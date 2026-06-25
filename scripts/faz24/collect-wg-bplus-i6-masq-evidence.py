@@ -16,6 +16,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -69,6 +70,40 @@ def run_command(argv: list[str], timeout: int = 12) -> CommandResult:
     return CommandResult(proc.returncode, proc.stdout, proc.stderr)
 
 
+def command_paths(name: str) -> list[str]:
+    """Return PATH + common Linux admin locations for a command."""
+    candidates: list[str] = []
+    found = shutil.which(name)
+    if found:
+        candidates.append(found)
+    candidates.extend(
+        [
+            f"/usr/sbin/{name}",
+            f"/sbin/{name}",
+            f"/usr/bin/{name}",
+            f"/bin/{name}",
+            f"/usr/local/bin/{name}",
+            f"/usr/local/sbin/{name}",
+            f"/snap/bin/{name}",
+            f"/opt/homebrew/bin/{name}",
+        ]
+    )
+    unique: list[str] = []
+    for candidate in candidates:
+        if candidate not in unique:
+            unique.append(candidate)
+    return unique
+
+
+def command_variants(name: str, args: list[str], sudo: bool = False) -> list[list[str]]:
+    variants: list[list[str]] = []
+    for command in command_paths(name):
+        if sudo:
+            variants.append(["sudo", "-n", command, *args])
+        variants.append([command, *args])
+    return variants
+
+
 def first_success(commands: list[list[str]], timeout: int = 12) -> CommandResult:
     last = CommandResult(127, "", "not-run")
     for command in commands:
@@ -98,13 +133,7 @@ def parse_wg_interface(requested: str) -> tuple[str, dict[str, Any]]:
     if requested != "auto":
         return safe_name(requested, "wg0"), {"requested": requested, "autoDetected": False}
 
-    result = first_success(
-        [
-            ["wg", "show", "interfaces"],
-            ["sudo", "-n", "wg", "show", "interfaces"],
-        ],
-        timeout=8,
-    )
+    result = first_success(command_variants("wg", ["show", "interfaces"], sudo=True), timeout=8)
     interfaces = [item for item in result.stdout.split() if re.match(r"^[A-Za-z0-9_.:@-]{1,96}$", item)]
     selected = interfaces[0] if interfaces else "wg0"
     return safe_name(selected, "wg0"), {
@@ -129,14 +158,17 @@ def rollback_hash(unit: str, pod_cidr: str, wg_interface: str, target_host: str)
 
 
 def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
-    active = run_command(["systemctl", "is-active", unit], timeout=6)
-    enabled = run_command(["systemctl", "is-enabled", unit], timeout=6)
-    show = run_command(
-        ["systemctl", "show", unit, "-p", "ActiveState", "-p", "UnitFileState", "-p", "ExecStart", "-p", "ExecStop"],
+    active = first_success(command_variants("systemctl", ["is-active", unit]), timeout=6)
+    enabled = first_success(command_variants("systemctl", ["is-enabled", unit]), timeout=6)
+    show = first_success(
+        command_variants(
+            "systemctl",
+            ["show", unit, "-p", "ActiveState", "-p", "UnitFileState", "-p", "ExecStart", "-p", "ExecStop"],
+        ),
         timeout=8,
     )
-    timer_active = run_command(["systemctl", "is-active", drift_timer], timeout=6)
-    timer_enabled = run_command(["systemctl", "is-enabled", drift_timer], timeout=6)
+    timer_active = first_success(command_variants("systemctl", ["is-active", drift_timer]), timeout=6)
+    timer_enabled = first_success(command_variants("systemctl", ["is-enabled", drift_timer]), timeout=6)
 
     show_stdout = show.stdout if show.exit_code == 0 else ""
     has_exec_start = "ExecStart=" in show_stdout and not re.search(r"^ExecStart=$", show_stdout, re.MULTILINE)
@@ -156,7 +188,7 @@ def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
 
 
 def collect_route_interface(target_host: str) -> dict[str, Any]:
-    result = run_command(["ip", "route", "get", target_host], timeout=6)
+    result = first_success(command_variants("ip", ["route", "get", target_host]), timeout=6)
     route_interface = None
     if result.exit_code == 0:
         match = re.search(r"\bdev\s+([A-Za-z0-9_.:@-]{1,96})\b", result.stdout)
@@ -169,13 +201,7 @@ def collect_route_interface(target_host: str) -> dict[str, Any]:
 
 
 def collect_iptables(pod_cidr: str, wg_interface: str, target_host: str) -> dict[str, Any]:
-    result = first_success(
-        [
-            ["sudo", "-n", "iptables", "-t", "nat", "-S", "POSTROUTING"],
-            ["iptables", "-t", "nat", "-S", "POSTROUTING"],
-        ],
-        timeout=10,
-    )
+    result = first_success(command_variants("iptables", ["-t", "nat", "-S", "POSTROUTING"], sudo=True), timeout=10)
     lines = result.stdout.splitlines() if result.exit_code == 0 else []
     target_networks = {f"{target_host}/32"}
     try:
@@ -226,8 +252,8 @@ def collect_pod_http_probe(
     target_port: int,
     path: str,
 ) -> dict[str, Any]:
-    pods = run_command(
-        ["kubectl", "--context", kube_context, "-n", namespace, "get", "pods", "-o", "json"],
+    pods = first_success(
+        command_variants("kubectl", ["--context", kube_context, "-n", namespace, "get", "pods", "-o", "json"]),
         timeout=15,
     )
     if pods.exit_code != 0:
@@ -244,28 +270,30 @@ def collect_pod_http_probe(
         phase = item.get("status", {}).get("phase")
         if phase != "Running" or not pod_name:
             continue
-        probe = run_command(
-            [
+        probe = first_success(
+            command_variants(
                 "kubectl",
-                "--context",
-                kube_context,
-                "-n",
-                namespace,
-                "exec",
-                pod_name,
-                "--",
-                "sh",
-                "-c",
-                (
-                    "if command -v curl >/dev/null 2>&1; then "
-                    "curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \"$0\"; "
-                    "elif command -v wget >/dev/null 2>&1; then "
-                    "wget -q -T 5 -O /dev/null --server-response \"$0\" 2>&1 "
-                    "| awk '/HTTP\\//{code=$2} END{print code+0}'; "
-                    "else exit 127; fi"
-                ),
-                url,
-            ],
+                [
+                    "--context",
+                    kube_context,
+                    "-n",
+                    namespace,
+                    "exec",
+                    pod_name,
+                    "--",
+                    "sh",
+                    "-c",
+                    (
+                        "if command -v curl >/dev/null 2>&1; then "
+                        "curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \"$0\"; "
+                        "elif command -v wget >/dev/null 2>&1; then "
+                        "wget -q -T 5 -O /dev/null --server-response \"$0\" 2>&1 "
+                        "| awk '/HTTP\\//{code=$2} END{print code+0}'; "
+                        "else exit 127; fi"
+                    ),
+                    url,
+                ],
+            ),
             timeout=20,
         )
         code_match = re.search(r"\b([1-5][0-9][0-9])\b", probe.stdout)
