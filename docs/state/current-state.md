@@ -201,13 +201,14 @@ Boundary / next:
   yazıldı:
   `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4796367521`.
 
-## Live Delta — Faz 24 WG-B+ I6 source contract merged; runtime verifier PASS pending (2026-06-25)
+## Live Delta — Faz 24 WG-B+ I6 operator package ready; host verifier PASS pending (2026-06-25)
 
 Faz 24 WG-B+ I6 pod-CIDR -> WG MASQ işi source/contract seviyesinde
-main'e alındı, fakat runtime acceptance hâlâ açık. Bu delta yalnız I6 kanıt
-ingest/verifier ve runbook yüzeyinin hazır olduğunu söyler; gerçek host/WG
-path'inden metadata-only evidence üretilip verifier PASS alınmadan I6 kabul
-edilmiş sayılmaz.
+main'e alındı ve operator-run için metadata-only host-evidence package
+workflow'u hazırlandı, fakat runtime acceptance hâlâ açık. Bu delta yalnız I6
+kanıt ingest/verifier, runbook ve operator package yüzeyinin hazır olduğunu
+söyler; gerçek host/WG path'inden metadata-only evidence üretilip verifier PASS
+alınmadan I6 kabul edilmiş sayılmaz.
 
 Source/contract evidence:
 
@@ -255,6 +256,17 @@ Source/contract evidence:
   round-trip testleri eklendi. Bu operator/root evidence üretim yolunu açan
   source/runbook desteğidir; host, WireGuard, Kubernetes object, platform-ai,
   secret veya production mutation yapmaz ve acceptance kanıtı değildir.
+- `platform-k8s-gitops#1987` merge commit
+  `ab4c70caad0c39110067a901551d748b97c4a890` ile I6 host evidence için
+  metadata-only operator package workflow'u, package builder'ı, testleri ve
+  runbook §6.1 operator-package adımı eklendi. Workflow `staging-sw`'a
+  bağlanmaz; yalnız wrapper, expected metadata JSON, README ve `SHA256SUMS`
+  artifact'i üretir. Bu operator'a bounded evidence collection yolu verir ama
+  tek başına runtime acceptance kanıtı değildir.
+- `platform-k8s-gitops#1988` merge commit
+  `407f5dd9aab45b029f46152c649ee386bd94e650` ile operator package workflow
+  checksum doğrulaması package dizininde çalışacak şekilde düzeltildi. Bu
+  workflow verification hygiene düzeltmesidir; host/WG evidence yerine geçmez.
 
 Runtime/live collector evidence:
 
@@ -274,6 +286,23 @@ Runtime/live collector evidence:
   `dffff98b71cf7750333ac9a06bce53caaef6cfa8` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi. Artifact:
   `faz24-wg-bplus-i6-masq-collect-28149700182`.
+- Operator package workflow run `28151747361`, `main`
+  `407f5dd9aab45b029f46152c649ee386bd94e650` üzerinde çalıştı ve workflow
+  conclusion `success` verdi. Artifact:
+  `faz24-i6-host-evidence-package-28151747361`.
+- Download edilen package artifact'i lokal doğrulamada beklenen 4 dosyayı
+  içerdi: `collect-staging-i6-host-evidence.sh`,
+  `expected-i6-host-evidence-metadata.json`, `README.md`, `SHA256SUMS`.
+  `sha256sum --check SHA256SUMS` tüm dosyalar için OK döndü ve wrapper
+  `bash -n` kontrolünden geçti. Artifact secret/raw-output taraması private
+  key, Bearer/JWT-like veya raw command output marker'ı bulmadı.
+- Package metadata boundary:
+  `hostMutationByPackageBuild=false`, `hostMutationByWrapper=false`,
+  `wireGuardMutation=false`, `clusterObjectMutation=false`,
+  `platformAiMutation=false`, `productionMutation=false`; redaction flags
+  `secretMaterialIncluded=false`, `rawCommandOutputIncluded=false`,
+  `rawPacketCaptureIncluded=false`, `rawAudioIncluded=false`,
+  `rawTranscriptIncluded=false`.
 - Latest collector metadata:
   `schemaVersion=faz24.wg-bplus.i6.pod-cidr-wg-masq.v1`,
   `status=blocked`, verifier `status=fail`, `findingCount=10`.
@@ -301,10 +330,10 @@ Runtime/live boundary:
 - Eski runbook/handoff yüzeyinde `k3d-wg-masq` ve pod -> WG -> `live-stt:8200`
   için prose/historical test-leg kanıtı var; bu yeni I6 verifier üzerinden
   normalize edilmiş PASS evidence değildir.
-- Sıradaki bounded iş: self-hosted runner'a host namespace evidence yüzeyini
-  açmak (`ip`, `iptables`, `systemctl`) veya `RB-faz24-wg-bplus-i6-pod-cidr-wg-masq.md`
-  §6.1 operator-collected host evidence fallback'iyle onaylı protected
-  metadata-only host evidence JSON'u üretip
+- Sıradaki bounded iş: `faz24-i6-host-evidence-package-28151747361`
+  artifact'ini `staging-sw` üzerinde clean repo checkout'tan operator olarak
+  çalıştırıp `RB-faz24-wg-bplus-i6-pod-cidr-wg-masq.md` §6.1 boundary'sine
+  uygun protected metadata-only host evidence JSON'u üretmek ve
   `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'u ile ingest etmektir.
   #1867 verifier PASS ve reviewer acceptance gelene kadar `Needs Verify`
   durumunda tutulur.
@@ -312,11 +341,9 @@ Runtime/live boundary:
   production cutover kabulü yerine geçmez.
 - Project #2 / board truth: `scripts/board-sync.sh sync-state 1867` son başarılı
   kontrolde board `Status=Needs Verify`, body `status=needs-verify`,
-  `claim=unclaimed` döndürdü. GraphQL ProjectV2 budget sonraki continuation
-  sırasında exhausted olduğu için board/project sync tekrarları REST-backed
-  issue/PR/check truth ile devam etti; Project custom-field reconciliation reset
-  sonrası yapılmalıdır. Latest REST-backed evidence comment #1867'ye yazıldı:
-  `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4796272213`.
+  `claim=unclaimed` döndürdü. Latest REST-backed evidence comment #1867'ye
+  yazıldı:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4796544994`.
 
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
