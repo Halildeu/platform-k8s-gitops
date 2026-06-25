@@ -150,4 +150,29 @@ grep -q '^GITHUB_RELEASE_ACTIVE_SERIES_DENSE=needs_hygiene .*active_count=8 thre
 grep -q '^RELEASE_TRAIN_WAIVER_FINDINGS=.*GITHUB_RELEASE_ACTIVE_SERIES_DENSE' "$out_d" \
   || fail "d-dense: dense finding must be waiver-eligible"
 
+# ---------------------------------------------------------------------------
+# (e) FUTURE graduation: trusted series ^v0\.4\., frozen minor v0.3, a v0.3.9
+#     published AFTER a v0.4 boundary -> needs_hygiene. This proves the
+#     frozen-series regex is SSOT-DERIVED from AGENT_RELEASE_FROZEN_MINOR, not
+#     hardcoded to v0.2 (#1939 post-impl Codex REVISE 019efe62). With the old
+#     hardcoded ^v0\.2\. this returned a FALSE pass (count=0).
+# ---------------------------------------------------------------------------
+fixture_e='[
+  {"tagName":"v0.4.1","isLatest":true,"isDraft":false,"isPrerelease":false,"publishedAt":"2026-07-02T00:00:00Z"},
+  {"tagName":"v0.4.0","isLatest":false,"isDraft":false,"isPrerelease":false,"publishedAt":"2026-07-01T00:00:00Z"},
+  {"tagName":"v0.3.9","isLatest":false,"isDraft":false,"isPrerelease":false,"publishedAt":"2026-07-01T10:30:00Z"},
+  {"tagName":"v0.3.0","isLatest":false,"isDraft":false,"isPrerelease":false,"publishedAt":"2026-06-24T09:04:29Z"}
+]'
+out_e="$(
+  export AGENT_RELEASE_TRUSTED_SERIES_REGEX='^v0\.4\.'
+  export AGENT_RELEASE_SERIES_LABEL='v0.4'
+  export AGENT_RELEASE_FROZEN_MINOR='v0.3'
+  export AGENT_RELEASE_TRUSTED_LINEAGE_STARTED_AT='2026-07-01T00:00:00Z'
+  run_fixture 'e-frozen-derived' 0 needs_hygiene "$fixture_e"
+)"
+grep -q '^GITHUB_RELEASE_TRAIN_SERIES=pass latest_stable=v0.4.1 ' "$out_e" \
+  || fail "e: latest-stable v0.4.1 on trusted ^v0\\.4\\. must pass series"
+grep -q '^GITHUB_RELEASE_FROZEN_SERIES_REGRESSION=needs_hygiene frozen_series=v0.3 count=1' "$out_e" \
+  || fail "e: frozen regex must derive from AGENT_RELEASE_FROZEN_MINOR (v0.3.9 after v0.4 boundary counted, NOT hardcoded v0.2)"
+
 echo "release-train-verdict-ok"

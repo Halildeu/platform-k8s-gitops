@@ -320,10 +320,15 @@ release_train_verdict() {
     print_check 'GITHUB_RELEASE_LATEST_POINTER' 'pass' "pointer_kind=$pointer_kind"
   fi
 
-  # Frozen-series regression: v0.2.x published at/after the trusted boundary.
+  # Frozen-series regression: frozen-minor.x published at/after the trusted boundary.
+  # Derive the frozen-series regex from the SSOT minor label (escape dots, anchor,
+  # trailing dot) — NOT hardcoded — so a future graduation (e.g. trusted ^v0\.4\.,
+  # frozen v0.3) counts post-boundary frozen releases without a code change.
+  local frozen_regex
+  frozen_regex="^$(printf '%s' "$AGENT_RELEASE_FROZEN_MINOR" | sed 's/\./\\./g')\\."
   local regression_count
-  regression_count="$(printf '%s\n' "$releases_json" | jq --arg boundary "$boundary" '
-    [ .[] | select((.tagName // "") | test("^v0\\.2\\.")) | select((.publishedAt // "") >= $boundary) ] | length')"
+  regression_count="$(printf '%s\n' "$releases_json" | jq --arg boundary "$boundary" --arg frozen_regex "$frozen_regex" '
+    [ .[] | select((.tagName // "") | test($frozen_regex)) | select((.publishedAt // "") >= $boundary) ] | length')"
   if [ "$regression_count" -gt 0 ]; then
     print_check 'GITHUB_RELEASE_FROZEN_SERIES_REGRESSION' 'needs_hygiene' "frozen_series=$AGENT_RELEASE_FROZEN_MINOR count=$regression_count boundary=$boundary reason=frozen-series-release-after-graduation"
     needs_hygiene=1
