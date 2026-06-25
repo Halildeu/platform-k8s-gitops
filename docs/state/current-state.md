@@ -1,5 +1,52 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 WG-B+ I6 host MASQ evidence PASS; reviewer acceptance pending (2026-06-25)
+
+`platform-k8s-gitops#1867` moved from source/operator-package readiness to a
+fresh metadata-only verifier PASS on `staging-sw`, after a bounded host-side
+I6 repair. The previous live collector result had already proven that
+`staging-sw` could query host namespace metadata, that the pod-origin HTTP
+probe to Denetim plaintext `10.99.0.2:8200` returned a bounded `4xx`, and that
+the existing `k3d-wg-masq.service` was active/enabled; it still failed because
+the host namespace NAT rule, drift timer, and rollback `ExecStop` were absent.
+
+Bounded live change applied on `staging-sw` at `20260625T110213Z`:
+
+- Installed `/usr/local/sbin/k3d-wg-masq-host-rule.sh`, an idempotent
+  apply/check/rollback wrapper for the exact host NAT rule
+  `-s 10.42.0.0/16 -d 10.99.0.0/24 -o wg0 -j MASQUERADE`.
+- Added systemd drop-in
+  `/etc/systemd/system/k3d-wg-masq.service.d/faz24-i6-host-rule.conf` with
+  `ExecStartPost=/usr/local/sbin/k3d-wg-masq-host-rule.sh apply` and
+  `ExecStop=/usr/local/sbin/k3d-wg-masq-host-rule.sh rollback`.
+- Added `/etc/systemd/system/k3d-wg-masq-drift.service` and enabled
+  `/etc/systemd/system/k3d-wg-masq.timer` to re-apply the exact rule on a
+  5-minute timer.
+- Applied and checked the host rule successfully. Rollback is exact-rule
+  deletion plus disabling/removing the timer, drift service, drop-in, and
+  wrapper, followed by `systemctl daemon-reload`.
+
+Fresh evidence:
+
+- Clean temporary repo clone on `staging-sw` collected metadata-only evidence
+  `/tmp/wg-bplus-i6-masq-evidence-20260625T110233Z.json`.
+- Local verifier output: `Faz24 WG-B+ I6 MASQ evidence: PASS`,
+  `clusterName=k3d-test`, `podCIDR=10.42.0.0/16`, `wgInterface=wg0`,
+  `mechanismType=host-systemd-iptables`.
+- GitHub ingest workflow
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml` run `28165629939` on
+  `eb686b0bee10c0d1daeac225a0d36b51d26da834` completed `success`; job
+  `83416769870` passed decode, verifier, private-material scan, summary, and
+  artifact upload. Artifact:
+  `faz24-wg-bplus-i6-masq-evidence-28165629939` / id `7876217236`.
+
+Acceptance boundary: this is I6 pod-CIDR-to-WireGuard MASQ metadata evidence
+only. It does not prove `platform-ai#198` Denetim `8243` app-mTLS,
+`platform-ai#188` compute-plane audit smoke, `platform-ai#182` direct audio
+e2e, I3 management audit, production cutover, or broad readiness. Keep #1867
+open until the evidence is reviewed and explicitly accepted; do not use this
+as a direct-STT flag-flip basis.
+
 ## Live Delta — Faz 24 I7 Windows Firewall evidence narrowed; endpoint policy still blocks remote 8243 (2026-06-25)
 
 Follow-up read-only #198 probes after the Caddy persistence fix preserved the
