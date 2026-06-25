@@ -79,7 +79,10 @@ class BuildI3DenetimSshAuthorizePackageTest(unittest.TestCase):
             self.assertNotIn("Bearer ", all_text)
             self.assertNotIn("eyJ", json.dumps(metadata))
             self.assertIn(SAMPLE_PUBLIC_KEY, (output / "faz24-i3-denetim_ed25519.pub").read_text(encoding="utf-8"))
-            self.assertIn("administrator-required", (output / "authorize-denetim-i3-public-key.ps1").read_text(encoding="utf-8"))
+            powershell = (output / "authorize-denetim-i3-public-key.ps1").read_text(encoding="utf-8")
+            self.assertIn("administrator-required", powershell)
+            self.assertIn("sshd-not-running", powershell)
+            self.assertIn("$sshdStatusAfter -ne 'Running'", powershell)
             self.assertIn("Administrators read-only", (output / "README.md").read_text(encoding="utf-8"))
 
     def test_rejects_private_key_material(self):
