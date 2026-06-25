@@ -37,6 +37,7 @@ jobs:
     env:
       EVIDENCE_DIR: /tmp/faz24-wg-bplus-i3-evidence-${{ github.run_id }}
       EVIDENCE_JSON: /tmp/faz24-wg-bplus-i3-evidence-${{ github.run_id }}/wg-bplus-i3-evidence.json
+      SSH_IDENTITY_PATH: ~/.ssh/faz24-i3-denetim_ed25519
 
     steps:
       - name: Validate dispatch inputs
@@ -86,6 +87,7 @@ jobs:
           DENETIM_SSH_TARGET_INPUT: ${{ inputs.denetim_ssh_target }}
           LOOKBACK_HOURS_INPUT: ${{ inputs.lookback_hours }}
           WG_INTERFACE_INPUT: ${{ inputs.wg_interface }}
+          FAZ24_I3_SSH_IDENTITY_PATH: ${{ env.SSH_IDENTITY_PATH }}
         run: |
           set -euo pipefail
 
@@ -95,6 +97,7 @@ jobs:
             --denetim-target "${DENETIM_SSH_TARGET_INPUT}" \
             --lookback-hours "${LOOKBACK_HOURS_INPUT}" \
             --wg-interface "${WG_INTERFACE_INPUT}" \
+            --ssh-identity-path "${FAZ24_I3_SSH_IDENTITY_PATH}" \
             --retention-days 14 \
             | tee "${EVIDENCE_DIR}/collector-summary.txt"
 
@@ -128,6 +131,7 @@ jobs:
             echo
             echo "- Runner: self-hosted staging-sw"
             echo "- Denetim target: redacted; stable hash is in the evidence JSON"
+            echo "- Runner SSH identity: path hash and public-key metadata are in \`collector.denetimSshPreflight\`"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Artifact: \`faz24-wg-bplus-i3-evidence-${{ github.run_id }}\`"
             echo "- Verifier exit code: \`${verify_exit_code}\`"

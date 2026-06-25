@@ -38,8 +38,10 @@ class FakeRunner:
         self.ssh_stderr = ssh_stderr
         self.wg_requires_sudo = wg_requires_sudo
         self.wg_binary_path_only = wg_binary_path_only
+        self.commands: list[list[str]] = []
 
     def __call__(self, argv: list[str], stdin: str | None = None, timeout: int = 30):
+        self.commands.append(argv)
         if argv[:3] == ["ip", "route", "get"]:
             return collector.CommandResult(0, "10.99.0.2 dev wg-denetim src 10.99.0.1\n", "")
         if argv and argv[0] == "journalctl":
@@ -122,7 +124,12 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
             "tcp22Errno": None,
         }
 
-    def build(self, runner: FakeRunner, wg_interface: str = "wg0") -> dict:
+    def build(
+        self,
+        runner: FakeRunner,
+        wg_interface: str = "wg0",
+        ssh_identity_path: str | None = None,
+    ) -> dict:
         return collector.build_evidence(
             timestamp=datetime(2026, 6, 25, 0, 0, 0, tzinfo=timezone.utc),
             protected_path="github-actions://Halildeu/platform-k8s-gitops/actions/runs/1/artifacts/faz24-wg-bplus-i3-evidence",
@@ -133,6 +140,7 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
             connect_timeout_seconds=1,
             runner=runner,
             tcp_probe=self.tcp_ok,
+            ssh_identity_path=ssh_identity_path,
         )
 
     def run_verifier(self, data: dict) -> subprocess.CompletedProcess[str]:
@@ -195,6 +203,28 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
         self.assertTrue(preflight["sshStderrPresent"])
         self.assertTrue(preflight["sshErrorFingerprint"])
         self.assertNotIn("Permission denied", serialized)
+
+    def test_denetim_ssh_uses_configured_runner_identity_without_key_leak(self):
+        runner = FakeRunner(remote_success_json())
+        with tempfile.TemporaryDirectory() as tmpdir:
+            key_path = Path(tmpdir) / "faz24-i3-denetim_ed25519"
+            key_path.write_text("not-a-real-private-key\n", encoding="utf-8")
+            key_path.with_name(key_path.name + ".pub").write_text(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakePublicKey faz24-i3\n",
+                encoding="utf-8",
+            )
+
+            evidence = self.build(runner, ssh_identity_path=str(key_path))
+
+        preflight = evidence["collector"]["denetimSshPreflight"]
+        ssh_commands = [argv for argv in runner.commands if argv and argv[0] == "ssh"]
+        self.assertEqual(1, len(ssh_commands))
+        self.assertIn("-i", ssh_commands[0])
+        self.assertIn("IdentitiesOnly=yes", ssh_commands[0])
+        self.assertTrue(preflight["sshIdentityConfigured"])
+        self.assertTrue(preflight["sshIdentityPublicKeyPresent"])
+        self.assertTrue(preflight["sshIdentityPublicKeyFingerprint"])
+        self.assertNotIn("FakePublicKey", json.dumps(evidence))
 
     def test_staging_wireguard_uses_sudo_fallback(self):
         original_which = collector.shutil.which

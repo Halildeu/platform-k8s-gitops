@@ -27,6 +27,7 @@ SCHEMA_VERSION = "faz24.wg-bplus.i3.audit.v1"
 DEFAULT_DENETIM_TARGET = "svc-denetim-agent@10.99.0.2"
 DEFAULT_WG_INTERFACE = "auto"
 DEFAULT_RETENTION_DAYS = 14
+DEFAULT_SSH_IDENTITY_PATH = "~/.ssh/faz24-i3-denetim_ed25519"
 WG_BINARY_CANDIDATES = [
     "wg",
     "/usr/bin/wg",
@@ -245,6 +246,32 @@ def is_ip_literal(value: str) -> bool:
     return bool(re.match(r"^[0-9.]+$", value) or ":" in value)
 
 
+def inspect_ssh_identity(identity_path: str | None) -> dict[str, Any]:
+    if identity_path is None or not identity_path.strip():
+        return {
+            "sshIdentityConfigured": False,
+            "sshIdentityPathHash": "",
+            "sshIdentityPublicKeyPresent": False,
+            "sshIdentityPublicKeyFingerprint": "",
+        }
+
+    path = Path(identity_path).expanduser()
+    public_path = path.with_name(path.name + ".pub")
+    public_key = ""
+    if public_path.exists():
+        try:
+            public_key = public_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            public_key = ""
+
+    return {
+        "sshIdentityConfigured": path.exists(),
+        "sshIdentityPathHash": sha256_short(str(path)),
+        "sshIdentityPublicKeyPresent": bool(public_key),
+        "sshIdentityPublicKeyFingerprint": sha256_short(public_key) if public_key else "",
+    }
+
+
 def classify_socket_error(exc: OSError) -> str:
     text = str(exc).lower()
     errno_value = getattr(exc, "errno", None)
@@ -313,6 +340,7 @@ def collect_denetim_ssh_preflight(
     target: str,
     ssh_result: CommandResult,
     timeout_seconds: int,
+    ssh_identity_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     host = parse_ssh_target_host(target)
     route = runner(["ip", "route", "get", host], None, timeout_seconds)
@@ -334,6 +362,14 @@ def collect_denetim_ssh_preflight(
         "sshStdoutPresent": bool(ssh_result.stdout.strip()),
         "sshStderrPresent": bool(ssh_result.stderr.strip()),
         "sshErrorFingerprint": sha256_short(ssh_output) if ssh_output.strip() else "",
+        "sshIdentityConfigured": bool(ssh_identity_metadata["sshIdentityConfigured"]),
+        "sshIdentityPathHash": str(ssh_identity_metadata["sshIdentityPathHash"]),
+        "sshIdentityPublicKeyPresent": bool(
+            ssh_identity_metadata["sshIdentityPublicKeyPresent"]
+        ),
+        "sshIdentityPublicKeyFingerprint": str(
+            ssh_identity_metadata["sshIdentityPublicKeyFingerprint"]
+        ),
     }
 
 
@@ -557,8 +593,18 @@ def collect_denetim_metadata(
     target: str,
     lookback_hours: int,
     connect_timeout_seconds: int,
+    ssh_identity_path: str | None,
 ) -> tuple[dict[str, Any] | None, CommandResult]:
     script = build_powershell_collector(lookback_hours)
+    identity_metadata = inspect_ssh_identity(ssh_identity_path)
+    identity_args: list[str] = []
+    if identity_metadata["sshIdentityConfigured"] and ssh_identity_path is not None:
+        identity_args = [
+            "-i",
+            str(Path(ssh_identity_path).expanduser()),
+            "-o",
+            "IdentitiesOnly=yes",
+        ]
     ssh = runner(
         [
             "ssh",
@@ -572,6 +618,7 @@ def collect_denetim_metadata(
             "ServerAliveInterval=5",
             "-o",
             "ServerAliveCountMax=2",
+            *identity_args,
             target,
             "powershell",
             "-NoProfile",
@@ -619,6 +666,7 @@ def build_evidence(
     connect_timeout_seconds: int,
     runner: CommandRunner,
     tcp_probe: TcpProbeRunner = probe_tcp_connect,
+    ssh_identity_path: str | None = DEFAULT_SSH_IDENTITY_PATH,
 ) -> dict[str, Any]:
     now = utc_text(timestamp)
     target_hash = sha256_short(denetim_target)
@@ -634,13 +682,16 @@ def build_evidence(
         target=denetim_target,
         lookback_hours=lookback_hours,
         connect_timeout_seconds=connect_timeout_seconds,
+        ssh_identity_path=ssh_identity_path,
     )
+    ssh_identity_metadata = inspect_ssh_identity(ssh_identity_path)
     denetim_ssh_preflight = collect_denetim_ssh_preflight(
         runner,
         tcp_probe,
         denetim_target,
         ssh_result,
         connect_timeout_seconds,
+        ssh_identity_metadata,
     )
     remote_ok = remote is not None and ssh_result.returncode == 0
     remote_host = bounded(str(remote.get("host", "denetim-pc")) if remote else "denetim-pc", 80)
@@ -818,6 +869,11 @@ def parse_args() -> argparse.Namespace:
         help="SSH/connect timeout for metadata commands",
     )
     parser.add_argument(
+        "--ssh-identity-path",
+        default=os.environ.get("FAZ24_I3_SSH_IDENTITY_PATH", DEFAULT_SSH_IDENTITY_PATH),
+        help="Optional runner-local SSH identity path for Denetim metadata SSH",
+    )
+    parser.add_argument(
         "--protected-evidence-path",
         default=None,
         help="Override protectedEvidencePath; defaults to current GitHub Actions run artifact path",
@@ -839,6 +895,7 @@ def main() -> int:
         wg_interface=args.wg_interface,
         connect_timeout_seconds=args.connect_timeout_seconds,
         runner=run_command,
+        ssh_identity_path=args.ssh_identity_path,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
