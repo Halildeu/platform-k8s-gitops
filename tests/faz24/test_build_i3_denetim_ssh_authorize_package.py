@@ -14,6 +14,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "faz24" / "build-i3-denetim-ssh-authorize-package.py"
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "faz24-i3-denetim-ssh-authorize-package.yml"
 
 SAMPLE_PUBLIC_KEY = (
     "ssh-ed25519 "
@@ -135,6 +136,16 @@ class BuildI3DenetimSshAuthorizePackageTest(unittest.TestCase):
                 SAMPLE_PUBLIC_KEY + "\n",
                 (output_dir / "faz24-i3-denetim_ed25519.pub").read_text(encoding="utf-8"),
             )
+
+    def test_workflow_keeps_input_public_key_outside_package_dir(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "PUBLIC_KEY_INPUT_FILE: /tmp/faz24-i3-denetim-ssh-authorize-input-${{ github.run_id }}.pub",
+            workflow,
+        )
+        self.assertNotIn("PUBLIC_KEY_INPUT_FILE: /tmp/faz24-i3-denetim-ssh-authorize-package-", workflow)
+        self.assertIn('rm -f "${PUBLIC_KEY_INPUT_FILE}"', workflow)
 
 
 if __name__ == "__main__":
