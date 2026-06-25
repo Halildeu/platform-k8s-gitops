@@ -1,5 +1,44 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 I7 Windows Firewall evidence narrowed; endpoint policy still blocks remote 8243 (2026-06-25)
+
+Follow-up read-only #198 probes after the Caddy persistence fix preserved the
+same network boundary and ruled out one more Windows Firewall-only theory.
+From `staging-sw`, `ip route get 10.99.0.2` still selects `wg0` with source
+`10.99.0.1`; TCP/8200 succeeds, but TCP/8243 still times out. On Denetim PC,
+`CaddyI7AppMtls` remains `Running`, `caddy.exe` owns listener
+`10.99.0.2:8243`, and Denetim-local `Test-NetConnection 10.99.0.2 -Port 8243`
+succeeds through interface `wg0`.
+
+Visible Windows Firewall evidence now shows both local inbound allow rules are
+present via `netsh advfirewall`: `WG-staging-caddy-mtls-8243` and
+`WG-staging-caddy-mtls-8243-program`, enabled for Domain/Private/Public,
+remote `10.99.0.1`, protocol TCP, local port `8243`, action `Allow`; the
+program-scoped rule points at `C:\caddy\caddy.exe`. `ActiveStore`
+profiles show `DefaultInboundAction=Block`, `AllowLocalFirewallRules=True`,
+and `AllowLocalIPsecRules=True`; the `wg0` network category is `Public`.
+Windows Firewall drop logging is not currently available (`pfirewall.log`
+missing / profile logging disabled), and the Security log query for WFP drop
+events `5152/5157` matching `8243`/`10.99.0.x` returned no matching evidence.
+ESET firewall-related services (`efwd`, `ekrn`, `ekrnEpfw`) and the ERA agent
+are running.
+
+Therefore the current #198 blocker is narrower than "missing Caddy" or
+"missing visible Windows Firewall allow rule": remote inbound
+`10.99.0.1 -> 10.99.0.2:8243` is still blocked by endpoint/security policy or
+another WFP provider path below/outside the visible local Windows Firewall
+allow rules. The next safe action is endpoint/security-owner review of
+ESET/ERA or central WFP policy for that exact 5-tuple, preferably by adding a
+TTL-bounded allow/logging rule for `C:\caddy\caddy.exe` on TCP/8243 from
+`10.99.0.1`, then rerunning `live-stt-preflight`. Do not disable or stop ESET
+as an acceptance shortcut.
+
+Acceptance boundary: direct-STT remains disabled, no raw audio was sent, no
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE` or `/transcribe` e2e was proven, and
+`platform-ai#198` remains open until route, TCP/8243, TLS server identity,
+valid client mTLS, no-client/wrong-client fail-closed behavior, and
+reviewer/operator acceptance are all evidenced through the I7 verifier path.
+
 ## Live Delta — Faz 24 I7 Caddy persists on Denetim; remote 8243 remains host-policy blocked (2026-06-25)
 
 This supersedes the same-day I7 note below that Caddy was not running
