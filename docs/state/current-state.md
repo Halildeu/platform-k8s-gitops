@@ -139,11 +139,11 @@ Live workflow evidence:
   file SHA256SUMS matched, private key marker absent, bearer marker absent,
   metadata raw public key absent, and generated PowerShell contains
   `sshd-not-running` plus `$sshdStatusAfter -ne 'Running'`.
-- Latest I3 evidence workflow run `28143607433`, `main`
-  `8fd7d76882201cfb80d7afe61e271211c6c6e779` üzerinde çalıştı ve verifier
+- Latest I3 evidence workflow run `28150424752`, `main`
+  `97ebe1ee87d9a7fb7a02ddc82781bae1a47f4b53` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi.
 - I3 evidence artifact:
-  `faz24-wg-bplus-i3-evidence-28143607433`.
+  `faz24-wg-bplus-i3-evidence-28150424752`.
 - Artifact redaction flags:
   `rawAudioIncluded=false`, `rawTranscriptIncluded=false`,
   `secretMaterialIncluded=false`, `commandContentIncluded=false`.
@@ -199,7 +199,7 @@ Boundary / next:
   kontrolde board `Status=Needs Verify`, body `status=needs-verify`,
   `claim=unclaimed` döndürdü. Latest REST-backed evidence comment #1864'e
   yazıldı:
-  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795385968`.
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4796367521`.
 
 ## Live Delta — Faz 24 WG-B+ I6 source contract merged; runtime verifier PASS pending (2026-06-25)
 
@@ -248,6 +248,13 @@ Source/contract evidence:
   non-missing failure exit code'larını koruyacak şekilde düzeltildi. Bu da
   host evidence sınıflandırmasını daraltan source/tooling düzeltmesidir;
   acceptance kanıtı değildir.
+- `platform-k8s-gitops#1985` squash merge commit
+  `97ebe1ee87d9a7fb7a02ddc82781bae1a47f4b53` ile I6 collector'a
+  `--protected-evidence-path` override'ı, workflow'a opsiyonel protected path
+  input'u, runbook'a operator-collected host evidence fallback'i ve collector
+  round-trip testleri eklendi. Bu operator/root evidence üretim yolunu açan
+  source/runbook desteğidir; host, WireGuard, Kubernetes object, platform-ai,
+  secret veya production mutation yapmaz ve acceptance kanıtı değildir.
 
 Runtime/live collector evidence:
 
@@ -295,10 +302,12 @@ Runtime/live boundary:
   için prose/historical test-leg kanıtı var; bu yeni I6 verifier üzerinden
   normalize edilmiş PASS evidence değildir.
 - Sıradaki bounded iş: self-hosted runner'a host namespace evidence yüzeyini
-  açmak (`ip`, `iptables`, `systemctl`) veya onaylı protected metadata-only host
-  evidence JSON'unu `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'u ile
-  ingest etmektir. #1867 verifier PASS ve reviewer acceptance gelene kadar
-  `Needs Verify` durumunda tutulur.
+  açmak (`ip`, `iptables`, `systemctl`) veya `RB-faz24-wg-bplus-i6-pod-cidr-wg-masq.md`
+  §6.1 operator-collected host evidence fallback'iyle onaylı protected
+  metadata-only host evidence JSON'u üretip
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'u ile ingest etmektir.
+  #1867 verifier PASS ve reviewer acceptance gelene kadar `Needs Verify`
+  durumunda tutulur.
 - Bu kanıt direct-STT Functional, I3 management audit, platform-ai app-mTLS veya
   production cutover kabulü yerine geçmez.
 - Project #2 / board truth: `scripts/board-sync.sh sync-state 1867` son başarılı
