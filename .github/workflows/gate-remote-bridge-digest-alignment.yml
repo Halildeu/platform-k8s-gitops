@@ -1,0 +1,39 @@
+name: "Remote-bridge digest alignment (Faz 22.6 #2031)"
+
+# Faz 22.6 durable re-drift guard (Codex 019f008a Q6, AGREE 2026-06-26). The remote-bridge
+# activation overlay must render the SAME endpoint-admin-service digest as the primary test
+# overlay (same-image pilot topology). A manual digest-sync PR that bumps the primary test
+# overlay but NOT the bridge activation overlay re-blocks the completion-audit REMOTE_BRIDGE_LIVE
+# gate at runtime (proven: 3015656f->5eff536b drifted within an hour of PR #2030); this catches
+# that drift at PR time. Fail-closed. The testai auto-sync excludes endpoint-admin (SERVICES /
+# REQUIRED_SVCS / SYNC_SERVICES), so this enforces manual-PR authoring discipline and never
+# blocks the auto-sync bot.
+
+on:
+  pull_request:
+    paths:
+      - 'kustomize/overlays/test/**'
+      - 'kustomize/base/apps/endpoint-admin-service/**'
+      - 'kustomize/base/apps/endpoint-admin-remote-bridge/**'
+      - 'scripts/governance/check-remote-bridge-digest-alignment.sh'
+      - '.github/workflows/gate-remote-bridge-digest-alignment.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  remote-bridge-digest-alignment:
+    name: remote-bridge-digest-alignment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup kustomize
+        uses: imranismail/setup-kustomize@v3
+        with:
+          kustomize-version: "5.3.0"
+
+      - name: Assert remote-bridge digest == primary endpoint-admin digest
+        run: bash scripts/governance/check-remote-bridge-digest-alignment.sh

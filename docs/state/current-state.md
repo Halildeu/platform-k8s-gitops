@@ -1367,6 +1367,14 @@ The Q6 re-drift fear materialised immediately: within ~1h of the 3015656f align 
 - DURABLE FIX still pending (#2031), mechanism corrected by Codex 019f008a: the testai auto-sync (deploy-backend-testai -> apply-test-overlay-digests.py -> sync-test-overlay.sh) DOES bump the primary endpoint-admin digest in overlays/test (endpoint-admin-service is in REQUIRED_SVCS/SERVICE_SPECS/SYNC_SERVICES) but NOT the bridge activation overlay, so a primary bump silently re-drifts the bridge. The durable fix = make the auto-sync bump the bridge digest in lockstep (and widen its diff-guard allowlist), THEN a digest-alignment guard enforces it. A standalone guard alone (drafted PR #2033, now closed) would block the auto-sync; it needs the auto-sync companion first. This PR is the manual re-align only.
 - F22_6_COMPLETION remains blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only).
 
+### 2026-06-26 Live Delta — CORRECTION + durable guard LANDED (Codex 019f008a AGREE after evidence push-back)
+
+The previous delta's mechanism claim was WRONG: the testai auto-sync does NOT bump endpoint-admin. Codex's earlier REVISE (which prompted that wording) misread deploy-backend-testai.yml lines 162/198; on evidence push-back Codex AGREE'd. The verified picture:
+
+- endpoint-admin-service is EXCLUDED from deploy-backend-testai.yml SERVICES array (line 192 comment: "discovery-server + endpoint-admin-service ilk cut'tan SKIP (S4)") AND REQUIRED_SVCS (line 159), and REJECTED fail-closed by apply-test-overlay-digests.py SYNC_SERVICES (out-of-scope, line 137-144). No other scripts/automation writes endpoint-admin to overlays/test; the overlay endpoint-admin bumps (#2032/#2014/#2013/#1834) are all manual feature PRs.
+- Therefore the standalone digest-alignment guard IS the correct durable fix (NO auto-sync change needed): it never blocks the auto-sync (which leaves the endpoint-admin line untouched) and enforces that a MANUAL endpoint-admin overlay bump also co-bumps the bridge.
+- DURABLE GUARD LANDED: scripts/governance/check-remote-bridge-digest-alignment.sh + .github/workflows/gate-remote-bridge-digest-alignment.yml — renders both overlays, asserts the endpoint-admin digest is singular AND equal, fail-closed. Verified: pass on aligned (5eff=5eff), fail on simulated drift. This durably closes the Q6 re-drift risk (#2031).
+
 Boundary for #548 remains unchanged:
 
 - This is source/live-wiring progress for the #548 harness path, not #548 resolution.

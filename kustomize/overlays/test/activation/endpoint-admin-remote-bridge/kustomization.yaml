@@ -153,11 +153,14 @@ images:
   # Digest lineage: 6b12276 = historical baseline (#733); 3015656f = #754/#548-M1/#1497 (PR #2030);
   # 5eff536b = current primary (#2032 Faz 24 retention digest-sync). The completion-audit
   # REMOTE_BRIDGE_LIVE gate needs BOTH deployments + pods to share this one digest (digest_hits>=4).
-  # RE-DRIFT RISK: the testai auto-sync (deploy-backend-testai -> apply-test-overlay-digests.py) bumps the
-  # PRIMARY endpoint-admin digest in overlays/test but NOT this bridge digest, so a primary bump silently
-  # re-drifts the bridge (proven: 3015656f->5eff536b re-blocked the gate within ~1h). DURABLE FIX (#2031):
-  # make the auto-sync bump this bridge digest in lockstep (then a digest-alignment guard can enforce it).
-  # Until then, re-align this manually whenever the primary moves.
+  # RE-DRIFT RISK: a manual PR that bumps the PRIMARY endpoint-admin digest in overlays/test must ALSO bump
+  # THIS bridge digest, else the gate re-blocks (proven: a manual digest-sync moved the primary 3015656f->
+  # 5eff536b within ~1h of PR #2030, re-drifting this bridge). The testai auto-sync does NOT touch this:
+  # endpoint-admin is excluded from deploy-backend-testai SERVICES/REQUIRED_SVCS and rejected by
+  # apply-test-overlay-digests.py SYNC_SERVICES, so the overlay endpoint-admin digest is manual-only.
+  # DURABLE FIX (#2031, Codex 019f008a AGREE): scripts/governance/check-remote-bridge-digest-alignment.sh +
+  # .github/workflows/gate-remote-bridge-digest-alignment.yml fail any PR whose rendered primary digest != this
+  # bridge digest — enforcing the manual-PR co-bump at PR time (never blocks the auto-sync, which skips endpoint-admin).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
     digest: sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b
