@@ -61,9 +61,13 @@ metadata-only G-WER/DER and G-INT acceptance gates, `platform-ai#201` added the
 #156 retention-readiness gate, `platform-ai#202` closed the Redis
 control-plane wording/runtime gap, `platform-ai#203` recorded the
 recording/archive boundary as live-path RED / future opt-in only, and
-`platform-ai#204` added the metadata-only G-LAT/COST gate. This advances
-sector-standard quality/compliance governance, but does not provide real pilot
-WER/DER, real pilot G-INT, pilot G-LAT/COST, VERBIS/DB cleanup acceptance,
+`platform-ai#204` added the metadata-only G-LAT/COST gate.
+`platform-k8s-gitops` now also carries the metadata-only G-CAP aggregate
+capture gate verifier
+(`scripts/faz24/verify_gcap_capture_gate_evidence.py`) for redacted external
+recorder verifier outputs. This advances sector-standard quality/compliance
+governance, but does not provide real pilot WER/DER, real pilot G-INT, pilot
+G-LAT/COST, live aggregate G-CAP evidence, VERBIS/DB cleanup acceptance,
 direct-STT runtime, raw-audio transit, or production readiness.
 
 **Faz 22.5 AG-029 delta (2026-06-07)**: AG-029 is no longer only a

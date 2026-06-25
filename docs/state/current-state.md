@@ -525,6 +525,35 @@ direct-STT smoke, not a successful `audio-gateway -> live-stt /transcribe`
 transcript, not desktop mic/loopback evidence, not WG-B+ host/operator
 evidence, and not production readiness.
 
+## Live Delta — Faz 24 G-CAP aggregate capture gate verifier packaged (2026-06-25)
+
+The #1615 external recorder evidence path now has a metadata-only aggregate
+G-CAP verifier for capture reliability:
+
+- `scripts/faz24/verify_gcap_capture_gate_evidence.py` consumes only redacted
+  `faz24.externalRecorderSmokeVerifier.v1` outputs from
+  `verify_external_recorder_smoke_evidence.py`.
+- The verifier gates attempt count, distinct meeting/session coverage, success
+  rate, retry rate, and failure rate with explicit CLI thresholds. Defaults are
+  `min-attempts=5`, `min-distinct-meetings=5`, `min-distinct-sessions=5`,
+  `min-success-rate=0.95`, `max-retry-rate=0.10`, and
+  `max-failure-rate=0.05`.
+- `status=pass` means the submitted verifier set meets those aggregate G-CAP
+  thresholds. `status=blocked` means the evidence set is too small or coverage
+  is insufficient. `status=fail` means privacy/schema/overclaim rejection or an
+  enough-sample threshold miss.
+- The verifier rejects raw recorder smoke envelopes, JWT/Bearer/Authorization
+  shaped values, sensitive keys, raw audio/transcript/prompt/response fields,
+  and direct-STT / compute-plane audit / desktop mic / production overclaims.
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` now includes
+  the aggregate command and attachment rule for
+  `/tmp/faz24-gcap-capture-gate.verify.json`.
+
+Boundary: this packages source-side G-CAP aggregate evaluation only. It is not a
+new live recorder run, not direct-STT transcript evidence, not same-session
+compute-plane audit evidence, not desktop mic/loopback evidence, and not
+production readiness.
+
 ## Live Delta — Faz 24 external recorder smoke evidence verifier packaged (2026-06-25)
 
 The #1615 external recorder evidence path now has a fail-closed verifier for
