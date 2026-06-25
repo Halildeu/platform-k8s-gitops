@@ -53,6 +53,9 @@ SYNC_SERVICES = frozenset({
     "schema-service",
     "endpoint-admin-service",
     "audio-gateway-service",
+    "meeting-service",
+    "transcript-service",
+    "audit-event-consumer-service",
     "api-gateway",
 })
 

@@ -30,17 +30,30 @@ class DeployBackendTestaiStabilityGateTest(unittest.TestCase):
 
     def test_stability_window_budget_comment_matches_service_count(self):
         services = self._gate_1d_services()
-        self.assertEqual(10, len(services), services)
+        self.assertEqual(13, len(services), services)
         self.assertIn("audio-gateway", services)
-        self.assertIn("22 min budget", self.workflow)
-        self.assertIn("rollout (10 * 180s = 30m max)", self.workflow)
+        self.assertIn("meeting-service", services)
+        self.assertIn("transcript-service", services)
+        self.assertIn("audit-event-consumer-service", services)
+        self.assertIn("12 * 180s + endpoint-admin 300s ≈ 41m max", self.workflow)
 
-    def test_faz24_audio_gateway_rollout_mapping_is_explicit(self):
+    def test_faz24_runtime_rollout_mappings_are_explicit(self):
         self.assertIn(
             '"audio-gateway-service|audio-gateway|audio-gateway|audio-gateway|audio-gateway-service"',
             self.workflow,
         )
-        self.assertIn("audio-gateway-service", self.workflow)
+        self.assertIn(
+            '"meeting-service|meeting-service|meeting-service|meeting-service|meeting-service"',
+            self.workflow,
+        )
+        self.assertIn(
+            '"transcript-service|transcript-service|transcript-service|transcript-service|transcript-service"',
+            self.workflow,
+        )
+        self.assertIn(
+            '"audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service"',
+            self.workflow,
+        )
 
 
 if __name__ == "__main__":
