@@ -37,7 +37,7 @@ jobs:
     env:
       EVIDENCE_DIR: /tmp/faz24-wg-bplus-i3-evidence-${{ github.run_id }}
       EVIDENCE_JSON: /tmp/faz24-wg-bplus-i3-evidence-${{ github.run_id }}/wg-bplus-i3-evidence.json
-      SSH_IDENTITY_PATH: ~/.ssh/faz24-i3-denetim_ed25519
+      SSH_IDENTITY_PATH: ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519
 
     steps:
       - name: Validate dispatch inputs
