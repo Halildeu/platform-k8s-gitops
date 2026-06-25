@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 24 WG-B+ I3 dedicated account missing; bootstrap path added (2026-06-25)
+## Live Delta — Faz 24 WG-B+ I3 bootstrap package artifact available; operator application pending (2026-06-25)
 
 `platform-k8s-gitops#1864` I3 Denetim authorization blocker was narrowed one
 level deeper than the previous `ssh-auth-publickey` classification. A temporary
@@ -14,7 +14,8 @@ no `svc-denetim-agent` local account. The existing hardened package
 `target-user-not-found:svc-denetim-agent` / `User svc-denetim-agent was not
 found`; no authorize evidence PASS was produced.
 
-This source update adds a bounded package enhancement for that live gap:
+`platform-k8s-gitops#2010` merged the bounded package enhancement for that live
+gap at `29c98ffbf76cbb7e538ea43488c4941563e057b5`:
 
 - default behavior remains fail-closed when the target user is missing;
 - explicit `-CreateTargetUser -GrantEventLogReaders` bootstrap mode creates a
@@ -31,14 +32,42 @@ This source update adds a bounded package enhancement for that live gap:
   and full `tests/faz24` (`95 passed`); real Claude CLI blocker review returned
   `AGREE` with no P0/P1 blockers.
 
+The enhanced package workflow was then run from `main`:
+
+- workflow run `28168084207` concluded `success`;
+- artifact `faz24-i3-denetim-ssh-authorize-package-28168084207` was downloaded
+  and locally verified;
+- expected files `README.md`, `SHA256SUMS`,
+  `authorize-denetim-i3-public-key.ps1`,
+  `expected-public-key-metadata.json`, and
+  `faz24-i3-denetim_ed25519.pub` were present;
+- `sha256sum --check SHA256SUMS` passed for all artifact files;
+- metadata confirms `supportsTargetUserBootstrap=true` and recommends
+  `CreateTargetUser` / `GrantEventLogReaders` for the missing-account path;
+- secret/private-material scan found no actual private key or bearer token; the
+  only private-key text hit was the generated script's intentional rejection
+  pattern.
+
+The operator handoff package was also refreshed:
+
+- workflow run `28168214328` concluded `success`;
+- artifact `faz24-wg-bplus-operator-handoff-28168214328` was downloaded and
+  verified with `sha256sum --check SHA256SUMS`;
+- handoff JSON now points I3 to authorize package run `28168084207` and artifact
+  `faz24-i3-denetim-ssh-authorize-package-28168084207`;
+- the handoff acceptance boundary still requires operator execution, authorize
+  evidence verifier PASS, I3 evidence verifier PASS, and reviewer acceptance.
+
 No bootstrap mutation was applied in this attempt. After the fail-closed
 missing-user proof, `denetimpc@10.99.0.2` SSH began returning
 `Permission denied (publickey)` again while `staging-sw` still reached
 `10.99.0.2:22`; `svc-denetim-agent@10.99.0.2` also still returns
-`Permission denied (publickey)`. Therefore the next step is to merge the
-bootstrap package support, rebuild/use the enhanced package, and then either
+`Permission denied (publickey)`. `staging-sw -> 10.99.0.2:8243` for the Denetim
+app-mTLS/Caddy path also still fails. Therefore the next step is to either
 restore the approved `denetimpc` management window or have an elevated Denetim
-operator run the enhanced package locally. Only after
+operator run
+`faz24-i3-denetim-ssh-authorize-package-28168084207` locally with
+`-CreateTargetUser -GrantEventLogReaders`. Only after
 `denetim-i3-ssh-authorize-evidence.json` verifies PASS should the Denetim
 authorize evidence ingest and `faz24-wg-bplus-i3-evidence.yml` rerun proceed.
 
