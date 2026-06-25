@@ -836,26 +836,6 @@ Plus P0-5 vs P0-15 ayrımı net:
 ### Wazuh pivot reactivation (Codex HYBRID önerisi geri al, EVIDENCE-GATED)
 - Phase 1 pilot >50% fail rate **+ root cause Wazuh ile çözülebilir kanıt**
 - Phase 2 ramp 4 hafta üzeri gecikme
-
----
-
-## §2.5 mTLS trust-model reconciliation — Faz 22 #1497 (2026-06-25, Codex `019f0056`)
-
-**Karar (REAFFIRM):** Device-API mTLS trust modeli **yalnızca TLS passthrough**'tur (§2.5 "Karar: passthrough"). Backend kendi connector'ında mTLS terminate eder; identity **doğrulanmış client cert'ten** (TLS handshake) gelir; forwardable hiçbir header kimlik kaynağı DEĞİLDİR. Üç bağımsız oy doğrular: §2.5 + 22.6 gRPC bridge `clientAuth=REQUIRE` (`RemoteBridgeGrpcServer`) + 22.6 operator REST servlet-X509-attr okuması (`OperatorCredentialExtractor`).
-
-**Drift (#1497):** #316 (Faz 22.3) forwarded-header (`X-Client-Cert`) modunu k8s'te **DEFAULT-ON** yapmıştı — §2.5 ile çelişen tek aykırı. forwarded-header **client-spoofable**'dır: edge inbound `X-Client-Cert`/`X-Tenant-Id` strip etmezse VEYA backend off-edge erişilebilirse sahte kimlik enjekte edilebilir.
-
-**Reconciliation (uygulandı):**
-- **Backend (platform-backend #763):** `application-k8s.yml` `endpoint-admin.mtls.forward-header.enabled` default **true→false** (artık HER profilde default-off). forwarded-header artık **NON-CANONICAL, default-off, lab-only fallback** — açılırsa hardened header-stripping edge + off-edge-unreachable backend (NetPol) ZORUNLU; **asla go-live yolu değil**. forward-header ↔ passthrough mutually exclusive (`MtlsPassthroughValidator`, both-on → startup FAIL). N2 spoof-deny test simetrisi enrollment + command + **heartbeat** (yeni) + config-regression guard eklendi.
-- **Governance (bu PR):** §2.5 passthrough-canonical olarak mühürlendi; forwarded-header lab-fallback olarak yeniden sınıflandırıldı.
-
-**Runtime-safety (doğru gerekçe — "mTLS canlı değil" iddiası DEĞİL):** Committed kustomize/helm/bootstrap yüzeyinde `ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED` aktivasyonu YOK; çalışan passthrough yolu `MtlsPassthroughValidator` mutual-exclusion gereği zaten `forward-header=false` ister. Bu yüzden default flip mevcut bir tüketiciyi kırmaz. Her iki mod off iken device-API controller'ları fail-CLOSED (401 `MTLS_CERT_MISSING`); servlet X509 attr container/TLS-set kaynak, remote header değil.
-
-**Operator-gated aktivasyon (PR kapsamı DIŞI):** canlı passthrough aktivasyonu `docs/runbooks/RB-faz22-M2-edge-mtls-activation.md` P1-P7 (DNS A records + AD CS issuing CA + PKCS12 keystore/truststore mounts + `ENDPOINT_ADMIN_MTLS_PASSTHROUGH_*` env + fixed-tenant + ingress `--enable-ssl-passthrough` + host-nginx `--with-stream*` + NetPol 8443 port-scope + PKI egress CIDRs) + N1/N2/P + header-strip smoke ile sınırlıdır; trust-model reconciliation bu prerequisite'leri değiştirmez.
-
-**Lab fallback aktivasyonu (eğer hiç kullanılırsa):** `forward-header.enabled=true` SADECE edge inbound `X-Client-Cert`+`X-Tenant-Id` strip ediyorsa + backend off-edge unreachable ise (NetPol) açılabilir; aksi halde go-live YASAK. Sektör-standardı (Teleport/BeyondCorp/SPIFFE): identity terminasyon noktasındaki doğrulanmış client cert'ten gelir, forwardable header'dan asla — meğer ki edge hardened, header-stripping bir güven sınırı olsun.
-
-**Cross-AI:** Implementer Claude (Anthropic); Reviewer Codex (OpenAI) thread `019f0056-a3aa-7970-93b2-de819a494e75` (PARTIAL→ready_for_impl, 6 must-fix folded; MF3/MF5/MF6 origin/main'de zaten karşılanmıştı — Codex stale branch okumuş). **#316 forwarded-header drift reconciled; #1497 trust-model kararı mühürlü.**
 - AD CS infrastructure unsustainable
 - Cross-platform (Linux/macOS) acil ihtiyaç
 
@@ -867,6 +847,27 @@ Plus P0-5 vs P0-15 ayrımı net:
 ### Faz 22 scope reduction (Codex önerisi geri kabul)
 - 12 ay sonrası ROI re-evaluation
 - Corp organizational pivot
+
+---
+
+## §2.5 mTLS trust-model reconciliation — Faz 22 #1497 (2026-06-25, Codex `019f0056`)
+
+**Karar (REAFFIRM):** Device-API mTLS trust modeli **yalnızca TLS passthrough**'tur (§2.5 "Karar: passthrough"). Backend kendi connector'ında mTLS terminate eder; identity **doğrulanmış client cert'ten** (TLS handshake) gelir; forwardable hiçbir header kimlik kaynağı DEĞİLDİR. Üç bağımsız oy doğrular: §2.5 + 22.6 gRPC bridge `clientAuth=REQUIRE` (`RemoteBridgeGrpcServer`) + 22.6 operator REST servlet-X509-attr okuması (`OperatorCredentialExtractor`).
+
+**Drift (#1497):** #316 (Faz 22.3) forwarded-header (`X-Client-Cert`) modunu k8s'te **DEFAULT-ON** yapmıştı — §2.5 ile çelişen tek aykırı. forwarded-header **client-spoofable**'dır: edge inbound `X-Client-Cert`/`X-Tenant-Id` strip etmezse VEYA backend off-edge erişilebilirse sahte kimlik enjekte edilebilir.
+
+**Reconciliation (uygulandı):**
+- **Backend (platform-backend #763):** `application-k8s.yml` `forward-header.enabled` default **true→false** (HER profilde default-off); forwarded-header **NON-CANONICAL, default-off, lab-only fallback** olarak yeniden belgelendi; mutual-exclusion korundu (`MtlsPassthroughValidator`, both-on → startup FAIL); N2 spoof-deny test simetrisi enrollment + command + **heartbeat** (yeni) + config-regression guard.
+- **GitOps base (bu PR):** `kustomize/base/apps/endpoint-admin-service/configmap.yaml` `ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED` **true→false** — base desired-state default'u passthrough-canonical ile tutarlı yapar.
+- **Governance (bu PR):** §2.5 passthrough-canonical olarak mühürlendi; forwarded-header lab-fallback olarak yeniden sınıflandırıldı.
+
+**Runtime-safety (doğru gerekçe):** Rendered **test + prod** overlay'leri `forward-header=false` + `passthrough=true` patch'ini ZATEN uyguluyordu (`kubectl kustomize overlays/{test,prod}` ile doğrulandı) — yani base default'unun true→false flip'i **rendered-neutral** (sıfır cluster delta), yalnız base desired-state hijyeni (Codex post-impl bulgusu: base ConfigMap eskiden `true` taşıyordu, "committed yüzeyde aktivasyon yok" iddiası bu yüzden düzeltildi). Çalışan passthrough yolu `MtlsPassthroughValidator` mutual-exclusion gereği zaten forward-header=false ister. Her iki mod off iken device-API controller'ları fail-CLOSED (401 `MTLS_CERT_MISSING`); servlet X509 attr container/TLS-set kaynak, remote header değil.
+
+**Operator-gated aktivasyon (PR kapsamı DIŞI):** canlı passthrough aktivasyonu `docs/runbooks/RB-faz22-M2-edge-mtls-activation.md` P1-P7 (DNS A records + AD CS issuing CA + PKCS12 keystore/truststore mounts + `ENDPOINT_ADMIN_MTLS_PASSTHROUGH_*` env + fixed-tenant + ingress `--enable-ssl-passthrough` + host-nginx `--with-stream*` + NetPol 8443 port-scope + PKI egress CIDRs) + N1/N2/P + header-strip smoke ile sınırlıdır; trust-model reconciliation bu prerequisite'leri değiştirmez.
+
+**Lab fallback aktivasyonu (eğer hiç kullanılırsa):** `forward-header.enabled=true` SADECE edge inbound `X-Client-Cert`+`X-Tenant-Id` strip/overwrite ediyorsa + backend off-edge unreachable ise (NetPol) açılabilir; aksi halde go-live YASAK. Sektör-standardı (Teleport/BeyondCorp/SPIFFE): identity terminasyon noktasındaki doğrulanmış client cert'ten gelir, forwardable header'dan asla.
+
+**Cross-AI:** Implementer Claude (Anthropic); Reviewer Codex (OpenAI) thread `019f0056-a3aa-7970-93b2-de819a494e75` (PARTIAL→ready_for_impl; post-impl PR-A AGREE, PR-B REVISE→base-flip + block-move + runtime-safety-reword absorb). **#316 forwarded-header drift reconciled; #1497 trust-model kararı mühürlü.**
 
 ---
 

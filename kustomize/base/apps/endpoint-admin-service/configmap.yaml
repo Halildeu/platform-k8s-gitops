@@ -114,13 +114,15 @@ data:
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INTERVAL_MS: "600000"
   ENDPOINT_ADMIN_AGENT_AUTH_TIMESTAMP_WINDOW_SECONDS: "300"
 
-  # Faz 22.5 M2 (#1359) — tokenless/domain AutoEnroll passthrough mTLS.
-  # Default-off contract: the sha-f78a24d endpoint-admin image carries the
-  # secondary Tomcat connector, but it binds 8443 only when a test/prod overlay
-  # deliberately flips PASSTHROUGH_ENABLED=true. Forward-header mode stays ON
-  # for the existing trusted-hop route while passthrough is off; the backend
-  # fail-fast validator requires it to be false when passthrough is enabled.
-  ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED: "true"
+  # Faz 22.5 M2 (#1359) + Faz 22 #1497 (ADR-0029 §2.5, Codex 019f0056) — passthrough mTLS.
+  # CANONICAL = TLS passthrough (a test/prod overlay flips PASSTHROUGH_ENABLED=true to bind the
+  # secondary 8443 connector; identity = the VERIFIED client cert from the handshake). The
+  # forwarded-header (X-Client-Cert) mode is a NON-CANONICAL, client-spoofable lab fallback and is
+  # now default-OFF here too (#1497 base flip true->false) so the base desired-state matches the
+  # passthrough-canonical decision. The backend fail-fast validator (MtlsPassthroughValidator)
+  # requires forward-header=false when passthrough is enabled, and the test/prod overlays already
+  # patch it to false — so this base flip is rendered-neutral (zero cluster delta).
+  ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED: "false"
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED: "false"
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_PORT: "8443"
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID: ""
