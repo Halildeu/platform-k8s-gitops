@@ -4,7 +4,7 @@
 >
 > **Mutabakat trail**: Claude (Anthropic) + Codex `019e879c` (OpenAI, AGREE final) + Mavis `mvs_c922505d66a94a45b031feb3489f9488` msg `78` (MiniMax, AGREE).
 >
-> **2026-06-25 truth refresh**: Faz 24 bağımsız ürün olarak konumlanır; Workcube/ERP entegrasyonu ürün bağımlılığı değildir. Sektör-standardı yol haritası §11'e eklendi ve mevcut runtime truth'a göre sınırlandı: recorder OpenFGA selector + edge lifecycle evidence accepted; direct-STT, compute-plane audit smoke, desktop mic/loopback ve WG-B+ I3/I6 host/operator gates hâlâ ayrı kanıt ister.
+> **2026-06-25 truth refresh**: Faz 24 bağımsız ürün olarak konumlanır; Workcube/ERP entegrasyonu ürün bağımlılığı değildir. Sektör-standardı yol haritası §11'e eklendi ve mevcut runtime truth'a göre sınırlandı: recorder OpenFGA selector + edge lifecycle evidence accepted; #188 compute-plane audit verifier/runbook packaged but live smoke evidence open; direct-STT, desktop mic/loopback ve WG-B+ I3/I6 host/operator gates hâlâ ayrı kanıt ister.
 
 ---
 
@@ -38,7 +38,7 @@ Bağımsız toplantı zekâsı platformu. Workcube/ERP bu plan için ürün bağ
 - `meeting-service`, `transcript-service`, `audit-event-consumer-service`, `audio-gateway` ve Redis Streams foundation k3d-test hattında kanıtlıdır; bu, production veya direct-STT transcript readiness iddiası değildir.
 - OpenFGA runtime selector `meeting` / `transcript` model gap'i `01KVXG15ETYAHMHANFD0E5CVK8` ile aşıldı; recorder edge lifecycle smoke `testai.acik.com/api/v1/audio-gateway` üzerinde consent/session/chunk/finish seviyesinde kanıtlandı.
 - External `POST https://testai.acik.com/api/v1/admin/meetings` hâlâ `platform-desktop` token audience sınırı nedeniyle ayrı gateway-contract takip ister; mevcut recorder meeting fixture hop'u cluster-internal meeting-service üzerinden yapılmıştır.
-- `audio-gateway` şu anda Redis dispatcher modunda; direct-STT transcript, same-session `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit smoke ve desktop mic/loopback kanıtı ayrı kapıdır.
+- `audio-gateway` şu anda Redis dispatcher modunda; #188 same-session `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit verifier/runbook packaged olsa da live audit smoke, direct-STT transcript ve desktop mic/loopback kanıtı ayrı kapıdır.
 - WG-B+ I3/I6 cross-server hardening acceptance, #1864 ve #1867 altında protected host/operator evidence PASS + reviewer acceptance gelmeden Faz 24 final readiness olarak konuşulmaz.
 
 ## 3. 3-AI Mutabakat Noktaları (her biri 3 AI tarafından onaylı)

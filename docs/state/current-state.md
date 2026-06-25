@@ -1,5 +1,28 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 compute-plane audit evidence verifier packaged (2026-06-25)
+
+The `platform-ai#188` compute-plane audit evidence path now has a fail-closed
+verifier and runbook for the redacted Redis `audit:events` envelope:
+
+- `scripts/faz24/verify_compute_plane_audit_evidence.py` validates
+  `faz24.computePlaneAuditEvidence.v1` JSON before issue attachment.
+- The verifier requires `status=pass`, `tokenIncluded=false`,
+  `source.streamKey=audit:events`, Redis stream record id shape, event type
+  `CHUNK_FORWARDED_TO_COMPUTE_PLANE`, same `sessionId`, `meetingId`,
+  `chunkSeq`, `correlationId`, `sha256`, `byteLength`, and `computePlane`
+  between `expected` and `event`.
+- The verifier rejects raw audio, transcript text/segments, destination URL,
+  JWT/Bearer/Authorization/private-key shaped values, and sensitive response
+  keys before evidence is attached.
+- `docs/runbooks/RB-faz24-compute-plane-audit-smoke.md` defines the operator
+  evidence envelope and attachment rule for `platform-ai#188`.
+
+Boundary: this packages #188 evidence verification only. It is not a live
+direct-STT smoke, not a successful `audio-gateway -> live-stt /transcribe`
+transcript, not desktop mic/loopback evidence, not WG-B+ host/operator
+evidence, and not production readiness.
+
 ## Live Delta — Faz 24 external recorder smoke evidence verifier packaged (2026-06-25)
 
 The #1615 external recorder evidence path now has a fail-closed verifier for
