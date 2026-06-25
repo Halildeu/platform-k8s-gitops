@@ -1,11 +1,11 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 24 WG-B+ I3 collector auto-detect live; runner `wg` tool + Denetim SSH gate blocked (2026-06-25)
+## Live Delta — Faz 24 WG-B+ I3 runner `wg` repaired; Denetim SSH + correlation gate blocked (2026-06-25)
 
 Faz 24 WG-B+ I3 management-audit evidence path source-ready olmaktan çıktı ve
-self-hosted `staging-sw` runner üzerinde canlı denendi; acceptance hâlâ açık.
-Bu kanıt direct-STT, app-mTLS, compute-plane audit veya direct audio e2e
-kabulü değildir.
+self-hosted `staging-sw` runner üzerinde canlı denendi. Runner-side `wg`
+binary prerequisite repair edildi, fakat I3 verifier hâlâ PASS değil. Bu kanıt
+direct-STT, app-mTLS, compute-plane audit veya direct audio e2e kabulü değildir.
 
 Source/workflow chain:
 
@@ -27,14 +27,26 @@ Source/workflow chain:
   `8084a2b4136f6f4bed73638d7403d10d66c1952c` ile common `wg` binary path
   resolution ekledi: `wg`, `/usr/bin/wg`, `/usr/sbin/wg`, `/usr/local/bin/wg`,
   `/snap/bin/wg`, `/opt/homebrew/bin/wg`.
+- `platform-k8s-gitops#1964` squash merge commit
+  `98af5a89e27260f4a95156a8003a338406f01f75` ile controlled
+  `faz24-i3-runner-wg-tool-repair.yml` workflow'unu, runner-side repair
+  script'ini ve runbook rollback boundary'sini ekledi.
 
 Live workflow evidence:
 
-- Latest workflow run `28139937689`, `main`
-  `8084a2b4136f6f4bed73638d7403d10d66c1952c` üzerinde çalıştı ve verifier
+- Runner prerequisite repair workflow run `28140583560`, `main`
+  `98af5a89e27260f4a95156a8003a338406f01f75` üzerinde `success` verdi.
+- Runner repair artifact:
+  `faz24-i3-runner-wg-tool-28140583560` / artifact id `7866580976`.
+- Runner repair JSON:
+  `status=pass`, `reason=wg-tool-installed`, `packageManager=apt-get`,
+  `installAttempted=true`, `installed=true`, `wgToolFound=true`,
+  `wgToolSelected=wg`, `wgToolProbeExitCode=0`.
+- Latest I3 evidence workflow run `28140619780`, `main`
+  `98af5a89e27260f4a95156a8003a338406f01f75` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi.
-- Uploaded artifact:
-  `faz24-wg-bplus-i3-evidence-28139937689` / artifact id `7866337164`.
+- I3 evidence artifact:
+  `faz24-wg-bplus-i3-evidence-28140619780` / artifact id `7866591970`.
 - Artifact redaction flags:
   `rawAudioIncluded=false`, `rawTranscriptIncluded=false`,
   `secretMaterialIncluded=false`, `commandContentIncluded=false`.
@@ -42,19 +54,18 @@ Live workflow evidence:
 
 Bounded blocker facts:
 
+- Runner-side `wg` discovery eski blocker olmaktan çıktı:
+  `stagingWireGuardProbe.wgToolFound=true`,
+  `stagingWireGuardProbe.interfacesQueryable=true`,
+  `stagingWireGuardProbe.detectedCount=1`, `selectedInterface=wg0`.
 - `remoteCollectorReached=false`.
 - Denetim SSH metadata collector all Denetim-side checks için exit `255`
   verdi.
 - `stagingWireGuardProbe.requested=auto`.
-- `stagingWireGuardProbe.wgToolFound=false`.
-- `stagingWireGuardProbe.wgToolProbeExitCode=127`.
-- `stagingWireGuardProbe.interfacesQueryable=false`.
-- `stagingWireGuardProbe.interfacesExitCode=127`.
-- `stagingWireGuardProbe.detectedCount=0`.
+- `stagingWireGuardProbe.selectedLatestExitCode=1`,
+  `selectedTransferExitCode=1`, `selectedEndpointsExitCode=1`.
 - `stagingJournalQueryable=true`, fakat `stagingJournalMatchCount=0`.
-- `stagingWireGuardQueryable=false` ve `stagingWireGuardPeerCount=0`; bu sonuç
-  auto-discovery ve common binary path resolver merged olduktan sonraki run'dan
-  geliyor.
+- `stagingWireGuardQueryable=false` ve `stagingWireGuardPeerCount=0`.
 - `stagingSshSocketQueryable=false`, `stagingSshSocketCount=0`.
 - Required I3 checks hâlâ fail:
   `openssh-event-log`, `powershell-transcription`,
@@ -65,16 +76,15 @@ Boundary / next:
 
 - `platform-k8s-gitops#1864` I3 acceptance açık kalır; verifier PASS olmadan
   accepted/readiness dili kullanılmaz.
-- Sonraki kanıt işi, self-hosted `staging-sw` runner'dan
-  kullanılabilir `wg` binary erişimini (`wireguard-tools` veya PATH/sudo
-  secure-path) ve `svc-denetim-agent@10.99.0.2` SSH reachability'yi
-  kanıtlamaktır.
+- Sonraki kanıt işi artık runner-side `wg` binary erişimi değildir; Denetim SSH
+  reachability/metadata collection ve staging WireGuard/SSH correlation
+  metadata'sı kanıtlanmalıdır.
 - Bu management-plane evidence, `platform-ai#198` Denetim `8243` app-mTLS,
   `platform-ai#188` compute-plane audit smoke veya `platform-ai#182` direct
   audio e2e acceptance'ı yerine geçmez.
 - Project #2 custom-field sync bu oturumda GitHub GraphQL/ProjectV2 rate limit
   nedeniyle pending kaldı; latest REST-backed evidence comment #1864'e yazıldı:
-  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4794939272`.
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795023408`.
 
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
