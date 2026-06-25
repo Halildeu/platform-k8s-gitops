@@ -35,6 +35,8 @@ kritik düzeltmesi: SHA256 hesaplamak = içerik okumak).
 
 ## 2. Manifest schema (v1)
 
+> **Machine-readable + CI-enforced**: [`schema/faz-22-8a-backup-manifest-v1.schema.json`](../schema/faz-22-8a-backup-manifest-v1.schema.json) (JSON Schema Draft 2020-12) is the canonical machine form of this section, validated by `tests/contracts/test_backup_manifest_payload_contract_v1.py` (CI gate `gate-faz22-8a-backup-manifest-contract.yml`). It pins the invariants structurally: `additionalProperties:false` on every object **forbids a content-hash/SHA256 field** (invariant #1) and the removed `is_container` field; `extension_type` carries **no `archive`** value (§1.2 + 2026-06-13 amendment); `manifest_version`/`dc_ea_tier` are const; `denied_classes` is the authoritative §3 set; `root_ref` must be an opaque `managed_root:<uuid>` ref. A future producer (platform-agent [#117](https://github.com/Halildeu/platform-agent/issues/117)) and the backend mirror (§5) validate against this one schema.
+
 ```json
 {
   "manifest_version": "1",

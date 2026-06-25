@@ -1,0 +1,45 @@
+# Faz 22.8A.1 — endpoint backup dry-run manifest contract self-validation.
+#
+# Makes the contract repo machine-enforce its own KVKK-critical wire invariants
+# (DC-EA-1 metadata-only: no content/SHA256 hash field via additionalProperties:false;
+# extension_type has no `archive` value per the 2026-06-13 amendment; const-pinned
+# version/tier; the authoritative DC-EA-RED denied_classes enum; opaque root_ref)
+# BEFORE any producer (platform-agent #117) or backend consumer is built, so the
+# decision cannot silently regress.
+#
+# Charter: board #1390; manifest contract docs/faz-22-8a-backup-manifest-contract-v1.md;
+# Codex 019ea961 + 019ec28a.
+
+name: Gate — Faz 22.8A Backup Manifest Contract
+
+on:
+  pull_request:
+    paths:
+      - 'schema/faz-22-8a-backup-manifest-v1.schema.json'
+      - 'docs/faz-22-8a-backup-manifest-contract-v1.md'
+      - 'tests/contracts/**'
+      - '.github/workflows/gate-faz22-8a-backup-manifest-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'schema/faz-22-8a-backup-manifest-v1.schema.json'
+      - 'docs/faz-22-8a-backup-manifest-contract-v1.md'
+      - 'tests/contracts/**'
+      - '.github/workflows/gate-faz22-8a-backup-manifest-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-contract:
+    name: Validate Faz 22.8A backup manifest contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet jsonschema
+      - name: Contract self-validation (schema + goldens + content-hash/archive negatives)
+        run: python3 -m unittest tests.contracts.test_backup_manifest_payload_contract_v1 -v
