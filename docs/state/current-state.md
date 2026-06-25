@@ -20,6 +20,11 @@ workflow'u main'dedir. Bu Denetim PC mutation kanıtı değildir; operator'ın
 elevated Denetim PowerShell oturumunda paketi uygulaması, ingest verifier'ın
 PASS vermesi ve I3 verifier'ın tekrar PASS vermesi hâlâ gerekir.
 
+I3/I6 operator window için metadata-only handoff package hattı da main'e
+alındı. Bu handoff yalnız doğru run id, artifact, ingest komutu ve `Needs
+Verify` boundary bilgisini paketler; Denetim PC veya `staging-sw`'a bağlanmaz
+ve acceptance kanıtı değildir.
+
 Source/workflow chain:
 
 - `platform-k8s-gitops#1957` merge commit
@@ -80,6 +85,13 @@ Source/workflow chain:
   generated package script'i `sshd` `Running` değilse PASS evidence yazmayacak
   şekilde sertleştirdi. Boundary: workflow Denetim PC'ye bağlanmaz, host veya
   cluster mutasyonu yapmaz ve #1864 kabul kanıtı değildir.
+- `platform-k8s-gitops#1991` merge commit
+  `71e1f6a2f3d6439f3432debcb71cb89eb075df08` ile I3/I6 operator window için
+  metadata-only `faz24-wg-bplus-operator-handoff.yml` workflow'unu, builder'ı,
+  testleri ve I3/I6 runbook referanslarını ekledi. Boundary: workflow yalnız
+  `README.md`, `faz24-wg-bplus-operator-handoff.json` ve `SHA256SUMS`
+  artifact'i üretir; Denetim PC, `staging-sw`, host, cluster, WireGuard,
+  platform-ai, secret veya production state'e bağlanmaz/değişiklik yapmaz.
 
 Live workflow evidence:
 
@@ -139,6 +151,17 @@ Live workflow evidence:
   file SHA256SUMS matched, private key marker absent, bearer marker absent,
   metadata raw public key absent, and generated PowerShell contains
   `sshd-not-running` plus `$sshdStatusAfter -ne 'Running'`.
+- Operator handoff workflow run `28153244360`, `main`
+  `71e1f6a2f3d6439f3432debcb71cb89eb075df08` üzerinde `success` verdi.
+  Artifact: `faz24-wg-bplus-operator-handoff-28153244360`.
+- Handoff artifact doğrulanan dosya seti yalnız `README.md`, `SHA256SUMS` ve
+  `faz24-wg-bplus-operator-handoff.json`. `sha256sum --check SHA256SUMS` tüm
+  dosyalar için OK döndü; private-key/Bearer/JWT-like taraması boş döndü.
+  Manifest `i3.boardStatus=Needs Verify`, `i6.boardStatus=Needs Verify`,
+  `operatorExecutionRequired=true`, `verifierPassRequired=true`,
+  `reviewerAcceptanceRequired=true`, `packageBuildDenetimMutation=false`,
+  `packageBuildStagingMutation=false`, `packageBuildProductionMutation=false`,
+  `containsSecrets=false`, `containsRawCommandOutput=false` beyan ediyor.
 - Latest I3 evidence workflow run `28150424752`, `main`
   `97ebe1ee87d9a7fb7a02ddc82781bae1a47f4b53` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi.
@@ -188,6 +211,7 @@ Boundary / next:
   `svc-denetim-agent` authorized public key set'i, artifact'te verilen runner
   public key ile hizalanmalıdır. Public-key-only hardened package artifact'i ve
   Denetim-side metadata ingest workflow'u hazırdır; sıradaki bounded iş
+  `faz24-wg-bplus-operator-handoff-28153244360` içindeki I3 sıra/komutlarıyla
   elevated Denetim operator execution evidence'i, ingest verifier PASS'i ve
   ardından I3 evidence workflow rerun'ıdır. Repo Actions secret/variable
   yüzeyinde `SSH`, `DENETIM`, `WG`, `FAZ24` veya `KEY` ile eşleşen kullanılabilir
@@ -201,13 +225,14 @@ Boundary / next:
   yazıldı:
   `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4796367521`.
 
-## Live Delta — Faz 24 WG-B+ I6 operator package ready; host verifier PASS pending (2026-06-25)
+## Live Delta — Faz 24 WG-B+ I6 operator package and handoff ready; host verifier PASS pending (2026-06-25)
 
 Faz 24 WG-B+ I6 pod-CIDR -> WG MASQ işi source/contract seviyesinde
 main'e alındı ve operator-run için metadata-only host-evidence package
-workflow'u hazırlandı, fakat runtime acceptance hâlâ açık. Bu delta yalnız I6
-kanıt ingest/verifier, runbook ve operator package yüzeyinin hazır olduğunu
-söyler; gerçek host/WG path'inden metadata-only evidence üretilip verifier PASS
+workflow'u ve I3/I6 operator handoff package hattı hazırlandı, fakat runtime
+acceptance hâlâ açık. Bu delta yalnız I6 kanıt ingest/verifier, runbook,
+operator package ve coordination package yüzeyinin hazır olduğunu söyler;
+gerçek host/WG path'inden metadata-only evidence üretilip verifier PASS
 alınmadan I6 kabul edilmiş sayılmaz.
 
 Source/contract evidence:
@@ -267,6 +292,12 @@ Source/contract evidence:
   `407f5dd9aab45b029f46152c649ee386bd94e650` ile operator package workflow
   checksum doğrulaması package dizininde çalışacak şekilde düzeltildi. Bu
   workflow verification hygiene düzeltmesidir; host/WG evidence yerine geçmez.
+- `platform-k8s-gitops#1991` merge commit
+  `71e1f6a2f3d6439f3432debcb71cb89eb075df08` ile I3/I6 operator handoff
+  workflow'u, builder'ı, testleri ve I3/I6 runbook referansları eklendi. Bu
+  coordination artifact doğru run id, artifact, ingest komutu ve `Needs
+  Verify` boundary bilgisini paketler; host/WG evidence veya acceptance yerine
+  geçmez.
 
 Runtime/live collector evidence:
 
@@ -303,6 +334,15 @@ Runtime/live collector evidence:
   `secretMaterialIncluded=false`, `rawCommandOutputIncluded=false`,
   `rawPacketCaptureIncluded=false`, `rawAudioIncluded=false`,
   `rawTranscriptIncluded=false`.
+- Operator handoff workflow run `28153244360`, `main`
+  `71e1f6a2f3d6439f3432debcb71cb89eb075df08` üzerinde `success` verdi.
+  Artifact: `faz24-wg-bplus-operator-handoff-28153244360`. Local doğrulamada
+  `README.md`, `SHA256SUMS` ve `faz24-wg-bplus-operator-handoff.json`
+  bulundu, `sha256sum --check SHA256SUMS` OK döndü ve secret/private-material
+  taraması boş döndü. Manifest `i6.boardStatus=Needs Verify`,
+  `operatorExecutionRequired=true`, `verifierPassRequired=true`,
+  `packageBuildStagingMutation=false`, `packageBuildProductionMutation=false`
+  sınırını koruyor.
 - Latest collector metadata:
   `schemaVersion=faz24.wg-bplus.i6.pod-cidr-wg-masq.v1`,
   `status=blocked`, verifier `status=fail`, `findingCount=10`.
@@ -330,7 +370,8 @@ Runtime/live boundary:
 - Eski runbook/handoff yüzeyinde `k3d-wg-masq` ve pod -> WG -> `live-stt:8200`
   için prose/historical test-leg kanıtı var; bu yeni I6 verifier üzerinden
   normalize edilmiş PASS evidence değildir.
-- Sıradaki bounded iş: `faz24-i6-host-evidence-package-28151747361`
+- Sıradaki bounded iş: `faz24-wg-bplus-operator-handoff-28153244360` içindeki
+  I6 sıra/komutlarıyla `faz24-i6-host-evidence-package-28151747361`
   artifact'ini `staging-sw` üzerinde clean repo checkout'tan operator olarak
   çalıştırıp `RB-faz24-wg-bplus-i6-pod-cidr-wg-masq.md` §6.1 boundary'sine
   uygun protected metadata-only host evidence JSON'u üretmek ve
