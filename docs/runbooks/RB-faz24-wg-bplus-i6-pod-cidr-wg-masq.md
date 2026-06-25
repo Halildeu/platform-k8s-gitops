@@ -175,6 +175,55 @@ The uploaded artifact is `faz24-wg-bplus-i6-masq-evidence-<run_id>`.
 Boundary: a passing ingest proves only the I6 MASQ metadata contract. It does
 not make direct-STT, I3, app-mTLS, or production accepted.
 
+### 6.1 Operator-collected Host Evidence Fallback
+
+Use this path only when the self-hosted `staging-sw` runner can reach the
+cluster/WG path but cannot query host namespace NAT/systemd metadata. The
+operator runs the same collector from a protected host context and keeps raw
+host command output out of the JSON artifact.
+
+On `staging-sw`, from a clean checkout of `platform-k8s-gitops`:
+
+```bash
+PROTECTED_REF="operator://staging-sw/protected/faz24/i6/$(date -u +%Y%m%dT%H%M%SZ)"
+OUT="/tmp/wg-bplus-i6-masq-evidence.json"
+
+sudo -E python3 scripts/faz24/collect-wg-bplus-i6-masq-evidence.py \
+  --output "${OUT}" \
+  --pod-cidr "10.42.0.0/16" \
+  --wg-interface "auto" \
+  --platform-ai-host "10.99.0.2" \
+  --platform-ai-port 8200 \
+  --kube-context "k3d-test" \
+  --namespace "platform-test" \
+  --systemd-unit "k3d-wg-masq.service" \
+  --drift-timer "k3d-wg-masq.timer" \
+  --rollback-tested-ref "rollback/k3d-wg-masq-dry-run.json" \
+  --protected-evidence-path "${PROTECTED_REF}"
+
+python3 scripts/faz24/verify-wg-bplus-i6-masq-evidence.py "${OUT}"
+```
+
+If the local verifier returns `PASS`, ingest the exact JSON:
+
+```bash
+I6_EVIDENCE_B64="$(base64 < "${OUT}" | tr -d '\n')"
+
+gh workflow run faz24-wg-bplus-i6-masq-evidence-ingest.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f evidence_json_base64="${I6_EVIDENCE_B64}"
+```
+
+Boundary:
+
+- the collector is metadata-only and does not change host iptables/nftables,
+  WireGuard, Kubernetes objects, platform-ai, or production state,
+- `--protected-evidence-path` must identify the protected operator evidence
+  location; it must not contain secrets or raw command output,
+- a local PASS is not final until the GitHub ingest workflow also returns PASS
+  and #1867 receives an evidence comment.
+
 ## 7. Drift Detection
 
 The drift detector must compute the same expected rule hash used by the
