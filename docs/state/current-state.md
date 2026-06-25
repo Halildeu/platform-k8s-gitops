@@ -13,9 +13,12 @@ değildir.
 
 Ek source/evidence progress: Denetim-side authorized public key hizalaması için
 public-key-only operator package hattı main'e alındı ve identity artifact'inden
-başarılı package artifact'i üretildi. Bu Denetim PC mutation kanıtı değildir;
-operator'ın elevated Denetim PowerShell oturumunda paketi uygulaması ve I3
-verifier'ın tekrar PASS vermesi hâlâ gerekir.
+başarılı package artifact'i üretildi. Package script artık `sshd` servisi
+`Running` değilse `status=blocked` / `reason=sshd-not-running` evidence'i
+yazıp non-zero çıkar; ayrıca Denetim-side evidence için metadata-only ingest
+workflow'u main'dedir. Bu Denetim PC mutation kanıtı değildir; operator'ın
+elevated Denetim PowerShell oturumunda paketi uygulaması, ingest verifier'ın
+PASS vermesi ve I3 verifier'ın tekrar PASS vermesi hâlâ gerekir.
 
 Source/workflow chain:
 
@@ -66,6 +69,17 @@ Source/workflow chain:
   `c133eb097d34290370c5069c4206f7645dd5898c` ile transient `input.pub`
   dosyasını package artifact dizininin dışına taşıdı; artifact contract'ı
   yalnız operator package dosyalarıyla sınırlı kaldı.
+- `platform-k8s-gitops#1973` squash merge commit
+  `8fd7d76882201cfb80d7afe61e271211c6c6e779` ile ilk package evidence'ını bu
+  current-state yüzeyine taşıdı ve I3 acceptance boundary'sini açık tuttu.
+- `platform-k8s-gitops#1974` squash merge commit
+  `66ed1f41e883a386b9d26f45fad1cc63ea8075e5` ile metadata-only
+  `faz24-i3-denetim-ssh-authorize-evidence-ingest.yml` workflow'unu,
+  `verify-i3-denetim-ssh-authorize-evidence.py` verifier'ını, raw
+  private/public key ve raw Windows profile path leak guard'larını ekledi;
+  generated package script'i `sshd` `Running` değilse PASS evidence yazmayacak
+  şekilde sertleştirdi. Boundary: workflow Denetim PC'ye bağlanmaz, host veya
+  cluster mutasyonu yapmaz ve #1864 kabul kanıtı değildir.
 
 Live workflow evidence:
 
@@ -107,11 +121,29 @@ Live workflow evidence:
 - Package artifact content scan:
   `contains_openssh_private=false`, `contains_rsa_private=false`,
   `contains_bearer=false`.
-- Latest I3 evidence workflow run `28142193278`, `main`
-  `b9bbedc659edaa1f8c3c5bbe564ad2e3840794b8` üzerinde çalıştı ve verifier
+- Hardened Denetim SSH authorize package workflow run `28144138366`, `main`
+  `66ed1f41e883a386b9d26f45fad1cc63ea8075e5` üzerinde `success` verdi.
+- Hardened package artifact:
+  `faz24-i3-denetim-ssh-authorize-package-28144138366`.
+- Hardened package artifact doğrulanan dosya seti yine yalnız `README.md`,
+  `SHA256SUMS`, `authorize-denetim-i3-public-key.ps1`,
+  `expected-public-key-metadata.json` ve `faz24-i3-denetim_ed25519.pub`.
+- Hardened package metadata:
+  `targetUser=svc-denetim-agent`, `sourceIdentityRunId=28142166373`,
+  `publicKeyFingerprint=SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`,
+  `publicKeyLineSha256=83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff`,
+  `publicKeyBlobSha256=e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756`,
+  `privateKeyIncluded=false`,
+  `rawPublicKeyIncludedInMetadata=false`.
+- Hardened package local artifact verification:
+  file SHA256SUMS matched, private key marker absent, bearer marker absent,
+  metadata raw public key absent, and generated PowerShell contains
+  `sshd-not-running` plus `$sshdStatusAfter -ne 'Running'`.
+- Latest I3 evidence workflow run `28143607433`, `main`
+  `8fd7d76882201cfb80d7afe61e271211c6c6e779` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi.
 - I3 evidence artifact:
-  `faz24-wg-bplus-i3-evidence-28142193278`.
+  `faz24-wg-bplus-i3-evidence-28143607433`.
 - Artifact redaction flags:
   `rawAudioIncluded=false`, `rawTranscriptIncluded=false`,
   `secretMaterialIncluded=false`, `commandContentIncluded=false`.
@@ -154,17 +186,20 @@ Boundary / next:
 - Sonraki kanıt işi artık runner-side `wg` binary erişimi, identity path
   visibility veya TCP 22 reachability değildir; Denetim PC
   `svc-denetim-agent` authorized public key set'i, artifact'te verilen runner
-  public key ile hizalanmalıdır. Public-key-only package artifact'i üretildi;
-  sıradaki bounded iş elevated Denetim operator execution evidence'i ve
+  public key ile hizalanmalıdır. Public-key-only hardened package artifact'i ve
+  Denetim-side metadata ingest workflow'u hazırdır; sıradaki bounded iş
+  elevated Denetim operator execution evidence'i, ingest verifier PASS'i ve
   ardından I3 evidence workflow rerun'ıdır. Repo Actions secret/variable
   yüzeyinde `SSH`, `DENETIM`, `WG`, `FAZ24` veya `KEY` ile eşleşen kullanılabilir
   credential adı bulunmadı.
 - Bu management-plane evidence, `platform-ai#198` Denetim `8243` app-mTLS,
   `platform-ai#188` compute-plane audit smoke veya `platform-ai#182` direct
   audio e2e acceptance'ı yerine geçmez.
-- Project #2 custom-field sync bu oturumda GitHub GraphQL/ProjectV2 rate limit
-  nedeniyle pending kaldı; latest REST-backed evidence comment #1864'e yazıldı:
-  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795217510`.
+- Project #2 / board truth: `scripts/board-sync.sh sync-state 1864` son
+  kontrolde board `Status=Needs Verify`, body `status=needs-verify`,
+  `claim=unclaimed` döndürdü. Latest REST-backed evidence comment #1864'e
+  yazıldı:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795385968`.
 
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
