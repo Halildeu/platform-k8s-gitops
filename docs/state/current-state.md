@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 I7 Caddy persists on Denetim; remote 8243 remains host-policy blocked (2026-06-25)
+
+This supersedes the same-day I7 note below that Caddy was not running
+persistently. A bounded host-side action created Windows Scheduled Task
+`CaddyI7AppMtls` as `SYSTEM` to run
+`C:\caddy\caddy.exe run --config C:\caddy\Caddyfile`, then backed up
+`C:\caddy\Caddyfile` to
+`C:\caddy\Caddyfile.codex-20260625T103755Z-pre-wg-bind` before adding
+`bind 10.99.0.2` under `https://live-stt.denetim:8243`. Windows Firewall now
+has the existing port-scoped allow rule `WG-staging-caddy-mtls-8243` plus an
+additive program-scoped allow rule `WG-staging-caddy-mtls-8243-program` for
+`C:\caddy\caddy.exe`, TCP/8243, remote `10.99.0.1`.
+
+Latest live evidence: `CaddyI7AppMtls` is running, `caddy.exe` owns listener
+`10.99.0.2:8243`, and Denetim-local `Test-NetConnection 10.99.0.2 -Port 8243`
+succeeds. From `staging-sw`, the route/handshake to Denetim remains present and
+TCP/8200 still works, but TCP/8243 still times out. The test `audio-gateway`
+pod also times out on `https://10.99.0.2:8243/health` and on the
+`live-stt.denetim` SNI/resolve variant. Therefore the remaining
+`platform-ai#198` blocker is no longer Caddy process persistence or an
+IPv6-only listener; it is host/network enforcement below or outside Windows
+Firewall's visible allow rules, most likely ESET/WFP/central endpoint policy on
+inbound 8243.
+
+Acceptance boundary: direct-STT remains disabled, no raw audio was sent, no
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE` or `/transcribe` e2e was proven, and
+`platform-ai#198` remains open until `live-stt-preflight` evidence proves route,
+TCP, TLS server identity, valid client mTLS, wrong/no-client fail-closed, and an
+operator/reviewer accepts the evidence. Rollback for the host-side change is to
+stop/delete `CaddyI7AppMtls`, stop `caddy.exe`, restore the backed-up Caddyfile,
+and remove the additive program firewall rule if the endpoint owner requests it.
+
 ## Live Delta — Faz 24 I7 app-mTLS evidence verifier packaged (2026-06-25)
 
 `platform-ai#198` remains the immediate runtime blocker before any bounded
