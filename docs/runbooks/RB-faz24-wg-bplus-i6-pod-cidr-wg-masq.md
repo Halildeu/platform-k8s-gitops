@@ -182,6 +182,21 @@ cluster/WG path but cannot query host namespace NAT/systemd metadata. The
 operator runs the same collector from a protected host context and keeps raw
 host command output out of the JSON artifact.
 
+If I3 #1864 and I6 #1867 are being coordinated in one operator window, generate
+the handoff package first:
+
+```bash
+gh workflow run faz24-wg-bplus-operator-handoff.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main
+```
+
+The uploaded artifact is `faz24-wg-bplus-operator-handoff-<run_id>`. It keeps
+the current I6 package run id, I6 ingest command, and I3 Denetim authorization
+commands together with explicit `Needs Verify` boundaries. The handoff package
+does not connect to `staging-sw`, collect host evidence, or make #1867
+acceptable.
+
 Build the operator package first:
 
 ```bash
