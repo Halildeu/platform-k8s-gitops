@@ -254,7 +254,6 @@ jobs:
             echo "::error::digests is empty object — dispatcher/operator meant to send digests but produced none."
             exit 1
           fi
-          DIGEST_MODE="true"
           echo "✓ Digest-pin mode active ($(echo "${DIGESTS_PARSED}" | jq 'length') services in payload)"
 
           # Override DIGESTS_JSON with normalized (object-form) for downstream jq
