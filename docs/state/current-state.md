@@ -236,6 +236,12 @@ Source/contract evidence:
   path fallback'ini ekledi. Bu düzeltme ilk collector run'ında görülen
   admin-tool `127` sınıfını path ekseninde daraltmak içindir; acceptance kanıtı
   değildir.
+- `platform-k8s-gitops#1981` squash merge commit
+  `ebc8c2fdd7873fdfbff943cf6f84f8b550d9892d` ile collector'ın host evidence
+  fallback zincirini genişletti: `systemctl` ve `ip route get` için `sudo -n`
+  variant'ları, NAT metadata için `iptables`, `iptables-nft`,
+  `iptables-legacy` ve `iptables-save -t nat` variant'ları eklendi. Bu da
+  source/tooling düzeltmesidir; acceptance kanıtı değildir.
 
 Runtime/live collector evidence:
 
@@ -247,6 +253,10 @@ Runtime/live collector evidence:
   `f9c04982737c60ac7b0b0f65b6abd9903db43a95` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi. Artifact:
   `faz24-wg-bplus-i6-masq-collect-28146163383`.
+- Genişletilmiş fallback sonrası collector workflow run `28146507775`, `main`
+  `ebc8c2fdd7873fdfbff943cf6f84f8b550d9892d` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi. Artifact:
+  `faz24-wg-bplus-i6-masq-collect-28146507775`.
 - Latest collector metadata:
   `schemaVersion=faz24.wg-bplus.i6.pod-cidr-wg-masq.v1`,
   `status=blocked`, verifier `status=fail`, `findingCount=10`.
@@ -261,12 +271,13 @@ Runtime/live collector evidence:
   `host-namespace-nat-rule-present`, `pod-cidr-to-wg-masq-rule`,
   `reboot-persistence`, `drift-detect`, `rollback-defined`,
   `no-broad-lan-nat`.
-- Narrowed host evidence blocker: latest run still reports
+- Narrowed host evidence blocker: latest run `28146507775` still reports
   `route.probeExitCode=127`, `iptables.probeExitCode=127` and
   `systemd.showExitCode=127`. The current self-hosted runner environment sees
   WireGuard and can execute a pod-origin HTTP probe, but it does not expose the
   host namespace `ip`/`iptables`/`systemctl` surfaces required to prove NAT,
-  drift and rollback.
+  drift and rollback even after common path, sudo and iptables-variant
+  fallbacks.
 
 Runtime/live boundary:
 
