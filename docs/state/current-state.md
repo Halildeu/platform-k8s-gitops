@@ -242,6 +242,12 @@ Source/contract evidence:
   variant'ları, NAT metadata için `iptables`, `iptables-nft`,
   `iptables-legacy` ve `iptables-save -t nat` variant'ları eklendi. Bu da
   source/tooling düzeltmesidir; acceptance kanıtı değildir.
+- `platform-k8s-gitops#1983` squash merge commit
+  `dffff98b71cf7750333ac9a06bce53caaef6cfa8` ile collector'a read-only
+  `nsenter` host namespace variant'ları eklendi ve `first_success` fallback'i
+  non-missing failure exit code'larını koruyacak şekilde düzeltildi. Bu da
+  host evidence sınıflandırmasını daraltan source/tooling düzeltmesidir;
+  acceptance kanıtı değildir.
 
 Runtime/live collector evidence:
 
@@ -257,6 +263,10 @@ Runtime/live collector evidence:
   `ebc8c2fdd7873fdfbff943cf6f84f8b550d9892d` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi. Artifact:
   `faz24-wg-bplus-i6-masq-collect-28146507775`.
+- `nsenter` fallback sonrası collector workflow run `28149700182`, `main`
+  `dffff98b71cf7750333ac9a06bce53caaef6cfa8` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi. Artifact:
+  `faz24-wg-bplus-i6-masq-collect-28149700182`.
 - Latest collector metadata:
   `schemaVersion=faz24.wg-bplus.i6.pod-cidr-wg-masq.v1`,
   `status=blocked`, verifier `status=fail`, `findingCount=10`.
@@ -271,13 +281,13 @@ Runtime/live collector evidence:
   `host-namespace-nat-rule-present`, `pod-cidr-to-wg-masq-rule`,
   `reboot-persistence`, `drift-detect`, `rollback-defined`,
   `no-broad-lan-nat`.
-- Narrowed host evidence blocker: latest run `28146507775` still reports
-  `route.probeExitCode=127`, `iptables.probeExitCode=127` and
-  `systemd.showExitCode=127`. The current self-hosted runner environment sees
-  WireGuard and can execute a pod-origin HTTP probe, but it does not expose the
-  host namespace `ip`/`iptables`/`systemctl` surfaces required to prove NAT,
-  drift and rollback even after common path, sudo and iptables-variant
-  fallbacks.
+- Narrowed host evidence blocker: latest run `28149700182` reports
+  `collector.route.probeExitCode=1`, `collector.iptables.probeExitCode=1` and
+  `collector.systemd.showExitCode=1` after direct, sudo, iptables-variant and
+  read-only `nsenter` paths. The current self-hosted runner environment sees
+  WireGuard and can execute a pod-origin HTTP probe, but it still does not
+  expose acceptable host namespace `ip`/`iptables`/`systemctl` metadata to
+  prove NAT, drift and rollback.
 
 Runtime/live boundary:
 
@@ -297,7 +307,7 @@ Runtime/live boundary:
   sırasında exhausted olduğu için board/project sync tekrarları REST-backed
   issue/PR/check truth ile devam etti; Project custom-field reconciliation reset
   sonrası yapılmalıdır. Latest REST-backed evidence comment #1867'ye yazıldı:
-  `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4795783082`.
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4796272213`.
 
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
