@@ -1,5 +1,25 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 external recorder smoke runner packaged (2026-06-25)
+
+The next #1615 evidence step now has an operator-safe runner:
+
+- `scripts/faz24/run_external_recorder_smoke.py` validates the
+  `platform-desktop` token contract first, then runs external
+  `POST /api/v1/admin/meetings` plus `audio-gateway`
+  consent/session/chunk/finish/status through `testai.acik.com`.
+- The runner emits a redacted JSON envelope with
+  `schemaVersion=faz24.externalRecorderSmoke.v1` and `tokenIncluded=false`;
+  it never prints token material.
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` now points
+  operators at the runner instead of raw curl as the preferred #1615 evidence
+  path.
+
+Boundary: this is not live Keycloak mutation and not successful external smoke
+evidence by itself. It also does not prove direct-STT, same-session
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit, desktop mic/loopback, or production
+readiness. It only packages the next external acceptance evidence capture.
+
 ## Live Delta — Faz 24 platform-desktop gateway audience preflight packaged (2026-06-25)
 
 The next #1615 external meeting-admin gate now has a docs/test helper package:

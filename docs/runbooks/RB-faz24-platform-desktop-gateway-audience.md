@@ -156,30 +156,35 @@ Evidence attachment rule:
 - Do not attach the JWT, raw Keycloak admin response, admin token, password,
   bearer token, cookie, or raw command transcript.
 
-### 4. External meeting-admin smoke
+### 4. External meeting-admin + recorder lifecycle smoke
 
-After the validator reports `status=pass`, run the external user-path smoke:
+After the validator reports `status=pass`, prefer the bundled smoke runner so
+the external meeting-admin path and the recorder lifecycle are captured in one
+redacted evidence envelope:
 
 ```bash
-umask 077
-AUTH_HEADER_FILE=/tmp/faz24-platform-desktop-auth-header.txt
-printf 'Authorization: Bearer %s\n' "$(cat "$TOKEN_FILE")" > "$AUTH_HEADER_FILE"
-
-curl -fsS -X POST \
-  "https://testai.acik.com/api/v1/admin/meetings" \
-  -H @"$AUTH_HEADER_FILE" \
-  -H "Content-Type: application/json" \
-  -d @/tmp/faz24-meeting-create-payload.json
+python3 scripts/faz24/run_external_recorder_smoke.py \
+  --token-file "$TOKEN_FILE" \
+  --base-url "https://testai.acik.com" \
+  --expected-issuer "https://testai.acik.com/realms/platform-test" \
+  --output-file /tmp/faz24-external-recorder-smoke.json
 ```
 
 Expected next evidence:
 
-- HTTP `201` from the external `api-gateway` path.
-- Created meeting UUID.
-- Subsequent `audio-gateway` consent/session/chunk/finish evidence using the
+- `/tmp/faz24-external-recorder-smoke.json` has
+  `schemaVersion=faz24.externalRecorderSmoke.v1`, `status=pass`, and
+  `tokenIncluded=false`.
+- `create_meeting` step returns HTTP `201` from the external `api-gateway`
+  path and records the created meeting UUID.
+- `record_consent`, `start_session`, `upload_chunk`, `finish_session`, and
+  `session_status` all pass against the public `audio-gateway` path using the
   same meeting UUID.
 - Same-session compute-plane audit smoke and direct-STT transcript remain
   separate gates; do not infer them from meeting creation alone.
+
+Manual curl remains acceptable for diagnosis, but the output attached to #1615
+should be the redacted runner JSON, not a raw shell transcript.
 
 ## Cleanup
 
@@ -188,6 +193,7 @@ AUTH_HEADER_FILE=${AUTH_HEADER_FILE:-/tmp/faz24-platform-desktop-auth-header.txt
 shred -u "$TOKEN_FILE" 2>/dev/null || rm -f "$TOKEN_FILE"
 shred -u "$AUTH_HEADER_FILE" 2>/dev/null || rm -f "$AUTH_HEADER_FILE"
 rm -f /tmp/faz24-platform-desktop-token-contract.json
+rm -f /tmp/faz24-external-recorder-smoke.json
 ```
 
 If direct access grants were temporarily enabled for smoke token minting,
@@ -200,3 +206,5 @@ Keycloak before ending the operator window.
 - OpenFGA selector acceptance: #1660
 - Plan/current-state refresh: #1993
 - Validator: `scripts/keycloak/validate_faz24_platform_desktop_token_contract.py`
+- External recorder smoke runner:
+  `scripts/faz24/run_external_recorder_smoke.py`
