@@ -176,6 +176,12 @@ def rollback_hash(unit: str, pod_cidr: str, wg_interface: str, target_host: str)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def protected_evidence_path(args: argparse.Namespace) -> str:
+    if args.protected_evidence_path:
+        return args.protected_evidence_path
+    return f"github-actions://Halildeu/platform-k8s-gitops/actions/runs/{args.github_run_id}"
+
+
 def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
     active = first_success(host_command_variants("systemctl", ["is-active", unit], sudo=True), timeout=6)
     enabled = first_success(host_command_variants("systemctl", ["is-enabled", unit], sudo=True), timeout=6)
@@ -430,7 +436,7 @@ def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
         "schemaVersion": SCHEMA_VERSION,
         "collectedAt": collected_at,
         "status": "pass" if all_pass else "blocked",
-        "protectedEvidencePath": f"github-actions://Halildeu/platform-k8s-gitops/actions/runs/{args.github_run_id}",
+        "protectedEvidencePath": protected_evidence_path(args),
         "redaction": {
             "secretMaterialIncluded": False,
             "rawCommandOutputIncluded": False,
@@ -501,6 +507,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--drift-timer", default=os.environ.get("DRIFT_TIMER", "k3d-wg-masq.timer"))
     parser.add_argument("--drift-interval-minutes", type=int, default=int(os.environ.get("DRIFT_INTERVAL_MINUTES", "5")))
     parser.add_argument("--rollback-tested-ref", default=os.environ.get("ROLLBACK_TESTED_REF", ""))
+    parser.add_argument(
+        "--protected-evidence-path",
+        default=os.environ.get("PROTECTED_EVIDENCE_PATH", ""),
+        help="Override protectedEvidencePath for operator-collected host evidence",
+    )
     parser.add_argument("--github-run-id", default=os.environ.get("GITHUB_RUN_ID", "0"))
     return parser.parse_args(argv)
 

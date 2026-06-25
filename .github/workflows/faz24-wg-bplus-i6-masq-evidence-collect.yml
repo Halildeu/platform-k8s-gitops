@@ -48,6 +48,10 @@ on:
         description: "Optional relative metadata ref proving rollback was tested"
         required: false
         default: ""
+      protected_evidence_path:
+        description: "Optional protected evidence URI override for operator-collected host evidence"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -80,6 +84,7 @@ jobs:
           SYSTEMD_UNIT: ${{ inputs.systemd_unit }}
           DRIFT_TIMER: ${{ inputs.drift_timer }}
           ROLLBACK_TESTED_REF: ${{ inputs.rollback_tested_ref }}
+          PROTECTED_EVIDENCE_PATH: ${{ inputs.protected_evidence_path }}
         run: |
           set -euo pipefail
 
@@ -104,6 +109,7 @@ jobs:
           reject_multiline systemd_unit "${SYSTEMD_UNIT}"
           reject_multiline drift_timer "${DRIFT_TIMER}"
           reject_multiline rollback_tested_ref "${ROLLBACK_TESTED_REF}"
+          reject_multiline protected_evidence_path "${PROTECTED_EVIDENCE_PATH}"
 
           if ! printf '%s' "${POD_CIDR}" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$'; then
             echo "::error::pod_cidr must be IPv4 CIDR"
@@ -141,6 +147,7 @@ jobs:
           SYSTEMD_UNIT: ${{ inputs.systemd_unit }}
           DRIFT_TIMER: ${{ inputs.drift_timer }}
           ROLLBACK_TESTED_REF: ${{ inputs.rollback_tested_ref }}
+          PROTECTED_EVIDENCE_PATH: ${{ inputs.protected_evidence_path }}
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
@@ -156,6 +163,7 @@ jobs:
             --systemd-unit "${SYSTEMD_UNIT}" \
             --drift-timer "${DRIFT_TIMER}" \
             --rollback-tested-ref "${ROLLBACK_TESTED_REF}" \
+            --protected-evidence-path "${PROTECTED_EVIDENCE_PATH}" \
             > "${EVIDENCE_DIR}/collector.stdout" \
             2> "${EVIDENCE_DIR}/collector.stderr"
 
