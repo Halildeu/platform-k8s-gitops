@@ -535,7 +535,7 @@ jobs:
             echo ""
             echo "## Backend deploy verify chain"
             echo ""
-            echo "- Sequential rollout (10 service): ✓"
+            echo "- Sequential rollout (13 services): ✓"
             echo "- Gate 1a (per-service pod digest): ✓"
             echo "- Gate 1b (api-gateway public health): ✓"
             echo "- Gate 1c (in-cluster readiness): ✓"
