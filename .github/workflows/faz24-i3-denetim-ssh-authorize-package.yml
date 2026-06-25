@@ -35,7 +35,7 @@ jobs:
 
     env:
       PACKAGE_DIR: /tmp/faz24-i3-denetim-ssh-authorize-package-${{ github.run_id }}
-      PUBLIC_KEY_INPUT_FILE: /tmp/faz24-i3-denetim-ssh-authorize-package-${{ github.run_id }}/input.pub
+      PUBLIC_KEY_INPUT_FILE: /tmp/faz24-i3-denetim-ssh-authorize-input-${{ github.run_id }}.pub
 
     steps:
       - name: Validate dispatch inputs
@@ -173,3 +173,4 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "${PACKAGE_DIR}"
+          rm -f "${PUBLIC_KEY_INPUT_FILE}"
