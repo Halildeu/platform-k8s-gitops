@@ -1,5 +1,55 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 #187 transcript routing deployed on testai; #198 remains runtime gate (2026-06-25)
+
+`platform-ai#187` source/deploy scope is accepted with live evidence and issue
+state is now `CLOSED`. The backend source chain was `platform-backend#756`,
+merged at `8c269ccf229d5ae71a51bd096dce30725965590a`, with main Maven CI run
+`28174995497` and image build run `28174995267` both concluding `success`.
+The transcript routing artifact for the #187 slice is
+`transcript-service=sha256:8f6bb65fb40c4696fa61ec812b998803c537387359fc98e4005a2b764764a5f5`.
+
+GitOps rollout coverage was widened by `platform-k8s-gitops#2015`, merged at
+`a9b19c9f009aa3379400cae61de66355fc802dcd`, so
+`deploy-backend-testai.yml` now includes the Faz 24 runtime services
+`meeting-service`, `transcript-service`, and `audit-event-consumer-service` in
+the blocking digest-pin rollout, readiness, and stability chain. A follow-up
+summary-only hygiene PR, `platform-k8s-gitops#2016`, merged at
+`d1aee91023198bc7ca4f9808ea04a0433dd9e8ed` and aligned the job summary wording
+with the 13-service rollout contract.
+
+Authoritative runtime evidence is workflow_dispatch run `28176231063` on GitOps
+main head `a9b19c9f009aa3379400cae61de66355fc802dcd`, which concluded
+`success`:
+
+- digest-pin mode active with 13 services in payload;
+- `meeting-service` pod digest verified at
+  `sha256:a4929327c7514b584f6c97b5bd203b7f4e532ce61a679c5ed87d453cea1607c6`;
+- `transcript-service` pod digest verified at
+  `sha256:8f6bb65fb40c4696fa61ec812b998803c537387359fc98e4005a2b764764a5f5`;
+- `audit-event-consumer-service` pod digest verified at
+  `sha256:ceb3089930f5bcaad721516a653e49d3ac52feaa89a954024f5792aa797bb4f8`;
+- Gate 1b api-gateway public edge chain succeeded;
+- Gate 1c readiness returned `200` for `meeting-service`,
+  `transcript-service`, and `audit-event-consumer-service`;
+- Gate 1d stability passed for `meeting-service`, `transcript-service`, and
+  `audit-event-consumer-service` across `120s` windows, and the full deploy job
+  concluded `success`;
+- Gate 2 is opt-in; the step concluded `success`, but no separate persona auth
+  proof is claimed unless `SMOKE_AUTH_*` secrets are configured for the run.
+
+Boundary: this advances only the #187 source-side transcript routing and testai
+runtime deployment coverage. It does not enable direct-STT runtime flags, does
+not send raw audio, does not prove `audio-gateway -> live-stt /transcribe`, does
+not prove `CHUNK_FORWARDED_TO_COMPUTE_PLANE` same-session audit evidence, and
+does not make Faz 24 production-ready. `platform-ai#198` remains `OPEN`: the
+current blocker is still the Denetim `10.99.0.1 -> 10.99.0.2 TCP/8243`
+app-mTLS path, with the remaining block suspected below or outside visible
+local Windows Firewall allow rules at the ESET/ERA/central WFP policy layer.
+After the endpoint/security owner applies that allow/log policy, rerun
+`live-stt-preflight` and then the separate
+`platform-ai#188` compute-plane audit smoke before claiming direct-STT e2e.
+
 ## Live Delta — Faz 24 WG-B+ I3 bootstrap package artifact available; operator application pending (2026-06-25)
 
 `platform-k8s-gitops#1864` I3 Denetim authorization blocker was narrowed one
