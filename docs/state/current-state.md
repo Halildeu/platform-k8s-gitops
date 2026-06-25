@@ -1367,6 +1367,15 @@ The Q6 re-drift fear materialised immediately: within ~1h of the 3015656f align 
 - DURABLE FIX still pending (#2031), mechanism corrected by Codex 019f008a: the testai auto-sync (deploy-backend-testai -> apply-test-overlay-digests.py -> sync-test-overlay.sh) DOES bump the primary endpoint-admin digest in overlays/test (endpoint-admin-service is in REQUIRED_SVCS/SERVICE_SPECS/SYNC_SERVICES) but NOT the bridge activation overlay, so a primary bump silently re-drifts the bridge. The durable fix = make the auto-sync bump the bridge digest in lockstep (and widen its diff-guard allowlist), THEN a digest-alignment guard enforces it. A standalone guard alone (drafted PR #2033, now closed) would block the auto-sync; it needs the auto-sync companion first. This PR is the manual re-align only.
 - F22_6_COMPLETION remains blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only).
 
+### 2026-06-26 Live Delta — durable re-drift fix LANDED (companion auto-sync co-bump + alignment guard, Codex 019f008a)
+
+The #2034 delta's pending durable fix is now implemented. Note: that delta's diagnosis was CORRECT (verified from origin/main, NOT the stale main checkout that misled an interim PR #2035): the testai auto-sync DOES bump endpoint-admin (`apply-test-overlay-digests.py` SYNC_SERVICES includes endpoint-admin-service; `deploy-backend-testai.yml` REQUIRED_SVCS/SERVICE_SPECS/Gate1c/1d include it), but it did NOT touch the bridge → re-drift. The durable fix (Codex companion model):
+
+- **Companion auto-sync co-bump** (`scripts/automation/sync-test-overlay.sh` #2031): after applying the rollout digest map to the primary test overlay, if endpoint-admin-service was rolled, it mirrors that exact digest into the bridge activation overlay in the SAME auto PR (reusing `apply-test-overlay-digests.py --kustomization <bridge>`). Diff-guard widened to allow both files (digest-only, added==deleted, 1..14). So auto-sync PRs stay aligned automatically — never re-drift.
+- **Alignment guard** (`scripts/governance/check-remote-bridge-digest-alignment.sh` + `.github/workflows/gate-remote-bridge-digest-alignment.yml`): renders both overlays, asserts the endpoint-admin digest is singular AND equal, fail-closed. Catches any manual PR (or regression) that bumps one side without the other, at PR time.
+- Verified local: co-bump moves both primary+bridge to the rolled digest; diff-guard sees 2 files / added==deleted / 1..14; alignment guard pass on aligned, fail on simulated drift; bridge mirror correctly SKIPPED when endpoint-admin not in the rollout. shellcheck clean. Interim PR #2033 (drafted) + #2035 (stale-branch premise) closed; this supersedes both.
+- F22_6_COMPLETION still blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only); the remote-bridge re-drift RISK is now durably closed.
+
 Boundary for #548 remains unchanged:
 
 - This is source/live-wiring progress for the #548 harness path, not #548 resolution.
