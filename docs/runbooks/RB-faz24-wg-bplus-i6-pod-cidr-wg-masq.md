@@ -182,26 +182,40 @@ cluster/WG path but cannot query host namespace NAT/systemd metadata. The
 operator runs the same collector from a protected host context and keeps raw
 host command output out of the JSON artifact.
 
+Build the operator package first:
+
+```bash
+gh workflow run faz24-wg-bplus-i6-host-evidence-package.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f target_host=staging-sw \
+  -f pod_cidr=10.42.0.0/16 \
+  -f wg_interface=auto \
+  -f platform_ai_host=10.99.0.2 \
+  -f platform_ai_port=8200 \
+  -f kube_context=k3d-test \
+  -f namespace=platform-test \
+  -f systemd_unit=k3d-wg-masq.service \
+  -f drift_timer=k3d-wg-masq.timer \
+  -f rollback_tested_ref=rollback/k3d-wg-masq-dry-run.json
+```
+
+The uploaded artifact is `faz24-i6-host-evidence-package-<run_id>`. It
+contains only:
+
+- `collect-staging-i6-host-evidence.sh`
+- `expected-i6-host-evidence-metadata.json`
+- `README.md`
+- `SHA256SUMS`
+
+Boundary: the package workflow does not connect to `staging-sw`, does not
+collect host command output, and does not change host iptables/nftables,
+WireGuard, Kubernetes objects, platform-ai, secrets, or production state.
+
 On `staging-sw`, from a clean checkout of `platform-k8s-gitops`:
 
 ```bash
-PROTECTED_REF="operator://staging-sw/protected/faz24/i6/$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="/tmp/wg-bplus-i6-masq-evidence.json"
-
-sudo -E python3 scripts/faz24/collect-wg-bplus-i6-masq-evidence.py \
-  --output "${OUT}" \
-  --pod-cidr "10.42.0.0/16" \
-  --wg-interface "auto" \
-  --platform-ai-host "10.99.0.2" \
-  --platform-ai-port 8200 \
-  --kube-context "k3d-test" \
-  --namespace "platform-test" \
-  --systemd-unit "k3d-wg-masq.service" \
-  --drift-timer "k3d-wg-masq.timer" \
-  --rollback-tested-ref "rollback/k3d-wg-masq-dry-run.json" \
-  --protected-evidence-path "${PROTECTED_REF}"
-
-python3 scripts/faz24/verify-wg-bplus-i6-masq-evidence.py "${OUT}"
+bash /path/to/collect-staging-i6-host-evidence.sh
 ```
 
 If the local verifier returns `PASS`, ingest the exact JSON:
