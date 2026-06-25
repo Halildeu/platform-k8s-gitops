@@ -59,11 +59,12 @@ that live-stt-preflight passes, `platform-ai#188` same-session
 **Faz 24 product-gate delta (2026-06-25)**: `platform-ai#199` / `#200` added
 metadata-only G-WER/DER and G-INT acceptance gates, `platform-ai#201` added the
 #156 retention-readiness gate, `platform-ai#202` closed the Redis
-control-plane wording/runtime gap, and `platform-ai#203` recorded the
-recording/archive boundary as live-path RED / future opt-in only. This advances
+control-plane wording/runtime gap, `platform-ai#203` recorded the
+recording/archive boundary as live-path RED / future opt-in only, and
+`platform-ai#204` added the metadata-only G-LAT/COST gate. This advances
 sector-standard quality/compliance governance, but does not provide real pilot
-WER/DER, real pilot G-INT, VERBIS/DB cleanup acceptance, direct-STT runtime,
-raw-audio transit, or production readiness.
+WER/DER, real pilot G-INT, pilot G-LAT/COST, VERBIS/DB cleanup acceptance,
+direct-STT runtime, raw-audio transit, or production readiness.
 
 **Faz 22.5 AG-029 delta (2026-06-07)**: AG-029 is no longer only a
 TODO/draft item. `platform-agent` #74 and #75 are merged, and a local

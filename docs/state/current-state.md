@@ -74,6 +74,14 @@ advanced several product-quality and compliance guardrails on `main`:
   pass purpose/legal-basis, consent, tenant-isolated key, encryption/KMS,
   retention, erasure, legal-hold, access-audit, evidence-privacy, and rollback
   gates before raw audio is stored.
+- `platform-ai#204` merged the G-LAT/COST gate infrastructure at
+  `1c9a2cc95852cce830a12f4ff14736465211138e`. The new
+  `services/live-stt-service/scripts/glat_cost_gate.py` consumes
+  metadata-only latency p95, queue-lag p95, throughput, utilization, error
+  rate, and cost-per-audio-minute evidence, requires explicit thresholds, and
+  allows only approved pilot evidence kinds to satisfy the gate. Lab /
+  synthetic / Common Voice style performance rows can support capacity
+  planning but intentionally return `status=blocked` for acceptance.
 
 Project #4 was reconciled after these updates: `platform-ai#185` is `Done`,
 while `#160`, `#161`, `#162`, `#156`, `#182`, `#188`, and `#198` remain
@@ -81,10 +89,11 @@ while `#160`, `#161`, `#162`, `#156`, `#182`, `#188`, and `#198` remain
 
 Boundary: these changes advance source-side quality/compliance/product
 governance. They do not produce real pilot WER/DER, do not satisfy G-INT with a
-real meeting, do not record VERBIS, do not create DB cleanup evidence, do not
-enable direct-STT, do not send raw audio, do not satisfy #188 compute-plane
-audit smoke, and do not make Faz 24 production-ready. The immediate direct-STT
-runtime blocker remains `platform-ai#198` Denetim `8243` app-mTLS reachability.
+real meeting, do not produce pilot G-LAT/COST acceptance, do not record VERBIS,
+do not create DB cleanup evidence, do not enable direct-STT, do not send raw
+audio, do not satisfy #188 compute-plane audit smoke, and do not make Faz 24
+production-ready. The immediate direct-STT runtime blocker remains
+`platform-ai#198` Denetim `8243` app-mTLS reachability.
 
 ## Live Delta — Faz 24 #187 transcript routing deployed on testai; #198 remains runtime gate (2026-06-25)
 
