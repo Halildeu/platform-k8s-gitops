@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -87,7 +87,7 @@ def remote_success_json() -> str:
 class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
     def build(self, runner: FakeRunner) -> dict:
         return collector.build_evidence(
-            timestamp=datetime(2026, 6, 25, 0, 0, 0, tzinfo=UTC),
+            timestamp=datetime(2026, 6, 25, 0, 0, 0, tzinfo=timezone.utc),
             protected_path="github-actions://Halildeu/platform-k8s-gitops/actions/runs/1/artifacts/faz24-wg-bplus-i3-evidence",
             retention_days=14,
             denetim_target="svc-denetim-agent@10.99.0.2",
