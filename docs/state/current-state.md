@@ -1,5 +1,55 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 product-quality guardrails advanced; pilot/runtime gates remain open (2026-06-25)
+
+After the #187 transcript-routing source/deploy slice, `platform-ai` also
+advanced several product-quality and compliance guardrails on `main`:
+
+- `platform-ai#199` merged G-WER/DER gate infrastructure at
+  `243de9d981b299c28c2015ae0b85112fde924bf8`. The new
+  `services/live-stt-service/scripts/gwer_gate.py` consumes metadata-only WER
+  and DER evidence rows, requires explicit thresholds, and allows only approved
+  pilot evidence kinds (`pilot-meeting`, `workcube-pilot`, `customer-pilot`) to
+  satisfy the gate. Common Voice / synthetic-smoke evidence can support
+  harness validation but cannot satisfy real G-WER by itself.
+- `platform-ai#200` merged G-INT gate infrastructure at
+  `7cc2612c0b1e2d3ef0bf528ec256c400f26e8a86`. The new
+  `services/meeting-ai-service/scripts/gint_gate.py` requires approved pilot
+  rows, real backend evidence, complete metadata hashes, explicit thresholds,
+  and blocks raw transcript/prompt/response/citation/PII-shaped values from
+  acceptance evidence.
+- `platform-ai#201` merged the #156 retention-readiness gate at
+  `3549c284ba0afbdf33f02a8c234ddaa6750db869`. `scripts/retention_gate.py`
+  makes the current state machine-readable: MinIO lifecycle evidence exists,
+  but the gate intentionally returns `status=blocked` until VERBIS is recorded
+  or exempt-confirmed and DB cleanup evidence exists for transcript records,
+  meeting intelligence, and KVKK access logs.
+- `platform-ai#202` merged Redis consumer wording/runtime cleanup at
+  `74d55b63a60bd9075fbf303fd0856ed7abfa15c5`. The default handler is now
+  `CoordinationChunkHandler`, preserving the control-plane-only contract:
+  hash/metadata logging only, no audio fetch, no transcription activation.
+  `platform-ai#183` is closed on this source-level correction.
+- `platform-ai#203` merged the #185 recording/archive boundary at
+  `546bf13aa378891eac43c879c382423e17709ee9`. `platform-ai`
+  `docs/adr/0036-recording-archive-plane.md` records that the default Faz 24
+  live path does not persist raw meeting audio; the `meeting-audio` MinIO
+  bucket remains infrastructure, not a default recording/archive product path.
+  Any replay/reprocess/legal-hold archive must reopen a separate issue/PR and
+  pass purpose/legal-basis, consent, tenant-isolated key, encryption/KMS,
+  retention, erasure, legal-hold, access-audit, evidence-privacy, and rollback
+  gates before raw audio is stored.
+
+Project #4 was reconciled after these updates: `platform-ai#185` is `Done`,
+while `#160`, `#161`, `#162`, `#156`, `#182`, `#188`, and `#198` remain
+`In Progress` because their pilot/runtime/go-live evidence is still open.
+
+Boundary: these changes advance source-side quality/compliance/product
+governance. They do not produce real pilot WER/DER, do not satisfy G-INT with a
+real meeting, do not record VERBIS, do not create DB cleanup evidence, do not
+enable direct-STT, do not send raw audio, do not satisfy #188 compute-plane
+audit smoke, and do not make Faz 24 production-ready. The immediate direct-STT
+runtime blocker remains `platform-ai#198` Denetim `8243` app-mTLS reachability.
+
 ## Live Delta — Faz 24 #187 transcript routing deployed on testai; #198 remains runtime gate (2026-06-25)
 
 `platform-ai#187` source/deploy scope is accepted with live evidence and issue

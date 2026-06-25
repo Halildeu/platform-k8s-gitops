@@ -278,7 +278,7 @@ Savunulabilir pozisyon: **Türkçe-first + on-prem/self-host + compliance-grade 
 Current diagnosis:
 
 - Altyapı hattı ileri: gateway, Redis Streams, meeting/transcript/audit services, OpenFGA selector ve recorder edge lifecycle evidence var.
-- Ürün-değer hattı açık: reliable capture, diarization, WER/DER ölçümü, citation'lı summary/action extraction, admin consent/retention/legal-hold UX ve PoC benchmark raporu eksik.
+- Ürün-değer hattında source-side guardrail ilerledi: G-WER/DER verifier (`platform-ai#199`), G-INT verifier (`platform-ai#200`), retention readiness gate (`platform-ai#201`), Redis control-plane cleanup (`platform-ai#202`) ve recording/archive RED boundary (`platform-ai#203`) main'de. Buna rağmen gerçek pilot WER/DER, gerçek pilot G-INT, VERBIS/DB cleanup evidence, direct-STT e2e ve desktop mic/loopback acceptance hâlâ açık.
 - Acceptance dili bu ayrımı korur: infrastructure evidence, market-ready product evidence yerine geçmez.
 
 ### 11.2 Capability Tracks
@@ -286,9 +286,9 @@ Current diagnosis:
 | Track | Kapsam | Sektör boşluğu | Öncelik | Ana repo |
 |---|---|---|:--:|---|
 | **T-A Capture** | Teams/Calendar bot, Zoom/Meet bot, desktop recorder production smoke, browser upload fallback | Bot/capture yoksa ürün dosya-yükleme aracı seviyesinde kalır | P0 | backend + desktop/web/mobile |
-| **T-B Quality** | Türkçe WER harness, gerçek toplantı benchmark, diarization DER, speaker→person mapping | Türkçe doğruluk ve diarization rakip paritesinin temel kanıtı | P0 | `platform-ai` |
-| **T-C Intelligence** | Özet, karar, aksiyon, owner/date extraction, citation/timecode, transcript Q&A | Asıl ürün değeri; regüle pazarda her çıkarım kaynağa bağlanmalı | P0 | `platform-ai` + backend |
-| **T-D Compliance Productization** | ADR-0030 hukuk/VERBIS acceptance, consent UI, retention/legal-hold, access matrix, audit export, on-prem install pack | Bu pazar için farklılaşma noktası; doküman değil ürün yüzeyi olmalı | P1 | gitops + web + backend |
+| **T-B Quality** | Türkçe WER harness, gerçek toplantı benchmark, diarization DER, speaker→person mapping; `gwer_gate.py` source-side gate main'de, pilot evidence bekliyor | Türkçe doğruluk ve diarization rakip paritesinin temel kanıtı | P0 | `platform-ai` |
+| **T-C Intelligence** | Özet, karar, aksiyon, owner/date extraction, citation/timecode, transcript Q&A; `gint_gate.py` source-side gate main'de, gerçek pilot evidence bekliyor | Asıl ürün değeri; regüle pazarda her çıkarım kaynağa bağlanmalı | P0 | `platform-ai` + backend |
+| **T-D Compliance Productization** | ADR-0030 hukuk/VERBIS acceptance, consent UI, retention/legal-hold, access matrix, audit export, on-prem install pack; #156 retention gate ve #185 recording/archive RED boundary source-ready | Bu pazar için farklılaşma noktası; doküman değil ürün yüzeyi olmalı | P1 | gitops + web + backend |
 | **T-E Integration Parity** | Webhook, CRM/Jira/CSV/export, notification follow-up, calendar/task sink | Diferansiyatör değil ama enterprise satışta eksiklik gibi görünür | P2 | backend + web |
 
 Deferred by design:
@@ -302,10 +302,10 @@ Deferred by design:
 
 | Gate | Evidence |
 |---|---|
-| **G-WER/DER** | Gerçek Türkçe toplantı setinde WER ve diarization DER hedefi; synthetic fixture yalnız CI/pipeline smoke içindir |
-| **G-INT** | Faithfulness + action-item precision/recall + owner/date accuracy; her summary/action citation/timecode ile bağlanır |
+| **G-WER/DER** | Gerçek Türkçe toplantı setinde WER ve diarization DER hedefi; `platform-ai#199` gate synthetic/Common Voice kanıtı acceptance yerine kullanmayı bloklar |
+| **G-INT** | Faithfulness + action-item precision/recall + owner/date accuracy; her summary/action citation/timecode ile bağlanır; `platform-ai#200` gate synthetic/mock kanıtı pilot acceptance yerine kullanmayı bloklar |
 | **G-CAP** | Teams/Calendar veya desktop recorder ile kayıt başlatma, consent alma, chunk upload, finish ve failure retry oranı ölçülü |
-| **G-COMP** | Consent, retention, legal hold, access audit ve deletion/export policy canlı; KVKK hukuk/VERBIS boundary ADR-0030'da accepted |
+| **G-COMP** | Consent, retention, legal hold, access audit ve deletion/export policy canlı; KVKK hukuk/VERBIS boundary ADR-0030'da accepted; `platform-ai#201` retention gate mevcut durumda blocked döner, `platform-ai#203` raw-audio archive'i default live path'ten çıkarır |
 | **G-LAT/COST** | Latency p50/p95, queue lag, cost/dakika ve GPU/CPU utilization ölçülür; model/GPU kararı bu ölçüme dayanır |
 | **G-OPS** | On-prem install/upgrade/backup/restore/runbook kanıtı; secret delivery ve rollback path test edilir |
 
@@ -317,13 +317,14 @@ Aşama-2 evidence line
   Boundary: direct-STT, compute-plane audit, desktop mic/loopback, WG-B+ I3/I6 open.
 
 Aşama-3 Core Product Value (P0)
-  T-B WER/DER harness + diarization
-  T-C citation'lı summary / decision / action extraction
+  T-B WER/DER + T-C G-INT gate infrastructure main'de; gerçek pilot kanıtı pending
+  Citation'lı summary / decision / action extraction acceptance hattı hâlâ gerçek pilot kanıtı ister
   İlk gerçek toplantı e2e: capture -> transcript -> intelligence -> audit.
 
 Aşama-4 Adoption + Compliance (P0/P1)
   T-A Teams/Calendar veya desktop recorder production-grade capture
   T-D consent / retention / legal-hold / access audit UX
+  Raw-audio archive default-off; future opt-in only (platform-ai-scoped ADR-0036)
   ADR-0030 accepted + on-prem installation package.
 
 Aşama-5 Proof
@@ -362,5 +363,10 @@ Aşama-6 Scale + GTM
 - **ADR-0031 Two-Server Meeting Intelligence Topology** ACCEPTED 2026-06-03 (gitops PR #1233 MERGED — D1-D8 host boundary + network topology + resource pressure + GPU + deployment + Vault + KVKK + failure modes)
 - Observability skeleton: `docs/observability-skeleton-meeting-intelligence.md`
 - platform-ai PR #1 MERGED `4088d9a` — live-stt-service PoC iskelet
+- platform-ai PR #199 MERGED `243de9d` — G-WER/DER gate verifier
+- platform-ai PR #200 MERGED `7cc2612` — G-INT gate verifier
+- platform-ai PR #201 MERGED `3549c28` — #156 retention readiness gate
+- platform-ai PR #202 MERGED `74d55b6` — Redis consumer control-plane semantics
+- platform-ai PR #203 MERGED `546bf13` — #185 recording/archive boundary (platform-ai-scoped ADR-0036, not gitops ADR-0036)
 - platform-ai Issue #19 re-scope (Faz 24 two-host resource baseline — ADR-0031 ile uyumlu)
 - Global HARD RULE: Cross-AI Peer Review provider seviyesinde + Plan Consensus Autonomy + No Fake Work + Türkçe cevap + Uzun Vadeli Kalıcı Çözüm
