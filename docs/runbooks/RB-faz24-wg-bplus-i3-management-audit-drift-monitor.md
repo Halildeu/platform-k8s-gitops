@@ -102,6 +102,29 @@ JSON contract.
 
 ## 5. Collection Commands
 
+### 5.0 Operator Handoff Coordination Package
+
+When #1864 I3 and #1867 I6 are being handed to an operator together, build the
+metadata-only coordination artifact first:
+
+```bash
+gh workflow run faz24-wg-bplus-operator-handoff.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main
+```
+
+The uploaded artifact is `faz24-wg-bplus-operator-handoff-<run_id>`. It
+contains only `README.md`, `faz24-wg-bplus-operator-handoff.json`, and
+`SHA256SUMS`. It does not connect to Denetim PC or `staging-sw`, does not
+collect live evidence, and does not change host, cluster, WireGuard,
+platform-ai, secret, or production state.
+
+Use the handoff artifact to keep the exact I3 package run id, public-key
+fingerprint/hash values, I3 ingest command, I3 evidence rerun command, and I6
+operator package command together. The handoff artifact is not acceptance
+evidence; #1864 still requires Denetim operator execution, Denetim authorize
+evidence ingest PASS, I3 evidence verifier PASS, and reviewer acceptance.
+
 ### 5.1 Preferred self-hosted workflow path
 
 Use the self-hosted `staging-sw` runner first. The workflow collects a
