@@ -1358,6 +1358,15 @@ The primary endpoint-admin-service had drifted forward to sha256:3015656f (later
 - `scripts/faz22-remote-ops/faz22-6-completion-audit.sh` → `REMOTE_BRIDGE_LIVE=pass mode=ssh expected_digest=sha256:3015656f... digest_hits=4`. F22_6_COMPLETION remains blocked ONLY on the two owner markers (b1-4-acceptance-package-required #548, view-only-evidence-package-required #1580).
 - gitops PR #2030 (activation digest + audit EXPECTED + decision-package fixtures + contract + apply-workflow default). DURABLE FOLLOW-UP (Codex Q6): single-source the bridge expected digest from the test-overlay primary digest so a future backend bump cannot re-drift it.
 
+### 2026-06-26 Live Delta — RE-DRIFT 3015656f → 5eff536b realigned (durable auto-sync fix scoped #2031, Codex 019f008a)
+
+The Q6 re-drift fear materialised immediately: within ~1h of the 3015656f align above, a digest-sync PR (#2032, Faz 24 retention) bumped the primary endpoint-admin-service to sha256:5eff536b on BOTH the test overlay AND the live cluster, leaving the bridge at 3015656f → REMOTE_BRIDGE_LIVE re-blocked (digest_hits=2). This PR re-aligns the bridge to the current primary (manual re-align); the DURABLE auto-sync fix (so this cannot recur silently) is scoped in #2031 — Codex 019f008a corrected the mechanism (the auto-sync DOES bump endpoint-admin, see below).
+
+- Bridge forward-aligned 3015656f → sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b (activation overlay + audit EXPECTED + decision-package fixtures + contract + apply-workflow default). Live apply via rendered activation overlay (server dry-run → apply → rollout) — NOT kubectl set image.
+- Live: endpoint-admin-service AND endpoint-admin-remote-bridge pods both imageID sha256:5eff536b, Ready=true; `faz22-6-completion-audit.sh` → REMOTE_BRIDGE_LIVE=pass mode=ssh digest_hits=4.
+- DURABLE FIX still pending (#2031), mechanism corrected by Codex 019f008a: the testai auto-sync (deploy-backend-testai -> apply-test-overlay-digests.py -> sync-test-overlay.sh) DOES bump the primary endpoint-admin digest in overlays/test (endpoint-admin-service is in REQUIRED_SVCS/SERVICE_SPECS/SYNC_SERVICES) but NOT the bridge activation overlay, so a primary bump silently re-drifts the bridge. The durable fix = make the auto-sync bump the bridge digest in lockstep (and widen its diff-guard allowlist), THEN a digest-alignment guard enforces it. A standalone guard alone (drafted PR #2033, now closed) would block the auto-sync; it needs the auto-sync companion first. This PR is the manual re-align only.
+- F22_6_COMPLETION remains blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only).
+
 Boundary for #548 remains unchanged:
 
 - This is source/live-wiring progress for the #548 harness path, not #548 resolution.
