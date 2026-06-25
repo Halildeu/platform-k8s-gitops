@@ -1,5 +1,65 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 WG-B+ I3 metadata collector live; Denetim SSH/WG evidence gate blocked (2026-06-25)
+
+Faz 24 WG-B+ I3 management-audit evidence path source-ready olmaktan çıktı ve
+self-hosted `staging-sw` runner üzerinde canlı denendi; acceptance hâlâ açık.
+Bu kanıt direct-STT, app-mTLS, compute-plane audit veya direct audio e2e
+kabulü değildir.
+
+Source/workflow chain:
+
+- `platform-k8s-gitops#1957` merge commit
+  `d90540bded29de8cb5fdd1bc0757e02ce1a0b5af` ile
+  `faz24-wg-bplus-i3-evidence.yml` workflow'unu, metadata-only collector'ı ve
+  mevcut verifier ile round-trip testlerini ekledi.
+- `platform-k8s-gitops#1958` merge commit
+  `d5477d5b8e4b10f98a0c4a570d72e3de44d68515` ile self-hosted runner Python
+  3.10 uyumluluğunu düzeltti.
+- `platform-k8s-gitops#1959` merge commit
+  `a44cb2b20fa4ae36ab190e1484418c7d71c505a5` ile staging WireGuard metadata
+  komutları için `sudo -n wg show ...` fallback'ini ekledi.
+
+Live workflow evidence:
+
+- Workflow run `28139309828`, `main`
+  `a44cb2b20fa4ae36ab190e1484418c7d71c505a5` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi.
+- Uploaded artifact:
+  `faz24-wg-bplus-i3-evidence-28139309828` / artifact id `7866093518`.
+- Artifact redaction flags:
+  `rawAudioIncluded=false`, `rawTranscriptIncluded=false`,
+  `secretMaterialIncluded=false`, `commandContentIncluded=false`.
+- Verifier result: `Faz24 WG-B+ I3 evidence: FAIL`.
+
+Bounded blocker facts:
+
+- `remoteCollectorReached=false`.
+- Denetim SSH metadata collector all Denetim-side checks için exit `255`
+  verdi.
+- `stagingJournalQueryable=true`, fakat `stagingJournalMatchCount=0`.
+- `stagingWireGuardQueryable=false` ve `stagingWireGuardPeerCount=0`; bu sonuç
+  `sudo -n wg show ...` fallback'i merged olduktan sonraki run'dan geliyor.
+- `stagingSshSocketQueryable=false`, `stagingSshSocketCount=0`.
+- Required I3 checks hâlâ fail:
+  `openssh-event-log`, `powershell-transcription`,
+  `powershell-script-block`, `failed-login`, `wireguard-health`,
+  `eset-firewall-drift`, `time-sync`, `staging-connection-log`.
+
+Boundary / next:
+
+- `platform-k8s-gitops#1864` I3 acceptance açık kalır; verifier PASS olmadan
+  accepted/readiness dili kullanılmaz.
+- Sonraki kanıt işi, self-hosted `staging-sw` runner'dan
+  `svc-denetim-agent@10.99.0.2` SSH reachability ve doğru staging WireGuard
+  interface/sudo metadata sorgusunu kanıtlamaktır.
+- Bu management-plane evidence, `platform-ai#198` Denetim `8243` app-mTLS,
+  `platform-ai#188` compute-plane audit smoke veya `platform-ai#182` direct
+  audio e2e acceptance'ı yerine geçmez.
+- Project #2 custom-field sync bu oturumda GitHub GraphQL/ProjectV2 rate limit
+  nedeniyle pending kaldı; REST-backed evidence comment #1864'e yazıldı:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4794864159`.
+
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
 Faz 24 direct-STT source artifact ve GitOps desired-state hattı,
