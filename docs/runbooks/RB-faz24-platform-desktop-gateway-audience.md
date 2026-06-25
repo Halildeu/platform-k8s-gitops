@@ -186,6 +186,32 @@ Expected next evidence:
 Manual curl remains acceptable for diagnosis, but the output attached to #1615
 should be the redacted runner JSON, not a raw shell transcript.
 
+### 5. Verify the redacted smoke evidence envelope
+
+Before attaching the smoke output to #1615, run the verifier against the
+redacted evidence envelope:
+
+```bash
+python3 scripts/faz24/verify_external_recorder_smoke_evidence.py \
+  --evidence-file /tmp/faz24-external-recorder-smoke.json \
+  --output-file /tmp/faz24-external-recorder-smoke.verify.json
+```
+
+Expected verifier evidence:
+
+- `/tmp/faz24-external-recorder-smoke.verify.json` has
+  `schemaVersion=faz24.externalRecorderSmokeVerifier.v1`, `status=pass`, and
+  `tokenIncluded=false`.
+- The verifier accepts only the exact token-contract, external meeting create,
+  consent, start, chunk, finish and final status sequence.
+- The verifier rejects direct-STT, compute-plane audit, desktop mic/loopback or
+  production-readiness overclaims in the boundary fields.
+- The verifier rejects JWT/Bearer/Authorization/private-key shaped values and
+  sensitive response keys before evidence is attached.
+
+Attach both redacted JSON files after checking both have `tokenIncluded=false`.
+Do not attach raw command transcripts.
+
 ## Cleanup
 
 ```bash
@@ -194,6 +220,7 @@ shred -u "$TOKEN_FILE" 2>/dev/null || rm -f "$TOKEN_FILE"
 shred -u "$AUTH_HEADER_FILE" 2>/dev/null || rm -f "$AUTH_HEADER_FILE"
 rm -f /tmp/faz24-platform-desktop-token-contract.json
 rm -f /tmp/faz24-external-recorder-smoke.json
+rm -f /tmp/faz24-external-recorder-smoke.verify.json
 ```
 
 If direct access grants were temporarily enabled for smoke token minting,
@@ -208,3 +235,5 @@ Keycloak before ending the operator window.
 - Validator: `scripts/keycloak/validate_faz24_platform_desktop_token_contract.py`
 - External recorder smoke runner:
   `scripts/faz24/run_external_recorder_smoke.py`
+- External recorder smoke verifier:
+  `scripts/faz24/verify_external_recorder_smoke_evidence.py`

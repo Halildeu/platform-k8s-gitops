@@ -1,5 +1,32 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 external recorder smoke evidence verifier packaged (2026-06-25)
+
+The #1615 external recorder evidence path now has a fail-closed verifier for
+the redacted runner envelope:
+
+- `scripts/faz24/verify_external_recorder_smoke_evidence.py` validates
+  `faz24.externalRecorderSmoke.v1` JSON before issue attachment.
+- The verifier requires `status=pass`, `tokenIncluded=false`, the exact
+  token-contract -> create-meeting -> consent -> start -> chunk -> finish ->
+  final-status step order, UUID-shaped meeting/capture ids, and `SES-`
+  session id shape.
+- The verifier rejects secret/JWT/Bearer/Authorization/private-key shaped
+  content and sensitive response keys.
+- The verifier preserves the boundary: external meeting-admin path and recorder
+  lifecycle may be accepted only when both are explicitly true, while
+  direct-STT, same-session compute-plane audit, desktop mic/loopback, and
+  production readiness must remain false in this evidence class.
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` now requires
+  operators to attach both `/tmp/faz24-external-recorder-smoke.json` and
+  `/tmp/faz24-external-recorder-smoke.verify.json` after confirming both have
+  `tokenIncluded=false`.
+
+Boundary: this packages evidence verification only. It is not a live
+`platform-desktop` token mutation, not a successful external smoke run, not
+direct-STT evidence, not compute-plane audit evidence, and not desktop
+mic/loopback evidence.
+
 ## Live Delta — Faz 24 external recorder smoke runner packaged (2026-06-25)
 
 The next #1615 evidence step now has an operator-safe runner:
