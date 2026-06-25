@@ -25,9 +25,15 @@ spec.loader.exec_module(collector)
 
 
 class FakeRunner:
-    def __init__(self, ssh_stdout: str | None, ssh_returncode: int = 0):
+    def __init__(
+        self,
+        ssh_stdout: str | None,
+        ssh_returncode: int = 0,
+        wg_requires_sudo: bool = False,
+    ):
         self.ssh_stdout = ssh_stdout
         self.ssh_returncode = ssh_returncode
+        self.wg_requires_sudo = wg_requires_sudo
 
     def __call__(self, argv: list[str], stdin: str | None = None, timeout: int = 30):
         if argv and argv[0] == "journalctl":
@@ -36,18 +42,26 @@ class FakeRunner:
                 "2026-06-25T00:00:00Z staging sshd Accepted publickey for svc-denetim-agent\n",
                 "",
             )
+        if argv[:3] == ["sudo", "-n", "wg"]:
+            return self._wg_result(argv[3:])
         if argv and argv[0] == "wg":
-            if "latest-handshakes" in argv:
-                return collector.CommandResult(0, "peerprefix 1782345600\n", "")
-            if "transfer" in argv:
-                return collector.CommandResult(0, "peerprefix 1024 2048\n", "")
-            if "endpoints" in argv:
-                return collector.CommandResult(0, "peerprefix 10.99.0.2:51820\n", "")
+            if self.wg_requires_sudo:
+                return collector.CommandResult(1, "", "permission-denied")
+            return self._wg_result(argv)
         if argv and argv[0] == "ss":
             return collector.CommandResult(0, "ESTAB 0 0 10.99.0.1:49152 10.99.0.2:22\n", "")
         if argv and argv[0] == "ssh":
             return collector.CommandResult(self.ssh_returncode, self.ssh_stdout or "", "")
         return collector.CommandResult(127, "", "unexpected-command")
+
+    def _wg_result(self, argv: list[str]):
+        if "latest-handshakes" in argv:
+            return collector.CommandResult(0, "peerprefix 1782345600\n", "")
+        if "transfer" in argv:
+            return collector.CommandResult(0, "peerprefix 1024 2048\n", "")
+        if "endpoints" in argv:
+            return collector.CommandResult(0, "peerprefix 10.99.0.2:51820\n", "")
+        return collector.CommandResult(127, "", "unexpected-wg-command")
 
 
 def remote_success_json() -> str:
@@ -137,6 +151,21 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("status must be 'pass'", result.stderr)
+
+    def test_staging_wireguard_uses_sudo_fallback(self):
+        original_which = collector.shutil.which
+        collector.shutil.which = lambda name: "/usr/bin/sudo" if name == "sudo" else None
+        try:
+            evidence = self.build(FakeRunner(remote_success_json(), wg_requires_sudo=True))
+        finally:
+            collector.shutil.which = original_which
+
+        self.assertTrue(evidence["collector"]["stagingWireGuardQueryable"])
+        self.assertEqual(1, evidence["collector"]["stagingWireGuardPeerCount"])
+
+        result = self.run_verifier(evidence)
+
+        self.assertEqual(0, result.returncode, result.stderr)
 
 
 if __name__ == "__main__":
