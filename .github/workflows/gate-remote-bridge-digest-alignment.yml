@@ -1,4 +1,4 @@
-name: Remote-bridge digest alignment (Faz 22.6 #2031)
+name: "Remote-bridge digest alignment (Faz 22.6 #2031)"
 
 # Faz 22.6 durable re-drift guard (Codex 019f008a Q6). The remote-bridge activation
 # overlay must render the SAME endpoint-admin-service digest as the primary test overlay
