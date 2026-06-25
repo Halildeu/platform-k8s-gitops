@@ -70,6 +70,8 @@ class BuildI3DenetimSshAuthorizePackageTest(unittest.TestCase):
             self.assertEqual("28142166373", metadata["sourceIdentityRunId"])
             self.assertFalse(metadata["privateKeyIncluded"])
             self.assertFalse(metadata["rawPublicKeyIncludedInMetadata"])
+            self.assertTrue(metadata["supportsTargetUserBootstrap"])
+            self.assertEqual(["CreateTargetUser", "GrantEventLogReaders"], metadata["recommendedMissingUserFlags"])
             self.assertEqual("unit-test-faz24", metadata["publicKeyComment"])
             self.assertTrue(metadata["publicKeyFingerprint"].startswith("SHA256:"))
             self.assertNotIn(SAMPLE_PUBLIC_KEY, json.dumps(metadata))
@@ -83,7 +85,13 @@ class BuildI3DenetimSshAuthorizePackageTest(unittest.TestCase):
             self.assertIn("administrator-required", powershell)
             self.assertIn("sshd-not-running", powershell)
             self.assertIn("$sshdStatusAfter -ne 'Running'", powershell)
-            self.assertIn("Administrators read-only", (output / "README.md").read_text(encoding="utf-8"))
+            self.assertIn("[switch]$CreateTargetUser", powershell)
+            self.assertIn("[switch]$GrantEventLogReaders", powershell)
+            self.assertIn("target-user-not-found", powershell)
+            self.assertIn("New-RandomSecurePassword", powershell)
+            readme = (output / "README.md").read_text(encoding="utf-8")
+            self.assertIn("Event Log Readers", readme)
+            self.assertIn("Administrators read-only", readme)
 
     def test_rejects_private_key_material(self):
         with tempfile.TemporaryDirectory() as tmpdir:

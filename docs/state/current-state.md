@@ -1,5 +1,53 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 WG-B+ I3 dedicated account missing; bootstrap path added (2026-06-25)
+
+`platform-k8s-gitops#1864` I3 Denetim authorization blocker was narrowed one
+level deeper than the previous `ssh-auth-publickey` classification. A temporary
+approved `denetimpc@10.99.0.2` management SSH window became available from the
+Mac through `staging-sw`; the session ran with elevated local Administrators
+token (`BUILTIN\Administrators`, high mandatory level). Read-only local user
+enumeration showed only `denetimpc`, `lokaladm`, disabled built-in accounts, and
+no `svc-denetim-agent` local account. The existing hardened package
+`faz24-i3-denetim-ssh-authorize-package-28144138366` was copied to
+`C:\Temp\faz24-i3-authorize-28144138366-codex`, but execution failed closed with
+`target-user-not-found:svc-denetim-agent` / `User svc-denetim-agent was not
+found`; no authorize evidence PASS was produced.
+
+This source update adds a bounded package enhancement for that live gap:
+
+- default behavior remains fail-closed when the target user is missing;
+- explicit `-CreateTargetUser -GrantEventLogReaders` bootstrap mode creates a
+  non-admin `svc-denetim-agent` local account with a random non-exported
+  password, grants Event Log Readers for metadata collection, prepares the
+  `.ssh/authorized_keys` profile path when Windows has not created the profile
+  yet, and records only hash/boolean state in
+  `denetim-i3-ssh-authorize-evidence.json`;
+- the ingest verifier now validates the optional bootstrap evidence fields when
+  present, including `targetUserCreated` / `targetUserExisted` consistency and
+  `eventLogReadersGrantAttempted=true` implying
+  `eventLogReadersMembershipPresent=true`;
+- local validation passed for `py_compile`, targeted package/verifier tests,
+  and full `tests/faz24` (`95 passed`); real Claude CLI blocker review returned
+  `AGREE` with no P0/P1 blockers.
+
+No bootstrap mutation was applied in this attempt. After the fail-closed
+missing-user proof, `denetimpc@10.99.0.2` SSH began returning
+`Permission denied (publickey)` again while `staging-sw` still reached
+`10.99.0.2:22`; `svc-denetim-agent@10.99.0.2` also still returns
+`Permission denied (publickey)`. Therefore the next step is to merge the
+bootstrap package support, rebuild/use the enhanced package, and then either
+restore the approved `denetimpc` management window or have an elevated Denetim
+operator run the enhanced package locally. Only after
+`denetim-i3-ssh-authorize-evidence.json` verifies PASS should the Denetim
+authorize evidence ingest and `faz24-wg-bplus-i3-evidence.yml` rerun proceed.
+
+Boundary: this is management-plane account/key bootstrap support and blocker
+classification. It does not prove I3 acceptance, `platform-ai#198` Denetim
+`8243` app-mTLS, `platform-ai#188` compute-plane audit smoke,
+`platform-ai#182` direct audio e2e, direct-STT Functional, production cutover,
+or broad readiness.
+
 ## Live Delta — Faz 24 WG-B+ I3 Denetim authorization package ready; management access unavailable (2026-06-25)
 
 `platform-k8s-gitops#1864` remains blocked on Denetim management access before

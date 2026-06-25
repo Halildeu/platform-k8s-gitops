@@ -211,6 +211,24 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -TargetUser svc-denetim-agent
 ```
 
+If the package reports `target-user-not-found:svc-denetim-agent`, rerun from
+the same elevated local Denetim directory with the explicit bootstrap flags:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\authorize-denetim-i3-public-key.ps1 `
+  -TargetUser svc-denetim-agent `
+  -CreateTargetUser `
+  -GrantEventLogReaders
+```
+
+Bootstrap mode creates the dedicated local account with a random non-exported
+password, keeps it non-admin, grants Event Log Readers for metadata collection,
+prepares the `.ssh` directory when Windows has not created the profile yet, and
+records only hashes/boolean state in `denetim-i3-ssh-authorize-evidence.json`.
+Without `-CreateTargetUser`, a missing target user remains a fail-closed
+condition.
+
 Do not run it from a network share. The script is idempotent: it validates the
 public key fingerprint and SHA256, resolves the local `svc-denetim-agent`
 profile, appends the key only when the key material is absent, sets the file
