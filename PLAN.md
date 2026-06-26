@@ -71,9 +71,13 @@ advanced in `k3d-test`: transient smoke Jobs derived from the deployed
 meeting action/decision, transcript segment, and KVKK access-audit rows, then
 wrote `metadata-only` destruction audit rows for `db.meeting-intelligence`,
 `db.transcript-records`, and `db.kvkk-access-log`. Evidence is recorded in
-`docs/faz-24-evidence/2026-06-26-retention-runtime-smoke.md`. Boundary remains:
-this is test DB cleanup behavior only; #156 and G-COMP still need VERBIS status,
-MinIO lifecycle runtime evidence, production/legal owner acceptance, and broader
+`docs/faz-24-evidence/2026-06-26-retention-runtime-smoke.md`. `platform-ai#211`
+then tightened the source-side retention gate so MinIO lifecycle cannot be
+accepted from source script or issue-comment evidence alone; current snapshot is
+still `status=blocked` with VERBIS + three MinIO runtime lifecycle export
+blockers. Boundary remains: this is test DB cleanup behavior plus source-side
+fake-closure prevention only; #156 and G-COMP still need VERBIS status, MinIO
+lifecycle runtime evidence, production/legal owner acceptance, and broader
 compliance evidence before pass/readiness language is valid.
 
 **Faz 24 #162 Ask-AI hardening delta (2026-06-26)**:
