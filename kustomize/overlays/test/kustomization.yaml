@@ -7212,6 +7212,19 @@ patches:
         path: /spec/replicas
         value: 1
 
+  # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
+  # default-off so future prod inclusion requires its own D30 review.
+  - target:
+      kind: ConfigMap
+      name: audio-gateway-config
+    patch: |-
+      - op: replace
+        path: /data/AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE
+        value: "true"
+      - op: replace
+        path: /data/AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE
+        value: "true"
+
   # Test PDB gevşek (tek replica olunca anlamsız)
   - target:
       kind: PodDisruptionBudget

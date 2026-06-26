@@ -1,7 +1,7 @@
 # RB — Faz 24 audio-gateway JWT audience/capability enforcement
 
-> **Status**: ACTIVE — source/runtime enforcement path packaged, live enforce
-> flip still requires bounded operator execution and verifier PASS.
+> **Status**: ACTIVE — test desired-state enforce flip is GitOps-authoritative;
+> live acceptance still requires rollout evidence and verifier PASS.
 >
 > **Scope**: `platform-backend#716`, `audio-gateway-service`,
 > `platform-test` realm, testai `k3d-test`.
@@ -28,10 +28,10 @@ The durable contract is two-layer:
 Meeting/session/consent authorization remains separate and does not replace the
 audience/capability gate.
 
-## 2. Current Desired-State Defaults
+## 2. Desired-State Contract
 
-GitOps carries the backend validator flags explicitly in
-`kustomize/base/apps/audio-gateway/configmap.yaml`:
+The pre-flip baseline carried backend validator flags explicitly as
+default-off:
 
 ```yaml
 AUDIO_GATEWAY_SECURITY_RESOURCE_CLIENT_ID: "audio-gateway-service"
@@ -39,8 +39,13 @@ AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE: "false"
 AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE: "false"
 ```
 
-These values are intentionally default-off. A PR that changes both booleans to
-`"true"` is the enforce flip and must be paired with the evidence below.
+The test desired-state enforce flip changes both booleans to `"true"` through
+the `kustomize/overlays/test/kustomization.yaml` patch. The base ConfigMap
+remains default-off so a later prod overlay inclusion requires its own D30
+review and prod-specific preconditions.
+
+Live acceptance is not automatic at merge time. It still requires rollout
+evidence plus the fail-closed matrix in this runbook.
 
 ## 3. Preconditions
 
@@ -68,9 +73,12 @@ AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE: "true"
 AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE: "true"
 ```
 
-Deploy through the normal `platform-k8s-gitops` PR + testai deploy path. Do not
-apply an out-of-band `kubectl patch` to the shared `k3d-test` workload; ADR-0023
-keeps test overlay authoritative.
+For test, the accepted location is the `kustomize/overlays/test` patch, not the
+base ConfigMap. Deploy through the normal `platform-k8s-gitops` PR + testai
+deploy path. Do not apply an out-of-band `kubectl patch` to the shared
+`k3d-test` workload; ADR-0023 keeps test overlay authoritative. After merge,
+confirm the live ConfigMap and pod environment render both booleans as `"true"`
+before collecting the matrix below.
 
 ## 5. Required Fail-Closed Live Smoke
 
