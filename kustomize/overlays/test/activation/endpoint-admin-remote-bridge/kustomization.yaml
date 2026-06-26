@@ -159,6 +159,8 @@ images:
   # (scripts/governance/check-remote-bridge-digest-alignment.sh + gate-remote-bridge-digest-alignment.yml)
   # fails any PR whose rendered primary != bridge digest. A manual endpoint-admin bump must co-bump here too.
   # (Prior re-drift 3015656f->5eff536b re-blocked the gate within ~1h of PR #2030 — that class is now closed.)
+  # 2026-06-26 #548 V77 manual co-bump: aligned with the primary endpoint-admin digest
+  # (5eff536b -> 8c4209ee, sha-74d312d) so the digest-alignment gate stays green.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b
+    digest: sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842
