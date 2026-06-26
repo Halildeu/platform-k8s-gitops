@@ -1635,6 +1635,79 @@ Runtime/live boundary at this historical point:
   yazıldı:
   `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4796544994`.
 
+## Live Delta — Faz 24 direct-STT egress/SNI path and default-off mTLS wiring live; Functional gate açık (2026-06-26)
+
+Faz 24 direct-STT hattında önceki digest/up kanıtının üstüne iki kalıcı
+GitOps adımı daha canlıya taşındı. `audio-gateway` artık Denetim
+`live-stt.denetim:8243` yoluna timeout olmadan erişebiliyor ve durable
+direct-STT mTLS/SNI ayarlarını default-off taşıyor. Bu kanıt cross-server
+transit readiness seviyesindedir; `platform-ai#182` Functional acceptance
+değildir.
+
+Source, GitOps ve live rollout zinciri:
+
+- `platform-backend#768` merged direct-STT multipart media-type fix'i taşıdı.
+  `platform-k8s-gitops#2061` bu artifact'i testai overlay'e pinledi:
+  `audio-gateway-service@sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`.
+- `platform-k8s-gitops#2062` merged commit
+  `7288bbd2c2aabcd7adb6b4a4a848e063c6eed593` ile test overlay'e
+  `allow-audio-gateway-egress-live-stt-mtls` NetworkPolicy ekledi:
+  pod selector `app.kubernetes.io/name=audio-gateway`, destination
+  `10.99.0.2/32`, TCP/8243.
+- #2062 canlı evidence: real `audio-gateway` pod image digest'i
+  `sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`;
+  pod içinden `https://10.99.0.2:8243/health` çağrısı 55 ms içinde Caddy/TLS
+  seviyesine ulaştı ve timeout yerine SNI/Host mismatch kaynaklı HTTP 421
+  döndürdü. tcpdump SYN/SYN-ACK/TLS payload'ı `wg0` üzerinde
+  `10.99.0.1 -> 10.99.0.2:8243` olarak gördü.
+- `platform-k8s-gitops#2063` merged commit
+  `b860f1818091e2c6cf7106a8c01b6cdac244832e` ile durable default-off wiring'i
+  taşıdı: `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`,
+  `AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL=https://live-stt.denetim:8243/transcribe`,
+  TLS path'leri `/etc/direct-stt-mtls/direct-stt-*.{crt,key}`,
+  result stream `transcript:direct-stt-results`, hostAlias
+  `live-stt.denetim -> 10.99.0.2`, `fsGroup=1000`, and read-only
+  `/etc/direct-stt-mtls` mount from existing `audio-gateway-secrets`.
+- #2063 canlı evidence: staging-sw `k3d-test/platform-test`
+  `deployment/audio-gateway` rollout status successful; live pod
+  `audio-gateway-769cc7745c-46st4` Running/Ready, restartCount `0`, imageID
+  `ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`;
+  pod içinden `direct_stt_enabled=false`, `/etc/hosts` contains
+  `10.99.0.2 live-stt.denetim`, `/etc/direct-stt-mtls` mount present,
+  readiness endpoint OK. `curl https://live-stt.denetim:8243/health` reaches
+  TLS in 42 ms and returns HTTP `000` because client certificate files are not
+  seeded yet; this is expected pre-seed behavior, not transcript evidence.
+- Live ExternalSecret boundary: `audio-gateway-secrets` maps only
+  `SPRING_DATA_REDIS_PASSWORD<-kv/platform/audio-gateway-service/redis_password`.
+  Live Secret key list also contains only `SPRING_DATA_REDIS_PASSWORD`.
+  The future direct-STT keys `direct-stt-ca.crt`,
+  `direct-stt-client.crt`, and `direct-stt-client.key` are absent by design
+  until Vault seed + ESO mapping.
+
+Boundary:
+
+- Direct-STT remains disabled in live config; the pod does not read missing
+  mTLS files while `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`.
+- This removes the earlier NetPol/WireGuard timeout blocker for the real
+  `audio-gateway` pod and stages SNI-safe hostname routing, but it does not
+  prove `/transcribe` response handling, Redis result-stream emission, or
+  metadata-only no-persistence behavior.
+- `platform-ai#182` remains open until Vault/ESO seed, direct-STT flag flip,
+  and same-session `/transcribe` evidence show lifecycle status,
+  `CHUNK_FORWARDED_TO_COMPUTE_PLANE`, `transcript:direct-stt-results`, and no
+  raw audio/transcript persistence outside the accepted contract.
+- `platform-ai#198` full I7 remains a separate gate: app-mTLS 8243 path is
+  usable for this slice, but meeting-ai 8343, PKI rotation/secret delivery,
+  request audit, plaintext-bypass remediation, failure drill, and
+  reviewer/operator acceptance are still separate.
+
+Runbook:
+
+- `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md` now records the guarded
+  enablement order and rollback: seed Vault properties, update ESO mapping,
+  verify Secret keys by name only, flip direct-STT on, deploy/sync, then run
+  #182 smoke.
+
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
 Faz 24 direct-STT source artifact ve GitOps desired-state hattı,
