@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Verify Faz 24 G-COMP compliance readiness gate evidence.
+"""Verify Faz 24 G-COMP engineering compliance-readiness evidence.
 
-This verifier accepts a redacted metadata envelope for compliance-product
-readiness. It validates consent, retention, legal-hold, access-audit,
-deletion/export, KVKK/VERBIS, redaction, and runbook evidence without
-accepting raw audio, transcript text, credentials, personal data, or legal /
-production-readiness overclaims.
+This verifier accepts a redacted metadata envelope for engineering-owned
+compliance controls. It validates consent, parametric retention controls,
+legal-hold, access-audit, deletion/export, owner legal-track notification,
+redaction, and runbook evidence without accepting raw audio, transcript text,
+credentials, personal data, or legal / production-readiness overclaims.
+
+Legal/KVKK/VERBIS acceptance is a parallel owner/legal track and is not an
+engineering blocker after owner notification is recorded.
 """
 
 from __future__ import annotations
@@ -24,16 +27,22 @@ from typing import Any, Iterable
 EVIDENCE_SCHEMA_VERSION = "faz24.gcompComplianceEvidence.v1"
 VERIFIER_SCHEMA_VERSION = "faz24.gcompComplianceGateVerifier.v1"
 
-REQUIRED_CHECKS = {
+ENGINEERING_REQUIRED_CHECKS = {
     "consent",
     "retention",
     "legal_hold",
     "access_audit",
     "deletion_export",
-    "kvkk_verbis",
     "redaction",
     "runbook",
 }
+
+LEGAL_TRACK_NOTIFICATION_CHECKS = {
+    "legal_track_notification",
+    "kvkk_verbis",
+}
+
+REQUIRED_CHECKS = ENGINEERING_REQUIRED_CHECKS | {"legal_track_notification"}
 
 REQUIRED_METRICS = {
     "consentCoverage",
@@ -52,7 +61,11 @@ BOUNDARY_EXPECTATIONS = {
     "legalHoldEvidencePresent": True,
     "accessAuditEvidencePresent": True,
     "deletionExportEvidencePresent": True,
-    "kvkkVerbisEvidencePresent": True,
+    "ownerLegalTrackNotificationPresent": True,
+    "retentionDurationsParametric": True,
+    "retentionDefaultsFailClosed": True,
+    "consentDefaultRequired": True,
+    "deletionPipelineDefaultEnabled": True,
     "redactionEvidencePresent": True,
     "secretsIncluded": False,
     "rawAudioIncluded": False,
@@ -61,6 +74,9 @@ BOUNDARY_EXPECTATIONS = {
     "rawResponseIncluded": False,
     "unredactedPersonalDataIncluded": False,
     "legalAdviceClaimed": False,
+    "legalAcceptanceClaimed": False,
+    "productionLegalGoClaimed": False,
+    "retentionDurationsHardcoded": False,
     "liveProductionMutation": False,
     "productionReady": False,
 }
@@ -73,6 +89,9 @@ FORBIDDEN_TRUE_BOUNDARIES = {
     "rawResponseIncluded",
     "unredactedPersonalDataIncluded",
     "legalAdviceClaimed",
+    "legalAcceptanceClaimed",
+    "productionLegalGoClaimed",
+    "retentionDurationsHardcoded",
     "liveProductionMutation",
     "productionReady",
 }
@@ -331,20 +350,25 @@ def _check_map(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _evidence_ref_ok(item: dict[str, Any]) -> bool:
+    ref = item.get("evidenceRef")
+    return isinstance(ref, str) and bool(SAFE_EVIDENCE_REF_RE.match(ref))
+
+
 def _validate_checks(data: dict[str, Any], checks: list[Check]) -> tuple[bool, bool]:
     named = _check_map(data)
     _add(checks, "checks_shape", bool(named), "checks must be a non-empty list of named objects")
-    missing = sorted(REQUIRED_CHECKS - set(named))
+    missing = sorted(ENGINEERING_REQUIRED_CHECKS - set(named))
     _add(
         checks,
         "required_checks_present",
         not missing,
-        "required checks must be present: " + ", ".join(sorted(REQUIRED_CHECKS)),
+        "engineering checks must be present: " + ", ".join(sorted(ENGINEERING_REQUIRED_CHECKS)),
     )
 
     blocked = bool(missing) or not named
     failed = False
-    for name in sorted(REQUIRED_CHECKS & set(named)):
+    for name in sorted(ENGINEERING_REQUIRED_CHECKS & set(named)):
         item = named[name]
         status = item.get("status")
         status_pass = status == "pass"
@@ -359,8 +383,7 @@ def _validate_checks(data: dict[str, Any], checks: list[Check]) -> tuple[bool, b
         elif not status_pass:
             failed = True
 
-        ref = item.get("evidenceRef")
-        ref_ok = isinstance(ref, str) and bool(SAFE_EVIDENCE_REF_RE.match(ref))
+        ref_ok = _evidence_ref_ok(item)
         _add(
             checks,
             f"check_{name}_evidence_ref",
@@ -368,6 +391,35 @@ def _validate_checks(data: dict[str, Any], checks: list[Check]) -> tuple[bool, b
             f"check {name} evidenceRef must use an allowed bounded evidence URI",
         )
         blocked = blocked or not ref_ok
+
+    legal_track_candidates = [
+        named[name] for name in sorted(LEGAL_TRACK_NOTIFICATION_CHECKS & set(named))
+    ]
+    legal_track_present = bool(legal_track_candidates)
+    _add(
+        checks,
+        "legal_track_notification_present",
+        legal_track_present,
+        "one legal-track notification check must be present: "
+        + ", ".join(sorted(LEGAL_TRACK_NOTIFICATION_CHECKS)),
+    )
+    legal_track_pass = any(item.get("status") == "pass" for item in legal_track_candidates)
+    _add(
+        checks,
+        "legal_track_notification_status_pass",
+        legal_track_pass,
+        "one legal-track notification check must have status pass; legal acceptance itself is parallel",
+    )
+    legal_track_ref_ok = any(
+        item.get("status") == "pass" and _evidence_ref_ok(item) for item in legal_track_candidates
+    )
+    _add(
+        checks,
+        "legal_track_notification_evidence_ref",
+        legal_track_ref_ok,
+        "legal-track notification evidenceRef must use an allowed bounded evidence URI",
+    )
+    blocked = blocked or not legal_track_present or not legal_track_pass or not legal_track_ref_ok
     return blocked, failed
 
 
@@ -491,6 +543,7 @@ def validate_evidence(
 
     metrics = {
         "requiredChecks": len(REQUIRED_CHECKS),
+        "engineeringRequiredChecks": len(ENGINEERING_REQUIRED_CHECKS),
         "metricCount": len(REQUIRED_METRICS),
         "values": metric_values,
     }
@@ -531,6 +584,14 @@ def _summary(
             "secretsIncluded": False,
             "unredactedPersonalDataIncluded": False,
             "legalAdviceClaimed": False,
+            "legalAcceptanceClaimed": False,
+            "productionLegalGoClaimed": False,
+            "ownerLegalTrackNotificationPresent": True,
+            "retentionDurationsParametric": True,
+            "retentionDefaultsFailClosed": True,
+            "consentDefaultRequired": True,
+            "deletionPipelineDefaultEnabled": True,
+            "retentionDurationsHardcoded": False,
             "liveProductionMutation": False,
             "productionReady": False,
         },

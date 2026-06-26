@@ -548,9 +548,10 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if evidence["status"] != "pass":
+        failure_count = len(evidence.get("failures", []))
         print(
-            "direct-STT mTLS preflight collection produced fail evidence: "
-            + ",".join(evidence["failures"]),
+            "direct-STT mTLS preflight collection produced fail evidence "
+            f"({failure_count} failure codes); inspect metadata JSON",
             file=sys.stderr,
         )
         return 1

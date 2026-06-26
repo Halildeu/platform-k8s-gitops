@@ -153,6 +153,26 @@ Doğru yaklaşım:
 - blocker
 - sıradaki kapı
 
+### 4.5 Faz 24 Legal Track vs Engineering Gate
+
+Faz 24 Meeting Intelligence için KVKK/VERBIS/hukuk owner acceptance, owner
+bildirimi kayda alındıktan sonra mühendislik completion blocker'ı değildir.
+Mühendislik değerlendirmesi şunları arar:
+
+- retention/silme süreleri owner tarafından sonra verilebilen parametrelerdir;
+  hardcoded süre veya sınırsız default kabul edilmez
+- saklama default'u fail-closed olur: owner parametresi yoksa durable storage
+  açılmaz veya ilgili path refuse-to-store davranır
+- consent default required, deletion pipeline default enabled, redaction/audit
+  kontrolleri machine-checkable evidence ile doğrulanır
+- legal acceptance, VERBIS güncelliği, DPA veya production legal go agent/CI/PR
+  tarafından iddia edilmez
+
+Doğru status dili: "engineering G-COMP controls pass/pending", "legal track
+parallel/pending", "production legal go owner-gated". Yanlış status dili:
+"KVKK accepted", "VERBIS closed", "legal review not required" veya legal
+pending olduğu için mühendislik gate'ini otomatik blocked saymak.
+
 ---
 
 ## 5. Testten Proda Promotion Semantiği
