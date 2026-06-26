@@ -4,6 +4,8 @@
 
 **Son güncelleme:** 2026-04-19 (ADR-0002 Single-Host Dual-Cluster + Faz A-I roadmap reset)
 
+**Faz 22 tamamlama eylem planı (2026-06-26):** [`docs/faz-22-completion-action-plan.md`](./docs/faz-22-completion-action-plan.md) — owner/operator/hukuk **yapılacaklar listesi** + agent yürütme planı + sıra/bağımlılıklar. Canonical makine kapısı: `scripts/faz22-remote-ops/faz22-6-completion-audit.sh` (origin/main'den koş) + `docs/runbooks/RB-faz22.6-autonomous-completion-contract.md`.
+
 ---
 
 ## 0. Mevcut Strateji (ADR-0002 sonrası)
