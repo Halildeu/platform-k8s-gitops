@@ -1,167 +1,187 @@
-# RB-faz22-3b-vault-pki-setup — Vault PKI engine for Faz 22.3B device certs
+# RB-faz22-3b-vault-pki-setup — test Vault PKI engine + tpm-device role + backend AppRole for #548 device-cert issuance
 
-ID: RB-faz22-3b-vault-pki-setup
-Service: HashiCorp Vault PKI secrets engine (endpoint device-cert CA)
-Status: Canonical (gitops authoritative) — **operator-executed**
-Owner: @team/platform
-Gate: **Gate 2** of [ADR-0039](../adr/0039-faz-22-3b-tpm-attestation-vault-pki.md) (Faz 22.3B)
+> **Tetik:** Faz 22.6 #548 `/attest` step needs the endpoint-admin-service `VaultPkiClient` to sign the
+> TPM device CSR (`POST /v1/{mount}/sign/{role}`) → issued leaf cert → `endpoint_tpm_device_binding` (V74)
+> row → §3.1 SPKI parity → device-key session. The live `/attest` currently denies with
+> `code=FEATURE_DISABLED detail="FEATURE_DISABLED: vault issuance not configured"` (proven 2026-06-26,
+> see PR #2057 evidence): the backend `endpoint-admin.tpm-attest.vault.enabled=false` because the PKI
+> mount/role/AppRole do not exist yet **and** the test Vault has no HTTPS listener the backend can pin.
+>
+> **This runbook covers the PKI engine + `tpm-device` sign role + backend AppRole** (the issuance backend).
+> It is the prerequisite that [`RB-faz22.6-548-vault-https-enablement.md`](./RB-faz22.6-548-vault-https-enablement.md)
+> (PR #2054, the HTTPS **transport**) explicitly assumes "already provisioned". The two compose:
+> transport (HTTPS listener the backend pins) + issuance (this PKI engine) -> the backend config flip (§5)
+> -> `/attest` issues the cert.
+>
+> **Cross-AI note:** Codex (thread 019efd6b) directed "Vault server-cert + pinned-CA, NOT a proxy"
+> (transport, RB-vault-https) and the gate-4b client contract (this runbook). Author: Claude.
+>
+> **Owner/operator-gated:** writes to the shared, 2-month-stable `platform-vault-test`. The PKI mount +
+> role + AppRole are **additive** (new mount path `pki_int`, new auth method `approle`, new policy/role -
+> they do NOT touch existing mounts, the KV store, the ESO ClusterSecretStore, or the `:8200` HTTP plane),
+> so this step does **not** restart Vault and does **not** risk the parallel-session test plane. The single
+> blast-radius step is the HTTPS listener restart in the companion RB (#2054), not this one.
 
-> **Disabled-from-live-issuance.** This runbook stands up the Vault PKI CA + the
-> `tpm-device` role + the least-privilege backend AppRole. **No certificate is
-> issued in production until** the backend attestation verifier (gate 4) is
-> deployed AND its feature flag is flipped on per-tenant. Standing up the CA is
-> inert until then. Parallel to AD CS (Faz 22.3A); does not touch it.
-
--------------------------------------------------------------------------------
 ## 1. AMAÇ
--------------------------------------------------------------------------------
-Faz 22.3B'nin domain-less/BYOD/macOS-Linux cihaz mTLS yolunda, TPM attestation
-doğrulandıktan sonra backend'in **kısa-ömürlü clientAuth cert** issue ettiği
-**Vault PKI** CA'sını kurmak. Cert kimliği `SAN URI = tpm:{ek_pub_sha256}`;
-özel anahtar cihazın TPM'inde (backend yalnız CSR public-key'ini imzalar).
 
--------------------------------------------------------------------------------
-## 2. KAPSAM
--------------------------------------------------------------------------------
-**Kurar:** offline root → intermediate PKI mount → `tpm-device` role →
-OCSP/CRL → backend least-privilege AppRole+policy.
-**Kurmaz / KAPSAMDIŞI:** live issuance (gate 4 + flag), agent enrollment
-(gate 3), AD CS (Faz 22.3A — Codex). Root key Transit/HSM + Shamir 3-of-5.
+Stand up the Vault PKI issuance backend the endpoint-admin-service `VaultPkiClient` (gate-4b, ADR-0039)
+expects, so `/attest` signs the TPM device CSR and writes the V74 binding row instead of denying
+`FEATURE_DISABLED`. **Out of scope:** the HTTPS transport listener (RB-faz22.6-548-vault-https-enablement,
+#2054) and the device-key SESSION broker flip (separate `DEVICE_KEY_ATTESTATION_REAL` broker - NEVER flip
+the shared denetim-pilot broker).
 
--------------------------------------------------------------------------------
-## 3. ÖNKOŞULLAR (operator / Vault-admin)
--------------------------------------------------------------------------------
-- Vault unsealed; admin token; ADR-0010 credential-lifecycle disiplinine uyum.
-- **Transit engine** veya **HSM/managed-keys (PKCS#11)** signing için hazır.
-- Root custody: **Shamir 3-of-5** unseal/recovery key holders belirlenmiş.
-- ADR-0039 + `docs/faz-22-3b-tpm-attestation-design.md` §5 okunmuş.
+## 2. KAPSAM (backend contract — code-verified, NOT invented)
 
--------------------------------------------------------------------------------
-## 4. ADIMLAR
--------------------------------------------------------------------------------
+The backend `VaultPkiClient` + `VaultPkiProperties` (prefix `endpoint-admin.tpm-attest.vault`) require:
 
-### 4.1 Root CA — offline, ayrı mount (issuance'a açık DEĞİL)
+| Contract element | Value (code-verified) | Source |
+|---|---|---|
+| Sign endpoint | `POST /v1/{mount}/sign/{role}` body `{"csr":"<PEM>","format":"pem"}` -> `data.certificate` | `VaultPkiClient.signCsr` |
+| `mount` default | `pki_int` | `VaultPkiProperties` (blank -> `pki_int`) |
+| `role` default | `tpm-device` | `VaultPkiProperties` (blank -> `tpm-device`) |
+| Auth | AppRole - `POST /v1/auth/approle/login` `{role_id,secret_id}` -> token (lease + renew skew) | `VaultPkiClient` cachedToken |
+| `baseUrl` | MUST be `https://` (fail-fast otherwise) | `VaultPkiProperties` |
+| `caCertPem` | pinned Vault server CA (must contain `BEGIN CERTIFICATE`), required when enabled | `VaultPkiProperties` |
+| `roleId`/`secretId` | from ESO / mounted secret, never hardcoded (redacted in toString) | `VaultPkiProperties` |
+
+The agent submits a **CSR** (the TPM device key proves possession); Vault **signs** it (Vault does not
+generate the key). So the `tpm-device` role is a **sign** role permitting the device-cert shape: an RSA-2048
+key (the Intel fTPM EK/AK floor - V12 telemetry-flags 2048 as accepted), a `tpm:<deviceId>` URI SAN, and a
+short leaf TTL.
+
+## 3. ÖNKOŞULLAR (operator)
+
+- Host shell on staging-sw (`ssh halil@staging-sw`), docker control of `platform-vault-test`.
+- A privileged Vault token for `platform-vault-test` (root or a policy that can `sys/mounts`, `sys/auth`,
+  `sys/policies/acl`, and write the pki role). Operator-supplied; this runbook never prints it.
+- An **issuing CA** for `pki_int`: either (a) generate a self-signed root in-Vault for the test plane, or
+  (b) import an intermediate signed by an offline/internal root. The test plane uses (a) for simplicity
+  (the device leaf chains to this test PKI root, distinct from the EK-manufacturer Intel ODCA root, which
+  is the `/nonce` EK-chain anchor - do NOT conflate the two roots).
+- Companion transport runbook (#2054) ready to apply (the backend needs HTTPS to reach Vault), but the
+  PKI engine below can be provisioned first (it works over the existing `:8200` plane).
+
+## 4. ADIMLAR (additive; no Vault restart)
+
+> Run on staging-sw with `VAULT_ADDR=http://127.0.0.1:8200` (host-published test Vault) and the operator
+> token exported to the shell (`export VAULT_TOKEN=...` - keep it out of shell history / scripts).
+
+### 4.1 Enable + configure the PKI engine at `pki_int`
 ```bash
-vault secrets enable -path=pki_endpoint_root pki
-vault secrets tune -max-lease-ttl=87600h pki_endpoint_root          # 10y root
-# Tercih: managed-key (HSM/PKCS#11) ya da Transit-backed root key.
-vault write -field=certificate pki_endpoint_root/root/generate/internal \
-    common_name="ACIK Endpoint Device Root CA" issuer_name="endpoint-root" \
-    key_type=ec key_bits=384 ttl=87600h > endpoint_root_ca.crt
-# Root key ONLINE issuance'a kapalı: yalnız intermediate'i imzalar (4.2), sonra
-# root mount erişimi kısıtlanır / offline alınır (Shamir custody).
+vault secrets enable -path=pki_int pki                      # idempotent: ignore "path is already in use"
+vault secrets tune -max-lease-ttl=8760h pki_int
+# Test-plane self-signed root (Option a). For Option b, import an intermediate CSR signed offline.
+vault write -field=certificate pki_int/root/generate/internal \
+    common_name="platform-test endpoint device CA" issuer_name="tpm-device-ca" ttl=8760h \
+    key_type=rsa key_bits=4096 > /tmp/pki_int_ca.crt   # device-cert chain root (NOT the Intel EK root)
+vault write pki_int/config/urls \
+    issuing_certificates="http://127.0.0.1:8200/v1/pki_int/ca" \
+    crl_distribution_points="http://127.0.0.1:8200/v1/pki_int/crl"
 ```
+> Devam eşiği: `vault read pki_int/cert/ca` returns the CA; `/tmp/pki_int_ca.crt` is a valid PEM.
 
-### 4.2 Intermediate (issuance mount)
+### 4.2 Create the `tpm-device` sign role (URI-SAN `tpm:*`, RSA-2048, short leaf)
 ```bash
-vault secrets enable -path=pki_endpoint_device pki
-vault secrets tune -max-lease-ttl=720h pki_endpoint_device          # 30d cap
-vault write -field=csr pki_endpoint_device/intermediate/generate/internal \
-    common_name="ACIK Endpoint Device Issuing CA" key_type=ec key_bits=384 \
-    > endpoint_int.csr
-vault write -field=certificate pki_endpoint_root/root/sign-intermediate \
-    csr=@endpoint_int.csr format=pem_bundle ttl=43800h \
-    max_path_length=0 > endpoint_int.crt                # 5y; max_path_length=0 ⇒ NO sub-CA (Codex)
-vault write pki_endpoint_device/intermediate/set-signed certificate=@endpoint_int.crt
+vault write pki_int/roles/tpm-device \
+    allowed_uri_sans="tpm:*" \
+    allow_any_name=true allow_ip_sans=false \
+    key_type=rsa key_bits=2048 \
+    max_ttl=72h ttl=24h \
+    no_store=false require_cn=false \
+    use_csr_common_name=true use_csr_sans=true \
+    enforce_hostnames=false
 ```
+> Rationale: the device CSR carries CN=deviceId + URI-SAN `tpm:<deviceId>`; `allowed_uri_sans=tpm:*`
+> permits exactly that namespace and nothing else. `key_bits=2048` matches the Intel fTPM EK/AK floor.
+> Devam eşiği: `vault read pki_int/roles/tpm-device` shows `allowed_uri_sans=[tpm:*]`.
 
-### 4.3 OCSP/CRL (CDP/AIA + propagation SLO)
+### 4.3 Enable AppRole + bind a least-privilege policy for the backend
 ```bash
-vault write pki_endpoint_device/config/urls \
-    issuing_certificates="https://vault.internal/v1/pki_endpoint_device/ca" \
-    crl_distribution_points="https://vault.internal/v1/pki_endpoint_device/crl" \
-    ocsp_servers="https://vault.internal/v1/pki_endpoint_device/ocsp"
-vault write pki_endpoint_device/config/crl expiry=24h ocsp_disable=false \
-    auto_rebuild=true auto_rebuild_grace_period=12h
-# SLO: CRL/OCSP propagation < auto_rebuild_grace_period; measured at pilot.
-```
-
-### 4.4 `tpm-device` role (clientAuth-only, short-TTL, SAN/CN backend-overridden)
-```bash
-vault write pki_endpoint_device/roles/tpm-device \
-    allow_any_name=false require_cn=false \
-    use_csr_common_name=false use_csr_sans=false \
-    allowed_uri_sans="tpm:*" allowed_uri_sans_template=false \
-    client_flag=true server_flag=false \
-    key_usage="DigitalSignature" ext_key_usage="ClientAuth" \
-    ext_key_usage_oids="" \
-    key_type="any" signature_bits=256 \
-    ttl=168h max_ttl=168h \
-    no_store=false generate_lease=false
-```
-- **`use_csr_sans=false` + `use_csr_common_name=false`** → agent CSR'ındaki SAN/CN
-  YOK SAYILIR; backend `issue` çağrısında `uri_sans=tpm:{ek_pub_sha256}` +
-  `common_name={deviceUuid}` enjekte eder (design §5/§6). Role yalnız `tpm:*`
-  URI SAN'a izin verir; başka SAN tipi (DNS/IP/email) reddedilir.
-- **clientAuth-only**: `server_flag=false`, EKU=ClientAuth. Başka critical
-  extension yok (`ext_key_usage_oids=""`).
-- **Short-TTL 168h**: renewal re-attests (design §7). `max_ttl` cap'li.
-- CSR key-policy (design V9): zayıf anahtar reddi backend tarafında da
-  enforce edilir (RSA-3072+/ECDSA-P256+); role `signature_bits=256`.
-
-### 4.5 Backend least-privilege AppRole + policy
-```hcl
-# policy: endpoint-device-pki-issuer  (ONLY issue on the tpm-device role)
-path "pki_endpoint_device/issue/tpm-device" { capabilities = ["create","update"] }
-path "pki_endpoint_device/revoke"           { capabilities = ["create","update"] }
-# NO access to root/intermediate keys, NO other PKI paths, NO config.
-```
-```bash
-vault policy write endpoint-device-pki-issuer endpoint-device-pki-issuer.hcl
-vault write auth/approle/role/endpoint-admin-tpm-pki \
-    token_policies="endpoint-device-pki-issuer" \
-    token_ttl=20m token_max_ttl=30m secret_id_ttl=0 \
+vault auth enable approle 2>/dev/null || true              # idempotent
+cat <<'POLICY' | vault policy write endpoint-admin-tpm-sign -
+# Least privilege: the backend may ONLY sign the tpm-device role on pki_int.
+path "pki_int/sign/tpm-device" { capabilities = ["update"] }
+path "pki_int/cert/ca"        { capabilities = ["read"] }
+POLICY
+vault write auth/approle/role/endpoint-admin-tpm \
+    token_policies="endpoint-admin-tpm-sign" \
+    token_ttl=20m token_max_ttl=1h secret_id_ttl=720h \
     secret_id_num_uses=0 token_num_uses=0
-# RoleID/SecretID → ESO/Spring-Cloud-Vault path (RB-eso-vault-approle-rotate
-# disiplini). Backend yalnız issue+revoke; CA key'e erişemez.
+ROLE_ID=$(vault read -field=role_id auth/approle/role/endpoint-admin-tpm/role-id)
+SECRET_ID=$(vault write -f -field=secret_id auth/approle/role/endpoint-admin-tpm/secret-id)
+# Seed roleId/secretId into Vault KV for ESO (do NOT echo; pipe). Mirror the other endpoint secrets:
+printf '%s' "$ROLE_ID"   | vault kv patch kv/platform/endpoint-admin tpm_vault_role_id=-
+printf '%s' "$SECRET_ID" | vault kv patch kv/platform/endpoint-admin tpm_vault_secret_id=-
+unset ROLE_ID SECRET_ID
 ```
-ESO: backend'in mevcut Vault auth zinciri (Spring Cloud Vault / ESO AppRole)
-bu policy'i alır; ayrı bir `ExternalSecret` gerekmiyorsa AppRole token-policy
-yeterli. Gerekirse `kustomize/overlays/<env>/eso/endpoint-admin/` altına
-`externalsecret-endpoint-tpm-pki.yaml` eklenir (gate 4 PR'ında, flag'le).
+> Devam eşiği: `vault read auth/approle/role/endpoint-admin-tpm` exists; KV has both keys (values redacted).
+> The policy is sign-only - it cannot read the KV store, other mounts, or issue under any other role.
 
--------------------------------------------------------------------------------
-## 5. DOĞRULAMA (sandbox; live issuance KAPALI kalır)
--------------------------------------------------------------------------------
+## 5. BACKEND CONFIG ACTIVATION (gitops — apply ONLY after #2054 HTTPS listener is live)
+
+> WARN FAIL-FAST GUARD: `VaultPkiProperties` throws at startup if `enabled=true` but `baseUrl` is not
+> `https://` or `caCertPem` is unpinned or `roleId`/`secretId` are blank. **Do NOT flip `enabled=true`
+> until** (a) #2054's HTTPS listener is live (`https://vault.platform-test.svc.cluster.local:8202`
+> reachable from the endpoint-admin pod), and (b) §4 PKI + AppRole exist, and (c) the ESO-synced
+> `tpm_vault_role_id`/`tpm_vault_secret_id` land in the pod env. Flipping early takes endpoint-admin DOWN
+> (breaks the parallel-session test plane). This is the single ordered activation point.
+
+ConfigMap (`endpoint-admin-service-config`, test overlay) JSON6902 add, mirroring the existing tpm-attest
+keys (do NOT inline the AppRole creds - those come from ESO):
+```yaml
+ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED: "true"
+ENDPOINT_ADMIN_TPM_ATTEST_VAULT_BASE_URL: "https://vault.platform-test.svc.cluster.local:8202"
+ENDPOINT_ADMIN_TPM_ATTEST_VAULT_MOUNT: "pki_int"
+ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE: "tpm-device"
+ENDPOINT_ADMIN_TPM_ATTEST_VAULT_CA_CERT_PEM: "<the #2054 gen-vault-test-tls CA PEM, multi-line>"
+# roleId/secretId via ESO -> ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID / _SECRET_ID
+```
+ExternalSecret: add `tpm_vault_role_id`->`ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID` and
+`tpm_vault_secret_id`->`ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID` from `kv/platform/endpoint-admin`.
+Then selective `kubectl apply` + `rollout restart deploy/endpoint-admin-service` + browser/console verify
+(HARD RULE - deploy sonrasi console verify).
+
+## 6. POST-GATE CHAIN COMPLETION (re-run the proven live-/attest recipe)
+
+Once §4 + §5 + #2054 are live, re-run the **proven** live-drive recipe (validated 2026-06-26, recorded in
+agent memory `project_faz22_6_548_devkey_session_attestation.md` cont.6 + PR #2057 evidence):
+
+1. Mint a fresh enrollment token: KC master-admin token -> reset test persona `c5persona-admin-9001` pw ->
+   ROPC `frontend` client -> `POST https://testai.acik.com/api/v1/endpoint-admin/endpoint-enrollments`
+   (gateway Route 23 RewritePath -> backend `/api/v1/admin/endpoint-enrollments`) -> `.token` -> rotate
+   persona pw after (HARD RULE - don't touch the operator login user).
+2. On the denetim PC (WG 10.99.0.2, agent v0.3.3 WDAC-trusted):
+   `$env:ENDPOINT_AGENT_AUTO_ENROLL_API_URL='https://testai.acik.com/api/v1/endpoint-agent'` +
+   `$env:ENDPOINT_AGENT_ENROLLMENT_TOKEN='<token>'` -> `endpoint-agent.exe --auto-enroll-tpm`
+   (token via env; the `--enrollment-token` flag is mutually-exclusive with `--auto-enroll-tpm`).
+
+**Expected (success) — distinct from the 2026-06-26 FEATURE_DISABLED run:**
+- `tpm-attest-audit`: `V12 EK/AK RSA 2048 accepted` -> **Vault sign OK** (no `FEATURE_DISABLED`).
+- DB `endpoint_admin_service.endpoint_enrollments` row -> `status=CONSUMED` (NOT `TPM_FAILED`).
+- A new `endpoint_admin_service.endpoint_tpm_device_binding` (V74) row with the issued leaf + SPKI.
+- The issued cert chains to the §4.1 `pki_int` CA, with URI-SAN `tpm:<deviceId>`.
+
+## 7. VERIFY (D29-EA — Up != Functional != Zanzibar)
+
 ```bash
-# Role var + clientAuth-only + SAN override:
-vault read pki_endpoint_device/roles/tpm-device | grep -E "use_csr_sans|server_flag|ext_key_usage|max_ttl"
-# Sandbox test-issue (sonra revoke): backend'in yapacağı çağrı şekli
-SER=$(vault write -field=serial_number pki_endpoint_device/issue/tpm-device \
-    csr=@test.csr uri_sans="tpm:deadbeef..." common_name="00000000-..." ttl=1h)
-vault write pki_endpoint_device/revoke serial_number="$SER"
-# AppRole least-privilege negatif: issuer token CA key/config OKUYAMAZ
-VAULT_TOKEN=<approle-token> vault read pki_endpoint_device/cert/ca && echo "FAIL: should be denied"
+# Backend reaches Vault HTTPS + AppRole login works (no FEATURE_DISABLED in audit):
+kubectl --context k3d-test -n platform-test logs deploy/endpoint-admin-service --since=5m \
+  | grep -iE "FEATURE_DISABLED|vault|approle|sign" | tail
+# V74 binding row written for the device:
+docker exec platform-pg-test psql -U postgres -d endpoint_admin -tAc \
+  "SELECT count(*) FROM endpoint_admin_service.endpoint_tpm_device_binding;"
 ```
-Beklenen: role clientAuth-only + `use_csr_sans=false`; AppRole yalnız issue/revoke,
-CA key read **denied**.
 
-**Operasyonel doğrulama checklist (Codex 019ec723 — uygulamada zorunlu):**
-- [ ] **Vault-sürüm testi:** `allowed_uri_sans="tpm:*"` glob'unun bu Vault sürümünde beklendiği gibi match ettiği + `use_csr_sans=false` ile agent CSR SAN/CN'inin gerçekten yok sayıldığı sandbox'ta kanıtlanır (sürüm davranış farkı riski).
-- [ ] **Sub-CA engeli:** intermediate `max_path_length=0` → issue edilen leaf'ten alt-CA türetilemediği doğrulanır.
-- [ ] **V9 leaf-policy deny:** zayıf-anahtar (RSA<3072 / ECDSA<P256) + clientAuth-dışı critical-ext içeren CSR'ın backend tarafında **deny** edildiği test edilir (sadece role config değil, runtime deny).
-- [ ] **OCSP/CRL propagation ÖLÇÜLÜR** (yalnız configure değil): revoke → CRL/OCSP yansıma gecikmesi `auto_rebuild_grace_period` altında, pilot'ta metrikle.
-- [ ] **Disable = fail-closed + alarm:** `vault secrets disable` / seal sırasında backend issuance'ın tam fail-closed olduğu + alarm tetiklendiği test edilir (gate 5 CA-resilience).
-- [ ] **AppRole per-request short token** (hardening): backend tarafı issuance token'ını mümkünse tek-talep-ömürlü döngüye taşır.
+## 8. ROLLBACK
 
--------------------------------------------------------------------------------
-## 6. ROLLBACK / DR (ADR-0039 R-3)
--------------------------------------------------------------------------------
-- **Seal/unseal**: Shamir 3-of-5; unseal key holders ayrı. Seal sırasında
-  issuance fail-closed (backend gate 4 fail-closed davranışı).
-- **Intermediate rollover**: yeni intermediate sign + eski'yi CRL'e; grace
-  period boyunca iki intermediate trusted.
-- **Root-compromise recovery**: root offline olduğu için blast-radius dar;
-  yeni root + yeni intermediate + tüm device re-enroll (attestation). Metrikli
-  drill **gate 5** (CA-resilience) kapsamında — pilot öncesi zorunlu.
-- **Disable**: `vault secrets disable pki_endpoint_device` tüm issuance'ı durdurur
-  (backend flag off + bu = tam fail-closed).
+PKI/AppRole are additive - to fully revert: `vault delete auth/approle/role/endpoint-admin-tpm`,
+`vault policy delete endpoint-admin-tpm-sign`, `vault secrets disable pki_int` (only if no other consumer),
+and flip `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED=false` in the overlay + rollout. The `:8200` HTTP plane,
+ESO ClusterSecretStore, and every other Vault consumer are untouched throughout.
 
--------------------------------------------------------------------------------
-## 7. REFERANS
--------------------------------------------------------------------------------
-- [ADR-0039](../adr/0039-faz-22-3b-tpm-attestation-vault-pki.md) §5 (Vault PKI), R-3
-- `docs/faz-22-3b-tpm-attestation-design.md` §5–6 (role + identity resolver)
-- [ADR-0010](../adr/0010-vault-credential-lifecycle-and-dr.md) (Vault credential lifecycle/DR)
-- `docs/runbooks/RB-eso-vault-approle-rotate.md` (AppRole rotation)
-- HashiCorp Vault PKI secrets engine; CA/Browser Forum + NIST SP 800-57 (key sizes), TCG TPM 2.0
+## Referans
+
+- [`RB-faz22.6-548-vault-https-enablement.md`](./RB-faz22.6-548-vault-https-enablement.md) - companion HTTPS transport (PR #2054).
+- PR #2057 - V77 deploy + the live `/attest` FEATURE_DISABLED proof this runbook unblocks.
+- Backend gate-4b: `endpoint-admin-service/.../tpmattest/VaultPkiClient.java` + `VaultPkiProperties.java`.
+- Codex thread `019efd6b` (Vault server-cert + pinned-CA, not proxy).
