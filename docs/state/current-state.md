@@ -56,9 +56,30 @@ material from the existing Redis password aggregate:
   usable for mTLS `/health` from the real pod before any direct-STT flag flip.
 
 Boundary: this is source/desired-state hardening only. No Vault values were
-read or written, no live Kubernetes mutation was performed, no direct-STT flag
-was flipped, and no audio was sent. #182 still requires approved seed,
-pre-flag mTLS preflight PASS, direct-STT flag flip, and fresh e2e evidence.
+read or written, no direct Kubernetes mutation was performed by the agent;
+ArgoCD auto-synced the merged desired-state to the cluster. No direct-STT flag
+was flipped, and no audio was sent. #182 still requires approved seed, pre-flag
+mTLS preflight PASS, direct-STT flag flip, and fresh e2e evidence.
+
+Post-merge live sync evidence for PR #2078 / merge
+`74d22737168202b1f885f8ef8911d04d8195527a`:
+
+- `platform-eso-test` is at revision
+  `74d22737168202b1f885f8ef8911d04d8195527a`; Argo reports
+  `ExternalSecret/audio-gateway-direct-stt-mtls` as `Synced` / `Degraded`.
+- Live `ExternalSecret/audio-gateway-direct-stt-mtls` has `Ready=False`,
+  reason `SecretSyncedError`, message `could not get secret data from provider`.
+  This is the expected pre-seed fail-closed state, not preflight PASS evidence.
+- Live `Secret/audio-gateway-direct-stt-mtls` is absent; no direct-STT mTLS key
+  names exist yet.
+- Live `deployment/audio-gateway` now mounts `/etc/direct-stt-mtls` from
+  `audio-gateway-direct-stt-mtls` with `optional=true`.
+- Live `audio-gateway` pod remains `Running` / Ready while
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`, proving the optional mount did not
+  break the current flag-false runtime.
+- Live `audio-gateway-secrets` remains `Ready=True` and its runtime key-name
+  list contains only `SPRING_DATA_REDIS_PASSWORD`; Redis aggregate sync was not
+  poisoned by the missing direct-STT certificate/key properties.
 
 ## Live Delta — Faz 24 audio-gateway authz enforce desired-state flip (2026-06-26)
 
