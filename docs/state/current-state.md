@@ -1,5 +1,28 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 desktop mic + loopback capture verifier packaged (2026-06-27)
+
+The remaining #1615 desktop real-capture gate now has a metadata-only
+acceptance verifier and runbook:
+
+- `scripts/faz24/verify_desktop_capture_evidence.py` validates
+  `faz24.desktopCaptureEvidence.v1` envelopes from a real `platform-desktop`
+  smoke run.
+- `docs/runbooks/RB-faz24-desktop-capture-evidence.md` defines the evidence
+  contract and attachment rules.
+- The verifier requires both `microphone` and `loopback` real-device sources,
+  visible active recording indicator, consent capture, exact public
+  `audio-gateway` lifecycle step order, and source digest match for the mic and
+  loopback uploaded chunks.
+- It rejects raw audio/base64 audio, transcript text, JWT/Bearer/Authorization
+  material, destination URLs, direct client-to-STT overclaims, direct-STT
+  transcript claims, compute-plane audit claims, and production-readiness claims.
+
+Boundary: this is source-side evidence-gate packaging only. It does not run the
+desktop app, capture microphone or loopback audio, call `/transcribe`, mutate
+runtime, or close #1615. Live desktop mic/loopback acceptance still requires a
+real redacted `platform-desktop` smoke output plus verifier PASS.
+
 ## Live Delta — Faz 24 KVKK engineering/legal separation rule (2026-06-27)
 
 Owner directive recorded by user: KVKK/VERBIS/hukuk owner acceptance is a

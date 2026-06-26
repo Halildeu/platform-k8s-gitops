@@ -255,6 +255,26 @@ Attach the aggregate JSON only after checking `tokenIncluded=false`. This G-CAP
 aggregate does not prove direct-STT, same-session compute-plane audit, desktop
 mic/loopback, or product-wide readiness.
 
+### 7. Desktop mic + loopback evidence
+
+The external recorder smoke proves the public gateway lifecycle from a
+redacted client-token path. It still does not prove that the `platform-desktop`
+app captured real microphone and system-loopback audio sources. For that gate,
+collect a separate metadata-only desktop evidence envelope and run:
+
+```bash
+python3 scripts/faz24/verify_desktop_capture_evidence.py \
+  /tmp/faz24-desktop-capture-evidence.json \
+  --summary-json /tmp/faz24-desktop-capture-evidence.verify.json
+```
+
+The desktop verifier requires real-device `microphone` and `loopback` sources,
+visible active indicator, consent capture, exact public `audio-gateway`
+lifecycle ordering, and matching upload digests. It rejects raw audio, transcript
+text, token material, destination URLs, direct client-to-STT, compute-plane,
+direct-STT transcript, and production-readiness overclaims. See
+`docs/runbooks/RB-faz24-desktop-capture-evidence.md`.
+
 ## Cleanup
 
 ```bash

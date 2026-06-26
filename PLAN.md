@@ -85,6 +85,20 @@ pipeline default is enabled, and legal/production overclaims are forbidden.
 Legal acceptance, VERBIS güncelliği or production legal go still require
 owner/legal artifact; agent/CI/PR must not claim them.
 
+**Faz 24 desktop capture gate delta (2026-06-27)**:
+`platform-k8s-gitops` now carries a metadata-only desktop mic+loopback evidence
+verifier and runbook:
+`scripts/faz24/verify_desktop_capture_evidence.py` and
+`docs/runbooks/RB-faz24-desktop-capture-evidence.md`. The verifier accepts only
+real `platform-desktop` smoke metadata proving both microphone and loopback
+sources, visible active indicator, consent capture, exact public
+`audio-gateway` lifecycle ordering, and matching upload digests. It rejects raw
+audio/base64 audio, transcript text, JWT/Bearer/Authorization material,
+destination URLs, direct client-to-STT, direct-STT transcript, compute-plane
+audit, and production-readiness claims. Boundary: source/runbook package only;
+live desktop smoke PASS, direct-STT e2e, aggregate G-CAP reliability, and
+product readiness remain separate gates.
+
 **Faz 24 #161/#162 product-gate hardening delta (2026-06-26)**:
 `platform-ai#229` merged as `b4f86b1c8ae9e77ae41846eaf834cc2ea0fa5b50`;
 main CI run `28260265821` succeeded across repo-gates and all service-test
