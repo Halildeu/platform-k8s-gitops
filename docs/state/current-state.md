@@ -1635,6 +1635,32 @@ Runtime/live boundary at this historical point:
   yazıldı:
   `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4796544994`.
 
+## Live Delta — Faz 24 direct-STT #182 metadata-only e2e verifier packaged; Functional gate açık (2026-06-26)
+
+Faz 24 #182 now has a source-side evidence contract for the future
+direct-STT e2e smoke. `scripts/faz24/verify_direct_stt_e2e_evidence.py` and
+`.github/workflows/faz24-direct-stt-e2e-evidence-ingest.yml` validate a bounded
+`faz24.directSttE2eEvidence.v1` JSON artifact before any #182 acceptance claim.
+
+The verifier requires real `audio-gateway` pod evidence from
+`k3d-test/platform-test`, `AUDIO_GATEWAY_DIRECT_STT_ENABLED=true`,
+`live-stt.denetim:8243` mTLS health HTTP 200 with mounted client certificate
+material, same session/chunk/correlation across lifecycle, `/transcribe` HTTP
+200, `transcript:direct-stt-results`, and
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE`, plus metadata-only persistence boundary
+flags. It rejects PEM values, tokens, raw command output, destination URLs,
+raw audio, raw transcript text, transcript segments, and raw packet captures.
+
+Boundary:
+
+- This is source-side acceptance guardrail packaging only.
+- It does not seed Vault, map ESO keys, flip direct-STT on, send audio, or
+  produce a live transcript.
+- `platform-ai#182` remains open until the verifier passes on live e2e
+  evidence after the credential seed + ESO mapping + flag flip path.
+- `platform-ai#198` full I7, desktop mic/loopback, product pilot, and
+  production readiness remain separate gates.
+
 ## Live Delta — Faz 24 direct-STT egress/SNI path and default-off mTLS wiring live; Functional gate açık (2026-06-26)
 
 Faz 24 direct-STT hattında önceki digest/up kanıtının üstüne iki kalıcı
