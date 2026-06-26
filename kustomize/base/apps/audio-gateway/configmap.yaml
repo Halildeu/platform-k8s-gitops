@@ -54,3 +54,19 @@ data:
   # stream-key consumer'ın AUDIT_CONSUMER_STREAM_KEY'i (audit:events) ile birebir aynı.
   AUDIO_GATEWAY_AUDIT_REDIS_ENABLED: "true"
   AUDIO_GATEWAY_AUDIT_STREAM_KEY: "audit:events"
+  # --- Faz 24 direct-STT runtime wiring (default-OFF until mTLS secret seed) ---
+  # Backend #725/#753/#768 already ships the direct-STT WebClient, mTLS support,
+  # result stream handoff, and audio-part Content-Type fix. Desired-state keeps
+  # the full config visible while the actual runtime flag stays false until the
+  # audio-gateway mTLS files are delivered through audio-gateway-secrets.
+  AUDIO_GATEWAY_DIRECT_STT_ENABLED: "false"
+  AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL: "https://live-stt.denetim:8243/transcribe"
+  AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT: "2"
+  AUDIO_GATEWAY_DIRECT_STT_CONNECT_TIMEOUT_MS: "5000"
+  AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS: "180000"
+  AUDIO_GATEWAY_DIRECT_STT_TLS_ENABLED: "true"
+  AUDIO_GATEWAY_DIRECT_STT_TLS_CA_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-ca.crt"
+  AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-client.crt"
+  AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_PRIVATE_KEY_PATH: "/etc/direct-stt-mtls/direct-stt-client.key"
+  AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_ENABLED: "true"
+  AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_KEY: "transcript:direct-stt-results"
