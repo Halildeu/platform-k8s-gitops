@@ -10,15 +10,21 @@
 
 Faz 24 is positioned for regulated and data-sensitive enterprise segments.
 G-COMP evidence must prove more than a policy document exists: consent,
-retention, legal-hold, access-audit, deletion/export, KVKK/VERBIS, redaction,
-and operator runbook evidence need a bounded metadata envelope before a
-compliance-readiness claim can be attached to an issue.
+retention, legal-hold, access-audit, deletion/export, owner legal-track
+notification, redaction, and operator runbook evidence need a bounded metadata
+envelope before an engineering compliance-readiness claim can be attached to an
+issue.
 
 The verifier rejects credential material, personal data, raw audio,
 transcript text, prompt/response payloads, legal-advice overclaims,
 live-production mutations, and production-readiness claims. It should be run
 after an operator, CI job, or legal/compliance owner creates a redacted
 `faz24.gcompComplianceEvidence.v1` envelope.
+
+KVKK/VERBIS/legal owner acceptance is a parallel legal track after owner
+notification is recorded. The verifier treats that notification as engineering
+evidence; it does not claim legal acceptance, VERBIS closure, DPA/subprocessor
+acceptance, or production legal go.
 
 ## Evidence Shape
 
@@ -31,7 +37,8 @@ The evidence file must be a JSON object with:
   `legal-review`, or `compliance-drill`
 - one named check for each required evidence class:
   `consent`, `retention`, `legal_hold`, `access_audit`,
-  `deletion_export`, `kvkk_verbis`, `redaction`, `runbook`
+  `deletion_export`, `legal_track_notification`, `redaction`, `runbook`
+  (`kvkk_verbis` is accepted only as a legacy owner-notification alias)
 - one bounded `evidenceRef` per check using one of:
   `github://`, `github-actions://`, `artifact://`, `operator://`,
   `protected://`, `runbook://`, `legal://`, `dpo://`
@@ -41,7 +48,31 @@ The evidence file must be a JSON object with:
   `dataSubjectResponseDays`, `legalHoldDrillAgeDays`,
   `dbCleanupEvidenceAgeDays`
 - boundary fields explicitly keeping secret, raw payload, personal data,
-  legal-advice, live-production, and production-readiness claims false.
+  legal-advice, legal-acceptance, production-legal-go, live-production, and
+  production-readiness claims false.
+- boundary fields explicitly proving the engineering/legal split:
+  `ownerLegalTrackNotificationPresent=true`,
+  `retentionDurationsParametric=true`,
+  `retentionDefaultsFailClosed=true`,
+  `consentDefaultRequired=true`, `deletionPipelineDefaultEnabled=true`, and
+  `retentionDurationsHardcoded=false`.
+
+## Retention Parameter Semantics
+
+Retention and deletion durations are owner-supplied parameters, not fixed
+engineering blockers. G-COMP evidence must show one of these states:
+
+- owner has not supplied effective duration values yet: durable raw-audio /
+  transcript / derived-artifact storage paths are fail-closed or
+  refuse-to-store, and `retentionDefaultsFailClosed=true`.
+- owner has supplied effective duration values: the `retention` check
+  `evidenceRef` points to a bounded owner/legal/operator/protected artifact
+  documenting the source decision, and the values are applied as config rather
+  than hardcoded in code, manifests, or verifier fixtures.
+
+Hardcoded duration claims are rejected by `retentionDurationsHardcoded=false`.
+Missing owner values are not an engineering blocker when the unset/default path
+is fail-closed.
 
 ## Command
 
@@ -82,4 +113,6 @@ rows containing personal data.
 This verifier can support G-COMP source-side acceptance discipline. It does
 not prove final legal acceptance, does not replace DPO/operator review, does
 not satisfy VERBIS or exemption evidence by itself, does not perform erasure or
-DB cleanup, and does not make Faz 24 production-ready.
+DB cleanup, and does not make Faz 24 production-ready. Legal/VERBIS owner
+acceptance remains visible as a parallel track but must not be interpreted as a
+Faz 24 engineering completion blocker after owner notification is recorded.
