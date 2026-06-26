@@ -1,5 +1,48 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 #227 G-INT hardening merged; I7 8243 preflight refreshed (2026-06-26)
+
+`platform-ai#227` is now merged after `zeynep-serban` approval. The change
+hardens only the G-INT evidence metadata contract:
+
+- PR: `https://github.com/Halildeu/platform-ai/pull/227`
+- Merge commit: `7904dc915c985454ab39a02d169320e757c8ed85`
+- Main CI run `28241477589` completed `success` across `repo-gates`,
+  `meeting-ai-service`, `diarization-service`, `live-stt-service`, and
+  `final-stt-service`.
+- Scope: `sample_manifest_hash`, `sample_count_hash`, positive integer
+  `n_samples`, `eval_set_hash`, and `prompt_hash` are now bound so hand-edited
+  pilot sample counts cannot silently satisfy the source-side G-INT gate.
+
+Boundary: this does not provide real pilot transcript/audio evidence, does not
+enable an LLM provider, does not satisfy `platform-ai#162` G-INT acceptance,
+and does not close `platform-ai#182` or any production gate.
+
+After the operator ESET/endpoint allow-log completion, the Denetim live-stt
+app-mTLS `live-stt-preflight` path was refreshed from `staging-sw`:
+
+- route to `10.99.0.2` resolves through `wg0` with source `10.99.0.1`;
+- `10.99.0.2:8243` is TCP-reachable from `staging-sw`;
+- valid client cert to `https://live-stt.denetim:8243/health` returns HTTP
+  `200` with live-stt health `status=ok`, model `medium`, device `cuda`, and
+  compute `float16`;
+- no-client probe fails closed with TLS alert `certificate required` and curl
+  exit `56`;
+- wrong-client probe fails closed with TLS alert `unknown ca` and curl exit
+  `56`.
+
+This narrows `platform-ai#198` only for the `live-stt-preflight` slice. The
+full I7 prod-gate remains open because `10.99.0.2:8343` still timed out from
+`staging-sw`, the current Denetim Caddyfile has no meeting-ai `8343` server
+block, and Vault PKI rotation/secret delivery, request audit, plaintext-bypass
+closure, failure drill, redaction review, and reviewer/operator acceptance are
+still separate gates.
+
+`platform-backend#768` remains the direct `platform-ai#182` blocker: it is open,
+clean, and CI-green, but still has no independent review/approval, so the
+direct-STT multipart media-type fix is not merged or deployed. No fresh
+direct-STT e2e acceptance has been produced yet.
+
 ## Live Delta — Faz 24 #226 merged and Denetim GPU host updated; #182 remains open (2026-06-26)
 
 `platform-ai#226` is now merged after `zeynep-serban` approval and has been
