@@ -1,5 +1,89 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 recording-access PR-2 runtime evidence recorded; tokened object-level gate remains open (2026-06-26)
+
+Faz 24 recorder authorization moved past the source-only `meeting#can_record`
+modeling step and is now deployed on testai. This is still not an object-level
+tokened acceptance gate.
+
+Evidence chain:
+
+- `platform-backend#761` merged at
+  `22b54669f1429def872308a1156719fafad15adb`, adding the additive OpenFGA
+  `meeting#can_record` relation without making it directly assignable.
+- The test OpenFGA model selector moved from
+  `01KVXG15ETYAHMHANFD0E5CVK8` to `01KW0EJTM60YGZTEKNGS7PDPNP`; Vault
+  `kv/platform/openfga#model_id` was patched, model-consuming consumers were
+  restarted, and contextual checks passed for owner/participant allow plus
+  viewer/nobody/blocked deny paths.
+- `platform-backend#765` merged at
+  `794c187a129a0b557c2522a816cff457dc199e77`, adding non-admin
+  `GET /api/v1/meetings/{id}/recording-access` and repointing
+  `audio-gateway-service` `MeetingServiceAccessValidator` away from the
+  temporary admin GET-by-id route.
+- `platform-k8s-gitops#2038` merged at
+  `c5ab6cbe9734e6aa55b6bcb06ccdbf69f2ed2994`, pinning the test overlay to
+  `audio-gateway-service@sha256:54fd0226561dd912532f3784773887c01693742faff31079562d24002c11a351`
+  and
+  `meeting-service@sha256:e9e45ac39ca53a7986a84c49ff8422077b20acdbc5a84b560b95e893845517cf`.
+- Deploy workflow run `28206874588` on GitOps `main` head
+  `c5ab6cbe9734e6aa55b6bcb06ccdbf69f2ed2994` concluded `success`: digest-pin
+  rollout covered the 13-service payload, Gate 1b public edge passed, Gate 1c
+  readiness passed, and Gate 1d stability passed. Gate 2 did not provide a
+  tokened persona proof because `SMOKE_AUTH_*` was not configured for the run.
+- Live staging imageID evidence matched the pinned digests for `audio-gateway`
+  and `meeting-service`; `transcript-service` remained at
+  `sha256:af97f1aa1b3212e0461288f53c1e1a16395e9ed2e80923d0cc4a1137bf2249ba`,
+  and `permission-service` remained at
+  `sha256:e828808e54a88a3290cd3c1b9343dbe2cc0f8b55061b27a5e0c7957fde3f9b0e`.
+  The checked pods were `Running`/Ready with restart count `0`, and pod-local
+  readiness for `meeting-service` and `audio-gateway` returned `{"status":"UP"}`.
+- Public no-token smoke preserved fail-closed edge behavior:
+  `/api/v1/meetings/00000000-0000-0000-0000-000000000000/recording-access`
+  returned `401`, and `/api/users/all?page=1&pageSize=1` returned `401`.
+- Runtime evidence was recorded on `platform-backend#759`:
+  https://github.com/Halildeu/platform-backend/issues/759#issuecomment-4805199650
+
+Boundary: the tokened object-level matrix is still open: expected
+owner/participant `204`, no-recorder `403`, unknown or tenant-hidden meeting
+`404`, and blocked-owner `403` must be proven with accepted personas before this
+becomes recorder authorization acceptance. The temporary B-narrow admin GET-by-id
+relaxation should not be removed until that matrix is evidenced. Separately,
+`platform-backend#716` audio-gateway audience/capability enforcement remains
+open, and `platform-ai#198`, `platform-ai#188`, `platform-ai#182`, direct-STT
+e2e, desktop mic/loopback, product-quality pilot gates, and production readiness
+remain separate gates.
+
+## Live Delta — Faz 24 #198 local firewall/listener proof received; central endpoint allow still needed (2026-06-26)
+
+Operator-provided Denetim Admin PowerShell output added one more local proof for
+`platform-ai#198`:
+
+- local Windows Firewall rule `WG-staging-caddy-mtls-8243-ttl-codex` exists in
+  `PersistentStore`, is enabled, action `Allow`, direction `Inbound`, profile
+  `Any`;
+- tuple is scoped to source `10.99.0.1` -> destination `10.99.0.2`, TCP local
+  port `8243`;
+- program scope is `C:\caddy\caddy.exe`;
+- Windows Firewall allow/drop logging is enabled to
+  `%systemroot%\system32\LogFiles\Firewall\pfirewall.log`;
+- TTL rollback scheduled task
+  `Remove-WG-staging-caddy-mtls-8243-ttl-codex` exists and is `Ready`;
+- Caddy is listening on `10.99.0.2:8243`.
+
+Evidence was recorded on `platform-ai#198`:
+https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4801156545
+
+Boundary: this proves only local Windows tuple/listener state. It does not prove
+remote reachability from `staging-sw` or from `audio-gateway`; the last canonical
+follow-up still had `10.99.0.1 -> 10.99.0.2 TCP/8243` timing out while
+`10.99.0.2:8200` remained reachable over the same WG path. The next safe
+operator action remains an ESET/ERA or central endpoint/WFP allow+log policy for
+that exact tuple and `C:\caddy\caddy.exe`, with TTL and rollback. Do not disable
+ESET as an acceptance shortcut. No direct-STT flag flip, raw audio,
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE`, `/transcribe` e2e, or production readiness is
+claimed from this proof.
+
 ## Live Delta — Faz 24 WG-B+ I6 MASQ evidence accepted; runtime gates remain open (2026-06-25)
 
 `platform-k8s-gitops#1867` is now closed / Project #2 `Done` for the
