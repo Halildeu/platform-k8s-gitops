@@ -65,6 +65,17 @@ fail-closed evidence path. Runtime acceptance remains open until token drain,
 GitOps enforce booleans true, no-token/wrong-audience/missing-role/valid-recorder
 matrix PASS, and reviewer/operator acceptance.
 
+**Faz 24 #156 retention delta (2026-06-26)**: DB cleanup runtime evidence
+advanced in `k3d-test`: transient smoke Jobs derived from the deployed
+`meeting-service` and `transcript-service` images deleted expired synthetic
+meeting action/decision, transcript segment, and KVKK access-audit rows, then
+wrote `metadata-only` destruction audit rows for `db.meeting-intelligence`,
+`db.transcript-records`, and `db.kvkk-access-log`. Evidence is recorded in
+`docs/faz-24-evidence/2026-06-26-retention-runtime-smoke.md`. Boundary remains:
+this is test DB cleanup behavior only; #156 and G-COMP still need VERBIS status,
+MinIO lifecycle runtime evidence, production/legal owner acceptance, and broader
+compliance evidence before pass/readiness language is valid.
+
 **Faz 24 live delta (2026-06-25)**: `platform-ai#187` source/deploy scope is
 accepted with `platform-backend#756` (`8c269ccf...`), `platform-k8s-gitops#2015`
 (`a9b19c9f...`), and deploy run `28176231063` proving 13-service digest-pin
