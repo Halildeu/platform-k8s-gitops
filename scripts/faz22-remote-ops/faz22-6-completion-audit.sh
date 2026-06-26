@@ -26,6 +26,14 @@ B1_4_ATTESTATION_ACCEPTANCE_REF="${B1_4_ATTESTATION_ACCEPTANCE_REF:-Halildeu/pla
 B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS="${B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS:-tpm-complete,hardware-attestation-complete,5-device,50-device,800-device,production,broad-rollout}"
 VIEW_ONLY_ACCEPTANCE_REF="${VIEW_ONLY_ACCEPTANCE_REF:-Halildeu/platform-k8s-gitops#1580}"
 VIEW_ONLY_FORBIDDEN_CLAIMS="${VIEW_ONLY_FORBIDDEN_CLAIMS:-rdp,credential-entry,raw-shell,port-forward,5-device,50-device,800-device,production,broad-rollout}"
+# ADR-0044: VIEW_ONLY marker split. Engineering gate (fail-closed) + KVKK gate
+# (tracked, non-blocking). The KVKK non-blocking track is an ALLOWLIST: only the
+# enumerated legal/DPO/retention keys (plus the standard marker fields) may appear
+# in the F22_6_VIEW_ONLY_KVKK marker. Any other key (a security/product/audit field
+# mislabeled as "legal") is an allowlist violation and DOES block completion — the
+# non-blocking-ness applies to genuine legal items only, never to weakening a gate.
+VIEW_ONLY_EVIDENCE_SCHEMA_VERSION="${VIEW_ONLY_EVIDENCE_SCHEMA_VERSION:-faz22.6-view-only-evidence-v2}"
+VIEW_ONLY_KVKK_ALLOWED_KEYS="${VIEW_ONLY_KVKK_ALLOWED_KEYS:-kvkk_attended_pilot_signoff,legal_dpo_consent,retention_policy_approval,status,owner_approved_by,approved_at,expires_at}"
 EXPECTED_AGENT_TAG="${EXPECTED_AGENT_TAG:-$EXPECTED_AGENT_LATEST_TAG}"
 
 need() {
@@ -159,19 +167,22 @@ issue_json_for_ref() {
 }
 
 marker_count() {
-  # marker_count <marker-key>; reads issue body from stdin and ignores fenced examples.
-  local marker="$1"
-  awk -v marker="$marker" '
+  # marker_count <marker-key> [version]; reads issue body from stdin and ignores
+  # fenced examples. version defaults to v1 (the established marker-format token);
+  # ADR-0044's F22_6_VIEW_ONLY_ENGINEERING marker is v2.
+  local marker="$1" version="${2:-v1}"
+  awk -v marker="$marker" -v version="$version" '
     /^```/ { fenced = !fenced; next }
-    !fenced && $0 ~ "^" marker ":[[:space:]]*v1[[:space:]]*$" { count++ }
+    !fenced && $0 ~ "^" marker ":[[:space:]]*" version "[[:space:]]*$" { count++ }
     END { print count + 0 }
   '
 }
 
 marker_block() {
-  # marker_block <marker-key>; reads issue body from stdin and ignores fenced examples.
-  local marker="$1"
-  awk -v marker="$marker" '
+  # marker_block <marker-key> [version]; reads issue body from stdin and ignores
+  # fenced examples. version defaults to v1.
+  local marker="$1" version="${2:-v1}"
+  awk -v marker="$marker" -v version="$version" '
     /^```/ {
       if (found) {
         exit
@@ -180,7 +191,7 @@ marker_block() {
       next
     }
     fenced { next }
-    !found && $0 ~ "^" marker ":[[:space:]]*v1[[:space:]]*$" {
+    !found && $0 ~ "^" marker ":[[:space:]]*" version "[[:space:]]*$" {
       found = 1
       print
       next
@@ -262,8 +273,20 @@ manifest_csv_matches_marker() {
 
 verify_view_only_evidence_manifest() {
   # verify_view_only_evidence_manifest <url> <expected-sha256> <marker-body>
+  #
+  # ADR-0044 v2 engineering manifest: mode-aware.
+  #   recording_mode=disabled -> positive no-content-persistence proof
+  #     (content_persistence=none) + metadata audit still active
+  #     (metadata_audit=active); WORM/record-before-fanout are NOT required and
+  #     recording_worm=pass is FORBIDDEN (avoids an untested "recording off" claim).
+  #   recording_mode=enabled  -> re-arms the fail-closed recording controls:
+  #     recording_worm=pass + record_before_fanout=pass + a parametric
+  #     recording_retention_days (positive int) + recording_retention_owner_ref.
+  # kvkk_attended_pilot_signoff is NOT part of this manifest (moved to the
+  # non-blocking F22_6_VIEW_ONLY_KVKK marker per ADR-0044 D1/D2).
   local url="$1" expected_sha="$2" marker_body="$3"
   local fetched canonical actual_sha marker_value manifest_value errors=()
+  local recording_mode
 
   case "$url" in
     https://*) ;;
@@ -297,10 +320,25 @@ verify_view_only_evidence_manifest() {
     errors+=("evidence_package_sha256_mismatch")
   fi
 
-  [ "$(manifest_field "$canonical" "schema_version")" = "faz22.6-view-only-evidence-v1" ] || errors+=("manifest:schema_version")
+  [ "$(manifest_field "$canonical" "schema_version")" = "$VIEW_ONLY_EVIDENCE_SCHEMA_VERSION" ] || errors+=("manifest:schema_version")
 
+  recording_mode="$(manifest_field "$canonical" "recording_mode")"
+
+  # Base exact-match fields (manifest must equal marker, both non-empty), plus
+  # mode-specific fields appended below.
   local exact_field
-  for exact_field in acceptance_scope product_channel view_mode pilot_device session_id recording_worm d10_fail_closed dlp_mask_policy local_abort active_indicator viewer_path_decision kvkk_attended_pilot_signoff owner_approved_by approved_at expires_at; do
+  local exact_fields=(
+    acceptance_scope product_channel view_mode pilot_device session_id
+    recording_mode d10_fail_closed dlp_mask_policy local_abort active_indicator
+    viewer_path_decision owner_approved_by approved_at expires_at
+  )
+  case "$recording_mode" in
+    disabled) exact_fields+=(content_persistence metadata_audit) ;;
+    enabled) exact_fields+=(recording_worm record_before_fanout recording_retention_days recording_retention_unit recording_retention_owner_ref) ;;
+    *) errors+=("manifest:recording_mode:invalid") ;;
+  esac
+
+  for exact_field in "${exact_fields[@]}"; do
     marker_value="$(printf '%s\n' "$marker_body" | waiver_field "$exact_field")"
     manifest_value="$(manifest_field "$canonical" "$exact_field")"
     if [ -z "$manifest_value" ]; then
@@ -310,11 +348,44 @@ verify_view_only_evidence_manifest() {
     fi
   done
 
+  # Mode-specific value constraints (if-blocks, not `&&`, to stay set -e safe).
+  case "$recording_mode" in
+    disabled)
+      [ "$(manifest_field "$canonical" "content_persistence")" = "none" ] || errors+=("manifest:content_persistence:must-be-none")
+      [ "$(manifest_field "$canonical" "metadata_audit")" = "active" ] || errors+=("manifest:metadata_audit:must-be-active")
+      # No enabled-only recording field may appear in a disabled manifest.
+      local disabled_forbidden
+      for disabled_forbidden in recording_worm record_before_fanout recording_retention_days recording_retention_unit recording_retention_owner_ref; do
+        if [ -n "$(manifest_field "$canonical" "$disabled_forbidden")" ]; then
+          errors+=("manifest:${disabled_forbidden}:forbidden-when-disabled")
+        fi
+      done
+      ;;
+    enabled)
+      [ "$(manifest_field "$canonical" "recording_worm")" = "pass" ] || errors+=("manifest:recording_worm:must-be-pass")
+      [ "$(manifest_field "$canonical" "record_before_fanout")" = "pass" ] || errors+=("manifest:record_before_fanout:must-be-pass")
+      [[ "$(manifest_field "$canonical" "recording_retention_days")" =~ ^[1-9][0-9]*$ ]] || errors+=("manifest:recording_retention_days:must-be-positive-int")
+      [ "$(manifest_field "$canonical" "recording_retention_unit")" = "days" ] || errors+=("manifest:recording_retention_unit:must-be-days")
+      [ -n "$(manifest_field "$canonical" "recording_retention_owner_ref")" ] || errors+=("manifest:recording_retention_owner_ref")
+      ;;
+  esac
+
   local required_value
   manifest_csv_matches_marker "$canonical" "$marker_body" "audit_negative_matrix" || errors+=("manifest:audit_negative_matrix:mismatch")
   manifest_csv_matches_marker "$canonical" "$marker_body" "forbidden_claims" || errors+=("manifest:forbidden_claims:mismatch")
 
-  for required_value in no-auth wrong-device expired-session recording-down dlp-deny local-abort; do
+  # Full engineering evidence list (ADR-0044 D2) machine-bound as required
+  # adversarial negative-matrix tokens.
+  local required_negatives=(
+    no-auth wrong-device expired-session dlp-deny local-abort
+    no-control-attempt-denied mtls-authz-enforced ttl-revoke-kill
+    frame-flow-proven audit-metadata-recorded
+  )
+  case "$recording_mode" in
+    disabled) required_negatives+=(recording-disabled-no-persistence metadata-audit-on) ;;
+    enabled) required_negatives+=(recording-down) ;;
+  esac
+  for required_value in "${required_negatives[@]}"; do
     manifest_csv_has "$canonical" "audit_negative_matrix" "$required_value" || errors+=("manifest:audit_negative_matrix:$required_value")
   done
   IFS=',' read -r -a _view_manifest_forbidden_claims <<<"$VIEW_ONLY_FORBIDDEN_CLAIMS"
@@ -566,28 +637,42 @@ check_b1_4_hardware_gate() {
   return 1
 }
 
-check_view_only_gate() {
-  local ref="$VIEW_ONLY_ACCEPTANCE_REF" issue_json state body title marker_count_value marker_body missing=()
+check_view_only_engineering_gate() {
+  # ADR-0044 D2: the fail-closed engineering gate for #1580 VIEW_ONLY.
+  # Reads F22_6_VIEW_ONLY_ENGINEERING: v2 (NOT the legacy bundled marker, which is
+  # refused as legacy_bundled_marker_detected). Mode-aware on recording_mode.
+  # kvkk_attended_pilot_signoff is NOT part of this gate (it is the separate,
+  # non-blocking F22_6_VIEW_ONLY_KVKK gate).
+  local ref="$VIEW_ONLY_ACCEPTANCE_REF" issue_json state body title marker_count_value legacy_count marker_body missing=()
   if ! issue_json="$(issue_json_for_ref "$ref")"; then
-    lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "ref=$ref reason=$(printf '%s' "$issue_json" | jq -r '._audit_error // "issue-fetch-failed"')"
+    lineage_print_check 'GATE_VIEW_ONLY_ENGINEERING' 'blocked' "ref=$ref reason=$(printf '%s' "$issue_json" | jq -r '._audit_error // "issue-fetch-failed"')"
     return 1
   fi
   state="$(printf '%s\n' "$issue_json" | jq -r '.state // ""')"
   body="$(printf '%s\n' "$issue_json" | jq -r '.body // ""')"
   title="$(printf '%s\n' "$issue_json" | jq -r '.title // ""')"
-  marker_count_value="$(printf '%s\n' "$body" | marker_count 'F22_6_VIEW_ONLY_ACCEPTANCE')"
+
+  # Legacy fail-safe (Codex 019f05cc #2): an old bundled marker must NEVER
+  # auto-pass the new engineering gate.
+  legacy_count="$(printf '%s\n' "$body" | marker_count 'F22_6_VIEW_ONLY_ACCEPTANCE')"
+  if [ "$legacy_count" -ge 1 ]; then
+    lineage_print_check 'GATE_VIEW_ONLY_ENGINEERING' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=legacy_bundled_marker_detected"
+    return 1
+  fi
+
+  marker_count_value="$(printf '%s\n' "$body" | marker_count 'F22_6_VIEW_ONLY_ENGINEERING' 'v2')"
 
   if [ "$marker_count_value" -gt 1 ]; then
-    lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=duplicate-marker"
+    lineage_print_check 'GATE_VIEW_ONLY_ENGINEERING' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=duplicate-marker"
     return 1
   fi
 
   if [ "$marker_count_value" -eq 1 ]; then
     local acceptance_scope product_channel view_mode pilot_device session_id evidence_package_sha256
-    local evidence_package_url evidence_manifest_errors
-    local recording_worm d10_fail_closed dlp_mask_policy local_abort active_indicator viewer_path_decision
-    local audit_negative_matrix kvkk_attended_pilot_signoff forbidden_claims owner approved_at expires_at date_errors
-    marker_body="$(printf '%s\n' "$body" | marker_block 'F22_6_VIEW_ONLY_ACCEPTANCE')"
+    local evidence_package_url evidence_manifest_errors recording_mode
+    local d10_fail_closed dlp_mask_policy local_abort active_indicator viewer_path_decision
+    local audit_negative_matrix forbidden_claims owner approved_at expires_at date_errors
+    marker_body="$(printf '%s\n' "$body" | marker_block 'F22_6_VIEW_ONLY_ENGINEERING' 'v2')"
     acceptance_scope="$(printf '%s\n' "$marker_body" | waiver_field 'acceptance_scope')"
     product_channel="$(printf '%s\n' "$marker_body" | waiver_field 'product_channel')"
     view_mode="$(printf '%s\n' "$marker_body" | waiver_field 'view_mode')"
@@ -595,14 +680,13 @@ check_view_only_gate() {
     session_id="$(printf '%s\n' "$marker_body" | waiver_field 'session_id')"
     evidence_package_url="$(printf '%s\n' "$marker_body" | waiver_field 'evidence_package_url')"
     evidence_package_sha256="$(printf '%s\n' "$marker_body" | waiver_field 'evidence_package_sha256')"
-    recording_worm="$(printf '%s\n' "$marker_body" | waiver_field 'recording_worm')"
+    recording_mode="$(printf '%s\n' "$marker_body" | waiver_field 'recording_mode')"
     d10_fail_closed="$(printf '%s\n' "$marker_body" | waiver_field 'd10_fail_closed')"
     dlp_mask_policy="$(printf '%s\n' "$marker_body" | waiver_field 'dlp_mask_policy')"
     local_abort="$(printf '%s\n' "$marker_body" | waiver_field 'local_abort')"
     active_indicator="$(printf '%s\n' "$marker_body" | waiver_field 'active_indicator')"
     viewer_path_decision="$(printf '%s\n' "$marker_body" | waiver_field 'viewer_path_decision')"
     audit_negative_matrix="$(printf '%s\n' "$marker_body" | waiver_field 'audit_negative_matrix')"
-    kvkk_attended_pilot_signoff="$(printf '%s\n' "$marker_body" | waiver_field 'kvkk_attended_pilot_signoff')"
     forbidden_claims="$(printf '%s\n' "$marker_body" | waiver_field 'forbidden_claims')"
     owner="$(printf '%s\n' "$marker_body" | waiver_field 'owner_approved_by')"
     approved_at="$(printf '%s\n' "$marker_body" | waiver_field 'approved_at')"
@@ -616,7 +700,6 @@ check_view_only_gate() {
     [ -n "$session_id" ] || missing+=("session_id")
     [ -n "$evidence_package_url" ] || missing+=("evidence_package_url")
     [[ "$evidence_package_sha256" =~ ^[a-fA-F0-9]{64}$ ]] || missing+=("evidence_package_sha256")
-    [ "$recording_worm" = "pass" ] || missing+=("recording_worm")
     [ "$d10_fail_closed" = "pass" ] || missing+=("d10_fail_closed")
     [ "$dlp_mask_policy" = "pass" ] || missing+=("dlp_mask_policy")
     [ "$local_abort" = "pass" ] || missing+=("local_abort")
@@ -625,11 +708,49 @@ check_view_only_gate() {
       fanout-proven|owner-deferred) ;;
       *) missing+=("viewer_path_decision") ;;
     esac
-    local negative
-    for negative in no-auth wrong-device expired-session recording-down dlp-deny local-abort; do
+
+    # Full engineering evidence list (ADR-0044 D2): machine-bound as concrete
+    # adversarial negative-matrix tokens so each promised control is required,
+    # not just folded into a single flag.
+    local negative required_negatives
+    required_negatives=(
+      no-auth wrong-device expired-session dlp-deny local-abort
+      no-control-attempt-denied mtls-authz-enforced ttl-revoke-kill
+      frame-flow-proven audit-metadata-recorded
+    )
+    # Mode-aware recording controls (ADR-0044 D3/D5).
+    case "$recording_mode" in
+      disabled)
+        # Privacy-safe MVP: no content persistence, metadata audit still active.
+        [ "$(printf '%s\n' "$marker_body" | waiver_field 'content_persistence')" = "none" ] || missing+=("content_persistence")
+        [ "$(printf '%s\n' "$marker_body" | waiver_field 'metadata_audit')" = "active" ] || missing+=("metadata_audit")
+        # No enabled-only recording field may be asserted while disabled — an
+        # untested privacy claim (ADR-0044 D5). Reject any of them.
+        local disabled_forbidden
+        for disabled_forbidden in recording_worm record_before_fanout recording_retention_days recording_retention_owner_ref recording_retention_unit; do
+          if [ -n "$(printf '%s\n' "$marker_body" | waiver_field "$disabled_forbidden")" ]; then
+            missing+=("${disabled_forbidden}:forbidden-when-disabled")
+          fi
+        done
+        required_negatives+=(recording-disabled-no-persistence metadata-audit-on)
+        ;;
+      enabled)
+        # Opt-in recording re-arms the fail-closed controls + parametric retention.
+        [ "$(printf '%s\n' "$marker_body" | waiver_field 'recording_worm')" = "pass" ] || missing+=("recording_worm")
+        [ "$(printf '%s\n' "$marker_body" | waiver_field 'record_before_fanout')" = "pass" ] || missing+=("record_before_fanout")
+        [[ "$(printf '%s\n' "$marker_body" | waiver_field 'recording_retention_days')" =~ ^[1-9][0-9]*$ ]] || missing+=("recording_retention_days")
+        [ "$(printf '%s\n' "$marker_body" | waiver_field 'recording_retention_unit')" = "days" ] || missing+=("recording_retention_unit")
+        [ -n "$(printf '%s\n' "$marker_body" | waiver_field 'recording_retention_owner_ref')" ] || missing+=("recording_retention_owner_ref")
+        required_negatives+=(recording-down)
+        ;;
+      *)
+        missing+=("recording_mode")
+        ;;
+    esac
+    for negative in "${required_negatives[@]}"; do
       csv_has "$audit_negative_matrix" "$negative" || missing+=("audit_negative_matrix:$negative")
     done
-    [ "$kvkk_attended_pilot_signoff" = "pass" ] || missing+=("kvkk_attended_pilot_signoff")
+
     local forbidden
     IFS=',' read -r -a _view_forbidden_claims <<<"$VIEW_ONLY_FORBIDDEN_CLAIMS"
     for forbidden in "${_view_forbidden_claims[@]}"; do
@@ -650,15 +771,103 @@ check_view_only_gate() {
     if [ "${#missing[@]}" -ne 0 ]; then
       local reason
       reason="$(IFS=,; printf '%s' "${missing[*]}")"
-      lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=$reason"
+      lineage_print_check 'GATE_VIEW_ONLY_ENGINEERING' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=$reason"
       return 1
     fi
-    lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'pass' "state=$state issue=$ref owner=$owner session_id=$session_id evidence_package_sha256=$evidence_package_sha256 expires_at=$expires_at"
+    lineage_print_check 'GATE_VIEW_ONLY_ENGINEERING' 'pass' "state=$state issue=$ref owner=$owner session_id=$session_id recording_mode=$recording_mode evidence_package_sha256=$evidence_package_sha256 expires_at=$expires_at"
     return 0
   fi
 
-  lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "state=$state expected=CLOSED-with-view-only-acceptance issue=$ref title=$(printf '%q' "$title") reason=missing-acceptance-marker"
+  lineage_print_check 'GATE_VIEW_ONLY_ENGINEERING' 'blocked' "state=$state expected=CLOSED-with-view-only-engineering-acceptance issue=$ref title=$(printf '%q' "$title") reason=missing-acceptance-marker"
   return 1
+}
+
+check_view_only_kvkk() {
+  # ADR-0044 D1/D4: the KVKK/legal track is TRACKED but NON-BLOCKING. This gate
+  # ALWAYS emits a status line (visible, never lost) and returns 0 (does not
+  # fail-close F22_6_COMPLETION) for genuine legal states (tracked_pending |
+  # cleared | expired). The ONE exception is an ALLOWLIST VIOLATION: if the
+  # F22_6_VIEW_ONLY_KVKK marker carries any key outside the enumerated
+  # legal/DPO/retention allowlist (i.e. a security/product/audit field mislabeled
+  # as "legal" to sneak it into the non-blocking track), that IS an integrity
+  # violation and returns 1 (blocks). Non-blocking-ness applies to genuine legal
+  # items only, never to weakening a gate (Codex 019f05cc #3).
+  local ref="$VIEW_ONLY_ACCEPTANCE_REF" issue_json body title marker_count_value marker_body
+  if ! issue_json="$(issue_json_for_ref "$ref")"; then
+    # Non-blocking gate: surface fetch failure as tracked_pending, do not block.
+    lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "ref=$ref reason=issue-fetch-failed"
+    return 0
+  fi
+  body="$(printf '%s\n' "$issue_json" | jq -r '.body // ""')"
+  title="$(printf '%s\n' "$issue_json" | jq -r '.title // ""')"
+  marker_count_value="$(printf '%s\n' "$body" | marker_count 'F22_6_VIEW_ONLY_KVKK')"
+
+  if [ "$marker_count_value" -eq 0 ]; then
+    lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=no-kvkk-marker"
+    return 0
+  fi
+
+  # Allowlist (whitelist) enforcement over ALL KVKK blocks, evaluated BEFORE the
+  # duplicate short-circuit so a second marker carrying a forbidden key cannot
+  # slip through (Codex 019f05cc post-impl #1). Every field key in any
+  # F22_6_VIEW_ONLY_KVKK block must be in VIEW_ONLY_KVKK_ALLOWED_KEYS; any other
+  # key is an attempt to reclassify a non-legal field as legal ->
+  # allowlist_violation -> blocks.
+  local key violations=()
+  while IFS= read -r key; do
+    [ -z "$key" ] && continue
+    csv_has "$VIEW_ONLY_KVKK_ALLOWED_KEYS" "$key" || violations+=("$key")
+  done < <(printf '%s\n' "$body" | awk '
+    /^```/ { fenced = !fenced; next }
+    fenced { next }
+    $0 ~ /^F22_6_VIEW_ONLY_KVKK:[[:space:]]*v1[[:space:]]*$/ { inblock = 1; next }
+    inblock {
+      if ($0 ~ /^[A-Za-z0-9_]+:/) { k = $0; sub(/:.*/, "", k); print k; next }
+      inblock = 0
+    }
+  ')
+  if [ "${#violations[@]}" -ne 0 ]; then
+    local violation_list
+    violation_list="$(printf '%s\n' "${violations[@]}" | LC_ALL=C sort -u | paste -sd, -)"
+    lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'allowlist_violation' "issue=$ref title=$(printf '%q' "$title") forbidden_keys=$violation_list"
+    return 1
+  fi
+
+  if [ "$marker_count_value" -gt 1 ]; then
+    lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=duplicate-marker"
+    return 0
+  fi
+
+  marker_body="$(printf '%s\n' "$body" | marker_block 'F22_6_VIEW_ONLY_KVKK')"
+
+  local status owner approved_at expires_at date_errors
+  status="$(printf '%s\n' "$marker_body" | waiver_field 'status')"
+  owner="$(printf '%s\n' "$marker_body" | waiver_field 'owner_approved_by')"
+  approved_at="$(printf '%s\n' "$marker_body" | waiver_field 'approved_at')"
+  expires_at="$(printf '%s\n' "$marker_body" | waiver_field 'expires_at')"
+
+  if [ "$status" = "cleared" ]; then
+    # A real clear needs a named DPO/owner + valid, non-expired dates. If the
+    # clear is incomplete it simply stays pending (non-blocking), never blocks.
+    date_errors="$(date_window_errors "$approved_at" "$expires_at")"
+    if owner_is_invalid "$owner"; then
+      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=incomplete-clear:owner_approved_by"
+      return 0
+    fi
+    if printf '%s' "$date_errors" | grep -q 'expires_at-expired'; then
+      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'expired' "issue=$ref owner=$owner expires_at=$expires_at"
+      return 0
+    fi
+    if [ -n "$date_errors" ]; then
+      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=incomplete-clear:$date_errors"
+      return 0
+    fi
+    lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'cleared' "issue=$ref owner=$owner approved_at=$approved_at expires_at=$expires_at"
+    return 0
+  fi
+
+  lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref status=$(printf '%q' "${status:-unset}")"
+  return 0
 }
 
 remote_bridge_kubectl_output() {
@@ -826,11 +1035,21 @@ main() {
     next_required+=('b1-4-acceptance-package-required')
   fi
 
-  if check_view_only_gate; then
+  if check_view_only_engineering_gate; then
     :
   else
     blocked=1
-    next_required+=('view-only-evidence-package-required')
+    next_required+=('view-only-engineering-evidence-package-required')
+  fi
+
+  # ADR-0044 D1/D4: KVKK is a tracked, NON-BLOCKING legal track. This gate always
+  # emits a GATE_VIEW_ONLY_KVKK status line (tracked_pending|cleared|expired) so
+  # the legal obligation stays visible, but it does NOT fail-close completion. The
+  # only blocking path is an allowlist violation (a security/product field
+  # mislabeled as "legal" to sneak into the non-blocking track).
+  if ! check_view_only_kvkk; then
+    blocked=1
+    next_required+=('view-only-kvkk-allowlist-violation')
   fi
 
   if ! check_remote_bridge; then
