@@ -23,6 +23,16 @@ the two test runtime booleans to true through the test overlay patch:
 - `AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=true`
 - `AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=true`
 
+Post-merge live refinement: the ConfigMap update alone did not restart the
+existing `audio-gateway` pod, so the pod process environment still read
+`AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=false` and
+`AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=false`. The test overlay now
+also bumps the `audio-gateway` pod-template annotation
+`audio-gateway.acik.com/authz-enforce-rev=2026-06-26-716-enforce-v2` so the
+ConfigMap flip causes a GitOps-authoritative rolling update. Live #716 evidence
+must prove both the rendered/live ConfigMap and the running pod process
+environment have the two booleans set to `true`.
+
 Boundary:
 
 - This is test desired-state only. The prod overlay does not include
@@ -30,8 +40,8 @@ Boundary:
   default-off so prod cannot inherit this test flip without a prod-specific
   review.
 - This is not acceptance by itself. `platform-backend#716` still requires live
-  token-drain/maintenance-window evidence, rollout evidence, and a redacted
-  fail-closed matrix through
+  token-drain/maintenance-window evidence, pod-env rollout evidence, and a
+  redacted fail-closed matrix through
   `verify_audio_gateway_authz_enforce_evidence.py`: no token `401`, wrong
   audience `401`, missing `audio_record` `403`, valid recorder token security
   pass with expected business response.

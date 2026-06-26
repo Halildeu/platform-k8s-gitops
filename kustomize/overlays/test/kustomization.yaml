@@ -7208,9 +7208,21 @@ patches:
       kind: Deployment
       name: audio-gateway
     patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: audio-gateway
+      spec:
+        replicas: 1
+        template:
+          metadata:
+            annotations:
+              # Faz 24 #716 authz enforce flip consumes ConfigMap values via
+              # envFrom. A ConfigMap-only edit does not restart pods, so this
+              # test-only marker changes the pod template hash and makes the
+              # enforce flip rollout GitOps-authoritative. Bump this rev on
+              # any future authz env flip.
+              audio-gateway.acik.com/authz-enforce-rev: "2026-06-26-716-enforce-v2"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.

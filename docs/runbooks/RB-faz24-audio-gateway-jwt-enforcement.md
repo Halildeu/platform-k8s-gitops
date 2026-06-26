@@ -45,7 +45,9 @@ remains default-off so a later prod overlay inclusion requires its own D30
 review and prod-specific preconditions.
 
 Live acceptance is not automatic at merge time. It still requires rollout
-evidence plus the fail-closed matrix in this runbook.
+evidence plus the fail-closed matrix in this runbook. Because these properties
+are consumed through `envFrom`, ConfigMap truth is not enough: the running pod
+process environment must also show the new values after a pod-template rollout.
 
 ## 3. Preconditions
 
@@ -76,9 +78,25 @@ AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE: "true"
 For test, the accepted location is the `kustomize/overlays/test` patch, not the
 base ConfigMap. Deploy through the normal `platform-k8s-gitops` PR + testai
 deploy path. Do not apply an out-of-band `kubectl patch` to the shared
-`k3d-test` workload; ADR-0023 keeps test overlay authoritative. After merge,
-confirm the live ConfigMap and pod environment render both booleans as `"true"`
-before collecting the matrix below.
+`k3d-test` workload; ADR-0023 keeps test overlay authoritative.
+
+The test overlay must also bump the `audio-gateway` Deployment pod-template
+annotation `audio-gateway.acik.com/authz-enforce-rev` whenever this env flip
+changes. A ConfigMap-only patch can sync successfully while the old pod keeps
+stale environment values. After merge, confirm the live ConfigMap and the
+running pod environment both render both booleans as `"true"` before collecting
+the matrix below.
+
+```bash
+kubectl --context k3d-test -n platform-test get cm audio-gateway-config -o json \
+  | jq -r '.data | {enforce:.AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE,role:.AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE}'
+
+POD="$(kubectl --context k3d-test -n platform-test get pod \
+  -l app.kubernetes.io/name=audio-gateway \
+  -o jsonpath='{.items[0].metadata.name}')"
+kubectl --context k3d-test -n platform-test exec "$POD" -- sh -c \
+  'printf "ENFORCE=%s\nROLE=%s\n" "$AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE" "$AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE"'
+```
 
 ## 5. Required Fail-Closed Live Smoke
 
