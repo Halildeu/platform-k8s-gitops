@@ -1,5 +1,26 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 #162 Ask-AI redaction guard hardened in source; pilot G-INT remains open (2026-06-26)
+
+`platform-ai#207` merged source-side hardening for
+`meeting-ai-service` post-meeting Ask-AI:
+
+- `/ask` now redacts both transcript and question before a real LLM prompt is
+  constructed;
+- `/ask` applies the same ADR-0043 / KVKK residual PII fail-closed guard used by
+  `/analyze` to both transcript and question;
+- residual PII on `/ask` returns `422` before any LLM call;
+- unsupported cloud LLM backends on `/ask` now return `501` instead of silently
+  producing mock output;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`.
+
+Boundary: this is source-side meeting-ai hardening only. It does not process a
+real pilot transcript/audio sample, does not enable a cloud LLM/API, does not
+mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approved
+real pilot G-INT evidence, explicit thresholds, and reviewer/operator acceptance
+remain open.
+
 ## Live Delta — Faz 24 #156 DB retention runtime smoke passed in test; VERBIS/MinIO/legal gates remain open (2026-06-26)
 
 `platform-ai#156` moved past a source-only DB cleanup claim for the deployed
