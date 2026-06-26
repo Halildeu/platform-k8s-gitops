@@ -128,8 +128,13 @@ images:
     # (audit:events emit never fired). E2E smoke proved: with sha-74c9e1a a real
     # ChunkAdmissionRejected (413 oversize) lands on the audit:events stream and
     # is persisted by audit-event-consumer-service.
+    # 2026-06-26 update: sha-fb8d436 (platform-backend#768) fixes the direct-STT
+    # multipart audio part Content-Type — derives audio/wav (and webm/pcm/...) from
+    # AudioFormat.mediaType() instead of always application/octet-stream, so live-stt
+    # accepts the forwarded WAV (was rejected "Unsupported content_type"). Builds on
+    # #765 recording-access repoint. Unblocks Zeynep #182 direct-STT e2e.
     # D30 immutable digest pin.
-    digest: sha256:54fd0226561dd912532f3784773887c01693742faff31079562d24002c11a351
+    digest: sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
