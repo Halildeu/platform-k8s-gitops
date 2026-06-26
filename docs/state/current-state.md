@@ -153,6 +153,20 @@ https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4806465423
   `live-stt-service`, and `meeting-ai-service`;
 - Claude adversarial review returned `AGREE` with no P0/P1 blocker.
 
+`platform-ai#222` then tightened action metadata attribution phrase matching:
+
+- merge commit `5b7149e9c7bf2df78fb1a2c6e17e3a5829cebb8d`;
+- copied `action_items[].owner` and `action_items[].due_date` phrases now match
+  on word/phrase boundaries, not raw substrings inside unrelated words;
+- regression coverage blocks false-positive attribution examples such as owner
+  `Can` matching `canlı`, owner `IT` matching `kritik`, and due date `salı`
+  matching `Salıverme`;
+- existing token-subset fallback for legitimate multi-word attribution remains
+  in place;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- Claude adversarial review returned `AGREE` with no P0/P1 blocker.
+
 Boundary: this is source-side meeting-ai hardening only. It does not process a
 real pilot transcript/audio sample, does not enable a cloud LLM/API, does not
 mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approved
