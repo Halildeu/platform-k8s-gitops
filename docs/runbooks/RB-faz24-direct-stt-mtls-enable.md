@@ -28,6 +28,54 @@ volume still exposes them as files.
 
 ## Evidence Contract
 
+There are two evidence gates.
+
+### Gate 1 — mTLS enablement preflight, before the flag flip
+
+After Vault seed + ESO mapping, but before `AUDIO_GATEWAY_DIRECT_STT_ENABLED`
+is changed, build metadata-only JSON using schema
+`faz24.directSttMtlsEnablementPreflight.v1` and run:
+
+```bash
+python3 scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py \
+  docs/faz-24-evidence/<date>-direct-stt-mtls-preflight.json \
+  --summary-json /tmp/faz24-direct-stt-mtls-preflight.verify.json
+```
+
+The preflight verifier requires:
+
+- real `audio-gateway` pod evidence from `k3d-test/platform-test`;
+- `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false` still in desired/runtime state;
+- hostAlias `live-stt.denetim -> 10.99.0.2`, narrow NetworkPolicy
+  `10.99.0.2/32:8243`, and `/etc/direct-stt-mtls` mount present;
+- `ExternalSecret/audio-gateway-secrets` Ready with mappings from
+  `direct_stt_ca_crt`, `direct_stt_client_crt`, and `direct_stt_client_key`
+  to the file-like Secret keys;
+- runtime Secret key names include `direct-stt-ca.crt`,
+  `direct-stt-client.crt`, and `direct-stt-client.key`, with no values
+  captured;
+- `https://live-stt.denetim:8243/health` HTTP 200 from the real pod using the
+  mounted client certificate material;
+- explicit boundary flags showing no audio was sent, `/transcribe` was not
+  called, #182 direct audio e2e is not yet proven, #198 full I7 remains
+  separate, desktop mic/loopback is separate, and production readiness is not
+  claimed.
+
+The verifier rejects PEM values, token-like material, raw command output,
+destination URLs, raw audio, transcript text, and packet captures.
+
+To archive the same preflight evidence through CI:
+
+```bash
+DIRECT_STT_MTLS_PREFLIGHT_B64="$(
+  base64 < docs/faz-24-evidence/<date>-direct-stt-mtls-preflight.json | tr -d '\n'
+)"
+gh workflow run faz24-direct-stt-mtls-preflight-ingest.yml \
+  -f evidence_json_base64="${DIRECT_STT_MTLS_PREFLIGHT_B64}"
+```
+
+### Gate 2 — direct-STT e2e, after the flag flip
+
 After the flag flip, #182 evidence is accepted only as metadata-only JSON using
 schema `faz24.directSttE2eEvidence.v1` and passing:
 
@@ -72,15 +120,18 @@ gh workflow run faz24-direct-stt-e2e-evidence-ingest.yml \
 1. Seed the three Vault properties with stdin-pipe or an approved equivalent. Do not print PEM values.
 2. Update `kustomize/overlays/test/eso/audio-gateway/externalsecret.yaml` to map the three properties above into `audio-gateway-secrets`.
 3. Verify `ExternalSecret/audio-gateway-secrets` is `Ready=True` and the target Secret exposes the three file-like keys by key name only.
-4. Flip `AUDIO_GATEWAY_DIRECT_STT_ENABLED` to `"true"` in `kustomize/base/apps/audio-gateway/configmap.yaml`.
-5. Deploy/sync the test overlay and verify the `audio-gateway` pod image digest is unchanged unless a newer backend artifact is intentionally pinned.
-6. From the real `audio-gateway` pod, verify `live-stt.denetim` resolves to `10.99.0.2` and `https://live-stt.denetim:8243/health` reaches Caddy/live-stt with the mounted client certificate.
-7. Run the #182 smoke: start meeting/capture/session, upload a privacy-safe WAV chunk, finish session, then prove:
+4. Write the metadata-only mTLS enablement preflight JSON and run
+   `verify_direct_stt_mtls_enablement_preflight.py`. Do not continue to the
+   flag flip unless it reports PASS.
+5. Flip `AUDIO_GATEWAY_DIRECT_STT_ENABLED` to `"true"` in `kustomize/base/apps/audio-gateway/configmap.yaml`.
+6. Deploy/sync the test overlay and verify the `audio-gateway` pod image digest is unchanged unless a newer backend artifact is intentionally pinned.
+7. From the real `audio-gateway` pod, verify `live-stt.denetim` resolves to `10.99.0.2` and `https://live-stt.denetim:8243/health` reaches Caddy/live-stt with the mounted client certificate.
+8. Run the #182 smoke: start meeting/capture/session, upload a privacy-safe WAV chunk, finish session, then prove:
    - HTTP lifecycle returns expected `201/200` statuses.
    - `CHUNK_FORWARDED_TO_COMPUTE_PLANE` exists in `audit:events` for the same session/chunk/correlation.
    - `transcript:direct-stt-results` contains the same session/chunk/correlation.
    - Redis `audio:chunks:pNN` carries metadata only, not raw audio.
-8. Write the metadata-only JSON evidence and run the verifier above locally and,
+9. Write the metadata-only JSON evidence and run the e2e verifier above locally and,
    when reviewer handoff is needed, through the GitHub workflow ingest.
 
 ## Rollback

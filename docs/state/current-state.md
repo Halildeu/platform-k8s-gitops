@@ -1,5 +1,49 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT pre-flag guard added; live Secret still pre-seed (2026-06-26)
+
+Read-only refresh from `staging-sw` / `k3d-test` confirmed the current #182
+runtime boundary:
+
+- real `deployment/audio-gateway` is `1/1` Ready in `platform-test`;
+- live pod `audio-gateway-769cc7745c-46st4` is Running/Ready and uses
+  `ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`;
+- live config still has `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`,
+  `https://live-stt.denetim:8243/transcribe`, and result stream
+  `transcript:direct-stt-results`;
+- `ExternalSecret/audio-gateway-secrets` is `Ready=True` / `SecretSynced`;
+- live Secret key names contain only `SPRING_DATA_REDIS_PASSWORD`;
+- `allow-audio-gateway-egress-live-stt-mtls` still targets
+  `10.99.0.2/32` TCP/8243.
+
+This refresh did not read or print Secret values. Denetim SSH from the current
+agent path returned `Permission denied (publickey)`, so this session did not
+retrieve client certificate/key material and did not seed Vault.
+
+New guardrail:
+
+- `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py` now validates
+  a metadata-only `faz24.directSttMtlsEnablementPreflight.v1` artifact for the
+  seed-after / flag-before point.
+- `.github/workflows/faz24-direct-stt-mtls-preflight-ingest.yml` validates and
+  archives the same preflight evidence artifact in GitHub Actions without
+  connecting to Denetim PC, Vault, Kubernetes, `/transcribe`, or audio data.
+- The preflight requires real-pod evidence while
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`: hostAlias, narrow NetworkPolicy,
+  `/etc/direct-stt-mtls` mount, ESO mappings for `direct_stt_ca_crt`,
+  `direct_stt_client_crt`, `direct_stt_client_key`, runtime Secret key names
+  for `direct-stt-ca.crt`, `direct-stt-client.crt`,
+  `direct-stt-client.key`, and mTLS `/health` HTTP 200 from the real pod using
+  mounted client cert material.
+- It rejects PEM values, tokens, raw command output, destination URLs, raw
+  audio, transcript text, and packet captures. Boundary flags must keep raw
+  audio unsent, `/transcribe` uncalled, #182 e2e unproven, full I7, desktop
+  mic/loopback, and production readiness separate.
+
+Current #182 path remains: approved credential seed authority -> ESO mapping ->
+pre-flag mTLS enablement preflight PASS -> direct-STT flag flip -> live e2e
+evidence through `verify_direct_stt_e2e_evidence.py`.
+
 ## Live Delta — Faz 24 #229/#230 source quality gates merged; user-facing e2e still gated (2026-06-26)
 
 Two additional `platform-ai` source-side product-quality hardening PRs are now
@@ -1792,10 +1836,10 @@ Boundary:
 
 Runbook:
 
-- `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md` now records the guarded
-  enablement order and rollback: seed Vault properties, update ESO mapping,
-  verify Secret keys by name only, flip direct-STT on, deploy/sync, then run
-  #182 smoke.
+- `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md` now records the two-gate
+  guarded path: seed + ESO mapping -> metadata-only mTLS enablement preflight
+  PASS while direct-STT is still disabled -> flag flip -> metadata-only e2e
+  verifier PASS after `/transcribe` result-stream evidence.
 
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 

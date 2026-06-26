@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Tests for direct-STT mTLS enablement preflight evidence verifier."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = REPO_ROOT / "scripts" / "faz24" / "verify_direct_stt_mtls_enablement_preflight.py"
+
+
+def valid_preflight() -> dict:
+    return {
+        "schemaVersion": "faz24.directSttMtlsEnablementPreflight.v1",
+        "status": "pass",
+        "issue": "platform-ai#182",
+        "generatedAt": "2026-06-26T20:00:00Z",
+        "failures": [],
+        "source": {
+            "gitopsCommit": "8c86093250f8353a86991667a8066f08ce586178",
+            "backendImageDigest": "abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0",
+        },
+        "environment": {
+            "cluster": "k3d-test",
+            "namespace": "platform-test",
+            "deployment": "audio-gateway",
+            "podName": "audio-gateway-769cc7745c-46st4",
+            "podReady": True,
+        },
+        "desiredState": {
+            "directSttEnabled": False,
+            "transcribeHost": "live-stt.denetim",
+            "transcribePort": 8243,
+            "hostAliasIp": "10.99.0.2",
+            "networkPolicyCidr": "10.99.0.2/32",
+            "networkPolicyPort": 8243,
+            "mtlsMountPath": "/etc/direct-stt-mtls",
+            "mtlsMountPresent": True,
+        },
+        "externalSecret": {
+            "name": "audio-gateway-secrets",
+            "ready": True,
+            "secretStore": "vault-platform-gitops",
+            "vaultPath": "kv/platform/audio-gateway-service",
+            "mappedVaultProperties": [
+                "redis_password",
+                "direct_stt_ca_crt",
+                "direct_stt_client_crt",
+                "direct_stt_client_key",
+            ],
+            "targetSecretKeys": [
+                "SPRING_DATA_REDIS_PASSWORD",
+                "direct-stt-ca.crt",
+                "direct-stt-client.crt",
+                "direct-stt-client.key",
+            ],
+            "secretValueIncluded": False,
+        },
+        "runtimeSecret": {
+            "name": "audio-gateway-secrets",
+            "keyNames": [
+                "SPRING_DATA_REDIS_PASSWORD",
+                "direct-stt-ca.crt",
+                "direct-stt-client.crt",
+                "direct-stt-client.key",
+            ],
+            "secretValueIncluded": False,
+            "fileLikeKeysNotExportedAsEnv": True,
+        },
+        "mtlsProbe": {
+            "fromRealPod": True,
+            "host": "live-stt.denetim",
+            "port": 8243,
+            "clientCertificateUsed": True,
+            "healthHttpStatus": 200,
+            "totalMs": 412,
+            "secretValueIncluded": False,
+        },
+        "boundaries": {
+            "vaultSeedAuthorityAccepted": True,
+            "secretValuesIncluded": False,
+            "directSttEnabled": False,
+            "rawAudioSent": False,
+            "transcribeCalled": False,
+            "directAudioE2eProven": False,
+            "i7ProdGateProven": False,
+            "desktopMicLoopbackProven": False,
+            "productionReady": False,
+        },
+    }
+
+
+class DirectSttMtlsEnablementPreflightVerifierTest(unittest.TestCase):
+    def run_validator(self, data: dict) -> subprocess.CompletedProcess[str]:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8") as tmp:
+            json.dump(data, tmp)
+            tmp.flush()
+            return subprocess.run(
+                [sys.executable, str(SCRIPT), tmp.name],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+    def test_valid_preflight_passes(self):
+        result = self.run_validator(valid_preflight())
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Faz 24 direct-STT mTLS enablement preflight: PASS", result.stdout)
+
+    def test_direct_stt_must_remain_disabled_before_flip(self):
+        data = valid_preflight()
+        data["desiredState"]["directSttEnabled"] = True
+        data["boundaries"]["directSttEnabled"] = True
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("desired_direct_stt_disabled", result.stdout)
+        self.assertIn("boundary_directSttEnabled", result.stdout)
+
+    def test_missing_runtime_key_fails(self):
+        data = valid_preflight()
+        data["runtimeSecret"]["keyNames"].remove("direct-stt-client.key")
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("runtime_secret_keys", result.stdout)
+
+    def test_missing_external_secret_property_fails(self):
+        data = valid_preflight()
+        data["externalSecret"]["mappedVaultProperties"].remove("direct_stt_client_key")
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("external_secret_properties", result.stdout)
+
+    def test_mtls_probe_must_use_real_pod(self):
+        data = valid_preflight()
+        data["mtlsProbe"]["fromRealPod"] = False
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("mtls_probe_real_pod", result.stdout)
+
+    def test_secret_material_is_rejected(self):
+        data = valid_preflight()
+        data["runtimeSecret"]["client_key_pem"] = "-----BEGIN PRIVATE KEY-----\nredacted\n-----END PRIVATE KEY-----"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no_sensitive_content", result.stdout)
+
+    def test_destination_url_key_is_rejected(self):
+        data = valid_preflight()
+        data["mtlsProbe"]["destination_url"] = "https://live-stt.denetim:8243/health"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no_sensitive_content", result.stdout)
+
+    def test_audio_transcribe_overclaim_fails(self):
+        data = valid_preflight()
+        data["boundaries"]["rawAudioSent"] = True
+        data["boundaries"]["transcribeCalled"] = True
+        data["boundaries"]["directAudioE2eProven"] = True
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("boundary_rawAudioSent", result.stdout)
+        self.assertIn("boundary_transcribeCalled", result.stdout)
+        self.assertIn("boundary_directAudioE2eProven", result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
