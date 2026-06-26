@@ -1,5 +1,61 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 #188 audit gate closed; #182 waits on two review-ready fixes (2026-06-26)
+
+`platform-ai#188` is now deliberately closed and Project #4 status is `Done`
+for the narrow KVKK compute-plane audit gate that blocked direct-STT activation.
+
+Accepted live evidence:
+
+- Transient direct-STT smoke in `k3d-test/platform-test` reached the gateway
+  lifecycle: consent `201`, session start `201`, chunk `200`, finish `200`.
+- Redis `audit:events` contained `CHUNK_FORWARDED_TO_COMPUTE_PLANE` for the
+  same session/chunk/correlation before raw-audio compute-plane transit:
+  session `SES-31a15790-57eb-4cbe-b923-954c8f6578ac`, meeting
+  `ce3982b6-0a85-4b56-aecf-de3234af8224`, chunkSeq `0`, correlation
+  `faz24-direct-stt-188-20260626T105433Z`, computePlane `live-stt`.
+- The metadata-only verifier reported
+  `faz24.computePlaneAuditVerifier.v1 status=pass`, `tokenIncluded=false`,
+  and `failures=0`.
+- Evidence excluded bearer/JWT material, idempotency keys, raw audio bytes,
+  destination URL, and transcript text.
+
+Issue and board state:
+
+- `platform-ai#188` is closed with acceptance boundary:
+  https://github.com/Halildeu/platform-ai/issues/188
+- Project #4 item for `platform-ai#188` is `Done`.
+- `platform-ai#182` remains `Open` / `In Progress`.
+- `platform-ai#198` remains `Open` / `In Progress`: the immediate
+  `live-stt-preflight` path passed after the operator ESET/endpoint allow-log
+  update, but the fuller I7 prod-gate still needs meeting-ai 8343, Vault PKI
+  rotation, request audit, plaintext-bypass closure, failure drill, and
+  reviewer/operator acceptance.
+
+Current `platform-ai#182` blockers are now source/runtime fixes and redeploy,
+not the #188 audit gate:
+
+- `platform-backend#768` is ready for review with all GitHub checks green. It
+  fixes the direct-STT multipart audio part to derive `Content-Type` and
+  filename from `AudioFormat` instead of sending `application/octet-stream` /
+  `chunk.bin`, which live-stt rejected during the live #182 attempt.
+- `platform-ai#226` is ready for review with all GitHub checks green. It sets
+  the GPU-host live-stt cold-load request budget to
+  `STT_REQUEST_TIMEOUT=180` and extends `update.ps1` warmup curl to
+  `--max-time 240`, addressing the observed
+  `504 / WorkerTimeoutError` path when `audio/wav` reached live-stt.
+- A real Claude CLI adversarial review was attempted for both PRs but failed
+  with local Claude auth `401`; no cross-AI review is claimed for these two
+  PRs yet.
+
+Boundary:
+
+- This is not #182 e2e acceptance and not production readiness.
+- Next required sequence for #182: review/merge/deploy both PRs, update/restart
+  the Denetim GPU host, then rerun the live direct-STT e2e and prove live-stt
+  HTTP `200`, `DIRECT_STT_TRANSCRIPT_RESULT` on the result stream,
+  same-session audit correlation, and no raw-audio persistence.
+
 ## Live Delta — Faz 24 #191 Denetim deploy mirror drift-proofed; #198 remains open (2026-06-26)
 
 `platform-ai#191` is now closed for the Denetim PC deploy-clone drift/update
