@@ -44,7 +44,7 @@ mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approve
 real pilot G-INT evidence, explicit thresholds, and reviewer/operator acceptance
 remain open.
 
-## Live Delta — Faz 24 #156 DB retention runtime smoke passed in test; VERBIS/MinIO/legal gates remain open (2026-06-26)
+## Live Delta — Faz 24 #156 DB retention runtime smoke passed in test; MinIO runtime evidence gate tightened (2026-06-26)
 
 `platform-ai#156` moved past a source-only DB cleanup claim for the deployed
 meeting/transcript services in `k3d-test` / `platform-test`. This is still not a
@@ -98,13 +98,31 @@ Observed cleanup:
 Evidence note:
 `docs/faz-24-evidence/2026-06-26-retention-runtime-smoke.md`.
 
+`platform-ai#211` then tightened the source-side #156 retention readiness gate:
+
+- merge commit `b349cba04c8523a4f3325a12d01ae24eabb5da98`;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- current snapshot now treats the DB cleanup smoke layers as active but keeps
+  `status=blocked`, `findingCount=0`, `blockerCount=4`;
+- the remaining machine-readable blockers are VERBIS plus three MinIO runtime
+  lifecycle export blockers;
+- active MinIO evidence can no longer be accepted from
+  `deploy/minio/setup-lifecycle.sh` or issue-comment/source evidence alone;
+  each bucket must carry metadata-only runtime lifecycle export evidence
+  (`bucket_name`, observed expiration days, `Enabled` rule status, runtime
+  environment, lifecycle export ref, runtime evidence ref, and
+  `evidence_payload=metadata-only`);
+- `db.kvkk-access-log` retention timestamp is pinned to `accessed_at`, matching
+  transcript-service V1 access-event timestamp semantics.
+
 Boundary: this proves only bounded test runtime behavior for the deployed DB
-cleanup jobs and metadata-only destruction audit writes. #156 remains open until
-VERBIS status is recorded or exempt-confirmed, MinIO lifecycle runtime evidence
-for configured retention buckets is attached, and owner/legal acceptance is
-recorded. This does not prove direct-STT, app-mTLS, raw-audio governance,
-G-WER/DER, G-INT, desktop mic/loopback, production cleanup, or production
-readiness.
+cleanup jobs and source-side fake-closure prevention for MinIO lifecycle
+evidence. #156 remains open until VERBIS status is recorded or exempt-confirmed,
+MinIO lifecycle runtime evidence for configured retention buckets is attached,
+and owner/legal acceptance is recorded. This does not prove direct-STT,
+app-mTLS, raw-audio governance, G-WER/DER, G-INT, desktop mic/loopback,
+production cleanup, or production readiness.
 
 ## Live Delta — Faz 24 audio-gateway JWT enforce evidence path packaged; runtime flip remains open (2026-06-26)
 
@@ -283,11 +301,13 @@ GitOps also advanced several product-quality and compliance guardrails on
   and blocks raw transcript/prompt/response/citation/PII-shaped values from
   acceptance evidence.
 - `platform-ai#201` merged the #156 retention-readiness gate at
-  `3549c284ba0afbdf33f02a8c234ddaa6750db869`. `scripts/retention_gate.py`
-  makes the current state machine-readable: MinIO lifecycle evidence exists,
-  but the gate intentionally returns `status=blocked` until VERBIS is recorded
-  or exempt-confirmed and DB cleanup evidence exists for transcript records,
-  meeting intelligence, and KVKK access logs.
+  `3549c284ba0afbdf33f02a8c234ddaa6750db869`; `platform-ai#211` later tightened
+  it at `b349cba04c8523a4f3325a12d01ae24eabb5da98`. `scripts/retention_gate.py`
+  now makes the current state machine-readable without accepting source-only
+  MinIO evidence: DB cleanup smoke layers are active in the snapshot, while the
+  gate intentionally returns `status=blocked` until VERBIS is recorded or
+  exempt-confirmed and runtime MinIO lifecycle export evidence exists for the
+  configured buckets.
 - `platform-ai#202` merged Redis consumer wording/runtime cleanup at
   `74d55b63a60bd9075fbf303fd0856ed7abfa15c5`. The default handler is now
   `CoordinationChunkHandler`, preserving the control-plane-only contract:
