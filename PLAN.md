@@ -108,6 +108,17 @@ claim. Boundary remains explicit: this is G-INT source hardening only; it does
 not provide real pilot G-INT evidence, enable a cloud LLM/API, mutate runtime,
 process raw audio, satisfy #198/#188/#182, or change production readiness.
 
+**Faz 24 #162 summary exposure guard delta (2026-06-26)**: `platform-ai#213`
+merged source-side meeting-ai summary hardening. `AnalyzeResponse` is now
+`schema_version=3-adr0043`; summary prose is filtered through the transcript-span
+citation guard before user exposure, unsupported summary prose is withheld into
+`rejected_claims[].kind=summary`, fully withheld summaries return an empty data
+string with `summary_grounding_status=withheld`, and `ungrounded_count` remains
+scoped to decision/action rejection count. Boundary remains explicit: this is
+G-INT hallucination-exposure hardening only; it does not provide real pilot G-INT
+evidence, enable a cloud LLM/API, mutate runtime, process raw audio, satisfy
+#198/#188/#182, or change production readiness.
+
 **Faz 24 #161 diarization decision-gate delta (2026-06-26)**:
 `platform-ai#210` merged source-side diarization backend decision gating:
 metadata-only candidate rows can select a backend only with explicit DER, RTF,

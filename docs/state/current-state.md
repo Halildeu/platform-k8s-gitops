@@ -38,6 +38,21 @@
 - PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
   `live-stt-service`, and `meeting-ai-service`.
 
+`platform-ai#213` merged meeting summary exposure guard:
+
+- merge commit `4648bd5de5e6222b4f35e916ac0bad4ad81dad23`;
+- `AnalyzeResponse.schema_version` moved to `3-adr0043`;
+- summary prose is filtered through the same transcript-span citation guard before
+  user exposure;
+- only grounded summary sentences remain in `summary`;
+- unsupported summary prose is withheld into `rejected_claims[].kind=summary`;
+- fully withheld summaries return an empty data string with
+  `summary_grounding_status=withheld`;
+- `ungrounded_count` preserves the decision/action rejection count and excludes
+  summary-only rejections;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`.
+
 Boundary: this is source-side meeting-ai hardening only. It does not process a
 real pilot transcript/audio sample, does not enable a cloud LLM/API, does not
 mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approved
@@ -312,6 +327,12 @@ GitOps also advanced several product-quality and compliance guardrails on
   rows, real backend evidence, complete metadata hashes, explicit thresholds,
   and blocks raw transcript/prompt/response/citation/PII-shaped values from
   acceptance evidence.
+- `platform-ai#213` merged meeting-ai summary exposure hardening at
+  `4648bd5de5e6222b4f35e916ac0bad4ad81dad23`. `AnalyzeResponse` v3 now keeps
+  only citation-guarded summary sentences in `summary`, moves unsupported summary
+  prose to `rejected_claims[].kind=summary`, and keeps `ungrounded_count` scoped
+  to decision/action rejections. This is source-side G-INT exposure hardening, not
+  pilot acceptance evidence.
 - `platform-ai#201` merged the #156 retention-readiness gate at
   `3549c284ba0afbdf33f02a8c234ddaa6750db869`; `platform-ai#211` later tightened
   it at `b349cba04c8523a4f3325a12d01ae24eabb5da98`; `platform-ai#212` then
