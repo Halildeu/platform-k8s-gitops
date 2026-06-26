@@ -37,12 +37,22 @@ spec:
     spec:
       automountServiceAccountToken: false
       serviceAccountName: audio-gateway
+      # Test overlay direct-STT target: keep TLS SNI/Host as live-stt.denetim
+      # while routing over WireGuard to Denetim. NetworkPolicy separately
+      # constrains egress to 10.99.0.2/32:8243.
+      hostAliases:
+        - ip: "10.99.0.2"
+          hostnames:
+            - "live-stt.denetim"
       securityContext:
         runAsNonRoot: true
         # Dockerfile USER 1000 (app) — endpoint-admin'deki 65532 distroless
         # uid'inden farklı; image'daki gerçek uid ile eşleşir
         runAsUser: 1000
         runAsGroup: 1000
+        # direct-STT mTLS Secret files are mounted defaultMode 0440; fsGroup
+        # lets the non-root app user read them without making keys world-readable.
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -106,8 +116,20 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: direct-stt-mtls
+              mountPath: /etc/direct-stt-mtls
+              readOnly: true
       imagePullSecrets:
         - name: ghcr-pull
       volumes:
         - name: tmp
           emptyDir: {}
+        # Same Secret as envFrom. Future direct-STT mTLS entries intentionally
+        # use file-like key names (`direct-stt-*.crt/key`) so envFrom does not
+        # export PEM material as environment variables; the volume exposes them
+        # as files for the WebClient. Direct-STT remains disabled until those
+        # keys are seeded and AUDIO_GATEWAY_DIRECT_STT_ENABLED flips true.
+        - name: direct-stt-mtls
+          secret:
+            secretName: audio-gateway-secrets
+            defaultMode: 0440
