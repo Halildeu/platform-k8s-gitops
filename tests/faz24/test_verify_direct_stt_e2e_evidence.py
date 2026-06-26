@@ -20,6 +20,7 @@ def valid_e2e() -> dict:
         "schemaVersion": "faz24.directSttE2eEvidence.v1",
         "status": "pass",
         "issue": "platform-ai#182",
+        "tokenIncluded": False,
         "generatedAt": "2026-06-26T20:30:00Z",
         "failures": [],
         "source": {
@@ -32,6 +33,7 @@ def valid_e2e() -> dict:
             "namespace": "platform-test",
             "deployment": "audio-gateway",
             "podName": "audio-gateway-769cc7745c-46st4",
+            "podReady": True,
         },
         "runtime": {
             "directSttEnabled": True,
@@ -50,6 +52,8 @@ def valid_e2e() -> dict:
         },
         "mtlsProbe": {
             "fromRealPod": True,
+            "host": "live-stt.denetim",
+            "port": 8243,
             "clientCertificateUsed": True,
             "healthHttpStatus": 200,
             "totalMs": 423,
@@ -92,6 +96,7 @@ def valid_e2e() -> dict:
             "directAudioE2eProven": True,
             "directSttTranscriptProven": True,
             "computePlaneAuditProven": True,
+            "directClientToStt": False,
             "rawAudioIncluded": False,
             "rawTranscriptIncluded": False,
             "i7ProdGateProven": False,
@@ -128,6 +133,15 @@ class DirectSttE2eEvidenceVerifierTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("environment_kubectl_context", result.stdout)
 
+    def test_pod_ready_required(self):
+        data = valid_e2e()
+        data["environment"]["podReady"] = False
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("environment_pod_ready", result.stdout)
+
     def test_shared_mtls_secret_name_fails(self):
         data = valid_e2e()
         data["runtime"]["mtlsSecretName"] = "audio-gateway-secrets"
@@ -136,6 +150,62 @@ class DirectSttE2eEvidenceVerifierTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("runtime_mtls_secret_name", result.stdout)
+
+    def test_mtls_probe_host_port_are_bound_to_live_stt(self):
+        data = valid_e2e()
+        data["mtlsProbe"]["host"] = "localhost"
+        data["mtlsProbe"]["port"] = 8200
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("mtls_probe_host", result.stdout)
+        self.assertIn("mtls_probe_port", result.stdout)
+
+    def test_direct_client_to_stt_overclaim_fails(self):
+        data = valid_e2e()
+        data["boundaries"]["directClientToStt"] = True
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("boundary_directClientToStt", result.stdout)
+
+    def test_camelcase_sensitive_key_is_rejected(self):
+        data = valid_e2e()
+        data["flow"]["transcriptText"] = "raw transcript must never be attached"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no_sensitive_content", result.stdout)
+
+    def test_url_like_value_is_rejected_even_under_safe_key(self):
+        data = valid_e2e()
+        data["mtlsProbe"]["healthTarget"] = "https://live-stt.denetim:8243/health"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no_sensitive_content", result.stdout)
+
+    def test_data_audio_value_is_rejected(self):
+        data = valid_e2e()
+        data["flow"]["samplePreview"] = "data:audio/wav;base64,QUJDRA=="
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no_sensitive_content", result.stdout)
+
+    def test_token_included_flag_must_be_false(self):
+        data = valid_e2e()
+        data["tokenIncluded"] = True
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("token_not_included", result.stdout)
 
 
 if __name__ == "__main__":

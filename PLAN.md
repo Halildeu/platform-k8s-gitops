@@ -75,6 +75,18 @@ A live fail-closed collector run before seed confirms the current #182 blocker
 remains missing dedicated ESO/runtime Secret key evidence for the three
 direct-STT files.
 
+**Faz 24 direct-STT verifier hardening delta (2026-06-27)**:
+`verify_direct_stt_mtls_enablement_preflight.py` and
+`verify_direct_stt_e2e_evidence.py` now share the same stricter metadata-only
+redaction discipline: camelCase sensitive-key variants, URL-like values,
+base64 audio data URIs, PEM/token/raw-output/audio/transcript payloads are
+rejected. The e2e verifier additionally requires `tokenIncluded=false`, a Ready
+real `audio-gateway` pod, explicit mTLS probe host/port
+`live-stt.denetim:8243`, and `directClientToStt=false`. This is source-side
+false-acceptance hardening only; #182 still requires approved seed, preflight
+PASS, flag flip, fresh `/transcribe` result-stream evidence, same-session audit
+correlation, and no raw-audio persistence proof.
+
 **Faz 24 KVKK engineering/legal separation delta (2026-06-27)**:
 `ADR-0030` now binds KVKK/VERBIS/hukuk owner acceptance as a parallel
 owner/legal track, not a Faz 24 engineering completion blocker after owner

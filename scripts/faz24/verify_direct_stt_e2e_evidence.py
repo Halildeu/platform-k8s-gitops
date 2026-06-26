@@ -56,10 +56,13 @@ UUID_RE = re.compile(
 )
 REDIS_ID_RE = re.compile(r"^\d+-\d+$")
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:@/-]{1,160}$")
+CAMEL_BOUNDARY_1_RE = re.compile(r"(.)([A-Z][a-z]+)")
+CAMEL_BOUNDARY_2_RE = re.compile(r"([a-z0-9])([A-Z])")
 
 FORBIDDEN_KEY_NAMES = {
     "access_token",
     "api_key",
+    "auth_token",
     "audio",
     "audio_base64",
     "audio_bytes",
@@ -67,15 +70,21 @@ FORBIDDEN_KEY_NAMES = {
     "audiobytes",
     "authorization",
     "bearer",
+    "callback_endpoint",
+    "callback_url",
     "cert_pem",
     "certificate",
     "certificate_pem",
     "client_secret",
+    "credential",
     "command_line",
     "command_output",
     "cookie",
+    "destination_endpoint",
     "destination_url",
+    "endpoint_url",
     "idempotency_key",
+    "internal_url",
     "jwt",
     "key_pem",
     "packet_capture",
@@ -85,19 +94,29 @@ FORBIDDEN_KEY_NAMES = {
     "private_key",
     "private_key_pem",
     "raw_audio",
+    "raw_audio_bytes",
     "raw_command_output",
     "raw_output",
+    "raw_request",
+    "raw_response",
     "refresh_token",
     "segments",
     "secret",
     "secret_id",
+    "session_token",
+    "stt_endpoint",
+    "stt_url",
     "text",
     "token",
+    "transcribe_endpoint",
     "transcribe_url",
     "transcript",
     "transcript_text",
     "url",
+    "webhook_url",
+    "whisper_url",
 }
+FORBIDDEN_KEY_NAMES_COMPACT = {name.replace("_", "") for name in FORBIDDEN_KEY_NAMES}
 
 SECRET_VALUE_PATTERNS = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
@@ -109,12 +128,15 @@ SECRET_VALUE_PATTERNS = [
     re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"\b(?:https?|wss?)://[^\s\"']+", re.IGNORECASE),
+    re.compile(r"data:audio/[A-Za-z0-9.+-]+;base64,", re.IGNORECASE),
 ]
 
 BOUNDARY_EXPECTATIONS = {
     "directAudioE2eProven": True,
     "directSttTranscriptProven": True,
     "computePlaneAuditProven": True,
+    "directClientToStt": False,
     "rawAudioIncluded": False,
     "rawTranscriptIncluded": False,
     "i7ProdGateProven": False,
@@ -140,7 +162,10 @@ def utc_now() -> str:
 
 
 def normalized_key(key: str) -> str:
-    return key.replace("-", "_").replace(".", "_").strip().lower()
+    key = key.replace("-", "_").replace(".", "_").strip()
+    key = CAMEL_BOUNDARY_1_RE.sub(r"\1_\2", key)
+    key = CAMEL_BOUNDARY_2_RE.sub(r"\1_\2", key)
+    return re.sub(r"_+", "_", key).lower()
 
 
 def iter_values(value: Any, path: str = "$") -> Iterable[tuple[str, str | None, Any]]:
@@ -207,13 +232,15 @@ def redis_id(value: Any) -> bool:
 def validate_no_sensitive_content(data: dict[str, Any], checks: list[Check]) -> None:
     findings: list[str] = []
     for path, key, value in iter_values(data):
-        if key is not None and normalized_key(key) in FORBIDDEN_KEY_NAMES:
-            findings.append(f"{path}: forbidden key '{key}'")
-            continue
+        if key is not None:
+            normalized = normalized_key(key)
+            if normalized in FORBIDDEN_KEY_NAMES or normalized.replace("_", "") in FORBIDDEN_KEY_NAMES_COMPACT:
+                findings.append(f"{path}: forbidden key '{key}'")
+                continue
         if isinstance(value, str):
             for pattern in SECRET_VALUE_PATTERNS:
                 if pattern.search(value):
-                    findings.append(f"{path}: secret-like or raw certificate value")
+                    findings.append(f"{path}: secret-like, URL-like, or raw audio/certificate value")
                     break
 
     add(
@@ -235,6 +262,7 @@ def validate_top_level(data: dict[str, Any], checks: list[Check]) -> None:
     )
     add(checks, "status_pass", data.get("status") == "pass", "status must be pass")
     add(checks, "issue", data.get("issue") == EXPECTED_ISSUE, f"issue must be {EXPECTED_ISSUE}")
+    add(checks, "token_not_included", data.get("tokenIncluded") is False, "tokenIncluded must be false")
     add(
         checks,
         "generated_at",
@@ -274,6 +302,7 @@ def validate_environment(data: dict[str, Any], checks: list[Check]) -> None:
     add(checks, "environment_namespace", env.get("namespace") == EXPECTED_NAMESPACE, f"namespace must be {EXPECTED_NAMESPACE}")
     add(checks, "environment_deployment", env.get("deployment") == EXPECTED_DEPLOYMENT, f"deployment must be {EXPECTED_DEPLOYMENT}")
     add(checks, "environment_pod_name", safe_name(env.get("podName")), "podName must be bounded safe metadata")
+    add(checks, "environment_pod_ready", env.get("podReady") is True, "podReady must be true")
 
 
 def validate_runtime(data: dict[str, Any], checks: list[Check]) -> None:
@@ -307,6 +336,8 @@ def validate_mtls_probe(data: dict[str, Any], checks: list[Check]) -> None:
         add(checks, "mtls_probe_shape", False, "mtlsProbe must be an object")
         return
     add(checks, "mtls_probe_real_pod", probe.get("fromRealPod") is True, "mtls probe must run from real audio-gateway pod")
+    add(checks, "mtls_probe_host", probe.get("host") == EXPECTED_TRANSCRIBE_HOST, f"host must be {EXPECTED_TRANSCRIBE_HOST}")
+    add(checks, "mtls_probe_port", as_int(probe.get("port")) == EXPECTED_TRANSCRIBE_PORT, f"port must be {EXPECTED_TRANSCRIBE_PORT}")
     add(checks, "mtls_probe_client_auth", probe.get("clientCertificateUsed") is True, "clientCertificateUsed must be true")
     add(checks, "mtls_probe_health_status", as_int(probe.get("healthHttpStatus")) == 200, "healthHttpStatus must be 200")
     total_ms = as_int(probe.get("totalMs"))

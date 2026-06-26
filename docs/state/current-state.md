@@ -1,5 +1,29 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT verifier hardening packaged (2026-06-27)
+
+The #182 direct-STT evidence gates now have stricter metadata-only false-accept
+guards:
+
+- `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py` rejects
+  camelCase sensitive-key bypasses such as `destinationUrl`, URL-like values,
+  base64 audio data URIs, PEM/token/raw-output/audio/transcript payloads, and
+  packet captures.
+- `scripts/faz24/verify_direct_stt_e2e_evidence.py` applies the same redaction
+  discipline and additionally requires `tokenIncluded=false`, a Ready real
+  `audio-gateway` pod, explicit mTLS probe host/port
+  `live-stt.denetim:8243`, and `directClientToStt=false`.
+- `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md`, `PLAN.md`, and the
+  canonical Faz 24 plan were updated to make those fields part of the #182
+  evidence contract.
+
+Boundary: this is source-side verifier/runbook hardening only. No Vault value
+was read or written, no Kubernetes object was mutated, direct-STT was not
+enabled, `/transcribe` was not run, and no #182 acceptance or production
+readiness is claimed. #182 still requires approved seed, pre-flag mTLS
+preflight PASS, direct-STT flag flip, fresh result-stream evidence,
+same-session audit correlation, and no raw-audio persistence proof.
+
 ## Live Delta — Faz 24 G-CAP desktop verifier input support packaged (2026-06-27)
 
 The G-CAP aggregate capture verifier now accepts both approved capture verifier

@@ -125,7 +125,9 @@ The preflight verifier requires:
   claimed.
 
 The verifier rejects PEM values, token-like material, raw command output,
-destination URLs, raw audio, transcript text, and packet captures.
+destination URLs, URL-like values, camelCase sensitive-key variants such as
+`destinationUrl`, raw audio, base64 audio data URIs, transcript text, and
+packet captures.
 
 To archive the same preflight evidence through CI:
 
@@ -150,22 +152,27 @@ python3 scripts/faz24/verify_direct_stt_e2e_evidence.py \
 
 The verifier requires:
 
-- real `audio-gateway` pod evidence from `k3d-test/platform-test`;
+- real Ready `audio-gateway` pod evidence from `k3d-test/platform-test`;
 - evidence collected with explicit `kubectl --context k3d-test`, recorded as
   `environment.kubectlContext="k3d-test"`;
+- top-level `tokenIncluded=false`; do not attach access tokens or token-shaped
+  data to the evidence;
 - `AUDIO_GATEWAY_DIRECT_STT_ENABLED=true`;
-- `live-stt.denetim:8243` mTLS health HTTP 200 from the real pod with mounted
-  client certificate material;
+- `live-stt.denetim:8243` mTLS health HTTP 200 from the real pod with explicit
+  `mtlsProbe.host="live-stt.denetim"` and `mtlsProbe.port=8243`, using the
+  mounted client certificate material;
 - same session/chunk/correlation for lifecycle HTTP statuses,
   `/transcribe` HTTP 200, `transcript:direct-stt-results`, and
   `CHUNK_FORWARDED_TO_COMPUTE_PLANE`;
 - Redis/audio persistence boundary flags proving metadata-only chunk state and
   no raw audio/transcript in Redis, result stream, logs, or the evidence file;
-- explicit boundary flags showing #198 full I7, desktop mic/loopback, and
-  production readiness are still separate gates.
+- explicit boundary flags showing direct client-to-STT is false, and #198 full
+  I7, desktop mic/loopback, and production readiness are still separate gates.
 
 The verifier rejects PEM values, tokens, raw command output, destination URLs,
-raw audio, raw transcript text, transcript segments, and raw packet captures.
+URL-like values, camelCase sensitive-key variants such as `transcriptText` or
+`destinationUrl`, raw audio, base64 audio data URIs, raw transcript text,
+transcript segments, and raw packet captures.
 Only key names, hashes, IDs, HTTP statuses, and bounded timing metadata belong
 in the JSON. The verifier intentionally rejects evidence unless it still shows
 `live-stt.denetim -> 10.99.0.2`; if the Denetim WireGuard address changes,
