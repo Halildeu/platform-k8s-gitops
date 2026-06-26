@@ -118,7 +118,11 @@ completion_line="$(first_line 'F22_6_COMPLETION=')"
 next_required="$(line_value 'F22_6_NEXT_REQUIRED=')"
 remote_bridge_line="$(first_line 'REMOTE_BRIDGE_LIVE=')"
 b1_line="$(first_line 'GATE_B1_4_HARDWARE_ATTESTATION=')"
-view_line="$(first_line 'GATE_VIEW_ONLY_SCREEN_SHARE=')"
+# ADR-0044: the fail-closed VIEW_ONLY gate is the ENGINEERING gate. The KVKK gate
+# is tracked but non-blocking (surfaced for visibility; not an actionable blocker
+# unless it is an allowlist_violation).
+view_line="$(first_line 'GATE_VIEW_ONLY_ENGINEERING=')"
+kvkk_line="$(first_line 'GATE_VIEW_ONLY_KVKK=')"
 release_line="$(first_line 'F22_6_RELEASE_LINEAGE=')"
 release_gate_line="$(first_line 'RELEASE_LINEAGE_GATE=')"
 release_waiver_line="$(first_line 'RELEASE_LINEAGE_WAIVER=')"
@@ -156,7 +160,7 @@ b1_hardware_cmd='scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh --m
 # shellcheck disable=SC2016
 b1_risk_cmd='scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh --mode risk --marker-out "$MARKER_DIR/b1-4-risk-marker.txt" --owner-approved-by "$OWNER_APPROVED_BY" --approved-at "$APPROVED_AT" --expires-at "$EXPIRES_AT"'
 # shellcheck disable=SC2016
-view_cmd='scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh --manifest-out "$MARKER_DIR/view-only-evidence.json" --marker-out "$MARKER_DIR/view-only-marker.txt" --evidence-url "$VIEW_ONLY_EVIDENCE_URL" --pilot-device "$PILOT_DEVICE" --session-id "$VIEW_ONLY_SESSION_ID" --recording-worm pass --d10-fail-closed pass --dlp-mask-policy pass --local-abort pass --active-indicator pass --viewer-path-decision "$VIEWER_PATH_DECISION" --kvkk-attended-pilot-signoff pass --owner-approved-by "$OWNER_APPROVED_BY" --approved-at "$APPROVED_AT" --expires-at "$EXPIRES_AT"'
+view_cmd='scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh --manifest-out "$MARKER_DIR/view-only-evidence.json" --marker-out "$MARKER_DIR/view-only-marker.txt" --evidence-url "$VIEW_ONLY_EVIDENCE_URL" --pilot-device "$PILOT_DEVICE" --session-id "$VIEW_ONLY_SESSION_ID" --recording-mode disabled --d10-fail-closed pass --dlp-mask-policy pass --local-abort pass --active-indicator pass --viewer-path-decision "$VIEWER_PATH_DECISION" --owner-approved-by "$OWNER_APPROVED_BY" --approved-at "$APPROVED_AT" --expires-at "$EXPIRES_AT"'
 # shellcheck disable=SC2016
 release_cmd="scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh --marker-out \"\$MARKER_DIR/release-lineage-waiver-marker.txt\" --release-tag $EXPECTED_AGENT_TAG --artifact-host-digest $EXPECTED_ARTIFACT_HOST_DIGEST --owner-approved-by \"\$OWNER_APPROVED_BY\" --approved-at \"\$APPROVED_AT\" --expires-at \"\$EXPIRES_AT\""
 
@@ -289,7 +293,8 @@ GitHub, Kubernetes, releases, endpoints, or secrets, and it does not claim Faz
 \`\`\`text
 ${remote_bridge_line:-REMOTE_BRIDGE_LIVE=missing}
 ${b1_line:-GATE_B1_4_HARDWARE_ATTESTATION=missing}
-${view_line:-GATE_VIEW_ONLY_SCREEN_SHARE=missing}
+${view_line:-GATE_VIEW_ONLY_ENGINEERING=missing}
+${kvkk_line:-GATE_VIEW_ONLY_KVKK=missing}
 ${release_gate_line:-RELEASE_LINEAGE_GATE=missing}
 ${release_line:-F22_6_RELEASE_LINEAGE=missing}
 ${release_waiver_line:-RELEASE_LINEAGE_WAIVER=missing}

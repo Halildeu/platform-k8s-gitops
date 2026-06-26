@@ -9,6 +9,7 @@ on:
       - 'scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh'
   push:
     branches:
       - main
@@ -44,7 +45,8 @@ jobs:
             scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
             scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh \
             tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh \
-            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh \
+            tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh
 
       - name: Run VIEW_ONLY evidence verifier regression test
         run: |
@@ -57,3 +59,9 @@ jobs:
           set -euo pipefail
           TMPDIR="$RUNNER_TEMP" \
             tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh
+
+      - name: Run VIEW_ONLY split-gate (engineering vs KVKK) regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh

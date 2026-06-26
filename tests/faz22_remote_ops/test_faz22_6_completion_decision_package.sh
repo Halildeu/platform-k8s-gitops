@@ -31,14 +31,15 @@ cat >"$audit_file" <<'EOF'
 F22_6_AUDIT_SCOPE=remote-ops-autonomous-completion
 GATE_22_6_1_OPERATION_CATALOG=pass state=CLOSED issue=Halildeu/platform-backend#701
 GATE_B1_4_HARDWARE_ATTESTATION=blocked state=OPEN expected=CLOSED-or-bounded-risk-accepted issue=Halildeu/platform-backend#548 reason=missing-acceptance-marker
-GATE_VIEW_ONLY_SCREEN_SHARE=blocked state=OPEN expected=CLOSED-with-view-only-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
+GATE_VIEW_ONLY_ENGINEERING=blocked state=OPEN expected=CLOSED-with-view-only-engineering-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
+GATE_VIEW_ONLY_KVKK=tracked_pending issue=Halildeu/platform-k8s-gitops#1580 reason=no-kvkk-marker
 REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b
 RELEASE_LINEAGE_WAIVER=blocked ref=Halildeu/platform-k8s-gitops#1901 reason=marker,scope,release_tag,artifact_host_digest,owner_approved_by,accepted_findings:GITHUB_RELEASE_IMMUTABLE,accepted_findings:GITHUB_RELEASE_DENSE_TRAIN,forbidden_claims:5-device,forbidden_claims:50-device,forbidden_claims:800-device,forbidden_claims:production,forbidden_claims:broad-rollout,approved_at,expires_at
 F22_6_RELEASE_LINEAGE=needs_hygiene
 RELEASE_LINEAGE_GATE=blocked mode=local-kubectl status=needs_hygiene
 AGENT_RELEASE_TRAIN=needs_hygiene
 F22_6_COMPLETION=blocked
-F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required,release-lineage-audit-pass-required
+F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required,release-lineage-audit-pass-required
 EOF
 
 output="$(
@@ -78,6 +79,8 @@ jq -e '
 grep -q '^# Faz 22.6 Completion Decision Package' "$markdown"
 grep -q 'Halildeu/platform-backend#548' "$markdown"
 grep -q 'Halildeu/platform-k8s-gitops#1580' "$markdown"
+grep -q 'GATE_VIEW_ONLY_ENGINEERING=blocked' "$markdown"
+grep -q 'GATE_VIEW_ONLY_KVKK=tracked_pending' "$markdown"
 grep -q 'Halildeu/platform-k8s-gitops#1901' "$markdown"
 grep -q 'does not approve risk' "$markdown"
 grep -q 'faz22-6-b1-4-acceptance-package.sh --mode risk' "$markdown"
@@ -89,13 +92,14 @@ mixed_out_dir="$tmp_dir/mixed-out"
 cat >"$mixed_audit" <<'EOF'
 REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b
 GATE_B1_4_HARDWARE_ATTESTATION=blocked state=OPEN expected=CLOSED-or-bounded-risk-accepted issue=Halildeu/platform-backend#548 reason=missing-acceptance-marker
-GATE_VIEW_ONLY_SCREEN_SHARE=blocked state=OPEN expected=CLOSED-with-view-only-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
+GATE_VIEW_ONLY_ENGINEERING=blocked state=OPEN expected=CLOSED-with-view-only-engineering-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
+GATE_VIEW_ONLY_KVKK=tracked_pending issue=Halildeu/platform-k8s-gitops#1580 reason=no-kvkk-marker
 RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene
 F22_6_RELEASE_LINEAGE=pass
 RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass
 AGENT_RELEASE_TRAIN=pass
 F22_6_COMPLETION=blocked
-F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required
+F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required
 EOF
 
 "$GENERATOR" \
@@ -158,7 +162,8 @@ pass_out_dir="$tmp_dir/pass-out"
 cat >"$pass_audit" <<'EOF'
 REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b
 GATE_B1_4_HARDWARE_ATTESTATION=bounded_pilot_risk_accepted state=OPEN issue=Halildeu/platform-backend#548 owner=example expires_at=2026-07-23
-GATE_VIEW_ONLY_SCREEN_SHARE=pass state=CLOSED issue=Halildeu/platform-k8s-gitops#1580 evidence_package_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+GATE_VIEW_ONLY_ENGINEERING=pass state=CLOSED issue=Halildeu/platform-k8s-gitops#1580 evidence_package_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+GATE_VIEW_ONLY_KVKK=cleared issue=Halildeu/platform-k8s-gitops#1580 owner=DPO Example approved_at=2026-06-23 expires_at=2026-07-23
 RELEASE_LINEAGE_WAIVER=bounded_pilot_pass ref=Halildeu/platform-k8s-gitops#1901 owner=example expires_at=2026-07-23
 F22_6_RELEASE_LINEAGE=bounded_pilot_pass
 RELEASE_LINEAGE_GATE=bounded_pilot_pass mode=local-kubectl status=bounded_pilot_pass

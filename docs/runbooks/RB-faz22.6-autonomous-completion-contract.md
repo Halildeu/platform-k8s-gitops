@@ -68,7 +68,8 @@ evidence.
 | 22.6.3 Constrained executor | Accepted AgentPC2 full matrix evidence | `platform-agent#208` |
 | Broker live state | Dedicated remote-bridge deployment ready on immutable digest; ExternalSecrets Ready/SecretSynced | `docs/state/current-state.md` plus live `kubectl`; current expected digest `sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842` |
 | B1.4 hardware attestation | Real device-key/TPM evidence on agent wire, broker verifier pass, root policy, positive and negative field evidence | `platform-backend#548` |
-| VIEW_ONLY screen-share | Product-channel live VIEW_ONLY smoke, D10 recording/fail-closed evidence, DLP/mask policy, local abort, active indicator, KVKK/attended pilot sign-off | `platform-k8s-gitops#1580` |
+| VIEW_ONLY screen-share — ENGINEERING (fail-closed) | Product-channel live VIEW_ONLY smoke, D10 fail-closed evidence, DLP/mask policy, local abort, active indicator, recording-mode-aware controls (`disabled`: no-content-persistence proof; `enabled`: WORM + record-before-fanout + parametric retention) | `platform-k8s-gitops#1580` (`F22_6_VIEW_ONLY_ENGINEERING: v2`) |
+| VIEW_ONLY screen-share — KVKK/legal (NON-BLOCKING, ADR-0044) | Tracked, never fail-closes completion: emitted `tracked_pending\|cleared\|expired`. Allowlist only; mislabeled non-legal field → `allowlist_violation` blocks | `platform-k8s-gitops#1580` (`F22_6_VIEW_ONLY_KVKK: v1`) |
 | Release/version hygiene | Agent release, MSI/ProductVersion/FileVersion, artifact-host current, GitOps expected version, verifier defaults, and acceptance issue evidence agree | release artifacts plus GitOps verifier output |
 | Rollout boundary | 5/50/800 readiness is either explicitly out of scope or proven under separate signed MSI/GPO rollout gates | rollout issues, not `#208` |
 
@@ -161,130 +162,166 @@ create hardware evidence. It only prevents hand-written marker drift after a
 real owner decision exists. It rejects placeholder owners, invalid dates,
 expired risk windows, and `expires_at` on the hardware path.
 
-### 4.2 VIEW_ONLY Screen-Share Acceptance
+### 4.2 VIEW_ONLY Screen-Share Acceptance (ADR-0044 split: ENGINEERING + KVKK)
 
-`platform-k8s-gitops#1580` can pass only through bounded VIEW_ONLY
-product-channel evidence. RDP, credential entry, raw shell, port-forward,
-screen-share without recording, or a UI-only session claim does not satisfy
-this gate.
+`platform-k8s-gitops#1580` is split into two markers ([ADR-0044](../adr/0044-faz22-6-kvkk-nonblocking-parametric-durations.md)):
+
+- **`F22_6_VIEW_ONLY_ENGINEERING: v2`** — the fail-closed completion gate
+  (`GATE_VIEW_ONLY_ENGINEERING`). Bounded VIEW_ONLY product-channel evidence
+  only. RDP, credential entry, raw shell, port-forward, or a UI-only session
+  claim does not satisfy it.
+- **`F22_6_VIEW_ONLY_KVKK: v1`** — a TRACKED, NON-BLOCKING legal/DPO marker
+  (`GATE_VIEW_ONLY_KVKK`). It is emitted every audit run as
+  `tracked_pending | cleared | expired` so the legal obligation stays visible,
+  but it does NOT fail-close `F22_6_COMPLETION`. The KVKK marker is an
+  ALLOWLIST (only legal/DPO/retention keys); a security/product/audit field
+  mislabeled as legal is an `allowlist_violation` and DOES block.
+
+**Legacy fail-safe:** the old bundled `F22_6_VIEW_ONLY_ACCEPTANCE: v1` marker is
+refused — if present, the engineering gate blocks with
+`reason=legacy_bundled_marker_detected`. It never auto-passes the v2 gate.
+
+#### Engineering marker — `recording_mode=disabled` (privacy-safe MVP)
 
 ```text
-F22_6_VIEW_ONLY_ACCEPTANCE: v1
+F22_6_VIEW_ONLY_ENGINEERING: v2
 acceptance_scope: bounded-pilot-view-only
 product_channel: endpoint-agent-outbound-mtls-remote-bridge
 view_mode: VIEW_ONLY
 pilot_device: <device or deviceId>
 session_id: <product session id>
+recording_mode: disabled
+content_persistence: none
+metadata_audit: active
 evidence_package_url: <https URL to canonical JSON evidence manifest>
 evidence_package_sha256: <64 hex SHA256 of jq -cS canonical JSON manifest>
-recording_worm: pass
 d10_fail_closed: pass
 dlp_mask_policy: pass
 local_abort: pass
 active_indicator: pass
 viewer_path_decision: fanout-proven
-audit_negative_matrix: no-auth,wrong-device,expired-session,recording-down,dlp-deny,local-abort
-kvkk_attended_pilot_signoff: pass
+audit_negative_matrix: no-auth,wrong-device,expired-session,dlp-deny,local-abort,no-control-attempt-denied,mtls-authz-enforced,ttl-revoke-kill,frame-flow-proven,audit-metadata-recorded,recording-disabled-no-persistence,metadata-audit-on
 forbidden_claims: rdp,credential-entry,raw-shell,port-forward,5-device,50-device,800-device,production,broad-rollout
 owner_approved_by: <named owner>
 approved_at: YYYY-MM-DD
 expires_at: YYYY-MM-DD
 ```
 
+The full engineering evidence list is **machine-bound** as required
+`audit_negative_matrix` tokens (each must be present, in addition to the
+`d10_fail_closed` / `dlp_mask_policy` / `local_abort` / `active_indicator`
+fields and the HTTPS manifest hash): `no-control-attempt-denied` (no-control
+invariant), `mtls-authz-enforced` (mTLS + authz), `ttl-revoke-kill`
+(session TTL + revoke + kill), `frame-flow-proven` (non-inert DataPlaneHandler
+streamed VIEW_ONLY frames), `audit-metadata-recorded` (session metadata audit),
+plus the auth/device/session/DLP/local-abort denials.
+
+In `disabled` mode the MVP persists no content (positive `content_persistence:
+none` proof) and keeps metadata audit active. ALL enabled-only recording fields
+(`recording_worm`, `record_before_fanout`, `recording_retention_*`) are
+FORBIDDEN here (an untested "recording off" claim). The manifest mirrors these
+fields; `schema_version` is `faz22.6-view-only-evidence-v2`.
+
+#### Engineering marker — `recording_mode=enabled` (opt-in recording)
+
+When recording is owner-opted-in, the fail-closed recording controls re-arm and
+the parametric retention applies. Replace the `disabled` block's
+`content_persistence` / `metadata_audit` lines with:
+
+```text
+recording_mode: enabled
+recording_worm: pass
+record_before_fanout: pass
+recording_retention_days: <positive integer>
+recording_retention_unit: days
+recording_retention_owner_ref: <owner decision reference>
+```
+
+and the negative matrix replaces the disabled-mode pair
+(`recording-disabled-no-persistence,metadata-audit-on`) with `recording-down`
+(the fail-closed-kill proof); the machine-bound evidence tokens above stay
+required. `recording_retention_days` is parametric (ADR-0044 D3): the owner sets
+the effective value, `recording_retention_unit` is fixed to `days`, and the
+decision is referenced in `recording_retention_owner_ref`. The retention
+**min/max bounds** live in runtime config (Helm values, ADR-0044 D3), not in the
+acceptance marker — the marker carries only the effective value + owner ref.
+
 `viewer_path_decision` may be `fanout-proven` or `owner-deferred`. A defer keeps
 the fan-out limitation explicit; it does not prove broad operator-viewer
 readiness.
 
-The evidence package URL must be fetchable over HTTPS by the audit runner and
-must return a JSON manifest whose `jq -cS` canonical representation hashes to
-`evidence_package_sha256`. The manifest must use this schema:
+The evidence package URL must be fetchable over HTTPS and return a JSON manifest
+whose `jq -cS` canonical representation hashes to `evidence_package_sha256`. The
+manifest is metadata-only: do not publish raw screen frames, credentials,
+private endpoint identifiers, personal data, or operator tokens. Store sensitive
+recording material in the approved WORM location and expose only redacted
+references and hashes.
 
-```json
-{
-  "schema_version": "faz22.6-view-only-evidence-v1",
-  "acceptance_scope": "bounded-pilot-view-only",
-  "product_channel": "endpoint-agent-outbound-mtls-remote-bridge",
-  "view_mode": "VIEW_ONLY",
-  "pilot_device": "<device or deviceId>",
-  "session_id": "<product session id>",
-  "recording_worm": "pass",
-  "d10_fail_closed": "pass",
-  "dlp_mask_policy": "pass",
-  "local_abort": "pass",
-  "active_indicator": "pass",
-  "viewer_path_decision": "fanout-proven",
-  "audit_negative_matrix": [
-    "no-auth",
-    "wrong-device",
-    "expired-session",
-    "recording-down",
-    "dlp-deny",
-    "local-abort"
-  ],
-  "kvkk_attended_pilot_signoff": "pass",
-  "forbidden_claims": [
-    "rdp",
-    "credential-entry",
-    "raw-shell",
-    "port-forward",
-    "5-device",
-    "50-device",
-    "800-device",
-    "production",
-    "broad-rollout"
-  ],
-  "owner_approved_by": "<named owner>",
-  "approved_at": "YYYY-MM-DD",
-  "expires_at": "YYYY-MM-DD"
-}
+#### KVKK marker (non-blocking, allowlist)
+
+```text
+F22_6_VIEW_ONLY_KVKK: v1
+status: cleared
+kvkk_attended_pilot_signoff: pass
+legal_dpo_consent: pass
+retention_policy_approval: pass
+owner_approved_by: <named DPO/owner>
+approved_at: YYYY-MM-DD
+expires_at: YYYY-MM-DD
 ```
 
-`viewer_path_decision` in the manifest must match the issue marker and may be
-either `fanout-proven` or `owner-deferred`; the JSON block above shows the
-fan-out-proven case.
+Allowed keys only: `kvkk_attended_pilot_signoff`, `legal_dpo_consent`,
+`retention_policy_approval`, `status`, `owner_approved_by`, `approved_at`,
+`expires_at`. Any other key → `allowlist_violation` (blocks). With no marker, or
+`status` not `cleared`, or an incomplete clear, the gate stays
+`tracked_pending` (non-blocking). A cleared marker past `expires_at` reports
+`expired` (still non-blocking).
 
-The manifest is intentionally metadata-only. Do not publish raw screen-share
-frames, credentials, private endpoint identifiers, personal data, or operator
-tokens in the manifest. Store sensitive recording material in the approved WORM
-evidence location and expose only redacted references and hashes.
+The allowlist scan covers **every** `F22_6_VIEW_ONLY_KVKK` block in the issue
+body (evaluated before the duplicate short-circuit, so a second marker cannot
+smuggle a forbidden key into the non-blocking track). Only canonical column-0
+`key:` lines using `[A-Za-z0-9_]` keys count as marker fields; indented or
+hyphenated lookalikes terminate the block and are not treated as fields — use
+the canonical underscore keys above.
 
-Use the package helper to produce the canonical JSON, `jq -cS` SHA256, and
-issue marker from already-approved evidence metadata:
+#### Generator
 
 ```bash
+# disabled (privacy-safe MVP):
 scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh \
-  --manifest-out /path/to/view-only-evidence.json \
-  --marker-out /path/to/view-only-marker.txt \
+  --manifest-out /path/view-only-evidence.json \
+  --marker-out /path/view-only-marker.txt \
   --evidence-url https://example.invalid/view-only-evidence.json \
-  --pilot-device AgentPc2 \
-  --session-id <product session id> \
-  --recording-worm pass \
-  --d10-fail-closed pass \
-  --dlp-mask-policy pass \
-  --local-abort pass \
-  --active-indicator pass \
-  --viewer-path-decision fanout-proven \
-  --kvkk-attended-pilot-signoff pass \
-  --owner-approved-by "<named owner>" \
-  --approved-at YYYY-MM-DD \
-  --expires-at YYYY-MM-DD
+  --pilot-device AgentPc2 --session-id <product session id> \
+  --recording-mode disabled \
+  --d10-fail-closed pass --dlp-mask-policy pass --local-abort pass \
+  --active-indicator pass --viewer-path-decision fanout-proven \
+  --owner-approved-by "<named owner>" --approved-at YYYY-MM-DD --expires-at YYYY-MM-DD
+
+# enabled (opt-in recording): add
+#   --recording-mode enabled --recording-worm pass --record-before-fanout pass \
+#   --recording-retention-days N --recording-retention-owner-ref <ref>
 ```
 
-The helper does not approve #1580, does not write to GitHub, and does not prove
-a live VIEW_ONLY session by itself. It only prevents hand-written marker/hash
-drift once the owner/operator-gated evidence exists.
+The helper generates the ENGINEERING marker + manifest only; the KVKK marker is
+DPO/owner-authored. The helper does not approve #1580, does not write to GitHub,
+and does not prove a live VIEW_ONLY session by itself.
 
 Marker parsing is fail-closed:
 
 - named owner cannot be empty, `TBD`, `none`, `n/a`, `na`,
   `placeholder`, `owner`, or the literal example `named-owner`;
-- dates must parse as UTC `YYYY-MM-DD`;
-- expired acceptance/risk windows fail;
+- dates must parse as UTC `YYYY-MM-DD`; expired windows fail;
 - `evidence_package_url` must be HTTPS and fetchable;
 - `evidence_package_sha256` must match the canonical JSON evidence manifest;
-- required manifest fields must match the issue marker;
+- required manifest fields must match the issue marker (mode-aware);
+- `recording_mode` must be `disabled` or `enabled`; mode-specific fields
+  (content_persistence/metadata_audit, or recording_worm/record_before_fanout/
+  recording_retention_days/recording_retention_unit/recording_retention_owner_ref)
+  are required per mode, and enabled-only fields are forbidden under `disabled`;
 - forbidden rollout claims must be explicitly listed;
-- the marker must live on the canonical issue body, not only in a comment.
+- the marker must live on the canonical issue body, not only in a comment;
+- a legacy bundled `F22_6_VIEW_ONLY_ACCEPTANCE` marker blocks the gate.
 
 ## 5. Explicit Non-Completion Cases
 
@@ -383,8 +420,13 @@ short-lived read-only `github.token` rather than a long-lived repository secret.
 
 The audit is intentionally conservative. It prints `F22_6_COMPLETION=blocked`
 while `#548` lacks hardware-attestation acceptance or bounded risk acceptance,
-while `#1580` lacks VIEW_ONLY acceptance, or when live broker/release evidence
-is missing.
+while `#1580` lacks VIEW_ONLY **ENGINEERING** acceptance
+(`GATE_VIEW_ONLY_ENGINEERING`), or when live broker/release evidence is missing.
+The KVKK/legal marker is tracked separately as `GATE_VIEW_ONLY_KVKK`
+(`tracked_pending|cleared|expired`) and does NOT fail-close completion
+([ADR-0044](../adr/0044-faz22-6-kvkk-nonblocking-parametric-durations.md)); the
+sole exception is a `GATE_VIEW_ONLY_KVKK=allowlist_violation` (a non-legal field
+mislabeled as legal), which blocks.
 
 Use the release-lineage helper before any 5-device or broader rollout claim:
 
@@ -419,7 +461,8 @@ Allowed language:
 - source-ready
 - live broker healthy
 - open/blocked on hardware attestation
-- open/blocked on VIEW_ONLY live acceptance
+- open/blocked on VIEW_ONLY engineering live acceptance
+- KVKK legal track tracked/pending (non-blocking, ADR-0044)
 - release hygiene needs audit
 
 Disallowed language until every completion gate passes:
