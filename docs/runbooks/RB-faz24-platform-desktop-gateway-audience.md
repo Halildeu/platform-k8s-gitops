@@ -175,11 +175,17 @@ Expected next evidence:
 - `/tmp/faz24-external-recorder-smoke.json` has
   `schemaVersion=faz24.externalRecorderSmoke.v1`, `status=pass`, and
   `tokenIncluded=false`.
+- The runner output is metadata-only: it does not include the JWT, public
+  `baseUrl`, raw audio, transcript text, raw command output, callback,
+  destination, internal, webhook, STT, or transcribe URLs. Token-contract
+  `issuer` is the only URL-shaped value allowed in the envelope.
 - `create_meeting` step returns HTTP `201` from the external `api-gateway`
   path and records the created meeting UUID.
 - `record_consent`, `start_session`, `upload_chunk`, `finish_session`, and
   `session_status` all pass against the public `audio-gateway` path using the
   same meeting UUID.
+- `ids.sessionId` must be path-safe (`SES-` plus bounded alphanumeric,
+  underscore, and dash only); path traversal or URL-shaped session IDs fail.
 - Same-session compute-plane audit smoke and direct-STT transcript remain
   separate gates; do not infer them from meeting creation alone.
 
@@ -204,10 +210,14 @@ Expected verifier evidence:
   `tokenIncluded=false`.
 - The verifier accepts only the exact token-contract, external meeting create,
   consent, start, chunk, finish and final status sequence.
-- The verifier rejects direct-STT, compute-plane audit, desktop mic/loopback or
-  production-readiness overclaims in the boundary fields.
-- The verifier rejects JWT/Bearer/Authorization/private-key shaped values and
-  sensitive response keys before evidence is attached.
+- The verifier rejects direct-STT, direct client-to-STT, direct-STT transcript,
+  compute-plane audit, desktop mic/loopback or production-readiness overclaims
+  in the boundary fields.
+- The verifier rejects JWT/Bearer/Authorization/private-key shaped values,
+  camelCase sensitive-key variants such as `destinationUrl`, URL-like values
+  outside the token-contract `issuer`, base64 audio data URIs, raw
+  audio/transcript fields, raw request/response payloads, packet captures, and
+  unsafe `sessionId` values before evidence is attached.
 
 Attach both redacted JSON files after checking both have `tokenIncluded=false`.
 Do not attach raw command transcripts.

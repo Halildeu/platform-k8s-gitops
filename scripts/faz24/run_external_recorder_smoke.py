@@ -23,6 +23,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -53,15 +54,67 @@ SENSITIVE_RESPONSE_KEYS = {
     "jwt",
     "credential",
     "session_token",
+    "auth_token",
+    "api_key",
     "cookie",
     "client_secret",
     "password",
     "secret",
+    "callback_endpoint",
+    "callback_url",
+    "destination_endpoint",
+    "destination_url",
+    "endpoint_url",
+    "internal_url",
+    "stt_endpoint",
+    "stt_url",
+    "transcribe_endpoint",
+    "transcribe_url",
+    "webhook_url",
+    "whisper_url",
+    "audio_base64",
+    "audio_bytes",
+    "audio_preview",
+    "raw_audio",
+    "raw_audio_bytes",
+    "transcript",
+    "transcript_text",
 }
+SENSITIVE_RESPONSE_KEYS_COMPACT = {key.replace("_", "") for key in SENSITIVE_RESPONSE_KEYS}
+CAMEL_BOUNDARY_1_RE = re.compile(r"(.)([A-Z][a-z]+)")
+CAMEL_BOUNDARY_2_RE = re.compile(r"([a-z0-9])([A-Z])")
+SESSION_ID_RE = re.compile(r"^SES-[A-Za-z0-9_-]{4,120}$")
+SENSITIVE_VALUE_PATTERNS = [
+    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
+    re.compile(r"\bAuthorization\s*:", re.IGNORECASE),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    re.compile(r"\b(?:https?|wss?)://[^\s\"']+", re.IGNORECASE),
+    re.compile(r"data:audio/[A-Za-z0-9.+-]+;base64,", re.IGNORECASE),
+]
 
 
 class SmokeError(RuntimeError):
     """Operator-facing smoke failure with a bounded message."""
+
+
+def _normalized_key(key: str) -> str:
+    key = key.replace("-", "_").replace(".", "_").strip()
+    key = CAMEL_BOUNDARY_1_RE.sub(r"\1_\2", key)
+    key = CAMEL_BOUNDARY_2_RE.sub(r"\1_\2", key)
+    return re.sub(r"_+", "_", key).lower()
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = _normalized_key(key)
+    return (
+        normalized in SENSITIVE_RESPONSE_KEYS
+        or normalized.replace("_", "") in SENSITIVE_RESPONSE_KEYS_COMPACT
+    )
+
+
+def _is_sensitive_string(value: str) -> bool:
+    return any(pattern.search(value) for pattern in SENSITIVE_VALUE_PATTERNS)
 
 
 def _load_token_validator():
@@ -161,16 +214,21 @@ def _response_excerpt(body: Any) -> Any:
     if body is None or isinstance(body, (int, float, bool)):
         return body
     if isinstance(body, str):
+        if _is_sensitive_string(body):
+            return "<redacted-sensitive-value>"
         return _truncate(body)
     if isinstance(body, list):
         return [_response_excerpt(item) for item in body[:20]]
     if isinstance(body, dict):
         safe: dict[str, Any] = {}
+        redacted_count = 0
         for key, value in body.items():
-            if str(key).lower() in SENSITIVE_RESPONSE_KEYS:
-                safe[key] = "<redacted>"
+            if _is_sensitive_key(str(key)):
+                redacted_count += 1
             else:
                 safe[key] = _response_excerpt(value)
+        if redacted_count:
+            safe["redactedFieldCount"] = redacted_count
         return safe
     return str(body)
 
@@ -258,7 +316,6 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         "schemaVersion": SCHEMA_VERSION,
         "status": "running",
         "tokenIncluded": False,
-        "baseUrl": args.base_url.rstrip("/"),
         "startedAt": started_at,
         "steps": [],
         "ids": {},
@@ -266,6 +323,8 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             "externalMeetingAdminPathExercised": False,
             "recorderLifecycleExercised": False,
             "directSttProven": False,
+            "directSttTranscriptProven": False,
+            "directClientToStt": False,
             "computePlaneAuditProven": False,
             "desktopMicLoopbackProven": False,
             "productionReady": False,
@@ -359,6 +418,8 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             report["status"] = "fail"
             return 1, report
         session_id = _require_field(response, "sessionId", "start_session")
+        if not SESSION_ID_RE.match(session_id):
+            raise SmokeError("start_session response contains unsafe sessionId")
         report["ids"]["sessionId"] = session_id
 
         now_ms = int(time.time() * 1000)

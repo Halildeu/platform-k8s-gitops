@@ -199,6 +199,47 @@ class _ProcessingStatusHandler(_SmokeHandler):
         self._write(404, {"error": "not_found"})
 
 
+class _SensitiveResponseHandler(_SmokeHandler):
+    def do_POST(self):
+        if self.path == "/api/v1/admin/meetings":
+            self._record()
+            body = self._read_json()
+            assert body["title"]
+            self._write(
+                201,
+                {
+                    "id": "22222222-2222-4222-8222-222222222222",
+                    "status": "SCHEDULED",
+                    "accessToken": "should-not-appear",
+                    "destinationUrl": "https://internal.example.invalid/callback",
+                    "audioPreview": "data:audio/wav;base64,QUJDRA==",
+                    "nested": {
+                        "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzbW9rZSJ9.signature"
+                    },
+                },
+            )
+            return
+        super().do_POST()
+
+
+class _UnsafeSessionIdHandler(_SmokeHandler):
+    def do_POST(self):
+        if self.path == "/api/v1/audio-gateway/sessions":
+            self._record()
+            body = self._read_json()
+            assert body["meetingId"] == "22222222-2222-4222-8222-222222222222"
+            self._write(
+                201,
+                {
+                    "sessionId": "SES-../../secret",
+                    "correlationId": "corr-start",
+                    "sessionStartMs": 1782370000001,
+                },
+            )
+            return
+        super().do_POST()
+
+
 def _serve(handler_cls):
     handler_cls.calls = []
     handler_cls.bearer_seen = False
@@ -244,6 +285,8 @@ def test_external_recorder_smoke_happy_path_redacts_token(tmp_path):
     assert report["boundaries"]["externalMeetingAdminPathExercised"] is True
     assert report["boundaries"]["recorderLifecycleExercised"] is True
     assert report["boundaries"]["directSttProven"] is False
+    assert report["boundaries"]["directSttTranscriptProven"] is False
+    assert report["boundaries"]["directClientToStt"] is False
     assert report["boundaries"]["computePlaneAuditProven"] is False
     assert _SmokeHandler.bearer_seen is True
     assert _SmokeHandler.calls == [
@@ -286,6 +329,75 @@ def test_output_file_is_written_with_owner_only_permissions(tmp_path):
     assert proc.returncode == 0
     assert json.loads(output_file.read_text(encoding="utf-8"))["status"] == "pass"
     assert output_file.stat().st_mode & 0o777 == 0o600
+
+
+def test_sensitive_response_fields_are_omitted_or_redacted(tmp_path):
+    token_file = tmp_path / "token.jwt"
+    token_file.write_text(_valid_token(), encoding="utf-8")
+    server = _serve(_SensitiveResponseHandler)
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--token-file",
+                str(token_file),
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--timeout-seconds",
+                "3",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    finally:
+        server.shutdown()
+
+    report = json.loads(proc.stdout)
+    assert proc.returncode == 0
+    rendered = json.dumps(report)
+    assert "accessToken" not in rendered
+    assert "destinationUrl" not in rendered
+    assert "audioPreview" not in rendered
+    assert "Authorization" not in rendered
+    assert "should-not-appear" not in rendered
+    assert "internal.example.invalid" not in rendered
+    assert "data:audio" not in rendered
+    assert "Bearer " not in rendered
+    assert report["steps"][1]["response"]["redactedFieldCount"] == 3
+    assert report["steps"][1]["response"]["nested"]["redactedFieldCount"] == 1
+
+
+def test_unsafe_session_id_response_returns_error_envelope(tmp_path):
+    token_file = tmp_path / "token.jwt"
+    token_file.write_text(_valid_token(), encoding="utf-8")
+    server = _serve(_UnsafeSessionIdHandler)
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--token-file",
+                str(token_file),
+                "--base-url",
+                f"http://127.0.0.1:{server.server_port}",
+                "--timeout-seconds",
+                "3",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    finally:
+        server.shutdown()
+
+    report = json.loads(proc.stdout)
+    assert proc.returncode == 2
+    assert report["status"] == "error"
+    assert "unsafe sessionId" in report["error"]
 
 
 def test_create_meeting_http_failure_stops_before_later_steps(tmp_path):
