@@ -96,12 +96,14 @@ wrong-client `unknown ca` fail-closed. Full I7 still needs meeting-ai 8343
 request audit, plaintext-bypass closure, failure drill, and reviewer/operator
 acceptance.
 `platform-backend#716` audience/capability enforcement is also advanced on the
-GitOps side: the test desired-state enforce booleans move to `true`, while
+GitOps side: the test desired-state enforce booleans move to `true` and the
+test Deployment carries a pod-template rollout marker so the ConfigMap envFrom
+change is actually consumed by the running pod.
 `docs/runbooks/RB-faz24-audio-gateway-jwt-enforcement.md` and
 `scripts/faz24/verify_audio_gateway_authz_enforce_evidence.py` keep live
-acceptance bounded to token-drain/maintenance-window proof, rollout proof, the
-no-token/wrong-audience/missing-role/valid-recorder matrix PASS and
-reviewer/operator acceptance.
+acceptance bounded to token-drain/maintenance-window proof, pod process-env
+rollout proof, the no-token/wrong-audience/missing-role/valid-recorder matrix
+PASS and reviewer/operator acceptance.
 
 **Faz 24 #191/#226 Denetim deploy mirror/runtime delta (2026-06-26)**:
 `platform-ai#216`-`#220` closed the Denetim deploy-clone drift/update-script
