@@ -58,10 +58,18 @@ the CSR; pinning 2048 here would be a wrong signal and is omitted).
 `"tpm:" + ekPubSha256` and documented as "the SAN URI the backend injects into the Vault PKI issue call",
 but `VaultPkiClient.signCsr` currently sends **only** `{csr,format}` — it does **not** pass `uri_sans`.
 The CSR itself **cannot** carry the URI-SAN (`TpmCsrPolicy` rejects all extensions except clientAuth EKU).
-⇒ **Today the issued leaf carries NO `tpm:<ekPubSha256>` URI-SAN.** The device identity is the CSR CN.
-Completing the identity SAN is a **backend follow-up**: wire `verdict.sanUri()` into `signCsr`'s body as
-`"uri_sans":"<sanUri>"`. The role below keeps `allowed_uri_sans=tpm:*` so that follow-up needs no Vault
-change — but until it lands, do not claim a `tpm:` SAN on the issued cert.
+⇒ **Today the issued leaf carries NO `tpm:<ekPubSha256>` URI-SAN.**
+
+**CN is NON-AUTHORITATIVE (Codex 019f0456 iter-2).** The backend does NOT verify that the CSR CN equals the
+server-derived `scope.deviceId()`: the /attest chain binds the CSR **public key** to the attested TPM device
+key (`TpmEnrollmentController` + `TpmCsrPolicy`), and the authoritative device identity is the
+**server-derived enrollment scope** (`DefaultTpmEnrollmentScopeResolver`) + the **V74
+`endpoint_tpm_device_binding` row (SPKI of the device key)** (`TpmEnrollmentCompletionService`). The CN
+string is display/debug only and MUST NOT be treated as identity. Completing a trustworthy identity is a
+**backend follow-up**: wire `common_name=scope.deviceId()` **and** `uri_sans=verdict.sanUri()` into
+`signCsr`'s body; then the Vault role can tighten to `allow_any_name=false`. The role below keeps
+`allowed_uri_sans=tpm:*` so that follow-up needs no Vault change — but until it lands, the issued cert's
+CN/SAN are NOT authoritative identity.
 
 ## 3. ÖNKOŞULLAR (operator)
 
@@ -107,9 +115,11 @@ vault write pki_int/roles/tpm-device \
 > **no `key_type`/`key_bits`** (the key comes from the CSR; the backend `TpmCsrPolicy` enforces the
 > RSA-3072+/EC-P256+ device floor — pinning here would mis-signal). `use_csr_sans=false` because the CSR
 > carries no SAN (policy strips all extensions but clientAuth); `allowed_uri_sans="tpm:*"` is kept for the
-> forward `sanUri()` wiring (§2 gap). `allow_any_name=true` is deliberate: the CN is an opaque attested
-> deviceId, not a DNS domain — domain allow-listing does not apply; the device identity is gated upstream
-> by the full /nonce→/attest chain + the AppRole, not by Vault name policy.
+> forward `sanUri()` wiring (§2 gap). `allow_any_name=true` is a deliberate **interim** choice: the CSR CN
+> is **non-authoritative** (§2 — the backend does not bind it; identity = the server-derived scope + the
+> V74 SPKI binding), so Vault name-policy is not the identity gate (the /nonce→/attest chain + AppRole are).
+> Target hardening = the §2 backend follow-up (inject `common_name=scope.deviceId` + `uri_sans=sanUri`) →
+> then flip this role to `allow_any_name=false`. Until then, treat the leaf CN/SAN as display-only.
 > Devam eşiği: `vault read pki_int/roles/tpm-device` shows `client_flag true server_flag false`.
 
 ### 4.3 Enable AppRole + bind a least-privilege policy for the backend
@@ -144,27 +154,34 @@ unset ROLE_ID SECRET_ID
 > or `caCertPem` is unpinned or `roleId`/`secretId` are blank → endpoint-admin DOWN (breaks the
 > parallel-session test plane). `enabled=true` MUST be the **last** patch, only after ALL preflight passes.
 
-### 5.1 HARD preflight (Codex 019f0456 F4 — every check must pass before the flip)
+**Ordering (Codex 019f0456 iter-2):** apply the ExternalSecret mapping (§5.2) + the config keys WITHOUT
+`ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED` FIRST, wait for ESO Ready + BOTH synced keys non-empty, run the
+preflight below against the **ESO-synced** roleId/secretId, and only then add `…_ENABLED: "true"` in a
+final patch. This proves the exact creds the pod will use — not just that the role works.
 ```bash
 # (a) PKI role + clientAuth shape exist:
 vault read pki_int/roles/tpm-device | grep -E "client_flag|server_flag"      # expect true / false
-# (b) the backend AppRole actually logs in AND can sign (real round-trip, throwaway token):
-VT=$(vault write -field=token auth/approle/login \
-       role_id="$(vault read -field=role_id auth/approle/role/endpoint-admin-tpm/role-id)" \
-       secret_id="$(vault write -f -field=secret_id auth/approle/role/endpoint-admin-tpm/secret-id)")
-VAULT_TOKEN="$VT" vault write pki_int/sign/tpm-device csr=@/tmp/test-device.csr format=pem >/dev/null \
-  && echo "SIGN_OK" || echo "SIGN_FAIL — fix role/policy before flip"
-# (c) ESO synced the creds into the live Secret:
+# (b) ESO is Ready AND BOTH synced keys are present (NOT just role_id — secret_id blank → fail-fast DOWN):
 kubectl --context k3d-test -n platform-test get externalsecret endpoint-admin-service-secrets \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'                # expect True
-kubectl --context k3d-test -n platform-test get secret endpoint-admin-service-secrets \
-  -o jsonpath='{.data.ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID}' | head -c1     # expect non-empty
+for k in ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID; do
+  v=$(kubectl --context k3d-test -n platform-test get secret endpoint-admin-service-secrets -o jsonpath="{.data.$k}")
+  [ -n "$v" ] && echo "$k=present" || { echo "$k=MISSING — fix ESO remoteRef before flip"; }
+done
+# (c) the EXACT ESO-synced creds log in AND can sign (redacted; values never printed; unset after):
+RID=$(kubectl --context k3d-test -n platform-test get secret endpoint-admin-service-secrets -o jsonpath='{.data.ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID}' | base64 -d)
+SID=$(kubectl --context k3d-test -n platform-test get secret endpoint-admin-service-secrets -o jsonpath='{.data.ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID}' | base64 -d)
+VT=$(vault write -field=token auth/approle/login role_id="$RID" secret_id="$SID")
+VAULT_TOKEN="$VT" vault write pki_int/sign/tpm-device csr=@/tmp/test-device.csr format=pem >/dev/null \
+  && echo "SYNCED_SIGN_OK" || echo "SYNCED_SIGN_FAIL — synced creds cannot sign; fix before flip"
+unset RID SID VT
 # (d) backend pod can TLS-handshake the HTTPS listener (#2054 live):
 kubectl --context k3d-test -n platform-test exec deploy/endpoint-admin-service -- \
   sh -c 'echo | openssl s_client -connect vault.platform-test.svc.cluster.local:8202 2>&1 | grep -i "Verify\|CONNECTED"'
 ```
-> Do NOT proceed to 5.2 unless (a) clientAuth shape ✓, (b) `SIGN_OK`, (c) ExternalSecret Ready=True + key
-> present, (d) TLS handshake succeeds.
+> Do NOT add `…_ENABLED: "true"` unless (a) clientAuth shape ✓, (b) ESO Ready=True + BOTH keys present,
+> (c) `SYNCED_SIGN_OK` (the pod's actual creds sign), (d) TLS handshake succeeds. Then verify the post-flip
+> rollout log shows no `VaultPkiProperties`/`FEATURE_DISABLED` startup error.
 
 ### 5.2 The flip (ConfigMap + ExternalSecret; `enabled=true` LAST)
 ConfigMap (`endpoint-admin-service-config`, test overlay) JSON6902 add (do NOT inline AppRole creds):
@@ -199,8 +216,9 @@ agent memory `project_faz22_6_548_devkey_session_attestation.md` cont.6 + PR #20
 - `tpm-attest-audit`: device CSR validated (RSA-3072+/EC-P256+, clientAuth-only) → **Vault sign OK** (no `FEATURE_DISABLED`).
 - DB `endpoint_admin_service.endpoint_enrollments` row → `status=CONSUMED` (NOT `TPM_FAILED`).
 - A new `endpoint_admin_service.endpoint_tpm_device_binding` (V74) row with the issued leaf + SPKI.
-- The issued cert chains to the §4.1 `pki_int` CA; CN = the device CN; clientAuth-only.
-  (A `tpm:<ekPubSha256>` URI-SAN appears only after the §2 backend `sanUri()` wiring follow-up.)
+- The issued cert chains to the §4.1 `pki_int` CA; clientAuth-only. The authoritative device identity is
+  the V74 `endpoint_tpm_device_binding` row (SPKI of the device key) — NOT the leaf CN/SAN, which stay
+  non-authoritative until the §2 backend injection follow-up (`common_name=scope.deviceId` + `uri_sans=sanUri`).
 
 ## 7. VERIFY (D29-EA — Up != Functional != Zanzibar)
 
