@@ -216,15 +216,19 @@ Do not attach raw command transcripts.
 
 A single recorder smoke only proves one lifecycle attempt. For G-CAP, aggregate
 multiple redacted verifier outputs and gate the capture path on attempt count,
-distinct meeting/session coverage, success rate, retry rate, and failure rate:
+distinct meeting/session coverage, success rate, retry rate, and failure rate.
+Supported inputs are verifier summaries only:
+
+- `faz24.externalRecorderSmokeVerifier.v1`
+- `faz24.desktopCaptureEvidenceVerifier.v1`
 
 ```bash
 python3 scripts/faz24/verify_gcap_capture_gate_evidence.py \
   --evidence-file /tmp/faz24-external-recorder-smoke-01.verify.json \
   --evidence-file /tmp/faz24-external-recorder-smoke-02.verify.json \
   --evidence-file /tmp/faz24-external-recorder-smoke-03.verify.json \
-  --evidence-file /tmp/faz24-external-recorder-smoke-04.verify.json \
-  --evidence-file /tmp/faz24-external-recorder-smoke-05.verify.json \
+  --evidence-file /tmp/faz24-desktop-capture-evidence-04.verify.json \
+  --evidence-file /tmp/faz24-desktop-capture-evidence-05.verify.json \
   --min-attempts 5 \
   --min-distinct-meetings 5 \
   --min-distinct-sessions 5 \
@@ -246,14 +250,16 @@ Expected aggregate evidence:
   configured threshold.
 - `status=error` means the evidence files could not be loaded because of
   invalid JSON, wrong top-level shape/schema, or I/O failure.
-- The aggregate verifier consumes only
-  `faz24.externalRecorderSmokeVerifier.v1` outputs. It rejects raw recorder
-  smoke envelopes, raw audio, transcript text, JWT/Bearer/Authorization-shaped
-  values, and direct-STT/compute-plane/desktop mic/production overclaims.
+- The aggregate verifier consumes only verifier summaries. It rejects raw
+  recorder smoke envelopes, raw desktop capture envelopes, raw audio, transcript
+  text, JWT/Bearer/Authorization-shaped values, and direct-STT/compute-plane/
+  production overclaims.
 
 Attach the aggregate JSON only after checking `tokenIncluded=false`. This G-CAP
-aggregate does not prove direct-STT, same-session compute-plane audit, desktop
-mic/loopback, or product-wide readiness.
+aggregate does not prove direct-STT, same-session compute-plane audit, or
+product-wide readiness. If desktop verifier summaries are included,
+`desktopMicLoopbackProven=true` in the G-CAP output means only that submitted
+desktop verifier summaries proved mic+loopback for their attempts.
 
 ### 7. Desktop mic + loopback evidence
 
@@ -274,6 +280,11 @@ lifecycle ordering, and matching upload digests. It rejects raw audio, transcrip
 text, token material, destination URLs, direct client-to-STT, compute-plane,
 direct-STT transcript, and production-readiness overclaims. See
 `docs/runbooks/RB-faz24-desktop-capture-evidence.md`.
+
+Use `/tmp/faz24-desktop-capture-evidence.verify.json` as a G-CAP aggregate input
+only after confirming that verifier summary has `schemaVersion=
+faz24.desktopCaptureEvidenceVerifier.v1`, `status=pass`, and
+`tokenIncluded=false`.
 
 ## Cleanup
 

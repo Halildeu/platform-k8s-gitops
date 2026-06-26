@@ -112,7 +112,9 @@ It does not prove:
 - compute-plane audit (`platform-ai#188`, already accepted separately);
 - full I7 app-mTLS prod-gate (`platform-ai#198`);
 - diarization/DER, WER, G-INT, or G-LAT/COST;
-- G-CAP aggregate reliability;
+- G-CAP aggregate reliability by itself; the verifier summary may be submitted
+  as one `verify_gcap_capture_gate_evidence.py` input after `status=pass`, but
+  aggregate G-CAP still requires enough accepted attempts to meet thresholds;
 - G-COMP compliance readiness;
 - production readiness.
 

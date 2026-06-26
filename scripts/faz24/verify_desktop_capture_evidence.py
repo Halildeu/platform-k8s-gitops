@@ -412,16 +412,39 @@ def verify(data: dict[str, Any]) -> list[Check]:
     return checks
 
 
-def write_summary(path: Path, checks: list[Check]) -> None:
+def build_summary(checks: list[Check], data: dict[str, Any] | None = None) -> dict[str, Any]:
     passed = all(check.passed for check in checks)
-    summary = {
+    failures = [check.message for check in checks if not check.passed]
+    summary: dict[str, Any] = {
         "schemaVersion": VERIFIER_SCHEMA_VERSION,
+        "evidenceSchemaVersion": EVIDENCE_SCHEMA_VERSION,
         "checkedAt": utc_now(),
         "status": "pass" if passed else "fail",
+        "tokenIncluded": False,
         "passed": sum(1 for check in checks if check.passed),
         "total": len(checks),
         "checks": [asdict(check) for check in checks],
+        "failures": failures,
     }
+    if data is not None:
+        session = data.get("session")
+        if isinstance(session, dict):
+            summary["ids"] = {
+                "meetingId": session.get("meetingId"),
+                "captureId": session.get("captureId"),
+                "sessionId": session.get("sessionId"),
+            }
+        boundaries = data.get("boundaries")
+        if isinstance(boundaries, dict):
+            summary["boundaries"] = {
+                key: boundaries.get(key)
+                for key in BOUNDARY_EXPECTATIONS
+            }
+    return summary
+
+
+def write_summary(path: Path, checks: list[Check], data: dict[str, Any] | None = None) -> None:
+    summary = build_summary(checks, data)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -453,7 +476,7 @@ def main() -> int:
     checks = verify(data)
     print_human(checks)
     if args.summary_json:
-        write_summary(args.summary_json, checks)
+        write_summary(args.summary_json, checks, data)
     return 0 if all(check.passed for check in checks) else 1
 
 
