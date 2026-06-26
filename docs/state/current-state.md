@@ -1,5 +1,53 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 #191 Denetim deploy mirror drift-proofed; #198 remains open (2026-06-26)
+
+`platform-ai#191` is now closed for the Denetim PC deploy-clone drift/update
+reliability scope.
+
+Source and CI chain:
+
+- `platform-ai#216` merged PowerShell 5.1-safe origin ref/range construction
+  for `deploy/gpu-host/update.ps1`.
+- `platform-ai#217` merged the ASCII-only script guard after a Denetim
+  PowerShell decode/parse failure.
+- `platform-ai#218` added CI coverage for the GPU-host update script unit test
+  and `pwsh` parse check.
+- `platform-ai#219` fixed runtime `RepoRoot`/`LogDir` default resolution for
+  `update.ps1` and `drift-guard.ps1`.
+- `platform-ai#220` merged PowerShell 5.1-safe git command streaming through
+  `Invoke-GitStream`; Claude first pass caught a P0 output-stream return-array
+  bug, the patch was tightened, and the second pass returned AGREE.
+
+Final Denetim live evidence after `#220`:
+
+- deploy mirror pinned to
+  `platform-ai/main=2f97d2fbf99d65850194d91a12f7d5bc87f921a3`;
+- `update.ps1 -NoRestart` ran successfully on Denetim Windows PowerShell,
+  pinned the tracked tree to `origin/main`, and completed with `done`;
+- `drift-guard.ps1` reported
+  `OK: clean, on main, == origin/main.`;
+- final git evidence showed
+  `HEAD=ORIGIN_MAIN=2f97d2fbf99d65850194d91a12f7d5bc87f921a3`, no unpushed
+  commits, and a clean tracked tree; remaining untracked directories were local
+  cache/venv/fixture/backup directories only;
+- scheduled tasks `platform-ai-live-stt` and `platform-ai-meeting-ai` were
+  `Running`;
+- local health checks returned live-stt `status=loading`, model `medium`,
+  device `cuda`, compute `float16`, and meeting-ai `status=ok`, backend `mock`,
+  redaction enabled.
+
+Evidence was recorded on `platform-ai#191`:
+https://github.com/Halildeu/platform-ai/issues/191#issuecomment-4806462741
+
+Boundary: this closes only the deploy-clone drift/update-script reliability gap.
+It does not enable direct-STT, does not send raw audio, does not prove
+`platform-ai#198` app-mTLS, does not satisfy `platform-ai#188` or
+`platform-ai#182`, and does not make Faz 24 production-ready. The immediate
+post-`#191` `#198` retry still showed `staging-sw` route via `wg0` and
+TCP/8200 success, but TCP/8243 and the SNI HTTPS probe timed out before TLS:
+https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4806465423
+
 ## Live Delta — Faz 24 #162 meeting-ai source guards advanced; pilot G-INT remains open (2026-06-26)
 
 `platform-ai#207` merged source-side hardening for
