@@ -26,6 +26,47 @@ Use file-like Secret keys intentionally. The deployment also uses `envFrom` for
 names, so Kubernetes skips exporting PEM material as env vars while the Secret
 volume still exposes them as files.
 
+## Evidence Contract
+
+After the flag flip, #182 evidence is accepted only as metadata-only JSON using
+schema `faz24.directSttE2eEvidence.v1` and passing:
+
+```bash
+python3 scripts/faz24/verify_direct_stt_e2e_evidence.py \
+  docs/faz-24-evidence/<date>-direct-stt-e2e.json \
+  --summary-json /tmp/faz24-direct-stt-e2e.verify.json
+```
+
+The verifier requires:
+
+- real `audio-gateway` pod evidence from `k3d-test/platform-test`;
+- `AUDIO_GATEWAY_DIRECT_STT_ENABLED=true`;
+- `live-stt.denetim:8243` mTLS health HTTP 200 from the real pod with mounted
+  client certificate material;
+- same session/chunk/correlation for lifecycle HTTP statuses,
+  `/transcribe` HTTP 200, `transcript:direct-stt-results`, and
+  `CHUNK_FORWARDED_TO_COMPUTE_PLANE`;
+- Redis/audio persistence boundary flags proving metadata-only chunk state and
+  no raw audio/transcript in Redis, result stream, logs, or the evidence file;
+- explicit boundary flags showing #198 full I7, desktop mic/loopback, and
+  production readiness are still separate gates.
+
+The verifier rejects PEM values, tokens, raw command output, destination URLs,
+raw audio, raw transcript text, transcript segments, and raw packet captures.
+Only key names, hashes, IDs, HTTP statuses, and bounded timing metadata belong
+in the JSON. The verifier intentionally rejects evidence unless it still shows
+`live-stt.denetim -> 10.99.0.2`; if the Denetim WireGuard address changes,
+update the hostAlias, NetworkPolicy destination, and verifier expected IP in
+the same PR. To archive the same evidence through CI:
+
+```bash
+DIRECT_STT_EVIDENCE_B64="$(
+  base64 < docs/faz-24-evidence/<date>-direct-stt-e2e.json | tr -d '\n'
+)"
+gh workflow run faz24-direct-stt-e2e-evidence-ingest.yml \
+  -f evidence_json_base64="${DIRECT_STT_EVIDENCE_B64}"
+```
+
 ## Enablement Order
 
 1. Seed the three Vault properties with stdin-pipe or an approved equivalent. Do not print PEM values.
@@ -39,6 +80,8 @@ volume still exposes them as files.
    - `CHUNK_FORWARDED_TO_COMPUTE_PLANE` exists in `audit:events` for the same session/chunk/correlation.
    - `transcript:direct-stt-results` contains the same session/chunk/correlation.
    - Redis `audio:chunks:pNN` carries metadata only, not raw audio.
+8. Write the metadata-only JSON evidence and run the verifier above locally and,
+   when reviewer handoff is needed, through the GitHub workflow ingest.
 
 ## Rollback
 
