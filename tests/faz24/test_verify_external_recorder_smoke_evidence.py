@@ -16,7 +16,6 @@ def valid_evidence() -> dict:
         "schemaVersion": "faz24.externalRecorderSmoke.v1",
         "status": "pass",
         "tokenIncluded": False,
-        "baseUrl": "https://testai.acik.com",
         "startedAt": "2026-06-25T08:00:00Z",
         "completedAt": "2026-06-25T08:01:00Z",
         "ids": {
@@ -28,6 +27,8 @@ def valid_evidence() -> dict:
             "externalMeetingAdminPathExercised": True,
             "recorderLifecycleExercised": True,
             "directSttProven": False,
+            "directSttTranscriptProven": False,
+            "directClientToStt": False,
             "computePlaneAuditProven": False,
             "desktopMicLoopbackProven": False,
             "productionReady": False,
@@ -194,7 +195,7 @@ def test_nested_token_leak_fails(tmp_path):
     report = json.loads(proc.stdout)
 
     assert proc.returncode == 1
-    assert any("secret-like value" in failure for failure in report["failures"])
+    assert any("secret-like" in failure for failure in report["failures"])
 
 
 def test_sensitive_key_leak_fails(tmp_path):
@@ -206,6 +207,57 @@ def test_sensitive_key_leak_fails(tmp_path):
 
     assert proc.returncode == 1
     assert any("forbidden key" in failure for failure in report["failures"])
+
+
+def test_camelcase_sensitive_key_leak_fails(tmp_path):
+    data = valid_evidence()
+    data["steps"][1]["response"]["destinationUrl"] = "https://internal.example.invalid/callback"
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert any("forbidden key" in failure for failure in report["failures"])
+
+
+def test_url_like_value_under_safe_key_fails(tmp_path):
+    data = valid_evidence()
+    data["steps"][1]["response"]["diagnostic"] = "https://internal.example.invalid/callback"
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert any("URL-like" in failure for failure in report["failures"])
+
+
+def test_data_audio_value_fails(tmp_path):
+    data = valid_evidence()
+    data["steps"][4]["response"]["preview"] = "data:audio/wav;base64,QUJDRA=="
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert any("raw audio" in failure for failure in report["failures"])
+
+
+def test_unsafe_session_id_fails(tmp_path):
+    data = valid_evidence()
+    unsafe = "SES-../../secret"
+    data["ids"]["sessionId"] = unsafe
+    for step in data["steps"]:
+        if step["name"] == "start_session":
+            step["response"]["sessionId"] = unsafe
+        elif step["name"] in {"upload_chunk", "finish_session", "session_status"}:
+            step["path"] = step["path"].replace("SES-test-1", unsafe)
+            step["response"]["sessionId"] = unsafe
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert any("ids.sessionId" in failure for failure in report["failures"])
 
 
 def test_top_level_token_included_fails(tmp_path):
@@ -222,6 +274,8 @@ def test_top_level_token_included_fails(tmp_path):
 def test_overclaim_boundary_fails(tmp_path):
     data = valid_evidence()
     data["boundaries"]["directSttProven"] = True
+    data["boundaries"]["directSttTranscriptProven"] = True
+    data["boundaries"]["directClientToStt"] = True
     data["boundaries"]["productionReady"] = True
 
     proc = run_verifier(tmp_path, data)
@@ -229,6 +283,8 @@ def test_overclaim_boundary_fails(tmp_path):
 
     assert proc.returncode == 1
     assert any("directSttProven" in failure for failure in report["failures"])
+    assert any("directSttTranscriptProven" in failure for failure in report["failures"])
+    assert any("directClientToStt" in failure for failure in report["failures"])
     assert any("productionReady" in failure for failure in report["failures"])
 
 

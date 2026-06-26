@@ -87,6 +87,21 @@ false-acceptance hardening only; #182 still requires approved seed, preflight
 PASS, flag flip, fresh `/transcribe` result-stream evidence, same-session audit
 correlation, and no raw-audio persistence proof.
 
+**Faz 24 external recorder evidence hardening delta (2026-06-27)**:
+`run_external_recorder_smoke.py` and
+`verify_external_recorder_smoke_evidence.py` now align with the direct-STT and
+desktop capture metadata-only standard. The runner omits sensitive response
+fields, redacts URL-like/base64-audio values, no longer writes top-level
+`baseUrl`, and rejects unsafe `sessionId` before lifecycle path construction.
+The verifier rejects camelCase sensitive keys, destination/callback/internal/
+webhook/STT/transcribe URL leakage, raw audio/transcript/request/response
+payloads, packet captures, unsafe `sessionId`, and direct-STT/direct-client/
+compute-plane/production overclaims. Token-contract `issuer` remains the only
+URL-shaped value allowed in the external-recorder evidence envelope. Boundary:
+source-side false-acceptance hardening only; live external meeting-admin smoke
+still requires an approved short-lived `platform-desktop` token, runner PASS,
+verifier PASS, and reviewer acceptance.
+
 **Faz 24 KVKK engineering/legal separation delta (2026-06-27)**:
 `ADR-0030` now binds KVKK/VERBIS/hukuk owner acceptance as a parallel
 owner/legal track, not a Faz 24 engineering completion blocker after owner

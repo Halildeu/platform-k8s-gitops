@@ -67,6 +67,8 @@ BOUNDARY_EXPECTATIONS = {
     "externalMeetingAdminPathExercised": True,
     "recorderLifecycleExercised": True,
     "directSttProven": False,
+    "directSttTranscriptProven": False,
+    "directClientToStt": False,
     "computePlaneAuditProven": False,
     "desktopMicLoopbackProven": False,
     "productionReady": False,
@@ -88,19 +90,52 @@ SENSITIVE_KEY_NAMES = {
     "client_secret",
     "password",
     "secret",
+    "callback_endpoint",
+    "callback_url",
+    "destination_endpoint",
+    "destination_url",
+    "endpoint_url",
+    "internal_url",
+    "stt_endpoint",
+    "stt_url",
+    "transcribe_endpoint",
+    "transcribe_url",
+    "webhook_url",
+    "whisper_url",
+    "audio_base64",
+    "audio_bytes",
+    "audio_preview",
+    "raw_audio",
+    "raw_audio_bytes",
+    "transcript",
+    "transcript_text",
+    "segments",
+    "raw_request",
+    "raw_response",
+    "packet_capture",
+    "pcap",
+    "body",
+    "payload",
 }
+SENSITIVE_KEY_NAME_COMPACT = {name.replace("_", "") for name in SENSITIVE_KEY_NAMES}
+URL_VALUE_ALLOWED_KEYS = {"issuer"}
 
 SECRET_VALUE_PATTERNS = [
-    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
-    re.compile(r"\bAuthorization\s*:", re.IGNORECASE),
-    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    ("secret", re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE)),
+    ("secret", re.compile(r"\bAuthorization\s*:", re.IGNORECASE)),
+    ("secret", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
+    ("secret", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("url", re.compile(r"\b(?:https?|wss?)://[^\s\"']+", re.IGNORECASE)),
+    ("raw_audio", re.compile(r"data:audio/[A-Za-z0-9.+-]+;base64,", re.IGNORECASE)),
 ]
 
 UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
     r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
+SESSION_ID_RE = re.compile(r"^SES-[A-Za-z0-9_-]{4,120}$")
+CAMEL_BOUNDARY_1_RE = re.compile(r"(.)([A-Z][a-z]+)")
+CAMEL_BOUNDARY_2_RE = re.compile(r"([a-z0-9])([A-Z])")
 
 
 @dataclass
@@ -130,6 +165,13 @@ def _iter_values(value: Any, path: str = "$") -> Iterable[tuple[str, str | None,
             child_path = f"{path}[{index}]"
             yield child_path, None, child
             yield from _iter_values(child, child_path)
+
+
+def _normalized_key(key: str) -> str:
+    key = key.replace("-", "_").replace(".", "_").strip()
+    key = CAMEL_BOUNDARY_1_RE.sub(r"\1_\2", key)
+    key = CAMEL_BOUNDARY_2_RE.sub(r"\1_\2", key)
+    return re.sub(r"_+", "_", key).lower()
 
 
 def _load_evidence(path: Path | None) -> tuple[dict[str, Any] | None, str | None]:
@@ -163,13 +205,18 @@ def _step_by_name(steps: Any) -> dict[str, dict[str, Any]]:
 def _validate_no_sensitive_content(data: dict[str, Any], checks: list[Check]) -> None:
     findings: list[str] = []
     for path, key, value in _iter_values(data):
-        if key is not None and key.lower() in SENSITIVE_KEY_NAMES:
-            findings.append(f"{path}: forbidden key '{key}'")
-            continue
+        if key is not None:
+            normalized = _normalized_key(key)
+            if normalized in SENSITIVE_KEY_NAMES or normalized.replace("_", "") in SENSITIVE_KEY_NAME_COMPACT:
+                findings.append(f"{path}: forbidden key '{key}'")
+                continue
         if isinstance(value, str):
-            for pattern in SECRET_VALUE_PATTERNS:
+            normalized = _normalized_key(key) if key is not None else ""
+            for pattern_kind, pattern in SECRET_VALUE_PATTERNS:
+                if pattern_kind == "url" and normalized in URL_VALUE_ALLOWED_KEYS:
+                    continue
                 if pattern.search(value):
-                    findings.append(f"{path}: secret-like value")
+                    findings.append(f"{path}: secret-like, URL-like, or raw audio value")
                     break
 
     _add(
@@ -222,8 +269,8 @@ def _validate_ids(data: dict[str, Any], checks: list[Check]) -> tuple[str, str, 
     _add(
         checks,
         "session_id_shape",
-        session_id.startswith("SES-") and len(session_id) > 4 and "\n" not in session_id,
-        "ids.sessionId must be non-empty and start with SES-",
+        bool(SESSION_ID_RE.match(session_id)),
+        "ids.sessionId must start with SES- and contain only safe chars",
     )
     return meeting_id, capture_id, session_id
 

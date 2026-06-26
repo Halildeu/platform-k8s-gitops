@@ -1,5 +1,30 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 external recorder smoke evidence hardening packaged (2026-06-27)
+
+The external meeting-admin + recorder lifecycle smoke package for #1996/#1997
+now uses the same metadata-only false-accept discipline as the direct-STT and
+desktop capture gates:
+
+- `scripts/faz24/run_external_recorder_smoke.py` omits token/destination/
+  callback/internal/webhook/STT/transcribe URL fields from response excerpts,
+  redacts URL-like or base64-audio string values, no longer emits top-level
+  `baseUrl`, and fails closed on unsafe `sessionId` values before using them in
+  lifecycle paths.
+- `scripts/faz24/verify_external_recorder_smoke_evidence.py` rejects camelCase
+  sensitive-key bypasses such as `destinationUrl`, URL-like values outside the
+  token-contract `issuer`, base64 audio data URIs, raw audio/transcript
+  payloads, raw request/response bodies, packet captures, unsafe `sessionId`,
+  and direct-STT/direct-client/compute-plane/production overclaims.
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` records the
+  stricter attachment contract.
+
+Boundary: source-side runner/verifier/runbook hardening only. No token was
+minted, no live smoke was run, no Vault value was read or written, no runtime
+object was mutated, and no #1615 acceptance is claimed. External meeting-admin
+acceptance still requires an approved short-lived `platform-desktop` token, the
+runner output with `status=pass`, verifier PASS, and reviewer acceptance.
+
 ## Live Delta — Faz 24 direct-STT verifier hardening packaged (2026-06-27)
 
 The #182 direct-STT evidence gates now have stricter metadata-only false-accept
