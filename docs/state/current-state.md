@@ -1,5 +1,65 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 KVKK engineering/legal separation rule (2026-06-27)
+
+Owner directive recorded by user: KVKK/VERBIS/hukuk owner acceptance is a
+parallel legal track and must not block Faz 24 engineering completion after
+owner notification is recorded. Engineering proceeds as if the legal track were
+externally handled, but does not claim legal acceptance, VERBIS closure, DPA, or
+production legal go.
+
+Canonical rule updates:
+
+- `AGENTS.md` hard rule now states Faz 24 KVKK legal-track parallelism.
+- `docs/context-priority-rules.md` §4.5 defines legal track vs engineering gate
+  status language.
+- `docs/adr/0030-kvkk-meeting-intelligence-boundary.md` is now
+  `ENGINEERING ACCEPTED / LEGAL TRACK PARALLEL`, not legal accepted.
+- `scripts/faz24/verify_gcomp_compliance_gate_evidence.py` now treats
+  `legal_track_notification` / legacy `kvkk_verbis` as owner notification
+  evidence, not legal acceptance. It requires fail-closed parametric controls:
+  `retentionDurationsParametric=true`, `retentionDefaultsFailClosed=true`,
+  `consentDefaultRequired=true`, `deletionPipelineDefaultEnabled=true`, and
+  forbids `legalAcceptanceClaimed`, `productionLegalGoClaimed`, and hardcoded
+  retention durations.
+
+Engineering boundary:
+
+- Retention/deletion durations are owner-supplied parameters. Missing owner
+  values are not an engineering blocker if the durable storage path is
+  fail-closed/refuse-to-store and no hardcoded duration is accepted as a legal
+  decision.
+- Legal acceptance, VERBIS güncelliği, DPA/subprocessor decision, and production
+  legal go remain owner/legal artifacts. They are not produced by agent/CI/PR
+  and must not be used as closure language without evidence.
+- Claude cross-AI adversarial review was run on 2026-06-27. It agreed with the
+  separation only under fail-closed defaults: retention unset/refuse-to-store,
+  consent default required, deletion pipeline default enabled, and no legal
+  overclaim.
+
+## Live Delta — Faz 24 direct-STT mTLS Secret blast-radius split (2026-06-27)
+
+`platform-ai#182` credential-delivery path now separates direct-STT mTLS
+material from the existing Redis password aggregate:
+
+- `audio-gateway-secrets` remains the `envFrom` Secret for
+  `SPRING_DATA_REDIS_PASSWORD` only.
+- New dedicated `ExternalSecret/Secret audio-gateway-direct-stt-mtls` carries
+  only `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key` from `kv/platform/audio-gateway-service`.
+- `deployment/audio-gateway` mounts `/etc/direct-stt-mtls` from the dedicated
+  Secret. The mount stays `optional: true` while
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`, so a missing pre-seed Secret does
+  not break the current flag-false pod.
+- The preflight collector/verifier now requires the dedicated ExternalSecret
+  and runtime Secret to be Ready/present, not referenced by `envFrom`, and
+  usable for mTLS `/health` from the real pod before any direct-STT flag flip.
+
+Boundary: this is source/desired-state hardening only. No Vault values were
+read or written, no live Kubernetes mutation was performed, no direct-STT flag
+was flipped, and no audio was sent. #182 still requires approved seed,
+pre-flag mTLS preflight PASS, direct-STT flag flip, and fresh e2e evidence.
+
 ## Live Delta — Faz 24 audio-gateway authz enforce desired-state flip (2026-06-26)
 
 `platform-backend#716` moves from packaged/default-off toward test runtime
@@ -71,8 +131,8 @@ Guardrail added:
   context must not be trusted.
 
 Live state remains pre-seed: `audio-gateway` desired/runtime direct-STT flag is
-false, `ExternalSecret/audio-gateway-secrets` maps only `redis_password`, and
-the target Secret exposes only `SPRING_DATA_REDIS_PASSWORD` by key name. No
+false, `audio-gateway-secrets` maps only `redis_password`, and direct-STT mTLS
+material is expected through dedicated `audio-gateway-direct-stt-mtls`. No
 credential values are recorded here, no Vault/ESO mutation was performed, and
 no audio was sent.
 
@@ -87,8 +147,9 @@ runtime boundary:
 - live config still has `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`,
   `https://live-stt.denetim:8243/transcribe`, and result stream
   `transcript:direct-stt-results`;
-- `ExternalSecret/audio-gateway-secrets` is `Ready=True` / `SecretSynced`;
-- live Secret key names contain only `SPRING_DATA_REDIS_PASSWORD`;
+- `ExternalSecret/audio-gateway-secrets` is `Ready=True` / `SecretSynced` for
+  Redis only;
+- live aggregate Secret key names contain only `SPRING_DATA_REDIS_PASSWORD`;
 - `allow-audio-gateway-egress-live-stt-mtls` still targets
   `10.99.0.2/32` TCP/8243.
 
@@ -106,9 +167,9 @@ New guardrail:
   connecting to Denetim PC, Vault, Kubernetes, `/transcribe`, or audio data.
 - The preflight requires real-pod evidence while
   `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`: hostAlias, narrow NetworkPolicy,
-  `/etc/direct-stt-mtls` mount, ESO mappings for `direct_stt_ca_crt`,
-  `direct_stt_client_crt`, `direct_stt_client_key`, runtime Secret key names
-  for `direct-stt-ca.crt`, `direct-stt-client.crt`,
+  `/etc/direct-stt-mtls` mount, dedicated ESO mappings for
+  `direct_stt_ca_crt`, `direct_stt_client_crt`, `direct_stt_client_key`,
+  runtime Secret key names for `direct-stt-ca.crt`, `direct-stt-client.crt`,
   `direct-stt-client.key`, and mTLS `/health` HTTP 200 from the real pod using
   mounted client cert material.
 - It rejects PEM values, tokens, raw command output, destination URLs, raw
@@ -120,10 +181,10 @@ New guardrail:
   key names, pod readiness, and bounded mTLS `/health` status/timing from the
   real `audio-gateway` pod, then writes verifier-compatible JSON without
   values. A live fail-closed run before seed showed the current expected
-  blocker: `ExternalSecret/audio-gateway-secrets` still maps only
-  `redis_password`, the runtime Secret still exposes only
-  `SPRING_DATA_REDIS_PASSWORD`, and the mTLS probe cannot reach HTTP 200 until
-  the three direct-STT keys exist.
+  blocker: dedicated `ExternalSecret/audio-gateway-direct-stt-mtls` and its
+  runtime Secret key evidence are still absent/unproven until the three
+  direct-STT Vault properties are seeded and synced. The Redis aggregate still
+  exposes only `SPRING_DATA_REDIS_PASSWORD` by design.
 
 Current #182 path remains: approved credential seed authority -> ESO mapping ->
 pre-flag mTLS enablement preflight PASS -> direct-STT flag flip -> live e2e
@@ -1883,7 +1944,8 @@ Source, GitOps ve live rollout zinciri:
   TLS path'leri `/etc/direct-stt-mtls/direct-stt-*.{crt,key}`,
   result stream `transcript:direct-stt-results`, hostAlias
   `live-stt.denetim -> 10.99.0.2`, `fsGroup=1000`, and read-only
-  `/etc/direct-stt-mtls` mount from existing `audio-gateway-secrets`.
+  `/etc/direct-stt-mtls` mount from dedicated
+  `audio-gateway-direct-stt-mtls`.
 - #2063 canlı evidence: staging-sw `k3d-test/platform-test`
   `deployment/audio-gateway` rollout status successful; live pod
   `audio-gateway-769cc7745c-46st4` Running/Ready, restartCount `0`, imageID
@@ -1895,10 +1957,10 @@ Source, GitOps ve live rollout zinciri:
   seeded yet; this is expected pre-seed behavior, not transcript evidence.
 - Live ExternalSecret boundary: `audio-gateway-secrets` maps only
   `SPRING_DATA_REDIS_PASSWORD<-kv/platform/audio-gateway-service/redis_password`.
-  Live Secret key list also contains only `SPRING_DATA_REDIS_PASSWORD`.
-  The future direct-STT keys `direct-stt-ca.crt`,
-  `direct-stt-client.crt`, and `direct-stt-client.key` are absent by design
-  until Vault seed + ESO mapping.
+  Direct-STT cert/key material belongs to dedicated
+  `audio-gateway-direct-stt-mtls`, whose target keys
+  `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key` remain absent/unproven until Vault seed + ESO sync.
 
 Boundary:
 

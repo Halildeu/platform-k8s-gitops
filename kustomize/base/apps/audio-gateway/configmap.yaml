@@ -58,7 +58,8 @@ data:
   # Backend #725/#753/#768 already ships the direct-STT WebClient, mTLS support,
   # result stream handoff, and audio-part Content-Type fix. Desired-state keeps
   # the full config visible while the actual runtime flag stays false until the
-  # audio-gateway mTLS files are delivered through audio-gateway-secrets.
+  # audio-gateway mTLS files are delivered through the dedicated
+  # audio-gateway-direct-stt-mtls Secret.
   AUDIO_GATEWAY_DIRECT_STT_ENABLED: "false"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL: "https://live-stt.denetim:8243/transcribe"
   AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT: "2"

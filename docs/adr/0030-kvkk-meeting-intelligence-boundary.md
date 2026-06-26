@@ -1,8 +1,8 @@
-# ADR-0030 — KVKK Boundary for Meeting Intelligence (PLACEHOLDER DRAFT)
+# ADR-0030 — KVKK Boundary for Meeting Intelligence
 
-> **Status**: PLACEHOLDER (2026-06-02). 3-AI mutabakat ile Adım 0 kapısı olarak açıldı; gerçek pilot ses/transcript akışı öncesi tam ADR (status: ACCEPTED) doldurulacak.
+> **Status**: ENGINEERING ACCEPTED / LEGAL TRACK PARALLEL (2026-06-27). 2026-06-02 placeholder 3-AI mutabakat ile Adım 0 kapısı olarak açıldı; 2026-06-27 owner kararıyla KVKK/VERBIS/hukuk owner acceptance mühendislik completion blocker'ı olmaktan çıkarıldı. Legal/VERBIS owner track'i paralel yürür; bu ADR legal acceptance, VERBIS güncelliği veya production legal go iddiası değildir.
 >
-> **Mutabakat trail**: Claude (Anthropic) + Codex `019e879c` (OpenAI) AGREE final + Mavis `mvs_c922505d66a94a45b031feb3489f9488` msg `78` (MiniMax) AGREE.
+> **Mutabakat trail**: Claude (Anthropic) + Codex `019e879c` (OpenAI) AGREE final + Mavis `mvs_c922505d66a94a45b031feb3489f9488` msg `78` (MiniMax) AGREE. 2026-06-27 Claude adversarial review: legal track engineering'den ayrılabilir; P0 riskleri önlemek için retention default `UNSET/refuse-to-store`, consent default required, deletion pipeline default enabled, legal acceptance overclaim forbidden.
 
 ---
 
@@ -17,7 +17,24 @@ Faz 24 Meeting Intelligence platformu (`platform-ai` Python STT + `audio-gateway
 
 Mavis MiniMax kritik notu (2026-06-02): **"Ses kaydı kadar transcript koruma kritik — son kullanıcıyı korumak için hem ses hem metin aynı KVKK kapsamına girmeli."**
 
-## Decision (placeholder — pilot öncesi ACCEPTED'a alınacak)
+## Decision
+
+### Engineering / Legal Separation
+
+1. KVKK/VERBIS/hukuk owner acceptance, owner bildirimi kayda alındıktan sonra
+   Faz 24 mühendislik completion blocker'ı değildir.
+2. Mühendislik, legal karar verilmiş gibi ürün kontrollerini uygular ama legal
+   acceptance, VERBIS güncelliği, DPA veya production legal go iddia etmez.
+3. Retention/silme süreleri owner-supplied parametredir. Kod, manifest, gate ve
+   evidence sabit süreyi acceptance blocker olarak kullanmaz; owner değer
+   verdiğinde config ile uygulanır.
+4. Güvenli default fail-closed'dur: durable storage için retention parametresi
+   yoksa ilgili path refuse-to-store davranır; consent default required,
+   deletion pipeline default enabled kalır.
+5. G-COMP engineering gate; consent, parametric retention controls, legal-hold,
+   access audit, deletion/export, owner legal-track notification, redaction ve
+   runbook evidence doğrular. Hukuki yeterlilik/veri sorumlusu sicil kararını
+   doğrulamaz.
 
 ### Scope
 
@@ -29,7 +46,7 @@ Mavis MiniMax kritik notu (2026-06-02): **"Ses kaydı kadar transcript koruma kr
 | Özet / karar / aksiyon (LLM çıktısı) | Transcript ile aynı; LLM input PII redaction (isim, telefon, IBAN) review öncesi |
 | Audit event (kim erişti, ne zaman) | Permanent retention — KVKK Madde 12 hesap verebilirlik |
 
-### Roles & Rights (taslak — pilot öncesi netleşir)
+### Roles & Rights
 
 | Rol | Erişim |
 |---|---|
@@ -39,14 +56,18 @@ Mavis MiniMax kritik notu (2026-06-02): **"Ses kaydı kadar transcript koruma kr
 | Report viewer (3rd-party UI) | Yalnız onaylı redacted özet — full transcript YOK |
 | Service account (STT/LLM pipeline) | İşleme süresi boyunca encrypted access; idempotent + audit-trail |
 
-### Retention
+### Retention Parameters
 
-| Veri | Süre | Silme |
+Süreler owner/legal track tarafından sağlanan parametrelerdir. Aşağıdaki tablo
+engineering kontrolünün şeklini bağlar; sayısal değerler acceptance blocker
+değil, owner config'i geldiğinde uygulanacak parametrelerdir.
+
+| Veri | Parametre | Silme |
 |---|---|---|
-| Raw audio | 30 gün default (configurable per meeting) | Soft delete + 7 gün grace + hard delete + audit |
-| Transcript | 90 gün default | Aynı pattern |
-| Özet/karar/aksiyon | 1 yıl (rapor değeri) | Owner explicit silme |
-| Audit log | 7 yıl (KVKK Madde 12) | Immutable |
+| Raw audio | `raw_audio_retention_days` owner-supplied; unset ise durable raw-audio storage refuse-to-store | Soft delete + owner-supplied grace + hard delete + audit |
+| Transcript | `transcript_retention_days` owner-supplied; unset ise durable transcript storage refuse-to-store | Aynı pattern |
+| Özet/karar/aksiyon | `derived_artifact_retention_days` owner-supplied; unset ise export/share sınırlı | Owner explicit silme + TTL worker |
+| Audit log | `audit_retention_days` owner-supplied; immutable append-only; unset ise deletion policy legal track pending olarak raporlanır | Immutable / legal hold aware |
 
 ### Consent Flow
 
@@ -83,7 +104,10 @@ Mobile (`platform-mobile`) ve Desktop (`platform-desktop`) client'ları M6 Integ
 | **OTA update integrity** | Client | EAS Update + signed manifest (Expo CodeSigning) + version policy | electron-updater + SHA + signature verify + staged rollout |
 | **Biometric auth (opsiyonel)** | Client | `expo-local-authentication` Face ID + Touch ID + Android biometric | Touch ID (macOS) + Windows Hello |
 
-**Production gate (M7)**: Bu tablo hukuk review ile detaylanır + ADR ACCEPTED durumuna gelir. Pilot kullanıcı kaydı **bu detaylanma öncesi YASAK**.
+**M7 engineering gate**: Bu tablo G-COMP evidence içinde machine-checkable
+kontrollerle doğrulanır. Hukuk review/VERBIS owner track'i paraleldir ve
+mühendislik blocker'ı değildir; pilot/user-facing legal go owner/legal artifact
+ile ayrıca kanıtlanmadan legal acceptance iddiası kurulmaz.
 
 ### Cross-Server STT Transit Boundary (ADR-0031 `019e8c09` absorb — 2026-06-03)
 
@@ -99,49 +123,68 @@ Mobile (`platform-mobile`) ve Desktop (`platform-desktop`) client'ları M6 Integ
 | **Log redaction cross-server** | Transcript text + audio path payload'a düşmez | Structured log redaction filter (correlation ID + metadata OK; text + filename + speaker ID **redacted** veya hash); `kvkk_pii_redaction_total` metric. |
 | **Failure / backlog behavior** | Silent drop YASAK; fail-fast + alert | platform-ai unreachable → Gateway 503 fail-fast; Redis TTL drain (kısa süre tolerate); admission control reject + Prometheus alert + audit event `cross_server_transit_failure`. |
 | **No direct client-to-STT rule** | Mobile/desktop/web Gateway zorunlu | Network policy: platform-ai ingress sadece staging-sw Gateway source IP'sinden allow; başka source drop + audit. |
-| **Backup / cache retention cross-server** | HF model cache + transcript cache + audio cache TTL | HF model cache platform-ai disk'inde (24h+ kabul; model warm-load avantajı); transcript cache memory-only (no persistence); audio cache **YOK** (transient stream-through). |
-| **Legal controller-processor boundary** | Workcube = controller; platform-ai host operator = processor | KVKK Madde 11 sözleşme: DPA (Data Processing Agreement) imzalı; subprocessor list (Vault PKI provider, GPU cloud) dokümante; cross-border transit (LLM API) ADR-0030 §LLM API option A/B karar dahil. |
+| **Backup / cache retention cross-server** | Cache süreleri owner-supplied parametre veya ephemeral default olur | HF model cache platform-ai disk'inde yalnız model warm-load için; transcript cache memory-only (no persistence); audio cache **YOK** (transient stream-through). Kalıcı cache retention değeri owner config'i olmadan açılmaz. |
+| **Legal controller-processor boundary** | Workcube = controller; platform-ai host operator = processor adayı | DPA/subprocessor/cross-border kararları owner/legal track'indedir. Mühendislik bu sınırı config/audit/redaction/host-access kontrolleriyle destekler ama DPA imzalı veya legal accepted iddiası yapmaz. |
 
-**Production gate (M7) ek madde**: Bu cross-server transit clause hukuk review ile detaylanır + ADR ACCEPTED durumuna gelir. Pilot kullanıcı kaydı **bu detaylanma öncesi YASAK**.
+**M7 engineering ek madde**: Cross-server transit için WireGuard/mTLS, tenant
+propagation, bounded Redis, redaction ve audit evidence gerekir. Hukuk review
+ve DPA owner/legal track'te paralel izlenir; bu eksikse production legal go
+iddia edilmez ama mühendislik kontrolleri ilerlemeye devam eder.
 
-## Status & Open Questions (pilot öncesi cevap)
+## Parallel Legal Track (owner/legal; engineering blocker değil)
 
 - [ ] Hukuk danışmanı review (Türk KVKK uzmanı)
-- [ ] VERBIS bildirimi gerek mi (veri sorumlusu sicili)?
+- [ ] VERBIS bildirimi/güncellemesi gerek mi (veri sorumlusu sicili)?
 - [ ] Sınır ötesi aktarma için aydınlatma metni (LLM API kullanımında)
 - [ ] Çalışan toplantısı / müşteri toplantısı / iç eğitim ayrı kategori mi?
-- [ ] Türkiye dışı kullanıcı (Workcube müşteri yurt dışı) için GDPR paralel uyum
+- [ ] Türkiye dışı kullanıcı için GDPR paralel uyum
+- [x] Owner bildirimi kayda alındı: kullanıcı 2026-06-27 "ben owner'a bildirdim" kararını verdi; engineering gate bu bildirimden sonra legal acceptance beklemez.
 
 ## Mavis Adversarial Vurgu (msg `74`/`78` absorb)
 
-Mavis MiniMax review'ında öne çıkan eklenti soru/karar tablosu (TBD = pilot öncesi cevap):
+Mavis MiniMax review'ında öne çıkan eklenti soru/karar tablosu (legal/owner
+track cevapları paralel; engineering gate için blocker değil):
 
 | Konu | Soru | Karar |
 |---|---|---|
-| Hukuka uygunluk dayanağı (Madde 5/6/9) | Açık rıza mı, sözleşme mi, meşru menfaat mi? | TBD |
-| Saklama süresi otomatik silme | Soft delete + hard delete TTL configurable | Tablo §Retention (30/90/1yr/7yr) |
-| Üçüncü taraf model paylaşım | OpenAI/Anthropic Whisper API → KVKK Madde 8/9 uyumu | LLM API §Option A/B karar pilot öncesi |
+| Hukuka uygunluk dayanağı (Madde 5/6/9) | Açık rıza mı, sözleşme mi, meşru menfaat mi? | Owner/legal track; engineering blocker değil |
+| Saklama süresi otomatik silme | Soft delete + hard delete TTL configurable | Owner-supplied parametre; unset ise durable storage fail-closed |
+| Üçüncü taraf model paylaşım | OpenAI/Anthropic Whisper API → KVKK Madde 8/9 uyumu | LLM API §Option A/B owner/legal track; engineering redaction/overclaim guard uygular |
 | Erişim kontrolü (RBAC + Zanzibar) | Kim okuyabilir, role-based mi? | Tablo §Roles & Rights |
 | Silme talebi (Madde 11/13) | Kullanıcı transcript sildirmek isterse iş akışı? | TBD — Faz 24.7'de operator UI |
-| Veri minimizasyonu | Ses dosyası saklansın mı yoksa sadece transcript yeterli mi? | Default: ses 30 gün, transcript 90 gün; configurable |
+| Veri minimizasyonu | Ses dosyası saklansın mı yoksa sadece transcript yeterli mi? | Default durable raw-audio storage kapalı / parametre unset; owner config gelince policy uygulanır |
 | Transcript okuma yetkisi (participant vs IT admin) | Çalışan mahremiyeti vs şirket güvenliği KVKK Madde 6/9 dayanağı | Tablo §Roles & Rights — IT admin KISITLI; içerik erişim consent/legal hold gerek |
 | Meeting katılımcı consent | Katılımcı KVKK Madde 15/16 bilgi talep edebilir | §Consent Flow — explicit consent modal + opt-out |
 | Şirket IT admin access sınırı | Tüm transcript erişim hukuki dayanağı? | Default: audit metadata YES, içerik HAYIR (consent/legal hold gerek) |
 | Multi-tenant tenant isolation | Bir müşterinin verisi diğerine sızmamalı (Madde 12/32) | §Future Multi-tenant Readiness — tenantId reserved field |
 
-## Production Çıkış Kapısı (Gate)
+## Engineering G-COMP Gate
 
-Faz 24 servisleri **production'a çıkmaz** şu maddeler tamamlanana kadar:
+Faz 24 mühendislik G-COMP evidence pass için şu maddeler aranır:
 
-- [ ] KVKK Madde 6/9 uyumlu hukuki dayanak dokümante edilmiş (hukuk review imzalı)
-- [ ] Saklama süresi ve otomatik silme mekanizması implement edilmiş (cron worker + audit)
-- [ ] Veri paylaşım limiti (üçüncü taraf model sağlayıcı dahil) kontratla sabitlenmiş (DPA imzalı)
+- [ ] Owner legal-track notification evidence kayıtlı
+- [ ] Retention/silme süreleri parametric config; hardcoded duration yok
+- [ ] Retention unset/default path fail-closed veya refuse-to-store
+- [ ] Consent default required
+- [ ] Deletion pipeline default enabled + audit
 - [ ] Silme talebi iş akışı tasarlanmış + UI'da operator endpoint var
 - [ ] Observability GOP başı doğrulanmış (ses/transcript log'a düşmüyor — `kvkk_pii_redaction_total` metric < threshold)
 - [ ] Consent flow LIVE testai'de browser smoke ile kanıtlanmış
-- [ ] LLM API yurt dışı aktarma için aydınlatma metni eklenmiş (Option A/B karar dokümante)
 - [ ] Multi-tenant readiness placeholder live veya `multi_tenant_ready: false` explicit işaretli
-- [ ] **Cross-Server STT Transit Boundary** hukuk review ile detaylandı + WireGuard/mTLS UP + tenant propagation (X-* headers) propagating + audit event `audio_chunk_forwarded_to_platform_ai` emit verify + Redis transient/bounded policy live (persistence OFF, TTL kısa, max memory bounded, backlog fail-fast) + platform-ai host access boundary (SSH + Vault credentials + audit trail) live evidence ile doğrulandı (ADR-0031 + ADR-0030 §"Cross-Server STT Transit Boundary" — Codex `019e8c09` iter-2 absorb 2026-06-03)
+- [ ] **Cross-Server STT Transit Boundary** WireGuard/mTLS UP + tenant propagation (X-* headers) propagating + audit event `audio_chunk_forwarded_to_platform_ai` emit verify + Redis transient/bounded policy live (persistence OFF, TTL kısa/owner-supplied, max memory bounded, backlog fail-fast) + platform-ai host access boundary (SSH + Vault credentials + audit trail) live evidence ile doğrulandı (ADR-0031 + ADR-0030 §"Cross-Server STT Transit Boundary" — Codex `019e8c09` iter-2 absorb 2026-06-03)
+- [ ] Verifier/output hiçbir yerde `legalAdviceClaimed`, `legalAcceptanceClaimed`, `productionLegalGoClaimed`, `productionReady` overclaim yapmıyor
+
+## Owner/Legal Production Go (parallel)
+
+Bu maddeler owner/legal track'indedir. Mühendislik gate'ini bloklamaz; ancak
+bu kanıtlar olmadan legal acceptance veya production legal go söylenmez:
+
+- [ ] KVKK Madde 5/6/9 uyumlu hukuki dayanak dokümante edilmiş
+- [ ] VERBIS bildirimi/güncellemesi owner/legal tarafından kararlaştırılmış
+- [ ] Saklama süresi değerleri owner/legal tarafından config'e verilmiş
+- [ ] Veri paylaşım limiti (üçüncü taraf model sağlayıcı dahil) kontratla sabitlenmiş
+- [ ] LLM API yurt dışı aktarma için aydınlatma metni eklenmiş veya self-host karar verilmiş
+- [ ] DPA/subprocessor/cross-border transit kararları owner/legal artifact ile kayıtlı
 
 ## Cross-AI Mutabakat Detayı (kritik kararlar)
 
@@ -149,8 +192,9 @@ Faz 24 servisleri **production'a çıkmaz** şu maddeler tamamlanana kadar:
 |---|---|
 | Ses + transcript aynı KVKK kapsamında | Mavis önerisi → Claude + Codex AGREE |
 | Multi-tenant placeholder şimdi | Mavis öneri → Claude + Codex AGREE |
-| KVKK ADR placeholder pilot öncesi şart (GOP başı) | Mavis + Codex + Claude AGREE |
+| KVKK engineering controls ADR/GOP başı şart | Mavis + Codex + Claude AGREE; 2026-06-27 owner kararıyla legal track parallel |
 | LLM API yurt dışı veri akışı için option A/B karar pilot öncesi | Codex önerisi → Claude + Mavis AGREE |
+| Legal acceptance engineering blocker değil; fail-closed parametric controls şart | Kullanıcı owner kararı + Claude adversarial review 2026-06-27 |
 
 ## References
 
@@ -160,9 +204,11 @@ Faz 24 servisleri **production'a çıkmaz** şu maddeler tamamlanana kadar:
 - `docs/faz-24-meeting-intelligence-plan.md` (canonical Faz 24 plan)
 - `platform-ai/CLAUDE.md` PII/KVKK boundary repo-specific kural
 - Cross-AI threads: Codex `019e879c` + Mavis msg id `74` + `78`
+- 2026-06-27 Claude CLI adversarial review (legal-track parallelism / fail-closed parameterization)
 
 ## Next
 
-1. PR-gw-01 Gateway Contract 1.0 freeze öncesi bu placeholder canonical referans alır
-2. Pilot ses kaydı kullanılmadan önce **bu ADR ACCEPTED'a yükselir** (hukuk review + open question'lar cevaplanır)
-3. PR-stt-02 real audio fixture seçimi **bu ADR'yle uyumlu** — privacy-safe asset stratejisi (Common Voice TR veya synthetic TTS)
+1. PR-gw-01 Gateway Contract 1.0 freeze ve sonraki Faz 24 product gates bu ADR'yi canonical referans alır
+2. Mühendislik G-COMP gate'i owner legal-track notification + fail-closed parametric controls ile yürür
+3. Owner/legal production go ayrı artifact ister; bu ADR tek başına legal acceptance veya VERBIS closure üretmez
+4. PR-stt-02 real audio fixture seçimi **bu ADR'yle uyumlu** — privacy-safe asset stratejisi (Common Voice TR veya synthetic TTS)

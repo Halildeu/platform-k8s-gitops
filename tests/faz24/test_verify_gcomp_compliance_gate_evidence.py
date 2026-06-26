@@ -13,7 +13,7 @@ REQUIRED_CHECKS = [
     "legal_hold",
     "access_audit",
     "deletion_export",
-    "kvkk_verbis",
+    "legal_track_notification",
     "redaction",
     "runbook",
 ]
@@ -49,7 +49,11 @@ def valid_evidence() -> dict:
             "legalHoldEvidencePresent": True,
             "accessAuditEvidencePresent": True,
             "deletionExportEvidencePresent": True,
-            "kvkkVerbisEvidencePresent": True,
+            "ownerLegalTrackNotificationPresent": True,
+            "retentionDurationsParametric": True,
+            "retentionDefaultsFailClosed": True,
+            "consentDefaultRequired": True,
+            "deletionPipelineDefaultEnabled": True,
             "redactionEvidencePresent": True,
             "secretsIncluded": False,
             "rawAudioIncluded": False,
@@ -58,6 +62,9 @@ def valid_evidence() -> dict:
             "rawResponseIncluded": False,
             "unredactedPersonalDataIncluded": False,
             "legalAdviceClaimed": False,
+            "legalAcceptanceClaimed": False,
+            "productionLegalGoClaimed": False,
+            "retentionDurationsHardcoded": False,
             "liveProductionMutation": False,
             "productionReady": False,
         },
@@ -108,20 +115,20 @@ def test_valid_evidence_passes(tmp_path):
 
 def test_missing_required_check_blocks(tmp_path):
     data = valid_evidence()
-    data["checks"] = [check for check in data["checks"] if check["name"] != "kvkk_verbis"]
+    data["checks"] = [check for check in data["checks"] if check["name"] != "retention"]
 
     proc = run_verifier(tmp_path, data)
     report = json.loads(proc.stdout)
 
     assert proc.returncode == 3
     assert report["status"] == "blocked"
-    assert any("required checks" in failure for failure in report["failures"])
+    assert any("engineering checks" in failure for failure in report["failures"])
 
 
-def test_skipped_kvkk_verbis_check_blocks(tmp_path):
+def test_skipped_legal_track_notification_blocks(tmp_path):
     data = valid_evidence()
     for check in data["checks"]:
-        if check["name"] == "kvkk_verbis":
+        if check["name"] == "legal_track_notification":
             check["status"] = "skipped"
 
     proc = run_verifier(tmp_path, data)
@@ -129,7 +136,44 @@ def test_skipped_kvkk_verbis_check_blocks(tmp_path):
 
     assert proc.returncode == 3
     assert report["status"] == "blocked"
-    assert any("check kvkk_verbis status must be pass" in failure for failure in report["failures"])
+    assert any("legal-track notification" in failure for failure in report["failures"])
+
+
+def test_legacy_kvkk_verbis_pass_satisfies_owner_notification(tmp_path):
+    data = valid_evidence()
+    data["checks"] = [
+        check for check in data["checks"] if check["name"] != "legal_track_notification"
+    ]
+    data["checks"].append(
+        {
+            "name": "kvkk_verbis",
+            "status": "pass",
+            "evidenceRef": "legal://faz24/owner-notified/2026-06-27",
+        }
+    )
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 0
+    assert report["status"] == "pass"
+
+
+def test_skipped_legacy_kvkk_verbis_does_not_block_when_notification_passes(tmp_path):
+    data = valid_evidence()
+    data["checks"].append(
+        {
+            "name": "kvkk_verbis",
+            "status": "skipped",
+            "evidenceRef": "legal://faz24/legacy-kvkk-verbis/pending",
+        }
+    )
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 0
+    assert report["status"] == "pass"
 
 
 def test_consent_coverage_threshold_miss_fails(tmp_path):
@@ -216,16 +260,16 @@ def test_negative_metric_blocks(tmp_path):
     assert any("legalHoldDrillAgeDays must be numeric and >= 0" in failure for failure in report["failures"])
 
 
-def test_missing_legal_operator_boundary_blocks(tmp_path):
+def test_missing_owner_legal_track_notification_boundary_blocks(tmp_path):
     data = valid_evidence()
-    data["boundaries"]["kvkkVerbisEvidencePresent"] = False
+    data["boundaries"]["ownerLegalTrackNotificationPresent"] = False
 
     proc = run_verifier(tmp_path, data)
     report = json.loads(proc.stdout)
 
     assert proc.returncode == 3
     assert report["status"] == "blocked"
-    assert any("kvkkVerbisEvidencePresent" in failure for failure in report["failures"])
+    assert any("ownerLegalTrackNotificationPresent" in failure for failure in report["failures"])
 
 
 def test_sensitive_key_leak_fails(tmp_path):
@@ -300,6 +344,42 @@ def test_legal_advice_overclaim_fails(tmp_path):
     assert proc.returncode == 1
     assert report["status"] == "fail"
     assert any("legalAdviceClaimed" in failure for failure in report["failures"])
+
+
+def test_legal_acceptance_overclaim_fails(tmp_path):
+    data = valid_evidence()
+    data["boundaries"]["legalAcceptanceClaimed"] = True
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert report["status"] == "fail"
+    assert any("legalAcceptanceClaimed" in failure for failure in report["failures"])
+
+
+def test_hardcoded_retention_duration_fails(tmp_path):
+    data = valid_evidence()
+    data["boundaries"]["retentionDurationsHardcoded"] = True
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert report["status"] == "fail"
+    assert any("retentionDurationsHardcoded" in failure for failure in report["failures"])
+
+
+def test_non_parametric_retention_boundary_blocks(tmp_path):
+    data = valid_evidence()
+    data["boundaries"]["retentionDurationsParametric"] = False
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("retentionDurationsParametric" in failure for failure in report["failures"])
 
 
 def test_top_level_token_included_fails(tmp_path):
