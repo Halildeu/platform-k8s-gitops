@@ -57,6 +57,13 @@ and production readiness are separate gates. The latest #198 operator output
 proves local Windows Firewall tuple/listener state only; ESET/ERA or central
 endpoint/WFP allow+log for `10.99.0.1 -> 10.99.0.2 TCP/8243`
 `C:\caddy\caddy.exe` is still required before `live-stt-preflight`.
+`platform-backend#716` audience/capability enforcement is also advanced on the
+GitOps side: explicit default-off `audio-gateway` security flags,
+`docs/runbooks/RB-faz24-audio-gateway-jwt-enforcement.md`, and
+`scripts/faz24/verify_audio_gateway_authz_enforce_evidence.py` package the
+fail-closed evidence path. Runtime acceptance remains open until token drain,
+GitOps enforce booleans true, no-token/wrong-audience/missing-role/valid-recorder
+matrix PASS, and reviewer/operator acceptance.
 
 **Faz 24 live delta (2026-06-25)**: `platform-ai#187` source/deploy scope is
 accepted with `platform-backend#756` (`8c269ccf...`), `platform-k8s-gitops#2015`

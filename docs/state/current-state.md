@@ -1,5 +1,42 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 audio-gateway JWT enforce evidence path packaged; runtime flip remains open (2026-06-26)
+
+`platform-backend#716` remains the P1 shared-realm authz gate for real recorder
+traffic: `audio-gateway-service` must require both
+`aud=audio-gateway-service` and
+`resource_access.audio-gateway-service.roles=[audio_record]` before real/prod
+audio use. Backend validator code and fail-closed source tests are already in
+the post-`platform-backend#719/#720` image lineage now carried by the current
+test audio-gateway digest, but the GitOps/runtime enforce flip is still open.
+
+This repo now packages the durable GitOps/evidence path:
+
+- `kustomize/base/apps/audio-gateway/configmap.yaml` carries explicit
+  default-off security flags:
+  `AUDIO_GATEWAY_SECURITY_RESOURCE_CLIENT_ID=audio-gateway-service`,
+  `AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=false`, and
+  `AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=false`;
+- `docs/runbooks/RB-faz24-audio-gateway-jwt-enforcement.md` records the Step 6
+  token drain, Step 7 GitOps-authoritative enforce flip, rollback, and evidence
+  attachment contract;
+- `scripts/faz24/verify_audio_gateway_authz_enforce_evidence.py` validates only
+  redacted `faz24.audioGatewayAuthzEnforceEvidence.v1` metadata and requires the
+  fail-closed matrix: no token `401`, wrong audience `401`, missing
+  `audio_record` role `403`, and valid recorder token `2xx/204` or
+  business `404 session-not-found`;
+- the verifier rejects JWT/Bearer/private-key/cookie/secret-shaped content, raw
+  audio/transcript/prompt/response payloads, direct-STT or production overclaims,
+  and evidence where the enforce booleans are not both true.
+
+Boundary: this is source/desired-state/evidence packaging only. It does not flip
+`AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE` or
+`AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE` to true, does not mutate
+Keycloak, does not prove the #716 fail-closed live smoke, does not send raw
+audio, does not prove direct-STT, and does not make production ready. #716 should
+remain open until token drain, GitOps enforce flip, live fail-closed matrix, and
+reviewer/operator acceptance are all recorded.
+
 ## Live Delta — Faz 24 recording-access PR-2 runtime evidence recorded; tokened object-level gate remains open (2026-06-26)
 
 Faz 24 recorder authorization moved past the source-only `meeting#can_record`
