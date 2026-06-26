@@ -53,6 +53,24 @@
 - PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
   `live-stt-service`, and `meeting-ai-service`.
 
+`platform-ai#214` merged meeting action due-date attribution guard:
+
+- merge commit `d82f7a0edde168b266239c881102ea40add0c6b5`;
+- `AnalyzeResponse.schema_version` moved to `4-adr0043`;
+- `action_items[].due_date` is treated as a separate grounded metadata claim from
+  the action text;
+- if the action text is grounded but the due-date text is not present in the same
+  cited source sentence, the action still ships with `due_date=null`;
+- unsupported, reformatted, or normalized due-date attribution is recorded as
+  `rejected_claims[].kind=action_due_date`;
+- numeric date/time reformatting is intentionally not inferred: for example,
+  `2026-06-26` cited only to `cuma` or to `26.06.2026` is rejected unless that
+  exact due-date text appears in the grounded source sentence;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- Claude adversarial review pass 1 found a digit-group false-pass P1; the source
+  patch was tightened, and pass 2 returned `NO P0/P1`.
+
 Boundary: this is source-side meeting-ai hardening only. It does not process a
 real pilot transcript/audio sample, does not enable a cloud LLM/API, does not
 mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approved

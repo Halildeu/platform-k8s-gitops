@@ -119,6 +119,17 @@ G-INT hallucination-exposure hardening only; it does not provide real pilot G-IN
 evidence, enable a cloud LLM/API, mutate runtime, process raw audio, satisfy
 #198/#188/#182, or change production readiness.
 
+**Faz 24 #162 action due-date attribution delta (2026-06-26)**:
+`platform-ai#214` merged source-side meeting-ai action due-date hardening.
+`AnalyzeResponse` is now `schema_version=4-adr0043`; `action_items[].due_date`
+is accepted only when the due-date phrase is present in the same cited source
+sentence as the grounded action text. Unsupported, reformatted, or normalized
+due dates are withheld from the user-visible action metadata (`due_date=null`)
+and recorded as `rejected_claims[].kind=action_due_date`. Boundary remains
+explicit: this is G-INT metadata precision hardening only; it does not provide
+real pilot G-INT evidence, enable a cloud LLM/API, mutate runtime, process raw
+audio, satisfy #198/#188/#182, or change production readiness.
+
 **Faz 24 #161 diarization decision-gate delta (2026-06-26)**:
 `platform-ai#210` merged source-side diarization backend decision gating:
 metadata-only candidate rows can select a backend only with explicit DER, RTF,
