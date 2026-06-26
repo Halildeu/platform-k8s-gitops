@@ -102,6 +102,19 @@ claim. Boundary remains explicit: this is G-INT source hardening only; it does
 not provide real pilot G-INT evidence, enable a cloud LLM/API, mutate runtime,
 process raw audio, satisfy #198/#188/#182, or change production readiness.
 
+**Faz 24 #161 diarization decision-gate delta (2026-06-26)**:
+`platform-ai#210` merged source-side diarization backend decision gating:
+metadata-only candidate rows can select a backend only with explicit DER, RTF,
+latency, VRAM, and sample thresholds, approved pilot evidence, approved
+license/deployment metadata, `sha256:<64 hex>` evidence hash, and explicit
+non-biometric posture (`voiceprint_enabled=false`,
+`biometric_processing=false`, `speaker_identity_mapping=false`). Current
+synthetic diarization evidence remains `blocked`; hard policy violations return
+`fail`. Boundary remains explicit: this does not produce real pilot DER, select
+a diarization backend/model, process real audio, enable voiceprint/biometric
+identity, mutate runtime, satisfy #198/#188/#182, or change production
+readiness.
+
 **Faz 24 live delta (2026-06-25)**: `platform-ai#187` source/deploy scope is
 accepted with `platform-backend#756` (`8c269ccf...`), `platform-k8s-gitops#2015`
 (`a9b19c9f...`), and deploy run `28176231063` proving 13-service digest-pin

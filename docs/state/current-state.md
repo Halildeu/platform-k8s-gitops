@@ -319,6 +319,16 @@ GitOps also advanced several product-quality and compliance guardrails on
   allows only approved pilot evidence kinds to satisfy the gate. Lab /
   synthetic / Common Voice style performance rows can support capacity
   planning but intentionally return `status=blocked` for acceptance.
+- `platform-ai#210` merged the #161 diarization backend decision gate at
+  `b78e96ac9624edb0e1176f9273179f8e9e225d2d`. The new
+  `services/diarization-service/scripts/diar_decision_gate.py` consumes
+  metadata-only diarization candidate rows and requires explicit DER, RTF,
+  latency, VRAM, and sample thresholds, approved pilot evidence, approved
+  license/deployment metadata, a `sha256:<64 hex>` evidence hash, and explicit
+  non-biometric posture (`voiceprint_enabled=false`,
+  `biometric_processing=false`, `speaker_identity_mapping=false`) before a
+  backend decision can pass. Current synthetic diarization evidence remains
+  `status=blocked`; hard policy violations return `fail`.
 - GitOps issue `platform-k8s-gitops#2027` tracks the shared no-mutation
   evidence-ingest workflow for the G-CAP/G-OPS/G-COMP verifiers:
   `.github/workflows/faz24-product-gate-evidence-ingest.yml` decodes a
@@ -334,11 +344,12 @@ while `#160`, `#161`, `#162`, `#156`, `#182`, `#188`, and `#198` remain
 
 Boundary: these changes advance source-side quality/compliance/product
 governance. They do not produce real pilot WER/DER, do not satisfy G-INT with a
-real meeting, do not produce pilot G-LAT/COST acceptance, do not record VERBIS,
-do not create DB cleanup evidence, do not produce live G-COMP acceptance
-evidence, do not create live G-CAP/G-OPS acceptance evidence, do not enable
-direct-STT, do not send raw audio, do not satisfy #188 compute-plane audit
-smoke, and do not make Faz 24 production-ready. The
+real meeting, do not produce pilot G-LAT/COST acceptance, do not select a
+diarization backend/model, do not record VERBIS, do not create DB cleanup
+evidence, do not produce live G-COMP acceptance evidence, do not create live
+G-CAP/G-OPS acceptance evidence, do not enable direct-STT, do not send raw
+audio, do not satisfy #188 compute-plane audit smoke, and do not make Faz 24
+production readiness. The
 immediate direct-STT runtime blocker remains
 `platform-ai#198` Denetim `8243` app-mTLS reachability.
 
