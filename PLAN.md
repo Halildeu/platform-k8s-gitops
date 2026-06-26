@@ -72,12 +72,14 @@ meeting action/decision, transcript segment, and KVKK access-audit rows, then
 wrote `metadata-only` destruction audit rows for `db.meeting-intelligence`,
 `db.transcript-records`, and `db.kvkk-access-log`. Evidence is recorded in
 `docs/faz-24-evidence/2026-06-26-retention-runtime-smoke.md`. `platform-ai#211`
-then tightened the source-side retention gate so MinIO lifecycle cannot be
-accepted from source script or issue-comment evidence alone; current snapshot is
-still `status=blocked` with VERBIS + three MinIO runtime lifecycle export
-blockers. Boundary remains: this is test DB cleanup behavior plus source-side
-fake-closure prevention only; #156 and G-COMP still need VERBIS status, MinIO
-lifecycle runtime evidence, production/legal owner acceptance, and broader
+tightened the source-side retention gate so MinIO lifecycle cannot be accepted
+from source script or issue-comment evidence alone; `platform-ai#212` then added
+metadata-only test MinIO lifecycle runtime export evidence for `meeting-audio`
+7d, `transcripts` 365d, and `audit-archive` 2557d. Current snapshot remains
+`status=blocked` with `findingCount=0`, `blockerCount=1`; the remaining blocker
+is VERBIS/legal status. Boundary remains: this is test DB cleanup behavior plus
+test MinIO metadata-only lifecycle evidence only; #156 and G-COMP still need
+VERBIS/legal owner acceptance, production lifecycle/deletion proof, and broader
 compliance evidence before pass/readiness language is valid.
 
 **Faz 24 #162 Ask-AI hardening delta (2026-06-26)**:
