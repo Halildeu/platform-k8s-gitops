@@ -84,6 +84,15 @@ returns `422` before any LLM call, and unsupported cloud LLM backends return
 does not produce real pilot G-INT evidence, does not enable a cloud LLM/API, does
 not mutate runtime, and does not change production readiness.
 
+**Faz 24 #162 action-owner grounding delta (2026-06-26)**:
+`platform-ai#208` merged source-side meeting-ai action attribution hardening:
+`action_items[].owner` is accepted only when it appears in the same cited source
+sentence as the grounded action text. Unsupported owner attribution is withheld
+from the user-visible assignee field (`owner=null`) and recorded as
+`rejected_claims[].kind=action_owner`. Boundary remains explicit: this is G-INT
+precision hardening only; it does not provide real pilot G-INT evidence, enable a
+cloud LLM/API, mutate runtime, process raw audio, or change production readiness.
+
 **Faz 24 live delta (2026-06-25)**: `platform-ai#187` source/deploy scope is
 accepted with `platform-backend#756` (`8c269ccf...`), `platform-k8s-gitops#2015`
 (`a9b19c9f...`), and deploy run `28176231063` proving 13-service digest-pin

@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 24 #162 Ask-AI redaction guard hardened in source; pilot G-INT remains open (2026-06-26)
+## Live Delta — Faz 24 #162 meeting-ai source guards advanced; pilot G-INT remains open (2026-06-26)
 
 `platform-ai#207` merged source-side hardening for
 `meeting-ai-service` post-meeting Ask-AI:
@@ -12,6 +12,18 @@
 - residual PII on `/ask` returns `422` before any LLM call;
 - unsupported cloud LLM backends on `/ask` now return `501` instead of silently
   producing mock output;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`.
+
+`platform-ai#208` merged an adjacent G-INT action-owner attribution guard:
+
+- `action_items[].owner` is treated as a separate grounded claim from the action
+  text;
+- if the action text is grounded but the owner is not present in the same cited
+  source sentence, the action still ships with `owner=null`;
+- unsupported owner attribution is recorded as
+  `rejected_claims[].kind=action_owner` instead of being shown as a
+  user-visible assignee;
 - PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
   `live-stt-service`, and `meeting-ai-service`.
 
