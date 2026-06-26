@@ -168,6 +168,18 @@ source-side G-INT precision hardening only; it does not provide real pilot G-INT
 evidence, enable a cloud LLM/API, mutate runtime, process raw audio, satisfy
 #198/#188/#182, or change production readiness.
 
+**Faz 24 #162 attribution phrase-boundary delta (2026-06-26)**:
+`platform-ai#222` tightened meeting-ai action metadata attribution matching.
+Copied `action_items[].owner` and `action_items[].due_date` phrases now match on
+word/phrase boundaries rather than raw substrings inside unrelated words. This
+blocks false-positive attribution cases such as owner `Can` matching `canlı`,
+owner `IT` matching `kritik`, and due date `salı` matching `Salıverme`, while
+preserving the existing token-subset fallback for legitimate multi-word
+attribution. Boundary remains explicit: this is source-side G-INT precision
+hardening only; it does not provide real pilot G-INT evidence, enable a cloud
+LLM/API, mutate runtime, process raw audio, satisfy #198/#188/#182, or change
+production readiness.
+
 **Faz 24 #161 diarization decision-gate delta (2026-06-26)**:
 `platform-ai#210` merged source-side diarization backend decision gating:
 metadata-only candidate rows can select a backend only with explicit DER, RTF,
