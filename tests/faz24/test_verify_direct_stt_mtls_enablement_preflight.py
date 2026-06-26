@@ -216,9 +216,36 @@ class DirectSttMtlsEnablementPreflightVerifierTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("no_sensitive_content", result.stdout)
 
+    def test_camelcase_sensitive_key_is_rejected(self):
+        data = valid_preflight()
+        data["mtlsProbe"]["destinationUrl"] = "https://live-stt.denetim:8243/health"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no_sensitive_content", result.stdout)
+
     def test_destination_url_key_is_rejected(self):
         data = valid_preflight()
         data["mtlsProbe"]["destination_url"] = "https://live-stt.denetim:8243/health"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no_sensitive_content", result.stdout)
+
+    def test_url_like_value_is_rejected_even_under_safe_key(self):
+        data = valid_preflight()
+        data["mtlsProbe"]["healthTarget"] = "https://live-stt.denetim:8243/health"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no_sensitive_content", result.stdout)
+
+    def test_data_audio_value_is_rejected(self):
+        data = valid_preflight()
+        data["mtlsProbe"]["samplePreview"] = "data:audio/wav;base64,QUJDRA=="
 
         result = self.run_validator(data)
 
