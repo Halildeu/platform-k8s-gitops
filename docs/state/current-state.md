@@ -2092,6 +2092,16 @@ The #2034 delta's pending durable fix is now implemented. Note: that delta's dia
 - Verified local: co-bump moves both primary+bridge to the rolled digest; diff-guard sees 2 files / added==deleted / 1..14; alignment guard pass on aligned, fail on simulated drift; bridge mirror correctly SKIPPED when endpoint-admin not in the rollout. shellcheck clean. Interim PR #2033 (drafted) + #2035 (stale-branch premise) closed; this supersedes both.
 - F22_6_COMPLETION still blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only); the remote-bridge re-drift RISK is now durably closed.
 
+### 2026-06-26 Live Delta — V77 (#2057) SSOT-refs re-drift; audit/workflow/contract realigned 5eff536b → 8c4209ee (Codex 019f056e)
+
+The #2031 durable fix closes OVERLAY-vs-OVERLAY drift (auto-sync co-bumps both overlays + the alignment guard asserts overlay equality). It does NOT cover a second drift class: the SSOT *reference* defaults (audit `EXPECTED_REMOTE_BRIDGE_DIGEST`, apply-workflow `expected_digest` default, contract §3 expected digest) are NOT bumped by the auto-sync nor checked by the alignment guard. The V77 #548 deploy (gitops PR #2057) bumped BOTH overlays to `sha256:8c4209ee...` (platform-backend #769 merge sha-74d312d) and the live endpoint-admin-service pod is on 8c4209ee, but the three SSOT refs stayed on `5eff536b` → `REMOTE_BRIDGE_LIVE=blocked digest_hits=2` (the marker-hardened audit; service=8c vs expected=5eff).
+
+- Reconciled the 3 SSOT refs → `sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842` (audit default + apply-workflow default + contract §3). History comments preserved.
+- Live truth at this point: primary endpoint-admin-service desired+live = 8c4209ee; bridge desired (activation overlay) = 8c4209ee; **bridge LIVE pod = 5eff536b (pending rollout)**; audit digest_hits=2 until the bridge is rolled.
+- NEXT: live bridge rollout via rendered activation overlay → `kubectl diff -f` (real diff, not just `--dry-run=server`) → apply → `rollout status` → pod imageID check → re-audit (expect digest_hits=4).
+- DURABLE FOLLOW-UP (Codex 019f056e): extend the auto-sync co-bump (`sync-test-overlay.sh`) AND the alignment guard (`check-remote-bridge-digest-alignment.sh`) to ALSO cover the 3 SSOT refs, so this SSOT-refs-vs-overlay class is closed fail-closed at PR time — tracked separately (this PR is the manual re-align only).
+- F22_6_COMPLETION still blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only).
+
 Boundary for #548 remains unchanged:
 
 - This is source/live-wiring progress for the #548 harness path, not #548 resolution.

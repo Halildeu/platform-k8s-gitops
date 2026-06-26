@@ -66,7 +66,7 @@ evidence.
 | 22.6.1 Operation Catalog | Accepted bounded evidence; raw operation classes denied | `platform-backend#701` |
 | 22.6.2 Approved Script Runner | Accepted bounded evidence; immutable script library and argument schema enforced | `platform-backend#702` |
 | 22.6.3 Constrained executor | Accepted AgentPC2 full matrix evidence | `platform-agent#208` |
-| Broker live state | Dedicated remote-bridge deployment ready on immutable digest; ExternalSecrets Ready/SecretSynced | `docs/state/current-state.md` plus live `kubectl`; current expected digest `sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b` |
+| Broker live state | Dedicated remote-bridge deployment ready on immutable digest; ExternalSecrets Ready/SecretSynced | `docs/state/current-state.md` plus live `kubectl`; current expected digest `sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842` |
 | B1.4 hardware attestation | Real device-key/TPM evidence on agent wire, broker verifier pass, root policy, positive and negative field evidence | `platform-backend#548` |
 | VIEW_ONLY screen-share | Product-channel live VIEW_ONLY smoke, D10 recording/fail-closed evidence, DLP/mask policy, local abort, active indicator, KVKK/attended pilot sign-off | `platform-k8s-gitops#1580` |
 | Release/version hygiene | Agent release, MSI/ProductVersion/FileVersion, artifact-host current, GitOps expected version, verifier defaults, and acceptance issue evidence agree | release artifacts plus GitOps verifier output |
