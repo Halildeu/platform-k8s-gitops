@@ -5358,12 +5358,20 @@ images:
     # single-arch linux/amd64 v2 manifest). The deploy-backend-testai.yml image
     # set rolls this digest AND restarts the pod, so the envFrom ConfigMap
     # change below takes effect on the same roll.
-    # 2026-06-26 retention runtime sync: backend image build 28199414291
-    # emitted this endpoint-admin-service digest in the same immutable payload
-    # as meeting/transcript #764. No endpoint-admin functional acceptance is
-    # claimed here; this line only restores deploy-backend-testai digest-map
-    # parity for the test overlay.
-    digest: sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b
+    # 2026-06-26 Faz 22.6 #548 V77 deploy: bump sha-7f56ed6 (5eff536b, retention
+    # runtime sync) -> sha-74d312d (8c4209ee, platform-backend #769 merge 74d312df,
+    # CI image-push run 28239023740). Forward-only: 74d312df is a descendant of
+    # 7f56ed6; the endpoint-admin-service PATH delta across this gap is exactly the
+    # #548/#1497 runtime-relevant set (#755 audit, #757 V2 EK-chain bundle, #760
+    # Phase 1.5 /attest device-completion, #763 mTLS forward-header default-OFF,
+    # #769 V77) — other monorepo first-parent commits in this range do not touch
+    # endpoint-admin-service. V77 widens the endpoint_enrollments
+    # status CHECK constraint to admit TPM_IN_PROGRESS/TPM_FAILED, which the /attest
+    # leg sets before Vault sign-CSR. Without this the live /attest hit SQLState 23514
+    # (DataIntegrityViolation) on the canonical-status constraint. Flyway applies V77
+    # on this roll. This restores /attest past the DB-write gate; the next live wall
+    # is Vault-HTTPS (gate-B, operator infra) -> FEATURE_DISABLED, not a code defect.
+    digest: sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
