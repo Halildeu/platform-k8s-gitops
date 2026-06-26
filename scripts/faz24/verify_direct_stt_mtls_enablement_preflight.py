@@ -27,6 +27,7 @@ VERIFIER_SCHEMA_VERSION = "faz24.directSttMtlsEnablementPreflightVerifier.v1"
 
 EXPECTED_ISSUE = "platform-ai#182"
 EXPECTED_CLUSTER = "k3d-test"
+EXPECTED_KUBECTL_CONTEXT = "k3d-test"
 EXPECTED_NAMESPACE = "platform-test"
 EXPECTED_DEPLOYMENT = "audio-gateway"
 EXPECTED_SECRET = "audio-gateway-secrets"
@@ -255,6 +256,12 @@ def validate_environment(data: dict[str, Any], checks: list[Check]) -> None:
         add(checks, "environment_shape", False, "environment must be an object")
         return
     add(checks, "environment_cluster", env.get("cluster") == EXPECTED_CLUSTER, f"cluster must be {EXPECTED_CLUSTER}")
+    add(
+        checks,
+        "environment_kubectl_context",
+        env.get("kubectlContext") == EXPECTED_KUBECTL_CONTEXT,
+        f"kubectlContext must be {EXPECTED_KUBECTL_CONTEXT}; do not rely on kubectl's default context",
+    )
     add(checks, "environment_namespace", env.get("namespace") == EXPECTED_NAMESPACE, f"namespace must be {EXPECTED_NAMESPACE}")
     add(checks, "environment_deployment", env.get("deployment") == EXPECTED_DEPLOYMENT, f"deployment must be {EXPECTED_DEPLOYMENT}")
     add(checks, "environment_pod_name", safe_name(env.get("podName")), "podName must be bounded safe metadata")

@@ -28,6 +28,7 @@ def valid_preflight() -> dict:
         },
         "environment": {
             "cluster": "k3d-test",
+            "kubectlContext": "k3d-test",
             "namespace": "platform-test",
             "deployment": "audio-gateway",
             "podName": "audio-gateway-769cc7745c-46st4",
@@ -133,6 +134,15 @@ class DirectSttMtlsEnablementPreflightVerifierTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("runtime_secret_keys", result.stdout)
+
+    def test_wrong_kubectl_context_fails(self):
+        data = valid_preflight()
+        data["environment"]["kubectlContext"] = "k3d-prod"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("environment_kubectl_context", result.stdout)
 
     def test_missing_external_secret_property_fails(self):
         data = valid_preflight()

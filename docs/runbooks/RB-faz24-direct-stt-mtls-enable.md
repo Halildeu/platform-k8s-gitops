@@ -9,6 +9,41 @@
 - NetworkPolicy `allow-audio-gateway-egress-live-stt-mtls` allows only `audio-gateway` -> `10.99.0.2/32` TCP/8243.
 - The pod maps `live-stt.denetim` to `10.99.0.2` with `hostAliases` so HTTPS SNI/Host remains the certificate/Caddy hostname while routing over WireGuard.
 
+## Kubernetes Context Guard
+
+All live Kubernetes reads or mutations in this runbook target the test cluster
+only. Do not rely on the shell's default `kubectl` context; on `staging-sw` it
+can point at `k3d-prod`.
+
+Use an explicit context wrapper before collecting evidence or applying the
+test overlay:
+
+```bash
+export KUBECTL_CONTEXT=k3d-test
+export KUBECTL_NAMESPACE=platform-test
+kubectl --context "${KUBECTL_CONTEXT}" config current-context
+kubectl --context "${KUBECTL_CONTEXT}" get ns "${KUBECTL_NAMESPACE}"
+
+k() {
+  kubectl --context "${KUBECTL_CONTEXT}" -n "${KUBECTL_NAMESPACE}" "$@"
+}
+```
+
+The Gate 1 and Gate 2 evidence JSON must include:
+
+```json
+{
+  "environment": {
+    "cluster": "k3d-test",
+    "kubectlContext": "k3d-test",
+    "namespace": "platform-test"
+  }
+}
+```
+
+Both direct-STT verifiers fail closed when `environment.kubectlContext` is not
+`k3d-test`.
+
 ## Secret Contract
 
 Vault path: `kv/platform/audio-gateway-service`
@@ -45,6 +80,8 @@ python3 scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py \
 The preflight verifier requires:
 
 - real `audio-gateway` pod evidence from `k3d-test/platform-test`;
+- evidence collected with explicit `kubectl --context k3d-test`, recorded as
+  `environment.kubectlContext="k3d-test"`;
 - `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false` still in desired/runtime state;
 - hostAlias `live-stt.denetim -> 10.99.0.2`, narrow NetworkPolicy
   `10.99.0.2/32:8243`, and `/etc/direct-stt-mtls` mount present;
@@ -88,6 +125,8 @@ python3 scripts/faz24/verify_direct_stt_e2e_evidence.py \
 The verifier requires:
 
 - real `audio-gateway` pod evidence from `k3d-test/platform-test`;
+- evidence collected with explicit `kubectl --context k3d-test`, recorded as
+  `environment.kubectlContext="k3d-test"`;
 - `AUDIO_GATEWAY_DIRECT_STT_ENABLED=true`;
 - `live-stt.denetim:8243` mTLS health HTTP 200 from the real pod with mounted
   client certificate material;
@@ -119,7 +158,9 @@ gh workflow run faz24-direct-stt-e2e-evidence-ingest.yml \
 
 1. Seed the three Vault properties with stdin-pipe or an approved equivalent. Do not print PEM values.
 2. Update `kustomize/overlays/test/eso/audio-gateway/externalsecret.yaml` to map the three properties above into `audio-gateway-secrets`.
-3. Verify `ExternalSecret/audio-gateway-secrets` is `Ready=True` and the target Secret exposes the three file-like keys by key name only.
+3. Verify `ExternalSecret/audio-gateway-secrets` is `Ready=True` and the
+   target Secret exposes the three file-like keys by key name only, using
+   `kubectl --context k3d-test -n platform-test`.
 4. Write the metadata-only mTLS enablement preflight JSON and run
    `verify_direct_stt_mtls_enablement_preflight.py`. Do not continue to the
    flag flip unless it reports PASS.

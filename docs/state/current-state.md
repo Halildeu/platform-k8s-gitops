@@ -1,5 +1,32 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT kubectl context guard added (2026-06-26)
+
+Read-only staging-sw refresh after `platform-k8s-gitops#2069` found a
+runtime-ops hazard: `kubectl config current-context` on `staging-sw` currently
+points at `k3d-prod`, while the direct-STT acceptance path targets
+`k3d-test/platform-test`. A contextless `kubectl -n platform-test ...` command
+therefore returned `namespaces "platform-test" not found` from the wrong
+cluster context before the explicit `--context k3d-test` read confirmed the
+actual test state.
+
+Guardrail added:
+
+- `verify_direct_stt_mtls_enablement_preflight.py` now requires
+  `environment.kubectlContext="k3d-test"` in addition to
+  `environment.cluster="k3d-test"`.
+- `verify_direct_stt_e2e_evidence.py` now requires the same explicit context
+  marker before #182 e2e evidence can pass.
+- `RB-faz24-direct-stt-mtls-enable.md` now starts live commands with
+  `kubectl --context k3d-test -n platform-test` and states that default
+  context must not be trusted.
+
+Live state remains pre-seed: `audio-gateway` desired/runtime direct-STT flag is
+false, `ExternalSecret/audio-gateway-secrets` maps only `redis_password`, and
+the target Secret exposes only `SPRING_DATA_REDIS_PASSWORD` by key name. No
+credential values are recorded here, no Vault/ESO mutation was performed, and
+no audio was sent.
+
 ## Live Delta — Faz 24 direct-STT pre-flag guard added; live Secret still pre-seed (2026-06-26)
 
 Read-only refresh from `staging-sw` / `k3d-test` confirmed the current #182
