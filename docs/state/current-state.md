@@ -1,6 +1,69 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 24 #227 G-INT hardening merged; I7 8243 preflight refreshed (2026-06-26)
+## Live Delta — Faz 24 #229/#230 source quality gates merged; user-facing e2e still gated (2026-06-26)
+
+Two additional `platform-ai` source-side product-quality hardening PRs are now
+merged on `main` after provider-separated Cross-AI review and green CI:
+
+- `platform-ai#229` merged as
+  `b4f86b1c8ae9e77ae41846eaf834cc2ea0fa5b50`.
+  Main CI run `28260265821` completed `success` across `repo-gates`,
+  `meeting-ai-service`, `live-stt-service`, `final-stt-service`, and
+  `diarization-service`.
+- `platform-ai#230` merged as
+  `87b3f22022602f9fa853371511e08b0fada82550`.
+  Main CI run `28260320293` completed `success` across `repo-gates`,
+  `live-stt-service`, `diarization-service`, `meeting-ai-service`, and
+  `final-stt-service`.
+- Cross-AI review was completed through Claude for both PRs with no P0/P1
+  blockers after fixes. `zeynep-serban` personal review was not required for
+  Halil-owned work and the pending review requests were removed before merge.
+
+What moved:
+
+- G-INT evidence now requires citation coverage and verified-summary evidence.
+  Structurally valid but uncited intelligence output cannot satisfy the
+  source-side gate by itself.
+- G-WER/DER evidence now requires explicit denominator thresholds:
+  `minWerSamples`, `minDerSamples`, and `minWerRefWords`. Tiny pilot rows
+  cannot pass only because their WER/DER metric values are below ceilings.
+- Shared Faz 24 AI gate ingest and operator-facing docs/runbooks carry the same
+  threshold contracts.
+
+Direct-STT live boundary also moved since the older #227 snapshot below:
+
+- `platform-backend#768` has since merged and deployed through
+  `platform-k8s-gitops#2061`; the test `audio-gateway-service` image digest is
+  `sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`.
+- `platform-k8s-gitops#2062` added the narrow real-pod egress path from
+  `audio-gateway` to Denetim `10.99.0.2/32` TCP/8243, and live pod evidence
+  reached Caddy/TLS over WireGuard instead of timing out.
+- `platform-k8s-gitops#2063` staged durable default-off mTLS/SNI wiring:
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`,
+  `https://live-stt.denetim:8243/transcribe`, hostAlias
+  `live-stt.denetim -> 10.99.0.2`, read-only `/etc/direct-stt-mtls` mount, and
+  `transcript:direct-stt-results`.
+- `platform-k8s-gitops#2065` added the metadata-only direct-STT e2e evidence
+  verifier and ingest path.
+
+Current user-facing boundary:
+
+- A normal end user still cannot be told to run a complete live meeting
+  experience and expect transcript + summary + actions. `platform-ai#182`
+  remains open until approved Vault/ESO credential seed, direct-STT flag flip,
+  and a fresh live e2e prove `/transcribe` HTTP `200`,
+  `DIRECT_STT_TRANSCRIPT_RESULT`, same-session audit correlation, and no raw
+  audio/transcript persistence outside the accepted contract.
+- `platform-ai#161` and `platform-ai#162` remain open for real pilot WER/DER and
+  real pilot G-INT evidence. The merged source gates reduce false acceptance;
+  they do not provide pilot evidence, select a model/backend, enable a real LLM
+  provider, or make Faz 24 production-ready.
+- `platform-ai#198` immediate live-stt 8243 preflight is proven, but full I7
+  prod-gate remains broader: meeting-ai 8343, Vault PKI rotation/secret
+  delivery, request audit, plaintext-bypass closure, failure drill, redaction
+  review, and operator acceptance remain separate.
+
+## Historical Delta — Faz 24 #227 G-INT hardening merged; I7 8243 preflight refreshed (2026-06-26)
 
 `platform-ai#227` is now merged after `zeynep-serban` approval. The change
 hardens only the G-INT evidence metadata contract:
@@ -38,10 +101,9 @@ block, and Vault PKI rotation/secret delivery, request audit, plaintext-bypass
 closure, failure drill, redaction review, and reviewer/operator acceptance are
 still separate gates.
 
-`platform-backend#768` remains the direct `platform-ai#182` blocker: it is open,
-clean, and CI-green, but still has no independent review/approval, so the
-direct-STT multipart media-type fix is not merged or deployed. No fresh
-direct-STT e2e acceptance has been produced yet.
+This section predates the later #768/#2061/#2062/#2063/#2065 direct-STT
+default-off staging chain recorded above. No fresh direct-STT e2e acceptance has
+been produced yet.
 
 ## Live Delta — Faz 24 #226 merged and Denetim GPU host updated; #182 remains open (2026-06-26)
 
@@ -79,14 +141,15 @@ Important boundary:
 - `platform-ai#182` accidentally auto-closed at the same timestamp as the
   #226 squash merge, without a new e2e acceptance comment. It was reopened with
   the explicit boundary that the e2e gate remains open.
-- `platform-backend#768` is still open/reviewless, though CI green. It has not
-  been merged or deployed, so the direct-STT multipart media-type fix is not in
-  test runtime yet.
+- This #226 section predates the later `platform-backend#768` merge/deploy and
+  #2061/#2062/#2063/#2065 default-off mTLS/SNI/evidence chain. The current
+  #182 path is no longer "review/merge/deploy #768"; it is approved Vault/ESO
+  credential seed, direct-STT flag flip, then a fresh live direct-STT e2e proof.
 
-Next accepted #182 evidence remains unchanged: review/merge/deploy
-`platform-backend#768`, rerun the live direct-STT e2e, and prove live-stt HTTP
-`200`, `DIRECT_STT_TRANSCRIPT_RESULT`, same-session compute-plane audit
-correlation, and no raw-audio persistence.
+Next accepted #182 evidence: rerun the live direct-STT e2e after credential
+seed and flag flip, and prove live-stt HTTP `200`,
+`DIRECT_STT_TRANSCRIPT_RESULT`, same-session compute-plane audit correlation,
+and no raw-audio persistence.
 
 ## Historical Delta — Faz 24 #188 audit gate accepted; pre-#226-merge #182 blockers (2026-06-26)
 
