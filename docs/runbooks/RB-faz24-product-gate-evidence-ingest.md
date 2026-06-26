@@ -6,7 +6,8 @@ This runbook describes the no-mutation GitHub Actions ingest path for Faz 24
 product-gate evidence:
 
 - G-CAP capture reliability evidence from
-  `scripts/faz24/verify_gcap_capture_gate_evidence.py`
+  `scripts/faz24/verify_gcap_capture_gate_evidence.py` using redacted
+  external-recorder and/or desktop-capture verifier summaries
 - G-OPS on-prem operability evidence from
   `scripts/faz24/verify_gops_operability_gate_evidence.py`
 - G-COMP compliance readiness evidence from
@@ -70,7 +71,8 @@ It does not prove:
 - live G-CAP/G-OPS/G-COMP product acceptance
 - direct-STT transcript readiness
 - compute-plane audit readiness
-- desktop mic/loopback readiness
+- fresh desktop mic/loopback readiness beyond any submitted desktop verifier
+  summaries
 - VERBIS/legal acceptance
 - DB cleanup completion
 - production readiness

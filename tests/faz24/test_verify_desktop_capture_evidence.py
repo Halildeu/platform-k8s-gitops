@@ -157,6 +157,42 @@ def test_valid_evidence_passes():
     assert "Faz 24 desktop capture evidence: PASS" in result.stdout
 
 
+def test_summary_json_exposes_only_redacted_aggregate_fields(tmp_path):
+    evidence_file = tmp_path / "desktop-evidence.json"
+    summary_file = tmp_path / "desktop-summary.json"
+    evidence_file.write_text(json.dumps(valid_evidence()), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            str(evidence_file),
+            "--summary-json",
+            str(summary_file),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    summary = json.loads(summary_file.read_text(encoding="utf-8"))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert summary["schemaVersion"] == "faz24.desktopCaptureEvidenceVerifier.v1"
+    assert summary["evidenceSchemaVersion"] == "faz24.desktopCaptureEvidence.v1"
+    assert summary["status"] == "pass"
+    assert summary["tokenIncluded"] is False
+    assert summary["ids"] == {
+        "meetingId": "ce3982b6-0a85-4b56-aecf-de3234af8224",
+        "captureId": "b003d1a4-1428-41ad-a47d-fe374ad1b013",
+        "sessionId": SESSION_ID,
+    }
+    assert summary["boundaries"]["desktopMicLoopbackProven"] is True
+    rendered = json.dumps(summary)
+    assert DEVICE_HASH not in rendered
+    assert MIC_SHA not in rendered
+    assert LOOPBACK_SHA not in rendered
+
+
 def test_raw_audio_key_is_rejected():
     data = valid_evidence()
     data["sources"]["microphone"]["raw_audio"] = "AAAA"

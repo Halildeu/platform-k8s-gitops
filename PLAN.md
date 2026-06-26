@@ -99,6 +99,19 @@ audit, and production-readiness claims. Boundary: source/runbook package only;
 live desktop smoke PASS, direct-STT e2e, aggregate G-CAP reliability, and
 product readiness remain separate gates.
 
+**Faz 24 G-CAP desktop aggregation delta (2026-06-27)**:
+`scripts/faz24/verify_gcap_capture_gate_evidence.py` now accepts both redacted
+external recorder verifier summaries and redacted desktop capture verifier
+summaries: `faz24.externalRecorderSmokeVerifier.v1` and
+`faz24.desktopCaptureEvidenceVerifier.v1`. Raw recorder smoke envelopes and raw
+desktop capture envelopes are still rejected. The aggregate output reports
+external vs desktop attempt counts, keeps the same threshold model
+(`min-attempts`, distinct meeting/session coverage, success/retry/failure rate),
+and preserves the no direct-STT / no compute-plane / no production-readiness
+boundary. This enables real desktop smoke PASS summaries to contribute to
+G-CAP reliability evidence, but a single desktop PASS is still only one attempt
+and does not close live aggregate G-CAP.
+
 **Faz 24 #161/#162 product-gate hardening delta (2026-06-26)**:
 `platform-ai#229` merged as `b4f86b1c8ae9e77ae41846eaf834cc2ea0fa5b50`;
 main CI run `28260265821` succeeded across repo-gates and all service-test
@@ -306,8 +319,8 @@ recording/archive boundary as live-path RED / future opt-in only, and
 `platform-k8s-gitops` now also carries the metadata-only G-CAP aggregate
 capture gate verifier
 (`scripts/faz24/verify_gcap_capture_gate_evidence.py`) for redacted external
-recorder verifier outputs. `platform-k8s-gitops` also carries the
-metadata-only G-OPS operability gate verifier
+recorder and desktop capture verifier summaries. `platform-k8s-gitops` also
+carries the metadata-only G-OPS operability gate verifier
 (`scripts/faz24/verify_gops_operability_gate_evidence.py`) for on-prem
 install/upgrade/backup/restore/rollback/secret-delivery/observability
 evidence. This slice adds the metadata-only G-COMP aggregate compliance gate

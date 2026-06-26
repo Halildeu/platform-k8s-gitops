@@ -1,5 +1,29 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 G-CAP desktop verifier input support packaged (2026-06-27)
+
+The G-CAP aggregate capture verifier now accepts both approved capture verifier
+summary classes:
+
+- `faz24.externalRecorderSmokeVerifier.v1` from
+  `verify_external_recorder_smoke_evidence.py`.
+- `faz24.desktopCaptureEvidenceVerifier.v1` from
+  `verify_desktop_capture_evidence.py`.
+
+Raw evidence envelopes are still rejected: `faz24.externalRecorderSmoke.v1` and
+`faz24.desktopCaptureEvidence.v1` are not valid G-CAP aggregate inputs. The
+aggregate verifier continues to gate attempt count, distinct meeting/session
+coverage, success rate, retry rate, and failure rate; it now reports
+`attemptClasses` and `passedAttemptClasses` split by external recorder vs
+desktop capture. Desktop capture summaries expose only redacted `ids`,
+boundary flags, and verifier checks for aggregation.
+
+Boundary: this packages source-side aggregate evaluation only. It does not run a
+desktop smoke, does not collect live audio, does not prove direct-STT,
+compute-plane audit, G-INT, WER/DER, G-COMP, I7, or production readiness. A
+single desktop verifier PASS is only one capture attempt; aggregate G-CAP
+requires enough accepted verifier summaries to satisfy configured thresholds.
+
 ## Live Delta — Faz 24 desktop mic + loopback capture verifier packaged (2026-06-27)
 
 The remaining #1615 desktop real-capture gate now has a metadata-only
@@ -1396,12 +1420,14 @@ evidence, and not production readiness.
 
 ## Live Delta — Faz 24 G-CAP aggregate capture gate verifier packaged (2026-06-25)
 
-The #1615 external recorder evidence path now has a metadata-only aggregate
-G-CAP verifier for capture reliability:
+The #1615 capture evidence path now has a metadata-only aggregate G-CAP verifier
+for capture reliability:
 
 - `scripts/faz24/verify_gcap_capture_gate_evidence.py` consumes only redacted
-  `faz24.externalRecorderSmokeVerifier.v1` outputs from
-  `verify_external_recorder_smoke_evidence.py`.
+  verifier summaries: `faz24.externalRecorderSmokeVerifier.v1` outputs from
+  `verify_external_recorder_smoke_evidence.py` and, after the 2026-06-27
+  hardening, `faz24.desktopCaptureEvidenceVerifier.v1` outputs from
+  `verify_desktop_capture_evidence.py`.
 - The verifier gates attempt count, distinct meeting/session coverage, success
   rate, retry rate, and failure rate with explicit CLI thresholds. Defaults are
   `min-attempts=5`, `min-distinct-meetings=5`, `min-distinct-sessions=5`,
@@ -1411,17 +1437,20 @@ G-CAP verifier for capture reliability:
   thresholds. `status=blocked` means the evidence set is too small or coverage
   is insufficient. `status=fail` means privacy/schema/overclaim rejection or an
   enough-sample threshold miss.
-- The verifier rejects raw recorder smoke envelopes, JWT/Bearer/Authorization
-  shaped values, sensitive keys, raw audio/transcript/prompt/response fields,
-  and direct-STT / compute-plane audit / desktop mic / production overclaims.
+- The verifier rejects raw recorder smoke envelopes, raw desktop capture
+  envelopes, JWT/Bearer/Authorization shaped values, sensitive keys, raw
+  audio/transcript/prompt/response fields, and direct-STT / compute-plane audit /
+  production overclaims.
 - `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` now includes
   the aggregate command and attachment rule for
   `/tmp/faz24-gcap-capture-gate.verify.json`.
 
 Boundary: this packages source-side G-CAP aggregate evaluation only. It is not a
 new live recorder run, not direct-STT transcript evidence, not same-session
-compute-plane audit evidence, not desktop mic/loopback evidence, and not
-production readiness.
+compute-plane audit evidence, and not production readiness. If desktop verifier
+summaries are included, `desktopMicLoopbackProven=true` means those submitted
+verifier summaries proved desktop mic+loopback for their attempts; it is not a
+fresh live desktop run or product-wide readiness claim.
 
 ## Live Delta — Faz 24 G-OPS operability gate verifier packaged (2026-06-25)
 
