@@ -93,6 +93,15 @@ from the user-visible assignee field (`owner=null`) and recorded as
 precision hardening only; it does not provide real pilot G-INT evidence, enable a
 cloud LLM/API, mutate runtime, process raw audio, or change production readiness.
 
+**Faz 24 #162 Ask-AI unsupported-answer withholding delta (2026-06-26)**:
+`platform-ai#209` merged source-side `/ask` hallucination exposure hardening:
+empty/no-info/ungrounded generated answers now return fixed `Metinde bu bilgi
+yok.` instead of returning unsupported generated prose merely with
+`grounded=false`. The ungrounded citation does not carry the unsupported answer
+claim. Boundary remains explicit: this is G-INT source hardening only; it does
+not provide real pilot G-INT evidence, enable a cloud LLM/API, mutate runtime,
+process raw audio, satisfy #198/#188/#182, or change production readiness.
+
 **Faz 24 live delta (2026-06-25)**: `platform-ai#187` source/deploy scope is
 accepted with `platform-backend#756` (`8c269ccf...`), `platform-k8s-gitops#2015`
 (`a9b19c9f...`), and deploy run `28176231063` proving 13-service digest-pin
