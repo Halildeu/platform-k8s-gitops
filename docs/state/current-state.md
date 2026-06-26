@@ -1,5 +1,67 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 #156 DB retention runtime smoke passed in test; VERBIS/MinIO/legal gates remain open (2026-06-26)
+
+`platform-ai#156` moved past a source-only DB cleanup claim for the deployed
+meeting/transcript services in `k3d-test` / `platform-test`. This is still not a
+production/legal retention acceptance.
+
+Live runtime and schema evidence:
+
+- `meeting-service` was `1/1` ready with restart count `0` and imageID
+  `ghcr.io/halildeu/platform-backend-meeting-service@sha256:e9e45ac39ca53a7986a84c49ff8422077b20acdbc5a84b560b95e893845517cf`.
+- `transcript-service` was `1/1` ready with restart count `0` and imageID
+  `ghcr.io/halildeu/platform-backend-transcript-service@sha256:af97f1aa1b3212e0461288f53c1e1a16395e9ed2e80923d0cc4a1137bf2249ba`.
+- `meeting_service.meeting_flyway_history` shows V2
+  `meeting retention destruction audit` installed successfully at
+  `2026-06-25 21:18:09.463874`.
+- `transcript_service.transcript_flyway_history` shows V3
+  `transcript retention destruction audit` installed successfully at
+  `2026-06-25 21:18:13.696855`.
+
+Test-only smoke method:
+
+- inserted one expired synthetic `meeting_actions` row and one expired synthetic
+  `meeting_decisions` row under a synthetic parent meeting;
+- inserted one expired `transcript_segments` row with `text_draft IS NULL` and
+  `text_final IS NULL`, plus one expired metadata-only `transcript_access_audit`
+  row;
+- ran transient smoke Jobs derived from the live Deployments with only cleanup
+  cron overridden for the short smoke window; `app.kubernetes.io/name` stayed
+  distinct from the Service selectors, while `app.kubernetes.io/part-of=platform`
+  allowed the same DNS/Postgres egress class;
+- deleted the transient Jobs and removed the synthetic parent meeting fixture
+  after evidence collection.
+
+Observed cleanup:
+
+- meeting retention log reported
+  `layer=db.meeting-intelligence`, `actionDeletedCount=1`,
+  `decisionDeletedCount=1`, `deletedCount=2`,
+  `jobId=meeting-intelligence-retention-cleanup`;
+- transcript retention log reported
+  `layer=db.transcript-records`, `deletedCount=1`,
+  `jobId=transcript-records-retention-cleanup`;
+- transcript retention log reported
+  `layer=db.kvkk-access-log`, `deletedCount=1`,
+  `jobId=kvkk-access-log-retention-cleanup`;
+- DB residue checks returned `0` for the synthetic action, decision, transcript
+  segment, access-audit row, and parent meeting fixture;
+- destruction audit rows were written with `audit_payload=metadata-only` for
+  `db.meeting-intelligence`, `db.transcript-records`, and
+  `db.kvkk-access-log`.
+
+Evidence note:
+`docs/faz-24-evidence/2026-06-26-retention-runtime-smoke.md`.
+
+Boundary: this proves only bounded test runtime behavior for the deployed DB
+cleanup jobs and metadata-only destruction audit writes. #156 remains open until
+VERBIS status is recorded or exempt-confirmed, MinIO lifecycle runtime evidence
+for configured retention buckets is attached, and owner/legal acceptance is
+recorded. This does not prove direct-STT, app-mTLS, raw-audio governance,
+G-WER/DER, G-INT, desktop mic/loopback, production cleanup, or production
+readiness.
+
 ## Live Delta — Faz 24 audio-gateway JWT enforce evidence path packaged; runtime flip remains open (2026-06-26)
 
 `platform-backend#716` remains the P1 shared-realm authz gate for real recorder
