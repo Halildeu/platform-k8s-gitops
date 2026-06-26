@@ -1,5 +1,29 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 G-CAP external summary boundary hardening packaged (2026-06-27)
+
+The G-CAP aggregate capture verifier now requires external-recorder verifier
+summaries to carry the same post-#2084 boundary set as the external smoke
+verifier:
+
+- `scripts/faz24/verify_gcap_capture_gate_evidence.py` requires
+  `directClientToStt=false` and `directSttTranscriptProven=false` in
+  `faz24.externalRecorderSmokeVerifier.v1` boundaries.
+- External summary inputs must also include passed
+  `boundary_directClientToStt` and `boundary_directSttTranscriptProven`
+  verifier checks. Stale pre-hardening external summaries no longer satisfy
+  aggregate G-CAP success thresholds.
+- The aggregate summary now keeps `directClientToStt=false` and
+  `directSttTranscriptProven=false` alongside the existing no direct-STT,
+  no compute-plane audit, and no production-readiness boundaries.
+
+Boundary: source-side aggregate verifier/runbook hardening only. No external
+recorder smoke was run, no desktop smoke was run, no token was minted, no
+runtime object was mutated, and no #1615 acceptance is claimed. Live aggregate
+G-CAP still requires enough accepted redacted verifier summaries to meet the
+configured attempt, distinct meeting/session, success, retry, and failure-rate
+thresholds.
+
 ## Live Delta — Faz 24 external recorder smoke evidence hardening packaged (2026-06-27)
 
 The external meeting-admin + recorder lifecycle smoke package for #1996/#1997

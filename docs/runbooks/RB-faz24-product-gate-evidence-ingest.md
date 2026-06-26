@@ -7,7 +7,11 @@ product-gate evidence:
 
 - G-CAP capture reliability evidence from
   `scripts/faz24/verify_gcap_capture_gate_evidence.py` using redacted
-  external-recorder and/or desktop-capture verifier summaries
+  external-recorder and/or desktop-capture verifier summaries. External
+  recorder summaries must be post-hardening summaries with
+  `directClientToStt=false`, `directSttTranscriptProven=false`, and the
+  corresponding passed boundary checks; stale pre-hardening summaries are not
+  aggregate acceptance evidence.
 - G-OPS on-prem operability evidence from
   `scripts/faz24/verify_gops_operability_gate_evidence.py`
 - G-COMP compliance readiness evidence from
@@ -73,6 +77,8 @@ It does not prove:
 - compute-plane audit readiness
 - fresh desktop mic/loopback readiness beyond any submitted desktop verifier
   summaries
+- direct client-to-STT or direct-STT transcript readiness from external
+  recorder summaries
 - VERBIS/legal acceptance
 - DB cleanup completion
 - production readiness

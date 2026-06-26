@@ -232,6 +232,13 @@ Supported inputs are verifier summaries only:
 - `faz24.externalRecorderSmokeVerifier.v1`
 - `faz24.desktopCaptureEvidenceVerifier.v1`
 
+External recorder summaries must be produced by the post-hardening verifier:
+they must include `boundaries.directClientToStt=false`,
+`boundaries.directSttTranscriptProven=false`, and passed
+`boundary_directClientToStt` / `boundary_directSttTranscriptProven` checks.
+Older external summaries that do not carry these fields are stale and must not
+be used for aggregate G-CAP acceptance.
+
 ```bash
 python3 scripts/faz24/verify_gcap_capture_gate_evidence.py \
   --evidence-file /tmp/faz24-external-recorder-smoke-01.verify.json \
@@ -262,8 +269,9 @@ Expected aggregate evidence:
   invalid JSON, wrong top-level shape/schema, or I/O failure.
 - The aggregate verifier consumes only verifier summaries. It rejects raw
   recorder smoke envelopes, raw desktop capture envelopes, raw audio, transcript
-  text, JWT/Bearer/Authorization-shaped values, and direct-STT/compute-plane/
-  production overclaims.
+  text, JWT/Bearer/Authorization-shaped values, stale external summaries
+  without direct client-to-STT / direct-STT transcript boundary checks, and
+  direct-STT/compute-plane/production overclaims.
 
 Attach the aggregate JSON only after checking `tokenIncluded=false`. This G-CAP
 aggregate does not prove direct-STT, same-session compute-plane audit, or

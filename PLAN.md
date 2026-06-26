@@ -134,10 +134,14 @@ summaries: `faz24.externalRecorderSmokeVerifier.v1` and
 desktop capture envelopes are still rejected. The aggregate output reports
 external vs desktop attempt counts, keeps the same threshold model
 (`min-attempts`, distinct meeting/session coverage, success/retry/failure rate),
-and preserves the no direct-STT / no compute-plane / no production-readiness
-boundary. This enables real desktop smoke PASS summaries to contribute to
-G-CAP reliability evidence, but a single desktop PASS is still only one attempt
-and does not close live aggregate G-CAP.
+and preserves the no direct-STT / no direct client-to-STT / no direct-STT
+transcript / no compute-plane / no production-readiness boundary. External
+recorder summaries must be post-hardening `verify_external_recorder_smoke`
+outputs with `directClientToStt=false`, `directSttTranscriptProven=false`, and
+matching passed boundary checks; stale pre-hardening summaries do not satisfy
+G-CAP. This enables real desktop smoke PASS summaries to contribute to G-CAP
+reliability evidence, but a single desktop PASS is still only one attempt and
+does not close live aggregate G-CAP.
 
 **Faz 24 #161/#162 product-gate hardening delta (2026-06-26)**:
 `platform-ai#229` merged as `b4f86b1c8ae9e77ae41846eaf834cc2ea0fa5b50`;

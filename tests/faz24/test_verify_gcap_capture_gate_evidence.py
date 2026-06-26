@@ -19,6 +19,8 @@ SUCCESS_CHECK_NAMES = [
     "boundary_externalMeetingAdminPathExercised",
     "boundary_recorderLifecycleExercised",
     "boundary_directSttProven",
+    "boundary_directClientToStt",
+    "boundary_directSttTranscriptProven",
     "boundary_computePlaneAuditProven",
     "boundary_desktopMicLoopbackProven",
     "boundary_productionReady",
@@ -151,6 +153,8 @@ def verifier_report(index: int, *, status: str = "pass", retry: bool = False) ->
             "externalMeetingAdminPathExercised": True,
             "recorderLifecycleExercised": True,
             "directSttProven": False,
+            "directClientToStt": False,
+            "directSttTranscriptProven": False,
             "computePlaneAuditProven": False,
             "desktopMicLoopbackProven": False,
             "productionReady": False,
@@ -393,6 +397,39 @@ def test_underlying_unsafe_verifier_check_fails(tmp_path):
 def test_boundary_overclaim_fails(tmp_path):
     reports = [verifier_report(index) for index in range(1, 6)]
     reports[0]["boundaries"]["directSttProven"] = True
+
+    proc = run_gate(tmp_path, reports)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert report["status"] == "fail"
+    assert any("direct-STT" in failure for failure in report["failures"])
+
+
+def test_external_summary_missing_post_hardening_boundary_checks_fails(tmp_path):
+    reports = [verifier_report(index) for index in range(1, 6)]
+    reports[0]["boundaries"].pop("directClientToStt")
+    reports[0]["boundaries"].pop("directSttTranscriptProven")
+    reports[0]["checks"] = [
+        check
+        for check in reports[0]["checks"]
+        if check["name"]
+        not in {"boundary_directClientToStt", "boundary_directSttTranscriptProven"}
+    ]
+
+    proc = run_gate(tmp_path, reports)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert report["status"] == "fail"
+    assert any("boundary_directClientToStt" in failure for failure in report["failures"])
+    assert any("post-hardening G-CAP expectations" in failure for failure in report["failures"])
+
+
+def test_external_summary_direct_client_or_transcript_overclaim_fails(tmp_path):
+    reports = [verifier_report(index) for index in range(1, 6)]
+    reports[0]["boundaries"]["directClientToStt"] = True
+    reports[1]["boundaries"]["directSttTranscriptProven"] = True
 
     proc = run_gate(tmp_path, reports)
     report = json.loads(proc.stdout)
