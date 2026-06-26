@@ -33,6 +33,7 @@ EXPECTED_CLUSTER = "k3d-test"
 EXPECTED_KUBECTL_CONTEXT = "k3d-test"
 EXPECTED_NAMESPACE = "platform-test"
 EXPECTED_DEPLOYMENT = "audio-gateway"
+EXPECTED_MTLS_SECRET = "audio-gateway-direct-stt-mtls"
 EXPECTED_TRANSCRIBE_HOST = "live-stt.denetim"
 EXPECTED_TRANSCRIBE_PORT = 8243
 EXPECTED_HOST_ALIAS_IP = "10.99.0.2"
@@ -287,6 +288,7 @@ def validate_runtime(data: dict[str, Any], checks: list[Check]) -> None:
     add(checks, "runtime_host_alias_ip", runtime.get("hostAliasIp") == EXPECTED_HOST_ALIAS_IP, f"hostAliasIp must be {EXPECTED_HOST_ALIAS_IP}")
     add(checks, "runtime_mtls_mount_path", runtime.get("mtlsMountPath") == EXPECTED_MTLS_MOUNT, f"mtlsMountPath must be {EXPECTED_MTLS_MOUNT}")
     add(checks, "runtime_mtls_mount_present", runtime.get("mtlsMountPresent") is True, "mtls mount must be present")
+    add(checks, "runtime_mtls_secret_name", runtime.get("mtlsSecretName") == EXPECTED_MTLS_SECRET, f"mtlsSecretName must be {EXPECTED_MTLS_SECRET}")
     add(checks, "runtime_secret_value_absent", runtime.get("secretValueIncluded") is False, "secretValueIncluded must be false")
 
     keys = runtime.get("mtlsSecretKeyNames")

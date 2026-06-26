@@ -30,7 +30,8 @@ EXPECTED_CLUSTER = "k3d-test"
 EXPECTED_KUBECTL_CONTEXT = "k3d-test"
 EXPECTED_NAMESPACE = "platform-test"
 EXPECTED_DEPLOYMENT = "audio-gateway"
-EXPECTED_SECRET = "audio-gateway-secrets"
+EXPECTED_AGGREGATE_SECRET = "audio-gateway-secrets"
+EXPECTED_SECRET = "audio-gateway-direct-stt-mtls"
 EXPECTED_SECRET_STORE = "vault-platform-gitops"
 EXPECTED_VAULT_PATH = "kv/platform/audio-gateway-service"
 EXPECTED_TRANSCRIBE_HOST = "live-stt.denetim"
@@ -49,6 +50,7 @@ REQUIRED_SECRET_KEYS = {
     "direct-stt-client.crt",
     "direct-stt-client.key",
 }
+AGGREGATE_SECRET_KEYS = {"SPRING_DATA_REDIS_PASSWORD"}
 
 UTC_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -281,6 +283,8 @@ def validate_desired_state(data: dict[str, Any], checks: list[Check]) -> None:
     add(checks, "desired_netpol_port", as_int(desired.get("networkPolicyPort")) == EXPECTED_TRANSCRIBE_PORT, f"networkPolicyPort must be {EXPECTED_TRANSCRIBE_PORT}")
     add(checks, "desired_mtls_mount_path", desired.get("mtlsMountPath") == EXPECTED_MTLS_MOUNT, f"mtlsMountPath must be {EXPECTED_MTLS_MOUNT}")
     add(checks, "desired_mtls_mount_present", desired.get("mtlsMountPresent") is True, "mtls mount must be present")
+    add(checks, "desired_mtls_secret_name", desired.get("mtlsSecretName") == EXPECTED_SECRET, f"mtlsSecretName must be {EXPECTED_SECRET}")
+    add(checks, "desired_mtls_secret_optional", desired.get("mtlsSecretOptional") is True, "mTLS Secret mount must stay optional while direct-STT is disabled")
 
 
 def validate_external_secret(data: dict[str, Any], checks: list[Check]) -> None:
@@ -321,6 +325,35 @@ def validate_runtime_secret(data: dict[str, Any], checks: list[Check]) -> None:
     )
     add(checks, "runtime_secret_values_absent", runtime.get("secretValueIncluded") is False, "secretValueIncluded must be false")
     add(checks, "runtime_secret_env_risk", runtime.get("fileLikeKeysNotExportedAsEnv") is True, "file-like keys must not be exported as env vars")
+    add(checks, "runtime_secret_not_env_from", runtime.get("dedicatedSecretNotEnvFrom") is True, "direct-STT mTLS Secret must not be referenced by envFrom")
+
+
+def validate_aggregate_secret(data: dict[str, Any], checks: list[Check]) -> None:
+    aggregate = data.get("aggregateSecret")
+    if not isinstance(aggregate, dict):
+        add(checks, "aggregate_secret_shape", False, "aggregateSecret must be an object")
+        return
+    add(checks, "aggregate_secret_name", aggregate.get("name") == EXPECTED_AGGREGATE_SECRET, f"name must be {EXPECTED_AGGREGATE_SECRET}")
+    add(checks, "aggregate_secret_ready", aggregate.get("ready") is True, "aggregate Secret ExternalSecret must remain Ready=True")
+    add(
+        checks,
+        "aggregate_secret_target_redis_key",
+        AGGREGATE_SECRET_KEYS.issubset(string_set(aggregate.get("targetSecretKeys"))),
+        "aggregate ExternalSecret target must keep SPRING_DATA_REDIS_PASSWORD",
+    )
+    add(
+        checks,
+        "aggregate_secret_runtime_redis_key",
+        AGGREGATE_SECRET_KEYS.issubset(string_set(aggregate.get("runtimeKeyNames"))),
+        "aggregate runtime Secret must keep SPRING_DATA_REDIS_PASSWORD",
+    )
+    add(
+        checks,
+        "aggregate_secret_no_direct_stt_keys",
+        aggregate.get("directSttKeysPresent") is False,
+        "direct-STT mTLS keys must not be present in audio-gateway-secrets",
+    )
+    add(checks, "aggregate_secret_values_absent", aggregate.get("secretValueIncluded") is False, "secretValueIncluded must be false")
 
 
 def validate_mtls_probe(data: dict[str, Any], checks: list[Check]) -> None:
@@ -355,6 +388,7 @@ def verify(data: dict[str, Any]) -> list[Check]:
     validate_environment(data, checks)
     validate_desired_state(data, checks)
     validate_external_secret(data, checks)
+    validate_aggregate_secret(data, checks)
     validate_runtime_secret(data, checks)
     validate_mtls_probe(data, checks)
     validate_boundaries(data, checks)

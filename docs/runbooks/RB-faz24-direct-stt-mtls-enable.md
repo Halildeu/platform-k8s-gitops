@@ -5,7 +5,10 @@
 ## Current Safe State
 
 - GitOps `audio-gateway` carries direct-STT configuration with `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`.
-- The pod mounts `/etc/direct-stt-mtls` from `audio-gateway-secrets`, but missing direct-STT files do not change runtime behavior while the flag is false.
+- The pod mounts `/etc/direct-stt-mtls` from dedicated
+  `audio-gateway-direct-stt-mtls`. The mount is optional while
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`, so missing direct-STT files do not
+  change runtime behavior before the seed/preflight gate.
 - NetworkPolicy `allow-audio-gateway-egress-live-stt-mtls` allows only `audio-gateway` -> `10.99.0.2/32` TCP/8243.
 - The pod maps `live-stt.denetim` to `10.99.0.2` with `hostAliases` so HTTPS SNI/Host remains the certificate/Caddy hostname while routing over WireGuard.
 
@@ -48,6 +51,19 @@ Both direct-STT verifiers fail closed when `environment.kubectlContext` is not
 
 Vault path: `kv/platform/audio-gateway-service`
 
+Runtime Secret split:
+
+- `audio-gateway-secrets` remains the aggregate envFrom Secret for
+  `SPRING_DATA_REDIS_PASSWORD` only.
+- `audio-gateway-direct-stt-mtls` carries only direct-STT certificate/key
+  files. Do not add these properties to `audio-gateway-secrets`; one missing
+  ESO property in an aggregate ExternalSecret would risk `SecretSyncedError`
+  for the Redis password path.
+- Before the three Vault properties are seeded, the dedicated
+  `ExternalSecret/audio-gateway-direct-stt-mtls` may report `SecretSyncedError`
+  / `Ready=False`. Treat that as expected fail-closed noise: it is not preflight
+  PASS evidence, but it must not disturb the Redis aggregate.
+
 Required properties before flipping direct-STT on:
 
 | Vault property | K8s Secret key | Mounted file |
@@ -56,10 +72,8 @@ Required properties before flipping direct-STT on:
 | `direct_stt_client_crt` | `direct-stt-client.crt` | `/etc/direct-stt-mtls/direct-stt-client.crt` |
 | `direct_stt_client_key` | `direct-stt-client.key` | `/etc/direct-stt-mtls/direct-stt-client.key` |
 
-Use file-like Secret keys intentionally. The deployment also uses `envFrom` for
-`audio-gateway-secrets`; file-like keys are not valid environment variable
-names, so Kubernetes skips exporting PEM material as env vars while the Secret
-volume still exposes them as files.
+Use file-like Secret keys intentionally. The deployment does not reference the
+dedicated mTLS Secret via `envFrom`; it is mounted read-only as files only.
 
 ## Evidence Contract
 
@@ -96,12 +110,13 @@ The preflight verifier requires:
 - `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false` still in desired/runtime state;
 - hostAlias `live-stt.denetim -> 10.99.0.2`, narrow NetworkPolicy
   `10.99.0.2/32:8243`, and `/etc/direct-stt-mtls` mount present;
-- `ExternalSecret/audio-gateway-secrets` Ready with mappings from
+- `ExternalSecret/audio-gateway-direct-stt-mtls` Ready with mappings from
   `direct_stt_ca_crt`, `direct_stt_client_crt`, and `direct_stt_client_key`
   to the file-like Secret keys;
-- runtime Secret key names include `direct-stt-ca.crt`,
+- runtime `Secret/audio-gateway-direct-stt-mtls` key names include `direct-stt-ca.crt`,
   `direct-stt-client.crt`, and `direct-stt-client.key`, with no values
   captured;
+- `audio-gateway-direct-stt-mtls` is not referenced by `envFrom`;
 - `https://live-stt.denetim:8243/health` HTTP 200 from the real pod using the
   mounted client certificate material;
 - explicit boundary flags showing no audio was sent, `/transcribe` was not
@@ -168,8 +183,14 @@ gh workflow run faz24-direct-stt-e2e-evidence-ingest.yml \
 ## Enablement Order
 
 1. Seed the three Vault properties with stdin-pipe or an approved equivalent. Do not print PEM values.
-2. Update `kustomize/overlays/test/eso/audio-gateway/externalsecret.yaml` to map the three properties above into `audio-gateway-secrets`.
-3. Verify `ExternalSecret/audio-gateway-secrets` is `Ready=True` and the
+2. Ensure `kustomize/overlays/test/eso/audio-gateway/externalsecret.yaml`
+   maps the three properties above into `audio-gateway-direct-stt-mtls`.
+   The Redis aggregate `audio-gateway-secrets` must stay Redis-only.
+   A pre-seed `SecretSyncedError` on the dedicated mTLS ExternalSecret is
+   expected until the properties exist; do not flip direct-STT on from that
+   state.
+3. Sync/apply the ESO overlay, then verify
+   `ExternalSecret/audio-gateway-direct-stt-mtls` is `Ready=True` and the
    target Secret exposes the three file-like keys by key name only, using
    `kubectl --context k3d-test -n platform-test`.
 4. Write the metadata-only mTLS enablement preflight JSON and run

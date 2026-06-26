@@ -40,6 +40,7 @@ def valid_e2e() -> dict:
             "hostAliasIp": "10.99.0.2",
             "mtlsMountPath": "/etc/direct-stt-mtls",
             "mtlsMountPresent": True,
+            "mtlsSecretName": "audio-gateway-direct-stt-mtls",
             "secretValueIncluded": False,
             "mtlsSecretKeyNames": [
                 "direct-stt-ca.crt",
@@ -126,6 +127,15 @@ class DirectSttE2eEvidenceVerifierTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("environment_kubectl_context", result.stdout)
+
+    def test_shared_mtls_secret_name_fails(self):
+        data = valid_e2e()
+        data["runtime"]["mtlsSecretName"] = "audio-gateway-secrets"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("runtime_mtls_secret_name", result.stdout)
 
 
 if __name__ == "__main__":

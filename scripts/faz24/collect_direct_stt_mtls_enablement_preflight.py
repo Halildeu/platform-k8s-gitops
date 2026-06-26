@@ -25,8 +25,10 @@ DEFAULT_CONTEXT = "k3d-test"
 DEFAULT_NAMESPACE = "platform-test"
 DEFAULT_DEPLOYMENT = "audio-gateway"
 DEFAULT_CONFIGMAP = "audio-gateway-config"
-DEFAULT_EXTERNAL_SECRET = "audio-gateway-secrets"
-DEFAULT_SECRET = "audio-gateway-secrets"
+DEFAULT_AGGREGATE_EXTERNAL_SECRET = "audio-gateway-secrets"
+DEFAULT_AGGREGATE_SECRET = "audio-gateway-secrets"
+DEFAULT_EXTERNAL_SECRET = "audio-gateway-direct-stt-mtls"
+DEFAULT_SECRET = "audio-gateway-direct-stt-mtls"
 DEFAULT_NETPOL = "allow-audio-gateway-egress-live-stt-mtls"
 DEFAULT_SECRET_STORE = "vault-platform-gitops"
 DEFAULT_VAULT_PATH = "kv/platform/audio-gateway-service"
@@ -50,6 +52,7 @@ REQUIRED_SECRET_KEYS = {
     "direct-stt-client.crt",
     "direct-stt-client.key",
 }
+AGGREGATE_SECRET_KEYS = {"SPRING_DATA_REDIS_PASSWORD"}
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"sha256:([0-9a-f]{64})")
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -254,20 +257,42 @@ def host_alias_ip(deployment: dict[str, Any] | None, hostname: str) -> str:
     return ""
 
 
-def mtls_mount_present(deployment: dict[str, Any] | None, mount_path: str) -> bool:
+def mtls_mount_info(deployment: dict[str, Any] | None, mount_path: str) -> tuple[bool, str, bool | None]:
+    pod_spec = (
+        deployment.get("spec", {}).get("template", {}).get("spec", {})
+        if isinstance(deployment, dict)
+        else {}
+    )
+    containers = pod_spec.get("containers", []) if isinstance(pod_spec, dict) else []
+    mount_name = ""
+    for container in containers:
+        if container.get("name") != DEFAULT_DEPLOYMENT:
+            continue
+        for mount in container.get("volumeMounts", []):
+            if mount.get("mountPath") == mount_path and mount.get("readOnly") is True:
+                mount_name = str(mount.get("name", ""))
+                break
+    if not mount_name:
+        return False, "", None
+    for volume in pod_spec.get("volumes", []) if isinstance(pod_spec, dict) else []:
+        if volume.get("name") != mount_name:
+            continue
+        secret = volume.get("secret", {})
+        return True, str(secret.get("secretName", "")), bool(secret.get("optional", False))
+    return True, "", None
+
+
+def secret_referenced_by_env_from(deployment: dict[str, Any] | None, secret_name: str) -> bool:
     containers = (
-        deployment.get("spec", {})
-        .get("template", {})
-        .get("spec", {})
-        .get("containers", [])
+        deployment.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
         if isinstance(deployment, dict)
         else []
     )
     for container in containers:
         if container.get("name") != DEFAULT_DEPLOYMENT:
             continue
-        for mount in container.get("volumeMounts", []):
-            if mount.get("mountPath") == mount_path and mount.get("readOnly") is True:
+        for item in container.get("envFrom", []):
+            if item.get("secretRef", {}).get("name") == secret_name:
                 return True
     return False
 
@@ -373,6 +398,23 @@ def build_evidence(
     )
     if error:
         failures.append(error)
+    aggregate_external_secret, error = kget(
+        runner,
+        context=context,
+        namespace=namespace,
+        kind="externalsecret",
+        name=DEFAULT_AGGREGATE_EXTERNAL_SECRET,
+    )
+    if error:
+        failures.append(error)
+    aggregate_runtime_keys, error = kget_secret_key_names(
+        runner,
+        context=context,
+        namespace=namespace,
+        name=DEFAULT_AGGREGATE_SECRET,
+    )
+    if error:
+        failures.append(error)
     external_secret, error = kget(
         runner,
         context=context,
@@ -422,17 +464,23 @@ def build_evidence(
         failures.append(probe_error)
 
     mapped_properties, target_keys, vault_paths = external_secret_mappings(external_secret)
+    _aggregate_properties, aggregate_target_keys, _aggregate_vault_paths = external_secret_mappings(
+        aggregate_external_secret
+    )
     secret_store = external_secret_store(external_secret)
     vault_path = next(iter(vault_paths)) if len(vault_paths) == 1 else ""
     netpol_cidr, netpol_port = network_policy_target(netpol)
     host_ip = host_alias_ip(deployment, EXPECTED_TRANSCRIBE_HOST)
     direct_stt_enabled = config_direct_stt_enabled(configmap)
-    mount_present = mtls_mount_present(deployment, EXPECTED_MTLS_MOUNT)
+    mount_present, mtls_secret_name, mtls_secret_optional = mtls_mount_info(
+        deployment, EXPECTED_MTLS_MOUNT
+    )
     gitops_commit = git_commit(runner, gitops_commit_override)
     backend_image_digest = image_digest_hex(pod or {})
     file_like_keys_not_exported_as_env = REQUIRED_SECRET_KEYS.issubset(runtime_keys) and all(
         ENV_NAME_RE.match(key) is None for key in REQUIRED_SECRET_KEYS
     )
+    dedicated_secret_not_env_from = not secret_referenced_by_env_from(deployment, DEFAULT_SECRET)
 
     readiness_failures = [
         ("source-gitops-commit-invalid", GIT_SHA_RE.match(gitops_commit) is None),
@@ -442,6 +490,13 @@ def build_evidence(
         ("host-alias-mismatch", host_ip != EXPECTED_HOST_ALIAS_IP),
         ("network-policy-mismatch", netpol_cidr != EXPECTED_NETPOL_CIDR or netpol_port != EXPECTED_TRANSCRIBE_PORT),
         ("mtls-mount-missing", not mount_present),
+        ("mtls-secret-name-mismatch", mtls_secret_name != DEFAULT_SECRET),
+        ("mtls-secret-not-optional", mtls_secret_optional is not True),
+        ("mtls-secret-envfrom-risk", not dedicated_secret_not_env_from),
+        ("aggregate-external-secret-not-ready", not external_secret_ready(aggregate_external_secret)),
+        ("aggregate-secret-target-redis-key-missing", not AGGREGATE_SECRET_KEYS.issubset(aggregate_target_keys)),
+        ("aggregate-secret-runtime-redis-key-missing", not AGGREGATE_SECRET_KEYS.issubset(aggregate_runtime_keys)),
+        ("aggregate-secret-direct-stt-contamination", bool(REQUIRED_SECRET_KEYS & aggregate_runtime_keys) or bool(REQUIRED_SECRET_KEYS & aggregate_target_keys)),
         ("external-secret-not-ready", not external_secret_ready(external_secret)),
         ("external-secret-store-mismatch", secret_store != DEFAULT_SECRET_STORE),
         ("external-secret-vault-path-mismatch", vault_paths != {DEFAULT_VAULT_PATH}),
@@ -480,6 +535,8 @@ def build_evidence(
             "networkPolicyPort": netpol_port,
             "mtlsMountPath": EXPECTED_MTLS_MOUNT,
             "mtlsMountPresent": mount_present,
+            "mtlsSecretName": mtls_secret_name,
+            "mtlsSecretOptional": mtls_secret_optional,
         },
         "externalSecret": {
             "name": DEFAULT_EXTERNAL_SECRET,
@@ -490,11 +547,23 @@ def build_evidence(
             "targetSecretKeys": sorted(target_keys),
             "secretValueIncluded": False,
         },
+        "aggregateSecret": {
+            "name": DEFAULT_AGGREGATE_SECRET,
+            "ready": external_secret_ready(aggregate_external_secret),
+            "targetSecretKeys": sorted(aggregate_target_keys),
+            "runtimeKeyNames": sorted(aggregate_runtime_keys),
+            "directSttKeysPresent": bool(
+                REQUIRED_SECRET_KEYS & aggregate_runtime_keys
+                or REQUIRED_SECRET_KEYS & aggregate_target_keys
+            ),
+            "secretValueIncluded": False,
+        },
         "runtimeSecret": {
             "name": DEFAULT_SECRET,
             "keyNames": sorted(runtime_keys),
             "secretValueIncluded": False,
             "fileLikeKeysNotExportedAsEnv": file_like_keys_not_exported_as_env,
+            "dedicatedSecretNotEnvFrom": dedicated_secret_not_env_from,
         },
         "mtlsProbe": {
             "fromRealPod": bool(pod_name),

@@ -59,16 +59,21 @@ current live truth. `platform-backend#768` merged and was deployed through
 `transcript:direct-stt-results`. Live staging-sw `k3d-test/platform-test`
 rollout is Ready and pod readiness is OK. Remaining guarded path for
 `platform-ai#182`: Vault seed authority, ESO mapping for
-`direct-stt-ca.crt` / `direct-stt-client.crt` / `direct-stt-client.key`,
-metadata-only mTLS enablement preflight PASS while direct-STT is still false,
-flag flip, and `/transcribe` result-stream smoke. This does not change #198
-full I7, desktop mic/loopback, product pilot, or production readiness gates.
+`direct-stt-ca.crt` / `direct-stt-client.crt` / `direct-stt-client.key` into
+the dedicated `audio-gateway-direct-stt-mtls` Secret, metadata-only mTLS
+enablement preflight PASS while direct-STT is still false, flag flip, and
+`/transcribe` result-stream smoke. Keep the Redis aggregate
+`audio-gateway-secrets` out of this cert/key failure domain. This does not
+change #198 full I7, desktop mic/loopback, product pilot, or production
+readiness gates.
 The preflight PASS path now has a source-side collector:
 `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py`, which emits
 only metadata/key names and bounded mTLS `/health` status/timing before the
-existing verifier runs. A live fail-closed collector run before seed confirms
-the current #182 blocker remains missing ESO mappings/runtime Secret keys for
-the three direct-STT files.
+existing verifier runs. The preflight now expects the dedicated
+`audio-gateway-direct-stt-mtls` ExternalSecret/Secret, not the Redis aggregate.
+A live fail-closed collector run before seed confirms the current #182 blocker
+remains missing dedicated ESO/runtime Secret key evidence for the three
+direct-STT files.
 
 **Faz 24 KVKK engineering/legal separation delta (2026-06-27)**:
 `ADR-0030` now binds KVKK/VERBIS/hukuk owner acceptance as a parallel
