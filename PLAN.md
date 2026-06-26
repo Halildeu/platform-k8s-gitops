@@ -156,6 +156,18 @@ it does not provide real pilot G-INT evidence, enable a cloud LLM/API, mutate
 runtime, process raw audio, satisfy #198/#188/#182, or change production
 readiness.
 
+**Faz 24 #162 strict materiality delta (2026-06-26)**:
+`platform-ai#221` tightened the `#215` materiality guard. Unsupported
+content-token allowance for shippable meeting-ai claims is now zero, so a short
+unsupported business fact such as `fabrika açtı` cannot ride along inside a long
+grounded decision/answer merely because overall overlap remains high.
+Deterministic mock `/ask` retrieval is separated from acceptance gating through
+`best_matching_sentence()`, but the returned answer still passes through
+`ground_claim()` before user exposure. Boundary remains explicit: this is
+source-side G-INT precision hardening only; it does not provide real pilot G-INT
+evidence, enable a cloud LLM/API, mutate runtime, process raw audio, satisfy
+#198/#188/#182, or change production readiness.
+
 **Faz 24 #161 diarization decision-gate delta (2026-06-26)**:
 `platform-ai#210` merged source-side diarization backend decision gating:
 metadata-only candidate rows can select a backend only with explicit DER, RTF,

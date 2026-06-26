@@ -136,6 +136,23 @@ https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4806465423
 - Claude adversarial review returned `AGREE` with no P0/P1 blocker; a P2
   internal verifier-version note was absorbed.
 
+`platform-ai#221` then tightened the same materiality guard:
+
+- merge commit `28c483a5b92b8dea522edbc6910cc218b8024ce6`;
+- unsupported content-token allowance for shippable claims is now zero, so a
+  short unsupported business fact cannot ride along inside a long grounded
+  decision/answer;
+- regression coverage pins the prior false-positive shape:
+  `... ödeme takvimi netleşti, fabrika açtı` is rejected even when overall
+  overlap is high;
+- deterministic mock `/ask` retrieval is now separated from acceptance gating
+  through `best_matching_sentence()`;
+- every returned mock `/ask` answer still passes through `ground_claim()` before
+  user exposure;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- Claude adversarial review returned `AGREE` with no P0/P1 blocker.
+
 Boundary: this is source-side meeting-ai hardening only. It does not process a
 real pilot transcript/audio sample, does not enable a cloud LLM/API, does not
 mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approved
