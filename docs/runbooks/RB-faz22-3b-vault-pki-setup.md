@@ -236,6 +236,15 @@ PKI/AppRole are additive — to fully revert: `vault delete auth/approle/role/en
 and flip `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED=false` in the overlay + rollout. The `:8200` HTTP plane,
 ESO ClusterSecretStore, and every other Vault consumer are untouched throughout.
 
+## 9. Prod-shaping notes (Codex 019f0456 — non-blocking for this test runbook)
+
+- **secret-id handling:** §4.3 / §5.1 pass `secret_id="$SID"` on the command line (argv). It is never
+  printed to the transcript, but for a prod-shaped run move to a stdin/JSON or response-wrapping pattern
+  (`vault write … -<<<'{"secret_id":"…"}'` or Vault-Agent) so it never lands in argv/process list.
+- **`openssl` in the pod (§5.1.d):** the endpoint-admin image is JRE/Ubuntu-based (`sh` present, `openssl`
+  not guaranteed). If `openssl s_client` is absent, run the TLS handshake from a short-lived debug pod in
+  the SAME namespace + NetworkPolicy egress scope (so the test reflects the real pod's reachability).
+
 ## Referans
 
 - `RB-faz22.6-548-vault-https-enablement.md` — companion HTTPS transport (lands in PR #2054).
