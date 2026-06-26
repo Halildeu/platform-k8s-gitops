@@ -103,10 +103,6 @@ Evidence note:
 - merge commit `b349cba04c8523a4f3325a12d01ae24eabb5da98`;
 - PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
   `live-stt-service`, and `meeting-ai-service`;
-- current snapshot now treats the DB cleanup smoke layers as active but keeps
-  `status=blocked`, `findingCount=0`, `blockerCount=4`;
-- the remaining machine-readable blockers are VERBIS plus three MinIO runtime
-  lifecycle export blockers;
 - active MinIO evidence can no longer be accepted from
   `deploy/minio/setup-lifecycle.sh` or issue-comment/source evidence alone;
   each bucket must carry metadata-only runtime lifecycle export evidence
@@ -116,13 +112,29 @@ Evidence note:
 - `db.kvkk-access-log` retention timestamp is pinned to `accessed_at`, matching
   transcript-service V1 access-event timestamp semantics.
 
+`platform-ai#212` then attached test MinIO metadata-only lifecycle runtime
+evidence:
+
+- merge commit `f6d7d707c3a33e7f147b0351a87f7fe1f0569104`;
+- evidence file
+  `docs/evidence/minio-lifecycle-runtime-2026-06-26.json`;
+- issue evidence
+  `platform-ai#156` comment `issuecomment-4805932172`;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- configured test buckets now carry metadata-only lifecycle evidence:
+  `meeting-audio` 7d Enabled, `transcripts` 365d Enabled, and
+  `audit-archive` 2557d Enabled;
+- current snapshot treats DB cleanup smoke layers and MinIO lifecycle layers as
+  active but keeps `status=blocked`, `findingCount=0`, `blockerCount=1`;
+- the remaining machine-readable blocker is VERBIS/legal status.
+
 Boundary: this proves only bounded test runtime behavior for the deployed DB
-cleanup jobs and source-side fake-closure prevention for MinIO lifecycle
-evidence. #156 remains open until VERBIS status is recorded or exempt-confirmed,
-MinIO lifecycle runtime evidence for configured retention buckets is attached,
-and owner/legal acceptance is recorded. This does not prove direct-STT,
-app-mTLS, raw-audio governance, G-WER/DER, G-INT, desktop mic/loopback,
-production cleanup, or production readiness.
+cleanup jobs and metadata-only test MinIO lifecycle configuration. #156 remains
+open until VERBIS status is recorded or exempt-confirmed and owner/legal
+acceptance is recorded. This does not prove direct-STT, app-mTLS, raw-audio
+governance, G-WER/DER, G-INT, desktop mic/loopback, production cleanup,
+production lifecycle/deletion behavior, G-COMP pass, or production readiness.
 
 ## Live Delta — Faz 24 audio-gateway JWT enforce evidence path packaged; runtime flip remains open (2026-06-26)
 
@@ -302,12 +314,14 @@ GitOps also advanced several product-quality and compliance guardrails on
   acceptance evidence.
 - `platform-ai#201` merged the #156 retention-readiness gate at
   `3549c284ba0afbdf33f02a8c234ddaa6750db869`; `platform-ai#211` later tightened
-  it at `b349cba04c8523a4f3325a12d01ae24eabb5da98`. `scripts/retention_gate.py`
+  it at `b349cba04c8523a4f3325a12d01ae24eabb5da98`; `platform-ai#212` then
+  added test MinIO metadata-only lifecycle runtime evidence at
+  `f6d7d707c3a33e7f147b0351a87f7fe1f0569104`. `scripts/retention_gate.py`
   now makes the current state machine-readable without accepting source-only
-  MinIO evidence: DB cleanup smoke layers are active in the snapshot, while the
-  gate intentionally returns `status=blocked` until VERBIS is recorded or
-  exempt-confirmed and runtime MinIO lifecycle export evidence exists for the
-  configured buckets.
+  MinIO evidence: DB cleanup smoke layers and configured test MinIO lifecycle
+  layers are active in the snapshot, while the gate intentionally returns
+  `status=blocked` until VERBIS is recorded or exempt-confirmed and owner/legal
+  acceptance is recorded.
 - `platform-ai#202` merged Redis consumer wording/runtime cleanup at
   `74d55b63a60bd9075fbf303fd0856ed7abfa15c5`. The default handler is now
   `CoordinationChunkHandler`, preserving the control-plane-only contract:
