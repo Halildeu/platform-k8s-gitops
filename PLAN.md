@@ -63,6 +63,12 @@ rollout is Ready and pod readiness is OK. Remaining guarded path for
 metadata-only mTLS enablement preflight PASS while direct-STT is still false,
 flag flip, and `/transcribe` result-stream smoke. This does not change #198
 full I7, desktop mic/loopback, product pilot, or production readiness gates.
+The preflight PASS path now has a source-side collector:
+`scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py`, which emits
+only metadata/key names and bounded mTLS `/health` status/timing before the
+existing verifier runs. A live fail-closed collector run before seed confirms
+the current #182 blocker remains missing ESO mappings/runtime Secret keys for
+the three direct-STT files.
 
 **Faz 24 #161/#162 product-gate hardening delta (2026-06-26)**:
 `platform-ai#229` merged as `b4f86b1c8ae9e77ae41846eaf834cc2ea0fa5b50`;

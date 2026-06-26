@@ -115,6 +115,15 @@ New guardrail:
   audio, transcript text, and packet captures. Boundary flags must keep raw
   audio unsent, `/transcribe` uncalled, #182 e2e unproven, full I7, desktop
   mic/loopback, and production readiness separate.
+- `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py` is the
+  source-side collector for this gate. It queries only object metadata, Secret
+  key names, pod readiness, and bounded mTLS `/health` status/timing from the
+  real `audio-gateway` pod, then writes verifier-compatible JSON without
+  values. A live fail-closed run before seed showed the current expected
+  blocker: `ExternalSecret/audio-gateway-secrets` still maps only
+  `redis_password`, the runtime Secret still exposes only
+  `SPRING_DATA_REDIS_PASSWORD`, and the mTLS probe cannot reach HTTP 200 until
+  the three direct-STT keys exist.
 
 Current #182 path remains: approved credential seed authority -> ESO mapping ->
 pre-flag mTLS enablement preflight PASS -> direct-STT flag flip -> live e2e
