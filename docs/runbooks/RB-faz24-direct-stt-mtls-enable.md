@@ -72,10 +72,21 @@ is changed, build metadata-only JSON using schema
 `faz24.directSttMtlsEnablementPreflight.v1` and run:
 
 ```bash
+python3 scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py \
+  --context k3d-test \
+  --namespace platform-test \
+  --output docs/faz-24-evidence/<date>-direct-stt-mtls-preflight.json
+
 python3 scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py \
   docs/faz-24-evidence/<date>-direct-stt-mtls-preflight.json \
   --summary-json /tmp/faz24-direct-stt-mtls-preflight.verify.json
 ```
+
+The collector fails closed if the Secret key names are absent, the real pod
+cannot use the mounted cert material, or any expected GitOps/runtime shape is
+missing. It writes only key names, bounded HTTP status/timing metadata, and
+boolean boundary flags; it does not write PEM values, token material, raw
+command output, raw audio, transcript text, or destination URLs.
 
 The preflight verifier requires:
 
