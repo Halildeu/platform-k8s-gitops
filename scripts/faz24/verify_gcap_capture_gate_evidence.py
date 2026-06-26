@@ -37,6 +37,8 @@ EXTERNAL_BOUNDARY_EXPECTATIONS = {
     "externalMeetingAdminPathExercised": True,
     "recorderLifecycleExercised": True,
     "directSttProven": False,
+    "directClientToStt": False,
+    "directSttTranscriptProven": False,
     "computePlaneAuditProven": False,
     "desktopMicLoopbackProven": False,
     "productionReady": False,
@@ -73,6 +75,8 @@ EXTERNAL_REQUIRED_SUCCESS_CHECKS = {
     "boundary_externalMeetingAdminPathExercised",
     "boundary_recorderLifecycleExercised",
     "boundary_directSttProven",
+    "boundary_directClientToStt",
+    "boundary_directSttTranscriptProven",
     "boundary_computePlaneAuditProven",
     "boundary_desktopMicLoopbackProven",
     "boundary_productionReady",
@@ -548,6 +552,32 @@ def _validate_report(index: int, report: dict[str, Any], checks: list[Check]) ->
         f"row {index}: direct-STT, compute-plane audit, and production boundaries must not be true",
     )
 
+    required_success_checks = _required_success_checks(input_schema)
+    missing_success_checks = sorted(required_success_checks - report_checks.keys())
+    required_success_checks_present = bool(required_success_checks) and not missing_success_checks
+    _add(
+        checks,
+        f"row_{index}_required_success_checks_present",
+        required_success_checks_present,
+        f"row {index}: required verifier checks missing: {', '.join(missing_success_checks)}",
+    )
+    failed_success_checks = sorted(
+        name for name in required_success_checks if report_checks.get(name) is False
+    )
+    success_checks_pass = bool(required_success_checks) and not failed_success_checks
+    _add(
+        checks,
+        f"row_{index}_required_success_checks_pass",
+        success_checks_pass,
+        f"row {index}: required verifier checks failed: {', '.join(failed_success_checks)}",
+    )
+    positive_boundary_success = _positive_boundary_success(report)
+    _add(
+        checks,
+        f"row_{index}_required_boundaries",
+        positive_boundary_success,
+        f"row {index}: verifier boundaries must match post-hardening G-CAP expectations",
+    )
     meeting_id, session_id = _ids(report)
     valid = (
         schema_ok
@@ -556,11 +586,9 @@ def _validate_report(index: int, report: dict[str, Any], checks: list[Check]) ->
         and checks_shape_ok
         and unsafe_verifier_checks_ok
         and negative_boundary_ok
+        and required_success_checks_present
+        and positive_boundary_success
     )
-
-    required_success_checks = _required_success_checks(input_schema)
-    required_success_checks_present = bool(required_success_checks) and required_success_checks.issubset(report_checks.keys())
-    success_checks_pass = bool(required_success_checks) and all(report_checks.get(name) is True for name in required_success_checks)
     ids_ok = (
         isinstance(meeting_id, str)
         and bool(UUID_RE.match(meeting_id))
@@ -573,7 +601,6 @@ def _validate_report(index: int, report: dict[str, Any], checks: list[Check]) ->
         and _failures_empty(report)
         and required_success_checks_present
         and success_checks_pass
-        and _positive_boundary_success(report)
         and ids_ok
     )
 
@@ -742,6 +769,8 @@ def _summary(
             "rawAudioIncluded": False,
             "rawTranscriptIncluded": False,
             "directSttProven": False,
+            "directClientToStt": False,
+            "directSttTranscriptProven": False,
             "computePlaneAuditProven": False,
             "desktopMicLoopbackProven": metrics.get("passedAttemptClasses", {}).get("desktopCapture", 0) > 0,
             "productionReady": False,
