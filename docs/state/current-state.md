@@ -1,5 +1,42 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 KVKK engineering/legal separation rule (2026-06-27)
+
+Owner directive recorded by user: KVKK/VERBIS/hukuk owner acceptance is a
+parallel legal track and must not block Faz 24 engineering completion after
+owner notification is recorded. Engineering proceeds as if the legal track were
+externally handled, but does not claim legal acceptance, VERBIS closure, DPA, or
+production legal go.
+
+Canonical rule updates:
+
+- `AGENTS.md` hard rule now states Faz 24 KVKK legal-track parallelism.
+- `docs/context-priority-rules.md` §4.5 defines legal track vs engineering gate
+  status language.
+- `docs/adr/0030-kvkk-meeting-intelligence-boundary.md` is now
+  `ENGINEERING ACCEPTED / LEGAL TRACK PARALLEL`, not legal accepted.
+- `scripts/faz24/verify_gcomp_compliance_gate_evidence.py` now treats
+  `legal_track_notification` / legacy `kvkk_verbis` as owner notification
+  evidence, not legal acceptance. It requires fail-closed parametric controls:
+  `retentionDurationsParametric=true`, `retentionDefaultsFailClosed=true`,
+  `consentDefaultRequired=true`, `deletionPipelineDefaultEnabled=true`, and
+  forbids `legalAcceptanceClaimed`, `productionLegalGoClaimed`, and hardcoded
+  retention durations.
+
+Engineering boundary:
+
+- Retention/deletion durations are owner-supplied parameters. Missing owner
+  values are not an engineering blocker if the durable storage path is
+  fail-closed/refuse-to-store and no hardcoded duration is accepted as a legal
+  decision.
+- Legal acceptance, VERBIS güncelliği, DPA/subprocessor decision, and production
+  legal go remain owner/legal artifacts. They are not produced by agent/CI/PR
+  and must not be used as closure language without evidence.
+- Claude cross-AI adversarial review was run on 2026-06-27. It agreed with the
+  separation only under fail-closed defaults: retention unset/refuse-to-store,
+  consent default required, deletion pipeline default enabled, and no legal
+  overclaim.
+
 ## Live Delta — Faz 24 audio-gateway authz enforce desired-state flip (2026-06-26)
 
 `platform-backend#716` moves from packaged/default-off toward test runtime

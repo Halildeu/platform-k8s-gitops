@@ -70,6 +70,16 @@ existing verifier runs. A live fail-closed collector run before seed confirms
 the current #182 blocker remains missing ESO mappings/runtime Secret keys for
 the three direct-STT files.
 
+**Faz 24 KVKK engineering/legal separation delta (2026-06-27)**:
+`ADR-0030` now binds KVKK/VERBIS/hukuk owner acceptance as a parallel
+owner/legal track, not a Faz 24 engineering completion blocker after owner
+notification is recorded. Engineering G-COMP proceeds with fail-closed
+parametric controls: retention/deletion durations are owner-supplied config,
+unset durable storage refuses to store, consent default is required, deletion
+pipeline default is enabled, and legal/production overclaims are forbidden.
+Legal acceptance, VERBIS güncelliği or production legal go still require
+owner/legal artifact; agent/CI/PR must not claim them.
+
 **Faz 24 #161/#162 product-gate hardening delta (2026-06-26)**:
 `platform-ai#229` merged as `b4f86b1c8ae9e77ae41846eaf834cc2ea0fa5b50`;
 main CI run `28260265821` succeeded across repo-gates and all service-test
@@ -149,11 +159,13 @@ tightened the source-side retention gate so MinIO lifecycle cannot be accepted
 from source script or issue-comment evidence alone; `platform-ai#212` then added
 metadata-only test MinIO lifecycle runtime export evidence for `meeting-audio`
 7d, `transcripts` 365d, and `audit-archive` 2557d. Current snapshot remains
-`status=blocked` with `findingCount=0`, `blockerCount=1`; the remaining blocker
-is VERBIS/legal status. Boundary remains: this is test DB cleanup behavior plus
+historical and superseded by the 2026-06-27 KVKK engineering/legal separation
+rule: VERBIS/legal owner acceptance is a parallel legal track, not an
+engineering blocker. Boundary remains: this is test DB cleanup behavior plus
 test MinIO metadata-only lifecycle evidence only; #156 and G-COMP still need
-VERBIS/legal owner acceptance, production lifecycle/deletion proof, and broader
-compliance evidence before pass/readiness language is valid.
+production lifecycle/deletion proof, owner notification evidence, fail-closed
+parametric controls, and broader compliance evidence before engineering
+pass/readiness language is valid. Legal go/readiness remains owner/legal-gated.
 
 **Faz 24 #162 Ask-AI hardening delta (2026-06-26)**:
 `platform-ai#207` merged source-side meeting-ai `/ask` protection: transcript
