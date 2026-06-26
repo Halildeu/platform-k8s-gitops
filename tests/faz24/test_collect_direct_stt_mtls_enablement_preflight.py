@@ -57,7 +57,7 @@ class FakeRunner:
             if self.git_sha is None:
                 return collector.CommandResult(128, "", "not-a-git-repo")
             return collector.CommandResult(0, self.git_sha + "\n", "")
-        if argv[:8] == [
+        if argv[:7] == [
             "kubectl",
             "--context",
             "k3d-test",
@@ -65,17 +65,19 @@ class FakeRunner:
             "platform-test",
             "get",
             "secret",
-            "audio-gateway-secrets",
         ]:
-            keys = [
-                "SPRING_DATA_REDIS_PASSWORD",
-                "direct-stt-ca.crt",
-                "direct-stt-client.crt",
-                "direct-stt-client.key",
-            ]
-            if self.missing_secret_key:
-                keys.remove("direct-stt-client.key")
-            return collector.CommandResult(0, "\n".join(keys) + "\n", "")
+            secret_name = argv[7] if len(argv) > 7 else ""
+            if secret_name == "audio-gateway-direct-stt-mtls":
+                keys = [
+                    "direct-stt-ca.crt",
+                    "direct-stt-client.crt",
+                    "direct-stt-client.key",
+                ]
+                if self.missing_secret_key:
+                    keys.remove("direct-stt-client.key")
+                return collector.CommandResult(0, "\n".join(keys) + "\n", "")
+            if secret_name == "audio-gateway-secrets":
+                return collector.CommandResult(0, "SPRING_DATA_REDIS_PASSWORD\n", "")
         if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "get"]:
             return self._kubectl_get(argv)
         if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "exec"]:
@@ -89,8 +91,10 @@ class FakeRunner:
             return self._json(deployment())
         if kind == "configmap" and name == "audio-gateway-config":
             return self._json(configmap())
-        if kind == "externalsecret" and name == "audio-gateway-secrets":
+        if kind == "externalsecret" and name == "audio-gateway-direct-stt-mtls":
             return self._json(external_secret(self.vault_path))
+        if kind == "externalsecret" and name == "audio-gateway-secrets":
+            return self._json(aggregate_external_secret())
         if kind == "networkpolicy" and name == "allow-audio-gateway-egress-live-stt-mtls":
             return self._json(network_policy())
         if kind == "pods":
@@ -112,6 +116,10 @@ def deployment() -> dict:
                     "containers": [
                         {
                             "name": "audio-gateway",
+                            "envFrom": [
+                                {"configMapRef": {"name": "audio-gateway-config"}},
+                                {"secretRef": {"name": "audio-gateway-secrets"}},
+                            ],
                             "volumeMounts": [
                                 {
                                     "name": "direct-stt-mtls",
@@ -119,6 +127,15 @@ def deployment() -> dict:
                                     "readOnly": True,
                                 }
                             ],
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "direct-stt-mtls",
+                            "secret": {
+                                "secretName": "audio-gateway-direct-stt-mtls",
+                                "optional": True,
+                            },
                         }
                     ],
                 }
@@ -136,13 +153,6 @@ def external_secret(vault_path: str) -> dict:
         "spec": {
             "secretStoreRef": {"name": "vault-platform-gitops"},
             "data": [
-                {
-                    "secretKey": "SPRING_DATA_REDIS_PASSWORD",
-                    "remoteRef": {
-                        "key": vault_path,
-                        "property": "redis_password",
-                    },
-                },
                 {
                     "secretKey": "direct-stt-ca.crt",
                     "remoteRef": {
@@ -162,6 +172,24 @@ def external_secret(vault_path: str) -> dict:
                     "remoteRef": {
                         "key": vault_path,
                         "property": "direct_stt_client_key",
+                    },
+                },
+            ],
+        },
+        "status": {"conditions": [{"type": "Ready", "status": "True"}]},
+    }
+
+
+def aggregate_external_secret() -> dict:
+    return {
+        "spec": {
+            "secretStoreRef": {"name": "vault-platform-gitops"},
+            "data": [
+                {
+                    "secretKey": "SPRING_DATA_REDIS_PASSWORD",
+                    "remoteRef": {
+                        "key": "kv/platform/audio-gateway-service",
+                        "property": "redis_password",
                     },
                 },
             ],
@@ -229,13 +257,28 @@ class DirectSttMtlsPreflightCollectorTest(unittest.TestCase):
         self.assertFalse(evidence["runtimeSecret"]["secretValueIncluded"])
         self.assertEqual(
             {
-                "SPRING_DATA_REDIS_PASSWORD",
                 "direct-stt-ca.crt",
                 "direct-stt-client.crt",
                 "direct-stt-client.key",
             },
             set(evidence["runtimeSecret"]["keyNames"]),
         )
+        self.assertEqual(
+            "audio-gateway-direct-stt-mtls",
+            evidence["desiredState"]["mtlsSecretName"],
+        )
+        self.assertTrue(evidence["desiredState"]["mtlsSecretOptional"])
+        self.assertTrue(evidence["runtimeSecret"]["dedicatedSecretNotEnvFrom"])
+        self.assertEqual("audio-gateway-secrets", evidence["aggregateSecret"]["name"])
+        self.assertEqual(
+            ["SPRING_DATA_REDIS_PASSWORD"],
+            evidence["aggregateSecret"]["targetSecretKeys"],
+        )
+        self.assertEqual(
+            ["SPRING_DATA_REDIS_PASSWORD"],
+            evidence["aggregateSecret"]["runtimeKeyNames"],
+        )
+        self.assertFalse(evidence["aggregateSecret"]["directSttKeysPresent"])
         self.assertTrue(all("--context" in command for command in runner.commands if command and command[0] == "kubectl"))
         exec_commands = [command for command in runner.commands if "exec" in command]
         self.assertEqual(1, len(exec_commands))

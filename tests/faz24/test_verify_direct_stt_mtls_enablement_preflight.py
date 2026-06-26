@@ -43,20 +43,20 @@ def valid_preflight() -> dict:
             "networkPolicyPort": 8243,
             "mtlsMountPath": "/etc/direct-stt-mtls",
             "mtlsMountPresent": True,
+            "mtlsSecretName": "audio-gateway-direct-stt-mtls",
+            "mtlsSecretOptional": True,
         },
         "externalSecret": {
-            "name": "audio-gateway-secrets",
+            "name": "audio-gateway-direct-stt-mtls",
             "ready": True,
             "secretStore": "vault-platform-gitops",
             "vaultPath": "kv/platform/audio-gateway-service",
             "mappedVaultProperties": [
-                "redis_password",
                 "direct_stt_ca_crt",
                 "direct_stt_client_crt",
                 "direct_stt_client_key",
             ],
             "targetSecretKeys": [
-                "SPRING_DATA_REDIS_PASSWORD",
                 "direct-stt-ca.crt",
                 "direct-stt-client.crt",
                 "direct-stt-client.key",
@@ -64,15 +64,23 @@ def valid_preflight() -> dict:
             "secretValueIncluded": False,
         },
         "runtimeSecret": {
-            "name": "audio-gateway-secrets",
+            "name": "audio-gateway-direct-stt-mtls",
             "keyNames": [
-                "SPRING_DATA_REDIS_PASSWORD",
                 "direct-stt-ca.crt",
                 "direct-stt-client.crt",
                 "direct-stt-client.key",
             ],
             "secretValueIncluded": False,
             "fileLikeKeysNotExportedAsEnv": True,
+            "dedicatedSecretNotEnvFrom": True,
+        },
+        "aggregateSecret": {
+            "name": "audio-gateway-secrets",
+            "ready": True,
+            "targetSecretKeys": ["SPRING_DATA_REDIS_PASSWORD"],
+            "runtimeKeyNames": ["SPRING_DATA_REDIS_PASSWORD"],
+            "directSttKeysPresent": False,
+            "secretValueIncluded": False,
         },
         "mtlsProbe": {
             "fromRealPod": True,
@@ -134,6 +142,43 @@ class DirectSttMtlsEnablementPreflightVerifierTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("runtime_secret_keys", result.stdout)
+
+    def test_shared_audio_gateway_secret_fails(self):
+        data = valid_preflight()
+        data["desiredState"]["mtlsSecretName"] = "audio-gateway-secrets"
+        data["externalSecret"]["name"] = "audio-gateway-secrets"
+        data["runtimeSecret"]["name"] = "audio-gateway-secrets"
+        data["runtimeSecret"]["dedicatedSecretNotEnvFrom"] = False
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("desired_mtls_secret_name", result.stdout)
+        self.assertIn("external_secret_name", result.stdout)
+        self.assertIn("runtime_secret_name", result.stdout)
+        self.assertIn("runtime_secret_not_env_from", result.stdout)
+
+    def test_direct_stt_key_in_aggregate_secret_fails(self):
+        data = valid_preflight()
+        data["aggregateSecret"]["targetSecretKeys"].append("direct-stt-client.key")
+        data["aggregateSecret"]["runtimeKeyNames"].append("direct-stt-client.key")
+        data["aggregateSecret"]["directSttKeysPresent"] = True
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("aggregate_secret_no_direct_stt_keys", result.stdout)
+
+    def test_missing_redis_key_in_aggregate_secret_fails(self):
+        data = valid_preflight()
+        data["aggregateSecret"]["targetSecretKeys"] = []
+        data["aggregateSecret"]["runtimeKeyNames"] = []
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("aggregate_secret_target_redis_key", result.stdout)
+        self.assertIn("aggregate_secret_runtime_redis_key", result.stdout)
 
     def test_wrong_kubectl_context_fails(self):
         data = valid_preflight()

@@ -124,12 +124,12 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-        # Same Secret as envFrom. Future direct-STT mTLS entries intentionally
-        # use file-like key names (`direct-stt-*.crt/key`) so envFrom does not
-        # export PEM material as environment variables; the volume exposes them
-        # as files for the WebClient. Direct-STT remains disabled until those
-        # keys are seeded and AUDIO_GATEWAY_DIRECT_STT_ENABLED flips true.
+        # Dedicated Secret, separate from audio-gateway-secrets/envFrom, so
+        # direct-STT certificate seed drift cannot break the Redis password
+        # aggregate. Optional keeps the current flag-false pod runnable before
+        # seed; the preflight/e2e verifiers fail closed until all files exist.
         - name: direct-stt-mtls
           secret:
-            secretName: audio-gateway-secrets
+            secretName: audio-gateway-direct-stt-mtls
+            optional: true
             defaultMode: 0440
