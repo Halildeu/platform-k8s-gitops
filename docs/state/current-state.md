@@ -71,6 +71,23 @@
 - Claude adversarial review pass 1 found a digit-group false-pass P1; the source
   patch was tightened, and pass 2 returned `NO P0/P1`.
 
+`platform-ai#215` merged meeting fact-fusion / single-source materiality guard:
+
+- merge commit `d84befa90c668155b7362c7b29e2f436a8a5f0cf`;
+- `AnalyzeResponse.schema_version` moved to `5-adr0043`;
+- default citation grounding now requires high-precision single-source material
+  coverage (`0.65`), not the earlier loose `0.4` overlap floor;
+- fused decisions/actions/summary sentences that merge supported prose with
+  unsupported facts outside the cited transcript sentence are withheld rather
+  than presented as grounded;
+- generated `/ask` answers with fused unsupported prose are replaced by the fixed
+  `Metinde bu bilgi yok.` answer instead of exposing unsupported prose with
+  `grounded=false`;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- Claude adversarial review returned `AGREE` with no P0/P1 blocker; a P2
+  internal verifier-version note was absorbed.
+
 Boundary: this is source-side meeting-ai hardening only. It does not process a
 real pilot transcript/audio sample, does not enable a cloud LLM/API, does not
 mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approved

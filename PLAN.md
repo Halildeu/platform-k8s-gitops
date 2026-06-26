@@ -130,6 +130,19 @@ explicit: this is G-INT metadata precision hardening only; it does not provide
 real pilot G-INT evidence, enable a cloud LLM/API, mutate runtime, process raw
 audio, satisfy #198/#188/#182, or change production readiness.
 
+**Faz 24 #162 fact-fusion grounding delta (2026-06-26)**:
+`platform-ai#215` merged source-side meeting-ai fact-fusion / single-source
+materiality hardening. `AnalyzeResponse` is now `schema_version=5-adr0043`;
+default citation grounding requires high-precision single-source material
+coverage, and fused decisions/actions/summary sentences that mix supported prose
+with unsupported facts outside the cited transcript sentence are withheld. `/ask`
+also replaces fused unsupported generated prose with the fixed
+`Metinde bu bilgi yok.` answer instead of exposing it with `grounded=false`.
+Boundary remains explicit: this is G-INT hallucination-exposure hardening only;
+it does not provide real pilot G-INT evidence, enable a cloud LLM/API, mutate
+runtime, process raw audio, satisfy #198/#188/#182, or change production
+readiness.
+
 **Faz 24 #161 diarization decision-gate delta (2026-06-26)**:
 `platform-ai#210` merged source-side diarization backend decision gating:
 metadata-only candidate rows can select a backend only with explicit DER, RTF,
