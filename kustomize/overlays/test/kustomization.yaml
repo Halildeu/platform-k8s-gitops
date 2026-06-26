@@ -52,6 +52,7 @@ resources:
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
+  - netpol-endpoint-admin-vault-https.yaml  # #548 gate-B (PR #2054): endpoint-admin → Vault 172.19.0.4/32:8202 TLS (narrow, additive)
   # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
   # allow-egress-host-bridge (PG) + allow-monitoring-scrape (9187 added); no
   # dedicated netpol (part-of=platform is required by drift Check 5 — Codex 019ed602).
@@ -7074,6 +7075,29 @@ patches:
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8200
+      # Faz 22.6 #548 gate-B (PR #2054) — additive :8202 TLS endpoint (the container's HTTPS listener,
+      # bridge-direct, no host-publish). SAFE-ON-MERGE: just an unused Endpoints port until the operator
+      # activates the listener + flips the backend (RB-faz22.6-548-vault-https-enablement.md). The base
+      # port 0 is named "http", so the added port carries a name ("https") — required once >1 port.
+      - op: add
+        path: /subsets/0/ports/-
+        value:
+          name: https
+          port: 8202
+          protocol: TCP
+  # Faz 22.6 #548 gate-B — vault Service gains the matching :8202 port (routes to the container TLS
+  # listener). Base Service has the single named "http" port; this adds "https" → targetPort 8202.
+  - target:
+      kind: Service
+      name: vault
+    patch: |-
+      - op: add
+        path: /spec/ports/-
+        value:
+          name: https
+          port: 8202
+          targetPort: 8202
+          protocol: TCP
   - target:
       kind: Endpoints
       name: redis-streams
