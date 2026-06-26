@@ -27,6 +27,17 @@
 - PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
   `live-stt-service`, and `meeting-ai-service`.
 
+`platform-ai#209` merged Ask-AI unsupported-answer withholding:
+
+- generated `/ask` answers that cannot be grounded to a transcript sentence are
+  no longer returned as user-visible prose merely with `grounded=false`;
+- empty answers, fixed no-info sentinel answers, and ungrounded generated
+  answers return the fixed `Metinde bu bilgi yok.` answer;
+- the ungrounded citation avoids carrying the unsupported generated answer
+  (`claim=""`, `source_text=""`);
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`.
+
 Boundary: this is source-side meeting-ai hardening only. It does not process a
 real pilot transcript/audio sample, does not enable a cloud LLM/API, does not
 mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approved
