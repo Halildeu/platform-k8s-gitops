@@ -82,7 +82,7 @@ running, `STT_REQUEST_TIMEOUT = "180"` is present in `start-live-stt.ps1`,
 on `cuda/float16`, and log tail contains `Transcribe success`. Boundary
 remains explicit: this applies the #226 WorkerTimeoutError source/runtime
 slice only. It does not merge/deploy `platform-backend#768`, produce
-`DIRECT_STT_TRANSCRIPT_RESULT`, close `platform-ai#182`, or change production
+`DIRECT_STT_TRANSCRIPT_RESULT`, satisfy `platform-ai#182`, or change production
 readiness.
 
 **Faz 24 #162/#227 G-INT sample metadata delta (2026-06-26)**:
@@ -95,8 +95,7 @@ This binds G-INT pilot evidence to `sample_manifest_hash`,
 the source-side gate. Boundary remains explicit: this is source-side G-INT
 evidence-contract hardening only; it does not provide real pilot transcript or
 audio evidence, does not enable an LLM provider, does not satisfy
-`platform-ai#162` acceptance, and does not close `platform-ai#182` or any
-production gate.
+`platform-ai#162` acceptance, `platform-ai#182`, or any production gate.
 
 **Faz 24 #156 retention delta (2026-06-26)**: DB cleanup runtime evidence
 advanced in `k3d-test`: transient smoke Jobs derived from the deployed

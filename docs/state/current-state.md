@@ -16,7 +16,7 @@ hardens only the G-INT evidence metadata contract:
 
 Boundary: this does not provide real pilot transcript/audio evidence, does not
 enable an LLM provider, does not satisfy `platform-ai#162` G-INT acceptance,
-and does not close `platform-ai#182` or any production gate.
+`platform-ai#182`, or any production gate.
 
 After the operator ESET/endpoint allow-log completion, the Denetim live-stt
 app-mTLS `live-stt-preflight` path was refreshed from `staging-sw`:
@@ -88,7 +88,7 @@ Next accepted #182 evidence remains unchanged: review/merge/deploy
 `200`, `DIRECT_STT_TRANSCRIPT_RESULT`, same-session compute-plane audit
 correlation, and no raw-audio persistence.
 
-## Historical Delta — Faz 24 #188 audit gate closed; pre-#226-merge #182 blockers (2026-06-26)
+## Historical Delta — Faz 24 #188 audit gate accepted; pre-#226-merge #182 blockers (2026-06-26)
 
 > Superseded for `platform-ai#226` by the live delta above. This section is kept
 > as the #188 acceptance snapshot and the pre-merge #182 blocker context.
