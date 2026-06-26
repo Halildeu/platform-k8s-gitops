@@ -1,0 +1,7 @@
+# Faz 22.6 #548 — operator-generated Vault TLS material (config.hcl :8202 HTTPS listener).
+# NEVER commit: the server/CA private keys are secrets; the certs are host-custody artifacts.
+# Generated host-side by host-compose/vault/test/tls/gen-vault-test-tls.sh into this directory
+# (= the platform-vault-test container's /vault/config/tls/ mount). This .gitignore keeps the
+# mount path present in the repo while excluding every generated file.
+*
+!.gitignore

@@ -1,0 +1,5 @@
+# Faz 22.6 #548 — host-only internal CA material for the test Vault HTTPS listener.
+# gen-vault-test-tls.sh writes the CA PRIVATE KEY here (ca/), deliberately OUTSIDE the
+# /vault/config mount (Codex 019f02db Must-Fix #1). The CA private key must NEVER be
+# committed; only its public cert is exported (base64) into the backend caCertPem pin.
+ca/

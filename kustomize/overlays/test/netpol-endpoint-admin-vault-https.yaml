@@ -1,0 +1,37 @@
+# endpoint-admin-service → test Vault :8202 — Faz 22.6 #548 gate-B (PR #2054, Codex 019f02db Must-Fix #3).
+#
+# endpoint-admin-service is `part-of: platform`, so it already matches the namespace-wide
+# allow-egress-host-bridge allowlist — but that allowlist only opens Vault :8200. The #548
+# VaultPkiClient needs the NEW :8202 TLS listener. Rather than WIDEN the shared 0.0.0.0/0 base
+# allowlist to :8202 for ALL platform pods, this policy ADDS :8202 egress for ONLY
+# endpoint-admin-service, to the Vault container bridge IP /32. NetworkPolicies union, so this
+# grants the extra port without touching the base (least-privilege per Codex).
+#
+# SAFE-ON-MERGE: merely permits a path that stays unused until the operator activates the :8202
+# listener + flips the backend to https (RB-faz22.6-548-vault-https-enablement.md). No pod behavior
+# changes on merge. 172.19.0.4 = platform-vault-test bridge IP (verify live before activation:
+# kubectl -n platform-test get endpoints vault -o yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-endpoint-admin-vault-https
+  annotations:
+    platform.acik.com/issue: "548"
+    platform.acik.com/runbook: "docs/runbooks/RB-faz22.6-548-vault-https-enablement.md"
+  labels:
+    app.kubernetes.io/name: endpoint-admin-service
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-service
+  policyTypes:
+    - Egress
+  egress:
+    # Vault test host-bridge :8202 TLS listener only (container bridge IP /32, native TLS port).
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.4/32
+      ports:
+        - protocol: TCP
+          port: 8202
