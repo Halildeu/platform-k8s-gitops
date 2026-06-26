@@ -28,10 +28,10 @@ data:
   # configurable" tasarımı tam bu durum için) → test'te override:
   AUDIO_GATEWAY_JWT_TENANT_CLAIM: "tenantId"
   # user-claim default'u (userId) realm'le zaten uyumlu — override gerekmez.
-  # --- Faz 24 #716 shared-realm authz hardening (DEFAULT-OFF) ---
+  # --- Faz 24 #716 shared-realm authz hardening (default-off baseline) ---
   # Backend #719/#720 already contains audience + capability-role enforcement.
-  # These flags are explicit in GitOps so the Step 7 flip is a deliberate,
-  # reviewable desired-state change after token drain and fail-closed smoke prep.
+  # Test overlay may deliberately patch these booleans to true after token-drain
+  # review and fail-closed smoke prep. Prod must make its own D30 decision.
   AUDIO_GATEWAY_SECURITY_RESOURCE_CLIENT_ID: "audio-gateway-service"
   AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE: "false"
   AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE: "false"

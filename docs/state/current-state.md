@@ -1,5 +1,44 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 audio-gateway authz enforce desired-state flip (2026-06-26)
+
+`platform-backend#716` moves from packaged/default-off toward test runtime
+enforcement. The live read-only preflight before this GitOps change showed:
+
+- `audio-gateway` in `k3d-test/platform-test` Ready `1/1`;
+- image
+  `ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`,
+  which is newer than the merged backend validator PRs
+  `platform-backend#719/#720`;
+- `AUDIO_GATEWAY_SECURITY_RESOURCE_CLIENT_ID=audio-gateway-service`;
+- `AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=false`;
+- `AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=false`;
+- JWKS internal URI remains
+  `http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs`
+  while issuer remains `https://testai.acik.com/realms/platform-test`.
+
+This GitOps desired-state update keeps the base ConfigMap default-off and flips
+the two test runtime booleans to true through the test overlay patch:
+
+- `AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=true`
+- `AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=true`
+
+Boundary:
+
+- This is test desired-state only. The prod overlay does not include
+  `audio-gateway` until the later D30 cutover path, and base remains
+  default-off so prod cannot inherit this test flip without a prod-specific
+  review.
+- This is not acceptance by itself. `platform-backend#716` still requires live
+  token-drain/maintenance-window evidence, rollout evidence, and a redacted
+  fail-closed matrix through
+  `verify_audio_gateway_authz_enforce_evidence.py`: no token `401`, wrong
+  audience `401`, missing `audio_record` `403`, valid recorder token security
+  pass with expected business response.
+- No Keycloak mutation, token printing, direct-STT, raw audio,
+  compute-plane transit, desktop mic/loopback, or production readiness is
+  claimed from this desired-state flip.
+
 ## Live Delta — Faz 24 direct-STT kubectl context guard added (2026-06-26)
 
 Read-only staging-sw refresh after `platform-k8s-gitops#2069` found a
@@ -546,20 +585,21 @@ acceptance is recorded. This does not prove direct-STT, app-mTLS, raw-audio
 governance, G-WER/DER, G-INT, desktop mic/loopback, production cleanup,
 production lifecycle/deletion behavior, G-COMP pass, or production readiness.
 
-## Live Delta — Faz 24 audio-gateway JWT enforce evidence path packaged; runtime flip remains open (2026-06-26)
+## Historical Delta — Faz 24 audio-gateway JWT enforce evidence path packaged; runtime flip follow-up below (2026-06-26)
 
 `platform-backend#716` remains the P1 shared-realm authz gate for real recorder
 traffic: `audio-gateway-service` must require both
 `aud=audio-gateway-service` and
 `resource_access.audio-gateway-service.roles=[audio_record]` before real/prod
-audio use. Backend validator code and fail-closed source tests are already in
-the post-`platform-backend#719/#720` image lineage now carried by the current
-test audio-gateway digest, but the GitOps/runtime enforce flip is still open.
+audio use. Backend validator code and fail-closed source tests are in the
+post-`platform-backend#719/#720` image lineage now carried by the current test
+audio-gateway digest. The later live delta at the top of this file supersedes
+the default-off desired-state part of this historical section.
 
-This repo now packages the durable GitOps/evidence path:
+This package established the durable GitOps/evidence path:
 
-- `kustomize/base/apps/audio-gateway/configmap.yaml` carries explicit
-  default-off security flags:
+- `kustomize/base/apps/audio-gateway/configmap.yaml` carried explicit
+  pre-flip default-off security flags:
   `AUDIO_GATEWAY_SECURITY_RESOURCE_CLIENT_ID=audio-gateway-service`,
   `AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=false`, and
   `AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=false`;
@@ -575,13 +615,10 @@ This repo now packages the durable GitOps/evidence path:
   audio/transcript/prompt/response payloads, direct-STT or production overclaims,
   and evidence where the enforce booleans are not both true.
 
-Boundary: this is source/desired-state/evidence packaging only. It does not flip
-`AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE` or
-`AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE` to true, does not mutate
-Keycloak, does not prove the #716 fail-closed live smoke, does not send raw
-audio, does not prove direct-STT, and does not make production ready. #716 should
-remain open until token drain, GitOps enforce flip, live fail-closed matrix, and
-reviewer/operator acceptance are all recorded.
+Boundary: this section is historical source/evidence packaging context. The
+later desired-state flip changes the two booleans to true for the test overlay,
+but #716 still remains open until live rollout evidence, fail-closed matrix, and
+reviewer/operator acceptance are recorded.
 
 ## Live Delta — Faz 24 recording-access PR-2 runtime evidence recorded; tokened object-level gate remains open (2026-06-26)
 
