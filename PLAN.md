@@ -157,6 +157,16 @@ audit, and production-readiness claims. Boundary: source/runbook package only;
 live desktop smoke PASS, direct-STT e2e, aggregate G-CAP reliability, and
 product readiness remain separate gates.
 
+**Faz 24 desktop capture operator handoff package delta (2026-06-27)**:
+`build-desktop-capture-operator-handoff.py` plus workflow
+`faz24-desktop-capture-operator-handoff.yml` now package the remaining real
+`platform-desktop` mic+loopback capture sequence as a metadata-only operator
+artifact (`README.md` + manifest + `SHA256SUMS`). It orders real desktop run
+-> redacted evidence review -> desktop verifier PASS -> G-CAP aggregate when
+enough verifier summaries exist. Boundary: no desktop app execution, no token
+read, no testai connection, no Kubernetes/Vault mutation, no audio send, and
+no #1615 status advance.
+
 **Faz 24 G-CAP desktop aggregation delta (2026-06-27)**:
 `scripts/faz24/verify_gcap_capture_gate_evidence.py` now accepts both redacted
 external recorder verifier summaries and redacted desktop capture verifier

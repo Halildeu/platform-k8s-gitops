@@ -22,6 +22,27 @@ real `platform-desktop` run. The verifier accepts only metadata and rejects raw
 audio, transcript text, token material, direct client-to-STT calls, and broad
 readiness claims.
 
+## Metadata-Only Handoff Package
+
+For an operator-facing command bundle, build the source-side handoff artifact:
+
+```bash
+gh workflow run faz24-desktop-capture-operator-handoff.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f operator_batch_id=faz24-desktop-capture-20260627 \
+  -f gitops_ref=main
+```
+
+The artifact contains `README.md`,
+`faz24-desktop-capture-operator-handoff.json`, and `SHA256SUMS`. It is a
+coordination artifact only: it does not run the desktop app, read tokens,
+connect to `testai.acik.com`, mutate Kubernetes/Vault, send audio, collect live
+evidence, or advance #1615. Use it to hand the exact real-desktop-run ->
+redacted-evidence-review -> verifier -> G-CAP aggregate command order to the
+operator without embedding raw audio, token material, device labels, desktop
+logs, or shell transcripts.
+
 ## Evidence Contract
 
 Verifier:
