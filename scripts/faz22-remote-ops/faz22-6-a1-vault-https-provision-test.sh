@@ -58,11 +58,10 @@ docker_cli() {
 docker_api() {
   local method="$1"
   local path="$2"
-  shift 2
   local sock
   command -v curl >/dev/null 2>&1 || return 1
   for sock in /var/run/docker.sock /run/docker.sock; do
-    if [ -S "$sock" ] && curl -fsS -X "$method" --unix-socket "$sock" "http://localhost$path" "$@"; then
+    if [ -S "$sock" ] && curl -fsS -X "$method" --unix-socket "$sock" "http://localhost$path"; then
       return 0
     fi
   done
@@ -117,26 +116,43 @@ restart_vault_container() {
 vault_status_json() {
   local url
   command -v curl >/dev/null 2>&1 || return 1
-  for url in https://127.0.0.1:8302 https://172.19.0.4:8202; do
+  while IFS= read -r url; do
     if curl -fsS --connect-timeout 3 --max-time 10 --cacert "$VAULT_TLS_DIR/ca.crt" \
       "$url/v1/sys/seal-status"; then
       return 0
     fi
-  done
+  done < <(vault_api_urls)
   return 1
 }
 
 vault_api_base() {
   local url
   command -v curl >/dev/null 2>&1 || return 1
-  for url in https://127.0.0.1:8302 https://172.19.0.4:8202; do
+  while IFS= read -r url; do
     if curl -fsS --connect-timeout 3 --max-time 10 --cacert "$VAULT_TLS_DIR/ca.crt" \
       "$url/v1/sys/seal-status" >/dev/null; then
       printf '%s\n' "$url"
       return 0
     fi
-  done
+  done < <(vault_api_urls)
   return 1
+}
+
+vault_api_urls() {
+  local inspect_json
+  local ip
+  {
+    printf '%s\n' "https://127.0.0.1:8302"
+    if inspect_json="$(docker_inspect_vault 2>/dev/null)"; then
+      printf '%s\n' "$inspect_json" \
+        | jq -r '.NetworkSettings.Networks[]?.IPAddress // empty' 2>/dev/null \
+        | while IFS= read -r ip; do
+            if [ -n "$ip" ]; then
+              printf 'https://%s:8202\n' "$ip"
+            fi
+          done
+    fi
+  } | awk '!seen[$0]++'
 }
 
 wait_for_vault_status_json() {
@@ -154,8 +170,8 @@ unseal_vault_with_key_index() {
   local idx="$1"
   local url
   url="$(vault_api_base)" || return 1
-  sudo -n jq -r --argjson idx "$idx" '.unseal_keys_b64[$idx]' "$VAULT_INIT_JSON" \
-    | jq -Rs '{key: rtrimstr("\n")}' \
+  sudo -n jq -er --argjson idx "$idx" '.unseal_keys_b64[$idx] | select(type == "string" and length > 0)' "$VAULT_INIT_JSON" \
+    | jq -Rs 'if length > 1 then {key: rtrimstr("\n")} else halt_error(1) end' \
     | curl -fsS --connect-timeout 3 --max-time 10 --cacert "$VAULT_TLS_DIR/ca.crt" \
       -H 'Content-Type: application/json' --data @- "$url/v1/sys/unseal" >/dev/null
 }

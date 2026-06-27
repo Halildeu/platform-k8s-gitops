@@ -192,16 +192,11 @@ jobs:
             get endpoints vault -o jsonpath='{.subsets[0].ports[?(@.port==8202)].port}{"\n"}' \
             | grep -Fx '8202'
 
-          vault_status_ok=0
-          for url in "https://127.0.0.1:8302" "https://172.19.0.4:8202"; do
-            if curl -fsS --connect-timeout 3 --max-time 10 --cacert "${VAULT_TLS_DIR}/ca.crt" \
-              "${url}/v1/sys/seal-status" | jq -e '.sealed == false' >/dev/null; then
-              vault_status_ok=1
-              break
-            fi
-          done
-          if [ "$vault_status_ok" != "1" ]; then
-            echo "FAIL Vault HTTPS 8202 CA-pinned seal-status did not return sealed=false" >&2
+          # Compose publishes container HTTPS 8202 as host-local 8302; the
+          # Kubernetes Service/Endpoint still exposes the native 8202 port.
+          if ! curl -fsS --connect-timeout 3 --max-time 10 --cacert "${VAULT_TLS_DIR}/ca.crt" \
+            "https://127.0.0.1:8302/v1/sys/seal-status" | jq -e '.sealed == false' >/dev/null; then
+            echo "FAIL Vault HTTPS 8302 host-published CA-pinned seal-status did not return sealed=false" >&2
             exit 1
           fi
 
