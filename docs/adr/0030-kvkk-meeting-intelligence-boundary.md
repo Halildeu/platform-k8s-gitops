@@ -69,6 +69,31 @@ değil, owner config'i geldiğinde uygulanacak parametrelerdir.
 | Özet/karar/aksiyon | `derived_artifact_retention_days` owner-supplied; unset ise export/share sınırlı | Owner explicit silme + TTL worker |
 | Audit log | `audit_retention_days` owner-supplied; immutable append-only; unset ise deletion policy legal track pending olarak raporlanır | Immutable / legal hold aware |
 
+#### Effective Retention Value Provenance
+
+Owner duration value'ları yoksa bu legal/owner track pending olarak kalır ve
+mühendislik ancak fail-closed unset/default davranışıyla ilerler: durable
+raw-audio/transcript storage açılmaz veya ilgili path refuse-to-store kalır.
+Bu durum tek başına G-COMP mühendislik blocker'ı değildir.
+
+Owner duration value'ları evidence'e girdiğinde artık örnek/runbook değeri
+değil, uygulanmış konfigürasyon olarak kanıtlanır. G-COMP evidence bu durumda:
+
+- bounded `ownerDecisionRef` taşır (`github://`, `github-actions://`,
+  `artifact://`, `operator://`, `protected://`, `legal://`, `dpo://`);
+  `runbook://` örnekleri owner kararı sayılmaz
+- `appliedAsConfig=true` ile değerin config olarak uygulandığını gösterir
+- `hardcodedInCode=false` ile kod/manifest/fixture sabiti olmadığını gösterir
+- supplied gün değerlerini pozitif bounded integer olarak verir
+
+`hardcodedInCode=true` fail'dir. Owner provenance, config application veya
+bounded gün değeri eksikse sonuç blocked kalır; legal acceptance veya
+production legal go iddia edilmez.
+
+Verifier status ayrımı kasıtlıdır: `hardcodedInCode=true` hard failure
+üretir; ownerDecisionRef, applied-as-config, explicit `hardcodedInCode=false`
+veya bounded gün değeri eksik/geçersizse evidence blocked kalır.
+
 ### Consent Flow
 
 - **Meeting başlatırken** explicit consent (UI modal — "Bu toplantı kayıt + transcribe edilecek")

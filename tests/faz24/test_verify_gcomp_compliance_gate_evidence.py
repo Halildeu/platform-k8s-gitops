@@ -72,6 +72,19 @@ def valid_evidence() -> dict:
     }
 
 
+def valid_retention_parameters() -> dict:
+    return {
+        "effectiveValuesSupplied": True,
+        "ownerDecisionRef": "protected://faz24/gcomp/retention-owner-decision/2026-06-27",
+        "appliedAsConfig": True,
+        "hardcodedInCode": False,
+        "rawAudioRetentionDays": 7,
+        "transcriptRetentionDays": 365,
+        "derivedArtifactRetentionDays": 365,
+        "auditRetentionDays": 2557,
+    }
+
+
 def run_verifier(tmp_path: Path, payload, *extra_args: str) -> subprocess.CompletedProcess[str]:
     evidence_file = tmp_path / "gcomp-evidence.json"
     if isinstance(payload, str):
@@ -380,6 +393,158 @@ def test_non_parametric_retention_boundary_blocks(tmp_path):
     assert proc.returncode == 3
     assert report["status"] == "blocked"
     assert any("retentionDurationsParametric" in failure for failure in report["failures"])
+
+
+def test_supplied_retention_parameters_with_owner_provenance_pass(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = valid_retention_parameters()
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 0
+    assert report["status"] == "pass"
+    assert report["metrics"]["retentionParameters"]["effectiveValuesSupplied"] is True
+    assert report["metrics"]["retentionParameters"]["suppliedDurationFields"] == [
+        "auditRetentionDays",
+        "derivedArtifactRetentionDays",
+        "rawAudioRetentionDays",
+        "transcriptRetentionDays",
+    ]
+
+
+def test_empty_retention_parameters_use_fail_closed_defaults_pass(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = {}
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 0
+    assert report["status"] == "pass"
+    assert report["metrics"]["retentionParameters"]["present"] is True
+    assert report["metrics"]["retentionParameters"]["effectiveValuesSupplied"] is False
+    assert report["metrics"]["retentionParameters"]["suppliedDurationFields"] == []
+
+
+def test_retention_parameters_must_be_object(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = "protected://faz24/gcomp/not-an-object"
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("retentionParameters must be an object" in failure for failure in report["failures"])
+
+
+def test_supplied_retention_parameters_missing_owner_ref_blocks(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = valid_retention_parameters()
+    del data["retentionParameters"]["ownerDecisionRef"]
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("ownerDecisionRef" in failure for failure in report["failures"])
+
+
+def test_supplied_retention_parameters_runbook_ref_blocks(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = valid_retention_parameters()
+    data["retentionParameters"]["ownerDecisionRef"] = "runbook://faz24/gcomp/example-only"
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("ownerDecisionRef" in failure for failure in report["failures"])
+
+
+def test_supplied_retention_parameters_applied_as_config_false_blocks(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = valid_retention_parameters()
+    data["retentionParameters"]["appliedAsConfig"] = False
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("must be applied as config" in failure for failure in report["failures"])
+
+
+def test_supplied_retention_parameters_hardcoded_fails(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = valid_retention_parameters()
+    data["retentionParameters"]["hardcodedInCode"] = True
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 1
+    assert report["status"] == "fail"
+    assert any("must not be hardcoded" in failure for failure in report["failures"])
+
+
+def test_supplied_retention_parameters_missing_hardcoded_flag_blocks(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = valid_retention_parameters()
+    del data["retentionParameters"]["hardcodedInCode"]
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("must not be hardcoded" in failure for failure in report["failures"])
+
+
+def test_retention_effective_flag_without_values_blocks(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = {
+        "effectiveValuesSupplied": True,
+        "ownerDecisionRef": "protected://faz24/gcomp/retention-owner-decision/2026-06-27",
+        "appliedAsConfig": True,
+        "hardcodedInCode": False,
+    }
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("requires at least one" in failure for failure in report["failures"])
+
+
+def test_retention_zero_duration_blocks(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = valid_retention_parameters()
+    data["retentionParameters"]["rawAudioRetentionDays"] = 0
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("positive integer days" in failure for failure in report["failures"])
+
+
+def test_retention_duration_over_max_blocks(tmp_path):
+    data = valid_evidence()
+    data["retentionParameters"] = valid_retention_parameters()
+    data["retentionParameters"]["rawAudioRetentionDays"] = 36501
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert any("positive integer days" in failure for failure in report["failures"])
 
 
 def test_top_level_token_included_fails(tmp_path):

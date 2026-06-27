@@ -165,6 +165,14 @@ SAFE_EVIDENCE_REF_RE = re.compile(
     r"^(github|github-actions|artifact|operator|protected|runbook|legal|dpo)://"
     r"[A-Za-z0-9_.:@/#?=&%+-]{3,240}$"
 )
+OWNER_RETENTION_REF_SCHEMES = {"github", "github-actions", "artifact", "operator", "protected", "legal", "dpo"}
+RETENTION_PARAMETER_DAY_FIELDS = {
+    "rawAudioRetentionDays",
+    "transcriptRetentionDays",
+    "derivedArtifactRetentionDays",
+    "auditRetentionDays",
+}
+MAX_RETENTION_DAYS = 36500
 
 
 @dataclass
@@ -355,6 +363,128 @@ def _evidence_ref_ok(item: dict[str, Any]) -> bool:
     return isinstance(ref, str) and bool(SAFE_EVIDENCE_REF_RE.match(ref))
 
 
+def _ref_scheme(ref: str) -> str:
+    return ref.split("://", 1)[0].lower()
+
+
+def _owner_retention_ref_ok(ref: Any) -> bool:
+    return (
+        isinstance(ref, str)
+        and bool(SAFE_EVIDENCE_REF_RE.match(ref))
+        and _ref_scheme(ref) in OWNER_RETENTION_REF_SCHEMES
+    )
+
+
+def _retention_day_value_ok(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= MAX_RETENTION_DAYS
+
+
+def _validate_retention_parameters(data: dict[str, Any], checks: list[Check]) -> tuple[bool, bool, dict[str, Any]]:
+    """Validate optional owner-supplied effective retention duration metadata."""
+    parameters = data.get("retentionParameters")
+    if parameters is None:
+        _add(
+            checks,
+            "retention_parameters_absent_uses_fail_closed_defaults",
+            True,
+            "retentionParameters absent; fail-closed default boundary is used",
+        )
+        return False, False, {
+            "present": False,
+            "effectiveValuesSupplied": False,
+            "suppliedDurationFields": [],
+        }
+
+    if not isinstance(parameters, dict):
+        _add(checks, "retention_parameters_shape", False, "retentionParameters must be an object")
+        return True, False, {
+            "present": False,
+            "effectiveValuesSupplied": False,
+            "suppliedDurationFields": [],
+        }
+
+    supplied_duration_fields = sorted(
+        key for key in RETENTION_PARAMETER_DAY_FIELDS if parameters.get(key) is not None
+    )
+    effective_flag = parameters.get("effectiveValuesSupplied")
+    effective_values_supplied = effective_flag is True or bool(supplied_duration_fields)
+    _add(
+        checks,
+        "retention_parameters_effective_values_flag",
+        isinstance(effective_flag, bool) or effective_flag is None,
+        "retentionParameters.effectiveValuesSupplied must be boolean when present",
+    )
+
+    invalid_duration_fields = sorted(
+        key
+        for key in supplied_duration_fields
+        if not _retention_day_value_ok(parameters.get(key))
+    )
+    durations_ok = not invalid_duration_fields
+    _add(
+        checks,
+        "retention_parameters_duration_values",
+        durations_ok,
+        (
+            "retention duration fields must be positive integer days <= "
+            f"{MAX_RETENTION_DAYS}: {', '.join(invalid_duration_fields)}"
+        ),
+    )
+
+    values_required_ok = not (effective_flag is True and not supplied_duration_fields)
+    _add(
+        checks,
+        "retention_parameters_values_present_when_supplied",
+        values_required_ok,
+        "effectiveValuesSupplied=true requires at least one effective retention duration value",
+    )
+
+    owner_ref_ok = True
+    applied_as_config_ok = True
+    hardcoded_ok = True
+    if effective_values_supplied:
+        owner_ref_ok = _owner_retention_ref_ok(parameters.get("ownerDecisionRef"))
+        applied_as_config_ok = parameters.get("appliedAsConfig") is True
+        hardcoded_ok = parameters.get("hardcodedInCode") is False
+    hardcoded_is_affirmed = parameters.get("hardcodedInCode") is True
+    _add(
+        checks,
+        "retention_parameters_owner_decision_ref",
+        owner_ref_ok,
+        "supplied retention durations require a bounded owner/legal/operator/protected ownerDecisionRef",
+    )
+    _add(
+        checks,
+        "retention_parameters_applied_as_config",
+        applied_as_config_ok,
+        "supplied retention durations must be applied as config",
+    )
+    _add(
+        checks,
+        "retention_parameters_not_hardcoded",
+        hardcoded_ok,
+        "supplied retention durations must not be hardcoded in code, manifests, or fixtures",
+    )
+
+    blocked = (
+        (not isinstance(effective_flag, bool) and effective_flag is not None)
+        or not durations_ok
+        or not values_required_ok
+        or not owner_ref_ok
+        or not applied_as_config_ok
+        or not hardcoded_ok
+    )
+    failed = hardcoded_is_affirmed
+    return blocked, failed, {
+        "present": True,
+        "effectiveValuesSupplied": effective_values_supplied,
+        "suppliedDurationFields": supplied_duration_fields,
+        "ownerDecisionRefPresent": _owner_retention_ref_ok(parameters.get("ownerDecisionRef")),
+        "appliedAsConfig": parameters.get("appliedAsConfig") is True,
+        "hardcodedInCode": hardcoded_is_affirmed,
+    }
+
+
 def _validate_checks(data: dict[str, Any], checks: list[Check]) -> tuple[bool, bool]:
     named = _check_map(data)
     _add(checks, "checks_shape", bool(named), "checks must be a non-empty list of named objects")
@@ -539,6 +669,9 @@ def validate_evidence(
     environment_ok = _validate_environment(data, checks)
     boundary_all_ok, boundary_fatal_ok = _validate_boundaries(data, checks)
     checks_blocked, checks_failed = _validate_checks(data, checks)
+    retention_parameters_blocked, retention_parameters_failed, retention_parameter_values = (
+        _validate_retention_parameters(data, checks)
+    )
     metrics_blocked, metrics_failed, metric_values = _validate_metrics(data, checks, thresholds)
 
     metrics = {
@@ -546,11 +679,25 @@ def validate_evidence(
         "engineeringRequiredChecks": len(ENGINEERING_REQUIRED_CHECKS),
         "metricCount": len(REQUIRED_METRICS),
         "values": metric_values,
+        "retentionParameters": retention_parameter_values,
     }
 
-    if not privacy_ok or not structural_ok or not boundary_fatal_ok or checks_failed or metrics_failed:
+    if (
+        not privacy_ok
+        or not structural_ok
+        or not boundary_fatal_ok
+        or checks_failed
+        or retention_parameters_failed
+        or metrics_failed
+    ):
         status = "fail"
-    elif not environment_ok or not boundary_all_ok or checks_blocked or metrics_blocked:
+    elif (
+        not environment_ok
+        or not boundary_all_ok
+        or checks_blocked
+        or retention_parameters_blocked
+        or metrics_blocked
+    ):
         status = "blocked"
     else:
         status = "pass"
@@ -589,6 +736,7 @@ def _summary(
             "ownerLegalTrackNotificationPresent": True,
             "retentionDurationsParametric": True,
             "retentionDefaultsFailClosed": True,
+            "retentionOwnerProvenanceRequiredWhenValuesSupplied": True,
             "consentDefaultRequired": True,
             "deletionPipelineDefaultEnabled": True,
             "retentionDurationsHardcoded": False,
