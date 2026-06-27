@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 external recorder operator handoff package packaged (2026-06-27)
+
+The remaining external meeting-admin / recorder lifecycle path under
+`platform-k8s-gitops#1615` now has a metadata-only operator handoff package:
+
+- `scripts/faz24/build-external-recorder-operator-handoff.py` emits
+  `README.md`, `faz24-external-recorder-operator-handoff.json`, and
+  `SHA256SUMS` under schema
+  `faz24.externalRecorder.operator-handoff.v1`.
+- `.github/workflows/faz24-external-recorder-operator-handoff.yml` builds and
+  uploads the same package from `workflow_dispatch`, with four bounded inputs:
+  operator batch id, GitOps ref, public base URL, and expected issuer URL.
+- `tests/faz24/test_build_external_recorder_operator_handoff.py` locks the
+  package boundary: no token/certificate/private-key material, checked
+  `SHA256SUMS`, explicit `Needs Verify` acceptance state, and exact
+  token-contract -> external-smoke -> verifier -> G-CAP aggregate command
+  ordering.
+
+The package orders the handoff as Gate 0 approved short-lived
+`platform-desktop` token file -> Gate 1 token-contract PASS -> Gate 2 external
+meeting-admin plus recorder lifecycle smoke PASS -> Gate 3 external smoke
+verifier PASS -> Gate 4 optional G-CAP aggregate once enough accepted verifier
+summaries exist.
+
+Boundary: source-side package/workflow/test documentation only. Building the
+package does not mint or read tokens, connect to `testai.acik.com`, mutate
+Keycloak, mutate Kubernetes, touch Vault, run the recorder smoke, send audio,
+collect live evidence, or advance #1615 status. Live #1615 still requires the
+operator-run token-contract report, external smoke output, verifier summary,
+reviewer acceptance, and separate product-gate evidence before broader
+readiness claims.
+
 ## Live Delta — Faz 24 direct-STT operator handoff package packaged (2026-06-27)
 
 The remaining `platform-ai#182` / `platform-k8s-gitops#1615` operator runtime
