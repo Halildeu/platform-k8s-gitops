@@ -1,5 +1,33 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 governance + B0 marker-enforcement + B1 durable drift-guard DONE; B2 (#1580) build-ready (2026-06-27)
+
+Faz 22 completion chain advanced (handoff
+[`docs/session-handoff-2026-06-27-faz22-b2-ready.md`](../session-handoff-2026-06-27-faz22-b2-ready.md)):
+
+- **ADR-0044 (#2076)** — KVKK is now a machine-enforced **non-blocking** track
+  (only `allowlist_violation` blocks); durations are **parametric** (owner sets
+  later); #1580 marker split into `F22_6_VIEW_ONLY_ENGINEERING:v2` (fail-closed)
+  + `F22_6_VIEW_ONLY_KVKK:v1` (tracked); recording-OFF is the default. KVKK no
+  longer gates `F22_6_COMPLETION`.
+- **B0 (#2079)** — the completion audit (now 1190 lines, up from the 861-line
+  pre-B0 baseline) now machine-enforces the split:
+  recording-mode-aware engineering gate (5-token negative matrix) + non-blocking
+  KVKK gate + v2 evidence manifest + legacy bundled-marker fail-safe + v2
+  evidence/decision generators + contract §7/§9.
+- **B1 (#2101)** — #2067 durable digest-drift guard solved by **elimination**
+  (Codex verdict C): single SSOT = the rendered overlay. `lib-remote-bridge-digest.sh`
+  renders both overlays and forces `primary == bridge`; the audit **derives**
+  `expected_digest` (no literal); env-override is diagnostic-only; the live check
+  is exact JSON+jq per-object (no grep-count masking). A silent re-drift on the
+  next endpoint-admin V-bump is now structurally impossible.
+
+Boundary: this is governance + audit hardening + a durable guard, all in
+`platform-k8s-gitops` (docs/scripts/workflow). **#1580 VIEW_ONLY runtime code is
+not written yet** — slice-1 design is bound (Codex `019f078a`) and documented in
+the handoff §6; the build (`platform-backend`, ~3-5 eng-weeks, default-off +
+fail-closed) is the next agent P0. #548-A remains owner-gated (A1 Vault gate-B).
+
 ## Live Delta — Faz 24 recorder admin GET-by-id source cleanup merged; runtime matrix remains open (2026-06-27)
 
 `platform-backend#767` was merged as
