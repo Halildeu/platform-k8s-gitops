@@ -13,7 +13,7 @@ Standing /goal: **"Faz 22.6 öncelikli olmak üzere Faz 22'nin tamamını sektö
 
 Önceki handoff'tan (#2074) sonra bu oturum **governance + makine-zorlaması (B0) + durable drift kilidi (B1)** zincirini kapattı ve **B2'nin (#1580 VIEW_ONLY) ilk slice tasarımını cross-AI ile bağladı**. Kullanıcı **"hand off"** dedi. B2 = ~3-5 eng-haftalık, **güvenlik-hassas** gRPC/Spring inşası (no-control invariant + no-persistence proof + permit-gating + bounded-backpressure concurrency); bu oturum çok derin → kural gereği ("uzun-vadeli kalıcı — integrity işini acele etme") build **taze odaklı session**'da, **bu doc'taki bağlı tasarımdan** başlar (sıfırdan değil).
 
-**Kritik çalışma kuralı (her tuzakta tekrarlandı):** her okuma/iş **`origin/main`** taze worktree'sinden yapılır — paylaşılan checkout (`/Users/halilkocoglu/Documents/platform-k8s-gitops`) kirli + paralel-session olabilir; ASLA oradan checkout/commit etme. Codex MCP'nin cwd'si paylaşılan checkout → ona **hangi tree'yi okuyacağını açıkça söyle** (bu oturumda Codex bir kez 149-satırlık eski state-only audit'i okuyup yanlış-pozitif marker-gap raporladı; origin/main'deki 861-satır marker-hardened audit ile düzeltildi).
+**Kritik çalışma kuralı (her tuzakta tekrarlandı):** her okuma/iş **`origin/main`** taze worktree'sinden yapılır — paylaşılan checkout (`/Users/halilkocoglu/Documents/platform-k8s-gitops`) kirli + paralel-session olabilir; ASLA oradan checkout/commit etme. Codex MCP'nin cwd'si paylaşılan checkout → ona **hangi tree'yi okuyacağını açıkça söyle** (bu oturumda Codex bir kez 149-satırlık eski state-only audit'i okuyup yanlış-pozitif marker-gap raporladı; origin/main'deki marker-hardened audit ile düzeltildi — o an 861 satır; B0/B1 sonrası 1190 satır).
 
 ---
 

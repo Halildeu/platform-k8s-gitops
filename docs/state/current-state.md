@@ -10,7 +10,8 @@ Faz 22 completion chain advanced (handoff
   later); #1580 marker split into `F22_6_VIEW_ONLY_ENGINEERING:v2` (fail-closed)
   + `F22_6_VIEW_ONLY_KVKK:v1` (tracked); recording-OFF is the default. KVKK no
   longer gates `F22_6_COMPLETION`.
-- **B0 (#2079)** — the 861-line completion audit now machine-enforces the split:
+- **B0 (#2079)** — the completion audit (now 1190 lines, up from the 861-line
+  pre-B0 baseline) now machine-enforces the split:
   recording-mode-aware engineering gate (5-token negative matrix) + non-blocking
   KVKK gate + v2 evidence manifest + legacy bundled-marker fail-safe + v2
   evidence/decision generators + contract §7/§9.
