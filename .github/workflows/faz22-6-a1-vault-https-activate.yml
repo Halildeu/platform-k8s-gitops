@@ -67,11 +67,19 @@ jobs:
           set -euo pipefail
 
           docker_cmd() {
-            if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
-              docker "$@"
-            else
-              sudo -n docker "$@"
-            fi
+            local docker_bin
+            for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
+              if command -v "$docker_bin" >/dev/null 2>&1 && "$docker_bin" version >/dev/null 2>&1; then
+                "$docker_bin" "$@"
+                return 0
+              fi
+              if command -v sudo >/dev/null 2>&1 && sudo -n "$docker_bin" version >/dev/null 2>&1; then
+                sudo -n "$docker_bin" "$@"
+                return 0
+              fi
+            done
+            echo "FAIL docker CLI unavailable through PATH, common absolute paths, or sudo" >&2
+            return 1
           }
 
           docker_cmd inspect platform-vault-test --format '{{json .Mounts}}' > /tmp/platform-vault-test-mounts.json
@@ -159,11 +167,19 @@ jobs:
             | grep -Fx '8202'
 
           docker_cmd() {
-            if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
-              docker "$@"
-            else
-              sudo -n docker "$@"
-            fi
+            local docker_bin
+            for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
+              if command -v "$docker_bin" >/dev/null 2>&1 && "$docker_bin" version >/dev/null 2>&1; then
+                "$docker_bin" "$@"
+                return 0
+              fi
+              if command -v sudo >/dev/null 2>&1 && sudo -n "$docker_bin" version >/dev/null 2>&1; then
+                sudo -n "$docker_bin" "$@"
+                return 0
+              fi
+            done
+            echo "FAIL docker CLI unavailable through PATH, common absolute paths, or sudo" >&2
+            return 1
           }
 
           docker_cmd exec platform-vault-test sh -c \
