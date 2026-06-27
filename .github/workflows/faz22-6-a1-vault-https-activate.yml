@@ -66,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker_cmd() {
+          docker_cli() {
             local docker_bin
             for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
               if command -v "$docker_bin" >/dev/null 2>&1 && "$docker_bin" version >/dev/null 2>&1; then
@@ -78,11 +78,34 @@ jobs:
                 return 0
               fi
             done
-            echo "FAIL docker CLI unavailable through PATH, common absolute paths, or sudo" >&2
             return 1
           }
 
-          docker_cmd inspect platform-vault-test --format '{{json .Mounts}}' > /tmp/platform-vault-test-mounts.json
+          docker_api_get() {
+            local sock
+            command -v curl >/dev/null 2>&1 || return 1
+            for sock in /var/run/docker.sock /run/docker.sock; do
+              if [ -S "$sock" ] && curl -fsS --unix-socket "$sock" "http://localhost$1" >/dev/null 2>&1; then
+                curl -fsS --unix-socket "$sock" "http://localhost$1"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          docker_inspect_json() {
+            if docker_cli inspect platform-vault-test --format '{{json .}}'; then
+              return 0
+            fi
+            if docker_api_get "/containers/platform-vault-test/json"; then
+              return 0
+            fi
+            echo "FAIL Docker control unavailable: no usable CLI and no readable Docker socket API" >&2
+            return 1
+          }
+
+          docker_inspect_json > /tmp/platform-vault-test-inspect.json
+          jq '.Mounts' /tmp/platform-vault-test-inspect.json > /tmp/platform-vault-test-mounts.json
 
           jq -e --arg src "/home/halil/platform-stateful/test/vault/data" \
             '[.[] | select(.Destination == "/vault/data" and (.Source | startswith($src)))] | length == 1' \
@@ -90,8 +113,11 @@ jobs:
           jq -e --arg src "/home/halil/platform-stateful/test/vault/logs" \
             '[.[] | select(.Destination == "/vault/logs" and (.Source | startswith($src)))] | length == 1' \
             /tmp/platform-vault-test-mounts.json >/dev/null
+          jq -e --arg src "/home/halil/platform-stateful/test/vault/tls" \
+            '[.[] | select(.Destination == "/vault/tls" and (.Source | startswith($src)) and .RW == false)] | length == 1' \
+            /tmp/platform-vault-test-mounts.json >/dev/null
 
-          echo "PASS live Vault data/log mounts match /home/halil/platform-stateful/test/vault"
+          echo "PASS live Vault data/log/tls mounts match /home/halil/platform-stateful/test/vault"
 
       - name: Render only Vault Service and Endpoints from test overlay
         run: |
@@ -166,24 +192,13 @@ jobs:
             get endpoints vault -o jsonpath='{.subsets[0].ports[?(@.port==8202)].port}{"\n"}' \
             | grep -Fx '8202'
 
-          docker_cmd() {
-            local docker_bin
-            for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
-              if command -v "$docker_bin" >/dev/null 2>&1 && "$docker_bin" version >/dev/null 2>&1; then
-                "$docker_bin" "$@"
-                return 0
-              fi
-              if command -v sudo >/dev/null 2>&1 && sudo -n "$docker_bin" version >/dev/null 2>&1; then
-                sudo -n "$docker_bin" "$@"
-                return 0
-              fi
-            done
-            echo "FAIL docker CLI unavailable through PATH, common absolute paths, or sudo" >&2
-            return 1
-          }
-
-          docker_cmd exec platform-vault-test sh -c \
-            'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'
+          # Compose publishes container HTTPS 8202 as host-local 8302; the
+          # Kubernetes Service/Endpoint still exposes the native 8202 port.
+          if ! curl -fsS --connect-timeout 3 --max-time 10 --cacert "${VAULT_TLS_DIR}/ca.crt" \
+            "https://127.0.0.1:8302/v1/sys/seal-status" | jq -e '.sealed == false' >/dev/null; then
+            echo "FAIL Vault HTTPS 8302 host-published CA-pinned seal-status did not return sealed=false" >&2
+            exit 1
+          fi
 
           scripts/faz22-remote-ops/faz22-6-a1-preflight.sh
 

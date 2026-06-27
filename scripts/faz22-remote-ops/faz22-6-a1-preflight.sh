@@ -142,7 +142,15 @@ fi
 vault_tls_files="$(remote_shell "if sudo -n test -r '$VAULT_TLS_DIR/ca.crt' && sudo -n test -r '$VAULT_TLS_DIR/tls.crt' && sudo -n test -r '$VAULT_TLS_DIR/tls.key'; then echo present; else echo missing; fi" 2>/dev/null || true)"
 if [ "$vault_tls_files" = "present" ]; then
   ok "Vault TLS material present on $SSH_TARGET (values not printed)"
-  vault_status_cmd="$(cat <<'EOS'
+  printf -v vault_tls_dir_env '%q' "$VAULT_TLS_DIR"
+  vault_status_cmd="VAULT_TLS_DIR=$vault_tls_dir_env
+$(cat <<'EOS'
+if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout 3 --max-time 10 --cacert "$VAULT_TLS_DIR/ca.crt" \
+    "https://127.0.0.1:8302/v1/sys/seal-status" | jq -e '.sealed == false' >/dev/null; then
+    exit 0
+  fi
+fi
 docker_cmd() {
   local docker_bin
   for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
