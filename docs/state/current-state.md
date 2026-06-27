@@ -1,5 +1,33 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 desktop capture operator handoff package packaged (2026-06-27)
+
+The remaining real `platform-desktop` microphone + loopback capture path under
+`platform-k8s-gitops#1615` now has a metadata-only operator handoff package:
+
+- `scripts/faz24/build-desktop-capture-operator-handoff.py` emits
+  `README.md`, `faz24-desktop-capture-operator-handoff.json`, and
+  `SHA256SUMS` under schema `faz24.desktopCapture.operator-handoff.v1`.
+- `.github/workflows/faz24-desktop-capture-operator-handoff.yml` builds and
+  uploads the same package from `workflow_dispatch`, with two bounded inputs:
+  operator batch id and GitOps ref.
+- `tests/faz24/test_build_desktop_capture_operator_handoff.py` locks the
+  package boundary: no token/certificate/private-key/raw-audio-shaped material,
+  checked `SHA256SUMS`, explicit `Needs Verify` acceptance state, and exact
+  real-desktop-run -> redacted-evidence-review -> desktop-verifier -> G-CAP
+  aggregate command ordering.
+
+The package orders the handoff as Gate 0 real platform-desktop run -> Gate 1
+redacted evidence review -> Gate 2 desktop capture verifier PASS -> Gate 3
+optional G-CAP aggregate once enough accepted verifier summaries exist.
+
+Boundary: source-side package/workflow/test documentation only. Building the
+package does not run the desktop app, read tokens, connect to `testai.acik.com`,
+mutate Kubernetes, touch Vault, send audio, collect live evidence, or advance
+#1615 status. Live #1615 still requires a real redacted platform-desktop
+mic+loopback evidence envelope, verifier PASS, reviewer acceptance, and
+separate aggregate/product-gate evidence before broader readiness claims.
+
 ## Live Delta — Faz 24 external recorder operator handoff package packaged (2026-06-27)
 
 The remaining external meeting-admin / recorder lifecycle path under
