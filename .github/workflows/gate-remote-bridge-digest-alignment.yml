@@ -15,6 +15,10 @@ on:
       - 'kustomize/base/apps/endpoint-admin-service/**'
       - 'kustomize/base/apps/endpoint-admin-remote-bridge/**'
       - 'scripts/governance/check-remote-bridge-digest-alignment.sh'
+      - 'scripts/governance/lib-remote-bridge-digest.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'tests/governance/test_remote_bridge_digest_alignment.sh'
+      - '.github/workflows/apply-remote-bridge-activation.yml'
       - '.github/workflows/gate-remote-bridge-digest-alignment.yml'
 
 permissions:
@@ -36,3 +40,6 @@ jobs:
 
       - name: Assert remote-bridge digest == primary endpoint-admin digest
         run: bash scripts/governance/check-remote-bridge-digest-alignment.sh
+
+      - name: Lib + guard + derive regression test (#2067)
+        run: bash tests/governance/test_remote_bridge_digest_alignment.sh

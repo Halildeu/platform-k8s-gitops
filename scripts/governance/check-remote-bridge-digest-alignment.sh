@@ -1,81 +1,68 @@
 #!/usr/bin/env bash
-# Faz 22.6 durable re-drift guard (Codex 019f008a Q6, issue #2031).
+# Faz 22.6 durable re-drift guard (Codex 019f008a Q6 #2031; issue #2067 verdict C
+# Codex 019f0733).
 #
 # Same-image pilot topology: the remote-bridge activation overlay runs the SAME
 # endpoint-admin-service image as the primary test overlay. The completion-audit
-# REMOTE_BRIDGE_LIVE gate requires both live deployments to share ONE digest
-# (digest_hits>=4). A PR that bumps the PRIMARY test-overlay endpoint-admin digest
-# without also bumping the bridge activation overlay re-drifts them and re-blocks
-# the gate at runtime (proven live: 3015656f->5eff536b drifted within an hour of
-# PR #2030). This guard asserts the two RENDERED endpoint-admin-service digests are
-# EQUAL at PR time, so the drift is caught before it ships. Fail-closed.
+# REMOTE_BRIDGE_LIVE gate DERIVES its expected digest from the rendered overlay
+# (single source of truth, no hardcoded literal — issue #2067), and requires the
+# live deployments to share that one digest. A PR that bumps the PRIMARY
+# test-overlay endpoint-admin digest without also bumping the bridge activation
+# overlay re-drifts them and re-blocks the gate at runtime (proven live:
+# 3015656f->5eff536b drifted within an hour of PR #2030). This guard asserts the
+# two RENDERED endpoint-admin-service digests are EQUAL at PR time, so the drift
+# is caught before it ships. Fail-closed.
 #
-# Companion: the testai auto-sync now co-bumps this bridge whenever it bumps the
-# primary endpoint-admin digest (scripts/automation/sync-test-overlay.sh #2031), so
-# auto-sync PRs stay aligned and pass this guard. This guard is the enforcement /
-# safety-net that catches any manual PR (or future regression) that bumps one side
-# without the other.
+# Because the audit + this guard both derive the expected digest from the overlay
+# via the SHARED lib below, there is no longer a separate hardcoded "expected
+# digest" copy to drift (the old EXPECTED_REMOTE_BRIDGE_DIGEST literal is gone) —
+# this guard is the canonical PR-time enforcement of the single-source invariant.
+#
+# Companion: the testai auto-sync co-bumps the bridge whenever it bumps the
+# primary endpoint-admin digest (scripts/automation/sync-test-overlay.sh #2031),
+# so auto-sync PRs stay aligned and pass this guard. This guard catches any manual
+# PR (or future regression) that bumps one side without the other.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-IMG="ghcr.io/halildeu/platform-backend-endpoint-admin-service"
-PRIMARY_OVERLAY="kustomize/overlays/test"
-BRIDGE_OVERLAY="kustomize/overlays/test/activation/endpoint-admin-remote-bridge"
+# shellcheck source=scripts/governance/lib-remote-bridge-digest.sh
+source "$REPO_ROOT/scripts/governance/lib-remote-bridge-digest.sh"
 
-# Prefer standalone kustomize (the CI image, imranismail/setup-kustomize); fall back to
-# kubectl kustomize (local/cluster hosts). Both render the same overlay bytes.
-if command -v kustomize >/dev/null 2>&1; then
-  KUSTOMIZE_RENDER=(kustomize build)
-elif command -v kubectl >/dev/null 2>&1; then
-  KUSTOMIZE_RENDER=(kubectl kustomize)
-else
+if [ -z "$(rbd_render_cmd || true)" ]; then
   echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=unknown reason=missing-kustomize-and-kubectl" >&2
   exit 2
 fi
 
-extract_digest() {
-  # $1 = overlay path. Echoes the unique endpoint-admin-service image digest(s).
-  # Returns non-zero if the overlay does not render.
-  local overlay="$1" rendered
-  if ! rendered="$("${KUSTOMIZE_RENDER[@]}" "$overlay" 2>/dev/null)"; then
-    return 1
-  fi
-  printf '%s\n' "$rendered" | grep -oE "${IMG}@sha256:[0-9a-f]{64}" | sort -u
-}
-
-if ! primary="$(extract_digest "$PRIMARY_OVERLAY")"; then
-  echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=primary-overlay-render-failed overlay=$PRIMARY_OVERLAY"
-  exit 1
-fi
-if ! bridge="$(extract_digest "$BRIDGE_OVERLAY")"; then
-  echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=bridge-overlay-render-failed overlay=$BRIDGE_OVERLAY"
+primary=""; prc=0
+primary="$(rbd_overlay_digest "$RBD_PRIMARY_OVERLAY")" || prc=$?
+if [ "$prc" != 0 ]; then
+  case "$prc" in
+    2) echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=primary-digest-not-singular overlay=$RBD_PRIMARY_OVERLAY" ;;
+    *) echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=primary-overlay-render-failed overlay=$RBD_PRIMARY_OVERLAY" ;;
+  esac
   exit 1
 fi
 
-primary_count="$(printf '%s\n' "$primary" | grep -c . || true)"
-bridge_count="$(printf '%s\n' "$bridge" | grep -c . || true)"
-
-if [ "$primary_count" != "1" ]; then
-  echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=primary-digest-not-singular count=$primary_count"
-  printf '  %s\n' "$primary"
-  exit 1
-fi
-if [ "$bridge_count" != "1" ]; then
-  echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=bridge-digest-not-singular count=$bridge_count"
-  printf '  %s\n' "$bridge"
+bridge=""; brc=0
+bridge="$(rbd_overlay_digest "$RBD_BRIDGE_OVERLAY")" || brc=$?
+if [ "$brc" != 0 ]; then
+  case "$brc" in
+    2) echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=bridge-digest-not-singular overlay=$RBD_BRIDGE_OVERLAY" ;;
+    *) echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=bridge-overlay-render-failed overlay=$RBD_BRIDGE_OVERLAY" ;;
+  esac
   exit 1
 fi
 
 if [ "$primary" != "$bridge" ]; then
   echo "REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=digest-drift"
-  echo "  primary ($PRIMARY_OVERLAY): $primary"
-  echo "  bridge  ($BRIDGE_OVERLAY): $bridge"
+  echo "  primary ($RBD_PRIMARY_OVERLAY): $primary"
+  echo "  bridge  ($RBD_BRIDGE_OVERLAY): $bridge"
   echo "  Same-image pilot topology requires these to match. A bump of the endpoint-admin"
   echo "  digest must update BOTH the test overlay primary AND the bridge activation overlay"
   echo "  (the auto-sync does this automatically; a manual PR must too) else completion-audit"
-  echo "  REMOTE_BRIDGE_LIVE re-blocks (Codex 019f008a Q6 / #2031)."
+  echo "  REMOTE_BRIDGE_LIVE re-blocks (Codex 019f008a Q6 / #2031 / #2067)."
   exit 1
 fi
 

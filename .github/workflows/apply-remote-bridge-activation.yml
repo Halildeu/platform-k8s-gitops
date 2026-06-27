@@ -7,9 +7,9 @@ on:
         description: 'Required literal: APPLY_REMOTE_BRIDGE_ACTIVATION'
         required: true
       expected_digest:
-        description: 'Expected endpoint-admin-service digest for endpoint-admin-remote-bridge'
-        required: true
-        default: 'sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842'
+        description: 'Expected endpoint-admin-service digest (leave EMPTY to derive from the rendered overlay — single SSOT #2067; if set, must equal the rendered digest)'
+        required: false
+        default: ''
       dry_run:
         description: 'Render and server-side dry-run only'
         required: true
@@ -48,8 +48,12 @@ jobs:
             exit 1
           fi
 
-          if ! printf '%s' "${{ inputs.expected_digest }}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
-            echo "::error::expected_digest must match ^sha256:[a-f0-9]{64}$"
+          # expected_digest is optional (single SSOT #2067): empty -> derived from
+          # the rendered overlay; if provided, it must be well-formed and is then
+          # asserted equal to the rendered digest in the render step.
+          if [ -n "${{ inputs.expected_digest }}" ] \
+            && ! printf '%s' "${{ inputs.expected_digest }}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+            echo "::error::expected_digest (when provided) must match ^sha256:[a-f0-9]{64}$"
             exit 1
           fi
 
@@ -61,8 +65,28 @@ jobs:
           set -euo pipefail
 
           kubectl kustomize "${OVERLAY}" > /tmp/endpoint-admin-remote-bridge-activation.yaml
-          grep -F "image: ghcr.io/halildeu/platform-backend-endpoint-admin-service@${{ inputs.expected_digest }}" \
-            /tmp/endpoint-admin-remote-bridge-activation.yaml
+
+          # Single SSOT (#2067): derive the endpoint-admin-service digest from the
+          # rendered overlay; assert exactly one.
+          IMG=ghcr.io/halildeu/platform-backend-endpoint-admin-service
+          mapfile -t rendered_digests < <(grep -oE "image: ${IMG}@sha256:[0-9a-f]{64}" \
+            /tmp/endpoint-admin-remote-bridge-activation.yaml | sed -E 's/^image:[[:space:]]*//' | sort -u)
+          if [ "${#rendered_digests[@]}" -ne 1 ]; then
+            echo "::error::rendered overlay must contain exactly one ${IMG} digest; got ${#rendered_digests[@]}"
+            printf '  %s\n' "${rendered_digests[@]}"
+            exit 1
+          fi
+          resolved="${rendered_digests[0]#*@}"
+
+          # If the operator provided expected_digest, it must equal the rendered one
+          # (no stale literal can be applied).
+          provided="${{ inputs.expected_digest }}"
+          if [ -n "$provided" ] && [ "$provided" != "$resolved" ]; then
+            echo "::error::provided expected_digest ($provided) != rendered overlay digest ($resolved)"
+            exit 1
+          fi
+          echo "RESOLVED_DIGEST=${resolved}" >> "$GITHUB_ENV"
+
           grep -F 'REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED: "true"' \
             /tmp/endpoint-admin-remote-bridge-activation.yaml
 
@@ -72,7 +96,8 @@ jobs:
             echo "- context: \`${K8S_CONTEXT}\`"
             echo "- namespace: \`${K8S_NAMESPACE}\`"
             echo "- deployment: \`${DEPLOYMENT}\`"
-            echo "- expected digest: \`${{ inputs.expected_digest }}\`"
+            echo "- expected digest (derived from overlay): \`${resolved}\`"
+            echo "- expected_digest input: \`${provided:-<empty — derived from overlay>}\`"
             echo "- dry_run: \`${{ inputs.dry_run }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -96,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          expected="${{ inputs.expected_digest }}"
+          expected="${RESOLVED_DIGEST}"
 
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             rollout status "deploy/${DEPLOYMENT}" --timeout=240s
