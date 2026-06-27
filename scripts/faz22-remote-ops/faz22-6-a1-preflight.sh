@@ -145,10 +145,11 @@ if [ "$vault_tls_files" = "present" ]; then
   printf -v vault_tls_dir_env '%q' "$VAULT_TLS_DIR"
   vault_status_cmd="VAULT_TLS_DIR=$vault_tls_dir_env
 $(cat <<'EOS'
+vault_status_pass=0
 if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
   if curl -fsS --connect-timeout 3 --max-time 10 --cacert "$VAULT_TLS_DIR/ca.crt" \
     "https://127.0.0.1:8302/v1/sys/seal-status" | jq -e '.sealed == false' >/dev/null; then
-    exit 0
+    vault_status_pass=1
   fi
 fi
 docker_cmd() {
@@ -165,10 +166,14 @@ docker_cmd() {
   done
   return 1
 }
-docker_cmd exec platform-vault-test sh -c 'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'
+if [ "$vault_status_pass" = "1" ] || docker_cmd exec platform-vault-test sh -c 'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'; then
+  echo pass
+else
+  echo fail
+fi
 EOS
 )"
-  vault_https_health="$(remote_shell "$vault_status_cmd && echo pass || echo fail" 2>/dev/null || true)"
+  vault_https_health="$(remote_shell "$vault_status_cmd" 2>/dev/null || true)"
   if [ "$vault_https_health" = "pass" ]; then
     ok "Vault HTTPS 8202 CA-pinned status works"
   else
