@@ -1,0 +1,169 @@
+name: Faz 22.6 A1 Vault HTTPS Activate
+
+# Operator-triggered activation for the test-only Vault HTTPS 8202 path used by
+# the Faz 22.6 #548 A1 hardware-attestation flow. This workflow exists because
+# Mac-side SSH to staging-sw can be unavailable while the self-hosted runner is
+# still the authoritative k3d-test execution surface.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Required literal for live activation: APPLY_FAZ22_A1_VAULT_HTTPS_8202"
+        required: true
+        default: "DRY_RUN_ONLY"
+      dry_run:
+        description: "Render, server-side dry-run, and preflight only"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      denetim_check:
+        description: "Run Denetim PC SSH/TPM checks during preflight"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz22-6-a1-vault-https-activate
+  cancel-in-progress: false
+
+env:
+  KUBE_CONTEXT: k3d-test
+  KUBE_NAMESPACE: platform-test
+  SSH_TARGET: local
+  VAULT_TLS_DIR: /home/halil/platform-stateful/test/vault/tls
+  VAULT_INIT_JSON: /home/halil/bootstrap-drill/vault-init-test.json
+  VAULT_COMPOSE_DIR: /home/halil/platform-k8s-gitops/host-compose/vault/test
+
+jobs:
+  activate:
+    name: Activate Vault HTTPS 8202 on staging-sw
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.dry_run }}" = "false" ] && [ "${{ inputs.confirm }}" != "APPLY_FAZ22_A1_VAULT_HTTPS_8202" ]; then
+            echo "::error::live activation requires confirm=APPLY_FAZ22_A1_VAULT_HTTPS_8202"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify live Vault mount contract
+        run: |
+          set -euo pipefail
+          docker inspect platform-vault-test --format '{{json .Mounts}}' > /tmp/platform-vault-test-mounts.json
+
+          jq -e --arg src "/home/halil/platform-stateful/test/vault/data" \
+            '[.[] | select(.Destination == "/vault/data" and (.Source | startswith($src)))] | length == 1' \
+            /tmp/platform-vault-test-mounts.json >/dev/null
+          jq -e --arg src "/home/halil/platform-stateful/test/vault/logs" \
+            '[.[] | select(.Destination == "/vault/logs" and (.Source | startswith($src)))] | length == 1' \
+            /tmp/platform-vault-test-mounts.json >/dev/null
+
+          echo "PASS live Vault data/log mounts match /home/halil/platform-stateful/test/vault"
+
+      - name: Render only Vault Service and Endpoints from test overlay
+        run: |
+          set -euo pipefail
+          kubectl kustomize kustomize/overlays/test > /tmp/faz22-a1-test-render.yaml
+          python3 - <<'PY' >/tmp/faz22-a1-vault-service-endpoints.yaml
+          import re
+          from pathlib import Path
+
+          text = Path("/tmp/faz22-a1-test-render.yaml").read_text()
+          docs = re.split(r"^---\s*$", text, flags=re.MULTILINE)
+          selected = []
+          for doc in docs:
+              if not doc.strip():
+                  continue
+              if not re.search(r"^kind:\s*(Service|Endpoints)\s*$", doc, re.MULTILINE):
+                  continue
+              if not re.search(r"^\s+name:\s*vault\s*$", doc, re.MULTILINE):
+                  continue
+              selected.append(doc.strip() + "\n")
+          if len(selected) != 2:
+              raise SystemExit(f"expected Service+Endpoints for vault, selected={len(selected)}")
+          print("---")
+          print("---\n".join(selected), end="")
+          PY
+
+          grep -F "name: https" /tmp/faz22-a1-vault-service-endpoints.yaml
+          grep -F "port: 8202" /tmp/faz22-a1-vault-service-endpoints.yaml
+
+      - name: Server-side dry-run for Vault Service and Endpoints
+        run: |
+          set -euo pipefail
+          kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            apply --dry-run=server -f /tmp/faz22-a1-vault-service-endpoints.yaml
+
+      - name: Preflight before live activation
+        env:
+          DENETIM_CHECK: ${{ inputs.denetim_check }}
+        run: |
+          set -euo pipefail
+          scripts/faz22-remote-ops/faz22-6-a1-preflight.sh
+
+      - name: Stop after dry-run
+        if: inputs.dry_run == 'true'
+        run: |
+          echo "Dry-run requested; no Vault restart and no Kubernetes apply performed."
+
+      - name: Restart Vault with HTTPS listener and apply Service/Endpoints
+        if: inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+
+          SSH_TARGET=local \
+          RESTART_VAULT=1 \
+          AUTO_UNSEAL_AFTER_RESTART=1 \
+          scripts/faz22-remote-ops/faz22-6-a1-vault-https-provision-test.sh
+
+          kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            apply -f /tmp/faz22-a1-vault-service-endpoints.yaml
+
+      - name: Verify live Vault HTTPS 8202
+        if: inputs.dry_run == 'false'
+        env:
+          DENETIM_CHECK: ${{ inputs.denetim_check }}
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            get service vault -o jsonpath='{.spec.ports[?(@.port==8202)].port}{"\n"}' \
+            | grep -Fx '8202'
+          kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            get endpoints vault -o jsonpath='{.subsets[0].ports[?(@.port==8202)].port}{"\n"}' \
+            | grep -Fx '8202'
+          docker exec platform-vault-test sh -c \
+            'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'
+
+          scripts/faz22-remote-ops/faz22-6-a1-preflight.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Faz 22.6 A1 Vault HTTPS activation"
+            echo ""
+            echo "- Runner: self-hosted staging-sw"
+            echo "- dry_run: \`${{ inputs.dry_run }}\`"
+            echo "- context: \`${KUBE_CONTEXT}\`"
+            echo "- namespace: \`${KUBE_NAMESPACE}\`"
+            echo "- Denetim check: \`${{ inputs.denetim_check }}\`"
+            echo ""
+            echo "This workflow does not mark #548 accepted; it only activates the Vault HTTPS transport prerequisite."
+          } >> "$GITHUB_STEP_SUMMARY"
