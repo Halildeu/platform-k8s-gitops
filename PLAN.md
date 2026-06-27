@@ -210,15 +210,16 @@ explicit: these are source-side false-acceptance guards, not real pilot WER/DER,
 real pilot G-INT, direct-STT e2e, model/backend selection, LLM enablement, or
 production readiness.
 
-**Faz 24 live delta (2026-06-26)**: PR-2 recorder authorization source/runtime
+**Faz 24 live delta (2026-06-26 + 2026-06-27 source cleanup)**: PR-2 recorder authorization source/runtime
 chain is now recorded: `platform-backend#761` added OpenFGA
 `meeting#can_record`, the test selector is `01KW0EJTM60YGZTEKNGS7PDPNP`,
 `platform-backend#765` added non-admin
 `GET /api/v1/meetings/{id}/recording-access`, and
 `platform-k8s-gitops#2038` plus deploy run `28206874588` carried the
 `audio-gateway-service` / `meeting-service` digest pins through testai
-readiness/stability. Boundary remains explicit: tokened object-level matrix,
-B-narrow admin GET-by-id cleanup, `platform-backend#716`,
+readiness/stability. Later `platform-backend#767` merged source/test cleanup
+for the temporary admin GET-by-id relaxation. Boundary remains explicit:
+tokened object-level matrix after image rollout, `platform-backend#716`,
 `platform-ai#198` full I7 prod-gate, `platform-ai#182`, desktop mic/loopback,
 product pilot gates, and production readiness are separate gates. `#198`
 immediate Denetim 8243 app-mTLS preflight now has refreshed PASS evidence after
