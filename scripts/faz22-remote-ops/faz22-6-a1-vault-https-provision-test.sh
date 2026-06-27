@@ -40,7 +40,7 @@ need() {
   }
 }
 
-docker_cmd() {
+docker_cli() {
   local docker_bin
   for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
     if command -v "$docker_bin" >/dev/null 2>&1 && "$docker_bin" version >/dev/null 2>&1; then
@@ -52,21 +52,122 @@ docker_cmd() {
       return 0
     fi
   done
-  echo "FAIL docker CLI unavailable through PATH, common absolute paths, or sudo" >&2
   return 1
 }
 
-need_docker() {
-  docker_cmd version >/dev/null 2>&1 || {
-    echo "FAIL missing command: docker (also unavailable through common paths or sudo)" >&2
-    exit 1
-  }
+docker_api() {
+  local method="$1"
+  local path="$2"
+  shift 2
+  local sock
+  command -v curl >/dev/null 2>&1 || return 1
+  for sock in /var/run/docker.sock /run/docker.sock; do
+    if [ -S "$sock" ] && curl -fsS -X "$method" --unix-socket "$sock" "http://localhost$path" "$@"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+docker_control_available() {
+  docker_cli version >/dev/null 2>&1 || docker_api GET /_ping >/dev/null 2>&1
+}
+
+docker_inspect_vault() {
+  docker_cli inspect platform-vault-test --format '{{json .}}' 2>/dev/null || \
+    docker_api GET /containers/platform-vault-test/json
+}
+
+docker_vault_has_required_mounts() {
+  docker_inspect_vault | jq -e \
+    --arg data "/home/halil/platform-stateful/test/vault/data" \
+    --arg logs "/home/halil/platform-stateful/test/vault/logs" \
+    --arg tls "/home/halil/platform-stateful/test/vault/tls" '
+      ([.Mounts[] | select(.Destination == "/vault/data" and (.Source | startswith($data)))] | length == 1) and
+      ([.Mounts[] | select(.Destination == "/vault/logs" and (.Source | startswith($logs)))] | length == 1) and
+      ([.Mounts[] | select(.Destination == "/vault/tls" and (.Source | startswith($tls)) and .RW == false)] | length == 1)
+    ' >/dev/null
+}
+
+restart_vault_container() {
+  cd "$VAULT_COMPOSE_DIR"
+  if docker_cli compose --profile manual up -d --force-recreate vault >/dev/null 2>&1; then
+    echo "PASS vault recreated with docker compose"
+    return 0
+  fi
+
+  if ! docker_vault_has_required_mounts; then
+    echo "FAIL Docker CLI/compose unavailable and existing platform-vault-test does not already have required data/log/tls mounts; compose recreate is required" >&2
+    return 1
+  fi
+
+  if docker_cli restart platform-vault-test >/dev/null 2>&1; then
+    echo "PASS vault restarted with docker CLI"
+    return 0
+  fi
+  if docker_api POST /containers/platform-vault-test/restart?t=30 >/dev/null; then
+    echo "PASS vault restarted with Docker socket API"
+    return 0
+  fi
+
+  echo "FAIL Docker control unavailable: no usable CLI restart and no writable Docker socket API" >&2
+  return 1
+}
+
+vault_status_json() {
+  local url
+  command -v curl >/dev/null 2>&1 || return 1
+  for url in https://127.0.0.1:8302 https://172.19.0.4:8202; do
+    if curl -fsS --connect-timeout 3 --max-time 10 --cacert "$VAULT_TLS_DIR/ca.crt" \
+      "$url/v1/sys/seal-status"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+vault_api_base() {
+  local url
+  command -v curl >/dev/null 2>&1 || return 1
+  for url in https://127.0.0.1:8302 https://172.19.0.4:8202; do
+    if curl -fsS --connect-timeout 3 --max-time 10 --cacert "$VAULT_TLS_DIR/ca.crt" \
+      "$url/v1/sys/seal-status" >/dev/null; then
+      printf '%s\n' "$url"
+      return 0
+    fi
+  done
+  return 1
+}
+
+wait_for_vault_status_json() {
+  local attempt
+  for attempt in $(seq 1 30); do
+    if vault_status_json; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+unseal_vault_with_key_index() {
+  local idx="$1"
+  local url
+  url="$(vault_api_base)" || return 1
+  sudo -n jq -r --argjson idx "$idx" '.unseal_keys_b64[$idx]' "$VAULT_INIT_JSON" \
+    | jq -Rs '{key: rtrimstr("\n")}' \
+    | curl -fsS --connect-timeout 3 --max-time 10 --cacert "$VAULT_TLS_DIR/ca.crt" \
+      -H 'Content-Type: application/json' --data @- "$url/v1/sys/unseal" >/dev/null
 }
 
 need openssl
 need sudo
 need jq
-need_docker
+need curl
+docker_control_available || {
+  echo "FAIL Docker control unavailable: no usable Docker CLI and no Docker socket API" >&2
+  exit 1
+}
 
 echo "A1_VAULT_HTTPS_PROVISION_BEGIN host=$(hostname) tls_dir=$VAULT_TLS_DIR restart=$RESTART_VAULT auto_unseal=$AUTO_UNSEAL_AFTER_RESTART force=$FORCE"
 
@@ -175,27 +276,26 @@ openssl x509 -in "$VAULT_TLS_DIR/ca.crt" -noout -fingerprint -sha256 -subject -i
 openssl x509 -in "$VAULT_TLS_DIR/tls.crt" -noout -fingerprint -sha256 -subject -issuer
 
 if [ "$RESTART_VAULT" = "1" ]; then
-  cd "$VAULT_COMPOSE_DIR"
-  docker_cmd compose --profile manual up -d --force-recreate vault >/dev/null
+  restart_vault_container
 
   sealed="$(
-    docker_cmd exec platform-vault-test sh -c \
-      'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json' \
-      2>/dev/null | jq -r '.sealed // "unknown"' || true
+    wait_for_vault_status_json 2>/dev/null | jq -r '.sealed // "unknown"' || true
   )"
   if [ "$sealed" = "true" ] && [ "$AUTO_UNSEAL_AFTER_RESTART" = "1" ]; then
     echo "INFO Vault is sealed after restart; applying test unseal keys (values not printed)"
     for idx in 0 1; do
-      sudo -n jq -r --argjson idx "$idx" '.unseal_keys_b64[$idx]' "$VAULT_INIT_JSON" \
-        | docker_cmd exec -i platform-vault-test vault operator unseal - >/dev/null
+      unseal_vault_with_key_index "$idx"
     done
   elif [ "$sealed" = "true" ]; then
     echo "FAIL Vault is sealed after restart and AUTO_UNSEAL_AFTER_RESTART is not enabled" >&2
     exit 1
   fi
 
-  docker_cmd exec platform-vault-test sh -c \
-    'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'
+  final_status="$(wait_for_vault_status_json 2>/dev/null || true)"
+  if ! printf '%s\n' "$final_status" | jq -e '.sealed == false' >/dev/null; then
+    echo "FAIL vault https 8202 CA-pinned seal-status did not return sealed=false" >&2
+    exit 1
+  fi
   echo "PASS vault https 8202 CA-pinned status works"
 else
   echo "INFO restart skipped; set RESTART_VAULT=1 after the compose/config change is present on staging-sw"
