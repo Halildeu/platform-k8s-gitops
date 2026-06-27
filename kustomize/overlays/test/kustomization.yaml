@@ -6119,6 +6119,53 @@ patches:
           L2CgW6T5hGM17eiVJbaVokyDT4T8psEe+8Ai97WxkcKutEPLqQIwKfwsPexCXiW7
           LzUZ5BTaZ9I6lZwF7ti90G61b02HdgFA8eaNTYdlbdK1xtAmpjyl
           -----END CERTIFICATE-----
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_VAULT_BASE_URL
+        value: "https://vault.platform-test.svc.cluster.local:8202"
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_VAULT_MOUNT
+        value: "pki_int"
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE
+        value: "tpm-device"
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_VAULT_CA_CERT_PEM
+        value: |
+          -----BEGIN CERTIFICATE-----
+          MIIFgzCCA2ugAwIBAgIUH3mDdOSfJ3XcqfFWnyGppQ7VqG8wDQYJKoZIhvcNAQEL
+          BQAwUTEiMCAGA1UEAwwZcGxhdGZvcm0tdGVzdC12YXVsdC1hMS1jYTEWMBQGA1UE
+          CgwNcGxhdGZvcm0tdGVzdDETMBEGA1UECwwKZmF6MjIuNi1hMTAeFw0yNjA2Mjcw
+          NDE4MjRaFw0yODA5MjkwNDE4MjRaMFExIjAgBgNVBAMMGXBsYXRmb3JtLXRlc3Qt
+          dmF1bHQtYTEtY2ExFjAUBgNVBAoMDXBsYXRmb3JtLXRlc3QxEzARBgNVBAsMCmZh
+          ejIyLjYtYTEwggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQC6E942f6Dr
+          dDWj0LgoaUMx6w5f08Bf8UwQMSuqCzi4OkQJHajrDK2g0FfS1DH3FKBlOGLF8dmG
+          oU7NqqFfRFkSnAm9m2e+2nkTHI6OHpYZQem1f/YZ3oY1qutH9BYVaj77wqBqqohH
+          CkuuP1ob0G4X8OuWjzxMhQZqCQdqrlu/ydr0R2o1XzPv4OOp/YECGWhdt7nt+c0o
+          U/9cOq6TA8biUDBjPDZzrcI2Vk/LW0uK8i22epYsb18i4qxXo0NReS8Zv3q6wA65
+          2wbemHXwM9BYaXpYhLmbJor95CMGAMxLZmMRa7SAR06/2gcW29LgVpusq25xY+tY
+          byUHJ9/7VK22I6VRHJk4kUQJG1BxJDgD2WxIswiFbKXNcbZdCSe61Uh8/4NlA9vw
+          UHEb8m+Zf0nfjTIb5cZSRB0gRaambaGILmDI9+nwketDhayAi0E/Sxc0kJzmq1BT
+          LCANmoP80Hoj8dr8mn3jbuu/fs8ccIE31+XshznVOwbsBpMqFX50YHREF1owls/c
+          eZrELSLyVxmI5jIR7fuhO5ZpSZyVpCIrGc6LGpiQROeSvUhXCO6OavZHFmtNv6Ui
+          YPS47sJtaIWnfNLi++0AeoU+kPmLO1PPui+funLqv5wpX8Cx81YoTk8secVT49cR
+          fkRAPfWbTvzjeokaK2TysKxqQ9lfogqNNwIDAQABo1MwUTAdBgNVHQ4EFgQUsMDo
+          dsk4vCkHGVPyBhLlr6jS+vcwHwYDVR0jBBgwFoAUsMDodsk4vCkHGVPyBhLlr6jS
+          +vcwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAgEAedCvyk70QxET
+          s1A2GKM/PLuhkRdL5dj4o6ZL9fCG9l6rqYKFngoDH86yEn36qc04Cvm4QNq1QO2T
+          GnhdNsGHjS8pDqECnQquN2QIm28qqJsdFDLyO6dLBbQB90LKUyIhP9z93YTMKP1Q
+          0Z+UwI0j96HcrstvlJMK7KzukfWyz+X5kVlhUlaUR1KiLWmnPfUaBB/mSC0eFvzQ
+          SK/oSGx5GPNNS24KpPR3BV2bRWVGLQ/M/yi4auNJQMJpoqOC44SWmNfB2/p9mgXd
+          9D6r4m37EluDnwFlLm9Ok7LiPUfmsW2vf1TwVQlIjgW+n0TWTES28DPaHq3BE0N+
+          EbW59iXtLxwsdNR/Mweb7ncLViG7XDwc8Mrs8hMPw1ZLZ4t2H6m0zguG3zTNmnbp
+          0jm6OOEOe0TGShdXQFe+ldvJ71T/FgV+z6rxgXSc+pLQhXFXWUp5PNLmkuQIxKGE
+          +tpjWbnp8us0Sj+Yc+YcDP7187273o+JR4jQtZwRJO/9q9gyceH9Jlm0MU/8eDvh
+          /k5N1k8kIP5A9px4yNhaSgnZJ5ybPSq1SKpt5ucwxp25XnfDT13KTJKaHSk3tv3v
+          sJtExzuVMG89utEaU654SnLnRqrFZNP/sz7KMqXEf+gnn3xUISBnQswICH070ajJ
+          xBPIQhv394xPqPEwwfz8545paZqXDS0=
+          -----END CERTIFICATE-----
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED
+        value: "true"
 
   # --- Faz 24 Meeting Intelligence (gitops#1615 activation) — TEST only ---
   # meeting-service (#410) + transcript-service (#411) admin API gateway routes.
