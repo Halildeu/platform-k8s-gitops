@@ -65,7 +65,16 @@ jobs:
       - name: Verify live Vault mount contract
         run: |
           set -euo pipefail
-          docker inspect platform-vault-test --format '{{json .Mounts}}' > /tmp/platform-vault-test-mounts.json
+
+          docker_cmd() {
+            if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
+              docker "$@"
+            else
+              sudo -n docker "$@"
+            fi
+          }
+
+          docker_cmd inspect platform-vault-test --format '{{json .Mounts}}' > /tmp/platform-vault-test-mounts.json
 
           jq -e --arg src "/home/halil/platform-stateful/test/vault/data" \
             '[.[] | select(.Destination == "/vault/data" and (.Source | startswith($src)))] | length == 1' \
@@ -148,7 +157,16 @@ jobs:
           kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
             get endpoints vault -o jsonpath='{.subsets[0].ports[?(@.port==8202)].port}{"\n"}' \
             | grep -Fx '8202'
-          docker exec platform-vault-test sh -c \
+
+          docker_cmd() {
+            if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
+              docker "$@"
+            else
+              sudo -n docker "$@"
+            fi
+          }
+
+          docker_cmd exec platform-vault-test sh -c \
             'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'
 
           scripts/faz22-remote-ops/faz22-6-a1-preflight.sh
