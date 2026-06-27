@@ -1,5 +1,56 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT mTLS preflight live blocker evidence (2026-06-27)
+
+After `platform-k8s-gitops` PR #2096 merged, the canonical self-hosted
+direct-STT mTLS preflight collector was dispatched against `k3d-test`:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28276666101`
+- Head SHA: `c12ae05338d85a6ce180934b262a2e6d6be33c08`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28276666101`
+  (`7920418957`)
+- Result: FAIL by design as bounded blocker evidence; verifier summary
+  `52/61` checks passed.
+
+Accepted pre-flip facts from the run:
+
+- Explicit `kubectlContext=k3d-test` was used and `platform-test` was
+  reachable.
+- Real `audio-gateway` pod was observed Ready:
+  `audio-gateway-56b5465b4b-fbzl9`.
+- Desired state remains safe for the pre-flip stage:
+  `directSttEnabled=false`, host `live-stt.denetim`, port `8243`,
+  hostAlias `10.99.0.2`, NetworkPolicy `10.99.0.2/32:8243`, mTLS mount path
+  `/etc/direct-stt-mtls`, optional Secret mount preserved.
+- Aggregate `audio-gateway-secrets` remains Ready with Redis only; direct-STT
+  mTLS key names are not folded into the aggregate Secret.
+- Boundary checks remain false for secret values included, raw audio sent,
+  `/transcribe` called, direct audio e2e proven, I7 prod-gate proven,
+  desktop mic/loopback proven, and production-ready.
+
+Current live blocker proved by the run:
+
+- Dedicated `ExternalSecret/audio-gateway-direct-stt-mtls` is not Ready.
+- Runtime `Secret/audio-gateway-direct-stt-mtls` lacks
+  `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key`.
+- Pod-local mTLS `/health` probe could not use a client certificate and did
+  not return HTTP 200 (`mtls-probe-exit-58`).
+- `vaultSeedAuthorityAccepted=false`.
+
+Boundary: this is no-mutation blocker evidence only. It does not enable
+direct-STT, does not call `/transcribe`, does not send audio, does not prove
+`platform-ai#182`, and does not advance `platform-k8s-gitops#1615` beyond
+`Needs Verify`. The next accepted #182 path remains: approved Vault/ESO seed
+for `direct_stt_ca_crt`, `direct_stt_client_crt`, and
+`direct_stt_client_key` -> rerun this workflow until preflight PASS while
+direct-STT is still false -> separate reviewed GitOps flag flip -> fresh
+`/transcribe` e2e evidence with `DIRECT_STT_TRANSCRIPT_RESULT`, same-session
+audit correlation, no raw-audio persistence proof, and reviewer acceptance.
+Full #198 I7, I3, desktop mic/loopback, product-gate evidence, production
+readiness, and legal go remain separate gates.
+
 ## Live Delta — Faz 24 I7 app-mTLS operator handoff package packaged (2026-06-27)
 
 The remaining `platform-ai#198` / `platform-k8s-gitops#1615` I7 app-mTLS
