@@ -12,6 +12,7 @@ KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetimpc@10.99.0.2}"
 DENETIM_SSH_IDENTITY="${DENETIM_SSH_IDENTITY:-$HOME/.ssh/id_ed25519}"
+DENETIM_CHECK="${DENETIM_CHECK:-true}"
 DEVICE_KEY_OVERLAY="${DEVICE_KEY_OVERLAY:-kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key}"
 ENDPOINT_ADMIN_ESO_OVERLAY="${ENDPOINT_ADMIN_ESO_OVERLAY:-kustomize/overlays/test/eso/endpoint-admin}"
 VAULT_TLS_DIR="${VAULT_TLS_DIR:-/home/halil/platform-stateful/test/vault/tls}"
@@ -31,21 +32,42 @@ fail() {
   printf 'FAIL %s\n' "$*"
 }
 
+is_local_target() {
+  case "$SSH_TARGET" in
+    local|localhost|127.0.0.1)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 remote_kubectl() {
-  ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" \
-    "kubectl --context '$KUBE_CONTEXT' -n '$KUBE_NAMESPACE' $*"
+  if is_local_target; then
+    kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" "$@"
+  else
+    ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" \
+      "kubectl --context '$KUBE_CONTEXT' -n '$KUBE_NAMESPACE' $*"
+  fi
 }
 
 remote_shell() {
-  ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" "$@"
+  if is_local_target; then
+    bash -lc "$*"
+  else
+    ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" "$@"
+  fi
 }
 
 denetim_ssh() {
   local identity_args=()
+  local jump_args=()
   if [ -n "$DENETIM_SSH_IDENTITY" ]; then
     identity_args=(-i "$DENETIM_SSH_IDENTITY")
   fi
-  ssh -o BatchMode=yes -o ConnectTimeout=10 "${identity_args[@]}" -J "$SSH_TARGET" "$DENETIM_SSH_TARGET" "$@"
+  if ! is_local_target; then
+    jump_args=(-J "$SSH_TARGET")
+  fi
+  ssh -o BatchMode=yes -o ConnectTimeout=10 "${identity_args[@]}" "${jump_args[@]}" "$DENETIM_SSH_TARGET" "$@"
 }
 
 printf 'A1_PREFLIGHT_BEGIN context=%s namespace=%s ssh=%s denetim=%s\n' \
@@ -151,7 +173,9 @@ for es in \
   fi
 done
 
-if denetim_ssh 'cmd /c hostname' >/tmp/faz22-6-a1-denetim-host.txt 2>/dev/null; then
+if [ "$DENETIM_CHECK" != "true" ]; then
+  warn "Denetim PC check skipped by DENETIM_CHECK=$DENETIM_CHECK"
+elif denetim_ssh 'cmd /c hostname' >/tmp/faz22-6-a1-denetim-host.txt 2>/dev/null; then
   ok "Denetim PC reachable host=$(tr -d '\r\n' </tmp/faz22-6-a1-denetim-host.txt)"
   tpm_info="$(denetim_ssh \
     'powershell -NoProfile -Command "tpmtool getdeviceinformation"' 2>/dev/null || true)"

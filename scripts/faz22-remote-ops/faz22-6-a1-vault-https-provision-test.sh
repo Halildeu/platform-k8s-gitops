@@ -10,7 +10,9 @@ set -euo pipefail
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
 VAULT_TLS_DIR="${VAULT_TLS_DIR:-/home/halil/platform-stateful/test/vault/tls}"
 VAULT_COMPOSE_DIR="${VAULT_COMPOSE_DIR:-/home/halil/platform-k8s-gitops/host-compose/vault/test}"
+VAULT_INIT_JSON="${VAULT_INIT_JSON:-/home/halil/bootstrap-drill/vault-init-test.json}"
 RESTART_VAULT="${RESTART_VAULT:-0}"
+AUTO_UNSEAL_AFTER_RESTART="${AUTO_UNSEAL_AFTER_RESTART:-1}"
 FORCE="${FORCE:-0}"
 
 if [ -z "${SSH_AUTH_SOCK:-}" ] && command -v launchctl >/dev/null 2>&1; then
@@ -20,8 +22,15 @@ if [ -z "${SSH_AUTH_SOCK:-}" ] && command -v launchctl >/dev/null 2>&1; then
   fi
 fi
 
-ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" \
-  "VAULT_TLS_DIR='$VAULT_TLS_DIR' VAULT_COMPOSE_DIR='$VAULT_COMPOSE_DIR' RESTART_VAULT='$RESTART_VAULT' FORCE='$FORCE' bash -se" <<'REMOTE'
+remote_env="VAULT_TLS_DIR='$VAULT_TLS_DIR' VAULT_COMPOSE_DIR='$VAULT_COMPOSE_DIR' VAULT_INIT_JSON='$VAULT_INIT_JSON' RESTART_VAULT='$RESTART_VAULT' AUTO_UNSEAL_AFTER_RESTART='$AUTO_UNSEAL_AFTER_RESTART' FORCE='$FORCE'"
+
+if [ "$SSH_TARGET" = "local" ] || [ "$SSH_TARGET" = "localhost" ] || [ "$SSH_TARGET" = "127.0.0.1" ]; then
+  remote_runner=(bash -c "$remote_env bash -se")
+else
+  remote_runner=(ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" "$remote_env bash -se")
+fi
+
+"${remote_runner[@]}" <<'REMOTE'
 set -euo pipefail
 
 need() {
@@ -34,8 +43,21 @@ need() {
 need openssl
 need docker
 need sudo
+need jq
 
-echo "A1_VAULT_HTTPS_PROVISION_BEGIN host=$(hostname) tls_dir=$VAULT_TLS_DIR restart=$RESTART_VAULT force=$FORCE"
+echo "A1_VAULT_HTTPS_PROVISION_BEGIN host=$(hostname) tls_dir=$VAULT_TLS_DIR restart=$RESTART_VAULT auto_unseal=$AUTO_UNSEAL_AFTER_RESTART force=$FORCE"
+
+if [ "$RESTART_VAULT" = "1" ] && [ "$AUTO_UNSEAL_AFTER_RESTART" = "1" ]; then
+  if ! sudo -n test -r "$VAULT_INIT_JSON"; then
+    echo "FAIL restart requested but test Vault init JSON is not readable: $VAULT_INIT_JSON" >&2
+    exit 1
+  fi
+  if ! sudo -n jq -e '.unseal_keys_b64 | length >= 2' "$VAULT_INIT_JSON" >/dev/null; then
+    echo "FAIL restart requested but $VAULT_INIT_JSON does not contain at least two unseal keys" >&2
+    exit 1
+  fi
+  echo "PASS test Vault unseal material present (values not printed)"
+fi
 
 existing_count=0
 for f in ca.crt tls.crt tls.key; do
@@ -132,6 +154,23 @@ openssl x509 -in "$VAULT_TLS_DIR/tls.crt" -noout -fingerprint -sha256 -subject -
 if [ "$RESTART_VAULT" = "1" ]; then
   cd "$VAULT_COMPOSE_DIR"
   docker compose --profile manual up -d --force-recreate vault >/dev/null
+
+  sealed="$(
+    docker exec platform-vault-test sh -c \
+      'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json' \
+      2>/dev/null | jq -r '.sealed // "unknown"' || true
+  )"
+  if [ "$sealed" = "true" ] && [ "$AUTO_UNSEAL_AFTER_RESTART" = "1" ]; then
+    echo "INFO Vault is sealed after restart; applying test unseal keys (values not printed)"
+    for idx in 0 1; do
+      sudo -n jq -r --argjson idx "$idx" '.unseal_keys_b64[$idx]' "$VAULT_INIT_JSON" \
+        | docker exec -i platform-vault-test vault operator unseal - >/dev/null
+    done
+  elif [ "$sealed" = "true" ]; then
+    echo "FAIL Vault is sealed after restart and AUTO_UNSEAL_AFTER_RESTART is not enabled" >&2
+    exit 1
+  fi
+
   docker exec platform-vault-test sh -c \
     'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'
   echo "PASS vault https 8202 CA-pinned status works"
