@@ -1,0 +1,29 @@
+# endpoint-admin-remote-bridge-device-key ACTIVATION overlay — Faz 22.6 #548 A1
+#
+# OWNER-GATED and deliberately outside the Argo root. This overlay stands up a
+# separate broker for the #548 strong hardware-attestation run. It must never
+# replace or mutate the existing denetim pilot broker, which remains on
+# MACHINE_CERT_ENROLLMENT for the bounded product-channel pilot.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-test
+nameSuffix: -device-key
+
+resources:
+  - ../../../../base/apps/endpoint-admin-remote-bridge
+  - externalsecret.yaml
+  - netpol.yaml
+
+patches:
+  - path: identity-patch.yaml
+  - path: configmap-device-key-patch.yaml
+  - path: patch-activate.yaml
+  - path: service-patch.yaml
+
+images:
+  # Same image as the live primary endpoint-admin-service and shared
+  # remote-bridge broker proven in the 2026-06-26 Faz 22.6 live audit.
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
+    newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
+    digest: sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842
