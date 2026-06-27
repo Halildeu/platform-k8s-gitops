@@ -161,12 +161,19 @@ Mühendislik değerlendirmesi şunları arar:
 
 - retention/silme süreleri owner tarafından sonra verilebilen parametrelerdir;
   hardcoded süre veya sınırsız default kabul edilmez
+- eksik owner duration değeri veya sabit süre seçilmemiş olması engineering
+  blocker değildir **yalnız** fail-closed/refuse-to-store default aktifse;
+  owner uygun değeri verdiğinde config/evidence olarak uygulanır
 - saklama default'u fail-closed olur: owner parametresi yoksa durable storage
   açılmaz veya ilgili path refuse-to-store davranır
 - consent default required, deletion pipeline default enabled, redaction/audit
   kontrolleri machine-checkable evidence ile doğrulanır
 - legal acceptance, VERBIS güncelliği, DPA veya production legal go agent/CI/PR
   tarafından iddia edilmez
+- veri akışı, recording/retention modu, consent/deletion boundary veya
+  legal-vs-engineering ayrımı değişirse `ADR-0030` D6 tetiklenir; karar önce
+  provider-distinct cross-AI istişareyle değerlendirilir ve ADR'ye bağlanmadan
+  canonical kural sayılmaz
 
 Doğru status dili: "engineering G-COMP controls pass/pending", "legal track
 parallel/pending", "production legal go owner-gated". Yanlış status dili:

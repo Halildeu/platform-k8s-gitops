@@ -35,6 +35,21 @@ Mavis MiniMax kritik notu (2026-06-02): **"Ses kaydı kadar transcript koruma kr
    access audit, deletion/export, owner legal-track notification, redaction ve
    runbook evidence doğrular. Hukuki yeterlilik/veri sorumlusu sicil kararını
    doğrulamaz.
+6. Bu boundary'yi etkileyen yeni mimari kararlar (veri akışı, recording modu,
+   retention/deletion semantics, consent default'u, legal/engineering ayrımı)
+   provider-distinct cross-AI istişareden geçer ve ADR'ye bağlanmadan canonical
+   kural sayılmaz.
+
+**D6 trigger list (self-attestation'a bırakılmaz):** Aşağıdaki yüzeylerden
+birini değiştiren PR/ops kararı D6 kapsamındadır: `ADR-0030`, `ADR-0031`,
+`ADR-0043`, bu Faz 24 planının KVKK/G-COMP/data-flow bölümleri,
+`verify_gcomp_compliance_gate_evidence.py`, `RB-faz24-gcomp-compliance-gate.md`,
+G-COMP evidence schema/fixture'ları, `rawAudioRetentionDays`,
+`transcriptRetentionDays`, `derivedArtifactRetentionDays`,
+`auditRetentionDays`, `retentionDefaultsFailClosed`,
+`consentDefaultRequired`, `deletionPipelineDefaultEnabled`, recording mode
+anahtarları, raw-audio/transcript/LLM route veya storage boundary'si. Kapsam
+belirsizse D6 tetiklenmiş kabul edilir ve cross-AI + ADR yolu izlenir.
 
 ### Scope
 
