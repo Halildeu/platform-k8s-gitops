@@ -1,5 +1,39 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 recorder admin GET-by-id source cleanup merged; runtime matrix remains open (2026-06-27)
+
+`platform-backend#767` was merged as
+`1e937841affc79d62609020fe29de9af6f521a3c` on `main`, tracking
+`platform-backend#766` without auto-closing it. The PR head
+`24088111686b7f65cd3f3ad5ac6361fafba2421a` passed all required PR checks,
+including full reactor, meeting-service, audio-gateway-service,
+endpoint-admin-service, gitleaks, OSV, contract-gate, and ADR-0011 relation
+alignment. A separate `platform-backend#766` evidence comment records the
+boundary:
+https://github.com/Halildeu/platform-backend/issues/766#issuecomment-4815055379
+
+Source/test facts now accepted:
+
+- The temporary authenticated admin `GET /api/v1/admin/meetings/*` relaxation
+  was removed from `meeting-service`; admin meeting routes are back under
+  admin/scoped authority.
+- Non-admin admin-route security tests assert Spring Security rejects before
+  service/OpenFGA authorization interaction.
+- `audio-gateway-service` contract tests verify the `recording-access`
+  preflight validator is called on happy-path session/recording flows.
+- Provider-separated review was applied: Codex implemented; Claude CLI
+  adversarial review found no P0/P1 blockers after the P2 test-interaction
+  finding was absorbed.
+
+Boundary: this is source/test hardening, not runtime acceptance. No GitOps
+image rollout, testai/prod runtime deployment, live recorder persona smoke, or
+`platform-backend#766` closure is claimed here. After a backend image rollout,
+the still-open tokened recorder-access matrix remains: owner/participant
+`204`, non-recorder `403`, unknown or tenant-hidden meeting `404`, and
+blocked-owner `403`. `platform-backend#716`, `platform-ai#198`,
+`platform-ai#182`, desktop mic/loopback, product-quality pilot gates,
+production readiness, and legal go remain separate gates.
+
 ## Live Delta — Faz 24 direct-STT mTLS preflight live blocker evidence (2026-06-27)
 
 After `platform-k8s-gitops` PR #2096 merged, the canonical self-hosted
@@ -1168,12 +1202,13 @@ Evidence chain:
 Boundary: the tokened object-level matrix is still open: expected
 owner/participant `204`, no-recorder `403`, unknown or tenant-hidden meeting
 `404`, and blocked-owner `403` must be proven with accepted personas before this
-becomes recorder authorization acceptance. The temporary B-narrow admin GET-by-id
-relaxation should not be removed until that matrix is evidenced. Separately,
-`platform-backend#716` audio-gateway audience/capability enforcement remains
-open, and `platform-ai#198`, `platform-ai#188`, `platform-ai#182`, direct-STT
-e2e, desktop mic/loopback, product-quality pilot gates, and production readiness
-remain separate gates.
+becomes recorder authorization acceptance. Later source cleanup for the
+temporary B-narrow admin GET-by-id relaxation is recorded above via
+`platform-backend#767`; it does not replace image rollout or tokened runtime
+persona proof. Separately, `platform-backend#716` audio-gateway
+audience/capability enforcement remains open, and `platform-ai#198`,
+`platform-ai#188`, `platform-ai#182`, direct-STT e2e, desktop mic/loopback,
+product-quality pilot gates, and production readiness remain separate gates.
 
 ## Live Delta — Faz 24 #198 local firewall/listener proof received; central endpoint allow still needed (2026-06-26)
 
