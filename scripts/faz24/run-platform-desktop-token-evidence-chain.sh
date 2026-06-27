@@ -124,11 +124,11 @@ write_kc_source_diagnostic() {
       sudo_readable=true
     fi
     jq -n \
-      --arg label "${label}" \
+      --arg candidateLabel "${label}" \
       --argjson exists "${exists}" \
       --argjson readable "${readable}" \
       --argjson sudoReadable "${sudo_readable}" \
-      '{"label": $label, "exists": $exists, "readable": $readable, "sudoReadable": $sudoReadable}' >> "${candidates}"
+      '{"label": $candidateLabel, "exists": $exists, "readable": $readable, "sudoReadable": $sudoReadable}' >> "${candidates}"
   done < <(keycloak_admin_password_candidates)
 
   command -v docker >/dev/null 2>&1 && docker_available=true
