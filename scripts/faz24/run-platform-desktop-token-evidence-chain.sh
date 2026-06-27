@@ -181,7 +181,7 @@ read_keycloak_admin_password() {
   if [[ -n "${KC_ADMIN_PASSWORD:-}" ]]; then
     printf '%s' "${KC_ADMIN_PASSWORD}" > "${ADMIN_PASS_FILE}"
     chmod 0600 "${ADMIN_PASS_FILE}"
-    write_kc_source_diagnostic "actions-secret" "KC_ADMIN_PASSWORD"
+    write_kc_source_diagnostic "actions-secret" "KC_TEST_ADMIN_PASSWORD"
     return 0
   fi
 

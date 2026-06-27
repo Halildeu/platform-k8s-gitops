@@ -37,6 +37,7 @@ def test_runner_contract_restores_and_redacts():
     assert "--arg label" not in text
     assert 'write_kc_source_diagnostic "host-file"' in text
     assert 'write_kc_source_diagnostic "host-file-sudo"' in text
+    assert 'write_kc_source_diagnostic "actions-secret" "KC_TEST_ADMIN_PASSWORD"' in text
     assert "sudo -n cat" in text
     assert "rawTokenLogged: false" in text
     assert "rawPasswordLogged: false" in text
@@ -57,6 +58,7 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
 
     assert "runs-on: [self-hosted, staging-sw, testai-deploy]" in workflow
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
+    assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert "faz24-platform-desktop-token-evidence-${{ github.run_id }}" in workflow
     assert "Verify artifact excludes private material" in workflow
     assert "directGrantsRestored" in workflow

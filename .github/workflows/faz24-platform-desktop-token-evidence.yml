@@ -116,6 +116,7 @@ jobs:
           BASE_URL: ${{ inputs.base_url }}
           EXPECTED_ISSUER: ${{ inputs.expected_issuer }}
           KC_BASE_URL: ${{ inputs.keycloak_base_url }}
+          KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           RUN_EXTERNAL_SMOKE: ${{ inputs.run_external_smoke == 'true' && '1' || '0' }}
         run: |
           set -euo pipefail
