@@ -42,8 +42,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
-          cpus: "0.25"
+          # Faz 22.6 A1 HTTPS listener pushed the old 256M cap into OOMKilled
+          # on staging-sw during controlled recreate; keep test Vault bounded
+          # but leave enough headroom for dual listeners + Raft startup.
+          memory: 512M
+          cpus: "0.50"
 
 networks:
   platform-test-net:
