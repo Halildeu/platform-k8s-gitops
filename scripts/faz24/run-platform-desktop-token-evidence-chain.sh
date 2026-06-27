@@ -84,8 +84,23 @@ safe_error() {
     | cut -c1-180
 }
 
+keycloak_admin_password_candidates() {
+  printf '%s\t%s\n' \
+    "canonical-home-repo" "/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "canonical-home-compose" "/home/halil/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "runner-home-compose" "${HOME}/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "checkout-absolute" "${PWD}/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "checkout-relative" "host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "github-work" "/home/runner/work/platform-k8s-gitops/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "github-work-underscore" "/home/runner/_work/platform-k8s-gitops/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "opt-repo" "/opt/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "srv-repo" "/srv/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    | awk -F '\t' 'NF >= 2 && !seen[$2]++'
+}
+
 write_kc_source_diagnostic() {
   local selected="${1:-}"
+  local selected_label="${2:-}"
   local candidates="${TMP_DIR}/kc-source-candidates.jsonl"
   : > "${candidates}"
 
@@ -93,8 +108,33 @@ write_kc_source_diagnostic() {
   local container_found=false
   local run_secret_readable=false
   local env_secret_readable=false
+  local docker_socket_present=false
+  local docker_socket_readable=false
+  local docker_socket_writable=false
   local actions_secret_present=false
+  local label candidate exists readable sudo_readable
+  while IFS=$'\t' read -r label candidate; do
+    exists=false
+    readable=false
+    sudo_readable=false
+    [[ -e "${candidate}" ]] && exists=true
+    [[ -r "${candidate}" ]] && readable=true
+    if command -v sudo >/dev/null 2>&1 \
+        && sudo -n test -r "${candidate}" >/dev/null 2>&1; then
+      sudo_readable=true
+    fi
+    jq -n \
+      --arg label "${label}" \
+      --argjson exists "${exists}" \
+      --argjson readable "${readable}" \
+      --argjson sudoReadable "${sudo_readable}" \
+      '{label: $label, exists: $exists, readable: $readable, sudoReadable: $sudoReadable}' >> "${candidates}"
+  done < <(keycloak_admin_password_candidates)
+
   command -v docker >/dev/null 2>&1 && docker_available=true
+  [[ -e /var/run/docker.sock ]] && docker_socket_present=true
+  [[ -r /var/run/docker.sock ]] && docker_socket_readable=true
+  [[ -w /var/run/docker.sock ]] && docker_socket_writable=true
   [[ -n "${KC_ADMIN_PASSWORD:-}" ]] && actions_secret_present=true
   if [[ "${docker_available}" == "true" ]]; then
     docker inspect "${KC_CONTAINER}" >/dev/null 2>&1 && container_found=true
@@ -106,24 +146,34 @@ write_kc_source_diagnostic() {
 
   jq -n \
     --arg selectedSource "${selected}" \
+    --arg selectedLabel "${selected_label}" \
     --arg container "${KC_CONTAINER}" \
     --arg realm "${KC_REALM}" \
     --argjson dockerAvailable "${docker_available}" \
     --argjson containerFound "${container_found}" \
     --argjson runSecretReadable "${run_secret_readable}" \
     --argjson envSecretReadable "${env_secret_readable}" \
+    --argjson dockerSocketPresent "${docker_socket_present}" \
+    --argjson dockerSocketReadable "${docker_socket_readable}" \
+    --argjson dockerSocketWritable "${docker_socket_writable}" \
     --argjson actionsSecretPresent "${actions_secret_present}" \
+    --slurpfile hostFileCandidates "${candidates}" \
     '{
       selectedSource: $selectedSource,
+      selectedLabel: $selectedLabel,
       realm: $realm,
       container: $container,
       docker: {
         available: $dockerAvailable,
         containerFound: $containerFound,
         runSecretReadable: $runSecretReadable,
-        envSecretReadable: $envSecretReadable
+        envSecretReadable: $envSecretReadable,
+        socketPresent: $dockerSocketPresent,
+        socketReadable: $dockerSocketReadable,
+        socketWritable: $dockerSocketWritable
       },
-      actionsSecretPresent: $actionsSecretPresent
+      actionsSecretPresent: $actionsSecretPresent,
+      hostFileCandidates: $hostFileCandidates
     }' > "${KC_SOURCE_JSON}"
 }
 
@@ -131,7 +181,7 @@ read_keycloak_admin_password() {
   if [[ -n "${KC_ADMIN_PASSWORD:-}" ]]; then
     printf '%s' "${KC_ADMIN_PASSWORD}" > "${ADMIN_PASS_FILE}"
     chmod 0600 "${ADMIN_PASS_FILE}"
-    write_kc_source_diagnostic "actions-secret"
+    write_kc_source_diagnostic "actions-secret" "KC_ADMIN_PASSWORD"
     return 0
   fi
 
@@ -139,18 +189,36 @@ read_keycloak_admin_password() {
     if docker exec "${KC_CONTAINER}" sh -c 'cat /run/secrets/kc_admin_password' \
         > "${ADMIN_PASS_FILE}" 2>/dev/null && [[ -s "${ADMIN_PASS_FILE}" ]]; then
       chmod 0600 "${ADMIN_PASS_FILE}"
-      write_kc_source_diagnostic "docker-run-secret"
+      write_kc_source_diagnostic "docker-run-secret" "run-secret"
       return 0
     fi
     if docker exec "${KC_CONTAINER}" sh -c 'p="${KEYCLOAK_ADMIN_PASSWORD_FILE:-}"; [ -n "$p" ] && cat "$p"' \
         > "${ADMIN_PASS_FILE}" 2>/dev/null && [[ -s "${ADMIN_PASS_FILE}" ]]; then
       chmod 0600 "${ADMIN_PASS_FILE}"
-      write_kc_source_diagnostic "docker-env-secret"
+      write_kc_source_diagnostic "docker-env-secret" "env-secret"
       return 0
     fi
   fi
 
-  write_kc_source_diagnostic ""
+  local label candidate
+  while IFS=$'\t' read -r label candidate; do
+    if [[ -r "${candidate}" ]]; then
+      cp "${candidate}" "${ADMIN_PASS_FILE}"
+      chmod 0600 "${ADMIN_PASS_FILE}"
+      write_kc_source_diagnostic "host-file" "${label}"
+      return 0
+    fi
+    if command -v sudo >/dev/null 2>&1 \
+        && sudo -n cat "${candidate}" > "${ADMIN_PASS_FILE}" 2>/dev/null \
+        && [[ -s "${ADMIN_PASS_FILE}" ]]; then
+      chmod 0600 "${ADMIN_PASS_FILE}"
+      write_kc_source_diagnostic "host-file-sudo" "${label}"
+      return 0
+    fi
+    : > "${ADMIN_PASS_FILE}"
+  done < <(keycloak_admin_password_candidates)
+
+  write_kc_source_diagnostic "" ""
   return 1
 }
 
