@@ -31,6 +31,8 @@ def test_runner_contract_restores_and_redacts():
     assert "keycloak_admin_password_candidates" in text
     assert "hostFileCandidates" in text
     assert "sudoReadable" in text
+    assert '{"label": $label, "exists": $exists' in text
+    assert "{label: $label" not in text
     assert 'write_kc_source_diagnostic "host-file"' in text
     assert 'write_kc_source_diagnostic "host-file-sudo"' in text
     assert "sudo -n cat" in text
