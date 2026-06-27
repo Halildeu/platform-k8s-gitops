@@ -1,5 +1,27 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 G-COMP retention parameter provenance hardening packaged (2026-06-27)
+
+The G-COMP engineering compliance verifier now machine-checks owner provenance
+for effective retention durations without turning missing owner values into an
+engineering blocker:
+
+- If `retentionParameters` is absent, the verifier continues to rely on
+  `retentionDefaultsFailClosed=true`: unset/default durable storage paths must
+  refuse to store.
+- If effective retention duration values are supplied, the evidence must carry
+  a bounded `ownerDecisionRef` using an owner/legal/operator/protected evidence
+  URI, `appliedAsConfig=true`, `hardcodedInCode=false`, and bounded positive day
+  values for the supplied retention fields.
+- `runbook://` examples and hardcoded fixture/code/manifests are not accepted
+  as owner provenance for effective values.
+
+Boundary: source-side verifier/runbook hardening only. No owner duration value
+was chosen, no legal acceptance is claimed, no runtime object was mutated, and
+no production lifecycle/deletion proof or G-COMP acceptance is claimed. Legal
+track stays parallel; engineering can proceed with fail-closed unset/default
+behavior until owner values are externally supplied.
+
 ## Live Delta — Faz 24 G-CAP external summary boundary hardening packaged (2026-06-27)
 
 The G-CAP aggregate capture verifier now requires external-recorder verifier

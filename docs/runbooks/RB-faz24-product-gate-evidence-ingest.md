@@ -15,7 +15,11 @@ product-gate evidence:
 - G-OPS on-prem operability evidence from
   `scripts/faz24/verify_gops_operability_gate_evidence.py`
 - G-COMP compliance readiness evidence from
-  `scripts/faz24/verify_gcomp_compliance_gate_evidence.py`
+  `scripts/faz24/verify_gcomp_compliance_gate_evidence.py`. If G-COMP evidence
+  includes owner-supplied effective retention values, it must include bounded
+  `retentionParameters.ownerDecisionRef`, `appliedAsConfig=true`, and
+  `hardcodedInCode=false`; otherwise the unset/default path must remain
+  fail-closed.
 
 The workflow is `.github/workflows/faz24-product-gate-evidence-ingest.yml`.
 It validates redacted metadata evidence only. It does not run a pilot, mutate

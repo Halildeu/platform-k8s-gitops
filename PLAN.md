@@ -112,6 +112,17 @@ pipeline default is enabled, and legal/production overclaims are forbidden.
 Legal acceptance, VERBIS güncelliği or production legal go still require
 owner/legal artifact; agent/CI/PR must not claim them.
 
+**Faz 24 G-COMP retention provenance delta (2026-06-27)**:
+`scripts/faz24/verify_gcomp_compliance_gate_evidence.py` now treats effective
+retention duration values as optional owner-supplied parameters with
+machine-checkable provenance. Missing owner values remain non-blocking only
+when `retentionDefaultsFailClosed=true`; if `retentionParameters` supplies
+effective day values, the envelope must include bounded `ownerDecisionRef`,
+`appliedAsConfig=true`, `hardcodedInCode=false`, and positive bounded day
+values. This is verifier/runbook hardening only; no owner duration value,
+legal acceptance, production lifecycle/deletion proof, or G-COMP acceptance is
+claimed.
+
 **Faz 24 desktop capture gate delta (2026-06-27)**:
 `platform-k8s-gitops` now carries a metadata-only desktop mic+loopback evidence
 verifier and runbook:

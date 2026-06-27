@@ -56,6 +56,13 @@ The evidence file must be a JSON object with:
   `retentionDefaultsFailClosed=true`,
   `consentDefaultRequired=true`, `deletionPipelineDefaultEnabled=true`, and
   `retentionDurationsHardcoded=false`.
+- optional `retentionParameters` object when owner-supplied effective values
+  have been configured:
+  `effectiveValuesSupplied=true`, bounded `ownerDecisionRef`,
+  `appliedAsConfig=true`, `hardcodedInCode=false`, and positive integer day
+  values for any supplied `rawAudioRetentionDays`,
+  `transcriptRetentionDays`, `derivedArtifactRetentionDays`, or
+  `auditRetentionDays`.
 
 ## Retention Parameter Semantics
 
@@ -72,7 +79,15 @@ engineering blockers. G-COMP evidence must show one of these states:
 
 Hardcoded duration claims are rejected by `retentionDurationsHardcoded=false`.
 Missing owner values are not an engineering blocker when the unset/default path
-is fail-closed.
+is fail-closed. If effective values are supplied, `retentionParameters` must
+carry the same provenance: `ownerDecisionRef` must use a bounded
+`github://`, `github-actions://`, `artifact://`, `operator://`,
+`protected://`, `legal://`, or `dpo://` URI. `runbook://` examples are not
+owner decision evidence.
+
+An empty `retentionParameters` object means owner values are still pending; the
+verifier treats it like absent retention parameters and relies on fail-closed
+unset/default behavior.
 
 ## Command
 
