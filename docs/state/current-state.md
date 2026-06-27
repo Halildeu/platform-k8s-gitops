@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 product-gate operator handoff package packaged (2026-06-27)
+
+The remaining G-CAP / G-OPS / G-COMP product-gate evidence sequence under
+`platform-k8s-gitops#1615` now has a metadata-only operator handoff package:
+
+- `scripts/faz24/build-product-gate-operator-handoff.py` emits `README.md`,
+  `faz24-product-gate-operator-handoff.json`, and `SHA256SUMS` under schema
+  `faz24.productGate.operator-handoff.v1`.
+- `.github/workflows/faz24-product-gate-operator-handoff.yml` builds and
+  uploads the same package from `workflow_dispatch`, with two bounded inputs:
+  operator batch id and GitOps ref.
+- `tests/faz24/test_build_product_gate_operator_handoff.py` locks the package
+  boundary: no credential/certificate/private-key/raw-audio-shaped material,
+  checked `SHA256SUMS`, explicit `Needs Verify` acceptance state, and exact
+  redacted-evidence-selection -> G-CAP -> G-OPS -> G-COMP -> reviewer
+  acceptance ordering.
+
+The package also corrects the handoff command pattern for existing external
+recorder and desktop capture G-CAP ingest: the workflow input is now a
+`{"reports":[...]}` wrapper built from accepted verifier summaries, not the
+aggregate verifier output. The ingest workflow then reruns the selected
+verifier before uploading an artifact.
+
+Boundary: source-side package/workflow/test documentation only. Building the
+package does not collect runtime evidence, run a pilot, mutate Kubernetes,
+touch Vault, change firewall or legal state, ingest evidence, store raw meeting
+data, or advance #1615 status. Live #1615 still requires accepted redacted
+G-CAP/G-OPS/G-COMP evidence, no-mutation ingest artifacts, reviewer acceptance,
+and separate direct-STT / desktop / I3 / I7 / production gates. KVKK/VERBIS
+owner legal acceptance remains a parallel legal track after owner notification;
+it is not an engineering blocker and is not claimed by this package.
+
 ## Live Delta — Faz 24 desktop capture operator handoff package packaged (2026-06-27)
 
 The remaining real `platform-desktop` microphone + loopback capture path under

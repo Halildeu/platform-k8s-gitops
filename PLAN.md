@@ -167,6 +167,20 @@ enough verifier summaries exist. Boundary: no desktop app execution, no token
 read, no testai connection, no Kubernetes/Vault mutation, no audio send, and
 no #1615 status advance.
 
+**Faz 24 product-gate operator handoff package delta (2026-06-27)**:
+`build-product-gate-operator-handoff.py` plus workflow
+`faz24-product-gate-operator-handoff.yml` now package the remaining
+G-CAP/G-OPS/G-COMP evidence sequence as a metadata-only operator artifact
+(`README.md` + manifest + `SHA256SUMS`). It orders redacted evidence selection
+-> G-CAP aggregate verifier and ingest wrapper -> G-OPS verifier and ingest
+-> G-COMP verifier and ingest -> reviewer acceptance. Existing
+external-recorder and desktop handoff G-CAP ingest commands now submit a
+`{"reports":[...]}` wrapper built from verifier summaries, not the aggregate
+verifier output. Boundary: no live evidence collection, no pilot run, no
+Kubernetes/Vault/firewall/legal mutation, no evidence ingest, no legal go, and
+no #1615 status advance. KVKK/VERBIS owner legal acceptance remains parallel
+and is not an engineering blocker after owner notification.
+
 **Faz 24 G-CAP desktop aggregation delta (2026-06-27)**:
 `scripts/faz24/verify_gcap_capture_gate_evidence.py` now accepts both redacted
 external recorder verifier summaries and redacted desktop capture verifier

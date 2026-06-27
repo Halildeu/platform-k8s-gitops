@@ -103,6 +103,26 @@ class BuildExternalRecorderOperatorHandoffTest(unittest.TestCase):
                 gates["gcap-aggregate"]["commands"]["verify"],
             )
             self.assertIn(
+                'jq -s \'{"reports": .}\'',
+                gates["gcap-aggregate"]["commands"]["prepareIngestInput"],
+            )
+            self.assertIn(
+                "faz24-desktop-capture-evidence.verify.json",
+                gates["gcap-aggregate"]["commands"]["prepareIngestInput"],
+            )
+            self.assertNotIn(
+                "faz24-desktop-capture-evidence-04.verify.json",
+                gates["gcap-aggregate"]["commands"]["prepareIngestInput"],
+            )
+            self.assertIn(
+                'all(.reports[]; .status == "pass" and .tokenIncluded == false)',
+                gates["gcap-aggregate"]["commands"]["prepareIngestInput"],
+            )
+            self.assertIn(
+                "faz24-gcap-capture-gate.ingest-input.json",
+                gates["gcap-aggregate"]["commands"]["ingest"],
+            )
+            self.assertIn(
                 "faz24-product-gate-evidence-ingest.yml",
                 gates["gcap-aggregate"]["commands"]["ingest"],
             )
