@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 I7 app-mTLS operator handoff package packaged (2026-06-27)
+
+The remaining `platform-ai#198` / `platform-k8s-gitops#1615` I7 app-mTLS
+evidence sequence now has a metadata-only operator handoff package:
+
+- `scripts/faz24/build-i7-app-mtls-operator-handoff.py` emits `README.md`,
+  `faz24-i7-app-mtls-operator-handoff.json`, and `SHA256SUMS` under schema
+  `faz24.i7AppMtls.operator-handoff.v1`.
+- `.github/workflows/faz24-i7-app-mtls-operator-handoff.yml` builds and
+  uploads the same package from `workflow_dispatch`, with bounded inputs for
+  operator batch id, GitOps ref, source/Denetim WG IPs, and evidence JSON
+  paths.
+- `tests/faz24/test_build_i7_app_mtls_operator_handoff.py` locks the package
+  boundary: no credential/certificate/private-key/raw-audio-shaped material,
+  checked `SHA256SUMS`, explicit `Needs Verify` acceptance state, and exact
+  endpoint-policy -> live-stt-preflight -> prod-gate-evidence -> reviewer
+  acceptance ordering.
+- `docs/runbooks/RB-faz24-i7-app-mtls-evidence.md` now points operators to the
+  package and keeps the `live-stt-preflight` vs full `prod-gate` boundary
+  explicit.
+
+Boundary: source-side package/workflow/test/runbook documentation only.
+Building the package does not connect to Denetim PC, Vault, Kubernetes, Caddy,
+firewall/EDR policy, or production; does not collect runtime evidence; does
+not enable direct-STT; does not send audio; and does not advance #198/#1615
+status. `live-stt-preflight` remains only the bounded TCP/8243 profile. Full
+I7 still requires `prod-gate` metadata for live-stt plus meeting-ai 8343,
+request audit, plaintext-bypass closure, rotation drill, failure drill,
+redaction, ingest artifact, and reviewer acceptance. #188 compute-plane audit,
+#182 direct-STT e2e, desktop mic/loopback, product pilot, production readiness,
+and legal go remain separate.
+
 ## Live Delta — Faz 24 product-gate operator handoff package packaged (2026-06-27)
 
 The remaining G-CAP / G-OPS / G-COMP product-gate evidence sequence under

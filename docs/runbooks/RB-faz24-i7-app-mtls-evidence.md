@@ -74,6 +74,34 @@ If the security owner chooses logging before allowlisting, the log must be
 bounded to the same tuple and must not include packet payload, raw audio,
 private keys, bearer material, JWTs, or raw certificate chains.
 
+## 2.2 Operator Handoff Package
+
+Use the source-side handoff builder when #198 needs a single coordination
+artifact for the remaining I7 evidence sequence:
+
+```bash
+python3 scripts/faz24/build-i7-app-mtls-operator-handoff.py \
+  --output-dir /tmp/faz24-i7-app-mtls-operator-handoff
+```
+
+Or build the same package through GitHub Actions:
+
+```bash
+gh workflow run faz24-i7-app-mtls-operator-handoff.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main
+```
+
+The package emits `README.md`, `faz24-i7-app-mtls-operator-handoff.json`, and
+`SHA256SUMS`. It is metadata-only: it does not connect to Denetim PC, Vault,
+Kubernetes, Caddy, firewall/EDR policy, or production; it does not collect
+runtime evidence, enable direct-STT, send audio, or advance #198/#1615.
+
+The package orders the handoff as endpoint/security policy evidence ->
+`live-stt-preflight` verifier/ingest -> full `prod-gate` verifier/ingest ->
+reviewer acceptance. A `live-stt-preflight` PASS is only the bounded
+TCP/8243 profile and does not close full I7.
+
 ## 3. Metadata Contract
 
 Write a JSON file using schema `faz24.i7.app-mtls.evidence.v1`.
