@@ -40,10 +40,29 @@ need() {
   }
 }
 
+docker_cmd() {
+  if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
+    docker "$@"
+  else
+    sudo -n docker "$@"
+  fi
+}
+
+need_docker() {
+  if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
+    return 0
+  fi
+  if sudo -n docker version >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "FAIL missing command: docker (also unavailable through sudo -n docker)" >&2
+  exit 1
+}
+
 need openssl
-need docker
 need sudo
 need jq
+need_docker
 
 echo "A1_VAULT_HTTPS_PROVISION_BEGIN host=$(hostname) tls_dir=$VAULT_TLS_DIR restart=$RESTART_VAULT auto_unseal=$AUTO_UNSEAL_AFTER_RESTART force=$FORCE"
 
@@ -153,10 +172,10 @@ openssl x509 -in "$VAULT_TLS_DIR/tls.crt" -noout -fingerprint -sha256 -subject -
 
 if [ "$RESTART_VAULT" = "1" ]; then
   cd "$VAULT_COMPOSE_DIR"
-  docker compose --profile manual up -d --force-recreate vault >/dev/null
+  docker_cmd compose --profile manual up -d --force-recreate vault >/dev/null
 
   sealed="$(
-    docker exec platform-vault-test sh -c \
+    docker_cmd exec platform-vault-test sh -c \
       'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json' \
       2>/dev/null | jq -r '.sealed // "unknown"' || true
   )"
@@ -164,14 +183,14 @@ if [ "$RESTART_VAULT" = "1" ]; then
     echo "INFO Vault is sealed after restart; applying test unseal keys (values not printed)"
     for idx in 0 1; do
       sudo -n jq -r --argjson idx "$idx" '.unseal_keys_b64[$idx]' "$VAULT_INIT_JSON" \
-        | docker exec -i platform-vault-test vault operator unseal - >/dev/null
+        | docker_cmd exec -i platform-vault-test vault operator unseal - >/dev/null
     done
   elif [ "$sealed" = "true" ]; then
     echo "FAIL Vault is sealed after restart and AUTO_UNSEAL_AFTER_RESTART is not enabled" >&2
     exit 1
   fi
 
-  docker exec platform-vault-test sh -c \
+  docker_cmd exec platform-vault-test sh -c \
     'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'
   echo "PASS vault https 8202 CA-pinned status works"
 else
