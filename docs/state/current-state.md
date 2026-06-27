@@ -197,6 +197,12 @@ Engineering boundary:
   values are not an engineering blocker if the durable storage path is
   fail-closed/refuse-to-store and no hardcoded duration is accepted as a legal
   decision.
+- Fixed duration choices are not blockers while the owner value is pending only
+  if the fail-closed/refuse-to-store default remains active; the value is
+  applied later as config/evidence when the owner supplies it.
+- Any future architecture decision covered by `ADR-0030` D6 trigger surfaces
+  must use provider-distinct cross-AI consultation and be recorded as an ADR
+  before it becomes canonical.
 - Legal acceptance, VERBIS güncelliği, DPA/subprocessor decision, and production
   legal go remain owner/legal artifacts. They are not produced by agent/CI/PR
   and must not be used as closure language without evidence.
