@@ -46,8 +46,8 @@ Owner decisions recorded: **#548 = STRONG path (real hardware/TPM attestation)**
 
 ## 2. PART B — Agent execution (autonomous; cross-AI reviewed)
 
-### B1 · #2067 durable version-drift guard — NOW
-Extend `scripts/automation/sync-test-overlay.sh` co-bump + `scripts/governance/check-remote-bridge-digest-alignment.sh` to also cover the 3 SSOT refs (audit `EXPECTED_REMOTE_BRIDGE_DIGEST` + apply-workflow default + contract §3) so a future endpoint-admin V-bump cannot silently re-drift the bridge gate (the recurring "version mismatch" class). Interim rule until landed: every endpoint-admin V-bump co-updates overlays **and** the 3 SSOT refs.
+### B1 · #2067 durable version-drift guard — ✅ DONE (Codex 019f0733 verdict C)
+**Eliminated the drift sources instead of syncing copies.** The single SSOT is now the **rendered overlay**: a shared lib (`scripts/governance/lib-remote-bridge-digest.sh`) renders the overlay and extracts the endpoint-admin digest; the completion-audit **derives** `expected_digest` from it (no hardcoded `EXPECTED_REMOTE_BRIDGE_DIGEST` literal — env override only as an explicit `ALLOW_EXPECTED_DIGEST_OVERRIDE=1` diagnostic escape hatch, output marks `expected_source`); the contract §3 cell is **de-pinned**; the apply-workflow `expected_digest` default is **emptied** (derived from the render at run time, asserted equal if provided). The PR-time guard + a new `tests/governance/test_remote_bridge_digest_alignment.sh` enforce the same-image invariant fail-closed. A future endpoint-admin V-bump can no longer silently re-drift any literal — there are no literal copies left (the auto-sync keeps the 2 overlays aligned; everything else derives). Live-proven: `REMOTE_BRIDGE_LIVE=pass expected_source=rendered-overlay`.
 
 ### B2 · #1580 VIEW_ONLY build — slice-by-slice (in-house; NOT Guacamole/RDP/VNC)
 First acceptance = **single-device attended bounded pilot** over the existing outbound agent + remote-bridge (low-fps PNG/JPEG over gRPC DATA). **MVP = `recording_mode=disabled`** (live VIEW_ONLY, no content persistence; metadata audit always-on — ADR-0044 D3/D5). Slices (each cross-AI reviewed + browser smoke):

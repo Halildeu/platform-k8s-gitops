@@ -16,12 +16,23 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
 source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
 endpoint_agent_release_policy_load "$REPO_ROOT"
+# shellcheck source=scripts/governance/lib-remote-bridge-digest.sh
+source "$REPO_ROOT/scripts/governance/lib-remote-bridge-digest.sh"
+# Single SSOT for the remote-bridge expected digest: the rendered overlay
+# (issue #2067 / Codex 019f0733 verdict C). Absolute overlay paths so the
+# derivation works regardless of the audit's CWD.
+RBD_PRIMARY_OVERLAY="$REPO_ROOT/kustomize/overlays/test"
+RBD_BRIDGE_OVERLAY="$REPO_ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge"
 
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
 REMOTE_BRIDGE_KUBECTL_MODE="${REMOTE_BRIDGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
-EXPECTED_REMOTE_BRIDGE_DIGEST="${EXPECTED_REMOTE_BRIDGE_DIGEST:-sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842}"
+# EXPECTED_REMOTE_BRIDGE_DIGEST is DERIVED at audit time (check_remote_bridge) from
+# the rendered overlay — there is NO hardcoded literal (the old default was a drift
+# source, #2067). Setting it in the env is honored ONLY as an explicit diagnostic
+# escape hatch with ALLOW_EXPECTED_DIGEST_OVERRIDE=1 (output marks
+# expected_source=env_override); it never silently overrides the rendered source.
 B1_4_ATTESTATION_ACCEPTANCE_REF="${B1_4_ATTESTATION_ACCEPTANCE_REF:-Halildeu/platform-backend#548}"
 B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS="${B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS:-tpm-complete,hardware-attestation-complete,5-device,50-device,800-device,production,broad-rollout}"
 VIEW_ONLY_ACCEPTANCE_REF="${VIEW_ONLY_ACCEPTANCE_REF:-Halildeu/platform-k8s-gitops#1580}"
@@ -870,21 +881,78 @@ check_view_only_kvkk() {
   return 0
 }
 
-remote_bridge_kubectl_output() {
-  kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" get deploy endpoint-admin-service endpoint-admin-remote-bridge \
-    -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image
-  kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" get pod \
-    -l 'app.kubernetes.io/name in (endpoint-admin-service,endpoint-admin-remote-bridge)' \
-    -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID
-  kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" get externalsecret \
-    endpoint-admin-remote-bridge-secrets endpoint-admin-remote-bridge-signer endpoint-admin-remote-bridge-tls \
-    -o custom-columns=NAME:.metadata.name,READY:.status.conditions[0].status,REASON:.status.conditions[0].reason \
-    --no-headers
+remote_bridge_query_cmd() {
+  # remote_bridge_query_cmd <q_context> <q_namespace>
+  # Echo a single shell command that emits three marker-delimited JSON blocks
+  # (deploys, pods, ExternalSecrets). The SAME command runs locally (bash -c) and
+  # remotely (ssh), so the exact-parse below is identical in both modes.
+  local q_context="$1" q_namespace="$2" q_selector
+  q_selector="$(shell_quote 'app.kubernetes.io/name in (endpoint-admin-service,endpoint-admin-remote-bridge)')"
+  printf '%s' "echo '===RB_DEPLOYS==='; kubectl --context $q_context -n $q_namespace get deploy endpoint-admin-service endpoint-admin-remote-bridge -o json; echo '===RB_PODS==='; kubectl --context $q_context -n $q_namespace get pod -l $q_selector -o json; echo '===RB_ES==='; kubectl --context $q_context -n $q_namespace get externalsecret endpoint-admin-remote-bridge-secrets endpoint-admin-remote-bridge-signer endpoint-admin-remote-bridge-tls -o json"
+}
+
+_rb_section() {
+  # _rb_section <combined-output> <marker>; print the JSON block after ===<marker>===.
+  printf '%s\n' "$1" | awk -v m="===$2===" '
+    $0 == m { grab = 1; next }
+    /^===RB_[A-Z]+===$/ { grab = 0 }
+    grab { print }
+  '
+}
+
+evaluate_remote_bridge_live() {
+  # evaluate_remote_bridge_live <expected-digest> <deploys-json> <pods-json> <es-json>
+  # Exact per-object assertions (Codex 019f0733 P1/P2 — replaces grep-count, which
+  # could mask object-specific drift): both named Deployments carry the expected
+  # image; for each app label there is >=1 non-deleting Running pod and ALL such
+  # pods are Ready on the expected imageID (no pod on a wrong digest); the three
+  # named ExternalSecrets are Ready=True/SecretSynced. Prints "ok" | "blocked
+  # reason=...". Returns 0 only on ok.
+  local expected="$1" deploys="$2" pods="$3" es="$4"
+  local full="${RBD_IMG}@${expected}" reasons=() d lbl
+  for d in endpoint-admin-service endpoint-admin-remote-bridge; do
+    printf '%s' "$deploys" | jq -e --arg n "$d" --arg f "$full" \
+      '([.items[]|select(.metadata.name==$n)]|length==1)
+       and ([.items[]|select(.metadata.name==$n)][0].spec.template.spec.containers[0].image==$f)' \
+      >/dev/null 2>&1 || reasons+=("deploy:$d")
+  done
+  for lbl in endpoint-admin-service endpoint-admin-remote-bridge; do
+    printf '%s' "$pods" | jq -e --arg n "$lbl" --arg e "$expected" '
+      [ .items[]
+        | select(.metadata.deletionTimestamp == null)
+        | select(.metadata.labels["app.kubernetes.io/name"] == $n)
+        | select(.status.phase == "Running") ] as $p
+      | ($p | length >= 1)
+        and (all($p[];
+              (.status.containerStatuses[0].ready == true)
+              and (.status.containerStatuses[0].imageID | contains($e))))' \
+      >/dev/null 2>&1 || reasons+=("pods:$lbl")
+  done
+  # Per-name exact-one + an explicit Ready=True/SecretSynced condition. Using
+  # `any` over `(.status.conditions // [])` (not a select-stream inside all()) so an
+  # ExternalSecret that EXISTS but has no Ready condition fails closed instead of
+  # being silently skipped (Codex 019f0733 P1).
+  printf '%s' "$es" | jq -e '
+    def es_ready($n):
+      ([.items[] | select(.metadata.name == $n)] | length == 1)
+      and ([.items[] | select(.metadata.name == $n)][0].status.conditions // []
+            | any(.type == "Ready" and .status == "True" and .reason == "SecretSynced"));
+    es_ready("endpoint-admin-remote-bridge-secrets")
+    and es_ready("endpoint-admin-remote-bridge-signer")
+    and es_ready("endpoint-admin-remote-bridge-tls")' \
+    >/dev/null 2>&1 || reasons+=("externalsecrets")
+  if [ "${#reasons[@]}" -ne 0 ]; then
+    printf 'blocked reason=%s' "$(IFS=,; printf '%s' "${reasons[*]}")"
+    return 1
+  fi
+  printf 'ok'
+  return 0
 }
 
 check_remote_bridge() {
-  local output digest_hits secret_hits
-  local q_context q_namespace q_selector remote_cmd effective_mode
+  local output effective_mode rb_query q_context q_namespace
+  local expected_digest expected_source expected_ref derive_rc
+  local deploys_json pods_json es_json eval_out eval_rc
   case "$REMOTE_BRIDGE_KUBECTL_MODE" in
     local|local-kubectl) effective_mode="local-kubectl" ;;
     ssh) effective_mode="ssh" ;;
@@ -906,12 +974,47 @@ check_remote_bridge() {
     return 1
   fi
 
+  # Derive the expected digest from the rendered overlay (single SSOT, #2067 /
+  # Codex 019f0733). An env-set EXPECTED_REMOTE_BRIDGE_DIGEST is honored ONLY as an
+  # explicit diagnostic escape hatch (ALLOW_EXPECTED_DIGEST_OVERRIDE=1) and is
+  # marked expected_source=env_override — never a silent fallback for a canonical pass.
+  expected_source="rendered-overlay"
+  if [ -n "${EXPECTED_REMOTE_BRIDGE_DIGEST:-}" ]; then
+    if [ "${ALLOW_EXPECTED_DIGEST_OVERRIDE:-0}" = "1" ]; then
+      expected_source="env_override"
+      expected_digest="$EXPECTED_REMOTE_BRIDGE_DIGEST"
+    else
+      printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=expected-digest-env-set-without-ALLOW_EXPECTED_DIGEST_OVERRIDE\n' "$effective_mode"
+      return 1
+    fi
+  else
+    derive_rc=0
+    expected_ref="$(rbd_expected_digest)" || derive_rc=$?
+    case "$derive_rc" in
+      0) expected_digest="${expected_ref##*@}" ;;
+      3) printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=missing-kustomize-and-kubectl-for-expected-digest\n' "$effective_mode"; return 1 ;;
+      4) printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=overlay-digest-drift-primary-ne-bridge\n' "$effective_mode"; return 1 ;;
+      *) printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=expected-digest-derivation-failed code=%s\n' "$effective_mode" "$derive_rc"; return 1 ;;
+    esac
+  fi
+  if ! printf '%s' "$expected_digest" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+    printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=expected-digest-malformed expected_source=%s\n' "$effective_mode" "$expected_source"
+    return 1
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=missing-jq\n' "$effective_mode"
+    return 1
+  fi
+  q_context="$(shell_quote "$KUBE_CONTEXT")"
+  q_namespace="$(shell_quote "$KUBE_NAMESPACE")"
+  rb_query="$(remote_bridge_query_cmd "$q_context" "$q_namespace")"
   if [ "$effective_mode" = "local-kubectl" ]; then
     if ! command -v kubectl >/dev/null 2>&1; then
       printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=missing-kubectl\n' "$effective_mode"
       return 1
     fi
-    if ! output="$(remote_bridge_kubectl_output 2>&1)"; then
+    if ! output="$(bash -c "$rb_query" 2>&1)"; then
       printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=%q\n' "$effective_mode" "$output"
       return 1
     fi
@@ -920,29 +1023,36 @@ check_remote_bridge() {
       printf 'REMOTE_BRIDGE_LIVE=unknown mode=ssh reason=missing-ssh\n'
       return 1
     fi
-    q_context="$(shell_quote "$KUBE_CONTEXT")"
-    q_namespace="$(shell_quote "$KUBE_NAMESPACE")"
-    q_selector="$(shell_quote 'app.kubernetes.io/name in (endpoint-admin-service,endpoint-admin-remote-bridge)')"
-    remote_cmd="kubectl --context $q_context -n $q_namespace get deploy endpoint-admin-service endpoint-admin-remote-bridge -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image && kubectl --context $q_context -n $q_namespace get pod -l $q_selector -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID && kubectl --context $q_context -n $q_namespace get externalsecret endpoint-admin-remote-bridge-secrets endpoint-admin-remote-bridge-signer endpoint-admin-remote-bridge-tls -o custom-columns=NAME:.metadata.name,READY:.status.conditions[0].status,REASON:.status.conditions[0].reason --no-headers"
-    # shellcheck disable=SC2029 # q_context/q_namespace are shell-escaped locally and intentionally expanded before ssh.
-    if ! output="$(ssh "$SSH_TARGET" "$remote_cmd" 2>&1)"; then
+    # shellcheck disable=SC2029 # rb_query is composed from shell_quote'd context/namespace; intentional remote expansion.
+    if ! output="$(ssh "$SSH_TARGET" "$rb_query" 2>&1)"; then
       printf 'REMOTE_BRIDGE_LIVE=unknown mode=ssh reason=%q\n' "$output"
       return 1
     fi
   fi
 
-  printf 'REMOTE_BRIDGE_LIVE_OUTPUT_BEGIN\n%s\nREMOTE_BRIDGE_LIVE_OUTPUT_END\n' "$output"
-  # Pilot topology intentionally runs the primary endpoint-admin deployment and
-  # the separate remote-bridge broker deployment from the same endpoint-admin
-  # image. If remote-bridge becomes a separate image, split this into two
-  # explicit digest expectations instead of weakening the check.
-  digest_hits="$(printf '%s\n' "$output" | grep -c "@${EXPECTED_REMOTE_BRIDGE_DIGEST}" || true)"
-  secret_hits="$(printf '%s\n' "$output" | grep -cE 'True.*SecretSynced' || true)"
-  if [ "$digest_hits" -ge 4 ] && [ "$secret_hits" -ge 3 ]; then
-    printf 'REMOTE_BRIDGE_LIVE=pass mode=%s expected_digest=%s\n' "$effective_mode" "$EXPECTED_REMOTE_BRIDGE_DIGEST"
+  deploys_json="$(_rb_section "$output" RB_DEPLOYS)"
+  pods_json="$(_rb_section "$output" RB_PODS)"
+  es_json="$(_rb_section "$output" RB_ES)"
+  eval_rc=0
+  eval_out="$(evaluate_remote_bridge_live "$expected_digest" "$deploys_json" "$pods_json" "$es_json")" || eval_rc=$?
+
+  # Env-override is a DIAGNOSTIC escape hatch only — it can NEVER be a canonical
+  # completion source (Codex 019f0733 P1). Always return non-zero in that mode so
+  # main() never folds it into F22_6_COMPLETION=pass.
+  if [ "$expected_source" = "env_override" ]; then
+    if [ "$eval_rc" = 0 ]; then
+      printf 'REMOTE_BRIDGE_LIVE=diagnostic_pass mode=%s expected_source=env_override expected_digest=%s reason=env-override-not-canonical\n' "$effective_mode" "$expected_digest"
+    else
+      printf 'REMOTE_BRIDGE_LIVE=diagnostic_blocked mode=%s expected_source=env_override expected_digest=%s %s\n' "$effective_mode" "$expected_digest" "$eval_out"
+    fi
+    return 1
+  fi
+
+  if [ "$eval_rc" = 0 ]; then
+    printf 'REMOTE_BRIDGE_LIVE=pass mode=%s expected_source=%s expected_digest=%s\n' "$effective_mode" "$expected_source" "$expected_digest"
     return 0
   fi
-  printf 'REMOTE_BRIDGE_LIVE=blocked mode=%s expected_digest=%s digest_hits=%s secret_synced_hits=%s\n' "$effective_mode" "$EXPECTED_REMOTE_BRIDGE_DIGEST" "$digest_hits" "$secret_hits"
+  printf 'REMOTE_BRIDGE_LIVE=blocked mode=%s expected_source=%s expected_digest=%s %s\n' "$effective_mode" "$expected_source" "$expected_digest" "$eval_out"
   return 1
 }
 
