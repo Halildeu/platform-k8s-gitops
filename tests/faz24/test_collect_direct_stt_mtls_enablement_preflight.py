@@ -40,11 +40,15 @@ class FakeRunner:
     def __init__(
         self,
         *,
+        missing_context: bool = False,
+        namespace_reachable: bool = True,
         missing_secret_key: bool = False,
         mtls_status: int = 200,
         vault_path: str = "kv/platform/audio-gateway-service",
         git_sha: str | None = "91a743542cdaf6996dea6d055cf08252e9122e59",
     ):
+        self.missing_context = missing_context
+        self.namespace_reachable = namespace_reachable
         self.missing_secret_key = missing_secret_key
         self.mtls_status = mtls_status
         self.vault_path = vault_path
@@ -57,6 +61,19 @@ class FakeRunner:
             if self.git_sha is None:
                 return collector.CommandResult(128, "", "not-a-git-repo")
             return collector.CommandResult(0, self.git_sha + "\n", "")
+        if len(argv) == 6 and argv[:3] == ["kubectl", "config", "get-contexts"]:
+            context = argv[3]
+            if self.missing_context:
+                return collector.CommandResult(1, "", f"context {context} not found")
+            return collector.CommandResult(0, context + "\n", "")
+        if (
+            len(argv) >= 8
+            and argv[:4] == ["kubectl", "--context", argv[2], "get"]
+            and argv[4] == "namespace"
+        ):
+            if not self.namespace_reachable:
+                return collector.CommandResult(1, "", "namespace not found")
+            return self._json({"metadata": {"name": argv[5]}})
         if argv[:7] == [
             "kubectl",
             "--context",
@@ -279,11 +296,19 @@ class DirectSttMtlsPreflightCollectorTest(unittest.TestCase):
             evidence["aggregateSecret"]["runtimeKeyNames"],
         )
         self.assertFalse(evidence["aggregateSecret"]["directSttKeysPresent"])
-        self.assertTrue(all("--context" in command for command in runner.commands if command and command[0] == "kubectl"))
+        runtime_kubectl_commands = [
+            command
+            for command in runner.commands
+            if command and command[0] == "kubectl" and command[1] != "config"
+        ]
+        self.assertTrue(all("--context" in command for command in runtime_kubectl_commands))
         exec_commands = [command for command in runner.commands if "exec" in command]
         self.assertEqual(1, len(exec_commands))
         self.assertIn("curl -sS", exec_commands[0][-1])
         self.assertNotIn("curl -skS", exec_commands[0][-1])
+        self.assertTrue(evidence["environment"]["contextAvailable"])
+        self.assertTrue(evidence["environment"]["namespaceReachable"])
+        self.assertEqual("", evidence["environment"]["contextFailure"])
 
         result = self.run_verifier(evidence)
 
@@ -334,6 +359,49 @@ class DirectSttMtlsPreflightCollectorTest(unittest.TestCase):
         self.assertEqual("k3d-prod", evidence["environment"]["cluster"])
         self.assertEqual("k3d-prod", evidence["environment"]["kubectlContext"])
         self.assertEqual("fail", evidence["status"])
+
+    def test_missing_kube_context_short_circuits_runtime_reads(self):
+        runner = FakeRunner(missing_context=True)
+
+        evidence = collector.build_evidence(runner=runner)
+
+        self.assertEqual("fail", evidence["status"])
+        self.assertFalse(evidence["environment"]["contextAvailable"])
+        self.assertFalse(evidence["environment"]["namespaceReachable"])
+        self.assertEqual(
+            "kubectl-context-k3d-test-missing",
+            evidence["environment"]["contextFailure"],
+        )
+        self.assertEqual(["kubectl-context-k3d-test-missing"], evidence["failures"])
+        runtime_kubectl_commands = [
+            command
+            for command in runner.commands
+            if command and command[0] == "kubectl" and command[1] != "config"
+        ]
+        self.assertEqual([], runtime_kubectl_commands)
+
+    def test_unreachable_namespace_short_circuits_runtime_reads(self):
+        runner = FakeRunner(namespace_reachable=False)
+
+        evidence = collector.build_evidence(runner=runner)
+
+        self.assertEqual("fail", evidence["status"])
+        self.assertTrue(evidence["environment"]["contextAvailable"])
+        self.assertFalse(evidence["environment"]["namespaceReachable"])
+        self.assertEqual(
+            "kubectl-namespace-platform-test:command-exit-1",
+            evidence["environment"]["contextFailure"],
+        )
+        self.assertEqual(["kubectl-namespace-platform-test:command-exit-1"], evidence["failures"])
+        runtime_kubectl_commands = [
+            command
+            for command in runner.commands
+            if command and command[0] == "kubectl" and command[1] != "config"
+        ]
+        self.assertEqual(
+            [["kubectl", "--context", "k3d-test", "get", "namespace", "platform-test", "-o", "json"]],
+            runtime_kubectl_commands,
+        )
 
 
 if __name__ == "__main__":

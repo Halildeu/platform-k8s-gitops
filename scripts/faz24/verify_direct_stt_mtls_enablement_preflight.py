@@ -290,6 +290,9 @@ def validate_environment(data: dict[str, Any], checks: list[Check]) -> None:
         env.get("kubectlContext") == EXPECTED_KUBECTL_CONTEXT,
         f"kubectlContext must be {EXPECTED_KUBECTL_CONTEXT}; do not rely on kubectl's default context",
     )
+    add(checks, "environment_context_available", env.get("contextAvailable") is True, "kubectl context must exist locally")
+    add(checks, "environment_namespace_reachable", env.get("namespaceReachable") is True, "target namespace must be reachable through the explicit context")
+    add(checks, "environment_context_failure_empty", env.get("contextFailure") == "", "contextFailure must be empty for pass evidence")
     add(checks, "environment_namespace", env.get("namespace") == EXPECTED_NAMESPACE, f"namespace must be {EXPECTED_NAMESPACE}")
     add(checks, "environment_deployment", env.get("deployment") == EXPECTED_DEPLOYMENT, f"deployment must be {EXPECTED_DEPLOYMENT}")
     add(checks, "environment_pod_name", safe_name(env.get("podName")), "podName must be bounded safe metadata")
