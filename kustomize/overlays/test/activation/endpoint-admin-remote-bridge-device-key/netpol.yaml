@@ -1,0 +1,105 @@
+# Narrow NetworkPolicies for the #548 strong-path broker. The base broker pod is
+# outside part-of=platform, so namespace default-deny applies; these policies add
+# only the explicit paths required for a test pilot.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-device-key-allow-ingress-9444
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/part-of: remote-bridge-device-key
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - ipBlock:
+            cidr: 10.9.10.53/32
+        - ipBlock:
+            cidr: 172.19.0.2/32
+      ports:
+        - protocol: TCP
+          port: 9444
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-device-key-allow-egress-dns
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/part-of: remote-bridge-device-key
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-device-key-allow-egress-openfga
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/part-of: remote-bridge-device-key
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openfga
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-device-key-allow-egress-host-bridge
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/part-of: remote-bridge-device-key
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.6/32
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.5/32
+      ports:
+        - protocol: TCP
+          port: 8080

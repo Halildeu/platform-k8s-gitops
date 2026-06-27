@@ -1,0 +1,14 @@
+# Dedicated diagnostic NodePort for the #548 strong-path broker. It publishes
+# only the mTLS gRPC bridge and leaves 8096/8081 unpublished.
+apiVersion: v1
+kind: Service
+metadata:
+  name: endpoint-admin-remote-bridge
+spec:
+  type: NodePort
+  ports:
+    - name: grpc-bridge
+      port: 9444
+      targetPort: bridge
+      protocol: TCP
+      nodePort: 31945
