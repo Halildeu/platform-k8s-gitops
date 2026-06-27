@@ -1468,7 +1468,8 @@ cmd_sync_state() {
 }
 
 # --- subcommand: verify -------------------------------------------------------
-# PR-merge evidence: a merged PR's `Tracked by #N` -> board Status Needs Verify
+# PR-merge evidence: a merged PR's `Tracked by <ref>` -> board Status Needs Verify
+# where <ref> is #N, repo#N, owner/repo#N, or a full issue URL.
 # + a machine-readable EVIDENCE comment. Idempotent; never downgrades Done /
 # Blocked / Needs Verify; skips (success) non-eligible items.
 cmd_verify() {
@@ -1481,6 +1482,18 @@ cmd_verify() {
   local ref="$1"
   if printf '%s' "$ref" | grep -Eq '^[^/ ]+/[^/ #]+#[0-9]+$'; then
     ref="https://github.com/${ref%#*}/issues/${ref##*#}"
+  elif printf '%s' "$ref" | grep -Eq '^[^/ #]+#[0-9]+$'; then
+    [ -n "$OPT_PR_REPO" ] || die "verify repo#N refs require --pr-repo owner/repo"
+    local pr_owner repo_name pr_owner_norm repo_name_norm
+    pr_owner="${OPT_PR_REPO%%/*}"
+    repo_name="${ref%#*}"
+    pr_owner_norm="$(printf '%s' "$pr_owner" | tr '[:upper:]' '[:lower:]')"
+    repo_name_norm="$(printf '%s' "$repo_name" | tr '[:upper:]' '[:lower:]')"
+    if [ "$repo_name_norm" = "$pr_owner_norm" ]; then
+      log "verify skip — '$ref' looks like owner#N; use #N, repo#N, owner/repo#N, or a full issue URL"
+      return 0
+    fi
+    ref="https://github.com/${pr_owner}/${repo_name}/issues/${ref##*#}"
   elif [ -n "$OPT_REPO" ] && printf '%s' "$ref" | grep -Eq '^[0-9]+$'; then
     ref="https://github.com/$OPT_REPO/issues/$ref"
   fi
