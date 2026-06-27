@@ -52,6 +52,7 @@ KC_SOURCE_JSON="${TMP_DIR}/keycloak-source.json"
 ADMIN_PASS_FILE="${TMP_DIR}/kc-admin-password"
 USER_PASS_FILE="${TMP_DIR}/smoke-user-password"
 TOKEN_FILE="${TMP_DIR}/platform-desktop-token.jwt"
+ADMIN_TOKEN_FILE="${TMP_DIR}/kc-admin-token.jwt"
 
 : > "${GRANT_ATTEMPTS_JSONL}"
 printf '{}\n' > "${CLIENT_BEFORE_JSON}"
@@ -75,6 +76,7 @@ SMOKE_EXIT="not-run"
 SMOKE_VERIFY_EXIT="not-run"
 DIAGNOSTIC_WRITTEN="false"
 CLEANUP_DONE="false"
+KC_ADMIN_MODE=""
 
 safe_error() {
   local value="${1:-}"
@@ -209,7 +211,7 @@ read_keycloak_admin_password() {
       return 0
     fi
     if command -v sudo >/dev/null 2>&1 \
-        && sudo -n cat "${candidate}" > "${ADMIN_PASS_FILE}" 2>/dev/null \
+        && { sudo -n cat "${candidate}" 2>/dev/null | tee "${ADMIN_PASS_FILE}" >/dev/null; } \
         && [[ -s "${ADMIN_PASS_FILE}" ]]; then
       chmod 0600 "${ADMIN_PASS_FILE}"
       write_kc_source_diagnostic "host-file-sudo" "${label}"
@@ -224,18 +226,88 @@ read_keycloak_admin_password() {
 
 kcadm_login() {
   read_keycloak_admin_password || die "keycloak-admin-password-source-missing"
-  "${KCADM[@]}" config credentials \
-    --server "${KC_INTERNAL_SERVER}" \
-    --realm master \
-    --user "${KC_ADMIN_USER}" \
-    --password "$(tr -d '\n' < "${ADMIN_PASS_FILE}")" >/dev/null 2>/dev/null \
-    || die "keycloak-admin-login-failed"
+  if command -v docker >/dev/null 2>&1 && docker inspect "${KC_CONTAINER}" >/dev/null 2>&1; then
+    if "${KCADM[@]}" config credentials \
+        --server "${KC_INTERNAL_SERVER}" \
+        --realm master \
+        --user "${KC_ADMIN_USER}" \
+        --password "$(tr -d '\n' < "${ADMIN_PASS_FILE}")" >/dev/null 2>/dev/null; then
+      KC_ADMIN_MODE="kcadm"
+      return 0
+    fi
+  fi
+
+  local response_file="${TMP_DIR}/admin-token-response.json"
+  local http_status token
+  http_status="$(curl -sS -o "${response_file}" -w '%{http_code}' -X POST \
+    "${KC_BASE_URL}/realms/master/protocol/openid-connect/token" \
+    --data-urlencode "grant_type=password" \
+    --data-urlencode "client_id=admin-cli" \
+    --data-urlencode "username=${KC_ADMIN_USER}" \
+    --data-urlencode "password@${ADMIN_PASS_FILE}" || printf '000')"
+  token="$(jq -r '.access_token // empty' "${response_file}" 2>/dev/null || true)"
+  if [[ "${http_status}" == "200" && -n "${token}" ]]; then
+    printf '%s' "${token}" > "${ADMIN_TOKEN_FILE}"
+    chmod 0600 "${ADMIN_TOKEN_FILE}"
+    KC_ADMIN_MODE="rest"
+    return 0
+  fi
+
+  die "keycloak-admin-login-failed"
+}
+
+admin_auth_header() {
+  printf 'Authorization: Bearer %s' "$(tr -d '\n' < "${ADMIN_TOKEN_FILE}")"
+}
+
+kc_admin_rest() {
+  local method="$1"
+  local path="$2"
+  local out="$3"
+  local body_file="${4:-}"
+  local url="${KC_BASE_URL}/admin/realms/${KC_REALM}${path}"
+  if [[ -n "${body_file}" ]]; then
+    curl -sS -o "${out}" -w '%{http_code}' -X "${method}" \
+      "${url}" \
+      -H "$(admin_auth_header)" \
+      -H "Content-Type: application/json" \
+      --data-binary "@${body_file}" || printf '000'
+  else
+    curl -sS -o "${out}" -w '%{http_code}' -X "${method}" \
+      "${url}" \
+      -H "$(admin_auth_header)" || printf '000'
+  fi
+}
+
+read_client_list() {
+  local out="$1"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    "${KCADM[@]}" get clients -r "${KC_REALM}" -q "clientId=${CLIENT_ID}" > "${out}"
+    return $?
+  fi
+
+  local code
+  code="$(kc_admin_rest GET "/clients?clientId=${CLIENT_ID}" "${out}")"
+  [[ "${code}" == "200" ]]
+}
+
+read_user_list() {
+  local username="$1"
+  local out="$2"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    "${KCADM[@]}" get users -r "${KC_REALM}" -q "username=${username}" -q exact=true > "${out}"
+    return $?
+  fi
+
+  local code
+  code="$(kc_admin_rest GET "/users?username=${username}&exact=true" "${out}")"
+  [[ "${code}" == "200" ]]
 }
 
 capture_client_state() {
   local out="$1"
   local raw="${TMP_DIR}/client-raw.json"
-  "${KCADM[@]}" get clients -r "${KC_REALM}" -q "clientId=${CLIENT_ID}" > "${raw}" \
+  read_client_list "${raw}" \
     || die "keycloak-client-read-failed"
   jq -e --arg clientId "${CLIENT_ID}" '
     .[0] as $c
@@ -273,7 +345,7 @@ capture_client_state() {
 
 resolve_client_uuid() {
   local raw="${TMP_DIR}/client-id-raw.json"
-  "${KCADM[@]}" get clients -r "${KC_REALM}" -q "clientId=${CLIENT_ID}" --fields id > "${raw}" \
+  read_client_list "${raw}" \
     || die "keycloak-client-id-read-failed"
   CLIENT_UUID="$(jq -r '.[0].id // empty' "${raw}")"
   [[ -n "${CLIENT_UUID}" ]] || die "keycloak-platform-desktop-client-id-missing"
@@ -283,16 +355,32 @@ upsert_mapper() {
   local name="$1"
   local mapper_file="$2"
   local existing_id
-  existing_id="$("${KCADM[@]}" get "clients/${CLIENT_UUID}/protocol-mappers/models" -r "${KC_REALM}" \
-    | jq -r --arg name "${name}" '.[]? | select(.name == $name) | .id' | head -n 1)"
-  if [[ -n "${existing_id}" ]]; then
-    "${KCADM[@]}" update "clients/${CLIENT_UUID}/protocol-mappers/models/${existing_id}" \
-      -r "${KC_REALM}" -f "${mapper_file}" >/dev/null \
-      || die "keycloak-mapper-update-failed:${name}"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    existing_id="$("${KCADM[@]}" get "clients/${CLIENT_UUID}/protocol-mappers/models" -r "${KC_REALM}" \
+      | jq -r --arg name "${name}" '.[]? | select(.name == $name) | .id' | head -n 1)"
+    if [[ -n "${existing_id}" ]]; then
+      "${KCADM[@]}" update "clients/${CLIENT_UUID}/protocol-mappers/models/${existing_id}" \
+        -r "${KC_REALM}" -f "${mapper_file}" >/dev/null \
+        || die "keycloak-mapper-update-failed:${name}"
+    else
+      "${KCADM[@]}" create "clients/${CLIENT_UUID}/protocol-mappers/models" \
+        -r "${KC_REALM}" -f "${mapper_file}" >/dev/null \
+        || die "keycloak-mapper-create-failed:${name}"
+    fi
   else
-    "${KCADM[@]}" create "clients/${CLIENT_UUID}/protocol-mappers/models" \
-      -r "${KC_REALM}" -f "${mapper_file}" >/dev/null \
-      || die "keycloak-mapper-create-failed:${name}"
+    local list_file="${TMP_DIR}/mappers-${name}.json"
+    local out_file="${TMP_DIR}/mapper-${name}-out.json"
+    local code
+    code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}/protocol-mappers/models" "${list_file}")"
+    [[ "${code}" == "200" ]] || die "keycloak-mapper-read-failed:${name}"
+    existing_id="$(jq -r --arg name "${name}" '.[]? | select(.name == $name) | .id' "${list_file}" | head -n 1)"
+    if [[ -n "${existing_id}" ]]; then
+      code="$(kc_admin_rest PUT "/clients/${CLIENT_UUID}/protocol-mappers/models/${existing_id}" "${out_file}" "${mapper_file}")"
+      [[ "${code}" == "204" ]] || die "keycloak-mapper-update-failed:${name}"
+    else
+      code="$(kc_admin_rest POST "/clients/${CLIENT_UUID}/protocol-mappers/models" "${out_file}" "${mapper_file}")"
+      [[ "${code}" == "201" || "${code}" == "204" ]] || die "keycloak-mapper-create-failed:${name}"
+    fi
   fi
 }
 
@@ -349,9 +437,11 @@ converge_platform_desktop_mappers() {
 }
 
 create_temp_user() {
-  local existing
-  existing="$("${KCADM[@]}" get users -r "${KC_REALM}" -q "username=${TEMP_USERNAME}" -q exact=true \
-    | jq -r '.[0].id // empty')"
+  local existing lookup_file
+  lookup_file="${TMP_DIR}/temp-user-lookup.json"
+  read_user_list "${TEMP_USERNAME}" "${lookup_file}" \
+    || die "temp-user-lookup-failed:${TEMP_USERNAME}"
+  existing="$(jq -r '.[0].id // empty' "${lookup_file}")"
   [[ -z "${existing}" ]] || die "temp-user-already-exists:${TEMP_USERNAME}"
 
   local create_file="${TMP_DIR}/temp-user.json"
@@ -377,20 +467,49 @@ create_temp_user() {
         org_id: [$tenantId]
       }
     }' > "${create_file}"
-  TEMP_USER_ID="$("${KCADM[@]}" create users -r "${KC_REALM}" -f "${create_file}" -i)"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    TEMP_USER_ID="$("${KCADM[@]}" create users -r "${KC_REALM}" -f "${create_file}" -i)"
+  else
+    local create_out="${TMP_DIR}/temp-user-create.out"
+    local code
+    code="$(kc_admin_rest POST "/users" "${create_out}" "${create_file}")"
+    [[ "${code}" == "201" || "${code}" == "204" ]] || die "temp-user-create-failed"
+    read_user_list "${TEMP_USERNAME}" "${lookup_file}" \
+      || die "temp-user-created-lookup-failed:${TEMP_USERNAME}"
+    TEMP_USER_ID="$(jq -r '.[0].id // empty' "${lookup_file}")"
+  fi
   [[ -n "${TEMP_USER_ID}" ]] || die "temp-user-create-id-missing"
   TEMP_USER_CREATED="true"
 
   openssl rand -hex 24 | tr -d '\n' > "${USER_PASS_FILE}"
   chmod 0600 "${USER_PASS_FILE}"
-  "${KCADM[@]}" set-password -r "${KC_REALM}" --userid "${TEMP_USER_ID}" \
-    --new-password "$(cat "${USER_PASS_FILE}")" >/dev/null 2>/dev/null \
-    || die "temp-user-set-password-failed"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    "${KCADM[@]}" set-password -r "${KC_REALM}" --userid "${TEMP_USER_ID}" \
+      --new-password "$(cat "${USER_PASS_FILE}")" >/dev/null 2>/dev/null \
+      || die "temp-user-set-password-failed"
 
-  "${KCADM[@]}" get "roles/${REQUIRED_ROLE}" -r "${KC_REALM}" >/dev/null \
-    || die "required-realm-role-missing:${REQUIRED_ROLE}"
-  "${KCADM[@]}" add-roles -r "${KC_REALM}" --uusername "${TEMP_USERNAME}" --rolename "${REQUIRED_ROLE}" >/dev/null \
-    || die "required-realm-role-assign-failed:${REQUIRED_ROLE}"
+    "${KCADM[@]}" get "roles/${REQUIRED_ROLE}" -r "${KC_REALM}" >/dev/null \
+      || die "required-realm-role-missing:${REQUIRED_ROLE}"
+    "${KCADM[@]}" add-roles -r "${KC_REALM}" --uusername "${TEMP_USERNAME}" --rolename "${REQUIRED_ROLE}" >/dev/null \
+      || die "required-realm-role-assign-failed:${REQUIRED_ROLE}"
+  else
+    local reset_file="${TMP_DIR}/temp-user-reset-password.json"
+    local reset_out="${TMP_DIR}/temp-user-reset-password.out"
+    local role_file="${TMP_DIR}/required-role.json"
+    local role_assign_file="${TMP_DIR}/required-role-assign.json"
+    local role_assign_out="${TMP_DIR}/required-role-assign.out"
+    local code
+    jq -n --rawfile value "${USER_PASS_FILE}" \
+      '{type:"password", value:$value, temporary:false}' > "${reset_file}"
+    code="$(kc_admin_rest PUT "/users/${TEMP_USER_ID}/reset-password" "${reset_out}" "${reset_file}")"
+    [[ "${code}" == "204" ]] || die "temp-user-set-password-failed"
+
+    code="$(kc_admin_rest GET "/roles/${REQUIRED_ROLE}" "${role_file}")"
+    [[ "${code}" == "200" ]] || die "required-realm-role-missing:${REQUIRED_ROLE}"
+    jq '[.]' "${role_file}" > "${role_assign_file}"
+    code="$(kc_admin_rest POST "/users/${TEMP_USER_ID}/role-mappings/realm" "${role_assign_out}" "${role_assign_file}")"
+    [[ "${code}" == "204" ]] || die "required-realm-role-assign-failed:${REQUIRED_ROLE}"
+  fi
 }
 
 capture_user_diagnostic() {
@@ -401,9 +520,19 @@ capture_user_diagnostic() {
   local user_json="${TMP_DIR}/user.json"
   local creds_json="${TMP_DIR}/credentials.json"
   local roles_json="${TMP_DIR}/roles.json"
-  "${KCADM[@]}" get "users/${TEMP_USER_ID}" -r "${KC_REALM}" > "${user_json}" || true
-  "${KCADM[@]}" get "users/${TEMP_USER_ID}/credentials" -r "${KC_REALM}" > "${creds_json}" || printf '[]\n' > "${creds_json}"
-  "${KCADM[@]}" get "users/${TEMP_USER_ID}/role-mappings/realm" -r "${KC_REALM}" > "${roles_json}" || printf '[]\n' > "${roles_json}"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    "${KCADM[@]}" get "users/${TEMP_USER_ID}" -r "${KC_REALM}" > "${user_json}" || true
+    "${KCADM[@]}" get "users/${TEMP_USER_ID}/credentials" -r "${KC_REALM}" > "${creds_json}" || printf '[]\n' > "${creds_json}"
+    "${KCADM[@]}" get "users/${TEMP_USER_ID}/role-mappings/realm" -r "${KC_REALM}" > "${roles_json}" || printf '[]\n' > "${roles_json}"
+  else
+    local code
+    code="$(kc_admin_rest GET "/users/${TEMP_USER_ID}" "${user_json}")"
+    [[ "${code}" == "200" ]] || printf '{}\n' > "${user_json}"
+    code="$(kc_admin_rest GET "/users/${TEMP_USER_ID}/credentials" "${creds_json}")"
+    [[ "${code}" == "200" ]] || printf '[]\n' > "${creds_json}"
+    code="$(kc_admin_rest GET "/users/${TEMP_USER_ID}/role-mappings/realm" "${roles_json}")"
+    [[ "${code}" == "200" ]] || printf '[]\n' > "${roles_json}"
+  fi
   jq -n \
     --slurpfile user "${user_json}" \
     --slurpfile creds "${creds_json}" \
@@ -427,8 +556,20 @@ capture_user_diagnostic() {
 
 enable_direct_grants_temporarily() {
   DIRECT_GRANTS_ORIGINAL="$(jq -r '.directAccessGrantsEnabled // false' "${CLIENT_BEFORE_JSON}")"
-  "${KCADM[@]}" update "clients/${CLIENT_UUID}" -r "${KC_REALM}" -s directAccessGrantsEnabled=true >/dev/null \
-    || die "platform-desktop-direct-grants-enable-failed"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    "${KCADM[@]}" update "clients/${CLIENT_UUID}" -r "${KC_REALM}" -s directAccessGrantsEnabled=true >/dev/null \
+      || die "platform-desktop-direct-grants-enable-failed"
+  else
+    local client_file="${TMP_DIR}/client-direct-grants.json"
+    local update_file="${TMP_DIR}/client-direct-grants-update.json"
+    local update_out="${TMP_DIR}/client-direct-grants-update.out"
+    local code
+    code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}" "${client_file}")"
+    [[ "${code}" == "200" ]] || die "platform-desktop-direct-grants-read-failed"
+    jq '.directAccessGrantsEnabled = true' "${client_file}" > "${update_file}"
+    code="$(kc_admin_rest PUT "/clients/${CLIENT_UUID}" "${update_out}" "${update_file}")"
+    [[ "${code}" == "204" ]] || die "platform-desktop-direct-grants-enable-failed"
+  fi
   DIRECT_GRANTS_TOGGLED="true"
 }
 
@@ -564,15 +705,36 @@ cleanup_live_state() {
   fi
   set +e
   if [[ -n "${CLIENT_UUID}" && "${DIRECT_GRANTS_TOGGLED}" == "true" && -n "${DIRECT_GRANTS_ORIGINAL}" ]]; then
-    "${KCADM[@]}" update "clients/${CLIENT_UUID}" -r "${KC_REALM}" \
-      -s "directAccessGrantsEnabled=${DIRECT_GRANTS_ORIGINAL}" >/dev/null 2>&1 \
-      && DIRECT_GRANTS_RESTORED="true"
+    if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+      "${KCADM[@]}" update "clients/${CLIENT_UUID}" -r "${KC_REALM}" \
+        -s "directAccessGrantsEnabled=${DIRECT_GRANTS_ORIGINAL}" >/dev/null 2>&1 \
+        && DIRECT_GRANTS_RESTORED="true"
+    elif [[ -s "${ADMIN_TOKEN_FILE}" ]]; then
+      local client_file="${TMP_DIR}/client-direct-grants-restore.json"
+      local update_file="${TMP_DIR}/client-direct-grants-restore-update.json"
+      local update_out="${TMP_DIR}/client-direct-grants-restore.out"
+      local code
+      code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}" "${client_file}")"
+      if [[ "${code}" == "200" ]]; then
+        jq --argjson enabled "${DIRECT_GRANTS_ORIGINAL}" \
+          '.directAccessGrantsEnabled = $enabled' "${client_file}" > "${update_file}"
+        code="$(kc_admin_rest PUT "/clients/${CLIENT_UUID}" "${update_out}" "${update_file}")"
+        [[ "${code}" == "204" ]] && DIRECT_GRANTS_RESTORED="true"
+      fi
+    fi
   fi
   if [[ -n "${TEMP_USER_ID}" && "${TEMP_USER_CREATED}" == "true" ]]; then
-    "${KCADM[@]}" delete "users/${TEMP_USER_ID}" -r "${KC_REALM}" >/dev/null 2>&1 \
-      && TEMP_USER_DELETED="true"
+    if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+      "${KCADM[@]}" delete "users/${TEMP_USER_ID}" -r "${KC_REALM}" >/dev/null 2>&1 \
+        && TEMP_USER_DELETED="true"
+    elif [[ -s "${ADMIN_TOKEN_FILE}" ]]; then
+      local delete_out="${TMP_DIR}/temp-user-delete.out"
+      local code
+      code="$(kc_admin_rest DELETE "/users/${TEMP_USER_ID}" "${delete_out}")"
+      [[ "${code}" == "204" || "${code}" == "404" ]] && TEMP_USER_DELETED="true"
+    fi
   fi
-  rm -f "${ADMIN_PASS_FILE}" "${USER_PASS_FILE}" "${TOKEN_FILE}"
+  rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${USER_PASS_FILE}" "${TOKEN_FILE}"
   [[ ! -e "${TOKEN_FILE}" ]] && TOKEN_FILE_REMOVED="true"
   CLEANUP_DONE="true"
   set -e
@@ -682,6 +844,7 @@ die() {
   exit 1
 }
 
+# shellcheck disable=SC2329 # Invoked by the EXIT trap below.
 on_exit() {
   local rc="$1"
   set +e

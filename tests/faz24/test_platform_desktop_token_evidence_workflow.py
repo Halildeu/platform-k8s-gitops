@@ -30,6 +30,10 @@ def test_runner_contract_restores_and_redacts():
     assert "grant-attempts-array.json" in text
     assert "keycloak_admin_password_candidates" in text
     assert "hostFileCandidates" in text
+    assert "KC_ADMIN_MODE" in text
+    assert "ADMIN_TOKEN_FILE" in text
+    assert "kc_admin_rest" in text
+    assert "keycloak-admin-login-failed" in text
     assert "sudoReadable" in text
     assert "--arg candidateLabel" in text
     assert '{"label": $candidateLabel, "exists": $exists' in text
@@ -39,6 +43,7 @@ def test_runner_contract_restores_and_redacts():
     assert 'write_kc_source_diagnostic "host-file-sudo"' in text
     assert 'write_kc_source_diagnostic "actions-secret" "KC_TEST_ADMIN_PASSWORD"' in text
     assert "sudo -n cat" in text
+    assert 'rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${USER_PASS_FILE}" "${TOKEN_FILE}"' in text
     assert "rawTokenLogged: false" in text
     assert "rawPasswordLogged: false" in text
     assert "rawAdminCredentialLogged: false" in text
