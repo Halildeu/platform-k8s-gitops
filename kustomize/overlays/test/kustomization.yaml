@@ -135,7 +135,7 @@ images:
     # accepts the forwarded WAV (was rejected "Unsupported content_type"). Builds on
     # #765 recording-access repoint. Unblocks Zeynep #182 direct-STT e2e.
     # D30 immutable digest pin.
-    digest: sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0
+    digest: sha256:7a364ec877d3e21536749a3cf52404c1d8fd91f3e6dc439818978211782f3624
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -165,7 +165,7 @@ images:
     # meeting#can_record. This is the PR-2 source artifact for removing the
     # audio-gateway dependency on /api/v1/admin/meetings/{id}.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:e9e45ac39ca53a7986a84c49ff8422077b20acdbc5a84b560b95e893845517cf
+    digest: sha256:2527e623799c14a00c6f3b5f108ecac1dcb98555c8a1c26a0a41705c71e818d8
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
