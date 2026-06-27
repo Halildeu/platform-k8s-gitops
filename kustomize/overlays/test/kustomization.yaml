@@ -7145,6 +7145,19 @@ patches:
               port:
                 number: 80
 
+  # Faz 22.6 A1 — test Vault HTTPS host-bridge egress.
+  # Base keeps legacy Vault HTTP :8200. Test overlay adds the :8202 HTTPS
+  # plane used by the TPM-attestation Vault PKI path without widening prod.
+  - target:
+      kind: NetworkPolicy
+      name: allow-egress-host-bridge
+    patch: |-
+      - op: add
+        path: /spec/egress/0/ports/-
+        value:
+          protocol: TCP
+          port: 8202
+
   # Host bridge test portları (D20)
   # 2026-04-22 live truth: k3d-test node + test compose stateful container'lar
   # aynı `platform-test-net` Docker ağına bağlı. Bu yüzden host-service
