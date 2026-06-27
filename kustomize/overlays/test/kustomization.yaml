@@ -7180,6 +7180,23 @@ patches:
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8200
+      - op: add
+        path: /subsets/0/ports/-
+        value:
+          name: https
+          port: 8202
+          protocol: TCP
+  - target:
+      kind: Service
+      name: vault
+    patch: |-
+      - op: add
+        path: /spec/ports/-
+        value:
+          name: https
+          port: 8202
+          targetPort: 8202
+          protocol: TCP
   - target:
       kind: Endpoints
       name: redis-streams

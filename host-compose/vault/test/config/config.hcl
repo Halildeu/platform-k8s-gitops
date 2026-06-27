@@ -1,6 +1,8 @@
 # Vault config — test (ADR-0002 same-host isolated instance)
 # Storage: Raft single-node
-# Listener: HTTP (host nginx SSL termination)
+# Listeners:
+# - 8200 HTTP keeps the existing ESO path stable.
+# - 8202 HTTPS is the Faz 22.6 A1 backend TPM-attestation sign path.
 
 ui = true
 
@@ -12,6 +14,13 @@ storage "raft" {
 listener "tcp" {
   address       = "0.0.0.0:8200"
   tls_disable   = true
+}
+
+listener "tcp" {
+  address         = "0.0.0.0:8202"
+  tls_cert_file   = "/vault/tls/tls.crt"
+  tls_key_file    = "/vault/tls/tls.key"
+  tls_client_ca_file = "/vault/tls/ca.crt"
 }
 
 api_addr     = "http://platform-vault-test:8200"

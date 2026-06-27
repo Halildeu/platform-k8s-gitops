@@ -14,6 +14,7 @@ DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetimpc@10.99.0.2}"
 DENETIM_SSH_IDENTITY="${DENETIM_SSH_IDENTITY:-$HOME/.ssh/id_ed25519}"
 DEVICE_KEY_OVERLAY="${DEVICE_KEY_OVERLAY:-kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key}"
 ENDPOINT_ADMIN_ESO_OVERLAY="${ENDPOINT_ADMIN_ESO_OVERLAY:-kustomize/overlays/test/eso/endpoint-admin}"
+VAULT_TLS_DIR="${VAULT_TLS_DIR:-/home/halil/platform-stateful/test/vault/tls}"
 
 if [ -z "${SSH_AUTH_SOCK:-}" ] && command -v launchctl >/dev/null 2>&1; then
   launchd_ssh_auth_sock="$(launchctl getenv SSH_AUTH_SOCK 2>/dev/null || true)"
@@ -33,6 +34,10 @@ fail() {
 remote_kubectl() {
   ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" \
     "kubectl --context '$KUBE_CONTEXT' -n '$KUBE_NAMESPACE' $*"
+}
+
+remote_shell() {
+  ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" "$@"
 }
 
 denetim_ssh() {
@@ -86,11 +91,44 @@ service_vault="$(remote_kubectl "get configmap endpoint-admin-service-config -o 
 shared_verifier="$(remote_kubectl "get configmap endpoint-admin-remote-bridge-config -o jsonpath='{.data.REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER}'" 2>/dev/null || true)"
 vault_https_port="$(remote_kubectl "get service vault -o jsonpath='{.spec.ports[?(@.port==8202)].port}'" 2>/dev/null || true)"
 
-[ "$service_tpm" = "true" ] && ok "endpoint-admin-service tpm-attest enabled" || fail "endpoint-admin-service tpm-attest not enabled"
-[ -n "$service_root" ] && ok "endpoint-admin-service manufacturer root pin present" || fail "endpoint-admin-service manufacturer root pin missing"
-[ "$service_vault" = "true" ] && ok "endpoint-admin-service Vault PKI enabled" || warn "endpoint-admin-service Vault PKI not enabled yet"
-[ "$vault_https_port" = "8202" ] && ok "Vault HTTPS service port 8202 visible" || warn "Vault HTTPS service port 8202 not visible yet"
-[ "$shared_verifier" = "MACHINE_CERT_ENROLLMENT" ] && ok "shared broker remains MACHINE_CERT_ENROLLMENT" || warn "shared broker verifier is $shared_verifier"
+if [ "$service_tpm" = "true" ]; then
+  ok "endpoint-admin-service tpm-attest enabled"
+else
+  fail "endpoint-admin-service tpm-attest not enabled"
+fi
+if [ -n "$service_root" ]; then
+  ok "endpoint-admin-service manufacturer root pin present"
+else
+  fail "endpoint-admin-service manufacturer root pin missing"
+fi
+if [ "$service_vault" = "true" ]; then
+  ok "endpoint-admin-service Vault PKI enabled"
+else
+  warn "endpoint-admin-service Vault PKI not enabled yet"
+fi
+if [ "$vault_https_port" = "8202" ]; then
+  ok "Vault HTTPS service port 8202 visible"
+else
+  warn "Vault HTTPS service port 8202 not visible yet"
+fi
+if [ "$shared_verifier" = "MACHINE_CERT_ENROLLMENT" ]; then
+  ok "shared broker remains MACHINE_CERT_ENROLLMENT"
+else
+  warn "shared broker verifier is $shared_verifier"
+fi
+
+vault_tls_files="$(remote_shell "if sudo -n test -r '$VAULT_TLS_DIR/ca.crt' && sudo -n test -r '$VAULT_TLS_DIR/tls.crt' && sudo -n test -r '$VAULT_TLS_DIR/tls.key'; then echo present; else echo missing; fi" 2>/dev/null || true)"
+if [ "$vault_tls_files" = "present" ]; then
+  ok "Vault TLS material present on $SSH_TARGET (values not printed)"
+  vault_https_health="$(remote_shell "docker exec platform-vault-test sh -c 'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null' && echo pass || echo fail" 2>/dev/null || true)"
+  if [ "$vault_https_health" = "pass" ]; then
+    ok "Vault HTTPS 8202 CA-pinned status works"
+  else
+    warn "Vault HTTPS 8202 CA-pinned status not working yet"
+  fi
+else
+  warn "Vault TLS material missing on $SSH_TARGET:$VAULT_TLS_DIR"
+fi
 
 for key in ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID; do
   value_present="$(remote_kubectl "get secret endpoint-admin-service-secrets -o jsonpath='{.data.$key}'" 2>/dev/null || true)"
@@ -120,10 +158,18 @@ if denetim_ssh 'cmd /c hostname' >/tmp/faz22-6-a1-denetim-host.txt 2>/dev/null; 
   printf '%s\n' "$tpm_info" | sed 's/^/INFO denetim-tpm /'
   ek_count="$(denetim_ssh \
     'powershell -NoProfile -Command "(Get-TpmEndorsementKeyInfo -Hash Sha256).ManufacturerCertificates.Count"' 2>/dev/null | tr -d '\r' || true)"
-  [ "${ek_count:-0}" -ge 1 ] && ok "Denetim PC EK manufacturer cert count=$ek_count" || fail "Denetim PC EK manufacturer cert missing"
+  if [ "${ek_count:-0}" -ge 1 ]; then
+    ok "Denetim PC EK manufacturer cert count=$ek_count"
+  else
+    fail "Denetim PC EK manufacturer cert missing"
+  fi
   agent_version="$(denetim_ssh \
     'powershell -NoProfile -Command "(Get-Item C:\Progra~1\EndpointAgent\endpoint-agent.exe).VersionInfo.ProductVersion"' 2>/dev/null | tr -d '\r' || true)"
-  [ -n "$agent_version" ] && ok "Denetim PC EndpointAgent version=$agent_version" || warn "Denetim PC EndpointAgent version unavailable"
+  if [ -n "$agent_version" ]; then
+    ok "Denetim PC EndpointAgent version=$agent_version"
+  else
+    warn "Denetim PC EndpointAgent version unavailable"
+  fi
 else
   fail "Denetim PC not reachable via $SSH_TARGET -> $DENETIM_SSH_TARGET"
 fi
