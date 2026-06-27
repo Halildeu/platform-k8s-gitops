@@ -484,15 +484,22 @@ yetkisi yetersiz, repair run `gh issue view/comment/edit` aşamasında patlar.
 | Classic PAT alternatifi | `repo` + `project` (veya `read:project` + `write:project`) |
 
 Offline harness: `scripts/test/board-sync-verify-pat-missing.sh` — fake
-`gh` shim ile **7 senaryoyu** deterministic koşturur:
+`gh` shim ile **10 senaryoyu** deterministic koşturur:
 
 1. PAT present — full path: Project API + EVIDENCE comment + body rewrite + board Status
-2. PAT present REPAIR (iter-2 P1 + iter-3 P1 #2) — pre-existing EVIDENCE; comment ATLANIR ama body rewrite (`gh issue edit`) + board (`project item-edit`) STILL fire'lar
-3. PAT missing, same-repo — comment-only, Project API'ye DOKUNMAZ
-4. PAT missing, cross-repo — soft-skip + `::warning::` annotation + step summary, network'e DOKUNMAZ
-5. PAT missing, idempotent — pre-existing EVIDENCE → comment ATLANIR
+2. PAT missing, same-repo — comment-only, Project API'ye DOKUNMAZ
+3. PAT missing, cross-repo — soft-skip + `::warning::` annotation + step summary, network'e DOKUNMAZ
+4. PAT missing, idempotent — pre-existing EVIDENCE → comment ATLANIR
+5. PAT present REPAIR (iter-2 P1 + iter-3 P1 #2) — pre-existing EVIDENCE; comment ATLANIR ama body rewrite (`gh issue edit`) + board (`project item-edit`) STILL fire'lar
 6. PAT missing, lowercase same-repo (iter-3 P1 #3) — case-insensitive compare, false cross-repo skip YOK
-7. Workflow guard — boş GH_TOKEN durumunda `::error::` + exit 1 (file-level grep assertion)
+7. PAT missing, repo-only cross-repo shorthand — `platform-ai#N` aynı-owner
+   cross-repo ref olarak normalize edilir ve PAT yokken no-network soft-skip
+   alır; bare `#N` gibi aynı repo issue'suna düşmez
+8. PAT missing, invalid owner#N typo — `Halildeu#N` gibi owner#N biçimli
+   hata `Halildeu/Halildeu#N` gibi yanlış issue'ya gitmeden soft-skip alır
+9. Workflow extraction — `Tracked by platform-ai#198` satırı `platform-ai#198`
+   olarak çıkar, `#198` olarak kırpılmaz
+10. Workflow guard — boş GH_TOKEN durumunda `::error::` + exit 1 (file-level grep assertion)
 
 Yeni regression bu harness'la lokal yakalanır, gerçek merge beklemeden.
 
@@ -500,7 +507,8 @@ Yeni regression bu harness'la lokal yakalanır, gerçek merge beklemeden.
 PR body'sindeki `Tracked by <ref>` satırlarını parse eder, her ref için
 `board-sync.sh verify` çağırır.
 
-- Ref formatları: `#N`, `owner/repo#N`, tam issue URL'i — **cross-repo
+- Ref formatları: `#N`, `repo#N` (PR repo owner'ı ile aynı GitHub owner
+  altında normalize edilir), `owner/repo#N`, tam issue URL'i — **cross-repo
   `Tracked by` desteklenir** (board user-owned, issue repo-owned).
 - `Closes/Fixes/Resolves` parse EDİLMEZ — yalnız `Tracked by`. (`Closes`
   issue'yu native kapatır → `item-closed → Done`.)

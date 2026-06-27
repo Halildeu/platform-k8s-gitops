@@ -79,10 +79,10 @@ jobs:
               echo "Settings → Secrets and variables → Actions → \`ADD_TO_PROJECT_PAT\`."
             } | tee -a "$GITHUB_STEP_SUMMARY"
           fi
-          # tracked-by line(s) -> ref token(s): #N, owner/repo#N, or issue URL.
+          # tracked-by line(s) -> ref token(s): #N, repo#N, owner/repo#N, or issue URL.
           refs="$(printf '%s\n' "${PR_BODY:-}" \
             | grep -iE '^[[:space:]]*tracked[ -]?by\b' \
-            | grep -oE '(https://github\.com/[^ ]+/issues/[0-9]+|[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+|#[0-9]+)' \
+            | grep -oE '(https://github\.com/[^ ]+/issues/[0-9]+|[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+|[A-Za-z0-9._-]+#[0-9]+|#[0-9]+)' \
             | head -20 || true)"
           if [ -z "$refs" ]; then
             echo "PR #$PR_NUMBER — no 'Tracked by' refs; nothing to do." \

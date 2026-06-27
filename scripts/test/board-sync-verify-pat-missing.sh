@@ -5,7 +5,7 @@
 # (#1085, Codex 019e8079 must_fix #4; iter-2 P1 + iter-3 P1 follow-ups
 # absorbed in 019e809d). Drives the verify subcommand under a synthetic
 # `gh` shim that records every call and produces deterministic responses
-# for the seven PAT-state scenarios:
+# for the ten PAT-state / PR-body parsing scenarios:
 #
 #   1. PAT present (canonical):           Project API touched, board moves.
 #   2. PAT missing, same-repo ref:        comment-only, no Project API.
@@ -17,10 +17,16 @@
 #                                         assertion).
 #   6. PAT missing, lowercase same-repo   case-insensitive owner/repo
 #      (iter-3 P1 #3):                    compare — NOT cross-repo-skipped.
-#   7. Both tokens empty (workflow bug):  workflow-level guard, asserted
+#   7. PAT missing, repo-only cross-repo  platform-ai#N shorthand normalizes
+#      shorthand:                         to same-owner repo and soft-skips.
+#   8. PAT missing, invalid owner#N:      owner#N-shaped typo soft-skips
+#                                         before any issue/project call.
+#   9. Workflow Tracked-by extraction:    repo#N is extracted as a full token,
+#                                         not truncated to bare #N.
+#   10. Both tokens empty (workflow bug): workflow-level guard, asserted
 #                                         by inspecting the workflow file.
 #
-# All seven scenarios run hermetically — no GitHub network access — so a
+# All ten scenarios run hermetically — no GitHub network access — so a
 # regression that re-introduces a Project API call on the PAT-missing
 # branch (or drops the body rewrite half of the repair guarantee) is
 # caught locally instead of waiting for a real merge.
@@ -400,9 +406,59 @@ run_case "pat-missing-lowercase" "pat-missing-same-repo" 0 \
 assert_log_contains "issue comment"   # took the same-repo path, not the cross-repo skip
 assert_log_lacks "project view"
 
-# Scenario 7: Workflow guard — assert both-token-empty trips the workflow
+# Scenario 7: PAT missing, repo-only cross-repo shorthand — `platform-ai#198`
+# must normalize to `Halildeu/platform-ai#198`, then soft-skip on the
+# PAT-missing path. Pre-fix, the workflow extracted bare `#198` and the
+# script attempted to comment on Halildeu/platform-k8s-gitops#198.
+printf '\n[7] PAT missing, repo-only cross-repo shorthand — normalize then skip\n'
+export BOARD_PAT_PRESENT=""
+run_case "pat-missing-repo-only-cross" "pat-missing-cross-repo" 0 \
+  verify "platform-ai#198" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+if grep -E "^(issue|project) " "$LAST_LOG" >/dev/null 2>&1; then
+  fail=$((fail + 1))
+  printf '    ✗ repo-only cross-repo skip should have made no issue/project gh calls\n'
+else
+  printf '    ✓ no issue/project gh calls (repo-only cross-repo skip clean)\n'
+fi
+
+# Scenario 8: PAT missing, invalid owner#N-shaped typo. If someone writes
+# `Tracked by Halildeu#198`, the repo-only normalizer must not construct
+# `Halildeu/Halildeu#198` and then comment on a wrong issue.
+printf '\n[8] PAT missing, invalid owner#N typo — skip before issue/project calls\n'
+export BOARD_PAT_PRESENT=""
+run_case "pat-missing-owner-typo" "pat-missing-cross-repo" 0 \
+  verify "Halildeu#198" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+if grep -E "^(issue|project) " "$LAST_LOG" >/dev/null 2>&1; then
+  fail=$((fail + 1))
+  printf '    ✗ owner#N typo should have made no issue/project gh calls\n'
+else
+  printf '    ✓ no issue/project gh calls (owner#N typo skipped cleanly)\n'
+fi
+
+# Scenario 9: Workflow extraction — assert repo-only shorthand is captured as
+# a full token before the bare `#N` fallback. This mirrors the regex in
+# .github/workflows/board-pr-evidence.yml so the exact regression that hit
+# PR #2094 is caught locally.
+printf '\n[9] Workflow extraction — repo-only shorthand is not truncated\n'
+tracked_refs="$(printf '%s\n' \
+    'Tracked by platform-ai#198.' \
+    'Tracked by #1615.' \
+  | grep -iE '^[[:space:]]*tracked[ -]?by\b' \
+  | grep -oE '(https://github\.com/[^ ]+/issues/[0-9]+|[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+|[A-Za-z0-9._-]+#[0-9]+|#[0-9]+)' \
+  | paste -sd ',' -)"
+if [ "$tracked_refs" = "platform-ai#198,#1615" ]; then
+  pass=$((pass + 1))
+  printf '  ✓ workflow regex extracts repo-only shorthand before bare issue fallback\n'
+else
+  fail=$((fail + 1))
+  printf '  ✗ workflow regex extraction mismatch: %s\n' "$tracked_refs"
+fi
+
+# Scenario 10: Workflow guard — assert both-token-empty trips the workflow
 # (file-level grep; the actual run is gated by GitHub Actions).
-printf '\n[7] Workflow guard — empty-token branch fails loudly\n'
+printf '\n[10] Workflow guard — empty-token branch fails loudly\n'
 if grep -q "GH_TOKEN is empty" "$WORKFLOW"; then
   pass=$((pass + 1))
   printf '  ✓ workflow has empty-GH_TOKEN ::error:: guard\n'
