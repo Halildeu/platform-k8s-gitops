@@ -1,5 +1,31 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT preflight context guard packaged (2026-06-27)
+
+The direct-STT mTLS enablement collector now distinguishes local execution
+environment failures from actual runtime object drift before #182 preflight
+evidence is interpreted:
+
+- `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py` first checks
+  that the local executor has the explicit `k3d-test` kube context and can
+  reach namespace `platform-test`.
+- The metadata envelope now records `environment.contextAvailable`,
+  `environment.namespaceReachable`, and `environment.contextFailure`.
+- `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py` requires
+  `contextAvailable=true`, `namespaceReachable=true`, and empty
+  `contextFailure` for PASS evidence.
+- A local Codex desktop run on 2026-06-27 produced fail-closed metadata with
+  only `kubectl-context-k3d-test-missing`; that proves this local executor
+  cannot collect the live #182 preflight, not that the staging runtime objects
+  are absent or drifted.
+
+Boundary: source-side collector/verifier/runbook hardening only. No Vault value
+was read or written, no Kubernetes object was mutated, direct-STT was not
+enabled, `/transcribe` was not run, and no #182/#1615 acceptance is claimed.
+Live #182 still requires an executor with `k3d-test` access, approved mTLS
+seed, pre-flag PASS, flag flip, result-stream evidence, same-session audit, and
+no raw-audio persistence proof.
+
 ## Live Delta — Faz 24 G-COMP retention parameter provenance hardening packaged (2026-06-27)
 
 The G-COMP engineering compliance verifier now machine-checks owner provenance

@@ -118,6 +118,29 @@ def kget(
     return load_json(runner(argv, timeout), f"kubectl-get-{kind}-{name or 'list'}")
 
 
+def kube_access_status(
+    runner: CommandRunner,
+    *,
+    context: str,
+    namespace: str,
+    timeout: int = 10,
+) -> tuple[bool, bool, str | None]:
+    context_result = runner(
+        ["kubectl", "config", "get-contexts", context, "-o", "name"],
+        timeout,
+    )
+    if context_result.returncode != 0 or context_result.stdout.strip() != context:
+        return False, False, f"kubectl-context-{context}-missing"
+
+    namespace_result = runner(
+        ["kubectl", "--context", context, "get", "namespace", namespace, "-o", "json"],
+        timeout,
+    )
+    if namespace_result.returncode != 0:
+        return True, False, f"kubectl-namespace-{namespace}:command-exit-{namespace_result.returncode}"
+    return True, True, None
+
+
 def kget_secret_key_names(
     runner: CommandRunner,
     *,
@@ -380,86 +403,106 @@ def build_evidence(
     probe_timeout: int = 40,
 ) -> dict[str, Any]:
     failures: list[str] = []
-    deployment, error = kget(
+    context_available, namespace_reachable, access_error = kube_access_status(
         runner,
         context=context,
         namespace=namespace,
-        kind="deployment",
-        name=deployment_name,
     )
-    if error:
-        failures.append(error)
-    configmap, error = kget(
-        runner,
-        context=context,
-        namespace=namespace,
-        kind="configmap",
-        name=DEFAULT_CONFIGMAP,
-    )
-    if error:
-        failures.append(error)
-    aggregate_external_secret, error = kget(
-        runner,
-        context=context,
-        namespace=namespace,
-        kind="externalsecret",
-        name=DEFAULT_AGGREGATE_EXTERNAL_SECRET,
-    )
-    if error:
-        failures.append(error)
-    aggregate_runtime_keys, error = kget_secret_key_names(
-        runner,
-        context=context,
-        namespace=namespace,
-        name=DEFAULT_AGGREGATE_SECRET,
-    )
-    if error:
-        failures.append(error)
-    external_secret, error = kget(
-        runner,
-        context=context,
-        namespace=namespace,
-        kind="externalsecret",
-        name=DEFAULT_EXTERNAL_SECRET,
-    )
-    if error:
-        failures.append(error)
-    runtime_keys, error = kget_secret_key_names(
-        runner,
-        context=context,
-        namespace=namespace,
-        name=DEFAULT_SECRET,
-    )
-    if error:
-        failures.append(error)
-    netpol, error = kget(
-        runner,
-        context=context,
-        namespace=namespace,
-        kind="networkpolicy",
-        name=DEFAULT_NETPOL,
-    )
-    if error:
-        failures.append(error)
-    pods, error = kget(
-        runner,
-        context=context,
-        namespace=namespace,
-        kind="pods",
-        name=None,
-    )
-    if error:
-        failures.append(error)
+    if access_error:
+        failures.append(access_error)
 
-    pod = find_audio_gateway_pod(pods or {}, deployment_name)
+    deployment = None
+    configmap = None
+    aggregate_external_secret = None
+    aggregate_runtime_keys: set[str] = set()
+    external_secret = None
+    runtime_keys: set[str] = set()
+    netpol = None
+    pods: dict[str, Any] = {}
+    pod = None
+    if context_available and namespace_reachable:
+        deployment, error = kget(
+            runner,
+            context=context,
+            namespace=namespace,
+            kind="deployment",
+            name=deployment_name,
+        )
+        if error:
+            failures.append(error)
+        configmap, error = kget(
+            runner,
+            context=context,
+            namespace=namespace,
+            kind="configmap",
+            name=DEFAULT_CONFIGMAP,
+        )
+        if error:
+            failures.append(error)
+        aggregate_external_secret, error = kget(
+            runner,
+            context=context,
+            namespace=namespace,
+            kind="externalsecret",
+            name=DEFAULT_AGGREGATE_EXTERNAL_SECRET,
+        )
+        if error:
+            failures.append(error)
+        aggregate_runtime_keys, error = kget_secret_key_names(
+            runner,
+            context=context,
+            namespace=namespace,
+            name=DEFAULT_AGGREGATE_SECRET,
+        )
+        if error:
+            failures.append(error)
+        external_secret, error = kget(
+            runner,
+            context=context,
+            namespace=namespace,
+            kind="externalsecret",
+            name=DEFAULT_EXTERNAL_SECRET,
+        )
+        if error:
+            failures.append(error)
+        runtime_keys, error = kget_secret_key_names(
+            runner,
+            context=context,
+            namespace=namespace,
+            name=DEFAULT_SECRET,
+        )
+        if error:
+            failures.append(error)
+        netpol, error = kget(
+            runner,
+            context=context,
+            namespace=namespace,
+            kind="networkpolicy",
+            name=DEFAULT_NETPOL,
+        )
+        if error:
+            failures.append(error)
+        pods, error = kget(
+            runner,
+            context=context,
+            namespace=namespace,
+            kind="pods",
+            name=None,
+        )
+        if error:
+            failures.append(error)
+        pod = find_audio_gateway_pod(pods or {}, deployment_name)
     pod_name = pod.get("metadata", {}).get("name", "") if isinstance(pod, dict) else ""
-    health_status, total_ms, client_cert_used, probe_error = run_mtls_probe(
-        runner,
-        context=context,
-        namespace=namespace,
-        pod_name=pod_name,
-        timeout=probe_timeout,
-    )
+    if context_available and namespace_reachable:
+        health_status, total_ms, client_cert_used, probe_error = run_mtls_probe(
+            runner,
+            context=context,
+            namespace=namespace,
+            pod_name=pod_name,
+            timeout=probe_timeout,
+        )
+    else:
+        health_status, total_ms, client_cert_used, probe_error = None, None, False, None
     if probe_error:
         failures.append(probe_error)
 
@@ -484,27 +527,46 @@ def build_evidence(
 
     readiness_failures = [
         ("source-gitops-commit-invalid", GIT_SHA_RE.match(gitops_commit) is None),
-        ("source-backend-image-digest-missing", not backend_image_digest),
-        ("pod-not-ready", not pod_ready(pod)),
-        ("direct-stt-not-disabled", direct_stt_enabled is not False),
-        ("host-alias-mismatch", host_ip != EXPECTED_HOST_ALIAS_IP),
-        ("network-policy-mismatch", netpol_cidr != EXPECTED_NETPOL_CIDR or netpol_port != EXPECTED_TRANSCRIBE_PORT),
-        ("mtls-mount-missing", not mount_present),
-        ("mtls-secret-name-mismatch", mtls_secret_name != DEFAULT_SECRET),
-        ("mtls-secret-not-optional", mtls_secret_optional is not True),
-        ("mtls-secret-envfrom-risk", not dedicated_secret_not_env_from),
-        ("aggregate-external-secret-not-ready", not external_secret_ready(aggregate_external_secret)),
-        ("aggregate-secret-target-redis-key-missing", not AGGREGATE_SECRET_KEYS.issubset(aggregate_target_keys)),
-        ("aggregate-secret-runtime-redis-key-missing", not AGGREGATE_SECRET_KEYS.issubset(aggregate_runtime_keys)),
-        ("aggregate-secret-direct-stt-contamination", bool(REQUIRED_SECRET_KEYS & aggregate_runtime_keys) or bool(REQUIRED_SECRET_KEYS & aggregate_target_keys)),
-        ("external-secret-not-ready", not external_secret_ready(external_secret)),
-        ("external-secret-store-mismatch", secret_store != DEFAULT_SECRET_STORE),
-        ("external-secret-vault-path-mismatch", vault_paths != {DEFAULT_VAULT_PATH}),
-        ("external-secret-mapping-missing", not REQUIRED_VAULT_PROPERTIES.issubset(mapped_properties)),
-        ("external-secret-target-key-missing", not REQUIRED_SECRET_KEYS.issubset(target_keys)),
-        ("runtime-secret-key-missing", not REQUIRED_SECRET_KEYS.issubset(runtime_keys)),
-        ("mtls-health-not-200", health_status != 200),
     ]
+    if context_available and namespace_reachable:
+        readiness_failures.extend(
+            [
+                ("source-backend-image-digest-missing", not backend_image_digest),
+                ("pod-not-ready", not pod_ready(pod)),
+                ("direct-stt-not-disabled", direct_stt_enabled is not False),
+                ("host-alias-mismatch", host_ip != EXPECTED_HOST_ALIAS_IP),
+                (
+                    "network-policy-mismatch",
+                    netpol_cidr != EXPECTED_NETPOL_CIDR
+                    or netpol_port != EXPECTED_TRANSCRIBE_PORT,
+                ),
+                ("mtls-mount-missing", not mount_present),
+                ("mtls-secret-name-mismatch", mtls_secret_name != DEFAULT_SECRET),
+                ("mtls-secret-not-optional", mtls_secret_optional is not True),
+                ("mtls-secret-envfrom-risk", not dedicated_secret_not_env_from),
+                ("aggregate-external-secret-not-ready", not external_secret_ready(aggregate_external_secret)),
+                (
+                    "aggregate-secret-target-redis-key-missing",
+                    not AGGREGATE_SECRET_KEYS.issubset(aggregate_target_keys),
+                ),
+                (
+                    "aggregate-secret-runtime-redis-key-missing",
+                    not AGGREGATE_SECRET_KEYS.issubset(aggregate_runtime_keys),
+                ),
+                (
+                    "aggregate-secret-direct-stt-contamination",
+                    bool(REQUIRED_SECRET_KEYS & aggregate_runtime_keys)
+                    or bool(REQUIRED_SECRET_KEYS & aggregate_target_keys),
+                ),
+                ("external-secret-not-ready", not external_secret_ready(external_secret)),
+                ("external-secret-store-mismatch", secret_store != DEFAULT_SECRET_STORE),
+                ("external-secret-vault-path-mismatch", vault_paths != {DEFAULT_VAULT_PATH}),
+                ("external-secret-mapping-missing", not REQUIRED_VAULT_PROPERTIES.issubset(mapped_properties)),
+                ("external-secret-target-key-missing", not REQUIRED_SECRET_KEYS.issubset(target_keys)),
+                ("runtime-secret-key-missing", not REQUIRED_SECRET_KEYS.issubset(runtime_keys)),
+                ("mtls-health-not-200", health_status != 200),
+            ]
+        )
     failures.extend(code for code, failed in readiness_failures if failed)
     failures = sorted(set(failures))
 
@@ -525,6 +587,9 @@ def build_evidence(
             "deployment": deployment_name,
             "podName": pod_name,
             "podReady": pod_ready(pod),
+            "contextAvailable": context_available,
+            "namespaceReachable": namespace_reachable,
+            "contextFailure": access_error or "",
         },
         "desiredState": {
             "directSttEnabled": direct_stt_enabled,

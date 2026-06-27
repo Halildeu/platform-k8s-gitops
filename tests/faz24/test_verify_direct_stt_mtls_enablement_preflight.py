@@ -33,6 +33,9 @@ def valid_preflight() -> dict:
             "deployment": "audio-gateway",
             "podName": "audio-gateway-769cc7745c-46st4",
             "podReady": True,
+            "contextAvailable": True,
+            "namespaceReachable": True,
+            "contextFailure": "",
         },
         "desiredState": {
             "directSttEnabled": False,
@@ -188,6 +191,23 @@ class DirectSttMtlsEnablementPreflightVerifierTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("environment_kubectl_context", result.stdout)
+
+    def test_missing_kube_context_fails_before_runtime_claim(self):
+        data = valid_preflight()
+        data["status"] = "fail"
+        data["failures"] = ["kubectl-context-k3d-test-missing"]
+        data["environment"]["contextAvailable"] = False
+        data["environment"]["namespaceReachable"] = False
+        data["environment"]["contextFailure"] = "kubectl-context-k3d-test-missing"
+        data["environment"]["podName"] = ""
+        data["environment"]["podReady"] = False
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("environment_context_available", result.stdout)
+        self.assertIn("environment_namespace_reachable", result.stdout)
+        self.assertIn("environment_context_failure_empty", result.stdout)
 
     def test_missing_external_secret_property_fails(self):
         data = valid_preflight()

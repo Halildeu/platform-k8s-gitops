@@ -24,7 +24,7 @@ test overlay:
 ```bash
 export KUBECTL_CONTEXT=k3d-test
 export KUBECTL_NAMESPACE=platform-test
-kubectl --context "${KUBECTL_CONTEXT}" config current-context
+kubectl config get-contexts "${KUBECTL_CONTEXT}" -o name
 kubectl --context "${KUBECTL_CONTEXT}" get ns "${KUBECTL_NAMESPACE}"
 
 k() {
@@ -39,13 +39,19 @@ The Gate 1 and Gate 2 evidence JSON must include:
   "environment": {
     "cluster": "k3d-test",
     "kubectlContext": "k3d-test",
-    "namespace": "platform-test"
+    "namespace": "platform-test",
+    "contextAvailable": true,
+    "namespaceReachable": true,
+    "contextFailure": ""
   }
 }
 ```
 
 Both direct-STT verifiers fail closed when `environment.kubectlContext` is not
-`k3d-test`.
+`k3d-test`. The preflight collector also fails before runtime object reads when
+the local executor lacks the `k3d-test` context or cannot reach
+`platform-test`; that failure is execution-environment evidence only and must
+not be used as runtime object drift proof.
 
 ## Secret Contract
 
@@ -107,6 +113,8 @@ The preflight verifier requires:
 - real `audio-gateway` pod evidence from `k3d-test/platform-test`;
 - evidence collected with explicit `kubectl --context k3d-test`, recorded as
   `environment.kubectlContext="k3d-test"`;
+- `environment.contextAvailable=true`, `environment.namespaceReachable=true`,
+  and `environment.contextFailure=""`;
 - `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false` still in desired/runtime state;
 - hostAlias `live-stt.denetim -> 10.99.0.2`, narrow NetworkPolicy
   `10.99.0.2/32:8243`, and `/etc/direct-stt-mtls` mount present;
