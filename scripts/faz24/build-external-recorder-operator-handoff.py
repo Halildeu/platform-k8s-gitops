@@ -33,6 +33,7 @@ TOKEN_CONTRACT_REPORT_PATH = "/tmp/faz24-platform-desktop-token-contract.json"
 SMOKE_EVIDENCE_PATH = "/tmp/faz24-external-recorder-smoke.json"
 SMOKE_VERIFY_PATH = "/tmp/faz24-external-recorder-smoke.verify.json"
 GCAP_VERIFY_PATH = "/tmp/faz24-gcap-capture-gate.verify.json"
+GCAP_INGEST_INPUT_PATH = "/tmp/faz24-gcap-capture-gate.ingest-input.json"
 
 SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:@/-]{1,180}$")
 HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,120}[a-z0-9])?$")
@@ -143,9 +144,23 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             f"jq -e '.tokenIncluded == false' {GCAP_VERIFY_PATH}",
         ]
     )
+    gcap_ingest_input = command_block(
+        [
+            "jq -s '{\"reports\": .}' \\",
+            "  /tmp/faz24-external-recorder-smoke-01.verify.json \\",
+            "  /tmp/faz24-external-recorder-smoke-02.verify.json \\",
+            "  /tmp/faz24-external-recorder-smoke-03.verify.json \\",
+            "  /tmp/faz24-desktop-capture-evidence.verify.json \\",
+            f"  /tmp/faz24-desktop-capture-evidence-05.verify.json > {GCAP_INGEST_INPUT_PATH}",
+            "jq -e '",
+            "  (.reports | length) >= 5 and",
+            '  all(.reports[]; .status == "pass" and .tokenIncluded == false)',
+            f"' {GCAP_INGEST_INPUT_PATH}",
+        ]
+    )
     gcap_ingest = command_block(
         [
-            f'GCAP_EVIDENCE_B64="$(base64 < {GCAP_VERIFY_PATH} | tr -d \'\\n\')"',
+            f'GCAP_EVIDENCE_B64="$(base64 < {GCAP_INGEST_INPUT_PATH} | tr -d \'\\n\')"',
             "gh workflow run faz24-product-gate-evidence-ingest.yml \\",
             f"  --repo {REPO} \\",
             f"  --ref {args.gitops_ref} \\",
@@ -200,6 +215,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "smokeEvidencePath": SMOKE_EVIDENCE_PATH,
             "smokeVerifierPath": SMOKE_VERIFY_PATH,
             "gcapVerifierPath": GCAP_VERIFY_PATH,
+            "gcapIngestInputPath": GCAP_INGEST_INPUT_PATH,
         },
         "orderedGates": [
             {
@@ -243,7 +259,11 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
                 "id": "gcap-aggregate",
                 "owner": "reviewer/operator",
                 "statusBeforeExecution": "blocked-until-enough-verifier-summaries",
-                "commands": {"verify": gcap_aggregate, "ingest": gcap_ingest},
+                "commands": {
+                    "verify": gcap_aggregate,
+                    "prepareIngestInput": gcap_ingest_input,
+                    "ingest": gcap_ingest,
+                },
             },
         ],
         "issueCommentTemplates": {
@@ -298,6 +318,7 @@ external recorder smoke, send audio, or collect live evidence.
 - smoke evidence: `{target["smokeEvidencePath"]}`
 - smoke verifier summary: `{target["smokeVerifierPath"]}`
 - G-CAP aggregate summary: `{target["gcapVerifierPath"]}`
+- G-CAP ingest input wrapper: `{target["gcapIngestInputPath"]}`
 
 ## Gate 0 — operator token file
 
@@ -351,9 +372,12 @@ summaries exist:
 {gates["gcap-aggregate"]["commands"]["verify"]}
 ```
 
-Ingest only the aggregate verifier output, not raw evidence:
+Prepare the ingest wrapper from verifier summaries, then run the no-mutation
+ingest workflow:
 
 ```bash
+{gates["gcap-aggregate"]["commands"]["prepareIngestInput"]}
+
 {gates["gcap-aggregate"]["commands"]["ingest"]}
 ```
 

@@ -34,9 +34,29 @@ Dispatch the workflow with:
 - `evidence_json_base64`: a single-line base64 representation of the selected
   gate's redacted JSON evidence envelope
 
+For `gcap`, the workflow input is the set of redacted verifier summaries
+accepted by `verify_gcap_capture_gate_evidence.py`, commonly as a wrapper such
+as `{"reports":[...]}`. Do not submit the aggregate verifier output itself as
+the workflow input; the workflow reruns the verifier and uploads its own
+summary artifact. For `gops` and `gcomp`, submit the redacted evidence envelope
+for the selected gate.
+
 Do not paste secrets, tokens, JWTs, private keys, certificates, raw audio,
 raw transcript text, prompts, responses, personal data, cookies, kubeconfig,
 Vault material, or legal advice text into the evidence JSON.
+
+## Operator Handoff Package
+
+`scripts/faz24/build-product-gate-operator-handoff.py` and workflow
+`.github/workflows/faz24-product-gate-operator-handoff.yml` build a
+metadata-only handoff package for the G-CAP/G-OPS/G-COMP sequence. The package
+contains `README.md`, `faz24-product-gate-operator-handoff.json`, and
+`SHA256SUMS`.
+
+The package is coordination evidence only. It does not collect live evidence,
+run a pilot, mutate Kubernetes/Vault/firewall/legal state, ingest evidence,
+accept legal/KVKK/VERBIS sign-off, or move `platform-k8s-gitops#1615` beyond
+`Needs Verify`.
 
 ## Local Encoding
 
