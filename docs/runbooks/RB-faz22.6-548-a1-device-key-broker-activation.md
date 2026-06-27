@@ -51,6 +51,15 @@ This is not enough to close #548. The backend still needs the HTTPS Vault transp
 the live cluster, the final `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED=true` flip, and a real Denetim PC TPM
 enrollment/session marker.
 
+The test Vault HTTPS transport is intentionally additive:
+
+- existing ESO continues to use `http://vault.platform-test.svc.cluster.local:8200`;
+- backend TPM-attestation signing uses `https://vault.platform-test.svc.cluster.local:8202`;
+- the TLS CA/cert/key live under `/home/halil/platform-stateful/test/vault/tls` on `staging-sw` and are never
+  committed to git or printed in evidence;
+- the Kubernetes `vault` Service/Endpoints expose an additional `https:8202` port for the same test Vault
+  container endpoint.
+
 The dedicated strong-path broker intentionally does not use the bounded product-channel duress risk-acceptance
 flag. If full session execution needs a duress-clean signal, wire a real duress source or record an explicit
 owner decision outside the #548 hardware-attestation marker; do not hide that gap inside the marker.
@@ -69,8 +78,9 @@ Required operator actions, summarized:
    2026-06-27 for the current test Vault.
 3. Seed `tpm_vault_role_id` and `tpm_vault_secret_id` into `kv/platform/endpoint-admin-service`. Done on
    2026-06-27 for the current test Vault.
-4. Seed/pin the HTTPS Vault listener CA for `https://vault.platform-test.svc.cluster.local:8202`. Still open;
-   live service discovery currently shows only the existing `vault:8200` service port.
+4. Seed/pin the HTTPS Vault listener CA for `https://vault.platform-test.svc.cluster.local:8202`. The
+   GitOps service port is additive; the backend flag remains off until live TLS status works through the
+   pinned CA.
 5. Apply/sync the endpoint-admin ESO mapping and verify the live K8s Secret contains both Vault fields without
    printing either value.
 6. Flip primary `endpoint-admin-service` Vault PKI config only after ESO Ready, synced credentials can sign
@@ -78,6 +88,53 @@ Required operator actions, summarized:
 
 Do not print role IDs, secret IDs, Vault tokens, private keys, or raw cert private material in chat, Mavis,
 GitHub, shell history, or evidence. Use presence/status/hash evidence.
+
+### 2.1.1 Vault HTTPS 8202 activation guard
+
+Before restarting the test Vault container, verify the live mount source still matches the desired compose path:
+
+```bash
+ssh staging-sw "docker inspect platform-vault-test --format '{{json .Mounts}}' | jq '.[].Source'"
+```
+
+Expected data/log source prefix:
+
+```text
+/home/halil/platform-stateful/test/vault
+```
+
+If the live container reports `/srv/platform/stateful/test/vault`, stop and reconcile the mount path first. A
+wrong path on recreate can boot Vault with an empty Raft directory.
+
+Provision or reuse test-only TLS material:
+
+```bash
+RESTART_VAULT=0 scripts/faz22-remote-ops/faz22-6-a1-vault-https-provision-test.sh
+```
+
+After this PR is merged and the staging-sw checkout has the compose/config change, restart with validation:
+
+```bash
+RESTART_VAULT=1 scripts/faz22-remote-ops/faz22-6-a1-vault-https-provision-test.sh
+```
+
+If Vault returns sealed after recreate, unseal it with the test key threshold before continuing. Then verify:
+
+```bash
+ssh staging-sw "docker exec platform-vault-test sh -c \
+  'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status'"
+```
+
+The generated certificate includes `172.19.0.4` as a convenience SAN because the current `k3d-test` host bridge
+endpoint uses that container IP. The DNS SANs are the primary contract; if Docker bridge IP changes, rotate the
+test TLS material or rely on DNS verification from the backend.
+
+After Vault restart, check ESO readiness again because a single-node Vault restart can produce transient
+`SecretSyncFailure` events until the next reconcile:
+
+```bash
+ssh staging-sw "kubectl --context k3d-test -n platform-test get externalsecret -o wide"
+```
 
 ### 2.2 Dedicated #548 broker Vault path
 
@@ -123,8 +180,8 @@ Required before apply:
 - primary `endpoint-admin-service` has Intel manufacturer root pin;
 - primary Vault PKI signing is configured and proven with `pki_int/sign/tpm-device`, or the next step is
   explicitly limited to broker render only;
-- Vault HTTPS `:8202` transport exists and its CA is pinned before `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED`
-  is flipped;
+- Vault HTTPS `:8202` transport exists, the service port is visible, and CA-pinned `vault status` works before
+  `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED` is flipped;
 - live `endpoint-admin-service-secrets` contains `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID` and
   `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID`;
 - shared broker remains `MACHINE_CERT_ENROLLMENT`;
