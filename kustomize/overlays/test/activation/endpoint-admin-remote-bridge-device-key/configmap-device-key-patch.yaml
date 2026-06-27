@@ -1,0 +1,107 @@
+# Activation ConfigMap patch — Faz 22.6 #548 strong device-key broker.
+#
+# This is the only broker config that may use DEVICE_KEY_ATTESTATION_REAL. It is
+# intentionally separate from the shared denetim pilot broker, which stays on
+# MACHINE_CERT_ENROLLMENT until a migration policy is approved.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-admin-remote-bridge-config
+data:
+  ENDPOINT_ADMIN_PRIMARY_PLANE_ENABLED: "false"
+
+  REMOTE_BRIDGE_PORT: "9444"
+  REMOTE_BRIDGE_HEARTBEAT_INTERVAL_MILLIS: "10000"
+  REMOTE_BRIDGE_PERMIT_KID: "rb-test-denetim-device-key-20260627-01"
+  REMOTE_BRIDGE_RECORDING_ANCHOR_KEY_PATH: "/etc/remote-bridge/signer/recording-anchor.key"
+  REMOTE_BRIDGE_RECORDING_ANCHOR_KEY_ALGORITHM: "SHA256withECDSA"
+  REMOTE_BRIDGE_BROKER_POLICY_VERSION: "rb-test-denetim-device-key-v1"
+  REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "60000"
+  REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS: "120000"
+  REMOTE_BRIDGE_PEER_EVIDENCE_PARSER: "TRANSPORT_BOUND"
+  REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: "DEVICE_KEY_ATTESTATION_REAL"
+  REMOTE_BRIDGE_OWNER_GRANT_GATE_TYPE: "APPROVAL_BACKED_DURABLE_DB"
+  # Fail-closed for the strong #548 evidence path. The shared product-channel
+  # pilot may carry a bounded duress risk-acceptance, but this hardware
+  # attestation broker must not convert an unwired duress source into "no
+  # duress" just to keep a session alive.
+  REMOTE_BRIDGE_DURESS_SOURCE_TYPE: "AMBIGUOUS_UNTIL_WIRED"
+  REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "false"
+
+  # The REAL verifier needs the EK-chain validator bean. Vault PKI issuance is
+  # handled by the primary endpoint-admin-service /attest path; this broker only
+  # needs tpm-attest enabled plus pinned manufacturer roots so it can validate
+  # EK chains during the session verifier decision.
+  ENDPOINT_ADMIN_TPM_ATTEST_ENABLED: "true"
+  ENDPOINT_ADMIN_TPM_ATTEST_ALLOWED_TENANT_IDS: "00000000-0000-0000-0000-000000000001"
+  ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_ROOT_SHA256: "beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24"
+  ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_ROOT_PEMS: |
+    -----BEGIN CERTIFICATE-----
+    MIICujCCAj6gAwIBAgIUPLLiHTrwySRtWxR4lxKLlu7MJ7wwDAYIKoZIzj0EAwMF
+    ADCBiTELMAkGA1UEBgwCVVMxCzAJBgNVBAgMAkNBMRQwEgYDVQQHDAtTYW50YSBD
+    bGFyYTEaMBgGA1UECgwRSW50ZWwgQ29ycG9yYXRpb24xIzAhBgNVBAsMGk9uRGll
+    IENBIFJvb3QgQ2VydCBTaWduaW5nMRYwFAYDVQQDDA13d3d3LmludGVsLmNvbTAe
+    Fw0xOTA0MDMwMDAwMDBaFw00OTEyMzEyMzU5NTlaMIGJMQswCQYDVQQGEwJVUzEL
+    MAkGA1UECAwCQ0ExFDASBgNVBAcMC1NhbnRhIENsYXJhMRowGAYDVQQKDBFJbnRl
+    bCBDb3Jwb3JhdGlvbjEjMCEGA1UECwwaT25EaWUgQ0EgUm9vdCBDZXJ0IFNpZ25p
+    bmcxFjAUBgNVBAMMDXd3dy5pbnRlbC5jb20wdjAQBgcqhkjOPQIBBgUrgQQAIgNi
+    AASvEnwdlH5b12am+SnN/paJKwAR1ms7zREdmsT1ET+uByC5FwoTwdDhF+YSwezp
+    MOw8uqBagEbUFQ7qYH71F/0oGARHg3RuawlRaxgIrOh1+UwNnsEJo9eK9p3BwYJ6
+    aQejYzBhMB8GA1UdIwQYMBaAFLRYyfbkCECj8ljIOXhuro4KjZw4MA8GA1UdEwEB
+    /wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMB0GA1UdDgQWBBQdWJn25AhAo/JYyDl4
+    bq6OCpGcODAMBggqhkjOPQQDAwUAA2gAMGUCMQD/QeJRRfOrr6R5pHKetXFmluOu
+    WshN6e3s7vYWiXcn+U8uHkUVB+ZOLWeb+wbckRcxAjA2kp8egOZROtTJ7OGF+/cY
+    b7UKoFey2YJgfjRu6P2MpbekdZzvWz1qsSY9aWLsjxQ=
+    -----END CERTIFICATE-----
+
+  ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_EVALUATOR: "REAL_PKI"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_REVOCATION_MODE: "CRL"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_ALLOW_INSECURE_NO_REVOCATION: "false"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_MAX_AGE_MS: "30000"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_ATTESTATION_VERIFIER: "KEY_BASED"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_ATTESTATION_EXPECTED_BUILDER_ID: "faz22-agent-builder@acik"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_ATTESTATION_EXPECTED_POLICY_HASH: "faz22-remote-bridge-policy-v1"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_ATTESTATION_SIGNATURE_ALGORITHM: "SHA256withECDSA"
+
+  REMOTE_BRIDGE_STEP_UP_VERIFIER: "WEBAUTHN"
+  REMOTE_BRIDGE_STEP_UP_SIGNATURE_ALGORITHM: "SHA256withECDSA"
+  REMOTE_BRIDGE_STEP_UP_EXPECTED_ORIGIN: "https://testai.acik.com"
+  REMOTE_BRIDGE_STEP_UP_EXPECTED_RP_ID: "testai.acik.com"
+  REMOTE_BRIDGE_STEP_UP_CHALLENGE_TTL_MILLIS: "120000"
+
+  REMOTE_BRIDGE_OPERATOR_AUTH_TYPE: "JWT_BEARER"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_JWK_SET_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_ISSUER: "https://testai.acik.com/realms/platform-test"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_AUDIENCE: "remote-bridge-operator-api"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_TENANT_CLAIM: "tenant_id"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_SUBJECT_CLAIM: "preferred_username"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_ROLE_CLAIM_PATH: "realm_access.roles"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_REQUIRED_OPERATOR_ROLE: "remote-bridge-operator"
+
+  REMOTE_BRIDGE_OPERATOR_REST_ENABLED: "true"
+  REMOTE_BRIDGE_NEGATIVE_PROBES_ENABLED: "true"
+  REMOTE_BRIDGE_NEGATIVE_PROBES_OBSERVATION_TIMEOUT_MILLIS: "15000"
+  REMOTE_BRIDGE_APPROVAL_REST_ENABLED: "true"
+  REMOTE_BRIDGE_APPROVAL_AUDIT_SINK: "DURABLE_WORM_DB"
+  REMOTE_BRIDGE_APPROVAL_GRANT_TTL_MILLIS: "300000"
+  REMOTE_BRIDGE_APPROVAL_FATIGUE_MAX_PER_WINDOW: "5"
+  REMOTE_BRIDGE_APPROVAL_FATIGUE_WINDOW_MILLIS: "3600000"
+  SPRING_APPLICATION_JSON: |
+    {
+      "remote-bridge": {
+        "approval": {
+          "canonical-identity": {
+            "rb-operator-denetim": "rb-operator-denetim",
+            "rb-approver-denetim": "rb-approver-denetim"
+          },
+          "grants": {
+            "can-request": {
+              "rb-operator-denetim": ["00000000-0000-0000-0000-000000000001"]
+            },
+            "can-approve": {
+              "rb-approver-denetim": ["00000000-0000-0000-0000-000000000001"]
+            }
+          }
+        }
+      }
+    }
