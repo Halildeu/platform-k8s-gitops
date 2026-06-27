@@ -96,6 +96,17 @@ runtime sequence as a metadata-only operator artifact (`README.md` + manifest +
 Kubernetes mutation, no Denetim PC touch, no direct-STT enablement, no
 `/transcribe`, no raw audio, and no #182/#1615 status advance.
 
+**Faz 24 external recorder operator handoff package delta (2026-06-27)**:
+`build-external-recorder-operator-handoff.py` plus workflow
+`faz24-external-recorder-operator-handoff.yml` now package the remaining
+external meeting-admin + recorder lifecycle sequence as a metadata-only
+operator artifact (`README.md` + manifest + `SHA256SUMS`). It orders approved
+short-lived `platform-desktop` token file -> token-contract PASS -> external
+recorder smoke PASS -> verifier PASS -> G-CAP aggregate when enough verifier
+summaries exist. Boundary: no token mint/read, no testai connection, no
+Keycloak/Kubernetes/Vault mutation, no smoke run, no audio send, and no #1615
+status advance.
+
 **Faz 24 external recorder evidence hardening delta (2026-06-27)**:
 `run_external_recorder_smoke.py` and
 `verify_external_recorder_smoke_evidence.py` now align with the direct-STT and

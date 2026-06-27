@@ -45,6 +45,28 @@ contract (`frontend` or `account`) rather than inventing a new `api-gateway`
 audience unless the `api-gateway` runtime config is changed and verified in a
 separate backend/GitOps change.
 
+## Metadata-Only Handoff Package
+
+For an operator-facing command bundle, build the source-side handoff artifact:
+
+```bash
+gh workflow run faz24-external-recorder-operator-handoff.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f operator_batch_id=faz24-external-recorder-20260627 \
+  -f gitops_ref=main \
+  -f base_url=https://testai.acik.com \
+  -f expected_issuer=https://testai.acik.com/realms/platform-test
+```
+
+The artifact contains `README.md`,
+`faz24-external-recorder-operator-handoff.json`, and `SHA256SUMS`. It is a
+coordination artifact only: it does not mint or read tokens, connect to
+`testai.acik.com`, mutate Keycloak/Kubernetes/Vault, run the smoke, send audio,
+or advance #1615. Use it to hand the exact token-contract -> external-smoke ->
+verifier -> G-CAP aggregate command order to the operator without embedding
+secrets or raw command transcripts.
+
 ## Operator Steps
 
 ### 1. Preflight current token
