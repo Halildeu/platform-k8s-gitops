@@ -153,6 +153,28 @@ advance #182/#1615 status. Live #182 still requires approved credential seed,
 real `k3d-test` preflight PASS, reviewed flag flip, fresh result-stream
 evidence, same-session audit, and no raw-audio persistence proof.
 
+## Live Delta — Faz 24 direct-STT self-hosted preflight collector packaged (2026-06-27)
+
+The `platform-ai#182` Gate 1 pre-flag evidence path now has a canonical
+self-hosted collection workflow:
+
+- `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml` runs on the
+  `staging-sw` self-hosted runner and calls
+  `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py` with explicit
+  `k3d-test` / `platform-test` inputs.
+- The workflow then runs
+  `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py`, uploads a
+  metadata-only artifact and summary, and fails unless the verifier passes.
+- Failed runs still upload bounded blocker evidence when the artifact leak
+  guard passes, but a red run is not acceptance and must not advance #182 or
+  #1615.
+
+Boundary: source-side workflow/runbook documentation only. It does not seed
+credentials, read or write Vault, mutate Kubernetes, mutate Caddy/firewall,
+enable direct-STT, call `/transcribe`, send audio, collect raw output, or
+advance #182/#1615 status. It only removes the manual-shell dependency for the
+seed-after / flag-before evidence collection step.
+
 ## Live Delta — Faz 24 direct-STT preflight context guard packaged (2026-06-27)
 
 The direct-STT mTLS enablement collector now distinguishes local execution

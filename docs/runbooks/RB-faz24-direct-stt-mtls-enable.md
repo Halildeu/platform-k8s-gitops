@@ -132,6 +132,28 @@ python3 scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py \
   --summary-json /tmp/faz24-direct-stt-mtls-preflight.verify.json
 ```
 
+If the evidence should be collected by the canonical self-hosted test runner
+instead of an interactive shell on `staging-sw`, dispatch the collector
+workflow. It runs the same collector/verifier on the `staging-sw` runner,
+uploads the metadata-only JSON + verifier summary, and stays red when the
+preflight is not accepted:
+
+```bash
+gh workflow run faz24-direct-stt-mtls-preflight-collect.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f kube_context=k3d-test \
+  -f namespace=platform-test \
+  -f deployment=audio-gateway \
+  -f probe_timeout=40
+```
+
+The artifact name is
+`faz24-direct-stt-mtls-preflight-collect-<run_id>`. A red workflow can still be
+useful fail-closed blocker evidence, but it is not acceptance. Gate 1 is
+accepted only when the verifier exit code is `0` and the artifact leak guard
+passes.
+
 The collector fails closed if the Secret key names are absent, the real pod
 cannot use the mounted cert material, or any expected GitOps/runtime shape is
 missing. It writes only key names, bounded HTTP status/timing metadata, and
