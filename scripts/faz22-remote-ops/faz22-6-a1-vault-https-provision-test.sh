@@ -41,22 +41,26 @@ need() {
 }
 
 docker_cmd() {
-  if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
-    docker "$@"
-  else
-    sudo -n docker "$@"
-  fi
+  local docker_bin
+  for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
+    if command -v "$docker_bin" >/dev/null 2>&1 && "$docker_bin" version >/dev/null 2>&1; then
+      "$docker_bin" "$@"
+      return 0
+    fi
+    if command -v sudo >/dev/null 2>&1 && sudo -n "$docker_bin" version >/dev/null 2>&1; then
+      sudo -n "$docker_bin" "$@"
+      return 0
+    fi
+  done
+  echo "FAIL docker CLI unavailable through PATH, common absolute paths, or sudo" >&2
+  return 1
 }
 
 need_docker() {
-  if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
-    return 0
-  fi
-  if sudo -n docker version >/dev/null 2>&1; then
-    return 0
-  fi
-  echo "FAIL missing command: docker (also unavailable through sudo -n docker)" >&2
-  exit 1
+  docker_cmd version >/dev/null 2>&1 || {
+    echo "FAIL missing command: docker (also unavailable through common paths or sudo)" >&2
+    exit 1
+  }
 }
 
 need openssl

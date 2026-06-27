@@ -142,7 +142,25 @@ fi
 vault_tls_files="$(remote_shell "if sudo -n test -r '$VAULT_TLS_DIR/ca.crt' && sudo -n test -r '$VAULT_TLS_DIR/tls.crt' && sudo -n test -r '$VAULT_TLS_DIR/tls.key'; then echo present; else echo missing; fi" 2>/dev/null || true)"
 if [ "$vault_tls_files" = "present" ]; then
   ok "Vault TLS material present on $SSH_TARGET (values not printed)"
-  vault_https_health="$(remote_shell "if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then docker exec platform-vault-test sh -c 'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'; else sudo -n docker exec platform-vault-test sh -c 'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'; fi && echo pass || echo fail" 2>/dev/null || true)"
+  vault_status_cmd="$(cat <<'EOS'
+docker_cmd() {
+  local docker_bin
+  for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
+    if command -v "$docker_bin" >/dev/null 2>&1 && "$docker_bin" version >/dev/null 2>&1; then
+      "$docker_bin" "$@"
+      return 0
+    fi
+    if command -v sudo >/dev/null 2>&1 && sudo -n "$docker_bin" version >/dev/null 2>&1; then
+      sudo -n "$docker_bin" "$@"
+      return 0
+    fi
+  done
+  return 1
+}
+docker_cmd exec platform-vault-test sh -c 'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status -format=json >/dev/null'
+EOS
+)"
+  vault_https_health="$(remote_shell "$vault_status_cmd && echo pass || echo fail" 2>/dev/null || true)"
   if [ "$vault_https_health" = "pass" ]; then
     ok "Vault HTTPS 8202 CA-pinned status works"
   else
