@@ -87,6 +87,15 @@ false-acceptance hardening only; #182 still requires approved seed, preflight
 PASS, flag flip, fresh `/transcribe` result-stream evidence, same-session audit
 correlation, and no raw-audio persistence proof.
 
+**Faz 24 direct-STT operator handoff package delta (2026-06-27)**:
+`build-direct-stt-operator-handoff.py` plus workflow
+`faz24-direct-stt-operator-handoff.yml` now package the remaining #182/#1615
+runtime sequence as a metadata-only operator artifact (`README.md` + manifest +
+`SHA256SUMS`). It orders credential seed -> preflight PASS -> reviewed flag flip
+-> e2e PASS -> reviewer acceptance. Boundary: no Vault read/write, no
+Kubernetes mutation, no Denetim PC touch, no direct-STT enablement, no
+`/transcribe`, no raw audio, and no #182/#1615 status advance.
+
 **Faz 24 external recorder evidence hardening delta (2026-06-27)**:
 `run_external_recorder_smoke.py` and
 `verify_external_recorder_smoke_evidence.py` now align with the direct-STT and

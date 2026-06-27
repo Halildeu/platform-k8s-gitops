@@ -85,6 +85,36 @@ dedicated mTLS Secret via `envFrom`; it is mounted read-only as files only.
 
 There are two evidence gates.
 
+### Operator handoff package
+
+When the runtime executor and credential seed authority are ready, generate a
+metadata-only handoff package before any live mutation:
+
+```bash
+gh workflow run faz24-direct-stt-operator-handoff.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f operator_batch_id=faz24-direct-stt-20260627 \
+  -f gitops_ref=main \
+  -f kube_context=k3d-test \
+  -f namespace=platform-test \
+  -f preflight_evidence_path=docs/faz-24-evidence/direct-stt-mtls-preflight.json \
+  -f e2e_evidence_path=docs/faz-24-evidence/direct-stt-e2e.json
+```
+
+Download the artifact `faz24-direct-stt-operator-handoff-<run_id>` and verify:
+
+```bash
+sha256sum --check SHA256SUMS
+```
+
+The package contains only `README.md`,
+`faz24-direct-stt-operator-handoff.json`, and `SHA256SUMS`. It is coordination
+material for Gate 0 -> Gate 1 -> flag flip -> Gate 2; it is not evidence by
+itself. It must not contain Vault values, PEM data, bearer/JWT material, raw
+command output, raw audio, transcript text, packet captures, or destination URL
+payloads.
+
 ### Gate 1 — mTLS enablement preflight, before the flag flip
 
 After Vault seed + ESO mapping, but before `AUDIO_GATEWAY_DIRECT_STT_ENABLED`

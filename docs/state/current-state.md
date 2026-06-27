@@ -1,5 +1,34 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT operator handoff package packaged (2026-06-27)
+
+The remaining `platform-ai#182` / `platform-k8s-gitops#1615` operator runtime
+path now has a metadata-only handoff package builder and GitHub workflow:
+
+- `scripts/faz24/build-direct-stt-operator-handoff.py` emits `README.md`,
+  `faz24-direct-stt-operator-handoff.json`, and `SHA256SUMS` under schema
+  `faz24.directStt.operator-handoff.v1`.
+- `.github/workflows/faz24-direct-stt-operator-handoff.yml` builds and uploads
+  the same package from `workflow_dispatch`, with six bounded inputs only:
+  operator batch id, GitOps ref, kube context, namespace, preflight evidence
+  path, and e2e evidence path.
+- `tests/faz24/test_build_direct_stt_operator_handoff.py` locks the package
+  boundary: no credentials/cert values/raw audio/transcript material, relative
+  evidence paths only, checked `SHA256SUMS`, and explicit `Needs Verify`
+  acceptance state.
+
+The package orders the handoff as Gate 0 credential seed -> Gate 1
+metadata-only preflight PASS while direct-STT is false -> reviewed GitOps flag
+flip -> Gate 3 metadata-only e2e PASS -> reviewer acceptance. It also carries
+issue comment templates for future preflight/e2e evidence notes.
+
+Boundary: source-side package/workflow/test documentation only. Building the
+package does not read or write Vault, mutate Kubernetes, touch Denetim PC,
+enable direct-STT, call `/transcribe`, send audio, collect runtime evidence, or
+advance #182/#1615 status. Live #182 still requires approved credential seed,
+real `k3d-test` preflight PASS, reviewed flag flip, fresh result-stream
+evidence, same-session audit, and no raw-audio persistence proof.
+
 ## Live Delta — Faz 24 direct-STT preflight context guard packaged (2026-06-27)
 
 The direct-STT mTLS enablement collector now distinguishes local execution
