@@ -357,7 +357,7 @@ def build_package(args: argparse.Namespace) -> dict[str, object]:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True, help="directory for the handoff files")
-    parser.add_argument("--operator-batch-id", default="faz24-wg-bplus-20260625")
+    parser.add_argument("--operator-batch-id", default="faz24-wg-bplus-20260628")
     parser.add_argument("--i3-identity-run-id", default=DEFAULT_I3_IDENTITY_RUN_ID)
     parser.add_argument("--i3-authorize-package-run-id", default=DEFAULT_I3_AUTHORIZE_PACKAGE_RUN_ID)
     parser.add_argument("--i3-public-key-fingerprint", default=DEFAULT_I3_PUBLIC_KEY_FINGERPRINT)

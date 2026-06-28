@@ -11,7 +11,7 @@ on:
       operator_batch_id:
         description: "Symbolic operator batch id"
         required: true
-        default: "faz24-wg-bplus-20260625"
+        default: "faz24-wg-bplus-20260628"
       i3_identity_run_id:
         description: "I3 runner SSH identity workflow run id"
         required: true

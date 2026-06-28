@@ -45,6 +45,7 @@ class BuildWgBplusOperatorHandoffTest(unittest.TestCase):
                 (output / "faz24-wg-bplus-operator-handoff.json").read_text(encoding="utf-8")
             )
             self.assertEqual("faz24.wg-bplus.operator-handoff.v1", manifest["schemaVersion"])
+            self.assertEqual("faz24-wg-bplus-20260628", manifest["operatorBatchId"])
             self.assertEqual("Needs Verify", manifest["i3"]["boardStatus"])
             self.assertEqual("Needs Verify", manifest["i6"]["boardStatus"])
             self.assertTrue(manifest["acceptanceBoundary"]["operatorExecutionRequired"])
