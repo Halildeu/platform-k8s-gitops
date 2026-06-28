@@ -88,6 +88,7 @@ jobs:
             -e 'Bearer ' \
             -e 'Authorization:' \
             -e 'eyJ[A-Za-z0-9_-]+\.' \
+            -e 'data:audio/[A-Za-z0-9.+-]+;base64,' \
             -e '"(access_token|refresh_token|token|jwt|password|secret|private_key|audio|raw_audio|transcript|prompt|response|payload|email|phone|telephone|full_name)"[[:space:]]*:' \
             -- "${EVIDENCE_DIR}"; then
             echo "::error::readiness rollup artifact contains forbidden private/secret/raw media/personal material"

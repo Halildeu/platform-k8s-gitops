@@ -78,8 +78,22 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "directGrantsRestored" in workflow
     assert "tempUserDeleted" in workflow
     assert "tokenFileRemoved" in workflow
+    assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,'" in workflow
     assert "SECRET_SCAN_OUTCOME" in workflow
     assert "No production, direct-STT, desktop mic/loopback" in workflow
     assert 'sed -n \'1,80p\' "${EVIDENCE_DIR}/runner.stdout"' not in workflow
     assert 'sed -n \'1,80p\' "${EVIDENCE_DIR}/runner.stderr"' not in workflow
     assert "cancel-in-progress: false" in workflow
+
+
+def test_workflow_secret_scan_blocks_raw_audio_data_urls_before_upload():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    secret_scan = workflow.split("- name: Verify artifact excludes private material", 1)[1]
+    secret_scan = secret_scan.split("- name: Write workflow summary", 1)[0]
+
+    assert "grep -R -a -E --" not in secret_scan
+    assert "grep -E --" not in secret_scan
+    assert "-e '-----BEGIN CERTIFICATE-----'" in secret_scan
+    assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,' \\\n            -- \\" in secret_scan
+    assert "steps.secret_scan.outcome == 'success'" in workflow
