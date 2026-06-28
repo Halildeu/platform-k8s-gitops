@@ -1,5 +1,42 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 product-gate handoff now carries G-OPS issue reference (2026-06-28)
+
+During G-OPS/G-COMP issue evidence sync, Codex found that the product-gate
+handoff manifest already carried G-OPS verifier and ingest commands but its
+`issues` object did not point at `platform-k8s-gitops#2022`. PR #2140 added
+`gopsVerifier=platform-k8s-gitops#2022`, pinned it in the product-gate handoff
+unit test, and merged to `main` at
+`73be208f36e5d9f5c540bd2d48e10f2615394fae`.
+
+On that main head SHA, Codex regenerated the metadata-only product-gate
+handoff package:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28329431009`
+- Artifact: `faz24-product-gate-operator-handoff-28329431009`
+- Schema: `faz24.productGate.operator-handoff.v1`
+- Operator batch id: `faz24-product-gate-20260628`
+- Issue references:
+  `gcapAggregate=platform-k8s-gitops#2027`,
+  `gopsVerifier=platform-k8s-gitops#2022`,
+  `gcompVerifier=platform-k8s-gitops#2024`,
+  `productGateIngest=platform-k8s-gitops#2027`
+
+Artifact validation: workflow returned `success`; downloaded artifact
+`SHA256SUMS` verified `README.md` and
+`faz24-product-gate-operator-handoff.json`; local artifact scan found no
+forbidden private key, certificate, bearer/JWT, or raw-audio-like material.
+The manifest keeps `containsCredentials=false`, `containsRawAudio=false`, and
+`containsUnredactedPersonalData=false`.
+
+Boundary: this is source/test/current-state sync plus metadata-only handoff
+packaging. It does not collect G-CAP/G-OPS/G-COMP evidence, run an on-prem
+operability drill, mutate Kubernetes/Vault/Keycloak/Denetim/legal state, send
+audio, ingest product-gate evidence, satisfy `#2022`, `#2024`, `#2027`, or
+advance `#1615`. These issues remain `Needs Verify` pending accepted redacted
+runtime/operator evidence, ingest artifacts, and reviewer acceptance.
+
 ## Live Delta — Faz 24 I7 app-mTLS handoff default synced and artifact regenerated (2026-06-28)
 
 PR #2138 synced the remaining stale Faz 24 operator-handoff defaults and
