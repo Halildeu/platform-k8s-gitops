@@ -33,6 +33,9 @@ def test_runner_contract_restores_and_redacts():
     assert "KC_ADMIN_MODE" in text
     assert "ADMIN_TOKEN_FILE" in text
     assert "kc_admin_rest" in text
+    assert "mapper-${name}-update.json" in text
+    assert "jq --arg id" in text
+    assert ".id = $id" in text
     assert "keycloak-admin-login-failed" in text
     assert "sudoReadable" in text
     assert "--arg candidateLabel" in text
