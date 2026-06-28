@@ -1,5 +1,52 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 external-recorder current-main refresh PASS; #1615 rollup still open (2026-06-28)
+
+Codex dispatched the safe `platform-test` external-recorder evidence workflow
+on current `main` after the #1615 readiness rollup verifier landed:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326365972`
+- Head SHA: `57f9e6fdd1085ddabf442da94abe7fa642c9d8f8`
+- Artifact: `faz24-platform-desktop-token-evidence-28326365972`
+- Diagnostic envelope: `faz24.platformDesktopTokenEvidenceChain.v1`,
+  `status=pass`, `tokenIncluded=false`, `failureReason=null`.
+- Chain results: platform-desktop token contract `pass`, external recorder
+  smoke `pass`, external recorder verifier `pass`.
+- Cleanup: direct grants toggled and restored, temporary smoke user created and
+  deleted, token file removed.
+- Boundary flags: `platformTestOnly=true`, `productionMutation=false`,
+  `rawTokenLogged=false`, `rawPasswordLogged=false`,
+  `rawAdminCredentialLogged=false`, `directSttClaimed=false`,
+  `productionReadyClaimed=false`.
+- Downloaded artifact local scan found no forbidden token, key, certificate,
+  bearer, private-field, raw-audio, or raw-transcript material.
+
+External recorder verifier summary:
+
+- Schema: `faz24.externalRecorderSmokeVerifier.v1`, `status=pass`,
+  `tokenIncluded=false`.
+- Accepted scope: `externalMeetingAdminPathExercised=true`,
+  `recorderLifecycleExercised=true`.
+- Explicit non-claims: `directClientToStt=false`, `directSttProven=false`,
+  `directSttTranscriptProven=false`, `desktopMicLoopbackProven=false`,
+  `productionReady=false`.
+- All verifier checks passed, including exact lifecycle step order and HTTP
+  contract checks for meeting create, consent, session start, chunk upload,
+  finish, and status.
+
+Evidence comment:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826497928
+
+Boundary: this fresh run proves only the short-lived `platform-desktop` token
+to external meeting-admin and recorder lifecycle slice on `platform-test`. It
+does not prove desktop mic/loopback, direct-STT, direct-STT transcript,
+compute-plane audit, I7 full prod-gate, G-OPS, G-COMP, legal acceptance, or
+production readiness. `#1615` remains open and Project #2 status remains
+`Needs Verify` until the remaining rollup gates have accepted evidence.
+
 ## Live Delta — Faz 24 #1615 readiness rollup verifier packaged; child gates still authoritative (2026-06-28)
 
 The #1615 multi-gate acceptance surface now has a source-side fail-closed
