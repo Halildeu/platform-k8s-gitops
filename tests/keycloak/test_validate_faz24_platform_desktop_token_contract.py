@@ -47,6 +47,9 @@ def test_valid_platform_desktop_token_contract_passes():
                 "companyId": "1",
                 "userId": "990001",
                 "realm_access": {"roles": ["MEETING_ADMIN"]},
+                "resource_access": {
+                    "audio-gateway-service": {"roles": ["audio_record"]}
+                },
             }
         )
     )
@@ -56,6 +59,7 @@ def test_valid_platform_desktop_token_contract_passes():
     assert report["tokenIncluded"] is False
     assert report["audience"]["gatewayMatches"] == ["frontend"]
     assert all(report["claims"].values())
+    assert report["clientRole"]["present"] is True
 
 
 def test_missing_gateway_compatible_audience_fails():
@@ -68,6 +72,9 @@ def test_missing_gateway_compatible_audience_fails():
                 "companyId": "1",
                 "userId": "990001",
                 "realm_access": {"roles": ["MEETING_ADMIN"]},
+                "resource_access": {
+                    "audio-gateway-service": {"roles": ["audio_record"]}
+                },
             }
         )
     )
@@ -104,6 +111,28 @@ def test_missing_required_claim_and_role_fail_without_leaking_token():
     assert "signature" not in proc.stderr
 
 
+def test_missing_audio_record_client_role_fails():
+    proc, report = _run(
+        _token(
+            {
+                "azp": "platform-desktop",
+                "aud": ["audio-gateway-service", "meeting-service", "frontend"],
+                "tenantId": "1",
+                "companyId": "1",
+                "userId": "990001",
+                "realm_access": {"roles": ["MEETING_ADMIN"]},
+            }
+        )
+    )
+
+    assert proc.returncode == 1
+    assert report["status"] == "fail"
+    assert report["clientRole"]["resourceClientId"] == "audio-gateway-service"
+    assert report["clientRole"]["present"] is False
+    assert report["clientRole"]["missing"] == ["audio_record"]
+    assert any("missing client role" in failure for failure in report["failures"])
+
+
 def test_token_file_input_path_passes(tmp_path):
     token_file = tmp_path / "token.jwt"
     token_file.write_text(
@@ -115,6 +144,9 @@ def test_token_file_input_path_passes(tmp_path):
                 "companyId": "1",
                 "userId": "990001",
                 "realm_access": {"roles": ["MEETING_ADMIN"]},
+                "resource_access": {
+                    "audio-gateway-service": {"roles": ["audio_record"]}
+                },
             }
         )
         + "\n",
@@ -145,6 +177,9 @@ def test_required_azp_mismatch_fails():
                 "companyId": "1",
                 "userId": "990001",
                 "realm_access": {"roles": ["MEETING_ADMIN"]},
+                "resource_access": {
+                    "audio-gateway-service": {"roles": ["audio_record"]}
+                },
             }
         )
     )

@@ -36,6 +36,9 @@ def _valid_token() -> str:
             "companyId": "1",
             "userId": "990001",
             "realm_access": {"roles": ["MEETING_ADMIN"]},
+            "resource_access": {
+                "audio-gateway-service": {"roles": ["audio_record"]}
+            },
         }
     )
 

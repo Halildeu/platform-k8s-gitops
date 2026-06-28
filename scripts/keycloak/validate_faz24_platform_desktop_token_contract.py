@@ -23,6 +23,8 @@ DEFAULT_REQUIRED_AUDIENCES = ("audio-gateway-service", "meeting-service")
 # recorded in GitOps config; override this when runtime config changes.
 DEFAULT_GATEWAY_AUDIENCES = ("frontend", "account", "auth-service")
 DEFAULT_REQUIRED_CLAIMS = ("tenantId", "companyId", "userId")
+DEFAULT_RESOURCE_CLIENT_ID = "audio-gateway-service"
+DEFAULT_REQUIRED_CLIENT_ROLES = ("audio_record",)
 
 
 def _csv(value: str | None, default: tuple[str, ...]) -> list[str]:
@@ -79,18 +81,34 @@ def _roles(payload: dict[str, Any]) -> list[str]:
     return [str(role) for role in roles if role is not None]
 
 
+def _client_roles(payload: dict[str, Any], resource_client_id: str) -> list[str]:
+    resource_access = payload.get("resource_access")
+    if not isinstance(resource_access, dict):
+        return []
+    client_access = resource_access.get(resource_client_id)
+    if not isinstance(client_access, dict):
+        return []
+    roles = client_access.get("roles")
+    if not isinstance(roles, list):
+        return []
+    return [str(role) for role in roles if role is not None]
+
+
 def validate(
     payload: dict[str, Any],
     *,
     required_audiences: list[str],
     gateway_audiences: list[str],
     required_claims: list[str],
+    resource_client_id: str,
+    required_client_roles: list[str],
     required_azp: str,
     required_role: str,
     expected_issuer: str | None,
 ) -> dict[str, Any]:
     aud = _normalize_audience(payload.get("aud"))
     roles = _roles(payload)
+    client_roles = _client_roles(payload, resource_client_id)
     failures: list[str] = []
 
     missing_required_audiences = [item for item in required_audiences if item not in aud]
@@ -99,6 +117,9 @@ def validate(
         item
         for item in required_claims
         if item not in payload or payload.get(item) in (None, "")
+    ]
+    missing_client_roles = [
+        item for item in required_client_roles if item not in client_roles
     ]
 
     if missing_required_audiences:
@@ -116,6 +137,13 @@ def validate(
         failures.append(f"azp mismatch: expected {required_azp}")
     if required_role not in roles:
         failures.append(f"missing realm role: {required_role}")
+    if missing_client_roles:
+        failures.append(
+            "missing client role(s) for "
+            + resource_client_id
+            + ": "
+            + ",".join(missing_client_roles)
+        )
     if expected_issuer is not None and payload.get("iss") != expected_issuer:
         failures.append(f"issuer mismatch: expected {expected_issuer}")
 
@@ -140,6 +168,12 @@ def validate(
         "realmRole": {
             "required": required_role,
             "present": required_role in roles,
+        },
+        "clientRole": {
+            "resourceClientId": resource_client_id,
+            "required": required_client_roles,
+            "missing": missing_client_roles,
+            "present": not missing_client_roles,
         },
         "failures": failures,
     }
@@ -179,6 +213,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Comma-separated required claims. Default: " + ",".join(DEFAULT_REQUIRED_CLAIMS),
     )
     parser.add_argument(
+        "--resource-client-id",
+        default=os.environ.get("RESOURCE_CLIENT_ID", DEFAULT_RESOURCE_CLIENT_ID),
+        help="Resource client id for capability roles. Default: " + DEFAULT_RESOURCE_CLIENT_ID,
+    )
+    parser.add_argument(
+        "--required-client-roles",
+        default=os.environ.get("REQUIRED_CLIENT_ROLES"),
+        help=(
+            "Comma-separated client roles on --resource-client-id. Default: "
+            + ",".join(DEFAULT_REQUIRED_CLIENT_ROLES)
+        ),
+    )
+    parser.add_argument(
         "--required-azp",
         default=os.environ.get("REQUIRED_AZP", "platform-desktop"),
         help="Expected azp client id. Default: platform-desktop.",
@@ -203,6 +250,11 @@ def main(argv: list[str] | None = None) -> int:
             required_audiences=_csv(args.required_audiences, DEFAULT_REQUIRED_AUDIENCES),
             gateway_audiences=_csv(args.gateway_accepted_audiences, DEFAULT_GATEWAY_AUDIENCES),
             required_claims=_csv(args.required_claims, DEFAULT_REQUIRED_CLAIMS),
+            resource_client_id=args.resource_client_id,
+            required_client_roles=_csv(
+                args.required_client_roles,
+                DEFAULT_REQUIRED_CLIENT_ROLES,
+            ),
             required_azp=args.required_azp,
             required_role=args.required_role,
             expected_issuer=args.expected_issuer,

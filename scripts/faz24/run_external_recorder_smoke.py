@@ -147,6 +147,8 @@ def _validate_token_contract(token: str, expected_issuer: str | None) -> dict[st
         required_audiences=list(validator.DEFAULT_REQUIRED_AUDIENCES),
         gateway_audiences=list(validator.DEFAULT_GATEWAY_AUDIENCES),
         required_claims=list(validator.DEFAULT_REQUIRED_CLAIMS),
+        resource_client_id=validator.DEFAULT_RESOURCE_CLIENT_ID,
+        required_client_roles=list(validator.DEFAULT_REQUIRED_CLIENT_ROLES),
         required_azp="platform-desktop",
         required_role="MEETING_ADMIN",
         expected_issuer=expected_issuer,
