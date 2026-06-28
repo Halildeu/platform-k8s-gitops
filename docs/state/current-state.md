@@ -1,5 +1,49 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 WG-B+ operator handoff regenerated with fresh I3 package defaults (2026-06-28)
+
+Codex regenerated the metadata-only WG-B+ operator handoff from current `main`
+after the fresh I3 identity/package defaults landed:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28327185922`
+- Artifact: `faz24-wg-bplus-operator-handoff-28327185922`
+- Schema: `faz24.wg-bplus.operator-handoff.v1`
+- Operator batch id: `faz24-wg-bplus-20260628`
+- I3 identity run id: `28326845949`
+- I3 authorize package run id: `28326859105`
+- I3 authorize package artifact:
+  `faz24-i3-denetim-ssh-authorize-package-28326859105`
+- I3 target user: `svc-denetim-agent`
+- I3 board status in manifest: `Needs Verify`
+
+Artifact validation: downloaded `SHA256SUMS` verified `README.md` and
+`faz24-wg-bplus-operator-handoff.json`; local artifact scan found no forbidden
+private key, token, bearer, raw-audio, raw-transcript, or credential-like JSON
+key findings. Manifest mutation boundary has `containsSecrets=false`,
+`packageBuildDenetimMutation=false`, `packageBuildHostMutation=false`,
+`packageBuildClusterMutation=false`, and `packageBuildProductionMutation=false`.
+
+The handoff artifact now gives the operator one current sequence: download the
+fresh Denetim SSH authorize package, run
+`authorize-denetim-i3-public-key.ps1` from an elevated Denetim PowerShell
+session, ingest `denetim-i3-ssh-authorize-evidence.json`, then rerun
+`faz24-wg-bplus-i3-evidence.yml` and require verifier PASS. The default
+operator batch id in `scripts/faz24/build-wg-bplus-operator-handoff.py` and
+`.github/workflows/faz24-wg-bplus-operator-handoff.yml` is now
+`faz24-wg-bplus-20260628`, matching the regenerated artifact.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826569987
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826570829
+
+Boundary: this is coordination packaging only. It does not authorize the key on
+Denetim, ingest Denetim-side evidence, pass I3, or satisfy `#1615`. `#1864` and
+`#1615` remain `Needs Verify`.
+
 ## Live Delta — Faz 24 I3 operator package refreshed from current runner public key (2026-06-28)
 
 After the current-main I3 evidence refresh confirmed
