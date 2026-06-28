@@ -1,5 +1,42 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 operator handoff artifacts refreshed on current main; runtime gates unchanged (2026-06-28)
+
+Three metadata-only Faz 24 operator handoff packages were regenerated from
+current `main` head `7170360375066734ec1792b4adb3d3576083bb22` after the
+external recorder and direct-STT preflight truth refreshes:
+
+| Package | Workflow run | Artifact | Scope | Runtime evidence collected |
+|---|---:|---|---|---|
+| Desktop capture handoff | `28324678324` | `faz24-desktop-capture-operator-handoff-28324678324` | real `platform-desktop` microphone + loopback gate sequence | No |
+| I7 app-mTLS handoff | `28324677083` | `faz24-i7-app-mtls-operator-handoff-28324677083` | live-stt preflight plus full I7 prod-gate sequence | No |
+| Product-gate handoff | `28324676315` | `faz24-product-gate-operator-handoff-28324676315` | G-CAP / G-OPS / G-COMP evidence sequencing | No |
+
+All three workflow runs concluded `success`; downloaded artifacts passed local
+`SHA256SUMS` verification. Their schemas are:
+`faz24.desktopCapture.operator-handoff.v1`,
+`faz24.i7AppMtls.operator-handoff.v1`, and
+`faz24.productGate.operator-handoff.v1`.
+
+Boundary: these are coordination artifacts only. They do not run the desktop
+app, read tokens, connect to `testai`, mutate Kubernetes/Vault/firewall/legal
+state, collect runtime evidence, enable direct-STT, send audio, ingest
+G-CAP/G-OPS/G-COMP evidence, claim legal go, or advance `#1615` /
+`platform-ai#198`. Open gates are unchanged: direct-STT still needs approved
+Vault/ESO seed and pre-flag mTLS PASS before any reviewed flag flip; desktop
+capture still needs a real mic+loopback run and verifier PASS; I7 still needs
+bounded endpoint/security policy evidence plus full prod-gate evidence including
+meeting-ai; product gates still need accepted redacted runtime/operator
+evidence and verifier/ingest PASS. KVKK/VERBIS owner legal acceptance remains a
+parallel legal track and is not an engineering blocker after owner notification.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826339054
+- `platform-ai#198`:
+  https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4826339056
+
 ## Live Delta — Faz 24 direct-STT mTLS preflight rerun still blocks on ESO/Secret seed (2026-06-28)
 
 After the operator reported the Denetim/ESET allow work as completed, the
