@@ -1,5 +1,43 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 readiness and platform-desktop evidence ingest block raw audio data URLs before artifact upload (2026-06-28)
+
+PR #2144 extended the raw-audio data URL retention guard from the product-gate
+ingest workflow to two remaining Faz 24 evidence-upload boundaries and merged
+to `main` at `fbec1ce269b9ad47a644df938a9e05f57bb50298`.
+
+Updated workflows:
+
+- `.github/workflows/faz24-readiness-rollup-evidence-ingest.yml`
+- `.github/workflows/faz24-platform-desktop-token-evidence.yml`
+
+Both workflows already rejected token/private/certificate-like values and raw
+media key names before artifact upload. They now also reject raw media data URL
+values matching `data:audio/[A-Za-z0-9.+-]+;base64,` before rejected evidence
+can be retained as an Actions artifact.
+
+Validation:
+
+- Targeted workflow tests:
+  `tests/faz24/test_readiness_rollup_evidence_ingest_workflow.py` and
+  `tests/faz24/test_platform_desktop_token_evidence_workflow.py` -> `9 passed`.
+- Full Faz 24 local test run before PR: `286 passed`.
+- Workflow YAML parse for both modified workflows: pass.
+- Local data URL scan simulations for both grep variants detected
+  `data:audio/wav;base64,...`.
+- PR #2144 CI passed: boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, HARD RULE language check, YAML lint, shellcheck,
+  Kustomize build sanity, CodeQL analysis, and action/python analysis.
+
+Boundary: workflow/test hardening only. This does not collect readiness rollup,
+G-CAP, desktop, external recorder, Direct-STT, or I7 evidence; does not mint or
+read a platform-desktop token; does not perform desktop mic/loopback capture;
+does not mutate runtime/Kubernetes/Vault/Keycloak/Denetim/firewall/legal
+state; and does not satisfy `#2027`, `#2022`, `#2024`, `platform-ai#198`, or
+advance `#1615`. It only strengthens the no-raw-audio retention boundary for
+future metadata-only evidence ingest attempts without making an acceptance
+claim.
+
 ## Live Delta — Faz 24 product-gate ingest blocks raw audio data URLs before artifact upload (2026-06-28)
 
 PR #2142 hardened `.github/workflows/faz24-product-gate-evidence-ingest.yml`
