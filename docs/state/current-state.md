@@ -1,5 +1,64 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 post-ESET/current-main child-gate refresh still needs operator gates (2026-06-28)
+
+After PR #2133 landed on `main`, Codex reran the two safe child-gate
+collectors that can be executed without raw credential disclosure or host
+mutation:
+
+- Head SHA: `74234ffbabf44c42966fa1ab8eb91f0aabca5f81`
+- Direct-STT mTLS preflight workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28327705115`
+- Direct-STT artifact:
+  `faz24-direct-stt-mtls-preflight-collect-28327705115`
+- WG-B+ I3 workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28327705135`
+- WG-B+ I3 artifact: `faz24-wg-bplus-i3-evidence-28327705135`
+
+Direct-STT result (`platform-ai#182`): verifier fail, `52/61` checks passed.
+Accepted live facts: explicit `k3d-test` context exists, `platform-test` is
+reachable, `audio-gateway` pod is Ready, direct-STT remains disabled before
+flag flip, the desired target shape remains `live-stt.denetim:8243` via
+`10.99.0.2/32:8243`, the aggregate Redis ExternalSecret remains Ready, and no
+raw secret/audio/transcript material was exported. Current blocker:
+`ExternalSecret/audio-gateway-direct-stt-mtls` is not `Ready=True`; runtime
+Secret `audio-gateway-direct-stt-mtls` has no file keys; the pod-local mTLS
+probe could not use a client certificate, did not return HTTP `200`, and has
+`vaultSeedAuthorityAccepted=false`. Failure codes:
+`external-secret-not-ready`,
+`kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`,
+`runtime-secret-key-missing`, `mtls-health-not-200`, and
+`mtls-probe-exit-28`.
+
+WG-B+ I3 result (`platform-k8s-gitops#1864`): verifier fail. Accepted
+live/preflight facts: TCP/22 to the Denetim target is reachable, the runner SSH
+identity is configured, and runner public-key metadata is present. Current
+blocker: SSH exits `255` with `sshFailureClass=ssh-auth-publickey`, so the
+remote Denetim collector is not reached. Because the remote collector is not
+reached, OpenSSH event log, PowerShell transcription, PowerShell script-block,
+failed-login audit, WireGuard health, ESET/firewall drift, time-sync, and
+staging connection-log checks remain fail/unproven. This does not prove ESET
+failure; it proves the I3 remote collector still cannot authenticate to Denetim.
+
+Artifact hygiene: downloaded artifacts were scanned locally; no forbidden
+private key, certificate, bearer/JWT, or raw media material was found.
+
+Evidence comments:
+
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826623228
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826623705
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826624329
+
+Boundary: these runs refreshed evidence only. They did not seed Vault, mutate
+Kubernetes, authorize the Denetim key, flip Direct-STT, call `/transcribe`,
+send audio, prove desktop mic/loopback, prove I7, claim production readiness,
+or advance `#1615`. Next gates remain Direct-STT approved mTLS seed ->
+preflight PASS -> reviewed flag flip -> e2e PASS, plus I3 Denetim public-key
+authorization/evidence ingest -> I3 PASS.
+
 ## Live Delta — Faz 24 Direct-STT operator handoff regenerated with fresh batch id (2026-06-28)
 
 Codex regenerated the metadata-only Direct-STT operator handoff from current
