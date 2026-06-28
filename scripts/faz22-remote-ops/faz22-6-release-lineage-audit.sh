@@ -15,6 +15,7 @@ source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
 endpoint_agent_release_policy_load "$REPO_ROOT"
 
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
+SSH_OPTS="${SSH_OPTS:-}"
 RELEASE_LINEAGE_KUBECTL_MODE="${RELEASE_LINEAGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
@@ -50,6 +51,23 @@ sha_from_sums() {
 shell_quote() {
   # shell_quote <value>
   printf '%q' "$1"
+}
+
+ssh_cmd() {
+  # ssh_cmd <target> <remote-command>
+  #
+  # Field operators often need identity-scoped SSH (for example,
+  # `-o IdentitiesOnly=yes -i ~/.ssh/id_ed25519`) to avoid OpenSSH offering too
+  # many local keys before the accepted key. Keep the default behavior unchanged,
+  # but allow bounded options via SSH_OPTS for live audit runs.
+  local target="$1" remote_cmd="$2"
+  local opts=()
+  if [ -n "$SSH_OPTS" ]; then
+    # shellcheck disable=SC2206 # SSH_OPTS is an operator-provided shellwords string.
+    opts=($SSH_OPTS)
+  fi
+  # shellcheck disable=SC2029 # remote_cmd is intentionally composed client-side by the caller.
+  ssh "${opts[@]}" "$target" "$remote_cmd"
 }
 
 fetch_url() {
@@ -646,7 +664,7 @@ main() {
     q_context="$(shell_quote "$KUBE_CONTEXT")"
     q_namespace="$(shell_quote "$KUBE_NAMESPACE")"
     # shellcheck disable=SC2029 # q_context/q_namespace are shell-escaped locally and intentionally expanded before ssh.
-    if live="$(ssh "$SSH_TARGET" "kubectl --context $q_context -n $q_namespace get deploy artifact-host -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image && kubectl --context $q_context -n $q_namespace get pod -l app.kubernetes.io/name=artifact-host -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID" 2>&1)"; then
+    if live="$(ssh_cmd "$SSH_TARGET" "kubectl --context $q_context -n $q_namespace get deploy artifact-host -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image && kubectl --context $q_context -n $q_namespace get pod -l app.kubernetes.io/name=artifact-host -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID" 2>&1)"; then
       printf 'ARTIFACT_HOST_LIVE_OUTPUT_BEGIN\n%s\nARTIFACT_HOST_LIVE_OUTPUT_END\n' "$live"
       digest_hits="$(printf '%s\n' "$live" | grep -c "$EXPECTED_ARTIFACT_HOST_DIGEST" || true)"
       if [ "$digest_hits" -ge "$MIN_ARTIFACT_HOST_DIGEST_HITS" ]; then

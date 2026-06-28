@@ -25,6 +25,7 @@ RBD_PRIMARY_OVERLAY="$REPO_ROOT/kustomize/overlays/test"
 RBD_BRIDGE_OVERLAY="$REPO_ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge"
 
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
+SSH_OPTS="${SSH_OPTS:-}"
 REMOTE_BRIDGE_KUBECTL_MODE="${REMOTE_BRIDGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
@@ -57,6 +58,22 @@ need() {
 shell_quote() {
   local value="$1"
   printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
+}
+
+ssh_cmd() {
+  # ssh_cmd <target> <remote-command>
+  #
+  # Allows live audits to scope OpenSSH identity selection without changing the
+  # default CI behavior. Example:
+  # SSH_OPTS='-o IdentitiesOnly=yes -i ~/.ssh/id_ed25519'
+  local target="$1" remote_cmd="$2"
+  local opts=()
+  if [ -n "$SSH_OPTS" ]; then
+    # shellcheck disable=SC2206 # SSH_OPTS is an operator-provided shellwords string.
+    opts=($SSH_OPTS)
+  fi
+  # shellcheck disable=SC2029 # remote_cmd is intentionally composed client-side by the caller.
+  ssh "${opts[@]}" "$target" "$remote_cmd"
 }
 
 fetch_url() {
@@ -1024,7 +1041,7 @@ check_remote_bridge() {
       return 1
     fi
     # shellcheck disable=SC2029 # rb_query is composed from shell_quote'd context/namespace; intentional remote expansion.
-    if ! output="$(ssh "$SSH_TARGET" "$rb_query" 2>&1)"; then
+    if ! output="$(ssh_cmd "$SSH_TARGET" "$rb_query" 2>&1)"; then
       printf 'REMOTE_BRIDGE_LIVE=unknown mode=ssh reason=%q\n' "$output"
       return 1
     fi
@@ -1074,6 +1091,7 @@ check_release_lineage_gate() {
   if output="$(
     RELEASE_LINEAGE_KUBECTL_MODE="$effective_mode" \
       SSH_TARGET="$SSH_TARGET" \
+      SSH_OPTS="$SSH_OPTS" \
       KUBE_CONTEXT="$KUBE_CONTEXT" \
       KUBE_NAMESPACE="$KUBE_NAMESPACE" \
       bash "$SCRIPT_DIR/faz22-6-release-lineage-audit.sh" 2>&1
