@@ -40,6 +40,7 @@ charts/
 
 # Local
 .local/
+.tmp/
 tmp/
 
 # Claude Code session state

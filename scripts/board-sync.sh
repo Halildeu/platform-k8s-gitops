@@ -322,14 +322,39 @@ preflight() {
     || die "project id mismatch: expected $PROJECT_ID, got '${pid:-none}'"
 }
 
-board_json() {
+ensure_board_cache() {
   if [ -z "$BOARD_CACHE" ]; then
-    BOARD_CACHE="$(mktemp -t board-sync.XXXXXX)"
+    BOARD_CACHE="$(board_cache_temp)"
     gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
       --format json --limit "$PROJECT_ITEM_LIMIT" >"$BOARD_CACHE" \
       || die "failed to fetch board items"
   fi
+}
+
+board_json() {
+  local had_cache="${BOARD_CACHE:-}"
+  ensure_board_cache
   cat "$BOARD_CACHE"
+  if [ -z "$had_cache" ] && [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then
+    rm -f "$BOARD_CACHE"
+  fi
+}
+
+board_cache_temp() {
+  local roots=() root path
+  [ -n "${BOARD_SYNC_TMPDIR:-}" ] && roots+=("$BOARD_SYNC_TMPDIR")
+  [ -n "${TMPDIR:-}" ] && roots+=("$TMPDIR")
+  roots+=("$REPO_ROOT/.tmp/board-sync")
+
+  for root in "${roots[@]}"; do
+    [ -n "$root" ] || continue
+    mkdir -p "$root" 2>/dev/null || continue
+    path="$(mktemp "$root/board-sync.XXXXXX" 2>/dev/null)" || continue
+    printf '%s' "$path"
+    return 0
+  done
+
+  die "failed to create board cache temp file; set BOARD_SYNC_TMPDIR to a writable directory"
 }
 
 # board_matches <num> <repo-or-empty> -> tab lines: id status url title kind
@@ -777,6 +802,7 @@ winner_of() {
 # --- subcommand: list ---------------------------------------------------------
 cmd_list() {
   log "== Eligible work (Status=Todo, Kind!=umbrella, real issues) =="
+  ensure_board_cache
   board_json | jq -r '
     [ .items[]
       | select(.content.type == "Issue")
