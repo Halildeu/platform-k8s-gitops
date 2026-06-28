@@ -30,7 +30,7 @@ For an operator-facing command bundle, build the source-side handoff artifact:
 gh workflow run faz24-desktop-capture-operator-handoff.yml \
   --repo Halildeu/platform-k8s-gitops \
   --ref main \
-  -f operator_batch_id=faz24-desktop-capture-20260627 \
+  -f operator_batch_id=faz24-desktop-capture-20260628 \
   -f gitops_ref=main
 ```
 

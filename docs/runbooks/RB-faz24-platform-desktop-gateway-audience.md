@@ -53,7 +53,7 @@ For an operator-facing command bundle, build the source-side handoff artifact:
 gh workflow run faz24-external-recorder-operator-handoff.yml \
   --repo Halildeu/platform-k8s-gitops \
   --ref main \
-  -f operator_batch_id=faz24-external-recorder-20260627 \
+  -f operator_batch_id=faz24-external-recorder-20260628 \
   -f gitops_ref=main \
   -f base_url=https://testai.acik.com \
   -f expected_issuer=https://testai.acik.com/realms/platform-test
