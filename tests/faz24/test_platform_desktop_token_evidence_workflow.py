@@ -33,6 +33,12 @@ def test_runner_contract_restores_and_redacts():
     assert "KC_ADMIN_MODE" in text
     assert "ADMIN_TOKEN_FILE" in text
     assert "kc_admin_rest" in text
+    assert "RESOURCE_CLIENT_ID" in text
+    assert "CAPABILITY_ROLE" in text
+    assert "audio_record" in text
+    assert "role-mappings/clients/${RESOURCE_CLIENT_UUID}" in text
+    assert "required-client-role-missing" in text
+    assert "CLIENT_ROLE_ASSIGNED" in text
     assert "mapper-${name}-update.json" in text
     assert "jq --arg id" in text
     assert ".id = $id" in text

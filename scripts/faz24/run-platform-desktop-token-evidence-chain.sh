@@ -18,6 +18,8 @@ KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
 KC_INTERNAL_SERVER="${KC_INTERNAL_SERVER:-http://localhost:8080}"
 CLIENT_ID="${CLIENT_ID:-platform-desktop}"
+RESOURCE_CLIENT_ID="${RESOURCE_CLIENT_ID:-audio-gateway-service}"
+CAPABILITY_ROLE="${CAPABILITY_ROLE:-audio_record}"
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 EXPECTED_ISSUER="${EXPECTED_ISSUER:-https://testai.acik.com/realms/platform-test}"
 RUN_EXTERNAL_SMOKE="${RUN_EXTERNAL_SMOKE:-1}"
@@ -63,8 +65,10 @@ printf '{}\n' > "${KC_SOURCE_JSON}"
 STATUS="running"
 FAILURE_REASON=""
 CLIENT_UUID=""
+RESOURCE_CLIENT_UUID=""
 TEMP_USER_ID=""
 TEMP_USER_CREATED="false"
+CLIENT_ROLE_ASSIGNED="false"
 DIRECT_GRANTS_ORIGINAL=""
 DIRECT_GRANTS_TOGGLED="false"
 DIRECT_GRANTS_RESTORED="false"
@@ -279,16 +283,22 @@ kc_admin_rest() {
   fi
 }
 
-read_client_list() {
-  local out="$1"
+read_client_list_by_client_id() {
+  local client_id="$1"
+  local out="$2"
   if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
-    "${KCADM[@]}" get clients -r "${KC_REALM}" -q "clientId=${CLIENT_ID}" > "${out}"
+    "${KCADM[@]}" get clients -r "${KC_REALM}" -q "clientId=${client_id}" > "${out}"
     return $?
   fi
 
   local code
-  code="$(kc_admin_rest GET "/clients?clientId=${CLIENT_ID}" "${out}")"
+  code="$(kc_admin_rest GET "/clients?clientId=${client_id}" "${out}")"
   [[ "${code}" == "200" ]]
+}
+
+read_client_list() {
+  local out="$1"
+  read_client_list_by_client_id "${CLIENT_ID}" "${out}"
 }
 
 read_user_list() {
@@ -306,10 +316,14 @@ read_user_list() {
 
 capture_client_state() {
   local out="$1"
+  local fail_reason="${2-keycloak-client-read-failed}"
   local raw="${TMP_DIR}/client-raw.json"
-  read_client_list "${raw}" \
-    || die "keycloak-client-read-failed"
-  jq -e --arg clientId "${CLIENT_ID}" '
+  if ! read_client_list "${raw}"; then
+    printf '{}\n' > "${out}"
+    [[ -z "${fail_reason}" ]] && return 1
+    die "${fail_reason}"
+  fi
+  if ! jq -e --arg clientId "${CLIENT_ID}" '
     .[0] as $c
     | if $c == null then error("client not found") else
       {
@@ -339,8 +353,11 @@ capture_client_state() {
           userIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "userId" and .config["claim.name"] == "userId" and .config["access.token.claim"] == "true")
         }
       }
-      end' "${raw}" > "${out}" \
-    || die "keycloak-platform-desktop-client-missing"
+      end' "${raw}" > "${out}"; then
+    printf '{}\n' > "${out}"
+    [[ -z "${fail_reason}" ]] && return 1
+    die "keycloak-platform-desktop-client-missing"
+  fi
 }
 
 resolve_client_uuid() {
@@ -349,6 +366,14 @@ resolve_client_uuid() {
     || die "keycloak-client-id-read-failed"
   CLIENT_UUID="$(jq -r '.[0].id // empty' "${raw}")"
   [[ -n "${CLIENT_UUID}" ]] || die "keycloak-platform-desktop-client-id-missing"
+}
+
+resolve_resource_client_uuid() {
+  local raw="${TMP_DIR}/resource-client-id-raw.json"
+  read_client_list_by_client_id "${RESOURCE_CLIENT_ID}" "${raw}" \
+    || die "resource-client-read-failed:${RESOURCE_CLIENT_ID}"
+  RESOURCE_CLIENT_UUID="$(jq -r '.[0].id // empty' "${raw}")"
+  [[ -n "${RESOURCE_CLIENT_UUID}" ]] || die "resource-client-missing:${RESOURCE_CLIENT_ID}"
 }
 
 upsert_mapper() {
@@ -438,6 +463,28 @@ converge_platform_desktop_mappers() {
   upsert_mapper "userId" "$(write_user_attribute_mapper "userId")"
 }
 
+assign_capability_role() {
+  resolve_resource_client_uuid
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    "${KCADM[@]}" get "clients/${RESOURCE_CLIENT_UUID}/roles/${CAPABILITY_ROLE}" -r "${KC_REALM}" >/dev/null \
+      || die "required-client-role-missing:${RESOURCE_CLIENT_ID}/${CAPABILITY_ROLE}"
+    "${KCADM[@]}" add-roles -r "${KC_REALM}" --uusername "${TEMP_USERNAME}" \
+      --cclientid "${RESOURCE_CLIENT_ID}" --rolename "${CAPABILITY_ROLE}" >/dev/null \
+      || die "required-client-role-assign-failed:${RESOURCE_CLIENT_ID}/${CAPABILITY_ROLE}"
+  else
+    local role_file="${TMP_DIR}/required-client-role.json"
+    local role_assign_file="${TMP_DIR}/required-client-role-assign.json"
+    local role_assign_out="${TMP_DIR}/required-client-role-assign.out"
+    local code
+    code="$(kc_admin_rest GET "/clients/${RESOURCE_CLIENT_UUID}/roles/${CAPABILITY_ROLE}" "${role_file}")"
+    [[ "${code}" == "200" ]] || die "required-client-role-missing:${RESOURCE_CLIENT_ID}/${CAPABILITY_ROLE}"
+    jq '[.]' "${role_file}" > "${role_assign_file}"
+    code="$(kc_admin_rest POST "/users/${TEMP_USER_ID}/role-mappings/clients/${RESOURCE_CLIENT_UUID}" "${role_assign_out}" "${role_assign_file}")"
+    [[ "${code}" == "204" ]] || die "required-client-role-assign-failed:${RESOURCE_CLIENT_ID}/${CAPABILITY_ROLE}"
+  fi
+  CLIENT_ROLE_ASSIGNED="true"
+}
+
 create_temp_user() {
   local existing lookup_file
   lookup_file="${TMP_DIR}/temp-user-lookup.json"
@@ -512,6 +559,7 @@ create_temp_user() {
     code="$(kc_admin_rest POST "/users/${TEMP_USER_ID}/role-mappings/realm" "${role_assign_out}" "${role_assign_file}")"
     [[ "${code}" == "204" ]] || die "required-realm-role-assign-failed:${REQUIRED_ROLE}"
   fi
+  assign_capability_role
 }
 
 capture_user_diagnostic() {
@@ -522,10 +570,16 @@ capture_user_diagnostic() {
   local user_json="${TMP_DIR}/user.json"
   local creds_json="${TMP_DIR}/credentials.json"
   local roles_json="${TMP_DIR}/roles.json"
+  local client_roles_json="${TMP_DIR}/client-roles.json"
+  printf '[]\n' > "${client_roles_json}"
   if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
     "${KCADM[@]}" get "users/${TEMP_USER_ID}" -r "${KC_REALM}" > "${user_json}" || true
     "${KCADM[@]}" get "users/${TEMP_USER_ID}/credentials" -r "${KC_REALM}" > "${creds_json}" || printf '[]\n' > "${creds_json}"
     "${KCADM[@]}" get "users/${TEMP_USER_ID}/role-mappings/realm" -r "${KC_REALM}" > "${roles_json}" || printf '[]\n' > "${roles_json}"
+    if [[ -n "${RESOURCE_CLIENT_UUID}" ]]; then
+      "${KCADM[@]}" get "users/${TEMP_USER_ID}/role-mappings/clients/${RESOURCE_CLIENT_UUID}" -r "${KC_REALM}" > "${client_roles_json}" \
+        || printf '[]\n' > "${client_roles_json}"
+    fi
   else
     local code
     code="$(kc_admin_rest GET "/users/${TEMP_USER_ID}" "${user_json}")"
@@ -534,12 +588,20 @@ capture_user_diagnostic() {
     [[ "${code}" == "200" ]] || printf '[]\n' > "${creds_json}"
     code="$(kc_admin_rest GET "/users/${TEMP_USER_ID}/role-mappings/realm" "${roles_json}")"
     [[ "${code}" == "200" ]] || printf '[]\n' > "${roles_json}"
+    if [[ -n "${RESOURCE_CLIENT_UUID}" ]]; then
+      code="$(kc_admin_rest GET "/users/${TEMP_USER_ID}/role-mappings/clients/${RESOURCE_CLIENT_UUID}" "${client_roles_json}")"
+      [[ "${code}" == "200" ]] || printf '[]\n' > "${client_roles_json}"
+    fi
   fi
   jq -n \
     --slurpfile user "${user_json}" \
     --slurpfile creds "${creds_json}" \
     --slurpfile roles "${roles_json}" \
+    --slurpfile clientRoles "${client_roles_json}" \
     --arg requiredRole "${REQUIRED_ROLE}" \
+    --arg resourceClientId "${RESOURCE_CLIENT_ID}" \
+    --arg capabilityRole "${CAPABILITY_ROLE}" \
+    --argjson clientRoleAssigned "${CLIENT_ROLE_ASSIGNED}" \
     '($user[0] // {}) as $u
       | {
           username: ($u.username // null),
@@ -552,7 +614,13 @@ capture_user_diagnostic() {
             userId: (($u.attributes.userId // []) | length > 0)
           },
           credentialTypes: [($creds[0] // [])[]? | .type],
-          realmRolePresent: any(($roles[0] // [])[]?; .name == $requiredRole)
+          realmRolePresent: any(($roles[0] // [])[]?; .name == $requiredRole),
+          clientRole: {
+            resourceClientId: $resourceClientId,
+            capabilityRole: $capabilityRole,
+            assignedByScript: $clientRoleAssigned,
+            present: any(($clientRoles[0] // [])[]?; .name == $capabilityRole)
+          }
         }' > "${USER_DIAG_JSON}"
 }
 
@@ -736,6 +804,7 @@ cleanup_live_state() {
       [[ "${code}" == "204" || "${code}" == "404" ]] && TEMP_USER_DELETED="true"
     fi
   fi
+  capture_client_state "${CLIENT_AFTER_JSON}" "" || true
   rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${USER_PASS_FILE}" "${TOKEN_FILE}"
   [[ ! -e "${TOKEN_FILE}" ]] && TOKEN_FILE_REMOVED="true"
   CLEANUP_DONE="true"
@@ -769,6 +838,8 @@ write_diagnostic() {
     --arg failureReason "${FAILURE_REASON}" \
     --arg realm "${KC_REALM}" \
     --arg clientId "${CLIENT_ID}" \
+    --arg resourceClientId "${RESOURCE_CLIENT_ID}" \
+    --arg capabilityRole "${CAPABILITY_ROLE}" \
     --arg baseUrl "${BASE_URL}" \
     --arg expectedIssuer "${EXPECTED_ISSUER}" \
     --arg tokenPresent "${TOKEN_PRESENT}" \
@@ -796,6 +867,8 @@ write_diagnostic() {
       target: {
         realm: $realm,
         clientId: $clientId,
+        resourceClientId: $resourceClientId,
+        capabilityRole: $capabilityRole,
         baseUrl: $baseUrl,
         expectedIssuer: $expectedIssuer
       },
@@ -881,7 +954,6 @@ else
 fi
 
 cleanup_live_state
-capture_client_state "${CLIENT_AFTER_JSON}" || true
 write_diagnostic
 
 echo "diagnostic=${DIAG_JSON}"
