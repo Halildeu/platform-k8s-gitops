@@ -38,6 +38,7 @@ def test_workflow_preserves_no_mutation_and_secret_scan_boundaries():
     assert "No pilot, runtime/Kubernetes/Vault/firewall/legal mutation" in text
     assert "-e 'Bearer '" in text
     assert "-e 'Authorization:'" in text
+    assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,'" in text
     assert "PRIVATE KEY" in text
     assert "forbidden key names" in text
     assert "raw_audio" in text
@@ -56,7 +57,8 @@ def test_grep_patterns_keep_option_separator_after_patterns():
 
     assert "grep -R -E --" not in secret_scan
     assert "grep -E --" not in secret_scan
-    assert "-e '-----BEGIN CERTIFICATE-----' \\\n            -- \\" in secret_scan
+    assert "-e '-----BEGIN CERTIFICATE-----'" in secret_scan
+    assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,' \\\n            -- \\" in secret_scan
     assert "-e '\"(phone|telephone|email)\"[[:space:]]*:' \\\n            -- \\" in secret_scan
 
 
