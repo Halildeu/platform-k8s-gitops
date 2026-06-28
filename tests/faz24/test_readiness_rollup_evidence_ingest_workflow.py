@@ -34,12 +34,26 @@ def test_workflow_preserves_no_mutation_and_secret_scan_boundaries():
     assert "no evidence collection, runtime/Kubernetes/Vault/firewall/legal mutation" in text
     assert "-e 'Bearer '" in text
     assert "-e 'Authorization:'" in text
+    assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,'" in text
     assert "PRIVATE KEY" in text
     assert "raw_audio" in text
     assert "transcript" in text
     assert "full_name" in text
     assert 'id: secret_scan' in text
     assert "steps.secret_scan.outcome == 'success'" in text
+
+
+def test_grep_patterns_keep_option_separator_after_patterns():
+    text = workflow_text()
+
+    secret_scan = text.split("- name: Verify artifact excludes private material", 1)[1]
+    secret_scan = secret_scan.split("- name: Write workflow summary", 1)[0]
+
+    assert "grep -R -I -q -E --" not in secret_scan
+    assert "grep -E --" not in secret_scan
+    assert "-e '-----BEGIN CERTIFICATE-----'" in secret_scan
+    assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,' \\\n            -e '\"(access_token" in secret_scan
+    assert "full_name)\"[[:space:]]*:' \\\n            -- \"${EVIDENCE_DIR}\"" in secret_scan
 
 
 def test_workflow_uploads_artifact_before_failure_guard():
