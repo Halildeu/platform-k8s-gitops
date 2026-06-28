@@ -1,5 +1,28 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 product-gate ingest blocks raw audio data URLs before artifact upload (2026-06-28)
+
+PR #2142 hardened `.github/workflows/faz24-product-gate-evidence-ingest.yml`
+and merged to `main` at `f18052c529a5ab380c743f0930e747047b1ddd43`. The
+workflow secret scan already rejected raw-audio key names; it now also rejects
+raw media data URL values matching `data:audio/[A-Za-z0-9.+-]+;base64,`
+before the evidence artifact upload step can retain rejected evidence.
+
+Validation:
+
+- `tests/faz24/test_product_gate_evidence_ingest_workflow.py` pins the new
+  raw-audio data URL scan and keeps the `grep` option separator check.
+- Full Faz 24 local test run before PR: `284 passed`.
+- PR #2142 CI passed: boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, no-closure check, YAML lint, shellcheck,
+  Kustomize build sanity, and CodeQL analysis.
+
+Boundary: workflow/test hardening only. This does not collect
+G-CAP/G-OPS/G-COMP evidence, run a pilot, mutate runtime/Kubernetes/Vault/
+firewall/legal state, ingest product-gate evidence, satisfy `#2027`, or
+advance `#1615`. It strengthens the no-raw-audio retention boundary for future
+metadata-only product-gate evidence ingest attempts.
+
 ## Live Delta — Faz 24 product-gate handoff now carries G-OPS issue reference (2026-06-28)
 
 During G-OPS/G-COMP issue evidence sync, Codex found that the product-gate
