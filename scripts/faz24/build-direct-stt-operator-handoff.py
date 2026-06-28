@@ -152,6 +152,20 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "  --apply",
         ]
     )
+    seed_verify = (
+        f"python3 scripts/faz24/verify_direct_stt_mtls_seed_operator_evidence.py "
+        f"{args.seed_evidence_path} "
+        "--summary-json /tmp/faz24-direct-stt-mtls-seed.verify.json"
+    )
+    seed_ingest = command_block(
+        [
+            f'DIRECT_STT_MTLS_SEED_B64="$(base64 < {args.seed_evidence_path} | tr -d \'\\n\')"',
+            "gh workflow run faz24-direct-stt-mtls-seed-evidence-ingest.yml \\",
+            f"  --repo {REPO} \\",
+            f"  --ref {args.gitops_ref} \\",
+            '  -f evidence_json_base64="${DIRECT_STT_MTLS_SEED_B64}"',
+        ]
+    )
     preflight_verify = (
         f"python3 scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py "
         f"{args.preflight_evidence_path} "
@@ -178,6 +192,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "operatorExecutionRequired": True,
             "approvedCredentialSeedRequired": True,
             "seedEvidenceRequired": True,
+            "seedEvidenceIngestRequired": True,
             "preflightVerifierPassRequired": True,
             "flagFlipRequiresSeparateReviewedChange": True,
             "e2eVerifierPassRequired": True,
@@ -233,6 +248,8 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
                 "commands": {
                     "validateOnly": seed_validate,
                     "apply": seed_apply,
+                    "verifySeedEvidence": seed_verify,
+                    "ingestSeedEvidence": seed_ingest,
                     "postSeedReadinessProbe": command_block(
                         [
                             "gh workflow run faz24-direct-stt-mtls-preflight-collect.yml \\",
@@ -340,6 +357,7 @@ live evidence.
 
 - Current status remains `Needs Verify`.
 - Operator credential seed is required before Gate 1.
+- Gate 0 seed evidence verifier/ingest proves only redacted helper execution.
 - Gate 1 requires metadata-only preflight PASS while direct-STT is still false.
 - The direct-STT flag flip is a separate reviewed GitOps change after Gate 1.
 - Gate 2 requires metadata-only e2e PASS after the flag flip.
@@ -383,13 +401,27 @@ Then apply the Vault KV v2 merge patch:
 {gates["credential-seed"]["commands"]["apply"]}
 ```
 
+Verify the applied seed evidence:
+
+```bash
+{gates["credential-seed"]["commands"]["verifySeedEvidence"]}
+```
+
+Archive the redacted seed evidence through CI:
+
+```bash
+{gates["credential-seed"]["commands"]["ingestSeedEvidence"]}
+```
+
 The helper writes only redacted evidence to `{target["seedEvidencePath"]}`:
 property names, file-format booleans, permission booleans, HTTP status, and
 boundary flags. It must not contain PEM values, Vault token, local file paths,
 raw command output, audio, transcript text, or Kubernetes Secret data.
 
-After the apply step, force or wait for ESO reconciliation and use the
-canonical preflight collector as the readiness proof:
+Seed evidence PASS is not Direct-STT acceptance. It proves only that the
+operator helper applied the bounded Vault merge patch and wrote safe redacted
+evidence. After the apply step, force or wait for ESO reconciliation and use
+the canonical preflight collector as the readiness proof:
 
 ```bash
 {gates["credential-seed"]["commands"]["postSeedReadinessProbe"]}
