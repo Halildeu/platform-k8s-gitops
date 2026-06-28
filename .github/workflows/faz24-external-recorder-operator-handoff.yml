@@ -11,7 +11,7 @@ on:
       operator_batch_id:
         description: "Symbolic operator batch id"
         required: true
-        default: "faz24-external-recorder-20260627"
+        default: "faz24-external-recorder-20260628"
       gitops_ref:
         description: "Git ref used by follow-up ingest workflows"
         required: true
