@@ -1,5 +1,43 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 I7 app-mTLS handoff default synced and artifact regenerated (2026-06-28)
+
+PR #2138 synced the remaining stale Faz 24 operator-handoff defaults and
+runbook commands to the current `20260628` artifact line and merged to `main`
+at `2d2bae7e3809fb650eee339fd9da0cc9ffcf18e2`. The I7 app-mTLS builder and
+workflow now default to `faz24-i7-app-mtls-20260628`; the Direct-STT,
+desktop-capture, and external-recorder runbook handoff commands also point to
+their current `20260628` batch ids.
+
+On that main head SHA, Codex regenerated the metadata-only I7 app-mTLS
+handoff package:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28329132953`
+- Artifact: `faz24-i7-app-mtls-operator-handoff-28329132953`
+- Schema: `faz24.i7AppMtls.operator-handoff.v1`
+- Operator batch id: `faz24-i7-app-mtls-20260628`
+- GitOps rollup issue: `platform-k8s-gitops#1615`
+- I7 production-gate issue: `platform-ai#198`
+- Target tuple: source `10.99.0.1` -> Denetim `10.99.0.2`, live-stt TCP
+  `8243`, meeting-ai TCP `8343`
+
+Artifact validation: the workflow returned `success`; downloaded artifact
+`SHA256SUMS` verified `README.md` and
+`faz24-i7-app-mtls-operator-handoff.json`; local artifact scan found no
+forbidden private key, certificate, bearer/JWT, or raw-audio-like material.
+The manifest keeps `containsCredentials=false` and
+`liveSttPreflightDoesNotAcceptFullI7=true`.
+
+Boundary: this is source/default/runbook/test sync plus metadata-only operator
+handoff packaging. It does not connect to Denetim PC, mutate endpoint security
+or firewall policy, mutate Kubernetes/Vault/production, collect runtime I7
+evidence, enable Direct-STT, call `/transcribe`, send audio, satisfy
+`platform-ai#198`, or advance `#1615`. Full I7 still requires accepted
+endpoint-policy evidence, live-stt preflight verifier/ingest, full prod-gate
+evidence including meeting-ai `8343`, request audit, plaintext-bypass closure,
+rotation/failure drills, and reviewer acceptance.
+
 ## Live Delta — Faz 24 product/desktop/external handoff refs corrected and regenerated (2026-06-28)
 
 Codex found a live handoff reference drift while refreshing the Faz 24
