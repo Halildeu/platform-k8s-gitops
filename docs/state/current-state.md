@@ -1,5 +1,57 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 external-recorder G-CAP aggregate verifier PASS; remaining product gates stay open (2026-06-28)
+
+The external-recorder aggregate capture reliability slice now has accepted
+redacted verifier evidence. Five `faz24.externalRecorderSmokeVerifier.v1`
+summaries were collected from the platform-desktop token + external recorder
+chain:
+
+- `28324072820` — artifact
+  `faz24-platform-desktop-token-evidence-28324072820`
+- `28324934651` — artifact
+  `faz24-platform-desktop-token-evidence-28324934651`
+- `28324934663` — artifact
+  `faz24-platform-desktop-token-evidence-28324934663`
+- `28324967848` — artifact
+  `faz24-platform-desktop-token-evidence-28324967848`
+- `28324982225` — artifact
+  `faz24-platform-desktop-token-evidence-28324982225`
+
+Each source summary had `status=pass`, `tokenIncluded=false`,
+`externalMeetingAdminPathExercised=true`, and
+`recorderLifecycleExercised=true`, with distinct meeting and session IDs.
+Cancelled dispatches `28324934671` and `28324934676` are not counted.
+
+Aggregate verification:
+
+- Local verifier output: `faz24.gcapCaptureGateVerifier.v1`,
+  `status=pass`.
+- Authoritative ingest workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28325069572`
+- Artifact: `faz24-product-gate-evidence-gcap-28325069572`
+- Head SHA: `0ee1972d5bb48f5432543ffecfea165996fcfe80`
+- Metrics: attempts `5`, distinct meetings `5`, distinct sessions `5`,
+  success rate `1.0`, retry rate `0.0`, failure rate `0.0`.
+- Thresholds: min attempts `5`, min distinct meetings `5`, min distinct
+  sessions `5`, min success rate `0.95`, max retry rate `0.10`, max failure
+  rate `0.05`.
+- Boundary scan: no forbidden token/key/certificate/bearer findings.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826371063
+- `platform-ai#160`:
+  https://github.com/Halildeu/platform-ai/issues/160#issuecomment-4826371068
+
+Boundary: this accepts only the external-recorder aggregate G-CAP slice from
+redacted verifier summaries. It does not prove desktop mic/loopback capture,
+direct-STT, direct-STT transcript, compute-plane audit, I7 prod-gate, G-OPS,
+G-COMP, legal go, production lifecycle/deletion, or production readiness.
+`#1615` remains open and Project #2 status remains `Needs Verify` until the
+remaining rollup gates have accepted evidence.
+
 ## Live Delta — Faz 24 operator handoff artifacts refreshed on current main; runtime gates unchanged (2026-06-28)
 
 Three metadata-only Faz 24 operator handoff packages were regenerated from
