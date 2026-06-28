@@ -81,6 +81,56 @@ Required properties before flipping direct-STT on:
 Use file-like Secret keys intentionally. The deployment does not reference the
 dedicated mTLS Secret via `envFrom`; it is mounted read-only as files only.
 
+### Operator-safe Vault seed helper
+
+When the approved mTLS files are available on the operator machine, prefer the
+repo helper below instead of ad hoc `vault kv patch key="$(cat file)"` commands.
+The helper keeps raw PEM values and the Vault token out of shell arguments,
+stdout, issue comments, artifacts, and evidence files. It emits only redacted
+presence/status evidence.
+
+Prerequisites:
+
+- the Vault token is stored in an operator-only file, for example
+  `/secure/operator-vault.token`;
+- the three approved PEM files are stored in operator-only files;
+- all four files are `chmod 600`;
+- the operator substitutes the `/secure/...` placeholders locally and does not
+  paste PEM/token values into the terminal transcript or GitHub.
+
+Validate file formats and produce dry-run redacted evidence first:
+
+```bash
+python3 scripts/faz24/direct_stt_mtls_seed_operator.py \
+  --vault-addr https://vault.testai.acik.com \
+  --vault-path kv/platform/audio-gateway-service \
+  --vault-token-file /secure/operator-vault.token \
+  --ca-crt-file /secure/direct-stt-ca.crt \
+  --client-crt-file /secure/direct-stt-client.crt \
+  --client-key-file /secure/direct-stt-client.key \
+  --evidence-out docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json
+```
+
+Apply the Vault KV v2 merge patch only after the dry-run evidence is redacted:
+
+```bash
+python3 scripts/faz24/direct_stt_mtls_seed_operator.py \
+  --vault-addr https://vault.testai.acik.com \
+  --vault-path kv/platform/audio-gateway-service \
+  --vault-token-file /secure/operator-vault.token \
+  --ca-crt-file /secure/direct-stt-ca.crt \
+  --client-crt-file /secure/direct-stt-client.crt \
+  --client-key-file /secure/direct-stt-client.key \
+  --evidence-out docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json \
+  --apply
+```
+
+Accepted seed evidence is still not Direct-STT acceptance. After the apply,
+force or wait for ESO reconciliation and run Gate 1 preflight. Gate 1 is the
+first accepted proof that `ExternalSecret/audio-gateway-direct-stt-mtls` is
+Ready, the runtime Secret exposes the three expected key names, and the real
+`audio-gateway` pod can use the mounted client certificate.
+
 ## Evidence Contract
 
 There are two evidence gates.
@@ -249,7 +299,9 @@ gh workflow run faz24-direct-stt-e2e-evidence-ingest.yml \
 
 ## Enablement Order
 
-1. Seed the three Vault properties with stdin-pipe or an approved equivalent. Do not print PEM values.
+1. Seed the three Vault properties with
+   `scripts/faz24/direct_stt_mtls_seed_operator.py` or an approved equivalent.
+   Do not print PEM values.
 2. Ensure `kustomize/overlays/test/eso/audio-gateway/externalsecret.yaml`
    maps the three properties above into `audio-gateway-direct-stt-mtls`.
    The Redis aggregate `audio-gateway-secrets` must stay Redis-only.
