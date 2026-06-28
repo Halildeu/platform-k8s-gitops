@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 readiness rollup ingest now bounds dispatch payload size (2026-06-28)
+
+PR #2154 added a `200000` character upper bound to
+`.github/workflows/faz24-readiness-rollup-evidence-ingest.yml` for the
+`evidence_json_base64` workflow-dispatch input and merged to `main` at
+`485307a30053d6043bb40385906ac1467ea9cae1`.
+
+The guard runs before the base64 regex validation so oversized rollup evidence
+payloads fail closed before expensive string validation or artifact retention.
+This aligns the #1615 readiness rollup ingest path with the bounded input
+discipline already present in the Faz 24 product-gate and Direct-STT seed
+evidence ingest workflows.
+
+Validation before merge:
+
+- Targeted workflow contract test:
+  `tests/faz24/test_readiness_rollup_evidence_ingest_workflow.py` -> `6 passed`.
+- YAML semantic parse for the workflow: pass.
+- Full Faz 24 local test run: `306 passed`.
+- Staged diff whitespace, auto-closure keyword, and secret-like value scans:
+  no finding.
+- Claude adversarial review: AGREE, no blocker.
+- PR #2154 CI passed: boundary declaration, cross-AI audit, gitleaks, forbidden
+  close keyword scan, HARD RULE language check, YAML lint, shellcheck,
+  Kustomize build sanity, CodeQL actions, CodeQL python, ADR-0031 drift guard,
+  and placeholder leak check.
+
+Boundary: workflow/test hardening only. This does not collect readiness rollup
+evidence, mutate runtime/Kubernetes/Vault/Denetim/firewall/legal state, enable
+Direct-STT, ingest accepted product-gate evidence, prove #1615 readiness, or
+make a production-readiness claim.
+
 ## Live Delta — Direct-STT mTLS preflight refresh still fails at Vault/ESO seed readiness (2026-06-28)
 
 After the refreshed operator handoff artifact was generated from `main`, Codex
