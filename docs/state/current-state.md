@@ -1,5 +1,79 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Direct-STT Gate 0 seed helper and handoff artifact now make Vault/ESO blocker executable without raw secret retention (2026-06-28)
+
+PR #2148 added a repo-native Direct-STT mTLS seed helper and merged to `main`
+at `7b50455f52fbdc932b0d05cc6c3c318b0303d9d5`. The helper is
+`scripts/faz24/direct_stt_mtls_seed_operator.py`; it is intended for the
+operator-controlled Vault seed window after approved mTLS files are available.
+
+Helper contract:
+
+- reads the Vault token from an operator-only token file;
+- reads `direct_stt_ca_crt`, `direct_stt_client_crt`, and
+  `direct_stt_client_key` source files from operator-only PEM files;
+- requires restricted file permissions on the input files;
+- defaults to dry-run unless `--apply` is supplied;
+- uses Vault KV v2 `PATCH` with `Content-Type: application/merge-patch+json`
+  so only the three direct-STT mTLS properties are set or updated;
+- writes redacted `faz24.directSttMtlsSeedOperatorEvidence.v1` evidence;
+- records no PEM values, Vault token, local file paths, raw command output,
+  audio, transcript text, Kubernetes Secret data, Denetim endpoint payload, or
+  production acceptance.
+
+Validation before PR #2148:
+
+- Python compile for the helper and Direct-STT handoff builder: pass.
+- Targeted tests:
+  `tests/faz24/test_direct_stt_mtls_seed_operator.py` and
+  `tests/faz24/test_build_direct_stt_operator_handoff.py` -> `8 passed`.
+- Full Faz 24 local test run: `289 passed`.
+- Generated handoff artifact `SHA256SUMS` check: pass.
+- Generated handoff artifact forbidden-material scan: no finding.
+- Staged diff whitespace, close-keyword, and secret-like value scans: no
+  finding.
+- Claude adversarial review: AGREE, no blocker.
+- PR #2148 CI passed: boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, HARD RULE language check, YAML lint, shellcheck,
+  Kustomize build sanity, CodeQL analysis, and action/python analysis.
+
+After PR #2148 landed, Codex regenerated the Direct-STT metadata-only operator
+handoff package from `main`:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28331250211`
+- Artifact: `faz24-direct-stt-operator-handoff-28331250211`
+- Schema: `faz24.directStt.operator-handoff.v1`
+- Operator batch id: `faz24-direct-stt-20260628`
+- Target: `k3d-test` / `platform-test` / `audio-gateway`
+- Vault path: `kv/platform/audio-gateway-service`
+- mTLS object: `audio-gateway-direct-stt-mtls`
+- Redacted seed evidence path:
+  `docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json`
+- Manifest now carries `seedEvidenceRequired=true` and Gate 0 commands for
+  validate-only seed evidence, `--apply` Vault merge-patch, and the
+  post-seed `faz24-direct-stt-mtls-preflight-collect.yml` readiness probe.
+
+Artifact validation after download:
+
+- `SHA256SUMS` verified `README.md` and
+  `faz24-direct-stt-operator-handoff.json`.
+- Local artifact scan found no forbidden private key, certificate, bearer/JWT,
+  or raw media data URL material.
+- SHA-256:
+  `9308cb500c1b91df220efbd34977ff116b191629b4de7c4aeeb1e3ceeb2fb708`
+  for `faz24-direct-stt-operator-handoff.json`;
+  `be73d7801219fe0a73c7d4868aaa8d3471eba3ee1d1a298fe36022904f1bb320`
+  for `README.md`.
+
+Boundary: this is source-side helper/runbook/handoff hardening and
+metadata-only handoff packaging. It does not run the helper, read or write
+Vault, read PEM files, mutate Kubernetes, mutate Denetim/firewall/EDR, enable
+Direct-STT, call `/transcribe`, send audio, prove mTLS preflight, prove #182
+e2e, satisfy #198 I7, or advance #1615. The next runtime gate remains:
+operator-approved seed with redacted evidence -> ESO reconciliation ->
+preflight PASS -> reviewed flag flip -> e2e PASS.
+
 ## Live Delta — Direct-STT mTLS preflight now fails on ESO/Vault seed readiness, not repo wiring (2026-06-28)
 
 Codex dispatched `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml`
