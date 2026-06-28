@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 #1615 readiness rollup verifier packaged; child gates still authoritative (2026-06-28)
+
+The #1615 multi-gate acceptance surface now has a source-side fail-closed
+rollup verifier and no-mutation ingest path:
+
+- Script: `scripts/faz24/verify_faz24_readiness_rollup.py`
+- Workflow: `.github/workflows/faz24-readiness-rollup-evidence-ingest.yml`
+- Runbook: `docs/runbooks/RB-faz24-readiness-rollup.md`
+- Tests:
+  `tests/faz24/test_verify_faz24_readiness_rollup.py`,
+  `tests/faz24/test_readiness_rollup_evidence_ingest_workflow.py`
+
+The verifier accepts only a redacted `faz24.readinessRollupEvidence.v1`
+envelope for `platform-k8s-gitops#1615`. It requires every required child gate
+to be present with `status=pass`, `acceptedByVerifier=true`, bounded
+`evidenceRef`, `issueRef`, `observedAt`, and a single-line summary. Required
+gates include foundation deploy, recorder edge lifecycle, G-CAP aggregate,
+desktop capture, direct-STT preflight and e2e, compute-plane audit, WG-B+ I3
+and I6, I7 live-stt app-mTLS and full prod-gate, G-OPS, G-COMP, retention
+lifecycle, pilot WER/DER, pilot G-INT, pilot G-LAT/COST, and browser/client
+smoke.
+
+Boundary: this is aggregation guard infrastructure only. It does not collect
+runtime evidence, seed Vault/ESO material, mutate Kubernetes/Caddy/firewall,
+enable direct-STT, run desktop capture, perform legal acceptance, or make a
+production-readiness claim. The child gate verifiers and their issue evidence
+remain authoritative; the rollup can only pass after those gates have accepted
+redacted evidence. Current live truth remains unchanged: direct-STT, desktop
+capture, WG-B+ I3, full I7, G-OPS/G-COMP, pilot quality/intelligence/latency
+and client smoke evidence still need accepted proof before #1615 can move past
+`Needs Verify`.
+
 ## Live Delta — Faz 24 current-main live retry: Direct-STT/I3 still blocked; I7 live-stt slice remains bounded PASS (2026-06-28)
 
 Codex re-ran the operator/secret/device-free live checks on current `main`
