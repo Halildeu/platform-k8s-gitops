@@ -1,5 +1,60 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT mTLS preflight rerun still blocks on ESO/Secret seed (2026-06-28)
+
+After the operator reported the Denetim/ESET allow work as completed, the
+metadata-only direct-STT mTLS preflight collector was rerun from `main`:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28324321302`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28324321302`
+- Verifier: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Result: `status=fail`, `52/61` checks passed.
+
+Accepted facts from the rerun:
+
+- Explicit `kubectlContext=k3d-test`; namespace `platform-test` reachable.
+- Real `audio-gateway` pod was Ready:
+  `audio-gateway-58859b497c-cwvcb`.
+- Desired pre-flag shape remains intact: direct-STT disabled,
+  `live-stt.denetim:8243`, hostAlias `10.99.0.2`, NetworkPolicy
+  `10.99.0.2/32:8243`, `/etc/direct-stt-mtls` mount present and optional.
+- Aggregate `audio-gateway-secrets` remains Ready and Redis-only; direct-STT
+  cert/key names are not folded into the `envFrom` aggregate Secret.
+- Metadata boundaries held false for secret values included, raw audio sent,
+  `/transcribe` called, direct audio e2e proven, I7 prod-gate proven,
+  desktop mic/loopback proven, and production-ready.
+- Artifact scan found no forbidden token/key/certificate/audio/transcribe
+  findings.
+
+Current blocker from the run:
+
+- `ExternalSecret/audio-gateway-direct-stt-mtls` is not `Ready=True`.
+- Runtime `Secret/audio-gateway-direct-stt-mtls` is absent or lacks
+  `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key`.
+- The pod-local mTLS health probe could not use a client certificate and did
+  not return HTTP `200` (`mtls-probe-exit-28`).
+- `vaultSeedAuthorityAccepted=false`.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826297943
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826298006
+- `platform-ai#198`:
+  https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4826298023
+
+Boundary: ESET/endpoint allow work alone does not advance `platform-ai#182`
+while the pod lacks approved direct-STT mTLS material. The next accepted
+engineering action remains: seed approved `direct_stt_ca_crt`,
+`direct_stt_client_crt`, and `direct_stt_client_key` into
+`kv/platform/audio-gateway-service`, wait for
+`audio-gateway-direct-stt-mtls` ESO sync, rerun this preflight while
+direct-STT remains disabled, and only then consider the reviewed test flag flip
+plus fresh `/transcribe` e2e evidence.
+
 ## Live Delta — Faz 24 platform-desktop external recorder smoke PASS; broader product gates remain open (2026-06-28)
 
 `platform-k8s-gitops#2118` merged at
