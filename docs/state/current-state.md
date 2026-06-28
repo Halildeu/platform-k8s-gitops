@@ -1,5 +1,48 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 I3 operator package refreshed from current runner public key (2026-06-28)
+
+After the current-main I3 evidence refresh confirmed
+`sshFailureClass=ssh-auth-publickey`, Codex rebuilt the public-key-only Denetim
+authorization package from a fresh runner identity verification:
+
+- Runner identity verify workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326845949`
+- Runner identity artifact: `faz24-i3-runner-ssh-identity-28326845949`
+- Denetim authorization package workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326859105`
+- Denetim authorization package artifact:
+  `faz24-i3-denetim-ssh-authorize-package-28326859105`
+- Source identity run id: `28326845949`
+- Target user: `svc-denetim-agent`
+- Public key fingerprint:
+  `SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`
+- Public key line/blob SHA256 values are recorded in the package metadata
+  artifact and consumed by the handoff workflow defaults; they are intentionally
+  not duplicated in this state note to keep secret-scanning noise out of the
+  canonical status surface.
+
+Package validation: downloaded artifacts were scanned locally with no forbidden
+private-key, token, bearer, raw-audio, or raw-transcript findings; package
+`SHA256SUMS` verified the public key, PowerShell authorize script, metadata, and
+README. `scripts/faz24/build-wg-bplus-operator-handoff.py` and
+`.github/workflows/faz24-wg-bplus-operator-handoff.yml` now default to these
+fresh I3 run ids so a regenerated WG-B+ operator handoff points at the current
+package rather than stale historical artifacts.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826541072
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826541590
+
+Boundary: this prepares a public-key-only operator package. It does not connect
+to Denetim PC, mutate Denetim host config, upload private key material, collect
+accepted I3 runtime evidence, or advance `#1615`. I3 remains `Needs Verify`
+until the Denetim-side authorization evidence is ingested and the I3 evidence
+workflow passes.
+
 ## Live Delta — Faz 24 current-main child-gate refresh: Direct-STT and I3 remain blocked (2026-06-28)
 
 Codex reran the two operator-free #1615 child-gate collectors on current `main`

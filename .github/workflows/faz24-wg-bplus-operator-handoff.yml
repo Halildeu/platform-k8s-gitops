@@ -15,11 +15,11 @@ on:
       i3_identity_run_id:
         description: "I3 runner SSH identity workflow run id"
         required: true
-        default: "28142166373"
+        default: "28326845949"
       i3_authorize_package_run_id:
         description: "I3 Denetim SSH authorize package workflow run id"
         required: true
-        default: "28144138366"
+        default: "28326859105"
       i3_public_key_fingerprint:
         description: "Expected runner public key fingerprint"
         required: true

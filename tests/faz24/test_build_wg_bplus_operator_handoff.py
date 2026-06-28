@@ -52,7 +52,8 @@ class BuildWgBplusOperatorHandoffTest(unittest.TestCase):
             self.assertFalse(manifest["mutationBoundary"]["packageBuildHostMutation"])
             self.assertFalse(manifest["mutationBoundary"]["packageBuildProductionMutation"])
             self.assertFalse(manifest["mutationBoundary"]["containsSecrets"])
-            self.assertEqual("28144138366", manifest["i3"]["authorizePackageRunId"])
+            self.assertEqual("28326845949", manifest["i3"]["identityRunId"])
+            self.assertEqual("28326859105", manifest["i3"]["authorizePackageRunId"])
             self.assertEqual("28151747361", manifest["i6"]["hostPackageRunId"])
             self.assertIn(
                 "faz24-i3-denetim-ssh-authorize-evidence-ingest.yml",
