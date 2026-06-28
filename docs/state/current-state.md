@@ -1,5 +1,66 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Direct-STT mTLS preflight refresh still fails at Vault/ESO seed readiness (2026-06-28)
+
+After the refreshed operator handoff artifact was generated from `main`, Codex
+reran the metadata-only Direct-STT mTLS preflight collector from current `main`
+to refresh live Gate 1 truth. The workflow ran on the self-hosted `staging-sw`
+runner and uploaded the metadata-only artifact, but the verifier again rejected
+the evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28332212180`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28332212180`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Evidence status: `fail`
+- Verifier schema: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Verifier status: `fail`
+- Verifier score: `52/61`
+
+Failure codes in the collected evidence:
+
+- `external-secret-not-ready`
+- `kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`
+- `mtls-health-not-200`
+- `mtls-probe-exit-28`
+- `runtime-secret-key-missing`
+
+Rejecting verifier checks:
+
+- `status_pass`
+- `failures_empty`
+- `external_secret_ready`
+- `runtime_secret_keys`
+- `runtime_secret_env_risk`
+- `mtls_probe_client_auth`
+- `mtls_probe_health_status`
+- `mtls_probe_total_ms`
+- `boundary_vaultSeedAuthorityAccepted`
+
+Local artifact validation after download:
+
+- Forbidden material scan: no private key, certificate, bearer/JWT, raw media
+  data URL, Denetim endpoint URL, or `/transcribe` material found.
+- SHA-256:
+  `20f73712f1f8b87685df0bff73cfae77142f502a8286c3fb20781045cbdd312e`
+  for `faz24-direct-stt-mtls-preflight.json`;
+  `9baf1e089d8c7d8f0d22a08c472f1cfa8922eeeb29c329e0f0ced262702e4e7d`
+  for `verification-summary.json`;
+  `5e1020f572f5a027c956c39bec5a6393d11936bba76d8ea26da53327e169adcd`
+  for `verifier.stdout`;
+  `d8f989baeacfe0ffa513cd994cd6bcb58a1fd2f27bed3efd19f8d2fc978fa381`
+  for `collector.stderr`.
+
+Boundary: this refresh does not prove Direct-STT, egress acceptance,
+`/transcribe`, desktop mic/loopback, I7 prod-gate, or production readiness. It
+does confirm the active Gate 1 blocker on current `main`: the approved
+operator Vault seed / ESO reconciliation has not yet produced a Ready
+`audio-gateway-direct-stt-mtls` ExternalSecret, the runtime Secret key names
+are absent, and `vaultSeedAuthorityAccepted=false`. The next runtime chain
+remains: operator-approved seed with redacted evidence -> seed evidence
+verifier/ingest PASS -> ESO reconciliation -> Gate 1 preflight PASS ->
+reviewed flag flip -> Gate 2 e2e PASS -> reviewer acceptance.
+
 ## Live Delta — Direct-STT operator handoff artifact now includes seed evidence verifier/ingest commands (2026-06-28)
 
 After PR #2150 and #2151 were merged, Codex regenerated the Direct-STT
