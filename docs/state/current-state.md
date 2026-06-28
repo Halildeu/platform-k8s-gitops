@@ -1,5 +1,71 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Direct-STT mTLS preflight now fails on ESO/Vault seed readiness, not repo wiring (2026-06-28)
+
+Codex dispatched `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml`
+from `main` after the platform-desktop token/external-recorder evidence run.
+The metadata-only preflight collector ran on the self-hosted `staging-sw`
+runner and uploaded artifact evidence, but the verifier rejected the evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28330597164`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28330597164`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Evidence status: `fail`
+- Verifier schema: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Verifier status: `fail`
+- Verifier score: `52/61`
+
+Failure codes in the collected evidence:
+
+- `external-secret-not-ready`
+- `kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`
+- `mtls-health-not-200`
+- `mtls-probe-exit-28`
+- `runtime-secret-key-missing`
+
+Notable passing checks:
+
+- Explicit kubectl context `k3d-test` exists.
+- Namespace `platform-test` is reachable.
+- Deployment `audio-gateway` and selected pod are present and ready.
+- Direct-STT flag is still disabled before the flag flip.
+- Desired host/port/cidr shape matches `live-stt.denetim`, TCP `8243`,
+  hostAlias `10.99.0.2`, and NetworkPolicy CIDR `10.99.0.2/32`.
+- mTLS mount path `/etc/direct-stt-mtls` is present and optional while
+  Direct-STT remains disabled.
+- Aggregate `audio-gateway-secrets` ExternalSecret remains Ready and does not
+  contain direct-STT mTLS keys.
+- Artifact secret scan found no private key, certificate, bearer/JWT, raw media,
+  Denetim endpoint URL, or `/transcribe` material.
+
+Rejecting checks identify the active blocker:
+
+- `audio-gateway-direct-stt-mtls` ExternalSecret is not Ready.
+- Runtime Secret `audio-gateway-direct-stt-mtls` does not expose the expected
+  keys `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key`.
+- mTLS probe ran from the real audio-gateway pod but did not use a client
+  certificate, did not receive HTTP 200, and did not produce an accepted timing
+  sample.
+- `vaultSeedAuthorityAccepted=false`.
+
+Local artifact validation after download:
+
+- Forbidden material scan: no private key, certificate, bearer/JWT, raw media,
+  Denetim endpoint URL, or `/transcribe` material found.
+- SHA-256:
+  `b2ed2ce7e0f4d9662a02e7055d62326c813e154a800975ec9eb5cdad40f91d70`
+  for `faz24-direct-stt-mtls-preflight.json`;
+  `636da09ff5dc446ade7d4a9ae3566c6007aade9ac0229afa2de7e77a5453753c`
+  for `verification-summary.json`.
+
+Boundary: this run does not prove Direct-STT, egress, `/transcribe`, desktop
+mic/loopback, I7 prod-gate, or any production acceptance. It does narrow the
+next actionable blocker to approved Vault/ESO seed and reconciliation of the
+`audio-gateway-direct-stt-mtls` Secret keys before the reviewed flag flip and
+e2e path can be attempted.
+
 ## Live Delta — Faz 24 platform-desktop token and external-recorder evidence chain PASS on staging-sw (2026-06-28)
 
 Codex dispatched `.github/workflows/faz24-platform-desktop-token-evidence.yml`
