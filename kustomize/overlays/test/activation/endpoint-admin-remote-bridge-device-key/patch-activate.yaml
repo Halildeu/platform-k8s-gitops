@@ -1,4 +1,5 @@
 # Activation patch — Faz 22.6 #548 strong device-key broker.
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,6 +10,25 @@ spec:
     spec:
       containers:
         - name: endpoint-admin-remote-bridge
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          # The strong verifier path performs the full endpoint-admin bootstrap
+          # plus TPM/device-key verifier wiring. Live A1 evidence on 2026-06-28
+          # showed the inherited 150s/500m broker startup window can restart
+          # the JVM before management:8081 binds under test-cluster pressure.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 40
           env:
             - name: REMOTE_BRIDGE_ENABLED
               value: "true"
