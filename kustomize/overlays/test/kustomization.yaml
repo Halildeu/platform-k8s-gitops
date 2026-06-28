@@ -7352,3 +7352,10 @@ patches:
       - op: replace
         path: /spec/hard/services
         value: "32"
+      # 2026-06-28: Faz 22.6 #548 dedicated device-key broker adds three
+      # isolated ExternalSecret-owned Secrets (runtime, TLS, signer). Live
+      # namespace was already secrets=30/30, so keep this test-only object
+      # quota honest instead of reusing the shared broker secret path.
+      - op: replace
+        path: /spec/hard/secrets
+        value: "40"
