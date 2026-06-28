@@ -370,12 +370,14 @@ upsert_mapper() {
   else
     local list_file="${TMP_DIR}/mappers-${name}.json"
     local out_file="${TMP_DIR}/mapper-${name}-out.json"
+    local update_file="${TMP_DIR}/mapper-${name}-update.json"
     local code
     code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}/protocol-mappers/models" "${list_file}")"
     [[ "${code}" == "200" ]] || die "keycloak-mapper-read-failed:${name}"
     existing_id="$(jq -r --arg name "${name}" '.[]? | select(.name == $name) | .id' "${list_file}" | head -n 1)"
     if [[ -n "${existing_id}" ]]; then
-      code="$(kc_admin_rest PUT "/clients/${CLIENT_UUID}/protocol-mappers/models/${existing_id}" "${out_file}" "${mapper_file}")"
+      jq --arg id "${existing_id}" '.id = $id' "${mapper_file}" > "${update_file}"
+      code="$(kc_admin_rest PUT "/clients/${CLIENT_UUID}/protocol-mappers/models/${existing_id}" "${out_file}" "${update_file}")"
       [[ "${code}" == "204" ]] || die "keycloak-mapper-update-failed:${name}"
     else
       code="$(kc_admin_rest POST "/clients/${CLIENT_UUID}/protocol-mappers/models" "${out_file}" "${mapper_file}")"
