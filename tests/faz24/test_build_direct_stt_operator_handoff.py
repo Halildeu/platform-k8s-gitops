@@ -53,6 +53,7 @@ class BuildDirectSttOperatorHandoffTest(unittest.TestCase):
             self.assertEqual("platform-ai#182", manifest["issues"]["directSttE2e"])
             self.assertEqual("needs-verify", manifest["acceptanceBoundary"]["issueStatus"])
             self.assertTrue(manifest["acceptanceBoundary"]["approvedCredentialSeedRequired"])
+            self.assertTrue(manifest["acceptanceBoundary"]["seedEvidenceRequired"])
             self.assertTrue(manifest["acceptanceBoundary"]["preflightVerifierPassRequired"])
             self.assertTrue(manifest["acceptanceBoundary"]["flagFlipRequiresSeparateReviewedChange"])
             self.assertTrue(manifest["acceptanceBoundary"]["e2eVerifierPassRequired"])
@@ -69,8 +70,32 @@ class BuildDirectSttOperatorHandoffTest(unittest.TestCase):
                 manifest["target"]["mtlsObjectName"],
             )
             self.assertEqual("audio-gateway-secrets", manifest["target"]["aggregateObjectName"])
+            self.assertEqual(
+                "docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json",
+                manifest["target"]["seedEvidencePath"],
+            )
             self.assertNotIn("mtlsSecret", manifest["target"])
             self.assertNotIn("aggregateSecret", manifest["target"])
+
+            seed = manifest["orderedGates"][0]
+            self.assertEqual("credential-seed", seed["id"])
+            self.assertEqual(
+                "docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json",
+                seed["redactedEvidencePath"],
+            )
+            self.assertIn(
+                "direct_stt_mtls_seed_operator.py",
+                seed["commands"]["validateOnly"],
+            )
+            self.assertIn(
+                "--vault-path kv/platform/audio-gateway-service",
+                seed["commands"]["apply"],
+            )
+            self.assertIn("--apply", seed["commands"]["apply"])
+            self.assertIn(
+                "faz24-direct-stt-mtls-preflight-collect.yml",
+                seed["commands"]["postSeedReadinessProbe"],
+            )
 
             preflight = manifest["orderedGates"][1]
             self.assertEqual("preflight", preflight["id"])
@@ -91,6 +116,10 @@ class BuildDirectSttOperatorHandoffTest(unittest.TestCase):
 
             readme = (output / "README.md").read_text(encoding="utf-8")
             self.assertIn("coordination artifact only", readme)
+            self.assertIn("validate-only", readme)
+            self.assertIn("Vault KV v2 merge patch", readme)
+            self.assertIn("/secure/operator-vault.token", readme)
+            self.assertIn("redacted seed evidence path", readme)
             self.assertIn("Gate 1", readme)
             self.assertIn("Gate 2", readme)
             self.assertIn("Gate 3", readme)

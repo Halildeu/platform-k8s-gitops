@@ -35,6 +35,7 @@ DEFAULT_AGGREGATE_OBJECT_NAME = "audio-gateway-secrets"
 DEFAULT_TRANSCRIBE_HOST = "live-stt.denetim"
 DEFAULT_TRANSCRIBE_IP = "10.99.0.2"
 DEFAULT_TRANSCRIBE_PORT = 8243
+DEFAULT_SEED_EVIDENCE_PATH = "docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json"
 DEFAULT_PREFLIGHT_PATH = "docs/faz-24-evidence/direct-stt-mtls-preflight.json"
 DEFAULT_E2E_PATH = "docs/faz-24-evidence/direct-stt-e2e.json"
 
@@ -116,6 +117,7 @@ def validate_args(args: argparse.Namespace) -> None:
     validate_host("transcribe-host", args.transcribe_host)
     validate_ipv4("transcribe-ip", args.transcribe_ip)
     validate_port("transcribe-port", args.transcribe_port)
+    validate_relative_path("seed-evidence-path", args.seed_evidence_path)
     validate_relative_path("preflight-evidence-path", args.preflight_evidence_path)
     validate_relative_path("e2e-evidence-path", args.e2e_evidence_path)
 
@@ -125,6 +127,31 @@ def command_block(lines: list[str]) -> str:
 
 
 def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
+    seed_validate = command_block(
+        [
+            "python3 scripts/faz24/direct_stt_mtls_seed_operator.py \\",
+            f"  --vault-addr https://vault.testai.acik.com \\",
+            f"  --vault-path {args.vault_path} \\",
+            "  --vault-token-file /secure/operator-vault.token \\",
+            "  --ca-crt-file /secure/direct-stt-ca.crt \\",
+            "  --client-crt-file /secure/direct-stt-client.crt \\",
+            "  --client-key-file /secure/direct-stt-client.key \\",
+            f"  --evidence-out {args.seed_evidence_path}",
+        ]
+    )
+    seed_apply = command_block(
+        [
+            "python3 scripts/faz24/direct_stt_mtls_seed_operator.py \\",
+            f"  --vault-addr https://vault.testai.acik.com \\",
+            f"  --vault-path {args.vault_path} \\",
+            "  --vault-token-file /secure/operator-vault.token \\",
+            "  --ca-crt-file /secure/direct-stt-ca.crt \\",
+            "  --client-crt-file /secure/direct-stt-client.crt \\",
+            "  --client-key-file /secure/direct-stt-client.key \\",
+            f"  --evidence-out {args.seed_evidence_path} \\",
+            "  --apply",
+        ]
+    )
     preflight_verify = (
         f"python3 scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py "
         f"{args.preflight_evidence_path} "
@@ -150,6 +177,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "issueStatus": "needs-verify",
             "operatorExecutionRequired": True,
             "approvedCredentialSeedRequired": True,
+            "seedEvidenceRequired": True,
             "preflightVerifierPassRequired": True,
             "flagFlipRequiresSeparateReviewedChange": True,
             "e2eVerifierPassRequired": True,
@@ -181,6 +209,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "transcribeHost": args.transcribe_host,
             "transcribeIp": args.transcribe_ip,
             "transcribePort": args.transcribe_port,
+            "seedEvidencePath": args.seed_evidence_path,
             "preflightEvidencePath": args.preflight_evidence_path,
             "e2eEvidencePath": args.e2e_evidence_path,
         },
@@ -201,6 +230,22 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
                     "direct_stt_client_crt",
                     "direct_stt_client_key",
                 ],
+                "commands": {
+                    "validateOnly": seed_validate,
+                    "apply": seed_apply,
+                    "postSeedReadinessProbe": command_block(
+                        [
+                            "gh workflow run faz24-direct-stt-mtls-preflight-collect.yml \\",
+                            f"  --repo {REPO} \\",
+                            f"  --ref {args.gitops_ref} \\",
+                            f"  -f kube_context={args.kube_context} \\",
+                            f"  -f namespace={args.namespace} \\",
+                            f"  -f deployment={args.deployment} \\",
+                            "  -f probe_timeout=40",
+                        ]
+                    ),
+                },
+                "redactedEvidencePath": args.seed_evidence_path,
             },
             {
                 "id": "preflight",
@@ -309,6 +354,7 @@ live evidence.
 - mTLS Kubernetes object: `{target["mtlsObjectName"]}`
 - aggregate Kubernetes object: `{target["aggregateObjectName"]}`
 - transcribe endpoint identity: `{target["transcribeHost"]}:{target["transcribePort"]}`
+- redacted seed evidence path: `{target["seedEvidencePath"]}`
 
 ## Gate 0 — credential seed
 
@@ -321,6 +367,33 @@ paste, log, or attach values:
 
 Do not put these values into `{target["aggregateObjectName"]}`. They belong only
 in `{target["mtlsObjectName"]}`.
+
+Use the repo helper from an operator shell that has the approved PEM files and
+a Vault token file. Keep all input files `chmod 600`; replace only the
+`/secure/...` placeholders. First run validate-only; it writes redacted
+evidence but does not mutate Vault:
+
+```bash
+{gates["credential-seed"]["commands"]["validateOnly"]}
+```
+
+Then apply the Vault KV v2 merge patch:
+
+```bash
+{gates["credential-seed"]["commands"]["apply"]}
+```
+
+The helper writes only redacted evidence to `{target["seedEvidencePath"]}`:
+property names, file-format booleans, permission booleans, HTTP status, and
+boundary flags. It must not contain PEM values, Vault token, local file paths,
+raw command output, audio, transcript text, or Kubernetes Secret data.
+
+After the apply step, force or wait for ESO reconciliation and use the
+canonical preflight collector as the readiness proof:
+
+```bash
+{gates["credential-seed"]["commands"]["postSeedReadinessProbe"]}
+```
 
 ## Gate 1 — pre-flag mTLS preflight
 
@@ -426,6 +499,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--transcribe-host", default=DEFAULT_TRANSCRIBE_HOST)
     parser.add_argument("--transcribe-ip", default=DEFAULT_TRANSCRIBE_IP)
     parser.add_argument("--transcribe-port", type=int, default=DEFAULT_TRANSCRIBE_PORT)
+    parser.add_argument("--seed-evidence-path", default=DEFAULT_SEED_EVIDENCE_PATH)
     parser.add_argument("--preflight-evidence-path", default=DEFAULT_PREFLIGHT_PATH)
     parser.add_argument("--e2e-evidence-path", default=DEFAULT_E2E_PATH)
     return parser.parse_args(argv)
