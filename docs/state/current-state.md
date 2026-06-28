@@ -1,5 +1,45 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 platform-desktop external recorder smoke PASS; broader product gates remain open (2026-06-28)
+
+`platform-k8s-gitops#2118` merged at
+`fad82038713314979c4e650d3f81542cc17c4caf`, then workflow run
+`28324072820` on `main` produced accepted redacted evidence for the
+short-lived `platform-desktop` token -> external recorder path:
+
+- Artifact `faz24-platform-desktop-token-evidence-28324072820` contains
+  `faz24.platformDesktopTokenEvidenceChain.v1` with `status=pass`,
+  `tokenIncluded=false`, `failureReason=null`.
+- Keycloak admin source was the repo Actions secret label
+  `KC_TEST_ADMIN_PASSWORD`; the self-hosted runner had no Docker socket path, so
+  the script used the bounded Keycloak Admin REST path.
+- `platform-desktop` token contract now requires and proved:
+  `aud=audio-gateway-service`, `aud=meeting-service`, gateway-compatible
+  `frontend`, claims `tenantId/companyId/userId`, realm role `MEETING_ADMIN`,
+  and client role `resource_access.audio-gateway-service.roles=[audio_record]`.
+- External recorder smoke through `https://testai.acik.com` passed:
+  meeting create `201`, consent `201`, session start `201`, chunk upload `200`,
+  finish `200`, status `200` with `state=FINISHED`.
+- `faz24.externalRecorderSmokeVerifier.v1` returned `status=pass`; private
+  material scan found no forbidden token/key/certificate/bearer/private-field
+  content.
+- Cleanup evidence: direct grants toggled and restored; temporary smoke user
+  created and deleted; token file removed.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826277030
+- `platform-backend#766`:
+  https://github.com/Halildeu/platform-backend/issues/766#issuecomment-4826277039
+
+Boundary: this proves the platform-test external meeting-admin plus recorder
+lifecycle chain for the short-lived `platform-desktop` token. It does not prove
+direct-STT, direct-STT transcript, compute-plane audit, desktop mic/loopback,
+aggregate G-CAP reliability threshold, G-OPS/G-COMP, legal acceptance,
+production lifecycle/deletion, or production readiness. `#1615` remains open
+and Project #2 `platform Roadmap` status remains `Needs Verify`.
+
 ## Live Delta — Faz 22.6 governance + B0 marker-enforcement + B1 durable drift-guard DONE; B2 (#1580) build-ready (2026-06-27)
 
 Faz 22 completion chain advanced (handoff
