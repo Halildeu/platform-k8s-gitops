@@ -49,6 +49,7 @@ class BuildDirectSttOperatorHandoffTest(unittest.TestCase):
                 )
             )
             self.assertEqual("faz24.directStt.operator-handoff.v1", manifest["schemaVersion"])
+            self.assertEqual("faz24-direct-stt-20260628", manifest["operatorBatchId"])
             self.assertEqual("platform-ai#182", manifest["issues"]["directSttE2e"])
             self.assertEqual("needs-verify", manifest["acceptanceBoundary"]["issueStatus"])
             self.assertTrue(manifest["acceptanceBoundary"]["approvedCredentialSeedRequired"])

@@ -25,7 +25,7 @@ SHA256SUMS_NAME = "SHA256SUMS"
 
 REPO = "Halildeu/platform-k8s-gitops"
 PLATFORM_AI_REPO = "Halildeu/platform-ai"
-DEFAULT_BATCH_ID = "faz24-direct-stt-20260627"
+DEFAULT_BATCH_ID = "faz24-direct-stt-20260628"
 DEFAULT_KUBE_CONTEXT = "k3d-test"
 DEFAULT_NAMESPACE = "platform-test"
 DEFAULT_DEPLOYMENT = "audio-gateway"
