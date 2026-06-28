@@ -1,5 +1,76 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 current-main live retry: Direct-STT/I3 still blocked; I7 live-stt slice remains bounded PASS (2026-06-28)
+
+Codex re-ran the operator/secret/device-free live checks on current `main`
+`7b0071abe7513870dd71f8a8f0e7373cece91e47` after the endpoint/ESET work was
+reported complete.
+
+Direct-STT mTLS preflight:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28325457236`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28325457236`
+- Verifier: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Result: `status=fail`, `52/61` checks passed.
+- Accepted live facts: explicit `k3d-test` context, reachable
+  `platform-test`, real Ready `audio-gateway` pod, direct-STT still disabled,
+  `live-stt.denetim:8243`, hostAlias `10.99.0.2`, NetworkPolicy
+  `10.99.0.2/32:8243`, optional `/etc/direct-stt-mtls` mount present, and the
+  aggregate Redis Secret remains Ready without direct-STT file keys.
+- Current blocker: `ExternalSecret/audio-gateway-direct-stt-mtls` is not
+  `Ready=True`; runtime Secret keys `direct-stt-ca.crt`,
+  `direct-stt-client.crt`, and `direct-stt-client.key` are missing; the pod-local
+  health probe could not use a client certificate and did not return HTTP `200`.
+  `vaultSeedAuthorityAccepted=false` means the approved Vault/ESO direct-STT
+  mTLS seed has not yet been accepted, not that a reviewed seed was rejected.
+
+WG-B+ I3 management audit:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28325508283`
+- Artifact: `faz24-wg-bplus-i3-evidence-28325508283`
+- Result: `evidence-not-accepted`.
+- Accepted live facts: target TCP/22 is reachable, runner SSH identity is
+  configured, and public-key metadata is present.
+- Current blocker: SSH exits with public-key auth failure
+  (`ssh-auth-publickey`), so remote Denetim audit/drift collection is not
+  reached. OpenSSH event log, PowerShell transcription, PowerShell script-block,
+  failed-login audit, WireGuard health, ESET/firewall drift, time sync, and
+  staging connection-log checks remain non-pass.
+
+I7 app-mTLS bounded slice:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28226401974`
+- Artifact: `faz24-i7-app-mtls-evidence-28226401974`
+- Verifier: `faz24.i7.app-mtls.verifier.v1`
+- Result: `status=pass`, `evidenceProfile=live-stt-preflight`,
+  `tokenIncluded=false`.
+- Accepted slice: WG route to Denetim IP, TCP/8243 reachability, TLS server
+  identity for `live-stt.denetim`, valid client certificate accepted with HTTP
+  `200`, and no-client/wrong-client probes rejected.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826415077
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826415079
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826415074
+- `platform-ai#198`:
+  https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4826415088
+
+Boundary: this delta does not close `#1615`, `#1864`, `platform-ai#182`, or
+`platform-ai#198`. It does not enable direct-STT, call `/transcribe`, send raw
+audio, mutate Vault/Kubernetes/Caddy/firewall, prove desktop mic/loopback,
+prove meeting-ai app-mTLS, prove G-OPS/G-COMP, claim legal go, or make the
+system production-ready. Remaining accepted evidence still requires approved
+Vault/ESO direct-STT mTLS material, Denetim SSH public-key authorization
+evidence, real desktop capture proof, and runtime/operator evidence for the
+remaining product gates.
+
 ## Live Delta — Faz 24 external-recorder G-CAP aggregate verifier PASS; remaining product gates stay open (2026-06-28)
 
 The external-recorder aggregate capture reliability slice now has accepted
