@@ -1,5 +1,66 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 current-main child-gate refresh: Direct-STT and I3 remain blocked (2026-06-28)
+
+Codex reran the two operator-free #1615 child-gate collectors on current `main`
+`3d033f912c106b3689a5a5e1ceb359994c3609ef` after the external-recorder refresh
+and readiness rollup verifier landed.
+
+Direct-STT mTLS preflight (`platform-ai#182`):
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326650072`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28326650072`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Verifier: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Result: `status=fail`, `52/61` checks passed.
+- Accepted live facts: explicit `k3d-test` context exists, `platform-test` is
+  reachable, `audio-gateway` pod is Ready, direct-STT is still disabled before
+  flag flip, desired mTLS shape still targets `live-stt.denetim:8243` via
+  `10.99.0.2/32:8243`, `/etc/direct-stt-mtls`, and
+  `audio-gateway-direct-stt-mtls`, and the aggregate Redis Secret remains Ready
+  without direct-STT file keys.
+- Current blocker: `ExternalSecret/audio-gateway-direct-stt-mtls` is still not
+  `Ready=True`; runtime Secret keys `direct-stt-ca.crt`,
+  `direct-stt-client.crt`, and `direct-stt-client.key` are missing; the pod-local
+  mTLS health probe could not use a client certificate and did not return HTTP
+  `200`; `vaultSeedAuthorityAccepted=false`.
+
+WG-B+ I3 management audit (`platform-k8s-gitops#1864`):
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326650160`
+- Artifact: `faz24-wg-bplus-i3-evidence-28326650160`
+- Evidence schema: `faz24.wg-bplus.i3.audit.v1`
+- Result: verifier fail.
+- Accepted live/preflight facts: TCP/22 to the Denetim target is reachable, the
+  runner SSH identity is configured, public-key metadata is present, WireGuard
+  tooling is available, and `wg0` is detected on staging-sw.
+- Current blocker: SSH exits `255` with
+  `sshFailureClass=ssh-auth-publickey`, so the remote Denetim collector is not
+  reached. Required checks remain fail for OpenSSH event log, PowerShell
+  transcription, PowerShell script-block, failed-login audit, WireGuard health,
+  ESET/firewall drift, time sync, and staging connection-log evidence.
+
+Artifact hygiene: downloaded artifacts for both runs were scanned locally; no
+forbidden token, key, certificate, bearer, raw-audio, or raw-transcript findings
+were detected.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826525965
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826524753
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826525346
+
+Boundary: these runs refreshed truth only. They did not read or write Vault,
+mutate Kubernetes, mutate Caddy/firewall, flip direct-STT, call `/transcribe`,
+send audio, mutate Denetim host state, prove desktop mic/loopback, prove I7 full
+prod-gate, claim legal acceptance, or claim production readiness. `#1615`
+remains open and Project #2 status remains `Needs Verify`.
+
 ## Live Delta — Faz 24 external-recorder current-main refresh PASS; #1615 rollup still open (2026-06-28)
 
 Codex dispatched the safe `platform-test` external-recorder evidence workflow
