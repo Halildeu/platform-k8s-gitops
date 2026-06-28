@@ -18,6 +18,13 @@ def test_workflow_dispatches_rollup_ingest():
     assert "faz24-readiness-rollup-${{ github.run_id }}" in text
 
 
+def test_workflow_bounds_dispatch_payload_size():
+    text = workflow_text()
+
+    assert 'if [ "${#EVIDENCE_JSON_BASE64}" -gt 200000 ]; then' in text
+    assert "evidence_json_base64 is too large" in text
+
+
 def test_workflow_routes_to_rollup_verifier():
     text = workflow_text()
 
