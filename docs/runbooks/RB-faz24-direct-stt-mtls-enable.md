@@ -94,7 +94,7 @@ metadata-only handoff package before any live mutation:
 gh workflow run faz24-direct-stt-operator-handoff.yml \
   --repo Halildeu/platform-k8s-gitops \
   --ref main \
-  -f operator_batch_id=faz24-direct-stt-20260627 \
+  -f operator_batch_id=faz24-direct-stt-20260628 \
   -f gitops_ref=main \
   -f kube_context=k3d-test \
   -f namespace=platform-test \

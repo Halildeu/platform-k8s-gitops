@@ -52,6 +52,7 @@ class BuildI7AppMtlsOperatorHandoffTest(unittest.TestCase):
                 "faz24.i7AppMtls.operator-handoff.v1",
                 manifest["schemaVersion"],
             )
+            self.assertEqual("faz24-i7-app-mtls-20260628", manifest["operatorBatchId"])
             self.assertEqual("platform-k8s-gitops#1615", manifest["issues"]["gitopsRollup"])
             self.assertEqual("platform-ai#198", manifest["issues"]["i7ProdGate"])
             self.assertEqual("platform-ai#188", manifest["issues"]["computePlaneAudit"])
@@ -230,6 +231,7 @@ class BuildI7AppMtlsOperatorHandoffTest(unittest.TestCase):
     def test_workflow_contract(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
 
+        self.assertIn('default: "faz24-i7-app-mtls-20260628"', workflow)
         self.assertIn("faz24-i7-app-mtls-operator-handoff-${{ github.run_id }}", workflow)
         self.assertIn("does not connect to Denetim PC", workflow)
         self.assertIn('(cd "${HANDOFF_DIR}" && sha256sum --check SHA256SUMS)', workflow)
