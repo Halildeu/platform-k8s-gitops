@@ -24,7 +24,7 @@ README_NAME = "README.md"
 SHA256SUMS_NAME = "SHA256SUMS"
 
 REPO = "Halildeu/platform-k8s-gitops"
-DEFAULT_BATCH_ID = "faz24-desktop-capture-20260627"
+DEFAULT_BATCH_ID = "faz24-desktop-capture-20260628"
 EVIDENCE_PATH = "/tmp/faz24-desktop-capture-evidence.json"
 VERIFY_PATH = "/tmp/faz24-desktop-capture-evidence.verify.json"
 GCAP_VERIFY_PATH = "/tmp/faz24-gcap-capture-gate.verify.json"
@@ -150,7 +150,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
         "operatorBatchId": args.operator_batch_id,
         "issues": {
             "gitopsRollup": "platform-k8s-gitops#1615",
-            "gcapAggregate": "platform-k8s-gitops#2021",
+            "gcapAggregate": "platform-k8s-gitops#2027",
         },
         "acceptanceBoundary": {
             "issueStatus": "needs-verify",

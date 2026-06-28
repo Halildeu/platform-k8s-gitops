@@ -52,10 +52,12 @@ class BuildExternalRecorderOperatorHandoffTest(unittest.TestCase):
                 "faz24.externalRecorder.operator-handoff.v1",
                 manifest["schemaVersion"],
             )
+            self.assertEqual("faz24-external-recorder-20260628", manifest["operatorBatchId"])
             self.assertEqual("platform-k8s-gitops#1615", manifest["issues"]["gitopsRollup"])
             self.assertEqual("platform-k8s-gitops#1995", manifest["issues"]["tokenContract"])
             self.assertEqual("platform-k8s-gitops#1996", manifest["issues"]["externalRecorderRunner"])
             self.assertEqual("platform-k8s-gitops#1997", manifest["issues"]["externalRecorderVerifier"])
+            self.assertEqual("platform-k8s-gitops#2027", manifest["issues"]["gcapAggregate"])
             self.assertEqual("needs-verify", manifest["acceptanceBoundary"]["issueStatus"])
             self.assertTrue(manifest["acceptanceBoundary"]["approvedShortLivedTokenRequired"])
             self.assertTrue(manifest["acceptanceBoundary"]["tokenContractPassRequired"])

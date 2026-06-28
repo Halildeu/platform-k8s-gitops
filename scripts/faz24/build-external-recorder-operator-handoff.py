@@ -26,7 +26,7 @@ README_NAME = "README.md"
 SHA256SUMS_NAME = "SHA256SUMS"
 
 REPO = "Halildeu/platform-k8s-gitops"
-DEFAULT_BATCH_ID = "faz24-external-recorder-20260627"
+DEFAULT_BATCH_ID = "faz24-external-recorder-20260628"
 DEFAULT_BASE_URL = "https://testai.acik.com"
 DEFAULT_EXPECTED_ISSUER = "https://testai.acik.com/realms/platform-test"
 TOKEN_CONTRACT_REPORT_PATH = "/tmp/faz24-platform-desktop-token-contract.json"
@@ -178,7 +178,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "tokenContract": "platform-k8s-gitops#1995",
             "externalRecorderRunner": "platform-k8s-gitops#1996",
             "externalRecorderVerifier": "platform-k8s-gitops#1997",
-            "gcapAggregate": "platform-k8s-gitops#2021",
+            "gcapAggregate": "platform-k8s-gitops#2027",
         },
         "acceptanceBoundary": {
             "issueStatus": "needs-verify",

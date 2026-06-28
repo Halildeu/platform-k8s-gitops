@@ -52,8 +52,9 @@ class BuildDesktopCaptureOperatorHandoffTest(unittest.TestCase):
                 "faz24.desktopCapture.operator-handoff.v1",
                 manifest["schemaVersion"],
             )
+            self.assertEqual("faz24-desktop-capture-20260628", manifest["operatorBatchId"])
             self.assertEqual("platform-k8s-gitops#1615", manifest["issues"]["gitopsRollup"])
-            self.assertEqual("platform-k8s-gitops#2021", manifest["issues"]["gcapAggregate"])
+            self.assertEqual("platform-k8s-gitops#2027", manifest["issues"]["gcapAggregate"])
             self.assertEqual("needs-verify", manifest["acceptanceBoundary"]["issueStatus"])
             self.assertTrue(manifest["acceptanceBoundary"]["realDesktopRunRequired"])
             self.assertTrue(manifest["acceptanceBoundary"]["microphoneRealDeviceRequired"])

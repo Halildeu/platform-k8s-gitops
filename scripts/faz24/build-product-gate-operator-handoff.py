@@ -25,7 +25,7 @@ README_NAME = "README.md"
 SHA256SUMS_NAME = "SHA256SUMS"
 
 REPO = "Halildeu/platform-k8s-gitops"
-DEFAULT_BATCH_ID = "faz24-product-gate-20260627"
+DEFAULT_BATCH_ID = "faz24-product-gate-20260628"
 INGEST_WORKFLOW = "faz24-product-gate-evidence-ingest.yml"
 
 GCAP_INPUT_PATHS = [
@@ -222,7 +222,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
         "operatorBatchId": args.operator_batch_id,
         "issues": {
             "gitopsRollup": "platform-k8s-gitops#1615",
-            "gcapAggregate": "platform-k8s-gitops#2021",
+            "gcapAggregate": "platform-k8s-gitops#2027",
             "gcompVerifier": "platform-k8s-gitops#2024",
             "productGateIngest": "platform-k8s-gitops#2027",
         },
