@@ -1,5 +1,66 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 platform-desktop token/external-recorder chain refreshed PASS (2026-06-28)
+
+After the operator clarified Codex is allowed to run this bounded gate directly,
+Codex reran `.github/workflows/faz24-platform-desktop-token-evidence.yml` from
+`main` for the platform-test short-lived `platform-desktop` token contract and
+external-recorder evidence chain. The self-hosted `staging-sw` run returned
+`success`:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28332787391`
+- Head SHA: `814a5ac28689e6c9cbbcd19b5494787ae85fd398`
+- Artifact: `faz24-platform-desktop-token-evidence-28332787391`
+- Diagnostic schema: `faz24.platformDesktopTokenEvidenceChain.v1`
+- Diagnostic status: `pass`
+- Token contract: `pass`
+- External recorder smoke: `pass`
+- External recorder verifier: `pass`
+
+Accepted evidence facts:
+
+- `tokenIncluded=false`
+- Token contract `azp=platform-desktop`
+- Issuer `https://testai.acik.com/realms/platform-test`
+- Required audiences `audio-gateway-service` and `meeting-service` were present.
+- Required claims `tenantId`, `companyId`, and `userId` were present.
+- Required realm role `MEETING_ADMIN` was present.
+- External recorder lifecycle exercised the public testai admin/consent/session
+  path and finished the session successfully.
+- Verifier checks passed for schema, status, no sensitive content, exact step
+  order, token-not-included, expected HTTP contracts, and the negative boundary
+  checks for direct-STT, direct client-to-STT, desktop mic/loopback,
+  compute-plane audit, and production readiness.
+
+Cleanup and secret-boundary facts:
+
+- `cleanup.directGrantsToggled=true`
+- `cleanup.directGrantsRestored=true`
+- `cleanup.tempUserCreated=true`
+- `cleanup.tempUserDeleted=true`
+- `cleanup.tokenFileRemoved=true`
+- Local artifact scan found no private key, certificate, bearer/JWT,
+  `Authorization:`, raw audio data URL, forbidden token key, password/secret key,
+  raw request/response, transcript, or cookie material.
+
+Local artifact SHA-256:
+
+- `8102a48bc9fc12536abda4085d3b7c70a96f1c70fedef6e6b1ee540db1caa0e3`
+  for `faz24-platform-desktop-token-diagnostic.json`
+- `6670b8cce10d73a6657750e4d790045cca0eb2ad65cadc556b8926500cfda214`
+  for `faz24-platform-desktop-token-contract.json`
+- `32dbe65f7ac8d12a0303603f753769ae2b4e68e0ef29f037a4a43906c8dac1bf`
+  for `faz24-external-recorder-smoke.json`
+- `9d3928278eed17ad45825d1515fa1175d436f948f6f089eab88035b3b589cf2a`
+  for `faz24-external-recorder-smoke.verify.json`
+
+Boundary: this refresh proves only the platform-test short-lived
+`platform-desktop` token contract plus external-recorder smoke/verifier chain.
+It does not prove Direct-STT, desktop mic/loopback capture, G-CAP aggregate,
+G-OPS/G-COMP, production readiness, legal acceptance, or full #1615/#2027
+acceptance.
+
 ## Live Delta — Faz 24 readiness rollup ingest now bounds dispatch payload size (2026-06-28)
 
 PR #2154 added a `200000` character upper bound to
