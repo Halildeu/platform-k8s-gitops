@@ -1,5 +1,77 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Direct-STT Gate 0 seed evidence now has a fail-closed ingest gate (2026-06-28)
+
+PR #2150 added a repo-native verifier and CI ingest workflow for the redacted
+Direct-STT mTLS Vault seed evidence and merged to `main` at
+`526468754951e09b010ef9f36191fadc5d0e7ec1`.
+
+New source-side components:
+
+- Verifier:
+  `scripts/faz24/verify_direct_stt_mtls_seed_operator_evidence.py`
+- CI ingest workflow:
+  `.github/workflows/faz24-direct-stt-mtls-seed-evidence-ingest.yml`
+- Handoff integration:
+  `scripts/faz24/build-direct-stt-operator-handoff.py`
+- Operator runbook integration:
+  `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md`
+
+The verifier accepts only applied
+`faz24.directSttMtlsSeedOperatorEvidence.v1` evidence with:
+
+- `status=pass` and `applyRequested=true`;
+- Vault operation `vault-kv-v2-merge-patch`;
+- Vault path `kv/platform/audio-gateway-service`;
+- exactly the three direct-STT mTLS properties:
+  `direct_stt_ca_crt`, `direct_stt_client_crt`, and
+  `direct_stt_client_key`;
+- file evidence showing the CA certificate, client certificate, and client
+  private key files were provided, format-accepted, permission-restricted, and
+  not recorded as paths or values;
+- a 2xx Vault result and empty `errorClass`;
+- boundary flags proving no secret value, Vault token, local path, raw command
+  output, Kubernetes mutation, direct-STT enablement, `/transcribe` call, raw
+  audio, or production mutation is claimed;
+- next-verification routing to ESO reconciliation, `ExternalSecret` readiness,
+  runtime Secret key-name checks, and the preflight collector workflow.
+
+The ingest workflow decodes base64 JSON, runs the verifier, scans the artifact
+for private key, certificate, bearer/JWT, raw media, Denetim endpoint, and
+`/transcribe` material before upload, and fails the workflow when the evidence
+is rejected. The workflow has `contents: read` permission only and does not read
+PEM files, read Vault tokens, mutate Vault/Kubernetes/Denetim/firewall, enable
+Direct-STT, call `/transcribe`, send audio, prove ESO reconciliation, prove
+#182 e2e, satisfy #198 I7, or make a production-readiness claim.
+
+Validation before merge:
+
+- Python compile for the new verifier, seed helper, and Direct-STT handoff
+  builder: pass.
+- Targeted local tests for the new verifier, new workflow, handoff builder, and
+  seed helper: `24 passed`.
+- Full Faz 24 local test run: `305 passed`.
+- Generated handoff artifact `SHA256SUMS` check: pass.
+- Generated handoff artifact forbidden-material scan: no finding.
+- Staged diff whitespace, auto-closure keyword, and secret-like value scans:
+  no finding, except the expected non-issue `Path(...).resolve()` grep false
+  positive during the broad close-word scan.
+- Claude adversarial review: AGREE, no blocker.
+- PR #2150 CI passed: boundary declaration, cross-AI audit, gitleaks, forbidden
+  close keyword scan, HARD RULE language check, YAML lint, shellcheck,
+  Kustomize build sanity, CodeQL actions, CodeQL python, ADR-0031 drift guard,
+  and placeholder leak check.
+
+Boundary: this is still source-side evidence-gate hardening only. It does not
+run the seed helper, perform the operator Vault seed, reconcile ESO, prove
+`ExternalSecret/audio-gateway-direct-stt-mtls` readiness, prove runtime Secret
+key presence, prove mTLS health HTTP 200, flip
+`AUDIO_GATEWAY_DIRECT_STT_ENABLED`, prove #182 e2e, satisfy #198 I7, or advance
+#1615. The next runtime chain remains: operator-approved seed with redacted
+evidence -> seed evidence verifier/ingest PASS -> ESO reconciliation -> Gate 1
+preflight PASS -> reviewed flag flip -> Gate 2 e2e PASS -> reviewer
+acceptance.
+
 ## Live Delta — Direct-STT Gate 0 seed helper and handoff artifact now make Vault/ESO blocker executable without raw secret retention (2026-06-28)
 
 PR #2148 added a repo-native Direct-STT mTLS seed helper and merged to `main`
