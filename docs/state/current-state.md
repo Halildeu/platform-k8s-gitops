@@ -1,5 +1,51 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 product/desktop/external handoff refs corrected and regenerated (2026-06-28)
+
+Codex found a live handoff reference drift while refreshing the Faz 24
+desktop-capture operator package: `platform-k8s-gitops#2021` does not resolve
+as a GitHub issue, while `platform-k8s-gitops#2027` is the live Project #2
+`Needs Verify` item for the shared G-CAP/G-OPS/G-COMP evidence ingest workflow.
+PR #2136 corrected the source/workflow/test defaults and merged to `main` at
+`e4246fa508c95075cb74df070c3a307e8b4aa18d`.
+
+On that main head SHA, Codex regenerated the three metadata-only handoff
+artifacts that feed the remaining product-gate coordination path:
+
+- Product-gate handoff:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28328742081`
+  -> `faz24-product-gate-operator-handoff-28328742081`;
+  schema `faz24.productGate.operator-handoff.v1`; operator batch id
+  `faz24-product-gate-20260628`; `gcapAggregate` and `productGateIngest` both
+  point to `platform-k8s-gitops#2027`.
+- External-recorder handoff:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28328742093`
+  -> `faz24-external-recorder-operator-handoff-28328742093`;
+  schema `faz24.externalRecorder.operator-handoff.v1`; operator batch id
+  `faz24-external-recorder-20260628`; `gcapAggregate` points to
+  `platform-k8s-gitops#2027`.
+- Desktop-capture handoff:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28328742106`
+  -> `faz24-desktop-capture-operator-handoff-28328742106`;
+  schema `faz24.desktopCapture.operator-handoff.v1`; operator batch id
+  `faz24-desktop-capture-20260628`; `gcapAggregate` points to
+  `platform-k8s-gitops#2027`.
+
+Artifact validation: all three workflows returned `success`; downloaded
+artifacts passed `SHA256SUMS`; local artifact scan found no forbidden private
+key, certificate, bearer/JWT, or raw-audio-like material. The product-gate
+manifest keeps `legalTrackParallel=true` and
+`kvkkOwnerLegalAcceptanceNotEngineeringBlocker=true`, so owner legal acceptance
+remains a parallel legal track and is not an engineering blocker.
+
+Boundary: this is source/default/test and metadata-only artifact sync. It does
+not run the desktop app, mint/read a short-lived token, connect to
+`testai.acik.com`, mutate Keycloak/Kubernetes/Vault/firewall/legal state, send
+audio, ingest product-gate evidence, prove desktop mic/loopback, satisfy
+G-CAP/G-OPS/G-COMP, or advance `#1615`. `#2027` still requires accepted
+redacted product-gate evidence and reviewer acceptance before any broader
+readiness claim.
+
 ## Live Delta — Faz 24 post-ESET/current-main child-gate refresh still needs operator gates (2026-06-28)
 
 After PR #2133 landed on `main`, Codex reran the two safe child-gate
