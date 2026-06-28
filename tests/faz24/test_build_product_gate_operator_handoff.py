@@ -55,6 +55,7 @@ class BuildProductGateOperatorHandoffTest(unittest.TestCase):
             self.assertEqual("faz24-product-gate-20260628", manifest["operatorBatchId"])
             self.assertEqual("platform-k8s-gitops#1615", manifest["issues"]["gitopsRollup"])
             self.assertEqual("platform-k8s-gitops#2027", manifest["issues"]["gcapAggregate"])
+            self.assertEqual("platform-k8s-gitops#2022", manifest["issues"]["gopsVerifier"])
             self.assertEqual("platform-k8s-gitops#2024", manifest["issues"]["gcompVerifier"])
             self.assertEqual("platform-k8s-gitops#2027", manifest["issues"]["productGateIngest"])
             self.assertEqual("needs-verify", manifest["acceptanceBoundary"]["issueStatus"])

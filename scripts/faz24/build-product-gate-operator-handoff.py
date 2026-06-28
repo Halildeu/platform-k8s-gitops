@@ -223,6 +223,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
         "issues": {
             "gitopsRollup": "platform-k8s-gitops#1615",
             "gcapAggregate": "platform-k8s-gitops#2027",
+            "gopsVerifier": "platform-k8s-gitops#2022",
             "gcompVerifier": "platform-k8s-gitops#2024",
             "productGateIngest": "platform-k8s-gitops#2027",
         },
