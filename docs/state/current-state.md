@@ -1,5 +1,66 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 platform-desktop token and external-recorder evidence chain PASS on staging-sw (2026-06-28)
+
+Codex dispatched `.github/workflows/faz24-platform-desktop-token-evidence.yml`
+from `main` after PR #2144/#2145 landed. The run returned `success` on the
+self-hosted `staging-sw` runner:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28330401735`
+- Artifact: `faz24-platform-desktop-token-evidence-28330401735`
+- Artifact files:
+  `faz24-platform-desktop-token-diagnostic.json`,
+  `faz24-platform-desktop-token-contract.json`,
+  `faz24-external-recorder-smoke.json`,
+  `faz24-external-recorder-smoke.verify.json`,
+  `runner.stdout`, `runner.stderr`
+- Diagnostic schema: `faz24.platformDesktopTokenEvidenceChain.v1`
+- Diagnostic status: `pass`
+- Token contract: `pass`
+- External recorder smoke: `pass`
+- External recorder verifier: `pass`
+
+Important artifact facts:
+
+- `tokenIncluded=false`
+- `boundaries.platformTestOnly=true`
+- `boundaries.productionMutation=false`
+- `boundaries.directSttClaimed=false`
+- `boundaries.rawTokenLogged=false`
+- `boundaries.rawPasswordLogged=false`
+- `boundaries.rawAdminCredentialLogged=false`
+- `cleanup.directGrantsRestored=true`
+- `cleanup.tempUserDeleted=true`
+- `cleanup.tokenFileRemoved=true`
+- External recorder verifier checks passed, including exact step order,
+  token-not-included, expected HTTP contracts, and direct-STT / desktop mic
+  loopback / compute-plane / production-boundary negative checks.
+
+Local artifact validation after download:
+
+- Forbidden material scan: no private key, certificate, bearer/JWT,
+  `Authorization:`, or `data:audio/...;base64,` value found.
+- Forbidden key-name scan: no `access_token`, `refresh_token`,
+  authorization/bearer/jwt/api/private key, client secret/password/secret,
+  raw audio, transcript text, raw request/response, or cookie key found.
+- SHA-256:
+  `96077dd38abfc70159e5926449d162c9e569485b4a905a7222dc62ba00eacd14`
+  for `faz24-platform-desktop-token-diagnostic.json`;
+  `6670b8cce10d73a6657750e4d790045cca0eb2ad65cadc556b8926500cfda214`
+  for `faz24-platform-desktop-token-contract.json`;
+  `d7fdd02e44f10f606427cc73c63a040ac6eae09b42aa8575adacf8dcb81c4c9e`
+  for `faz24-external-recorder-smoke.json`;
+  `4d7b5d8c4d35a3539438b3987f8a25cd78d75a059b3d879df0aa8f5e505d1781`
+  for `faz24-external-recorder-smoke.verify.json`.
+
+Boundary: this run proves the platform-test short-lived `platform-desktop`
+token contract and the external-recorder smoke/verifier path for the
+#1995/#1996/#1997 chain. It does not collect desktop mic/loopback evidence,
+does not prove Direct-STT, does not perform Denetim endpoint/firewall/Vault/
+Kubernetes/legal mutation, does not exercise production, and does not satisfy
+the full `#2027` product gate or advance `#1615` beyond this bounded evidence.
+
 ## Live Delta — Faz 24 readiness and platform-desktop evidence ingest block raw audio data URLs before artifact upload (2026-06-28)
 
 PR #2144 extended the raw-audio data URL retention guard from the product-gate
