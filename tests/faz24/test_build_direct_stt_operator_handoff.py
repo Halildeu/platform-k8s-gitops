@@ -54,6 +54,7 @@ class BuildDirectSttOperatorHandoffTest(unittest.TestCase):
             self.assertEqual("needs-verify", manifest["acceptanceBoundary"]["issueStatus"])
             self.assertTrue(manifest["acceptanceBoundary"]["approvedCredentialSeedRequired"])
             self.assertTrue(manifest["acceptanceBoundary"]["seedEvidenceRequired"])
+            self.assertTrue(manifest["acceptanceBoundary"]["seedEvidenceIngestRequired"])
             self.assertTrue(manifest["acceptanceBoundary"]["preflightVerifierPassRequired"])
             self.assertTrue(manifest["acceptanceBoundary"]["flagFlipRequiresSeparateReviewedChange"])
             self.assertTrue(manifest["acceptanceBoundary"]["e2eVerifierPassRequired"])
@@ -93,6 +94,22 @@ class BuildDirectSttOperatorHandoffTest(unittest.TestCase):
             )
             self.assertIn("--apply", seed["commands"]["apply"])
             self.assertIn(
+                "verify_direct_stt_mtls_seed_operator_evidence.py",
+                seed["commands"]["verifySeedEvidence"],
+            )
+            self.assertIn(
+                "--summary-json /tmp/faz24-direct-stt-mtls-seed.verify.json",
+                seed["commands"]["verifySeedEvidence"],
+            )
+            self.assertIn(
+                "faz24-direct-stt-mtls-seed-evidence-ingest.yml",
+                seed["commands"]["ingestSeedEvidence"],
+            )
+            self.assertIn(
+                'evidence_json_base64="${DIRECT_STT_MTLS_SEED_B64}"',
+                seed["commands"]["ingestSeedEvidence"],
+            )
+            self.assertIn(
                 "faz24-direct-stt-mtls-preflight-collect.yml",
                 seed["commands"]["postSeedReadinessProbe"],
             )
@@ -120,6 +137,9 @@ class BuildDirectSttOperatorHandoffTest(unittest.TestCase):
             self.assertIn("Vault KV v2 merge patch", readme)
             self.assertIn("/secure/operator-vault.token", readme)
             self.assertIn("redacted seed evidence path", readme)
+            self.assertIn("Verify the applied seed evidence", readme)
+            self.assertIn("seed evidence verifier/ingest", readme)
+            self.assertIn("Seed evidence PASS is not Direct-STT acceptance", readme)
             self.assertIn("Gate 1", readme)
             self.assertIn("Gate 2", readme)
             self.assertIn("Gate 3", readme)

@@ -1,0 +1,178 @@
+name: Faz 24 Direct-STT mTLS Seed Evidence Ingest
+
+# Validates redacted operator evidence after the approved Vault KV v2 seed
+# helper has applied the direct-STT mTLS properties. It does not read PEM files,
+# read Vault tokens, mutate Vault/Kubernetes/Denetim/firewall, enable
+# direct-STT, call /transcribe, send audio, or claim production readiness.
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_json_base64:
+        description: "Base64 of faz24 direct-STT mTLS seed evidence JSON"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-direct-stt-mtls-seed-evidence-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: verify direct-STT mTLS seed evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      EVIDENCE_DIR: /tmp/faz24-direct-stt-mtls-seed-${{ github.run_id }}
+      EVIDENCE_JSON: /tmp/faz24-direct-stt-mtls-seed-${{ github.run_id }}/faz24-direct-stt-mtls-seed-evidence.json
+      SUMMARY_JSON: /tmp/faz24-direct-stt-mtls-seed-${{ github.run_id }}/verification-summary.json
+
+    steps:
+      - name: Validate dispatch input
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+
+          case "${EVIDENCE_JSON_BASE64}" in
+            *$'\n'*|*$'\r'*)
+              echo "::error::evidence_json_base64 must be a single line"
+              exit 1
+              ;;
+          esac
+
+          if [ "${#EVIDENCE_JSON_BASE64}" -gt 200000 ]; then
+            echo "::error::evidence_json_base64 is too large"
+            exit 1
+          fi
+
+          if ! printf '%s' "${EVIDENCE_JSON_BASE64}" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            echo "::error::evidence_json_base64 must be plain base64"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Decode evidence JSON
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          printf '%s' "${EVIDENCE_JSON_BASE64}" | base64 -d > "${EVIDENCE_JSON}"
+          python3 -m json.tool "${EVIDENCE_JSON}" > "${EVIDENCE_JSON}.pretty"
+          mv "${EVIDENCE_JSON}.pretty" "${EVIDENCE_JSON}"
+
+      - name: Verify direct-STT mTLS seed evidence
+        id: verify
+        run: |
+          set +e
+          python3 scripts/faz24/verify_direct_stt_mtls_seed_operator_evidence.py \
+            "${EVIDENCE_JSON}" \
+            --summary-json "${SUMMARY_JSON}" \
+            > "${EVIDENCE_DIR}/verifier.stdout" \
+            2> "${EVIDENCE_DIR}/verifier.stderr"
+          exit_code="$?"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          cat "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+          cat "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+          exit 0
+
+      - name: Verify artifact excludes private material
+        id: secret_scan
+        if: always()
+        run: |
+          set -euo pipefail
+
+          test -d "${EVIDENCE_DIR}"
+          test -s "${EVIDENCE_JSON}"
+
+          if grep -R -E \
+            -e '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
+            -e '-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
+            -e 'Bearer ' \
+            -e 'Authorization:' \
+            -e 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.' \
+            -e '-----BEGIN CERTIFICATE-----' \
+            -e 'data:audio/[A-Za-z0-9.+-]+;base64,' \
+            -e 'audio/wav' \
+            -e 'audio/mpeg' \
+            -e 'https://live-stt\.denetim:8243' \
+            -e '/transcribe' \
+            -- \
+            "${EVIDENCE_DIR}"; then
+            echo "::error::evidence artifact contains forbidden private/secret/raw media/endpoint material"
+            exit 1
+          fi
+
+          if grep -E \
+            -e '"(access_token|refresh_token)"[[:space:]]*:' \
+            -e '"(authorization|bearer|jwt|api_key|private_key)"[[:space:]]*:' \
+            -e '"(client_secret|password|secret)"[[:space:]]*:' \
+            -e '"(raw_audio|audio_bytes|audio_base64|transcript_text)"[[:space:]]*:' \
+            -e '"(raw_request|raw_response|cookie)"[[:space:]]*:' \
+            -e '"(raw_command_output|command_output)"[[:space:]]*:' \
+            -- \
+            "${EVIDENCE_JSON}"; then
+            echo "::error::evidence JSON contains forbidden key names"
+            exit 1
+          fi
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 direct-STT mTLS seed evidence ingest"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-direct-stt-mtls-seed-${{ github.run_id }}\`"
+            echo "- Verifier exit code: \`${VERIFY_EXIT_CODE:-missing}\`"
+            echo
+            echo "Boundary: redacted seed-helper evidence validation only."
+            echo "This workflow does not read PEM files or Vault tokens, mutate"
+            echo "Vault/Kubernetes/Denetim/firewall, enable direct-STT, call"
+            echo "/transcribe, send audio, prove ESO reconciliation, prove e2e,"
+            echo "or make any production-readiness claim."
+            echo
+            echo '```text'
+            sed -n '1,180p' "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+            sed -n '1,180p' "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence ingest artifact
+        if: always() && steps.secret_scan.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-direct-stt-mtls-seed-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local evidence directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail workflow when evidence is rejected
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERIFY_EXIT_CODE}" ]; then
+            echo "::error::evidence verifier did not expose an exit code"
+            exit 1
+          fi
+          if [ "${VERIFY_EXIT_CODE}" != "0" ]; then
+            echo "::error::direct-STT mTLS seed evidence was rejected"
+            exit "${VERIFY_EXIT_CODE}"
+          fi

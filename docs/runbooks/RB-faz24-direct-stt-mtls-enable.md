@@ -125,15 +125,38 @@ python3 scripts/faz24/direct_stt_mtls_seed_operator.py \
   --apply
 ```
 
-Accepted seed evidence is still not Direct-STT acceptance. After the apply,
-force or wait for ESO reconciliation and run Gate 1 preflight. Gate 1 is the
-first accepted proof that `ExternalSecret/audio-gateway-direct-stt-mtls` is
-Ready, the runtime Secret exposes the three expected key names, and the real
-`audio-gateway` pod can use the mounted client certificate.
+Verify the applied seed evidence locally:
+
+```bash
+python3 scripts/faz24/verify_direct_stt_mtls_seed_operator_evidence.py \
+  docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json \
+  --summary-json /tmp/faz24-direct-stt-mtls-seed.verify.json
+```
+
+Archive the redacted seed evidence through CI:
+
+```bash
+DIRECT_STT_MTLS_SEED_B64="$(
+  base64 < docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json | tr -d '\n'
+)"
+gh workflow run faz24-direct-stt-mtls-seed-evidence-ingest.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f evidence_json_base64="${DIRECT_STT_MTLS_SEED_B64}"
+```
+
+Accepted seed evidence is still not Direct-STT acceptance. It proves only that
+the seed helper applied the bounded Vault merge patch and wrote safe redacted
+evidence. After the apply, force or wait for ESO reconciliation and run Gate 1
+preflight. Gate 1 is the first accepted proof that
+`ExternalSecret/audio-gateway-direct-stt-mtls` is Ready, the runtime Secret
+exposes the three expected key names, and the real `audio-gateway` pod can use
+the mounted client certificate.
 
 ## Evidence Contract
 
-There are two evidence gates.
+There are three evidence gates: Gate 0 seed-helper evidence, Gate 1 preflight
+evidence, and Gate 2 e2e evidence.
 
 ### Operator handoff package
 
