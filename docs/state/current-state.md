@@ -1,5 +1,59 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 Direct-STT operator handoff regenerated with fresh batch id (2026-06-28)
+
+Codex regenerated the metadata-only Direct-STT operator handoff from current
+`main` after the fresh Direct-STT/I3 child-gate refresh showed the mTLS seed
+boundary is still the active Direct-STT blocker:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28327442436`
+- Artifact: `faz24-direct-stt-operator-handoff-28327442436`
+- Schema: `faz24.directStt.operator-handoff.v1`
+- Operator batch id: `faz24-direct-stt-20260628`
+- GitOps issue: `platform-k8s-gitops#1615`
+- Direct-STT issue: `platform-ai#182`
+- I7 production-gate issue reference: `platform-ai#198`
+- Target context/namespace/deployment:
+  `k3d-test` / `platform-test` / `audio-gateway`
+- Target mTLS object and Vault path:
+  `audio-gateway-direct-stt-mtls`,
+  `kv/platform/audio-gateway-service`
+- Target host/IP/port: `live-stt.denetim` / `10.99.0.2` / `8243`
+- Evidence paths:
+  `docs/faz-24-evidence/direct-stt-mtls-preflight.json` and
+  `docs/faz-24-evidence/direct-stt-e2e.json`
+
+Artifact validation: downloaded `SHA256SUMS` verified `README.md` and
+`faz24-direct-stt-operator-handoff.json`; local artifact scan found no
+forbidden private key, certificate, token, bearer, raw-audio, raw-transcript, or
+credential-like JSON key findings. Manifest mutation boundary has
+`containsSecrets=false`, `containsCertificates=false`,
+`packageBuildVaultMutation=false`, `packageBuildClusterMutation=false`,
+`packageBuildDenetimMutation=false`, and `packageBuildProductionMutation=false`.
+
+The handoff artifact now gives the operator one current Direct-STT sequence:
+seed the approved Vault properties `direct_stt_ca_crt`,
+`direct_stt_client_crt`, and `direct_stt_client_key` without recording raw
+values; collect/verify/ingest the mTLS preflight; make a separate reviewed
+GitOps flag flip only after preflight PASS; then collect/verify/ingest the e2e
+Direct-STT evidence and require reviewer acceptance. The default operator batch
+id in `scripts/faz24/build-direct-stt-operator-handoff.py` and
+`.github/workflows/faz24-direct-stt-operator-handoff.yml` is now
+`faz24-direct-stt-20260628`, matching the regenerated artifact.
+
+Evidence comments:
+
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826594372
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826594987
+
+Boundary: this is coordination packaging only. It does not seed Vault, read or
+write raw credentials, mutate Kubernetes, flip Direct-STT, call `/transcribe`,
+send audio, prove Direct-STT e2e, satisfy I7, or advance `#1615`. `#182` and
+`#1615` remain `Needs Verify`.
+
 ## Live Delta — Faz 24 WG-B+ operator handoff regenerated with fresh I3 package defaults (2026-06-28)
 
 Codex regenerated the metadata-only WG-B+ operator handoff from current `main`
