@@ -1,5 +1,46 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Direct-STT operator handoff artifact now includes seed evidence verifier/ingest commands (2026-06-28)
+
+After PR #2150 and #2151 were merged, Codex regenerated the Direct-STT
+metadata-only operator handoff package from `main` so the distributed handoff
+artifact carries the new Gate 0 seed evidence verification and ingest commands.
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28331957582`
+- Artifact: `faz24-direct-stt-operator-handoff-28331957582`
+- Schema: `faz24.directStt.operator-handoff.v1`
+- Operator batch id: `faz24-direct-stt-20260628`
+- Target seed evidence path:
+  `docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json`
+- Manifest assertions:
+  `acceptanceBoundary.seedEvidenceIngestRequired=true`;
+  `orderedGates[0].commands.verifySeedEvidence` points to
+  `scripts/faz24/verify_direct_stt_mtls_seed_operator_evidence.py`;
+  `orderedGates[0].commands.ingestSeedEvidence` points to
+  `faz24-direct-stt-mtls-seed-evidence-ingest.yml`.
+
+Local artifact validation after download:
+
+- `SHA256SUMS` verified `README.md` and
+  `faz24-direct-stt-operator-handoff.json`.
+- Local artifact scan found no forbidden private key, certificate, bearer/JWT,
+  raw media data URL, Denetim endpoint URL, or `/transcribe` material.
+- SHA-256:
+  `01803f77627baa21167c22bfb447dc2356f4f745b59751a01189218438c400f2`
+  for `README.md`;
+  `339a42f15d0814c43b1db31af0aa0b22cd157ca52fb11b9369a4d50fccfea56e`
+  for `faz24-direct-stt-operator-handoff.json`.
+
+Boundary: this handoff artifact is still metadata-only coordination material.
+It does not run the seed helper, read PEM files, read Vault tokens, mutate
+Vault/Kubernetes/Denetim/firewall, reconcile ESO, enable Direct-STT, call
+`/transcribe`, send audio, prove #182 e2e, satisfy #198 I7, or advance #1615.
+The next runtime chain remains unchanged: operator-approved seed with redacted
+evidence -> seed evidence verifier/ingest PASS -> ESO reconciliation -> Gate 1
+preflight PASS -> reviewed flag flip -> Gate 2 e2e PASS -> reviewer
+acceptance.
+
 ## Live Delta — Direct-STT Gate 0 seed evidence now has a fail-closed ingest gate (2026-06-28)
 
 PR #2150 added a repo-native verifier and CI ingest workflow for the redacted
