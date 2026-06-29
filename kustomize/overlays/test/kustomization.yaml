@@ -172,7 +172,7 @@ images:
     # meeting#can_record. This is the PR-2 source artifact for removing the
     # audio-gateway dependency on /api/v1/admin/meetings/{id}.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:2527e623799c14a00c6f3b5f108ecac1dcb98555c8a1c26a0a41705c71e818d8
+    digest: sha256:856b67ad8a7b45b167d7c12a0a8358f9820d2e0eea0839d46e8d22bd7c48100c
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -192,7 +192,7 @@ images:
     # transcript/KVKK access-log cleanup and destruction-audit accounting. This
     # desired-state pin does not by itself prove live deletion or legal closure.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:af97f1aa1b3212e0461288f53c1e1a16395e9ed2e80923d0cc4a1137bf2249ba
+    digest: sha256:fe5a125718ef7148756537c60724e6d8c39ad226bdf918f6868db692b5caad2f
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -5405,7 +5405,7 @@ images:
     # run 28372404929). This carries strict securityNetwork structured
     # EDR_NETWORK ingest. It does not claim deployment-enforcement enablement
     # or #527 runtime acceptance.
-    digest: sha256:f950a3b94db3d0f57060defb047f349370174fa42bc093df0a0ccea1ceff9ca8
+    digest: sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571

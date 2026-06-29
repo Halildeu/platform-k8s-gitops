@@ -179,4 +179,4 @@ images:
   # normal test overlay rollout; this co-bump preserves same-image bridge topology.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:f950a3b94db3d0f57060defb047f349370174fa42bc093df0a0ccea1ceff9ca8
+    digest: sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba
