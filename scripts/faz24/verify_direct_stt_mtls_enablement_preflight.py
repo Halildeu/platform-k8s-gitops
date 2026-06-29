@@ -56,6 +56,8 @@ UTC_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:@/-]{1,160}$")
+SAFE_CONDITION_VALUE_RE = re.compile(r"^[A-Za-z0-9_.:/@-]{1,160}$")
+SAFE_OPTIONAL_CONDITION_VALUE_RE = re.compile(r"^[A-Za-z0-9_.:/@-]{0,160}$")
 CAMEL_BOUNDARY_1_RE = re.compile(r"(.)([A-Z][a-z]+)")
 CAMEL_BOUNDARY_2_RE = re.compile(r"([a-z0-9])([A-Z])")
 
@@ -226,6 +228,11 @@ def string_set(value: Any) -> set[str]:
     return set(value)
 
 
+def safe_condition_value(value: Any, *, allow_empty: bool = False) -> bool:
+    pattern = SAFE_OPTIONAL_CONDITION_VALUE_RE if allow_empty else SAFE_CONDITION_VALUE_RE
+    return isinstance(value, str) and bool(pattern.match(value))
+
+
 def validate_no_sensitive_content(data: dict[str, Any], checks: list[Check]) -> None:
     findings: list[str] = []
     for path, key, value in iter_values(data):
@@ -338,6 +345,39 @@ def validate_external_secret(data: dict[str, Any], checks: list[Check]) -> None:
         f"targetSecretKeys must include {', '.join(sorted(REQUIRED_SECRET_KEYS))}",
     )
     add(checks, "external_secret_values_absent", external.get("secretValueIncluded") is False, "secretValueIncluded must be false")
+
+    conditions = external.get("conditions")
+    condition_findings: list[str] = []
+    if not isinstance(conditions, list) or len(conditions) > 6:
+        condition_findings.append("conditions must be a list of at most 6 items")
+    else:
+        for index, condition in enumerate(conditions):
+            if not isinstance(condition, dict):
+                condition_findings.append(f"conditions[{index}] must be an object")
+                continue
+            for key in ["type", "status", "reason"]:
+                if not safe_condition_value(condition.get(key)):
+                    condition_findings.append(f"conditions[{index}].{key} must be bounded metadata")
+            if not safe_condition_value(condition.get("lastTransitionTime"), allow_empty=True):
+                condition_findings.append(
+                    f"conditions[{index}].lastTransitionTime must be bounded metadata"
+                )
+            if condition.get("messageIncluded") is not False or "message" in condition:
+                condition_findings.append(f"conditions[{index}] must not include raw message text")
+            if not isinstance(condition.get("messagePresent"), bool):
+                condition_findings.append(f"conditions[{index}].messagePresent must be boolean")
+            message_length = as_int(condition.get("messageLength"))
+            if message_length is None or not 0 <= message_length <= 20000:
+                condition_findings.append(f"conditions[{index}].messageLength must be 0..20000")
+
+    add(
+        checks,
+        "external_secret_conditions_redacted",
+        not condition_findings,
+        "ExternalSecret condition metadata is bounded and redacted"
+        if not condition_findings
+        else "; ".join(condition_findings[:6]),
+    )
 
 
 def validate_runtime_secret(data: dict[str, Any], checks: list[Check]) -> None:

@@ -246,6 +246,12 @@ The preflight verifier requires:
 - `ExternalSecret/audio-gateway-direct-stt-mtls` Ready with mappings from
   `direct_stt_ca_crt`, `direct_stt_client_crt`, and `direct_stt_client_key`
   to the file-like Secret keys;
+- redacted `ExternalSecret` condition diagnostics for the dedicated mTLS
+  object. The collector records only bounded condition metadata such as
+  `type`, `status`, `reason`, `lastTransitionTime`, and whether a message was
+  present. Raw condition messages are not written to evidence; use the reason
+  and failure codes to route follow-up without leaking Vault/ESO provider
+  detail or secret-shaped text;
 - runtime `Secret/audio-gateway-direct-stt-mtls` key names include `direct-stt-ca.crt`,
   `direct-stt-client.crt`, and `direct-stt-client.key`, with no values
   captured;

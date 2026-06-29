@@ -43,6 +43,9 @@ class FakeRunner:
         missing_context: bool = False,
         namespace_reachable: bool = True,
         missing_secret_key: bool = False,
+        external_secret_ready: bool = True,
+        external_secret_reason: str = "SecretSynced",
+        external_secret_message: str = "",
         mtls_status: int = 200,
         vault_path: str = "kv/platform/audio-gateway-service",
         git_sha: str | None = "91a743542cdaf6996dea6d055cf08252e9122e59",
@@ -50,6 +53,9 @@ class FakeRunner:
         self.missing_context = missing_context
         self.namespace_reachable = namespace_reachable
         self.missing_secret_key = missing_secret_key
+        self.external_secret_ready = external_secret_ready
+        self.external_secret_reason = external_secret_reason
+        self.external_secret_message = external_secret_message
         self.mtls_status = mtls_status
         self.vault_path = vault_path
         self.git_sha = git_sha
@@ -109,7 +115,14 @@ class FakeRunner:
         if kind == "configmap" and name == "audio-gateway-config":
             return self._json(configmap())
         if kind == "externalsecret" and name == "audio-gateway-direct-stt-mtls":
-            return self._json(external_secret(self.vault_path))
+            return self._json(
+                external_secret(
+                    self.vault_path,
+                    ready=self.external_secret_ready,
+                    reason=self.external_secret_reason,
+                    message=self.external_secret_message,
+                )
+            )
         if kind == "externalsecret" and name == "audio-gateway-secrets":
             return self._json(aggregate_external_secret())
         if kind == "networkpolicy" and name == "allow-audio-gateway-egress-live-stt-mtls":
@@ -165,7 +178,13 @@ def configmap() -> dict:
     return {"data": {"AUDIO_GATEWAY_DIRECT_STT_ENABLED": "false"}}
 
 
-def external_secret(vault_path: str) -> dict:
+def external_secret(
+    vault_path: str,
+    *,
+    ready: bool = True,
+    reason: str = "SecretSynced",
+    message: str = "",
+) -> dict:
     return {
         "spec": {
             "secretStoreRef": {"name": "vault-platform-gitops"},
@@ -193,7 +212,17 @@ def external_secret(vault_path: str) -> dict:
                 },
             ],
         },
-        "status": {"conditions": [{"type": "Ready", "status": "True"}]},
+        "status": {
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "True" if ready else "False",
+                    "reason": reason,
+                    "message": message,
+                    "lastTransitionTime": "2026-06-29T01:00:00Z",
+                }
+            ]
+        },
     }
 
 
@@ -273,6 +302,20 @@ class DirectSttMtlsPreflightCollectorTest(unittest.TestCase):
         self.assertEqual([], evidence["failures"])
         self.assertFalse(evidence["runtimeSecret"]["secretValueIncluded"])
         self.assertEqual(
+            [
+                {
+                    "type": "Ready",
+                    "status": "True",
+                    "reason": "SecretSynced",
+                    "lastTransitionTime": "2026-06-29T01:00:00Z",
+                    "messagePresent": False,
+                    "messageLength": 0,
+                    "messageIncluded": False,
+                }
+            ],
+            evidence["externalSecret"]["conditions"],
+        )
+        self.assertEqual(
             {
                 "direct-stt-ca.crt",
                 "direct-stt-client.crt",
@@ -329,6 +372,37 @@ class DirectSttMtlsPreflightCollectorTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("status_pass", result.stdout)
+
+    def test_external_secret_synced_error_records_redacted_condition_metadata(self):
+        message = (
+            "could not get secret data from provider: missing property "
+            "direct_stt_client_key at kv/platform/audio-gateway-service"
+        )
+        evidence = collector.build_evidence(
+            runner=FakeRunner(
+                external_secret_ready=False,
+                external_secret_reason="SecretSyncedError",
+                external_secret_message=message,
+                missing_secret_key=True,
+                mtls_status=000,
+            )
+        )
+        serialized = json.dumps(evidence)
+
+        self.assertEqual("fail", evidence["status"])
+        self.assertIn("external-secret-not-ready", evidence["failures"])
+        self.assertEqual("SecretSyncedError", evidence["externalSecret"]["conditions"][0]["reason"])
+        self.assertTrue(evidence["externalSecret"]["conditions"][0]["messagePresent"])
+        self.assertEqual(len(message), evidence["externalSecret"]["conditions"][0]["messageLength"])
+        self.assertFalse(evidence["externalSecret"]["conditions"][0]["messageIncluded"])
+        self.assertNotIn(message, serialized)
+        self.assertNotIn("direct_stt_client_key at", serialized)
+
+        result = self.run_verifier(evidence)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("external_secret_ready", result.stdout)
+        self.assertIn("external_secret_conditions_redacted", result.stdout)
 
     def test_non_200_mtls_probe_fails(self):
         evidence = collector.build_evidence(runner=FakeRunner(mtls_status=000))
