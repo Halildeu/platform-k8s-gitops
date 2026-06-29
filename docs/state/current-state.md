@@ -1,5 +1,89 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 Direct-STT preflight still blocked; remaining evidence ingests now bound payload size (2026-06-29)
+
+Codex reran `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml`
+from current `main` to check whether the Direct-STT Vault/ESO seed state had
+changed after the prior 2026-06-28 failure. The metadata-only preflight again
+uploaded an artifact and passed the artifact secret scan, but the verifier
+rejected the evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28342155603`
+- Head SHA: `f4223f168335d42064bd029226705b6f6b7a60b3`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28342155603`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Evidence status: `fail`
+- Verifier schema: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Verifier status: `fail`
+
+Failure codes:
+
+- `external-secret-not-ready`
+- `kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`
+- `mtls-health-not-200`
+- `mtls-probe-exit-28`
+- `runtime-secret-key-missing`
+
+Rejecting verifier checks:
+
+- `status_pass`
+- `failures_empty`
+- `external_secret_ready`
+- `runtime_secret_keys`
+- `runtime_secret_env_risk`
+- `mtls_probe_client_auth`
+- `mtls_probe_health_status`
+- `mtls_probe_total_ms`
+- `boundary_vaultSeedAuthorityAccepted`
+
+Artifact validation after download:
+
+- Local artifact scan found no private key, certificate, bearer/JWT,
+  `Authorization:`, raw audio data URL, or `/transcribe` material.
+- SHA-256:
+  `f96b513c9ee01e361cbffa786def56e9b8f9f3020c96efad31345138a9abd8a5`
+  for `faz24-direct-stt-mtls-preflight.json`;
+  `e898dbde4c61402499adad2f3dea3b32fba17b7b7488e4b3dce924b41040c76c`
+  for `verification-summary.json`.
+
+Source-side hardening completed after this runtime refresh:
+
+- PR #2157 merged to `main` at
+  `0d4b66beaea8684b3766b8750dd15ce768049e30`.
+- The remaining Faz 24 `evidence_json_base64` ingest workflows now reject
+  payloads over `200000` characters before base64 regex validation, decode,
+  verifier execution, or artifact retention:
+  `faz24-direct-stt-mtls-preflight-ingest.yml`,
+  `faz24-direct-stt-e2e-evidence-ingest.yml`,
+  `faz24-i7-app-mtls-evidence-ingest.yml`,
+  `faz24-i3-denetim-ssh-authorize-evidence-ingest.yml`, and
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml`.
+- `tests/faz24/test_evidence_ingest_payload_bounds.py` now scans every
+  `faz24-*.yml` workflow that declares `evidence_json_base64:` and requires
+  the `200000` character fail-closed guard. Current coverage: 8/8 bounded.
+
+Validation before merge:
+
+- Targeted ingest-boundary tests: `18 passed`.
+- YAML semantic parse for all `.github/workflows/faz24-*.yml`: pass.
+- Full Faz 24 local test run: `307 passed`.
+- Staged diff whitespace and forbidden closure-language scans: no finding.
+- Claude adversarial review: second pass AGREE after full workflow context
+  confirmed all 8 `evidence_json_base64` Faz 24 workflows are bounded.
+- PR #2157 CI passed: ADR-0011 boundary declaration, cross-AI audit,
+  gitleaks, forbidden close keyword scan, HARD RULE language check, YAML lint,
+  shellcheck, Kustomize build sanity, CodeQL actions, CodeQL python, ADR-0031
+  drift guard, and placeholder leak check.
+
+Boundary: the live refresh confirms the active Direct-STT Gate 1 blocker
+remains unresolved Vault/ESO seed reconciliation for
+`audio-gateway-direct-stt-mtls` and expected runtime key names. The source
+hardening is workflow/test-only. This does not mutate
+Vault/Kubernetes/Denetim/firewall/legal state, enable Direct-STT, call
+`/transcribe`, send audio, prove desktop mic/loopback, satisfy G-CAP/G-OPS/
+G-COMP, claim legal acceptance, or satisfy #1615/#2027.
+
 ## Live Delta — Faz 24 platform-desktop token/external-recorder chain refreshed PASS (2026-06-28)
 
 After the operator clarified Codex is allowed to run this bounded gate directly,
