@@ -42,6 +42,11 @@ jobs:
               ;;
           esac
 
+          if [ "${#EVIDENCE_JSON_BASE64}" -gt 200000 ]; then
+            echo "::error::evidence_json_base64 is too large"
+            exit 1
+          fi
+
           if ! printf '%s' "${EVIDENCE_JSON_BASE64}" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
             echo "::error::evidence_json_base64 must be plain base64"
             exit 1
