@@ -134,8 +134,15 @@ images:
     # AudioFormat.mediaType() instead of always application/octet-stream, so live-stt
     # accepts the forwarded WAV (was rejected "Unsupported content_type"). Builds on
     # #765 recording-access repoint. Unblocks Zeynep #182 direct-STT e2e.
+    # 2026-06-29 update: sha-bdf5a02 (platform-backend#776) WAV-wraps raw PCM16
+    # chunks before the live-stt forward. #768 set audio/L16 for PCM16, but live-stt
+    # cannot decode headerless raw PCM (proven live from the gateway client cert:
+    # raw PCM + audio/L16 AND raw PCM + audio/wav both 400 "Audio decode failed";
+    # only a real WAV container returns 200). The gateway now synthesizes a canonical
+    # WAV header (session sampleRateHz/channels, 16-bit signed LE) and forwards as
+    # audio/wav, so direct_stt_success can finally increment. Codex 019f131e AGREE.
     # D30 immutable digest pin.
-    digest: sha256:7a364ec877d3e21536749a3cf52404c1d8fd91f3e6dc439818978211782f3624
+    digest: sha256:5f08b14dcbd5b923f7320bbc8c016c1096b322dd8489a899cded62f97b7107af
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -7320,7 +7327,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-06-29-mtls-enabled-v1"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-06-29-wav-wrap-776-v2"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
