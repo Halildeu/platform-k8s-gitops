@@ -61,7 +61,10 @@ data:
   # Chain proven 2026-06-29: 3-way mTLS smoke (valid -> live-stt /health 200;
   # no-cert & wrong-CA rejected) + synthetic /transcribe 200 (CUDA, language=tr).
   # ArgoCD selfHeal was reverting the live kubectl patch; this gitops flip is the
-  # durable enablement (RB-faz24-direct-stt-mtls-enable.md Step 5). Rollback: "false".
+  # durable enablement (RB-faz24-direct-stt-mtls-enable.md Step 5). Rollback: set
+  # back to "false" AND bump the test-overlay direct-stt-enable-rev annotation (or
+  # rollout restart) — envFrom ConfigMap values are read only at pod start, so a
+  # flag change alone does not roll the pod.
   AUDIO_GATEWAY_DIRECT_STT_ENABLED: "true"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL: "https://live-stt.denetim:8243/transcribe"
   AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT: "2"
