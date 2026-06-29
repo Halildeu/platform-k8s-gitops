@@ -64,6 +64,17 @@ def valid_preflight() -> dict:
                 "direct-stt-client.crt",
                 "direct-stt-client.key",
             ],
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": "True",
+                    "reason": "SecretSynced",
+                    "lastTransitionTime": "2026-06-29T01:00:00Z",
+                    "messagePresent": False,
+                    "messageLength": 0,
+                    "messageIncluded": False,
+                }
+            ],
             "secretValueIncluded": False,
         },
         "runtimeSecret": {
@@ -217,6 +228,34 @@ class DirectSttMtlsEnablementPreflightVerifierTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("external_secret_properties", result.stdout)
+
+    def test_external_secret_raw_condition_message_fails(self):
+        data = valid_preflight()
+        data["externalSecret"]["conditions"][0]["messageIncluded"] = True
+        data["externalSecret"]["conditions"][0]["message"] = "could not read secret property"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("external_secret_conditions_redacted", result.stdout)
+
+    def test_external_secret_unsafe_condition_reason_fails(self):
+        data = valid_preflight()
+        data["externalSecret"]["conditions"][0]["reason"] = "SecretSynced\nError"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("external_secret_conditions_redacted", result.stdout)
+
+    def test_external_secret_empty_required_condition_metadata_fails(self):
+        data = valid_preflight()
+        data["externalSecret"]["conditions"][0]["reason"] = ""
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("external_secret_conditions_redacted", result.stdout)
 
     def test_mtls_probe_must_use_real_pod(self):
         data = valid_preflight()

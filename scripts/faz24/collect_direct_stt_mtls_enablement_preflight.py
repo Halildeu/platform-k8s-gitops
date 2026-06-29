@@ -56,6 +56,7 @@ AGGREGATE_SECRET_KEYS = {"SPRING_DATA_REDIS_PASSWORD"}
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"sha256:([0-9a-f]{64})")
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+SAFE_CONDITION_VALUE_RE = re.compile(r"^[A-Za-z0-9_.:/@-]{0,160}$")
 
 
 @dataclass(frozen=True)
@@ -263,6 +264,41 @@ def external_secret_store(external_secret: dict[str, Any] | None) -> str:
     if not isinstance(external_secret, dict):
         return ""
     return external_secret.get("spec", {}).get("secretStoreRef", {}).get("name", "")
+
+
+def safe_condition_value(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    if "\n" in value or "\r" in value or not SAFE_CONDITION_VALUE_RE.match(value):
+        return "redacted-unsafe-value"
+    return value
+
+
+def external_secret_conditions(external_secret: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(external_secret, dict):
+        return []
+    conditions = external_secret.get("status", {}).get("conditions", [])
+    if not isinstance(conditions, list):
+        return []
+
+    diagnostics: list[dict[str, Any]] = []
+    for condition in conditions[:6]:
+        if not isinstance(condition, dict):
+            continue
+        message = condition.get("message")
+        message_text = message if isinstance(message, str) else ""
+        diagnostics.append(
+            {
+                "type": safe_condition_value(condition.get("type")),
+                "status": safe_condition_value(condition.get("status")),
+                "reason": safe_condition_value(condition.get("reason")),
+                "lastTransitionTime": safe_condition_value(condition.get("lastTransitionTime")),
+                "messagePresent": bool(message_text),
+                "messageLength": min(len(message_text), 20000),
+                "messageIncluded": False,
+            }
+        )
+    return diagnostics
 
 
 def host_alias_ip(deployment: dict[str, Any] | None, hostname: str) -> str:
@@ -610,6 +646,7 @@ def build_evidence(
             "vaultPath": vault_path,
             "mappedVaultProperties": sorted(mapped_properties),
             "targetSecretKeys": sorted(target_keys),
+            "conditions": external_secret_conditions(external_secret),
             "secretValueIncluded": False,
         },
         "aggregateSecret": {
