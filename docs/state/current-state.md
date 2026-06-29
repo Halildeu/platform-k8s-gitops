@@ -1,5 +1,59 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 Direct-STT preflight now carries redacted ESO condition diagnostics (2026-06-29)
+
+PR #2161 merged to `main` at
+`f83f3bd40c8027172f12efbc6dae308b03869bb4` and hardens the Direct-STT
+Gate 1 preflight evidence path for the active
+`audio-gateway-direct-stt-mtls` Vault/ESO blocker.
+
+Changed source contracts:
+
+- `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py` now records
+  redacted `ExternalSecret` condition diagnostics for the dedicated
+  `audio-gateway-direct-stt-mtls` object. The evidence includes bounded
+  `type`, `status`, `reason`, optional `lastTransitionTime`,
+  `messagePresent`, `messageLength`, and `messageIncluded=false`.
+- Raw ESO/Vault condition message text is not stored in evidence. Unsafe
+  condition values are replaced with `redacted-unsafe-value`; the condition
+  list is capped at six items.
+- `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py` now rejects
+  raw `message` keys, requires `messageIncluded=false`, requires bounded
+  non-empty `type/status/reason`, allows only bounded optional
+  `lastTransitionTime`, and bounds `messageLength` to `0..20000`.
+- `tests/faz24/test_collect_direct_stt_mtls_enablement_preflight.py` and
+  `tests/faz24/test_verify_direct_stt_mtls_enablement_preflight.py` cover the
+  `SecretSyncedError` redaction path, raw-message rejection, unsafe condition
+  metadata rejection, and empty required condition metadata rejection.
+- `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md` now documents how the
+  redacted ESO diagnostics should be interpreted during Gate 1 triage.
+
+Validation before merge:
+
+- Direct-STT preflight collector/verifier targeted tests: `28 passed`.
+- Full Faz 24 local test run: `312 passed`.
+- YAML semantic parse for all `.github/workflows/faz24-*.yml`: `22` parsed.
+- Staged diff whitespace and diff-level forbidden closure-language scans: no
+  finding.
+- Claude adversarial review: first pass AGREE with a non-empty condition
+  metadata observation; second pass AGREE after the verifier required
+  non-empty `type/status/reason` while keeping `lastTransitionTime` optional
+  and bounded.
+- PR #2161 CI passed: ADR-0011 boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, HARD RULE no-closure language check, YAML lint,
+  shellcheck, Kustomize build sanity, CodeQL actions, CodeQL python,
+  ADR-0031 drift guard, and placeholder leak check.
+
+Boundary: source/test/docs hardening only. This does not mutate
+Vault/Kubernetes/Denetim/firewall/legal state, seed `direct_stt_*` properties,
+force ESO reconciliation, enable Direct-STT, call `/transcribe`, send audio,
+prove desktop mic/loopback, satisfy G-CAP/G-OPS/G-COMP, claim legal
+acceptance, or satisfy #1615/#2027. The active Direct-STT Gate 1 blocker
+remains unresolved Vault/ESO seed reconciliation for
+`audio-gateway-direct-stt-mtls` and expected runtime key names; the next
+preflight artifact will now expose safe condition reason metadata for that
+blocker.
+
 ## Live Delta — Faz 24 evidence artifact uploads now require successful private-material scan (2026-06-29)
 
 PR #2159 merged to `main` at
