@@ -44,6 +44,89 @@ def test_runner_accepts_privacy_safe_chunk_file_without_logging_token_material()
     assert "TOKEN_FILE_REMOVED" in text
 
 
+def test_redis_records_falls_back_to_kube_cli_pod_without_docker():
+    collector = _load_collector()
+    calls = []
+    manifests = []
+
+    def fake_runner(argv, _timeout):
+        calls.append(argv)
+        if argv[:2] == ["docker", "exec"]:
+            return collector.CommandResult(127, "", "docker: command not found")
+        if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "apply"]:
+            with open(argv[-1], encoding="utf-8") as handle:
+                manifests.append(json.load(handle))
+            return collector.CommandResult(0, "pod/faz24-redis-read created\n", "")
+        if argv[:7] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "get", "pod"]:
+            return collector.CommandResult(0, json.dumps({"status": {"phase": "Succeeded"}}), "")
+        if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "logs"]:
+            return collector.CommandResult(
+                0,
+                json.dumps(
+                    [
+                        [
+                            "1782471276845-0",
+                            [
+                                "eventType",
+                                "DIRECT_STT_TRANSCRIPT_RESULT",
+                                "sessionId",
+                                "SES-test",
+                                "chunkSeq",
+                                "0",
+                            ],
+                        ]
+                    ]
+                ),
+                "",
+            )
+        if argv[:7] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "delete", "pod"]:
+            return collector.CommandResult(0, "pod deleted\n", "")
+        raise AssertionError(f"unexpected command: {argv}")
+
+    records, error = collector.redis_records(
+        fake_runner,
+        container="platform-redis-streams-test",
+        context="k3d-test",
+        namespace="platform-test",
+        service="redis-streams",
+        secret="audio-gateway-secrets",
+        secret_key="SPRING_DATA_REDIS_PASSWORD",
+        image="redis:7.4-alpine",
+        stream="transcript:direct-stt-results",
+        count=1000,
+    )
+
+    assert error is None
+    assert records == [
+        (
+            "1782471276845-0",
+            {
+                "eventType": "DIRECT_STT_TRANSCRIPT_RESULT",
+                "sessionId": "SES-test",
+                "chunkSeq": "0",
+            },
+        )
+    ]
+    assert manifests
+    assert manifests[0]["spec"]["activeDeadlineSeconds"] == 60
+    env = manifests[0]["spec"]["containers"][0]["env"]
+    security_context = manifests[0]["spec"]["containers"][0]["securityContext"]
+    assert security_context["allowPrivilegeEscalation"] is False
+    assert security_context["readOnlyRootFilesystem"] is True
+    assert security_context["runAsNonRoot"] is True
+    assert {
+        "name": "REDIS_PASSWORD",
+        "valueFrom": {
+            "secretKeyRef": {
+                "name": "audio-gateway-secrets",
+                "key": "SPRING_DATA_REDIS_PASSWORD",
+            }
+        },
+    } in env
+    assert "REDIS_PASSWORD" not in json.dumps(manifests[0].get("metadata", {}))
+    assert any(argv[:7] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "delete", "pod"] for argv in calls)
+
+
 def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -289,6 +372,10 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
         namespace="platform-test",
         deployment="audio-gateway",
         redis_container="platform-redis-streams-test",
+        redis_service="redis-streams",
+        redis_secret="audio-gateway-secrets",
+        redis_secret_key="SPRING_DATA_REDIS_PASSWORD",
+        redis_cli_image="redis:7.4-alpine",
         gitops_commit="5fb581052354c8874c575573d755a0bf47ba923f",
         probe_timeout=40,
         redis_count=1000,
