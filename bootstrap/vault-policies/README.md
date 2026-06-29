@@ -96,6 +96,86 @@ kubectl --context k3d-test -n external-secrets create secret generic \
 - Test secret_id: **14 gün**
 - Token TTL: 1h (otomatik renew)
 
+## 6.5 Faz 24 direct-STT app-mTLS seeder (I7 — TEST only)
+
+> **Referans:** `docs/runbooks/RB-bplus-i7-app-mtls.md` · Codex `019ef0a2` (design) + `019f1124` (review-REVISE absorb) · ADR-0030/0031
+> **Amaç:** root token OLMADAN, additive (server-side PATCH), **ayrı blast-radius-izole** AppRole ile audio-gateway client mTLS material'ını üret + `kv/platform/audio-gateway-service`'e seed et → ESO `audio-gateway-direct-stt-mtls` Ready. **bootstrap-writer'a bind ETME** (leak → cert-mint sızması).
+
+Policy: `bootstrap/vault-policies/test/audio-gateway-mtls-seeder.hcl` (test-only). KV `patch,read` (overwrite YOK), `pki-denetim-ai/issue/audio-gateway-client` `update` (tek rol), server-issue/sign/root/config/revoke/sys/auth/identity DENY.
+
+**Adım 0 — PKI role config'i KİLİTLE (asıl risk; policy değil rol)** — Codex `019f1124`:
+```bash
+export VAULT_ADDR=http://localhost:8201
+VAULT_TOKEN=<test-root> vault read pki-denetim-ai/roles/audio-gateway-client
+# Beklenen: client_flag=true, server_flag=false, max_ttl<=24h (86400),
+#           allow_any_name=false, allowed CN/URI-SAN dar, key_type/bits uygun.
+# Permissive ise issue'dan ÖNCE düzelt (aksi halde token permissive cert mint eder).
+```
+
+**Adım 1 — Apply (operator; `vault policy write` = sys/policies, agent üstünde):**
+```bash
+vault login <test-root-token>      # SADECE policy write + approle create için; paylaşılmaz
+vault policy write audio-gateway-mtls-seeder bootstrap/vault-policies/test/audio-gateway-mtls-seeder.hcl
+
+# DEDICATED, one-shot, kısa-ömürlü AppRole (bootstrap-writer DEĞİL):
+vault write auth/approle/role/audio-gateway-mtls-seeder-test \
+  token_policies="audio-gateway-mtls-seeder" \
+  token_ttl=15m token_max_ttl=15m token_num_uses=0 \
+  secret_id_ttl=30m secret_id_num_uses=1 bind_secret_id=true
+# token_num_uses=0 = 15m TTL içinde sınırsız çağrı (bound: one-shot secret_id + 15m);
+# fixed num_uses YOK ki verifier tam negatif-suite'i tek token'da koşabilsin (Codex 019f1124).
+
+ROLE_ID=$(vault read -field=role_id auth/approle/role/audio-gateway-mtls-seeder-test/role-id)
+SECRET_ID=$(vault write -f -field=secret_id auth/approle/role/audio-gateway-mtls-seeder-test/secret-id)
+# role-id/secret-id agent'a güvenli ver (umask 077; dosya mode 0600). secret-id GİT'E GİRMEZ.
+```
+
+**Adım 2 — Boundary doğrula (negatif testler PASS olmalı):**
+```bash
+export ROLE_ID; printf '%s' "$SECRET_ID" > /tmp/ag-mtls-seeder-secret-id.txt; chmod 600 /tmp/ag-mtls-seeder-secret-id.txt
+bash bootstrap/vault-policies/test/audio-gateway-mtls-seeder-verify.sh
+# kv=patch,read · issue=update · server-issue/sign/root/config/revoke/sys/approle/foreign-kv = 403
+```
+
+**Adım 3 — Seed (agent; root yok, dedicated AppRole token, multiline PEM-safe):**
+
+> **Precondition (Codex 019f1124 caveat-3):** `patch` var-olan path gerektirir; bu
+> AppRole `create` taşımaz → yeni path YARATAMAZ. Seed öncesi path'in mevcut
+> olduğunu kanıtla (redis_password orada): `vault kv get -mount=kv platform/audio-gateway-service`
+> (değer bas­ma; key-presence yeter). Path yoksa owner/operator preseed eder.
+
+```bash
+T=$(curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" \
+     -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$(cat /tmp/ag-mtls-seeder-secret-id.txt)\"}" \
+     | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth"]["client_token"])')
+
+umask 077; D=$(mktemp -d)
+# 1) client cert üret (audio-gateway-client rolü; CN/SAN role-enforced)
+curl -sf -X PUT -H "X-Vault-Token: $T" "$VAULT_ADDR/v1/pki-denetim-ai/issue/audio-gateway-client" \
+  -d '{"common_name":"audio-gateway","ttl":"24h"}' \
+  | python3 -c 'import sys,json;d=json.load(sys.stdin)["data"];open("'"$D"'/crt","w").write(d["certificate"]);open("'"$D"'/key","w").write(d["private_key"]);open("'"$D"'/ca","w").write(d["issuing_ca"])'
+
+# 2) additive server-side PATCH (mevcut redis pw KORUNUR; overwrite YOK)
+vault kv patch -mount=kv platform/audio-gateway-service \
+  direct_stt_client_crt=@"$D/crt" direct_stt_client_key=@"$D/key" direct_stt_ca_crt=@"$D/ca"   # VAULT_TOKEN=$T
+
+shred -u "$D"/crt "$D"/key "$D"/ca 2>/dev/null; rm -rf "$D"; unset T   # raw key diske kalmaz
+```
+
+**Adım 4 — ESO reconcile + doğrula:**
+```bash
+kubectl --context k3d-test -n platform-test annotate externalsecret audio-gateway-direct-stt-mtls \
+  force-sync="$(date +%s)" --overwrite
+kubectl --context k3d-test -n platform-test get externalsecret audio-gateway-direct-stt-mtls   # READY=True
+```
+
+> **Neden Vault bozulmaz:** `patch` = server-side KV v2 merge → yalnız `direct_stt_*` key'leri set edilir, var-olan key'ler (redis pw) korunur; `create/update/delete/destroy/metadata` GRANT EDİLMEZ. PEM çok-satırlı `@file` ile taşınır (argv/process-list sızıntısı yok; raw key tempdir 0600 + shred). Ayrı AppRole → bootstrap-writer blast-radius'una eklenmez. Prod Vault'a hiçbiri yazılmaz (I7-prod = KVKK m.6 gate).
+>
+> **Evidence (raw key ASLA log/tee/evidence'e düşmez — Codex 019f1124 caveat-4/5):** yalnız cert
+> `serial_number`, `not_after`, fingerprint/hash-prefix, KV version ve ESO `Ready=True` kaydedilir.
+> Vault audit device `log_raw=false` doğrulanır. **24h client cert ≠ kalıcı readiness:** evidence'a
+> `not_after` + refresh-deadline yazılır; rotation/renewal drill prod/uzun-koşu için ayrı gate (I7-prod).
+
 ## 7. ClusterSecretStore Entegrasyon
 
 `kustomize/base/eso/clustersecretstore-vault.yaml` base tanım:
