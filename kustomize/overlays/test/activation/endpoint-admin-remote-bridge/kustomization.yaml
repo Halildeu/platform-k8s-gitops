@@ -165,6 +165,10 @@ images:
   # digest (48b6975c -> 78863864, sha-42a3683) so the same-image
   # remote-bridge pilot topology remains drift-free. This file is still
   # owner-gated and outside Argo root; this PR does not apply it.
+  # 2026-06-29 #527/#774 manual co-bump: aligned with the primary endpoint-admin
+  # digest (78863864 -> a16acbe7, sha-d7532b6) carrying CERT_IDENTITY failed-device
+  # queue auto-ingest. Owner-gated activation remains separate from normal test
+  # overlay rollout.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:788638648a54039133bf9f1f5ac442b996fed42c6e3adb55f7b696d8d403e52c
+    digest: sha256:a16acbe7e23bdea43d92e4297fc8ce71d1a25b9b8a1e0868755c8aae357dd15b
