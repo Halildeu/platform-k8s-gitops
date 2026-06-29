@@ -82,6 +82,7 @@ jobs:
 
       - name: Verify artifact excludes private material
         if: always()
+        id: verify_artifact
         run: |
           set -euo pipefail
           if grep -R -E -- '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.' "${EVIDENCE_DIR}"; then
@@ -111,7 +112,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload evidence ingest artifact
-        if: always()
+        if: always() && steps.verify_artifact.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: faz24-wg-bplus-i6-masq-evidence-${{ github.run_id }}
