@@ -688,12 +688,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     evidence = collect(args)
+    status = evidence["status"]
     write_json(args.output, evidence)
-    print(f"status={evidence['status']}")
     print(f"evidence={args.output}")
-    if evidence["failures"]:
-        print("failures=" + ",".join(evidence["failures"][:12]))
-    return 0 if evidence["status"] == "pass" else 1
+    print("collector=metadata-written")
+    return 0 if status == "pass" else 1
 
 
 if __name__ == "__main__":

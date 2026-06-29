@@ -234,7 +234,7 @@ jobs:
           exit_code="$?"
           set -e
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
-          grep -E '^(status=|evidence=|failures=)' "${EVIDENCE_DIR}/collector.stdout" || true
+          grep -E '^(evidence=|collector=metadata-written$)' "${EVIDENCE_DIR}/collector.stdout" || true
           echo "collector.stderr.bytes=$(wc -c < "${EVIDENCE_DIR}/collector.stderr" | tr -d ' ')"
           echo "collector.stderr.sha256=$(sha256sum "${EVIDENCE_DIR}/collector.stderr" | awk '{print $1}')"
           exit 0
