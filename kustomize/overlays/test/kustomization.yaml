@@ -7311,6 +7311,11 @@ patches:
               # enforce flip rollout GitOps-authoritative. Bump this rev on
               # any future authz env flip.
               audio-gateway.acik.com/authz-enforce-rev: "2026-06-26-716-enforce-v2"
+              # Faz 24 #182 direct-STT enable flip consumes ConfigMap values via
+              # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
+              # changes so ArgoCD/kustomize sync actually rolls the pod and it
+              # re-reads the flag (rollback to "false" must also bump+roll).
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-06-29-mtls-enabled-v1"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
