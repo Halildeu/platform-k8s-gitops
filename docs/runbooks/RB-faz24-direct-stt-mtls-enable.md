@@ -2,15 +2,23 @@
 
 > Scope: test overlay `audio-gateway` -> Denetim `live-stt.denetim:8243` direct-STT path for `platform-ai#182/#198`.
 
-## Current Safe State
+## Current Test State
 
-- GitOps `audio-gateway` carries direct-STT configuration with `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`.
+- GitOps `audio-gateway` now carries
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=true` for the test path after
+  platform-k8s-gitops #2170 (`5fb581052354c8874c575573d755a0bf47ba923f`).
+  Production still excludes `audio-gateway` until its own D30 cutover decision.
 - The pod mounts `/etc/direct-stt-mtls` from dedicated
-  `audio-gateway-direct-stt-mtls`. The mount is optional while
-  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`, so missing direct-STT files do not
-  change runtime behavior before the seed/preflight gate.
+  `audio-gateway-direct-stt-mtls`; the latest post-#2170 metadata refresh saw
+  `ExternalSecret` Ready, runtime Secret keys present, and pod-local mTLS
+  `/health` returning HTTP 200 with the mounted client certificate.
 - NetworkPolicy `allow-audio-gateway-egress-live-stt-mtls` allows only `audio-gateway` -> `10.99.0.2/32` TCP/8243.
 - The pod maps `live-stt.denetim` to `10.99.0.2` with `hostAliases` so HTTPS SNI/Host remains the certificate/Caddy hostname while routing over WireGuard.
+- Gate 1 preflight is a pre-flag verifier and expects
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`. After #2170 it must not be used as
+  the active acceptance gate. Current #182 acceptance is Gate 2: real recorder
+  lifecycle -> direct-STT `/transcribe` -> `transcript:direct-stt-results` ->
+  same-session compute-plane audit -> no raw audio/transcript in evidence/logs.
 
 ## Kubernetes Context Guard
 
@@ -282,6 +290,34 @@ gh workflow run faz24-direct-stt-mtls-preflight-ingest.yml \
 
 After the flag flip, #182 evidence is accepted only as metadata-only JSON using
 schema `faz24.directSttE2eEvidence.v1` and passing:
+
+```bash
+gh workflow run faz24-direct-stt-e2e-collect.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f base_url=https://testai.acik.com \
+  -f expected_issuer=https://testai.acik.com/realms/platform-test \
+  -f keycloak_base_url=http://127.0.0.1:8082 \
+  -f kube_context=k3d-test \
+  -f namespace=platform-test \
+  -f deployment=audio-gateway \
+  -f redis_container=platform-redis-streams-test \
+  -f chunk_file=/tmp/sample-tr-cv17-001.wav \
+  -f audio_format=WAV \
+  -f sample_rate_hz=48000 \
+  -f channels=1 \
+  -f probe_timeout=40
+```
+
+The collector workflow mints a short-lived `platform-desktop` test token,
+uses a runner-local privacy-safe WAV fixture for the recorder lifecycle, then
+collects only metadata from Kubernetes, Redis Streams, and bounded pod logs.
+The uploaded artifact must not contain bearer/JWT material, PEM/certificate
+values, raw audio, raw transcript text, destination URLs, or raw command
+output. A red workflow is blocker evidence; accepted Gate 2 requires the
+collector and verifier exit codes to be `0`.
+
+For manual/local verification of an already produced JSON:
 
 ```bash
 python3 scripts/faz24/verify_direct_stt_e2e_evidence.py \

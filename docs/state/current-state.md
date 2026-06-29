@@ -1,5 +1,66 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Direct-STT Gate 2 collector path after test enablement (2026-06-29)
+
+Live truth changed after the older Gate 1 entries below. PR #2170 merged to
+`main` at `5fb581052354c8874c575573d755a0bf47ba923f` and intentionally enabled
+test-only Direct-STT by setting
+`AUDIO_GATEWAY_DIRECT_STT_ENABLED="true"` in `kustomize/overlays/test`.
+
+Codex then reran the canonical
+`.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml` workflow from
+current `main`:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28365309365`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28365309365`
+- Evidence status: `fail`
+- Verifier status: `fail`
+- Verifier count: `59/62`
+- Only remaining failure code for this preflight contract:
+  `direct-stt-not-disabled`
+
+Accepted live facts from the post-#2170 preflight artifact:
+
+- `k3d-test` / `platform-test` is reachable from the runner.
+- The real `audio-gateway` pod is Ready.
+- Expected hostAlias, egress NetworkPolicy and mTLS mount metadata are present.
+- `ExternalSecret/audio-gateway-direct-stt-mtls` is `Ready=True`.
+- Runtime `Secret/audio-gateway-direct-stt-mtls` exposes the expected key names.
+- Aggregate `audio-gateway-secrets` remains Redis-only and does not include
+  `direct_stt_*` key names.
+- Pod-local client-cert mTLS health probe reached HTTP `200` in `67ms`.
+- Artifact scan found no private key, certificate, bearer/JWT, raw audio data
+  URL, transcript text, or raw Direct-STT endpoint material.
+
+Interpretation:
+
+- The older `external-secret-not-ready`, `runtime-secret-key-missing`,
+  `mtls-health-not-200`, and `mtls-probe-exit-28` Gate 1 blockers in the
+  entries below are stale for the latest `main` evidence.
+- The old pre-enable preflight intentionally fails after #2170 because
+  `desiredState.directSttEnabled=true`; it is no longer the active acceptance
+  gate.
+- The active #182 blocker is now Gate 2 real recorder evidence: external
+  recorder lifecycle, `/transcribe` request path, Redis
+  `transcript:direct-stt-results`, `CHUNK_FORWARDED_TO_DIRECT_STT` audit match,
+  pod log correlation, and negative persistence/log/evidence checks without raw
+  audio, transcript, token, PEM, or endpoint disclosure.
+
+This source update adds the metadata-only Gate 2 path:
+
+- `.github/workflows/faz24-direct-stt-e2e-collect.yml`
+- `scripts/faz24/collect_direct_stt_e2e_evidence.py`
+- verifier contract alignment for real audio-gateway `SES-*` session ids and
+  `chunkSeq` correlation
+- recorder smoke sample metadata (`sampleSha256`, byte length, format, sample
+  rate, channels, `rawAudioIncluded=false`)
+
+Boundary: this update does not run Gate 2, send audio by itself, prove desktop
+mic/loopback, satisfy G-CAP/G-OPS/G-COMP, claim legal acceptance, or satisfy
+#1615/#2027. It only makes the next real-recorder evidence run executable and
+reviewable without leaking raw audio/transcript/credential material.
+
 ## Live Delta — Direct-STT Gate 1 preflight rerun exposes redacted ESO reason (2026-06-29)
 
 After PR #2161 and its current-state sync PR #2162 merged, Codex reran the

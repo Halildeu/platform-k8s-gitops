@@ -350,6 +350,15 @@ def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
 
     meeting_payload = _load_json_file(args.meeting_payload_file, _default_meeting_payload())
     chunk_body = _load_chunk(args.chunk_file)
+    report["sample"] = {
+        "chunkSeq": 0,
+        "sampleSha256": hashlib.sha256(chunk_body).hexdigest(),
+        "byteLength": len(chunk_body),
+        "audioFormat": args.audio_format,
+        "sampleRateHz": args.sample_rate_hz,
+        "channels": args.channels,
+        "rawAudioIncluded": False,
+    }
     capture_id = args.capture_id or str(uuid.uuid4())
     consent_hash = "sha256:" + hashlib.sha256(args.consent_text.encode("utf-8")).hexdigest()
 

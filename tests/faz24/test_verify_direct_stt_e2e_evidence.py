@@ -59,9 +59,9 @@ def valid_e2e() -> dict:
             "totalMs": 423,
         },
         "flow": {
-            "sessionId": "31a15790-57eb-4cbe-b923-954c8f6578ac",
-            "chunkId": "ce3982b6-0a85-4b56-aecf-de3234af8224",
-            "correlationId": "b003d1a4-1428-41ad-a47d-fe374ad1b013",
+            "sessionId": "SES-31a15790-57eb-4cbe-b923-954c8f6578ac",
+            "chunkSeq": 0,
+            "correlationId": "faz24-direct-stt-182-test",
             "sampleSha256": "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560",
             "rawAudioIncluded": False,
             "meetingCreateHttpStatus": 201,
@@ -81,7 +81,7 @@ def valid_e2e() -> dict:
             "eventFound": True,
             "recordId": "1782471276846-0",
             "sessionIdMatches": True,
-            "chunkIdMatches": True,
+            "chunkSeqMatches": True,
             "correlationIdMatches": True,
         },
         "persistence": {
@@ -170,6 +170,15 @@ class DirectSttE2eEvidenceVerifierTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("boundary_directClientToStt", result.stdout)
+
+    def test_correlation_id_rejects_path_like_shape(self):
+        data = valid_e2e()
+        data["flow"]["correlationId"] = "faz24/direct-stt-182"
+
+        result = self.run_validator(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("flow_correlation_id", result.stdout)
 
     def test_camelcase_sensitive_key_is_rejected(self):
         data = valid_e2e()

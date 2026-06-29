@@ -54,8 +54,9 @@ UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
     r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
+SESSION_ID_RE = re.compile(r"^SES-[A-Za-z0-9_-]{4,120}$")
 REDIS_ID_RE = re.compile(r"^\d+-\d+$")
-SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:@/-]{1,160}$")
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,160}$")
 CAMEL_BOUNDARY_1_RE = re.compile(r"(.)([A-Z][a-z]+)")
 CAMEL_BOUNDARY_2_RE = re.compile(r"([a-z0-9])([A-Z])")
 
@@ -350,9 +351,15 @@ def validate_flow(data: dict[str, Any], checks: list[Check]) -> None:
         add(checks, "flow_shape", False, "flow must be an object")
         return
 
-    add(checks, "flow_session_id", uuidish(flow.get("sessionId")), "sessionId must be UUID")
-    add(checks, "flow_chunk_id", uuidish(flow.get("chunkId")), "chunkId must be UUID")
-    add(checks, "flow_correlation_id", uuidish(flow.get("correlationId")), "correlationId must be UUID")
+    add(
+        checks,
+        "flow_session_id",
+        isinstance(flow.get("sessionId"), str) and bool(SESSION_ID_RE.match(flow["sessionId"])),
+        "sessionId must match the audio-gateway SES-* contract",
+    )
+    chunk_seq = as_int(flow.get("chunkSeq"))
+    add(checks, "flow_chunk_seq", chunk_seq is not None and chunk_seq >= 0, "chunkSeq must be >= 0")
+    add(checks, "flow_correlation_id", safe_name(flow.get("correlationId")), "correlationId must be bounded safe metadata")
     add(checks, "flow_sample_hash", sha256(flow.get("sampleSha256")), "sampleSha256 must be sha256 of privacy-safe sample")
     add(checks, "flow_raw_audio_absent", flow.get("rawAudioIncluded") is False, "rawAudioIncluded must be false")
     add(checks, "flow_meeting_status", as_int(flow.get("meetingCreateHttpStatus")) in {200, 201}, "meetingCreateHttpStatus must be 200 or 201")
@@ -378,7 +385,7 @@ def validate_audit(data: dict[str, Any], checks: list[Check]) -> None:
     add(checks, "audit_event_found", audit.get("eventFound") is True, "audit event must be found")
     add(checks, "audit_record_id", redis_id(audit.get("recordId")), "recordId must be Redis stream id shaped")
     add(checks, "audit_session_match", audit.get("sessionIdMatches") is True, "sessionIdMatches must be true")
-    add(checks, "audit_chunk_match", audit.get("chunkIdMatches") is True, "chunkIdMatches must be true")
+    add(checks, "audit_chunk_match", audit.get("chunkSeqMatches") is True, "chunkSeqMatches must be true")
     add(checks, "audit_correlation_match", audit.get("correlationIdMatches") is True, "correlationIdMatches must be true")
 
 

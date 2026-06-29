@@ -23,6 +23,10 @@ CAPABILITY_ROLE="${CAPABILITY_ROLE:-audio_record}"
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 EXPECTED_ISSUER="${EXPECTED_ISSUER:-https://testai.acik.com/realms/platform-test}"
 RUN_EXTERNAL_SMOKE="${RUN_EXTERNAL_SMOKE:-1}"
+SMOKE_CHUNK_FILE="${SMOKE_CHUNK_FILE:-}"
+SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-WAV}"
+SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-48000}"
+SMOKE_CHANNELS="${SMOKE_CHANNELS:-1}"
 OUT_DIR="${OUT_DIR:-/tmp/faz24-platform-desktop-token-evidence}"
 RUN_ID_SAFE="${GITHUB_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_ATTEMPT_SAFE="${GITHUB_RUN_ATTEMPT:-1}"
@@ -732,12 +736,22 @@ run_token_contract_and_smoke() {
     return 0
   fi
 
-  set +e
-  python3 scripts/faz24/run_external_recorder_smoke.py \
+  local smoke_args=(
     --token-file "${TOKEN_FILE}" \
     --base-url "${BASE_URL}" \
     --expected-issuer "${EXPECTED_ISSUER}" \
-    --output-file "${SMOKE_JSON}" \
+    --audio-format "${SMOKE_AUDIO_FORMAT}" \
+    --sample-rate-hz "${SMOKE_SAMPLE_RATE_HZ}" \
+    --channels "${SMOKE_CHANNELS}" \
+    --output-file "${SMOKE_JSON}"
+  )
+  if [[ -n "${SMOKE_CHUNK_FILE}" ]]; then
+    smoke_args+=(--chunk-file "${SMOKE_CHUNK_FILE}")
+  fi
+
+  set +e
+  python3 scripts/faz24/run_external_recorder_smoke.py \
+    "${smoke_args[@]}" \
     > "${TMP_DIR}/smoke.stdout" \
     2> "${TMP_DIR}/smoke.stderr"
   SMOKE_EXIT="$?"

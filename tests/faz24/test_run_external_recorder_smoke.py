@@ -285,6 +285,10 @@ def test_external_recorder_smoke_happy_path_redacts_token(tmp_path):
     assert token not in proc.stderr
     assert report["ids"]["meetingId"] == "22222222-2222-4222-8222-222222222222"
     assert report["ids"]["sessionId"] == "SES-test-1"
+    assert report["sample"]["chunkSeq"] == 0
+    assert report["sample"]["sampleSha256"]
+    assert report["sample"]["rawAudioIncluded"] is False
+    assert "audioBytes" not in report["sample"]
     assert report["boundaries"]["externalMeetingAdminPathExercised"] is True
     assert report["boundaries"]["recorderLifecycleExercised"] is True
     assert report["boundaries"]["directSttProven"] is False
