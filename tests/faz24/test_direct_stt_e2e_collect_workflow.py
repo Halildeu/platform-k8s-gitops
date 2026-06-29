@@ -44,43 +44,51 @@ def test_runner_accepts_privacy_safe_chunk_file_without_logging_token_material()
     assert "TOKEN_FILE_REMOVED" in text
 
 
-def test_redis_records_falls_back_to_kube_cli_pod_without_docker():
+def _resp_bulk(value):
+    return f"${len(value)}\r\n{value}\r\n"
+
+
+def _resp_array(values):
+    return f"*{len(values)}\r\n" + "".join(values)
+
+
+def _resp_stream_record(record_id, fields):
+    field_values = []
+    for key, value in fields:
+        field_values.append(_resp_bulk(key))
+        field_values.append(_resp_bulk(value))
+    return _resp_array([_resp_bulk(record_id), _resp_array(field_values)])
+
+
+def _resp_xrevrange(records):
+    return "+OK\r\n" + _resp_array(records) + "+OK\r\n"
+
+
+def test_redis_records_falls_back_to_kube_exec_without_docker():
     collector = _load_collector()
     calls = []
-    manifests = []
 
     def fake_runner(argv, _timeout):
         calls.append(argv)
         if argv[:2] == ["docker", "exec"]:
             return collector.CommandResult(127, "", "docker: command not found")
-        if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "apply"]:
-            with open(argv[-1], encoding="utf-8") as handle:
-                manifests.append(json.load(handle))
-            return collector.CommandResult(0, "pod/faz24-redis-read created\n", "")
-        if argv[:7] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "get", "pod"]:
-            return collector.CommandResult(0, json.dumps({"status": {"phase": "Succeeded"}}), "")
-        if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "logs"]:
+        if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "exec"]:
             return collector.CommandResult(
                 0,
-                json.dumps(
+                _resp_xrevrange(
                     [
-                        [
+                        _resp_stream_record(
                             "1782471276845-0",
                             [
-                                "eventType",
-                                "DIRECT_STT_TRANSCRIPT_RESULT",
-                                "sessionId",
-                                "SES-test",
-                                "chunkSeq",
-                                "0",
+                                ("eventType", "DIRECT_STT_TRANSCRIPT_RESULT"),
+                                ("sessionId", "SES-test"),
+                                ("chunkSeq", "0"),
                             ],
-                        ]
+                        )
                     ]
                 ),
                 "",
             )
-        if argv[:7] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "delete", "pod"]:
-            return collector.CommandResult(0, "pod deleted\n", "")
         raise AssertionError(f"unexpected command: {argv}")
 
     records, error = collector.redis_records(
@@ -92,6 +100,8 @@ def test_redis_records_falls_back_to_kube_cli_pod_without_docker():
         secret="audio-gateway-secrets",
         secret_key="SPRING_DATA_REDIS_PASSWORD",
         image="redis:7.4-alpine",
+        exec_pod="audio-gateway-abc",
+        exec_container="audio-gateway",
         stream="transcript:direct-stt-results",
         count=1000,
     )
@@ -107,24 +117,88 @@ def test_redis_records_falls_back_to_kube_cli_pod_without_docker():
             },
         )
     ]
-    assert manifests
-    assert manifests[0]["spec"]["activeDeadlineSeconds"] == 60
-    env = manifests[0]["spec"]["containers"][0]["env"]
-    security_context = manifests[0]["spec"]["containers"][0]["securityContext"]
-    assert security_context["allowPrivilegeEscalation"] is False
-    assert security_context["readOnlyRootFilesystem"] is True
-    assert security_context["runAsNonRoot"] is True
-    assert {
-        "name": "REDIS_PASSWORD",
-        "valueFrom": {
-            "secretKeyRef": {
-                "name": "audio-gateway-secrets",
-                "key": "SPRING_DATA_REDIS_PASSWORD",
-            }
-        },
-    } in env
-    assert "REDIS_PASSWORD" not in json.dumps(manifests[0].get("metadata", {}))
-    assert any(argv[:7] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "delete", "pod"] for argv in calls)
+    exec_calls = [argv for argv in calls if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "exec"]]
+    assert len(exec_calls) == 1
+    assert exec_calls[0][6:9] == ["audio-gateway-abc", "-c", "audio-gateway"]
+    assert "SPRING_DATA_REDIS_PASSWORD" in exec_calls[0][-4]
+    assert "docker: command not found" not in json.dumps(records)
+
+
+def test_redis_stream_records_uses_kube_exec_fallback_without_pod_creation():
+    collector = _load_collector()
+    calls = []
+
+    def fake_runner(argv, _timeout):
+        calls.append(argv)
+        if argv[:2] == ["docker", "exec"]:
+            return collector.CommandResult(127, "", "docker: command not found")
+        if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "exec"]:
+            stream = argv[-2]
+            record = (
+                _resp_stream_record("1-0", [("sessionId", "SES-test"), ("chunkSeq", "0")])
+                if stream == "transcript:direct-stt-results"
+                else _resp_stream_record("2-0", [("eventType", "CHUNK_FORWARDED_TO_COMPUTE_PLANE")])
+            )
+            return collector.CommandResult(
+                0,
+                _resp_xrevrange([record]),
+                "",
+            )
+        raise AssertionError(f"unexpected command: {argv}")
+
+    records, errors = collector.redis_stream_records(
+        fake_runner,
+        container="platform-redis-streams-test",
+        streams=["transcript:direct-stt-results", "audit:events"],
+        count=1000,
+        context="k3d-test",
+        namespace="platform-test",
+        service="redis-streams",
+        secret="audio-gateway-secrets",
+        secret_key="SPRING_DATA_REDIS_PASSWORD",
+        image="redis:7.4-alpine",
+        exec_pod="audio-gateway-abc",
+        exec_container="audio-gateway",
+    )
+
+    assert errors == []
+    assert sorted(records) == ["audit:events", "transcript:direct-stt-results"]
+    assert not [argv for argv in calls if "apply" in argv or "delete" in argv]
+    assert len([argv for argv in calls if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "exec"]]) == 2
+
+
+def test_redis_stream_records_keeps_kube_exec_partial_successes():
+    collector = _load_collector()
+
+    def fake_runner(argv, _timeout):
+        if argv[:2] == ["docker", "exec"]:
+            return collector.CommandResult(127, "", "docker: command not found")
+        if argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "exec"]:
+            stream = argv[-2]
+            if stream == "audit:events":
+                return collector.CommandResult(124, "", "timeout")
+            return collector.CommandResult(
+                0,
+                _resp_xrevrange([_resp_stream_record("1-0", [("sessionId", "SES-test")])]),
+                "",
+            )
+        raise AssertionError(f"unexpected command: {argv}")
+
+    records, errors = collector.redis_stream_records(
+        fake_runner,
+        container="platform-redis-streams-test",
+        streams=["transcript:direct-stt-results", "audit:events"],
+        count=1000,
+        context="k3d-test",
+        namespace="platform-test",
+        exec_pod="audio-gateway-abc",
+        exec_container="audio-gateway",
+    )
+
+    assert sorted(records) == ["transcript:direct-stt-results"]
+    assert records["transcript:direct-stt-results"][0][0] == "1-0"
+    assert errors
+    assert "audit:events:command-exit-124" in errors[0]
 
 
 def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
