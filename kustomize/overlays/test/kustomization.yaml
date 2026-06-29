@@ -5377,7 +5377,13 @@ images:
     # (DataIntegrityViolation) on the canonical-status constraint. Flyway applies V77
     # on this roll. This restores /attest past the DB-write gate; the next live wall
     # is Vault-HTTPS (gate-B, operator infra) -> FEATURE_DISABLED, not a code defect.
-    digest: sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842
+    # 2026-06-29 Faz 22.5 failed-device queue residual: re-pin from the
+    # canonical waveFailureReport export image (sha-6766ef6, 48b6975c) to the
+    # backend #773 image (sha-42a3683, image build run 28349472354). This carries
+    # #772 heartbeat-stale autonomous ingest plus #773 disabled-by-default GitHub
+    # escalation POST. Deploy-backend-testai run 28349537083 correctly refused
+    # live mutation until the GitOps test overlay matched the digest map.
+    digest: sha256:788638648a54039133bf9f1f5ac442b996fed42c6e3adb55f7b696d8d403e52c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
