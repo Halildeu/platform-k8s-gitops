@@ -1,5 +1,81 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Direct-STT Gate 1 preflight rerun exposes redacted ESO reason (2026-06-29)
+
+After PR #2161 and its current-state sync PR #2162 merged, Codex reran the
+canonical `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml`
+workflow from current `main` to refresh the Direct-STT Gate 1 blocker with the
+new redacted ESO condition diagnostics. The workflow uploaded the metadata-only
+artifact and passed the artifact leak guard, but the verifier again rejected
+the evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28343805188`
+- Head SHA: `52cc186e4e354dfad4f2bf8aa9adee6eb1e5a387`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28343805188`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Evidence status: `fail`
+- Verifier schema: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Verifier status: `fail`
+
+Failure codes:
+
+- `external-secret-not-ready`
+- `kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`
+- `mtls-health-not-200`
+- `mtls-probe-exit-28`
+- `runtime-secret-key-missing`
+
+Rejecting verifier checks:
+
+- `status_pass`
+- `failures_empty`
+- `external_secret_ready`
+- `runtime_secret_keys`
+- `runtime_secret_env_risk`
+- `mtls_probe_client_auth`
+- `mtls_probe_health_status`
+- `mtls_probe_total_ms`
+- `boundary_vaultSeedAuthorityAccepted`
+
+New redacted ESO diagnostics:
+
+- `ExternalSecret/audio-gateway-direct-stt-mtls` remains `Ready=False`.
+- Condition metadata is `type=Ready`, `status=False`,
+  `reason=SecretSyncedError`, `lastTransitionTime=2026-06-26T22:19:35Z`.
+- Raw condition message text was not included:
+  `messageIncluded=false`, `messagePresent=true`, `messageLength=39`.
+- Expected ExternalSecret mappings are present for
+  `direct_stt_ca_crt`, `direct_stt_client_crt`, and
+  `direct_stt_client_key`, targeting `direct-stt-ca.crt`,
+  `direct-stt-client.crt`, and `direct-stt-client.key` from
+  `kv/platform/audio-gateway-service`.
+- Runtime `Secret/audio-gateway-direct-stt-mtls` exposes no key names yet.
+- Aggregate `audio-gateway-secrets` remains Ready and Redis-only:
+  `SPRING_DATA_REDIS_PASSWORD`; `directSttKeysPresent=false`.
+
+Artifact validation after download:
+
+- Local artifact scan found no private key, certificate, bearer/JWT,
+  `Authorization:`, raw audio data URL, `audio/wav`, `audio/mpeg`,
+  `/transcribe`, or raw `https://live-stt.denetim:8243` endpoint material.
+- SHA-256:
+  `a1e0db15b228ba8e0c4bf2732728c5d104b2621a70fc8302ab951c7e4f21a085`
+  for `faz24-direct-stt-mtls-preflight.json`;
+  `d3f24bc13e170e79235f01cdfa1cfdb95d0beb703b5a76d2e39402e1f7db74f0`
+  for `verification-summary.json`;
+  `02885790aeb09c0e57c7a0adb46879102a0f8e84c9435ab4f5e2e48095bb7323`
+  for `verifier.stdout`;
+  `d8f989baeacfe0ffa513cd994cd6bcb58a1fd2f27bed3efd19f8d2fc978fa381`
+  for `collector.stderr`.
+
+Boundary: the active Direct-STT Gate 1 blocker remains unresolved Vault/ESO
+seed reconciliation for `audio-gateway-direct-stt-mtls` and expected runtime
+key names. This refresh does not mutate Vault/Kubernetes/Denetim/firewall/
+legal state, seed `direct_stt_*` properties, force ESO reconciliation, enable
+Direct-STT, call `/transcribe`, send audio, prove desktop mic/loopback,
+satisfy G-CAP/G-OPS/G-COMP, claim legal acceptance, or satisfy #1615/#2027.
+
 ## Live Delta — Faz 24 Direct-STT preflight now carries redacted ESO condition diagnostics (2026-06-29)
 
 PR #2161 merged to `main` at
