@@ -1,5 +1,58 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 evidence artifact uploads now require successful private-material scan (2026-06-29)
+
+PR #2159 merged to `main` at
+`c9e71704a41b0b561f0bf65f10747e57c944fa7e` and tightens Faz 24
+evidence artifact retention so upload steps are fail-closed on the
+private-material scan result.
+
+Changed source contracts:
+
+- Direct-STT preflight/e2e evidence workflows now require
+  `steps.verify_artifact.outcome == 'success'` before artifact upload instead
+  of accepting any non-`failure` result:
+  `faz24-direct-stt-mtls-preflight-ingest.yml`,
+  `faz24-direct-stt-mtls-preflight-collect.yml`, and
+  `faz24-direct-stt-e2e-evidence-ingest.yml`.
+- I3 Denetim SSH authorize, I7 app-mTLS, and WG-B+ I6 MASQ evidence
+  collect/ingest workflows now give the private-material scan step
+  `id: verify_artifact` and gate `actions/upload-artifact@v7` on
+  `steps.verify_artifact.outcome == 'success'`:
+  `faz24-i3-denetim-ssh-authorize-evidence-ingest.yml`,
+  `faz24-i7-app-mtls-evidence-ingest.yml`,
+  `faz24-wg-bplus-i6-masq-evidence-collect.yml`, and
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml`.
+- `tests/faz24/test_artifact_upload_secret_scan_guards.py` now scans Faz 24
+  workflows that combine `Verify artifact excludes private material` with
+  `actions/upload-artifact@v7`, rejects the weaker
+  `steps.verify_artifact.outcome != 'failure'` pattern, requires a
+  `secret_scan` or `verify_artifact` scan id, and requires every
+  `if: always()` upload in those workflows to reference the scan id with
+  `outcome == 'success'`.
+
+Validation before merge:
+
+- Targeted guard tests: `2 passed`.
+- YAML semantic parse for all `.github/workflows/faz24-*.yml`: `22` parsed.
+- Full Faz 24 local test run: `308 passed`.
+- Staged diff whitespace and diff-level forbidden closure-language scans: no
+  finding.
+- Claude adversarial review: AGREE. Key note: the prior `!= 'failure'` guard
+  could upload when the scan step was `skipped`; `== 'success'` is the
+  fail-closed form.
+- PR #2159 CI passed: ADR-0011 boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, HARD RULE no-closure language check, YAML lint,
+  shellcheck, Kustomize build sanity, CodeQL actions, CodeQL python,
+  ADR-0031 drift guard, and placeholder leak check.
+
+Boundary: workflow/test-only source hardening. This does not mutate
+Vault/Kubernetes/Denetim/firewall/legal state, enable Direct-STT, call
+`/transcribe`, send audio, prove desktop mic/loopback, satisfy G-CAP/G-OPS/
+G-COMP, claim legal acceptance, or satisfy #1615/#2027. The active Direct-STT
+Gate 1 blocker remains unresolved Vault/ESO seed reconciliation for
+`audio-gateway-direct-stt-mtls` and expected runtime key names.
+
 ## Live Delta — Faz 24 Direct-STT preflight still blocked; remaining evidence ingests now bound payload size (2026-06-29)
 
 Codex reran `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml`
