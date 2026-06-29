@@ -176,6 +176,43 @@ kubectl --context k3d-test -n platform-test get externalsecret audio-gateway-dir
 > Vault audit device `log_raw=false` doğrulanır. **24h client cert ≠ kalıcı readiness:** evidence'a
 > `not_after` + refresh-deadline yazılır; rotation/renewal drill prod/uzun-koşu için ayrı gate (I7-prod).
 
+## 6.6 GitOps Vault-config reconciler (AI-otonom, TEST only)
+
+> **Amaç:** Vault CONFIG (ACL policy + scoped AppRole) değişikliklerini **operatörün her seferinde root koşması olmadan**, git-reviewed kaynaktan otonom apply et — ESO/ArgoCD'nin secret/manifest için yaptığını policy için yap.
+> **Policy:** `test/vault-config-reconciler.hcl` · **Script:** `scripts/ops/vault-policy-reconcile.sh`
+
+**Güven modeli (dürüst):** Reconciler approle ≈ **TEST-Vault config-admin** (policy-write + approle-manage). OSS Vault'ta policy-write güçlüdür (teorik self-escalation) → "güvenli" = **bounded**: TEST-only (prod'a ASLA yazılmaz), host-local 0600 secret-id, short-lived token, audited, **git-review = content gate** (script runtime'da policy yazmaz, yalnız commit'li içeriği apply eder). Hard DENY: `unseal / generate-root / seal / rekey / raw / storage / audit-disable / identity / token-create / kv-secret-read / pki-issue`. Yani sızsa bile **Vault ele geçirilemez, unseal edilemez, secret okunamaz, prod'a dokunulamaz** — agent'ın zaten sahip olduğu SSH+sudo güveniyle tutarlı. Root-of-trust (root token + unseal key) **owner-only** kalır.
+
+**Bir-kez owner kurulumu (ömürlük — root sadece BURADA; sonra AI-otonom):**
+```bash
+export VAULT_ADDR=http://localhost:8201        # platform-vault-test
+vault login <test-root>                        # SADECE bu adim; bir kez
+vault policy write vault-config-reconciler bootstrap/vault-policies/test/vault-config-reconciler.hcl
+vault write auth/approle/role/vault-config-reconciler \
+  token_policies="vault-config-reconciler" \
+  token_ttl=15m token_max_ttl=30m secret_id_ttl=168h bind_secret_id=true
+# secret_id_ttl=168h (7g) — Codex 019f1150: ttl=0 (süresiz) host-local dosya
+# sızarsa süresiz config-admin demek. Haftalık rotasyon (owner cron / re-run):
+#   vault write -f -field=secret_id auth/approle/role/vault-config-reconciler/secret-id \
+#     > /home/halil/.vault/reconciler-secret-id ; chmod 600 ...
+# İdeal (gelecek): per-run response-wrapped single-use secret_id + bound_cidrs.
+umask 077; mkdir -p /home/halil/.vault
+vault read  -field=role_id   auth/approle/role/vault-config-reconciler/role-id   > /home/halil/.vault/reconciler-role-id
+vault write -f -field=secret_id auth/approle/role/vault-config-reconciler/secret-id > /home/halil/.vault/reconciler-secret-id
+chmod 600 /home/halil/.vault/reconciler-role-id /home/halil/.vault/reconciler-secret-id
+```
+
+**Bundan sonra (agent, root yok — her policy değişiminde):**
+```bash
+# tüm git-reviewed policy + approle'leri idempotent apply:
+scripts/ops/vault-policy-reconcile.sh
+# bir seed approle için taze secret-id üret (seed yapmak üzere):
+scripts/ops/vault-policy-reconcile.sh --emit-seed-secret-id audio-gateway-mtls-seeder-test
+# kuru çalıştırma:
+scripts/ops/vault-policy-reconcile.sh --dry-run
+```
+Reconciler `common/*` + `test/*` policy'lerini ve manifest'teki approle'leri (eso-runtime, bootstrap-writer, audio-gateway-mtls-seeder) apply eder; **prod/* ASLA**. Yeni policy → manifest'e satır ekle (PR + cross-AI) → reconcile.
+
 ## 7. ClusterSecretStore Entegrasyon
 
 `kustomize/base/eso/clustersecretstore-vault.yaml` base tanım:
