@@ -5388,7 +5388,12 @@ images:
     # run 28362358662). This carries CERT_IDENTITY auto-ingest from active
     # machine-cert expiry and TPM_FAILED enrollments with redacted evidence only.
     # This is a test overlay digest alignment, not deployment-enforcement enablement.
-    digest: sha256:a16acbe7e23bdea43d92e4297fc8ce71d1a25b9b8a1e0868755c8aae357dd15b
+    # 2026-06-29 Faz 22.5 failed-device queue residual: re-pin from backend
+    # #774 (sha-d7532b6, a16acbe7) to backend #775 (sha-51249eb, image build
+    # run 28367130572). This carries DNS_EDGE_MTLS autonomous ingest from
+    # strict-allowlisted AG-038 diagnostics DNS/TLS state. It does not claim
+    # EDR_NETWORK ingest, mTLS peer-cert proof, or deployment-enforcement enablement.
+    digest: sha256:3bda7b2f7782d0590454e8b7718b455cbef36b19979f95d7ed3c20dea3ba0f2c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
