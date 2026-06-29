@@ -161,6 +161,10 @@ images:
   # (Prior re-drift 3015656f->5eff536b re-blocked the gate within ~1h of PR #2030 — that class is now closed.)
   # 2026-06-26 #548 V77 manual co-bump: aligned with the primary endpoint-admin digest
   # (5eff536b -> 8c4209ee, sha-74d312d) so the digest-alignment gate stays green.
+  # 2026-06-29 #527/#773 manual co-bump: aligned with the primary endpoint-admin
+  # digest (48b6975c -> 78863864, sha-42a3683) so the same-image
+  # remote-bridge pilot topology remains drift-free. This file is still
+  # owner-gated and outside Argo root; this PR does not apply it.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:48b6975c3506b1f0d0c8b359eb3bd576556a28a061f511cc20f1293c385f0bca
+    digest: sha256:788638648a54039133bf9f1f5ac442b996fed42c6e3adb55f7b696d8d403e52c
