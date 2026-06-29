@@ -185,6 +185,60 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Prepare privacy-safe smoke chunk fixture
+        id: prepare_chunk
+        env:
+          CHUNK_FILE_INPUT: ${{ inputs.chunk_file }}
+          SAMPLE_RATE_HZ_INPUT: ${{ inputs.sample_rate_hz }}
+          CHANNELS_INPUT: ${{ inputs.channels }}
+        run: |
+          set -euo pipefail
+
+          if [ -r "${CHUNK_FILE_INPUT}" ]; then
+            chunk_file="${CHUNK_FILE_INPUT}"
+            fixture_source="input"
+          else
+            chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.wav"
+            fixture_source="generated"
+            python3 - "${chunk_file}" "${SAMPLE_RATE_HZ_INPUT}" "${CHANNELS_INPUT}" <<'PY'
+          import math
+          import struct
+          import sys
+          import wave
+
+          path = sys.argv[1]
+          rate = int(sys.argv[2])
+          channels = int(sys.argv[3])
+          duration_s = 5.0
+          frames = int(rate * duration_s)
+
+          with wave.open(path, "wb") as wav:
+              wav.setnchannels(channels)
+              wav.setsampwidth(2)
+              wav.setframerate(rate)
+              for idx in range(frames):
+                  t = idx / rate
+                  # Deterministic synthetic, privacy-safe fixture. It is audio-shaped
+                  # enough for transport and format gates, but contains no human speech.
+                  envelope = min(1.0, t / 0.08, (duration_s - t) / 0.08)
+                  carrier = (
+                      0.55 * math.sin(2.0 * math.pi * 220.0 * t)
+                      + 0.30 * math.sin(2.0 * math.pi * 440.0 * t)
+                      + 0.15 * math.sin(2.0 * math.pi * 660.0 * t)
+                  )
+                  value = int(max(-1.0, min(1.0, carrier * envelope * 0.25)) * 32767)
+                  packed = struct.pack("<h", value)
+                  wav.writeframesraw(packed * channels)
+          PY
+          fi
+
+          test -s "${chunk_file}"
+          echo "chunk_file=${chunk_file}" >> "${GITHUB_OUTPUT}"
+          echo "chunk_fixture_source=${fixture_source}" >> "${GITHUB_OUTPUT}"
+          echo "chunk_fixture_source=${fixture_source}"
+          echo "chunk_fixture.bytes=$(wc -c < "${chunk_file}" | tr -d ' ')"
+          echo "chunk_fixture.sha256=$(sha256sum "${chunk_file}" | awk '{print $1}')"
+
       - name: Run token and external recorder lifecycle
         id: run_chain
         env:
@@ -194,7 +248,7 @@ jobs:
           KC_BASE_URL: ${{ inputs.keycloak_base_url }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           RUN_EXTERNAL_SMOKE: "1"
-          SMOKE_CHUNK_FILE: ${{ inputs.chunk_file }}
+          SMOKE_CHUNK_FILE: ${{ steps.prepare_chunk.outputs.chunk_file }}
           SMOKE_AUDIO_FORMAT: ${{ inputs.audio_format }}
           SMOKE_SAMPLE_RATE_HZ: ${{ inputs.sample_rate_hz }}
           SMOKE_CHANNELS: ${{ inputs.channels }}
@@ -304,6 +358,7 @@ jobs:
           CHAIN_EXIT_CODE: ${{ steps.run_chain.outputs.exit_code }}
           COLLECT_EXIT_CODE: ${{ steps.collect_e2e.outputs.exit_code }}
           VERIFY_EXIT_CODE: ${{ steps.verify_e2e.outputs.exit_code }}
+          CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}
         run: |
           set -euo pipefail
           direct_status="missing"
@@ -321,6 +376,7 @@ jobs:
             echo "- Token/external chain exit code: \`${CHAIN_EXIT_CODE:-missing}\`"
             echo "- Collector exit code: \`${COLLECT_EXIT_CODE:-missing}\`"
             echo "- E2E verifier exit code: \`${VERIFY_EXIT_CODE:-missing}\`"
+            echo "- Chunk fixture source: \`${CHUNK_FIXTURE_SOURCE:-missing}\`"
             echo "- Direct-STT evidence status: \`${direct_status}\`"
             echo "- Direct-STT failures: \`${direct_failures:-none}\`"
             echo

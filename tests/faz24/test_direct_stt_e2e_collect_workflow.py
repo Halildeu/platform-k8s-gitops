@@ -53,7 +53,13 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "verify_direct_stt_e2e_evidence.py" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert "RUN_EXTERNAL_SMOKE: \"1\"" in workflow
-    assert "SMOKE_CHUNK_FILE: ${{ inputs.chunk_file }}" in workflow
+    assert "Prepare privacy-safe smoke chunk fixture" in workflow
+    assert "CHUNK_FILE_INPUT: ${{ inputs.chunk_file }}" in workflow
+    assert 'chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.wav"' in workflow
+    assert "contains no human speech" in workflow
+    assert "chunk_fixture_source=${fixture_source}" in workflow
+    assert "CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}" in workflow
+    assert "SMOKE_CHUNK_FILE: ${{ steps.prepare_chunk.outputs.chunk_file }}" in workflow
     assert "faz24-direct-stt-e2e-collect-${{ github.run_id }}" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,'" in workflow
