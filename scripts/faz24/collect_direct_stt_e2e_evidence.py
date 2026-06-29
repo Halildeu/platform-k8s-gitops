@@ -358,10 +358,16 @@ class RespParser:
 
     def read_line(self) -> bytes:
         end = self.data.find(b"\r\n", self.pos)
+        terminator_len = 2
+        if end < 0:
+            # subprocess.run(text=True) normalizes CRLF to LF. The Redis
+            # payload is still RESP-shaped, but line delimiters arrive as LF.
+            end = self.data.find(b"\n", self.pos)
+            terminator_len = 1
         if end < 0:
             raise RespParseError("missing-crlf")
         line = self.data[self.pos:end]
-        self.pos = end + 2
+        self.pos = end + terminator_len
         return line
 
     def parse_one(self) -> Any:
@@ -382,9 +388,12 @@ class RespParser:
                 return None
             value = self.data[self.pos : self.pos + length]
             self.pos += length
-            if self.data[self.pos : self.pos + 2] != b"\r\n":
+            if self.data[self.pos : self.pos + 2] == b"\r\n":
+                self.pos += 2
+            elif self.data[self.pos : self.pos + 1] == b"\n":
+                self.pos += 1
+            else:
                 raise RespParseError("bulk-missing-crlf")
-            self.pos += 2
             return value.decode("utf-8", errors="replace")
         if prefix == b"*":
             length = int(self.read_line())

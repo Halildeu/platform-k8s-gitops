@@ -124,6 +124,39 @@ def test_redis_records_falls_back_to_kube_exec_without_docker():
     assert "docker: command not found" not in json.dumps(records)
 
 
+def test_redis_records_accepts_text_mode_lf_normalized_resp():
+    collector = _load_collector()
+    payload = _resp_xrevrange(
+        [
+            _resp_stream_record(
+                "1782471276845-0",
+                [
+                    ("eventType", "DIRECT_STT_TRANSCRIPT_RESULT"),
+                    ("sessionId", "SES-test"),
+                    ("chunkSeq", "0"),
+                ],
+            )
+        ]
+    ).replace("\r\n", "\n")
+
+    records, error = collector.redis_records_from_resp_result(
+        collector.CommandResult(0, payload, ""),
+        stream="transcript:direct-stt-results",
+    )
+
+    assert error is None
+    assert records == [
+        (
+            "1782471276845-0",
+            {
+                "eventType": "DIRECT_STT_TRANSCRIPT_RESULT",
+                "sessionId": "SES-test",
+                "chunkSeq": "0",
+            },
+        )
+    ]
+
+
 def test_redis_stream_records_uses_kube_exec_fallback_without_pod_creation():
     collector = _load_collector()
     calls = []
