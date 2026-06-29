@@ -169,6 +169,10 @@ images:
   # digest (78863864 -> a16acbe7, sha-d7532b6) carrying CERT_IDENTITY failed-device
   # queue auto-ingest. Owner-gated activation remains separate from normal test
   # overlay rollout.
+  # 2026-06-29 #527/#775 manual co-bump: aligned with the primary endpoint-admin
+  # digest (a16acbe7 -> 3bda7b2, sha-51249eb) carrying DNS_EDGE_MTLS diagnostics
+  # auto-ingest. Owner-gated activation remains separate from normal test overlay
+  # rollout; this co-bump preserves the same-image bridge topology.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:a16acbe7e23bdea43d92e4297fc8ce71d1a25b9b8a1e0868755c8aae357dd15b
+    digest: sha256:3bda7b2f7782d0590454e8b7718b455cbef36b19979f95d7ed3c20dea3ba0f2c
