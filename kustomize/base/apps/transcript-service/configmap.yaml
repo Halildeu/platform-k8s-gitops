@@ -45,7 +45,7 @@ data:
   KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
 
   # JWT Security
-  SECURITY_AUTH_ALLOWED_CLIENT_IDS: "frontend,admin-cli,serban-web,account"
+  SECURITY_AUTH_ALLOWED_CLIENT_IDS: "frontend,admin-cli,serban-web,account,platform-desktop"
   SECURITY_JWT_AUDIENCE: "transcript-service,frontend,account,serban-web"
 
   # Spring profile — activates application-k8s.yml (KEYCLOAK_JWKS_URI binding,
