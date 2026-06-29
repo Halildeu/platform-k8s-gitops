@@ -5377,7 +5377,7 @@ images:
     # (DataIntegrityViolation) on the canonical-status constraint. Flyway applies V77
     # on this roll. This restores /attest past the DB-write gate; the next live wall
     # is Vault-HTTPS (gate-B, operator infra) -> FEATURE_DISABLED, not a code defect.
-    digest: sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842
+    digest: sha256:48b6975c3506b1f0d0c8b359eb3bd576556a28a061f511cc20f1293c385f0bca
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571

@@ -163,4 +163,4 @@ images:
   # (5eff536b -> 8c4209ee, sha-74d312d) so the digest-alignment gate stays green.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842
+    digest: sha256:48b6975c3506b1f0d0c8b359eb3bd576556a28a061f511cc20f1293c385f0bca
