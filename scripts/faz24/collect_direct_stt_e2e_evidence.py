@@ -18,6 +18,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -30,6 +32,10 @@ DEFAULT_DEPLOYMENT = "audio-gateway"
 DEFAULT_CONFIGMAP = "audio-gateway-config"
 DEFAULT_MTLS_SECRET = "audio-gateway-direct-stt-mtls"
 DEFAULT_REDIS_CONTAINER = "platform-redis-streams-test"
+DEFAULT_REDIS_SERVICE = "redis-streams"
+DEFAULT_REDIS_SECRET = "audio-gateway-secrets"
+DEFAULT_REDIS_SECRET_KEY = "SPRING_DATA_REDIS_PASSWORD"
+DEFAULT_REDIS_CLI_IMAGE = "redis:7.4-alpine"
 EXPECTED_TRANSCRIBE_HOST = "live-stt.denetim"
 EXPECTED_TRANSCRIBE_PORT = 8243
 EXPECTED_HOST_ALIAS_IP = "10.99.0.2"
@@ -287,31 +293,7 @@ def mtls_probe(
     }
 
 
-def redis_records(
-    runner: CommandRunner,
-    *,
-    container: str,
-    stream: str,
-    count: int,
-    timeout: int = 20,
-) -> tuple[list[tuple[str, dict[str, str]]], str | None]:
-    result = runner(
-        [
-            "docker",
-            "exec",
-            container,
-            "sh",
-            "-c",
-            'redis-cli -a "$REDIS_PASSWORD" --json XREVRANGE "$1" + - COUNT "$2"',
-            "sh",
-            stream,
-            str(count),
-        ],
-        timeout,
-    )
-    data, error = load_json_result(result, f"redis-xrevrange-{stream}")
-    if error:
-        return [], error
+def parse_redis_records(data: Any) -> list[tuple[str, dict[str, str]]]:
     records: list[tuple[str, dict[str, str]]] = []
     for item in data if isinstance(data, list) else []:
         if not isinstance(item, list) or len(item) != 2:
@@ -325,7 +307,220 @@ def redis_records(
             fields = {str(k): str(v) for k, v in fields_raw.items()}
         if isinstance(record_id, str):
             records.append((record_id, fields))
-    return records, None
+    return records
+
+
+def redis_records_from_result(
+    result: CommandResult,
+    *,
+    stream: str,
+    error_prefix: str = "redis-xrevrange",
+) -> tuple[list[tuple[str, dict[str, str]]], str | None]:
+    data, error = load_json_result(result, f"{error_prefix}-{stream}")
+    if error:
+        return [], error
+    return parse_redis_records(data), None
+
+
+def redis_records_via_docker(
+    runner: CommandRunner,
+    *,
+    container: str,
+    stream: str,
+    count: int,
+    timeout: int,
+) -> tuple[list[tuple[str, dict[str, str]]], str | None]:
+    result = runner(
+        [
+            "docker",
+            "exec",
+            container,
+            "sh",
+            "-c",
+            'export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli --json XREVRANGE "$1" + - COUNT "$2"',
+            "redis-query",
+            stream,
+            str(count),
+        ],
+        timeout,
+    )
+    return redis_records_from_result(result, stream=stream)
+
+
+def redis_records_via_kube_cli_pod(
+    runner: CommandRunner,
+    *,
+    context: str,
+    namespace: str,
+    service: str,
+    secret: str,
+    secret_key: str,
+    image: str,
+    stream: str,
+    count: int,
+    timeout: int,
+) -> tuple[list[tuple[str, dict[str, str]]], str | None]:
+    suffix = hashlib.sha256(f"{os.getpid()}:{time.monotonic_ns()}:{stream}".encode("utf-8")).hexdigest()[:12]
+    pod_name = f"faz24-redis-read-{suffix}"
+    manifest = {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "name": pod_name,
+            "namespace": namespace,
+            "labels": {
+                "app.kubernetes.io/name": "faz24-redis-read",
+                "app.kubernetes.io/part-of": "platform-k8s-gitops",
+                "faz24.acik.com/purpose": "direct-stt-e2e-evidence",
+            },
+        },
+        "spec": {
+            "activeDeadlineSeconds": timeout,
+            "automountServiceAccountToken": False,
+            "restartPolicy": "Never",
+            "containers": [
+                {
+                    "name": "redis-cli",
+                    "image": image,
+                    "imagePullPolicy": "IfNotPresent",
+                    "env": [
+                        {"name": "REDIS_HOST", "value": service},
+                        {
+                            "name": "REDIS_PASSWORD",
+                            "valueFrom": {
+                                "secretKeyRef": {
+                                    "name": secret,
+                                    "key": secret_key,
+                                }
+                            },
+                        },
+                    ],
+                    "command": ["sh", "-c"],
+                    "args": [
+                        'export REDISCLI_AUTH="$REDIS_PASSWORD"; exec redis-cli -h "$REDIS_HOST" --json XREVRANGE "$1" + - COUNT "$2"',
+                        "redis-query",
+                        stream,
+                        str(count),
+                    ],
+                    "resources": {
+                        "requests": {"cpu": "10m", "memory": "32Mi"},
+                        "limits": {"cpu": "100m", "memory": "128Mi"},
+                    },
+                    "securityContext": {
+                        "allowPrivilegeEscalation": False,
+                        "capabilities": {"drop": ["ALL"]},
+                        "readOnlyRootFilesystem": True,
+                        "runAsNonRoot": True,
+                    },
+                }
+            ],
+        },
+    }
+
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        json.dump(manifest, handle)
+        manifest_path = handle.name
+    try:
+        apply_result = runner(
+            ["kubectl", "--context", context, "-n", namespace, "apply", "-f", manifest_path],
+            20,
+        )
+        if apply_result.returncode != 0:
+            return [], f"redis-kube-cli-{stream}:apply-command-exit-{apply_result.returncode}"
+
+        deadline = time.monotonic() + timeout
+        phase = ""
+        while time.monotonic() < deadline:
+            pod_data, get_error = kget(
+                runner,
+                context=context,
+                namespace=namespace,
+                kind="pod",
+                name=pod_name,
+                timeout=10,
+            )
+            if not get_error and isinstance(pod_data, dict):
+                phase = str(pod_data.get("status", {}).get("phase") or "")
+                if phase in {"Succeeded", "Failed"}:
+                    break
+            time.sleep(1)
+        if phase != "Succeeded":
+            return [], f"redis-kube-cli-{stream}:pod-phase-{phase or 'timeout'}"
+
+        logs_result = runner(
+            ["kubectl", "--context", context, "-n", namespace, "logs", pod_name, "-c", "redis-cli"],
+            20,
+        )
+        return redis_records_from_result(logs_result, stream=stream, error_prefix="redis-kube-cli-xrevrange")
+    finally:
+        try:
+            os.unlink(manifest_path)
+        except FileNotFoundError:
+            pass
+        runner(
+            [
+                "kubectl",
+                "--context",
+                context,
+                "-n",
+                namespace,
+                "delete",
+                "pod",
+                pod_name,
+                "--ignore-not-found=true",
+                "--wait=false",
+            ],
+            20,
+        )
+
+
+def redis_records(
+    runner: CommandRunner,
+    *,
+    container: str,
+    stream: str,
+    count: int,
+    context: str | None = None,
+    namespace: str | None = None,
+    service: str = DEFAULT_REDIS_SERVICE,
+    secret: str = DEFAULT_REDIS_SECRET,
+    secret_key: str = DEFAULT_REDIS_SECRET_KEY,
+    image: str = DEFAULT_REDIS_CLI_IMAGE,
+    timeout: int = 20,
+) -> tuple[list[tuple[str, dict[str, str]]], str | None]:
+    records, docker_error = redis_records_via_docker(
+        runner,
+        container=container,
+        stream=stream,
+        count=count,
+        timeout=timeout,
+    )
+    if not docker_error:
+        return records, None
+    if context and namespace and any(
+        marker in docker_error
+        for marker in ("command-exit-125", "command-exit-126", "command-exit-127")
+    ):
+        # GitHub's self-hosted runner container has kubectl but not necessarily
+        # docker/redis-cli. Use a short-lived in-cluster redis-cli pod only for
+        # that runner-tooling gap; a reachable Docker Redis with bad state
+        # should keep failing as Docker evidence.
+        records, kube_error = redis_records_via_kube_cli_pod(
+            runner,
+            context=context,
+            namespace=namespace,
+            service=service,
+            secret=secret,
+            secret_key=secret_key,
+            image=image,
+            stream=stream,
+            count=count,
+            timeout=timeout + 40,
+        )
+        if not kube_error:
+            return records, None
+        return [], f"{docker_error};{kube_error}"
+    return [], docker_error
 
 
 def find_record(
@@ -353,6 +548,12 @@ def find_audio_chunk_record(
     runner: CommandRunner,
     *,
     container: str,
+    context: str | None,
+    namespace: str | None,
+    service: str,
+    secret: str,
+    secret_key: str,
+    image: str,
     session_id: str,
     chunk_seq: int,
     correlation_id: str,
@@ -362,7 +563,18 @@ def find_audio_chunk_record(
     errors: list[str] = []
     for idx in range(32):
         stream = f"audio:chunks:p{idx:02d}"
-        records, error = redis_records(runner, container=container, stream=stream, count=count)
+        records, error = redis_records(
+            runner,
+            container=container,
+            context=context,
+            namespace=namespace,
+            service=service,
+            secret=secret,
+            secret_key=secret_key,
+            image=image,
+            stream=stream,
+            count=count,
+        )
         if error:
             errors.append(error)
             continue
@@ -433,6 +645,10 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     chunk_seq = int(upload_response.get("chunkSeq", sample.get("chunkSeq", 0)) or 0)
     correlation_id = str(upload_response.get("correlationId") or "")
     sample_sha256 = str(sample.get("sampleSha256") or "")
+    redis_service = getattr(args, "redis_service", DEFAULT_REDIS_SERVICE)
+    redis_secret = getattr(args, "redis_secret", DEFAULT_REDIS_SECRET)
+    redis_secret_key = getattr(args, "redis_secret_key", DEFAULT_REDIS_SECRET_KEY)
+    redis_cli_image = getattr(args, "redis_cli_image", DEFAULT_REDIS_CLI_IMAGE)
 
     if smoke.get("status") != "pass":
         failures.append("external-smoke-not-pass")
@@ -501,6 +717,12 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     result_records, err = redis_records(
         runner,
         container=args.redis_container,
+        context=args.context,
+        namespace=args.namespace,
+        service=redis_service,
+        secret=redis_secret,
+        secret_key=redis_secret_key,
+        image=redis_cli_image,
         stream=EXPECTED_RESULT_STREAM,
         count=args.redis_count,
     )
@@ -525,6 +747,12 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     audit_records, err = redis_records(
         runner,
         container=args.redis_container,
+        context=args.context,
+        namespace=args.namespace,
+        service=redis_service,
+        secret=redis_secret,
+        secret_key=redis_secret_key,
+        image=redis_cli_image,
         stream=EXPECTED_AUDIT_STREAM,
         count=args.redis_count,
     )
@@ -544,6 +772,12 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     audio_stream, audio_fields, err = find_audio_chunk_record(
         runner,
         container=args.redis_container,
+        context=args.context,
+        namespace=args.namespace,
+        service=redis_service,
+        secret=redis_secret,
+        secret_key=redis_secret_key,
+        image=redis_cli_image,
         session_id=session_id,
         chunk_seq=chunk_seq,
         correlation_id=correlation_id,
@@ -679,6 +913,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--namespace", default=DEFAULT_NAMESPACE)
     parser.add_argument("--deployment", default=DEFAULT_DEPLOYMENT)
     parser.add_argument("--redis-container", default=DEFAULT_REDIS_CONTAINER)
+    parser.add_argument("--redis-service", default=DEFAULT_REDIS_SERVICE)
+    parser.add_argument("--redis-secret", default=DEFAULT_REDIS_SECRET)
+    parser.add_argument("--redis-secret-key", default=DEFAULT_REDIS_SECRET_KEY)
+    parser.add_argument("--redis-cli-image", default=DEFAULT_REDIS_CLI_IMAGE)
     parser.add_argument("--gitops-commit")
     parser.add_argument("--probe-timeout", type=int, default=40)
     parser.add_argument("--redis-count", type=int, default=1000)
