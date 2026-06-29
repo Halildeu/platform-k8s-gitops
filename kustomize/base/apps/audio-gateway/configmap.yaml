@@ -54,13 +54,15 @@ data:
   # stream-key consumer'ın AUDIT_CONSUMER_STREAM_KEY'i (audit:events) ile birebir aynı.
   AUDIO_GATEWAY_AUDIT_REDIS_ENABLED: "true"
   AUDIO_GATEWAY_AUDIT_STREAM_KEY: "audit:events"
-  # --- Faz 24 direct-STT runtime wiring (default-OFF until mTLS secret seed) ---
-  # Backend #725/#753/#768 already ships the direct-STT WebClient, mTLS support,
-  # result stream handoff, and audio-part Content-Type fix. Desired-state keeps
-  # the full config visible while the actual runtime flag stays false until the
-  # audio-gateway mTLS files are delivered through the dedicated
-  # audio-gateway-direct-stt-mtls Secret.
-  AUDIO_GATEWAY_DIRECT_STT_ENABLED: "false"
+  # --- Faz 24 direct-STT runtime wiring (TEST-enabled 2026-06-29; prod excludes audio-gateway until D30) ---
+  # Backend #725/#753/#768 ships the direct-STT WebClient + mTLS + result-stream.
+  # mTLS material now delivered via the audio-gateway-direct-stt-mtls Secret (ESO
+  # Ready=True; denetim-ai-ca client cert, PKCS#8 key) -> runtime flag ENABLED.
+  # Chain proven 2026-06-29: 3-way mTLS smoke (valid -> live-stt /health 200;
+  # no-cert & wrong-CA rejected) + synthetic /transcribe 200 (CUDA, language=tr).
+  # ArgoCD selfHeal was reverting the live kubectl patch; this gitops flip is the
+  # durable enablement (RB-faz24-direct-stt-mtls-enable.md Step 5). Rollback: "false".
+  AUDIO_GATEWAY_DIRECT_STT_ENABLED: "true"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL: "https://live-stt.denetim:8243/transcribe"
   AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT: "2"
   AUDIO_GATEWAY_DIRECT_STT_CONNECT_TIMEOUT_MS: "5000"
