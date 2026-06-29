@@ -3,6 +3,15 @@
 > Format: D28 5-alan + sıradaki agent P0 aksiyon listesi
 > Bağlam: "Zeynep'in yerine 2 gün biz yapıyoruz, beklemek yok, tam otonom" → #182 recorder e2e otonom sürüldü.
 
+> ## ✅ P0 RESOLVED — 2026-06-29 (LIVE-PROVEN, bu session içinde kapatıldı)
+> §5'teki WAV-wrap P0 **tamamlandı + canlı kanıtlandı**:
+> - platform-backend **PR #776** MERGED (`WavEncoder` + dispatcher PCM16→WAV; 17/17 test incl. javax.sound round-trip; Codex `019f131e` AGREE; CI 18/18) → image `sha-bdf5a02` / digest `sha256:5f08b14d`.
+> - gitops **PR #2173** MERGED (overlays/test digest bump + `direct-stt-enable-rev` annotation) → ArgoCD sync → pod `audio-gateway-db587b44b-dwszp` imageID `@sha256:5f08b14d` LIVE.
+> - **E2e (testai.acik.com, persona test-recorder-182, Türkçe TTS):** consent 201 → session 201 → chunk 200 → finish 200 → **`audio_gateway_direct_stt_success_total = 1.0`** (http_error YOK) + log `Direct-STT transcript received … textLen=80 sttLang=tr model=medium`. **#182 strict acceptance MET.**
+> - Test fixtures (meeting `004bbb37` + persona + owner tuple) regresyon için bırakıldı (§7 cleanup opsiyonel).
+>
+> Aşağıdaki orijinal handoff (P0 dahil) audit referansı olarak korunuyor.
+
 ---
 
 ## 1. Bağlam (neden bu handoff)
