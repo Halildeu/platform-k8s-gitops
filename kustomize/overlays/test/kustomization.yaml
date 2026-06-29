@@ -5400,7 +5400,12 @@ images:
     # run 28367130572). This carries DNS_EDGE_MTLS autonomous ingest from
     # strict-allowlisted AG-038 diagnostics DNS/TLS state. It does not claim
     # EDR_NETWORK ingest, mTLS peer-cert proof, or deployment-enforcement enablement.
-    digest: sha256:3bda7b2f7782d0590454e8b7718b455cbef36b19979f95d7ed3c20dea3ba0f2c
+    # 2026-06-29 Faz 22.5 failed-device queue residual: re-pin from backend
+    # #775 (sha-51249eb, 3bda7b2) to backend #777 (sha-3fd9953, image build
+    # run 28372404929). This carries strict securityNetwork structured
+    # EDR_NETWORK ingest. It does not claim deployment-enforcement enablement
+    # or #527 runtime acceptance.
+    digest: sha256:f950a3b94db3d0f57060defb047f349370174fa42bc093df0a0ccea1ceff9ca8
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
