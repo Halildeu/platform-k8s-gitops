@@ -183,6 +183,8 @@ kubectl --context k3d-test -n platform-test get externalsecret audio-gateway-dir
 
 **Güven modeli (dürüst):** Reconciler approle ≈ **TEST-Vault config-admin** (policy-write + approle-manage). OSS Vault'ta policy-write güçlüdür (teorik self-escalation) → "güvenli" = **bounded**: TEST-only (prod'a ASLA yazılmaz), host-local 0600 secret-id, short-lived token, audited, **git-review = content gate** (script runtime'da policy yazmaz, yalnız commit'li içeriği apply eder). Hard DENY: `unseal / generate-root / seal / rekey / raw / storage / audit-disable / identity / token-create / kv-secret-read / pki-issue`. Yani sızsa bile **Vault ele geçirilemez, unseal edilemez, secret okunamaz, prod'a dokunulamaz** — agent'ın zaten sahip olduğu SSH+sudo güveniyle tutarlı. Root-of-trust (root token + unseal key) **owner-only** kalır.
 
+> **Net (Codex 019f1150):** Reconciler credential staging-sw'deki mevcut sudo trust boundary'sini aşan **yeni bir prod/root-of-trust yetkisi VERMEZ**; ancak TEST Vault named policy/approle surface üzerinde **pratik config-admin yetkisi VERİR** — bu yetki git-review + named-path scope + fail-closed policy-lint + audit + finite secret_id TTL ile *bounded* kabul edilir. (Vault açısından pozitif bir yetkidir; yalnızca mevcut host trust modeline göre sudo-on-staging'den *materially larger* değildir.)
+
 **Bir-kez owner kurulumu (ömürlük — root sadece BURADA; sonra AI-otonom):**
 ```bash
 export VAULT_ADDR=http://localhost:8201        # platform-vault-test
