@@ -50,7 +50,7 @@ and is denied by the activation netpol** (`netpol.yaml` adds no `8096` allow; th
 `9444` ingress rule is explicitly "Never api-gateway"). The activation
 `service-patch.yaml` makes the Service a **`NodePort`** publishing only `9444`
 (nodePort 31944, L4 fallback). Therefore exposing the operator viewer over `8096`
-is itself part of the owner-approved change (§3 step 3) — and it must use a
+is itself part of the owner-approved change (§3 step 1) — and it must use a
 **separate `ClusterIP` Service**, never a new port on the NodePort Service (that
 would allocate a node-wide NodePort for 8096 and blow the "api-gateway only"
 boundary; see OWNER-APPROVAL.md node-origin caveat).
@@ -67,8 +67,9 @@ This is the owner decision. Do not flip the flag until every box holds:
       marker — it does **not** fail-close `F22_6_COMPLETION` — but a live pilot
       still does not start without the owner/DPO sign-off.
 - [ ] **1-person roster** fixed: exactly one authorized operator `(tenantId, subject)`.
-- [ ] **Owner sign-off to expose `8096`** (step 3 opens an HTTP listener that is
-      deliberately closed today — a security-boundary decision, not a default).
+- [ ] **Owner sign-off to expose `8096`** (the §3 step 1 viewer overlay opens an
+      HTTP listener that is deliberately closed today — a security-boundary
+      decision, not a default).
 - [ ] A single **pilot device** identified + consenting (attended).
 
 ## 3. Enable steps (TEST/pilot env; each: command → expected → fail signal)
@@ -76,110 +77,48 @@ This is the owner decision. Do not flip the flag until every box holds:
 > Credential/security mutations are TEST-autonomous / PROD-owner-gated. Run in the
 > pilot (test) env, against the **`endpoint-admin-remote-bridge`** Deployment only.
 
-1. **Pin the pilot to png-only** (defense-in-depth; slice-1 default stays
-   `png|jpeg|webp` by design — narrowing it is a pilot choice, not a code change).
-   Add to ConfigMap `endpoint-admin-remote-bridge-config`
-   (`overlays/test/activation/endpoint-admin-remote-bridge/configmap-activation-patch.yaml`):
-   ```yaml
-   REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES: "image/png"
-   ```
-   - Expected: `LiveOnlyViewDataPlaneHandler` drops any non-png frame.
-   - Fail signal: jpeg/webp frames still fan out → ConfigMap not re-read (the
-     rolling restart in step 4 is required for `envFrom`).
-
-2. **Turn the viewer controller ON** (the operator REST surface is already
+1. **Apply the pre-staged viewer-exposure overlay** — the bridge-side enable in one
+   reviewed, render-proven `apply -k`. The overlay
+   `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer` is a
+   SUPERSET of the broker activation PLUS: `REMOTE_BRIDGE_VIEWER_ENABLED=true`, the
+   png pilot pin (`REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES=image/png`),
+   the http `containerPort: 8096`, a dedicated **`ClusterIP`** Service
+   `endpoint-admin-remote-bridge-viewer` (8096, never NodePort), and an additive
+   NetworkPolicy allowing 8096 ingress from `app.kubernetes.io/name: api-gateway`
+   pods only. The operator REST surface is already
    `REMOTE_BRIDGE_OPERATOR_REST_ENABLED=true`; the viewer controller is gated
-   separately by `@ConditionalOnProperty`). Add:
-   ```yaml
-   REMOTE_BRIDGE_VIEWER_ENABLED: "true"
-   ```
-   Keep `REMOTE_BRIDGE_ENABLED=true` (set by `patch-activate.yaml`).
-   - Expected: after restart the `RemoteBridgeViewerController` bean is present.
-   - Fail signal: context-load error referencing `RemoteBridgeViewerAuditService`
-     / `EndpointAuditService` → bean wiring (audit service is `@Service`, so this
-     should not happen post-#780).
-
-3. **Expose HTTP `8096` for the viewer path only** (owner-approved
-   security-boundary change — see §1.1). Four coordinated, scoped edits:
-   - **Deployment** `endpoint-admin-remote-bridge` (`patch-activate.yaml` ports
-     patch): add the http containerPort —
-     ```yaml
-     ports:
-       - name: http
-         containerPort: 8096
-         protocol: TCP
-     ```
-   - **A NEW dedicated `ClusterIP` Service** (do NOT touch the NodePort
-     `service-patch.yaml`; add a new manifest, e.g. `viewer-clusterip-service.yaml`,
-     to the activation kustomization):
-     ```yaml
-     apiVersion: v1
-     kind: Service
-     metadata:
-       name: endpoint-admin-remote-bridge-viewer
-     spec:
-       type: ClusterIP          # NEVER NodePort — keeps 8096 off every node IP
-       selector:
-         app.kubernetes.io/name: endpoint-admin-remote-bridge
-       ports:
-         - name: http
-           port: 8096
-           targetPort: http
-     ```
-   - **NetworkPolicy** (`netpol.yaml`): add an ingress rule allowing `8096`
-     **from the api-gateway pods ONLY** (a narrow `podSelector`
-     `app.kubernetes.io/name: api-gateway`, not `part-of=platform`, and not the
-     agent/orchestrator/edge sources that may reach 9444).
-   - **api-gateway route** (`kustomize/base/apps/api-gateway/configmap.yaml` or the
-     test overlay route layer): add a route that is evaluated **before** the
-     catch-all `SPRING_CLOUD_GATEWAY_ROUTES_24_*`
-     (`Path=/api/v1/endpoint-admin/**` → `endpoint-admin-service:8096`, which
-     rewrites to `/api/v1/admin/...` and would otherwise swallow the viewer path).
-     Ordering here is by route `order` then load order — set an explicit lower
-     `order` so it cannot regress when indices are renumbered:
-     ```yaml
-     SPRING_CLOUD_GATEWAY_ROUTES_28_ID: "remote-bridge-viewer-route"
-     SPRING_CLOUD_GATEWAY_ROUTES_28_URI: "http://endpoint-admin-remote-bridge-viewer:8096"
-     SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER: "-10"   # < route 24 (default order 0) → wins
-     SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0: "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view"
-     SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1: "Method=GET"
-     SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0: "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
-     ```
-     Preserve the `?streamId=` query string (Spring Cloud Gateway forwards it by
-     default) and forward `Authorization`; disable response buffering for this
-     route (SSE). **Surface note:** `api-gateway-config` is **not** part of the
-     remote-bridge activation overlay — it lives in the api-gateway config surface
-     (`overlays/test`) and is read by `deploy/api-gateway` via `envFrom`, so the
-     route only goes live after a **separate api-gateway apply + restart**
-     (step 4b). Keep this route change owner-gated: apply it deliberately at enable
-     and withdraw it at Mode B rollback (§6) — do not leave it as an always-on
-     default ahead of the owner decision.
+   separately by `@ConditionalOnProperty`. (To pin a different content-type set,
+   edit the overlay's `configmap-viewer-patch.yaml` first — slice-1's default is
+   `png|jpeg|webp`.) See the overlay's `OWNER-APPROVAL.md`.
    - **Build sanity (no apply):**
      ```bash
-     kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+     kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
      ```
-     Rendered proof MUST show: a `ClusterIP` Service for 8096 (no NodePort
-     allocated for 8096), the 9444 NodePort preserved, and the netpol 8096 allow
-     scoped to `app.kubernetes.io/name: api-gateway` only.
-   - Expected: `curl -N -H "Authorization: Bearer <op-jwt>"` against the public
-     view URL reaches the **bridge viewer** service (401/404 from the SERVICE, not
-     a gateway 404/502) and frames stream incrementally (not batched).
-   - Fail signal: gateway 404 (route ordered after the catch-all → hit the primary
-     service) / 502 (8096 ClusterIP/netpol wrong) / batched frames (buffering on).
-
-4a. **Roll the bridge** to pick up the ConfigMap + ports:
-   ```bash
-   kubectl --context k3d-test -n platform-test apply -k \
-     kustomize/overlays/test/activation/endpoint-admin-remote-bridge
-   kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge
-   kubectl --context k3d-test -n platform-test rollout status  deploy/endpoint-admin-remote-bridge --timeout=180s
-   ```
-   - Expected: pod Ready (probes on `8081`); broker still bound on 9444.
+     Rendered proof MUST show: a `ClusterIP` Service for 8096 (no NodePort for
+     8096); the 9444 NodePort preserved; the **ingress** netpol 8096 allow scoped
+     to `app.kubernetes.io/name: api-gateway` only AND the companion **egress**
+     netpol (api-gateway → bridge:8096 — required because the ns default-denies
+     egress and the bridge is `part-of=remote-bridge`, outside the standard intra-ns
+     allow); the bridge deployment env
+     `REMOTE_BRIDGE_ENABLED=true`; the ConfigMap `REMOTE_BRIDGE_VIEWER_ENABLED=true`
+     + png allowlist; and the overlay NOT referenced by
+     `overlays/test/kustomization.yaml`.
+   - **Apply + roll:**
+     ```bash
+     kubectl --context k3d-test -n platform-test apply -k \
+       kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
+     kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge
+     kubectl --context k3d-test -n platform-test rollout status  deploy/endpoint-admin-remote-bridge --timeout=180s
+     ```
+   - Expected: pod Ready (probes on `8081`); broker still bound on 9444; the
+     `RemoteBridgeViewerController` bean present; the viewer ClusterIP resolvable.
    - Fail signal: not-Ready → control #11 fail-closed (missing signer/cert/ACL
-     secret) or the step-2 context-load error.
+     secret); or a context-load error referencing `RemoteBridgeViewerAuditService`
+     / `EndpointAuditService` → bean wiring (audit service is `@Service`, should not
+     happen post-#780).
 
-4b. **Apply the api-gateway route + reload api-gateway** (separate surface — the
-   route is `envFrom` config, so the bridge restart in 4a does NOT pick it up).
+2. **Apply the api-gateway route + reload api-gateway** (separate surface — the
+   route is `envFrom` config, so the step-1 bridge restart does NOT pick it up).
    **DO NOT `apply -f kustomize/base/apps/api-gateway/configmap.yaml` directly** —
    the base ConfigMap ships `KEYCLOAK_ISSUER_URI` / `KEYCLOAK_JWKS_URI` as
    `OVERLAY_MUST_OVERRIDE` placeholders (the real values come from the
@@ -226,7 +165,9 @@ This is the owner decision. Do not flip the flag until every box holds:
 - **8096 negative reachability** (the boundary, run from each origin):
   - same-ns non-api-gateway pod → 8096 connect **denied** (netpol).
   - ingress-nginx ns pod → 8096 **denied**.
-  - api-gateway pod → 8096 **allowed** (the only permitted source).
+  - api-gateway pod → 8096 **allowed** (the only permitted source — this validates
+    BOTH the bridge ingress allow AND the api-gateway egress allow; if either is
+    missing the curl hangs/`502`s, not `401`).
   - confirm `kubectl get svc endpoint-admin-remote-bridge-viewer` is `ClusterIP`
     (no `NodePort`), and the 9444 NodePort Service is unchanged.
 - **Audited (the #780 gate) — executable drill**:
@@ -281,13 +222,27 @@ revocation — mandatory, not optional):
 - Withdraw the api-gateway viewer route (`..._28_*`) and **`rollout restart
   deploy/api-gateway`** so the running gateway drops the route (it is `envFrom`
   config — removing it from the ConfigMap without a restart leaves the route live
-  in the old pod). Then delete the `endpoint-admin-remote-bridge-viewer` ClusterIP
-  Service, remove the 8096 netpol allow, and remove the `8096` containerPort
-  (`rollout restart deploy/endpoint-admin-remote-bridge`).
+  in the old pod).
+- Delete the three viewer-only resources by name (they are standalone; re-applying
+  the broker-only overlay does NOT remove them; NEVER `delete -k` this superset
+  overlay — it would tear down the broker too):
+  ```bash
+  kubectl --context k3d-test -n platform-test delete service endpoint-admin-remote-bridge-viewer
+  kubectl --context k3d-test -n platform-test delete networkpolicy eab-bridge-viewer-allow-ingress-8096-from-api-gateway
+  kubectl --context k3d-test -n platform-test delete networkpolicy eab-api-gateway-allow-egress-8096-to-bridge-viewer
+  ```
+- Re-apply the **broker-only** overlay to revert the 8096 containerPort + viewer
+  ConfigMap flags (3-way merge drops them), then restart:
+  ```bash
+  kubectl --context k3d-test -n platform-test apply -k \
+    kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+  kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge
+  ```
 - Re-render + prove the §1.1 default posture is restored: route 28 gone from the
   api-gateway env, 8096 not published, no api-gateway→8096 allow, 9444 NodePort
   intact; the public view URL no longer reaches the bridge; re-run the §4
-  negative-reachability checks (all 8096 origins denied).
+  negative-reachability checks (all 8096 origins denied). `REMOTE_BRIDGE_ENABLED`
+  stays true throughout — the broker + agent stream never go down.
 - No data to purge: recording-OFF means nothing was persisted.
 
 ## 7. References

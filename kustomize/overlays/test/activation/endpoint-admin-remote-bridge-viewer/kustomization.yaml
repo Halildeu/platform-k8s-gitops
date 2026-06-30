@@ -1,0 +1,43 @@
+# endpoint-admin-remote-bridge-viewer ACTIVATION overlay — Faz 22.6 #1580 VIEW_ONLY exposure
+#
+# ⚠️ OWNER-GATED. A SUPERSET of ../endpoint-admin-remote-bridge (broker activation)
+# PLUS the operator VIEW_ONLY viewer HTTP exposure on 8096. It is DELIBERATELY NOT
+# referenced by kustomize/overlays/test/kustomization.yaml — it is NOT in the Argo
+# root, so an ArgoCD reconcile / `apply -k overlays/test` can NEVER expose the viewer.
+#
+# Two separate owner decisions:
+#   - broker only             → apply -k .../activation/endpoint-admin-remote-bridge
+#   - broker + VIEW_ONLY view → apply -k .../activation/endpoint-admin-remote-bridge-viewer (this)
+#
+# This overlay stages ONLY the bridge-side viewer surface: the viewer flag + png
+# pin (configmap patch), containerPort 8096 (deployment patch), a dedicated
+# ClusterIP 8096 Service (NEVER NodePort), and an additive NetworkPolicy allowing
+# 8096 ingress from api-gateway pods only. The api-gateway route 28 stays a runtime
+# `kubectl patch configmap api-gateway-config` (see
+# docs/runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md §3 step 4b) — it must
+# merge into the single existing api-gateway-config without clobbering the overlay's
+# KEYCLOAK_* values.
+#
+# Activation is a deliberate operator action AFTER the §2 gate in the runbook
+# (KVKK/DPO sign-off + 8096-exposure sign-off + 1-person roster + consenting pilot
+# device). Applying this overlay does NOT close #1580; the §4.2
+# F22_6_VIEW_ONLY_ENGINEERING: v2 product-channel evidence is a separate gate.
+#
+# Build sanity (no apply):
+#   kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-test
+
+resources:
+  - ../endpoint-admin-remote-bridge          # broker activation (superset base)
+  - viewer-clusterip-service.yaml            # dedicated ClusterIP 8096 (NEVER NodePort)
+  - viewer-from-api-gateway-netpol.yaml      # additive INGRESS 8096 (bridge ← api-gateway)
+  - viewer-api-gateway-egress-netpol.yaml    # additive EGRESS 8096 (api-gateway → bridge); both sides required
+
+patches:
+  # turn the viewer controller ON + pin the pilot to png-only frames
+  - path: configmap-viewer-patch.yaml
+  # advertise containerPort 8096 (http) on the bridge pod (base advertises only 9444+8081)
+  - path: deployment-http-port-patch.yaml
