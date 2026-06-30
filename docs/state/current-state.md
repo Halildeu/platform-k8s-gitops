@@ -1,5 +1,33 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 #1580 VIEW_ONLY viewer chain MERGED (engineering code-complete, disabled-by-default) (2026-06-30)
+
+Supersedes the 2026-06-27 B2-ready note ("**#1580 VIEW_ONLY runtime code is not
+written yet**"): the runtime chain was written and merged 2026-06-28/29. Verified
+via `gh pr view` (state=MERGED, mergedAt):
+
+- **platform-backend#770** (2026-06-28) — slice-1 recording-OFF screen fan-out (broker `…/bridge/server/viewonly`, latest-wins, 1:1, incarnation-bound authz).
+- **platform-backend#778** (2026-06-29) — VIEW_ONLY operator SSE controller (`/internal/remote-bridge/operator/sessions/{id}/view`; 401/opaque-404/409).
+- **platform-backend#780** (2026-06-29) — fail-closed hash-chain audit (`REMOTE_SUPPORT_SCREEN_OBSERVATION` START/STOP; no observation without a committed `VIEW_START` → 503 on audit-down).
+- **platform-web#847** (2026-06-29) — operator screen-observation viewer MFE (`/endpoint-admin/remote-access/sessions/:sessionId/view`; fetch-SSE, view-only, no input forwarding; browser-verified in CI).
+
+Boundary: the chain is **disabled-by-default**. It runs only on the isolated
+`endpoint-admin-remote-bridge` Deployment (activation overlay, `REMOTE_BRIDGE_ENABLED=true`),
+gated behind `remote-bridge.viewer.enabled` (`@ConditionalOnProperty`). The
+primary `endpoint-admin-service` keeps the viewer OFF, and the bridge does not
+publish HTTP `8096` today (Service publishes only 9444; netpol denies 8096).
+Turning the bounded 1-person pilot ON is the owner/ops sequence in
+[`docs/runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md`](../runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md).
+
+Gate reconciliation (ADR-0044 split): the canonical fail-closed gate for #1580 is
+now **`GATE_VIEW_ONLY_ENGINEERING`** (marker `F22_6_VIEW_ONLY_ENGINEERING: v2`),
+with KVKK tracked/non-blocking under `GATE_VIEW_ONLY_KVKK` (`F22_6_VIEW_ONLY_KVKK: v1`).
+The legacy `GATE_VIEW_ONLY_SCREEN_SHARE=blocked` line later in this file is the
+pre-split alias; #1580 stays **blocked under `GATE_VIEW_ONLY_ENGINEERING`** until
+the §4.2 v2 product-channel evidence is captured (engineering merged ≠ pilot
+accepted). The old bundled `F22_6_VIEW_ONLY_ACCEPTANCE` marker is refused
+(`legacy_bundled_marker_detected`).
+
 ## Live Delta — Direct-STT Gate 2 collector path after test enablement (2026-06-29)
 
 Live truth changed after the older Gate 1 entries below. PR #2170 merged to
