@@ -5735,12 +5735,14 @@ images:
     digest: sha256:66f79088c766545e7fbbfba7fd5a537fd8b89f2d6cf8714b4e78d0763c29489e
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.3.1:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.1 (+ platform-agent#233).
+  # platform-agent Release EXE trusted workflow for tag v0.3.8:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.8 (+ platform-agent#251).
   # Serves /artifacts/endpoint-agent/current/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
   # install + discovers the live package hash without a per-release frontend edit
+  # (D30 immutability applies to the container image digest below; the /current
+  # artifact alias is intentionally a mutable pointer to the image-pinned release)
   # (gitops#1569/#1601/#1640, platform-agent#128/#170/#171/#193/#194/#203). The agent exe inside EndpointAgent.zip
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
@@ -5750,14 +5752,14 @@ images:
   # artifact and is not treated as a release-hosted public asset here.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.3.1
-    # D30 immutable pin — Release EXE trusted run 28100776164 (tag v0.3.1,
+    newTag: v0.3.8
+    # D30 immutable pin — Release EXE trusted run 28482092421 (tag v0.3.8,
     # release_class=rollout-candidate, signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # 6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7 and
+    # 757238d0bc010e88020b19d3528ad39a8e3ad45e3ac292bbc05b961b42acb114 and
     # agent binary SHA256
-    # edcac7e2a78d8801c6d168bdb8d51f6ecc5e99bc4c4f9fdc8507943df321e1be.
-    digest: sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27
+    # f884a645162726565e68021f15bd4d2deb6060cc86efd3f15c0ef16439cac68d.
+    digest: sha256:3649c292bda00c5b218d159e17ac7870ca5bc6bda8bec647b56e67a4d532ce5a
 
 patches:
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so
