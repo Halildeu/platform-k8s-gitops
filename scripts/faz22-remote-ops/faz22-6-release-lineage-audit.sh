@@ -67,7 +67,11 @@ ssh_cmd() {
     opts=($SSH_OPTS)
   fi
   # shellcheck disable=SC2029 # remote_cmd is intentionally composed client-side by the caller.
-  ssh "${opts[@]}" "$target" "$remote_cmd"
+  if [ "${#opts[@]}" -gt 0 ]; then
+    ssh "${opts[@]}" "$target" "$remote_cmd"
+  else
+    ssh "$target" "$remote_cmd"
+  fi
 }
 
 fetch_url() {
