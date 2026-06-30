@@ -1,5 +1,40 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 release-lineage dense active-series audit pass (2026-07-01)
+
+The EndpointAgent trusted `v0.3` release train has reached the active-series
+dense threshold (`v0.3.0` through `v0.3.7`, active count `8`). The release-lineage
+gate no longer treats this as a waiver-only condition: the live audit now runs a
+machine-verifiable dense-lineage audit before deciding whether the
+`GITHUB_RELEASE_ACTIVE_SERIES_DENSE` finding remains.
+
+Live audit evidence from `staging-sw` SSH mode:
+
+- `GITHUB_RELEASE_TRAIN_SERIES=pass latest_stable=v0.3.7 trusted_series=v0.3`
+- `GITHUB_RELEASE_LATEST_POINTER=pass pointer_kind=stable`
+- `GITHUB_RELEASE_FROZEN_SERIES_REGRESSION=pass frozen_series=v0.2 count=0`
+- `ACTIVE_SERIES_DENSE_LINEAGE_AUDIT=pass trusted_series=v0.3 active_count=8
+  threshold=8 first=v0.3.0 latest=v0.3.7 seed_nonimmutable_allowed=1
+  last_previous_release=v0.3.6 last_manifest_tag=v0.3.7`
+- `GITHUB_RELEASE_ACTIVE_SERIES_DENSE=pass trusted_series=v0.3 active_count=8
+  threshold=8 resolved_by=lineage-audit`
+- `ARTIFACT_HOST_LIVE_DIGEST=pass mode=ssh
+  expected_digest=sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27
+  digest_hits=3`
+- `RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene`
+- `F22_6_RELEASE_LINEAGE=pass`
+
+Current completion-audit boundary after this evidence:
+
+- `REMOTE_BRIDGE_LIVE=pass`
+- `RELEASE_LINEAGE_GATE=pass mode=ssh status=pass`
+- `F22_6_COMPLETION=blocked`
+- `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`
+
+The final Faz 22.6 completion gate therefore remains open on the two real
+acceptance packages only: `platform-backend#548` hardware-attestation acceptance
+evidence and `platform-k8s-gitops#1580` VIEW_ONLY engineering/KVKK evidence.
+
 ## Live Delta — Faz 22.6 #1580 VIEW_ONLY viewer chain MERGED (engineering code-complete, disabled-by-default) (2026-06-30)
 
 Supersedes the 2026-06-27 B2-ready note ("**#1580 VIEW_ONLY runtime code is not

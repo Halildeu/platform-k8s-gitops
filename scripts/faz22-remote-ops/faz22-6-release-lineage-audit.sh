@@ -384,6 +384,251 @@ release_train_verdict() {
   return 0
 }
 
+csv_has() {
+  # csv_has <csv> <value>
+  local csv="$1" value="$2"
+  printf '%s' "$csv" | tr -d ' ' | grep -Eq "(^|,)${value}(,|$)"
+}
+
+csv_without() {
+  # csv_without <csv> <value>
+  local csv="$1" value="$2"
+  local out="" item
+  local _csv_items=()
+  IFS=',' read -r -a _csv_items <<<"$csv"
+  for item in "${_csv_items[@]}"; do
+    item="$(printf '%s' "$item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [ -z "$item" ] && continue
+    [ "$item" = "$value" ] && continue
+    if [ -z "$out" ]; then
+      out="$item"
+    else
+      out="$out,$item"
+    fi
+  done
+  printf '%s' "$out"
+}
+
+active_series_release_url() {
+  # active_series_release_url <tag> <asset>
+  local tag="$1" asset="$2"
+  printf 'https://github.com/%s/releases/download/%s/%s' "$AGENT_REPO" "$tag" "$asset"
+}
+
+fetch_active_series_asset() {
+  # fetch_active_series_asset <tag> <asset>
+  #
+  # ACTIVE_SERIES_DENSE_EVIDENCE_DIR is intentionally test-only: offline unit
+  # tests can provide immutable fixtures without hitting GitHub. Live audits
+  # use the public GitHub release asset URL.
+  local tag="$1" asset="$2"
+  if [ -n "${ACTIVE_SERIES_DENSE_EVIDENCE_DIR:-}" ]; then
+    cat "$ACTIVE_SERIES_DENSE_EVIDENCE_DIR/$tag/$asset"
+  else
+    fetch_url "$(active_series_release_url "$tag" "$asset")"
+  fi
+}
+
+github_tag_commit() {
+  # github_tag_commit <tag>
+  local tag="$1" tag_ref object_sha object_type
+  tag_ref="$(gh api "repos/${AGENT_REPO}/git/ref/tags/${tag}")" || return 1
+  object_sha="$(printf '%s\n' "$tag_ref" | jq -r '.object.sha // ""')"
+  object_type="$(printf '%s\n' "$tag_ref" | jq -r '.object.type // ""')"
+  case "$object_type" in
+    commit)
+      printf '%s' "$object_sha"
+      ;;
+    tag)
+      gh api "repos/${AGENT_REPO}/git/tags/${object_sha}" --jq .object.sha
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+active_series_dense_lineage_audit() {
+  # active_series_dense_lineage_audit <releases_json>
+  #
+  # Proves that an active trusted-series train that reached the dense threshold
+  # is an intentional, contiguous, signed release lineage rather than a moving
+  # or abandoned release surface. The seed release (v0.3.0 today) may predate
+  # repo-level GitHub release immutability, but every later trusted-series
+  # release must be immutable and chain to the previous release.
+  local releases_json="$1"
+  local trusted_regex="$AGENT_RELEASE_TRUSTED_SERIES_REGEX"
+  local boundary="$AGENT_RELEASE_TRUSTED_LINEAGE_STARTED_AT"
+  local dense_threshold="$AGENT_RELEASE_ACTIVE_SERIES_DENSE_THRESHOLD"
+  local series_tsv active_count stable_count first_tag latest_tag reason
+
+  active_count="$(printf '%s\n' "$releases_json" | jq --arg regex "$trusted_regex" '
+    [ .[].tagName | select(test($regex)) ] | length')"
+  if [ "$active_count" -lt "$dense_threshold" ]; then
+    print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'not_required' "trusted_series=$AGENT_RELEASE_SERIES_LABEL active_count=$active_count threshold=$dense_threshold"
+    return 0
+  fi
+
+  if ! series_tsv="$(printf '%s\n' "$releases_json" | jq -r --arg regex "$trusted_regex" --arg boundary "$boundary" '
+    [ .[]
+      | select((.tagName // "") | test($regex))
+      | select((.isDraft // false | not) and (.isPrerelease // false | not))
+      | . + ((.tagName // "") | capture("^v(?<major>[0-9]+)\\.(?<minor>[0-9]+)\\.(?<patch>[0-9]+)$") | {patch:(.patch|tonumber)})
+    ]
+    | sort_by(.patch)
+    | .[]
+    | [.tagName, (.isImmutable // false | tostring), (.publishedAt // ""), (.patch | tostring)]
+    | @tsv')" ; then
+    print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL reason=trusted-series-release-list-parse-failed"
+    return 1
+  fi
+
+  stable_count="$(printf '%s\n' "$series_tsv" | awk 'NF { count++ } END { print count + 0 }')"
+  if [ "$stable_count" -eq 0 ]; then
+    print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL active_count=$active_count stable_count=$stable_count reason=no-stable-trusted-series-releases"
+    return 1
+  fi
+  if [ "$stable_count" -ne "$active_count" ]; then
+    print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL active_count=$active_count stable_count=$stable_count reason=trusted-series-dense-includes-draft-or-prerelease"
+    return 1
+  fi
+
+  first_tag="$(printf '%s\n' "$series_tsv" | awk -F '\t' 'NF { print $1; exit }')"
+  latest_tag="$(printf '%s\n' "$series_tsv" | awk -F '\t' 'NF { tag = $1 } END { print tag }')"
+
+  local expected_patch="" previous_tag="" previous_manifest_tag="" previous_release_tag=""
+  local tag is_immutable published_at patch manifest sums
+  local release_tag previous_release release_class source_commit workflow_run_id
+  local agent_sha zip_sha signer_thumbprint signing_tier artifact_digest artifact_ref
+  local sum_agent_sha sum_zip_sha tag_commit
+  local seed_nonimmutable_allowed=0
+  local required_names=(endpoint-agent.exe bootstrap-package.ps1 install.ps1 uninstall.ps1 EndpointAgent.zip EndpointAgent.zip.sha256 release-manifest.json)
+  local asset
+
+  while IFS=$'\t' read -r tag is_immutable published_at patch; do
+    [ -z "$tag" ] && continue
+
+    if ! printf '%s\n' "$tag" | grep -Eq "$trusted_regex"; then
+      reason="tag-outside-trusted-series:$tag"
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL reason=$reason"
+      return 1
+    fi
+
+    if [ -z "$expected_patch" ]; then
+      expected_patch="$patch"
+      if [ "$patch" != "0" ]; then
+        print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL first=$tag reason=first-trusted-series-release-not-patch-zero"
+        return 1
+      fi
+    elif [ "$patch" != "$expected_patch" ]; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag expected_patch=$expected_patch actual_patch=$patch reason=non-contiguous-patch-lineage"
+      return 1
+    fi
+    expected_patch=$((expected_patch + 1))
+
+    if [ "$is_immutable" != "true" ]; then
+      if [ "$tag" = "$first_tag" ] && [ "$patch" = "0" ] && [ "$published_at" = "$boundary" ]; then
+        seed_nonimmutable_allowed=1
+      else
+        print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag isImmutable=$is_immutable reason=non-seed-release-not-immutable"
+        return 1
+      fi
+    fi
+
+    if ! manifest="$(fetch_active_series_asset "$tag" 'release-manifest.json' 2>&1)"; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag reason=manifest-fetch-failed:$(printf '%q' "$manifest")"
+      return 1
+    fi
+    if ! sums="$(fetch_active_series_asset "$tag" 'SHA256SUMS' 2>&1)"; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag reason=sha256sums-fetch-failed:$(printf '%q' "$sums")"
+      return 1
+    fi
+
+    release_tag="$(printf '%s\n' "$manifest" | jq -r '.release_tag // ""')"
+    previous_release="$(printf '%s\n' "$manifest" | jq -r '.previous_release // ""')"
+    release_class="$(printf '%s\n' "$manifest" | jq -r '.release_class // ""')"
+    source_commit="$(printf '%s\n' "$manifest" | jq -r '.source_commit // ""')"
+    workflow_run_id="$(printf '%s\n' "$manifest" | jq -r '.workflow_run_id // ""')"
+    agent_sha="$(printf '%s\n' "$manifest" | jq -r '.endpoint_agent_sha256 // ""')"
+    zip_sha="$(printf '%s\n' "$manifest" | jq -r '.endpoint_agent_zip_sha256 // ""')"
+    signer_thumbprint="$(printf '%s\n' "$manifest" | jq -r '.signer_thumbprint // ""')"
+    signing_tier="$(printf '%s\n' "$manifest" | jq -r '.signing_tier // ""')"
+    artifact_digest="$(printf '%s\n' "$manifest" | jq -r '.artifact_host_digest // ""')"
+    artifact_ref="$(printf '%s\n' "$manifest" | jq -r '.artifact_host_image_ref // ""')"
+
+    if [ "$release_tag" != "$tag" ]; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag manifest_release_tag=$release_tag reason=manifest-tag-mismatch"
+      return 1
+    fi
+    if [ -n "$previous_tag" ] && [ "$previous_release" != "$previous_tag" ]; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag previous_release=$previous_release expected_previous=$previous_tag reason=previous-release-chain-break"
+      return 1
+    fi
+    if [ -z "$previous_tag" ] && printf '%s\n' "$previous_release" | grep -Eq "$trusted_regex"; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag previous_release=$previous_release reason=seed-previous-release-inside-trusted-series"
+      return 1
+    fi
+    if [ "$release_class" != "bounded-pilot" ] && [ "$release_class" != "rollout-candidate" ]; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag release_class=$release_class reason=unexpected-release-class"
+      return 1
+    fi
+    if ! printf '%s\n' "$source_commit" | grep -Eq '^[a-f0-9]{40}$'; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag reason=bad-source-commit"
+      return 1
+    fi
+    if ! printf '%s\n' "$workflow_run_id" | grep -Eq '^[0-9]+$'; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag reason=bad-workflow-run-id"
+      return 1
+    fi
+    if ! printf '%s\n' "$agent_sha" | grep -Eq '^[a-f0-9]{64}$' \
+      || ! printf '%s\n' "$zip_sha" | grep -Eq '^[a-f0-9]{64}$'; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag reason=bad-asset-sha"
+      return 1
+    fi
+    if [ "$signer_thumbprint" != "$EXPECTED_SIGNER_THUMBPRINT" ] || [ "$signing_tier" != "$EXPECTED_SIGNING_TIER" ]; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag thumbprint=$signer_thumbprint tier=$signing_tier reason=signer-mismatch"
+      return 1
+    fi
+    if ! printf '%s\n' "$artifact_digest" | grep -Eq '^sha256:[a-f0-9]{64}$' \
+      || ! printf '%s\n' "$artifact_ref" | grep -q "$artifact_digest" \
+      || ! printf '%s\n' "$artifact_ref" | grep -q ":$tag@"; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag reason=artifact-host-ref-mismatch"
+      return 1
+    fi
+
+    for asset in "${required_names[@]}"; do
+      if ! sha_from_sums "$asset" "$sums" >/dev/null 2>&1; then
+        print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag missing_asset=$asset reason=sha256sums-coverage"
+        return 1
+      fi
+    done
+    sum_agent_sha="$(sha_from_sums 'endpoint-agent.exe' "$sums")"
+    sum_zip_sha="$(sha_from_sums 'EndpointAgent.zip' "$sums")"
+    if [ "$sum_agent_sha" != "$agent_sha" ] || [ "$sum_zip_sha" != "$zip_sha" ]; then
+      print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag reason=manifest-sha256sums-mismatch"
+      return 1
+    fi
+
+    if [ "${ACTIVE_SERIES_DENSE_SKIP_TAG_REF:-0}" != "1" ]; then
+      if ! tag_commit="$(github_tag_commit "$tag" 2>&1)"; then
+        print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag reason=tag-ref-read-failed:$(printf '%q' "$tag_commit")"
+        return 1
+      fi
+      if [ "$tag_commit" != "$source_commit" ]; then
+        print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'blocked' "trusted_series=$AGENT_RELEASE_SERIES_LABEL tag=$tag commit=$tag_commit manifest_source_commit=$source_commit reason=tag-source-commit-mismatch"
+        return 1
+      fi
+    fi
+
+    previous_manifest_tag="$release_tag"
+    previous_release_tag="$previous_release"
+    previous_tag="$tag"
+  done <<<"$series_tsv"
+
+  print_check 'ACTIVE_SERIES_DENSE_LINEAGE_AUDIT' 'pass' "trusted_series=$AGENT_RELEASE_SERIES_LABEL active_count=$active_count threshold=$dense_threshold first=$first_tag latest=$latest_tag seed_nonimmutable_allowed=$seed_nonimmutable_allowed last_previous_release=$previous_release_tag last_manifest_tag=$previous_manifest_tag"
+  return 0
+}
+
 main() {
   need gh
   need jq
@@ -414,17 +659,38 @@ main() {
   fi
 
   # Release-train graduation/hygiene (pure, decoupled from the deploy pin).
-  local train_output train_verdict train_findings
+  local train_output train_verdict train_findings dense_lineage_resolved dense_active_count
   if train_output="$(release_train_verdict "$releases")"; then
     :
   fi
-  printf '%s\n' "$train_output" | grep -E '^GITHUB_RELEASE_' || true
   train_verdict="$(printf '%s\n' "$train_output" | awk -F= '$1 == "RELEASE_TRAIN_VERDICT" { v = $2 } END { print v }')"
   train_findings="$(printf '%s\n' "$train_output" | awk -F= '$1 == "RELEASE_TRAIN_WAIVER_FINDINGS" { v = substr($0, length("RELEASE_TRAIN_WAIVER_FINDINGS=") + 1) } END { print v }')"
+  dense_lineage_resolved=0
+  if csv_has "$train_findings" 'GITHUB_RELEASE_ACTIVE_SERIES_DENSE'; then
+    # The pure train verdict deliberately marks a dense active series as
+    # hygiene. Main resolves that finding only when the full live lineage audit
+    # proves the active trusted train is contiguous, signed, checksummed, and
+    # tag-bound. Suppress the intermediate needs_hygiene line so the final audit
+    # output contains a single authoritative status for this check.
+    printf '%s\n' "$train_output" | grep -E '^GITHUB_RELEASE_' | grep -v '^GITHUB_RELEASE_ACTIVE_SERIES_DENSE=' || true
+    if active_series_dense_lineage_audit "$releases"; then
+      dense_lineage_resolved=1
+      dense_active_count="$(printf '%s\n' "$releases" | jq --arg regex "$AGENT_RELEASE_TRUSTED_SERIES_REGEX" '[ .[].tagName | select(test($regex)) ] | length')"
+      print_check 'GITHUB_RELEASE_ACTIVE_SERIES_DENSE' 'pass' "trusted_series=$AGENT_RELEASE_SERIES_LABEL active_count=$dense_active_count threshold=$AGENT_RELEASE_ACTIVE_SERIES_DENSE_THRESHOLD resolved_by=lineage-audit"
+    else
+      dense_active_count="$(printf '%s\n' "$releases" | jq --arg regex "$AGENT_RELEASE_TRUSTED_SERIES_REGEX" '[ .[].tagName | select(test($regex)) ] | length')"
+      print_check 'GITHUB_RELEASE_ACTIVE_SERIES_DENSE' 'needs_hygiene' "trusted_series=$AGENT_RELEASE_SERIES_LABEL active_count=$dense_active_count threshold=$AGENT_RELEASE_ACTIVE_SERIES_DENSE_THRESHOLD reason=active-series-dense-lineage-audit-blocked"
+    fi
+  else
+    printf '%s\n' "$train_output" | grep -E '^GITHUB_RELEASE_' || true
+  fi
   case "$train_verdict" in
     pass) : ;;
     needs_hygiene)
-      needs_hygiene=1
+      if [ "$dense_lineage_resolved" -eq 1 ]; then
+        train_findings="$(csv_without "$train_findings" 'GITHUB_RELEASE_ACTIVE_SERIES_DENSE')"
+      fi
+      [ -z "$train_findings" ] || needs_hygiene=1
       if [ -n "$train_findings" ]; then
         local _f
         IFS=',' read -r -a _f <<<"$train_findings"
