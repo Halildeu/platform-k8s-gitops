@@ -141,8 +141,15 @@ images:
     # only a real WAV container returns 200). The gateway now synthesizes a canonical
     # WAV header (session sampleRateHz/channels, 16-bit signed LE) and forwards as
     # audio/wav, so direct_stt_success can finally increment. Codex 019f131e AGREE.
+    # 2026-06-30 update: sha-e08bd25 (platform-backend#782) adds owner-scoped
+    # direct-STT transcript delivery endpoints:
+    # GET /api/v1/audio-gateway/sessions/{sessionId}/transcript-events and SSE
+    # /stream, reading transcript:direct-stt-results with tenant/user/session
+    # filtering plus PII-safe transcript access audit. Required for desktop
+    # live transcript rendering (platform-desktop#33). Image build evidence:
+    # platform-backend run 28453628121, audio-gateway-service digest below.
     # D30 immutable digest pin.
-    digest: sha256:5f08b14dcbd5b923f7320bbc8c016c1096b322dd8489a899cded62f97b7107af
+    digest: sha256:0629130846f0da06f171b69ae7abd75d9d65ecdf810ba0dd4e4841cd2d46a6c8
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
