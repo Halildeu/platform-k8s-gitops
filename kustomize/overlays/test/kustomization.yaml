@@ -146,10 +146,12 @@ images:
     # GET /api/v1/audio-gateway/sessions/{sessionId}/transcript-events and SSE
     # /stream, reading transcript:direct-stt-results with tenant/user/session
     # filtering plus PII-safe transcript access audit. Required for desktop
-    # live transcript rendering (platform-desktop#33). Image build evidence:
-    # platform-backend run 28453628121, audio-gateway-service digest below.
+    # live transcript rendering (platform-desktop#33). 2026-07-01 staging:
+    # platform-backend run 28478081048 from
+    # codex/faz24-audio-gateway-window5-image-20260701@a3e01dd188cb;
+    # latest_pushed=false; audio-gateway-service digest below.
     # D30 immutable digest pin.
-    digest: sha256:0629130846f0da06f171b69ae7abd75d9d65ecdf810ba0dd4e4841cd2d46a6c8
+    digest: sha256:9a3f3a83c023a483b872a8c4c76795db9649d863b32db782570790161e33a7ce
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
