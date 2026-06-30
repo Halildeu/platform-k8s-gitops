@@ -1,8 +1,8 @@
 # RB-faz22.6 — Release Lineage Hygiene Audit
 
 > Status: ACTIVE hygiene gate, 2026-06-24.
-> Scope: EndpointAgent `v0.3.1` rollout-candidate / no-waiver release-lineage
-> release lineage for Faz 22.6.
+> Scope: EndpointAgent trusted `v0.3.x` release train plus the exact-pinned
+> `v0.3.1` bounded-pilot artifact-host deploy evidence for Faz 22.6.
 > Parent contract: `docs/runbooks/RB-faz22.6-autonomous-completion-contract.md`.
 
 This runbook defines the release-lineage checks that must be clean before
@@ -90,17 +90,30 @@ Hygiene findings:
 - Faz 22.6 #1939 reworked the release-train portion of the audit (see §3.2).
   The train is now evaluated against the latest STABLE release on the trusted
   `v0.3` series, decoupled from the deployed bounded-pilot `v0.3.1` pin. With
-  the live train (latest stable `v0.3.3`, four `v0.3.x` releases below the
-  dense threshold, zero frozen-series regressions) the train checks print
+  the earlier live train (latest stable `v0.3.3`, four `v0.3.x` releases below
+  the dense threshold, zero frozen-series regressions) the train checks printed
   `GITHUB_RELEASE_TRAIN_SERIES=pass`, `GITHUB_RELEASE_LATEST_POINTER=pass`,
   `GITHUB_RELEASE_FROZEN_SERIES_REGRESSION=pass`, and
   `GITHUB_RELEASE_ACTIVE_SERIES_DENSE=pass`.
+- On 2026-07-01 the active trusted series reached the dense threshold with
+  `v0.3.0` through `v0.3.7`. The audit now resolves
+  `GITHUB_RELEASE_ACTIVE_SERIES_DENSE` through a non-waiver lineage audit:
+  `ACTIVE_SERIES_DENSE_LINEAGE_AUDIT=pass trusted_series=v0.3 active_count=8
+  threshold=8 first=v0.3.0 latest=v0.3.7 seed_nonimmutable_allowed=1
+  last_previous_release=v0.3.6 last_manifest_tag=v0.3.7`, followed by
+  `GITHUB_RELEASE_ACTIVE_SERIES_DENSE=pass ... resolved_by=lineage-audit`.
+  This keeps dense-train hygiene fail-closed without requiring the bounded-pilot
+  waiver path when the full trusted-series chain is machine-verifiable.
 - The historical dense `v0.2.x` pilot-recovery train and immutable=false
   `v0.3.0` release object remain historical evidence. They are no longer a
   release-lineage hygiene blocker: the rework only counts `v0.2.x` releases
   published at or after the trusted-lineage boundary
   (`2026-06-24T09:04:29Z`) as a regression, so the pre-boundary recovery train
-  is never counted and is never deleted.
+  is never counted and is never deleted. The patch-zero trusted-series seed
+  (`v0.3.0`) is the only allowed `isImmutable=false` trusted-series release,
+  and only because it exactly matches the trusted-lineage boundary and points
+  back to the frozen `v0.2` line. Every later trusted-series release must be
+  immutable.
 
 ## 3. Audit Command
 
@@ -178,11 +191,20 @@ count), which false-blocked completion once the agent graduated to the signed
     series → `needs_hygiene`. Historical `v0.2.x` before the boundary are fine
     and are never counted or deleted.
   - `GITHUB_RELEASE_ACTIVE_SERIES_DENSE` — if the count of trusted-series
-    releases in the window is `>= active_series_dense_threshold` (`8`), this is
-    `needs_hygiene` with reason
-    `active-series-dense-requires-lineage-audit-or-waiver`. It is never
-    auto-passed and never triggers a delete; it requires a lineage audit or
-    waiver.
+    releases in the window is `>= active_series_dense_threshold` (`8`), the
+    pure train verdict flags hygiene with reason
+    `active-series-dense-requires-lineage-audit-or-waiver`. The live audit then
+    runs `ACTIVE_SERIES_DENSE_LINEAGE_AUDIT`. It prints pass only when the
+    trusted series is contiguous from patch zero, every non-seed release is a
+    GitHub-immutable stable release, each release manifest points to the
+    previous tag, required manifest fields are populated, signer/tier match the
+    policy, artifact-host refs are digest-bound to the same tag, SHA256SUMS
+    covers the required seven assets, manifest ZIP/executable hashes match
+    SHA256SUMS, and tag source commits match manifest `source_commit`. If this
+    audit passes, `GITHUB_RELEASE_ACTIVE_SERIES_DENSE=pass
+    resolved_by=lineage-audit`; if it fails, the hygiene finding remains and
+    requires the bounded-pilot waiver path. Dense active series is never
+    auto-passed and never triggers delete.
 
 `release_train_verdict` is offline-testable on its own
 (`tests/faz22_remote_ops/test_faz22_6_release_train_verdict.sh`, gated by
@@ -239,6 +261,8 @@ production rollout ready until the audit prints `F22_6_RELEASE_LINEAGE=pass`.
 - current artifact-host manifest parity for served payload fields, without
   requiring a self-referential image digest;
 - explicit source commit and workflow/run provenance in the release record;
+- if the trusted active series reaches the dense threshold, a passing
+  `ACTIVE_SERIES_DENSE_LINEAGE_AUDIT` or a bounded-pilot-only waiver;
 - no unresolved release-lineage hygiene finding. A bounded-pilot waiver does
   not produce `F22_6_RELEASE_LINEAGE=pass`; it produces
   `F22_6_RELEASE_LINEAGE=bounded_pilot_pass` and keeps broad rollout language
