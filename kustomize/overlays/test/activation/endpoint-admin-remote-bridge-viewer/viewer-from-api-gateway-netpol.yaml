@@ -1,0 +1,34 @@
+# control #6 (viewer) — ADDITIVE ingress allow: 8096 from api-gateway pods ONLY.
+#
+# A SEPARATE NetworkPolicy from the broker's eab-bridge-allow-ingress-9444.
+# NetworkPolicies are additive (the union of all allows applies), so this adds
+# 8096-from-api-gateway WITHOUT touching the 9444 rule, and withdrawing this single
+# manifest cleanly removes the 8096 allow (Mode B rollback).
+#
+# The broker's 9444 rule is explicitly "Never api-gateway" (that path is agent
+# mTLS/gRPC). The operator VIEW_ONLY HTTP path on 8096 is a DISTINCT trust basis
+# (api-gateway-fronted operator JWT), so api-gateway is the ONLY permitted 8096
+# source — not the agent/orchestrator/edge sources, not part-of=platform.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-bridge-viewer-allow-ingress-8096-from-api-gateway
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/part-of: remote-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # ONLY the api-gateway pods (same namespace). Narrow pod label, not
+        # part-of=platform, and not the 9444 agent/orchestrator/edge sources.
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8096

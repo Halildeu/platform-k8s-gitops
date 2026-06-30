@@ -1,0 +1,18 @@
+# Viewer enable patch — Faz 22.6 #1580 VIEW_ONLY.
+#
+# Strategic-merge ADDS two keys to endpoint-admin-remote-bridge-config (produced by
+# the broker activation overlay). Does NOT touch REMOTE_BRIDGE_ENABLED (the broker
+# gate, set by ../endpoint-admin-remote-bridge/patch-activate.yaml) or
+# REMOTE_BRIDGE_OPERATOR_REST_ENABLED (already true in the broker config).
+#
+#   - REMOTE_BRIDGE_VIEWER_ENABLED          → @ConditionalOnProperty gate for the
+#     RemoteBridgeViewerController (operator SSE viewer). Separate from operator-rest.
+#   - REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES → pilot defense-in-depth:
+#     narrow the slice-1 png|jpeg|webp default to png-only for the bounded pilot.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-admin-remote-bridge-config
+data:
+  REMOTE_BRIDGE_VIEWER_ENABLED: "true"
+  REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES: "image/png"
