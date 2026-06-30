@@ -149,7 +149,7 @@ images:
     # live transcript rendering (platform-desktop#33). Image build evidence:
     # platform-backend run 28453628121, audio-gateway-service digest below.
     # D30 immutable digest pin.
-    digest: sha256:0629130846f0da06f171b69ae7abd75d9d65ecdf810ba0dd4e4841cd2d46a6c8
+    digest: sha256:9a3f3a83c023a483b872a8c4c76795db9649d863b32db782570790161e33a7ce
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
