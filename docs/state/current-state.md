@@ -1,5 +1,61 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 completion audit SSH mode repaired; remote-bridge reconciled to rendered SSOT (2026-06-30)
+
+Codex reran the Faz 22.6 completion audit from a clean `origin/main` worktree and
+found a shell/runtime bug in the Mac-to-`staging-sw` SSH path before the audit
+could evaluate live truth: both `faz22-6-completion-audit.sh` and
+`faz22-6-release-lineage-audit.sh` expanded an empty `SSH_OPTS` array under
+`set -u`, producing `opts[@]: unbound variable`. The fix keeps non-empty
+operator-provided `SSH_OPTS` behavior but calls `ssh "$target" "$remote_cmd"`
+without an empty array expansion when no options are set. The regression test now
+covers both non-empty and empty `SSH_OPTS` for the completion and release-lineage
+audit helpers.
+
+After the SSH-mode audit path was usable, the live completion audit exposed a real
+desired-vs-live drift rather than a stale literal problem:
+
+- rendered remote-bridge SSOT digest:
+  `sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba`
+- live primary `endpoint-admin-service` digest: `ef3193b...`
+- live `endpoint-admin-remote-bridge` digest before reconciliation:
+  `sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842`
+
+Codex then applied the rendered owner-gated activation overlay to the test
+cluster through the same GitOps overlay path, not by `kubectl set image` or an
+imperative deployment patch:
+
+```bash
+kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge \
+  | ssh staging-sw "kubectl --context k3d-test -n platform-test apply -f -"
+```
+
+Live evidence after rollout:
+
+- `platform-test/endpoint-admin-service`: `ready=1/1`, `updated=1`,
+  `available=1`, image digest `sha256:ef3193...`
+- `platform-test/endpoint-admin-remote-bridge`: `ready=1/1`, `updated=1`,
+  `available=1`, image digest `sha256:ef3193...`
+- matching pods are `Ready=true`, `restartCount=0`, and `imageID` equals
+  `sha256:ef3193...`
+- remote-bridge ExternalSecrets `endpoint-admin-remote-bridge-secrets`,
+  `endpoint-admin-remote-bridge-signer`, and
+  `endpoint-admin-remote-bridge-tls` are all `Ready=True / SecretSynced`
+
+The refreshed audit now reports:
+
+```text
+REMOTE_BRIDGE_LIVE=pass mode=ssh expected_source=rendered-overlay expected_digest=sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba
+RELEASE_LINEAGE_GATE=pass mode=ssh status=pass
+F22_6_COMPLETION=blocked
+F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required
+```
+
+Boundary: this is a test-cluster reconciliation and audit-path repair only. It
+does not satisfy #548 B1.4 hardware/device-key acceptance, #1580 VIEW_ONLY
+engineering acceptance, KVKK attended sign-off, production readiness, broad
+rollout, or final Faz 22.6 completion.
+
 ## Live Delta — Direct-STT Gate 2 collector path after test enablement (2026-06-29)
 
 Live truth changed after the older Gate 1 entries below. PR #2170 merged to
