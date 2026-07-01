@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6 latest audit/decision package plus AgentPC2 TPM binding gap confirmed (2026-07-01)
+## Live Delta — Faz 22.6 latest main audit/decision package plus AgentPC2 TPM binding gap confirmed (2026-07-01)
 
 After the A1 host/Vault/device-key broker proof, Codex reran the completion
 audit and regenerated the read-only decision package from that fresh audit.
@@ -8,8 +8,8 @@ audit and regenerated the read-only decision package from that fresh audit.
 Latest audit and decision package:
 
 - Live audit:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28514716022`
-  (`headSha=bf5493cc42394e781ceb7cb8467a4baaec368726`), result `success`.
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28515537389`
+  (`headSha=4cde2548d1ebefa36e6a33654ba1d973c8d4d613`), result `success`.
 - The live audit passed operation catalog, approved script runner,
   constrained executor, remote bridge live, release lineage, and the
   release-lineage gate.
@@ -19,10 +19,10 @@ Latest audit and decision package:
 - The required next evidence packages are the B1.4 acceptance package and the
   VIEW_ONLY engineering evidence package.
 - Decision package workflow:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28514792708`
-  (`headSha=bf5493cc42394e781ceb7cb8467a4baaec368726`), result `success`.
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28515615758`
+  (`headSha=4cde2548d1ebefa36e6a33654ba1d973c8d4d613`), result `success`.
 - Artifact:
-  `faz22-6-completion-decision-package-28514716022`.
+  `faz22-6-completion-decision-package-28515537389`.
 - Decision package output:
   `completion.status=blocked` and
   `completion.next_required=[b1-4-acceptance-package-required, view-only-engineering-evidence-package-required]`.
