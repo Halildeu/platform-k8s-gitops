@@ -1,5 +1,67 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT recorder path bounded-latency test state (2026-07-01)
+
+Faz 24 Meeting Intelligence desktop recorder path now has a live direct-STT test
+chain on `staging-sw` / `k3d-test` / platform-ai GPU host, with the product
+surface still under acceptance.
+
+Source and PR chain:
+
+- `platform-desktop#34` is open with passing CI and adds the Electron recorder
+  product surface for live transcript, newest-first transcript ordering,
+  source transcript export, transient transcript-poll timeout handling, and
+  direct live stream status visibility.
+- `platform-ai#233` is open with passing CI and adds live-STT partial cadence plus
+  low-confidence/no-speech filtering for sync `/transcribe` segments.
+- `platform-k8s-gitops#2199` is open with passing CI and pins
+  `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=12000` in desired-state for
+  audio-gateway test overlay, plus a pod-template annotation bump to force
+  rollout.
+
+Live test evidence:
+
+- `audio-gateway` test pod
+  `audio-gateway-85c4fbbb85-kvt8b` is `Running` / container ready.
+- The live pod env currently reports
+  `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=12000`.
+- platform-ai GPU host `SRB-AIDENETIMPC` is running
+  `platform-ai-live-stt` on commit `bf5a9f6` from
+  `feat/faz-24-live-stt-stream-partial-cadence`.
+- GPU host `/health` reports
+  `{"status":"ok","version":"0.1.0","model":"medium","device":"cuda","compute_type":"float16"}`.
+- Local Electron dev run was restarted from
+  `platform-desktop` branch `codex/faz24-runtime-main-20260630`, with Vite on
+  `127.0.0.1:5173`.
+
+Runtime findings that drove the change:
+
+- Older audio-gateway runtime had
+  `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=180000`, while 5s live draft
+  windows were surfacing delayed STT responses tens of seconds later.
+- audio-gateway logs showed direct-STT responses around 25s-43s and
+  `maxInFlight=2` saturation; stale late windows could appear as incorrect
+  transcript rows in the desktop surface.
+- The desktop main process must be restarted after transcript gateway client
+  changes; renderer hot reload alone can leave the old 15s poll timeout path in
+  use.
+
+Boundary:
+
+- This is a test-state direct-STT/product-surface advance, not final Faz 24
+  acceptance. `platform-desktop#34`, `platform-ai#233`, and
+  `platform-k8s-gitops#2199` still need their normal merge/reconcile path before
+  this becomes durable desired-state.
+- The temporary GPU host branch deploy is a test-host mutation for live
+  validation. Durable GPU deploy remains tied to the repo's normal
+  `origin/main` mirror update discipline after PR merge.
+- The 12s timeout is live on the audio-gateway deployment env and desired-state
+  is present in `#2199`; until merge/reconcile, ArgoCD can still make live state
+  drift from desired-state.
+- Direct browser/client-to-platform-ai is not a production architecture target.
+  Word-progressive transcript UX should be carried through the gateway-owned
+  stream path; local direct stream remains a dev/diagnostic acceleration path.
+
 ## Live Delta — Faz 22.6 #1580 VIEW_ONLY viewer pilot workflow merged; dry-run proven; gate still marker-blocked (2026-07-01)
 
 The VIEW_ONLY operator viewer pilot enable path is now workflow-backed instead
