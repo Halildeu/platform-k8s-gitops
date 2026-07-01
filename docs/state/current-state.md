@@ -68,6 +68,39 @@ AgentPC2 endpoint-local access boundary:
   remains an endpoint-local elevated PowerShell operator action. Cluster,
   GitHub, evidence packaging, and marker helper work remain agent-doable.
 
+B1.4/#548 device-key broker activation dry-run readiness:
+
+- `apply-device-key-remote-bridge-activation.yml` dry-run workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28518156307`
+  succeeded on main SHA `e38078d33971135b3880a230e7fe85db6d85a87f`.
+- Runner/job evidence: self-hosted `staging-sw-testai-deploy`; job
+  `84535034803` completed successfully.
+- Dispatch input validation passed with
+  `confirm=APPLY_DEVICE_KEY_REMOTE_BRIDGE_ACTIVATION`, `dry_run=true`, and no
+  operator-provided digest override.
+- Render guard passed for
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live`:
+  `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER=DEVICE_KEY_ATTESTATION_REAL`,
+  `REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED=false`, no bounded pilot
+  risk-acceptance flag, public SNI
+  `remote-bridge-mtls.testai.acik.com`, backend service
+  `endpoint-admin-remote-bridge-device-key:9444`, and rollout strategy
+  `maxSurge=0` / `maxUnavailable=1`.
+- The rendered endpoint-admin-service digest was derived from the overlay as
+  `sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- Kubernetes server-side dry-run against `k3d-test/platform-test` passed:
+  the device-key service account, ConfigMap, Service, Deployment,
+  ExternalSecrets, SNI Ingress, and device-key NetworkPolicies rendered as
+  valid server-side objects.
+- Apply, rollout, live imageID check, and live SNI backend verification were
+  intentionally skipped because this run was dry-run only.
+- Boundary: this proves the owner-gated #548 device-key broker activation is
+  render-valid and server-side-dry-run-valid on the test cluster. It does not
+  apply the dedicated broker, does not run AgentPC2 TPM auto-enroll, does not
+  create a TPM binding row, does not run the hardware-key session, does not
+  produce the `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker, and does
+  not satisfy #548.
+
 VIEW_ONLY viewer pilot-surface dry-run readiness:
 
 - `apply-view-only-viewer-pilot-enable.yml` dry-run workflow
