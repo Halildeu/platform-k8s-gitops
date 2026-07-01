@@ -4,9 +4,11 @@ on:
   pull_request:
     paths:
       - '.github/workflows/gate-faz22-view-only-evidence-verifier.yml'
+      - '.github/workflows/faz22-6-view-only-engineering-evidence-package.yml'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh'
+      - 'scripts/test/faz22-6-acceptance-package-workflows-static.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh'
@@ -15,9 +17,11 @@ on:
       - main
     paths:
       - '.github/workflows/gate-faz22-view-only-evidence-verifier.yml'
+      - '.github/workflows/faz22-6-view-only-engineering-evidence-package.yml'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh'
+      - 'scripts/test/faz22-6-acceptance-package-workflows-static.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
 
@@ -44,6 +48,7 @@ jobs:
           bash -n \
             scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
             scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh \
+            scripts/test/faz22-6-acceptance-package-workflows-static.sh \
             tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh \
             tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh \
             tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh

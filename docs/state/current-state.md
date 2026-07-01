@@ -1,5 +1,29 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 acceptance package workflow surface added in GitOps (2026-07-01)
+
+Codex added artifact-only package workflows for the two acceptance markers that
+the latest Faz 22.6 audit still requires:
+
+- `faz22-6-b1-4-acceptance-package.yml` packages either the strong
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker or the bounded
+  `F22_6_B1_4_RISK_ACCEPTANCE: v1` marker after explicit owner/evidence
+  acknowledgements.
+- `faz22-6-view-only-engineering-evidence-package.yml` packages the
+  disabled-mode metadata manifest plus matching
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` marker after explicit engineering-control
+  acknowledgement.
+- Both workflows are artifact-only: `permissions: contents: read`, no secrets,
+  no `kubectl`, no issue writes, and no production mutation.
+- Static guard:
+  `scripts/test/faz22-6-acceptance-package-workflows-static.sh`.
+
+Boundary: these workflows remove manual marker-format drift after real
+owner/evidence decisions exist. They do not create AgentPC2 TPM evidence, do
+not apply the #548 device-key broker, do not start a VIEW_ONLY pilot, do not
+write `platform-backend#548` or `platform-k8s-gitops#1580`, and do not satisfy
+`F22_6_COMPLETION` by themselves.
+
 ## Live Delta — Faz 22.6 latest main audit/decision package plus AgentPC2 TPM binding gap confirmed (2026-07-01)
 
 After the A1 host/Vault/device-key broker proof, Codex reran the completion
