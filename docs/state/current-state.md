@@ -8,8 +8,8 @@ audit and regenerated the read-only decision package from that fresh audit.
 Latest audit and decision package:
 
 - Live audit:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28515537389`
-  (`headSha=4cde2548d1ebefa36e6a33654ba1d973c8d4d613`), result `success`.
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28517349270`
+  (`headSha=28e2c854eb7fda8ef7ef0f61c41f715820ae07cd`), result `success`.
 - The live audit passed operation catalog, approved script runner,
   constrained executor, remote bridge live, release lineage, and the
   release-lineage gate.
@@ -19,10 +19,10 @@ Latest audit and decision package:
 - The required next evidence packages are the B1.4 acceptance package and the
   VIEW_ONLY engineering evidence package.
 - Decision package workflow:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28515615758`
-  (`headSha=4cde2548d1ebefa36e6a33654ba1d973c8d4d613`), result `success`.
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28517585327`
+  (`headSha=28e2c854eb7fda8ef7ef0f61c41f715820ae07cd`), result `success`.
 - Artifact:
-  `faz22-6-completion-decision-package-28515537389`.
+  `faz22-6-completion-decision-package-28517349270`.
 - Decision package output:
   `completion.status=blocked` and
   `completion.next_required=[b1-4-acceptance-package-required, view-only-engineering-evidence-package-required]`.
@@ -54,6 +54,19 @@ AgentPC2 TPM auto-enroll packet readiness:
   a binding row, does not run the device-key broker session, and does not
   satisfy #548. It only removes the packet-preparation ambiguity for the
   next endpoint-local AgentPC2 TPM auto-enroll attempt.
+
+AgentPC2 endpoint-local access boundary:
+
+- Codex verified SSH access to `staging-sw` works for user `halil`; the user is
+  in `sudo` and `docker`.
+- `staging-sw` has WireGuard `wg0` with peer route `10.99.0.2/32`.
+- Read-only reachability checks from `staging-sw` to `10.99.0.2` found no open
+  management port on `22`, `5985`, `5986`, `3389`, or `445`, and one ICMP ping
+  probe received no reply.
+- Boundary: until AgentPC2 exposes an approved admin shell path (SSH, WinRM,
+  RDP, or an equivalent managed execution channel), the TPM auto-enroll command
+  remains an endpoint-local elevated PowerShell operator action. Cluster,
+  GitHub, evidence packaging, and marker helper work remain agent-doable.
 
 VIEW_ONLY viewer pilot-surface dry-run readiness:
 
