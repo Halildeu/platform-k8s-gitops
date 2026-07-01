@@ -100,10 +100,23 @@ Source and PR chain:
 
 Live test evidence:
 
-- `audio-gateway` test pod
-  `audio-gateway-85c4fbbb85-kvt8b` is `Running` / container ready.
-- The live pod env currently reports
-  `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=12000`.
+- Post-merge read-only `staging-sw` / `k3d-test` check found
+  `audio-gateway-78d8488cd5-5r6vs` `Running` / `1/1`, deployment
+  `generation=33`, `observedGeneration=33`, `updatedReplicas=1`,
+  `readyReplicas=1`, image
+  `ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:9a3f3a83c023a483b872a8c4c76795db9649d863b32db782570790161e33a7ce`.
+- The live pod env, read via `printenv` and filtered to non-secret Direct-STT
+  keys, reports:
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=true`,
+  `AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT=2`,
+  `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=12000`,
+  `AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_ENABLED=true`,
+  `AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_WINDOW_SECONDS=5`,
+  `AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_MAX_BUFFERED_SESSIONS=64`,
+  `AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_ENABLED=true`, and
+  `AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_KEY=transcript:direct-stt-results`.
+- `staging-sw` TCP probe to Denetim live-STT target
+  `10.99.0.2:8243` succeeds.
 - platform-ai GPU host `SRB-AIDENETIMPC` is running
   `platform-ai-live-stt` on commit `bf5a9f6` from
   `feat/faz-24-live-stt-stream-partial-cadence`.
@@ -139,11 +152,11 @@ Boundary:
 - The temporary GPU host branch deploy is a test-host mutation for live
   validation. Durable GPU deploy remains tied to the repo's normal
   `origin/main` mirror update discipline after PR merge.
-- The 12s timeout was previously observed on the audio-gateway deployment env
-  and is now present in merged desired-state. This delta did not prove live
-  ArgoCD reconcile or backend `#781` aggregation-image rollout; local kubectl
-  verification was unavailable because the active `docker-desktop` context API
-  refused `127.0.0.1:6443`.
+- The 12s timeout and aggregation/result-stream env are present in merged
+  desired-state and in the live `k3d-test` audio-gateway pod env. This proves
+  config rollout to the pod, but not backend `#781` aggregation-code/image
+  rollout: the deployed audio-gateway image digest is still the live runtime
+  image listed above, while `#781` remains a draft source PR.
 - Direct browser/client-to-platform-ai is not a production architecture target.
   Word-progressive transcript UX should be carried through the gateway-owned
   stream path; local direct stream remains a dev/diagnostic acceleration path.
