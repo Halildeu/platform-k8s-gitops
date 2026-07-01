@@ -27,6 +27,34 @@ Latest audit and decision package:
   `completion.status=blocked` and
   `completion.next_required=[b1-4-acceptance-package-required, view-only-engineering-evidence-package-required]`.
 
+AgentPC2 TPM auto-enroll packet readiness:
+
+- `platform-k8s-gitops#2214` merged at
+  `6fc3e6595fdf4af1b554c22527528b3165a5f20d`, adding the non-secret
+  AgentPC2 TPM auto-enroll packet generator, workflow-dispatch packet builder,
+  static guard, and #548 runbook correction for the real
+  `endpoint-agent.exe --auto-enroll-tpm --api-url ...` path.
+- Main workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28516699960`
+  succeeded and uploaded artifact
+  `faz22-6-agentpc2-tpm-autoenroll-28516699960`.
+- Downloaded artifact contents were verified locally as exactly:
+  `agentpc2-tpm-autoenroll.ps1`, `README.md`, `packet-manifest.json`, and
+  `SHA256SUMS`; `shasum -a 256 -c SHA256SUMS` passed for the generated files.
+- Artifact manifest targets `AgentPc2` /
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f`, API base
+  `https://testai.acik.com/api/v1/endpoint-agent`, and suffixes
+  `/enrollments/tpm/nonce` plus `/enrollments/tpm/attest`.
+- Secret hygiene remains bounded: artifact scan found no private-key,
+  bearer-token, password, secret, or long token pattern; manifest records
+  `enrollment_token_embedded=false`,
+  `raw_credential_material_included=false`, and token channel
+  `process environment on endpoint only`.
+- Boundary: this packet readiness does not run TPM enrollment, does not create
+  a binding row, does not run the device-key broker session, and does not
+  satisfy #548. It only removes the packet-preparation ambiguity for the
+  next endpoint-local AgentPC2 TPM auto-enroll attempt.
+
 AgentPC2 live product-channel state:
 
 - Product device:
