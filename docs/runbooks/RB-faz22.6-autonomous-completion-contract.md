@@ -162,6 +162,38 @@ create hardware evidence. It only prevents hand-written marker drift after a
 real owner decision exists. It rejects placeholder owners, invalid dates,
 expired risk windows, and `expires_at` on the hardware path.
 
+The same packaging contract is also available as an artifact-only GitHub
+Actions workflow:
+
+```bash
+gh workflow run faz22-6-b1-4-acceptance-package.yml \
+  --ref main \
+  -f mode=hardware \
+  -f confirm=PREPARE_FAZ22_6_B1_4_ACCEPTANCE_PACKAGE \
+  -f owner_decision_ack=ACK_REAL_HARDWARE_ATTESTATION_EVIDENCE_EXISTS \
+  -f owner_approved_by="<named owner>" \
+  -f approved_at=YYYY-MM-DD
+```
+
+For the bounded-risk path:
+
+```bash
+gh workflow run faz22-6-b1-4-acceptance-package.yml \
+  --ref main \
+  -f mode=risk \
+  -f confirm=PREPARE_FAZ22_6_B1_4_ACCEPTANCE_PACKAGE \
+  -f owner_decision_ack=ACK_BOUNDED_RISK_OWNER_ACCEPTED \
+  -f owner_approved_by="<named owner>" \
+  -f approved_at=YYYY-MM-DD \
+  -f expires_at=YYYY-MM-DD
+```
+
+The workflow uploads a marker artifact plus `package-manifest.json` and
+`SHA256SUMS`. It uses `permissions: contents: read`, does not read secrets, does
+not run `kubectl`, and does not write `platform-backend#548`. The owner still
+has to verify the real evidence and post the generated marker to the canonical
+gate issue.
+
 ### 4.2 VIEW_ONLY Screen-Share Acceptance (ADR-0044 split: ENGINEERING + KVKK)
 
 `platform-k8s-gitops#1580` is split into two markers ([ADR-0044](../adr/0044-faz22-6-kvkk-nonblocking-parametric-durations.md)):
@@ -256,6 +288,30 @@ manifest is metadata-only: do not publish raw screen frames, credentials,
 private endpoint identifiers, personal data, or operator tokens. Store sensitive
 recording material in the approved WORM location and expose only redacted
 references and hashes.
+
+The disabled-mode engineering package can also be produced by the artifact-only
+workflow:
+
+```bash
+gh workflow run faz22-6-view-only-engineering-evidence-package.yml \
+  --ref main \
+  -f confirm=PREPARE_FAZ22_6_VIEW_ONLY_ENGINEERING_EVIDENCE_PACKAGE \
+  -f ack_controls=ACK_VIEW_ONLY_ENGINEERING_CONTROLS_VERIFIED \
+  -f evidence_url=https://testai.acik.com/artifacts/<path>/view-only-engineering-evidence-manifest.json \
+  -f pilot_device="<device or deviceId>" \
+  -f session_id="<product session id>" \
+  -f viewer_path_decision=fanout-proven \
+  -f owner_approved_by="<named owner>" \
+  -f approved_at=YYYY-MM-DD \
+  -f expires_at=YYYY-MM-DD
+```
+
+This workflow generates the canonical JSON manifest, the matching
+`F22_6_VIEW_ONLY_ENGINEERING: v2` marker, `package-manifest.json`, and
+`SHA256SUMS`. It does not apply the viewer overlay, does not start a VIEW_ONLY
+session, does not write `#1580`, and does not create KVKK/legal signoff. Before
+the marker can pass the live verifier, the generated JSON must be served at the
+exact `evidence_url` over HTTPS with the SHA printed in the marker.
 
 #### KVKK marker (non-blocking, allowlist)
 
