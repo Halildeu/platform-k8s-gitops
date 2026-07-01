@@ -1,5 +1,61 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 #548 device-key dry-run refreshed; AgentPC2 token still pending (2026-07-01)
+
+This delta supersedes only the #548 device-key dry-run freshness and the
+AgentPC2 token-consume status in the previous Faz 22.6 entries. It does not
+change the completion verdict.
+
+Latest #548 endpoint-local token state:
+
+- Fresh TEST enrollment token was minted for AgentPC2 TPM auto-enroll without
+  exposing raw token material to chat, GitHub, Mavis, or logs.
+- Server-side status check for enrollment
+  `4f6dfce2-b563-432c-aeb1-2b050ad14914` returned:
+  `status=PENDING`, `deviceId=null`, `consumedAt=null`,
+  `requestedBySubject=87b1d2c8-aeed-40af-8742-de8431efeee2`, and
+  `expiresAt=2026-07-01T16:20:39.216902Z`.
+- Interpretation: AgentPC2 has not yet consumed the token and has not produced
+  a TPM binding or #548 hardware/device-key evidence from this enrollment.
+- Endpoint-admin logs in the last check still show only the earlier malformed
+  denial:
+  `tpm-enroll deny code=MALFORMED ... fields=[enrollmentToken[NotBlank,len=1]]`;
+  no newer successful TPM binding was present.
+
+Latest #548 device-key broker activation dry-run:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28528702337`
+  (`Apply #548 device-key remote-bridge activation`) completed successfully on
+  main SHA `857dd6bec2e1862c3e8a3abd07902b9cbc8cc599`.
+- Dispatch was `dry_run=true`; no live apply was performed.
+- Render guard proved the owner-gated real-verifier path still renders:
+  `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: DEVICE_KEY_ATTESTATION_REAL`,
+  `REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "false"`, no
+  enrollment-backed pilot-risk flag, SNI route intent
+  `remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444`,
+  and rollout strategy `maxSurge=0` / `maxUnavailable=1`.
+- The rendered endpoint-admin image digest was derived as
+  `sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- Kubernetes server-side dry-run against `k3d-test/platform-test` accepted the
+  ServiceAccount, ConfigMap, Service, Deployment, ExternalSecrets, Ingress, and
+  NetworkPolicies for the dedicated device-key broker surface.
+- Live post-run guard confirmed the dry-run did not create the device-key
+  deployment or SNI ingress in the test cluster:
+  `device-key-deploy=not-created`, `mtls-ingress=missing`.
+- Issue evidence:
+  `https://github.com/Halildeu/platform-backend/issues/548#issuecomment-4856962326`.
+
+Boundary:
+
+- This strengthens #548 activation readiness but does not satisfy #548.
+- Remaining #548 acceptance requires an elevated AgentPC2 endpoint-local TPM
+  auto-enroll run with the full fresh test token in the hidden prompt, followed
+  by server-side TPM binding verification, device-key broker session evidence,
+  negative matrix evidence, and the hardware acceptance marker.
+- `F22_6_COMPLETION` remains blocked because #548 and #1580 still lack their
+  required acceptance markers.
+
 ## Live Delta — Faz 22.6 latest truth after AgentPC2 TPM runner hardening and VIEW_ONLY dry-run refresh (2026-07-01)
 
 Latest authoritative audit:
