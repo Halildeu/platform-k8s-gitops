@@ -390,11 +390,16 @@ Get-Content -LiteralPath \$Sums | Select-String 'agentpc2-tpm-autoenroll'
 
 \$SecureToken = \$null
 \$Bstr = [IntPtr]::Zero
+\$EndpointPacketStarted = \$false
 try {
   \$SecureToken = Read-Host -Prompt 'Paste approved FRESH TEST ENDPOINT_AGENT_ENROLLMENT_TOKEN' -AsSecureString
+  if (\$SecureToken.Length -lt 20) {
+    throw 'Enrollment token input is too short. Paste the full fresh test enrollment token into the hidden prompt; do not type the masking asterisk, prompt text, or a redacted placeholder.'
+  }
   \$Bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR(\$SecureToken)
   \$env:ENDPOINT_AGENT_ENROLLMENT_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(\$Bstr)
 
+  \$EndpointPacketStarted = \$true
   Write-Step 'run endpoint-local TPM auto-enroll packet'
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File \$Script \`
     -ApiUrl \$ApiUrl \`
@@ -406,8 +411,12 @@ try {
 }
 catch {
   Clear-ProcessEnrollmentToken
-  Write-Step 'TPM auto-enroll failed; printing redacted endpoint diagnostics'
-  Write-TpmAutoEnrollDiagnostics
+  if (\$EndpointPacketStarted) {
+    Write-Step 'TPM auto-enroll failed; printing redacted endpoint diagnostics'
+    Write-TpmAutoEnrollDiagnostics
+  } else {
+    Write-Step 'TPM auto-enroll did not start; endpoint diagnostics skipped'
+  }
   throw
 }
 finally {
@@ -449,7 +458,9 @@ environment only.
 Use \`agentpc2-tpm-autoenroll-runner.ps1\` for operator execution. It downloads
 and verifies \`agentpc2-tpm-autoenroll.ps1\`, prompts for the fresh test token
 inside a hidden secure prompt, injects it only into process environment, and
-clears it after the endpoint-local run. If the agent exits non-zero, the runner
+clears it after the endpoint-local run. It rejects obviously truncated token
+input locally before calling the endpoint or API, without logging the token
+value. If the agent exits non-zero, the runner
 prints redacted endpoint diagnostics from the evidence directory plus the local
 \`endpoint-agent.exe\` version/help so stale-binary and server-side failures are
 visible without a second operator command. Do not edit the \`Read-Host -Prompt\`

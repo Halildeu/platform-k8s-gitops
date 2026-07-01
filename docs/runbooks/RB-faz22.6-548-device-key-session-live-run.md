@@ -138,6 +138,10 @@ The broker must run the `DEVICE_KEY_ATTESTATION_REAL` verifier (the only `HARDWA
    hidden prompt, injects it only into the process environment, and clears it
    after the endpoint-local run. Do not edit the `Read-Host -Prompt` text and do
    not put the raw token in chat, GitHub, Mavis, shell history, or evidence.
+   The runner rejects obviously truncated prompt input locally before the
+   endpoint/API call, without logging the token value; this specifically guards
+   the live-found `enrollmentToken len=1` class from accidentally typing the
+   masking asterisk, prompt text, or a redacted placeholder.
    If `endpoint-agent --auto-enroll-tpm` exits non-zero, the current runner
    prints redacted endpoint diagnostics from the evidence directory plus the
    local `endpoint-agent.exe` version/help output; use that first to separate
