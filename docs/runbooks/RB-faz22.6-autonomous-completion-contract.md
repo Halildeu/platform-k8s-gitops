@@ -383,6 +383,20 @@ After a live audit, generate a read-only owner decision package instead of
 hand-interpreting the final blocker lines:
 
 ```bash
+gh workflow run gate-faz22-completion-decision-package.yml \
+  --ref main \
+  -f audit_run_id=<faz22-6-live-audit-run-id>
+```
+
+The workflow downloads the `faz22-6-completion-audit` artifact from that live
+audit run, builds the bounded JSON/Markdown package, and uploads
+`faz22-6-completion-decision-package-<run-id>`. It is read-only: it does not
+approve risk, write markers, mutate GitHub issues, touch Kubernetes, contact
+endpoints, mutate releases, or access secrets.
+
+The same package can be generated locally from an already downloaded audit file:
+
+```bash
 scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh \
   --audit-file /path/to/faz22-6-completion-audit.txt \
   --output-dir /path/to/decision-package
