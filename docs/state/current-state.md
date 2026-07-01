@@ -1,5 +1,78 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 latest audit/decision package plus AgentPC2 TPM binding gap confirmed (2026-07-01)
+
+After the A1 host/Vault/device-key broker proof, Codex reran the completion
+audit and regenerated the read-only decision package from that fresh audit.
+
+Latest audit and decision package:
+
+- Live audit:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28514716022`
+  (`headSha=bf5493cc42394e781ceb7cb8467a4baaec368726`), result `success`.
+- The live audit passed operation catalog, approved script runner,
+  constrained executor, remote bridge live, release lineage, and the
+  release-lineage gate.
+- The same audit kept B1.4 hardware attestation and VIEW_ONLY engineering in
+  `blocked` because their acceptance markers are still missing, kept VIEW_ONLY
+  KVKK as `tracked_pending`, and kept Faz 22.6 completion in `blocked`.
+- The required next evidence packages are the B1.4 acceptance package and the
+  VIEW_ONLY engineering evidence package.
+- Decision package workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28514792708`
+  (`headSha=bf5493cc42394e781ceb7cb8467a4baaec368726`), result `success`.
+- Artifact:
+  `faz22-6-completion-decision-package-28514716022`.
+- Decision package output:
+  `completion.status=blocked` and
+  `completion.next_required=[b1-4-acceptance-package-required, view-only-engineering-evidence-package-required]`.
+
+AgentPC2 live product-channel state:
+
+- Product device:
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f` / `AgentPc2`.
+- `endpoint_devices` shows `status=ONLINE`, `agent_version=v0.3.8`,
+  `last_seen_at=2026-07-01 11:39:41.273565+00`.
+- Latest heartbeats show `agentMode=mtls-machine-cert` and capabilities:
+  `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
+  `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
+  `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
+  `SET_DISPLAY_POLICY`.
+- The heartbeat capability list does not advertise `UPDATE_AGENT` and does not
+  advertise a TPM/device-key enrollment/session operation.
+
+AgentPC2 TPM binding gap:
+
+- `endpoint_admin_service.endpoint_tpm_device_binding` exists and has the
+  required non-null columns for a strong hardware marker:
+  `ak_name`, `ak_pub_sha256`, `ek_cert_sha256`, and
+  `device_key_spki_sha256`.
+- `endpoint_admin_service.endpoint_tpm_device_identity` also exists.
+- Read-only DB queries found no AgentPC2 rows in:
+  `endpoint_tpm_device_binding`,
+  `endpoint_tpm_device_identity`, or
+  `endpoint_enrollments`.
+- The `endpoint_commands` type check constraint currently allows only:
+  `COLLECT_INVENTORY`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
+  `CHANGE_LOCAL_PASSWORD`, `SMB_LIST_ALLOWED_PATH`,
+  `SMB_READ_FILE_METADATA`, `SMB_DOWNLOAD_FILE`, `SMB_UPLOAD_FILE`,
+  `ROTATE_CREDENTIAL`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`,
+  `UPDATE_AGENT`, `SET_DISPLAY_POLICY`, and `COLLECT_BACKUP_DRYRUN`.
+  There is no TPM enroll command type.
+- `platform-agent` confirms `--auto-enroll-tpm` is a closed CLI path:
+  it is mutually exclusive with normal `--auto-enroll`, requires
+  the auto-enroll API URL, and requires the enrollment-token environment
+  value.
+
+Boundary: #548 is no longer blocked on the A1 Vault/device-key broker
+infrastructure proof. It is blocked on target-endpoint TPM enrollment/session
+evidence: AgentPC2 must run the TPM auto-enroll path, produce a persisted
+TPM binding row, then complete a device-key broker session that yields
+`deviceTrusted=true` / `Basis.HARDWARE_KEY_ATTESTATION` plus the negative
+matrix. Because no product command exists for TPM enrollment, this cannot be
+truthfully reclassified as an agent-only product-channel trigger from the
+current live state.
+
 ## Live Delta — Faz 24 direct-STT recorder path bounded-latency test state (2026-07-01)
 
 Faz 24 Meeting Intelligence desktop recorder path now has a live direct-STT test
