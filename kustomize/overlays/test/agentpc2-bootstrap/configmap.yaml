@@ -67,9 +67,9 @@ data:
     9e3a7a89f5782ea54acb93e7c4bc1bbe411e0d5f29eacabca2a3911dbd8a5196  agentpc2-remote-bridge-canonical-env-patch-v7.ps1
     f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1
     d9de569b166e0fe0a2b19b21acd60ea607499019c38260b3d446c1e6b5d211e6  agentpc2-tpm-autoenroll.ps1
-    7d74581dbb34a726dc254549e3433310d8a51949abc3a608bcbd70bfb14448e5  agentpc2-tpm-autoenroll-runner.ps1
-    21ab99fadc904337fc51cba7fb484ffcf4cd7abeea736a2d4657d8a45ea3f200  agentpc2-tpm-autoenroll-README.md
-    2362a3dd120715efa5980353e92385937d86cc893fee7de24bebdec49fae2b04  agentpc2-tpm-autoenroll-packet-manifest.json
+    6082c2d092d2300325915addcda22bd50c44e15fd73ea38e3f6e66033df20e0c  agentpc2-tpm-autoenroll-runner.ps1
+    fc3b145925603bf870cb39679ec725f5cebb4956b4167172acb1a454ee2a1243  agentpc2-tpm-autoenroll-README.md
+    adcfb09000003493d900f79d3aae4c2fcf72d27772d23df72d6391a25bab61c6  agentpc2-tpm-autoenroll-packet-manifest.json
   agentpc2-self-update-policy-seed-v023.ps1: |
     <#
     .SYNOPSIS
@@ -1591,11 +1591,16 @@ data:
 
     $SecureToken = $null
     $Bstr = [IntPtr]::Zero
+    $EndpointPacketStarted = $false
     try {
       $SecureToken = Read-Host -Prompt 'Paste approved FRESH TEST ENDPOINT_AGENT_ENROLLMENT_TOKEN' -AsSecureString
+      if ($SecureToken.Length -lt 20) {
+        throw 'Enrollment token input is too short. Paste the full fresh test enrollment token into the hidden prompt; do not type the masking asterisk, prompt text, or a redacted placeholder.'
+      }
       $Bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureToken)
       $env:ENDPOINT_AGENT_ENROLLMENT_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Bstr)
 
+      $EndpointPacketStarted = $true
       Write-Step 'run endpoint-local TPM auto-enroll packet'
       & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script `
         -ApiUrl $ApiUrl `
@@ -1607,8 +1612,12 @@ data:
     }
     catch {
       Clear-ProcessEnrollmentToken
-      Write-Step 'TPM auto-enroll failed; printing redacted endpoint diagnostics'
-      Write-TpmAutoEnrollDiagnostics
+      if ($EndpointPacketStarted) {
+        Write-Step 'TPM auto-enroll failed; printing redacted endpoint diagnostics'
+        Write-TpmAutoEnrollDiagnostics
+      } else {
+        Write-Step 'TPM auto-enroll did not start; endpoint diagnostics skipped'
+      }
       throw
     }
     finally {
@@ -1648,7 +1657,9 @@ data:
     Use `agentpc2-tpm-autoenroll-runner.ps1` for operator execution. It downloads
     and verifies `agentpc2-tpm-autoenroll.ps1`, prompts for the fresh test token
     inside a hidden secure prompt, injects it only into process environment, and
-    clears it after the endpoint-local run. If the agent exits non-zero, the runner
+    clears it after the endpoint-local run. It rejects obviously truncated token
+    input locally before calling the endpoint or API, without logging the token
+    value. If the agent exits non-zero, the runner
     prints redacted endpoint diagnostics from the evidence directory plus the local
     `endpoint-agent.exe` version/help so stale-binary and server-side failures are
     visible without a second operator command. Do not edit the `Read-Host -Prompt`
@@ -1710,7 +1721,7 @@ data:
   agentpc2-tpm-autoenroll-packet-manifest.json: |
     {
       "schema": "faz22.6.agentpc2.tpm-autoenroll.packet.v1",
-      "generated_at": "2026-07-01T14:44:15Z",
+      "generated_at": "2026-07-01T15:00:51Z",
       "target": {
         "hostname": "AgentPc2",
         "product_device_id": "2f7ad30f-970a-42e7-8af8-08764ae6066f"

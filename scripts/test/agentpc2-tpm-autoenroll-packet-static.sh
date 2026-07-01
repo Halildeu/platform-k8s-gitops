@@ -128,6 +128,21 @@ if ! grep -Fq "\$env:ENDPOINT_AGENT_ENROLLMENT_TOKEN =" "${packet_runner}"; then
   exit 1
 fi
 
+if ! grep -Fq "\$SecureToken.Length -lt 20" "${packet_runner}"; then
+  echo "runner must reject obviously truncated enrollment-token prompt input before endpoint/API execution" >&2
+  exit 1
+fi
+
+if ! grep -Fq "Enrollment token input is too short" "${packet_runner}"; then
+  echo "runner must explain too-short token input without logging token material" >&2
+  exit 1
+fi
+
+if ! grep -Fq "TPM auto-enroll did not start; endpoint diagnostics skipped" "${packet_runner}"; then
+  echo "runner must avoid printing stale endpoint diagnostics when local token preflight fails" >&2
+  exit 1
+fi
+
 if ! grep -Fq "ZeroFreeBSTR" "${packet_runner}"; then
   echo "runner must zero the SecureString BSTR after use" >&2
   exit 1
@@ -288,6 +303,11 @@ fi
 
 if ! grep -Fq "TPM auto-enroll failed; printing redacted endpoint diagnostics" "${bootstrap_configmap}"; then
   echo "published bootstrap ConfigMap must include the runner diagnostic failure path" >&2
+  exit 1
+fi
+
+if ! grep -Fq "Enrollment token input is too short" "${bootstrap_configmap}"; then
+  echo "published bootstrap ConfigMap must include the runner too-short token guard" >&2
   exit 1
 fi
 
