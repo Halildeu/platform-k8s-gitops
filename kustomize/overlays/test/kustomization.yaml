@@ -150,8 +150,13 @@ images:
     # platform-backend run 28478081048 from
     # codex/faz24-audio-gateway-window5-image-20260701@a3e01dd188cb;
     # latest_pushed=false; audio-gateway-service digest below.
+    # 2026-07-01 update: platform-backend#781 five-second direct-STT audio
+    # window aggregation image from the same branch/commit lineage. Image build
+    # run 28516713962 (workflow_dispatch) produced the immutable digest below;
+    # source commit a3e01dd188cb contains PR #781 head 717708946c69 plus CI
+    # branch-dispatch tag-safety. Test overlay only; prod remains D30-deferred.
     # D30 immutable digest pin.
-    digest: sha256:9a3f3a83c023a483b872a8c4c76795db9649d863b32db782570790161e33a7ce
+    digest: sha256:8eabcaaf7a25971f99d5aba8bc6f57eb8d4bad702b623dcf95730dbdb89e4b9e
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
