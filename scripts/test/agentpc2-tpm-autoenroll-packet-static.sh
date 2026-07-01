@@ -138,6 +138,32 @@ if ! grep -Fq "Clear-ProcessEnrollmentToken" "${packet_runner}"; then
   exit 1
 fi
 
+if ! grep -Fq "Write-TpmAutoEnrollDiagnostics" "${packet_runner}"; then
+  echo "runner must print redacted endpoint diagnostics when TPM auto-enroll fails" >&2
+  exit 1
+fi
+
+if ! grep -Fq "TPM auto-enroll failed; printing redacted endpoint diagnostics" "${packet_runner}"; then
+  echo "runner failure path must make diagnostic collection explicit" >&2
+  exit 1
+fi
+
+if ! grep -Fq "endpoint-agent-tpm-autoenroll-stderr.txt" "${packet_runner}"; then
+  echo "runner diagnostics must print the redacted endpoint-agent stderr file" >&2
+  exit 1
+fi
+
+if ! grep -Fq -- "--auto-enroll-tpm --help" "${packet_runner}"; then
+  echo "runner diagnostics must print endpoint-agent TPM help for stale-binary detection" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC2016 # This is a literal PowerShell heredoc regression sentinel.
+if grep -Fq '$(.Exception.Message)' "${packet_runner}"; then
+  echo "runner diagnostics must not lose the PowerShell catch variable while generating from bash heredoc" >&2
+  exit 1
+fi
+
 if grep -Fq -- "--enrollment-token" "${packet_runner}"; then
   echo "runner must not pass enrollment tokens on argv" >&2
   exit 1
@@ -252,6 +278,16 @@ fi
 
 if ! grep -Fq "Paste approved FRESH TEST ENDPOINT_AGENT_ENROLLMENT_TOKEN" "${bootstrap_configmap}"; then
   echo "published bootstrap ConfigMap must include the safe runner prompt text" >&2
+  exit 1
+fi
+
+if ! grep -Fq "Write-TpmAutoEnrollDiagnostics" "${bootstrap_configmap}"; then
+  echo "published bootstrap ConfigMap must include runner failure diagnostics" >&2
+  exit 1
+fi
+
+if ! grep -Fq "TPM auto-enroll failed; printing redacted endpoint diagnostics" "${bootstrap_configmap}"; then
+  echo "published bootstrap ConfigMap must include the runner diagnostic failure path" >&2
   exit 1
 fi
 

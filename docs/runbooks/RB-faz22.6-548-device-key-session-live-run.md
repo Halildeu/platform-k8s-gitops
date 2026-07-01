@@ -138,7 +138,11 @@ The broker must run the `DEVICE_KEY_ATTESTATION_REAL` verifier (the only `HARDWA
    hidden prompt, injects it only into the process environment, and clears it
    after the endpoint-local run. Do not edit the `Read-Host -Prompt` text and do
    not put the raw token in chat, GitHub, Mavis, shell history, or evidence.
-   Return only the generated redacted evidence files.
+   If `endpoint-agent --auto-enroll-tpm` exits non-zero, the current runner
+   prints redacted endpoint diagnostics from the evidence directory plus the
+   local `endpoint-agent.exe` version/help output; use that first to separate
+   stale endpoint binary, TPM/EK capability, bootstrap mTLS, API, and persistence
+   failures. Return only the generated redacted evidence files.
 
    The underlying agent CLI is:
    ```powershell

@@ -320,6 +320,54 @@ function Clear-ProcessEnrollmentToken {
   Remove-Item Env:\ENDPOINT_AGENT_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
 }
 
+function Write-FileSection([string]\$Title, [string]\$Path) {
+  Write-Host ''
+  Write-Host "=== \$Title ==="
+  if (Test-Path -LiteralPath \$Path) {
+    Get-Content -LiteralPath \$Path -ErrorAction SilentlyContinue
+  } else {
+    Write-Host "[missing] \$Path"
+  }
+}
+
+function Write-CommandSection([string]\$Title, [scriptblock]\$Command) {
+  Write-Host ''
+  Write-Host "=== \$Title ==="
+  try {
+    & \$Command
+  } catch {
+    \$message = \$_.Exception.Message
+    Write-Host "[diagnostic unavailable] \$message"
+  }
+}
+
+function Write-TpmAutoEnrollDiagnostics {
+  \$EvidenceDir = "\$env:ProgramData\EndpointAgent\faz22-6-tpm-autoenroll-evidence"
+
+  Write-Host ''
+  Write-Host '=== Evidence dir ==='
+  if (Test-Path -LiteralPath \$EvidenceDir) {
+    Get-ChildItem -LiteralPath \$EvidenceDir -ErrorAction SilentlyContinue |
+      Select-Object Name,Length,LastWriteTime
+  } else {
+    Write-Host "[missing] \$EvidenceDir"
+  }
+
+  Write-FileSection 'endpoint-agent stderr' "\$EvidenceDir\endpoint-agent-tpm-autoenroll-stderr.txt"
+  Write-FileSection 'endpoint-agent stdout' "\$EvidenceDir\endpoint-agent-tpm-autoenroll-stdout.txt"
+  Write-FileSection 'EK certificate summary' "\$EvidenceDir\ek-certificate-summary.json"
+  Write-FileSection 'TPM device information' "\$EvidenceDir\tpmtool-deviceinformation.txt"
+
+  Write-Host ''
+  Write-Host '=== endpoint-agent file ==='
+  Get-Item -LiteralPath \$EndpointAgentExe -ErrorAction SilentlyContinue |
+    Select-Object FullName,Length,LastWriteTime
+
+  Write-CommandSection 'endpoint-agent version' { & \$EndpointAgentExe --version 2>&1 | Select-Object -First 80 }
+  Write-CommandSection 'endpoint-agent help' { & \$EndpointAgentExe --help 2>&1 | Select-Object -First 120 }
+  Write-CommandSection 'endpoint-agent auto-enroll-tpm help' { & \$EndpointAgentExe --auto-enroll-tpm --help 2>&1 | Select-Object -First 120 }
+}
+
 Assert-Administrator
 Clear-ProcessEnrollmentToken
 
@@ -355,6 +403,12 @@ try {
   if (\$LASTEXITCODE -ne 0) {
     throw "agentpc2-tpm-autoenroll.ps1 exited with code \$LASTEXITCODE"
   }
+}
+catch {
+  Clear-ProcessEnrollmentToken
+  Write-Step 'TPM auto-enroll failed; printing redacted endpoint diagnostics'
+  Write-TpmAutoEnrollDiagnostics
+  throw
 }
 finally {
   if (\$Bstr -ne [IntPtr]::Zero) {
@@ -395,7 +449,10 @@ environment only.
 Use \`agentpc2-tpm-autoenroll-runner.ps1\` for operator execution. It downloads
 and verifies \`agentpc2-tpm-autoenroll.ps1\`, prompts for the fresh test token
 inside a hidden secure prompt, injects it only into process environment, and
-clears it after the endpoint-local run. Do not edit the \`Read-Host -Prompt\`
+clears it after the endpoint-local run. If the agent exits non-zero, the runner
+prints redacted endpoint diagnostics from the evidence directory plus the local
+\`endpoint-agent.exe\` version/help so stale-binary and server-side failures are
+visible without a second operator command. Do not edit the \`Read-Host -Prompt\`
 text and do not paste the raw value into commands.
 
 ## Target

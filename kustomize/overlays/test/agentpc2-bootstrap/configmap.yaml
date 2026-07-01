@@ -67,9 +67,9 @@ data:
     9e3a7a89f5782ea54acb93e7c4bc1bbe411e0d5f29eacabca2a3911dbd8a5196  agentpc2-remote-bridge-canonical-env-patch-v7.ps1
     f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1
     d9de569b166e0fe0a2b19b21acd60ea607499019c38260b3d446c1e6b5d211e6  agentpc2-tpm-autoenroll.ps1
-    935fbf9aea6dc9e094ac9a1f315685a811db4dc786a5c79369077af188f2e4a8  agentpc2-tpm-autoenroll-runner.ps1
-    eb2ccd1a840c188df148a8cdec3e2318dae3d5c907c499c08c67df5d815fb495  agentpc2-tpm-autoenroll-README.md
-    863f4cc5780cb73ac3b3d7a25c1d70659290d9d55f87b9d3ad6a05d93c92dd0b  agentpc2-tpm-autoenroll-packet-manifest.json
+    7d74581dbb34a726dc254549e3433310d8a51949abc3a608bcbd70bfb14448e5  agentpc2-tpm-autoenroll-runner.ps1
+    21ab99fadc904337fc51cba7fb484ffcf4cd7abeea736a2d4657d8a45ea3f200  agentpc2-tpm-autoenroll-README.md
+    2362a3dd120715efa5980353e92385937d86cc893fee7de24bebdec49fae2b04  agentpc2-tpm-autoenroll-packet-manifest.json
   agentpc2-self-update-policy-seed-v023.ps1: |
     <#
     .SYNOPSIS
@@ -1521,6 +1521,54 @@ data:
       Remove-Item Env:\ENDPOINT_AGENT_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
     }
 
+    function Write-FileSection([string]$Title, [string]$Path) {
+      Write-Host ''
+      Write-Host "=== $Title ==="
+      if (Test-Path -LiteralPath $Path) {
+        Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue
+      } else {
+        Write-Host "[missing] $Path"
+      }
+    }
+
+    function Write-CommandSection([string]$Title, [scriptblock]$Command) {
+      Write-Host ''
+      Write-Host "=== $Title ==="
+      try {
+        & $Command
+      } catch {
+        $message = $_.Exception.Message
+        Write-Host "[diagnostic unavailable] $message"
+      }
+    }
+
+    function Write-TpmAutoEnrollDiagnostics {
+      $EvidenceDir = "$env:ProgramData\EndpointAgent\faz22-6-tpm-autoenroll-evidence"
+
+      Write-Host ''
+      Write-Host '=== Evidence dir ==='
+      if (Test-Path -LiteralPath $EvidenceDir) {
+        Get-ChildItem -LiteralPath $EvidenceDir -ErrorAction SilentlyContinue |
+          Select-Object Name,Length,LastWriteTime
+      } else {
+        Write-Host "[missing] $EvidenceDir"
+      }
+
+      Write-FileSection 'endpoint-agent stderr' "$EvidenceDir\endpoint-agent-tpm-autoenroll-stderr.txt"
+      Write-FileSection 'endpoint-agent stdout' "$EvidenceDir\endpoint-agent-tpm-autoenroll-stdout.txt"
+      Write-FileSection 'EK certificate summary' "$EvidenceDir\ek-certificate-summary.json"
+      Write-FileSection 'TPM device information' "$EvidenceDir\tpmtool-deviceinformation.txt"
+
+      Write-Host ''
+      Write-Host '=== endpoint-agent file ==='
+      Get-Item -LiteralPath $EndpointAgentExe -ErrorAction SilentlyContinue |
+        Select-Object FullName,Length,LastWriteTime
+
+      Write-CommandSection 'endpoint-agent version' { & $EndpointAgentExe --version 2>&1 | Select-Object -First 80 }
+      Write-CommandSection 'endpoint-agent help' { & $EndpointAgentExe --help 2>&1 | Select-Object -First 120 }
+      Write-CommandSection 'endpoint-agent auto-enroll-tpm help' { & $EndpointAgentExe --auto-enroll-tpm --help 2>&1 | Select-Object -First 120 }
+    }
+
     Assert-Administrator
     Clear-ProcessEnrollmentToken
 
@@ -1556,6 +1604,12 @@ data:
       if ($LASTEXITCODE -ne 0) {
         throw "agentpc2-tpm-autoenroll.ps1 exited with code $LASTEXITCODE"
       }
+    }
+    catch {
+      Clear-ProcessEnrollmentToken
+      Write-Step 'TPM auto-enroll failed; printing redacted endpoint diagnostics'
+      Write-TpmAutoEnrollDiagnostics
+      throw
     }
     finally {
       if ($Bstr -ne [IntPtr]::Zero) {
@@ -1594,7 +1648,10 @@ data:
     Use `agentpc2-tpm-autoenroll-runner.ps1` for operator execution. It downloads
     and verifies `agentpc2-tpm-autoenroll.ps1`, prompts for the fresh test token
     inside a hidden secure prompt, injects it only into process environment, and
-    clears it after the endpoint-local run. Do not edit the `Read-Host -Prompt`
+    clears it after the endpoint-local run. If the agent exits non-zero, the runner
+    prints redacted endpoint diagnostics from the evidence directory plus the local
+    `endpoint-agent.exe` version/help so stale-binary and server-side failures are
+    visible without a second operator command. Do not edit the `Read-Host -Prompt`
     text and do not paste the raw value into commands.
 
     ## Target
@@ -1653,7 +1710,7 @@ data:
   agentpc2-tpm-autoenroll-packet-manifest.json: |
     {
       "schema": "faz22.6.agentpc2.tpm-autoenroll.packet.v1",
-      "generated_at": "2026-07-01T13:44:38Z",
+      "generated_at": "2026-07-01T14:44:15Z",
       "target": {
         "hostname": "AgentPc2",
         "product_device_id": "2f7ad30f-970a-42e7-8af8-08764ae6066f"
