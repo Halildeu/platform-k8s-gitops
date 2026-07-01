@@ -22,8 +22,9 @@ patches:
   - path: service-patch.yaml
 
 images:
-  # Same image as the live primary endpoint-admin-service and shared
-  # remote-bridge broker proven in the 2026-06-26 Faz 22.6 live audit.
+  # Immutable backend image carrying the #548 device-key challenge issuance path
+  # (platform-backend d0911f4160e98c4e07dc735c45da6c3298427411,
+  # CI image run 28464372731, digest artifact digest-endpoint-admin-service).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842
+    digest: sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6
