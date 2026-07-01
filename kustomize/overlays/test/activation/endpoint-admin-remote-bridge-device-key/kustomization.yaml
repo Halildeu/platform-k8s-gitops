@@ -19,6 +19,7 @@ patches:
   - path: identity-patch.yaml
   - path: configmap-device-key-patch.yaml
   - path: patch-activate.yaml
+  - path: strategy-patch.yaml
   - path: service-patch.yaml
 
 images:

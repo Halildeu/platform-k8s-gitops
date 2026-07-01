@@ -118,6 +118,8 @@ jobs:
           grep -F "name: endpoint-admin-remote-bridge-mtls" /tmp/eab-bridge-device-key-live.yaml
           grep -F "host: remote-bridge-mtls.testai.acik.com" /tmp/eab-bridge-device-key-live.yaml
           grep -F "name: endpoint-admin-remote-bridge-device-key" /tmp/eab-bridge-device-key-live.yaml
+          grep -F "maxSurge: 0" /tmp/eab-bridge-device-key-live.yaml
+          grep -F "maxUnavailable: 1" /tmp/eab-bridge-device-key-live.yaml
 
           IMG=ghcr.io/halildeu/platform-backend-endpoint-admin-service
           digest_count="$(grep -oE "image: ${IMG}@sha256:[0-9a-f]{64}" \
