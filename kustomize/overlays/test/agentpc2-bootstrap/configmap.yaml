@@ -66,6 +66,9 @@ data:
     c301386acbcee0297260495a1d4fc79f4e263130c39522a6137354d10f11bdbe  agentpc2-first-install-bootstrap.ps1
     9e3a7a89f5782ea54acb93e7c4bc1bbe411e0d5f29eacabca2a3911dbd8a5196  agentpc2-remote-bridge-canonical-env-patch-v7.ps1
     f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1
+    bf95a1ecf2fea8949e08040bff01db9d131f6f630aaacbeacf9c651c0385615b  agentpc2-tpm-autoenroll.ps1
+    8c754bac80a98bbe4237f167dfaaa25049f1f12885e8870784941b5a134095db  agentpc2-tpm-autoenroll-README.md
+    287bbad742229be44afc9e2e569f0995080e5682341b67fafbf1979908c52ec5  agentpc2-tpm-autoenroll-packet-manifest.json
   agentpc2-self-update-policy-seed-v023.ps1: |
     <#
     .SYNOPSIS
@@ -1304,3 +1307,270 @@ data:
     if (-not $service -or $service.State -ne "Running") { throw "EndpointAgent is not running after patch." }
 
     Write-Step "completed"
+  agentpc2-tpm-autoenroll.ps1: |
+    [CmdletBinding()]
+    param(
+      [Parameter(Mandatory=$true)]
+      [ValidatePattern('^https://')]
+      [string]$ApiUrl,
+
+      [Parameter(Mandatory=$true)]
+      [string]$TargetProductDeviceId,
+
+      [string]$EndpointAgentExe = 'C:\Program Files\EndpointAgent\endpoint-agent.exe',
+      [string]$EvidenceDir = "$env:ProgramData\EndpointAgent\faz22-6-tpm-autoenroll-evidence",
+      [switch]$NoRun
+    )
+
+    $ErrorActionPreference = 'Stop'
+    Set-StrictMode -Version Latest
+
+    function Write-Step([string]$Message) {
+      Write-Host "[faz22.6-tpm] $Message"
+    }
+
+    function Get-Sha256File([string]$Path) {
+      if (-not (Test-Path -LiteralPath $Path)) { return $null }
+      return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+    }
+
+    function Redact-Line([string]$Line) {
+      if ($null -eq $Line) { return $Line }
+      $out = $Line
+      $out = $out -replace '(?i)(token|secret|password|bearer)[=: ][^ ]+', '$1=<redacted>'
+      $out = $out -replace '(?i)authorization: .*$', 'authorization: <redacted>'
+      return $out
+    }
+
+    function Write-JsonFile($Object, [string]$Path) {
+      $Object | ConvertTo-Json -Depth 8 | Out-File -LiteralPath $Path -Encoding UTF8
+    }
+
+    New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
+    $summaryPath = Join-Path $EvidenceDir 'agentpc2-tpm-autoenroll-summary.json'
+    $stdoutPath = Join-Path $EvidenceDir 'endpoint-agent-tpm-autoenroll-stdout.txt'
+    $stderrPath = Join-Path $EvidenceDir 'endpoint-agent-tpm-autoenroll-stderr.txt'
+    $tpmInfoPath = Join-Path $EvidenceDir 'tpmtool-deviceinformation.txt'
+    $ekInfoPath = Join-Path $EvidenceDir 'ek-certificate-summary.json'
+
+    $token = [Environment]::GetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', 'Process')
+    if ([string]::IsNullOrWhiteSpace($token)) {
+      throw 'ENDPOINT_AGENT_ENROLLMENT_TOKEN must be present in the current process environment. Do not pass it on the command line and do not write it into this script.'
+    }
+
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+      throw 'Run from an elevated PowerShell session. TPM and LocalMachine certificate evidence require administrator context.'
+    }
+
+    if (-not (Test-Path -LiteralPath $EndpointAgentExe)) {
+      throw "endpoint-agent.exe not found at $EndpointAgentExe"
+    }
+
+    Write-Step 'collect TPM attestation capability'
+    $tpmToolText = (& tpmtool getdeviceinformation 2>&1 | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+    $tpmToolText | Out-File -LiteralPath $tpmInfoPath -Encoding UTF8
+
+    $ek = Get-TpmEndorsementKeyInfo -Hash Sha256
+    $manufacturerCertCount = 0
+    if ($null -ne $ek.ManufacturerCertificates) {
+      $manufacturerCertCount = @($ek.ManufacturerCertificates).Count
+    }
+    $ekSubjects = @()
+    $ekIssuers = @()
+    if ($manufacturerCertCount -gt 0) {
+      foreach ($cert in @($ek.ManufacturerCertificates)) {
+        $ekSubjects += $cert.Subject
+        $ekIssuers += $cert.Issuer
+      }
+    }
+    Write-JsonFile ([ordered]@{
+      manufacturerCertCount = $manufacturerCertCount
+      subjects = $ekSubjects
+      issuers = $ekIssuers
+    }) $ekInfoPath
+
+    if ($manufacturerCertCount -lt 1) {
+      throw 'TPM manufacturer EK certificate is missing. This endpoint cannot produce the #548 hardware-attestation marker.'
+    }
+    if ($tpmToolText -match 'Is Capable For Attestation:\s*False') {
+      throw 'TPM reports Is Capable For Attestation: False.'
+    }
+    if ($tpmToolText -match 'Ready For Attestation:\s*False') {
+      throw 'TPM reports Ready For Attestation: False.'
+    }
+
+    $certPath = Join-Path $env:ProgramData 'EndpointAgent\tpm-client-cert.pem'
+    $beforeCertSha = Get-Sha256File $certPath
+    $exitCode = $null
+
+    if ($NoRun) {
+      Write-Step 'NoRun set; skipped endpoint-agent --auto-enroll-tpm execution'
+    } else {
+      Write-Step 'run endpoint-agent --auto-enroll-tpm with process-env token injection'
+      $psi = New-Object System.Diagnostics.ProcessStartInfo
+      $psi.FileName = $EndpointAgentExe
+      $psi.UseShellExecute = $false
+      $psi.RedirectStandardOutput = $true
+      $psi.RedirectStandardError = $true
+      $psi.ArgumentList.Add('--auto-enroll-tpm')
+      $psi.ArgumentList.Add('--api-url')
+      $psi.ArgumentList.Add($ApiUrl.TrimEnd('/'))
+      $psi.Environment['ENDPOINT_AGENT_ENROLLMENT_TOKEN'] = $token
+
+      $proc = New-Object System.Diagnostics.Process
+      $proc.StartInfo = $psi
+      [void]$proc.Start()
+      $stdout = $proc.StandardOutput.ReadToEnd()
+      $stderr = $proc.StandardError.ReadToEnd()
+      $proc.WaitForExit()
+      $exitCode = $proc.ExitCode
+
+      ($stdout -split "`r?`n" | ForEach-Object { Redact-Line $_ }) |
+        Out-File -LiteralPath $stdoutPath -Encoding UTF8
+      ($stderr -split "`r?`n" | ForEach-Object { Redact-Line $_ }) |
+        Out-File -LiteralPath $stderrPath -Encoding UTF8
+
+      [Environment]::SetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', $null, 'Process')
+      Remove-Item Env:\ENDPOINT_AGENT_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
+
+      if ($exitCode -ne 0) {
+        throw "endpoint-agent --auto-enroll-tpm exited with code $exitCode. Redacted stderr is at $stderrPath"
+      }
+    }
+
+    $afterCertSha = Get-Sha256File $certPath
+    $certSummary = $null
+    if (Test-Path -LiteralPath $certPath) {
+      $pem = Get-Content -LiteralPath $certPath -Raw
+      $base64 = ($pem -replace '-----BEGIN CERTIFICATE-----','' -replace '-----END CERTIFICATE-----','' -replace '\s','')
+      $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([Convert]::FromBase64String($base64))
+      $certSummary = [ordered]@{
+        subject = $cert.Subject
+        issuer = $cert.Issuer
+        notBeforeUtc = $cert.NotBefore.ToUniversalTime().ToString('o')
+        notAfterUtc = $cert.NotAfter.ToUniversalTime().ToString('o')
+        thumbprint = $cert.Thumbprint
+        pemSha256 = $afterCertSha
+      }
+    }
+
+    $summary = [ordered]@{
+      schema = 'faz22.6.agentpc2.tpm-autoenroll.endpoint-evidence.v1'
+      generatedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+      targetProductDeviceId = $TargetProductDeviceId
+      apiUrl = $ApiUrl.TrimEnd('/')
+      endpointAgentExe = $EndpointAgentExe
+      noRun = [bool]$NoRun
+      exitCode = $exitCode
+      tpm = [ordered]@{
+        tpmtoolEvidence = $tpmInfoPath
+        ekSummaryEvidence = $ekInfoPath
+        manufacturerCertCount = $manufacturerCertCount
+      }
+      certificate = $certSummary
+      certificateSha256Before = $beforeCertSha
+      certificateSha256After = $afterCertSha
+      secretHygiene = [ordered]@{
+        rawEnrollmentTokenLogged = $false
+        tokenPassedOnCommandLine = $false
+        tokenEmbeddedInScript = $false
+        stdoutRedacted = $true
+        stderrRedacted = $true
+      }
+      nextServerSideChecks = @(
+        'endpoint_tpm_device_binding row for target device exists',
+        'ak_name, ak_pub_sha256, ek_cert_sha256, device_key_spki_sha256 are non-empty',
+        'bridge-selected mTLS leaf SPKI equals endpoint_tpm_device_binding.device_key_spki_sha256',
+        'dedicated broker session yields deviceTrusted=true and Basis.HARDWARE_KEY_ATTESTATION'
+      )
+    }
+    Write-JsonFile $summary $summaryPath
+    Write-Step "summary=$summaryPath"
+    Write-Step 'endpoint-local TPM auto-enroll evidence collection finished'
+  agentpc2-tpm-autoenroll-README.md: |
+    # Faz 22.6 #548 AgentPC2 TPM Auto-Enroll Packet
+
+    This packet is non-secret. It does not contain an enrollment token, bearer token,
+    private key, cookie, password, or raw credential. The generated PowerShell script
+    requires the test enrollment token through the current PowerShell process
+    environment only.
+
+    ## Target
+
+    - Hostname: `AgentPc2`
+    - Product device id: `2f7ad30f-970a-42e7-8af8-08764ae6066f`
+    - TPM enroll API base: `https://testai.acik.com/api/v1/endpoint-agent`
+    - Dedicated device-key broker SNI for the follow-up session: `remote-bridge-mtls.testai.acik.com`
+    - Endpoint binary path: `C:\Program Files\EndpointAgent\endpoint-agent.exe`
+
+    The agent appends `/enrollments/tpm/nonce` and
+    `/enrollments/tpm/attest` to the API base. On the test edge, the
+    `/api/v1/endpoint-agent/**` gateway route rewrites to backend
+    `/api/v1/agent/**`.
+
+    ## Endpoint-Local Execution
+
+    Run from an elevated PowerShell session on AgentPC2.
+
+    1. Inject the approved test enrollment token through the current process
+       environment using the approved secret channel. Do not paste the raw value in
+       chat, GitHub, Mavis, shell transcript, or evidence.
+    2. Execute:
+
+    ```powershell
+    .\agentpc2-tpm-autoenroll.ps1 \
+      -ApiUrl "https://testai.acik.com/api/v1/endpoint-agent" \
+      -TargetProductDeviceId "2f7ad30f-970a-42e7-8af8-08764ae6066f" \
+      -EndpointAgentExe "C:\Program Files\EndpointAgent\endpoint-agent.exe"
+    ```
+
+    3. Remove the process environment value immediately after the script returns.
+    4. Return only the generated evidence files, especially
+       `agentpc2-tpm-autoenroll-summary.json`. Do not include the enrollment token.
+
+    ## Acceptance Boundary
+
+    This packet proves only the endpoint-local TPM auto-enroll attempt and produces
+    redacted endpoint evidence. It does not by itself satisfy #548. Server-side
+    acceptance still requires:
+
+    - a complete `endpoint_tpm_device_binding` row for the target device;
+    - non-empty `ak_name`, `ak_pub_sha256`, `ek_cert_sha256`, and
+      `device_key_spki_sha256`;
+    - bridge-selected mTLS leaf SPKI equal to the persisted device-key SPKI;
+    - a live dedicated-broker session with `deviceTrusted=true` and
+      `Basis.HARDWARE_KEY_ATTESTATION`;
+    - negative matrix evidence for missing, stale, replay, wrong-device, and
+      wrong-tenant cases.
+  agentpc2-tpm-autoenroll-packet-manifest.json: |
+    {
+      "schema": "faz22.6.agentpc2.tpm-autoenroll.packet.v1",
+      "generated_at": "2026-07-01T13:08:48Z",
+      "target": {
+        "hostname": "AgentPc2",
+        "product_device_id": "2f7ad30f-970a-42e7-8af8-08764ae6066f"
+      },
+      "api": {
+        "base_url": "https://testai.acik.com/api/v1/endpoint-agent",
+        "suffixes": [
+          "/enrollments/tpm/nonce",
+          "/enrollments/tpm/attest"
+        ]
+      },
+      "endpoint_agent_exe": "C:\\Program Files\\EndpointAgent\\endpoint-agent.exe",
+      "dedicated_broker_host": "remote-bridge-mtls.testai.acik.com",
+      "secret_hygiene": {
+        "enrollment_token_embedded": false,
+        "raw_credential_material_included": false,
+        "token_channel": "process environment on endpoint only"
+      },
+      "files": [
+        "agentpc2-tpm-autoenroll.ps1",
+        "agentpc2-tpm-autoenroll-README.md",
+        "agentpc2-tpm-autoenroll-packet-manifest.json",
+        "SHA256SUMS"
+      ]
+    }
