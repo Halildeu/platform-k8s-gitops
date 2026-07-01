@@ -16,8 +16,13 @@ Source and PR chain:
   low-confidence/no-speech filtering for sync `/transcribe` segments.
 - `platform-k8s-gitops#2199` is open with passing CI and pins
   `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=12000` in desired-state for
-  audio-gateway test overlay, plus a pod-template annotation bump to force
-  rollout.
+  audio-gateway test overlay, carries the backend `#781` Direct-STT aggregation
+  knobs (`enabled=true`, `window-seconds=5`, `max-buffered-sessions=64`), plus a
+  pod-template annotation bump to force rollout.
+- `platform-backend#781` is open as a draft with passing CI and implements the
+  memory-only PCM16 aggregation/result-stream path needed to avoid one
+  Whisper request per 100ms desktop chunk. That image promotion is still a
+  separate acceptance boundary.
 
 Live test evidence:
 
@@ -42,6 +47,10 @@ Runtime findings that drove the change:
 - audio-gateway logs showed direct-STT responses around 25s-43s and
   `maxInFlight=2` saturation; stale late windows could appear as incorrect
   transcript rows in the desktop surface.
+- Desktop screenshots on 2026-07-01 still showed plausible short-chunk STT
+  artifacts while gateway event polling was active. The desired-state
+  aggregation knobs prepare the runtime for backend `#781`, but do not by
+  themselves prove the aggregation code is running on the live pod.
 - The desktop main process must be restarted after transcript gateway client
   changes; renderer hot reload alone can leave the old 15s poll timeout path in
   use.
