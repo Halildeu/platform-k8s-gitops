@@ -52,6 +52,13 @@ Live A1 status from 2026-06-27:
   `CN=AgentPc2` TPM client certificate from `CN=platform-test endpoint device CA`, service status `Running`,
   `ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED=true`, and agent logs reaching
   `remote-bridge: dialing broker` for `remote-bridge-mtls.testai.acik.com:443`.
+- The A1 workflow therefore defaults `denetim_check=false`. A 2026-07-01
+  read-only check from `staging-sw` still proved route `10.99.0.2 dev wg0 src
+  10.99.0.1` and `10.99.0.2:22` TCP reachability, but both
+  `denetimpc@10.99.0.2` and `svc-denetim-agent@10.99.0.2` returned
+  `Permission denied (publickey)`. Set `denetim_check=true` only if the owner
+  explicitly switches the selected target back to Denetim PC and refreshes the
+  SSH key/ACL path first.
 
 This is not enough to close #548. The backend still needs the HTTPS Vault transport/pinned CA, ESO sync in
 the live cluster, the final `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED=true` flip, and a real target-endpoint TPM
