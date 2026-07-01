@@ -51,6 +51,22 @@ if ! grep -Fq 'ArgoCD core sync unavailable and kubectl selected-resource fallba
   exit 1
 fi
 
+if ! grep -Fq 'resolve_app_target_revision' "$sync_script" \
+  || ! grep -Fq 'sync_argocd_application' "$sync_script"; then
+  echo "sync helper must resolve the live ArgoCD app targetRevision before syncing" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'ArgoCD app targetRevision is $app_target_revision; syncing configured target and enforcing observed revision $REVISION' "$sync_script"; then
+  echo "sync helper must handle branch targetRevision by syncing the configured target and retaining the observed SHA guard" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'app sync "$APP" --timeout "$TIMEOUT"' "$sync_script"; then
+  echo "sync helper must avoid --revision <sha> when ArgoCD app targetRevision is a branch such as main" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'EXPECTED_MODEL_ID="${EXPECTED_MODEL_ID:-}"' "$verify_script"; then
   echo "OpenFGA verifier must not hard-code a stale default model id" >&2
   exit 1
