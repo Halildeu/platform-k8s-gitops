@@ -177,6 +177,10 @@ images:
   # digest (3bda7b2 -> f950a3b, sha-3fd9953) carrying strict securityNetwork
   # structured EDR_NETWORK ingest. Owner-gated activation remains separate from
   # normal test overlay rollout; this co-bump preserves same-image bridge topology.
+  # 2026-07-01 #785 manual co-bump: aligned with the primary endpoint-admin
+  # digest (ef3193b -> 8320223) carrying the remote bridge connected-stream
+  # gauge. Owner-gated activation still requires the apply workflow to mutate
+  # the live broker deployment; this line only updates desired-state.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba
+    digest: sha256:83202237520749f697b9674e2a188f6c211ed57b9f832b1845c5959cbb3874db

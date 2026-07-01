@@ -23,9 +23,10 @@ patches:
   - path: service-patch.yaml
 
 images:
-  # Immutable backend image carrying the #548 device-key challenge issuance path
-  # (platform-backend d0911f4160e98c4e07dc735c45da6c3298427411,
-  # CI image run 28464372731, digest artifact digest-endpoint-admin-service).
+  # Immutable backend image carrying the #548 device-key challenge issuance path.
+  # 2026-07-01 sync: backend #785 merge 0fe6a1a8 / image build run 28552448079
+  # preserves the #548 device-key path from the prior d0911f416 image and adds
+  # remote_access_bridge_control_streams_connected for live channel evidence.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6
+    digest: sha256:83202237520749f697b9674e2a188f6c211ed57b9f832b1845c5959cbb3874db
