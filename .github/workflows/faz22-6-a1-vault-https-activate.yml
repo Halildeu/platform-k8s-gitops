@@ -104,7 +104,14 @@ jobs:
             return 1
           }
 
-          docker_inspect_json > /tmp/platform-vault-test-inspect.json
+          if ! docker_inspect_json > /tmp/platform-vault-test-inspect.json; then
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "::warning::Docker control unavailable; dry-run will continue without live Vault mount contract proof"
+              touch /tmp/faz22-a1-vault-mount-contract-skipped
+              exit 0
+            fi
+            exit 1
+          fi
           jq '.Mounts' /tmp/platform-vault-test-inspect.json > /tmp/platform-vault-test-mounts.json
 
           jq -e --arg src "/home/halil/platform-stateful/test/vault/data" \
@@ -214,5 +221,9 @@ jobs:
             echo "- namespace: \`${KUBE_NAMESPACE}\`"
             echo "- Denetim check: \`${{ inputs.denetim_check }}\`"
             echo ""
+            if [ -f /tmp/faz22-a1-vault-mount-contract-skipped ]; then
+              echo "- Vault mount contract: \`skipped-docker-control-unavailable\`"
+              echo ""
+            fi
             echo "This workflow does not mark #548 accepted; it only activates the Vault HTTPS transport prerequisite."
           } >> "$GITHUB_STEP_SUMMARY"
