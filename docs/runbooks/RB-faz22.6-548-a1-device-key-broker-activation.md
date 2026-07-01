@@ -13,16 +13,18 @@
 The non-secret GitOps activation overlay is:
 
 ```text
-kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key
+kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
 ```
 
-It renders a separate broker with:
+It renders the separate broker child overlay and the public SNI route with:
 
 - Deployment/Service/ConfigMap names suffixed as `endpoint-admin-remote-bridge-*-device-key`;
 - unique pod/service selectors (`app.kubernetes.io/name=endpoint-admin-remote-bridge-device-key`);
+- public mTLS SNI ingress `remote-bridge-mtls.testai.acik.com` routed to
+  `endpoint-admin-remote-bridge-device-key:9444`;
 - `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER=DEVICE_KEY_ATTESTATION_REAL`;
 - fail-closed duress source `AMBIGUOUS_UNTIL_WIRED`, not `PILOT_RISK_ACCEPTED_DISABLED`;
-- `ENDPOINT_ADMIN_TPM_ATTEST_ENABLED=true` and the pinned Intel ODCA manufacturer root;
+- `ENDPOINT_ADMIN_TPM_ATTEST_ENABLED=true` and the pinned TPM manufacturer roots/intermediate;
 - dedicated NodePort `31945` for the test pilot;
 - dedicated Vault path `kv/platform/endpoint-admin-remote-bridge-device-key`;
 - no production overlay changes and no Argo-root reference.
@@ -30,7 +32,7 @@ It renders a separate broker with:
 Render-only validation:
 
 ```bash
-kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key
+kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
 scripts/faz22-remote-ops/faz22-6-a1-preflight.sh
 ```
 
@@ -43,12 +45,16 @@ Live A1 status from 2026-06-27:
 - the temporary non-standard `tpm-device` AppRole/policy used during initial probing was removed;
 - test GitOps ESO now maps `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID` and
   `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID` from `kv/platform/endpoint-admin-service`.
-- Denetim PC is reachable over `staging-sw -> WG -> 10.99.0.2`; Windows OpenSSH key/ACL was normalized,
-  three consecutive SSH smokes passed, TPM 2.0 is present/ready/capable for attestation, EK manufacturer cert
-  count is `1`, and EndpointAgent reports `v0.3.3`.
+- Denetim PC historical preflight was reachable over `staging-sw -> WG -> 10.99.0.2`; Windows OpenSSH key/ACL
+  was normalized, three consecutive SSH smokes passed, TPM 2.0 was present/ready/capable for attestation,
+  EK manufacturer cert count was `1`, and EndpointAgent reported `v0.3.3`.
+- Current 2026-07-01 target endpoint is AgentPC2. Operator precheck showed EndpointAgent `v0.3.8`, a
+  `CN=AgentPc2` TPM client certificate from `CN=platform-test endpoint device CA`, service status `Running`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED=true`, and agent logs reaching
+  `remote-bridge: dialing broker` for `remote-bridge-mtls.testai.acik.com:443`.
 
 This is not enough to close #548. The backend still needs the HTTPS Vault transport/pinned CA, ESO sync in
-the live cluster, the final `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED=true` flip, and a real Denetim PC TPM
+the live cluster, the final `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ENABLED=true` flip, and a real target-endpoint TPM
 enrollment/session marker.
 
 The test Vault HTTPS transport is intentionally additive:
@@ -162,9 +168,9 @@ permit_signing_key_pem
 recording_anchor_signing_key
 ```
 
-The `device_ca_pem` must validate the TPM-issued client cert that the Denetim PC bridge will present. If the
-agent is still selecting the old machine cert, the REAL verifier will deny with the expected mTLS leaf binding
-failure.
+The `device_ca_pem` must validate the TPM-issued client cert that the target endpoint bridge will present.
+For the current run, this is AgentPC2. If the agent is still selecting the old machine cert, the REAL verifier
+will deny with the expected mTLS leaf binding failure.
 
 ## 3. Pre-apply gates
 
@@ -185,20 +191,60 @@ Required before apply:
 - live `endpoint-admin-service-secrets` contains `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID` and
   `ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID`;
 - shared broker remains `MACHINE_CERT_ENROLLMENT`;
-- Denetim PC is reachable over `staging-sw -> WG -> 10.99.0.2`;
-- Denetim PC TPM has `Ready For Attestation=True`, `Is Capable For Attestation=True`, and at least one EK manufacturer cert;
+- target endpoint is explicitly selected for the run (`AgentPC2` for the 2026-07-01 run; Denetim PC only if the
+  owner explicitly switches the target);
+- target endpoint TPM has `Ready For Attestation=True`, `Is Capable For Attestation=True`, and at least one EK
+  manufacturer cert;
+- target endpoint TPM client certificate is still within `NotBefore`/`NotAfter`; AgentPC2's 2026-07-01 precheck
+  certificate expired at `2026-07-01T18:18:52+03:00`, so rerun TPM enrollment if the live session is after that time;
 - dedicated ExternalSecrets are Ready=True after applying the overlay.
 
 ## 4. Apply
+
+### 4.1 Mutual-exclusion boundary
+
+The shared product-channel activation overlay
+`kustomize/overlays/test/activation/endpoint-admin-remote-bridge` and this device-key live wrapper both render
+the same public SNI Ingress name:
+
+```text
+endpoint-admin-remote-bridge-mtls
+```
+
+They intentionally point that one SNI route at different Services:
+
+- shared product-channel activation: `endpoint-admin-remote-bridge:9444`;
+- #548 device-key activation: `endpoint-admin-remote-bridge-device-key:9444`.
+
+Do not run the shared activation workflow while the device-key activation workflow is in progress, and do not
+apply both activation overlays as independent live states. The workflows share the same GitHub Actions
+concurrency group so owner-gated workflow applies cannot race; direct `kubectl apply` remains an operator
+responsibility and must preserve this mutual-exclusion boundary.
 
 Only after the operator confirms the Vault paths are seeded:
 
 ```bash
 kubectl --context k3d-test -n platform-test apply -k \
-  kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key
+  kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
 
 kubectl --context k3d-test -n platform-test rollout status \
   deploy/endpoint-admin-remote-bridge-device-key --timeout=300s
+```
+
+If direct `staging-sw` SSH is unavailable, use the owner-gated self-hosted workflow after the PR is on `main`:
+
+```bash
+gh workflow run apply-device-key-remote-bridge-activation.yml \
+  --ref main \
+  -f confirm=APPLY_DEVICE_KEY_REMOTE_BRIDGE_ACTIVATION \
+  -f expected_digest=sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6 \
+  -f dry_run=true
+
+gh workflow run apply-device-key-remote-bridge-activation.yml \
+  --ref main \
+  -f confirm=APPLY_DEVICE_KEY_REMOTE_BRIDGE_ACTIVATION \
+  -f expected_digest=sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6 \
+  -f dry_run=false
 ```
 
 Post-apply checks:
@@ -219,16 +265,17 @@ Expected verifier output:
 DEVICE_KEY_ATTESTATION_REAL
 ```
 
-## 5. Denetim PC next run
+## 5. Target endpoint next run
 
 After the primary Vault PKI `/attest` path and the dedicated REAL broker are live:
 
-1. Run TPM auto-enroll on Denetim PC using a fresh test enrollment token.
+1. Run TPM auto-enroll on the selected target endpoint using a fresh test enrollment token.
+   For the 2026-07-01 run, use AgentPC2 unless the owner explicitly changes the target.
 2. Verify `endpoint_tpm_device_binding` has non-empty `ak_name`, `ak_pub_sha256`, `ek_cert_sha256`, and
-   `device_key_spki_sha256` for the Denetim PC.
+   `device_key_spki_sha256` for the target endpoint.
 3. Verify the bridge-selected Windows `LocalMachine\My` client cert is the TPM-issued cert and its SPKI matches
    `device_key_spki_sha256`.
-4. Point only the Denetim PC at the dedicated broker endpoint.
+4. Point only the selected target endpoint at the dedicated broker endpoint.
 5. Run a live broker session and capture `deviceTrusted=true`, `Basis.HARDWARE_KEY_ATTESTATION`.
 6. Run negative matrix: missing, stale, replay, wrong-device, wrong-tenant.
 7. Only then generate the `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker.
@@ -239,7 +286,7 @@ The overlay is isolated. Rollback removes only the dedicated strong-path broker:
 
 ```bash
 kubectl --context k3d-test -n platform-test delete -k \
-  kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key
+  kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
 ```
 
 Do not delete or alter the shared `endpoint-admin-remote-bridge` resources during this rollback.

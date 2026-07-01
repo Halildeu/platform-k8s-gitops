@@ -57,6 +57,10 @@ jobs:
         run: kustomize build kustomize/base/apps/endpoint-admin-remote-bridge > /tmp/eab-bridge-base.yaml
       - name: Build overlays/test/activation/endpoint-admin-remote-bridge (D10-8 activation — staged)
         run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge > /tmp/eab-bridge-activation.yaml
+      - name: Build overlays/test/activation/endpoint-admin-remote-bridge-device-key (#548 child — staged)
+        run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key > /tmp/eab-bridge-device-key.yaml
+      - name: Build overlays/test/activation/endpoint-admin-remote-bridge-device-key-live (#548 live wrapper — staged)
+        run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live > /tmp/eab-bridge-device-key-live.yaml
       - name: D10-8 broker isolation guards (no part-of=platform; not in Argo root)
         run: |
           # control #1 — the broker must NEVER carry part-of=platform (it would
@@ -80,6 +84,50 @@ jobs:
             echo "❌ scaffold Deployment is not replicas:0 — control #11 (inert) broken"; exit 1
           fi
           echo "✓ D10-8 broker isolation guards pass (no part-of=platform; not in Argo root; scaffold inert replicas:0/enabled=false)"
+      - name: "#548 device-key broker guards (REAL verifier; isolated; SNI wrapper)"
+        run: |
+          set -euo pipefail
+
+          # The strong device-key broker must stay isolated from the broad
+          # platform allowlists and out of the synced test Argo root.
+          if grep -q "part-of: platform" /tmp/eab-bridge-device-key.yaml; then
+            echo "❌ device-key child render carries app.kubernetes.io/part-of: platform"
+            exit 1
+          fi
+          if grep -q "part-of: platform" /tmp/eab-bridge-device-key-live.yaml; then
+            echo "❌ device-key live wrapper render carries app.kubernetes.io/part-of: platform"
+            exit 1
+          fi
+          if grep -q "endpoint-admin-remote-bridge-device-key" /tmp/test.yaml; then
+            echo "❌ device-key broker leaked into overlays/test render — must stay owner-gated"
+            exit 1
+          fi
+
+          # #548 must exercise the real hardware/device-key verifier path, not
+          # the bounded pilot acceptance path used by the shared broker.
+          grep -F 'REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: DEVICE_KEY_ATTESTATION_REAL' \
+            /tmp/eab-bridge-device-key-live.yaml
+          grep -F 'REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "false"' \
+            /tmp/eab-bridge-device-key-live.yaml
+          if grep -q "REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED" \
+            /tmp/eab-bridge-device-key-live.yaml; then
+            echo "❌ device-key broker render contains bounded pilot risk-acceptance flag"
+            exit 1
+          fi
+
+          grep -F "name: endpoint-admin-remote-bridge-mtls" /tmp/eab-bridge-device-key-live.yaml
+          grep -F "host: remote-bridge-mtls.testai.acik.com" /tmp/eab-bridge-device-key-live.yaml
+          grep -F "name: endpoint-admin-remote-bridge-device-key" /tmp/eab-bridge-device-key-live.yaml
+
+          IMG=ghcr.io/halildeu/platform-backend-endpoint-admin-service
+          digest_count="$(grep -oE "image: ${IMG}@sha256:[0-9a-f]{64}" \
+            /tmp/eab-bridge-device-key-live.yaml | sort -u | wc -l | tr -d ' ')"
+          if [ "${digest_count}" != "1" ]; then
+            echo "❌ device-key live wrapper must render exactly one immutable endpoint-admin-service digest"
+            exit 1
+          fi
+
+          echo "✓ #548 device-key broker guards pass (REAL verifier; isolated; owner-gated SNI wrapper)"
       # Faz 17.Z — PR'da blocking: local overlay'ler render sanity (lokal dev drift yakalama)
       - name: Build overlays/local-authn-min (Faz 17.2)
         run: kustomize build kustomize/overlays/local-authn-min > /tmp/local-authn-min.yaml
