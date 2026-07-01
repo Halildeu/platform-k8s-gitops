@@ -18,6 +18,7 @@ TEST_CONTEXT="${TEST_CONTEXT:-k3d-test}"
 TEST_NAMESPACE="${TEST_NAMESPACE:-platform-test}"
 OVERLAY_PATH="${OVERLAY_PATH:-kustomize/overlays/test}"
 ESO_OVERLAY_PATH="${ESO_OVERLAY_PATH:-kustomize/overlays/test/eso}"
+ALLOW_KUBECTL_SELECTED_RESOURCE_FALLBACK="${ALLOW_KUBECTL_SELECTED_RESOURCE_FALLBACK:-false}"
 SYNC_MODE="argocd"
 
 fail() {
@@ -99,6 +100,16 @@ ensure_argocd_cli() {
   command -v argocd >/dev/null 2>&1 || fail "argocd CLI download did not produce executable"
 }
 
+prepare_argocd_core_kubeconfig() {
+  local core_kubeconfig
+  core_kubeconfig="${RUNNER_TEMP:-/tmp}/argocd-core-${APP}-kubeconfig"
+  kubectl config view --raw > "$core_kubeconfig"
+  kubectl --kubeconfig "$core_kubeconfig" config set-context \
+    "$ARGOCD_CONTEXT" \
+    --namespace "$ARGOCD_NAMESPACE" >/dev/null
+  export KUBECONFIG="$core_kubeconfig"
+}
+
 ensure_argocd_application() {
   if kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
     get application "$APP" >/dev/null 2>&1; then
@@ -167,6 +178,10 @@ PY
 }
 
 sync_with_kubectl_overlay_fallback() {
+  if [[ "$ALLOW_KUBECTL_SELECTED_RESOURCE_FALLBACK" != "true" ]]; then
+    fail "ArgoCD core sync unavailable and kubectl selected-resource fallback is disabled"
+  fi
+
   SYNC_MODE="kubectl-overlay-selected-resources"
   command -v python3 >/dev/null 2>&1 || fail "python3 not found"
 
@@ -228,19 +243,20 @@ echo "app=$APP argocd_context=$ARGOCD_CONTEXT namespace=$ARGOCD_NAMESPACE revisi
 
 ensure_argocd_application
 
+prepare_argocd_core_kubeconfig
 ARGOCD=(argocd --core --kube-context "$ARGOCD_CONTEXT")
 
 echo "-- before sync --"
-if ! "${ARGOCD[@]}" app get "$APP" -N "$ARGOCD_NAMESPACE"; then
+if ! "${ARGOCD[@]}" app get "$APP"; then
   sync_with_kubectl_overlay_fallback
   exit 0
 fi
 
-if ! "${ARGOCD[@]}" app sync "$APP" -N "$ARGOCD_NAMESPACE" --revision "$REVISION" --timeout "$TIMEOUT"; then
+if ! "${ARGOCD[@]}" app sync "$APP" --revision "$REVISION" --timeout "$TIMEOUT"; then
   sync_with_kubectl_overlay_fallback
   exit 0
 fi
-if ! "${ARGOCD[@]}" app wait "$APP" -N "$ARGOCD_NAMESPACE" --sync --health --timeout "$TIMEOUT"; then
+if ! "${ARGOCD[@]}" app wait "$APP" --sync --health --timeout "$TIMEOUT"; then
   sync_with_kubectl_overlay_fallback
   exit 0
 fi
