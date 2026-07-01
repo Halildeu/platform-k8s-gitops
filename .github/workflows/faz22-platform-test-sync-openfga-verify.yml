@@ -12,13 +12,13 @@ on:
   workflow_dispatch:
     inputs:
       expected_model_id:
-        description: "Expected endpoint-admin OpenFGA model id"
+        description: "Optional expected endpoint-admin OpenFGA model id; leave empty to assert live Secret-to-pod consistency"
         required: false
-        default: "01KS8QE8T1EJ2DF5CRS4VV9YX1"
+        default: ""
       expected_store_id:
-        description: "Expected endpoint-admin OpenFGA store id"
+        description: "Optional expected endpoint-admin OpenFGA store id; leave empty to assert live Secret-to-pod consistency"
         required: false
-        default: "01KPP0CFP4G82K42Y6NYSPT4JF"
+        default: ""
 
 permissions:
   contents: read

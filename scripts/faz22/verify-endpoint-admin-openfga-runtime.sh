@@ -17,9 +17,11 @@ DEPLOY="${DEPLOY:-endpoint-admin-service}"
 CM="${CM:-endpoint-admin-service-config}"
 ES="${ES:-endpoint-admin-service-secrets}"
 SECRET="${SECRET:-endpoint-admin-service-secrets}"
-EXPECTED_MODEL_ID="${EXPECTED_MODEL_ID:-01KS8QE8T1EJ2DF5CRS4VV9YX1}"
-EXPECTED_STORE_ID="${EXPECTED_STORE_ID:-01KPP0CFP4G82K42Y6NYSPT4JF}"
+EXPECTED_MODEL_ID="${EXPECTED_MODEL_ID:-}"
+EXPECTED_STORE_ID="${EXPECTED_STORE_ID:-}"
 REPORT_PATH="${REPORT_PATH:-}"
+EXPECTED_MODEL_SOURCE="operator-input"
+EXPECTED_STORE_SOURCE="operator-input"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -49,6 +51,8 @@ emit_report() {
   "secret": "$SECRET",
   "expected_model_id": "$EXPECTED_MODEL_ID",
   "expected_store_id": "$EXPECTED_STORE_ID",
+  "expected_model_source": "$EXPECTED_MODEL_SOURCE",
+  "expected_store_source": "$EXPECTED_STORE_SOURCE",
   "observed_model_id": "${OBSERVED_MODEL_ID:-}",
   "observed_store_id": "${OBSERVED_STORE_ID:-}",
   "pod_model_id": "${POD_MODEL_ID:-}",
@@ -120,6 +124,20 @@ OBSERVED_MODEL_ID="$(printf '%s' "$SECRET_JSON" | jq -r '.data.ERP_OPENFGA_MODEL
 
 echo "Secret STORE_ID=$OBSERVED_STORE_ID"
 echo "Secret MODEL_ID=$OBSERVED_MODEL_ID"
+
+[ -n "$OBSERVED_STORE_ID" ] || fail "Secret STORE_ID is missing"
+[ -n "$OBSERVED_MODEL_ID" ] || fail "Secret MODEL_ID is missing"
+
+if [ -z "$EXPECTED_STORE_ID" ]; then
+  EXPECTED_STORE_ID="$OBSERVED_STORE_ID"
+  EXPECTED_STORE_SOURCE="live-secret"
+  echo "Expected STORE_ID not provided; using live Secret value for pod-consistency verification"
+fi
+if [ -z "$EXPECTED_MODEL_ID" ]; then
+  EXPECTED_MODEL_ID="$OBSERVED_MODEL_ID"
+  EXPECTED_MODEL_SOURCE="live-secret"
+  echo "Expected MODEL_ID not provided; using live Secret value for pod-consistency verification"
+fi
 
 [ "$OBSERVED_STORE_ID" = "$EXPECTED_STORE_ID" ] || fail "Secret STORE_ID mismatch"
 [ "$OBSERVED_MODEL_ID" = "$EXPECTED_MODEL_ID" ] || fail "Secret MODEL_ID mismatch"
