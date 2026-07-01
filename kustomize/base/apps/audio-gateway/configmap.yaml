@@ -69,7 +69,10 @@ data:
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL: "https://live-stt.denetim:8243/transcribe"
   AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT: "2"
   AUDIO_GATEWAY_DIRECT_STT_CONNECT_TIMEOUT_MS: "5000"
-  AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS: "180000"
+  # 5s recorder windows must not surface stale transcript events tens of seconds
+  # later; timeout above this is treated as a dropped live draft, not a meeting
+  # failure. Final/batch STT remains a separate quality path.
+  AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS: "12000"
   AUDIO_GATEWAY_DIRECT_STT_TLS_ENABLED: "true"
   AUDIO_GATEWAY_DIRECT_STT_TLS_CA_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-ca.crt"
   AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-client.crt"

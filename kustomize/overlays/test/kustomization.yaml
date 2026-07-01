@@ -7409,7 +7409,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-06-29-wav-wrap-776-v2"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-01-direct-stt-latency-v1"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
