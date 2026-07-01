@@ -177,6 +177,33 @@ sys.exit(1)
 PY
 }
 
+resolve_app_target_revision() {
+  kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+    get application "$APP" -o json \
+    | jq -r '.spec.source.targetRevision // (.spec.sources[0].targetRevision // "")'
+}
+
+sync_argocd_application() {
+  local app_target_revision
+  app_target_revision="$(resolve_app_target_revision)"
+  if [[ -z "$app_target_revision" ]]; then
+    fail "ArgoCD app targetRevision is empty"
+  fi
+
+  if [[ "$app_target_revision" == "$REVISION" ]]; then
+    "${ARGOCD[@]}" app sync "$APP" --revision "$REVISION" --timeout "$TIMEOUT"
+    return 0
+  fi
+
+  if [[ ! "$app_target_revision" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ArgoCD app targetRevision is $app_target_revision; syncing configured target and enforcing observed revision $REVISION"
+    "${ARGOCD[@]}" app sync "$APP" --timeout "$TIMEOUT"
+    return 0
+  fi
+
+  fail "ArgoCD app targetRevision $app_target_revision does not match requested revision $REVISION"
+}
+
 sync_with_kubectl_overlay_fallback() {
   if [[ "$ALLOW_KUBECTL_SELECTED_RESOURCE_FALLBACK" != "true" ]]; then
     fail "ArgoCD core sync unavailable and kubectl selected-resource fallback is disabled"
@@ -252,7 +279,7 @@ if ! "${ARGOCD[@]}" app get "$APP"; then
   exit 0
 fi
 
-if ! "${ARGOCD[@]}" app sync "$APP" --revision "$REVISION" --timeout "$TIMEOUT"; then
+if ! sync_argocd_application; then
   sync_with_kubectl_overlay_fallback
   exit 0
 fi
