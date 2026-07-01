@@ -4,6 +4,7 @@ set -euo pipefail
 script="scripts/faz22-remote-ops/faz22-6-agentpc2-tpm-autoenroll-packet.sh"
 workflow=".github/workflows/faz22-6-agentpc2-tpm-autoenroll-packet.yml"
 runbook="docs/runbooks/RB-faz22.6-548-device-key-session-live-run.md"
+bootstrap_configmap="kustomize/overlays/test/agentpc2-bootstrap/configmap.yaml"
 
 if [[ ! -x "${script}" ]]; then
   echo "missing executable ${script}" >&2
@@ -116,6 +117,51 @@ fi
 
 if ! grep -Fq -- "--auto-enroll-tpm" "${runbook}"; then
   echo "runbook must use the TPM-specific auto-enroll CLI flag" >&2
+  exit 1
+fi
+
+if [[ ! -f "${bootstrap_configmap}" ]]; then
+  echo "missing ${bootstrap_configmap}" >&2
+  exit 1
+fi
+
+for published_key in \
+  "agentpc2-tpm-autoenroll.ps1:" \
+  "agentpc2-tpm-autoenroll-README.md:" \
+  "agentpc2-tpm-autoenroll-packet-manifest.json:"; do
+  if ! grep -Fq "${published_key}" "${bootstrap_configmap}"; then
+    echo "AgentPC2 bootstrap ConfigMap must publish ${published_key}" >&2
+    exit 1
+  fi
+done
+
+if ! grep -Fq "bf95a1ecf2fea8949e08040bff01db9d131f6f630aaacbeacf9c651c0385615b  agentpc2-tpm-autoenroll.ps1" "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the TPM auto-enroll script hash" >&2
+  exit 1
+fi
+
+if ! grep -Fq "8c754bac80a98bbe4237f167dfaaa25049f1f12885e8870784941b5a134095db  agentpc2-tpm-autoenroll-README.md" "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the TPM auto-enroll README hash" >&2
+  exit 1
+fi
+
+if ! grep -Fq "287bbad742229be44afc9e2e569f0995080e5682341b67fafbf1979908c52ec5  agentpc2-tpm-autoenroll-packet-manifest.json" "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the TPM auto-enroll manifest hash" >&2
+  exit 1
+fi
+
+if ! grep -Fq "schema = 'faz22.6.agentpc2.tpm-autoenroll.endpoint-evidence.v1'" "${bootstrap_configmap}"; then
+  echo "published TPM auto-enroll script must emit the endpoint evidence schema" >&2
+  exit 1
+fi
+
+if ! grep -Fq "tokenEmbeddedInScript = \$false" "${bootstrap_configmap}"; then
+  echo "published TPM auto-enroll script must record tokenEmbeddedInScript=false" >&2
+  exit 1
+fi
+
+if grep -Fq -- "--enrollment-token" "${bootstrap_configmap}"; then
+  echo "published bootstrap ConfigMap must not pass enrollment tokens on argv" >&2
   exit 1
 fi
 
