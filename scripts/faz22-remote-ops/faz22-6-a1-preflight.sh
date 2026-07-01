@@ -41,9 +41,18 @@ is_local_target() {
   return 1
 }
 
+shell_quote() {
+  local value="$1"
+  printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
+}
+
 remote_kubectl() {
   if is_local_target; then
-    kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" "$@"
+    if [ "$#" -eq 1 ]; then
+      bash -lc "kubectl --context $(shell_quote "$KUBE_CONTEXT") -n $(shell_quote "$KUBE_NAMESPACE") $1"
+    else
+      kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" "$@"
+    fi
   else
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_TARGET" \
       "kubectl --context '$KUBE_CONTEXT' -n '$KUBE_NAMESPACE' $*"

@@ -21,9 +21,9 @@ on:
           - "true"
           - "false"
       denetim_check:
-        description: "Run Denetim PC SSH/TPM checks during preflight"
+        description: "Run legacy Denetim PC SSH/TPM checks during preflight; set true only when Denetim is the selected target"
         required: true
-        default: "true"
+        default: "false"
         type: choice
         options:
           - "true"

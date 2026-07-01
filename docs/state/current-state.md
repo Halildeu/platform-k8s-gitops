@@ -71,6 +71,148 @@ Boundary:
   Word-progressive transcript UX should be carried through the gateway-owned
   stream path; local direct stream remains a dev/diagnostic acceleration path.
 
+## Live Delta — Faz 22.6 #548 A1 host/Vault/device-key broker live proof collected; acceptance still marker-blocked (2026-07-01)
+
+After the workflow-default dry-run proof, Codex ran the A1 checks directly
+against `staging-sw` through SSH so the host-level Docker/Vault material could
+be observed with the same user that owns the test host state.
+
+Live host/Vault proof:
+
+- `staging-sw` Docker control is available for user `halil`; the user is in the
+  `docker` group and `sudo -n` works.
+- `docker inspect platform-vault-test` shows the intended bind mounts:
+  `/home/halil/platform-stateful/test/vault/data -> /vault/data`,
+  `/home/halil/platform-stateful/test/vault/logs -> /vault/logs`, and
+  `/home/halil/platform-stateful/test/vault/tls -> /vault/tls:ro`.
+- The test Vault container is running and healthy with
+  `127.0.0.1:8201->8200/tcp` and `127.0.0.1:8302->8202/tcp`.
+- CA-pinned host HTTPS probe succeeds:
+  `https://127.0.0.1:8302/v1/sys/seal-status` returns
+  `sealed=false`, `initialized=true`, Vault `1.17.6`.
+- Container-local HTTPS probe also succeeds:
+  `VAULT_ADDR=https://127.0.0.1:8202` with `/vault/tls/ca.crt` returns
+  `sealed=false`.
+
+Live SSH-target A1 preflight:
+
+- Command boundary:
+  `SSH_TARGET=staging-sw DENETIM_CHECK=false KUBE_CONTEXT=k3d-test KUBE_NAMESPACE=platform-test scripts/faz22-remote-ops/faz22-6-a1-preflight.sh`.
+- Result: exit `0`.
+- Key passes:
+  `PASS device-key overlay renders`,
+  `PASS rendered verifier=DEVICE_KEY_ATTESTATION_REAL`,
+  `PASS rendered dedicated nodePort=31945`,
+  `PASS live primary service and shared broker are visible`,
+  `PASS endpoint-admin-service tpm-attest enabled`,
+  `PASS endpoint-admin-service manufacturer root pin present`,
+  `PASS endpoint-admin-service Vault PKI enabled`,
+  `PASS Vault HTTPS service port 8202 visible`,
+  `PASS shared broker remains MACHINE_CERT_ENROLLMENT`,
+  `PASS Vault TLS material present on staging-sw (values not printed)`,
+  `PASS Vault HTTPS 8202 CA-pinned status works`,
+  both live endpoint-admin-service Vault AppRole Secret keys are present, and
+  all three device-key ExternalSecrets are `Ready=True`.
+- Denetim probe is intentionally skipped with `DENETIM_CHECK=false` because the
+  current 2026-07-01 #548 target is AgentPC2.
+
+Live dedicated device-key broker proof:
+
+- Deployments:
+  `endpoint-admin-remote-bridge` is `1/1` on digest
+  `sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba`,
+  and `endpoint-admin-remote-bridge-device-key` is `1/1` on digest
+  `sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- Services:
+  shared broker remains NodePort `31944`; device-key broker is NodePort
+  `31945`; Vault service exposes both `8200` and `8202`.
+- Public SNI route:
+  `remote-bridge-mtls.testai.acik.com` routes to
+  `endpoint-admin-remote-bridge-device-key:9444`.
+- Pod runtime env, read from `/proc/1/environ`, includes
+  `REMOTE_BRIDGE_ENABLED=true`,
+  `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER=DEVICE_KEY_ATTESTATION_REAL`,
+  `REMOTE_BRIDGE_ALLOW_INSECURE_PLAINTEXT=false`,
+  `REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED=false`,
+  `REMOTE_BRIDGE_DURESS_SOURCE_TYPE=AMBIGUOUS_UNTIL_WIRED`,
+  `ENDPOINT_ADMIN_TPM_ATTEST_ENABLED=true`, pinned manufacturer root hashes,
+  and remote-bridge TLS/key file paths.
+- Broker log shows the gRPC server listening on `0.0.0.0:9444` with mutual
+  TLS.
+
+Boundary: A1 infrastructure is live enough for the next AgentPC2 TPM
+enrollment/session proof attempt. This still does not create the #548
+acceptance marker: no target endpoint TPM enrollment/session was run in this
+delta, no broker `deviceTrusted=true` / `Basis.HARDWARE_KEY_ATTESTATION`
+session was captured, no negative matrix was produced, and no issue marker was
+written. `F22_6_COMPLETION` remains blocked until #548 and #1580 acceptance
+markers are present.
+
+## Live Delta — Faz 22.6 #548 A1 workflow dry-run default proven; Denetim check is opt-in; acceptance still marker-blocked (2026-07-01)
+
+The A1 Vault HTTPS/device-key prerequisite workflow no longer depends on the
+legacy Denetim SSH probe by default. The current #548 run target remains the
+device-key path for AgentPC2; Denetim is now an explicit opt-in check only when
+the owner switches the selected target back to Denetim.
+
+Source changes:
+
+- PR `#2205` merged at `bf06d6e0d2c5db59763aed3fb3990981e1296f81`.
+  Dry-run now warns and continues when Docker control is unavailable for live
+  Vault mount-contract inspection; live activation remains fail-closed.
+- PR `#2206` merged at `8679224f35008df637a08538d9eee4206ee62793`.
+  A1 preflight local-kubectl execution now handles command-string probes
+  correctly instead of passing the whole probe as one kubectl argument.
+- PR `#2207` merged at `9a26e4e07bb892d22f1181780b55a05af061f73f`.
+  `denetim_check` default changed to `false`, with runbook text stating it is a
+  legacy Denetim-only probe.
+
+Default dry-run proof after those changes:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28514013440`
+  (`headSha=9a26e4e07bb892d22f1181780b55a05af061f73f`).
+- Result: `success`.
+- Inputs: `dry_run=true`, default `denetim_check=false`.
+- Summary boundary: `Vault mount contract=skipped-docker-control-unavailable`.
+  This is allowed only for dry-run; a live `dry_run=false` activation still
+  requires Docker control or an equivalent live mount-contract proof.
+- Preflight results:
+  `PASS device-key overlay renders`,
+  `PASS rendered verifier=DEVICE_KEY_ATTESTATION_REAL`,
+  `PASS rendered dedicated nodePort=31945`,
+  `PASS live primary service and shared broker are visible`,
+  `PASS endpoint-admin-service tpm-attest enabled`,
+  `PASS endpoint-admin-service manufacturer root pin present`,
+  `PASS endpoint-admin-service Vault PKI enabled`,
+  `PASS Vault HTTPS service port 8202 visible`,
+  `PASS shared broker remains MACHINE_CERT_ENROLLMENT`,
+  `PASS live endpoint-admin-service-secrets has ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID`,
+  `PASS live endpoint-admin-service-secrets has ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID`,
+  and all device-key ExternalSecrets are `Ready=True`.
+- Remaining dry-run warnings:
+  `Vault TLS material missing on local:/home/halil/platform-stateful/test/vault/tls`
+  and Docker control unavailable for the mount-contract proof.
+
+Denetim-specific proof:
+
+- Workflow with `denetim_check=true`:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28513809573`
+  (`headSha=8679224f35008df637a08538d9eee4206ee62793`) failed only at the
+  Denetim reachability probe after the cluster/Vault/ESO checks passed.
+- Direct staging-sw route truth:
+  `ip route get 10.99.0.2` resolves via `wg0` with source `10.99.0.1`, and TCP
+  port 22 is open.
+- Direct SSH truth:
+  `denetimpc@10.99.0.2` and `svc-denetim-agent@10.99.0.2` both return
+  `Permission denied (publickey)`.
+
+Boundary: this improves #548 A1 readiness and removes a stale Denetim default
+from the current AgentPC2-oriented path. It does not restart Vault, does not
+apply Kubernetes changes, does not enroll a TPM/device key, does not produce a
+broker `device=true` session marker, does not write a #548 acceptance marker,
+and does not satisfy `F22_6_COMPLETION`.
+
 ## Live Delta — Faz 22.6 completion decision package workflow dispatch proven; gates still marker-blocked (2026-07-01)
 
 The read-only owner/operator decision package is now generated by workflow from
