@@ -77,6 +77,52 @@ This is the owner decision. Do not flip the flag until every box holds:
 > Credential/security mutations are TEST-autonomous / PROD-owner-gated. Run in the
 > pilot (test) env, against the **`endpoint-admin-remote-bridge`** Deployment only.
 
+### 3.0 Preferred path — audited workflow
+
+Use the GitHub Actions workflow for the pilot surface whenever possible:
+
+```bash
+gh workflow run apply-view-only-viewer-pilot-enable.yml \
+  --ref main \
+  -f action=dry_run \
+  -f confirm=DRY_RUN_VIEW_ONLY_VIEWER_PILOT_ENABLE
+```
+
+The dry-run renders the owner-gated overlay, proves the viewer surface is
+ClusterIP-only, proves the overlay is not in the synced test Argo root, and runs a
+server-side dry-run against `k3d-test/platform-test`.
+
+After every §2 gate is true, use the same workflow for the live pilot enable:
+
+```bash
+gh workflow run apply-view-only-viewer-pilot-enable.yml \
+  --ref main \
+  -f action=apply \
+  -f confirm=APPLY_VIEW_ONLY_VIEWER_PILOT_ENABLE \
+  -f ack_kvkk_dpia=ACK_KVKK_DPIA_ATTENDED_PILOT_SIGNOFF_RECORDED \
+  -f ack_one_person_roster=ACK_ONE_PERSON_OPERATOR_ROSTER_FIXED \
+  -f ack_pilot_device_consent=ACK_CONSENTING_ATTENDED_PILOT_DEVICE \
+  -f ack_8096_exposure=ACK_OWNER_8096_EXPOSURE
+```
+
+The workflow applies the bridge-side viewer overlay, patches only route-28 keys
+into the live `api-gateway-config`, restarts the bridge and gateway, and verifies:
+ClusterIP/no-NodePort, `REMOTE_BRIDGE_ENABLED=true`, viewer ConfigMap flags,
+gateway route binding, and absence of `OVERLAY_MUST_OVERRIDE` in the gateway's
+Keycloak environment. It does not mint the §4.2 marker and does not prove the
+product-channel VIEW_ONLY session by itself.
+
+Rollback is also workflow-backed and leaves the broker enabled:
+
+```bash
+gh workflow run apply-view-only-viewer-pilot-enable.yml \
+  --ref main \
+  -f action=rollback \
+  -f confirm=ROLLBACK_VIEW_ONLY_VIEWER_PILOT_ENABLE
+```
+
+The manual steps below remain the break-glass/fallback form of the same contract.
+
 1. **Apply the pre-staged viewer-exposure overlay** — the bridge-side enable in one
    reviewed, render-proven `apply -k`. The overlay
    `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer` is a
