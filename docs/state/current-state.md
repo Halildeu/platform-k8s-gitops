@@ -1,5 +1,89 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 latest truth after AgentPC2 TPM runner hardening and VIEW_ONLY dry-run refresh (2026-07-01)
+
+Latest authoritative audit:
+
+- `faz22-6-live-audit.yml` run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28527364757`
+  succeeded on main SHA `12356d679d5c106a077431b3d563a4879b475e21`.
+- Audit output still reports:
+  `REMOTE_BRIDGE_LIVE=pass`, `F22_6_RELEASE_LINEAGE=pass`, and
+  `RELEASE_LINEAGE_GATE=pass`.
+- Audit output still reports
+  `GATE_B1_4_HARDWARE_ATTESTATION=blocked reason=missing-acceptance-marker`,
+  `GATE_VIEW_ONLY_ENGINEERING=blocked reason=missing-acceptance-marker`,
+  `GATE_VIEW_ONLY_KVKK=tracked_pending reason=no-kvkk-marker`, and
+  `F22_6_COMPLETION=blocked`.
+- Therefore the next required gates remain exactly:
+  `b1-4-acceptance-package-required` and
+  `view-only-engineering-evidence-package-required`.
+
+AgentPC2 TPM auto-enroll live-found input failure and mitigation:
+
+- Server-side endpoint-admin logs for the latest AgentPC2 TPM auto-enroll
+  attempt reached the TPM enrollment controller but denied the request as
+  malformed before any TPM binding could be created:
+  `tpm-enroll deny code=MALFORMED detail=MethodArgumentNotValidException fields=[enrollmentToken[NotBlank,len=1]]`.
+- Interpretation: backend received a one-character enrollment token value.
+  This is not TPM evidence and cannot produce the #548 marker.
+- `platform-k8s-gitops#2225` merged at
+  `60fca93634a8660fbd33fc0c3dbdd283bb4b73fd`, adding failure-path runner
+  diagnostics: clear the process token first, then print redacted
+  endpoint-agent stderr/stdout, EK/TPM summaries, local endpoint-agent file
+  info, version/help, and `--auto-enroll-tpm --help`.
+- `platform-k8s-gitops#2226` merged at
+  `12356d679d5c106a077431b3d563a4879b475e21`, adding a local hidden-prompt
+  preflight that rejects obviously truncated token input
+  (`SecureString.Length < 20`) before endpoint/API execution and skips stale
+  endpoint diagnostics when the endpoint packet never started.
+- `faz22-platform-test-sync-openfga-verify.yml` run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28527266174`
+  passed and synced `platform-test` to
+  `12356d679d5c106a077431b3d563a4879b475e21`.
+- Live Argo state after the sync: `platform-test` is `Synced Healthy` at
+  `12356d679d5c106a077431b3d563a4879b475e21`.
+- Public bootstrap publication after the sync:
+  `https://testai.acik.com/artifacts/endpoint-agent/bootstrap/SHA256SUMS`
+  pins `agentpc2-tpm-autoenroll-runner.ps1` to
+  `6082c2d092d2300325915addcda22bd50c44e15fd73ea38e3f6e66033df20e0c`.
+- Issue evidence was recorded in
+  `https://github.com/Halildeu/platform-backend/issues/548#issuecomment-4856735236`.
+- Boundary: this hardens and debugs the endpoint-local #548 path, but it does
+  not satisfy #548. A fresh elevated AgentPC2 run with a real fresh test
+  enrollment token is still required, followed by server-side TPM binding
+  verification, device-key broker session evidence, and negative matrix
+  evidence.
+
+VIEW_ONLY owner-gated pilot surface refresh:
+
+- `apply-view-only-viewer-pilot-enable.yml` dry-run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28527491081`
+  succeeded on main SHA `12356d679d5c106a077431b3d563a4879b475e21`.
+- The dry-run rendered and guarded
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer`:
+  `REMOTE_BRIDGE_ENABLED=true`, `REMOTE_BRIDGE_VIEWER_ENABLED=true`,
+  `REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES=image/png`,
+  `containerPort: 8096`, dedicated
+  `endpoint-admin-remote-bridge-viewer` `ClusterIP`, no 8096 NodePort, and
+  both 8096 NetworkPolicies
+  `eab-bridge-viewer-allow-ingress-8096-from-api-gateway` plus
+  `eab-api-gateway-allow-egress-8096-to-bridge-viewer`.
+- The workflow verified the viewer overlay is absent from the synced
+  `kustomize/overlays/test` Argo root.
+- Server-side dry-run against `k3d-test/platform-test` accepted the rendered
+  Service, ConfigMap, Deployment, ExternalSecrets, Ingress, and NetworkPolicy
+  objects.
+- Live post-dry-run check found no viewer Service or viewer NetworkPolicy
+  leftovers; the pilot surface was not applied.
+- Issue evidence was recorded in
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1580#issuecomment-4856735523`.
+- Boundary: this proves the owner-gated VIEW_ONLY viewer exposure path remains
+  render-valid and server-side-dry-run-valid. It does not expose 8096, does
+  not start a product-channel VIEW_ONLY session, does not create the
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` marker, does not create KVKK/DPO signoff,
+  and does not satisfy `platform-k8s-gitops#1580`.
+
 ## Live Delta — Faz 22.6 acceptance package workflow surface added in GitOps (2026-07-01)
 
 Codex added artifact-only package workflows for the two acceptance markers that
