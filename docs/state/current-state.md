@@ -14,7 +14,8 @@ Source and PR chain:
   direct live stream status visibility.
 - `platform-ai#233` is open with passing CI and adds live-STT partial cadence plus
   low-confidence/no-speech filtering for sync `/transcribe` segments.
-- `platform-k8s-gitops#2199` is open with passing CI and pins
+- `platform-k8s-gitops#2199` merged at
+  `69a1e5e834f7a8e720a40d58c9d1e629c3b4ce99` after passing CI. It pins
   `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=12000` in desired-state for
   audio-gateway test overlay, carries the backend `#781` Direct-STT aggregation
   knobs (`enabled=true`, `window-seconds=5`, `max-buffered-sessions=64`), plus a
@@ -58,15 +59,18 @@ Runtime findings that drove the change:
 Boundary:
 
 - This is a test-state direct-STT/product-surface advance, not final Faz 24
-  acceptance. `platform-desktop#34`, `platform-ai#233`, and
-  `platform-k8s-gitops#2199` still need their normal merge/reconcile path before
-  this becomes durable desired-state.
+  acceptance. `platform-k8s-gitops#2199` is now durable desired-state on
+  `main`, while `platform-desktop#34`, `platform-ai#233`, and
+  `platform-backend#781` still need their normal merge/runtime evidence path
+  before the product path is acceptance-ready.
 - The temporary GPU host branch deploy is a test-host mutation for live
   validation. Durable GPU deploy remains tied to the repo's normal
   `origin/main` mirror update discipline after PR merge.
-- The 12s timeout is live on the audio-gateway deployment env and desired-state
-  is present in `#2199`; until merge/reconcile, ArgoCD can still make live state
-  drift from desired-state.
+- The 12s timeout was previously observed on the audio-gateway deployment env
+  and is now present in merged desired-state. This delta did not prove live
+  ArgoCD reconcile or backend `#781` aggregation-image rollout; local kubectl
+  verification was unavailable because the active `docker-desktop` context API
+  refused `127.0.0.1:6443`.
 - Direct browser/client-to-platform-ai is not a production architecture target.
   Word-progressive transcript UX should be carried through the gateway-owned
   stream path; local direct stream remains a dev/diagnostic acceleration path.
