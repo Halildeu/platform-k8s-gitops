@@ -69,7 +69,17 @@ data:
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL: "https://live-stt.denetim:8243/transcribe"
   AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT: "2"
   AUDIO_GATEWAY_DIRECT_STT_CONNECT_TIMEOUT_MS: "5000"
-  AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS: "180000"
+  # 5s recorder windows must not surface stale transcript events tens of seconds
+  # later; timeout above this is treated as a dropped live draft, not a meeting
+  # failure. Final/batch STT remains a separate quality path.
+  AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS: "12000"
+  # Backend #781 consumes these knobs once the aggregation image is promoted:
+  # 100ms desktop PCM16 chunks stay admitted/audited individually, but the
+  # Direct-STT hop receives bounded memory-only WAV windows to reduce
+  # one-word/short-chunk Whisper artifacts.
+  AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_ENABLED: "true"
+  AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_WINDOW_SECONDS: "5"
+  AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_MAX_BUFFERED_SESSIONS: "64"
   AUDIO_GATEWAY_DIRECT_STT_TLS_ENABLED: "true"
   AUDIO_GATEWAY_DIRECT_STT_TLS_CA_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-ca.crt"
   AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-client.crt"
