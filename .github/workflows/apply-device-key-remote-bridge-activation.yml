@@ -81,6 +81,10 @@ jobs:
             /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
           grep -F "name: endpoint-admin-remote-bridge-device-key" \
             /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+          grep -F "maxSurge: 0" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+          grep -F "maxUnavailable: 1" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
 
           IMG=ghcr.io/halildeu/platform-backend-endpoint-admin-service
           mapfile -t rendered_digests < <(grep -oE "image: ${IMG}@sha256:[0-9a-f]{64}" \
@@ -109,6 +113,7 @@ jobs:
             echo "- expected_digest input: \`${provided:-<empty — derived from overlay>}\`"
             echo "- verifier: \`DEVICE_KEY_ATTESTATION_REAL\`"
             echo "- public SNI route: \`remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444\`"
+            echo "- rollout strategy: \`maxSurge=0/maxUnavailable=1\`"
             echo "- dry_run: \`${{ inputs.dry_run }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 

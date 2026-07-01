@@ -221,6 +221,20 @@ apply both activation overlays as independent live states. The workflows share t
 concurrency group so owner-gated workflow applies cannot race; direct `kubectl apply` remains an operator
 responsibility and must preserve this mutual-exclusion boundary.
 
+### 4.2 Quota-safe rollout boundary
+
+The device-key broker overlay deliberately renders:
+
+```text
+maxSurge=0
+maxUnavailable=1
+```
+
+The test namespace can run close to its CPU ResourceQuota during Faz 22.6 evidence capture. A default
+`maxSurge=1/maxUnavailable=0` rollout attempts to create a second broker pod before terminating the old one and can
+fail with `exceeded quota` even though the steady-state single broker fits. The device-key broker is a single-device,
+owner-gated evidence path, so a one-at-a-time replacement is the intended durable rollout behavior.
+
 Only after the operator confirms the Vault paths are seeded:
 
 ```bash
