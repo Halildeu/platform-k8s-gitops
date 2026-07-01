@@ -6,9 +6,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
-
 OUT_DIR="${OUT_DIR:-}"
 API_URL="${API_URL:-https://testai.acik.com/api/v1/endpoint-agent}"
 TARGET_HOSTNAME="${TARGET_HOSTNAME:-AgentPc2}"
@@ -94,9 +91,17 @@ fi
 mkdir -p "$OUT_DIR"
 
 packet_ps1="$OUT_DIR/agentpc2-tpm-autoenroll.ps1"
+runner_ps1="$OUT_DIR/agentpc2-tpm-autoenroll-runner.ps1"
 readme="$OUT_DIR/README.md"
 manifest="$OUT_DIR/packet-manifest.json"
-checksums="$OUT_DIR/SHA256SUMS"
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
 
 cat >"$packet_ps1" <<'EOF_PS1'
 [CmdletBinding()]
@@ -206,10 +211,8 @@ if ($NoRun) {
   $psi.UseShellExecute = $false
   $psi.RedirectStandardOutput = $true
   $psi.RedirectStandardError = $true
-  $psi.ArgumentList.Add('--auto-enroll-tpm')
-  $psi.ArgumentList.Add('--api-url')
-  $psi.ArgumentList.Add($ApiUrl.TrimEnd('/'))
-  $psi.Environment['ENDPOINT_AGENT_ENROLLMENT_TOKEN'] = $token
+  $psi.Arguments = '--auto-enroll-tpm --api-url ' + $ApiUrl.TrimEnd('/')
+  $psi.EnvironmentVariables['ENDPOINT_AGENT_ENROLLMENT_TOKEN'] = $token
 
   $proc = New-Object System.Diagnostics.Process
   $proc.StartInfo = $psi
@@ -283,6 +286,104 @@ Write-Step "summary=$summaryPath"
 Write-Step 'endpoint-local TPM auto-enroll evidence collection finished'
 EOF_PS1
 
+packet_ps1_sha256="$(sha256_file "$packet_ps1")"
+
+cat >"$runner_ps1" <<EOF_RUNNER_PS1
+[CmdletBinding()]
+param(
+  [string]\$BaseUrl = 'https://testai.acik.com/artifacts/endpoint-agent/bootstrap',
+  [string]\$WorkDir = 'C:\Temp\faz22-6-agentpc2-tpm',
+  [string]\$ExpectedScriptSha256 = '${packet_ps1_sha256}',
+  [string]\$ApiUrl = '${API_URL%/}',
+  [string]\$TargetProductDeviceId = '${TARGET_PRODUCT_DEVICE_ID}',
+  [string]\$EndpointAgentExe = '${ENDPOINT_AGENT_EXE}'
+)
+
+\$ErrorActionPreference = 'Stop'
+\$ProgressPreference = 'SilentlyContinue'
+Set-StrictMode -Version Latest
+
+function Write-Step([string]\$Message) {
+  Write-Host "[faz22.6-tpm-runner] \$Message"
+}
+
+function Assert-Administrator {
+  \$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  \$principal = New-Object Security.Principal.WindowsPrincipal(\$identity)
+  if (-not \$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw 'Run from an elevated PowerShell session.'
+  }
+}
+
+function Clear-ProcessEnrollmentToken {
+  [Environment]::SetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', \$null, 'Process')
+  Remove-Item Env:\ENDPOINT_AGENT_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
+}
+
+Assert-Administrator
+Clear-ProcessEnrollmentToken
+
+\$BaseUrl = \$BaseUrl.TrimEnd('/')
+New-Item -ItemType Directory -Force -Path \$WorkDir | Out-Null
+
+\$Script = Join-Path \$WorkDir 'agentpc2-tpm-autoenroll.ps1'
+\$Sums = Join-Path \$WorkDir 'SHA256SUMS'
+
+Write-Step 'download TPM auto-enroll script and checksum manifest'
+Invoke-WebRequest -UseBasicParsing -Uri "\$BaseUrl/agentpc2-tpm-autoenroll.ps1?cacheBust=\$([Guid]::NewGuid().ToString('N'))" -OutFile \$Script
+Invoke-WebRequest -UseBasicParsing -Uri "\$BaseUrl/SHA256SUMS?cacheBust=\$([Guid]::NewGuid().ToString('N'))" -OutFile \$Sums
+
+\$ActualScriptSha256 = (Get-FileHash -LiteralPath \$Script -Algorithm SHA256).Hash.ToLowerInvariant()
+if (\$ActualScriptSha256 -ne \$ExpectedScriptSha256) {
+  throw "TPM auto-enroll script SHA256 mismatch. actual=\$ActualScriptSha256 expected=\$ExpectedScriptSha256"
+}
+
+Get-Content -LiteralPath \$Sums | Select-String 'agentpc2-tpm-autoenroll'
+
+\$SecureToken = \$null
+\$Bstr = [IntPtr]::Zero
+try {
+  \$SecureToken = Read-Host -Prompt 'Paste approved FRESH TEST ENDPOINT_AGENT_ENROLLMENT_TOKEN' -AsSecureString
+  \$Bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR(\$SecureToken)
+  \$env:ENDPOINT_AGENT_ENROLLMENT_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(\$Bstr)
+
+  Write-Step 'run endpoint-local TPM auto-enroll packet'
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File \$Script \`
+    -ApiUrl \$ApiUrl \`
+    -TargetProductDeviceId \$TargetProductDeviceId \`
+    -EndpointAgentExe \$EndpointAgentExe
+  if (\$LASTEXITCODE -ne 0) {
+    throw "agentpc2-tpm-autoenroll.ps1 exited with code \$LASTEXITCODE"
+  }
+}
+finally {
+  if (\$Bstr -ne [IntPtr]::Zero) {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR(\$Bstr)
+  }
+  Clear-ProcessEnrollmentToken
+  Remove-Variable SecureToken -ErrorAction SilentlyContinue
+  Remove-Variable Bstr -ErrorAction SilentlyContinue
+}
+
+\$EvidenceDir = "\$env:ProgramData\EndpointAgent\faz22-6-tpm-autoenroll-evidence"
+
+Write-Host ''
+Write-Host '=== Evidence dir ==='
+Get-ChildItem \$EvidenceDir
+
+Write-Host ''
+Write-Host '=== Summary ==='
+Get-Content "\$EvidenceDir\agentpc2-tpm-autoenroll-summary.json"
+
+Write-Host ''
+Write-Host '=== EK certificate summary ==='
+Get-Content "\$EvidenceDir\ek-certificate-summary.json" -ErrorAction SilentlyContinue
+
+Write-Host ''
+Write-Host '=== TPM device information ==='
+Get-Content "\$EvidenceDir\tpmtool-deviceinformation.txt" -ErrorAction SilentlyContinue
+EOF_RUNNER_PS1
+
 cat >"$readme" <<EOF_README
 # Faz 22.6 #548 AgentPC2 TPM Auto-Enroll Packet
 
@@ -290,6 +391,12 @@ This packet is non-secret. It does not contain an enrollment token, bearer token
 private key, cookie, password, or raw credential. The generated PowerShell script
 requires the test enrollment token through the current PowerShell process
 environment only.
+
+Use \`agentpc2-tpm-autoenroll-runner.ps1\` for operator execution. It downloads
+and verifies \`agentpc2-tpm-autoenroll.ps1\`, prompts for the fresh test token
+inside a hidden secure prompt, injects it only into process environment, and
+clears it after the endpoint-local run. Do not edit the \`Read-Host -Prompt\`
+text and do not paste the raw value into commands.
 
 ## Target
 
@@ -311,7 +418,13 @@ Run from an elevated PowerShell session on AgentPC2.
 1. Inject the approved test enrollment token through the current process
    environment using the approved secret channel. Do not paste the raw value in
    chat, GitHub, Mavis, shell transcript, or evidence.
-2. Execute:
+2. Prefer the runner:
+
+\`\`\`powershell
+.\agentpc2-tpm-autoenroll-runner.ps1
+\`\`\`
+
+3. Advanced/manual execution, if the runner cannot be used:
 
 \`\`\`powershell
 .\\agentpc2-tpm-autoenroll.ps1 \\
@@ -320,8 +433,8 @@ Run from an elevated PowerShell session on AgentPC2.
   -EndpointAgentExe "${ENDPOINT_AGENT_EXE}"
 \`\`\`
 
-3. Remove the process environment value immediately after the script returns.
-4. Return only the generated evidence files, especially
+4. Remove the process environment value immediately after the script returns.
+5. Return only the generated evidence files, especially
    \`agentpc2-tpm-autoenroll-summary.json\`. Do not include the enrollment token.
 
 ## Acceptance Boundary
@@ -360,21 +473,24 @@ jq -n \
       raw_credential_material_included:false,
       token_channel:"process environment on endpoint only"
     },
-    files:["agentpc2-tpm-autoenroll.ps1","README.md","packet-manifest.json","SHA256SUMS"]
+    files:["agentpc2-tpm-autoenroll.ps1","agentpc2-tpm-autoenroll-runner.ps1","README.md","packet-manifest.json","SHA256SUMS"]
   }' >"$manifest"
 
 (
   cd "$OUT_DIR"
   rm -f SHA256SUMS
+  tmp_checksums="$(mktemp)"
   if command -v sha256sum >/dev/null 2>&1; then
     find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
       | sort -z \
-      | xargs -0 sha256sum > SHA256SUMS
+      | xargs -0 sha256sum > "$tmp_checksums"
+    mv "$tmp_checksums" SHA256SUMS
     sha256sum -c SHA256SUMS >/dev/null
   else
     find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
       | sort -z \
-      | xargs -0 shasum -a 256 > SHA256SUMS
+      | xargs -0 shasum -a 256 > "$tmp_checksums"
+    mv "$tmp_checksums" SHA256SUMS
     shasum -a 256 -c SHA256SUMS >/dev/null
   fi
 )

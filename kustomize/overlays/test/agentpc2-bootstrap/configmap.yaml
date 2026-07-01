@@ -66,9 +66,10 @@ data:
     c301386acbcee0297260495a1d4fc79f4e263130c39522a6137354d10f11bdbe  agentpc2-first-install-bootstrap.ps1
     9e3a7a89f5782ea54acb93e7c4bc1bbe411e0d5f29eacabca2a3911dbd8a5196  agentpc2-remote-bridge-canonical-env-patch-v7.ps1
     f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1
-    bf95a1ecf2fea8949e08040bff01db9d131f6f630aaacbeacf9c651c0385615b  agentpc2-tpm-autoenroll.ps1
-    8c754bac80a98bbe4237f167dfaaa25049f1f12885e8870784941b5a134095db  agentpc2-tpm-autoenroll-README.md
-    287bbad742229be44afc9e2e569f0995080e5682341b67fafbf1979908c52ec5  agentpc2-tpm-autoenroll-packet-manifest.json
+    d9de569b166e0fe0a2b19b21acd60ea607499019c38260b3d446c1e6b5d211e6  agentpc2-tpm-autoenroll.ps1
+    935fbf9aea6dc9e094ac9a1f315685a811db4dc786a5c79369077af188f2e4a8  agentpc2-tpm-autoenroll-runner.ps1
+    eb2ccd1a840c188df148a8cdec3e2318dae3d5c907c499c08c67df5d815fb495  agentpc2-tpm-autoenroll-README.md
+    863f4cc5780cb73ac3b3d7a25c1d70659290d9d55f87b9d3ad6a05d93c92dd0b  agentpc2-tpm-autoenroll-packet-manifest.json
   agentpc2-self-update-policy-seed-v023.ps1: |
     <#
     .SYNOPSIS
@@ -1415,10 +1416,8 @@ data:
       $psi.UseShellExecute = $false
       $psi.RedirectStandardOutput = $true
       $psi.RedirectStandardError = $true
-      $psi.ArgumentList.Add('--auto-enroll-tpm')
-      $psi.ArgumentList.Add('--api-url')
-      $psi.ArgumentList.Add($ApiUrl.TrimEnd('/'))
-      $psi.Environment['ENDPOINT_AGENT_ENROLLMENT_TOKEN'] = $token
+      $psi.Arguments = '--auto-enroll-tpm --api-url ' + $ApiUrl.TrimEnd('/')
+      $psi.EnvironmentVariables['ENDPOINT_AGENT_ENROLLMENT_TOKEN'] = $token
 
       $proc = New-Object System.Diagnostics.Process
       $proc.StartInfo = $psi
@@ -1490,6 +1489,100 @@ data:
     Write-JsonFile $summary $summaryPath
     Write-Step "summary=$summaryPath"
     Write-Step 'endpoint-local TPM auto-enroll evidence collection finished'
+  agentpc2-tpm-autoenroll-runner.ps1: |
+    [CmdletBinding()]
+    param(
+      [string]$BaseUrl = 'https://testai.acik.com/artifacts/endpoint-agent/bootstrap',
+      [string]$WorkDir = 'C:\Temp\faz22-6-agentpc2-tpm',
+      [string]$ExpectedScriptSha256 = 'd9de569b166e0fe0a2b19b21acd60ea607499019c38260b3d446c1e6b5d211e6',
+      [string]$ApiUrl = 'https://testai.acik.com/api/v1/endpoint-agent',
+      [string]$TargetProductDeviceId = '2f7ad30f-970a-42e7-8af8-08764ae6066f',
+      [string]$EndpointAgentExe = 'C:\Program Files\EndpointAgent\endpoint-agent.exe'
+    )
+
+    $ErrorActionPreference = 'Stop'
+    $ProgressPreference = 'SilentlyContinue'
+    Set-StrictMode -Version Latest
+
+    function Write-Step([string]$Message) {
+      Write-Host "[faz22.6-tpm-runner] $Message"
+    }
+
+    function Assert-Administrator {
+      $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+      $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+      if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw 'Run from an elevated PowerShell session.'
+      }
+    }
+
+    function Clear-ProcessEnrollmentToken {
+      [Environment]::SetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', $null, 'Process')
+      Remove-Item Env:\ENDPOINT_AGENT_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
+    }
+
+    Assert-Administrator
+    Clear-ProcessEnrollmentToken
+
+    $BaseUrl = $BaseUrl.TrimEnd('/')
+    New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
+
+    $Script = Join-Path $WorkDir 'agentpc2-tpm-autoenroll.ps1'
+    $Sums = Join-Path $WorkDir 'SHA256SUMS'
+
+    Write-Step 'download TPM auto-enroll script and checksum manifest'
+    Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/agentpc2-tpm-autoenroll.ps1?cacheBust=$([Guid]::NewGuid().ToString('N'))" -OutFile $Script
+    Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/SHA256SUMS?cacheBust=$([Guid]::NewGuid().ToString('N'))" -OutFile $Sums
+
+    $ActualScriptSha256 = (Get-FileHash -LiteralPath $Script -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($ActualScriptSha256 -ne $ExpectedScriptSha256) {
+      throw "TPM auto-enroll script SHA256 mismatch. actual=$ActualScriptSha256 expected=$ExpectedScriptSha256"
+    }
+
+    Get-Content -LiteralPath $Sums | Select-String 'agentpc2-tpm-autoenroll'
+
+    $SecureToken = $null
+    $Bstr = [IntPtr]::Zero
+    try {
+      $SecureToken = Read-Host -Prompt 'Paste approved FRESH TEST ENDPOINT_AGENT_ENROLLMENT_TOKEN' -AsSecureString
+      $Bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureToken)
+      $env:ENDPOINT_AGENT_ENROLLMENT_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Bstr)
+
+      Write-Step 'run endpoint-local TPM auto-enroll packet'
+      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script `
+        -ApiUrl $ApiUrl `
+        -TargetProductDeviceId $TargetProductDeviceId `
+        -EndpointAgentExe $EndpointAgentExe
+      if ($LASTEXITCODE -ne 0) {
+        throw "agentpc2-tpm-autoenroll.ps1 exited with code $LASTEXITCODE"
+      }
+    }
+    finally {
+      if ($Bstr -ne [IntPtr]::Zero) {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Bstr)
+      }
+      Clear-ProcessEnrollmentToken
+      Remove-Variable SecureToken -ErrorAction SilentlyContinue
+      Remove-Variable Bstr -ErrorAction SilentlyContinue
+    }
+
+    $EvidenceDir = "$env:ProgramData\EndpointAgent\faz22-6-tpm-autoenroll-evidence"
+
+    Write-Host ''
+    Write-Host '=== Evidence dir ==='
+    Get-ChildItem $EvidenceDir
+
+    Write-Host ''
+    Write-Host '=== Summary ==='
+    Get-Content "$EvidenceDir\agentpc2-tpm-autoenroll-summary.json"
+
+    Write-Host ''
+    Write-Host '=== EK certificate summary ==='
+    Get-Content "$EvidenceDir\ek-certificate-summary.json" -ErrorAction SilentlyContinue
+
+    Write-Host ''
+    Write-Host '=== TPM device information ==='
+    Get-Content "$EvidenceDir\tpmtool-deviceinformation.txt" -ErrorAction SilentlyContinue
   agentpc2-tpm-autoenroll-README.md: |
     # Faz 22.6 #548 AgentPC2 TPM Auto-Enroll Packet
 
@@ -1497,6 +1590,12 @@ data:
     private key, cookie, password, or raw credential. The generated PowerShell script
     requires the test enrollment token through the current PowerShell process
     environment only.
+
+    Use `agentpc2-tpm-autoenroll-runner.ps1` for operator execution. It downloads
+    and verifies `agentpc2-tpm-autoenroll.ps1`, prompts for the fresh test token
+    inside a hidden secure prompt, injects it only into process environment, and
+    clears it after the endpoint-local run. Do not edit the `Read-Host -Prompt`
+    text and do not paste the raw value into commands.
 
     ## Target
 
@@ -1518,7 +1617,13 @@ data:
     1. Inject the approved test enrollment token through the current process
        environment using the approved secret channel. Do not paste the raw value in
        chat, GitHub, Mavis, shell transcript, or evidence.
-    2. Execute:
+    2. Prefer the runner:
+
+    ```powershell
+    .\agentpc2-tpm-autoenroll-runner.ps1
+    ```
+
+    3. Advanced/manual execution, if the runner cannot be used:
 
     ```powershell
     .\agentpc2-tpm-autoenroll.ps1 \
@@ -1527,8 +1632,8 @@ data:
       -EndpointAgentExe "C:\Program Files\EndpointAgent\endpoint-agent.exe"
     ```
 
-    3. Remove the process environment value immediately after the script returns.
-    4. Return only the generated evidence files, especially
+    4. Remove the process environment value immediately after the script returns.
+    5. Return only the generated evidence files, especially
        `agentpc2-tpm-autoenroll-summary.json`. Do not include the enrollment token.
 
     ## Acceptance Boundary
@@ -1548,7 +1653,7 @@ data:
   agentpc2-tpm-autoenroll-packet-manifest.json: |
     {
       "schema": "faz22.6.agentpc2.tpm-autoenroll.packet.v1",
-      "generated_at": "2026-07-01T13:08:48Z",
+      "generated_at": "2026-07-01T13:44:38Z",
       "target": {
         "hostname": "AgentPc2",
         "product_device_id": "2f7ad30f-970a-42e7-8af8-08764ae6066f"
@@ -1569,6 +1674,7 @@ data:
       },
       "files": [
         "agentpc2-tpm-autoenroll.ps1",
+        "agentpc2-tpm-autoenroll-runner.ps1",
         "agentpc2-tpm-autoenroll-README.md",
         "agentpc2-tpm-autoenroll-packet-manifest.json",
         "SHA256SUMS"

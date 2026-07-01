@@ -132,11 +132,13 @@ The broker must run the `DEVICE_KEY_ATTESTATION_REAL` verifier (the only `HARDWA
      -f target_hostname=AgentPc2 \
      -f target_product_device_id=2f7ad30f-970a-42e7-8af8-08764ae6066f
    ```
-   The packet never embeds the enrollment token. On AgentPC2, inject the fresh
-   test enrollment token through the elevated PowerShell process environment,
-   run `agentpc2-tpm-autoenroll.ps1`, and return only the generated redacted
-   evidence files. Do not put the raw token in chat, GitHub, Mavis, shell
-   history, or evidence.
+   The packet never embeds the enrollment token. On AgentPC2, prefer
+   `agentpc2-tpm-autoenroll-runner.ps1`: it downloads and verifies
+   `agentpc2-tpm-autoenroll.ps1`, prompts for the fresh test token with a fixed
+   hidden prompt, injects it only into the process environment, and clears it
+   after the endpoint-local run. Do not edit the `Read-Host -Prompt` text and do
+   not put the raw token in chat, GitHub, Mavis, shell history, or evidence.
+   Return only the generated redacted evidence files.
 
    The underlying agent CLI is:
    ```powershell
