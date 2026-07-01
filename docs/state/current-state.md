@@ -55,6 +55,38 @@ AgentPC2 TPM auto-enroll packet readiness:
   satisfy #548. It only removes the packet-preparation ambiguity for the
   next endpoint-local AgentPC2 TPM auto-enroll attempt.
 
+VIEW_ONLY viewer pilot-surface dry-run readiness:
+
+- `apply-view-only-viewer-pilot-enable.yml` dry-run workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28517114097`
+  succeeded on main SHA `91735dfc8852697960c4e518cda6fcd49d7a8dd0`.
+- Runner/job evidence: self-hosted `staging-sw-testai-deploy`; job
+  `84531503722` completed successfully.
+- Dispatch input validation passed with
+  `action=dry_run` and `confirm=DRY_RUN_VIEW_ONLY_VIEWER_PILOT_ENABLE`.
+- Render guard passed for
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer`:
+  `REMOTE_BRIDGE_ENABLED=true`, `REMOTE_BRIDGE_VIEWER_ENABLED=true`,
+  `REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES=image/png`,
+  `containerPort: 8096`, dedicated
+  `endpoint-admin-remote-bridge-viewer` `ClusterIP`, no viewer NodePort,
+  and both viewer NetworkPolicies
+  `eab-bridge-viewer-allow-ingress-8096-from-api-gateway` plus
+  `eab-api-gateway-allow-egress-8096-to-bridge-viewer` rendered.
+- The synced test Argo root render did not contain
+  `endpoint-admin-remote-bridge-viewer`.
+- Kubernetes server-side dry-run against `k3d-test/platform-test` passed:
+  viewer ClusterIP service and both 8096 NetworkPolicies would be created,
+  while the broker ConfigMap/Deployment/ExternalSecrets/Ingress and existing
+  services/netpols would be configured or left unchanged under server dry-run.
+- Apply, api-gateway route patch, live surface verification, rollback, and
+  rollback verification steps were intentionally skipped because this run was
+  dry-run only.
+- Boundary: this proves the owner-gated viewer pilot surface is render-valid
+  and server-side-dry-run-valid on the test cluster. It does not apply the
+  8096 exposure, does not start a VIEW_ONLY session, does not produce the
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` marker, and does not satisfy #1580.
+
 AgentPC2 live product-channel state:
 
 - Product device:
