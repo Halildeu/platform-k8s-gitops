@@ -1,5 +1,56 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 #548 device-key broker activation GitOps-aligned; completion gate still marker-blocked (2026-07-01)
+
+The owner-gated device-key remote-bridge broker activation path was moved from
+imperative drift into GitOps and re-applied from `main`.
+
+Source and workflow evidence:
+
+- PR `#2197` merged at `fb0353cf69bff4906487eab35224ef8f4f25f149`: adds the
+  owner-gated device-key activation overlay, live wrapper, runbook, and workflow
+  for the isolated `endpoint-admin-remote-bridge-device-key` Deployment.
+- PR `#2198` merged at `82532c550f0e52986021debcb4f7707f190dbfbd`: adds the
+  quota-safe rollout strategy patch (`maxSurge=0`, `maxUnavailable=1`) and
+  guards it in CI/workflow render checks.
+- Activation workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28511116890`
+  succeeded from `main` with expected backend digest
+  `sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- Live verification in that workflow reported
+  `deployment "endpoint-admin-remote-bridge-device-key" successfully rolled out`,
+  `ready=1`, `updated=1`, `available=1`, and pod
+  `imageID=ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- The same workflow verified the SNI route
+  `remote-bridge-mtls.testai.acik.com` points at
+  `endpoint-admin-remote-bridge-device-key`.
+
+Canonical Faz 22.6 live audit after the activation:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28511141449`
+  (`headSha=82532c550f0e52986021debcb4f7707f190dbfbd`, self-hosted
+  `staging-sw` local-kubectl mode).
+- `ENDPOINT_AGENT_RELEASE_POLICY=pass release_tag=v0.3.9 next_trusted_minor=v0.3`
+- `GATE_22_6_1_OPERATION_CATALOG=pass`
+- `GATE_22_6_2_APPROVED_SCRIPT_RUNNER=pass`
+- `GATE_22_6_3_CONSTRAINED_EXECUTOR=pass`
+- `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay
+  expected_digest=sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba`
+- `F22_6_RELEASE_LINEAGE=pass`
+- `RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass`
+- `F22_6_COMPLETION=blocked`
+- `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`
+
+Boundary: `platform-backend#548` currently has GitHub state `CLOSED`, but the
+completion audit intentionally still reports
+`GATE_B1_4_HARDWARE_ATTESTATION=blocked ... reason=missing-acceptance-marker`.
+The device-key broker is activated and live on the expected immutable backend
+digest, but #548 product acceptance still requires the machine-readable B1.4
+acceptance marker or an explicit bounded-risk marker defined in
+`docs/runbooks/RB-faz22.6-autonomous-completion-contract.md`. Issue state alone
+is not accepted as sensitive-gate approval.
+
 ## Live Delta — Faz 22.6 release-lineage dense active-series audit pass (2026-07-01)
 
 The EndpointAgent trusted `v0.3` release train has reached the active-series
