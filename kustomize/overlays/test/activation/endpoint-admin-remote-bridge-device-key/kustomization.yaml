@@ -30,6 +30,10 @@ images:
   # 2026-07-02 sync: backend #786 merge e22c08b5 / image build run 28558654307
   # adds device-bound endpoint enrollment token support required before the
   # live TPM run can bind acceptance evidence to AgentPC2 or SRB-AIDENETIMPC.
+  # 2026-07-02 sync: backend branch codex/faz226-548-rootcause commit 6294cd8e
+  # / image build run 28614019890 fixes device-key challenge/decision WORM
+  # audit recording by using non-empty SHA-256 content hashes and adds the
+  # TPM binding least-privilege read grant.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f
+    digest: sha256:5a55eb10a35221055286e3e1dab7af666e730758a986b648c160cfa6b763b65a
