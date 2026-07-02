@@ -1,5 +1,82 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 #548 hardware verifier passed; #1580 viewer dry-run refreshed; completion still marker-blocked (2026-07-02)
+
+This delta supersedes only the #548 evidence interpretation in the earlier
+2026-07-02 entry below. It does not change the completion verdict.
+
+#548 device-key / TPM evidence:
+
+- The active public path remains the standard remote-bridge mTLS SNI route:
+  `remote-bridge-mtls.testai.acik.com:443 -> endpoint-admin-remote-bridge-device-key:9444`.
+- The latest Denetim/device-key smoke evidence is stored on `staging-sw` at:
+  `/home/halil/codex-rb-smoke/20260702T194246Z-faz226-548-denetim-device-key`.
+- Smoke summary:
+  `open=200`, `approve=200`, `challenge=200`, `verify=200`,
+  `deviceKeyEvidenceWait=stored`, and `operation=200`.
+- The operation response was `kind=KILL`, but this is not a device-key verifier
+  failure. The dedicated device-key broker is running duress fail-closed
+  (`AMBIGUOUS_UNTIL_WIRED`, no risk-accepted duress bypass), so a safe KILL is
+  expected after the verifier decision.
+- Durable recording entry `seq=2` is a `POLICY_EVENT` with
+  `hash16=1786b90a79796bb0`. This matches the SHA-256 prefix of the canonical
+  device-trust decision:
+
+```text
+DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified
+sha256=1786b90a79796bb07710d60d20a42e593449794ae3e08e1983354d3d1b01e1cf
+```
+
+- Targeted backend verification on branch `codex/faz226-548-rootcause` passed:
+  `DeviceKeyAttestationRealSessionDeviceTrustVerifierTest`,
+  `DeviceKeyAttestationNegativeEvidenceMatrixTest`, and
+  `RemoteBridgeOperatorServiceTest` ran `48` tests with `0` failures/errors.
+- Issue evidence was appended to
+  `https://github.com/Halildeu/platform-backend/issues/548#issuecomment-4869957468`.
+
+#548 boundary:
+
+- This is strong evidence that the real `DEVICE_KEY_ATTESTATION_REAL` verifier
+  reached `HARDWARE_KEY_ATTESTATION` with identity consistency.
+- It is not, by itself, the machine-readable acceptance marker required by the
+  Faz 22.6 completion audit.
+- The audit still requires exactly one valid marker in the canonical
+  `platform-backend#548` issue body. For the strong path that marker is
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1`, with a named owner and no
+  `expires_at`. No bounded-risk or enrollment-backed substitution is claimed.
+
+#1580 VIEW_ONLY viewer pilot surface:
+
+- A fresh non-mutating dry-run was executed from `main`:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28617730927`.
+- The run concluded `success` and rendered the owner-gated viewer overlay with:
+  `REMOTE_BRIDGE_VIEWER_ENABLED=true`,
+  `REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES=image/png`,
+  `endpoint-admin-remote-bridge-viewer` as `ClusterIP`, no NodePort for `8096`,
+  `containerPort: 8096`, and both NetworkPolicies:
+  `eab-bridge-viewer-allow-ingress-8096-from-api-gateway` plus
+  `eab-api-gateway-allow-egress-8096-to-bridge-viewer`.
+- Server-side dry-run in `k3d-test/platform-test` accepted the viewer Service,
+  bridge config/deployment changes, ExternalSecrets, ingress, and both 8096
+  NetworkPolicies.
+- Live posture after the dry-run remains intentionally closed:
+  no viewer Service, no viewer 8096 NetworkPolicies, and no live viewer route
+  was applied.
+- Issue evidence was appended to
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1580#issuecomment-4869957484`.
+
+Current Faz 22.6 completion boundary:
+
+- Latest canonical audit evidence still reports
+  `F22_6_COMPLETION=blocked`.
+- `REMOTE_BRIDGE_LIVE=pass` and `F22_6_RELEASE_LINEAGE=pass` remain green.
+- `GATE_B1_4_HARDWARE_ATTESTATION` remains blocked by missing issue-body
+  acceptance marker, not by missing verifier evidence.
+- `GATE_VIEW_ONLY_ENGINEERING` remains blocked by missing
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` product-channel evidence marker.
+- `GATE_VIEW_ONLY_KVKK` remains tracked-pending and non-blocking unless its
+  allowlist is violated.
+
 ## Live Delta — Faz 22.6 #548 device-key live route active; completion still marker-blocked (2026-07-02)
 
 This delta supersedes only the remote-bridge live evidence interpretation after
