@@ -5430,7 +5430,13 @@ images:
     # tokens bind to a target endpoint_device row, so TPM completion can
     # create device-specific endpoint_tpm_device_binding evidence. It does
     # not create the #548 acceptance marker without the live TPM run.
-    digest: sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f
+    # 2026-07-02 Faz 22.6 #548 device-key root-cause sync: co-bump primary
+    # test overlay with the owner-gated bridge activation overlays to preserve
+    # the same-image remote-bridge pilot topology. This carries the WORM audit
+    # hash fix, redacted EK-chain diagnostics, and chain-summary evidence used
+    # by the hardware-key attestation smoke; it does not create acceptance
+    # markers for #548 or #1580.
+    digest: sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
