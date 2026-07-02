@@ -27,6 +27,9 @@ images:
   # 2026-07-01 sync: backend #785 merge 0fe6a1a8 / image build run 28552448079
   # preserves the #548 device-key path from the prior d0911f416 image and adds
   # remote_access_bridge_control_streams_connected for live channel evidence.
+  # 2026-07-02 sync: backend #786 merge e22c08b5 / image build run 28558654307
+  # adds device-bound endpoint enrollment token support required before the
+  # live TPM run can bind acceptance evidence to AgentPC2 or SRB-AIDENETIMPC.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:83202237520749f697b9674e2a188f6c211ed57b9f832b1845c5959cbb3874db
+    digest: sha256:6452e5dd752526abf33696d4dbda9020663c5eb3beb2011ddd17f8bf7d3dd725

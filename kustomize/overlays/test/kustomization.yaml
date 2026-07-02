@@ -5424,7 +5424,13 @@ images:
     # image build run 28552448079). This preserves the prior #548 device-key
     # path and adds remote_access_bridge_control_streams_connected for live
     # AgentPC/channel evidence; it does not create the #548 acceptance marker.
-    digest: sha256:83202237520749f697b9674e2a188f6c211ed57b9f832b1845c5959cbb3874db
+    # 2026-07-02 Faz 22.6 #548 device-bound enrollment sync: re-pin from
+    # backend #785 (merge 0fe6a1a8) to backend #786 (merge e22c08b5, image
+    # build run 28558654307). This lets admin-minted endpoint enrollment
+    # tokens bind to a target endpoint_device row, so TPM completion can
+    # create device-specific endpoint_tpm_device_binding evidence. It does
+    # not create the #548 acceptance marker without the live TPM run.
+    digest: sha256:6452e5dd752526abf33696d4dbda9020663c5eb3beb2011ddd17f8bf7d3dd725
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
