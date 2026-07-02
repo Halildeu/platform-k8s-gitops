@@ -185,8 +185,12 @@ images:
     # non-admin recording-access preflight endpoint backed by OpenFGA
     # meeting#can_record. This is the PR-2 source artifact for removing the
     # audio-gateway dependency on /api/v1/admin/meetings/{id}.
+    # 2026-07-02 update: platform-backend#792 adds the backend-owned Meeting AI
+    # submit adapter at /api/v1/admin/meetings/{meetingId}/intelligence/analyze.
+    # Image build run 28617209018 from c99a0ba produced this immutable digest;
+    # test overlay only, runtime smoke remains acceptance evidence.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:45dffa4dcdc8ab2fb22303a0dad5420b6399c26b9c6456e1077b215deea6b05e
+    digest: sha256:8a6254b5876b5508e45f0b51a3b9756b24a17df1c38850c14911abfa1ec9797d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -502,7 +506,13 @@ images:
     # kaldırıldı, sonraki dispatch'lerde drift kaynağı sadece imperative
     # `kubectl set image` repository_dispatch executor'ı kalır (ADR-0023
     # planlı kalıcı çözüm gitops-level ArgoCD sync ayrı sprint).
-    digest: sha256:bf605d73a39d18fc2a6a5614579d0cbc18b41ccbd5a9a1e7d051049986918af5
+    #
+    # 2026-07-02 update: platform-backend#792 carries Meeting AI submit route
+    # parity in the gateway image. Existing test-only route patch below still
+    # maps /api/v1/admin/meetings/** to meeting-service; this image pin keeps
+    # gateway source/runtime family aligned. Image build run 28617210245 from
+    # c99a0ba produced this immutable digest.
+    digest: sha256:adb4e2a9d5f8e5c625c12fafa9afb562ca93836f2ccf7b74e06d38e5182b11ac
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
