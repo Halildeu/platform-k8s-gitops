@@ -40,6 +40,10 @@ images:
   # 2026-07-02 sync: same backend branch commit d5bed30d / image build run
   # 28616008882 includes chain subject/issuer summaries for exact manufacturer
   # root/intermediate reconciliation.
+  # 2026-07-03 Faz 24 meeting AI runtime co-bump: aligned with backend main
+  # merge 389b3bc image build run 28625506330 after the primary test overlay
+  # moved endpoint-admin-service to sha-12f4f97. Activation remains owner-gated
+  # and this does not add acceptance markers.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5
+    digest: sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f
