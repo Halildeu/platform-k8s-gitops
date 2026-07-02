@@ -1,5 +1,46 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 remote-bridge digest drift detected; same-image reconciliation in flight (2026-07-02)
+
+This delta supersedes only the `REMOTE_BRIDGE_LIVE=pass` interpretation in the
+entries below until the reconciliation PR is merged and the live audit is
+rerun. It does not change the completion verdict.
+
+Latest audit:
+
+- `Faz 22.6 Live Audit`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28618060866`
+  failed at `REMOTE_BRIDGE_LIVE`.
+- The audit derived expected digest
+  `sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f`
+  from the rendered overlays, but the active device-key broker was live on
+  `sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5`.
+- This is not a port/routing blocker: the public path remains the standard
+  443/SNI route
+  `remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444`.
+
+Reconciliation direction:
+
+- PR `platform-k8s-gitops#2236` reconciles the same-image remote-bridge
+  topology by co-bumping the primary test overlay, the normal bridge activation
+  overlay, and the device-key bridge activation overlay to the same immutable
+  `54f56a2f...` digest.
+- The PR does not enable the VIEW_ONLY viewer surface and does not add #548 or
+  #1580 acceptance markers.
+- After merge/apply, `Faz 22.6 Live Audit` must be rerun. Until that audit shows
+  a fresh `REMOTE_BRIDGE_LIVE=pass`, the live status remains blocked by this
+  drift plus the existing #548/#1580 marker requirements.
+
+Current Faz 22.6 completion boundary:
+
+- `F22_6_COMPLETION=blocked`.
+- #548 has hardware-key verifier smoke evidence, but still needs the issue-body
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker with named owner
+  approval.
+- #1580 still needs the product-channel VIEW_ONLY engineering marker and
+  attended pilot evidence. KVKK remains tracked separately and non-blocking
+  unless the allowlist is violated.
+
 ## Live Delta — Faz 22.6 #548 hardware verifier passed; #1580 viewer dry-run refreshed; completion still marker-blocked (2026-07-02)
 
 This delta supersedes only the #548 evidence interpretation in the earlier
