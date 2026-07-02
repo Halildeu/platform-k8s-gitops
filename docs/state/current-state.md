@@ -1,5 +1,76 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 #548 device-key live route active; completion still marker-blocked (2026-07-02)
+
+This delta supersedes only the remote-bridge live evidence interpretation after
+the #548 device-key broker activation. It does not change the completion
+verdict.
+
+Source and rollout chain:
+
+- `platform-backend#791` merged the device-key challenge lifecycle audit
+  follow-up for endpoint-admin-service.
+- `platform-k8s-gitops#2233` pinned the test endpoint-admin-service consumers
+  to image digest
+  `sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f`.
+- `Apply #548 device-key remote-bridge activation` workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28609420731`
+  applied the owner-gated device-key wrapper and verified rollout/imageID/SNI.
+
+Live cluster evidence:
+
+- `platform-test/endpoint-admin-service` is Ready on
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f`.
+- `platform-test/endpoint-admin-remote-bridge-device-key` is Ready on the same
+  digest, with `restartCount=0`.
+- Public SNI route is now
+  `remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444`.
+- The older enrollment-backed `endpoint-admin-remote-bridge` deployment still
+  exists on digest
+  `sha256:6452e5dd752526abf33696d4dbda9020663c5eb3beb2011ddd17f8bf7d3dd725`,
+  but it is not the active public SNI backend while the device-key wrapper is
+  selected.
+
+Audit correction:
+
+- The completion audit previously derived the expected digest from the aligned
+  overlays and then checked the inactive `endpoint-admin-remote-bridge`
+  deployment, which caused a false `REMOTE_BRIDGE_LIVE` blocker after the SNI
+  route moved to the dedicated device-key broker.
+- The audit now reads `endpoint-admin-remote-bridge-mtls` and validates
+  `endpoint-admin-service` plus the active SNI backend deployment and matching
+  ExternalSecrets.
+- Patched live audit output now reports:
+  `REMOTE_BRIDGE_LIVE=pass mode=ssh expected_source=rendered-overlay
+  expected_digest=sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f`.
+
+Endpoint evidence:
+
+- Denetim PC resolves `remote-bridge-mtls.testai.acik.com` to `10.9.10.53` and
+  TCP `443` succeeds; this is not a closed-port problem.
+- EndpointAgent service restart on Denetim PC loads the machine certificate and
+  starts the device-key remote bridge, but the auto-enroll heartbeat currently
+  receives `401 MACHINE_CERT_NOT_ENROLLED`.
+- Backend bridge logs still show `HELLO_VERIFIED:cert=false,attestation=false,device=false`.
+  Therefore no `device=true` or hardware/device-key acceptance evidence exists
+  yet.
+
+Current completion boundary:
+
+- `F22_6_RELEASE_LINEAGE=pass` remains green.
+- `REMOTE_BRIDGE_LIVE=pass` is the correct active-SNI interpretation after this
+  audit correction.
+- `GATE_B1_4_HARDWARE_ATTESTATION` remains blocked by missing
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE` or bounded-risk marker on
+  `platform-backend#548`.
+- `GATE_VIEW_ONLY_ENGINEERING` remains blocked by missing
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` evidence marker on
+  `platform-k8s-gitops#1580`.
+- `GATE_VIEW_ONLY_KVKK` remains tracked-pending and non-blocking unless the
+  marker allowlist is violated.
+- Current machine result remains `F22_6_COMPLETION=blocked` with
+  `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`.
+
 ## Live Delta — Faz 22.6 #548 device-key dry-run refreshed; AgentPC2 token still pending (2026-07-01)
 
 This delta supersedes only the #548 device-key dry-run freshness and the

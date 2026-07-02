@@ -904,12 +904,12 @@ check_view_only_kvkk() {
 
 remote_bridge_query_cmd() {
   # remote_bridge_query_cmd <q_context> <q_namespace>
-  # Echo a single shell command that emits three marker-delimited JSON blocks
+  # Echo a single shell command that emits four marker-delimited JSON blocks
   # (deploys, pods, ExternalSecrets). The SAME command runs locally (bash -c) and
   # remotely (ssh), so the exact-parse below is identical in both modes.
   local q_context="$1" q_namespace="$2" q_selector
-  q_selector="$(shell_quote 'app.kubernetes.io/name in (endpoint-admin-service,endpoint-admin-remote-bridge)')"
-  printf '%s' "echo '===RB_DEPLOYS==='; kubectl --context $q_context -n $q_namespace get deploy endpoint-admin-service endpoint-admin-remote-bridge -o json; echo '===RB_PODS==='; kubectl --context $q_context -n $q_namespace get pod -l $q_selector -o json; echo '===RB_ES==='; kubectl --context $q_context -n $q_namespace get externalsecret endpoint-admin-remote-bridge-secrets endpoint-admin-remote-bridge-signer endpoint-admin-remote-bridge-tls -o json"
+  q_selector="$(shell_quote 'app.kubernetes.io/name in (endpoint-admin-service,endpoint-admin-remote-bridge,endpoint-admin-remote-bridge-device-key)')"
+  printf '%s' "echo '===RB_DEPLOYS==='; kubectl --context $q_context -n $q_namespace get deploy endpoint-admin-service endpoint-admin-remote-bridge endpoint-admin-remote-bridge-device-key --ignore-not-found -o json; echo '===RB_PODS==='; kubectl --context $q_context -n $q_namespace get pod -l $q_selector -o json; echo '===RB_ES==='; kubectl --context $q_context -n $q_namespace get externalsecret endpoint-admin-remote-bridge-secrets endpoint-admin-remote-bridge-signer endpoint-admin-remote-bridge-tls endpoint-admin-remote-bridge-secrets-device-key endpoint-admin-remote-bridge-signer-device-key endpoint-admin-remote-bridge-tls-device-key --ignore-not-found -o json; echo '===RB_INGRESS==='; kubectl --context $q_context -n $q_namespace get ingress endpoint-admin-remote-bridge-mtls -o json"
 }
 
 _rb_section() {
@@ -922,22 +922,47 @@ _rb_section() {
 }
 
 evaluate_remote_bridge_live() {
-  # evaluate_remote_bridge_live <expected-digest> <deploys-json> <pods-json> <es-json>
+  # evaluate_remote_bridge_live <expected-digest> <deploys-json> <pods-json> <es-json> <ingress-json>
   # Exact per-object assertions (Codex 019f0733 P1/P2 — replaces grep-count, which
-  # could mask object-specific drift): both named Deployments carry the expected
-  # image; for each app label there is >=1 non-deleting Running pod and ALL such
-  # pods are Ready on the expected imageID (no pod on a wrong digest); the three
-  # named ExternalSecrets are Ready=True/SecretSynced. Prints "ok" | "blocked
-  # reason=...". Returns 0 only on ok.
-  local expected="$1" deploys="$2" pods="$3" es="$4"
-  local full="${RBD_IMG}@${expected}" reasons=() d lbl
-  for d in endpoint-admin-service endpoint-admin-remote-bridge; do
+  # could mask object-specific drift): endpoint-admin-service and the active SNI
+  # broker deployment carry the expected image; for each app label there is >=1
+  # non-deleting Running pod and ALL such pods are Ready on the expected imageID
+  # (no pod on a wrong digest); the active broker's ExternalSecrets are
+  # Ready=True/SecretSynced. The active broker is derived from the public SNI
+  # Ingress so the #548 device-key live wrapper does not get blocked by the
+  # now-inactive enrollment-backed broker deployment.
+  local expected="$1" deploys="$2" pods="$3" es="$4" ingress="$5"
+  local full="${RBD_IMG}@${expected}" reasons=() d lbl active_broker active_secret_suffix
+
+  active_broker="$(printf '%s' "$ingress" | jq -r '
+    [ .spec.rules[]?
+      | select(.host == "remote-bridge-mtls.testai.acik.com")
+      | .http.paths[]?.backend.service.name ] | first // ""' 2>/dev/null || true)"
+  case "$active_broker" in
+    endpoint-admin-remote-bridge)
+      active_secret_suffix=""
+      ;;
+    endpoint-admin-remote-bridge-device-key)
+      active_secret_suffix="-device-key"
+      ;;
+    "")
+      reasons+=("ingress:endpoint-admin-remote-bridge-mtls")
+      active_broker="endpoint-admin-remote-bridge"
+      active_secret_suffix=""
+      ;;
+    *)
+      reasons+=("ingress:unexpected-backend:$active_broker")
+      active_secret_suffix=""
+      ;;
+  esac
+
+  for d in endpoint-admin-service "$active_broker"; do
     printf '%s' "$deploys" | jq -e --arg n "$d" --arg f "$full" \
       '([.items[]|select(.metadata.name==$n)]|length==1)
        and ([.items[]|select(.metadata.name==$n)][0].spec.template.spec.containers[0].image==$f)' \
       >/dev/null 2>&1 || reasons+=("deploy:$d")
   done
-  for lbl in endpoint-admin-service endpoint-admin-remote-bridge; do
+  for lbl in endpoint-admin-service "$active_broker"; do
     printf '%s' "$pods" | jq -e --arg n "$lbl" --arg e "$expected" '
       [ .items[]
         | select(.metadata.deletionTimestamp == null)
@@ -947,20 +972,20 @@ evaluate_remote_bridge_live() {
         and (all($p[];
               (.status.containerStatuses[0].ready == true)
               and (.status.containerStatuses[0].imageID | contains($e))))' \
-      >/dev/null 2>&1 || reasons+=("pods:$lbl")
+    >/dev/null 2>&1 || reasons+=("pods:$lbl")
   done
   # Per-name exact-one + an explicit Ready=True/SecretSynced condition. Using
   # `any` over `(.status.conditions // [])` (not a select-stream inside all()) so an
   # ExternalSecret that EXISTS but has no Ready condition fails closed instead of
   # being silently skipped (Codex 019f0733 P1).
-  printf '%s' "$es" | jq -e '
+  printf '%s' "$es" | jq -e --arg suffix "$active_secret_suffix" '
     def es_ready($n):
       ([.items[] | select(.metadata.name == $n)] | length == 1)
       and ([.items[] | select(.metadata.name == $n)][0].status.conditions // []
             | any(.type == "Ready" and .status == "True" and .reason == "SecretSynced"));
-    es_ready("endpoint-admin-remote-bridge-secrets")
-    and es_ready("endpoint-admin-remote-bridge-signer")
-    and es_ready("endpoint-admin-remote-bridge-tls")' \
+    es_ready("endpoint-admin-remote-bridge-secrets" + $suffix)
+    and es_ready("endpoint-admin-remote-bridge-signer" + $suffix)
+    and es_ready("endpoint-admin-remote-bridge-tls" + $suffix)' \
     >/dev/null 2>&1 || reasons+=("externalsecrets")
   if [ "${#reasons[@]}" -ne 0 ]; then
     printf 'blocked reason=%s' "$(IFS=,; printf '%s' "${reasons[*]}")"
@@ -973,7 +998,7 @@ evaluate_remote_bridge_live() {
 check_remote_bridge() {
   local output effective_mode rb_query q_context q_namespace
   local expected_digest expected_source expected_ref derive_rc
-  local deploys_json pods_json es_json eval_out eval_rc
+  local deploys_json pods_json es_json ingress_json eval_out eval_rc
   case "$REMOTE_BRIDGE_KUBECTL_MODE" in
     local|local-kubectl) effective_mode="local-kubectl" ;;
     ssh) effective_mode="ssh" ;;
@@ -1054,8 +1079,9 @@ check_remote_bridge() {
   deploys_json="$(_rb_section "$output" RB_DEPLOYS)"
   pods_json="$(_rb_section "$output" RB_PODS)"
   es_json="$(_rb_section "$output" RB_ES)"
+  ingress_json="$(_rb_section "$output" RB_INGRESS)"
   eval_rc=0
-  eval_out="$(evaluate_remote_bridge_live "$expected_digest" "$deploys_json" "$pods_json" "$es_json")" || eval_rc=$?
+  eval_out="$(evaluate_remote_bridge_live "$expected_digest" "$deploys_json" "$pods_json" "$es_json" "$ingress_json")" || eval_rc=$?
 
   # Env-override is a DIAGNOSTIC escape hatch only — it can NEVER be a canonical
   # completion source (Codex 019f0733 P1). Always return non-zero in that mode so

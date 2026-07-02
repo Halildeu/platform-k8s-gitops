@@ -114,14 +114,22 @@ printf '%s\n' "$ovr_out" | grep -q 'reason=expected-digest-env-set-without-ALLOW
 
 # 6) evaluate_remote_bridge_live: exact per-object parse (no grep-count masking).
 IMG="ghcr.io/halildeu/platform-backend-endpoint-admin-service"
-mk_deploys() { jq -nc --arg img "$1" '{items:[
+mk_deploys() {
+  local img="$1" bridge="${2:-$1}" device_key="${3:-$1}"
+  jq -nc --arg img "$img" --arg bridge "$bridge" --arg device_key "$device_key" '{items:[
   {metadata:{name:"endpoint-admin-service"},spec:{template:{spec:{containers:[{image:$img}]}}}},
-  {metadata:{name:"endpoint-admin-remote-bridge"},spec:{template:{spec:{containers:[{image:$img}]}}}}]}'; }
+  {metadata:{name:"endpoint-admin-remote-bridge"},spec:{template:{spec:{containers:[{image:$bridge}]}}}},
+  {metadata:{name:"endpoint-admin-remote-bridge-device-key"},spec:{template:{spec:{containers:[{image:$device_key}]}}}}]}'
+}
 mk_pod() { jq -nc --arg n "$1" --arg img "$2" '{metadata:{name:($n+"-x"),deletionTimestamp:null,labels:{"app.kubernetes.io/name":$n}},status:{phase:"Running",containerStatuses:[{ready:true,imageID:$img}]}}'; }
 mk_es() { jq -nc '{items:[
   {metadata:{name:"endpoint-admin-remote-bridge-secrets"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}},
   {metadata:{name:"endpoint-admin-remote-bridge-signer"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}},
-  {metadata:{name:"endpoint-admin-remote-bridge-tls"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}}]}'; }
+  {metadata:{name:"endpoint-admin-remote-bridge-tls"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}},
+  {metadata:{name:"endpoint-admin-remote-bridge-secrets-device-key"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}},
+  {metadata:{name:"endpoint-admin-remote-bridge-signer-device-key"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}},
+  {metadata:{name:"endpoint-admin-remote-bridge-tls-device-key"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}}]}'; }
+mk_ingress() { jq -nc --arg svc "$1" '{spec:{rules:[{host:"remote-bridge-mtls.testai.acik.com",http:{paths:[{backend:{service:{name:$svc}}}]}}]}}'; }
 
 export F22_6_COMPLETION_AUDIT_SOURCE_ONLY=1
 # shellcheck source=/dev/null
@@ -130,9 +138,22 @@ source "$AUDIT"
 deploys_ok="$(mk_deploys "${IMG}@${A}")"
 pods_ok="$(jq -nc --argjson a "$(mk_pod endpoint-admin-service "${IMG}@${A}")" --argjson b "$(mk_pod endpoint-admin-remote-bridge "${IMG}@${A}")" '{items:[$a,$b]}')"
 es_ok="$(mk_es)"
+ingress_base="$(mk_ingress endpoint-admin-remote-bridge)"
+ingress_device_key="$(mk_ingress endpoint-admin-remote-bridge-device-key)"
 
-evaluate_remote_bridge_live "$A" "$deploys_ok" "$pods_ok" "$es_ok" >/dev/null \
+evaluate_remote_bridge_live "$A" "$deploys_ok" "$pods_ok" "$es_ok" "$ingress_base" >/dev/null \
   || { echo "FAIL: aligned fixtures should evaluate ok"; exit 1; }
+
+# When the public SNI Ingress points at the #548 device-key broker, the inactive
+# enrollment-backed broker may still be on an older digest without blocking the
+# active remote-bridge evidence.
+deploys_device_key_active="$(mk_deploys "${IMG}@${A}" "${IMG}@${B}" "${IMG}@${A}")"
+pods_device_key_active="$(jq -nc \
+  --argjson a "$(mk_pod endpoint-admin-service "${IMG}@${A}")" \
+  --argjson b "$(mk_pod endpoint-admin-remote-bridge "${IMG}@${B}")" \
+  --argjson c "$(mk_pod endpoint-admin-remote-bridge-device-key "${IMG}@${A}")" '{items:[$a,$b,$c]}')"
+evaluate_remote_bridge_live "$A" "$deploys_device_key_active" "$pods_device_key_active" "$es_ok" "$ingress_device_key" >/dev/null \
+  || { echo "FAIL: active device-key SNI should ignore inactive stale enrollment-backed broker"; exit 1; }
 
 # A 2nd endpoint-admin-service pod on a WRONG digest must block (grep-count would mask it).
 pods_drift="$(jq -nc \
@@ -140,7 +161,7 @@ pods_drift="$(jq -nc \
   --argjson b "$(mk_pod endpoint-admin-remote-bridge "${IMG}@${A}")" \
   --argjson c "$(mk_pod endpoint-admin-service "${IMG}@${B}")" '{items:[$a,$b,$c]}')"
 set +e
-evaluate_remote_bridge_live "$A" "$deploys_ok" "$pods_drift" "$es_ok" >"$tmp_dir/eval-drift.out"; erc=$?
+evaluate_remote_bridge_live "$A" "$deploys_ok" "$pods_drift" "$es_ok" "$ingress_base" >"$tmp_dir/eval-drift.out"; erc=$?
 set -e
 [ "$erc" != 0 ] || { echo "FAIL: wrong-digest pod should block (count-masking guard)"; exit 1; }
 grep -q 'pods:endpoint-admin-service' "$tmp_dir/eval-drift.out" || { echo "FAIL: drift reason: $(cat "$tmp_dir/eval-drift.out")"; exit 1; }
@@ -148,7 +169,7 @@ grep -q 'pods:endpoint-admin-service' "$tmp_dir/eval-drift.out" || { echo "FAIL:
 # A missing ExternalSecret must block.
 es_missing="$(jq -nc '{items:[{metadata:{name:"endpoint-admin-remote-bridge-secrets"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}}]}')"
 set +e
-evaluate_remote_bridge_live "$A" "$deploys_ok" "$pods_ok" "$es_missing" >"$tmp_dir/eval-es.out"; erc=$?
+evaluate_remote_bridge_live "$A" "$deploys_ok" "$pods_ok" "$es_missing" "$ingress_base" >"$tmp_dir/eval-es.out"; erc=$?
 set -e
 [ "$erc" != 0 ] || { echo "FAIL: missing ExternalSecret should block"; exit 1; }
 grep -q 'externalsecrets' "$tmp_dir/eval-es.out" || { echo "FAIL: es reason: $(cat "$tmp_dir/eval-es.out")"; exit 1; }
@@ -160,7 +181,7 @@ es_no_ready="$(jq -nc '{items:[
   {metadata:{name:"endpoint-admin-remote-bridge-signer"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}},
   {metadata:{name:"endpoint-admin-remote-bridge-tls"},status:{conditions:[]}}]}')"
 set +e
-evaluate_remote_bridge_live "$A" "$deploys_ok" "$pods_ok" "$es_no_ready" >"$tmp_dir/eval-es2.out"; erc=$?
+evaluate_remote_bridge_live "$A" "$deploys_ok" "$pods_ok" "$es_no_ready" "$ingress_base" >"$tmp_dir/eval-es2.out"; erc=$?
 set -e
 [ "$erc" != 0 ] || { echo "FAIL: ES present but missing Ready condition should block"; exit 1; }
 grep -q 'externalsecrets' "$tmp_dir/eval-es2.out" || { echo "FAIL: es-no-ready reason: $(cat "$tmp_dir/eval-es2.out")"; exit 1; }
@@ -178,6 +199,7 @@ case "$args" in
   *"get deploy"*) jq -nc --arg img "$img" '{items:[{metadata:{name:"endpoint-admin-service"},spec:{template:{spec:{containers:[{image:$img}]}}}},{metadata:{name:"endpoint-admin-remote-bridge"},spec:{template:{spec:{containers:[{image:$img}]}}}}]}' ;;
   *"get pod"*) jq -nc --arg img "$img" '{items:[{metadata:{name:"p1",deletionTimestamp:null,labels:{"app.kubernetes.io/name":"endpoint-admin-service"}},status:{phase:"Running",containerStatuses:[{ready:true,imageID:$img}]}},{metadata:{name:"p2",deletionTimestamp:null,labels:{"app.kubernetes.io/name":"endpoint-admin-remote-bridge"}},status:{phase:"Running",containerStatuses:[{ready:true,imageID:$img}]}}]}' ;;
   *"get externalsecret"*) jq -nc '{items:[{metadata:{name:"endpoint-admin-remote-bridge-secrets"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}},{metadata:{name:"endpoint-admin-remote-bridge-signer"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}},{metadata:{name:"endpoint-admin-remote-bridge-tls"},status:{conditions:[{type:"Ready",status:"True",reason:"SecretSynced"}]}}]}' ;;
+  *"get ingress"*) jq -nc '{spec:{rules:[{host:"remote-bridge-mtls.testai.acik.com",http:{paths:[{backend:{service:{name:"endpoint-admin-remote-bridge"}}}]}}]}}' ;;
   *) echo '{}' ;;
 esac
 SH
