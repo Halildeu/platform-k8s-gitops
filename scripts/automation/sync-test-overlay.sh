@@ -45,6 +45,10 @@ KUSTOMIZATION="kustomize/overlays/test/kustomization.yaml"
 # the rollout bumps endpoint-admin-service, its digest is mirrored into this bridge
 # overlay in the SAME PR so the completion-audit REMOTE_BRIDGE_LIVE gate cannot re-drift.
 BRIDGE_KUSTOMIZATION="kustomize/overlays/test/activation/endpoint-admin-remote-bridge/kustomization.yaml"
+# Faz 22.6 #548 uses a dedicated, owner-gated device-key broker overlay on the same
+# endpoint-admin-service image line. Keep it in the same digest-sync transaction so
+# strong-attestation evidence runs do not silently execute stale backend bytecode.
+DEVICE_KEY_BRIDGE_KUSTOMIZATION="kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/kustomization.yaml"
 APPLY_SCRIPT="scripts/automation/apply-test-overlay-digests.py"
 GH_REPO="${GITHUB_REPO:-Halildeu/platform-k8s-gitops}"
 SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
@@ -86,16 +90,16 @@ fi
 echo "$APPLY_OUT"
 
 # ------------------------------------------------------------
-# Mirror endpoint-admin-service digest into the bridge activation overlay (#2031)
+# Mirror endpoint-admin-service digest into the bridge activation overlays (#2031 + #548)
 # ------------------------------------------------------------
-# Same-image pilot topology: the remote-bridge runs the SAME endpoint-admin-service
+# Same-image pilot topology: the remote-bridge brokers run the SAME endpoint-admin-service
 # image. If the rollout bumped endpoint-admin-service, mirror that exact digest into
-# the bridge activation overlay so the two never re-drift (completion-audit
-# REMOTE_BRIDGE_LIVE digest_hits>=4). Reuses the same comment-preserving writer with a
-# single-service map; endpoint-admin-service is the ONLY service mirrored. The
-# digest-alignment guard (scripts/governance/check-remote-bridge-digest-alignment.sh)
-# enforces this invariant at PR time.
+# the normal bridge and #548 device-key activation overlays so they never re-drift.
+# Reuses the same comment-preserving writer with a single-service map; endpoint-admin-service
+# is the ONLY service mirrored. The digest-alignment guard
+# (scripts/governance/check-remote-bridge-digest-alignment.sh) enforces this invariant at PR time.
 BRIDGE_OUT=""
+DEVICE_KEY_BRIDGE_OUT=""
 EA_DIGEST=$(printf '%s' "$DIGEST_MAP" | jq -r '."endpoint-admin-service" // empty')
 if [[ -n "$EA_DIGEST" ]]; then
   if ! BRIDGE_OUT=$(python3 "$APPLY_SCRIPT" --digest-map "{\"endpoint-admin-service\":\"${EA_DIGEST}\"}" --kustomization "$BRIDGE_KUSTOMIZATION"); then
@@ -103,27 +107,32 @@ if [[ -n "$EA_DIGEST" ]]; then
     exit 1
   fi
   echo "$BRIDGE_OUT"
+  if ! DEVICE_KEY_BRIDGE_OUT=$(python3 "$APPLY_SCRIPT" --digest-map "{\"endpoint-admin-service\":\"${EA_DIGEST}\"}" --kustomization "$DEVICE_KEY_BRIDGE_KUSTOMIZATION"); then
+    echo "::error::[sync-test-overlay] device-key bridge activation overlay mirror failed (endpoint-admin digest ${EA_DIGEST})"
+    exit 1
+  fi
+  echo "$DEVICE_KEY_BRIDGE_OUT"
 fi
 
-if git diff --quiet -- "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION"; then
-  echo "[sync-test-overlay] test overlay + bridge already in sync with the rollout — no PR needed"
+if git diff --quiet -- "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION" "$DEVICE_KEY_BRIDGE_KUSTOMIZATION"; then
+  echo "[sync-test-overlay] test overlay + bridge overlays already in sync with the rollout — no PR needed"
   exit 0
 fi
 
 # ------------------------------------------------------------
-# Diff guard — the PR may change ONLY the primary test overlay + the bridge activation
-# overlay, ONLY digest: lines, ONLY <= 14 (up to 13 backend services + 1 bridge mirror)
+# Diff guard — the PR may change ONLY the primary test overlay + bridge activation
+# overlays, ONLY digest: lines, ONLY <= 15 (up to 13 backend services + 2 bridge mirrors)
 # ------------------------------------------------------------
 changed_files=$(git diff --name-only)
 while IFS= read -r cf; do
   [[ -z "$cf" ]] && continue
-  if [[ "$cf" != "$KUSTOMIZATION" && "$cf" != "$BRIDGE_KUSTOMIZATION" ]]; then
-    echo "::error::[sync-test-overlay] diff-guard: only $KUSTOMIZATION and $BRIDGE_KUSTOMIZATION may change; got: ${changed_files//$'\n'/, }"
+  if [[ "$cf" != "$KUSTOMIZATION" && "$cf" != "$BRIDGE_KUSTOMIZATION" && "$cf" != "$DEVICE_KEY_BRIDGE_KUSTOMIZATION" ]]; then
+    echo "::error::[sync-test-overlay] diff-guard: only $KUSTOMIZATION, $BRIDGE_KUSTOMIZATION and $DEVICE_KEY_BRIDGE_KUSTOMIZATION may change; got: ${changed_files//$'\n'/, }"
     exit 1
   fi
 done <<< "$changed_files"
 
-offending=$(git diff -U0 -- "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION" \
+offending=$(git diff -U0 -- "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION" "$DEVICE_KEY_BRIDGE_KUSTOMIZATION" \
   | grep -E '^[-+]' \
   | grep -vE '^(\+\+\+|---) ' \
   | grep -vE '^[-+][[:space:]]+digest: sha256:[a-f0-9]{64}$' || true)
@@ -133,9 +142,9 @@ if [[ -n "$offending" ]]; then
   exit 1
 fi
 
-added=$(git diff -U0 -- "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION" \
+added=$(git diff -U0 -- "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION" "$DEVICE_KEY_BRIDGE_KUSTOMIZATION" \
   | grep -cE '^\+[[:space:]]+digest: sha256:[a-f0-9]{64}$' || true)
-deleted=$(git diff -U0 -- "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION" \
+deleted=$(git diff -U0 -- "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION" "$DEVICE_KEY_BRIDGE_KUSTOMIZATION" \
   | grep -cE '^-[[:space:]]+digest: sha256:[a-f0-9]{64}$' || true)
 # Pure-rewrite contract: each change removes one digest line and adds one, so
 # added == deleted. A mismatch means a digest line was purely added or deleted
@@ -144,23 +153,24 @@ if [[ "$added" -ne "$deleted" ]]; then
   echo "::error::[sync-test-overlay] diff-guard: digest add/remove mismatch (+${added} / -${deleted}) — expected a pure rewrite"
   exit 1
 fi
-if [[ "$added" -lt 1 || "$added" -gt 14 ]]; then
-  echo "::error::[sync-test-overlay] diff-guard: ${added} digest line(s) changed (expected 1..14: up to 13 backend services + 1 endpoint-admin bridge mirror)"
+if [[ "$added" -lt 1 || "$added" -gt 15 ]]; then
+  echo "::error::[sync-test-overlay] diff-guard: ${added} digest line(s) changed (expected 1..15: up to 13 backend services + 2 endpoint-admin bridge mirrors)"
   exit 1
 fi
-echo "[sync-test-overlay] diff-guard OK — ${added} digest line(s) rewritten (incl. any endpoint-admin bridge mirror)"
+echo "[sync-test-overlay] diff-guard OK — ${added} digest line(s) rewritten (incl. any endpoint-admin bridge mirrors)"
 
 # ------------------------------------------------------------
 # Commit + force-push the rolling automation branch
 # ------------------------------------------------------------
 git config user.name "$BOT_NAME"
 git config user.email "$BOT_EMAIL"
-git add "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION"
+git add "$KUSTOMIZATION" "$BRIDGE_KUSTOMIZATION" "$DEVICE_KEY_BRIDGE_KUSTOMIZATION"
 git commit --quiet -m "auto(test-overlay): sync ${added} backend digest(s) to deploy sha-${SHORT_SHA}
 
-Includes the endpoint-admin-service bridge activation overlay mirror when endpoint-admin
-was rolled (same-image pilot topology, #2031), so the completion-audit REMOTE_BRIDGE_LIVE
-gate cannot re-drift. Rollout run: ${RUN_URL}
+Includes endpoint-admin-service bridge activation overlay mirrors when endpoint-admin
+was rolled (same-image pilot topology, #2031 + #548), so the completion-audit
+REMOTE_BRIDGE_LIVE and strong device-key broker evidence path cannot re-drift.
+Rollout run: ${RUN_URL}
 Generated by scripts/automation/sync-test-overlay.sh (#827 PR-B + #2031)."
 
 # Dedicated automation branch reset to origin/main each run — force-push is the
@@ -197,6 +207,12 @@ ${APPLY_OUT}
 
 ~~~
 ${BRIDGE_OUT:-(unchanged — endpoint-admin-service not in this rollout)}
+~~~
+
+### Device-key bridge activation overlay (endpoint-admin same-image mirror, #548)
+
+~~~
+${DEVICE_KEY_BRIDGE_OUT:-(unchanged — endpoint-admin-service not in this rollout)}
 ~~~
 
 - Rollout run: ${RUN_URL}

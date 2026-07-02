@@ -27,6 +27,7 @@ cat >"$fake_bin/kustomize" <<'SH'
 set -euo pipefail
 overlay="${2:-}"
 case "$overlay" in
+  *activation/endpoint-admin-remote-bridge-device-key*) d="$FAKE_DEVICE_KEY_DIGEST" ;;
   *activation/endpoint-admin-remote-bridge*) d="$FAKE_BRIDGE_DIGEST" ;;
   *) d="$FAKE_PRIMARY_DIGEST" ;;
 esac
@@ -45,8 +46,8 @@ YAML
 SH
 chmod +x "$fake_bin/kustomize"
 
-run_guard_fake() { # run_guard_fake <primary> <bridge>
-  PATH="$fake_bin:$PATH" FAKE_PRIMARY_DIGEST="$1" FAKE_BRIDGE_DIGEST="$2" bash "$GUARD"
+run_guard_fake() { # run_guard_fake <primary> <bridge> <device-key>
+  PATH="$fake_bin:$PATH" FAKE_PRIMARY_DIGEST="$1" FAKE_BRIDGE_DIGEST="$2" FAKE_DEVICE_KEY_DIGEST="$3" bash "$GUARD"
 }
 
 # 1) Guard PASS against the REAL overlays (they are aligned on main).
@@ -55,17 +56,27 @@ printf '%s\n' "$out" | grep -q '^REMOTE_BRIDGE_DIGEST_ALIGNMENT=pass digest=ghcr
   || { echo "FAIL: real overlays should be aligned: $out"; exit 1; }
 
 # 2) Guard PASS with fake equal digests.
-out="$(run_guard_fake "$A" "$A")"
+out="$(run_guard_fake "$A" "$A" "$A")"
 printf '%s\n' "$out" | grep -q "^REMOTE_BRIDGE_DIGEST_ALIGNMENT=pass digest=.*@${A}\$" \
   || { echo "FAIL: equal fake digests should pass: $out"; exit 1; }
 
 # 3) Guard FAIL on drift (primary != bridge).
 set +e
-out="$(run_guard_fake "$A" "$B")"; rc=$?
+out="$(run_guard_fake "$A" "$B" "$A")"; rc=$?
 set -e
 [ "$rc" != 0 ] || { echo "FAIL: drift should exit non-zero"; exit 1; }
 printf '%s\n' "$out" | grep -q '^REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=digest-drift' \
   || { echo "FAIL: drift reason: $out"; exit 1; }
+printf '%s\n' "$out" | grep -q 'device-key' \
+  || { echo "FAIL: drift output should include the device-key overlay: $out"; exit 1; }
+
+# 3b) Guard also FAILS when only the #548 device-key broker is stale.
+set +e
+out="$(run_guard_fake "$A" "$A" "$B")"; rc=$?
+set -e
+[ "$rc" != 0 ] || { echo "FAIL: device-key drift should exit non-zero"; exit 1; }
+printf '%s\n' "$out" | grep -q '^REMOTE_BRIDGE_DIGEST_ALIGNMENT=fail reason=digest-drift' \
+  || { echo "FAIL: device-key drift reason: $out"; exit 1; }
 
 # 4) Lib unit: no render tool -> rbd_overlay_digest returns 3; drift -> rbd_expected_digest returns 4.
 cat >"$tmp_dir/lib-unit.sh" <<UNIT

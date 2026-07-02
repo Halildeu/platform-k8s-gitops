@@ -4,8 +4,9 @@
 # Single source of truth for the Faz 22.6 remote-bridge "expected" endpoint-admin
 # digest (issue #2067, Codex 019f0733 verdict C): the digest is DERIVED by
 # rendering the kustomize overlay, never hardcoded. Same-image pilot topology
-# means the primary test overlay and the remote-bridge activation overlay must
-# render the SAME endpoint-admin-service image digest. This lib is shared by:
+# means the primary test overlay, the remote-bridge activation overlay, and the
+# #548 device-key activation overlay must render the SAME endpoint-admin-service
+# image digest. This lib is shared by:
 #   - scripts/governance/check-remote-bridge-digest-alignment.sh (PR-time guard)
 #   - scripts/faz22-remote-ops/faz22-6-completion-audit.sh (REMOTE_BRIDGE_LIVE)
 # so both derive the expected digest the same way and cannot drift from each
@@ -14,6 +15,7 @@
 RBD_IMG="${RBD_IMG:-ghcr.io/halildeu/platform-backend-endpoint-admin-service}"
 RBD_PRIMARY_OVERLAY="${RBD_PRIMARY_OVERLAY:-kustomize/overlays/test}"
 RBD_BRIDGE_OVERLAY="${RBD_BRIDGE_OVERLAY:-kustomize/overlays/test/activation/endpoint-admin-remote-bridge}"
+RBD_DEVICE_KEY_BRIDGE_OVERLAY="${RBD_DEVICE_KEY_BRIDGE_OVERLAY:-kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key}"
 
 rbd_render_cmd() {
   # Echo the render command words (standalone kustomize preferred — the CI image;

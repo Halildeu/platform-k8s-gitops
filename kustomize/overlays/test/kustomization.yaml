@@ -5430,7 +5430,7 @@ images:
     # tokens bind to a target endpoint_device row, so TPM completion can
     # create device-specific endpoint_tpm_device_binding evidence. It does
     # not create the #548 acceptance marker without the live TPM run.
-    digest: sha256:6452e5dd752526abf33696d4dbda9020663c5eb3beb2011ddd17f8bf7d3dd725
+    digest: sha256:cf90e9871a49c18713385d1c022b60fc404c3075f356cf9bf1ebc15ad244e470
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
