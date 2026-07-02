@@ -1,5 +1,45 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 #548 hardware marker accepted; VIEW_ONLY is sole completion blocker (2026-07-02)
+
+This delta supersedes the #548 marker-blocked interpretation in the entries
+below. It does not close Faz 22.6 because `platform-k8s-gitops#1580` remains
+open and missing its fail-closed VIEW_ONLY engineering evidence marker.
+
+What changed:
+
+- The strong hardware path marker was appended to the canonical
+  `platform-backend#548` issue body:
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1`.
+- The marker is backed by the 2026-07-02 Denetim/device-key smoke evidence:
+  `DEVICE_KEY_ATTESTATION_REAL` reached
+  `basis=HARDWARE_KEY_ATTESTATION`, with identity consistency and the durable
+  recording hash-chain `POLICY_EVENT` hash prefix `1786b90a79796bb0`.
+- The official `Faz 22.6 Live Audit` workflow was rerun from `main`:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28622626048`.
+
+Current audit result:
+
+```text
+GATE_B1_4_HARDWARE_ATTESTATION=pass state=CLOSED issue=Halildeu/platform-backend#548 owner=Halil Kocoglu approved_at=2026-07-02
+GATE_VIEW_ONLY_ENGINEERING=blocked state=OPEN expected=CLOSED-with-view-only-engineering-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
+GATE_VIEW_ONLY_KVKK=tracked_pending issue=Halildeu/platform-k8s-gitops#1580 reason=no-kvkk-marker
+REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay expected_digest=sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5
+F22_6_RELEASE_LINEAGE=pass
+RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass
+F22_6_COMPLETION=blocked
+F22_6_NEXT_REQUIRED=view-only-engineering-evidence-package-required
+```
+
+Boundary:
+
+- `#548` is no longer the Faz 22.6 completion blocker.
+- `#1580` remains the only fail-closed completion blocker.
+- KVKK remains tracked-pending and visible, but non-blocking per ADR-0044 unless
+  the KVKK marker allowlist is violated.
+- No 5-device, 50-device, 800-device, production, or broad-rollout readiness is
+  claimed.
+
 ## Live Delta — Faz 22.6 remote-bridge live evidence restored; completion still marker-blocked (2026-07-02)
 
 This delta supersedes the "same-image reconciliation in flight" note below.
