@@ -34,6 +34,9 @@ images:
   # / image build run 28614019890 fixes device-key challenge/decision WORM
   # audit recording by using non-empty SHA-256 content hashes and adds the
   # TPM binding least-privilege read grant.
+  # 2026-07-02 sync: same backend branch commit 47f7c403 / image build run
+  # 28615452456 adds redacted EK-chain diagnostics for the live
+  # ek-chain-untrusted root-cause pass without weakening device trust.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:5a55eb10a35221055286e3e1dab7af666e730758a986b648c160cfa6b763b65a
+    digest: sha256:ae033108989cc431c49b8f691af040543634d8d8a633d37c49dc580e0d2c51e8
