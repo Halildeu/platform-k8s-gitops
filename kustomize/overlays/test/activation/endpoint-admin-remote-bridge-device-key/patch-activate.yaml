@@ -7,6 +7,9 @@ metadata:
 spec:
   replicas: 1
   template:
+    metadata:
+      annotations:
+        faz22-6.acik.io/ek-intermediate-bundle: "intel-adl-20260702-01"
     spec:
       containers:
         - name: endpoint-admin-remote-bridge
