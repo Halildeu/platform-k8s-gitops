@@ -32,4 +32,4 @@ images:
   # live TPM run can bind acceptance evidence to AgentPC2 or SRB-AIDENETIMPC.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:6452e5dd752526abf33696d4dbda9020663c5eb3beb2011ddd17f8bf7d3dd725
+    digest: sha256:cf90e9871a49c18713385d1c022b60fc404c3075f356cf9bf1ebc15ad244e470
