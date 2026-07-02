@@ -1,5 +1,35 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 remote-bridge live evidence restored; completion still marker-blocked (2026-07-02)
+
+This delta supersedes the "same-image reconciliation in flight" note below.
+
+Latest audit:
+
+- `Faz 22.6 Live Audit`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28619549743`
+  concluded `success`.
+- `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay
+  expected_digest=sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5`.
+- Live `k3d-test/platform-test` evidence on `staging-sw` matches the same digest:
+  `endpoint-admin-service` and `endpoint-admin-remote-bridge-device-key` are
+  both Ready on
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5`,
+  with current pods Ready and `restartCount=0`.
+- The public remote bridge path remains the standard 443/SNI route:
+  `remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444`.
+
+Current Faz 22.6 completion boundary:
+
+- `F22_6_COMPLETION=blocked`.
+- `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`.
+- #548 is blocked by the missing issue-body
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker, not by missing
+  hardware-key verifier smoke evidence.
+- #1580 is blocked by the missing
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` product-channel VIEW_ONLY evidence marker.
+- `F22_6_RELEASE_LINEAGE=pass` and `RELEASE_LINEAGE_GATE=pass`.
+
 ## Live Delta — Faz 22.6 remote-bridge digest drift detected; same-image reconciliation in flight (2026-07-02)
 
 This delta supersedes only the `REMOTE_BRIDGE_LIVE=pass` interpretation in the
