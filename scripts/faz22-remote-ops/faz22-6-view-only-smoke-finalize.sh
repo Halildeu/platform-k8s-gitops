@@ -163,7 +163,9 @@ recording_has_policy_event() {
 broker_log_has_frame_flow() {
   local broker_log="$1" session_id="$2"
   require_file "$broker_log"
-  grep -F "$session_id" "$broker_log" | grep -E 'SCREEN_VIEW|VIEW_ONLY|FRAME|DATA|PERMIT' >/dev/null
+  grep -F "$session_id" "$broker_log" \
+    | grep -E '(^|[[:space:]])(event|kind|signal)=(SCREEN_VIEW|VIEW_ONLY|VIEW_ONLY_FRAME|FRAME|DATA_FRAME|PERMIT_VIEW)([[:space:]]|$)|"(event|kind|signal)"[[:space:]]*:[[:space:]]*"(SCREEN_VIEW|VIEW_ONLY|VIEW_ONLY_FRAME|FRAME|DATA_FRAME|PERMIT_VIEW)"' \
+      >/dev/null
 }
 
 need jq
@@ -258,6 +260,8 @@ if [ -n "$FINALIZER_SUMMARY_OUT" ]; then
     fi
   )"
   manifest_sha="$(awk '/^evidence_package_sha256:/ { print $2 }' "$MARKER_OUT")"
+  [[ "$manifest_sha" =~ ^[a-fA-F0-9]{64}$ ]] \
+    || die "could not extract evidence_package_sha256 from marker"
   jq -n \
     --arg schema_version "faz22.6-view-only-smoke-finalizer-v1" \
     --arg smoke_dir "$SMOKE_DIR" \
