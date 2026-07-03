@@ -5786,8 +5786,8 @@ images:
     digest: sha256:66f79088c766545e7fbbfba7fd5a537fd8b89f2d6cf8714b4e78d0763c29489e
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.3.10:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.10 (+ platform-agent#256).
+  # platform-agent Release EXE trusted workflow for tag v0.3.11:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.11 (+ platform-agent#256/#257).
   # Serves /artifacts/endpoint-agent/current/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
@@ -5798,23 +5798,24 @@ images:
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.3.9; durable archive remains
-  # the GitHub release assets. v0.3.10 adds broker-verifiable remote-bridge
-  # attestation evidence for the signed endpoint-agent.exe digest. The signed
-  # MSI is a separate trusted MSI workflow artifact and is not treated as a
-  # release-hosted public asset here.
+  # One-version-per-image: this image REPLACES v0.3.10; durable archive remains
+  # the GitHub release assets. v0.3.11 keeps broker-verifiable remote-bridge
+  # attestation evidence for the signed endpoint-agent.exe digest and normalizes
+  # served artifact modes to 0644 so nginx can read the attestation assets. The
+  # signed MSI is a separate trusted MSI workflow artifact and is not treated as
+  # a release-hosted public asset here.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.3.10
-    # D30 immutable pin — Release EXE trusted run 28663076175 (tag v0.3.10,
+    newTag: v0.3.11
+    # D30 immutable pin — Release EXE trusted run 28664375224 (tag v0.3.11,
     # release_class=rollout-candidate, signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # 3ff47c33885b304d70a2b4aa641083145194d849ab1bedc4f01c501158b0e4ee,
+    # 7829ff5fcde15af88c6ada98942397da38a83364ef69ec774a1d0c95d3fb5e57,
     # agent binary SHA256
-    # 346276bdc0890a86697faa938da0f493a5ea790610a60a756229fc46e2db7433, and
+    # 4738976b94d90eab7f7b29e45ddbad314e30bde959100b237ddd63c50d530201, and
     # remote-bridge attestation evidence SHA256
-    # f3c470e2df8395856e5ed5ab9a522a047236ea895e698894f7c314c71bf3a349.
-    digest: sha256:4076408b8895a9bf5cef1f2f517aaa7848d2febc3128d344ada13fe11e978555
+    # 7a2e78046f8c59b413c7e973dcdc402f68ed7ca437e6e7257ddd934efd1f3a16.
+    digest: sha256:65a6f681c4347eb78d82a225d80e6acbc7030235ba60a7cac119f427184844da
 
 patches:
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so
