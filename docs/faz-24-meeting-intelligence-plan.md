@@ -51,6 +51,8 @@
 
 Bağımsız toplantı zekâsı platformu. Belirli bir ERP/CRM markası bu plan için ürün bağımlılığı değildir; ilk pilotlar yalnızca generic ERP/CRM adapter kontratı üzerinden map edilir. Telefon / masaüstü / Teams ses kaynaklarından:
 
+**ERP/CRM-agnostic ürün kuralı**: Workcube veya başka bir ERP/CRM adı Faz 24 core product contract'ında, UI'da, API/DTO'da, acceptance gate'te veya "done" dilinde ürün bağımlılığı olarak kullanılamaz. Bu adlar yalnız tarihsel kanıt, ilk müşteri pilotu veya adapter örneği bağlamında geçebilir; yeni ürün işi "generic ERP/CRM adapter" kontratıyla yazılır ve tüm ERP/CRM'lerle çalışabilirlik hedeflenir.
+
 - Canlı geçici transkript (2-8 sn gecikme)
 - Kesinleşmiş transkript (10-20 sn bağlamlı)
 - Konuşmacı ayrımı (diarization)
