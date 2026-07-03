@@ -192,6 +192,9 @@ images:
   # merge 389b3bc image build run 28625506330 after the primary test overlay
   # moved endpoint-admin-service to sha-12f4f97. Activation remains owner-gated
   # and this does not add acceptance markers.
+  # 2026-07-03 Faz 22.6 #1580 cert-channel co-bump: aligned with the primary
+  # endpoint-admin digest from backend #793 / image build run 28640622647.
+  # Activation remains owner-gated; #1580 still requires live VIEW_ONLY evidence.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f
+    digest: sha256:206cd7af1c93b31b492a3befee669a3ad65e9a4d63a7ba66f15063343cb0111e

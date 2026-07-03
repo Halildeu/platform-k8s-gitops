@@ -5449,7 +5449,14 @@ images:
     # hash fix, redacted EK-chain diagnostics, and chain-summary evidence used
     # by the hardware-key attestation smoke; it does not create acceptance
     # markers for #548 or #1580.
-    digest: sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f
+    # 2026-07-03 Faz 22.6 #1580 product-channel cert coexistence sync: re-pin
+    # from backend #786 lineage to backend #793 (merge 5a0e4f1, image build
+    # run 28640622647). This carries V78 endpoint_machine_certs active-slot
+    # scoping plus connected-device resolution over active AD_CS and VAULT_TPM
+    # candidates. It restores product remote-bridge peer resolution without
+    # treating staging-sw/WG as the endpoint product path; #1580 still requires
+    # live VIEW_ONLY attended smoke evidence and KVKK signoff.
+    digest: sha256:206cd7af1c93b31b492a3befee669a3ad65e9a4d63a7ba66f15063343cb0111e
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
