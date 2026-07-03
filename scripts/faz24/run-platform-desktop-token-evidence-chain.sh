@@ -17,16 +17,19 @@ KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
 KC_INTERNAL_SERVER="${KC_INTERNAL_SERVER:-http://localhost:8080}"
+KC_ADMIN_MODE_PREFERENCE="${KC_ADMIN_MODE_PREFERENCE:-rest}"
 CLIENT_ID="${CLIENT_ID:-platform-desktop}"
 RESOURCE_CLIENT_ID="${RESOURCE_CLIENT_ID:-audio-gateway-service}"
 CAPABILITY_ROLE="${CAPABILITY_ROLE:-audio_record}"
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 EXPECTED_ISSUER="${EXPECTED_ISSUER:-https://testai.acik.com/realms/platform-test}"
 RUN_EXTERNAL_SMOKE="${RUN_EXTERNAL_SMOKE:-1}"
+RUN_MEETING_AI_ANALYZE_SMOKE="${RUN_MEETING_AI_ANALYZE_SMOKE:-0}"
 SMOKE_CHUNK_FILE="${SMOKE_CHUNK_FILE:-}"
 SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-WAV}"
 SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-48000}"
 SMOKE_CHANNELS="${SMOKE_CHANNELS:-1}"
+MEETING_AI_ANALYZE_SOURCE_FILE="${MEETING_AI_ANALYZE_SOURCE_FILE:-}"
 OUT_DIR="${OUT_DIR:-/tmp/faz24-platform-desktop-token-evidence}"
 RUN_ID_SAFE="${GITHUB_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_ATTEMPT_SAFE="${GITHUB_RUN_ATTEMPT:-1}"
@@ -50,6 +53,8 @@ DIAG_JSON="${OUT_DIR}/faz24-platform-desktop-token-diagnostic.json"
 TOKEN_CONTRACT_JSON="${OUT_DIR}/faz24-platform-desktop-token-contract.json"
 SMOKE_JSON="${OUT_DIR}/faz24-external-recorder-smoke.json"
 SMOKE_VERIFY_JSON="${OUT_DIR}/faz24-external-recorder-smoke.verify.json"
+MEETING_AI_ANALYZE_JSON="${OUT_DIR}/faz24-meeting-ai-analyze-smoke.json"
+MEETING_AI_ANALYZE_VERIFY_JSON="${OUT_DIR}/faz24-meeting-ai-analyze-smoke.verify.json"
 CLIENT_BEFORE_JSON="${TMP_DIR}/client-before.json"
 CLIENT_AFTER_JSON="${TMP_DIR}/client-after.json"
 USER_DIAG_JSON="${TMP_DIR}/user-diagnostic.json"
@@ -82,6 +87,8 @@ TOKEN_PRESENT="false"
 TOKEN_CONTRACT_EXIT="not-run"
 SMOKE_EXIT="not-run"
 SMOKE_VERIFY_EXIT="not-run"
+MEETING_AI_ANALYZE_EXIT="not-run"
+MEETING_AI_ANALYZE_VERIFY_EXIT="not-run"
 DIAGNOSTIC_WRITTEN="false"
 CLEANUP_DONE="false"
 KC_ADMIN_MODE=""
@@ -234,17 +241,6 @@ read_keycloak_admin_password() {
 
 kcadm_login() {
   read_keycloak_admin_password || die "keycloak-admin-password-source-missing"
-  if command -v docker >/dev/null 2>&1 && docker inspect "${KC_CONTAINER}" >/dev/null 2>&1; then
-    if "${KCADM[@]}" config credentials \
-        --server "${KC_INTERNAL_SERVER}" \
-        --realm master \
-        --user "${KC_ADMIN_USER}" \
-        --password "$(tr -d '\n' < "${ADMIN_PASS_FILE}")" >/dev/null 2>/dev/null; then
-      KC_ADMIN_MODE="kcadm"
-      return 0
-    fi
-  fi
-
   local response_file="${TMP_DIR}/admin-token-response.json"
   local http_status token
   http_status="$(curl -sS -o "${response_file}" -w '%{http_code}' -X POST \
@@ -259,6 +255,19 @@ kcadm_login() {
     chmod 0600 "${ADMIN_TOKEN_FILE}"
     KC_ADMIN_MODE="rest"
     return 0
+  fi
+
+  if [[ "${KC_ADMIN_MODE_PREFERENCE}" != "rest" ]] \
+      && command -v docker >/dev/null 2>&1 \
+      && docker inspect "${KC_CONTAINER}" >/dev/null 2>&1; then
+    if "${KCADM[@]}" config credentials \
+        --server "${KC_INTERNAL_SERVER}" \
+        --realm master \
+        --user "${KC_ADMIN_USER}" \
+        --password "$(tr -d '\n' < "${ADMIN_PASS_FILE}")" >/dev/null 2>/dev/null; then
+      KC_ADMIN_MODE="kcadm"
+      return 0
+    fi
   fi
 
   die "keycloak-admin-login-failed"
@@ -730,52 +739,95 @@ run_token_contract_and_smoke() {
     return 1
   fi
 
-  if [[ "${RUN_EXTERNAL_SMOKE}" != "1" ]]; then
+  if [[ "${RUN_EXTERNAL_SMOKE}" != "1" && "${RUN_MEETING_AI_ANALYZE_SMOKE}" != "1" ]]; then
     STATUS="pass"
     FAILURE_REASON=""
     return 0
   fi
 
-  local smoke_args=(
-    --token-file "${TOKEN_FILE}" \
-    --base-url "${BASE_URL}" \
-    --expected-issuer "${EXPECTED_ISSUER}" \
-    --audio-format "${SMOKE_AUDIO_FORMAT}" \
-    --sample-rate-hz "${SMOKE_SAMPLE_RATE_HZ}" \
-    --channels "${SMOKE_CHANNELS}" \
-    --output-file "${SMOKE_JSON}"
-  )
-  if [[ -n "${SMOKE_CHUNK_FILE}" ]]; then
-    smoke_args+=(--chunk-file "${SMOKE_CHUNK_FILE}")
+  if [[ "${RUN_EXTERNAL_SMOKE}" == "1" ]]; then
+    local smoke_args=(
+      --token-file "${TOKEN_FILE}" \
+      --base-url "${BASE_URL}" \
+      --expected-issuer "${EXPECTED_ISSUER}" \
+      --audio-format "${SMOKE_AUDIO_FORMAT}" \
+      --sample-rate-hz "${SMOKE_SAMPLE_RATE_HZ}" \
+      --channels "${SMOKE_CHANNELS}" \
+      --output-file "${SMOKE_JSON}"
+    )
+    if [[ -n "${SMOKE_CHUNK_FILE}" ]]; then
+      smoke_args+=(--chunk-file "${SMOKE_CHUNK_FILE}")
+    fi
+
+    set +e
+    python3 scripts/faz24/run_external_recorder_smoke.py \
+      "${smoke_args[@]}" \
+      > "${TMP_DIR}/smoke.stdout" \
+      2> "${TMP_DIR}/smoke.stderr"
+    SMOKE_EXIT="$?"
+    set -e
+
+    if [[ "${SMOKE_EXIT}" != "0" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="external-recorder-smoke-failed"
+      return 1
+    fi
+
+    set +e
+    python3 scripts/faz24/verify_external_recorder_smoke_evidence.py \
+      --evidence-file "${SMOKE_JSON}" \
+      --output-file "${SMOKE_VERIFY_JSON}" \
+      > "${TMP_DIR}/smoke-verify.stdout" \
+      2> "${TMP_DIR}/smoke-verify.stderr"
+    SMOKE_VERIFY_EXIT="$?"
+    set -e
+
+    if [[ "${SMOKE_VERIFY_EXIT}" != "0" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="external-recorder-smoke-verifier-failed"
+      return 1
+    fi
   fi
 
-  set +e
-  python3 scripts/faz24/run_external_recorder_smoke.py \
-    "${smoke_args[@]}" \
-    > "${TMP_DIR}/smoke.stdout" \
-    2> "${TMP_DIR}/smoke.stderr"
-  SMOKE_EXIT="$?"
-  set -e
+  if [[ "${RUN_MEETING_AI_ANALYZE_SMOKE}" == "1" ]]; then
+    local analyze_args=(
+      --token-file "${TOKEN_FILE}" \
+      --base-url "${BASE_URL}" \
+      --expected-issuer "${EXPECTED_ISSUER}" \
+      --output-file "${MEETING_AI_ANALYZE_JSON}"
+    )
+    if [[ -n "${MEETING_AI_ANALYZE_SOURCE_FILE}" ]]; then
+      analyze_args+=(--source-text-file "${MEETING_AI_ANALYZE_SOURCE_FILE}")
+    fi
 
-  if [[ "${SMOKE_EXIT}" != "0" ]]; then
-    STATUS="fail"
-    FAILURE_REASON="external-recorder-smoke-failed"
-    return 1
-  fi
+    set +e
+    python3 scripts/faz24/run_meeting_ai_analyze_smoke.py \
+      "${analyze_args[@]}" \
+      > "${TMP_DIR}/meeting-ai-analyze.stdout" \
+      2> "${TMP_DIR}/meeting-ai-analyze.stderr"
+    MEETING_AI_ANALYZE_EXIT="$?"
+    set -e
 
-  set +e
-  python3 scripts/faz24/verify_external_recorder_smoke_evidence.py \
-    --evidence-file "${SMOKE_JSON}" \
-    --output-file "${SMOKE_VERIFY_JSON}" \
-    > "${TMP_DIR}/smoke-verify.stdout" \
-    2> "${TMP_DIR}/smoke-verify.stderr"
-  SMOKE_VERIFY_EXIT="$?"
-  set -e
+    if [[ "${MEETING_AI_ANALYZE_EXIT}" != "0" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="meeting-ai-analyze-smoke-failed"
+      return 1
+    fi
 
-  if [[ "${SMOKE_VERIFY_EXIT}" != "0" ]]; then
-    STATUS="fail"
-    FAILURE_REASON="external-recorder-smoke-verifier-failed"
-    return 1
+    set +e
+    python3 scripts/faz24/verify_meeting_ai_analyze_smoke_evidence.py \
+      --evidence-file "${MEETING_AI_ANALYZE_JSON}" \
+      --output-file "${MEETING_AI_ANALYZE_VERIFY_JSON}" \
+      > "${TMP_DIR}/meeting-ai-analyze-verify.stdout" \
+      2> "${TMP_DIR}/meeting-ai-analyze-verify.stderr"
+    MEETING_AI_ANALYZE_VERIFY_EXIT="$?"
+    set -e
+
+    if [[ "${MEETING_AI_ANALYZE_VERIFY_EXIT}" != "0" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="meeting-ai-analyze-smoke-verifier-failed"
+      return 1
+    fi
   fi
 
   STATUS="pass"
@@ -829,6 +881,8 @@ write_diagnostic() {
   local token_contract_status="not-run"
   local smoke_status="not-run"
   local smoke_verify_status="not-run"
+  local meeting_ai_analyze_status="not-run"
+  local meeting_ai_analyze_verify_status="not-run"
   local grant_attempts_array="${TMP_DIR}/grant-attempts-array.json"
   if [[ -s "${TOKEN_CONTRACT_JSON}" ]]; then
     token_contract_status="$(jq -r '.status // "unknown"' "${TOKEN_CONTRACT_JSON}" 2>/dev/null || printf 'unknown')"
@@ -838,6 +892,12 @@ write_diagnostic() {
   fi
   if [[ -s "${SMOKE_VERIFY_JSON}" ]]; then
     smoke_verify_status="$(jq -r '.status // "unknown"' "${SMOKE_VERIFY_JSON}" 2>/dev/null || printf 'unknown')"
+  fi
+  if [[ -s "${MEETING_AI_ANALYZE_JSON}" ]]; then
+    meeting_ai_analyze_status="$(jq -r '.status // "unknown"' "${MEETING_AI_ANALYZE_JSON}" 2>/dev/null || printf 'unknown')"
+  fi
+  if [[ -s "${MEETING_AI_ANALYZE_VERIFY_JSON}" ]]; then
+    meeting_ai_analyze_verify_status="$(jq -r '.status // "unknown"' "${MEETING_AI_ANALYZE_VERIFY_JSON}" 2>/dev/null || printf 'unknown')"
   fi
   if [[ -s "${GRANT_ATTEMPTS_JSONL}" ]]; then
     jq -s '.' "${GRANT_ATTEMPTS_JSONL}" > "${grant_attempts_array}" \
@@ -863,6 +923,10 @@ write_diagnostic() {
     --arg smokeStatus "${smoke_status}" \
     --arg smokeVerifyExit "${SMOKE_VERIFY_EXIT}" \
     --arg smokeVerifyStatus "${smoke_verify_status}" \
+    --arg meetingAiAnalyzeExit "${MEETING_AI_ANALYZE_EXIT}" \
+    --arg meetingAiAnalyzeStatus "${meeting_ai_analyze_status}" \
+    --arg meetingAiAnalyzeVerifyExit "${MEETING_AI_ANALYZE_VERIFY_EXIT}" \
+    --arg meetingAiAnalyzeVerifyStatus "${meeting_ai_analyze_verify_status}" \
     --argjson directGrantsToggled "${DIRECT_GRANTS_TOGGLED}" \
     --argjson directGrantsRestored "${DIRECT_GRANTS_RESTORED}" \
     --argjson tempUserCreated "${TEMP_USER_CREATED}" \
@@ -913,6 +977,14 @@ write_diagnostic() {
         externalRecorderVerifier: {
           exitCode: $smokeVerifyExit,
           status: $smokeVerifyStatus
+        },
+        meetingAiAnalyzeSmoke: {
+          exitCode: $meetingAiAnalyzeExit,
+          status: $meetingAiAnalyzeStatus
+        },
+        meetingAiAnalyzeVerifier: {
+          exitCode: $meetingAiAnalyzeVerifyExit,
+          status: $meetingAiAnalyzeVerifyStatus
         }
       },
       cleanup: {
@@ -950,7 +1022,7 @@ on_exit() {
 trap 'on_exit "$?"' EXIT
 
 echo "Faz 24 platform-desktop token evidence chain started"
-echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SMOKE}"
+echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SMOKE} run_meeting_ai_analyze_smoke=${RUN_MEETING_AI_ANALYZE_SMOKE}"
 
 kcadm_login
 resolve_client_uuid
@@ -979,6 +1051,12 @@ if [[ -s "${SMOKE_JSON}" ]]; then
 fi
 if [[ -s "${SMOKE_VERIFY_JSON}" ]]; then
   echo "external_smoke_verify=${SMOKE_VERIFY_JSON}"
+fi
+if [[ -s "${MEETING_AI_ANALYZE_JSON}" ]]; then
+  echo "meeting_ai_analyze=${MEETING_AI_ANALYZE_JSON}"
+fi
+if [[ -s "${MEETING_AI_ANALYZE_VERIFY_JSON}" ]]; then
+  echo "meeting_ai_analyze_verify=${MEETING_AI_ANALYZE_VERIFY_JSON}"
 fi
 echo "status=${STATUS}"
 
