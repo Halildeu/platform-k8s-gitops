@@ -602,6 +602,60 @@ matrix. Because no product command exists for TPM enrollment, this cannot be
 truthfully reclassified as an agent-only product-channel trigger from the
 current live state.
 
+## Live Delta — Faz 24 live-STT source-readiness and ERP/CRM-agnostic scope refresh (2026-07-03)
+
+Faz 24 Meeting Intelligence source/product surface advanced after the
+2026-07-01 direct-STT test-state snapshot, but runtime/user acceptance remains
+separate from source readiness.
+
+Current live PR truth:
+
+- `platform-ai#233` is no longer draft. It is Ready for Review at head
+  `28ca20f4a3ead7812bab6de9afde5807e775ed5b`, `mergeStateStatus=CLEAN`, with
+  visible GitHub checks green for `repo-gates`, `service-tests
+  (diarization-service)`, `service-tests (final-stt-service)`,
+  `service-tests (live-stt-service)`, and `service-tests (meeting-ai-service)`.
+  Claude cross-AI re-review returned `AGREE_WITH_NOTES` and found no blocker
+  for source/CI readiness; it explicitly kept live Turkish manual smoke and
+  authenticated Meeting AI analyze smoke as runtime acceptance gates.
+- `platform-desktop#34` remains draft at head
+  `cf5f179fd5edd551fdf46cbebdb58ec5c54e1cd6`, `mergeStateStatus=CLEAN`, with
+  GitHub `build` SUCCESS. The latest desktop source change keeps Direct-STT
+  draft behavior but allows gateway `FINAL` / `REVISED` fallback rows when the
+  direct stream is sparse and the gateway text is not already covered by
+  visible direct segments. This narrows the observed "speech present but large
+  transcript portions missing" class without claiming final UX acceptance.
+- `platform-ai#236` is open and ready at head
+  `4c6a403785add9afa7425b1972906982589cc53f`, `mergeStateStatus=CLEAN`, with
+  service CI green. It removes vendor-specific pilot kind usage from active
+  Faz 24 AI gates in favor of `erp-pilot`, `pilot-meeting`, and
+  `customer-pilot`.
+- `platform-k8s-gitops#2259` is open at head
+  `8e1b157cc75583d39dd49f673ce3517693e15205`, `mergeStateStatus=CLEAN`, with
+  checks green. It updates the Faz 24 plan/state language so a specific
+  ERP/CRM product is not a product dependency; pilots map through a generic
+  adapter contract.
+
+Follow-up work intentionally tracked instead of hiding in PR comments:
+
+- `platform-ai#237` tracks live-stream decode-threshold parity between the
+  direct stream path and configurable sync worker path.
+- `platform-ai#238` tracks short Turkish utterance filtering so legitimate
+  short responses such as `Ne?` / `Ha?` do not get over-filtered by the
+  artifact guard.
+
+Boundary:
+
+- This delta is source/CI/cross-AI readiness and scope alignment evidence, not
+  final Faz 24 runtime acceptance.
+- `platform-k8s-gitops#2186` remains `Needs Verify`: required evidence is
+  still a fresh live Turkish manual desktop smoke on the intended direct-STT
+  runtime plus authenticated, redacted Meeting AI analyze smoke through the
+  testai/api-gateway path.
+- The product contract is ERP/CRM-agnostic. Historical Workcube/MSSQL/ETL
+  references remain historical source evidence only and must not be read as a
+  vendor-specific product dependency.
+
 ## Live Delta — Faz 24 direct-STT recorder path bounded-latency test state (2026-07-01)
 
 Faz 24 Meeting Intelligence desktop recorder path now has a live direct-STT test
