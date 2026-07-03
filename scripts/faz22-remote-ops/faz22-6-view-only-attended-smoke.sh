@@ -17,7 +17,7 @@ K8S_CONTEXT="${K8S_CONTEXT:-k3d-test}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-platform-test}"
 REMOTE_BRIDGE_DEPLOYMENT="${REMOTE_BRIDGE_DEPLOYMENT:-endpoint-admin-remote-bridge}"
 REMOTE_BRIDGE_LOCAL_PORT="${REMOTE_BRIDGE_LOCAL_PORT:-18096}"
-EXPECTED_DIGEST="${EXPECTED_DIGEST:-sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f}"
+EXPECTED_DIGEST="${EXPECTED_DIGEST:-sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5}"
 
 DEVICE_ID="${DEVICE_ID:-423b6fc3-7497-4083-bd2f-5e2fe543bfe9}"
 DEVICE_HOSTNAME="${DEVICE_HOSTNAME:-SRB-AIDENETIMPC}"
@@ -812,7 +812,7 @@ write_sha256sums() {
     rm -f SHA256SUMS
     local sums_file
     sums_file="$(mktemp "${TMPDIR:-/tmp}/faz226-viewonly-sha256.XXXXXX")"
-    find . -type f ! -name SHA256SUMS ! -name '*.curl.conf' -print0 \
+    find . -type f ! -name SHA256SUMS ! -name workflow-smoke.log ! -name '*.curl.conf' -print0 \
       | sort -z \
       | xargs -0 shasum -a 256 > "$sums_file"
     mv "$sums_file" SHA256SUMS
