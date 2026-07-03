@@ -53,6 +53,8 @@ resources:
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
   - netpol-audio-gateway-live-stt-mtls.yaml  # Faz 24 #182/#198: audio-gateway -> platform-ai live-stt app-mTLS 10.99.0.2:8243
+  - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
+  - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
   # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
   # allow-egress-host-bridge (PG) + allow-monitoring-scrape (9187 added); no
   # dedicated netpol (part-of=platform is required by drift Check 5 — Codex 019ed602).
@@ -5830,6 +5832,13 @@ patches:
       - op: replace
         path: /data/USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED
         value: "true"
+  - target:
+      kind: ConfigMap
+      name: meeting-service-config
+    patch: |-
+      - op: add
+        path: /data/MEETING_AI_BASE_URL
+        value: "http://meeting-ai-service:8080"
 
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The
   # base bootstrap Secret is for non-ESO bootstrap only; rendering both creates
