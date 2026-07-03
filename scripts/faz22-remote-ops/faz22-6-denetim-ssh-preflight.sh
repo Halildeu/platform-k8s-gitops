@@ -13,10 +13,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 DEFAULT_DENETIM_SSH_IDENTITY="${REPO_ROOT}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519"
+DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/halil/.ssh/config}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2}"
 DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i ${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}"
 if [[ "$DENETIM_SSH_OPTS" == "__SSH_CONFIG__" ]]; then
-  DENETIM_SSH_OPTS=""
+  DENETIM_SSH_OPTS="-F ${DEFAULT_DENETIM_SSH_CONFIG}"
 fi
 REQUIRE_ACTIVE_GUI="${REQUIRE_ACTIVE_GUI:-1}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/faz22-6-denetim-ssh-preflight-${GITHUB_RUN_ID:-manual}}"
@@ -42,6 +43,7 @@ Environment:
   DENETIM_SSH_TARGET=svc-denetim-agent@10.99.0.2
   DENETIM_SSH_OPTS="-i ../.faz24-i3-ssh/faz24-i3-denetim_ed25519 -o IdentitiesOnly=yes"
   DENETIM_SSH_OPTS=__SSH_CONFIG__ with DENETIM_SSH_TARGET=denetim-pc
+    Uses /home/halil/.ssh/config on the self-hosted staging-sw runner.
   REQUIRE_ACTIVE_GUI=1
   EVIDENCE_DIR=/tmp/faz22-6-denetim-ssh-preflight-<run>
 
@@ -209,9 +211,12 @@ validate_inputs() {
     fail_preflight "denetim-ssh-key-not-readable"
   fi
 
-  if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" && -z "$DENETIM_SSH_OPTS" ]]; then
+  if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" && "$DENETIM_SSH_OPTS" == *"$DEFAULT_DENETIM_SSH_CONFIG"* ]]; then
     local ssh_config resolved_host resolved_user identity_file
-    ssh_config="$(ssh -G "$DENETIM_SSH_TARGET" 2>/dev/null)" \
+    # shellcheck disable=SC2206
+    local opts=( $DENETIM_SSH_OPTS )
+    [[ -r "$DEFAULT_DENETIM_SSH_CONFIG" ]] || fail_preflight "denetim-ssh-config-not-readable"
+    ssh_config="$(ssh "${opts[@]}" -G "$DENETIM_SSH_TARGET" 2>/dev/null)" \
       || fail_preflight "denetim-ssh-alias-config-unreadable"
     resolved_host="$(awk 'tolower($1) == "hostname" { print $2; exit }' <<<"$ssh_config")"
     resolved_user="$(awk 'tolower($1) == "user" { print $2; exit }' <<<"$ssh_config")"
@@ -225,8 +230,10 @@ validate_inputs() {
 
 load_identity_public_metadata() {
   local identity_file="$DEFAULT_DENETIM_SSH_IDENTITY"
-  if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" && -z "$DENETIM_SSH_OPTS" ]]; then
-    identity_file="$(ssh -G "$DENETIM_SSH_TARGET" 2>/dev/null | awk 'tolower($1) == "identityfile" { print $2; exit }' || true)"
+  if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" && "$DENETIM_SSH_OPTS" == *"$DEFAULT_DENETIM_SSH_CONFIG"* ]]; then
+    # shellcheck disable=SC2206
+    local opts=( $DENETIM_SSH_OPTS )
+    identity_file="$(ssh "${opts[@]}" -G "$DENETIM_SSH_TARGET" 2>/dev/null | awk 'tolower($1) == "identityfile" { print $2; exit }' || true)"
     identity_file="${identity_file/#\~/$HOME}"
   fi
 
