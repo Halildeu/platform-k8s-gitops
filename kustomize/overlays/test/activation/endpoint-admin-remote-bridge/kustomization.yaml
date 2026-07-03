@@ -199,6 +199,11 @@ images:
   # #794 / image build run 28642329661 after #793 reused the live-applied V78
   # migration number. Activation remains owner-gated; staging-sw/WG is only a
   # server/debug/bootstrap path and is not product acceptance evidence.
+  # 2026-07-03 Faz 22.6 #1580 session-duress source co-bump: aligned with
+  # backend #796 / image build run 28681672419 after primary test moved
+  # endpoint-admin-service to the SESSION_SIGNAL-capable image. Activation
+  # remains owner-gated; live VIEW_ONLY evidence and KVKK signoff are still
+  # separate acceptance inputs.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:51e4a8f93831208c33f4441f763d3a6f1d85af171edbd8966d732e2a47870f55
+    digest: sha256:6f794ec6b0ff91955313529016459885e0d01ac6f1acaf84c1b20cefe10560e3

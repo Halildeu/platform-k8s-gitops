@@ -69,6 +69,7 @@ REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS:-
 STEP_UP_RUNTIME_STABILIZE_SECONDS="${STEP_UP_RUNTIME_STABILIZE_SECONDS:-8}"
 STEP_UP_EPHEMERAL_KEY_ENABLED="${STEP_UP_EPHEMERAL_KEY_ENABLED:-1}"
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
+DURESS_SIGNAL_FOR_OPERATION="${DURESS_SIGNAL_FOR_OPERATION:-NONE}"
 
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/faz22-6-view-only-attended-${SESSION_ID}}"
 AUTO_FINALIZE="${AUTO_FINALIZE:-0}"
@@ -93,6 +94,7 @@ open_code=""
 approve_code=""
 challenge_code=""
 verify_code=""
+duress_signal_code=""
 operation_code=""
 negative_nonpilot_code=""
 close_code=""
@@ -123,6 +125,7 @@ Important optional environment:
   OWNER_APPROVED_BY="Halil Kocoglu"
   APPROVED_AT=YYYY-MM-DD
   EXPIRES_AT=YYYY-MM-DD
+  DURESS_SIGNAL_FOR_OPERATION=NONE
 
 The script writes a redacted evidence bundle under EVIDENCE_DIR. It does not
 write #1580 and does not assert KVKK/legal signoff.
@@ -217,6 +220,7 @@ validate_inputs() {
   [[ "$DEVICE_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail_smoke "device-id-invalid"
   [[ "$SESSION_ID" =~ ^[A-Za-z0-9._:-]+$ ]] || fail_smoke "session-id-invalid"
   [[ "$OPERATION_ID" =~ ^[A-Za-z0-9._:-]+$ ]] || fail_smoke "operation-id-invalid"
+  [[ "$DURESS_SIGNAL_FOR_OPERATION" == "NONE" ]] || fail_smoke "duress-signal-for-operation-must-be-none"
   case "$REQUIRE_ACTIVE_GUI" in 0|1) ;; *) fail_smoke "require-active-gui-invalid" ;; esac
   case "$AUTO_FINALIZE" in 0|1) ;; *) fail_smoke "auto-finalize-invalid" ;; esac
   case "$VIEWER_PATH_DECISION" in owner-deferred|fanout-proven) ;; *) fail_smoke "viewer-path-decision-invalid" ;; esac
@@ -817,6 +821,8 @@ write_summary() {
     --arg approve "$approve_code" \
     --arg challenge "$challenge_code" \
     --arg verify "$verify_code" \
+    --arg duressSignalCode "$duress_signal_code" \
+    --arg duressSignal "$DURESS_SIGNAL_FOR_OPERATION" \
     --arg operation "$operation_code" \
     --arg close "$close_code" \
     --arg negativeNonpilot "$negative_nonpilot_code" \
@@ -836,10 +842,16 @@ write_summary() {
         approve: $approve,
         challenge: $challenge,
         verify: $verify,
+        duressSignal: $duressSignalCode,
         operation: $operation,
         close: $close,
         "negative-nonpilot": $negativeNonpilot,
         "viewer-sse": $viewerCode
+      },
+      duressSignal: {
+        source: "operator-session",
+        signal: $duressSignal,
+        recorded: ($duressSignalCode == "200")
       },
       consentWait: $consentWait,
       operationKind: $operationKind,
@@ -946,6 +958,12 @@ main() {
   assert_http "$verify_code" 200 "step-up verify" "${EVIDENCE_DIR}/step-up-verify.body"
   jq -e '.verified == true' "${EVIDENCE_DIR}/step-up-verify.body" >/dev/null \
     || fail_smoke "step-up-verify-not-verified"
+
+  body="$(jq -nc --arg signal "$DURESS_SIGNAL_FOR_OPERATION" '{signal:$signal}')"
+  duress_signal_code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/duress/signal" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/duress-signal.body" "$body")"
+  assert_http "$duress_signal_code" 200 "duress signal" "${EVIDENCE_DIR}/duress-signal.body"
+  jq -e --arg signal "$DURESS_SIGNAL_FOR_OPERATION" '.signal == $signal and .terminal == false' "${EVIDENCE_DIR}/duress-signal.body" >/dev/null \
+    || fail_smoke "duress-signal-not-recorded"
 
   body="$(jq -nc --arg op "$OPERATION_ID" '{operationId:$op, operation:"SCREEN_VIEW", commandLine:null}')"
   operation_code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/operations" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/operation.body" "$body")"

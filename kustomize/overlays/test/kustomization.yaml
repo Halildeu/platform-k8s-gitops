@@ -5465,7 +5465,12 @@ images:
     # This is product-channel recovery support only: staging-sw/WG remains a
     # server/debug/bootstrap path, not an endpoint product path; #1580 still
     # requires product 443 VIEW_ONLY attended evidence and KVKK signoff.
-    digest: sha256:51e4a8f93831208c33f4441f763d3a6f1d85af171edbd8966d732e2a47870f55
+    # 2026-07-03 Faz 22.6 #1580 session-duress source sync: re-pin from
+    # backend #794 to backend #796 (merge 46d7a96, image build run
+    # 28681672419). This carries the SESSION_SIGNAL duress source, internal
+    # operator duress signal endpoint, and fail-closed positive-duress handling
+    # needed before product-channel VIEW_ONLY attended evidence can be retried.
+    digest: sha256:6f794ec6b0ff91955313529016459885e0d01ac6f1acaf84c1b20cefe10560e3
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
