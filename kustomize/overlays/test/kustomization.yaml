@@ -4047,7 +4047,20 @@ images:
     #   build run 28053854408; Codex 019ef5f7 AGREE.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-6f9ef4d
     #   digest sha256:74a15f7e4bc532793d7c776483d52c2c898f5af9744e4c796efb132c7ec4b3e0
-    digest: sha256:74a15f7e4bc532793d7c776483d52c2c898f5af9744e4c796efb132c7ec4b3e0
+    #
+    # 2026-07-03 update: sha-6f9ef4d -> sha-4de2f93 = main 4de2f939 (platform-web
+    #   #860 + #858 + #857 + #856, ATS-0019 39c zinciri). Faz 25 interview-evidence
+    #   MFE'si testai'de acilir: build-single-domain STAGE-enable (#860, endpoint-
+    #   admin #653 mirror) -> remotes/interview-evidence/remoteEntry.js + shell
+    #   mount-chunk uretimi; Segment View design-system reuse (#857) + shell
+    #   register default-disabled STUB (#856) + jsdom gate allowlist (#858).
+    #   Hepsi Codex AGREE (thread 019f2850/019f282f) + CI-green squash. Durable
+    #   overlay bump — imperative deploy-testai set-image selfHeal ile revert
+    #   oluyor (bugun 18:29 success run'i buna ragmen edge 6f9ef4d kaldi, kanit).
+    #   image build run 28681993786.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-4de2f93
+    #   digest sha256:46093e2e5dac16f8d0e0132ea42e234408b834e0bb63311b7c4334ddb5c69331
+    digest: sha256:46093e2e5dac16f8d0e0132ea42e234408b834e0bb63311b7c4334ddb5c69331
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
