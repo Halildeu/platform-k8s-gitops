@@ -101,6 +101,7 @@ jobs:
           mkdir -p "${EVIDENCE_DIR}"
           chmod +x scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh
           if [ "$DENETIM_SSH_AUTH_MODE" = "ssh_config_alias" ]; then
+            export DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/runner/faz22-6-denetim-ssh/config}"
             export DENETIM_SSH_OPTS="__SSH_CONFIG__"
           fi
 
