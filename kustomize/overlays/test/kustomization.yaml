@@ -4060,7 +4060,17 @@ images:
     #   image build run 28681993786.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-4de2f93
     #   digest sha256:46093e2e5dac16f8d0e0132ea42e234408b834e0bb63311b7c4334ddb5c69331
-    digest: sha256:46093e2e5dac16f8d0e0132ea42e234408b834e0bb63311b7c4334ddb5c69331
+    #
+    # 2026-07-04 update: sha-4de2f93 -> sha-ee57792 = main ee57792d (platform-web
+    #   #861, ATS-0019 39c-4). interview-evidence MFE'sine F4/F5 Inceleme
+    #   calisma-alani: kanit-kapisi (SUPPORTED-only) + 3 insan-yolu + no-auto-
+    #   finalize + FINALIZED->EXPORTED terminal (cift-export yasak; Codex REVISE
+    #   absorb) — demo motor (ATS-0016 sinir), jsdom 18 test. Codex 019f2850
+    #   REVISE->AGREE + CI 26/26. Durable overlay bump (selfHeal pattern).
+    #   image build run 28684058709.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-ee57792
+    #   digest sha256:24067427f017422371e9b40dfe3316de2bd38363fb74ba6694a9774489d7261c
+    digest: sha256:24067427f017422371e9b40dfe3316de2bd38363fb74ba6694a9774489d7261c
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
