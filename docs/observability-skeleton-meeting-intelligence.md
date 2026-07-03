@@ -89,7 +89,7 @@ Her HTTP/WebSocket request ve queue mesajında zorunlu header/field:
   "resource": {
     "meeting_id": "MTG-2026-0042",
     "transcript_segment_id": "SEG-001",
-    "tenant_id": "workcube-main"
+    "tenant_id": "tenant-main"
   },
   "result": "ok",
   "client_ip_hash": "...",  // raw IP YASAK
