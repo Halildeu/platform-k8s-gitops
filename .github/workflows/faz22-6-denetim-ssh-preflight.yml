@@ -12,6 +12,14 @@ on:
         required: true
         default: "svc-denetim-agent@10.99.0.2"
         type: string
+      denetim_ssh_auth_mode:
+        description: "Denetim SSH auth source"
+        required: true
+        default: "runner_identity"
+        type: choice
+        options:
+          - runner_identity
+          - ssh_config_alias
       require_active_gui:
         description: "Require an active Denetim Windows GUI session"
         required: true
@@ -41,6 +49,7 @@ jobs:
         env:
           CONFIRM: ${{ inputs.confirm }}
           DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
         run: |
           set -euo pipefail
 
@@ -57,11 +66,26 @@ jobs:
 
           reject_multiline CONFIRM "$CONFIRM"
           reject_multiline DENETIM_SSH_TARGET "$DENETIM_SSH_TARGET"
+          reject_multiline DENETIM_SSH_AUTH_MODE "$DENETIM_SSH_AUTH_MODE"
 
           if [ "$CONFIRM" != "RUN_FAZ22_6_DENETIM_SSH_PREFLIGHT" ]; then
             echo "::error::confirm input must be RUN_FAZ22_6_DENETIM_SSH_PREFLIGHT"
             exit 1
           fi
+
+          case "$DENETIM_SSH_AUTH_MODE" in
+            runner_identity) ;;
+            ssh_config_alias)
+              if [ "$DENETIM_SSH_TARGET" != "denetim-pc" ]; then
+                echo "::error::ssh_config_alias mode requires denetim_ssh_target=denetim-pc"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::unsupported denetim_ssh_auth_mode"
+              exit 1
+              ;;
+          esac
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -70,11 +94,15 @@ jobs:
         id: preflight
         env:
           DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
           REQUIRE_ACTIVE_GUI: ${{ inputs.require_active_gui && '1' || '0' }}
         run: |
           set +e
           mkdir -p "${EVIDENCE_DIR}"
           chmod +x scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh
+          if [ "$DENETIM_SSH_AUTH_MODE" = "ssh_config_alias" ]; then
+            export DENETIM_SSH_OPTS="__SSH_CONFIG__"
+          fi
 
           scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh \
             2>&1 | tee "${EVIDENCE_DIR}/workflow.log"

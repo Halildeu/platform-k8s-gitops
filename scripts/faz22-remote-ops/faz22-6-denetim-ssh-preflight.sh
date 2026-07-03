@@ -15,6 +15,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DEFAULT_DENETIM_SSH_IDENTITY="${REPO_ROOT}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2}"
 DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i ${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}"
+if [[ "$DENETIM_SSH_OPTS" == "__SSH_CONFIG__" ]]; then
+  DENETIM_SSH_OPTS=""
+fi
 REQUIRE_ACTIVE_GUI="${REQUIRE_ACTIVE_GUI:-1}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/faz22-6-denetim-ssh-preflight-${GITHUB_RUN_ID:-manual}}"
 SUMMARY_FILE="${EVIDENCE_DIR}/summary.json"
@@ -38,6 +41,7 @@ Usage:
 Environment:
   DENETIM_SSH_TARGET=svc-denetim-agent@10.99.0.2
   DENETIM_SSH_OPTS="-i ../.faz24-i3-ssh/faz24-i3-denetim_ed25519 -o IdentitiesOnly=yes"
+  DENETIM_SSH_OPTS=__SSH_CONFIG__ with DENETIM_SSH_TARGET=denetim-pc
   REQUIRE_ACTIVE_GUI=1
   EVIDENCE_DIR=/tmp/faz22-6-denetim-ssh-preflight-<run>
 
@@ -204,12 +208,31 @@ validate_inputs() {
   if [[ "$DENETIM_SSH_OPTS" == *"$DEFAULT_DENETIM_SSH_IDENTITY"* && ! -r "$DEFAULT_DENETIM_SSH_IDENTITY" ]]; then
     fail_preflight "denetim-ssh-key-not-readable"
   fi
+
+  if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" && -z "$DENETIM_SSH_OPTS" ]]; then
+    local ssh_config resolved_host resolved_user identity_file
+    ssh_config="$(ssh -G "$DENETIM_SSH_TARGET" 2>/dev/null)" \
+      || fail_preflight "denetim-ssh-alias-config-unreadable"
+    resolved_host="$(awk 'tolower($1) == "hostname" { print $2; exit }' <<<"$ssh_config")"
+    resolved_user="$(awk 'tolower($1) == "user" { print $2; exit }' <<<"$ssh_config")"
+    identity_file="$(awk 'tolower($1) == "identityfile" { print $2; exit }' <<<"$ssh_config")"
+
+    [[ "$resolved_host" == "10.99.0.2" ]] || fail_preflight "denetim-ssh-alias-missing-hostname"
+    [[ "$resolved_user" == "denetimpc" ]] || fail_preflight "denetim-ssh-alias-missing-user"
+    [[ "$identity_file" == *"id_denetim"* ]] || fail_preflight "denetim-ssh-alias-missing-identity"
+  fi
 }
 
 load_identity_public_metadata() {
-  if [[ -r "$DEFAULT_DENETIM_SSH_IDENTITY" ]] && command -v ssh-keygen >/dev/null 2>&1; then
+  local identity_file="$DEFAULT_DENETIM_SSH_IDENTITY"
+  if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" && -z "$DENETIM_SSH_OPTS" ]]; then
+    identity_file="$(ssh -G "$DENETIM_SSH_TARGET" 2>/dev/null | awk 'tolower($1) == "identityfile" { print $2; exit }' || true)"
+    identity_file="${identity_file/#\~/$HOME}"
+  fi
+
+  if [[ -r "$identity_file" ]] && command -v ssh-keygen >/dev/null 2>&1; then
     local pub_file="${EVIDENCE_DIR}/runner-identity.pub"
-    ssh-keygen -y -f "$DEFAULT_DENETIM_SSH_IDENTITY" > "$pub_file" 2>/dev/null || return
+    ssh-keygen -y -f "$identity_file" > "$pub_file" 2>/dev/null || return
     identity_public_sha256="$(sha256_file "$pub_file")"
     identity_public_fingerprint="$(ssh-keygen -lf "$pub_file" 2>/dev/null | awk '{print $2}' || true)"
   fi
