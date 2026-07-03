@@ -13,11 +13,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 FINALIZER="${SCRIPT_DIR}/faz22-6-view-only-smoke-finalize.sh"
 
+RBD_PRIMARY_OVERLAY="${RBD_PRIMARY_OVERLAY:-${REPO_ROOT}/kustomize/overlays/test}"
+RBD_BRIDGE_OVERLAY="${RBD_BRIDGE_OVERLAY:-${REPO_ROOT}/kustomize/overlays/test/activation/endpoint-admin-remote-bridge}"
+RBD_DEVICE_KEY_BRIDGE_OVERLAY="${RBD_DEVICE_KEY_BRIDGE_OVERLAY:-${REPO_ROOT}/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key}"
+# shellcheck source=scripts/governance/lib-remote-bridge-digest.sh disable=SC1091
+source "${REPO_ROOT}/scripts/governance/lib-remote-bridge-digest.sh"
+
 K8S_CONTEXT="${K8S_CONTEXT:-k3d-test}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-platform-test}"
 REMOTE_BRIDGE_DEPLOYMENT="${REMOTE_BRIDGE_DEPLOYMENT:-endpoint-admin-remote-bridge}"
 REMOTE_BRIDGE_LOCAL_PORT="${REMOTE_BRIDGE_LOCAL_PORT:-18096}"
-EXPECTED_DIGEST="${EXPECTED_DIGEST:-sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5}"
+EXPECTED_DIGEST="${EXPECTED_DIGEST:-}"
 
 DEVICE_ID="${DEVICE_ID:-423b6fc3-7497-4083-bd2f-5e2fe543bfe9}"
 DEVICE_HOSTNAME="${DEVICE_HOSTNAME:-SRB-AIDENETIMPC}"
@@ -102,7 +108,7 @@ Required environment on the self-hosted runner:
   KC_TEST_ADMIN_PASSWORD or readable Keycloak admin password source.
 
 Important optional environment:
-  EXPECTED_DIGEST=sha256:...
+  EXPECTED_DIGEST=sha256:... (empty derives from the rendered overlay SSOT)
   DEVICE_ID=...
   DEVICE_HOSTNAME=...
   DENETIM_SSH_TARGET=svc-denetim-agent@10.99.0.2
@@ -192,6 +198,17 @@ future_date_utc() {
 }
 
 validate_inputs() {
+  if [[ -z "$EXPECTED_DIGEST" ]]; then
+    local expected_ref derive_rc
+    derive_rc=0
+    expected_ref="$(rbd_expected_digest)" || derive_rc=$?
+    case "$derive_rc" in
+      0) EXPECTED_DIGEST="${expected_ref##*@}" ;;
+      3) fail_smoke "expected-digest-derive-missing-render-tool" ;;
+      4) fail_smoke "expected-digest-derive-overlay-drift" ;;
+      *) fail_smoke "expected-digest-derive-failed:${derive_rc}" ;;
+    esac
+  fi
   [[ "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || fail_smoke "expected-digest-invalid"
   [[ "$DEVICE_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail_smoke "device-id-invalid"
   [[ "$SESSION_ID" =~ ^[A-Za-z0-9._:-]+$ ]] || fail_smoke "session-id-invalid"

@@ -19,6 +19,7 @@ grep -Fq 'write #1580' <<<"$help_out"
 workflow_text="$(cat "$WORKFLOW")"
 
 grep -q 'RUN_FAZ22_6_VIEW_ONLY_ATTENDED_SMOKE' <<<"$workflow_text"
+grep -q 'empty derives from rendered overlay SSOT' <<<"$workflow_text"
 grep -q 'runs-on: \[self-hosted, staging-sw, testai-deploy\]' <<<"$workflow_text"
 grep -q 'contents: read' <<<"$workflow_text"
 grep -q 'issues: write' <<<"$workflow_text"
@@ -46,6 +47,9 @@ grep -q 'recording.tsv' "$SCRIPT"
 grep -q 'summary.json' "$SCRIPT"
 grep -q 'SHA256SUMS' "$SCRIPT"
 grep -q '! -name workflow-smoke.log' "$SCRIPT"
+grep -q 'lib-remote-bridge-digest.sh' "$SCRIPT"
+grep -q 'rbd_expected_digest' "$SCRIPT"
+grep -q 'expected-digest-derive-overlay-drift' "$SCRIPT"
 grep -q 'capabilities:\["VIEW_ONLY"\]' "$SCRIPT"
 grep -q 'operation:"SCREEN_VIEW"' "$SCRIPT"
 grep -q 'capabilities:\["FULL_RDP"\]' "$SCRIPT"
@@ -61,6 +65,11 @@ grep -q "ssh -G \"\$DENETIM_SSH_TARGET\"" "$SCRIPT"
 grep -q 'denetim-ssh-alias-missing-identity' "$SCRIPT"
 grep -q "WHERE chain_id = :'sid'" "$SCRIPT"
 grep -q -- "-v \"sid=\${SESSION_ID}\"" "$SCRIPT"
+
+if grep -Fq '54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5' "$SCRIPT" "$WORKFLOW"; then
+  echo "script/workflow must derive the remote-bridge expected digest from the overlay SSOT, not hardcode the stale 54f digest" >&2
+  exit 1
+fi
 
 if grep -q 'ssh .* -L' "$SCRIPT" || grep -q 'nc -l' "$SCRIPT"; then
   echo "script must not create endpoint inbound tunnels/listeners" >&2
