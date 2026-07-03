@@ -1,0 +1,38 @@
+# Faz 24 #2186 - test-only Meeting AI bridge to the GPU host.
+# Prod cutover/mTLS remains a separate D30 gate; this resource only makes the
+# authenticated test overlay path explicit and GitOps-owned.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meeting-ai-service
+  labels:
+    app.kubernetes.io/name: meeting-ai-service
+    app.kubernetes.io/component: host-bridge
+    app.kubernetes.io/part-of: platform
+    platform.acik.com/faz: "24"
+    platform.acik.com/issue: "2186"
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8300
+      protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: meeting-ai-service
+  labels:
+    app.kubernetes.io/name: meeting-ai-service
+    app.kubernetes.io/component: host-bridge
+    app.kubernetes.io/part-of: platform
+    platform.acik.com/faz: "24"
+    platform.acik.com/issue: "2186"
+subsets:
+  - addresses:
+      - ip: 10.99.0.2
+    ports:
+      - name: http
+        port: 8300
+        protocol: TCP
