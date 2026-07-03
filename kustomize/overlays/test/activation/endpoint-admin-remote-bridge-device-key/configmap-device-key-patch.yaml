@@ -21,11 +21,12 @@ data:
   REMOTE_BRIDGE_PEER_EVIDENCE_PARSER: "TRANSPORT_BOUND"
   REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: "DEVICE_KEY_ATTESTATION_REAL"
   REMOTE_BRIDGE_OWNER_GRANT_GATE_TYPE: "APPROVAL_BACKED_DURABLE_DB"
-  # Fail-closed for the strong #548 evidence path. The shared product-channel
-  # pilot may carry a bounded duress risk-acceptance, but this hardware
-  # attestation broker must not convert an unwired duress source into "no
-  # duress" just to keep a session alive.
-  REMOTE_BRIDGE_DURESS_SOURCE_TYPE: "AMBIGUOUS_UNTIL_WIRED"
+  # Fail-closed session-backed duress source for the strong #548/#1580 evidence
+  # path. Missing or stale session signals still classify as AMBIGUOUS and kill;
+  # only a fresh authenticated operator-session signal can assert NONE before
+  # the VIEW_ONLY operation.
+  REMOTE_BRIDGE_DURESS_SOURCE_TYPE: "SESSION_SIGNAL"
+  REMOTE_BRIDGE_DURESS_SIGNAL_TTL_MILLIS: "120000"
   REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "false"
 
   # The REAL verifier needs the EK-chain validator bean. Vault PKI issuance is

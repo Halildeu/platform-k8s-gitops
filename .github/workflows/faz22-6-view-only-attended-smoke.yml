@@ -22,6 +22,14 @@ on:
         required: true
         default: "SRB-AIDENETIMPC"
         type: string
+      remote_bridge_deployment:
+        description: "Remote bridge deployment to test; strong Faz 22.6 path uses the device-key broker"
+        required: true
+        default: "endpoint-admin-remote-bridge-device-key"
+        type: choice
+        options:
+          - endpoint-admin-remote-bridge-device-key
+          - endpoint-admin-remote-bridge
       require_active_gui:
         description: "Fail before the product smoke unless Denetim PC reports an active GUI session"
         required: true
@@ -103,6 +111,7 @@ jobs:
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           DEVICE_ID: ${{ inputs.device_id }}
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          REMOTE_BRIDGE_DEPLOYMENT: ${{ inputs.remote_bridge_deployment }}
           DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
           DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
           AUTO_FINALIZE: ${{ inputs.auto_finalize && '1' || '0' }}
@@ -123,7 +132,7 @@ jobs:
             esac
           }
 
-          for name in CONFIRM EXPECTED_DIGEST DEVICE_ID DEVICE_HOSTNAME DENETIM_SSH_TARGET DENETIM_SSH_AUTH_MODE AUTO_FINALIZE EVIDENCE_URL APPROVED_AT EXPIRES_AT; do
+          for name in CONFIRM EXPECTED_DIGEST DEVICE_ID DEVICE_HOSTNAME REMOTE_BRIDGE_DEPLOYMENT DENETIM_SSH_TARGET DENETIM_SSH_AUTH_MODE AUTO_FINALIZE EVIDENCE_URL APPROVED_AT EXPIRES_AT; do
             reject_multiline "$name" "${!name}"
           done
 
@@ -141,6 +150,14 @@ jobs:
             echo "::error::device_id must look like a UUID"
             exit 1
           fi
+
+          case "$REMOTE_BRIDGE_DEPLOYMENT" in
+            endpoint-admin-remote-bridge-device-key|endpoint-admin-remote-bridge) ;;
+            *)
+              echo "::error::unsupported remote_bridge_deployment"
+              exit 1
+              ;;
+          esac
 
           case "$DENETIM_SSH_AUTH_MODE" in
             runner_identity) ;;
@@ -183,6 +200,7 @@ jobs:
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           DEVICE_ID: ${{ inputs.device_id }}
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          REMOTE_BRIDGE_DEPLOYMENT: ${{ inputs.remote_bridge_deployment }}
           DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
           DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
           REQUIRE_ACTIVE_GUI: ${{ inputs.require_active_gui && '1' || '0' }}
@@ -239,6 +257,7 @@ jobs:
           session_hash="$(jq -r '.sessionHash // ""' "$summary")"
           open_http="$(jq -r '.http.open // ""' "$summary")"
           approve_http="$(jq -r '.http.approve // ""' "$summary")"
+          duress_http="$(jq -r '.http.duressSignal // ""' "$summary")"
           operation_http="$(jq -r '.http.operation // ""' "$summary")"
           negative_http="$(jq -r '.http["negative-nonpilot"] // ""' "$summary")"
           consent_wait="$(jq -r '.consentWait // ""' "$summary")"
@@ -260,9 +279,10 @@ jobs:
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
             echo "- Target device: \`${{ inputs.device_hostname }}\` / \`${{ inputs.device_id }}\`"
+            echo "- Remote bridge deployment: \`${{ inputs.remote_bridge_deployment }}\`"
             echo "- Status: \`${status}\`"
             echo "- Consent wait: \`${consent_wait}\`"
-            echo "- Open / approve / operation / negative-nonpilot HTTP: \`${open_http}\` / \`${approve_http}\` / \`${operation_http}\` / \`${negative_http}\`"
+            echo "- Open / approve / duress-signal / operation / negative-nonpilot HTTP: \`${open_http}\` / \`${approve_http}\` / \`${duress_http}\` / \`${operation_http}\` / \`${negative_http}\`"
             echo "- Transport pushed: \`${transport_pushed}\`"
             echo "- Broker signals: \`${broker_signals}\`"
             echo "- Session hash: \`${session_hash}\`"
