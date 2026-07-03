@@ -45,11 +45,12 @@ PG_SECRET_NAME="${PG_SECRET_NAME:-endpoint-admin-remote-bridge-secrets}"
 PG_USER_SECRET_KEY="${PG_USER_SECRET_KEY:-SPRING_DATASOURCE_USERNAME}"
 PG_PASSWORD_SECRET_KEY="${PG_PASSWORD_SECRET_KEY:-SPRING_DATASOURCE_PASSWORD}"
 
-# Default requires the staging-sw host's Denetim PC key. The GitHub runner may
-# have HOME=/home/runner even when the process user is halil, so do not depend
-# on ~/.ssh/config alias expansion for the default path.
-DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetimpc@10.99.0.2}"
-DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i /home/halil/.ssh/id_denetim -o IdentitiesOnly=yes}"
+# Default uses the controlled runner-local Denetim identity created by
+# faz24-i3-runner-ssh-identity.yml. The GitHub runner HOME can be ephemeral, so
+# anchor the key relative to the checked-out workspace instead of ~/.ssh.
+DEFAULT_DENETIM_SSH_IDENTITY="${REPO_ROOT}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519"
+DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2}"
+DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i ${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}"
 REQUIRE_ACTIVE_GUI="${REQUIRE_ACTIVE_GUI:-1}"
 CONSENT_WAIT_SECONDS="${CONSENT_WAIT_SECONDS:-120}"
 FRAME_WAIT_SECONDS="${FRAME_WAIT_SECONDS:-20}"
@@ -104,8 +105,8 @@ Important optional environment:
   EXPECTED_DIGEST=sha256:...
   DEVICE_ID=...
   DEVICE_HOSTNAME=...
-  DENETIM_SSH_TARGET=denetimpc@10.99.0.2
-  DENETIM_SSH_OPTS="-i /home/halil/.ssh/id_denetim -o IdentitiesOnly=yes"
+  DENETIM_SSH_TARGET=svc-denetim-agent@10.99.0.2
+  DENETIM_SSH_OPTS="-i ../.faz24-i3-ssh/faz24-i3-denetim_ed25519 -o IdentitiesOnly=yes"
   REQUIRE_ACTIVE_GUI=1
   AUTO_FINALIZE=1
   EVIDENCE_URL=https://...
@@ -211,8 +212,8 @@ validate_inputs() {
 validate_denetim_ssh_target_config() {
   [[ -n "$DENETIM_SSH_TARGET" ]] || return
 
-  if [[ "$DENETIM_SSH_OPTS" == *"/home/halil/.ssh/id_denetim"* ]]; then
-    [[ -r /home/halil/.ssh/id_denetim ]] || fail_smoke "denetim-ssh-key-not-readable"
+  if [[ "$DENETIM_SSH_OPTS" == *"$DEFAULT_DENETIM_SSH_IDENTITY"* ]]; then
+    [[ -r "$DEFAULT_DENETIM_SSH_IDENTITY" ]] || fail_smoke "denetim-ssh-key-not-readable"
   fi
 
   if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" ]]; then
