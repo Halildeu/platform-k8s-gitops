@@ -1,0 +1,236 @@
+name: Faz 22.6 Denetim SSH key evidence ingest
+
+# Validates public-key-only operator evidence after the Denetim PC
+# svc-denetim-agent authorized_keys update. This workflow does not connect to
+# Denetim PC and does not start VIEW_ONLY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Required literal: RUN_FAZ22_6_DENETIM_SSH_KEY_EVIDENCE_INGEST"
+        required: true
+        type: string
+      evidence_json_base64:
+        description: "Base64 of denetim-ssh-authorized-key-summary.json"
+        required: true
+        type: string
+      expected_user:
+        description: "Expected Denetim local user"
+        required: true
+        default: "svc-denetim-agent"
+        type: string
+      expected_public_key_fingerprint:
+        description: "Expected runner public key fingerprint"
+        required: true
+        default: "SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y"
+        type: string
+      expected_public_key_line_sha256:
+        description: "Expected full public-key line SHA256"
+        required: true
+        default: "83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff"
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: faz22-6-denetim-ssh-key-evidence-ingest
+  cancel-in-progress: false
+
+env:
+  EVIDENCE_DIR: /tmp/faz22-6-denetim-ssh-key-evidence-${{ github.run_id }}
+  EVIDENCE_JSON: /tmp/faz22-6-denetim-ssh-key-evidence-input-${{ github.run_id }}.json
+  SUMMARY_JSON: /tmp/faz22-6-denetim-ssh-key-evidence-${{ github.run_id }}/verification-summary.json
+
+jobs:
+  ingest:
+    name: verify Denetim SSH key operator evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+          EXPECTED_USER: ${{ inputs.expected_user }}
+          EXPECTED_PUBLIC_KEY_FINGERPRINT: ${{ inputs.expected_public_key_fingerprint }}
+          EXPECTED_PUBLIC_KEY_LINE_SHA256: ${{ inputs.expected_public_key_line_sha256 }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*|"")
+                echo "::error::${name} must be a non-empty single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline confirm "${CONFIRM}"
+          reject_multiline evidence_json_base64 "${EVIDENCE_JSON_BASE64}"
+          reject_multiline expected_user "${EXPECTED_USER}"
+          reject_multiline expected_public_key_fingerprint "${EXPECTED_PUBLIC_KEY_FINGERPRINT}"
+          reject_multiline expected_public_key_line_sha256 "${EXPECTED_PUBLIC_KEY_LINE_SHA256}"
+
+          if [ "${CONFIRM}" != "RUN_FAZ22_6_DENETIM_SSH_KEY_EVIDENCE_INGEST" ]; then
+            echo "::error::confirm input must be RUN_FAZ22_6_DENETIM_SSH_KEY_EVIDENCE_INGEST"
+            exit 1
+          fi
+          if [ "${#EVIDENCE_JSON_BASE64}" -gt 200000 ]; then
+            echo "::error::evidence_json_base64 is too large"
+            exit 1
+          fi
+          if ! printf '%s' "${EVIDENCE_JSON_BASE64}" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            echo "::error::evidence_json_base64 must be plain base64"
+            exit 1
+          fi
+          if ! printf '%s' "${EXPECTED_USER}" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+            echo "::error::expected_user contains unsupported characters"
+            exit 1
+          fi
+          if ! printf '%s' "${EXPECTED_PUBLIC_KEY_FINGERPRINT}" | grep -Eq '^SHA256:[A-Za-z0-9+/]+={0,2}$'; then
+            echo "::error::expected_public_key_fingerprint must be an OpenSSH SHA256 fingerprint"
+            exit 1
+          fi
+          if ! printf '%s' "${EXPECTED_PUBLIC_KEY_LINE_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "::error::expected_public_key_line_sha256 must be 64 lowercase hex chars"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Decode evidence JSON
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          printf '%s' "${EVIDENCE_JSON_BASE64}" | base64 -d > "${EVIDENCE_JSON}"
+          python3 -m json.tool "${EVIDENCE_JSON}" > "${EVIDENCE_JSON}.pretty"
+          mv "${EVIDENCE_JSON}.pretty" "${EVIDENCE_JSON}"
+
+      - name: Verify Denetim SSH key evidence
+        id: verify
+        env:
+          EXPECTED_USER: ${{ inputs.expected_user }}
+          EXPECTED_PUBLIC_KEY_FINGERPRINT: ${{ inputs.expected_public_key_fingerprint }}
+          EXPECTED_PUBLIC_KEY_LINE_SHA256: ${{ inputs.expected_public_key_line_sha256 }}
+        run: |
+          set +e
+          python3 scripts/faz22-remote-ops/verify-denetim-ssh-key-evidence.py \
+            "${EVIDENCE_JSON}" \
+            --expected-user "${EXPECTED_USER}" \
+            --expected-public-key-fingerprint "${EXPECTED_PUBLIC_KEY_FINGERPRINT}" \
+            --expected-public-key-line-sha256 "${EXPECTED_PUBLIC_KEY_LINE_SHA256}" \
+            --summary-json "${SUMMARY_JSON}" \
+            > "${EVIDENCE_DIR}/verifier.stdout" \
+            2> "${EVIDENCE_DIR}/verifier.stderr"
+          exit_code="$?"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          cat "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+          cat "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+          rm -f "${EVIDENCE_JSON}"
+          exit 0
+
+      - name: Verify artifact excludes private material
+        if: always()
+        run: |
+          set -euo pipefail
+          if grep -R -E -- '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.|ssh-ed25519 ' "${EVIDENCE_DIR}"; then
+            echo "::error::evidence artifact contains forbidden private/secret/raw-public-key-like material"
+            exit 1
+          fi
+
+      - name: Publish redacted #1580 key-evidence summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          summary="${SUMMARY_JSON}"
+          if [ ! -f "$summary" ]; then
+            jq -n \
+              --arg status "fail" \
+              --arg reason "summary-json-missing" \
+              '{schemaVersion:"faz22.6-denetim-ssh-key-evidence-verification-v1",status:$status,findingCount:1,findings:[{code:$reason,message:$reason}]}' \
+              > "$summary"
+          fi
+
+          status="$(jq -r '.status // "unknown"' "$summary")"
+          finding_count="$(jq -r '.findingCount // ""' "$summary")"
+          user_name="$(jq -r '.userName // ""' "$summary")"
+          identity_fp="$(jq -r '.runnerPublicKeyFingerprint // ""' "$summary")"
+          line_sha="$(jq -r '.runnerPublicKeyLineSha256 // ""' "$summary")"
+          sshd_status="$(jq -r '.sshdStatus // ""' "$summary")"
+          sshd_start_type="$(jq -r '.sshdStartType // ""' "$summary")"
+          key_present="$(jq -r '.authorizedKeysContainsRunnerPublicKey // ""' "$summary")"
+          admin_member="$(jq -r '.isLocalAdministratorMember // ""' "$summary")"
+          summary_sha="$(sha256sum "$summary" | awk '{print $1}')"
+
+          comment="${RUNNER_TEMP}/faz22-6-denetim-ssh-key-evidence.md"
+          {
+            echo "## #1580 Denetim SSH key operator evidence"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Status: \`${status}\`"
+            echo "- Verifier exit code: \`${VERIFY_EXIT_CODE:-missing}\`"
+            echo "- Finding count: \`${finding_count}\`"
+            echo "- User: \`${user_name}\`"
+            echo "- Runner public-key fingerprint: \`${identity_fp}\`"
+            echo "- Runner public-key line SHA256: \`${line_sha}\`"
+            echo "- authorized_keys contains runner public key: \`${key_present}\`"
+            echo "- Local Administrators member: \`${admin_member}\`"
+            echo "- sshd: \`${sshd_status}\` / \`${sshd_start_type}\`"
+            echo "- Verification summary SHA256: \`${summary_sha}\`"
+            echo
+            echo "Boundary: this validates the Denetim SSH public-key authorization precondition only. It is not VIEW_ONLY evidence, not #1580 marker, and not KVKK/legal signoff. Passing evidence unlocks rerunning the Denetim SSH preflight."
+          } > "$comment"
+
+          gh issue comment 1580 \
+            --repo Halildeu/platform-k8s-gitops \
+            --body-file "$comment" \
+            || echo "::warning::Could not comment on #1580; evidence remains in the workflow artifact."
+
+          {
+            echo "## Denetim SSH key evidence ingest"
+            echo
+            cat "$comment"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload redacted evidence ingest artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz22-6-denetim-ssh-key-evidence-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup raw operator evidence input
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f "${EVIDENCE_JSON}"
+
+      - name: Fail workflow when evidence is rejected
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERIFY_EXIT_CODE}" ]; then
+            echo "::error::evidence verifier did not expose an exit code"
+            exit 1
+          fi
+          if [ "${VERIFY_EXIT_CODE}" != "0" ]; then
+            echo "::error::Denetim SSH key evidence was rejected"
+            exit "${VERIFY_EXIT_CODE}"
+          fi
