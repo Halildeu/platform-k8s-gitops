@@ -195,6 +195,10 @@ images:
   # 2026-07-03 Faz 22.6 #1580 cert-channel co-bump: aligned with the primary
   # endpoint-admin digest from backend #793 / image build run 28640622647.
   # Activation remains owner-gated; #1580 still requires live VIEW_ONLY evidence.
+  # 2026-07-03 Faz 22.6 #1580 V78/V79 repair co-bump: aligned with backend
+  # #794 / image build run 28642329661 after #793 reused the live-applied V78
+  # migration number. Activation remains owner-gated; staging-sw/WG is only a
+  # server/debug/bootstrap path and is not product acceptance evidence.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:206cd7af1c93b31b492a3befee669a3ad65e9a4d63a7ba66f15063343cb0111e
+    digest: sha256:51e4a8f93831208c33f4441f763d3a6f1d85af171edbd8966d732e2a47870f55

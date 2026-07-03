@@ -5456,7 +5456,16 @@ images:
     # candidates. It restores product remote-bridge peer resolution without
     # treating staging-sw/WG as the endpoint product path; #1580 still requires
     # live VIEW_ONLY attended smoke evidence and KVKK signoff.
-    digest: sha256:206cd7af1c93b31b492a3befee669a3ad65e9a4d63a7ba66f15063343cb0111e
+    # 2026-07-03 Faz 22.6 #1580 Flyway V78/V79 repair sync: re-pin from
+    # backend #793 (merge 5a0e4f1) to backend #794 (merge c576750c, image
+    # build run 28642329661). This restores the live-applied V78
+    # remote_bridge_tpm_binding_read_grant migration checksum and moves the
+    # cert-channel active-slot migration to V79, after deploy guard run
+    # 28642450572 failed closed because desired-state still pointed at #793.
+    # This is product-channel recovery support only: staging-sw/WG remains a
+    # server/debug/bootstrap path, not an endpoint product path; #1580 still
+    # requires product 443 VIEW_ONLY attended evidence and KVKK signoff.
+    digest: sha256:51e4a8f93831208c33f4441f763d3a6f1d85af171edbd8966d732e2a47870f55
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
