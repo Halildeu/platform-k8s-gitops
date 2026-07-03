@@ -55,10 +55,11 @@ PG_PASSWORD_SECRET_KEY="${PG_PASSWORD_SECRET_KEY:-SPRING_DATASOURCE_PASSWORD}"
 # faz24-i3-runner-ssh-identity.yml. The GitHub runner HOME can be ephemeral, so
 # anchor the key relative to the checked-out workspace instead of ~/.ssh.
 DEFAULT_DENETIM_SSH_IDENTITY="${REPO_ROOT}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519"
+DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/halil/.ssh/config}"
 DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-svc-denetim-agent@10.99.0.2}"
 DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i ${DEFAULT_DENETIM_SSH_IDENTITY} -o IdentitiesOnly=yes}"
 if [[ "$DENETIM_SSH_OPTS" == "__SSH_CONFIG__" ]]; then
-  DENETIM_SSH_OPTS=""
+  DENETIM_SSH_OPTS="-F ${DEFAULT_DENETIM_SSH_CONFIG}"
 fi
 REQUIRE_ACTIVE_GUI="${REQUIRE_ACTIVE_GUI:-1}"
 CONSENT_WAIT_SECONDS="${CONSENT_WAIT_SECONDS:-120}"
@@ -238,7 +239,12 @@ validate_denetim_ssh_target_config() {
 
   if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" ]]; then
     local ssh_config resolved_host resolved_user identity_file
-    ssh_config="$(ssh -G "$DENETIM_SSH_TARGET" 2>/dev/null)" \
+    # shellcheck disable=SC2206
+    local opts=( $DENETIM_SSH_OPTS )
+    [[ "$DENETIM_SSH_OPTS" == *"$DEFAULT_DENETIM_SSH_CONFIG"* ]] \
+      || fail_smoke "denetim-ssh-alias-mode-requires-config-file"
+    [[ -r "$DEFAULT_DENETIM_SSH_CONFIG" ]] || fail_smoke "denetim-ssh-config-not-readable"
+    ssh_config="$(ssh "${opts[@]}" -G "$DENETIM_SSH_TARGET" 2>/dev/null)" \
       || fail_smoke "denetim-ssh-alias-config-unreadable"
     resolved_host="$(awk 'tolower($1) == "hostname" { print $2; exit }' <<<"$ssh_config")"
     resolved_user="$(awk 'tolower($1) == "user" { print $2; exit }' <<<"$ssh_config")"
