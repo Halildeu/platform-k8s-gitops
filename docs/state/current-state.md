@@ -629,8 +629,8 @@ Current live PR truth:
   `2d9b35b2d1453f802569fcb408197341d5d467ed`, `mergeStateStatus=CLEAN`, with
   service CI green. It removes vendor-specific pilot kind usage from active
   Faz 24 AI gates in favor of `erp-pilot`, `pilot-meeting`, and
-  `customer-pilot`, and also rewords legacy STT/WER pilot reports so Workcube
-  is not presented as the product contract.
+  `customer-pilot`, and also rewords legacy STT/WER pilot reports so the first
+  customer pilot is not presented as the product contract.
 - `platform-k8s-gitops#2259` is open on
   `codex/faz24-erp-agnostic-plan`, `mergeStateStatus=CLEAN`, with checks green.
   It updates the Faz 24 plan/state language so a specific ERP/CRM product is
@@ -652,8 +652,8 @@ Boundary:
   still a fresh live Turkish manual desktop smoke on the intended direct-STT
   runtime plus authenticated, redacted Meeting AI analyze smoke through the
   testai/api-gateway path.
-- The product contract is ERP/CRM-agnostic. Historical Workcube/MSSQL/ETL
-  references remain historical source evidence only and must not be read as a
+- The product contract is ERP/CRM-agnostic. Historical ERP/MSSQL/ETL references
+  remain historical source evidence only and must not be read as a
   vendor-specific product dependency.
 
 ## Live Delta — Faz 24 direct-STT recorder path bounded-latency test state (2026-07-01)

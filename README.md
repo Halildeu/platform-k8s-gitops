@@ -255,4 +255,4 @@ Hooks: no-closure-language (HARD RULE) + kustomize-build-sanity + yamllint + she
 
 ## Lisans
 
-Internal — Workcube ERP platform.
+Internal — ERP/CRM-agnostic platform.
