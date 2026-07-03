@@ -22,6 +22,7 @@ grep -q 'runs-on: \[self-hosted, staging-sw, testai-deploy\]' <<<"$workflow_text
 grep -q 'contents: read' <<<"$workflow_text"
 grep -q 'issues: write' <<<"$workflow_text"
 grep -q 'svc-denetim-agent@10.99.0.2' <<<"$workflow_text"
+grep -q 'DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/runner/faz22-6-denetim-ssh/config}"' <<<"$workflow_text"
 grep -q 'Upload redacted preflight bundle' <<<"$workflow_text"
 grep -q 'does not start VIEW_ONLY' <<<"$workflow_text"
 grep -q 'does not write the #1580 engineering marker' <<<"$workflow_text"
