@@ -5483,7 +5483,13 @@ images:
     # 28681672419). This carries the SESSION_SIGNAL duress source, internal
     # operator duress signal endpoint, and fail-closed positive-duress handling
     # needed before product-channel VIEW_ONLY attended evidence can be retried.
-    digest: sha256:6f794ec6b0ff91955313529016459885e0d01ac6f1acaf84c1b20cefe10560e3
+    # 2026-07-03 Faz 22.6 #1580 WORM recorder diagnostic hash sync: re-pin
+    # from backend #796 to backend #797 (merge 328b103, image build run
+    # 28683451172). This carries non-blank content hashes for device-key and
+    # device-trust diagnostic audit records so best-effort diagnostics cannot
+    # poison later clean duress-signal recording before the attended VIEW_ONLY
+    # smoke reaches the operation path.
+    digest: sha256:a5cf602f9936d31f96e8006f4221b46317a1422895b5a8585e16bb8533de1e44
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
