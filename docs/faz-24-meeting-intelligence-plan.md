@@ -49,7 +49,7 @@
 
 ## 1. Vizyon
 
-Bağımsız toplantı zekâsı platformu. Belirli bir ERP/CRM markası bu plan için ürün bağımlılığı değildir; Workcube yalnızca ilk pilot/connector yüzeylerinden biri olabilir. Telefon / masaüstü / Teams ses kaynaklarından:
+Bağımsız toplantı zekâsı platformu. Belirli bir ERP/CRM markası bu plan için ürün bağımlılığı değildir; ilk pilotlar yalnızca generic ERP/CRM adapter kontratı üzerinden map edilir. Telefon / masaüstü / Teams ses kaynaklarından:
 
 - Canlı geçici transkript (2-8 sn gecikme)
 - Kesinleşmiş transkript (10-20 sn bağlamlı)

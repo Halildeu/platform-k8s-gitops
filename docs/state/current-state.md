@@ -3938,7 +3938,7 @@ GitOps also advanced several product-quality and compliance guardrails on
   `243de9d981b299c28c2015ae0b85112fde924bf8`. The new
   `services/live-stt-service/scripts/gwer_gate.py` consumes metadata-only WER
   and DER evidence rows, requires explicit thresholds, and allows only approved
-  pilot evidence kinds (`pilot-meeting`, `workcube-pilot`, `customer-pilot`) to
+  pilot evidence kinds (`pilot-meeting`, `erp-pilot`, `customer-pilot`) to
   satisfy the gate. Common Voice / synthetic-smoke evidence can support
   harness validation but cannot satisfy real G-WER by itself.
 - `platform-ai#200` merged G-INT gate infrastructure at
@@ -4593,7 +4593,8 @@ The Faz 24 canonical plan and `PLAN.md` roadmap row have been realigned with
 the current product decision and runtime boundary:
 
 - Faz 24 is now described as an independent meeting-intelligence product;
-  Workcube/ERP is no longer a product dependency or primary framing.
+  ERP/CRM vendor-specific framing is no longer a product dependency or primary
+  framing.
 - The canonical plan now separates infrastructure/runtime evidence from
   market-ready product evidence. Recorder OpenFGA selector promotion and edge
   lifecycle evidence remain accepted, but direct-STT transcript, same-session
