@@ -27,6 +27,19 @@ on:
         required: true
         default: true
         type: boolean
+      denetim_ssh_target:
+        description: "Denetim SSH target used only for GUI/log preflight"
+        required: true
+        default: "svc-denetim-agent@10.99.0.2"
+        type: string
+      denetim_ssh_auth_mode:
+        description: "Denetim SSH auth source"
+        required: true
+        default: "runner_identity"
+        type: choice
+        options:
+          - runner_identity
+          - ssh_config_alias
       auto_finalize:
         description: "Also run the v2 finalizer when evidence_url is already the canonical HTTPS manifest URL"
         required: true
@@ -90,6 +103,8 @@ jobs:
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           DEVICE_ID: ${{ inputs.device_id }}
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
           AUTO_FINALIZE: ${{ inputs.auto_finalize && '1' || '0' }}
           EVIDENCE_URL: ${{ inputs.evidence_url }}
           APPROVED_AT: ${{ inputs.approved_at }}
@@ -108,7 +123,7 @@ jobs:
             esac
           }
 
-          for name in CONFIRM EXPECTED_DIGEST DEVICE_ID DEVICE_HOSTNAME AUTO_FINALIZE EVIDENCE_URL APPROVED_AT EXPIRES_AT; do
+          for name in CONFIRM EXPECTED_DIGEST DEVICE_ID DEVICE_HOSTNAME DENETIM_SSH_TARGET DENETIM_SSH_AUTH_MODE AUTO_FINALIZE EVIDENCE_URL APPROVED_AT EXPIRES_AT; do
             reject_multiline "$name" "${!name}"
           done
 
@@ -126,6 +141,20 @@ jobs:
             echo "::error::device_id must look like a UUID"
             exit 1
           fi
+
+          case "$DENETIM_SSH_AUTH_MODE" in
+            runner_identity) ;;
+            ssh_config_alias)
+              if [ "$DENETIM_SSH_TARGET" != "denetim-pc" ]; then
+                echo "::error::ssh_config_alias mode requires denetim_ssh_target=denetim-pc"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::unsupported denetim_ssh_auth_mode"
+              exit 1
+              ;;
+          esac
 
           if [ "$AUTO_FINALIZE" = "1" ] && ! printf '%s' "$EVIDENCE_URL" | grep -Eq '^https://[^?#]+$'; then
             echo "::error::auto_finalize requires evidence_url as an HTTPS URL without query or fragment"
@@ -154,6 +183,8 @@ jobs:
           EXPECTED_DIGEST: ${{ inputs.expected_digest }}
           DEVICE_ID: ${{ inputs.device_id }}
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
           REQUIRE_ACTIVE_GUI: ${{ inputs.require_active_gui && '1' || '0' }}
           AUTO_FINALIZE: ${{ inputs.auto_finalize && '1' || '0' }}
           EVIDENCE_URL: ${{ inputs.evidence_url }}
@@ -165,6 +196,9 @@ jobs:
           set +e
           mkdir -p "${EVIDENCE_DIR}"
           chmod +x scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+          if [ "$DENETIM_SSH_AUTH_MODE" = "ssh_config_alias" ]; then
+            export DENETIM_SSH_OPTS="__SSH_CONFIG__"
+          fi
 
           scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh \
             2>&1 | while IFS= read -r line; do
