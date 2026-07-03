@@ -5907,6 +5907,14 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      # #2186 Meeting AI analyze bridge changes meeting-service ConfigMap
+      # envFrom data. Static ConfigMap data does not restart existing pods, so
+      # this test-only marker makes the env pickup rollout GitOps-authoritative
+      # and avoids a direct kubectl rollout restart on the shared test cluster.
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          platform.acik.com/faz24-meeting-ai-base-url-rev: "2026-07-03-2186"
 
   # Faz 24 Meeting Intelligence foundation (#411): replica 1 default
   # (HARD RULE — Scale-to-Zero YASAK). No mTLS connector → base 150s startup
