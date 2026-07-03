@@ -7500,10 +7500,12 @@ patches:
         value: 24Gi
       # 2026-06-18: audit-archive-exporter Service made the live namespace hit
       # services=28/28, blocking ArgoCD sync before artifact-host v0.2.9 could
-      # reconcile. Add small test-only headroom for current desired services.
+      # reconcile. 2026-07-03: Faz 24 #2186 meeting-ai test bridge found live
+      # services=32/32 after Endpoints/NetPolicy synced; keep small test-only
+      # headroom so the selectorless Service can reconcile via GitOps.
       - op: replace
         path: /spec/hard/services
-        value: "32"
+        value: "36"
       # 2026-06-28: Faz 22.6 #548 dedicated device-key broker adds three
       # isolated ExternalSecret-owned Secrets (runtime, TLS, signer). Live
       # namespace was already secrets=30/30, so keep this test-only object
