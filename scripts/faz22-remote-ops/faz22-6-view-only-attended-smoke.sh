@@ -45,14 +45,11 @@ PG_SECRET_NAME="${PG_SECRET_NAME:-endpoint-admin-remote-bridge-secrets}"
 PG_USER_SECRET_KEY="${PG_USER_SECRET_KEY:-SPRING_DATASOURCE_USERNAME}"
 PG_PASSWORD_SECRET_KEY="${PG_PASSWORD_SECRET_KEY:-SPRING_DATASOURCE_PASSWORD}"
 
-# Default requires the staging-sw runner user's ~/.ssh/config:
-#   Host denetim-pc
-#     User denetimpc
-#     HostName 10.99.0.2
-#     IdentityFile ~/.ssh/id_denetim
-# Override DENETIM_SSH_TARGET for other runners.
-DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetim-pc}"
-DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:-}"
+# Default requires the staging-sw host's Denetim PC key. The GitHub runner may
+# have HOME=/home/runner even when the process user is halil, so do not depend
+# on ~/.ssh/config alias expansion for the default path.
+DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetimpc@10.99.0.2}"
+DENETIM_SSH_OPTS="${DENETIM_SSH_OPTS:--i /home/halil/.ssh/id_denetim -o IdentitiesOnly=yes}"
 REQUIRE_ACTIVE_GUI="${REQUIRE_ACTIVE_GUI:-1}"
 CONSENT_WAIT_SECONDS="${CONSENT_WAIT_SECONDS:-120}"
 FRAME_WAIT_SECONDS="${FRAME_WAIT_SECONDS:-20}"
@@ -107,7 +104,8 @@ Important optional environment:
   EXPECTED_DIGEST=sha256:...
   DEVICE_ID=...
   DEVICE_HOSTNAME=...
-  DENETIM_SSH_TARGET=denetim-pc  # staging-sw ~/.ssh/config alias; override for other runners
+  DENETIM_SSH_TARGET=denetimpc@10.99.0.2
+  DENETIM_SSH_OPTS="-i /home/halil/.ssh/id_denetim -o IdentitiesOnly=yes"
   REQUIRE_ACTIVE_GUI=1
   AUTO_FINALIZE=1
   EVIDENCE_URL=https://...
@@ -212,18 +210,23 @@ validate_inputs() {
 
 validate_denetim_ssh_target_config() {
   [[ -n "$DENETIM_SSH_TARGET" ]] || return
-  [[ "$DENETIM_SSH_TARGET" == "denetim-pc" ]] || return
 
-  local ssh_config resolved_host resolved_user identity_file
-  ssh_config="$(ssh -G "$DENETIM_SSH_TARGET" 2>/dev/null)" \
-    || fail_smoke "denetim-ssh-alias-config-unreadable"
-  resolved_host="$(awk 'tolower($1) == "hostname" { print $2; exit }' <<<"$ssh_config")"
-  resolved_user="$(awk 'tolower($1) == "user" { print $2; exit }' <<<"$ssh_config")"
-  identity_file="$(awk 'tolower($1) == "identityfile" { print $2; exit }' <<<"$ssh_config")"
+  if [[ "$DENETIM_SSH_OPTS" == *"/home/halil/.ssh/id_denetim"* ]]; then
+    [[ -r /home/halil/.ssh/id_denetim ]] || fail_smoke "denetim-ssh-key-not-readable"
+  fi
 
-  [[ "$resolved_host" == "10.99.0.2" ]] || fail_smoke "denetim-ssh-alias-missing-hostname"
-  [[ "$resolved_user" == "denetimpc" ]] || fail_smoke "denetim-ssh-alias-missing-user"
-  [[ "$identity_file" == *"id_denetim"* ]] || fail_smoke "denetim-ssh-alias-missing-identity"
+  if [[ "$DENETIM_SSH_TARGET" == "denetim-pc" ]]; then
+    local ssh_config resolved_host resolved_user identity_file
+    ssh_config="$(ssh -G "$DENETIM_SSH_TARGET" 2>/dev/null)" \
+      || fail_smoke "denetim-ssh-alias-config-unreadable"
+    resolved_host="$(awk 'tolower($1) == "hostname" { print $2; exit }' <<<"$ssh_config")"
+    resolved_user="$(awk 'tolower($1) == "user" { print $2; exit }' <<<"$ssh_config")"
+    identity_file="$(awk 'tolower($1) == "identityfile" { print $2; exit }' <<<"$ssh_config")"
+
+    [[ "$resolved_host" == "10.99.0.2" ]] || fail_smoke "denetim-ssh-alias-missing-hostname"
+    [[ "$resolved_user" == "denetimpc" ]] || fail_smoke "denetim-ssh-alias-missing-user"
+    [[ "$identity_file" == *"id_denetim"* ]] || fail_smoke "denetim-ssh-alias-missing-identity"
+  fi
 }
 
 curl_json() {
