@@ -626,15 +626,15 @@ Current live PR truth:
   visible direct segments. This narrows the observed "speech present but large
   transcript portions missing" class without claiming final UX acceptance.
 - `platform-ai#236` is open and ready at head
-  `4c6a403785add9afa7425b1972906982589cc53f`, `mergeStateStatus=CLEAN`, with
+  `2d9b35b2d1453f802569fcb408197341d5d467ed`, `mergeStateStatus=CLEAN`, with
   service CI green. It removes vendor-specific pilot kind usage from active
   Faz 24 AI gates in favor of `erp-pilot`, `pilot-meeting`, and
-  `customer-pilot`.
-- `platform-k8s-gitops#2259` is open at head
-  `8e1b157cc75583d39dd49f673ce3517693e15205`, `mergeStateStatus=CLEAN`, with
-  checks green. It updates the Faz 24 plan/state language so a specific
-  ERP/CRM product is not a product dependency; pilots map through a generic
-  adapter contract.
+  `customer-pilot`, and also rewords legacy STT/WER pilot reports so Workcube
+  is not presented as the product contract.
+- `platform-k8s-gitops#2259` is open on
+  `codex/faz24-erp-agnostic-plan`, `mergeStateStatus=CLEAN`, with checks green.
+  It updates the Faz 24 plan/state language so a specific ERP/CRM product is
+  not a product dependency; pilots map through a generic adapter contract.
 
 Follow-up work intentionally tracked instead of hiding in PR comments:
 
