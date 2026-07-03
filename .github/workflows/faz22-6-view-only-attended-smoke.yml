@@ -8,9 +8,9 @@ on:
         required: true
         type: string
       expected_digest:
-        description: "Expected endpoint-admin remote-bridge deployment digest"
-        required: true
-        default: "sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5"
+        description: "Optional endpoint-admin remote-bridge deployment digest; empty derives from rendered overlay SSOT"
+        required: false
+        default: ""
         type: string
       device_id:
         description: "Attended pilot endpoint device UUID"
@@ -117,8 +117,8 @@ jobs:
             exit 1
           fi
 
-          if ! printf '%s' "$EXPECTED_DIGEST" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
-            echo "::error::expected_digest must match ^sha256:[a-f0-9]{64}$"
+          if [ -n "$EXPECTED_DIGEST" ] && ! printf '%s' "$EXPECTED_DIGEST" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+            echo "::error::expected_digest must be empty or match ^sha256:[a-f0-9]{64}$"
             exit 1
           fi
 
