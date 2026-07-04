@@ -125,7 +125,7 @@ veya bounded gün değeri eksik/geçersizse evidence blocked kalır.
 ### Future Multi-tenant Readiness (Mavis önerisi)
 
 - TenantId metadata Gateway Contract 1.0'da reserved field
-- Faz 24.1 MVP tek müşteri (Workcube içi) OK
+- Faz 24.1 MVP tek müşteri/pilot olabilir; ürün kontratı ERP/CRM markasına bağlı değildir
 - Multi-tenant onboarding'de retroactive eklemek YASAK — placeholder şimdi
 
 ### Mobile + Desktop Client Boundary (Codex `019e89fb` placeholder)
@@ -164,7 +164,7 @@ ile ayrıca kanıtlanmadan legal acceptance iddiası kurulmaz.
 | **Failure / backlog behavior** | Silent drop YASAK; fail-fast + alert | platform-ai unreachable → Gateway 503 fail-fast; Redis TTL drain (kısa süre tolerate); admission control reject + Prometheus alert + audit event `cross_server_transit_failure`. |
 | **No direct client-to-STT rule** | Mobile/desktop/web Gateway zorunlu | Network policy: platform-ai ingress sadece staging-sw Gateway source IP'sinden allow; başka source drop + audit. |
 | **Backup / cache retention cross-server** | Cache süreleri owner-supplied parametre veya ephemeral default olur | HF model cache platform-ai disk'inde yalnız model warm-load için; transcript cache memory-only (no persistence); audio cache **YOK** (transient stream-through). Kalıcı cache retention değeri owner config'i olmadan açılmaz. |
-| **Legal controller-processor boundary** | Workcube = controller; platform-ai host operator = processor adayı | DPA/subprocessor/cross-border kararları owner/legal track'indedir. Mühendislik bu sınırı config/audit/redaction/host-access kontrolleriyle destekler ama DPA imzalı veya legal accepted iddiası yapmaz. |
+| **Legal controller-processor boundary** | Müşteri/tenant ERP-CRM alan sahibi = controller; platform-ai host operator = processor adayı | DPA/subprocessor/cross-border kararları owner/legal track'indedir. Mühendislik bu sınırı config/audit/redaction/host-access kontrolleriyle destekler ama DPA imzalı veya legal accepted iddiası yapmaz. Belirli ERP/CRM markası yalnız pilot/adaptör örneğidir; core ürün sözleşmesi vendor-specific değildir. |
 
 **M7 engineering ek madde**: Cross-server transit için WireGuard/mTLS, tenant
 propagation, bounded Redis, redaction ve audit evidence gerekir. Hukuk review

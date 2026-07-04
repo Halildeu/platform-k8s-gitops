@@ -602,6 +602,60 @@ matrix. Because no product command exists for TPM enrollment, this cannot be
 truthfully reclassified as an agent-only product-channel trigger from the
 current live state.
 
+## Live Delta — Faz 24 live-STT source-readiness and ERP/CRM-agnostic scope refresh (2026-07-03)
+
+Faz 24 Meeting Intelligence source/product surface advanced after the
+2026-07-01 direct-STT test-state snapshot, but runtime/user acceptance remains
+separate from source readiness.
+
+Current live PR truth:
+
+- `platform-ai#233` is no longer draft. It is Ready for Review at head
+  `28ca20f4a3ead7812bab6de9afde5807e775ed5b`, `mergeStateStatus=CLEAN`, with
+  visible GitHub checks green for `repo-gates`, `service-tests
+  (diarization-service)`, `service-tests (final-stt-service)`,
+  `service-tests (live-stt-service)`, and `service-tests (meeting-ai-service)`.
+  Claude cross-AI re-review returned `AGREE_WITH_NOTES` and found no blocker
+  for source/CI readiness; it explicitly kept live Turkish manual smoke and
+  authenticated Meeting AI analyze smoke as runtime acceptance gates.
+- `platform-desktop#34` remains draft at head
+  `cf5f179fd5edd551fdf46cbebdb58ec5c54e1cd6`, `mergeStateStatus=CLEAN`, with
+  GitHub `build` SUCCESS. The latest desktop source change keeps Direct-STT
+  draft behavior but allows gateway `FINAL` / `REVISED` fallback rows when the
+  direct stream is sparse and the gateway text is not already covered by
+  visible direct segments. This narrows the observed "speech present but large
+  transcript portions missing" class without claiming final UX acceptance.
+- `platform-ai#236` is open and ready at head
+  `2d9b35b2d1453f802569fcb408197341d5d467ed`, `mergeStateStatus=CLEAN`, with
+  service CI green. It removes vendor-specific pilot kind usage from active
+  Faz 24 AI gates in favor of `erp-pilot`, `pilot-meeting`, and
+  `customer-pilot`, and also rewords legacy STT/WER pilot reports so the first
+  customer pilot is not presented as the product contract.
+- `platform-k8s-gitops#2259` is open on
+  `codex/faz24-erp-agnostic-plan`, `mergeStateStatus=CLEAN`, with checks green.
+  It updates the Faz 24 plan/state language so a specific ERP/CRM product is
+  not a product dependency; pilots map through a generic adapter contract.
+
+Follow-up work intentionally tracked instead of hiding in PR comments:
+
+- `platform-ai#237` tracks live-stream decode-threshold parity between the
+  direct stream path and configurable sync worker path.
+- `platform-ai#238` tracks short Turkish utterance filtering so legitimate
+  short responses such as `Ne?` / `Ha?` do not get over-filtered by the
+  artifact guard.
+
+Boundary:
+
+- This delta is source/CI/cross-AI readiness and scope alignment evidence, not
+  final Faz 24 runtime acceptance.
+- `platform-k8s-gitops#2186` remains `Needs Verify`: required evidence is
+  still a fresh live Turkish manual desktop smoke on the intended direct-STT
+  runtime plus authenticated, redacted Meeting AI analyze smoke through the
+  testai/api-gateway path.
+- The product contract is ERP/CRM-agnostic. Historical ERP/MSSQL/ETL references
+  remain historical source evidence only and must not be read as a
+  vendor-specific product dependency.
+
 ## Live Delta — Faz 24 direct-STT recorder path bounded-latency test state (2026-07-01)
 
 Faz 24 Meeting Intelligence desktop recorder path now has a live direct-STT test
@@ -3938,7 +3992,7 @@ GitOps also advanced several product-quality and compliance guardrails on
   `243de9d981b299c28c2015ae0b85112fde924bf8`. The new
   `services/live-stt-service/scripts/gwer_gate.py` consumes metadata-only WER
   and DER evidence rows, requires explicit thresholds, and allows only approved
-  pilot evidence kinds (`pilot-meeting`, `workcube-pilot`, `customer-pilot`) to
+  pilot evidence kinds (`pilot-meeting`, `erp-pilot`, `customer-pilot`) to
   satisfy the gate. Common Voice / synthetic-smoke evidence can support
   harness validation but cannot satisfy real G-WER by itself.
 - `platform-ai#200` merged G-INT gate infrastructure at
@@ -4593,7 +4647,8 @@ The Faz 24 canonical plan and `PLAN.md` roadmap row have been realigned with
 the current product decision and runtime boundary:
 
 - Faz 24 is now described as an independent meeting-intelligence product;
-  Workcube/ERP is no longer a product dependency or primary framing.
+  ERP/CRM vendor-specific framing is no longer a product dependency or primary
+  framing.
 - The canonical plan now separates infrastructure/runtime evidence from
   market-ready product evidence. Recorder OpenFGA selector promotion and edge
   lifecycle evidence remain accepted, but direct-STT transcript, same-session

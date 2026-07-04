@@ -12,7 +12,7 @@
 
 Sektörün temel değeri (özet/karar/aksiyon) bizde **hiç yok**. 2-AI istişare (Claude + Codex `019ed1f5`): salt "toplantı özeti" bağımsız ürün olarak savunulabilir değil (Otter/Fireflies/Copilot zaten yapıyor). **Regüle sektör için ayırt edici = kaynaklı çıktı**: "AI dedi" değil **"şu cümleden (transcript segment + timestamp) çıkarıldı"** — hem differentiator hem hallucination guard hem KVKK Madde 12 hesap-verebilirlik temeli.
 
-Bağlayıcı önkoşullar: **ADR-0031** (`meeting-ai-service` = `platform-ai` compute plane; client'lar asla doğrudan bağlanmaz; transcript Gateway → cross-server mTLS/WireGuard → platform-ai; controller=Workcube/processor=platform-ai DPA) + **ADR-0030** (LLM çıktısı = transcript-seviye koruma; LLM-input PII redaction; ses asla LLM'e gönderilmez; özet retention 1yr; pilot ADR ACCEPTED + hukuk öncesi YASAK).
+Bağlayıcı önkoşullar: **ADR-0031** (`meeting-ai-service` = `platform-ai` compute plane; client'lar asla doğrudan bağlanmaz; transcript Gateway → cross-server mTLS/WireGuard → platform-ai; controller=müşteri/tenant ERP-CRM alan sahibi, processor=platform-ai host operator DPA) + **ADR-0030** (LLM çıktısı = transcript-seviye koruma; LLM-input PII redaction; ses asla LLM'e gönderilmez; özet retention 1yr; pilot ADR ACCEPTED + hukuk öncesi YASAK). Belirli bir ERP/CRM markası yalnız pilot/adaptör örneği olabilir; core Meeting Intelligence kontratı ERP/CRM-agnostic kalır.
 
 ---
 
