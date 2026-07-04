@@ -51,7 +51,7 @@
 
 Bağımsız toplantı zekâsı platformu. Belirli bir ERP/CRM markası bu plan için ürün bağımlılığı değildir; ilk pilotlar yalnızca generic ERP/CRM adapter kontratı üzerinden map edilir. Telefon / masaüstü / Teams ses kaynaklarından:
 
-**ERP/CRM-agnostic ürün kuralı**: Herhangi bir ERP/CRM markası Faz 24 core product contract'ında, UI'da, API/DTO'da, acceptance gate'te veya "done" dilinde ürün bağımlılığı olarak kullanılamaz. Marka adları yalnız tarihsel kanıt, ilk müşteri pilotu veya adapter örneği bağlamında geçebilir; yeni ürün işi "generic ERP/CRM adapter" kontratıyla yazılır ve tüm ERP/CRM'lerle çalışabilirlik hedeflenir.
+**ERP/CRM-agnostic ürün kuralı**: Herhangi bir ERP/CRM markası, müşteri adı veya pilot adapter adı Faz 24 core product contract'ında, UI'da, API/DTO'da, acceptance gate'te veya "done" dilinde ürün bağımlılığı olarak kullanılamaz. Pilot/customer/adapter isimleri yalnız adapter konfigürasyonu, tarihsel migration/lineage dokümanı veya kanıtı, evidence paketi ya da deployment notu sınırında kalır; yeni ürün işi "generic ERP/CRM adapter" kontratıyla yazılır ve tüm ERP/CRM'lerle çalışabilirlik hedeflenir. Hiçbir ERP/CRM markası için özel prompt, parser, workflow, UI branch, feature flag, scoring rule ya da acceptance shortcut kurulmaz; pilot adaptör yalnız generic ERP/CRM adapter contract'ının bir implementasyonu olarak davranır.
 
 - Canlı geçici transkript (2-8 sn gecikme)
 - Kesinleşmiş transkript (10-20 sn bağlamlı)

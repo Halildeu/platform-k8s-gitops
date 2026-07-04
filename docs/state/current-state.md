@@ -610,31 +610,31 @@ separate from source readiness.
 
 Current live PR truth:
 
-- `platform-ai#233` is no longer draft. It is Ready for Review at head
-  `28ca20f4a3ead7812bab6de9afde5807e775ed5b`, `mergeStateStatus=CLEAN`, with
-  visible GitHub checks green for `repo-gates`, `service-tests
-  (diarization-service)`, `service-tests (final-stt-service)`,
-  `service-tests (live-stt-service)`, and `service-tests (meeting-ai-service)`.
-  Claude cross-AI re-review returned `AGREE_WITH_NOTES` and found no blocker
-  for source/CI readiness; it explicitly kept live Turkish manual smoke and
-  authenticated Meeting AI analyze smoke as runtime acceptance gates.
+- `platform-ai#233` is merged to `main` at merge commit
+  `192bf6f7a90421f13f1f7e54e58e5826d54c655f`. The final PR head
+  `0f7ed999523203608bc28d83b2246559ae204d54` had green visible checks for
+  `repo-gates`, `service-tests (diarization-service)`, `service-tests
+  (final-stt-service)`, `service-tests (live-stt-service)`, and `service-tests
+  (meeting-ai-service)`. The final source patch preserves medium-length stable
+  live drafts when a short low-overlap final would otherwise erase already
+  visible words. This targets the observed "spoken content disappears /
+  overwritten by short final" loss mode without proving runtime rollout.
 - `platform-desktop#34` remains draft at head
-  `cf5f179fd5edd551fdf46cbebdb58ec5c54e1cd6`, `mergeStateStatus=CLEAN`, with
-  GitHub `build` SUCCESS. The latest desktop source change keeps Direct-STT
-  draft behavior but allows gateway `FINAL` / `REVISED` fallback rows when the
-  direct stream is sparse and the gateway text is not already covered by
-  visible direct segments. This narrows the observed "speech present but large
-  transcript portions missing" class without claiming final UX acceptance.
-- `platform-ai#236` is open and ready at head
-  `2d9b35b2d1453f802569fcb408197341d5d467ed`, `mergeStateStatus=CLEAN`, with
-  service CI green. It removes vendor-specific pilot kind usage from active
-  Faz 24 AI gates in favor of `erp-pilot`, `pilot-meeting`, and
-  `customer-pilot`, and also rewords legacy STT/WER pilot reports so the first
-  customer pilot is not presented as the product contract.
-- `platform-k8s-gitops#2259` is open on
-  `codex/faz24-erp-agnostic-plan`, `mergeStateStatus=CLEAN`, with checks green.
-  It updates the Faz 24 plan/state language so a specific ERP/CRM product is
-  not a product dependency; pilots map through a generic adapter contract.
+  `1fb0498bef9d03331153abc6740ead0b5d2b611a`, `mergeStateStatus=UNSTABLE`
+  because GitHub `build` is still `QUEUED` on the required runner. The latest
+  desktop product surface is generic ERP/CRM output + handoff readiness, and
+  the local STT UX guard preserves visible Direct-STT words when a shorter
+  final correction arrives; GitHub build completion and live Turkish smoke
+  remain separate acceptance gates.
+- `platform-ai#239` is merged to `main` at merge commit
+  `5f3d891f26251856acd97643e2966d5a88c220c8`. It makes the active
+  platform-ai repo identity and Faz 24 AI documentation ERP/CRM-agnostic and
+  keeps pilot/customer/adapter naming out of the core product/model contract.
+- `platform-k8s-gitops#2265` is open on
+  `codex/faz24-generic-erp-product-language-20260704`. It updates the Faz 24
+  plan/state language so no specific ERP/CRM product is a dependency; pilots
+  map through a generic adapter contract, and no vendor-specific prompt/parser/
+  workflow/UI branch/feature flag/scoring rule/acceptance shortcut is allowed.
 
 Follow-up work intentionally tracked instead of hiding in PR comments:
 
@@ -654,7 +654,10 @@ Boundary:
   testai/api-gateway path.
 - The product contract is ERP/CRM-agnostic. Historical ERP/MSSQL/ETL references
   remain historical source evidence only and must not be read as a
-  vendor-specific product dependency.
+  vendor-specific product dependency. New Faz 24 product docs should avoid
+  naming a pilot ERP/CRM unless the text is explicitly about adapter config,
+  historical migration/lineage evidence, an evidence package, or deployment
+  notes.
 
 ## Live Delta — Faz 24 direct-STT recorder path bounded-latency test state (2026-07-01)
 
@@ -668,7 +671,9 @@ Source and PR chain:
   product surface for live transcript, newest-first transcript ordering,
   source transcript export, transient transcript-poll timeout handling, and
   direct live stream status visibility.
-- `platform-ai#233` is open with passing CI and adds live-STT partial cadence plus
+- `platform-ai#233` later merged to `main` at
+  `192bf6f7a90421f13f1f7e54e58e5826d54c655f`; at this snapshot time it was
+  still the open source path for live-STT partial cadence plus
   low-confidence/no-speech filtering for sync `/transcribe` segments.
 - `platform-k8s-gitops#2199` merged at
   `69a1e5e834f7a8e720a40d58c9d1e629c3b4ce99` after passing CI. It pins
