@@ -229,7 +229,7 @@ ADR-0030 KVKK Meeting Intelligence Boundary'de cross-server hop eksikti. Bu ADR 
 - Failure/backlog behavior (Gateway 503 + Redis fail-fast, no silent drop)
 - No direct client-to-STT rule (mobile/desktop/web Gateway zorunlu)
 - Backup/cache retention (HF model cache, transcript cache, audio cache TTL)
-- Legal controller-processor boundary (müşteri/tenant ERP-CRM alan sahibi = controller; platform-ai host operator = processor; DPA gerek; Workcube yalnız pilot/adaptör örneği)
+- Legal controller-processor boundary (müşteri/tenant ERP-CRM alan sahibi = controller; platform-ai host operator = processor; DPA gerek; belirli ERP/CRM markası yalnız pilot/adaptör örneği)
 
 ### D8 — Cross-server failure modes
 
