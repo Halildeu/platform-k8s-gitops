@@ -41,8 +41,12 @@ services:
       - ./init:/docker-entrypoint-initdb.d:ro
     secrets:
       - pg_password
+    # Sister-pin to prod (2026-05-20 vault-prod drift class). Test PG live
+    # IP already matches the overlay Endpoints patch (172.19.0.6); pinning
+    # here just prevents a future docker recreate from silently drifting.
     networks:
-      - platform-test-net
+      platform-test-net:
+        ipv4_address: 172.19.0.6
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s

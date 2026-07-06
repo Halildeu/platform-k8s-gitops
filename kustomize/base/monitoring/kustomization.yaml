@@ -95,6 +95,14 @@ resources:
   # grafana_datasource=1 → kube-prometheus-stack Grafana sidecar otomatik import.
   - grafana-dashboards/stt-pipeline-dashboard.yaml  # Faz 24 PR-obs-01b (gitops#1246) — gateway + Redis Streams + live-stt(collapsed, scrape pending); seri adları canlı envanterden (lettuce summary → avg+max, p99 yok)
   - grafana-datasources/
+  # 2026-07-06 network-drift observability PR (issue #2268). Adds scrape-side
+  # wiring (ServiceMonitor + Service) and the ExternalSecretNotReady /
+  # ClusterSecretStoreNotReady alerts. Rationale: the 2026-05-20 vault-prod
+  # docker-network-drift caused 2d17h of SecretSyncedError across every prod
+  # ExternalSecret with zero alerts because ESO metrics were never scraped.
+  # See docs/RB-vault-ops.md §"Network drift".
+  - eso-servicemonitor.yaml
+  - eso-external-secret-alert-rule.yaml
 
 # Kullanım:
 # Apply sadece S3 session'da (testai soak başlangıcı öncesi):

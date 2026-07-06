@@ -24,8 +24,18 @@ services:
       - ./init:/docker-entrypoint-initdb.d:ro   # DB create + grant scripts
     secrets:
       - pg_password
+    # 2026-05-20 vault-prod incident revealed a wider class: all three
+    # host-bridge services on platform-prod-net (postgres, keycloak, vault)
+    # were drifted between docker-assigned IPs and the k8s overlay Endpoints
+    # committed in kustomize/overlays/prod. Argo manual-sync had masked the
+    # drift; the next re-sync would have flipped Endpoints back to stale
+    # IPs and broken all three cluster→host bridges. Fix: static-pin every
+    # Endpoints-bridged host-compose container to its live IP so overlay
+    # and runtime stay canonical across restarts. See docs/RB-vault-ops.md
+    # §"Network drift" for the reserved-IP allocation table.
     networks:
-      - platform-prod-net
+      platform-prod-net:
+        ipv4_address: 172.21.0.10
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s

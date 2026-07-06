@@ -137,6 +137,81 @@ for svc_path in "postgres/${ENV}" "keycloak/${ENV}"; do
   fi
 done
 
+# 7. Network drift verification (2026-05-20 vault-prod incident class).
+# For each host-bridge service (postgres, keycloak, vault) verify three
+# things must all agree:
+#   a. docker inspect .NetworkSettings.Networks[platform-<env>-net] present
+#      (non-empty). On 2026-05-20 vault-prod was found with .Networks: {}
+#      despite Up 39m — this is the primary signal.
+#   b. docker IPv4 on that network equals the ipv4_address pinned in
+#      host-compose/<svc>/<env>/docker-compose.yml (the reserved table
+#      below is the authoritative source for the pin).
+#   c. k8s Endpoints/<svc> in the platform-<env> namespace addresses[0].ip
+#      matches (b). If not, kube-proxy will route traffic to the wrong
+#      container or fail with "no endpoints".
+# Auto-fix is intentionally off (per Codex 019f37d9 adversarial review):
+# preflight is a fail-loud detector; the recovery command is printed and
+# the operator (or the runbook) applies it. Silent auto-patching would
+# create a second uncontrolled control plane.
+declare -A pin_ip
+declare -A container_of
+declare -A endpoint_of
+# container_of maps preflight-svc-name → actual docker container name
+# endpoint_of maps preflight-svc-name → k8s Endpoints resource name
+container_of[postgres]=pg     # docker: platform-pg-<env>
+container_of[keycloak]=kc     # docker: platform-kc-<env>
+container_of[vault]=vault     # docker: platform-vault-<env>
+endpoint_of[postgres]=postgres
+endpoint_of[keycloak]=keycloak
+endpoint_of[vault]=vault
+if [[ "${ENV}" == "prod" ]]; then
+  pin_ip[postgres]=172.21.0.10
+  pin_ip[keycloak]=172.21.0.3
+  pin_ip[vault]=172.21.0.9
+else
+  pin_ip[postgres]=172.19.0.6
+  pin_ip[keycloak]=172.19.0.7
+  pin_ip[vault]=172.19.0.4
+fi
+NS="platform-${ENV}"
+KCTX="k3d-${ENV}"
+
+for svc in postgres keycloak vault; do
+  container="platform-${container_of[$svc]}-${ENV}"
+  want="${pin_ip[$svc]}"
+
+  # (a) network attachment. Recovery MUST reattach with --ip <pin>, otherwise
+  # Docker DHCP will hand out a fresh dynamic address and reintroduce the
+  # very drift class this section detects (Codex 019f37d9 post-impl review
+  # bulgu 1).
+  net_json=$(sshrun "docker inspect ${container} --format '{{json .NetworkSettings.Networks}}' 2>/dev/null" || echo "{}")
+  if [[ "${net_json}" == "{}" || -z "${net_json}" ]]; then
+    check "Network drift ${container} attach" FAIL "container has NO network attachments; recover: docker network connect --ip ${want} ${NET} ${container}"
+    continue
+  fi
+  if ! printf '%s' "${net_json}" | grep -q "\"${NET}\""; then
+    check "Network drift ${container} on ${NET}" FAIL "not attached to ${NET}; recover: docker network connect --ip ${want} ${NET} ${container}"
+    continue
+  fi
+
+  # (b) docker IPv4 vs compose pin
+  docker_ip=$(sshrun "docker inspect ${container} --format '{{(index .NetworkSettings.Networks \"${NET}\").IPAddress}}' 2>/dev/null" || echo "")
+  if [[ "${docker_ip}" != "${want}" ]]; then
+    check "Network drift ${container} IP" FAIL "docker IP=${docker_ip:-<empty>} != compose pin=${want}; recover: docker rm -f ${container} && docker compose -f host-compose/${svc}/${ENV}/docker-compose.yml up -d (owner window; vault requires unseal)"
+    continue
+  fi
+
+  # (c) k8s Endpoints match
+  ep_name="${endpoint_of[$svc]}"
+  ep_ip=$(sshrun "kubectl --context ${KCTX} -n ${NS} get endpoints ${ep_name} -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null" || echo "")
+  if [[ "${ep_ip}" != "${want}" ]]; then
+    check "Network drift ${ep_name}/${NS} Endpoint" FAIL "k8s Endpoints=${ep_ip:-<empty>} != docker/compose=${want}; recover: kubectl --context ${KCTX} -n ${NS} patch endpoints ${ep_name} --type json -p '[{\"op\":\"replace\",\"path\":\"/subsets/0/addresses/0/ip\",\"value\":\"${want}\"}]' — then Argo sync to make it durable"
+    continue
+  fi
+
+  check "Network drift ${svc}/${ENV} (docker+k8s+pin all=${want})" PASS
+done
+
 echo
 echo "=== Özet ==="
 echo "PASS: ${PASS}"

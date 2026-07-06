@@ -1,8 +1,6 @@
 # Vault Test Instance — ADR-0002 Same-Host Full Isolation
 # Network: platform-test-net (test ESO ile aynı network)
-# Ports:
-# - 8201 -> 8200 HTTP API (legacy test host-local access)
-# - 8302 -> 8202 HTTPS API (Faz 22.6 A1 backend TPM-attestation sign path)
+# Port: 8201 (test — prod 8200 ile çakışma yok)
 # Container: platform-vault-test
 # Operasyon: test default scale-to-zero; ESO apply için up edilir
 
@@ -19,16 +17,20 @@ services:
       VAULT_API_ADDR: http://platform-vault-test:8200
     ports:
       - "127.0.0.1:8201:8200"   # Localhost-only bind
-      - "127.0.0.1:8302:8202"   # Localhost-only HTTPS bind
     cap_add:
       - IPC_LOCK
     volumes:
       - ./config:/vault/config:ro
-      - /home/halil/platform-stateful/test/vault/data:/vault/data
-      - /home/halil/platform-stateful/test/vault/logs:/vault/logs
-      - /home/halil/platform-stateful/test/vault/tls:/vault/tls:ro
+      - /srv/platform/stateful/test/vault/data:/vault/data
+      - /srv/platform/stateful/test/vault/logs:/vault/logs
+    # Symmetry with prod (2026-05-20 network drift fix) — test-net has not
+    # dropped Vault yet, but the same failure class applies. Pin to the
+    # live IP so a container recreate cannot silently drift the k8s
+    # Endpoints target. Value matches the overlay endpoint patch in
+    # kustomize/overlays/test/kustomization.yaml (172.19.0.4).
     networks:
-      - platform-test-net
+      platform-test-net:
+        ipv4_address: 172.19.0.4
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8200/v1/sys/health"]
       interval: 30s
@@ -42,11 +44,8 @@ services:
     deploy:
       resources:
         limits:
-          # Faz 22.6 A1 HTTPS listener pushed the old 256M cap into OOMKilled
-          # on staging-sw during controlled recreate; keep test Vault bounded
-          # but leave enough headroom for dual listeners + Raft startup.
-          memory: 512M
-          cpus: "0.50"
+          memory: 256M
+          cpus: "0.25"
 
 networks:
   platform-test-net:

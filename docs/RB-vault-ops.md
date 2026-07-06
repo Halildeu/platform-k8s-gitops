@@ -120,6 +120,108 @@ Owner: @team/platform
     koruma önlemlerini planla.
 
 -------------------------------------------------------------------------------
+5.1 NETWORK DRIFT (host-bridge IP kopması, 2026-05-20 vault-prod incident)
+-------------------------------------------------------------------------------
+
+**Semptom:** k3d-<env> cluster'ından Vault'a (veya postgres/keycloak'a)
+erişim aniden koptu. `kubectl -n platform-<env> get endpoints <svc>` boş
+subset veya IP hedef container'ı değil başka bir container'ı gösteriyor.
+ExternalSecret'lar `SecretSyncedError` durumunda kalıyor. `kubectl describe
+service vault` "no endpoints" hatası veriyor.
+
+**Kök neden sınıfı:** `host-compose/*/{prod,test}/docker-compose.yml`
+içindeki container docker network attach'i kayboluyor VEYA docker
+DHCP yeni bir IP atıyor — overlay Endpoints resource ise sabit IP'ye
+pin'li. Live incident (2026-05-20): `platform-vault-prod` container'ı
+`NetworkSettings.Networks: {}` durumunda kaldı (Up 39m) ve prod
+ExternalSecret'lar 2d17h `SecretSyncedError`'da kaldı.
+
+**Kalıcı fix (2026-07-06 landed):** Tüm host-bridge servisler compose
+tarafında static IPv4 (`ipv4_address`) ile pin'li; overlay Endpoints ile
+aynı IP'yi paylaşıyor. Reserved IP tablosu (authoritative):
+
+| Env | Servis | Container | Docker network | Static IP | K8s Endpoint IP | Port |
+|---|---|---|---|---|---|---|
+| prod | postgres | `platform-pg-prod` | `platform-prod-net` | `172.21.0.10` | `172.21.0.10` | 5432 |
+| prod | keycloak | `platform-kc-prod` | `platform-prod-net` | `172.21.0.3` | `172.21.0.3` | 8080 |
+| prod | vault | `platform-vault-prod` | `platform-prod-net` | `172.21.0.9` | `172.21.0.9` | 8200 |
+| test | postgres | `platform-pg-test` | `platform-test-net` | `172.19.0.6` | `172.19.0.6` | 5432 |
+| test | keycloak | `platform-kc-test` | `platform-test-net` | `172.19.0.7` | `172.19.0.7` | 8080 |
+| test | vault | `platform-vault-test` | `platform-test-net` | `172.19.0.4` | `172.19.0.4` | 8200 |
+
+Bu üç değer (compose `ipv4_address`, docker runtime IP, k8s Endpoints IP)
+aynı satırda olmak ZORUNDA. Aralarında sapma tespit edilirse fix uygulanır.
+
+**Detection (fail-loud, no auto-fix):** `host-compose/preflight-check.sh
+<env>` script'inin 7. bölümü her host-bridge servisi 3 boyutta doğrular:
+(a) container `platform-<env>-net`'e attach; (b) docker IPv4 == compose
+pin; (c) k8s Endpoints IP == compose pin. Sapma varsa recovery komutu
+konsola basılır. Auto-fix yok (Codex 019f37d9 adversarial review kararı:
+silent auto-patch ikinci kontrol düzlemi yaratır).
+
+**Recovery (single-service drift):**
+
+```bash
+# 1. Diagnostic — hangi katmanda sapma?
+ssh halil@staging-sw
+docker inspect platform-vault-prod --format '{{json .NetworkSettings.Networks}}' | jq .
+kubectl --context k3d-prod -n platform-prod get endpoints vault -o yaml | grep ip
+
+# 2A. Network detach ise re-attach (container mevcut, network yok):
+# --ip <reserved> ZORUNLU: bu flag olmadan Docker DHCP dinamik bir IP verir
+# ve bu bölümün çözdüğü drift sınıfını yeniden üretir (compose'daki
+# ipv4_address sadece `docker compose up`/recreate akışında etkilidir).
+docker network connect --ip 172.21.0.9 platform-prod-net platform-vault-prod
+# Doğrula:
+docker inspect platform-vault-prod --format '{{(index .NetworkSettings.Networks "platform-prod-net").IPAddress}}'
+# → 172.21.0.9 beklenir
+
+# 2B. IP drift ise container recreate (owner maintenance window!):
+# Vault için unseal shard-holder'lar hazır olmalı (3-of-5 threshold).
+cd /path/to/platform-k8s-gitops/host-compose/vault/prod
+docker compose down
+docker compose up -d
+# Container static IP'ye pin'lenir. Ardından unseal:
+docker exec -it platform-vault-prod vault operator unseal <key-1>
+docker exec -it platform-vault-prod vault operator unseal <key-2>
+docker exec -it platform-vault-prod vault operator unseal <key-3>
+
+# 3. Preflight ile doğrula
+bash host-compose/preflight-check.sh prod   # section 7 all PASS beklenir
+
+# 4. ArgoCD sync (manual — HARD RULE D30 atomic cutover)
+# platform-prod app manual sync policy'de. Overlay ↔ live hizalanmışsa
+# sync no-op olacak. Değilse çakışmayı runbook ile çöz.
+```
+
+**Argo manual-sync notu:** `argocd/applications/platform-prod.yaml`
+`automated:` block YOK → operator explicit sync tetikler. Bu drift'in
+2d17h sürmesinin bir sebebi: manual patch (`kubectl patch endpoints`)
+persist etti ama overlay stale kaldı; ekip re-sync tetiklemedi.
+Yeni bir manual patch uygulandığında **aynı gün overlay güncellemesi PR
+açılmalı** (governance debt önleme).
+
+**Prometheus alert:** `ExternalSecretNotReady` (5m sürekli) → Teams
+webhook. PrometheusRule + ServiceMonitor bu PR ile landed. Vault-kaynaklı
+secret delivery başarısızlığı 5dk içinde alert üretir; pg/kc endpoint
+drift'i için preflight + runbook birincil sinyal.
+
+**Alert bootstrap-ordering (fresh cluster):** ESO alert yolunun kanıt
+sayılması için iki apply yüzeyi birlikte devrede olmalı — (i) `base/eso`
+altındaki `external-secrets-metrics` Service (metrics port 8080'i selector
+ile controller Pod'una bağlar); (ii) `base/monitoring` altındaki
+`ServiceMonitor` + `PrometheusRule` (scrape + alert kuralları). Fresh
+cluster kurulumunda önce `kubectl apply -k kustomize/overlays/<env>/eso`
+sonra `kubectl apply -k kustomize/base/monitoring` (veya prod'da ArgoCD
+platform-system app'ini beklet). O ana kadar preflight (§5.1 detection)
+tek başına ground-truth detector.
+
+**Bağlantı:** platform-k8s-gitops#2268 (Faz 18 vault-ops). Original
+incident evidence: Vault container `NetworkSettings.Networks: {}` +
+`kubectl describe service vault` "no endpoints" + ESO status
+`SecretSyncedError` 2d17h.
+
+-------------------------------------------------------------------------------
 6. ÖZET
 -------------------------------------------------------------------------------
 

@@ -2,14 +2,15 @@
 # - Image: GHCR sha-<short>
 # - Host bridge: platform-test-net Docker network (172.19.0.x); fiili
 #   Endpoints patch değerleri satır 240+ (postgres 172.19.0.6, keycloak
-#   172.19.0.5, vault 172.19.0.4 — verified live 2026-05-11). 10.9.10.53
-#   LAN binds artık deprecated (PR #517 KC + PR #519 PG) — k3d pods
-#   bridge IP üzerinden erişiyor, host LAN bind hostta sadece localhost.
-# - UYARI: Endpoints IP'leri deterministic değil (docker network connect sırası
-#   IP atar). Compose recreate sonrası bootstrap/reconnect-compose-to-test-net.sh
-#   hem docker bağlantısını hem kubectl Endpoints patch'ini çalıştırır. Git truth
-#   bu ay kullanılan IP setini yansıtır; kalıcı çözüm için compose'da
-#   ipv4_address sabitlemek ayrı roadmap item'ı (platform-ssot repo değişikliği).
+#   172.19.0.7, vault 172.19.0.4 — canonical after 2026-07-06 static-IP
+#   pin, gitops#2268). 10.9.10.53 LAN binds artık deprecated (PR #517 KC +
+#   PR #519 PG) — k3d pods bridge IP üzerinden erişiyor, host LAN bind
+#   hostta sadece localhost.
+# - Network drift kalıcı çözüm (2026-07-06, gitops#2268 — DONE): compose
+#   `ipv4_address` ile pinlendi (host-compose/{postgres,keycloak,vault}/test/
+#   docker-compose.yml). Yukarıdaki tablo authoritative reserved IP set'i.
+#   Drift detection + recovery: docs/RB-vault-ops.md §5.1 "Network drift"
+#   + host-compose/preflight-check.sh section 7 (fail-loud, no auto-fix).
 # - Replica: 1 default (2026-05-10: HARD RULE — TEST Cluster Scale-to-Zero YASAK;
 #   D17 deprecated; multi-Claude paralel session koordinasyon için scale-down YASAK)
 # - Namespace: platform-test
@@ -7430,13 +7431,20 @@ patches:
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
+  # 2026-05-20 vault-prod drift-class mirror. postgres + vault live IPs
+  # already match overlay committed values (.6 and .4); only keycloak
+  # drifted (.5 committed vs .7 live) on a past docker recreate. Compose
+  # static ipv4_address pins for all three (postgres/keycloak/vault) landed
+  # in host-compose/*/test/docker-compose.yml so future docker recreates
+  # cannot drift the k8s Endpoints target. See docs/RB-vault-ops.md
+  # §"Network drift".
   - target:
       kind: Endpoints
       name: keycloak
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.5"
+        value: "172.19.0.7"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8080

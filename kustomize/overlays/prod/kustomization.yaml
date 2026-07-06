@@ -1161,13 +1161,23 @@ patches:
                 number: 80
 
   # Host bridge prod portları (D20)
+  # 2026-05-20 vault-prod network-drift class — see docs/RB-vault-ops.md
+  # §"Network drift" and host-compose/{postgres,keycloak,vault}/prod/
+  # docker-compose.yml. All three prod host-bridge Endpoints IPs were
+  # drifted from the values committed here (docker-assigned live IPs had
+  # rotated 172.21.0.{4,5,6} → 172.21.0.{10,3,9}). Manual `kubectl patch
+  # endpoints ...` restored service on 2026-05-20 but the overlay stayed
+  # stale until this commit. Compose ipv4_address now pins each container
+  # to the value below; overlay + docker + live k8s Endpoints all
+  # canonical after merge. Merge is heal, not break: Argo manual sync
+  # would have re-broken all three on the next re-sync before this fix.
   - target:
       kind: Endpoints
       name: postgres
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.21.0.4"
+        value: "172.21.0.10"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
@@ -1177,7 +1187,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.21.0.5"
+        value: "172.21.0.3"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8080
@@ -1187,7 +1197,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.21.0.6"
+        value: "172.21.0.9"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8200

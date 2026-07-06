@@ -1,0 +1,49 @@
+# ServiceMonitor — external-secrets controller metrics
+#
+# 2026-07-06 network-drift observability follow-up (issue #2268). The
+# external-secrets Helm chart deploys the controller with a `:8080/metrics`
+# port but ships no Service/ServiceMonitor. As a result, prior to this
+# manifest, `externalsecret_status_condition` and `externalsecret_sync_calls_error`
+# were unreachable from Prometheus — the 2026-05-20 vault-prod drift
+# (2d17h of SecretSyncedError across every prod ExternalSecret) fired no
+# alert.
+#
+# This ServiceMonitor scrapes the paired Service
+# (kustomize/base/eso/service-metrics.yaml) and the accompanying
+# PrometheusRule (eso-external-secret-alert-rule.yaml) turns that into a
+# 5-minute-sustained ExternalSecretNotReady alert with Teams delivery
+# via the existing alert route (ADR-0029 primary-Teams).
+#
+# Selector deliberately matches app.kubernetes.io/name=external-secrets-metrics
+# (Service label), NOT the Helm-chart-managed pod label — a chart rename
+# on the pod side won't silently break the scrape.
+#
+# Codex thread 019f37d9 (network-drift review) verified the metric names
+# exist by live-curling :8080/metrics from the running controller before
+# this rule was authored.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: external-secrets
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    # Required by kube-prometheus-stack's serviceMonitorSelector
+    # (`matchLabels: { release: kube-prometheus-stack }`).
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - external-secrets
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: external-secrets-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      # 60s keeps cardinality budget conservative — ESO exports
+      # per-ExternalSecret series (currently ~10 per cluster). No histogram
+      # bucket blow-up.
+      interval: 60s
+      scrapeTimeout: 30s

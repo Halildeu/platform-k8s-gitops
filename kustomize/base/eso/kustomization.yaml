@@ -15,6 +15,13 @@ labels:
 
 resources:
   - clustersecretstore-vault.yaml
+  # 2026-07-06 network-drift PR (issue #2268): fronts the external-secrets
+  # controller Deployment's :8080 metrics port so Prometheus can scrape ESO
+  # health. Paired ServiceMonitor lives in
+  # kustomize/base/monitoring/eso-servicemonitor.yaml — kept there because
+  # the monitoring namespace is where the kube-prometheus-stack
+  # serviceMonitorSelector matches.
+  - service-metrics.yaml
   # ghcr-pull ExternalSecret overlay-specific — base/eso kustomization
   # namespace=external-secrets zorlar (ClusterSecretStore için gerekli),
   # ama ExternalSecret workload ns'inde (platform-test/platform-prod) olmalı
