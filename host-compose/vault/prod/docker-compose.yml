@@ -23,8 +23,20 @@ services:
       - ./config:/vault/config:ro
       - /srv/platform/stateful/prod/vault/data:/vault/data
       - /srv/platform/stateful/prod/vault/logs:/vault/logs   # audit log persist
+    # 2026-05-20 network drift incident: container was found with
+    # NetworkSettings.Networks:{} despite Up 39m; k3d-prod → vault Endpoint
+    # went stale (kube-proxy reported "vault:http has no endpoints") and
+    # every prod ExternalSecret sat SecretSyncedError for 2d17h. Root cause
+    # unknown (probable container recreate outside compose). Fix (this file):
+    # pin a static IPv4 so a recreate lands on the SAME address the overlay
+    # Endpoints resource points at — no manual `kubectl patch endpoints`
+    # after each restart. Value 172.21.0.9 = the live IP at pin-time; the
+    # prod overlay endpoint patch (kustomize/overlays/prod/kustomization.yaml)
+    # is aligned to the same value in this PR so merge is atomic and
+    # container restart-free. See docs/RB-vault-ops.md §"Network drift".
     networks:
-      - platform-prod-net
+      platform-prod-net:
+        ipv4_address: 172.21.0.9
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8200/v1/sys/health"]
       interval: 30s

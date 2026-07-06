@@ -7430,13 +7430,20 @@ patches:
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
+  # 2026-05-20 vault-prod drift-class mirror. postgres + vault live IPs
+  # already match overlay committed values (.6 and .4); only keycloak
+  # drifted (.5 committed vs .7 live) on a past docker recreate. Compose
+  # static ipv4_address pins for all three (postgres/keycloak/vault) landed
+  # in host-compose/*/test/docker-compose.yml so future docker recreates
+  # cannot drift the k8s Endpoints target. See docs/RB-vault-ops.md
+  # §"Network drift".
   - target:
       kind: Endpoints
       name: keycloak
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.5"
+        value: "172.19.0.7"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8080

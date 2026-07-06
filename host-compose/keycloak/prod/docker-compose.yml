@@ -94,9 +94,15 @@ services:
     secrets:
       - kc_db_password
       - kc_admin_password
+    # Sister-pin to postgres/vault (2026-05-20 drift class). Static IPv4 on
+    # platform-prod-net locks the k3d-prod ↔ keycloak bridge target so a
+    # container recreate cannot silently drift the overlay Endpoint. The
+    # second network (platform_microservice-network) reaches KC via DNS
+    # name from the backend compose stack; no pin needed there.
     networks:
-      - platform-prod-net
-      - platform_microservice-network
+      platform-prod-net:
+        ipv4_address: 172.21.0.3
+      platform_microservice-network: {}
     healthcheck:
       # 2026-04-24: localhost → 127.0.0.1 (DNS resolve bypass) + printf (echo -e
       # portability). Bu combination staging-sw'de `Health.Status=unhealthy` drift'ini

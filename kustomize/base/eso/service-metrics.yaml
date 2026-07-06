@@ -1,0 +1,41 @@
+# ESO controller metrics Service — sits in front of the external-secrets
+# controller Deployment's :8080 metrics port. Wired into Prometheus by the
+# ServiceMonitor at kustomize/base/monitoring/eso-servicemonitor.yaml, which
+# feeds the ExternalSecretNotReady alert rule.
+#
+# Why this exists: the external-secrets Helm chart deploys three separate
+# Deployments (external-secrets controller, external-secrets-cert-controller,
+# external-secrets-webhook), all with a metrics port, but the chart does
+# NOT ship a Service or ServiceMonitor. As shipped, ESO metrics are
+# unreachable from Prometheus and rules such as `externalsecret_status_condition`
+# yield no series — meaning the 2026-05-20 vault-prod drift (2d17h of
+# SecretSyncedError) fired no alert. This Service + ServiceMonitor closes
+# that observability gap.
+#
+# Selector matches the controller Deployment only (app.kubernetes.io/name=
+# external-secrets is unique to the main controller pod; the cert-controller
+# and webhook pods use different names). External-secrets `:8080/metrics`
+# exposes the metrics documented at
+# https://external-secrets.io/latest/api/metrics/ — the alert rule uses
+# `externalsecret_status_condition{condition="Ready",status="False"}` which
+# is emitted by this controller.
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-secrets-metrics
+  namespace: external-secrets
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: eso
+    app.kubernetes.io/name: external-secrets-metrics
+spec:
+  type: ClusterIP
+  clusterIP: None   # headless — Prometheus doesn't need load balancing
+  selector:
+    app.kubernetes.io/name: external-secrets
+    app.kubernetes.io/instance: external-secrets
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
