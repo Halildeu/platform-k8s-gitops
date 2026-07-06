@@ -71,22 +71,24 @@ Mount'lar:
 
 Labels: `self-hosted`, `staging-sw`, `testai-deploy`.
 
-Runner registration:
+Runner lifecycle:
 ```bash
-# 1. GitHub UI'da:
-#    Settings → Actions → Runners → New self-hosted runner
-#    Architecture: linux x64
-#    Bir registration token üretilir (~1h geçerli)
-
-# 2. staging-sw'de:
+# 1. staging-sw'de:
 ssh halil@staging-sw
 
-# 3. Runner image build + run (Step 3.4 PR ile gelecek docker-compose)
-cd /home/halil/platform/gha-runner
-docker compose up -d
+# 2. Runner image build + run
+cd /home/halil/platform/platform-k8s-gitops/gha-runner
 
-# 4. İlk start'ta runner registration token'ı sor — env file'a koyula bilir
+# 3. Önce GitHub API egress preflight. Bu fail ise runner'ı başlatma;
+#    container registration-token fetch loop'una girmemeli.
+curl -fsS --connect-timeout 5 --max-time 8 -I https://api.github.com | head -1
+
+# 4. RUNNER_PAT .env'de least-privilege PAT olarak bulunur; registration token
+#    entrypoint tarafından API'den fresh alınır.
+docker compose up -d
 ```
+
+Detaylı kurulum ve PAT ayrımı: `gha-runner/README.md`.
 
 ### 2. PAT (platform-web → gitops dispatch için)
 
@@ -229,21 +231,25 @@ kubectl --context=k3d-test rollout status deployment/frontend -n platform-test -
 
 ### Runner offline
 
-**Sebep**: Docker container down, network issue, runner token expired.
+**Sebep**: Docker container down, GitHub API egress kapalı, veya `RUNNER_PAT` scope/expiry sorunu.
 
 **Recovery**:
 ```bash
 ssh halil@staging-sw
-cd /home/halil/platform/gha-runner
+cd /home/halil/platform/platform-k8s-gitops/gha-runner
 docker compose ps
 docker compose logs --tail=100 runner
-# Restart eğer gerek
+
+# Önce egress preflight; bu fail ise runner'ı restart etme.
+curl -fsS --connect-timeout 5 --max-time 8 -I https://api.github.com | head -1
+
+# Egress OK ise restart.
 docker compose restart runner
 
-# Token expired ise:
-# GitHub UI'da yeni registration token al
-# .env dosyasına yapıştır
-docker compose down && docker compose up -d
+# PAT expired/scope invalid ise:
+# GitHub UI'da yeni least-privilege RUNNER_PAT üret
+# .env dosyasında RUNNER_PAT değerini güncelle
+# docker compose restart runner
 ```
 
 ## Step 5 B — Tier 2 (current state)
