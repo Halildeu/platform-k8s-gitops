@@ -911,6 +911,10 @@ patches:
         value: 8200
 
   # Prod ResourceQuota: 2 replica + openfga/job toplam limit bütçesi
+  # 2026-07-06: requests.memory 8Gi -> 12Gi (Codex thread 019f37d7 verdict H2)
+  # 22 backend x 384Mi = 8448Mi steady-state; 8Gi tasarım hatası, rolling
+  # replacement overlap headroom yoktu. Node memory 24GiB, 12Gi güvenli.
+  # Prod stack 65h gap recovery kanıtı: issue #2267.
   - target:
       kind: ResourceQuota
       name: platform-quota
@@ -920,10 +924,80 @@ patches:
         value: "8"
       - op: replace
         path: /spec/hard/requests.memory
-        value: 8Gi
+        value: 12Gi
       - op: replace
         path: /spec/hard/limits.cpu
         value: "24"
       - op: replace
         path: /spec/hard/limits.memory
         value: 24Gi
+
+  # 2026-07-06 startupProbe failureThreshold 30 -> 60 (Codex thread 019f37d7
+  # verdict H2). Spring Boot backend cold-start ~76s context + 30s Hikari +
+  # 30s Flyway attempt ~= 140s; 30x5s=150s window çok dar, cascade restart
+  # loop. 60x5s=300s window cold-start için güvenli. Sadece startupProbe
+  # (readiness/liveness gevşetme yok). frontend/api-gateway/artifact-host/
+  # openfga (fast) kapsam dışı. Prod stack 65h gap recovery: issue #2267.
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
+  - target:
+      kind: Deployment
+      name: user-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
+  - target:
+      kind: Deployment
+      name: permission-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
+  - target:
+      kind: Deployment
+      name: notification-orchestrator
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
+  - target:
+      kind: Deployment
+      name: core-data-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
+  - target:
+      kind: Deployment
+      name: report-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
+  - target:
+      kind: Deployment
+      name: schema-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
+  - target:
+      kind: Deployment
+      name: variant-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 60
