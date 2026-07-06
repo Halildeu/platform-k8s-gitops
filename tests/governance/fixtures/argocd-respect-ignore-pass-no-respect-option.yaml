@@ -1,0 +1,30 @@
+# Fixture (PASS) — RespectIgnoreDifferences NOT in syncOptions, so even a
+# blanket `/metadata` ignore is safe (ArgoCD does not relocate managedFields
+# into the SSA body when the option is off — ignoreDifferences only affects
+# the diff view).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fixture-pass-no-respect-option
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://example.invalid/repo.git
+    targetRevision: main
+    path: kustomize/overlays/test
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-test
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /metadata
+        - /metadata/managedFields
+      jqPathExpressions:
+        - .metadata.managedFields

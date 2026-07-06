@@ -1,0 +1,198 @@
+# Cross-repo enum/contract drift guard spec — ADR-0031 DD-5-1.
+#
+# Decision rule (ADR-0031 §2 I2): for every mapping, set(canonical) MUST equal
+# set(mirror_j) for EVERY mirror_j in mirrors[]. Per-mirror equality — NOT
+# mirror-union — to avoid the stale-mirror-hidden-by-union failure mode
+# documented in ADR-0031 §I2 worked example.
+#
+# Add a new mapping = one block here.
+# Add a new parser strategy = a separate PR with `kind` added to KNOWN_STRATEGIES
+# in scripts/drift_detection/lib/cross_repo_enum/parsers.py + matching unit tests
+# in tests/drift_detection/test_check_drift_cross_repo_enums.py.
+#
+# Spec is validated against config/cross_repo_enum_drift_spec.schema.json before
+# any gh api fetch (ADR-0031 §I5). Duplicate id, unknown kind, missing field,
+# zero mirrors, `java_grid_column_case_literals` without `anchor` → exit 2.
+
+schema_version: 1
+
+mappings:
+  - id: compliance-decision
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/model/ComplianceDecision.java
+      kind: java_enum
+      symbol: ComplianceDecision
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/pages/devices/EndpointDevicesPage.tsx
+        kind: ts_const_tuple
+        symbol: PROHIBITED_DECISION_VALUES
+    notes: |
+      WEB-015 v2-a; ladder UNAUTHORIZED > UNKNOWN > NON_COMPLIANT > COMPLIANT.
+      2026-06-02 live drift PR #736 — Codex review thread 019e8820. The
+      `UNKNOWN` value was added under Codex 019e6bbf iter-3; the frontend
+      tuple silently dropped behind it. This mapping is the prototypical
+      drift class the guard exists to catch.
+
+  - id: device-status
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/model/DeviceStatus.java
+      kind: java_enum
+      symbol: DeviceStatus
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-device/types.ts
+        kind: ts_union_type
+        symbol: DeviceStatus
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-device/types.ts
+        kind: ts_const_tuple
+        symbol: DEVICE_STATUS_VALUES
+    notes: |
+      Mirror appears twice in the same file (union at line ~13, tuple at line ~47).
+      Both MUST match the backend enum independently (per-mirror equality, I2).
+
+  - id: os-type
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/model/OsType.java
+      kind: java_enum
+      symbol: OsType
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-device/types.ts
+        kind: ts_union_type
+        symbol: OsType
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-device/types.ts
+        kind: ts_const_tuple
+        symbol: OS_TYPE_VALUES
+
+  - id: wdac-mode
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/security/AppControlPayloadPolicy.java
+      kind: java_set_of
+      symbol: WDAC_MODE_ENUM
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/pages/devices/EndpointDevicesPage.tsx
+        kind: ts_const_tuple
+        symbol: WDAC_MODE_VALUES
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-app-control/types.ts
+        kind: ts_union_type
+        symbol: WdacMode
+    notes: |
+      Codex 019e840e iter-1 P0 #2: UNKNOWN dominant. Values: OFF/AUDIT/ENFORCE/UNKNOWN.
+
+  - id: applocker-mode
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/security/AppControlPayloadPolicy.java
+      kind: java_set_of
+      symbol: APPLOCKER_MODE_ENUM
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-app-control/types.ts
+        kind: ts_union_type
+        symbol: AppLockerEnforcementMode
+    notes: |
+      AppLocker per-rule-collection enforcement.
+      Values: NOT_CONFIGURED/AUDIT_ONLY/ENFORCE/UNKNOWN.
+
+  - id: service-state
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/security/EndpointServiceWireEnums.java
+      kind: java_set_of
+      symbol: SERVICE_STATE_ENUM
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/pages/devices/EndpointDevicesPage.tsx
+        kind: ts_const_tuple
+        symbol: APP_ID_SVC_STATE_VALUES
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-app-control/types.ts
+        kind: ts_union_type
+        symbol: ServiceState
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-services/types.ts
+        kind: ts_union_type
+        symbol: ServiceState
+    notes: |
+      Backend canonical is shared between AG-039 (services) and AG-041
+      (app-control AppIDSvc) per EndpointServiceWireEnums.java:6-9 JavaDoc.
+      Three frontend mirrors: tuple on the devices grid page + union in
+      app-control entity + union in services entity. ADR-0031 §3.3 closure
+      blocker DD-5-4 removes ServicesPayloadPolicy private duplicate so
+      this canonical is unambiguous.
+
+  - id: startup-mode
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/security/EndpointServiceWireEnums.java
+      kind: java_set_of
+      symbol: STARTUP_MODE_ENUM
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-app-control/types.ts
+        kind: ts_union_type
+        symbol: ServiceStartupMode
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-services/types.ts
+        kind: ts_union_type
+        symbol: StartupMode
+    notes: |
+      Distinct frontend identifiers (ServiceStartupMode in app-control,
+      StartupMode in services) — same value-set. 5-value enum includes
+      AUTO_DELAYED for Windows Server AppIDSvc emission. Backend canonical
+      EndpointServiceWireEnums.STARTUP_MODE_ENUM.
+
+  - id: probe-error-code
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/security/AppControlPayloadPolicy.java
+      kind: java_set_of
+      symbol: PROBE_ERROR_CODE_ENUM
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-app-control/types.ts
+        kind: ts_union_type
+        symbol: AppControlProbeErrorCode
+    notes: |
+      8-value enum matching platform-agent AppControlErr* constants.
+
+  - id: probe-error-source
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/security/AppControlPayloadPolicy.java
+      kind: java_set_of
+      symbol: PROBE_ERROR_SOURCE_ENUM
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/entities/endpoint-app-control/types.ts
+        kind: ts_union_type
+        symbol: AppControlProbeErrorSource
+    notes: |
+      3-value lowercase enum: wdac / appLocker / filesystem.
+
+  - id: prohibited-status-sql-case
+    canonical:
+      repo: Halildeu/platform-backend
+      path: endpoint-admin-service/src/main/java/com/example/endpointadmin/grid/DeviceGridColumns.java
+      kind: java_grid_column_case_literals
+      symbol: prohibited_status
+      anchor: 'new GridColumn("prohibited_status",'
+    mirrors:
+      - repo: Halildeu/platform-web
+        path: apps/mfe-endpoint-admin/src/pages/devices/EndpointDevicesPage.tsx
+        kind: ts_const_tuple
+        symbol: PROHIBITED_STATUS_VALUES
+    notes: |
+      Backend canonical is the SQL string literal inside a Java GridColumn
+      constructor: CASE WHEN pe.id IS NULL THEN 'NO_EVALUATION' ELSE 'OK' END.
+      The narrow `java_grid_column_case_literals` parser extracts the two
+      quoted literals; arbitrary SQL CASE shapes are NOT supported (exit 2).

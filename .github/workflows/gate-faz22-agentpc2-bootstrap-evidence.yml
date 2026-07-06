@@ -1,0 +1,68 @@
+name: Gate Faz 22.6.3 AgentPC2 bootstrap evidence verifier
+
+on:
+  pull_request:
+    paths:
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
+      - 'scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-evidence-verify.sh'
+      - 'tests/faz22/agentpc2-bootstrap-evidence/**'
+      - '.github/workflows/gate-faz22-agentpc2-bootstrap-evidence.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
+      - 'scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-evidence-verify.sh'
+      - 'tests/faz22/agentpc2-bootstrap-evidence/**'
+      - '.github/workflows/gate-faz22-agentpc2-bootstrap-evidence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verifier-fixture:
+    name: Verify fixture acceptance and rejection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ENDPOINT_AGENT_RELEASE_POLICY_FILE: tests/faz22/agentpc2-bootstrap-evidence/policy-v0.2.28.json
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Valid fixture is accepted
+        run: |
+          set -euo pipefail
+          chmod +x scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-evidence-verify.sh
+          scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-evidence-verify.sh \
+            --evidence-dir tests/faz22/agentpc2-bootstrap-evidence/valid
+
+          jq -e '.status == "accepted-bootstrap-evidence"' \
+            tests/faz22/agentpc2-bootstrap-evidence/valid/bootstrap-evidence-verifier-summary.json
+
+      - name: Tampered fixture is rejected
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cp -R tests/faz22/agentpc2-bootstrap-evidence/valid/. "$tmp/"
+          jq '.release.binarySha256 = "0000000000000000000000000000000000000000000000000000000000000000"' \
+            "$tmp/agentpc2-first-install-bootstrap-summary.json" \
+            > "$tmp/agentpc2-first-install-bootstrap-summary.tmp"
+          mv "$tmp/agentpc2-first-install-bootstrap-summary.tmp" "$tmp/agentpc2-first-install-bootstrap-summary.json"
+
+          set +e
+          scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-evidence-verify.sh \
+            --evidence-dir "$tmp"
+          rc="$?"
+          set -e
+
+          if [ "$rc" = "0" ]; then
+            echo "::error::tampered fixture unexpectedly accepted"
+            exit 1
+          fi
+
+          jq -e '.status == "rejected-bootstrap-evidence"' \
+            "$tmp/bootstrap-evidence-verifier-summary.json"

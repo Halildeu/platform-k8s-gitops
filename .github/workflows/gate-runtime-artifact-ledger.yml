@@ -1,0 +1,106 @@
+# ADR-0023 Guardrail PR-6 — Runtime Artifact Ledger Validate
+#
+# Codex plan-time AGREE: thread 019e44d9 iter-3 (after 12 must_fix absorbed
+# across iter-1 + iter-2 + iter-3 review).
+#
+# Scope: validate runtime-artifacts/<kind>/<digest>.json files against
+# schema/runtime-artifact-ledger-v1.schema.json. PR-time + main-push +
+# fixtures parity with the image ledger gate.
+
+name: Runtime Artifact Ledger Validate (ADR-0023 PR-6)
+
+on:
+  pull_request:
+    paths:
+      - 'runtime-artifacts/**'
+      - 'schema/runtime-artifact-ledger-v1.schema.json'
+      - 'scripts/promotion/validate-runtime-artifact-schema.py'
+      - 'tests/runtime-artifacts/**'
+      - '.github/workflows/gate-runtime-artifact-ledger.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runtime-artifacts/**'
+      - 'schema/runtime-artifact-ledger-v1.schema.json'
+      - 'scripts/promotion/validate-runtime-artifact-schema.py'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-pr:
+    name: Validate runtime-artifact ledger (PR diff)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet jsonschema PyYAML
+      - run: python3 scripts/promotion/validate-runtime-artifact-schema.py --pr-only --verbose
+
+  validate-main-full:
+    name: Validate runtime-artifact ledger (main full scan)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet jsonschema PyYAML
+      - run: python3 scripts/promotion/validate-runtime-artifact-schema.py --verbose
+
+  fixtures:
+    name: Fixture suite (positive + negative)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        fixture:
+          - tests/runtime-artifacts/fixtures/valid-openfga-model.json
+          - tests/runtime-artifacts/fixtures/invalid-bad-digest.json
+          - tests/runtime-artifacts/fixtures/invalid-missing-required.json
+          - tests/runtime-artifacts/fixtures/invalid-loose-evidence.json
+          - tests/runtime-artifacts/fixtures/invalid-bad-ulid.json
+          - tests/runtime-artifacts/fixtures/invalid-pending-with-evidence.json
+          - tests/runtime-artifacts/fixtures/invalid-emergency-bypass-no-justification.json
+          - tests/runtime-artifacts/fixtures/invalid-historical-backfill-no-imported-at.json
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet jsonschema PyYAML
+      - name: Run fixture ${{ matrix.fixture }}
+        run: |
+          set +e
+          python3 scripts/promotion/validate-runtime-artifact-schema.py --single "${{ matrix.fixture }}"
+          rc=$?
+          # Naming convention: valid-* must rc=0; invalid-* must rc=1.
+          case "${{ matrix.fixture }}" in
+            *"/valid-"*)
+              if [[ $rc -ne 0 ]]; then
+                echo "::error::Valid fixture rejected (rc=$rc): ${{ matrix.fixture }}"
+                exit 1
+              fi
+              echo "::notice::Valid fixture accepted: ${{ matrix.fixture }}"
+              ;;
+            *"/invalid-"*)
+              if [[ $rc -ne 1 ]]; then
+                echo "::error::Invalid fixture not rejected as expected (rc=$rc): ${{ matrix.fixture }}"
+                exit 1
+              fi
+              echo "::notice::Invalid fixture rejected as expected: ${{ matrix.fixture }}"
+              ;;
+            *)
+              echo "::error::Fixture name must start with 'valid-' or 'invalid-': ${{ matrix.fixture }}"
+              exit 1
+              ;;
+          esac

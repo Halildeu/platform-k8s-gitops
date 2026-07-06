@@ -77,6 +77,12 @@ _METRICS = {
     "last_delivery_success_timestamp": 0,
     "last_delivery_failure_timestamp": 0,
     "webhook_received_total": 0,
+    "synthetic_skipped_total": 0,
+    # Codex `019e6fb5` AGREE Yol C-prime — startup auth drift sentinel.
+    # 1 if GITHUB_TOKEN env non-empty at process start; 0 otherwise. Pairs with
+    # PrometheusRule AlertmanagerBridgeGHSecretAbsent — silent ESO sync errors
+    # become visible without bridge depending on itself for paging.
+    "github_token_configured": 1 if os.environ.get("GITHUB_TOKEN", "") else 0,
 }
 
 
@@ -141,6 +147,16 @@ def render_metrics() -> bytes:
     lines.append("# HELP alertmanager_bridge_webhook_received_total Total Alertmanager webhook POSTs received")
     lines.append("# TYPE alertmanager_bridge_webhook_received_total counter")
     lines.append(f"alertmanager_bridge_webhook_received_total {_METRICS['webhook_received_total']}")
+    lines.append("# HELP alertmanager_bridge_synthetic_skipped_total Synthetic alerts skipped (is_synthetic=true filter; BL-008-bridge Codex 019e6de3)")
+    lines.append("# TYPE alertmanager_bridge_synthetic_skipped_total counter")
+    lines.append(f"alertmanager_bridge_synthetic_skipped_total {_METRICS['synthetic_skipped_total']}")
+    # Gauge: github_token_configured — startup auth presence sentinel
+    # (Codex `019e6fb5` AGREE Yol C-prime). 1 = GITHUB_TOKEN env non-empty at
+    # process start; 0 = missing (ESO sync drift, secret absent, deploy misconfig).
+    # Sampled once at startup; restart required to refresh after PAT rotation.
+    lines.append("# HELP alertmanager_bridge_github_token_configured GH token env presence at startup (1=set non-empty, 0=missing — silent auth-drift sentinel)")
+    lines.append("# TYPE alertmanager_bridge_github_token_configured gauge")
+    lines.append(f"alertmanager_bridge_github_token_configured {_METRICS['github_token_configured']}")
     return ("\n".join(lines) + "\n").encode()
 
 
@@ -434,7 +450,35 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
     - firing + existing open issue → comment recurrence
     - resolved + existing open issue → comment resolved + CLOSE issue
     - resolved + no open issue → no-op (already closed earlier)
+
+    BL-008-bridge — synthetic alert filter (Codex `019e6de3` AGREE B path +
+    `019e6e03` REVISE iter-2 contract clarification):
+
+    **Bridge GH Issue suppression contract** (governance-explicit):
+    - Filter triggers ONLY on exact match `labels.is_synthetic == "true"`.
+    - Loose aliases ("synthetic", "test", "smoke") NOT honored — risks accidentally
+      swallowing a real alert that happens to mention "synthetic" in another label.
+    - All synthetic-firing CronJobs (R29 monthly Teams smoke + future diagnostic
+      injectors) MUST set this exact label or accept GH Issue spam.
+
+    Behavior:
+    - `is_synthetic=true` → skip GH Issue creation (no create/comment/close).
+    - Synthetic alert still routes through Alertmanager to Teams (perf-alerts-teams
+      receiver) for Adaptive Card receipt validation — bridge sibling route hit
+      via `continue:true` but suppressed here.
+    - `synthetic_skipped_total` metric increments (operator: zero-rate expected
+      outside scheduled synthetic windows; spike = unexpected injection).
     """
+    labels = alert.get("labels", {})
+    if labels.get("is_synthetic") == "true":
+        metric_inc("synthetic_skipped_total")
+        log.info(
+            f"synthetic alert skipped (is_synthetic=true): "
+            f"alertname={labels.get('alertname', 'unknown')} "
+            f"status={alert.get('status', 'unknown')}"
+        )
+        return True
+
     status = alert.get("status", "firing")
     title = make_issue_title(alert)
 

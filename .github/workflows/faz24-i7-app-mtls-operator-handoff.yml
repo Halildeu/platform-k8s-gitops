@@ -1,0 +1,237 @@
+name: Faz 24 I7 App mTLS Operator Handoff
+
+# Builds a metadata-only operator handoff package for platform-ai#198 and
+# platform-k8s-gitops#1615. This workflow does not connect to Denetim PC,
+# Vault, Kubernetes, Caddy, firewall/EDR policy, or production; it does not
+# collect runtime evidence, enable direct-STT, or send audio.
+
+on:
+  workflow_dispatch:
+    inputs:
+      operator_batch_id:
+        description: "Symbolic operator batch id"
+        required: true
+        default: "faz24-i7-app-mtls-20260628"
+      gitops_ref:
+        description: "Git ref used by follow-up ingest workflows"
+        required: true
+        default: "main"
+      source_wg_ip:
+        description: "Expected staging/source WireGuard IP"
+        required: true
+        default: "10.99.0.1"
+      denetim_wg_ip:
+        description: "Expected Denetim WireGuard IP"
+        required: true
+        default: "10.99.0.2"
+      live_stt_preflight_path:
+        description: "Path for live-stt preflight evidence JSON"
+        required: true
+        default: "/tmp/faz24-i7-live-stt-preflight.json"
+      prod_gate_evidence_path:
+        description: "Path for full I7 prod-gate evidence JSON"
+        required: true
+        default: "/tmp/faz24-i7-prod-gate.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-i7-app-mtls-operator-handoff
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: build I7 app-mTLS operator handoff package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      HANDOFF_DIR: /tmp/faz24-i7-app-mtls-operator-handoff-${{ github.run_id }}
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          OPERATOR_BATCH_ID: ${{ inputs.operator_batch_id }}
+          GITOPS_REF: ${{ inputs.gitops_ref }}
+          SOURCE_WG_IP: ${{ inputs.source_wg_ip }}
+          DENETIM_WG_IP: ${{ inputs.denetim_wg_ip }}
+          LIVE_STT_PREFLIGHT_PATH: ${{ inputs.live_stt_preflight_path }}
+          PROD_GATE_EVIDENCE_PATH: ${{ inputs.prod_gate_evidence_path }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "${value}" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be single-line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_secret_like() {
+            name="$1"
+            value="$2"
+            if printf '%s' "${value}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|-----BEGIN CERTIFICATE-----|Bearer |eyJ[A-Za-z0-9_-]+\.|data:audio/[A-Za-z0-9.+-]+;base64,'; then
+              echo "::error::${name} must not contain certificate/private/secret/raw-audio-like material"
+              exit 1
+            fi
+          }
+
+          reject_token_chars() {
+            name="$1"
+            value="$2"
+            if ! printf '%s' "${value}" | grep -Eq '^[A-Za-z0-9_.:@/-]+$'; then
+              echo "::error::${name} contains unsupported characters"
+              exit 1
+            fi
+          }
+
+          reject_path_chars() {
+            name="$1"
+            value="$2"
+            if ! printf '%s' "${value}" | grep -Eq '^[A-Za-z0-9_.:@/+~-]+$'; then
+              echo "::error::${name} contains unsupported characters"
+              exit 1
+            fi
+            if printf '%s' "${value}" | grep -Eq '(^|/)\.\.(/|$)|^[A-Za-z]:'; then
+              echo "::error::${name} must not escape the handoff boundary"
+              exit 1
+            fi
+            if printf '%s' "${value}" | grep -Eq '^/' && ! printf '%s' "${value}" | grep -Eq '^/tmp/'; then
+              echo "::error::${name} absolute paths are only allowed under /tmp"
+              exit 1
+            fi
+          }
+
+          reject_ip_shape() {
+            name="$1"
+            value="$2"
+            if ! printf '%s' "${value}" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+              echo "::error::${name} must be an IPv4 address"
+              exit 1
+            fi
+            IFS=. read -r octet1 octet2 octet3 octet4 <<EOF
+          ${value}
+          EOF
+            for octet in "${octet1}" "${octet2}" "${octet3}" "${octet4}"; do
+              if [ "${octet}" -gt 255 ]; then
+                echo "::error::${name} must be an IPv4 address"
+                exit 1
+              fi
+            done
+          }
+
+          for item in \
+            "operator_batch_id:${OPERATOR_BATCH_ID}" \
+            "gitops_ref:${GITOPS_REF}" \
+            "source_wg_ip:${SOURCE_WG_IP}" \
+            "denetim_wg_ip:${DENETIM_WG_IP}" \
+            "live_stt_preflight_path:${LIVE_STT_PREFLIGHT_PATH}" \
+            "prod_gate_evidence_path:${PROD_GATE_EVIDENCE_PATH}"
+          do
+            name="${item%%:*}"
+            value="${item#*:}"
+            reject_multiline "${name}" "${value}"
+            reject_secret_like "${name}" "${value}"
+          done
+
+          reject_token_chars operator_batch_id "${OPERATOR_BATCH_ID}"
+          reject_token_chars gitops_ref "${GITOPS_REF}"
+          reject_ip_shape source_wg_ip "${SOURCE_WG_IP}"
+          reject_ip_shape denetim_wg_ip "${DENETIM_WG_IP}"
+          reject_path_chars live_stt_preflight_path "${LIVE_STT_PREFLIGHT_PATH}"
+          reject_path_chars prod_gate_evidence_path "${PROD_GATE_EVIDENCE_PATH}"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build handoff package
+        env:
+          OPERATOR_BATCH_ID: ${{ inputs.operator_batch_id }}
+          GITOPS_REF: ${{ inputs.gitops_ref }}
+          SOURCE_WG_IP: ${{ inputs.source_wg_ip }}
+          DENETIM_WG_IP: ${{ inputs.denetim_wg_ip }}
+          LIVE_STT_PREFLIGHT_PATH: ${{ inputs.live_stt_preflight_path }}
+          PROD_GATE_EVIDENCE_PATH: ${{ inputs.prod_gate_evidence_path }}
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/build-i7-app-mtls-operator-handoff.py \
+            --output-dir "${HANDOFF_DIR}" \
+            --operator-batch-id "${OPERATOR_BATCH_ID}" \
+            --gitops-ref "${GITOPS_REF}" \
+            --source-wg-ip "${SOURCE_WG_IP}" \
+            --denetim-wg-ip "${DENETIM_WG_IP}" \
+            --live-stt-preflight-path "${LIVE_STT_PREFLIGHT_PATH}" \
+            --prod-gate-evidence-path "${PROD_GATE_EVIDENCE_PATH}"
+
+      - name: Verify handoff artifact boundary
+        env:
+          EXPECTED_SOURCE_WG_IP: ${{ inputs.source_wg_ip }}
+          EXPECTED_DENETIM_WG_IP: ${{ inputs.denetim_wg_ip }}
+        run: |
+          set -euo pipefail
+          test -s "${HANDOFF_DIR}/README.md"
+          test -s "${HANDOFF_DIR}/faz24-i7-app-mtls-operator-handoff.json"
+          test -s "${HANDOFF_DIR}/SHA256SUMS"
+          if grep -R -E -- '-----BEGIN (CERTIFICATE|OPENSSH |RSA |EC |DSA )|-----END (CERTIFICATE|OPENSSH |RSA |EC |DSA )|Bearer |eyJ[A-Za-z0-9_-]+\.|data:audio/[A-Za-z0-9.+-]+;base64,' "${HANDOFF_DIR}"; then
+            echo "::error::handoff artifact contains forbidden certificate/private/secret/raw-audio-like material"
+            exit 1
+          fi
+          (cd "${HANDOFF_DIR}" && sha256sum --check SHA256SUMS)
+          python3 - <<'PY' "${HANDOFF_DIR}/faz24-i7-app-mtls-operator-handoff.json"
+          import json
+          import os
+          import sys
+
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert data["schemaVersion"] == "faz24.i7AppMtls.operator-handoff.v1"
+          assert data["acceptanceBoundary"]["operatorExecutionRequired"] is True
+          assert data["acceptanceBoundary"]["liveSttPreflightVerifierPassRequired"] is True
+          assert data["acceptanceBoundary"]["prodGateVerifierPassRequired"] is True
+          assert data["acceptanceBoundary"]["liveSttPreflightDoesNotAcceptFullI7"] is True
+          assert data["mutationBoundary"]["packageBuildDenetimMutation"] is False
+          assert data["mutationBoundary"]["packageBuildFirewallMutation"] is False
+          assert data["mutationBoundary"]["packageBuildEndpointSecurityMutation"] is False
+          assert data["mutationBoundary"]["packageBuildClusterMutation"] is False
+          assert data["mutationBoundary"]["containsCredentials"] is False
+          assert data["target"]["sourceWgIp"] == os.environ["EXPECTED_SOURCE_WG_IP"]
+          assert data["target"]["denetimWgIp"] == os.environ["EXPECTED_DENETIM_WG_IP"]
+          PY
+
+      - name: Write workflow summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 I7 app-mTLS operator handoff"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-i7-app-mtls-operator-handoff-${{ github.run_id }}\`"
+            echo "- GitOps issue: #1615"
+            echo "- I7 issue: platform-ai#198"
+            echo
+            echo "Boundary: metadata-only coordination artifact. It does not connect to Denetim PC, Vault, Kubernetes, Caddy, firewall/EDR policy, or production; collect runtime evidence; enable direct-STT; send audio; or mark #198/#1615 accepted."
+            echo
+            if [ -s "${HANDOFF_DIR}/README.md" ]; then
+              sed -n '1,180p' "${HANDOFF_DIR}/README.md"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload handoff artifact
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-i7-app-mtls-operator-handoff-${{ github.run_id }}
+          path: ${{ env.HANDOFF_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local handoff directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${HANDOFF_DIR}"

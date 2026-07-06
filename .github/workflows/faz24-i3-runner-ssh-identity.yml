@@ -1,0 +1,148 @@
+name: Faz 24 I3 Runner SSH Identity
+
+# Controlled preflight/repair for the self-hosted staging-sw runner identity
+# used by platform-k8s-gitops#1864. This workflow may create a runner-local SSH
+# private key, but it never uploads the private key. The uploaded artifact
+# contains only JSON metadata and the public key needed for Denetim-side
+# authorization.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "verify or create"
+        required: true
+        default: "verify"
+      confirm:
+        description: "Required for create: CREATE_FAZ24_I3_DENETIM_SSH_IDENTITY"
+        required: false
+        default: "VERIFY_ONLY"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: faz24-i3-runner-ssh-identity
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    name: preflight/repair staging-sw SSH identity
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 10
+
+    env:
+      EVIDENCE_DIR: /tmp/faz24-i3-runner-ssh-identity-${{ github.run_id }}
+      EVIDENCE_JSON: /tmp/faz24-i3-runner-ssh-identity-${{ github.run_id }}/ssh-identity.json
+      PUBLIC_KEY_COPY: /tmp/faz24-i3-runner-ssh-identity-${{ github.run_id }}/faz24-i3-denetim_ed25519.pub
+      SSH_IDENTITY_PATH: ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          MODE_INPUT: ${{ inputs.mode }}
+          CONFIRM_INPUT: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline mode "${MODE_INPUT}"
+          reject_multiline confirm "${CONFIRM_INPUT}"
+
+          if ! printf '%s' "${MODE_INPUT}" | grep -Eq '^(verify|create)$'; then
+            echo "::error::mode must be verify or create"
+            exit 1
+          fi
+          if [ "${MODE_INPUT}" = "create" ] && [ "${CONFIRM_INPUT}" != "CREATE_FAZ24_I3_DENETIM_SSH_IDENTITY" ]; then
+            echo "::error::create mode requires confirm=CREATE_FAZ24_I3_DENETIM_SSH_IDENTITY"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run SSH identity preflight/repair
+        id: identity
+        shell: bash
+        env:
+          FAZ24_I3_SSH_IDENTITY_MODE: ${{ inputs.mode }}
+          FAZ24_I3_SSH_IDENTITY_CONFIRM: ${{ inputs.confirm }}
+          FAZ24_I3_SSH_IDENTITY_PATH: ${{ env.SSH_IDENTITY_PATH }}
+          FAZ24_I3_SSH_IDENTITY_EVIDENCE_JSON: ${{ env.EVIDENCE_JSON }}
+          FAZ24_I3_SSH_IDENTITY_PUBLIC_KEY_COPY: ${{ env.PUBLIC_KEY_COPY }}
+        run: |
+          set +e
+          mkdir -p "${EVIDENCE_DIR}"
+          scripts/faz24/repair-i3-runner-ssh-identity.sh \
+            | tee "${EVIDENCE_DIR}/ssh-identity-summary.txt"
+          exit_code="${PIPESTATUS[0]}"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          MODE_INPUT: ${{ inputs.mode }}
+          IDENTITY_EXIT_CODE: ${{ steps.identity.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          exit_code="${IDENTITY_EXIT_CODE:-missing}"
+          {
+            echo "## Faz 24 I3 runner SSH identity"
+            echo
+            echo "- Runner: self-hosted staging-sw"
+            echo "- Mode: \`${MODE_INPUT}\`"
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-i3-runner-ssh-identity-${{ github.run_id }}\`"
+            echo "- Exit code: \`${exit_code}\`"
+            echo
+            echo "Boundary: runner-local SSH identity only. Create mode may create a private key on the self-hosted runner, but this workflow does not upload private key material and does not change Denetim PC, cluster, direct-STT, app-mTLS, or production state."
+            echo
+            echo '```text'
+            sed -n '1,120p' "${EVIDENCE_DIR}/ssh-identity-summary.txt" 2>/dev/null || true
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload SSH identity evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-i3-runner-ssh-identity-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local evidence directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail workflow when SSH identity remains unavailable
+        if: always()
+        env:
+          IDENTITY_EXIT_CODE: ${{ steps.identity.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          exit_code="${IDENTITY_EXIT_CODE}"
+          if [ -z "${exit_code}" ]; then
+            echo "::error::SSH identity repair did not expose an exit code"
+            exit 1
+          fi
+          if [ "${exit_code}" != "0" ]; then
+            echo "::error::SSH identity remains unavailable; see uploaded evidence artifact"
+            exit "${exit_code}"
+          fi

@@ -42,6 +42,11 @@ spec:
       # ve OutOfSync cosmetic kalıcı. RespectIgnoreDifferences bu çakışmayı
       # çözer: ignore edilen jsonPointers sync sırasında dokunulmaz.
       # Ref: https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#respect-ignore-difference-configs
+      # 2026-05-19 (Codex 019e41d7): RespectIgnoreDifferences yalnız TARGETED
+      # runtime field'lar için kalır (HPA /spec/replicas, dinamik ConfigMap
+      # /data + annotation path'leri) — blanket `/metadata` ignore ile ASLA
+      # birlikte kullanılmaz (managedFields'i SSA gövdesine taşıyıp sync'i
+      # `metadata.managedFields must be nil` ile bozar; bkz. ExternalSecret).
       - RespectIgnoreDifferences=true
   ignoreDifferences:
     # 2026-05-10 (PR-471): Prod replicas HPA-managed — ArgoCD /spec/replicas
@@ -60,8 +65,13 @@ spec:
     - group: external-secrets.io
       kind: ExternalSecret
       jsonPointers:
-        # /metadata tümü + /status (ServerSideApply field manager cosmetic)
-        - /metadata
+        # 2026-05-19 (Codex 019e41d7, bkz. PR #850 aynı fix): blanket `/metadata`
+        # ignore KALDIRILDI — ESO v1 CRD'sinde `/metadata` managedFields'i de
+        # kapsıyordu; RespectIgnoreDifferences ile birlikte SSA sync gövdesine
+        # managedFields taşıyıp `metadata.managedFields must be nil` ile sync'i
+        # bozardı. RespectIgnoreDifferences bu app'te HPA `/spec/replicas` +
+        # dinamik ConfigMap annotation'ları için KALIYOR; yalnız ExternalSecret
+        # `/metadata` ignore'u `/status`'a daraltıldı.
         - /status
       # 2026-04-24 Session 28 T+30 (d investigate): OutOfSync gerçek sebebi
       # ESO v1 API default field'ları (canlıda var, manifest'te yok):

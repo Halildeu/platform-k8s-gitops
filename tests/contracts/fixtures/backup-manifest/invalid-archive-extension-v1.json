@@ -1,0 +1,13 @@
+{
+  "manifest_version": "1",
+  "dc_ea_tier": "DC-EA-1",
+  "device_id": "11111111-1111-1111-1111-111111111111",
+  "tenant_id": "1",
+  "generated_at": "2026-06-26T00:00:00Z",
+  "allowlist_profile_id": "profile-corp-default-v1",
+  "scope": { "managed_data_roots": ["managed_root:22222222-2222-2222-2222-222222222222"], "byod": false },
+  "entries": [
+    { "path_class": "managed/onedrive-business", "root_ref": "managed_root:22222222-2222-2222-2222-222222222222", "relative_depth": 3, "extension_type": "archive", "size_bytes": 12345, "mtime_bucket": "P7D", "owner_scope_marker": "company", "file_count": 1 }
+  ],
+  "aggregate": { "total_eligible_count": 1, "total_eligible_size_bytes": 12345, "denied_count": 0, "denied_classes": [], "container_count": 0, "unresolved_path_count": 0 }
+}

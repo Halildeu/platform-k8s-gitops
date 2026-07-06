@@ -1,0 +1,5 @@
+[agentpc2-bootstrap] download immutable install.ps1
+[agentpc2-bootstrap] download immutable endpoint-agent.exe
+[agentpc2-bootstrap] verify endpoint-agent.exe signer thumbprint
+[agentpc2-bootstrap] install EndpointAgent v0.2.28 with outbound remote bridge
+[agentpc2-bootstrap] summary: C:\ProgramData\EndpointAgent\rollout-evidence\agentpc2-first-install-bootstrap-summary.json

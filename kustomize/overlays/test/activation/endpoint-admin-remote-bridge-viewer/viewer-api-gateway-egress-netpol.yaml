@@ -1,0 +1,35 @@
+# control #6 (viewer, egress side) — ADDITIVE egress allow: api-gateway → bridge:8096.
+#
+# REQUIRED COMPANION to viewer-from-api-gateway-netpol.yaml. NetworkPolicy needs
+# BOTH sides: the bridge ingress allow (that file) lets the bridge RECEIVE on 8096;
+# this lets api-gateway SEND. Without it the api-gateway egress is default-denied
+# to the bridge: the namespace default-denies egress
+# (kustomize/base/netpol/default-deny.yaml), and the existing allow-egress-intra-ns
+# only permits part-of=platform → part-of=platform. The bridge is deliberately
+# part-of=remote-bridge (broker isolation), so the standard intra-ns egress does NOT
+# cover api-gateway → bridge → enable would 502/connect-fail without this.
+#
+# Narrowly scoped: api-gateway pods → the bridge pod, TCP 8096 only. Additive
+# (union with the api-gateway's existing DNS/intra-ns/host egress); withdrawing this
+# manifest cleanly removes the api-gateway→8096 path (Mode B rollback).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-api-gateway-allow-egress-8096-to-bridge-viewer
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: remote-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: endpoint-admin-remote-bridge
+      ports:
+        - protocol: TCP
+          port: 8096

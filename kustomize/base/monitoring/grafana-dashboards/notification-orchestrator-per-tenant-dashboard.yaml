@@ -1,0 +1,350 @@
+# Grafana Dashboard ConfigMap — notification-orchestrator per-tenant view
+#
+# Faz 23.8 M7 T4.3 closure DoD residual (2026-05-21). Companion to
+# `notification-orchestrator-dashboard.yaml` (system-wide platform-prod
+# namespace view); per-tenant ($tenant) breakdown skeleton.
+#
+# **Backend metric kontratı hizalama (Codex 019e4bf5 RED absorb)**:
+# v1 dashboard query'leri mevcut backend metric isimleriyle uyumlu:
+#   - notify_intent_terminated_total{terminal}  (WorkerMetrics)
+#   - notify_dispatch_outcome_total{channel, status}  (WorkerMetrics)
+#   - notify_kvkk_erasure_sla_overdue_count  (ErasureSlaWatchdog gauge)
+#   - notify_kvkk_erasure_sla_breach_total  (ErasureSlaWatchdog counter)
+#   - notify_abuse_blocked_total{reason}  (AbuseGuardService)
+#   - notify_abuse_bypassed_total  (AbuseGuardService)
+#
+# **Per-tenant filtering gap (instrumentation follow-up)**:
+# Mevcut Counter.builder çağrıları `org_id` Tag taşımıyor (AuditEventPublisher
+# audit row'da var, Micrometer counter tag'inde yok). Dashboard $tenant
+# template variable'ı + tenant_filter informational panel taşır; backend
+# `Counter.builder(...).tag("org_id", orgId).register(...)` retrofit
+# sonrası panel filter'ları aktive olur. Backend instrumentation M8
+# multi-tenant pre-req (R10 mitigation plan parçası); separate
+# platform-backend PR scope.
+#
+# v1 davranış: panels "All tenants" sistem-genelinde gösterir. $tenant
+# variable görsel UI placeholder + dropdown selector; query'lerde aktif
+# filter YOK (backend retrofit sonrası filter eklenecek — Codex panel
+# query revision iter). Bu pattern → dashboard immediately useful for
+# system-wide view + future-ready for multi-tenant.
+#
+# Sidecar provisioner: grafana_dashboard=1 (helm-values sidecar.dashboards.enabled=true).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-orchestrator-per-tenant-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  notification-orchestrator-per-tenant.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": "-- Grafana --",
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "Notification orchestrator per-tenant ($tenant) view skeleton — Faz 23.8 M7 T4.3 closure DoD. v1 panels system-wide (org_id label backend instrumentation M8 follow-up); $tenant variable future-ready selector.",
+      "editable": false,
+      "gnetId": null,
+      "graphTooltip": 1,
+      "id": null,
+      "iteration": 1716280800000,
+      "links": [
+        {
+          "icon": "external link",
+          "tags": [],
+          "targetBlank": true,
+          "title": "System-wide dashboard",
+          "tooltip": "Notification orchestrator system-wide view (platform-prod namespace)",
+          "type": "link",
+          "url": "/d/notification-orchestrator/notification-orchestrator"
+        }
+      ],
+      "panels": [
+        {
+          "datasource": "Prometheus",
+          "description": "Intent terminal transition rate by terminal status (notify_intent_terminated_total{terminal}). System-wide view; per-tenant filter activates when backend adds org_id Counter tag (M8 multi-tenant pre-req).",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "id": 1,
+          "options": {
+            "legend": {"displayMode": "list", "placement": "bottom"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (terminal) (rate(notify_intent_terminated_total{namespace=\"platform-prod\"}[5m]))",
+              "legendFormat": "{{terminal}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Intent terminated rate by terminal status",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "Dispatch outcome breakdown by channel + status (notify_dispatch_outcome_total{channel, status}). Includes DELIVERED, FAILED, RETRY, BLOCKED_* terminal states. Per-tenant filter follow-up.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "id": 2,
+          "options": {
+            "legend": {"displayMode": "table", "placement": "right"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (channel, status) (rate(notify_dispatch_outcome_total{namespace=\"platform-prod\"}[5m]))",
+              "legendFormat": "{{channel}}/{{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Dispatch outcome by channel + status",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "Eligibility guard block breakdown (DeliveryEligibilityService). Filter dispatch_outcome to BLOCKED_* status set: preference, authz, suppression, idempotency, no-push-endpoint, external-not-allowed. High volumes per reason → tenant policy effects (when org_id tag retrofitted).",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "id": 3,
+          "options": {
+            "legend": {"displayMode": "table", "placement": "right"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (channel, status) (rate(notify_dispatch_outcome_total{namespace=\"platform-prod\", status=~\"BLOCKED_.*\"}[5m]))",
+              "legendFormat": "{{channel}}/{{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Eligibility blocks (BLOCKED_*) by channel + status",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "WebPush dispatch outcome (channel=push) breakdown — RFC 8030 status mapping: DELIVERED (201/204), FAILED (410 subscription_expired + 404 endpoint_not_found), BLOCKED_NO_PUSH_ENDPOINT (marker target eligibility guard), RETRY (429/5xx transient). Browser-only scope (Faz 23.7 M7 T4.2); mobile FCM/APNS Faz 22.2 dep.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "id": 4,
+          "options": {
+            "legend": {"displayMode": "list", "placement": "bottom"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(notify_dispatch_outcome_total{namespace=\"platform-prod\", channel=\"push\"}[5m]))",
+              "legendFormat": "{{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "WebPush dispatch outcome by status (channel=push)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "KVKK Madde 13.2 30-gün SLA breach — ErasureSlaWatchdog @Scheduled cron 6h: notify_kvkk_erasure_sla_overdue_count gauge (current overdue) + notify_kvkk_erasure_sla_breach_total counter (cumulative). Per-tenant: requires org_id tag retrofit.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {"mode": "thresholds"},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 1},
+                  {"color": "red", "value": 5}
+                ]
+              }
+            }
+          },
+          "gridPos": {"h": 4, "w": 12, "x": 0, "y": 16},
+          "id": 5,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+          },
+          "targets": [
+            {
+              "expr": "sum (notify_kvkk_erasure_sla_overdue_count{namespace=\"platform-prod\"})",
+              "legendFormat": "overdue (current)",
+              "refId": "A"
+            },
+            {
+              "expr": "sum (increase(notify_kvkk_erasure_sla_breach_total{namespace=\"platform-prod\"}[1d]))",
+              "legendFormat": "breached (24h)",
+              "refId": "B"
+            }
+          ],
+          "title": "Erasure 30-gün SLA breach (KVKK Madde 13.2)",
+          "type": "stat"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "AbuseGuard rate-limit + fan-out cap decisions. notify_abuse_blocked_total{reason} (RATE_LIMITED / WEBHOOK_FANOUT_CAP / FLOOD) + notify_abuse_bypassed_total (RATE_LIMIT_BYPASSED_CRITICAL severity=critical bypass). Per-tenant: outlier detection requires org_id tag.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 4, "w": 12, "x": 12, "y": 16},
+          "id": 6,
+          "options": {
+            "legend": {"displayMode": "list", "placement": "bottom"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (reason) (rate(notify_abuse_blocked_total{namespace=\"platform-prod\"}[5m]))",
+              "legendFormat": "blocked: {{reason}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum (rate(notify_abuse_bypassed_total{namespace=\"platform-prod\"}[5m]))",
+              "legendFormat": "bypassed (critical)",
+              "refId": "B"
+            }
+          ],
+          "title": "AbuseGuard decisions (blocked + bypassed)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "Per-tenant filter activation status indicator — backend Counter.builder('notify_*').tag('org_id', orgId) retrofit pending. Until then, $tenant variable selector is informational; all panel queries return system-wide (cluster sum) view. M8 multi-tenant pre-req (R10 mitigation plan).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "fixed", "fixedColor": "orange"},
+              "noValue": "Backend org_id Tag instrumentation pending (M8 pre-req)"
+            }
+          },
+          "gridPos": {"h": 4, "w": 24, "x": 0, "y": 20},
+          "id": 7,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "textMode": "value_and_name"
+          },
+          "targets": [
+            {
+              "expr": "absent(notify_dispatch_outcome_total{namespace=\"platform-prod\", org_id!=\"\"}) or vector(0)",
+              "legendFormat": "tenant_filter_status",
+              "refId": "A"
+            }
+          ],
+          "title": "Per-tenant filter activation status",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "postgres", "uid": "notify_pg_ro"},
+          "description": "**OPERATOR-ONLY BREAK-GLASS — NOT TENANT-FACING.** Top 20 templates by send volume + success rate. PG aggregate read (notify.audit_event_v2 + notification_delivery JOIN terminal truth). Tenant variable filter `${tenant:sqlstring}` Grafana SQL escape; **NOT a security boundary** (M8 acceptance gates required for tenant-facing — see ADR-0026 §4 + RB-grafana-notify-pg-datasource.md §6). Operator activation chain: DB RO role + Vault seed + ESO + Grafana env (see RB §3). LIMIT 20; default dashboard window 24h. Faz 23.8 M7 T4.3.7 (Codex 019e4ee2 plan-time + 019e4f10 iter-2 P1 absorb).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "custom": {
+                "align": "auto",
+                "cellOptions": {"type": "auto"},
+                "filterable": false
+              },
+              "noValue": "PG datasource activation pending (operator chain — see RB-grafana-notify-pg-datasource.md)",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 50},
+                  {"color": "green", "value": 95}
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "success_rate_pct"},
+                "properties": [
+                  {"id": "unit", "value": "percent"},
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 24},
+          "id": 8,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false},
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "postgres", "uid": "notify_pg_ro"},
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "-- Codex 019e4f10 P1 #3 + #4 absorb (iter-2) + iter-3 nd.id PK fix:\n-- (a) WHERE template_id IS NOT NULL kaldırıldı → COALESCE fallback reachable\n-- (b) Success rate JOIN notification_delivery (terminal truth nd.status)\n--     audit_event_v2 event_type DLR async flow için terminal değil\n--     notification_delivery PK kolonu = id (NOT delivery_id; Codex 019e4f10 iter-2 P1)\n-- (c) Tenant variable Grafana SQL safe escape ${tenant:sqlstring}\n--     (manual single-quote YASAK; SQL injection risk)\nSELECT\n  COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) AS template_key,\n  COUNT(DISTINCT ae.delivery_id) AS total_count,\n  COUNT(DISTINCT nd.id) FILTER (\n    WHERE nd.status = 'DELIVERED'\n  ) AS success_count,\n  (COUNT(DISTINCT nd.id) FILTER (\n    WHERE nd.status = 'DELIVERED'\n  )::numeric / NULLIF(COUNT(DISTINCT ae.delivery_id), 0) * 100)::numeric(5,2) AS success_rate_pct\nFROM notify.audit_event_v2 ae\nLEFT JOIN notify.notification_delivery nd\n  ON nd.id = ae.delivery_id\nWHERE\n  ae.org_id = ${tenant:sqlstring}\n  AND ae.occurred_at BETWEEN $__timeFrom() AND $__timeTo()\n  AND COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) IS NOT NULL\nGROUP BY template_key\nORDER BY total_count DESC\nLIMIT 20;",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 20 Templates by Send Volume + Success Rate (PG aggregate)",
+          "type": "table"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 36,
+      "style": "dark",
+      "tags": ["notification-orchestrator", "per-tenant", "faz-23.8", "m7"],
+      "templating": {
+        "list": [
+          {
+            "current": {"selected": false, "text": "", "value": ""},
+            "datasource": "Prometheus",
+            "definition": "label_values(notify_dispatch_outcome_total{namespace=\"platform-prod\"}, org_id)",
+            "description": "Select tenant org_id. Panel id=8 (Top 20 Templates PG aggregate) uses ${tenant:sqlstring} single-value equality predicate — multi/includeAll DISABLED (Codex 019e4f10 iter-2 P2 absorb: multi/all comma-separated quoted value equality predicate ile uyumsuz). Prometheus panels (id 1-7) $tenant filtrelemiyor — informational, system-wide (backend org_id Counter tag retrofit M8 pre-req).",
+            "hide": 0,
+            "includeAll": false,
+            "label": "Tenant (org_id, single-select)",
+            "multi": false,
+            "name": "tenant",
+            "options": [],
+            "query": {
+              "query": "label_values(notify_dispatch_outcome_total{namespace=\"platform-prod\"}, org_id)",
+              "refId": "Prometheus-tenant-Variable-Query"
+            },
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Notification Orchestrator — Per-Tenant View (Faz 23.8 M7 T4.3)",
+      "uid": "notification-orchestrator-per-tenant",
+      "version": 1
+    }

@@ -1,0 +1,74 @@
+# Faz 22.5 M2 — NetworkPolicy for the backend mTLS listener (8443).
+#
+# ⚠️ ISOLATION CAVEAT (Codex review F2): Kubernetes NetworkPolicy is ADDITIVE —
+# it cannot express a deny. The endpoint-admin pod carries
+# `app.kubernetes.io/part-of: platform`, and the base broad intra-namespace allow
+# (kustomize/base/netpol/allow-ingress-intra-ns.yaml) already permits ingress
+# from ALL platform pods to ALL ports. So the allow below does NOT by itself
+# isolate 8443 — any platform pod could still reach it. TRUE isolation requires
+# ONE of (operator decision, before activation):
+#   (a) port-scope the broad intra-ns allow so 8443 is excluded, OR
+#   (b) move the mTLS listener onto a SEPARATELY-LABELED workload/Deployment that
+#       the broad policy's selector does not match, then bind the allow below to
+#       that label.
+# Until (a) or (b), treat 8443 as reachable intra-namespace and rely on the
+# backend's mTLS client-auth (no anonymous/in-cluster bypass of cert validation).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mtls-passthrough-to-backend
+  labels:
+    app.kubernetes.io/part-of: faz22-endpoint-agent-mtls
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8443
+---
+# Egress for mTLS chain validation (Codex review F3): the namespace runs
+# default-deny egress; the base egress allow only opens DNS + intra-ns + the
+# host bridge (5432/8080/8200). mTLS chain validation needs the backend to reach
+# the AD CS CRL/OCSP distribution points (and, if it resolves AD computer
+# identity, the domain controller LDAPS). Without this, revocation checking
+# either fails-closed (rejecting all enrollments) or cannot be proven.
+#
+# Test activation 2026-06-14: replace the fail-closed sentinels with narrow lab
+# /32s. AD CS Enterprise Root CA runs on ERP-MOBIL (10.9.10.101); the DC/LDAPS
+# endpoint is ACIKDC01 (10.9.10.10). Keep these test-only and do not widen to
+# RFC1918 supernets.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mtls-backend-pki-egress
+  labels:
+    app.kubernetes.io/part-of: faz22-endpoint-agent-mtls
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.9.10.101/32   # ERP-MOBIL.acik.local AD CS CRL/OCSP host
+      ports:
+        - protocol: TCP
+          port: 80    # HTTP CRL distribution point
+        - protocol: TCP
+          port: 443   # OCSP responder
+    - to:
+        - ipBlock:
+            cidr: 10.9.10.10/32   # ACIKDC01.acik.local domain controller
+      ports:
+        - protocol: TCP
+          port: 636   # LDAPS (objectGUID resolve, if used)

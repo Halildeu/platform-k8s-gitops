@@ -1,0 +1,25 @@
+# endpoint-admin-remote-bridge Service — Faz 22.6 D10-8 broker isolation
+#
+# Control #5 (Codex): the broker Service publishes ONLY 9444 (the mTLS gRPC
+# bridge). It does NOT expose 8096 (admin HTTP) or 8081 (management) — even
+# though the shared image still binds them inside the pod. Reachability to
+# those ports is closed by the activation ingress NetworkPolicy (documented
+# pilot waiver).
+apiVersion: v1
+kind: Service
+metadata:
+  name: endpoint-admin-remote-bridge
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/component: remote-bridge-broker
+    app.kubernetes.io/part-of: remote-bridge
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+  ports:
+    # ONLY the mTLS gRPC bridge. No http (8096), no management (8081).
+    - name: grpc-bridge
+      port: 9444
+      targetPort: bridge
+      protocol: TCP

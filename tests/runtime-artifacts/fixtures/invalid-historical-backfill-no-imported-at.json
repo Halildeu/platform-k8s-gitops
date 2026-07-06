@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "artifact_kind": "openfga-model",
+  "artifact_content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000007",
+  "source": {
+    "kind": "openfga-server",
+    "canonical_source_ref": "openfga://platform-prod/authorization-models/01KS15PF531R1P99BMMM7SFMV1"
+  },
+  "promotion": {
+    "test": {
+      "status": "verified",
+      "method": "historical-backfill",
+      "store_ref": "platform-test",
+      "verified_at": "2026-05-19T23:24:50Z",
+      "model_id_env": "01JX0000000000000000000000",
+      "evidence": {
+        "required_types_present": ["user", "report_group"],
+        "type_count": 10,
+        "allow_proof": null,
+        "deny_proof": null
+      },
+      "evidence_completeness": "partial-import",
+      "source_docs": ["docs/session-handoff-2026-05-20-promotion-pipeline-progress.md"]
+    },
+    "prod": {
+      "status": "promoted",
+      "method": "historical-backfill",
+      "store_ref": "platform-prod",
+      "verified_at": "2026-05-20T10:30:00Z",
+      "promoted_at": "2026-05-20T11:00:00Z",
+      "model_id_env": "01KS15PF531R1P99BMMM7SFMV1",
+      "evidence": {
+        "required_types_present": ["user", "report_group"],
+        "type_count": 10,
+        "allow_proof": null,
+        "deny_proof": null
+      },
+      "evidence_completeness": "partial-import",
+      "source_docs": ["docs/session-handoff-2026-05-20-multi-initiative-closure.md"]
+    }
+  },
+  "metadata": {
+    "rollback_safe": true
+  },
+  "audit": {
+    "implementer": "claude",
+    "reviewer": "codex",
+    "created_at": "2026-05-20T13:00:00Z",
+    "approval_pathway": "historical-backfill",
+    "backfill": true
+  }
+}

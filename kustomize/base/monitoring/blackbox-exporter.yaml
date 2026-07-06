@@ -223,3 +223,73 @@ spec:
       labels:
         component: prod-health-probe
         edge: ai-prod
+---
+# DiD-2 (defense-in-depth follow-up after 2026-05-21 PermissionProvider
+# stale-token incident on ai.acik.com /settings/notifications):
+#
+# These two Probe CRs are HTTP-level synthetic monitors that detect when the
+# frontend's /settings/notifications route stops returning 2xx from the SPA
+# nginx fallback (kustomize/base/apps/frontend/nginx-default.conf). They
+# explicitly do NOT detect client-side stuck-UI (e.g. PermissionProvider
+# AuthNotReadyError loops, "Tercihler yüklenemedi" rendered by JS) — that
+# would require a browser-based synthetic (Playwright headless CronJob)
+# and is out of scope for this iteration. The HTTP probe still catches:
+#   - nginx down / pod CrashLoopBackOff
+#   - ingress 5xx / TLS cert expiry / DNS failure
+#   - upstream API gateway proxy failures that take the SPA shell with them
+#
+# Alert wiring lives in prometheusrule-frontend-settings-notifications.yaml.
+# Scrape interval 60s + alert `for: 5m` matches existing edge probe pattern
+# (zanzibar-prod-edge-health / zanzibar-testai-edge-health above).
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: frontend-prod-settings-notifications
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+spec:
+  jobName: blackbox-prod-settings-notifications
+  module: http_200
+  prober:
+    url: blackbox-exporter.monitoring.svc.cluster.local:9115
+  interval: 60s
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - https://ai.acik.com/settings/notifications
+      labels:
+        component: prod-settings-notifications-probe
+        # `edge` is the operational dimension (matches existing
+        # zanzibar-prod-edge-* pattern). `host` is the literal DNS name
+        # used by alert annotation URLs — keep them SEPARATE because
+        # `edge=ai-prod` is NOT a valid hostname (Codex 019e4946 iter-3
+        # post-impl REVISE).
+        edge: ai-prod
+        host: ai.acik.com
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: frontend-testai-settings-notifications
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+spec:
+  jobName: blackbox-testai-settings-notifications
+  module: http_200
+  prober:
+    url: blackbox-exporter.monitoring.svc.cluster.local:9115
+  interval: 60s
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - https://testai.acik.com/settings/notifications
+      labels:
+        component: testai-settings-notifications-probe
+        edge: testai
+        host: testai.acik.com

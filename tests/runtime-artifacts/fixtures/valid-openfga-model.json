@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "artifact_kind": "openfga-model",
+  "artifact_content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "source": {
+    "kind": "openfga-server",
+    "canonical_source_ref": "openfga://platform-test/authorization-models/01JX0000000000000000000000"
+  },
+  "runtime_selector": {
+    "selector_kind": "vault",
+    "vault_path": "kv/platform/openfga",
+    "field": "model_id"
+  },
+  "promotion": {
+    "test": {
+      "status": "verified",
+      "method": "pr-promotion",
+      "store_ref": "platform-test",
+      "verified_at": "2026-05-20T10:00:00Z",
+      "verified_by_pr": 999,
+      "model_id_env": "01JX0000000000000000000000",
+      "evidence": {
+        "required_types_present": ["user", "organization", "report_group"],
+        "type_count": 10,
+        "tuple_backfill_count": 4,
+        "list_objects_count": 4,
+        "allow_proof": {
+          "user": "user:1204",
+          "relation": "can_view",
+          "object": "report_group:HR_REPORTS",
+          "expected": "allow"
+        },
+        "deny_proof": {
+          "user": "user:9999",
+          "relation": "can_view",
+          "object": "report_group:HR_REPORTS",
+          "expected": "deny"
+        }
+      },
+      "evidence_completeness": "complete",
+      "source_docs": ["docs/runbooks/RB-openfga-model-promote.md#test-verify"]
+    },
+    "prod": {
+      "status": "promoted",
+      "method": "pr-promotion",
+      "store_ref": "platform-prod",
+      "verified_at": "2026-05-20T10:30:00Z",
+      "promoted_at": "2026-05-20T11:00:00Z",
+      "promoted_by_pr": 1000,
+      "model_id_env": "01KS15PF531R1P99BMMM7SFMV1",
+      "evidence": {
+        "required_types_present": ["user", "organization", "report_group"],
+        "type_count": 10,
+        "tuple_backfill_count": 4,
+        "list_objects_count": 4,
+        "allow_proof": {
+          "user": "user:1204",
+          "relation": "can_view",
+          "object": "report_group:HR_REPORTS",
+          "expected": "allow"
+        },
+        "deny_proof": {
+          "user": "user:9999",
+          "relation": "can_view",
+          "object": "report_group:HR_REPORTS",
+          "expected": "deny"
+        }
+      },
+      "evidence_completeness": "complete",
+      "source_docs": ["docs/runbooks/RB-openfga-model-promote.md#prod-promote"]
+    }
+  },
+  "metadata": {
+    "previous_artifact_content_digest": null,
+    "rollback_safe": true,
+    "rollback_runbook_ref": "docs/runbooks/RB-openfga-model-rollback.md",
+    "backward_compatible_until": null,
+    "migration_refs": ["PR #999", "PR #1000"]
+  },
+  "audit": {
+    "implementer": "claude",
+    "reviewer": "codex",
+    "codex_thread_id": "019e44d9-96ae-7ff0-972a-7b5202e6dfb0",
+    "created_at": "2026-05-20T11:00:00Z",
+    "approval_pathway": "cross-ai-agree",
+    "backfill": false
+  }
+}

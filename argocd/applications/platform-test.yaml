@@ -20,7 +20,13 @@ spec:
     namespace: platform-test
   syncPolicy:
     automated:
-      prune: true
+      # 2026-05-20 — Guardrail PR-2 (ADR-0023, Codex 019e40e4 Option A):
+      # İlk aktivasyonda prune: false → ArgoCD test cluster'da overlays/test
+      # dışında bulduğu kaynakları SILMEZ; sadece manifest'lerde olanı sync
+      # eder. Stabil çalıştıktan sonra ayrı PR ile prune: true'ya çevrilebilir
+      # (operatör test cluster'da silinmesi istenmeyen out-of-band kaynak
+      # olmadığını teyit edince).
+      prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
@@ -48,6 +54,21 @@ spec:
         - /metadata/annotations/frontend-federation-smoke.io~1last-fire
         - /metadata/annotations/frontend-federation-smoke.io~1result
         - /metadata/annotations/frontend-federation-smoke.io~1failures
+    # ESO runtime/default drift is constrained to status, known v1 defaulted
+    # remoteRef fields, and two specific operator/client annotations. This
+    # avoids blanket metadata ignore while keeping ExternalSecret specs
+    # GitOps-authoritative.
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /status
+        - /metadata/annotations/force-sync
+        - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+      jqPathExpressions:
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
+        - .spec.data[].remoteRef.nullBytePolicy
   # 2026-05-10: D17 scale-to-zero ignoreDifferences DEPRECATED.
   # HARD RULE — TEST Cluster Scale-to-Zero YASAK (kullanıcı 2026-05-10
   # kararı): multi-Claude paralel session geliştirme modelinde scale-down

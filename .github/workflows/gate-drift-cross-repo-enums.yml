@@ -1,0 +1,118 @@
+# ADR-0031 DD-5-1 — Cross-Repo Enum / Contract Drift Guard.
+#
+# Codex thread 019e8832 iter-4 AGREE (ready_for_impl: true).
+#
+# Triggers (ADR-0031 §I7 — NOT path-filtered per reporting-allowlist-drift.yml
+# precedent; path-filtered required checks risk the GitHub missing/pending
+# merge-block trap on unrelated PRs):
+#   - pull_request — every PR, no paths filter
+#   - push to main — main-branch drift catch
+#   - workflow_dispatch — ad-hoc + forced-drift smoke
+#   - schedule weekly Mon 03:30 UTC — stale-main regression catch
+#
+# Authority: Codex consensus only — governance + CI script + caller wiring,
+# no credential-read, no credential-write, no prod state-mutation,
+# no user-communication.
+
+name: ADR-0031 Cross-Repo Enum Drift Guard
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "30 3 * * 1"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: cross-repo-enum-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-repo-enum-drift:
+    name: ADR-0031 — cross-repo enum drift guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: pip install --quiet jsonschema pyyaml
+
+      - name: Unit tests — parsers + spec validator + paired-PR
+        run: |
+          python3 -m unittest tests.drift_detection.test_check_drift_cross_repo_enums -v
+
+      - name: Resolve own-pr-url + body (PR runs only)
+        id: pr
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Spec-host self-validation runs against public repos and explicitly
+          # opts into github.token. Caller workflows still pass the composite
+          # action's explicit cross_repo_contract_read_token input.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OWN_PR_URL="https://github.com/${{ github.repository }}/pull/${PR_NUMBER}"
+          BODY_FILE="/tmp/pr-body.txt"
+          gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json body --jq .body > "$BODY_FILE"
+          echo "own-pr-url=$OWN_PR_URL" >> "$GITHUB_OUTPUT"
+          echo "body-file=$BODY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Run drift guard (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          # Spec-host self-validation runs against public repos and explicitly
+          # opts into github.token. Caller workflows still pass the composite
+          # action's explicit cross_repo_contract_read_token input.
+          GH_TOKEN: ${{ github.token }}
+          ACTION_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/drift_detection/check_drift_cross_repo_enums.py \
+            --spec config/cross_repo_enum_drift_spec.yaml \
+            --spec-schema config/cross_repo_enum_drift_spec.schema.json \
+            --own-repo "${{ github.repository }}" \
+            --own-role spec-host \
+            --canonical-ref main \
+            --mirror-ref main \
+            --own-pr-url "${{ steps.pr.outputs.own-pr-url }}" \
+            --own-pr-body-file "${{ steps.pr.outputs.body-file }}" \
+            --report-out /tmp/cross-repo-enum-drift-report.json
+
+      - name: Run drift guard (push/schedule/dispatch)
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          # Spec-host self-validation runs against public repos and explicitly
+          # opts into github.token. Caller workflows still pass the composite
+          # action's explicit cross_repo_contract_read_token input.
+          GH_TOKEN: ${{ github.token }}
+          ACTION_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/drift_detection/check_drift_cross_repo_enums.py \
+            --spec config/cross_repo_enum_drift_spec.yaml \
+            --spec-schema config/cross_repo_enum_drift_spec.schema.json \
+            --own-repo "${{ github.repository }}" \
+            --own-role spec-host \
+            --canonical-ref main \
+            --mirror-ref main \
+            --report-out /tmp/cross-repo-enum-drift-report.json
+
+      - name: Upload drift report artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cross-repo-enum-drift-report
+          path: /tmp/cross-repo-enum-drift-report.json
+          retention-days: 7

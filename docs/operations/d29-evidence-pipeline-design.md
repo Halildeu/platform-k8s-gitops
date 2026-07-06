@@ -229,7 +229,7 @@ If gate-evidence-check.py is buggy and lets through unverified digest,
 ## See also
 
 - `docs/operations/promotion-ledger-design.md` — full architecture spec
-- `scripts/drift-detection/check_prod_drift.sh` — runtime drift detector
+- `scripts/drift-detection/check_env_drift.sh` — runtime drift detector
   (second line of defense)
 - `scripts/drift-detection/alarm_receiver.sh` — pattern for systemd
   ExecStartPost integration

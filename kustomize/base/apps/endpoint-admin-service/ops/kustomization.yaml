@@ -1,0 +1,24 @@
+# ops extras for endpoint-admin-service (Faz 22.5 M6, #1493)
+# CRD-gated resources: ServiceMonitor (monitoring.coreos.com).
+#
+# NOT: endpoint-admin-service ExternalSecret'i ops/ değil per-environment
+# overlay'lerde (overlays/{test,prod}/eso/endpoint-admin) yönetilir (flat Vault
+# path + dual-owner Argo Application çakışmasını önleme — notification-orchestrator
+# emsali, Codex 019e08df). Bu yüzden bu ops/ paketi YALNIZCA ServiceMonitor taşır.
+#
+# Label injection parent runtime kustomization ile simetrik (app-name + part-of).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: endpoint-admin-service
+    includeSelectors: false
+    includeTemplates: false
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - servicemonitor.yaml

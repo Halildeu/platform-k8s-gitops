@@ -13,50 +13,122 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # prefix (auto-test-overlay/ · auto-verified/ · auto-promotion/) is audited in
 # pr-cross-ai-audit.mjs `auditAutomation` mode — a bot-generated PR is exempt
 # from the peer-review claim iff a multi-signal predicate holds (same-repo +
-# actor allowlist + Automation source/exempt-reason/evidence). PR-A keeps the
-# `pull_request` trigger; the `pull_request_target` + base-ref hardening is a
-# separate follow-up (PR-A2 — required-check migration, operator-coordinated).
+# actor allowlist + Automation source/exempt-reason/evidence).
+#
+# #842 PR-A2 (Codex thread `019e42c7-6470-7c71-bccb-e052248dfd99`, PARTIAL→AGREE):
+# This workflow migrates from `pull_request` to `pull_request_target`:
+#   * The audit script now runs from the BASE ref (e.g. `main`) instead of the
+#     PR head. A malicious PR that ships a tampered `pr-cross-ai-audit.mjs` in
+#     its head no longer weakens its own audit — the trusted main copy runs.
+#   * `pull_request_target` is the more privileged event variant; permissions
+#     stay `contents: read` + `pull-requests: read` (no write, no secrets) per
+#     Codex Q5 hardening — minimal grant.
+#   * Job name `cross-ai-audit` is preserved so the branch-protection ruleset
+#     context (PMD §2.10 must-pass list) matches without rename.
+#   * `concurrency` block cancels superseded runs on the same PR — guards
+#     against rapid `synchronize` push churn (an attacker or noisy author
+#     cannot pile up N parallel audit runs to exhaust CI minutes).
+#   * `ready_for_review` is deliberately omitted — an auto-* automation PR is
+#     opened DRAFT by a bot (auto-promotion/ prod candidates) and an operator
+#     marks it ready. The automation-exemption gate rejects human-triggered
+#     re-runs; re-running on `ready_for_review` would break the legit operator
+#     DRAFT→ready flow, and special-casing it to PASS would launder a prior
+#     malicious human `synchronize`. The audit already ran on `opened` /
+#     `synchronize` (the content-changing events); the draft→ready flip
+#     changes no content.
 
 on:
-  pull_request:
-    # #827: `ready_for_review` is deliberately omitted. An auto-* automation
-    # PR is opened DRAFT by a bot (auto-promotion/ prod candidates) and an
-    # operator marks it ready — a human-sender event. The automation-exemption
-    # gate rejects human-triggered re-runs; re-running on `ready_for_review`
-    # would break the legit operator DRAFT→ready flow, and special-casing it
-    # to PASS would launder a prior malicious human `synchronize`. The audit
-    # already ran on `opened` / `synchronize` (the content-changing events);
-    # the draft→ready flip changes no content.
+  # #842 PR-A2 cleanup (post-PR #868 merge): the transition `pull_request`
+  # trigger is removed now that `pull_request_target` is live on main. The
+  # bootstrap problem (PR head's workflow not matching the event) does not
+  # recur because main now lists `pull_request_target` — `pull_request_target`
+  # reads the workflow from base, so any future PR's audit fires from the
+  # trusted base copy without needing a `pull_request` parallel.
+  pull_request_target:
     types:
       - opened
       - edited
       - synchronize
       - reopened
+      # #842 follow-up cleanup (Codex thread 019e5b85, 2026-05-24):
+      # `labeled` / `unlabeled` triggers REMOVED. The audit script is
+      # currently label-agnostic (pr-cross-ai-audit.mjs reads PR body fields
+      # only, not labels). Under label events the GitHub `sender` flips to
+      # whoever toggled the label — usually a human operator. For
+      # automation PRs (auto-promotion/, auto-test-overlay/, auto-verified/)
+      # the audit script's `auditAutomation` mode requires BOTH the PR
+      # author AND the event sender to be in the prefix-specific bot
+      # allowlist (pr-cross-ai-audit.mjs `auditAutomation` actor check).
+      # A human labeling an automation PR therefore turns a previously-
+      # green `cross-ai-audit` check RED on the very same content — a
+      # false-negative governance failure, not a real audit failure.
+      # The inverse risk (human launders a prior malicious `synchronize`
+      # by toggling a label) is also blocked by removing these triggers.
+      # When the audit script gains genuine label-aware semantics, this
+      # block should be re-added with the matching script logic in the
+      # SAME PR (atomic wiring + behavior), not pre-wired ahead.
 
 permissions:
   contents: read
   pull-requests: read
 
+# #842 Codex 019e42c7 Q8: concurrency guards parallel runs on the same PR.
+# Per-PR concurrency group; superseded runs are cancelled on `synchronize`
+# so rapid push churn does not exhaust CI minutes.
+concurrency:
+  group: cross-ai-audit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   cross-ai-audit:
     # Codex `019e2693` HIGH-1: canonical check context PMD §2.10 must-pass list
     # branch protection ruleset bu exact context'i arıyor (`cross-ai-audit`).
+    # #842 PR-A2: job name preserved across the pull_request → pull_request_target
+    # migration so branch protection ruleset does not need an "Expected" sweep.
     name: cross-ai-audit
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout base ref (trusted main, not PR head)
+        # #842 Codex 019e42c7 Q8: `base.ref` (not `base.sha`) — track the latest
+        # commit on the base branch so a freshly-hardened audit script runs
+        # against PRs opened before the hardening landed. `base.sha` would
+        # pin to the SHA at PR-open time and miss subsequent fixes.
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
 
+      # #898 — Dependabot exemption diff-allowlist gate needs the PR file list.
+      # `gh api ... --paginate` over the read-only `pull-requests: read`
+      # permission (already granted above) keeps `pull_request_target`'s
+      # secrets-isolation model intact: no head checkout, no token scope
+      # expansion, deterministic regardless of GitHub UI ordering or PR size.
+      # GH_TOKEN is set explicitly so `gh` does not rely on runner-env auth.
+      - name: Fetch changed files (paginated, read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename' > /tmp/changed-files.txt
+          echo "PR files:"
+          cat /tmp/changed-files.txt
+
       - name: Run cross-AI audit
+        # `GITHUB_EVENT_PATH` carries the PR payload (head ref/sha, base, body,
+        # actor, sender, labels) — the audit reads PR metadata from there, not
+        # from the checked-out tree. So the base-ref checkout above does not
+        # restrict what the audit can inspect about the PR (Codex Q3 onay).
+        # #898: `--changed-files-file` feeds the Dependabot exemption diff
+        # allowlist gate; ignored for non-Dependabot PRs.
         run: |
           node scripts/ci/pr-cross-ai-audit.mjs \
-            --event-path "$GITHUB_EVENT_PATH"
+            --event-path "$GITHUB_EVENT_PATH" \
+            --changed-files-file /tmp/changed-files.txt
 
       # #827 — regression test for the automation-PR exemption logic
       # (auditAutomation): legit bot auto-PRs pass, human-on-auto-branch is

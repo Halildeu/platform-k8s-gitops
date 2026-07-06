@@ -1,0 +1,27 @@
+# audit-event-consumer-service base kustomization — Faz 24 KVKK audit pipeline (#1249)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# app.kubernetes.io/name selector + Service selector + Deployment pod
+# selector aynı label ile eşleşsin (transcript-service / meeting-service pattern).
+# NOTE: name label MUST equal the services.yaml catalog name
+# (audit-event-consumer-service) — drift gate Check4 does an exact match between
+# the Deployment app.kubernetes.io/name label and services.yaml `name`.
+labels:
+  - pairs:
+      app.kubernetes.io/name: audit-event-consumer-service
+    includeSelectors: true
+    includeTemplates: true
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - serviceaccount.yaml
+  # No secret stub: ESO ExternalSecret creates audit-event-consumer-service-secrets
+  # directly (target.creationPolicy: Owner) from
+  # overlays/<env>/eso/audit-event-consumer-service.

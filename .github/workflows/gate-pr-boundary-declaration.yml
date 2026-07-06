@@ -43,21 +43,42 @@ jobs:
           ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
+      # #898 — Dependabot exemption diff-allowlist gate needs the PR file list.
+      # `gh api ... --paginate` over the already-granted read-only
+      # `pull-requests: read` permission. No head checkout, no token scope
+      # expansion — `pull_request_target` security model preserved.
+      - name: Fetch changed files (paginated, read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename' > /tmp/changed-files.txt
+          echo "PR files:"
+          cat /tmp/changed-files.txt
+
       - name: Validate PR boundary declaration (event payload)
+        # #898: `--changed-files-file` feeds the Dependabot exemption diff
+        # allowlist gate. For non-Dependabot PRs the dispatch falls through to
+        # the normal `run_all_checks()` body audit and the flag is unused.
         run: |
           python3 scripts/governance/check_pr_boundary_declaration.py \
             --event-path "$GITHUB_EVENT_PATH" \
+            --changed-files-file /tmp/changed-files.txt \
             --verbose
 
       - name: BG-1 JSON artifact
         if: always()
+        # #898 Codex `019e4523` non-blocking guardrail: artifact step must also
+        # carry `--changed-files-file` so the JSON output is semantically the
+        # same as the human-readable output (both lanes consistent).
         run: |
           python3 scripts/governance/check_pr_boundary_declaration.py \
             --event-path "$GITHUB_EVENT_PATH" \
+            --changed-files-file /tmp/changed-files.txt \
             --json > /tmp/bg-1-report.json || true
           cat /tmp/bg-1-report.json
 

@@ -1,0 +1,88 @@
+# audio-gateway-service ConfigMap — Faz 24 (Aşama-2 staging)
+#
+# Test-realm değerleri base'de (endpoint-admin configmap emsali — prod overlay
+# audio-gateway'i Faz 24 D30 cutover'a kadar DAHİL ETMEZ; dahil edildiğinde
+# issuer/JWKS/Redis host patch'lenir).
+#
+# JWT dual-URI kontratı (platform-backend#556): issuer external (token iss
+# claim'i edge host taşır) + JWKS internal (default-deny egress dışarı 443
+# vermez; key fetch in-cluster keycloak Service üzerinden).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audio-gateway-config
+  labels:
+    app.kubernetes.io/name: audio-gateway
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+data:
+  SPRING_PROFILES_ACTIVE: "k8s"
+  # --- JWT (ZORUNLU çift — eksikse pod fail-fast, #556 kontratı) ---
+  AUDIO_GATEWAY_JWT_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
+  AUDIO_GATEWAY_JWT_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  # --- JWT claim adları (test realm canonical) ---
+  # platform-test realm'in frontend client mapper'ları claim'i `tenantId`
+  # olarak basar (oidc-usermodel-attribute-mapper tenantId→tenantId +
+  # platform-userId userId→userId; companyId mapper'ı YOK — 2026-06-11
+  # mapper audit). Backend default'u companyId (Codex 019e8846 "claim adı
+  # configurable" tasarımı tam bu durum için) → test'te override:
+  AUDIO_GATEWAY_JWT_TENANT_CLAIM: "tenantId"
+  # user-claim default'u (userId) realm'le zaten uyumlu — override gerekmez.
+  # --- Faz 24 #716 shared-realm authz hardening (default-off baseline) ---
+  # Backend #719/#720 already contains audience + capability-role enforcement.
+  # Test overlay may deliberately patch these booleans to true after token-drain
+  # review and fail-closed smoke prep. Prod must make its own D30 decision.
+  AUDIO_GATEWAY_SECURITY_RESOURCE_CLIENT_ID: "audio-gateway-service"
+  AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE: "false"
+  AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE: "false"
+  # --- Dispatcher: Redis Streams cross-server (PR-gw-01C #534) ---
+  AUDIO_GATEWAY_DISPATCHER_MODE: "redis"
+  # Aggregate /actuator/health Redis reachability'yi yansıtsın (D29 Functional
+  # sinyali; liveness/readiness state-based kalır — #556)
+  AUDIO_GATEWAY_HEALTH_REDIS_ENABLED: "true"
+  # --- Redis bağlantısı (host-bridge Service → host-compose/redis-streams) ---
+  SPRING_DATA_REDIS_HOST: "redis-streams"
+  SPRING_DATA_REDIS_PORT: "6379"
+  # SPRING_DATA_REDIS_PASSWORD → audio-gateway-secrets (ESO, Vault
+  # kv/platform/audio-gateway-service redis_password)
+  # --- Faz 24 KVKK audit producer flip (gitops#1249 / #1615) ---
+  # RedisStreamAuditSink'i aktive eder (default NoOpAudioGatewayAuditSink yerine
+  # — backend application.yml audit.enabled=${AUDIO_GATEWAY_AUDIT_REDIS_ENABLED:false}).
+  # audit-event-consumer-service (#1631) k3d-test'te D29 LIVE: consumer group
+  # audit-persist-v1 'audit:events' stream'ine joined → producer flip end-to-end
+  # audit akışını tamamlar (audio-gateway producer → audit:events → consumer → audit_event DB).
+  # stream-key consumer'ın AUDIT_CONSUMER_STREAM_KEY'i (audit:events) ile birebir aynı.
+  AUDIO_GATEWAY_AUDIT_REDIS_ENABLED: "true"
+  AUDIO_GATEWAY_AUDIT_STREAM_KEY: "audit:events"
+  # --- Faz 24 direct-STT runtime wiring (TEST-enabled 2026-06-29; prod excludes audio-gateway until D30) ---
+  # Backend #725/#753/#768 ships the direct-STT WebClient + mTLS + result-stream.
+  # mTLS material now delivered via the audio-gateway-direct-stt-mtls Secret (ESO
+  # Ready=True; denetim-ai-ca client cert, PKCS#8 key) -> runtime flag ENABLED.
+  # Chain proven 2026-06-29: 3-way mTLS smoke (valid -> live-stt /health 200;
+  # no-cert & wrong-CA rejected) + synthetic /transcribe 200 (CUDA, language=tr).
+  # ArgoCD selfHeal was reverting the live kubectl patch; this gitops flip is the
+  # durable enablement (RB-faz24-direct-stt-mtls-enable.md Step 5). Rollback: set
+  # back to "false" AND bump the test-overlay direct-stt-enable-rev annotation (or
+  # rollout restart) — envFrom ConfigMap values are read only at pod start, so a
+  # flag change alone does not roll the pod.
+  AUDIO_GATEWAY_DIRECT_STT_ENABLED: "true"
+  AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL: "https://live-stt.denetim:8243/transcribe"
+  AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT: "2"
+  AUDIO_GATEWAY_DIRECT_STT_CONNECT_TIMEOUT_MS: "5000"
+  # 5s recorder windows must not surface stale transcript events tens of seconds
+  # later; timeout above this is treated as a dropped live draft, not a meeting
+  # failure. Final/batch STT remains a separate quality path.
+  AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS: "12000"
+  # Backend #781 consumes these knobs once the aggregation image is promoted:
+  # 100ms desktop PCM16 chunks stay admitted/audited individually, but the
+  # Direct-STT hop receives bounded memory-only WAV windows to reduce
+  # one-word/short-chunk Whisper artifacts.
+  AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_ENABLED: "true"
+  AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_WINDOW_SECONDS: "5"
+  AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_MAX_BUFFERED_SESSIONS: "64"
+  AUDIO_GATEWAY_DIRECT_STT_TLS_ENABLED: "true"
+  AUDIO_GATEWAY_DIRECT_STT_TLS_CA_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-ca.crt"
+  AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_CERTIFICATE_PATH: "/etc/direct-stt-mtls/direct-stt-client.crt"
+  AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_PRIVATE_KEY_PATH: "/etc/direct-stt-mtls/direct-stt-client.key"
+  AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_ENABLED: "true"
+  AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_KEY: "transcript:direct-stt-results"

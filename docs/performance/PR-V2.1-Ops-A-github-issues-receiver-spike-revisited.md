@@ -1,13 +1,19 @@
-# PR-V2.1-Ops-A — GitHub Issues Receiver Spike (Revisited)
+# PR-V2.1-Ops-A — GitHub Issues Receiver Spike (Revisited) — **HISTORICAL / SUPERSEDED**
+
+> ⚠️ **STATUS: HISTORICAL / SUPERSEDED (2026-05-19, PR #861 + #862 deprecation)** — Bu spike doc Alertmanager `webhook_configs` → GitHub `repository_dispatch` direct receiver pattern'ini öneriyordu. Implementation gerçekte payload schema uyumsuzluğu nedeniyle çalışmadı (Alertmanager Go template body wrap edemez; PR #648 closed RED). Direct receiver + token mount + perf route'lar PR #861 ile `values-prod.yaml`'dan kaldırıldı. #862 (P3 wrapper bridge) implementation **deprecated** (Codex `019e4445` REVISE — redundant; mevcut `alertmanager-bridge` pod `gh` CLI ile Issue lifecycle zaten yapıyor).
+>
+> **Canonical accepted path**: `alarm-receiver-bridge` Alertmanager receiver → `alertmanager-bridge` pod (script `kustomize/base/monitoring/alertmanager-bridge/alertmanager-bridge.py`) → `gh` CLI direct Issue create/comment/close. NOT `repository_dispatch`.
+>
+> Bu doc spike intent + alternative path keşfi olarak korunur (historical context). Live system için: `docs/operations/alertmanager-bridge-design.md` + `docs/runbooks/RB-prod-alertmanager-activation.md`.
 
 > **Belge kodu**: `PR-V2.1-Ops-A-github-issues-receiver-spike-revisited`
-> **Tarih**: 2026-05-14
+> **Tarih**: 2026-05-14 (SUPERSEDED 2026-05-19)
 > **Sahip**: Halil
 > **Sprint**: V2.1 prod-readiness sub-wave (PMD v9.1 §3.4 doğal fallback path)
 > **Tetik**: Vault DR blocker → Slack receiver Vault'a bağımlı (PR #642 owner waiver)
-> **Codex thread**: `019e2a4f-d1d1-7892-92f5-70e565b0efdc` (Q1 verdict — PMD §3.4 doğal fallback önerisi)
+> **Codex thread**: `019e2a4f-d1d1-7892-92f5-70e565b0efdc` (Q1 verdict — PMD §3.4 doğal fallback önerisi; superseded by `019e4256` iter-2 + `019e4445`)
 > **Önceki Codex spike**: `019e267a` Preferred B path: `alertmanager-github-receiver` image 3 yıl stale (reject)
-> **Status**: Spike (Codex strategic consensus revize)
+> **Status**: Spike — SUPERSEDED (Codex strategic consensus REVISE iter chain Session 42)
 
 ---
 

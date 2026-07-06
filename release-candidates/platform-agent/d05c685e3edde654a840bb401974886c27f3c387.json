@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-agent",
+  "service": "artifact-host",
+  "git_sha": "d05c685e3edde654a840bb401974886c27f3c387",
+  "git_short_sha": "d05c685",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-agent-artifacts",
+    "digest": "sha256:d8e4b1c72d293759ba4946cae3e8a870b5514406ed2af1d6604cc510078b967f",
+    "tag": "sha-d05c685",
+    "push_run_id": 27292353430,
+    "pushed_at": "2026-06-10T17:06:47Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-06-10T17:14:25Z",
+      "promoted_by_pr": 1435,
+      "argocd_revision": "e7b9dd8b",
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-06-10T17:14:30Z",
+          "details": "k3d-test/platform-test: 2 artifact-host pods (artifact-host-7d99d5d6d7-992cv, -bwhpd) Running ready=true restarts=0; both imageID ghcr.io/halildeu/platform-agent-artifacts@sha256:d8e4b1c72d293759ba4946cae3e8a870b5514406ed2af1d6604cc510078b967f == the prod-pinned digest (identical trusted-internal-ca artifact promoted, no rebuild).",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1436"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-06-10T17:50:14Z",
+          "details": "Live testai.acik.com/artifacts/endpoint-agent smoke (v0.2.3 + /current/ alias): /current/bootstrap-package.ps1 200 Cache-Control 'no-store, max-age=0' (mutable alias); /current/release-manifest.json endpoint_agent_zip_sha256=e03618da2c6afe06ef5d674a759ea3a43614cdac7f16c27aaaabb9d05ba51b14 == /current/EndpointAgent.zip.sha256; /v0.2.3/bootstrap-package.ps1 200 Cache-Control immutable; /v0.2.2/bootstrap-package.ps1 -> 404 (one-version retention); /healthz 200; SPA / + /api/v1/endpoint-agent/health 401 unaffected. End-to-end VM proof (Win11, default PowerShell 5.1) via the EXACT endpoint-admin UI one-command: download /current/ -> sha256 e03618da verify -> extract -> SHA256SUMS verify -> install.ps1 -> fresh-enroll; Get-Service EndpointAgent Running, exe FileVersion v0.2.3, agent log 'agent enrolled device=d0efb00a', enrollment token CONSUMED.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1436",
+          "endpoints": [
+            "/artifacts/endpoint-agent/current/bootstrap-package.ps1",
+            "/artifacts/endpoint-agent/current/release-manifest.json",
+            "/artifacts/endpoint-agent/current/EndpointAgent.zip.sha256",
+            "/artifacts/endpoint-agent/v0.2.3/bootstrap-package.ps1",
+            "/healthz"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "AMBER",
+          "checked_at": "2026-06-10T17:14:30Z",
+          "details": "artifact-host is a static nginx file host with jwt_validates=false (docs/operations/services.yaml): no JWT-validating or OpenFGA authz surface (public install URL by design). Zanzibar/allow-deny tier is N/A; AMBER is the D29 policy outcome for jwt_validates=false services (gate accepts GREEN-or-AMBER).",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1436",
+          "allow_deny_synthetic": "SKIP"
+        }
+      },
+      "verified_at": "2026-06-10T17:50:14Z",
+      "candidate_pr": 1437,
+      "candidate_pr_status": "ready_for_review"
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:d634f61164ac9b036ca54280f2197423706397eb791f998dd378cd8f333f10ff"
+  },
+  "audit": {
+    "created_at": "2026-06-10T18:00:00Z",
+    "last_updated_at": "2026-06-10T18:00:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-agent/actions/runs/27292353430"
+  }
+}

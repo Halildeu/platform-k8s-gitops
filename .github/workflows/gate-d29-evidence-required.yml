@@ -23,6 +23,11 @@ on:
     paths:
       - "kustomize/overlays/prod/**"
       - "scripts/promotion/gate-evidence-check.py"
+      # FU-Gate-Refactor (PR #936): the gate now delegates tier policy to
+      # the shared helper, so helper-only changes must trigger this gate
+      # too — otherwise a future helper-only PR could silently relax or
+      # break the policy without re-validating prod digest evidence.
+      - "scripts/promotion/d29_evidence_policy.py"
       - ".github/workflows/gate-d29-evidence-required.yml"
 
 permissions:
@@ -34,11 +39,11 @@ jobs:
     name: D29 evidence required for prod digest changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 

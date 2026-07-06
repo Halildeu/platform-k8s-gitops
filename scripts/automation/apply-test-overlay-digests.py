@@ -19,8 +19,8 @@ Entry identification: an `images:` entry is recognised by its
 "current entry" so a digest is only ever attributed to the entry it belongs to.
 
 Usage:
-  apply-test-overlay-digests.py --digest-map '<json>' [--kustomization PATH] [--check]
-  DIGEST_MAP='<json>' apply-test-overlay-digests.py [--check]
+  apply-test-overlay-digests.py --digest-map '<json>' [--kustomization PATH] [--check] [--fail-on-change]
+  DIGEST_MAP='<json>' apply-test-overlay-digests.py [--check] [--fail-on-change]
 
 Exit:
   0 — applied (or, with --check, every mapped service resolvable + digests valid)
@@ -39,11 +39,10 @@ from pathlib import Path
 
 DEFAULT_KUSTOMIZATION = "kustomize/overlays/test/kustomization.yaml"
 
-# The backend services deploy-backend-testai.yml rolls out (its SERVICES array).
+# The backend services deploy-backend-testai.yml rolls out (its SERVICE_SPECS).
 # The digest map must contain ONLY these — a key outside this set (e.g. a
-# non-rolled backend entry such as endpoint-admin-service /
-# notification-orchestrator) is a contract violation and is rejected
-# fail-closed (Codex 019e407c P3).
+# non-rolled backend entry such as notification-orchestrator) is a contract
+# violation and is rejected fail-closed (Codex 019e407c P3).
 SYNC_SERVICES = frozenset({
     "auth-service",
     "permission-service",
@@ -52,6 +51,11 @@ SYNC_SERVICES = frozenset({
     "core-data-service",
     "report-service",
     "schema-service",
+    "endpoint-admin-service",
+    "audio-gateway-service",
+    "meeting-service",
+    "transcript-service",
+    "audit-event-consumer-service",
     "api-gateway",
 })
 
@@ -86,6 +90,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--check",
         action="store_true",
         help="Validate + report only; do not write the file.",
+    )
+    parser.add_argument(
+        "--fail-on-change",
+        action="store_true",
+        help="With --check, fail if any digest line would change.",
     )
     return parser.parse_args(argv)
 
@@ -193,6 +202,13 @@ def main(argv: list[str]) -> int:
         return 0
 
     if args.check:
+        if args.fail_on_change and changes:
+            print(
+                "[apply-test-overlay] --fail-on-change: overlay desired-state "
+                f"differs from digest map ({len(changes)} digest line(s) would change)",
+                file=sys.stderr,
+            )
+            return 1
         print(f"[apply-test-overlay] --check: {len(changes)} digest line(s) would change — not written")
         return 0
 

@@ -1,0 +1,99 @@
+# audit-retention-worker CronJob — Faz 24 KVKK audit-archive 7yr WORM (#1250-D, ADR-0042).
+#
+# Standalone retention worker (ADR-0042 D2): scheduled run-once Job that drains
+# the immutable audit_event.audit_event source on a no-gap contiguous-prefix seq
+# cursor, PER_TENANT hash-chain verify-before-archive (fail-closed), and writes
+# NDJSON.gz + manifest segments to host-compose MinIO under S3 Object Lock
+# COMPLIANCE (7yr) with version-id idempotency.
+#
+# Shape (Codex 019ed4f4 D-plan AGREE):
+#   - kind CronJob, ArgoCD-reconciled in the test overlay (recurring, unlike the
+#     one-shot etl-worker Job). NOT a Deployment → no Service, no api-gateway
+#     route, no services.yaml catalog entry (drift gate Check4 Deployment↔catalog
+#     does not apply).
+#   - concurrencyPolicy: Forbid — never two overlapping archive runs (a loser
+#     could create a stray object version → next run's latest-version anomaly).
+#   - jobTemplate backoffLimit 0 — the app owns fail-closed retry; a failed Job
+#     leaves the cursor frozen, the next schedule retries.
+#   - restartPolicy Never, activeDeadlineSeconds 3600 (no stuck job),
+#     ttlSecondsAfterFinished 86400 (24h log retention).
+#   - run-once mode (AUDIT_RETENTION_RUN_ONCE=true via ConfigMap); scheduler off.
+#   - image: digest-pinned by the overlay (OVERLAY_MUST_OVERRIDE fail-closed).
+#   - AUDIT_RETENTION_WORKER_IMAGE_DIGEST (ConfigMap) MUST equal the pinned digest
+#     (manifest/ledger evidence binding).
+#   - readOnlyRootFilesystem + emptyDir /tmp (Spring Boot temp); uid 1000
+#     (matches the worker Dockerfile non-root user).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-retention-worker
+  labels:
+    app.kubernetes.io/name: audit-retention-worker
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: audit-archive
+spec:
+  schedule: "0 3 * * *"          # daily 03:00 (low traffic); cursor resumable
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit-retention-worker
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: audit-archive
+    spec:
+      backoffLimit: 0             # app owns fail-closed retry; no K8s re-run
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit-retention-worker
+            app.kubernetes.io/component: backend
+            app.kubernetes.io/part-of: audit-archive
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          serviceAccountName: audit-retention-worker
+          imagePullSecrets:
+            - name: ghcr-pull
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: audit-retention-worker
+              # PLACEHOLDER — overlay MUST set via images: + newName + digest.
+              # Fail-closed: literal "OVERLAY_MUST_OVERRIDE" leak →
+              # gate-enforcement-check.yml CI guard rejects.
+              image: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker:OVERLAY_MUST_OVERRIDE
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - configMapRef:
+                    name: audit-retention-worker-config
+                - secretRef:
+                    name: audit-retention-worker-secrets
+                    optional: false
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: tmp
+              emptyDir: {}

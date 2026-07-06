@@ -1,0 +1,20 @@
+# Viewer http containerPort patch — Faz 22.6 #1580 VIEW_ONLY.
+#
+# The base bridge deployment advertises ONLY 9444 (bridge) + 8081 (management);
+# 8096 (http) is bound in-pod (SERVER_PORT=8096) but intentionally NOT declared
+# (control #5). This strategic-merge ADDS the http containerPort so the dedicated
+# ClusterIP viewer Service can target it by name. Merge key is containerPort, so
+# 9444 + 8081 are preserved; this only adds 8096.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: endpoint-admin-remote-bridge
+spec:
+  template:
+    spec:
+      containers:
+        - name: endpoint-admin-remote-bridge
+          ports:
+            - name: http
+              containerPort: 8096
+              protocol: TCP

@@ -1,14 +1,13 @@
 # Vault Test Instance — ADR-0002 Same-Host Isolation
 
-> **Container:** `platform-vault-test` · **Port:** 8201 · **Network:** `platform-test-net`
-> **Disk:** `/srv/platform/stateful/test/vault/{data,logs}`
+> **Container:** `platform-vault-test` · **Ports:** 8201 HTTP, 8302 HTTPS host-local · **Network:** `platform-test-net`
+> **Disk:** `/home/halil/platform-stateful/test/vault/{data,logs,tls}`
 > **Default state:** kapalı (scale-to-zero); ESO apply öncesi up edilir
 
 ## Kurulum
 
 ```bash
-sudo mkdir -p /srv/platform/stateful/test/vault/{data,logs}
-sudo chown -R 1000:1000 /srv/platform/stateful/test/vault
+mkdir -p /home/halil/platform-stateful/test/vault/{data,logs,tls}
 
 # ADR §5.1 enforce: profiles [manual] default-off
 docker compose --profile manual up -d
@@ -29,6 +28,41 @@ vault write auth/approle/role/eso-runtime token_policies=eso-runtime token_ttl=1
 
 # Test overlay role_id patch (overlays/test/eso/clustersecretstore-patch.yaml)
 vault read auth/approle/role/eso-runtime/role-id
+```
+
+## Faz 22.6 A1 HTTPS listener
+
+The existing HTTP listener on `:8200` remains the ESO path. The `:8202` HTTPS
+listener is reserved for backend TPM-attestation PKI signing:
+
+```text
+https://vault.platform-test.svc.cluster.local:8202
+```
+
+Before restarting Vault with the HTTPS listener, provision TLS material outside
+git:
+
+```text
+/home/halil/platform-stateful/test/vault/tls/ca.crt
+/home/halil/platform-stateful/test/vault/tls/tls.crt
+/home/halil/platform-stateful/test/vault/tls/tls.key
+```
+
+The certificate SAN set must include at least:
+
+```text
+vault.platform-test.svc.cluster.local
+vault.platform-test.svc
+vault
+localhost
+127.0.0.1
+```
+
+Validation without printing key material:
+
+```bash
+docker exec platform-vault-test sh -c \
+  'VAULT_ADDR=https://127.0.0.1:8202 VAULT_CACERT=/vault/tls/ca.crt vault status'
 ```
 
 ## İzolasyon

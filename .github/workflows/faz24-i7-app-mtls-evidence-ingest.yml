@@ -1,0 +1,144 @@
+name: Faz 24 I7 App mTLS Evidence Ingest
+
+# Validates metadata-only app-mTLS evidence for platform-ai#198. It does not
+# connect to Denetim PC, mutate Caddy/firewall/Vault/Kubernetes, or enable
+# direct-STT.
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_json_base64:
+        description: "Base64 of faz24-i7-app-mtls-evidence.json"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-i7-app-mtls-evidence-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: verify I7 app-mTLS evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      EVIDENCE_DIR: /tmp/faz24-i7-app-mtls-evidence-${{ github.run_id }}
+      EVIDENCE_JSON: /tmp/faz24-i7-app-mtls-evidence-${{ github.run_id }}/faz24-i7-app-mtls-evidence.json
+      SUMMARY_JSON: /tmp/faz24-i7-app-mtls-evidence-${{ github.run_id }}/verification-summary.json
+
+    steps:
+      - name: Validate dispatch input
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+
+          case "${EVIDENCE_JSON_BASE64}" in
+            *$'\n'*|*$'\r'*)
+              echo "::error::evidence_json_base64 must be a single line"
+              exit 1
+              ;;
+          esac
+
+          if [ "${#EVIDENCE_JSON_BASE64}" -gt 200000 ]; then
+            echo "::error::evidence_json_base64 is too large"
+            exit 1
+          fi
+
+          if ! printf '%s' "${EVIDENCE_JSON_BASE64}" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            echo "::error::evidence_json_base64 must be plain base64"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Decode evidence JSON
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          printf '%s' "${EVIDENCE_JSON_BASE64}" | base64 -d > "${EVIDENCE_JSON}"
+          python3 -m json.tool "${EVIDENCE_JSON}" > "${EVIDENCE_JSON}.pretty"
+          mv "${EVIDENCE_JSON}.pretty" "${EVIDENCE_JSON}"
+
+      - name: Verify I7 app-mTLS evidence
+        id: verify
+        continue-on-error: true
+        run: |
+          set +e
+          python3 scripts/faz24/verify-i7-app-mtls-evidence.py \
+            "${EVIDENCE_JSON}" \
+            --summary-json "${SUMMARY_JSON}" \
+            > "${EVIDENCE_DIR}/verifier.stdout" \
+            2> "${EVIDENCE_DIR}/verifier.stderr"
+          exit_code="$?"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          cat "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+          cat "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+          exit 0
+
+      - name: Verify artifact excludes private material
+        if: always()
+        id: verify_artifact
+        run: |
+          set -euo pipefail
+          if grep -R -E -- '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.|-----BEGIN CERTIFICATE-----' "${EVIDENCE_DIR}"; then
+            echo "::error::evidence artifact contains forbidden private/secret/raw-certificate material"
+            exit 1
+          fi
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 I7 app-mTLS evidence ingest"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-i7-app-mtls-evidence-${{ github.run_id }}\`"
+            echo "- Verifier exit code: \`${VERIFY_EXIT_CODE:-missing}\`"
+            echo
+            echo "Boundary: metadata-only evidence validation. This workflow does not connect to Denetim PC, mutate Caddy/firewall/Vault/Kubernetes, enable direct-STT, send audio, or make production ready."
+            echo
+            echo '```text'
+            sed -n '1,160p' "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+            sed -n '1,160p' "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence ingest artifact
+        if: always() && steps.verify_artifact.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-i7-app-mtls-evidence-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local evidence directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail workflow when evidence is rejected
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERIFY_EXIT_CODE}" ]; then
+            echo "::error::evidence verifier did not expose an exit code"
+            exit 1
+          fi
+          if [ "${VERIFY_EXIT_CODE}" != "0" ]; then
+            echo "::error::I7 app-mTLS evidence was rejected"
+            exit "${VERIFY_EXIT_CODE}"
+          fi

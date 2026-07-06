@@ -1,0 +1,94 @@
+# ArgoCD `RespectIgnoreDifferences` + Blanket `/metadata` Anti-pattern Gate
+#
+# Codex thread `019e41d7` AGREE / `019e4216` AGREE_WITH_REVISIONS — Session 42
+# (2026-05-19) bug class regression guard. PR #850 + PR #851 sealed the
+# `metadata.managedFields must be nil` Server-Side-Apply failure caused by
+# the combination of `RespectIgnoreDifferences=true` + a blanket
+# `/metadata` (or descendant) jsonPointer / jqPathExpression in
+# `spec.ignoreDifferences`. This workflow is a PR-time static analysis gate
+# that blocks the pattern from re-entering the codebase.
+#
+# Matching contract (see `scripts/governance/check_argocd_respect_ignore_diff.py`):
+#   - Risk mode: `RespectIgnoreDifferences=true` in syncOptions
+#   - Fail (in risk mode): JSON pointer `/metadata`, `/metadata/managedFields`,
+#     `/metadata/managedFields/*`, broad container `/metadata/annotations`,
+#     `/metadata/labels`; jq path `.metadata`, `.metadata.managedFields`,
+#     managedFields descendants
+#   - Pass: `/status`, `/spec/replicas`, `/metadata/annotations/<key>`,
+#     `/metadata/labels/<key>`, `/metadata/finalizers`
+#
+# Triggers:
+#   - workflow_dispatch (manual debug)
+#   - pull_request paths filter (script + tests + fixtures + ArgoCD apps + doc)
+#   - push to main paths filter (same set)
+#
+# Authority: Codex consensus only (no operator approval — read-only static
+# analysis, no state mutation, no credential read).
+
+name: gate — argocd-respect-ignore-diff
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/gate-argocd-respect-ignore-diff.yml"
+      - "scripts/governance/check_argocd_respect_ignore_diff.py"
+      - "tests/governance/test_check_argocd_respect_ignore_diff.py"
+      - "tests/governance/fixtures/argocd-respect-ignore-*.yaml"
+      - "argocd/applications/**/*.yaml"
+      - "docs/operations/argocd-respect-ignore-diff-antipattern.md"
+      - "AGENTS.md"
+      - "docs/context-priority-rules.md"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/gate-argocd-respect-ignore-diff.yml"
+      - "scripts/governance/check_argocd_respect_ignore_diff.py"
+      - "tests/governance/test_check_argocd_respect_ignore_diff.py"
+      - "tests/governance/fixtures/argocd-respect-ignore-*.yaml"
+      - "argocd/applications/**/*.yaml"
+      - "docs/operations/argocd-respect-ignore-diff-antipattern.md"
+      - "AGENTS.md"
+      - "docs/context-priority-rules.md"
+
+jobs:
+  argocd-respect-ignore-diff:
+    name: argocd RespectIgnoreDifferences + blanket /metadata regression guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Static analysis — argocd/applications/*.yaml
+        run: |
+          python3 scripts/governance/check_argocd_respect_ignore_diff.py --verbose
+
+      - name: JSON artifact
+        if: always()
+        run: |
+          python3 scripts/governance/check_argocd_respect_ignore_diff.py \
+            --json > /tmp/argocd-respect-ignore-diff-report.json || true
+          cat /tmp/argocd-respect-ignore-diff-report.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: argocd-respect-ignore-diff-report
+          path: /tmp/argocd-respect-ignore-diff-report.json
+          retention-days: 7
+
+      - name: Run unit tests
+        run: |
+          python3 -m unittest tests.governance.test_check_argocd_respect_ignore_diff -v

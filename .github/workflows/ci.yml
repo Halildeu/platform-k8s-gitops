@@ -40,6 +40,147 @@ jobs:
         run: kustomize build kustomize/base/rbac/prod-deploy-smoke > /tmp/rbac-prod-deploy-smoke.yaml
       - name: Build base/rbac/prod-operator-readonly (PR-3D staged readonly identity)
         run: kustomize build kustomize/base/rbac/prod-operator-readonly > /tmp/rbac-prod-operator-readonly.yaml
+      - name: Build base/endpoint-agent-mtls (Faz 22.5 M2 staged inert)
+        run: kustomize build kustomize/base/endpoint-agent-mtls > /tmp/endpoint-agent-mtls.yaml
+      - name: Endpoint Agent mTLS canonical host guard
+        run: bash scripts/test/endpoint-agent-mtls-hosts.sh
+      - name: AgentPC2 first-install bootstrap static guard
+        run: bash scripts/test/agentpc2-first-install-bootstrap-static.sh
+      - name: AgentPC2 constrained-executor acceptance static guard
+        run: bash scripts/test/agentpc2-constrained-executor-acceptance-static.sh
+      - name: AgentPC2 UPDATE_AGENT static guard
+        run: bash scripts/test/agentpc2-update-agent-static.sh
+      - name: AgentPC2 TPM auto-enroll packet static guard
+        run: bash scripts/test/agentpc2-tpm-autoenroll-packet-static.sh
+      - name: Faz 22.6 acceptance package workflows static guard
+        run: bash scripts/test/faz22-6-acceptance-package-workflows-static.sh
+      - name: platform-test GitOps sync static guard
+        run: bash scripts/test/platform-test-gitops-sync-static.sh
+      # Faz 22.6 D10-8 — remote-bridge broker isolation. Desired-state, NOT in
+      # the Argo root (owner-gated activation). Render sanity + isolation guards
+      # (Codex 019ebc51 P2 — machine-enforced, not self-attestation).
+      - name: Build base/apps/endpoint-admin-remote-bridge (D10-8 scaffold — staged)
+        run: kustomize build kustomize/base/apps/endpoint-admin-remote-bridge > /tmp/eab-bridge-base.yaml
+      - name: Build overlays/test/activation/endpoint-admin-remote-bridge (D10-8 activation — staged)
+        run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge > /tmp/eab-bridge-activation.yaml
+      - name: Build overlays/test/activation/endpoint-admin-remote-bridge-device-key (#548 child — staged)
+        run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key > /tmp/eab-bridge-device-key.yaml
+      - name: Build overlays/test/activation/endpoint-admin-remote-bridge-device-key-live (#548 live wrapper — staged)
+        run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live > /tmp/eab-bridge-device-key-live.yaml
+      - name: Build overlays/test/activation/endpoint-admin-remote-bridge-viewer (#1580 viewer — staged)
+        run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer > /tmp/eab-bridge-viewer.yaml
+      - name: D10-8 broker isolation guards (no part-of=platform; not in Argo root)
+        run: |
+          # control #1 — the broker must NEVER carry part-of=platform (it would
+          # match the broad platform ingress/egress allowlists in base/netpol).
+          if grep -q "part-of: platform" /tmp/eab-bridge-base.yaml; then
+            echo "❌ broker scaffold render carries app.kubernetes.io/part-of: platform — control #1 broken"; exit 1
+          fi
+          if grep -q "part-of: platform" /tmp/eab-bridge-activation.yaml; then
+            echo "❌ broker activation render carries app.kubernetes.io/part-of: platform — control #1 broken"; exit 1
+          fi
+          # desired-state boundary — the broker must NOT leak into the synced
+          # test Argo root (/tmp/test.yaml built above), else it could auto-roll.
+          if grep -q "endpoint-admin-remote-bridge" /tmp/test.yaml; then
+            echo "❌ endpoint-admin-remote-bridge leaked into overlays/test render — must stay out of the Argo root"; exit 1
+          fi
+          # control #11 — the scaffold must ship inert (replicas:0 + enabled false).
+          if ! grep -q "REMOTE_BRIDGE_ENABLED: \"false\"" /tmp/eab-bridge-base.yaml; then
+            echo "❌ scaffold ConfigMap missing REMOTE_BRIDGE_ENABLED=false — control #11 broken"; exit 1
+          fi
+          if ! grep -q "replicas: 0" /tmp/eab-bridge-base.yaml; then
+            echo "❌ scaffold Deployment is not replicas:0 — control #11 (inert) broken"; exit 1
+          fi
+          echo "✓ D10-8 broker isolation guards pass (no part-of=platform; not in Argo root; scaffold inert replicas:0/enabled=false)"
+      - name: "#548 device-key broker guards (REAL verifier; isolated; SNI wrapper)"
+        run: |
+          set -euo pipefail
+
+          # The strong device-key broker must stay isolated from the broad
+          # platform allowlists and out of the synced test Argo root.
+          if grep -q "part-of: platform" /tmp/eab-bridge-device-key.yaml; then
+            echo "❌ device-key child render carries app.kubernetes.io/part-of: platform"
+            exit 1
+          fi
+          if grep -q "part-of: platform" /tmp/eab-bridge-device-key-live.yaml; then
+            echo "❌ device-key live wrapper render carries app.kubernetes.io/part-of: platform"
+            exit 1
+          fi
+          if grep -q "endpoint-admin-remote-bridge-device-key" /tmp/test.yaml; then
+            echo "❌ device-key broker leaked into overlays/test render — must stay owner-gated"
+            exit 1
+          fi
+
+          # #548 must exercise the real hardware/device-key verifier path, not
+          # the bounded pilot acceptance path used by the shared broker.
+          grep -F 'REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: DEVICE_KEY_ATTESTATION_REAL' \
+            /tmp/eab-bridge-device-key-live.yaml
+          grep -F 'REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "false"' \
+            /tmp/eab-bridge-device-key-live.yaml
+          if grep -q "REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED" \
+            /tmp/eab-bridge-device-key-live.yaml; then
+            echo "❌ device-key broker render contains bounded pilot risk-acceptance flag"
+            exit 1
+          fi
+
+          grep -F "name: endpoint-admin-remote-bridge-mtls" /tmp/eab-bridge-device-key-live.yaml
+          grep -F "host: remote-bridge-mtls.testai.acik.com" /tmp/eab-bridge-device-key-live.yaml
+          grep -F "name: endpoint-admin-remote-bridge-device-key" /tmp/eab-bridge-device-key-live.yaml
+          grep -F "maxSurge: 0" /tmp/eab-bridge-device-key-live.yaml
+          grep -F "maxUnavailable: 1" /tmp/eab-bridge-device-key-live.yaml
+
+          IMG=ghcr.io/halildeu/platform-backend-endpoint-admin-service
+          digest_count="$(grep -oE "image: ${IMG}@sha256:[0-9a-f]{64}" \
+            /tmp/eab-bridge-device-key-live.yaml | sort -u | wc -l | tr -d ' ')"
+          if [ "${digest_count}" != "1" ]; then
+            echo "❌ device-key live wrapper must render exactly one immutable endpoint-admin-service digest"
+            exit 1
+          fi
+
+          echo "✓ #548 device-key broker guards pass (REAL verifier; isolated; owner-gated SNI wrapper)"
+      - name: "#1580 VIEW_ONLY viewer exposure guards (ClusterIP-only; owner-gated)"
+        run: |
+          set -euo pipefail
+
+          # The viewer surface is an owner-gated superset overlay. It must stay
+          # isolated from platform-wide NetworkPolicies and out of the synced
+          # test Argo root.
+          if grep -q "part-of: platform" /tmp/eab-bridge-viewer.yaml; then
+            echo "❌ viewer render carries app.kubernetes.io/part-of: platform"
+            exit 1
+          fi
+          if grep -q "endpoint-admin-remote-bridge-viewer" /tmp/test.yaml; then
+            echo "❌ viewer overlay leaked into overlays/test render — must stay owner-gated"
+            exit 1
+          fi
+
+          grep -A1 -F 'name: REMOTE_BRIDGE_ENABLED' /tmp/eab-bridge-viewer.yaml \
+            | grep -F 'value: "true"'
+          grep -F 'REMOTE_BRIDGE_VIEWER_ENABLED: "true"' /tmp/eab-bridge-viewer.yaml
+          grep -F 'REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES: image/png' \
+            /tmp/eab-bridge-viewer.yaml
+          grep -F 'containerPort: 8096' /tmp/eab-bridge-viewer.yaml
+
+          grep -F 'name: endpoint-admin-remote-bridge-viewer' /tmp/eab-bridge-viewer.yaml
+          grep -F 'type: ClusterIP' /tmp/eab-bridge-viewer.yaml
+          if awk '
+              /^---[[:space:]]*$/ { in_viewer_service = 0 }
+              /name: endpoint-admin-remote-bridge-viewer/ { in_viewer_service = 1 }
+              in_viewer_service && /nodePort:/ { bad = 1 }
+              END { exit bad ? 0 : 1 }
+            ' /tmp/eab-bridge-viewer.yaml; then
+            echo "❌ viewer Service rendered a nodePort; 8096 must stay ClusterIP-only"
+            exit 1
+          fi
+          grep -F 'nodePort: 31944' /tmp/eab-bridge-viewer.yaml
+
+          grep -F 'name: eab-bridge-viewer-allow-ingress-8096-from-api-gateway' \
+            /tmp/eab-bridge-viewer.yaml
+          grep -F 'name: eab-api-gateway-allow-egress-8096-to-bridge-viewer' \
+            /tmp/eab-bridge-viewer.yaml
+          grep -F 'app.kubernetes.io/name: api-gateway' /tmp/eab-bridge-viewer.yaml
+
+          echo "✓ #1580 VIEW_ONLY viewer exposure guards pass (ClusterIP-only; owner-gated; route still runtime-patched)"
       # Faz 17.Z — PR'da blocking: local overlay'ler render sanity (lokal dev drift yakalama)
       - name: Build overlays/local-authn-min (Faz 17.2)
         run: kustomize build kustomize/overlays/local-authn-min > /tmp/local-authn-min.yaml

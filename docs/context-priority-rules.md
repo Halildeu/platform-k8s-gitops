@@ -153,6 +153,33 @@ Doğru yaklaşım:
 - blocker
 - sıradaki kapı
 
+### 4.5 Faz 24 Legal Track vs Engineering Gate
+
+Faz 24 Meeting Intelligence için KVKK/VERBIS/hukuk owner acceptance, owner
+bildirimi kayda alındıktan sonra mühendislik completion blocker'ı değildir.
+Mühendislik değerlendirmesi şunları arar:
+
+- retention/silme süreleri owner tarafından sonra verilebilen parametrelerdir;
+  hardcoded süre veya sınırsız default kabul edilmez
+- eksik owner duration değeri veya sabit süre seçilmemiş olması engineering
+  blocker değildir **yalnız** fail-closed/refuse-to-store default aktifse;
+  owner uygun değeri verdiğinde config/evidence olarak uygulanır
+- saklama default'u fail-closed olur: owner parametresi yoksa durable storage
+  açılmaz veya ilgili path refuse-to-store davranır
+- consent default required, deletion pipeline default enabled, redaction/audit
+  kontrolleri machine-checkable evidence ile doğrulanır
+- legal acceptance, VERBIS güncelliği, DPA veya production legal go agent/CI/PR
+  tarafından iddia edilmez
+- veri akışı, recording/retention modu, consent/deletion boundary veya
+  legal-vs-engineering ayrımı değişirse `ADR-0030` D6 tetiklenir; karar önce
+  provider-distinct cross-AI istişareyle değerlendirilir ve ADR'ye bağlanmadan
+  canonical kural sayılmaz
+
+Doğru status dili: "engineering G-COMP controls pass/pending", "legal track
+parallel/pending", "production legal go owner-gated". Yanlış status dili:
+"KVKK accepted", "VERBIS closed", "legal review not required" veya legal
+pending olduğu için mühendislik gate'ini otomatik blocked saymak.
+
 ---
 
 ## 5. Testten Proda Promotion Semantiği
@@ -250,3 +277,59 @@ Aktif iş durumu, açık risk/issue ve milestone/gate `Status`'ü **[platform Ro
 - **Source-of-truth sınırı.** Board aktif iş `Status`'ü için canonical; `current-state.md` runtime truth kalır; bir item iki yerde bağımsız yürütülmez.
 
 Detaylı protokol (agent-state şablonu, claim protokolü, comment taxonomy, eligible-work filtresi): **[docs/board-protocol.md](board-protocol.md)**.
+
+---
+
+## 10. Agent İletişimi — Mavis CLI
+
+Lokal agent'lar (paralel Claude session'lar dahil) arası ve kullanıcı ile koordinasyon kanalı **Mavis CLI**'dir. Multi-session geliştirme modelinde paralel agent koordinasyonu için tek standart kanal.
+
+### 3 Yol (öncelik sırası)
+
+- **Session ID** (en kesin): `mvs_<id>` — bilinen session'a direkt mesaj
+- **Agent name** (daha portable): `agent-<name>` — session crash'inde Agent name persist, yeni session ile devam eder
+- **`peers`** (discovery): kim erişilebilir görmek için
+
+```bash
+# Discovery
+mavis communication peers
+
+# Send (Session ID veya Agent name ile)
+mavis communication send --to <id|name> --command prompt --content "..."
+```
+
+### Ne zaman
+
+- Multi-session paralel iş koordinasyonu
+- Async tamamlanma bildirimi (örn. "build done, deploy hazır")
+- Agent handoff / iş paylaşımı / context transfer
+- Long-running operation trigger gönderme
+
+### Redaction guard (zorunlu)
+
+`--content` içine **YASAK**:
+
+- Secret, JWT, refresh token, raw bearer
+- Webhook URL, cookie, OAuth client secret
+- Private key, signing key, HMAC secret
+- Admin credential (password, root token)
+- Kullanıcı PII (kullanıcı email/telefon/UPN)
+
+Sebep: `--content` shell history, process list, Mavis transport/log queue ve karşı peer transcript'ine düşebilir. Gerekirse sadece **redacted özet + evidence path/issue/PR linki** gönderilir.
+
+### Acceptance gate bypass değil
+
+Mavis bildirimi **yerine geçmez**:
+
+- Board claim (`Claim-before-work` kuralı bypass değil)
+- Live evidence (D29 Up/Functional/Secured ayrı kanıt)
+- Browser smoke kanıtı (HARD RULE Tarayıcıdan Sonuç Doğrulanmadan)
+- PR/CI truth (HARD RULE CI Kırmızıyken Merge YASAK)
+- Runtime acceptance (No Fake Work — yalnız koordinasyon kanıtı)
+
+"X session'a haber verdim" demek "iş bitti / accepted" demek **değildir**. Acceptance ayrı kapı; Mavis sadece async iletişim kanalı.
+
+### Detay
+
+- Repo: [AGENTS.md §3 HARD RULE](../AGENTS.md) (kısa canonical bullet) + [CLAUDE.md Ana Kurallar #0](../CLAUDE.md) (proje-spesifik genişletme)
+- Global: `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı geniş açıklama + akış detayları + HARD RULE bağlantıları)

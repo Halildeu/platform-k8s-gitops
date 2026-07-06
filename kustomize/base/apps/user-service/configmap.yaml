@@ -89,6 +89,21 @@ data:
   SERVICE_AUTH_ISSUER: "auth-service"
   SERVICE_AUTH_JWK_SET_URI: "http://auth-service:8088/oauth2/jwks"
 
+  # #734: user-service MINTS a notification-orchestrator-audience service token
+  # (client_credentials → auth-service) to POST the admin "new user awaiting
+  # activation" email via the internal notify endpoint. CLIENT_SECRET comes from
+  # ESO (service_token_client_secret). The token audience/permissions are set
+  # per-call in code (getToken("notification-orchestrator", ["notify:intents:system"])).
+  SERVICE_TOKEN_MINT_URL: "http://auth-service:8088/oauth2/token"
+  SERVICE_TOKEN_CLIENT_ID: "user-service"
+  # Admin "awaiting activation" notification (#734). DEFAULT off (prod-safe): the
+  # test overlay flips it to "true" (testai activation); prod stays off until its
+  # own Vault cred (service_token_client_secret) is seeded + explicitly enabled.
+  USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED: "false"
+  USER_PENDING_ACTIVATION_NOTIFICATION_BASE_URL: "http://notification-orchestrator:8089"
+  USER_PENDING_ACTIVATION_NOTIFICATION_ADMIN_EMAIL: "halil.kocoglu@serban.com.tr"
+  USER_PENDING_ACTIVATION_NOTIFICATION_ORG_ID: "platform-system"
+
   # 2026-05-14 D1.2 reconcile: 3 SECURITY_JWT_* programmatic decoder env'leri
   # inline'dan ConfigMap'e taşındı (D1.1a pattern: intended inline=2 olmak — yalnız
   # SPRING_PROFILES_ACTIVE + JAVA_TOOL_OPTIONS; gerisi envFrom üzerinden).

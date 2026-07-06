@@ -1,0 +1,178 @@
+name: Faz 24 WG-B+ I3 Evidence
+
+# Metadata-only live evidence collector for platform-k8s-gitops#1864.
+# It runs on the self-hosted staging-sw runner because GitHub-hosted runners
+# cannot reach the WireGuard-canonical Denetim management path.
+
+on:
+  workflow_dispatch:
+    inputs:
+      denetim_ssh_target:
+        description: "Denetim SSH metadata target"
+        required: true
+        default: "svc-denetim-agent@10.99.0.2"
+      lookback_hours:
+        description: "Audit metadata lookback window in hours"
+        required: true
+        default: "2"
+      wg_interface:
+        description: "staging-sw WireGuard interface or auto"
+        required: true
+        default: "auto"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: faz24-wg-bplus-i3-evidence
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: collect metadata-only I3 evidence
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 10
+
+    env:
+      EVIDENCE_DIR: /tmp/faz24-wg-bplus-i3-evidence-${{ github.run_id }}
+      EVIDENCE_JSON: /tmp/faz24-wg-bplus-i3-evidence-${{ github.run_id }}/wg-bplus-i3-evidence.json
+      SSH_IDENTITY_PATH: ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          DENETIM_SSH_TARGET_INPUT: ${{ inputs.denetim_ssh_target }}
+          LOOKBACK_HOURS_INPUT: ${{ inputs.lookback_hours }}
+          WG_INTERFACE_INPUT: ${{ inputs.wg_interface }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline denetim_ssh_target "${DENETIM_SSH_TARGET_INPUT}"
+          reject_multiline lookback_hours "${LOOKBACK_HOURS_INPUT}"
+          reject_multiline wg_interface "${WG_INTERFACE_INPUT}"
+
+          if ! printf '%s' "${DENETIM_SSH_TARGET_INPUT}" | grep -Eq '^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$'; then
+            echo "::error::denetim_ssh_target must look like user@host"
+            exit 1
+          fi
+
+          if ! printf '%s' "${LOOKBACK_HOURS_INPUT}" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "::error::lookback_hours must be a positive integer"
+            exit 1
+          fi
+
+          if ! printf '%s' "${WG_INTERFACE_INPUT}" | grep -Eq '^[A-Za-z0-9_.:-]+$'; then
+            echo "::error::wg_interface contains unsupported characters"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Collect metadata-only evidence
+        id: collect
+        env:
+          DENETIM_SSH_TARGET_INPUT: ${{ inputs.denetim_ssh_target }}
+          LOOKBACK_HOURS_INPUT: ${{ inputs.lookback_hours }}
+          WG_INTERFACE_INPUT: ${{ inputs.wg_interface }}
+          FAZ24_I3_SSH_IDENTITY_PATH: ${{ env.SSH_IDENTITY_PATH }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${EVIDENCE_DIR}"
+          python3 scripts/faz24/collect-wg-bplus-i3-evidence.py \
+            --output "${EVIDENCE_JSON}" \
+            --denetim-target "${DENETIM_SSH_TARGET_INPUT}" \
+            --lookback-hours "${LOOKBACK_HOURS_INPUT}" \
+            --wg-interface "${WG_INTERFACE_INPUT}" \
+            --ssh-identity-path "${FAZ24_I3_SSH_IDENTITY_PATH}" \
+            --retention-days 14 \
+            | tee "${EVIDENCE_DIR}/collector-summary.txt"
+
+      - name: Verify evidence contract
+        id: verify
+        continue-on-error: true
+        run: |
+          set +e
+          python3 scripts/faz24/verify-wg-bplus-i3-evidence.py "${EVIDENCE_JSON}" \
+            > "${EVIDENCE_DIR}/verifier.stdout" \
+            2> "${EVIDENCE_DIR}/verifier.stderr"
+          exit_code="$?"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          if [ "${exit_code}" = "0" ]; then
+            cat "${EVIDENCE_DIR}/verifier.stdout"
+          else
+            cat "${EVIDENCE_DIR}/verifier.stderr"
+          fi
+          exit 0
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          verify_exit_code="${VERIFY_EXIT_CODE:-missing}"
+          {
+            echo "## Faz 24 WG-B+ I3 evidence"
+            echo
+            echo "- Runner: self-hosted staging-sw"
+            echo "- Denetim target: redacted; stable hash is in the evidence JSON"
+            echo "- Runner SSH identity: path hash and public-key metadata are in \`collector.denetimSshPreflight\`"
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-wg-bplus-i3-evidence-${{ github.run_id }}\`"
+            echo "- Verifier exit code: \`${verify_exit_code}\`"
+            echo
+            echo "Boundary: metadata only. No raw audio, transcript text, command/script content, token, cookie, private key, or bearer material is intentionally exported."
+            echo
+            echo '```text'
+            sed -n '1,120p' "${EVIDENCE_DIR}/collector-summary.txt" 2>/dev/null || true
+            sed -n '1,160p' "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+            sed -n '1,160p' "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload metadata evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-wg-bplus-i3-evidence-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local evidence directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail workflow when I3 verifier rejects evidence
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          exit_code="${VERIFY_EXIT_CODE}"
+          if [ -z "${exit_code}" ]; then
+            echo "::error::I3 verifier did not expose an exit code"
+            exit 1
+          fi
+          if [ "${exit_code}" != "0" ]; then
+            echo "::error::I3 metadata evidence was collected but did not pass the acceptance verifier"
+            exit "${exit_code}"
+          fi

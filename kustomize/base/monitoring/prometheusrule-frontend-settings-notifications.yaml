@@ -1,0 +1,90 @@
+# DiD-2 (defense-in-depth follow-up, 2026-05-21):
+# PrometheusRule for the /settings/notifications synthetic Probe CRs added in
+# blackbox-exporter.yaml (frontend-{prod,testai}-settings-notifications).
+#
+# 2 alerts:
+#   1. FrontendSettingsNotificationsProbeFailing — probe returning non-2xx
+#      sustained for 5m → critical (real edge regression: nginx down,
+#      ingress 5xx, TLS cert expiry, DNS failure, etc.).
+#   2. FrontendSettingsNotificationsProbeStale — probe sample series
+#      missing for 10m → warning (blackbox-exporter Deployment or Probe CR
+#      itself in a broken state; per-job to distinguish prod-vs-testai).
+#
+# Scope and known limits:
+#   - HTTP-level only. JS console errors / client-side stuck-UI (the
+#     2026-05-21 PermissionProvider AuthNotReadyError pattern) are NOT
+#     visible to blackbox; that requires a browser-based synthetic
+#     (Playwright headless CronJob — separate follow-up PR).
+#   - Probe `module: http_200` accepts only 200 (existing nginx SPA
+#     fallback contract — kustomize/base/apps/frontend/nginx-default.conf
+#     index.html catch-all returns 200 for unknown SPA routes).
+#
+# Selector contract (label `release: kube-prometheus-stack`) matches the
+# existing rule discovery pattern; see prometheusrule-frontend-federation-
+# smoke-common.yaml for precedent.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: frontend-settings-notifications-probe-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: frontend-settings-notifications-probe
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: platform
+    # kube-prometheus-stack PrometheusRule discovery contract — same label
+    # used by every other rule in this directory (see Codex 019e26c5 R5
+    # absorb note in prometheusrule-frontend-federation-smoke-common.yaml).
+    release: kube-prometheus-stack
+    team: frontend
+spec:
+  groups:
+    - name: frontend-settings-notifications-probe
+      interval: 1m
+      rules:
+        # 1. Probe sustained failure — real edge regression.
+        - alert: FrontendSettingsNotificationsProbeFailing
+          expr: |
+            probe_success{job=~"blackbox-(testai|prod)-settings-notifications"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            team: frontend
+            alert_class: synthetic-smoke
+          annotations:
+            summary: "/settings/notifications synthetic probe failing on {{ $labels.edge }}"
+            description: |
+              Blackbox HTTP probe to https://{{ $labels.host }}/settings/notifications
+              has returned non-200 for ≥5m sustained. Real edge regression:
+              check nginx pod state, ingress controller, TLS cert expiry, DNS,
+              upstream API gateway. Job: {{ $labels.job }}, edge: {{ $labels.edge }}.
+              Live verify: curl -I https://{{ $labels.host }}/settings/notifications
+              Runbook: docs/runbooks/RB-synthetic-frontend-probes.md
+
+        # 2. Probe series missing — blackbox-exporter or Probe CR broken.
+        # Per-job `absent_over_time` so a partial outage (testai gone, prod
+        # alive) still produces a per-edge alert with the right label set
+        # rather than going silent because only one of two jobs missing.
+        # Without the per-job split, the `absent_over_time` expression
+        # silently swallows the alert when at least one matching series
+        # still exists, regardless of which edge dropped out.
+        - alert: FrontendSettingsNotificationsProbeStale
+          expr: |
+            absent_over_time(probe_success{job="blackbox-prod-settings-notifications"}[10m]) == 1
+            or
+            absent_over_time(probe_success{job="blackbox-testai-settings-notifications"}[10m]) == 1
+          for: 5m
+          labels:
+            severity: warning
+            team: frontend
+            alert_class: synthetic-smoke
+          annotations:
+            summary: "Frontend /settings/notifications probe series missing"
+            description: |
+              No probe_success samples in last 10m for one or both
+              blackbox-{prod,testai}-settings-notifications jobs.
+              Likely cause: blackbox-exporter Deployment down, Probe CR not
+              discovered by Prometheus, or scrape config broken.
+              Live verify: kubectl -n monitoring get probe; kubectl -n
+              monitoring get pods -l app.kubernetes.io/name=blackbox-exporter
+              Note: alert vector has no $labels.job — both jobs collapse
+              into one alert; check the description text for which edge.

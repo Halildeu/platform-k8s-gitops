@@ -71,3 +71,7 @@ spec:
           port: 8080              # Keycloak (host'ta 8081/8082, service içeri 8080)
         - protocol: TCP
           port: 8200              # Vault
+        - protocol: TCP
+          port: 6379              # Redis Streams (Faz 24 chunk transport — ADR-0031 D2)
+        - protocol: TCP
+          port: 9000              # MinIO S3 (Faz 24 #1250 audit-archive 7yr WORM — ADR-0042)

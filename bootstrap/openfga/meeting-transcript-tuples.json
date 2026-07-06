@@ -1,0 +1,107 @@
+{
+  "_comment": "Faz 24 Meeting Intelligence (gitops#1615 activation) — meeting-service (#410) + transcript-service (#411) OpenFGA Zanzibar-ready tuple seed (test overlay live smoke).",
+  "_purpose": "module:MEETING + module:TRANSCRIPT instance + grant tuple seed → @RequireModule(module:MEETING|TRANSCRIPT) gate'i fail-closed-deny'dan enforce'a taşır. Test admin (user:1) full + test viewer (user:9102) view-only (deny-by-relation proof). UPPERCASE object id (ADR-0041 §5 Option A, Codex 019ed603): catalog key == role_permissions.permission_key == OpenFGA object id == servis @RequireModule literal'i (MeetingAuthz/TranscriptAuthz.MODULE) — dördü de AYNI string; MODULE write path case transform YAPMAZ.",
+  "_scope": "test-only bootstrap exception (endpoint-admin BE-009 emsali, Codex 019de00f revize ile aynı disiplin). Test cluster k3d-test, realm platform-test. PRODUCTION realm 'serban' tuple SET edilmez.",
+  "_reference": "endpoint-admin emsali: bootstrap/openfga/endpoint-admin-tuples.json + docs/RB-22-1-1-be-009-openfga-live.md. ADR-0012-EA DD-EA-2: OpenFGA tuple writer canonical = permission-service. Faz 24 modülleri için henüz ayrı governance charter YOK; bu seed test-cluster synthetic Zanzibar proof'tur — prod/canonical seed permission-service tuple-writer üzerinden formalize edilmeli (Codex cross-AI review onayına tabi).",
+  "_invariants": [
+    "Wildcard subject (user:*) YASAK — explicit numeric user IDs only",
+    "Production realm 'serban' tuple SET edilmez (test=platform-test only)",
+    "Test subject = numeric user ID (mock persona, prod kullanıcısı DEĞİL; user:1 = admin@example.com test persona userId claim'i)",
+    "Idempotent: LIVE OpenFGA duplicate tuple write → HTTP 400 'cannot write a tuple which already exists' (NOT 409; verified 2026-06-17 k3d-test). Batch write fails atomically on ANY duplicate → seed script writes per-tuple + treats already-exists 400/409 as idempotent OK.",
+    "Relation kontratı live model 'module' type'tan: can_view / can_manage (can_edit / blocked mevcut ama bu seed'de kullanılmıyor)"
+  ],
+  "_apply_via": "TEST bootstrap: direct OpenFGA REST write via meeting-service pod (OpenFGA pod'da curl yok). Script (repo canonical path): scripts/faz24/openfga-meeting-transcript-seed.sh. Script bu JSON'un `.tuples[]` (write payload) + `.smoke_checks[]` (allow/deny assert) array'lerini single-source-of-truth olarak okur (jq host'ta mevcut, staging-sw'de koşar). CANONICAL/prod path = permission-service OpenFGA bootstrap endpoint (DD-EA-2). Bu test-seed prod'a taşınmadan permission-service yoluna çevrilmeli.",
+  "_live_verified_2026_06_17_lowercase_SUPERSEDED": "(SUPERSEDED baseline — lowercase) k3d-test store 01KPP0CFP4G82K42Y6NYSPT4JF model 01KS8QE8T1EJ2DF5CRS4VV9YX1. lowercase module:meeting/module:transcript 7/7 smoke. ADR-0041 §5 Option A ile UPPERCASE'e geçildi; staged re-seed runbook docs/runbooks/RB-faz24-mt-uppercase-reseed.md.",
+  "_uppercase_align_2026_06_17": "Option A (Codex 019ed603): servisler module:MEETING/module:TRANSCRIPT check eder. Staged live transition (delete-first DEĞİL): (1) backend #688 merge+image, (2) bu uppercase JSON ile seed script çalıştır → uppercase tuple'lar ADDITIVE eklenir (lowercase durur), (3) yeni uppercase imaj pod'ları deploy + 7/7 smoke, (4) lowercase tuple'ları DELETE + 7/7 tekrar, (5) permission-service writer-path prod-gate evidence (grant→outbox→tuple→endpoint 200).",
+  "model": "module type relation set (define module: can_view, can_manage, can_edit, blocked). meeting/transcript = module instances (module:MEETING, module:TRANSCRIPT — UPPERCASE).",
+  "tuples": [
+    {
+      "_role": "meeting admin (test persona user:1) — full module access via can_manage",
+      "user": "user:1",
+      "relation": "can_manage",
+      "object": "module:MEETING"
+    },
+    {
+      "_role": "meeting admin (test persona user:1) — explicit can_view (emsal: her ikisi explicit yazılır)",
+      "user": "user:1",
+      "relation": "can_view",
+      "object": "module:MEETING"
+    },
+    {
+      "_role": "transcript admin (test persona user:1) — full module access via can_manage",
+      "user": "user:1",
+      "relation": "can_manage",
+      "object": "module:TRANSCRIPT"
+    },
+    {
+      "_role": "transcript admin (test persona user:1) — explicit can_view",
+      "user": "user:1",
+      "relation": "can_view",
+      "object": "module:TRANSCRIPT"
+    },
+    {
+      "_role": "meeting viewer (test persona user:9102) — view-only (deny-by-relation: can_manage YOK)",
+      "user": "user:9102",
+      "relation": "can_view",
+      "object": "module:MEETING"
+    },
+    {
+      "_role": "transcript viewer (test persona user:9102) — view-only",
+      "user": "user:9102",
+      "relation": "can_view",
+      "object": "module:TRANSCRIPT"
+    }
+  ],
+  "_smoke_checks_doc": "Structured allow/deny assertions — single persistent source for the seed script (scripts/faz24/openfga-meeting-transcript-seed.sh) to run post-seed /check and fail-closed (exit 1) on any mismatch. expect_allowed=true → ALLOW; false → DENY (or DENY-by-relation). Covers admin full grant (user:1), unknown subject deny (user:0), viewer deny-by-relation (user:9102 can_manage), and viewer allow (user:9102 can_view transcript).",
+  "smoke_checks": [
+    {
+      "_label": "ALLOW admin can_view meeting",
+      "user": "user:1",
+      "relation": "can_view",
+      "object": "module:MEETING",
+      "expect_allowed": true
+    },
+    {
+      "_label": "ALLOW admin can_manage meeting",
+      "user": "user:1",
+      "relation": "can_manage",
+      "object": "module:MEETING",
+      "expect_allowed": true
+    },
+    {
+      "_label": "ALLOW admin can_view transcript",
+      "user": "user:1",
+      "relation": "can_view",
+      "object": "module:TRANSCRIPT",
+      "expect_allowed": true
+    },
+    {
+      "_label": "ALLOW admin can_manage transcript",
+      "user": "user:1",
+      "relation": "can_manage",
+      "object": "module:TRANSCRIPT",
+      "expect_allowed": true
+    },
+    {
+      "_label": "DENY unknown subject can_view meeting",
+      "user": "user:0",
+      "relation": "can_view",
+      "object": "module:MEETING",
+      "expect_allowed": false
+    },
+    {
+      "_label": "DENY-by-relation viewer can_manage meeting (viewer has no manage)",
+      "user": "user:9102",
+      "relation": "can_manage",
+      "object": "module:MEETING",
+      "expect_allowed": false
+    },
+    {
+      "_label": "ALLOW-viewer can_view transcript",
+      "user": "user:9102",
+      "relation": "can_view",
+      "object": "module:TRANSCRIPT",
+      "expect_allowed": true
+    }
+  ]
+}

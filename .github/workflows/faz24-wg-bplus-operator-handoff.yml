@@ -1,0 +1,221 @@
+name: Faz 24 WG-B+ Operator Handoff
+
+# Builds a metadata-only operator handoff package for the remaining I3/I6
+# evidence steps. It does not connect to Denetim PC or staging-sw, does not
+# collect live evidence, and does not mutate host, cluster, WireGuard,
+# platform-ai, secrets, or production state.
+
+on:
+  workflow_dispatch:
+    inputs:
+      operator_batch_id:
+        description: "Symbolic operator batch id"
+        required: true
+        default: "faz24-wg-bplus-20260628"
+      i3_identity_run_id:
+        description: "I3 runner SSH identity workflow run id"
+        required: true
+        default: "28326845949"
+      i3_authorize_package_run_id:
+        description: "I3 Denetim SSH authorize package workflow run id"
+        required: true
+        default: "28326859105"
+      i3_public_key_fingerprint:
+        description: "Expected runner public key fingerprint"
+        required: true
+        default: "SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y"
+      i3_public_key_line_sha256:
+        description: "Expected runner public key line SHA256"
+        required: true
+        default: "83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff"
+      i3_public_key_blob_sha256:
+        description: "Expected runner public key blob SHA256"
+        required: true
+        default: "e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756"
+      i6_host_package_run_id:
+        description: "I6 host-evidence package workflow run id"
+        required: true
+        default: "28151747361"
+      denetim_ssh_target:
+        description: "Denetim SSH target used by the I3 evidence workflow"
+        required: true
+        default: "svc-denetim-agent@10.99.0.2"
+      i6_target_host:
+        description: "Host where I6 operator package is run"
+        required: true
+        default: "staging-sw"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-wg-bplus-operator-handoff
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: build WG-B+ operator handoff package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      HANDOFF_DIR: /tmp/faz24-wg-bplus-operator-handoff-${{ github.run_id }}
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          OPERATOR_BATCH_ID: ${{ inputs.operator_batch_id }}
+          I3_IDENTITY_RUN_ID: ${{ inputs.i3_identity_run_id }}
+          I3_AUTHORIZE_PACKAGE_RUN_ID: ${{ inputs.i3_authorize_package_run_id }}
+          I3_PUBLIC_KEY_FINGERPRINT: ${{ inputs.i3_public_key_fingerprint }}
+          I3_PUBLIC_KEY_LINE_SHA256: ${{ inputs.i3_public_key_line_sha256 }}
+          I3_PUBLIC_KEY_BLOB_SHA256: ${{ inputs.i3_public_key_blob_sha256 }}
+          I6_HOST_PACKAGE_RUN_ID: ${{ inputs.i6_host_package_run_id }}
+          DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          I6_TARGET_HOST: ${{ inputs.i6_target_host }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "${value}" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be single-line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline operator_batch_id "${OPERATOR_BATCH_ID}"
+          reject_multiline i3_identity_run_id "${I3_IDENTITY_RUN_ID}"
+          reject_multiline i3_authorize_package_run_id "${I3_AUTHORIZE_PACKAGE_RUN_ID}"
+          reject_multiline i3_public_key_fingerprint "${I3_PUBLIC_KEY_FINGERPRINT}"
+          reject_multiline i3_public_key_line_sha256 "${I3_PUBLIC_KEY_LINE_SHA256}"
+          reject_multiline i3_public_key_blob_sha256 "${I3_PUBLIC_KEY_BLOB_SHA256}"
+          reject_multiline i6_host_package_run_id "${I6_HOST_PACKAGE_RUN_ID}"
+          reject_multiline denetim_ssh_target "${DENETIM_SSH_TARGET}"
+          reject_multiline i6_target_host "${I6_TARGET_HOST}"
+
+          all_inputs="${OPERATOR_BATCH_ID}${I3_IDENTITY_RUN_ID}${I3_AUTHORIZE_PACKAGE_RUN_ID}${I3_PUBLIC_KEY_FINGERPRINT}${I3_PUBLIC_KEY_LINE_SHA256}${I3_PUBLIC_KEY_BLOB_SHA256}${I6_HOST_PACKAGE_RUN_ID}${DENETIM_SSH_TARGET}${I6_TARGET_HOST}"
+          if printf '%s' "${all_inputs}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.'; then
+            echo "::error::inputs must not contain private/secret-like material"
+            exit 1
+          fi
+          if ! printf '%s' "${OPERATOR_BATCH_ID}${I6_TARGET_HOST}" | grep -Eq '^[A-Za-z0-9_.:@/-]+$'; then
+            echo "::error::name-like inputs contain unsupported characters"
+            exit 1
+          fi
+          if printf '%s' "${OPERATOR_BATCH_ID}${I6_TARGET_HOST}" | grep -Eq '(^/|(^|/)\.\.(/|$)|^[A-Za-z]:)'; then
+            echo "::error::name-like inputs must stay inside the handoff boundary"
+            exit 1
+          fi
+          if ! printf '%s' "${I3_IDENTITY_RUN_ID}${I3_AUTHORIZE_PACKAGE_RUN_ID}${I6_HOST_PACKAGE_RUN_ID}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::run ids must be numeric"
+            exit 1
+          fi
+          if ! printf '%s' "${I3_PUBLIC_KEY_FINGERPRINT}" | grep -Eq '^SHA256:[A-Za-z0-9+/]+={0,2}$'; then
+            echo "::error::i3_public_key_fingerprint must be an OpenSSH SHA256 fingerprint"
+            exit 1
+          fi
+          if ! printf '%s' "${I3_PUBLIC_KEY_LINE_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "::error::i3_public_key_line_sha256 must be lowercase 64-char hex"
+            exit 1
+          fi
+          if ! printf '%s' "${I3_PUBLIC_KEY_BLOB_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "::error::i3_public_key_blob_sha256 must be lowercase 64-char hex"
+            exit 1
+          fi
+          if ! printf '%s' "${DENETIM_SSH_TARGET}" | grep -Eq '^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]{1,128}$'; then
+            echo "::error::denetim_ssh_target must look like user@host"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build handoff package
+        env:
+          OPERATOR_BATCH_ID: ${{ inputs.operator_batch_id }}
+          I3_IDENTITY_RUN_ID: ${{ inputs.i3_identity_run_id }}
+          I3_AUTHORIZE_PACKAGE_RUN_ID: ${{ inputs.i3_authorize_package_run_id }}
+          I3_PUBLIC_KEY_FINGERPRINT: ${{ inputs.i3_public_key_fingerprint }}
+          I3_PUBLIC_KEY_LINE_SHA256: ${{ inputs.i3_public_key_line_sha256 }}
+          I3_PUBLIC_KEY_BLOB_SHA256: ${{ inputs.i3_public_key_blob_sha256 }}
+          I6_HOST_PACKAGE_RUN_ID: ${{ inputs.i6_host_package_run_id }}
+          DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          I6_TARGET_HOST: ${{ inputs.i6_target_host }}
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/build-wg-bplus-operator-handoff.py \
+            --output-dir "${HANDOFF_DIR}" \
+            --operator-batch-id "${OPERATOR_BATCH_ID}" \
+            --i3-identity-run-id "${I3_IDENTITY_RUN_ID}" \
+            --i3-authorize-package-run-id "${I3_AUTHORIZE_PACKAGE_RUN_ID}" \
+            --i3-public-key-fingerprint "${I3_PUBLIC_KEY_FINGERPRINT}" \
+            --i3-public-key-line-sha256 "${I3_PUBLIC_KEY_LINE_SHA256}" \
+            --i3-public-key-blob-sha256 "${I3_PUBLIC_KEY_BLOB_SHA256}" \
+            --i6-host-package-run-id "${I6_HOST_PACKAGE_RUN_ID}" \
+            --denetim-ssh-target "${DENETIM_SSH_TARGET}" \
+            --i6-target-host "${I6_TARGET_HOST}"
+
+      - name: Verify handoff artifact boundary
+        run: |
+          set -euo pipefail
+          test -s "${HANDOFF_DIR}/README.md"
+          test -s "${HANDOFF_DIR}/faz24-wg-bplus-operator-handoff.json"
+          test -s "${HANDOFF_DIR}/SHA256SUMS"
+          if grep -R -E -- '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.' "${HANDOFF_DIR}"; then
+            echo "::error::handoff artifact contains forbidden private/secret-like material"
+            exit 1
+          fi
+          (cd "${HANDOFF_DIR}" && sha256sum --check SHA256SUMS)
+          python3 - <<'PY' "${HANDOFF_DIR}/faz24-wg-bplus-operator-handoff.json"
+          import json
+          import sys
+
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert data["schemaVersion"] == "faz24.wg-bplus.operator-handoff.v1"
+          assert data["acceptanceBoundary"]["operatorExecutionRequired"] is True
+          assert data["acceptanceBoundary"]["verifierPassRequired"] is True
+          assert data["mutationBoundary"]["packageBuildHostMutation"] is False
+          assert data["mutationBoundary"]["packageBuildProductionMutation"] is False
+          assert data["mutationBoundary"]["containsSecrets"] is False
+          assert data["i3"]["boardStatus"] == "Needs Verify"
+          assert data["i6"]["boardStatus"] == "Needs Verify"
+          PY
+
+      - name: Write workflow summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 WG-B+ operator handoff"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-wg-bplus-operator-handoff-${{ github.run_id }}\`"
+            echo "- I3 issue: #1864"
+            echo "- I6 issue: #1867"
+            echo "- Docs/board issue: #1874"
+            echo
+            echo "Boundary: metadata-only coordination artifact. It does not connect to Denetim PC or staging-sw, collect live evidence, mutate host or cluster state, or mark I3/I6 accepted."
+            echo
+            if [ -s "${HANDOFF_DIR}/README.md" ]; then
+              sed -n '1,180p' "${HANDOFF_DIR}/README.md"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload handoff artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-wg-bplus-operator-handoff-${{ github.run_id }}
+          path: ${{ env.HANDOFF_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local handoff directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${HANDOFF_DIR}"

@@ -51,6 +51,16 @@ REPORT="/tmp/smoke-report-${ENV}-${TS_FILE}.json"
 # digest set has per-service D29 evidence rather than a representative subset.
 D29_SERVICES=(api-gateway user-service variant-service permission-service schema-service report-service auth-service core-data-service notification-orchestrator)
 
+discover_optional_d29_services() {
+  # endpoint-admin-service is an optional workload across environments and
+  # rollout moments. Include it when the Deployment exists in the target
+  # cluster instead of hardcoding it into every env and breaking smoke while
+  # the service is intentionally dark.
+  if kubectl --context "$CONTEXT" -n "$NAMESPACE" get deploy endpoint-admin-service >/dev/null 2>&1; then
+    D29_SERVICES+=(endpoint-admin-service)
+  fi
+}
+
 # Expected KC issuer per env (matches check_pr_time.sh Check 3)
 case "$ENV" in
   prod) EXPECTED_ISSUER="https://ai.acik.com/realms/serban" ;;
@@ -232,6 +242,7 @@ tier_functional() {
       auth-service) svc_ep="/api/v1/impersonation/sessions" ;;
       core-data-service) svc_ep="/api/v1/companies" ;;
       notification-orchestrator) svc_ep="/api/v1/notify/inbox/me" ;;
+      endpoint-admin-service) svc_ep="/api/v1/admin/endpoint-devices" ;;
       *) continue ;;
     esac
     checked_endpoints+=("$svc_ep")
@@ -493,6 +504,8 @@ if ! kubectl --context "$CONTEXT" -n "$NAMESPACE" get ns "$NAMESPACE" > /dev/nul
   echo "(staging-sw connectivity required; this script is host-execution only)"
   exit 2
 fi
+
+discover_optional_d29_services
 
 tier_up
 tier_functional

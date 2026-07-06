@@ -1,0 +1,50 @@
+name: Gate Faz 22.6 release-train verdict
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-release-train-verdict.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_release_train_verdict.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gate-faz22-release-train-verdict.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_release_train_verdict.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-faz22-release-train-verdict-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-train-verdict-regression:
+    name: Verify release-train graduation/hygiene verdict
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse release-lineage audit script and test
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh \
+            scripts/faz22-remote-ops/endpoint-agent-release-policy.sh \
+            tests/faz22_remote_ops/test_faz22_6_release_train_verdict.sh
+
+      - name: Run release-train verdict regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_release_train_verdict.sh

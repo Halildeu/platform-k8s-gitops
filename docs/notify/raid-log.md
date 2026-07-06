@@ -26,8 +26,8 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 
 | ID | Assumption | Confidence | Validation | Last Review | Owner |
 |---|---|:---:|---|---|---|
-| A1 | SMS primary JetSMS canlı sözleşme aktif (2026-05-19 kullanıcı kararı); NetGSM secondary contract 2026-05-30'a kadar imzalanır → failover acceptance kapanır | Medium | legal/ops weekly check | 2026-05-19 | ops + legal |
-| A2 | KVKK Art.11 erasure pattern legal review 2026-05-25'te tamamlanır | Medium | PR #130 erasure pattern submitted by 2026-05-20 | 2026-05-09 | legal |
+| A1 | SMS primary JetSMS canlı sözleşme aktif (2026-05-19 kullanıcı kararı); **NetGSM secondary contract kısa vadede yapılmayacak — R1 ⏳ DEFER (kullanıcı kararı 2026-05-23)**; JetSMS-only degraded mode = kabul edilen kalıcı işletim durumu; NetGSM altyapısı asset-preserved (sözleşme olursa reactivation) | Low | — (DEFER; sözleşme imzalanırsa re-aktive) | 2026-05-23 | ops |
+| A2 | KVKK Art.11 erasure pattern legal review — **R2 CLOSED 2026-05-23** (Codex `019e5189` final legal verdict AGREE = kabul edilen hukuk onayı; kullanıcı kararı) | High (validated) | Codex `019e5189` verdict + 6/7 K-PR MERGED | 2026-05-23 | — |
 | A3 | Browser SSO verify user availability 2026-05-12 öncesi | Low | Pre-Production Full Authority — agent headless alternative kullanır | 2026-05-09 | agent |
 | A4 | Faz 22.2 endpoint-admin Lab tier 23.7 (Push) öncesi hazır | Medium | endpoint-admin PR list cross-faz coord | 2026-05-09 | dev |
 | A5 | Velocity baseline ~10-15h/session block tutar | Medium | Sprint cycle başı vs bitişi gerçekleşen saat audit | 2026-05-09 | agent |
@@ -63,9 +63,9 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 | D-N1 | Faz 22.1.1b III review verdict | 23.1 başlangıç | bypassed pre-prod 2026-05-08 user onayı | dev (Faz 22.1.1b) | 🟡 |
 | D-N2 | Faz 22.2 endpoint-admin Lab tier readiness signal | 23.7 (Push) | TBD | dev (Faz 22.2) | ⏳ |
 | D-N3 | JetSMS provider canlı sözleşme + API erişim (SMS primary, 2026-05-19 kullanıcı kararı) | 23.3 (SMS primary) | aktif (sözleşme var) | JetSMS commercial | 🟢 |
-| D-N3b | NetGSM provider sözleşme + sandbox account (SMS secondary failover) | 23.3 (SMS secondary) | 2026-05-30 target | NetGSM commercial | 🟡 |
+| D-N3b | NetGSM provider sözleşme + sandbox account (SMS secondary failover) | 23.3 (SMS secondary) | ⏳ DEFER — kısa vadede yok (kullanıcı kararı 2026-05-23); asset-preserved | NetGSM commercial | ⏳ |
 | D-N4 | İletimerkezi tertiary SMS provider — DEFERRED (JetSMS primary + NetGSM secondary kararı sonrası kapsam dışı; gelecekte 3. provider gerekirse) | future | — | İletimerkezi commercial | ⏳ deferred |
-| D-N5 | Legal KVKK Art.11 erasure pattern review | 23.2.B | 2026-05-25 target | legal (external/in-house) | 🔴 |
+| D-N5 | Legal KVKK Art.11 erasure pattern review | 23.2.B | **CLOSED 2026-05-23** — Codex `019e5189` final legal verdict (kullanıcı kararı: Codex istişare verdict'i = kabul edilen hukuk onayı) | legal / Codex AI proxy | 🟢 |
 | D-N6 | DKIM/SPF/DMARC prod domain config (operator manual setting) | 23.2 closure | TBD ops | ops | 🟡 |
 | D-N7 | Browser SSO user availability (testai.acik.com + ai.acik.com) | 23.9 closure | per-cutover | user | 🟡 |
 | D-N8 | GHCR registry availability (Halildeu org packages) | tüm deploy | continuous | GitHub | 🟢 |
@@ -107,9 +107,10 @@ Risk boyutu ayrı [`risk-register.md`](risk-register.md) içinde tutulur (22 ris
 - **2026-05-09 (Session 39 iter-2)**: Initial RAID log oluşturuldu (Codex `019e0c28` F5 absorb). 10 assumption + 5 issue + 10 dependency.
 - **2026-05-09 (M2 D29 partial evidence + credential blocker)**: Yeni issue I6 — Keycloak test realm admin credential unavailable; M2 D29 authenticated full pipeline BLOCKED. PR #444 lab-deps MERGED; lab dependency smoke LIVE: Mailpit + webhook receiver + Slack mock transport; authenticated notify-orch intent-submit path still BLOCKED. 23.1 sub-faz marker 🟡 partial kalır. Toplam: 10 A + 6 I + 10 D = 48 active boyut (önceki 47'ye +I6).
 - **2026-05-18 (I6 stale-resolved → board #777 closed)**: RAID I6 Keycloak credential blocker 🔴 Active → 🟢 Resolved. Kanıt: 2026-05-14 `m2-credential-gate-unblocked.md` (`kc-bootstrap-admin-recovery.sh` master admin recovery) + 2026-05-18 live re-verify (`platform-kc-test` healthy, `kcadm` master login OK, D29 personaları mevcut). Codex `019e3c74` AGREE — stale credential blocker; M2 D29 evidence/acceptance reconciliation ayrı item #754, persona credential Vault formalization ayrı hardening backlog'u (normal user, realm-admin değil). Board açık I-serisi issue mapping'i I2/I4'e düştü; I6 satırı tarihsel kayıt olarak 🟢 Resolved.
+- **2026-05-23 (R1 DEFER + R2 closure RAID sync)**: A1 + D-N3b → NetGSM secondary contract **⏳ DEFER** (kullanıcı kararı: sözleşme kısa vadede yapılmayacak; JetSMS-only degraded mode kabul edilen kalıcı işletim durumu; `NetGsmProvider` + Vault/ESO altyapısı asset-preserved — kaldırılmaz, sözleşme olursa reactivation). A2 + D-N5 → R2 KVKK legal review **CLOSED** (Codex `019e5189` final legal verdict AGREE = kabul edilen hukuk onayı; kullanıcı kararı 2026-05-23); D-N5 🔴 → 🟢.
 
 ## Next Review
 
 - **2026-05-12**: M1/M2 closure öncesi RAID review (A3, A8, A10 + I1, I2 + D-N7, D-N9)
 - **2026-05-16**: İlk weekly stakeholder summary
-- **2026-05-25**: D-N5 KVKK legal review ETA gate
+- ~~2026-05-25: D-N5 KVKK legal review ETA gate~~ — **D-N5 CLOSED 2026-05-23** (R2 Codex `019e5189` final legal verdict); review gate gerekmiyor

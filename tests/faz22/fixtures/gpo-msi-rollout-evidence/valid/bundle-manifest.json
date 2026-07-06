@@ -1,0 +1,34 @@
+{
+  "schema": "faz22.1680.gpo-msi.acceptance-bundle.v1",
+  "generatedAt": "2026-06-19T05:00:00Z",
+  "releaseTag": "v0.2.10",
+  "artifact": {
+    "msiUrl": "https://github.com/Halildeu/platform-agent/releases/download/v0.2.10/EndpointAgent-0.2.10-signed.msi",
+    "msiSha256": "132b8990bc78c4952ccaa7d2076cf26a37f0616f81e1a82274b5570b49f24ea4",
+    "msiManifestUrl": "https://github.com/Halildeu/platform-agent/releases/download/v0.2.10/msi-build-manifest.json",
+    "msiManifestSha256": "68929426674f6524e6fdbc78e2eb024920cfd686dd637573537c1717196c69ee",
+    "expectedSignerThumbprint": "D68F4F530137EB65CE44E3405E82B46205E753E5",
+    "expectedMinimumAgentVersion": "0.2.10"
+  },
+  "deployment": {
+    "method": "gpo-msi",
+    "autoEnrollApiUrl": "https://mtls.testai.acik.com/api/v1/endpoint-agent",
+    "autoEnrollCertSANURIPrefix": "adcomputer:",
+    "autoEnrollJitterSeconds": 900,
+    "secretFree": true,
+    "domainWideLinkAllowed": false
+  },
+  "acceptanceBoundary": {
+    "closesIssue1680": false,
+    "remaining": [
+      "M3 constrained pilot targeting evidence",
+      "M4 two managed PCs installed/upgraded through gpo-msi",
+      "M5 per-device service and restart evidence",
+      "M6 per-device mTLS/tokenless and backend heartbeat evidence",
+      "M7 rollback drill on at least one PC",
+      "M8 failed-device triage",
+      "M9 Project status evidence"
+    ]
+  },
+  "files": []
+}

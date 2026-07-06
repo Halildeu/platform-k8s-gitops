@@ -1,0 +1,129 @@
+# audit-archive-exporter Deployment — Faz 24 PR-obs-02 (#1656, ADR-0042 §4).
+#
+# WHY a standalone exporter (not the worker's own /prometheus): the
+# audit-retention-worker is a run-once daily CronJob (kustomize/base/apps/
+# audit-retention-worker/cronjob.yaml, schedule "0 3 * * *"), so its in-process
+# Micrometer counters (audit_archive_lag_seconds / chain_break / anomaly /
+# errors) are EPHEMERAL — Prometheus cannot reliably scrape a ~30s job. The
+# durable truth lives in the audit_archive.* DB state (cursor/ledger/anchor), so
+# this always-on exporter turns that DB state into scrapeable gauges and the
+# companion PrometheusRule (base/monitoring/audit-retention-worker-rule.yaml)
+# alerts on them. (Codex plan-time consult 019ed602 REVISE→absorbed.)
+#
+# Vehicle: prometheus-community postgres_exporter, default+settings collectors
+# DISABLED (PG_EXPORTER_DISABLE_DEFAULT_METRICS/SETTINGS) so it runs ONLY the
+# custom queries in the mounted ConfigMap (least-privilege read role — no
+# pg_monitor / no pg_stat_* surface). Mirrors the off-the-shelf-exporter norm of
+# redis-streams-exporter (oliver006/redis_exporter).
+#
+# Network posture (Codex 019ed602 final): the pod carries
+# app.kubernetes.io/part-of=platform — same as the sibling redis-streams-exporter —
+# so it inherits the shared allow-egress-dns + allow-egress-host-bridge (PG
+# reachable) + allow-monitoring-scrape (port 9187 added there). (part-of=audit-archive
+# would give tighter egress, but the PR-time drift Check 5 only scopes part-of=platform
+# Deployments and a catalog-enabled Deployment must be platform-scoped.) The exporter
+# only ever connects to the host-compose Postgres (audit_event DB, audit_event +
+# audit_archive schemas); its DB blast radius is bounded at the ROLE layer — a
+# dedicated read-only audit_archive_exporter role (SELECT only) via ESO — not the network.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-archive-exporter
+spec:
+  # Single replica — stateless scrape proxy (HARD RULE: test scale-to-zero YASAK
+  # → replicas 1, never 0).
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit-archive-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit-archive-exporter
+    spec:
+      # No K8s API access needed (DB scrape proxy only).
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # Image default user is `nobody`; pin numeric IDs so kubelet can
+        # verify runAsNonRoot instead of rejecting the non-numeric image user.
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        # seccomp runtime default.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres-exporter
+          # D30 immutable: overlay pins @sha256 (OVERLAY_MUST_OVERRIDE fail-closed
+          # placeholder — base alone cannot be applied; gate-enforcement-check.yml
+          # rejects a literal leak).
+          image: quay.io/prometheuscommunity/postgres-exporter:OVERLAY_MUST_OVERRIDE
+          imagePullPolicy: IfNotPresent
+          env:
+            # Connection — host-compose Postgres via the selectorless `postgres`
+            # Service (base/host-services/postgres-svc.yaml; overlay Endpoints →
+            # 172.19.0.6:5432 on platform-test-net). sslmode=disable is REQUIRED:
+            # lib/pq defaults to sslmode=require and the host bridge is non-TLS
+            # (the worker's JDBC url is likewise plain). connect_timeout bounds a
+            # stuck scrape. User/pass come from ESO (dedicated read-only role
+            # audit_archive_exporter — NOT the worker's owner role).
+            - name: DATA_SOURCE_URI
+              value: "postgres:5432/audit_event?sslmode=disable&connect_timeout=5"
+            - name: DATA_SOURCE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: audit-archive-exporter-secrets
+                  key: DATA_SOURCE_USER
+            - name: DATA_SOURCE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: audit-archive-exporter-secrets
+                  key: DATA_SOURCE_PASS
+            # Run ONLY the custom queries (no built-in pg_stat_*/pg_settings
+            # collectors → minimal grant surface). pg_up + pg_exporter_last_scrape_error
+            # are still emitted in this mode (verified empirically against v0.15.0).
+            - name: PG_EXPORTER_DISABLE_DEFAULT_METRICS
+              value: "true"
+            - name: PG_EXPORTER_DISABLE_SETTINGS_METRICS
+              value: "true"
+            - name: PG_EXPORTER_AUTO_DISCOVER_DATABASES
+              value: "false"
+            - name: PG_EXPORTER_EXTEND_QUERY_PATH
+              value: "/etc/pg-exporter/queries.yaml"
+            - name: PG_EXPORTER_WEB_LISTEN_ADDRESS
+              value: ":9187"
+          ports:
+            - name: http-metrics
+              containerPort: 9187
+              protocol: TCP
+          volumeMounts:
+            - name: queries
+              mountPath: /etc/pg-exporter
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: http-metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http-metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: queries
+          configMap:
+            name: audit-archive-exporter-queries

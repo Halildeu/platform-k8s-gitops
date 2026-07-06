@@ -1,0 +1,29 @@
+# Public SNI route for the dedicated #548 device-key broker.
+#
+# The resource name intentionally matches the existing remote-bridge mTLS
+# ingress; applying this wrapper reconciles the live manual route drift:
+# remote-bridge-mtls.testai.acik.com:443 -> endpoint-admin-remote-bridge-device-key:9444.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: endpoint-admin-remote-bridge-mtls
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/component: remote-bridge-broker
+    app.kubernetes.io/part-of: remote-bridge
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: remote-bridge-mtls.testai.acik.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: endpoint-admin-remote-bridge-device-key
+                port:
+                  number: 9444

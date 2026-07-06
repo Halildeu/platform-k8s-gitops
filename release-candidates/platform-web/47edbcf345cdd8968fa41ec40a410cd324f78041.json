@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-web",
+  "service": "frontend",
+  "git_sha": "47edbcf345cdd8968fa41ec40a410cd324f78041",
+  "git_short_sha": "47edbcf3",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-web-frontend",
+    "digest": "sha256:1bd9b33d0baac77818c3ee666cfc9ff75be9149352cea087c3ad02d458bea19a",
+    "tag": "sha-47edbcf",
+    "push_run_id": 27305091272,
+    "pushed_at": "2026-06-10T20:46:48Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-06-10T20:46:48Z",
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-06-10T20:46:48Z",
+          "details": "rollout=true pod=fe-variant-smoke-20260610204648-1048352-79c7d5c99-sq7nj ready=True digest=match build_info_sha=match evidence_class=frontend-prod-variant-transient-smoke"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-06-10T20:46:48Z",
+          "details": "root=200 entry=/mf-entry-bootstrap-0.js:200 remote_entry=/remoteEntry.js:200 env_baking[bundle_js=5 forbidden_hit='none' host_ai.acik.com=true realm_serban=true] prod_probe[root=200 oidc_serban=200] GA proof-check (transient pod exec): /remotes/ includes endpoint-admin, remoteEntry.js PRESENT; env payload VITE_SHELL_ENABLE_ENDPOINT_ADMIN_REMOTE=1 + MFE_ENDPOINT_ADMIN_URL=https://ai.acik.com/remotes/endpoint-admin/remoteEntry.js.",
+          "endpoints": [
+            "/",
+            "/build-info.json",
+            "/mf-entry-bootstrap-0.js",
+            "/remoteEntry.js",
+            "/remotes/endpoint-admin/remoteEntry.js"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "AMBER",
+          "checked_at": "2026-06-10T20:46:48Z",
+          "details": "frontend is a static SPA (jwt_validates:false, services.yaml) \u2014 no own JWT decoder, no OpenFGA/Zanzibar authz plane. Zanzibar tier not-applicable; AMBER is the honest non-GREEN verdict (ADR-0022).",
+          "allow_deny_synthetic": "SKIP"
+        }
+      },
+      "verified_at": "2026-06-10T20:46:48Z",
+      "candidate_pr": null,
+      "candidate_pr_status": "ready_for_review"
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:2eee40a26a2ec96c67cc56928636f6b611a767134d2b8940af16742b6d40ff14"
+  },
+  "audit": {
+    "created_at": "2026-06-10T20:46:48Z",
+    "last_updated_at": "2026-06-10T20:46:48Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-web/actions/runs/27305091272"
+  }
+}

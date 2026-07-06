@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/endpoint-outdated-software-payload-v1.schema.json",
+  "title": "Endpoint Outdated Software Payload (AG-036) v1",
+  "description": "Wire contract for the AG-036 outdated-software probe block carried under the COLLECT_INVENTORY result at details.inventory.outdatedSoftware. Source of truth = platform-agent internal/inventory/outdated_software.go OutdatedSoftwareResult (schemaVersion=1; probe PR #38 merged sha a29eef49; truncation semantics finalized by AG-036 PR #40 merged sha e64c131). Backend ingest (outdated-software persist/query) and web view MUST conform to this shape. Redaction boundary (machine-enforced here, agent-enforced at source via TestOutdatedSoftwarePackage_JSONKeys): per-package wire fields are EXACTLY packageId + installedVersion + availableVersion — NO display name / publisher / install location / license / download URL. The probe is read-only ('winget upgrade --include-returning-apps --source winget'); it NEVER mutates package state. Thresholds/caps (MaxUpgrade=512) are agent-side const and NOT payload-configurable. upgradeCount semantics (PR #40 contract debt resolution, option a): upgradeCount is the returned/capped count (== len(upgrade), bounded [0, maxUpgrade]); upgradeTruncated is the AUTHORITATIVE 'list incomplete' signal; the true pending total is intentionally NOT carried on the wire when truncated. See docs/faz-22-outdated-software-contract-v1.md §'Decision record'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "supported",
+    "probeComplete",
+    "upgradeCount",
+    "upgrade",
+    "upgradeTruncated",
+    "maxUpgrade",
+    "sourceUsed",
+    "probeDurationMs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Payload schema version. const 1 pins AG-036 v1. A new shape requires a new version + a new schema $id (see forward-compat rule in docs/faz-22-outdated-software-contract-v1.md)."
+    },
+    "supported": {
+      "type": "boolean",
+      "description": "false on non-Windows runtimes (the agent still emits canonical OS metadata so the backend persists 'probe not supported here' instead of treating absence as a failed ingest)."
+    },
+    "probeComplete": {
+      "type": "boolean",
+      "description": "true only when probeErrors is empty AND sourceUsed != none (fail-closed: any probeError or a no-source run flips this false; consumers MUST NOT render an incomplete probe as 'fully up to date')."
+    },
+    "upgradeCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 512,
+      "description": "Count of upgradeable packages RETURNED in 'upgrade' (equals len(upgrade)). Bounded [0, maxUpgrade=512] — machine-enforced here (maximum:512) to stay in lockstep with the agent cap (MaxOutdatedPackages), the backend ingest policy (OutdatedSoftwarePayloadPolicy enforces [0,512]) and the DB CHECK (upgrade_count <= max_upgrade). When upgradeTruncated=true the host had MORE than maxUpgrade pending upgrades and upgradeCount is the CAPPED count (== maxUpgrade), NOT the true pending total — the true total is intentionally NOT carried on the wire (read upgradeTruncated, the authoritative signal). When upgradeTruncated=false this IS the exact pending total. See the upgradeCount semantics decision in docs/faz-22-outdated-software-contract-v1.md."
+    },
+    "upgrade": {
+      "type": "array",
+      "maxItems": 512,
+      "description": "Upgradeable package entries. ALWAYS serializes as [] (never null). Capped at maxUpgrade (512).",
+      "items": { "$ref": "#/$defs/outdatedPackage" }
+    },
+    "upgradeTruncated": {
+      "type": "boolean",
+      "description": "AUTHORITATIVE 'list is incomplete' signal (finalized by platform-agent AG-036 PR #40 / e64c131). true ⟺ the host had MORE than maxUpgrade classifiable upgrades, so the returned 'upgrade' list and 'upgradeCount' are capped at maxUpgrade and the true pending total is NOT on the wire. false ⟺ the returned list is complete and 'upgradeCount' is the exact pending total. Consumers MUST treat this flag as the truncation source of truth — NOT the legacy 'upgradeCount==maxUpgrade' heuristic (which false-positives at exactly-512). Legacy nuance: rows produced by PRE-#40 agents may carry upgradeTruncated=false even when capped (agent version is not on the wire), so a consumer reading historical rows MAY use 'upgradeCount==maxUpgrade' only as a conservative legacy fallback; for current agents upgradeTruncated is authoritative."
+    },
+    "maxUpgrade": {
+      "type": "integer",
+      "const": 512,
+      "description": "Agent-side upgrade cap (MaxOutdatedPackages = 512)."
+    },
+    "sourceUsed": {
+      "type": "string",
+      "enum": ["winget", "none"],
+      "description": "winget = read-only 'winget upgrade --include-returning-apps --source winget'. none = no probe ran (unsupported platform)."
+    },
+    "probeErrors": {
+      "type": "array",
+      "description": "Optional (omitempty at source). Any entry flips probeComplete=false.",
+      "items": { "$ref": "#/$defs/probeError" }
+    },
+    "probeDurationMs": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "outdatedPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageId", "installedVersion", "availableVersion"],
+      "description": "Per-package wire shape. EXACTLY these three keys — the redaction boundary (no display name / publisher / install location / license / download URL) is machine-enforced both here (additionalProperties:false) and at source (TestOutdatedSoftwarePackage_JSONKeys).",
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^\\S+$",
+          "description": "Stable winget package id (e.g. '7zip.7zip', 'Microsoft.VisualStudioCode'). No whitespace — it is an id, not a human-facing display name. The only package-level correlation key on the wire."
+        },
+        "installedVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Currently-installed version string (public, non-PII)."
+        },
+        "availableVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Available (newer) version string (public, non-PII). The from/to pair is what makes the 'outdated' signal actionable."
+        }
+      }
+    },
+    "probeError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "source": { "type": "string", "enum": ["winget", "none"] },
+        "code": {
+          "type": "string",
+          "enum": [
+            "UNSUPPORTED_PLATFORM",
+            "WINGET_NOT_FOUND",
+            "WINGET_TIMEOUT",
+            "WINGET_FAILED",
+            "WINGET_EMPTY_OUTPUT",
+            "WINGET_PARSE_ERROR"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Bounded operator-facing text; static phrasing; NEVER a raw errno dump, filesystem path, or package display name."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "supported": true,
+      "probeComplete": true,
+      "upgradeCount": 2,
+      "upgrade": [
+        { "packageId": "7zip.7zip", "installedVersion": "24.09", "availableVersion": "25.01" },
+        { "packageId": "Microsoft.VisualStudioCode", "installedVersion": "1.89.0", "availableVersion": "1.91.1" }
+      ],
+      "upgradeTruncated": false,
+      "maxUpgrade": 512,
+      "sourceUsed": "winget",
+      "probeDurationMs": 45
+    },
+    {
+      "schemaVersion": 1,
+      "supported": true,
+      "probeComplete": true,
+      "upgradeCount": 0,
+      "upgrade": [],
+      "upgradeTruncated": false,
+      "maxUpgrade": 512,
+      "sourceUsed": "winget",
+      "probeDurationMs": 28
+    },
+    {
+      "schemaVersion": 1,
+      "supported": false,
+      "probeComplete": false,
+      "upgradeCount": 0,
+      "upgrade": [],
+      "upgradeTruncated": false,
+      "maxUpgrade": 512,
+      "sourceUsed": "none",
+      "probeErrors": [
+        { "source": "none", "code": "UNSUPPORTED_PLATFORM", "summary": "outdated-software probe not supported on this runtime" }
+      ],
+      "probeDurationMs": 0
+    }
+  ]
+}

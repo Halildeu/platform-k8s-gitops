@@ -22,9 +22,32 @@ resources:
   # plus Faz 23.4 PR-E.4 cross-pod broadcast (PG LISTEN/NOTIFY) ile HPA
   # min=max=1 lock'u kaldırdı; replicas=2 base ile prod'a giriyor.
   - ../../base/apps/notification-orchestrator
+  # Faz 22.5 P2-A A1 first prod deploy (BE-024c v2-d DiffCacheBackfill admin endpoint;
+  # platform-backend PR #475 cumulative, image sha-5af5f8d / sha256:7fa5975c...; current testai digest has D29 GREEN ledger evidence.
+  # Test cluster LIVE + fresh D29 smoke PASS (Up/Functional/Zanzibar GREEN, allow_deny_synthetic=PASS; PR #1242 evidence comment + release-candidates ledger).
+  # Apply gate: prereq PR (#1241) ESO ExternalSecret in platform-eso-prod must reach
+  # Ready=True before this workload entry's apply (otherwise pod CrashLoop pending secret).
+  # Codex 019e8c3a iter-1 plan AGREE; A2 (D30 atomic cutover DNS L4 switch) separate user decision.
+  - ../../base/apps/endpoint-admin-service
+  # Faz 22.5 M2 prod mTLS activation (#1359/#1376): dedicated SNI host for
+  # tokenless domain-device enrollment. Test path `mtls.testai.acik.com` was
+  # already live-proven with AD CS machine certs; prod overlay rewrites the
+  # host below to `mtls.ai.acik.com` and keeps browser traffic on `ai.acik.com`
+  # untouched. Secrets are seeded out-of-band; no key material is committed.
+  - ../../base/endpoint-agent-mtls
+  # Faz 22.5 — endpoint-agent artifact host (prod desired-state; gitops#1436).
+  # Serves the UI one-command install artifacts on ai.acik.com/artifacts/ (the
+  # endpoint-admin modal derives artifactBaseUrl from window.location.origin).
+  # Image pin + the /artifacts ingress path are below. DESIRED-STATE ONLY — prod
+  # ArgoCD is manual-sync (D30), so this rolls only at the owner-gated cutover.
+  - ../../base/apps/artifact-host
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster (network teşhisi sonrası — k3d cluster → 10.9.193.0/24 routing fail)
   - endpoints-workcube-mssql.yaml    # 172.21.0.7 (workcube-mssql-proxy-prod, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.21.0.7/32:11433
+  # Faz 23.3 M4 prod cutover RE-ATTEMPT (PR-B4) — notification-orchestrator
+  # egress 587 (SMTP) + 443 (JetSMS SOAP + Graph deferred). Test overlay
+  # pattern paralel (kustomize/overlays/test/netpol-notification-egress-mail-providers.yaml).
+  - netpol-notification-egress-mail-providers.yaml
   # PERF-INIT-V2 PR-B5b3e prod promote (Codex thread `019e24ea` revised
   # design): cluster-side federation/cache smoke CronJob promoted from
   # test cluster after observed stability — same curl-only script
@@ -44,6 +67,14 @@ resources:
   - frontend-federation-smoke-rbac.yaml
   - frontend-federation-smoke-status.yaml
   - frontend-federation-smoke-netpol.yaml
+  # R29 Mitigation #3 — Weekly synthetic Teams smoke CronJob (V2.1 Exit #4
+  # mitigation chain — Codex `019e6de3` BL-008-bridge composite scope + `019e6e03`
+  # REVISE iter-2 absorb: weekly cadence during R29 active surveillance).
+  # Schedule: Monday 09:00 Istanbul weekly. Fires synthetic alert to Alertmanager
+  # v2 API → perf-alerts-teams Adaptive Card receipt validates Power Automate
+  # workflow lifecycle. Operator verify: Power Automate UI run history (R29
+  # mitigation #6) + Teams #perf-alerts channel.
+  - cronjob-r29-teams-smoke.yaml
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)
@@ -61,7 +92,7 @@ images:
     # overlay still pinned the pre-PR #141 auth-service image. The digest below
     # matches the test-proven ServiceJwt decoder @Profile gate fix
     # (platform-backend c5df886) and the live prod pod imageID.
-    digest: sha256:81499ba09e248791123f82a660d5776f33dba4ea226e30ce4b465ed1f03bf3b5
+    digest: sha256:82cb10d42f1049ec38983de92b9ec11339769a882775d2927ad3e0aacd120841
   # 2026-05-04 Session 37: prod backend canonical realign — promote test cluster
   # digest (built from same canonical main HEAD) to bring ai.acik.com level
   # with testai. PR #331 first promoted to sha256:a0a48aa9 (test overlay yaml)
@@ -69,7 +100,7 @@ images:
   # sha256:16451b81. This cleanup PR uses the live test digest, GHCR-verified.
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
-    digest: sha256:bb95149a3d5fc5dc7e545d8d51de6cf9085e6000728cbaff853fe5f00236b3c9
+    digest: sha256:bf605d73a39d18fc2a6a5614579d0cbc18b41ccbd5a9a1e7d051049986918af5
   # 2026-05-18: M365 auto-provision bridge (platform-backend PR #245, merge
   # commit 53646b5). Lazy-provisions the backend `users` row on an M365 SSO
   # first-login JWT — required before M365 v2 is enabled on the `serban`
@@ -89,17 +120,17 @@ images:
   # Was sha256:c1316fbc (PR #818) → sha256:c94c057c (PR #825 M365 bridge).
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
-    digest: sha256:fce3096eb994cdd8c3911c3c9e64369b082ca066d5a24ce430146a22a8585541
+    digest: sha256:2f82ab9a02ee389c21eae2f82a5edd6a40c06b221b45fd3969f77ee4facaadcc
   # 2026-05-04 Session 37: variant-service canonical realign — was sha256:4a51a49f.
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
-    digest: sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
+    digest: sha256:8c5ae280ee244fc096d346c341a96808acd0d8611f92eb8f751d7d8c9e9191a7
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
-    digest: sha256:ec5cfd1b9ce3e84fc4ea81461ba488b2569170da8442b4c8c22c9198e37b573c
+    digest: sha256:e5ea02a847c904f10aefc4fe21de7cbdea507d28e672a76e9e8a6aba9e7dbb22
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
-    digest: sha256:7f3f71d67eaee2943b651abefce519ae0ce1e3e0742f648e8774d46272470158
+    digest: sha256:2b1619301b6a1745ff76cfbb88bd736fefc38d01ef7f3ade2eb75efff0617560
   # 2026-05-04 Session 37: schema-service canonical realign — was sha256:1a0e3f02.
   # PR #331 first promoted to sha256:2a7076c9 from test overlay yaml — that
   # digest had been garbage-collected from GHCR (manifest unknown). Test
@@ -118,7 +149,7 @@ images:
   # gitops test pin PR #745.
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
-    digest: sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
+    digest: sha256:b5cc08c2bc8b6dc434fea403a97a529545f0c056551790e08c88db417243fd69
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-05-03 Session 37 ArgoCD OutOfSync drift realign:
@@ -136,7 +167,7 @@ images:
     # InternalImpersonationAuditController, causing auth-service session create
     # to hit permission-service static-resource 404/500. This digest matches
     # test's PR-B internal controller image and the live prod pod imageID.
-    digest: sha256:6cf81e19b7e3883626dfeb8cbfa3514dd46546aecba4c65ee70abf9c722a709f
+    digest: sha256:7cfaf090deea7f44d6c1cbd1bf95ceb7bf7298b1db3362079d0b9e2321ad8528
   # Frontend prod variant (ai.acik.com + serban realm)
   # 2026-05-03 Session 37: AG Grid lisans bytes-fix + single-source refactor +
   # buildx cache scope-v2 rename hotfix branch (`hotfix/ag-grid-license-rebuild`,
@@ -163,21 +194,59 @@ images:
   # Artifact: build sha-b567292, platform-web commit b567292d (PR #611),
   # CI run 26095796755 job "Build + Push prod" — env-baked
   # VITE_KEYCLOAK_URL=https://ai.acik.com, VITE_KEYCLOAK_REALM=serban.
-  # Carries platform-web PR #608 (decode JWT payload as UTF-8 — fixes the
-  # Turkish-name mojibake "Halil KoÃ§oÄlu" in the shell header + user grids).
-  # D29 evidence (ADR-0022 frontend-prod-variant-transient-smoke): the prod
-  # variant artifact was transient-run in k3d-test (platform-test ns) and
-  # smoked 2026-05-19T12:10:00Z — d29_up GREEN (imageID digest +
-  # /build-info.json sha match), d29_functional GREEN (/ 200 + entry asset
-  # 200 + remoteEntry 200 + env-baking: no testai.acik.com / localhost:8080
-  # leak, ai.acik.com + serban present; ai.acik.com read-only probe 200/200),
-  # d29_zanzibar AMBER (static SPA, jwt_validates:false). Ledger:
-  # release-candidates/platform-web/b567292de47d6bced9af518ae1192603abaef070.json
-  # Rollback digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
-  # (prior prod, 2026-05-04 sha-940c4c4 — last digest live on prod).
+  # 2026-05-20 — frontend prod-variant bump for the PR #640 auth fix
+  # (platform-web `3f56f6b2`). Carries the AuthBootstrapper stale-token
+  # recovery from `fix/auth-stale-token-recovery`: when silent-SSO returns
+  # no Keycloak session, the controller now clears the rehydrated
+  # localStorage token + authzSnapshot before dispatching
+  # `phase=unauthenticated`, so ProtectedRoute can `Navigate(/login)` and
+  # /api/v1/notify/* don't 401-storm against an empty HttpOnly cookie.
+  # Live prod symptom this fixes: /settings/notifications stayed on
+  # "Tercihler yüklenemedi" with PermissionProvider AuthNotReadyError
+  # polling indefinitely after Keycloak SSO expiry. Bug pattern + fix
+  # already shipped on testai via PR #640 merge `3f56f6b2`; this overlay
+  # bump is the prod promotion of the same artifact.
+  #
+  # Codex cross-AI peer review thread `019e4702` AGREE (with revisions
+  # absorbed: pin to `3f56f6b2` standalone instead of latest main
+  # `c3f56abe` to minimize blast radius — multi-fix promotion deferred).
+  #
+  # Previous live prod digest:  sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
+  #   • Source commit: 2026-05-20 platform-web `3f56f6b2` (PR #640 stale-token recovery, BUILD_SHA 3f56f6b)
+  #   • Rollback target — see "Rollback runbook" below.
+  # New digest (this commit): sha256:b85ca3898552deca5505090826ec82741dc6e3572774bf1a375b4ece69b47cda
+  #   • Source commit: 2026-06-08 platform-web sha-12553d5 (PR #774 AG-Grid + AG-Charts
+  #     Enterprise PERPETUAL license rebuild; built from cd9099e so PR #773 devices
+  #     bulk-actions + ~3wk frontend #640→#773 included — prod un-freeze, USER-APPROVED
+  #     full promote 2026-06-08).
+  #   • Why: AG Grid Enterprise TRIAL key (AG-127779) expired 2026-06-02 → watermark on
+  #     all Enterprise grids. Perpetual key set in AG_GRID_LICENSE_KEY repo secret.
+  #   • Skew note: prod endpoint-admin-service recent (~2026-06-05) → devices features
+  #     have backend support; other backends 14-19d. Gate = prod browser smoke post-sync.
+  #   • Image build run: https://github.com/Halildeu/platform-web/actions/runs/27142561876
+  #   • Cross-AI: Codex thread 019ea776 (rebuild + deploy-chain AGREE)
+  #   • Push step `Pinnable`: ghcr.io/halildeu/platform-web-frontend@sha256:b85ca3898552deca5505090826ec82741dc6e3572774bf1a375b4ece69b47cda
+  #
+  # Rollback runbook (acil):
+  #   gh workflow run "Deploy prod GitOps sync" --repo Halildeu/platform-k8s-gitops --ref main \
+  #     --field revision=<önceki gitops main SHA> \
+  #     --field sync_mode=full --field allow_prune=false \
+  #     --field confirm=SYNC-PROD-ROLLBACK
+  #   Sonra: bu PR'ı revert-forward eden bir PR aç, gitops main yeni digest'te kalmasın.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:7e0999d1865ad560e45374af7d76d7a2427c35d0791c1ee30a73598eb81861ce
+    # Faz 22.5 endpoint-admin GA (gitops#1440, owner "ga açalım" 2026-06-10):
+    # main 80273b64 (#1438) → main 47edbcf3 (platform-web#806+#807 — the prod
+    # eager build now INCLUDES the endpoint-admin MFE; #807 fixed the real gate,
+    # build-single-domain.mjs's hardcoded testai-only endpointAdminEnabled).
+    # D29 ledger release-candidates/platform-web/47edbcf3….json (up/functional
+    # GREEN, zanzibar AMBER) + GA proof-check: transient-pod /remotes/ includes
+    # endpoint-admin (remoteEntry.js PRESENT) + env payload
+    # VITE_SHELL_ENABLE_ENDPOINT_ADMIN_REMOTE=1 + MFE_ENDPOINT_ADMIN_URL on the
+    # ai.acik.com origin. DESIRED-STATE; live cutover = surgical `kubectl set
+    # image deploy/frontend` (owner GA approval in-session; drift guard aborts
+    # resources-sync on the D30 backlog). Rollback: 2eee40a2 (#1438 modal-only).
+    digest: sha256:1bd9b33d0baac77818c3ee666cfc9ff75be9149352cea087c3ad02d458bea19a
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
   # canonical activation. Pin remains sha-204042d (PR #126 era) until D29
@@ -207,7 +276,42 @@ images:
   #     dispatch flip (R1 NetGSM contract activation 2026-05-30).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
+    # 2026-05-20 (Faz 23.A4 PR-B3 — DKIM relay strategy prod): Bump from
+    # sha-70491543 (Faz 23.6 strict baseline) to sha-6307428. Carries
+    # cumulative delta since 70491543:
+    #   - Faz 23.3 SMS multi-provider (PR-1 → PR-A3.1.1; JetSMS context routing)
+    #   - PR #151 DKIM RFC 6376 (app-side fallback artifact; relay activated here)
+    #   - Faz 23.X delta (T1.6 abuse, M6a inbox history, etc.)
+    #   - PR-B1 (PR #268 MERGED 2026-05-20T19:46Z): notify.dkim.strategy enum
+    #     + ProductionConfigValidator validateDkimRelay() branch
+    # Test cluster acceptance: PR-B2 #914 MERGED 2026-05-20T19:51Z sha-6307428
+    # smoke OK (SmtpAdapter activated: dkimEnabled=false; ProductionConfigValidator
+    # SKIP non-prod; pod Started in 74s).
+    # Build evidence: gh run view 26185928228 -R Halildeu/platform-backend
+    # success 2026-05-20T19:47Z; digest sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d.
+    digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
+
+  # Faz 22.5 M2 prod mTLS activation (#1359/#1376).
+  # Promotes the test-proven cert-auth command lifecycle image:
+  #   - platform-backend PR #665 merge commit 47d29d5f
+  #   - gitops PR #1559 M2 cert command smoke evidence
+  #   - live testai pod imageID matched sha256:0b7e8489...
+  # This replaces the older P2-A prod digest because prod `mtls.ai.acik.com`
+  # needs the M2-C auto-enroll + heartbeat + command/result endpoints.
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
+    newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
+    digest: sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97
+
+  # Faz 22.5 — endpoint-agent artifact host (prod desired-state; gitops#1436).
+  # Same env-agnostic static-nginx image as testai (serves /artifacts/endpoint-
+  # agent/v0.2.3/ + the mutable /current/ alias). Reusing the identical digest is
+  # acceptable (Codex 019eb2d6) — D30 tracks the immutable digest, not the tag.
+  # Provenance: release-exe-signed.yml run 27292353430 (tag v0.2.3, source
+  # sha-d05c685, signing_tier=trusted-internal-ca); same pin as test overlay #1435.
+  - name: artifact-host
+    newName: ghcr.io/halildeu/platform-agent-artifacts
+    newTag: v0.2.3
+    digest: sha256:d8e4b1c72d293759ba4946cae3e8a870b5514406ed2af1d6604cc510078b967f
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -287,6 +391,14 @@ patches:
   - target:
       kind: Deployment
       name: variant-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  # Faz 22.5 P2-A A1: endpoint-admin-service first prod deploy, replicas=1 (pre-prod tek user)
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
     patch: |-
       - op: replace
         path: /spec/replicas
@@ -789,15 +901,75 @@ patches:
       # alınca activation hazır. NOTIFY_DKIM_ENABLED=false kaldığı sürece
       # backend DkimSigner bean ConditionalOnProperty disabled → SmtpAdapter
       # Optional<DkimSigner> empty → no DKIM-Signature header.
+      # Faz 23.A4 DKIM relay strategy (PR-B3 2026-05-20, Codex 019e4514
+      # plan-time consult — uzun vadeli kalıcı stabil; Office 365 Native DKIM):
+      # - strategy=relay: provider-managed DKIM (Microsoft yönetir key rotation)
+      # - enabled=false: app-side DkimSigner DISABLED (Optional empty)
+      # - relay.provider=office365 + relay.domain=acik.com → validator branch
+      # - SMTP TLS enforce zaten true (line 712); From: ai@acik.com aligned acik.com
+      # **OPERATOR PREREQ (one-time setup)**:
+      #   1. Office 365 admin tenant DKIM enable for acik.com:
+      #      Microsoft 365 Defender > Email & Collaboration > Email auth settings
+      #      > DKIM > acik.com > Rotate DKIM keys (generates tenant selector)
+      #   2. DNS CNAME publish (acik.com DNS provider, **one-time** forever):
+      #      selector1._domainkey.acik.com CNAME selector1-acik-com._domainkey.<tenant>.onmicrosoft.com
+      #      selector2._domainkey.acik.com CNAME selector2-acik-com._domainkey.<tenant>.onmicrosoft.com
+      #      (Microsoft tenant-specific; Office 365 admin UI gösterir)
+      # Pre-setup deploy SAFE: ProductionConfigValidator relay branch geçer
+      # (config-only validation); outbound mail unsigned olarak hâlâ deliver
+      # olur; Office 365 admin DKIM enable + CNAME propagation sonrası signed.
+      - op: add
+        path: /data/NOTIFY_DKIM_STRATEGY
+        value: "relay"
       - op: add
         path: /data/NOTIFY_DKIM_ENABLED
         value: "false"
+      - op: add
+        path: /data/NOTIFY_DKIM_RELAY_PROVIDER
+        value: "office365"
+      - op: add
+        path: /data/NOTIFY_DKIM_RELAY_DOMAIN
+        value: "acik.com"
+      # Selector/domain prep (relay path'inde kullanılmıyor ama config görünür
+      # kalır; app-side fallback için Vault'ta PKCS#8 key dormant — Codex
+      # post-relay 72h stabil sonrası cleanup PR'da silinecek):
       - op: add
         path: /data/NOTIFY_DKIM_SELECTOR
         value: "acik2026"
       - op: add
         path: /data/NOTIFY_DKIM_DOMAIN
         value: "acik.com"
+      # Faz 23.3 M4 prod cutover RE-ATTEMPT (PR-B4 2026-05-20, Codex 019e4514
+      # test cluster LIVE 2026-05-20 + PR-B1+PR-B2+PR-B3 DKIM relay activation
+      # MERGED + prod pod boot OK):
+      # - JetSMS primary activation (R6: Biotekno mikrolink2 contract LIVE)
+      # - 4 multipart/SOAP/channel/length keys (test cluster PR-A3.2 LIVE)
+      # - R24 mitigation: OTP_TOPIC_KEYS="" initial; Biotekno OTP sender ID
+      #   provisioning sonrası operator config patch ile enable
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER
+        value: "jetsms"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_MULTIPART_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_ON_LENGTH_PROBLEM
+        value: "SendAllPackage"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_SOAP_OPERATION
+        value: "sendSMSSingle"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL
+        value: "VF"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_ALLOWED
+        value: "VF,VFO"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS
+        value: ""
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_MAX_LENGTH
+        value: "160"
       # NOTIFY_DISPATCH_ENABLED=false BAĞLANTILI: dispatch flip true sadece
       # smtp_username + smtp_password Vault'ta dolu olduğunda yapılmalı.
       # Operator post-merge sequence:
@@ -840,6 +1012,90 @@ patches:
         path: /data/NOTIFY_DISPATCH_ENABLED
         value: "true"
 
+  # Faz 22.5 P2-A A1 first prod deploy — endpoint-admin-service ConfigMap
+  # prod realm override + OpenFGA authz wiring (Codex 019e8cca post-impl
+  # REVISE absorb: MUST-FIX OpenFGA fail-open gap — without ERP_OPENFGA_ENABLED=true
+  # + valid STORE_ID + MODEL_ID, @RequireModule interceptor's authzService.isEnabled()
+  # returns false → fail-open → D29 'Secured' claim cannot be made).
+  #
+  # KC realm: base = test realm platform-test; prod = serban.
+  # JWT decoder bean uses KEYCLOAK_JWKS_URI (Faz 22.1.1 C.5.persona #960 fix:
+  # profile=k8s active → KEYCLOAK_JWKS_URI binds to
+  # spring.security.oauth2.resourceserver.jwt.jwk-set-uri).
+  # SECURITY_JWT_AUDIENCE base ('endpoint-admin-service,frontend,account,
+  # serban-web') already realm-neutral — no audience override needed.
+  #
+  # OpenFGA store/model: prod tenant (separate from test). Values sourced from
+  # report-service-config prod live state (same OpenFGA tenant shared across
+  # backend services on prod cluster). Tuples for module:endpoint-admin
+  # can_view/can_manage authoritative seed via permission-service (out-of-band,
+  # not in this PR).
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
+      - op: replace
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      # LOGGING_LEVEL_ROOT prod = INFO (test = DEBUG)
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: "INFO"
+      # ERP_OPENFGA_ENABLED/API_URL inherit from base. Store/model IDs:
+      # 2026-06-11 cutover regression fix — the prior "moved to ESO Secret"
+      # plan was NEVER completed (endpoint-admin-service-secrets has only
+      # pepper/encryption/db keys, NOT store/model), so when the D30 full-sync
+      # applied this ConfigMap (which had dropped the inline values) and rolled
+      # the pod, the OpenFGA client got an empty storeId → FgaInvalidParameter
+      # → fail-closed 403 on every @RequireModule call (devices + the
+      # one-command enrollment modal). Store/model IDs are NON-SECRET
+      # identifiers (permission-service/report-service carry them in env too),
+      # so they belong in the ConfigMap. Pinned to the live prod OpenFGA tenant
+      # (verified `allowed:true` against this model 2026-06-11).
+      - op: add
+        path: /data/ERP_OPENFGA_STORE_ID
+        value: "01KPXCVBHCY2TQ6YHVK009NS1C"
+      - op: add
+        path: /data/ERP_OPENFGA_MODEL_ID
+        value: "01KSFFK9K3V43DD211Z79K3FYA"
+
+  # Faz 22.5 M2 prod AD CS / edge mTLS activation (#1359/#1376).
+  # Preconditions live-proven 2026-06-14/15:
+  #   - DNS `mtls.ai.acik.com` resolves to the staging edge (10.9.10.53).
+  #   - Host nginx SNI stream route points `mtls.ai.acik.com` to prod ingress.
+  #   - AD CS issues machine ClientAuth certs from Acik-Endpoint-CA.
+  #   - Server cert SAN covers both `mtls.testai.acik.com` and
+  #     `mtls.ai.acik.com`.
+  #   - Kubernetes mTLS store/password secrets are seeded out-of-band; no
+  #     secret material is committed here.
+  # Fixed tenant UUID matches the current endpoint-admin default tenant used
+  # throughout Faz 22 evidence and M2 local/test matrices.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED
+        value: "false"
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID
+        value: "00000000-0000-0000-0000-000000000001"
+
+  # Prod SNI host override for the shared endpoint-agent mTLS base bundle.
+  - target:
+      kind: Ingress
+      name: endpoint-agent-mtls
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: "mtls.ai.acik.com"
+
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
   # değişmesi pod restart tetiklemez; bu annotation rolling restart
@@ -865,8 +1121,24 @@ patches:
           # AuditPartitionRetentionService bean gets instantiated under
           # the new NOTIFY_AUDIT_RETENTION_ENABLED=true config.
           compliance.acik.com/audit-retention-cycle: "pr-c-2-flip-2026-05-09"
+          # Faz 23.A4 DKIM relay strategy activation (PR-B3 2026-05-20,
+          # Codex 019e4514). Image bump + relay ConfigMap atomic — annotation
+          # bump pod rolling restart tetikler so DkimSigner conditional bean
+          # (enabled=false) takes effect on new pod boot.
+          mail.acik.com/dkim-relay-strategy: "b3-prod-2026-05-20-sha-6307428"
+          # Faz 23.3 M4 prod cutover RE-ATTEMPT (PR-B4 2026-05-20, Codex
+          # iter-1 P1 absorb): ConfigMap envFrom yeni 8 JetSMS key + netpol
+          # additive; rollout annotation pod restart tetikler so SmsAdapter
+          # primary=jetsms reload + JetSmsDlrPollingWorker activate.
+          sms.acik.com/jetsms-m4-cutover: "b4-prod-2026-05-20-sha-6307428"
 
   # Ingress host + TLS host: ai.acik.com (D18)
+  # Faz 22.5 (gitops#1436): append the /artifacts path → artifact-host:80 so the
+  # endpoint-admin UI one-command + manifest discovery resolve on ai.acik.com.
+  # ingress-nginx matches most-specific path first, so /artifacts wins over `/`
+  # regardless of list order; no rewrite-target → path passes verbatim to the
+  # artifact-host nginx. Same host + existing wildcard-acik-com TLS cert (no TLS
+  # change). DESIRED-STATE ONLY (prod manual-sync; owner-gated rollout).
   - target:
       kind: Ingress
       name: platform
@@ -877,6 +1149,16 @@ patches:
       - op: replace
         path: /spec/tls/0/hosts/0
         value: ai.acik.com
+      - op: add
+        path: /spec/rules/0/http/paths/-
+        value:
+          path: /artifacts
+          pathType: Prefix
+          backend:
+            service:
+              name: artifact-host
+              port:
+                number: 80
 
   # Host bridge prod portları (D20)
   - target:

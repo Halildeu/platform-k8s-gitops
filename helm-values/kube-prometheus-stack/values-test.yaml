@@ -34,12 +34,46 @@ prometheus:
     serviceMonitorSelector: {}        # Tüm ServiceMonitor'ları scrape et
     podMonitorSelectorNilUsesHelmValues: false
     podMonitorSelector: {}
-    # Remote write prod Prometheus'a
-    # NOT: URL prod cluster ingress veya direct Service; cutover sonrası set edilir
-    # Şimdilik placeholder; PR-next-5 ArgoCD kurulumu sonrası doğru endpoint yazılır.
+    # Remote write prod Prometheus'a — gitops#1459 onarımı (2026-06-12).
+    # Eski URL var olmayan bir prod-ns Service'ine işaret ediyordu
+    # (cross-cluster DNS çözümsüz; akış hiç çalışmadı). Yeni zincir:
+    # D19 bridge Service (base/monitoring-test-only) → remote-write-bridge
+    # nginx (host-compose, 172.19.0.251:9091, basic auth) →
+    # k3d-prod-server-0:30090 NodePort → prod receiver
+    # (enableRemoteWriteReceiver, values-prod).
     remoteWrite:
-      - url: "http://prometheus-prod-remote-write-receiver.platform-prod.svc.cluster.local:9090/api/v1/write"
+      - url: "http://remote-write-bridge.monitoring.svc.cluster.local:9091/api/v1/write"
+        basicAuth:
+          username:
+            name: remote-write-bridge-auth   # ESO: kv/platform/remote-write-bridge
+            key: username
+          password:
+            name: remote-write-bridge-auth
+            key: password
         writeRelabelConfigs:
+          # Allowlist fazı (gitops#1459, Codex 019ebacc cardinality kararı):
+          # full-fidelity federation ilk açılışta H1=235k yaptı (H0=115k,
+          # eşit boyutlu cluster'lar → ×2 kaçınılmaz; prod prometheus 773Mi/1Gi
+          # RAM'e dayandı). Amaç STT görünürlüğü — job-scope'lu dar keep:
+          #   up                    → tüm job'lar (target görünürlüğü, ~30 seri)
+          #   redis_*               → yalnız redis-streams-exporter
+          #   http/lettuce/jvm-heap → yalnız audio-gateway
+          #   stt:* + stt_*         → tüm job'lar (recording + worker)
+          #   http/hikari/jvm       → meeting-service + transcript-service
+          #                           (PR-obs-03 #1660; alerting prod-hub'da, test'te
+          #                           Alertmanager kapalı → up dışı 6 alert'in girdi
+          #                           serileri allowlist'e girmezse prod-hub'da
+          #                           veri-yok = sahte kapsama. Codex 019edc25 MF1.
+          #                           hikaricp_connections_pending + jvm used|max
+          #                           heap-util için; cardinality düşük — pool=1,
+          #                           uri seti dar.)
+          # Test infra federation'ı (kubelet/apiserver/ksm/node-exporter)
+          # BİLİNÇLİ dışarıda — ayrı karar (Codex). Guard: prod'da aktif test
+          # serisi <= Tallow*1.15 + RSS<=850Mi sustained (issue #1459).
+          - sourceLabels: ["job", "__name__"]
+            separator: ";"
+            regex: "(?:redis-streams-exporter;(?:redis_up|redis_stream_.*)|audio-gateway;(?:http_server_requests_(?:seconds|active_seconds).*|lettuce_command_(?:completion|firstresponse)_seconds.*|jvm_memory_used_bytes)|(?:meeting-service|transcript-service);(?:http_server_requests_(?:seconds|active_seconds).*|hikaricp_connections_pending|jvm_memory_(?:used|max)_bytes)|[^;]*;(?:up|stt:.*|stt_.*))"
+            action: keep
           # Test cluster label ekle (prod Grafana'da ayrım için)
           - sourceLabels: ["__name__"]
             targetLabel: "cluster"

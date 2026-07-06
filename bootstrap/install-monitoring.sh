@@ -51,12 +51,28 @@ if [[ ! -f "${values_file}" ]]; then
   err "values dosyası yok: ${values_file}"
 fi
 
+# R16 PR1 kill-switch (Codex 019e4448) — KPS_REMOTE_WRITE_DISABLED=1 layers
+# a second -f values override that empties prometheus.prometheusSpec.remoteWrite.
+# Only `test` ships an outbound remoteWrite stream today, so the override is
+# only meaningful (and only ships a file) on the test side.
+killswitch_args=()
+if [[ "${KPS_REMOTE_WRITE_DISABLED:-0}" == "1" ]]; then
+  killswitch_file="${REPO_ROOT}/helm-values/kube-prometheus-stack/values-${ENV}-no-remote-write.yaml"
+  if [[ -f "${killswitch_file}" ]]; then
+    log "R16 KILL-SWITCH ACTIVE — layering ${killswitch_file##*/}"
+    killswitch_args=(-f "${killswitch_file}")
+  else
+    log "R16 KILL-SWITCH requested but ${killswitch_file##*/} not present — skipping (${ENV} has no outbound remote_write to disable)"
+  fi
+fi
+
 log "helm upgrade --install kube-prometheus-stack (${ENV}, chart 65.x)"
 helm --kube-context "${ctx}" upgrade --install kube-prometheus-stack \
   prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --version "${KPS_VERSION:-65.8.0}" \
   -f "${values_file}" \
+  "${killswitch_args[@]}" \
   --wait --timeout 10m
 
 log "kurulum tamam"

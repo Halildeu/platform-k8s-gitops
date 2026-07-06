@@ -1,0 +1,176 @@
+name: Faz 24 I3 Denetim SSH Authorize Package
+
+# Builds a public-key-only operator package for platform-k8s-gitops#1864.
+# It does not connect to Denetim PC and does not upload private key material.
+
+on:
+  workflow_dispatch:
+    inputs:
+      identity_run_id:
+        description: "Faz 24 I3 Runner SSH Identity run id to download public key from"
+        required: false
+        default: ""
+      public_key:
+        description: "Optional single-line ssh-ed25519 public key; used when identity_run_id is empty"
+        required: false
+        default: ""
+      target_user:
+        description: "Denetim local user that must authorize the public key"
+        required: true
+        default: "svc-denetim-agent"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: faz24-i3-denetim-ssh-authorize-package
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: build Denetim SSH authorization package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      PACKAGE_DIR: /tmp/faz24-i3-denetim-ssh-authorize-package-${{ github.run_id }}
+      PUBLIC_KEY_INPUT_FILE: /tmp/faz24-i3-denetim-ssh-authorize-input-${{ github.run_id }}.pub
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          IDENTITY_RUN_ID: ${{ inputs.identity_run_id }}
+          PUBLIC_KEY: ${{ inputs.public_key }}
+          TARGET_USER: ${{ inputs.target_user }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline identity_run_id "${IDENTITY_RUN_ID}"
+          reject_multiline public_key "${PUBLIC_KEY}"
+          reject_multiline target_user "${TARGET_USER}"
+
+          if [ -z "${IDENTITY_RUN_ID}" ] && [ -z "${PUBLIC_KEY}" ]; then
+            echo "::error::identity_run_id or public_key is required"
+            exit 1
+          fi
+          if [ -n "${IDENTITY_RUN_ID}" ] && [ -n "${PUBLIC_KEY}" ]; then
+            echo "::error::set only one of identity_run_id or public_key"
+            exit 1
+          fi
+          if [ -n "${IDENTITY_RUN_ID}" ] && ! printf '%s' "${IDENTITY_RUN_ID}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::identity_run_id must be numeric"
+            exit 1
+          fi
+          if ! printf '%s' "${TARGET_USER}" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+            echo "::error::target_user must contain only letters, numbers, dot, underscore, or dash"
+            exit 1
+          fi
+          if printf '%s' "${PUBLIC_KEY}" | grep -Eq 'BEGIN .*PRIVATE KEY|PRIVATE KEY-----'; then
+            echo "::error::private key material is not accepted"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve public key input
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IDENTITY_RUN_ID: ${{ inputs.identity_run_id }}
+          PUBLIC_KEY: ${{ inputs.public_key }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${PACKAGE_DIR}"
+
+          if [ -n "${PUBLIC_KEY}" ]; then
+            printf '%s\n' "${PUBLIC_KEY}" > "${PUBLIC_KEY_INPUT_FILE}"
+            exit 0
+          fi
+
+          download_dir="${RUNNER_TEMP}/faz24-i3-identity-${IDENTITY_RUN_ID}"
+          mkdir -p "${download_dir}"
+          gh run download "${IDENTITY_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "faz24-i3-runner-ssh-identity-${IDENTITY_RUN_ID}" \
+            --dir "${download_dir}"
+
+          mapfile -t public_keys < <(find "${download_dir}" -type f -name '*.pub' | sort)
+          if [ "${#public_keys[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one .pub file in identity artifact, found ${#public_keys[@]}"
+            exit 1
+          fi
+          cp "${public_keys[0]}" "${PUBLIC_KEY_INPUT_FILE}"
+
+      - name: Build package
+        id: build
+        env:
+          IDENTITY_RUN_ID: ${{ inputs.identity_run_id }}
+          TARGET_USER: ${{ inputs.target_user }}
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/build-i3-denetim-ssh-authorize-package.py \
+            --public-key-file "${PUBLIC_KEY_INPUT_FILE}" \
+            --output-dir "${PACKAGE_DIR}" \
+            --target-user "${TARGET_USER}" \
+            --source-identity-run-id "${IDENTITY_RUN_ID}"
+
+      - name: Verify package excludes private material
+        run: |
+          set -euo pipefail
+          if grep -R -E -- '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.' "${PACKAGE_DIR}"; then
+            echo "::error::package contains forbidden private/secret-like material"
+            exit 1
+          fi
+          test -s "${PACKAGE_DIR}/authorize-denetim-i3-public-key.ps1"
+          test -s "${PACKAGE_DIR}/faz24-i3-denetim_ed25519.pub"
+          test -s "${PACKAGE_DIR}/expected-public-key-metadata.json"
+          test -s "${PACKAGE_DIR}/SHA256SUMS"
+
+      - name: Write workflow summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 I3 Denetim SSH authorization package"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-i3-denetim-ssh-authorize-package-${{ github.run_id }}\`"
+            echo "- Target user: \`${{ inputs.target_user }}\`"
+            echo "- Identity run id: \`${{ inputs.identity_run_id }}\`"
+            echo
+            echo "Boundary: public-key-only operator package. This workflow does not connect to Denetim PC, does not change Denetim host config, and does not upload private key material. A Denetim operator must run the PowerShell script from an elevated session, then rerun the I3 evidence workflow."
+            echo
+            if [ -s "${PACKAGE_DIR}/expected-public-key-metadata.json" ]; then
+              echo '```json'
+              sed -n '1,160p' "${PACKAGE_DIR}/expected-public-key-metadata.json"
+              echo '```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload package artifact
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-i3-denetim-ssh-authorize-package-${{ github.run_id }}
+          path: ${{ env.PACKAGE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local package directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${PACKAGE_DIR}"
+          rm -f "${PUBLIC_KEY_INPUT_FILE}"

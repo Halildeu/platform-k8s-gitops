@@ -12,6 +12,14 @@ spec:
     limits.memory: "12Gi"
     persistentvolumeclaims: "10"
     pods: "30"
-    services: "20"
+    # 20 → 24 (2026-06-11, gitops#1447 follow-up): test ns 20/20 doluydu —
+    # Faz 24 audio-gateway + redis-streams host-bridge Service'i Forbidden
+    # aldı (exceeded quota). +4 headroom: Faz 24 kalan servisleri
+    # (meeting/transcript) + 1 yedek. CI quota preflight'ı yalnız cpu/memory
+    # sayıyor — object-count gap'i için bkz. gitops#1448 sonrası iyileştirme.
+    # 24 → 28 (2026-06-17, #1615 transcript deploy): meeting-service 24/24'ü
+    # doldurdu (24→meeting dahil) → transcript Service Forbidden aldı. +4:
+    # transcript (#411) + audit-event-consumer (#1249) + 2 yedek (Faz 24 sonu).
+    services: "28"
     secrets: "30"
     configmaps: "30"

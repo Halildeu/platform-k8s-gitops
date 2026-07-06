@@ -1,0 +1,53 @@
+# Give the #548 strong-path broker its own selectors. Kustomize adds the
+# "-device-key" resource name suffix, but label values are not automatically
+# rewritten; without this patch the shared and strong-path brokers would select
+# each other's pods.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: endpoint-admin-remote-bridge
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/component: remote-bridge-device-key-broker
+    app.kubernetes.io/part-of: remote-bridge-device-key
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+        app.kubernetes.io/component: remote-bridge-device-key-broker
+        app.kubernetes.io/part-of: remote-bridge-device-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: endpoint-admin-remote-bridge
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/component: remote-bridge-device-key-broker
+    app.kubernetes.io/part-of: remote-bridge-device-key
+spec:
+  selector:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-admin-remote-bridge-config
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/component: remote-bridge-device-key-broker
+    app.kubernetes.io/part-of: remote-bridge-device-key
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: endpoint-admin-remote-bridge
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/component: remote-bridge-device-key-broker
+    app.kubernetes.io/part-of: remote-bridge-device-key

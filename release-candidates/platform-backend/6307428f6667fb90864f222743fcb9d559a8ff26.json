@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "notification-orchestrator",
+  "git_sha": "6307428f6667fb90864f222743fcb9d559a8ff26",
+  "git_short_sha": "6307428f",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-notification-orchestrator",
+    "digest": "sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d",
+    "tag": "sha-6307428",
+    "push_run_id": 26185928228,
+    "pushed_at": "2026-05-20T19:47:00Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-05-20T19:51:00Z",
+      "promoted_by_pr": 914,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-20T19:54:12Z",
+          "details": "Pod imageID=sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d Running 1/1; SmsAdapter activated primary=jetsms; SmtpAdapter activated dkimEnabled=false (relay strategy contract); ProductionConfigValidator SKIPPED (non-prod profile); Started in 74s"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-20T19:54:12Z",
+          "endpoints": [
+            "/actuator/health"
+          ],
+          "details": "PR-B1 (platform-backend #268) backend strategy enum + ProductionConfigValidator validateDkimStrategy() switch branch test cluster boot smoke OK. 4 yeni ConfigMap key rendered (NOTIFY_DKIM_STRATEGY=relay + NOTIFY_DKIM_ENABLED=false + relay.provider=office365 + relay.domain=acik.com). SmtpAdapter Optional<DkimSigner> empty (enabled=false) — relay path doğru. Test cluster mevcut akış (SMS JetSMS multipart) kırılmadı."
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-20T19:54:12Z",
+          "allow_deny_synthetic": "PASS",
+          "details": "Layer 1 NotifyOrgAccessGuard (JWT org_id claim) unchanged in PR-B1; sadece DKIM validator + SmtpAdapter scope. M2 D29-Authorized historic evidence (2026-05-14) + sha-6ed593e PR-A3.1.1 canary smoke (2026-05-20) Layer 1 ALLOW/DENY pattern still valid; 23.A4 backend strategy enum auth-filter scope dışı."
+        }
+      },
+      "verified_at": "2026-05-20T19:54:12Z",
+      "candidate_pr": 914,
+      "candidate_pr_status": "merged"
+    },
+    "prod": {
+      "promoted_at": "2026-05-20T20:14:00Z",
+      "promoted_by_pr": 916,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-20T20:15:33Z",
+          "details": "Pod imageID=sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d Running 1/1; SmtpAdapter activated dkimEnabled=false (relay strategy); SmsAdapter activated primary=jetsms secondary=(none) registered=[netgsm, jetsms]; ProductionConfigValidator: all production guards PASSED (validateDkimStrategy + validateDkimRelay relay.provider=office365 relay.domain=acik.com); JetSmsDlrPollingWorker activated batchSize=100 pollInterval=PT1M scheduling=true; OutboxPoller + RetryWorker activated; Started in 37.768 seconds"
+        },
+        "d29_functional": {
+          "status": "AMBER",
+          "checked_at": "2026-05-20T20:15:33Z",
+          "endpoints": ["/actuator/health"],
+          "details": "Boot-only functional smoke GREEN (pod env vars all 14 DKIM + JetSMS keys present + ConfigMap render correct + ProductionConfigValidator PASSED). Real SMS dispatch canary smoke ext-gated (real user M365 SSO UI flow; agent prod-smoke-tester JWT mint gateway-block 403). DLR poll cycle scheduling=true ama henuz pending DLR yok (ACCEPTED delivery_id bos set). AMBER status: boot-up evidence GREEN ama functional-acceptance (canary SMS dispatch + DLR terminal) ext-gated."
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-20T20:15:33Z",
+          "allow_deny_synthetic": "PASS",
+          "details": "Layer 1 NotifyOrgAccessGuard (JWT org_id claim) unchanged in PR-B chain; PR-B1 backend strategy enum scope sadece DKIM validator + SmtpAdapter. M2 D29-Authorized historic evidence (2026-05-14) + Session 47 PR-A3.1.1 canary smoke chain Layer 1 ALLOW/DENY pattern still valid; PR-B prod cutover auth-filter scope dışı."
+        }
+      },
+      "verified_at": "2026-05-20T20:15:33Z",
+      "candidate_pr": 916,
+      "candidate_pr_status": "merged"
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3"
+  },
+  "audit": {
+    "created_at": "2026-05-20T19:50:00Z",
+    "last_updated_at": "2026-05-20T20:30:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/26185928228"
+  }
+}

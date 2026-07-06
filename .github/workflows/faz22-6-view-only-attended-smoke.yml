@@ -1,0 +1,331 @@
+name: Faz 22.6 VIEW_ONLY attended product smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Required literal: RUN_FAZ22_6_VIEW_ONLY_ATTENDED_SMOKE"
+        required: true
+        type: string
+      expected_digest:
+        description: "Optional endpoint-admin remote-bridge deployment digest; empty derives from rendered overlay SSOT"
+        required: false
+        default: ""
+        type: string
+      device_id:
+        description: "Attended pilot endpoint device UUID"
+        required: true
+        default: "423b6fc3-7497-4083-bd2f-5e2fe543bfe9"
+        type: string
+      device_hostname:
+        description: "Attended pilot endpoint hostname"
+        required: true
+        default: "SRB-AIDENETIMPC"
+        type: string
+      remote_bridge_deployment:
+        description: "Remote bridge deployment to test; strong Faz 22.6 path uses the device-key broker"
+        required: true
+        default: "endpoint-admin-remote-bridge-device-key"
+        type: choice
+        options:
+          - endpoint-admin-remote-bridge-device-key
+          - endpoint-admin-remote-bridge
+      require_active_gui:
+        description: "Fail before the product smoke unless Denetim PC reports an active GUI session"
+        required: true
+        default: true
+        type: boolean
+      denetim_ssh_target:
+        description: "Denetim SSH target used only for GUI/log preflight"
+        required: true
+        default: "svc-denetim-agent@10.99.0.2"
+        type: string
+      denetim_ssh_auth_mode:
+        description: "Denetim SSH auth source"
+        required: true
+        default: "runner_identity"
+        type: choice
+        options:
+          - runner_identity
+          - ssh_config_alias
+      auto_finalize:
+        description: "Also run the v2 finalizer when evidence_url is already the canonical HTTPS manifest URL"
+        required: true
+        default: false
+        type: boolean
+      evidence_url:
+        description: "Optional HTTPS URL for the canonical manifest when auto_finalize=true"
+        required: false
+        default: ""
+        type: string
+      owner_approved_by:
+        description: "Named owner used only when auto_finalize=true"
+        required: false
+        default: "Halil Kocoglu"
+        type: string
+      approved_at:
+        description: "Owner approval date YYYY-MM-DD; default is workflow run date"
+        required: false
+        default: ""
+        type: string
+      expires_at:
+        description: "Engineering evidence expiry YYYY-MM-DD; default is +30 days when auto_finalize=true"
+        required: false
+        default: ""
+        type: string
+      viewer_path_decision:
+        description: "Fan-out decision for the bounded pilot"
+        required: true
+        default: "owner-deferred"
+        type: choice
+        options:
+          - owner-deferred
+          - fanout-proven
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: faz22-6-view-only-attended-smoke
+  cancel-in-progress: false
+
+env:
+  K8S_CONTEXT: k3d-test
+  K8S_NAMESPACE: platform-test
+  REMOTE_BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge
+  REMOTE_BRIDGE_LOCAL_PORT: "18096"
+  EVIDENCE_DIR: /tmp/faz22-6-view-only-attended-${{ github.run_id }}
+  ISSUE_URL: https://github.com/Halildeu/platform-k8s-gitops/issues/1580
+
+jobs:
+  attended-smoke:
+    name: VIEW_ONLY attended product-channel smoke
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 35
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          REMOTE_BRIDGE_DEPLOYMENT: ${{ inputs.remote_bridge_deployment }}
+          DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
+          AUTO_FINALIZE: ${{ inputs.auto_finalize && '1' || '0' }}
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          APPROVED_AT: ${{ inputs.approved_at }}
+          EXPIRES_AT: ${{ inputs.expires_at }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          for name in CONFIRM EXPECTED_DIGEST DEVICE_ID DEVICE_HOSTNAME REMOTE_BRIDGE_DEPLOYMENT DENETIM_SSH_TARGET DENETIM_SSH_AUTH_MODE AUTO_FINALIZE EVIDENCE_URL APPROVED_AT EXPIRES_AT; do
+            reject_multiline "$name" "${!name}"
+          done
+
+          if [ "$CONFIRM" != "RUN_FAZ22_6_VIEW_ONLY_ATTENDED_SMOKE" ]; then
+            echo "::error::confirm input must be RUN_FAZ22_6_VIEW_ONLY_ATTENDED_SMOKE"
+            exit 1
+          fi
+
+          if [ -n "$EXPECTED_DIGEST" ] && ! printf '%s' "$EXPECTED_DIGEST" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+            echo "::error::expected_digest must be empty or match ^sha256:[a-f0-9]{64}$"
+            exit 1
+          fi
+
+          if ! printf '%s' "$DEVICE_ID" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+            echo "::error::device_id must look like a UUID"
+            exit 1
+          fi
+
+          case "$REMOTE_BRIDGE_DEPLOYMENT" in
+            endpoint-admin-remote-bridge-device-key|endpoint-admin-remote-bridge) ;;
+            *)
+              echo "::error::unsupported remote_bridge_deployment"
+              exit 1
+              ;;
+          esac
+
+          case "$DENETIM_SSH_AUTH_MODE" in
+            runner_identity) ;;
+            ssh_config_alias)
+              if [ "$DENETIM_SSH_TARGET" != "denetim-pc" ]; then
+                echo "::error::ssh_config_alias mode requires denetim_ssh_target=denetim-pc"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::unsupported denetim_ssh_auth_mode"
+              exit 1
+              ;;
+          esac
+
+          if [ "$AUTO_FINALIZE" = "1" ] && ! printf '%s' "$EVIDENCE_URL" | grep -Eq '^https://[^?#]+$'; then
+            echo "::error::auto_finalize requires evidence_url as an HTTPS URL without query or fragment"
+            exit 1
+          fi
+
+          if [ -n "$APPROVED_AT" ] && ! printf '%s' "$APPROVED_AT" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+            echo "::error::approved_at must be YYYY-MM-DD when set"
+            exit 1
+          fi
+
+          if [ -n "$EXPIRES_AT" ] && ! printf '%s' "$EXPIRES_AT" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+            echo "::error::expires_at must be YYYY-MM-DD when set"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run VIEW_ONLY attended smoke
+        id: smoke
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
+          KC_TEST_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+          EMIT_GITHUB_MASK_COMMANDS: "1"
+          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          REMOTE_BRIDGE_DEPLOYMENT: ${{ inputs.remote_bridge_deployment }}
+          DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
+          REQUIRE_ACTIVE_GUI: ${{ inputs.require_active_gui && '1' || '0' }}
+          AUTO_FINALIZE: ${{ inputs.auto_finalize && '1' || '0' }}
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          OWNER_APPROVED_BY: ${{ inputs.owner_approved_by }}
+          APPROVED_AT: ${{ inputs.approved_at }}
+          EXPIRES_AT: ${{ inputs.expires_at }}
+          VIEWER_PATH_DECISION: ${{ inputs.viewer_path_decision }}
+        run: |
+          set +e
+          mkdir -p "${EVIDENCE_DIR}"
+          chmod +x scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+          if [ "$DENETIM_SSH_AUTH_MODE" = "ssh_config_alias" ]; then
+            export DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/runner/faz22-6-denetim-ssh/config}"
+            export DENETIM_SSH_OPTS="__SSH_CONFIG__"
+          fi
+
+          scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh \
+            2>&1 | while IFS= read -r line; do
+              if [[ "$line" == ::add-mask::* ]]; then
+                printf '%s\n' "$line"
+              else
+                printf '%s\n' "$line" | tee -a "${EVIDENCE_DIR}/workflow-smoke.log"
+              fi
+            done
+          exit_code="${PIPESTATUS[0]}"
+
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          echo "VIEW_ONLY_ATTENDED_SMOKE_EXIT_CODE=${exit_code}"
+          exit 0
+
+      - name: Publish redacted #1580 evidence summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
+        run: |
+          set -euo pipefail
+
+          summary="${EVIDENCE_DIR}/summary.json"
+          mkdir -p "${EVIDENCE_DIR}"
+          if [ ! -f "$summary" ]; then
+            jq -n \
+              --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --arg status "no-go" \
+              --arg reason "summary-json-missing" \
+              --arg evidenceDir "$EVIDENCE_DIR" \
+              '{generatedAt:$generatedAt,status:$status,reason:$reason,evidenceDir:$evidenceDir}' \
+              > "$summary"
+          fi
+
+          status="$(jq -r '.status // "unknown"' "$summary")"
+          reason="$(jq -r '.reason // ""' "$summary")"
+          session_hash="$(jq -r '.sessionHash // ""' "$summary")"
+          open_http="$(jq -r '.http.open // ""' "$summary")"
+          approve_http="$(jq -r '.http.approve // ""' "$summary")"
+          duress_http="$(jq -r '.http.duressSignal // ""' "$summary")"
+          operation_http="$(jq -r '.http.operation // ""' "$summary")"
+          negative_http="$(jq -r '.http["negative-nonpilot"] // ""' "$summary")"
+          consent_wait="$(jq -r '.consentWait // ""' "$summary")"
+          transport_pushed="$(jq -r '.transportPushed // ""' "$summary")"
+          broker_signals="$(jq -c '.brokerSignals // []' "$summary")"
+          manifest_sha=""
+          marker_sha=""
+          if [ -f "${EVIDENCE_DIR}/view-only-engineering-evidence-manifest.json" ]; then
+            manifest_sha="$(jq -cS . "${EVIDENCE_DIR}/view-only-engineering-evidence-manifest.json" | sha256sum | awk '{print $1}')"
+          fi
+          if [ -f "${EVIDENCE_DIR}/view-only-engineering-marker.txt" ]; then
+            marker_sha="$(sha256sum "${EVIDENCE_DIR}/view-only-engineering-marker.txt" | awk '{print $1}')"
+          fi
+
+          comment="${RUNNER_TEMP}/faz22-6-view-only-attended-smoke.md"
+          {
+            echo "## #1580 VIEW_ONLY attended product smoke"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
+            echo "- Target device: \`${{ inputs.device_hostname }}\` / \`${{ inputs.device_id }}\`"
+            echo "- Remote bridge deployment: \`${{ inputs.remote_bridge_deployment }}\`"
+            echo "- Status: \`${status}\`"
+            echo "- Consent wait: \`${consent_wait}\`"
+            echo "- Open / approve / duress-signal / operation / negative-nonpilot HTTP: \`${open_http}\` / \`${approve_http}\` / \`${duress_http}\` / \`${operation_http}\` / \`${negative_http}\`"
+            echo "- Transport pushed: \`${transport_pushed}\`"
+            echo "- Broker signals: \`${broker_signals}\`"
+            echo "- Session hash: \`${session_hash}\`"
+            if [ -n "$manifest_sha" ]; then
+              echo "- Generated manifest SHA-256: \`${manifest_sha}\`"
+            fi
+            if [ -n "$marker_sha" ]; then
+              echo "- Generated marker SHA-256: \`${marker_sha}\`"
+            fi
+            if [ -n "$reason" ]; then
+              echo "- Reason: \`${reason}\`"
+            fi
+            echo
+            echo "Boundary: this workflow is product-channel VIEW_ONLY evidence collection. It does not write the #1580 acceptance marker, does not assert KVKK/DPIA legal signoff, does not prove RDP/credential-entry/raw-shell/port-forward, and does not claim production or broad-rollout readiness."
+          } > "$comment"
+
+          gh issue comment 1580 \
+            --repo Halildeu/platform-k8s-gitops \
+            --body-file "$comment" \
+            || echo "::warning::Could not comment on #1580; evidence remains in artifact."
+
+          {
+            echo "## VIEW_ONLY attended product smoke"
+            echo
+            cat "$comment"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload redacted evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz22-6-view-only-attended-smoke-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail workflow on no-go
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.smoke.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ "${EXIT_CODE:-1}" != "0" ]; then
+            echo "::error::VIEW_ONLY attended smoke did not produce accepted-candidate evidence"
+            exit "${EXIT_CODE:-1}"
+          fi

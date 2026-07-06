@@ -2,13 +2,13 @@
 # scripts/drift-detection/alarm_receiver.sh
 #
 # Codex P0 follow-up — drift detection JSON output → GitHub issue audit trail.
-# Reads /tmp/drift-report-<env>-<ts>.json (produced by check_prod_drift.sh)
+# Reads /tmp/drift-report-<env>-<ts>.json (produced by check_env_drift.sh)
 # and opens a GitHub issue per P1/P2 finding (with deduplication via title
 # match — repeated drift reuses existing issue's comment thread).
 #
 # Designed for staging-sw systemd integration:
 #
-#   ExecStart=/bin/bash check_prod_drift.sh prod
+#   ExecStart=/bin/bash check_env_drift.sh prod
 #   ExecStartPost=/bin/bash alarm_receiver.sh /tmp/drift-report-prod-<ts>.json
 #
 # Or invoked manually for ad-hoc reports.
@@ -353,14 +353,18 @@ ENV=$(jq -r '.environment' "$REPORT")
 TS=$(jq -r '.timestamp' "$REPORT")
 EXIT_CODE=$(jq -r '.exit_code' "$REPORT")
 
-# Extract findings filtered to P1/P2 (skip OK)
-findings_count=$(jq '[.findings[] | select(.class != "OK")] | length' "$REPORT")
+# Extract findings filtered to P1/P2 (skip OK + P3).
+# Codex 019e44c8 should_fix #2 — P3 is documented as ::notice::-only
+# (ADR-0023 PR-4 check_env_drift.sh). The alarm receiver MUST NOT open or
+# update GitHub issues on a P3-only report; P3 is operator-visible via the
+# GitHub Actions notice line and the JSON artifact.
+findings_count=$(jq '[.findings[] | select(.class == "P1" or .class == "P2")] | length' "$REPORT")
 [[ "$findings_count" -eq 0 ]] && {
-  echo "[alarm_receiver] no P1/P2/P3 findings — exit clean"
+  echo "[alarm_receiver] no P1/P2 findings — exit clean (P3 ignored by design)"
   exit 0
 }
 
-echo "[alarm_receiver] $findings_count findings to process from $REPORT"
+echo "[alarm_receiver] $findings_count P1/P2 findings to process from $REPORT"
 
 # Pre-flight
 preflight_ok=1
@@ -375,7 +379,8 @@ delivered_webhook=0
 undelivered=0
 
 # For each P1/P2 finding, generate a stable signature and open/update issue
-jq -c '.findings[] | select(.class != "OK")' "$REPORT" | while IFS= read -r finding; do
+# (P3 explicitly excluded; see Codex 019e44c8 should_fix #2 note above).
+jq -c '.findings[] | select(.class == "P1" or .class == "P2")' "$REPORT" | while IFS= read -r finding; do
   cls=$(echo "$finding" | jq -r '.class')
   knd=$(echo "$finding" | jq -r '.kind')
   msg=$(echo "$finding" | jq -r '.message')

@@ -1,0 +1,69 @@
+name: Gate Faz 22.6 release-lineage waiver
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-release-lineage-waiver.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'docs/runbooks/RB-faz22.6-release-lineage-audit.md'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gate-faz22-release-lineage-waiver.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'docs/runbooks/RB-faz22.6-release-lineage-audit.md'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-faz22-release-lineage-waiver-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  waiver-regression:
+    name: Verify release-lineage waiver gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Parse audit scripts and waiver test
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
+            scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh \
+            scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh \
+            scripts/faz22-remote-ops/endpoint-agent-release-policy.sh \
+            tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh \
+            tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh
+
+      - name: Run completion release-lineage gate regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh
+
+      - name: Run release-lineage waiver regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh

@@ -3,7 +3,7 @@
 
 Codex 019e2319 iter-3 AGREE — Single CLI consumed by both bash orchestrators:
   * scripts/drift-detection/check_pr_time.sh  (mode=pr-time)
-  * scripts/drift-detection/check_prod_drift.sh (mode=runtime)
+  * scripts/drift-detection/check_env_drift.sh (mode=runtime)
 
 Both modes share the same contract motor (lib/deploy_normalizer +
 lib/probe_contract_rules + lib/services_catalog). Modes differ in inputs:

@@ -1,0 +1,45 @@
+# Faz 22.5 M2 — edge mTLS (ADR-0029): TLS-passthrough Ingress for the dedicated
+# device-API SNI host. The agent presents an AD CS machine certificate; the
+# backend (NOT the edge) terminates mTLS and derives identity from the client
+# cert in the TLS handshake (spoofing-safe — never from a request header).
+#
+# STAGED IN TEST: the test overlay renders this bundle, but live activation is
+# still operator-gated (keystore/truststore secrets + fixed tenant UUID +
+# ingress-nginx controller `--enable-ssl-passthrough` + host-nginx stream route).
+# See docs/runbooks/RB-faz22-M2-edge-mtls-activation.md.
+#
+# Acceptance (plan §0.5.2): DNS resolves + edge client-cert verify (at backend) +
+# spoof-header strip + no-cert/spoofed-header negative fail-closed + valid
+# machine-cert positive tokenless AutoEnroll smoke.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: endpoint-agent-mtls
+  annotations:
+    # TLS passthrough — ingress-nginx forwards the raw TLS stream by SNI; the
+    # backend Service terminates mTLS. Requires the controller to run with
+    # `--enable-ssl-passthrough` (operator prerequisite, see runbook).
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # Header discipline (plan §0.5.2): with ssl-passthrough this Ingress operates
+    # at L4 (raw TLS stream) and does NOT process HTTP headers — so a
+    # `configuration-snippet` header-strip here would be INEFFECTIVE. With
+    # passthrough the strip is enforced at the BACKEND: it derives identity from
+    # the client cert in the TLS handshake (ADR-0029 §2.5, spoofing-safe) and
+    # MUST ignore any caller-supplied X-Client-Cert / X-Tenant-Id / X-Company-Id
+    # / ssl-client-* header. See the runbook "Header-strip verification".
+spec:
+  ingressClassName: nginx
+  rules:
+    # Dedicated SNI host — never bind an optional client-cert prompt onto the
+    # general browser host (testai.acik.com). Operator creates the DNS A record.
+    - host: mtls.testai.acik.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: endpoint-agent-mtls-backend
+                port:
+                  number: 8443

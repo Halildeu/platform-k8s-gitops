@@ -1,0 +1,91 @@
+# transcript-service ConfigMap — Faz 24 Meeting Intelligence (foundation deploy #411)
+#
+# Non-secret env contract. Source: transcript-service application.yml +
+# application-k8s.yml defaults (platform-backend). DB credentials
+# (SPRING_DATASOURCE_USERNAME/PASSWORD) + OpenFGA store/model IDs are delivered
+# via the ESO-managed `transcript-service-secrets` Secret (not here), matching
+# meeting-service / endpoint-admin-service discipline.
+#
+# Env-specific override (KEYCLOAK_ISSUER_URI / KEYCLOAK_JWKS_URI /
+# SECURITY_JWT_AUDIENCE) stays test-base default; a prod overlay would patch the
+# realm ('serban') like endpoint-admin / meeting.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: transcript-service-config
+  annotations:
+    # Mirror endpoint-admin / meeting: ArgoCD Replace sync keeps this ConfigMap
+    # exact and removes stale keys after a desired-state key removal.
+    argocd.argoproj.io/sync-options: Replace=true
+  labels:
+    app.kubernetes.io/name: transcript-service
+data:
+  # Listen ports (Spring Boot SERVER_PORT 8098)
+  SERVER_PORT: "8098"
+  MANAGEMENT_SERVER_PORT: "8081"
+
+  # Datasource (host-compose Postgres test cluster — D6 stateful contract).
+  # Database name `transcript`; schema `transcript_service` is owned + created
+  # by Flyway (flyway.schemas=transcript_service). DB user/password come from
+  # ESO (transcript-service-secrets).
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/transcript"
+  DB_POOL_MAX: "5"
+
+  # JPA / Flyway — Flyway is the sole schema authority. baseline-on-migrate
+  # baselines an existing schema; ddl-auto=validate (Hibernate verifies, never
+  # mutates). TRANSCRIPT_DB_SCHEMA drives Flyway default-schema + schemas +
+  # Hibernate default_schema (application.yml) so they agree.
+  SPRING_FLYWAY_ENABLED: "true"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
+  TRANSCRIPT_DB_SCHEMA: "transcript_service"
+
+  # Identity / OIDC — test=platform-test realm; prod overlay would patch 'serban'
+  KEYCLOAK_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
+  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+
+  # JWT Security
+  SECURITY_AUTH_ALLOWED_CLIENT_IDS: "frontend,admin-cli,serban-web,account,platform-desktop"
+  SECURITY_JWT_AUDIENCE: "transcript-service,frontend,account,serban-web"
+
+  # Spring profile — activates application-k8s.yml (KEYCLOAK_JWKS_URI binding,
+  # OpenFGA gate). Without it SecurityConfig falls back to the serban realm JWKS.
+  SPRING_PROFILES_ACTIVE: "k8s"
+
+  # Spring Cloud (D7 — Eureka removed)
+  SPRING_CLOUD_VAULT_ENABLED: "false"
+  SPRING_CLOUD_DISCOVERY_ENABLED: "false"
+  SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
+
+  # OpenFGA authz gate (common-auth `erp.openfga.*` contract). enabled=true so
+  # the @RequireModule (module:transcript) is NOT a fail-open no-op. Store/Model
+  # ID are env-specific runtime selectors delivered through the ESO-managed
+  # `transcript-service-secrets` Secret from kv/platform/openfga (shared model
+  # ledger; same discipline as meeting / endpoint-admin / permission-service).
+  # NOTE: transcript-service is a tuple CONSUMER (never writes tuples — ADR-0012-EA
+  # DD-EA-2: permission-service is the sole writer). Zanzibar-ready (module:transcript
+  # tuple seed + allow/deny) is the deferred follow-up; with enabled=true and no
+  # tuple yet, authenticated check() is fail-CLOSED (deny) — D29 Functional gate
+  # (no-JWT → 401) is unaffected (JWT auth precedes OpenFGA).
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+  ERP_OPENFGA_CHECK_CACHE_TTL_SECONDS: "10"
+
+  # Local default tenant (legacy scope key back-fill — transcript.tenant.*)
+  TRANSCRIPT_LOCAL_DEFAULT_TENANT_ID: "00000000-0000-0000-0000-000000000001"
+
+  # Export / search operational caps (KVKK DoS + memory guard). Export beyond
+  # max-rows is rejected 400 (preflight gate). Defaults mirror application.yml.
+  TRANSCRIPT_EXPORT_MAX_ROWS: "50000"
+  TRANSCRIPT_SEARCH_DEFAULT_PAGE_SIZE: "50"
+  TRANSCRIPT_SEARCH_MAX_PAGE_SIZE: "200"
+
+  # Logging
+  LOGGING_LEVEL_ROOT: "INFO"
+
+  # Management / actuator
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
+  MANAGEMENT_TRACING_ENABLED: "false"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"

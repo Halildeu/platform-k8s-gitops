@@ -1,0 +1,353 @@
+name: "Apply #1580 VIEW_ONLY viewer pilot surface"
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to run"
+        required: true
+        default: "dry_run"
+        type: choice
+        options:
+          - dry_run
+          - apply
+          - rollback
+      confirm:
+        description: "Required literal per action: DRY_RUN_VIEW_ONLY_VIEWER_PILOT_ENABLE, APPLY_VIEW_ONLY_VIEWER_PILOT_ENABLE, or ROLLBACK_VIEW_ONLY_VIEWER_PILOT_ENABLE"
+        required: true
+      ack_kvkk_dpia:
+        description: "For apply: literal ACK_KVKK_DPIA_ATTENDED_PILOT_SIGNOFF_RECORDED"
+        required: false
+        default: ""
+      ack_one_person_roster:
+        description: "For apply: literal ACK_ONE_PERSON_OPERATOR_ROSTER_FIXED"
+        required: false
+        default: ""
+      ack_pilot_device_consent:
+        description: "For apply: literal ACK_CONSENTING_ATTENDED_PILOT_DEVICE"
+        required: false
+        default: ""
+      ack_8096_exposure:
+        description: "For apply: literal ACK_OWNER_8096_EXPOSURE"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  # Shares the remote-bridge activation group: broker/device-key/viewer overlays
+  # all mutate the same isolated broker Deployment and must not race.
+  group: endpoint-admin-remote-bridge-activation
+  cancel-in-progress: false
+
+env:
+  K8S_CONTEXT: k3d-test
+  K8S_NAMESPACE: platform-test
+  BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge
+  GATEWAY_DEPLOYMENT: api-gateway
+  VIEWER_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
+  BROKER_ONLY_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+  TEST_ROOT_OVERLAY: kustomize/overlays/test
+
+jobs:
+  viewer-pilot-surface:
+    name: "Apply or rollback owner-gated #1580 VIEW_ONLY viewer pilot surface"
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 20
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+
+          case "${{ inputs.action }}" in
+            dry_run)
+              expected_confirm="DRY_RUN_VIEW_ONLY_VIEWER_PILOT_ENABLE"
+              ;;
+            apply)
+              expected_confirm="APPLY_VIEW_ONLY_VIEWER_PILOT_ENABLE"
+              ;;
+            rollback)
+              expected_confirm="ROLLBACK_VIEW_ONLY_VIEWER_PILOT_ENABLE"
+              ;;
+            *)
+              echo "::error::unsupported action: ${{ inputs.action }}"
+              exit 1
+              ;;
+          esac
+
+          if [ "${{ inputs.confirm }}" != "${expected_confirm}" ]; then
+            echo "::error::confirm input must be ${expected_confirm}"
+            exit 1
+          fi
+
+          if [ "${{ inputs.action }}" = "apply" ]; then
+            [ "${{ inputs.ack_kvkk_dpia }}" = "ACK_KVKK_DPIA_ATTENDED_PILOT_SIGNOFF_RECORDED" ] || {
+              echo "::error::apply requires KVKK/DPIA attended pilot signoff acknowledgement"
+              exit 1
+            }
+            [ "${{ inputs.ack_one_person_roster }}" = "ACK_ONE_PERSON_OPERATOR_ROSTER_FIXED" ] || {
+              echo "::error::apply requires one-person operator roster acknowledgement"
+              exit 1
+            }
+            [ "${{ inputs.ack_pilot_device_consent }}" = "ACK_CONSENTING_ATTENDED_PILOT_DEVICE" ] || {
+              echo "::error::apply requires consenting attended pilot device acknowledgement"
+              exit 1
+            }
+            [ "${{ inputs.ack_8096_exposure }}" = "ACK_OWNER_8096_EXPOSURE" ] || {
+              echo "::error::apply requires owner acknowledgement for exposing the 8096 viewer surface"
+              exit 1
+            }
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Render and guard viewer exposure overlay
+        if: inputs.action != 'rollback'
+        run: |
+          set -euo pipefail
+
+          kubectl kustomize "${VIEWER_OVERLAY}" > /tmp/endpoint-admin-remote-bridge-viewer.yaml
+
+          grep -A1 -F 'name: REMOTE_BRIDGE_ENABLED' /tmp/endpoint-admin-remote-bridge-viewer.yaml \
+            | grep -F 'value: "true"'
+          grep -F 'REMOTE_BRIDGE_VIEWER_ENABLED: "true"' /tmp/endpoint-admin-remote-bridge-viewer.yaml
+          grep -F 'REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES: image/png' \
+            /tmp/endpoint-admin-remote-bridge-viewer.yaml
+
+          grep -F 'name: endpoint-admin-remote-bridge-viewer' \
+            /tmp/endpoint-admin-remote-bridge-viewer.yaml
+          grep -F 'type: ClusterIP' /tmp/endpoint-admin-remote-bridge-viewer.yaml
+          if awk '
+              /^---[[:space:]]*$/ { in_viewer_service = 0 }
+              /name: endpoint-admin-remote-bridge-viewer/ { in_viewer_service = 1 }
+              in_viewer_service && /nodePort:/ { bad = 1 }
+              END { exit bad ? 0 : 1 }
+            ' \
+            /tmp/endpoint-admin-remote-bridge-viewer.yaml; then
+            echo "::error::viewer exposure rendered a nodePort; 8096 must remain ClusterIP-only"
+            exit 1
+          fi
+
+          grep -F 'containerPort: 8096' /tmp/endpoint-admin-remote-bridge-viewer.yaml
+          grep -F 'name: eab-bridge-viewer-allow-ingress-8096-from-api-gateway' \
+            /tmp/endpoint-admin-remote-bridge-viewer.yaml
+          grep -F 'name: eab-api-gateway-allow-egress-8096-to-bridge-viewer' \
+            /tmp/endpoint-admin-remote-bridge-viewer.yaml
+          grep -F 'app.kubernetes.io/name: api-gateway' /tmp/endpoint-admin-remote-bridge-viewer.yaml
+
+          kubectl kustomize "${TEST_ROOT_OVERLAY}" > /tmp/platform-test-root.yaml
+          if grep -q 'endpoint-admin-remote-bridge-viewer' /tmp/platform-test-root.yaml; then
+            echo "::error::viewer overlay leaked into the synced test Argo root"
+            exit 1
+          fi
+
+          {
+            echo "## #1580 VIEW_ONLY viewer pilot surface render"
+            echo ""
+            echo "- action: \`${{ inputs.action }}\`"
+            echo "- context: \`${K8S_CONTEXT}\`"
+            echo "- namespace: \`${K8S_NAMESPACE}\`"
+            echo "- viewer overlay: \`${VIEWER_OVERLAY}\`"
+            echo "- viewer service: \`endpoint-admin-remote-bridge-viewer:8096\`"
+            echo "- service type: \`ClusterIP\`"
+            echo "- route: \`/api/v1/endpoint-admin/remote-access/sessions/*/view\`"
+            echo "- Argo root exposure: \`absent\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Server-side dry-run viewer exposure overlay
+        if: inputs.action != 'rollback'
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply --dry-run=server -f /tmp/endpoint-admin-remote-bridge-viewer.yaml
+
+      - name: Apply viewer exposure overlay
+        if: inputs.action == 'apply'
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply -f /tmp/endpoint-admin-remote-bridge-viewer.yaml
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout restart "deploy/${BRIDGE_DEPLOYMENT}"
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout status "deploy/${BRIDGE_DEPLOYMENT}" --timeout=300s
+
+      - name: Patch api-gateway route to viewer
+        if: inputs.action == 'apply'
+        run: |
+          set -euo pipefail
+
+          # ${sid} is a Spring RewritePath variable, not a shell variable.
+          # shellcheck disable=SC2016
+          patch_payload='{
+            "data": {
+              "SPRING_CLOUD_GATEWAY_ROUTES_28_ID": "remote-bridge-viewer-route",
+              "SPRING_CLOUD_GATEWAY_ROUTES_28_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
+              "SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER": "-10",
+              "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
+              "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET",
+              "SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
+            }
+          }'
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            patch configmap api-gateway-config --type merge -p "${patch_payload}"
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout restart "deploy/${GATEWAY_DEPLOYMENT}"
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout status "deploy/${GATEWAY_DEPLOYMENT}" --timeout=300s
+
+      - name: Verify live viewer pilot surface
+        if: inputs.action == 'apply'
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get svc endpoint-admin-remote-bridge-viewer \
+            -o jsonpath='viewer_service_type={.spec.type} ports={.spec.ports[*].port} nodePorts={.spec.ports[*].nodePort}{"\n"}'
+
+          svc_type="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get svc endpoint-admin-remote-bridge-viewer -o jsonpath='{.spec.type}')"
+          node_ports="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get svc endpoint-admin-remote-bridge-viewer -o jsonpath='{.spec.ports[*].nodePort}')"
+          if [ "${svc_type}" != "ClusterIP" ] || [ -n "${node_ports}" ]; then
+            echo "::error::viewer service must be ClusterIP with no nodePort"
+            exit 1
+          fi
+
+          bridge_env="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get deploy "${BRIDGE_DEPLOYMENT}" \
+            -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}')"
+          printf '%s\n' "${bridge_env}" | grep -F 'REMOTE_BRIDGE_ENABLED=true'
+
+          bridge_config="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap endpoint-admin-remote-bridge-config -o json)"
+          printf '%s\n' "${bridge_config}" \
+            | jq -e '.data.REMOTE_BRIDGE_VIEWER_ENABLED == "true"'
+          printf '%s\n' "${bridge_config}" \
+            | jq -e '.data.REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES == "image/png"'
+
+          gateway_env="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            exec "deploy/${GATEWAY_DEPLOYMENT}" -- printenv \
+            | grep -E 'SPRING_CLOUD_GATEWAY_ROUTES_28_(ID|URI|ORDER)=|KEYCLOAK_(ISSUER_URI|JWKS_URI)=')"
+          printf '%s\n' "${gateway_env}"
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ID=remote-bridge-viewer-route'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_URI=http://endpoint-admin-remote-bridge-viewer:8096'
+          printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER=-10'
+          if printf '%s\n' "${gateway_env}" | grep -F 'OVERLAY_MUST_OVERRIDE'; then
+            echo "::error::api-gateway KEYCLOAK overlay values were clobbered"
+            exit 1
+          fi
+
+          {
+            echo ""
+            echo "## #1580 VIEW_ONLY viewer pilot live surface"
+            echo ""
+            echo "- bridge rollout: \`ok\`"
+            echo "- api-gateway rollout: \`ok\`"
+            echo "- viewer service: \`ClusterIP/no-nodePort\`"
+            echo "- gateway route 28: \`remote-bridge-viewer-route\`"
+            echo "- keycloak overlay placeholders: \`absent\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rollback viewer pilot surface
+        if: inputs.action == 'rollback'
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap api-gateway-config -o json \
+            | jq 'del(
+                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID,
+                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_URI,
+                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER,
+                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0,
+                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1,
+                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0
+              )' \
+            | kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" apply -f -
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout restart "deploy/${GATEWAY_DEPLOYMENT}"
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout status "deploy/${GATEWAY_DEPLOYMENT}" --timeout=300s
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete service endpoint-admin-remote-bridge-viewer --ignore-not-found
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete networkpolicy eab-bridge-viewer-allow-ingress-8096-from-api-gateway --ignore-not-found
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete networkpolicy eab-api-gateway-allow-egress-8096-to-bridge-viewer --ignore-not-found
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply -k "${BROKER_ONLY_OVERLAY}"
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout restart "deploy/${BRIDGE_DEPLOYMENT}"
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout status "deploy/${BRIDGE_DEPLOYMENT}" --timeout=300s
+
+      - name: Verify rollback posture
+        if: inputs.action == 'rollback'
+        run: |
+          set -euo pipefail
+
+          if kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get svc endpoint-admin-remote-bridge-viewer >/dev/null 2>&1; then
+            echo "::error::viewer ClusterIP service still exists after rollback"
+            exit 1
+          fi
+          if kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get networkpolicy eab-bridge-viewer-allow-ingress-8096-from-api-gateway >/dev/null 2>&1; then
+            echo "::error::viewer ingress NetworkPolicy still exists after rollback"
+            exit 1
+          fi
+          if kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get networkpolicy eab-api-gateway-allow-egress-8096-to-bridge-viewer >/dev/null 2>&1; then
+            echo "::error::viewer egress NetworkPolicy still exists after rollback"
+            exit 1
+          fi
+
+          route_keys="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap api-gateway-config -o json \
+            | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_28_"))' || true)"
+          if [ -n "${route_keys}" ]; then
+            echo "::error::api-gateway route 28 keys remain after rollback"
+            printf '%s\n' "${route_keys}"
+            exit 1
+          fi
+
+          bridge_env="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get deploy "${BRIDGE_DEPLOYMENT}" \
+            -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}')"
+          printf '%s\n' "${bridge_env}" | grep -F 'REMOTE_BRIDGE_ENABLED=true'
+
+          bridge_config="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap endpoint-admin-remote-bridge-config -o json)"
+          if printf '%s\n' "${bridge_config}" \
+            | jq -e '.data.REMOTE_BRIDGE_VIEWER_ENABLED == "true"' >/dev/null; then
+            echo "::error::viewer flag is still true after rollback"
+            exit 1
+          fi
+          bridge_ports="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get deploy "${BRIDGE_DEPLOYMENT}" \
+            -o jsonpath='{range .spec.template.spec.containers[0].ports[*]}{.containerPort}{"\n"}{end}')"
+          if printf '%s\n' "${bridge_ports}" | grep -Fx '8096'; then
+            echo "::error::containerPort 8096 is still advertised after rollback"
+            exit 1
+          fi
+
+          {
+            echo "## #1580 VIEW_ONLY viewer rollback verification"
+            echo ""
+            echo "- viewer service: \`absent\`"
+            echo "- viewer NetworkPolicies: \`absent\`"
+            echo "- api-gateway route 28: \`absent\`"
+            echo "- broker remains enabled: \`REMOTE_BRIDGE_ENABLED=true\`"
+          } >> "$GITHUB_STEP_SUMMARY"

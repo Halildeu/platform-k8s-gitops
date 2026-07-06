@@ -1,0 +1,17 @@
+{
+  "schema": "faz22.m7.rollback-rehearsal.collector.v1",
+  "collectedAt": "2026-06-19T05:19:00Z",
+  "phase": "reinstall-continuity",
+  "deviceRole": "domain-gpo",
+  "overall": "PASS",
+  "failCount": 0,
+  "warnCount": 0,
+  "facts": { "computerName": "PC-A", "domain": "acik.local", "partOfDomain": true },
+  "checks": [
+    { "name": "backend-tcp", "status": "PASS", "detail": "TCP mtls.testai.acik.com:443 reachable" },
+    { "name": "machine-cert", "status": "PASS", "detail": "Client-Auth cert present" },
+    { "name": "service-running", "status": "PASS", "detail": "EndpointAgent service Running after reinstall" },
+    { "name": "agent-binary", "status": "PASS", "detail": "binary present after reinstall" },
+    { "name": "exe-signature", "status": "PASS", "detail": "signature valid" }
+  ]
+}

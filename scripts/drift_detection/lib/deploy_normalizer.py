@@ -17,7 +17,7 @@ Surface ("CONTRACT_SURFACE") covered by `template_contract_view`:
     )
 
 `image` is excluded — digest parity is governed by the existing image-pin
-gate in check_prod_drift.sh (Section 2).
+gate in check_env_drift.sh (Section 2).
 
 Probe defaults applied per Kubernetes API server injection:
   scheme=HTTP, periodSeconds=10, timeoutSeconds=1, successThreshold=1,

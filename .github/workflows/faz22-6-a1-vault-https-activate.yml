@@ -1,0 +1,229 @@
+name: Faz 22.6 A1 Vault HTTPS Activate
+
+# Operator-triggered activation for the test-only Vault HTTPS 8202 path used by
+# the Faz 22.6 #548 A1 hardware-attestation flow. This workflow exists because
+# Mac-side SSH to staging-sw can be unavailable while the self-hosted runner is
+# still the authoritative k3d-test execution surface.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Required literal for live activation: APPLY_FAZ22_A1_VAULT_HTTPS_8202"
+        required: true
+        default: "DRY_RUN_ONLY"
+      dry_run:
+        description: "Render, server-side dry-run, and preflight only"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      denetim_check:
+        description: "Run legacy Denetim PC SSH/TPM checks during preflight; set true only when Denetim is the selected target"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz22-6-a1-vault-https-activate
+  cancel-in-progress: false
+
+env:
+  KUBE_CONTEXT: k3d-test
+  KUBE_NAMESPACE: platform-test
+  SSH_TARGET: local
+  VAULT_TLS_DIR: /home/halil/platform-stateful/test/vault/tls
+  VAULT_INIT_JSON: /home/halil/bootstrap-drill/vault-init-test.json
+  VAULT_COMPOSE_DIR: /home/halil/platform-k8s-gitops/host-compose/vault/test
+
+jobs:
+  activate:
+    name: Activate Vault HTTPS 8202 on staging-sw
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.dry_run }}" = "false" ] && [ "${{ inputs.confirm }}" != "APPLY_FAZ22_A1_VAULT_HTTPS_8202" ]; then
+            echo "::error::live activation requires confirm=APPLY_FAZ22_A1_VAULT_HTTPS_8202"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify live Vault mount contract
+        run: |
+          set -euo pipefail
+
+          docker_cli() {
+            local docker_bin
+            for docker_bin in docker /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
+              if command -v "$docker_bin" >/dev/null 2>&1 && "$docker_bin" version >/dev/null 2>&1; then
+                "$docker_bin" "$@"
+                return 0
+              fi
+              if command -v sudo >/dev/null 2>&1 && sudo -n "$docker_bin" version >/dev/null 2>&1; then
+                sudo -n "$docker_bin" "$@"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          docker_api_get() {
+            local sock
+            command -v curl >/dev/null 2>&1 || return 1
+            for sock in /var/run/docker.sock /run/docker.sock; do
+              if [ -S "$sock" ] && curl -fsS --unix-socket "$sock" "http://localhost$1" >/dev/null 2>&1; then
+                curl -fsS --unix-socket "$sock" "http://localhost$1"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          docker_inspect_json() {
+            if docker_cli inspect platform-vault-test --format '{{json .}}'; then
+              return 0
+            fi
+            if docker_api_get "/containers/platform-vault-test/json"; then
+              return 0
+            fi
+            echo "FAIL Docker control unavailable: no usable CLI and no readable Docker socket API" >&2
+            return 1
+          }
+
+          if ! docker_inspect_json > /tmp/platform-vault-test-inspect.json; then
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "::warning::Docker control unavailable; dry-run will continue without live Vault mount contract proof"
+              touch /tmp/faz22-a1-vault-mount-contract-skipped
+              exit 0
+            fi
+            exit 1
+          fi
+          jq '.Mounts' /tmp/platform-vault-test-inspect.json > /tmp/platform-vault-test-mounts.json
+
+          jq -e --arg src "/home/halil/platform-stateful/test/vault/data" \
+            '[.[] | select(.Destination == "/vault/data" and (.Source | startswith($src)))] | length == 1' \
+            /tmp/platform-vault-test-mounts.json >/dev/null
+          jq -e --arg src "/home/halil/platform-stateful/test/vault/logs" \
+            '[.[] | select(.Destination == "/vault/logs" and (.Source | startswith($src)))] | length == 1' \
+            /tmp/platform-vault-test-mounts.json >/dev/null
+          jq -e --arg src "/home/halil/platform-stateful/test/vault/tls" \
+            '[.[] | select(.Destination == "/vault/tls" and (.Source | startswith($src)) and .RW == false)] | length == 1' \
+            /tmp/platform-vault-test-mounts.json >/dev/null
+
+          echo "PASS live Vault data/log/tls mounts match /home/halil/platform-stateful/test/vault"
+
+      - name: Render only Vault Service and Endpoints from test overlay
+        run: |
+          set -euo pipefail
+          kubectl kustomize kustomize/overlays/test > /tmp/faz22-a1-test-render.yaml
+          python3 - <<'PY' >/tmp/faz22-a1-vault-service-endpoints.yaml
+          import re
+          from pathlib import Path
+
+          text = Path("/tmp/faz22-a1-test-render.yaml").read_text()
+          docs = re.split(r"^---\s*$", text, flags=re.MULTILINE)
+          selected = []
+          for doc in docs:
+              if not doc.strip():
+                  continue
+              if not re.search(r"^kind:\s*(Service|Endpoints)\s*$", doc, re.MULTILINE):
+                  continue
+              if not re.search(r"^\s+name:\s*vault\s*$", doc, re.MULTILINE):
+                  continue
+              selected.append(doc.strip() + "\n")
+          if len(selected) != 2:
+              raise SystemExit(f"expected Service+Endpoints for vault, selected={len(selected)}")
+          print("---")
+          print("---\n".join(selected), end="")
+          PY
+
+          grep -F "name: https" /tmp/faz22-a1-vault-service-endpoints.yaml
+          grep -F "port: 8202" /tmp/faz22-a1-vault-service-endpoints.yaml
+
+      - name: Server-side dry-run for Vault Service and Endpoints
+        run: |
+          set -euo pipefail
+          kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            apply --dry-run=server -f /tmp/faz22-a1-vault-service-endpoints.yaml
+
+      - name: Preflight before live activation
+        env:
+          DENETIM_CHECK: ${{ inputs.denetim_check }}
+        run: |
+          set -euo pipefail
+          scripts/faz22-remote-ops/faz22-6-a1-preflight.sh
+
+      - name: Stop after dry-run
+        if: inputs.dry_run == 'true'
+        run: |
+          echo "Dry-run requested; no Vault restart and no Kubernetes apply performed."
+
+      - name: Restart Vault with HTTPS listener and apply Service/Endpoints
+        if: inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+
+          SSH_TARGET=local \
+          RESTART_VAULT=1 \
+          AUTO_UNSEAL_AFTER_RESTART=1 \
+          scripts/faz22-remote-ops/faz22-6-a1-vault-https-provision-test.sh
+
+          kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            apply -f /tmp/faz22-a1-vault-service-endpoints.yaml
+
+      - name: Verify live Vault HTTPS 8202
+        if: inputs.dry_run == 'false'
+        env:
+          DENETIM_CHECK: ${{ inputs.denetim_check }}
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            get service vault -o jsonpath='{.spec.ports[?(@.port==8202)].port}{"\n"}' \
+            | grep -Fx '8202'
+          kubectl --context="${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            get endpoints vault -o jsonpath='{.subsets[0].ports[?(@.port==8202)].port}{"\n"}' \
+            | grep -Fx '8202'
+
+          # Compose publishes container HTTPS 8202 as host-local 8302; the
+          # Kubernetes Service/Endpoint still exposes the native 8202 port.
+          if ! curl -fsS --connect-timeout 3 --max-time 10 --cacert "${VAULT_TLS_DIR}/ca.crt" \
+            "https://127.0.0.1:8302/v1/sys/seal-status" | jq -e '.sealed == false' >/dev/null; then
+            echo "FAIL Vault HTTPS 8302 host-published CA-pinned seal-status did not return sealed=false" >&2
+            exit 1
+          fi
+
+          scripts/faz22-remote-ops/faz22-6-a1-preflight.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Faz 22.6 A1 Vault HTTPS activation"
+            echo ""
+            echo "- Runner: self-hosted staging-sw"
+            echo "- dry_run: \`${{ inputs.dry_run }}\`"
+            echo "- context: \`${KUBE_CONTEXT}\`"
+            echo "- namespace: \`${KUBE_NAMESPACE}\`"
+            echo "- Denetim check: \`${{ inputs.denetim_check }}\`"
+            echo ""
+            if [ -f /tmp/faz22-a1-vault-mount-contract-skipped ]; then
+              echo "- Vault mount contract: \`skipped-docker-control-unavailable\`"
+              echo ""
+            fi
+            echo "This workflow does not mark #548 accepted; it only activates the Vault HTTPS transport prerequisite."
+          } >> "$GITHUB_STEP_SUMMARY"

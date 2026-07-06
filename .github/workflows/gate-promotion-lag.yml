@@ -1,0 +1,88 @@
+# ADR-0023 Guardrail PR-5 — promotion-lag/generation gate
+#
+# Fail-closed CI gate that detects when a test-validated (D29-GREEN) digest
+# has been waiting for prod promotion longer than the configured threshold
+# (default 7 days). Prevents prod from silently lagging a generation as
+# audited in ADR-0023 Annex A (4-point digest matrix).
+#
+# Triggers:
+#   - schedule (daily) — visibility surface; CI red without any open PR
+#     flags pipeline lag for operator attention.
+#   - workflow_dispatch — operator can run on demand (e.g., before opening
+#     a deliberate-deferral note).
+#   - pull_request on release-candidates/** or prod overlay change — re-
+#     evaluate the lag picture immediately after relevant changes.
+#
+# Reads:
+#   - release-candidates/<repo>/<digest>.json — D29 ledger entries.
+#   - kustomize/overlays/prod/ — current prod desired-state (digest pins).
+#   - docs/operations/services.yaml — set of tracked services + Zanzibar
+#     policy (used by check_evidence to gate AMBER acceptance).
+#
+# Notes:
+#   - Gate fires only on services that already have at least one D29-
+#     verified ledger; never-promoted-yet services are not lags.
+#   - Codex thread for ADR-0023 D5 design: 019e40e4.
+#
+# Reference: scripts/promotion/gate-evidence-check.py (check_promotion_lag).
+
+name: ADR-0023 PR-5 — Promotion-lag generation gate
+
+on:
+  pull_request:
+    paths:
+      - 'release-candidates/**'
+      - 'kustomize/overlays/prod/kustomization.yaml'
+      - 'scripts/promotion/gate-evidence-check.py'
+      # FU-Gate-Refactor (PR #936): tier policy now lives in the helper;
+      # helper-only changes must trigger the lag gate so its check_evidence-
+      # based "latest D29-verified per service" selection re-validates.
+      - 'scripts/promotion/d29_evidence_policy.py'
+      - '.github/workflows/gate-promotion-lag.yml'
+      - 'docs/operations/services.yaml'
+  schedule:
+    # Daily 06:00 UTC — surfaces pipeline lag without operator action.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      lag_days:
+        description: 'Override lag threshold (days). Default: 7'
+        required: false
+        default: '7'
+
+permissions:
+  contents: read
+
+jobs:
+  promotion-lag-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: python3 -m pip install --quiet PyYAML
+
+      - name: Install kubectl + kustomize (needed by render_overlay)
+        run: |
+          curl -sSL -o /usr/local/bin/kubectl \
+            "https://dl.k8s.io/release/$(curl -sSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x /usr/local/bin/kubectl
+          kubectl version --client=true
+
+      - name: Run promotion-lag gate
+        env:
+          LAG_DAYS: ${{ github.event.inputs.lag_days || '7' }}
+        run: |
+          set -euo pipefail
+          python3 scripts/promotion/gate-evidence-check.py \
+            --check-promotion-lag \
+            --lag-days "${LAG_DAYS}"

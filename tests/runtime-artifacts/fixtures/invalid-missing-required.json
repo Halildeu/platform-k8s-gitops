@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "artifact_kind": "openfga-model",
+  "source": {
+    "kind": "openfga-server",
+    "canonical_source_ref": "openfga://platform-test/authorization-models/01JX0000000000000000000000"
+  },
+  "promotion": {
+    "test": {
+      "status": "pending",
+      "method": "pr-promotion",
+      "store_ref": "platform-test",
+      "model_id_env": null,
+      "evidence": null,
+      "evidence_completeness": "unverified",
+      "source_docs": []
+    },
+    "prod": {
+      "status": "pending",
+      "method": "pr-promotion",
+      "store_ref": "platform-prod",
+      "model_id_env": null,
+      "evidence": null,
+      "evidence_completeness": "unverified",
+      "source_docs": []
+    }
+  },
+  "metadata": {
+    "rollback_safe": true
+  },
+  "audit": {
+    "implementer": "claude",
+    "reviewer": "codex",
+    "created_at": "2026-05-20T11:00:00Z",
+    "approval_pathway": "cross-ai-agree"
+  }
+}

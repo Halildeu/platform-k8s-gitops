@@ -64,44 +64,55 @@ alertmanager:
     global:
       resolve_timeout: 5m
     route:
-      # Drill window root route — fallback receiver default tüm alarmlara
-      receiver: direct-fallback
+      # Codex thread `019e5aaf` REVISE absorb (BL-008 2026-05-24): root route
+      # `null` — drill window'da default null receiver, gereksiz POST/mail
+      # noise yok. Sadece D43 outage fallback alert'leri explicit regex match
+      # ile `direct-fallback` receiver'a yönlendirilir.
+      receiver: "null"
       group_by: ['alertname', 'severity', 'namespace']
-      group_wait: 0s
+      group_wait: 30s
       group_interval: 5m
       repeat_interval: 30m
       routes:
-        # Stable matcher — NotifyServiceDown ek hızlı bypass
+        # D43 outage fallback dar match — NotifyServiceDown VEYA NotifyServiceAbsent.
+        # Codex `019e5aaf` REVISE absorb: explicit regex; root null kalır,
+        # sadece bu iki alert direct-fallback'e gider.
         - matchers:
-            - alertname = "NotifyServiceDown"
+            - alertname =~ "NotifyServiceDown|NotifyServiceAbsent"
           receiver: direct-fallback
           group_wait: 0s
           repeat_interval: 30m
-          continue: false  # NotifyServiceDown yalnız direct-fallback'e gitsin
+          continue: false
     receivers:
-      # Codex iter-2 #3: Slack + SMTP birlikte tek receiver (daha sade).
+      # Codex `019e5aaf` REVISE absorb: null receiver eklenir (root drop için).
+      # 2026-05-24 user decision Slack DEFER absorb via Codex 019e5b9c REVISE
+      # plan: SMTP-only direct-fallback receiver. Slack channel removed per
+      # user decision 2026-05-24 ("slack kullanmıyoruz. sonrasınd agelirse
+      # yapılacak"). Future Slack reactivation requires operator workspace
+      # adoption + admin onayı + Vault SLACK_WEBHOOK_URL seed + this block
+      # re-add (atomic in same PR with drill rerun).
+      #
+      # Slack-only historical (pre-2026-05-24 user decision Slack DEFER):
+      # `slack_configs` block previously routed to #alerts-d43-drill via
+      # api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL
+      # using `webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock`
+      # (BL-008 2026-05-24 dual-receipt drill in-cluster mock URL).
+      # Removed in PR Lane B (roadmap-faz23-d43-slack-defer-helm-cleanup).
+      # Reference: docs/faz-23-evidence/2026-05-24-d43-slack-defer-smtp-only-acceptance.md
+      - name: "null"
       - name: direct-fallback
-        slack_configs:
-          - api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL
-            channel: '#alerts-d43-drill'
-            send_resolved: true
-            # Codex iter-3 P1 #3: Alertmanager Go template Sprig `default`
-            # destekleemez; `with ... else ... end` pattern'i kullan.
-            title: '[D43 DRILL] {{ .CommonLabels.alertname }} — {{ .CommonLabels.severity }}'
-            text: |-
-              {{ range .Alerts }}
-              *Alert*: {{ .Labels.alertname }}
-              *Cluster*: {{ with .Labels.cluster }}{{ . }}{{ else }}k3d-test{{ end }}
-              *Severity*: {{ .Labels.severity }}
-              *Outage Fallback*: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}
-              *Description*: {{ .Annotations.description }}
-              {{ end }}
         email_configs:
+          # NOTE 2026-05-24 (Codex `019e5aaf` post-impl absorb): Mailpit
+          # accepts unauthenticated SMTP; Operator v0.90.1 doesn't recognize
+          # `auth_*_file` fields in email_configs schema. For the
+          # in-cluster mock drill, auth_* fields are omitted (Mailpit
+          # require_tls=false + no auth required). Real prod SMTP relays
+          # (Office 365 etc.) MUST use inline `auth_username` /
+          # `auth_password` or `_file` variants per Operator version
+          # support — see RB-notification-outage-fallback.md §6.5.8.
           - to: drill-fallback@local
             from: alertmanager-fallback@local
             smarthost: 'mailpit.platform-test.svc.cluster.local:587'
-            auth_username_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_USER
-            auth_password_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_PASSWORD
             require_tls: false
             send_resolved: true
             headers:

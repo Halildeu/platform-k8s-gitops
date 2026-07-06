@@ -1,0 +1,26 @@
+# Fixture (FAIL) — RespectIgnoreDifferences=true + blanket `/metadata`
+# (Codex 019e41d7 root cause of `metadata.managedFields must be nil`).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fixture-fail-blanket-metadata
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://example.invalid/repo.git
+    targetRevision: main
+    path: kustomize/overlays/test
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-test
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /metadata

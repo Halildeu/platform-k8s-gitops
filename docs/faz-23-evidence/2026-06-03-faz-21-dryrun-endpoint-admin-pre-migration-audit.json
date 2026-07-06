@@ -1,0 +1,48 @@
+{
+  "schema_version": "faz-21-pre-migration-audit/v2",
+  "generated_at": "2026-06-03T08:09:34Z",
+  "pg_time_unix": 1780474175,
+  "workstation_time_unix": 1780474174,
+  "pg_host": "172.19.0.6",
+  "pg_database": "endpoint_admin",
+  "audit_scope": "Faz 21.0 sub-faz DoD (charter §4.3)",
+  "predicates": {
+    "inv2_tenant_persistence_per_table": [{"schema":"endpoint_admin_service","table":"endpoint_device","status":"missing_table","tenant_key_column":null,"null_tenant_key_count":null},{"schema":"endpoint_admin_service","table":"endpoint_devices","status":"discovered","tenant_key_column":"tenant_id","null_tenant_key_count":0},{"schema":"endpoint_admin_service","table":"endpoint_software_inventory","status":"missing_table","tenant_key_column":null,"null_tenant_key_count":null},{"schema":"endpoint_admin_service","table":"endpoint_software_inventory_state_history","status":"discovered","tenant_key_column":"tenant_id","null_tenant_key_count":0},{"schema":"endpoint_admin_service","table":"endpoint_outdated_software","status":"missing_table","tenant_key_column":null,"null_tenant_key_count":null},{"schema":"endpoint_admin_service","table":"endpoint_outdated_software_snapshots","status":"discovered","tenant_key_column":"tenant_id","null_tenant_key_count":0},{"schema":"endpoint_admin_service","table":"endpoint_outdated_software_packages","status":"discovered","tenant_key_column":"tenant_id","null_tenant_key_count":0},{"schema":"endpoint_admin_service","table":"endpoint_install_audit","status":"discovered","tenant_key_column":"tenant_id","null_tenant_key_count":0},{"schema":"endpoint_admin_service","table":"install_audit","status":"missing_table","tenant_key_column":null,"null_tenant_key_count":null},{"schema":"endpoint_admin_service","table":"endpoint_compliance_policy_evaluation","status":"missing_table","tenant_key_column":null,"null_tenant_key_count":null},{"schema":"endpoint_admin_service","table":"endpoint_compliance_evaluations","status":"discovered","tenant_key_column":"tenant_id","null_tenant_key_count":0},{"schema":"endpoint_admin_service","table":"endpoint_app_control","status":"missing_table","tenant_key_column":null,"null_tenant_key_count":null},{"schema":"endpoint_admin_service","table":"endpoint_app_control_snapshots","status":"discovered","tenant_key_column":"tenant_id","null_tenant_key_count":0}],
+    "inv2_summary": {
+      "discovered_count": 7,
+      "missing_count": 6,
+      "no_tenant_key_count": 0,
+      "violation_count": 0,
+      "skipped_by_schema_prefix": 6,
+      "endpoint_discovered_count": 7
+    },
+    "inv3_callback_correlation_orphan": {
+      "status": "OBSERVATION_INSUFFICIENT",
+      "tenant_path": "",
+      "orphan_count": null,
+      "provider_distinct_count": null
+    },
+    "inv1_request_missing_advisory_24h": {
+      "status": "ADVISORY_ABSENT",
+      "count": null
+    }
+  },
+  "thresholds": {
+    "inv2_violation_count_max": 0,
+    "inv3_orphan_count_max": 0,
+    "inv1_advisory_max": 100
+  },
+  "scope_notes": {
+    "inv3_snapshot_analog_only": "Read-only orphan count; charter §4.3 callback isolation test REQUIRES backend integration test (concurrent update + assertion). Tracked separately.",
+    "inv4_ai_boundary_not_audited_here": "Inv-4 manual cross-check required; see r10-invariant-checks.sh + RB §4.1"
+  },
+  "verdict": "CLEAN",
+  "anti_pattern_guards": {
+    "read_only_on_production": true,
+    "no_raw_tenant_pii_in_evidence": true,
+    "pg_password_file_mode_enforced": true,
+    "schema_discovery_first": true,
+    "backdate_evidence": false,
+    "pg_time_skew_present": true
+  }
+}

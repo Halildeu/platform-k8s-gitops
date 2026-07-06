@@ -1,0 +1,35 @@
+# remote-write-bridge D19 Service+Endpoints — test cluster (gitops#1459)
+#
+# Test Prometheus'un remoteWrite hedefi:
+#   http://remote-write-bridge.monitoring.svc.cluster.local:9091/api/v1/write
+# Endpoints host-compose nginx köprüsünün platform-test-net static IP'sine
+# işaret eder (redis-streams-svc D19 emsali).
+apiVersion: v1
+kind: Service
+metadata:
+  name: remote-write-bridge
+  labels:
+    app.kubernetes.io/name: remote-write-bridge
+    app.kubernetes.io/component: host-bridge
+spec:
+  ports:
+    - name: http-rw
+      port: 9091
+      targetPort: 9091
+      protocol: TCP
+---
+# Endpoints manuel (selector yok — Service otomatik eşleştirmez)
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: remote-write-bridge                # Service ile aynı isim
+  labels:
+    app.kubernetes.io/name: remote-write-bridge
+    app.kubernetes.io/component: host-bridge
+subsets:
+  - addresses:
+      - ip: 172.19.0.251   # host-compose/remote-write-bridge static pin
+    ports:
+      - name: http-rw
+        port: 9091
+        protocol: TCP

@@ -1,0 +1,184 @@
+name: "Apply #548 device-key remote-bridge activation"
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Required literal: APPLY_DEVICE_KEY_REMOTE_BRIDGE_ACTIVATION'
+        required: true
+      expected_digest:
+        description: 'Expected endpoint-admin-service digest (leave EMPTY to derive from the rendered overlay; if set, must equal the rendered digest)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Render and server-side dry-run only'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Shares the original remote-bridge activation group because both workflows
+  # intentionally own the same public SNI Ingress name. They must not race.
+  group: endpoint-admin-remote-bridge-activation
+  cancel-in-progress: false
+
+env:
+  K8S_CONTEXT: k3d-test
+  K8S_NAMESPACE: platform-test
+  DEPLOYMENT: endpoint-admin-remote-bridge-device-key
+  OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
+
+jobs:
+  apply:
+    name: "Apply owner-gated #548 device-key remote-bridge activation"
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.confirm }}" != "APPLY_DEVICE_KEY_REMOTE_BRIDGE_ACTIVATION" ]; then
+            echo "::error::confirm input must be APPLY_DEVICE_KEY_REMOTE_BRIDGE_ACTIVATION"
+            exit 1
+          fi
+
+          if [ -n "${{ inputs.expected_digest }}" ] \
+            && ! printf '%s' "${{ inputs.expected_digest }}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+            echo "::error::expected_digest (when provided) must match ^sha256:[a-f0-9]{64}$"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Render device-key activation overlay
+        run: |
+          set -euo pipefail
+
+          kubectl kustomize "${OVERLAY}" > /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+
+          grep -F 'REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: DEVICE_KEY_ATTESTATION_REAL' \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+          grep -F 'REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "false"' \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+          if grep -q "REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml; then
+            echo "::error::device-key render contains bounded pilot risk-acceptance flag"
+            exit 1
+          fi
+
+          grep -F "name: endpoint-admin-remote-bridge-mtls" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+          grep -F "host: remote-bridge-mtls.testai.acik.com" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+          grep -F "name: endpoint-admin-remote-bridge-device-key" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+          grep -F "maxSurge: 0" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+          grep -F "maxUnavailable: 1" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+
+          IMG=ghcr.io/halildeu/platform-backend-endpoint-admin-service
+          mapfile -t rendered_digests < <(grep -oE "image: ${IMG}@sha256:[0-9a-f]{64}" \
+            /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml | sed -E 's/^image:[[:space:]]*//' | sort -u)
+          if [ "${#rendered_digests[@]}" -ne 1 ]; then
+            echo "::error::rendered overlay must contain exactly one ${IMG} digest; got ${#rendered_digests[@]}"
+            printf '  %s\n' "${rendered_digests[@]}"
+            exit 1
+          fi
+          resolved="${rendered_digests[0]#*@}"
+
+          provided="${{ inputs.expected_digest }}"
+          if [ -n "$provided" ] && [ "$provided" != "$resolved" ]; then
+            echo "::error::provided expected_digest ($provided) != rendered overlay digest ($resolved)"
+            exit 1
+          fi
+          echo "RESOLVED_DIGEST=${resolved}" >> "$GITHUB_ENV"
+
+          {
+            echo "## #548 device-key remote-bridge activation render"
+            echo ""
+            echo "- context: \`${K8S_CONTEXT}\`"
+            echo "- namespace: \`${K8S_NAMESPACE}\`"
+            echo "- deployment: \`${DEPLOYMENT}\`"
+            echo "- expected digest (derived from overlay): \`${resolved}\`"
+            echo "- expected_digest input: \`${provided:-<empty — derived from overlay>}\`"
+            echo "- verifier: \`DEVICE_KEY_ATTESTATION_REAL\`"
+            echo "- public SNI route: \`remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444\`"
+            echo "- rollout strategy: \`maxSurge=0/maxUnavailable=1\`"
+            echo "- dry_run: \`${{ inputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Server-side dry-run
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply --dry-run=server -f /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+
+      - name: Apply device-key activation overlay
+        if: inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply -f /tmp/endpoint-admin-remote-bridge-device-key-activation.yaml
+
+      - name: Verify device-key rollout, imageID, and SNI route
+        if: inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+
+          expected="${RESOLVED_DIGEST}"
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout status "deploy/${DEPLOYMENT}" --timeout=300s
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get deploy "${DEPLOYMENT}" \
+            -o jsonpath='image={.spec.template.spec.containers[0].image}{"\n"}generation={.metadata.generation}{"\n"}observed={.status.observedGeneration}{"\n"}ready={.status.readyReplicas}{"\n"}updated={.status.updatedReplicas}{"\n"}available={.status.availableReplicas}{"\n"}'
+
+          backend="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get ingress endpoint-admin-remote-bridge-mtls \
+            -o jsonpath='{.spec.rules[?(@.host=="remote-bridge-mtls.testai.acik.com")].http.paths[0].backend.service.name}')"
+          if [ "${backend}" != "endpoint-admin-remote-bridge-device-key" ]; then
+            echo "::error::remote-bridge-mtls.testai.acik.com routes to ${backend}, expected endpoint-admin-remote-bridge-device-key"
+            exit 1
+          fi
+
+          pods_json="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get pods -l "app.kubernetes.io/name=${DEPLOYMENT}" -o json)"
+
+          echo "${pods_json}" | jq -r \
+            '.items[]
+             | select(.metadata.deletionTimestamp == null)
+             | "pod=\(.metadata.name) phase=\(.status.phase) ready=\(.status.containerStatuses[0].ready) restarts=\(.status.containerStatuses[0].restartCount) image=\(.spec.containers[0].image) imageID=\(.status.containerStatuses[0].imageID)"'
+
+          bad_count="$(echo "${pods_json}" | jq --arg expected "${expected}" \
+            '[.items[]
+              | select(.metadata.deletionTimestamp == null)
+              | select(.status.phase == "Running")
+              | select((.status.containerStatuses[0].ready != true) or ((.status.containerStatuses[0].imageID | contains($expected)) | not))]
+             | length')"
+
+          if [ "${bad_count}" != "0" ]; then
+            echo "::error::one or more live ${DEPLOYMENT} pods are not Ready on ${expected}"
+            exit 1
+          fi
+
+          {
+            echo ""
+            echo "## #548 device-key remote-bridge live verification"
+            echo ""
+            echo "- rollout status: \`ok\`"
+            echo "- imageID digest: \`${expected}\`"
+            echo "- SNI backend: \`endpoint-admin-remote-bridge-device-key\`"
+          } >> "$GITHUB_STEP_SUMMARY"

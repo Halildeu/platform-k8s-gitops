@@ -1,0 +1,17 @@
+# audit-archive-exporter Service — Faz 24 PR-obs-02 (#1656).
+# ServiceMonitor (ops/servicemonitor.yaml) matches port name http-metrics.
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-archive-exporter
+  labels:
+    app.kubernetes.io/name: audit-archive-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: audit-archive-exporter
+  ports:
+    - name: http-metrics
+      port: 9187
+      targetPort: http-metrics
+      protocol: TCP

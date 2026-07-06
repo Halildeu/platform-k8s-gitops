@@ -1,0 +1,29 @@
+# Prod Loki push NodePort — gitops#1462 (prod-hub-ONLY)
+#
+# remote-write-bridge nginx'i (host-compose, platform-prod-net bacağı)
+# k3d-prod-server-0:30100 üzerinden Loki /loki/api/v1/push'a ulaşır. NodePort
+# host'a PUBLISH EDİLMEZ (k3d -p mapping'i yok) — yalnız prod docker bridge içi.
+# Auth köprüde (loki.htpasswd); Loki auth_enabled:false olduğu için bu
+# Service'in test ağına/LAN'a doğrudan açılmaması tasarım sınırı
+# (Codex 019ebb70 #1462 REVISE — remote-write-nodeport emsali).
+#
+# Selector CANLI svc/loki'den kopyalandı (chart label sürüme göre değişir,
+# tahmin edilmez — Codex S4).
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki-push-nodeport
+  labels:
+    app.kubernetes.io/name: loki-push-nodeport
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/component: single-binary
+    app.kubernetes.io/instance: loki
+    app.kubernetes.io/name: loki
+  ports:
+    - name: http-metrics
+      port: 3100
+      targetPort: 3100
+      nodePort: 30100
+      protocol: TCP

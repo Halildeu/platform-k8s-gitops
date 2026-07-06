@@ -1,0 +1,130 @@
+# ADR-0031 DD-5-1 — reusable composite action.
+#
+# Callers (platform-backend, platform-web) pin to a specific commit SHA per
+# ADR-0031 §I4 — explicit bump PR per interface change. Initial pin is the
+# DD-5-1 merge SHA.
+#
+# Caller workflows MUST checkout this action's repo on a known ref AND
+# checkout their own repo on the running PR's ref. The action resolves script
+# + spec paths via $GITHUB_ACTION_PATH (the directory of action.yml itself,
+# which is in the platform-k8s-gitops checkout, NOT the caller workspace).
+
+name: Cross-repo enum drift guard
+description: |
+  ADR-0031: enforce per-mirror set equality between platform-backend canonical
+  enums (Java enum / Set<String> / SQL CASE literal) and platform-web TS mirror
+  tuples/unions. Uses gh api contents+pulls (read-only); requires a fine-grained
+  PAT or GitHub App token with Contents:Read + Pull requests:Read on
+  platform-backend + platform-web + platform-k8s-gitops.
+
+inputs:
+  cross_repo_contract_read_token:
+    description: |
+      GitHub token (fine-grained PAT or App token) with Contents:Read +
+      Pull requests:Read on all three repos. NOT the default github.token
+      unless caller explicitly opts in for public-repo runs.
+    required: true
+  own_repo:
+    description: "Caller's repo (owner/repo) — auto-derived in caller workflow from $GITHUB_REPOSITORY"
+    required: true
+  own_role:
+    description: "canonical | mirror | spec-host"
+    required: true
+  canonical_ref:
+    description: "Ref to fetch canonical files at (default main)"
+    required: false
+    default: main
+  mirror_ref:
+    description: "Ref to fetch mirror files at (default main)"
+    required: false
+    default: main
+  own_pr_url:
+    description: "HTML URL of the running PR (empty on push/schedule)"
+    required: false
+    default: ""
+  own_pr_body_file:
+    description: "Path to a file containing the running PR body (empty on push/schedule)"
+    required: false
+    default: ""
+  own_changed_paths_file:
+    description: |
+      Path to a newline-separated list of files modified by the running PR.
+      Required for §I6 same-mapping enforcement when own_role is canonical
+      or mirror. Empty on spec-host runs or push/schedule events.
+    required: false
+    default: ""
+  action_commit_sha:
+    description: "SHA of this action's checked-out commit (for report header line)"
+    required: false
+    default: ""
+  python_version:
+    description: "Python version (default 3.12)"
+    required: false
+    default: "3.12"
+
+outputs:
+  report_path:
+    description: "Path of the JSON drift report artifact (consumer can upload via actions/upload-artifact)"
+    value: ${{ steps.run.outputs.report-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install Python deps
+      shell: bash
+      run: pip install --quiet jsonschema pyyaml
+
+    - name: Run cross-repo enum drift guard
+      id: run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.cross_repo_contract_read_token }}
+        ACTION_COMMIT_SHA: ${{ inputs.action_commit_sha }}
+      run: |
+        set -euo pipefail
+        REPORT_PATH="${RUNNER_TEMP}/cross-repo-enum-drift-report.json"
+        # Action lives under $GITHUB_ACTION_PATH/.github/actions/check-cross-repo-enum-drift/
+        # so the platform-k8s-gitops checkout root is two levels up plus repo root.
+        ACTION_ROOT="${GITHUB_ACTION_PATH%/.github/actions/check-cross-repo-enum-drift}"
+        SCRIPT="${ACTION_ROOT}/scripts/drift_detection/check_drift_cross_repo_enums.py"
+        SPEC="${ACTION_ROOT}/config/cross_repo_enum_drift_spec.yaml"
+        SCHEMA="${ACTION_ROOT}/config/cross_repo_enum_drift_spec.schema.json"
+        if [[ ! -f "$SCRIPT" || ! -f "$SPEC" || ! -f "$SCHEMA" ]]; then
+          echo "ERROR: composite action resolution failed — caller did not check out platform-k8s-gitops via this action; expected files at:"
+          echo "  $SCRIPT"
+          echo "  $SPEC"
+          echo "  $SCHEMA"
+          exit 2
+        fi
+        ARGS=(
+          --spec "$SPEC"
+          --spec-schema "$SCHEMA"
+          --own-repo "${{ inputs.own_repo }}"
+          --own-role "${{ inputs.own_role }}"
+          --canonical-ref "${{ inputs.canonical_ref }}"
+          --mirror-ref "${{ inputs.mirror_ref }}"
+          --report-out "$REPORT_PATH"
+        )
+        if [[ -n "${{ inputs.own_pr_url }}" ]]; then
+          ARGS+=(--own-pr-url "${{ inputs.own_pr_url }}")
+        fi
+        if [[ -n "${{ inputs.own_pr_body_file }}" ]]; then
+          ARGS+=(--own-pr-body-file "${{ inputs.own_pr_body_file }}")
+        fi
+        if [[ -n "${{ inputs.own_changed_paths_file }}" ]]; then
+          ARGS+=(--own-changed-paths-file "${{ inputs.own_changed_paths_file }}")
+        fi
+        # Codex post-impl iter-1 axis 8 must-fix: write `report-path` output
+        # even on red gate so callers can upload the diagnostic artifact.
+        # Capture rc, write output, then re-exit with the same code.
+        set +e
+        python3 "$SCRIPT" "${ARGS[@]}"
+        rc=$?
+        set -e
+        echo "report-path=$REPORT_PATH" >> "$GITHUB_OUTPUT"
+        exit $rc

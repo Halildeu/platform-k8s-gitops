@@ -1,0 +1,61 @@
+name: Faz 22 — platform-test GitOps sync + endpoint-admin OpenFGA verify
+
+# Operator-triggered test overlay sync path for endpoint-admin runtime selector
+# evidence. This workflow uses ArgoCD to sync the platform-test Application and
+# then runs the read-only endpoint-admin OpenFGA runtime verifier.
+#
+# It MUST NOT patch workloads directly. The sync step goes through ArgoCD core
+# mode against the k3d-prod ArgoCD hub and waits for platform-test Synced +
+# Healthy at the dispatched main revision.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_model_id:
+        description: "Optional expected endpoint-admin OpenFGA model id; leave empty to assert live Secret-to-pod consistency"
+        required: false
+        default: ""
+      expected_store_id:
+        description: "Optional expected endpoint-admin OpenFGA store id; leave empty to assert live Secret-to-pod consistency"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz22-platform-test-sync-openfga-verify
+  cancel-in-progress: false
+
+jobs:
+  sync-verify:
+    name: platform-test sync + endpoint-admin OpenFGA verify
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Sync platform-test through ArgoCD
+        env:
+          REVISION: ${{ github.sha }}
+          REPORT_PATH: ${{ runner.temp }}/platform-test-argocd-sync-report.json
+        run: bash scripts/faz22/sync-platform-test-gitops.sh
+
+      - name: Verify endpoint-admin OpenFGA runtime selector
+        env:
+          EXPECTED_MODEL_ID: ${{ inputs.expected_model_id }}
+          EXPECTED_STORE_ID: ${{ inputs.expected_store_id }}
+          REPORT_PATH: ${{ runner.temp }}/endpoint-admin-openfga-runtime-report.json
+        run: bash scripts/faz22/verify-endpoint-admin-openfga-runtime.sh
+
+      - name: Upload sync + runtime reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: endpoint-admin-openfga-sync-verify-report
+          path: |
+            ${{ runner.temp }}/platform-test-argocd-sync-report.json
+            ${{ runner.temp }}/endpoint-admin-openfga-runtime-report.json
+          retention-days: 14

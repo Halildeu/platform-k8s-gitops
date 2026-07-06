@@ -1,0 +1,42 @@
+# Faz 23 v1 closure BL-008 R9 D43 outage fallback drill — webhook-receiver ingress NetworkPolicy
+#
+# Test-only mock Slack receipt sink: Alertmanager (monitoring NS) → webhook-receiver
+# (platform-test NS) port 8080. Mailpit netpol pattern'i ile aynı sınıf (dar source,
+# dar port, dar target). Drill window'larında runtime POST receipt evidence için
+# permanent prereq olarak commit edilir; sonraki drill'lerde implicit gizli prereq
+# yaratmaz.
+#
+# Codex thread `019e5aaf-e5e9-7983-a073-a64e51c8f9bb` REVISE absorb (2026-05-24):
+# - NetworkPolicy permanent kalmalı (drill-only gereksiz sürtünme yaratır).
+# - Source: monitoring namespace (`kubernetes.io/metadata.name=monitoring`).
+# - Target: webhook-receiver pod selector.
+# - Port: 8080/TCP.
+#
+# Mock-vs-real evidence note: bu policy ile Alertmanager slack_configs HTTP POST
+# delivery webhook-receiver nginx 200 receipt sağlar; "Slack channel receipt"
+# anlamına gelmez. Real Slack incoming webhook board issue #853 ile owner-external
+# action.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: webhook-receiver-allow-monitoring
+  namespace: platform-test
+  labels:
+    app.kubernetes.io/name: webhook-receiver
+    app.kubernetes.io/component: lab-dep
+    app.kubernetes.io/managed-by: notify-d29-lab-deps
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-receiver
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+          protocol: TCP

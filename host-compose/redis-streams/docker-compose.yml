@@ -1,0 +1,60 @@
+# Redis Streams — Faz 24 cross-server chunk transport (staging-sw, test plane)
+#
+# ADR-0031 D2: Redis staging-sw'da yaşar (dış altyapı — helm-values/k8s içinde
+# DEĞİL; host-compose precedent: keycloak/postgres/vault).
+# Kontrat (platform-backend#534 producer + platform-ai#138 consumer):
+#   - streams `audio:chunks:p00..p31` (32 partition; producer XADD ile yaratır)
+#   - consumer group `live-stt-v1` (consumer XGROUP CREATE mkstream ile yaratır,
+#     BUSYGROUP tolere — Redis tarafında init GEREKMEZ)
+#
+# Bounded/transient profil (ADR-0031 D3 + D8):
+#   - persistence OFF (appendonly no + save "") — chunk'lar transient, KVKK
+#     sınırı: kalıcılaşma transcript katmanında (ADR-0032), transport'ta değil
+#   - maxmemory 512mb + noeviction → backlog dolunca XADD hata verir →
+#     producer DispatchOutcome.QueueFull/Unavailable (fail-fast, sessiz drop YOK)
+#   - kimlik (gitops#1457, Codex 019ebb70): requirepass YERİNE aclfile —
+#     iki user. `default` (= eski requirepass; audio-gateway AUTH <pass>
+#     producer) Vault kv/platform/audio-gateway-service.redis_password.
+#     `exporter` read-only (REDIS_USER=exporter) Vault
+#     kv/platform/redis-streams-exporter.password — bağımsız rotation +
+#     least-privilege (keyspace audio:chunks:p*, -@all + explicit read-class).
+#     aclfile container start'ta /run/redis tmpfs'e üretilir (persistence
+#     yok → runtime ACL SETUSER uçar; secret diske kalıcı düşmez).
+#     .env: REDIS_PASSWORD + EXPORTER_PASSWORD (gitignore'lu, seed runbook'ta).
+#
+# Erişim:
+#   - k3d-test pod'ları: platform-test-net static IP 172.19.0.250 üzerinden
+#     (kustomize/base/host-services/redis-streams-svc.yaml Service+Endpoints)
+#   - GPU host (platform-ai compute plane): staging-sw LAN IP :6379
+#     (ports publish) — Aşama-2 smoke synthetic-fixture istisnası (LAN-direct);
+#     WireGuard+mTLS gerçek meeting audio öncesi ZORUNLU (ADR-0031 D2)
+services:
+  redis-streams:
+    image: redis:7.4-alpine
+    container_name: platform-redis-streams-test
+    restart: unless-stopped
+    # ACL bootstrap entrypoint: .env parolalarından /run/redis tmpfs'e aclfile
+    # üretir, sonra redis-server --aclfile ile exec (gitops#1457).
+    entrypoint: ["/bin/sh", "/usr/local/bin/gen-acl-and-run.sh"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD .env dosyasında zorunlu}
+      EXPORTER_PASSWORD: ${EXPORTER_PASSWORD:?EXPORTER_PASSWORD .env dosyasında zorunlu}
+    volumes:
+      - ./gen-acl-and-run.sh:/usr/local/bin/gen-acl-and-run.sh:ro
+    tmpfs:
+      - /run/redis:mode=0700   # aclfile burada üretilir (diske kalıcı düşmez)
+    ports:
+      - "6379:6379"   # GPU host LAN erişimi (Aşama-2; bkz üst yorum)
+    networks:
+      platform-test-net:
+        ipv4_address: 172.19.0.250   # k8s Endpoints pin'i bu IP'ye (overlay patch)
+    healthcheck:
+      # default user (eski requirepass eşleniği) ile ping
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+networks:
+  platform-test-net:
+    external: true

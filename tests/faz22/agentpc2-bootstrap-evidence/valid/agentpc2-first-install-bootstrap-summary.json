@@ -1,0 +1,114 @@
+{
+  "schema": "faz22.1768.agentpc2-first-install-bootstrap.endpoint.v1",
+  "status": "installed-service-running",
+  "startedAt": "2026-06-20T12:30:00.0000000Z",
+  "completedAt": "2026-06-20T12:32:00.0000000Z",
+  "computerName": "AGENTPC2",
+  "user": "ACIK\\aiadmin",
+  "release": {
+    "id": "v0.2.28",
+    "targetVersion": "0.2.28",
+    "binaryUrl": "https://github.com/Halildeu/platform-agent/releases/download/v0.2.28/endpoint-agent.exe",
+    "binarySha256": "e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4",
+    "installPs1Sha256": "f257202723ac719f4170cbe2e800dc190845ff7fbd128c6ce3ddd2ac90e49e0e",
+    "signerThumbprint": "D68F4F530137EB65CE44E3405E82B46205E753E5",
+    "signingTier": "trusted-internal-ca",
+    "authenticodeStatus": "Valid",
+    "authenticodeStatusMessage": "Signature verified."
+  },
+  "remoteBridge": {
+    "enabled": true,
+    "brokerAddr": "remote-bridge-mtls.testai.acik.com:443",
+    "tlsServerName": "remote-bridge-mtls.testai.acik.com",
+    "operationsEnabled": true,
+    "permitKeyId": "rb-test-denetim-20260617-01",
+    "permitBrokerPublicKeySha256": "0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110"
+  },
+  "autoEnroll": {
+    "apiUrl": "https://mtls.testai.acik.com/api/v1/endpoint-agent",
+    "certSANURIPrefix": "adcomputer:"
+  },
+  "service": {
+    "Name": "EndpointAgent",
+    "DisplayName": "Endpoint Agent",
+    "State": "Running",
+    "StartMode": "Auto",
+    "StartName": "LocalSystem",
+    "PathName": "\"C:\\Program Files\\EndpointAgent\\endpoint-agent.exe\" --service-run-name EndpointAgent"
+  },
+  "redactedServiceEnvironment": [
+    {
+      "Key": "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED",
+      "Present": true,
+      "Length": 4,
+      "Value": "true"
+    },
+    {
+      "Key": "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR",
+      "Present": true,
+      "Length": 43,
+      "Value": "remote-bridge-mtls.testai.acik.com:443"
+    },
+    {
+      "Key": "ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME",
+      "Present": true,
+      "Length": 34,
+      "Value": "remote-bridge-mtls.testai.acik.com"
+    },
+    {
+      "Key": "ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED",
+      "Present": true,
+      "Length": 4,
+      "Value": "true"
+    },
+    {
+      "Key": "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID",
+      "Present": true,
+      "Length": 27,
+      "Value": "<redacted>"
+    },
+    {
+      "Key": "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64",
+      "Present": true,
+      "Length": 124,
+      "Value": "<redacted>"
+    },
+    {
+      "Key": "ENDPOINT_AGENT_AUTO_ENROLL_API_URL",
+      "Present": true,
+      "Length": 52,
+      "Value": "https://mtls.testai.acik.com/api/v1/endpoint-agent"
+    }
+  ],
+  "clientAuthCerts": [
+    {
+      "Subject": "CN=AGENTPC2.acik.local",
+      "Issuer": "CN=Acik-Endpoint-CA, DC=acik, DC=local",
+      "Thumbprint": "14F33A3F49E27AAD1FBF51FD04BA4697306567E2",
+      "NotBefore": "2026-06-18T08:32:28.0000000Z",
+      "NotAfter": "2027-06-18T08:32:28.0000000Z",
+      "HasPrivateKey": true,
+      "SAN": "DNS Name=AGENTPC2.acik.local, URL=adcomputer:fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a"
+    }
+  ],
+  "evidence": {
+    "root": "C:\\ProgramData\\EndpointAgent\\rollout-evidence",
+    "transcript": "C:\\ProgramData\\EndpointAgent\\rollout-evidence\\agentpc2-first-install-bootstrap-transcript.log",
+    "logTail": "C:\\ProgramData\\EndpointAgent\\rollout-evidence\\endpoint-agent-log-tail.txt",
+    "remoteBridgeSignals": "C:\\ProgramData\\EndpointAgent\\rollout-evidence\\endpoint-agent-remote-bridge-signals.txt"
+  },
+  "boundary": {
+    "proves": [
+      "Endpoint-local install script executed",
+      "EndpointAgent service install/start attempted with immutable v0.2.28 binary hash",
+      "Outbound remote bridge configuration written for 443/SNI broker"
+    ],
+    "doesNotProve": [
+      "platform-agent#208 constrained operation acceptance",
+      "broad GPO/MSI rollout",
+      "inbound SSH/RDP/WinRM/SMB/RPC support",
+      "production/domain-wide support readiness",
+      "TPM/device-key hardware attestation"
+    ]
+  }
+}

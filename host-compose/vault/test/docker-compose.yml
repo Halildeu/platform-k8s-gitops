@@ -1,6 +1,8 @@
 # Vault Test Instance — ADR-0002 Same-Host Full Isolation
 # Network: platform-test-net (test ESO ile aynı network)
-# Port: 8201 (test — prod 8200 ile çakışma yok)
+# Ports:
+# - 8201 -> 8200 HTTP API (legacy test host-local access)
+# - 8302 -> 8202 HTTPS API (Faz 22.6 A1 backend TPM-attestation sign path)
 # Container: platform-vault-test
 # Operasyon: test default scale-to-zero; ESO apply için up edilir
 
@@ -17,12 +19,14 @@ services:
       VAULT_API_ADDR: http://platform-vault-test:8200
     ports:
       - "127.0.0.1:8201:8200"   # Localhost-only bind
+      - "127.0.0.1:8302:8202"   # Localhost-only HTTPS bind
     cap_add:
       - IPC_LOCK
     volumes:
       - ./config:/vault/config:ro
-      - /srv/platform/stateful/test/vault/data:/vault/data
-      - /srv/platform/stateful/test/vault/logs:/vault/logs
+      - /home/halil/platform-stateful/test/vault/data:/vault/data
+      - /home/halil/platform-stateful/test/vault/logs:/vault/logs
+      - /home/halil/platform-stateful/test/vault/tls:/vault/tls:ro
     networks:
       - platform-test-net
     healthcheck:
@@ -38,8 +42,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
-          cpus: "0.25"
+          # Faz 22.6 A1 HTTPS listener pushed the old 256M cap into OOMKilled
+          # on staging-sw during controlled recreate; keep test Vault bounded
+          # but leave enough headroom for dual listeners + Raft startup.
+          memory: 512M
+          cpus: "0.50"
 
 networks:
   platform-test-net:

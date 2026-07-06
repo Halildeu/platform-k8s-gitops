@@ -50,6 +50,49 @@ path "kv/data/platform/endpoint-admin-service" {
   capabilities = ["read"]
 }
 
+# --- Faz 22.6 endpoint-admin-remote-bridge activation path ---
+# Dedicated broker-scoped secret path for the outbound mTLS remote-ops broker.
+# Consumed by kustomize/overlays/test/activation/endpoint-admin-remote-bridge.
+# This is deliberately separate from endpoint-admin-service because the broker
+# receives only least-priv DB/OpenFGA/PKI/attestation/step-up/signing material,
+# not the primary endpoint-admin service's enrollment/admin secrets.
+path "kv/data/platform/endpoint-admin-remote-bridge" {
+  capabilities = ["read"]
+}
+
+# --- Faz 24 #410/#1615 meeting-service (foundation deploy 2026-06-17) ---
+# ExternalSecret reads kv/platform/meeting-service with 2 keys (db_username,
+# db_password). Same flat-path convention as endpoint-admin/auth/report.
+# Without this grant ESO sync returns 403 → K8s Secret never lands →
+# pod stuck ContainerCreating (envFrom optional:false). Live patch applied
+# to vault-test alongside; this file keeps it canonical (bootstrap-drill safe).
+path "kv/data/platform/meeting-service" {
+  capabilities = ["read"]
+}
+
+# --- Faz 24 #411/#1615 transcript-service (foundation deploy 2026-06-17) ---
+# ExternalSecret reads kv/platform/transcript-service with 2 keys (db_username,
+# db_password). Same flat-path convention as meeting/endpoint-admin/auth/report.
+# Without this grant ESO sync returns 403 → K8s Secret never lands →
+# pod stuck ContainerCreating (envFrom optional:false). Live patch applied
+# to vault-test alongside; this file keeps it canonical (bootstrap-drill safe).
+path "kv/data/platform/transcript-service" {
+  capabilities = ["read"]
+}
+
+# --- Faz 24 #1249/#1615 audit-event-consumer-service (KVKK audit pipeline) ---
+# ExternalSecret reads kv/platform/audit-event-consumer-service with 3 keys
+# (db_username, db_password, redis_password — same flat-path convention as
+# meeting/transcript/endpoint-admin/auth). redis_password matches the
+# host-compose/redis-streams requirepass (the audio-gateway producer uses the
+# same value via kv/platform/audio-gateway-service). Without this grant ESO sync
+# returns 403 → K8s Secret never lands → pod stuck ContainerCreating
+# (envFrom optional:false). Live patch applied to vault-test alongside; this
+# file keeps it canonical (bootstrap-drill safe).
+path "kv/data/platform/audit-event-consumer-service" {
+  capabilities = ["read"]
+}
+
 # --- Faz 23.9 Step D notification-orchestrator (flat path; auth-service convention) ---
 # Codex thread 019e08df REVISE absorb: ExternalSecret reads kv/platform/notification-
 # orchestrator with 5 keys (db_username, db_password, webhook_signing_secret,
@@ -83,22 +126,31 @@ path "kv/data/platform/alertmanager-fallback" {
   capabilities = ["read"]
 }
 
-# --- V2.1 Ops-A — Perf alert receiver (A2 isolation path) ---
-# Codex `019e2772` post-impl peer review iter-3 P0 blocker absorb:
-# ESO `perf-alertmanager-secrets` ExternalSecret bu path'i okuyor;
+# --- V2.1 Ops-A — Perf alert receiver (A2 isolation path; ADR-0029 Hibrit D Teams primary) ---
+# ADR-0029 Hibrit D 2026-05-27 — Microsoft Teams Power Automate workflow primary
+# canlı path (kullanıcı kararı "Slack altyapısını bozma + Teams kullan"; Codex
+# `019e6b24` REVISE→AGREE strategic chain absorb). Slack pattern dormant
+# asset-preserved (multi-tenant başka tenants için reactivation chain).
+#
+# Original: Codex `019e2772` post-impl peer review iter-3 P0 blocker absorb:
+# ESO `perf-alertmanager-teams-secrets` ExternalSecret bu path'i okuyor;
 # policy genişletilmeden owner Vault write tek başına yeterli olmaz (403).
 #
 # Vault path: kv/platform/perf-alertmanager
-#   SLACK_WEBHOOK_URL — #perf-alerts Slack channel incoming webhook
+#   TEAMS_WEBHOOK_URL — Microsoft Teams Power Automate workflow webhook (active; ADR-0029 D1)
+#   SLACK_WEBHOOK_URL — multi-tenant başka tenants için dormant (ADR-0029 D2; RB-perf-alerts-slack-reactivation-chain.md)
 #
 # ESO ExternalSecret: kustomize/overlays/{test,prod}/eso/alertmanager/
-#   externalsecret-perf-alertmanager.yaml
+#   externalsecret-perf-alertmanager-teams.yaml (active Teams)
+#   externalsecret-perf-alertmanager.yaml.disabled.template (dormant Slack)
 # Mount: alertmanagerSpec.secrets[] → /etc/alertmanager/secrets/perf-
-#   alertmanager-secrets/SLACK_WEBHOOK_URL
+#   alertmanager-teams-secrets/TEAMS_WEBHOOK_URL
 #
-# D43 fallback ile AYRI Slack kanalı (#perf-alerts vs #alerts-d43-drill).
+# D43 fallback (ADR-0027 Hibrit C — SMTP-only primary + Teams dormant) ile AYRI
+# infrastructure (kv/platform/alertmanager-fallback vs kv/platform/perf-alertmanager).
 # Spike Codex `019e267a` A2 isolation tercih + V2.1 Ops-A impl prep PR
-# Codex `019e2772` post-impl P0 fix absorb.
+# Codex `019e2772` post-impl P0 fix absorb + ADR-0029 Hibrit D pivot Codex
+# `019e6b24` REVISE→AGREE chain (4-iter peer review).
 path "kv/data/platform/perf-alertmanager" {
   capabilities = ["read"]
 }
@@ -135,6 +187,53 @@ path "kv/data/platform/keycloak/smoke-client" {
 
 # --- GHCR pull token (ghcr-pull ExternalSecret) ---
 path "kv/data/gitops/ghcr-token" {
+  capabilities = ["read"]
+}
+
+# --- Faz 24 audio-gateway-service (Aşama-2 staging — platform-ai#151, gitops#1447) ---
+# SPRING_DATA_REDIS_PASSWORD (host-compose/redis-streams requirepass ile aynı;
+# seed: docs/runbooks/redis-streams-staging-sw.md §1)
+path "kv/data/platform/audio-gateway-service" {
+  capabilities = ["read"]
+}
+
+# --- remote-write-bridge basic auth (gitops#1459) ---
+# Test Prometheus remoteWrite basicAuth credential'ı (username/password;
+# host-compose/remote-write-bridge htpasswd ile aynı parola — seed README §1).
+# Tüketici: monitoring ns ExternalSecret remote-write-bridge-auth
+# (kustomize/base/monitoring-test-only).
+path "kv/data/platform/remote-write-bridge" {
+  capabilities = ["read"]
+}
+
+# --- redis-streams-exporter read-only ACL user (gitops#1457) ---
+# Exporter'ın ayrı read-only Redis user'ı (username=exporter + password;
+# host-compose/redis-streams aclfile ile aynı parola). audio-gateway'in
+# default-user parolasından bağımsız rotation. Tüketici: platform-test ns
+# ExternalSecret redis-streams-exporter-secrets.
+path "kv/data/platform/redis-streams-exporter" {
+  capabilities = ["read"]
+}
+
+# --- Faz 24 #1250 audit-retention-worker (audit-archive 7yr WORM — ADR-0042) ---
+# ExternalSecret audit-retention-worker-secrets reads kv/platform/audit-retention-worker
+# (minio_access_key + minio_secret_key — least-privilege MinIO svcacct for the
+# audit-archive bucket; non-secret endpoint/bucket/region carried alongside).
+# Same flat-path convention as audit-event-consumer / redis-streams-exporter.
+# Without this grant ESO sync returns 403 → Secret never lands → the C-slice
+# audit-retention-worker CronJob can't start. Live patch applied to vault-test
+# alongside; this file keeps it canonical (bootstrap-drill safe).
+path "kv/data/platform/audit-retention-worker" {
+  capabilities = ["read"]
+}
+
+# --- Faz 24 PR-obs-02 audit-archive-exporter (ADR-0042 durable metrics) ---
+# ExternalSecret audit-archive-exporter-secrets reads
+# kv/platform/audit-archive-exporter (db_username + db_password) for the
+# dedicated read-only Postgres exporter role. Without this grant ESO sync
+# returns 403 -> Secret never lands -> audit-archive-exporter remains
+# CreateContainerConfigError/Degraded.
+path "kv/data/platform/audit-archive-exporter" {
   capabilities = ["read"]
 }
 

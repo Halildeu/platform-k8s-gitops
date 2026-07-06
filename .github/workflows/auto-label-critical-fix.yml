@@ -1,0 +1,113 @@
+# FU-AutoLabel (2026-05-21) — auto-apply `critical-fix` label from PR
+# template trailer `Critical-Fix: yes`.
+#
+# Closes DiD-1 (PR #926) known-limit: previously `critical-fix` label
+# discipline was manual; operator had to remember to add it. This workflow
+# parses the PR body trailer at PR open/edit/sync time and applies the
+# label automatically when the operator sets `Critical-Fix: yes`.
+#
+# Semantics:
+#   - Matches `^Critical-Fix:\s*yes\b` on its own line (case-insensitive)
+#     OUTSIDE of HTML comments (commented-out lines are intentionally
+#     skipped — operator removed the trailer from active text)
+#   - `Critical-Fix: no` (or missing) → no action; the workflow NEVER
+#     removes the label, so manual `gh pr edit --add-label critical-fix`
+#     is preserved even if the trailer was forgotten
+#   - Adds label idempotently (gh CLI is no-op if label already present)
+#   - Creates the `critical-fix` label if it does not exist (one-time
+#     auto-init for repos that haven't manually defined it)
+#
+# Why pull_request_target (not pull_request):
+#   - Needs `pull-requests: write` to add label
+#   - `pull_request` from fork lacks write token; would silently fail
+#   - `pull_request_target` runs from base ref with elevated token;
+#     no PR-head checkout performed (label-only mutation, no code exec)
+#
+# Permissions:
+#   contents:        read   — workflow file resolution
+#   pull-requests:   write  — `gh pr edit --add-label` for the PR mutation
+#   issues:          write  — `gh label create` is repo-level label metadata
+#                              (Codex iter-1 P1 absorb — label CRUD lives
+#                              under Issues API in GitHub's permission model;
+#                              `pull-requests: write` is not sufficient).
+
+name: Auto-label critical-fix trailer
+
+on:
+  pull_request_target:
+    # synchronize covers re-pushes; edited covers PR body updates after
+    # initial open (operator can add the trailer post-hoc and the next
+    # body-edit event applies the label).
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+# Per-PR concurrency — body-edit spam should not pile up parallel runs.
+concurrency:
+  group: auto-label-critical-fix-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  apply-label:
+    name: auto-label-critical-fix
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Parse Critical-Fix trailer
+        id: parse
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          # Strip HTML comments first so commented-out trailers are ignored.
+          # python3 handles multi-line stripping more robustly than sed.
+          STRIPPED=$(python3 -c '
+          import os, re, sys
+          body = os.environ.get("BODY", "") or ""
+          # Remove HTML comments (<!-- ... -->) including multi-line.
+          body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+          sys.stdout.write(body)
+          ')
+          # Match "Critical-Fix:" on its own non-comment line, case-insensitive,
+          # value must be "yes" or "true" (whitespace flexible). First match wins.
+          if printf '%s\n' "$STRIPPED" | grep -iE '^[[:space:]]*Critical-Fix:[[:space:]]*(yes|true)[[:space:]]*$' > /dev/null; then
+            echo "should_apply=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Critical-Fix trailer found — will apply 'critical-fix' label"
+          else
+            echo "should_apply=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Critical-Fix: yes trailer in PR body — workflow no-op"
+          fi
+
+      - name: Ensure critical-fix label exists
+        if: steps.parse.outputs.should_apply == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Codex iter-1 P2 absorb: NO `--force`. `--force` overwrites the
+          # existing label's color and description on every label-apply,
+          # turning this auto-label workflow into an accidental label-style
+          # reconciler. We only want create-if-missing semantics:
+          #   - label exists with whatever curated metadata operator chose
+          #     → `gh label create` exits non-zero, `|| true` swallows
+          #   - label missing → creates with our defaults
+          # Operator can change label color/description manually anytime
+          # without this workflow stomping it.
+          gh label create critical-fix \
+            --repo "${{ github.repository }}" \
+            --color D93F0B \
+            --description "Hotfix/incident PR — DiD-1 SLA monitor tracks prod deploy lag" \
+            2>&1 | tail -3 || true
+
+      - name: Add critical-fix label to PR
+        if: steps.parse.outputs.should_apply == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # `gh pr edit --add-label` is idempotent (no-op if already applied).
+          gh pr edit "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --add-label critical-fix
+          echo "::notice::Applied 'critical-fix' label to PR #${{ github.event.pull_request.number }}"

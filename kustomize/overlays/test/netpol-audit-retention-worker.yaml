@@ -1,0 +1,59 @@
+# audit-retention-worker NetworkPolicy — Faz 24 #1250-D (ADR-0042 §4, Codex D3).
+#
+# The worker's narrow egress story: it talks to EXACTLY DNS + the host-compose
+# Postgres (audit_event source + audit_archive state) + the host-compose MinIO
+# (WORM archive). NOT Redis, NOT Vault, NOT Keycloak, NOT the Kubernetes API.
+#
+# TRUE tight enforcement (Codex D post-impl REVISE-2): the worker pod carries
+# `app.kubernetes.io/part-of: audit-archive` (NOT platform), so it does NOT match
+# the namespace-wide allow-egress-host-bridge / allow-egress-dns / allow-egress-intra-ns
+# (all part-of=platform). This policy — selecting the worker by name — is therefore
+# the SOLE egress allowlist for the worker: DNS + PG + MinIO only (no Redis, Vault,
+# Keycloak, intra-ns, or K8s API). DNS is re-provided here (the worker lost the
+# shared allow-egress-dns by escaping part-of=platform). PG/MinIO host endpoints
+# are /32 ipBlocks (selectorless-Service DNAT resolves to these; A-slice proved
+# the host-endpoint path).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-audit-retention-worker
+  annotations:
+    platform.acik.com/adr: "0042"
+    platform.acik.com/issue: "1250"
+  labels:
+    app.kubernetes.io/name: audit-retention-worker
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audit-retention-worker
+  policyTypes:
+    - Egress
+  egress:
+    # DNS — resolve the selectorless `postgres` / `minio` Services.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Postgres host endpoint (audit_event source + audit_archive state).
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.6/32
+      ports:
+        - protocol: TCP
+          port: 5432
+    # MinIO host endpoint (WORM archive object store).
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.252/32
+      ports:
+        - protocol: TCP
+          port: 9000

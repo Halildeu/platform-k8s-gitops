@@ -1,0 +1,32 @@
+# endpoint-admin-service ServiceMonitor — Faz 22.5 M6 (#1493, sub-task of #1378)
+# D27 upstream pattern (annotation YOK); kube-prometheus-stack Prometheus CR
+# serviceMonitorSelectorNilUsesHelmValues=false ile cluster-wide tarar; bu CR
+# herhangi ns'de olsa yakalar.
+#
+# Why: endpoint-admin-service'in Service+Deployment'i `management` 8081 portunu
+# zaten açıyor ama hiçbir ServiceMonitor yoktu → /actuator/prometheus HİÇ
+# scrape edilmiyordu. M6 capacity-baseline / wave-abort PromQL'lerinin
+# (hikaricp_connections_*, http_server_requests_seconds_*,
+# endpoint_admin_agent_command_results_total) gerçek seriye bağlanması için bu
+# scrape job şart (RB-faz22.5-m6 §3.1 + §5 + §6). audio-gateway/ops emsali:
+# eşleşen Service yoksa SM boş kalır, runtime gelince otomatik devreye girer —
+# burada test+prod runtime ZATEN mevcut (overlays/{test,prod} include eder).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: endpoint-admin-service
+  labels:
+    release: kube-prometheus-stack   # Prom Operator bu label ile filtreler
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-service
+  endpoints:
+    - port: management          # 8081 actuator port (auth'suz)
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - platform-prod
+      - platform-test

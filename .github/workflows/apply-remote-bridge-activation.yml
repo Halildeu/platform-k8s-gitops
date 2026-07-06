@@ -1,0 +1,159 @@
+name: Apply endpoint-admin remote-bridge activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Required literal: APPLY_REMOTE_BRIDGE_ACTIVATION'
+        required: true
+      expected_digest:
+        description: 'Expected endpoint-admin-service digest (leave EMPTY to derive from the rendered overlay — single SSOT #2067; if set, must equal the rendered digest)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Render and server-side dry-run only'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: endpoint-admin-remote-bridge-activation
+  cancel-in-progress: false
+
+env:
+  K8S_CONTEXT: k3d-test
+  K8S_NAMESPACE: platform-test
+  DEPLOYMENT: endpoint-admin-remote-bridge
+  OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+
+jobs:
+  apply:
+    name: Apply owner-gated remote-bridge activation
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.confirm }}" != "APPLY_REMOTE_BRIDGE_ACTIVATION" ]; then
+            echo "::error::confirm input must be APPLY_REMOTE_BRIDGE_ACTIVATION"
+            exit 1
+          fi
+
+          # expected_digest is optional (single SSOT #2067): empty -> derived from
+          # the rendered overlay; if provided, it must be well-formed and is then
+          # asserted equal to the rendered digest in the render step.
+          if [ -n "${{ inputs.expected_digest }}" ] \
+            && ! printf '%s' "${{ inputs.expected_digest }}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+            echo "::error::expected_digest (when provided) must match ^sha256:[a-f0-9]{64}$"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Render activation overlay
+        run: |
+          set -euo pipefail
+
+          kubectl kustomize "${OVERLAY}" > /tmp/endpoint-admin-remote-bridge-activation.yaml
+
+          # Single SSOT (#2067): derive the endpoint-admin-service digest from the
+          # rendered overlay; assert exactly one.
+          IMG=ghcr.io/halildeu/platform-backend-endpoint-admin-service
+          mapfile -t rendered_digests < <(grep -oE "image: ${IMG}@sha256:[0-9a-f]{64}" \
+            /tmp/endpoint-admin-remote-bridge-activation.yaml | sed -E 's/^image:[[:space:]]*//' | sort -u)
+          if [ "${#rendered_digests[@]}" -ne 1 ]; then
+            echo "::error::rendered overlay must contain exactly one ${IMG} digest; got ${#rendered_digests[@]}"
+            printf '  %s\n' "${rendered_digests[@]}"
+            exit 1
+          fi
+          resolved="${rendered_digests[0]#*@}"
+
+          # If the operator provided expected_digest, it must equal the rendered one
+          # (no stale literal can be applied).
+          provided="${{ inputs.expected_digest }}"
+          if [ -n "$provided" ] && [ "$provided" != "$resolved" ]; then
+            echo "::error::provided expected_digest ($provided) != rendered overlay digest ($resolved)"
+            exit 1
+          fi
+          echo "RESOLVED_DIGEST=${resolved}" >> "$GITHUB_ENV"
+
+          grep -F 'REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED: "true"' \
+            /tmp/endpoint-admin-remote-bridge-activation.yaml
+
+          {
+            echo "## Remote-bridge activation render"
+            echo ""
+            echo "- context: \`${K8S_CONTEXT}\`"
+            echo "- namespace: \`${K8S_NAMESPACE}\`"
+            echo "- deployment: \`${DEPLOYMENT}\`"
+            echo "- expected digest (derived from overlay): \`${resolved}\`"
+            echo "- expected_digest input: \`${provided:-<empty — derived from overlay>}\`"
+            echo "- dry_run: \`${{ inputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Server-side dry-run
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply --dry-run=server -f /tmp/endpoint-admin-remote-bridge-activation.yaml
+
+      - name: Apply activation overlay
+        if: inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply -f /tmp/endpoint-admin-remote-bridge-activation.yaml
+
+      - name: Verify remote-bridge rollout and imageID
+        if: inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+
+          expected="${RESOLVED_DIGEST}"
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            rollout status "deploy/${DEPLOYMENT}" --timeout=240s
+
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get deploy "${DEPLOYMENT}" \
+            -o jsonpath='image={.spec.template.spec.containers[0].image}{"\n"}generation={.metadata.generation}{"\n"}observed={.status.observedGeneration}{"\n"}ready={.status.readyReplicas}{"\n"}updated={.status.updatedReplicas}{"\n"}available={.status.availableReplicas}{"\n"}'
+
+          pods_json="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get pods -l "app.kubernetes.io/name=${DEPLOYMENT}" -o json)"
+
+          echo "${pods_json}" | jq -r \
+            '.items[]
+             | select(.metadata.deletionTimestamp == null)
+             | "pod=\(.metadata.name) phase=\(.status.phase) ready=\(.status.containerStatuses[0].ready) restarts=\(.status.containerStatuses[0].restartCount) image=\(.spec.containers[0].image) imageID=\(.status.containerStatuses[0].imageID)"'
+
+          bad_count="$(echo "${pods_json}" | jq --arg expected "${expected}" \
+            '[.items[]
+              | select(.metadata.deletionTimestamp == null)
+              | select(.status.phase == "Running")
+              | select((.status.containerStatuses[0].ready != true) or ((.status.containerStatuses[0].imageID | contains($expected)) | not))]
+             | length')"
+
+          if [ "${bad_count}" != "0" ]; then
+            echo "::error::one or more live ${DEPLOYMENT} pods are not Ready on ${expected}"
+            exit 1
+          fi
+
+          {
+            echo ""
+            echo "## Remote-bridge activation live verification"
+            echo ""
+            echo "- rollout status: \`ok\`"
+            echo "- imageID digest: \`${expected}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,24 @@
+# Faz 24 #2186 - meeting-service authenticated analyze path to GPU-host
+# meeting-ai. Narrow test-only allow; no broad egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-meeting-service-egress-meeting-ai
+  labels:
+    app.kubernetes.io/name: meeting-service
+    app.kubernetes.io/part-of: platform
+    platform.acik.com/faz: "24"
+    platform.acik.com/issue: "2186"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: meeting-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.99.0.2/32
+      ports:
+        - protocol: TCP
+          port: 8300

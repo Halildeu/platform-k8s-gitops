@@ -1,0 +1,190 @@
+name: Faz 22.6 Denetim SSH preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Required literal: RUN_FAZ22_6_DENETIM_SSH_PREFLIGHT"
+        required: true
+        type: string
+      denetim_ssh_target:
+        description: "Denetim SSH target"
+        required: true
+        default: "svc-denetim-agent@10.99.0.2"
+        type: string
+      denetim_ssh_auth_mode:
+        description: "Denetim SSH auth source"
+        required: true
+        default: "runner_identity"
+        type: choice
+        options:
+          - runner_identity
+          - ssh_config_alias
+      require_active_gui:
+        description: "Require an active Denetim Windows GUI session"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: faz22-6-denetim-ssh-preflight
+  cancel-in-progress: false
+
+env:
+  EVIDENCE_DIR: /tmp/faz22-6-denetim-ssh-preflight-${{ github.run_id }}
+  ISSUE_URL: https://github.com/Halildeu/platform-k8s-gitops/issues/1580
+
+jobs:
+  preflight:
+    name: Denetim SSH and GUI readiness preflight
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 8
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*|"")
+                echo "::error::${name} must be a non-empty single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline CONFIRM "$CONFIRM"
+          reject_multiline DENETIM_SSH_TARGET "$DENETIM_SSH_TARGET"
+          reject_multiline DENETIM_SSH_AUTH_MODE "$DENETIM_SSH_AUTH_MODE"
+
+          if [ "$CONFIRM" != "RUN_FAZ22_6_DENETIM_SSH_PREFLIGHT" ]; then
+            echo "::error::confirm input must be RUN_FAZ22_6_DENETIM_SSH_PREFLIGHT"
+            exit 1
+          fi
+
+          case "$DENETIM_SSH_AUTH_MODE" in
+            runner_identity) ;;
+            ssh_config_alias)
+              if [ "$DENETIM_SSH_TARGET" != "denetim-pc" ]; then
+                echo "::error::ssh_config_alias mode requires denetim_ssh_target=denetim-pc"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::unsupported denetim_ssh_auth_mode"
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run Denetim SSH preflight
+        id: preflight
+        env:
+          DENETIM_SSH_TARGET: ${{ inputs.denetim_ssh_target }}
+          DENETIM_SSH_AUTH_MODE: ${{ inputs.denetim_ssh_auth_mode }}
+          REQUIRE_ACTIVE_GUI: ${{ inputs.require_active_gui && '1' || '0' }}
+        run: |
+          set +e
+          mkdir -p "${EVIDENCE_DIR}"
+          chmod +x scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh
+          if [ "$DENETIM_SSH_AUTH_MODE" = "ssh_config_alias" ]; then
+            export DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/runner/faz22-6-denetim-ssh/config}"
+            export DENETIM_SSH_OPTS="__SSH_CONFIG__"
+          fi
+
+          scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh \
+            2>&1 | tee "${EVIDENCE_DIR}/workflow.log"
+          exit_code="${PIPESTATUS[0]}"
+
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          echo "DENETIM_SSH_PREFLIGHT_EXIT_CODE=${exit_code}"
+          exit 0
+
+      - name: Publish redacted #1580 preflight summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
+          DENETIM_SSH_TARGET_DISPLAY: ${{ inputs.denetim_ssh_target }}
+        run: |
+          set -euo pipefail
+
+          summary="${EVIDENCE_DIR}/summary.json"
+          mkdir -p "${EVIDENCE_DIR}"
+          if [ ! -f "$summary" ]; then
+            jq -n \
+              --arg status "no-go" \
+              --arg reason "summary-json-missing" \
+              '{schemaVersion:"faz22.6-denetim-ssh-preflight-v1",status:$status,reason:$reason}' \
+              > "$summary"
+          fi
+
+          status="$(jq -r '.status // "unknown"' "$summary")"
+          reason="$(jq -r '.reason // ""' "$summary")"
+          failure_class="$(jq -r '.sshFailureClass // ""' "$summary")"
+          active_gui="$(jq -r '.activeGuiDetected // ""' "$summary")"
+          require_gui="$(jq -r '.requireActiveGui // ""' "$summary")"
+          identity_fp="$(jq -r '.runnerIdentity.publicFingerprint // ""' "$summary")"
+          sums_sha=""
+          if [ -f "${EVIDENCE_DIR}/SHA256SUMS" ]; then
+            sums_sha="$(sha256sum "${EVIDENCE_DIR}/SHA256SUMS" | awk '{print $1}')"
+          fi
+
+          comment="${RUNNER_TEMP}/faz22-6-denetim-ssh-preflight.md"
+          {
+            echo "## #1580 Denetim SSH preflight"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Target: \`${DENETIM_SSH_TARGET_DISPLAY}\`"
+            echo "- Status: \`${status}\`"
+            echo "- Reason: \`${reason}\`"
+            echo "- SSH failure class: \`${failure_class}\`"
+            echo "- Active GUI required / detected: \`${require_gui}\` / \`${active_gui}\`"
+            echo "- Runner public-key fingerprint: \`${identity_fp}\`"
+            echo "- Evidence SHA256SUMS hash: \`${sums_sha}\`"
+            echo
+            echo "Boundary: this is a preflight only. It does not start VIEW_ONLY, does not write the #1580 engineering marker, does not assert KVKK/DPIA legal signoff, and does not prove production or broad-rollout readiness."
+          } > "$comment"
+
+          gh issue comment 1580 \
+            --repo Halildeu/platform-k8s-gitops \
+            --body-file "$comment" \
+            || echo "::warning::Could not comment on #1580; evidence remains in the workflow artifact."
+
+          {
+            echo "## Denetim SSH preflight"
+            echo
+            cat "$comment"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload redacted preflight bundle
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz22-6-denetim-ssh-preflight-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail workflow on no-go
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.preflight.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ "${EXIT_CODE:-1}" != "0" ]; then
+            echo "::error::Denetim SSH preflight did not pass"
+            exit "${EXIT_CODE:-1}"
+          fi

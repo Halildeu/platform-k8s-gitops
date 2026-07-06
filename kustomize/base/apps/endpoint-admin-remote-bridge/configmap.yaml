@@ -1,0 +1,93 @@
+# endpoint-admin-remote-bridge ConfigMap — Faz 22.6 D10-8 broker isolation
+#
+# Broker runtime config contract. This is the SCAFFOLD (desired-state) value set:
+# the broker ships DISABLED (control #11 fail-closed). The owner-gated activation
+# overlay (overlays/test/activation/endpoint-admin-remote-bridge) patches the
+# enable flag, bind host, TLS/signer paths and secret-backed values at flip time.
+#
+# Same image as endpoint-admin-service (Codex A+), so this mirrors the relevant
+# subset of endpoint-admin-service-config — but DELIBERATELY DIVERGES on:
+#   - REMOTE_BRIDGE_ENABLED=false  (disabled-by-default; T-2b @ConditionalOnProperty)
+#   - REMOTE_BRIDGE_BIND_HOST=127.0.0.1  (loopback default; T-2b RemoteBridgeServerProperties)
+#   - SPRING_FLYWAY_ENABLED=false  (control #4 — migrations stay on the PRIMARY
+#     endpoint-admin-service; the broker NEVER owns schema evolution)
+#   - SPRING_JPA_HIBERNATE_DDL_AUTO=validate  (never mutates the schema)
+#   - the secret reference is the broker's OWN secret (control #3), NOT
+#     endpoint-admin-service-secrets (no Keycloak-admin / enrollment pepper /
+#     command-encryption / broad-DB credentials reach the broker)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-admin-remote-bridge-config
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/component: remote-bridge-broker
+    app.kubernetes.io/part-of: remote-bridge
+data:
+  # --- Remote bridge gRPC broker (T-2b/T-2c) -------------------------------
+  # DISABLED in the scaffold. The activation overlay flips this to "true"
+  # (control #11: enabled=true exists ONLY on the broker Deployment, never on
+  # the primary endpoint-admin-service).
+  REMOTE_BRIDGE_ENABLED: "false"
+  # Loopback default (T-2b). Activation sets 0.0.0.0 to expose 9444 behind the
+  # mTLS L4 edge / ingress allowlist (control #6).
+  REMOTE_BRIDGE_BIND_HOST: "127.0.0.1"
+  REMOTE_BRIDGE_BIND_PORT: "9444"
+  # mTLS-only fail-closed (T-2c). Plaintext is refused unless explicitly enabled
+  # AND provably loopback; the broker stays mTLS-only in the pilot.
+  REMOTE_BRIDGE_ALLOW_INSECURE_PLAINTEXT: "false"
+
+  # --- Listen ports (same Spring Boot image) -------------------------------
+  # NOTE: the shared image still binds the main HTTP (8096) + management (8081)
+  # servers. control #5 keeps those UNPUBLISHED: the broker Service exposes ONLY
+  # 9444, and the activation ingress NetworkPolicy denies 8096/8081 from every
+  # source except kubelet probes on 8081 (documented pilot waiver — closing the
+  # Spring web/admin controllers in the broker runtime is a T-4a-ii backend
+  # concern, NOT this gitops slice).
+  SERVER_PORT: "8096"
+  SERVER_SHUTDOWN: "graceful"
+  MANAGEMENT_SERVER_PORT: "8081"
+  SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: "30s"
+
+  # --- Datasource — control #4 least-privilege role ------------------------
+  # The broker connects with its OWN least-priv Postgres role (session /
+  # recording / ledger SELECT/INSERT/UPDATE only), credentials delivered via the
+  # broker ExternalSecret (control #3). FLYWAY DISABLED here — the primary owns
+  # migrations; the broker boots against the already-migrated schema with
+  # ddl-auto=validate.
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/endpoint_admin"
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "3"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
+  DB_POOL_MAX: "3"
+  SPRING_FLYWAY_ENABLED: "false"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
+  ENDPOINT_ADMIN_DB_SCHEMA: "endpoint_admin_service"
+
+  # --- Identity / OIDC (control #7 egress: JWKS-read) ----------------------
+  KEYCLOAK_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
+  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  SECURITY_AUTH_ALLOWED_CLIENT_IDS: "frontend,admin-cli,serban-web,account"
+  SECURITY_JWT_AUDIENCE: "endpoint-admin-service,frontend,account,serban-web"
+  SPRING_PROFILES_ACTIVE: "k8s"
+
+  # --- Discovery off -------------------------------------------------------
+  EUREKA_CLIENT_ENABLED: "false"
+  SPRING_CLOUD_DISCOVERY_ENABLED: "false"
+  SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
+
+  # --- OpenFGA authz gate (control #7 egress: OpenFGA-check) ----------------
+  # The broker still enforces module authz; store/model are env-specific stubs
+  # the activation overlay pins (mirrors endpoint-admin-service base pattern —
+  # empty IDs fail loud at call time, never silently open).
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+  ERP_OPENFGA_STORE_ID: ""
+  ERP_OPENFGA_MODEL_ID: ""
+
+  # --- Logging / management ------------------------------------------------
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_COM_EXAMPLE_ENDPOINTADMIN: "INFO"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
+  MANAGEMENT_TRACING_ENABLED: "false"

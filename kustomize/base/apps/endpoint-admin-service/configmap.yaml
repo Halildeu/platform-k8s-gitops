@@ -16,6 +16,12 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: endpoint-admin-service-config
+  annotations:
+    # #1267 runtime reconcile: ArgoCD ServerSideApply can leave previously
+    # manager-owned ConfigMap data keys behind after a desired-state key
+    # removal. Replace sync makes this ConfigMap exact and removes stale
+    # ERP_OPENFGA_STORE_ID / ERP_OPENFGA_MODEL_ID pins from live runtime.
+    argocd.argoproj.io/sync-options: Replace=true
   labels:
     app.kubernetes.io/name: endpoint-admin-service
 data:
@@ -31,9 +37,19 @@ data:
   SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "2"
   DB_POOL_MAX: "5"
 
-  # JPA / Flyway — uygulama Flyway kullanmıyor; Hibernate ddl-auto=update
-  SPRING_FLYWAY_ENABLED: "false"
-  SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+  # JPA / Flyway — BE-016 (Codex 019e4fbc plan-time consult). Flyway owns
+  # schema evolution: V4 effective-state is baselined into the Flyway history
+  # (application.yml baseline-version=4) and V5+ migrations are Flyway-applied.
+  # baseline-on-migrate baselines an existing ddl-auto-built endpoint_admin
+  # schema at V4 (one history row: version=4 type=BASELINE); V1-V4 are NOT
+  # re-run against a populated schema.
+  # ddl-auto=validate — Hibernate verifies the live schema matches the entity
+  # mappings on startup but never mutates it; Flyway is the sole schema
+  # authority. This is the ownership-hardening stage (was `update` during the
+  # adoption rollout — Codex 019e4fbc two-stage: adoption first, ownership
+  # second).
+  SPRING_FLYWAY_ENABLED: "true"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
   ENDPOINT_ADMIN_DB_SCHEMA: "endpoint_admin_service"
 
   # Identity / OIDC — test=platform-test realm; prod overlay 'serban'
@@ -44,16 +60,76 @@ data:
   SECURITY_AUTH_ALLOWED_CLIENT_IDS: "frontend,admin-cli,serban-web,account"
   SECURITY_JWT_AUDIENCE: "endpoint-admin-service,frontend,account,serban-web"
 
+  # Spring profile — application-k8s.yml'ı aktive eder (Faz 22.1.1 C.5.persona
+  # #960 fix 2026-05-22: profile yokken SecurityConfig fallback
+  # http://localhost:8081/realms/serban/... JWKS URI'sını kullanıp
+  # JWT validation 401 veriyordu; profile aktif olunca KEYCLOAK_JWKS_URI
+  # env binding doğru spring.security.oauth2.resourceserver.jwt.jwk-set-uri'a
+  # mapleniyor).
+  SPRING_PROFILES_ACTIVE: "k8s"
+
   # Eureka / Spring Cloud (D7 — Eureka kaldırıldı)
   EUREKA_CLIENT_ENABLED: "false"
   SPRING_CLOUD_DISCOVERY_ENABLED: "false"
   SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
+
+  # OpenFGA authz gate (Faz 22.1.1 BE-009; common-auth `erp.openfga.*` contract).
+  # Provenance fix — gitops #1265 (2026-06-04) made the gate explicit so a full
+  # `apply -k` / ArgoCD sync cannot silently drop ERP_OPENFGA_ENABLED and turn
+  # the @RequireModule interceptor into a fail-open no-op.
+  #
+  # Store/Model ID are intentionally NOT carried in ConfigMap. They are
+  # environment-specific runtime artifact selectors and are delivered through
+  # the ESO-managed `endpoint-admin-service-secrets` Secret from
+  # `kv/platform/openfga`, matching permission-service / report-service /
+  # variant-service discipline. That keeps endpoint-admin on the shared OpenFGA
+  # model ledger instead of a stale overlay pin.
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+
+  # AG-028 Managed Uninstall feature flag (endpoint-admin.uninstall.enabled).
+  # DARK-LAUNCH default: false → the uninstall REST surface (propose / approve /
+  # list / history) returns 503 "Service Unavailable" in dark mode (app default,
+  # EndpointUninstallService throws ResponseStatusException(SERVICE_UNAVAILABLE)).
+  # Ships dark so the destructive managed-uninstall capability is exposed only by
+  # a deliberate, env-specific overlay flip. Base stays false (prod inherits
+  # dark); the TEST overlay `replace`s this to "true" (AG-028 go-live on test —
+  # gitops #1239: full build + deploy + destructive E2E SUCCEEDED_VERIFIED +
+  # headless-browser acceptance). The overlay `replace` (not `add`) fails fast if
+  # this base default is ever removed — same fail-loud discipline as the OpenFGA
+  # store/model stubs above.
+  ENDPOINT_ADMIN_UNINSTALL_ENABLED: "false"
+
+  # Domain Ops Broker feature flag (endpoint-admin.domain-ops.enabled).
+  # DARK-LAUNCH default: false -> the Domain Ops admin API fails closed with
+  # 403 "Domain ops broker is disabled." Base/prod stay dark; test overlay flips
+  # this deliberately for #676 product-channel acceptance so the real Admin API
+  # can create durable endpoint_domain_ops_requests rows, dispatch through the
+  # typed connector boundary, and persist redacted result/audit evidence.
+  ENDPOINT_ADMIN_DOMAIN_OPS_ENABLED: "false"
 
   # Agent auth (HMAC nonce + timestamp window)
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_TTL_SECONDS: "600"
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INITIAL_DELAY_MS: "600000"
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INTERVAL_MS: "600000"
   ENDPOINT_ADMIN_AGENT_AUTH_TIMESTAMP_WINDOW_SECONDS: "300"
+
+  # Faz 22.5 M2 (#1359) + Faz 22 #1497 (ADR-0029 §2.5, Codex 019f0056) — passthrough mTLS.
+  # CANONICAL = TLS passthrough (a test/prod overlay flips PASSTHROUGH_ENABLED=true to bind the
+  # secondary 8443 connector; identity = the VERIFIED client cert from the handshake). The
+  # forwarded-header (X-Client-Cert) mode is a NON-CANONICAL, client-spoofable lab fallback and is
+  # now default-OFF here too (#1497 base flip true->false) so the base desired-state matches the
+  # passthrough-canonical decision. The backend fail-fast validator (MtlsPassthroughValidator)
+  # requires forward-header=false when passthrough is enabled, and the test/prod overlays already
+  # patch it to false — so this base flip is rendered-neutral (zero cluster delta).
+  ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED: "false"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED: "false"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_PORT: "8443"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID: ""
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_KEY_STORE: "/etc/endpoint-admin/mtls/server-keystore.p12"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_KEY_STORE_TYPE: "PKCS12"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_TRUST_STORE: "/etc/endpoint-admin/mtls/truststore.p12"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_TRUST_STORE_TYPE: "PKCS12"
 
   # Command claim TTL
   ENDPOINT_ADMIN_COMMAND_CLAIM_TTL_SECONDS: "300"

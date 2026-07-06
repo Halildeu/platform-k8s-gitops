@@ -1,0 +1,26 @@
+# Fixture (FAIL) — RespectIgnoreDifferences=true + jq path expressions
+# that select the whole `.metadata` block or `.metadata.managedFields`.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fixture-fail-jq-metadata
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://example.invalid/repo.git
+    targetRevision: main
+    path: kustomize/overlays/test
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-test
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - .metadata
+        - .metadata.managedFields

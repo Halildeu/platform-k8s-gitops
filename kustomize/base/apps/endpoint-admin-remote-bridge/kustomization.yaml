@@ -1,0 +1,26 @@
+# endpoint-admin-remote-bridge base kustomization — Faz 22.6 D10-8 broker isolation
+#
+# CONTROL #1 — the label transformer applies ONLY the name-selector pair. There
+# is DELIBERATELY NO `app.kubernetes.io/part-of: platform` pair here (contrast
+# kustomize/base/apps/endpoint-admin-service/kustomization.yaml, which adds it).
+# The broker must NOT inherit the platform-wide ingress/egress allowlists in
+# kustomize/base/netpol/*; it is default-denied by the namespace policy and only
+# the activation overlay's broker-scoped NetworkPolicies grant narrow access.
+#
+# This base is NOT referenced by overlays/test or overlays/prod (it is not in
+# the Argo root). It builds standalone for sanity:
+#   kubectl kustomize kustomize/base/apps/endpoint-admin-remote-bridge
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge
+    includeSelectors: true
+    includeTemplates: true
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - service.yaml
+  - deployment.yaml

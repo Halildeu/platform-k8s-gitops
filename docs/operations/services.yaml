@@ -171,24 +171,284 @@ services:
       test: enabled    # variant: platform-web-frontend-testai
       prod: enabled    # variant: platform-web-frontend
 
+  - name: artifact-host
+    repo: platform-agent
+    description: |
+      Faz 22.5 M1 endpoint-agent bootstrap artifact host. nginx serving the
+      one-command Windows agent install artifacts as static files at
+      /artifacts/endpoint-agent/<version>/{bootstrap-package.ps1,EndpointAgent.zip,
+      SHA256SUMS,release-manifest.json}. Image
+      ghcr.io/halildeu/platform-agent-artifacts (built by the platform-agent
+      release workflow), pulled with ghcr-pull, D30 digest-pinned.
+    jwt_validates: false  # static artifact host, no auth (public install URL)
+    route_external: true  # /artifacts path (edge → cluster ingress)
+    workload_kind: Deployment
+    runtime_class: nginx
+    probe_contract: http-healthz   # /healthz nginx
+    environments:
+      test: enabled
+      prod: enabled    # Faz 22.5 prod-enable (gitops#1436; supersedes #1429):
+                       # in prod overlay (../../base/apps/artifact-host) + image
+                       # digest pin (v0.2.3 @sha256:d8e4b1c7… — trusted-internal-ca,
+                       # /current/ alias) + /artifacts Ingress path. ai.acik.com/
+                       # artifacts serves the real installer (no longer SPA
+                       # fallback). Edge unchanged — the prod `/` catch-all
+                       # already forwards /artifacts to the cluster ingress.
+                       # Public exposure of the lab-signed installer; owner
+                       # sign-off 2026-06-10 ("Onayla + sonuna kadar sür"). The
+                       # endpoint-admin UI one-command derives -ApiUrl from
+                       # window.location.origin → prod installs target ai.acik.com
+                       # (resolves #1429 wrong-target KEYSTONE). DESIRED-STATE;
+                       # live rollout gated at deploy-prod-gitops production-env
+                       # approval. See docs/runbooks/RB-faz22-m1-artifact-host.md §8.
+
+  - name: audio-gateway
+    repo: platform-backend
+    description: |
+      Faz 24 Meeting Intelligence audio chunk admission gateway (PR-gw-01
+      family — platform-backend#390/#403/#421/#534/#556/#558). JWT fail-closed
+      session/chunk REST API (/api/v1/audio-gateway); Redis Streams
+      cross-server dispatcher producer (audio:chunks:p00..p31, group
+      live-stt-v1 — ADR-0031 D2) to the platform-ai live-stt consumer
+      (platform-ai#138). Aşama-2 staging smoke ön şartı (platform-ai#151/#57).
+      Redis runtime: host-compose/redis-streams + docs/runbooks/
+      redis-streams-staging-sw.md.
+    jwt_validates: true
+    route_external: true   # /api/v1/audio-gateway ingress direct path (8210)
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator   # management:8081 (#558)
+    environments:
+      test: enabled
+      prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
+
+  - name: redis-streams-exporter
+    repo: oliver006/redis_exporter
+    description: |
+      Faz 24 PR-obs-01a (gitops#1247): Redis Streams chunk transport queue
+      görünürlüğü — stream length + consumer-group lag/pending/idle (XINFO,
+      32 partition explicit check-single-streams). Hedef: host-services
+      redis-streams D19 bridge (host-compose/redis-streams). Parola ESO
+      kv/platform/audio-gateway-service.redis_password (paylaşımlı requirepass
+      — geçici; read-only ACL ayrımı follow-up gitops#1457). ServiceMonitor
+      9121 /metrics; netpol allow-monitoring-scrape 9121.
+    jwt_validates: false  # internal metrics endpoint, monitoring-ns scrape only
+    route_external: false
+    third_party: true
+    workload_kind: Deployment
+    runtime_class: lab-tool
+    probe_contract: exempt   # redis_exporter kendi /health modeli (healthz seti dışı)
+    environments:
+      test: enabled
+      prod: deferred   # prod'da Redis Streams yok — D30 cutover'da runtime ile birlikte
+
+  - name: audit-archive-exporter
+    repo: prometheuscommunity/postgres-exporter
+    description: |
+      Faz 24 PR-obs-02 (gitops#1656, ADR-0042 §4): audit-retention-worker
+      DB-state observability — postgres_exporter custom queries over the durable
+      audit_archive.* state (cursor/ledger). The worker is a run-once CronJob so
+      its in-process Micrometer counters are ephemeral; this always-on exporter
+      surfaces the DB truth + the companion PrometheusRule alerts on it. Read-only
+      role via ESO kv/platform/audit-archive-exporter; ServiceMonitor 9187 /metrics.
+      Network posture = redis-streams-exporter parity (part-of=platform → shared
+      allow-egress-host-bridge + allow-monitoring-scrape 9187); DB blast radius is
+      bounded by the dedicated read-only role, not the network layer.
+    jwt_validates: false  # internal metrics endpoint, monitoring-ns scrape only
+    route_external: false
+    third_party: true
+    workload_kind: Deployment
+    runtime_class: lab-tool
+    probe_contract: exempt   # postgres_exporter tcp/metrics; no actuator healthz set
+    environments:
+      test: enabled
+      prod: deferred   # worker/exporter test-only until the ADR-0042 §5 prod gate
+
+  - name: meeting-service
+    repo: platform-backend
+    description: |
+      Faz 24 Meeting Intelligence meeting CRUD + org_id multi-tenancy + OpenFGA
+      (platform-backend#410, PR #672). meeting/session/action/decision CRUD;
+      Flyway V1 'meeting' DB schema meeting_service (4 tablo + org_id compat
+      triggers); @RequireModule(module:meeting) authz. k3d-test foundation
+      deploy gitops#1615 / PR #1618 — D29 Up+Functional LIVE 2026-06-17.
+      Zanzibar-ready LIVE 2026-06-17 (OpenFGA module:meeting can_view/can_manage
+      allow + deny + deny-by-relation enforce; bootstrap/openfga/
+      meeting-transcript-tuples.json) + api-gateway route 26
+      /api/v1/admin/meetings/** APPLIED+LOADED (render-correct test-overlay
+      ConfigMap patch; authenticated gateway-forward smoke pending — gateway
+      security filter global 401, persona token realm/role setup gerek).
+    jwt_validates: true
+    route_external: false   # gateway-routed (api-gateway route 26 /api/v1/admin/meetings/**); false=no own edge ingress (endpoint-admin/notification emsali)
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator   # management:8081
+    environments:
+      test: enabled
+      prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
+
+  - name: transcript-service
+    repo: platform-backend
+    description: |
+      Faz 24 Meeting Intelligence transcript segment CRUD + search/export + KVKK
+      Madde 12 erişim kaydı (platform-backend#411, PR #674). transcript_segments
+      CRUD + transcript_access_audit (2yr, yapısal transcript-free); Flyway V1
+      'transcript' DB schema transcript_service (org_id compat baked-in);
+      @RequireModule(module:transcript) authz consumer. k3d-test foundation
+      deploy gitops#1615 — ESO Ready=True/SecretSynced + Vault seed/policy live;
+      D29 Up+Functional LIVE 2026-06-17 (pod imageID digest match + health 200 +
+      no-JWT 401). Zanzibar-ready LIVE 2026-06-17 (OpenFGA module:transcript
+      can_view/can_manage allow + deny + deny-by-relation enforce; bootstrap/
+      openfga/meeting-transcript-tuples.json) + api-gateway route 27
+      /api/v1/admin/transcripts/** APPLIED+LOADED (render-correct test-overlay
+      ConfigMap patch; authenticated gateway-forward smoke pending — gateway
+      security filter global 401, persona token realm/role setup gerek).
+    jwt_validates: true
+    route_external: false   # gateway-routed (api-gateway route 27 /api/v1/admin/transcripts/**); false=no own edge ingress (endpoint-admin/notification emsali)
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator   # management:8081
+    environments:
+      test: enabled
+      prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
+
+  - name: audit-event-consumer-service
+    repo: platform-backend
+    description: |
+      Faz 24 KVKK audit pipeline Redis consumer (platform-backend#1249, PR #677).
+      Pure Redis-Streams consumer (XREADGROUP audit:events group audit-persist-v1
+      → immutable hash-chain persist + DLQ audit:events:dlq); NO CRUD HTTP API
+      (no @RestController) → jwt_validates:false, no api-gateway route, no OpenFGA
+      gate. Flyway V1 baseline DB schema audit_event (history table
+      audit_consumer_flyway_history); SERVER_PORT 8099 + management 8081
+      spring-actuator contract. k3d-test deploy gitops#1615 — D29 Up+Functional
+      LIVE 2026-06-17 (pod imageID digest match + health 200 + consumer group
+      audit-persist-v1 joined on stream audit:events). Same host-bridge Redis as
+      audio-gateway (producer side; AUDIO_GATEWAY_AUDIT_REDIS_ENABLED flip +
+      end-to-end event flow = deferred follow-up, Zanzibar-ready analogu).
+    jwt_validates: false   # pure Redis consumer — no inbound HTTP API to enforce
+    route_external: false   # no public HTTP API (consumer-only, internal 8099 actuator)
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator   # management:8081
+    environments:
+      test: enabled
+      prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
+
   # --- DEFERRED services (intentionally not in target env) ---
 
   - name: endpoint-admin-service
     repo: platform-backend
     description: |
       Endpoint admin / governance API (Faz 22.1.3 lab tier — DD-EA-1 manifest
-      contract gate's subject). Currently dev/test only; prod scope decision
-      pending Faz 22.2 BG-EA-1 product review.
+      contract gate's subject). GitOps-enabled in test and prod; prod endpoint-
+      admin service presence passed D29 smoke after #1241 ESO + #1242 workload/
+      config merged.
 
-      Status note (Codex Sprint A P0 truthful state — 2026-05-04):
-        Test cluster pod RUNNING (compose-era leftover / unmanaged), but NOT
-        in test gitops overlay (kustomize/overlays/test). Mark deferred from
-        gitops perspective — runtime drift detector will P1-alarm the
-        unmanaged cluster pod, surfacing the integration gap.
+      Status note (Plan A/B/C + C.5.persona + BE-014A zinciri MERGED 2026-05-22):
+        Test cluster endpoint-admin-service GitOps-governed in
+        kustomize/overlays/test with immutable digest pin
+        sha256:fd7a9c54f7919bdb71c9b2adf8d18e548d6ac4dc9cb25e0d5857dddd2dc0e3bc
+        (BE-014A post-merge final main SHA `c8f244c4`, gitops PR #965 MERGED;
+        previous H1 digest sha256:b2250b7a274ec8... at #956 superseded).
+        api-gateway companion digest pin
+        sha256:84500b5ebe162b8014035fe6bcf9a76b407ef81fad0a6b3407d5fa7357cce47c
+        (post-H2 merge final main SHA `161296cf`, gitops PR #957 MERGED).
+        Live check 2026-05-22: Deployment 1/1, pod imageID match
+        (BE-014A bytecode), ExternalSecret SecretSynced=True, actuator
+        health UP.
 
-        Faz 22.x onboard task: bring endpoint-admin-service into gitops
-        (kustomize base + test overlay), then flip test→enabled here. Until
-        then catalog reflects gitops-governed state, not cluster-actual state.
+        platform-backend canonical main NOW carries endpoint-admin-service
+        + api-gateway integration (H1 PR #288 + H2 PR #291 MERGED) + BE-014A
+        tamper/offline audit deny hooks (PR #293 MERGED + #961 ConfigMap fix
+        + #965 gitops digest LIVE).
+
+        Live-runtime acceptance on test deployment (2026-05-22T09:52Z):
+        * C.5.persona D29-EA Live JWT 6/6 matrix VERIFIED
+        * BE-014A Functional 5/5 HMAC smoke VERIFIED (4 deny audit event
+          types EMITTING + 7 DB audit rows + noRollbackFor durability
+          invariant proven)
+        BE-011 agent full lifecycle (heartbeat/command/result) + BE-013
+        full HMAC lifecycle (BE-014A consume/deny path live yarı-kanıt) +
+        BE-016 audit integrity hash-chain remain separate acceptance
+        gates; prod overlay activation remains 22.2+.
+
+        2026-05-22 truth-refresh (#982): BE-016 (hash-chain + Flyway,
+        platform-backend#295/#297), BE-017 (dual-control gate, #300
+        dd6b1eab), BE-011 (agent wire-contract, platform-agent#9) all
+        MERGED source-side. endpoint-admin-service live digest is now
+        sha256:1a1d0aac... (BE-017, gitops PR #980) and MATCHES GitOps
+        desired (D30 OK; supersedes BE-014A fd7a9c54). [HISTORICAL/SUPERSEDED
+        by 2026-05-24 refresh — api-gateway D30 drift LIVE sha256:6137bb2c…
+        != desired sha256:84500b5e… ifadesi 2026-05-22 anlık idi; gitops
+        PR #985 (`6a4c488`) ile overlay desired = live = sha256:6137bb2c…
+        olarak hizalandı; api-gateway D30 parity LIVE 2026-05-24,
+        PR #985 sonrası desired/live parity kanıtlıdır (gitops #1000
+        No-Fake-Work correction attestation).]
+
+        2026-05-24 truth-refresh (cumulative Faz 22 Web auth-transport
+        chain — 4 platform-web PR + 5 gitops PR):
+        * Web runtime acceptance LIVE: platform-web #654 (RTK gateway
+          path fix + testai build enable, `c5d96916`) + #656
+          (`createEndpointAdminApp` race protection, `45fa1db7`) + #657
+          (`endpointAdminApi.ts` auth Bearer + localStorage fallback,
+          `5455b076`) + #658 (RTK `fetchFn: unwrapRequestFetchFn`
+          Request-object header drop workaround mirrors notify #652,
+          `4c3df712`) all MERGED + deployed.
+        * Frontend live pod imageID sha256:583aa8c9... (gitops #1007
+          D30 drift-correction `9202ce28`; overlay desired = live, D30
+          OK); intermediate sha256:c212be87... (gitops #998 #657 era,
+          `5ba3b5e2`) historical.
+        * Browser-context post-#658 verify (claude-in-chrome MCP, single
+          tab Platform Admin shell session): /endpoint-agents/status →
+          200 (auth-only, Bearer accepted); /endpoint-admin/endpoint-
+          devices → 403 (FGA fail-closed for Platform Admin no-tuple,
+          expected deny); /endpoint-admin/endpoint-audit-events → 403
+          (same FGA fail-closed). 401 storm giderildi end-to-end.
+        * Authorized persona ALLOW path: c5persona-admin-9001 JWT
+          (userId="9001", FGA can_manage module:endpoint-admin tuple
+          seeded) in-browser fetch 3/3 → 200; real data döndü
+          (HALILKOOLUB735 Windows device record + ENDPOINT_COMMAND_
+          APPROVED audit row — yan-kanıt BE-011 lifecycle + BE-017
+          dual-control source-side LIVE).
+        * platform-web #655 + #653 CLOSED 2026-05-23 with evidence
+          comments; gitops #1004 ALLOW path browser-context evidence
+          note MERGED `49aaf9c`; gitops #1010 + #1014 truth-refresh +
+          handoff MERGED.
+        * D29-EA matrix (persona path): Up ✅ + Functional ✅ + Secured
+          ✅ + Zanzibar-ready ✅; full operator-session parity for
+          audit/status pending follow-on.
+
+        2026-06-07 truth-refresh (Faz 22.5 software deployment + prod
+        endpoint-admin gate):
+        * BE-011 real agent lifecycle is formally evidenced in gitops #1021 /
+          platform-agent #10 and current-state: HALILKOOLUB735 enroll →
+          heartbeat → command/result → audit chain is no longer only
+          yan-kanit.
+        * First install pilot is testai-proven (#1133 GREEN): 7-Zip install
+          end-to-end on HALILKOOLUB735 with backend command/audit and UI
+          evidence.
+        * AG-028 managed uninstall is testai-proven (#1239 CLOSED + gitops
+          #1279): real 7-Zip uninstall on HALILKOOLUB735 produced
+          `SUCCEEDED_VERIFIED` and `ABSENT_VERIFIED`; maker-checker proposer
+          != approver held.
+        * Prod endpoint-admin gate passed: #1241 ESO MERGED, #1242 workload/
+          config MERGED, prod Deployment `endpoint-admin-service` 1/1 Running,
+          pod restart 0, imageID digest `sha256:7fa5975c...`, and D29 smoke
+          runner GREEN for Up + Functional + Zanzibar-ready
+          (`/tmp/smoke-report-prod-20260606T020443Z` on staging-sw).
+
+        Kalan kapılar (ayrı kapı — testai/prod service-presence kanıtı
+        domain-wide readiness yerine geçmez):
+        * #1044 two additional user-owned devices + 24h soak roll-up.
+        * #376 authenticated compliance-gap browser D5 acceptance.
+        * AG-029 signed agent self-update — multi-device/trusted-signing/
+          rollout-policy acceptance.
+        * BE-026..BE-029 rollout controls — source sprint accepted, runtime
+          policy acceptance separate.
+        * 22.2.B / 22.3 IT rollout — acik.local domain, MSI/GPO/AD CS, EDR
+          allowlist, Trusted Signing, 5-PC pilot and later 50/800 ramp remain
+          operator/IT-bound.
     jwt_validates: true
     route_external: false
     workload_kind: Deployment
@@ -196,8 +456,8 @@ services:
     probe_contract: spring-actuator
     jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
-      test: enabled   # Faz 22.1.1b onboard COMPLETE 2026-05-05: gitops manifest live'a hizalandı (35 ConfigMap key + 4 ExternalSecret key + port 8096) + image digest pin sha-bd1e5c8. ESO ClusterSecretStore vault-platform-gitops zaten Ready, kv/platform/endpoint-admin-service Vault path populated. D29-EA smoke pending (kubectl apply sonrası).
-      prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
+      test: enabled   # 2026-06-07 truth-refresh: endpoint-admin-service testai is GitOps-enabled with D29/D30 evidence across backend/web/agent paths; BE-011 lifecycle, 7-Zip install (#1133) and AG-028 uninstall (#1239/#1279) are test-proven. Kalan kapılar: #1044 two-device soak, #376 compliance-gap D5, AG-029 multi-device/trusted signing, rollout controls and IT/domain rollout.
+      prod: enabled   # 2026-06-06: #1241/#1242 merged + prod D29 smoke GREEN for endpoint-admin-service digest sha256:7fa5975c... (report /tmp/smoke-report-prod-20260606T020443Z on staging-sw). Future prod digest changes still need fresh immutable digest + D29 ledger evidence.
 
   - name: notification-orchestrator
     repo: platform-backend

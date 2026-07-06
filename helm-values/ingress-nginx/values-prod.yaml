@@ -33,6 +33,12 @@ controller:
     patch:
       enabled: true
 
+  # Faz 22.5 M2 #1359/#1376 — required for the dedicated prod mTLS SNI host.
+  # `mtls.ai.acik.com` must be L4 TLS-passthrough: the endpoint-admin backend
+  # terminates mTLS on 8443 and enforces client certificate auth.
+  extraArgs:
+    enable-ssl-passthrough: ""
+
   # Metrics (prom scrape için etiketler) — EdgeHigh5xxRatio + gateway p95 alert'leri
   # bu metriklere bağlı. PrometheusRule: kustomize/base/monitoring/zanzibar-stability-rule.yaml
   metrics:

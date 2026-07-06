@@ -19,7 +19,19 @@ metadata:
     app.kubernetes.io/name: notification-orchestrator
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: platform
-    release: prometheus
+    # 2026-05-20 fix: PrometheusOperator ruleSelector matches
+    # `release: kube-prometheus-stack` (the kube-prometheus-stack helm
+    # release name in this cluster's monitoring namespace). The previous
+    # `release: prometheus` label silently failed to match, so this
+    # PrometheusRule was never rendered into the operator's
+    # `prometheus-kube-prometheus-stack-prometheus-rulefiles-0` ConfigMap
+    # and NONE of the notification-orchestrator alerts (NotifyAuthzDisabledRegression,
+    # NotifyDlqSustained, NotifyServiceDown, NotifyAbuseStorm, NotifyOrgAccessDeniedStorm,
+    # NotifyAuditRetentionStale, ...) were ever evaluated by Prometheus.
+    # Live evidence (k3d-test 2026-05-20 04:18 UTC): wget actuator/rules
+    # returned 0 of the 6 notification-orchestrator alert names.
+    # Fix: align label with operator's ruleSelector matchLabels.
+    release: kube-prometheus-stack
 spec:
   groups:
     - name: notification-orchestrator-critical
@@ -154,6 +166,64 @@ spec:
             description: |
               {{ $value }} DLQ rows accumulated. Operator review +
               replayed=true marker after triage.
+
+        # ----- Faz 23.2 T1.6.5 — AbuseGuard storm detection
+        # (Codex previous-thread 019e0c28 P2 deferred follow-up;
+        #  current-thread 019e42c1 iter-1 REVISE absorb)
+        #
+        # Counter notify_abuse_blocked_total emits when AbuseGuardService
+        # returns HTTP 429 (rate-limit window per (orgId, topicKey) or
+        # webhook fan-out cap). Default window=60s, rate=100/window per
+        # (org,topic), fan-out cap=10. Critical bypass via severity=critical
+        # ONLY — fan-out cap is a HARD safety limit and cannot be bypassed.
+        #
+        # Aggregation: namespace-sum matches existing storm pattern
+        # (NotifyOrgAccessDeniedStorm) so service-wide storms aren't masked
+        # by per-pod label distribution. Per-reason inspection happens via
+        # the runbook query.
+        #
+        # Severity choice: warning (NOT critical), no page=true. AbuseGuard
+        # is a working-as-designed return path — sustained 429s mean the
+        # guard is enforcing the boundary while abuse traffic OR an
+        # upstream caller regression is hitting the API. Alertmanager
+        # bridge routes critical → P1, warning → P2 (alertmanager-bridge-
+        # design.md). Critical/P1 would create false-page burden when one
+        # legitimate but noisy automation exceeds rate-limit.
+        #
+        # Threshold 0.5/sec for 5m: ~150 blocked requests in 5 minutes.
+        # Lower (0.1/sec) noises on single noisy caller. Higher (1/sec)
+        # misses coordinated low-volume abuse. Effective service limit
+        # scales with replica count (in-process ConcurrentHashMap; pod
+        # count × per-pod limit). Alert measures blocked-rate, not
+        # allowed-rate — independent of replica scaling.
+        #
+        # No absent() companion: counter only increments on 429. Healthy
+        # steady-state may have no series at all (Prometheus doesn't
+        # scrape un-incremented counters). An absent() alert would be a
+        # permanent false-positive in clean clusters. If a future
+        # AbuseGuard always-on gauge (e.g. notify_abuse_guard_initialized)
+        # is added, a companion absent() can be split into a follow-up PR.
+        - alert: NotifyAbuseStorm
+          expr: sum by (namespace) (rate(notify_abuse_blocked_total[5m])) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify abuse-block storm > 0.5/sec"
+            description: |
+              {{ $value | humanize }} abuse-blocked requests/sec over 5m
+              (aggregated by namespace). AbuseGuard is rejecting requests
+              with HTTP 429. This usually means abuse traffic or an upstream
+              caller regression, while the guard is still enforcing the
+              boundary.
+              Inspect reason distribution:
+              `sum by (namespace, reason) (rate(notify_abuse_blocked_total[5m]))`.
+              Fan-out cap hits are higher-priority triage because the cap
+              is a hard safety limit and is not bypassed by severity=critical.
+              Effective service limit scales with replica count
+              (in-process state; pod_count × per-pod limit).
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-notify-abuse-guard.md"
 
     # ----- Faz 23.6 PR-5.4/5.5 strict cutover alerts (Step B Codex 019e0892
     # priority 2; iter-1 REVISE absorb thread 019e08fa) -----

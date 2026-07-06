@@ -65,19 +65,31 @@ alertmanager:
             requests:
               storage: 1Gi
 
-    # V2.1 Ops-A — Perf alert receiver secret mount (Codex 019e267a spike absorb)
-    # ESO `perf-alertmanager-secrets` K8s Secret pod'a file mount edilir;
-    # Alertmanager config `slack_configs.api_url_file` ile path okur (env injection DEĞİL).
-    # Mount path: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
+    # V2.1 Ops-A — Perf alert receiver secret mount (ADR-0029 Hibrit D 2026-05-27 —
+    # Microsoft Teams primary; Codex `019e6b24` REVISE→AGREE strategic chain absorb).
+    # ESO `perf-alertmanager-teams-secrets` K8s Secret pod'a file mount edilir;
+    # Alertmanager config `webhook_configs.url_file` ile path okur (env injection DEĞİL).
+    # Mount path: /etc/alertmanager/secrets/perf-alertmanager-teams-secrets/TEAMS_WEBHOOK_URL
+    #
+    # Slack mount dormant (multi-tenant başka tenants için asset-preserved):
+    # `perf-alertmanager-secrets` (Slack-canonical) — KORUNUR audit; aktif mount YOK.
+    # Reactivation: RB-perf-alerts-slack-reactivation-chain.md (tenant demand-driven).
+    #
+    # NOT: `github-issues-receiver-token` mount KALDIRILDI (Codex `019e4256`
+    # Session 42 REVISE iter-2 P0 absorb — sibling PR #857b). Alertmanager
+    # `webhook_configs` does not wrap payload into GitHub `repository_dispatch`
+    # schema `{event_type, client_payload}`, so the direct receiver fails 4xx;
+    # ref. PR #648 RED. GitHub Issue trail flows through
+    # `alarm-receiver-bridge` → `alertmanager-bridge` pod (uses `gh` CLI to
+    # create/comment/close GitHub Issues directly — NOT via repository_dispatch).
+    # The mount + token will be re-introduced when a payload wrapper bridge
+    # (sidecar/proxy) is built — separate future PR.
     secrets:
-      - perf-alertmanager-secrets
-      # V2.1 Ops-A GitHub Issues receiver (Codex 019e2a4f Q1+Q2 + PR #645 spike):
-      # Vault'tan bağımsız PAT mount; GHA secret olarak da configure edilebilir.
-      # Mount path: /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
-      # Owner action: kubectl create secret generic github-issues-receiver-token \
-      #   --from-literal=GITHUB_TOKEN=<PAT_with_repo_workflow_scope>
-      - github-issues-receiver-token
-      # D43 fallback secret (mevcut, audit only — alarm-receiver-bridge baseline path)
+      - perf-alertmanager-teams-secrets
+      # D43 fallback SMTP secret — ACTIVE for `auth_password_file` mount
+      # (direct-fallback email_configs SMTP via Office 365 relay; BL-008
+      # RESTORED 2026-05-28 Codex 019e6dc4 A-prime). Bridge GitHub Issue
+      # path separately preserved via route continue:true (no Secret dep).
       - alertmanager-fallback-secrets
 
   ingress:
@@ -88,10 +100,14 @@ alertmanager:
   # Bridge: alertmanager-bridge K8s service (kustomize/base/monitoring/alertmanager-bridge/).
   #
   # V2.1 Ops-A extension (Codex 019e267a spike AGREE_AFTER_REVISIONS +
-  # 019e2772 post-impl review P0/P1/P2 absorb):
-  # `team=perf` matched alert'ler perf-alerts-slack receiver'a (#perf-alerts);
-  # critical perf alarmları DUAL delivery (Slack + bridge P1 yolu korunuyor);
+  # 019e2772 post-impl review P0/P1/P2 absorb +
+  # 2026-05-27 ADR-0029 Hibrit D Teams pivot — Codex 019e6b24 + 019e6bd1):
+  # `team=perf` matched alert'ler **perf-alerts-teams** receiver'a (Power Automate
+  # workflow → Adaptive Card → Teams Denetim/#perf-alerts kanalı);
+  # critical perf alarmları DUAL delivery (Teams + bridge P1 yolu korunuyor);
   # throttle group_interval: 5m, repeat_interval: 6h (alarm fatigue azaltma).
+  # Slack receiver historically (pre-Hibrit D); Hibrit D pivot sonrası
+  # Slack dormant asset-preserved başka tenants için (ADR-0029 D2).
   config:
     global:
       resolve_timeout: 5m
@@ -102,23 +118,75 @@ alertmanager:
       repeat_interval: 4h
       receiver: 'alarm-receiver-bridge'
       routes:
-        # V2.1 Ops-A — Critical perf alarms TRIPLE delivery (Codex 019e2772 P1 + 019e2a4f Q1+Q2):
-        # 1. perf-alerts-github-issues (continue:true → 2. + 3.) — Vault'tan bağımsız (V2.1 #4 closure)
-        # 2. perf-alerts-slack (continue:true → 3. critical bridge route) — Vault DR sonrası activate
-        # 3. critical bridge (P1 operator action <10min pipeline)
+        # D43 — notification-orchestrator outage fallback (Codex 019e4234 +
+        # 019e0dea iter-2 absorb #3; Codex 019e4234 post-impl P1 absorb:
+        # continue=true to preserve the existing P1 bridge evidence trail).
+        #
+        # NotifyServiceDown / NotifyServiceAbsent fire when the orchestrator is
+        # down/absent — these MUST bypass orchestrator-routed delivery and hit
+        # the direct-fallback receiver (SMTP via Office 365 relay; BL-008
+        # RESTORED 2026-05-28 Codex 019e6dc4 A-prime pattern — auth_username
+        # literal + auth_password_file mount). `bypass_orchestrator=true`
+        # label is stable (PrometheusRule contract); matcher uses alertname
+        # for readability + label is the fingerprint anchor.
+        #
+        # `continue: true` is INTENTIONAL: Alertmanager route semantics say a
+        # matched child route delivers to its receiver and (if continue=false)
+        # STOPS sibling evaluation — the parent's `receiver` does NOT auto-fire.
+        # If we used continue=false here, the existing `severity=critical →
+        # alarm-receiver-bridge` route below would be bypassed for D43 alerts;
+        # the GitHub Issues P1 evidence trail would silently disappear during
+        # the very outages this route is supposed to make MORE visible. With
+        # continue=true, D43 alert traverses direct-fallback (SMTP receipt),
+        # then matches the `severity=critical` sibling and reaches
+        # alarm-receiver-bridge GitHub Issue path. Current effective coverage:
+        # **2-channel D43 defense-in-depth (SMTP + bridge GitHub Issue)**.
+        # Bridge dedupes on alertname+namespace → only one Issue opened.
+        # Historical: 2026-05-24 Slack removed (user decision); 2026-05-27
+        # BL-008 dormant (Codex 019e6bd1 misnamed-field root-cause); 2026-05-28
+        # BL-008 RESTORED A-prime (Codex 019e6dc4 — auth_username_file field
+        # doesn't exist upstream Alertmanager v0.27.0; fix = literal username).
+        #
+        # ACTIVATION STATE (truth-sync 2026-05-28 post-PR #1104 BL-008 RESTORE):
+        #   (a) ESO `alertmanager-fallback-secrets` Vault'da synced (SecretSynced=True);
+        #       SMTP_PASSWORD mount path active; Slack key historical (asset-preserved
+        #       başka tenants için — ADR-0027 Hibrit C);
+        #   (b) `helm upgrade kube-prometheus-stack -n monitoring
+        #        -f helm-values/kube-prometheus-stack/values-prod.yaml`
+        #       Alertmanager pod restart picks up new config + Secret mount;
+        #   (c) Synthetic NotifyServiceDown smoke (scale orchestrator=0 in a
+        #       controlled window) → **SMTP receipt notify-ops@acik.com**
+        #       + GitHub Issue bridge + recovery.
+        # 2-channel D43 defense-in-depth aktif (SMTP + bridge). `continue: true`
+        # bridge GitHub Issue path'i de garanti eder (defense-in-depth).
+        # Runbook: docs/runbooks/RB-notification-outage-fallback.md §3.2 prod
+        # sub-section + §6.5 activation procedure.
         - matchers:
-            - team = "perf"
-            - severity = "critical"
-          receiver: 'perf-alerts-github-issues'
-          group_by: ['alertname', 'namespace']
-          group_wait: 30s
+            - alertname =~ "NotifyServiceDown|NotifyServiceAbsent"
+          receiver: direct-fallback
+          group_wait: 0s
           group_interval: 5m
-          repeat_interval: 6h
+          repeat_interval: 30m
           continue: true
+        # V2.1 Ops-A — Critical perf alarms DUAL delivery (ADR-0029 Hibrit D
+        # 2026-05-27 — Microsoft Teams Power Automate workflow primary;
+        # Codex `019e6b24` REVISE→AGREE strategic chain absorb).
+        # Akış:
+        # 1. perf-alerts-teams (continue:true → 2.) — Vault TEAMS_WEBHOOK_URL
+        #    seed sonrası activate; Power Automate flow → Teams `#perf-alerts`
+        # 2. critical bridge route (alarm-receiver-bridge → alertmanager-bridge
+        #    pod GitHub Issue wrap) — P1 operator action <10min pipeline
+        # Net: Teams + bridge GitHub Issue (2 channel, defense-in-depth).
+        #
+        # Slack dormant (multi-tenant başka tenants için asset-preserved per
+        # ADR-0029 D2; runbook `docs/runbooks/RB-perf-alerts-slack-reactivation-chain.md`
+        # atomic 6-step). Slack receiver+route rendered config'ten kaldırıldı
+        # (Codex `019e6b24` iter-2 REVISE: Slack route ACTIVE olmamalı —
+        # `continue:true` failure-aware fallback değil; alert fatigue önleme).
         - matchers:
             - team = "perf"
             - severity = "critical"
-          receiver: 'perf-alerts-slack'
+          receiver: 'perf-alerts-teams'
           group_by: ['alertname', 'namespace']
           group_wait: 30s
           group_interval: 5m
@@ -130,24 +198,20 @@ alertmanager:
           receiver: 'alarm-receiver-bridge'
           group_wait: 0s
           repeat_interval: 1h
-        # V2.1 Ops-A — Non-critical perf alarms DUAL delivery (warning/info)
-        # GitHub Issues (V2.1 #4 closure path) + Slack (Vault DR sonrası).
+        # V2.1 Ops-A — Non-critical perf alarms DUAL delivery via Teams
+        # (`perf-alerts-teams` here, continue:true) + warning/info bridge
+        # GitHub Issue (catch-all `severity=~"warning|info"` route below also
+        # matches → `alarm-receiver-bridge` → alertmanager-bridge pod GitHub
+        # Issue wrap). ADR-0029 Hibrit D 2026-05-27 — Teams primary canlı path;
+        # Slack route deprecated (dormant snippet RB-perf-alerts-slack-reactivation-chain.md).
         - matchers:
             - team = "perf"
-          receiver: 'perf-alerts-github-issues'
+          receiver: 'perf-alerts-teams'
           group_by: ['alertname', 'namespace']
           group_wait: 30s
           group_interval: 5m
           repeat_interval: 6h
           continue: true
-        - matchers:
-            - team = "perf"
-          receiver: 'perf-alerts-slack'
-          group_by: ['alertname', 'namespace']
-          group_wait: 30s
-          group_interval: 5m
-          repeat_interval: 6h
-          continue: false
         # Warning/info generic: standard route
         - matchers:
             - severity =~ "warning|info"
@@ -158,50 +222,142 @@ alertmanager:
           - url: 'http://alertmanager-bridge.monitoring.svc.cluster.local:9093/alert'
             send_resolved: true
             max_alerts: 50
-      # V2.1 Ops-A — Perf alerts Slack receiver (Codex 019e267a spike absorb +
-      # 019e2772 P0 #2 template fix: `default` Sprig fonksiyonu Alertmanager Go
-      # template'inde desteklenmez; `with ... else ... end` pattern).
-      # api_url_file: ESO `perf-alertmanager-secrets` Secret → file mount;
-      # owner Vault `kv/platform/perf-alertmanager.SLACK_WEBHOOK_URL` yazımı sonrası
+      # V2.1 Ops-A — Perf alerts Teams receiver (ADR-0029 Hibrit D 2026-05-27 —
+      # Microsoft Teams Power Automate workflow primary; Codex `019e6b24`
+      # REVISE→AGREE strategic chain absorb).
+      #
+      # url_file: ESO `perf-alertmanager-teams-secrets` Secret → file mount;
+      # owner Vault `kv/platform/perf-alertmanager.TEAMS_WEBHOOK_URL` yazımı sonrası
       # ESO 1h refresh-interval içinde Secret oluşturur; Alertmanager pod restart
       # gerekmez (file mount auto-update kube-prometheus-stack 84.x pattern).
-      - name: 'perf-alerts-slack'
-        slack_configs:
-          - api_url_file: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
-            channel: '#perf-alerts'
-            send_resolved: true
-            title: 'V2.1 Perf Alert | {{ .GroupLabels.alertname }}'
-            text: |-
-              *Status:* {{ .Status | toUpper }}
-              *Severity:* {{ .CommonLabels.severity }}
-              *Namespace:* {{ with .CommonLabels.namespace }}{{ . }}{{ else }}n/a{{ end }}
-              *Description:* {{ range .Alerts }}{{ .Annotations.description }}{{ end }}
-              *Runbook:* {{ range .Alerts }}{{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}{{ end }}
-      # V2.1 Ops-A — Perf alerts GitHub Issues receiver (Codex 019e2a4f Q1+Q2 + PR #645 spike).
-      # Vault DR blocker bypass: GitHub PAT GHA secret olarak veya K8s Secret manual create.
-      # Alertmanager webhook → GitHub API repository_dispatch → .github/workflows/alert-receiver.yml
-      # → Issue create/comment/close lifecycle.
       #
-      # http_config Bearer auth header_file:
-      #   /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
+      # Payload: Alertmanager v4 raw JSON POST (webhook_configs body template
+      # etmez — Codex `019e6b24` iter-1 absorb); Adaptive Card transform Power
+      # Automate flow içinde yapılır (trigger: "When HTTP request received";
+      # action: "Post adaptive card in chat or channel" Teams #perf-alerts).
+      # Setup pattern + JSON schema reference: docs/runbooks/V2.1-perf-alert-receiver.md §2 +
+      # docs/runbooks/RB-d43-teams-reactivation-chain.md (Adaptive Card example).
       #
-      # Payload: Alertmanager v4 webhook format (status + commonLabels + alerts[] + annotations)
-      # Workflow parses STATUS, ALERTNAME, SEVERITY, NAMESPACE, DESC, RUNBOOK → Issue body.
-      # Dedupe: label `alert/<alertname>/<namespace>`; existing open issue → comment, no new.
-      # Resolved lifecycle: status=resolved → issue close + comment.
-      - name: 'perf-alerts-github-issues'
+      # Slack dormant (multi-tenant başka tenants için): RB-perf-alerts-slack-reactivation-chain.md
+      # 6-step atomic chain (tenant Slack workspace demand-driven activation).
+      - name: 'perf-alerts-teams'
         webhook_configs:
-          - url: 'https://api.github.com/repos/Halildeu/platform-k8s-gitops/dispatches'
-            http_config:
-              authorization:
-                type: Bearer
-                credentials_file: /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
+          - url_file: /etc/alertmanager/secrets/perf-alertmanager-teams-secrets/TEAMS_WEBHOOK_URL
             send_resolved: true
             max_alerts: 50
-            # Alertmanager webhook payload mapping → GitHub repository_dispatch:
-            # body = {"event_type": "perf-alert", "client_payload": <alertmanager v4 webhook>}
-            # Alertmanager Go template ile wrap edilemez; workflow parser PAYLOAD field'larını
-            # commonLabels/alerts[]/status üzerinden okur (toJSON GitHub Actions side).
+            # Note: body template KULLANILMAZ; Alertmanager raw v4 JSON gönderir;
+            # Adaptive Card transform Power Automate flow içinde dynamic content
+            # ile yapılır (alertname, severity, namespace, alert_class, description,
+            # runbook_url field mapping).
+      # V2.1 Ops-A — Perf alerts GitHub Issues receiver KALDIRILDI (Codex
+      # `019e4256` Session 42 REVISE iter-2 P0 absorb — PR #857b sibling).
+      #
+      # Sebep: Alertmanager `webhook_configs` ham v4 payload gönderir; GitHub
+      # `repository_dispatch` API `{event_type, client_payload}` wrapper ister.
+      # Alertmanager Go template ile body wrap edilemez. Bu receiver canlıya
+      # alınırsa her perf alert için 4xx fail log spam üretir. PR #648 aynı
+      # nedenle RED/closed (ref. `docs/session-52-handoff-final-honest-close.md:111`).
+      #
+      # GitHub Issue trail prod perf alerts için şu an `alarm-receiver-bridge`
+      # route → `alertmanager-bridge` pod (Python wrapper) üzerinden akıyor;
+      # bridge payload'u doğru wrap eder. perf-alerts-slack receiver ise
+      # `api_url_file` ile çalışıyor (Slack webhook POST).
+      #
+      # Wrapper bridge (sidecar/proxy) PR'ı geldiğinde bu receiver + ilgili
+      # secret mount + 2 perf route geri eklenir. Bkz. board issue #857
+      # acceptance + RB-prod-alertmanager-activation.md §2.2.
+      # D43 outage fallback direct receiver (Codex 019e4234 + 019e0dea iter-2
+      # absorb #3 + 2026-05-24 user decision Slack DEFER absorb via Codex
+      # 019e5b9c REVISE plan + 2026-05-27 Codex 019e6bd1 BL-008 dormant absorb +
+      # **2026-05-28 Codex 019e6dc4 BL-008 RESTORED A-prime root-cause fix**).
+      #
+      # CURRENT STATE: receiver `direct-fallback` **SMTP-active via Office 365
+      # relay** (BL-008 RESTORED A-prime — Codex 019e6dc4 plan-time AGREE).
+      # Effective D43 coverage: **2-channel defense-in-depth (SMTP + bridge
+      # GitHub Issue)** via route `continue: true` → severity=critical sibling.
+      # ESO `alertmanager-fallback-secrets` Vault'da synced + mount-listed +
+      # SMTP_PASSWORD file path generated config'te kullanılır.
+      #
+      # A-PRIME PATTERN (Codex 019e6dc4 root-cause fix):
+      #   - `auth_username`: literal string (Alertmanager v0.27.0 schema —
+      #     `auth_username_file` field upstream'de YOK)
+      #   - `auth_password_file`: ESO mount path (no plain secret in generated
+      #     config; only path reference)
+      # Username sensitive değil (service mailbox identifier, same as `from`).
+      #
+      # HISTORICAL CHANNELS (slack_configs block silindi 2026-05-24 user
+      # decision):
+      #   * SMTP `notify-ops@acik.com` via `smtp.office365.com:587` — ACTIVE
+      #     (BL-008 RESTORED 2026-05-28)
+      #   * Slack — removed 2026-05-24 ("slack kullanmıyoruz"); future
+      #     reactivation = operator Slack workspace + Vault seed + PR atomic
+      #     with drill rerun (asset-preserved başka tenants için ADR-0027 D2).
+      #
+      # CREDENTIALS: ESO mount `/etc/alertmanager/secrets/
+      # alertmanager-fallback-secrets/SMTP_PASSWORD`. Username `auth_username`
+      # literal — Vault'tan değil, values'tan (service mailbox identifier same
+      # as `from`; not sensitive — log/audit'te zaten görünür).
+      #
+      # Templates: Alertmanager Go template — Sprig `default` is unsupported
+      # in Alertmanager (Codex 019e0dea iter-3 P1 #3); use `{{ with X }}{{ . }}
+      # {{ else }}fallback{{ end }}` pattern.
+      #
+      # Slack-only historical (pre-2026-05-24 user decision Slack DEFER):
+      # `slack_configs` block previously routed to #alerts-d43-drill via
+      # api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL
+      # Removed in PR Lane B (roadmap-faz23-d43-slack-defer-helm-cleanup).
+      # Reference: docs/faz-23-evidence/2026-05-24-d43-slack-defer-smtp-only-acceptance.md
+      - name: direct-fallback
+        # ─── BL-008-smtp SHARED IDENTITY INTERIM (Codex 019e6df9 AGREE_AFTER_REVISIONS) ───
+        # 2026-05-28 post PR #1104 (A-prime root-cause fix) live smoke discovered:
+        # cluster auth as `alertmanager-fallback@acik.com` reject 535 5.7.3
+        # (mailbox not provisioned in tenant / SMTP AUTH disabled); same Vault
+        # password (sha256[16]=785f11a6e9589e6f) DOES validate for `ai@acik.com`
+        # (Python smtplib AUTH probe code=235 SUCCESS). Yol B unblock = swap
+        # both `from` and `auth_username` to `ai@acik.com` (orchestrator's
+        # shared service identity); Vault state + ESO mount unchanged.
+        #
+        # A-prime schema requirement KEPT (Alertmanager v0.27.0 email_config):
+        #   - `auth_username`: literal string (NO `auth_username_file` field exists)
+        #   - `auth_password_file`: mount path (preferred over inline)
+        #
+        # Identity note: `ai@acik.com` is the SHARED orchestrator service
+        # mailbox identifier; not sensitive (also surfaces as `from`/`auth`
+        # in O365 audit logs). Defense-in-depth distinct-identity restore =
+        # ADR-0030 / Yol A follow-up (`alertmanager-fallback@acik.com`
+        # mailbox provisioning + Vault re-seed + this `auth_username` literal
+        # restore — atomic cycle, separate PR).
+        #
+        # D43 alert pipeline (post-fix): 2-channel defense-in-depth
+        #   (1) direct-fallback receiver: SMTP via Office 365 relay (shared `ai@acik.com`)
+        #   (2) alarm-receiver-bridge sibling via route continue:true: GitHub Issue
+        # R29 (perf-alertmanager) channels unrelated to this receiver — D43
+        # SMTP only matches NotifyServiceDown|NotifyServiceAbsent route.
+        email_configs:
+          - to: notify-ops@acik.com
+            from: ai@acik.com
+            smarthost: 'smtp.office365.com:587'
+            auth_username: ai@acik.com
+            auth_password_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_PASSWORD
+            require_tls: true
+            send_resolved: true
+            headers:
+              subject: '[D43 PROD] {{ .CommonLabels.alertname }}'
+            html: |-
+              <h3>D43 Outage Fallback — Prod</h3>
+              <ul>
+              {{ range .Alerts }}
+              <li>
+                <strong>{{ .Labels.alertname }}</strong> ({{ .Labels.severity }})<br/>
+                Cluster: {{ with .Labels.cluster }}{{ . }}{{ else }}prod{{ end }}<br/>
+                Namespace: {{ with .Labels.namespace }}{{ . }}{{ else }}n/a{{ end }}<br/>
+                Outage Fallback: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}<br/>
+                Bypass Orchestrator: {{ with .Labels.bypass_orchestrator }}{{ . }}{{ else }}false{{ end }}<br/>
+                Description: {{ .Annotations.description }}<br/>
+                Runbook: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
+              </li>
+              {{ end }}
+              </ul>
     inhibit_rules:
       # Critical inhibits warning of same alertname
       - source_matchers:
@@ -276,6 +432,19 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
 
+  # M7 T4.3.7 BL-015 — Notify per-template analytics datasource credential
+  # Codex iter-3 verdict thread `019e5a75-ebf3-7860-9832-2776a6d185b6` prod activation chain
+  # Secret-backed env var (optional:true defer-aware)
+  # - ExternalSecret: kustomize/overlays/prod/eso/grafana/externalsecret-grafana-notify-pg.yaml
+  # - Datasource ConfigMap: kustomize/base/monitoring/grafana-datasources/notify-pg-datasource.yaml
+  # - Operator activation chain: docs/runbooks/RB-grafana-notify-pg-datasource.md §3
+  envValueFrom:
+    NOTIFY_PG_RO_PASSWORD:
+      secretKeyRef:
+        name: grafana-notify-pg-secret
+        key: NOTIFY_PG_RO_PASSWORD
+        optional: true
+
 # ─── Prometheus ───
 prometheus:
   enabled: true
@@ -285,12 +454,25 @@ prometheus:
     retention: 10d                    # D10
     retentionSize: "8GB"
 
+    # gitops#1459: test→prod-hub remote_write zincirinin receiver ucu.
+    # /api/v1/write yalnız remote-write-bridge nginx'i (basic auth) üzerinden
+    # erişilir — NodePort 30090 host'a publish edilmez, prod bridge içi.
+    # Cardinality gate: kabul kriterinde pre/post head-series ölçümü +
+    # rollback eşiği (#1459).
+    enableRemoteWriteReceiver: true
+
     resources:
       requests:
         cpu: 100m
         memory: 512Mi
       limits:
-        memory: 1Gi
+        # gitops#1459 canlı kalibrasyon (2026-06-12): remote_write ilk
+        # full-fidelity dalgası head'i 235k'ya çıkardı; allowlist yeni akışı
+        # ~1.3k'ya daralttı ama eski seriler 2h blok rotasyonuna kadar
+        # head'de kalır — RSS 893Mi'ye vurdu (1Gi'de OOM riski). 1536Mi
+        # rotasyon penceresine güvenli nefes + allowlist-sonrası kalıcı
+        # işletme payı (host RAM: 23Gi, available ~4.9Gi).
+        memory: 1536Mi
 
     storageSpec:
       volumeClaimTemplate:

@@ -30,21 +30,24 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - ServerSideApply=true
-      # 2026-04-24 Session 28: RespectIgnoreDifferences (bkz. platform-prod.yaml açıklaması)
-      - RespectIgnoreDifferences=true
-  # 2026-04-23 PR #54 (post PR #52 v1beta1→v1 migration):
-  # ServerSideApply v1 spec'i cluster'a dayattı ama stored managedFields +
-  # annotations + status alanları v1beta1 era'dan kalma serialization ile
-  # cosmetic diff üretiyor. Runtime sağlıklı: `ClusterSecretStore` Ready=True,
-  # `ExternalSecret/ghcr-pull` SecretSynced=True, ESO controller reconcile ediyor.
-  # Bu ignore'lar yalnız cosmetic diff'i susturur; gerçek provider/data/path
-  # drift'i hâlâ Argo tarafından yakalanır (örn. `spec.provider.vault.server` FQDN).
+      # RespectIgnoreDifferences KALDIRILDI (2026-05-19, Codex 019e41d7):
+      # bu option + aşağıdaki blanket `/metadata` ignore birlikte, sync
+      # sırasında canlı `/metadata`'yı (managedFields dahil) Server-Side-Apply
+      # gövdesine taşıyıp `metadata.managedFields must be nil` ile TÜM sync'leri
+      # Failed yapıyordu — app OutOfSync+Degraded kilidi. Fix: option kaldır +
+      # `/metadata` ignore'unu `/status`'a daralt (aşağıda).
+  # ignoreDifferences — yalnız cosmetic diff susturma; gerçek provider/data/path
+  # drift'ini Argo yine yakalar (örn. `spec.provider.vault.server` FQDN).
+  # 2026-05-19 (Codex 019e41d7): blanket `/metadata` ignore KALDIRILDI — ESO v1
+  # CRD'sinde `/metadata` managedFields'i de kapsıyordu; RespectIgnoreDifferences
+  # ile birlikte SSA sync'ini `metadata.managedFields must be nil` ile bozuyordu
+  # (app OutOfSync+Degraded). `/status` + ESO v1 default-field jq ignore'ları
+  # cosmetic diff için yeterli; managedFields cosmetic diff'ini ArgoCD kendi
+  # normalize eder. Eski rationale: PR #54 (v1beta1→v1 migration) cosmetic diff.
   ignoreDifferences:
-    # 2026-04-24 Session 28: /metadata agresif + ESO v1 spec default fields
     - group: external-secrets.io
       kind: ExternalSecret
       jsonPointers:
-        - /metadata
         - /status
       jqPathExpressions:
         # ESO v1 default fields (canlıda var, manifest'te yok — Session 28 T+30 diff investigate)
@@ -55,5 +58,4 @@ spec:
     - group: external-secrets.io
       kind: ClusterSecretStore
       jsonPointers:
-        - /metadata
         - /status

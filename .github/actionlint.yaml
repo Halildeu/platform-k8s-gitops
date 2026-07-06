@@ -1,0 +1,8 @@
+self-hosted-runner:
+  labels:
+    - staging-sw
+    - testai-deploy
+
+config-variables: null
+
+paths:

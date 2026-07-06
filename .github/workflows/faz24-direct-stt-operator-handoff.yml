@@ -1,0 +1,203 @@
+name: Faz 24 Direct-STT Operator Handoff
+
+# Builds a metadata-only operator handoff package for platform-ai#182 and
+# platform-k8s-gitops#1615. This workflow does not connect to Vault,
+# Kubernetes, Denetim PC, or production; it does not read or write credentials,
+# enable direct-STT, call /transcribe, or send audio.
+
+on:
+  workflow_dispatch:
+    inputs:
+      operator_batch_id:
+        description: "Symbolic operator batch id"
+        required: true
+        default: "faz24-direct-stt-20260628"
+      gitops_ref:
+        description: "Git ref used by follow-up ingest workflows"
+        required: true
+        default: "main"
+      kube_context:
+        description: "Expected Kubernetes context"
+        required: true
+        default: "k3d-test"
+      namespace:
+        description: "Expected Kubernetes namespace"
+        required: true
+        default: "platform-test"
+      preflight_evidence_path:
+        description: "Relative path for preflight evidence JSON"
+        required: true
+        default: "docs/faz-24-evidence/direct-stt-mtls-preflight.json"
+      e2e_evidence_path:
+        description: "Relative path for e2e evidence JSON"
+        required: true
+        default: "docs/faz-24-evidence/direct-stt-e2e.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-direct-stt-operator-handoff
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: build direct-STT operator handoff package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      HANDOFF_DIR: /tmp/faz24-direct-stt-operator-handoff-${{ github.run_id }}
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          OPERATOR_BATCH_ID: ${{ inputs.operator_batch_id }}
+          GITOPS_REF: ${{ inputs.gitops_ref }}
+          KUBE_CONTEXT: ${{ inputs.kube_context }}
+          NAMESPACE: ${{ inputs.namespace }}
+          PREFLIGHT_EVIDENCE_PATH: ${{ inputs.preflight_evidence_path }}
+          E2E_EVIDENCE_PATH: ${{ inputs.e2e_evidence_path }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "${value}" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be single-line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_unsupported_chars() {
+            name="$1"
+            value="$2"
+            if ! printf '%s' "${value}" | grep -Eq '^[A-Za-z0-9_.:@/+~-]+$'; then
+              echo "::error::${name} contains unsupported characters"
+              exit 1
+            fi
+          }
+
+          reject_path_escape() {
+            name="$1"
+            value="$2"
+            if printf '%s' "${value}" | grep -Eq '(^/|(^|/)\.\.(/|$)|^[A-Za-z]:)'; then
+              echo "::error::${name} must stay inside the handoff boundary"
+              exit 1
+            fi
+          }
+
+          reject_multiline operator_batch_id "${OPERATOR_BATCH_ID}"
+          reject_multiline gitops_ref "${GITOPS_REF}"
+          reject_multiline kube_context "${KUBE_CONTEXT}"
+          reject_multiline namespace "${NAMESPACE}"
+          reject_multiline preflight_evidence_path "${PREFLIGHT_EVIDENCE_PATH}"
+          reject_multiline e2e_evidence_path "${E2E_EVIDENCE_PATH}"
+
+          reject_unsupported_chars operator_batch_id "${OPERATOR_BATCH_ID}"
+          reject_unsupported_chars gitops_ref "${GITOPS_REF}"
+          reject_unsupported_chars kube_context "${KUBE_CONTEXT}"
+          reject_unsupported_chars namespace "${NAMESPACE}"
+          reject_unsupported_chars preflight_evidence_path "${PREFLIGHT_EVIDENCE_PATH}"
+          reject_unsupported_chars e2e_evidence_path "${E2E_EVIDENCE_PATH}"
+
+          reject_path_escape operator_batch_id "${OPERATOR_BATCH_ID}"
+          reject_path_escape gitops_ref "${GITOPS_REF}"
+          reject_path_escape kube_context "${KUBE_CONTEXT}"
+          reject_path_escape namespace "${NAMESPACE}"
+          reject_path_escape preflight_evidence_path "${PREFLIGHT_EVIDENCE_PATH}"
+          reject_path_escape e2e_evidence_path "${E2E_EVIDENCE_PATH}"
+
+          all_inputs="${OPERATOR_BATCH_ID}${GITOPS_REF}${KUBE_CONTEXT}${NAMESPACE}${PREFLIGHT_EVIDENCE_PATH}${E2E_EVIDENCE_PATH}"
+          if printf '%s' "${all_inputs}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|-----BEGIN CERTIFICATE-----|Bearer |eyJ[A-Za-z0-9_-]+\.'; then
+            echo "::error::inputs must not contain certificate/private/secret-like material"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build handoff package
+        env:
+          OPERATOR_BATCH_ID: ${{ inputs.operator_batch_id }}
+          GITOPS_REF: ${{ inputs.gitops_ref }}
+          KUBE_CONTEXT: ${{ inputs.kube_context }}
+          NAMESPACE: ${{ inputs.namespace }}
+          PREFLIGHT_EVIDENCE_PATH: ${{ inputs.preflight_evidence_path }}
+          E2E_EVIDENCE_PATH: ${{ inputs.e2e_evidence_path }}
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/build-direct-stt-operator-handoff.py \
+            --output-dir "${HANDOFF_DIR}" \
+            --operator-batch-id "${OPERATOR_BATCH_ID}" \
+            --gitops-ref "${GITOPS_REF}" \
+            --kube-context "${KUBE_CONTEXT}" \
+            --namespace "${NAMESPACE}" \
+            --preflight-evidence-path "${PREFLIGHT_EVIDENCE_PATH}" \
+            --e2e-evidence-path "${E2E_EVIDENCE_PATH}"
+
+      - name: Verify handoff artifact boundary
+        env:
+          EXPECTED_KUBE_CONTEXT: ${{ inputs.kube_context }}
+        run: |
+          set -euo pipefail
+          test -s "${HANDOFF_DIR}/README.md"
+          test -s "${HANDOFF_DIR}/faz24-direct-stt-operator-handoff.json"
+          test -s "${HANDOFF_DIR}/SHA256SUMS"
+          if grep -R -E -- '-----BEGIN (CERTIFICATE|OPENSSH |RSA |EC |DSA )|-----END (CERTIFICATE|OPENSSH |RSA |EC |DSA )|Bearer |eyJ[A-Za-z0-9_-]+\.' "${HANDOFF_DIR}"; then
+            echo "::error::handoff artifact contains forbidden certificate/private/secret-like material"
+            exit 1
+          fi
+          (cd "${HANDOFF_DIR}" && sha256sum --check SHA256SUMS)
+          python3 - <<'PY' "${HANDOFF_DIR}/faz24-direct-stt-operator-handoff.json"
+          import json
+          import os
+          import sys
+
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert data["schemaVersion"] == "faz24.directStt.operator-handoff.v1"
+          assert data["acceptanceBoundary"]["operatorExecutionRequired"] is True
+          assert data["acceptanceBoundary"]["preflightVerifierPassRequired"] is True
+          assert data["acceptanceBoundary"]["e2eVerifierPassRequired"] is True
+          assert data["mutationBoundary"]["packageBuildVaultMutation"] is False
+          assert data["mutationBoundary"]["packageBuildClusterMutation"] is False
+          assert data["mutationBoundary"]["containsSecrets"] is False
+          assert data["target"]["kubeContext"] == os.environ["EXPECTED_KUBE_CONTEXT"]
+          PY
+
+      - name: Write workflow summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 direct-STT operator handoff"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-direct-stt-operator-handoff-${{ github.run_id }}\`"
+            echo "- GitOps issue: #1615"
+            echo "- Direct-STT issue: platform-ai#182"
+            echo
+            echo "Boundary: metadata-only coordination artifact. It does not connect to Vault, Kubernetes, Denetim PC, or production; read or write credentials; enable direct-STT; call /transcribe; send audio; or mark #182/#1615 accepted."
+            echo
+            if [ -s "${HANDOFF_DIR}/README.md" ]; then
+              sed -n '1,180p' "${HANDOFF_DIR}/README.md"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload handoff artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-direct-stt-operator-handoff-${{ github.run_id }}
+          path: ${{ env.HANDOFF_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local handoff directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${HANDOFF_DIR}"

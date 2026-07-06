@@ -1,0 +1,251 @@
+name: Gate - Faz 22 signed MSI/GPO bundle
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-gpo-msi-bundle.yml'
+      - 'scripts/faz22-mass-deployment/**'
+      - 'docs/runbooks/RB-faz22.5-signed-msi-gpo-rollout-acceptance.md'
+      - 'docs/faz-22-software-deployment-plan.md'
+      - 'docs/state/current-state.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gate-faz22-gpo-msi-bundle.yml'
+      - 'scripts/faz22-mass-deployment/**'
+      - 'docs/runbooks/RB-faz22.5-signed-msi-gpo-rollout-acceptance.md'
+      - 'docs/faz-22-software-deployment-plan.md'
+      - 'docs/state/current-state.md'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-bundle:
+    name: Validate signed MSI/GPO acceptance bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build bundle with pinned release assets
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/endpoint-agent-1680-bundle-ci
+          for attempt in 1 2 3; do
+            if pwsh -NoProfile -ExecutionPolicy Bypass \
+              -File scripts/faz22-mass-deployment/build-gpo-msi-acceptance-bundle.ps1 \
+              -OutputDir /tmp/endpoint-agent-1680-bundle-ci \
+              -DownloadAssets \
+              -Force; then
+              exit 0
+            fi
+            rm -rf /tmp/endpoint-agent-1680-bundle-ci
+            echo "bundle build attempt ${attempt} failed; retrying pinned asset download"
+            sleep $((attempt * 5))
+          done
+          echo "bundle build failed after 3 attempts"
+          exit 1
+
+      - name: Parse generated PowerShell scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $paths = @(
+            "scripts/faz22-mass-deployment/build-gpo-msi-acceptance-bundle.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/install-endpoint-agent-gpo-msi.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/verify-endpoint-agent-gpo-msi.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/rollback-endpoint-agent-gpo-msi.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/collect-endpoint-agent-rollout-evidence.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/validate-gpo-msi-rollout-evidence.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/wave-preflight.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/m5-same-day-pilot-collector.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/m7-rollback-rehearsal-collector.ps1"
+          )
+
+          foreach ($path in $paths) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              $errors | Format-List
+              throw "PowerShell parse failed: $path"
+            }
+            Write-Host "PARSE_OK $path"
+          }
+
+      - name: Validate manifest and rollout guardrails
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          expected_msi_sha256 = "132b8990bc78c4952ccaa7d2076cf26a37f0616f81e1a82274b5570b49f24ea4"
+          expected_manifest_sha256 = "68929426674f6524e6fdbc78e2eb024920cfd686dd637573537c1717196c69ee"
+          manifest_path = Path("/tmp/endpoint-agent-1680-bundle-ci/bundle-manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+
+          assert manifest["schema"] == "faz22.1680.gpo-msi.acceptance-bundle.v1"
+          assert manifest["releaseTag"] == "v0.2.10"
+          artifact = manifest["artifact"]
+          assert artifact["msiSha256"] == expected_msi_sha256
+          assert artifact["msiManifestSha256"] == expected_manifest_sha256
+          assert artifact["expectedSignerThumbprint"] == "D68F4F530137EB65CE44E3405E82B46205E753E5"
+          assert artifact["expectedMinimumAgentVersion"] == "0.2.10"
+
+          deployment = manifest["deployment"]
+          assert deployment["method"] == "gpo-msi"
+          assert deployment["secretFree"] is True
+          assert deployment["domainWideLinkAllowed"] is False
+          assert deployment["autoEnrollApiUrl"] == "https://mtls.testai.acik.com/api/v1/endpoint-agent"
+          assert deployment["autoEnrollCertSANURIPrefix"] == "adcomputer:"
+
+          boundary = manifest["acceptanceBoundary"]
+          assert boundary["closesIssue1680"] is False
+          required_remaining = {
+              "M3 constrained pilot targeting evidence",
+              "M4 two managed PCs installed/upgraded through gpo-msi",
+              "M5 per-device service and restart evidence",
+              "M6 per-device mTLS/tokenless and backend heartbeat evidence",
+              "M7 rollback drill on at least one PC",
+              "M8 failed-device triage",
+              "M9 Project status evidence",
+          }
+          assert required_remaining.issubset(set(boundary["remaining"]))
+
+          files = {entry["name"]: entry for entry in manifest["files"]}
+          assert files["EndpointAgent-0.2.10-signed.msi"]["sha256"] == artifact["msiSha256"]
+          assert files["msi-build-manifest.json"]["sha256"] == artifact["msiManifestSha256"]
+          verifier = files["validate-gpo-msi-rollout-evidence.ps1"]
+
+          msi_file = Path("/tmp/endpoint-agent-1680-bundle-ci/assets/EndpointAgent-0.2.10-signed.msi")
+          msi_manifest_file = Path("/tmp/endpoint-agent-1680-bundle-ci/assets/msi-build-manifest.json")
+          verifier_file = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/validate-gpo-msi-rollout-evidence.ps1")
+          source_verifier_file = Path("scripts/faz22-mass-deployment/validate-gpo-msi-rollout-evidence.ps1")
+          assert hashlib.sha256(msi_file.read_bytes()).hexdigest() == expected_msi_sha256
+          assert hashlib.sha256(msi_manifest_file.read_bytes()).hexdigest() == expected_manifest_sha256
+          assert hashlib.sha256(verifier_file.read_bytes()).hexdigest() == verifier["sha256"]
+          assert hashlib.sha256(source_verifier_file.read_bytes()).hexdigest() == verifier["sha256"]
+
+          install_text = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/install-endpoint-agent-gpo-msi.ps1").read_text(encoding="utf-8-sig")
+          assert "ENDPOINT_AGENT_ENROLLMENT_TOKEN" not in install_text
+          assert "function Resolve-ScriptRoot" in install_text
+          assert 'MsiPath = (Join-Path $PSScriptRoot' not in install_text
+          assert 'Join-Path $PSScriptRoot' not in install_text
+          assert '$AutoEnrollApiUrl = "https://mtls.testai.acik.com/api/v1/endpoint-agent"' in install_text
+          assert '$AutoEnrollCertSANURIPrefix = "adcomputer:"' in install_text
+          assert "AUTO_ENROLL=1" in install_text
+          assert "AUTO_ENROLL_API_URL=$AutoEnrollApiUrl" in install_text
+          assert "AUTO_ENROLL_CERT_SAN_URI_PREFIX=$AutoEnrollCertSANURIPrefix" in install_text
+
+          verify_text = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/verify-endpoint-agent-gpo-msi.ps1").read_text(encoding="utf-8-sig")
+          rollback_text = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/rollback-endpoint-agent-gpo-msi.ps1").read_text(encoding="utf-8-sig")
+          assert "function Resolve-ScriptRoot" in verify_text
+          assert "function Resolve-ScriptRoot" in rollback_text
+          assert 'Join-Path $PSScriptRoot' not in verify_text
+          assert 'Join-Path $PSScriptRoot' not in rollback_text
+          assert '"-RequireSignature"' not in verify_text
+          assert "$args =" not in install_text
+          assert "$args =" not in rollback_text
+          assert "$waveArgs" in rollback_text
+          assert "$m7Args" in rollback_text
+
+          print("bundle manifest and guardrails PASS")
+          PY
+
+      - name: Validate evidence verifier fixture behavior
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $script = "scripts/faz22-mass-deployment/validate-gpo-msi-rollout-evidence.ps1"
+          $valid = "tests/faz22/fixtures/gpo-msi-rollout-evidence/valid"
+
+          $json = & pwsh -NoProfile -ExecutionPolicy Bypass `
+            -File $script `
+            -EvidenceRoot $valid `
+            -BundleManifestPath (Join-Path $valid "bundle-manifest.json") `
+            -Json `
+            -ExitCodeOnFail
+          $result = $json | ConvertFrom-Json
+          if ($result.overall -ne "PASS" -or $result.failCount -ne 0) {
+            $json
+            throw "valid fixture did not PASS"
+          }
+          Write-Host "VALID_FIXTURE_PASS"
+
+          $tmpWarn = Join-Path ([System.IO.Path]::GetTempPath()) ("gpo-msi-evidence-warn-" + [guid]::NewGuid().ToString("N"))
+          try {
+            Copy-Item -Path $valid -Destination $tmpWarn -Recurse
+            Get-ChildItem -Path $tmpWarn -Filter "*-wave.json" | ForEach-Object {
+              $wave = Get-Content $_.FullName -Raw | ConvertFrom-Json
+              $wave.overall = "PASS-WITH-WARN"
+              $wave.warnCount = 1
+              foreach ($check in $wave.checks) {
+                if ($check.check -eq "exe-signature") {
+                  $check.status = "WARN"
+                  $check.detail = "signature status=NotSigned signer=<none> (MSI signer evidence is authoritative for #1680)"
+                }
+              }
+              $wave | ConvertTo-Json -Depth 10 | Set-Content -Path $_.FullName -Encoding UTF8
+            }
+            $warnJson = & pwsh -NoProfile -ExecutionPolicy Bypass `
+              -File $script `
+              -EvidenceRoot $tmpWarn `
+              -BundleManifestPath (Join-Path $tmpWarn "bundle-manifest.json") `
+              -Json `
+              -ExitCodeOnFail
+            $warnResult = $warnJson | ConvertFrom-Json
+            if ($warnResult.overall -ne "PASS" -or $warnResult.failCount -ne 0) {
+              $warnJson
+              throw "PASS-WITH-WARN exe-signature fixture did not PASS"
+            }
+            Write-Host "WARN_EXE_SIGNATURE_FIXTURE_PASS"
+          } finally {
+            Remove-Item -Path $tmpWarn -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gpo-msi-evidence-negative-" + [guid]::NewGuid().ToString("N"))
+          try {
+            Copy-Item -Path $valid -Destination $tmp -Recurse
+            Remove-Item -Path (Join-Path $tmp "pc-b-*.json") -Force
+            & pwsh -NoProfile -ExecutionPolicy Bypass `
+              -File $script `
+              -EvidenceRoot $tmp `
+              -BundleManifestPath (Join-Path $tmp "bundle-manifest.json") `
+              -ExitCodeOnFail
+            if ($LASTEXITCODE -eq 0) {
+              throw "negative fixture unexpectedly passed without second device"
+            }
+            Write-Host "NEGATIVE_MISSING_SECOND_DEVICE_FAILS"
+          } finally {
+            Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          $tmp2 = Join-Path ([System.IO.Path]::GetTempPath()) ("gpo-msi-evidence-targeting-" + [guid]::NewGuid().ToString("N"))
+          try {
+            Copy-Item -Path $valid -Destination $tmp2 -Recurse
+            $targeting = Join-Path $tmp2 "targeting.json"
+            $targetingJson = Get-Content $targeting -Raw | ConvertFrom-Json
+            $targetingJson.domainWideLinkAllowed = $true
+            $targetingJson | ConvertTo-Json -Depth 10 | Set-Content -Path $targeting -Encoding UTF8
+            & pwsh -NoProfile -ExecutionPolicy Bypass `
+              -File $script `
+              -EvidenceRoot $tmp2 `
+              -BundleManifestPath (Join-Path $tmp2 "bundle-manifest.json") `
+              -ExitCodeOnFail
+            if ($LASTEXITCODE -eq 0) {
+              throw "negative fixture unexpectedly passed with domainWideLinkAllowed=true"
+            }
+            Write-Host "NEGATIVE_DOMAIN_WIDE_TARGETING_FAILS"
+          } finally {
+            Remove-Item -Path $tmp2 -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          # Negative fixture commands intentionally exit non-zero. Reset the
+          # native exit code after proving the expected fail-closed behavior so
+          # the pwsh step reports the fixture audit result instead of the last
+          # child process exit code.
+          $global:LASTEXITCODE = 0

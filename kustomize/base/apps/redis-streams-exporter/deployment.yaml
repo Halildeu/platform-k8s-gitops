@@ -1,0 +1,96 @@
+# redis-streams-exporter Deployment — Faz 24 PR-obs-01a
+#
+# oliver006/redis_exporter: Redis Streams chunk transport'unun (audio:chunks:p00..p31,
+# consumer group live-stt-v1) stream length + group pending/lag + consumer
+# metriklerini üretir (XINFO tabanlı). Prometheus ops/servicemonitor.yaml ile
+# 9121'den scrape eder.
+#
+# NetPol uyumu (part-of=platform label'ı üzerinden otomatik):
+# - egress: allow-egress-host-bridge 6379 (Redis Streams — ADR-0031 D2 satırı)
+# - ingress: allow-monitoring-scrape 9121 (bu PR'da eklendi)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-streams-exporter
+spec:
+  # Tek replica yeterli (stateless scrape proxy'si); test overlay'de de 1
+  # (HARD RULE test scale-to-zero YASAK).
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-streams-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-streams-exporter
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # Image default'u nonroot 59000 (upstream Dockerfile USER) — uid
+        # pin'lemiyoruz; seccomp runtime default.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis-exporter
+          # D30 immutable: overlay digest pin'ler (OVERLAY_MUST_OVERRIDE
+          # fail-closed placeholder — base tek başına apply edilemez).
+          image: docker.io/oliver006/redis_exporter:OVERLAY_MUST_OVERRIDE
+          env:
+            # Host-services D19 bridge Service (kustomize/base/host-services/
+            # redis-streams-svc.yaml) — overlay Endpoints gerçek bridge IP'yi
+            # taşır; exporter cluster içinden Service DNS'iyle gider.
+            # ACL ayrımı (gitops#1457): read-only `exporter` user — requirepass
+            # default user'dan bağımsız (Codex 019ebb70). REDIS_USER + PASSWORD
+            # ESO'dan (kv/platform/redis-streams-exporter).
+            # redis_exporter ACL kullanımı (upstream README): user/pass HEM
+            # REDIS_ADDR userinfo'sunda HEM ayrı env'de — canlı 2026-06-12:
+            # REDIS_USER tek başına env'de iken redis_exporter default-user'a
+            # düşüp WRONGPASS verir; userinfo'lu connstr şart. K8s $(VAR)
+            # expansion REDIS_USER/PASSWORD'dan SONRA tanımlı (sıralama önemli).
+            - name: REDIS_USER
+              valueFrom:
+                secretKeyRef:
+                  name: redis-streams-exporter-secrets
+                  key: REDIS_USER
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-streams-exporter-secrets
+                  key: REDIS_PASSWORD
+            - name: REDIS_ADDR
+              value: "redis://$(REDIS_USER):$(REDIS_PASSWORD)@redis-streams:6379"
+            # 32 partition explicit liste (glob değil — Codex 019ebacc S2:
+            # cardinality sabit + glob semantiği sürpriz üretmesin).
+            # check-single-streams: her stream için ayrı XINFO STREAM/GROUPS
+            # metrik seti (redis_stream_length, redis_stream_group_*).
+            - name: REDIS_EXPORTER_CHECK_SINGLE_STREAMS
+              value: "audio:chunks:p00,audio:chunks:p01,audio:chunks:p02,audio:chunks:p03,audio:chunks:p04,audio:chunks:p05,audio:chunks:p06,audio:chunks:p07,audio:chunks:p08,audio:chunks:p09,audio:chunks:p10,audio:chunks:p11,audio:chunks:p12,audio:chunks:p13,audio:chunks:p14,audio:chunks:p15,audio:chunks:p16,audio:chunks:p17,audio:chunks:p18,audio:chunks:p19,audio:chunks:p20,audio:chunks:p21,audio:chunks:p22,audio:chunks:p23,audio:chunks:p24,audio:chunks:p25,audio:chunks:p26,audio:chunks:p27,audio:chunks:p28,audio:chunks:p29,audio:chunks:p30,audio:chunks:p31"
+          ports:
+            - name: http-metrics
+              containerPort: 9121
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http-metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http-metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

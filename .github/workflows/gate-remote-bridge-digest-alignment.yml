@@ -1,0 +1,45 @@
+name: "Remote-bridge digest alignment (Faz 22.6 #2031/#548)"
+
+# Faz 22.6 durable re-drift guard (Codex 019f008a Q6, AGREE 2026-06-26). The remote-bridge
+# activation overlays must render the SAME endpoint-admin-service digest as the primary test
+# overlay (same-image pilot topology). The testai auto-sync now co-bumps the normal bridge
+# and #548 device-key bridge whenever it bumps the primary endpoint-admin digest, so auto-sync
+# PRs stay aligned; this guard is the fail-closed enforcement that catches any PR (manual or
+# regression) that bumps one side without the others before REMOTE_BRIDGE_LIVE or #548 device-key
+# evidence re-blocks at runtime.
+
+on:
+  pull_request:
+    paths:
+      - 'kustomize/overlays/test/**'
+      - 'kustomize/base/apps/endpoint-admin-service/**'
+      - 'kustomize/base/apps/endpoint-admin-remote-bridge/**'
+      - 'scripts/governance/check-remote-bridge-digest-alignment.sh'
+      - 'scripts/governance/lib-remote-bridge-digest.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'tests/governance/test_remote_bridge_digest_alignment.sh'
+      - '.github/workflows/apply-remote-bridge-activation.yml'
+      - '.github/workflows/gate-remote-bridge-digest-alignment.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  remote-bridge-digest-alignment:
+    name: remote-bridge-digest-alignment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup kustomize
+        uses: imranismail/setup-kustomize@v3
+        with:
+          kustomize-version: "5.3.0"
+
+      - name: Assert remote-bridge digests == primary endpoint-admin digest
+        run: bash scripts/governance/check-remote-bridge-digest-alignment.sh
+
+      - name: Lib + guard + derive regression test (#2067)
+        run: bash tests/governance/test_remote_bridge_digest_alignment.sh

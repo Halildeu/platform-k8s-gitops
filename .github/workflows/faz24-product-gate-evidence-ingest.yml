@@ -1,0 +1,228 @@
+---
+name: Faz 24 Product Gate Evidence Ingest
+
+# Validates metadata-only evidence for Faz 24 product gates. It does not run a
+# pilot, mutate runtime/Kubernetes/Vault/firewall/legal state, or make a
+# production-readiness claim.
+
+"on":
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: "Product gate to verify: gcap, gops, or gcomp"
+        required: true
+        type: choice
+        options:
+          - gcap
+          - gops
+          - gcomp
+      evidence_json_base64:
+        description: >-
+          Single-line base64 JSON evidence envelope for the selected gate
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-product-gate-evidence-ingest-${{ inputs.gate }}
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: verify ${{ inputs.gate }} evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      GATE: ${{ inputs.gate }}
+      EVIDENCE_DIR: /tmp/faz24-pg-${{ inputs.gate }}-${{ github.run_id }}
+      EVIDENCE_JSON: >-
+        /tmp/faz24-pg-${{ inputs.gate }}-${{ github.run_id }}/evidence.json
+      SUMMARY_JSON: >-
+        /tmp/faz24-pg-${{ inputs.gate }}-${{ github.run_id }}/summary.json
+
+    steps:
+      - name: Validate dispatch input
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+
+          case "${GATE}" in
+            gcap|gops|gcomp) ;;
+            *)
+              echo "::error::gate must be one of: gcap, gops, gcomp"
+              exit 1
+              ;;
+          esac
+
+          case "${EVIDENCE_JSON_BASE64}" in
+            *$'\n'*|*$'\r'*)
+              echo "::error::evidence_json_base64 must be a single line"
+              exit 1
+              ;;
+          esac
+
+          if [ "${#EVIDENCE_JSON_BASE64}" -gt 200000 ]; then
+            echo "::error::evidence_json_base64 is too large"
+            exit 1
+          fi
+
+          if ! printf '%s' "${EVIDENCE_JSON_BASE64}" \
+            | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            echo "::error::evidence_json_base64 must be plain base64"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Decode evidence JSON
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          printf '%s' "${EVIDENCE_JSON_BASE64}" | base64 -d > "${EVIDENCE_JSON}"
+          python3 -m json.tool "${EVIDENCE_JSON}" > "${EVIDENCE_JSON}.pretty"
+          mv "${EVIDENCE_JSON}.pretty" "${EVIDENCE_JSON}"
+
+      - name: Verify selected product-gate evidence
+        id: verify
+        run: |
+          set +e
+
+          case "${GATE}" in
+            gcap)
+              verifier="scripts/faz24/verify_gcap_capture_gate_evidence.py"
+              ;;
+            gops)
+              verifier="scripts/faz24/verify_gops_operability_gate_evidence.py"
+              ;;
+            gcomp)
+              verifier="scripts/faz24/verify_gcomp_compliance_gate_evidence.py"
+              ;;
+            *)
+              echo "::error::unsupported gate ${GATE}"
+              exit 2
+              ;;
+          esac
+
+          echo "verifier=${verifier}" >> "${GITHUB_OUTPUT}"
+          python3 "${verifier}" \
+            --evidence-file "${EVIDENCE_JSON}" \
+            --output-file "${SUMMARY_JSON}" \
+            > "${EVIDENCE_DIR}/verifier.stdout" \
+            2> "${EVIDENCE_DIR}/verifier.stderr"
+          exit_code="$?"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          cat "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+          cat "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+          exit 0
+
+      - name: Verify artifact excludes private material
+        id: secret_scan
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ ! -d "${EVIDENCE_DIR}" ] || [ ! -f "${EVIDENCE_JSON}" ]; then
+            echo "::error::evidence directory or JSON file is missing"
+            exit 1
+          fi
+
+          if grep -R -E \
+            -e '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
+            -e '-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
+            -e 'Bearer ' \
+            -e 'Authorization:' \
+            -e 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.' \
+            -e '-----BEGIN CERTIFICATE-----' \
+            -e 'data:audio/[A-Za-z0-9.+-]+;base64,' \
+            -- \
+            "${EVIDENCE_DIR}"; then
+            echo "::error::evidence artifact contains forbidden material"
+            exit 1
+          fi
+
+          if grep -E \
+            -e '"(access_token|refresh_token)"[[:space:]]*:' \
+            -e '"(token|authorization)"[[:space:]]*:' \
+            -e '"(bearer|jwt|api_key|private_key)"[[:space:]]*:' \
+            -e '"(client_secret|password|secret)"[[:space:]]*:' \
+            -e '"(audio_bytes|raw_audio|rawaudio)"[[:space:]]*:' \
+            -e '"(transcript_text|raw_transcript)"[[:space:]]*:' \
+            -e '"(raw_prompt|prompt_text|raw_response_text)"[[:space:]]*:' \
+            -e '"(personal_data|raw_personal_data)"[[:space:]]*:' \
+            -e '"(full_name|participant_name)"[[:space:]]*:' \
+            -e '"(phone|telephone|email)"[[:space:]]*:' \
+            -- \
+            "${EVIDENCE_JSON}"; then
+            echo "::error::evidence JSON contains forbidden key names"
+            exit 1
+          fi
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+          VERIFIER: ${{ steps.verify.outputs.verifier }}
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs"
+          run_url="${run_url}/${GITHUB_RUN_ID}"
+          artifact_name="faz24-product-gate-evidence-${GATE}-${GITHUB_RUN_ID}"
+          {
+            echo "## Faz 24 product-gate evidence ingest"
+            echo
+            echo "- Gate: \`${GATE}\`"
+            echo "- Verifier: \`${VERIFIER:-missing}\`"
+            echo "- Workflow: ${run_url}"
+            echo "- Artifact: \`${artifact_name}\`"
+            echo "- Verifier exit code: \`${VERIFY_EXIT_CODE:-missing}\`"
+            echo
+            echo "Boundary: metadata-only source evidence validation."
+            echo "No pilot, runtime/Kubernetes/Vault/firewall/legal mutation,"
+            echo "raw meeting data, VERBIS/legal acceptance,"
+            echo "direct-STT enablement,"
+            echo "or production-readiness claim is produced by this workflow."
+            echo
+            echo '```text'
+            sed -n '1,160p' \
+              "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+            sed -n '1,160p' \
+              "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence ingest artifact
+        if: always() && steps.secret_scan.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: >-
+            faz24-product-gate-evidence-${{ inputs.gate }}-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local evidence directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail workflow when evidence is rejected
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERIFY_EXIT_CODE}" ]; then
+            echo "::error::evidence verifier did not expose an exit code"
+            exit 1
+          fi
+          if [ "${VERIFY_EXIT_CODE}" != "0" ]; then
+            echo "::error::${GATE} evidence was rejected"
+            exit "${VERIFY_EXIT_CODE}"
+          fi

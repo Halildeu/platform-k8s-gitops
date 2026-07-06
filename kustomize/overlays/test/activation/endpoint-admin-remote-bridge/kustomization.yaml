@@ -1,0 +1,213 @@
+# endpoint-admin-remote-bridge ACTIVATION overlay — Faz 22.6 D10-8 (test)
+#
+# ⚠️  OWNER-GATED. This overlay is the runtime-activation half of the broker
+# isolation package. It is DELIBERATELY NOT referenced by
+# kustomize/overlays/test/kustomization.yaml — it is NOT in the Argo root, so an
+# ArgoCD reconcile / `apply -k overlays/test` can NEVER flip the broker live.
+#
+# Activation is a deliberate operator action AFTER:
+#   1. T-4a-ii broker beans + permit-signing-key config land as merged backend code,
+#   2. the broker mTLS / signer / WORM secrets are seeded to
+#      kv/platform/endpoint-admin-remote-bridge,
+#   3. the live exposure smoke passes (docs/RB-22-6-remote-bridge-pilot-flip.md §A3),
+#   4. ADR-0034 §13/D10 owner sign-off for the first live session.
+#
+# 2026-06-18 #510 parent acceptance verification gate:
+#   - topology: Option A true outbound-only agent -> broker mTLS/gRPC stream
+#   - no broker -> device egress NetworkPolicy is part of this gate
+#   - immutable test digest includes platform-backend#696
+#     (`14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`) so live product
+#     sessions can capture redacted PERMIT metadata for #510 G6.
+#   - immutable test digest includes platform-backend#697
+#     (`2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`) so advisory
+#     AgentHello.deviceId cannot veto active machine-cert enrollment trust.
+#   - immutable test digest includes platform-backend#698
+#     (`9a53fa745ec7dc27ed5166291ec3048e389615d3`) so any remaining live
+#     DENY returns bounded/redacted deny.reason and deny.policyGate metadata.
+#   - immutable test digest includes platform-backend#699
+#     (`64926dd98ea2501ada12facfb5962d6f4677ff5a`) so CRYPTO_IDENTITY
+#     DENY responses expose bounded/redacted deny.policyDetail diagnostics.
+#   - immutable test digest includes platform-backend#701/#705 via #704/#706
+#     (`9a8bf45a51c6494e5f03ba33f515dd38e108bbee`) so #1697 can smoke the
+#     catalog gate through the owner-gated remote-bridge broker path without
+#     racing a superseded #701-only endpoint-admin image.
+#   - immutable test digest includes platform-backend#707 via #708
+#     (`41998aa04224dcfeaadfac201317891ca18dd95f`) so the owner-gated
+#     remote-bridge broker path uses the same connected-peer resolver fallback
+#     artifact as the primary endpoint-admin-service test overlay.
+#   - immutable test digest includes platform-backend#702 via #709
+#     (`6b8bac8090824968fe31da824a855c3ef59912db`) so #1705 can smoke the
+#     approved-script catalog path through the same owner-gated broker lane.
+#   - immutable test digest includes platform-backend#710/#711
+#     (`3216a6b599a1f41b93b7c9b35a1ed4a3b26eabab`) so #710 can smoke the
+#     explicit operator close/reopen lifecycle path through the same
+#     owner-gated broker lane instead of testing the older approved-script
+#     broker image.
+#   - immutable test digest includes platform-backend#713 via #714
+#     (`dc1e6e0b852d29720f80d06166c1eb720196a014`) so long-lived broker
+#     control streams refresh peer-trust evidence on heartbeat after AgentHello.
+#   - immutable test digest includes platform-backend#713 via #715
+#     (`99d15f1f5aae3aeefa31b5589db7858715026c02`) so accepted consent
+#     refreshes cached AgentHello trust evidence before the first operator
+#     action when the current agent does not emit broker HEARTBEAT frames.
+#   - immutable test digest includes platform-backend#717 via #718
+#     (`49dfe1fc33a286a575f87b93c4f524ae24b619cd`) so renewed same-SAN
+#     AD CS machine cert enrollment rotates the active cert row before the
+#     AgentPC2 #208 product-channel smoke rechecks device-bound HELLO.
+#   - immutable test digest includes platform-backend#723/#724
+#     (`0d521d76e6f9810ff8a776bea250776d5b33b5b0`) so the bounded non-prod
+#     AgentPC2 pilot can explicitly select enrollment-backed crypto identity
+#     while prod-like profiles still reject that exception and DATA/EndStream
+#     terminal markers are recorded for #208 acceptance.
+#   - immutable test digest:
+#     sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3
+#
+# Then, and only then:
+#   kubectl --context k3d-test -n platform-test apply -k \
+#     kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+#
+# Build sanity (no apply):
+#   kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-test
+
+resources:
+  - ../../../../base/apps/endpoint-admin-remote-bridge   # the inert scaffold
+  - ingress-passthrough.yaml                             # dedicated 443/SNI broker path
+  - externalsecret.yaml                                   # control #3/#4/#10
+  - netpol.yaml                                           # control #6/#7/#8
+
+patches:
+  # control #11 / product gate — explicit non-prod trust-basis and approval
+  # config for the first Denetim PC product-channel session.
+  - path: configmap-activation-patch.yaml
+  # control #11 — flips replicas:1 + REMOTE_BRIDGE_ENABLED=true + mounts the
+  # mTLS/signer secrets + makes the broker secret required (fail-closed).
+  - path: patch-activate.yaml
+  # Legacy L4 fallback — publishes 9444 as nodePort 31944 (still no 8096/8081).
+  # The accepted standard path is the passthrough Ingress above:
+  # remote-bridge-mtls.testai.acik.com:443 -> host stream -> ingress-nginx
+  # ssl-passthrough -> endpoint-admin-remote-bridge:9444.
+  - path: service-patch.yaml
+
+images:
+  # control #11 — immutable digest (D30). SAME image as endpoint-admin-service
+  # (Codex A+). Re-pinned after #699 CRYPTO_IDENTITY detail hardening merged,
+  # because the latest #510 product smoke on the #698 digest returned a visible
+  # policy gate but no bounded detail explaining the remaining identity gap.
+  # Re-pinned for #1697 after backend #704/#706 merged, so the activation path
+  # uses the same combined Operation Catalog + Domain Ops executor image as the
+  # primary test overlay. This file is still owner-gated and outside Argo root;
+  # this PR does not apply it.
+  # Re-pinned for backend #707/#708 after the primary test overlay moved to
+  # sha-41998aa, so owner-gated broker-path smoke does not run on stale
+  # connected-peer resolver code.
+  # Re-pinned for #1705 after backend #709 merged, so the activation path
+  # uses the same Approved Script Runner image as the primary test overlay.
+  # Re-pinned for backend #710/#711 after the primary test overlay moved to
+  # sha-3216a6b5, so owner-gated broker-path close/reopen smoke does not run
+  # on the older approved-script-only broker image.
+  # Re-pinned for backend #713/#714 after the primary test overlay moved to
+  # sha-dc1e6e0, so owner-gated broker-path close/reopen smoke validates the
+  # heartbeat peer-trust freshness fix on the same image as endpoint-admin.
+  # Re-pinned for backend #713/#715 after the primary test overlay moved to
+  # sha-99d15f1, so owner-gated broker-path close/reopen smoke validates the
+  # accepted-consent trust-refresh fix on the same image as endpoint-admin.
+  # Re-pinned for backend #717/#718 after the primary test overlay moved to
+  # sha-49dfe1f, so owner-gated broker-path AgentPC2 smoke validates renewed
+  # same-SAN machine-cert rotation on the same image as endpoint-admin.
+  # Merge-order guard: draft PR #1652 also touches this activation overlay and
+  # carries the older sha256:3950a612... digest. If #1652 is resumed after this
+  # PR, rebase it onto this digest before merge/apply; do not downgrade.
+  # This file is still owner-gated and outside Argo root; this PR does not
+  # apply it.
+  # This activation overlay remains outside the Argo root and still requires an
+  # explicit owner-gated operator apply before #510 live product-session
+  # verification.
+  # Re-pinned to the live broker imageID proven on the dedicated
+  # remote-bridge-mtls.testai.acik.com:443 SNI path.
+  # 2026-06-21 Faz 22.6 AgentPC2 constrained executor terminal-output audit
+  # (backend #724 -> sha-0d521d7). Re-pinned with the primary endpoint-admin
+  # overlay so the owner-gated broker path records DATA frames as AGENT_OUTPUT
+  # and EndStream as SESSION_END during #208/#1768 acceptance rerun.
+  # 2026-06-21 backend #723 is activated by configmap-activation-patch.yaml
+  # through the explicit non-prod
+  # REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED
+  # flag; do not copy that flag into prod overlays.
+  # 2026-06-22 backend #729 full-matrix negative-probe controller support:
+  # re-pin owner-gated broker image with the primary endpoint-admin #729 digest
+  # so AgentPC2 acceptance can prove expired-permit and replay DENY through the
+  # real outbound mTLS product channel.
+  # 2026-06-23 backend #730 negative-probe observer fix: re-pin with primary
+  # endpoint-admin so expired-permit DENY accepts the bounded
+  # `operation-dispatch-failed:permit-invalid:*` agent error-code family instead
+  # of misclassifying suffixed product errors as agent-deny-not-observed.
+  # 2026-06-23 backend #733 #548 device-key attestation negative evidence matrix:
+  # re-pin with primary endpoint-admin so owner-gated broker-path smokes run on
+  # the fail-closed source harness image. This remains source/live-wiring
+  # progress only; it does not prove TPM/device-key field evidence.
+  # 2026-06-25 Faz 22.6 REMOTE_BRIDGE_LIVE digest-align (Codex 019f008a): forward-align
+  # the bridge to the CURRENT primary endpoint-admin digest (same-image pilot topology).
+  # Digest lineage: 6b12276 = historical baseline (#733); 3015656f = #754/#548-M1/#1497 (PR #2030);
+  # 5eff536b = current primary (#2032 Faz 24 retention digest-sync). The completion-audit
+  # REMOTE_BRIDGE_LIVE gate needs BOTH deployments + pods to share this one digest (digest_hits>=4).
+  # DURABLE FIX DONE (#2031, Codex 019f008a): the testai auto-sync now CO-BUMPS this bridge digest in
+  # lockstep whenever it bumps the primary endpoint-admin digest (scripts/automation/sync-test-overlay.sh
+  # mirrors endpoint-admin-service into this overlay in the same auto PR), AND the digest-alignment guard
+  # (scripts/governance/check-remote-bridge-digest-alignment.sh + gate-remote-bridge-digest-alignment.yml)
+  # fails any PR whose rendered primary != bridge digest. A manual endpoint-admin bump must co-bump here too.
+  # (Prior re-drift 3015656f->5eff536b re-blocked the gate within ~1h of PR #2030 — that class is now closed.)
+  # 2026-06-26 #548 V77 manual co-bump: aligned with the primary endpoint-admin digest
+  # (5eff536b -> 8c4209ee, sha-74d312d) so the digest-alignment gate stays green.
+  # 2026-06-29 #527/#773 manual co-bump: aligned with the primary endpoint-admin
+  # digest (48b6975c -> 78863864, sha-42a3683) so the same-image
+  # remote-bridge pilot topology remains drift-free. This file is still
+  # owner-gated and outside Argo root; this PR does not apply it.
+  # 2026-06-29 #527/#774 manual co-bump: aligned with the primary endpoint-admin
+  # digest (78863864 -> a16acbe7, sha-d7532b6) carrying CERT_IDENTITY failed-device
+  # queue auto-ingest. Owner-gated activation remains separate from normal test
+  # overlay rollout.
+  # 2026-06-29 #527/#775 manual co-bump: aligned with the primary endpoint-admin
+  # digest (a16acbe7 -> 3bda7b2, sha-51249eb) carrying DNS_EDGE_MTLS diagnostics
+  # auto-ingest. Owner-gated activation remains separate from normal test overlay
+  # rollout; this co-bump preserves the same-image bridge topology.
+  # 2026-06-29 #527/#777 manual co-bump: aligned with the primary endpoint-admin
+  # digest (3bda7b2 -> f950a3b, sha-3fd9953) carrying strict securityNetwork
+  # structured EDR_NETWORK ingest. Owner-gated activation remains separate from
+  # normal test overlay rollout; this co-bump preserves same-image bridge topology.
+  # 2026-07-01 #785 manual co-bump: aligned with the primary endpoint-admin
+  # digest (ef3193b -> 8320223) carrying the remote bridge connected-stream
+  # gauge. Owner-gated activation still requires the apply workflow to mutate
+  # the live broker deployment; this line only updates desired-state.
+  # 2026-07-02 #786 manual co-bump: aligned with the primary endpoint-admin
+  # digest carrying device-bound endpoint enrollment tokens for the #548 TPM
+  # acceptance run. Activation remains owner-gated and still must be applied.
+  # 2026-07-02 #548 device-key root-cause co-bump: aligned with the primary
+  # endpoint-admin digest carrying the WORM audit hash fix and EK-chain
+  # diagnostics used by the device-key verifier smoke. Activation remains
+  # owner-gated and this does not add acceptance markers.
+  # 2026-07-03 Faz 24 meeting AI runtime co-bump: aligned with backend main
+  # merge 389b3bc image build run 28625506330 after the primary test overlay
+  # moved endpoint-admin-service to sha-12f4f97. Activation remains owner-gated
+  # and this does not add acceptance markers.
+  # 2026-07-03 Faz 22.6 #1580 cert-channel co-bump: aligned with the primary
+  # endpoint-admin digest from backend #793 / image build run 28640622647.
+  # Activation remains owner-gated; #1580 still requires live VIEW_ONLY evidence.
+  # 2026-07-03 Faz 22.6 #1580 V78/V79 repair co-bump: aligned with backend
+  # #794 / image build run 28642329661 after #793 reused the live-applied V78
+  # migration number. Activation remains owner-gated; staging-sw/WG is only a
+  # server/debug/bootstrap path and is not product acceptance evidence.
+  # 2026-07-03 Faz 22.6 #1580 session-duress source co-bump: aligned with
+  # backend #796 / image build run 28681672419 after primary test moved
+  # endpoint-admin-service to the SESSION_SIGNAL-capable image. Activation
+  # remains owner-gated; live VIEW_ONLY evidence and KVKK signoff are still
+  # separate acceptance inputs.
+  # 2026-07-03 Faz 22.6 #1580 WORM recorder diagnostic hash co-bump: aligned
+  # with backend #797 / image build run 28683451172 after primary test moved
+  # endpoint-admin-service to the recorder-safe diagnostic audit image.
+  # Activation remains owner-gated; this prepares the live attended smoke retry.
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
+    newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
+    digest: sha256:a5cf602f9936d31f96e8006f4221b46317a1422895b5a8585e16bb8533de1e44

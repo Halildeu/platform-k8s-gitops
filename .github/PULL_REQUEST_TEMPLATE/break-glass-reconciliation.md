@@ -24,7 +24,7 @@ This PR brings the gitops desired-state YAML in sync with the cluster live-state
 
 - [ ] `kustomize/base/<resource>.yaml` updated to match live state
 - [ ] `kustomize/overlays/<env>/<resource-patch>.yaml` updated if env-specific
-- [ ] No drift remains: `bash scripts/drift-detection/check_prod_drift.sh <env>` → exit 0
+- [ ] No drift remains: `bash scripts/drift-detection/check_env_drift.sh <env>` → exit 0
 - [ ] If digest change: corresponding `release-candidates/<repo>/<sha>.json` ledger entry generated
 
 ## Why break-glass was needed

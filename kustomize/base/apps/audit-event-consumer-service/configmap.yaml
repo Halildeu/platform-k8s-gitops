@@ -1,0 +1,96 @@
+# audit-event-consumer-service ConfigMap — Faz 24 KVKK audit pipeline (#1249)
+#
+# Non-secret env contract. Source: audit-event-consumer-service application.yml +
+# application-k8s.yml defaults (platform-backend#1249). DB credentials
+# (SPRING_DATASOURCE_USERNAME/PASSWORD) + Redis password
+# (AUDIT_CONSUMER_REDIS_PASSWORD) are delivered via the ESO-managed
+# `audit-event-consumer-service-secrets` Secret (not here), matching
+# transcript-service / audio-gateway discipline.
+#
+# This service is a PURE Redis-Streams CONSUMER (no @RestController). It has no
+# HTTP API so it never validates a request JWT — but the actuator/security
+# chain still binds, so KEYCLOAK_ISSUER_URI / KEYCLOAK_JWKS_URI /
+# SECURITY_JWT_AUDIENCE are carried for parity with the sibling Faz 24 services
+# (harmless: no inbound API to enforce). OpenFGA is intentionally OMITTED
+# (no @RequireModule → ERP_OPENFGA_* would be a dead, fail-open no-op).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-event-consumer-service-config
+  annotations:
+    # Mirror transcript / meeting: ArgoCD Replace sync keeps this ConfigMap
+    # exact and removes stale keys after a desired-state key removal.
+    argocd.argoproj.io/sync-options: Replace=true
+  labels:
+    app.kubernetes.io/name: audit-event-consumer-service
+data:
+  # Listen ports (Spring Boot SERVER_PORT 8099)
+  SERVER_PORT: "8099"
+  MANAGEMENT_SERVER_PORT: "8081"
+
+  # Datasource (host-compose Postgres test cluster — D6 stateful contract).
+  # Database name `audit_event`; schema `audit_event` is owned + created by
+  # Flyway (flyway history table audit_consumer_flyway_history, V1 baseline,
+  # driven by AUDIT_CONSUMER_DB_SCHEMA). DB user/password come from ESO
+  # (audit-event-consumer-service-secrets).
+  #
+  # currentSchema=audit_event (gitops#1647): the consumer persist path is a
+  # NATIVE `INSERT INTO audit_event` (AuditEventRepository, JdbcTemplate) which
+  # does NOT honour spring.jpa hibernate.default_schema — that only rewrites
+  # Hibernate-generated SQL. Without the connection search_path set, the
+  # unqualified table resolves to public.audit_event (absent) → "relation
+  # audit_event does not exist" → event left unacked in the PEL (no persist).
+  # currentSchema pins the connection search_path so native + Hibernate agree.
+  # (Integration tests passed because Testcontainers used the public schema —
+  # the non-public-schema mismatch only surfaces live; proven by E2E smoke.)
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/audit_event?currentSchema=audit_event"
+  DB_POOL_MAX: "5"
+
+  # JPA / Flyway — Flyway is the sole schema authority. ddl-auto=validate
+  # (Hibernate verifies, never mutates). AUDIT_CONSUMER_DB_SCHEMA drives the
+  # Flyway default-schema + Hibernate default_schema (application.yml) so they
+  # agree.
+  SPRING_FLYWAY_ENABLED: "true"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
+  AUDIT_CONSUMER_DB_SCHEMA: "audit_event"
+
+  # --- Redis Streams CONSUMER (spring.data.redis.* via AUDIT_CONSUMER_REDIS_*) ---
+  # Connects to the SAME host-bridge Redis as audio-gateway (the producer side):
+  # redis-streams Service → host-compose/redis-streams (ADR-0031 D2). Egress to
+  # 6379 is already open via the namespace-wide allow-egress-host-bridge NetPol
+  # (part-of=platform). Password → audit-event-consumer-service-secrets (ESO,
+  # Vault kv/platform/audit-event-consumer-service redis_password).
+  AUDIT_CONSUMER_ENABLED: "true"
+  AUDIT_CONSUMER_REDIS_HOST: "redis-streams"
+  AUDIT_CONSUMER_REDIS_PORT: "6379"
+  AUDIT_CONSUMER_STREAM_KEY: "audit:events"
+  AUDIT_CONSUMER_GROUP_NAME: "audit-persist-v1"
+  AUDIT_CONSUMER_DLQ_STREAM_KEY: "audit:events:dlq"
+  AUDIT_CONSUMER_POLL_BATCH_SIZE: "64"
+
+  # Identity / OIDC — test=platform-test realm; prod overlay would patch 'serban'
+  # (carried for parity with transcript/meeting; no inbound HTTP API to enforce).
+  KEYCLOAK_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
+  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+
+  # JWT Security (parity-only — consumer has no @RestController)
+  SECURITY_JWT_AUDIENCE: "audit-event-consumer-service,frontend,account,serban-web"
+
+  # Spring profile — activates application-k8s.yml
+  SPRING_PROFILES_ACTIVE: "k8s"
+
+  # Spring Cloud (D7 — Eureka removed; Vault/discovery off, transcript pattern)
+  SPRING_CLOUD_VAULT_ENABLED: "false"
+  SPRING_CLOUD_DISCOVERY_ENABLED: "false"
+  SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
+
+  # Logging
+  LOGGING_LEVEL_ROOT: "INFO"
+
+  # Management / actuator (transcript/meeting contract — health,info,prometheus)
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
+  MANAGEMENT_TRACING_ENABLED: "false"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"

@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-agent",
+  "service": "artifact-host",
+  "git_sha": "78f2ee35dcd64e7fc70d6d63e4e8f8ce016b85c1",
+  "git_short_sha": "78f2ee3",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-agent-artifacts",
+    "digest": "sha256:b3118c6e14fd7cb6d157d684b56333e10eb99e9defc7d84dadbf9e078fca4a86",
+    "tag": "sha-78f2ee3",
+    "push_run_id": 27667406377,
+    "pushed_at": "2026-06-17T05:18:45Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-06-17T05:28:31Z",
+      "promoted_by_pr": 1641,
+      "argocd_revision": "38fd3a3f90e3b261d87a9cc121268bcf54b0dc16",
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-06-17T05:32:00Z",
+          "details": "ArgoCD platform-test Synced/Healthy at revision 38fd3a3f90e3b261d87a9cc121268bcf54b0dc16; platform-test/artifact-host Deployment 2/2 ready; both pods imageID ghcr.io/halildeu/platform-agent-artifacts@sha256:b3118c6e14fd7cb6d157d684b56333e10eb99e9defc7d84dadbf9e078fca4a86, ready=true, restartCount=0.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1640"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-06-17T05:32:00Z",
+          "details": "Public testai current artifact smoke: release-manifest reports release_tag=v0.2.8, EndpointAgent.zip.sha256 returns 73ce4aaf0409344a36ea3619c8cca22cfdcb2a222002a902cd03e197145a6b06, and bootstrap-package.ps1 contains host-aware Resolve-BootstrapApiUrls/Get-PackageUrlHost with old hardcoded testai API defaults absent.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1640",
+          "endpoints": [
+            "/artifacts/endpoint-agent/current/release-manifest.json",
+            "/artifacts/endpoint-agent/current/EndpointAgent.zip.sha256",
+            "/artifacts/endpoint-agent/current/bootstrap-package.ps1"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "AMBER",
+          "checked_at": "2026-06-17T05:32:00Z",
+          "details": "artifact-host is a static nginx file host with no JWT/OpenFGA authorization surface; public install artifact serving is intentional. Zanzibar allow/deny synthetic is not applicable for this service.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1640",
+          "allow_deny_synthetic": "SKIP"
+        }
+      },
+      "verified_at": "2026-06-17T05:32:00Z",
+      "candidate_pr": 1641,
+      "candidate_pr_status": "merged"
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8"
+  },
+  "audit": {
+    "created_at": "2026-06-17T05:21:00Z",
+    "last_updated_at": "2026-06-17T05:32:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-agent/actions/runs/27667406377"
+  }
+}

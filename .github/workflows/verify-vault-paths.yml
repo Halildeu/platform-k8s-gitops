@@ -1,0 +1,80 @@
+# ExternalSecret Vault path verify gate — static CI (Layer 1 of 3-layer verify
+# gate; Codex `019e6fb5` AGREE Yol C-prime BL-008-bridge follow-up).
+#
+# Layer 1 (this workflow, GitHub-hosted runner — no cluster/Vault access):
+#   - kustomize render OK (build sanity for ESO overlay)
+#   - ExternalSecret remoteRef inventory extraction
+#   - Required field presence (key + property + secretKey non-empty)
+#
+# Layer 2 (live preflight, self-hosted runner on staging-sw): runs via
+# scripts/verify-vault-paths.sh live mode — manual/operator-triggered after
+# Vault seed or PAT rotation.
+#
+# Layer 3 (runtime surveillance): PrometheusRule
+# prometheusrule-alertmanager-bridge-gh-auth.yaml.
+
+name: Verify Vault Paths — Static (Layer 1)
+
+on:
+  pull_request:
+    # Codex `019e6fb5` iter-2 must_fix #4 — yaml-wildcard kapsam: legacy
+    # bare-name files (örn. eso/endpoint-admin/externalsecret.yaml) eski
+    # `externalsecret-*` glob dışına düşüyordu.
+    paths:
+      - "kustomize/overlays/**/eso/**/*.yaml"
+      - "scripts/verify-vault-paths.sh"
+      - ".github/workflows/verify-vault-paths.yml"
+  push:
+    branches: [main]
+    paths:
+      - "kustomize/overlays/**/eso/**/*.yaml"
+      - "scripts/verify-vault-paths.sh"
+  workflow_dispatch:
+    inputs:
+      overlay:
+        description: "Target overlay"
+        type: choice
+        options: [test, prod, both]
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  static-verify:
+    name: static-verify (${{ matrix.overlay }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        overlay: [test, prod]
+      fail-fast: false
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML + jq
+        run: |
+          pip install pyyaml
+          # jq pre-installed on ubuntu-latest
+
+      - name: Run verify-vault-paths.sh static (${{ matrix.overlay }})
+        if: github.event_name != 'workflow_dispatch' || inputs.overlay == 'both' || inputs.overlay == matrix.overlay
+        run: |
+          bash scripts/verify-vault-paths.sh static \
+            --overlay ${{ matrix.overlay }} \
+            --report /tmp/vault-paths-static-${{ matrix.overlay }}.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: vault-paths-static-${{ matrix.overlay }}
+          path: /tmp/vault-paths-static-${{ matrix.overlay }}.json
+          retention-days: 14
+          if-no-files-found: warn

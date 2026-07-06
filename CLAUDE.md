@@ -41,6 +41,39 @@ PRs #561/#564/#567/#568/#570/#571/#572 merged in ssot 2026-05-05 never reached t
 
 ## Ana Kurallar (HARD RULE)
 
+### 0. Mavis CLI — Lokal Agent İletişimi (2026-05-29, üst-seviye iletişim kanalı)
+
+**Lokal agent'lar arası ve kullanıcı ile iletişim için Mavis CLI kullanılır**. Multi-session koordinasyon, paralel agent handoff, tamamlanma bildirimi, async iş zinciri için tek standart kanal.
+
+**3 Yol** (öncelik sırası):
+
+```bash
+# 1. Session ID ile (en kesin)
+mavis communication send --to mvs_88b2fffe2de74dbe9a17b929569552ac \
+  --command prompt --content "İş tamamlandı, sonuç: ..."
+
+# 2. Agent name ile (daha genel — session crash olursa Agent name persist)
+mavis communication send --to agent-d2f425d1ea79 \
+  --command prompt --content "Şunu yap: ..."
+
+# 3. Peers listele (discovery — kim erişilebilir)
+mavis communication peers
+```
+
+**Discovery + send akışı**: `peers` ile listele → Session ID veya Agent name seç → `send` ile prompt gönder.
+
+**Ne zaman**: multi-session paralel iş, async tamamlanma bildirimi, agent handoff, long-running trigger.
+
+**Yasak (redaction guard genişletilmiş)**: `--content` içine **secret/JWT/refresh token/raw bearer/webhook URL/cookie/OAuth client secret/private key/signing key/HMAC secret/admin credential/PII YASAK** (shell history, process list, Mavis log/queue, karşı peer transcript'ine düşebilir). Gerekirse sadece **redacted özet + evidence path/issue/PR linki** gönderilir.
+
+**Acceptance gate bypass değil**: Mavis bildirimi **board claim'i, live evidence (D29 Up/Functional/Secured), browser smoke (HARD RULE Tarayıcıdan Sonuç Doğrulanmadan), PR/CI truth (HARD RULE CI Kırmızıyken Merge YASAK)** yerine geçmez — yalnız koordinasyon kanıtıdır (HARD RULE No Fake Work uyumlu). "X session'a haber verdim" ≠ "iş bitti".
+
+**Canonical referans**:
+
+- [AGENTS.md §3 HARD RULE](./AGENTS.md) (kısa canonical bullet)
+- [docs/context-priority-rules.md §10 Agent İletişimi](./docs/context-priority-rules.md) (proje canonical detay)
+- Global `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı + örnek senaryolar)
+
 ### 1. No Closure Language
 
 "Kapandı/bitti/gün sonu/pause/bekle" kelimeleri **YASAK**. Kullanıcı "dur/yeter/bitti" demedikçe iş aktif devam eder. Her ara rapor sonunda **bir sonraki aksiyon** olmalı.

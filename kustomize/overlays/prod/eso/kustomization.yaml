@@ -26,6 +26,8 @@ resources:
   - externalsecret-ghcr-pull.yaml    # platform-prod ns (W1 Opsiyon B)
   - notify                            # notification-orchestrator-secrets (Faz 23.9 Step D)
   - alertmanager                      # Faz 23.2.D T1.4 D43 outage fallback (Codex 019e0dea iter-2)
+  - grafana                           # Faz 23.8 M7 T4.3.7 — grafana-notify-pg-secret (defer-aware; PR-1 Codex 019e4ee2)
+  - endpoint-admin                    # Faz 22.5 P2-A A1 first prod deploy (BE-024c v2-d) — Codex 019e8c3a iter-1 AGREE; prereq: Vault kv/platform/endpoint-admin-service seed + prod PG endpoint_admin DB+role+password match
 
 patches:
   - target:

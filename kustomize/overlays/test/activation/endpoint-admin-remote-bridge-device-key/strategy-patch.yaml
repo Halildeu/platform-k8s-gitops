@@ -1,0 +1,17 @@
+# Quota-safe rollout strategy for the owner-gated #548 device-key broker.
+#
+# The test namespace runs close to its CPU limit during the Faz 22.6 evidence
+# window. The default RollingUpdate surge briefly creates a second broker pod
+# and can exceed ResourceQuota before the old pod terminates. This broker is a
+# single-device, owner-gated evidence path, so one-at-a-time replacement is the
+# safer default.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: endpoint-admin-remote-bridge
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1

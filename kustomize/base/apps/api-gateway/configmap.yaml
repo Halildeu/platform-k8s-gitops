@@ -220,6 +220,50 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_21_PREDICATES_0: "Path=/api/v1/impersonation/**"
   # StripPrefix yok — native route preserved
 
+  # Faz 22.1.1 C.5.persona endpoint-admin gateway routes (#960 fix 2026-05-22):
+  # H2 source PR #291 + gitops #957 image yaml'da `spring.cloud.gateway.routes`
+  # entries var ama ConfigMap env'i (SPRING_CLOUD_GATEWAY_ROUTES_0..21) Spring
+  # property list binding yüzünden yaml listesini override ediyordu — endpoint-
+  # admin route'ları yüklenmiyor + gateway 404 (live evidence 2026-05-22).
+  # Codex 019e4cb6 prior REVISE "legacy prefix NO-OP in SCG 4.3.3+" yanlıştı;
+  # gateway env'inden 22 route fiilen yükleniyor (kanıt: SPRING_PROFILES_ACTIVE=
+  # k8s + auth/users gateway forward çalışıyor). Düzeltme: aynı env prefix ile
+  # endpoint-admin route 22/23/24 eklendi. Path rewrite filter image yaml'daki
+  # `endpoint-admin-admin-route` ile birebir aynı (RewritePath segment regex).
+  # Live 6/6 C.5.persona matrix PASS (#960 body).
+  #
+  # Faz 22.3 mTLS auto-enroll route parity (#1357, 2026-06-08):
+  # backend source defines POST /api/v1/endpoint-agent/endpoint-enrollments/auto
+  # as a native endpoint, not under the legacy /api/v1/agent/** contract.
+  # Keep this exact route before the generic endpoint-agent rewrite, otherwise
+  # Spring Cloud Gateway rewrites auto-enroll to /api/v1/agent/endpoint-
+  # enrollments/auto and tokenless bootstrap cannot reach the backend
+  # controller. This route does not prove DNS/edge mTLS; endpoint-agent-mtls
+  # host + client-cert forwarding remains a separate live gate.
+  SPRING_CLOUD_GATEWAY_ROUTES_22_ID: "endpoint-admin-mtls-auto-enroll-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_22_URI: "http://endpoint-admin-service:8096"
+  SPRING_CLOUD_GATEWAY_ROUTES_22_PREDICATES_0: "Path=/api/v1/endpoint-agent/endpoint-enrollments/auto"
+  SPRING_CLOUD_GATEWAY_ROUTES_22_PREDICATES_1: "Method=POST"
+  SPRING_CLOUD_GATEWAY_ROUTES_23_ID: "endpoint-admin-agent-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_23_URI: "http://endpoint-admin-service:8096"
+  SPRING_CLOUD_GATEWAY_ROUTES_23_PREDICATES_0: "Path=/api/v1/endpoint-agent/**"
+  SPRING_CLOUD_GATEWAY_ROUTES_23_FILTERS_0: "RewritePath=/api/v1/endpoint-agent/(?<segment>.*), /api/v1/agent/${segment}"
+  SPRING_CLOUD_GATEWAY_ROUTES_24_ID: "endpoint-admin-admin-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_24_URI: "http://endpoint-admin-service:8096"
+  SPRING_CLOUD_GATEWAY_ROUTES_24_PREDICATES_0: "Path=/api/v1/endpoint-admin/**"
+  SPRING_CLOUD_GATEWAY_ROUTES_24_FILTERS_0: "RewritePath=/api/v1/endpoint-admin/(?<segment>.*), /api/v1/admin/${segment}"
+  SPRING_CLOUD_GATEWAY_ROUTES_25_ID: "endpoint-admin-status-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_25_URI: "http://endpoint-admin-service:8096"
+  SPRING_CLOUD_GATEWAY_ROUTES_25_PREDICATES_0: "Path=/api/v1/endpoint-agents/**"
+  # StripPrefix yok — endpoint-agents (plural) read-only status path
+
+  # NOT (Faz 24 Meeting Intelligence routes 26/27): meeting-service (#410) +
+  # transcript-service (#411) gateway route'ları base'de DEĞİL; test overlay
+  # strategic-merge ConfigMap patch'inde (kustomize/overlays/test/
+  # kustomization.yaml). Sebep: prod'da meeting/transcript Deployment YOK
+  # (prod:deferred) — base'de tutulsaydı prod render non-existent service'e
+  # route üretirdi (prod-leak). Codex cross-AI REVISE Must-Fix 1.
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:

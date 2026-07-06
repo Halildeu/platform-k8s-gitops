@@ -1,0 +1,88 @@
+# Grafana PostgreSQL datasource — notification-orchestrator audit_event_v2 read
+# Faz 23.8 M7 T4.3.7 per-template analytics (Codex 019e4ee2 PR-1 absorb).
+#
+# Pattern: kube-prometheus-stack Grafana sub-chart sidecar provisioner
+# (auto-discovers ConfigMap with label grafana_datasource=1).
+#
+# Datasource credentials: Grafana env var ${NOTIFY_PG_RO_PASSWORD} resolved
+# from Secret notification-orchestrator-pg-grafana-ro (ESO-managed; see
+# overlays/prod/eso/grafana/externalsecret-grafana-notify-pg.yaml).
+#
+# Activation chain (operator action — see RB-grafana-notify-pg-datasource.md):
+#   1. DB RO role: CREATE USER grafana_notify_ro WITH LOGIN PASSWORD '<random>';
+#      GRANT USAGE ON SCHEMA notify;
+#      GRANT SELECT ON notify.audit_event_v2, notify.notification_intent,
+#                       notify.notification_delivery TO grafana_notify_ro;
+#      ALTER DEFAULT PRIVILEGES IN SCHEMA notify GRANT SELECT ON TABLES
+#                       TO grafana_notify_ro;
+#   2. Vault seed: vault kv patch kv/platform/grafana/notify-pg-ro \
+#                                  password='<random_32_alnum>'
+#   3. ExternalSecret uncomment (overlays/prod/eso/grafana/)
+#   4. Grafana env injection (deployment patch — add Secret-backed env var)
+#   5. helm upgrade kube-prometheus-stack (sidecar provisioner picks new
+#      datasource ConfigMap)
+#   6. Verify: Grafana /api/datasources includes uid=notify_pg_ro
+#
+# Acceptance (PR-1 — Codex 019e4f10 iter-2 P1 #1 + P3 absorb):
+# - kustomize build sanity PASS
+# - sidecar provisioner pattern applied (label grafana_datasource=1)
+# - URL points to prod cluster postgres (cluster-internal Service DNS)
+# - Connection pool conservative (maxOpenConns=5; tek dashboard panel load)
+# - sslmode=disable (ADR-0001 intra-cluster plaintext PG; host-compose
+#   postgres + notification-orchestrator jdbc no-sslmode evidence — TLS-on
+#   PG Faz 24+ scope. sslmode=require activation'da SSL handshake fail verir)
+# - DB role grafana_notify_ro SELECT-only (mutating query DB-level blocked;
+#   ek savunma katmanı — operator activation chain RB §3.1)
+# - jsonData.timeout: 2 (Grafana 10+ PostgreSQL plugin connection-level
+#   query timeout, saniye — panel default 24h window query budget)
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-notify-pg-datasource
+  namespace: monitoring
+  labels:
+    # kube-prometheus-stack Grafana sidecar provisioner label trigger
+    grafana_datasource: "1"
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: datasource-provisioning
+    app.kubernetes.io/part-of: platform
+data:
+  notify-pg-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: notify-pg-ro
+        type: postgres
+        access: proxy
+        # Cluster-internal Service DNS; prod cluster Grafana → prod cluster PG
+        # (ADR-0002 §3.8: tek Grafana instance prod cluster; cross-cluster query
+        # YOK — bu datasource yalnız prod-side notify audit query'leri için)
+        url: postgres.platform-prod.svc.cluster.local:5432
+        database: notify_db
+        user: grafana_notify_ro
+        editable: false
+        isDefault: false
+        uid: notify_pg_ro
+        secureJsonData:
+          # Password Grafana deployment env var'dan resolve edilir
+          # (NOTIFY_PG_RO_PASSWORD); env Secret-backed
+          # (kustomize/overlays/prod/eso/grafana/externalsecret-grafana-notify-pg.yaml).
+          # Operator activation chain completion gerek (Vault seed + ESO).
+          password: ${NOTIFY_PG_RO_PASSWORD}
+        jsonData:
+          # PG connection settings (Grafana datasource backend) — Codex 019e4f10
+          # P1 #1 absorb: platform PG plaintext (host-compose docker-compose.yml
+          # + kustomize/base/apps/etl-worker configmap REPORTS_DB_SSLMODE unset
+          # + notification-orchestrator jdbc URL no sslmode). ADR-0001
+          # intra-cluster service traffic plaintext for MVP. sslmode=disable
+          # mevcut PG topology ile uyumlu; sslmode=require activation sırasında
+          # SSL handshake fail verirdi. TLS-on PG Faz 24+ scope (R8 trigger).
+          sslmode: disable
+          maxOpenConns: 5
+          maxIdleConns: 2
+          connMaxLifetime: 14400
+          postgresVersion: 1500
+          timescaledb: false
+          # Grafana 10+ datasource jsonData supports timeout field
+          # (PostgreSQL plugin connection-level query timeout, seconds)
+          timeout: 2

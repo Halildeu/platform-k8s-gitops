@@ -50,6 +50,11 @@ Tüm runbook, plan pack, handoff, query pack index — agent/ops session başlan
 | Doküman | Kullanım |
 |---|---|
 | [context-priority-rules.md](./context-priority-rules.md) | Canonical bağlam önceliği, authority zinciri ve testten proda promotion semantiği |
+| [faz-22-software-deployment-plan.md](./faz-22-software-deployment-plan.md) | Faz 22.5 software deployment / managed lifecycle planı; AG-034 file actions discovery-only sınırı |
+| [faz-22-remote-access-bridge-plan.md](./faz-22-remote-access-bridge-plan.md) | Faz 22.6 outbound remote-access bridge planı; broker/tunnel/session governance |
+| [sprint-plan-faz-22-7-compliance-gap-mart.md](./sprint-plan-faz-22-7-compliance-gap-mart.md) | Faz 22.7 compliance gap mart layer sprint planı; 22.7 numarası bu scope'a ayrılmıştır |
+| [faz-22-endpoint-data-protection-plan.md](./faz-22-endpoint-data-protection-plan.md) | Faz 22.8 endpoint backup/offboarding/forensic collection charter planı |
+| [faz-22-security-telemetry-plan.md](./faz-22-security-telemetry-plan.md) | Faz 22.9 endpoint security telemetry / detection extension planı; osquery/YARA/Sigma/Wazuh karar sınırı |
 | [S2-B1-vault-property-matrix.md](./S2-B1-vault-property-matrix.md) | ESO Vault path + property matrisi + preflight script |
 | [S2-B2-digest-pin-ci-template.md](./S2-B2-digest-pin-ci-template.md) | Platform-ssot deploy-backend.yml digest pin CI snippet |
 | [S2-C-argocd-install-plan.md](./S2-C-argocd-install-plan.md) | ArgoCD install + 6 Application app-of-apps plan |

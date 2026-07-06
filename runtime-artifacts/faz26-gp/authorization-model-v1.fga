@@ -1,0 +1,147 @@
+# Faz 26 — Governed Process & Work Platform — OpenFGA Authorization Model v2
+# Status: DRAFT v2 (Faz 26A foundation). Codex REVISE (thread 019f18f8) absorbe.
+# Canonical ontology: docs/faz-26-ontology-v1.md (v2)
+# İlke: tüm okuma (graph/search/RAG/report/AI) gp-core Read Gateway'den geçer;
+#       OpenFGA = data-plane policy enforcement point (helper değil). viewer = guard.
+#       Edge görünür ⇔ can_view(source) AND can_view(target) AND can_view(edge_scope) (app-layer).
+# Store: AYRI (Faz 1-24 izole). Tuple writer = permission-service (reuse).
+
+model
+  schema 1.1
+
+type user
+
+type organization
+  relations
+    define admin: [user]
+    define member: [user] or admin
+
+type unit
+  relations
+    define organization: [organization]
+    define manager: [user]
+    define member: [user] or manager or member from organization
+
+# --- Yapısal ---
+type process
+  relations
+    define unit: [unit]
+    define owner: [user]
+    define editor: [user] or owner or manager from unit
+    define viewer: [user] or editor or member from unit
+
+type step
+  relations
+    define process: [process]
+    define owner: [user]
+    define editor: [user] or owner or editor from process
+    define viewer: [user] or editor or viewer from process
+
+# --- Katalog katmanı (org-visible tanım) ---
+type framework
+  relations
+    define organization: [organization]
+    define editor: [user] or admin from organization
+    define viewer: [user] or editor or member from organization
+
+type requirement
+  relations
+    define framework: [framework]
+    define editor: [user] or editor from framework
+    define viewer: [user] or editor or viewer from framework
+
+type control_definition
+  relations
+    define organization: [organization]
+    define editor: [user] or admin from organization
+    define viewer: [user] or editor or member from organization
+
+# coverage_mapping = reified crosswalk (control_definition <-> requirement).
+# Katalog mapping org-visible; ama status/gap içeren operasyonel coverage scoped (requirement_status).
+type coverage_mapping
+  relations
+    define organization: [organization]
+    define editor: [user] or admin from organization
+    define viewer: [user] or editor or member from organization
+
+# --- Operasyonel / scoped katman ---
+type control_instance
+  relations
+    define unit: [unit]
+    define definition: [control_definition]
+    define owner: [user]
+    define reviewer: [user] or manager from unit
+    define editor: [user] or owner
+    define viewer: [user] or editor or reviewer or member from unit
+
+type requirement_status
+  relations
+    define unit: [unit]
+    define owner: [user]
+    define reviewer: [user] or manager from unit
+    define editor: [user] or owner
+    define viewer: [user] or editor or reviewer or member from unit
+
+type risk
+  relations
+    define unit: [unit]
+    define owner: [user]
+    define editor: [user] or owner or manager from unit
+    define viewer: [user] or editor or member from unit
+
+type kpi
+  relations
+    define unit: [unit]
+    define owner: [user]
+    define editor: [user] or owner or manager from unit
+    define viewer: [user] or editor or member from unit
+
+type policy
+  relations
+    define unit: [unit]
+    define owner: [user]
+    define editor: [user] or owner or manager from unit
+    define viewer: [user] or editor or member from unit
+
+type rule
+  relations
+    define unit: [unit]
+    define editor: [user] or manager from unit
+    define viewer: [user] or editor or member from unit
+
+type task
+  relations
+    define unit: [unit]
+    define owner: [user]
+    define watcher: [user]
+    define approver: [user] or manager from unit
+    define editor: [user] or owner
+    define viewer: [user] or editor or watcher or approver or member from unit
+
+type assessment
+  relations
+    define unit: [unit]
+    define assessor: [user]
+    define editor: [user] or assessor or manager from unit
+    define viewer: [user] or editor or member from unit
+
+# --- Evidence: immutable object + binding + custody relations (editor YOK) ---
+type evidence_object
+  relations
+    define unit: [unit]
+    define owner: [user]
+    define custodian: [user] or owner
+    define records_manager: [user] or manager from unit
+    define legal_hold_manager: [user] or manager from unit
+    define reviewer: [user] or manager from unit
+    define viewer: [user] or owner or custodian or reviewer or member from unit
+
+# evidence_binding = bu kanıtın bir control_instance/assessment/task/requirement_status'a
+# hangi scope'ta delil olduğu. Görünürlük hem evidence hem bağlandığı node'a tabi (Read Gateway).
+type evidence_binding
+  relations
+    define unit: [unit]
+    define evidence: [evidence_object]
+    define owner: [user]
+    define editor: [user] or owner or manager from unit
+    define viewer: [user] or editor or member from unit

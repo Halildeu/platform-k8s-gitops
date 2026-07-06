@@ -1,0 +1,26 @@
+# Fixture (FAIL) — RespectIgnoreDifferences=true + explicit
+# `/metadata/managedFields` and nested descendant `/metadata/managedFields/manager`.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fixture-fail-managed-fields
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://example.invalid/repo.git
+    targetRevision: main
+    path: kustomize/overlays/test
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-test
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /metadata/managedFields
+        - /metadata/managedFields/manager

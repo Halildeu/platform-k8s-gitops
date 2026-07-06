@@ -1,0 +1,24 @@
+# Faz 24 #182/#198 — audio-gateway direct-STT app-mTLS egress to platform-ai.
+# Narrow test-only allow: live-stt Denetim WireGuard endpoint, no generic 8243.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-audio-gateway-egress-live-stt-mtls
+  labels:
+    app.kubernetes.io/name: audio-gateway
+    app.kubernetes.io/part-of: platform
+    platform.acik.com/faz: "24"
+    platform.acik.com/issue: "platform-ai-182"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audio-gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.99.0.2/32
+      ports:
+        - protocol: TCP
+          port: 8243

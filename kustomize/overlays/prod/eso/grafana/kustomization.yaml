@@ -1,0 +1,14 @@
+# grafana ESO overlay — prod cluster (M7 T4.3.7 PR-1)
+# Codex 019e4ee2 plan-time AGREE absorb.
+#
+# **DEFER-AWARE**: grafana-notify-pg-secret ExternalSecret yaml içinde
+# data: [] empty (remoteRef comment-out). Operator activation chain
+# completion gerek (Vault seed + uncomment). See:
+# docs/runbooks/RB-grafana-notify-pg-datasource.md §3
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+resources:
+  - externalsecret-grafana-notify-pg.yaml

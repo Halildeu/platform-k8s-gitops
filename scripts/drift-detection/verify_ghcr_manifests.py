@@ -40,7 +40,6 @@ import urllib.error
 import urllib.request
 import json
 import base64
-import math
 from typing import Optional
 
 DIGEST_PATTERN = re.compile(
@@ -199,39 +198,35 @@ def main() -> int:
     # token-exchange fail is an unambiguous permission problem, not GC. MISSING
     # and AUTH_FAIL now count TOGETHER toward the ≥80% threshold.
     #
-    # 2026-05-18 fix (#821 follow-up, Codex 019e3f5b REVISE): the guard was
-    # `if missing and not network_fails and ...` — ONE transient GHCR timeout
-    # (NETWORK_FAIL) disabled the heuristic; control then fell through to
-    # `if missing: return 1` (which precedes the network branch) and produced
-    # a hard FALSE-RED while N cross-repo 404s were really just a packages:read
-    # gap. The `not network_fails` guard is removed so a transient timeout no
-    # longer disables the heuristic. NETWORK_FAIL is deliberately NOT added to
-    # the threshold count: only MISSING + AUTH_FAIL (the 404-class evidence)
-    # decide whether ≥80% is reached, so a timeout can never be the deciding
-    # vote that reclassifies an otherwise-suspicious missing-count — e.g.
-    # 7 MISSING + 1 NETWORK + 2 OK stays a hard fail (unverified 7 < threshold).
-    # `math.ceil` so the threshold is a true ≥80% (`int()` floored, e.g. 9→7).
+    # 2026-05-18 fix (#821 follow-up, Codex 019e3f5b REVISE): transient
+    # NETWORK_FAIL no longer disables the reclassification (historical —
+    # the ≥80% threshold this fixed was itself retired 2026-06-11, below).
     #
     # Operator follow-up: the PR-time verifier authenticates with THIS repo's
     # GITHUB_TOKEN, which cannot read cross-repo private GHCR packages
     # (platform-backend-*, platform-web-*). Until a cross-repo `read:packages`
     # PAT / GitHub App token secret is wired in (then GHCR_STRICT=true can
-    # restore hard-fail), near-all-unverified is reported as inconclusive WARN.
+    # restore hard-fail), 404s are reported as inconclusive WARN.
     # Live artifact truth: pod `imageID == desired digest` + the runtime drift
     # detector (catches a real GC'd digest within ~5min).
-    threshold = max(1, math.ceil(len(pairs) * 0.8))
-    unverified = len(missing) + len(auth_fails)
-    if missing and unverified >= threshold:
+    #
+    # 2026-06-11 fix (gitops#1447, Codex 019eb709 iter-5 AGREE): the previous
+    # ≥80%-unverified threshold heuristic was boundary-fragile — adding ONE new
+    # readable package (audio-gateway, created by this repo chain so its
+    # token CAN read it) pushed the OK count up, dropped unverified (10/13)
+    # below ceil(13*0.8)=11, and hard-failed on 10 live in-cluster digests
+    # (same run: prod 10/12 ≥ 10 → WARN/exit 0 — inconsistent by construction).
+    # Non-strict mode semantics are now aligned with the documented intent:
+    # a 404 with a token that cannot read cross-repo packages is NEVER a
+    # reliable "really deleted" signal, so MISSING is always reclassified as
+    # inconclusive in non-strict mode. GHCR_STRICT=true (with a cross-repo
+    # read:packages token) restores the hard-fail path below.
+    if missing and not strict:
         print()
-        if unverified == len(pairs):
-            print("[HEURISTIC] all digests unverified (404 / auth-fail) — cross-repo")
-            print("            packages:read missing (GITHUB_TOKEN scoped to this repo).")
-        else:
-            ok_count = len(pairs) - unverified
-            print(f"[HEURISTIC] {unverified}/{len(pairs)} digests unverified (≥80% threshold)")
-            print(f"            — {ok_count} OK likely current-repo same-org package(s);")
-            print(f"            cross-repo 404/auth-fail = packages:read missing.")
-        print("            Reclassifying MISSING as AUTH_FAIL (inconclusive, not real GC).")
+        print(f"[INCONCLUSIVE] {len(missing)}/{len(pairs)} manifest 404 with a token that")
+        print("               cannot read cross-repo private packages — treating as")
+        print("               AUTH_FAIL-equivalent (not real GC). GHCR_STRICT=true +")
+        print("               cross-repo read:packages PAT restores hard-fail.")
         auth_fails.extend(missing)
         missing = []
 

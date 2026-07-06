@@ -1,0 +1,174 @@
+# PrometheusRule — audit-retention-worker (Faz 24 PR-obs-02, gitops#1656, ADR-0042 §4).
+#
+# The worker is a run-once daily CronJob (base/apps/audit-retention-worker,
+# schedule "0 3 * * *"), so its in-process Micrometer counters are EPHEMERAL —
+# Prometheus can't scrape a ~30s job. These alerts therefore key on DURABLE
+# signals only: (a) DB state surfaced by audit-archive-exporter (postgres_exporter
+# custom queries over audit_archive.*), and (b) the CronJob/Job lifecycle from
+# kube-state-metrics. Codex plan-time consult 019ed602 (REVISE→absorbed).
+#
+# Design discipline (mirrors stt-pipeline-rule.yaml):
+#  - NO absent(): base/monitoring applies to BOTH clusters. The exporter + worker
+#    + their series exist ONLY in k3d-test (test-only until the ADR-0042 §5 prod
+#    gate), so every expr below is naturally inert in prod (no series → no alert,
+#    no cross-cluster false-positive).
+#  - lag keys on audit_archive_state_lag_seconds (ingested_at-aware, contiguous-
+#    prefix faithful — see configmap-queries.yaml); the stale-cursor alert was
+#    DROPPED (cursor_age is meaningless when idle, Codex 019ed602 Must-Fix 2).
+#  - thresholds are initial values (daily schedule + margin); calibrate after the
+#    first real cool-down/archive cycles are observed (annotation note).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: audit-retention-worker
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack   # Prom Operator ruleSelector
+spec:
+  groups:
+    - name: audit-archive.lag
+      interval: 1m
+      rules:
+        # The oldest contiguous-next-by-seq row has been archivable-and-present
+        # (cold past 90d AND ingested) yet unarchived for > 26h. Daily 03:00 run +
+        # margin → a healthy pipeline keeps this near 0 (rows are archived the
+        # first night after they cool). >26h ⇒ the worker fell behind / isn't
+        # advancing the cursor over eligible work.
+        - alert: AuditArchiveRetentionLagHigh
+          expr: audit_archive_state_lag_seconds > (26 * 3600)
+          for: 30m
+          labels:
+            severity: warning
+            component: audit-retention-worker
+            slo_class: retention-lag
+          annotations:
+            summary: "audit-archive retention lag > 26h"
+            description: "En eski arşivlenebilir (90g soğumuş + DB'ye düşmüş) audit_event satırı {{ $value | humanizeDuration }} arşivlenmeden bekliyor (cursor ilerlemiyor). Günlük 03:00 worker run + marj eşiği. Worker Job/CronJob durumunu kontrol et. Initial pre-prod threshold."
+            runbook_url: "docs/runbooks/RB-faz24-audit-archive-exporter.md"
+
+        # Two-plus missed daily windows worth of eligible backlog — escalate.
+        - alert: AuditArchiveRetentionLagCritical
+          expr: audit_archive_state_lag_seconds > (50 * 3600)
+          for: 30m
+          labels:
+            severity: critical
+            component: audit-retention-worker
+            slo_class: retention-lag
+          annotations:
+            summary: "audit-archive retention lag > 50h (>=2 missed windows)"
+            description: "En eski arşivlenebilir audit_event satırı {{ $value | humanizeDuration }} arşivlenmedi — 2+ günlük worker penceresi kaçtı. 7yıl WORM retention SLA riski. Worker fail-closed (chain-break/anomaly) veya hiç koşmuyor olabilir; Job loglarına bak."
+            runbook_url: "docs/runbooks/RB-faz24-audit-archive-exporter.md"
+
+    - name: audit-archive.worker
+      interval: 1m
+      rules:
+        # Fail-closed signal: a ChainBreakException / ArchiveAnomalyException /
+        # error leaves the cursor frozen and the Job exits non-zero. Owner-join
+        # (NOT a job_name prefix regex — Codex 019ed602 Must-Fix 5) so only Jobs
+        # owned by the audit-retention-worker CronJob count, never ad-hoc Jobs.
+        # NOTE: ttlSecondsAfterFinished=86400 can GC a failed Job after 24h — this
+        # is a timely alert, not a permanent forensic record (use Job logs/ledger).
+        - alert: AuditRetentionWorkerJobFailed
+          expr: |
+            kube_job_status_failed{namespace="platform-test"} > 0
+            and on(namespace, job_name)
+            kube_job_owner{namespace="platform-test", owner_kind="CronJob", owner_name="audit-retention-worker", owner_is_controller="true"} == 1
+          for: 5m
+          labels:
+            severity: critical
+            component: audit-retention-worker
+            slo_class: fail-closed
+          annotations:
+            summary: "audit-retention-worker Job FAILED (fail-closed)"
+            description: "audit-retention-worker CronJob'unun bir Job'u başarısız (kube_job_status_failed>0). Fail-closed tasarım: chain-break/anomaly/hata → cursor donar, arşiv yazılmaz, Job non-zero çıkar. Job loglarını incele (chain-break tenant? S3 anomaly? DB?). Cursor bilerek ilerlemedi — düzeltilene kadar arşiv durur."
+            runbook_url: "docs/runbooks/RB-faz24-audit-archive-exporter.md"
+
+        # The CronJob hasn't created a Job in > 26h after having scheduled at least
+        # once: suspended, or schedule stopped. last_schedule_time advances on Job
+        # CREATION (even a failing one), so this catches "not even trying", distinct
+        # from "tried and failed" (above). ABSENT-FREE TRADEOFF (Codex 019ed602 P2):
+        # last_schedule_time is ABSENT for a never-scheduled OR deleted CronJob, so
+        # this alert intentionally does NOT fire for those (no absent() → prod inert);
+        # a deleted CronJob is caught by GitOps/ArgoCD drift, not here.
+        - alert: AuditRetentionCronJobNotScheduling
+          expr: |
+            time() - kube_cronjob_status_last_schedule_time{namespace="platform-test", cronjob="audit-retention-worker"} > (26 * 3600)
+          for: 15m
+          labels:
+            severity: warning
+            component: audit-retention-worker
+            slo_class: scheduling
+          annotations:
+            summary: "audit-retention-worker CronJob 26h+ schedule etmedi"
+            description: "audit-retention-worker en son {{ $value | humanizeDuration }} önce Job schedule etti (>26h, günlük cadence kaçtı). CronJob suspend edilmiş veya en az bir kez schedule ettikten sonra durmuş olabilir (silinmiş/hiç-schedule-edilmemiş CronJob bu alert'i tetiklemez — absent-free; GitOps drift yakalar). kubectl -n platform-test get cronjob audit-retention-worker."
+            runbook_url: "docs/runbooks/RB-faz24-audit-archive-exporter.md"
+
+    - name: audit-archive.ledger
+      interval: 1m
+      rules:
+        # DB-invariant guard (NOT the primary chain-break signal — a chain break
+        # leaves NO ledger row + a failed Job). The worker inserts a ledger row
+        # ONLY after S3 verify, inside one atomic txn (ADR-0042 D4.7), so a row
+        # with verify_status != VERIFIED means corruption / manual tampering /
+        # future-code-regression. NULL-safe via IS DISTINCT FROM in the query.
+        - alert: AuditArchiveLedgerUnverified
+          expr: audit_archive_ledger_unverified_rows > 0
+          for: 10m
+          labels:
+            severity: critical
+            component: audit-retention-worker
+            slo_class: integrity
+          annotations:
+            summary: "audit-archive ledger satırı VERIFIED değil"
+            description: "{{ $value }} audit_archive_ledger satırı verify_status != 'VERIFIED'. Normal akışta beklenmez (ledger insert S3-verify sonrası atomik). DB invariant ihlali / manuel müdahale / kod regresyonu sinyali — ledger satırını ve ilgili S3 object-version'ı incele."
+            runbook_url: "docs/runbooks/RB-faz24-audit-archive-exporter.md"
+
+    - name: audit-archive.exporter
+      interval: 1m
+      rules:
+        # Visibility loss (NOT data loss): the metrics endpoint is unreachable, so
+        # lag/ledger blindness — don't stay blind long.
+        - alert: AuditArchiveExporterDown
+          expr: up{job="audit-archive-exporter"} == 0
+          for: 10m
+          labels:
+            severity: warning
+            component: audit-archive-exporter
+            slo_class: observability
+          annotations:
+            summary: "audit-archive-exporter scrape down (görünürlük kaybı)"
+            description: "audit-archive-exporter 10dk'dır scrape edilemiyor — retention lag/ledger körlüğü. Pod durumunu kontrol et (kubectl -n platform-test get pod -l app.kubernetes.io/name=audit-archive-exporter). Veri kaybı değil, görünürlük kaybı."
+            runbook_url: "docs/runbooks/RB-faz24-audit-archive-exporter.md"
+
+        # Exporter up but cannot reach/authenticate to PG (pg_up=0). EXPECTED until
+        # the operator seeds the dedicated read role + Vault (kv/platform/
+        # audit-archive-exporter) AND the worker's first Flyway creates audit_archive.* —
+        # see the runbook. Treat as honest "not-yet-wired", not green readiness.
+        - alert: AuditArchiveExporterDBUnreachable
+          expr: pg_up{job="audit-archive-exporter"} == 0
+          for: 15m
+          labels:
+            severity: warning
+            component: audit-archive-exporter
+            slo_class: observability
+          annotations:
+            summary: "audit-archive-exporter PG'ye bağlanamıyor (pg_up=0)"
+            description: "Exporter ayakta ama Postgres'e bağlanamıyor/yetkilenemiyor (pg_up=0, 15dk). Operatör dedicated read role audit_archive_exporter + Vault seed'i tamamlamadan ve worker ilk Flyway'i audit_archive.* tablolarını oluşturmadan önce bu BEKLENİR (RB-faz24-audit-archive-exporter.md). Seed sonrası sürerse cred/role/NetPol kontrol et."
+            runbook_url: "docs/runbooks/RB-faz24-audit-archive-exporter.md"
+
+        # Connected (pg_up=1) but a custom query ERRORED (grant/schema/query) →
+        # audit_archive_* series go missing and the lag/ledger alerts silently fall
+        # blind. pg_up==0 above does NOT cover this (Codex 019ed602 post-impl P1).
+        - alert: AuditArchiveExporterScrapeError
+          expr: pg_exporter_last_scrape_error{job="audit-archive-exporter"} != 0
+          for: 15m
+          labels:
+            severity: warning
+            component: audit-archive-exporter
+            slo_class: observability
+          annotations:
+            summary: "audit-archive-exporter custom-query scrape error"
+            description: "Exporter PG'ye bağlı (pg_up=1) ama bir custom query hata veriyor (pg_exporter_last_scrape_error!=0, 15dk) → audit_archive_state_* / audit_archive_ledger_* serileri eksik kalır ve lag/ledger alert'leri SESSİZ düşer. Operatör read role + grant + worker ilk Flyway (audit_archive.* tabloları) tamamlanmadan önce BEKLENİR; activation sonrası sürerse blocker (grant/şema/query hatası) — RB-faz24-audit-archive-exporter.md."
+            runbook_url: "docs/runbooks/RB-faz24-audit-archive-exporter.md"

@@ -1,0 +1,75 @@
+# Activation patch — Faz 22.6 #548 strong device-key broker.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: endpoint-admin-remote-bridge
+spec:
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        faz22-6.acik.io/ek-intermediate-bundle: "intel-adl-20260702-01"
+    spec:
+      containers:
+        - name: endpoint-admin-remote-bridge
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: 750m
+              memory: 768Mi
+          # The strong verifier path performs the full endpoint-admin bootstrap
+          # plus TPM/device-key verifier wiring. Live A1 evidence on 2026-06-28
+          # showed the inherited 150s/500m broker startup window can restart
+          # the JVM before management:8081 binds under test-cluster pressure.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 40
+          env:
+            - name: REMOTE_BRIDGE_ENABLED
+              value: "true"
+            - name: ENDPOINT_ADMIN_PRIMARY_PLANE_ENABLED
+              value: "false"
+            - name: REMOTE_BRIDGE_BIND_HOST
+              value: "0.0.0.0"
+            - name: REMOTE_BRIDGE_TLS_CERT_CHAIN_PEM_PATH
+              value: /etc/remote-bridge/tls/server-chain.pem
+            - name: REMOTE_BRIDGE_TLS_PRIVATE_KEY_PEM_PATH
+              value: /etc/remote-bridge/tls/server-key.pem
+            - name: REMOTE_BRIDGE_TLS_CLIENT_CA_PEM_PATH
+              value: /etc/remote-bridge/tls/device-ca.pem
+            - name: REMOTE_BRIDGE_PERMIT_SIGNING_KEY_PEM_PATH
+              value: /etc/remote-bridge/signer/permit-signing.key
+            - name: REMOTE_BRIDGE_RECORDING_ANCHOR_KEY_PATH
+              value: /etc/remote-bridge/signer/recording-anchor.key
+          envFrom:
+            - configMapRef:
+                name: endpoint-admin-remote-bridge-config-device-key
+            - secretRef:
+                name: endpoint-admin-remote-bridge-secrets-device-key
+                optional: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: bridge-tls
+              mountPath: /etc/remote-bridge/tls
+              readOnly: true
+            - name: bridge-signer
+              mountPath: /etc/remote-bridge/signer
+              readOnly: true
+      volumes:
+        - name: bridge-tls
+          secret:
+            secretName: endpoint-admin-remote-bridge-tls-device-key
+            defaultMode: 0440
+        - name: bridge-signer
+          secret:
+            secretName: endpoint-admin-remote-bridge-signer-device-key
+            defaultMode: 0440

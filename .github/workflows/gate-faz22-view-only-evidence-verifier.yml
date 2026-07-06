@@ -1,0 +1,112 @@
+name: Gate Faz 22.6 VIEW_ONLY evidence verifier
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-view-only-evidence-verifier.yml'
+      - '.github/workflows/faz22-6-denetim-ssh-key-evidence-ingest.yml'
+      - '.github/workflows/faz22-6-denetim-ssh-preflight.yml'
+      - '.github/workflows/faz22-6-view-only-attended-smoke.yml'
+      - '.github/workflows/faz22-6-view-only-engineering-evidence-package.yml'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh'
+      - 'scripts/faz22-remote-ops/verify-denetim-ssh-key-evidence.py'
+      - 'scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh'
+      - 'scripts/test/faz22-6-acceptance-package-workflows-static.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_denetim_ssh_key_evidence_verifier.py'
+      - 'tests/faz22_remote_ops/test_faz22_6_denetim_ssh_preflight_workflow.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_attended_smoke_runner.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gate-faz22-view-only-evidence-verifier.yml'
+      - '.github/workflows/faz22-6-denetim-ssh-key-evidence-ingest.yml'
+      - '.github/workflows/faz22-6-denetim-ssh-preflight.yml'
+      - '.github/workflows/faz22-6-view-only-attended-smoke.yml'
+      - '.github/workflows/faz22-6-view-only-engineering-evidence-package.yml'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh'
+      - 'scripts/faz22-remote-ops/verify-denetim-ssh-key-evidence.py'
+      - 'scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh'
+      - 'scripts/test/faz22-6-acceptance-package-workflows-static.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_denetim_ssh_key_evidence_verifier.py'
+      - 'tests/faz22_remote_ops/test_faz22_6_denetim_ssh_preflight_workflow.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_attended_smoke_runner.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-faz22-view-only-evidence-verifier-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier-regression:
+    name: Verify VIEW_ONLY evidence manifest guard and package generator
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Parse completion audit and verifier test
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
+            scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh \
+            scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh \
+            scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh \
+            scripts/test/faz22-6-acceptance-package-workflows-static.sh \
+            tests/faz22_remote_ops/test_faz22_6_denetim_ssh_preflight_workflow.sh \
+            tests/faz22_remote_ops/test_faz22_6_view_only_attended_smoke_runner.sh \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh \
+            tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh
+          python3 -m py_compile scripts/faz22-remote-ops/verify-denetim-ssh-key-evidence.py
+
+      - name: Run Denetim SSH preflight workflow regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_denetim_ssh_preflight_workflow.sh
+
+      - name: Run Denetim SSH key evidence verifier regression test
+        run: |
+          set -euo pipefail
+          python3 -m unittest tests.faz22_remote_ops.test_faz22_6_denetim_ssh_key_evidence_verifier
+
+      - name: Run VIEW_ONLY attended smoke runner regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_view_only_attended_smoke_runner.sh
+
+      - name: Run VIEW_ONLY evidence verifier regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh
+
+      - name: Run VIEW_ONLY evidence package generator regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh
+
+      - name: Run VIEW_ONLY split-gate (engineering vs KVKK) regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh

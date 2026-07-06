@@ -1,0 +1,139 @@
+name: Gate Faz 22.6 completion decision package
+
+on:
+  workflow_dispatch:
+    inputs:
+      audit_run_id:
+        description: "Faz 22.6 Live Audit run id that uploaded faz22-6-completion-audit"
+        required: true
+        type: string
+      prefix:
+        description: "Output package filename prefix"
+        required: false
+        default: "faz22-6-completion-decision-package"
+        type: string
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-completion-decision-package.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gate-faz22-completion-decision-package.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gate-faz22-completion-decision-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  decision-package-regression:
+    name: Verify completion decision package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse decision package script and test
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh \
+            scripts/faz22-remote-ops/endpoint-agent-release-policy.sh \
+            tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh
+
+      - name: Run completion decision package regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh
+
+  decision-package-from-live-audit:
+    name: Build package from live audit artifact
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AUDIT_RUN_ID: ${{ inputs.audit_run_id }}
+      PACKAGE_PREFIX: ${{ inputs.prefix }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+          case "$AUDIT_RUN_ID" in
+            ""|*[!0-9]*)
+              echo "::error::audit_run_id must be a numeric GitHub Actions run id"
+              exit 1
+              ;;
+          esac
+          case "$PACKAGE_PREFIX" in
+            ""|*[!A-Za-z0-9._-]*)
+              echo "::error::prefix must contain only A-Z, a-z, 0-9, dot, underscore, or dash"
+              exit 1
+              ;;
+          esac
+
+      - name: Download live audit artifact
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/faz22-audit"
+          gh run download "$AUDIT_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name faz22-6-completion-audit \
+            --dir "$RUNNER_TEMP/faz22-audit"
+          test -s "$RUNNER_TEMP/faz22-audit/faz22-6-completion-audit.txt"
+
+      - name: Build read-only decision package
+        run: |
+          set -euo pipefail
+          scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh \
+            --audit-file "$RUNNER_TEMP/faz22-audit/faz22-6-completion-audit.txt" \
+            --output-dir "$RUNNER_TEMP/faz22-decision-package" \
+            --prefix "$PACKAGE_PREFIX"
+
+      - name: Write package summary
+        if: always()
+        run: |
+          set -euo pipefail
+          package_md="$RUNNER_TEMP/faz22-decision-package/$PACKAGE_PREFIX.md"
+          {
+            echo "## Faz 22.6 completion decision package"
+            echo
+            echo "- Source live audit run: \`$AUDIT_RUN_ID\`"
+            echo "- Boundary: read-only; no approval, marker write, GitHub mutation, Kubernetes mutation, endpoint contact, release mutation, or secret access."
+            echo
+            if [ -s "$package_md" ]; then
+              sed -n '1,220p' "$package_md"
+            else
+              echo "Package markdown was not generated."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload decision package
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz22-6-completion-decision-package-${{ inputs.audit_run_id }}
+          path: ${{ runner.temp }}/faz22-decision-package/
+          if-no-files-found: error
+          retention-days: 14

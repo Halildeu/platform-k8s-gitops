@@ -1,0 +1,65 @@
+# endpoint-admin-remote-bridge-device-key ACTIVATION overlay — Faz 22.6 #548 A1
+#
+# OWNER-GATED and deliberately outside the Argo root. This overlay stands up a
+# separate broker for the #548 strong hardware-attestation run. It must never
+# replace or mutate the existing denetim pilot broker, which remains on
+# MACHINE_CERT_ENROLLMENT for the bounded product-channel pilot.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-test
+nameSuffix: -device-key
+
+resources:
+  - ../../../../base/apps/endpoint-admin-remote-bridge
+  - externalsecret.yaml
+  - netpol.yaml
+
+patches:
+  - path: identity-patch.yaml
+  - path: configmap-device-key-patch.yaml
+  - path: patch-activate.yaml
+  - path: strategy-patch.yaml
+  - path: service-patch.yaml
+
+images:
+  # Immutable backend image carrying the #548 device-key challenge issuance path.
+  # 2026-07-01 sync: backend #785 merge 0fe6a1a8 / image build run 28552448079
+  # preserves the #548 device-key path from the prior d0911f416 image and adds
+  # remote_access_bridge_control_streams_connected for live channel evidence.
+  # 2026-07-02 sync: backend #786 merge e22c08b5 / image build run 28558654307
+  # adds device-bound endpoint enrollment token support required before the
+  # live TPM run can bind acceptance evidence to AgentPC2 or SRB-AIDENETIMPC.
+  # 2026-07-02 sync: backend branch codex/faz226-548-rootcause commit 6294cd8e
+  # / image build run 28614019890 fixes device-key challenge/decision WORM
+  # audit recording by using non-empty SHA-256 content hashes and adds the
+  # TPM binding least-privilege read grant.
+  # 2026-07-02 sync: same backend branch commit 47f7c403 / image build run
+  # 28615452456 adds redacted EK-chain diagnostics for the live
+  # ek-chain-untrusted root-cause pass without weakening device trust.
+  # 2026-07-02 sync: same backend branch commit d5bed30d / image build run
+  # 28616008882 includes chain subject/issuer summaries for exact manufacturer
+  # root/intermediate reconciliation.
+  # 2026-07-03 Faz 24 meeting AI runtime co-bump: aligned with backend main
+  # merge 389b3bc image build run 28625506330 after the primary test overlay
+  # moved endpoint-admin-service to sha-12f4f97. Activation remains owner-gated
+  # and this does not add acceptance markers.
+  # 2026-07-03 Faz 22.6 #1580 cert-channel co-bump: aligned with the primary
+  # endpoint-admin digest from backend #793 / image build run 28640622647.
+  # Activation remains owner-gated; #1580 still requires live VIEW_ONLY evidence.
+  # 2026-07-03 Faz 22.6 #1580 V78/V79 repair co-bump: aligned with backend
+  # #794 / image build run 28642329661 after #793 reused the live-applied V78
+  # migration number. Activation remains owner-gated; staging-sw/WG is only a
+  # server/debug/bootstrap path and is not product acceptance evidence.
+  # 2026-07-03 Faz 22.6 #1580 session-duress source co-bump: aligned with
+  # backend #796 / image build run 28681672419 after primary test moved
+  # endpoint-admin-service to the SESSION_SIGNAL-capable image. Activation
+  # remains owner-gated; live VIEW_ONLY evidence and KVKK signoff are still
+  # separate acceptance inputs.
+  # 2026-07-03 Faz 22.6 #1580 WORM recorder diagnostic hash co-bump: aligned
+  # with backend #797 / image build run 28683451172 after primary test moved
+  # endpoint-admin-service to the recorder-safe diagnostic audit image.
+  # Activation remains owner-gated; this prepares the live attended smoke retry.
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
+    newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
+    digest: sha256:a5cf602f9936d31f96e8006f4221b46317a1422895b5a8585e16bb8533de1e44

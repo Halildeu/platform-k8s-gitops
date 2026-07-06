@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/runtime-artifact-ledger-v1.schema.json",
+  "title": "Runtime Artifact Ledger v1 — ADR-0023 PR-6",
+  "description": "Per-artifact ledger for NON-IMAGE artifacts (OpenFGA models, future kinds). Sibling to schema/promotion-ledger-v1.schema.json which is image-only. Content-digest-keyed; env-specific runtime IDs (e.g. OpenFGA ULIDs) are tracked per-promotion-block, not at top level.\n\nCanonical digest algorithm (NORMATIVE):\n  artifact_content_digest = 'sha256:' + hex(sha256(RFC8785_canonicalize(artifact_json)))\n\nFor artifact_kind=openfga-model, artifact_json is the inner authorization model object as returned by OpenFGA's GET /stores/{store}/authorization-models/{id} with the wrapper stripped. RFC 8785 (JSON Canonicalization Scheme) ensures whitespace/key-order/number-formatting differences across stores produce the same digest for byte-equivalent canonical content. See runtime-artifacts/README.md for the worked example.\n\nFile path convention: runtime-artifacts/<artifact_kind>/<digest-without-sha256:-prefix>.json — the validator enforces filename ↔ artifact_content_digest match.",
+  "type": "object",
+  "required": ["schema_version", "artifact_kind", "artifact_content_digest", "source", "promotion", "metadata", "audit"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "artifact_kind": {
+      "type": "string",
+      "enum": ["openfga-model"],
+      "description": "Add new kinds together with: (a) a matching $defs.evidence_<kind>, (b) validator format hooks per-kind, (c) positive+negative test fixtures, (d) README extension section."
+    },
+    "artifact_content_digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "required": ["kind", "canonical_source_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["openfga-server"]
+        },
+        "canonical_source_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where the canonical (env-independent) artifact JSON was fetched from for digest calculation. Audit/provenance only; the digest itself is env-independent. Example: 'openfga://platform-test/authorization-models/01JX...'."
+        }
+      }
+    },
+    "runtime_selector": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["selector_kind", "vault_path", "field"],
+          "properties": {
+            "selector_kind": { "type": "string", "enum": ["vault"] },
+            "vault_path": { "type": "string", "minLength": 1 },
+            "field": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["selector_kind", "store_ref"],
+          "properties": {
+            "selector_kind": { "type": "string", "enum": ["openfga-store-direct"] },
+            "store_ref": { "type": "string", "minLength": 1 },
+            "model_id_field": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "promotion": {
+      "type": "object",
+      "required": ["test", "prod"],
+      "additionalProperties": false,
+      "properties": {
+        "test": { "$ref": "#/$defs/promotion_block" },
+        "prod": { "$ref": "#/$defs/promotion_block" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["rollback_safe"],
+      "additionalProperties": false,
+      "properties": {
+        "previous_artifact_content_digest": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "rollback_safe": { "type": "boolean" },
+        "rollback_runbook_ref": { "type": ["string", "null"] },
+        "backward_compatible_until": { "type": ["string", "null"], "format": "date-time" },
+        "migration_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": ["implementer", "reviewer", "created_at", "approval_pathway"],
+      "additionalProperties": false,
+      "properties": {
+        "implementer": { "type": "string", "minLength": 1 },
+        "reviewer": { "type": "string", "minLength": 1 },
+        "codex_thread_id": { "type": ["string", "null"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "approval_pathway": {
+          "type": "string",
+          "enum": ["cross-ai-agree", "owner-approved", "emergency-bypass", "historical-backfill"]
+        },
+        "bypass_justification": { "type": "string", "minLength": 20 },
+        "backfill": { "type": "boolean", "default": false },
+        "imported_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "approval_pathway": { "const": "emergency-bypass" } }, "required": ["approval_pathway"] },
+          "then": { "required": ["bypass_justification"] }
+        },
+        {
+          "if": { "properties": { "approval_pathway": { "const": "historical-backfill" } }, "required": ["approval_pathway"] },
+          "then": {
+            "required": ["backfill", "imported_at"],
+            "properties": {
+              "backfill": { "const": true },
+              "imported_at": { "type": "string" }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "promotion_block": {
+      "type": "object",
+      "required": ["status", "method", "store_ref", "evidence_completeness", "source_docs"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "verified", "promoted", "rolled-back"]
+        },
+        "method": {
+          "type": "string",
+          "enum": ["pr-promotion", "manual-prod-migration", "historical-backfill"]
+        },
+        "store_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Env-specific runtime store (e.g. 'platform-test', 'platform-prod', or OpenFGA store UUID). Distinct from top-level source.canonical_source_ref which is digest-provenance only."
+        },
+        "verified_at": { "type": ["string", "null"], "format": "date-time" },
+        "promoted_at": { "type": ["string", "null"], "format": "date-time" },
+        "verified_by_pr": { "type": ["integer", "null"], "minimum": 1 },
+        "promoted_by_pr": { "type": ["integer", "null"], "minimum": 1 },
+        "model_id_env": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Env-specific OpenFGA ULID (Crockford base32, 26 chars, no I/L/O/U). Test and prod stores assign different ULIDs for the same canonical artifact. Null while status=pending."
+        },
+        "evidence": { "$ref": "#/$defs/evidence_openfga_model" },
+        "evidence_completeness": {
+          "type": "string",
+          "enum": ["complete", "partial-import", "unverified"]
+        },
+        "source_docs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "pending" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "model_id_env": { "type": "null" },
+              "evidence": { "type": "null" },
+              "evidence_completeness": { "const": "unverified" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["verified", "promoted"] } }, "required": ["status"] },
+          "then": {
+            "required": ["model_id_env", "evidence"],
+            "properties": {
+              "model_id_env": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+              "evidence": { "type": "object" },
+              "source_docs": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "verified" } }, "required": ["status"] },
+          "then": {
+            "required": ["verified_at"],
+            "properties": { "verified_at": { "type": "string" } }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "promoted" } }, "required": ["status"] },
+          "then": {
+            "required": ["verified_at", "promoted_at"],
+            "properties": {
+              "verified_at": { "type": "string" },
+              "promoted_at": { "type": "string" }
+            }
+          }
+        }
+      ]
+    },
+    "evidence_openfga_model": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required_types_present", "type_count", "allow_proof", "deny_proof"],
+          "properties": {
+            "required_types_present": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Authorization model types verified present in the live store (e.g. ['user', 'organization', 'report_group'])."
+            },
+            "type_count": { "type": "integer", "minimum": 1 },
+            "tuple_backfill_count": { "type": ["integer", "null"], "minimum": 0 },
+            "list_objects_count": { "type": ["integer", "null"], "minimum": 0 },
+            "allow_proof": { "$ref": "#/$defs/openfga_check" },
+            "deny_proof": { "$ref": "#/$defs/openfga_check" }
+          }
+        }
+      ]
+    },
+    "openfga_check": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["user", "relation", "object", "expected"],
+      "properties": {
+        "user": { "type": "string", "minLength": 1 },
+        "relation": { "type": "string", "minLength": 1 },
+        "object": { "type": "string", "minLength": 1 },
+        "expected": { "type": "string", "enum": ["allow", "deny"] }
+      }
+    }
+  }
+}

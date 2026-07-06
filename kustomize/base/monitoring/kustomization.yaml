@@ -19,8 +19,19 @@ resources:
   - backup-freshness-rule.yaml    # Codex iter-8 day-2 ek — backup_last_success metric + 5 alert
   - dr-drill-rule.yaml            # Session 28 paralel cleanup (c) — dr_drill_last_run_* metric + 4 alert (PLAN.md D23 quarterly)
   - recording-rules.yaml          # Pre-compute expensive PromQL (Grafana + alert hızlandırma)
+  - cardinality-recording-rules.yaml  # R16 PR1 (Codex 019e4448) — cardinality observability; topk by __name__/job + total gauge (no alert, that's PR2 after budget chosen)
+  - tempo-health-rule.yaml            # R11 PR1 (Codex 019e4448) — Tempo OTLP collector 2 alerts (TempoDown, TempoOTLPIngestErrors); WAL alert deferred to PR2/PR3 after live metric inventory
+  - tempo-servicemonitor.yaml         # R11 PR1 follow-up — ServiceMonitor for Tempo (Helm release deploys svc but no SM; surfaced by TempoDown=pending on first apply)
   - api-gateway-slo-rule.yaml     # iter-49 B.2 — api-gateway SLO warning rules (4 alert, dev-observable)
   - notify-dlq-slo-rule.yaml      # Step B.4 (Codex 019e0892 + 019e094a iter-1) — notify DLQ SLO + true multi-window burn rate alerts (4 alert, 18 recording rules incl. 5m/30m short windows, 99.5% target, 28d window, slow `unless` fast suppression)
+  # Faz 23 M8 PR-1 D (Codex 019e8c24 AGREE order D→B→A→C) — M7 v1 30-day
+  # stable observation truth surface. Recording rule emits stable_30d
+  # boolean (success_rate + burn-clean + alert-clean + observation-present);
+  # alert pair detects regression + stable-window-ready. OBSERVATION-ONLY:
+  # does NOT retroactively shorten the 30-day clock or convert M7 to green
+  # before 2026-06-22+ with clean evidence (docs/notify/milestones.md §M8).
+  - notify-m7-stable-recording-rule.yaml
+  - notify-m7-stable-alert-rule.yaml
   - rollout-replicaset-crash-rule.yaml  # Codex 019e256f PR-4 — KubeDeploymentRolloutStuck + KubeReplicaSetSplit + KubePodCrashLooping (continuous cluster alerting for drift gate observation layer)
   - rbac-least-privilege-rule.yaml      # prod-deploy PR-3E (Codex 019e3a40) — k8s API 403/Forbidden proxy-telemetri: KubeAPIForbiddenMutatingRequest + KubeAPIForbiddenRequestSpike
   # Ops-B core common rules (Codex 019e26c5 + 019e2772 iter-4 split):
@@ -33,6 +44,40 @@ resources:
   # gelmedi (observability gap). 3 alert: BridgeDown / BridgeCrashLooping /
   # BridgeHealthzFail. Prom k8s API state scrape bridge'den bağımsız.
   - prometheusrule-alertmanager-bridge-self-watch.yaml
+  # Bridge GitHub Auth surveillance (BL-008-bridge follow-up — Codex 019e6fb5
+  # AGREE Yol C-prime). 3-layer verify gate Layer 3 (runtime). 3 alert:
+  # GHTokenExternalSecretNotReady / GHSecretAbsent / GitHubDeliveryFailing.
+  # Routing via direct-fallback SMTP (R9 path) — bridge'in kendisine bağımlı
+  # değil. Companion: scripts/verify-vault-paths.sh (Layer 1 + 2).
+  - prometheusrule-alertmanager-bridge-gh-auth.yaml
+  # DiD-2 (2026-05-21) — Defense-in-depth follow-up to PermissionProvider
+  # stale-token incident on ai.acik.com /settings/notifications. HTTP-level
+  # synthetic probe + 2 alerts (Failing / Stale). Browser-based stuck-UI
+  # detection (Playwright headless) is separate follow-up scope.
+  - prometheusrule-frontend-settings-notifications.yaml
+  # Faz 24 PR-obs-01b (gitops#1247, Codex 019ebacc iter-2 AGREE) — STT pipeline:
+  # 2 recording (consumer_present bool + group lag sum, `or vector(0)` guard'lı)
+  # + 7 alert (gateway down/5xx/p95, redis down, exporter down, backlog-without-
+  # consumer, pending-stuck). absent() bilinçli YOK (base prod'a da gider;
+  # remote_write onarımına kadar cross-cluster false-positive üretirdi).
+  # SttConsumerAbsent alert DEĞİL — recording (GPU host intermittent; info
+  # severity'si bile alarm-receiver-bridge'te GitHub issue üretir).
+  - stt-pipeline-rule.yaml
+  # Faz 24 PR-obs-02 (gitops#1656, ADR-0042 §4, Codex 019ed602) — audit-retention-worker
+  # DB-state alerts. The worker is a run-once daily CronJob → in-process counters are
+  # ephemeral; alert on DURABLE signals: audit_archive.* state (via audit-archive-exporter
+  # postgres_exporter) + kube-state-metrics Job/CronJob lifecycle. absent()-free → inert in
+  # prod (exporter/worker/series are test-only). 8 alerts: lag warn/crit, job-failed,
+  # cronjob-not-scheduling, ledger-unverified, exporter-down, db-unreachable, scrape-error.
+  - audit-retention-worker-rule.yaml
+  # Faz 24 PR-obs-03 (gitops#1660) — meeting-service + transcript-service. These two
+  # services were LIVE (1/1) but had NO ServiceMonitor → never scraped (no up{} series).
+  # This adds the scrape (base/apps/{meeting,transcript}-service/ops) + 8 alerts on the
+  # live Micrometer series: up==0 down (2), 5xx ratio w/ clamp_min+traffic-floor (2),
+  # HikariCP pending>0 pool-starvation (2), heap>90% (2). p95 deliberately OMITTED
+  # (percentiles-histogram disabled → no _bucket series → would be fake coverage).
+  # absent()-free → inert in prod (services D30-deferred → no Service → SM empty).
+  - meeting-transcript-rule.yaml
   - alertmanager-bridge           # Codex Sprint A follow-up — AlertManager → GitHub Issues bridge
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values
@@ -43,6 +88,13 @@ resources:
   - grafana-dashboards/jvm-db-hikari-dashboard.yaml     # Codex iter-7 day-2 4. dashboard
   - grafana-dashboards/api-gateway-slo-dashboard.yaml   # iter-49 B — api-gateway status code matrix + SLO candidate (Codex 019ddf43)
   - grafana-dashboards/notification-orchestrator-dashboard.yaml  # Step B.3 + B.3.2 (Codex 019e0892 + 019e0935 + 019e0bb6) — 7 rows, 15 panels (strict cutover + retention + queue/dispatch + DLQ + alert state + SLO burn rate)
+  - grafana-dashboards/notification-orchestrator-per-tenant-dashboard.yaml  # Faz 23.8 M7 T4.3 closure DoD — per-tenant ($tenant) view skeleton (8 panels: intent terminated / dispatch / eligibility blocks / WebPush / erasure SLA / AbuseGuard / filter status / Top 20 Templates PG); v1 system-wide, backend org_id Counter Tag retrofit M8 multi-tenant pre-req (R10)
+  # Faz 23.8 M7 T4.3.7 PR-1 — Grafana PG datasource provisioning (Codex 019e4ee2)
+  # Per-template analytics panel datasource (defer-aware activation; operator
+  # action chain — see RB-grafana-notify-pg-datasource.md). ConfigMap label
+  # grafana_datasource=1 → kube-prometheus-stack Grafana sidecar otomatik import.
+  - grafana-dashboards/stt-pipeline-dashboard.yaml  # Faz 24 PR-obs-01b (gitops#1246) — gateway + Redis Streams + live-stt(collapsed, scrape pending); seri adları canlı envanterden (lettuce summary → avg+max, p99 yok)
+  - grafana-datasources/
 
 # Kullanım:
 # Apply sadece S3 session'da (testai soak başlangıcı öncesi):

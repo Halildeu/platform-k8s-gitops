@@ -1,0 +1,21 @@
+# audit-archive-exporter ServiceMonitor — Faz 24 PR-obs-02 (#1656).
+# job label on scraped series = "audit-archive-exporter" (the SM name) →
+# alerts use up{job="audit-archive-exporter"} / pg_up{job="audit-archive-exporter"}.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: audit-archive-exporter
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit-archive-exporter
+  endpoints:
+    - port: http-metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - platform-test

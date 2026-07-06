@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-web",
+  "service": "frontend",
+  "git_sha": "80273b64342c439c7b946c3c5258e0fc980041f6",
+  "git_short_sha": "80273b64",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-web-frontend",
+    "digest": "sha256:2eee40a26a2ec96c67cc56928636f6b611a767134d2b8940af16742b6d40ff14",
+    "tag": "sha-80273b6",
+    "push_run_id": 27296396176,
+    "pushed_at": "2026-06-10T18:14:30Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-06-10T19:34:13Z",
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-06-10T19:34:13Z",
+          "details": "rollout=true pod=fe-variant-smoke-20260610193413-969563-7d9bf98c7d-2crv2 ready=True digest=match build_info_sha=match evidence_class=frontend-prod-variant-transient-smoke"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-06-10T19:34:13Z",
+          "details": "root=200 entry=/mf-entry-bootstrap-0.js:200 remote_entry=/remoteEntry.js:200 env_baking[bundle_js=5 forbidden_hit='none' host_ai.acik.com=true realm_serban=true] prod_probe[root=200 oidc_serban=200]",
+          "endpoints": [
+            "/",
+            "/build-info.json",
+            "/mf-entry-bootstrap-0.js",
+            "/remoteEntry.js"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "AMBER",
+          "checked_at": "2026-06-10T19:34:13Z",
+          "details": "frontend is a static SPA (jwt_validates:false, services.yaml) \u2014 no own JWT decoder, no OpenFGA/Zanzibar authz plane. Zanzibar tier not-applicable; AMBER is the honest non-GREEN verdict (ADR-0022).",
+          "allow_deny_synthetic": "SKIP"
+        }
+      },
+      "verified_at": "2026-06-10T19:34:13Z",
+      "candidate_pr": null,
+      "candidate_pr_status": "ready_for_review"
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:b85ca3898552deca5505090826ec82741dc6e3572774bf1a375b4ece69b47cda"
+  },
+  "audit": {
+    "created_at": "2026-06-10T19:34:13Z",
+    "last_updated_at": "2026-06-10T19:34:13Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-web/actions/runs/27296396176"
+  }
+}

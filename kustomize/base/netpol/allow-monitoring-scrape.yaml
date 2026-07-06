@@ -17,3 +17,7 @@ spec:
       ports:
         - protocol: TCP
           port: 8081     # management port (actuator ayrı — standart pattern)
+        - protocol: TCP
+          port: 9121     # redis-streams-exporter (Faz 24 PR-obs-01a, gitops#1247)
+        - protocol: TCP
+          port: 9187     # audit-archive-exporter (Faz 24 PR-obs-02, gitops#1656)

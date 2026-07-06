@@ -1,0 +1,56 @@
+name: Gate Faz 22.6 remote-bridge standard port
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-remote-bridge-standard-port.yml'
+      - 'config/**'
+      - 'docs/faz-22-software-deployment-plan.md'
+      - 'docs/runbooks/**'
+      - 'docs/state/current-state.md'
+      - 'kustomize/**'
+      - 'scripts/faz22-remote-ops/**'
+      - 'tests/faz22/**'
+      - 'tests/faz22_remote_ops/**'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gate-faz22-remote-bridge-standard-port.yml'
+      - 'config/**'
+      - 'docs/faz-22-software-deployment-plan.md'
+      - 'docs/runbooks/**'
+      - 'docs/state/current-state.md'
+      - 'kustomize/**'
+      - 'scripts/faz22-remote-ops/**'
+      - 'tests/faz22/**'
+      - 'tests/faz22_remote_ops/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-faz22-remote-bridge-standard-port-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  remote-bridge-standard-port:
+    name: remote-bridge-standard-port
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Parse guard scripts
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/faz22-remote-ops/check-remote-bridge-standard-port.sh \
+            tests/faz22_remote_ops/test_remote_bridge_standard_port.sh
+
+      - name: Run regression test
+        run: bash tests/faz22_remote_ops/test_remote_bridge_standard_port.sh
+
+      - name: Assert active Faz 22.6 surfaces use :443 only
+        run: scripts/faz22-remote-ops/check-remote-bridge-standard-port.sh

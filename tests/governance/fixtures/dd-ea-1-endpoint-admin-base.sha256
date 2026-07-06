@@ -1,4 +1,4 @@
 # DD-EA-1 baseline (kustomize render bytes sha256)
 # Source: kustomize/base/apps/endpoint-admin-service
 # Update: python3 scripts/governance/check_endpoint_admin_manifest_contract.py --update-baseline
-1a254befd41b54ba2d02ca4060a0de302dbd8f258ffd961be2b8442c77efcf5e
+7d3b2dd3cd43119ca5ce24b91c13542b6902838a5c75a3cbd1a4397a81d9c37d

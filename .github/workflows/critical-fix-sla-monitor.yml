@@ -1,0 +1,102 @@
+# DiD-1 (defense-in-depth follow-up, 2026-05-21):
+# Critical-fix prod-deploy SLA monitor.
+#
+# Scans this repo for PRs merged in the last 48h with label `critical-fix`
+# and verifies a `deploy-prod-gitops` workflow has produced a successful
+# run whose deployed revision is an ancestor of the PR merge commit. If
+# the merge age exceeds the SLA thresholds:
+#   - >=1h, no deploy success: posts a warning comment on the PR
+#     (idempotent — skipped if a previous warning is younger than 1h)
+#   - >=4h, no deploy success: opens / refreshes a tracking issue with
+#     label `critical-fix-sla-active` (idempotent — refreshes existing
+#     open issue with matching marker rather than creating duplicates)
+#
+# Why this exists: the 2026-05-21 PermissionProvider stale-token incident
+# took ~22 hours between PR #640 merge and prod LIVE because the lag was
+# only noticed when the user reported the symptom. This monitor surfaces
+# the same lag as an automated signal.
+#
+# Known limit (called out in PR body): deploy-prod-gitops uses
+# `workflow_dispatch` with a `revision` input that is not exposed as a
+# machine-readable field by `gh run view --json`. The script falls back
+# to grepping the workflow run log for `argocd app sync --revision <sha>`
+# or `Revision: <sha>` lines. A follow-up PR should add a machine-readable
+# `prod-sync-result.json` workflow artifact so the log-grep can retire.
+
+name: Critical-fix prod-deploy SLA monitor
+
+on:
+  schedule:
+    # Every 15 minutes. Cadence balances responsiveness (1h warn / 4h
+    # critical thresholds round naturally to multiples of 15m) against
+    # GitHub Actions free-tier minute budget (4 runs/h × 24h ≈ 96/day).
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Skip side effects (no PR comments, no issues, no labels created)"
+        type: boolean
+        default: false
+      critical_hours:
+        description: "Hours after which an SLA tracking issue is opened (default 4)"
+        type: string
+        default: "4"
+      warning_hours:
+        description: "Hours after which a PR warning comment is posted (default 1)"
+        type: string
+        default: "1"
+
+permissions:
+  # Read PR metadata (for `gh pr list --label critical-fix`).
+  contents: read
+  # Write to PR (for warning comment) + read PR view (for comment idempotency).
+  pull-requests: write
+  # Create/refresh SLA tracking issues + create the auto-managed label.
+  issues: write
+  # Read workflow run state (gh run list / gh run view --log).
+  actions: read
+
+# Single active run at a time — the script is idempotent but parallel runs
+# would race on issue creation. cron + workflow_dispatch can collide.
+concurrency:
+  group: critical-fix-sla-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: critical-fix-sla-monitor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: "Checkout full history (Codex 019e4946 iter-3 — fetch-depth: 0)"
+        # The script calls `git merge-base --is-ancestor <merge_sha> <revision>`
+        # which requires every candidate revision and every PR merge SHA to be
+        # present in the local git object database. Default `actions/checkout`
+        # is shallow (fetch-depth: 1) and would silently produce false-negative
+        # "not ancestor" results for older revisions.
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Run SLA monitor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ARGS=(--repo "${{ github.repository }}")
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            ARGS+=(--dry-run)
+          fi
+          if [[ -n "${{ inputs.critical_hours }}" ]]; then
+            ARGS+=(--critical-hours "${{ inputs.critical_hours }}")
+          fi
+          if [[ -n "${{ inputs.warning_hours }}" ]]; then
+            ARGS+=(--warning-hours "${{ inputs.warning_hours }}")
+          fi
+          echo "Args: ${ARGS[*]}"
+          python3 scripts/promotion/critical_fix_sla_monitor.py "${ARGS[@]}"

@@ -1,0 +1,53 @@
+# ServiceMonitor — Tempo OTLP collector (R11 PR1 follow-up)
+#
+# R11 PR1 (#890) acceptance applied `platform-tempo-health-rules` to the
+# test cluster. The `TempoDown` alert transitioned to `pending` state
+# immediately — the `up{job=~"tempo|tempo-.+"}` series did not exist
+# because Tempo had no ServiceMonitor in the cluster (a pre-existing
+# observability gap that the R11 alert correctly surfaced on the first
+# apply).
+#
+# This manifest closes that gap: the Tempo Helm release (tempo-1.24.4)
+# exposes a Prometheus metrics endpoint on port `tempo-prom-metrics`
+# (TCP 3200), and the Tempo Service is already in the `monitoring`
+# namespace. The ServiceMonitor below wires it into the
+# kube-prometheus-stack scrape set so `up{job="tempo"}` starts
+# publishing and the R11 alert transitions `pending` → `inactive` on
+# the next scrape cycle.
+#
+# Codex thread: 019e4448-e90a-7472-9e8c-d287c0fa7970 (R11 PR1 acceptance
+#   loop — discovery → fix; same-thread follow-up, no new design
+#   verdict required per the PR-A2-style "obvious correctness fix"
+#   guidance).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tempo
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    # Required by kube-prometheus-stack's serviceMonitorSelector
+    # (`matchLabels: { release: kube-prometheus-stack }`).
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  selector:
+    matchLabels:
+      # The Tempo Helm chart labels its Service with app.kubernetes.io/name=tempo.
+      # We deliberately do NOT match on the chart's release label so a
+      # Tempo chart name change does not silently break the scrape.
+      app.kubernetes.io/name: tempo
+  endpoints:
+    - port: tempo-prom-metrics
+      path: /metrics
+      # 60s default keeps cardinality budget conservative (R16 PR1
+      # showed control-plane scrape is already 95% of total series;
+      # Tempo metrics endpoint adds ~50 series — well under budget).
+      interval: 60s
+      # 30s default; longer than 30s would risk missing alerts.
+      scrapeTimeout: 30s
+      # `job` label defaults to the Service name (`tempo`) — matches
+      # the R11 PrometheusRule `up{job=~"tempo|tempo-.+"}` regex.

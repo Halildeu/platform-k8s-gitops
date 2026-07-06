@@ -1,0 +1,288 @@
+# R29 Mitigation #3 — Weekly Synthetic Teams Smoke CronJob (PROD).
+#
+# Bağlam: R29 active risk (Teams Power Automate workflow lifecycle drift) 7-step
+# mitigation chain (R27 mirror). Mitigation #3 = "weekly synthetic Teams smoke
+# during active surveillance (cluster alert tetikle + Teams Adaptive Card render
+# kanıt; cron veya scheduled task)". V2.1 Exit #4 LIVE doc'unda 5 TODO arasında;
+# Codex `019e6e03` REVISE iter-2 absorb: weekly cadence (was monthly per V2.1
+# Exit #4 doc — Power Automate run-history 28-day window risks aylık operator
+# review delay = silent expire window).
+#
+# Why weekly cluster CronJob (vs GHA / browser MCP):
+# - In-cluster: Alertmanager v2 API local sub-second latency (no network egress)
+# - Schedule deterministic: weekly cron survives infra changes
+# - Failure mode observable: CronJob status fail → AlertmanagerBridgeDown analog
+# - Operator verify: Power Automate UI run history (R29 mitigation #6 weekly review)
+#
+# Operations:
+# - POST synthetic alert to Alertmanager `/api/v2/alerts` with `is_synthetic=true`
+#   + `severity=warning` (not critical — avoid PagerDuty escalation if defense-in-
+#   depth chain extended later) + `team=perf` + alertname prefix `R29SyntheticTeamsSmoke`
+# - Alert auto-resolves after `ends_at` (current time + 90s)
+# - Receiver routing: perf-alerts-teams (Teams Adaptive Card) — continue:true
+#   would also hit alarm-receiver-bridge but bridge skips via `is_synthetic=true`
+#   label filter (BL-008-bridge composite scope same PR)
+#
+# Verification flow:
+# 1. CronJob runs weekly → POST returns HTTP 200
+# 2. Power Automate run-history UI: 1 new run within ~7s avg
+# 3. Teams #perf-alerts channel: Adaptive Card with synthetic tag
+# 4. Status ConfigMap patched with last-fire timestamp + result
+# 5. If POST fails: ConfigMap result=FAIL → bridge alerts via self-watch
+#
+# Codex `019e6de3` AGREE B path: bridge GH token restore prerequisite for
+# defense-in-depth (bridge dual delivery to GH Issue when Teams down). Bridge
+# synthetic_skipped_total metric prevents Issue spam.
+#
+# Schedule (Codex `019e6e03` REVISE iter-2 absorb — timezone fix + cadence):
+# `0 9 * * 1` Europe/Istanbul = Monday 09:00 Istanbul weekly.
+# Weekly during R29 active surveillance (Power Automate trial expire ~2026-08-25
+# = 3 months ~12 fires); Codex preferred weekly > monthly because PA run-history
+# 28-day window risks aylık operator review delay = silent expire window.
+# Post-trial-permanent settle (e.g. service-account + permanent licence): can
+# downgrade to monthly via separate PR.
+# Single cluster (prod-only) — test cluster Teams path inactive (out of scope).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: r29-teams-smoke-script
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: r29-teams-smoke
+    app.kubernetes.io/component: synthetic-smoke
+    app.kubernetes.io/part-of: platform
+data:
+  smoke.sh: |
+    #!/bin/sh
+    # R29 Mitigation #3 — Weekly synthetic Teams smoke.
+    # Cluster-internal POST to Alertmanager v2 API; resolves after 90s.
+    set -eu
+
+    ALERTMANAGER="${ALERTMANAGER:-http://alertmanager-operated.monitoring.svc.cluster.local:9093}"
+    STARTS_AT="$(date -u +%FT%TZ)"
+    ENDS_AT="$(date -u -d '+90 seconds' +%FT%TZ 2>/dev/null || date -u -v +90S +%FT%TZ 2>/dev/null || echo "$STARTS_AT")"
+    FIRE_TS="$(date -u +%FT%TZ)"
+    RESULT="UNKNOWN"
+    HTTP_CODE="000"
+
+    # Alert payload — labels chosen to match perf-alerts-teams route;
+    # is_synthetic=true filter prevents bridge Issue spam.
+    PAYLOAD=$(cat <<EOF
+    [
+      {
+        "labels": {
+          "alertname": "R29SyntheticTeamsSmoke",
+          "severity": "warning",
+          "team": "perf",
+          "cluster": "k3d-prod",
+          "is_synthetic": "true",
+          "alert_class": "synthetic-smoke",
+          "service": "perf-alertmanager"
+        },
+        "annotations": {
+          "summary": "R29 weekly synthetic Teams smoke (mitigation #3 — V2.1 Exit #4)",
+          "description": "Cluster CronJob fired this synthetic alert to validate Microsoft Teams Power Automate workflow + Adaptive Card receipt + Vault TEAMS_WEBHOOK_URL ESO sync. Auto-resolves in 90s. Operator verify: Power Automate UI run-history + Teams #perf-alerts channel Adaptive Card receipt. If absent: R29 mitigation drift — check workflow expire / DLP / quota.",
+          "runbook_url": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/V2.1-perf-alert-receiver.md"
+        },
+        "startsAt": "$STARTS_AT",
+        "endsAt": "$ENDS_AT"
+      }
+    ]
+    EOF
+    )
+
+    echo "[R29] POST $ALERTMANAGER/api/v2/alerts startsAt=$STARTS_AT endsAt=$ENDS_AT"
+    HTTP_CODE=$(curl -sS -o /tmp/post_resp \
+      -w '%{http_code}' \
+      --max-time 10 \
+      -X POST \
+      -H 'Content-Type: application/json' \
+      --data "$PAYLOAD" \
+      "$ALERTMANAGER/api/v2/alerts" 2>&1) || HTTP_CODE="000"
+
+    if [ "$HTTP_CODE" = "200" ]; then
+      RESULT="PASS"
+      echo "[R29] POST OK (HTTP 200) — Alertmanager accepted synthetic alert"
+    else
+      RESULT="FAIL"
+      echo "[R29] POST FAIL (HTTP $HTTP_CODE)"
+      cat /tmp/post_resp 2>&1 || true
+    fi
+
+    # Status ConfigMap writer (federation-smoke pattern — best-effort, smoke verdict
+    # determined by HTTP code above; writer failures do NOT change exit code).
+    set +eu
+    TOKEN_FILE=/var/run/secrets/kubernetes.io/serviceaccount/token
+    NS_FILE=/var/run/secrets/kubernetes.io/serviceaccount/namespace
+    CA_FILE=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    if [ -r "$TOKEN_FILE" ] && [ -r "$NS_FILE" ] && [ -r "$CA_FILE" ]; then
+      TOKEN=$(cat "$TOKEN_FILE")
+      NS=$(cat "$NS_FILE")
+      API="https://kubernetes.default.svc"
+      CM_NAME="r29-teams-smoke-status"
+      PATCH_PAYLOAD="{\"metadata\":{\"annotations\":{\"r29-teams-smoke.io/last-fire\":\"$FIRE_TS\",\"r29-teams-smoke.io/result\":\"$RESULT\",\"r29-teams-smoke.io/http-code\":\"$HTTP_CODE\"}},\"data\":{\"lastFire\":\"$FIRE_TS\",\"result\":\"$RESULT\",\"httpCode\":\"$HTTP_CODE\"}}"
+      WRITER_HTTP=$(curl -sS -o /tmp/writer_resp -w '%{http_code}' \
+        --cacert "$CA_FILE" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/merge-patch+json" \
+        -X PATCH --data "$PATCH_PAYLOAD" \
+        --max-time 10 \
+        "$API/api/v1/namespaces/$NS/configmaps/$CM_NAME" 2>/dev/null) || WRITER_HTTP="000"
+      if [ "$WRITER_HTTP" = "200" ]; then
+        echo "[STATUS] patched ConfigMap $CM_NAME (result=$RESULT, httpCode=$HTTP_CODE)"
+      else
+        echo "[STATUS][WARN] ConfigMap writer HTTP $WRITER_HTTP (best-effort)"
+      fi
+    else
+      echo "[STATUS][WARN] ServiceAccount token not mounted — skipping writer"
+    fi
+    set -eu
+
+    if [ "$RESULT" != "PASS" ]; then
+      echo ""
+      echo "[R29] FAIL — synthetic Teams smoke POST failed (HTTP $HTTP_CODE)"
+      echo "[R29] Mitigation chain investigation:"
+      echo "  - Alertmanager pod state: kubectl -n monitoring get pod -l app.kubernetes.io/name=alertmanager"
+      echo "  - Receiver config: kubectl -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- amtool config show"
+      echo "  - Power Automate UI: https://make.powerautomate.com → My flows → perf-alertmanager workflow run history"
+      exit 1
+    fi
+    echo ""
+    echo "[R29] PASS — synthetic alert posted; verify Teams Adaptive Card receipt in #perf-alerts channel"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: r29-teams-smoke-status
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: r29-teams-smoke
+    app.kubernetes.io/component: synthetic-smoke
+    app.kubernetes.io/part-of: platform
+  annotations:
+    r29-teams-smoke.io/last-fire: "never"
+    r29-teams-smoke.io/result: "NEVER_RUN"
+    r29-teams-smoke.io/http-code: "000"
+data:
+  lastFire: "never"
+  result: "NEVER_RUN"
+  httpCode: "000"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: r29-teams-smoke
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: r29-teams-smoke
+    app.kubernetes.io/part-of: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: r29-teams-smoke-status-patcher
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: r29-teams-smoke
+    app.kubernetes.io/part-of: platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["r29-teams-smoke-status"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: r29-teams-smoke-status-patcher
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: r29-teams-smoke
+    app.kubernetes.io/part-of: platform
+subjects:
+  - kind: ServiceAccount
+    name: r29-teams-smoke
+    namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: r29-teams-smoke-status-patcher
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: r29-teams-smoke
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: r29-teams-smoke
+    app.kubernetes.io/component: synthetic-smoke
+    app.kubernetes.io/part-of: platform
+spec:
+  # Weekly Monday 09:00 Istanbul during R29 active surveillance (Codex `019e6e03`
+  # REVISE iter-2 absorb — Power Automate run-history 28-day window vs aylık
+  # cadence delay risk).
+  schedule: "0 9 * * 1"
+  timeZone: Europe/Istanbul
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 6
+  failedJobsHistoryLimit: 12
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 60
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 2592000
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: r29-teams-smoke
+            app.kubernetes.io/component: synthetic-smoke
+            app.kubernetes.io/part-of: platform
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: r29-teams-smoke
+          automountServiceAccountToken: true
+          containers:
+            - name: smoke
+              image: curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - /scripts/smoke.sh
+              env:
+                - name: ALERTMANAGER
+                  value: "http://alertmanager-operated.monitoring.svc.cluster.local:9093"
+              resources:
+                requests:
+                  cpu: "25m"
+                  memory: "32Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "64Mi"
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 100
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                seccompProfile:
+                  type: RuntimeDefault
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: smoke-script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: smoke-script
+              configMap:
+                name: r29-teams-smoke-script
+                defaultMode: 0555
+                items:
+                  - key: smoke.sh
+                    path: smoke.sh
+                    mode: 0555
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi

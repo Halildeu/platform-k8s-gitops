@@ -1,0 +1,135 @@
+{
+  "schema_version": "1.0",
+  "artifact_kind": "openfga-model",
+  "artifact_content_digest": "sha256:a48a49198c70bd3f928bbac2b87ef3fd83903f00691996c04778f892146f0f9c",
+  "source": {
+    "kind": "openfga-server",
+    "canonical_source_ref": "openfga://platform-test/authorization-models/01KS8QE8T1EJ2DF5CRS4VV9YX1"
+  },
+  "runtime_selector": {
+    "selector_kind": "vault",
+    "vault_path": "kv/platform/openfga",
+    "field": "model_id"
+  },
+  "promotion": {
+    "test": {
+      "status": "promoted",
+      "method": "pr-promotion",
+      "store_ref": "platform-test",
+      "verified_at": "2026-05-22T20:55:00Z",
+      "promoted_at": "2026-05-23T07:02:46Z",
+      "model_id_env": "01KS8QE8T1EJ2DF5CRS4VV9YX1",
+      "evidence": {
+        "required_types_present": [
+          "user",
+          "organization",
+          "company",
+          "project",
+          "warehouse",
+          "branch",
+          "module",
+          "action",
+          "report",
+          "report_group",
+          "subscriber",
+          "service_account",
+          "notification_topic",
+          "notification_template",
+          "template"
+        ],
+        "type_count": 15,
+        "tuple_backfill_count": 2,
+        "list_objects_count": null,
+        "allow_proof": {
+          "user": "subscriber:123be09e-e008-43ca-a7d1-ceba4595f80d",
+          "relation": "can_receive",
+          "object": "template:t1",
+          "expected": "allow"
+        },
+        "deny_proof": {
+          "user": "subscriber:nobody-test-xyz",
+          "relation": "can_receive",
+          "object": "template:t1",
+          "expected": "deny"
+        }
+      },
+      "evidence_completeness": "complete",
+      "verified_by_pr": 990,
+      "promoted_by_pr": 995,
+      "source_docs": [
+        "docs/faz-23-evidence/2026-05-22-openfga-notification-model-extension.md",
+        "docs/notify/openfga-notification-model.dsl",
+        "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md",
+        "docs/runbooks/RB-webpush-activation.md",
+        "docs/faz-23-evidence/2026-05-24-h-live-evidence-resync.md"
+      ]
+    },
+    "prod": {
+      "status": "promoted",
+      "method": "manual-prod-migration",
+      "store_ref": "platform-prod",
+      "verified_at": "2026-05-25T11:51:51Z",
+      "promoted_at": "2026-05-25T11:57:05Z",
+      "model_id_env": "01KSFFK9K3V43DD211Z79K3FYA",
+      "evidence": {
+        "required_types_present": [
+          "user",
+          "organization",
+          "company",
+          "project",
+          "warehouse",
+          "branch",
+          "module",
+          "action",
+          "report",
+          "report_group",
+          "subscriber",
+          "service_account",
+          "notification_topic",
+          "notification_template",
+          "template"
+        ],
+        "type_count": 15,
+        "tuple_backfill_count": 2,
+        "list_objects_count": null,
+        "allow_proof": {
+          "user": "subscriber:bl028-prod-canary-001",
+          "relation": "can_receive",
+          "object": "template:canary-prod-marketing-v1",
+          "expected": "allow"
+        },
+        "deny_proof": {
+          "user": "subscriber:nobody-control-bl028b",
+          "relation": "can_receive",
+          "object": "template:canary-prod-marketing-v1",
+          "expected": "deny"
+        }
+      },
+      "evidence_completeness": "complete",
+      "verified_by_pr": 1068,
+      "promoted_by_pr": null,
+      "source_docs": [
+        "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md",
+        "docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md",
+        "docs/faz-23-evidence/2026-05-25-bl028b-lane-b-prod-openfga-cutover-evidence.md"
+      ]
+    }
+  },
+  "metadata": {
+    "previous_artifact_content_digest": null,
+    "rollback_safe": true,
+    "rollback_runbook_ref": "docs/runbooks/RB-webpush-activation.md#4-rollback",
+    "backward_compatible_until": null,
+    "migration_refs": [
+      "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md",
+      "docs/faz-22-evidence/2026-06-07-endpoint-admin-openfga-eso-migration.md"
+    ]
+  },
+  "audit": {
+    "implementer": "Claude",
+    "reviewer": "Codex",
+    "codex_thread_id": "019e5146-02cc-7111-8961-1d66112f2869",
+    "created_at": "2026-05-22T20:55:00Z",
+    "approval_pathway": "cross-ai-agree"
+  }
+}

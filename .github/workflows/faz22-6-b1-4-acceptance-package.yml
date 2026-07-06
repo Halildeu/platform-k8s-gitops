@@ -1,0 +1,164 @@
+name: Faz 22.6 B1.4 acceptance package
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Acceptance path to package.
+        required: true
+        type: choice
+        options:
+          - hardware
+          - risk
+      confirm:
+        description: Type PREPARE_FAZ22_6_B1_4_ACCEPTANCE_PACKAGE.
+        required: true
+        type: string
+      owner_decision_ack:
+        description: Path-specific owner/evidence acknowledgement literal.
+        required: true
+        type: string
+      owner_approved_by:
+        description: Named owner, not a placeholder.
+        required: true
+        type: string
+      approved_at:
+        description: Owner approval date, YYYY-MM-DD.
+        required: true
+        type: string
+      expires_at:
+        description: Risk mode expiry, YYYY-MM-DD. Leave empty for hardware mode.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz22-6-b1-4-acceptance-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Generate B1.4 acceptance marker artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate dispatch acknowledgements
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          OWNER_DECISION_ACK: ${{ inputs.owner_decision_ack }}
+          EXPIRES_AT: ${{ inputs.expires_at }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CONFIRM" != "PREPARE_FAZ22_6_B1_4_ACCEPTANCE_PACKAGE" ]; then
+            echo "confirm must be PREPARE_FAZ22_6_B1_4_ACCEPTANCE_PACKAGE" >&2
+            exit 2
+          fi
+
+          case "$MODE" in
+            hardware)
+              if [ "$OWNER_DECISION_ACK" != "ACK_REAL_HARDWARE_ATTESTATION_EVIDENCE_EXISTS" ]; then
+                echo "hardware mode requires ACK_REAL_HARDWARE_ATTESTATION_EVIDENCE_EXISTS" >&2
+                exit 2
+              fi
+              if [ -n "$EXPIRES_AT" ]; then
+                echo "hardware mode must not set expires_at" >&2
+                exit 2
+              fi
+              ;;
+            risk)
+              if [ "$OWNER_DECISION_ACK" != "ACK_BOUNDED_RISK_OWNER_ACCEPTED" ]; then
+                echo "risk mode requires ACK_BOUNDED_RISK_OWNER_ACCEPTED" >&2
+                exit 2
+              fi
+              if [ -z "$EXPIRES_AT" ]; then
+                echo "risk mode requires expires_at" >&2
+                exit 2
+              fi
+              ;;
+            *)
+              echo "mode must be hardware or risk" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Generate marker package
+        env:
+          MODE: ${{ inputs.mode }}
+          OWNER_APPROVED_BY: ${{ inputs.owner_approved_by }}
+          APPROVED_AT: ${{ inputs.approved_at }}
+          EXPIRES_AT: ${{ inputs.expires_at }}
+          OWNER_DECISION_ACK: ${{ inputs.owner_decision_ack }}
+        run: |
+          set -euo pipefail
+
+          out="$RUNNER_TEMP/faz22-6-b1-4-acceptance-package"
+          mkdir -p "$out"
+          marker="$out/b1-4-${MODE}-marker.txt"
+
+          args=(
+            --mode "$MODE"
+            --marker-out "$marker"
+            --owner-approved-by "$OWNER_APPROVED_BY"
+            --approved-at "$APPROVED_AT"
+          )
+          if [ "$MODE" = "risk" ]; then
+            args+=(--expires-at "$EXPIRES_AT")
+          fi
+
+          scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh "${args[@]}" \
+            | tee "$out/generator-output.txt"
+
+          marker_sha="$(sha256sum "$marker" | awk '{print $1}')"
+          jq -n \
+            --arg schema_version "faz22.6-b1-4-acceptance-package-v1" \
+            --arg mode "$MODE" \
+            --arg owner_decision_ack "$OWNER_DECISION_ACK" \
+            --arg owner_approved_by "$OWNER_APPROVED_BY" \
+            --arg approved_at "$APPROVED_AT" \
+            --arg expires_at "$EXPIRES_AT" \
+            --arg marker_file "$(basename "$marker")" \
+            --arg marker_sha256 "$marker_sha" \
+            --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{
+              schema_version: $schema_version,
+              gate: "F22_6_B1_4",
+              mode: $mode,
+              owner_decision_ack: $owner_decision_ack,
+              owner_approved_by: $owner_approved_by,
+              approved_at: $approved_at,
+              expires_at: (if $expires_at == "" then null else $expires_at end),
+              marker_file: $marker_file,
+              marker_sha256: $marker_sha256,
+              run_url: $run_url,
+              writes_github_issues: false,
+              contains_secrets: false,
+              boundary: "artifact-only package; owner must post the marker to the canonical gate issue after verifying evidence"
+            }' >"$out/package-manifest.json"
+
+          {
+            echo "# Faz 22.6 B1.4 acceptance package"
+            echo
+            echo "Mode: \`$MODE\`"
+            echo
+            echo "This artifact was generated from owner metadata only. It does not approve #548, does not write to GitHub, and does not create hardware evidence."
+            echo
+            echo "Use \`$marker\` content only after the real evidence path named by the marker has been verified."
+          } >"$out/README.md"
+
+          (cd "$out" && sha256sum README.md package-manifest.json generator-output.txt "$(basename "$marker")" > SHA256SUMS)
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: faz22-6-b1-4-acceptance-package-${{ inputs.mode }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-6-b1-4-acceptance-package/
+          if-no-files-found: error
+          retention-days: 30

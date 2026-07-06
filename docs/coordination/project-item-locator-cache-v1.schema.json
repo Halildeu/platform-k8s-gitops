@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.dev/schemas/project-item-locator-cache-v1.schema.json",
+  "title": "Project Item Locator Cache v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "projectItemId",
+    "issueRepo",
+    "issueNumber",
+    "issueUrl",
+    "lastSeen",
+    "refreshedAt",
+    "catalogFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "project-item-locator-cache/v1"
+    },
+    "projectId": {
+      "type": "string",
+      "pattern": "^PVT_"
+    },
+    "projectItemId": {
+      "type": "string",
+      "pattern": "^PVTI_"
+    },
+    "issueRepo": {
+      "type": "string",
+      "pattern": "^[^/ ]+/[^/ ]+$"
+    },
+    "issueNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "issueUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://github\\.com/[^/ ]+/[^/ ]+/issues/[0-9]+$"
+    },
+    "lastSeen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Status", "Faz", "Track", "Priority", "Kind"],
+      "properties": {
+        "Status": { "type": "string", "minLength": 1 },
+        "Faz": { "type": "string", "minLength": 1 },
+        "Track": { "type": "string", "minLength": 1 },
+        "Priority": { "type": "string", "minLength": 1 },
+        "Kind": { "type": "string", "minLength": 1 }
+      }
+    },
+    "refreshedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "catalogFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

@@ -19,16 +19,19 @@ spec:
     path: argocd/applications
     directory:
       recurse: false
-      # Exclude pattern (PROD ROOT — sadece prod hub app'leri):
+      # Exclude pattern (PROD ROOT app-of-apps):
       # - root.yaml kendini include etmesin (recursive loop)
-      # - platform-test.yaml + platform-eso-test.yaml: test cluster app'leri
-      #   (Codex PR #1 iter-10 tespit — prod root test app'leri sweep ederse
-      #    test overlay prod hub'a push edilir, D30 + cluster isolation ihlal)
       # - platform-policies.yaml + platform-cert-manager.yaml: DRAFT (CRD
       #   install edilmeden apply fail)
-      # Test cluster ArgoCD ayrı kurulursa (S2-C1) test app'ler o instance'a
-      # eklenir — prod root'ta YERİ YOK.
-      exclude: '{root.yaml,platform-test.yaml,platform-eso-test.yaml,platform-policies.yaml,platform-cert-manager.yaml}'
+      # NOT (ADR-0023 Guardrail PR-2, Codex 019e40e4 Option A — 2026-05-20):
+      #   platform-test.yaml ARTIK un-excluded — prod root, test cluster'a
+      #   yönelik Application'ı YÖNETIR (destination.name=test-cluster, prod
+      #   in-cluster'a deploy DEĞİL). `argocd cluster add k3d-test` öncesi
+      #   Application Unknown/Error kalır (operatör adımı için
+      #   docs/operations/RUNBOOKS/RB-argocd-register-test-cluster.md).
+      # - platform-eso-test.yaml is now safe to include: it targets the
+      #   registered `test-cluster` destination, same as platform-test.yaml.
+      exclude: '{root.yaml,platform-policies.yaml,platform-cert-manager.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

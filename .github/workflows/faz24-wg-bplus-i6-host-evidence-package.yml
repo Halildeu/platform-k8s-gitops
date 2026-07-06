@@ -1,0 +1,208 @@
+name: Faz 24 WG-B+ I6 Host Evidence Package
+
+# Builds a metadata-only operator package for platform-k8s-gitops#1867.
+# It does not connect to staging-sw and does not collect or upload host command
+# output. The package only contains a shell wrapper, metadata, README, and
+# SHA256SUMS so an operator can run the existing collector/verifier from a
+# protected host context.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_host:
+        description: "Host where the operator will run the package"
+        required: true
+        default: "staging-sw"
+      pod_cidr:
+        description: "Pod CIDR expected to be MASQed toward WireGuard"
+        required: true
+        default: "10.42.0.0/16"
+      wg_interface:
+        description: "WireGuard interface, or auto"
+        required: true
+        default: "auto"
+      platform_ai_host:
+        description: "platform-ai target host/IP reached over WG"
+        required: true
+        default: "10.99.0.2"
+      platform_ai_port:
+        description: "platform-ai target port"
+        required: true
+        default: "8200"
+      kube_context:
+        description: "Kubernetes context on staging-sw"
+        required: true
+        default: "k3d-test"
+      namespace:
+        description: "Namespace for existing pod-origin HTTP probe"
+        required: true
+        default: "platform-test"
+      systemd_unit:
+        description: "Host systemd unit that owns the MASQ rule"
+        required: true
+        default: "k3d-wg-masq.service"
+      drift_timer:
+        description: "Host systemd timer that checks MASQ drift"
+        required: true
+        default: "k3d-wg-masq.timer"
+      rollback_tested_ref:
+        description: "Relative metadata ref proving rollback was tested"
+        required: false
+        default: "rollback/k3d-wg-masq-dry-run.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-wg-bplus-i6-host-evidence-package
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: build I6 host evidence operator package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      PACKAGE_DIR: /tmp/faz24-i6-host-evidence-package-${{ github.run_id }}
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          TARGET_HOST: ${{ inputs.target_host }}
+          POD_CIDR: ${{ inputs.pod_cidr }}
+          WG_INTERFACE: ${{ inputs.wg_interface }}
+          PLATFORM_AI_HOST: ${{ inputs.platform_ai_host }}
+          PLATFORM_AI_PORT: ${{ inputs.platform_ai_port }}
+          KUBE_CONTEXT: ${{ inputs.kube_context }}
+          KUBE_NAMESPACE: ${{ inputs.namespace }}
+          SYSTEMD_UNIT: ${{ inputs.systemd_unit }}
+          DRIFT_TIMER: ${{ inputs.drift_timer }}
+          ROLLBACK_TESTED_REF: ${{ inputs.rollback_tested_ref }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "${value}" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be single-line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline target_host "${TARGET_HOST}"
+          reject_multiline pod_cidr "${POD_CIDR}"
+          reject_multiline wg_interface "${WG_INTERFACE}"
+          reject_multiline platform_ai_host "${PLATFORM_AI_HOST}"
+          reject_multiline platform_ai_port "${PLATFORM_AI_PORT}"
+          reject_multiline kube_context "${KUBE_CONTEXT}"
+          reject_multiline namespace "${KUBE_NAMESPACE}"
+          reject_multiline systemd_unit "${SYSTEMD_UNIT}"
+          reject_multiline drift_timer "${DRIFT_TIMER}"
+          reject_multiline rollback_tested_ref "${ROLLBACK_TESTED_REF}"
+
+          if ! printf '%s' "${TARGET_HOST}${WG_INTERFACE}${KUBE_CONTEXT}${KUBE_NAMESPACE}${SYSTEMD_UNIT}${DRIFT_TIMER}" | grep -Eq '^[A-Za-z0-9_.:@-]+$'; then
+            echo "::error::name-like inputs contain unsupported characters"
+            exit 1
+          fi
+          if ! printf '%s' "${POD_CIDR}" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$'; then
+            echo "::error::pod_cidr must be IPv4 CIDR"
+            exit 1
+          fi
+          if ! printf '%s' "${PLATFORM_AI_HOST}" | grep -Eq '^[A-Za-z0-9_.:-]{1,128}$'; then
+            echo "::error::platform_ai_host contains unsupported characters"
+            exit 1
+          fi
+          if ! printf '%s' "${PLATFORM_AI_PORT}" | grep -Eq '^[0-9]{1,5}$'; then
+            echo "::error::platform_ai_port must be numeric"
+            exit 1
+          fi
+          if [ -n "${ROLLBACK_TESTED_REF}" ] && printf '%s' "${ROLLBACK_TESTED_REF}" | grep -Eq '(^/|(^|/)\.\.(/|$)|^[A-Za-z]:)'; then
+            echo "::error::rollback_tested_ref must be relative and stay under protected evidence path"
+            exit 1
+          fi
+          if printf '%s' "${ROLLBACK_TESTED_REF}${TARGET_HOST}${POD_CIDR}${WG_INTERFACE}${PLATFORM_AI_HOST}${PLATFORM_AI_PORT}${KUBE_CONTEXT}${KUBE_NAMESPACE}${SYSTEMD_UNIT}${DRIFT_TIMER}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.'; then
+            echo "::error::inputs must not contain private/secret-like material"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build package
+        env:
+          TARGET_HOST: ${{ inputs.target_host }}
+          POD_CIDR: ${{ inputs.pod_cidr }}
+          WG_INTERFACE: ${{ inputs.wg_interface }}
+          PLATFORM_AI_HOST: ${{ inputs.platform_ai_host }}
+          PLATFORM_AI_PORT: ${{ inputs.platform_ai_port }}
+          KUBE_CONTEXT: ${{ inputs.kube_context }}
+          KUBE_NAMESPACE: ${{ inputs.namespace }}
+          SYSTEMD_UNIT: ${{ inputs.systemd_unit }}
+          DRIFT_TIMER: ${{ inputs.drift_timer }}
+          ROLLBACK_TESTED_REF: ${{ inputs.rollback_tested_ref }}
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/build-wg-bplus-i6-host-evidence-package.py \
+            --output-dir "${PACKAGE_DIR}" \
+            --target-host "${TARGET_HOST}" \
+            --pod-cidr "${POD_CIDR}" \
+            --wg-interface "${WG_INTERFACE}" \
+            --platform-ai-host "${PLATFORM_AI_HOST}" \
+            --platform-ai-port "${PLATFORM_AI_PORT}" \
+            --kube-context "${KUBE_CONTEXT}" \
+            --namespace "${KUBE_NAMESPACE}" \
+            --systemd-unit "${SYSTEMD_UNIT}" \
+            --drift-timer "${DRIFT_TIMER}" \
+            --rollback-tested-ref "${ROLLBACK_TESTED_REF}"
+
+      - name: Verify package excludes private material
+        run: |
+          set -euo pipefail
+          if grep -R -E -- '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.' "${PACKAGE_DIR}"; then
+            echo "::error::package contains forbidden private/secret-like material"
+            exit 1
+          fi
+          test -s "${PACKAGE_DIR}/collect-staging-i6-host-evidence.sh"
+          test -s "${PACKAGE_DIR}/expected-i6-host-evidence-metadata.json"
+          test -s "${PACKAGE_DIR}/README.md"
+          test -s "${PACKAGE_DIR}/SHA256SUMS"
+          (cd "${PACKAGE_DIR}" && sha256sum --check SHA256SUMS)
+
+      - name: Write workflow summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 WG-B+ I6 host evidence package"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-i6-host-evidence-package-${{ github.run_id }}\`"
+            echo "- Target host: \`${{ inputs.target_host }}\`"
+            echo
+            echo "Boundary: metadata-only operator package. This workflow does not connect to staging-sw, collect host command output, change host iptables/nftables, WireGuard, Kubernetes objects, platform-ai, secrets, or production state."
+            echo
+            if [ -s "${PACKAGE_DIR}/expected-i6-host-evidence-metadata.json" ]; then
+              echo '```json'
+              sed -n '1,160p' "${PACKAGE_DIR}/expected-i6-host-evidence-metadata.json"
+              echo '```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload package artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-i6-host-evidence-package-${{ github.run_id }}
+          path: ${{ env.PACKAGE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local package directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${PACKAGE_DIR}"

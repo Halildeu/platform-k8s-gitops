@@ -1,0 +1,174 @@
+name: Faz 22.6 VIEW_ONLY engineering evidence package
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type PREPARE_FAZ22_6_VIEW_ONLY_ENGINEERING_EVIDENCE_PACKAGE.
+        required: true
+        type: string
+      ack_controls:
+        description: Type ACK_VIEW_ONLY_ENGINEERING_CONTROLS_VERIFIED.
+        required: true
+        type: string
+      evidence_url:
+        description: HTTPS URL where the canonical JSON manifest will be served.
+        required: true
+        type: string
+      pilot_device:
+        description: Consenting pilot device name or product device ID.
+        required: true
+        type: string
+      session_id:
+        description: Product-channel VIEW_ONLY session ID.
+        required: true
+        type: string
+      viewer_path_decision:
+        description: Fan-out decision for the bounded pilot.
+        required: true
+        type: choice
+        options:
+          - fanout-proven
+          - owner-deferred
+      owner_approved_by:
+        description: Named owner, not a placeholder.
+        required: true
+        type: string
+      approved_at:
+        description: Owner approval date, YYYY-MM-DD.
+        required: true
+        type: string
+      expires_at:
+        description: Engineering evidence expiry, YYYY-MM-DD.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz22-6-view-only-engineering-evidence-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Generate VIEW_ONLY engineering manifest and marker artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate dispatch acknowledgements
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          ACK_CONTROLS: ${{ inputs.ack_controls }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CONFIRM" != "PREPARE_FAZ22_6_VIEW_ONLY_ENGINEERING_EVIDENCE_PACKAGE" ]; then
+            echo "confirm must be PREPARE_FAZ22_6_VIEW_ONLY_ENGINEERING_EVIDENCE_PACKAGE" >&2
+            exit 2
+          fi
+          if [ "$ACK_CONTROLS" != "ACK_VIEW_ONLY_ENGINEERING_CONTROLS_VERIFIED" ]; then
+            echo "ack_controls must be ACK_VIEW_ONLY_ENGINEERING_CONTROLS_VERIFIED" >&2
+            exit 2
+          fi
+
+      - name: Generate metadata-only evidence package
+        env:
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          PILOT_DEVICE: ${{ inputs.pilot_device }}
+          SESSION_ID: ${{ inputs.session_id }}
+          VIEWER_PATH_DECISION: ${{ inputs.viewer_path_decision }}
+          OWNER_APPROVED_BY: ${{ inputs.owner_approved_by }}
+          APPROVED_AT: ${{ inputs.approved_at }}
+          EXPIRES_AT: ${{ inputs.expires_at }}
+          ACK_CONTROLS: ${{ inputs.ack_controls }}
+        run: |
+          set -euo pipefail
+
+          out="$RUNNER_TEMP/faz22-6-view-only-engineering-evidence-package"
+          mkdir -p "$out"
+          manifest="$out/view-only-engineering-evidence-manifest.json"
+          marker="$out/view-only-engineering-marker.txt"
+
+          scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh \
+            --manifest-out "$manifest" \
+            --marker-out "$marker" \
+            --evidence-url "$EVIDENCE_URL" \
+            --pilot-device "$PILOT_DEVICE" \
+            --session-id "$SESSION_ID" \
+            --recording-mode disabled \
+            --d10-fail-closed pass \
+            --dlp-mask-policy pass \
+            --local-abort pass \
+            --active-indicator pass \
+            --viewer-path-decision "$VIEWER_PATH_DECISION" \
+            --owner-approved-by "$OWNER_APPROVED_BY" \
+            --approved-at "$APPROVED_AT" \
+            --expires-at "$EXPIRES_AT" \
+            | tee "$out/generator-output.txt"
+
+          canonical_manifest="$(jq -cS . "$manifest")"
+          manifest_sha="$(printf '%s' "$canonical_manifest" | sha256sum | awk '{print $1}')"
+          marker_sha="$(sha256sum "$marker" | awk '{print $1}')"
+          jq -n \
+            --arg schema_version "faz22.6-view-only-engineering-evidence-package-v1" \
+            --arg ack_controls "$ACK_CONTROLS" \
+            --arg evidence_url "$EVIDENCE_URL" \
+            --arg pilot_device "$PILOT_DEVICE" \
+            --arg session_id "$SESSION_ID" \
+            --arg recording_mode "disabled" \
+            --arg viewer_path_decision "$VIEWER_PATH_DECISION" \
+            --arg owner_approved_by "$OWNER_APPROVED_BY" \
+            --arg approved_at "$APPROVED_AT" \
+            --arg expires_at "$EXPIRES_AT" \
+            --arg manifest_file "$(basename "$manifest")" \
+            --arg manifest_sha256 "$manifest_sha" \
+            --arg marker_file "$(basename "$marker")" \
+            --arg marker_sha256 "$marker_sha" \
+            --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{
+              schema_version: $schema_version,
+              gate: "F22_6_VIEW_ONLY_ENGINEERING",
+              ack_controls: $ack_controls,
+              evidence_url: $evidence_url,
+              pilot_device: $pilot_device,
+              session_id: $session_id,
+              recording_mode: $recording_mode,
+              viewer_path_decision: $viewer_path_decision,
+              owner_approved_by: $owner_approved_by,
+              approved_at: $approved_at,
+              expires_at: $expires_at,
+              manifest_file: $manifest_file,
+              manifest_sha256: $manifest_sha256,
+              marker_file: $marker_file,
+              marker_sha256: $marker_sha256,
+              run_url: $run_url,
+              writes_github_issues: false,
+              contains_secrets: false,
+              boundary: "artifact-only package; evidence_url must serve this exact canonical JSON before the marker can pass the verifier"
+            }' >"$out/package-manifest.json"
+
+          {
+            echo "# Faz 22.6 VIEW_ONLY engineering evidence package"
+            echo
+            echo "Recording mode: \`disabled\`"
+            echo "Evidence URL: \`$EVIDENCE_URL\`"
+            echo
+            echo "This artifact is metadata-only. It does not apply the viewer surface, does not start a VIEW_ONLY session, does not write #1580, and does not carry KVKK/legal signoff."
+            echo
+            echo "The canonical manifest must be served at the evidence URL with SHA-256 \`$manifest_sha\` before the marker can pass the live verifier."
+          } >"$out/README.md"
+
+          (cd "$out" && sha256sum README.md package-manifest.json generator-output.txt "$(basename "$manifest")" "$(basename "$marker")" > SHA256SUMS)
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: faz22-6-view-only-engineering-evidence-package-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-6-view-only-engineering-evidence-package/
+          if-no-files-found: error
+          retention-days: 30

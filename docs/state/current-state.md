@@ -1,6 +1,9553 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-05-18 ~15:30 UTC+3 (**PR-3E-A FORBIDDEN-TELEMETRY PROMETHEUSRULE STAGED — prod-deploy PR-3 track agent-tarafı kapsamı kayıtlı**: PR-3'ün son agent-autonomous kalemi. **PR-3E-A** — YENİ `kustomize/base/monitoring/rbac-least-privilege-rule.yaml` `PrometheusRule` (Codex `019e3a40` scope): `KubeAPIForbiddenMutatingRequest` (`apiserver_request_total{code="403",verb=~POST|PUT|PATCH|DELETE|CONNECT}` increase>0, `for:2m`) + `KubeAPIForbiddenRequestSpike` (403 rate >0.2/s, `for:10m`) — k8s API Forbidden PROXY-telemetrisi (tam RBAC audit log DEĞİL). `monitoring` kustomization'a eklendi (render sanity OK); staged — canlı firing `apply -k kustomize/base/monitoring` + Prom rule reload sonrası. PR-3E operator-gated kalanlar: audit-policy.yaml (apiserver control-plane), PR-3E-B `BreakGlassUsed` Alertmanager Slack/email route. **PR-3C Step 4 residual**: `deploy-prod-gitops.yml` `argocd app diff` no-diff'i job-fail sayıyor (tasarım); `platform-prod` oos=0 → standalone doğrulama-dispatch için sahte prod değişikliği gerekirdi, yapılmadı. Cutover #811 source-side merged + canary-proven; in-workflow proof ilk gerçek prod deploy'unun `identity=prod-deploy-smoke` job log'uyla kapanır (residual gate). **prod-deploy PR-3 track**: PR-3A (#790) + PR-3B prod break-glass RBAC + PR-3C (#811) workflow cutover agent-tarafı yürütüldü; PR-3E-A staged; PR-3D operator readonly identity + audit-policy + PR-3E-B operator-gated.) ⏸️ Önceki 2026-05-18 ~14:00 UTC+3 (**PR-3B PROD BREAK-GLASS RBAC CANLI + PR-3C RUNNER LEAST-PRIVILEGE CUTOVER (workflow-PR modeli)**: owner "sen yap" + Codex `019e3a40` ile operator-gated PR-3B/3C agent-infazına açıldı. **PR-3B prod** — `ops-break-glass` SA + cluster-admin CRB k3d-prod'a apply edildi (server dry-run temiz), `auth can-i '*' '*' --as=...ops-break-glass` = yes; prod'da token **bilerek üretilmedi** (token path #804 k3d-test drill'de kanıtlı — prod iddiası dar: "RBAC binding aktif, token issuance exercise edilmedi"). **PR-3C** — `prod-deploy-smoke` uzun-ömürlü SA-token Secret k3d-prod'a oluşturuldu, restricted kubeconfig kuruldu, **6-nokta canary 0-mismatch** (whoami=prod-deploy-smoke / RBAC 10/10 / gerçek `port-forward argocd-server` /healthz 200 / gerçek `rollout status api-gateway` success). **Runner host inventory plan-değiştiren bulgu**: `deploy-prod-gitops.yml` runner'ı `halil` user'ı (operator login user) olarak koşuyor + testai workflow'larıyla aynı runner + `~/.kube/config` paylaşıyor → eski "runner `~/.kube/config` swap" modeli geçersiz (testai kırar + PR-3D ile çakışır). **Refined PR-3C** (Codex `019e3a40` AGREE-with-revision): `deploy-prod-gitops.yml` restricted kubeconfig'i `production` env secret `PROD_DEPLOY_SMOKE_KUBECONFIG_B64`'ten runtime materialize eder (fail-fast identity+negative guard + `if:always()` cleanup); `~/.kube/config` el değmez; secret set edildi. **İddia dar**: workflow PR merge sonrası prod sync job'u restricted kubeconfig'e pinlenecek (secret set + canary PASS); "prod workflow artık admin kullanmıyor" iddiası ancak canlı env-gate dispatch job log'u (`identity=prod-deploy-smoke`) ile kesinleşir — **henüz pending**. Operator'ün `~/.kube/config admin@k3d-prod`'u PR-3C'de el değmeden durur (PR-3D'nin işi). **Pending**: PR-3C workflow PR merge → `production` env-gate'li dispatch doğrulaması (operator tıklaması); PR-3D operator readonly identity (owner); PR-3E audit/alarm.) ⏸️ Önceki 2026-05-18 ~12:00 UTC+3 (**PR-3C ADIM 1-2 CANLI — prod-deploy-smoke least-privilege RBAC k3d-prod'a uygulandı**: prod-deploy 4-PR planı PR-3'ün operator-gated PR-3C'sinin additive + read-only-verify alt-adımları (Adım 1-2) Codex `019e3a40` Verdict A ile agent-otonom yürütüldü — istişare verdict'i bu dar alt-adım için operator-gate'i açtı (Pre-Production Full Authority; additive RBAC ≠ destructive). **Canlı**: `kubectl --context k3d-prod apply -k kustomize/base/rbac/prod-deploy-smoke` → 5 obje created: `prod-deploy-smoke` SA (argocd ns) + `prod-deploy-smoke-argocd` Role/RoleBinding (argocd ns) + `prod-deploy-smoke-read` Role/RoleBinding (platform-prod ns). Server dry-run önce temiz. `auth can-i` impersonation acceptance matrisi **10/10** — doğrulanan YES: argocd `get services`/`list pods`/`create pods/portforward`, platform-prod `get deployments`/`watch deployments`/`get pods`; NO: platform-prod `patch deployments`/`create pods/exec`/`create pods/portforward`, cluster-wide `* *`. Role bunun biraz ötesinde grant içerir (endpoints, replicasets, list/watch varyantları); workload-mutate verb'i (patch/update/delete/exec/scale) Role'de yok (yaml dump'tan). Not: `auth can-i` subresource kontrolünün canonical formu `--subresource=`; `pods/portforward` slash formu kubectl v1.36'da intended subresource SAR'ını temsil etmeyip false-`no` döndürebilir — `--subresource=portforward` → `yes`, live Role kuralı doğru; runbook acceptance matrisi bu forma düzeltildi. SA henüz hiçbir runner tarafından kullanılmıyor (additive; runner hâlâ `admin@k3d-prod` kubeconfig). **Operator'da kalan**: PR-3C Adım 3 (runner kubeconfig cutover + eski admin kubeconfig host'tan kaldırma), Adım 4 (`deploy-prod-gitops.yml` `production` env-gate dispatch), PR-3B prod break-glass activation, PR-3D operator readonly identity — hepsi `RB-prod-rbac-least-privilege.md`.) ⏸️ Önceki 2026-05-18 ~11:30 UTC+3 (**D29 SMOKE TIER-2 NETWORK-PATH FIX MERGED — prod-deploy 4-PR planının repo-only otonom kapsamı PR-1/2/3A/4A + Tier-2 olarak kayıtlı**: PR-4A handoff §5'te "spec-bekleyen → defer" devredilen Tier-2 runner network-path kalemi otonom çözüldü. **#798 (`95a59eb`)** `d29-smoke-runner.sh` `tier_functional` her koşuda 6/6 servis RED veriyordu — `kubectl port-forward svc/<name> $port:80` kullanıyordu ama hiçbir JWT servisi port 80 expose etmiyor (api-gateway 8080 / user-service 8089 / variant-service 8091 / permission-service 8090 / schema-service 8096 / report-service 8095, hepsi `http` adlı port altında) → port-forward fail → curl `000` → 6 servis RED. Fix: `probe_functional_endpoint` helper — named port `:http`, 2 deterministik wiring pre-check (no http-port / no ready endpoint → RED), `Forwarding from` tunnel-bind poll, 3-state verdict (OK 200/401/403 / RED tunnel-up sonrası kötü kod veya wiring / AMBER tunnel hiç bind olmadı), RED-outranks-AMBER rollup; curl `localhost`→`127.0.0.1`, `000000` artefact giderildi; systemd `smoke-{test,prod}.service` `SuccessExitStatus=0 1`→`0 1 3` (PR-4A exit-3 incomplete follow-up). Kanıt: değiştirilmiş runner `k3d-test`'te koştu — 4 tier GREEN, exit 0, Tier 2 Functional RED→GREEN; RED dalları execute-doğrulandı (openfga 404→RED, eksik svc→RED). Codex `019e3a17` REVISE→AGREE (plan-time + post-impl). CI 8/8 GREEN + normal squash + archive-tag. **prod-deploy 4-PR planının repo-only otonom platform-k8s-gitops kapsamı PR-1/2/3A/4A + Tier-2 olarak kayıtlı**; bu repo'da otonom-yapılabilir prod-deploy işi kalmadı, kalan iş tümüyle operator-gated (PR-3B/C/D/E canlı RBAC) veya cross-repo (PR-4 ledger B3). Handoff: [docs/session-handoff-2026-05-18-d29-tier2.md](../session-handoff-2026-05-18-d29-tier2.md). ⏸️ Önceki 2026-05-18 ~10:45 UTC+3 (**PROD-DEPLOY 4-PR PLANI PR-4A MERGED — repo-only agent-actionable kapsam kayda geçti**: prod-deploy mimari planının (Codex `019e35d1`) bu session'da ayrıştırılan repo-only PR-4A adımı. **PR-4** Codex `019e39ea` scope kararıyla **PR-4A**'ya indirgendi (ledger CI automation cross-repo `platform-backend`/`platform-web` B3 + operator B2'ye devir; Tier-2 runner network-path spec'siz → defer). **PR-4A (#792, `18b3f46`)** `d29-smoke-runner.sh` Zanzibar tier store-id bug fix: `tier_zanzibar()` store_id'yi yanlış key (`OPENFGA_STORE_ID`; canonical `ERP_OPENFGA_STORE_ID`) + boş ConfigMap stub'ından okuyordu → her D29 smoke'da Zanzibar tier SKIP. `resolve_store_id()` resolver chain (env override → Secret/ConfigMap ERP_ key → legacy key → opt-in pod-env exec) + exit-code `3`=incomplete + `ledger-mark-verified.sh` defense-in-depth (non-GREEN/eksik tier ledger'a D29-verified taşınamaz). Kanıt: değiştirilmiş runner `k3d-test`'te koştu — Tier 4 `store_id resolved via secret/permission-service-secrets:ERP_OPENFGA_STORE_ID` → status GREEN. Codex `019e39ea` REVISE→AGREE + CI 8/8 yeşil + normal squash + archive-tag. **prod-deploy 4-PR planının repo-only agent-actionable platform-k8s-gitops kapsamı PR-1/2/3A/4A olarak kayıtlı** (#780 + #789 + #790 + #792); kalan iş operator-gated/cross-repo/spec-bekleyen. Kalan: PR-3B/C/D operator-gated canlı RBAC (runbook `RB-prod-rbac-least-privilege.md`); PR-4 ledger CI automation cross-repo B3 + operator B2; PR-3E audit/alarm; Tier-2 runner network-path spec. Handoff: [docs/session-handoff-2026-05-18-prod-deploy-pr4a.md](../session-handoff-2026-05-18-prod-deploy-pr4a.md). ⏸️ Önceki 2026-05-18 ~02:00 UTC+3 (**PROD-DEPLOY 4-PR PLANI PR-2 + PR-3A MERGED — legacy workflow retirement + staged RBAC least-privilege contract**: Q4 rollout sonrası prod-deploy mimari planının (Codex `019e35d1`) sıradaki adımları yürütüldü. **PR-2 (#789, `88ed56b`)** image-only `deploy-backend-prod.yml` + `deploy-frontend-prod.yml` workflow'larını sildi — ölü `prod-deploy` runner label + rakip `prod-backend/frontend-deploy` concurrency group elimine; prod'un tek normal GitHub Actions prod deploy workflow'u `deploy-prod-gitops.yml`; `RB-prod-deploy-rollback.md` GitOps revision-rollback'a yeniden yazıldı (Yol A `sync_mode=full`+`SYNC-PROD-ROLLBACK` / Yol B revert-forward); Codex `019e37fa` REVISE→AGREE. **PR-3** Codex `019e380b` scope kararıyla alt-adımlara bölündü; **PR-3A (#790, `2127827`)** repo-only RBAC contract: `kustomize/base/rbac/prod-deploy-smoke/` staged (overlay'e bağlı değil) least-privilege SA — argocd port-forward + platform-prod read/watch, workload-mutate yok + `RB-prod-rbac-least-privilege.md` operator runbook + `rbac-break-glass-design.md` truth-refresh; Codex `019e380b` AGREE. İki PR de cross-AI Codex review + CI yeşil (8/8 + 12/12) + normal squash (admin yok) + archive-tag. **Merge anında hiçbir canlı cluster/credential state mutasyonu OLMADI** (PR-2 workflow-delete; PR-3A staged-manifest, `kustomize build overlays/prod` → `prod-deploy-smoke` 0 geçiş). Sıradaki: PR-4 promotion ledger CI automation (otonom, sıradaki agent P0); PR-3B/C/D operator-gated canlı RBAC enforcement (runbook shipped); PR-3E audit/alarm. Handoff: [docs/session-handoff-2026-05-18-prod-deploy-pr2-pr3a.md](../session-handoff-2026-05-18-prod-deploy-pr2-pr3a.md). ⏸️ Önceki 2026-05-18 ~00:45 UTC+3 (**Q4 SCHEMA-SERVICE PROD ROLLOUT LIVE — deploy-prod-gitops.yml (PR-1) ilk prod kullanımı**: Session 67 (#747) schema-service Q4'ü test'te canlı + prod GitOps desired-state'i (#749) hazır devretti; bu session Q4'ü prod cluster'a uyguladı. Kalıcı tek prod-deploy mekanizması `deploy-prod-gitops.yml` (PR-1, #780 — ArgoCD `platform-prod` `environment: production` env-gate'li workflow) ilk gerçek prod kullanımında uçtan uca çalıştı: run 26003161043 `conclusion=success`. Operator setup owner açık opt-in ile (credential/control-plane gated): ArgoCD `helm upgrade` rev2 (`prod-gitops-sync` apiKey account + RBAC `get`/`sync` yalnız `default/platform-prod`) + `ARGOCD_PROD_SYNC_TOKEN` `production` env secret. Rollout `sync_mode=resources` 3-resource scoped (Codex `019e3638` VERDICT-B): `schema-service-config` 300s + `schema-service` digest `894e492f` + `nginx-config` orphan prune. Acceptance smoke **8/8 GREEN** (pod Q4 digest · Running/Ready/restart=0 · 300s at-rest+runtime env · nginx-config pruned · readiness/liveness 200 · log temiz · public 401 · ArgoCD `Synced/Healthy oos=0`); Codex `019e3638` VERDICT: YETERLİ. Residual (blocker değil): prod authenticated snapshot-data smoke koşulmadı — image Session 67'de test-proven. #781 (kendi `--core` PR-1 implementasyonum) #780 ile çakıştığı için duplicate kapatıldı. Sıradaki: 4-PR prod-deploy-architecture planı PR-2/3/4 (Codex `019e35d1`). Handoff: [docs/session-handoff-2026-05-18-q4-prod-rollout.md](../session-handoff-2026-05-18-q4-prod-rollout.md). ⏸️ Önceki 2026-05-17 ~12:30 UTC+3 (**Sessions 65-67 schema-service extractTables timeout fix — P0+P1+Q3+Q4 LIVE**: Session 65 handoff'unun (#726) devrettiği `/api/v1/schema/snapshot` blocker'ı — `extractTables` ~60s'de timeout olup HTTP 500 dönüyordu (`workcube_mikrolink` 1509+ tablo) — baştan sona çözüldü. **P0** MSSQL query timeout config-ize (`schema.mssql.query-timeout-seconds`, cluster 300s; PR #233 + gitops #728). **P1** `extractTables` → `extractBaseTables` (zorunlu/fatal) + `enrichTables` (identity/default/computed, 3 bağımsız non-fatal sorgu) split (PR #234 + gitops #730, çok-servisli digest hatası #732 ile düzeltildi). **Q3** `buildSnapshot` adım-1 base-fail → `SnapshotUnavailableException` → `SchemaExceptionHandler` global advice → HTTP 503 sanitize body (PR #235 + gitops #735). **Q4** `extractStorage` `sys.dm_db_partition_stats` DMV → `sys.partitions` + `sys.allocation_units` catalog view (izin-free; PR #237 + gitops #745) — `storage` envanteri artık `GRANT` olmadan doluyor. schema-service test cluster image `sha-58bc2c9` / digest `sha256:894e492f...`. Canlı (staging-sw `k3d-test`): `/snapshot` HTTP 200, 1513 tablo / 26333 kolon / 1787 ilişki / 16 domain; `Extracted storage for 1513 tables` log-kanıtlı; schema-service suite 202 test 0 fail. 12 PR (#726/#233/#728/#234/#730/#732/#733/#235/#735/#237/#745/#747) cross-AI Codex AGREE + CI yeşil + normal squash + archive-tag. Handoff: [docs/session-handoff-2026-05-17-session-67-extracttables-q3-q4-complete.md](../session-handoff-2026-05-17-session-67-extracttables-q3-q4-complete.md). Bu session new Live Delta entry below. ⏸️ Önceki 2026-05-15 ~21:00 UTC+3 (**Sessions 53+54 V2.1 closure track** parallel + **Sessions 53-57 reporting refactor track** — V2.1 9/9 DONE 🟢 + Faz G freeze gate FULL UNLOCKED V2.1 sub-wave for; **system-wide Faz G T0 already 2026-04-24** per PLAN.md). Bu session new Live Delta entry below for V2.1 closure track. ⏸️ Önceki 2026-05-14 ~12:23 UTC+3 (Session 49 — **D1.1a AUTH-SERVICE VAULT ROTATION CONTAINMENT TAMAMLANDI + 4 PR MERGED + 7→6 P1 DRIFT**: Codex strategic consultation `019e256f` Session 49 sırası C→A+B→D→Gate1d. **PR #563 MERGED** `6f263ca` PrometheusRule continuous alerting (KubeDeploymentRolloutStuck + KubeReplicaSetSplit + KubePodCrashLooping) + deploy-stability-window.md runbook. **PR #564 MERGED** `36392bf` D1.1a auth-service Vault rotation runbook (4 iter Codex peer review REVISE→AGREE — operator/agent boundary + Vault patch stdin pipe + rollback B+C correct sources + deploy snapshot plaintext exposure fix + ssh wrapper drop). **PR #566 MERGED** `1ac92b3` D1.1a containment 1st pass (DDL_AUTO=update→none safety hold). **PR #567 MERGED** `ce3aa7c` D1.1a 2nd pass (ConfigMap'a HIBERNATE_DIALECT + SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT + HIKARI init-fail-timeout — selective apply sonrası Hibernate dialect auto-detect fail çözümü). **D1.1a live operasyon**: Adım 1-9 tam yürütüldü (kullanıcı yetki opt-in 2026-05-14 chat): inline password hash `fddb842bb2939892` Vault'a yazıldı (kv version 4→5, stdin pipe), ESO force-sync 1 poll PASS (rv 1589540→2000279), kubectl replace --force ile inline env temizlendi, ConfigMap 2nd pass apply, rollout success, **inline env count 2** (SPRING_PROFILES_ACTIVE + JAVA_TOOL_OPTIONS), Spring start 58.3s clean, Gate 1d 180s stability PASS (uids match, restart=0), `/api/v1/authz/me` 4× 200, **drift detector 7→6 P1** (auth-service env drift kapandı), `/dev/shm/auth-pw.Blg7vf` shred. C E2E retest: mfe-users `Shell servisleri konfigüre edilmedi` blocker #561 ile çözüldü ✅; row-level impersonate UI eksik → spawn chip. **6 kalan P1** D dalga 1.2-1.7 (user/permission/core-data/report/schema/endpoint-admin). D1.1b (DDL_AUTO=validate + FLYWAY=true) Flyway state proof sonrası ayrı PR. Codex thread chain bu session: `019e256f` (strategy) + `019e257b` (PR #563 review) + `019e258a` (PR #564 review 4-iter) + `019e25a9` (PR #566 review) + `019e25ba` (PR #567 review). 7 spawn chip aktif (mfe-users UI + BE WireMock + FE Playwright + D dalga 1.2-1.7 + check_pr_time line213). Handoff: [docs/session-handoff-2026-05-14-session-49-d1.1a-closure.md](../session-handoff-2026-05-14-session-49-d1.1a-closure.md). ⏸️ Önceki 2026-05-14 ~01:30 UTC+3 (Session 48 supplement — **A NORMALIZER MERGED + D DALGA 1 BAŞLANGIÇ + AUTH-SERVICE P1 INCIDENT TESPİT**: Codex `019e234e` strategic consultation iter-3 zinciri C→A+B→D→Gate1d. **PR #554 MERGED** `343c11c` — drift normalizer baseline cleanup: `_parse_cpu_to_millicores` + `_parse_memory_to_bytes` + `_normalize_resources` (Kubernetes quantity equivalence: cpu "1"=="1000m", memory "1Gi"=="1024Mi") + `terminationGracePeriodSeconds=30` default inject. Live runtime smoke k3d-test: **10→7 P1 finding** (3 false positive eliminated: api-gateway cpu, endpoint-admin TGP, notification-orchestrator TGP). 59/59 unittest PASS. Codex peer review thread `019e235a` AGREE ilk turda. **C preflight** (Codex önerisi): testai admin Platform Admin login OK, `/admin/reports/users` 5 user grid load (admin@, testuser@, d35-admin@, d35-granted@, mcp-impersonation-tester@); audit DB fingerprint kanıt — rows 909+944 IMPERSONATION_BLOCKED target_email **BOŞ** (Session 47 BUG #1 pattern). 2 blocker: (a) mfe-users SPA "Shell servisleri konfigüre edilmedi" alert + (b) Browser MCP fetch/XHR cookie taşımıyor (extension sandbox) → E2E browser smoke ertelendi spawn chip'e. **D dalga 1.1 incident**: auth-service test cluster'da live inline `SPRING_DATASOURCE_PASSWORD` hash `6f76...` ile Vault canonical `808b...` (user-service + permission-service ile aynı) eşleşmiyor; live'da inline override aktif. ConfigMap'ta `SPRING_JPA_HIBERNATE_DDL_AUTO=update + SPRING_FLYWAY_ENABLED=false` tehlikeli steady-state; inline `none` override schema mutation engelliyor. Inline kaldırılırsa pod CrashLoop + schema corruption riski. Vault root token agent erişiminde yok → operator-blocked → spawn chip D1.1a auth-service Vault rotation + inline cleanup (containment plan: Codex 019e234e iter-5). 2 spawn task chip aktif: mfe-users init + auth-service Vault rotation. Handoff: [docs/session-handoff-2026-05-14-session-48-supplement-d-wave.md](../session-handoff-2026-05-14-session-48-supplement-d-wave.md). ⏸️ Önceki 2026-05-14 ~00:30 UTC+3 (Session 48 — **DEPLOYMENT CONTRACT DRIFT GATE LIVE — 2 PR LANDED + ENDPOINT-ADMIN PROBE DRIFT FIX**: User sorusu "çok fazla bug oluyor bunu engellemek/tespit için bir şey var mı?" → 3-katman drift gate impl. **PR #551 MERGED** `3720716` Codex `019e2319` iter-3 AGREE: `docs/operations/services.yaml` extend (workload_kind + runtime_class + probe_contract + jvm_warmup_extra), Python lib stdlib-only (deploy_normalizer + probe_contract_rules + services_catalog), CLI `check_deployment_contracts.py` (pr-time + runtime modes), 35/35 stdlib unittest. PR-time Check 5 + runtime Section 6 + RS-split Section 7. **PR #552 MERGED** `7a16982` Codex `019e233b` iter-2 AGREE: `scripts/deploy/gate-stability-window.sh` catalog-driven (jvm_warmup_extra→180s, others 120s) — UID churn / CrashLoopBackOff / restartCount per-(uid:container) / updatedReplicas / readyReplicas / RS-split / Progressing=False / ReplicaFailure=True; t=0 check + sleep + poll. 3 workflow Gate 1d after Gate 1c. Plus **immediate fix (no PR)**: cluster'daki endpoint-admin yeni RS `/healthz/*` → `/actuator/health/*` + `startupProbe` selective apply, CrashLoop 273-restart terminate, testai 200 LIVE. Runtime detector live'da 10 P1 finding üretti (baseline cleanup PR-3 bekliyor — terminationGracePeriodSeconds=30 default + cpu quantity normalize + apply-gap env drift birkaç backend'de). Cross-AI peer review HARD RULE iki PR için de uygulandı (REVISE→AGREE pattern). 3-katman cluster snapshot: Mac k3d-dev 🟢 + staging-sw k3d-test 🟢 + k3d-prod 🟢 + compose stateful 🟢. Handoff: [docs/session-handoff-2026-05-14-session-48-drift-gate-stability-window.md](../session-handoff-2026-05-14-session-48-drift-gate-stability-window.md). ⏸️ Önceki 2026-05-13 (Session 47 Bug Wave Closure — 5 PR MERGED + 2 spawn'd handoff [session-handoff-2026-05-13-session-47-bug-wave-closure.md](../session-handoff-2026-05-13-session-47-bug-wave-closure.md)). ⏸️ Önceki 2026-05-08 ~20:00 UTC+3 (Session 39 — **FAZ 23.6/23.7/23.8/23.9 OBSERVABILITY + KVKK + VAULT FULL CYCLE — 7 PR LANDED**: notification-orchestrator strict cutover (PR-5.4 default-org close + PR-5.5 subscriberId strict) prod LIVE on ai.acik.com, Vault path `kv/platform/notification-orchestrator` ESO managed (PR #424), 25 PrometheusRule alerts inactive/correctly-pending (PR #425/428/430), 12-panel Grafana dashboard sidecar imported (PR #431), DLQ SLO 99.5% with 18 recording rules + 4 burn-rate alerts true multi-window pattern (PR #433), audit retention KVKK Art.7 activated dry-run=true awaiting 02:00 UTC cron tick observation gate (PR #427). Pre-prod tek-user; multi-tenant Faz 21 = DEFER. Cross-AI peer review HARD RULE applied each PR (Codex thread chain `019e08df/0892/08fa/090d/093e/094a/0921/0935/0b9f`). Codex strategic retrospective `019e0b9f` AGREE: Step C.2 dry-run=false flip blocker = backend test gap (`AuditPartitionV8IntegrationTest` retention-days=36500 doesn't exercise DETACH/DROP) + 02:00 UTC tick clean evidence. Strategic continuation: A (C.2 prep) primary + B (dashboard extension) parallel; DEFER Tempo / federation / KVKK API / Faz 21 to dedicated sub-faz cycles. ⏸️ Önceki 2026-05-03 ~14:30 UTC+3 (Session 37 — **FAZ 19 PROD MIGRATION TAMAMLANDI + AG GRID LISANS BYTES FIX + DRIFT BACKLOG AUDIT**: ai.acik.com edge nginx cluster-authoritative migration LIVE — host disk static serving → cluster ingress proxy_pass (testai pattern + ai-spesifik istisnalar). Manual rsync döngüsü ortadan kalktı, GitOps digest pin + cluster pod truth public flow'a otomatik yansır. AG Grid Enterprise lisansı her iki public host'ta valid:true (LicenseManager getLicenseDetails programmatic kanıt, AG-128070, expiry 2 June 2026). Drift backlog 6 → 1 (ek #4 fix kalıcı, #1+#6 kapandı bu session, #2+#5 audit ile stale, sadece #3 runner labels açık). Codex `019ded8d` AGREE post-impl. platform-web `hotfix/ag-grid-license-rebuild` branch geçici release source (4 commit live ama main'e merge edilmedi — main build kırık: Vite 8 + Module Federation top-level await). main-fix sub-task spawn'da paralel ilerliyor. ⏸️ Önceki 2026-05-01 ~01:00 UTC+3 (Session 36 — **PROD POST-CUTOVER COMPLIANCE SPRINT BAŞLADI**: D30 atomic cutover T+7 günü; prod deploy discipline formal hale geldi (deploy-backend-prod.yml + deploy-frontend-prod.yml + shared verify-pod-digest.sh helper + production environment gate). T0=2026-04-24 cutover stable, 72h rollback-window 2026-04-27'de doldu, post-T+72h prod cluster-authoritative kabul ediliyor. Bu sprint'te (Codex 019de00f AGREE-with-revisions, 9 PR plan): PR-1 shared digest helper LIVE smoke (multi-replica + newest-only verified), PR-2 deploy-backend-prod.yml MERGED (workflow_dispatch + environment + strict digest), PR-3 deploy-frontend-prod.yml MERGED (aynı disipline), kalan 6 PR (truth refresh / rollback runbook / compose inventory / retire plan / Faz 22 charter / endpoint-admin skeleton). Prod live state: 9 backend service 2/2 ready hepsi `@sha256:<digest>` pinned, frontend 2/2 ready, ai.acik.com cluster-authoritative (host nginx → 30443 NodePort), compose stateful (PG/KC/Vault) D6 contract korumalı. iter-49 series + AG Grid license fix LIVE doğrulandı testai'da. ⏸️ Önceki 2026-04-30 ~22:55 UTC+3 (Session 35 — iter-49 CYCLE CLOSE + BACKEND/FRONTEND DEPLOY AUTOMATION DIGEST-PIN MODE LIVE: 12 PR landed cycle close, B.3 chain auto-trigger LIVE verified). ⏸️ Önceki 2026-04-28 ~19:30 UTC+3 (Session 33 FINAL — **ADR-0011 GOVERNANCE LAYER COMPLETE (DD-1..DD-4 + AC-1 + BG-1 + BG-2) + D35-2-FULL FIRST CANLI EVIDENCE 11/11 PASS + 15 PR LANDED (1 backend + 14 gitops)**: Bu session block ADR-0011 §4 PR sequence'ini tamamladı: 4 drift detection guard (anchor + V25/V26 contract, ETL canonical JSON, schema-service snapshot scaffold, env+Dockerfile lint), 1 audit cadence scaffold (drill evidence template + first-drill runbook), 2 boundary governance (per-PR boundary declaration CI gate + sandbox-blocking pattern playbook + 3 gray-area decision records). Tüm PR'lar Codex `019dd409` consensus akışı ile (PARTIAL/AGREE-with-revisions iter'leri absorb edildi). BG-1 self-validating gate ([PR #233](https://github.com/Halildeu/platform-k8s-gitops/pull/233)) kendi PR'ını da validate etti — boundary block + 6 class checkbox + user-approval evidence + label hard gate yeşil. ADR-0011 governance layer çalışıyor. Drift detection coverage Session 32-33 4 drift event'i kapatır: V19/V20/V21 anchor (DD-1), V25 jsonb extraction format (DD-2), etl-worker env prefix (DD-4 + config.py 4-prefix fallback fix), Dockerfile keyring (DD-4). DD-3 schema snapshot operator-loop scaffold; AC-1b operator first drill (Phase 1 Vault test rekey) post-merge user-approval ile. Codex thread chain (Session 33 toplam): `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE) → `019dd409` (D35-3 prereq + DD/AC/BG sequence + sandbox-blocking pattern). Kalan operator-pending: D35-3 UI persona evidence (browser session) + AC-1b drill execution. ⏸️ Önceki 2026-04-28 ~16:45 UTC+3 (Session 33 mid #2 — **D35-2-FULL FIRST CANLI EVIDENCE 11/11 PASS + GATEWAY EXTERNAL 500 ROOT CAUSE FIX + 7 PR LANDED (1 backend + 6 gitops)**: D35-2-limited (PR #218) "manuel SQL bypass" caveat'i KALKTI. REST controller layer V25-aligned eventual-consistency canlı yakalandı staging-sw test cluster'da: `POST /api/v1/access/scope` → 201 + scopeId=3 + outboxId=3 + openFgaObjectId=`wc-our-company-1` (V25 namespace) + outbox PROCESSED in 907ms + /check ALLOW granted + DENY negative + DELETE 204 + REVOKE PROCESSED 5s + FLIP DENY + 0 FAILED rows. D35-2-full evidence ([PR #225](https://github.com/Halildeu/platform-k8s-gitops/pull/225), `docs/faz-21-3-evidence/2026-04-28-d35-2-full-canli-rest-flow.md`). Gateway external `testai.acik.com` 500 root cause: Session 33 PR-G follow-up ROUTES_17 fix sırasında `kubectl apply -f base/configmap.yaml` selective apply overlay patch'lerini atladı, base'in literal `serban` realm değerini live cluster'a yazdı → `JwtException: No suitable decoder accepted the token` → AuthenticationServiceException → 500. Live'da düzeltildi (overlay-built ConfigMap apply + rolling restart api-gateway → external `testai.acik.com` POST 201) + drift-prevention guard ([PR #226](https://github.com/Halildeu/platform-k8s-gitops/pull/226): base ISSUER_URI/JWKS_URI = `OVERLAY_MUST_OVERRIDE` + prod overlay JWKS_URI explicit add — CLAUDE.md "Yaygın Pitfalls #1" pattern). Codex thread chain: `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE) → `019dd409` (D35-3 prereq + api-gateway route drift A-prime + persona credential boundary). Kalan kritik path: D35-3 UI persona evidence (browser session — operatör + agent correlation). ⏸️ Önceki 2026-04-28 ~12:55 UTC+3 (Session 33 — **V25 ALIGNMENT CROSS-REPO + D35-3 PREREQ INFRASTRUCTURE LANDED + STAGING-SW ROLLED OUT (3 PR: 1 backend + 2 gitops)**: V25 OUR_COMPANY anchor + `wc-our-company-` FGA namespace contract drift was carried by `permission-service` image `sha-4f408f4` (PR-G follow-up); fix-forward landed via [`platform-backend#17`](https://github.com/Halildeu/platform-backend/pull/17) sha-`943bd5f` (`expectedSourceTable(COMPANY)→OUR_COMPANY` + encoder COMPANY case `wc-our-company-<COMP_ID>`) + 5 unit-test files retargeted + 3 new V25/V26 Testcontainers contract tests + V25/V26 SQL copied to test classpath + V90 fixture rewritten with OUR_COMPANY anchor. [`platform-k8s-gitops#221`](https://github.com/Halildeu/platform-k8s-gitops/pull/221) digest-pin in test+prod overlays (`sha256:219b053777478fa048fbe04b4f990f477a1091d2e2a49c0691e18c340a5c9406`). Operator rollout on `k3d-test`: pod Running, immutable digest match, HikariPool-2 (reportsDb) + JPA EntityManagerFactory `reportsDb` validate cleanly against V25/V26 schema, app start 41.5s clean, 0 ERROR/Exception in boot logs, DB outbox state intact (0 PENDING / 0 FAILED / 2 PROCESSED from D35-2-limited preserved). [`platform-k8s-gitops#222`](https://github.com/Halildeu/platform-k8s-gitops/pull/222) **D35-3 prereq infrastructure** — 7 dosya, 1668 satır: `d35-2-full-template.md` + `d35-3-product-path-template.md` (evidence templates, V25-aligned 11-step + UI persona checklist), 3 runbook (RB-prereq-tuple-seed agent-yapılabilir, RB-keycloak-admin-jwt operatör-only, RB-ui-persona-checklist browser flow), 2 script (`openfga-access-tuple-seed.sh` idempotent + `rest-grant-runner.sh` 11-step canonical runner with V25 namespace drift detection). Codex thread chain: `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE single-image scope) → `019dd409` (D35-3 prereq strategy PARTIAL/AGREE — K-serisi defer, D35-2-full ayrı tier, prereq paket execute). Spawned hygiene chip: gitops `wc-company-*` references in docs/fixtures/SQL surfaces (Codex `019dd3dc` final note). ⏸️ Önceki 2026-04-28 ~10:40 UTC+3 (Session 32 FINAL — **D35-2 FIRST CANLI EVIDENCE CAPTURED + ADR-0010 9-PR SEQUENCE LANDED + OUR_COMPANY DRIFT FIXED + 31 PR THIS SESSION BLOCK**: Full D35 ladder closure D35-0 → D35-1 → D35-2 (D35-3 product path UI persona = downstream). Codex `019dd2c9` xhigh effort architecture (ADR-0010 9-PR sequence) + Codex `019dd34e` PARTIAL/AGREE-with-revisions (OUR_COMPANY drift fix 4-PR sequence + V26 source_pk dual-format hot-fix) + Codex `019dd333` Session 32 retrospective discipline applied. **D35-2 verified live (10/11 canonical steps PASS + 1 limited)**: GRANT scope_id=2 → outbox PROCESSED <8s → OpenFGA `allowed:true` granted user → REVOKE outbox PROCESSED <2s → flip → `allowed:false` originally-granted user → 0 FAILED outbox rows in 10min window. Step 4 (REST POST grant) bypassed manual SQL INSERT (D35-2-limited tag); full REST flow downstream of Keycloak admin JWT + module:ACCESS#can_manage tuple seed + AccessScopeController.grant exercise = D35-3 product path PR. Migration chain: V16 → V17 → V19 → V20 → V21 → V22 → V23 → V25 → V26 (V25 anchor table OUR_COMPANY + tenant predicate + signature widen org_id; V26 source_pk dual-format ETL JSON canonical vs jsonb extraction). Backend contract discovered live: OutboxPoller payload.tuple = `{user, relation, objectType, objectId}` (cross-repo Explore agent verified). Operator authority used per Kural #7 + ADR-0010 §2.5 + auto-mode + Codex consensus + sandbox enforcement.
+## Live Delta — Faz 22.6 #548 hardware marker accepted; VIEW_ONLY is sole completion blocker (2026-07-02)
+
+This delta supersedes the #548 marker-blocked interpretation in the entries
+below. It does not close Faz 22.6 because `platform-k8s-gitops#1580` remains
+open and missing its fail-closed VIEW_ONLY engineering evidence marker.
+
+What changed:
+
+- The strong hardware path marker was appended to the canonical
+  `platform-backend#548` issue body:
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1`.
+- The marker is backed by the 2026-07-02 Denetim/device-key smoke evidence:
+  `DEVICE_KEY_ATTESTATION_REAL` reached
+  `basis=HARDWARE_KEY_ATTESTATION`, with identity consistency and the durable
+  recording hash-chain `POLICY_EVENT` hash prefix `1786b90a79796bb0`.
+- The official `Faz 22.6 Live Audit` workflow was rerun from `main`:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28622626048`.
+
+Current audit result:
+
+```text
+GATE_B1_4_HARDWARE_ATTESTATION=pass state=CLOSED issue=Halildeu/platform-backend#548 owner=Halil Kocoglu approved_at=2026-07-02
+GATE_VIEW_ONLY_ENGINEERING=blocked state=OPEN expected=CLOSED-with-view-only-engineering-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
+GATE_VIEW_ONLY_KVKK=tracked_pending issue=Halildeu/platform-k8s-gitops#1580 reason=no-kvkk-marker
+REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay expected_digest=sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5
+F22_6_RELEASE_LINEAGE=pass
+RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass
+F22_6_COMPLETION=blocked
+F22_6_NEXT_REQUIRED=view-only-engineering-evidence-package-required
+```
+
+Boundary:
+
+- `#548` is no longer the Faz 22.6 completion blocker.
+- `#1580` remains the only fail-closed completion blocker.
+- KVKK remains tracked-pending and visible, but non-blocking per ADR-0044 unless
+  the KVKK marker allowlist is violated.
+- No 5-device, 50-device, 800-device, production, or broad-rollout readiness is
+  claimed.
+
+## Live Delta — Faz 22.6 remote-bridge live evidence restored; completion still marker-blocked (2026-07-02)
+
+This delta supersedes the "same-image reconciliation in flight" note below.
+
+Latest audit:
+
+- `Faz 22.6 Live Audit`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28619549743`
+  concluded `success`.
+- `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay
+  expected_digest=sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5`.
+- Live `k3d-test/platform-test` evidence on `staging-sw` matches the same digest:
+  `endpoint-admin-service` and `endpoint-admin-remote-bridge-device-key` are
+  both Ready on
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5`,
+  with current pods Ready and `restartCount=0`.
+- The public remote bridge path remains the standard 443/SNI route:
+  `remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444`.
+
+Current Faz 22.6 completion boundary:
+
+- `F22_6_COMPLETION=blocked`.
+- `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`.
+- #548 is blocked by the missing issue-body
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker, not by missing
+  hardware-key verifier smoke evidence.
+- #1580 is blocked by the missing
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` product-channel VIEW_ONLY evidence marker.
+- `F22_6_RELEASE_LINEAGE=pass` and `RELEASE_LINEAGE_GATE=pass`.
+
+## Live Delta — Faz 22.6 remote-bridge digest drift detected; same-image reconciliation in flight (2026-07-02)
+
+This delta supersedes only the `REMOTE_BRIDGE_LIVE=pass` interpretation in the
+entries below until the reconciliation PR is merged and the live audit is
+rerun. It does not change the completion verdict.
+
+Latest audit:
+
+- `Faz 22.6 Live Audit`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28618060866`
+  failed at `REMOTE_BRIDGE_LIVE`.
+- The audit derived expected digest
+  `sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f`
+  from the rendered overlays, but the active device-key broker was live on
+  `sha256:54f56a2f38a769a5dd739b40c66aabe244c2a887852f464cf9fce6eea2c234c5`.
+- This is not a port/routing blocker: the public path remains the standard
+  443/SNI route
+  `remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444`.
+
+Reconciliation direction:
+
+- PR `platform-k8s-gitops#2236` reconciles the same-image remote-bridge
+  topology by co-bumping the primary test overlay, the normal bridge activation
+  overlay, and the device-key bridge activation overlay to the same immutable
+  `54f56a2f...` digest.
+- The PR does not enable the VIEW_ONLY viewer surface and does not add #548 or
+  #1580 acceptance markers.
+- After merge/apply, `Faz 22.6 Live Audit` must be rerun. Until that audit shows
+  a fresh `REMOTE_BRIDGE_LIVE=pass`, the live status remains blocked by this
+  drift plus the existing #548/#1580 marker requirements.
+
+Current Faz 22.6 completion boundary:
+
+- `F22_6_COMPLETION=blocked`.
+- #548 has hardware-key verifier smoke evidence, but still needs the issue-body
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker with named owner
+  approval.
+- #1580 still needs the product-channel VIEW_ONLY engineering marker and
+  attended pilot evidence. KVKK remains tracked separately and non-blocking
+  unless the allowlist is violated.
+
+## Live Delta — Faz 22.6 #548 hardware verifier passed; #1580 viewer dry-run refreshed; completion still marker-blocked (2026-07-02)
+
+This delta supersedes only the #548 evidence interpretation in the earlier
+2026-07-02 entry below. It does not change the completion verdict.
+
+#548 device-key / TPM evidence:
+
+- The active public path remains the standard remote-bridge mTLS SNI route:
+  `remote-bridge-mtls.testai.acik.com:443 -> endpoint-admin-remote-bridge-device-key:9444`.
+- The latest Denetim/device-key smoke evidence is stored on `staging-sw` at:
+  `/home/halil/codex-rb-smoke/20260702T194246Z-faz226-548-denetim-device-key`.
+- Smoke summary:
+  `open=200`, `approve=200`, `challenge=200`, `verify=200`,
+  `deviceKeyEvidenceWait=stored`, and `operation=200`.
+- The operation response was `kind=KILL`, but this is not a device-key verifier
+  failure. The dedicated device-key broker is running duress fail-closed
+  (`AMBIGUOUS_UNTIL_WIRED`, no risk-accepted duress bypass), so a safe KILL is
+  expected after the verifier decision.
+- Durable recording entry `seq=2` is a `POLICY_EVENT` with
+  `hash16=1786b90a79796bb0`. This matches the SHA-256 prefix of the canonical
+  device-trust decision:
+
+```text
+DEVICE_TRUST_DECISION:trusted=true,basis=HARDWARE_KEY_ATTESTATION,effective_trusted=true,effective_basis=HARDWARE_KEY_ATTESTATION,identity=true,reason=hardware-key-attestation-verified
+sha256=1786b90a79796bb07710d60d20a42e593449794ae3e08e1983354d3d1b01e1cf
+```
+
+- Targeted backend verification on branch `codex/faz226-548-rootcause` passed:
+  `DeviceKeyAttestationRealSessionDeviceTrustVerifierTest`,
+  `DeviceKeyAttestationNegativeEvidenceMatrixTest`, and
+  `RemoteBridgeOperatorServiceTest` ran `48` tests with `0` failures/errors.
+- Issue evidence was appended to
+  `https://github.com/Halildeu/platform-backend/issues/548#issuecomment-4869957468`.
+
+#548 boundary:
+
+- This is strong evidence that the real `DEVICE_KEY_ATTESTATION_REAL` verifier
+  reached `HARDWARE_KEY_ATTESTATION` with identity consistency.
+- It is not, by itself, the machine-readable acceptance marker required by the
+  Faz 22.6 completion audit.
+- The audit still requires exactly one valid marker in the canonical
+  `platform-backend#548` issue body. For the strong path that marker is
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1`, with a named owner and no
+  `expires_at`. No bounded-risk or enrollment-backed substitution is claimed.
+
+#1580 VIEW_ONLY viewer pilot surface:
+
+- A fresh non-mutating dry-run was executed from `main`:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28617730927`.
+- The run concluded `success` and rendered the owner-gated viewer overlay with:
+  `REMOTE_BRIDGE_VIEWER_ENABLED=true`,
+  `REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES=image/png`,
+  `endpoint-admin-remote-bridge-viewer` as `ClusterIP`, no NodePort for `8096`,
+  `containerPort: 8096`, and both NetworkPolicies:
+  `eab-bridge-viewer-allow-ingress-8096-from-api-gateway` plus
+  `eab-api-gateway-allow-egress-8096-to-bridge-viewer`.
+- Server-side dry-run in `k3d-test/platform-test` accepted the viewer Service,
+  bridge config/deployment changes, ExternalSecrets, ingress, and both 8096
+  NetworkPolicies.
+- Live posture after the dry-run remains intentionally closed:
+  no viewer Service, no viewer 8096 NetworkPolicies, and no live viewer route
+  was applied.
+- Issue evidence was appended to
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1580#issuecomment-4869957484`.
+
+Current Faz 22.6 completion boundary:
+
+- Latest canonical audit evidence still reports
+  `F22_6_COMPLETION=blocked`.
+- `REMOTE_BRIDGE_LIVE=pass` and `F22_6_RELEASE_LINEAGE=pass` remain green.
+- `GATE_B1_4_HARDWARE_ATTESTATION` remains blocked by missing issue-body
+  acceptance marker, not by missing verifier evidence.
+- `GATE_VIEW_ONLY_ENGINEERING` remains blocked by missing
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` product-channel evidence marker.
+- `GATE_VIEW_ONLY_KVKK` remains tracked-pending and non-blocking unless its
+  allowlist is violated.
+
+## Live Delta — Faz 22.6 #548 device-key live route active; completion still marker-blocked (2026-07-02)
+
+This delta supersedes only the remote-bridge live evidence interpretation after
+the #548 device-key broker activation. It does not change the completion
+verdict.
+
+Source and rollout chain:
+
+- `platform-backend#791` merged the device-key challenge lifecycle audit
+  follow-up for endpoint-admin-service.
+- `platform-k8s-gitops#2233` pinned the test endpoint-admin-service consumers
+  to image digest
+  `sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f`.
+- `Apply #548 device-key remote-bridge activation` workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28609420731`
+  applied the owner-gated device-key wrapper and verified rollout/imageID/SNI.
+
+Live cluster evidence:
+
+- `platform-test/endpoint-admin-service` is Ready on
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f`.
+- `platform-test/endpoint-admin-remote-bridge-device-key` is Ready on the same
+  digest, with `restartCount=0`.
+- Public SNI route is now
+  `remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444`.
+- The older enrollment-backed `endpoint-admin-remote-bridge` deployment still
+  exists on digest
+  `sha256:6452e5dd752526abf33696d4dbda9020663c5eb3beb2011ddd17f8bf7d3dd725`,
+  but it is not the active public SNI backend while the device-key wrapper is
+  selected.
+
+Audit correction:
+
+- The completion audit previously derived the expected digest from the aligned
+  overlays and then checked the inactive `endpoint-admin-remote-bridge`
+  deployment, which caused a false `REMOTE_BRIDGE_LIVE` blocker after the SNI
+  route moved to the dedicated device-key broker.
+- The audit now reads `endpoint-admin-remote-bridge-mtls` and validates
+  `endpoint-admin-service` plus the active SNI backend deployment and matching
+  ExternalSecrets.
+- Patched live audit output now reports:
+  `REMOTE_BRIDGE_LIVE=pass mode=ssh expected_source=rendered-overlay
+  expected_digest=sha256:12f4f97e2261439d3786128208f49257b3103b46f3487337759b67bb3cbafb3f`.
+
+Endpoint evidence:
+
+- Denetim PC resolves `remote-bridge-mtls.testai.acik.com` to `10.9.10.53` and
+  TCP `443` succeeds; this is not a closed-port problem.
+- EndpointAgent service restart on Denetim PC loads the machine certificate and
+  starts the device-key remote bridge, but the auto-enroll heartbeat currently
+  receives `401 MACHINE_CERT_NOT_ENROLLED`.
+- Backend bridge logs still show `HELLO_VERIFIED:cert=false,attestation=false,device=false`.
+  Therefore no `device=true` or hardware/device-key acceptance evidence exists
+  yet.
+
+Current completion boundary:
+
+- `F22_6_RELEASE_LINEAGE=pass` remains green.
+- `REMOTE_BRIDGE_LIVE=pass` is the correct active-SNI interpretation after this
+  audit correction.
+- `GATE_B1_4_HARDWARE_ATTESTATION` remains blocked by missing
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE` or bounded-risk marker on
+  `platform-backend#548`.
+- `GATE_VIEW_ONLY_ENGINEERING` remains blocked by missing
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` evidence marker on
+  `platform-k8s-gitops#1580`.
+- `GATE_VIEW_ONLY_KVKK` remains tracked-pending and non-blocking unless the
+  marker allowlist is violated.
+- Current machine result remains `F22_6_COMPLETION=blocked` with
+  `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`.
+
+## Live Delta — Faz 22.6 #548 device-key dry-run refreshed; AgentPC2 token still pending (2026-07-01)
+
+This delta supersedes only the #548 device-key dry-run freshness and the
+AgentPC2 token-consume status in the previous Faz 22.6 entries. It does not
+change the completion verdict.
+
+Latest #548 endpoint-local token state:
+
+- Fresh TEST enrollment token was minted for AgentPC2 TPM auto-enroll without
+  exposing raw token material to chat, GitHub, Mavis, or logs.
+- Server-side status check for enrollment
+  `4f6dfce2-b563-432c-aeb1-2b050ad14914` returned:
+  `status=PENDING`, `deviceId=null`, `consumedAt=null`,
+  `requestedBySubject=87b1d2c8-aeed-40af-8742-de8431efeee2`, and
+  `expiresAt=2026-07-01T16:20:39.216902Z`.
+- Interpretation: AgentPC2 has not yet consumed the token and has not produced
+  a TPM binding or #548 hardware/device-key evidence from this enrollment.
+- Endpoint-admin logs in the last check still show only the earlier malformed
+  denial:
+  `tpm-enroll deny code=MALFORMED ... fields=[enrollmentToken[NotBlank,len=1]]`;
+  no newer successful TPM binding was present.
+
+Latest #548 device-key broker activation dry-run:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28528702337`
+  (`Apply #548 device-key remote-bridge activation`) completed successfully on
+  main SHA `857dd6bec2e1862c3e8a3abd07902b9cbc8cc599`.
+- Dispatch was `dry_run=true`; no live apply was performed.
+- Render guard proved the owner-gated real-verifier path still renders:
+  `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: DEVICE_KEY_ATTESTATION_REAL`,
+  `REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "false"`, no
+  enrollment-backed pilot-risk flag, SNI route intent
+  `remote-bridge-mtls.testai.acik.com -> endpoint-admin-remote-bridge-device-key:9444`,
+  and rollout strategy `maxSurge=0` / `maxUnavailable=1`.
+- The rendered endpoint-admin image digest was derived as
+  `sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- Kubernetes server-side dry-run against `k3d-test/platform-test` accepted the
+  ServiceAccount, ConfigMap, Service, Deployment, ExternalSecrets, Ingress, and
+  NetworkPolicies for the dedicated device-key broker surface.
+- Live post-run guard confirmed the dry-run did not create the device-key
+  deployment or SNI ingress in the test cluster:
+  `device-key-deploy=not-created`, `mtls-ingress=missing`.
+- Issue evidence:
+  `https://github.com/Halildeu/platform-backend/issues/548#issuecomment-4856962326`.
+
+Boundary:
+
+- This strengthens #548 activation readiness but does not satisfy #548.
+- Remaining #548 acceptance requires an elevated AgentPC2 endpoint-local TPM
+  auto-enroll run with the full fresh test token in the hidden prompt, followed
+  by server-side TPM binding verification, device-key broker session evidence,
+  negative matrix evidence, and the hardware acceptance marker.
+- `F22_6_COMPLETION` remains blocked because #548 and #1580 still lack their
+  required acceptance markers.
+
+## Live Delta — Faz 22.6 latest truth after AgentPC2 TPM runner hardening and VIEW_ONLY dry-run refresh (2026-07-01)
+
+Latest authoritative audit:
+
+- `faz22-6-live-audit.yml` run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28527364757`
+  succeeded on main SHA `12356d679d5c106a077431b3d563a4879b475e21`.
+- Audit output still reports:
+  `REMOTE_BRIDGE_LIVE=pass`, `F22_6_RELEASE_LINEAGE=pass`, and
+  `RELEASE_LINEAGE_GATE=pass`.
+- Audit output still reports
+  `GATE_B1_4_HARDWARE_ATTESTATION=blocked reason=missing-acceptance-marker`,
+  `GATE_VIEW_ONLY_ENGINEERING=blocked reason=missing-acceptance-marker`,
+  `GATE_VIEW_ONLY_KVKK=tracked_pending reason=no-kvkk-marker`, and
+  `F22_6_COMPLETION=blocked`.
+- Therefore the next required gates remain exactly:
+  `b1-4-acceptance-package-required` and
+  `view-only-engineering-evidence-package-required`.
+
+AgentPC2 TPM auto-enroll live-found input failure and mitigation:
+
+- Server-side endpoint-admin logs for the latest AgentPC2 TPM auto-enroll
+  attempt reached the TPM enrollment controller but denied the request as
+  malformed before any TPM binding could be created:
+  `tpm-enroll deny code=MALFORMED detail=MethodArgumentNotValidException fields=[enrollmentToken[NotBlank,len=1]]`.
+- Interpretation: backend received a one-character enrollment token value.
+  This is not TPM evidence and cannot produce the #548 marker.
+- `platform-k8s-gitops#2225` merged at
+  `60fca93634a8660fbd33fc0c3dbdd283bb4b73fd`, adding failure-path runner
+  diagnostics: clear the process token first, then print redacted
+  endpoint-agent stderr/stdout, EK/TPM summaries, local endpoint-agent file
+  info, version/help, and `--auto-enroll-tpm --help`.
+- `platform-k8s-gitops#2226` merged at
+  `12356d679d5c106a077431b3d563a4879b475e21`, adding a local hidden-prompt
+  preflight that rejects obviously truncated token input
+  (`SecureString.Length < 20`) before endpoint/API execution and skips stale
+  endpoint diagnostics when the endpoint packet never started.
+- `faz22-platform-test-sync-openfga-verify.yml` run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28527266174`
+  passed and synced `platform-test` to
+  `12356d679d5c106a077431b3d563a4879b475e21`.
+- Live Argo state after the sync: `platform-test` is `Synced Healthy` at
+  `12356d679d5c106a077431b3d563a4879b475e21`.
+- Public bootstrap publication after the sync:
+  `https://testai.acik.com/artifacts/endpoint-agent/bootstrap/SHA256SUMS`
+  pins `agentpc2-tpm-autoenroll-runner.ps1` to
+  `6082c2d092d2300325915addcda22bd50c44e15fd73ea38e3f6e66033df20e0c`.
+- Issue evidence was recorded in
+  `https://github.com/Halildeu/platform-backend/issues/548#issuecomment-4856735236`.
+- Boundary: this hardens and debugs the endpoint-local #548 path, but it does
+  not satisfy #548. A fresh elevated AgentPC2 run with a real fresh test
+  enrollment token is still required, followed by server-side TPM binding
+  verification, device-key broker session evidence, and negative matrix
+  evidence.
+
+VIEW_ONLY owner-gated pilot surface refresh:
+
+- `apply-view-only-viewer-pilot-enable.yml` dry-run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28527491081`
+  succeeded on main SHA `12356d679d5c106a077431b3d563a4879b475e21`.
+- The dry-run rendered and guarded
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer`:
+  `REMOTE_BRIDGE_ENABLED=true`, `REMOTE_BRIDGE_VIEWER_ENABLED=true`,
+  `REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES=image/png`,
+  `containerPort: 8096`, dedicated
+  `endpoint-admin-remote-bridge-viewer` `ClusterIP`, no 8096 NodePort, and
+  both 8096 NetworkPolicies
+  `eab-bridge-viewer-allow-ingress-8096-from-api-gateway` plus
+  `eab-api-gateway-allow-egress-8096-to-bridge-viewer`.
+- The workflow verified the viewer overlay is absent from the synced
+  `kustomize/overlays/test` Argo root.
+- Server-side dry-run against `k3d-test/platform-test` accepted the rendered
+  Service, ConfigMap, Deployment, ExternalSecrets, Ingress, and NetworkPolicy
+  objects.
+- Live post-dry-run check found no viewer Service or viewer NetworkPolicy
+  leftovers; the pilot surface was not applied.
+- Issue evidence was recorded in
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1580#issuecomment-4856735523`.
+- Boundary: this proves the owner-gated VIEW_ONLY viewer exposure path remains
+  render-valid and server-side-dry-run-valid. It does not expose 8096, does
+  not start a product-channel VIEW_ONLY session, does not create the
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` marker, does not create KVKK/DPO signoff,
+  and does not satisfy `platform-k8s-gitops#1580`.
+
+## Live Delta — Faz 22.6 acceptance package workflow surface added in GitOps (2026-07-01)
+
+Codex added artifact-only package workflows for the two acceptance markers that
+the latest Faz 22.6 audit still requires:
+
+- `faz22-6-b1-4-acceptance-package.yml` packages either the strong
+  `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker or the bounded
+  `F22_6_B1_4_RISK_ACCEPTANCE: v1` marker after explicit owner/evidence
+  acknowledgements.
+- `faz22-6-view-only-engineering-evidence-package.yml` packages the
+  disabled-mode metadata manifest plus matching
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` marker after explicit engineering-control
+  acknowledgement.
+- Both workflows are artifact-only: `permissions: contents: read`, no secrets,
+  no `kubectl`, no issue writes, and no production mutation.
+- Static guard:
+  `scripts/test/faz22-6-acceptance-package-workflows-static.sh`.
+
+Boundary: these workflows remove manual marker-format drift after real
+owner/evidence decisions exist. They do not create AgentPC2 TPM evidence, do
+not apply the #548 device-key broker, do not start a VIEW_ONLY pilot, do not
+write `platform-backend#548` or `platform-k8s-gitops#1580`, and do not satisfy
+`F22_6_COMPLETION` by themselves.
+
+## Live Delta — Faz 22.6 latest main audit/decision package plus AgentPC2 TPM binding gap confirmed (2026-07-01)
+
+After the A1 host/Vault/device-key broker proof, Codex reran the completion
+audit and regenerated the read-only decision package from that fresh audit.
+
+Latest audit and decision package:
+
+- Live audit:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28517349270`
+  (`headSha=28e2c854eb7fda8ef7ef0f61c41f715820ae07cd`), result `success`.
+- The live audit passed operation catalog, approved script runner,
+  constrained executor, remote bridge live, release lineage, and the
+  release-lineage gate.
+- The same audit kept B1.4 hardware attestation and VIEW_ONLY engineering in
+  `blocked` because their acceptance markers are still missing, kept VIEW_ONLY
+  KVKK as `tracked_pending`, and kept Faz 22.6 completion in `blocked`.
+- The required next evidence packages are the B1.4 acceptance package and the
+  VIEW_ONLY engineering evidence package.
+- Decision package workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28517585327`
+  (`headSha=28e2c854eb7fda8ef7ef0f61c41f715820ae07cd`), result `success`.
+- Artifact:
+  `faz22-6-completion-decision-package-28517349270`.
+- Decision package output:
+  `completion.status=blocked` and
+  `completion.next_required=[b1-4-acceptance-package-required, view-only-engineering-evidence-package-required]`.
+
+AgentPC2 TPM auto-enroll packet readiness:
+
+- `platform-k8s-gitops#2214` merged at
+  `6fc3e6595fdf4af1b554c22527528b3165a5f20d`, adding the non-secret
+  AgentPC2 TPM auto-enroll packet generator, workflow-dispatch packet builder,
+  static guard, and #548 runbook correction for the real
+  `endpoint-agent.exe --auto-enroll-tpm --api-url ...` path.
+- Main workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28516699960`
+  succeeded and uploaded artifact
+  `faz22-6-agentpc2-tpm-autoenroll-28516699960`.
+- Downloaded artifact contents were verified locally as exactly:
+  `agentpc2-tpm-autoenroll.ps1`, `README.md`, `packet-manifest.json`, and
+  `SHA256SUMS`; `shasum -a 256 -c SHA256SUMS` passed for the generated files.
+- Artifact manifest targets `AgentPc2` /
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f`, API base
+  `https://testai.acik.com/api/v1/endpoint-agent`, and suffixes
+  `/enrollments/tpm/nonce` plus `/enrollments/tpm/attest`.
+- Secret hygiene remains bounded: artifact scan found no private-key,
+  bearer-token, password, secret, or long token pattern; manifest records
+  `enrollment_token_embedded=false`,
+  `raw_credential_material_included=false`, and token channel
+  `process environment on endpoint only`.
+- Boundary: this packet readiness does not run TPM enrollment, does not create
+  a binding row, does not run the device-key broker session, and does not
+  satisfy #548. It only removes the packet-preparation ambiguity for the
+  next endpoint-local AgentPC2 TPM auto-enroll attempt.
+
+AgentPC2 endpoint-local access boundary:
+
+- Codex verified SSH access to `staging-sw` works for user `halil`; the user is
+  in `sudo` and `docker`.
+- `staging-sw` has WireGuard `wg0` with peer route `10.99.0.2/32`.
+- Read-only reachability checks from `staging-sw` to `10.99.0.2` found no open
+  management port on `22`, `5985`, `5986`, `3389`, or `445`, and one ICMP ping
+  probe received no reply.
+- Boundary: until AgentPC2 exposes an approved admin shell path (SSH, WinRM,
+  RDP, or an equivalent managed execution channel), the TPM auto-enroll command
+  remains an endpoint-local elevated PowerShell operator action. Cluster,
+  GitHub, evidence packaging, and marker helper work remain agent-doable.
+
+B1.4/#548 device-key broker activation dry-run readiness:
+
+- `apply-device-key-remote-bridge-activation.yml` dry-run workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28518156307`
+  succeeded on main SHA `e38078d33971135b3880a230e7fe85db6d85a87f`.
+- Runner/job evidence: self-hosted `staging-sw-testai-deploy`; job
+  `84535034803` completed successfully.
+- Dispatch input validation passed with
+  `confirm=APPLY_DEVICE_KEY_REMOTE_BRIDGE_ACTIVATION`, `dry_run=true`, and no
+  operator-provided digest override.
+- Render guard passed for
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live`:
+  `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER=DEVICE_KEY_ATTESTATION_REAL`,
+  `REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED=false`, no bounded pilot
+  risk-acceptance flag, public SNI
+  `remote-bridge-mtls.testai.acik.com`, backend service
+  `endpoint-admin-remote-bridge-device-key:9444`, and rollout strategy
+  `maxSurge=0` / `maxUnavailable=1`.
+- The rendered endpoint-admin-service digest was derived from the overlay as
+  `sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- Kubernetes server-side dry-run against `k3d-test/platform-test` passed:
+  the device-key service account, ConfigMap, Service, Deployment,
+  ExternalSecrets, SNI Ingress, and device-key NetworkPolicies rendered as
+  valid server-side objects.
+- Apply, rollout, live imageID check, and live SNI backend verification were
+  intentionally skipped because this run was dry-run only.
+- Boundary: this proves the owner-gated #548 device-key broker activation is
+  render-valid and server-side-dry-run-valid on the test cluster. It does not
+  apply the dedicated broker, does not run AgentPC2 TPM auto-enroll, does not
+  create a TPM binding row, does not run the hardware-key session, does not
+  produce the `F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1` marker, and does
+  not satisfy #548.
+
+VIEW_ONLY viewer pilot-surface dry-run readiness:
+
+- `apply-view-only-viewer-pilot-enable.yml` dry-run workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28517114097`
+  succeeded on main SHA `91735dfc8852697960c4e518cda6fcd49d7a8dd0`.
+- Runner/job evidence: self-hosted `staging-sw-testai-deploy`; job
+  `84531503722` completed successfully.
+- Dispatch input validation passed with
+  `action=dry_run` and `confirm=DRY_RUN_VIEW_ONLY_VIEWER_PILOT_ENABLE`.
+- Render guard passed for
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer`:
+  `REMOTE_BRIDGE_ENABLED=true`, `REMOTE_BRIDGE_VIEWER_ENABLED=true`,
+  `REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES=image/png`,
+  `containerPort: 8096`, dedicated
+  `endpoint-admin-remote-bridge-viewer` `ClusterIP`, no viewer NodePort,
+  and both viewer NetworkPolicies
+  `eab-bridge-viewer-allow-ingress-8096-from-api-gateway` plus
+  `eab-api-gateway-allow-egress-8096-to-bridge-viewer` rendered.
+- The synced test Argo root render did not contain
+  `endpoint-admin-remote-bridge-viewer`.
+- Kubernetes server-side dry-run against `k3d-test/platform-test` passed:
+  viewer ClusterIP service and both 8096 NetworkPolicies would be created,
+  while the broker ConfigMap/Deployment/ExternalSecrets/Ingress and existing
+  services/netpols would be configured or left unchanged under server dry-run.
+- Apply, api-gateway route patch, live surface verification, rollback, and
+  rollback verification steps were intentionally skipped because this run was
+  dry-run only.
+- Boundary: this proves the owner-gated viewer pilot surface is render-valid
+  and server-side-dry-run-valid on the test cluster. It does not apply the
+  8096 exposure, does not start a VIEW_ONLY session, does not produce the
+  `F22_6_VIEW_ONLY_ENGINEERING: v2` marker, and does not satisfy #1580.
+
+AgentPC2 live product-channel state:
+
+- Product device:
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f` / `AgentPc2`.
+- `endpoint_devices` shows `status=ONLINE`, `agent_version=v0.3.8`,
+  `last_seen_at=2026-07-01 11:39:41.273565+00`.
+- Latest heartbeats show `agentMode=mtls-machine-cert` and capabilities:
+  `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
+  `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
+  `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
+  `SET_DISPLAY_POLICY`.
+- The heartbeat capability list does not advertise `UPDATE_AGENT` and does not
+  advertise a TPM/device-key enrollment/session operation.
+
+AgentPC2 TPM binding gap:
+
+- `endpoint_admin_service.endpoint_tpm_device_binding` exists and has the
+  required non-null columns for a strong hardware marker:
+  `ak_name`, `ak_pub_sha256`, `ek_cert_sha256`, and
+  `device_key_spki_sha256`.
+- `endpoint_admin_service.endpoint_tpm_device_identity` also exists.
+- Read-only DB queries found no AgentPC2 rows in:
+  `endpoint_tpm_device_binding`,
+  `endpoint_tpm_device_identity`, or
+  `endpoint_enrollments`.
+- The `endpoint_commands` type check constraint currently allows only:
+  `COLLECT_INVENTORY`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
+  `CHANGE_LOCAL_PASSWORD`, `SMB_LIST_ALLOWED_PATH`,
+  `SMB_READ_FILE_METADATA`, `SMB_DOWNLOAD_FILE`, `SMB_UPLOAD_FILE`,
+  `ROTATE_CREDENTIAL`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`,
+  `UPDATE_AGENT`, `SET_DISPLAY_POLICY`, and `COLLECT_BACKUP_DRYRUN`.
+  There is no TPM enroll command type.
+- `platform-agent` confirms `--auto-enroll-tpm` is a closed CLI path:
+  it is mutually exclusive with normal `--auto-enroll`, requires
+  the auto-enroll API URL, and requires the enrollment-token environment
+  value.
+
+Boundary: #548 is no longer blocked on the A1 Vault/device-key broker
+infrastructure proof. It is blocked on target-endpoint TPM enrollment/session
+evidence: AgentPC2 must run the TPM auto-enroll path, produce a persisted
+TPM binding row, then complete a device-key broker session that yields
+`deviceTrusted=true` / `Basis.HARDWARE_KEY_ATTESTATION` plus the negative
+matrix. Because no product command exists for TPM enrollment, this cannot be
+truthfully reclassified as an agent-only product-channel trigger from the
+current live state.
+
+## Live Delta — Faz 24 live-STT source-readiness and ERP/CRM-agnostic scope refresh (2026-07-03)
+
+Faz 24 Meeting Intelligence source/product surface advanced after the
+2026-07-01 direct-STT test-state snapshot, but runtime/user acceptance remains
+separate from source readiness.
+
+Current live PR truth:
+
+- `platform-ai#233` is merged to `main` at merge commit
+  `192bf6f7a90421f13f1f7e54e58e5826d54c655f`. The final PR head
+  `0f7ed999523203608bc28d83b2246559ae204d54` had green visible checks for
+  `repo-gates`, `service-tests (diarization-service)`, `service-tests
+  (final-stt-service)`, `service-tests (live-stt-service)`, and `service-tests
+  (meeting-ai-service)`. The final source patch preserves medium-length stable
+  live drafts when a short low-overlap final would otherwise erase already
+  visible words. This targets the observed "spoken content disappears /
+  overwritten by short final" loss mode without proving runtime rollout.
+- `platform-desktop#34` remains draft at head
+  `1fb0498bef9d03331153abc6740ead0b5d2b611a`, `mergeStateStatus=UNSTABLE`
+  because GitHub `build` is still `QUEUED` on the required runner. The latest
+  desktop product surface is generic ERP/CRM output + handoff readiness, and
+  the local STT UX guard preserves visible Direct-STT words when a shorter
+  final correction arrives; GitHub build completion and live Turkish smoke
+  remain separate acceptance gates.
+- `platform-ai#239` is merged to `main` at merge commit
+  `5f3d891f26251856acd97643e2966d5a88c220c8`. It makes the active
+  platform-ai repo identity and Faz 24 AI documentation ERP/CRM-agnostic and
+  keeps pilot/customer/adapter naming out of the core product/model contract.
+- `platform-k8s-gitops#2265` is open on
+  `codex/faz24-generic-erp-product-language-20260704`. It updates the Faz 24
+  plan/state language so no specific ERP/CRM product is a dependency; pilots
+  map through a generic adapter contract, and no vendor-specific prompt/parser/
+  workflow/UI branch/feature flag/scoring rule/acceptance shortcut is allowed.
+
+Follow-up work intentionally tracked instead of hiding in PR comments:
+
+- `platform-ai#237` tracks live-stream decode-threshold parity between the
+  direct stream path and configurable sync worker path.
+- `platform-ai#238` tracks short Turkish utterance filtering so legitimate
+  short responses such as `Ne?` / `Ha?` do not get over-filtered by the
+  artifact guard.
+
+Boundary:
+
+- This delta is source/CI/cross-AI readiness and scope alignment evidence, not
+  final Faz 24 runtime acceptance.
+- `platform-k8s-gitops#2186` remains `Needs Verify`: required evidence is
+  still a fresh live Turkish manual desktop smoke on the intended direct-STT
+  runtime plus authenticated, redacted Meeting AI analyze smoke through the
+  testai/api-gateway path.
+- The product contract is ERP/CRM-agnostic. Historical ERP/MSSQL/ETL references
+  remain historical source evidence only and must not be read as a
+  vendor-specific product dependency. New Faz 24 product docs should avoid
+  naming a pilot ERP/CRM unless the text is explicitly about adapter config,
+  historical migration/lineage evidence, an evidence package, or deployment
+  notes.
+
+## Live Delta — Faz 24 direct-STT recorder path bounded-latency test state (2026-07-01)
+
+Faz 24 Meeting Intelligence desktop recorder path now has a live direct-STT test
+chain on `staging-sw` / `k3d-test` / platform-ai GPU host, with the product
+surface still under acceptance.
+
+Source and PR chain:
+
+- `platform-desktop#34` is open with passing CI and adds the Electron recorder
+  product surface for live transcript, newest-first transcript ordering,
+  source transcript export, transient transcript-poll timeout handling, and
+  direct live stream status visibility.
+- `platform-ai#233` later merged to `main` at
+  `192bf6f7a90421f13f1f7e54e58e5826d54c655f`; at this snapshot time it was
+  still the open source path for live-STT partial cadence plus
+  low-confidence/no-speech filtering for sync `/transcribe` segments.
+- `platform-k8s-gitops#2199` merged at
+  `69a1e5e834f7a8e720a40d58c9d1e629c3b4ce99` after passing CI. It pins
+  `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=12000` in desired-state for
+  audio-gateway test overlay, carries the backend `#781` Direct-STT aggregation
+  knobs (`enabled=true`, `window-seconds=5`, `max-buffered-sessions=64`), plus a
+  pod-template annotation bump to force rollout.
+- `platform-backend#781` is open as a draft with passing CI and implements the
+  memory-only PCM16 aggregation/result-stream path needed to avoid one
+  Whisper request per 100ms desktop chunk. That image promotion is still a
+  separate acceptance boundary.
+
+Live test evidence:
+
+- Post-merge read-only `staging-sw` / `k3d-test` check found
+  `audio-gateway-78d8488cd5-5r6vs` `Running` / `1/1`, deployment
+  `generation=33`, `observedGeneration=33`, `updatedReplicas=1`,
+  `readyReplicas=1`, image
+  `ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:9a3f3a83c023a483b872a8c4c76795db9649d863b32db782570790161e33a7ce`.
+- The live pod env, read via `printenv` and filtered to non-secret Direct-STT
+  keys, reports:
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=true`,
+  `AUDIO_GATEWAY_DIRECT_STT_MAX_IN_FLIGHT=2`,
+  `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=12000`,
+  `AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_ENABLED=true`,
+  `AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_WINDOW_SECONDS=5`,
+  `AUDIO_GATEWAY_DIRECT_STT_AGGREGATION_MAX_BUFFERED_SESSIONS=64`,
+  `AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_ENABLED=true`, and
+  `AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_KEY=transcript:direct-stt-results`.
+- `staging-sw` TCP probe to Denetim live-STT target
+  `10.99.0.2:8243` succeeds.
+- platform-ai GPU host `SRB-AIDENETIMPC` is running
+  `platform-ai-live-stt` on commit `bf5a9f6` from
+  `feat/faz-24-live-stt-stream-partial-cadence`.
+- GPU host `/health` reports
+  `{"status":"ok","version":"0.1.0","model":"medium","device":"cuda","compute_type":"float16"}`.
+- Local Electron dev run was restarted from
+  `platform-desktop` branch `codex/faz24-runtime-main-20260630`, with Vite on
+  `127.0.0.1:5173`.
+
+Runtime findings that drove the change:
+
+- Older audio-gateway runtime had
+  `AUDIO_GATEWAY_DIRECT_STT_RESPONSE_TIMEOUT_MS=180000`, while 5s live draft
+  windows were surfacing delayed STT responses tens of seconds later.
+- audio-gateway logs showed direct-STT responses around 25s-43s and
+  `maxInFlight=2` saturation; stale late windows could appear as incorrect
+  transcript rows in the desktop surface.
+- Desktop screenshots on 2026-07-01 still showed plausible short-chunk STT
+  artifacts while gateway event polling was active. The desired-state
+  aggregation knobs prepare the runtime for backend `#781`, but do not by
+  themselves prove the aggregation code is running on the live pod.
+- The desktop main process must be restarted after transcript gateway client
+  changes; renderer hot reload alone can leave the old 15s poll timeout path in
+  use.
+
+Boundary:
+
+- This is a test-state direct-STT/product-surface advance, not final Faz 24
+  acceptance. `platform-k8s-gitops#2199` is now durable desired-state on
+  `main`, while `platform-desktop#34`, `platform-ai#233`, and
+  `platform-backend#781` still need their normal merge/runtime evidence path
+  before the product path is acceptance-ready.
+- The temporary GPU host branch deploy is a test-host mutation for live
+  validation. Durable GPU deploy remains tied to the repo's normal
+  `origin/main` mirror update discipline after PR merge.
+- The 12s timeout and aggregation/result-stream env are present in merged
+  desired-state and in the live `k3d-test` audio-gateway pod env. This proves
+  config rollout to the pod, but not backend `#781` aggregation-code/image
+  rollout: the deployed audio-gateway image digest is still the live runtime
+  image listed above, while `#781` remains a draft source PR.
+- Direct browser/client-to-platform-ai is not a production architecture target.
+  Word-progressive transcript UX should be carried through the gateway-owned
+  stream path; local direct stream remains a dev/diagnostic acceleration path.
+
+## Live Delta — Faz 22.6 #548 A1 host/Vault/device-key broker live proof collected; acceptance still marker-blocked (2026-07-01)
+
+After the workflow-default dry-run proof, Codex ran the A1 checks directly
+against `staging-sw` through SSH so the host-level Docker/Vault material could
+be observed with the same user that owns the test host state.
+
+Live host/Vault proof:
+
+- `staging-sw` Docker control is available for user `halil`; the user is in the
+  `docker` group and `sudo -n` works.
+- `docker inspect platform-vault-test` shows the intended bind mounts:
+  `/home/halil/platform-stateful/test/vault/data -> /vault/data`,
+  `/home/halil/platform-stateful/test/vault/logs -> /vault/logs`, and
+  `/home/halil/platform-stateful/test/vault/tls -> /vault/tls:ro`.
+- The test Vault container is running and healthy with
+  `127.0.0.1:8201->8200/tcp` and `127.0.0.1:8302->8202/tcp`.
+- CA-pinned host HTTPS probe succeeds:
+  `https://127.0.0.1:8302/v1/sys/seal-status` returns
+  `sealed=false`, `initialized=true`, Vault `1.17.6`.
+- Container-local HTTPS probe also succeeds:
+  `VAULT_ADDR=https://127.0.0.1:8202` with `/vault/tls/ca.crt` returns
+  `sealed=false`.
+
+Live SSH-target A1 preflight:
+
+- Command boundary:
+  `SSH_TARGET=staging-sw DENETIM_CHECK=false KUBE_CONTEXT=k3d-test KUBE_NAMESPACE=platform-test scripts/faz22-remote-ops/faz22-6-a1-preflight.sh`.
+- Result: exit `0`.
+- Key passes:
+  `PASS device-key overlay renders`,
+  `PASS rendered verifier=DEVICE_KEY_ATTESTATION_REAL`,
+  `PASS rendered dedicated nodePort=31945`,
+  `PASS live primary service and shared broker are visible`,
+  `PASS endpoint-admin-service tpm-attest enabled`,
+  `PASS endpoint-admin-service manufacturer root pin present`,
+  `PASS endpoint-admin-service Vault PKI enabled`,
+  `PASS Vault HTTPS service port 8202 visible`,
+  `PASS shared broker remains MACHINE_CERT_ENROLLMENT`,
+  `PASS Vault TLS material present on staging-sw (values not printed)`,
+  `PASS Vault HTTPS 8202 CA-pinned status works`,
+  both live endpoint-admin-service Vault AppRole Secret keys are present, and
+  all three device-key ExternalSecrets are `Ready=True`.
+- Denetim probe is intentionally skipped with `DENETIM_CHECK=false` because the
+  current 2026-07-01 #548 target is AgentPC2.
+
+Live dedicated device-key broker proof:
+
+- Deployments:
+  `endpoint-admin-remote-bridge` is `1/1` on digest
+  `sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba`,
+  and `endpoint-admin-remote-bridge-device-key` is `1/1` on digest
+  `sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- Services:
+  shared broker remains NodePort `31944`; device-key broker is NodePort
+  `31945`; Vault service exposes both `8200` and `8202`.
+- Public SNI route:
+  `remote-bridge-mtls.testai.acik.com` routes to
+  `endpoint-admin-remote-bridge-device-key:9444`.
+- Pod runtime env, read from `/proc/1/environ`, includes
+  `REMOTE_BRIDGE_ENABLED=true`,
+  `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER=DEVICE_KEY_ATTESTATION_REAL`,
+  `REMOTE_BRIDGE_ALLOW_INSECURE_PLAINTEXT=false`,
+  `REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED=false`,
+  `REMOTE_BRIDGE_DURESS_SOURCE_TYPE=AMBIGUOUS_UNTIL_WIRED`,
+  `ENDPOINT_ADMIN_TPM_ATTEST_ENABLED=true`, pinned manufacturer root hashes,
+  and remote-bridge TLS/key file paths.
+- Broker log shows the gRPC server listening on `0.0.0.0:9444` with mutual
+  TLS.
+
+Boundary: A1 infrastructure is live enough for the next AgentPC2 TPM
+enrollment/session proof attempt. This still does not create the #548
+acceptance marker: no target endpoint TPM enrollment/session was run in this
+delta, no broker `deviceTrusted=true` / `Basis.HARDWARE_KEY_ATTESTATION`
+session was captured, no negative matrix was produced, and no issue marker was
+written. `F22_6_COMPLETION` remains blocked until #548 and #1580 acceptance
+markers are present.
+
+## Live Delta — Faz 22.6 #548 A1 workflow dry-run default proven; Denetim check is opt-in; acceptance still marker-blocked (2026-07-01)
+
+The A1 Vault HTTPS/device-key prerequisite workflow no longer depends on the
+legacy Denetim SSH probe by default. The current #548 run target remains the
+device-key path for AgentPC2; Denetim is now an explicit opt-in check only when
+the owner switches the selected target back to Denetim.
+
+Source changes:
+
+- PR `#2205` merged at `bf06d6e0d2c5db59763aed3fb3990981e1296f81`.
+  Dry-run now warns and continues when Docker control is unavailable for live
+  Vault mount-contract inspection; live activation remains fail-closed.
+- PR `#2206` merged at `8679224f35008df637a08538d9eee4206ee62793`.
+  A1 preflight local-kubectl execution now handles command-string probes
+  correctly instead of passing the whole probe as one kubectl argument.
+- PR `#2207` merged at `9a26e4e07bb892d22f1181780b55a05af061f73f`.
+  `denetim_check` default changed to `false`, with runbook text stating it is a
+  legacy Denetim-only probe.
+
+Default dry-run proof after those changes:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28514013440`
+  (`headSha=9a26e4e07bb892d22f1181780b55a05af061f73f`).
+- Result: `success`.
+- Inputs: `dry_run=true`, default `denetim_check=false`.
+- Summary boundary: `Vault mount contract=skipped-docker-control-unavailable`.
+  This is allowed only for dry-run; a live `dry_run=false` activation still
+  requires Docker control or an equivalent live mount-contract proof.
+- Preflight results:
+  `PASS device-key overlay renders`,
+  `PASS rendered verifier=DEVICE_KEY_ATTESTATION_REAL`,
+  `PASS rendered dedicated nodePort=31945`,
+  `PASS live primary service and shared broker are visible`,
+  `PASS endpoint-admin-service tpm-attest enabled`,
+  `PASS endpoint-admin-service manufacturer root pin present`,
+  `PASS endpoint-admin-service Vault PKI enabled`,
+  `PASS Vault HTTPS service port 8202 visible`,
+  `PASS shared broker remains MACHINE_CERT_ENROLLMENT`,
+  `PASS live endpoint-admin-service-secrets has ENDPOINT_ADMIN_TPM_ATTEST_VAULT_ROLE_ID`,
+  `PASS live endpoint-admin-service-secrets has ENDPOINT_ADMIN_TPM_ATTEST_VAULT_SECRET_ID`,
+  and all device-key ExternalSecrets are `Ready=True`.
+- Remaining dry-run warnings:
+  `Vault TLS material missing on local:/home/halil/platform-stateful/test/vault/tls`
+  and Docker control unavailable for the mount-contract proof.
+
+Denetim-specific proof:
+
+- Workflow with `denetim_check=true`:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28513809573`
+  (`headSha=8679224f35008df637a08538d9eee4206ee62793`) failed only at the
+  Denetim reachability probe after the cluster/Vault/ESO checks passed.
+- Direct staging-sw route truth:
+  `ip route get 10.99.0.2` resolves via `wg0` with source `10.99.0.1`, and TCP
+  port 22 is open.
+- Direct SSH truth:
+  `denetimpc@10.99.0.2` and `svc-denetim-agent@10.99.0.2` both return
+  `Permission denied (publickey)`.
+
+Boundary: this improves #548 A1 readiness and removes a stale Denetim default
+from the current AgentPC2-oriented path. It does not restart Vault, does not
+apply Kubernetes changes, does not enroll a TPM/device key, does not produce a
+broker `device=true` session marker, does not write a #548 acceptance marker,
+and does not satisfy `F22_6_COMPLETION`.
+
+## Live Delta — Faz 22.6 completion decision package workflow dispatch proven; gates still marker-blocked (2026-07-01)
+
+The read-only owner/operator decision package is now generated by workflow from
+the canonical live-audit artifact, instead of requiring a local hand-run script.
+
+Source and workflow evidence:
+
+- PR `#2203` merged at `e07d5c47edd068b97245c086f7d881ce03e22241`.
+- Workflow:
+  `.github/workflows/gate-faz22-completion-decision-package.yml`.
+- New dispatch input: `audit_run_id` for the source
+  `faz22-6-completion-audit` artifact; optional `prefix` for output filenames.
+- Boundary: read-only only. The workflow downloads the live-audit artifact,
+  builds JSON/Markdown with
+  `scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh`, uploads a
+  package artifact, and does not approve risk, write markers, mutate GitHub
+  issues, touch Kubernetes, contact endpoints, mutate releases, or access
+  secrets.
+
+Dispatch proof:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28513206680`
+  (`headSha=e07d5c47edd068b97245c086f7d881ce03e22241`).
+- Source live-audit run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28512824767`.
+- Artifact:
+  `faz22-6-completion-decision-package-28512824767`.
+- Result: `success`.
+- Package output:
+  `completion.status=blocked`,
+  `completion.next_required=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`,
+  `b1_4_hardware_attestation=blocked`,
+  `view_only_screen_share=blocked`,
+  `release_lineage=pass`.
+
+Boundary: this packages the current decision surface and removes manual
+interpretation drift. It does not create #548 hardware/device-key acceptance
+evidence, does not create #1580 VIEW_ONLY product-channel evidence, does not
+write any issue marker, and does not satisfy `F22_6_COMPLETION`.
+
+## Live Delta — Faz 22.6 #1580 VIEW_ONLY viewer pilot workflow merged; dry-run proven; gate still marker-blocked (2026-07-01)
+
+The VIEW_ONLY operator viewer pilot enable path is now workflow-backed instead
+of only manual runbook commands.
+
+Source and workflow evidence:
+
+- PR `#2201` merged at `3c8045964ebec38b2e6db4a5b44e0761ad0dce18`.
+- New workflow:
+  `.github/workflows/apply-view-only-viewer-pilot-enable.yml`.
+- Actions supported: `dry_run`, `apply`, `rollback`.
+- `apply` is fail-closed behind exact acknowledgement inputs for KVKK/DPIA
+  attended pilot signoff, one-person operator roster, consenting attended pilot
+  device, and owner 8096 exposure.
+- CI now renders
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer` and
+  guards: no `part-of: platform`, not in the synced test Argo root,
+  `REMOTE_BRIDGE_ENABLED=true`, `REMOTE_BRIDGE_VIEWER_ENABLED=true`, png-only
+  pilot pin, `containerPort: 8096`, `ClusterIP` viewer service with no
+  `nodePort`, preserved `nodePort: 31944` for 9444, and both 8096 NetworkPolicy
+  directions.
+
+Dry-run evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28512271886`
+  (`headSha=3c8045964ebec38b2e6db4a5b44e0761ad0dce18`).
+- Result: `success`.
+- Executed: dispatch input validation, checkout, render/guard viewer exposure
+  overlay, and server-side dry-run.
+- Skipped by design: live apply, api-gateway route patch, live surface verify,
+  rollback, and rollback verify.
+- Server-side dry-run proved the viewer resources would be accepted:
+  `service/endpoint-admin-remote-bridge-viewer created (server dry run)`,
+  `networkpolicy/eab-api-gateway-allow-egress-8096-to-bridge-viewer created
+  (server dry run)`, and
+  `networkpolicy/eab-bridge-viewer-allow-ingress-8096-from-api-gateway created
+  (server dry run)`.
+
+Post-merge completion audit:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28512342798`
+  (`headSha=3c8045964ebec38b2e6db4a5b44e0761ad0dce18`, self-hosted
+  `staging-sw` local-kubectl mode).
+- `GATE_22_6_1_OPERATION_CATALOG=pass`
+- `GATE_22_6_2_APPROVED_SCRIPT_RUNNER=pass`
+- `GATE_22_6_3_CONSTRAINED_EXECUTOR=pass`
+- `GATE_B1_4_HARDWARE_ATTESTATION=blocked ... reason=missing-acceptance-marker`
+- `GATE_VIEW_ONLY_ENGINEERING=blocked ... reason=missing-acceptance-marker`
+- `GATE_VIEW_ONLY_KVKK=tracked_pending ... reason=no-kvkk-marker`
+- `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl
+  expected_digest=sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba`
+- `F22_6_RELEASE_LINEAGE=pass`
+- `RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass`
+- `F22_6_COMPLETION=blocked`
+- `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`
+
+Boundary: this is operational hardening and dry-run evidence for the #1580 pilot
+surface. It does not start a VIEW_ONLY session, does not expose 8096 live, does
+not patch the api-gateway route, does not post `F22_6_VIEW_ONLY_ENGINEERING: v2`,
+and does not satisfy #1580 acceptance. The next #1580 movement is the owner-gated
+`action=apply` pilot window followed by product-channel evidence packaging.
+
+## Live Delta — Faz 22.6 #548 device-key broker activation GitOps-aligned; completion gate still marker-blocked (2026-07-01)
+
+The owner-gated device-key remote-bridge broker activation path was moved from
+imperative drift into GitOps and re-applied from `main`.
+
+Source and workflow evidence:
+
+- PR `#2197` merged at `fb0353cf69bff4906487eab35224ef8f4f25f149`: adds the
+  owner-gated device-key activation overlay, live wrapper, runbook, and workflow
+  for the isolated `endpoint-admin-remote-bridge-device-key` Deployment.
+- PR `#2198` merged at `82532c550f0e52986021debcb4f7707f190dbfbd`: adds the
+  quota-safe rollout strategy patch (`maxSurge=0`, `maxUnavailable=1`) and
+  guards it in CI/workflow render checks.
+- Activation workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28511116890`
+  succeeded from `main` with expected backend digest
+  `sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- Live verification in that workflow reported
+  `deployment "endpoint-admin-remote-bridge-device-key" successfully rolled out`,
+  `ready=1`, `updated=1`, `available=1`, and pod
+  `imageID=ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:462bd7444a03e2b3fddcb720a1b563e90fc2425c8cf200dddf635670cd05aae6`.
+- The same workflow verified the SNI route
+  `remote-bridge-mtls.testai.acik.com` points at
+  `endpoint-admin-remote-bridge-device-key`.
+
+Canonical Faz 22.6 live audit after the activation:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28511141449`
+  (`headSha=82532c550f0e52986021debcb4f7707f190dbfbd`, self-hosted
+  `staging-sw` local-kubectl mode).
+- `ENDPOINT_AGENT_RELEASE_POLICY=pass release_tag=v0.3.9 next_trusted_minor=v0.3`
+- `GATE_22_6_1_OPERATION_CATALOG=pass`
+- `GATE_22_6_2_APPROVED_SCRIPT_RUNNER=pass`
+- `GATE_22_6_3_CONSTRAINED_EXECUTOR=pass`
+- `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay
+  expected_digest=sha256:ef3193b134a73f3b59709ddf91b6727f604c5abf0dba486e8a0576a5e224c7ba`
+- `F22_6_RELEASE_LINEAGE=pass`
+- `RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass`
+- `F22_6_COMPLETION=blocked`
+- `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`
+
+Boundary: `platform-backend#548` currently has GitHub state `CLOSED`, but the
+completion audit intentionally still reports
+`GATE_B1_4_HARDWARE_ATTESTATION=blocked ... reason=missing-acceptance-marker`.
+The device-key broker is activated and live on the expected immutable backend
+digest, but #548 product acceptance still requires the machine-readable B1.4
+acceptance marker or an explicit bounded-risk marker defined in
+`docs/runbooks/RB-faz22.6-autonomous-completion-contract.md`. Issue state alone
+is not accepted as sensitive-gate approval.
+
+## Live Delta — Faz 22.6 release-lineage dense active-series audit pass (2026-07-01)
+
+The EndpointAgent trusted `v0.3` release train has reached the active-series
+dense threshold (`v0.3.0` through `v0.3.7`, active count `8`). The release-lineage
+gate no longer treats this as a waiver-only condition: the live audit now runs a
+machine-verifiable dense-lineage audit before deciding whether the
+`GITHUB_RELEASE_ACTIVE_SERIES_DENSE` finding remains.
+
+Live audit evidence from `staging-sw` SSH mode:
+
+- `GITHUB_RELEASE_TRAIN_SERIES=pass latest_stable=v0.3.7 trusted_series=v0.3`
+- `GITHUB_RELEASE_LATEST_POINTER=pass pointer_kind=stable`
+- `GITHUB_RELEASE_FROZEN_SERIES_REGRESSION=pass frozen_series=v0.2 count=0`
+- `ACTIVE_SERIES_DENSE_LINEAGE_AUDIT=pass trusted_series=v0.3 active_count=8
+  threshold=8 first=v0.3.0 latest=v0.3.7 seed_nonimmutable_allowed=1
+  last_previous_release=v0.3.6 last_manifest_tag=v0.3.7`
+- `GITHUB_RELEASE_ACTIVE_SERIES_DENSE=pass trusted_series=v0.3 active_count=8
+  threshold=8 resolved_by=lineage-audit`
+- `ARTIFACT_HOST_LIVE_DIGEST=pass mode=ssh
+  expected_digest=sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27
+  digest_hits=3`
+- `RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene`
+- `F22_6_RELEASE_LINEAGE=pass`
+
+Current completion-audit boundary after this evidence:
+
+- `REMOTE_BRIDGE_LIVE=pass`
+- `RELEASE_LINEAGE_GATE=pass mode=ssh status=pass`
+- `F22_6_COMPLETION=blocked`
+- `F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required`
+
+The final Faz 22.6 completion gate therefore remains open on the two real
+acceptance packages only: `platform-backend#548` hardware-attestation acceptance
+evidence and `platform-k8s-gitops#1580` VIEW_ONLY engineering/KVKK evidence.
+
+## Live Delta — Faz 22.6 #1580 VIEW_ONLY viewer chain MERGED (engineering code-complete, disabled-by-default) (2026-06-30)
+
+Supersedes the 2026-06-27 B2-ready note ("**#1580 VIEW_ONLY runtime code is not
+written yet**"): the runtime chain was written and merged 2026-06-28/29. Verified
+via `gh pr view` (state=MERGED, mergedAt):
+
+- **platform-backend#770** (2026-06-28) — slice-1 recording-OFF screen fan-out (broker `…/bridge/server/viewonly`, latest-wins, 1:1, incarnation-bound authz).
+- **platform-backend#778** (2026-06-29) — VIEW_ONLY operator SSE controller (`/internal/remote-bridge/operator/sessions/{id}/view`; 401/opaque-404/409).
+- **platform-backend#780** (2026-06-29) — fail-closed hash-chain audit (`REMOTE_SUPPORT_SCREEN_OBSERVATION` START/STOP; no observation without a committed `VIEW_START` → 503 on audit-down).
+- **platform-web#847** (2026-06-29) — operator screen-observation viewer MFE (`/endpoint-admin/remote-access/sessions/:sessionId/view`; fetch-SSE, view-only, no input forwarding; browser-verified in CI).
+
+Boundary: the chain is **disabled-by-default**. It runs only on the isolated
+`endpoint-admin-remote-bridge` Deployment (activation overlay, `REMOTE_BRIDGE_ENABLED=true`),
+gated behind `remote-bridge.viewer.enabled` (`@ConditionalOnProperty`). The
+primary `endpoint-admin-service` keeps the viewer OFF, and the bridge does not
+publish HTTP `8096` today (Service publishes only 9444; netpol denies 8096).
+Turning the bounded 1-person pilot ON is the owner/ops sequence in
+[`docs/runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md`](../runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md).
+
+Gate reconciliation (ADR-0044 split): the canonical fail-closed gate for #1580 is
+now **`GATE_VIEW_ONLY_ENGINEERING`** (marker `F22_6_VIEW_ONLY_ENGINEERING: v2`),
+with KVKK tracked/non-blocking under `GATE_VIEW_ONLY_KVKK` (`F22_6_VIEW_ONLY_KVKK: v1`).
+The legacy `GATE_VIEW_ONLY_SCREEN_SHARE=blocked` line later in this file is the
+pre-split alias; #1580 stays **blocked under `GATE_VIEW_ONLY_ENGINEERING`** until
+the §4.2 v2 product-channel evidence is captured (engineering merged ≠ pilot
+accepted). The old bundled `F22_6_VIEW_ONLY_ACCEPTANCE` marker is refused
+(`legacy_bundled_marker_detected`).
+
+## Live Delta — Direct-STT Gate 2 collector path after test enablement (2026-06-29)
+
+Live truth changed after the older Gate 1 entries below. PR #2170 merged to
+`main` at `5fb581052354c8874c575573d755a0bf47ba923f` and intentionally enabled
+test-only Direct-STT by setting
+`AUDIO_GATEWAY_DIRECT_STT_ENABLED="true"` in `kustomize/overlays/test`.
+
+Codex then reran the canonical
+`.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml` workflow from
+current `main`:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28365309365`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28365309365`
+- Evidence status: `fail`
+- Verifier status: `fail`
+- Verifier count: `59/62`
+- Only remaining failure code for this preflight contract:
+  `direct-stt-not-disabled`
+
+Accepted live facts from the post-#2170 preflight artifact:
+
+- `k3d-test` / `platform-test` is reachable from the runner.
+- The real `audio-gateway` pod is Ready.
+- Expected hostAlias, egress NetworkPolicy and mTLS mount metadata are present.
+- `ExternalSecret/audio-gateway-direct-stt-mtls` is `Ready=True`.
+- Runtime `Secret/audio-gateway-direct-stt-mtls` exposes the expected key names.
+- Aggregate `audio-gateway-secrets` remains Redis-only and does not include
+  `direct_stt_*` key names.
+- Pod-local client-cert mTLS health probe reached HTTP `200` in `67ms`.
+- Artifact scan found no private key, certificate, bearer/JWT, raw audio data
+  URL, transcript text, or raw Direct-STT endpoint material.
+
+Interpretation:
+
+- The older `external-secret-not-ready`, `runtime-secret-key-missing`,
+  `mtls-health-not-200`, and `mtls-probe-exit-28` Gate 1 blockers in the
+  entries below are stale for the latest `main` evidence.
+- The old pre-enable preflight intentionally fails after #2170 because
+  `desiredState.directSttEnabled=true`; it is no longer the active acceptance
+  gate.
+- The active #182 blocker is now Gate 2 real recorder evidence: external
+  recorder lifecycle, `/transcribe` request path, Redis
+  `transcript:direct-stt-results`, `CHUNK_FORWARDED_TO_DIRECT_STT` audit match,
+  pod log correlation, and negative persistence/log/evidence checks without raw
+  audio, transcript, token, PEM, or endpoint disclosure.
+
+This source update adds the metadata-only Gate 2 path:
+
+- `.github/workflows/faz24-direct-stt-e2e-collect.yml`
+- `scripts/faz24/collect_direct_stt_e2e_evidence.py`
+- verifier contract alignment for real audio-gateway `SES-*` session ids and
+  `chunkSeq` correlation
+- recorder smoke sample metadata (`sampleSha256`, byte length, format, sample
+  rate, channels, `rawAudioIncluded=false`)
+
+Boundary: this update does not run Gate 2, send audio by itself, prove desktop
+mic/loopback, satisfy G-CAP/G-OPS/G-COMP, claim legal acceptance, or satisfy
+#1615/#2027. It only makes the next real-recorder evidence run executable and
+reviewable without leaking raw audio/transcript/credential material.
+
+## Live Delta — Direct-STT Gate 1 preflight rerun exposes redacted ESO reason (2026-06-29)
+
+After PR #2161 and its current-state sync PR #2162 merged, Codex reran the
+canonical `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml`
+workflow from current `main` to refresh the Direct-STT Gate 1 blocker with the
+new redacted ESO condition diagnostics. The workflow uploaded the metadata-only
+artifact and passed the artifact leak guard, but the verifier again rejected
+the evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28343805188`
+- Head SHA: `52cc186e4e354dfad4f2bf8aa9adee6eb1e5a387`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28343805188`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Evidence status: `fail`
+- Verifier schema: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Verifier status: `fail`
+
+Failure codes:
+
+- `external-secret-not-ready`
+- `kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`
+- `mtls-health-not-200`
+- `mtls-probe-exit-28`
+- `runtime-secret-key-missing`
+
+Rejecting verifier checks:
+
+- `status_pass`
+- `failures_empty`
+- `external_secret_ready`
+- `runtime_secret_keys`
+- `runtime_secret_env_risk`
+- `mtls_probe_client_auth`
+- `mtls_probe_health_status`
+- `mtls_probe_total_ms`
+- `boundary_vaultSeedAuthorityAccepted`
+
+New redacted ESO diagnostics:
+
+- `ExternalSecret/audio-gateway-direct-stt-mtls` remains `Ready=False`.
+- Condition metadata is `type=Ready`, `status=False`,
+  `reason=SecretSyncedError`, `lastTransitionTime=2026-06-26T22:19:35Z`.
+- Raw condition message text was not included:
+  `messageIncluded=false`, `messagePresent=true`, `messageLength=39`.
+- Expected ExternalSecret mappings are present for
+  `direct_stt_ca_crt`, `direct_stt_client_crt`, and
+  `direct_stt_client_key`, targeting `direct-stt-ca.crt`,
+  `direct-stt-client.crt`, and `direct-stt-client.key` from
+  `kv/platform/audio-gateway-service`.
+- Runtime `Secret/audio-gateway-direct-stt-mtls` exposes no key names yet.
+- Aggregate `audio-gateway-secrets` remains Ready and Redis-only:
+  `SPRING_DATA_REDIS_PASSWORD`; `directSttKeysPresent=false`.
+
+Artifact validation after download:
+
+- Local artifact scan found no private key, certificate, bearer/JWT,
+  `Authorization:`, raw audio data URL, `audio/wav`, `audio/mpeg`,
+  `/transcribe`, or raw `https://live-stt.denetim:8243` endpoint material.
+- SHA-256:
+  `a1e0db15b228ba8e0c4bf2732728c5d104b2621a70fc8302ab951c7e4f21a085`
+  for `faz24-direct-stt-mtls-preflight.json`;
+  `d3f24bc13e170e79235f01cdfa1cfdb95d0beb703b5a76d2e39402e1f7db74f0`
+  for `verification-summary.json`;
+  `02885790aeb09c0e57c7a0adb46879102a0f8e84c9435ab4f5e2e48095bb7323`
+  for `verifier.stdout`;
+  `d8f989baeacfe0ffa513cd994cd6bcb58a1fd2f27bed3efd19f8d2fc978fa381`
+  for `collector.stderr`.
+
+Boundary: the active Direct-STT Gate 1 blocker remains unresolved Vault/ESO
+seed reconciliation for `audio-gateway-direct-stt-mtls` and expected runtime
+key names. This refresh does not mutate Vault/Kubernetes/Denetim/firewall/
+legal state, seed `direct_stt_*` properties, force ESO reconciliation, enable
+Direct-STT, call `/transcribe`, send audio, prove desktop mic/loopback,
+satisfy G-CAP/G-OPS/G-COMP, claim legal acceptance, or satisfy #1615/#2027.
+
+## Live Delta — Faz 24 Direct-STT preflight now carries redacted ESO condition diagnostics (2026-06-29)
+
+PR #2161 merged to `main` at
+`f83f3bd40c8027172f12efbc6dae308b03869bb4` and hardens the Direct-STT
+Gate 1 preflight evidence path for the active
+`audio-gateway-direct-stt-mtls` Vault/ESO blocker.
+
+Changed source contracts:
+
+- `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py` now records
+  redacted `ExternalSecret` condition diagnostics for the dedicated
+  `audio-gateway-direct-stt-mtls` object. The evidence includes bounded
+  `type`, `status`, `reason`, optional `lastTransitionTime`,
+  `messagePresent`, `messageLength`, and `messageIncluded=false`.
+- Raw ESO/Vault condition message text is not stored in evidence. Unsafe
+  condition values are replaced with `redacted-unsafe-value`; the condition
+  list is capped at six items.
+- `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py` now rejects
+  raw `message` keys, requires `messageIncluded=false`, requires bounded
+  non-empty `type/status/reason`, allows only bounded optional
+  `lastTransitionTime`, and bounds `messageLength` to `0..20000`.
+- `tests/faz24/test_collect_direct_stt_mtls_enablement_preflight.py` and
+  `tests/faz24/test_verify_direct_stt_mtls_enablement_preflight.py` cover the
+  `SecretSyncedError` redaction path, raw-message rejection, unsafe condition
+  metadata rejection, and empty required condition metadata rejection.
+- `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md` now documents how the
+  redacted ESO diagnostics should be interpreted during Gate 1 triage.
+
+Validation before merge:
+
+- Direct-STT preflight collector/verifier targeted tests: `28 passed`.
+- Full Faz 24 local test run: `312 passed`.
+- YAML semantic parse for all `.github/workflows/faz24-*.yml`: `22` parsed.
+- Staged diff whitespace and diff-level forbidden closure-language scans: no
+  finding.
+- Claude adversarial review: first pass AGREE with a non-empty condition
+  metadata observation; second pass AGREE after the verifier required
+  non-empty `type/status/reason` while keeping `lastTransitionTime` optional
+  and bounded.
+- PR #2161 CI passed: ADR-0011 boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, HARD RULE no-closure language check, YAML lint,
+  shellcheck, Kustomize build sanity, CodeQL actions, CodeQL python,
+  ADR-0031 drift guard, and placeholder leak check.
+
+Boundary: source/test/docs hardening only. This does not mutate
+Vault/Kubernetes/Denetim/firewall/legal state, seed `direct_stt_*` properties,
+force ESO reconciliation, enable Direct-STT, call `/transcribe`, send audio,
+prove desktop mic/loopback, satisfy G-CAP/G-OPS/G-COMP, claim legal
+acceptance, or satisfy #1615/#2027. The active Direct-STT Gate 1 blocker
+remains unresolved Vault/ESO seed reconciliation for
+`audio-gateway-direct-stt-mtls` and expected runtime key names; the next
+preflight artifact will now expose safe condition reason metadata for that
+blocker.
+
+## Live Delta — Faz 24 evidence artifact uploads now require successful private-material scan (2026-06-29)
+
+PR #2159 merged to `main` at
+`c9e71704a41b0b561f0bf65f10747e57c944fa7e` and tightens Faz 24
+evidence artifact retention so upload steps are fail-closed on the
+private-material scan result.
+
+Changed source contracts:
+
+- Direct-STT preflight/e2e evidence workflows now require
+  `steps.verify_artifact.outcome == 'success'` before artifact upload instead
+  of accepting any non-`failure` result:
+  `faz24-direct-stt-mtls-preflight-ingest.yml`,
+  `faz24-direct-stt-mtls-preflight-collect.yml`, and
+  `faz24-direct-stt-e2e-evidence-ingest.yml`.
+- I3 Denetim SSH authorize, I7 app-mTLS, and WG-B+ I6 MASQ evidence
+  collect/ingest workflows now give the private-material scan step
+  `id: verify_artifact` and gate `actions/upload-artifact@v7` on
+  `steps.verify_artifact.outcome == 'success'`:
+  `faz24-i3-denetim-ssh-authorize-evidence-ingest.yml`,
+  `faz24-i7-app-mtls-evidence-ingest.yml`,
+  `faz24-wg-bplus-i6-masq-evidence-collect.yml`, and
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml`.
+- `tests/faz24/test_artifact_upload_secret_scan_guards.py` now scans Faz 24
+  workflows that combine `Verify artifact excludes private material` with
+  `actions/upload-artifact@v7`, rejects the weaker
+  `steps.verify_artifact.outcome != 'failure'` pattern, requires a
+  `secret_scan` or `verify_artifact` scan id, and requires every
+  `if: always()` upload in those workflows to reference the scan id with
+  `outcome == 'success'`.
+
+Validation before merge:
+
+- Targeted guard tests: `2 passed`.
+- YAML semantic parse for all `.github/workflows/faz24-*.yml`: `22` parsed.
+- Full Faz 24 local test run: `308 passed`.
+- Staged diff whitespace and diff-level forbidden closure-language scans: no
+  finding.
+- Claude adversarial review: AGREE. Key note: the prior `!= 'failure'` guard
+  could upload when the scan step was `skipped`; `== 'success'` is the
+  fail-closed form.
+- PR #2159 CI passed: ADR-0011 boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, HARD RULE no-closure language check, YAML lint,
+  shellcheck, Kustomize build sanity, CodeQL actions, CodeQL python,
+  ADR-0031 drift guard, and placeholder leak check.
+
+Boundary: workflow/test-only source hardening. This does not mutate
+Vault/Kubernetes/Denetim/firewall/legal state, enable Direct-STT, call
+`/transcribe`, send audio, prove desktop mic/loopback, satisfy G-CAP/G-OPS/
+G-COMP, claim legal acceptance, or satisfy #1615/#2027. The active Direct-STT
+Gate 1 blocker remains unresolved Vault/ESO seed reconciliation for
+`audio-gateway-direct-stt-mtls` and expected runtime key names.
+
+## Live Delta — Faz 24 Direct-STT preflight still blocked; remaining evidence ingests now bound payload size (2026-06-29)
+
+Codex reran `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml`
+from current `main` to check whether the Direct-STT Vault/ESO seed state had
+changed after the prior 2026-06-28 failure. The metadata-only preflight again
+uploaded an artifact and passed the artifact secret scan, but the verifier
+rejected the evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28342155603`
+- Head SHA: `f4223f168335d42064bd029226705b6f6b7a60b3`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28342155603`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Evidence status: `fail`
+- Verifier schema: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Verifier status: `fail`
+
+Failure codes:
+
+- `external-secret-not-ready`
+- `kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`
+- `mtls-health-not-200`
+- `mtls-probe-exit-28`
+- `runtime-secret-key-missing`
+
+Rejecting verifier checks:
+
+- `status_pass`
+- `failures_empty`
+- `external_secret_ready`
+- `runtime_secret_keys`
+- `runtime_secret_env_risk`
+- `mtls_probe_client_auth`
+- `mtls_probe_health_status`
+- `mtls_probe_total_ms`
+- `boundary_vaultSeedAuthorityAccepted`
+
+Artifact validation after download:
+
+- Local artifact scan found no private key, certificate, bearer/JWT,
+  `Authorization:`, raw audio data URL, or `/transcribe` material.
+- SHA-256:
+  `f96b513c9ee01e361cbffa786def56e9b8f9f3020c96efad31345138a9abd8a5`
+  for `faz24-direct-stt-mtls-preflight.json`;
+  `e898dbde4c61402499adad2f3dea3b32fba17b7b7488e4b3dce924b41040c76c`
+  for `verification-summary.json`.
+
+Source-side hardening completed after this runtime refresh:
+
+- PR #2157 merged to `main` at
+  `0d4b66beaea8684b3766b8750dd15ce768049e30`.
+- The remaining Faz 24 `evidence_json_base64` ingest workflows now reject
+  payloads over `200000` characters before base64 regex validation, decode,
+  verifier execution, or artifact retention:
+  `faz24-direct-stt-mtls-preflight-ingest.yml`,
+  `faz24-direct-stt-e2e-evidence-ingest.yml`,
+  `faz24-i7-app-mtls-evidence-ingest.yml`,
+  `faz24-i3-denetim-ssh-authorize-evidence-ingest.yml`, and
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml`.
+- `tests/faz24/test_evidence_ingest_payload_bounds.py` now scans every
+  `faz24-*.yml` workflow that declares `evidence_json_base64:` and requires
+  the `200000` character fail-closed guard. Current coverage: 8/8 bounded.
+
+Validation before merge:
+
+- Targeted ingest-boundary tests: `18 passed`.
+- YAML semantic parse for all `.github/workflows/faz24-*.yml`: pass.
+- Full Faz 24 local test run: `307 passed`.
+- Staged diff whitespace and forbidden closure-language scans: no finding.
+- Claude adversarial review: second pass AGREE after full workflow context
+  confirmed all 8 `evidence_json_base64` Faz 24 workflows are bounded.
+- PR #2157 CI passed: ADR-0011 boundary declaration, cross-AI audit,
+  gitleaks, forbidden close keyword scan, HARD RULE language check, YAML lint,
+  shellcheck, Kustomize build sanity, CodeQL actions, CodeQL python, ADR-0031
+  drift guard, and placeholder leak check.
+
+Boundary: the live refresh confirms the active Direct-STT Gate 1 blocker
+remains unresolved Vault/ESO seed reconciliation for
+`audio-gateway-direct-stt-mtls` and expected runtime key names. The source
+hardening is workflow/test-only. This does not mutate
+Vault/Kubernetes/Denetim/firewall/legal state, enable Direct-STT, call
+`/transcribe`, send audio, prove desktop mic/loopback, satisfy G-CAP/G-OPS/
+G-COMP, claim legal acceptance, or satisfy #1615/#2027.
+
+## Live Delta — Faz 24 platform-desktop token/external-recorder chain refreshed PASS (2026-06-28)
+
+After the operator clarified Codex is allowed to run this bounded gate directly,
+Codex reran `.github/workflows/faz24-platform-desktop-token-evidence.yml` from
+`main` for the platform-test short-lived `platform-desktop` token contract and
+external-recorder evidence chain. The self-hosted `staging-sw` run returned
+`success`:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28332787391`
+- Head SHA: `814a5ac28689e6c9cbbcd19b5494787ae85fd398`
+- Artifact: `faz24-platform-desktop-token-evidence-28332787391`
+- Diagnostic schema: `faz24.platformDesktopTokenEvidenceChain.v1`
+- Diagnostic status: `pass`
+- Token contract: `pass`
+- External recorder smoke: `pass`
+- External recorder verifier: `pass`
+
+Accepted evidence facts:
+
+- `tokenIncluded=false`
+- Token contract `azp=platform-desktop`
+- Issuer `https://testai.acik.com/realms/platform-test`
+- Required audiences `audio-gateway-service` and `meeting-service` were present.
+- Required claims `tenantId`, `companyId`, and `userId` were present.
+- Required realm role `MEETING_ADMIN` was present.
+- External recorder lifecycle exercised the public testai admin/consent/session
+  path and finished the session successfully.
+- Verifier checks passed for schema, status, no sensitive content, exact step
+  order, token-not-included, expected HTTP contracts, and the negative boundary
+  checks for direct-STT, direct client-to-STT, desktop mic/loopback,
+  compute-plane audit, and production readiness.
+
+Cleanup and secret-boundary facts:
+
+- `cleanup.directGrantsToggled=true`
+- `cleanup.directGrantsRestored=true`
+- `cleanup.tempUserCreated=true`
+- `cleanup.tempUserDeleted=true`
+- `cleanup.tokenFileRemoved=true`
+- Local artifact scan found no private key, certificate, bearer/JWT,
+  `Authorization:`, raw audio data URL, forbidden token key, password/secret key,
+  raw request/response, transcript, or cookie material.
+
+Local artifact SHA-256:
+
+- `8102a48bc9fc12536abda4085d3b7c70a96f1c70fedef6e6b1ee540db1caa0e3`
+  for `faz24-platform-desktop-token-diagnostic.json`
+- `6670b8cce10d73a6657750e4d790045cca0eb2ad65cadc556b8926500cfda214`
+  for `faz24-platform-desktop-token-contract.json`
+- `32dbe65f7ac8d12a0303603f753769ae2b4e68e0ef29f037a4a43906c8dac1bf`
+  for `faz24-external-recorder-smoke.json`
+- `9d3928278eed17ad45825d1515fa1175d436f948f6f089eab88035b3b589cf2a`
+  for `faz24-external-recorder-smoke.verify.json`
+
+Boundary: this refresh proves only the platform-test short-lived
+`platform-desktop` token contract plus external-recorder smoke/verifier chain.
+It does not prove Direct-STT, desktop mic/loopback capture, G-CAP aggregate,
+G-OPS/G-COMP, production readiness, legal acceptance, or full #1615/#2027
+acceptance.
+
+## Live Delta — Faz 24 readiness rollup ingest now bounds dispatch payload size (2026-06-28)
+
+PR #2154 added a `200000` character upper bound to
+`.github/workflows/faz24-readiness-rollup-evidence-ingest.yml` for the
+`evidence_json_base64` workflow-dispatch input and merged to `main` at
+`485307a30053d6043bb40385906ac1467ea9cae1`.
+
+The guard runs before the base64 regex validation so oversized rollup evidence
+payloads fail closed before expensive string validation or artifact retention.
+This aligns the #1615 readiness rollup ingest path with the bounded input
+discipline already present in the Faz 24 product-gate and Direct-STT seed
+evidence ingest workflows.
+
+Validation before merge:
+
+- Targeted workflow contract test:
+  `tests/faz24/test_readiness_rollup_evidence_ingest_workflow.py` -> `6 passed`.
+- YAML semantic parse for the workflow: pass.
+- Full Faz 24 local test run: `306 passed`.
+- Staged diff whitespace, auto-closure keyword, and secret-like value scans:
+  no finding.
+- Claude adversarial review: AGREE, no blocker.
+- PR #2154 CI passed: boundary declaration, cross-AI audit, gitleaks, forbidden
+  close keyword scan, HARD RULE language check, YAML lint, shellcheck,
+  Kustomize build sanity, CodeQL actions, CodeQL python, ADR-0031 drift guard,
+  and placeholder leak check.
+
+Boundary: workflow/test hardening only. This does not collect readiness rollup
+evidence, mutate runtime/Kubernetes/Vault/Denetim/firewall/legal state, enable
+Direct-STT, ingest accepted product-gate evidence, prove #1615 readiness, or
+make a production-readiness claim.
+
+## Live Delta — Direct-STT mTLS preflight refresh still fails at Vault/ESO seed readiness (2026-06-28)
+
+After the refreshed operator handoff artifact was generated from `main`, Codex
+reran the metadata-only Direct-STT mTLS preflight collector from current `main`
+to refresh live Gate 1 truth. The workflow ran on the self-hosted `staging-sw`
+runner and uploaded the metadata-only artifact, but the verifier again rejected
+the evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28332212180`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28332212180`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Evidence status: `fail`
+- Verifier schema: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Verifier status: `fail`
+- Verifier score: `52/61`
+
+Failure codes in the collected evidence:
+
+- `external-secret-not-ready`
+- `kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`
+- `mtls-health-not-200`
+- `mtls-probe-exit-28`
+- `runtime-secret-key-missing`
+
+Rejecting verifier checks:
+
+- `status_pass`
+- `failures_empty`
+- `external_secret_ready`
+- `runtime_secret_keys`
+- `runtime_secret_env_risk`
+- `mtls_probe_client_auth`
+- `mtls_probe_health_status`
+- `mtls_probe_total_ms`
+- `boundary_vaultSeedAuthorityAccepted`
+
+Local artifact validation after download:
+
+- Forbidden material scan: no private key, certificate, bearer/JWT, raw media
+  data URL, Denetim endpoint URL, or `/transcribe` material found.
+- SHA-256:
+  `20f73712f1f8b87685df0bff73cfae77142f502a8286c3fb20781045cbdd312e`
+  for `faz24-direct-stt-mtls-preflight.json`;
+  `9baf1e089d8c7d8f0d22a08c472f1cfa8922eeeb29c329e0f0ced262702e4e7d`
+  for `verification-summary.json`;
+  `5e1020f572f5a027c956c39bec5a6393d11936bba76d8ea26da53327e169adcd`
+  for `verifier.stdout`;
+  `d8f989baeacfe0ffa513cd994cd6bcb58a1fd2f27bed3efd19f8d2fc978fa381`
+  for `collector.stderr`.
+
+Boundary: this refresh does not prove Direct-STT, egress acceptance,
+`/transcribe`, desktop mic/loopback, I7 prod-gate, or production readiness. It
+does confirm the active Gate 1 blocker on current `main`: the approved
+operator Vault seed / ESO reconciliation has not yet produced a Ready
+`audio-gateway-direct-stt-mtls` ExternalSecret, the runtime Secret key names
+are absent, and `vaultSeedAuthorityAccepted=false`. The next runtime chain
+remains: operator-approved seed with redacted evidence -> seed evidence
+verifier/ingest PASS -> ESO reconciliation -> Gate 1 preflight PASS ->
+reviewed flag flip -> Gate 2 e2e PASS -> reviewer acceptance.
+
+## Live Delta — Direct-STT operator handoff artifact now includes seed evidence verifier/ingest commands (2026-06-28)
+
+After PR #2150 and #2151 were merged, Codex regenerated the Direct-STT
+metadata-only operator handoff package from `main` so the distributed handoff
+artifact carries the new Gate 0 seed evidence verification and ingest commands.
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28331957582`
+- Artifact: `faz24-direct-stt-operator-handoff-28331957582`
+- Schema: `faz24.directStt.operator-handoff.v1`
+- Operator batch id: `faz24-direct-stt-20260628`
+- Target seed evidence path:
+  `docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json`
+- Manifest assertions:
+  `acceptanceBoundary.seedEvidenceIngestRequired=true`;
+  `orderedGates[0].commands.verifySeedEvidence` points to
+  `scripts/faz24/verify_direct_stt_mtls_seed_operator_evidence.py`;
+  `orderedGates[0].commands.ingestSeedEvidence` points to
+  `faz24-direct-stt-mtls-seed-evidence-ingest.yml`.
+
+Local artifact validation after download:
+
+- `SHA256SUMS` verified `README.md` and
+  `faz24-direct-stt-operator-handoff.json`.
+- Local artifact scan found no forbidden private key, certificate, bearer/JWT,
+  raw media data URL, Denetim endpoint URL, or `/transcribe` material.
+- SHA-256:
+  `01803f77627baa21167c22bfb447dc2356f4f745b59751a01189218438c400f2`
+  for `README.md`;
+  `339a42f15d0814c43b1db31af0aa0b22cd157ca52fb11b9369a4d50fccfea56e`
+  for `faz24-direct-stt-operator-handoff.json`.
+
+Boundary: this handoff artifact is still metadata-only coordination material.
+It does not run the seed helper, read PEM files, read Vault tokens, mutate
+Vault/Kubernetes/Denetim/firewall, reconcile ESO, enable Direct-STT, call
+`/transcribe`, send audio, prove #182 e2e, satisfy #198 I7, or advance #1615.
+The next runtime chain remains unchanged: operator-approved seed with redacted
+evidence -> seed evidence verifier/ingest PASS -> ESO reconciliation -> Gate 1
+preflight PASS -> reviewed flag flip -> Gate 2 e2e PASS -> reviewer
+acceptance.
+
+## Live Delta — Direct-STT Gate 0 seed evidence now has a fail-closed ingest gate (2026-06-28)
+
+PR #2150 added a repo-native verifier and CI ingest workflow for the redacted
+Direct-STT mTLS Vault seed evidence and merged to `main` at
+`526468754951e09b010ef9f36191fadc5d0e7ec1`.
+
+New source-side components:
+
+- Verifier:
+  `scripts/faz24/verify_direct_stt_mtls_seed_operator_evidence.py`
+- CI ingest workflow:
+  `.github/workflows/faz24-direct-stt-mtls-seed-evidence-ingest.yml`
+- Handoff integration:
+  `scripts/faz24/build-direct-stt-operator-handoff.py`
+- Operator runbook integration:
+  `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md`
+
+The verifier accepts only applied
+`faz24.directSttMtlsSeedOperatorEvidence.v1` evidence with:
+
+- `status=pass` and `applyRequested=true`;
+- Vault operation `vault-kv-v2-merge-patch`;
+- Vault path `kv/platform/audio-gateway-service`;
+- exactly the three direct-STT mTLS properties:
+  `direct_stt_ca_crt`, `direct_stt_client_crt`, and
+  `direct_stt_client_key`;
+- file evidence showing the CA certificate, client certificate, and client
+  private key files were provided, format-accepted, permission-restricted, and
+  not recorded as paths or values;
+- a 2xx Vault result and empty `errorClass`;
+- boundary flags proving no secret value, Vault token, local path, raw command
+  output, Kubernetes mutation, direct-STT enablement, `/transcribe` call, raw
+  audio, or production mutation is claimed;
+- next-verification routing to ESO reconciliation, `ExternalSecret` readiness,
+  runtime Secret key-name checks, and the preflight collector workflow.
+
+The ingest workflow decodes base64 JSON, runs the verifier, scans the artifact
+for private key, certificate, bearer/JWT, raw media, Denetim endpoint, and
+`/transcribe` material before upload, and fails the workflow when the evidence
+is rejected. The workflow has `contents: read` permission only and does not read
+PEM files, read Vault tokens, mutate Vault/Kubernetes/Denetim/firewall, enable
+Direct-STT, call `/transcribe`, send audio, prove ESO reconciliation, prove
+#182 e2e, satisfy #198 I7, or make a production-readiness claim.
+
+Validation before merge:
+
+- Python compile for the new verifier, seed helper, and Direct-STT handoff
+  builder: pass.
+- Targeted local tests for the new verifier, new workflow, handoff builder, and
+  seed helper: `24 passed`.
+- Full Faz 24 local test run: `305 passed`.
+- Generated handoff artifact `SHA256SUMS` check: pass.
+- Generated handoff artifact forbidden-material scan: no finding.
+- Staged diff whitespace, auto-closure keyword, and secret-like value scans:
+  no finding, except the expected non-issue `Path(...).resolve()` grep false
+  positive during the broad close-word scan.
+- Claude adversarial review: AGREE, no blocker.
+- PR #2150 CI passed: boundary declaration, cross-AI audit, gitleaks, forbidden
+  close keyword scan, HARD RULE language check, YAML lint, shellcheck,
+  Kustomize build sanity, CodeQL actions, CodeQL python, ADR-0031 drift guard,
+  and placeholder leak check.
+
+Boundary: this is still source-side evidence-gate hardening only. It does not
+run the seed helper, perform the operator Vault seed, reconcile ESO, prove
+`ExternalSecret/audio-gateway-direct-stt-mtls` readiness, prove runtime Secret
+key presence, prove mTLS health HTTP 200, flip
+`AUDIO_GATEWAY_DIRECT_STT_ENABLED`, prove #182 e2e, satisfy #198 I7, or advance
+#1615. The next runtime chain remains: operator-approved seed with redacted
+evidence -> seed evidence verifier/ingest PASS -> ESO reconciliation -> Gate 1
+preflight PASS -> reviewed flag flip -> Gate 2 e2e PASS -> reviewer
+acceptance.
+
+## Live Delta — Direct-STT Gate 0 seed helper and handoff artifact now make Vault/ESO blocker executable without raw secret retention (2026-06-28)
+
+PR #2148 added a repo-native Direct-STT mTLS seed helper and merged to `main`
+at `7b50455f52fbdc932b0d05cc6c3c318b0303d9d5`. The helper is
+`scripts/faz24/direct_stt_mtls_seed_operator.py`; it is intended for the
+operator-controlled Vault seed window after approved mTLS files are available.
+
+Helper contract:
+
+- reads the Vault token from an operator-only token file;
+- reads `direct_stt_ca_crt`, `direct_stt_client_crt`, and
+  `direct_stt_client_key` source files from operator-only PEM files;
+- requires restricted file permissions on the input files;
+- defaults to dry-run unless `--apply` is supplied;
+- uses Vault KV v2 `PATCH` with `Content-Type: application/merge-patch+json`
+  so only the three direct-STT mTLS properties are set or updated;
+- writes redacted `faz24.directSttMtlsSeedOperatorEvidence.v1` evidence;
+- records no PEM values, Vault token, local file paths, raw command output,
+  audio, transcript text, Kubernetes Secret data, Denetim endpoint payload, or
+  production acceptance.
+
+Validation before PR #2148:
+
+- Python compile for the helper and Direct-STT handoff builder: pass.
+- Targeted tests:
+  `tests/faz24/test_direct_stt_mtls_seed_operator.py` and
+  `tests/faz24/test_build_direct_stt_operator_handoff.py` -> `8 passed`.
+- Full Faz 24 local test run: `289 passed`.
+- Generated handoff artifact `SHA256SUMS` check: pass.
+- Generated handoff artifact forbidden-material scan: no finding.
+- Staged diff whitespace, close-keyword, and secret-like value scans: no
+  finding.
+- Claude adversarial review: AGREE, no blocker.
+- PR #2148 CI passed: boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, HARD RULE language check, YAML lint, shellcheck,
+  Kustomize build sanity, CodeQL analysis, and action/python analysis.
+
+After PR #2148 landed, Codex regenerated the Direct-STT metadata-only operator
+handoff package from `main`:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28331250211`
+- Artifact: `faz24-direct-stt-operator-handoff-28331250211`
+- Schema: `faz24.directStt.operator-handoff.v1`
+- Operator batch id: `faz24-direct-stt-20260628`
+- Target: `k3d-test` / `platform-test` / `audio-gateway`
+- Vault path: `kv/platform/audio-gateway-service`
+- mTLS object: `audio-gateway-direct-stt-mtls`
+- Redacted seed evidence path:
+  `docs/faz-24-evidence/direct-stt-mtls-seed-evidence.json`
+- Manifest now carries `seedEvidenceRequired=true` and Gate 0 commands for
+  validate-only seed evidence, `--apply` Vault merge-patch, and the
+  post-seed `faz24-direct-stt-mtls-preflight-collect.yml` readiness probe.
+
+Artifact validation after download:
+
+- `SHA256SUMS` verified `README.md` and
+  `faz24-direct-stt-operator-handoff.json`.
+- Local artifact scan found no forbidden private key, certificate, bearer/JWT,
+  or raw media data URL material.
+- SHA-256:
+  `9308cb500c1b91df220efbd34977ff116b191629b4de7c4aeeb1e3ceeb2fb708`
+  for `faz24-direct-stt-operator-handoff.json`;
+  `be73d7801219fe0a73c7d4868aaa8d3471eba3ee1d1a298fe36022904f1bb320`
+  for `README.md`.
+
+Boundary: this is source-side helper/runbook/handoff hardening and
+metadata-only handoff packaging. It does not run the helper, read or write
+Vault, read PEM files, mutate Kubernetes, mutate Denetim/firewall/EDR, enable
+Direct-STT, call `/transcribe`, send audio, prove mTLS preflight, prove #182
+e2e, satisfy #198 I7, or advance #1615. The next runtime gate remains:
+operator-approved seed with redacted evidence -> ESO reconciliation ->
+preflight PASS -> reviewed flag flip -> e2e PASS.
+
+## Live Delta — Direct-STT mTLS preflight now fails on ESO/Vault seed readiness, not repo wiring (2026-06-28)
+
+Codex dispatched `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml`
+from `main` after the platform-desktop token/external-recorder evidence run.
+The metadata-only preflight collector ran on the self-hosted `staging-sw`
+runner and uploaded artifact evidence, but the verifier rejected the evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28330597164`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28330597164`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Evidence status: `fail`
+- Verifier schema: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Verifier status: `fail`
+- Verifier score: `52/61`
+
+Failure codes in the collected evidence:
+
+- `external-secret-not-ready`
+- `kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`
+- `mtls-health-not-200`
+- `mtls-probe-exit-28`
+- `runtime-secret-key-missing`
+
+Notable passing checks:
+
+- Explicit kubectl context `k3d-test` exists.
+- Namespace `platform-test` is reachable.
+- Deployment `audio-gateway` and selected pod are present and ready.
+- Direct-STT flag is still disabled before the flag flip.
+- Desired host/port/cidr shape matches `live-stt.denetim`, TCP `8243`,
+  hostAlias `10.99.0.2`, and NetworkPolicy CIDR `10.99.0.2/32`.
+- mTLS mount path `/etc/direct-stt-mtls` is present and optional while
+  Direct-STT remains disabled.
+- Aggregate `audio-gateway-secrets` ExternalSecret remains Ready and does not
+  contain direct-STT mTLS keys.
+- Artifact secret scan found no private key, certificate, bearer/JWT, raw media,
+  Denetim endpoint URL, or `/transcribe` material.
+
+Rejecting checks identify the active blocker:
+
+- `audio-gateway-direct-stt-mtls` ExternalSecret is not Ready.
+- Runtime Secret `audio-gateway-direct-stt-mtls` does not expose the expected
+  keys `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key`.
+- mTLS probe ran from the real audio-gateway pod but did not use a client
+  certificate, did not receive HTTP 200, and did not produce an accepted timing
+  sample.
+- `vaultSeedAuthorityAccepted=false`.
+
+Local artifact validation after download:
+
+- Forbidden material scan: no private key, certificate, bearer/JWT, raw media,
+  Denetim endpoint URL, or `/transcribe` material found.
+- SHA-256:
+  `b2ed2ce7e0f4d9662a02e7055d62326c813e154a800975ec9eb5cdad40f91d70`
+  for `faz24-direct-stt-mtls-preflight.json`;
+  `636da09ff5dc446ade7d4a9ae3566c6007aade9ac0229afa2de7e77a5453753c`
+  for `verification-summary.json`.
+
+Boundary: this run does not prove Direct-STT, egress, `/transcribe`, desktop
+mic/loopback, I7 prod-gate, or any production acceptance. It does narrow the
+next actionable blocker to approved Vault/ESO seed and reconciliation of the
+`audio-gateway-direct-stt-mtls` Secret keys before the reviewed flag flip and
+e2e path can be attempted.
+
+## Live Delta — Faz 24 platform-desktop token and external-recorder evidence chain PASS on staging-sw (2026-06-28)
+
+Codex dispatched `.github/workflows/faz24-platform-desktop-token-evidence.yml`
+from `main` after PR #2144/#2145 landed. The run returned `success` on the
+self-hosted `staging-sw` runner:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28330401735`
+- Artifact: `faz24-platform-desktop-token-evidence-28330401735`
+- Artifact files:
+  `faz24-platform-desktop-token-diagnostic.json`,
+  `faz24-platform-desktop-token-contract.json`,
+  `faz24-external-recorder-smoke.json`,
+  `faz24-external-recorder-smoke.verify.json`,
+  `runner.stdout`, `runner.stderr`
+- Diagnostic schema: `faz24.platformDesktopTokenEvidenceChain.v1`
+- Diagnostic status: `pass`
+- Token contract: `pass`
+- External recorder smoke: `pass`
+- External recorder verifier: `pass`
+
+Important artifact facts:
+
+- `tokenIncluded=false`
+- `boundaries.platformTestOnly=true`
+- `boundaries.productionMutation=false`
+- `boundaries.directSttClaimed=false`
+- `boundaries.rawTokenLogged=false`
+- `boundaries.rawPasswordLogged=false`
+- `boundaries.rawAdminCredentialLogged=false`
+- `cleanup.directGrantsRestored=true`
+- `cleanup.tempUserDeleted=true`
+- `cleanup.tokenFileRemoved=true`
+- External recorder verifier checks passed, including exact step order,
+  token-not-included, expected HTTP contracts, and direct-STT / desktop mic
+  loopback / compute-plane / production-boundary negative checks.
+
+Local artifact validation after download:
+
+- Forbidden material scan: no private key, certificate, bearer/JWT,
+  `Authorization:`, or `data:audio/...;base64,` value found.
+- Forbidden key-name scan: no `access_token`, `refresh_token`,
+  authorization/bearer/jwt/api/private key, client secret/password/secret,
+  raw audio, transcript text, raw request/response, or cookie key found.
+- SHA-256:
+  `96077dd38abfc70159e5926449d162c9e569485b4a905a7222dc62ba00eacd14`
+  for `faz24-platform-desktop-token-diagnostic.json`;
+  `6670b8cce10d73a6657750e4d790045cca0eb2ad65cadc556b8926500cfda214`
+  for `faz24-platform-desktop-token-contract.json`;
+  `d7fdd02e44f10f606427cc73c63a040ac6eae09b42aa8575adacf8dcb81c4c9e`
+  for `faz24-external-recorder-smoke.json`;
+  `4d7b5d8c4d35a3539438b3987f8a25cd78d75a059b3d879df0aa8f5e505d1781`
+  for `faz24-external-recorder-smoke.verify.json`.
+
+Boundary: this run proves the platform-test short-lived `platform-desktop`
+token contract and the external-recorder smoke/verifier path for the
+#1995/#1996/#1997 chain. It does not collect desktop mic/loopback evidence,
+does not prove Direct-STT, does not perform Denetim endpoint/firewall/Vault/
+Kubernetes/legal mutation, does not exercise production, and does not satisfy
+the full `#2027` product gate or advance `#1615` beyond this bounded evidence.
+
+## Live Delta — Faz 24 readiness and platform-desktop evidence ingest block raw audio data URLs before artifact upload (2026-06-28)
+
+PR #2144 extended the raw-audio data URL retention guard from the product-gate
+ingest workflow to two remaining Faz 24 evidence-upload boundaries and merged
+to `main` at `fbec1ce269b9ad47a644df938a9e05f57bb50298`.
+
+Updated workflows:
+
+- `.github/workflows/faz24-readiness-rollup-evidence-ingest.yml`
+- `.github/workflows/faz24-platform-desktop-token-evidence.yml`
+
+Both workflows already rejected token/private/certificate-like values and raw
+media key names before artifact upload. They now also reject raw media data URL
+values matching `data:audio/[A-Za-z0-9.+-]+;base64,` before rejected evidence
+can be retained as an Actions artifact.
+
+Validation:
+
+- Targeted workflow tests:
+  `tests/faz24/test_readiness_rollup_evidence_ingest_workflow.py` and
+  `tests/faz24/test_platform_desktop_token_evidence_workflow.py` -> `9 passed`.
+- Full Faz 24 local test run before PR: `286 passed`.
+- Workflow YAML parse for both modified workflows: pass.
+- Local data URL scan simulations for both grep variants detected
+  `data:audio/wav;base64,...`.
+- PR #2144 CI passed: boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, HARD RULE language check, YAML lint, shellcheck,
+  Kustomize build sanity, CodeQL analysis, and action/python analysis.
+
+Boundary: workflow/test hardening only. This does not collect readiness rollup,
+G-CAP, desktop, external recorder, Direct-STT, or I7 evidence; does not mint or
+read a platform-desktop token; does not perform desktop mic/loopback capture;
+does not mutate runtime/Kubernetes/Vault/Keycloak/Denetim/firewall/legal
+state; and does not satisfy `#2027`, `#2022`, `#2024`, `platform-ai#198`, or
+advance `#1615`. It only strengthens the no-raw-audio retention boundary for
+future metadata-only evidence ingest attempts without making an acceptance
+claim.
+
+## Live Delta — Faz 24 product-gate ingest blocks raw audio data URLs before artifact upload (2026-06-28)
+
+PR #2142 hardened `.github/workflows/faz24-product-gate-evidence-ingest.yml`
+and merged to `main` at `f18052c529a5ab380c743f0930e747047b1ddd43`. The
+workflow secret scan already rejected raw-audio key names; it now also rejects
+raw media data URL values matching `data:audio/[A-Za-z0-9.+-]+;base64,`
+before the evidence artifact upload step can retain rejected evidence.
+
+Validation:
+
+- `tests/faz24/test_product_gate_evidence_ingest_workflow.py` pins the new
+  raw-audio data URL scan and keeps the `grep` option separator check.
+- Full Faz 24 local test run before PR: `284 passed`.
+- PR #2142 CI passed: boundary declaration, cross-AI audit, gitleaks,
+  forbidden close keyword scan, no-closure check, YAML lint, shellcheck,
+  Kustomize build sanity, and CodeQL analysis.
+
+Boundary: workflow/test hardening only. This does not collect
+G-CAP/G-OPS/G-COMP evidence, run a pilot, mutate runtime/Kubernetes/Vault/
+firewall/legal state, ingest product-gate evidence, satisfy `#2027`, or
+advance `#1615`. It strengthens the no-raw-audio retention boundary for future
+metadata-only product-gate evidence ingest attempts.
+
+## Live Delta — Faz 24 product-gate handoff now carries G-OPS issue reference (2026-06-28)
+
+During G-OPS/G-COMP issue evidence sync, Codex found that the product-gate
+handoff manifest already carried G-OPS verifier and ingest commands but its
+`issues` object did not point at `platform-k8s-gitops#2022`. PR #2140 added
+`gopsVerifier=platform-k8s-gitops#2022`, pinned it in the product-gate handoff
+unit test, and merged to `main` at
+`73be208f36e5d9f5c540bd2d48e10f2615394fae`.
+
+On that main head SHA, Codex regenerated the metadata-only product-gate
+handoff package:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28329431009`
+- Artifact: `faz24-product-gate-operator-handoff-28329431009`
+- Schema: `faz24.productGate.operator-handoff.v1`
+- Operator batch id: `faz24-product-gate-20260628`
+- Issue references:
+  `gcapAggregate=platform-k8s-gitops#2027`,
+  `gopsVerifier=platform-k8s-gitops#2022`,
+  `gcompVerifier=platform-k8s-gitops#2024`,
+  `productGateIngest=platform-k8s-gitops#2027`
+
+Artifact validation: workflow returned `success`; downloaded artifact
+`SHA256SUMS` verified `README.md` and
+`faz24-product-gate-operator-handoff.json`; local artifact scan found no
+forbidden private key, certificate, bearer/JWT, or raw-audio-like material.
+The manifest keeps `containsCredentials=false`, `containsRawAudio=false`, and
+`containsUnredactedPersonalData=false`.
+
+Boundary: this is source/test/current-state sync plus metadata-only handoff
+packaging. It does not collect G-CAP/G-OPS/G-COMP evidence, run an on-prem
+operability drill, mutate Kubernetes/Vault/Keycloak/Denetim/legal state, send
+audio, ingest product-gate evidence, satisfy `#2022`, `#2024`, `#2027`, or
+advance `#1615`. These issues remain `Needs Verify` pending accepted redacted
+runtime/operator evidence, ingest artifacts, and reviewer acceptance.
+
+## Live Delta — Faz 24 I7 app-mTLS handoff default synced and artifact regenerated (2026-06-28)
+
+PR #2138 synced the remaining stale Faz 24 operator-handoff defaults and
+runbook commands to the current `20260628` artifact line and merged to `main`
+at `2d2bae7e3809fb650eee339fd9da0cc9ffcf18e2`. The I7 app-mTLS builder and
+workflow now default to `faz24-i7-app-mtls-20260628`; the Direct-STT,
+desktop-capture, and external-recorder runbook handoff commands also point to
+their current `20260628` batch ids.
+
+On that main head SHA, Codex regenerated the metadata-only I7 app-mTLS
+handoff package:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28329132953`
+- Artifact: `faz24-i7-app-mtls-operator-handoff-28329132953`
+- Schema: `faz24.i7AppMtls.operator-handoff.v1`
+- Operator batch id: `faz24-i7-app-mtls-20260628`
+- GitOps rollup issue: `platform-k8s-gitops#1615`
+- I7 production-gate issue: `platform-ai#198`
+- Target tuple: source `10.99.0.1` -> Denetim `10.99.0.2`, live-stt TCP
+  `8243`, meeting-ai TCP `8343`
+
+Artifact validation: the workflow returned `success`; downloaded artifact
+`SHA256SUMS` verified `README.md` and
+`faz24-i7-app-mtls-operator-handoff.json`; local artifact scan found no
+forbidden private key, certificate, bearer/JWT, or raw-audio-like material.
+The manifest keeps `containsCredentials=false` and
+`liveSttPreflightDoesNotAcceptFullI7=true`.
+
+Boundary: this is source/default/runbook/test sync plus metadata-only operator
+handoff packaging. It does not connect to Denetim PC, mutate endpoint security
+or firewall policy, mutate Kubernetes/Vault/production, collect runtime I7
+evidence, enable Direct-STT, call `/transcribe`, send audio, satisfy
+`platform-ai#198`, or advance `#1615`. Full I7 still requires accepted
+endpoint-policy evidence, live-stt preflight verifier/ingest, full prod-gate
+evidence including meeting-ai `8343`, request audit, plaintext-bypass closure,
+rotation/failure drills, and reviewer acceptance.
+
+## Live Delta — Faz 24 product/desktop/external handoff refs corrected and regenerated (2026-06-28)
+
+Codex found a live handoff reference drift while refreshing the Faz 24
+desktop-capture operator package: `platform-k8s-gitops#2021` does not resolve
+as a GitHub issue, while `platform-k8s-gitops#2027` is the live Project #2
+`Needs Verify` item for the shared G-CAP/G-OPS/G-COMP evidence ingest workflow.
+PR #2136 corrected the source/workflow/test defaults and merged to `main` at
+`e4246fa508c95075cb74df070c3a307e8b4aa18d`.
+
+On that main head SHA, Codex regenerated the three metadata-only handoff
+artifacts that feed the remaining product-gate coordination path:
+
+- Product-gate handoff:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28328742081`
+  -> `faz24-product-gate-operator-handoff-28328742081`;
+  schema `faz24.productGate.operator-handoff.v1`; operator batch id
+  `faz24-product-gate-20260628`; `gcapAggregate` and `productGateIngest` both
+  point to `platform-k8s-gitops#2027`.
+- External-recorder handoff:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28328742093`
+  -> `faz24-external-recorder-operator-handoff-28328742093`;
+  schema `faz24.externalRecorder.operator-handoff.v1`; operator batch id
+  `faz24-external-recorder-20260628`; `gcapAggregate` points to
+  `platform-k8s-gitops#2027`.
+- Desktop-capture handoff:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28328742106`
+  -> `faz24-desktop-capture-operator-handoff-28328742106`;
+  schema `faz24.desktopCapture.operator-handoff.v1`; operator batch id
+  `faz24-desktop-capture-20260628`; `gcapAggregate` points to
+  `platform-k8s-gitops#2027`.
+
+Artifact validation: all three workflows returned `success`; downloaded
+artifacts passed `SHA256SUMS`; local artifact scan found no forbidden private
+key, certificate, bearer/JWT, or raw-audio-like material. The product-gate
+manifest keeps `legalTrackParallel=true` and
+`kvkkOwnerLegalAcceptanceNotEngineeringBlocker=true`, so owner legal acceptance
+remains a parallel legal track and is not an engineering blocker.
+
+Boundary: this is source/default/test and metadata-only artifact sync. It does
+not run the desktop app, mint/read a short-lived token, connect to
+`testai.acik.com`, mutate Keycloak/Kubernetes/Vault/firewall/legal state, send
+audio, ingest product-gate evidence, prove desktop mic/loopback, satisfy
+G-CAP/G-OPS/G-COMP, or advance `#1615`. `#2027` still requires accepted
+redacted product-gate evidence and reviewer acceptance before any broader
+readiness claim.
+
+## Live Delta — Faz 24 post-ESET/current-main child-gate refresh still needs operator gates (2026-06-28)
+
+After PR #2133 landed on `main`, Codex reran the two safe child-gate
+collectors that can be executed without raw credential disclosure or host
+mutation:
+
+- Head SHA: `74234ffbabf44c42966fa1ab8eb91f0aabca5f81`
+- Direct-STT mTLS preflight workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28327705115`
+- Direct-STT artifact:
+  `faz24-direct-stt-mtls-preflight-collect-28327705115`
+- WG-B+ I3 workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28327705135`
+- WG-B+ I3 artifact: `faz24-wg-bplus-i3-evidence-28327705135`
+
+Direct-STT result (`platform-ai#182`): verifier fail, `52/61` checks passed.
+Accepted live facts: explicit `k3d-test` context exists, `platform-test` is
+reachable, `audio-gateway` pod is Ready, direct-STT remains disabled before
+flag flip, the desired target shape remains `live-stt.denetim:8243` via
+`10.99.0.2/32:8243`, the aggregate Redis ExternalSecret remains Ready, and no
+raw secret/audio/transcript material was exported. Current blocker:
+`ExternalSecret/audio-gateway-direct-stt-mtls` is not `Ready=True`; runtime
+Secret `audio-gateway-direct-stt-mtls` has no file keys; the pod-local mTLS
+probe could not use a client certificate, did not return HTTP `200`, and has
+`vaultSeedAuthorityAccepted=false`. Failure codes:
+`external-secret-not-ready`,
+`kubectl-get-secret-audio-gateway-direct-stt-mtls:command-exit-1`,
+`runtime-secret-key-missing`, `mtls-health-not-200`, and
+`mtls-probe-exit-28`.
+
+WG-B+ I3 result (`platform-k8s-gitops#1864`): verifier fail. Accepted
+live/preflight facts: TCP/22 to the Denetim target is reachable, the runner SSH
+identity is configured, and runner public-key metadata is present. Current
+blocker: SSH exits `255` with `sshFailureClass=ssh-auth-publickey`, so the
+remote Denetim collector is not reached. Because the remote collector is not
+reached, OpenSSH event log, PowerShell transcription, PowerShell script-block,
+failed-login audit, WireGuard health, ESET/firewall drift, time-sync, and
+staging connection-log checks remain fail/unproven. This does not prove ESET
+failure; it proves the I3 remote collector still cannot authenticate to Denetim.
+
+Artifact hygiene: downloaded artifacts were scanned locally; no forbidden
+private key, certificate, bearer/JWT, or raw media material was found.
+
+Evidence comments:
+
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826623228
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826623705
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826624329
+
+Boundary: these runs refreshed evidence only. They did not seed Vault, mutate
+Kubernetes, authorize the Denetim key, flip Direct-STT, call `/transcribe`,
+send audio, prove desktop mic/loopback, prove I7, claim production readiness,
+or advance `#1615`. Next gates remain Direct-STT approved mTLS seed ->
+preflight PASS -> reviewed flag flip -> e2e PASS, plus I3 Denetim public-key
+authorization/evidence ingest -> I3 PASS.
+
+## Live Delta — Faz 24 Direct-STT operator handoff regenerated with fresh batch id (2026-06-28)
+
+Codex regenerated the metadata-only Direct-STT operator handoff from current
+`main` after the fresh Direct-STT/I3 child-gate refresh showed the mTLS seed
+boundary is still the active Direct-STT blocker:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28327442436`
+- Artifact: `faz24-direct-stt-operator-handoff-28327442436`
+- Schema: `faz24.directStt.operator-handoff.v1`
+- Operator batch id: `faz24-direct-stt-20260628`
+- GitOps issue: `platform-k8s-gitops#1615`
+- Direct-STT issue: `platform-ai#182`
+- I7 production-gate issue reference: `platform-ai#198`
+- Target context/namespace/deployment:
+  `k3d-test` / `platform-test` / `audio-gateway`
+- Target mTLS object and Vault path:
+  `audio-gateway-direct-stt-mtls`,
+  `kv/platform/audio-gateway-service`
+- Target host/IP/port: `live-stt.denetim` / `10.99.0.2` / `8243`
+- Evidence paths:
+  `docs/faz-24-evidence/direct-stt-mtls-preflight.json` and
+  `docs/faz-24-evidence/direct-stt-e2e.json`
+
+Artifact validation: downloaded `SHA256SUMS` verified `README.md` and
+`faz24-direct-stt-operator-handoff.json`; local artifact scan found no
+forbidden private key, certificate, token, bearer, raw-audio, raw-transcript, or
+credential-like JSON key findings. Manifest mutation boundary has
+`containsSecrets=false`, `containsCertificates=false`,
+`packageBuildVaultMutation=false`, `packageBuildClusterMutation=false`,
+`packageBuildDenetimMutation=false`, and `packageBuildProductionMutation=false`.
+
+The handoff artifact now gives the operator one current Direct-STT sequence:
+seed the approved Vault properties `direct_stt_ca_crt`,
+`direct_stt_client_crt`, and `direct_stt_client_key` without recording raw
+values; collect/verify/ingest the mTLS preflight; make a separate reviewed
+GitOps flag flip only after preflight PASS; then collect/verify/ingest the e2e
+Direct-STT evidence and require reviewer acceptance. The default operator batch
+id in `scripts/faz24/build-direct-stt-operator-handoff.py` and
+`.github/workflows/faz24-direct-stt-operator-handoff.yml` is now
+`faz24-direct-stt-20260628`, matching the regenerated artifact.
+
+Evidence comments:
+
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826594372
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826594987
+
+Boundary: this is coordination packaging only. It does not seed Vault, read or
+write raw credentials, mutate Kubernetes, flip Direct-STT, call `/transcribe`,
+send audio, prove Direct-STT e2e, satisfy I7, or advance `#1615`. `#182` and
+`#1615` remain `Needs Verify`.
+
+## Live Delta — Faz 24 WG-B+ operator handoff regenerated with fresh I3 package defaults (2026-06-28)
+
+Codex regenerated the metadata-only WG-B+ operator handoff from current `main`
+after the fresh I3 identity/package defaults landed:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28327185922`
+- Artifact: `faz24-wg-bplus-operator-handoff-28327185922`
+- Schema: `faz24.wg-bplus.operator-handoff.v1`
+- Operator batch id: `faz24-wg-bplus-20260628`
+- I3 identity run id: `28326845949`
+- I3 authorize package run id: `28326859105`
+- I3 authorize package artifact:
+  `faz24-i3-denetim-ssh-authorize-package-28326859105`
+- I3 target user: `svc-denetim-agent`
+- I3 board status in manifest: `Needs Verify`
+
+Artifact validation: downloaded `SHA256SUMS` verified `README.md` and
+`faz24-wg-bplus-operator-handoff.json`; local artifact scan found no forbidden
+private key, token, bearer, raw-audio, raw-transcript, or credential-like JSON
+key findings. Manifest mutation boundary has `containsSecrets=false`,
+`packageBuildDenetimMutation=false`, `packageBuildHostMutation=false`,
+`packageBuildClusterMutation=false`, and `packageBuildProductionMutation=false`.
+
+The handoff artifact now gives the operator one current sequence: download the
+fresh Denetim SSH authorize package, run
+`authorize-denetim-i3-public-key.ps1` from an elevated Denetim PowerShell
+session, ingest `denetim-i3-ssh-authorize-evidence.json`, then rerun
+`faz24-wg-bplus-i3-evidence.yml` and require verifier PASS. The default
+operator batch id in `scripts/faz24/build-wg-bplus-operator-handoff.py` and
+`.github/workflows/faz24-wg-bplus-operator-handoff.yml` is now
+`faz24-wg-bplus-20260628`, matching the regenerated artifact.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826569987
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826570829
+
+Boundary: this is coordination packaging only. It does not authorize the key on
+Denetim, ingest Denetim-side evidence, pass I3, or satisfy `#1615`. `#1864` and
+`#1615` remain `Needs Verify`.
+
+## Live Delta — Faz 24 I3 operator package refreshed from current runner public key (2026-06-28)
+
+After the current-main I3 evidence refresh confirmed
+`sshFailureClass=ssh-auth-publickey`, Codex rebuilt the public-key-only Denetim
+authorization package from a fresh runner identity verification:
+
+- Runner identity verify workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326845949`
+- Runner identity artifact: `faz24-i3-runner-ssh-identity-28326845949`
+- Denetim authorization package workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326859105`
+- Denetim authorization package artifact:
+  `faz24-i3-denetim-ssh-authorize-package-28326859105`
+- Source identity run id: `28326845949`
+- Target user: `svc-denetim-agent`
+- Public key fingerprint:
+  `SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`
+- Public key line/blob SHA256 values are recorded in the package metadata
+  artifact and consumed by the handoff workflow defaults; they are intentionally
+  not duplicated in this state note to keep secret-scanning noise out of the
+  canonical status surface.
+
+Package validation: downloaded artifacts were scanned locally with no forbidden
+private-key, token, bearer, raw-audio, or raw-transcript findings; package
+`SHA256SUMS` verified the public key, PowerShell authorize script, metadata, and
+README. `scripts/faz24/build-wg-bplus-operator-handoff.py` and
+`.github/workflows/faz24-wg-bplus-operator-handoff.yml` now default to these
+fresh I3 run ids so a regenerated WG-B+ operator handoff points at the current
+package rather than stale historical artifacts.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826541072
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826541590
+
+Boundary: this prepares a public-key-only operator package. It does not connect
+to Denetim PC, mutate Denetim host config, upload private key material, collect
+accepted I3 runtime evidence, or advance `#1615`. I3 remains `Needs Verify`
+until the Denetim-side authorization evidence is ingested and the I3 evidence
+workflow passes.
+
+## Live Delta — Faz 24 current-main child-gate refresh: Direct-STT and I3 remain blocked (2026-06-28)
+
+Codex reran the two operator-free #1615 child-gate collectors on current `main`
+`3d033f912c106b3689a5a5e1ceb359994c3609ef` after the external-recorder refresh
+and readiness rollup verifier landed.
+
+Direct-STT mTLS preflight (`platform-ai#182`):
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326650072`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28326650072`
+- Evidence schema: `faz24.directSttMtlsEnablementPreflight.v1`
+- Verifier: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Result: `status=fail`, `52/61` checks passed.
+- Accepted live facts: explicit `k3d-test` context exists, `platform-test` is
+  reachable, `audio-gateway` pod is Ready, direct-STT is still disabled before
+  flag flip, desired mTLS shape still targets `live-stt.denetim:8243` via
+  `10.99.0.2/32:8243`, `/etc/direct-stt-mtls`, and
+  `audio-gateway-direct-stt-mtls`, and the aggregate Redis Secret remains Ready
+  without direct-STT file keys.
+- Current blocker: `ExternalSecret/audio-gateway-direct-stt-mtls` is still not
+  `Ready=True`; runtime Secret keys `direct-stt-ca.crt`,
+  `direct-stt-client.crt`, and `direct-stt-client.key` are missing; the pod-local
+  mTLS health probe could not use a client certificate and did not return HTTP
+  `200`; `vaultSeedAuthorityAccepted=false`.
+
+WG-B+ I3 management audit (`platform-k8s-gitops#1864`):
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326650160`
+- Artifact: `faz24-wg-bplus-i3-evidence-28326650160`
+- Evidence schema: `faz24.wg-bplus.i3.audit.v1`
+- Result: verifier fail.
+- Accepted live/preflight facts: TCP/22 to the Denetim target is reachable, the
+  runner SSH identity is configured, public-key metadata is present, WireGuard
+  tooling is available, and `wg0` is detected on staging-sw.
+- Current blocker: SSH exits `255` with
+  `sshFailureClass=ssh-auth-publickey`, so the remote Denetim collector is not
+  reached. Required checks remain fail for OpenSSH event log, PowerShell
+  transcription, PowerShell script-block, failed-login audit, WireGuard health,
+  ESET/firewall drift, time sync, and staging connection-log evidence.
+
+Artifact hygiene: downloaded artifacts for both runs were scanned locally; no
+forbidden token, key, certificate, bearer, raw-audio, or raw-transcript findings
+were detected.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826525965
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826524753
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826525346
+
+Boundary: these runs refreshed truth only. They did not read or write Vault,
+mutate Kubernetes, mutate Caddy/firewall, flip direct-STT, call `/transcribe`,
+send audio, mutate Denetim host state, prove desktop mic/loopback, prove I7 full
+prod-gate, claim legal acceptance, or claim production readiness. `#1615`
+remains open and Project #2 status remains `Needs Verify`.
+
+## Live Delta — Faz 24 external-recorder current-main refresh PASS; #1615 rollup still open (2026-06-28)
+
+Codex dispatched the safe `platform-test` external-recorder evidence workflow
+on current `main` after the #1615 readiness rollup verifier landed:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28326365972`
+- Head SHA: `57f9e6fdd1085ddabf442da94abe7fa642c9d8f8`
+- Artifact: `faz24-platform-desktop-token-evidence-28326365972`
+- Diagnostic envelope: `faz24.platformDesktopTokenEvidenceChain.v1`,
+  `status=pass`, `tokenIncluded=false`, `failureReason=null`.
+- Chain results: platform-desktop token contract `pass`, external recorder
+  smoke `pass`, external recorder verifier `pass`.
+- Cleanup: direct grants toggled and restored, temporary smoke user created and
+  deleted, token file removed.
+- Boundary flags: `platformTestOnly=true`, `productionMutation=false`,
+  `rawTokenLogged=false`, `rawPasswordLogged=false`,
+  `rawAdminCredentialLogged=false`, `directSttClaimed=false`,
+  `productionReadyClaimed=false`.
+- Downloaded artifact local scan found no forbidden token, key, certificate,
+  bearer, private-field, raw-audio, or raw-transcript material.
+
+External recorder verifier summary:
+
+- Schema: `faz24.externalRecorderSmokeVerifier.v1`, `status=pass`,
+  `tokenIncluded=false`.
+- Accepted scope: `externalMeetingAdminPathExercised=true`,
+  `recorderLifecycleExercised=true`.
+- Explicit non-claims: `directClientToStt=false`, `directSttProven=false`,
+  `directSttTranscriptProven=false`, `desktopMicLoopbackProven=false`,
+  `productionReady=false`.
+- All verifier checks passed, including exact lifecycle step order and HTTP
+  contract checks for meeting create, consent, session start, chunk upload,
+  finish, and status.
+
+Evidence comment:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826497928
+
+Boundary: this fresh run proves only the short-lived `platform-desktop` token
+to external meeting-admin and recorder lifecycle slice on `platform-test`. It
+does not prove desktop mic/loopback, direct-STT, direct-STT transcript,
+compute-plane audit, I7 full prod-gate, G-OPS, G-COMP, legal acceptance, or
+production readiness. `#1615` remains open and Project #2 status remains
+`Needs Verify` until the remaining rollup gates have accepted evidence.
+
+## Live Delta — Faz 24 #1615 readiness rollup verifier packaged; child gates still authoritative (2026-06-28)
+
+The #1615 multi-gate acceptance surface now has a source-side fail-closed
+rollup verifier and no-mutation ingest path:
+
+- Script: `scripts/faz24/verify_faz24_readiness_rollup.py`
+- Workflow: `.github/workflows/faz24-readiness-rollup-evidence-ingest.yml`
+- Runbook: `docs/runbooks/RB-faz24-readiness-rollup.md`
+- Tests:
+  `tests/faz24/test_verify_faz24_readiness_rollup.py`,
+  `tests/faz24/test_readiness_rollup_evidence_ingest_workflow.py`
+
+The verifier accepts only a redacted `faz24.readinessRollupEvidence.v1`
+envelope for `platform-k8s-gitops#1615`. It requires every required child gate
+to be present with `status=pass`, `acceptedByVerifier=true`, bounded
+`evidenceRef`, `issueRef`, `observedAt`, and a single-line summary. Required
+gates include foundation deploy, recorder edge lifecycle, G-CAP aggregate,
+desktop capture, direct-STT preflight and e2e, compute-plane audit, WG-B+ I3
+and I6, I7 live-stt app-mTLS and full prod-gate, G-OPS, G-COMP, retention
+lifecycle, pilot WER/DER, pilot G-INT, pilot G-LAT/COST, and browser/client
+smoke.
+
+Boundary: this is aggregation guard infrastructure only. It does not collect
+runtime evidence, seed Vault/ESO material, mutate Kubernetes/Caddy/firewall,
+enable direct-STT, run desktop capture, perform legal acceptance, or make a
+production-readiness claim. The child gate verifiers and their issue evidence
+remain authoritative; the rollup can only pass after those gates have accepted
+redacted evidence. Current live truth remains unchanged: direct-STT, desktop
+capture, WG-B+ I3, full I7, G-OPS/G-COMP, pilot quality/intelligence/latency
+and client smoke evidence still need accepted proof before #1615 can move past
+`Needs Verify`.
+
+## Live Delta — Faz 24 current-main live retry: Direct-STT/I3 still blocked; I7 live-stt slice remains bounded PASS (2026-06-28)
+
+Codex re-ran the operator/secret/device-free live checks on current `main`
+`7b0071abe7513870dd71f8a8f0e7373cece91e47` after the endpoint/ESET work was
+reported complete.
+
+Direct-STT mTLS preflight:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28325457236`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28325457236`
+- Verifier: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Result: `status=fail`, `52/61` checks passed.
+- Accepted live facts: explicit `k3d-test` context, reachable
+  `platform-test`, real Ready `audio-gateway` pod, direct-STT still disabled,
+  `live-stt.denetim:8243`, hostAlias `10.99.0.2`, NetworkPolicy
+  `10.99.0.2/32:8243`, optional `/etc/direct-stt-mtls` mount present, and the
+  aggregate Redis Secret remains Ready without direct-STT file keys.
+- Current blocker: `ExternalSecret/audio-gateway-direct-stt-mtls` is not
+  `Ready=True`; runtime Secret keys `direct-stt-ca.crt`,
+  `direct-stt-client.crt`, and `direct-stt-client.key` are missing; the pod-local
+  health probe could not use a client certificate and did not return HTTP `200`.
+  `vaultSeedAuthorityAccepted=false` means the approved Vault/ESO direct-STT
+  mTLS seed has not yet been accepted, not that a reviewed seed was rejected.
+
+WG-B+ I3 management audit:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28325508283`
+- Artifact: `faz24-wg-bplus-i3-evidence-28325508283`
+- Result: `evidence-not-accepted`.
+- Accepted live facts: target TCP/22 is reachable, runner SSH identity is
+  configured, and public-key metadata is present.
+- Current blocker: SSH exits with public-key auth failure
+  (`ssh-auth-publickey`), so remote Denetim audit/drift collection is not
+  reached. OpenSSH event log, PowerShell transcription, PowerShell script-block,
+  failed-login audit, WireGuard health, ESET/firewall drift, time sync, and
+  staging connection-log checks remain non-pass.
+
+I7 app-mTLS bounded slice:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28226401974`
+- Artifact: `faz24-i7-app-mtls-evidence-28226401974`
+- Verifier: `faz24.i7.app-mtls.verifier.v1`
+- Result: `status=pass`, `evidenceProfile=live-stt-preflight`,
+  `tokenIncluded=false`.
+- Accepted slice: WG route to Denetim IP, TCP/8243 reachability, TLS server
+  identity for `live-stt.denetim`, valid client certificate accepted with HTTP
+  `200`, and no-client/wrong-client probes rejected.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826415077
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826415079
+- `platform-k8s-gitops#1864`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4826415074
+- `platform-ai#198`:
+  https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4826415088
+
+Boundary: this delta does not close `#1615`, `#1864`, `platform-ai#182`, or
+`platform-ai#198`. It does not enable direct-STT, call `/transcribe`, send raw
+audio, mutate Vault/Kubernetes/Caddy/firewall, prove desktop mic/loopback,
+prove meeting-ai app-mTLS, prove G-OPS/G-COMP, claim legal go, or make the
+system production-ready. Remaining accepted evidence still requires approved
+Vault/ESO direct-STT mTLS material, Denetim SSH public-key authorization
+evidence, real desktop capture proof, and runtime/operator evidence for the
+remaining product gates.
+
+## Live Delta — Faz 24 external-recorder G-CAP aggregate verifier PASS; remaining product gates stay open (2026-06-28)
+
+The external-recorder aggregate capture reliability slice now has accepted
+redacted verifier evidence. Five `faz24.externalRecorderSmokeVerifier.v1`
+summaries were collected from the platform-desktop token + external recorder
+chain:
+
+- `28324072820` — artifact
+  `faz24-platform-desktop-token-evidence-28324072820`
+- `28324934651` — artifact
+  `faz24-platform-desktop-token-evidence-28324934651`
+- `28324934663` — artifact
+  `faz24-platform-desktop-token-evidence-28324934663`
+- `28324967848` — artifact
+  `faz24-platform-desktop-token-evidence-28324967848`
+- `28324982225` — artifact
+  `faz24-platform-desktop-token-evidence-28324982225`
+
+Each source summary had `status=pass`, `tokenIncluded=false`,
+`externalMeetingAdminPathExercised=true`, and
+`recorderLifecycleExercised=true`, with distinct meeting and session IDs.
+Cancelled dispatches `28324934671` and `28324934676` are not counted.
+
+Aggregate verification:
+
+- Local verifier output: `faz24.gcapCaptureGateVerifier.v1`,
+  `status=pass`.
+- Authoritative ingest workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28325069572`
+- Artifact: `faz24-product-gate-evidence-gcap-28325069572`
+- Head SHA: `0ee1972d5bb48f5432543ffecfea165996fcfe80`
+- Metrics: attempts `5`, distinct meetings `5`, distinct sessions `5`,
+  success rate `1.0`, retry rate `0.0`, failure rate `0.0`.
+- Thresholds: min attempts `5`, min distinct meetings `5`, min distinct
+  sessions `5`, min success rate `0.95`, max retry rate `0.10`, max failure
+  rate `0.05`.
+- Boundary scan: no forbidden token/key/certificate/bearer findings.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826371063
+- `platform-ai#160`:
+  https://github.com/Halildeu/platform-ai/issues/160#issuecomment-4826371068
+
+Boundary: this accepts only the external-recorder aggregate G-CAP slice from
+redacted verifier summaries. It does not prove desktop mic/loopback capture,
+direct-STT, direct-STT transcript, compute-plane audit, I7 prod-gate, G-OPS,
+G-COMP, legal go, production lifecycle/deletion, or production readiness.
+`#1615` remains open and Project #2 status remains `Needs Verify` until the
+remaining rollup gates have accepted evidence.
+
+## Live Delta — Faz 24 operator handoff artifacts refreshed on current main; runtime gates unchanged (2026-06-28)
+
+Three metadata-only Faz 24 operator handoff packages were regenerated from
+current `main` head `7170360375066734ec1792b4adb3d3576083bb22` after the
+external recorder and direct-STT preflight truth refreshes:
+
+| Package | Workflow run | Artifact | Scope | Runtime evidence collected |
+|---|---:|---|---|---|
+| Desktop capture handoff | `28324678324` | `faz24-desktop-capture-operator-handoff-28324678324` | real `platform-desktop` microphone + loopback gate sequence | No |
+| I7 app-mTLS handoff | `28324677083` | `faz24-i7-app-mtls-operator-handoff-28324677083` | live-stt preflight plus full I7 prod-gate sequence | No |
+| Product-gate handoff | `28324676315` | `faz24-product-gate-operator-handoff-28324676315` | G-CAP / G-OPS / G-COMP evidence sequencing | No |
+
+All three workflow runs concluded `success`; downloaded artifacts passed local
+`SHA256SUMS` verification. Their schemas are:
+`faz24.desktopCapture.operator-handoff.v1`,
+`faz24.i7AppMtls.operator-handoff.v1`, and
+`faz24.productGate.operator-handoff.v1`.
+
+Boundary: these are coordination artifacts only. They do not run the desktop
+app, read tokens, connect to `testai`, mutate Kubernetes/Vault/firewall/legal
+state, collect runtime evidence, enable direct-STT, send audio, ingest
+G-CAP/G-OPS/G-COMP evidence, claim legal go, or advance `#1615` /
+`platform-ai#198`. Open gates are unchanged: direct-STT still needs approved
+Vault/ESO seed and pre-flag mTLS PASS before any reviewed flag flip; desktop
+capture still needs a real mic+loopback run and verifier PASS; I7 still needs
+bounded endpoint/security policy evidence plus full prod-gate evidence including
+meeting-ai; product gates still need accepted redacted runtime/operator
+evidence and verifier/ingest PASS. KVKK/VERBIS owner legal acceptance remains a
+parallel legal track and is not an engineering blocker after owner notification.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826339054
+- `platform-ai#198`:
+  https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4826339056
+
+## Live Delta — Faz 24 direct-STT mTLS preflight rerun still blocks on ESO/Secret seed (2026-06-28)
+
+After the operator reported the Denetim/ESET allow work as completed, the
+metadata-only direct-STT mTLS preflight collector was rerun from `main`:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28324321302`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28324321302`
+- Verifier: `faz24.directSttMtlsEnablementPreflightVerifier.v1`
+- Result: `status=fail`, `52/61` checks passed.
+
+Accepted facts from the rerun:
+
+- Explicit `kubectlContext=k3d-test`; namespace `platform-test` reachable.
+- Real `audio-gateway` pod was Ready:
+  `audio-gateway-58859b497c-cwvcb`.
+- Desired pre-flag shape remains intact: direct-STT disabled,
+  `live-stt.denetim:8243`, hostAlias `10.99.0.2`, NetworkPolicy
+  `10.99.0.2/32:8243`, `/etc/direct-stt-mtls` mount present and optional.
+- Aggregate `audio-gateway-secrets` remains Ready and Redis-only; direct-STT
+  cert/key names are not folded into the `envFrom` aggregate Secret.
+- Metadata boundaries held false for secret values included, raw audio sent,
+  `/transcribe` called, direct audio e2e proven, I7 prod-gate proven,
+  desktop mic/loopback proven, and production-ready.
+- Artifact scan found no forbidden token/key/certificate/audio/transcribe
+  findings.
+
+Current blocker from the run:
+
+- `ExternalSecret/audio-gateway-direct-stt-mtls` is not `Ready=True`.
+- Runtime `Secret/audio-gateway-direct-stt-mtls` is absent or lacks
+  `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key`.
+- The pod-local mTLS health probe could not use a client certificate and did
+  not return HTTP `200` (`mtls-probe-exit-28`).
+- `vaultSeedAuthorityAccepted=false`.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826297943
+- `platform-ai#182`:
+  https://github.com/Halildeu/platform-ai/issues/182#issuecomment-4826298006
+- `platform-ai#198`:
+  https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4826298023
+
+Boundary: ESET/endpoint allow work alone does not advance `platform-ai#182`
+while the pod lacks approved direct-STT mTLS material. The next accepted
+engineering action remains: seed approved `direct_stt_ca_crt`,
+`direct_stt_client_crt`, and `direct_stt_client_key` into
+`kv/platform/audio-gateway-service`, wait for
+`audio-gateway-direct-stt-mtls` ESO sync, rerun this preflight while
+direct-STT remains disabled, and only then consider the reviewed test flag flip
+plus fresh `/transcribe` e2e evidence.
+
+## Live Delta — Faz 24 platform-desktop external recorder smoke PASS; broader product gates remain open (2026-06-28)
+
+`platform-k8s-gitops#2118` merged at
+`fad82038713314979c4e650d3f81542cc17c4caf`, then workflow run
+`28324072820` on `main` produced accepted redacted evidence for the
+short-lived `platform-desktop` token -> external recorder path:
+
+- Artifact `faz24-platform-desktop-token-evidence-28324072820` contains
+  `faz24.platformDesktopTokenEvidenceChain.v1` with `status=pass`,
+  `tokenIncluded=false`, `failureReason=null`.
+- Keycloak admin source was the repo Actions secret label
+  `KC_TEST_ADMIN_PASSWORD`; the self-hosted runner had no Docker socket path, so
+  the script used the bounded Keycloak Admin REST path.
+- `platform-desktop` token contract now requires and proved:
+  `aud=audio-gateway-service`, `aud=meeting-service`, gateway-compatible
+  `frontend`, claims `tenantId/companyId/userId`, realm role `MEETING_ADMIN`,
+  and client role `resource_access.audio-gateway-service.roles=[audio_record]`.
+- External recorder smoke through `https://testai.acik.com` passed:
+  meeting create `201`, consent `201`, session start `201`, chunk upload `200`,
+  finish `200`, status `200` with `state=FINISHED`.
+- `faz24.externalRecorderSmokeVerifier.v1` returned `status=pass`; private
+  material scan found no forbidden token/key/certificate/bearer/private-field
+  content.
+- Cleanup evidence: direct grants toggled and restored; temporary smoke user
+  created and deleted; token file removed.
+
+Evidence comments:
+
+- `platform-k8s-gitops#1615`:
+  https://github.com/Halildeu/platform-k8s-gitops/issues/1615#issuecomment-4826277030
+- `platform-backend#766`:
+  https://github.com/Halildeu/platform-backend/issues/766#issuecomment-4826277039
+
+Boundary: this proves the platform-test external meeting-admin plus recorder
+lifecycle chain for the short-lived `platform-desktop` token. It does not prove
+direct-STT, direct-STT transcript, compute-plane audit, desktop mic/loopback,
+aggregate G-CAP reliability threshold, G-OPS/G-COMP, legal acceptance,
+production lifecycle/deletion, or production readiness. `#1615` remains open
+and Project #2 `platform Roadmap` status remains `Needs Verify`.
+
+## Live Delta — Faz 22.6 governance + B0 marker-enforcement + B1 durable drift-guard DONE; B2 (#1580) build-ready (2026-06-27)
+
+Faz 22 completion chain advanced (handoff
+[`docs/session-handoff-2026-06-27-faz22-b2-ready.md`](../session-handoff-2026-06-27-faz22-b2-ready.md)):
+
+- **ADR-0044 (#2076)** — KVKK is now a machine-enforced **non-blocking** track
+  (only `allowlist_violation` blocks); durations are **parametric** (owner sets
+  later); #1580 marker split into `F22_6_VIEW_ONLY_ENGINEERING:v2` (fail-closed)
+  + `F22_6_VIEW_ONLY_KVKK:v1` (tracked); recording-OFF is the default. KVKK no
+  longer gates `F22_6_COMPLETION`.
+- **B0 (#2079)** — the completion audit (now 1190 lines, up from the 861-line
+  pre-B0 baseline) now machine-enforces the split:
+  recording-mode-aware engineering gate (5-token negative matrix) + non-blocking
+  KVKK gate + v2 evidence manifest + legacy bundled-marker fail-safe + v2
+  evidence/decision generators + contract §7/§9.
+- **B1 (#2101)** — #2067 durable digest-drift guard solved by **elimination**
+  (Codex verdict C): single SSOT = the rendered overlay. `lib-remote-bridge-digest.sh`
+  renders both overlays and forces `primary == bridge`; the audit **derives**
+  `expected_digest` (no literal); env-override is diagnostic-only; the live check
+  is exact JSON+jq per-object (no grep-count masking). A silent re-drift on the
+  next endpoint-admin V-bump is now structurally impossible.
+
+Boundary: this is governance + audit hardening + a durable guard, all in
+`platform-k8s-gitops` (docs/scripts/workflow). **#1580 VIEW_ONLY runtime code is
+not written yet** — slice-1 design is bound (Codex `019f078a`) and documented in
+the handoff §6; the build (`platform-backend`, ~3-5 eng-weeks, default-off +
+fail-closed) is the next agent P0. #548-A remains owner-gated (A1 Vault gate-B).
+
+## Live Delta — Faz 24 recorder admin GET-by-id source cleanup merged; runtime matrix remains open (2026-06-27)
+
+`platform-backend#767` was merged as
+`1e937841affc79d62609020fe29de9af6f521a3c` on `main`, tracking
+`platform-backend#766` without auto-closing it. The PR head
+`24088111686b7f65cd3f3ad5ac6361fafba2421a` passed all required PR checks,
+including full reactor, meeting-service, audio-gateway-service,
+endpoint-admin-service, gitleaks, OSV, contract-gate, and ADR-0011 relation
+alignment. A separate `platform-backend#766` evidence comment records the
+boundary:
+https://github.com/Halildeu/platform-backend/issues/766#issuecomment-4815055379
+
+Source/test facts now accepted:
+
+- The temporary authenticated admin `GET /api/v1/admin/meetings/*` relaxation
+  was removed from `meeting-service`; admin meeting routes are back under
+  admin/scoped authority.
+- Non-admin admin-route security tests assert Spring Security rejects before
+  service/OpenFGA authorization interaction.
+- `audio-gateway-service` contract tests verify the `recording-access`
+  preflight validator is called on happy-path session/recording flows.
+- Provider-separated review was applied: Codex implemented; Claude CLI
+  adversarial review found no P0/P1 blockers after the P2 test-interaction
+  finding was absorbed.
+
+Boundary: this is source/test hardening, not runtime acceptance. No GitOps
+image rollout, testai/prod runtime deployment, live recorder persona smoke, or
+`platform-backend#766` closure is claimed here. After a backend image rollout,
+the still-open tokened recorder-access matrix remains: owner/participant
+`204`, non-recorder `403`, unknown or tenant-hidden meeting `404`, and
+blocked-owner `403`. `platform-backend#716`, `platform-ai#198`,
+`platform-ai#182`, desktop mic/loopback, product-quality pilot gates,
+production readiness, and legal go remain separate gates.
+
+## Live Delta — Faz 24 direct-STT mTLS preflight live blocker evidence (2026-06-27)
+
+After `platform-k8s-gitops` PR #2096 merged, the canonical self-hosted
+direct-STT mTLS preflight collector was dispatched against `k3d-test`:
+
+- Workflow run:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28276666101`
+- Head SHA: `c12ae05338d85a6ce180934b262a2e6d6be33c08`
+- Artifact: `faz24-direct-stt-mtls-preflight-collect-28276666101`
+  (`7920418957`)
+- Result: FAIL by design as bounded blocker evidence; verifier summary
+  `52/61` checks passed.
+
+Accepted pre-flip facts from the run:
+
+- Explicit `kubectlContext=k3d-test` was used and `platform-test` was
+  reachable.
+- Real `audio-gateway` pod was observed Ready:
+  `audio-gateway-56b5465b4b-fbzl9`.
+- Desired state remains safe for the pre-flip stage:
+  `directSttEnabled=false`, host `live-stt.denetim`, port `8243`,
+  hostAlias `10.99.0.2`, NetworkPolicy `10.99.0.2/32:8243`, mTLS mount path
+  `/etc/direct-stt-mtls`, optional Secret mount preserved.
+- Aggregate `audio-gateway-secrets` remains Ready with Redis only; direct-STT
+  mTLS key names are not folded into the aggregate Secret.
+- Boundary checks remain false for secret values included, raw audio sent,
+  `/transcribe` called, direct audio e2e proven, I7 prod-gate proven,
+  desktop mic/loopback proven, and production-ready.
+
+Current live blocker proved by the run:
+
+- Dedicated `ExternalSecret/audio-gateway-direct-stt-mtls` is not Ready.
+- Runtime `Secret/audio-gateway-direct-stt-mtls` lacks
+  `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key`.
+- Pod-local mTLS `/health` probe could not use a client certificate and did
+  not return HTTP 200 (`mtls-probe-exit-58`).
+- `vaultSeedAuthorityAccepted=false`.
+
+Boundary: this is no-mutation blocker evidence only. It does not enable
+direct-STT, does not call `/transcribe`, does not send audio, does not prove
+`platform-ai#182`, and does not advance `platform-k8s-gitops#1615` beyond
+`Needs Verify`. The next accepted #182 path remains: approved Vault/ESO seed
+for `direct_stt_ca_crt`, `direct_stt_client_crt`, and
+`direct_stt_client_key` -> rerun this workflow until preflight PASS while
+direct-STT is still false -> separate reviewed GitOps flag flip -> fresh
+`/transcribe` e2e evidence with `DIRECT_STT_TRANSCRIPT_RESULT`, same-session
+audit correlation, no raw-audio persistence proof, and reviewer acceptance.
+Full #198 I7, I3, desktop mic/loopback, product-gate evidence, production
+readiness, and legal go remain separate gates.
+
+## Live Delta — Faz 24 I7 app-mTLS operator handoff package packaged (2026-06-27)
+
+The remaining `platform-ai#198` / `platform-k8s-gitops#1615` I7 app-mTLS
+evidence sequence now has a metadata-only operator handoff package:
+
+- `scripts/faz24/build-i7-app-mtls-operator-handoff.py` emits `README.md`,
+  `faz24-i7-app-mtls-operator-handoff.json`, and `SHA256SUMS` under schema
+  `faz24.i7AppMtls.operator-handoff.v1`.
+- `.github/workflows/faz24-i7-app-mtls-operator-handoff.yml` builds and
+  uploads the same package from `workflow_dispatch`, with bounded inputs for
+  operator batch id, GitOps ref, source/Denetim WG IPs, and evidence JSON
+  paths.
+- `tests/faz24/test_build_i7_app_mtls_operator_handoff.py` locks the package
+  boundary: no credential/certificate/private-key/raw-audio-shaped material,
+  checked `SHA256SUMS`, explicit `Needs Verify` acceptance state, and exact
+  endpoint-policy -> live-stt-preflight -> prod-gate-evidence -> reviewer
+  acceptance ordering.
+- `docs/runbooks/RB-faz24-i7-app-mtls-evidence.md` now points operators to the
+  package and keeps the `live-stt-preflight` vs full `prod-gate` boundary
+  explicit.
+
+Boundary: source-side package/workflow/test/runbook documentation only.
+Building the package does not connect to Denetim PC, Vault, Kubernetes, Caddy,
+firewall/EDR policy, or production; does not collect runtime evidence; does
+not enable direct-STT; does not send audio; and does not advance #198/#1615
+status. `live-stt-preflight` remains only the bounded TCP/8243 profile. Full
+I7 still requires `prod-gate` metadata for live-stt plus meeting-ai 8343,
+request audit, plaintext-bypass closure, rotation drill, failure drill,
+redaction, ingest artifact, and reviewer acceptance. #188 compute-plane audit,
+#182 direct-STT e2e, desktop mic/loopback, product pilot, production readiness,
+and legal go remain separate.
+
+## Live Delta — Faz 24 product-gate operator handoff package packaged (2026-06-27)
+
+The remaining G-CAP / G-OPS / G-COMP product-gate evidence sequence under
+`platform-k8s-gitops#1615` now has a metadata-only operator handoff package:
+
+- `scripts/faz24/build-product-gate-operator-handoff.py` emits `README.md`,
+  `faz24-product-gate-operator-handoff.json`, and `SHA256SUMS` under schema
+  `faz24.productGate.operator-handoff.v1`.
+- `.github/workflows/faz24-product-gate-operator-handoff.yml` builds and
+  uploads the same package from `workflow_dispatch`, with two bounded inputs:
+  operator batch id and GitOps ref.
+- `tests/faz24/test_build_product_gate_operator_handoff.py` locks the package
+  boundary: no credential/certificate/private-key/raw-audio-shaped material,
+  checked `SHA256SUMS`, explicit `Needs Verify` acceptance state, and exact
+  redacted-evidence-selection -> G-CAP -> G-OPS -> G-COMP -> reviewer
+  acceptance ordering.
+
+The package also corrects the handoff command pattern for existing external
+recorder and desktop capture G-CAP ingest: the workflow input is now a
+`{"reports":[...]}` wrapper built from accepted verifier summaries, not the
+aggregate verifier output. The ingest workflow then reruns the selected
+verifier before uploading an artifact.
+
+Boundary: source-side package/workflow/test documentation only. Building the
+package does not collect runtime evidence, run a pilot, mutate Kubernetes,
+touch Vault, change firewall or legal state, ingest evidence, store raw meeting
+data, or advance #1615 status. Live #1615 still requires accepted redacted
+G-CAP/G-OPS/G-COMP evidence, no-mutation ingest artifacts, reviewer acceptance,
+and separate direct-STT / desktop / I3 / I7 / production gates. KVKK/VERBIS
+owner legal acceptance remains a parallel legal track after owner notification;
+it is not an engineering blocker and is not claimed by this package.
+
+## Live Delta — Faz 24 desktop capture operator handoff package packaged (2026-06-27)
+
+The remaining real `platform-desktop` microphone + loopback capture path under
+`platform-k8s-gitops#1615` now has a metadata-only operator handoff package:
+
+- `scripts/faz24/build-desktop-capture-operator-handoff.py` emits
+  `README.md`, `faz24-desktop-capture-operator-handoff.json`, and
+  `SHA256SUMS` under schema `faz24.desktopCapture.operator-handoff.v1`.
+- `.github/workflows/faz24-desktop-capture-operator-handoff.yml` builds and
+  uploads the same package from `workflow_dispatch`, with two bounded inputs:
+  operator batch id and GitOps ref.
+- `tests/faz24/test_build_desktop_capture_operator_handoff.py` locks the
+  package boundary: no token/certificate/private-key/raw-audio-shaped material,
+  checked `SHA256SUMS`, explicit `Needs Verify` acceptance state, and exact
+  real-desktop-run -> redacted-evidence-review -> desktop-verifier -> G-CAP
+  aggregate command ordering.
+
+The package orders the handoff as Gate 0 real platform-desktop run -> Gate 1
+redacted evidence review -> Gate 2 desktop capture verifier PASS -> Gate 3
+optional G-CAP aggregate once enough accepted verifier summaries exist.
+
+Boundary: source-side package/workflow/test documentation only. Building the
+package does not run the desktop app, read tokens, connect to `testai.acik.com`,
+mutate Kubernetes, touch Vault, send audio, collect live evidence, or advance
+#1615 status. Live #1615 still requires a real redacted platform-desktop
+mic+loopback evidence envelope, verifier PASS, reviewer acceptance, and
+separate aggregate/product-gate evidence before broader readiness claims.
+
+## Live Delta — Faz 24 external recorder operator handoff package packaged (2026-06-27)
+
+The remaining external meeting-admin / recorder lifecycle path under
+`platform-k8s-gitops#1615` now has a metadata-only operator handoff package:
+
+- `scripts/faz24/build-external-recorder-operator-handoff.py` emits
+  `README.md`, `faz24-external-recorder-operator-handoff.json`, and
+  `SHA256SUMS` under schema
+  `faz24.externalRecorder.operator-handoff.v1`.
+- `.github/workflows/faz24-external-recorder-operator-handoff.yml` builds and
+  uploads the same package from `workflow_dispatch`, with four bounded inputs:
+  operator batch id, GitOps ref, public base URL, and expected issuer URL.
+- `tests/faz24/test_build_external_recorder_operator_handoff.py` locks the
+  package boundary: no token/certificate/private-key material, checked
+  `SHA256SUMS`, explicit `Needs Verify` acceptance state, and exact
+  token-contract -> external-smoke -> verifier -> G-CAP aggregate command
+  ordering.
+
+The package orders the handoff as Gate 0 approved short-lived
+`platform-desktop` token file -> Gate 1 token-contract PASS -> Gate 2 external
+meeting-admin plus recorder lifecycle smoke PASS -> Gate 3 external smoke
+verifier PASS -> Gate 4 optional G-CAP aggregate once enough accepted verifier
+summaries exist.
+
+Boundary: source-side package/workflow/test documentation only. Building the
+package does not mint or read tokens, connect to `testai.acik.com`, mutate
+Keycloak, mutate Kubernetes, touch Vault, run the recorder smoke, send audio,
+collect live evidence, or advance #1615 status. Live #1615 still requires the
+operator-run token-contract report, external smoke output, verifier summary,
+reviewer acceptance, and separate product-gate evidence before broader
+readiness claims.
+
+## Live Delta — Faz 24 direct-STT operator handoff package packaged (2026-06-27)
+
+The remaining `platform-ai#182` / `platform-k8s-gitops#1615` operator runtime
+path now has a metadata-only handoff package builder and GitHub workflow:
+
+- `scripts/faz24/build-direct-stt-operator-handoff.py` emits `README.md`,
+  `faz24-direct-stt-operator-handoff.json`, and `SHA256SUMS` under schema
+  `faz24.directStt.operator-handoff.v1`.
+- `.github/workflows/faz24-direct-stt-operator-handoff.yml` builds and uploads
+  the same package from `workflow_dispatch`, with six bounded inputs only:
+  operator batch id, GitOps ref, kube context, namespace, preflight evidence
+  path, and e2e evidence path.
+- `tests/faz24/test_build_direct_stt_operator_handoff.py` locks the package
+  boundary: no credentials/cert values/raw audio/transcript material, relative
+  evidence paths only, checked `SHA256SUMS`, and explicit `Needs Verify`
+  acceptance state.
+
+The package orders the handoff as Gate 0 credential seed -> Gate 1
+metadata-only preflight PASS while direct-STT is false -> reviewed GitOps flag
+flip -> Gate 3 metadata-only e2e PASS -> reviewer acceptance. It also carries
+issue comment templates for future preflight/e2e evidence notes.
+
+Boundary: source-side package/workflow/test documentation only. Building the
+package does not read or write Vault, mutate Kubernetes, touch Denetim PC,
+enable direct-STT, call `/transcribe`, send audio, collect runtime evidence, or
+advance #182/#1615 status. Live #182 still requires approved credential seed,
+real `k3d-test` preflight PASS, reviewed flag flip, fresh result-stream
+evidence, same-session audit, and no raw-audio persistence proof.
+
+## Live Delta — Faz 24 direct-STT self-hosted preflight collector packaged (2026-06-27)
+
+The `platform-ai#182` Gate 1 pre-flag evidence path now has a canonical
+self-hosted collection workflow:
+
+- `.github/workflows/faz24-direct-stt-mtls-preflight-collect.yml` runs on the
+  `staging-sw` self-hosted runner and calls
+  `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py` with explicit
+  `k3d-test` / `platform-test` inputs.
+- The workflow then runs
+  `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py`, uploads a
+  metadata-only artifact and summary, and fails unless the verifier passes.
+- Failed runs still upload bounded blocker evidence when the artifact leak
+  guard passes, but a red run is not acceptance and must not advance #182 or
+  #1615.
+
+Boundary: source-side workflow/runbook documentation only. It does not seed
+credentials, read or write Vault, mutate Kubernetes, mutate Caddy/firewall,
+enable direct-STT, call `/transcribe`, send audio, collect raw output, or
+advance #182/#1615 status. It only removes the manual-shell dependency for the
+seed-after / flag-before evidence collection step.
+
+## Live Delta — Faz 24 direct-STT preflight context guard packaged (2026-06-27)
+
+The direct-STT mTLS enablement collector now distinguishes local execution
+environment failures from actual runtime object drift before #182 preflight
+evidence is interpreted:
+
+- `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py` first checks
+  that the local executor has the explicit `k3d-test` kube context and can
+  reach namespace `platform-test`.
+- The metadata envelope now records `environment.contextAvailable`,
+  `environment.namespaceReachable`, and `environment.contextFailure`.
+- `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py` requires
+  `contextAvailable=true`, `namespaceReachable=true`, and empty
+  `contextFailure` for PASS evidence.
+- A local Codex desktop run on 2026-06-27 produced fail-closed metadata with
+  only `kubectl-context-k3d-test-missing`; that proves this local executor
+  cannot collect the live #182 preflight, not that the staging runtime objects
+  are absent or drifted.
+
+Boundary: source-side collector/verifier/runbook hardening only. No Vault value
+was read or written, no Kubernetes object was mutated, direct-STT was not
+enabled, `/transcribe` was not run, and no #182/#1615 acceptance is claimed.
+Live #182 still requires an executor with `k3d-test` access, approved mTLS
+seed, pre-flag PASS, flag flip, result-stream evidence, same-session audit, and
+no raw-audio persistence proof.
+
+## Live Delta — Faz 24 G-COMP retention parameter provenance hardening packaged (2026-06-27)
+
+The G-COMP engineering compliance verifier now machine-checks owner provenance
+for effective retention durations without turning missing owner values into an
+engineering blocker:
+
+- If `retentionParameters` is absent, the verifier continues to rely on
+  `retentionDefaultsFailClosed=true`: unset/default durable storage paths must
+  refuse to store.
+- If effective retention duration values are supplied, the evidence must carry
+  a bounded `ownerDecisionRef` using an owner/legal/operator/protected evidence
+  URI, `appliedAsConfig=true`, `hardcodedInCode=false`, and bounded positive day
+  values for the supplied retention fields.
+- `runbook://` examples and hardcoded fixture/code/manifests are not accepted
+  as owner provenance for effective values.
+
+Boundary: source-side verifier/runbook hardening only. No owner duration value
+was chosen, no legal acceptance is claimed, no runtime object was mutated, and
+no production lifecycle/deletion proof or G-COMP acceptance is claimed. Legal
+track stays parallel; engineering can proceed with fail-closed unset/default
+behavior until owner values are externally supplied.
+
+## Live Delta — Faz 24 G-CAP external summary boundary hardening packaged (2026-06-27)
+
+The G-CAP aggregate capture verifier now requires external-recorder verifier
+summaries to carry the same post-#2084 boundary set as the external smoke
+verifier:
+
+- `scripts/faz24/verify_gcap_capture_gate_evidence.py` requires
+  `directClientToStt=false` and `directSttTranscriptProven=false` in
+  `faz24.externalRecorderSmokeVerifier.v1` boundaries.
+- External summary inputs must also include passed
+  `boundary_directClientToStt` and `boundary_directSttTranscriptProven`
+  verifier checks. Stale pre-hardening external summaries no longer satisfy
+  aggregate G-CAP success thresholds.
+- The aggregate summary now keeps `directClientToStt=false` and
+  `directSttTranscriptProven=false` alongside the existing no direct-STT,
+  no compute-plane audit, and no production-readiness boundaries.
+
+Boundary: source-side aggregate verifier/runbook hardening only. No external
+recorder smoke was run, no desktop smoke was run, no token was minted, no
+runtime object was mutated, and no #1615 acceptance is claimed. Live aggregate
+G-CAP still requires enough accepted redacted verifier summaries to meet the
+configured attempt, distinct meeting/session, success, retry, and failure-rate
+thresholds.
+
+## Live Delta — Faz 24 external recorder smoke evidence hardening packaged (2026-06-27)
+
+The external meeting-admin + recorder lifecycle smoke package for #1996/#1997
+now uses the same metadata-only false-accept discipline as the direct-STT and
+desktop capture gates:
+
+- `scripts/faz24/run_external_recorder_smoke.py` omits token/destination/
+  callback/internal/webhook/STT/transcribe URL fields from response excerpts,
+  redacts URL-like or base64-audio string values, no longer emits top-level
+  `baseUrl`, and fails closed on unsafe `sessionId` values before using them in
+  lifecycle paths.
+- `scripts/faz24/verify_external_recorder_smoke_evidence.py` rejects camelCase
+  sensitive-key bypasses such as `destinationUrl`, URL-like values outside the
+  token-contract `issuer`, base64 audio data URIs, raw audio/transcript
+  payloads, raw request/response bodies, packet captures, unsafe `sessionId`,
+  and direct-STT/direct-client/compute-plane/production overclaims.
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` records the
+  stricter attachment contract.
+
+Boundary: source-side runner/verifier/runbook hardening only. No token was
+minted, no live smoke was run, no Vault value was read or written, no runtime
+object was mutated, and no #1615 acceptance is claimed. External meeting-admin
+acceptance still requires an approved short-lived `platform-desktop` token, the
+runner output with `status=pass`, verifier PASS, and reviewer acceptance.
+
+## Live Delta — Faz 24 direct-STT verifier hardening packaged (2026-06-27)
+
+The #182 direct-STT evidence gates now have stricter metadata-only false-accept
+guards:
+
+- `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py` rejects
+  camelCase sensitive-key bypasses such as `destinationUrl`, URL-like values,
+  base64 audio data URIs, PEM/token/raw-output/audio/transcript payloads, and
+  packet captures.
+- `scripts/faz24/verify_direct_stt_e2e_evidence.py` applies the same redaction
+  discipline and additionally requires `tokenIncluded=false`, a Ready real
+  `audio-gateway` pod, explicit mTLS probe host/port
+  `live-stt.denetim:8243`, and `directClientToStt=false`.
+- `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md`, `PLAN.md`, and the
+  canonical Faz 24 plan were updated to make those fields part of the #182
+  evidence contract.
+
+Boundary: this is source-side verifier/runbook hardening only. No Vault value
+was read or written, no Kubernetes object was mutated, direct-STT was not
+enabled, `/transcribe` was not run, and no #182 acceptance or production
+readiness is claimed. #182 still requires approved seed, pre-flag mTLS
+preflight PASS, direct-STT flag flip, fresh result-stream evidence,
+same-session audit correlation, and no raw-audio persistence proof.
+
+## Live Delta — Faz 24 G-CAP desktop verifier input support packaged (2026-06-27)
+
+The G-CAP aggregate capture verifier now accepts both approved capture verifier
+summary classes:
+
+- `faz24.externalRecorderSmokeVerifier.v1` from
+  `verify_external_recorder_smoke_evidence.py`.
+- `faz24.desktopCaptureEvidenceVerifier.v1` from
+  `verify_desktop_capture_evidence.py`.
+
+Raw evidence envelopes are still rejected: `faz24.externalRecorderSmoke.v1` and
+`faz24.desktopCaptureEvidence.v1` are not valid G-CAP aggregate inputs. The
+aggregate verifier continues to gate attempt count, distinct meeting/session
+coverage, success rate, retry rate, and failure rate; it now reports
+`attemptClasses` and `passedAttemptClasses` split by external recorder vs
+desktop capture. Desktop capture summaries expose only redacted `ids`,
+boundary flags, and verifier checks for aggregation.
+
+Boundary: this packages source-side aggregate evaluation only. It does not run a
+desktop smoke, does not collect live audio, does not prove direct-STT,
+compute-plane audit, G-INT, WER/DER, G-COMP, I7, or production readiness. A
+single desktop verifier PASS is only one capture attempt; aggregate G-CAP
+requires enough accepted verifier summaries to satisfy configured thresholds.
+
+## Live Delta — Faz 24 desktop mic + loopback capture verifier packaged (2026-06-27)
+
+The remaining #1615 desktop real-capture gate now has a metadata-only
+acceptance verifier and runbook:
+
+- `scripts/faz24/verify_desktop_capture_evidence.py` validates
+  `faz24.desktopCaptureEvidence.v1` envelopes from a real `platform-desktop`
+  smoke run.
+- `docs/runbooks/RB-faz24-desktop-capture-evidence.md` defines the evidence
+  contract and attachment rules.
+- The verifier requires both `microphone` and `loopback` real-device sources,
+  visible active recording indicator, consent capture, exact public
+  `audio-gateway` lifecycle step order, and source digest match for the mic and
+  loopback uploaded chunks.
+- It rejects raw audio/base64 audio, transcript text, JWT/Bearer/Authorization
+  material, destination URLs, direct client-to-STT overclaims, direct-STT
+  transcript claims, compute-plane audit claims, and production-readiness claims.
+
+Boundary: this is source-side evidence-gate packaging only. It does not run the
+desktop app, capture microphone or loopback audio, call `/transcribe`, mutate
+runtime, or close #1615. Live desktop mic/loopback acceptance still requires a
+real redacted `platform-desktop` smoke output plus verifier PASS.
+
+## Live Delta — Faz 24 KVKK engineering/legal separation rule (2026-06-27)
+
+Owner directive recorded by user: KVKK/VERBIS/hukuk owner acceptance is a
+parallel legal track and must not block Faz 24 engineering completion after
+owner notification is recorded. Engineering proceeds as if the legal track were
+externally handled, but does not claim legal acceptance, VERBIS closure, DPA, or
+production legal go.
+
+Canonical rule updates:
+
+- `AGENTS.md` hard rule now states Faz 24 KVKK legal-track parallelism.
+- `docs/context-priority-rules.md` §4.5 defines legal track vs engineering gate
+  status language.
+- `docs/adr/0030-kvkk-meeting-intelligence-boundary.md` is now
+  `ENGINEERING ACCEPTED / LEGAL TRACK PARALLEL`, not legal accepted.
+- `scripts/faz24/verify_gcomp_compliance_gate_evidence.py` now treats
+  `legal_track_notification` / legacy `kvkk_verbis` as owner notification
+  evidence, not legal acceptance. It requires fail-closed parametric controls:
+  `retentionDurationsParametric=true`, `retentionDefaultsFailClosed=true`,
+  `consentDefaultRequired=true`, `deletionPipelineDefaultEnabled=true`, and
+  forbids `legalAcceptanceClaimed`, `productionLegalGoClaimed`, and hardcoded
+  retention durations.
+
+Engineering boundary:
+
+- Retention/deletion durations are owner-supplied parameters. Missing owner
+  values are not an engineering blocker if the durable storage path is
+  fail-closed/refuse-to-store and no hardcoded duration is accepted as a legal
+  decision.
+- Fixed duration choices are not blockers while the owner value is pending only
+  if the fail-closed/refuse-to-store default remains active; the value is
+  applied later as config/evidence when the owner supplies it.
+- Any future architecture decision covered by `ADR-0030` D6 trigger surfaces
+  must use provider-distinct cross-AI consultation and be recorded as an ADR
+  before it becomes canonical.
+- Legal acceptance, VERBIS güncelliği, DPA/subprocessor decision, and production
+  legal go remain owner/legal artifacts. They are not produced by agent/CI/PR
+  and must not be used as closure language without evidence.
+- Claude cross-AI adversarial review was run on 2026-06-27. It agreed with the
+  separation only under fail-closed defaults: retention unset/refuse-to-store,
+  consent default required, deletion pipeline default enabled, and no legal
+  overclaim.
+
+## Live Delta — Faz 24 direct-STT mTLS Secret blast-radius split (2026-06-27)
+
+`platform-ai#182` credential-delivery path now separates direct-STT mTLS
+material from the existing Redis password aggregate:
+
+- `audio-gateway-secrets` remains the `envFrom` Secret for
+  `SPRING_DATA_REDIS_PASSWORD` only.
+- New dedicated `ExternalSecret/Secret audio-gateway-direct-stt-mtls` carries
+  only `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key` from `kv/platform/audio-gateway-service`.
+- `deployment/audio-gateway` mounts `/etc/direct-stt-mtls` from the dedicated
+  Secret. The mount stays `optional: true` while
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`, so a missing pre-seed Secret does
+  not break the current flag-false pod.
+- The preflight collector/verifier now requires the dedicated ExternalSecret
+  and runtime Secret to be Ready/present, not referenced by `envFrom`, and
+  usable for mTLS `/health` from the real pod before any direct-STT flag flip.
+
+Boundary: this is source/desired-state hardening only. No Vault values were
+read or written, no direct Kubernetes mutation was performed by the agent;
+ArgoCD auto-synced the merged desired-state to the cluster. No direct-STT flag
+was flipped, and no audio was sent. #182 still requires approved seed, pre-flag
+mTLS preflight PASS, direct-STT flag flip, and fresh e2e evidence.
+
+Post-merge live sync evidence for PR #2078 / merge
+`74d22737168202b1f885f8ef8911d04d8195527a`:
+
+- `platform-eso-test` is at revision
+  `74d22737168202b1f885f8ef8911d04d8195527a`; Argo reports
+  `ExternalSecret/audio-gateway-direct-stt-mtls` as `Synced` / `Degraded`.
+- Live `ExternalSecret/audio-gateway-direct-stt-mtls` has `Ready=False`,
+  reason `SecretSyncedError`, message `could not get secret data from provider`.
+  This is the expected pre-seed fail-closed state, not preflight PASS evidence.
+- Live `Secret/audio-gateway-direct-stt-mtls` is absent; no direct-STT mTLS key
+  names exist yet.
+- Live `deployment/audio-gateway` now mounts `/etc/direct-stt-mtls` from
+  `audio-gateway-direct-stt-mtls` with `optional=true`.
+- Live `audio-gateway` pod remains `Running` / Ready while
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`, proving the optional mount did not
+  break the current flag-false runtime.
+- Live `audio-gateway-secrets` remains `Ready=True` and its runtime key-name
+  list contains only `SPRING_DATA_REDIS_PASSWORD`; Redis aggregate sync was not
+  poisoned by the missing direct-STT certificate/key properties.
+
+## Live Delta — Faz 24 audio-gateway authz enforce desired-state flip (2026-06-26)
+
+`platform-backend#716` moves from packaged/default-off toward test runtime
+enforcement. The live read-only preflight before this GitOps change showed:
+
+- `audio-gateway` in `k3d-test/platform-test` Ready `1/1`;
+- image
+  `ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`,
+  which is newer than the merged backend validator PRs
+  `platform-backend#719/#720`;
+- `AUDIO_GATEWAY_SECURITY_RESOURCE_CLIENT_ID=audio-gateway-service`;
+- `AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=false`;
+- `AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=false`;
+- JWKS internal URI remains
+  `http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs`
+  while issuer remains `https://testai.acik.com/realms/platform-test`.
+
+This GitOps desired-state update keeps the base ConfigMap default-off and flips
+the two test runtime booleans to true through the test overlay patch:
+
+- `AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=true`
+- `AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=true`
+
+Post-merge live refinement: the ConfigMap update alone did not restart the
+existing `audio-gateway` pod, so the pod process environment still read
+`AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=false` and
+`AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=false`. The test overlay now
+also bumps the `audio-gateway` pod-template annotation
+`audio-gateway.acik.com/authz-enforce-rev=2026-06-26-716-enforce-v2` so the
+ConfigMap flip causes a GitOps-authoritative rolling update. Live #716 evidence
+must prove both the rendered/live ConfigMap and the running pod process
+environment have the two booleans set to `true`.
+
+Boundary:
+
+- This is test desired-state only. The prod overlay does not include
+  `audio-gateway` until the later D30 cutover path, and base remains
+  default-off so prod cannot inherit this test flip without a prod-specific
+  review.
+- This is not acceptance by itself. `platform-backend#716` still requires live
+  token-drain/maintenance-window evidence, pod-env rollout evidence, and a
+  redacted fail-closed matrix through
+  `verify_audio_gateway_authz_enforce_evidence.py`: no token `401`, wrong
+  audience `401`, missing `audio_record` `403`, valid recorder token security
+  pass with expected business response.
+- No Keycloak mutation, token printing, direct-STT, raw audio,
+  compute-plane transit, desktop mic/loopback, or production readiness is
+  claimed from this desired-state flip.
+
+## Live Delta — Faz 24 direct-STT kubectl context guard added (2026-06-26)
+
+Read-only staging-sw refresh after `platform-k8s-gitops#2069` found a
+runtime-ops hazard: `kubectl config current-context` on `staging-sw` currently
+points at `k3d-prod`, while the direct-STT acceptance path targets
+`k3d-test/platform-test`. A contextless `kubectl -n platform-test ...` command
+therefore returned `namespaces "platform-test" not found` from the wrong
+cluster context before the explicit `--context k3d-test` read confirmed the
+actual test state.
+
+Guardrail added:
+
+- `verify_direct_stt_mtls_enablement_preflight.py` now requires
+  `environment.kubectlContext="k3d-test"` in addition to
+  `environment.cluster="k3d-test"`.
+- `verify_direct_stt_e2e_evidence.py` now requires the same explicit context
+  marker before #182 e2e evidence can pass.
+- `RB-faz24-direct-stt-mtls-enable.md` now starts live commands with
+  `kubectl --context k3d-test -n platform-test` and states that default
+  context must not be trusted.
+
+Live state remains pre-seed: `audio-gateway` desired/runtime direct-STT flag is
+false, `audio-gateway-secrets` maps only `redis_password`, and direct-STT mTLS
+material is expected through dedicated `audio-gateway-direct-stt-mtls`. No
+credential values are recorded here, no Vault/ESO mutation was performed, and
+no audio was sent.
+
+## Live Delta — Faz 24 direct-STT pre-flag guard added; live Secret still pre-seed (2026-06-26)
+
+Read-only refresh from `staging-sw` / `k3d-test` confirmed the current #182
+runtime boundary:
+
+- real `deployment/audio-gateway` is `1/1` Ready in `platform-test`;
+- live pod `audio-gateway-769cc7745c-46st4` is Running/Ready and uses
+  `ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`;
+- live config still has `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`,
+  `https://live-stt.denetim:8243/transcribe`, and result stream
+  `transcript:direct-stt-results`;
+- `ExternalSecret/audio-gateway-secrets` is `Ready=True` / `SecretSynced` for
+  Redis only;
+- live aggregate Secret key names contain only `SPRING_DATA_REDIS_PASSWORD`;
+- `allow-audio-gateway-egress-live-stt-mtls` still targets
+  `10.99.0.2/32` TCP/8243.
+
+This refresh did not read or print Secret values. Denetim SSH from the current
+agent path returned `Permission denied (publickey)`, so this session did not
+retrieve client certificate/key material and did not seed Vault.
+
+New guardrail:
+
+- `scripts/faz24/verify_direct_stt_mtls_enablement_preflight.py` now validates
+  a metadata-only `faz24.directSttMtlsEnablementPreflight.v1` artifact for the
+  seed-after / flag-before point.
+- `.github/workflows/faz24-direct-stt-mtls-preflight-ingest.yml` validates and
+  archives the same preflight evidence artifact in GitHub Actions without
+  connecting to Denetim PC, Vault, Kubernetes, `/transcribe`, or audio data.
+- The preflight requires real-pod evidence while
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`: hostAlias, narrow NetworkPolicy,
+  `/etc/direct-stt-mtls` mount, dedicated ESO mappings for
+  `direct_stt_ca_crt`, `direct_stt_client_crt`, `direct_stt_client_key`,
+  runtime Secret key names for `direct-stt-ca.crt`, `direct-stt-client.crt`,
+  `direct-stt-client.key`, and mTLS `/health` HTTP 200 from the real pod using
+  mounted client cert material.
+- It rejects PEM values, tokens, raw command output, destination URLs, raw
+  audio, transcript text, and packet captures. Boundary flags must keep raw
+  audio unsent, `/transcribe` uncalled, #182 e2e unproven, full I7, desktop
+  mic/loopback, and production readiness separate.
+- `scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py` is the
+  source-side collector for this gate. It queries only object metadata, Secret
+  key names, pod readiness, and bounded mTLS `/health` status/timing from the
+  real `audio-gateway` pod, then writes verifier-compatible JSON without
+  values. A live fail-closed run before seed showed the current expected
+  blocker: dedicated `ExternalSecret/audio-gateway-direct-stt-mtls` and its
+  runtime Secret key evidence are still absent/unproven until the three
+  direct-STT Vault properties are seeded and synced. The Redis aggregate still
+  exposes only `SPRING_DATA_REDIS_PASSWORD` by design.
+
+Current #182 path remains: approved credential seed authority -> ESO mapping ->
+pre-flag mTLS enablement preflight PASS -> direct-STT flag flip -> live e2e
+evidence through `verify_direct_stt_e2e_evidence.py`.
+
+## Live Delta — Faz 24 #229/#230 source quality gates merged; user-facing e2e still gated (2026-06-26)
+
+Two additional `platform-ai` source-side product-quality hardening PRs are now
+merged on `main` after provider-separated Cross-AI review and green CI:
+
+- `platform-ai#229` merged as
+  `b4f86b1c8ae9e77ae41846eaf834cc2ea0fa5b50`.
+  Main CI run `28260265821` completed `success` across `repo-gates`,
+  `meeting-ai-service`, `live-stt-service`, `final-stt-service`, and
+  `diarization-service`.
+- `platform-ai#230` merged as
+  `87b3f22022602f9fa853371511e08b0fada82550`.
+  Main CI run `28260320293` completed `success` across `repo-gates`,
+  `live-stt-service`, `diarization-service`, `meeting-ai-service`, and
+  `final-stt-service`.
+- Cross-AI review was completed through Claude for both PRs with no P0/P1
+  blockers after fixes. `zeynep-serban` personal review was not required for
+  Halil-owned work and the pending review requests were removed before merge.
+
+What moved:
+
+- G-INT evidence now requires citation coverage and verified-summary evidence.
+  Structurally valid but uncited intelligence output cannot satisfy the
+  source-side gate by itself.
+- G-WER/DER evidence now requires explicit denominator thresholds:
+  `minWerSamples`, `minDerSamples`, and `minWerRefWords`. Tiny pilot rows
+  cannot pass only because their WER/DER metric values are below ceilings.
+- Shared Faz 24 AI gate ingest and operator-facing docs/runbooks carry the same
+  threshold contracts.
+
+Direct-STT live boundary also moved since the older #227 snapshot below:
+
+- `platform-backend#768` has since merged and deployed through
+  `platform-k8s-gitops#2061`; the test `audio-gateway-service` image digest is
+  `sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`.
+- `platform-k8s-gitops#2062` added the narrow real-pod egress path from
+  `audio-gateway` to Denetim `10.99.0.2/32` TCP/8243, and live pod evidence
+  reached Caddy/TLS over WireGuard instead of timing out.
+- `platform-k8s-gitops#2063` staged durable default-off mTLS/SNI wiring:
+  `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`,
+  `https://live-stt.denetim:8243/transcribe`, hostAlias
+  `live-stt.denetim -> 10.99.0.2`, read-only `/etc/direct-stt-mtls` mount, and
+  `transcript:direct-stt-results`.
+- `platform-k8s-gitops#2065` added the metadata-only direct-STT e2e evidence
+  verifier and ingest path.
+
+Current user-facing boundary:
+
+- A normal end user still cannot be told to run a complete live meeting
+  experience and expect transcript + summary + actions. `platform-ai#182`
+  remains open until approved Vault/ESO credential seed, direct-STT flag flip,
+  and a fresh live e2e prove `/transcribe` HTTP `200`,
+  `DIRECT_STT_TRANSCRIPT_RESULT`, same-session audit correlation, and no raw
+  audio/transcript persistence outside the accepted contract.
+- `platform-ai#161` and `platform-ai#162` remain open for real pilot WER/DER and
+  real pilot G-INT evidence. The merged source gates reduce false acceptance;
+  they do not provide pilot evidence, select a model/backend, enable a real LLM
+  provider, or make Faz 24 production-ready.
+- `platform-ai#198` immediate live-stt 8243 preflight is proven, but full I7
+  prod-gate remains broader: meeting-ai 8343, Vault PKI rotation/secret
+  delivery, request audit, plaintext-bypass closure, failure drill, redaction
+  review, and operator acceptance remain separate.
+
+## Historical Delta — Faz 24 #227 G-INT hardening merged; I7 8243 preflight refreshed (2026-06-26)
+
+`platform-ai#227` is now merged after `zeynep-serban` approval. The change
+hardens only the G-INT evidence metadata contract:
+
+- PR: `https://github.com/Halildeu/platform-ai/pull/227`
+- Merge commit: `7904dc915c985454ab39a02d169320e757c8ed85`
+- Main CI run `28241477589` completed `success` across `repo-gates`,
+  `meeting-ai-service`, `diarization-service`, `live-stt-service`, and
+  `final-stt-service`.
+- Scope: `sample_manifest_hash`, `sample_count_hash`, positive integer
+  `n_samples`, `eval_set_hash`, and `prompt_hash` are now bound so hand-edited
+  pilot sample counts cannot silently satisfy the source-side G-INT gate.
+
+Boundary: this does not provide real pilot transcript/audio evidence, does not
+enable an LLM provider, does not satisfy `platform-ai#162` G-INT acceptance,
+`platform-ai#182`, or any production gate.
+
+After the operator ESET/endpoint allow-log completion, the Denetim live-stt
+app-mTLS `live-stt-preflight` path was refreshed from `staging-sw`:
+
+- route to `10.99.0.2` resolves through `wg0` with source `10.99.0.1`;
+- `10.99.0.2:8243` is TCP-reachable from `staging-sw`;
+- valid client cert to `https://live-stt.denetim:8243/health` returns HTTP
+  `200` with live-stt health `status=ok`, model `medium`, device `cuda`, and
+  compute `float16`;
+- no-client probe fails closed with TLS alert `certificate required` and curl
+  exit `56`;
+- wrong-client probe fails closed with TLS alert `unknown ca` and curl exit
+  `56`.
+
+This narrows `platform-ai#198` only for the `live-stt-preflight` slice. The
+full I7 prod-gate remains open because `10.99.0.2:8343` still timed out from
+`staging-sw`, the current Denetim Caddyfile has no meeting-ai `8343` server
+block, and Vault PKI rotation/secret delivery, request audit, plaintext-bypass
+closure, failure drill, redaction review, and reviewer/operator acceptance are
+still separate gates.
+
+This section predates the later #768/#2061/#2062/#2063/#2065 direct-STT
+default-off staging chain recorded above. No fresh direct-STT e2e acceptance has
+been produced yet.
+
+## Live Delta — Faz 24 #226 merged and Denetim GPU host updated; #182 remains open (2026-06-26)
+
+`platform-ai#226` is now merged after `zeynep-serban` approval and has been
+applied to the Denetim GPU host deploy mirror.
+
+Source, CI, and runtime evidence:
+
+- `platform-ai#226` squash-merged as
+  `58728b289d40a7cf9f9d59bc65a796fb895f1b09`.
+- Main CI run `28240240432` completed `success` across `repo-gates`,
+  `diarization-service`, `final-stt-service`, `live-stt-service`, and
+  `meeting-ai-service`.
+- Denetim SSH-over-WG update ran `deploy/gpu-host/update.ps1` and pinned the
+  deploy clone from `2f97d2fbf99d65850194d91a12f7d5bc87f921a3` to
+  `58728b289d40a7cf9f9d59bc65a796fb895f1b09`.
+- The tracked deploy tree is clean against `origin/main`.
+- `platform-ai-live-stt` and `platform-ai-meeting-ai` scheduled tasks are
+  `Running`.
+- Deployed script evidence shows `STT_REQUEST_TIMEOUT = "180"` in
+  `deploy/gpu-host/start-live-stt.ps1`, and `update.ps1` now uses
+  `curl.exe --max-time 240` for the live-stt warmup request.
+- Local Denetim health after the restart returned live-stt
+  `status=ok`, model `medium`, device `cuda`, compute `float16`, and
+  meeting-ai `status=ok`.
+- The live-stt log tail after the restart contains `Transcribe success` at
+  `2026-06-26 16:16:00` local host time.
+
+Important boundary:
+
+- The first update run was launched from the pre-merge `update.ps1` process and
+  printed warmup `curl exit=28`; this is not treated as acceptance by itself.
+  The later health/log evidence above is the bounded runtime proof that the
+  service reached loaded/ok state after the #226 update.
+- `platform-ai#182` accidentally auto-closed at the same timestamp as the
+  #226 squash merge, without a new e2e acceptance comment. It was reopened with
+  the explicit boundary that the e2e gate remains open.
+- This #226 section predates the later `platform-backend#768` merge/deploy and
+  #2061/#2062/#2063/#2065 default-off mTLS/SNI/evidence chain. The current
+  #182 path is no longer "review/merge/deploy #768"; it is approved Vault/ESO
+  credential seed, direct-STT flag flip, then a fresh live direct-STT e2e proof.
+
+Next accepted #182 evidence: rerun the live direct-STT e2e after credential
+seed and flag flip, and prove live-stt HTTP `200`,
+`DIRECT_STT_TRANSCRIPT_RESULT`, same-session compute-plane audit correlation,
+and no raw-audio persistence.
+
+## Historical Delta — Faz 24 #188 audit gate accepted; pre-#226-merge #182 blockers (2026-06-26)
+
+> Superseded for `platform-ai#226` by the live delta above. This section is kept
+> as the #188 acceptance snapshot and the pre-merge #182 blocker context.
+
+`platform-ai#188` is now deliberately closed and Project #4 status is `Done`
+for the narrow KVKK compute-plane audit gate that blocked direct-STT activation.
+
+Accepted live evidence:
+
+- Transient direct-STT smoke in `k3d-test/platform-test` reached the gateway
+  lifecycle: consent `201`, session start `201`, chunk `200`, finish `200`.
+- Redis `audit:events` contained `CHUNK_FORWARDED_TO_COMPUTE_PLANE` for the
+  same session/chunk/correlation before raw-audio compute-plane transit:
+  session `SES-31a15790-57eb-4cbe-b923-954c8f6578ac`, meeting
+  `ce3982b6-0a85-4b56-aecf-de3234af8224`, chunkSeq `0`, correlation
+  `faz24-direct-stt-188-20260626T105433Z`, computePlane `live-stt`.
+- The metadata-only verifier reported
+  `faz24.computePlaneAuditVerifier.v1 status=pass`, `tokenIncluded=false`,
+  and `failures=0`.
+- Evidence excluded bearer/JWT material, idempotency keys, raw audio bytes,
+  destination URL, and transcript text.
+
+Issue and board state:
+
+- `platform-ai#188` is closed with acceptance boundary:
+  https://github.com/Halildeu/platform-ai/issues/188
+- Project #4 item for `platform-ai#188` is `Done`.
+- `platform-ai#182` remains `Open` / `In Progress`.
+- `platform-ai#198` remains `Open` / `In Progress`: the immediate
+  `live-stt-preflight` path passed after the operator ESET/endpoint allow-log
+  update, but the fuller I7 prod-gate still needs meeting-ai 8343, Vault PKI
+  rotation, request audit, plaintext-bypass closure, failure drill, and
+  reviewer/operator acceptance.
+
+At this snapshot, `platform-ai#182` blockers were source/runtime fixes and
+redeploy, not the #188 audit gate:
+
+- `platform-backend#768` is ready for review with all GitHub checks green. It
+  fixes the direct-STT multipart audio part to derive `Content-Type` and
+  filename from `AudioFormat` instead of sending `application/octet-stream` /
+  `chunk.bin`, which live-stt rejected during the live #182 attempt.
+- `platform-ai#226` is ready for review with all GitHub checks green. It sets
+  the GPU-host live-stt cold-load request budget to
+  `STT_REQUEST_TIMEOUT=180` and extends `update.ps1` warmup curl to
+  `--max-time 240`, addressing the observed
+  `504 / WorkerTimeoutError` path when `audio/wav` reached live-stt.
+- A real Claude CLI adversarial review was attempted for both PRs but failed
+  with local Claude auth `401`; no cross-AI review is claimed for these two
+  PRs yet.
+
+Boundary:
+
+- This is not #182 e2e acceptance and not production readiness.
+- Next required sequence for #182: review/merge/deploy both PRs, update/restart
+  the Denetim GPU host, then rerun the live direct-STT e2e and prove live-stt
+  HTTP `200`, `DIRECT_STT_TRANSCRIPT_RESULT` on the result stream,
+  same-session audit correlation, and no raw-audio persistence.
+
+## Live Delta — Faz 24 #191 Denetim deploy mirror drift-proofed; #198 remains open (2026-06-26)
+
+`platform-ai#191` is now closed for the Denetim PC deploy-clone drift/update
+reliability scope.
+
+Source and CI chain:
+
+- `platform-ai#216` merged PowerShell 5.1-safe origin ref/range construction
+  for `deploy/gpu-host/update.ps1`.
+- `platform-ai#217` merged the ASCII-only script guard after a Denetim
+  PowerShell decode/parse failure.
+- `platform-ai#218` added CI coverage for the GPU-host update script unit test
+  and `pwsh` parse check.
+- `platform-ai#219` fixed runtime `RepoRoot`/`LogDir` default resolution for
+  `update.ps1` and `drift-guard.ps1`.
+- `platform-ai#220` merged PowerShell 5.1-safe git command streaming through
+  `Invoke-GitStream`; Claude first pass caught a P0 output-stream return-array
+  bug, the patch was tightened, and the second pass returned AGREE.
+
+Final Denetim live evidence after `#220`:
+
+- deploy mirror pinned to
+  `platform-ai/main=2f97d2fbf99d65850194d91a12f7d5bc87f921a3`;
+- `update.ps1 -NoRestart` ran successfully on Denetim Windows PowerShell,
+  pinned the tracked tree to `origin/main`, and completed with `done`;
+- `drift-guard.ps1` reported
+  `OK: clean, on main, == origin/main.`;
+- final git evidence showed
+  `HEAD=ORIGIN_MAIN=2f97d2fbf99d65850194d91a12f7d5bc87f921a3`, no unpushed
+  commits, and a clean tracked tree; remaining untracked directories were local
+  cache/venv/fixture/backup directories only;
+- scheduled tasks `platform-ai-live-stt` and `platform-ai-meeting-ai` were
+  `Running`;
+- local health checks returned live-stt `status=loading`, model `medium`,
+  device `cuda`, compute `float16`, and meeting-ai `status=ok`, backend `mock`,
+  redaction enabled.
+
+Evidence was recorded on `platform-ai#191`:
+https://github.com/Halildeu/platform-ai/issues/191#issuecomment-4806462741
+
+Boundary: this closes only the deploy-clone drift/update-script reliability gap.
+It does not enable direct-STT, does not send raw audio, does not prove
+`platform-ai#198` app-mTLS, does not satisfy `platform-ai#188` or
+`platform-ai#182`, and does not make Faz 24 production-ready. The immediate
+post-`#191` `#198` retry still showed `staging-sw` route via `wg0` and
+TCP/8200 success, but TCP/8243 and the SNI HTTPS probe timed out before TLS:
+https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4806465423
+
+## Live Delta — Faz 24 #162 meeting-ai source guards advanced; pilot G-INT remains open (2026-06-26)
+
+`platform-ai#207` merged source-side hardening for
+`meeting-ai-service` post-meeting Ask-AI:
+
+- `/ask` now redacts both transcript and question before a real LLM prompt is
+  constructed;
+- `/ask` applies the same ADR-0043 / KVKK residual PII fail-closed guard used by
+  `/analyze` to both transcript and question;
+- residual PII on `/ask` returns `422` before any LLM call;
+- unsupported cloud LLM backends on `/ask` now return `501` instead of silently
+  producing mock output;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`.
+
+`platform-ai#208` merged an adjacent G-INT action-owner attribution guard:
+
+- `action_items[].owner` is treated as a separate grounded claim from the action
+  text;
+- if the action text is grounded but the owner is not present in the same cited
+  source sentence, the action still ships with `owner=null`;
+- unsupported owner attribution is recorded as
+  `rejected_claims[].kind=action_owner` instead of being shown as a
+  user-visible assignee;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`.
+
+`platform-ai#209` merged Ask-AI unsupported-answer withholding:
+
+- generated `/ask` answers that cannot be grounded to a transcript sentence are
+  no longer returned as user-visible prose merely with `grounded=false`;
+- empty answers, fixed no-info sentinel answers, and ungrounded generated
+  answers return the fixed `Metinde bu bilgi yok.` answer;
+- the ungrounded citation avoids carrying the unsupported generated answer
+  (`claim=""`, `source_text=""`);
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`.
+
+`platform-ai#213` merged meeting summary exposure guard:
+
+- merge commit `4648bd5de5e6222b4f35e916ac0bad4ad81dad23`;
+- `AnalyzeResponse.schema_version` moved to `3-adr0043`;
+- summary prose is filtered through the same transcript-span citation guard before
+  user exposure;
+- only grounded summary sentences remain in `summary`;
+- unsupported summary prose is withheld into `rejected_claims[].kind=summary`;
+- fully withheld summaries return an empty data string with
+  `summary_grounding_status=withheld`;
+- `ungrounded_count` preserves the decision/action rejection count and excludes
+  summary-only rejections;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`.
+
+`platform-ai#214` merged meeting action due-date attribution guard:
+
+- merge commit `d82f7a0edde168b266239c881102ea40add0c6b5`;
+- `AnalyzeResponse.schema_version` moved to `4-adr0043`;
+- `action_items[].due_date` is treated as a separate grounded metadata claim from
+  the action text;
+- if the action text is grounded but the due-date text is not present in the same
+  cited source sentence, the action still ships with `due_date=null`;
+- unsupported, reformatted, or normalized due-date attribution is recorded as
+  `rejected_claims[].kind=action_due_date`;
+- numeric date/time reformatting is intentionally not inferred: for example,
+  `2026-06-26` cited only to `cuma` or to `26.06.2026` is rejected unless that
+  exact due-date text appears in the grounded source sentence;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- Claude adversarial review pass 1 found a digit-group false-pass P1; the source
+  patch was tightened, and pass 2 returned `NO P0/P1`.
+
+`platform-ai#215` merged meeting fact-fusion / single-source materiality guard:
+
+- merge commit `d84befa90c668155b7362c7b29e2f436a8a5f0cf`;
+- `AnalyzeResponse.schema_version` moved to `5-adr0043`;
+- default citation grounding now requires high-precision single-source material
+  coverage (`0.65`), not the earlier loose `0.4` overlap floor;
+- fused decisions/actions/summary sentences that merge supported prose with
+  unsupported facts outside the cited transcript sentence are withheld rather
+  than presented as grounded;
+- generated `/ask` answers with fused unsupported prose are replaced by the fixed
+  `Metinde bu bilgi yok.` answer instead of exposing unsupported prose with
+  `grounded=false`;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- Claude adversarial review returned `AGREE` with no P0/P1 blocker; a P2
+  internal verifier-version note was absorbed.
+
+`platform-ai#221` then tightened the same materiality guard:
+
+- merge commit `28c483a5b92b8dea522edbc6910cc218b8024ce6`;
+- unsupported content-token allowance for shippable claims is now zero, so a
+  short unsupported business fact cannot ride along inside a long grounded
+  decision/answer;
+- regression coverage pins the prior false-positive shape:
+  `... ödeme takvimi netleşti, fabrika açtı` is rejected even when overall
+  overlap is high;
+- deterministic mock `/ask` retrieval is now separated from acceptance gating
+  through `best_matching_sentence()`;
+- every returned mock `/ask` answer still passes through `ground_claim()` before
+  user exposure;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- Claude adversarial review returned `AGREE` with no P0/P1 blocker.
+
+`platform-ai#222` then tightened action metadata attribution phrase matching:
+
+- merge commit `5b7149e9c7bf2df78fb1a2c6e17e3a5829cebb8d`;
+- copied `action_items[].owner` and `action_items[].due_date` phrases now match
+  on word/phrase boundaries, not raw substrings inside unrelated words;
+- regression coverage blocks false-positive attribution examples such as owner
+  `Can` matching `canlı`, owner `IT` matching `kritik`, and due date `salı`
+  matching `Salıverme`;
+- existing token-subset fallback for legitimate multi-word attribution remains
+  in place;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- Claude adversarial review returned `AGREE` with no P0/P1 blocker.
+
+Boundary: this is source-side meeting-ai hardening only. It does not process a
+real pilot transcript/audio sample, does not enable a cloud LLM/API, does not
+mutate runtime, and does not satisfy `platform-ai#162` G-INT acceptance. Approved
+real pilot G-INT evidence, explicit thresholds, and reviewer/operator acceptance
+remain open.
+
+## Live Delta — Faz 24 #156 DB retention runtime smoke passed in test; MinIO runtime evidence gate tightened (2026-06-26)
+
+`platform-ai#156` moved past a source-only DB cleanup claim for the deployed
+meeting/transcript services in `k3d-test` / `platform-test`. This is still not a
+production/legal retention acceptance.
+
+Live runtime and schema evidence:
+
+- `meeting-service` was `1/1` ready with restart count `0` and imageID
+  `ghcr.io/halildeu/platform-backend-meeting-service@sha256:e9e45ac39ca53a7986a84c49ff8422077b20acdbc5a84b560b95e893845517cf`.
+- `transcript-service` was `1/1` ready with restart count `0` and imageID
+  `ghcr.io/halildeu/platform-backend-transcript-service@sha256:af97f1aa1b3212e0461288f53c1e1a16395e9ed2e80923d0cc4a1137bf2249ba`.
+- `meeting_service.meeting_flyway_history` shows V2
+  `meeting retention destruction audit` installed successfully at
+  `2026-06-25 21:18:09.463874`.
+- `transcript_service.transcript_flyway_history` shows V3
+  `transcript retention destruction audit` installed successfully at
+  `2026-06-25 21:18:13.696855`.
+
+Test-only smoke method:
+
+- inserted one expired synthetic `meeting_actions` row and one expired synthetic
+  `meeting_decisions` row under a synthetic parent meeting;
+- inserted one expired `transcript_segments` row with `text_draft IS NULL` and
+  `text_final IS NULL`, plus one expired metadata-only `transcript_access_audit`
+  row;
+- ran transient smoke Jobs derived from the live Deployments with only cleanup
+  cron overridden for the short smoke window; `app.kubernetes.io/name` stayed
+  distinct from the Service selectors, while `app.kubernetes.io/part-of=platform`
+  allowed the same DNS/Postgres egress class;
+- deleted the transient Jobs and removed the synthetic parent meeting fixture
+  after evidence collection.
+
+Observed cleanup:
+
+- meeting retention log reported
+  `layer=db.meeting-intelligence`, `actionDeletedCount=1`,
+  `decisionDeletedCount=1`, `deletedCount=2`,
+  `jobId=meeting-intelligence-retention-cleanup`;
+- transcript retention log reported
+  `layer=db.transcript-records`, `deletedCount=1`,
+  `jobId=transcript-records-retention-cleanup`;
+- transcript retention log reported
+  `layer=db.kvkk-access-log`, `deletedCount=1`,
+  `jobId=kvkk-access-log-retention-cleanup`;
+- DB residue checks returned `0` for the synthetic action, decision, transcript
+  segment, access-audit row, and parent meeting fixture;
+- destruction audit rows were written with `audit_payload=metadata-only` for
+  `db.meeting-intelligence`, `db.transcript-records`, and
+  `db.kvkk-access-log`.
+
+Evidence note:
+`docs/faz-24-evidence/2026-06-26-retention-runtime-smoke.md`.
+
+`platform-ai#211` then tightened the source-side #156 retention readiness gate:
+
+- merge commit `b349cba04c8523a4f3325a12d01ae24eabb5da98`;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- active MinIO evidence can no longer be accepted from
+  `deploy/minio/setup-lifecycle.sh` or issue-comment/source evidence alone;
+  each bucket must carry metadata-only runtime lifecycle export evidence
+  (`bucket_name`, observed expiration days, `Enabled` rule status, runtime
+  environment, lifecycle export ref, runtime evidence ref, and
+  `evidence_payload=metadata-only`);
+- `db.kvkk-access-log` retention timestamp is pinned to `accessed_at`, matching
+  transcript-service V1 access-event timestamp semantics.
+
+`platform-ai#212` then attached test MinIO metadata-only lifecycle runtime
+evidence:
+
+- merge commit `f6d7d707c3a33e7f147b0351a87f7fe1f0569104`;
+- evidence file
+  `docs/evidence/minio-lifecycle-runtime-2026-06-26.json`;
+- issue evidence
+  `platform-ai#156` comment `issuecomment-4805932172`;
+- PR CI passed for `repo-gates`, `diarization-service`, `final-stt-service`,
+  `live-stt-service`, and `meeting-ai-service`;
+- configured test buckets now carry metadata-only lifecycle evidence:
+  `meeting-audio` 7d Enabled, `transcripts` 365d Enabled, and
+  `audit-archive` 2557d Enabled;
+- current snapshot treats DB cleanup smoke layers and MinIO lifecycle layers as
+  active but keeps `status=blocked`, `findingCount=0`, `blockerCount=1`;
+- the remaining machine-readable blocker is VERBIS/legal status.
+
+Boundary: this proves only bounded test runtime behavior for the deployed DB
+cleanup jobs and metadata-only test MinIO lifecycle configuration. #156 remains
+open until VERBIS status is recorded or exempt-confirmed and owner/legal
+acceptance is recorded. This does not prove direct-STT, app-mTLS, raw-audio
+governance, G-WER/DER, G-INT, desktop mic/loopback, production cleanup,
+production lifecycle/deletion behavior, G-COMP pass, or production readiness.
+
+## Historical Delta — Faz 24 audio-gateway JWT enforce evidence path packaged; runtime flip follow-up below (2026-06-26)
+
+`platform-backend#716` remains the P1 shared-realm authz gate for real recorder
+traffic: `audio-gateway-service` must require both
+`aud=audio-gateway-service` and
+`resource_access.audio-gateway-service.roles=[audio_record]` before real/prod
+audio use. Backend validator code and fail-closed source tests are in the
+post-`platform-backend#719/#720` image lineage now carried by the current test
+audio-gateway digest. The later live delta at the top of this file supersedes
+the default-off desired-state part of this historical section.
+
+This package established the durable GitOps/evidence path:
+
+- `kustomize/base/apps/audio-gateway/configmap.yaml` carried explicit
+  pre-flip default-off security flags:
+  `AUDIO_GATEWAY_SECURITY_RESOURCE_CLIENT_ID=audio-gateway-service`,
+  `AUDIO_GATEWAY_SECURITY_ENFORCE_AUDIENCE=false`, and
+  `AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE=false`;
+- `docs/runbooks/RB-faz24-audio-gateway-jwt-enforcement.md` records the Step 6
+  token drain, Step 7 GitOps-authoritative enforce flip, rollback, and evidence
+  attachment contract;
+- `scripts/faz24/verify_audio_gateway_authz_enforce_evidence.py` validates only
+  redacted `faz24.audioGatewayAuthzEnforceEvidence.v1` metadata and requires the
+  fail-closed matrix: no token `401`, wrong audience `401`, missing
+  `audio_record` role `403`, and valid recorder token `2xx/204` or
+  business `404 session-not-found`;
+- the verifier rejects JWT/Bearer/private-key/cookie/secret-shaped content, raw
+  audio/transcript/prompt/response payloads, direct-STT or production overclaims,
+  and evidence where the enforce booleans are not both true.
+
+Boundary: this section is historical source/evidence packaging context. The
+later desired-state flip changes the two booleans to true for the test overlay,
+but #716 still remains open until live rollout evidence, fail-closed matrix, and
+reviewer/operator acceptance are recorded.
+
+## Live Delta — Faz 24 recording-access PR-2 runtime evidence recorded; tokened object-level gate remains open (2026-06-26)
+
+Faz 24 recorder authorization moved past the source-only `meeting#can_record`
+modeling step and is now deployed on testai. This is still not an object-level
+tokened acceptance gate.
+
+Evidence chain:
+
+- `platform-backend#761` merged at
+  `22b54669f1429def872308a1156719fafad15adb`, adding the additive OpenFGA
+  `meeting#can_record` relation without making it directly assignable.
+- The test OpenFGA model selector moved from
+  `01KVXG15ETYAHMHANFD0E5CVK8` to `01KW0EJTM60YGZTEKNGS7PDPNP`; Vault
+  `kv/platform/openfga#model_id` was patched, model-consuming consumers were
+  restarted, and contextual checks passed for owner/participant allow plus
+  viewer/nobody/blocked deny paths.
+- `platform-backend#765` merged at
+  `794c187a129a0b557c2522a816cff457dc199e77`, adding non-admin
+  `GET /api/v1/meetings/{id}/recording-access` and repointing
+  `audio-gateway-service` `MeetingServiceAccessValidator` away from the
+  temporary admin GET-by-id route.
+- `platform-k8s-gitops#2038` merged at
+  `c5ab6cbe9734e6aa55b6bcb06ccdbf69f2ed2994`, pinning the test overlay to
+  `audio-gateway-service@sha256:54fd0226561dd912532f3784773887c01693742faff31079562d24002c11a351`
+  and
+  `meeting-service@sha256:e9e45ac39ca53a7986a84c49ff8422077b20acdbc5a84b560b95e893845517cf`.
+- Deploy workflow run `28206874588` on GitOps `main` head
+  `c5ab6cbe9734e6aa55b6bcb06ccdbf69f2ed2994` concluded `success`: digest-pin
+  rollout covered the 13-service payload, Gate 1b public edge passed, Gate 1c
+  readiness passed, and Gate 1d stability passed. Gate 2 did not provide a
+  tokened persona proof because `SMOKE_AUTH_*` was not configured for the run.
+- Live staging imageID evidence matched the pinned digests for `audio-gateway`
+  and `meeting-service`; `transcript-service` remained at
+  `sha256:af97f1aa1b3212e0461288f53c1e1a16395e9ed2e80923d0cc4a1137bf2249ba`,
+  and `permission-service` remained at
+  `sha256:e828808e54a88a3290cd3c1b9343dbe2cc0f8b55061b27a5e0c7957fde3f9b0e`.
+  The checked pods were `Running`/Ready with restart count `0`, and pod-local
+  readiness for `meeting-service` and `audio-gateway` returned `{"status":"UP"}`.
+- Public no-token smoke preserved fail-closed edge behavior:
+  `/api/v1/meetings/00000000-0000-0000-0000-000000000000/recording-access`
+  returned `401`, and `/api/users/all?page=1&pageSize=1` returned `401`.
+- Runtime evidence was recorded on `platform-backend#759`:
+  https://github.com/Halildeu/platform-backend/issues/759#issuecomment-4805199650
+
+Boundary: the tokened object-level matrix is still open: expected
+owner/participant `204`, no-recorder `403`, unknown or tenant-hidden meeting
+`404`, and blocked-owner `403` must be proven with accepted personas before this
+becomes recorder authorization acceptance. Later source cleanup for the
+temporary B-narrow admin GET-by-id relaxation is recorded above via
+`platform-backend#767`; it does not replace image rollout or tokened runtime
+persona proof. Separately, `platform-backend#716` audio-gateway
+audience/capability enforcement remains open, and `platform-ai#198`,
+`platform-ai#188`, `platform-ai#182`, direct-STT e2e, desktop mic/loopback,
+product-quality pilot gates, and production readiness remain separate gates.
+
+## Live Delta — Faz 24 #198 local firewall/listener proof received; central endpoint allow still needed (2026-06-26)
+
+Operator-provided Denetim Admin PowerShell output added one more local proof for
+`platform-ai#198`:
+
+- local Windows Firewall rule `WG-staging-caddy-mtls-8243-ttl-codex` exists in
+  `PersistentStore`, is enabled, action `Allow`, direction `Inbound`, profile
+  `Any`;
+- tuple is scoped to source `10.99.0.1` -> destination `10.99.0.2`, TCP local
+  port `8243`;
+- program scope is `C:\caddy\caddy.exe`;
+- Windows Firewall allow/drop logging is enabled to
+  `%systemroot%\system32\LogFiles\Firewall\pfirewall.log`;
+- TTL rollback scheduled task
+  `Remove-WG-staging-caddy-mtls-8243-ttl-codex` exists and is `Ready`;
+- Caddy is listening on `10.99.0.2:8243`.
+
+Evidence was recorded on `platform-ai#198`:
+https://github.com/Halildeu/platform-ai/issues/198#issuecomment-4801156545
+
+Boundary: this proves only local Windows tuple/listener state. It does not prove
+remote reachability from `staging-sw` or from `audio-gateway`; the last canonical
+follow-up still had `10.99.0.1 -> 10.99.0.2 TCP/8243` timing out while
+`10.99.0.2:8200` remained reachable over the same WG path. The next safe
+operator action remains an ESET/ERA or central endpoint/WFP allow+log policy for
+that exact tuple and `C:\caddy\caddy.exe`, with TTL and rollback. Do not disable
+ESET as an acceptance shortcut. No direct-STT flag flip, raw audio,
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE`, `/transcribe` e2e, or production readiness is
+claimed from this proof.
+
+## Live Delta — Faz 24 WG-B+ I6 MASQ evidence accepted; runtime gates remain open (2026-06-25)
+
+`platform-k8s-gitops#1867` is now closed / Project #2 `Done` for the
+I6-only pod-CIDR-to-WireGuard MASQ scope.
+
+Accepted evidence chain:
+
+- bounded `staging-sw` host-side I6 repair added an idempotent exact host NAT
+  wrapper for `10.42.0.0/16 -> 10.99.0.0/24` over `wg0`, systemd
+  `ExecStartPost` apply, `ExecStop` rollback, and a 5-minute drift re-apply
+  timer;
+- protected metadata-only evidence
+  `/tmp/wg-bplus-i6-masq-evidence-20260625T110233Z.json` was collected from a
+  clean temporary repo clone on `staging-sw`;
+- local verifier output was `Faz24 WG-B+ I6 MASQ evidence: PASS` with
+  `clusterName=k3d-test`, `podCIDR=10.42.0.0/16`, `wgInterface=wg0`, and
+  `mechanismType=host-systemd-iptables`;
+- GitHub ingest workflow run `28165629939` concluded `success`; job
+  `83416769870` passed input validation, evidence decode, verifier, private
+  material scan, summary, artifact upload, cleanup, and reject-on-fail guard;
+- ingest artifact `faz24-wg-bplus-i6-masq-evidence-28165629939` / id
+  `7876217236` was produced;
+- current-state PR `#2007` merged the evidence snapshot at
+  `2655db8416088ab5b0b76670b2a9bd427d2d657c`;
+- Claude CLI reviewer acceptance was recorded as `AGREE_ACCEPT` for I6-only
+  scope, with verifier status `pass`, finding count `0`, and no-leak boundary
+  preserved;
+- #1867 was deliberately closed after reviewer acceptance.
+
+Boundary: this acceptance covers only I6 pod-CIDR-to-WireGuard MASQ metadata
+evidence. It does not prove `platform-ai#198` Denetim `8243` app-mTLS,
+`platform-ai#188` same-session `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit smoke,
+`platform-ai#182` direct audio e2e, I3 management audit, desktop mic/loopback,
+production cutover, or broad Faz 24 readiness. It must not be used as a
+direct-STT flag-flip basis.
+
+## Live Delta — Faz 24 product-quality guardrails advanced; pilot/runtime gates remain open (2026-06-25)
+
+After the #187 transcript-routing source/deploy slice, `platform-ai` and
+GitOps also advanced several product-quality and compliance guardrails on
+`main`:
+
+- `platform-ai#199` merged G-WER/DER gate infrastructure at
+  `243de9d981b299c28c2015ae0b85112fde924bf8`. The new
+  `services/live-stt-service/scripts/gwer_gate.py` consumes metadata-only WER
+  and DER evidence rows, requires explicit thresholds, and allows only approved
+  pilot evidence kinds (`pilot-meeting`, `erp-pilot`, `customer-pilot`) to
+  satisfy the gate. Common Voice / synthetic-smoke evidence can support
+  harness validation but cannot satisfy real G-WER by itself.
+- `platform-ai#200` merged G-INT gate infrastructure at
+  `7cc2612c0b1e2d3ef0bf528ec256c400f26e8a86`. The new
+  `services/meeting-ai-service/scripts/gint_gate.py` requires approved pilot
+  rows, real backend evidence, complete metadata hashes, explicit thresholds,
+  and blocks raw transcript/prompt/response/citation/PII-shaped values from
+  acceptance evidence.
+- `platform-ai#213` merged meeting-ai summary exposure hardening at
+  `4648bd5de5e6222b4f35e916ac0bad4ad81dad23`. `AnalyzeResponse` v3 now keeps
+  only citation-guarded summary sentences in `summary`, moves unsupported summary
+  prose to `rejected_claims[].kind=summary`, and keeps `ungrounded_count` scoped
+  to decision/action rejections. This is source-side G-INT exposure hardening, not
+  pilot acceptance evidence.
+- `platform-ai#201` merged the #156 retention-readiness gate at
+  `3549c284ba0afbdf33f02a8c234ddaa6750db869`; `platform-ai#211` later tightened
+  it at `b349cba04c8523a4f3325a12d01ae24eabb5da98`; `platform-ai#212` then
+  added test MinIO metadata-only lifecycle runtime evidence at
+  `f6d7d707c3a33e7f147b0351a87f7fe1f0569104`. `scripts/retention_gate.py`
+  now makes the current state machine-readable without accepting source-only
+  MinIO evidence: DB cleanup smoke layers and configured test MinIO lifecycle
+  layers are active in the snapshot, while the gate intentionally returns
+  `status=blocked` until VERBIS is recorded or exempt-confirmed and owner/legal
+  acceptance is recorded.
+- `platform-ai#202` merged Redis consumer wording/runtime cleanup at
+  `74d55b63a60bd9075fbf303fd0856ed7abfa15c5`. The default handler is now
+  `CoordinationChunkHandler`, preserving the control-plane-only contract:
+  hash/metadata logging only, no audio fetch, no transcription activation.
+  `platform-ai#183` is closed on this source-level correction.
+- `platform-ai#203` merged the #185 recording/archive boundary at
+  `546bf13aa378891eac43c879c382423e17709ee9`. `platform-ai`
+  `docs/adr/0036-recording-archive-plane.md` records that the default Faz 24
+  live path does not persist raw meeting audio; the `meeting-audio` MinIO
+  bucket remains infrastructure, not a default recording/archive product path.
+  Any replay/reprocess/legal-hold archive must reopen a separate issue/PR and
+  pass purpose/legal-basis, consent, tenant-isolated key, encryption/KMS,
+  retention, erasure, legal-hold, access-audit, evidence-privacy, and rollback
+  gates before raw audio is stored.
+- GitOps issue `platform-k8s-gitops#2024` tracks the source-side G-COMP
+  aggregate compliance gate infrastructure.
+  `scripts/faz24/verify_gcomp_compliance_gate_evidence.py`
+  consumes a redacted `faz24.gcompComplianceEvidence.v1` envelope and requires
+  consent, retention, legal-hold, access-audit, deletion/export, KVKK/VERBIS,
+  redaction, and runbook evidence classes before it can return `pass`. It
+  rejects raw audio/transcript/prompt/response data, personal-data-shaped
+  values, token/secret material, legal-advice overclaims, live-production
+  mutations, and production-readiness claims.
+- `platform-ai#204` merged the G-LAT/COST gate infrastructure at
+  `1c9a2cc95852cce830a12f4ff14736465211138e`. The new
+  `services/live-stt-service/scripts/glat_cost_gate.py` consumes
+  metadata-only latency p95, queue-lag p95, throughput, utilization, error
+  rate, and cost-per-audio-minute evidence, requires explicit thresholds, and
+  allows only approved pilot evidence kinds to satisfy the gate. Lab /
+  synthetic / Common Voice style performance rows can support capacity
+  planning but intentionally return `status=blocked` for acceptance.
+- `platform-ai#210` merged the #161 diarization backend decision gate at
+  `b78e96ac9624edb0e1176f9273179f8e9e225d2d`. The new
+  `services/diarization-service/scripts/diar_decision_gate.py` consumes
+  metadata-only diarization candidate rows and requires explicit DER, RTF,
+  latency, VRAM, and sample thresholds, approved pilot evidence, approved
+  license/deployment metadata, a `sha256:<64 hex>` evidence hash, and explicit
+  non-biometric posture (`voiceprint_enabled=false`,
+  `biometric_processing=false`, `speaker_identity_mapping=false`) before a
+  backend decision can pass. Current synthetic diarization evidence remains
+  `status=blocked`; hard policy violations return `fail`.
+- GitOps issue `platform-k8s-gitops#2027` tracks the shared no-mutation
+  evidence-ingest workflow for the G-CAP/G-OPS/G-COMP verifiers:
+  `.github/workflows/faz24-product-gate-evidence-ingest.yml` decodes a
+  selected gate's redacted base64 JSON evidence, invokes the matching verifier,
+  scans for private/secret/raw-sensitive markers, and uploads a bounded
+  evidence artifact. It does not run a pilot, mutate runtime/Kubernetes/Vault/
+  firewall/legal state, store raw meeting data, accept VERBIS/legal sign-off,
+  enable direct-STT, or make production ready.
+
+Project #4 was reconciled after these updates: `platform-ai#185` is `Done`,
+while `#160`, `#161`, `#162`, `#156`, `#182`, `#188`, and `#198` remain
+`In Progress` because their pilot/runtime/go-live evidence is still open.
+
+Boundary: these changes advance source-side quality/compliance/product
+governance. They do not produce real pilot WER/DER, do not satisfy G-INT with a
+real meeting, do not produce pilot G-LAT/COST acceptance, do not select a
+diarization backend/model, do not record VERBIS, do not create DB cleanup
+evidence, do not produce live G-COMP acceptance evidence, do not create live
+G-CAP/G-OPS acceptance evidence, do not enable direct-STT, do not send raw
+audio, do not satisfy #188 compute-plane audit smoke, and do not make Faz 24
+production readiness. The
+immediate direct-STT runtime blocker remains
+`platform-ai#198` Denetim `8243` app-mTLS reachability.
+
+## Live Delta — Faz 24 #187 transcript routing deployed on testai; #198 remains runtime gate (2026-06-25)
+
+`platform-ai#187` source/deploy scope is accepted with live evidence and issue
+state is now `CLOSED`. The backend source chain was `platform-backend#756`,
+merged at `8c269ccf229d5ae71a51bd096dce30725965590a`, with main Maven CI run
+`28174995497` and image build run `28174995267` both concluding `success`.
+The transcript routing artifact for the #187 slice is
+`transcript-service=sha256:8f6bb65fb40c4696fa61ec812b998803c537387359fc98e4005a2b764764a5f5`.
+
+GitOps rollout coverage was widened by `platform-k8s-gitops#2015`, merged at
+`a9b19c9f009aa3379400cae61de66355fc802dcd`, so
+`deploy-backend-testai.yml` now includes the Faz 24 runtime services
+`meeting-service`, `transcript-service`, and `audit-event-consumer-service` in
+the blocking digest-pin rollout, readiness, and stability chain. A follow-up
+summary-only hygiene PR, `platform-k8s-gitops#2016`, merged at
+`d1aee91023198bc7ca4f9808ea04a0433dd9e8ed` and aligned the job summary wording
+with the 13-service rollout contract.
+
+Authoritative runtime evidence is workflow_dispatch run `28176231063` on GitOps
+main head `a9b19c9f009aa3379400cae61de66355fc802dcd`, which concluded
+`success`:
+
+- digest-pin mode active with 13 services in payload;
+- `meeting-service` pod digest verified at
+  `sha256:a4929327c7514b584f6c97b5bd203b7f4e532ce61a679c5ed87d453cea1607c6`;
+- `transcript-service` pod digest verified at
+  `sha256:8f6bb65fb40c4696fa61ec812b998803c537387359fc98e4005a2b764764a5f5`;
+- `audit-event-consumer-service` pod digest verified at
+  `sha256:ceb3089930f5bcaad721516a653e49d3ac52feaa89a954024f5792aa797bb4f8`;
+- Gate 1b api-gateway public edge chain succeeded;
+- Gate 1c readiness returned `200` for `meeting-service`,
+  `transcript-service`, and `audit-event-consumer-service`;
+- Gate 1d stability passed for `meeting-service`, `transcript-service`, and
+  `audit-event-consumer-service` across `120s` windows, and the full deploy job
+  concluded `success`;
+- Gate 2 is opt-in; the step concluded `success`, but no separate persona auth
+  proof is claimed unless `SMOKE_AUTH_*` secrets are configured for the run.
+
+Boundary: this advances only the #187 source-side transcript routing and testai
+runtime deployment coverage. It does not enable direct-STT runtime flags, does
+not send raw audio, does not prove `audio-gateway -> live-stt /transcribe`, does
+not prove `CHUNK_FORWARDED_TO_COMPUTE_PLANE` same-session audit evidence, and
+does not make Faz 24 production-ready. `platform-ai#198` remains `OPEN`: the
+current blocker is still the Denetim `10.99.0.1 -> 10.99.0.2 TCP/8243`
+app-mTLS path, with the remaining block suspected below or outside visible
+local Windows Firewall allow rules at the ESET/ERA/central WFP policy layer.
+After the endpoint/security owner applies that allow/log policy, rerun
+`live-stt-preflight` and then the separate
+`platform-ai#188` compute-plane audit smoke before claiming direct-STT e2e.
+
+## Live Delta — Faz 24 WG-B+ I3 bootstrap package artifact available; operator application pending (2026-06-25)
+
+`platform-k8s-gitops#1864` I3 Denetim authorization blocker was narrowed one
+level deeper than the previous `ssh-auth-publickey` classification. A temporary
+approved `denetimpc@10.99.0.2` management SSH window became available from the
+Mac through `staging-sw`; the session ran with elevated local Administrators
+token (`BUILTIN\Administrators`, high mandatory level). Read-only local user
+enumeration showed only `denetimpc`, `lokaladm`, disabled built-in accounts, and
+no `svc-denetim-agent` local account. The existing hardened package
+`faz24-i3-denetim-ssh-authorize-package-28144138366` was copied to
+`C:\Temp\faz24-i3-authorize-28144138366-codex`, but execution failed closed with
+`target-user-not-found:svc-denetim-agent` / `User svc-denetim-agent was not
+found`; no authorize evidence PASS was produced.
+
+`platform-k8s-gitops#2010` merged the bounded package enhancement for that live
+gap at `29c98ffbf76cbb7e538ea43488c4941563e057b5`:
+
+- default behavior remains fail-closed when the target user is missing;
+- explicit `-CreateTargetUser -GrantEventLogReaders` bootstrap mode creates a
+  non-admin `svc-denetim-agent` local account with a random non-exported
+  password, grants Event Log Readers for metadata collection, prepares the
+  `.ssh/authorized_keys` profile path when Windows has not created the profile
+  yet, and records only hash/boolean state in
+  `denetim-i3-ssh-authorize-evidence.json`;
+- the ingest verifier now validates the optional bootstrap evidence fields when
+  present, including `targetUserCreated` / `targetUserExisted` consistency and
+  `eventLogReadersGrantAttempted=true` implying
+  `eventLogReadersMembershipPresent=true`;
+- local validation passed for `py_compile`, targeted package/verifier tests,
+  and full `tests/faz24` (`95 passed`); real Claude CLI blocker review returned
+  `AGREE` with no P0/P1 blockers.
+
+The enhanced package workflow was then run from `main`:
+
+- workflow run `28168084207` concluded `success`;
+- artifact `faz24-i3-denetim-ssh-authorize-package-28168084207` was downloaded
+  and locally verified;
+- expected files `README.md`, `SHA256SUMS`,
+  `authorize-denetim-i3-public-key.ps1`,
+  `expected-public-key-metadata.json`, and
+  `faz24-i3-denetim_ed25519.pub` were present;
+- `sha256sum --check SHA256SUMS` passed for all artifact files;
+- metadata confirms `supportsTargetUserBootstrap=true` and recommends
+  `CreateTargetUser` / `GrantEventLogReaders` for the missing-account path;
+- secret/private-material scan found no actual private key or bearer token; the
+  only private-key text hit was the generated script's intentional rejection
+  pattern.
+
+The operator handoff package was also refreshed:
+
+- workflow run `28168214328` concluded `success`;
+- artifact `faz24-wg-bplus-operator-handoff-28168214328` was downloaded and
+  verified with `sha256sum --check SHA256SUMS`;
+- handoff JSON now points I3 to authorize package run `28168084207` and artifact
+  `faz24-i3-denetim-ssh-authorize-package-28168084207`;
+- the handoff acceptance boundary still requires operator execution, authorize
+  evidence verifier PASS, I3 evidence verifier PASS, and reviewer acceptance.
+
+No bootstrap mutation was applied in this attempt. After the fail-closed
+missing-user proof, `denetimpc@10.99.0.2` SSH began returning
+`Permission denied (publickey)` again while `staging-sw` still reached
+`10.99.0.2:22`; `svc-denetim-agent@10.99.0.2` also still returns
+`Permission denied (publickey)`. `staging-sw -> 10.99.0.2:8243` for the Denetim
+app-mTLS/Caddy path also still fails. Therefore the next step is to either
+restore the approved `denetimpc` management window or have an elevated Denetim
+operator run
+`faz24-i3-denetim-ssh-authorize-package-28168084207` locally with
+`-CreateTargetUser -GrantEventLogReaders`. Only after
+`denetim-i3-ssh-authorize-evidence.json` verifies PASS should the Denetim
+authorize evidence ingest and `faz24-wg-bplus-i3-evidence.yml` rerun proceed.
+
+Boundary: this is management-plane account/key bootstrap support and blocker
+classification. It does not prove I3 acceptance, `platform-ai#198` Denetim
+`8243` app-mTLS, `platform-ai#188` compute-plane audit smoke,
+`platform-ai#182` direct audio e2e, direct-STT Functional, production cutover,
+or broad readiness.
+
+## Live Delta — Faz 24 WG-B+ I3 Denetim authorization package ready; management access unavailable (2026-06-25)
+
+`platform-k8s-gitops#1864` remains blocked on Denetim management access before
+the hardened public-key authorization package can be applied. The package
+artifact `faz24-i3-denetim-ssh-authorize-package-28144138366` was downloaded
+and locally rechecked: expected files `README.md`, `SHA256SUMS`,
+`authorize-denetim-i3-public-key.ps1`, `expected-public-key-metadata.json`, and
+`faz24-i3-denetim_ed25519.pub` were present; `sha256sum --check SHA256SUMS`
+passed for all files; private-key, Bearer, GitHub token, and JWT-like marker
+scan returned clean. Package metadata still targets `svc-denetim-agent` with
+fingerprint `SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`, line hash
+`83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff`, and blob
+hash `e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756`.
+
+Fresh access probes show the operator application step cannot be performed
+through the currently available agent channels:
+
+- `ssh -J staging-sw denetimpc@10.99.0.2` now fails
+  `Permission denied (publickey)`.
+- `ssh -J staging-sw svc-denetim-agent@10.99.0.2` still fails
+  `Permission denied (publickey)`.
+- `staging-sw` can reach `10.99.0.2:22` at TCP level, so the current failure
+  class is SSH public-key authorization, not route/TCP reachability.
+- The old break-glass reverse SSH path is not currently available: local Mac
+  `127.0.0.1:22024` and `127.0.0.1:22025` refuse connections, and
+  `staging-sw` has no listener on `127.0.0.1:22024` or `127.0.0.1:22025`.
+
+Therefore the next I3 work is no longer package generation, checksum
+verification, runner `wg` tooling, runner identity path alignment, or TCP/22
+reachability. It is restoring an approved Denetim operator management channel
+or applying the already-built public-key package from an elevated Denetim
+operator session, then ingesting
+`denetim-i3-ssh-authorize-evidence.json` and rerunning
+`faz24-wg-bplus-i3-evidence.yml`. Do not mark #1864 accepted until Denetim
+authorize evidence ingest PASS, I3 evidence verifier PASS, and reviewer
+acceptance are all present.
+
+Boundary: this management-plane blocker does not change `platform-ai#198`
+Denetim `8243` app-mTLS, `platform-ai#188` compute-plane audit smoke,
+`platform-ai#182` direct audio e2e, I6 MASQ evidence, production cutover, or
+broad readiness.
+
+## Live Delta — Faz 24 WG-B+ I6 host MASQ evidence accepted (2026-06-25)
+
+`platform-k8s-gitops#1867` moved from source/operator-package readiness to a
+fresh metadata-only verifier PASS on `staging-sw`, after a bounded host-side
+I6 repair. The previous live collector result had already proven that
+`staging-sw` could query host namespace metadata, that the pod-origin HTTP
+probe to Denetim plaintext `10.99.0.2:8200` returned a bounded `4xx`, and that
+the existing `k3d-wg-masq.service` was active/enabled; it still failed because
+the host namespace NAT rule, drift timer, and rollback `ExecStop` were absent.
+
+Bounded live change applied on `staging-sw` at `20260625T110213Z`:
+
+- Installed `/usr/local/sbin/k3d-wg-masq-host-rule.sh`, an idempotent
+  apply/check/rollback wrapper for the exact host NAT rule
+  `-s 10.42.0.0/16 -d 10.99.0.0/24 -o wg0 -j MASQUERADE`.
+- Added systemd drop-in
+  `/etc/systemd/system/k3d-wg-masq.service.d/faz24-i6-host-rule.conf` with
+  `ExecStartPost=/usr/local/sbin/k3d-wg-masq-host-rule.sh apply` and
+  `ExecStop=/usr/local/sbin/k3d-wg-masq-host-rule.sh rollback`.
+- Added `/etc/systemd/system/k3d-wg-masq-drift.service` and enabled
+  `/etc/systemd/system/k3d-wg-masq.timer` to re-apply the exact rule on a
+  5-minute timer.
+- Applied and checked the host rule successfully. Rollback is exact-rule
+  deletion plus disabling/removing the timer, drift service, drop-in, and
+  wrapper, followed by `systemctl daemon-reload`.
+
+Fresh evidence:
+
+- Clean temporary repo clone on `staging-sw` collected metadata-only evidence
+  `/tmp/wg-bplus-i6-masq-evidence-20260625T110233Z.json`.
+- Local verifier output: `Faz24 WG-B+ I6 MASQ evidence: PASS`,
+  `clusterName=k3d-test`, `podCIDR=10.42.0.0/16`, `wgInterface=wg0`,
+  `mechanismType=host-systemd-iptables`.
+- GitHub ingest workflow
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml` run `28165629939` on
+  `eb686b0bee10c0d1daeac225a0d36b51d26da834` completed `success`; job
+  `83416769870` passed decode, verifier, private-material scan, summary, and
+  artifact upload. Artifact:
+  `faz24-wg-bplus-i6-masq-evidence-28165629939` / id `7876217236`.
+- Claude CLI reviewer acceptance was later recorded as `AGREE_ACCEPT` for the
+  I6-only scope, and `platform-k8s-gitops#1867` was deliberately closed /
+  Project #2 `Done`.
+
+Acceptance boundary: this accepted only I6 pod-CIDR-to-WireGuard MASQ metadata
+evidence. It does not prove `platform-ai#198` Denetim `8243` app-mTLS,
+`platform-ai#188` compute-plane audit smoke, `platform-ai#182` direct audio
+e2e, I3 management audit, production cutover, or broad readiness. Do not use
+this as a direct-STT flag-flip basis.
+
+## Live Delta — Faz 22.6 release-train graduation/hygiene gate reworked off the stale exact-pin (#1939, 2026-06-25)
+
+The machine completion gate's release-train check no longer false-blocks Faz
+22.6 once the EndpointAgent graduated to the signed `v0.3` lineage. Branch
+`feat/faz22-6-release-hygiene-claude-20260625` (PR pending; Codex thread
+`019efe62` AGREE) reworks `scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh`
+(the live-truth gate that `faz22-6-completion-audit.sh` delegates to after
+#1946), consuming the already-merged SSOT `config/faz22-6-endpoint-agent-release-policy.v1.json`:
+
+- The release-train graduation/hygiene logic is now a pure, network-free
+  `release_train_verdict` function (offline-testable; new test
+  `tests/faz22_remote_ops/test_faz22_6_release_train_verdict.sh` + gate
+  `.github/workflows/gate-faz22-release-train-verdict.yml`).
+- It separates the **bounded-pilot deploy pin** (`current_bounded_pilot.release_tag`
+  = `v0.3.1`, still exact-pinned for manifest/digest parity; new
+  `GITHUB_BOUNDED_PILOT_RELEASE_PRESENT` check requires the tag to exist as a
+  stable release but NOT to be GitHub's "latest") from the **release-train
+  graduation** check, which asserts the latest STABLE release matches the
+  trusted series (`^v0\.3\.`) — see RB §3.2.
+- New SSOT `release_train_policy` fields: `trusted_series_regex`,
+  `trusted_lineage_started_at` (`2026-06-24T09:04:29Z` = the v0.3.0 publishedAt
+  boundary), `active_series_dense_threshold` (`8`). Hygiene now counts only
+  `v0.2.x` releases published at/after the boundary as a regression
+  (`GITHUB_RELEASE_FROZEN_SERIES_REGRESSION`); the pre-boundary recovery train
+  is never counted or deleted. Excess trusted-series density
+  (`GITHUB_RELEASE_ACTIVE_SERIES_DENSE`, `>=` threshold) requires a lineage
+  audit/waiver and is never auto-passed.
+- Live GitHub truth at the time of the fix: latest stable `v0.3.3`, four
+  `v0.3.x` releases (below the dense threshold of 8), zero post-boundary
+  `v0.2.x` regressions → the train portion is a clean no-waiver `pass`.
+
+This corrects the prior `GITHUB_RELEASE_LATEST=pass tag=v0.3.1` exact-pin
+posture recorded below (2026-06-24): that exact-pin would block once GitHub's
+latest moved to `v0.3.2`/`v0.3.3` while the deployed pilot pin stayed `v0.3.1`.
+Branch is committed locally, not merged; deploy evidence and other Faz 22.6
+gates are unchanged.
+
+## Live Delta — Faz 24 I7 Windows Firewall evidence narrowed; endpoint policy still blocks remote 8243 (2026-06-25)
+
+Follow-up read-only #198 probes after the Caddy persistence fix preserved the
+same network boundary and ruled out one more Windows Firewall-only theory.
+From `staging-sw`, `ip route get 10.99.0.2` still selects `wg0` with source
+`10.99.0.1`; TCP/8200 succeeds, but TCP/8243 still times out. On Denetim PC,
+`CaddyI7AppMtls` remains `Running`, `caddy.exe` owns listener
+`10.99.0.2:8243`, and Denetim-local `Test-NetConnection 10.99.0.2 -Port 8243`
+succeeds through interface `wg0`.
+
+Visible Windows Firewall evidence now shows both local inbound allow rules are
+present via `netsh advfirewall`: `WG-staging-caddy-mtls-8243` and
+`WG-staging-caddy-mtls-8243-program`, enabled for Domain/Private/Public,
+remote `10.99.0.1`, protocol TCP, local port `8243`, action `Allow`; the
+program-scoped rule points at `C:\caddy\caddy.exe`. `ActiveStore`
+profiles show `DefaultInboundAction=Block`, `AllowLocalFirewallRules=True`,
+and `AllowLocalIPsecRules=True`; the `wg0` network category is `Public`.
+Windows Firewall drop logging is not currently available (`pfirewall.log`
+missing / profile logging disabled), and the Security log query for WFP drop
+events `5152/5157` matching `8243`/`10.99.0.x` returned no matching evidence.
+ESET firewall-related services (`efwd`, `ekrn`, `ekrnEpfw`) and the ERA agent
+are running.
+
+Therefore the current #198 blocker is narrower than "missing Caddy" or
+"missing visible Windows Firewall allow rule": remote inbound
+`10.99.0.1 -> 10.99.0.2:8243` is still blocked by endpoint/security policy or
+another WFP provider path below/outside the visible local Windows Firewall
+allow rules. The next safe action is endpoint/security-owner review of
+ESET/ERA or central WFP policy for that exact 5-tuple, preferably by adding a
+TTL-bounded allow/logging rule for `C:\caddy\caddy.exe` on TCP/8243 from
+`10.99.0.1`, then rerunning `live-stt-preflight`. Do not disable or stop ESET
+as an acceptance shortcut.
+
+Acceptance boundary: direct-STT remains disabled, no raw audio was sent, no
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE` or `/transcribe` e2e was proven, and
+`platform-ai#198` remains open until route, TCP/8243, TLS server identity,
+valid client mTLS, no-client/wrong-client fail-closed behavior, and
+reviewer/operator acceptance are all evidenced through the I7 verifier path.
+
+## Live Delta — Faz 24 I7 Caddy persists on Denetim; remote 8243 remains host-policy blocked (2026-06-25)
+
+This supersedes the same-day I7 note below that Caddy was not running
+persistently. A bounded host-side action created Windows Scheduled Task
+`CaddyI7AppMtls` as `SYSTEM` to run
+`C:\caddy\caddy.exe run --config C:\caddy\Caddyfile`, then backed up
+`C:\caddy\Caddyfile` to
+`C:\caddy\Caddyfile.codex-20260625T103755Z-pre-wg-bind` before adding
+`bind 10.99.0.2` under `https://live-stt.denetim:8243`. Windows Firewall now
+has the existing port-scoped allow rule `WG-staging-caddy-mtls-8243` plus an
+additive program-scoped allow rule `WG-staging-caddy-mtls-8243-program` for
+`C:\caddy\caddy.exe`, TCP/8243, remote `10.99.0.1`.
+
+Latest live evidence: `CaddyI7AppMtls` is running, `caddy.exe` owns listener
+`10.99.0.2:8243`, and Denetim-local `Test-NetConnection 10.99.0.2 -Port 8243`
+succeeds. From `staging-sw`, the route/handshake to Denetim remains present and
+TCP/8200 still works, but TCP/8243 still times out. The test `audio-gateway`
+pod also times out on `https://10.99.0.2:8243/health` and on the
+`live-stt.denetim` SNI/resolve variant. Therefore the remaining
+`platform-ai#198` blocker is no longer Caddy process persistence or an
+IPv6-only listener; it is host/network enforcement below or outside Windows
+Firewall's visible allow rules, most likely ESET/WFP/central endpoint policy on
+inbound 8243.
+
+Acceptance boundary: direct-STT remains disabled, no raw audio was sent, no
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE` or `/transcribe` e2e was proven, and
+`platform-ai#198` remains open until `live-stt-preflight` evidence proves route,
+TCP, TLS server identity, valid client mTLS, wrong/no-client fail-closed, and an
+operator/reviewer accepts the evidence. Rollback for the host-side change is to
+stop/delete `CaddyI7AppMtls`, stop `caddy.exe`, restore the backed-up Caddyfile,
+and remove the additive program firewall rule if the endpoint owner requests it.
+
+## Live Delta — Faz 24 I7 app-mTLS evidence verifier packaged (2026-06-25)
+
+`platform-ai#198` remains the immediate runtime blocker before any bounded
+direct-STT compute-plane smoke. A read-only `staging-sw` probe still shows a WG
+route to Denetim (`10.99.0.2 dev wg0 src 10.99.0.1`), but TCP/8243 from
+staging fails. This is consistent with the prior host-policy / WFP / ESET /
+central allowlist blocker and is not a GitOps digest rollout problem.
+
+Follow-up live narrowing after the verifier merge found a more specific
+runtime shape: Denetim still has plaintext Python services listening on `8200`
+and `8300`, `C:\caddy\Caddyfile` defines `live-stt.denetim:8243` with
+`client_auth require_and_verify`, and Windows Firewall has an enabled inbound
+allow rule `WG-staging-caddy-mtls-8243` for remote `10.99.0.1` to local
+TCP/8243. However, Caddy is not running persistently: before the probe there
+was no Caddy process or `8243` listener; `caddy.exe start --config
+C:\caddy\Caddyfile` briefly reported a background process/listener, but
+follow-up staging/audio-gateway probes still timed out and a final Denetim
+check again showed no Caddy process/listener. `caddy-err.log` tail showed start
+and server-running messages, not a captured crash. The next concrete runtime
+dependency is therefore an approved persistent Caddy service/task/host-policy
+path, then a fresh `live-stt-preflight` evidence JSON through the verifier.
+
+The I7 evidence path now has a metadata-only verifier and ingest workflow:
+
+- `scripts/faz24/verify-i7-app-mtls-evidence.py` validates
+  `faz24.i7.app-mtls.evidence.v1` JSON.
+- `.github/workflows/faz24-i7-app-mtls-evidence-ingest.yml` ingests a base64
+  evidence JSON, runs the verifier, uploads a bounded artifact, and fails when
+  the evidence is rejected.
+- `docs/runbooks/RB-faz24-i7-app-mtls-evidence.md` defines two profiles:
+  `live-stt-preflight` for the immediate Denetim `8243` path needed before
+  #188/#182 smoke preparation, and `prod-gate` for the fuller I7 gate including
+  meeting-ai, request audit, plaintext-bypass closure, rotation, failure drill,
+  and redaction.
+
+Boundary: this is source/evidence packaging only. It does not mutate Denetim
+PC, Caddy, firewall/WFP/ESET, Vault PKI, Kubernetes, or production state. It
+does not enable direct-STT, does not send audio, does not prove
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE`, does not prove `/transcribe` e2e, and does
+not make #198 accepted until live metadata evidence passes and is reviewed.
+
+## Live Delta — Faz 24 direct-STT transcript result artifact test runtime evidence (2026-06-25)
+
+`platform-backend#753` merged commit
+`eed9027c5bd85f12192b302568630a9100724126` and moved one source-side slice of
+`platform-ai#182`: successful direct-STT `/transcribe` responses can now be
+routed to a default-off Redis transcript result stream. Backend image build run
+`28159840296` succeeded. `platform-k8s-gitops#2000` then merged
+`9a3d8eafbfac2602088ff1d2e210ef3d645c68f6` and aligned test overlay
+desired-state for the backend payload:
+
+- `audio-gateway-service=sha256:a584bd1f4ca964f0c2707813808e2454afb77a82d87f4624df6eb02788a100e3`
+- `endpoint-admin-service=sha256:c6be72d5ad469fb764bdd1eebf6a4df5bd49e28af3b04ce8151bb68ccbbb3da9`
+
+Runtime evidence:
+
+- First repository_dispatch run `28159921571` failed before live mutation because
+  `--fail-on-change` detected overlay drift. This is historical negative
+  evidence; it was not a runtime rollout.
+- Manual `deploy-backend-testai.yml` workflow_dispatch run `28160561477`
+  succeeded on `main` `9a3d8eafbfac2602088ff1d2e210ef3d645c68f6`.
+- Gate 1a digest verification recorded
+  `endpoint-admin-service-845b5948bf-zjngx -> sha256:c6be72d5ad469fb764bdd1eebf6a4df5bd49e28af3b04ce8151bb68ccbbb3da9`
+  and
+  `audio-gateway-677695fdc5-8l95l -> sha256:a584bd1f4ca964f0c2707813808e2454afb77a82d87f4624df6eb02788a100e3`.
+- Gate 1b public edge returned HTTP `401`, accepted as api-gateway edge chain
+  alive.
+- Gate 1c readiness returned `200` for both `endpoint-admin-service` and
+  `audio-gateway`.
+- Gate 1d stability passed for `endpoint-admin-service` across `180s` and
+  `audio-gateway` across `120s`.
+- Gate 2 JWT auth smoke was skipped because `SMOKE_AUTH_*` secrets are absent.
+- Post-run read-only `staging-sw` query confirmed both Deployments are `1/1`,
+  both pods are `ready=true`, and both restart counts are `0`.
+
+Boundary: this proves the #753 source artifact reached `k3d-test` with immutable
+digest, readiness, and stability evidence. It still does not enable direct-STT,
+does not prove `audio-gateway -> live-stt /transcribe`, does not prove transcript
+result stream emission, does not close the `platform-ai#188` compute-plane audit
+gate, and is not production readiness.
+
+## Live Delta — Faz 24 compute-plane audit evidence verifier packaged (2026-06-25)
+
+The `platform-ai#188` compute-plane audit evidence path now has a fail-closed
+verifier and runbook for the redacted Redis `audit:events` envelope:
+
+- `scripts/faz24/verify_compute_plane_audit_evidence.py` validates
+  `faz24.computePlaneAuditEvidence.v1` JSON before issue attachment.
+- The verifier requires `status=pass`, `tokenIncluded=false`,
+  `source.streamKey=audit:events`, Redis stream record id shape, event type
+  `CHUNK_FORWARDED_TO_COMPUTE_PLANE`, same `sessionId`, `meetingId`,
+  `chunkSeq`, `correlationId`, `sha256`, `byteLength`, and `computePlane`
+  between `expected` and `event`.
+- The verifier rejects raw audio, transcript text/segments, destination URL,
+  JWT/Bearer/Authorization/private-key shaped values, and sensitive response
+  keys before evidence is attached.
+- `docs/runbooks/RB-faz24-compute-plane-audit-smoke.md` defines the operator
+  evidence envelope and attachment rule for `platform-ai#188`.
+
+Boundary: this packages #188 evidence verification only. It is not a live
+direct-STT smoke, not a successful `audio-gateway -> live-stt /transcribe`
+transcript, not desktop mic/loopback evidence, not WG-B+ host/operator
+evidence, and not production readiness.
+
+## Live Delta — Faz 24 G-CAP aggregate capture gate verifier packaged (2026-06-25)
+
+The #1615 capture evidence path now has a metadata-only aggregate G-CAP verifier
+for capture reliability:
+
+- `scripts/faz24/verify_gcap_capture_gate_evidence.py` consumes only redacted
+  verifier summaries: `faz24.externalRecorderSmokeVerifier.v1` outputs from
+  `verify_external_recorder_smoke_evidence.py` and, after the 2026-06-27
+  hardening, `faz24.desktopCaptureEvidenceVerifier.v1` outputs from
+  `verify_desktop_capture_evidence.py`.
+- The verifier gates attempt count, distinct meeting/session coverage, success
+  rate, retry rate, and failure rate with explicit CLI thresholds. Defaults are
+  `min-attempts=5`, `min-distinct-meetings=5`, `min-distinct-sessions=5`,
+  `min-success-rate=0.95`, `max-retry-rate=0.10`, and
+  `max-failure-rate=0.05`.
+- `status=pass` means the submitted verifier set meets those aggregate G-CAP
+  thresholds. `status=blocked` means the evidence set is too small or coverage
+  is insufficient. `status=fail` means privacy/schema/overclaim rejection or an
+  enough-sample threshold miss.
+- The verifier rejects raw recorder smoke envelopes, raw desktop capture
+  envelopes, JWT/Bearer/Authorization shaped values, sensitive keys, raw
+  audio/transcript/prompt/response fields, and direct-STT / compute-plane audit /
+  production overclaims.
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` now includes
+  the aggregate command and attachment rule for
+  `/tmp/faz24-gcap-capture-gate.verify.json`.
+
+Boundary: this packages source-side G-CAP aggregate evaluation only. It is not a
+new live recorder run, not direct-STT transcript evidence, not same-session
+compute-plane audit evidence, and not production readiness. If desktop verifier
+summaries are included, `desktopMicLoopbackProven=true` means those submitted
+verifier summaries proved desktop mic+loopback for their attempts; it is not a
+fresh live desktop run or product-wide readiness claim.
+
+## Live Delta — Faz 24 G-OPS operability gate verifier packaged (2026-06-25)
+
+Faz 24 now has a metadata-only G-OPS verifier for on-prem/self-host
+operability evidence:
+
+- `scripts/faz24/verify_gops_operability_gate_evidence.py` validates
+  `faz24.gopsOperabilityEvidence.v1` JSON before issue attachment.
+- Required evidence classes are install, upgrade, backup, restore, rollback,
+  secret delivery, observability, and runbook.
+- Default thresholds are `max-install-minutes=120`,
+  `max-upgrade-minutes=90`, `max-backup-age-hours=24`,
+  `max-restore-rto-minutes=240`, `max-restore-rpo-minutes=1440`,
+  `max-rollback-rto-minutes=60`, `max-secret-rotation-minutes=60`, and
+  `min-observability-coverage=0.90`.
+- `status=pass` means the submitted redacted evidence meets those source-side
+  G-OPS thresholds. `status=blocked` means an evidence class is missing or too
+  weak. `status=fail` means a privacy/schema/overclaim rejection or an
+  enough-evidence threshold miss.
+- The verifier rejects credential/token-shaped values, raw audio/transcript
+  fields, prompt/response payloads, and live-production / production-readiness
+  overclaims.
+- `docs/runbooks/RB-faz24-gops-operability-gate.md` defines the evidence
+  envelope, threshold command, status semantics, and attachment rule.
+
+Boundary: this packages source-side G-OPS evaluation only. It is not a live
+install, upgrade, backup, restore, rollback, secret rotation, cluster mutation,
+customer on-prem pilot, or production readiness acceptance.
+
+## Live Delta — Faz 24 external recorder smoke evidence verifier packaged (2026-06-25)
+
+The #1615 external recorder evidence path now has a fail-closed verifier for
+the redacted runner envelope:
+
+- `scripts/faz24/verify_external_recorder_smoke_evidence.py` validates
+  `faz24.externalRecorderSmoke.v1` JSON before issue attachment.
+- The verifier requires `status=pass`, `tokenIncluded=false`, the exact
+  token-contract -> create-meeting -> consent -> start -> chunk -> finish ->
+  final-status step order, UUID-shaped meeting/capture ids, and `SES-`
+  session id shape.
+- The verifier rejects secret/JWT/Bearer/Authorization/private-key shaped
+  content and sensitive response keys.
+- The verifier preserves the boundary: external meeting-admin path and recorder
+  lifecycle may be accepted only when both are explicitly true, while
+  direct-STT, same-session compute-plane audit, desktop mic/loopback, and
+  production readiness must remain false in this evidence class.
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` now requires
+  operators to attach both `/tmp/faz24-external-recorder-smoke.json` and
+  `/tmp/faz24-external-recorder-smoke.verify.json` after confirming both have
+  `tokenIncluded=false`.
+
+Boundary: this packages evidence verification only. It is not a live
+`platform-desktop` token mutation, not a successful external smoke run, not
+direct-STT evidence, not compute-plane audit evidence, and not desktop
+mic/loopback evidence.
+
+## Live Delta — Faz 24 external recorder smoke runner packaged (2026-06-25)
+
+The next #1615 evidence step now has an operator-safe runner:
+
+- `scripts/faz24/run_external_recorder_smoke.py` validates the
+  `platform-desktop` token contract first, then runs external
+  `POST /api/v1/admin/meetings` plus `audio-gateway`
+  consent/session/chunk/finish/status through `testai.acik.com`.
+- The runner emits a redacted JSON envelope with
+  `schemaVersion=faz24.externalRecorderSmoke.v1` and `tokenIncluded=false`;
+  it never prints token material.
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` now points
+  operators at the runner instead of raw curl as the preferred #1615 evidence
+  path.
+
+Boundary: this is not live Keycloak mutation and not successful external smoke
+evidence by itself. It also does not prove direct-STT, same-session
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit, desktop mic/loopback, or production
+readiness. It only packages the next external acceptance evidence capture.
+
+## Live Delta — Faz 24 platform-desktop gateway audience preflight packaged (2026-06-25)
+
+The next #1615 external meeting-admin gate now has a docs/test helper package:
+
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` defines the
+  operator path for converging the `platform-desktop` token contract in
+  `platform-test`.
+- `scripts/keycloak/validate_faz24_platform_desktop_token_contract.py` decodes
+  a locally supplied JWT payload and emits a redacted JSON report; it never
+  prints token material and does not verify signatures.
+- The desired token contract is explicit: `azp=platform-desktop`, service
+  audiences `audio-gateway-service` and `meeting-service`, at least one
+  api-gateway-compatible audience (`frontend`, `account`, or `auth-service`),
+  `tenantId`, `companyId`, `userId`, and `MEETING_ADMIN`.
+
+Boundary: this is not a live Keycloak mutation, not a successful external
+`POST /api/v1/admin/meetings` smoke, not direct-STT evidence, and not
+compute-plane audit evidence. It only packages the next operator-safe
+preflight and redacted evidence format.
+
+## Live Delta — Faz 24 plan truth refreshed around independent product gates (2026-06-25)
+
+The Faz 24 canonical plan and `PLAN.md` roadmap row have been realigned with
+the current product decision and runtime boundary:
+
+- Faz 24 is now described as an independent meeting-intelligence product;
+  ERP/CRM vendor-specific framing is no longer a product dependency or primary
+  framing.
+- The canonical plan now separates infrastructure/runtime evidence from
+  market-ready product evidence. Recorder OpenFGA selector promotion and edge
+  lifecycle evidence remain accepted, but direct-STT transcript, same-session
+  compute-plane audit smoke, desktop mic/loopback, and WG-B+ I3/I6
+  host/operator evidence are still separate gates.
+- Sector-standard product tracks are explicit in the canonical plan: capture,
+  Turkish WER/DER quality, citation-backed intelligence, compliance
+  productization, integration parity, and on-prem/ops packaging.
+- This update does not change #1864 or #1867 acceptance status; both remain
+  `Needs Verify` until protected operator evidence is ingested, verifier PASS
+  is present, and reviewer acceptance is recorded.
+
+## Live Delta — Faz 24 WG-B+ I3 runner SSH identity stable; Denetim authorization blocker remains (2026-06-25)
+
+Faz 24 WG-B+ I3 management-audit evidence path source-ready olmaktan çıktı ve
+self-hosted `staging-sw` runner üzerinde canlı denendi. Runner-side `wg`
+binary prerequisite repair edildi, Denetim SSH exit `255`
+`ssh-auth-publickey` sınıfına ayrıldı, runner-local SSH identity üretildi ve
+son I3 run'ında collector tarafından aynı path hash'iyle görüldü. Buna rağmen
+Denetim PC hâlâ public-key auth'u kabul etmiyor; I3 verifier PASS değil. Bu
+kanıt direct-STT, app-mTLS, compute-plane audit veya direct audio e2e kabulü
+değildir.
+
+Ek source/evidence progress: Denetim-side authorized public key hizalaması için
+public-key-only operator package hattı main'e alındı ve identity artifact'inden
+başarılı package artifact'i üretildi. Package script artık `sshd` servisi
+`Running` değilse `status=blocked` / `reason=sshd-not-running` evidence'i
+yazıp non-zero çıkar; ayrıca Denetim-side evidence için metadata-only ingest
+workflow'u main'dedir. Bu Denetim PC mutation kanıtı değildir; operator'ın
+elevated Denetim PowerShell oturumunda paketi uygulaması, ingest verifier'ın
+PASS vermesi ve I3 verifier'ın tekrar PASS vermesi hâlâ gerekir.
+
+I3/I6 operator window için metadata-only handoff package hattı da main'e
+alındı. Bu handoff yalnız doğru run id, artifact, ingest komutu ve `Needs
+Verify` boundary bilgisini paketler; Denetim PC veya `staging-sw`'a bağlanmaz
+ve acceptance kanıtı değildir.
+
+Source/workflow chain:
+
+- `platform-k8s-gitops#1957` merge commit
+  `d90540bded29de8cb5fdd1bc0757e02ce1a0b5af` ile
+  `faz24-wg-bplus-i3-evidence.yml` workflow'unu, metadata-only collector'ı ve
+  mevcut verifier ile round-trip testlerini ekledi.
+- `platform-k8s-gitops#1958` merge commit
+  `d5477d5b8e4b10f98a0c4a570d72e3de44d68515` ile self-hosted runner Python
+  3.10 uyumluluğunu düzeltti.
+- `platform-k8s-gitops#1959` merge commit
+  `a44cb2b20fa4ae36ab190e1484418c7d71c505a5` ile staging WireGuard metadata
+  komutları için `sudo -n wg show ...` fallback'ini ekledi.
+- `platform-k8s-gitops#1961` merge commit
+  `ec6a1bfdd8cd7e002f3198ddb26b2f751bcea2c2` ile workflow default'unu
+  `wg_interface=auto` yaptı ve `wg show interfaces` auto-discovery metadata'sını
+  ekledi.
+- `platform-k8s-gitops#1962` merge commit
+  `8084a2b4136f6f4bed73638d7403d10d66c1952c` ile common `wg` binary path
+  resolution ekledi: `wg`, `/usr/bin/wg`, `/usr/sbin/wg`, `/usr/local/bin/wg`,
+  `/snap/bin/wg`, `/opt/homebrew/bin/wg`.
+- `platform-k8s-gitops#1964` squash merge commit
+  `98af5a89e27260f4a95156a8003a338406f01f75` ile controlled
+  `faz24-i3-runner-wg-tool-repair.yml` workflow'unu, runner-side repair
+  script'ini ve runbook rollback boundary'sini ekledi.
+- `platform-k8s-gitops#1966` squash merge commit
+  `a1ad0e9eb50164c5861b4bce45bca83c72941cb0` ile metadata-only
+  `collector.denetimSshPreflight` alanını ekledi: route probe, TCP 22
+  reachability, SSH failure class ve raw-output-free fingerprint. Bu alan
+  diagnostic/blocker-classification kanıtıdır; acceptance check'lerini
+  genişletmez.
+- `platform-k8s-gitops#1968` squash merge commit
+  `e8f9dad3035c89f4490ed7f6c3aeab5883ddff9e` ile controlled
+  `faz24-i3-runner-ssh-identity.yml` workflow'unu, runner-local identity
+  repair script'ini ve collector'ın configured identity'yi `-i` /
+  `IdentitiesOnly=yes` ile kullanmasını ekledi. Boundary: private key runner
+  local kalır; artifact yalnız metadata ve public key içerir.
+- `platform-k8s-gitops#1969` REST merge fallback commit
+  `b9bbedc659edaa1f8c3c5bbe564ad2e3840794b8` ile identity workflow ve I3
+  evidence workflow'unun aynı runner-workspace identity path'ini kullanmasını
+  sağladı. Bu düzeltme #1968 sonrası görülen path hash mismatch'ini giderdi.
+- `platform-k8s-gitops#1971` squash merge commit
+  `6ed74b27639c9818cf876819f870e70d72a66107` ile public-key-only
+  `faz24-i3-denetim-ssh-authorize-package.yml` workflow'unu, package builder'ı,
+  operator PowerShell script üretimini, runbook akışını ve testleri ekledi.
+  Workflow Denetim PC'ye bağlanmaz ve private key upload etmez.
+- `platform-k8s-gitops#1972` squash merge commit
+  `c133eb097d34290370c5069c4206f7645dd5898c` ile transient `input.pub`
+  dosyasını package artifact dizininin dışına taşıdı; artifact contract'ı
+  yalnız operator package dosyalarıyla sınırlı kaldı.
+- `platform-k8s-gitops#1973` squash merge commit
+  `8fd7d76882201cfb80d7afe61e271211c6c6e779` ile ilk package evidence'ını bu
+  current-state yüzeyine taşıdı ve I3 acceptance boundary'sini açık tuttu.
+- `platform-k8s-gitops#1974` squash merge commit
+  `66ed1f41e883a386b9d26f45fad1cc63ea8075e5` ile metadata-only
+  `faz24-i3-denetim-ssh-authorize-evidence-ingest.yml` workflow'unu,
+  `verify-i3-denetim-ssh-authorize-evidence.py` verifier'ını, raw
+  private/public key ve raw Windows profile path leak guard'larını ekledi;
+  generated package script'i `sshd` `Running` değilse PASS evidence yazmayacak
+  şekilde sertleştirdi. Boundary: workflow Denetim PC'ye bağlanmaz, host veya
+  cluster mutasyonu yapmaz ve #1864 kabul kanıtı değildir.
+- `platform-k8s-gitops#1991` merge commit
+  `71e1f6a2f3d6439f3432debcb71cb89eb075df08` ile I3/I6 operator window için
+  metadata-only `faz24-wg-bplus-operator-handoff.yml` workflow'unu, builder'ı,
+  testleri ve I3/I6 runbook referanslarını ekledi. Boundary: workflow yalnız
+  `README.md`, `faz24-wg-bplus-operator-handoff.json` ve `SHA256SUMS`
+  artifact'i üretir; Denetim PC, `staging-sw`, host, cluster, WireGuard,
+  platform-ai, secret veya production state'e bağlanmaz/değişiklik yapmaz.
+
+Live workflow evidence:
+
+- Runner prerequisite repair workflow run `28140583560`, `main`
+  `98af5a89e27260f4a95156a8003a338406f01f75` üzerinde `success` verdi.
+- Runner repair artifact:
+  `faz24-i3-runner-wg-tool-28140583560` / artifact id `7866580976`.
+- Runner repair JSON:
+  `status=pass`, `reason=wg-tool-installed`, `packageManager=apt-get`,
+  `installAttempted=true`, `installed=true`, `wgToolFound=true`,
+  `wgToolSelected=wg`, `wgToolProbeExitCode=0`.
+- Runner SSH identity workflow run `28142166373`, `main`
+  `b9bbedc659edaa1f8c3c5bbe564ad2e3840794b8` üzerinde `success` verdi.
+- Runner SSH identity artifact:
+  `faz24-i3-runner-ssh-identity-28142166373`.
+- Runner SSH identity JSON:
+  `status=pass`, `reason=runner-ssh-identity-available`, `keyCreated=true`,
+  `keyPathHash=01aca9ec388cd6fa`, `publicKeyCopiedToArtifact=true`,
+  `privateKeyCopiedToArtifact=false`.
+- SSH identity artifact files yalnız `ssh-identity.json`,
+  `ssh-identity-summary.txt` ve `faz24-i3-denetim_ed25519.pub` içerdi; private
+  key artifact'e taşınmadı. Public key fingerprint:
+  `SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`.
+- Denetim SSH authorize package workflow run `28143384078`, `main`
+  `c133eb097d34290370c5069c4206f7645dd5898c` üzerinde `success` verdi.
+- Denetim SSH authorize package artifact:
+  `faz24-i3-denetim-ssh-authorize-package-28143384078`.
+- Package artifact doğrulanan dosya seti yalnız `README.md`, `SHA256SUMS`,
+  `authorize-denetim-i3-public-key.ps1`,
+  `expected-public-key-metadata.json` ve `faz24-i3-denetim_ed25519.pub`.
+- Package metadata:
+  `schemaVersion=faz24.i3.denetim.ssh-authorize-package.v1`,
+  `targetUser=svc-denetim-agent`, `sourceIdentityRunId=28142166373`,
+  `publicKeyFingerprint=SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`,
+  `publicKeyLineSha256=83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff`,
+  `publicKeyBlobSha256=e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756`,
+  `privateKeyIncluded=false`,
+  `rawPublicKeyIncludedInMetadata=false`.
+- Package artifact content scan:
+  `contains_openssh_private=false`, `contains_rsa_private=false`,
+  `contains_bearer=false`.
+- Hardened Denetim SSH authorize package workflow run `28144138366`, `main`
+  `66ed1f41e883a386b9d26f45fad1cc63ea8075e5` üzerinde `success` verdi.
+- Hardened package artifact:
+  `faz24-i3-denetim-ssh-authorize-package-28144138366`.
+- Hardened package artifact doğrulanan dosya seti yine yalnız `README.md`,
+  `SHA256SUMS`, `authorize-denetim-i3-public-key.ps1`,
+  `expected-public-key-metadata.json` ve `faz24-i3-denetim_ed25519.pub`.
+- Hardened package metadata:
+  `targetUser=svc-denetim-agent`, `sourceIdentityRunId=28142166373`,
+  `publicKeyFingerprint=SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`,
+  `publicKeyLineSha256=83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff`,
+  `publicKeyBlobSha256=e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756`,
+  `privateKeyIncluded=false`,
+  `rawPublicKeyIncludedInMetadata=false`.
+- Hardened package local artifact verification:
+  file SHA256SUMS matched, private key marker absent, bearer marker absent,
+  metadata raw public key absent, and generated PowerShell contains
+  `sshd-not-running` plus `$sshdStatusAfter -ne 'Running'`.
+- Operator handoff workflow run `28153244360`, `main`
+  `71e1f6a2f3d6439f3432debcb71cb89eb075df08` üzerinde `success` verdi.
+  Artifact: `faz24-wg-bplus-operator-handoff-28153244360`.
+- Handoff artifact doğrulanan dosya seti yalnız `README.md`, `SHA256SUMS` ve
+  `faz24-wg-bplus-operator-handoff.json`. `sha256sum --check SHA256SUMS` tüm
+  dosyalar için OK döndü; private-key/Bearer/JWT-like taraması boş döndü.
+  Manifest `i3.boardStatus=Needs Verify`, `i6.boardStatus=Needs Verify`,
+  `operatorExecutionRequired=true`, `verifierPassRequired=true`,
+  `reviewerAcceptanceRequired=true`, `packageBuildDenetimMutation=false`,
+  `packageBuildStagingMutation=false`, `packageBuildProductionMutation=false`,
+  `containsSecrets=false`, `containsRawCommandOutput=false` beyan ediyor.
+- Latest I3 evidence workflow run `28150424752`, `main`
+  `97ebe1ee87d9a7fb7a02ddc82781bae1a47f4b53` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi.
+- I3 evidence artifact:
+  `faz24-wg-bplus-i3-evidence-28150424752`.
+- Artifact redaction flags:
+  `rawAudioIncluded=false`, `rawTranscriptIncluded=false`,
+  `secretMaterialIncluded=false`, `commandContentIncluded=false`.
+- Verifier result: `Faz24 WG-B+ I3 evidence: FAIL`.
+
+Bounded blocker facts:
+
+- Runner-side `wg` discovery eski blocker olmaktan çıktı:
+  `stagingWireGuardProbe.wgToolFound=true`,
+  `stagingWireGuardProbe.interfacesQueryable=true`, `selectedInterface=wg0`.
+- Runner SSH identity path mismatch eski blocker olmaktan çıktı:
+  identity workflow `keyPathHash=01aca9ec388cd6fa`, I3 collector
+  `sshIdentityPathHash=01aca9ec388cd6fa`, `hashes_match=true`,
+  `sshIdentityConfigured=true`, `sshIdentityPublicKeyPresent=true`.
+- `remoteCollectorReached=false`.
+- Denetim SSH preflight artık endpoint TCP 22 erişilebilirliğini ve auth
+  sınıfını ayırıyor:
+  `denetimSshPreflight.tcp22Reachable=true`, `sshExitCode=255`,
+  `sshFailureClass=ssh-auth-publickey`, `sshStderrPresent=true`,
+  `sshErrorFingerprint=9d559fc5b2396bc2`.
+- TCP 22 erişimi endpoint socket'in runner'dan ulaşılabilir olduğunu
+  kanıtlıyor; kalan hata public-key authorization yüzeyinde.
+- Denetim SSH metadata collector all Denetim-side checks için exit `255`
+  vermeye devam ediyor; raw stderr artifact'e taşınmadı.
+- `stagingWireGuardProbe.requested=auto`.
+- `stagingWireGuardProbe.selectedLatestExitCode=1`,
+  `selectedTransferExitCode=1`, `selectedEndpointsExitCode=1`.
+- `stagingJournalQueryable=true`, fakat `stagingJournalMatchCount=0`.
+- `stagingWireGuardQueryable=false` ve `stagingWireGuardPeerCount=0`.
+- `stagingSshSocketQueryable=false`, `stagingSshSocketCount=0`.
+- Required I3 checks hâlâ fail:
+  `openssh-event-log`, `powershell-transcription`,
+  `powershell-script-block`, `failed-login`, `wireguard-health`,
+  `eset-firewall-drift`, `time-sync`, `staging-connection-log`.
+
+Boundary / next:
+
+- `platform-k8s-gitops#1864` I3 acceptance açık kalır; verifier PASS olmadan
+  accepted/readiness dili kullanılmaz.
+- Sonraki kanıt işi artık runner-side `wg` binary erişimi, identity path
+  visibility veya TCP 22 reachability değildir; Denetim PC
+  `svc-denetim-agent` authorized public key set'i, artifact'te verilen runner
+  public key ile hizalanmalıdır. Public-key-only hardened package artifact'i ve
+  Denetim-side metadata ingest workflow'u hazırdır; sıradaki bounded iş
+  `faz24-wg-bplus-operator-handoff-28153244360` içindeki I3 sıra/komutlarıyla
+  elevated Denetim operator execution evidence'i, ingest verifier PASS'i ve
+  ardından I3 evidence workflow rerun'ıdır. Repo Actions secret/variable
+  yüzeyinde `SSH`, `DENETIM`, `WG`, `FAZ24` veya `KEY` ile eşleşen kullanılabilir
+  credential adı bulunmadı.
+- Bu management-plane evidence, `platform-ai#198` Denetim `8243` app-mTLS,
+  `platform-ai#188` compute-plane audit smoke veya `platform-ai#182` direct
+  audio e2e acceptance'ı yerine geçmez.
+- Project #2 / board truth: `scripts/board-sync.sh sync-state 1864` son
+  kontrolde board `Status=Needs Verify`, body `status=needs-verify`,
+  `claim=unclaimed` döndürdü. Latest REST-backed evidence comment #1864'e
+  yazıldı:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4796367521`.
+
+## Live Delta — Faz 24 WG-B+ I6 operator package and handoff ready (historical pre-acceptance, 2026-06-25)
+
+Faz 24 WG-B+ I6 pod-CIDR -> WG MASQ işi source/contract seviyesinde
+main'e alındı ve operator-run için metadata-only host-evidence package
+workflow'u ve I3/I6 operator handoff package hattı hazırlandı, fakat runtime
+acceptance hâlâ açık. Bu delta yalnız I6 kanıt ingest/verifier, runbook,
+operator package ve coordination package yüzeyinin hazır olduğunu söyler;
+gerçek host/WG path'inden metadata-only evidence üretilip verifier PASS
+alınmadan I6 kabul edilmiş sayılmaz.
+
+Historical boundary: this section records the pre-acceptance package/handoff
+state. It was later superseded by live I6 verifier PASS, GitHub ingest run
+`28165629939`, Claude `AGREE_ACCEPT`, deliberate close of #1867, and Project
+#2 `Done`, recorded in the top I6 acceptance delta.
+
+Source/contract evidence:
+
+- `platform-k8s-gitops#1976` squash merge commit
+  `19c2d7ce76133ecf938800f0f56fb49067b5cf54` ile
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'unu,
+  `scripts/faz24/verify-wg-bplus-i6-masq-evidence.py` verifier'ını,
+  `docs/runbooks/RB-faz24-wg-bplus-i6-pod-cidr-wg-masq.md` runbook'unu ve
+  verifier testlerini ekledi.
+- Main üzerindeki bu SHA için gözlenen checks `success`: CodeQL, CI —
+  Kustomize Build + Lint, gate-secrets, ADR-0031 Cross-Repo Enum Drift Guard
+  ve Runtime PR Auto-close Guard.
+- Verifier contract'ı host-managed `iptables`/systemd mekanizmasını bekler;
+  Kubernetes DaemonSet assumption'ı, broad LAN NAT, raw output/audio/transcript,
+  secret-like değerler, absolute/parent-traversal evidence ref'leri ve drift
+  hash mismatch'i acceptance dışıdır.
+- `platform-k8s-gitops#1978` squash merge commit
+  `c9f240ea58aaa325c1befb0c352d2b559b2d4bd7` ile self-hosted `staging-sw`
+  runner üzerinde çalışan metadata-only I6 collector workflow/script'ini
+  ekledi. Default collector mode read-only ve fail-closed kalır; host
+  iptables/nftables, WireGuard, Kubernetes object, platform-ai veya production
+  state mutate etmez.
+- `platform-k8s-gitops#1979` squash merge commit
+  `f9c04982737c60ac7b0b0f65b6abd9903db43a95` ile collector'ın `ip`,
+  `iptables`, `systemctl`, `kubectl` ve `wg` komutları için common absolute
+  path fallback'ini ekledi. Bu düzeltme ilk collector run'ında görülen
+  admin-tool `127` sınıfını path ekseninde daraltmak içindir; acceptance kanıtı
+  değildir.
+- `platform-k8s-gitops#1981` squash merge commit
+  `ebc8c2fdd7873fdfbff943cf6f84f8b550d9892d` ile collector'ın host evidence
+  fallback zincirini genişletti: `systemctl` ve `ip route get` için `sudo -n`
+  variant'ları, NAT metadata için `iptables`, `iptables-nft`,
+  `iptables-legacy` ve `iptables-save -t nat` variant'ları eklendi. Bu da
+  source/tooling düzeltmesidir; acceptance kanıtı değildir.
+- `platform-k8s-gitops#1983` squash merge commit
+  `dffff98b71cf7750333ac9a06bce53caaef6cfa8` ile collector'a read-only
+  `nsenter` host namespace variant'ları eklendi ve `first_success` fallback'i
+  non-missing failure exit code'larını koruyacak şekilde düzeltildi. Bu da
+  host evidence sınıflandırmasını daraltan source/tooling düzeltmesidir;
+  acceptance kanıtı değildir.
+- `platform-k8s-gitops#1985` squash merge commit
+  `97ebe1ee87d9a7fb7a02ddc82781bae1a47f4b53` ile I6 collector'a
+  `--protected-evidence-path` override'ı, workflow'a opsiyonel protected path
+  input'u, runbook'a operator-collected host evidence fallback'i ve collector
+  round-trip testleri eklendi. Bu operator/root evidence üretim yolunu açan
+  source/runbook desteğidir; host, WireGuard, Kubernetes object, platform-ai,
+  secret veya production mutation yapmaz ve acceptance kanıtı değildir.
+- `platform-k8s-gitops#1987` merge commit
+  `ab4c70caad0c39110067a901551d748b97c4a890` ile I6 host evidence için
+  metadata-only operator package workflow'u, package builder'ı, testleri ve
+  runbook §6.1 operator-package adımı eklendi. Workflow `staging-sw`'a
+  bağlanmaz; yalnız wrapper, expected metadata JSON, README ve `SHA256SUMS`
+  artifact'i üretir. Bu operator'a bounded evidence collection yolu verir ama
+  tek başına runtime acceptance kanıtı değildir.
+- `platform-k8s-gitops#1988` merge commit
+  `407f5dd9aab45b029f46152c649ee386bd94e650` ile operator package workflow
+  checksum doğrulaması package dizininde çalışacak şekilde düzeltildi. Bu
+  workflow verification hygiene düzeltmesidir; host/WG evidence yerine geçmez.
+- `platform-k8s-gitops#1991` merge commit
+  `71e1f6a2f3d6439f3432debcb71cb89eb075df08` ile I3/I6 operator handoff
+  workflow'u, builder'ı, testleri ve I3/I6 runbook referansları eklendi. Bu
+  coordination artifact doğru run id, artifact, ingest komutu ve `Needs
+  Verify` boundary bilgisini paketler; host/WG evidence veya acceptance yerine
+  geçmez.
+
+Runtime/live collector evidence:
+
+- Collector workflow run `28145968109`, `main`
+  `c9f240ea58aaa325c1befb0c352d2b559b2d4bd7` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi. Artifact:
+  `faz24-wg-bplus-i6-masq-collect-28145968109`.
+- Path fallback sonrası collector workflow run `28146163383`, `main`
+  `f9c04982737c60ac7b0b0f65b6abd9903db43a95` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi. Artifact:
+  `faz24-wg-bplus-i6-masq-collect-28146163383`.
+- Genişletilmiş fallback sonrası collector workflow run `28146507775`, `main`
+  `ebc8c2fdd7873fdfbff943cf6f84f8b550d9892d` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi. Artifact:
+  `faz24-wg-bplus-i6-masq-collect-28146507775`.
+- `nsenter` fallback sonrası collector workflow run `28149700182`, `main`
+  `dffff98b71cf7750333ac9a06bce53caaef6cfa8` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi. Artifact:
+  `faz24-wg-bplus-i6-masq-collect-28149700182`.
+- Operator package workflow run `28151747361`, `main`
+  `407f5dd9aab45b029f46152c649ee386bd94e650` üzerinde çalıştı ve workflow
+  conclusion `success` verdi. Artifact:
+  `faz24-i6-host-evidence-package-28151747361`.
+- Download edilen package artifact'i lokal doğrulamada beklenen 4 dosyayı
+  içerdi: `collect-staging-i6-host-evidence.sh`,
+  `expected-i6-host-evidence-metadata.json`, `README.md`, `SHA256SUMS`.
+  `sha256sum --check SHA256SUMS` tüm dosyalar için OK döndü ve wrapper
+  `bash -n` kontrolünden geçti. Artifact secret/raw-output taraması private
+  key, Bearer/JWT-like veya raw command output marker'ı bulmadı.
+- Package metadata boundary:
+  `hostMutationByPackageBuild=false`, `hostMutationByWrapper=false`,
+  `wireGuardMutation=false`, `clusterObjectMutation=false`,
+  `platformAiMutation=false`, `productionMutation=false`; redaction flags
+  `secretMaterialIncluded=false`, `rawCommandOutputIncluded=false`,
+  `rawPacketCaptureIncluded=false`, `rawAudioIncluded=false`,
+  `rawTranscriptIncluded=false`.
+- Operator handoff workflow run `28153244360`, `main`
+  `71e1f6a2f3d6439f3432debcb71cb89eb075df08` üzerinde `success` verdi.
+  Artifact: `faz24-wg-bplus-operator-handoff-28153244360`. Local doğrulamada
+  `README.md`, `SHA256SUMS` ve `faz24-wg-bplus-operator-handoff.json`
+  bulundu, `sha256sum --check SHA256SUMS` OK döndü ve secret/private-material
+  taraması boş döndü. Manifest `i6.boardStatus=Needs Verify`,
+  `operatorExecutionRequired=true`, `verifierPassRequired=true`,
+  `packageBuildStagingMutation=false`, `packageBuildProductionMutation=false`
+  sınırını koruyor.
+- Latest collector metadata:
+  `schemaVersion=faz24.wg-bplus.i6.pod-cidr-wg-masq.v1`,
+  `status=blocked`, verifier `status=fail`, `findingCount=10`.
+- Redaction flags all false:
+  `secretMaterialIncluded=false`, `rawCommandOutputIncluded=false`,
+  `rawPacketCaptureIncluded=false`, `rawAudioIncluded=false`,
+  `rawTranscriptIncluded=false`.
+- Positive live facts: `wgInterface=wg0`, `wg.autoDetected=true`,
+  `wg.interfaceCount=1`, `pod-to-platform-ai-http=pass` with bounded `4xx`
+  status class, and `daemonset-not-assumed=pass`.
+- Remaining I6 blocked checks from latest run:
+  `host-namespace-nat-rule-present`, `pod-cidr-to-wg-masq-rule`,
+  `reboot-persistence`, `drift-detect`, `rollback-defined`,
+  `no-broad-lan-nat`.
+- Narrowed host evidence blocker: latest run `28149700182` reports
+  `collector.route.probeExitCode=1`, `collector.iptables.probeExitCode=1` and
+  `collector.systemd.showExitCode=1` after direct, sudo, iptables-variant and
+  read-only `nsenter` paths. The current self-hosted runner environment sees
+  WireGuard and can execute a pod-origin HTTP probe, but it still does not
+  expose acceptable host namespace `ip`/`iptables`/`systemctl` metadata to
+  prove NAT, drift and rollback.
+
+Runtime/live boundary at this historical point:
+
+- Eski runbook/handoff yüzeyinde `k3d-wg-masq` ve pod -> WG -> `live-stt:8200`
+  için prose/historical test-leg kanıtı var; bu yeni I6 verifier üzerinden
+  normalize edilmiş PASS evidence değildir.
+- The then-next bounded work was:
+  `faz24-wg-bplus-operator-handoff-28153244360` içindeki
+  I6 sıra/komutlarıyla `faz24-i6-host-evidence-package-28151747361`
+  artifact'ini `staging-sw` üzerinde clean repo checkout'tan operator olarak
+  çalıştırıp `RB-faz24-wg-bplus-i6-pod-cidr-wg-masq.md` §6.1 boundary'sine
+  uygun protected metadata-only host evidence JSON'u üretmek ve
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'u ile ingest etmektir.
+  This work later produced verifier PASS and reviewer acceptance as recorded in
+  the top I6 acceptance delta.
+- Bu kanıt direct-STT Functional, I3 management audit, platform-ai app-mTLS veya
+  production cutover kabulü yerine geçmez.
+- Historical Project #2 / board truth at that point:
+  `scripts/board-sync.sh sync-state 1867` son başarılı
+  kontrolde board `Status=Needs Verify`, body `status=needs-verify`,
+  `claim=unclaimed` döndürdü. Latest REST-backed evidence comment #1867'ye
+  yazıldı:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4796544994`.
+
+## Live Delta — Faz 24 direct-STT #182 metadata-only e2e verifier packaged; Functional gate açık (2026-06-26)
+
+Faz 24 #182 now has a source-side evidence contract for the future
+direct-STT e2e smoke. `scripts/faz24/verify_direct_stt_e2e_evidence.py` and
+`.github/workflows/faz24-direct-stt-e2e-evidence-ingest.yml` validate a bounded
+`faz24.directSttE2eEvidence.v1` JSON artifact before any #182 acceptance claim.
+
+The verifier requires real `audio-gateway` pod evidence from
+`k3d-test/platform-test`, `AUDIO_GATEWAY_DIRECT_STT_ENABLED=true`,
+`live-stt.denetim:8243` mTLS health HTTP 200 with mounted client certificate
+material, same session/chunk/correlation across lifecycle, `/transcribe` HTTP
+200, `transcript:direct-stt-results`, and
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE`, plus metadata-only persistence boundary
+flags. It rejects PEM values, tokens, raw command output, destination URLs,
+raw audio, raw transcript text, transcript segments, and raw packet captures.
+
+Boundary:
+
+- This is source-side acceptance guardrail packaging only.
+- It does not seed Vault, map ESO keys, flip direct-STT on, send audio, or
+  produce a live transcript.
+- `platform-ai#182` remains open until the verifier passes on live e2e
+  evidence after the credential seed + ESO mapping + flag flip path.
+- `platform-ai#198` full I7, desktop mic/loopback, product pilot, and
+  production readiness remain separate gates.
+
+## Live Delta — Faz 24 direct-STT egress/SNI path and default-off mTLS wiring live; Functional gate açık (2026-06-26)
+
+Faz 24 direct-STT hattında önceki digest/up kanıtının üstüne iki kalıcı
+GitOps adımı daha canlıya taşındı. `audio-gateway` artık Denetim
+`live-stt.denetim:8243` yoluna timeout olmadan erişebiliyor ve durable
+direct-STT mTLS/SNI ayarlarını default-off taşıyor. Bu kanıt cross-server
+transit readiness seviyesindedir; `platform-ai#182` Functional acceptance
+değildir.
+
+Source, GitOps ve live rollout zinciri:
+
+- `platform-backend#768` merged direct-STT multipart media-type fix'i taşıdı.
+  `platform-k8s-gitops#2061` bu artifact'i testai overlay'e pinledi:
+  `audio-gateway-service@sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`.
+- `platform-k8s-gitops#2062` merged commit
+  `7288bbd2c2aabcd7adb6b4a4a848e063c6eed593` ile test overlay'e
+  `allow-audio-gateway-egress-live-stt-mtls` NetworkPolicy ekledi:
+  pod selector `app.kubernetes.io/name=audio-gateway`, destination
+  `10.99.0.2/32`, TCP/8243.
+- #2062 canlı evidence: real `audio-gateway` pod image digest'i
+  `sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`;
+  pod içinden `https://10.99.0.2:8243/health` çağrısı 55 ms içinde Caddy/TLS
+  seviyesine ulaştı ve timeout yerine SNI/Host mismatch kaynaklı HTTP 421
+  döndürdü. tcpdump SYN/SYN-ACK/TLS payload'ı `wg0` üzerinde
+  `10.99.0.1 -> 10.99.0.2:8243` olarak gördü.
+- `platform-k8s-gitops#2063` merged commit
+  `b860f1818091e2c6cf7106a8c01b6cdac244832e` ile durable default-off wiring'i
+  taşıdı: `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`,
+  `AUDIO_GATEWAY_DIRECT_STT_TRANSCRIBE_URL=https://live-stt.denetim:8243/transcribe`,
+  TLS path'leri `/etc/direct-stt-mtls/direct-stt-*.{crt,key}`,
+  result stream `transcript:direct-stt-results`, hostAlias
+  `live-stt.denetim -> 10.99.0.2`, `fsGroup=1000`, and read-only
+  `/etc/direct-stt-mtls` mount from dedicated
+  `audio-gateway-direct-stt-mtls`.
+- #2063 canlı evidence: staging-sw `k3d-test/platform-test`
+  `deployment/audio-gateway` rollout status successful; live pod
+  `audio-gateway-769cc7745c-46st4` Running/Ready, restartCount `0`, imageID
+  `ghcr.io/halildeu/platform-backend-audio-gateway-service@sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`;
+  pod içinden `direct_stt_enabled=false`, `/etc/hosts` contains
+  `10.99.0.2 live-stt.denetim`, `/etc/direct-stt-mtls` mount present,
+  readiness endpoint OK. `curl https://live-stt.denetim:8243/health` reaches
+  TLS in 42 ms and returns HTTP `000` because client certificate files are not
+  seeded yet; this is expected pre-seed behavior, not transcript evidence.
+- Live ExternalSecret boundary: `audio-gateway-secrets` maps only
+  `SPRING_DATA_REDIS_PASSWORD<-kv/platform/audio-gateway-service/redis_password`.
+  Direct-STT cert/key material belongs to dedicated
+  `audio-gateway-direct-stt-mtls`, whose target keys
+  `direct-stt-ca.crt`, `direct-stt-client.crt`, and
+  `direct-stt-client.key` remain absent/unproven until Vault seed + ESO sync.
+
+Boundary:
+
+- Direct-STT remains disabled in live config; the pod does not read missing
+  mTLS files while `AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`.
+- This removes the earlier NetPol/WireGuard timeout blocker for the real
+  `audio-gateway` pod and stages SNI-safe hostname routing, but it does not
+  prove `/transcribe` response handling, Redis result-stream emission, or
+  metadata-only no-persistence behavior.
+- `platform-ai#182` remains open until Vault/ESO seed, direct-STT flag flip,
+  and same-session `/transcribe` evidence show lifecycle status,
+  `CHUNK_FORWARDED_TO_COMPUTE_PLANE`, `transcript:direct-stt-results`, and no
+  raw audio/transcript persistence outside the accepted contract.
+- `platform-ai#198` full I7 remains a separate gate: app-mTLS 8243 path is
+  usable for this slice, but meeting-ai 8343, PKI rotation/secret delivery,
+  request audit, plaintext-bypass remediation, failure drill, and
+  reviewer/operator acceptance are still separate.
+
+Runbook:
+
+- `docs/runbooks/RB-faz24-direct-stt-mtls-enable.md` now records the two-gate
+  guarded path: seed + ESO mapping -> metadata-only mTLS enablement preflight
+  PASS while direct-STT is still disabled -> flag flip -> metadata-only e2e
+  verifier PASS after `/transcribe` result-stream evidence.
+
+## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
+
+Faz 24 direct-STT source artifact ve GitOps desired-state hattı,
+`audio-gateway` için mTLS-capable artifact'i test overlay'e ve canlı
+`k3d-test` / `platform-test` rollout hattına taşıdı. Bu kanıt D30 digest pin
+ve D29 Up/stability seviyesindedir; direct-STT Functional kabul kanıtı değildir.
+
+Source ve desired-state zinciri:
+
+- `platform-backend#751` merged direct-STT HTTPS+mTLS client wiring'i
+  `main` branch'e taşıdı. Merge commit:
+  `116f150352b4c6f827844c5ddfafee4de67ab61e`.
+- Backend image build run `28135463780` workflow conclusion `success` verdi ve
+  dispatch digest map'i 15 servis üretti. Bu map içinde
+  `audio-gateway-service=sha256:257d2bf05688de5eaebbb7ec52a873eeb3849a9ac7223950f3e6767a7dfbe0ff`
+  ve
+  `endpoint-admin-service=sha256:9890a4341eed25c43770d06b9ad0a74b3a9100042873d294a1b729aeddb630d2`
+  vardı.
+- `platform-k8s-gitops#1954` merged commit
+  `e555bfadef2ce853d1688b20b89ff743b7c0e571` ile
+  `deploy-backend-testai.yml` automation'ını 10-service rollout'a genişletti,
+  `audio-gateway-service -> deployment/audio-gateway container/audio-gateway`
+  mapping'ini explicit hale getirdi ve test overlay digest pin'lerini yukarıdaki
+  `audio-gateway-service` / `endpoint-admin-service` digest'leriyle hizaladı.
+
+Live rollout evidence:
+
+- `deploy-backend-testai.yml` workflow_dispatch run `28136094253`, `main`
+  `e555bfadef2ce853d1688b20b89ff743b7c0e571` üzerinde workflow conclusion
+  `success` verdi.
+- Auto-extract fallback test overlay'den `audio-gateway-service` digest'ini
+  buldu; rollout step'i `Digest-pin mode active (15 services in payload)`
+  satırını verdi.
+- Sequential rollout `10 service` olarak çalıştı. `endpoint-admin-service`
+  `sha256:9890a4341eed25c43770d06b9ad0a74b3a9100042873d294a1b729aeddb630d2`
+  digest'ine, `audio-gateway` ise
+  `sha256:257d2bf05688de5eaebbb7ec52a873eeb3849a9ac7223950f3e6767a7dfbe0ff`
+  digest'ine verify edildi.
+- Gate 1c per-service in-cluster readiness listesine `audio-gateway` eklendi
+  ve readiness `200` verdi.
+- Gate 1d stability window `audio-gateway` için `120s` PASS, `endpoint-admin`
+  hattı için `180s` PASS ve `api-gateway` için `120s` PASS verdi.
+- Gate 2 JWT auth flow smoke `SMOKE_AUTH_*` repo secrets absent olduğu için
+  skipped/warn-only kaldı.
+- Test-overlay auto-PR sync job source-ready durumda, fakat
+  `AUTOMATION_APP_ID` / `AUTOMATION_APP_PRIVATE_KEY` repo secrets absent veya
+  incomplete olduğu için operator-disabled kaldı.
+
+Boundary:
+
+- Bu kanıt yeni `audio-gateway` artifact'inin test ortamında immutable digest
+  ile taşındığını, pod image digest doğrulamasını, readiness ve stability
+  seviyelerini gösterir.
+- Test overlay comment'leri ve base config hâlâ `AUDIO_GATEWAY_DISPATCHER_MODE`
+  için Redis yolunu gösteriyor; bu pin direct-STT flag flip yapmaz.
+- Direct-STT Functional acceptance hâlâ açık: `platform-ai#188` aynı
+  session/chunk/correlation için `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit
+  smoke ister; `platform-ai#182` `audio-gateway -> live-stt /transcribe`
+  no-persistence e2e ister.
+- `platform-ai#198` Denetim PC `8243` app-mTLS host-policy/WFP/ESET gate
+  hâlâ direct compute-plane smoke önündeki ana runtime blocker'dır. Daha önceki
+  packet evidence WireGuard yolunun SYN paketini Denetim PC'ye ulaştırdığını,
+  ancak `8243` için SYN-ACK dönmediğini göstermişti; bu nedenle blocker staging
+  route veya GitOps digest pin değil, Denetim host-policy/TCP processing
+  yüzeyidir.
+
+## Live Delta — Faz 24 OpenFGA meeting/transcript object model verified, selector pending (2026-06-24)
+
+Faz 24 recorder e2e hit a real OpenFGA model blocker: `meeting-service`
+creates canonical meetings by writing `meeting:<uuid>#owner@user:<id>`, but the
+active test model `01KS8QE8T1EJ2DF5CRS4VV9YX1` contains only 15 types and does
+not include `meeting` or `transcript`.
+
+Append-only test-store model write created verified model
+`01KVXG15ETYAHMHANFD0E5CVK8` with content digest
+`sha256:34d59b2230ea944ae1c2a1d9d27dc36baf3ee90f5514600cd007b215b7e642df`.
+The new model preserves all existing 15 types and adds only `meeting` and
+`transcript` object ReBAC types (`blocked`, `owner`, `participant`, `viewer`).
+
+Live explicit-model checks passed:
+
+- `user:1 can_view module:MEETING` -> allow
+- `user:1 can_manage module:TRANSCRIPT` -> allow
+- `user:9102 can_manage module:MEETING` -> deny
+- `user:0 can_view module:MEETING` -> deny
+- transient `meeting:<uuid>#owner@user:990001` write/check/viewer proof passed,
+  then the test tuple was deleted and rechecked false
+- transient `transcript:<uuid>#owner@user:990001` write/check/viewer proof
+  passed, then the test tuple was deleted and rechecked false
+
+Boundary:
+
+- This proves the new model is valid in the test store and supports the object
+  tuple shape required by `meeting-service`.
+- It does not yet make recorder runtime-ready. The shared runtime selector
+  `kv/platform/openfga#model_id` still has to be promoted to
+  `01KVXG15ETYAHMHANFD0E5CVK8`, ExternalSecrets must sync, model-consuming pods
+  must roll, and meeting create + audio-gateway recorder lifecycle smoke must
+  pass.
+- Canonical evidence and promotion steps:
+  `docs/faz-24-evidence/2026-06-24-openfga-meeting-transcript-object-model.md`
+  and
+  `docs/runbooks/RB-faz24-openfga-meeting-transcript-object-model.md`.
+- Canonical backend source alignment is tracked in
+  `Halildeu/platform-backend#742`.
+
+## Live Delta — Faz 22.6 v0.3.1 release-lineage no-waiver gate passed (2026-06-24)
+
+`platform-agent` PR #233 merged into `main` and produced trusted EndpointAgent
+release `v0.3.1` after repo-level release immutability was enabled:
+
+- PR: `https://github.com/Halildeu/platform-agent/pull/233`
+- Merge/source commit: `4a988afbb23320fd631a6e6aab629811e637aa1e`
+- Release workflow:
+  `https://github.com/Halildeu/platform-agent/actions/runs/28100776164`
+  (`success`)
+- MSI workflow:
+  `https://github.com/Halildeu/platform-agent/actions/runs/28100776149`
+  (`success`)
+- Release URL:
+  `https://github.com/Halildeu/platform-agent/releases/tag/v0.3.1`
+- GitHub Release metadata: `isImmutable=true`, `isDraft=false`,
+  `isPrerelease=false`, `publishedAt=2026-06-24T13:12:26Z`.
+- Release class: `rollout-candidate`
+- Previous release: `v0.3.0`
+- Workflow run id in release manifest: `28100776164`
+- `release-manifest.json` SHA256:
+  `3d74e3dbb057e0d23b25cf0f8fb93864db24749c7db3e2292946d9cf9b01545b`
+- `endpoint-agent.exe` SHA256:
+  `edcac7e2a78d8801c6d168bdb8d51f6ecc5e99bc4c4f9fdc8507943df321e1be`
+- `EndpointAgent.zip` SHA256:
+  `6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7`
+- Artifact-host image:
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.3.1@sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27`
+
+GitOps PR #1943 merged to `origin/main` at
+`fc3b64da0868adeec9e5d642d02016ffe1eb0778` and pinned the test
+`artifact-host` overlay to the same `v0.3.1` immutable digest. The first
+post-merge self-hosted audit run `28101992243` failed because ArgoCD had not
+yet reconciled live `artifact-host`; it still saw `v0.3.0` and
+`ARTIFACT_HOST_LIVE_DIGEST=blocked`.
+
+Current live evidence is the follow-up self-hosted release-lineage audit:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28102175711`
+  (`success`, head `fc3b64da0868adeec9e5d642d02016ffe1eb0778`)
+- `GITHUB_RELEASE_LATEST=pass tag=v0.3.1 draft=false prerelease=false`
+- `GITHUB_RELEASE_IMMUTABLE=pass tag=v0.3.1`
+- `GITHUB_RELEASE_DENSE_TRAIN=pass recent_series=v0.3 recent_series_count=2`
+- `GITHUB_TAG_SOURCE_COMMIT=pass tag=v0.3.1 commit=4a988afbb23320fd631a6e6aab629811e637aa1e`
+- `MANIFEST_RELEASE_TAG_PARITY=pass release=v0.3.1 current=v0.3.1`
+- `MANIFEST_WORKFLOW_RUN_PARITY=pass workflow_run_id=28100776164`
+- `MANIFEST_PREVIOUS_RELEASE_PARITY=pass previous_release=v0.3.0`
+- `MANIFEST_AGENT_SHA_PARITY=pass sha256=edcac7e2a78d8801c6d168bdb8d51f6ecc5e99bc4c4f9fdc8507943df321e1be`
+- `MANIFEST_ZIP_SHA_PARITY=pass sha256=6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7`
+- `RELEASE_MANIFEST_ARTIFACT_HOST_DIGEST=pass ref=ghcr.io/halildeu/platform-agent-artifacts:v0.3.1@sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27`
+- `ZIP_SHA256_FILE_PARITY=pass sha256=6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7`
+- `CURRENT_SHA256SUMS_COVERAGE=pass assets=7`
+- `RELEASE_SHA256SUMS_COVERAGE=pass assets=7`
+- `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl expected_digest=sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27 digest_hits=3`
+- `RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene`
+- `F22_6_RELEASE_LINEAGE=pass`
+
+Current boundary:
+
+- The #1901 release-lineage hygiene sub-gate now has no-waiver live evidence:
+  immutable GitHub Release object, source/tag provenance, release/current
+  manifest parity, workflow/previous-release parity, ZIP SHA parity, asset
+  coverage, and live artifact-host imageID digest are all proven for `v0.3.1`.
+- This does not by itself satisfy production, broad-rollout, or final Faz 22.6
+  gates. Final Faz 22.6 completion still depends on
+  `platform-backend#548` and `platform-k8s-gitops#1580`.
+
+## Live Delta — Faz 22.6 release-lineage live digest self-hosted evidence canonicalized (2026-06-23)
+
+Faz 22.6 release-lineage artifact-host live digest evidence is no longer
+blocked by Mac-side SSH to `staging-sw`. The canonical path is now the
+self-hosted `staging-sw` runner workflow:
+
+- PR #1916 merged the read-only
+  `.github/workflows/faz22-6-release-lineage-audit.yml` workflow and added
+  `RELEASE_LINEAGE_KUBECTL_MODE=local-kubectl` support to
+  `scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh`.
+- Workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28012805556`
+  completed `success` on head
+  `7d7f95e201489cc99d3ea9986738140b489af34a`, job
+  `release-lineage audit (staging-sw local kubectl)`.
+- The run produced canonical live cluster evidence:
+  `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl expected_digest=sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2 digest_hits=3`.
+- Board item #1915 is `Closed` / Project #2 `Done`.
+
+Boundary: this removes only the artifact-host live-digest evidence transport
+blocker for #1901. It does not close #1901 and does not make Faz 22.6
+release-lineage accepted. The same audit still reports:
+
+```text
+GITHUB_RELEASE_IMMUTABLE=needs_hygiene tag=v0.2.28 isImmutable=false
+GITHUB_RELEASE_DENSE_TRAIN=needs_hygiene recent_v0_2_count=27 threshold=5
+RELEASE_LINEAGE_WAIVER=blocked
+F22_6_RELEASE_LINEAGE=needs_hygiene
+```
+
+Therefore #1901 remains open/blocked until either an owner-approved waiver/risk
+acceptance marker satisfies the runbook contract or the release-lineage hygiene
+findings are fixed.
+
+## Live Delta — Faz 22.6 self-hosted completion audit canonicalized (2026-06-23)
+
+Faz 22.6 remote-bridge live evidence is no longer blocked by Mac-side SSH to
+`staging-sw`. The canonical path is now the self-hosted `staging-sw` runner
+workflow:
+
+- PR #1908 merged the read-only local-kubectl completion-audit workflow and
+  added `REMOTE_BRIDGE_KUBECTL_MODE=local-kubectl` support to
+  `scripts/faz22-remote-ops/faz22-6-completion-audit.sh`.
+- PR #1909 added a fail-fast GitHub token preflight after a manual run showed
+  the previous long-lived secret path could otherwise produce false-green audit
+  output when `GH_TOKEN` was empty.
+- PR #1913 replaced the absent `PLATFORM_GITHUB_READ_TOKEN` dependency with
+  the workflow-scoped read-only `github.token`; all gate repositories read by
+  the audit are public.
+- Workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28010996845`
+  completed `success` on head
+  `cc9031f4e9c8c5d5ea88c207d5f105a15f780b5b`, runner
+  `staging-sw-testai-deploy`, machine `stagingsw`.
+- The run produced canonical live cluster evidence:
+  `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c`.
+- The same run read live GitHub gate state without `gh` auth errors.
+- Board items #1907 and #1911 are `Closed` / Project #2 `Done`.
+
+Current completion-audit blockers after run `28010996845`:
+
+- `platform-backend#548`: `GATE_B1_4_HARDWARE_ATTESTATION=blocked`
+  (`missing-acceptance-marker`).
+- `platform-k8s-gitops#1580`: `GATE_VIEW_ONLY_SCREEN_SHARE=blocked`
+  (`missing-acceptance-marker`).
+- `platform-k8s-gitops#1901`: `RELEASE_LINEAGE_WAIVER=blocked`.
+- Agent release train remains `needs_hygiene`:
+  `latest=v0.2.28`, `recent_v0_2_count=20`, `isImmutable=false`.
+
+Therefore `F22_6_COMPLETION=blocked`, but `fix-remote-bridge-live` is no
+longer in `F22_6_NEXT_REQUIRED`. The current next-required set is:
+
+```text
+F22_6_NEXT_REQUIRED=close-or-risk-accept-548-with-marker,close-1580-with-view-only-marker,fix-release-lineage-hygiene
+```
+
+## Live Delta — Faz 22.6 #548 digest bump live-wired on test overlay (2026-06-23)
+
+GitOps/live-wiring status changed after the #548 digest bump follow-up:
+
+- platform-k8s-gitops PR #1893 merged at 2026-06-23T04:09:38Z with merge commit e62de03a4ea7a3539e4d6834c8c6666a1a3efd56.
+- Source build/run: Halildeu/platform-backend actions run 27998861570, backend head dcc5b6fb247f3408fe8d33db8742a5e33ddd1d56.
+- Desired digest: sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c.
+- Validation before merge: git diff --check; kubectl kustomize kustomize/overlays/test; kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge; PR CI green including ADR-0011 BG-1, forbidden-close scan, and cross-ai-audit.
+- Activation overlay note: endpoint-admin-remote-bridge activation is owner-gated and not wired into the platform-test Argo root. Live apply used the rendered kustomize activation overlay after server dry-run; it was not a direct kubectl set image / patch / edit mutation.
+
+Live staging-sw / k3d-test / platform-test evidence after apply:
+
+- endpoint-admin-service rollout succeeded; deployment image and running pod imageID both match ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c, pod Ready=true, restartCount=0.
+- endpoint-admin-remote-bridge rollout succeeded; deployment image and running pod imageID both match ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c, pod Ready=true, restartCount=0.
+- endpoint-admin-remote-bridge-secrets, endpoint-admin-remote-bridge-signer, and endpoint-admin-remote-bridge-tls ExternalSecrets are Ready=True / SecretSynced.
+- Broker startup log includes remote-bridge grpc server listening on 0.0.0.0:9444 (mutual TLS) and EndpointAdminServiceApplication started.
+
+### 2026-06-26 Live Delta — REMOTE_BRIDGE_LIVE digest forward-align 6b12276 → 3015656f (Codex 019f008a)
+
+The primary endpoint-admin-service had drifted forward to sha256:3015656f (later backend deploys: #754 TPM bootstrap-route fix + #548 M1 + #1497) while the remote-bridge activation overlay stayed pinned at the 2026-06-23 baseline sha256:6b12276 above — so the completion-audit REMOTE_BRIDGE_LIVE gate read digest_hits=2 (below the required 4). Forward-aligned the bridge to the current primary digest (same-image pilot topology); the historical 6b evidence above is intentionally retained, not rewritten.
+
+- Live apply used the rendered kustomize activation overlay after server dry-run (NOT kubectl set image/patch): `kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge | kubectl --context k3d-test -n platform-test apply --dry-run=server -f -` (deployment configured, rest unchanged) → apply → `kubectl rollout status deploy/endpoint-admin-remote-bridge` successfully rolled out.
+- endpoint-admin-service AND endpoint-admin-remote-bridge: deployment image and running pod imageID both match ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:3015656f62bc02549648add32b1a6bde994f1a02f971dbaefe2db43b0a5df79b, pod Ready=true, restartCount=0 (the old 6b12276 bridge pod terminated).
+- endpoint-admin-remote-bridge-secrets / -signer / -tls ExternalSecrets Ready=True / SecretSynced (3×).
+- `scripts/faz22-remote-ops/faz22-6-completion-audit.sh` → `REMOTE_BRIDGE_LIVE=pass mode=ssh expected_digest=sha256:3015656f... digest_hits=4`. F22_6_COMPLETION remains blocked ONLY on the two owner markers (b1-4-acceptance-package-required #548, view-only-evidence-package-required #1580).
+- gitops PR #2030 (activation digest + audit EXPECTED + decision-package fixtures + contract + apply-workflow default). DURABLE FOLLOW-UP (Codex Q6): single-source the bridge expected digest from the test-overlay primary digest so a future backend bump cannot re-drift it.
+
+### 2026-06-26 Live Delta — RE-DRIFT 3015656f → 5eff536b realigned (durable auto-sync fix scoped #2031, Codex 019f008a)
+
+The Q6 re-drift fear materialised immediately: within ~1h of the 3015656f align above, a digest-sync PR (#2032, Faz 24 retention) bumped the primary endpoint-admin-service to sha256:5eff536b on BOTH the test overlay AND the live cluster, leaving the bridge at 3015656f → REMOTE_BRIDGE_LIVE re-blocked (digest_hits=2). This PR re-aligns the bridge to the current primary (manual re-align); the DURABLE auto-sync fix (so this cannot recur silently) is scoped in #2031 — Codex 019f008a corrected the mechanism (the auto-sync DOES bump endpoint-admin, see below).
+
+- Bridge forward-aligned 3015656f → sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b (activation overlay + audit EXPECTED + decision-package fixtures + contract + apply-workflow default). Live apply via rendered activation overlay (server dry-run → apply → rollout) — NOT kubectl set image.
+- Live: endpoint-admin-service AND endpoint-admin-remote-bridge pods both imageID sha256:5eff536b, Ready=true; `faz22-6-completion-audit.sh` → REMOTE_BRIDGE_LIVE=pass mode=ssh digest_hits=4.
+- DURABLE FIX still pending (#2031), mechanism corrected by Codex 019f008a: the testai auto-sync (deploy-backend-testai -> apply-test-overlay-digests.py -> sync-test-overlay.sh) DOES bump the primary endpoint-admin digest in overlays/test (endpoint-admin-service is in REQUIRED_SVCS/SERVICE_SPECS/SYNC_SERVICES) but NOT the bridge activation overlay, so a primary bump silently re-drifts the bridge. The durable fix = make the auto-sync bump the bridge digest in lockstep (and widen its diff-guard allowlist), THEN a digest-alignment guard enforces it. A standalone guard alone (drafted PR #2033, now closed) would block the auto-sync; it needs the auto-sync companion first. This PR is the manual re-align only.
+- F22_6_COMPLETION remains blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only).
+
+### 2026-06-26 Live Delta — durable re-drift fix LANDED (companion auto-sync co-bump + alignment guard, Codex 019f008a)
+
+The #2034 delta's pending durable fix is now implemented. Note: that delta's diagnosis was CORRECT (verified from origin/main, NOT the stale main checkout that misled an interim PR #2035): the testai auto-sync DOES bump endpoint-admin (`apply-test-overlay-digests.py` SYNC_SERVICES includes endpoint-admin-service; `deploy-backend-testai.yml` REQUIRED_SVCS/SERVICE_SPECS/Gate1c/1d include it), but it did NOT touch the bridge → re-drift. The durable fix (Codex companion model):
+
+- **Companion auto-sync co-bump** (`scripts/automation/sync-test-overlay.sh` #2031): after applying the rollout digest map to the primary test overlay, if endpoint-admin-service was rolled, it mirrors that exact digest into the bridge activation overlay in the SAME auto PR (reusing `apply-test-overlay-digests.py --kustomization <bridge>`). Diff-guard widened to allow both files (digest-only, added==deleted, 1..14). So auto-sync PRs stay aligned automatically — never re-drift.
+- **Alignment guard** (`scripts/governance/check-remote-bridge-digest-alignment.sh` + `.github/workflows/gate-remote-bridge-digest-alignment.yml`): renders both overlays, asserts the endpoint-admin digest is singular AND equal, fail-closed. Catches any manual PR (or regression) that bumps one side without the other, at PR time.
+- Verified local: co-bump moves both primary+bridge to the rolled digest; diff-guard sees 2 files / added==deleted / 1..14; alignment guard pass on aligned, fail on simulated drift; bridge mirror correctly SKIPPED when endpoint-admin not in the rollout. shellcheck clean. Interim PR #2033 (drafted) + #2035 (stale-branch premise) closed; this supersedes both.
+- F22_6_COMPLETION still blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only); the remote-bridge re-drift RISK is now durably closed.
+
+### 2026-06-26 Live Delta — V77 (#2057) SSOT-refs re-drift; audit/workflow/contract realigned 5eff536b → 8c4209ee (Codex 019f056e)
+
+The #2031 durable fix closes OVERLAY-vs-OVERLAY drift (auto-sync co-bumps both overlays + the alignment guard asserts overlay equality). It does NOT cover a second drift class: the SSOT *reference* defaults (audit `EXPECTED_REMOTE_BRIDGE_DIGEST`, apply-workflow `expected_digest` default, contract §3 expected digest) are NOT bumped by the auto-sync nor checked by the alignment guard. The V77 #548 deploy (gitops PR #2057) bumped BOTH overlays to `sha256:8c4209ee...` (platform-backend #769 merge sha-74d312d) and the live endpoint-admin-service pod is on 8c4209ee, but the three SSOT refs stayed on `5eff536b` → `REMOTE_BRIDGE_LIVE=blocked digest_hits=2` (the marker-hardened audit; service=8c vs expected=5eff).
+
+- Reconciled the 3 SSOT refs → `sha256:8c4209ee8643ee58d0a6c2188f93ed61bff69dd32d338f3f0ecf1d63a9fb2842` (audit default + apply-workflow default + contract §3). History comments preserved.
+- Live truth at this point: primary endpoint-admin-service desired+live = 8c4209ee; bridge desired (activation overlay) = 8c4209ee; **bridge LIVE pod = 5eff536b (pending rollout)**; audit digest_hits=2 until the bridge is rolled.
+- **2026-06-27 BRIDGE ROLLOUT VERIFIED (component-derived; Codex 019f05c1 REVISE→AGREE):** rendered activation overlay applied; bridge rolled to 8c4209ee. Live-verified this session as **component-derived** (not a fresh audit-script run): all 4 digest inputs == EXPECTED 8c4209ee → bridge deploy DESIRED + bridge pod LIVE (`…85dd4f4468-4hppf` Running 0-restart) + primary `endpoint-admin-service` deploy DESIRED + primary pod LIVE (`…7f98687c7b-lbj9f` Running 0-restart); old `5eff536b` bridge pod terminated. Plus **secret_hits=3**: all 3 remote-bridge ExternalSecrets (`-secrets`/`-signer`/`-tls`) `True/SecretSynced`. By the audit's pass definition (`digest_hits≥4` AND `secret_hits≥3`) this satisfies `REMOTE_BRIDGE_LIVE=pass`. F22_6_COMPLETION's **completion-audit** remaining blockers are now ONLY the 2 fail-closed owner markers (#548 b1-4 hardware-attestation, #1580 view-only) — this is the audit's blocker set, **not** a final/prod/broad-rollout closure claim. CAVEAT: the bridge digest is still **manually** aligned across the 3 SSOT refs; the durable guard (#2067) is NOT yet implemented, so this REMOTE_BRIDGE_LIVE green can silently re-drift on the next endpoint-admin V-bump until #2067 lands (P0 durability follow-up, not a current completion blocker).
+- NEXT (done above): live bridge rollout via rendered activation overlay → `kubectl diff -f` (real diff, not just `--dry-run=server`) → apply → `rollout status` → pod imageID check → re-audit (expect digest_hits=4).
+- DURABLE FOLLOW-UP (Codex 019f056e): extend the auto-sync co-bump (`sync-test-overlay.sh`) AND the alignment guard (`check-remote-bridge-digest-alignment.sh`) to ALSO cover the 3 SSOT refs, so this SSOT-refs-vs-overlay class is closed fail-closed at PR time — tracked separately (this PR is the manual re-align only). **[SUPERSEDED by the 2026-06-27 #2067-C delta below — solved by ELIMINATION, not by syncing copies.]**
+- F22_6_COMPLETION still blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only).
+
+### 2026-06-27 Live Delta — #2067 durable guard LANDED via ELIMINATION (Codex 019f0733 verdict C)
+The SSOT-refs-vs-overlay drift class is closed by **removing the reference copies**, not syncing them. Single SSOT = the **rendered overlay**. New `scripts/governance/lib-remote-bridge-digest.sh` renders the overlay + extracts the endpoint-admin digest; `faz22-6-completion-audit.sh` now **derives** `expected_digest` from it (no `EXPECTED_REMOTE_BRIDGE_DIGEST` literal — env-set is honored ONLY as an explicit `ALLOW_EXPECTED_DIGEST_OVERRIDE=1` diagnostic that returns `REMOTE_BRIDGE_LIVE=diagnostic_pass` and can NEVER be a canonical completion source); contract §3 is **de-pinned**; the apply-workflow `expected_digest` default is **emptied** (derived from the render at run time, asserted-equal if provided). The audit's live check is now **exact JSON+jq per-object** assertions (both Deployments' image + every non-deleting Running pod Ready on expected imageID + the 3 named ExternalSecrets `Ready=True/SecretSynced`) — replacing the `grep -c >=4` count that could mask object-specific drift. The alignment guard + `tests/governance/test_remote_bridge_digest_alignment.sh` enforce the same-image invariant fail-closed at PR time. **Net: a future endpoint-admin V-bump can no longer silently re-drift any literal — there are no literal copies left.** `sync-test-overlay.sh` unchanged (no static refs to co-bump beyond the 2 overlays it already syncs). Live-proven: `REMOTE_BRIDGE_LIVE=pass mode=ssh expected_source=rendered-overlay`. Landed via gitops PR #20xx (B1).
+- F22_6_COMPLETION still blocked ONLY on the 2 owner markers (#548 b1-4, #1580 view-only).
+
+Boundary for #548 remains unchanged:
+
+- This is source/live-wiring progress for the #548 harness path, not #548 resolution.
+- Current broker audit still includes HELLO_VERIFIED:cert=true,attestation=false,device=false. That is useful connectivity evidence, but it also proves the hardware attestation/device-key gate is still open.
+- Remaining #548 acceptance gates: live TPM/device-key material, broker attestation root policy/config, positive verifier pass, negative field matrix, and field evidence.
+
+## Live Delta — AgentPC2 #208 full-matrix accepted; B1.4 source slices reconciled (2026-06-23)
+
+`platform-agent#208` is now Closed / Done for the bounded AgentPC2
+product-channel constrained executor scope. The full-matrix evidence
+supersedes the earlier AgentPC2 v0.2.20-v0.2.25 activation and stale-gate
+no-go entries for this narrow bounded pilot.
+
+Accepted AgentPC2 product-channel evidence:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27992032625`
+  completed `success`.
+- Evidence artifact: `agentpc2-constrained-executor-evidence-27992032625`.
+- Target endpoint: `AgentPc2` / product device
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f`.
+- Runtime: `k3d-test/platform-test`, deployment
+  `endpoint-admin-remote-bridge`, requested digest
+  `sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3`.
+- Product path: `GET_HOSTNAME`, `CONSTRAINED_PTY`, signed `PERMIT`,
+  `transportPushed=true`, `operationStatus=permit-transport-pushed`.
+- HTTP path: open/approve/step-up challenge/step-up verify/catalog operation
+  returned `200/200/200/200/200`.
+- Verifier result: `accepted-candidate` with `requireFullMatrix=true` and
+  `fullMatrixOk=true`.
+- Recording has `rowCount=3`, `hasAgentOutput=true`, and `hasEndStream=true`.
+- Governance evidence: operator and approver are distinct, step-up is verified,
+  ticket/justification are present, WORM recording is enabled, recording is
+  fail-closed, and the evidence redaction scan covered `35` files with `0`
+  findings.
+- Required negative evidence is present: raw unrestricted PTY `400`,
+  command/policy override `400`, disabled catalog `422`, no-auth catalog `401`,
+  wrong-device/unenrolled open `404`, expired permit `422`, replay `422`,
+  operator close `204`, and closed-session operation `404`.
+- Evidence summary:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4774267666`.
+
+Runtime re-check on 2026-06-23:
+
+- `k3d-test/platform-test` deployment `endpoint-admin-remote-bridge` is
+  `1/1` ready on image
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3`;
+  the running pod imageID matches the same immutable digest, with
+  `restartCount=0`.
+- Remote-bridge ExternalSecrets
+  `endpoint-admin-remote-bridge-secrets`,
+  `endpoint-admin-remote-bridge-signer`, and
+  `endpoint-admin-remote-bridge-tls` are all `Ready=True /
+  SecretSynced`.
+- Live broker config reports
+  `REMOTE_BRIDGE_HEARTBEAT_INTERVAL_MILLIS=5000` and
+  `REMOTE_BRIDGE_ENABLED=true`.
+- Recent broker audit log contains
+  `HELLO_VERIFIED:cert=true,attestation=false,device=false` for the AgentPC2
+  product channel. This confirms current outbound mTLS product-channel
+  connectivity and also confirms why #548 remains open: hardware-backed
+  device-key/TPM attestation is not present in the live evidence.
+
+Board/state reconciliation:
+
+- `platform-agent#208`: `CLOSED`, reason `COMPLETED`, Project #2 `Done`.
+- `platform-k8s-gitops#1768`: `CLOSED`, reason `COMPLETED`, Project #2
+  `Done`; the earlier AgentPC2 bootstrap blocker is superseded by the accepted
+  v0.2.28 product-channel evidence.
+- `platform-agent#116`: `CLOSED`, reason `COMPLETED`, Project #2 `Done`; the
+  stale outbound-tunnel spike/live-acceptance pointer is superseded by #208.
+
+B1.4 source progress and boundary:
+
+- `platform-backend#731` merged at `2026-06-23T00:49:23Z` with merge commit
+  `5d1e4fd36792e5b7bb08fa312669c4f4db6c7038`. It adds a strict v1
+  `AgentHello.attestationEvidenceB64` parser while preserving the legacy
+  bounded-pilot SLSA payload format.
+- `platform-agent#229` merged at `2026-06-23T01:16:09Z` with merge commit
+  `178db2952219e24951eba18c81e77480ed328d42`. It adds the agent-side strict
+  v1 envelope producer from pre-provisioned SLSA/device-key material while
+  preserving the raw override and failing closed on partial/malformed
+  structured config.
+- `platform-backend#732` merged at `2026-06-23T02:15:48Z` with merge commit
+  `12bbf76a7b066071111c9fa6f95cb13f73817561`. It wires already
+  parsed/verified peer device-key attestation into fail-closed session
+  device-trust modes, including the composite
+  `REQUIRE_ENROLLMENT_AND_DEVICE_KEY` mode. It is source-wiring only and does
+  not supply live TPM material, device-attestation roots, or field evidence.
+- `platform-backend#733` merged at `2026-06-23T02:53:06Z` with merge commit
+  `dcc5b6fb247f3408fe8d33db8742a5e33ddd1d56`. It adds source-level
+  negative evidence coverage for the strict v1 device-key attestation path:
+  the production parser, peer-trust ledger, and session device-trust verifier
+  now have an end-to-end test matrix for missing device-key evidence,
+  malformed envelopes, invalid signatures, untrusted roots, stale peer trust,
+  certificate-bound device mismatch, and missing tenant identity. This is
+  source hardening only and does not supply live TPM material,
+  device-attestation roots, or accepted field evidence.
+- `platform-agent#228`: `CLOSED`, reason `COMPLETED`, Project #2 `Done` for
+  the source-producer scope only.
+- `platform-backend#548`: `OPEN`, reason `REOPENED`, Project #2 `Blocked`.
+  Real completion still requires device-attestation CA/provisioning,
+  device-attestation roots configured in the broker, real TPM/device-key
+  material on the wire, broker verifier pass, and accepted live positive and
+  negative field evidence.
+
+Boundary: this is bounded AgentPC2 product-channel acceptance only. It does not
+prove signed MSI/GPO broad rollout, 5-PC/50-PC/800-PC wave readiness,
+production remote-support readiness, inbound SSH/RDP/WinRM/SMB/RPC reachability,
+unrestricted shell/file browser/clipboard/file transfer, or true TPM/device-key
+hardware attestation for broad rollout.
+
+## Live Delta — AgentPC2 v0.2.25 local bootstrap verified; #208 acceptance rerun blocked by stale defaults (2026-06-22)
+
+`platform-agent#208` remains not accepted yet. AgentPC2 has now been moved by
+endpoint-local bootstrap to the signed `v0.2.25` EndpointAgent build with the
+bounded outbound remote-bridge and signed self-update policy required for the
+next product-channel acceptance gate.
+
+Evidence:
+
+- Operator-side AgentPC2 transcript on 2026-06-22 verified downloads from
+  `https://testai.acik.com/artifacts/endpoint-agent/current`:
+  `install.ps1` SHA256
+  `138fa1469e393a59013a09ae18d951d56ef2cea47f4b91c2ca1bf2be8ae6657a`
+  and `endpoint-agent.exe` SHA256
+  `0bf8aada0bf7b25f3e574e576a8401f9030168cbe60a487d6f6c5a6d4c610aec`.
+- Authenticode verification returned `Status=Valid` with signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`.
+- Installed binary evidence on AgentPC2:
+  `C:\Program Files\EndpointAgent\endpoint-agent.exe`,
+  `ProductVersion=v0.2.25`, `FileVersion=v0.2.25`, length `14376360`, SHA256
+  `0BF8AADA0BF7B25F3E574E576A8401F9030168CBE60A487D6F6C5A6D4C610AEC`.
+- Service evidence: `EndpointAgent` is `Running`, `StartMode=Auto`,
+  `StartName=LocalSystem`.
+- Redacted service environment shows the dedicated outbound broker path
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR=remote-bridge-mtls.testai.acik.com:443`,
+  TLS server name `remote-bridge-mtls.testai.acik.com`, operations and PTY
+  enabled, pilot auto-consent enabled, and self-update enabled.
+- Self-update local policy now uses bounded hosts
+  `github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,testai.acik.com`
+  and the SHA256 signer certificate fingerprint
+  `EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD`.
+- Follow-up product-channel acceptance workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27947137547`
+  was intentionally cancelled after the runner-side gate was found to still
+  carry stale `v0.2.21` acceptance defaults. This is not product no-go evidence;
+  it is a stale-gate guard to avoid evaluating the live AgentPC2 `v0.2.25`
+  endpoint against the wrong release boundary.
+- The active remediation is to align the first-install, evidence-verifier,
+  constrained-acceptance, and `UPDATE_AGENT` runner defaults to `v0.2.25`
+  before rerunning the product-channel
+  HELLO/PERMIT/constrained-operation/negative/audit gate.
+
+Boundary: this proves AgentPC2 is locally installed with the expected signed
+`v0.2.25` binary and bounded remote-ops/self-update configuration. It does not
+prove `platform-agent#208` constrained-executor acceptance, product
+`UPDATE_AGENT` activation, broad MSI/GPO rollout, production support readiness,
+inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell, or TPM/device-key hardware
+attestation. The next gate is a fresh product-channel
+HELLO/PERMIT/constrained-operation/negative/audit workflow run after the
+`v0.2.25` gate/default alignment is merged or run from this branch.
+
+## Live Delta — AgentPC2 v0.2.21 product update reaches endpoint but fails signer allowlist (2026-06-22)
+
+`platform-agent#208` remains not accepted. The later AgentPC2 `v0.2.21`
+manual/bootstrap install restored outbound remote-bridge connectivity and
+advertised product update capability, but a fresh product-channel
+`UPDATE_AGENT` to `v0.2.23` failed endpoint-side before activation because the
+local self-update signer allowlist did not accept the released binary signer.
+
+Evidence:
+
+- Prior acceptance workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27935944910`
+  ended `status=no-go` with
+  `reason=pilot-readiness-artifact-manifest-mismatch`: AgentPC2 was observed as
+  `agent_version=v0.2.21`, while the live artifact manifest had already moved to
+  `release_tag=v0.2.23` and endpoint-agent.exe SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`.
+  Product-path operation fields were empty, so this did not exercise the
+  HELLO/PERMIT/constrained-operation path.
+- Product update workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27937126594`
+  dispatched `UPDATE_AGENT` to AgentPC2 for `v0.2.23` / `0.2.23` with expected
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5` and expected
+  binary SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`.
+- Live DB recheck for command
+  `418248a3-04d5-4395-96ea-af138a8abeac` showed the command reached AgentPC2:
+  `delivered_at=2026-06-22T07:37:25Z`,
+  `started_at=2026-06-22T07:38:27Z`, and
+  `completed_at=2026-06-22T07:38:32Z`.
+- Terminal result was fail-closed:
+  `endpoint_commands.status=FAILED`, `last_error=UPDATE_AGENT FAILED_STAGE`,
+  `endpoint_command_results.result_status=FAILED`, and
+  `result_payload.details.update.errorCode=SIGNER_NOT_ALLOWED` with reason
+  `verified signer not in local allowlist`.
+- `platform-agent#208` evidence comment:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4766194963`.
+
+Boundary: this proves the product command was delivered to AgentPC2 and failed
+inside endpoint self-update policy, not in GitHub Actions dispatch. It also
+proves the previous v0.2.21 acceptance no-go was a version-skew preflight, not a
+security/attestation verdict. The next gate is to restore the bounded SHA256
+signer allowlist/self-update config on AgentPC2 or otherwise provide a release
+path accepted by the installed agent, then rerun product `UPDATE_AGENT` and only
+after observing `v0.2.23` live rerun the constrained executor acceptance. No
+constrained executor acceptance, production support, broad rollout readiness, or
+unrestricted shell/RDP/WinRM/SMB/SSH readiness is claimed.
+
+## Live Delta — self-update activation no-go source hardening merged; AgentPC2 acceptance still open (2026-06-22)
+
+`platform-agent#208` remains not accepted. After the AgentPC2 `v0.2.23`
+product-channel `UPDATE_AGENT` run reached `STAGED_ACTIVATION_READY` but did
+not activate, `platform-agent#222` added source-side activation outcome
+persistence so future activation failures and rollbacks are not silent.
+
+Evidence:
+
+- `platform-agent#222` merged at
+  `eaee50d569ff6e51d6441278225685afe7a3f352`.
+- Source change: activation readiness failures, service stop failures,
+  rollback outcomes, and rollback failures now attempt to persist
+  `activation-outcome-<stagingId>.json` in the local self-update staging root.
+- If outcome persistence itself fails, the returned local activation outcome now
+  carries path-free `evidencePersistenceError` while preserving
+  `evidencePersisted=false` and fail-closed behavior.
+- Verification for `platform-agent#222`: local `go test ./internal/selfupdate
+  ./internal/commands ./internal/app`, local `go test ./...`, `git diff
+  --check`, Claude second-pass review, and PR CI all passed. CI included
+  BG-EA-1 boundary declaration, gitleaks, SBOM, reproducible build, Linux
+  test/lint/cross-build, Windows PowerShell installer gate, lab-only signing,
+  and Windows Go test.
+- `platform-agent#208` merge evidence comment:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4765879785`.
+
+Boundary: this is source hardening only. It does not activate the currently
+installed AgentPC2 `v0.2.20`, does not prove `v0.2.23` running, and does not
+close constrained executor acceptance. The current AgentPC2 no-go still needs
+endpoint-local diagnostic for activation plan
+`c015f8ec89519cb221f613b005004112` or a post-merge signed release/retry path
+that proves activation before the normal outbound 443 mTLS
+HELLO/PERMIT/constrained-operation/negative/audit gate for `platform-agent#208`.
+No unrestricted shell, inbound SSH/RDP/WinRM/SMB/RPC, production support, or
+broad rollout readiness is claimed.
+
+## Live Delta — AgentPC2 v0.2.23 UPDATE_AGENT stages successfully; activation not observed (2026-06-22)
+
+`platform-agent#208` remains not accepted. The bounded endpoint-local SHA256
+signer-policy seed has now run on AgentPC2 and removed the previous
+`SIGNER_NOT_ALLOWED` blocker. The latest product-channel `UPDATE_AGENT` rerun
+against the released and live-served `v0.2.23` artifact verified and staged the
+signed binary, but the endpoint did not report the activated version inside the
+900s observation window.
+
+Evidence:
+
+- `platform-k8s-gitops#1848` merged at
+  `5bbeeb868053469e7e6eb47245a1612b37980036`, publishing the bounded
+  endpoint-local SHA256 signer seed helper at
+  `https://testai.acik.com/artifacts/endpoint-agent/bootstrap/agentpc2-self-update-policy-seed-v023-sha256.ps1`.
+  Live artifact-host and public HTTPS checks returned SHA256
+  `0697369e93671e30de874b5f0589f8ed00355225284a70fa5f52ae1a0aac7aa1`.
+- Operator-run AgentPC2 seed evidence showed the script hash matched, the
+  `EndpointAgent` service remained `Running`, and the service environment now
+  contains bounded self-update policy using signer fingerprint algorithm
+  `sha256(cert.Raw)`. The configured remote bridge endpoint remains
+  `remote-bridge-mtls.testai.acik.com:443`.
+- Product update workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27934293027`
+  attempted `v0.2.23` / `0.2.23` for AgentPC2 with endpoint-agent.exe SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`,
+  release-manifest signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, and evidence artifact
+  `agentpc2-update-agent-evidence-27934293027`.
+- Live DB terminal evidence for command
+  `f65c51be-8739-4a32-b531-3f5d25179d1d` shows command type `UPDATE_AGENT`,
+  status `SUCCEEDED`, delivered `2026-06-22T06:35:02.200337Z`, started
+  `2026-06-22T06:36:04.221658Z`, completed
+  `2026-06-22T06:36:10.473836Z`, result summary
+  `UPDATE_AGENT STAGED_ACTIVATION_READY`, `oldVersion=v0.2.20`,
+  `targetVersion=0.2.23`, `stageStatus=STAGED_ACTIVATION_READY`,
+  `activationPlanId=c015f8ec89519cb221f613b005004112`, actual binary SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`, and
+  actual signer fingerprint
+  `EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD`.
+- Workflow summary ended `status=no-go`, `reason=expected-version-not-observed`,
+  `poll.result=timeout`, and observed AgentPC2 as `ONLINE` at
+  `agent_version=v0.2.20` with `lastSeenAt=2026-06-22T06:50:02.057117Z`.
+  Direct DB recheck after the workflow still showed `agent_version=v0.2.20`.
+- `platform-agent#208` evidence comment:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4765665886`.
+- Governance/no-go ledger update:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1693#issuecomment-4765670407`.
+
+Boundary: this proves release-catalog `UPDATE_AGENT` create/approve/dispatch
+and endpoint-side signed artifact verification/staging after SHA256 signer
+policy seeding. It does not prove self-update activation, `v0.2.23` running on
+AgentPC2, constrained executor acceptance, broad MSI/GPO rollout, production
+remote support, unrestricted shell, or inbound SSH/RDP/WinRM/SMB/RPC. The next
+required gate is to inspect/fix the endpoint-local self-update activation
+helper/outcome for activation plan `c015f8ec89519cb221f613b005004112`, rerun
+the product update until AgentPC2 reports `v0.2.23`, then run fresh outbound
+443 mTLS constrained-operation/negative/audit evidence against
+`remote-bridge-mtls.testai.acik.com:443`.
+
+## Live Delta — AgentPC2 self-update signer policy fix released as v0.2.23; artifact-host live verified (2026-06-22)
+
+`platform-agent#208` remains not accepted. The live root cause from the
+`v0.2.22` product `UPDATE_AGENT` attempt was endpoint-local policy, not broker
+delivery: AgentPC2 received and started the update command, then failed closed
+with `SIGNER_NOT_ALLOWED` because its local self-update signer allowlist did not
+include the trusted internal CA signer thumbprint.
+
+Fix-forward source/release state:
+
+- `platform-agent#221` merged at
+  `6977ea84047e7cfb6dd0713055b9bebf6ef14cdb`, wiring the Windows installer,
+  MSI wrapper, and WiX properties to persist endpoint-local self-update policy.
+  When self-update is enabled, install now fails closed unless allowed hosts and
+  signer thumbprints are present; if no explicit self-update signer allowlist is
+  supplied, the installer derives
+  `ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS` from the release-patched
+  `ExpectedSignerThumbprint`.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27923908721`
+  completed successfully for tag `v0.2.23`: signed exe build, Authenticode +
+  independent chain-to-pinned-root verification, release archive, and artifact
+  host image publish all passed.
+- Trusted MSI release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27923908730`
+  also completed successfully for tag `v0.2.23`.
+- GitHub release `https://github.com/Halildeu/platform-agent/releases/tag/v0.2.23`
+  publishes signing tier `trusted-internal-ca`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`,
+  `install.ps1` SHA256
+  `48b33211991c69d5677417e4651b459f7612cf38aa270ca9c112abb7e0766b96`, and
+  `EndpointAgent.zip` SHA256
+  `9ccef216ffe497ea496ad9b47d26fedc6427ce8bb34975c6f87335f61bc33ea6`.
+- The release manifest records artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.23@sha256:1334c1c52fe87c04f42154e02cdc8d1222637e5fa838656df4fb316bdcfb8fd4`.
+- `platform-k8s-gitops#1844` merged at
+  `8ca3da441e68c5f482f06438a3110225134c031b`, pinning the test overlay
+  artifact-host desired-state to the same immutable `v0.2.23` digest.
+- Live `k3d-test/platform-test` artifact-host rollout is verified:
+  deployment `artifact-host` generation `34`, observed `34`, ready `2/2`,
+  updated `2/2`, image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.23@sha256:1334c1c52fe87c04f42154e02cdc8d1222637e5fa838656df4fb316bdcfb8fd4`.
+  Pods `artifact-host-667bccd555-f556v` and
+  `artifact-host-667bccd555-lp2zh` are ready with `restartCount=0` and imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:1334c1c52fe87c04f42154e02cdc8d1222637e5fa838656df4fb316bdcfb8fd4`.
+- Public `/artifacts/endpoint-agent/current/release-manifest.json` resolves to
+  `release_tag=v0.2.23`, signing tier `trusted-internal-ca`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`, and
+  `EndpointAgent.zip` SHA256
+  `9ccef216ffe497ea496ad9b47d26fedc6427ce8bb34975c6f87335f61bc33ea6`.
+
+Boundary: this closes the durable packaging/install propagation gap for future
+signed self-update installs and verifies the immutable `v0.2.23` artifact-host
+candidate on test. It does not yet prove AgentPC2 has consumed `v0.2.23`,
+self-updated successfully, or completed the `platform-agent#208`
+constrained-executor acceptance. The next gates are: seed or otherwise correct
+the currently installed AgentPC2 local self-update policy, rerun product
+`UPDATE_AGENT` to `v0.2.23`, then run fresh outbound 443 mTLS
+constrained-operation/negative/audit evidence against
+`remote-bridge-mtls.testai.acik.com:443`.
+
+## Live Delta — AgentPC2 v0.2.22 artifact-host live; UPDATE_AGENT no-go is signer allowlist (2026-06-22)
+
+`platform-agent#208` remains not accepted. The latest product-channel
+`UPDATE_AGENT` run is no longer a delivery/poll uncertainty: live DB evidence
+shows the command was delivered to AgentPC2, started on the endpoint, and failed
+closed because the endpoint-local self-update signer allowlist did not contain
+the trusted internal CA signer thumbprint for the `v0.2.22` release.
+
+Current source/release/GitOps state:
+
+- GitOps PR `platform-k8s-gitops#1842` merged at
+  `7f11ac0c9a1ae3810088c092fc80e8c25f805087`, pinning the test artifact-host
+  desired-state to
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.22@sha256:da63e6fe353fda6939e3c6d3d0ae2ad7b65017b40871fac1e166c959f3830da5`.
+- Public `/artifacts/endpoint-agent/current/release-manifest.json` resolves to
+  `release_tag=v0.2.22`, signing tier `trusted-internal-ca`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
+  `c17fe546d9bea645d01b5b2a0d3e0f56993d84838a9e904064349105b25ce0c2`,
+  `install.ps1` SHA256
+  `aad51b5f295dd2a1f24e7f36861a569ee55921b0196ea2dd67d8b8001c49b259`, and
+  `EndpointAgent.zip` SHA256
+  `51fed6ca7915bc8982f1040f317829d0f1049f74b1399bc4532fa4725d731e5d`.
+- Product update workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27922444943`
+  completed `failure` for target `v0.2.22` after the endpoint remained at
+  `v0.2.20`.
+- Live DB terminal evidence for command
+  `ed0bb085-f8bb-40f9-aae9-8612cc98155b` shows `UPDATE_AGENT` status
+  `FAILED`, delivered `2026-06-22T00:25:20.836591Z`, started
+  `2026-06-22T00:26:22.851940Z`, completed
+  `2026-06-22T00:26:28.599427Z`, result summary
+  `UPDATE_AGENT FAILED_STAGE`, `errorCode=SIGNER_NOT_ALLOWED`, and reason
+  `verified signer not in local allowlist`.
+- `platform-agent#208` comment
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4763897245`
+  records the same live root cause and supersedes the weaker
+  `expected-version-not-observed` wording.
+- Durable fix-forward is open as draft PR
+  `https://github.com/Halildeu/platform-agent/pull/221`: installer/MSI
+  propagation for signed self-update policy. When self-update is enabled, the
+  installer writes endpoint-local self-update trust policy and derives
+  `ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS` from the release-patched
+  `ExpectedSignerThumbprint` if no explicit rotation allowlist is supplied.
+
+Boundary: this proves the `v0.2.22` release is publicly served and the product
+channel can deliver and start an `UPDATE_AGENT` command on AgentPC2. It does not
+yet prove self-update success or `platform-agent#208` constrained-executor
+acceptance. The next required gate is endpoint-local signer policy seeding for
+the already-installed `v0.2.20` pilot, rerun of the product `UPDATE_AGENT`
+workflow to `v0.2.22`, then a fresh outbound 443 mTLS constrained operation run
+from AgentPC2 against `remote-bridge-mtls.testai.acik.com:443` proving
+HELLO/CONSENT/ACTIVE, signed PERMIT, `AGENT_OUTPUT`/DATA plus terminal marker,
+negative guards, and audit evidence. It does not claim unrestricted
+shell/RDP/WinRM/SMB/SSH, file browser, production remote-support readiness,
+broad rollout, or true TPM/device-key hardware attestation.
+
+## Live Delta — AgentPC2 v0.2.20 endpoint bootstrap evidence received; product acceptance pending (2026-06-22)
+
+`platform-agent#208` remains not accepted. The latest product-channel rerun
+after `v0.2.19` reached signed `PERMIT` + `transportPushed=true`, but the durable
+recording still contained no useful terminal output. The source fix-forward was
+merged in `platform-agent#219`, and `v0.2.20` is now the canonical acceptance
+target. AgentPC2 endpoint-local bootstrap to `v0.2.20` has now been performed
+by an operator on the endpoint; the constrained-executor product acceptance
+workflow remains the next gate for #208.
+
+Fix-forward source/release state:
+
+- `platform-agent#219` merged at
+  `40c5cf8202773099df95c9de522168feebc6cce5`, tightening the Windows
+  constrained runner so zero-byte successful ConPTY reads are not treated as
+  EOF and empty constrained output fails closed. The broker permit, allowlist,
+  command hash, no-shell, and output cap contracts remain unchanged.
+- Trusted EXE/MSI release workflows `27916774165` / `27916774171` published
+  `v0.2.20` with
+  signing tier `trusted-internal-ca`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
+  `b28990d088b144927c0de7dd1ee83c2288e44a9357c2684892781164a1710b5a`,
+  `EndpointAgent.zip` SHA256
+  `9f7f5c2e227c7f88863095cec218322972a42464dc8042f064bb5accafaa1fe2`,
+  and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.20@sha256:5526b307b5181ed599077d164a3e162639671d56a39ba6bf8f47ef177dc30d67`.
+- GitOps PR `platform-k8s-gitops#1835` merged at
+  `3eef3e8be066c91c19f25c79169fc44828a89d71`, updating the test artifact-host
+  desired-state and AgentPC2 bootstrap defaults to the immutable `v0.2.20`
+  release hashes.
+- Live `k3d-test/platform-test` evidence now matches the immutable artifact-host
+  digest: deployment `artifact-host` generation `31`, observed `31`, ready
+  `2/2`; pods `artifact-host-7f675b8f49-c6zd5` and
+  `artifact-host-7f675b8f49-fr67b` are ready with imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:5526b307b5181ed599077d164a3e162639671d56a39ba6bf8f47ef177dc30d67`.
+- Public `/artifacts/endpoint-agent/current/release-manifest.json` resolves to
+  `release_tag=v0.2.20`, endpoint-agent.exe SHA256
+  `b28990d088b144927c0de7dd1ee83c2288e44a9357c2684892781164a1710b5a`,
+  `install.ps1` SHA256
+  `7fbc90fd1f7a26b5003f9e9448862e85862736ed081e7cab0f68a8e125ec72b3`, and
+  `EndpointAgent.zip` SHA256
+  `9f7f5c2e227c7f88863095cec218322972a42464dc8042f064bb5accafaa1fe2`.
+- Public AgentPC2 bootstrap script at
+  `/artifacts/endpoint-agent/bootstrap/agentpc2-first-install-bootstrap.ps1`
+  has SHA256
+  `411d2b73db8bb2e5380ff8ad15d83638ce3e76c5dcdbbcd06b9da7870e38e5b3`.
+- Bootstrap package gate workflow `27917353876` passed and posted #1768
+  `bootstrap-ready` evidence. Product `UPDATE_AGENT` workflow `27917408760`
+  remains no-go because the latest AgentPC2 heartbeat did not advertise
+  `UPDATE_AGENT`; it observed AgentPC2 online at `v0.2.19`.
+- Endpoint-local operator evidence from AgentPC2 on 2026-06-22 shows the public
+  bootstrap script SHA256 matched
+  `411d2b73db8bb2e5380ff8ad15d83638ce3e76c5dcdbbcd06b9da7870e38e5b3`; the
+  bootstrap installed `EndpointAgent` `v0.2.20`; Authenticode status was
+  `Valid`; signer thumbprint was
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`; endpoint-agent.exe SHA256 was
+  `b28990d088b144927c0de7dd1ee83c2288e44a9357c2684892781164a1710b5a`;
+  `install.ps1` SHA256 was
+  `7fbc90fd1f7a26b5003f9e9448862e85862736ed081e7cab0f68a8e125ec72b3`; the
+  service was `Running` as `LocalSystem`; remote bridge env pointed to
+  `remote-bridge-mtls.testai.acik.com:443` with TLS server name
+  `remote-bridge-mtls.testai.acik.com`, constrained PTY enabled, operations
+  enabled, pilot auto-consent enabled, and AD CS client cert SAN
+  `adcomputer:fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`.
+
+Boundary: this proves source merge, test artifact-host rollout, immutable
+imageID, public artifact manifest/bootstrap availability, and endpoint-local
+operator execution of the v0.2.20 bootstrap. #208 still needs fresh outbound
+443 mTLS HELLO/CONSENT/ACTIVE, signed PERMIT, `AGENT_OUTPUT`/DATA plus
+terminal marker, negative guards, and audit evidence through the product-channel
+acceptance workflow. It does not claim unrestricted shell/RDP/WinRM/SMB/SSH,
+file browser, production remote-support readiness, broad rollout, or true
+TPM/device-key hardware attestation.
+
+## Live Delta — AgentPC2 v0.2.18 online; broker needs bounded enrollment-backed pilot flag (2026-06-21)
+
+`platform-k8s-gitops#1768` has fresh endpoint-local bootstrap evidence for
+AgentPC2 on the published `v0.2.18` package, but `platform-agent#208` remains
+not accepted until the product-channel acceptance workflow captures a new
+bounded operation run.
+
+Fresh endpoint-local evidence from AgentPC2:
+
+- `agentpc2-first-install-bootstrap.ps1` was downloaded from
+  `https://testai.acik.com/artifacts/endpoint-agent/bootstrap/` with SHA256
+  `f12e05475dd2eaa77491e640a26406f8a10187d691529ebb503e51d14fd60d4b`, matching
+  the expected public artifact.
+- The bootstrap installed `EndpointAgent` `v0.2.18`, verified Authenticode as
+  `Valid`, signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`, and
+  endpoint-agent.exe SHA256
+  `92bf65812720d330eaefa9cfee86d6df4d6477a2370b14850f02a74ea288e88e`.
+- `install.ps1` SHA256 was
+  `13dae1d19b313518c2446f7b3e3985d65bc2d46c472fe57429e5bf2ea3b0f9b1`.
+- Windows service evidence shows `EndpointAgent` `Running`, `Auto`,
+  `LocalSystem`, binary version `ProductVersion=v0.2.18` /
+  `FileVersion=v0.2.18`.
+- The service environment is configured for outbound-only broker/SNI
+  `remote-bridge-mtls.testai.acik.com:443`, TLS server name
+  `remote-bridge-mtls.testai.acik.com`, constrained PTY/operations enabled,
+  pilot auto-consent enabled, and AD CS client certificate SAN
+  `adcomputer:fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`.
+
+Current product-channel no-go:
+
+- The live endpoint-admin remote-bridge deployment imageID currently uses
+  `sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d`.
+- `platform-k8s-gitops#1829` aligned the constrained-executor acceptance
+  defaults to `v0.2.18` and the live remote-bridge digest above; rerun
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27911758838`
+  reached the product broker instead of a stale verifier mismatch.
+- That rerun observed AgentPC2 `ONLINE`, `agent_version=v0.2.18`, and catalog
+  HTTP `200`, but the broker decision was `DENY`: `policy:CRYPTO_IDENTITY`,
+  `policyGate=CRYPTO_IDENTITY`, `policyDetail=attestation-unverified`,
+  `transportPushed=false`. Evidence artifact zip SHA256:
+  `dc2566f2a78aa02bd41437361a34e61a7ca873b2a50d660f9deaf1df6854db15`.
+- Backend `platform-backend#723/#724` is already present in the pinned digest:
+  it supports the explicit non-prod
+  `remote-bridge.broker.enrollment-backed-crypto-identity-pilot-risk-accepted`
+  flag and rejects that flag in production-like profiles. The remaining
+  owner-gated GitOps action is to activate the matching test-only ConfigMap
+  env `REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED=true`
+  on the dedicated activation overlay, then rerun #208 acceptance.
+- This evidence proves the bounded endpoint-local seed and service config only.
+  It does not prove `platform-agent#208` product-channel acceptance, broad
+  GPO/MSI rollout, production/domain-wide support readiness, unrestricted
+  shell, inbound SSH/RDP/WinRM/SMB/RPC, or TPM/device-key attestation. The next
+  product-channel gate still needs fresh HELLO/permit/constrained-operation
+  output, negative matrix, and audit/WORM evidence.
+
+## Live Delta — AgentPC2 v0.2.17 product path reaches PERMIT, but recording lacks agent output (2026-06-21)
+
+`platform-agent#208` and `platform-k8s-gitops#1768` remain not accepted.
+AgentPC2 is now installed with the `v0.2.17` operation-capable EndpointAgent
+and reaches the dedicated outbound-only product broker path at
+`remote-bridge-mtls.testai.acik.com:443`, but the latest guarded acceptance
+workflow still ended `no-go` because the same-session WORM recording did not
+contain endpoint output.
+
+Fresh evidence:
+
+- Operator-side AgentPC2 bootstrap transcript shows `EndpointAgent` `v0.2.17`
+  installed and running as `LocalSystem`, broker
+  `remote-bridge-mtls.testai.acik.com:443`, TLS server name
+  `remote-bridge-mtls.testai.acik.com`, constrained operations/PTY enabled,
+  binary SHA256
+  `418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2`, and
+  local rollout evidence zip SHA256
+  `6ADFC050F695F2C91391F44ECC1406CB52C9464F536E142031EC6EAA5692656D`.
+- Workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27905258546`
+  produced evidence artifact
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27905258546/artifacts/7775629367`
+  with artifact zip SHA256
+  `d075a279865fddb6fc9a65cc4073eaf8c76bb7a06dca6ded67ee75e5776677c5`.
+- Pilot readiness was `ready-for-product-smoke`: AgentPC2 was observed as
+  `ONLINE`, `agent_version=v0.2.17`, `last_seen_at=2026-06-21
+  13:06:42.458516+00`.
+- The product governance/session path advanced through `open=200`,
+  `approve=200`, step-up challenge `200`, and step-up verify `200`.
+- Catalog operation `GET_HOSTNAME` returned a signed, fresh `PERMIT` with
+  `capability=CONSTRAINED_PTY`, `policyVersion=rb-test-denetim-v1`,
+  `kid=rb-test-denetim-20260617-01`, and `transportPushed=true`.
+- Core negative guards remained fail-closed: no-auth catalog `401`, raw
+  caller-supplied PTY `400/catalog-operation-required`, command override
+  `400/catalog-command-override`, and disabled catalog operation
+  `422/catalog-operation-disabled`.
+
+No-go boundary:
+
+- `verification-summary.json` reports `result=missing-agent-output` and
+  `acceptedCandidate=false`.
+- `recording-summary.json` reports `rowCount=1`, `POLICY_EVENT` only, and no
+  `DATA`, no `AGENT_OUTPUT`, and no `EndStream` marker.
+- Therefore this evidence narrows the remaining work to the live broker/agent
+  operation dispatch plus recording/export path after `transportPushed=true`.
+  It does not prove `platform-agent#208` Done, unrestricted shell,
+  signed MSI/GPO broad rollout, production remote-support readiness, or true
+  TPM/device-key hardware attestation under `platform-backend#548`.
+
+## Live Delta — AgentPC2 first-install ingest verifier aligned to v0.2.17 (2026-06-21)
+
+The first-install evidence ingest gate must validate the same release that the
+current bounded AgentPC2 bootstrap package installs. After the
+`v0.2.17` bootstrap package was generated, the ingest verifier defaults were
+aligned from the previous `v0.2.16` artifact hashes to:
+
+- release `v0.2.17` / target version `0.2.17`
+- endpoint-agent.exe SHA256
+  `418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2`
+- install.ps1 SHA256
+  `8e7dffa89dda0a7bc8d8e6dc210b22298441b478c19dd5b1622ab64f75a94f56`
+
+This prevents a false negative when AgentPC2 produces valid endpoint-local
+`v0.2.17` bootstrap evidence. It does not prove `platform-agent#208`
+acceptance; the product-channel acceptance workflow still must capture fresh
+`HELLO`, signed `PERMIT`, constrained operation output, negative matrix, and
+audit/WORM evidence.
+
+## Live Delta — AgentPC2 v0.2.17 product update blocked by missing UPDATE_AGENT; bounded bootstrap package ready (2026-06-21)
+
+`platform-agent#208` remains not accepted. The dedicated
+`remote-bridge-mtls.testai.acik.com:443` broker/SNI path and `v0.2.17`
+artifact delivery are ready, but AgentPC2 still needs endpoint-local bootstrap
+before the constrained-operation acceptance workflow can prove `PERMIT`,
+`transportPushed=true`, `AGENT_OUTPUT`, and audit/WORM evidence.
+
+Current live/product-update evidence:
+
+- Product update workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27904276569`
+  attempted release-catalog `UPDATE_AGENT` to `v0.2.17` for AgentPC2
+  (`2f7ad30f-970a-42e7-8af8-08764ae6066f`) with expected binary SHA256
+  `418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2`.
+- The release record was created and approved, but dispatch returned HTTP
+  `422`: `Agent does not advertise the 'UPDATE_AGENT' capability on the most
+  recent heartbeat. Upgrade/configure the agent and retry.`
+- The same workflow observed AgentPC2 as `ONLINE`, `agent_version=v0.2.16`,
+  `last_seen_at=2026-06-21T12:24:58.283725Z`; polling was skipped because the
+  seed helper failed.
+- Negative trust-field guard remained fail-closed: caller-supplied
+  `binaryUrl`, `maxBytes`, `sha256`, `signerThumbprint`, `signingTier`, and
+  `targetVersion` in the dispatch request were rejected with HTTP `400`.
+
+Bounded first-install bootstrap evidence:
+
+- Workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27904338823`
+  generated the bounded AgentPC2 first-install bootstrap package for
+  EndpointAgent `v0.2.17`.
+- Generated script SHA256:
+  `e3f5d49f50ba2f792e8750541cf84d381cc57c94944ea06fd26d51fad93eb65b`
+  (`agentpc2-first-install-bootstrap.ps1`).
+- Canonical env patch v7 SHA256:
+  `f5233701b51cb6ff026f90ac7cd09f15cbe0356c644d395421be66b509d18ec8`.
+- Package summary status: `bootstrap-ready`; broker:
+  `remote-bridge-mtls.testai.acik.com:443`; permit public-key SHA256:
+  `0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110`.
+- Release metadata verified: `release-manifest.json`
+  `ad62a7ebecbe53f2d9fcdaea5096f76c4098eaf325c8ec2bf6a575b23a2c3e28`,
+  `install.ps1`
+  `8e7dffa89dda0a7bc8d8e6dc210b22298441b478c19dd5b1622ab64f75a94f56`,
+  `EndpointAgent.zip`
+  `873a2906c85668ed92a5c656806e77ece82b9d3feabcd6f4cb6927837205cfb7`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`.
+
+Next required evidence:
+
+- Execute the generated bounded bootstrap on AgentPC2 from an elevated
+  PowerShell session, then ingest endpoint-local evidence with the first-install
+  evidence workflow.
+- After ingest passes, rerun the `Faz 22.6.3 AgentPC2 constrained executor
+  acceptance` workflow and require fresh product-channel `HELLO`,
+  consent/active state, signed `PERMIT`, `transportPushed=true`, constrained
+  `GET_HOSTNAME` output, WORM `POLICY_EVENT + AGENT_OUTPUT`, and negative matrix
+  evidence.
+- This bootstrap package is only a bounded seed step. It does not prove
+  `platform-agent#208` acceptance, broad signed MSI/GPO rollout, production
+  support readiness, unrestricted shell, inbound SSH/RDP/WinRM/SMB/RPC, or
+  `platform-backend#548` true TPM/device-key hardware attestation.
+
+## Live Delta — AgentPC2 v0.2.16 installed; operation capability still missing (2026-06-21)
+
+`platform-agent#208` remains open. AgentPC2 endpoint-local bootstrap evidence
+now shows `EndpointAgent` `v0.2.16` installed and running with outbound
+`remote-bridge-mtls.testai.acik.com:443`, but the guarded acceptance workflows
+still end `no-go`. The latest recheck
+`https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27899090210`
+found AgentPC2 `ONLINE` at `v0.2.16`, then advanced through
+open/approve/step-up (`200` responses, WebAuthn verified) before catalog
+`GET_HOSTNAME` returned `DENY/session-not-active` with
+`transportPushed=false`. This is not `platform-agent#208` acceptance.
+
+A subsequent guarded run on merged `main`
+`https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27900035529`
+ran at commit `e29775133fcd9ad4a1a707214bb1b5648803caa2` after the
+capability verifier patch. It still ended `no-go`, but it stopped before the
+product operation path with `reason=postgres-client-pod-query-failed`: the
+workflow DB principal cannot read `endpoint_admin_service.endpoint_heartbeats`,
+and the shell helper converted that expected read-scope failure into a hard
+workflow failure before the fallback `endpoint_devices` query could run. This
+is a verifier control-flow bug, not `#208` acceptance evidence and not an
+endpoint-local bootstrap failure.
+
+Root cause found in source/config comparison: the installed service environment
+can still carry earlier alias keys such as
+`ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED`,
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64`, and
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID`, while the `v0.2.16` agent binary
+loads the canonical operation-capable keys
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED`,
+`ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_PUBLIC_KEY_B64`,
+`ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_KID`, and
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT`. The 2026-06-21
+`27899090210` evidence also exposed a verifier gap: the acceptance script was
+recording `capabilities=[]` from a hard-coded SQL literal instead of the latest
+`endpoint_heartbeats.payload.capabilities`, so the smoke reached the session
+path before clearly failing the endpoint capability gate.
+
+Desired-state follow-up: the public AgentPC2 bootstrap ConfigMap now publishes
+`agentpc2-remote-bridge-canonical-env-patch-v7.ps1` to migrate an already
+installed `v0.2.16` endpoint to canonical constrained-PTY env keys and
+owner-gated pilot auto-consent. The same canonical env patch is embedded in the
+first-install bootstrap path so a fresh rerun does not recreate the alias drift:
+public edge verification currently returns bootstrap SHA256
+`56b793f5b085abdaec49c2aa7fe5feac82d9999682d87f982a10dba0589c59f5` and v7
+patch SHA256
+`be30746c9d8c8ca6d439a68ecb2e75184638001935657dcc2fbf755422438f99`. The
+guarded acceptance script now reads the latest heartbeat capability payload
+when the workflow DB principal is allowed to read it, treats heartbeat
+read-scope denial as `capabilitySource.status=unavailable`, falls back to the
+endpoint device row, and fails early with
+`pilot-readiness-agent-capability-missing` when an available source does not
+advertise `CONSTRAINED_PTY`. If the heartbeat capability source is unavailable
+to the verifier, the summary explicitly records that boundary and the product
+smoke result remains authoritative instead of fabricating `capabilities=[]`.
+
+Endpoint-local v7 execution was completed on AgentPC2 at
+`2026-06-21T12:30:58+03:00` to `2026-06-21T12:32:29+03:00` with script SHA256
+`be30746c9d8c8ca6d439a68ecb2e75184638001935657dcc2fbf755422438f99`. The
+summary reported `status=patched-service-running`, EndpointAgent service
+`Running`, local binary SHA256
+`1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8`, no
+missing canonical keys, broker address
+`remote-bridge-mtls.testai.acik.com:443`, TLS server name
+`remote-bridge-mtls.testai.acik.com`, `ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED=true`,
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED=true`, and
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT=true`. The same log tail shows
+the agent reaching the remote-bridge path but ending streams with
+`broker closed the control stream`, `protocol defect: unsupported-payload-in-idle`,
+or `heartbeat watchdog expired`; this proves the canonical endpoint config is
+present and the product path is being attempted, but does not prove `PERMIT`,
+constrained operation output, or audit acceptance.
+
+This patch/script hardening is not acceptance evidence by itself. After
+endpoint-local v7/bootstrap execution, `#208` still requires fresh
+product-channel `HELLO`, `CONSENT_GRANTED`/`ACTIVE`, `PERMIT`,
+`transportPushed=true`, constrained `GET_HOSTNAME`, same-session
+`AGENT_OUTPUT`, safe negative matrix, and audit/WORM evidence.
+
+## Live Delta — remote-bridge-mtls SNI broker path proven via ingress-nginx; #208 still lacks fresh AGENT_OUTPUT (2026-06-21)
+
+`remote-bridge-mtls.testai.acik.com:443` is currently routed to the dedicated
+remote-bridge broker mTLS/gRPC path through ingress-nginx ssl-passthrough, not
+to the browser edge and not to the endpoint-agent mTLS API path. This closes
+the SNI/certificate routing prerequisite for the bounded pilot, but it does
+not close `platform-agent#208`: AgentPC2 still needs fresh `v0.2.16` `HELLO`,
+`PERMIT`, constrained `GET_HOSTNAME`, same-session `AGENT_OUTPUT`, negative,
+and audit evidence from the product channel.
+
+Fresh live evidence:
+
+- Argo `platform-test` is `health=Healthy` at revision
+  `210dbd2808cbb1cd54d49ac09d180383a9f7eb3c`. The app is still `OutOfSync`
+  only because of the unrelated shared
+  `ExternalSecret platform-test/notification-orchestrator-secrets` warning.
+- Ingress `platform-test/endpoint-admin-remote-bridge-mtls` has host
+  `remote-bridge-mtls.testai.acik.com`, annotation
+  `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, and backend
+  `endpoint-admin-remote-bridge:9444`.
+- Service `platform-test/endpoint-admin-remote-bridge` points to endpoint
+  `10.44.3.238:9444`; deployment `endpoint-admin-remote-bridge` is ready
+  `1/1` with imageID
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:2c023f64c35701b827927041d0b6ae24cc3a772667e626a3a5f3e6eebb59ff84`.
+- `remote-bridge-mtls.testai.acik.com` SNI on `127.0.0.1:443` negotiates
+  TLSv1.3/h2, presents `CN=remote-bridge-mtls.testai.acik.com` issued by
+  `Acik-Endpoint-CA`, advertises that CA as an acceptable client certificate
+  issuer, then fails without a client certificate with
+  `tlsv13 alert certificate required`.
+- The same IP/port with SNI `testai.acik.com` returns browser edge
+  `HTTP/2 200` with the public `*.acik.com` Sectigo certificate; SNI
+  `mtls.testai.acik.com` still presents the normal endpoint-agent mTLS API
+  certificate. Route separation is intact.
+- Broker preflight from staging is ready:
+  `PRECHECK_STATUS=ready failures=0 not_ready=0`.
+
+AgentPC2 product-channel boundary:
+
+- Historical broker logs around the 00:15-01:09 window show AgentPC2 reaching
+  the broker path with `HELLO_VERIFIED:cert=true,attestation=true,device=false`,
+  `CONSENT_TRUST_REFRESHED`, `CONSENT_GRANTED`, `ACTIVE`, then
+  `AGENT_ERROR:operation-dispatch-failed:retryable=false`.
+- The earlier product-channel smoke directory
+  `/home/halil/codex-rb-smoke/20260621T005147Z-agentpc2-v5-product` reached
+  the operator catalog (`catalog=200`) but `open` returned
+  `422 {"reason":"open-session-refused"}` because a previous AgentPC2 session was
+  still live.
+- After explicitly closing stale session
+  `rb-agentpc2-v5-20260621T001948Z`, the latest product-channel smoke
+  `/home/halil/codex-rb-smoke/20260621T010905Z-agentpc2-v5-product` advanced
+  through the real product path: `catalog=200`, `open=200`, `approve=200`,
+  `challenge=200`, `verify=200`, and `operation=200`.
+- The latest operation response is a broker `PERMIT` for catalog operation
+  `GET_HOSTNAME`, `capability=CONSTRAINED_PTY`, `policyVersion=rb-test-denetim-v1`,
+  `kid=rb-test-denetim-20260617-01`, `signaturePresent=true`, and
+  `transportPushed=true`.
+- Safe negative checks in the same run remained fail-closed:
+  `negative-nonpilot=400`, raw caller-supplied PTY command `raw-pty=400`,
+  command override `command-override=400`, and disabled catalog operation
+  `disabled-catalog=422`.
+- This is **not yet #208 acceptance**: WORM recording for
+  `rb-agentpc2-v5-20260621T010905Z` contains only seq `0` / `POLICY_EVENT`.
+  The broker log records `AGENT_ERROR:operation-dispatch-failed:retryable=false`
+  and no same-session `AGENT_OUTPUT`/DATA row.
+- A 06:48 four-hour recheck found no fresh AgentPC2 `HELLO`/`ACTIVE`; do not
+  claim AgentPC2 is connected now.
+
+Artifact boundary:
+
+- Latest endpoint evidence before re-bootstrap still showed AgentPC2 on
+  `v0.2.14`. The `v0.2.16` endpoint bootstrap must run endpoint-local or through
+  the existing product channel once it reconnects.
+- `platform-k8s-gitops#1806` merged at
+  `210dbd2808cbb1cd54d49ac09d180383a9f7eb3c`, fixing the canonical
+  `kustomize/overlays/test/agentpc2-bootstrap/configmap.yaml` source for the
+  AgentPC2 `v0.2.16` first-install bootstrap artifact.
+- Public artifact-host verification from the edge returned 5/5 `HTTP/2 200`
+  responses for `agentpc2-first-install-bootstrap.ps1`, SHA256
+  `d58574d4c9dd675ef41ba8b3bb1c12f8f13c88675ef43e0fee1d40b3bdf2eed7`,
+  with version marker `v0.2.16`.
+- Live `artifact-host` pods are ready with imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:307990110d8f85ef226b5a287c2c4096395b8de68db972572967ff59ef675900`;
+  the mounted bootstrap script hash is the same `d585...` value.
+
+Tracking correction:
+
+- `platform-agent#208` was briefly closed as `COMPLETED` while its issue body
+  and Project #2 item still said `Blocked` and while the required
+  `AGENT_OUTPUT`/DATA evidence was missing. The issue was reopened on
+  2026-06-21 with evidence comment
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4760487637`.
+- The Project #2 item is again consistent with the live state:
+  `platform-agent#208` is open and `Blocked`.
+- `platform-k8s-gitops#1621` is closed on GitHub, but its Project #2 item still
+  showed `In Progress` during the 2026-06-21 live check. The Project #2 item was
+  moved to `Done` and the issue body `agent-state` mirror was reconciled to
+  `status=done`, so this no longer appears as active work.
+
+Next acceptance gate:
+
+- Run the `v0.2.16` bootstrap on AgentPC2.
+- Re-run the guarded product smoke and require `PERMIT`, `transportPushed=true`,
+  constrained `GET_HOSTNAME`, same-session `AGENT_OUTPUT`/DATA, WORM
+  `POLICY_EVENT` + output recording, and safe negative-operation evidence.
+- Do not substitute reverse SSH/RDP/WinRM/SMB/SSH, unrestricted shell, or
+  endpoint-local manual output for the product-channel acceptance evidence.
+
+## Live Delta — AgentPC2 remote-bridge pilot auto-consent still awaiting endpoint-local v5 patch (2026-06-20)
+
+**Session milestone**: AgentPC2 v3 endpoint-local alias patch was verified as
+non-acceptance evidence. It corrected the broker/SNI/permit/env alias surface,
+but the endpoint summary returned `patched-needs-attention` because
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT` was still missing. Broker
+logs continued to show AgentPC2 `HELLO` without `CONSENT_GRANTED`/`ACTIVE`, so
+bounded operation dispatch remained `session-not-active`.
+
+Desired-state follow-up:
+
+- The test artifact-host bootstrap ConfigMap now includes bounded patch
+  `agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1`.
+- Rendered ConfigMap SHA256 for the v5 script:
+  `d08c1b3b7af7af00c000f9f3ecd48bfb2ad5a36f70d80289353b5dc45eec4d5f`.
+- Static guard `scripts/test/agentpc2-first-install-bootstrap-static.sh`
+  checks that the v5 patch key and hash are present, preventing a repeat of the
+  Argo-managed ConfigMap drift where a runtime-only patch disappeared from the
+  public bootstrap path.
+
+Acceptance boundary:
+
+- This only makes the endpoint-local v5 patch available through the GitOps
+  artifact-host path.
+- `platform-agent#208` remains open until AgentPC2 proves product-channel
+  `HELLO`/`CONSENT_GRANTED`/`ACTIVE`, permit, constrained operation, negative
+  operation, and audit evidence after the v5 patch is run.
+
+## Live Delta — Faz 22.6.3 #208 v0.2.14 artifact-host live; AgentPC2 first-install pending (2026-06-20)
+
+**Session milestone**: earlier AgentPC2 product-stream evidence reached the
+broker but the bounded operation returned `session-not-active` because the
+endpoint did not emit the broker consent result. `platform-agent#213` corrected
+that source gap with a disabled-by-default consent responder seam and an
+explicit `ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT` installer/MSI gate.
+The current live recheck still shows AgentPC2 on `v0.2.13`, so this is not yet
+#208 constrained-operation acceptance.
+
+Source and release evidence:
+
+- `platform-agent#213` merged at
+  `fe860dd13d14fda55258854693151fc7e68de534`, adding the gated pilot consent
+  responder plus installer/MSI configuration guards.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27879277114`
+  returned `conclusion=success` for tag `v0.2.14`.
+- Trusted MSI workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27879277123`
+  returned `conclusion=success` for tag `v0.2.14`.
+- Release manifest evidence: `endpoint_agent_sha256=624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618`,
+  `endpoint_agent_zip_sha256=2d7b372c7a3dda548caec66fbcb9327a04e54531369b9b1f2bd7f0c56910a7b1`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`,
+  signing tier `trusted-internal-ca`, and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`.
+- Trusted MSI evidence: `EndpointAgent-0.2.14-signed.msi` SHA256
+  `D5289D68050C5B703C9EDBFF6F338941BF894BD71DB0067DABED6EBA7D3C17ED`,
+  `production=true`, `timestamped=true`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, root certificate SHA256
+  `078494D03E2FB51EA35DB71FFC04B5C5230EE9F52E0D5A057B6F35B8F7E0B59E`.
+
+GitOps desired-state and live artifact-host evidence:
+
+- `platform-k8s-gitops#1796` merged at
+  `f8a45f34a0845d33d0c0d914a9e11d70913b977b`, advancing the test overlay
+  artifact-host desired image from
+  `v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
+  to
+  `v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`.
+- ArgoCD `platform-test` refreshed to revision
+  `f8a45f34a0845d33d0c0d914a9e11d70913b977b`; live
+  `platform-test/artifact-host` rolled out successfully with `generation=19`,
+  `observed=19`, `ready=2`, `updated=2`, `available=2`.
+- Both live artifact-host pods report imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`
+  with `ready=true` and restart count `0`.
+
+Live AgentPC2 and route recheck during this session:
+
+- `endpoint_admin_service.endpoint_devices` still shows `AgentPc2` product
+  device id `2f7ad30f-970a-42e7-8af8-08764ae6066f` as `ONLINE` in ring
+  `PILOT`, with `agent_version=v0.2.13` and `last_seen_at=2026-06-20
+  18:48:39.637374+00`.
+- `Faz 22.6.3 AgentPC2 v0.2.14 product update` workflow
+  `27880118884` correctly returned `no-go`: backend HTTP `422`
+  `Agent does not advertise the 'UPDATE_AGENT' capability on the most recent
+  heartbeat. Upgrade/configure the agent and retry.`
+- `Faz 22.6.3 AgentPC2 first-install bootstrap` workflow `27880208124`
+  produced `bootstrap-ready` evidence for `v0.2.14` with binary SHA256
+  `624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618`,
+  `install.ps1` SHA256
+  `5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df`,
+  broker `remote-bridge-mtls.testai.acik.com:443`, and permit public-key
+  SHA256 `0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110`.
+- The remote-bridge broker pod
+  `endpoint-admin-remote-bridge-6554577d8f-v6bsr` is `Ready 1/1` on
+  endpoint-admin digest
+  `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`.
+  Recent broker logs contain broker-readiness `HELLO_VERIFIED:cert=true,attestation=false,device=false`
+  entries at `2026-06-20T17:21:28Z`, but not AgentPC2 operation acceptance.
+- DB approval grants include recent `rb-agentpc2-*` `CONSTRAINED_PTY` grants,
+  but `session_recording_entry` has no corresponding AgentPC2 `AGENT_OUTPUT`
+  entry. This is **stream/approval-path signal**, not #208 constrained-operation
+  acceptance.
+- Fresh SNI recheck proves the dedicated broker route is separated from the
+  endpoint-agent mTLS API path: `remote-bridge-mtls.testai.acik.com:443`
+  serves leaf `CN=remote-bridge-mtls.testai.acik.com` with SHA256 fingerprint
+  `40:4E:21:30:0A:AD:34:C0:8D:E5:E9:D6:66:31:5B:9A:61:B5:99:D9:8C:8C:FC:27:1D:2D:2A:13:D5:DE:C0:D6`;
+  `mtls.testai.acik.com:443` still serves the endpoint-agent mTLS API cert
+  `CN=mtls.testai.acik.com`; `testai.acik.com:443` still serves the public
+  wildcard web cert.
+- Live `platform-web-nginx` stream map routes
+  `remote-bridge-mtls.testai.acik.com` to upstream `test_remote_bridge_broker`
+  (`172.19.0.2:19445`), and `endpoint-rb-node-forwarder` logged a successful
+  connection to the broker pod IP `10.45.62.59:9444` during the recheck at
+  `2026-06-20 18:42:01Z`.
+
+Acceptance boundary:
+
+- `platform-agent#208` remains open/blocked until a pilot endpoint running
+  `v0.2.14` proves outbound product-channel `HELLO`, broker permit
+  verification, constrained operation output, negative/plaintext refusal, and
+  audit/evidence ledger entries.
+- Raw shell/RDP/WinRM/SMB/SSH/reverse-tunnel access remains diagnostic only and
+  does not satisfy the product remote-ops acceptance gate.
+
+## Live Delta — Faz 22.6.3 #208 v0.2.13 staging prerequisites ready; AgentPC2 endpoint-local bootstrap pending (2026-06-20)
+
+**Session milestone**: AgentPC2 proved that the `v0.2.12` service environment
+was populated with the dedicated 443/SNI remote-bridge settings, compatibility
+aliases, pinned broker permit key metadata, pilot consent, and `adcomputer:`
+SAN prefix. The service still emitted only `agent mode=auto-enroll` and no
+`remote-bridge` / `HELLO` / permit / operation log lines. That narrowed the
+blocker to source wiring: the auto-enroll app path did not start the outbound
+remote bridge.
+
+Source and artifact lineage:
+
+- AgentPC2 local evidence (`2026-06-19`) showed
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR=remote-bridge-mtls.testai.acik.com:443`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME=remote-bridge-mtls.testai.acik.com`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED=true`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED=true`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED=true`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT=true`, and both old/new
+  permit-key and SAN-prefix aliases present; the log stream remained
+  auto-enroll-only.
+- `platform-agent#212` merged at
+  `56f4307965f41e38eff6ec50e7a0d901532a620d`, adding remote-bridge startup
+  in the auto-enroll service and foreground paths and reading persisted
+  auto-enroll identity via `Runner.DeviceID`.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27849205571`
+  returned `conclusion=success` for tag `v0.2.13`.
+- Release manifest evidence:
+  `endpoint_agent_sha256=6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c`,
+  `endpoint_agent_zip_sha256=9afe07b6eb1fa2c8b94b50181ec5265681e77a28ec3368bdd8d1a25fd59acec0`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`,
+  signing tier `trusted-internal-ca`, and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
+
+GitOps + public edge evidence:
+
+- `platform-k8s-gitops#1749` merged at
+  `74eea4c5a31926531b9feca0ee532c530d0cf4d5`, updating the test overlay
+  `artifact-host` pin from
+  `v0.2.12@sha256:b51cd8167734ecc1b383944454ef9030224b0d337a42ba476477b83ebbe762c9`
+  to
+  `v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
+- Public `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json`
+  now returns `release_tag=v0.2.13`,
+  `endpoint_agent_sha256=6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c`,
+  and
+  `endpoint_agent_zip_sha256=9afe07b6eb1fa2c8b94b50181ec5265681e77a28ec3368bdd8d1a25fd59acec0`.
+- Public artifact checks:
+  `/current/endpoint-agent.exe` returns SHA256
+  `6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c`
+  with size `14108584`; `/current/EndpointAgent.zip` returns SHA256
+  `9afe07b6eb1fa2c8b94b50181ec5265681e77a28ec3368bdd8d1a25fd59acec0`
+  with size `5455118`.
+- Manual platform-test sync workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27849762575`
+  completed successfully for endpoint-admin OpenFGA runtime selector
+  verification, but ArgoCD core was unavailable and the script used selected
+  endpoint-admin fallback. That report does not provide `artifact-host` pod
+  `imageID`.
+- Live drift workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27849826042`
+  still reports the existing broader `OutOfSync/Healthy` drift class and does
+  not produce artifact-host-specific digest parity.
+- `platform-backend#718` merged at
+  `49dfe1fc33a286a575f87b93c4f524ae24b619cd`, with the endpoint-admin
+  service CI and security gates green before merge.
+- `platform-k8s-gitops#1780` merged at
+  `0c2cc9e4a023da7d115818d27ed6207d97733a97`, adding the AgentPC2
+  first-install evidence ingest workflow and verifier. This is prerequisite
+  automation only, not #208 acceptance.
+- AgentPC2 constrained-executor acceptance rerun
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27871280141`
+  supersedes earlier same-day reruns `27869889116`, `27869662051`,
+  `27868590359`, and `27867580698` for the current no-go evidence. It reached
+  the staging
+  prerequisite checks and then failed intentionally with no-go reason
+  `pilot-readiness-agent-version-mismatch`.
+- That rerun verified the endpoint-admin remote-bridge deployment/pod digest
+  prerequisite as
+  `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`.
+- The same rerun verified the artifact-host `v0.2.13` release manifest and
+  artifact-host digest
+  `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
+- The current no-go artifact is
+  `agentpc2-constrained-executor-evidence-27871280141`. Downloaded artifact
+  verification with `shasum -a 256 -c SHA256SUMS` passed for every uploaded
+  file, including `workflow-smoke.log`.
+- Known evidence hashes for run `27871280141`: `summary.json` SHA256
+  `6ea4338267428c2e0171dc9d98d623f81a00464af172804ba3f044c89aafcfc6`,
+  `pilot-readiness/summary.json` SHA256
+  `76ed0b6578198b11c7066b49daef2c4e0c216d8c18e10d9682ba069b3da2dbba`,
+  `workflow-smoke.log` SHA256
+  `06e8b1409f2edcac6ac732f56ba126fd4efd0be8edd0ade00f459171d7235290`, and
+  `SHA256SUMS` SHA256
+  `afba29e7afd7de08361953f4574c76f42117c2a3865a10ccc303ea12f17b62da`.
+- Earlier follow-up live readiness helper output generated at
+  `2026-06-20T12:00:59Z` refined the AgentPC2 blocker from the workflow's
+  coarse preflight result:
+  `decision=owner-approved-seed-required`, reason `Target is older and does
+  not advertise UPDATE_AGENT; do not use Software Catalog or Approved Script
+  Runner as a hidden installer lane.` Evidence directory
+  `/tmp/agentpc2-readiness-live-4jRtYS` verified the public
+  `v0.2.13` release manifest, staging DB access, and the approved update
+  release candidate. Key hashes: `summary.json` SHA256
+  `890b75ef1ac49d1ec40375783907dafb6733c9a5fbf3d87cad9aa13c2796246d`,
+  `device-heartbeat.psv` SHA256
+  `ec651a489d2d1b8110fcf469bd31c81ac03642ffd0c72d62f8ffbc3f28ae6f1c`,
+  `agent-update-releases.psv` SHA256
+  `ee08a8edb94e79a9fde6944ed9c9b1f7383fb91b6914e6143fa90c0c9bff549a`,
+  `artifact-manifest.json` SHA256
+  `3a4038f46f5ca137f54664ca3ebf5d62fd37821293575032d0f5794d535a890d`,
+  and `software-catalog-candidates.psv` SHA256
+  `ccc4ec047cb7b8cd98aa30967983e096f713d44d0889aba8ec402c151d60cf66`.
+
+Acceptance boundary:
+
+- The `v0.2.13` source, public artifact-host, endpoint-admin digest, and
+  generated first-install bootstrap package are accepted prerequisites only.
+- Access audit refreshed 2026-06-20: staging has reverse SSH listeners for
+  ERP-MOBIL (`127.0.0.1:22022`) and Denetim PC (`127.0.0.1:22024`), but no
+  AgentPC2 listener (`127.0.0.1:22026` refused). ERP-MOBIL is reachable through
+  that tunnel as `ACIK\ca.setup` with local Administrators and Domain Admins
+  group membership, but the OpenSSH public-key session holds only an S4U ticket
+  scoped to `erp-mobil$`; ADWS/SYSVOL/GPO network operations fail from that
+  token. Denetim PC and ERP-MOBIL both timeout to AgentPC2 on ports
+  `22/135/445/5985/3389/443/80`. Therefore current live access cannot execute
+  the AgentPC2 bootstrap remotely through inbound SSH/RDP/WinRM/SMB/RPC, cannot
+  mutate GPO through the ERP tunnel, and cannot satisfy #208 by operator-shell
+  evidence.
+- AgentPC2 remains the live blocker: the latest acceptance rerun resolved the
+  existing product device row `2f7ad30f-970a-42e7-8af8-08764ae6066f` for
+  hostname `AgentPc2` and observed `agent_version=v0.2.12`, `status=ONLINE`,
+  `last_seen_at=2026-06-20 12:33:18.975489+00`, and `capabilities=[]`. The
+  pilot endpoint still does not report the expected `v0.2.13` agent version,
+  so the #208 product path stops before `HELLO`, permit, operation, negative,
+  or audit evidence.
+- The allowed next seed paths are limited to: catalog-bound `UPDATE_AGENT`
+  after a heartbeat advertises it, owner-approved local maintenance install for
+  this single pilot endpoint followed by product-channel smoke, or a
+  certificate-enrolled test endpoint already running the expected agent
+  version. Rejected acceptance paths remain Software Catalog abuse without an
+  approved EndpointAgent catalog item, Approved Script Runner
+  download-and-execute, generic endpoint-commands `UPDATE_AGENT`, direct DB
+  insert, caller-supplied binary/hash/signer fields, raw PowerShell or
+  unrestricted terminal, and RDP/SSH/WinRM/SMB/RPC/file browser/reverse tunnel.
+- `platform-k8s-gitops#1768` remains blocked until the generated
+  `agentpc2-first-install-bootstrap.ps1` runs endpoint-local on AgentPC2 from
+  an elevated PowerShell session and writes endpoint evidence under
+  `C:\ProgramData\EndpointAgent\rollout-evidence`.
+- The next automated hand-off after that endpoint-local seed is the
+  `Faz 22.6.3 AgentPC2 first-install evidence ingest` workflow. It validates
+  the copied endpoint evidence from an approved staging-runner path and, on a
+  passing verifier result, may dispatch the normal #208 constrained-executor
+  acceptance workflow. This ingest gate is prerequisite verification only; it
+  still does not count as product-channel `HELLO` / permit / operation /
+  negative / audit acceptance.
+- `platform-agent#208` remains open/blocked until a pilot endpoint running the
+  accepted `v0.2.13` candidate proves outbound product-channel `HELLO`, broker
+  permit verification, constrained operation output, negative/plaintext
+  refusal, and audit/evidence ledger entries.
+- Raw shell/RDP/WinRM/SMB/SSH and operator-pasted PowerShell remain diagnostic
+  aids only; they do not satisfy the product remote-ops acceptance gate.
+
+## Live Delta — Faz 22.6.3 #208 artifact-host v0.2.11 served; runtime terminal gate still open (2026-06-19)
+
+**Session milestone**: `platform-agent#210` corrected the artifact-host image
+staging contract so the image serves the loose signed `endpoint-agent.exe`
+listed by `release-manifest.json`, not only the ZIP/bootstrap files. Trusted
+release tag `v0.2.11` is published and the live `testai` artifact-host now
+serves the immutable `v0.2.11` artifact set through both `/v0.2.11/` and
+`/current/`. This is still an artifact delivery prerequisite, not Remote
+Response Terminal acceptance.
+
+Source and artifact lineage:
+
+- `platform-agent#210` merged at
+  `dea5a4b86eb05081147cc47c43f3cc1730072c73`, adding reusable artifact-host
+  served-file staging and release-time manifest/hash checks.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27810127580`
+  returned `conclusion=success` for tag `v0.2.11`.
+- Release manifest evidence:
+  `endpoint_agent_sha256=cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e`,
+  `endpoint_agent_zip_sha256=393ec3db48fe81dc9c85cf86e4879336dbac5136713611c6094c6daaca91df0d`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`,
+  signing tier `trusted-internal-ca`, and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.11@sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a`.
+- `platform-k8s-gitops#1743` merged at
+  `6a6c7c26905f24eef79b1ace2c3ad718ea57871b`, refreshing the Remote Response
+  Terminal evidence bundle `SHA256SUMS` immediately before verifier execution.
+- `platform-k8s-gitops#1744` merged at
+  `ff5caa8c50e5a038d786f7e18247d1a2119d831b`, promoting the test artifact-host
+  overlay from `v0.2.10@sha256:7befd6aac67712e1a40fd1ab950ff455c22161ffcadfe03c2dd204b128fffd72`
+  to `v0.2.11@sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a`.
+
+Live evidence after sync:
+
+- Platform-test sync workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27810517080`
+  returned `conclusion=success`; the ArgoCD Application reports `Synced` /
+  `Healthy` at revision `ff5caa8c50e5a038d786f7e18247d1a2119d831b`.
+- `platform-test/artifact-host` Deployment is rolled out with generation `13`,
+  observed generation `13`, `2/2` updated/ready replicas, and image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.11@sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a`.
+- Both live artifact-host pods are Ready with `restartCount=0` and imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a`.
+- Public manifest
+  `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json`
+  returns `release_tag=v0.2.11`,
+  `endpoint_agent_sha256=cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e`,
+  and `endpoint_agent_zip_sha256=393ec3db48fe81dc9c85cf86e4879336dbac5136713611c6094c6daaca91df0d`.
+- Public artifact checks:
+  `/current/endpoint-agent.exe` and `/v0.2.11/endpoint-agent.exe` both return
+  HTTP 200, size `14104488`, SHA256
+  `cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e`.
+  `/current/EndpointAgent.zip` and `/v0.2.11/EndpointAgent.zip` both return
+  HTTP 200, size `5453986`, SHA256
+  `393ec3db48fe81dc9c85cf86e4879336dbac5136713611c6094c6daaca91df0d`.
+
+Acceptance boundary:
+
+- The public artifact-host gate is satisfied for `v0.2.11`; by itself this did
+  not prove endpoint update or constrained terminal execution.
+- `platform-backend#712` is now accepted-bounded and Project #2 `Done` for the
+  release/update lane. The follow-up catalog-bound `UPDATE_AGENT` path used the
+  approved/enabled `v0.2.11` release row, reached staged activation on
+  `HALILKOOLUB735`, and moved heartbeat from `v0.2.5` to `v0.2.11`. Evidence:
+  command id `bc425bca-74ab-4a9c-a4e7-fa70cc8453f7`, result
+  `UPDATE_AGENT STAGED_ACTIVATION_READY`, binary SHA256
+  `cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e`,
+  Authenticode signer cert SHA256 thumbprint
+  `EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD`, and a
+  negative guard proving caller-supplied binary/hash/signer fields were
+  rejected.
+- `platform-agent#208` remains open until a pilot endpoint running the accepted
+  candidate proves product-channel constrained terminal output (`AGENT_OUTPUT`
+  or equivalent DATA/EndStream evidence). Raw shell/RDP/WinRM/SMB/SSH or
+  operator-pasted PowerShell does not satisfy the gate.
+
+## Live Delta — Faz 22.6.3 #208 agent artifact v0.2.10 served; runtime terminal gate still open (2026-06-19)
+
+**Session milestone**: the `platform-agent#208` constrained-executor source
+fix is now available as a signed test artifact and is served by the live
+`testai` artifact-host. This is a runtime prerequisite for the Remote Response
+Terminal lane, not terminal acceptance by itself. The pilot endpoint has not
+yet proven a `v0.2.10` product-path `AGENT_OUTPUT` / DATA recording.
+
+Source and artifact lineage:
+
+- `platform-agent#209` merged the agent app-entrypoint wiring for the
+  constrained PTY dispatcher. Default behavior remains CONTROL-only; operation
+  mode requires explicit enablement, outbound mTLS client material, pinned
+  broker permit key/kid, and plaintext dispatch refusal.
+- Release tag `v0.2.10` was published from merge commit
+  `9def0a7e15b1d746642e71501760176126a750c5`.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27794936606`
+  completed successfully.
+- Release manifest evidence:
+  `endpoint_agent_sha256=a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec`,
+  `endpoint_agent_zip_sha256=fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`,
+  signing tier `trusted-internal-ca`, and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.10@sha256:7befd6aac67712e1a40fd1ab950ff455c22161ffcadfe03c2dd204b128fffd72`.
+- `platform-k8s-gitops#1710` merged at
+  `2a280b33dd74087a5eee79eb13a83698a1368b5a`, promoting the test
+  artifact-host image from `v0.2.9` to the immutable `v0.2.10` digest.
+- Platform-test sync workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27795463381`
+  succeeded: `Sync platform-test through ArgoCD`, endpoint-admin OpenFGA
+  runtime selector verify, and report upload all passed.
+
+Live evidence after sync:
+
+- `artifact-host` deployment image is
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.10@sha256:7befd6aac67712e1a40fd1ab950ff455c22161ffcadfe03c2dd204b128fffd72`.
+- Deployment status is `2/2`, `updatedReplicas=2`, generation `12`, observed
+  generation `12`.
+- Both live artifact-host pods are Ready and their imageIDs match digest
+  `sha256:7befd6aac67712e1a40fd1ab950ff455c22161ffcadfe03c2dd204b128fffd72`.
+- Public manifest
+  `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json`
+  now returns `release_tag=v0.2.10`,
+  `endpoint_agent_sha256=a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec`,
+  and `endpoint_agent_zip_sha256=fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e`.
+- Evidence comment:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4746949961`.
+
+Residual runtime truth for `platform-agent#208`:
+
+- Denetim PC `SRB-AIDENETIMPC`
+  (`423b6fc3-7497-4083-bd2f-5e2fe543bfe9`) still reports
+  `agent_version=0.1.0-dev.g636f1d4-productsession`, status `ONLINE`, last
+  seen `2026-06-18 23:37:04+00`.
+- The latest heartbeat capabilities do not include `UPDATE_AGENT`; they list
+  `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
+  `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
+  `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
+  `SET_DISPLAY_POLICY`.
+- A live software-catalog query for agent/endpoint candidates returned only
+  approved 7-Zip WinGet items (`be026-smoke-7zip-registry`, `7zip`,
+  `be021-smoke-7zip`). There is no EndpointAgent `v0.2.10` catalog item, and
+  the current install lane is not a generic signed-binary installer.
+- The recent `#701/#702` catalog and approved-script product smoke evidence
+  records `POLICY_EVENT` only for the new digest path; it does not prove a new
+  `AGENT_OUTPUT` / DATA row from the `v0.2.10` constrained executor.
+- The latest generic Denetim product smoke
+  `/home/halil/codex-rb-smoke/20260618T223221Z-product` returned
+  `operation=400` with reason `catalog-operation-required` and no recording
+  rows. Do not use it as terminal acceptance evidence.
+
+Next gate:
+
+- Keep `platform-agent#208` open / `Needs Verify` until a pilot endpoint is
+  updated or installed from the `v0.2.10` artifact through an owner-approved
+  path and then proves a product-channel constrained operation that records
+  `AGENT_OUTPUT` or equivalent DATA/EndStream evidence.
+- Preferred product path is catalog-bound `UPDATE_AGENT`, but Denetim PC cannot
+  use that path while its latest heartbeat omits `UPDATE_AGENT`. The acceptable
+  alternatives are an explicitly owner-approved local maintenance install for a
+  single pilot endpoint, or a separate cert-enrolled endpoint already running
+  `v0.2.10`. Either alternative only seeds the pilot; it does not satisfy
+  terminal acceptance until product-channel `AGENT_OUTPUT` / DATA evidence is
+  recorded.
+- Do not count unrestricted shell, RDP, WinRM, SMB, SSH, arbitrary
+  download-and-execute, generic reverse tunnel, Software Catalog abuse,
+  Approved Script Runner abuse, or operator-pasted endpoint PowerShell as
+  acceptance evidence. The detailed decision tree is now in
+  `docs/runbooks/RB-faz22.6-remote-response-terminal.md`.
+
+## Live Delta — Faz 22.6.2 #702 Approved Script Runner product smoke accepted-bounded (2026-06-19)
+
+**Session milestone**: `platform-k8s-gitops#1705` now has live
+desired-state, runtime imageID, and product-path Approved Script Runner smoke
+evidence for `platform-backend#702/#709`. The bounded `#702` runtime gate has
+accepted-candidate evidence for one signed approved script (`DIAG_HOSTNAME`)
+with `PERMIT` / `permit-transport-pushed` and explicit fail-closed checks for
+raw script text, wrong script hash, argument-schema mismatch, disabled script,
+revoked script, and no-auth catalog access. This is not a claim for
+interactive terminal, unrestricted shell, file transfer, VIEW_ONLY
+screen-share, production remote-support readiness, broad rollout, platform-web
+operator UX, or true TPM/device-key attestation.
+
+Runtime and source lineage:
+
+- `platform-backend#709` merged the Approved Script Runner source/API slice at
+  `6b8bac8090824968fe31da824a855c3ef59912db`.
+- Selected artifact:
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`.
+- Backend image workflow run `27789316995` completed `success`; digest artifact
+  `digest-endpoint-admin-service` contained
+  `9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`.
+- GitOps PR `platform-k8s-gitops#1706` merged at
+  `2026-06-18T21:41:26Z` as
+  `5c8f766141ddef3900730e9a76c8bc6b27b908d5`, pinning both the primary test
+  overlay and the owner-gated remote-bridge activation overlay to the selected
+  digest.
+- PR `#1706` checks passed: ADR-0011 boundary, ADR-0031 enum drift, CodeQL
+  actions/python, drift render prod/test, kustomize, YAML lint, shellcheck,
+  no-closure, placeholder leak, ResourceQuota headroom prod/test, gitleaks,
+  cross-ai-audit, auto-label, and TPG reset guards.
+- Staging `/home/halil/platform-k8s-gitops` is at `5c8f766`; both
+  `kubectl --context k3d-test kustomize kustomize/overlays/test` and
+  the owner-gated remote-bridge activation overlay render the selected digest.
+- Live primary `endpoint-admin-service` pod
+  `endpoint-admin-service-6f5549ddcd-gn9ml` is Running/ready with restart
+  count `0` and imageID matching the selected digest.
+- Live `endpoint-admin-remote-bridge` pod
+  `endpoint-admin-remote-bridge-789dd799-ktpjk` is Running/ready with restart
+  count `0`; container `endpoint-admin-remote-bridge` imageID matches the
+  selected digest.
+
+Approved Script Runner product smoke evidence:
+
+- Evidence directory:
+  `/home/halil/codex-rb-smoke/20260618T215313Z-approved-script-product-9645`.
+- Summary files:
+  `/home/halil/codex-rb-smoke/20260618T215313Z-approved-script-product-9645/summary.json`
+  and
+  `/home/halil/codex-rb-smoke/20260618T215313Z-approved-script-product-9645/approved-script/summary.json`.
+- Evidence ledger: top-level `SHA256SUMS` has 45 entries and the
+  approved-script helper `SHA256SUMS` has 23 entries.
+- Session: `rb-approved-script-20260618T215313Z`; product HTTP path:
+  open `200`, approve `200`, step-up challenge `200`, step-up verify `200`.
+- Approved script result: status `accepted-candidate`, operationStatus
+  `permit-transport-pushed`, scriptId `DIAG_HOSTNAME`, scriptVersion `1`,
+  scriptHash
+  `b381ceb8eeba1a24a20f555807180a7f793697fcd11dbf016857e15c48da3f77`,
+  expectedOperationKind `PERMIT`, sessionPresent `true`.
+- Deny matrix: no-auth approved-scripts `401`, raw-script deny `400`,
+  wrong-hash deny `400`, argument-schema deny `400`, disabled-script deny
+  `422`, revoked-script deny `422`.
+- Audit/recording evidence: summary `recordingKinds` includes `POLICY_EVENT`;
+  remote-bridge logs show the gRPC server listening with mutual TLS and inbound
+  audit for session `rb-approved-script-20260618T215313Z` with
+  `CONSENT_GRANTED` and `ACTIVE`.
+- `platform-k8s-gitops#1705` records the acceptance evidence and is closed as
+  the bounded 22.6.2 GitOps/runtime gate.
+
+Residual boundaries:
+
+- `platform-agent#208` is source-ready for the 22.6.3 constrained executor, but
+  no new staging AGENT_OUTPUT/live terminal-source smoke was proven in the
+  `#1705` evidence path.
+- `platform-web#820` remains open for the operator UX. UI approval, TTL,
+  transcript, and negative-state browser smoke are not yet proven.
+- `platform-backend#548` remains the true device-key / TPM hardware-attestation
+  boundary for broad terminal rollout unless owner explicitly accepts a narrow,
+  time-bounded pilot risk envelope.
+- Open draft PR `platform-k8s-gitops#1652` still touches the owner-gated
+  remote-bridge activation overlay. It must preserve/rebase onto
+  `sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`
+  before merge/apply to avoid a digest downgrade or overlay drift.
+
+## Live Delta — Faz 22.6.1 #701 catalog smoke accepted on approved-script digest (2026-06-19)
+
+**Session milestone**: `platform-k8s-gitops#1697` and `platform-backend#707`
+now have fresh live staging evidence for the server-owned/static Operation
+Catalog and resolver guard path on the same runtime digest accepted for
+Approved Script Runner. The bounded catalog gate has product-path evidence for
+one enabled catalog operation (`GET_HOSTNAME`) with `PERMIT`,
+`transportPushed=true`, catalog fail-closed checks, and live pod imageID
+matching the selected digest. This is not a claim for Approved Script Runner
+itself, unrestricted shell, terminal UX, file transfer, VIEW_ONLY
+screen-share, broad managed-PC rollout, production remote-support readiness,
+or true TPM/device-key attestation.
+
+Runtime and source lineage:
+
+- Selected artifact:
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`.
+- Staging `/home/halil/platform-k8s-gitops` is at
+  `5c8f766141ddef3900730e9a76c8bc6b27b908d5`, which pins both the primary
+  test overlay and the owner-gated remote-bridge activation overlay to the
+  selected digest.
+- Live `endpoint-admin-remote-bridge` pod
+  `endpoint-admin-remote-bridge-789dd799-ktpjk` is Running/ready with restart
+  count `0`; container `endpoint-admin-remote-bridge` imageID matches the
+  selected digest.
+- `platform-k8s-gitops#1697` and `platform-backend#707` record the acceptance
+  evidence and are GitHub `Closed` for this bounded catalog/resolver gate.
+
+Product catalog smoke evidence:
+
+- Evidence directory:
+  `/home/halil/codex-rb-smoke/20260618T221211Z-catalog-9645ad-product-retry3`.
+- Catalog helper directory:
+  `/home/halil/codex-rb-smoke/20260618T221211Z-catalog-9645ad-product-retry3/catalog`.
+- Top-level `summary.json` SHA256:
+  `4f44404ab219e93d8724ee14ac78a29420f6638e291531a1d038317898d98d67`.
+- Session: `rb-catalog-9645ad-20260618T221211Z`; product HTTP path:
+  open `200`, approve `200`, step-up challenge `200`, step-up verify `200`.
+- Pilot/scope guard: non-pilot `FULL_RDP` open returned `400`.
+- Catalog access guard: no-auth catalog returned `401`; authenticated catalog
+  returned `200`.
+- Catalog negative matrix: raw `PTY_COMMAND` without `catalogOperationId`
+  returned `400/catalog-operation-required`; disabled `GET_SERVICE_STATUS`
+  returned `422/catalog-operation-disabled`; `GET_HOSTNAME` command override
+  returned `400/catalog-command-override`.
+- Allowed catalog operation result: `GET_HOSTNAME` returned `200`,
+  `kind=PERMIT`, `transportPushed=true`, `deny=null`,
+  `permit.signaturePresent=true`, `permit.freshAtResponseTime=true`,
+  `permit.capability=CONSTRAINED_PTY`, and
+  `catalogOperationId=GET_HOSTNAME`.
+- Audit/recording evidence: summary `recordingKinds` includes
+  `POLICY_EVENT`; broker log for the live stream records
+  `HELLO_VERIFIED:cert=true,attestation=true,device=false`.
+- Temporary REST/gRPC port-forwards and the Docker harness were cleaned up
+  after the accepted run; live pod readiness and imageID were rechecked after
+  cleanup.
+
+Discovered follow-up:
+
+- A stale successful Approved Script Runner session
+  `rb-approved-script-20260618T215313Z` initially caused subsequent catalog
+  `open-session` attempts to return `422/open-session-refused`, because the
+  remote-bridge session store allows one non-terminal session per peer.
+- Cleanup evidence:
+  `/home/halil/codex-rb-smoke/20260618T221002Z-cleanup-active-session-screen-view-deny`.
+  A `SCREEN_VIEW` operation returned `200` with
+  `kind=DENY`, `transportPushed=false`, and
+  `deny.reason=no-active-consent-lease`, which released the active slot.
+- Follow-up issue `platform-backend#710` tracks an explicit remote-bridge
+  session close/reaper path after `PERMIT` so later smokes and operator flows
+  do not depend on an incidental DENY cleanup operation.
+
+Residual boundaries:
+
+- `platform-backend#702/#709` Approved Script Runner evidence is recorded in
+  the separate `#1705` delta above and is not implied by this catalog section.
+- `platform-agent#208` remains the constrained executor source boundary; no
+  new packaged-agent terminal-source smoke is claimed by this catalog run.
+- `platform-web#820` remains open for the operator UX. UI approval, TTL,
+  transcript, and negative-state browser smoke are not proven here.
+- `platform-backend#548` remains the true device-key / TPM hardware-attestation
+  boundary for broad terminal rollout unless owner explicitly accepts a narrow,
+  time-bounded pilot risk envelope.
+
+## Live Delta — Faz 22.6.1 #701 catalog product smoke accepted-candidate on combined digest (2026-06-18)
+
+**Session milestone**: `platform-k8s-gitops#1697` now has live deploy,
+activation, preflight, and product-path catalog smoke evidence for the combined
+`platform-backend#701` + `#705/#706` endpoint-admin artifact. The bounded
+`#701` runtime gate has accepted-candidate evidence for one enabled catalog
+operation (`GET_HOSTNAME`) with `PERMIT`, `transportPushed=true`, and bounded
+audit/result evidence. This is not a claim for Approved Script Runner,
+interactive terminal, unrestricted shell, file transfer, VIEW_ONLY screen-share,
+production remote-support readiness, broad rollout, or true TPM/device-key
+attestation.
+
+Runtime and source lineage:
+
+- `platform-k8s-gitops#1698` merged the digest-independent catalog smoke
+  harness and Remote Response Terminal runbook boundary.
+- `platform-backend#706` merged after `#701/#704`, so the selected runtime
+  artifact is the combined endpoint-admin image from backend commit
+  `9a8bf45a51c6494e5f03ba33f515dd38e108bbee`, not the superseded `#701`-only
+  digest.
+- Selected artifact:
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c`.
+- `platform-k8s-gitops#1699` merged at
+  `0d031e1776060bdda7d957ae56660162173fa2e0`, pinning the primary test overlay
+  and visibly re-pinning the owner-gated remote-bridge activation overlay to
+  the same digest.
+- Backend test deploy workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27783540665`
+  completed `success`: digest extraction, sequential digest pin, public edge
+  chain, in-cluster readiness, and pod stability passed. Gate 2 JWT auth smoke
+  remained warn-only/skipped because `SMOKE_AUTH_*` secrets are not configured.
+- Owner-gated activation overlay was applied with the documented
+  `kubectl apply -k kustomize/overlays/test/activation/endpoint-admin-remote-bridge`
+  path against `k3d-test/platform-test`.
+- Live `endpoint-admin-service` and `endpoint-admin-remote-bridge` deployment
+  images and pod `imageID`s match the selected digest. The live remote-bridge
+  pod is `endpoint-admin-remote-bridge-dcbffc9c6-6szpg`, Ready `true`, restart
+  count `0`.
+
+Preflight and fail-closed evidence:
+
+- `scripts/faz22-remote-ops/remote-ops-session-preflight.sh` on the staging
+  host returned `PRECHECK_STATUS=ready failures=0 not_ready=0`.
+- Preflight confirmed activation overlay render, no zero digest placeholder, no
+  RFC5737 placeholder CIDRs, outbound-only topology, dedicated remote-bridge
+  Vault path, expected runtime envs, remote-bridge ExternalSecrets
+  `Ready=True / SecretSynced`, backing Secrets present, and remote-bridge
+  NetworkPolicies present.
+- No-auth catalog preflight on the new digest returned `401`:
+  `/home/halil/codex-rb-smoke/20260618T194645Z-catalog-noauth-newdigest`.
+  `summary.json` SHA256:
+  `5c13784f13cac4bf190132c7d3a7b1ff43a9356486343b09024973c7f382b2d9`.
+
+Product catalog smoke evidence:
+
+- Evidence directory:
+  `/home/halil/codex-rb-smoke/20260618T201530Z-catalog-701-product`.
+- `summary.json` SHA256:
+  `9485fb9935fd1467f82bd311998b0f0d7525d41fad94d368b4df0a4d4e69c20a`.
+- Session: `rb-denetim-catalog-20260618T201715Z`; device:
+  `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`; catalog operation:
+  `GET_HOSTNAME`; operation id: `op-catalog-20260618T201715Z`.
+- Product HTTP path: no-auth catalog `401`, authenticated catalog `200`, open
+  session `200` with `consentPromptSent=true`, non-pilot `FULL_RDP` open
+  `400`, approval `200`, step-up challenge `200`, step-up verify `200` with
+  `WEBAUTHN_USER_VERIFICATION`.
+- Catalog negative matrix: raw `PTY_COMMAND` without `catalogOperationId`
+  returned `400/catalog-operation-required`; disabled `GET_SERVICE_STATUS`
+  returned `422/catalog-operation-disabled`; `GET_HOSTNAME` command override
+  returned `400/catalog-command-override`.
+- Allowed catalog operation result: `GET_HOSTNAME` returned `200`,
+  `kind=PERMIT`, `transportPushed=true`, `deny=null`,
+  `permit.signaturePresent=true`, `permit.freshAtResponseTime=true`,
+  `permit.capability=CONSTRAINED_PTY`.
+- Bounded audit/result evidence: harness log records `HEARTBEAT`,
+  `CONSENT_PROMPT`, consent grant, and `OPERATION_DISPATCH` for the same
+  session/operation command `hostname`; remote-bridge log records
+  `HELLO_VERIFIED` and `CONSENT_GRANTED/ACTIVE`; DB WORM query records
+  `session_recording_entry` kind `POLICY_EVENT`.
+- Temporary per-run REST/gRPC port-forwards and Docker harness were cleaned up;
+  pre-existing shared `18096/19444` forwards were not touched.
+
+Residual boundaries:
+
+- The earlier `openSession 404` observation on the same digest remains useful
+  stale/no-live-peer evidence, but it is superseded for `#701` acceptance by
+  the fresh Denetim CONTROL stream smoke above. No backend resolver code change
+  is proven necessary by that earlier failure alone.
+- `platform-backend#701` now has accepted-candidate runtime evidence for the
+  server-owned/static first catalog boundary. Persistent tenant-scoped catalog
+  CRUD remains a separate product decision.
+- `platform-backend#702` owns Approved Script Runner. VIEW_ONLY screen-share
+  remains under `platform-k8s-gitops#1580`. True device-key/TPM residual remains
+  under `platform-backend#548`.
+
+## Live Delta — Faz 22.6 #510 parent remote-bridge acceptance closed on staging (2026-06-18)
+
+**Session milestone**: `platform-backend#510` is GitHub `Closed` and Project #2
+status is now `Done` after fresh live staging evidence. This is a parent
+acceptance closure for the owner-gated staging remote-ops path; it is not a
+50/800-device rollout claim and it does not replace the separate signed MSI/GPO
+pilot gate.
+
+Runtime and source lineage:
+
+- `platform-backend#699` merged as
+  `64926dd98ea2501ada12facfb5962d6f4677ff5a`, adding bounded/redacted
+  `deny.policyDetail` diagnostics for `CRYPTO_IDENTITY`.
+- GitOps PR `platform-k8s-gitops#1691` repinned the owner-gated
+  `endpoint-admin-remote-bridge` activation overlay to backend image digest
+  `sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`
+  and merged as `b13a1cb9e263ce1fa3f0d1c4034e8725f69900f0`.
+- Staging `/home/halil/platform-k8s-gitops` was fast-forwarded to that merge
+  and `kustomize/overlays/test/activation/endpoint-admin-remote-bridge` was
+  applied on `k3d-test/platform-test`.
+- Live deployment image and pod `imageID` both match:
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`.
+- Live pod: `endpoint-admin-remote-bridge-6dbc8cbf98-phkwm`, Ready `1/1`,
+  restart count `0`.
+
+Accepted product smoke evidence:
+
+- Parent evidence bundle:
+  `/home/halil/codex-rb-smoke/20260618T145831Z-parent-acceptance`.
+- Product smoke directory:
+  `/home/halil/codex-rb-smoke/20260618T145831Z-product`.
+- Session: `rb-denetim-20260618T145831Z`.
+- Operation: `op-hostname-20260618T145831Z`.
+- HTTP path: open `200`, negative non-pilot capability `400`, approve `200`,
+  step-up challenge `200`, step-up verify `200`, operation submit `200`.
+- Operation response: `kind=PERMIT`, `transportPushed=true`, `deny=null`,
+  `signaturePresent=true`, `freshAtResponseTime=true`,
+  capability `CONSTRAINED_PTY`.
+- Recording row captured for this run: `POLICY_EVENT`. The harness also
+  received broker `OPERATION_DISPATCH` for the same session and command
+  `hostname`; do not infer broad DATA-plane or full shell capability from this.
+
+mTLS / crypto identity evidence:
+
+- Broker log for the accepted live stream:
+  `HELLO_VERIFIED:cert=true,attestation=true,device=false`.
+- Active DB machine-cert binding for the Denetim device points at transport
+  peer key
+  `0979dec1a9553a75d8aed49d833e110abfb9a63992d5947201061315a987ee8b`.
+- Live harness path:
+  `/home/halil/codex-rb-smoke/harness-runs/20260618T145647Z-live-agent`.
+
+Evidence hashes in the parent bundle:
+
+```text
+91edcba0b4c2338daa8dfe5b1813d208ba0978718191a9a7cdbac44b78949c33  db-machine-cert.txt
+baceb677bc4d25bce7282b2ac13dda419ca9e9946ea63895bb4d000a169199ca  deploy-image.txt
+ccc7b9566037a1692769935392472ab4019d45ae034af889a80b42c56724087d  deploy.json
+35c4a971d9ca5f1f75fb44ce327f92b52afcfbce4bff8b9be93ee3ab78d28009  harness.log
+cc851f4429076702cb6ef06e8e2a4f7ea0b1b05571f937024b794db8b21f2beb  operation.res.json
+baceb677bc4d25bce7282b2ac13dda419ca9e9946ea63895bb4d000a169199ca  pod-imageID.txt
+b45aa06133f13359b6778a156c9a2637b82ae354adbd1fd12407df09389cc3ae  pod.json
+a6022084fefa6d1bbecfa42db1f18a7c4ebc0c448623a7f03c2fe3fd95574365  product-SHA256SUMS
+153c7d0626157bf40075ea0e89074f869f2e8de8c746d50d25878108b5a82c11  product-summary.json
+46a9e5ccd3734807a002c4c852dc252c12ec3aafc66ddba38a6591df071a1a5a  recording.tsv
+373f57cb4fd8ccd9e115b338e3744aa50ae2e156a04f136cac0dc06ae4012a76  remote-bridge-logs.txt
+```
+
+Residual boundaries:
+
+- The accepted #510 scope is the staging parent remote-ops acceptance gate, not
+  a broad managed-PC rollout. Packaged agent remote-ops capability, signed
+  MSI/GPO deployment, rollback drills, and larger device waves remain separate
+  rollout/productization gates.
+- Temporary reverse SSH and RDP/manual PowerShell remain lab-only and did not
+  count toward this acceptance.
+- Remote Response Terminal / Break-Glass Response Shell productization is now
+  split out of the closed `platform-backend#510` parent. Tracking issues:
+  `platform-k8s-gitops#1693` (governance/runbook), `platform-backend#701`
+  (Operation Catalog), `platform-backend#702` (Approved Script Runner),
+  `platform-agent#208` (constrained executor), and `platform-web#820`
+  (operator UX). This is not a current live terminal claim; it is the planned
+  22.6.x productization lane. Raw unrestricted shell, broad RDP/WinRM/SMB/SSH
+  support, signed MSI/GPO rollout, 5-PC/50-PC/800-PC readiness, production
+  remote-support readiness, and true TPM/device-key attestation remain outside
+  the #510 closure unless separately evidenced.
+
+## Live Delta — Faz 22.5 #1601 bounded acceptance closed + exporter blocker fixed (2026-06-18)
+
+**Session milestone**: `platform-k8s-gitops#1601` is closed and Project #2
+Status is `Done` for the bounded operatorless/product-channel acceptance scope.
+The accepted scope is Denetim PC product remote-ops session evidence plus
+AgentPC2 product-channel evidence; broader signed MSI/GPO rollout and
+owner-gated attended remote-support remain split follow-ups.
+
+Accepted evidence:
+
+- Denetim PC product session artifact
+  `/home/halil/codex-rb-smoke/20260617T191335Z-product` remains present on
+  staging; `summary.json` SHA256 is
+  `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`.
+  The product path returned `open=200`, `approve=200`, `challenge=200`,
+  `verify=200`, `operation=200`, `negative-nonpilot=400`; operation result
+  was `PERMIT` with `transportPushed=true`.
+- AgentPC2 product-channel gate is accepted under `#1643`: tokenless mTLS
+  auto-enroll, persisted DPAPI state, authenticated command polling, restart
+  continuity, and `v0.2.9` artifact promotion evidence are recorded. The
+  Windows CNG/KSP signer fix landed in `platform-agent#207`.
+- `audit-archive-exporter` Degraded was fixed by `#1677`, `#1678`, and
+  `#1679`: `audit-archive-exporter-secrets` is `True / SecretSynced`, the
+  Secret contains keys `DATA_SOURCE_PASS,DATA_SOURCE_USER` (values not
+  printed), rollout succeeded, pod is `Running/Ready`, and metrics include
+  `pg_up 1`, `pg_exporter_last_scrape_error 0`, and `audit_archive_*`.
+
+Scope split / residual truth:
+
+- Signed MSI/GPO rollout acceptance is split to `#1680`, Project #2
+  `Blocked`, Faz 22 / ops / P0 / gate. It owns managed-PC install, rollback,
+  and broader 5-PC/50-PC/800-PC rollout evidence. Agent-doable prep now has a
+  canonical runbook
+  `docs/runbooks/RB-faz22.5-signed-msi-gpo-rollout-acceptance.md` and endpoint
+  collector
+  `scripts/faz22-mass-deployment/collect-endpoint-agent-rollout-evidence.ps1`;
+  live acceptance remains blocked until the selected deployment method is run
+  on two managed PCs and their installed agent versions meet the current
+  artifact floor.
+- Current #1680 artifact reality after `#1710` and `#1736`: public
+  `current/release-manifest.json` serves `v0.2.10` with EXE SHA256
+  `a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec`
+  and ZIP SHA256
+  `fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e`.
+  GitHub release `v0.2.10` now also contains
+  `EndpointAgent-0.2.10-signed.msi` SHA256
+  `132b8990bc78c4952ccaa7d2076cf26a37f0616f81e1a82274b5570b49f24ea4`
+  and `msi-build-manifest.json` SHA256
+  `68929426674f6524e6fdbc78e2eb024920cfd686dd637573537c1717196c69ee`.
+  AG-018 workflow run `27794936579` succeeded for `v0.2.10` from head
+  `9def0a7e15b1d746642e71501760176126a750c5`; the trusted MSI manifest
+  records `production=true`, `signing_tier=trusted-internal-ca`,
+  `timestamped=true`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, root cert SHA256
+  `078494D03E2FB51EA35DB71FFC04B5C5230EE9F52E0D5A057B6F35B8F7E0B59E`,
+  `key_custody=host-fs-restricted`, and `vault_backed=false`. Therefore the
+  previous `signed != current` artifact blocker is removed. #1680 collectors
+  must still enforce `ExpectedMinimumAgentVersion=0.2.10`, and #1680 remains
+  open until two managed PCs provide GPO/MSI install, service, mTLS,
+  rollback, and failure-triage evidence.
+- Agent-doable prep for #1680 also includes
+  `scripts/faz22-mass-deployment/build-gpo-msi-acceptance-bundle.ps1`, which
+  builds a non-secret pilot-share-ready bundle containing the pinned
+  `v0.2.10` signed MSI, trusted manifest, startup install script, postinstall
+  verifier, rollback helper, collectors, and the read-only
+  `validate-gpo-msi-rollout-evidence.ps1` evidence-package verifier. The
+  bundle generator and verifier are not live acceptance and do not mutate
+  AD/GPO/endpoints; they remove ambiguity around the exact script/artifact set
+  and the M1-M8 evidence quality bar that the next `gpo-msi` pilot must use.
+- `.github/workflows/gate-faz22-gpo-msi-bundle.yml` machine-checks that bundle
+  path by downloading the pinned release assets, verifying hashes, parsing the
+  source and generated PowerShell scripts, asserting the manifest guardrails,
+  and running positive/negative verifier fixtures. This is reproducibility and
+  evidence-shape evidence only; #1680 still needs endpoint execution evidence
+  before the signed MSI/GPO rollout gate can move.
+- Remote-ops hardening/deploy evidence was added on 2026-06-18 for the
+  broader `platform-backend#510` parent. `platform-backend#696` merged as
+  `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`, exposing redacted/non-secret
+  PERMIT metadata while withholding raw `signatureB64`, raw `deviceId`, and raw
+  `operatorSubject`. `platform-backend#697` merged as
+  `2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`, preserving cert-bound device id
+  hard-deny while preventing advisory `AgentHello.deviceId` from vetoing active
+  machine-cert enrollment trust. `platform-backend#698` merged as
+  `9a53fa745ec7dc27ed5166291ec3048e389615d3`, adding redacted DENY metadata
+  because the latest product smoke on remote-bridge digest
+  `sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9`
+  still returned `DENY` without a visible policy gate. `platform-backend#699`
+  merged as `64926dd98ea2501ada12facfb5962d6f4677ff5a`, adding bounded
+  `deny.policyDetail` diagnostics for the remaining `CRYPTO_IDENTITY` gate.
+  The previous owner-gated remote-bridge activation overlay was pinned to the
+  #698 image build digest
+  `sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3`
+  from run `27762898846`; this worktree now repins it to the #699 image build
+  digest
+  `sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`
+  from run `27765787433`. Earlier `#1684` digest `sha256:d1634df...` had deploy
+  run `27756026906` succeeded with pod digest match, readiness `200`, and Gate
+  1d `endpoint-admin-service` stability PASS across `180s`.
+  `platform-k8s-gitops#1685` added a regression guard so Gate 1d coverage keeps
+  `endpoint-admin-service` in the stability window. This removes the G6
+  observability/deploy guard gap, but it is not the full #510 product
+  acceptance.
+- Broader owner-gated attended remote-access remains
+  `platform-backend#510` (`Needs Verify`). Remaining evidence: product-session
+  capture of the new redacted permit metadata plus retained live negative and
+  session-control cases: replay, expired permit, wrong device, audit-sink-down,
+  heartbeat loss, terminate/reconnect, mid-session revoke, and clock-skew.
+- Current Argo residual drift is exporter-external: `platform-eso-test`
+  remains `Degraded` because `perf-alertmanager-teams-secrets` cannot get
+  provider data; `platform-test` remains `OutOfSync` because
+  `notification-orchestrator-secrets` is OutOfSync while health is `Healthy`.
+  Do not describe the whole platform as green until those separate drifts are
+  addressed.
+
+## Live Delta — Faz 22.6 remote-ops product session gate evidence (#1601/#1666, 2026-06-17)
+
+**Session milestone**: Denetim PC now has accepted bounded-MVP product
+remote-ops session evidence through the real EndpointAgent outbound mTLS
+remote-bridge path. This is not reverse SSH/RDP clipboard evidence. The
+operator path opened a session, recorded approval, issued the WebAuthn
+challenge, verified step-up, and transported a constrained pilot operation.
+
+| Alan | Durum | Kanıt / sınır |
+|---|---|---|
+| GitOps heartbeat/trust freshness | 🟢 MERGED | PR #1666 merged at `c26e58b762fc987172dbae72666376d9895be12f`; test activation overlay now sets `REMOTE_BRIDGE_HEARTBEAT_INTERVAL_MILLIS=10000` and `REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS=120000`. |
+| Live broker runtime | 🟡 PRE-#696 LIVE DIGEST | `platform-test/endpoint-admin-remote-bridge` was live-verified on pod `endpoint-admin-remote-bridge-69568fb865-tf7wc`, Ready `1/1`, restart `0`; imageID was `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:a2f73c1508fb4aa95b1391ef419dd45e727d8652f7c4069cba595beafb4dd3a9`. That evidence predates the #696 redacted PERMIT metadata digest; the activation overlay now needs the #510 verification repin above applied and live imageID-verified before G6 can close. |
+| ESO/Vault desired-state cleanup | 🟢 READY + DONE | #1662 is resolved and Project #2 `Done`. PR #1672 merged the `eso-runtime` source grant for `kv/data/platform/endpoint-admin-remote-bridge` (`e98c529b133d64a40bf3625068e920c54ceab153`). Live test Vault policy apply used an owner-approved one-time generated root token without posting secret material, then revoked it. Evidence artifact `/home/halil/codex-rb-smoke/20260617T213937Z-remote-bridge-eso-clean`: ESO AppRole policies `default,eso-runtime`, remote-bridge path capability `read`, all three remote-bridge ExternalSecrets `True / SecretSynced`, post-restart preflight `PRECHECK_STATUS=ready failures=0 not_ready=0`, broker pod recreated `Ready=True` with unchanged digest. |
+| Checklist/runbook contract | 🟢 SOURCE | `docs/runbooks/RB-faz22.6-product-remote-ops-session-gate.md` defines the #510/#1601 product-session acceptance contract: outbound mTLS product channel only, typed `PTY_COMMAND hostname` read-only operation, approval/audit/negative evidence, and explicit exclusion of reverse SSH/RDP/manual bridge evidence. |
+| Denetim product smoke | 🟢 PERMIT + TRANSPORT PUSHED | Evidence dir `/home/halil/codex-rb-smoke/20260617T191335Z-product`; session `rb-denetim-20260617T191335Z`; device `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`; `open=200`, `negative-nonpilot=400`, `approve=200`, `challenge=200`, `verify=200`, `operation=200`; operation response `PERMIT` with `transportPushed=true`; `summary.json` SHA256 `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`. |
+| Endpoint-side cross-check | 🟢 OUTBOUND MTLS CONNECTED | Denetim agent log at `2026-06-17 19:13:37` shows `remote-bridge: pilot auto-consent is enabled` and `constrained-pty enabled with outbound mTLS cert fingerprint=da72cae025e650bdd19d59a87ea319ec900533525884e05d9cc10bb33c552ce6`. |
+| Remaining parent gates | 🟡 SPLIT | Denetim PC bounded MVP product-session evidence is accepted and #1601 is now Project `Done`; AgentPC2 is accepted under #1643. Signed MSI/GPO rollout acceptance is split to #1680, and broader owner-gated remote-access scope plus any retained full live negative/session-control matrix remain under backend parent #510. Backend follow-up #690 remains Project `Done` after product DENY cleanup smoke `rb-deny-cleanup-20260617T211003Z`; ESO/Vault cleanup #1662 is also Project `Done` after the clean desired-state evidence above. |
+
+## Live Delta — Faz 22.5 M4 MSI lifecycle lab smoke (#115, 2026-06-17)
+
+**Session milestone**: `platform-agent` #115 now has endpoint-side MSI
+lifecycle evidence on a snapshot-backed local Parallels Windows 11 VM. This
+adds install/repair/upgrade/uninstall behavior evidence to the earlier signed
+artifact generation record; it does not close production trusted-signing, EDR
+allowlist, GPO pilot, or 50/800 rollout gates.
+
+| Alan | Durum | Kanıt / sınır |
+|---|---|---|
+| Source baseline | 🟢 proven for this smoke | `platform-agent@08972ac` from `origin/main`; Windows agent binary SHA256 `869d658e1a1d10f7173a3376e2d3584440b21d13d57abe2dfa871cf9af436939`. |
+| MSI lifecycle | 🟢 lab PASS | Built lab MSI `0.1.2` and `0.1.3`; `0.1.2` install PASS, `0.1.2` repair PASS, `0.1.2 -> 0.1.3` upgrade PASS, `0.1.3` uninstall PASS. |
+| Evidence bundle | 🟢 captured | `/Users/halilkocoglu/codex-agent-msi-smoke/evidence.zip` SHA256 `7cd97ba0922ecf11a2fc0ed63905816487733dcc01937915bafda2788f58d486`; `summary-lifecycle.json` SHA256 `44cb738cd7e7e37f5a134d21b1bf8d04cedf523ee4679192f22a47f6843e77eb`. |
+| VM cleanup | 🟢 restored | Parallels VM `Windows 11` switched back to snapshot `{562aca0e-300e-4fcf-9bf6-08190aa751f9}` after the smoke. |
+| Remaining M4 gates | 🟡 open | Production trusted code-signing trust-chain, EDR/AppLocker/WDAC allowlist, GPO install pilot, rollback/reinstall drill, and broader rollout evidence remain unproven. #115 stays `Needs Verify`. |
+
+## Live Delta — Faz 22.5 two-device acceptance evidence (#1609, 2026-06-16)
+
+**Owner decision / safety boundary**: the 50-PC M6 wave remains deliberately
+closed. Active pilot scope is capped at **max 2 computers**. The allowed test
+pool is `SRB-AIDENETIMPC` (Denetim PC), `AgentPC2`, `AgentPC1`, and local
+Parallels/domain Windows. During the 2026-06-16 acceptance run the
+owner-approved current pair was **Denetim PC + ERP-MOBIL**; `AgentPC2` later
+became the accepted third-device product-channel record under #1643. It is not
+a blocker for the current two-device #1609 record. Tracked by Project #2 issue
+[#1609](https://github.com/Halildeu/platform-k8s-gitops/issues/1609).
+As of 2026-06-18, `AgentPC2` is tracked as the accepted third-device
+product-channel gate in
+[#1643](https://github.com/Halildeu/platform-k8s-gitops/issues/1643)
+(`Status=Done`, `Faz=Faz 22`, `Track=ops`, `Priority=P0`, `Kind=gate`).
+No temporary reverse SSH/RDP path, inbound SSH/WinRM/SMB/RPC reachability, or
+operator-pasted command counts as AgentPC2 acceptance evidence.
+
+| Device | Recommended role | Why | Boundary |
+|---|---|---|---|
+| `SRB-AIDENETIMPC` / Denetim PC | Accepted device 1 | Domain joined, `mtls.testai.acik.com:443=true`, `testai.acik.com:443=true`, `Acik-Endpoint-CA` client-auth cert, `EndpointAgent` Running/Auto/LocalSystem, restart smoke PASS. | Real workstation path; do not treat it as a 50-PC denominator. |
+| `ERP-MOBIL` | Accepted device 2 | Domain joined, `mtls.testai.acik.com:443=true`, `testai.acik.com:443=true`, `Acik-Endpoint-CA` client-auth cert, `EndpointAgent` Running/Auto/LocalSystem, restart smoke PASS. | Domain Windows Server / controllable acceptance host; valid for current 2-device cap, not broad workstation diversity. |
+| `AgentPC2` | Accepted third-device product-channel gate (#1643) | Tokenless mTLS auto-enroll, persisted DPAPI state, authenticated command polling, restart continuity, and `v0.2.9` artifact promotion evidence are recorded. | Does not prove signed MSI/GPO rollout; that broader gate is split to #1680. |
+| `AgentPC1` | Reserve/fallback | Useful if AgentPC2 is unavailable or needs comparison evidence. | Keep out of active denominator unless one of the primary pair is dropped. |
+| local Parallels Windows | Break/fix lab | Fastest place to reproduce installer, rollback, and service-mode regressions without affecting users. | Lab evidence only; not domain-GPO acceptance unless explicitly domain-joined and network-ready. |
+
+Acceptance evidence collected by Codex over temporary lab reverse-SSH bridges:
+
+| Device | Cert thumbprint(s) | Agent restart / log signal | Result |
+|---|---|---|---|
+| `SRB-AIDENETIMPC` | `1687D3C41443239A12ECA973E6EED87B0876B068` | restart succeeded; log includes `agent mode=auto-enroll`, `auto-enroll cert loaded`, `no command available` | PASS |
+| `ERP-MOBIL` | `F87F0D21F29DCBE77AA861587559BAC974D2FCC0`, `196E4A8D87F9B341718C6BBCFB33A0DD3FF96C53` | restart succeeded; log includes `agent mode=auto-enroll`, `auto-enroll cert loaded`, `no command available` | PASS |
+
+**AD/GPO operation boundary**: Codex-controlled SSH/public-key access to a
+domain host is sufficient for host-local diagnostics but not a durable AD/GPO
+mutation channel. AD/GPO changes must move to a delegated **Domain Ops Broker**
+or an explicitly domain-authenticated operator/DC path. Target design:
+[docs/faz-22-domain-ops-broker-plan.md](../faz-22-domain-ops-broker-plan.md).
+The first backend product slice is accepted under
+[platform-backend#676](https://github.com/Halildeu/platform-backend/issues/676):
+Admin API -> durable request state -> credential-ref custody -> typed connector
+dispatch -> deterministic fail-closed result/status/audit. It proves safe
+broker durability and redaction; it does not prove real AD/GPO mutation success.
+
+**Remote-ops product boundary**: temporary reverse SSH is a lab bridge, not a
+product capability. Product remote-ops remains disabled by default and must be
+outbound mTLS, TTL-bounded, allowlist-only, no raw shell, and fully audited
+before it can unblock operatorless AgentPC2 management.
+
+## Live Delta — Faz 22.5 M2 prod `mtls.ai.acik.com` activation proven (2026-06-15/16)
+
+**Session milestone**: prod Endpoint Agent mTLS host activation is live-proven
+for the M2 tokenless AutoEnroll path. GitOps activation PR #1593 merged at
+`5fc00710e92e8a7ada7003ece58913cf5114c546`; runtime follow-up upgraded
+prod ingress-nginx Helm release to rev4 with `--enable-ssl-passthrough`.
+Evidence file:
+`docs/faz-22-evidence/2026-06-15-m2-prod-mtls-ai-activation.md`.
+
+| Alan | Durum (2026-06-15/16) | Kanıt / sınır |
+|---|---|---|
+| Prod mTLS Service/Ingress | 🟢 LIVE | `endpoint-agent-mtls-backend` exists in `platform-prod` with endpoint `10.42.75.58:8443`; Ingress `endpoint-agent-mtls` host `mtls.ai.acik.com` is `Synced/Healthy`. |
+| Prod ingress-nginx passthrough | 🟢 LIVE | Helm release `ingress-nginx` rev4; controller pod `ingress-nginx-controller-h5bzn` is ready with `--enable-ssl-passthrough`, restarts `0`. |
+| Backend artifact | 🟢 IMMUTABLE DIGEST LIVE | `endpoint-admin-service-65dc8d6d58-cgzjz` ready, restarts `0`, imageID `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`. |
+| TLS/SNI | 🟢 BACKEND CERT SERVED | Forced SNI to `10.9.10.53:443` with `mtls.ai.acik.com` serves `CN=mtls.testai.acik.com`, issuer `Acik-Endpoint-CA`, SAN `DNS:mtls.testai.acik.com, DNS:mtls.ai.acik.com`, and requests a client certificate. |
+| No-cert negative | 🟢 FAIL-CLOSED | `curl --resolve mtls.ai.acik.com:443:10.9.10.53 .../endpoint-enrollments/auto` returns `http_code=000`, `exit=56`, TLS alert `certificate required`. |
+| Valid machine-cert positive | 🟢 PASS | `SRB-AIDENETIMPC` machine cert direct POST to prod AutoEnroll returned HTTP `201`; isolated-config agent run over `https://mtls.ai.acik.com/api/v1/endpoint-agent` logged `auto-enroll already-enrolled` and `no command available`, exit `0`. |
+| Existing Denetim service safety | 🟢 PRESERVED | Positive prod smoke used temporary `prod-smoke-auto-enroll.dpapi`; cleanup read-back `SmokeConfigExists=False`, main service remains `EndpointAgent Running / Auto / LocalSystem`. |
+| Global app drift boundary | 🟡 UNRELATED DRIFT | `platform-prod` Application still reports `OutOfSync/Missing` due to existing `ServiceMonitor endpoint-admin-service` drift. The mTLS Service/Ingress/Deployment rows are individually `Synced/Healthy`. |
+
+**Boundary**: This proves prod `mtls.ai.acik.com` host activation for the M2
+tokenless AutoEnroll path. It does not prove 50/800 rollout, 24h soak,
+revocation/wrong-CA matrix if retained, OS reboot continuity, or destructive
+rollback/uninstall drills.
+
+## Live Delta — Faz 22.5 M5 same-day selected-device pilot accepted (2026-06-15)
+
+**Owner decision / accepted scope**: The M5 first pilot did not wait for 24h and
+was narrowed to a same-day 2-device acceptance gate for this run. Board issue
+#1377 is `CLOSED` and Project #2 Status is `Done` with evidence comment
+`issuecomment-4711585681`.
+
+| Device | Role in this accepted gate | Evidence |
+|---|---|---|
+| `SRB-AIDENETIMPC` | domain workstation / denetim PC | Domain `acik.local`, `domainProbe=PASS`, `EndpointAgent` service `Running` / `Auto` / `LocalSystem`, binary `v0.2.5`, SHA256 `5917B45B7BBB8EAA675B6E450961D75582BFC67BD4A01A76332CA1C507D91ABE`, Authenticode `Valid`, WinGet system context ready, post-restart polling reached `no command available`. |
+| `ERP-MOBIL` | domain-joined Windows Server / AD CS path | Domain `acik.local`, `domainProbe=PASS`, internal DNS for `testai.acik.com` and `mtls.testai.acik.com` resolves to `10.9.10.53`, upgraded from `v0.2.4` to `v0.2.5` through canonical current bootstrap, Authenticode `Valid`, service `Running` / `Auto` / `LocalSystem`, AD CS machine cert loaded and post-restart polling reached `no command available`. |
+
+**Non-selected device boundary**: local Parallels `Windows 11` remains
+`WORKGROUP` and only reaches DC DNS/53; Kerberos/LDAP/SMB/LDAPS were not
+reachable. It is not valid for this M5 domain GPO/cert gate until domain
+networking/join is handled separately.
+
+**Remaining expansion boundary**: original 5-PC diversity pilot, later
+stabilization/soak evidence and 50/800 rollout remain separate follow-up
+gates if requested.
+
+**Agent-doable support added**: `scripts/faz22-mass-deployment/m5-same-day-pilot-collector.ps1`
+is a read-only Windows collector for T0/T+15/T+60 evidence. It does not install,
+uninstall, enroll, mutate GPO, read secrets, or submit backend data.
+
+## Live Delta — Faz 22.5 M7 same-day rollback/reinstall rehearsal advanced (2026-06-16)
+
+**Session milestone**: #1379 now has runtime rollback/reinstall evidence on both
+a local-control Windows device and the selected domain-GPO Denetim PC, plus
+live backend decommission/reactivate evidence against `testai` / `platform-test`.
+This is meaningful rollback-risk reduction, but not full M7 closure because GPO
+unlink/security-filter rollback propagation and the 50-PC/M6 expansion
+denominator remain open.
+
+Evidence file:
+`docs/faz-22-evidence/2026-06-16-m7-rollback-rehearsal-prep.md`.
+Issue evidence comment:
+`https://github.com/Halildeu/platform-k8s-gitops/issues/1379#issuecomment-4716977942`.
+
+| Device | Role | Runtime evidence | Boundary |
+|---|---|---|---|
+| `HALILKOOLUB735` | local-control Windows 11 | baseline `PASS-WITH-WARN`, rollback-clean `PASS`, reinstall-continuity `PASS`; service returned `Running / Automatic`; `endpoint-agent v0.2.5` | Proves local preserve-config/logs uninstall + HMAC-preserving reinstall; not domain-GPO propagation. |
+| `SRB-AIDENETIMPC` | domain-GPO Denetim PC | baseline `PASS`, rollback-clean `PASS`, reinstall-continuity `PASS`; service returned `Running / Auto / LocalSystem`; machine cert `1687D3C41443239A12ECA973E6EED87B0876B068`; signer `D68F4F530137EB65CE44E3405E82B46205E753E5`; auto-enroll config preserved | Proves selected domain-GPO device service/binary/env rollback-clean + auto-enroll reinstall continuity; not backend decommission/reactivate or GPO unlink propagation. |
+| `SRB-AIDENETIMPC` | backend lifecycle | `testai` API decommission returned `200` / `DECOMMISSIONED`; future-visible command `8bfe3af8-aba9-4100-9a55-15d365bebd5e` cascade-cancelled; new command while decommissioned returned `409`; reactivate returned `200` / `OFFLINE`; post-wait device returned `ONLINE`; audit events readable; summary SHA256 `396f6b15f3bab2b63ff0af4bb08e5e63bed172960610ef31a4cb8824f0e20824` | Proves backend lifecycle and write-guard fail-close on selected device; not GPO unlink/security-filter propagation or 50-PC denominator. |
+| `ERP-MOBIL` | GPO propagation attempt host | SSH identity `acik\ca.setup` has Domain Admins / Enterprise Admins / local Administrators groups, but SSH logon lacks usable DC network credentials; `klist get ldap/cifs ACIKDC01` returns `0x8009030e`, `SYSVOL` path test is false, `Get-GPO` returns `E_ACCESSDENIED` | Codex-controlled SSH is blocked for GroupPolicy/SYSVOL mutation; GPO unlink/security-filter propagation still needs DC/RDP/interactive admin, WinRM/CredSSP delegation, or a pre-authorized DC-side runner. |
+
+**Current #1379 boundary**: keep open/blocked for full M7 acceptance until
+Layer 3 GPO rollback propagation proof and wave denominator evidence are
+captured. The remaining GPO propagation smoke is not blocked by agent service
+logic; it is blocked by the current SSH credential-delegation boundary for
+DC-backed GroupPolicy mutation. Do not mark Done from this same-day rehearsal
+alone.
+
+## Live Delta — Faz 22.5 #1601 operatorless access release pin pending test rollout (2026-06-16, Codex)
+
+**Session milestone**: `platform-agent` #193 added disabled-by-default
+remote-bridge installer/bootstrap/MSI configuration wiring and #194 added
+release-manifest artifact-host digest evidence. The new trusted EXE release
+`v0.2.7` is published and D30-pinnable through its release asset manifest.
+
+| Alan | Durum (2026-06-16) | Kanıt / sınır |
+|---|---|---|
+| Agent remote-bridge config | 🟢 SOURCE-MERGED | `platform-agent` #193 merged `432d05920ab93b05ba5708611062870d50227d84`; installer/bootstrap accept `-RemoteBridgeEnabled`, `-RemoteBridgeBrokerAddr` and `-RemoteBridgeInsecurePlaintext`; service env is written only when explicitly enabled. Default install path remains remote-bridge disabled. |
+| Release digest evidence | 🟢 SOURCE-MERGED + RELEASED | `platform-agent` #194 merged `cd513d154c0c94a8a3726923c3aa8a21d9eba2a3`; Release EXE trusted run `27616980839` published `v0.2.7`. Release manifest records `artifact_host_image_ref=ghcr.io/halildeu/platform-agent-artifacts:v0.2.7@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`, `EndpointAgent.zip` SHA256 `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`, and agent binary SHA256 `80df31855c92a37a4592f30d58ae3352e5ff9bb93ed23eae69aa1137a9fbdfed`. |
+| GitOps desired-state | 🟢 MERGED, VERIFY PENDING | GitOps PR #1602 merged `488205233cd29a97558c0567de467749a5cd3ace`; origin/main now pins the test overlay artifact-host from `v0.2.5@sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2` to `v0.2.7@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`. |
+| Live artifact-host | 🟢 v0.2.7 PUBLIC ARTIFACT + POD IMAGEID VERIFIED | Follow-up live poll returned `release_tag=v0.2.7` from `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json`; `/current/EndpointAgent.zip.sha256` returns `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`; `/current/bootstrap-package.ps1` contains the `RemoteBridgeEnabled`, `RemoteBridgeBrokerAddr`, and `RemoteBridgeInsecurePlaintext` parameters. Staging `k3d-test` verification now confirms `platform-test/artifact-host` Deployment `2/2` ready with image `ghcr.io/halildeu/platform-agent-artifacts:v0.2.7@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`; both pods report imageID `ghcr.io/halildeu/platform-agent-artifacts@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`, `ready=true`, `restartCount=0`; rollout status succeeded; ArgoCD `platform-test` is `Synced / Healthy`. |
+| MSI trusted release | 🟢 BUG FIX MERGED + TRUSTED RUN PROVEN | `platform-agent` #195 merged `5a48900177ece937a9c17a8ed2117a672b186149`, cleaning self-hosted runner MSI staging before download and requiring exactly one unsigned MSI + manifest. Fresh trusted MSI run `27619652974` succeeded for `0.2.8`: `EndpointAgent-0.2.8-signed.msi` SHA256 `8af982357e32c9553f22ef1761fd808513b9945df67b3e280e2ba971626067e7`, trusted manifest SHA256 `5a662dee41764a324d123a6b58d58af3e65d3c16d2adf32675be127e133f9b51`, `production=true`, `signing_tier=trusted-internal-ca`, `timestamped=true`, and signature status `Valid`. This proves release-pipeline hygiene recovery; endpoint-side MSI install/GPO rollout remains a separate live smoke. |
+
+**Boundary**: This delta advances the operatorless install/remote-ops product
+path to release + desired-state pin + public artifact-host `/current/` live
+readiness plus trusted MSI artifact generation. Remote-bridge broker
+connectivity and Denetim product-session evidence are superseded by the
+2026-06-17 #1601/#1666 live delta above. It still does **not** prove AgentPC2
+product-channel acceptance or endpoint-side MSI/GPO rollout.
+
+## Live Delta — Faz 22.5 M2 durable AD DNS + service-mode continuity proven on ERP-MOBIL (2026-06-15, Codex #1569)
+
+**Session milestone**: M2 durable no-hosts path için bounded gate
+`platform-k8s-gitops#1569` Project #2'de `Done` durumuna taşındı ve issue
+kapandı.
+Önceki DC DNS mutation/access-denied snapshot'ı superseded: internal AD DNS
+records were fixed, artifact-host v0.2.4 was published, and the Windows/domain
+service-mode AutoEnroll continuity smoke was rerun through the durable DNS path.
+Kanıt zinciri: `platform-agent` #171 (`5319454f`) + release `v0.2.4`, GitOps
+#1575 (`c25dd56e`) artifact-host digest pin, and ERP-MOBIL no-hosts
+restart/service smoke evidence recorded on #1569 / #1359 / #1376 / agent #170.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Windows/domain access | 🟢 REACHABLE | Reverse SSH path çalışıyor: `staging-sw -> 127.0.0.1:22022 -> ERP-MOBIL:22`; Windows identity `acik\ca.setup`. `ERP-MOBIL` domain-joined (`acik.local`), DC discovery `ACIKDC01.acik.local` / `10.9.10.10`, secure channel `NERR_Success`. |
+| Hosts-file state | 🟢 NO SHIM | `C:\Windows\System32\drivers\etc\hosts` içinde `mtls.testai.acik.com`, `mtls.ai.acik.com`, `TEMP-M2-SMOKE` veya `10.9.10.53` satırı yok. Final smoke gerçek no-hosts durumunda koştu. |
+| AD DNS current state | 🟢 A RECORDS PROVEN | `ERP-MOBIL` DNS client `Ethernet0` server `10.9.10.10`. `Resolve-DnsName` now returns real A records for `testai.acik.com -> 10.9.10.53` and `mtls.testai.acik.com -> 10.9.10.53`; the earlier literal-IP CNAME and NXDOMAIN states are historical only. |
+| Edge reachability | 🟢 EDGE TCP REACHABLE | `Test-NetConnection testai.acik.com -Port 443`, `Test-NetConnection mtls.testai.acik.com -Port 443`, and `Test-NetConnection 10.9.10.53 -Port 443` succeeded from `ERP-MOBIL` without hosts shim. |
+| Artifact-host | 🟢 v0.2.5 CURRENT | `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json` returns `release_tag=v0.2.5`; `EndpointAgent.zip` SHA256 `18343e2aae8a197b93aceace974bec8bf432ac9feca21a505b9d155b0571151f`; agent binary SHA256 `5917b45b7bbb8eaa675b6e450961d75582bfc67bd4a01a76332ca1c507d91abe`; test artifact-host Deployment is `2/2 Ready` with `ghcr.io/halildeu/platform-agent-artifacts:v0.2.5@sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2` from gitops PR #1589. |
+| Agent CNG signer fix | 🟢 SOURCE-MERGED + RELEASED | `platform-agent` #171 fixed AD CS CNG machine certs with noncanonical KeySpec/AT_NONE by requiring a positive NCrypt Algorithm Name probe; merged `5319454f`, tagged `v0.2.4`, artifact-host image digest `sha256:f52480d300852cd0c2c398482e25f188eb8b3eda75d93aa495fa90e32a4b9592`. |
+| Agent durable service continuity | 🟢 PROVEN ON ERP-MOBIL | `EndpointAgent` restored from current bootstrap and later upgraded to `v0.2.5`, service `Running` / `Auto` / `LocalSystem`; post-restart logs show `auto-enroll cert loaded` for `ERP-MOBIL.acik.local` and repeated `no command available`, proving tokenless mTLS command-poll continuity over `https://mtls.testai.acik.com/api/v1/endpoint-agent`. |
+| AD CS machine cert | 🟢 CANONICAL TEMPLATE | Machine cert `CN=ERP-MOBIL.acik.local`, issuer `Acik-Endpoint-CA`, thumbprint `F87F0D21F29DCBE77AA861587559BAC974D2FCC0`, EKU Client Authentication, SAN `DNS Name=ERP-MOBIL.acik.local, URL=adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`. |
+| GitOps sync caveat | 🟡 PARTIAL DRIFT ONLY | ArgoCD test-cluster registration was restored through `bootstrap/register-test-cluster-argocd-secret.sh`; no direct workload image mutation was used. `artifact-host` now tracks the merged overlay and is healthy on v0.2.5. The `platform-test` Application still reports `OutOfSync` due to unrelated ExternalSecret/Secret drift, not artifact-host image drift. |
+
+**Boundary**: This proves the bounded #1569 subgate for durable AD DNS +
+ERP-MOBIL service restart continuity over tokenless mTLS. It does **not** prove
+OS reboot continuity, signed MSI/GPO deployment, later 5-PC/50/800 staged
+rollout, or prod `mtls.ai.acik.com`.
+#1359/#1376 remain open/Blocked for
+those broader gates; #1577 tracks ArgoCD test-cluster registration/network debt.
+
+## Historical Delta — Faz 22.5 M5 2-PC GPO pilot kickoff boundary (2026-06-15, Codex #1377; superseded by same-day no-24h scope)
+
+**Historical owner decision**: 5-PC pilot was not required for the first GPO pilot;
+board #1377 later superseded this with the same-day no-24h selected-device
+scope above. Codex rechecked the
+network-discoverable candidate set from this host:
+
+| Candidate | DNS/IP | Reachability from Codex host | Current pilot use |
+|---|---|---|---|
+| `ERP-MOBIL.acik.local` | `10.9.10.101` | TCP 135/139/445/3389/443 open; WinRM/SSH closed | Candidate 1. Domain/service continuity already proven; needs GPO/preflight evidence under M5. |
+| `HALILKOCOGLU.acik.local` | `10.9.2.151` | TCP 135/139/445/3389 open; WinRM/SSH/443 closed | Candidate 2. Corp-subnet diversity candidate; needs OS/build/EDR/machine-cert/preflight evidence from Windows/DC side. |
+| `AGENTPC2.acik.local` | `10.9.2.228` | DNS resolves, but checked ports refused | Not a good active candidate for this kickoff. |
+| `MKR-A1.acik.local` | `10.9.2.221` | DNS resolves, host down/timeouts | Not a good active candidate for this kickoff. |
+
+**Historical boundary**: This was a kickoff/matrix narrowing step, not M5 closure. From
+this Codex host there is no remote execution channel to the Windows clients
+(RDP/SMB/RPC visible, WinRM/SSH unavailable), so the next live evidence must be
+collected on the Windows/DC side: OU/GPO membership, preinstall
+`wave-preflight.ps1`, GPO MSI install, enroll-health preflight, same-day
+T0/T+15/T+60 collector evidence, and one-device rollback/reinstall drill.
+Superseded by the current top entry: #1377 is now `CLOSED` / Project `Done`
+under the user-narrowed 2-device same-day smoke gate.
+
+## Live Delta — Faz 22.5 M2 service-mode continuity smoke proven; dry-run CNG crash split to agent backlog (2026-06-15, Codex #1567/#165)
+
+**Session milestone**: M2 tokenless mTLS path için kalan agent-doable
+service-mode continuity kapısı bounded Windows smoke ile kanıtlandı. Clean
+`platform-agent` worktree `codex/m2-service-continuity-smoke` HEAD
+`473b3b8ce854bb6015a4e233dadc77feb6536f27` üzerinden Windows amd64 binary
+build edildi (`SHA256=e8f6415ab503fd75e32278a4dfca8a4b76c7ad727d5fee1748b829971d4c80a9`).
+Clean `platform-backend` current-source worktree `codex/m2-current-verify`
+HEAD `47d29d5f` local Postgres + mTLS passthrough `9443` ile çalıştırıldı.
+Windows 11 Parallels host `HALILKOOLUB735` üzerinde geçici
+`EndpointAgentM2Smoke` servisi `LocalSystem` altında `--auto-enroll --api-url
+https://mtls.local.test:9443/api/v1/endpoint-agent` ile koştu; servis
+stop/start sonrası tokenless DPAPI config'i koruyup heartbeat / command poll
+döngüsüne devam etti. Detay evidence:
+[2026-06-15-m2-service-mode-continuity-smoke.md](../faz-22-evidence/2026-06-15-m2-service-mode-continuity-smoke.md).
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Board work item | 🟢 BOUNDED SMOKE EVIDENCE READY | `platform-k8s-gitops#1567` created/claimed for this exact smoke. Project #2 fields set: `Faz=Faz 22`, `Track=ops`, `Priority=P0`, `Kind=issue`, `Status=In Progress` during execution. |
+| Agent build/test | 🟢 PASS | `go test ./internal/autoenroll ./internal/mtls ./internal/platform/windows/service ./cmd/endpoint-agent` passed before build. Windows binary `0.1.0-m2service.473b3b8ce854`, SHA256 `e8f6415ab503fd75e32278a4dfca8a4b76c7ad727d5fee1748b829971d4c80a9`. |
+| Backend local mTLS harness | 🟢 UP + FUNCTIONAL | Current backend `47d29d5f`; local Postgres `m2-pg-service` on `55434`, Flyway `endpoint_admin_service` v70, health `{"status":"UP"}`, HTTP `8097`, management `8098`, mTLS passthrough `9443`, fixed tenant `00000000-0000-0000-0000-000000000001`. |
+| Windows service first loop | 🟢 ENROLL + POLL | Host `HALILKOOLUB735`, temp service `EndpointAgentM2Smoke`, client cert `CN=WIN11-TESTPC`, SAN `adcomputer:e89692cc-fb06-4843-9b77-4efefcfb66b1`. Log: `auto-enroll enrolled: device_id=fe36d0c2-1ecc-4ccd-8fed-b41050b43f2c ... (tokenless mTLS, ADR-0029 M2)` followed by `no command available`. |
+| Restart continuity | 🟢 SERVICE STOP/START PROVEN | `Stop-Service EndpointAgentM2Smoke` then `Start-Service EndpointAgentM2Smoke`; persisted config `C:\ProgramData\EndpointAgentM2Smoke\config\auto-enroll.dpapi` remained length `566` and SHA256 `7959F1923F59C73B0F5A1667FE42BA35110B2FDA06AB91570540251759269D88` before/after; post-restart logs show `serviceMode=true`, `agent mode=auto-enroll`, cert reload, and repeated `no command available`. |
+| Backend DB evidence | 🟢 ONLINE + CERT BINDING + HEARTBEATS | `endpoint_devices`: `fe36d0c2-1ecc-4ccd-8fed-b41050b43f2c`, hostname `HALILKOOLUB735`, `status=ONLINE`, `agent_version=0.1.0-m2service.473b3b8ce854`, `last_seen_at=2026-06-15 07:18:16Z`. `endpoint_machine_certs`: `san_uri=adcomputer:e89692cc-fb06-4843-9b77-4efefcfb66b1`, `cert_thumbprint=00665df65ed881eb64b39dcd70547fe9a07f26d9d56273bca7129715385b2cc2`, `revoked_at=NULL`. `endpoint_heartbeats` has repeated ONLINE payloads from `10.211.55.3` after restart. |
+| Cleanup | 🟢 TEMP ARTIFACTS REMOVED | Temporary service, hosts alias, test CA/client certs, and temp install/log dirs removed from Windows after evidence capture; existing normal `EndpointAgent` service remained running. Local backend/Postgres harness was used only for this proof. |
+| Discovered agent defect | 🟡 SPLIT TO BACKLOG | `--auto-enroll --dry-run` loaded the cert and TLS config, then crashed in `cngSigner.Close -> CertFreeCertificateContext` (`0xc0000005`). Service-mode path still succeeded. Tracked separately as `platform-agent#165` in Project #2 Backlog; not hidden inside #1567. |
+
+**Boundary**: This proves bounded Windows service-mode continuity across a
+service stop/start using local test CA + `mtls.local.test` host alias. It does
+**not** prove AD CS-issued service continuity on a domain host, durable no-hosts
+AD DNS, signed MSI/GPO install, OS reboot continuity, M5 same-day
+selected-device pilot, later stabilization/soak evidence, 50/800-device
+rollout, or prod `mtls.ai.acik.com`. #1359/#1376 therefore remain open for
+durable DNS/AD CS/GPO/wave gates.
+
+## Live Delta — Faz 22.5 M2 current-backend local mTLS matrices reverified; durable rollout gates still open (2026-06-15, Codex #1359/#1376)
+
+**Session milestone**: M2'de agent-doable runtime doğrulama current backend
+truth'e taşındı. İlk lokal denemede `platform-backend` ana checkout'unun
+`origin/main`'den 132 commit geride detached snapshot olduğu tespit edildi; bu
+eski kanıt current truth sayılmadı. Temiz backend worktree
+`codex/m2-current-verify` doğrudan `origin/main` `47d29d5f` üzerinde açıldı ve
+aynı M2 enrollment/mTLS kontrolleri temiz Postgres ile yeniden koşturuldu.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Backend source freshness | 🟢 CURRENT MAIN | `platform-backend` worktree `/Users/halilkocoglu/Documents/platform-backend/.worktrees/m2-current-verify-codex`, branch `codex/m2-current-verify`, HEAD `47d29d5f feat(faz22): add mtls command lifecycle endpoints (#665)`, tracking `origin/main` |
+| L1 M2 tests | 🟢 PASS | `mvn -pl endpoint-admin-service -DfailIfNoTests=false -Dtest='MachineCertExtractorTest,MachineCertAutoEnrollServiceTest,AgentMachineCertEnrollmentControllerTest,AgentMachineCertEnrollmentControllerHeaderDisabledTest,AgentMachineCertEnrollmentControllerPassthroughTest,MtlsPassthroughConnectorConfigTest,MtlsPassthroughValidatorTest,MtlsConnectorGuardFilterTest,AgentMachineCertHeartbeatControllerTest,AgentMachineCertCommandControllerTest,AgentMachineCertCommandSecurityTest' test` → `Tests run: 75, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`. Maven logged known Java 24 / JaCoCo instrumentation noise and duplicate BouncyCastle dependency warnings; they did not fail the test gate. |
+| Forward-header local matrix | 🟢 PASS | Clean Postgres `m2-pg-current` on `localhost:55433`, backend on `localhost:8096`, Flyway schema `endpoint_admin_service` migrated to v70. `scripts/faz22-mass-deployment/m2-local-test/run-matrix.sh` → `TOTAL: pass=8 fail=0`: positive enroll 201, idempotent 200, tenant boundary 403, no-clientAuth EKU 401, no adcomputer SAN 401, missing cert 401, missing tenant 400, fingerprint conflict 409. DB: `WIN11-c6bbe13f` `ONLINE`, `tenant_id=org_id=00000000-0000-0000-0000-000000000001`, cert `san_uri=adcomputer:d6e7e496-3294-4b8c-a8cc-82971fd60fd0`, audit counts `MACHINE_CERT_AUTO_ENROLL_SUCCESS=2`, `FAILED=4`. |
+| Passthrough mTLS local matrix | 🟢 PASS | Same current backend restarted with `endpoint-admin.mtls.forward-header.enabled=false`, `endpoint-admin.mtls.passthrough.enabled=true`, `passthrough.port=9443`, fixed tenant `00000000-0000-0000-0000-000000000001`, local test CA keystore/truststore. Port `8443` is occupied by local `k3d-dev-serverlb`, so the domain-free local matrix used `9443`; production/test host config remains `:443`. Boot log: `Added passthrough mTLS connector on port 9443 (clientAuth=NEED)` and `Tomcat started on ports 8096 (http), 9443 (https)`. `MTLS_BASE=https://localhost:9443/... PG_CONTAINER=m2-pg-current CERTS=./certs ./run-passthrough.sh` → `TOTAL: pass=6 fail=0`: valid client cert enroll 201 despite forged `X-Tenant-Id`, no client cert TLS refusal `ec=56`, wrong-CA TLS refusal `ec=56`, plain `:8096` endpoint-agent 403 `MTLS_CONNECTOR_REQUIRED`, non-agent path on mTLS connector 404, DB tenant fixed/forged header ignored. DB now has second device `WIN11-PT-73ceb6e6`, cert `san_uri=adcomputer:73ceb6e6-205c-4fbd-b6d8-5d6ab00bbb64`; aggregate audit counts `SUCCESS=3`, `FAILED=4`. |
+| Board hygiene truth | 🟡 deterministic-safe, manual debt remains | After PR #1565, live audit/backfill ran with Project #2 GraphQL budget available: `items_with_missing_fields=107`, `proposal_count=1`, `manual_count=174`, `applied_count=0`; applying safe deterministic proposal set `platform-k8s-gitops#1560 Track=gitops`, then re-audit showed `items_with_missing_fields=107`, `proposal_count=0`, `manual_count=174`, `applied_count=0`. Remaining 174 manual exceptions require explicit triage; they must not be guessed by automation. |
+
+**Boundary**: This is a current-source, domain-free local runtime proof for
+the backend M2 enrollment/mTLS code path and guard behavior. It does **not**
+prove AD CS-issued live corp cert enrollment, durable AD DNS without hosts
+shim, edge/public `:443` passthrough beyond the existing no-cert fail-closed
+probe, AD CS/domain service continuity, OS reboot continuity, M5 same-day
+selected-device GPO pilot, later stabilization/soak evidence, 50/800 staged
+rollout, or prod `mtls.ai.acik.com`. Therefore
+#1359/#1376 stay open/Blocked;
+operator-bound and time-bound gates remain skipped per autonomous-mode
+instruction.
+
+## Live Delta — Faz 22.3B TPM/Vault enrollment source stack advanced; AD CS M2 remains primary rollout gate (2026-06-15)
+
+**Session milestone**: adjacent repo truth check shows the parallel TPM
+attestation + Vault PKI enrollment path (ADR-0039 / Faz 22.3B) materially
+advanced on source, while the AD CS M2 rollout gate remains separate. This path
+is disabled-by-default, additive, and does **not** replace the domain AD CS/GPO
+path tracked by #1359/#1376.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Agent TPM enrollment gate-3 | 🟢 SOURCE-MERGED | `platform-agent` PRs #158-#163 merged: TPM2 wire layer (`388054e8`), TPMT_PUBLIC marshal (`7b9a8ccd`), credential activation crypto (`c5575189`), TPMS_ATTEST/signature (`585764ae`), `TPMDevice` + mock (`5c72f106`), 4-leg HTTP orchestrator (`33551940`). `internal/autoenroll/` AD CS path is explicitly untouched in these PRs. |
+| Backend TPM/Vault gate-4 | 🟢 SOURCE-MERGED | `platform-backend` PRs #651/#659/#660/#661/#662/#664 merged: verifier foundation (`ddc7bdde`), PCR/CSR policy (`f24a6a3a`), Vault PKI issuance client (`a2d3a0ec`), `/nonce` (`749a11dd`), `/attest` + Vault issuance (`6c7e8151`), issuer-SPKI channel resolver core (`60784f0b`). |
+| Runtime / rollout | 🟡 not proven | No claim of live TPM enrollment, Vault PKI runtime enablement, mTLS cert acceptance, GPO rollout, or prod activation. Gate-4c resolver wiring is still described as disabled-by-default / no runtime effect until its follow-up wiring. |
+| Board hygiene | 🔴 tracking gap observed | REST issue/PR search shows the 22.3B source PRs are merged but several carry no `project-roadmap`/Faz/Priority labels. ProjectV2 GraphQL reads are currently exhausted (`remaining=0`, reset `2026-06-15 05:32:41 +03`), so Project #2 reconciliation must be resumed after reset; do not infer board completeness from these PR merges. |
+
+**Boundary**: Faz 22.3B is a parallel hardware-rooted enrollment channel for
+TPM-capable/domain-less segments. The current production-standard path for
+domain Windows rollout remains AD CS + signed MSI + GPO under #1359/#1376 and
+M4/M5/M6/M7 gates. 22.3B source progress improves future optional enrollment
+architecture but does not satisfy M2, M3, M4, GPO pilot, soak, or wave rollout.
+
+## Live Delta — Faz 22.5 M2 cert-auth command/result Windows smoke proven; durable DNS/GPO rollout still gated (2026-06-15, Codex #151/#663/#1555)
+
+**Session milestone**: M2 tokenless mTLS lifecycle'da agent-doable command/result
+runtime kapısı tek domain Windows host üzerinde kanıtlandı. `ERP-MOBIL.acik.local`
+üzerinde `platform-agent` #157 (`83cd30d0`) Windows amd64 binary'si
+`--auto-enroll --once --api-url https://mtls.testai.acik.com/api/v1/endpoint-agent`
+ile çalıştırıldı, AD CS machine cert'i seçti, cert-auth heartbeat attı,
+backend'de seed edilen non-destructive `COLLECT_INVENTORY` komutunu poll etti ve
+result submit ile `SUCCEEDED` durumuna taşıdı. Kanıt yorumları REST Issues API
+ile `platform-k8s-gitops` #1555, `platform-agent` #151 ve `platform-backend`
+#663 üzerine işlendi. Follow-up board truth closure: #151/#663/#1555 Project #2
+`Needs Verify`, #1359/#1376 `Blocked`, #1537/#1560 `Needs Verify` olarak
+`board-sync.sh sync-state` ile doğrulandı; #1561 manual exception report merged
+ve #1560 stale Backlog gövdesi `Needs Verify` gerçeğine hizalandı.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Windows cert-auth agent smoke | 🟢 PROVEN (bounded test) | Host `ERP-MOBIL.acik.local`, user `acik\ca.setup`; binary commit `83cd30d0`, SHA256 `a447a3eb5c338426bb458f148b6de304d4f3f132a3e041e41d1b3aed32932670`; agent log: `command 125d46a7-55b7-4379-a7d2-72bf7b0600cc finished with SUCCEEDED`; exit code 0 |
+| Backend command/result rows | 🟢 PROVEN (DB evidence) | Command `125d46a7-55b7-4379-a7d2-72bf7b0600cc`, device `a358d36d-2ade-4e1f-9f54-68a085ef44a5`, `status=SUCCEEDED`, `attempt_count=1`, `delivered_at=2026-06-15 01:22:17Z`, `completed_at=2026-06-15 01:23:21Z`, `last_error` empty; result `841575fe-8527-4978-9f4d-3c8f8d77dbf8`, `result_status=SUCCEEDED`, `claimId=87f1634b-11d3-4442-9915-a3fa082634cd`, diagnostics `backendDNSReachable=true`, `backendTLSValid=true` |
+| Cert identity binding | 🟢 PROVEN | Active machine cert binding row has `san_uri=adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`, subject `CN=ERP-MOBIL.acik.local`, issuer `Acik-Endpoint-CA`, thumbprint `61a7450113c0f86a91c35ffac46153db830e9f32c5f1a59db785f9c47e33650f`, `revoked_at=NULL` |
+| Edge/DNS path used for smoke | 🟡 TEMP SHIM | Windows local hosts shim mapped `mtls.testai.acik.com -> 10.9.10.53` only for smoke and was removed after evidence capture. Durable AD DNS for domain clients remains a separate gate. |
+| Public no-cert recheck | 🟢 FAIL-CLOSED | 2026-06-15 ~05:15 +03 Mac forced-SNI probe to `mtls.testai.acik.com:443` (`212.115.26.190`) reached the mTLS path, served `CN=mtls.testai.acik.com` issued by `Acik-Endpoint-CA`, sent TLS `Request CERT`, then failed closed without a client certificate (`curl: (56)`). This confirms the old 404/default-route snapshot is superseded for test SNI, but still does not prove durable AD DNS/GPO/prod. |
+| Board / issue truth | 🟡 synced, not accepted | REST comments: gitops #1555 `issuecomment-4703783674`, agent #151 `issuecomment-4703783710`, backend #663 `issuecomment-4703783749`. `board-sync.sh sync-state` confirms #151/#663/#1555 `Needs Verify`, #1359/#1376 `Blocked`, #1537/#1560 `Needs Verify`. #1561 added manual exception reporting; #1565 added scheduled/manual hygiene audit. Latest post-#1565 live audit/backfill: `items_with_missing_fields=107`, `proposal_count=0`, `manual_count=174`, `applied_count=0` after safe deterministic #1560 `Track=gitops` apply. |
+
+**Boundary**: This proves cert-auth heartbeat + command poll + command result
+submit on one Windows domain machine with a temporary hosts shim and a DB-seeded
+non-destructive command. It does **not** prove durable no-hosts AD DNS,
+AD CS/domain service continuity, OS reboot continuity, admin dispatch API,
+M5 same-day selected-device GPO pilot, later stabilization/soak evidence,
+50/800 staged rollout, or prod `mtls.ai.acik.com`.
+Operator-bound and time-bound gates remain skipped per autonomous-mode
+instruction.
+
+## Live Delta — Faz 22.5 M2 cert-auth command lifecycle source merged; runtime mTLS E2E was still Needs Verify before bounded smoke (2026-06-15, Codex #151/#663/#1537)
+
+> Superseded by the 2026-06-15 bounded Windows smoke entry above for the
+> command/result runtime path; durable DNS/admin-dispatch/GPO/wave gates remain
+> outside that proof.
+
+**Session milestone**: M2 tokenless mTLS lifecycle için agent-doable kalan
+command/result source slice backend + agent tarafında işlendi ve Project #2
+truth güncellendi. `platform-backend` #665 (`47d29d5f`) cert-auth command poll
+ve result endpoint'lerini `/api/v1/endpoint-agent/commands/**` altında ekledi.
+`platform-agent` #157 (`83cd30d0`) tokenless auto-enroll runner'ını
+cert-auth heartbeat sonrası command poll -> execute -> result submit akışına
+bağladı. Ardından `platform-k8s-gitops` #1556 (`3ad0ebe4`) test overlay
+`endpoint-admin-service` digest'ini #665 artifact'ine pinledi. İlgili
+runtime doğrulama issue'ları `Needs Verify` durumunda tutuldu:
+`platform-backend` #663, `platform-agent` #151 ve `platform-k8s-gitops` #1555.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Backend M2-C cert-auth command lifecycle | 🟡 SOURCE-MERGED + Needs Verify | `platform-backend` #665 merge commit `47d29d5fe4f1ba12b35d18f2edf17c11a0798afe`; PR CI before merge: Maven full reactor, endpoint-admin-service unit/slice, secrets, OSV, contract gate, auth/report/permission integration checks SUCCESS; issue #663 Project #2 `Needs Verify` |
+| Agent M2-D tokenless command lifecycle | 🟡 SOURCE-MERGED + Needs Verify | `platform-agent` #157 merge commit `83cd30d0a734db495caf3c0e1cf4ae76adb09666`; CI before merge: BG-EA-1 boundary declaration, Test/lint/cross-build, Windows Go test, Windows PowerShell 5.1 installer gate, D10-5a reproducible build, SBOM, gitleaks SUCCESS; issue #151 Project #2 `Needs Verify` |
+| GitOps M2-E desired-state pin | 🟡 MERGED + Needs Verify | `platform-k8s-gitops` #1556 merge commit `3ad0ebe45dbe6d974e17f8dfd3c82fe5e6dc5684`; test overlay now pins `endpoint-admin-service` to `sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`; issue #1555 Project #2 `Needs Verify` |
+| Testai deploy follow-up | 🟢 deploy + sync gates passed; E2E still open | `backend-testai-deploy` run `27516978772` completed `success`: endpoint-admin pod image verified at `sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`, public edge chain alive returned HTTP 401, all 9 service readiness checks returned 200, and endpoint-admin 180s stability window passed; Gate 2 JWT smoke skipped because `SMOKE_AUTH_*` secrets are absent. `faz22-platform-test-sync-openfga-verify` run `27517879015` also completed `success` through ArgoCD platform-test sync + endpoint-admin OpenFGA runtime selector verify. |
+| Auth boundary | 🟢 source-enforced | Agent `NextCommandCert` / `SubmitResultCert` send no `Authorization` header; legacy bearer path still fail-closes on empty token. Backend authenticates presented machine cert via existing lifecycle binding and ignores client-supplied tenant on mTLS passthrough. |
+| Cross-AI review | 🟢 no blocking findings | Claude CLI reviewed backend #665 and agent #157 diffs; both returned `NO BLOCKING FINDINGS`. Backend review residuals were outside-diff runtime/tenant-binding concerns; agent review's helper-name style note was absorbed. |
+| Board sync / hygiene | 🟡 deterministic backfill exhausted, manual triage remains | Clean `origin/main` `board-sync.sh sync-state` verified cross-repo #151/#663/#1555/#1537/#1560 as `Needs Verify` + unclaimed and #1359/#1376 as `Blocked`. #1561 added `--manual-exception-report`; #1565 added scheduled/manual audit. Latest post-#1565 live audit/backfill: `items_with_missing_fields=107`, `proposal_count=0`, `manual_count=174`, `applied_count=0` after safe deterministic #1560 `Track=gitops` apply. Remaining fields must not be guessed. |
+| Runtime gate | 🟡 bounded proof complete; durable gates open | Superseded by the bounded Windows smokes above for AutoEnroll -> heartbeat -> command poll -> command result and local service stop/start continuity. Remaining gates are durable no-hosts AD DNS, AD CS/domain service continuity, OS reboot continuity, admin dispatch API, M5 same-day selected-device GPO pilot, later stabilization/soak evidence, 50/800 rollout and prod `mtls.ai.acik.com`. |
+
+**Boundary**: M2 command/result lifecycle is now source-merged on both sides,
+desired-state pinned for test overlay, and testai backend deploy/sync gates have
+passed. This historical section is superseded by the bounded Windows smoke above
+for cert-bearing command/result execution. It still does not prove durable
+no-hosts AD DNS, AD CS/domain service continuity, OS reboot continuity,
+M5 same-day selected-device GPO pilot, later stabilization/soak evidence,
+50/800 rollout, or prod `mtls.ai.acik.com`.
+Operator-bound and time-bound gates
+remain skipped per autonomous-mode instruction.
+
+## Live Delta — Faz 22.5 M2 agent edge-default fix merged; Project #2 hygiene guard/backfill merged; M2 runtime gates still separate (2026-06-15, Codex #151/#1537)
+
+**Session milestone**: M2'de agent-doable kalan slice ve board hygiene slice
+autonomous olarak işlendi. `platform-agent` #156 (`ea4ba70`) merge edildi:
+tokenless AutoEnroll/mTLS default host'u canonical `mtls.testai.acik.com` oldu,
+retired `endpoint-agent-mtls.testai.acik.com` referansları kaldırıldı ve
+tokenless lifecycle fail-closed regression guard eklendi. `platform-k8s-gitops`
+#1552 (`61fa4786`) merge edildi: Project #2 required-field hygiene audit +
+fixture harness + CI guard + board protocol eklendi; live deterministic backfill
+Project #2 üzerinde uygulandı.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Agent M2 edge default | 🟢 MERGED | `platform-agent` #156 merge commit `ea4ba70`; CI: BG-EA-1, Go/Windows tests, PS5.1 installer gate, MSI lab build, SBOM, gitleaks, reproducible build all pass before merge |
+| Agent issue #151 | 🟡 Needs Verify | Project #2 status `Needs Verify`; issue evidence comment eklendi. Later #157/#1559 bounded command/result proof exists; issue remains `Needs Verify` for deliberate acceptance or durable-gate split |
+| Board required-field hygiene | 🟢 MERGED + APPLIED | `platform-k8s-gitops` #1552 merge commit `61fa4786`; pre-backfill `items=129`, `proposal_count=222`, `manual_count=172`; applied `75+75+72=222`; follow-up #1561 added manual exception reporting; #1565 added scheduled/manual audit. Latest post-#1565 live audit/backfill is `items_with_missing_fields=107`, `proposal_count=0`, `manual_count=174`, `applied_count=0` after safe deterministic #1560 `Track=gitops` apply. |
+| Board issue #1537 / #1560 | 🟡 Needs Verify | `board-sync verify/sync-state` sonrası Project #2 `Needs Verify`, claims cleared. Remaining 174 manual fields are triage debt, not auto-fill candidates; #1560 stale Backlog body was corrected to `Needs Verify` truth and later safe deterministic audit set #1560 `Track=gitops`. |
+| M2 acceptance boundary | 🟡 split | Test AutoEnroll + tokenless heartbeat already live-smoked; bounded cert-auth command/result is now proven via #1559 and local service stop/start continuity is proven via #1567; #1359/#1376 remain Project #2 `Blocked` for durable no-hosts AD DNS, AD CS/domain service continuity, OS reboot continuity, 2-PC/GPO/soak/wave and prod gates |
+
+**Boundary**: #156 + #1552 materially improved M2 source/board hygiene; #1559
+later proved bounded cert-auth command/result execution on one Windows host.
+They still do not prove durable no-hosts AD DNS, AD CS/domain service
+continuity, OS reboot continuity, M5 same-day selected-device GPO pilot, later
+stabilization/soak evidence, 50/800 wave rollout, or prod `mtls.ai.acik.com`.
+Remaining manual Project fields must be triaged explicitly; no script should
+infer `Faz`/`Priority`/`Status` without deterministic evidence.
+
+## Live Delta — Faz 22.5 M2 AD CS edge mTLS AutoEnroll + tokenless heartbeat live-smoked; durable DNS/GPO rollout still gated (2026-06-14, Codex #1359/#1376/#151)
+
+**Session milestone**: tokenless Endpoint Agent AutoEnroll için eski
+`endpoint-agent-mtls.testai.acik.com` placeholder'ı canonical olarak
+`mtls.testai.acik.com` (test/pilot) ve `mtls.ai.acik.com` (prod) isimlerine
+taşındı; AD CS Enterprise Root CA path'i kuruldu; test edge/backend mTLS
+passthrough canlı aktive edildi; `ERP-MOBIL.acik.local` machine certificate ile
+tokenless AutoEnroll **HTTP 201** live smoke geçti. Ardından `platform-agent`
+#155 (`836d232`) Windows certstore crash fix artifact'i ERP-MOBIL'de
+`--auto-enroll` ile çalıştırıldı ve backend DB'de tokenless mTLS heartbeat
+satırları oluştu. Bu M2 auto-enroll + heartbeat subgate'ini önemli ölçüde
+açar, fakat durable AD DNS, M5 same-day selected-device GPO rollout, later
+stabilization/soak evidence ve 50/800 dalgaları bu kanıtla otomatik kapanmaz.
+Cert-auth command/result lifecycle sonradan #1559
+ile bounded tek-makine smoke olarak kanıtlandı; durable service-mode/rollout
+kanıtı ayrı kalır.
+
+| Alan | Durum (2026-06-14) | Kanıt / sınır |
+|---|---|---|
+| DNS | 🟡 public OK, internal AD DNS pending | `mtls.testai.acik.com` + `mtls.ai.acik.com` public resolver'larda `212.115.26.190`; ERP-MOBIL heartbeat smoke için geçici local hosts shim kullanıldı ve kanıt sonrası kaldırıldı. Durable gate: domain DNS `mtls.testai.acik.com` -> internal edge without hosts file |
+| AD CS | 🟢 Enterprise Root CA + machine cert issuance proven | CA `Acik-Endpoint-CA`; `ERP-MOBIL` machine cert SAN `adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`, EKU Client Authentication, private key non-exportable |
+| Backend mTLS listener | 🟢 Live on test | endpoint-admin pod `1/1 Running`; `endpoint-agent-mtls-backend` endpoint `10.44.3.253:8443`; log: `Tomcat started on ports 8096 (http), 8443 (https)` and trust store `/etc/endpoint-admin/mtls/truststore.p12` |
+| Edge passthrough | 🟢 Test host active | `platform-web-nginx` stream SNI route sends `mtls.testai.acik.com:443` to k3d-test `127.0.0.1:31443`; browser hosts fallback to loopback `8444`; `testai-healthz` and `ai nginx-healthz` still return 200 |
+| TLS cert | 🟢 Backend server cert covers mTLS hosts | Public forced-SNI no-cert probe now serves `CN=mtls.testai.acik.com`, issuer `Acik-Endpoint-CA`, SAN covers `mtls.testai.acik.com` + `mtls.ai.acik.com`; no longer wildcard edge cert for mTLS SNI |
+| No-cert negative | 🟢 Fail-closed | Public `curl -vkI --resolve mtls.testai.acik.com:443:212.115.26.190 .../endpoint-enrollments/auto` shows server `Request CERT` then `curl: (56)`; Windows private-edge no-cert path also exits 56 |
+| Spoof-header + valid cert positive | 🟢 HTTP 201 live | Windows Schannel explicit `LocalMachine\\MY\\F87F0D21...` client cert via private edge `10.9.10.53:443` + forged `X-Client-Cert` / `X-Tenant-Id` / `X-Company-Id` headers returned `201` with `status=enrolled`, device `a358d36d-2ade-4e1f-9f54-68a085ef44a5`, SAN URI `adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d` |
+| DB/audit | 🟢 Fixed tenant + cert identity proven | `endpoint_devices.tenant_id/org_id = 00000000-0000-0000-0000-000000000001` despite forged header; `endpoint_machine_certs` row stored SAN/objectGUID/thumbprint; audit `MACHINE_CERT_AUTO_ENROLL_SUCCESS` with `performed_by_subject=machine-cert:adcomputer:...` |
+| Agent tokenless heartbeat | 🟢 live-smoked on ERP-MOBIL | `platform-agent` #155 crash fix artifact SHA256 `BDEA1B102...`; backend `endpoint_devices` row `a358d36d-2ade-4e1f-9f54-68a085ef44a5` is `ONLINE`; latest DB heartbeat `2026-06-14 23:05:06.603163+00`, `agent_version=0.1.0-ci.355.g836d232`, `hostname=ERP-MOBIL`, `osType=WINDOWS` |
+| GitOps config | 🟡 reconciled for test overlay, runtime/DNS still gated | #1545 reconciled M2 test mTLS desired-state after AutoEnroll smoke; #1550 aligned endpoint-admin test digest to live `sha256:6316261...`. Durable internal AD DNS and cert-auth command lifecycle are still separate gates |
+| M2 acceptance boundary | 🟡 auto-enroll + heartbeat live, rollout open | AutoEnroll path and tokenless mTLS heartbeat are live-proven on one domain machine. At the time of this entry command lifecycle was deferred to #151; #1559 later proved bounded command/result. M5 same-day selected-device GPO pilot, later stabilization/soak evidence and 50/800 rollout remain separate gates |
+
+**Boundary**: #1359/#1376 are no longer merely DNS/edge blocked for test
+AutoEnroll/heartbeat; a real tokenless AutoEnroll success and backend heartbeat
+exist. Do **not** claim M5 same-day selected-device GPO readiness, 50/800
+rollout readiness, prod `mtls.ai.acik.com` activation, durable internal DNS
+readiness, or cert-auth command/result lifecycle from this evidence alone.
+
+## Live Delta — Faz 22.5 wave-gate runbooks hardened + wave-preflight runtime-proven + M4 LIVE (2026-06-13, Codex 019ebf9b/019ebfbb/019ebff3)
+
+**Session milestone**: Faz 22.5 rollout wave-gate'lerinin **agent-completable prep'i doygun** — M5/M6/M7 runbook'ları doğrulanmış-doğru (gerçek backend/agent surface), `wave-preflight.ps1` canlı Windows'ta runtime-proven, M2/#1015 operatör doküman doğruluğu düzeltildi. **6 PR merged** bu oturum.
+
+| Alan | Durum (2026-06-13) | Kanıt |
+|---|---|---|
+| **M4 Signed MSI** | 🟢 **LIVE** (eski "OPEN" supersede) | AG-018 internal-CA pipeline, v0.2.1 production MSI 2-kanıt doğrulandı (`project_ag018_linux_signing_pivot`) |
+| **M5/M6/M7 runbook'lar** | 🟢 **HARDENED** (eski "Source DRAFT" supersede) | gitops **#1490** — `RB-faz22-gpo-pilot-5pc.md` was later amended by owner same-day no-24h scope for #1377 + `RB-faz22.5-m6-capacity-baseline.md` (metric-freeze + DeviceStatus enum fix) + `RB-faz22.5-m7-rollback-drill.md` (uydurma `/revoke` → gerçek `decommission`/`reactivate`+409; `EndpointAgent`/`endpoint-agent.exe` isim fix); #1489 duplicate consolidate edildi |
+| **wave-preflight.ps1** | 🟢 **NEW + runtime-proven** | `scripts/faz22-mass-deployment/wave-preflight.ps1` (preinstall/enroll-health/rollback-clean); **#1491** gate-masking `[int]@()` fix — canlı Win11 VM (`HALILKOOLUB735`, SYSTEM) smoke ile yakalandı+doğrulandı |
+| **M2 #1359 evidence template** | 🟢 doğruluk fix | **#1492** — uydurma `/revoke` endpoint + `platform-agent.exe`/`state.json` → gerçek surface (`auto-enroll.dpapi` vs `hmac-credential.dpapi` iki-store ayrımı) |
+| **#1015 IT pilot runbook** | 🟢 doğruluk fix | **#1494** — `endpoint-enes-agent`/`EndpointEnes\Logs` → `EndpointAgent`/`endpoint-agent.exe`/`%ProgramData%\EndpointAgent\logs`; heartbeat path + tablo adları doğrulandı; preflight wired |
+| Board | #1377 → **Done** under user-narrowed 2-device same-day smoke; #1378/#1379/#1015 → **Needs Verify** + evidence; #1488 backlog (deployment-plan §0.5.x stranded WIP) | Project #2 |
+| M6 metrics reconcile | 🟡 paralel chip in-flight (`d3e844f6`: ServiceMonitor + PromQL reconcile) | M2-bağımsız |
+
+**KRİTİK BLOCKER değişmedi (2026-06-14 DNS-name supersede notu)**:
+**M2 tokenless mTLS (#1359/#1376)** 2026-06-14 live smoke ile test AutoEnroll
+bakımından açıldı: DNS, AD CS CA, machine cert, backend 8443, ingress
+ssl-passthrough, host-nginx stream route, no-cert negative, spoof-header +
+valid-cert positive ve DB/audit evidence mevcut. Kalan gate artık daha dar:
+desired-state reconciliation/PR, mTLS-continuous credential/heartbeat channel,
+M5 same-day selected-device GPO pilot, later stabilization/soak evidence ve
+M5/M6/M7 wave execution. Agent prep ~100, wave exec
+~0. Cross-AI: Implementer Claude ≠ Reviewer Codex (HARD RULE).
+
+## Live Delta — Faz 22.7 Compliance Gap Mart Layer D5 LIVE acceptance (browser-verified) + COMPLETED (2026-06-09, Codex 019ea95d)
+
+**Session milestone**: Faz 22.7 (Compliance Gap Mart Layer, platform-backend #376) promoted from SOURCE-MERGED to **COMPLETED** — the D5 live/browser acceptance that was the open gate is now performed and documented, and the three COMPLETED-promotion-gate backend hardening tests landed (provider-distinct Codex review).
+
+### D5 live acceptance — testai browser smoke (HARD RULE Tarayıcıdan Sonuç Doğrulanmadan: satisfied)
+
+Driven via Chrome MCP against `https://testai.acik.com/endpoint-admin/compliance/gaps` (Platform Admin session):
+
+| Acceptance dimension | Evidence |
+|---|---|
+| **Cluster API 200** | `GET /api/v1/endpoint-admin/endpoint-devices/compliance-gap?page=1&pageSize=20&gapTypes=pending_security_updates,rdp_enabled&freshnessWindow=P7D` → **200** (gateway Route → service `/api/v1/admin/...`) |
+| **Grid render (real data)** | 2 devices: `HALILKOOLUB735` (1 gap — "Bekleyen Güvenlik Güncellemeleri", Güçlü/strong-fresh, lastSeen 2026-06-08 17:54) + `MKR-A1` (2 gaps — "Uzak Masaüstü Etkin" + "Bekleyen Güvenlik Güncellemeleri"). Header: `Tazelik: PT168H · Aranan boşluklar: pending_security_updates, rdp_enabled`. Pagination `1/1 · 2 cihaz`. |
+| **Filter exercise (server-side)** | Uncheck "RDP açık" → new request `…gapTypes=pending_security_updates&freshnessWindow=P7D` → 200; MKR-A1 gapCount 2 → 1 (RDP chip dropped). Confirms server-side re-query, not client filter. |
+| **Drill-down** | Row click → device "Detay" drawer with per-snapshot tabs (Detay / İşlemler / Denetim Geçmişi / Envanter / Donanım / Sağlık / Güncel Olmayan Yazılım / Hotfix Duruşu / Agent Tanılaması / Hizmetler). |
+| **Console** | Clean — no errors/exceptions (only a benign `ag-grid-license resolved key: found` DEBUG line). |
+| **D29 digest invariant** | Live testai endpoint-admin pod imageID `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:3e1e5852838d1ae519bffbe604787c56052d7a0d9965f8c19f590ed3fae1f3bc` == overlay desired digest (`kustomize/overlays/test/kustomization.yaml`). Pod `1/1 Running`, ready=true. |
+
+D29 tiers for the read-only mart: **Up** (pod 1/1) + **Functional** (API 200 + JSON-shape + grid/filter/drill-down render) + **Secured** (RBAC `can_view` enforced — see backend tests).
+
+### COMPLETED-promotion-gate backend hardening (platform-backend, Codex 019ea95d findings 3 + 6)
+
+Three machine-enforced guards added (read-only; no runtime behaviour change), all green locally (`Tests run: 5, Failures: 0`, incl. PG IT on a real postgres:16 Testcontainer):
+
+- `ComplianceGapRedactionContractTest` — drives the **real** `EndpointComplianceGapService` (mocked repository) and asserts an exact per-level key allowlist + a sensitive-field deny-list scan over the whole serialized tree (guards `GapDetail.details` / `filterEcho` `Map<String,Object>` against future PII leak).
+- `AdminEndpointComplianceGapSecurityTest` — compliance-gap controller was uncovered by `AdminEndpointAuthorizationSecurityTest`; now denied-viewer → `403` fail-closed (service never invoked) + viewer-with-`can_view` → `200`.
+- `ComplianceGapRepositoryTenantIsolationPostgresIntegrationTest` — real PG + Flyway; tenant A's RDP-enabled startup snapshot AND pending-security-updates hotfix snapshot are visible to tenant A and invisible to tenant B (no existence leak; both gap-type paths).
+
+### Status
+
+Faz 22.7 = **🟢 COMPLETED** (authority platform-backend #376 CLOSED 2026-06-07 + D1 contract + D2-MVP API + D3 explorer merged + D5 browser-verified + redaction allowlist + 403 fail-closed + tenant cross-leak guards). Scope honesty: D2 is MVP (2 gap types `rdp_enabled` + `pending_security_updates`; `gapStrength`/`device[]`/`sort`/explicit-stale/extra-types deferred). Boundary: 22.7 = read-only mart (outside #1388 sensitive-ops gate); "Path C" detection = 22.5 (not 22.7). Canonical plan: `docs/sprint-plan-faz-22-7-compliance-gap-mart.md`.
+
+## Live Delta — Faz 22.5 consensus gate tracker + M5/M6/M7/#1359 source slice drafts MERGED (2026-05-28 / Session 51 closure batch — Codex 019ea916 + 019ea922 AGREE)
+
+**Session milestone**: Faz 22.5 M2-M7 + #1359 gate'leri için **canonical source-vs-operator boundary tracker** ve **4 source slice runbook draft** (M5 + M6 + M7 + #1359 acceptance evidence template) main'e landed. HARD RULE Tam Otonom (2026-05-28) uygulaması: her gate için **agent organize path** + bounded operator dependency explicit; "operator action gerek" tek satır YASAK pattern engellendi.
+
+| Slice | PR | Evidence | Hüküm |
+|---|---|---|---|
+| Consensus gate tracker M2-M7 + #1359 | **#1385** `ad204d16` MERGED 2026-05-28 | `docs/faz-22.5-consensus-gate-tracker-m2-m7.md` 7-section canonical tracker + `docs/faz-22-endpoint-admin-plan-2026-05-21.md` historical banner; Codex thread `019ea916` plan-time AGREE; CI 10/10 PASS | Source-side LIVE — agent-doable scope + operator-gate boundary per gate |
+| M5/M6/M7/#1359 source slice runbook drafts | **#1386** `b1841b65` MERGED 2026-05-28 | 4 new files: `RB-faz22.5-1359-acceptance-evidence-template.md` + `RB-faz22-gpo-pilot-5pc.md` + `RB-faz22.5-m6-capacity-baseline.md` + `RB-faz22.5-m7-rollback-drill.md`; Codex thread `019ea922` plan-time AGREE (M7 destructive boundary explicit); CI 10/10 PASS; +1167 insertions | Source-side draft scope LIVE — runtime mutation NONE; operator gate REQUIRED per gate; closure claim NO |
+
+**Tracker coverage** (PR #1385 §2 Gate Boundary Matrix):
+- **M2** (#1376) — AD CS / edge mTLS finalization: Source LIVE (RB + scripts + ADR MERGED PR #1078/#1080); operator gate = DNS + AD CS + CA + cert
+- **M5** (#1377) — same-day selected-device GPO pilot: Source runbook/evidence updated; supersedes both original 5-PC/7d and intermediate 2-PC/24h paths. Current accepted gate is the user-narrowed 2-device smoke in the top 2026-06-15 entry; original/full expansion remains separate.
+- **M6** (#1378) — 50-PC capacity baseline: Source DRAFT LIVE (PR #1386 RB-faz22.5-m6-capacity-baseline.md); operator gate = 50 PC IT + on-call rotation
+- **M7** (#1379) — Rollback drill: Source DRAFT LIVE (PR #1386 RB-faz22.5-m7-rollback-drill.md); operator gate = Lab env + domain admin; execution FORBIDDEN until lab-clone + Codex plan-time AGREE per scope
+- **#1359** Tokenless AutoEnroll: Source LIVE (edge mTLS RB + smoke templates) + Acceptance evidence template DRAFT LIVE (PR #1386); operator gate = DNS + cert + CA + agent --auto-enroll source (DNS still BLOCKED — see live delta above)
+
+**Operator Dependency Roll-up** (Tracker §4 — HARD RULE Tam Otonom organize path):
+- D1 DNS records → agent organize path = script + DNS monitor + board issue (corp DNS admin operator action)
+- D2 AD CS Enterprise CA → preflight script + Codex consult (Windows Server admin role install)
+- D3 Client CA bundle → export script + ESO ExternalSecret config (DC remote PowerShell + Vault stdin-pipe seed)
+- D4 IT pilot PC → diversity matrix + Mavis ops + evidence pack (IT admin 5+50 PC allocation)
+- D5 Mavis ops sign-off → CLI peer message pattern + on-call rotation (per-gate APPROVED comment)
+
+**HARD RULE Tam Otonom anti-pattern engeli** (2026-05-28): Her gate için "kullanıcı yapsın" / "operator action gerek" tek satır YASAK pattern eliminated. Agent organize path + bounded operator condition + Mavis coordination format zorunlu. Source PR merge ≠ acceptance kapanışı (Codex No Fake Work HARD RULE).
+
+**Cross-AI peer review chain**:
+- Implementer: Claude (Anthropic) — Session 51 Faz 22 otonom chain
+- Reviewer (plan-time): Codex (OpenAI GPT-5.2) `019ea916` (tracker scope AGREE) + `019ea922` (4 runbook draft single-PR AGREE; M7 destructive boundary explicit)
+- Verdict: AGREE source-side scope + operator-gate boundary explicit per gate
+
+**Follow-up scope** (Tracker §3 closure status — operator-bound):
+- M2 closure: DNS yayını + AD CS Web Enrollment + cert chain + cert end-to-end + edge mTLS LIVE + spoof negative + no-cert negative + ≥1 test PC autoenrollment proof
+- M5 original/full expansion closure: selected-device matrix + domain-gpo enrollment/GPO install LIVE + same-day T0/T+15/T+60 no-regress evidence + rollback/reinstall drill + `same_day_smoke=true` / `soak_hours=0` artifact + Mavis sign-off; current #1377 accepted gate is narrower and already closed.
+- M6 closure: 50/50 PC + capacity baseline measured + 1+ controlled abort drill PASS + throttling LIVE + Mavis sign-off
+- M7 closure: lab-clone drill 3-layer PASS (uninstall + revoke + GPO rollback) + audit ledger proof + Mavis sign-off
+- #1359 closure: DNS LIVE + cert mount + cert end-to-end + agent --auto-enroll source PR + edge mTLS + spoof/no-cert negative PASS (currently BLOCKED on DNS)
+
+## Live Delta — Faz 22.5 #108 agent-level mode rescue LIVE-verified + merged; frontend pin reconciled; CI billing blocker (2026-06-08 22:15 Istanbul / 19:15Z UTC)
+
+**Session milestone**: the residual half of platform-agent #108 (an *agent-level*
+defense so a stale `HKLM\SOFTWARE\EndpointAgent\Mode=auto-enroll` cannot strand a
+fully HMAC-provisioned host even if the installer fails to clear it) is now
+implemented, cross-AI reviewed, **LIVE-verified on a real Windows device**, and
+merged. This does **not** by itself close #108: full closure still needs the fix
+shipped via the official release pipeline + the installer-clears-regkey path
+(#111) and #109 confirmed end-to-end on a standard PC.
+
+| Slice | Evidence | Hüküm |
+|---|---|---|
+| Source + review | platform-agent PR **#114** `ccc27ef` — source-aware `resolveMode`/`decideMode` + `modeSignals` (HMAC signal = explicit `ENDPOINT_AGENT_API_URL` env **+** env token *or* a valid DPAPI-persisted credential `hmacCredentialPersisted()`, fail-closed) + auto-enroll-URL guard. Codex (OpenAI) thread `019ea886` **AGREE** (2 P1 absorbed: config-DEFAULT masquerade + token-cleared-by-installer). `go build/vet/test` host + `GOOS=windows` green | Cross-provider review + local gates passed |
+| LIVE A/B (real device) | HALILKOOLUB735 (device `d0efb00a`), same stale `Mode=auto-enroll` + DPAPI cred + per-service `ENDPOINT_AGENT_API_URL`: **CONTROL** (origin/main binary `7033af92`) → `agent mode=auto-enroll` → service **Stopped** (bug reproduced); **TREATMENT** (#114 binary `f3fb2598`) → `agent mode=hmac` + `hmac credential loaded from store` → service **Running** + heartbeat. Device restored to baseline (orig binary `ec7875d2`, no Mode key, HMAC) | Agent-level rescue proven at runtime on the exact #108 failure condition |
+| Frontend pin reconciled | platform-k8s-gitops PR **#1374** `26519aae` — test-overlay `frontend` digest `sha-4b9859c` → **`sha-9b4b5f2`** (`sha256:7b3ba897…`, web #777 decommission/reactivate toolbar + DeviceLifecycleModal). Forward-only (`9b4b5f24` strict descendant of `4b9859c`; domain column + lifecycle, no regression). testai pod `frontend-6c6dd6c9cf-vv927` Running on `@sha256:7b3ba897`; gitops canonical now matches live | Frontend drift eliminated; canonical = cluster |
+| Merge path | Both PRs merged via **REST squash, no `--admin`** (private repo has no branch-protection required checks; `mergeable=true`). Cross-AI audit trail in each squash commit | No admin bypass; cross-AI gate honoured |
+
+**Blocker — GitHub Actions account billing (operator-only, money boundary)**:
+between 2026-06-08 17:40Z (last green runs) and 18:48Z the **Actions spending
+limit was exhausted account-wide** — every new CI run fails to *start* the runner
+("spending limit needs to be increased"). Per repo HARD RULES neither PR was
+merged on green CI; instead the owner directed **REST-API merge** and merges were
+backed by independent evidence in lieu of CI (local build/vet/test + Codex AGREE +
+live device A/B for #114; ancestry + GHCR + live-cluster + local BG-1 boundary
+PASS for #1374). **Restore billing → re-run CI on both merge commits to backfill
+the standard signal.** This blocker also gates any further merge/deploy until lifted.
+
+**P0 / MKR-A1 truth (corrected)**:
+
+- **P0-0 result-submit visibility** — DONE (platform-backend **#509** CLOSED; invalid payload → `FAILED + last_error`).
+- **P0-2 installer productization + PS5.1 gate** — DONE (platform-agent **#101** CLOSED + **#112**/PR **#113** CLOSED/MERGED).
+- **#108 stale-regkey strand** — agent-level rescue **LIVE-verified + merged (PR #114)**; full closure still gated on official-release binary + installer (#111) path on a standard PC.
+- **#109 reinstall/fresh-enroll guard** — MERGED (PR #110); standalone live verify still pending (Needs Verify).
+- **#1359 tokenless/domain AutoEnroll** — **TEST AUTOENROLL LIVE-SMOKED** (DNS + AD CS + edge/backend mTLS + no-cert negative + valid machine-cert positive + DB/audit evidence on `ERP-MOBIL`; remaining: desired-state reconciliation, mTLS-continuous heartbeat/credential, GPO/soak/waves).
+
+## Live Delta — Faz 22.5 platform-agent #101 Parallels standard-PC bootstrap smoke (2026-06-08 18:05 Istanbul / 15:05Z UTC)
+
+**Session milestone**: the refreshed `platform-agent` #107 public artifact now
+has a local Parallels Windows 11 (`HALILKOOLUB735`) standard-PC rerun evidence
+chain for the HMAC fallback bootstrap path tracked by platform-agent #101. The
+accepted run downloaded the canonical ZIP from `testai.acik.com`, verified the
+ZIP SHA256, installed the agent, enrolled, confirmed HMAC credential persistence,
+removed enrollment-token material from the service environment, and completed a
+non-destructive `COLLECT_INVENTORY` command through backend -> agent -> result
+-> audit. This does not prove tokenless domain AutoEnroll, DNS/edge mTLS, MSI/GPO
+rollout, M5 same-day selected-device GPO pilot, or production Trusted Signing.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Artifact | Historical #107 accepted run used `EndpointAgent.zip` SHA256 `9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029`; standalone `bootstrap-package.ps1` SHA256 `7ac13aad5c910a74c59862dfc7faafc3c88187c541b9b5f7af64172427335859`; installed binary SHA256 `EC7875D2C39ABCD0C08364C78767DB86AF91857A71817A11AF5045E9255BD60C` | Historical package was used for this accepted run; new pilot installs must use the live artifact-host `current/` pointer documented below |
+| Fresh-store HMAC bootstrap | Old DPAPI HMAC store was backed up/removed before the accepted rerun; service `EndpointAgent` is Running/Automatic as LocalSystem; process PID `1120`; logs show `agent enrolled` and `hmac credential confirmed` for device `d0efb00a-681a-4e32-b7de-a27ef94f2977` at `2026/06/08 14:50:27-28Z`; service env keys contain `ENDPOINT_AGENT_API_URL` and `ENDPOINT_AGENT_LOG_DIR` but no `ENDPOINT_AGENT_ENROLLMENT_TOKEN` | #101 fresh standard-PC HMAC fallback rerun evidence exists for local Parallels |
+| Backend device | Admin API device list reports `HALILKOOLUB735` `ONLINE`, `agentVersion=0.1.0-dev`, `updatedAt=2026-06-08T14:53:22.885723Z` | Agent is visible to endpoint-admin backend after install |
+| Command lifecycle | `COLLECT_INVENTORY` command `5482af96-b480-463f-a5a1-2d8b3bcd6aa4` issued `14:54:00Z`, delivered `14:54:22Z`, started `14:55:29Z`, completed `14:55:49Z`, terminal `SUCCEEDED`; result row `a5bd419c-f5b2-45c6-8679-0dea6638e0db` | Backend -> agent -> execute -> result chain is functional for non-destructive inventory |
+| Inventory payload | `software.appCount=17`, `wingetReady=true`, `wingetVersion=1.28.240`, `wingetEgress.packageQuery.found=true` for `7zip.7zip`, `hardware.supported=true`, `domainJoined=false`, diagnostics `configHash` is 64 chars, backend DNS/TLS checks true | 22.5 read-only / readiness payload reaches backend through the command result |
+| Audit | `ENDPOINT_COMMAND_CREATED` audit `9711ee57-9d47-4945-8a74-b0adbf415dd5`; `ENDPOINT_SOFTWARE_INVENTORY_REPLACED` audit `f221ad3a-b428-4d17-a9cd-cd64ea97dc1d` with appCount/storedCount `17` and `wingetEgressIngested=true` | Command and inventory replacement audit path observed |
+| Follow-up found | A rerun with `-Force` + new enrollment token on an already-enrolled machine loaded the existing DPAPI HMAC store instead of treating the token as a fresh-enroll intent; tracked as platform-agent #109 | Upgrade preservation is useful, but fresh-reenroll/reset semantics need an explicit guard before 800-PC operations |
+
+**Boundary / remaining gates**:
+
+- platform-agent #101 can use this evidence for HMAC fallback standard-PC
+  verification, subject to board acceptance.
+- platform-agent #109 tracks the explicit reinstall/fresh-enroll guard found
+  during the rerun.
+- platform-k8s-gitops #1359 remains blocked on DNS/edge mTLS for tokenless
+  domain AutoEnroll.
+- #1044 historical two-device/24h soak and domain/IT pilot evidence remain
+  separate; it is not the current #1377 M5 same-day/no-24h gate.
+- Evidence file:
+  `docs/faz-22-evidence/2026-06-08-agent-101-parallels-bootstrap-smoke.md`.
+
+## Live Delta — Faz 22.5 standard PC install productization chain (2026-06-08 17:35 Istanbul / 14:35Z UTC)
+
+**Session milestone**: the standard Windows PC friction observed on MKR-A1 is
+now tracked in the canonical 22.5 plan and has source/desired-state progress
+across agent, backend and GitOps. Later 2026-06-15 evidence proves the bounded
+ERP-MOBIL tokenless domain AutoEnroll/service-continuity subgate; this older
+section still does not prove M5 same-day selected-device GPO readiness,
+50/800 rollout readiness or prod `mtls.ai.acik.com`.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Written plan | PR #1354 merged `6160ae35`; `docs/faz-22-software-deployment-plan.md` now has `0.4 Standard PC Install Productization Lane` with M0-M7 milestones, duration baseline and non-negotiable target | Plan is canonical; current lane is no longer ad-hoc |
+| Agent installer/package | `platform-agent` PR #102 merged `cba5ecee`; PR #103 merged `87fa38b9`; PR #105 merged `05774bf6`; PR #106 merged `7e92a9e4`; PR #107 merged `35c641e3`; main workflow runs `27137185247`, `27142499833` and `27144437218` succeeded | PS5.1-safe installer package, UTF-8 BOM packaged scripts, `EndpointAgent.zip`, `bootstrap-package.ps1`, static encoding guard and `-AutoEnroll` installer/bootstrap path are source-ready. Agent AutoEnroll client default, packaged bootstrap default and direct `install.ps1` default align to the deployed external route `/api/v1/endpoint-agent` |
+| Canonical artifact | 2026-06-15 live artifact-host check after v0.2.4 promotion: `https://testai.acik.com/artifacts/endpoint-agent/current/` and immutable `/artifacts/endpoint-agent/v0.2.4/` return HTTP 200 for `bootstrap-package.ps1`, `EndpointAgent.zip`, `EndpointAgent.zip.sha256`, `SHA256SUMS`, and `release-manifest.json`; current ZIP SHA256 is `9caea9fb851513717cc1e3d54c5378dd850731de8e73e21df9351cf7077ec8a8`; agent binary SHA256 is `067e42eab24ee1f73dc28903774c6f5db6c6dcb2bf1163271efa3803587e06a3`; older `/0.1.0-dev/` URLs now return HTTP 404 | Manual ZIP transfer is no longer required for pilot bootstrap; new installs must use `current/` or immutable `v0.2.4/`. Hidden token prompt still remains on the HMAC fallback path; tokenless AutoEnroll uses the mTLS host |
+| Backend result-submit visibility | `platform-backend` PR #511 merged `7c0ec4a`; endpoint-admin image digest `sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45` pinned by GitOps PR #1355 `d0c26292`; live pod imageID matches digest and `/actuator/health` is UP. Runtime invalid-result smoke submitted AG-038 diagnostics with invalid `configHash="abc"` and got HTTP `400`; DB row moved to `FAILED`, `last_error` carried bounded `RESULT_REJECTED`, lock was cleared and zero raw result rows were persisted | P0-0 source + test overlay + runtime failure-visibility proof exists and aligns with platform-backend #509 Project Done evidence. This does not prove the full standard-PC installer rerun in platform-agent #101 |
+| Gateway route parity | GitOps PR #1358 merged `4ddc8dd8`; live `api-gateway` env carries `endpoint-admin-mtls-auto-enroll-route` at route index 22 and public POST to `/api/v1/endpoint-agent/endpoint-enrollments/auto` returns `401 MTLS_CERT_MISSING` without a client cert | Route reaches backend auto-enroll controller and fail-closes without cert; this is route parity, not tokenless enrollment success |
+| Edge mTLS activation runbook | `docs/runbooks/RB-faz22.3-edge-mtls-autoenroll.md` defines the dedicated mTLS host, backend `X-Client-Cert` / `X-Tenant-Id` contract, spoof-header stripping, no-cert negative, header-injection negative and valid machine-cert positive smokes | The blocker is now executable as an ops runbook; acceptance still requires DNS + edge mTLS + valid machine-cert evidence |
+| DNS / edge mTLS gate | 2026-06-15 supersede: internal AD DNS returns A records for `testai.acik.com` and `mtls.testai.acik.com` to `10.9.10.53`; test edge stream route is active for `mtls.testai.acik.com`; backend serves `CN=mtls.testai.acik.com` from AD CS and requests a client cert; `ERP-MOBIL` valid machine-cert AutoEnroll returned HTTP 201 with DB/audit evidence and later v0.2.4 service restart logs show `auto-enroll cert loaded` + `no command available` | Tokenless AutoEnroll test path and bounded service continuity are live-smoked; remaining gates are OS reboot, board-authoritative M5 same-day selected-device GPO pilot, explicit no-24h risk/stabilization decision before M6 expansion, and prod host activation; tracked by #1359/#1376 |
+
+**Boundary / remaining gates**:
+
+- platform-agent #101 remains `Needs Verify` until a fresh standard PC rerun
+  proves install + enrollment + service start from the newly published package.
+- platform-backend #509 has runtime invalid-result visibility evidence; keep
+  future installer acceptance separate under platform-agent #101.
+- platform-k8s-gitops #1359 is the P0 ops gate for tokenless domain AutoEnroll:
+  DNS host, TLS client-cert request/verification, spoof-safe certificate
+  forwarding and positive/negative mTLS evidence.
+- HMAC bootstrap is usable today for local-control fallback reruns, but it
+  still needs a hidden enrollment token; it does not count for domain-gpo M5
+  acceptance and is not the final 800-PC domain rollout channel.
+
+## Live Delta — Faz 22.5 P1 visibility local Parallels probe smoke (2026-06-07 21:28 Istanbul / 18:28Z UTC)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+read-only P1 visibility probe evidence from current `platform-agent` main
+(`origin/main@eebd198`) through a temporary Windows ARM64 probe binary. The
+probe executed as `nt authority\system` via `prlctl exec`, produced a 39,594
+byte JSON output, and exercised the same internal inventory collectors with
+explicit opt-in flags. This is local lab evidence only; it is not #1044
+two-device repeatability, not 24h observation, not `acik.local` IT pilot, not
+production rollout and not backend/browser ingest acceptance.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Artifact integrity | Binary SHA256 `03f5a3fc38f3f59c2d410cffb00f4b6bb4ffab914574b068f10bfaa07e71d53c`; output SHA256 `e3713fb0f332f11fb9d7cab1268d23b88bd0bfa70a8e220ca3dfa03e1c54f178`; output path `/Users/halilkocoglu/tmp/faz22-p1-probe-smoke-20260607/p1-probe-output.json` | Evidence is traceable to a local temp binary and captured output |
+| `AG-030` pending reboot | `supported=true`, `probeComplete=true`, `pendingReboot=true`; sources `CBS_REBOOT_PENDING` and `PENDING_FILE_RENAME_OPERATIONS` | Local read-only probe PASS; VM has reboot indicators |
+| `AG-031` security posture | Defender present; Domain/Private/Public firewall enabled; BitLocker system drive present, encrypted/protected/active flags false; no recovery-key material emitted | Local read-only probe PASS |
+| `AG-032` local admin group | `sourceUsed=netapi`; local member count `2`; domain member count `0`; no raw SID/name list recorded in docs | Summary-only local admin inventory path exercised |
+| `AG-033` device health | One fixed disk; memory total `21468217344`, available `16614338560`, used percent `22`; uptime `232993` seconds / `2` days | Local read-only probe PASS |
+| `AG-039` services | Six canonical services observed: `BITS`, `EndpointAgent`, `EventLog`, `MpsSvc`, `WinDefend`, `wuauserv`; `EndpointAgent`, `EventLog`, `MpsSvc`, `WinDefend`, `wuauserv` running; `BITS` stopped/manual | Critical services read-only probe PASS |
+| `AG-038` diagnostics | `supported=true`, `probeComplete=false`; config hash emitted; `BACKEND_HOST_UNRESOLVED` because temp binary had no backend API URL / service environment | Collector fail-closed observed; not backend connectivity acceptance |
+| `AG-040` startup exposure | `supported=true`, `probeComplete=false`; `startupAppCount=38`, RDP disabled; redaction guard entries for task scheduler names | Collector redaction/fail-closed observed; not full startup-exposure acceptance |
+| Secret hygiene | Grep scan for Bearer/JWT/Authorization/password/token/secret/user-profile path patterns returned empty | No raw secret material recorded |
+| Evidence | `docs/faz-22-evidence/2026-06-07-p1-visibility-parallels-probe-smoke.md` | Traceable evidence file added |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Service-configured backend ingest / browser proof is still the higher
+  evidence class for `AG-038` and `AG-040`.
+- Domain / `acik.local` / IT pilot, trusted signing and domain-wide rollout
+  remain separate gates.
+
+## Live Delta — Faz 22 AG-029 local Parallels self-update E2E evidence (2026-06-07)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+accepted one-device AG-029 signed self-update evidence through the
+BE-031/BE-032 release-catalog and catalog-bound `UPDATE_AGENT` dispatch path.
+This supersedes earlier draft-only and `0.1.3-lab.1` snapshot wording. It is
+local lab evidence only; #1044 two-device repeatability, trusted production
+signing, rollout policy acceptance, `acik.local` IT pilot, domain password
+behavior and domain-wide rollout remain separate gates.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source chain | `platform-agent` PR #74 `656cd1a384ced3b79c4996acc5d9031e0c11dc77` MERGED; PR #75 `5f3218165f58244f29eb4c5220e839eb795a9bed` MERGED; `platform-backend` PR #494 `5184831c419ba52df081c49b6c04f5f8eb054ecb` and PR #495 `82071da050bc196459bf214962759020284797fa` MERGED | Agent source/checklist + backend release catalog/dispatch source are on main |
+| Trust preflight | Dedicated BE-032 dispatch body with caller-supplied trust fields (`binaryUrl` / hash / signer) returned HTTP `400` | Backend trust material resolved from release catalog, not caller payload |
+| Release path | Release `ag029-localhost-014-20260607143458`; proposer `userId=9997`; separate approver `userId=9998`; status `APPROVED`; signing tier `LAB_ONLY_EVIDENCE` | Maker-checker release path exercised in lab |
+| Command lifecycle | Command `0640e361-ccb7-4a7b-8967-27ea992ba7ad`; result row `c0bdeb9e-054f-41b6-a12e-3787ec45e244`; terminal `SUCCEEDED`; `stageStatus=STAGED_ACTIVATION_READY`; `oldVersion=0.1.0-dev`; `targetVersion=0.1.4-lab.1` | Catalog-bound `UPDATE_AGENT` command reached the local Windows agent and staged successfully |
+| Activation / heartbeat | `endpoint-agent --version` -> `endpoint-agent 0.1.4-lab.1`; service `Running`; activation outcome `ACTIVATED`; `serviceRunningVerified=true`; `evidencePersisted=true`; backend heartbeat reports `agent_version=0.1.4-lab.1` | Local Windows service swap and post-activation evidence observed |
+| Cleanup / safety | Local HTTPS artifact server stopped; temp local smoke user absent; synthetic KC users disabled; temp token/password dirs removed | Lab artifacts cleaned without carrying raw secret values into docs |
+| Evidence | `platform-agent` #55 raw evidence comment: https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4642413343; accepted sign-off comment: https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4642421851 | Traceable issue-level evidence and acceptance |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Lab-only signing is not production Trusted Signing.
+- This does not claim domain-wide deployment, domain password reset, cached
+  domain credential update, SMB/file actions, or pre-logon VPN behavior.
+
+## Live Delta — Faz 22 AG-092 disposable local lock/unlock dispatch smoke (2026-06-07 20:21 Istanbul / 17:21Z UTC)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+backend-to-agent dual-control success-path evidence for both `LOCK_USER_LOGIN`
+and `UNLOCK_USER_LOGIN` on a disposable local Windows SAM account. The smoke
+created `ea-lockunlock-smoke`, locked it through endpoint-admin command
+dispatch, verified `Enabled=false` on the VM, unlocked it through a second
+command, verified `Enabled=true`, then removed the synthetic account. This is
+local Windows SAM evidence only; it is not domain password reset, cached domain
+credential proof, M365/Entra reset, SMB/file action, #1044 two-device batch,
+`acik.local` IT pilot, or 24h observation evidence.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| LOCK_USER_LOGIN success path | Command `a8dfaac1-1c3b-4f4f-84cd-77b62c2bd553`; `approvalStatus=APPROVED`; terminal `SUCCEEDED`; result `LOCK_USER_LOGIN applied`; VM state `Enabled=true` -> `Enabled=false` | Backend-to-agent dispatch and local SAM lock adapter success path exercised |
+| UNLOCK_USER_LOGIN success path | Command `fd62b31e-c84a-4ee7-b1d0-e433c35768e1`; `approvalStatus=APPROVED`; terminal `SUCCEEDED`; result `UNLOCK_USER_LOGIN applied`; VM state `Enabled=false` -> `Enabled=true` | Backend-to-agent dispatch and local SAM unlock adapter success path exercised |
+| Cleanup / secret hygiene | `net user ea-lockunlock-smoke` returned `The user name could not be found.` after cleanup; evidence scan found no raw Bearer/JWT/Authorization/password/token/secret material | No synthetic account or raw credential material left behind |
+| Evidence | `docs/faz-22-evidence/2026-06-07-ag92-disposable-lockunlock-dispatch-smoke.md`; local evidence dir `/tmp/faz22-live-smoke/ag92-lockunlock-disposable-20260607T172110Z` | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Domain / `acik.local` / IT pilot gates remain separate.
+- Domain password / cached credential / pre-logon VPN behavior remains a
+  separate identity connector and IT-pilot design lane.
+
+## Live Delta — Faz 22 AG-092 / AG-042 backend-to-agent dispatch smoke (2026-06-07 19:43 Istanbul / 16:43Z UTC)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+backend-to-agent dual-control dispatch evidence for command-specific local
+Windows account operations. `LOCK_USER_LOGIN` reached the agent and enforced
+the reserved built-in Administrator guard without mutating the VM. `CHANGE_LOCAL_PASSWORD`
+reached the agent and changed a disposable local SAM account password, then the
+helper removed the synthetic account. This is local Windows SAM evidence only;
+it is not domain password reset, cached domain credential proof, M365/Entra
+reset, SMB/file action, #1044 two-device batch, `acik.local` IT pilot, or 24h
+observation evidence.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source/helper chain | `platform-agent` PRs #95, #96, #97, #98, #99 MERGED; final mergeCommit #99 `160b1fcc612e95cd39d463da5d30bb3683e4036b`; CI checks PASS including Windows Go test | Smoke helpers and redaction/reporting fixes source-ready on `platform-agent` main |
+| AG-092 lock dispatch | Command `2825b275-4f31-4324-9ad6-a96e08d8b27e`; type `LOCK_USER_LOGIN`; target `Administrator`; `approvalStatus=APPROVED`; terminal `FAILED`; reason: reserved built-in account cannot be targeted by remote command; VM before/after unchanged | Backend-to-agent dispatch path exercised; reserved account guard enforced |
+| AG-042 local password dispatch | Command `c06cd030-c62e-40da-814d-90956e960eaa`; type `CHANGE_LOCAL_PASSWORD`; target synthetic local user `ea-recovery-smoke`; `approvalStatus=APPROVED`; terminal `SUCCEEDED`; result `CHANGE_LOCAL_PASSWORD applied`; VM before/after changed | Backend-to-agent dispatch path exercised; local SAM password adapter applied on disposable account |
+| Cleanup / secret hygiene | `Get-LocalUser ea-recovery-smoke` returned `ABSENT`; `/tmp/ag42-auth.bixUyo` removed; evidence scan found no raw Bearer/JWT/Authorization/local-password material | No synthetic account or raw credential material left behind |
+| Issue truth | `platform-agent#92` acceptance comment added and state `CLOSED`; `platform-agent#94` post-close live evidence comment added | AG-092/AG-042 helper/live evidence recorded |
+| Evidence | `docs/faz-22-evidence/2026-06-07-ag92-ag42-backend-dispatch-smoke.md`; local evidence dirs `/tmp/faz22-live-smoke/ag92-lock-final-20260607T162200Z` and `/tmp/faz22-live-smoke/ag42-local-password-final-20260607T163900Z` | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Domain / `acik.local` / IT pilot gates remain separate.
+- Domain password / cached credential / pre-logon VPN behavior remains a
+  separate identity connector and IT-pilot design lane.
+
+## Live Delta — Faz 22 #1267 endpoint-admin OpenFGA ESO selector runtime PASS (2026-06-07 18:13 Istanbul / 15:13Z UTC)
+
+**Session milestone**: endpoint-admin OpenFGA store/model selector migration now has
+runtime proof on `platform-test`. The pod environment resolves through the
+ESO-managed shared `kv/platform/openfga` Secret instead of stale ConfigMap pins.
+This closes the #1267 selector-migration acceptance; it does not claim a new
+persona allow/deny smoke, #1044 multi-device batch, domain-wide rollout or
+24h soak.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source migration | PR #1330 moved endpoint-admin OpenFGA model/store IDs out of the ConfigMap path and into the ESO-managed secret selector; follow-up PRs #1332-#1339 added the runtime verifier and hardened the platform-test sync path | Source + verifier chain merged |
+| Runtime workflow | `Faz 22 — platform-test GitOps sync + endpoint-admin OpenFGA verify` run [27096356021](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27096356021), head `513e238bc5498f20e2c9a6e875122b393cae4a98`, conclusion `success` | Runtime gate PASS |
+| Sync mode | ArgoCD core was unavailable on the self-hosted runner, so the workflow reconciled selected GitOps-rendered endpoint-admin resources from `kustomize/overlays/test` plus the ESO overlay (`kubectl-overlay-selected-resources`) | Overlay-rendered selected-resource fallback; no direct workload image mutation, `kubectl set image`, workload edit or unmanaged patch |
+| Selector proof | Runtime report verdict `PASS`: expected/observed/pod model `01KS8QE8T1EJ2DF5CRS4VV9YX1`; expected/observed/pod store `01KPP0CFP4G82K42Y6NYSPT4JF` | Pod env matches shared ESO-managed OpenFGA values |
+| Board truth | #1267 CLOSED + Project Done + body `status=done`; #1331 CLOSED + Project Done + body `status=done` | Selector migration and verifier workflow accepted |
+| Evidence | `docs/faz-22-evidence/2026-06-07-endpoint-admin-openfga-runtime-selector.md`; workflow artifact `endpoint-admin-openfga-sync-verify-report` | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Domain / `acik.local` / IT pilot gates remain separate.
+- Further persona allow/deny smoke is a D29 Functional/Secured evidence lane,
+  not a blocker for this selector-migration acceptance.
+
+## Live Delta — Faz 22 AG-042 local password / lock / unlock Parallels smoke (2026-06-07 16:48 Istanbul / 13:48Z UTC)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+agent-side Windows SAM mutation proof for `LOCK_USER_LOGIN`,
+`UNLOCK_USER_LOGIN`, and `CHANGE_LOCAL_PASSWORD` on a disposable local account.
+This is local adapter evidence only; it is not backend/JWT dual-control
+dispatch, domain password reset, M365/Entra reset, SMB/file action, #1044
+multi-device acceptance, or `acik.local` IT pilot evidence.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source baseline | `platform-agent origin/main` at `690d39943404b6d458b44e9582a0e8589af2eb32` (#91 merged); Windows arm64 test binary SHA256 `8da4c6d2a225a8234314a2f43711b5678ad9ced5f5e821685c6d49ff4b95ecd8` | Test built from current main, not the stale local dirty agent worktree |
+| Local Go tests | `go test ./internal/users ./internal/commands ./internal/inventory` returned PASS for all three packages | Unit-level local-user protocol/executor/inventory guards green |
+| Parallels smoke | PowerShell harness created temporary local user `ea-pwd-0607a`, ran `TestMutateLocalWindowsIntegration`, then removed the user | Disposable local SAM account only |
+| Mutation proof | Test output: `--- PASS: TestMutateLocalWindowsIntegration (0.04s)`; harness `exitCode=0`, `removedAfterCleanup=true`, `secretEchoed=false` | `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`, `CHANGE_LOCAL_PASSWORD` adapter path proven on local Windows |
+| Evidence | `docs/faz-22-evidence/2026-06-07-local-password-parallels-smoke.md` | Traceable evidence file added |
+
+**Boundary / remaining gates**:
+
+- `platform-agent#92` remains open for operator-gated backend-to-agent
+  `LOCK_USER_LOGIN` dispatch with two distinct admin JWTs.
+- `platform-k8s-gitops#1044` remains open for the user-owned 2-device batch
+  plus observation roll-up.
+- Domain password / cached credential / pre-logon VPN behavior remains a
+  separate identity connector and IT-pilot design gate; this smoke proves local
+  SAM only.
+
+---
+
+## Live Delta — Faz 22.5 P1 visibility roll-up acceptance reconcile (#1134/#1164) (2026-06-07 15:25 Istanbul / 12:25Z UTC)
+
+**Session milestone**: the prior admin-JWT / WEB-015 evidence gap is
+superseded. `testai` live evidence now proves the P1 visibility roll-up at
+source + test runtime level. This does not satisfy #1044 multi-device + 24h
+soak, #1037 `acik.local` IT pilot or #1015 IT pilot readiness. The prior
+#1267 OpenFGA selector migration gap was accepted later the same day; see the
+2026-06-07 18:13 Istanbul delta above.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Admin JWT full-payload smoke | Role-bearing synthetic `ENDPOINT_ADMIN` JWT (`userId=1169`) + OpenFGA `user:1169 can_view module:endpoint-admin -> allowed=true`; endpoint-admin pod `endpoint-admin-service-d6795c845-lvdts`; image digest `sha256:389565a9d5411247be6735f6816a77e3906ad2ecf8552ea5216d64584618be97`; 4 endpoint direct service smoke: `software-inventory/diff` 200 status=OK, `software-inventory/history` 200 totalElements=5, `outdated-software/latest` 200, `prohibited-software` 200 status=OK | #1164 blocker cleared; earlier 403 was missing JWT role/scope, not Keycloak admin password or OpenFGA tuple |
+| WEB-015 export | Public gateway `POST https://testai.acik.com/api/v1/endpoint-admin/endpoint-devices/export` with `{format:csv, exportMode:raw}` returned 200 `text/csv;charset=UTF-8`, `endpoint-devices-raw.csv`, 7 lines; header includes `Bilgisayar Adı`, `Yasaklı Yazılım`, `Ajan Son Poll` | CSV/report export source + edge path live |
+| Board truth | #1164 Done/closed; #1134 Done/closed; both body `agent-state status=done` | P1 visibility roll-up reconciled |
+
+**Boundary / remaining gates**:
+
+- User-owned #1044 two additional devices + 24h soak remains open by design.
+- `acik.local` #1037 / #1015 remains operator-bound.
+- #1267 OpenFGA model migration evaluation is no longer open; runtime selector
+  proof was accepted in workflow 27096356021.
+
+---
+
+## Live Delta — Faz 22.2.A Parallels W11 CI rehearsal workflow_dispatch PASS (2026-06-07 06:35 Istanbul / 03:35Z UTC)
+
+**Session milestone**: `platform-agent` #12 local Parallels Windows 11
+rehearsal moved from terminal-only evidence to a real GitHub Actions
+`workflow_dispatch` run on an ephemeral self-hosted macOS runner. This is a
+repeatable local-lab rehearsal proof; it is not `acik.local` domain pilot,
+multi-device soak, trusted production signing, password-reset readiness or
+domain-wide rollout acceptance.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Harness hardening | `platform-agent` PR #78 MERGED, mergeCommit `ea3abc7c035f8aa03d2a590fa3f756892970c4ca`; CI checks PASS; Claude CLI cross-AI verdict `AGREE`, no must-fix | Parallels 26 `--without-shell` / stdin PowerShell / empty-output false-green risks closed before workflow run |
+| Ephemeral runner | Repo initially had `total_count=0` self-hosted runners; ephemeral runner `codex-parallels-w11-Halil-MacBook-Pro.local-20260607033348` registered with labels `self-hosted, macOS, ARM64, parallels, windows11`; after job `.credentials` and `.runner` removed; repo runner list returned to `total_count=0` | No persistent self-hosted runner left behind |
+| Workflow run | `Parallels Windows 11 CI pilot rehearsal` run [27081667910](https://github.com/Halildeu/platform-agent/actions/runs/27081667910), job [79928639993](https://github.com/Halildeu/platform-agent/actions/runs/27081667910/job/79928639993), event `workflow_dispatch`, head `main@ea3abc7c...`, conclusion `success` | GitHub Actions path exercised against local Parallels VM |
+| Artifact | Uploaded artifact `parallels-w11-ci-evidence-27081667910`, `8837` bytes, not expired; downloaded evidence includes `precheck.txt`, `classify/classification.json`, `SHA256SUMS`, `windows-live.txt`, `run.log` | Evidence is retrievable from Actions |
+| VM classification | `HALILKOOLUB735`, Windows 11 Pro for Workstations, `OSVersion=10.0.26200`, `Domain=WORKGROUP`, `PartOfDomain=false`, `AzureAdJoined=NO`, `WorkplaceJoined=NO`, `DomainJoined=NO`, detected tier `A1` | Local non-domain baseline confirmed |
+| Backend reachability | Precheck `testai.acik.com:443` returned `Reachable=true` | Local VM can reach backend edge over TCP/443 |
+| Windows service smoke | `windows-live.ps1` produced 86 evidence lines; temporary service `EndpointAgentCodexTest` installed, started, event source verified, tamper checks executed, maintenance-token stop succeeded, uninstall/cleanup completed | Repeatable local Windows service lifecycle smoke through workflow_dispatch |
+| Package SHA | `endpoint-agent.exe` SHA256 `9491b41f7be4d172d4b6e00f13f1050abb4e657ff2593361a075ce5001f2463e`; install/uninstall/README SHA values captured in artifact | Build/package path exercised in workflow |
+| Secret scan | Classifier and main harness post-write secret scans clean | Evidence upload did not leave JWT/Bearer/password/token/raw-GUID/email/raw-SID findings |
+| BE-011 boundary | Optional `scripts/test/be011-lifecycle-helper.sh` absent; workflow logged skip and referenced predecessor manual BE-011 evidence | No fresh backend command/result/audit row was created by this workflow |
+| Evidence | `docs/faz-22-evidence/2026-06-07-parallels-windows11-ci-pilot-rehearsal.md`; platform-agent #12; platform-agent PR #78; gitops #1044 comment pending update | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- This proves the self-hosted Mac + Parallels W11 workflow_dispatch rehearsal
+  path only.
+- It does not satisfy gitops #1044 multi-device + 24h soak by itself.
+- It does not satisfy `acik.local` 22.2.B: domain join, EndpointPilot OU,
+  IT-owned devices, EDR allowlist and trusted signing remain separate gates.
+- A BE-011 helper can be added later if the workflow itself must emit fresh
+  backend command/result/audit ids; this run deliberately records that the
+  helper was absent rather than overclaiming it.
+
+---
+
+## Live Delta — Faz 22.3 / AG-030P auto-enroll dry-run crash hardening (2026-06-07 05:57 Istanbul / 02:57Z UTC)
+
+**Session milestone**: local Parallels Windows 11 exposed a real
+auto-enroll dry-run crash in the Windows certstore preflight path. The fix was
+implemented in `platform-agent` and verified against the same local Windows VM
+with a temp binary. This is a **source + local-lab preflight hardening**
+evidence item; it is not domain join, AD CS certificate provisioning, trusted
+production signing, or domain-wide rollout acceptance.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Root symptom | Installed `endpoint-agent 0.1.3-lab.1` crashed on `endpoint-agent.exe -auto-enroll -dry-run` with Windows access violation `0xc0000005`; stack entered `github.com/google/certtostore.(*WinCertStore).CertKey` via `certstore.acquireSigner` | Broad default cert-store scan was unsafe on the local workgroup VM |
+| Source fix | `platform-agent` PR #77 MERGED, mergeCommit `1ec4a5a98665eb06f4940cb3e9cd7624ac46316c` | Auto-enroll startup/dry-run now fail closed unless `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX` is configured; certstore adds private-key binding precheck before native key acquisition |
+| CI / review | PR #77 checks passed: BG-EA-1, gitleaks, SBOM, Test/lint/cross-build, lab-only ephemeral signing, Windows Go test; real Claude CLI review verdict `AGREE — merge-ready, zero must-fix` | Provider-distinct review + CI gate satisfied |
+| Local Parallels no-filter proof | Patched temp binary `C:\Temp\endpoint-agent-ag030p.exe`, SHA256 `0AC89B8B02F20F5C6550D10EC74076E29D7F79D9320E569E2D390B917A750154`; no-filter dry-run returns explicit filter requirement and `EXIT=1` | Crash replaced by actionable fail-closed diagnostic |
+| Local Parallels filtered proof | `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX=adcomputer:` and `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX=.acik.local` both return clean `cert load: no eligible machine certificate found`, `EXIT=1`, no native crash | Disambiguated filter paths no longer acquire arbitrary certs on the local baseline |
+| Installed service boundary | Installed service was not replaced during AG-030P proof; `EndpointAgent: RUNNING`, version `endpoint-agent 0.1.3-lab.1`, SHA256 `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE` | Temp-binary proof did not mutate the local service baseline |
+| Board / checklist | `platform-agent` #76 CLOSED + Project #2 Done; gitops #1044 received AG-030P batch addendum for other-device no-crash checks | Local fix accepted; multi-device checklist remains open |
+| Evidence | `docs/faz-22-evidence/2026-06-07-ag030p-auto-enroll-dryrun-no-crash.md`; platform-agent #76; platform-agent PR #77; gitops #1044 comment `4641247708` | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- This proves local-lab AG-030P crash hardening only.
+- The installed service still runs the pre-#77 `0.1.3-lab.1` binary until a
+  later self-update or installer path distributes the merged fix.
+- Domain mTLS enrollment still requires AD CS machine certificate provisioning
+  plus a configured subject suffix or SAN URI prefix (for example
+  `adcomputer:`) on the endpoint.
+- Other-device acceptance remains pending in #1044 and must include the same
+  no-crash dry-run checks on each batched Windows device.
+
+---
+
+## Live Delta — Faz 22.5 local Parallels read-only diagnostics refresh (2026-06-07 05:35 Istanbul / 02:35Z UTC)
+
+**Session milestone**: after AG-029 activation baseline, the same local
+Parallels endpoint (`HALILKOOLUB735`) was re-checked with installed-agent
+read-only diagnostics only. No command dispatch, install, uninstall, restart,
+account mutation, password change, domain join, SMB/file action or production
+claim was made.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Agent service | `EndpointAgent` RUNNING; startup mode `AUTO_DELAYED`; binary version `endpoint-agent 0.1.3-lab.1`; SHA256 `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE` | Local post-AG-029 binary still active |
+| Backend poll | Log tail showed device `d0efb00a-681a-4e32-b7de-a27ef94f2977` HMAC credential accepted with value redacted and `no command available` responses at 30s cadence through `2026-06-07 02:28Z` | Agent can poll backend without a new dispatched command |
+| Identity | `domain=WORKGROUP`, `partOfDomain=false`, `domainJoined=NO`, `azureAdJoined=NO`, `workplaceJoined=NO`, classification `LOCAL`; raw logged-in account fields emitted as hashes/masks | Local non-domain baseline confirmed |
+| Local users | `diagnose local-users` returned 5 local accounts; built-in disabled accounts observed; active local user observed; locked-out users observed as 0 | Read-only local user surface callable; no mutation |
+| Software / WinGet | `diagnose software` `supported=true`, `appCount=17`; 7-Zip not present in current inventory; `diagnose winget` resolved WinGet `1.28.240`; `diagnose winget-egress` DNS/TCP/HTTPS OK for Microsoft CDN/Store endpoints | Software inventory and WinGet readiness surfaces callable |
+| Hardware / services | Windows 11 Pro for Workstations ARM64 Parallels VM; C: free ~53.8GB; `EndpointAgent`, `EventLog`, `MpsSvc`, `WinDefend` RUNNING; `BITS`, `wuauserv` STOPPED/MANUAL | Local posture evidence captured |
+| Evidence | `docs/faz-22-evidence/2026-06-07-halilkoolub735-local-readonly-diagnostics.md`; platform-agent #55 comments `4641184773` and `4641192809`; gitops #1044 batch checklist comment `4641193725` | Local-only evidence and other-device checklist traceable |
+
+**Boundary / remaining gates**:
+
+- Multi-device acceptance is still pending: gitops #1044 remains open for at
+  least two additional devices plus soak/rollup.
+- Trusted production signing, domain-wide rollout, password reset, SMB/file
+  actions and sensitive operations remain separate gates.
+- This delta supports local development/testing confidence only.
+
+---
+
+## Live Delta — Faz 22.5 AG-029 post-merge local Parallels self-update baseline (2026-06-07 05:15 Istanbul / 02:15Z UTC)
+
+**Session milestone**: AG-029 moved from "draft/source pending" to a
+post-merge local Parallels baseline on `platform-agent origin/main`. This is
+local lab evidence only; it does **not** prove multi-device acceptance,
+domain-wide rollout, trusted production signing or prod enablement.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source fix | `platform-agent` #74 MERGED, mergeCommit `656cd1a384ced3b79c4996acc5d9031e0c11dc77` | Windows Authenticode sharing-violation root cause fixed by closing the staged temp download before verifier access |
+| Acceptance checklist | `platform-agent` #75 MERGED, mergeCommit `5f3218165f58244f29eb4c5220e839eb795a9bed` | Multi-device checklist exists; only local Parallels baseline is filled, other devices remain `PENDING_BATCH` |
+| Target artifact | built from merged `origin/main` as `endpoint-agent 0.1.3-lab.1`; signed target SHA256 `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE`; lab signer thumbprint `FC0E7FCCDD1AD1A60B3D0CD4FE91CD1556FFE02ABA3CAE3FCEF3978E61E624FE` | Lab-only signed artifact ready for local smoke |
+| Backend release + dispatch | release `ag029-main-20260607020152`; auth probe creator/approver `200/200`; negative trust-field preflight returned HTTP `400`; release DRAFT -> APPROVED; dispatch command `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6` | BE-031/BE-032 catalog-bound path used; caller-supplied trust fields rejected |
+| Command result | command `SUCCEEDED`; stageStatus `STAGED_ACTIVATION_READY`; oldVersion `0.1.2-lab.2`; targetVersion `0.1.3-lab.1`; actualSha256/signing thumbprint match target | Update staged, verified and activation-ready |
+| Windows activation | local Parallels device `HALILKOOLUB735` (`d0efb00a-681a-4e32-b7de-a27ef94f2977`); service `EndpointAgent` Running; PID `13016`; installed version `0.1.3-lab.1`; installed SHA256 matches signed target; `max-activated-version=0.1.3-lab.1` | Post-result activation completed on the local Windows baseline |
+| Backend heartbeat + audit | heartbeat row: `HALILKOOLUB735 | 0.1.3-lab.1 | ONLINE | 2026-06-07 02:02:13Z`; audit row `581d5710-a5bc-485d-a6d8-e8c1e2c1cb28` = `ENDPOINT_AGENT_UPDATE_COMMAND_CREATED` for release `ag029-main-20260607020152` | Server-side acceptance saw the new agent version and audit metadata |
+| Evidence link | `platform-agent` #55 evidence comment: https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4641111205 | AG-029 issue remains `Needs Verify` until broader acceptance is reconciled |
+
+**Boundary / remaining gates**:
+
+- Local Parallels baseline is now proven for AG-029 after merged main.
+- Multi-device acceptance is still pending batch evidence; the checklist added
+  in PR #75 must be filled for the other devices before a broad claim.
+- Trusted production signing is not proven here (`LAB_ONLY_EVIDENCE`).
+- Domain-wide rollout / MSI-GPO / ring-window-throttle policies remain separate
+  Faz 22.3 / 22.5.8 gates.
+
+---
+
+## Live Delta — Faz 22 prod endpoint-admin first workload presence + D29 prod GREEN (2026-06-05 22:50 Istanbul / 19:50Z UTC)
+
+**Session milestone**: prod endpoint-admin-service desired-state path progressed from ESO-gated candidate to live prod workload presence. This is **not** D30 atomic cutover/decommission; it is prod workload presence + D29 smoke evidence.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Prod ESO | gitops #1241 MERGED, mergeCommit `e268854c63ed29b91818d378041f812a814d26d6`; `ExternalSecret/endpoint-admin-service-secrets` selective ArgoCD sync; `Ready=True:SecretSynced`; generated Kubernetes Secret has 4 keys | Secret delivery live; values not logged |
+| Prod Vault/PG prereq | `kv/platform/endpoint-admin-service` seeded with `db_username`, `db_password`, `enrollment_token_pepper`, `device_secret_encryption_key`; evidence recorded only as key list + lengths + password hash prefix. Prod PG `endpoint_admin` role/database existed; role password rotated to Vault value; restricted temp pod with `app.kubernetes.io/part-of=platform` connected from pod-network and returned `endpoint_admin@endpoint_admin` | DB auth proven from pod-network |
+| Prod workload | gitops #1242 MERGED, mergeCommit `4202e17c1d0d3f7d72ec7943601fd453bba0bde3`; selective ArgoCD sync of endpoint-admin ConfigMap, Service, ServiceAccount, Deployment | Endpoint-admin resources Synced/Healthy |
+| D30 artifact | Pod `endpoint-admin-service-777c66f5c9-wl5kr`, `ready=true`, Deployment `ready=1/1`; imageID `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2` | Immutable digest match |
+| DB/Flyway boot | Hikari added connection; Flyway successfully applied 49 migrations to schema `endpoint_admin_service`, now at version `v50`; app started on 8096/8081 | Prod schema bootstrap succeeded |
+| OpenFGA | Log: `OpenFGA client created: url=http://openfga:8080, storeId=01KPXCVBHCY2TQ6YHVK009NS1C` | Authz plane wired |
+| D29 prod smoke | `/tmp/smoke-report-prod-20260605T195032Z.json`, exit 0: Up GREEN, Functional GREEN, Secured GREEN, Zanzibar GREEN, synthetic allow/deny PASS (`user:1204` allow, `user:9999999` deny) | D29 four-tier prod evidence captured |
+
+**ArgoCD note**: `platform-prod` application remains overall `OutOfSync` due pre-existing `r29-teams-smoke` resources. Endpoint-admin-specific resources are `Synced`/`Healthy`.
+
+**Open gates**: D30 atomic cutover / broad exposure remains a separate gate; AG-029 signed self-update, controlled rollout policies, IT/domain-wide rollout, and sensitive/SMB/file-action charter remain separate roadmap items.
+
+---
+
+## Live Delta — Faz 21.1 C4 org-canonicalization sweep + AG-028 managed uninstall test go-live + prod endpoint-admin blocker (2026-06-05, snapshot ~01:00 Istanbul / 2026-06-04 22:30Z UTC audit)
+
+**Session milestone**: endpoint-admin `org_id` FK-flip sweep simple-arc LIVE; AG-028 managed uninstall test go-live with live-verified destructive E2E; prod endpoint-admin overlay PRs open (gated).
+
+### Faz 21.1 C4 — `org_id` canonicalization FK-flip sweep
+
+Source-foundation arc (C1/V29-V36 org_id column + compat trigger + match/non-null CHECK) was already LIVE. C4 = flipping each tenant-composite FK `(child_col, tenant_id)→parent(id, tenant_id)` to org-composite `(child_col, org_id)→parent(id, org_id)` (MATCH SIMPLE, CASCADE preserved). `tenant_id` STAYS (A6 deferred); reads stay tenant-keyed (A5 deferred).
+
+| Slice | Migration | Backend PR | FKs | Status |
+|---|---|---|---|---|
+| A2 leaf 6/6 (device_health, diagnostics, hardware_inventory, services, startup_exposure, **hotfix_posture grandchild**) | V38-V43 | #452/#455/#457/#458/#459/#463 | 19 | 🟢 LIVE testai |
+| step-4 app_control (ORG-DONE-parent variant) | V44 | #465 | 2 | 🟢 LIVE testai |
+| step-5 outdated_software + software_inventory (pure-flip) | V45 | #467 | 3 | 🟢 LIVE testai |
+| **HUB** commands + catalog foundation + install_audit + uninstall consumers | V46-V49 | #471/#472/#473/… | 12 | 🟡 in-progress (parallel session `claude-v46-49`, board platform-backend #469; V46/V47/V48 merged+deployed, pod digest `sha256:0179c732…`) |
+
+**Live audit 2026-06-04 22:30Z** (`docker exec platform-pg-test`): **29 org-composite FKs** total, **12 tenant-composite FKs remaining** (all hub-dependent) at simple-arc completion; HUB session actively reducing this. Each LIVE slice: pod imageID==committed digest (D30), FK `convalidated=true`, old tenant FK dropped, Flyway `ok=true`, Codex cross-AI (plan+post-impl, provider-distinct). 3 reusable variants discovered: full leaf-family / ORG-DONE-parent / pure-flip / grandchild (2 UNIQUE parents). Memory: `project_faz_21_1_c4_simple_flip_arc.md`.
+
+### AG-028 managed uninstall — test go-live (live-verified)
+
+| Slice | Repo / PR | Evidence |
+|---|---|---|
+| Web Phase-3 managed uninstall UI | platform-web #752 MERGED (2026-06-04 18:37Z) | "Kaldır" button + "Son Kaldırmalar" table |
+| Test dark-launch flag | gitops #1279 MERGED (2026-06-04 21:14Z) | **LIVE-verified**: `ENDPOINT_ADMIN_UNINSTALL_ENABLED=true` on testai endpoint-admin pod env |
+| Evidence redaction fix | platform-agent #53 MERGED | — |
+| **Destructive E2E** real 7-Zip uninstall on HALILKOOLUB735, maker-checker (proposer ≠ approver) | — | **LIVE-verified**: `endpoint_uninstall_audit` (2 rows) latest `result_status=SUCCEEDED_VERIFIED` + `verification` column present (idempotent re-run row `SKIP_ALREADY_ABSENT`) |
+
+**Prod**: uninstall stays **dark in prod** (separate enablement decision). Authz long-term follow-up open: `#1274` (assignRole grant-side granule tuple not written on later member-add), `#1275` (legacy `syncTuplesToOpenFga` fail-loud/fold) — not E2E-blocking, P1 correctness.
+
+### Prod endpoint-admin presence — OPEN, gated
+
+`endpoint-admin-service` has **no prod deployment yet** (D30 cutover + operator pre-chain Vault+PG+ESO+overlay+NetPol). Prod overlay PRs open:
+- gitops **#1241** (prod ESO) — OPEN, mergeState=BEHIND
+- gitops **#1242** (prod workload/config) — OPEN, BEHIND, **2 governance gates RED (correct-behavior, not bugs)**: `D29 evidence required for prod digest changes` + `Drift PR-time render gate (Codex P0) (prod)`. These are prod-safety gates requiring D29 evidence before any prod digest change; passing them = a prod-deploy decision (owner/D30).
+
+---
+
+## Live Delta — Historical "Faz 22.7 Path C" wording, phase-boundary superseded (FILE_VERSION/SHA256/EXISTS) FULL CHAIN LIVE + HALILKOOLUB735 binary upgrade + 7-Zip lifecycle full E2E autonomous (2026-06-02 22:30 Istanbul)
+
+> **Phase-boundary correction 2026-06-09**: this historical live-evidence
+> section used "Faz 22.7 Path C" wording. Canonical phase ownership now treats
+> Faz 22.7 as the Compliance Gap Mart Layer tracked by platform-backend #376
+> and `docs/sprint-plan-faz-22-7-compliance-gap-mart.md`. The Path C evidence
+> below remains valid runtime evidence, but the 22.7 number must not be reused
+> for backup, SMB/file actions, data-protection scope, or security telemetry
+> expansion. Remote access is 22.6; endpoint backup/offboarding/forensic
+> collection is 22.8; endpoint security telemetry/detection extension is 22.9.
+
+**Session milestone**: Detection rule expansion completed end-to-end across agent + backend + web + cluster + endpoint + lifecycle smoke in single autonomous chain.
+
+### Path C chain — SOURCE-MERGED + LIVE testai
+
+| Slice | Repo / PR | sha / digest | LIVE evidence |
+|---|---|---|---|
+| **C1 agent** FILE_EXISTS + FILE_SHA256 + FILE_VERSION detectors | platform-agent #50 | `sha-2747605` | binary deployed HALILKOOLUB735 `C:\Program Files\EndpointAgent\endpoint-agent.exe` SHA256 `7584716c79885777928a90b6d7c60d39b2c9df4d798b1c2beb24e5b113254f50`; markers embedded (`validateFilePathSafety`, `validateVersionPredicateForFileVersion`, `VersionPredicate`, `FileVersionField`, `ExpectedSha256 must be 64 hex`); service running |
+| **C2 backend** DetectionRuleValidator FILE_VERSION + asLong integer-only + path safety mirror | platform-backend #384 | `sha-75fc507` / `sha256:5133ad487d68dc434d3a041734fc33f9131423316de7c976b2a0a3d0e38bc91e` | pod imageID match testai; actuator UP; Codex `019e8982` iter-2 AGREE; 13/13 CI |
+| **C2 gitops** test overlay digest pin | gitops #1222 | merged + cluster apply | rollout success; pod imageID exact match |
+| **C3 web** catalog/items DetectionRuleEditor + 5 subforms + path safety table-driven | platform-web #739 | `sha-ed72fcf` / `sha256:193d56c6719abb6771f57ec561b4d80124ac4d74e34b1801c1adc7ec83a207f1` | frontend pod imageID match testai; 974/974 mfe-endpoint-admin tests PASS (190 net new); Codex `019e8982` iter-3 AGREE |
+| **C3 gitops** frontend digest pin | gitops #1224 | merged + cluster apply | rollout success |
+| **C4 browser smoke** /endpoint-admin/catalog/items | manual MCP | — | drawer + 5 type tabs + FILE_VERSION EXACT/MIN/RANGE tabs + path safety i18n hint LIVE ("Yol izin listesindeki bir dizinde olmalı" for `D:\Tools\bad.exe`) |
+
+### HALILKOOLUB735 binary upgrade #135 — autonomous LIVE acceptance
+
+Faz 22.7 Path C agent binary upgraded on Parallels W11 via `prlctl exec` admin shell (Parallels Tools guest agent, bypasses network reachability). Service swap + COLLECT_INVENTORY E2E:
+
+- VM "Windows 11" started via `prlctl start` (settings allowlist `Bash(prlctl *)` added 2026-06-02)
+- Path C1 binary (CI artifact 7365146487) downloaded → staged at `~/path-c1-endpoint-agent.exe` → copied via `\\Mac\Home` shared folder → installed; SHA256 verified Mac=VM
+- EndpointAgent service stop → binary replace → start (post-restart log: `agent mode=hmac`, `hmac credential loaded from store device=d0efb00a-681a-4e32-b7de-a27ef94f2977`)
+- COLLECT_INVENTORY dispatched via `POST /endpoint-admin/endpoint-devices/{deviceId}/commands` → commandId `5a470a63-ea7b-44c6-96c2-70fcd0339124`
+- Agent log: `command 5a470a63-ea7b-44c6-96c2-70fcd0339124 finished with SUCCEEDED` at `2026-06-02 20:15:27`
+- Hardware inventory snapshot ingested `collectedAt: 2026-06-02T20:15:16Z` (match command finish ±11s)
+
+### 7-Zip lifecycle full E2E autonomous smoke (RB-faz22-7zip-lifecycle-live-smoke.md Path A unlocked)
+
+Previously documented as "autonomous JWT path blocked" (task #77, runbook §4.2b maker-checker requirement). This session unlocked the autonomous path via Keycloak test approver persona + OpenFGA tuple:
+
+1. **KC admin token** via `/run/secrets/kc_admin_password` URL-encoded → master realm admin token
+2. **Test approver persona** `endpoint-admin-test-approver` (KC sub `55a7b39f-e18f-4b2d-8834-01bfcf5d8b5f`, attributes `userId=9999`, `org_id=00000000-0000-0000-0000-000000000001`, role `ENDPOINT_ADMIN`, firstName/lastName/email + emailVerified=true)
+3. **OpenFGA tuple write** `user:9999 can_manage module:endpoint-admin` store `01KPP0CFP4G82K42Y6NYSPT4JF` model `01KS8QE8T1EJ2DF5CRS4VV9YX1` → check `allowed=true`
+4. **Test persona JWT mint** via `frontend` client direct grant → JWT carries `userId=9999` + `org_id=…001` + `ENDPOINT_ADMIN` role
+5. **7-Zip catalog**: admin@example.com (`userId=1`) creates DRAFT → test approver (`userId=9999`) approves → APPROVED enabled=true (maker-checker satisfied: creator ≠ approver)
+6. **Preflight** WARN (`inventory_stale` non-blocking) + `installedState=INSTALLED` (prior install)
+7. **INSTALL_SOFTWARE dispatch** with `acceptedWarnings=['inventory_stale']` → commandId `4278bd1e-47ce-4117-b705-0b2073da2a12`
+8. **Agent execution** poll cycle pickup → log `command 4278bd1e finished with SUCCEEDED` at `2026-06-02 20:29:54` (7s install)
+9. **Install audit row** auditId `7319b7a8-afd3-4e0a-860b-db0c3cff7e42`, resultStatus=SUCCEEDED, startedAt=20:29:47, finishedAt=20:29:54, postVerification=UNKNOWN (WinGet confirm-only Session-0)
+
+**Path A autonomous unlock formula (gelecek için)**: Vault KC admin password → master JWT → KC user create with `userId`+`org_id` attributes + ENDPOINT_ADMIN + emailVerified=true + password reset → FGA tuple write `user:<id> can_manage module:endpoint-admin` → JWT mint via `frontend` direct grant → cross-subject approve unlocks BE-020 maker-checker.
+
+### M8 #760 scheduled wakeup
+
+Cloud-side scheduled remote agent armed: routine `trig_017DuTR7goT5og4kcjEcJpsq` fires 2026-06-19T06:00 UTC (09:00 Istanbul) — Faz 23 M8 readiness check after M7 17-day stability window. Self-contained prompt: M7 metrics + tenant_isolation tests + M8 promotion plan + PR + Türkçe verdict. URL: https://claude.ai/code/routines/trig_017DuTR7goT5og4kcjEcJpsq
+
+---
+
+## Live Delta — Faz 22.5 P2-A WEB-015 + BE-024c v2-c-pre FULL CHAIN LIVE: v2-a + v2-b + v2-c-pre testai sealed (2026-06-02)
+
+**Session milestone**: Faz 22.5 P2-A "Inventory Change Evidence" sprint —
+DeviceGrid SCHEMA_VERSION 2 → 3 → 4 bumps for WEB-015 v2-a + v2-b grid
+exposure, plus BE-024c v2-c-pre diff summary cache foundation (V27
+migration). 12 PR MERGED across platform-backend (#374/#377/#381),
+platform-web (#734/#736/#737), platform-k8s-gitops (#1209/#1210/#1214/
+#1215/#1216/#1218); 5 deploy chain LIVE testai; HTTP E2E acceptance
+sealed (33-key v4 row + CSV 33-col Turkish headers + V27 migration
+applied) + browser smoke PASS sealed (Chrome MCP recovery sonrası
+2026-06-02 ~19:55Z).
+
+### v2-a + v2-b + v2-c-pre deploy chain LIVE
+
+| Slice | Backend | Web | Gitops digest | testai LIVE |
+|---|---|---|---|---|
+| **v2-a** prohibited + app-control SCHEMA v3 | #374 `sha-00be5e2` | #734 `sha-44c5574` | #1209 + #1210 | pod imageID match ✓ |
+| **v2-a decision domain widening** | — | #736 `sha-481f0f4` | #1214 | ✓ |
+| **v2-b** diagnostics + startup + services SCHEMA v4 | #377 `sha-625fc38` | #737 `sha-443e0cf` | #1215 + #1216 | pod imageID match ✓ |
+| **v2-c-pre** BE-024c diff cache foundation V27 | #381 `sha-fef46d9` | — (deferred) | #1218 | pod `sha256:cf08e400…d7532` ✓; V27 applied "Successfully applied 1 migration to schema endpoint_admin_service, now at version v27 (100ms)" |
+
+### v2-a v3 schema (5 new colIds)
+
+`prohibited_status` (CASE pe.id IS NULL THEN NO_EVALUATION ELSE OK) +
+`prohibited_decision` (pe.decision pass-through) +
+`prohibited_findings_count` (JSONB defensive jsonb_typeof guard over
+matchedItems.prohibitedInstalled) + `app_control_wdac_mode` + 
+`app_control_app_id_svc_state` — 2 new LEFT JOIN LATERAL (`pe` latest
+endpoint_compliance_evaluations, `ac` latest endpoint_app_control_snapshots,
+both schema-qualified + canonical `collected_at DESC, created_at DESC,
+id DESC` tiebreaker).
+
+Web v2-a fast-follow widened `prohibited_decision` domain to backend
+canonical 4-value enum (COMPLIANT / NON_COMPLIANT / UNAUTHORIZED /
+UNKNOWN) after testai LIVE smoke surfaced `decision=UNKNOWN` real-data
+finding; v0 draft `INSUFFICIENT_DATA` was a guess the backend never
+emits. PR #736 absorbs the real domain.
+
+### v2-b v4 schema (6 new colIds)
+
+`diagnostics_last_poll_latency_ms` + `diagnostics_last_error_code` (TEXT
+not closed enum — backend `DiagnosticsPayloadPolicy.CODE_RE` regex) +
+`diagnostics_last_error_at` (canonical `last_error_occurred_at`) +
+`startup_rdp_enabled` + `startup_windows_firewall_event_log_enabled`
+(CASE-guarded NULL when no snapshot / unsupported / probe-incomplete) +
+`services_critical_stopped_count` (6-allowlist WinDefend / wuauserv /
+BITS / EventLog / EndpointAgent / MpsSvc; precomputed in `se` LATERAL
+row). 3 new schema-qualified LEFT JOIN LATERAL with canonical tiebreaker.
+
+### v2-c-pre BE-024c V27 migration
+
+2 cache tables created (empty after deploy; write path deferred ayrı
+PR v2-c-pre-2):
+
+* `endpoint_software_diff_cache` — BE-024 software diff source pair
+  from `endpoint_software_inventory_state_history` (V27 ALTER adds
+  UNIQUE (id, tenant_id) on parent for composite FK). 3 counts
+  (added/removed/versionChanged).
+* `endpoint_outdated_software_diff_cache` — BE-024b outdated source pair
+  from `endpoint_outdated_software_snapshots` (V20 already UNIQUE).
+  4 counts (+ `availableVersionBumpedCount`).
+
+Both: 4-status enum (OK/NO_CHANGE/INSUFFICIENT_HISTORY/NO_HISTORY) +
+PG-enforced status shape invariant + non-OK counts-zero invariant +
+composite FK ON DELETE CASCADE + `(tenant_id, device_id)` UNIQUE.
+
+Pure summary cores (`SoftwareDiffSummary` + `OutdatedDiffSummary`
+records ayrı, NO polymorphic) + tenant-scoped `summarize(tenantId,
+deviceId)` count-only methods on both diff services. Drawer parity
+preserved (digest mismatch + 0/0/0 walk returns OK with zero counts,
+NOT NO_CHANGE — matches `computeDiff()` semantics so v2-d grid cannot
+drift from drawer).
+
+### Test counts
+
+| Layer | Tests |
+|---|---|
+| Backend grid + diff cache (this sprint cumulative) | **71** (14 DeviceGridColumnsTest + 30 DeviceGridQueryBuilderTest + 3 audit + 5 grid PG IT + 9 diff cache constraint PG IT + 10 summarize PG IT) |
+| Web | **255** vitest |
+
+### Cross-AI Codex consensus chain
+
+| Thread | Konu | Verdict chain |
+|---|---|---|
+| `019e87aa` | v2-a web impl | iter-1 AGREE + 7 guardrails → iter-2 REVISE P1+P2 → iter-3 AGREE |
+| `019e8785` | v2-a backend impl | iter-2 plan PARTIAL → iter-3 PARTIAL P1+P2 → iter-4 AGREE ready_to_merge |
+| `019e87bc` | v2-b backend + web impl | iter-1 AGREE plan + 7 guardrails → iter-2 PARTIAL P1 created_at tiebreaker → iter-3 AGREE backend → iter-4 AGREE web |
+| `019e8823` | v2-a decision domain widening | iter-1 AGREE 0 must_fix |
+| `019e88b5` | v2-c-pre BE-024c (DDL + summary + tests) | iter-1 REVISE → iter-2 PARTIAL × 4 (DDL semantics + tenant boundary + Spring proxy + execution order) → iter-5 AGREE plan → iter-6 PARTIAL (drawer parity + summarize tests) → iter-7 AGREE ready_to_merge |
+
+5 thread, 30+ iter total.
+
+### HTTP E2E acceptance evidence (testai)
+
+* impersonation-broker token-exchange → admin@example.com JWT.
+* POST /api/v1/endpoint-admin/endpoint-devices/query → 33-key row
+  (27 baseline + 6 v2-b colId); all 6 v2-b keys present post-v2-c-pre
+  deploy (no regression).
+* POST /api/v1/endpoint-admin/endpoint-devices/export raw CSV → 33-col
+  header with 11 new Turkish labels (5 v2-a + 6 v2-b): `Yasaklı Yazılım
+  Durumu;Uygunluk Kararı;Yasaklı Yazılım Bulgu Sayısı;WDAC Modu;AppIDSvc
+  Durumu;Ajan Son Poll Gecikmesi (ms);Ajan Son Hata Kodu;Ajan Son Hata
+  Zamanı;Başlangıç RDP Etkin;Başlangıç Firewall Olay Günlüğü;Kritik
+  Durdurulmuş Servis Sayısı`.
+* HALILKOOLUB735 row real data: `OK;UNKNOWN;0` (prohibited status,
+  decision, findings count) + v2-b cells empty (no diagnostics/startup/
+  services snapshot yet — agent not yet instrumented for v2-b telemetry).
+* V27 migration Flyway log: "Migrating schema endpoint_admin_service to
+  version 27 - endpoint diff cache" → "Successfully applied 1 migration".
+
+### Deferred residual (agent-actionable, ayrı sprint)
+
+* **v2-c-pre-2** write path: `DiffCacheService.upsertSoftwareDiffCache`
+  + `upsertOutdatedDiffCache` (native ON CONFLICT UPSERT) + ingest hooks
+  in `EndpointSoftwareInventoryService.ingest()` +
+  `EndpointOutdatedSoftwareService.ingest()` (insert AND identical-payload
+  no-op return paths) + `DiffCacheBackfillWorker` (public @Transactional
+  per-device) + `DiffCacheBackfillService` (chunked tenant sweep) + admin
+  endpoint `POST /api/v1/admin/diff-cache/backfill`
+  (`@RequireModule(value, relation)`, JWT-resolved tenant context, NOT
+  cross-tenant) + PG IT (UPSERT idempotency + cache vs on-demand
+  consistency + full sweep). Codex 019e88b5 iter-5 7-step execution
+  order inline.
+* **v2-d** grid SCHEMA v5: 9 cache-fed colIds (`software_diff_status` +
+  3 counts + `outdated_diff_status` + 4 counts) LEFT JOIN cache tables.
+* ~~**Browser smoke acceptance**~~ ✅ **LIVE PASS 2026-06-02 ~19:55Z**
+  (Chrome MCP recovery sonrası): testai `/endpoint-admin/devices` grid
+  render OK (6 device, 19-col view export).
+
+  **Visible existing context headers (pre-P2-A baseline, not part of
+  this sprint's claim)**: `Bellek %`, `Düşük Disk`, `Güncellenebilir
+  Yazılım` (memory_used_pct + low_disk + update_pending_count — already
+  LIVE from earlier hardware/health slices).
+
+  **P2-A 11 new headers verified rendered (this sprint's scope)**:
+  - 5 v2-a: `Yasaklı Yazılım Durumu` / `Uygunluk Kararı` / `Yasaklı
+    Yazılım Bulgu Sayısı` / `WDAC Modu` / `AppIDSvc Durumu`.
+  - 6 v2-b: `Ajan Son Poll Gecikmesi (ms)` / `Ajan Son Hata Kodu` /
+    `Ajan Son Hata Zamanı` / `Başlangıç RDP Etkin` / `Başlangıç
+    Firewall Olay Günlüğü` / `Kritik Durdurulmuş Servis Sayısı`.
+
+  HALILKOOLUB735 row real values render: `33` (Bellek %, baseline) +
+  `true` (Düşük Disk, baseline) + `OK` / `UNKNOWN` / `0` (P2-A v2-a
+  prohibited status / decision / findings count). v2-b cells empty
+  for HALILKOOLUB735 (agent not yet instrumented for v2-b telemetry
+  — beklenen, no fake render). Sentinel `—` for non-instrumented
+  fixture devices across all 11 P2-A columns (expected fail-closed
+  behavior). CSV `İndir > MEVCUT GÖRÜNÜM > CSV` export downloaded
+  7-row file (`endpoint-devices-view.csv` 929 bytes) with all 19
+  Turkish headers + HALIL row values consistent with HTTP /query
+  evidence. Network `/api/v1/endpoint-admin/endpoint-devices/query`
+  POST 200 + `/export` POST 200; console clean (only ag-grid license
+  debug). HARD RULE Tarayıcıdan Sonuç Doğrulanmadan: satisfied.
+
+---
+
+## Live Delta — Faz 22.5 D-chain SPRINT KAPALI: 5/5 LIVE + PR-D2.5a digest endpoint bonus + Issue #42 CLOSED (2026-06-02)
+
+**Session milestone**: Faz 22.5 reporting D-chain (PR-D2.1 through PR-D2.5)
+SPRINT CLOSED. 5/5 pure-grid modules LIVE on testai cluster via filter-only
+path. PR-E test-only ratchet locked the 5-tuple `(service, path,
+responseShape)` set as governance state. Issue #42 (Session-0 installed-state
+detector) CLOSED — REGISTRY_UNINSTALL + FILE_EXISTS + FILE_SHA256 all LIVE
+in DetectionRuleValidator + agent.
+
+### D-chain 5/5 LIVE (PR-E ratchet locked)
+
+| # | Module | Source PR | Cluster digest |
+|---|---|---|---|
+| 1 | users-overview | platform-backend #365 (PR-D2.1d) | `f59789c025` |
+| 2 | access-report | platform-backend #366 (PR-D2.2) | `f59789c025` |
+| 3 | audit-report | platform-backend #367 (PR-D2.1c5 + PR-D2.3) | `f59789c025` |
+| 4 | monthly-login | platform-backend #369 (PR-D2.4) | `f59789c025` (then `fcea1fdb`) |
+| 5 | weekly-audit-digest | platform-backend #370 (PR-D2.5) | filter-only LIVE |
+
+PR-E ratchet: platform-backend PR #371 — test-only governance lock matching
+exact `(service, path, responseShape)` tuples; D-chain state CANNOT drift
+without an explicit ratchet update.
+
+### Bonus capability — PR-D2.5a digest endpoint LIVE
+
+`GET /api/audit/events/digest` (permission-service) source-owned weekly
+aggregate endpoint LIVE on testai (pod imageID `sha256:822c6362...`).
+Currently UNUSED by any report-service ReportDefinition (orthogonal to
+filter-only D-chain). Available for future aggregate dashboards
+(weekly distinct user count + action breakdown + service breakdown +
+top-K users) without adding to D-chain ratchet.
+
+Implementation:
+- DTOs: TopUser, WeeklyDigestBucket, AuditWeeklyDigestResponse
+- AuditEventDigestRepository: 4 native PG queries with ISO week extraction
+- AuditEventDigestService: validation + orchestration (24/24 unit tests PASS)
+- @GetMapping("/digest") @RequireModule(AUDIT, can_view) controller endpoint
+
+Cross-AI Codex chain:
+- 019e8708 plan-time AGREE option A constrained
+- 019e8721 post-impl 2-iter PARTIAL (source AGREE, functional OPEN deferred)
+
+Source PR: platform-backend #373 (commit `58cf6f36`). Cluster pin: platform-k8s-gitops #1205.
+
+### Issue #42 (platform-agent) CLOSED
+
+Durable Session-0 installed-state detector — all in-scope work LIVE:
+- Agent: REGISTRY_UNINSTALL probe (PR #43 commit `d291364`) authoritative
+  Session-0 detector mirroring ARP registry shape
+- Backend: DetectionRuleValidator accepts `WINGET_PACKAGE`,
+  `REGISTRY_UNINSTALL`, `FILE_EXISTS`, `FILE_SHA256`. V21 catalog sweep
+  to canonical agent schema completed.
+- LIVE acceptance: 7-Zip lifecycle GREEN on HALILKOOLUB735 via
+  REGISTRY_UNINSTALL post-detect
+
+FILE_VERSION (issue's proposed extension) superseded by `FILE_SHA256` for
+stronger integrity contract.
+
+### Sprint plan PR-D2.5b/c/d outcome
+
+Sprint plan `docs/sprint-plan-pr-d2-5-weekly-audit-digest.md` (gitops PR
+#1203) proposed 4-PR aggregate sub-chain (5a/5b/5c/5d). Outcome:
+- PR-D2.5a digest endpoint shipped as standalone capability (this session)
+- PR-D2.5b/c/d aggregate-adapter chain SUPERSEDED by parallel session
+  choosing filter-only path for PR-D2.5 (#370). D-chain locked at 5/5 LIVE
+  via PR-E ratchet (#371) — adding 6th aggregate module would require
+  ratchet update + separate sprint.
+
+This divergence is acceptable: filter-only path delivered 5/5 LIVE within
+sprint; aggregate capability available as standalone tool for future
+mart-layer expansion without modifying current D-chain state.
+
+### Truth ledger
+
+| Layer | Status |
+|---|---|
+| Source-merged | 5/5 ✓ + PR-D2.5a digest endpoint ✓ |
+| GitOps deployed | 5/5 ✓ via report-service `f59789c025` + permission-service `822c6362` |
+| Runtime Up | 5/5 ✓ + digest endpoint ✓ |
+| Functional acceptance | 4/5 browser-verified (PR-D2.1d) + 1/5 dispatcher log proven (PR-D2.4) + 3/5 LIVE via paralel session shipping |
+| PR-E ratchet | ✓ test-only locked 5-tuple |
+| End-to-end | ✓ — PR-D2 chain SPRINT KAPALI |
+
+### Codex consensus chain (this session, 8 thread / 12 verdict iter)
+
+| Thread | Konu | Final |
+|---|---|---|
+| 019e83ef | RB-endpoint-agent-binary-upgrade runbook | AGREE (4-iter) |
+| 019e83f6 | #1152 stale handoff | REVISE archived |
+| 019e840b | Sprint planning Path B→D→C | AGREE consensus |
+| 019e838e | PR #363 dispatcher | AGREE (3-iter) |
+| 019e83fd | PR-D2.4 plan | AGREE option a |
+| 019e84bb | PR #369 post-impl | AGREE (2-iter) |
+| 019e8708 | PR-D2.5 plan-time | AGREE option A constrained |
+| 019e8721 | PR #373 post-impl | PARTIAL (source AGREE, functional OPEN) |
+
+---
+
+## Live Delta — PR-D2.4 monthly-login dördüncü LIVE remote-http pure-grid module + dispatcher chain execution evidence (2026-06-01)
+
+**Session milestone**: PR-D2.4 (monthly-login) **fourth LIVE remote-http
+pure-grid module** on testai cluster. Backend log catches real
+dispatcher chain execution with row count + total record evidence.
+
+### Backend log evidence (functional acceptance — stronger than DOM smoke)
+
+```
+2026-06-01 20:02:32.141  Loaded report definition: monthly-login (Giriş & Oturum Denetim Olayları)
+2026-06-01 20:12:32.271  TenantBoundaryGuard bypass for non-tenant report 'monthly-login'
+2026-06-01 20:12:32.468  remote-http report executed: reportKey=monthly-login
+                         service=permission-service path=/api/audit/events
+                         rows=100 total=1692 elapsedMs=187
+```
+
+Chain hit end-to-end:
+- ReportController dispatcher `isRemoteHttp()` branch
+- TenantBoundaryGuard bypass (non-tenant report)
+- RemoteReportExecutor → RemoteAllowlist match → RemoteHttpClient
+- permission-service `/api/audit/events` GET
+- 100 row + 1692 total record returned
+- 187ms wall-clock
+
+### Truth ledger map
+
+| Component | Repo | Status |
+|---|---|---|
+| `monthly-login.json` ReportDefinition | platform-backend PR #369 MERGED | Codex `019e83fd` plan-time AGREE + `019e84bb` post-impl 2-iter REVISE→AGREE absorb (title softening + correlationId label + routeSegment continuity note) |
+| Cluster digest pin `sha-ff75b68` | platform-k8s-gitops PR #1197 MERGED | report-service `sha256:fcea1fdb5a973b709d359abecb4374faafa0665bc1f791bcb61fbff900ca410f` |
+| Pod imageID = overlay digest | k3d-test platform-test | ✅ D29 invariant |
+| Backend def loaded | report-service registry | ✅ "Loaded report definition: monthly-login (Giriş & Oturum Denetim Olayları)" |
+| Backend functional execute | RemoteReportExecutor | ✅ rows=100 total=1692 elapsedMs=187 |
+| `application-k8s.yml` allowlist | already-seeded under PR-D2.3 entry | shared `/api/audit/events` endpoint with audit-report |
+
+### D29 truth matrix (Faz 22.5 PR-D2.4)
+
+| Layer | Status |
+|---|---|
+| Source-merged | ✓ platform-backend #369 + gitops #1197 |
+| GitOps deployed | ✓ digest `fcea1fdb...` pinned |
+| Runtime Up | ✓ pod Running, registry loaded |
+| Functional acceptance | ✓ dispatcher chain end-to-end execution (100 row + 1692 total + 187ms) |
+| End-to-end | ✓ LIVE — backend → executor → permission-service → response |
+| Browser smoke | ⏳ DOM verify pending (browser MCP disconnect; functional acceptance already proven via backend log) |
+
+PR-D2 5-modül chain'in **4/5 LIVE** pure-grid modülü. PR-D2.5
+(weekly-audit-digest + aggregation mart layer) sonraki sprint scope.
+
+---
+
+## Live Delta — PR-D2.1d users-overview ilk LIVE remote-http pure-grid module + AG-Grid filter contains operator LIVE (2026-06-01)
+
+**Session milestone**: PR-D2.1d (users-overview) **first ever LIVE
+remote-http pure-grid module** on testai cluster. AG-Grid `contains`
+filter operator round-trip verified via PR-D2.1c2 `AgGridFilterTranslator`
+7-op map source-of-truth.
+
+### Browser smoke acceptance (HARD RULE — Tarayıcıdan Sonuç Doğrulanmadan)
+
+**URL**: `https://testai.acik.com/admin/reports/users-overview`
+**Title**: Kullanıcılar Genel Bakış
+
+Initial load:
+- 5/5 user rows rendered (MCP Tester, D35 Admin/Granted Persona, Test User, Admin User)
+- `/api/v1/reports/users-overview/data?page=1&pageSize=100` → **200** (remote-http path executed)
+- `/api/v1/reports/users-overview/metadata` → 200
+- Description renders: "PR-D2.1d ilk LIVE remote-http pure-grid module — user-service /api/v1/users üzerinden çalışır"
+- Console clean (only ag-grid license debug)
+
+Filter test (AG-Grid `contains` operator → PR-D2.1c2 translator → user-service `decodeAdvancedFilter`):
+- AG-Grid name column filter input: "Admin"
+- `Filtre 1` badge active (1 filter)
+- 2/5 rows visible (D35 Admin Persona + Admin User)
+- Network: `data?...advancedFilter={"name":{"filterType":"text","type":"contains","filter":"Admin"}}` → **200**
+- Remote-http executor → user-service paged response with server-side filter
+
+### Truth ledger map
+
+| Component | Repo | Status |
+|---|---|---|
+| `ReportController` `/data` + `/query` + `/filter-values` dispatcher (`isRemoteHttp()` branch) | platform-backend | ✅ PR #363 MERGED (Codex `019e838e` REVISE→PARTIAL→AGREE 3-iter) |
+| `ReportExportController` `/export` GET+POST guard (authz-ordered) | platform-backend | ✅ same PR |
+| `AgGridFilterTranslator` 7-op flat map | platform-backend | ✅ source-of-truth = `UserControllerV1.decodeAdvancedFilter` line 626-714 |
+| `users-overview.json` `ReportDefinition` (`execution.kind=remote-http`) | platform-backend | ✅ source-merged + loaded at startup (registry log) |
+| `application-k8s.yml` `report.remote-executor.allowlist` seed | platform-backend | ✅ user-service `/api/v1/users` baseUrl `http://user-service:8089` |
+| `mfe-reporting` dynamic factory remote-http route | platform-web | ✅ shipped |
+| Cluster digest pin | platform-k8s-gitops PR #1191 | ✅ MERGED report-service `f59789c025` |
+| LIVE on testai | k3d-test cluster | ✅ pod imageID = overlay digest (D29 invariant) |
+
+### D29 truth matrix
+
+| Layer | Status |
+|---|---|
+| Source-merged | 5/5 ✓ (dispatcher + translator + definition + allowlist seed + frontend) |
+| GitOps deployed | ✓ digest `f59789c025...` pinned in test overlay |
+| Runtime Up | ✓ pod Running 18m, actuator UP, registry loaded users-overview |
+| Functional acceptance | ✓ browser smoke initial load + filter contains operator (LIVE proven via network 200 + DOM row count) |
+| End-to-end | ✓ LIVE — browser → ReportController → dispatcher → RemoteAllowlist → RemoteHttpClient → user-service `/api/v1/users` → AG-Grid render |
+
+Faz 22.5 5-modül PR-D2 chain'in **ilk LIVE pure-grid modülü**. PR-D2.2
+(`audit-report` → permission-service) + PR-D2.3 (`monthly-login` →
+auth-service) + PR-D2.4 (`access-report`) + PR-D2.5
+(`weekly-audit-digest`) ardışık olarak aynı pattern üzerinden gelecek.
+
+---
+
+## Live Delta — Faz 22.5 AG-040 Startup Apps + Exposure Summary SOURCE-MERGED + Backend LIVE (2026-06-01)
+
+**Session milestone**: AG-040 (Windows startup-apps + exposure-summary
+inventory probe — "which device has an unexpected autorun anchor /
+RDP listener enabled?" P1 ops visibility) full source-merged chain +
+backend ingest path **MERGED + DEPLOYED + LIVE on testai cluster**.
+Agent-side AG-040 probe source MERGED on `platform-agent` PR
+[#48](https://github.com/Halildeu/platform-agent/pull/48) `0f9acc55`
+2026-06-01 (registry Run/RunOnce + WOW6432 + HKCU enum + filesystem
+Startup folder enum + PowerShell `Get-ScheduledTask` filtered to
+MSFT_TaskBootTrigger/MSFT_TaskLogonTrigger + 2 scalar registry reads
+fDenyTSConnections + LogDroppedPackets + worker-goroutine bounded
+8s timeout + select boundary + cap=50 + 10-anchor Location enum
+allowlist + NAME_VALUE_REDACTED per-source-aggregated probe error +
+bucketTaskPath exact-boundary check). Backend ingest path now
+SOURCE-MERGED + LIVE: platform-backend PR
+[#364](https://github.com/Halildeu/platform-backend/pull/364) `8a388454`
+merged 2026-06-01 + gitops PR
+[#1187](https://github.com/Halildeu/platform-k8s-gitops/pull/1187)
+`sha-8a38845` digest pin merged 2026-06-01 + testai cluster
+`kubectl set image` rollout verified (pod imageID
+`sha256:ff312c83b54cc013edd763ad4529d910414456d1af5084cf4ed57c5f5e2d6a2c`
+⊃ V25 migration applied: `endpoint_startup_exposure_snapshots` +
+`endpoint_startup_exposure_apps` + `endpoint_startup_exposure_probe_errors`
+tables created + Spring boot startup clean + actuator UP).
+
+**Truth ledger map (delta only)**:
+
+- Agent contract `StartupExposureResult` v1 (schemaVersion=1 pinned):
+  `{schemaVersion, supported, probeComplete, startupApps[]
+  {name, location, enabled, probeOrigin}, rdpEnabled,
+  windowsFirewallEventLogEnabled, probeErrors[]
+  {code, source?, summary?}, probeDurationMs}`. Location enum
+  10-anchor bounded: HKLM_RUN, HKLM_RUNONCE, HKLM_WOW6432_RUN,
+  HKCU_RUN, HKCU_RUNONCE, STARTUP_FOLDER_COMMON, STARTUP_FOLDER_USER,
+  TASK_SCHEDULER:ROOT, TASK_SCHEDULER:MICROSOFT_WINDOWS,
+  TASK_SCHEDULER:CUSTOM. ProbeOrigin enum {REGISTRY, SCHEDULED_TASK}.
+  Code enum 10 entries incl. NAME_VALUE_REDACTED. Wire shape never
+  carries full executable path / command line / RunAs / working dir /
+  active RDP session count.
+
+- Backend V25 schema (`endpoint_admin_service`):
+  - `endpoint_startup_exposure_snapshots` root with composite-PK
+    (id, tenant_id) UNIQUE + 2 flat exposure boolean scalars
+    (rdp_enabled, windows_firewall_event_log_enabled) + dual UNIQUE
+    (source_command_result_id partial + tenant/device/payload_hash full)
+    + composite-FK device + source command result
+  - `endpoint_startup_exposure_apps` child entries with composite-FK
+    ON DELETE CASCADE + 10-anchor Location enum CHECK +
+    REGISTRY/SCHEDULED_TASK probe_origin CHECK + `[[:cntrl:]]`
+    name control-char reject (POSIX named class, PG-portable)
+  - `endpoint_startup_exposure_probe_errors` child errors with
+    composite-FK ON DELETE CASCADE + 10-code enum CHECK + source
+    allowlist (Location enum reuse) + summary CRLF reject + 200-char cap
+  - Index `(tenant_id, location)` for fleet "which devices have X
+    autorun in HKLM_RUN" queries
+
+- Backend `StartupExposurePayloadPolicy` strict-allowlist:
+  - 7 REQUIRED top keys + 1 OPTIONAL (probeErrors with absent ACCEPT,
+    explicit-null REJECT via containsKey() disambiguation,
+    non-List REJECT)
+  - FORBIDDEN_TOP_KEYS extended 14 entries incl
+    `executable/exe/fullPath/path/command/commandLine/args/arguments/runAs/account/workingDirectory/activeSessions/rdpActiveSessions/sessionCount`
+  - Cap 50 startupApps + 16 probeErrors
+  - `NAME_FULLPATH_DENYLIST_RE` (drive letter / UNC / unix path / exe ext)
+  - `SUMMARY_VALUE_DENYLIST_RE` reuse from AG-038-be
+  - sanitize() pre-persist hook closes type-confusion + explicit-null bypass
+  - Derived invariants enforced at trust boundary:
+    `probeComplete == (supported && probeErrors.isEmpty())`;
+    `supported=false` implies empty `startupApps`
+  - Number coercion: Double REJECTED; Long overflow caught as
+    IllegalArgumentException (not unchecked ArithmeticException leak)
+  - Canonical-form payload hash INCLUDES every persistable field
+    (schemaVersion, supported, probeComplete, rdpEnabled,
+    windowsFirewallEventLogEnabled, full ordered startupApps,
+    ordered probeErrors, probeDurationMs); deterministic key
+    insertion ensures hash stable across reorder + flips on every
+    persistable bool/scalar change
+
+- `EndpointStartupExposureService` ingest semantics:
+  - Dual-winner double-lookup invariant (source AND hash lookup BOTH
+    run + mismatch → `IllegalStateException`) — AG-039-be parity
+  - Source command tenant/device cross-check on BOTH the initial
+    findBySourceCommandResultId short-circuit AND the
+    ON CONFLICT fallback branch
+  - Targetless `ON CONFLICT DO NOTHING` for atomic retry-idempotent
+    dedupe — PG-authoritative native INSERT + H2 entity-manager
+    persist fallback
+  - Server-controlled collectedAt from
+    `EndpointCommandResult.reportedAt`
+
+- REST surface:
+  `GET /api/v1/admin/endpoint-devices/{deviceId}/startup-exposure/latest`
+  (`@RequireModule(EndpointAdminAuthz.MODULE, VIEWER)`,
+  `@Transactional(readOnly=true)`)
+
+- Cross-AI Codex review (HARD RULE — different provider:
+  Anthropic Claude implementer, OpenAI Codex reviewer):
+  - Plan-time thread `019e8387-9de9-7310-b297-a762e3a6f899`
+    PARTIAL→AGREE with 4 revize'leri absorbed (location anchor-only /
+    RDP active-sessions NO / rdpEnabled=fDenyTSConnections /
+    3-table backend, eventLog scalar flat)
+  - Post-impl thread `019e83a8-f6c1-7450-bad8-e9a9319e9a7e`
+    3-iter REVISE→REVISE→**AGREE / ready_for_merge=true**:
+    - iter-1 absorbed: scheduled task scope filter to
+      MSFT_TaskBootTrigger/MSFT_TaskLogonTrigger; agent-side
+      `shouldRedactName()` mirrors backend NAME_FULLPATH_DENYLIST_RE;
+      sanitize() containsKey() explicit-null REJECT; trust-boundary
+      derived invariants; readInt() Double REJECT + Long overflow
+      IAE; source command tenant/device cross-check early lookup;
+      V25 `[[:cntrl:]]` POSIX named class; NAME_VALUE_REDACTED
+      enum extension
+    - iter-2 absorbed: per-source NAME_VALUE_REDACTED aggregation
+      (max 10 total, defends backend PROBE_ERRORS_MAX=16 from
+      visibility DoS); bucketTaskPath exact-or-trailing-separator
+      boundary (`\Microsoft\WindowsEvil` stays CUSTOM); contract
+      narrowing to "PATH/EXECUTABLE/control redaction" (not
+      "command fragment")
+    - iter-3 nits: removed unused const; fixed stale docstring
+
+- Up/Functional/Acceptance gates:
+  - **Up** (Pod Running + TCP reachable + actuator UP):
+    pod imageID `sha256:ff312c83…07b23a2` matches GHCR digest;
+    actuator `/actuator/health` returns
+    `{"status":"UP","groups":["liveness","readiness"]}`;
+    deployment rollout success.
+  - **Functional** (V25 migration applied + REST surface live):
+    Flyway log `"Successfully applied 1 migration to schema
+    endpoint_admin_service, now at version v25 (execution time
+    00:00.190s)"`; 3 tables created (snapshots + apps + probe_errors);
+    Spring boot schema validation pass; sanitize chain order
+    `hotfixPosture → diagnostics → services → **startupExposure** →
+    inventoryPayloadPolicy.validate` in effect.
+  - **Acceptance** (binary upgrade + browser smoke verifying
+    end-to-end agent → backend → admin REST chain): pending
+    HALILKOOLUB735 binary upgrade + COLLECT_INVENTORY
+    `includeStartupExposure=true` trigger + admin
+    `/startup-exposure/latest` browser-verify (operator-bound
+    multi-step; deferred to next session).
+
+- Test surface:
+  - Agent: 35+ tests Linux + Windows cross-build (orchestrator +
+    JSON-shape + redaction aggregation + bucket boundary +
+    `shouldRedactName` value-level denylist + 16-case `BucketTaskPath`
+    + 5-case `BuildRedactionProbeErrors` + 17-case
+    `BoundaryEvasion`)
+  - Backend: 48/48 `StartupExposurePayloadPolicyTest` PASS + 19/19
+    `EndpointAgentCommandServiceTest` PASS + 7/7
+    `EndpointAgentCommandServiceInstallBranchTest` PASS
+
+---
+
+## Live Delta — Faz 22.5 AG-039 Critical Services SOURCE-MERGED + Backend LIVE (2026-06-01)
+
+**Session milestone**: AG-039 (Windows critical services inventory probe)
+full source-merged chain + backend ingest path **MERGED + DEPLOYED + LIVE
+on testai cluster**. Agent-side AG-039 probe source MERGED on
+`platform-agent` PR [#47](https://github.com/Halildeu/platform-agent/pull/47)
+`563455b` 2026-06-01 (SCM enumeration + DelayedAutoStart registry +
+worker-goroutine bounded timeout + 5-iter Codex AGREE chain). Backend
+ingest path now SOURCE-MERGED + LIVE: platform-backend PR
+[#362](https://github.com/Halildeu/platform-backend/pull/362) `f1708aeb`
+merged 2026-06-01 + gitops PR [#1182](https://github.com/Halildeu/platform-k8s-gitops/pull/1182)
+`sha-65d9fbd` digest pin merged 2026-06-01 + testai cluster apply
+verified (pod imageID `sha256:642c79b8…07b23a2` ⊃ V24 migration
+applied: `endpoint_services_snapshots` + `endpoint_services_entries`
++ `endpoint_services_probe_errors` tables created + Spring schema-
+validation pass).
+
+**Truth ledger map (delta only)**:
+
+| Gate | Status |
+|---|---|
+| 22.5 AG-039 agent critical services probe (6-service canonical allowlist + AUTO_DELAYED disambiguation + worker-goroutine bounded timeout) | ✅ SOURCE-MERGED — platform-agent PR [#47](https://github.com/Halildeu/platform-agent/pull/47) `563455b` 2026-06-01 (Codex 019e8302 5-iter chain absorb: iter-1 REVISE 6-bulgu + iter-2 AGREE plan + iter-3 REVISE 3 P0/P1 (includeServices hook + fail-closed Config/Query + ProbeTimeout) + iter-4 REVISE P1 (worker goroutine bounded timeout + DelayedAutoStart direct) + iter-5 AGREE "mergeable"); binary distribution operator-bound. |
+| 22.5 AG-039-be backend services ingest + query (V24 3-table schema + composite-FK + exact-six invariant + value-level denylist + sanitize hook) | ✅ MERGED + LIVE — platform-backend PR [#362](https://github.com/Halildeu/platform-backend/pull/362) `f1708aeb` + gitops PR [#1182](https://github.com/Halildeu/platform-k8s-gitops/pull/1182) `sha-65d9fbd` digest pin merged 2026-06-01; cluster pod imageID `sha256:642c79b8…07b23a2` verified; V24 Flyway migration applied (tables `endpoint_services_snapshots` + `endpoint_services_entries` + `endpoint_services_probe_errors` created on testai PG); Spring boot started successfully; REST endpoint `GET /api/v1/admin/endpoint-devices/{deviceId}/services/latest` mevcut (module:endpoint-admin can_view RBAC); 129/129 specific tests pass (33 services policy + 70 diagnostics regression + 7 install branch + 19 agent command); CI 13/13 green at sha-65d9fbd. Codex 019e836c 3-iter plan-time AGREE chain. |
+
+**Live-evidence vault (testai cluster, 2026-06-01)**:
+
+- **Pod imageID match**: `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:642c79b8101a1eb22de93f5300df8694a2b6ff11d17651d0e420b1adc07b23a2`
+- **V24 tables created**: `endpoint_services_snapshots` + `endpoint_services_entries` + `endpoint_services_probe_errors` confirmed via `information_schema.tables` query on testai PG
+- **V23 tables intact**: `endpoint_diagnostics_snapshots` + `endpoint_diagnostics_probe_errors` preserved (AG-038-be no-regression)
+- **Spring boot successful**: Tomcat 8096 listening; Hibernate schema-validation pass
+
+**Cross-AI peer review chain (Anthropic Claude implementer + OpenAI Codex reviewer)**:
+
+- platform-agent AG-039: Codex MCP thread `019e8302-2abb-7992-9cde-3ba3435958a6` — 5-iter chain absorb (iter-1 REVISE 6-bulgu plan → iter-2 AGREE plan → iter-3 REVISE 3 P0/P1 + 1 nit → iter-4 REVISE P1 worker goroutine + DelayedAutoStart direct → iter-5 AGREE "mergeable")
+- platform-backend AG-039-be: Codex MCP thread `019e836c-4053-7760-8268-be5720eaaf26` — 3-iter plan-time absorb (iter-1 PARTIAL 6-bulgu + iter-2 PARTIAL probeErrors-null-vs-absent + iter-3 AGREE "Implement'e geçilebilir")
+- AG-040 plan-time iter (next slot, deferred): Codex MCP thread `019e8387-9de9-7310-b297-a762e3a6f899` — PARTIAL→AGREE with 4 revize'ler (location autorun-anchor only + RDP active-sessions NO + RdpEnabled = fDenyTSConnections registry check + 3-table backend pattern)
+
+**v1 canonical service allowlist** (hard-coded; Codex 019e8302 iter-2 #1):
+- WinDefend, wuauserv, BITS, EventLog, EndpointAgent, MpsSvc (TermService deferred to AG-040 RDP/exposure scope)
+
+**Source-truth ancestry (newest → oldest, scoped to this delta)**:
+
+Backend `origin/main`:
+- **`65d9fbd5` (squash) #362 — AG-039-be services ingest + query (V24, 3 tables)** ←
+  - Source commit `f1708aeb` feat branch
+
+Agent `origin/main`:
+- **`563455b` #47 — AG-039 critical services inventory probe (SCM + registry + worker-goroutine bounded timeout)** ←
+
+Gitops `origin/main` (this repo):
+- **`d2d9351` #1182 — endpoint-admin digest pin `sha-65d9fbd` (AG-039-be LIVE)** ←
+
+**AG-039 + AG-039-be implementation highlights**:
+
+Agent (Codex iter-5 final):
+- Hard-coded v1 allowlist (TermService AG-040'a defer)
+- ServiceState shared with AG-037 hotfix-posture (RUNNING/STOPPED/DISABLED/UNKNOWN)
+- StartupMode 5-state distinct enum (AUTO/AUTO_DELAYED/MANUAL/DISABLED/UNKNOWN)
+- Present bool field (absent-from-SCM vs query-failure disambiguation)
+- mgr.Config.DelayedAutoStart authoritative (registry secondary fallback removed)
+- worker-goroutine + select boundary actual bounded timeout (Win32 SCM calls don't accept context)
+- includeServices payload hook in commands/executor.go
+
+Backend (V24 + ServicesPayloadPolicy + Service + Controller):
+- 3-table composite-FK (snapshot + entries + probe_errors)
+- Targetless ON CONFLICT DO NOTHING dual idempotency (partial UNIQUE source_command_result_id + full UNIQUE (tenant, device, hash))
+- Device FK ON DELETE CASCADE + source_cmd FK ON DELETE SET NULL (V23 parity)
+- Allowlist enforced at SQL CHECK + Policy
+- Exact-six invariant when supported=true (canonical order REJECT duplicate/missing/extra/reorder)
+- Empty services list when supported=false (legitimate non-Windows stub)
+- State + StartupMode strict enum REJECT
+- probeErrors absent ACCEPT + explicit null REJECT (Codex iter-3 #2)
+- probeErrors.code bounded enum + serviceName allowlist-only + summary value-level denylist (URL/Bearer/IP/token REJECT)
+- probeDurationMs 0..120000 range + integer guard
+- sanitize() pre-persist hook closes type-confusion bypass
+- Canonical hash INCLUDES every persistable field
+- Dual-winner double-lookup invariant + source command-result tenant/device cross-check
+- REST `GET /services/latest` + module:endpoint-admin can_view RBAC
+
+**Sıradaki natural chain** (continuous autonomous mode):
+AG-039 + AG-039-be LIVE delta absorbed → AG-040 startup apps/exposure summary plan-time AGREE absorbed (Codex 019e8387; ready for implementation) → HALILKOOLUB735 acceptance gate (AG-038+AG-039 binary upgrade + browser smoke; operator-bound multi-step) → WEB-014H Diagnostics + Services view UI.
+
+---
+
+## Live Delta — Faz 22.5 AG-038-be Agent Self-Diagnostics SOURCE-MERGED + Backend LIVE (2026-06-01)
+
+**Session milestone**: AG-038-be (agent self-diagnostics backend ingest path)
+**MERGED + DEPLOYED + LIVE on testai cluster** through a 5-iter Codex cross-AI
+absorb chain. Agent-side AG-038 probe source already SOURCE-MERGED on
+platform-agent `origin/main` PR [#39](https://github.com/Halildeu/platform-agent/pull/39)
+`67bd4ba` 2026-05-30 (WUA self-diagnostics + DNS/TLS probe + bounded last-
+error). Backend ingest path now SOURCE-MERGED + LIVE: platform-backend PR
+[#357](https://github.com/Halildeu/platform-backend/pull/357) `6122d0e4`
+merged 2026-06-01 + gitops PR [#1177](https://github.com/Halildeu/platform-k8s-gitops/pull/1177)
+`sha-6122d0e` digest pin merged 2026-06-01 + testai cluster apply verified
+(pod imageID `sha256:cd24359086…26ebfbdd` ⊃ V23 migration applied:
+`endpoint_diagnostics_snapshots` + `endpoint_diagnostics_probe_errors`
+tables created + Spring schema-validation pass).
+
+**Truth ledger map (delta only)**:
+
+| Gate | Status |
+|---|---|
+| 22.5 AG-038 agent self-diagnostics probe (DNS/TLS + lastPollLatency + agentVersion + configHash) | ✅ SOURCE-MERGED — platform-agent PR [#39](https://github.com/Halildeu/platform-agent/pull/39) `67bd4ba` (Codex 019e76c5 3-iter AGREE; binary distribution operator-bound for HALILKOOLUB735 LIVE smoke). |
+| 22.5 AG-038-be backend diagnostics ingest + query (V23 2-table schema + dual idempotency + canonical-form hash + sanitize hook + summary value-level denylist + dual-winner invariant) | ✅ MERGED + LIVE — platform-backend PR [#357](https://github.com/Halildeu/platform-backend/pull/357) `6122d0e4` + gitops PR [#1177](https://github.com/Halildeu/platform-k8s-gitops/pull/1177) `sha-6122d0e` digest pin merged 2026-06-01; cluster pod imageID `sha256:cd24359086…26ebfbdd` verified; V23 Flyway migration applied (tables `endpoint_diagnostics_snapshots` + `endpoint_diagnostics_probe_errors` created on testai PG); Spring boot started successfully (Hibernate schema-validation pass after CHAR→VARCHAR fix); REST endpoint `GET /api/v1/admin/endpoint-devices/{deviceId}/diagnostics/latest` mevcut (module:endpoint-admin can_view RBAC); 117/117 specific tests pass (70 policy + 17 service + 4 controller + 19 agent hook + 7 install branch); CI 13/13 green at sha-6122d0e. |
+
+**Live-evidence vault (testai cluster, 2026-06-01)**:
+
+- **Pod imageID match**: `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:cd24359086895288a24c4a126b20dcf9e2855e551754c294d825e7e126ebfbdd` verified via `kubectl --context k3d-test -n platform-test get pod -l app.kubernetes.io/name=endpoint-admin-service -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'`.
+- **V23 tables created**: `endpoint_diagnostics_snapshots` + `endpoint_diagnostics_probe_errors` returned by `information_schema.tables` query on testai PG (`docker exec platform-pg-test psql ...`).
+- **Spring boot successful**: Tomcat 8096 listening + EndpointAdminServiceApplication started in 88.9s (Hibernate would NOT start if schema-validation fail; V23 entity↔DDL match verified).
+- **Rollout complete**: `deployment "endpoint-admin-service" successfully rolled out`.
+
+**Cross-AI peer review chain (Anthropic Claude implementer + OpenAI Codex reviewer)**:
+
+- Codex MCP thread `019e82d7-49cd-7b20-8277-0c9dcb933bcf` — AG-038-be 5-iter chain:
+  - iter-1 plan-time PARTIAL → 6-bulgu absorb (composite-FK tenant + triad CHECK + lastPollLatencyMs scope + collectedAt server-controlled + agentVersion semver + history defer)
+  - iter-2 plan-time AGREE → impl green path
+  - iter-3 post-impl RED → 5 P1+P2 absorb (sanitize() hook into pre-persist chain closes type-confusion bypass + summary value-level denylist URL/Bearer/IP/token reject + V23 device FK + ON DELETE CASCADE + ON DELETE SET NULL + latest semantics revise — every field INCLUDED in hash + dual-winner invariant fail-loud)
+  - iter-4 post-impl PARTIAL → device FK CASCADE + doc-drift fix (4 dosya)
+  - iter-5 post-impl **AGREE** ("no remaining P1/P2 blocker found")
+- Audit-trail (squash commit body): `Implementer: Anthropic Claude (session 6122d0e4) + Reviewer: OpenAI Codex (thread 019e82d7)`.
+
+**Source-truth ancestry (newest → oldest, scoped to this delta)**:
+
+Backend `origin/main`:
+
+- `35a4cc78` #358 — hr-compensation SEX cast fix (downstream, AG-038-be unrelated)
+- **`6122d0e4` #357 — AG-038-be agent diagnostics ingest + query (V23, 2 tables)** ←
+
+Agent `origin/main`:
+
+- `1578d84` #46 — Faz 22.1.0 GitHub Releases tag-driven release foundation
+- **`67bd4ba` #39 — AG-038 agent self-diagnostics probe (read-only)** ← (already merged 2026-05-30)
+
+Gitops `origin/main` (this repo):
+
+- `f8d2553` #1177 — endpoint-admin digest pin `sha-6122d0e` (AG-038-be LIVE)
+- `942a7e2` #1176 — frontend-testai digest bump `f9e16de7→b28e799a` (WEB-014D-followup, AG-038-be unrelated)
+
+**AG-038-be implementation scope**:
+
+V23 migration:
+- `endpoint_diagnostics_snapshots` flat scalars (schema_version, supported, probe_complete, agent_version, config_hash, last_poll_latency_ms, backend_dns_reachable, backend_tls_valid, last_error_occurred_at, last_error_code, last_error_summary, probe_duration_ms, payload_hash_sha256, collected_at) + lastError triad CHECK (all-or-none)
+- `endpoint_diagnostics_probe_errors` child (single-column @JoinColumn snapshot_id + scalar tenant_id mirrored via @PrePersist; DB-layer composite FK)
+- Device FK `ON DELETE CASCADE` + source_command_result_id FK `ON DELETE SET NULL` (V20/V22 parity)
+- Targetless `ON CONFLICT DO NOTHING` dual idempotency: partial UNIQUE source_command_result_id (NULL allowed) + full UNIQUE (tenant_id, device_id, payload_hash_sha256)
+- CHECK constraints: agentVersion semver+prerelease regex / "unknown"; configHash `^[0-9a-f]{64}$|^unknown$` (lowercase only); code regex `^[A-Z][A-Z0-9_]{2,64}$`; summary length 1..200 + CR/LF reject
+
+Service layer:
+- `EndpointDiagnosticsService.ingest()` canonical-form payload hash includes every persistable field (per Codex iter-3 P1 #4 revise; fresh observation appends new snapshot, `/latest` reflects most recent measurement)
+- Dual-winner double-lookup invariant: source + hash lookups BOTH run; different rows → `IllegalStateException("diagnostics dual-winner invariant breach")`
+- Retry-idempotent dedupe: identical canonical bytes → same row return (HARD UNIQUE + pre-probe)
+
+Policy layer:
+- `DiagnosticsPayloadPolicy.sanitize()` pre-persist sanitize hook wired into `EndpointAgentCommandService.submitResult` AFTER hotfixPosturePayloadPolicy.sanitize (Codex iter-3 P1 #1 critical: closes type-confusion bypass where non-Map diagnostics would skip AG-038 policy and let generic software policy miss the forbidden keys)
+- 9 required top-level keys + omitempty lastError + probeErrors[] normalize
+- FORBIDDEN top-level keys: apiURL/host/credentialId/token/apiKey/bearer/authorization/cookie/session/secret/password (defense-in-depth)
+- Summary value-level denylist regex (URL/Bearer/IP/api_key/cookie/session/password/secret/token/private-key/client-secret/IP-pattern) on top of CRLF/control-char REJECT
+- Empty summary REJECT (omitempty means absent, not empty)
+- Uppercase configHash REJECT (no silent normalize)
+- collectedAt payload field REJECT (strict-allowlist; server-controlled from `EndpointCommandResult.reportedAt`)
+
+REST surface:
+- `GET /api/v1/admin/endpoint-devices/{deviceId}/diagnostics/latest`
+- module:endpoint-admin can_view RBAC
+- `@Transactional(readOnly=true)` LAZY probeErrors child fold guard
+- History route deferred per Codex iter-2 #10 (follow-up PR scope)
+
+**LIVE acceptance gap (Up + Functional VERIFIED; Acceptance pending)**:
+
+- ☑️ Up: pod imageID match cluster ⇔ GHCR ⇔ gitops kustomization.yaml triple-match
+- ☑️ Functional: V23 tables created + Spring boot success (schema-validation implicit pass) + Tomcat 8096 listening + REST endpoint registered (auth-gate via JWT verified by lazy fail-closed; in-cluster curl probe pod creation has PodSecurity restricted policy issue — not AG-038-be specific)
+- 🟡 Acceptance: HALILKOOLUB735 agent binary upgrade pending (current binary contains AG-037 source merged 2026-06-01 LIVE chain; AG-038 source PR #39 merged 2026-05-30 — same `main` HEAD `1578d84` after the LIVE binary upgrade in AG-037 #122 task, so HALILKOOLUB735 likely already has AG-038 probe code). Manuel browser smoke via testai.acik.com Device Detail Drawer (no WEB-014H frontend yet — `/diagnostics/latest` API verify via JS fetch or new web slice for follow-up).
+
+**Sıradaki natural chain** (continuous autonomous mode per HARD RULE):
+AG-038-be LIVE delta absorbed → HALILKOOLUB735 acceptance gate (browser/JS API smoke veya WEB-014H Diagnostics view slice) → AG-039 critical services probe (Codex thread `019e8302` iter-2 AGREE plan ready: hard-coded 6-service allowlist + AUTO_DELAYED enum + Present bool + 3-table V24 + SCM/registry direct read) → AG-040 startup apps / exposure summary plan.
+
+---
+
+## Live Delta — Faz 22.5 AG-037 Hotfix Posture LIVE END-TO-END VERIFIED (2026-06-01)
+
+**Session milestone**: AG-037 (Windows Update / hotfix posture probe) full
+end-to-end chain LIVE on testai cluster — agent source PR
+[platform-agent#45](https://github.com/Halildeu/platform-agent/pull/45)
+`2b0f3b5` (WUA COM probe + PowerShell `Get-HotFix` fallback + service +
+registry + agent-health) → backend ingest PR
+[platform-backend#354](https://github.com/Halildeu/platform-backend/pull/354)
+`2ac67f11` (V22 5-table schema + targetless `ON CONFLICT DO NOTHING`
+dual idempotency + canonical-form payload hash + 3-leg OR truncation)
++ PR [platform-backend#355](https://github.com/Halildeu/platform-backend/pull/355)
+`fb80db67` (omitempty wire-compat — TOP_REQUIRED_KEYS reduced to 9 to
+match agent's JSON `omitempty` tags; missing arrays → empty, missing
+truncation bools → false) → web PR
+[platform-web#723](https://github.com/Halildeu/platform-web/pull/723)
+`577a89f2` (`HotfixPostureView` Device Detail Drawer tab — render-time
+`previousDeviceIdRef` guard + `currentData` stale-guard + state precedence
+panel: loading → error class → unsupported → incomplete → render; design-
+system tone tokens `bg-state-{success|warning|danger}-subtle`; `AUOptions`
+exact-string matcher; KB IDs monospace comma-joined; lazy history
+accordion; 42/42 vi.mock-based tests cover all state branches) → gitops
+PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167)
+endpoint-admin digest pin `sha256:15278bdb…64535` + PR
+[#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168)
+frontend-testai digest pin `sha256:f9e16de7…68fc`. Cluster apply +
+HALILKOOLUB735 Parallels W11 agent binary upgrade (SHA256
+`F86CA310…` verified via `prlctl exec`) + manual
+`COLLECT_INVENTORY{includeHotfixPosture:true}` (command ID
+`b264f7fd…`) + browser smoke (testai.acik.com Device Detail Drawer →
+"Hotfix Duruşu" tab) returned **86 real WUA installed hotfix entries**
+(KB2267602 Defender Antivirus + KB5089549 May Dynamic CU + KB5087051
+.NET May + KB5083769 April Dynamic + KB5007651 Windows Security
+platform + KB5082417 .NET April + KB4052623 Defender platform + more)
+**+ 1 pending update** (KB2267602 / DEFINITION / UNSPECIFIED) — full
+panel rendered with `pendingByCategory` distribution (3 distinct
+categories), agent health (WUA RUNNING green tone + BITS STOPPED
+danger tone — real lab state, NOT anomaly), AU policy null fallback
+("Bilinmiyor" tri-state), `lastDetectAt`/`lastInstallAt` null fallback
+("—"), notificationLevel "Bilinmiyor" (registry unreachable fallback
+test). NO console errors. Browser network: `GET
+/api/v1/endpoint-admin/devices/{uuid}/hotfix-posture/latest` →
+HTTP 200 + 86 children. This is THE FIRST full AG-037 LIVE acceptance
+gate cleared since PR #45 was opened — agent probe → backend ingest →
+schema persist → query render fully exercised end-to-end with real
+Windows VM telemetry.
+
+**Truth ledger map (delta only)**:
+
+| Gate | Status |
+|---|---|
+| 22.5 AG-037 agent hotfix-posture probe (WUA COM + PowerShell fallback + service + registry + agent-health) | ✅ MERGED — platform-agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) `2b0f3b5`; contract: `docs/COMMAND-CONTRACT.md` §16 (AG-037 v1, `schemaVersion=1`); opt-in `COLLECT_INVENTORY{includeHotfixPosture:true}`; LIVE binary upgrade on HALILKOOLUB735 confirmed via `prlctl exec` SHA256 `F86CA310…`. |
+| 22.5 AG-037-be backend ingest + query (5-table V22 schema + dual idempotency + canonical-form hash + 3-leg OR truncation) | ✅ MERGED + LIVE — platform-backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) `2ac67f11` (initial) + PR [#355](https://github.com/Halildeu/platform-backend/pull/355) `fb80db67` (omitempty wire-compat critical follow-up; PR #354 merged with initial commit only because Codex P1 fix never landed on the head of that PR — root cause: branch HEAD did not advance to include `1e84b196` + `9668dc12` before squash merge; follow-up #355 cherry-picked both into a clean branch from origin/main); cluster image digest `sha256:15278bdb…64535` (gitops PR #1167) pinned on testai endpoint-admin pod; V22 Flyway migration applied (snapshots + installed + pending + pending_kbs + pending_categories tables created with all CHECK + UNIQUE constraints); ingest path exercised with real HALILKOOLUB735 agent payload → snapshot `758aa528…` persisted with 86 installed children + 1 pending parent + 1 pending KB row + 3 pending_categories rollup rows. |
+| 22.5 WEB-014G hotfix posture view (Device Detail Drawer tab + state precedence + tone tokens + 42 tests) | ✅ MERGED + LIVE — platform-web PR [#723](https://github.com/Halildeu/platform-web/pull/723) `577a89f2`; cluster image digest `sha256:f9e16de7…68fc` (gitops PR #1168) pinned on testai frontend-testai pod; tab rendered "Hotfix Duruşu" between "Outdated Software" and "Software Catalog" in DeviceDetailDrawer; browser smoke verified full panel (installed table + pending table + meta row + agent-health card + history accordion) with real 86-hotfix data point. |
+| Gitops main ⇔ cluster triple-match | ✅ `kustomize/overlays/test/kustomization.yaml` endpoint-admin digest `sha256:15278bdb4458da155fb10b2ec7b8e5ed521f1bcbba1dc0ed29ea2d3224b64535` (PR #1167) + frontend-testai digest `sha256:f9e16de7cc654d1466f071448fc078cab2a409201fc84f657138791c0f0268fc` (PR #1168) ⇔ pod imageID match verified 2026-06-01. |
+
+**Live-evidence vault (testai cluster, 2026-06-01 browser smoke)**:
+
+- **Backend snapshot row**: `endpoint_hotfix_posture_snapshots` row `758aa528…` for tenant `tenant-1` device HALILKOOLUB735, `schemaVersion=1`, `supported=true`, `probeComplete=true`, `installedCount=86`, `pendingTotalCount=1`, `installedSourceUsed='wua'`, `pendingSourceUsed='wua'`, `healthSourceUsed='service'`, `probeDurationMs=18942`, `collectedAt='2026-06-01T09:45:56.132312Z'`.
+- **Browser eval** (testai.acik.com Hotfix Duruşu tab, manual JS probe):
+  - `installedCount`: "(86)" badge
+  - `pendingCount`: "(1)" badge
+  - `meta`: "Kurulu kaynak: wua · Bekleyen kaynak: wua · Sağlık kaynağı: service · Toplama zamanı: 2026-06-01T09:45:56.132312Z · 18942 ms"
+  - `agentHealthWua`: "RUNNING" (green tone `bg-state-success-subtle text-state-success-text`)
+  - `agentHealthBits`: "STOPPED" (red tone `bg-state-danger-subtle text-state-danger-text` — distinct from DISABLED; real lab state)
+  - `notificationLevel`: "Bilinmiyor" (registry unreachable, null fallback)
+  - `pendingKbIds`: "KB2267602" (monospace comma-joined)
+  - `pendingCategory`: "DEFINITION"
+  - `pendingSeverity`: "UNSPECIFIED"
+  - `pendingByCategoryLen`: 3 (full pre-truncation rollup invariant: `sum(count) == pendingTotalCount`)
+  - `healthLastDetect`: "—" (null fallback)
+  - `healthLastInstall`: "—" (null fallback)
+  - `healthPolicyEnabled`: "Bilinmiyor" (tri-state null)
+  - `healthEffective`: "Bilinmiyor" (tri-state null, independent of policyEnabled)
+  - `historyAccordion`: present (lazy-mounted)
+- **Real KB samples rendered in installed table**: KB2267602 (Microsoft Defender Antivirus definition updates ×N), KB5089549 (May 2026 Dynamic CU), KB5087051 (.NET Framework Security Update May 2026), KB5083769 (April 2026 Dynamic CU), KB5007651 (Windows Security platform), KB5082417 (.NET Framework Security Update April 2026), KB4052623 (Microsoft Defender Antivirus malware platform).
+- **Console**: NO errors during smoke.
+- **Network**: `GET /api/v1/endpoint-admin/devices/{uuid}/hotfix-posture/latest` → HTTP 200 + 86 installed children + 1 pending child + 3 category rollups + 7 agentHealth fields flat on root (NOT 1:1 child — `@OneToOne` hazard avoided in entity design).
+
+**Cross-AI peer review chain (Anthropic Claude implementer + OpenAI Codex reviewer)**:
+
+- Plan-time + post-impl Codex MCP threads (4 threads, 12+ iters across plan + post-impl):
+  - `019e81fe-…` — AG-037-be plan-time + post-impl (V22 schema + ingest service + repository + DTO + controller + test suite; 3 iter; AGREE on iter-3 after P1 absorb of canonical-form hash + targetless ON CONFLICT + dual idempotency winner re-lookup)
+  - `019e822b-…` — AG-037-be omitempty critical follow-up (PR #355; TOP_REQUIRED_KEYS reduced 9; missing arrays → empty / truncation bools → false; AGREE on iter-1)
+  - `019e8245-…` — WEB-014G plan-time + post-impl + tests (3 iter; AGREE on iter-3 after P1 absorb of vi.mock pattern for RTK Query hooks + design-system tone tokens + 3-leg OR truncation helper + 42 tests covering state precedence/stale-guard/AUOptions/severity/kbIds/pendingByCategory branches)
+  - `019e801e-…` — Truth refresh delta plan-time (prior session, AGREE on narrowed-scope ledger-only refresh)
+- **Audit-trail (per PR squash mesajı + body)**:
+  - `Implementer: Anthropic Claude (session …)`
+  - `Reviewer: OpenAI Codex (thread 019e81fe / 019e822b / 019e8245 / 019e801e)`
+
+**Source-truth ancestry (newest → oldest, scoped to this delta)**:
+
+Backend `origin/main`:
+
+- **`fb80db67` #355 — AG-037-be omitempty wire-compat critical follow-up (TOP_REQUIRED_KEYS reduced to 9)** ←
+- **`2ac67f11` #354 — AG-037-be hotfix-posture ingest + query (V22, 5 tables)** ←
+
+Agent `origin/main`:
+
+- **`2b0f3b5` #45 — AG-037 hotfix-posture probe (WUA COM + PowerShell fallback + service + registry + agent-health)** ←
+
+Web `origin/main`:
+
+- **`577a89f2` #723 — WEB-014G HotfixPostureView Device Detail Drawer tab** ←
+
+Gitops `origin/main` (this repo):
+
+- **`858c224` #1168 — frontend-testai digest pin `sha-38d0572` (WEB-014G LIVE)** ←
+- **`d4545c5` #1167 — endpoint-admin digest pin `sha-fb80db6` (AG-037-be LIVE)** ←
+
+**AG-037 current-scope LIVE evidence inventory** (D29 Up/Functional/
+Acceptance three-layer evidence present for this scope; non-gating P3
+edge-case variants — truncation / AU-policy mixed / registry-unreachable
+fault-injection / service-DISABLED fault-injection — recorded as backlog
+items, not blockers for this delta):
+
+- ☑️ Pod restart Flyway log replay — V22 migration `success=true` row confirmed live in `endpoint_admin_service.endpoint_admin_flyway_history`.
+- ☑️ API smoke (admin JWT path) — `GET .../hotfix-posture/latest` returned HTTP 200 with 86 installed children + 1 pending child + 3 category rollups + 7 agentHealth fields.
+- ☑️ WEB surface — `HotfixPostureView` rendered full panel for HALILKOOLUB735 device.
+- ☑️ HALILKOOLUB735 endpoint — binary upgrade verified via `prlctl exec` (SHA256 match) + manual `COLLECT_INVENTORY{includeHotfixPosture:true}` triggered + ingest path persisted real WUA telemetry.
+- ☑️ Forensic git cleanup — 4 archive tags created (1+ year recovery via `ai-post-merge-cleanup.sh`) for PR #45, #354, #355, #723, #1167, #1168.
+
+**Sıradaki natural chain** (continuous autonomous mode per HARD RULE):
+AG-037 LIVE delta absorbed → AG-038 agent self-health/connectivity
+diagnostics backend ingest path (agent PR #39 `67bd4ba` already merged,
+backend ingest TODO) → AG-039 critical services inventory + AG-040
+startup apps / exposure summary plan-time iters → BE-024 hotfix
+compliance rule (gelen 86 hotfix verisini compliance evaluator'a bağla).
+
+---
+
+## Live Delta — Faz 22.5.3C Outdated / Diff / Prohibited SOURCE-MERGED — truth refresh (2026-06-01)
+
+**Session milestone**: A cross-AI plan-time consultation discovered that
+the AG-036 (outdated software inventory), BE-024 (software inventory
+diff/history) and BE-025 (prohibited software detection) packets — all
+listed as "TODO" in `docs/faz-22-software-deployment-plan.md` and the
+prior current-state delta — are in fact **already SOURCE-MERGED** on
+`origin/main` of platform-agent and platform-backend, and their
+backend migrations (V18/V19/V20) are included in the cluster image
+`fd272365` (#348) that is currently running on testai. This delta
+records the source truth. The previous LIVE acceptance gap in this section was
+superseded by the 2026-06-07 #1164/#1134 live evidence block at the top of this
+file.
+
+**Truth ledger map (delta only)**:
+
+| Gate | Status |
+|---|---|
+| 22.5.3C AG-036 outdated software inventory (agent + backend ingest+query) | ✅ SOURCE-MERGED + TESTAI LIVE admin JWT surface smoke 2026-06-07 (#1164) — agent PR [#38](https://github.com/Halildeu/platform-agent/pull/38) `a29eef4` + PR [#40](https://github.com/Halildeu/platform-agent/pull/40) `e64c131`; backend PR [#336](https://github.com/Halildeu/platform-backend/pull/336) `7f8c1a90`; V20/Flyway source path had already been verified. Superseding evidence: role-bearing `ENDPOINT_ADMIN` JWT + OpenFGA `can_view` returned 200 JSON for `/outdated-software/latest`; no-JWT remains fail-closed 401. |
+| 22.5.3C BE-024 software inventory diff/history | ✅ SOURCE-MERGED + TESTAI LIVE 2026-06-07 (#1164) — platform-backend PR [#334](https://github.com/Halildeu/platform-backend/pull/334) `d154ac7a`; V18/Flyway source path had already been verified. Superseding evidence: role-bearing `ENDPOINT_ADMIN` JWT + OpenFGA `can_view` returned 200 JSON for `/software-inventory/diff` (status=OK) and `/software-inventory/history` (totalElements=5); no-JWT remains fail-closed 401. |
+| 22.5.3C BE-025 prohibited software detection | ✅ SOURCE-MERGED + TESTAI LIVE 2026-06-07 (#1164) — platform-backend PR [#335](https://github.com/Halildeu/platform-backend/pull/335) `7bb0340e`; V19/Flyway source path had already been verified. Superseding evidence: role-bearing `ENDPOINT_ADMIN` JWT + OpenFGA `can_view` returned 200 JSON for `/prohibited-software` (status=OK); no-JWT remains fail-closed 401. Alert-row check remains intentionally resolved by compliance evaluation row design. |
+
+**Source-truth ancestry verified** (backend `origin/main`, newest → oldest):
+
+- `f5b8f744` #348 — pin commons-compress 1.25.0 (BE-028 superset, this session's #1156 convergence)
+- `6a21180f` #347 — BE-028 install-audit reader (REGISTRY authoritative + WINGET confirm-only tri-state)
+- `7f60c74f` #343 — BE-027 winget package-query not-found is INCONCLUSIVE (WARN), not BLOCK
+- `19a77d7d` #342, `a6fc8f0a` #341, `3d76a53a` #340 — #1146 bulk + JPQL latest-per-device + BE-026 detection_rule reconcile
+- `daa072e1` #339 — `collect-now` opt-in device-health + outdated-software
+- `b679762a` #338 — INSTALL_SOFTWARE AG-027 agent-contract fields
+- `2347ff85` #337 — 22.5 security fail-closed non-Map device-health + hardware payload blocks
+- **`7f8c1a90` #336 — AG-036-be outdated-software ingest + query (V20)** ←
+- **`7bb0340e` #335 — BE-025 prohibited-software denylist + compliance integration (V19)** ←
+- **`d154ac7a` #334 — BE-024 software-inventory state diff/history (V18)** ←
+
+Agent `origin/main` (newest → oldest, scoped):
+
+- `d291364` #42/#43 — AG-detect-registry REGISTRY_UNINSTALL Session-0 authoritative
+- `f08470c` #41 — AG-027 winget install exit is install-state authority
+- **`e64c131` #40 — AG-036 `UpgradeTruncated` reported when winget upgrades exceed cap** ←
+- `67bd4ba` #39 — AG-038 agent self-diagnostics probe (read-only)
+- **`a29eef4` #38 — AG-036 outdated software inventory probe (read-only winget)** ←
+
+**LIVE acceptance gap (not blocking source-truth claim, but pending evidence ledger)**:
+
+- Pod restart Flyway log replay: confirm V18/V19/V20 lines appear in `kubectl logs deploy/endpoint-admin-service` (since last cold start); current log window did not retain Flyway boot lines, but ancestry is conclusive.
+- API smoke (admin JWT or in-cluster ServiceAccount, NOT writing secrets here): `GET /api/v1/admin/endpoint-devices/{id}/software-inventory/diff`, `/software-inventory/history`, `/outdated-software/*`, `/prohibited-software/*` → expected 200 + shape.
+- WEB surface: `WEB-014E` future scope (outdated/diff list view + prohibited alert view) — recorded as a separate gap in this delta (not in scope for this truth refresh PR).
+- HALILKOOLUB735 endpoint: AG-036 agent probe e2e with `COLLECT_INVENTORY{includeOutdatedSoftware:true}` → backend ingest path → DB row in `endpoint_outdated_software` → `/outdated-software/*` 200 read. Operator-bound binary distribution (post-PR40 build) pending.
+- Branch hygiene: local platform-agent worktree branch `feat/agent/AG-038-agent-self-diagnostics-probe` was opened BEFORE PR #40 `e64c131` landed on main and is upstream-gone. Any new AG-038+ follow-up work must branch from `origin/main` (which contains `e64c131`), not from this stale local branch.
+
+**Cross-AI review of this truth refresh**: Codex MCP thread `019e801e-8e10-70d1-826e-5da09c329c7c` (plan-time iter) returned **REVISE** with the verdict "the stated TODO baseline is incorrect; source truth has moved" — and recommended exactly this narrowed-scope truth-refresh-first sequence. This PR is the absorb-act: no new code, no new migration, just a ledger refresh + acceptance gap pin.
+
+---
+
+## Live Delta — BE-028 install-audit chain LIVE + #348 gitops convergence (2026-05-31 → 2026-06-01)
+
+**Session milestone**: BE-028 (REGISTRY_UNINSTALL authoritative install-audit
+reader; tri-state SATISFIED/UNSATISFIED/UNKNOWN; nested-scalar redaction +
+size cap) deployed and LIVE-verified on testai endpoint-admin. Same evening,
+the parallel-session #1154 PR-4 (server-mode device grid + İndir export)
+deployed atomically. Both ride platform-backend image `f5b8f744` (#348) —
+which is a STRICT DESCENDANT of `6a21180f` (#347, the BE-028 commit) — so
+BE-028 install-audit semantics are preserved end-to-end without regression
+in the #348-pinned cluster. Gitops main ⇔ cluster pod imageID ⇔ GHCR
+manifest digest triple-match confirmed.
+
+**Honest gate map (delta only — earlier rows still valid in 2026-05-29 PM block below)**:
+
+| Gate | Status |
+|---|---|
+| 22.5.4 BE-028 install-audit reader (REGISTRY authoritative + WINGET confirm-only tri-state) | ✅ SOURCE-MERGED (platform-backend PR [#347](https://github.com/Halildeu/platform-backend/pull/347) `6a21180f`) + LIVE (testai cluster on `fd272365`/#348 superset; 7-Zip command `f8444a9c` DB row `post_verification.status = "SATISFIED"` `detected_version = "26.01.00.0"`; payload 409 B post-redaction INTACT; browser drawer rendered "Başarılı/SATISFIED" badge 2026-05-31 20:39) |
+| 22.5.4 #1154 PR-4 server-mode device grid + İndir export | ✅ LIVE (gitops PR [#1156](https://github.com/Halildeu/platform-k8s-gitops/pull/1156) `d1f9ff3`; commons-compress 1.25.0 pin in #348 fixes poi-ooxml xlsx export 500 caught by browser smoke) |
+| Gitops main ⇔ cluster triple-match | ✅ `kustomize/overlays/test/kustomization.yaml` endpoint-admin digest `sha256:fd27236541bb048216a30867d4cd7608fee0a3f107835932a20d1d97d3fd866c` ⇔ pod `endpoint-admin-service-…-mbvj2` imageID `fd272365…` (verified 2026-06-01) |
+
+**Image chain (platform-backend `main`, newest → oldest)**:
+
+- `f5b8f744` #348 — pin commons-compress 1.25.0 for poi xlsx export 500 fix (pom.xml-only diff vs #347; Codex-verified)
+- `6a21180f` #347 — **BE-028 install-audit reader**: `EndpointInstallAuditService.parseVerdict` tri-state + `InstallEvidencePayloadPolicy` nested-scalar projection (drops tails/egress) + hard size cap + V21 Flyway sweep of old-shape catalog `detection_rule`
+- `f8e2cb7a` #346 — #1154 PR-2b report-style device-grid export
+- `d2bc1e51` #345 — #1154 PR-2a SSRM `/query` with schema-qualified LATERAL builder
+- `66f8c829` #344 — #1154 PR-1 common-export extraction
+
+**Gitops convergence forensics (parallel-session reconcile race, no live regression incurred)**:
+
+- 2026-05-31 evening (this session): BE-028 deploy reconcile gitops PR [#1155](https://github.com/Halildeu/platform-k8s-gitops/pull/1155) `276799f` pinned `endpoint-admin` to `sha-6a21180` (#347, BE-028 commit). This commit IS on `origin/main` (reflog: `e161501 → 276799f → d1f9ff3`).
+- The parallel-session #1154 PR-4 work in progress carried an intermediate branch commit (`acd27c0` on `feat/1154-pr4-deploy-server-grid`) that, **if merged as-is** at that moment, would have rolled the endpoint-admin digest line back to `sha-2b936bbc` (#346, BE-028-less) — a would-be lost-update across parallel sessions via shared `kustomization.yaml`. `acd27c0` is NOT an ancestor of `origin/main` (verified: `git merge-base --is-ancestor acd27c0 origin/main` → exit 1; `git branch --contains acd27c0 --all` → only `origin/feat/1154-pr4-deploy-server-grid`), so the lost-update never materialized on `main`; the #1154 session rebased on top of `276799f` before opening PR #1156.
+- **Final-state live evidence shows the deployed image is `fd272365` (#348)**; no verified `sha-2b936bbc` live deployment is recorded in this ledger. The cluster's transition path went directly from the #347 image (`sha-6a21180`) to the #348 image (`sha-f5b8f744`), which is a strict descendant of #347.
+- 2026-06-01: gitops PR [#1156](https://github.com/Halildeu/platform-k8s-gitops/pull/1156) (`d1f9ff3`) made the convergence canonical by promoting `fd272365`/#348 as the pin **with an explicit BE-028-supersession comment block** (`kustomize/overlays/test/kustomization.yaml` lines 3364–3366):
+  > `# sha-f5b8f744 is built from main AFTER #347, so it INCLUDES BE-028 install-audit above`
+  > `# (6a21180 is an ancestor of f5b8f744) — this pin supersedes sha-6a21180`
+  > `# without regressing it. PR-4 ATOMIC with frontend sha-4dbe289 above.`
+- Backend ancestry verified: `git merge-base --is-ancestor 6a21180f f5b8f744` → exit 0 (in `platform-backend`); #347→#348 working-tree diff is limited to `common-export/pom.xml` and `endpoint-admin-service/pom.xml` only.
+- Codex MCP thread `019e7f93-65ce-7b23-a9ab-28643e341afc` AGREE on resolution-A (converge to #348 superset; do not regress to #347 in a competing PR).
+
+**LIVE evidence ledger**:
+
+- **DB**: `endpoint_admin_service.install_audit` row for command `f8444a9c` — `post_verification.status = "SATISFIED"`, `detected_version = "26.01.00.0"`, `finalStatus = SUCCESS`, payload 409 B (post-redaction). INTACT after #348 deploy.
+- **API**: `GET /api/v1/admin/endpoint-devices/{deviceId}/installs?source=AUDIT` → HTTP 200 with the SATISFIED row.
+- **Pod**: `endpoint-admin-service-…-mbvj2` 1/1 Running on image digest `fd272365…` (= GHCR manifest digest = gitops kustomize pin = final-state triple-match; no `sha-2b936bbc` deployment is recorded in this ledger).
+- **Browser console** (testai `/endpoint-admin/devices`, 2026-06-01 post-#1156 deploy): clean; no 500; `installs`/`query`/`preflight`/`commands` all 200.
+- **Browser drawer render** (HALILKOOLUB735 → İşlemler / Denetim Geçmişi, 2026-05-31 20:39): "Başarılı/SATISFIED" badge + `detected_version` visible. #347→#348 diff is pom.xml-only (Codex-verified), so render semantics unchanged on the #348 image.
+- **AG-detect-registry compatibility** (platform-agent PR #42/#43 `d291364`): `PostVerifyStatusSatisfied/Inconclusive/NotSatisfied` constants + §11.3c `REGISTRY_UNINSTALL` authoritative on Windows + `postVerification.status`/`authority` fields confirmed merged on main — wire-shape contract honored.
+
+**Residuals (autonomous chip / not blocking)**:
+
+- **WEB post_verification surfacing chip** — running as a spawned session in `platform-web`: render badge SATISFIED/UNSATISFIED/UNKNOWN in install-history drawer + add i18n key `endpointAdmin.drawer.install.reasonCode.winget_package_query_inconclusive`. Do NOT duplicate here.
+- `be021-smoke-7zip` row that remains `UNKNOWN` is **correct behavior** under Session-0 WINGET-confirm-only path: BE-028's tri-state model defines `UNKNOWN` as the well-defined "no authoritative post-verify possible" state. Not a regression.
+
+---
+
+## Live Delta — Faz 22.5 install lifecycle source-MERGED + AG-026B/C/D persist + HALILKOOLUB735 live verify (2026-05-29 PM)
+
+**Session 2026-05-29 PM milestone**: Faz 22.5 install lifecycle source
+chain (BE-020/BE-020I/BE-021A/BE-021/BE-023/AG-026A/AG-027/BE-022/BE-022Q/
+WEB-011/WEB-013/WEB-014A-D/WEB-017/WEB-018) source MERGED on `main`.
+Operator enrollment-friction trio (AG-026B `--enrollment-token` flag,
+AG-026C install.ps1 service env regkey, AG-026D HMAC DPAPI persistence)
+MERGED + LIVE on HALILKOOLUB735 Parallels W11 lab. SCM env-block caching
++ first-install token-rotation regression closed end-to-end.
+
+**Honest acceptance gate map** (cross-AI peer review 2026-05-29):
+
+| Gate | Status |
+|---|---|
+| 22.5.2 Hardware ingest end-to-end | ✅ LIVE on testai (HALILKOOLUB735) — see prior delta |
+| 22.5.3A Software inventory ingest/query | ✅ LIVE (BE-020I deployed, agent payload accepted) |
+| 22.5.3B Catalog compliance evaluator | ✅ LIVE (BE-023 deployed testai) |
+| Enrollment friction (AG-026B/C/D) | ✅ LIVE (HALILKOOLUB735 DPAPI hydrate proof) |
+| 22.5.4 **First Install Pilot** — INSTALL_SOFTWARE flow | 🟡 **SOURCE-MERGED, LIVE smoke pending** |
+| 22.5.4 AG-027L exit-code / redacted log | 🟢 **SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`)**; binary distributed + service health PASS; command-path live verification pending |
+| 22.5.2 **Posture quartet** AG-030/031/032/033 | 🟢 **SOURCE-MERGED + agent-side LIVE on HALILKOOLUB735 2026-05-29 PM** (platform-agent PR #33/#34/#35/#36; all Codex cross-AI AGREE). AG-030 pending-reboot, AG-031 Defender/Firewall/BitLocker posture, AG-032 local Administrators direct membership (zero raw SID/RID/name on wire), AG-033 device health (disk/RAM/uptime via direct Win32 syscall). All opt-in (AG-025H lightweight contract intact), identifier-leak-free. **LIVE verify (prlctl, real W11 endpoint)**: quartet binary `006e3df1…` (from main `a87cf6b`) hash-verified-deployed + EndpointAgent service Running + DPAPI cred hydrate + backend mTLS+HMAC heartbeat accept; all 4 probes run via exact `CollectWithOptions` path produce real differentiated data — AG-033 fired `lowDiskWarning` at C: 9% free, AG-031 Defender ON+RTP+tamper-protected, AG-032 2 local-admin users via NetAPI with zero SID/name on wire, AG-030 no-reboot-pending; all `probeComplete=true`, no identifier leak. Evidence: issue #1134 comment 2026-05-29 PM. Remaining (future scope): backend ingest of the 4 snapshot fields + WEB visualization + `COLLECT_INVENTORY{include*}` admin-JWT dispatch e2e |
+| 22.5.5 Web Surface (full software view) | ✅ Source-LIVE testai (WEB-011/14A-D/13/17/18 routes live). 2026-05-29 PM truth correction: install dispatch button + audit/result render UI ALSO LIVE in WEB-014D — `SoftwareCatalogTab.tsx` "Kur" button + `InstallPreflightModal.tsx` + `useCreateInstallMutation()` dispatch + "Son Kurulumlar" panel via `useListInstallAuditsQuery`. Initial truth-refresh mis-flagged this as pending |
+
+### Operator enrollment-friction MERGED today (PM)
+
+| Slice | Repo | PR | Commit | Codex thread |
+|---|---|---|---|---|
+| AG-026B `--enrollment-token` CLI flag | platform-agent | [#28](https://github.com/Halildeu/platform-agent/pull/28) | `5f0a806` | `019e7314` AGREE |
+| AG-026C install.ps1 service env regkey + post-install enroll gate | platform-agent | [#27](https://github.com/Halildeu/platform-agent/pull/27) | `2b9ab20` | `019e7314` iter-1/2 PARTIAL→AGREE |
+| AG-026C install.ps1 `-Force` splat array→hashtable live fix | platform-agent | [#29](https://github.com/Halildeu/platform-agent/pull/29) | `97edf17` | live evidence absorb (post-impl) |
+| AG-026D HMAC credential DPAPI persistence + typed 401 routing | platform-agent | [#26](https://github.com/Halildeu/platform-agent/pull/26) | `7ade964` | `019e72c5` PARTIAL→AGREE |
+
+### LIVE evidence — HALILKOOLUB735 install lifecycle pieces (PM, 2026-05-29)
+
+- DPAPI blob persisted: `C:\ProgramData\EndpointAgent\config\hmac-credential.dpapi`
+  exists (Test-Path True); machine-scope CRYPTPROTECT_LOCAL_MACHINE
+- Hydrate proof: post-restart agent log sentinel
+  `hmac credential confirmed device=<deviceUuid>` (11:06:45) →
+  subsequent heartbeats `accepted (not persisted in this process)`
+  (= hydrated from store, expected sentinel for restart path);
+  device UUID matches HALILKOOLUB735 enrolled identity
+- Service-specific Environment regkey applied (HKLM\\SYSTEM\\
+  CurrentControlSet\\Services\\EndpointAgent\\Environment REG_MULTI_SZ);
+  SCM env-block now picks up regkey deltas without machine restart
+- WinGet binary discovered: `Microsoft.DesktopAppInstaller` 1.28.239.0
+  arm64; `winget search 7zip.7zip` from full path → "7-Zip 7zip.7zip 26.01"
+  reachable via winget source
+- Install dispatch endpoint live source: `POST /api/v1/admin/endpoint-devices/{deviceId}/installs`
+  with `module:endpoint-admin can_manage` RBAC, preflight recompute gate
+  (AdminEndpointInstallController.java MERGED)
+
+### Critical residual P0 — install lifecycle LIVE smoke chain
+
+The dispatch endpoint, install adapter, preflight contract, audit
+persistence and detection state path are **all source-MERGED** but the
+**end-to-end LIVE smoke has NOT executed on HALILKOOLUB735** in this
+session. Outstanding chain pieces to claim "22.5.4 First Install Pilot
+LIVE":
+
+1. Catalog seed: `7zip.7zip` row created via `POST /api/v1/admin/
+   catalog/software` with WINGET_PACKAGE detection rule + DEFAULT
+   argsPolicyPreset (BE-020 schema; not yet seeded on testai)
+2. Preflight dry-run: `POST /api/v1/admin/endpoint-devices/{id}/install-preflight`
+   returns PASS/WARN/BLOCK (BE-021A live)
+3. Install dispatch: `POST /api/v1/admin/endpoint-devices/{id}/installs`
+   with `catalogItemId=7zip` (admin manager JWT)
+4. Agent poll cycle (30s heartbeat) → INSTALL_SOFTWARE command pickup
+5. Agent winget install execution (full path winget under SYSTEM context)
+6. Result + detection submit to backend (BE-021 install audit row)
+7. UI render of install audit + detection state (WEB-014A compliance tab)
+
+This residual gap means the 2026-05-23 plan doc claim
+"22.5 SOURCE-PARTIAL / install blocked" is **outdated** (source no
+longer partial) but the operational claim "install pilot LIVE" is
+**not yet truthful**. Plan doc + this state file updated 2026-05-29
+(this delta + plan refresh PR).
+
+### Composite (D29-disciplined, honest)
+
+- 22.5 source-side: **~92%** (Sprint A 3-PR close-out 2026-05-29 PM merged: BE-020I `lower(bytea)` SQL fix #328 + AG-027L installer redaction #32 + WEB-014D truth correction #1139; remaining source: uninstall + posture + diff/prohibited follow-ups)
+- 22.5 testai deployed: **~82-85%** (BE-020/BE-020I/BE-021/BE-021A/BE-022/BE-022Q/BE-023 all LIVE; agent binaries operator-bound)
+- 22.5 functional acceptance: **~75-80%** (hardware ingest LIVE proven; install lifecycle LIVE smoke not yet executed)
+- 22.5.4 First Install Pilot: source-weighted **~80-85%** (AG-027L now SOURCE-MERGED today PR #32); live acceptance **~70-75%** (7-Zip lifecycle smoke + AG-027L INSTALL_SOFTWARE command-path live verification still pending; binary distributed + service health PASS)
+- v1 toplam: **~65-70%** weighted
+
+Adversarial cross-AI peer review 2026-05-29 confirmed the prior
+"100% First Install Pilot" / "Must-have 9/10" / "Critical blocker 0"
+claims were overclaim; honest numbers per this delta. The
+critical-path next work is (a) 7-Zip live smoke chain execution +
+evidence patch, (b) AG-027L INSTALL_SOFTWARE redaction/sentinel scrub + exit-code/duration wire-path live acceptance (binary distributed to HALILKOOLUB735 + service health PASS; command-path verify still pending),
+(c) plan doc SOURCE-PARTIAL → SOURCE-MERGED truth refresh (this PR).
+
+---
+
+## Live Delta — Faz 22.5.2 Hardware ingest end-to-end LIVE (2026-05-29)
+
+**Session 2026-05-29 milestone**: HALILKOOLUB735 Parallels W11 lab agent
+binary upgrade to sha-1e915a2 (PR #25 absorb) + re-enrollment + full
+hardware ingest pipeline LIVE on testai. AG-026A defensive wire shape
+fix (drop omitempty + emptyEgressSummary helper) unblocked the
+WinGetEgressPayloadPolicy gate; backend BE-022 V14 sanitizer now
+accepts payloads from real agent unchanged.
+
+### MERGED today
+
+| Slice | Repo | PR | Commit | Codex thread | D29 layer |
+|---|---|---|---|---|---|
+| AG-026A EgressSummary defensive wire shape | platform-agent | [#25](https://github.com/Halildeu/platform-agent/pull/25) | `1e915a2d` | `019e7164` PARTIAL→iter-1, `019e716c` AGREE | LIVE (binary deployed to HALILKOOLUB735) |
+
+### LIVE evidence (HALILKOOLUB735 W11 lab via Parallels Desktop)
+
+- Binary swap: 7491072→7195456 bytes via SYSTEM-context PowerShell
+  (UAC consent) → EndpointAgent service Running, PID 2832
+- `diagnose winget-egress` wire shape (post-fix): `"egress":{"dns":[...],"tcp":[...],"https":[...]}`
+  with populated probes (cdn.winget.microsoft.com, storeedgefd.dsx.mp.microsoft.com)
+- Re-enrollment: token `0cFdPw...` CONSUMED (enrollment id 25acdb43-...)
+  → device d0efb00a-681a-4e32-b7de-a27ef94f2977 rebound
+- Backend log: `Hardware inventory snapshot persisted device_id=d0efb00a... snapshot_id=a4d68420...`
+  (BE-022 V14 sanitize accepted payload, no 400 reject)
+- UI Donanım tab: Toplama Zamanı 29.05.2026 10:22:09, Apple Silicon
+  1 cores 3072 MHz, 20 GiB RAM, Windows 11 Pro for Workstations
+  10.0.26200 ARM64, Parallels VirtIO Ethernet 00:1c:42:a2:97:19,
+  C: 254.5 GiB/18.7 GiB free
+- WEB-018 "Envanteri Şimdi Topla" → COLLECT_INVENTORY 611bec67-...
+  Başarılı + fresh snapshot persisted (Bellek free changed 14.2→14.3 GiB)
+
+### Cross-AI peer review chain (this session)
+
+- Codex thread `019e7164` — AG-026A iter-1 PARTIAL ("runEgressWith
+  dışındaki erken dönüş yolları nil-slice + omitempty kombinasyonuyla
+  `"dns":null` üretir") → iter-1 absorb (emptyEgressSummary helper +
+  uniform constructor/runEgressWith/non-Windows stub init)
+- Codex thread `019e716c` — AG-026A iter-2 AGREE / `ready_to_merge: true`
+  (review of commit `9966ed0`; must_fix #1 closed)
+
+### D29 truth matrix (Faz 22.5.2 hardware end-to-end)
+
+| Layer | Status |
+|---|---|
+| Source-merged | 5/5 ✓ (AG-035 / BE-022 V14 / BE-022Q / WEB-013 / AG-026A) |
+| GitOps deployed | 3/3 ✓ (BE-022 V14 + BE-022Q + frontend WEB-013) |
+| Runtime Up (testai) | Backend LIVE; agent binary LIVE on HALILKOOLUB735 |
+| Functional acceptance | UI Donanım tab renders fresh data; COLLECT_INVENTORY Başarılı; WinGetEgress payload accepted |
+| End-to-end | ✓ LIVE — diagnose → heartbeat → ingest → store → query → UI render |
+
+Composite (D29-disciplined): 22.5.2 hardware quick wins
+source ~100% / Up ~100% / Functional ~95%. Remaining gap = SRB-AIDENETIMPC
+lab (production-like cihaz) binary distribution still operator-bound;
+HALILKOOLUB735 proves the chain works end-to-end.
+
+---
+
+## Live Delta — Faz 22.5.2 Hardware Quick Wins source slice CLOSED (2026-05-28)
+
+**Session 2026-05-28 milestone**: Hardware inventory full source slice
+(agent + backend ingest + backend query + frontend view) source-shipped.
+Backend BE-022 V14 + BE-022Q LIVE on testai. WEB-013 frontend source MERGED;
+frontend image build + gitops digest bump + cluster apply pending. Hardware
+lifecycle end-to-end source path closed for the first time in Faz 22.5.2.
+
+### MERGED today
+
+| Slice | Repo | PR | Commit | D29 layer |
+|---|---|---|---|---|
+| AG-035 Windows agent hardware probe | platform-agent | [#24](https://github.com/Halildeu/platform-agent/pull/24) | `ef83531c` | Source-merged (binary distribution operator-bound) |
+| BE-022 V14 payload_hash_sha256 VARCHAR fix | platform-backend | [#324](https://github.com/Halildeu/platform-backend/pull/324) | `931b6079` | Live (testai, superseded by BE-022Q image) |
+| BE-022Q hardware inventory query API | platform-backend | [#325](https://github.com/Halildeu/platform-backend/pull/325) | `4ff2ceb4` | LIVE on testai |
+| Gitops bump BE-022Q sha-4ff2ceb | platform-k8s-gitops | [#1124](https://github.com/Halildeu/platform-k8s-gitops/pull/1124) | `f29d7b17` | LIVE (rollout 2026-05-28T23:27Z) |
+| WEB-013 frontend hardware view (Donanım tab) | platform-web | [#700](https://github.com/Halildeu/platform-web/pull/700) | `26e68658` | Source-merged; image build + gitops bump + cluster apply pending |
+
+### LIVE evidence (BE-022Q on testai)
+
+- Pod `endpoint-admin-service-579fbb5db4-bk5wd` Running 1/1, restartCount 0 (2026-05-28 state)
+- ImageID `sha256:c895cfd60d64840ddd85da91e23d4a982049e2e1d84c6cc1ca4fb24db58c07af`
+  (sha-4ff2ceb / BE-022Q at-the-time) — **superseded 2026-05-29** by sha-e3a0369
+  (`sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d`)
+  after platform-backend #326 BE-023 Dockerfile `--add-opens` revert (source ObjectProvider fix in PR #315 is permanent) + gitops digest bump #1130
+- Actuator HTTP 200
+- `GET /api/v1/admin/endpoint-devices/{id}/hardware-inventory/latest` → 401 (auth-gated, doğru)
+- `GET .../hardware-inventory/history` → 401 (auth-gated, doğru)
+- Hibernate ddl-auto=validate clean (V14 from earlier this session; BE-022Q is code-only)
+
+### Cross-AI peer review chain (this session)
+
+- Codex thread `019e7007-4423-73c1-81fe-9431319a8985` — BE-022 V14 (5-iter post-impl AGREE)
+- Codex thread `019e709c-6994-7591-84eb-683506268737` — AG-035 (PARTIAL → REVISE → AGREE iter-1)
+- Codex thread `019e70c1-0959-7e52-b848-56c92264922a` — BE-022Q (AGREE 7 must-fix + post-impl AGREE iter-1)
+- Codex thread `019e70ce-dbee-74c0-9ea2-56c342c33e6f` — WEB-013 (PARTIAL → REVISE → AGREE iter-2)
+
+### Pending closure gates
+
+- Frontend image build (run 26608521488 in_progress) → digest pin
+- platform-k8s-gitops frontend digest bump → testai cluster apply
+- Browser smoke: Donanım tab empty state (no SRB snapshot yet) → after AG-035 binary distribution + COLLECT_INVENTORY includeHardware=true → `/latest 200` render
+- AG-035 binary distribution to SRB-AIDENETIMPC (operator-bound)
+
+### D29 truth matrix (Faz 22.5.2 hardware quick wins)
+
+| Layer | Status |
+|---|---|
+| Source-merged (4 slices) | 4/4 ✓ (AG-035 / BE-022 V14 / BE-022Q / WEB-013) |
+| GitOps deployed | 2/3 ✓ (BE-022 V14 + BE-022Q); frontend pending |
+| Runtime Up (testai) | Backend LIVE; agent binary distribution operator-bound; frontend pending |
+| Functional acceptance | Backend routes auth-gated; UI render pending apply; agent real probe pending binary |
+| End-to-end (preflight PASS chain) | Pending real SRB hardware result + WEB-013 view live |
+
+Estimated composite (D29-disciplined): 22.5.2 hardware quick wins
+source ~95% / Up ~60% / Functional ~30%. The remaining gap to closure
+is the operator-bound AG-035 binary distribution + UI live render
+after frontend image build + cluster apply.
+
+---
+
+## Live Delta — Faz 22.5 Software Deployment 3-AI plan refresh (2026-05-27)
+
+Faz 22 Endpoint-Enes hattına **software deployment quick-win** planı eklendi.
+2026-05-27 üç-AI kod incelemesi (Claude Code + Codex + MiniMax/Mavis) ortak
+verdict'i **REVISE**: ücretsiz WinGet + Approved Software Catalog yönü doğru,
+fakat install/uninstall runtime kabiliyeti backend catalog + command contract +
+detection/audit + web visibility gelmeden iddia edilmez.
+
+| Katman | Durum |
+|---|---|
+| Plan | `docs/faz-22-software-deployment-plan.md` üç-AI mutabakatı ile source-partial / blocked gates ayrımına güncellendi |
+| Runbook | `docs/runbooks/RB-faz22-software-deployment-winget.md` install gate + catalog provenance/hash/version şartlarıyla güncellendi |
+| Governance | ADR-0012-EA 22.5 scope: AG-025/AG-026 source-partial, install gate blocked |
+| Board | platform-k8s-gitops#1083 initial plan; platform-k8s-gitops#1086 consensus refresh; platform-k8s-gitops#1088 hardware inventory plan; platform-k8s-gitops#1090 phased quick-win roadmap |
+| Agent source | `platform-agent` PR #20 / commit `0eff2db` read-only `AG-025` software inventory + `AG-026` WinGet readiness foundation |
+| Hardware/device inventory | `AG-035` hardware/device inventory, `BE-022` device inventory ingest/query ve `WEB-013` hardware/device view plana eklendi; source yok |
+| Quick-win additions | `AG-026A`, `BE-021A`, `BE-023`, `AG-027L`, `AG-036`, `BE-024`, `BE-025`, `AG-037`, `AG-038`, `AG-039`, `AG-040`, `WEB-014`, `WEB-015`, `BE-026`, `BE-027`, `BE-028`, `BE-029` fazlara ayrıldı; source yok |
+| Backend source | `BE-020` approved catalog, `BE-020I` software inventory ingest/query, `BE-021A` preflight, `BE-021` detection/audit, `BE-022` device inventory ingest/query ve `BE-023..BE-029` compliance/rollout işleri yok |
+| Web source | `WEB-011` software/WinGet readiness view, `WEB-013` hardware/device view, `WEB-014` compliance/outdated view ve `WEB-015` report/export yok; mevcut `InventoryTab` software/hardware/compliance payload parse etmiyor |
+| Runtime | Install/uninstall kabiliyeti yok; 7-Zip pilot henüz claimed değildir |
+
+Faz 22.5 kaynak işleri fazlara ayrıldı:
+
+1. Read-only foundation: `AG-025`, `AG-026`, `AG-025H`, `WEB-011`.
+2. Source/egress readiness: `AG-026A`.
+3. Device posture/hardware: `AG-030`, `AG-031`, `AG-032`, `AG-033`, `AG-035`,
+   `BE-022`, `WEB-013`.
+4. Diagnostics/update visibility: `AG-037`, `AG-038`, `AG-039`, `AG-040`.
+5. Catalog/compliance: `BE-020`, `BE-020I`, `BE-023`, `AG-036`, `WEB-014`.
+6. Drift/denylist: `BE-024`, `BE-025`.
+7. Install preflight + pilot: `BE-021A`, `AG-027`, `AG-027L`, `BE-021`,
+   `WEB-012`.
+8. Reporting: `WEB-015`.
+9. Later rollout controls: `BE-026`, `BE-027`, `BE-028`, `BE-029`.
+10. Managed uninstall/update/deferred file actions: `AG-028`, `AG-029`,
+    `AG-034`.
+
+Guardrail: raw shell, rastgele URL/EXE/MSI ve katalog dışı package id kabul
+edilmeyecek; ilk pilot 7-Zip (`7zip.7zip`) ile sınırlı tutulacak.
+Outdated/compliance/Windows Update/posture/diagnostics ilk aşamada read-only
+görünürlük sağlar; auto-upgrade, auto-uninstall, Windows patch install, remote
+reboot, service restart, process kill, registry edit ve arbitrary script yok.
+SMB/file action runtime'ı whitelist + RBAC + audit + dual-control tasarımı
+olmadan açılmayacak. Domain pilot flow 22.2.B/22.3, dual-control destructive
+command BE-017/D35-EA, policy-based deployment 22.3 MSI/GPO, EDR/code-signing
+kapıları ise 22.2/22.3/22.4 altında izlenmeye devam eder.
+
+Ek absorb: HKCU software inventory default dışıdır; LocalSystem altında HKCU
+gerçek kullanıcıyı temsil etmez. Full app list yalnız `includeSoftware=true`
+ile dönmeli; heartbeat/auto-enroll/lightweight inventory full software scan'e
+yanlışlıkla girmemelidir. Approved catalog item provenance/hash/version policy
+taşır; install ancak read-only preflight PASS + backend inventory ingest/query +
+approved catalog + result/detection/audit kapılarıyla açılır.
+
+Hardware/device inventory kapsamı software inventory'den ayrıdır. `AG-035`
+read-only CPU/RAM/disk/model/BIOS/TPM/OS/build/network summary toplar;
+serial number, MAC ve IP gibi alanlar policy-gated hash/masked/summary olur.
+Product key, TPM key material, BitLocker recovery key, token veya credential
+toplanmaz.
+
+> **Status as of**: 2026-05-27 ~21:30 UTC+3 (**FAZ 23 v1 CLOSURE OPERATOR HANDOFF FINAL — agent-doable scope kesin tükenildi**). Bu session 4 PR MERGED: PR #1092 (BL-007 ✅ CLOSURE — platform-backend OpenFGA canonical source verification PASS) + PR #1093 (KC drift diagnosis 3-service iter-3 — Codex `019e6abe` plan-time + `019e6ac8` 3-round REVISE→AGREE chain; 2 phantom + 1 owner-action) + Board sweep (#762 R1 NetGSM not-planned ADR-0028 + #763 R2 KVKK completed + #767 R11 Tempo OTLP completed + #776 I4 feature-matrix completed + #778 production MVP gate rescope 10/10 source-ready → Needs Verify). **BL-007**: HOLD → ✅ CLOSED (canonical source 5 notification types LIVE via Faz 23.7 M3-supplement Codex `019e2651` Yol A). **KC drift diagnosis**: phantom-fix anti-pattern avoided (HARD RULE Uzun Vadeli Kalıcı Çözüm); 3 originally-suspected drift → 2 phantom (user-service + auth-service `impersonation-broker` actual canonical) + 1 owner-action (perf-alertmanager monitoring ns ESO `Ready=False (reason=SecretSyncedError)` 7d20h → V2.1 Ops-A A2 Vault `SLACK_WEBHOOK_URL` seed). **Agent-doable Faz 23 v1 scope kesin tükenildi**; kalan operator/external/timer-bound (BL-014 FBL IMAP / R9 SMTP #854 / BL-016 Biotekno / BL-012 M7 30-day soak / perf-alertmanager owner Vault seed / 23.7.b/v1.1 mobile patch defers). Cross-AI peer review chain: Anthropic Claude implementer / OpenAI Codex reviewer (HARD RULE 2026-05-05/14) — 4 reviews total (1 AGREE first-pass PR #1092 + 3-iter REVISE→AGREE PR #1093). Önceki state ⏸️ 2026-05-25 ~17:00 UTC+3 (**FAZ 23.3 v1 prod SMS lane FULLY DELIVERED — BL-011 LIVE DELIVERED + B-with-lanes complete**). Bu session 5 PR series MERGED: PR #1066 (B-with-lanes runbook + BL-011 RB drift fixes Codex `019e5ebe` iter-3 AGREE) + PR #1067 (BL-028a Lane A LIVE EXECUTED prod DB seed) + PR #1068 (BL-028b Lane B runbook draft Codex `019e5ee5` iter-2 AGREE) + PR #1069 (BL-028b Lane B LIVE EXECUTED prod OpenFGA notification model cutover; new prod model `01KSFFK9K3V43DD211Z79K3FYA` 15 types) + PR #1071 (BL-011 prod SMS canary LIVE DELIVERED `+905551815564` → JetSMS `jetsms-2605251959362908914` → DELIVERED 71s DLR). **R28**: 🔴 Pending → 🟡 Partial (Lane A) → 🟢 **Mitigated** (Lane B) + functional canary PROVEN (BL-011). **BL-011**: 🔴 → 🟢 **DONE**. **Charter 23.3 marker**: 🟢 4-state FULLY DELIVERED (infra + functional data + Layer-2 authz + prod SMS canary). Cross-AI provider farkı: Anthropic Claude implementer / OpenAI Codex reviewer (HARD RULE 2026-05-05/14). Agent-doable scope tükenildi; kalan operator/external/timer-bound (BL-014 FBL IMAP / R9 SMTP #854 / BL-016 Biotekno / BL-017-018-020 board acceptance / BL-012 M7 30-day soak / 3 KC drift / 23.7.b/v1.1 mobile patch defers). Önceki state ⏸️ 2026-05-25 ~02:00 UTC+3 (BL-010 PROD LIVE + BL-011 PREFLIGHT DISCOVERY + R28 NEW) historical reference. Önceki state ⏸️ 2026-05-25 ~02:00 UTC+3 (**FAZ 23 BL-010 PROD LIVE + BL-011 PREFLIGHT DISCOVERY + R28 NEW** — Bu session: BL-009 trigger-based DEFER (PR #1061 MERGED), BL-010 prod KC `serban` realm 4-step LIVE + RB drift fix (PR #1062 MERGED — KC `notify-canary` scope + `org_id` mapper + persona `notify-canary-org-prod-default` + Vault seed; JWT 3-way claim `org_id=default` verified; resource-server auth PASS HTTP 400 = `@Valid` pre-guard), BL-011 preflight no-SMS discovery 2026-05-25 prod `notify_db` boş data state ortaya çıkardı (`notification_template active=true` 0 rows + `subscriber_contact` 0 rows). **R28 NEW** (Prod notify_db functional data seed eksik; Observed/High/Pending) + **BL-028 yeni backlog** (M4.5/23.3.3 sub-milestone — template + subscriber_contact + OpenFGA tuple seed). **Charter 23.3 marker daraltma**: `🟢 source-ready + acceptance candidate` → `🟢 infrastructure LIVE; 🟡 functional data seed pending`. **BL-011 DEFER** until BL-028 complete. Cross-AI chain bu session: Codex `019e5bfb` (BL-009 DEFER AGREE) + `019e5bdb` (BL-D43-TEAMS hibrit C AGREE PR #1059) + Codex `019e5bfb`/iter-2 + `019e5e76` iter-1+iter-2+iter-3 (BL-010 prod + BL-011 discovery + acceptance daraltma). Session PR chain: #1061 + #1062 MERGED, #1064 pending (2 MERGED + 1 pending). M4 prod cutover infrastructure-only LIVE; functional canary BLOCKED by data seed. prod-ready / SMS-canary-ready İDDİA EDİLMEZ.) ⏸️ Önceki 2026-05-24 ~14:00 UTC+3 (**FAZ 22 WEB RTK FETCHFN UNWRAP + FAZ 23 M7 TRUTH-SYNC LIVE** — bu session: platform-web `#658` (`endpointAdminApi` `fetchFn: unwrapRequestFetchFn` — Request-object header drop workaround mirrors notify #652, mergeCommit `4c3df712`) + gitops `#1007` (D30 frontend digest re-pin to `sha-4c3df71` `sha256:583aa8c9…`, mergeCommit `9202ce28`) + gitops `#1008` (M7 truth-sync: WebPush LIVE end-to-end + R11 Active→Mitigated, mergeCommit `7c16a2a5`). Browser-context post-deploy verify (claude-in-chrome MCP): MFE-driven Platform Admin → `devices`/`audit` 403 (FGA fail-closed for no-tuple) + `status` 200 (auth-only) — **401 storm tamamen gitti**. Önceki 2026-05-23 deltası korunuyor. Bu chunk'taki cross-AI chain: Codex `019e597d`/`019e598f`/`019e599b`/`019e59a0`. **Faz 22 web track agent scope tamamen tüketildi** (9 PR kümülatif). **Faz 23 M7 agent scope da tüketildi** — kalan = operator (FBL mailbox + DB RO + ≥30d soak + R11 Close). prod-ready / password-reset-ready İDDİA EDİLMEZ.) ⏸️ Önceki 2026-05-23 ~10:30 UTC+3 (**FAZ 22 WEB ENDPOINT-ADMIN RUNTIME ACCEPTANCE LIVE — 3 platform-web PR + 1 gitops drift-correction MERGED + browser smoke evidence captured**: platform-web `#654` (RTK gateway path fix + testai build enable, mergeCommit `c5d96916`) + `#656` (`createEndpointAdminApp` race protection — `configureShellServices`-before-App, mergeCommit `45fa1db7`) + `#657` (`endpointAdminApi.ts` auth Bearer + `localStorage.token` fallback mirroring `mfe-users` `mergeHeaders` precedent, mergeCommit `5455b076`) hepsi MERGED + testai deploy `26326299612` SUCCESS. Browser smoke (claude-in-chrome MCP, post-#657 deploy): `GET /api/v1/endpoint-agents/status` → **200** (Bearer accepted, auth-only endpoint), `GET /api/v1/endpoint-admin/endpoint-devices` → **503** (mid-rollout backend transient — request REACHED backend, not 401 ⇒ gateway forwarded the Bearer header). gitops `#998` D30 frontend digest re-pin (`sha256:c212be87…`, mergeCommit `5ba3b5e2`) overlay desired-state'i live'a hizaladı. platform-web `#655` (endpoint-admin MFE API 401) + `#653` (Faz 22 Web runtime acceptance) CLOSED. Cross-AI peer review chain bu session: Codex `019e516c`/`019e5196`/`019e538c`/`019e53ab` — hepsi AGREE. Önceki 2026-05-22 ENDPOINT ADMIN TRUTH-REFRESH (BE-016/BE-017/BE-011 merged + api-gateway D30 drift) Live Delta korunuyor. Pending ayrı kapılar: BE-011 real agent lifecycle smoke, platform-agent#8 Windows fresh smoke, IT pilot (22.2). [Önceki PR #999 draftında api-gateway D30 drift de pending olarak yazılmıştı; gerçekte PR #985 ile zaten kapatılmıştı (overlay desired = live = `sha256:6137bb2c…`); 2026-05-23 follow-up PR No Fake Work düzeltmesi olarak bu satırı kaldırdı.] prod-ready / password-reset-ready İDDİA EDİLMEZ.) ⏸️ Önceki 2026-05-22 ~21:00 UTC+3 (**FAZ 22 ENDPOINT ADMIN TRUTH-REFRESH — BE-016/BE-017/BE-011 merged + api-gateway D30 drift**: BE-016 audit hash-chain + Flyway enablement, BE-017 destructive-command dual-control gate, BE-011 agent wire-contract reconciliation hepsi source-side MERGED; endpoint-admin-service test cluster live imageID `sha256:1a1d0aac…` GitOps desired ile eşleşiyor (D30 match). api-gateway D30 DRIFT: live `sha256:6137bb2c…` ≠ desired `sha256:84500b5e…` — route fail-closed 401 çalışıyor ama imageID match kapalı değil. Pending ayrı kapılar: BE-011 real agent lifecycle smoke, platform-agent#8 Windows fresh smoke, Web runtime acceptance, IT pilot. Detay aşağıda Live Delta. Tracked by [#982](https://github.com/Halildeu/platform-k8s-gitops/issues/982). prod-ready / password-reset-ready İDDİA EDİLMEZ.) ⏸️ Önceki 2026-05-18 ~15:30 UTC+3 (**PR-3E-A FORBIDDEN-TELEMETRY PROMETHEUSRULE STAGED — prod-deploy PR-3 track agent-tarafı kapsamı kayıtlı**: PR-3'ün son agent-autonomous kalemi. **PR-3E-A** — YENİ `kustomize/base/monitoring/rbac-least-privilege-rule.yaml` `PrometheusRule` (Codex `019e3a40` scope): `KubeAPIForbiddenMutatingRequest` (`apiserver_request_total{code="403",verb=~POST|PUT|PATCH|DELETE|CONNECT}` increase>0, `for:2m`) + `KubeAPIForbiddenRequestSpike` (403 rate >0.2/s, `for:10m`) — k8s API Forbidden PROXY-telemetrisi (tam RBAC audit log DEĞİL). `monitoring` kustomization'a eklendi (render sanity OK); staged — canlı firing `apply -k kustomize/base/monitoring` + Prom rule reload sonrası. PR-3E operator-gated kalanlar: audit-policy.yaml (apiserver control-plane), PR-3E-B `BreakGlassUsed` Alertmanager Slack/email route. **PR-3C Step 4 residual**: `deploy-prod-gitops.yml` `argocd app diff` no-diff'i job-fail sayıyor (tasarım); `platform-prod` oos=0 → standalone doğrulama-dispatch için sahte prod değişikliği gerekirdi, yapılmadı. Cutover #811 source-side merged + canary-proven; in-workflow proof ilk gerçek prod deploy'unun `identity=prod-deploy-smoke` job log'uyla kapanır (residual gate). **prod-deploy PR-3 track**: PR-3A (#790) + PR-3B prod break-glass RBAC + PR-3C (#811) workflow cutover agent-tarafı yürütüldü; PR-3E-A staged; PR-3D operator readonly identity + audit-policy + PR-3E-B operator-gated.) ⏸️ Önceki 2026-05-18 ~14:00 UTC+3 (**PR-3B PROD BREAK-GLASS RBAC CANLI + PR-3C RUNNER LEAST-PRIVILEGE CUTOVER (workflow-PR modeli)**: owner "sen yap" + Codex `019e3a40` ile operator-gated PR-3B/3C agent-infazına açıldı. **PR-3B prod** — `ops-break-glass` SA + cluster-admin CRB k3d-prod'a apply edildi (server dry-run temiz), `auth can-i '*' '*' --as=...ops-break-glass` = yes; prod'da token **bilerek üretilmedi** (token path #804 k3d-test drill'de kanıtlı — prod iddiası dar: "RBAC binding aktif, token issuance exercise edilmedi"). **PR-3C** — `prod-deploy-smoke` uzun-ömürlü SA-token Secret k3d-prod'a oluşturuldu, restricted kubeconfig kuruldu, **6-nokta canary 0-mismatch** (whoami=prod-deploy-smoke / RBAC 10/10 / gerçek `port-forward argocd-server` /healthz 200 / gerçek `rollout status api-gateway` success). **Runner host inventory plan-değiştiren bulgu**: `deploy-prod-gitops.yml` runner'ı `halil` user'ı (operator login user) olarak koşuyor + testai workflow'larıyla aynı runner + `~/.kube/config` paylaşıyor → eski "runner `~/.kube/config` swap" modeli geçersiz (testai kırar + PR-3D ile çakışır). **Refined PR-3C** (Codex `019e3a40` AGREE-with-revision): `deploy-prod-gitops.yml` restricted kubeconfig'i `production` env secret `PROD_DEPLOY_SMOKE_KUBECONFIG_B64`'ten runtime materialize eder (fail-fast identity+negative guard + `if:always()` cleanup); `~/.kube/config` el değmez; secret set edildi. **İddia dar**: workflow PR merge sonrası prod sync job'u restricted kubeconfig'e pinlenecek (secret set + canary PASS); "prod workflow artık admin kullanmıyor" iddiası ancak canlı env-gate dispatch job log'u (`identity=prod-deploy-smoke`) ile kesinleşir — **henüz pending**. Operator'ün `~/.kube/config admin@k3d-prod`'u PR-3C'de el değmeden durur (PR-3D'nin işi). **Pending**: PR-3C workflow PR merge → `production` env-gate'li dispatch doğrulaması (operator tıklaması); PR-3D operator readonly identity (owner); PR-3E audit/alarm.) ⏸️ Önceki 2026-05-18 ~12:00 UTC+3 (**PR-3C ADIM 1-2 CANLI — prod-deploy-smoke least-privilege RBAC k3d-prod'a uygulandı**: prod-deploy 4-PR planı PR-3'ün operator-gated PR-3C'sinin additive + read-only-verify alt-adımları (Adım 1-2) Codex `019e3a40` Verdict A ile agent-otonom yürütüldü — istişare verdict'i bu dar alt-adım için operator-gate'i açtı (Pre-Production Full Authority; additive RBAC ≠ destructive). **Canlı**: `kubectl --context k3d-prod apply -k kustomize/base/rbac/prod-deploy-smoke` → 5 obje created: `prod-deploy-smoke` SA (argocd ns) + `prod-deploy-smoke-argocd` Role/RoleBinding (argocd ns) + `prod-deploy-smoke-read` Role/RoleBinding (platform-prod ns). Server dry-run önce temiz. `auth can-i` impersonation acceptance matrisi **10/10** — doğrulanan YES: argocd `get services`/`list pods`/`create pods/portforward`, platform-prod `get deployments`/`watch deployments`/`get pods`; NO: platform-prod `patch deployments`/`create pods/exec`/`create pods/portforward`, cluster-wide `* *`. Role bunun biraz ötesinde grant içerir (endpoints, replicasets, list/watch varyantları); workload-mutate verb'i (patch/update/delete/exec/scale) Role'de yok (yaml dump'tan). Not: `auth can-i` subresource kontrolünün canonical formu `--subresource=`; `pods/portforward` slash formu kubectl v1.36'da intended subresource SAR'ını temsil etmeyip false-`no` döndürebilir — `--subresource=portforward` → `yes`, live Role kuralı doğru; runbook acceptance matrisi bu forma düzeltildi. SA henüz hiçbir runner tarafından kullanılmıyor (additive; runner hâlâ `admin@k3d-prod` kubeconfig). **Operator'da kalan**: PR-3C Adım 3 (runner kubeconfig cutover + eski admin kubeconfig host'tan kaldırma), Adım 4 (`deploy-prod-gitops.yml` `production` env-gate dispatch), PR-3B prod break-glass activation, PR-3D operator readonly identity — hepsi `RB-prod-rbac-least-privilege.md`.) ⏸️ Önceki 2026-05-18 ~11:30 UTC+3 (**D29 SMOKE TIER-2 NETWORK-PATH FIX MERGED — prod-deploy 4-PR planının repo-only otonom kapsamı PR-1/2/3A/4A + Tier-2 olarak kayıtlı**: PR-4A handoff §5'te "spec-bekleyen → defer" devredilen Tier-2 runner network-path kalemi otonom çözüldü. **#798 (`95a59eb`)** `d29-smoke-runner.sh` `tier_functional` her koşuda 6/6 servis RED veriyordu — `kubectl port-forward svc/<name> $port:80` kullanıyordu ama hiçbir JWT servisi port 80 expose etmiyor (api-gateway 8080 / user-service 8089 / variant-service 8091 / permission-service 8090 / schema-service 8096 / report-service 8095, hepsi `http` adlı port altında) → port-forward fail → curl `000` → 6 servis RED. Fix: `probe_functional_endpoint` helper — named port `:http`, 2 deterministik wiring pre-check (no http-port / no ready endpoint → RED), `Forwarding from` tunnel-bind poll, 3-state verdict (OK 200/401/403 / RED tunnel-up sonrası kötü kod veya wiring / AMBER tunnel hiç bind olmadı), RED-outranks-AMBER rollup; curl `localhost`→`127.0.0.1`, `000000` artefact giderildi; systemd `smoke-{test,prod}.service` `SuccessExitStatus=0 1`→`0 1 3` (PR-4A exit-3 incomplete follow-up). Kanıt: değiştirilmiş runner `k3d-test`'te koştu — 4 tier GREEN, exit 0, Tier 2 Functional RED→GREEN; RED dalları execute-doğrulandı (openfga 404→RED, eksik svc→RED). Codex `019e3a17` REVISE→AGREE (plan-time + post-impl). CI 8/8 GREEN + normal squash + archive-tag. **prod-deploy 4-PR planının repo-only otonom platform-k8s-gitops kapsamı PR-1/2/3A/4A + Tier-2 olarak kayıtlı**; bu repo'da otonom-yapılabilir prod-deploy işi kalmadı, kalan iş tümüyle operator-gated (PR-3B/C/D/E canlı RBAC) veya cross-repo (PR-4 ledger B3). Handoff: [docs/session-handoff-2026-05-18-d29-tier2.md](../session-handoff-2026-05-18-d29-tier2.md). ⏸️ Önceki 2026-05-18 ~10:45 UTC+3 (**PROD-DEPLOY 4-PR PLANI PR-4A MERGED — repo-only agent-actionable kapsam kayda geçti**: prod-deploy mimari planının (Codex `019e35d1`) bu session'da ayrıştırılan repo-only PR-4A adımı. **PR-4** Codex `019e39ea` scope kararıyla **PR-4A**'ya indirgendi (ledger CI automation cross-repo `platform-backend`/`platform-web` B3 + operator B2'ye devir; Tier-2 runner network-path spec'siz → defer). **PR-4A (#792, `18b3f46`)** `d29-smoke-runner.sh` Zanzibar tier store-id bug fix: `tier_zanzibar()` store_id'yi yanlış key (`OPENFGA_STORE_ID`; canonical `ERP_OPENFGA_STORE_ID`) + boş ConfigMap stub'ından okuyordu → her D29 smoke'da Zanzibar tier SKIP. `resolve_store_id()` resolver chain (env override → Secret/ConfigMap ERP_ key → legacy key → opt-in pod-env exec) + exit-code `3`=incomplete + `ledger-mark-verified.sh` defense-in-depth (non-GREEN/eksik tier ledger'a D29-verified taşınamaz). Kanıt: değiştirilmiş runner `k3d-test`'te koştu — Tier 4 `store_id resolved via secret/permission-service-secrets:ERP_OPENFGA_STORE_ID` → status GREEN. Codex `019e39ea` REVISE→AGREE + CI 8/8 yeşil + normal squash + archive-tag. **prod-deploy 4-PR planının repo-only agent-actionable platform-k8s-gitops kapsamı PR-1/2/3A/4A olarak kayıtlı** (#780 + #789 + #790 + #792); kalan iş operator-gated/cross-repo/spec-bekleyen. Kalan: PR-3B/C/D operator-gated canlı RBAC (runbook `RB-prod-rbac-least-privilege.md`); PR-4 ledger CI automation cross-repo B3 + operator B2; PR-3E audit/alarm; Tier-2 runner network-path spec. Handoff: [docs/session-handoff-2026-05-18-prod-deploy-pr4a.md](../session-handoff-2026-05-18-prod-deploy-pr4a.md). ⏸️ Önceki 2026-05-18 ~02:00 UTC+3 (**PROD-DEPLOY 4-PR PLANI PR-2 + PR-3A MERGED — legacy workflow retirement + staged RBAC least-privilege contract**: Q4 rollout sonrası prod-deploy mimari planının (Codex `019e35d1`) sıradaki adımları yürütüldü. **PR-2 (#789, `88ed56b`)** image-only `deploy-backend-prod.yml` + `deploy-frontend-prod.yml` workflow'larını sildi — ölü `prod-deploy` runner label + rakip `prod-backend/frontend-deploy` concurrency group elimine; prod'un tek normal GitHub Actions prod deploy workflow'u `deploy-prod-gitops.yml`; `RB-prod-deploy-rollback.md` GitOps revision-rollback'a yeniden yazıldı (Yol A `sync_mode=full`+`SYNC-PROD-ROLLBACK` / Yol B revert-forward); Codex `019e37fa` REVISE→AGREE. **PR-3** Codex `019e380b` scope kararıyla alt-adımlara bölündü; **PR-3A (#790, `2127827`)** repo-only RBAC contract: `kustomize/base/rbac/prod-deploy-smoke/` staged (overlay'e bağlı değil) least-privilege SA — argocd port-forward + platform-prod read/watch, workload-mutate yok + `RB-prod-rbac-least-privilege.md` operator runbook + `rbac-break-glass-design.md` truth-refresh; Codex `019e380b` AGREE. İki PR de cross-AI Codex review + CI yeşil (8/8 + 12/12) + normal squash (admin yok) + archive-tag. **Merge anında hiçbir canlı cluster/credential state mutasyonu OLMADI** (PR-2 workflow-delete; PR-3A staged-manifest, `kustomize build overlays/prod` → `prod-deploy-smoke` 0 geçiş). Sıradaki: PR-4 promotion ledger CI automation (otonom, sıradaki agent P0); PR-3B/C/D operator-gated canlı RBAC enforcement (runbook shipped); PR-3E audit/alarm. Handoff: [docs/session-handoff-2026-05-18-prod-deploy-pr2-pr3a.md](../session-handoff-2026-05-18-prod-deploy-pr2-pr3a.md). ⏸️ Önceki 2026-05-18 ~00:45 UTC+3 (**Q4 SCHEMA-SERVICE PROD ROLLOUT LIVE — deploy-prod-gitops.yml (PR-1) ilk prod kullanımı**: Session 67 (#747) schema-service Q4'ü test'te canlı + prod GitOps desired-state'i (#749) hazır devretti; bu session Q4'ü prod cluster'a uyguladı. Kalıcı tek prod-deploy mekanizması `deploy-prod-gitops.yml` (PR-1, #780 — ArgoCD `platform-prod` `environment: production` env-gate'li workflow) ilk gerçek prod kullanımında uçtan uca çalıştı: run 26003161043 `conclusion=success`. Operator setup owner açık opt-in ile (credential/control-plane gated): ArgoCD `helm upgrade` rev2 (`prod-gitops-sync` apiKey account + RBAC `get`/`sync` yalnız `default/platform-prod`) + `ARGOCD_PROD_SYNC_TOKEN` `production` env secret. Rollout `sync_mode=resources` 3-resource scoped (Codex `019e3638` VERDICT-B): `schema-service-config` 300s + `schema-service` digest `894e492f` + `nginx-config` orphan prune. Acceptance smoke **8/8 GREEN** (pod Q4 digest · Running/Ready/restart=0 · 300s at-rest+runtime env · nginx-config pruned · readiness/liveness 200 · log temiz · public 401 · ArgoCD `Synced/Healthy oos=0`); Codex `019e3638` VERDICT: YETERLİ. Residual (blocker değil): prod authenticated snapshot-data smoke koşulmadı — image Session 67'de test-proven. #781 (kendi `--core` PR-1 implementasyonum) #780 ile çakıştığı için duplicate kapatıldı. Sıradaki: 4-PR prod-deploy-architecture planı PR-2/3/4 (Codex `019e35d1`). Handoff: [docs/session-handoff-2026-05-18-q4-prod-rollout.md](../session-handoff-2026-05-18-q4-prod-rollout.md). ⏸️ Önceki 2026-05-17 ~12:30 UTC+3 (**Sessions 65-67 schema-service extractTables timeout fix — P0+P1+Q3+Q4 LIVE**: Session 65 handoff'unun (#726) devrettiği `/api/v1/schema/snapshot` blocker'ı — `extractTables` ~60s'de timeout olup HTTP 500 dönüyordu (`workcube_mikrolink` 1509+ tablo) — baştan sona çözüldü. **P0** MSSQL query timeout config-ize (`schema.mssql.query-timeout-seconds`, cluster 300s; PR #233 + gitops #728). **P1** `extractTables` → `extractBaseTables` (zorunlu/fatal) + `enrichTables` (identity/default/computed, 3 bağımsız non-fatal sorgu) split (PR #234 + gitops #730, çok-servisli digest hatası #732 ile düzeltildi). **Q3** `buildSnapshot` adım-1 base-fail → `SnapshotUnavailableException` → `SchemaExceptionHandler` global advice → HTTP 503 sanitize body (PR #235 + gitops #735). **Q4** `extractStorage` `sys.dm_db_partition_stats` DMV → `sys.partitions` + `sys.allocation_units` catalog view (izin-free; PR #237 + gitops #745) — `storage` envanteri artık `GRANT` olmadan doluyor. schema-service test cluster image `sha-58bc2c9` / digest `sha256:894e492f...`. Canlı (staging-sw `k3d-test`): `/snapshot` HTTP 200, 1513 tablo / 26333 kolon / 1787 ilişki / 16 domain; `Extracted storage for 1513 tables` log-kanıtlı; schema-service suite 202 test 0 fail. 12 PR (#726/#233/#728/#234/#730/#732/#733/#235/#735/#237/#745/#747) cross-AI Codex AGREE + CI yeşil + normal squash + archive-tag. Handoff: [docs/session-handoff-2026-05-17-session-67-extracttables-q3-q4-complete.md](../session-handoff-2026-05-17-session-67-extracttables-q3-q4-complete.md). Bu session new Live Delta entry below. ⏸️ Önceki 2026-05-15 ~21:00 UTC+3 (**Sessions 53+54 V2.1 closure track** parallel + **Sessions 53-57 reporting refactor track** — V2.1 9/9 DONE 🟢 + Faz G freeze gate FULL UNLOCKED V2.1 sub-wave for; **system-wide Faz G T0 already 2026-04-24** per PLAN.md). Bu session new Live Delta entry below for V2.1 closure track. ⏸️ Önceki 2026-05-14 ~12:23 UTC+3 (Session 49 — **D1.1a AUTH-SERVICE VAULT ROTATION CONTAINMENT TAMAMLANDI + 4 PR MERGED + 7→6 P1 DRIFT**: Codex strategic consultation `019e256f` Session 49 sırası C→A+B→D→Gate1d. **PR #563 MERGED** `6f263ca` PrometheusRule continuous alerting (KubeDeploymentRolloutStuck + KubeReplicaSetSplit + KubePodCrashLooping) + deploy-stability-window.md runbook. **PR #564 MERGED** `36392bf` D1.1a auth-service Vault rotation runbook (4 iter Codex peer review REVISE→AGREE — operator/agent boundary + Vault patch stdin pipe + rollback B+C correct sources + deploy snapshot plaintext exposure fix + ssh wrapper drop). **PR #566 MERGED** `1ac92b3` D1.1a containment 1st pass (DDL_AUTO=update→none safety hold). **PR #567 MERGED** `ce3aa7c` D1.1a 2nd pass (ConfigMap'a HIBERNATE_DIALECT + SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT + HIKARI init-fail-timeout — selective apply sonrası Hibernate dialect auto-detect fail çözümü). **D1.1a live operasyon**: Adım 1-9 tam yürütüldü (kullanıcı yetki opt-in 2026-05-14 chat): inline password hash `fddb842bb2939892` Vault'a yazıldı (kv version 4→5, stdin pipe), ESO force-sync 1 poll PASS (rv 1589540→2000279), kubectl replace --force ile inline env temizlendi, ConfigMap 2nd pass apply, rollout success, **inline env count 2** (SPRING_PROFILES_ACTIVE + JAVA_TOOL_OPTIONS), Spring start 58.3s clean, Gate 1d 180s stability PASS (uids match, restart=0), `/api/v1/authz/me` 4× 200, **drift detector 7→6 P1** (auth-service env drift kapandı), `/dev/shm/auth-pw.Blg7vf` shred. C E2E retest: mfe-users `Shell servisleri konfigüre edilmedi` blocker #561 ile çözüldü ✅; row-level impersonate UI eksik → spawn chip. **6 kalan P1** D dalga 1.2-1.7 (user/permission/core-data/report/schema/endpoint-admin). D1.1b (DDL_AUTO=validate + FLYWAY=true) Flyway state proof sonrası ayrı PR. Codex thread chain bu session: `019e256f` (strategy) + `019e257b` (PR #563 review) + `019e258a` (PR #564 review 4-iter) + `019e25a9` (PR #566 review) + `019e25ba` (PR #567 review). 7 spawn chip aktif (mfe-users UI + BE WireMock + FE Playwright + D dalga 1.2-1.7 + check_pr_time line213). Handoff: [docs/session-handoff-2026-05-14-session-49-d1.1a-closure.md](../session-handoff-2026-05-14-session-49-d1.1a-closure.md). ⏸️ Önceki 2026-05-14 ~01:30 UTC+3 (Session 48 supplement — **A NORMALIZER MERGED + D DALGA 1 BAŞLANGIÇ + AUTH-SERVICE P1 INCIDENT TESPİT**: Codex `019e234e` strategic consultation iter-3 zinciri C→A+B→D→Gate1d. **PR #554 MERGED** `343c11c` — drift normalizer baseline cleanup: `_parse_cpu_to_millicores` + `_parse_memory_to_bytes` + `_normalize_resources` (Kubernetes quantity equivalence: cpu "1"=="1000m", memory "1Gi"=="1024Mi") + `terminationGracePeriodSeconds=30` default inject. Live runtime smoke k3d-test: **10→7 P1 finding** (3 false positive eliminated: api-gateway cpu, endpoint-admin TGP, notification-orchestrator TGP). 59/59 unittest PASS. Codex peer review thread `019e235a` AGREE ilk turda. **C preflight** (Codex önerisi): testai admin Platform Admin login OK, `/admin/reports/users` 5 user grid load (admin@, testuser@, d35-admin@, d35-granted@, mcp-impersonation-tester@); audit DB fingerprint kanıt — rows 909+944 IMPERSONATION_BLOCKED target_email **BOŞ** (Session 47 BUG #1 pattern). 2 blocker: (a) mfe-users SPA "Shell servisleri konfigüre edilmedi" alert + (b) Browser MCP fetch/XHR cookie taşımıyor (extension sandbox) → E2E browser smoke ertelendi spawn chip'e. **D dalga 1.1 incident**: auth-service test cluster'da live inline `SPRING_DATASOURCE_PASSWORD` hash `6f76...` ile Vault canonical `808b...` (user-service + permission-service ile aynı) eşleşmiyor; live'da inline override aktif. ConfigMap'ta `SPRING_JPA_HIBERNATE_DDL_AUTO=update + SPRING_FLYWAY_ENABLED=false` tehlikeli steady-state; inline `none` override schema mutation engelliyor. Inline kaldırılırsa pod CrashLoop + schema corruption riski. Vault root token agent erişiminde yok → operator-blocked → spawn chip D1.1a auth-service Vault rotation + inline cleanup (containment plan: Codex 019e234e iter-5). 2 spawn task chip aktif: mfe-users init + auth-service Vault rotation. Handoff: [docs/session-handoff-2026-05-14-session-48-supplement-d-wave.md](../session-handoff-2026-05-14-session-48-supplement-d-wave.md). ⏸️ Önceki 2026-05-14 ~00:30 UTC+3 (Session 48 — **DEPLOYMENT CONTRACT DRIFT GATE LIVE — 2 PR LANDED + ENDPOINT-ADMIN PROBE DRIFT FIX**: User sorusu "çok fazla bug oluyor bunu engellemek/tespit için bir şey var mı?" → 3-katman drift gate impl. **PR #551 MERGED** `3720716` Codex `019e2319` iter-3 AGREE: `docs/operations/services.yaml` extend (workload_kind + runtime_class + probe_contract + jvm_warmup_extra), Python lib stdlib-only (deploy_normalizer + probe_contract_rules + services_catalog), CLI `check_deployment_contracts.py` (pr-time + runtime modes), 35/35 stdlib unittest. PR-time Check 5 + runtime Section 6 + RS-split Section 7. **PR #552 MERGED** `7a16982` Codex `019e233b` iter-2 AGREE: `scripts/deploy/gate-stability-window.sh` catalog-driven (jvm_warmup_extra→180s, others 120s) — UID churn / CrashLoopBackOff / restartCount per-(uid:container) / updatedReplicas / readyReplicas / RS-split / Progressing=False / ReplicaFailure=True; t=0 check + sleep + poll. 3 workflow Gate 1d after Gate 1c. Plus **immediate fix (no PR)**: cluster'daki endpoint-admin yeni RS `/healthz/*` → `/actuator/health/*` + `startupProbe` selective apply, CrashLoop 273-restart terminate, testai 200 LIVE. Runtime detector live'da 10 P1 finding üretti (baseline cleanup PR-3 bekliyor — terminationGracePeriodSeconds=30 default + cpu quantity normalize + apply-gap env drift birkaç backend'de). Cross-AI peer review HARD RULE iki PR için de uygulandı (REVISE→AGREE pattern). 3-katman cluster snapshot: Mac k3d-dev 🟢 + staging-sw k3d-test 🟢 + k3d-prod 🟢 + compose stateful 🟢. Handoff: [docs/session-handoff-2026-05-14-session-48-drift-gate-stability-window.md](../session-handoff-2026-05-14-session-48-drift-gate-stability-window.md). ⏸️ Önceki 2026-05-13 (Session 47 Bug Wave Closure — 5 PR MERGED + 2 spawn'd handoff [session-handoff-2026-05-13-session-47-bug-wave-closure.md](../session-handoff-2026-05-13-session-47-bug-wave-closure.md)). ⏸️ Önceki 2026-05-08 ~20:00 UTC+3 (Session 39 — **FAZ 23.6/23.7/23.8/23.9 OBSERVABILITY + KVKK + VAULT FULL CYCLE — 7 PR LANDED**: notification-orchestrator strict cutover (PR-5.4 default-org close + PR-5.5 subscriberId strict) prod LIVE on ai.acik.com, Vault path `kv/platform/notification-orchestrator` ESO managed (PR #424), 25 PrometheusRule alerts inactive/correctly-pending (PR #425/428/430), 12-panel Grafana dashboard sidecar imported (PR #431), DLQ SLO 99.5% with 18 recording rules + 4 burn-rate alerts true multi-window pattern (PR #433), audit retention KVKK Art.7 activated dry-run=true awaiting 02:00 UTC cron tick observation gate (PR #427). Pre-prod tek-user; multi-tenant Faz 21 = DEFER. Cross-AI peer review HARD RULE applied each PR (Codex thread chain `019e08df/0892/08fa/090d/093e/094a/0921/0935/0b9f`). Codex strategic retrospective `019e0b9f` AGREE: Step C.2 dry-run=false flip blocker = backend test gap (`AuditPartitionV8IntegrationTest` retention-days=36500 doesn't exercise DETACH/DROP) + 02:00 UTC tick clean evidence. Strategic continuation: A (C.2 prep) primary + B (dashboard extension) parallel; DEFER Tempo / federation / KVKK API / Faz 21 to dedicated sub-faz cycles. ⏸️ Önceki 2026-05-03 ~14:30 UTC+3 (Session 37 — **FAZ 19 PROD MIGRATION TAMAMLANDI + AG GRID LISANS BYTES FIX + DRIFT BACKLOG AUDIT**: ai.acik.com edge nginx cluster-authoritative migration LIVE — host disk static serving → cluster ingress proxy_pass (testai pattern + ai-spesifik istisnalar). Manual rsync döngüsü ortadan kalktı, GitOps digest pin + cluster pod truth public flow'a otomatik yansır. AG Grid Enterprise lisansı her iki public host'ta valid:true (LicenseManager getLicenseDetails programmatic kanıt, AG-128070, expiry 2 June 2026). Drift backlog 6 → 1 (ek #4 fix kalıcı, #1+#6 kapandı bu session, #2+#5 audit ile stale, sadece #3 runner labels açık). Codex `019ded8d` AGREE post-impl. platform-web `hotfix/ag-grid-license-rebuild` branch geçici release source (4 commit live ama main'e merge edilmedi — main build kırık: Vite 8 + Module Federation top-level await). main-fix sub-task spawn'da paralel ilerliyor. ⏸️ Önceki 2026-05-01 ~01:00 UTC+3 (Session 36 — **PROD POST-CUTOVER COMPLIANCE SPRINT BAŞLADI**: D30 atomic cutover T+7 günü; prod deploy discipline formal hale geldi (deploy-backend-prod.yml + deploy-frontend-prod.yml + shared verify-pod-digest.sh helper + production environment gate). T0=2026-04-24 cutover stable, 72h rollback-window 2026-04-27'de doldu, post-T+72h prod cluster-authoritative kabul ediliyor. Bu sprint'te (Codex 019de00f AGREE-with-revisions, 9 PR plan): PR-1 shared digest helper LIVE smoke (multi-replica + newest-only verified), PR-2 deploy-backend-prod.yml MERGED (workflow_dispatch + environment + strict digest), PR-3 deploy-frontend-prod.yml MERGED (aynı disipline), kalan 6 PR (truth refresh / rollback runbook / compose inventory / retire plan / Faz 22 charter / endpoint-admin skeleton). Prod live state: 9 backend service 2/2 ready hepsi `@sha256:<digest>` pinned, frontend 2/2 ready, ai.acik.com cluster-authoritative (host nginx → 30443 NodePort), compose stateful (PG/KC/Vault) D6 contract korumalı. iter-49 series + AG Grid license fix LIVE doğrulandı testai'da. ⏸️ Önceki 2026-04-30 ~22:55 UTC+3 (Session 35 — iter-49 CYCLE CLOSE + BACKEND/FRONTEND DEPLOY AUTOMATION DIGEST-PIN MODE LIVE: 12 PR landed cycle close, B.3 chain auto-trigger LIVE verified). ⏸️ Önceki 2026-04-28 ~19:30 UTC+3 (Session 33 FINAL — **ADR-0011 GOVERNANCE LAYER COMPLETE (DD-1..DD-4 + AC-1 + BG-1 + BG-2) + D35-2-FULL FIRST CANLI EVIDENCE 11/11 PASS + 15 PR LANDED (1 backend + 14 gitops)**: Bu session block ADR-0011 §4 PR sequence'ini tamamladı: 4 drift detection guard (anchor + V25/V26 contract, ETL canonical JSON, schema-service snapshot scaffold, env+Dockerfile lint), 1 audit cadence scaffold (drill evidence template + first-drill runbook), 2 boundary governance (per-PR boundary declaration CI gate + sandbox-blocking pattern playbook + 3 gray-area decision records). Tüm PR'lar Codex `019dd409` consensus akışı ile (PARTIAL/AGREE-with-revisions iter'leri absorb edildi). BG-1 self-validating gate ([PR #233](https://github.com/Halildeu/platform-k8s-gitops/pull/233)) kendi PR'ını da validate etti — boundary block + 6 class checkbox + user-approval evidence + label hard gate yeşil. ADR-0011 governance layer çalışıyor. Drift detection coverage Session 32-33 4 drift event'i kapatır: V19/V20/V21 anchor (DD-1), V25 jsonb extraction format (DD-2), etl-worker env prefix (DD-4 + config.py 4-prefix fallback fix), Dockerfile keyring (DD-4). DD-3 schema snapshot operator-loop scaffold; AC-1b operator first drill (Phase 1 Vault test rekey) post-merge user-approval ile. Codex thread chain (Session 33 toplam): `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE) → `019dd409` (D35-3 prereq + DD/AC/BG sequence + sandbox-blocking pattern). Kalan operator-pending: D35-3 UI persona evidence (browser session) + AC-1b drill execution. ⏸️ Önceki 2026-04-28 ~16:45 UTC+3 (Session 33 mid #2 — **D35-2-FULL FIRST CANLI EVIDENCE 11/11 PASS + GATEWAY EXTERNAL 500 ROOT CAUSE FIX + 7 PR LANDED (1 backend + 6 gitops)**: D35-2-limited (PR #218) "manuel SQL bypass" caveat'i KALKTI. REST controller layer V25-aligned eventual-consistency canlı yakalandı staging-sw test cluster'da: `POST /api/v1/access/scope` → 201 + scopeId=3 + outboxId=3 + openFgaObjectId=`wc-our-company-1` (V25 namespace) + outbox PROCESSED in 907ms + /check ALLOW granted + DENY negative + DELETE 204 + REVOKE PROCESSED 5s + FLIP DENY + 0 FAILED rows. D35-2-full evidence ([PR #225](https://github.com/Halildeu/platform-k8s-gitops/pull/225), `docs/faz-21-3-evidence/2026-04-28-d35-2-full-canli-rest-flow.md`). Gateway external `testai.acik.com` 500 root cause: Session 33 PR-G follow-up ROUTES_17 fix sırasında `kubectl apply -f base/configmap.yaml` selective apply overlay patch'lerini atladı, base'in literal `serban` realm değerini live cluster'a yazdı → `JwtException: No suitable decoder accepted the token` → AuthenticationServiceException → 500. Live'da düzeltildi (overlay-built ConfigMap apply + rolling restart api-gateway → external `testai.acik.com` POST 201) + drift-prevention guard ([PR #226](https://github.com/Halildeu/platform-k8s-gitops/pull/226): base ISSUER_URI/JWKS_URI = `OVERLAY_MUST_OVERRIDE` + prod overlay JWKS_URI explicit add — CLAUDE.md "Yaygın Pitfalls #1" pattern). Codex thread chain: `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE) → `019dd409` (D35-3 prereq + api-gateway route drift A-prime + persona credential boundary). Kalan kritik path: D35-3 UI persona evidence (browser session — operatör + agent correlation). ⏸️ Önceki 2026-04-28 ~12:55 UTC+3 (Session 33 — **V25 ALIGNMENT CROSS-REPO + D35-3 PREREQ INFRASTRUCTURE LANDED + STAGING-SW ROLLED OUT (3 PR: 1 backend + 2 gitops)**: V25 OUR_COMPANY anchor + `wc-our-company-` FGA namespace contract drift was carried by `permission-service` image `sha-4f408f4` (PR-G follow-up); fix-forward landed via [`platform-backend#17`](https://github.com/Halildeu/platform-backend/pull/17) sha-`943bd5f` (`expectedSourceTable(COMPANY)→OUR_COMPANY` + encoder COMPANY case `wc-our-company-<COMP_ID>`) + 5 unit-test files retargeted + 3 new V25/V26 Testcontainers contract tests + V25/V26 SQL copied to test classpath + V90 fixture rewritten with OUR_COMPANY anchor. [`platform-k8s-gitops#221`](https://github.com/Halildeu/platform-k8s-gitops/pull/221) digest-pin in test+prod overlays (`sha256:219b053777478fa048fbe04b4f990f477a1091d2e2a49c0691e18c340a5c9406`). Operator rollout on `k3d-test`: pod Running, immutable digest match, HikariPool-2 (reportsDb) + JPA EntityManagerFactory `reportsDb` validate cleanly against V25/V26 schema, app start 41.5s clean, 0 ERROR/Exception in boot logs, DB outbox state intact (0 PENDING / 0 FAILED / 2 PROCESSED from D35-2-limited preserved). [`platform-k8s-gitops#222`](https://github.com/Halildeu/platform-k8s-gitops/pull/222) **D35-3 prereq infrastructure** — 7 dosya, 1668 satır: `d35-2-full-template.md` + `d35-3-product-path-template.md` (evidence templates, V25-aligned 11-step + UI persona checklist), 3 runbook (RB-prereq-tuple-seed agent-yapılabilir, RB-keycloak-admin-jwt operatör-only, RB-ui-persona-checklist browser flow), 2 script (`openfga-access-tuple-seed.sh` idempotent + `rest-grant-runner.sh` 11-step canonical runner with V25 namespace drift detection). Codex thread chain: `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE single-image scope) → `019dd409` (D35-3 prereq strategy PARTIAL/AGREE — K-serisi defer, D35-2-full ayrı tier, prereq paket execute). Spawned hygiene chip: gitops `wc-company-*` references in docs/fixtures/SQL surfaces (Codex `019dd3dc` final note). ⏸️ Önceki 2026-04-28 ~10:40 UTC+3 (Session 32 FINAL — **D35-2 FIRST CANLI EVIDENCE CAPTURED + ADR-0010 9-PR SEQUENCE LANDED + OUR_COMPANY DRIFT FIXED + 31 PR THIS SESSION BLOCK**: Full D35 ladder closure D35-0 → D35-1 → D35-2 (D35-3 product path UI persona = downstream). Codex `019dd2c9` xhigh effort architecture (ADR-0010 9-PR sequence) + Codex `019dd34e` PARTIAL/AGREE-with-revisions (OUR_COMPANY drift fix 4-PR sequence + V26 source_pk dual-format hot-fix) + Codex `019dd333` Session 32 retrospective discipline applied. **D35-2 verified live (10/11 canonical steps PASS + 1 limited)**: GRANT scope_id=2 → outbox PROCESSED <8s → OpenFGA `allowed:true` granted user → REVOKE outbox PROCESSED <2s → flip → `allowed:false` originally-granted user → 0 FAILED outbox rows in 10min window. Step 4 (REST POST grant) bypassed manual SQL INSERT (D35-2-limited tag); full REST flow downstream of Keycloak admin JWT + module:ACCESS#can_manage tuple seed + AccessScopeController.grant exercise = D35-3 product path PR. Migration chain: V16 → V17 → V19 → V20 → V21 → V22 → V23 → V25 → V26 (V25 anchor table OUR_COMPANY + tenant predicate + signature widen org_id; V26 source_pk dual-format ETL JSON canonical vs jsonb extraction). Backend contract discovered live: OutboxPoller payload.tuple = `{user, relation, objectType, objectId}` (cross-repo Explore agent verified). Operator authority used per Kural #7 + ADR-0010 §2.5 + auto-mode + Codex consensus + sandbox enforcement.
 >
 > **Bu session 31 PR** (#194-#218): ADR-0010 9-PR sequence (#196-#204 + supporting #194 V24 + #195 sig fix) + Faz 19.11.D ci/ port (#205 PR-A shim + #206 PR-B gate-enforcement-check + #207 + #208 hot-fix dual + #209 PR-C scope decision + #210 PR-D budget baseline + #211 etl-worker env multi-prefix) + OUR_COMPANY drift fix sequence (#212 PR-1 discovery + #213 PR-2 V25 + #214 PR-3 ETL manifest + #215 PR-4 ADR docs + #216 V26 dual-format) + D35 evidence (#217 D35-1 + #218 D35-2 first canlı). 0 cross-repo PR; all within-repo. ⏸️ Önceki 2026-04-28 ~07:40 UTC+3 (Session 32 mid — ADR-0010 9-PR SEQUENCE LANDED + DR + SoD + D35 LADDER kalıcı mimari kabul edildi): Codex `019dd2c9` xhigh effort architecture review → ADR-0010 Vault Credential Lifecycle + DR + Operator/Agent Authority. 6/9 PR merged + 4 supporting docs (15 PR total this session block: #194 V24 ops + #195 sig fix + #196 ADR-0010 + #197 bootstrap-writer policy/runbook/verify + #198 vault-patch wrapper + #199 D35 evidence ladder + #200 Faz 16.2.A scope anchor runbook + #201 Dockerfile keyring fix + DR-6 readiness evidence + #202 test vault DR rekey runbook + #203 prod DR-8/DR-9 runbooks). 3 user-driven items pending: AlUser_App MSSQL credential refresh (DR-6 Step 2 unblocker), test vault DR rekey execution (PR #202 runbook → admin token → DR-4 unblocker), prod DR-8 read-only inventory (PR #203 runbook → DR-9 readiness). Codex consensus + auto-mode sandbox correctly enforced ADR-0010 §2.5 user-approval gate on Vault credential operations even on test vault. ⏸️ Önceki 2026-04-28 ~06:05 UTC+3 (Session 31 — FAZ 21.3 OUTBOX RUNTIME ON STAGING-SW + D35 OPEN BLOCKER): 4 within-repo PR merged (#189 D35 11-step runbook, #190 PR-G follow-up digest pin, #191 test overlay shared-cred patch, #192 outbox isolated preflight evidence) + cross-repo platform-backend PR #16 + multiple V-series migrations (V21+V22+V23). Operator-driven on staging-sw k3d-test: V16+V17+V19+V20+V21+V22+V23 applied to reports_db, ESO sync REPORTS_DB_USERNAME/PASSWORD via Codex 019dd296 verdict B (test overlay aliases onto Vault `db_username`/`db_password` — caveat documented), permission-service rolled to PR-G follow-up digest `sha256:b6d59f0a...` (sha-4f408f4), Spring Boot Started in 42s, HikariPool-2 + reportsDb persistence unit + outbox poller alive (17 successful poll cycles ~85s, zero exceptions, V22+V23 schema verified). D35 first evidence (PR #189 Step 9.4-9.11) **superseded by ADR-0010 §2.3 D35 ladder**: PR #192 evidence retroactively classified as D35-0 (Runtime Preflight), D35-1 (Scope Anchor Prereq) needs real Workcube ETL row (Faz 16.2.A), D35-2 = "D35 first evidence" depends on D35-1, D35-3 = product path UI persona. Out-of-scope chip queued: dedicated reports_db role + Vault populate + revert PR #191 — partially resolved by ADR-0010 sequence (PR #194 V24 + PR #197 bootstrap-writer + PR #201 DR-6 readiness; full closure pending user action 2 = test vault DR rekey). ⏸️ Önceki 2026-04-26 ~22:10 UTC+3 (Session 30 — FAZ 19.11 STEP 1-4 + FAZ 21.A + FAZ 21.3 EXPLICIT-SCOPE FIXTURE + FAZ 16 ETL CI): 9 within-repo PR merged (#168-#176) + 2 cross-repo PR merged (platform-backend #10/#11). OpenFGA model migrated from platform-ssot to local fixtures + dev-seed.sh writes it before tuples (model_id explicit) + semantic-JSON drift gate vs upstream platform-backend + fixture smoke gate (10 checks: 5 allow + 3 deny + 2 containment-deny). data_access PG schema (V19+V20) regression CI gate (V16→V17→V19→V20 + 11-assertion suite). etl_worker pytest CI (159 tests) + ruff (19→0) + mypy strict (10→0). Codex retrospective `019dcbc8` consulted post-#172, absorbed in #173. Within-repo agent-actionable work exhausted; remaining items operator-gated (Faz 21.1b ETL run on staging-sw via PR #162 runbook) or sandbox-blocked (cross-repo PR-C/D/E Java/REST/UI). Handoff docs: `docs/session-handoff-2026-04-26-faz-21-3-zanzibar-fixture-sealed.md` + `docs/session-handoff-2026-04-26-supplement-pr-172-175.md`. ⏸️ Önceki 2026-04-25 — **FAZ 19.MSSQL.A-O LIVE**: Workcube MSSQL bridge canlı, 31 rapor + 12 dashboard, 8/8 backend endpoint 200 (handoff: `docs/session-handoff-2026-04-25-faz-19-mssql-closure.md`). ⏸️ Önceki 2026-04-24 ~15:30 UTC+3 — **FAZ 18.3 CROSS-REPO + HOST OPS**: ssot PR #550 + #551 MERGED (cross-repo), `platform-service-manager-1` container stop+rm canlı, zero regression (410 tombstone + 200 diğer routes). User direktif kaynak repo amacı netleştirildi: "Kaynak repo tek amacı eski geliştirmeleri yeni sisteme taşıma kaynağı, başka amaç yok" → Faz 19 Kaynak Repo Full Decommission plan-time Codex istişare sıradaki. 22 cross-repo PR merged (19 gitops + 3 ssot) Session 29'da. ⏸️ Önceki ~14:10 Session 29 +12 — **FAZ 18.2 CANLI DEPLOY PASS + PR-A AÇILDI**: `/api/services/` HTTP 410 Gone her iki domain (ai.acik.com + testai.acik.com) deploy PASS, zero regression. platform-ssot cross-repo PR #550 açıldı (MFE admin UI retire + Ops Links compat page + ShellHeader permission fix + i18n 4 dil, net -797 satır cleanup, linked worktree + `--worktree-mode` light gate PASS). 18 PR bu repo + 1 PR ssot = 19 cross-repo PR. ⏸️ Önceki ~12:45 Session 29 WRAP — **FAZ 17 TAM IMPL (10 PR MERGED 4070 satır) + FAZ 16.0/16.1 DRAFT + FAZ 16.2 PLAN AGREE**: Faz 17 Local Dev Environment Parity 9 sub-faz (17.0 naming + 17.1 fixtures + 17.2 profile overlays + 17.2.5 app base split + 17.3 scripts + 17.4 promotion-contract + 17.5 README + 17.X TLS + 17.Y image handoff) + CI 5/5 green. Faz 16.0 data contract DRAFT/RFC + Faz 16.1 annex 2A crawler 44 unique tablo + 2B 9 sys.* catalog. Codex 3 thread (019dbe80 Faz 17 iter-4 AGREE, 019dbe92 Faz 16.0 iter-4 AGREE DRAFT/RFC, 019dbf15 Faz 16.2 plan istişare). Kalan: Faz 17 secondary codex exec (user codex login), Faz 16.1 SEAL dış paydaş (Workcube admin 8 sourceQuery manuel + schema-service-parity-adr), Faz 16.2 Flyway V16 platform-ssot cross-repo PR. ⏸️ Önceki ~09:55 UTC+3 Session 29 — üç-katman (lokal dev Mac / test staging-sw k3d-test / prod staging-sw k3d-prod+compose) netleştirildi, Mac k3d mirror'ları stop (RAM relief ~7 GB→130 MB), staging-sw k3d-test auth-service RSA PEM placeholder fix (Vault `kv/platform/auth-service` jwt_private_key/public_key initialize) → **9/9 platform-test pod 1/1 Ready + testai.acik.com 200**, staging-sw k3d-prod 49 Running korundu. Faz 13 rollback-window kullanıcı direktifi ile iptal (canlı kullanıcı yok). Faz 17 Local Dev Environment Parity + Faz 16.0 Data Contract paralel plan draft (Plan subagent + Codex adversarial review bekleniyor). ⏸️ Önceki Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
 > **Verified by**: Codex + live `ssh staging-sw`
@@ -9,6 +9556,126 @@
 > **Interpretation gate**: Önce [../../AGENTS.md](../../AGENTS.md), ardından [../context-priority-rules.md](../context-priority-rules.md) okunur; bu dosya canlı truth snapshot'tır, repo-geneli kural sözleşmesi değildir.
 
 ---
+
+## Live Delta — Faz 22 Web RTK fetchFn unwrap + Faz 23 M7 truth-sync (2026-05-24)
+
+Önceki 2026-05-23 ALLOW-path smoke (`docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md`) §F follow-on'u (audit/status 401 vs devices 403 discrepancy) bu session sistematik araştırılıp kapatıldı: kök neden RTK Query 2.x `Request`-object header drop (notify #652 pattern), fix `endpointAdminApi.ts` `fetchBaseQuery({ fetchFn: unwrapRequestFetchFn, ... })`. Plus Faz 23 M7 canonical-doc truth-sync (milestones.md WebPush LIVE + risk-register R11 Mitigated). 3 PR cross-AI Codex AGREE + CI green + normal squash + archive-tag.
+
+### Merged (this session)
+
+| Repo | PR | Konu | mergeCommit | Codex |
+|---|---|---|---|---|
+| platform-web | **#658** | `endpointAdminApi` RTK fetchFn unwrap — `fetchFn: unwrapRequestFetchFn` + local shim copy + 4 new specs + #655 fallback spec update | `4c3df712` | `019e597d` AGREE |
+| platform-k8s-gitops | **#1007** | Test overlay frontend digest re-pin to `sha-4c3df71` (D30 drift-correction; #658 RTK fetchFn unwrap) | `9202ce28` | `019e598f` AGREE |
+| platform-k8s-gitops | **#1008** | Faz 23 M7 truth-sync: WebPush LIVE end-to-end + R11 Active→Mitigated | `7c16a2a5` | `019e599b` strategic + `019e59a0` post-impl AGREE |
+
+### D30 artifact durumu (live evidence 2026-05-24)
+
+| Servis | Desired (overlay) | Live pod imageID | D30 |
+|---|---|---|---|
+| platform-web-frontend-testai | `sha256:583aa8c97694d02811c97b53b1704ae90f538fa5d3c3ff4667d9f28139a8a8c7` | `sha256:583aa8c97694d02811c97b53b1704ae90f538fa5d3c3ff4667d9f28139a8a8c7` | ✅ match (post-#1007) |
+
+### Browser-context post-#658 verify (claude-in-chrome MCP, testai)
+
+| Route | Pre-#658 (header drop) | Post-#658 | Interpretation |
+|---|---|---|---|
+| `/endpoint-admin/devices` | 401 (auth-gate reject) | **403** | FGA fail-closed for Platform Admin no-tuple — expected deny |
+| `/endpoint-admin/audit` | 401 (auth-gate reject) | **403** | Same FGA fail-closed |
+| `/endpoint-admin/status` | 401 (auth-gate reject) | **200** | Auth-only endpoint; Bearer accepted |
+
+**401 storm gone end-to-end.** 3 route MFE-driven RTK call'ları artık Authorization header'ını backend handler'a ulaştırıyor.
+
+### Bug analiz — birikimli kök neden zinciri
+
+#654 RTK gateway path fix → MFE'nin 8. remote'u federation'a girdi + path'ler `/api/v1/endpoint-admin/*` doğru. #656 `createEndpointAdminApp` race-protection → `configureShellServices` MFE'nin ilk RTK query'sinden önce çağrılıyor. #657 `endpointAdminApi.ts` shell-injected `getShellServices().auth.getToken()` + `localStorage.token` fallback → shell-resolver MF singleton'a ulaşmasa bile JWT okunuyor. #658 `fetchFn: unwrapRequestFetchFn` → RTK 2.x `Request`-object header-drop wire-layer bug'ı dodge edildi, Authorization gerçekten backend'e gidiyor. **4 PR ile Web acceptance auth-transport zinciri LIVE end-to-end (401 storm giderildi, evidence live).**
+
+### Faz 23 M7 (#1008 truth-sync)
+
+milestones.md M7 T4.2 "WebPush activation pending" → "WebPush browser LIVE end-to-end 2026-05-23" (RB §3.10 subscribe + §3.11 SUCCESS push delivery `notify_dispatch_outcome_total{channel="push",status="DELIVERED"} 1.0`). Risk-register R11 Active → Mitigated (Tempo LIVE, Close defer to operator post-prod-cutover). R16 untouched (already design-managed; not M7 blocker per Codex `019e4ee7`).
+
+### Pending (ayrı kapı — bu delta KAPATMAZ)
+
+- **BE-011 real agent lifecycle smoke** — yan-kanıt session içinde captured (`HALILKOOLUB735` Windows device data döndü); resmi smoke ayrı kapı.
+- **platform-agent#8 Windows fresh smoke** — operator-bound (Windows VM).
+- **IT pilot 22.2** — operator-bound (AD ops).
+- **Faz 23 M7 operator-bound**: T4.3.5 FBL mailbox activation, ~~T4.3.7 DB RO role grant~~ **T4.3.7 BL-015-B/C PROD LIVE 2026-05-24** (G1-G8 PASS evidence `docs/faz-23-evidence/2026-05-24-bl015-bc-grafana-pg-ro-prod-live-g1-g8.md`; Grafana `notify_pg_ro` datasource health "Database Connection OK"; helm chart upgrade 65.8.0 → 75.4.0+ operator follow-up; ArgoCD `platform-eso-prod` auto-sync activation operator scope), R11 formal Close ≥30d soak baseline.
+
+Bu delta prod-ready / password-reset-ready İDDİA ETMEZ.
+
+## Live Delta — Faz 22 Web endpoint-admin runtime acceptance LIVE (2026-05-23)
+
+Web runtime acceptance — 2026-05-22 delta'da ayrı kapı olarak listelenen pending kalemi — bu session source-side MERGED + testai canlı + browser-functional smoke kanıtlandı ve pending listesinden çıkarıldı. Faz 22.1 Web runtime acceptance ~95% (issue/IT pilot ≠ runtime).
+
+### Merged (source-side, hepsi cross-AI Codex AGREE + CI yeşil + normal squash + archive-tag)
+
+| Repo | PR | Title | mergeCommit | Codex iter |
+|---|---|---|---|---|
+| platform-web | **#654** | feat(faz22-web): endpoint-admin runtime acceptance — RTK gateway path fix + testai build enablement | `c5d96916` | `019e516c` AGREE |
+| platform-web | **#656** | fix(faz22-web): endpoint-admin shell-services auth race — API 401 (`createEndpointAdminApp` configureShellServices-before-App) | `45fa1db7` | `019e5196` AGREE |
+| platform-web | **#657** | fix(faz22-web): endpoint-admin MFE auth Bearer — localStorage fallback (mfe-users `mergeHeaders` precedent) | `5455b076` | `019e538c` AGREE |
+| platform-k8s-gitops | **#998** | chore(faz22-web): test overlay frontend digest re-pin to sha-5455b07 (D30 drift-correction) | `5ba3b5e2` | `019e53ab` AGREE |
+
+### D30 artifact durumu (live evidence 2026-05-23, `ssh staging-sw kubectl --context k3d-test`)
+
+| Servis | Desired (overlay) | Live pod imageID | D30 |
+|---|---|---|---|
+| platform-web-frontend-testai | `sha256:c212be872062705c9de26333b1c38ddfbda06096a03ec89a63e13320bdbdf08b` | `sha256:c212be872062705c9de26333b1c38ddfbda06096a03ec89a63e13320bdbdf08b` | ✅ match (post-#998) |
+
+Drift source: `deploy-testai.yml` imperative `kubectl set image` (ADR-0023 documented). Gitops #998 overlay desired-state'i live'a hizaladı; `apply -k overlays/test` artık frontend imajı için no-op.
+
+### D29 (Up ≠ Functional ≠ Secured)
+
+- **Up**: frontend Deployment 1/1 pod Running ready=true; testai.acik.com/build-info.json `sha-5455b07` LIVE + `remotes` listesinde `endpoint-admin` 8. remote LIVE.
+- **Functional**: MFE 3 route render ediyor (`Uç Birimler`, `Denetim Olayları`, `Servis Durumu`); browser smoke (claude-in-chrome MCP) post-#657 network log: `GET /api/v1/endpoint-agents/status` → **200** (auth-only, Bearer accepted), `GET /api/v1/endpoint-admin/endpoint-devices` → **503** (mid-rollout backend transient, **NOT 401** — gateway Bearer'ı kabul edip forward etti). Pre-fix forensics: aynı endpoint'ler 401 dönüyordu (platform-web #655 orijinal yorum).
+- **Secured**: gateway auth-gate çalışıyor (Bearer'sız 401 fail-closed); Spring Security + OpenFGA `RequireModule` enforce ediyor (Platform Admin'in `can_view` tuple eksikliği 403'e çıkar — istenen deny davranışı; FGA tuple grant'i ayrı operator action konusu, runtime scope'u dışı).
+
+### Bug analiz — birikimli kök neden
+
+PR #654 RTK gateway path'lerini düzeltti (`/api/v1/endpoint-admin/*`, `/endpoint-agents/*`); pre-#654 MF 8. remote bile mevcut değildi + path'ler `/admin/*` legacy idi. PR #656 race protection ekledi (`configureShellServices` MFE'nin ilk RTK query'sinden önce çağrılması garantilendi). Ama PR #656'dan sonra browser re-smoke 401'in **devam** ettiğini gösterdi → daha derin forensics yapıldı (token valid, manual `fetch` Bearer'la 200/403, MFE Authorization header taşımıyor). Kök neden: `@mfe/shared-http` `resolveAuthToken()` `__FEDERATION__.__INSTANCES__` per-remote ayrı federation instance olduğu için shell-registered resolver bu MFE'ye ulaşmıyor (MF singleton sharing fiilen yok). PR #657 bunu `mfe-users` `mergeHeaders` precedent'ini birebir mirror'layarak çözdü: shell-injected `getShellServices().auth.getToken()` primary + `localStorage.token` fallback. Post-#657 browser network log 401'in gittiğini doğruladı.
+
+### Pending (ayrı kapı — bu delta KAPATMAZ)
+
+- **BE-011 real agent lifecycle smoke** — agent source contract MERGED; gerçek release artifact ile enroll/heartbeat/command/result canlı smoke pending.
+- **platform-agent#8 Windows fresh smoke** — AG-013 capability coherence sonrası fresh Windows VM smoke OPEN/Backlog.
+- **IT pilot (22.2)** — `acik.local` EndpointPilot OU + IT-owned Windows cihazlar pending.
+
+> Not: 2026-05-22 delta'da listelenen api-gateway D30 drift, bu PR draftında "pending" sayıldı; ancak gitops PR #985 (`6a4c488` — 2026-05-22 sonrası) drift'i **zaten kapatmıştı** (overlay desired = live = `sha256:6137bb2c…`). 2026-05-23 truth-refresh PR #999 bu pending'i taşıdı (No Fake Work ihlali — agent api-gateway desired/live'ı PR sırasında recheck etmemişti). Bu satır 2026-05-23 follow-up `docs/...api-gateway-drift-claim` PR'ında düzeltildi.
+
+Bu delta prod-ready / password-reset-ready İDDİA ETMEZ — 22.1 test runtime + source-side merge + browser-functional smoke seviyesi; 22.2/22.3 ayrı kapı.
+
+## Live Delta — Faz 22 Endpoint Admin truth-refresh: BE-016/BE-017 merged + api-gateway D30 drift (2026-05-22)
+
+Faz 22 endpoint-admin track 2026-05-22'de ilerledi; bu delta canonical truth'u BE-016/BE-017 merge sonrası hizalar. Tracked by [#982](https://github.com/Halildeu/platform-k8s-gitops/issues/982).
+
+### Merged (source-side)
+
+- **BE-016** audit integrity hash-chain + Flyway enablement — `platform-backend#295` (`ff7d4843`) + `#297` (Flyway `baseline-version` 0→4). Gitops #968/#971 (Flyway ConfigMap + digest pin) MERGED, #971 Done.
+- **BE-017** destructive command dual-control gate — `platform-backend#300` (mergeCommit `dd6b1eab`). Gitops digest bump #980 (`d702d678`) MERGED. Cross-AI: Codex `019e50e0` RED → absorb → AGREE. Gitops tracking #978 Done.
+- **BE-011** agent↔backend wire-contract reconciliation — `platform-agent#9` (`2e49f8b`) MERGED. Gitops tracking #974 Done.
+
+### D30 artifact durumu (live evidence 2026-05-22, `ssh staging-sw kubectl --context k3d-test`)
+
+| Servis | Desired (overlay) | Live pod imageID | D30 |
+|---|---|---|---|
+| endpoint-admin-service | `sha256:1a1d0aac…` | `sha256:1a1d0aac…` | ✅ match |
+| api-gateway | `sha256:84500b5e…` | `sha256:6137bb2c…` | ❌ **DRIFT** — desired/live eşleşmiyor |
+
+api-gateway drift: live `6137bb2c` `deploy-backend-testai.yml` auto-deploy'un imperative `kubectl set image` (api-gateway sıralı rollout son servis) çıktısı; overlay desired `84500b5e` stale kaldı. Route fail-closed çalışıyor ama D30 imageID match KAPALI DEĞİL. Resolution ayrı P1 track (bu delta documents-only).
+
+### D29 (Up ≠ Functional ≠ Secured)
+
+- **Up**: endpoint-admin-service Deployment 1/1 pod Running ready=true; api-gateway 1/1 Running ready=true.
+- **Functional / fail-closed**: public route smoke `https://testai.acik.com/api/v1/endpoint-admin/endpoint-devices` → 401, `/api/v1/endpoint-agents/status` → 401 (JWT yoksa fail-closed). api-gateway ConfigMap route 22/23/24 (agent/admin/status) live.
+- **Secured**: BE-017 dual-control gate canlı — V5 migration Flyway `4→v5` test cluster Postgres'te uygulandı; approval endpoint `@RequireModule(MANAGER)` ile manager-gated.
+
+### Pending (ayrı kapı — bu delta KAPATMAZ)
+
+- **BE-011 real agent lifecycle smoke** — agent source contract merged; gerçek release artifact ile enroll/heartbeat/command/result canlı smoke pending.
+- **platform-agent#8 Windows fresh smoke** — AG-013 capability coherence sonrası fresh Windows VM smoke OPEN/Backlog.
+- **Web runtime acceptance** — `apps/mfe-endpoint-admin` runtime route/flag + browser smoke pending.
+- **IT pilot (22.2)** — `acik.local` EndpointPilot OU + IT-owned Windows cihazlar pending.
+
+Bu delta prod-ready / password-reset-ready İDDİA ETMEZ — 22.1 test runtime + source-side merge seviyesi; 22.2/22.3 ayrı kapı.
 
 ## Live Delta — PR-3E-A Forbidden Telemetry + PR-3C Step-4 Residual (2026-05-18)
 
@@ -2095,7 +11762,71 @@ Plan-Consensus + No-Closure-Language + Forensic Cleanup + Browser-Verify HARD RU
 
 - 🟡 **#3 Self-hosted runner labels persistence** (düşük öncelik) — `prod-deploy` label runtime add edildi (`gh api repos/.../actions/runners/63/labels` POST `prod-deploy`); service restart sonrası kaybolma testi yapılmadı. Çözüm: runner config.sh `--labels` flag persist + systemd service reload.
 
-### 22.1.1 milestone reframe — A0 contract probe sonucu (Codex 019ded8d AGREE)
+### Endpoint Admin truth refresh — 2026-05-21 (#924)
+
+Bu bölüm, aşağıdaki tarihsel "22.1.1 milestone reframe" notunun operasyonel karar yüzeyi olarak üstündedir. Eski A0/III review notları bağlam olarak kalır; güncel karar için bu snapshot okunur. D29 disiplini: **Up != Functional != Secured**.
+
+#### Live runtime (k3d-test / platform-test)
+
+| Katman | Kanıt | Hüküm |
+|---|---|---|
+| Up | `endpoint-admin-service` Deployment `1/1`; pod `endpoint-admin-service-79748674b9-ff4zw` Running, restart `0`; endpoint adresleri `10.44.3.216:8096,10.44.3.216:8081` dolu | Test runtime ayakta |
+| D30 artifact | **BE-014A chain MERGED 2026-05-22 post**: GitOps test overlay digest pin `sha256:fd7a9c54f7919bdb71c9b2adf8d18e548d6ac4dc9cb25e0d5857dddd2dc0e3bc` (endpoint-admin BE-014A post-merge final main `c8f244c4`, gitops PR #965; superseded H1 digest `sha256:b2250b7a274ec8...` was #956 pre-BE-014A) + companion api-gateway `sha256:84500b5ebe162b8014035fe6bcf9a76b407ef81fad0a6b3407d5fa7357cce47c` (H2 post-merge, gitops PR #957). Live evidence 2026-05-22T09:30+ pod imageID match VERIFIED (endpoint-admin BE-014A bytecode) + Deployment 1/1, health UP, BE-014A Functional 5/5 HMAC LIVE. | Prod deferred (22.2+); BE-011 + BE-016 ayrı kapı |
+| Secret delivery | `endpoint-admin-service-secrets` ExternalSecret `SecretSynced=True` | ESO yüzeyi çalışıyor |
+| Functional-basic | `/actuator/health` -> `{"status":"UP","groups":["liveness","readiness"]}` | Spring health yüzeyi ayakta |
+| Fail-closed-basic | No-JWT `GET /api/v1/admin/endpoint-devices` -> `401` | JWT yokken admin yüzeyi kapalı |
+| Secured / Zanzibar-ready | **VERIFIED LIVE 2026-05-22** post-#961 (ConfigMap fix `a29fd55f`): synthetic OpenFGA 5/5 (#959) + Live JWT persona 6/6 matrix (admin allow GET/POST, viewer can_view allow, viewer can_manage DENY 403, no-token 401, invalid 401) + DB audit row (`endpoint_enrollments` PENDING id=`4e863eaa-...` + `endpoint_audit_events` action=CREATE_ENROLLMENT) + OpenFGA pod authz log deny path observable | D35-EA audit variants smoke; BE-011 agent live integration; BE-014 tamper/offline audit event model |
+
+#### Source / repo truth
+
+| Repo | Güncel durum | Not |
+|---|---|---|
+| `platform-backend` | **Plan C H1+H2 MERGED canonical main 2026-05-22**: `origin/main` artık `endpoint-admin-service/` tree taşıyor + api-gateway integration. H1 PR #288 mergeCommit `8e2589c1` + H2 PR #291 mergeCommit `161296cf`. **BE-014A backend PR #293 MERGED mergeCommit `c8f244c4`** (4 deny audit event types + noRollbackFor durability invariant + NOT_SUPPORTED regression guard). Final main D30 immutable images: endpoint-admin `sha256:fd7a9c54...` (BE-014A bytecode LIVE) + api-gateway `sha256:84500b5ebe162b...`. **C.5.persona Live JWT 6/6 matrix VERIFIED LIVE** (#961 ConfigMap fix `a29fd55f`) + **BE-014A Functional 5/5 HMAC smoke VERIFIED LIVE 2026-05-22T09:52Z** (#965 gitops digest `90922f30` + 7 DB audit rows + 4 deny event types EMITTING). | BE-011 agent full lifecycle (heartbeat/command/result) + BE-013 full HMAC lifecycle (BE-014A consume/deny path live yarı-kanıtlandı; enrollment chain BE-011 ile bağlanır) + BE-016 hash-chain + Windows fresh smoke ayrı kapı. |
+| `platform-k8s-gitops` | Test overlay endpoint-admin base'i ve digest pin'i taşıyor; `services.yaml` `test: enabled`, `prod: deferred`. | Prod aktivasyon 22.2+ kapsam. |
+| `platform-web` | `origin/main` altında `apps/mfe-endpoint-admin` source dosyaları mevcut (`26` dosya). | Runtime route/flag acceptance backend main + Secured gate sonrası. |
+| `platform-agent` | `origin/main` Go agent scaffold + CI/release hardening foundation taşıyor (`#1..#5`). CI run `26030514275` success; lab-only signing artifact indirildi (`SIGNING-EVIDENCE.md`, `signtool-verify.log`). Fresh temp worktree check: `./scripts/test/local.sh`, `./scripts/build/local.sh`, `./scripts/build/windows-package.sh` PASS. `docs/TRACKING-ROADMAP.md` Windows service, installer, local-user read-only ve tamper protection MVP icin Parallels Windows 11 historical evidence satırları taşıyor. | Bugün Windows canlı smoke tekrar koşulmadı; Parallels `Windows 11` VM stopped. IT pilot için trusted signing, EDR/allowlist, EndpointPilot OU ve backend live integration pending. |
+| Board | Endpoint-admin truth refresh işi `#924` olarak açıldı ve claim edildi. | Öncesinde board eligible list endpoint-admin işi göstermiyordu; Faz 23 işleri aktifti. |
+
+#### Evidence-weighted milestone progress
+
+Bu yüzdeler teslim taahhüdü değil, kanıt-ağırlıklı takip göstergesidir; Up/Functional/Secured kapıları ayrı tutulur.
+
+| Milestone | Yüzde | Kanıt | Açık kapı |
+|---|---:|---|---|
+| 22.0 Governance / repo split | ~95% ⬆️ | ADR-0012-EA aktif, 4-repo yerleşimi yazılı, #924 truth-refresh PR #944 MERGED + closed Done | C.5.persona acceptance docs sweep (bu PR) |
+| 22.1 GitOps test runtime | ~85% ⬆️⬆️ | Test Deployment `1/1`, digest desired/live hizalı, health UP, no-JWT 401. **BE-014A endpoint-admin digest `sha256:fd7a9c54f7919bdb...` LIVE** (gitops #965 superseded H1 `sha256:b2250b7a274ec8...` was #956 pre-BE-014A) + H2 api-gateway digest `sha256:84500b5ebe162b` LIVE + **#961 ConfigMap fix MERGED mergeCommit `a29fd55f`**: SPRING_PROFILES_ACTIVE=k8s + endpoint-admin gateway routes 22/23/24. **6/6 C.5.persona live JWT matrix + 5/5 BE-014A Functional HMAC smoke VERIFIED LIVE on test deployment** + 7 DB audit rows (4 deny event types EMITTING) + OpenFGA pod authz log evidence. | BE-011 agent live integration; BE-016 audit integrity hash-chain; prod deferred 22.2+ |
+| 22.1 Agent lab foundation | ~75% | platform-agent `origin/main` CI success, lab signing artifact, **PR #7 AG-013 capability fix MERGED + #6 Done** (false advertising kapatıldı; verification pending fresh Windows smoke #8), local test/build/windows-package PASS, historical Parallels service/installer/tamper evidence | Fresh Windows smoke (#8 Backlog), backend live enrollment/heartbeat integration, trusted signing |
+| 22.1 Backend canonicalization | **~95%** ⬆️⬆️ | **H1 source PR #288 MERGED 2026-05-21T22:01:59Z mergeCommit `8e2589c1`** + **H2 source PR #291 MERGED 2026-05-21T22:37:55Z mergeCommit `161296cf`**. Final main D30 immutable images. C.4 + H2 gitops overlay digest bumps MERGED. **#961 ConfigMap fix MERGED mergeCommit `a29fd55f`**: SPRING_PROFILES_ACTIVE=k8s + endpoint-admin gateway route table fix (22/23/24). **C.5.persona LIVE JWT 6/6 matrix VERIFIED** + DB audit row. **BE-014A backend PR #293 MERGED mergeCommit `c8f244c4`** + **gitops PR #965 MERGED mergeCommit `90922f30`** (digest `sha256:fd7a9c54...` LIVE). **BE-014A Functional acceptance VERIFIED LIVE 2026-05-22T09:52Z**: 4 deny event types ALL EMITTING (DENIED_DEVICE_MISMATCH + DENIED_REVOKED + DENIED_ALREADY_CONSUMED + DENIED_EXPIRED) via real HMAC agent consume path; durability invariant (noRollbackFor=ResponseStatusException) live-runtime proven on test deployment (prod deferred) (403/409 throw + audit row PERSIST); 7 DB audit rows + performed_by_subject `agent:678985e2-...` forensic correlation. Cross-AI chain: Codex 019e4c3f → 019e4c81 → 019e4c95 → 019e4caa → 019e4cb6 → 019e4cc2 → 019e4e8d → 019e4eaa → 019e4eb9 → 019e4ed6 (BE-014A plan) → 019e4ee1 (BE-014A backend AGREE) → 019e4efb (BE-014A gitops AGREE) → 019e4f15 (Functional smoke path A' strategic). | BE-011 agent live integration; BE-013 full lifecycle (HMAC) — `agent enrollment LIVE evidence chain` artık BE-014A live smoke ile birlikte yarı-kanıtlandı, BE-013 acceptance ayrı; BE-016 audit integrity hash-chain; D35-EA-3+ destructive saga |
+| 22.1 Web source surface | ~35% | `platform-web/origin/main` altında `apps/mfe-endpoint-admin` 26 source dosyası var; H2 gateway routes now live → runtime route enablement açık | Runtime route/flag enable backend canonical main + Secured + browser smoke kapısı |
+| 22.2 IT pilot readiness | ~10% | İlk kapsam `acik.local`; BOREAS/CESS dışarıda | EndpointPilot OU, 1-3 IT-owned cihaz, EDR allowlist, Azure Trusted Signing |
+| **Faz 22 toplam** | **~70-75%** ⬆️⬆️⬆️ | Plan A/B/C 6 PR + #961 ConfigMap + #963 PM refresh + #293 backend BE-014A + #965 gitops digest 10 PR MERGED autonomous + cross-AI peer review chain (13 Codex threads) absorbed; backend canonical main reconciliation MERGED; **C.5.persona Live JWT 6/6 + BE-014A Functional 5/5 + 4 deny audit events LIVE EMITTING**; image + GitOps overlay LIVE | BE-011 agent live integration full path (heartbeat/command/result) + BE-013 full lifecycle (HMAC) + BE-016 hash-chain + WEB runtime acceptance + Windows fresh smoke + IT pilot |
+
+#### Güncel Faz 22 kalan iş sırası (2026-05-22 C.5.persona Live VERIFIED sonrası)
+
+1. ~~`platform-backend` current `origin/main` üzerine endpoint-admin side branch reconciliation/cherry-pick PR.~~ **DONE 2026-05-22**: H1 PR #288 MERGED + H2 PR #291 MERGED.
+2. ~~Backend CI + immutable image rebuild; GitOps test digest bump gerekiyorsa digest update.~~ **DONE 2026-05-22**: final main images produced + GitOps overlay digest pins MERGED (gitops #956 + #957).
+3. ~~Full D29-EA Secured smoke: admin allow, viewer deny, unauth deny, OpenFGA tuple check, audit insert.~~ **DONE 2026-05-22**: Synthetic 5/5 (#959 Done) + Live JWT 6/6 (#960/#961 MERGED `a29fd55f`) — admin allow GET/POST, viewer can_view allow, viewer can_manage DENY 403, unauth 401, invalid 401 + DB `endpoint_enrollments` PENDING row + `endpoint_audit_events` `CREATE_ENROLLMENT` row + OpenFGA pod authz log deny path observable.
+4. BE-013 full HMAC lifecycle gate: agent-side enrollment chain → device credential → maintenance token consume / device match / expired deny / revoked deny full live flow (BE-014A consume/deny path live yarı-kanıtlandı 2026-05-22T09:52Z via direct enrollment consume bypass; full path = BE-011 agent live integration ile birleşik).
+5. Agent capability correction: Windows capability report `DISABLE_LOCAL_USER` / `ENABLE_LOCAL_USER` destekliyor gibi bildiriyor, ama executor implementation şu an default `UNSUPPORTED` döner. Pilot öncesi ya capability raporundan çıkarılmalı ya da gerçek adapter eklenmeli.
+6. Agent live integration: release artifact ile gerçek backend enrollment/heartbeat/command/result smoke; Parallels Windows smoke yeniden koşulursa historical evidence tazelenir.
+7. BE-014 Tamper/offline audit: service stop / uninstall attempt / heartbeat loss / revoked agent event model + audit publisher + controller tests (Codex 019e4e8d Q2 autonomous-capable; Windows tamper live evidence ayrı gate).
+8. IT async: `acik.local` EndpointPilot OU + 1-3 IT-owned Windows cihaz inventory baseline.
+
+**Kabul edilebilir dil**:
+- "Test runtime Up + basic Functional/fail-closed kanıtlandı."
+- "GitOps desired/live digest hizalı."
+- "Backend source canonical main'de MERGED (H1+H2 2026-05-22); D29-EA Secured (synthetic+Live JWT 6/6) VERIFIED LIVE; BE-011 agent live integration + D35-EA audit variants smoke ayrı kapı."
+- "Agent Windows MVP foundation kanıtlı; backend live integration, identity inventory ve trusted signing pending."
+- "C.5.persona Live JWT 6/6 matrix VERIFIED + DB audit row LIVE."
+- "BE-014A Functional 5/5 HMAC smoke VERIFIED LIVE on test deployment 2026-05-22T09:52Z; 4 deny audit event types EMITTING + 7 DB audit rows + durability invariant live-runtime proven; BE-011 full lifecycle + BE-016 hash-chain ayrı kapı."
+
+**Kabul edilmeyen dil**:
+- "Endpoint-admin prod ready."
+- "BE-009/BE-013 tamamen kabul edildi."
+- "Password reset açılabilir."
+- "Web route güvenle açıldı."
+
+### Tarihsel 22.1.1 milestone reframe — A0 contract probe sonucu (Codex 019ded8d AGREE)
 
 **BE-009 acceptance live yapılamıyor** — sub-branch state inconsistency tespit edildi:
 
@@ -4622,3 +14353,87 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 - **Handoff**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` (Session 1-10 kronolojik, append-only, karar kaynağı değil)
 - **Review backlog**: `docs/plan-revision-review-2026-04-20.md` (canonical cleanup backlog)
 - **Codex adversarial reviews**: thread `019daa7f` (adversarial), thread `019daad8` (4-faz plan)
+
+---
+
+## 8. Mail Delivery Path State (Session 42 — 2026-05-20, Codex `019e44b1` defer contract alignment)
+
+> Snapshot — `notification-orchestrator` mail delivery path canlı/desired-state ayrımı.
+
+> ### ⚠️ 2026-06-12 TRUTH-DELTA (Codex `019ebc5b` drift guard) — §8 Session-42 snapshot'ı **TEST için STALE**
+>
+> Bu oturum (2026-06-12, handoff `docs/session-handoff-2026-06-12-graph-mail-bidirectional.md`) §8'in "defer" anlatısını **TEST cluster için değiştirdi**. Aşağıdaki Session-42 tablo değerleri **historical**; TEST güncel truth:
+>
+> | Surface | Session-42 (stale) | **2026-06-12 TEST güncel** |
+> |---|---|---|
+> | Microsoft Graph **Mail.Read** (Application) | yok | ✅ Added + admin consent (D7 agent inbox read) |
+> | Client secret | ❌ yaratılmadı | ✅ **2 ayrı secret**: agent helper (D7/D7b) + backend `notify-orchestrator-test-graph-20260612` (D7c) — local dosyada, repo'da değil |
+> | ApplicationAccessPolicy (ai@acik.com restrict) | ❌ yapılmadı | ✅ **LIVE** — mail-enabled security group; ai.enes + serban **Denied** doğrulandı |
+> | Vault `kv/platform/notification-orchestrator.graph_*` (**test**) | absent | ✅ **seeded** (platform-vault-test) |
+> | ESO test `externalsecret-notify.yaml` Graph 3 remoteRef | commented out | ✅ **uncommented** (PR #1477) — `Ready=True SecretSynced` |
+> | TEST `notification-orchestrator` backend adapter | SmtpAdapter (graph=false) | ✅ **GraphMailAdapter active** (flag=true) + SmtpAdapter absent (mutual exclusion); **functional smoke PROVEN 2026-06-12** (intent→DELIVERED→Sent Items+Inbox; evidence §8) |
+> | Agent/ops mail surface | yok | ✅ `scripts/ops/graph-mail-list.sh` (D7 read) + `graph-mail-send.sh` (D7b send) LIVE; 3 gerçek mail teslim |
+>
+> **PROD hâlâ DEFER** (aşağıdaki tablolar prod için geçerli): prod Graph cutover ayrı owner-gated slot (ayrı prod secret + DKIM re-validate + 72h soak). MERGED PR'lar: #1456 #1471 #1473 #1477 #1480 #1482. ADR: `docs/adr/0024-graph-mail-adapter-defer.md` D7/D7b/D7c.
+
+### 8.1 Live runtime (effective desired-state — pod truth from helm release rev 2 minimal config kabuğu; deploy-time SmtpAdapter activation gerçek SmtpAdapter log evidence ile değil)
+
+| Surface | State | Source |
+|---|---|---|
+| `notification-orchestrator` backend mail adapter | **SmtpAdapter expected/effective desired-state** (`@ConditionalOnProperty(notify.adapters.graph.enabled, havingValue=false, matchIfMissing=true)`; ConfigMap flag `false` default; backend GraphTokenService inactive) | Backend code (PR #153 binary + earlier) + ConfigMap default + ESO behavior |
+| `notification-orchestrator` pod | LIVE prod cluster (Session 39 strict cutover 2026-05-08; SmtpAdapter active path) | `kubectl get pod -l app=notification-orchestrator -n platform-prod` (33d uptime baseline; restart count low) |
+| SMTP relay smarthost | `smtp.office365.com:587` STARTTLS | Vault `kv/platform/notification-orchestrator.smtp_username/password` (ai@acik.com + App Password) → ESO ExternalSecret → Spring `SPRING_MAIL_USERNAME`/`SPRING_MAIL_PASSWORD` env |
+| Microsoft Graph adapter | **DEFERRED** (binary capability korunur; runtime inactive) | ADR-0024 D2 + RB-graph-mail-adapter-activation.md DEFERRED ACTIVATION RUNBOOK banner |
+
+### 8.2 Entra tenant state (asset preserved, Session 42 2026-05-20)
+
+| Component | State |
+|---|---|
+| App Registration `acik-mail-graph-api` | ✅ Yaratıldı 2026-05-20 (owner halil.kocoglu@serban.com.tr, single-tenant `Açık Holding`) |
+| `client_id` | `6e3e5b4b-b819-41b0-a237-8774c6418e32` |
+| `tenant_id` | `6f49871e-cb5b-4b2f-b986-5b68f16365b9` |
+| API Permission: Microsoft Graph **Mail.Send (Application)** | ✅ Added |
+| API Permission: Microsoft Graph User.Read (Delegated) | ✅ Added (bootstrap default) |
+| Admin consent (tenant-wide) | ✅ **Verildi** (granted by `ai.enes@acik.com` global admin 2026-05-20) |
+| Client secret | ❌ **Yaratılmadı (defer karar; Session 42 kullanıcı kararı "riski yüksek, sonra yapalım")** |
+| ApplicationAccessPolicy (mailbox restrict to ai@acik.com) | ❌ Yapılmadı (defer; RB-graph-mail-adapter-activation.md §4 PowerShell) |
+
+### 8.3 Vault state — `kv/platform/notification-orchestrator.graph_*` 3 keys
+
+| Vault path | State (length-only) |
+|---|---|
+| `graph_tenant_id` | **property absent** (Vault'ta key yok; PR #906 defer-aware refactor sonrası ExternalSecret data[] artık bu remoteRef'i istemez — commented out olarak deferred reactivation snippet inline). Eski additive state SecretSyncedError aggregate fail üretmişti. |
+| `graph_client_id` | **property absent** (aynı defer-aware refactor — commented out) |
+| `graph_client_secret` | **property absent** (aynı defer-aware refactor — commented out) |
+| ExternalSecret `notification-orchestrator-secrets` (prod) | **Defer-aware refactor 2026-05-20 (Codex `019e45f8` AGREE)**: Graph 3 `remoteRef` entries **commented out** (deferred reactivation snippet inline). ExternalSecret aggregate `Ready=True` for active channels (SPRING_DATASOURCE_*, SMS NetGSM/JetSMS, Teams/Slack, FCM/APNS/VAPID, SMTP, DKIM, unsubscribe) — JetSMS prod cutover artık ESO aggregate blocker'a takılmaz. Live verify pending (PR merge + Argo sync sonrası). **Pod runtime etkisi yok**: Graph flag `false` default + digest henüz Graph-binary-inclusive sha değil → `GraphMailAdapter` bean instantiate edilmez; `SmtpAdapter` aktif; mail delivery hep SMTP path. |
+| ExternalSecret (test) | **Aynı defer-aware refactor** (test+prod parity, Codex önerisi). Graph 3 remoteRef commented out → aggregate `Ready=True` for active channels. Live verify pending. |
+
+### 8.4 Gitops desired-state (PR #872 merged 2026-05-19, Codex `019e42d1` AGREE_B staged-only)
+
+| File | Change |
+|---|---|
+| `kustomize/overlays/test/eso/notify/externalsecret-notify.yaml` | +3 Graph keys additive (`NOTIFY_ADAPTERS_GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET` ← `graph_*` remoteRef) — **2026-05-20 defer-aware refactor (Codex `019e45f8`)**: 3 remoteRef commented out (deferred reactivation snippet inline); D5 chain step 4 PR-gated re-enable |
+| `kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml` | +3 Graph keys additive (prod parity) — **same defer-aware refactor** |
+| `docs/runbooks/RB-faz-23-dns-records-acik-com.md` | NEW (236-line; SPF/DMARC/DKIM operator runbook; drift-free) |
+| `kustomize/overlays/{test,prod}/kustomization.yaml` | **UNTOUCHED** (Codex iter-2 P0 absorb: NO `NOTIFY_ADAPTERS_GRAPH_ENABLED=true` flag flip — pod boot risk on missing credentials) |
+| notification-orchestrator digest bump (Graph-binary-inclusive sha) | **NO** (defer; current digest stable; prod under A5 PR-B + RAID I6 sequencing) |
+
+### 8.5 Aktif risk + reactivation triggers
+
+| Topic | State |
+|---|---|
+| **Aktif risk** | **SIFIR** (client_secret yok → OAuth2 token alınamaz → permission tenant-wide ama "yapı kurulu, anahtar üretilmemiş" pasif) |
+| Reactivation trigger 1 | Microsoft App Password deprecation tenant'ı etkiler (`ai@acik.com` App Password SMTP AUTH fail) |
+| Reactivation trigger 2 | SMTP AUTH tenant policy break (`Set-TransportConfig -SmtpClientAuthenticationDisabled $true`) |
+| Reactivation trigger 3 | Outbound port 587 ISP/firewall block recurrence (staging-sw veya cluster outbound 587 timeout) |
+| Reactivation trigger 4 | Ops/security tactical decision (OAuth2 modern auth audit/compliance requirement) |
+| Reactivation trigger 5 | Provider migration (Office 365 → alternative tenant veya mail provider) |
+| Tracker | Board issue [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) P3 Backlog claim yok future-only; ADR-0024 + RB-graph-mail-adapter-activation.md 5-adım atomic reactivation chain |
+
+### 8.6 D43 outage fallback compatibility
+
+`alertmanager-fallback` direct-fallback receiver (D43 outage chain) **bağımsız path** — Graph activation veya defer state ile etkileşim YOK. D43 SMTP leg `ai@acik.com` SMTP credentials reuse via Session 42 partial seed (#854 progress); Slack leg owner artifact bekliyor.
+
+**Update 2026-05-24 (BL-008 mock-receipt drill — Codex `019e5aaf` REVISE absorb)**: Test cluster mock-receipt drill executed (16:14-16:26Z) — webhook-receiver POST `/slack-mock` 200 length=983 + Mailpit `[D43 DRILL] NotifyServiceAbsent` 16:17:33Z (same Alertmanager dispatch cycle); R9 🟡 Partial → 🟢 **mock-receipt mitigated**. Real Slack workspace receipt (board #853) + prod D43 activation (board #854 — Operator v0.90.1 `auth_*_file` schema gap fix #854 kapsamında) ayrı operator-external residual. Evidence: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`. Bkz. [RB-notification-outage-fallback.md](../runbooks/RB-notification-outage-fallback.md).
+
+---

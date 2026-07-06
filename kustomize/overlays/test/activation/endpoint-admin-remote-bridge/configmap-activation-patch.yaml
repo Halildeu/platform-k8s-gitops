@@ -1,0 +1,92 @@
+# Activation ConfigMap patch — Faz 22.6 product remote-ops session gate
+#
+# These values are the explicit, owner-approved test gate choices for the first
+# product-channel session. They keep the broker fail-closed by default but wire
+# the non-prod pilot trust basis honestly:
+#   - agent opens outbound mTLS/gRPC to broker (no broker->device egress)
+#   - operator auth uses real Keycloak JWT validation, not the single-token
+#     reference authenticator
+#   - step-up uses a real configured public key
+#   - approval grants and audit use durable DB-backed/WORM paths
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-admin-remote-bridge-config
+data:
+  ENDPOINT_ADMIN_PRIMARY_PLANE_ENABLED: "false"
+  REMOTE_BRIDGE_PORT: "9444"
+  REMOTE_BRIDGE_HEARTBEAT_INTERVAL_MILLIS: "10000"
+  REMOTE_BRIDGE_PERMIT_KID: "rb-test-denetim-20260617-01"
+  REMOTE_BRIDGE_RECORDING_ANCHOR_KEY_PATH: "/etc/remote-bridge/signer/recording-anchor.key"
+  REMOTE_BRIDGE_RECORDING_ANCHOR_KEY_ALGORITHM: "SHA256withECDSA"
+  REMOTE_BRIDGE_BROKER_POLICY_VERSION: "rb-test-denetim-v1"
+  REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "60000"
+  REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS: "120000"
+  REMOTE_BRIDGE_PEER_EVIDENCE_PARSER: "TRANSPORT_BOUND"
+  REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: "MACHINE_CERT_ENROLLMENT"
+  # Bounded non-prod pilot exception: backend rejects this flag in
+  # production-like profiles, and the broad rollout TPM/device-key gate remains
+  # open. This lets the AgentPC2 product smoke honestly use the AD CS
+  # machine-certificate enrollment basis already recorded in the audit path.
+  REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED: "true"
+  REMOTE_BRIDGE_OWNER_GRANT_GATE_TYPE: "APPROVAL_BACKED_DURABLE_DB"
+  REMOTE_BRIDGE_DURESS_SOURCE_TYPE: "PILOT_RISK_ACCEPTED_DISABLED"
+  REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "true"
+
+  ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_EVALUATOR: "REAL_PKI"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_REVOCATION_MODE: "CRL"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_ALLOW_INSECURE_NO_REVOCATION: "false"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_MAX_AGE_MS: "30000"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_ATTESTATION_VERIFIER: "KEY_BASED"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_ATTESTATION_EXPECTED_BUILDER_ID: "faz22-agent-builder@acik"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_ATTESTATION_EXPECTED_POLICY_HASH: "faz22-remote-bridge-policy-v1"
+  ENDPOINT_ADMIN_REMOTE_ACCESS_ATTESTATION_SIGNATURE_ALGORITHM: "SHA256withECDSA"
+
+  REMOTE_BRIDGE_STEP_UP_VERIFIER: "WEBAUTHN"
+  REMOTE_BRIDGE_STEP_UP_SIGNATURE_ALGORITHM: "SHA256withECDSA"
+  REMOTE_BRIDGE_STEP_UP_EXPECTED_ORIGIN: "https://testai.acik.com"
+  REMOTE_BRIDGE_STEP_UP_EXPECTED_RP_ID: "testai.acik.com"
+  REMOTE_BRIDGE_STEP_UP_CHALLENGE_TTL_MILLIS: "120000"
+
+  REMOTE_BRIDGE_OPERATOR_AUTH_TYPE: "JWT_BEARER"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_JWK_SET_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_ISSUER: "https://testai.acik.com/realms/platform-test"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_AUDIENCE: "remote-bridge-operator-api"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_TENANT_CLAIM: "tenant_id"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_SUBJECT_CLAIM: "preferred_username"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_ROLE_CLAIM_PATH: "realm_access.roles"
+  REMOTE_BRIDGE_OPERATOR_AUTH_JWT_REQUIRED_OPERATOR_ROLE: "remote-bridge-operator"
+
+  REMOTE_BRIDGE_OPERATOR_REST_ENABLED: "true"
+  # Non-prod acceptance-only #729 probe surface. The backend controller is also
+  # gated by operator REST and rejects production-like profiles.
+  REMOTE_BRIDGE_NEGATIVE_PROBES_ENABLED: "true"
+  # AgentPC2 product-channel full-matrix runs over real outbound mTLS and can
+  # observe agent-side negative deny events slightly after the default 3s
+  # harness window. Keep the production default in code; only widen the
+  # owner-gated non-prod probe observation window.
+  REMOTE_BRIDGE_NEGATIVE_PROBES_OBSERVATION_TIMEOUT_MILLIS: "15000"
+  REMOTE_BRIDGE_APPROVAL_REST_ENABLED: "true"
+  REMOTE_BRIDGE_APPROVAL_AUDIT_SINK: "DURABLE_WORM_DB"
+  REMOTE_BRIDGE_APPROVAL_GRANT_TTL_MILLIS: "300000"
+  REMOTE_BRIDGE_APPROVAL_FATIGUE_MAX_PER_WINDOW: "5"
+  REMOTE_BRIDGE_APPROVAL_FATIGUE_WINDOW_MILLIS: "3600000"
+  SPRING_APPLICATION_JSON: |
+    {
+      "remote-bridge": {
+        "approval": {
+          "canonical-identity": {
+            "rb-operator-denetim": "rb-operator-denetim",
+            "rb-approver-denetim": "rb-approver-denetim"
+          },
+          "grants": {
+            "can-request": {
+              "rb-operator-denetim": ["00000000-0000-0000-0000-000000000001"]
+            },
+            "can-approve": {
+              "rb-approver-denetim": ["00000000-0000-0000-0000-000000000001"]
+            }
+          }
+        }
+      }
+    }

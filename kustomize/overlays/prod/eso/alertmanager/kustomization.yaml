@@ -5,5 +5,14 @@ kind: Kustomization
 
 resources:
   - externalsecret-alertmanager-fallback.yaml
-  # V2.1 Ops-A — Perf alert receiver (Codex 019e267a spike AGREE_AFTER_REVISIONS)
-  - externalsecret-perf-alertmanager.yaml
+  # V2.1 Ops-A — Perf alert receiver Teams (ADR-0029 Hibrit D 2026-05-27 — Microsoft
+  # Teams Power Automate workflow primary; Codex `019e6b24` REVISE→AGREE chain absorb)
+  - externalsecret-perf-alertmanager-teams.yaml
+  # BL-008-bridge — Alertmanager Bridge GitHub Token D43 tertiary fallback
+  # (Codex `019e6de3` AGREE B path; ESO migration from manual K8s secret pattern).
+  # Vault path: kv/platform/alertmanager-bridge-gh property GITHUB_TOKEN.
+  - externalsecret-alertmanager-bridge-gh-token.yaml
+  # NOT: externalsecret-perf-alertmanager.yaml.disabled.template SLACK DORMANT
+  # asset-preserved (multi-tenant başka tenants için); kustomization'a dahil DEĞİL
+  # (ADR-0029 D2 disipline: no active dependency). Reactivation:
+  # docs/runbooks/RB-perf-alerts-slack-reactivation-chain.md atomic 6-step.

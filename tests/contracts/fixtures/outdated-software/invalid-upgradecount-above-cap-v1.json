@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "supported": true,
+  "probeComplete": true,
+  "upgradeCount": 513,
+  "upgrade": [
+    {
+      "packageId": "Contoso.App0001",
+      "installedVersion": "2.0.1",
+      "availableVersion": "2.1.1"
+    }
+  ],
+  "upgradeTruncated": true,
+  "maxUpgrade": 512,
+  "sourceUsed": "winget",
+  "probeDurationMs": 1840
+}

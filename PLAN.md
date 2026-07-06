@@ -4,6 +4,8 @@
 
 **Son güncelleme:** 2026-04-19 (ADR-0002 Single-Host Dual-Cluster + Faz A-I roadmap reset)
 
+**Faz 22 tamamlama eylem planı (2026-06-26):** [`docs/faz-22-completion-action-plan.md`](./docs/faz-22-completion-action-plan.md) — owner/operator/hukuk **yapılacaklar listesi** + agent yürütme planı + sıra/bağımlılıklar. Canonical makine kapısı: `scripts/faz22-remote-ops/faz22-6-completion-audit.sh` (origin/main'den koş) + `docs/runbooks/RB-faz22.6-autonomous-completion-contract.md`.
+
 ---
 
 ## 0. Mevcut Strateji (ADR-0002 sonrası)
@@ -34,7 +36,418 @@ Bu repo için güncel ana strateji:
 | **G** Atomic Prod Cutover | `ai.acik.com` same-host cutover | 0.5 gün + 72h soak | No-go gate, freeze window, stakeholder sign-off | `ai.acik.com` authoritative smoke PASS | H bekler | 🟢 (T0 2026-04-24) |
 | **H** Compose Deploy Decommission | dev repo deploy-backend + warm rollback shutdown | 0.5-1 gün | 72h rollback penceresi | Compose deploy job disabled + warm backend kapalı | G sonrası | 🟢 |
 | **I** Day-2 Hardening | Governance ritmi | 3-5 iş günü ilk tur + periyodik | backup drill, rotation, cert, vuln, retention | Ritim işliyor (aylık+çeyreklik review) | D sonrası parçalı | 🟡 ongoing |
-| **23** Notification Orchestration Platform | Custom Spring Boot multi-channel notification (email/SMS/in-app/Slack/webhook → v1 Teams/push/Web Push → v2 WhatsApp/Voice) | 14-18 hafta (Charter → Prod cutover) | Faz 22.1.1b III review verdict (23.1+); 23.0 paralel | ADR-0013 ACTIVE + 10 must-have 🟢 + Faz 23.9 prod cutover 72h stable | Faz 22 ile paralel (23.0); 23.1+ sıralı | 🟡 (Session 41 re-baseline 2026-05-09 19:50Z: 23.0 🟢; 23.1/23.2/23.4/23.8/23.9 🟡 partial; 23.3/23.5/23.6/23.7/23.X ⏳; **7/10 must-have done + 3 partial = ~88.5% coverage** (#10 D43 4-PR source-ready bump); 23.2 5-state matrix Source-ready **12/12** + Live-deployed **9/12** + Acceptance **0/12** + Blocked **2/12** (RAID I6 + R2 legal); **~17-22h residual**; T1.6 abuse guards LIVE + T1.4 D43 4-PR source-ready (drill execution operator-bound); Codex `019e0e51` bağımsız analiz: v1 readiness ~35% (acceptance-weighted); literal feature ~30%; "%85 must-have coverage production-ready DEĞİL — source-ready bias") |
+| **22** Endpoint Admin / Endpoint Agent | **Non-domain Windows endpoint management primary** (workgroup/standalone/BYOD); `acik.local` IT pilot optional second scope (2026-05-24 user scope decision; ADR-0012-EA "22.2 scope amendment" section): Go agent, backend endpoint-admin-service, web MFE, GitOps runtime governance | Evidence-driven | Backend canonical `main` reconciliation + full D29-EA Secured persona/audit smoke + agent live backend integration + Windows identity inventory + IT EndpointPilot OU + trusted signing | Test runtime Up + basic Functional/fail-closed + Live JWT persona + BE-014A Functional (4 deny audit) acceptance kanıtlı; agent repo/CI/Windows MVP servis-installer-tamper evidence var; prod deferred; BE-016 hash-chain + BE-017 dual-control + BE-011 wire-contract MERGED (source-side, 2026-05-22); **Web runtime acceptance LIVE (2026-05-23): platform-web #654+#656+#657 MERGED + testai deploy LIVE + browser smoke 3 routes 200/503-not-401 + gitops #998 D30 frontend digest re-pin sha-5455b07; platform-web #655 + #653 closed.** **Auth-transport zinciri LIVE end-to-end (2026-05-24): platform-web #658 (`endpointAdminApi` `fetchFn: unwrapRequestFetchFn` — Request-object header drop workaround, notify #652 pattern) + gitops #1007 (D30 frontend digest re-pin sha-4c3df71) MERGED; browser-context verify MFE-driven Platform Admin → devices/audit 403 (FGA fail-closed) + status 200 (auth-only); 401 storm giderildi, auth-transport evidence live.** Windows fresh smoke + BE-011 real agent lifecycle 2026-05-24 resmi-kanıtlandı (gitops PR #1021 `4ecb71dc` + platform-agent PR #10 `402bdc1`); ayrı kapılar: BE-017 formal dual-control (agent-actionable — board #1023), Faz 22.2 IT pilot, trusted signing, EDR allowlist, full IT-owned `acik.local` pilot | Faz 23 ile paralel ama destructive aksiyonlar 22.2+ | 🟡 (2026-05-23 Web runtime acceptance LIVE + 2026-05-22 Plan A/B/C + C.5.persona + BE-014A Functional VERIFIED LIVE: evidence-weighted overall ~82% (2026-05-24 post-handoff block truth-refresh — Windows fresh smoke + BE-011 lifecycle yan-kanıt → resmi-kanıt promote; per handoff §5 P0 #2 alt-not "Faz 22 overall %'sını değiştirmiyor" baseline — sub-track aggregates değişti (22.1 backend ~97%, 22.1 Web ~98%, 22.1 lab ~82% ↑) ama overall recalculation operator/IT-pilot ext-bound ağırlığıyla sınırlı; production-ready/password-reset-ready/domain-wide rollout-ready iddiası DEĞİL — ~~agent-actionable kalan = BE-017~~ ✅ BE-017 DONE 2026-05-24 (PR #1032); agent scope tüketildi, sıradaki adım 22.2.A non-domain primary follow-up runbook (`RB-faz22-non-domain-windows-pilot.md` ayrı PR sonraki tur) + 22.2.B `acik.local` operator-bound; geri kalan operator/IT-pilot/trusted-signing/EDR ext-bound); 22.0 governance/repo split ~95% (PR #944 + #924 Done), 22.1 lab foundation ~80% (PR #7 agent capability fix MERGED + #6 Done + Plan C H1/H2 + #956 + #957 gitops digest pins LIVE + #961 ConfigMap fix), 22.1 backend canonicalization ~97% ⬆️ (BE-016/BE-017/BE-011 MERGED + H1+H2 + BE-014A backend PR #293 MERGED mergeCommit c8f244c4 + gitops PR #965 MERGED mergeCommit 90922f30 digest sha256:fd7a9c54... LIVE + **BE-014A Functional 5/5 HMAC matrix VERIFIED LIVE 2026-05-22T09:52Z**: 4 deny event types ALL EMITTING + durability invariant live-runtime proven on test deployment (prod deferred) + 7 DB audit rows + performed_by_subject forensic correlation), **22.1 Web runtime acceptance ~98% ⬆️ (2026-05-24 auth-transport zinciri LIVE end-to-end: 4 platform-web PR — #654 RTK gateway path fix + testai build enablement MERGED `c5d96916` + #656 `createEndpointAdminApp` race protection MERGED `45fa1db7` + #657 `endpointAdminApi.ts` auth Bearer + localStorage fallback MERGED `5455b076` + **#658 `fetchFn: unwrapRequestFetchFn` Request-object header drop fix MERGED `4c3df712`** — testai deploy `26358855612` SUCCESS + browser smoke MFE-driven Platform Admin 3 route post-#658: devices/audit 403 FGA fail-closed + status 200 auth-only (401 storm giderildi); 2 gitops drift-correction — #998 D30 sha-5455b07 MERGED `5ba3b5e2` + **#1007 D30 sha-4c3df71 MERGED `9202ce28`**; platform-web #655 + #653 closed; gitops #1004 evidence note + #1008 Faz 23 M7 truth-sync MERGED `49aaf9c`/`7c16a2a5`)**, ~~22.2 IT pilot ~10%~~ (DEPRECATED per 2026-05-24 user scope decision — see ADR-0012-EA "22.2 scope amendment"); **22.2.A non-domain primary ~80%** (PR #1021 BE-011 + AG-013 WORKGROUP smoke HALILKOOLUB735 + PR #1032 BE-017 dual-control test cluster fixture + PR #13 CI automation source + **platform-agent PR #17 (`91ef533d`) AG-021/AG-022 identity source-foundation MERGED 2026-05-26** — `internal/identity` package + `dsregcmd`/`Win32_ComputerSystem`/`nltest` probes + LOCAL/DOMAIN/ENTRA/WORKPLACE classification + HALILKOOLUB735 `WORKGROUP`/`LOCAL` read-only evidence, redact pass clean (no JWT/Bearer/password/UPN/full-SID leak); eksik: self-hosted CI run + 2+ standalone/BYOD device + 24-72h soak + **BE-015 admin identity compliance API** + **AG-024 signed distribution / Authenticode** + **BE-019 KVKK boundary enforce**. *Identity classification **source path** artık DONE; **field acceptance** — multi-device + soak + BE-015 admin API + signed binary — operator/agent-extra gates altında pending. #1044 PASS DEĞİL, #1037 unblocked DEĞİL.*); **22.2.B `acik.local` optional ~25%** (Gate 0 evidence PR #1039 + runbook + helper PR #14 MERGED; operator-bound VPN routing + DC + EDR + signing waiting — 22.2.A overall blocker DEĞİL); **Faz 22.2 composite portfolio ~67%** (iki-katmanlı sayım; tek-numara closure dili yasak). Cross-AI peer review chain: 24 Codex thread (019e4c3f → 019e4c81 → 019e4c95 → 019e4caa → 019e4cb6 → 019e4cc2 → 019e4e8d → 019e4eaa → 019e4eb9 → 019e4ed6 → 019e4ee1 → 019e4efb → 019e4f15 → **019e516c (#654)** → **019e5196 (#656)** → **019e538c (#657)** → **019e53ab (gitops #998)** → **019e53b5 (#999)** → **019e53be (#1000)** → **019e5955 (#1004 evidence)** → **019e597d (#658)** → **019e598f (gitops #1007)** → **019e599b (M7 strategic)** → **019e59a0 (gitops #1008 M7 post-impl)**). [2026-05-24 post-handoff block: gitops PR #1021 MERGED `4ecb71dc` + platform-agent PR #10 MERGED `402bdc1` — fresh Parallels Windows 11 (HALILKOOLUB735) live smoke `scripts/test/windows-live.ps1` full pass (install → service RUNNING → tamper SDDL → event log source → read-only local-users 5 user JSON → maintenance token stop + uninstall clean) **AG-013 capability coherence verified live** (`DISABLE_LOCAL_USER`/`ENABLE_LOCAL_USER` correctly absent post #7); BE-011 real agent lifecycle live: device `d0efb00a-…` enrolled + 30s heartbeat poll + `COLLECT_INVENTORY` command `8181f20a-…` QUEUED → deliveredAt → startedAt → SUCCEEDED (~65s) + result payload populated + audit row `b3cf5210-…` inserted. Evidence: `docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md` (yan-kanıt → resmi-kanıt promote)] ~~Pending: BE-017 formal dual-control matrix~~ ✅ DONE 2026-05-24 (gitops PR #1032 MERGED `507f57c4` — `LOCK_USER_LOGIN` destructive 5-step smoke test-fixture only). Sıradaki **22.2.A non-domain primary follow-up**: yeni runbook `RB-faz22-non-domain-windows-pilot.md` (2+ standalone/BYOD device + 24-72h soak + identity classification + consent/privacy + signed artifact gates) — ayrı PR sonraki tur. **22.2.B `acik.local` optional ikinci scope** — operator-bound (VPN routing per gitops #1037 Gate 0 BLOCKER + DC reachability + EDR allowlist + trusted signing); 22.2.A primary scope için BLOCKER DEĞİL (2026-05-24 user scope decision; ADR-0012-EA "22.2 scope amendment"). **Production-ready / password-reset-ready / domain-wide rollout-ready iddiası DEĞİL** — single VM / no soak / 1 device baseline. [2026-05-23 No Fake Work düzeltmesi: önceki PR #999 satırında "api-gateway D30 drift (live sha256:6137bb2c ≠ desired sha256:84500b5e)" pending olarak yazılmıştı; gerçekte PR #985 ile zaten kapatılmıştı (overlay desired = live = sha256:6137bb2c), bu satır yanlışlıkla taşınmıştı, follow-up PR ile kaldırıldı.]) **PLUS Faz 22.3 — domain-wide mass deployment scope ADDED 2026-05-26** (ADR-0029 Plan A owner-approved; user explicit "tam otonom devam et"): 9-saatlik AGENTPC2 GPO Scheduled Task pilot fail (cross-subnet block + Scheduled Task pattern unreliable) sonrası 6-layer architecture (machine cert TPM-bound mTLS self-enrollment + AD CS code signing + WiX MSI fixed UpgradeCode + GPO Software Installation Computer-assigned + endpoint-admin-service backend SAN-primary identity + Faz 22.1 agent --auto-enroll); 5→50→800 PC pilot ramp; 22.2.A non-domain primary path **KORUNUR** (22.3 NE 22.2'yi amend NE supersede eder — paralel ayrı channel: 22.3 domain-managed `acik.local` MSI/GPO, 22.2.A workgroup/BYOD self-install); Codex cross-AI peer review chain (provider OpenAI threads `019e665f` iter-1/2/3 absorbed + `019e667f-98a5-7980-8f80-613fc1a1ed82` iter-4/5/6/7 REVISE 12 finding absorbed — xhigh reasoning effort); **22.3 ADR + AD CS preflight slice MERGED**: PR #1078 MERGED `d677511e` 2026-05-26 (ADR-0029) + PR #1080 MERGED `a9fab725` 2026-05-26 (`scripts/faz22-mass-deployment/` AD CS preflight + GPO startup + verify gate + 7-section runbook); **22.3 source-side remaining pending**: backend mTLS `POST /endpoint-enrollments/auto` endpoint (canonical platform-backend PR), agent `--auto-enroll` feature (canonical platform-agent PR), MSI WiX build/AD CS sign/local test (operator-bound #180), GPO Software Installation 5-PC pilot (#181), 50/800 ramp (#182)) |
+| **22.5** Software Deployment Quick Wins | Endpoint-Enes agent üzerinden ücretsiz WinGet + Approved Software Catalog tabanlı yazılım inventory/install/uninstall + cihaz posture/health/hardware + compliance/diagnostics hattı. 22.3 domain-wide mass deployment yerine geçmez; agent yüklendikten sonraki yönetim kabiliyetidir. | Evidence-driven | AG-025/AG-026 read-only inventory + WinGet readiness; AG-026A WinGet source/egress readiness; AG-025H lightweight/full software inventory guard; AG-035 hardware/device inventory; BE-020 catalog + provenance/hash/version policy; BE-020I software inventory ingest/query; BE-021A install preflight; BE-023 catalog compliance; AG-036 outdated software; BE-024 inventory diff/history; BE-025 prohibited software detection; BE-022 device inventory ingest/query; AG-027 install + AG-027L redacted logs; BE-021 detection/audit; WEB-011/WEB-012/WEB-013/WEB-014/WEB-015 UI/reporting; AG-030/AG-031/AG-032/AG-033/AG-037/AG-038/AG-039/AG-040 reboot/security/local-admin/health/update/diagnostics; BE-026/BE-027/BE-028/BE-029 rollout ring/window/throttle/bundle controls; AG-034 SMB/file action discovery only | Canonical plan ve runbook eklendi: [`docs/faz-22-software-deployment-plan.md`](./docs/faz-22-software-deployment-plan.md), [`docs/runbooks/RB-faz22-software-deployment-winget.md`](./docs/runbooks/RB-faz22-software-deployment-winget.md). 2026-05-27 3-AI review verdict: REVISE. `platform-agent` PR #20 / `0eff2db` ile AG-025/AG-026 read-only source foundation var; hardware/device inventory AG-035 + BE-022 + WEB-013 olarak planlandı; #1090 ile rakiplerdeki free-first quick-win'ler fazlara ayrıldı: source readiness → compliance/outdated → preflight → controlled install → reporting → rollout controls. Backend catalog/command/audit ve web visibility eksik. Install/uninstall/runtime policy kabiliyeti iddia edilmez. | Faz 22.2/22.3 ile paralel; source işleri ilgili repolarda | 🟡 SOURCE-PARTIAL → ✅ AG-037 LIVE (2026-06-01): AG-037 Windows hotfix posture full-chain LIVE on testai (agent PR #45 + backend PR #354/#355 + web PR #723 + gitops PR #1167/#1168; HALILKOOLUB735 86 installed + 1 pending real WUA telemetry rendered, see `docs/state/current-state.md` AG-037 LIVE delta); AG-030/031/032/033 SOURCE-MERGED (PRs #33/#34/#35/#36 binary distribution operator-bound); AG-035 + WEB-013 MERGED+LIVE 2026-05-29; AG-036 + BE-024 + BE-025 SOURCE-MERGED 2026-05-30 Flyway V18/V19/V20 applied; raw shell yok, katalog dışı package yok, ilk pilot 7-Zip (`7zip.7zip`); AG-038/039/040 diagnostics + AG-041 app-control SOURCE-MERGED + Backend LIVE 2026-06-01; AG-027 install LIVE BE-028 install-audit chain 2026-05-31; **WEB-015 v2-a + v2-b + BE-024c v2-c-pre FULL CHAIN LIVE 2026-06-02** (P2-A "Inventory Change Evidence" sprint): DeviceGrid SCHEMA_VERSION 2 → 3 → 4 bumps yapıldı; 11 yeni grid colId LIVE testai (5 v2-a prohibited_status+decision+findings_count + app_control_wdac_mode+app_id_svc_state, 6 v2-b diagnostics_last_poll_latency_ms+last_error_code+last_error_at + startup_rdp_enabled+windows_firewall_event_log_enabled + services_critical_stopped_count); V27 diff cache foundation migration applied LIVE (endpoint_software_diff_cache + endpoint_outdated_software_diff_cache empty cache tables ready for v2-c-pre-2 write path); 12 PR MERGED bu sprint (backend platform-backend#374/#377/#381 + web platform-web#734/#736/#737 + gitops platform-k8s-gitops#1209/#1210/#1214/#1215/#1216/#1218); 5 deploy chain LIVE testai (pod imageID match + V27 Flyway "Successfully applied 1 migration to schema endpoint_admin_service, now at version v27"); HTTP E2E acceptance kanıt seti (33-key v4 row + CSV 33-col Turkish headers + HALILKOOLUB735 gerçek veri `OK;UNKNOWN;0` prohibited + v2-b cells empty agent telemetry instrument bekleyiş); 71 backend grid + diff cache tests + 255 web vitest; Cross-AI Codex consensus 5 thread/30+ iter chain (019e87aa + 019e8785 + 019e87bc + 019e8823 + 019e88b5); bkz `docs/state/current-state.md` v2-a + v2-b + v2-c-pre LIVE delta entry. **Deferred ayrı sprint agent-actionable**: v2-c-pre-2 write path (DiffCacheService.upsert + ingest hooks + DiffCacheBackfillWorker + Service + admin endpoint + UPSERT idempotency + cache vs on-demand consistency + full sweep PG IT — Codex 019e88b5 iter-5 7-step execution order inline), v2-d grid SCHEMA v5 (9 cache-fed colIds LEFT JOIN cache tables), browser smoke acceptance LIVE PASS 2026-06-02 ~19:55Z (Chrome MCP recovery sonrası testai grid render + 11 v2-a/v2-b headers + HALILKOOLUB735 row real values + CSV export 19-col + console clean — HARD RULE Tarayıcıdan Sonuç Doğrulanmadan: satisfied). SMB/file runtime yok, yalnız discovery/guardrail |
+| **22.6** Remote Access Bridge | Agent-initiated outbound remote access / reverse tunnel / session broker hattı. Faz 22.5 command polling yerine geçmez; interaktif ve yüksek yetkili destek oturumları için ayrı güvenlik modeli üretir. | Evidence-driven | Sensitive Endpoint Ops Governance Gate (#1388); OSS-only build-vs-buy matrix (#1400); MeshCentral/RustDesk transport adapter POC (#1401); endpoint-admin broker ADR/state machine (#1402); legacy backend umbrella (#510/#524); agent outbound tunnel spike (#116) | Canonical plan: [`docs/faz-22-remote-access-bridge-plan.md`](./docs/faz-22-remote-access-bridge-plan.md) + **[`ADR-0033`](./docs/adr/0033-faz-22-6-remote-access-bridge-broker.md)** (broker mimarisi + OpenFGA `remote_session` authz + token contract + audit/recording schema + #1388 minimum pilot set + KVKK + STRIDE threat model). **Karar:** broker/policy/audit/recording core bizde yazılır; transport wrap (OpenZiti/zrok + MeshCentral POC); Guacamole yalnız broker-arkası protokol adapter; RustDesk secondary/defer. Inbound port açılmaz; session/device-bound single-use token + dual-control + RBAC + mandatory fail-closed recording + retention olmadan runtime yok. | 22.5 ile paralel planlanabilir; runtime #1388 gate'e bağlı | 🔴 PLANNING / BLOCKED by #1388 (runtime). **Design ACCEPTED via 3-AI consensus 2026-06-09** (Codex `019ea9aa` + Mavis/MiniMax `mvs_c922…` + Claude → ADR-0033); agent-actionable artifacts authored; unblock = #1388 owner/legal decision checklist (plan §9.2) |
+| **22.7** Compliance Gap Mart Layer | Endpoint-admin görünürlük verilerini aggregate karar katmanına çeviren compliance gap mart/read-model sprint'i. | 4-5 PR | Mevcut LIVE snapshot tabloları + field allowlist + stale/freshness semantics | Canonical sprint plan: [`docs/sprint-plan-faz-22-7-compliance-gap-mart.md`](./docs/sprint-plan-faz-22-7-compliance-gap-mart.md); board issue platform-backend #376 CLOSED/completed. 22.7 backup/SMB/file-action fazı olarak yeniden kullanılamaz. | 22.5 visibility zinciri üstüne kurulur | 🟢 COMPLETED authority = #376 |
+| **22.8** Endpoint Data Protection & Forensic Collection | Scheduled endpoint backup, offboarding copy ve forensic collection için ayrı hassas veri operasyon fazı. 22.5 AG-034 discovery'den türeyen runtime file-copy işi burada ele alınır. | Evidence-driven | Sensitive Endpoint Ops Governance Gate (#1388); 22.8 charter (#1390); OSS-only build-vs-buy matrix (#1400); backup engine matrix (#1399); backup dry-run manifest (#117); Velociraptor clean-room/legal ADR (#1403) | Canonical plan: [`docs/faz-22-endpoint-data-protection-plan.md`](./docs/faz-22-endpoint-data-protection-plan.md). **Karar:** 22.8A için Kopia primary backup engine adayı, restic fallback/cold archive, BorgBackup watchlist; Duplicati conditional/likely reject; rclone storage transport only. 22.8C için Velociraptor standing server/core embed değil, reference/serverless ops-adapter only; YARA integrate candidate; osquery telemetry reference. İlk güvenli slice dry-run manifest; runtime copy için legal basis, dual-control, chain-of-custody, retention ve storage ACL/encryption/audit şart. | 22.6 ile governance gate paylaşır; 22.5 runtime kapsamı değildir | 🔴 PLANNING / BLOCKED by #1388; OSS decisions Todo (#1400/#1399/#1403) |
+| **22.9** Endpoint Security Telemetry / Detection Extension | Endpoint-admin görünürlük hattını osquery/YARA/Sigma/Wazuh değerlendirmesiyle security telemetry/detection karar katmanına genişletme fazı. Endpoint scan/runtime action değildir; önce OSS-only karar ve charter gerekir. | Evidence-driven | OSS-only build-vs-buy matrix (#1400); telemetry/security matrix (#1404); sensitive endpoint ops runtime gate (#1388) | Canonical plan: [`docs/faz-22-security-telemetry-plan.md`](./docs/faz-22-security-telemetry-plan.md). **Karar:** osquery-style query/table modeli reference/light adapter; YARA bounded scanner candidate; Sigma DRL license-gated reference; Wazuh core adoption reject/defer, yalnız future SIEM connector olabilir. Runtime scan/action #1388 kabulü olmadan açılmaz. | 22.5 visibility + 22.8 forensic kararları üstüne kurulur | 🔴 PLANNING / MATRIX TODO (#1404); runtime blocked by #1388 |
+| **23** Notification Orchestration Platform | Custom Spring Boot multi-channel notification (email/SMS/in-app/Slack/webhook → v1 Teams/push/Web Push → v2 WhatsApp/Voice) | 14-18 hafta (Charter → Prod cutover) | Faz 22.1.1b III review verdict (23.1+); 23.0 paralel | ADR-0013 ACTIVE + 10 must-have 🟢 + Faz 23.9 prod cutover 72h stable | Faz 22 ile paralel (23.0); 23.1+ sıralı | 🟢 source-side/LIVE + 🟡 acceptance/operator-gated (Session 49+ re-baseline 2026-05-23: 23.0 🟢 + 23.2 🟢 (R2 KVKK CLOSED 2026-05-23 Codex `019e5189` final legal verdict) + 23.3 🟢 infra LIVE + 🟡 functional data seed pending (M4 prod LIVE 2026-05-20 sha-6307428; BL-011 SMS canary preflight discovery 2026-05-25 → prod notify_db boş data state — R28 NEW + BL-028 yeni backlog Codex `019e5e76` iter-2; BL-011 DEFER; R1 NetGSM ⏳ DEFER asset-preserved per kullanıcı kararı 2026-05-23) + 23.4 🟢 (M6a + M6b 6/6 LIVE 2026-05-20 board #758) + 23.5 🟢 source-ready (M5 6/6 LIVE) + 23.6 🟢 (T4.1 LIVE) + 23.9 🟢 FULL CLOSURE Session 49 2026-05-14; 23.1 🟡 (Layer-2 channel-level OpenFGA Faz 23.2 v2 rescope per Codex `019e3c74` verdict B) + 23.7 🟡 (WebPush browser-only LIVE end-to-end 2026-05-23 — RB-webpush §3.10+§3.11 ✅; mobile FCM/APNS Faz 22.2 dep DIŞI) + 23.8 🟡 (T4.3 9/9 source-side closed; FBL mailbox + per-template DB RO operator activation pending); 23.X ⏳ deferred. **10/10 must-have tracked/evidence-backed**: #1-#7/#9 🟢, #8 🟢 source-ready/live, #10 🟢 **mock-receipt mitigated (BL-008 2026-05-24)** — test cluster dual-receipt drill evidence; **real Slack #853 + prod activation #854 operator-external residual** (production-ready claim DEĞİL); canonical status authority [milestones.md](docs/notify/milestones.md) + [sprint-plan.md](docs/notify/sprint-plan.md) + [risk-register.md](docs/notify/risk-register.md) + [feature-matrix.md](docs/notify/feature-matrix.md). Önceki "Session 41 re-baseline 2026-05-09 19:50Z" satırı historical — superseded by Session 49+ truth-sync; agent-actionable Faz 23 scope tükendi, kalan iş operator queue (~~R9 D43 drill~~ → R9 mock-receipt mitigated 2026-05-24; real Slack workspace + prod activation operator-external + Vault canonical patch + FBL mailbox + DB RO role + R24 Biotekno OTP)) |
+| **24** Meeting Intelligence / STT Platform | **Bağımsız toplantı zekâsı ürünü** — ERP/CRM ürün bağımlılığı değil; telefon/masaüstü/Teams ses kaynaklarından canlı transkript + konuşmacı ayrımı + özet/karar/aksiyon çıkarımı. STT compute worker (`platform-ai` Python servisleri) + Spring Boot orchestration (`audio-gateway-service` + `meeting-service` + `transcript-service`) + React Native mobile (`platform-mobile`) + `platform-desktop` Electron (Faz 24.13 — board canonical 2026-06-05) + `mfe-meeting` MFE. Faz 23 notify entegre. **Two-server topology (ADR-0031 ACCEPTED, 2026-06-03)**: `platform-ai` ayrı dedicated host'ta; diğer `platform-*` staging-sw'da. | Evidence-driven (14-18 hafta MVP) | ADR-0030 KVKK boundary + ADR-0031 D1-D8 two-server topology + Observability/Audit GOP skeleton + Gateway Contract 1.0 freeze (cross-repo contract drift riski); GPU yokken CPU PoC önce, model kararı WER ölçüm sonrası; cross-server WireGuard + mTLS PKI ZORUNLU; **sektör-standardı ürün gate'leri** G-WER/DER, G-INT, G-CAP, G-COMP, G-LAT/COST, G-OPS + #1615 rollup verifier | Faz 24 source-side LIVE chain + acceptance D29 (Up/Functional/KVKK-safe/Cross-server transit-safe) + 3-AI mutabakat (Claude/Codex/Mavis-MiniMax 2026-06-02 — thread `019e879c` AGREE + Mavis msg `78` AGREE + Codex `019e8c09` ADR-0031 iter-1+iter-2+iter-3 REVISE absorb 2026-06-03 + Codex `019e97bb`+`019e97c3`+`019e97cc`+`019e97d2` plan canonical sync iter-1/2/3/4 REVISE absorb → iter-5 AGREE 2026-06-05) | Faz 22-23 ile paralel; 24.0 charter + ADR-0031 → 24.1 Gateway Contract → 24.2+ STT sıralı; 2026-06-26 itibarıyla recorder OpenFGA selector + edge lifecycle kanıtı accepted, WG-B+ I6 pod-CIDR-to-WireGuard MASQ kanıtı accepted, `platform-ai#188` compute-plane audit gate accepted, `platform-ai#226` GPU cold-load timeout fix Denetim runtime'a uygulanmış durumda, `platform-ai#229` G-INT citation coverage gate ve `platform-ai#230` G-WER/DER denominator threshold hardening merged/main-green; direct-STT default-off mTLS/SNI staging chain #2061/#2062/#2063/#2065 ile hazır, fakat Vault/ESO seed + pre-flag mTLS verifier PASS + flag flip sonrası live transcript e2e, desktop mic/loopback, WG-B+ I3 management audit ve Denetim I7 full prod-gate ayrı kapı. | 🟡 Infrastructure evidence advanced; product-value gates open. 24.0 charter Done 2026-06-03 + 24.1 Gateway 4 PR MERGED + 24.13 Desktop sub-Faz added 2026-06-05: live-stt-service PoC iskelet LIVE (platform-ai PR #1 MERGED `4088d9a` — FastAPI + faster-whisper medium int8 + 22/22 test PASS + Codex `019e877b` AGREE); 3-AI mutabakat plan kapısı `019e879c` AGREE final + Mavis `mvs_c922...` msg `78` AGREE; **ADR-0031 Two-Server Topology ACCEPTED 2026-06-03** (gitops PR #1233 MERGED); **PR-gw-01A/B-core/B3 MERGED** + **PR-gw-01C MERGED** + **PR-stt-04 consumer MERGED**; Aşama-2 staging evidence var. 2026-06-26 current truth: OpenFGA `meeting`/`transcript` selector promoted; recorder consent/session/chunk/finish edge lifecycle smoke accepted; I6 MASQ evidence #1867 Done; Denetim deploy mirror reliability #191 Closed and post-#226 runtime pinned to `HEAD=ORIGIN_MAIN=58728b289d40a7cf9f9d59bc65a796fb895f1b09`; #229/#230 main CI success; I3 operator package lane main'de ama #1864 `Needs Verify`; #198 immediate app-mTLS live-stt preflight PASS after ESET/endpoint allow-log, but meeting-ai 8343 and full I7 prod-gate remain open. `verify_faz24_readiness_rollup.py` artık #1615 için tüm child gate kabul kanıtlarını fail-closed aggregate eder ve tek alt gate PASS'i geniş kabul iddiasına çevirmeyi engeller. Sıradaki agent-doable yol: approved Vault/ESO seed authority + `verify_direct_stt_mtls_enablement_preflight.py` PASS + direct-STT flag flip kanıtı + canonical plan §11 T-A/T-B/T-C/T-D/T-E product tracks; operatör-bound yol: #1864 Denetim authorize evidence + #198 full I7 prod-gate acceptance (source-side #198 operator handoff package mevcut; acceptance yerine geçmez). Canonical plan: [`docs/faz-24-meeting-intelligence-plan.md`](./docs/faz-24-meeting-intelligence-plan.md) §11 + ADR-0030 + ADR-0031 + Project #4 board canonical truth. |
+
+**Faz 24 direct-STT late delta (2026-06-26)**: The older row-level
+`platform-backend#768` review/merge/deploy unblocker wording is superseded by
+current live truth. `platform-backend#768` merged and was deployed through
+`platform-k8s-gitops#2061` with testai `audio-gateway-service`
+`sha256:abe1e28cc088008d026534ac6cb0ffdc2d0f9e01d62a50029b256170aac0e6b0`.
+`platform-k8s-gitops#2062` added the narrow `audio-gateway` ->
+`10.99.0.2/32` TCP/8243 egress path and real-pod evidence no longer times out.
+`platform-k8s-gitops#2063` staged durable default-off mTLS/SNI wiring:
+`AUDIO_GATEWAY_DIRECT_STT_ENABLED=false`,
+`https://live-stt.denetim:8243/transcribe`, hostAlias
+`live-stt.denetim -> 10.99.0.2`, `/etc/direct-stt-mtls` mount, and
+`transcript:direct-stt-results`. Live staging-sw `k3d-test/platform-test`
+rollout is Ready and pod readiness is OK. Remaining guarded path for
+`platform-ai#182`: Vault seed authority, ESO mapping for
+`direct-stt-ca.crt` / `direct-stt-client.crt` / `direct-stt-client.key` into
+the dedicated `audio-gateway-direct-stt-mtls` Secret, metadata-only mTLS
+enablement preflight PASS while direct-STT is still false, flag flip, and
+`/transcribe` result-stream smoke. Keep the Redis aggregate
+`audio-gateway-secrets` out of this cert/key failure domain. This does not
+change #198 full I7, desktop mic/loopback, product pilot, or production
+readiness gates.
+The preflight PASS path now has a source-side collector:
+`scripts/faz24/collect_direct_stt_mtls_enablement_preflight.py`, which emits
+only metadata/key names and bounded mTLS `/health` status/timing before the
+existing verifier runs. The preflight now expects the dedicated
+`audio-gateway-direct-stt-mtls` ExternalSecret/Secret, not the Redis aggregate.
+A live fail-closed collector run before seed confirms the current #182 blocker
+remains missing dedicated ESO/runtime Secret key evidence for the three
+direct-STT files.
+
+**Faz 24 direct-STT verifier hardening delta (2026-06-27)**:
+`verify_direct_stt_mtls_enablement_preflight.py` and
+`verify_direct_stt_e2e_evidence.py` now share the same stricter metadata-only
+redaction discipline: camelCase sensitive-key variants, URL-like values,
+base64 audio data URIs, PEM/token/raw-output/audio/transcript payloads are
+rejected. The e2e verifier additionally requires `tokenIncluded=false`, a Ready
+real `audio-gateway` pod, explicit mTLS probe host/port
+`live-stt.denetim:8243`, and `directClientToStt=false`. This is source-side
+false-acceptance hardening only; #182 still requires approved seed, preflight
+PASS, flag flip, fresh `/transcribe` result-stream evidence, same-session audit
+correlation, and no raw-audio persistence proof.
+
+**Faz 24 direct-STT operator handoff package delta (2026-06-27)**:
+`build-direct-stt-operator-handoff.py` plus workflow
+`faz24-direct-stt-operator-handoff.yml` now package the remaining #182/#1615
+runtime sequence as a metadata-only operator artifact (`README.md` + manifest +
+`SHA256SUMS`). It orders credential seed -> preflight PASS -> reviewed flag flip
+-> e2e PASS -> reviewer acceptance. Boundary: no Vault read/write, no
+Kubernetes mutation, no Denetim PC touch, no direct-STT enablement, no
+`/transcribe`, no raw audio, and no #182/#1615 status advance.
+
+**Faz 24 external recorder operator handoff package delta (2026-06-27)**:
+`build-external-recorder-operator-handoff.py` plus workflow
+`faz24-external-recorder-operator-handoff.yml` now package the remaining
+external meeting-admin + recorder lifecycle sequence as a metadata-only
+operator artifact (`README.md` + manifest + `SHA256SUMS`). It orders approved
+short-lived `platform-desktop` token file -> token-contract PASS -> external
+recorder smoke PASS -> verifier PASS -> G-CAP aggregate when enough verifier
+summaries exist. Boundary: no token mint/read, no testai connection, no
+Keycloak/Kubernetes/Vault mutation, no smoke run, no audio send, and no #1615
+status advance.
+
+**Faz 24 external recorder evidence hardening delta (2026-06-27)**:
+`run_external_recorder_smoke.py` and
+`verify_external_recorder_smoke_evidence.py` now align with the direct-STT and
+desktop capture metadata-only standard. The runner omits sensitive response
+fields, redacts URL-like/base64-audio values, no longer writes top-level
+`baseUrl`, and rejects unsafe `sessionId` before lifecycle path construction.
+The verifier rejects camelCase sensitive keys, destination/callback/internal/
+webhook/STT/transcribe URL leakage, raw audio/transcript/request/response
+payloads, packet captures, unsafe `sessionId`, and direct-STT/direct-client/
+compute-plane/production overclaims. Token-contract `issuer` remains the only
+URL-shaped value allowed in the external-recorder evidence envelope. Boundary:
+source-side false-acceptance hardening only; live external meeting-admin smoke
+still requires an approved short-lived `platform-desktop` token, runner PASS,
+verifier PASS, and reviewer acceptance.
+
+**Faz 24 KVKK engineering/legal separation delta (2026-06-27)**:
+`ADR-0030` now binds KVKK/VERBIS/hukuk owner acceptance as a parallel
+owner/legal track, not a Faz 24 engineering completion blocker after owner
+notification is recorded. Engineering G-COMP proceeds with fail-closed
+parametric controls: retention/deletion durations are owner-supplied config,
+unset durable storage refuses to store, consent default is required, deletion
+pipeline default is enabled, and legal/production overclaims are forbidden.
+Legal acceptance, VERBIS güncelliği or production legal go still require
+owner/legal artifact; agent/CI/PR must not claim them.
+
+**Faz 24 G-COMP retention provenance delta (2026-06-27)**:
+`scripts/faz24/verify_gcomp_compliance_gate_evidence.py` now treats effective
+retention duration values as optional owner-supplied parameters with
+machine-checkable provenance. Missing owner values remain non-blocking only
+when `retentionDefaultsFailClosed=true`; if `retentionParameters` supplies
+effective day values, the envelope must include bounded `ownerDecisionRef`,
+`appliedAsConfig=true`, `hardcodedInCode=false`, and positive bounded day
+values. This is verifier/runbook hardening only; no owner duration value,
+legal acceptance, production lifecycle/deletion proof, or G-COMP acceptance is
+claimed.
+
+**Faz 24 desktop capture gate delta (2026-06-27)**:
+`platform-k8s-gitops` now carries a metadata-only desktop mic+loopback evidence
+verifier and runbook:
+`scripts/faz24/verify_desktop_capture_evidence.py` and
+`docs/runbooks/RB-faz24-desktop-capture-evidence.md`. The verifier accepts only
+real `platform-desktop` smoke metadata proving both microphone and loopback
+sources, visible active indicator, consent capture, exact public
+`audio-gateway` lifecycle ordering, and matching upload digests. It rejects raw
+audio/base64 audio, transcript text, JWT/Bearer/Authorization material,
+destination URLs, direct client-to-STT, direct-STT transcript, compute-plane
+audit, and production-readiness claims. Boundary: source/runbook package only;
+live desktop smoke PASS, direct-STT e2e, aggregate G-CAP reliability, and
+product readiness remain separate gates.
+
+**Faz 24 desktop capture operator handoff package delta (2026-06-27)**:
+`build-desktop-capture-operator-handoff.py` plus workflow
+`faz24-desktop-capture-operator-handoff.yml` now package the remaining real
+`platform-desktop` mic+loopback capture sequence as a metadata-only operator
+artifact (`README.md` + manifest + `SHA256SUMS`). It orders real desktop run
+-> redacted evidence review -> desktop verifier PASS -> G-CAP aggregate when
+enough verifier summaries exist. Boundary: no desktop app execution, no token
+read, no testai connection, no Kubernetes/Vault mutation, no audio send, and
+no #1615 status advance.
+
+**Faz 24 product-gate operator handoff package delta (2026-06-27)**:
+`build-product-gate-operator-handoff.py` plus workflow
+`faz24-product-gate-operator-handoff.yml` now package the remaining
+G-CAP/G-OPS/G-COMP evidence sequence as a metadata-only operator artifact
+(`README.md` + manifest + `SHA256SUMS`). It orders redacted evidence selection
+-> G-CAP aggregate verifier and ingest wrapper -> G-OPS verifier and ingest
+-> G-COMP verifier and ingest -> reviewer acceptance. Existing
+external-recorder and desktop handoff G-CAP ingest commands now submit a
+`{"reports":[...]}` wrapper built from verifier summaries, not the aggregate
+verifier output. Boundary: no live evidence collection, no pilot run, no
+Kubernetes/Vault/firewall/legal mutation, no evidence ingest, no legal go, and
+no #1615 status advance. KVKK/VERBIS owner legal acceptance remains parallel
+and is not an engineering blocker after owner notification.
+
+**Faz 24 G-CAP desktop aggregation delta (2026-06-27)**:
+`scripts/faz24/verify_gcap_capture_gate_evidence.py` now accepts both redacted
+external recorder verifier summaries and redacted desktop capture verifier
+summaries: `faz24.externalRecorderSmokeVerifier.v1` and
+`faz24.desktopCaptureEvidenceVerifier.v1`. Raw recorder smoke envelopes and raw
+desktop capture envelopes are still rejected. The aggregate output reports
+external vs desktop attempt counts, keeps the same threshold model
+(`min-attempts`, distinct meeting/session coverage, success/retry/failure rate),
+and preserves the no direct-STT / no direct client-to-STT / no direct-STT
+transcript / no compute-plane / no production-readiness boundary. External
+recorder summaries must be post-hardening `verify_external_recorder_smoke`
+outputs with `directClientToStt=false`, `directSttTranscriptProven=false`, and
+matching passed boundary checks; stale pre-hardening summaries do not satisfy
+G-CAP. This enables real desktop smoke PASS summaries to contribute to G-CAP
+reliability evidence, but a single desktop PASS is still only one attempt and
+does not close live aggregate G-CAP.
+
+**Faz 24 #161/#162 product-gate hardening delta (2026-06-26)**:
+`platform-ai#229` merged as `b4f86b1c8ae9e77ae41846eaf834cc2ea0fa5b50`;
+main CI run `28260265821` succeeded across repo-gates and all service-test
+lanes. It requires G-INT citation coverage and verified-summary evidence.
+`platform-ai#230` merged as `87b3f22022602f9fa853371511e08b0fada82550`;
+main CI run `28260320293` succeeded across repo-gates and all service-test
+lanes. It requires G-WER/DER denominator thresholds
+(`minWerSamples`, `minDerSamples`, `minWerRefWords`). Boundary remains
+explicit: these are source-side false-acceptance guards, not real pilot WER/DER,
+real pilot G-INT, direct-STT e2e, model/backend selection, LLM enablement, or
+production readiness.
+
+**Faz 24 live delta (2026-06-26 + 2026-06-27 source cleanup)**: PR-2 recorder authorization source/runtime
+chain is now recorded: `platform-backend#761` added OpenFGA
+`meeting#can_record`, the test selector is `01KW0EJTM60YGZTEKNGS7PDPNP`,
+`platform-backend#765` added non-admin
+`GET /api/v1/meetings/{id}/recording-access`, and
+`platform-k8s-gitops#2038` plus deploy run `28206874588` carried the
+`audio-gateway-service` / `meeting-service` digest pins through testai
+readiness/stability. Later `platform-backend#767` merged source/test cleanup
+for the temporary admin GET-by-id relaxation. Boundary remains explicit:
+tokened object-level matrix after image rollout, `platform-backend#716`,
+`platform-ai#198` full I7 prod-gate, `platform-ai#182`, desktop mic/loopback,
+product pilot gates, and production readiness are separate gates. `#198`
+immediate Denetim 8243 app-mTLS preflight now has refreshed PASS evidence after
+operator ESET/endpoint allow-log completion: staging-sw route
+`10.99.0.2 dev wg0 src 10.99.0.1`, TCP/8243 reachable, valid client cert
+`/health` HTTP 200, no-client `certificate required` fail-closed, and
+wrong-client `unknown ca` fail-closed. Full I7 still needs meeting-ai 8343
+(current staging-sw probe timed out), Vault PKI rotation/secret delivery,
+request audit, plaintext-bypass closure, failure drill, and reviewer/operator
+acceptance.
+`platform-backend#716` audience/capability enforcement is also advanced on the
+GitOps side: the test desired-state enforce booleans move to `true` and the
+test Deployment carries a pod-template rollout marker so the ConfigMap envFrom
+change is actually consumed by the running pod.
+`docs/runbooks/RB-faz24-audio-gateway-jwt-enforcement.md` and
+`scripts/faz24/verify_audio_gateway_authz_enforce_evidence.py` keep live
+acceptance bounded to token-drain/maintenance-window proof, pod process-env
+rollout proof, the no-token/wrong-audience/missing-role/valid-recorder matrix
+PASS and reviewer/operator acceptance.
+
+**Faz 24 #191/#226 Denetim deploy mirror/runtime delta (2026-06-26)**:
+`platform-ai#216`-`#220` closed the Denetim deploy-clone drift/update-script
+reliability gap with PowerShell 5.1-safe `update.ps1` and `drift-guard.ps1`
+hardening. After `platform-ai#226` approval/merge, Denetim runtime was updated
+over SSH-over-WG: deploy clone pinned to
+`HEAD=ORIGIN_MAIN=58728b289d40a7cf9f9d59bc65a796fb895f1b09`, tracked tree is
+clean, `platform-ai-live-stt` / `platform-ai-meeting-ai` scheduled tasks are
+running, `STT_REQUEST_TIMEOUT = "180"` is present in `start-live-stt.ps1`,
+`update.ps1` warmup cap is `--max-time 240`, live-stt local health is `ok`
+on `cuda/float16`, and log tail contains `Transcribe success`. Boundary
+remains explicit: this applies the #226 WorkerTimeoutError source/runtime
+slice only. It does not merge/deploy `platform-backend#768`, produce
+`DIRECT_STT_TRANSCRIPT_RESULT`, satisfy `platform-ai#182`, or change production
+readiness.
+
+**Faz 24 #162/#227 G-INT sample metadata delta (2026-06-26)**:
+`platform-ai#227` merged after `zeynep-serban` approval as
+`7904dc915c985454ab39a02d169320e757c8ed85`; main CI run `28241477589`
+completed `success` across repo-gates and all platform-ai service-test lanes.
+This binds G-INT pilot evidence to `sample_manifest_hash`,
+`sample_count_hash`, positive integer `n_samples`, `eval_set_hash`, and
+`prompt_hash`, preventing hand-edited sample counts from silently satisfying
+the source-side gate. Boundary remains explicit: this is source-side G-INT
+evidence-contract hardening only; it does not provide real pilot transcript or
+audio evidence, does not enable an LLM provider, does not satisfy
+`platform-ai#162` acceptance, `platform-ai#182`, or any production gate.
+
+**Faz 24 #156 retention delta (2026-06-26)**: DB cleanup runtime evidence
+advanced in `k3d-test`: transient smoke Jobs derived from the deployed
+`meeting-service` and `transcript-service` images deleted expired synthetic
+meeting action/decision, transcript segment, and KVKK access-audit rows, then
+wrote `metadata-only` destruction audit rows for `db.meeting-intelligence`,
+`db.transcript-records`, and `db.kvkk-access-log`. Evidence is recorded in
+`docs/faz-24-evidence/2026-06-26-retention-runtime-smoke.md`. `platform-ai#211`
+tightened the source-side retention gate so MinIO lifecycle cannot be accepted
+from source script or issue-comment evidence alone; `platform-ai#212` then added
+metadata-only test MinIO lifecycle runtime export evidence for `meeting-audio`
+7d, `transcripts` 365d, and `audit-archive` 2557d. Current snapshot remains
+historical and superseded by the 2026-06-27 KVKK engineering/legal separation
+rule: VERBIS/legal owner acceptance is a parallel legal track, not an
+engineering blocker. Boundary remains: this is test DB cleanup behavior plus
+test MinIO metadata-only lifecycle evidence only; #156 and G-COMP still need
+production lifecycle/deletion proof, owner notification evidence, fail-closed
+parametric controls, and broader compliance evidence before engineering
+pass/readiness language is valid. Legal go/readiness remains owner/legal-gated.
+
+**Faz 24 #162 Ask-AI hardening delta (2026-06-26)**:
+`platform-ai#207` merged source-side meeting-ai `/ask` protection: transcript
+and question are redacted before real LLM prompt construction, residual PII
+returns `422` before any LLM call, and unsupported cloud LLM backends return
+`501` instead of silently producing mock output. Boundary remains explicit: this
+does not produce real pilot G-INT evidence, does not enable a cloud LLM/API, does
+not mutate runtime, and does not change production readiness.
+
+**Faz 24 #162 action-owner grounding delta (2026-06-26)**:
+`platform-ai#208` merged source-side meeting-ai action attribution hardening:
+`action_items[].owner` is accepted only when it appears in the same cited source
+sentence as the grounded action text. Unsupported owner attribution is withheld
+from the user-visible assignee field (`owner=null`) and recorded as
+`rejected_claims[].kind=action_owner`. Boundary remains explicit: this is G-INT
+precision hardening only; it does not provide real pilot G-INT evidence, enable a
+cloud LLM/API, mutate runtime, process raw audio, or change production readiness.
+
+**Faz 24 #162 Ask-AI unsupported-answer withholding delta (2026-06-26)**:
+`platform-ai#209` merged source-side `/ask` hallucination exposure hardening:
+empty/no-info/ungrounded generated answers now return fixed `Metinde bu bilgi
+yok.` instead of returning unsupported generated prose merely with
+`grounded=false`. The ungrounded citation does not carry the unsupported answer
+claim. Boundary remains explicit: this is G-INT source hardening only; it does
+not provide real pilot G-INT evidence, enable a cloud LLM/API, mutate runtime,
+process raw audio, satisfy #198/#188/#182, or change production readiness.
+
+**Faz 24 #162 summary exposure guard delta (2026-06-26)**: `platform-ai#213`
+merged source-side meeting-ai summary hardening. `AnalyzeResponse` is now
+`schema_version=3-adr0043`; summary prose is filtered through the transcript-span
+citation guard before user exposure, unsupported summary prose is withheld into
+`rejected_claims[].kind=summary`, fully withheld summaries return an empty data
+string with `summary_grounding_status=withheld`, and `ungrounded_count` remains
+scoped to decision/action rejection count. Boundary remains explicit: this is
+G-INT hallucination-exposure hardening only; it does not provide real pilot G-INT
+evidence, enable a cloud LLM/API, mutate runtime, process raw audio, satisfy
+#198/#188/#182, or change production readiness.
+
+**Faz 24 #162 action due-date attribution delta (2026-06-26)**:
+`platform-ai#214` merged source-side meeting-ai action due-date hardening.
+`AnalyzeResponse` is now `schema_version=4-adr0043`; `action_items[].due_date`
+is accepted only when the due-date phrase is present in the same cited source
+sentence as the grounded action text. Unsupported, reformatted, or normalized
+due dates are withheld from the user-visible action metadata (`due_date=null`)
+and recorded as `rejected_claims[].kind=action_due_date`. Boundary remains
+explicit: this is G-INT metadata precision hardening only; it does not provide
+real pilot G-INT evidence, enable a cloud LLM/API, mutate runtime, process raw
+audio, satisfy #198/#188/#182, or change production readiness.
+
+**Faz 24 #162 fact-fusion grounding delta (2026-06-26)**:
+`platform-ai#215` merged source-side meeting-ai fact-fusion / single-source
+materiality hardening. `AnalyzeResponse` is now `schema_version=5-adr0043`;
+default citation grounding requires high-precision single-source material
+coverage, and fused decisions/actions/summary sentences that mix supported prose
+with unsupported facts outside the cited transcript sentence are withheld. `/ask`
+also replaces fused unsupported generated prose with the fixed
+`Metinde bu bilgi yok.` answer instead of exposing it with `grounded=false`.
+Boundary remains explicit: this is G-INT hallucination-exposure hardening only;
+it does not provide real pilot G-INT evidence, enable a cloud LLM/API, mutate
+runtime, process raw audio, satisfy #198/#188/#182, or change production
+readiness.
+
+**Faz 24 #162 strict materiality delta (2026-06-26)**:
+`platform-ai#221` tightened the `#215` materiality guard. Unsupported
+content-token allowance for shippable meeting-ai claims is now zero, so a short
+unsupported business fact such as `fabrika açtı` cannot ride along inside a long
+grounded decision/answer merely because overall overlap remains high.
+Deterministic mock `/ask` retrieval is separated from acceptance gating through
+`best_matching_sentence()`, but the returned answer still passes through
+`ground_claim()` before user exposure. Boundary remains explicit: this is
+source-side G-INT precision hardening only; it does not provide real pilot G-INT
+evidence, enable a cloud LLM/API, mutate runtime, process raw audio, satisfy
+#198/#188/#182, or change production readiness.
+
+**Faz 24 #162 attribution phrase-boundary delta (2026-06-26)**:
+`platform-ai#222` tightened meeting-ai action metadata attribution matching.
+Copied `action_items[].owner` and `action_items[].due_date` phrases now match on
+word/phrase boundaries rather than raw substrings inside unrelated words. This
+blocks false-positive attribution cases such as owner `Can` matching `canlı`,
+owner `IT` matching `kritik`, and due date `salı` matching `Salıverme`, while
+preserving the existing token-subset fallback for legitimate multi-word
+attribution. Boundary remains explicit: this is source-side G-INT precision
+hardening only; it does not provide real pilot G-INT evidence, enable a cloud
+LLM/API, mutate runtime, process raw audio, satisfy #198/#188/#182, or change
+production readiness.
+
+**Faz 24 #161 diarization decision-gate delta (2026-06-26)**:
+`platform-ai#210` merged source-side diarization backend decision gating:
+metadata-only candidate rows can select a backend only with explicit DER, RTF,
+latency, VRAM, and sample thresholds, approved pilot evidence, approved
+license/deployment metadata, `sha256:<64 hex>` evidence hash, and explicit
+non-biometric posture (`voiceprint_enabled=false`,
+`biometric_processing=false`, `speaker_identity_mapping=false`). Current
+synthetic diarization evidence remains `blocked`; hard policy violations return
+`fail`. Boundary remains explicit: this does not produce real pilot DER, select
+a diarization backend/model, process real audio, enable voiceprint/biometric
+identity, mutate runtime, satisfy #198/#188/#182, or change production
+readiness.
+
+**Faz 24 live delta (2026-06-25)**: `platform-ai#187` source/deploy scope is
+accepted with `platform-backend#756` (`8c269ccf...`), `platform-k8s-gitops#2015`
+(`a9b19c9f...`), and deploy run `28176231063` proving 13-service digest-pin
+rollout, readiness, and stability coverage for `meeting-service`,
+`transcript-service`, and `audit-event-consumer-service`. This removes the
+source/deploy transcript-routing gap, but it does not enable direct-STT runtime
+flags, send raw audio, or prove `/transcribe` e2e. `platform-ai#198` remains
+the immediate operator/security gate for Denetim source `10.99.0.1`,
+destination `10.99.0.2`, `TCP/8243`, program `C:\caddy\caddy.exe` at the
+ESET/ERA/central WFP policy layer; after
+that live-stt-preflight passes, `platform-ai#188` same-session
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit smoke remains the next runtime proof.
+
+**Faz 24 product-gate delta (2026-06-25)**: `platform-ai#199` / `#200` added
+metadata-only G-WER/DER and G-INT acceptance gates, `platform-ai#201` added the
+#156 retention-readiness gate, `platform-ai#202` closed the Redis
+control-plane wording/runtime gap, `platform-ai#203` recorded the
+recording/archive boundary as live-path RED / future opt-in only, and
+`platform-ai#204` added the metadata-only G-LAT/COST gate.
+`platform-k8s-gitops` now also carries the metadata-only G-CAP aggregate
+capture gate verifier
+(`scripts/faz24/verify_gcap_capture_gate_evidence.py`) for redacted external
+recorder and desktop capture verifier summaries. `platform-k8s-gitops` also
+carries the metadata-only G-OPS operability gate verifier
+(`scripts/faz24/verify_gops_operability_gate_evidence.py`) for on-prem
+install/upgrade/backup/restore/rollback/secret-delivery/observability
+evidence. This slice adds the metadata-only G-COMP aggregate compliance gate
+verifier (`scripts/faz24/verify_gcomp_compliance_gate_evidence.py`) for
+redacted consent/retention/legal-hold/access-audit/deletion-export/KVKK-VERBIS
+evidence, plus `.github/workflows/faz24-product-gate-evidence-ingest.yml` and
+`docs/runbooks/RB-faz24-product-gate-evidence-ingest.md` as a shared
+no-mutation ingest path for G-CAP/G-OPS/G-COMP evidence artifacts. This
+advances sector-standard quality/compliance governance, but
+does not provide real pilot WER/DER, real pilot G-INT, pilot G-LAT/COST, live
+aggregate G-CAP evidence, live G-COMP compliance evidence, live G-OPS on-prem
+evidence, VERBIS/DB cleanup acceptance, direct-STT runtime, raw-audio transit,
+or production readiness.
+
+**Faz 22.5 AG-029 delta (2026-06-07)**: AG-029 is no longer only a
+TODO/draft item. `platform-agent` #74 and #75 are merged, and a local
+Parallels Windows 11 post-merge self-update baseline is proven on
+HALILKOOLUB735 (`0.1.2-lab.2` -> `0.1.3-lab.1`, command
+`5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6` `SUCCEEDED`, backend heartbeat +
+audit matched). This does not claim multi-device acceptance, trusted
+production signing, domain-wide rollout or prod enablement; those remain
+separate Faz 22.3 / 22.5.8 gates.
+
+**Faz 22.3 AG-030P delta (2026-06-07)**: `platform-agent` #77 is merged after
+local Parallels no-crash proof for `endpoint-agent.exe -auto-enroll -dry-run`.
+The auto-enroll preflight now requires an explicit cert filter
+(`ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or
+`ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX`) and replaces broad
+certstore scan crashes with fail-closed diagnostics. This is mTLS preflight
+hardening only; AD CS provisioning, installed-service distribution,
+multi-device batch acceptance and domain-wide rollout remain separate gates.
+
+**Faz 22.2.A #12 delta (2026-06-07)**: the Parallels Windows 11 CI rehearsal
+is no longer terminal-only evidence. `platform-agent` #78 is merged and
+workflow_dispatch run `27081667910` passed on an ephemeral self-hosted macOS
+runner against `HALILKOOLUB735` (`PartOfDomain=false`, A1 workgroup). Evidence
+artifact `parallels-w11-ci-evidence-27081667910` proves build/package +
+temporary Windows service smoke + secret scans. This does not claim
+`acik.local` pilot, BE-011 fresh command ids, multi-device soak, trusted
+production signing, password-reset readiness or domain-wide rollout.
 
 **Gerçekçi ufuk:**
 - `testai.acik.com` full K8s: **1.5-2 hafta** (7-10 iş günü)
@@ -97,6 +510,23 @@ Bu repo için güncel ana strateji:
    - Runner throttle (cutover/rollback'te CPU %50/%25)
    - Legacy observability kapanışı (prod live ÖNCE)
    - Rollback-window kapsamı dar tutma
+
+### 0.5.1 Faz 22.6.x Remote Response Terminal Reference
+
+Remote Response Terminal / Break-Glass Response Shell ürünleştirme hattı Faz
+22.6 parent acceptance'ın devamı değil, ayrı 22.6.x productization lane'idir.
+Kanonik detay ve no-go kapıları:
+
+- `docs/faz-22-software-deployment-plan.md` §0.7
+- `docs/runbooks/RB-faz22.6-remote-response-terminal.md`
+- board gate `platform-k8s-gitops#1693`
+- implementation issues: `platform-backend#701`, `platform-backend#702`,
+  `platform-agent#208`, `platform-web#820`
+
+Boundary: `platform-backend#510` closed staging parent acceptance proves the
+outbound mTLS product path, not raw unrestricted shell, broad remote support,
+signed MSI/GPO rollout, 5/50/800-device rollout, or true TPM/device-key
+attestation.
 
 ### 0.6 Faz-Eski Mapping
 
@@ -179,7 +609,7 @@ Eski `S0-S4` seviye snapshot'ı ve oturum-özel sıra listeleri historical bağl
 | D37 | Admin user OpenFGA tuple coverage discipline | **Sorun**: 2026-04-29 D35-3 FULL PASS sonrası kullanıcı browser session'da admin@example.com (user:1) için 403 toast tespit edildi. Sebep: OpenFGA `organization:default#admin` tuple yalnızca `d35-admin-persona` (user:1204) için manuel seedlenmişti; gerçek `admin@example.com` ve diğer admin user'lar için seed yoktu. AuthorizationControllerV1.checkOrganizationAdmin() bu tuple'ı zorunlu kılar (superAdmin: true cevabı için). Sonuç: DB'de ADMIN role olmayan değil — DB doğru ama OpenFGA katmanında drift. **Karar**: `DefaultAdminRoleAssignmentInitializer` (mevcut Spring Boot CommandLineRunner) **kalıcı olarak aktif edilir** (PR #249 + #250). Pod startup'ta: (a) konfigürasyondaki admin email listesindeki user'lara DB ADMIN role assign, (b) OpenFGA `organization:default#admin` tuple ensure (idempotent writeTuple). Pod restart sonrası admin coverage otomatik onarılır → runtime drift'e karşı kalıcı koruma. **Mevcut kapsam**: ADMIN_EMAILS env var (manuel liste — `admin@example.com,d35-admin@example.com`). **Geliştirme önerileri (post-D37)**: (a) DB-driven dinamik mod — DB'deki ADMIN role'lü user'ları auto-discover (yeni admin eklenince config update gerekmeyecek), (b) DD-6 cross-repo guard — DB ADMIN role ↔ OpenFGA tuple alignment CI lane (DD-5 pattern'i ile uyumlu), (c) RoleChangeEvent listener — assignRole(ADMIN) sonrası tuple seed (cold path startup'a ek olarak hot path). **Codex thread**: `019dd409` (D35-3 prereq strategy + admin tuple coverage gap). |
 | D38 | Notification orchestration baseline | **Custom Spring Boot `notification-orchestrator`** (platform-backend repo, yeni sub-dir). Postgres-only stateful (Mongo/Redis/RabbitMQ YASAK — ADR-0002 §7.1 single-host 400GB ile uyumsuz). Mevcut `permission-service` Zanzibar plane reuse (ayrı OpenFGA store değil). 10-aday kıyas tablosu skor: Custom Spring Boot 9/10 (Codex thread `019df86f` AGREE). Novu / Knock / Courier / AWS SNS / SaaS combos = **deferred lab/evaluation candidate**. Ana scope: programmatic transactional notification; no-code workflow editor değer üretmiyor. Detay: ADR-0013-notification-orchestration. |
 | D39 | Notification stateful = Postgres-only | Tüm notification state Postgres'te: `notify.notification_intent` + `notification_delivery` + `notification_template` + `subscriber_preference` + `provider_config` + `provider_config_history` + `audit_event` + `dead_letter` + per-domain `notification_outbox`. **Mongo / Redis / RabbitMQ YASAK** — Codex `019df86f` Q2 RED verdict (3 yeni stateful sistem backup/restore + DR matrisi 3 kat büyür; upgrade yüzeyi Java ekibinin dışına çıkar). Outbox pattern: domain service'ler **direct provider çağırmaz**, kendi DB'lerinde transactional outbox row INSERT eder; orchestrator outbox poller PG advisory lock ile pickup eder. |
-| D40 | TR SMS provider native Java adapter (tier v1) | TR SMS provider adapter'ları Spring Boot içinde Java client (TS plugin değil). `SmsProvider` interface (`send`, `queryDelivery`/`pollDelivery`, `normalizeError`, `supportsUnicode`, `dlrMode`, `providerKey`). **Provider kararı 2026-05-19 (kullanıcı)**: **Primary**: JetSMS (canlı sözleşme + HTTP API `api.jetsms.com.tr/SMS-Web`), **secondary**: NetGSM (contract R1 pending). İletimerkezi/Mutlucell tertiary DEFERRED. Failover: failover-eligible `SmsFailureClass` (timeout/5xx/system/rate-limit/quota) → secondary auto; kalıcı recipient/content hatası → no-failover. DLR dual-mode: JetSMS **polling pull** (`HttpSmsReport`), NetGSM **webhook push** (`/api/v1/notify/dlr/netgsm`). GSM-7/UCS-2 vs ISO-8859-9 segment + Türkçe karakter + sender ID. **Tier v1** (Codex `019df86f` Q2 REVISE — MVP'den çıkarıldı, MVP-geniş 23.3'e taşındı). Multi-provider PR sequence Codex `019e3f82` AGREE (PR-0..PR-4). **D40-IYS sub-faz drift**: IYS (İleti Yönetim Sistemi) lookup, ticari mesajda zorunlu, OTP/transactional muaf. |
+| D40 | TR SMS provider native Java adapter (tier v1) | TR SMS provider adapter'ları Spring Boot içinde Java client (TS plugin değil). `SmsProvider` interface (`send`, `queryDelivery`/`pollDelivery`, `normalizeError`, `supportsUnicode`, `dlrMode`, `providerKey`). **Provider kararı 2026-05-19 (kullanıcı)**: **Primary**: JetSMS (canlı sözleşme + HTTP API `api.jetsms.com.tr/SMS-Web`), **secondary**: NetGSM 📦 Out of plan / demand-reactivated (ADR-0028 2026-05-25; asset-preserved dormant). İletimerkezi/Mutlucell tertiary DEFERRED. Failover: failover-eligible `SmsFailureClass` (timeout/5xx/system/rate-limit/quota) → secondary auto; kalıcı recipient/content hatası → no-failover. DLR dual-mode: JetSMS **polling pull** (`HttpSmsReport`), NetGSM **webhook push** (`/api/v1/notify/dlr/netgsm`). GSM-7/UCS-2 vs ISO-8859-9 segment + Türkçe karakter + sender ID. **Tier v1** (Codex `019df86f` Q2 REVISE — MVP'den çıkarıldı, MVP-geniş 23.3'e taşındı). Multi-provider PR sequence Codex `019e3f82` AGREE (PR-0..PR-4). **D40-IYS sub-faz drift**: IYS (İleti Yönetim Sistemi) lookup, ticari mesajda zorunlu, OTP/transactional muaf. |
 | D41 | Notification multi-tenancy = `org_id` + OpenFGA hard-deny | `subscriber:<userId>#can_receive notification_topic:<key>` OpenFGA tuple kontrolü. `notification_intent.org_id` first-class column, NOT NULL. Cross-org notification isteği reddedilir (deny default). Subscriber-tag authority **yetmez** — OpenFGA otoriter. MVP must-have (D46 #5 — cross-tenant leak kapatır). |
 | D42 | Notification KVKK / GDPR disiplin | Açık rıza **transactional kapsam dışı** (Faz 23 marketing değil). **Opt-out**: subscriber `notification_preference` kanal başına; KVKK 11. madde "veri işlemeyi durdurma". **PII redaction**: log'larda mail body / SMS body **maskelenmiş**, sadece `template_id` + `recipient_hash` (sha256) + `org_id` + `correlation_id`. **Retention**: `audit_event` 90 gün default (sub-faz drift 30/180/365). **Right to erasure** (Art.11): payload purge, recipient_hash kalır; **API/runbook MVP**, UI v1. **Right to information** (Art.13): subscriber kendi geçmişi; **API MVP**, UI v1. **DPA**: 3rd party provider sub-faz drift. |
 | D43 | Notification outage fallback bypass | **Kritik bulgu** (Codex `019df86f` Q4 PARTIAL): notification-orchestrator **kendi outage'ında alarm gönderemez**. Bu yüzden drift alarm-receiver, break-glass audit, kritik ops alarmı için **Alertmanager → direct SMTP/Slack fallback** ayrı katman olarak tutulur (`monitoring/alertmanager` config). Bu fallback notification-orchestrator'dan **bağımsız**: kendi SMTP/Slack credential'ı ESO ile sync. "Notification-service down" alarmı kendi içinden değil, Prometheus liveness probe + Alertmanager rule'undan gelir. MVP must-have (D46 #10). |
@@ -188,6 +618,7 @@ Eski `S0-S4` seviye snapshot'ı ve oturum-özel sıra listeleri historical bağl
 | D46 | Notification 10 must-have çizgisi | Production MVP demek için olmazsa olmaz: (1) Intent + delivery log schema; (2) Idempotency + dedupe; (3) Domain-side outbox; (4) Retry exponential backoff + DLQ + manual replay; (5) OpenFGA hard-deny + org boundary; (6) Vault/ESO + no secret logging; (7) PII redaction + KVKK retention; (8) Preference + critical bypass; (9) Template versioning + safe interpolation; (10) Observability + outage fallback. **Negotiable** (production MVP demek için olmasa da olur): kanal sayısı, workflow editor UI, brand customization, A/B testing, in-app inbox UI. Detay: `docs/notify/must-have-checklist.md`. |
 | D47 | Notification Faz 23 süre tahmini ve tier sequencing | **Codex `019df86f` Q5 PARTIAL absorb**: 1 senior Java + 0.5 frontend + 0.5 ops varsayımı. **23.0 Charter** 1 hafta. **23.1 Kernel/Closed Beta** 3-4 hafta (Email + Slack + webhook + outbox + retry/DLQ + audit + OpenFGA + Mailpit/WireMock). **23.2 Production MVP dar** 2-3 hafta original baseline (preference API + erasure + provider versioning + Grafana/alerts + fallback bypass) — **Session 39 iter-2/3 PM re-baseline (Codex thread `019e0c28`): 23.2 closure remaining T1 = ~100h, 4-6 hafta aggressive target M3 2026-06-08 per [sprint-plan.md](docs/notify/sprint-plan.md) + [milestones.md](docs/notify/milestones.md)** — **M3 stale audit 2026-05-09 supersedes ~100h/4-6 hafta**: backend code source-ready 7/9, T1 residual ~52-55h + acceptance gate + Codex iter overhead = ~60-70h provisional sprint / 2.5-3.5 hafta (T1.2 subscriber self-service + T1.4 D43 + T1.6 abuse guards gerçek pending; credential RAID I6 + R2 legal gate açılınca) per [m3-stale-audit-2026-05-09.md](docs/notify/m3-stale-audit-2026-05-09.md). **23.3 Production MVP geniş** 3 hafta (SMS JetSMS primary + NetGSM secondary + in-app backend API). **23.4-23.8 v1** +4-6 hafta. **23.9 Prod cutover** 1 hafta + 72h observation. **Toplam Charter → Prod cutover: 14-18 hafta** (3.5-4.5 ay). v2 (later) +8-12 hafta. **23.0 paralel** ilerleyebilir; 23.1 başlangıcı için **Faz 22.1.1b III review verdict** zorunlu. **Snapshot 2026-05-09 (Session 39, Codex `019e0bff` iter-1 absorb — historical baseline; superseded by M3 stale audit 2026-05-09 5-state matrix per [m3-stale-audit-2026-05-09.md](docs/notify/m3-stale-audit-2026-05-09.md))**: 23.0 🟢 done (1/11); 23.1 🟡 (service runtime LIVE, D29-Functional 3-channel evidence pending); 23.2 🟡 (Session 39 hardening 3/3 done — KVKK retention/Vault/SLO; original MVP-dar acceptance 2/8 done — superseded by audit: source-ready 7/9 + acceptance 1/9); 23.4 🟡 (in-app UI + identity guards LIVE, SMS DLR + archive UI pending); 23.8 🟡 (alerts LIVE, Tempo/bounce/per-tenant pending); 23.9 🟡 (activation LIVE 2026-05-08, 72h observation T+72h=2026-05-11, rollback prova + browser SSO pending); 23.3/23.5/23.6/23.7/23.X ⏳. **Historical: 7/10 must-have 🟢 + 2 partial + 1 pending = ~80% — superseded by M3 audit: 7+3+0 = 8.5/10 = ~85% (#8 ⏳→🟡 demote source-ready) — Session 41 sonu re-baseline 2026-05-09 19:50Z: 7+3+0 = 8.85/10 ≈ ~88.5% (#10 D43 4-PR source-ready bump); 5-state Source-ready 12/12 + Live-deployed 9/12 + Acceptance 0/12; T1 residual ~17-22h (drift -77/-82h vs 99.5h plan); Codex `019e0e51` bağımsız analiz: v1 readiness ~35% acceptance-weighted, "%85 must-have coverage production-ready DEĞİL")**. Net v1 readiness ~30% literal feature, source-ready bias ile semantik daha yüksek. Naming discipline: improvise label OK if cross-references canonical sub-faz ID; canonical status authority = Sub-Faz Tablosu marker'lar. |
 | D48 | MFE Auth Transport Contract | Protected MFE HTTP **MUST** wait for shell auth `transportReady`; only bootstrap-chain requests **MAY** bypass the gate (`__skipAuthReadyGate: true` on cookie/authz/login/profile/register endpoints); 401 refresh **MUST** be single-flight and restore token + cookie + authz + Redux + phase state via full closure; observability **MUST** be URL/PII-free (status_class+method counters only, bounded reason enums). Roadmap: PR-Auth-1 #302 → PR-Reporting-2 #304 → PR-HTTP-3 #306 → PR-Refresh-4 #307 → PR-Obs-5 #309 (DONE) + PR-E2E-6 + PR-BE-7 (planned). Detay: ADR-0014. |
+| D49 | Notification Graph mail adapter strategy: defer activation, preserve Entra asset | **Codex `019e44b1` defer contract alignment AGREE_WITH_REVISIONS (Session 42 2026-05-20)**: SMTP Office 365 path (`ai@acik.com` + App Password) canonical kalır; Microsoft Graph adapter binary backend (PR #153 sha-585b64f) capability olarak korunur ama **activation deferred** trigger geldiğinde (Microsoft App Password deprecation, SMTP AUTH tenant policy break, outbound 587 ISP block recurrence, ops/security tactical decision, provider migration). Entra App Registration `acik-mail-graph-api` + Mail.Send Application permission + **tenant-wide admin consent verildi** (asset olarak korunur; en ağır setup tamamlandı). Client secret + ApplicationAccessPolicy + Vault graph_* seed + ConfigMap flag flip + digest bump + smoke send 5-adım reactivation chain **atomic** çalıştırılır; parçalı aktivasyon yasak. Mailbox scope ApplicationAccessPolicy ile `ai@acik.com`'a daraltılır (RestrictAccess; blast-radius). Cross-AI peer review chain: `019e44b1` (defer contract), `019e42d1` (PR #872 staged-only ESO 3-key + DNS runbook), `019e4445` (#862 deprecation + bridge truth-cleanup). Detay: [ADR-0024](docs/adr/0024-graph-mail-adapter-defer.md) + [RB-graph-mail-adapter-activation.md](docs/runbooks/RB-graph-mail-adapter-activation.md) + board [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892). |
 
 ### Decision Register Status (Faz 23 — Session 39 truth alignment 2026-05-09)
 
@@ -197,13 +628,14 @@ Eski `S0-S4` seviye snapshot'ı ve oturum-özel sıra listeleri historical bağl
 | D39 | Notification stateful = Postgres-only | 🟢 implemented | V1+V8+V9-staging migrations LIVE; no Mongo/Redis/RabbitMQ added; outbox pattern live (alarm-receiver PR #347) |
 | D40 | TR SMS provider native Java adapter (tier v1) | 🟡 in-progress (JetSMS primary + NetGSM secondary, 2026-05-19 kullanıcı kararı; PR-0..PR-4 sequence Codex `019e3f82` AGREE) | Charter 23.3 chain; T3.1 sprint plan; R1 NetGSM secondary contract = failover acceptance blocker (primary aktif) |
 | D41 | Notification multi-tenancy = `org_id` + OpenFGA hard-deny | 🟢 implemented | NotifyOrgAccessGuard strict cutover LIVE (PR-5.4 default-org close + PR-5.5 subscriberId strict); 25 PrometheusRule alerts |
-| D42 | Notification KVKK / GDPR disiplin | 🟡 partial | Retention 90 day LIVE (PR #427/#437); PII redaction LIVE (Vault pepper); erasure API + right-to-information ⏳ pending T1.2 (M3 23.2.B) |
-| D43 | Notification outage fallback bypass | 🔴 pending | Charter 23.2.D; T1.4 sprint plan; runbook + drill execution; R9 active risk |
+| D42 | Notification KVKK / GDPR disiplin | 🟢 implemented | Retention 90 day LIVE (PR #427/#437); PII redaction LIVE (Vault pepper); **erasure API + right-to-information LIVE** (M3 R2 K-PR chain 6/7 MERGED = K1-K5+K7 — admin + subscriber self-service `SubscriberErasureController` + `AdminErasureController` + V18 erasure ledger + 30-gün SLA watchdog + audit body redaction LIVE); **R2 CLOSED 2026-05-23** via Codex `019e5189` final legal verdict (kullanıcı kararı 2026-05-23: Codex istişare verdict'i = kabul edilen hukuk onayı); K6 tenant-scoped DPO authz P1 non-blocking 23.2.B follow-up |
+| D43 | Notification outage fallback bypass | 🟢 mock-receipt mitigated | Charter 23.2.D T1.4 PR-1/2/3 + first controlled test drill 2026-05-10 (Mailpit SMTP receipt LIVE); **BL-008 mock-receipt drill 2026-05-24 16:14-16:26Z** (Codex `019e5aaf` REVISE absorb): test cluster DUAL receipt evidence (webhook-receiver POST `/slack-mock` 200 length=983 + Mailpit `[D43 DRILL] NotifyServiceAbsent` 16:17:33Z — same Alertmanager dispatch cycle); 10/10 mock-receipt criteria PASS; R9 🟡 Partial → 🟢 Mitigated (mock-receipt). **Real Slack workspace** (board #853) + **prod activation** (board #854 — `auth_*_file` Operator v0.90.1 schema gap fix gerekir) ayrı operator-external action. Evidence: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md` |
 | D44 | Notification channel coverage tier | 🟢 specified | Charter sub-faz mapping (Kernel/MVP-dar/MVP-geniş/v1/v2 with feature-matrix); D29-NOTIFY 3-katman per channel evidence partial |
-| D45 | Notification 5 yeni kategori (policy axis) | 🟡 partial | (1) Deliverability: pending DKIM prod activation (R3); (2) Abuse: pending T1.6 (23.2.F gerçek pending ~15h); (3) Accessibility: pending; (4) Incident/degraded: pending T1.4 D43 (gerçek pending ~15h); (5) Data classification: 🟢 substantively LIVE (M3 audit: enum + IntentSubmissionService + DeliveryEligibilityService source-ready/live; acceptance test gate) |
-| D46 | Notification 10 must-have çizgisi | 🟡 partial | 7 🟢 (#1-#6, #9) + 3 🟡 partial (#7 retention LIVE + admin erasure source-ready/R2 legal/subscriber endpoint pending; #8 ⏳→🟡 demote source-ready + RAID I6; #10 LIVE + D43 pending); 0 ⏳ pending; **8.5/10 = ~85% coverage** (M3 stale audit 2026-05-09 5-state matrix re-baseline); detay [must-have-checklist.md](docs/notify/must-have-checklist.md) |
+| D45 | Notification 5 yeni kategori (policy axis) | 🟢 source-ready / 🟡 partial | (1) Deliverability: 🟢 source-ready DKIM relay strategy LIVE prod 2026-05-20 (PR-B1 platform-backend #268 + gitops #914+#915+#916; Office 365 Native CNAME pattern; DNS publish operator-gated); R3 🟢 mitigated upgraded; (2) Abuse: 🟢 M3 T1.6 23.2.F AbuseGuardService + NotifyAbuseStorm PrometheusRule + Service IT LIVE Session 41 FULL ACCEPTANCE (R13 + R19 mitigated); (3) Accessibility: ☐ pending WCAG (Email multipart N1 LIVE via C4 cross-ref); (4) Incident/degraded: 🟢 **T1.4 D43 mock-receipt mitigated** (BL-008 2026-05-24 dual-receipt drill — webhook-receiver POST + Mailpit SMTP); real Slack #853 + prod activation #854 operator-external; (5) Data classification: 🟢 MVP core LIVE (P1; M3 T1.5 23.2.E PR #149 9-test acceptance) — per-class retention/commercial consent refinements (P3/P4 feature-matrix §16) remain partial/pending |
+| D46 | Notification 10 must-have çizgisi | 🟢 source-side / 🟡 operator-gated | **9+/10 source-side improved after BL-008 mock-receipt drill 2026-05-24**: #1-#7/#9 🟢, #8 🟢 source-ready/live (M3 T1.1 23.2.A preference trilogy + M5 23.5 UI LIVE), #10 🟢 **mock-receipt mitigated** (BL-008 2026-05-24 dual-receipt drill); real Slack workspace #853 + prod activation #854 operator-external residual (Operator v0.90.1 `auth_*_file` schema gap fix #854 kapsamında). Production-ready claim DEĞİL — canonical status authority [milestones.md](docs/notify/milestones.md) + [sprint-plan.md](docs/notify/sprint-plan.md) + [risk-register.md](docs/notify/risk-register.md) + [feature-matrix.md](docs/notify/feature-matrix.md). [must-have-checklist.md](docs/notify/must-have-checklist.md) marker'ları historical/stale notu kendi başlığında belirtir; evidence path olarak referans, status authority değil. |
 | D47 | Notification Faz 23 süre tahmini ve tier sequencing | 🟢 specified | Sub-faz tablosu + M0..M9 milestone tracker [milestones.md](docs/notify/milestones.md); estimation **~232-235h v1 residual** (M3 stale audit 2026-05-09 re-baseline; ~280h historical baseline superseded) + ~144h v2 |
 | D48 | MFE Auth Transport Contract | 🟢 implemented | PR-Auth-1 #302 + PR-Reporting-2 #304 + PR-HTTP-3 #306 + PR-Refresh-4 #307 + PR-Obs-5 #309 LIVE; PR-E2E-6 + PR-BE-7 pending |
+| D49 | Notification Graph mail adapter strategy | 🟡 deferred | Entra asset preserved (`acik-mail-graph-api` + Mail.Send + admin consent active); SMTP canonical; reactivation chain documented in [ADR-0024](docs/adr/0024-graph-mail-adapter-defer.md) + [RB-graph-mail-adapter-activation.md](docs/runbooks/RB-graph-mail-adapter-activation.md); tracked by [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) (P3 Backlog future-only); aktif risk sıfır (client secret yok → permission kullanılamaz) |
 
 **Status Legend**: 🟢 implemented (live cluster) · 🟢 specified (charter authoritative, no impl) · 🟡 partial · 🔴 pending · ⏳ deferred
 
@@ -1969,4 +2401,6 @@ Devam edeceğim faz: Faz 1 — Repo Temeli (README + .gitignore + ilk commit).
 | 2026-04-29 | **D37 Admin user OpenFGA tuple coverage discipline + DefaultAdminRoleAssignmentInitializer activation.** Tetikleyici: D35-3 FULL PASS sonrası kullanıcı browser session'da admin@example.com (user:1) için 403 toast tespit edildi. Sadece d35-admin-persona (user:1204) için organization:default#admin tuple manuel seedlenmişti; gerçek admin user için coverage yoktu. **Manual fix**: user:1, user:2, user:1204 için tuple seedlendi (programmatic chain ile verify). **Kalıcı fix**: PR #249 + #250 ile permission-service'in mevcut DefaultAdminRoleAssignmentInitializer'ı (Spring CommandLineRunner) ConfigMap üzerinden aktif edildi: `PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_ENABLED=true` + ADMIN_EMAILS=admin@example.com,d35-admin@example.com + USER_TABLE=users (permission_db.users primary datasource). Initializer pod startup'ta (a) email listesindeki user'lara DB ADMIN role assign, (b) OpenFGA organization:default#admin tuple ensure (idempotent writeTuple). Pod restart sonrası admin coverage otomatik onarılır — runtime drift'e karşı kalıcı koruma. **Idempotency stress-test**: tuple sil → pod restart → /check user:1 admin organization:default → allowed=true (auto-restore). **Geliştirme önerileri**: (a) DB-driven dinamik mod (yeni admin auto-discover), (b) DD-6 admin tuple coverage CI guard, (c) RoleChangeEvent listener (hot path). **27 PR landed Session 33 closure ramp**: cross-repo platform-backend (#18 fix + #19 DD-5 + #20 superAdmin bypass) + platform-k8s-gitops (#240/#241/#242/#243/#244/#245/#246/#247/#248/#249/#250). |
 | 2026-05-01 | **Faz 22 Endpoint Admin Service Governance + ADR-0012-EA charter draft (Sprint Prod post-cutover compliance PR-8).** Yeni service: endpoint-admin-service (Go agent + Windows + REST/queue admin API). PR #270 governance mutabakat raporu (Codex 019dd895 iter-3 AGREE) ile kararlaştırılan 10 mutabakat noktası ADR draft'a aktarıldı: (1) manifest aynı repo G7 Operational Isolation, (2) OpenFGA tuple writer permission-service üstünden cross-service tuple discipline, (3) D35-EA ladder 0..5 + 5 destructive command sınıfı dual-control gate, (4) Code signing supply-chain RoT Azure Trusted Signing default, (5) 8 governance guard DD-EA-1..7 + BG-EA-1 ADR-0011 analog, (6) Pilot tier matrisi Lab/Pilot/Restricted, (7) Password reset 4 connector (Local/AD/Entra/M365), (8) Identity discovery parallel read-only + PII boundary, (9) ADR-0012-EA charter (DD-EA + BG-EA + D35-EA), (10) Manifest skeleton (Faz 22.1 lab tier) ayrı PR-9. **5 kullanıcı clarify pending** (ADR Open Questions): endpoint-admin repo URL/branch + admin auth realm + pilot tier başlatma + code signing provider + 5 domain inventory authoritative. **Sub-faz roadmap**: 22.0 charter+skeleton (PR-8/PR-9), 22.1 Lab tier (Parallels lab full destructive test), 22.2 Pilot tier (IT-owned domain VM read-only), 22.3 Restricted tier (gerçek user device). Bağımlılık: D30 prod deploy discipline (PR-2/PR-3 prod workflow) endpoint-admin live deploy için zorunlu (Codex 019de00f kabul). |
 | 2026-05-02 | **Faz 22 ADR-0012-EA RESOLVED — 5 clarify cevabı absorb (Sprint PR-8b fill-in).** Kullanıcı 2026-05-02 mesajı ile 5 Open Questions cevaplandı; 4 cevap ADR draft'taki varsayımlardan **farklı** + 1 yeni bilgi (`platform-agent` ayrı repo). **Düzeltmeler**: (1) **REPO yapısı**: yeni ayrı `endpoint-admin-service` repo açılmayacak; 4-component yapısı: backend `Halildeu/platform-backend` `endpoint-admin-service/` sub-dir + agent `Halildeu/platform-agent` ayrı repo + web `Halildeu/platform-web` `apps/mfe-endpoint-admin/` + gitops `Halildeu/platform-k8s-gitops`. (2) **AUTH REALM**: prod=`serban` canonical platform realm (Keycloak built-in `master` realm KULLANILMAYACAK), test=`platform-test`, ayrı client opsiyonel `endpoint-admin-portal`. (3) **PILOT TIER**: 22.1 Lab (Parallels lab + lab-only-evidence imza, gerçek kullanıcı yok, password reset YOK) → 22.2 IT-owned `acik.local` domain-joined Windows 10/11 + ayrı `EndpointPilot` OU + 1-3 test cihaz + agent enrollment/heartbeat/inventory/identity discovery → 22.3 Restricted (sınırlı gerçek kullanıcı + EDR allowlist + IT onayı şart). **BOREAS ve CESS Faz 22 dışı**. (4) **CODE SIGNING**: Azure Trusted Signing 22.2'den itibaren mandatory, 22.1 self-signed `lab-only-evidence`. **Önemli**: signing key Vault/ESO runtime secret olarak taşınMAZ — supply-chain RoT, build-time CI pipeline (`platform-agent` + `platform-backend` CI workflow). ConfigMap `COSIGN_KEY_REF` SADECE public key reference (Azure KMS URI). Secret stub'tan `COSIGN_KEY_PEM` field'ı KALDIRILDI. (5) **DOMAIN INVENTORY**: 5 değil **3 domain** mevcut (`acik.local` + `BOREAS` + `CESS`). Initial scope **sadece acik.local** (22.1 + 22.2). BOREAS/CESS future expansion (3-domain inventory ID-001). Authority modeli: probe-based read-only evidence + IT manager review gate. **Manifest düzeltmeleri**: configmap.yaml `DISCOVERY_AD_ACIK_LOCAL_ENABLED` field eklendi (22.2'de overlay aktif), Entra/M365 `Faz 22.3+` notu, `COSIGN_LAB_ONLY_EVIDENCE` flag (22.1 true, 22.2+ false); secret-stub.yaml `AGENT_ENROLLMENT_SECRET` eklendi (`platform-agent` registration token), `COSIGN_KEY_PEM` kaldırıldı. ADR Open Questions → Resolved Questions; Sonuç (DRAFT) → Sonuç (ACTIVE). Sub-faz roadmap finalized: 22.1 platform-agent skeleton + Parallels lab, 22.2 acik.local + Azure Trusted Signing, 22.3 sınırlı gerçek kullanıcı. |
+| 2026-06-02 | **Mavis adversarial review — Faz 22.PW/STT PARTIAL verdict revision absorbed.** Root session adversarial review (2026-06-02) PARTIAL verdict: 2 revision gerekli. **Revision 1**: KVKK ADR-0030 placeholder kesildi — ses + transcript KVKK Madde 6/9 kapsamında hassas veri; GOP BASI (observability pipeline ses/transcript yazmaz; yalnızca metadata); saklama süresi, yetkilendirme, silme talebi, veri paylaşım limiti dokümante edilecek; production gate KVKK uyumluluk kapalı. **Revision 2**: Gateway contract önce kilitlenir (PR-gw-01 Contract 1.0 merged), sonra PR-stt-02 paralel başlar — eş zamanlı contract drift riski önlenir. **Ek notlar**: (B) staging-sw RAM pressure acceptance gate olmalı (23 GiB RAM, Faz 22.5 + Faz 23 notify + STT PoC paralel); (C) multilingual: Turkce sabit yetersiz, per-meeting language (ISO 639-1) contract'ta ZORUNLU; (D) transcript data en hassas alan — kimin okuduğu (participant/IT admin), export sınırı, meeting katılımcı consent vs şirket IT access sınırı KVKK ADR'ye eklendi; (E) multi-tenant isolation: Faz 24.1 MVP tek müşteri ise TBD ama future readiness placeholder ADR-0030'da. **Sonuç**: 2 revision absorb → AGREE. KVKK ADR: [`docs/adr/0030-kvkk-stt-voice-transcript-compliance.md`](docs/adr/0030-kvkk-stt-voice-transcript-compliance.md). |
+
 | 2026-05-02 | **Faz 22 ADR-0012-EA scope clarify (Sprint PR-8c) — 22.1 sıfırdan değil.** Kullanıcı 2026-05-02 ikinci mesajı ile 3 yanlış varsayım düzeltildi: (1) `Halildeu/platform-agent` GitHub remote yok ≠ "agent repo yok"; **lokal** `/Users/halilkocoglu/Documents/platform-agent` mevcut ve dolu (Go repo + HMAC signing + signed heartbeat/command poll/result submit + Windows service wrapper + installer scriptleri + local user read-only adapter + log/redaction + tamper protection + maintenance token local Windows testleri). 22.1 sıfırdan skeleton DEĞİL — local state review + remote bootstrap + build/release pipeline hardening. (2) **Backend sıfırdan değil**: BE-009 OpenFGA live gate + BE-013 maintenance token live gate kod-test ve gitops runtime kanıtları MEVCUT. 22.1'de bu gate'ler paralel ilerleyebilir; "backend 22.2'ye kalır" yanlış çerçeveydi. (3) **22.1 scope tablosu** (PR-8c clarify): agent ana track (lab/release hattı) + backend paralel (BE-009/BE-013 live gate) + gitops manifest reconcile (mevcut endpoint-admin-service skeleton PR #312) + AD/IT (EndpointPilot OU + 1-3 test cihaz hazırlığı); web 22.2'ye kalır. **Acik.local ölçeği**: ~800 cihaz domain'inde; pilot **EndpointPilot OU** + 1-3 IT kontrollü Windows 10/11 test cihaz; domain-wide deployment 22.3+. **Naming convention**: repo geniş tutulur (`platform-agent` — ileride macOS/Linux), binary endpoint odaklı (`endpoint-agent.exe` + `EndpointAgent` Windows service). **Build artifact + distribution**: 22.1 GitHub Releases (private asset) + lab-only-evidence flag; 22.2 Authenticode signed exe + MSI/signed zip + GPO/Intune; 22.3 signed MSI + signed update manifest + SBOM + Intune/GPO/SCCM staged rollout. **GHCR ana kanal değil agent binary için** (container image değil). **ADR §Bağlam clarify**: "manifest aynı repo + repo bölünmez" → "Runtime manifest tek yerde gitops, source kod ilgili platform repolarında; 'repo bölünmez' ifadesi YALNIZ GitOps manifest governance için." Sıralama B→A→C: B (bu PR) ADR clarify; A platform-agent local state review + GitHub remote bootstrap; C Codex plan-time istişare (düzeltilmiş bağlam ile 22.1 sub-tracks AGREE). |

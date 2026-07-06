@@ -28,8 +28,12 @@ CONTAINERS_SERVICES=(
   "platform-postgres-db-1:postgres:5432"
   "platform-keycloak-1:keycloak:8080"
   "platform-vault-1:vault:8200"
+  "minio-minio-test-1:minio:9000"
 )
 # Faz 3 ESO: vault platform-test-net'te görünür olmalı (ClusterSecretStore → 8200)
+# Faz 24 #1250 (ADR-0042): minio host-compose (audit-archive 7yr WORM) container
+# NATIVE port 9000 üzerinden — host-published :9100 değil; cluster bridge IP'den
+# container portuna erişir (redis-streams emsali). Drift sonrası reconnect.
 
 log()  { printf '\033[36m[reconnect]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[33m[reconnect]\033[0m %s\n' "$*" >&2; }
@@ -68,6 +72,24 @@ for entry in "${CONTAINERS_SERVICES[@]}"; do
     sshrun "docker network connect ${NETWORK} ${container}"
   else
     log "   zaten bağlı"
+  fi
+
+  # Faz 24 #1250 (ADR-0042): MinIO TEK-HOMED olmalı (return-path asymmetry —
+  # runbook RB-faz24-minio-audit-archive §0.1). Dual-home (minio_default +
+  # platform-test-net) k3d pod→minio:9000 timeout yaratır. Compose artık
+  # minio-test'i yalnız platform-test-net'e koyuyor; ama drift olursa burada
+  # FAIL-FAST + explicit consent iste (auto-disconnect YASAK — shared instance
+  # #55 meeting/transcript; owner onayı gerek).
+  if [[ "${container}" == minio-* ]]; then
+    other=$(sshrun "docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}} {{end}}' ${container}" | tr ' ' '\n' | grep -vE "^(${NETWORK})?$" | grep -c . || true)
+    if [[ "${other}" -gt 0 ]]; then
+      if [[ "${MINIO_SINGLE_HOME:-false}" == "true" ]]; then
+        warn "   ${container} dual-homed + MINIO_SINGLE_HOME=true → minio_default ayrılıyor"
+        sshrun "docker network disconnect minio_default ${container} || true"
+      else
+        err "   ${container} DUAL-HOMED (return-path bozuk). Single-home gerek: compose'da yalnız ${NETWORK}, ya da owner onayıyla MINIO_SINGLE_HOME=true ./$(basename "$0"). (runbook §0.1)"
+      fi
+    fi
   fi
 
   # IP'yi oku

@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "project-field-catalog/v1",
+  "catalogVersion": "2026-06-25T03:25:00Z",
+  "source": "docs/board-protocol.md#13-board-referansi-idler",
+  "project": {
+    "owner": "Halildeu",
+    "number": 2,
+    "id": "PVT_kwHOCx7tY84BIN2d"
+  },
+  "catalogFingerprint": "sha256:e293d05c722a8c4c58ee423cd1c006a531d78f47ff5380f046476ebad985ac3e",
+  "fields": {
+    "Status": {
+      "id": "PVTSSF_lAHOCx7tY84BIN2dzg4vgLw",
+      "type": "single_select",
+      "required": true,
+      "options": {
+        "Backlog": "81ee9923",
+        "Todo": "da11d7ac",
+        "In Progress": "6e2ec368",
+        "Blocked": "5f6aac96",
+        "Needs Verify": "516d2beb",
+        "Done": "a099a451"
+      }
+    },
+    "Faz": {
+      "id": "PVTSSF_lAHOCx7tY84BIN2dzhTGqF0",
+      "type": "single_select",
+      "required": true,
+      "options": {
+        "Faz G": "a8f19c83",
+        "Faz I": "a858eb09",
+        "Faz 22": "6fb80ca3",
+        "Faz 23": "7ff54758",
+        "Faz 24": "77b820c4",
+        "V2.1": "b21e7ec5",
+        "V3": "68101ca0",
+        "schema-service": "0df88f76"
+      }
+    },
+    "Track": {
+      "id": "PVTSSF_lAHOCx7tY84BIN2dzhTGqHY",
+      "type": "single_select",
+      "required": true,
+      "options": {
+        "gitops": "4b80f631",
+        "backend": "110c9207",
+        "web": "eb9e6ec7",
+        "agent": "e36ee869",
+        "ops": "d3935343"
+      }
+    },
+    "Priority": {
+      "id": "PVTSSF_lAHOCx7tY84BIN2dzhTGqHk",
+      "type": "single_select",
+      "required": true,
+      "options": {
+        "P0": "951c13f7",
+        "P1": "00ad329c",
+        "P2": "1831e102",
+        "P3": "e2dc8e72"
+      }
+    },
+    "Kind": {
+      "id": "PVTSSF_lAHOCx7tY84BIN2dzhTGxFk",
+      "type": "single_select",
+      "required": true,
+      "options": {
+        "umbrella": "deb03eb5",
+        "milestone": "4efca8fc",
+        "gate": "ad398fa9",
+        "risk": "e3a49d4e",
+        "issue": "22b29779"
+      }
+    }
+  }
+}

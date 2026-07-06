@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/faz-22-8a-backup-manifest-v1.schema.json",
+  "title": "Faz 22.8A.1 Endpoint Backup Dry-Run Manifest v1 (DC-EA-1, metadata-only)",
+  "description": "Machine-enforceable contract for docs/faz-22-8a-backup-manifest-contract-v1.md. DC-EA-1 metadata-only: file content is NEVER read and NO content/SHA256 hash is computed. `additionalProperties:false` everywhere structurally forbids a sneaked content-hash field (invariant #1) and the removed `is_container` field (2026-06-13 amendment). DC-EA-RED classes never produce entries (aggregate-only); `extension_type` has NO `archive` value (archive-container is DC-EA-RED). Codex 019ea961 + 019ec28a.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_version", "dc_ea_tier", "device_id", "tenant_id", "generated_at", "allowlist_profile_id", "scope", "entries", "aggregate"],
+  "properties": {
+    "manifest_version": { "const": "1" },
+    "dc_ea_tier": { "const": "DC-EA-1", "description": "metadata-only tier: content not read, no content/SHA256 hash" },
+    "device_id": { "type": "string", "minLength": 1 },
+    "tenant_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$", "description": "ISO-8601 UTC/offset timestamp; the regex pattern is a dependency-free hard gate (format:date-time alone is annotation-only without jsonschema[format])" },
+    "allowlist_profile_id": { "type": "string", "minLength": 1 },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["managed_data_roots", "byod"],
+      "properties": {
+        "managed_data_roots": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^managed_root:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+          "description": "opaque managed_root:<uuid> registry refs ONLY — never a raw path/share name (data minimization, KVKK m.4)"
+        },
+        "byod": { "type": "boolean" }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "description": "Per-eligible-object metadata. DC-EA-RED objects NEVER appear here (aggregate-only). additionalProperties:false forbids any content-hash field — that is invariant #1 (no SHA256/content read).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path_class", "root_ref", "relative_depth", "extension_type", "size_bytes", "mtime_bucket", "owner_scope_marker", "file_count"],
+        "properties": {
+          "path_class": { "enum": ["managed/onedrive-business", "managed/sharepoint", "managed/unc-corp", "managed/it-folder", "mdm-gpo-root"] },
+          "root_ref": { "type": "string", "pattern": "^managed_root:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", "description": "opaque registry ref, never a raw path" },
+          "relative_depth": { "type": "integer", "minimum": 0 },
+          "extension_type": { "enum": ["doc", "sheet", "pdf", "image", "other"], "description": "coarse enum; NO `archive` — archive-container is DC-EA-RED and never reaches an entry (2026-06-13 amendment)" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "mtime_bucket": { "enum": ["P7D", "P30D", "P90D", "older"], "description": "range bucket, not an exact timestamp (inference reduction)" },
+          "owner_scope_marker": { "enum": ["company", "unknown"] },
+          "file_count": { "type": "integer", "minimum": 1, "description": "file_count>1 = directory rollup signal (the removed is_container field is intentionally absent)" }
+        }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_eligible_count", "total_eligible_size_bytes", "denied_count", "denied_classes", "container_count", "unresolved_path_count"],
+      "properties": {
+        "total_eligible_count": { "type": "integer", "minimum": 0 },
+        "total_eligible_size_bytes": { "type": "integer", "minimum": 0 },
+        "denied_count": { "type": "integer", "minimum": 0, "description": "DC-EA-RED hits — aggregate only; no path is listed" },
+        "denied_classes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["credential_store", "browser_profile", "mailbox_cache", "private_key_material", "cloud_cli_token_store", "password_manager_vault", "dpapi_store", "registry_hive", "app_token_store", "archive_container"] },
+          "description": "coarse DC-EA-RED classes (no product/app fingerprint)"
+        },
+        "container_count": { "type": "integer", "minimum": 0, "description": "denied archive_container sub-count (release-gate flag); archive is NOT opened/descended in 22.8A.1" },
+        "unresolved_path_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "examples": [
+    {
+      "manifest_version": "1",
+      "dc_ea_tier": "DC-EA-1",
+      "device_id": "11111111-1111-1111-1111-111111111111",
+      "tenant_id": "1",
+      "generated_at": "2026-06-26T00:00:00Z",
+      "allowlist_profile_id": "profile-corp-default-v1",
+      "scope": { "managed_data_roots": ["managed_root:22222222-2222-2222-2222-222222222222"], "byod": false },
+      "entries": [
+        { "path_class": "managed/onedrive-business", "root_ref": "managed_root:22222222-2222-2222-2222-222222222222", "relative_depth": 3, "extension_type": "doc", "size_bytes": 12345, "mtime_bucket": "P7D", "owner_scope_marker": "company", "file_count": 1 }
+      ],
+      "aggregate": { "total_eligible_count": 1200, "total_eligible_size_bytes": 4567890, "denied_count": 38, "denied_classes": ["credential_store", "browser_profile", "mailbox_cache", "archive_container"], "container_count": 5, "unresolved_path_count": 0 }
+    },
+    {
+      "manifest_version": "1",
+      "dc_ea_tier": "DC-EA-1",
+      "device_id": "33333333-3333-3333-3333-333333333333",
+      "tenant_id": "7",
+      "generated_at": "2026-06-26T01:02:03Z",
+      "allowlist_profile_id": "profile-corp-default-v1",
+      "scope": { "managed_data_roots": ["managed_root:44444444-4444-4444-4444-444444444444"], "byod": false },
+      "entries": [
+        { "path_class": "managed/sharepoint", "root_ref": "managed_root:44444444-4444-4444-4444-444444444444", "relative_depth": 1, "extension_type": "pdf", "size_bytes": 2048, "mtime_bucket": "older", "owner_scope_marker": "company", "file_count": 4 }
+      ],
+      "aggregate": { "total_eligible_count": 4, "total_eligible_size_bytes": 8192, "denied_count": 0, "denied_classes": [], "container_count": 0, "unresolved_path_count": 0 }
+    },
+    {
+      "manifest_version": "1",
+      "dc_ea_tier": "DC-EA-1",
+      "device_id": "55555555-5555-5555-5555-555555555555",
+      "tenant_id": "9",
+      "generated_at": "2026-06-26T02:00:00Z",
+      "allowlist_profile_id": "profile-byod-syncroot-v1",
+      "scope": { "managed_data_roots": [], "byod": true },
+      "entries": [],
+      "aggregate": { "total_eligible_count": 0, "total_eligible_size_bytes": 0, "denied_count": 12, "denied_classes": ["private_key_material", "mailbox_cache", "archive_container"], "container_count": 3, "unresolved_path_count": 1 }
+    }
+  ]
+}

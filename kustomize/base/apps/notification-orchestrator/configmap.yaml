@@ -52,6 +52,15 @@ data:
   # FQDN, breaking prod overlay).
   NOTIFY_AUTHZ_PERMISSION_SERVICE_URL: "http://permission-service:8090"
 
+  # #734: SERVICE-token decoder for the internal system-submit path
+  # (/api/v1/internal/notify/intents). Env-gated — these activate the secondary
+  # auth-service JWT decoder so a service token (iss=auth-service,
+  # aud=notification-orchestrator, perm=notify:intents:system) can reach the
+  # internal endpoint. The user-facing Keycloak decoder is unchanged.
+  NOTIFY_INTERNAL_SERVICE_JWT_ISSUER: "auth-service"
+  NOTIFY_INTERNAL_SERVICE_JWT_JWK_SET_URI: "http://auth-service:8088/oauth2/jwks"
+  NOTIFY_INTERNAL_SERVICE_JWT_AUDIENCE: "notification-orchestrator"
+
   # SMTP / Slack / Webhook adapter defaults — provider URLs etc. ConfigMap;
   # secrets ESO ExternalSecret üzerinden inject edilir.
   NOTIFY_ADAPTERS_SMTP_HOST: "OVERLAY_MUST_OVERRIDE"
@@ -73,3 +82,43 @@ data:
 
   # Outage fallback bypass receiver names (Alertmanager — D43)
   NOTIFY_OUTAGE_FALLBACK_DOCS: "docs/runbooks/RB-notification-outage-fallback.md"
+
+  # Faz 23.8 M7 T4.3.a — Tempo OTLP trace export aktivasyonu.
+  # Spring Boot 3 Micrometer Tracing + OpenTelemetry exporter chain;
+  # base default %5 sampling (production-safe), test overlay'da %50'ye
+  # patch'lenir kanıt toplama için. Tempo backend monitoring/tempo
+  # ClusterIP 4318 HTTP endpoint (netpol-notification-tempo.yaml egress).
+  MANAGEMENT_TRACING_ENABLED: "true"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+  MANAGEMENT_TRACING_PROPAGATION_TYPE: "w3c"
+  # Spring Boot 3 OpenTelemetryProperties.resourceAttributes Map<String,String>
+  # binding — her attribute ayrı env (Spring relaxed binding convention):
+  MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_SERVICE_NAME: "notification-orchestrator"
+  MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_SERVICE_NAMESPACE: "platform"
+  # Spring Boot 3.5+ OTLP exporter property path: management.otlp.tracing.*
+  # (OTEL_EXPORTER_OTLP_* env'leri OpenTelemetry SDK native; Spring Boot
+  # auto-config Spring property'lerini bekler). Tempo HTTP OTLP receiver
+  # port 4318 path /v1/traces.
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: "http://tempo.monitoring.svc.cluster.local:4318/v1/traces"
+  MANAGEMENT_OTLP_TRACING_TRANSPORT: "http"
+
+  # Faz 23.7 M7 T4.2 PR-W4 — Web Push (RFC 8030 + RFC 8292 VAPID).
+  # Browser-only WebPush kanalı; FCM/APNS mobile Faz 22.2 dep scope DIŞI.
+  # WebPushConfig @ConfigurationProperties("notify.adapters.webpush") binding:
+  #   - enabled → NOTIFY_ADAPTERS_WEBPUSH_ENABLED
+  #   - publicKey → NOTIFY_ADAPTERS_WEBPUSH_PUBLIC_KEY (ESO ExternalSecret)
+  #   - privateKey → NOTIFY_ADAPTERS_WEBPUSH_PRIVATE_KEY (ESO ExternalSecret)
+  #   - vapidSubject → NOTIFY_ADAPTERS_WEBPUSH_VAPID_SUBJECT (ESO ExternalSecret)
+  #   - requestTimeoutSeconds → NOTIFY_ADAPTERS_WEBPUSH_REQUEST_TIMEOUT_SECONDS
+  #   - defaultTtlSeconds → NOTIFY_ADAPTERS_WEBPUSH_DEFAULT_TTL_SECONDS
+  #   - paddingMode → NOTIFY_ADAPTERS_WEBPUSH_PADDING_MODE
+  #   - maxPlaintextBytes → NOTIFY_ADAPTERS_WEBPUSH_MAX_PLAINTEXT_BYTES
+  # Base default disabled (false): VapidKeyService @PostConstruct keys empty
+  # ile fail-closed olmasın. Overlay-level enable: test cluster Vault keys
+  # seedlendikten sonra `NOTIFY_ADAPTERS_WEBPUSH_ENABLED: "true"` ile aç.
+  # Prod cutover ayrı karar (ADR/runbook).
+  NOTIFY_ADAPTERS_WEBPUSH_ENABLED: "false"
+  NOTIFY_ADAPTERS_WEBPUSH_REQUEST_TIMEOUT_SECONDS: "10"
+  NOTIFY_ADAPTERS_WEBPUSH_DEFAULT_TTL_SECONDS: "3600"
+  NOTIFY_ADAPTERS_WEBPUSH_PADDING_MODE: "none"
+  NOTIFY_ADAPTERS_WEBPUSH_MAX_PLAINTEXT_BYTES: "3072"

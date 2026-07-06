@@ -25,3 +25,71 @@
 # 1515cad psödo-örnek prosa stiline çevirdi; ilk commit (37079e2) hâlâ
 # history'de.
 37079e206c865f1cb1fd253da52f50e106dea5c5:docs/faz-22-evidence/2026-05-05-22-1-1b-d29-ea-canli.md:curl-auth-header:85
+
+# PR #1004 (Faz 22 ALLOW path browser smoke evidence) — same `curl-auth-header`
+# false-positive on the literal `not-a-real-jwt` placeholder in the §D
+# auth-gate fail-closed example. Fix commit d1cb75f replaced the curl example
+# with prose ("dummy bearer header" + a textual placeholder name); first
+# commit 2e63aec still has the literal in history.
+2e63aec2d83779fec766835f63e68df1f8ebb511:docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md:curl-auth-header:90
+
+# PR #1021 (Faz 22 Windows BE-011 evidence) — generic-api-key false-positive on
+# a deterministic smoke-test idempotency key string (BE-011 collect inventory
+# canonical ID, NOT a real secret); 2 occurrences in JSON examples on lines
+# 135 + 210 of the evidence doc.
+#
+# Same PR — the original gitleaksignore explanatory comment in commit 06ee6c1
+# embedded the literal idempotency key inline, which itself tripped the rule
+# on `.gitleaksignore` line 37. The follow-up commit (2033177) rewrote the
+# comment to no longer embed the literal, but gitleaks scans every commit on
+# the PR branch individually, so the 06ee6c1 fingerprint is still emitted on
+# its own line 37.
+05e71a2561aa4543e7554ba6be6c317312419a07:docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md:generic-api-key:135
+05e71a2561aa4543e7554ba6be6c317312419a07:docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md:generic-api-key:210
+06ee6c1e10d4393369aafc7ae80eedb196dc7fd1:.gitleaksignore:generic-api-key:37
+# PR #1019 (M5 23.5 live runtime evidence) — agent #3 original commit
+# 5467e0f6 used deterministic non-cryptographic smoke value
+# `evidence-smoke-invalid-2026-05-24` as the unsubscribe token query parameter
+# in 3 URL examples (lines 139, 148, 232). The follow-up commit 3d8b4fd
+# replaced these with `<SMOKE-TOKEN-REDACTED>` placeholder. The original
+# commit still trips generic-api-key rule because gitleaks scans every
+# commit in the PR diff individually.
+#
+# The flagged "secret" is a documentation smoke value used to exercise the
+# HMAC-verify-rejects-invalid-token path (HTTP 401 anchor) — no real signed
+# HMAC token, no production credential, no Vault/ESO material involved.
+db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:139
+db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:148
+db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:232
+
+# PR #1036 (BL-010 KC org_id User Attribute mapper canary persona) —
+# gitleaks generic-api-key entropy heuristic flagged Kubernetes pod name
+# suffixes (e.g. `api-gateway-664f4b5655-rqqlm`,
+# `notification-orchestrator-d9979cdbd-r5zjm`) on the initial commit. These
+# are deterministic ReplicaSet+pod hashes (k8s internal naming convention),
+# not credentials. The fix commit (9ba2a06) redacted them to `<POD>`
+# placeholder, but the original commit (77f307d) still contains the
+# high-entropy strings on lines 332 and 442 and re-trips the rule on its
+# own line each scan. No real credential ever existed; KC admin password
+# only flows through `/run/secrets/kc_admin_password` docker mount + Vault
+# operator-action seed (§7.2 of evidence doc).
+77f307dab9a564e2d2382f54a9a99c50db678653:docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md:generic-api-key:332
+77f307dab9a564e2d2382f54a9a99c50db678653:docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md:generic-api-key:442
+
+# PR #1131 (22.5 truth refresh, this PR) — first commit f3ceff9 documented
+# the HALILKOOLUB735 DPAPI hydrate proof using the LITERAL device UUID
+# `d0efb00a-681a-4e32-b7de-a27ef94f2977` immediately adjacent to the word
+# "credential" in the agent sentinel log sample
+# (`hmac credential confirmed device=<UUID>`). Gitleaks generic-api-key
+# heuristic misclassified the UUID+credential adjacency as a leaked key.
+# This iter-2 commit replaces the literal with the `<deviceUuid>`
+# placeholder. The device UUID is not a secret — it is the device id
+# already documented in many operational notes — but suppressing the
+# inline literal eliminates the heuristic miss entirely.
+f3ceff9fe2ca1370ada8eff9410ad639fc08530c:docs/state/current-state.md:generic-api-key:38
+
+# #1459 remote-write-bridge README dogrulama ornekleri — gercek secret degil:
+# 'curl -u rw-test:$PW' (env-var placeholder) + kasitli yanlis-cred ornegi.
+# Parolanin kendisi Vault'ta; README'de hicbir literal secret yok.
+.ost-compose/remote-write-bridge/README.md:curl-auth-user:46
+host-compose/remote-write-bridge/README.md:curl-auth-user:46

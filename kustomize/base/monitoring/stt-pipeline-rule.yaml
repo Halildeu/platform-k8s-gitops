@@ -1,0 +1,198 @@
+# PrometheusRule — STT pipeline (Faz 24 PR-obs-01b, gitops#1247)
+#
+# Codex 019ebacc iter-2 AGREE + Must-Fix absorb:
+# - Tüm Redis Streams ifadeleri {stream=~"audio:chunks:p[0-9][0-9]",
+#   group="live-stt-v1"} filtreli — aynı Redis'e ileride başka stream/group
+#   eklenirse STT alert'leri kirlenmesin (Must-Fix 1).
+# - 5xx oranında clamp_min + trafik floor (pre-MVP low-traffic noise guard —
+#   1 hata / 1 istek anlık %100 görünmesin; Must-Fix 2).
+# - p95 yalnız chunk-admission REST path'leri (canlı uri envanteri:
+#   /api/v1/audio-gateway/sessions + .../sessions/{sessionId}/chunks; gateway
+#   long-lived WS route'u YOK) + sample floor (Must-Fix 3+4).
+# - SttConsumerAbsent ALERT DEĞİL — recording rule (GPU host intermittent;
+#   values-prod warning/info → alarm-receiver-bridge GitHub issue gürültüsü).
+#   Dashboard stat'ı stt:consumer_present:bool okur; `or vector(0)` ile
+#   no-series durumunda da 0 üretir (Must-Fix 5).
+# - absent() tabanlı rule YOK (base/monitoring prod'a da gider; remote_write
+#   onarımına kadar cross-cluster false-positive üretirdi).
+#
+# Lag kaynağı: redis_exporter XINFO'dan NATİVE redis_stream_group_lag
+# (canlı envanter 2026-06-12, PR #1458 comment) — stream_length-delivered
+# türetmesi bilinçli kullanılmıyor.
+#
+# Threshold'lar initial pre-MVP değerleri: chunk cadence + MAXLEN/TTL
+# gözlemi sonrası kalibre edilecek (annotation'larda da not).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: stt-pipeline
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack   # Prom Operator ruleSelector
+spec:
+  groups:
+    - name: stt-pipeline.recording
+      interval: 30s
+      rules:
+        # Consumer mevcudiyeti (0/1) — dashboard stat + diğer alert'lerin
+        # girdisi. GPU host intermittent olduğu için tek başına ALERT DEĞİL.
+        # `or vector(0)`: exporter ayakta ama seri yoksa da 0 üret
+        # (deterministik stat — Codex Must-Fix 5).
+        - record: stt:consumer_present:bool
+          expr: |
+            clamp_max(
+              sum(redis_stream_group_consumers{
+                job="redis-streams-exporter",
+                stream=~"audio:chunks:p[0-9][0-9]",
+                group="live-stt-v1"
+              })
+              or vector(0),
+              1
+            )
+        # Toplam consumer-group lag (XINFO native) — dashboard + backlog alert.
+        - record: stt:stream_group_lag:sum
+          expr: |
+            sum(redis_stream_group_lag{
+              job="redis-streams-exporter",
+              stream=~"audio:chunks:p[0-9][0-9]",
+              group="live-stt-v1"
+            })
+            or vector(0)
+
+    - name: stt-pipeline.availability
+      interval: 30s
+      rules:
+        - alert: AudioGatewayDown
+          expr: up{job="audio-gateway"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: audio-gateway
+          annotations:
+            summary: "audio-gateway scrape down (chunk admission kesik olabilir)"
+            description: "Prometheus audio-gateway management endpoint'ini 5 dakikadır scrape edemiyor. Chunk admission API'si büyük ihtimalle kesik — Aşama-2 zinciri (client→gateway→Redis) kırık."
+            runbook_url: "docs/runbooks/redis-streams-staging-sw.md"
+
+        - alert: RedisStreamsDown
+          expr: redis_up{job="redis-streams-exporter"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            component: redis-streams
+          annotations:
+            summary: "Redis Streams chunk transport down"
+            description: "redis-streams-exporter Redis'e bağlanamıyor (redis_up=0, 3dk). Chunk transport kesik — gateway dispatcher 503 fail-fast zincirine düşer (ADR-0031 D2). Host-compose redis-streams container'ını kontrol et."
+            runbook_url: "docs/runbooks/redis-streams-staging-sw.md"
+
+        - alert: RedisStreamsExporterDown
+          expr: up{job="redis-streams-exporter"} == 0
+          for: 10m
+          labels:
+            severity: warning
+            component: redis-streams-exporter
+          annotations:
+            summary: "redis-streams-exporter scrape down (görünürlük kaybı)"
+            description: "Exporter 10 dakikadır scrape edilemiyor. Bu görünürlük kaybıdır, transport kaybı değil — Redis'in kendisi ayakta olabilir; ama queue/lag körlüğünde uzun kalmayalım."
+            runbook_url: "docs/runbooks/redis-streams-staging-sw.md"
+
+    - name: stt-pipeline.gateway-slo
+      interval: 30s
+      rules:
+        # 5xx oranı — clamp_min (bölme-sıfır) + and on() trafik floor
+        # (10dk'da >=20 istek yoksa değerlendirme yok; pre-MVP low-traffic
+        # noise guard — Codex Must-Fix 2).
+        - alert: AudioGateway5xxRatio
+          expr: |
+            (
+              sum(rate(http_server_requests_seconds_count{job="audio-gateway",status=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(http_server_requests_seconds_count{job="audio-gateway"}[5m])), 0.001)
+            ) > 0.05
+            and on()
+            sum(increase(http_server_requests_seconds_count{job="audio-gateway"}[10m])) >= 20
+          for: 10m
+          labels:
+            severity: warning
+            component: audio-gateway
+            slo_class: error-rate
+          annotations:
+            summary: "audio-gateway 5xx oranı >%5 (10dk sürekli)"
+            description: "5xx oranı son 5dk penceresinde %{{ $value | humanizePercentage }}. Initial pre-MVP threshold (%5 + >=20 istek/10dk floor) — trafik profili oturunca kalibre edilecek."
+
+        # p95 — yalnız chunk-admission REST path (canlı uri envanteri;
+        # long-lived WS yok). histogram_quantile düşük sample'da gürültülü →
+        # sample floor (Codex Must-Fix 3+4).
+        - alert: AudioGatewayP95High
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(http_server_requests_seconds_bucket{job="audio-gateway",uri=~"/api/v1/audio-gateway/.*"}[5m])
+              )
+            ) > 1.5
+            and on()
+            sum(increase(http_server_requests_seconds_count{job="audio-gateway",uri=~"/api/v1/audio-gateway/.*"}[15m])) >= 20
+          for: 15m
+          labels:
+            severity: warning
+            component: audio-gateway
+            slo_class: latency
+          annotations:
+            summary: "audio-gateway chunk-admission p95 > 1.5s (15dk)"
+            description: "Session/chunk REST path p95 latency {{ $value | humanizeDuration }}. Initial pre-MVP threshold; admission path'i sentetik 3200B chunk'larda normalde <100ms."
+
+    - name: stt-pipeline.transport-slo
+      interval: 30s
+      rules:
+        # Birleşik sinyal (Codex S3): "consumer yok" tek başına incident değil
+        # (GPU host intermittent); "backlog büyüyor VE consumer yok" incident
+        # adayı.
+        - alert: SttBacklogGrowingWithoutConsumer
+          expr: |
+            (
+              sum(redis_stream_group_lag{
+                job="redis-streams-exporter",
+                stream=~"audio:chunks:p[0-9][0-9]",
+                group="live-stt-v1"
+              }) > 50
+            )
+            and on()
+            (
+              (
+                sum(redis_stream_group_consumers{
+                  job="redis-streams-exporter",
+                  stream=~"audio:chunks:p[0-9][0-9]",
+                  group="live-stt-v1"
+                })
+                or vector(0)
+              ) == 0
+            )
+          for: 10m
+          labels:
+            severity: warning
+            component: redis-streams
+            slo_class: backlog
+          annotations:
+            summary: "STT backlog büyüyor ve consumer yok (lag>50, 10dk)"
+            description: "live-stt-v1 grubunun toplam lag'i {{ $value }} ve bağlı consumer 0 — GPU host kapalı/kopuk olabilir; chunk'lar birikiyor (maxmemory noeviction: sürerse Redis yazma reddine gider). Initial pre-MVP threshold (lag>50); chunk cadence gözlemiyle kalibre edilecek."
+            runbook_url: "docs/runbooks/redis-streams-staging-sw.md"
+
+        # Teslim edildi ama ACK yok — consumer crash/hang sinyali.
+        - alert: SttConsumerPendingStuck
+          expr: |
+            sum(redis_stream_group_messages_pending{
+              job="redis-streams-exporter",
+              stream=~"audio:chunks:p[0-9][0-9]",
+              group="live-stt-v1"
+            }) > 0
+          for: 30m
+          labels:
+            severity: warning
+            component: live-stt-consumer
+            slo_class: backlog
+          annotations:
+            summary: "STT pending mesaj 30dk'dır ACK'lanmadı"
+            description: "live-stt-v1 grubunda {{ $value }} pending mesaj 30 dakikadır duruyor — consumer teslim almış ama ACK'lamamış (crash/hang). İlk güvenlik ağı; gürültü olursa >5 veya oldest-idle tabanlı sinyale taşınır."
+            runbook_url: "docs/runbooks/redis-streams-staging-sw.md"

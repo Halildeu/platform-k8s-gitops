@@ -1,0 +1,257 @@
+name: Faz 24 Platform Desktop Token Evidence
+
+# Runs the #1995/#1996/#1997 external-recorder evidence chain on the
+# self-hosted staging-sw runner. Boundary: platform-test Keycloak only;
+# direct grants are restored, the temp user is deleted, token/password/admin
+# material is never uploaded, and production/direct-STT readiness is not
+# claimed by this workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Public testai base URL"
+        required: true
+        default: "https://testai.acik.com"
+      expected_issuer:
+        description: "Expected platform-test issuer URL"
+        required: true
+        default: "https://testai.acik.com/realms/platform-test"
+      keycloak_base_url:
+        description: "Runner-local Keycloak token endpoint base URL"
+        required: true
+        default: "http://127.0.0.1:8082"
+      run_external_smoke:
+        description: "Run external recorder smoke after token-contract PASS"
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-platform-desktop-token-evidence
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    name: platform-desktop token + external recorder evidence
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 20
+
+    env:
+      EVIDENCE_DIR: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}
+      DIAG_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}/faz24-platform-desktop-token-diagnostic.json
+      TOKEN_CONTRACT_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}/faz24-platform-desktop-token-contract.json
+      SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}/faz24-external-recorder-smoke.json
+      SMOKE_VERIFY_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}/faz24-external-recorder-smoke.verify.json
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          BASE_URL_INPUT: ${{ inputs.base_url }}
+          EXPECTED_ISSUER_INPUT: ${{ inputs.expected_issuer }}
+          KEYCLOAK_BASE_URL_INPUT: ${{ inputs.keycloak_base_url }}
+          RUN_EXTERNAL_SMOKE_INPUT: ${{ inputs.run_external_smoke }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          require_http_url() {
+            name="$1"
+            value="$2"
+            if ! printf '%s' "$value" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$'; then
+              echo "::error::${name} must be a bounded http(s) URL without credentials, query, or fragment"
+              exit 1
+            fi
+            if printf '%s' "$value" | grep -Eq '(^|/)\.\.(/|$)|@|[?&=#]'; then
+              echo "::error::${name} must not contain path escape, credentials, query, or fragment"
+              exit 1
+            fi
+          }
+
+          reject_multiline base_url "${BASE_URL_INPUT}"
+          reject_multiline expected_issuer "${EXPECTED_ISSUER_INPUT}"
+          reject_multiline keycloak_base_url "${KEYCLOAK_BASE_URL_INPUT}"
+          reject_multiline run_external_smoke "${RUN_EXTERNAL_SMOKE_INPUT}"
+          require_http_url base_url "${BASE_URL_INPUT}"
+          require_http_url expected_issuer "${EXPECTED_ISSUER_INPUT}"
+          require_http_url keycloak_base_url "${KEYCLOAK_BASE_URL_INPUT}"
+
+          case "${RUN_EXTERNAL_SMOKE_INPUT}" in
+            true|false) ;;
+            *)
+              echo "::error::run_external_smoke must be true or false"
+              exit 1
+              ;;
+          esac
+
+          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${RUN_EXTERNAL_SMOKE_INPUT}"
+          if printf '%s' "${all_inputs}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|Bearer |Authorization:|eyJ[A-Za-z0-9_-]+\.'; then
+            echo "::error::inputs must not contain token/private/secret-like material"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run platform-desktop token evidence chain
+        id: run_chain
+        env:
+          OUT_DIR: ${{ env.EVIDENCE_DIR }}
+          BASE_URL: ${{ inputs.base_url }}
+          EXPECTED_ISSUER: ${{ inputs.expected_issuer }}
+          KC_BASE_URL: ${{ inputs.keycloak_base_url }}
+          KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+          RUN_EXTERNAL_SMOKE: ${{ inputs.run_external_smoke == 'true' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          set +e
+          bash scripts/faz24/run-platform-desktop-token-evidence-chain.sh \
+            > "${EVIDENCE_DIR}/runner.stdout" \
+            2> "${EVIDENCE_DIR}/runner.stderr"
+          exit_code="$?"
+          set -e
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          sed -n '1,120p' "${EVIDENCE_DIR}/runner.stdout" 2>/dev/null || true
+          sed -n '1,120p' "${EVIDENCE_DIR}/runner.stderr" 2>/dev/null || true
+          exit 0
+
+      - name: Verify artifact excludes private material
+        id: secret_scan
+        if: always()
+        run: |
+          set -euo pipefail
+
+          test -d "${EVIDENCE_DIR}"
+          test -s "${DIAG_JSON}"
+
+          if grep -R -a -E \
+            -e '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
+            -e '-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
+            -e 'Bearer ' \
+            -e 'Authorization:' \
+            -e 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.' \
+            -e '-----BEGIN CERTIFICATE-----' \
+            -e 'data:audio/[A-Za-z0-9.+-]+;base64,' \
+            -- \
+            "${EVIDENCE_DIR}"; then
+            echo "::error::evidence artifact contains forbidden token/key/certificate material"
+            exit 1
+          fi
+
+          if grep -R -a -E \
+            -e '"(access_token|refresh_token)"[[:space:]]*:' \
+            -e '"(authorization|bearer|jwt|api_key|private_key)"[[:space:]]*:' \
+            -e '"(client_secret|password|secret)"[[:space:]]*:' \
+            -e '"(raw_audio|audio_bytes|audio_base64|transcript_text)"[[:space:]]*:' \
+            -e '"(raw_request|raw_response|cookie)"[[:space:]]*:' \
+            -- \
+            "${EVIDENCE_DIR}"; then
+            echo "::error::evidence artifact contains forbidden key names"
+            exit 1
+          fi
+
+          python3 - <<'PY' "${DIAG_JSON}"
+          import json
+          import sys
+
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert data["schemaVersion"] == "faz24.platformDesktopTokenEvidenceChain.v1"
+          assert data["tokenIncluded"] is False
+          assert data["boundaries"]["platformTestOnly"] is True
+          assert data["boundaries"]["productionMutation"] is False
+          assert data["boundaries"]["rawTokenLogged"] is False
+          assert data["boundaries"]["rawPasswordLogged"] is False
+          assert data["boundaries"]["rawAdminCredentialLogged"] is False
+          assert data["cleanup"]["directGrantsToggled"] in (True, False)
+          if data["cleanup"]["directGrantsToggled"]:
+              assert data["cleanup"]["directGrantsRestored"] is True
+          if data["cleanup"]["tempUserCreated"]:
+              assert data["cleanup"]["tempUserDeleted"] is True
+          assert data["cleanup"]["tokenFileRemoved"] is True
+          PY
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          CHAIN_EXIT_CODE: ${{ steps.run_chain.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          status="missing"
+          failure="missing"
+          token_contract="missing"
+          smoke="missing"
+          verifier="missing"
+          if [ -s "${DIAG_JSON}" ]; then
+            status="$(jq -r '.status // "missing"' "${DIAG_JSON}")"
+            failure="$(jq -r '.failureReason // "none"' "${DIAG_JSON}")"
+            token_contract="$(jq -r '.results.tokenContract.status // "missing"' "${DIAG_JSON}")"
+            smoke="$(jq -r '.results.externalRecorderSmoke.status // "missing"' "${DIAG_JSON}")"
+            verifier="$(jq -r '.results.externalRecorderVerifier.status // "missing"' "${DIAG_JSON}")"
+          fi
+          {
+            echo "## Faz 24 platform-desktop token evidence"
+            echo
+            echo "- Runner: self-hosted staging-sw"
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-platform-desktop-token-evidence-${{ github.run_id }}\`"
+            echo "- Chain exit code: \`${CHAIN_EXIT_CODE:-missing}\`"
+            echo "- Diagnostic status: \`${status}\`"
+            echo "- Failure reason: \`${failure}\`"
+            echo "- Token contract: \`${token_contract}\`"
+            echo "- External recorder smoke: \`${smoke}\`"
+            echo "- External recorder verifier: \`${verifier}\`"
+            echo
+            echo "Boundary: platform-test Keycloak only. The workflow restores direct grants, deletes the temporary smoke user, removes local token/password files, and uploads only redacted JSON/runner logs. No production, direct-STT, desktop mic/loopback, or #1615/#766 closure claim is made by this workflow."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload platform-desktop token evidence artifact
+        if: always() && steps.secret_scan.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-platform-desktop-token-evidence-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local evidence directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail workflow when chain is not accepted
+        if: always()
+        env:
+          CHAIN_EXIT_CODE: ${{ steps.run_chain.outputs.exit_code }}
+          SECRET_SCAN_OUTCOME: ${{ steps.secret_scan.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "${SECRET_SCAN_OUTCOME}" != "success" ]; then
+            echo "::error::platform-desktop token evidence secret scan did not pass"
+            exit 1
+          fi
+          if [ -z "${CHAIN_EXIT_CODE}" ]; then
+            echo "::error::platform-desktop token evidence chain did not expose an exit code"
+            exit 1
+          fi
+          if [ "${CHAIN_EXIT_CODE}" != "0" ]; then
+            echo "::error::platform-desktop token evidence chain was not accepted"
+            exit "${CHAIN_EXIT_CODE}"
+          fi

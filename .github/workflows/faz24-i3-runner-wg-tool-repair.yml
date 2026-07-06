@@ -1,0 +1,155 @@
+name: Faz 24 I3 Runner WG Tool Repair
+
+# Controlled preflight/repair for the self-hosted staging-sw runner prerequisite
+# needed by platform-k8s-gitops#1864. This workflow does not touch clusters,
+# Denetim PC config, direct-STT, app-mTLS, or production state.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "verify or install"
+        required: true
+        default: "verify"
+      confirm:
+        description: "Required for install: INSTALL_WIREGUARD_TOOLS_FOR_FAZ24_I3"
+        required: false
+        default: "VERIFY_ONLY"
+      package_manager:
+        description: "auto, apt-get, dnf, yum, zypper, apk"
+        required: true
+        default: "auto"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: faz24-i3-runner-wg-tool-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: preflight/repair staging-sw wg tool
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    env:
+      EVIDENCE_DIR: /tmp/faz24-i3-runner-wg-tool-${{ github.run_id }}
+      EVIDENCE_JSON: /tmp/faz24-i3-runner-wg-tool-${{ github.run_id }}/wg-tool-repair.json
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          MODE_INPUT: ${{ inputs.mode }}
+          CONFIRM_INPUT: ${{ inputs.confirm }}
+          PACKAGE_MANAGER_INPUT: ${{ inputs.package_manager }}
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline mode "${MODE_INPUT}"
+          reject_multiline confirm "${CONFIRM_INPUT}"
+          reject_multiline package_manager "${PACKAGE_MANAGER_INPUT}"
+
+          if ! printf '%s' "${MODE_INPUT}" | grep -Eq '^(verify|install)$'; then
+            echo "::error::mode must be verify or install"
+            exit 1
+          fi
+          if ! printf '%s' "${PACKAGE_MANAGER_INPUT}" | grep -Eq '^(auto|apt-get|dnf|yum|zypper|apk)$'; then
+            echo "::error::package_manager must be auto, apt-get, dnf, yum, zypper, or apk"
+            exit 1
+          fi
+          if [ "${MODE_INPUT}" = "install" ] && [ "${CONFIRM_INPUT}" != "INSTALL_WIREGUARD_TOOLS_FOR_FAZ24_I3" ]; then
+            echo "::error::install mode requires confirm=INSTALL_WIREGUARD_TOOLS_FOR_FAZ24_I3"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run WG tool preflight/repair
+        id: repair
+        shell: bash
+        env:
+          FAZ24_I3_WG_TOOL_MODE: ${{ inputs.mode }}
+          FAZ24_I3_WG_TOOL_CONFIRM: ${{ inputs.confirm }}
+          FAZ24_I3_WG_TOOL_PACKAGE_MANAGER: ${{ inputs.package_manager }}
+          FAZ24_I3_WG_TOOL_EVIDENCE_JSON: ${{ env.EVIDENCE_JSON }}
+        run: |
+          set +e
+          mkdir -p "${EVIDENCE_DIR}"
+          scripts/faz24/repair-i3-runner-wg-tool.sh \
+            | tee "${EVIDENCE_DIR}/wg-tool-repair-summary.txt"
+          exit_code="${PIPESTATUS[0]}"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          MODE_INPUT: ${{ inputs.mode }}
+          PACKAGE_MANAGER_INPUT: ${{ inputs.package_manager }}
+          REPAIR_EXIT_CODE: ${{ steps.repair.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          exit_code="${REPAIR_EXIT_CODE:-missing}"
+          {
+            echo "## Faz 24 I3 runner WG tool repair"
+            echo
+            echo "- Runner: self-hosted staging-sw"
+            echo "- Mode: \`${MODE_INPUT}\`"
+            echo "- Package manager: \`${PACKAGE_MANAGER_INPUT}\`"
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-i3-runner-wg-tool-${{ github.run_id }}\`"
+            echo "- Exit code: \`${exit_code}\`"
+            echo
+            echo "Boundary: host prerequisite only. No cluster, Denetim PC, direct-STT, app-mTLS, or production state is changed by verify mode. Install mode may install wireguard-tools on the self-hosted runner when the confirm token matches."
+            echo
+            echo '```text'
+            sed -n '1,120p' "${EVIDENCE_DIR}/wg-tool-repair-summary.txt" 2>/dev/null || true
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload WG tool evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-i3-runner-wg-tool-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local evidence directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail workflow when WG tool remains unavailable
+        if: always()
+        env:
+          REPAIR_EXIT_CODE: ${{ steps.repair.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+
+          exit_code="${REPAIR_EXIT_CODE}"
+          if [ -z "${exit_code}" ]; then
+            echo "::error::WG tool repair did not expose an exit code"
+            exit 1
+          fi
+          if [ "${exit_code}" != "0" ]; then
+            echo "::error::WG tool remains unavailable; see uploaded evidence artifact"
+            exit "${exit_code}"
+          fi

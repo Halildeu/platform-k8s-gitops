@@ -29,6 +29,12 @@ spec:
       app.kubernetes.io/name: endpoint-admin-service
   template:
     metadata:
+      annotations:
+        # #1267 runtime reconcile: ConfigMap store/model pins moved to the
+        # ESO-managed endpoint-admin-service-secrets Secret. Keep this stable
+        # marker in the pod template so the first GitOps sync after migration
+        # rolls pods and re-reads envFrom from the Secret.
+        endpoint-admin.acik.io/openfga-selector-source: "eso-secret"
       labels:
         app.kubernetes.io/name: endpoint-admin-service
         app.kubernetes.io/component: backend
@@ -59,12 +65,28 @@ spec:
             - name: management
               containerPort: 8081
               protocol: TCP
+            # Faz 22.5 M2 (#1359): default-off passthrough mTLS connector.
+            # The Spring Boot image only binds this when
+            # ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED=true and the mounted
+            # keystore/truststore + password env are present. Keeping the port
+            # declared now lets the staged endpoint-agent-mtls Service target
+            # `mtls` without changing selectors during activation.
+            - name: mtls
+              containerPort: 8443
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: endpoint-admin-service-config
             - secretRef:
                 name: endpoint-admin-service-secrets
                 optional: false
+            # Optional by design: base/prod/test stay default-off until the
+            # operator seeds this secret and an overlay deliberately enables
+            # the passthrough connector. Missing secret must not block the
+            # normal HMAC/JWT endpoint-admin runtime.
+            - secretRef:
+                name: endpoint-admin-service-mtls-secrets
+                optional: true
           resources:
             requests:
               cpu: 100m
@@ -113,8 +135,18 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: endpoint-admin-mtls-stores
+              mountPath: /etc/endpoint-admin/mtls
+              readOnly: true
       imagePullSecrets:
         - name: ghcr-pull
       volumes:
         - name: tmp
           emptyDir: {}
+        # Optional by design: when passthrough is disabled the directory may be
+        # empty. When enabled, the backend validator fails closed unless the
+        # expected PKCS12 files are readable.
+        - name: endpoint-admin-mtls-stores
+          secret:
+            secretName: endpoint-admin-service-mtls-stores
+            optional: true

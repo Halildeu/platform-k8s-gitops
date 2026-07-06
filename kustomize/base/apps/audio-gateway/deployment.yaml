@@ -1,0 +1,135 @@
+# audio-gateway-service Deployment — Faz 24 Meeting Intelligence (PR-gw-01 family)
+#
+# Aşama-2 staging smoke ön şartı (platform-ai#151 → #57 G8).
+# Endpoint-admin skeleton disiplini:
+# - image: OVERLAY_MUST_OVERRIDE (placeholder leak guard, fail-closed)
+# - replicas: 0 base default — overlay set eder (test: 1)
+#
+# JWT env kontratı (platform-backend#556 fail-fast):
+# AUDIO_GATEWAY_JWT_ISSUER_URI + AUDIO_GATEWAY_JWT_JWKS_URI configmap'te
+# ZORUNLU — eksikse pod startup PlaceholderResolutionException ile düşer
+# (bilinçli: yanlış realm'e sessiz düşme YASAK).
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audio-gateway
+  labels:
+    app.kubernetes.io/name: audio-gateway
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+spec:
+  replicas: 0  # overlay sets 1 (test); prod Faz 24 D30 cutover'a kadar dahil değil
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audio-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audio-gateway
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: platform
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: audio-gateway
+      # Test overlay direct-STT target: keep TLS SNI/Host as live-stt.denetim
+      # while routing over WireGuard to Denetim. NetworkPolicy separately
+      # constrains egress to 10.99.0.2/32:8243.
+      hostAliases:
+        - ip: "10.99.0.2"
+          hostnames:
+            - "live-stt.denetim"
+      securityContext:
+        runAsNonRoot: true
+        # Dockerfile USER 1000 (app) — endpoint-admin'deki 65532 distroless
+        # uid'inden farklı; image'daki gerçek uid ile eşleşir
+        runAsUser: 1000
+        runAsGroup: 1000
+        # direct-STT mTLS Secret files are mounted defaultMode 0440; fsGroup
+        # lets the non-root app user read them without making keys world-readable.
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: audio-gateway
+          # PLACEHOLDER — overlay MUST set via images: newName + digest (D30)
+          image: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service:OVERLAY_MUST_OVERRIDE
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8210
+              protocol: TCP
+            # k8s profilinde actuator ayrı management portunda (#558 —
+            # drift gate spring-actuator contract: probe port management/8081)
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: audio-gateway-config
+            - secretRef:
+                name: audio-gateway-secrets   # ESO: SPRING_DATA_REDIS_PASSWORD
+                optional: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # Probe pattern: endpoint-admin emsali (startupProbe gate + state-based
+          # liveness/readiness). Probe path'leri SecurityConfig'te permitAll
+          # (platform-backend#556 — kubelet Authorization header gönderemez).
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            failureThreshold: 30
+            periodSeconds: 5        # 150 sn startup toleransı
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            initialDelaySeconds: 0
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: direct-stt-mtls
+              mountPath: /etc/direct-stt-mtls
+              readOnly: true
+      imagePullSecrets:
+        - name: ghcr-pull
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        # Dedicated Secret, separate from audio-gateway-secrets/envFrom, so
+        # direct-STT certificate seed drift cannot break the Redis password
+        # aggregate. Optional keeps the current flag-false pod runnable before
+        # seed; the preflight/e2e verifiers fail closed until all files exist.
+        - name: direct-stt-mtls
+          secret:
+            secretName: audio-gateway-direct-stt-mtls
+            optional: true
+            defaultMode: 0440

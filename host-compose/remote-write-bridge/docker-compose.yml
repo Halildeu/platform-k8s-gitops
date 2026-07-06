@@ -1,0 +1,48 @@
+# remote-write-bridge — test→prod-hub Prometheus remote_write auth proxy
+# (gitops#1459, Codex 019ebacc REVISE absorb: prod node'u test bridge'ine
+#  bağlamak YASAK — dar yüzeyli, auth'lu, tek-endpoint nginx köprüsü)
+#
+# Mimari:
+#   test Prometheus (k3d-test, monitoring ns)
+#     → D19 Service+Endpoints (kustomize/base/monitoring-test-only) → 172.19.0.251:9091
+#     → BU container (platform-test-net bacağı; basic auth + POST /api/v1/write only)
+#     → platform-prod-net bacağı → k3d-prod-server-0:30090 (NodePort, yalnız prod
+#       bridge içi — host'a publish YOK)
+#     → prod Prometheus receiver (enableRemoteWriteReceiver)
+#
+# Kurulum + htpasswd üretimi + rotasyon: README.md
+# Parola Vault: kv/platform/remote-write-bridge (username/password — test
+# Prometheus basicAuth ESO ile aynı kaynaktan okur).
+#
+# Güvenlik sınırları (Codex Must-Fix):
+# - Yalnız POST /api/v1/write proxy'lenir; her şey 404/405
+# - Basic auth ZORUNLU (auth'suz POST=401 — acceptance negatif kanıtı)
+# - client_max_body_size + limit_req (cardinality/DoS guard'ın L7 katmanı;
+#   asıl gate prod head-series ölçümü)
+# - Host'a port publish YOK (yalnız docker bridge'ler içi erişim)
+
+services:
+  remote-write-bridge:
+    # nginx:1.27-alpine (docker.io manifest-list digest, 2026-06-12 — D30 pin)
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    container_name: platform-remote-write-bridge
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./secrets/htpasswd:/etc/nginx/htpasswd:ro   # README: openssl ile üret; git'e GİRMEZ
+      - ./secrets/loki.htpasswd:/etc/nginx/loki.htpasswd:ro   # gitops#1462 AYRI Loki auth (Codex S1)
+    networks:
+      platform-test-net:
+        ipv4_address: 172.19.0.251   # D19 Endpoints pin'i (redis-streams .250 emsali)
+      platform-prod-net: {}           # k3d-prod-server-0 DNS çözümü için ikinci bacak
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9091/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+networks:
+  platform-test-net:
+    external: true
+  platform-prod-net:
+    external: true

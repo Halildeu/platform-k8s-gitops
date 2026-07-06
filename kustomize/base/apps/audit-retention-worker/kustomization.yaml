@@ -1,0 +1,27 @@
+# audit-retention-worker base — Faz 24 KVKK audit-archive 7yr WORM (#1250-D).
+#
+# A recurring CronJob (NOT the one-shot operator-applied etl-worker model): wired
+# into the test overlay (ArgoCD-reconciled, digest-pinned). No service.yaml (no
+# HTTP API / no api-gateway route). No secret stub — the ESO ExternalSecret
+# (overlays/test/eso/audit-retention-worker) creates audit-retention-worker-secrets.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: audit-retention-worker
+    includeSelectors: false
+    includeTemplates: true
+  # part-of=audit-archive (NOT platform) — the worker pod must NOT match the
+  # namespace-wide allow-egress-host-bridge / allow-egress-dns / allow-egress-intra-ns
+  # (part-of=platform). The worker-specific allow-egress-audit-retention-worker
+  # NetPol is then its SOLE egress allowlist: DNS + PG + MinIO (Codex D REVISE-2).
+  - pairs:
+      app.kubernetes.io/part-of: audit-archive
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - cronjob.yaml

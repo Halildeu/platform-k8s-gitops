@@ -1,0 +1,17 @@
+# redis-streams-exporter Service — Faz 24 PR-obs-01a
+# ServiceMonitor (ops/servicemonitor.yaml) port adıyla (http-metrics) eşleşir.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-streams-exporter
+  labels:
+    app.kubernetes.io/name: redis-streams-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis-streams-exporter
+  ports:
+    - name: http-metrics
+      port: 9121
+      targetPort: http-metrics
+      protocol: TCP

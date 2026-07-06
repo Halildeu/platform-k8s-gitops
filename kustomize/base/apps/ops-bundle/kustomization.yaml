@@ -24,6 +24,16 @@ resources:
   - ../schema-service/ops
   - ../permission-service/ops
   - ../openfga/ops
+  # Faz 24 PR-obs-01a (gitops#1247): audio-gateway ServiceMonitor. Prod'da
+  # audio-gateway runtime'ı henüz yok (D30 defer) — SM eşleşen Service
+  # bulamaz, boş kalır; D30 cutover'da otomatik devreye girer.
+  - ../audio-gateway/ops
+  # Faz 22.5 M6 (gitops#1493, sub-task of #1378): endpoint-admin-service
+  # ServiceMonitor. Service had a named `management` 8081 port but no SM, so
+  # /actuator/prometheus was never scraped — the M6 capacity-baseline /
+  # wave-abort PromQL needs these series real. test+prod runtime already
+  # present (overlays/{test,prod} include base/apps/endpoint-admin-service).
+  - ../endpoint-admin-service/ops
   # Faz 23.9 Step D (Codex thread 019e08df REVISE absorb 2026-05-08):
   # notification-orchestrator ExternalSecret moved out of ops-bundle to
   # per-environment overlays (overlays/{test,prod}/eso/notify) to eliminate

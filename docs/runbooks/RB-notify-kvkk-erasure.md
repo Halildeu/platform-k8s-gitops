@@ -1,17 +1,28 @@
 # RB-notify-kvkk-erasure — KVKK Art.11 Right-to-Erasure Operasyon Prosedürü
 
-> **Status**: DRAFT (Faz 23.0 charter — 2026-05-05)
+> **Status**: ACTIVE — REFRESHED 2026-05-21 (Codex `019e4950` P2 absorb)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md) D42 + D46 #7
 > **Sub-faz**: 23.2 (MVP-dar — KVKK erasure path)
+> **SLA**: KVKK Madde 13.2 — başvuruya **en geç 30 gün** içinde cevap. Erasure request ledger (PR-K1 V18 migration) `due_at = received_at + 30d` tracking.
+> **Related runbooks**: `RB-notify-kvkk-provider-propagation.md` (Madde 11.4 provider matrix), `RB-notify-kvkk-backup-tombstone.md` (backup restore re-erasure)
+
+## Codex 019e4950 P2 absorb — drift fix (2026-05-21)
+
+Bu runbook **AI proxy review** sonrası kod ile aligned:
+- **Pseudonymization**: ~~SHA-256 anonim~~ → **HMAC-SHA256 with Vault-stored org-namespaced pepper** (`PiiRedactor.hashRecipient`). recipient_hash **pseudonymous personal data**; "anonim" terimi yanıltıcıdır.
+- **Audit table**: `audit_event_v2` (Faz 23.1 PR-F partitioned 90-day retention); `audit_event` legacy.
+- **Subscriber endpoint**: free-form `reason` accepted DEĞİL; sabit `self-service-kvkk-art-11`.
+- **Response shape**: `intents_erased`, `deliveries_anonymized`, `inbox_rows_deleted`, `status` (`completed` / `no_op`).
+- **DPO/legal final onay**: bu runbook implementation contract'ını yansıtır; hukuki uyum **DPO/legal sign-off ext** kalır.
 
 KVKK 11. madde: "Veri sahibi, kendisine ait verilerin silinmesini veya yok edilmesini talep edebilir."
 
-Bu runbook **subscriber'ın kendi notification verilerinin silinmesi** prosedürünü tanımlar. Audit log integrity korunur, payload purge edilir, recipient_hash kalır.
+Bu runbook **subscriber'ın kendi notification verilerinin silinmesi** prosedürünü tanımlar. Audit log integrity korunur, payload purge edilir, recipient_hash pseudonymous kalır.
 
 ## Kapsam
 
 - **Dahil**: subscriber'ın `notification_intent.payload`, `notification_delivery.recipient_id`, log MDC içeriği
-- **Hariç**: `audit_event.recipient_hash` (sha256 — anonim, audit integrity için kalır), `notification_delivery.provider_msg_id` (provider tarafı sorumluluk), aggregate metrics (kişiye özgü değil)
+- **Hariç (pseudonymous data — saklama hukuki dayanak)**: `audit_event_v2.recipient_hash` (HMAC-SHA256 with org-namespaced Vault pepper — pseudonymous, audit chain integrity + replay prevention için saklanır; KVKK Madde 7 hukuki yükümlülük gerekçesi 90-day retention'a kadar), `notification_delivery.provider_msg_id_masked` (provider DPA gereği — provider matrix runbook); aggregate metrics (kişiye özgü değil)
 
 ## Subscriber Self-Service (API yolu — MVP)
 

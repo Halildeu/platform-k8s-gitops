@@ -1,0 +1,91 @@
+name: Faz 22.6 Release Lineage Audit
+
+# Read-only live release-lineage evidence workflow for the Faz 22.6 bounded
+# pilot. It runs on the self-hosted staging-sw runner because GitHub-hosted
+# runners cannot reach the private k3d clusters, and Mac-side SSH may be
+# unavailable.
+
+on:
+  schedule:
+    - cron: "45 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: faz22-6-release-lineage-audit
+  cancel-in-progress: true
+
+jobs:
+  release-lineage-audit:
+    name: release-lineage audit (staging-sw local kubectl)
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 5
+
+    env:
+      # All referenced release/gate repositories are public. Use the
+      # workflow-scoped read-only token instead of a long-lived PAT secret.
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_LINEAGE_KUBECTL_MODE: local-kubectl
+      SSH_TARGET: local
+      KUBE_CONTEXT: k3d-test
+      KUBE_NAMESPACE: platform-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Assert GitHub read token
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::github.token did not expand; Faz 22.6 release-lineage audit cannot read GitHub release/issue metadata"
+            exit 1
+          fi
+
+      - name: Validate EndpointAgent release policy
+        run: |
+          set -euo pipefail
+          scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh
+
+      - name: Run Faz 22.6 release-lineage audit
+        run: |
+          set -euo pipefail
+          bash scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh \
+            | tee faz22-6-release-lineage-audit.txt
+
+      - name: Assert artifact-host live evidence
+        run: |
+          set -euo pipefail
+          if ! grep -q '^ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl ' faz22-6-release-lineage-audit.txt; then
+            echo "::error::ARTIFACT_HOST_LIVE_DIGEST did not pass in local-kubectl mode"
+            grep '^ARTIFACT_HOST_LIVE_DIGEST=' faz22-6-release-lineage-audit.txt || true
+            exit 1
+          fi
+
+      - name: Write release-lineage summary
+        if: always()
+        run: |
+          {
+            echo "## Faz 22.6 release-lineage audit"
+            echo
+            echo "- Runner: self-hosted staging-sw"
+            echo "- Kube context: \`${KUBE_CONTEXT}\`"
+            echo "- Namespace: \`${KUBE_NAMESPACE}\`"
+            echo "- Artifact-host mode: \`${RELEASE_LINEAGE_KUBECTL_MODE}\`"
+            echo
+            echo '```text'
+            sed -n '/^GITHUB_/p;/^MANIFEST_/p;/^CURRENT_/p;/^RELEASE_/p;/^ZIP_/p;/^ARTIFACT_HOST_LIVE_DIGEST/p;/^F22_6_RELEASE_LINEAGE/p' \
+              faz22-6-release-lineage-audit.txt 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release-lineage audit output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz22-6-release-lineage-audit
+          path: faz22-6-release-lineage-audit.txt
+          retention-days: 7

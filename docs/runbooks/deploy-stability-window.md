@@ -9,7 +9,7 @@ Bu runbook üç PrometheusRule alarmının response prosedürünü tarifler:
 - `KubePodCrashLooping` — Container CrashLoopBackOff > 5 dk
 
 Üç alarm tamamlayıcıdır:
-- **Drift detector timer** (PR #551 `check_prod_drift.sh`) — 15 dk cadence; spec drift'i raporlar
+- **Drift detector timer** (PR #551 `check_env_drift.sh`) — 15 dk cadence; spec drift'i raporlar
 - **Gate 1d** (PR #552 `gate-stability-window.sh`) — deploy CI'da tek-shot 2-3 dk pencere
 - **Bu PR-4 alarmları** — kontinü kube-state-metrics izlemesi
 
@@ -49,7 +49,7 @@ kubectl -n "$NS" logs "$POD" --tail=80
 ```
 
 **Kararlar**:
-- Eğer **probe drift** (yeni RS spec'inde yanlış path/port) → runtime drift detector (`check_prod_drift.sh`) çıktısını kontrol; PR-time gate (Check 5) bu PR'ı bloklamış olması gerek
+- Eğer **probe drift** (yeni RS spec'inde yanlış path/port) → runtime drift detector (`check_env_drift.sh`) çıktısını kontrol; PR-time gate (Check 5) bu PR'ı bloklamış olması gerek
 - Eğer **ImagePullBackOff** → GHCR manifest existence (`verify_ghcr_manifests.py`); digest gerçekten var mı
 - Eğer **ESO secret missing** → `kubectl get externalsecret`, `kubectl describe externalsecret` SecretSynced=true?
 
@@ -87,7 +87,7 @@ kubectl -n "$NS" get pod -l pod-template-hash="$(echo $NEW_RS | rev | cut -d- -f
 ```
 
 **Sınıflandırma**:
-1. Probe drift (en yaygın) → `check_prod_drift.sh` çıktısını kontrol; PR-time gate'in neden geçtiğini sorgula (servis catalog'da `probe_contract` eksik olabilir)
+1. Probe drift (en yaygın) → `check_env_drift.sh` çıktısını kontrol; PR-time gate'in neden geçtiğini sorgula (servis catalog'da `probe_contract` eksik olabilir)
 2. Image hash mismatch — yeni RS yanlış digest'le başlatıldı (ESO/Vault drift veya kasıtlı override)
 3. Pod-level securityContext / volumes / ConfigMap kaynağı eksik
 

@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "faz24.wg-bplus.i3.audit.v1",
+  "collectedAt": "2026-06-25T00:10:00Z",
+  "protectedEvidencePath": "\\\\denetim-pc\\protected-audit$\\faz24\\i3\\2026-06-25T001000Z",
+  "retentionDays": 90,
+  "acl": {
+    "mode": "protected",
+    "readers": ["platform-ops-audit"],
+    "writers": ["svc-denetim-agent"]
+  },
+  "redaction": {
+    "rawAudioIncluded": false,
+    "rawTranscriptIncluded": false,
+    "secretMaterialIncluded": false,
+    "commandContentIncluded": false
+  },
+  "checks": [
+    {
+      "id": "openssh-event-log",
+      "status": "pass",
+      "who": "svc-denetim-agent",
+      "when": "2026-06-25T00:01:00Z",
+      "what": "OpenSSH publickey session accepted from WG peer",
+      "evidenceRef": "windows/OpenSSH-Operational.evtx.jsonl"
+    },
+    {
+      "id": "powershell-transcription",
+      "status": "pass",
+      "who": "svc-denetim-agent",
+      "when": "2026-06-25T00:02:00Z",
+      "what": "PowerShell transcription enabled; transcript content retained only in protected path",
+      "evidenceRef": "windows/powershell-transcription-metadata.json"
+    },
+    {
+      "id": "powershell-script-block",
+      "status": "pass",
+      "who": "svc-denetim-agent",
+      "when": "2026-06-25T00:02:20Z",
+      "what": "Script-block logging enabled; metadata hash recorded, command text omitted",
+      "evidenceRef": "windows/powershell-scriptblock-metadata.json"
+    },
+    {
+      "id": "failed-login",
+      "status": "pass",
+      "who": "Windows Security log",
+      "when": "2026-06-25T00:03:00Z",
+      "what": "Failed SSH/Windows logon count exported as metadata",
+      "evidenceRef": "windows/failed-logons-summary.json"
+    },
+    {
+      "id": "wireguard-health",
+      "status": "pass",
+      "who": "denetim-pc WireGuard",
+      "when": "2026-06-25T00:04:00Z",
+      "what": "WG peer handshake age and rx/tx deltas inside threshold",
+      "evidenceRef": "windows/wireguard-health.json"
+    },
+    {
+      "id": "eset-firewall-drift",
+      "status": "pass",
+      "who": "denetim-pc firewall policy",
+      "when": "2026-06-25T00:05:00Z",
+      "what": "ESET/WFP/firewall allow rules match expected WG-only management surface",
+      "evidenceRef": "windows/firewall-eset-drift.json"
+    },
+    {
+      "id": "time-sync",
+      "status": "pass",
+      "who": "denetim-pc w32time",
+      "when": "2026-06-25T00:06:00Z",
+      "what": "Clock offset is within audit correlation threshold",
+      "evidenceRef": "windows/time-sync.json"
+    },
+    {
+      "id": "staging-connection-log",
+      "status": "pass",
+      "who": "staging-sw sshd/WireGuard",
+      "when": "2026-06-25T00:07:00Z",
+      "what": "Staging-side connection log correlates WG peer and SSH session metadata",
+      "evidenceRef": "staging/connection-log.json"
+    }
+  ]
+}

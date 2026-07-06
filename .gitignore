@@ -12,6 +12,12 @@ host-compose/proxy/tls/*.crt
 host-compose/proxy/tls/*.key
 host-compose/proxy/tls/*.pem
 
+# Faz 22.5 M2 local-test generated material (test CA key, server key, keystores)
+# — disposable lab artifacts, never committed (the *.sh generators recreate them).
+scripts/faz22-mass-deployment/m2-local-test/certs/
+scripts/faz22-mass-deployment/m2-local-test/**/*.p12
+scripts/faz22-mass-deployment/m2-local-test/**/*.srl
+
 # Host-level state (persistent volumes mount'ları)
 host-compose/state/*/
 !host-compose/state/.gitkeep
@@ -34,11 +40,20 @@ charts/
 
 # Local
 .local/
+.tmp/
 tmp/
 
 # Claude Code session state
 .claude/
+__pycache__/
+**/__pycache__/
+*.py[cod]
 scripts/drift_detection/__pycache__/
 scripts/drift_detection/**/__pycache__/
+scripts/governance/__pycache__/
 tests/drift_detection/__pycache__/
+tests/governance/__pycache__/
+tests/contracts/__pycache__/
 tests/__pycache__/
+tests/promotion/__pycache__/
+scripts/promotion/__pycache__/

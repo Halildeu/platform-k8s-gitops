@@ -41,7 +41,16 @@ spec:
                 secretKeyRef:
                   name: alertmanager-bridge-gh-token
                   key: token
-                  optional: true   # Bootstrap'ta gh auth fallback
+                  # Bootstrap fallback. Codex `019e6fb5` AGREE Yol C-prime — post-
+                  # acceptance flip to `optional: false` (RB §5.2 chain complete +
+                  # verify gate Layer 2 machine-enforced ESO Ready=True). Cannot
+                  # flip now: ArgoCD reconcile order may schedule pod before ESO
+                  # sync, leaving pod Pending forever and disabling self-watch
+                  # paging chicken-and-egg. Runtime drift caught via Layer 3
+                  # PrometheusRule alertmanager-bridge-gh-auth (3 alerts) routed
+                  # SMTP direct-fallback (R9 path), bridge'in kendisine bağımlı
+                  # olmadan.
+                  optional: true
           ports:
             - containerPort: 9093
               name: http

@@ -1,0 +1,55 @@
+# Fixture (PASS) — mirrors `argocd/applications/platform-prod.yaml` after
+# PR #851. RespectIgnoreDifferences=true is legitimate because every
+# ignoreDifferences entry is targeted:
+#   * Deployment `/spec/replicas` (HPA-managed)
+#   * ExternalSecret `/status` only (post-PR #851, narrowed from `/metadata`)
+#   * Specific ESO default-field jq paths (not `.metadata*`)
+#   * Endpoints `/subsets` (D20 host-bridge subset serialization drift)
+#   * ConfigMap `/data` + specific writer-managed annotation paths
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fixture-pass-platform-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://example.invalid/repo.git
+    targetRevision: main
+    path: kustomize/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-prod
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /status
+      jqPathExpressions:
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
+        - .spec.data[].remoteRef.nullBytePolicy
+    - kind: Endpoints
+      jsonPointers:
+        - /subsets
+    - kind: ConfigMap
+      name: openfga-config
+      jsonPointers:
+        - /data/OPENFGA_DATASTORE_URI
+    - kind: ConfigMap
+      name: frontend-federation-smoke-status
+      jsonPointers:
+        - /data
+        - /metadata/annotations/frontend-federation-smoke.io~1last-fire
+        - /metadata/annotations/frontend-federation-smoke.io~1result
+        - /metadata/annotations/frontend-federation-smoke.io~1failures

@@ -1,0 +1,247 @@
+name: Faz 22.6.3 AgentPC2 first-install bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Required literal: PREPARE_AGENTPC2_FIRST_INSTALL_BOOTSTRAP'
+        required: true
+      target_product_device_id:
+        description: 'Endpoint-admin product device UUID for AgentPC2'
+        required: true
+        default: '2f7ad30f-970a-42e7-8af8-08764ae6066f'
+      target_hostname:
+        description: 'Target endpoint hostname'
+        required: true
+        default: 'AgentPc2'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: faz22-agentpc2-first-install-bootstrap
+  cancel-in-progress: false
+
+env:
+  EVIDENCE_DIR: /tmp/agentpc2-first-install-bootstrap-${{ github.run_id }}
+  CONFIRM: ${{ inputs.confirm }}
+  TARGET_PRODUCT_DEVICE_ID: ${{ inputs.target_product_device_id }}
+  TARGET_HOSTNAME: ${{ inputs.target_hostname }}
+
+jobs:
+  prepare-bootstrap:
+    name: Prepare AgentPC2 first-install bootstrap package
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          for name in \
+            CONFIRM \
+            TARGET_PRODUCT_DEVICE_ID \
+            TARGET_HOSTNAME
+          do
+            reject_multiline "$name" "${!name}"
+          done
+
+          if [ "${CONFIRM}" != "PREPARE_AGENTPC2_FIRST_INSTALL_BOOTSTRAP" ]; then
+            echo "::error::confirm input must be PREPARE_AGENTPC2_FIRST_INSTALL_BOOTSTRAP"
+            exit 1
+          fi
+
+          if ! printf '%s' "${TARGET_PRODUCT_DEVICE_ID}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+            echo "::error::target_product_device_id must look like a UUID"
+            exit 1
+          fi
+
+          if [ -z "${TARGET_HOSTNAME}" ]; then
+            echo "::error::target_hostname cannot be empty"
+            exit 1
+          fi
+
+          if [ "${#TARGET_HOSTNAME}" -gt 253 ] || ! printf '%s' "${TARGET_HOSTNAME}" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)([.][A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'; then
+            echo "::error::target_hostname must be a DNS-safe hostname label/FQDN"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate release policy
+        run: scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh
+
+      - name: Prepare bounded first-install bootstrap
+        id: prepare
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p "${EVIDENCE_DIR}"
+          chmod +x scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-gate.sh
+
+          scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-gate.sh \
+            2>&1 | tee "${EVIDENCE_DIR}/workflow-bootstrap.log"
+          exit_code="${PIPESTATUS[0]}"
+
+          rm -f "${EVIDENCE_DIR}/SHA256SUMS"
+          (
+            cd "${EVIDENCE_DIR}" || exit 1
+            if command -v shasum >/dev/null 2>&1; then
+              find . -maxdepth 1 -type f ! -name "SHA256SUMS" -print0 \
+                | sort -z \
+                | xargs -0 shasum -a 256 > SHA256SUMS
+              shasum -a 256 -c SHA256SUMS
+            else
+              find . -maxdepth 1 -type f ! -name "SHA256SUMS" -print0 \
+                | sort -z \
+                | xargs -0 sha256sum > SHA256SUMS
+              sha256sum -c SHA256SUMS
+            fi
+          )
+          checksum_exit="$?"
+          if [ "${exit_code}" = "0" ] && [ "${checksum_exit}" != "0" ]; then
+            exit_code="${checksum_exit}"
+          fi
+
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          echo "AGENTPC2_FIRST_INSTALL_BOOTSTRAP_EXIT_CODE=${exit_code}"
+          exit 0
+
+      - name: Publish issue evidence
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
+        run: |
+          set -euo pipefail
+
+          summary="${EVIDENCE_DIR}/summary.json"
+          if [ ! -f "${summary}" ]; then
+            mkdir -p "${EVIDENCE_DIR}"
+            jq -n \
+              --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --arg status "no-go" \
+              --arg reason "summary-json-missing" \
+              --arg evidenceDir "${EVIDENCE_DIR}" \
+              '{
+                schema:"faz22.1768.agentpc2-first-install-bootstrap.gate.v1",
+                generatedAt:$generatedAt,
+                status:$status,
+                reason:$reason,
+                evidence:{dir:$evidenceDir},
+                secretHygiene:{
+                  rawBearerTokenLogged:false,
+                  rawPasswordLogged:false,
+                  rawPrivateKeyLogged:false,
+                  hmacEnrollmentTokenIncluded:false
+                }
+              }' > "${summary}"
+          fi
+
+          status="$(jq -r '.status // "unknown"' "${summary}")"
+          release_id="$(jq -r '.release.id // ""' "${summary}")"
+          target_version="$(jq -r '.release.targetVersion // ""' "${summary}")"
+          binary_sha="$(jq -r '.release.binary.sha256 // ""' "${summary}")"
+          install_sha="$(jq -r '.release.installPs1.sha256 // ""' "${summary}")"
+          manifest_sha="$(jq -r '.release.manifest.sha256 // ""' "${summary}")"
+          broker_addr="$(jq -r '.remoteBridge.brokerAddr // ""' "${summary}")"
+          permit_kid="$(jq -r '.remoteBridge.permitKeyId // ""' "${summary}")"
+          permit_public_sha="$(jq -r '.remoteBridge.permitBrokerPublicKeySha256 // ""' "${summary}")"
+          bootstrap_script="$(jq -r '.evidence.bootstrapScript // ""' "${summary}")"
+          secret_private="$(jq -r '.secretHygiene.rawPrivateKeyLogged // false' "${summary}")"
+          secret_token="$(jq -r '.secretHygiene.hmacEnrollmentTokenIncluded // false' "${summary}")"
+          release_sums_sha=""
+          if [ -f "${EVIDENCE_DIR}/release-SHA256SUMS" ]; then
+            release_sums_sha="$(sha256sum "${EVIDENCE_DIR}/release-SHA256SUMS" | awk '{print $1}')"
+          fi
+          evidence_sums_sha=""
+          if [ -f "${EVIDENCE_DIR}/SHA256SUMS" ]; then
+            evidence_sums_sha="$(sha256sum "${EVIDENCE_DIR}/SHA256SUMS" | awk '{print $1}')"
+          fi
+
+          comment="${RUNNER_TEMP}/agentpc2-first-install-bootstrap-1768.md"
+          {
+            echo "AGENTPC2_FIRST_INSTALL_BOOTSTRAP status=${status}"
+            echo ""
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Target: \`${TARGET_HOSTNAME}\` / \`${TARGET_PRODUCT_DEVICE_ID}\`"
+            echo "- Release: \`${release_id}\` / target version \`${target_version}\`"
+            echo "- Release manifest SHA256: \`${manifest_sha}\`"
+            echo "- install.ps1 SHA256: \`${install_sha}\`"
+            echo "- endpoint-agent.exe SHA256: \`${binary_sha}\`"
+            echo "- Remote bridge broker: \`${broker_addr}\`"
+            echo "- Permit key id/public-key SHA256: \`${permit_kid}\` / \`${permit_public_sha}\`"
+            echo "- Generated endpoint bootstrap script: \`${bootstrap_script}\`"
+            echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
+            echo "- Release SHA256SUMS hash: \`${release_sums_sha}\`"
+            echo "- Evidence SHA256SUMS hash: \`${evidence_sums_sha}\`"
+            echo "- Secret hygiene: rawPrivateKeyLogged=\`${secret_private}\`, hmacEnrollmentTokenIncluded=\`${secret_token}\`"
+            echo ""
+            echo "Boundary: this prepares the bounded AgentPC2 first-install bootstrap package for #1768. It does not prove platform-agent#208 constrained executor acceptance, does not prove AgentPC2 executed the bootstrap, does not prove broad GPO/MSI rollout, and does not open inbound SSH/RDP/WinRM/SMB/RPC."
+            echo ""
+            echo "Next gate: execute the generated bootstrap on AgentPC2 through an approved operator/product path, then rerun the #208 constrained-executor acceptance workflow."
+          } > "${comment}"
+
+          gh issue comment 1768 \
+            --repo Halildeu/platform-k8s-gitops \
+            --body-file "${comment}" \
+            || echo "::warning::Could not comment on platform-k8s-gitops#1768; evidence remains in the workflow artifact."
+
+          agent_comment="${RUNNER_TEMP}/agentpc2-first-install-bootstrap-208.md"
+          {
+            echo "AGENTPC2_FIRST_INSTALL_BOOTSTRAP_REFERENCE status=${status}"
+            echo ""
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- This is prerequisite/bootstrap evidence for AgentPC2 because the current older/non-operation-capable endpoint does not advertise \`UPDATE_AGENT\`."
+            echo "- It is not #208 acceptance. #208 still requires live HELLO/permit/constrained-operation/negative/audit evidence after AgentPC2 reports an operation-capable version."
+            echo "- Bootstrap package evidence dir: \`${EVIDENCE_DIR}\`"
+          } > "${agent_comment}"
+
+          gh issue comment 208 \
+            --repo Halildeu/platform-agent \
+            --body-file "${agent_comment}" \
+            || echo "::warning::Could not comment on platform-agent#208; evidence remains in the workflow artifact."
+
+          {
+            echo "## AgentPC2 first-install bootstrap"
+            echo ""
+            cat "${comment}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload bootstrap package and redacted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentpc2-first-install-bootstrap-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail workflow on no-go
+        if: always()
+        run: |
+          set -euo pipefail
+
+          exit_code="${{ steps.prepare.outputs.exit_code }}"
+          if [ -z "${exit_code}" ]; then
+            echo "::error::prepare step did not expose exit_code"
+            exit 1
+          fi
+
+          if [ "${exit_code}" != "0" ]; then
+            echo "::error::AgentPC2 first-install bootstrap package was not prepared; see uploaded evidence."
+            exit "${exit_code}"
+          fi

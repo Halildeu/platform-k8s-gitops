@@ -1,0 +1,192 @@
+name: Coordination Ledger Replay Gate
+
+on:
+  pull_request:
+    paths:
+      - "coordination-ledger/**/*.jsonl"
+      - "docs/coordination/coordination-ledger-event-v1.schema.json"
+      - "docs/coordination/ledger-event-authority-v1.json"
+      - "scripts/coordination/append-ledger-branch.sh"
+      - "scripts/coordination/append-ledger-event.py"
+      - "scripts/coordination/apply-ledger-mirrors.py"
+      - "scripts/coordination/emit-ledger-event.sh"
+      - "scripts/coordination/enforce-append-only-ledger.py"
+      - "scripts/coordination/ledger-claim-state.py"
+      - "scripts/coordination/materialize-ledger-comment.py"
+      - "scripts/coordination/reap-ledger-state.py"
+      - "scripts/coordination/retry-audit-debt.py"
+      - "scripts/coordination/scan-coordination-secrets.py"
+      - "scripts/coordination/takeover-recovery-flow.py"
+      - "scripts/coordination/tombstone-supersede-flow.py"
+      - "scripts/coordination/validate-pr-mirrors.py"
+      - "scripts/coordination/verify-ledger-replay.py"
+      - "scripts/test/coordination-ledger-append-only.sh"
+      - "scripts/test/coordination-ledger-audit-debt-retry.sh"
+      - "scripts/test/coordination-ledger-branch-cas.sh"
+      - "scripts/test/coordination-ledger-materialized-comment.sh"
+      - "scripts/test/coordination-ledger-mirror-safe-emission.sh"
+      - "scripts/test/coordination-ledger-post-cas-mirrors.sh"
+      - "scripts/test/coordination-ledger-pr-mirror-validation.sh"
+      - "scripts/test/coordination-ledger-reaper.sh"
+      - "scripts/test/coordination-ledger-replay.sh"
+      - "scripts/test/coordination-ledger-takeover-recovery.sh"
+      - "scripts/test/coordination-ledger-tombstone-supersede.sh"
+      - "scripts/test/coordination-ledger-writer.sh"
+      - "scripts/test/coordination-secret-scan.sh"
+      - "scripts/test/board-sync-ledger-require-claim.sh"
+      - "scripts/test/board-hygiene-audit.sh"
+      - "scripts/test/board-sync-project-item-limit.sh"
+      - "scripts/board-hygiene-audit.py"
+      - "scripts/board-sync.sh"
+      - ".github/workflows/gate-coordination-ledger-replay.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "coordination-ledger/**/*.jsonl"
+      - "docs/coordination/coordination-ledger-event-v1.schema.json"
+      - "docs/coordination/ledger-event-authority-v1.json"
+      - "scripts/coordination/append-ledger-branch.sh"
+      - "scripts/coordination/append-ledger-event.py"
+      - "scripts/coordination/apply-ledger-mirrors.py"
+      - "scripts/coordination/emit-ledger-event.sh"
+      - "scripts/coordination/enforce-append-only-ledger.py"
+      - "scripts/coordination/ledger-claim-state.py"
+      - "scripts/coordination/materialize-ledger-comment.py"
+      - "scripts/coordination/reap-ledger-state.py"
+      - "scripts/coordination/retry-audit-debt.py"
+      - "scripts/coordination/scan-coordination-secrets.py"
+      - "scripts/coordination/takeover-recovery-flow.py"
+      - "scripts/coordination/tombstone-supersede-flow.py"
+      - "scripts/coordination/validate-pr-mirrors.py"
+      - "scripts/coordination/verify-ledger-replay.py"
+      - "scripts/test/coordination-ledger-append-only.sh"
+      - "scripts/test/coordination-ledger-audit-debt-retry.sh"
+      - "scripts/test/coordination-ledger-branch-cas.sh"
+      - "scripts/test/coordination-ledger-materialized-comment.sh"
+      - "scripts/test/coordination-ledger-mirror-safe-emission.sh"
+      - "scripts/test/coordination-ledger-post-cas-mirrors.sh"
+      - "scripts/test/coordination-ledger-pr-mirror-validation.sh"
+      - "scripts/test/coordination-ledger-reaper.sh"
+      - "scripts/test/coordination-ledger-replay.sh"
+      - "scripts/test/coordination-ledger-takeover-recovery.sh"
+      - "scripts/test/coordination-ledger-tombstone-supersede.sh"
+      - "scripts/test/coordination-ledger-writer.sh"
+      - "scripts/test/coordination-secret-scan.sh"
+      - "scripts/test/board-sync-ledger-require-claim.sh"
+      - "scripts/test/board-hygiene-audit.sh"
+      - "scripts/test/board-sync-project-item-limit.sh"
+      - "scripts/board-hygiene-audit.py"
+      - "scripts/board-sync.sh"
+      - ".github/workflows/gate-coordination-ledger-replay.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compile ledger scripts
+        run: python3 -m py_compile scripts/coordination/append-ledger-event.py scripts/coordination/apply-ledger-mirrors.py scripts/coordination/enforce-append-only-ledger.py scripts/coordination/ledger-claim-state.py scripts/coordination/materialize-ledger-comment.py scripts/coordination/reap-ledger-state.py scripts/coordination/retry-audit-debt.py scripts/coordination/scan-coordination-secrets.py scripts/coordination/takeover-recovery-flow.py scripts/coordination/tombstone-supersede-flow.py scripts/coordination/validate-pr-mirrors.py scripts/coordination/verify-ledger-replay.py scripts/board-hygiene-audit.py
+
+      - name: Enforce append-only repository ledgers
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_ref="origin/${{ github.base_ref }}"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            base_ref="${{ github.event.before }}"
+          else
+            # Explicit bootstrap exception: a zero-SHA first push has no
+            # comparable base ledger. Normal PR and push paths must compare
+            # against base_ref and run the append-only guard below.
+            echo "No comparable base ref for append-only enforcement."
+            exit 0
+          fi
+          mapfile -t ledgers < <(git diff --name-only "$base_ref"...HEAD -- coordination-ledger 2>/dev/null | grep '\.jsonl$' | sort || true)
+          if [ "${#ledgers[@]}" -eq 0 ]; then
+            echo "No coordination-ledger JSONL diffs."
+            exit 0
+          fi
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          for path in "${ledgers[@]}"; do
+            old="$tmp/old-$(basename "$path")"
+            new="$tmp/new-$(basename "$path")"
+            git show "$base_ref:$path" >"$old" 2>/dev/null || : >"$old"
+            if [ -f "$path" ]; then
+              cp "$path" "$new"
+            else
+              : >"$new"
+            fi
+            python3 scripts/coordination/enforce-append-only-ledger.py --old "$old" --new "$new"
+          done
+
+      - name: Run verifier harness
+        run: bash scripts/test/coordination-ledger-replay.sh
+
+      - name: Run append writer harness
+        run: bash scripts/test/coordination-ledger-writer.sh
+
+      - name: Run remote branch CAS harness
+        run: bash scripts/test/coordination-ledger-branch-cas.sh
+
+      - name: Run materialized comment harness
+        run: bash scripts/test/coordination-ledger-materialized-comment.sh
+
+      - name: Run mirror-safe emission harness
+        run: bash scripts/test/coordination-ledger-mirror-safe-emission.sh
+
+      - name: Run post-CAS mirror writer harness
+        run: bash scripts/test/coordination-ledger-post-cas-mirrors.sh
+
+      - name: Run PR mirror validation harness
+        run: bash scripts/test/coordination-ledger-pr-mirror-validation.sh
+
+      - name: Run append-only enforcement harness
+        run: bash scripts/test/coordination-ledger-append-only.sh
+
+      - name: Run reaper harness
+        run: bash scripts/test/coordination-ledger-reaper.sh
+
+      - name: Run audit debt retry harness
+        run: bash scripts/test/coordination-ledger-audit-debt-retry.sh
+
+      - name: Run coordination secret scan harness
+        run: bash scripts/test/coordination-secret-scan.sh
+
+      - name: Scan coordination surfaces for high-confidence secrets
+        run: python3 scripts/coordination/scan-coordination-secrets.py
+
+      - name: Run takeover/recovery harness
+        run: bash scripts/test/coordination-ledger-takeover-recovery.sh
+
+      - name: Run tombstone/supersede harness
+        run: bash scripts/test/coordination-ledger-tombstone-supersede.sh
+
+      - name: Run ledger-backed require-claim harness
+        run: bash scripts/test/board-sync-ledger-require-claim.sh
+
+      - name: Run Project required-field hygiene harness
+        run: bash scripts/test/board-hygiene-audit.sh
+
+      - name: Run Project item-list limit harness
+        run: bash scripts/test/board-sync-project-item-limit.sh
+
+      - name: Replay repository ledger files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # bash is required for mapfile and process substitution.
+          mapfile -t ledgers < <(find coordination-ledger -type f -name '*.jsonl' 2>/dev/null | sort || true)
+          if [ "${#ledgers[@]}" -eq 0 ]; then
+            echo "No coordination-ledger JSONL files present."
+            exit 0
+          fi
+          python3 scripts/coordination/verify-ledger-replay.py "${ledgers[@]}"

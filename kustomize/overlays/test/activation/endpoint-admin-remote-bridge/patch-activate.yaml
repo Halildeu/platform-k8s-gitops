@@ -1,0 +1,71 @@
+# Activation patch (strategic merge) — Faz 22.6 D10-8 broker isolation
+#
+# Flips the inert scaffold to a live broker. control #11: enabled=true +
+# replicas=1 exist ONLY here, never on the primary endpoint-admin-service.
+# Fail-closed: with the mTLS/signer secrets absent the broker context fails to
+# start (T-2c refuses to bind without the PEMs) → pod never Ready.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: endpoint-admin-remote-bridge
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: endpoint-admin-remote-bridge
+          env:
+            # control #11 — broker ENABLED only on this Deployment.
+            - name: REMOTE_BRIDGE_ENABLED
+              value: "true"
+            # Broker-only runtime: do not load the primary endpoint admin plane
+            # command/enrollment/status beans or their broad secret dependencies.
+            - name: ENDPOINT_ADMIN_PRIMARY_PLANE_ENABLED
+              value: "false"
+            # Expose 9444 behind the mTLS L4 edge / ingress allowlist (control #6).
+            - name: REMOTE_BRIDGE_BIND_HOST
+              value: "0.0.0.0"
+            # mTLS-only (T-2c). Paths/filenames match the broker TLS secret
+            # keys and RB-22-6-remote-bridge-pilot-flip.md §A2 verbatim.
+            - name: REMOTE_BRIDGE_TLS_CERT_CHAIN_PEM_PATH
+              value: /etc/remote-bridge/tls/server-chain.pem
+            - name: REMOTE_BRIDGE_TLS_PRIVATE_KEY_PEM_PATH
+              value: /etc/remote-bridge/tls/server-key.pem
+            - name: REMOTE_BRIDGE_TLS_CLIENT_CA_PEM_PATH
+              value: /etc/remote-bridge/tls/device-ca.pem
+            # Permit-signing key (T-1b-i broker-private EC P-256). T-4a-ii wires
+            # the exact property; pinned here as a mounted file path.
+            - name: REMOTE_BRIDGE_PERMIT_SIGNING_KEY_PEM_PATH
+              value: /etc/remote-bridge/signer/permit-signing.key
+            # Durable WORM anchor key is separate from the permit key.
+            - name: REMOTE_BRIDGE_RECORDING_ANCHOR_KEY_PATH
+              value: /etc/remote-bridge/signer/recording-anchor.key
+          envFrom:
+            # Re-declared in full (strategic merge replaces the envFrom list):
+            # keep the config, and make the broker secret REQUIRED (control #11).
+            - configMapRef:
+                name: endpoint-admin-remote-bridge-config
+            - secretRef:
+                name: endpoint-admin-remote-bridge-secrets   # control #3 (broker's own)
+                optional: false                              # control #11 fail-closed
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: bridge-tls
+              mountPath: /etc/remote-bridge/tls
+              readOnly: true
+            - name: bridge-signer
+              mountPath: /etc/remote-bridge/signer
+              readOnly: true
+      volumes:
+        # defaultMode 0440 (group-readable) + pod fsGroup:65532 (base
+        # securityContext) so the non-root broker can read these without
+        # making them world-readable (Codex 019ebc51 P1).
+        - name: bridge-tls
+          secret:
+            secretName: endpoint-admin-remote-bridge-tls      # control #6/#11
+            defaultMode: 0440
+        - name: bridge-signer
+          secret:
+            secretName: endpoint-admin-remote-bridge-signer   # T-1b-i
+            defaultMode: 0440

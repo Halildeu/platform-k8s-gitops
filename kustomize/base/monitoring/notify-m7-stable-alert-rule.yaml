@@ -1,0 +1,115 @@
+# PrometheusRule — Faz 23 M7 v1 30-day stable observation alerts
+#
+# Faz 23 M8 PR-1 D (Codex `019e8c24` AGREE order D→B→A→C, post-impl
+# iter-1 PARTIAL absorbed).
+#
+# Two alerts on the observation truth surface (recording rules in
+# notify-m7-stable-recording-rule.yaml):
+#
+#   1) NotifyM7StableObservationRegression (warning, ticket) — fires when
+#      the previously-stable observation flips back to unstable. Operator
+#      knows the 30-day clock has effectively restarted.
+#
+#   2) NotifyM7StableObservationWindowReady (info, evidence trigger) —
+#      fires when stable_30d=1 AND observation coverage ≥ 0.99 (anti-silence
+#      guard from Codex iter-1 P0/coverage fix). Triggers the M8 DoD
+#      evidence collection step.
+#
+# These are OBSERVATION alerts — they do NOT mutate the M7 closure state.
+# Operator interprets them in conjunction with `docs/scripts/m7-stable-evidence.sh`.
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: notification-orchestrator-m7-stable-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/name: notification-orchestrator
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: notification-orchestrator-m7-stable-alerts
+      interval: 1m
+      rules:
+        - alert: NotifyM7StableObservationRegression
+          # Stable observation flipped from green to red. The 30-day
+          # stability clock has effectively restarted (M7 v1 stable claim
+          # is no longer valid). NOT paging — ticket-only; the M8 readiness
+          # blocker tracks itself via the recording rule, not via paging.
+          #
+          # Hysteresis: `max_over_time(stable_30d[1d]) > 0` guarantees the
+          # observation was at least once green in the previous day; this
+          # filters out cold-start absent → 0 noise after first deploy.
+          expr: |
+            notify:m7_v1:stable_30d == 0
+            and on(namespace)
+            (
+              max_over_time(notify:m7_v1:stable_30d[1d]) > 0
+            )
+          for: 15m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+            milestone: faz-23-m7-v1
+            page: "false"
+          annotations:
+            summary: "Notify M7 v1 stable_30d regressed — 30-day clock effectively restarted"
+            description: |
+              The M7 v1 30-day stable observation has regressed from green
+              to red in namespace {{ $labels.namespace }}. Composite
+              predicates: dispatch_success_rate_30d ≥ 0.995 AND
+              dlq_burn_max_30d ≤ 1.0 AND critical_alert_minutes_30d == 0
+              AND observation_coverage_30d ≥ 0.99 — one or more no longer
+              holds. The M8 (Multi-tenant Trigger Gate) DoD blocker has
+              reset; the next 30-day stability window starts now. Operator
+              action: run docs/scripts/m7-stable-evidence.sh to identify
+              which predicate failed; investigate corresponding regression
+              (provider degradation, template change, retry-policy shift,
+              or scrape outage).
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-faz-23-m7-30day-stable-observation.md"
+
+        - alert: NotifyM7StableObservationWindowReady
+          # Stable observation has been continuously green AND coverage
+          # has been at least 99% across the 30d window AND the natural
+          # 30-day mark from M7 LIVE (2026-06-22T00:00:00Z) has arrived.
+          # M8 DoD blocker #1 condition met — trigger evidence collection
+          # + downstream M8 readiness sprint.
+          #
+          # Codex iter-1 P0/coverage absorb: replaced
+          # `min_over_time(stable_30d[30d])` (hidden 60d semantic +
+          # partial-coverage false-positive bug) with direct composite
+          # readout.
+          # Codex iter-2 P0/timeGate absorb: stable_30d composite already
+          # enforces `elapsed_seconds_since_m7_live ≥ 2592000`, so this
+          # alert reads the composite directly with no separate time
+          # condition needed; the underlying recording rule guarantees the
+          # natural 30-day mark.
+          #
+          # `for: 24h` final hold-down filters single transient samples
+          # crossing the composite gate.
+          expr: |
+            notify:m7_v1:stable_30d == 1
+            and on(namespace)
+            notify:m7_v1:observation_coverage:30d >= 0.99
+          for: 24h
+          labels:
+            severity: info
+            service: notification-orchestrator
+            milestone: faz-23-m7-v1
+            page: "false"
+            evidence_trigger: m8-readiness
+          annotations:
+            summary: "Notify M7 v1 stable_30d window READY — M8 DoD evidence collection trigger"
+            description: |
+              The M7 v1 30-day stable observation has held green for 24h+
+              with observation coverage ≥ 0.99 across the 30d window in
+              namespace {{ $labels.namespace }}, and the natural 30-day
+              mark from M7 LIVE (2026-06-22T00:00:00Z) has arrived. M8
+              (Multi-tenant Trigger Gate) DoD blocker #1 condition met.
+              Operator action: run docs/scripts/m7-stable-evidence.sh to
+              emit the canonical evidence document
+              (docs/faz-23-evidence/YYYY-MM-DD-m7-v1-30day-stable-evidence.md);
+              start M8 PR-2 (Faz 21 charter draft) when evidence accepted.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-faz-23-m7-30day-stable-observation.md"

@@ -1,0 +1,55 @@
+name: Gate Faz 22.6 B1.4 marker
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-b1-4-marker.yml'
+      - '.github/workflows/faz22-6-b1-4-acceptance-package.yml'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'scripts/test/faz22-6-acceptance-package-workflows-static.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_b1_4_marker_gate.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gate-faz22-b1-4-marker.yml'
+      - '.github/workflows/faz22-6-b1-4-acceptance-package.yml'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'scripts/test/faz22-6-acceptance-package-workflows-static.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_b1_4_marker_gate.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-faz22-b1-4-marker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  marker-regression:
+    name: Verify B1.4 marker gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Parse completion audit and B1.4 test
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh \
+            scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
+            scripts/test/faz22-6-acceptance-package-workflows-static.sh \
+            tests/faz22_remote_ops/test_faz22_6_b1_4_marker_gate.sh
+
+      - name: Run B1.4 marker regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_b1_4_marker_gate.sh

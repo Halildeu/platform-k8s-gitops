@@ -1,0 +1,48 @@
+{
+  "schema_version": "faz-21-pre-migration-audit/v2",
+  "generated_at": "2026-06-03T08:09:31Z",
+  "pg_time_unix": 1780474171,
+  "workstation_time_unix": 1780474171,
+  "pg_host": "172.19.0.6",
+  "pg_database": "notify_db",
+  "audit_scope": "Faz 21.0 sub-faz DoD (charter §4.3)",
+  "predicates": {
+    "inv2_tenant_persistence_per_table": [{"schema":"notify","table":"notification_intent","status":"discovered","tenant_key_column":"org_id","null_tenant_key_count":0},{"schema":"notify","table":"notification_dispatch","status":"missing_table","tenant_key_column":null,"null_tenant_key_count":null},{"schema":"notify","table":"notification_delivery","status":"discovered","tenant_key_column":"derived:intent_id -> notify.notification_intent.org_id","null_tenant_key_count":0},{"schema":"notify","table":"notification_outbox","status":"missing_table","tenant_key_column":null,"null_tenant_key_count":null},{"schema":"notify","table":"audit_event_v2","status":"discovered","tenant_key_column":"org_id","null_tenant_key_count":0},{"schema":"notify","table":"idempotency_key","status":"discovered","tenant_key_column":"org_id","null_tenant_key_count":0}],
+    "inv2_summary": {
+      "discovered_count": 4,
+      "missing_count": 2,
+      "no_tenant_key_count": 0,
+      "violation_count": 0,
+      "skipped_by_schema_prefix": 13,
+      "endpoint_discovered_count": 0
+    },
+    "inv3_callback_correlation_orphan": {
+      "status": "DISCOVERED",
+      "tenant_path": "derived: delivery.intent_id -> notification_intent.org_id",
+      "orphan_count": 0,
+      "provider_distinct_count": 7
+    },
+    "inv1_request_missing_advisory_24h": {
+      "status": "ADVISORY_ABSENT",
+      "count": null
+    }
+  },
+  "thresholds": {
+    "inv2_violation_count_max": 0,
+    "inv3_orphan_count_max": 0,
+    "inv1_advisory_max": 100
+  },
+  "scope_notes": {
+    "inv3_snapshot_analog_only": "Read-only orphan count; charter §4.3 callback isolation test REQUIRES backend integration test (concurrent update + assertion). Tracked separately.",
+    "inv4_ai_boundary_not_audited_here": "Inv-4 manual cross-check required; see r10-invariant-checks.sh + RB §4.1"
+  },
+  "verdict": "CLEAN",
+  "anti_pattern_guards": {
+    "read_only_on_production": true,
+    "no_raw_tenant_pii_in_evidence": true,
+    "pg_password_file_mode_enforced": true,
+    "schema_discovery_first": true,
+    "backdate_evidence": false,
+    "pg_time_skew_present": true
+  }
+}

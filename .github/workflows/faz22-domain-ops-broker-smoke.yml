@@ -1,0 +1,66 @@
+name: Faz 22 — endpoint-admin domain ops broker smoke
+
+# Operator-triggered product-channel smoke for platform-backend#676.
+#
+# The workflow first reconciles the platform-test endpoint-admin resources from
+# GitOps desired state, then creates an authenticated domain-ops broker request
+# and verifies durable request state + redacted audit persistence. The expected
+# pilot connector result is fail-closed: FAILED / connector-unavailable.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_hostname:
+        description: "Endpoint hostname to use for the domain-ops broker smoke"
+        required: false
+        default: "ERP-MOBIL"
+      operation:
+        description: "Safe pilot domain operation enum"
+        required: false
+        default: "CERT_AUTOENROLL_PULSE"
+      credential_ref:
+        description: "Credential reference handle; value is never emitted in artifacts"
+        required: false
+        default: "delegated-worker:domain-ops/pilot"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz22-domain-ops-broker-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: endpoint-admin domain ops broker smoke
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Sync platform-test endpoint-admin resources
+        env:
+          REVISION: ${{ github.sha }}
+          REPORT_PATH: ${{ runner.temp }}/platform-test-argocd-sync-report.json
+        run: bash scripts/faz22/sync-platform-test-gitops.sh
+
+      - name: Smoke endpoint-admin domain ops broker
+        env:
+          TARGET_HOSTNAME: ${{ inputs.target_hostname }}
+          OPERATION: ${{ inputs.operation }}
+          CREDENTIAL_REF: ${{ inputs.credential_ref }}
+          KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+          REPORT_PATH: ${{ runner.temp }}/endpoint-admin-domain-ops-smoke-report.json
+        run: bash scripts/faz22/smoke-endpoint-admin-domain-ops.sh
+
+      - name: Upload domain ops smoke reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: endpoint-admin-domain-ops-smoke-report
+          path: |
+            ${{ runner.temp }}/platform-test-argocd-sync-report.json
+            ${{ runner.temp }}/endpoint-admin-domain-ops-smoke-report.json
+          retention-days: 14

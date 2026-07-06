@@ -1,0 +1,24 @@
+# Monitoring test-cluster-only base — gitops#1459 (monitoring-prod-hub simetrisi)
+#
+# Bu kustomization YALNIZCA test cluster'a apply edilir:
+#   kubectl --context k3d-test apply -k kustomize/base/monitoring-test-only
+#
+# Prod'a apply EDİLMEMELİ: D19 Endpoints'i test docker bridge IP'sine
+# (remote-write-bridge 172.19.0.251) işaret eder; prod'da anlamsız/yanıltıcı.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: monitoring
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - remote-write-bridge-svc.yaml
+  - externalsecret-remote-write-auth.yaml
+  # gitops#1462: promtail → Loki bridge auth (ayrı credential — Codex S1)
+  - externalsecret-promtail-loki.yaml

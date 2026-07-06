@@ -11,6 +11,8 @@ Codex `019dded6` S1 sertleştirmesi:
 - **`docker.sock` NO mount**: deploy işi container build / job-container çalıştırmamalı
 - **Mount'lar**: kubeconfig RO + `/home/halil/platform/web-stage/releases` RW
 - **Ephemeral mode**: her job sonrası container restart, yeni registration token
+- **Secret-safe token fetch**: `RUNNER_PAT` curl process argümanına konmaz;
+  GitHub API egress kapalıysa bounded backoff ile bekler.
 
 ## Kurulum (one-time setup)
 
@@ -61,15 +63,19 @@ cp .env.example .env
 # (RUNNER_REPO, RUNNER_NAME, RUNNER_LABELS default OK)
 vim .env
 
-# 3. Image build + container up
+# 3. GitHub API egress preflight
+curl -fsS --connect-timeout 5 --max-time 8 -I https://api.github.com | head -1
+# Beklenen: HTTP/2 200 veya HTTP/1.1 200
+
+# 4. Image build + container up
 docker compose build
 docker compose up -d
 
-# 4. Logs ile runner registration kontrol
+# 5. Logs ile runner registration kontrol
 docker compose logs -f runner --tail=50
 # Beklenen: "[entrypoint] Registered: staging-sw-testai-deploy (labels: ...)"
 
-# 5. GitHub UI: Settings → Actions → Runners
+# 6. GitHub UI: Settings → Actions → Runners
 #    `staging-sw-testai-deploy` runner online görünmeli (yeşil nokta)
 ```
 
@@ -95,6 +101,10 @@ Beklenen: 4 verify gate koşar (1a, 1b, 1c pass; Gate 2 secret yoksa skip).
 ```bash
 ssh halil@staging-sw
 cd /home/halil/platform/platform-k8s-gitops/gha-runner
+
+# Önce egress preflight; bu fail ise runner'ı restart etme.
+curl -fsS --connect-timeout 5 --max-time 8 -I https://api.github.com | head -1
+
 docker compose restart runner
 ```
 
@@ -107,6 +117,9 @@ docker compose restart runner
 3. `docker compose restart runner`
 
 > NOT: registration token (1h) entrypoint tarafından otomatik fetch edilir. Kullanıcı bu token'ı manuel doldurmak zorunda değil; PAT geçerli olduğu sürece runner kendi yenilemesini yapar.
+> `RUNNER_PAT` process argümanlarına yazılmaz; entrypoint transient curl config
+> dosyasını varsayılan olarak `/dev/shm` altında oluşturur ve scoped cleanup trap
+> ile siler.
 
 ### Runner image upgrade
 
@@ -115,6 +128,10 @@ ssh halil@staging-sw
 cd /home/halil/platform/platform-k8s-gitops
 git pull
 cd gha-runner
+
+# Önce egress preflight; bu fail ise container'ı ayağa kaldırma.
+curl -fsS --connect-timeout 5 --max-time 8 -I https://api.github.com | head -1
+
 docker compose build --no-cache
 docker compose up -d
 ```

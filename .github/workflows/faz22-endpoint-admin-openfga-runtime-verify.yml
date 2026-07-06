@@ -1,0 +1,46 @@
+name: Faz 22 — endpoint-admin OpenFGA runtime verify
+
+# Read-only self-hosted verifier for platform-k8s-gitops#1267.
+# It runs only on operator-triggered workflow_dispatch and never mutates
+# Kubernetes, Vault, ArgoCD, workloads, or GitHub state.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_model_id:
+        description: "Optional expected test OpenFGA model id; leave empty to assert live Secret-to-pod consistency"
+        required: false
+        default: ""
+      expected_store_id:
+        description: "Optional expected test OpenFGA store id; leave empty to assert live Secret-to-pod consistency"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: endpoint-admin OpenFGA runtime selector
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify endpoint-admin OpenFGA runtime selector
+        env:
+          EXPECTED_MODEL_ID: ${{ inputs.expected_model_id }}
+          EXPECTED_STORE_ID: ${{ inputs.expected_store_id }}
+          REPORT_PATH: ${{ runner.temp }}/endpoint-admin-openfga-runtime-report.json
+        run: |
+          bash scripts/faz22/verify-endpoint-admin-openfga-runtime.sh
+
+      - name: Upload runtime report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: endpoint-admin-openfga-runtime-report
+          path: ${{ runner.temp }}/endpoint-admin-openfga-runtime-report.json
+          retention-days: 14

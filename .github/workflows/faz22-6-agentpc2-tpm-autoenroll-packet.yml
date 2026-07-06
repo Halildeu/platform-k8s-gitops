@@ -1,0 +1,130 @@
+name: Faz 22.6 #548 AgentPC2 TPM auto-enroll packet
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Required literal: PREPARE_AGENTPC2_TPM_AUTOENROLL_PACKET'
+        required: true
+      api_url:
+        description: 'TPM enroll API base URL; agent appends /enrollments/tpm/{nonce,attest}'
+        required: true
+        default: 'https://testai.acik.com/api/v1/endpoint-agent'
+      target_product_device_id:
+        description: 'Endpoint-admin product device UUID for AgentPC2'
+        required: true
+        default: '2f7ad30f-970a-42e7-8af8-08764ae6066f'
+      target_hostname:
+        description: 'Target endpoint hostname'
+        required: true
+        default: 'AgentPc2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz22-6-agentpc2-tpm-autoenroll-packet
+  cancel-in-progress: false
+
+env:
+  CONFIRM: ${{ inputs.confirm }}
+  API_URL: ${{ inputs.api_url }}
+  TARGET_PRODUCT_DEVICE_ID: ${{ inputs.target_product_device_id }}
+  TARGET_HOSTNAME: ${{ inputs.target_hostname }}
+  PACKET_DIR: /tmp/faz22-6-agentpc2-tpm-autoenroll-${{ github.run_id }}
+
+jobs:
+  prepare-packet:
+    name: Prepare non-secret AgentPC2 TPM auto-enroll packet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          for name in CONFIRM API_URL TARGET_PRODUCT_DEVICE_ID TARGET_HOSTNAME; do
+            reject_multiline "$name" "${!name}"
+          done
+
+          if [ "${CONFIRM}" != "PREPARE_AGENTPC2_TPM_AUTOENROLL_PACKET" ]; then
+            echo "::error::confirm input must be PREPARE_AGENTPC2_TPM_AUTOENROLL_PACKET"
+            exit 1
+          fi
+
+          case "${API_URL}" in
+            https://*) ;;
+            *) echo "::error::api_url must be https"; exit 1 ;;
+          esac
+          case "${API_URL}" in
+            *\?*|*#*) echo "::error::api_url must not contain query or fragment"; exit 1 ;;
+          esac
+
+          if ! printf '%s' "${TARGET_PRODUCT_DEVICE_ID}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+            echo "::error::target_product_device_id must look like a UUID"
+            exit 1
+          fi
+
+          if [ -z "${TARGET_HOSTNAME}" ] || [ "${#TARGET_HOSTNAME}" -gt 253 ] || ! printf '%s' "${TARGET_HOSTNAME}" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)([.][A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'; then
+            echo "::error::target_hostname must be a DNS-safe hostname label/FQDN"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build packet
+        run: |
+          set -euo pipefail
+          scripts/faz22-remote-ops/faz22-6-agentpc2-tpm-autoenroll-packet.sh \
+            --out-dir "${PACKET_DIR}" \
+            --api-url "${API_URL}" \
+            --target-hostname "${TARGET_HOSTNAME}" \
+            --target-product-device-id "${TARGET_PRODUCT_DEVICE_ID}"
+
+      - name: Verify packet has no embedded secret material
+        run: |
+          set -euo pipefail
+          test -s "${PACKET_DIR}/agentpc2-tpm-autoenroll.ps1"
+          test -s "${PACKET_DIR}/packet-manifest.json"
+          test -s "${PACKET_DIR}/SHA256SUMS"
+          if grep -RIEq '(BEGIN (RSA |EC |OPENSSH |PRIVATE )?KEY|Authorization: Bearer|password=|secret=|token=[A-Za-z0-9_-]{16,})' "${PACKET_DIR}"; then
+            echo "::error::packet appears to contain raw secret material"
+            exit 1
+          fi
+          jq -e '
+            .secret_hygiene.enrollment_token_embedded == false and
+            .secret_hygiene.raw_credential_material_included == false
+          ' "${PACKET_DIR}/packet-manifest.json"
+
+      - name: Write summary
+        run: |
+          {
+            echo "## AgentPC2 TPM auto-enroll packet"
+            echo ""
+            echo "- Packet artifact: \`faz22-6-agentpc2-tpm-autoenroll-${{ github.run_id }}\`"
+            echo "- Target: \`${TARGET_HOSTNAME}\` / \`${TARGET_PRODUCT_DEVICE_ID}\`"
+            echo "- API base: \`${API_URL}\`"
+            echo "- Secret hygiene: no enrollment token or raw credential material embedded."
+            echo ""
+            echo "Boundary: this prepares the endpoint-local packet only. It does not run TPM enrollment, does not create a TPM binding row, does not run a device-key broker session, and does not satisfy #548."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload packet
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz22-6-agentpc2-tpm-autoenroll-${{ github.run_id }}
+          path: ${{ env.PACKET_DIR }}
+          if-no-files-found: error

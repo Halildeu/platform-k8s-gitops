@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "artifact_kind": "openfga-model",
+  "artifact_content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000006",
+  "source": {
+    "kind": "openfga-server",
+    "canonical_source_ref": "openfga://platform-prod/authorization-models/01KS15PF531R1P99BMMM7SFMV1"
+  },
+  "promotion": {
+    "test": {
+      "status": "pending",
+      "method": "pr-promotion",
+      "store_ref": "platform-test",
+      "model_id_env": null,
+      "evidence": null,
+      "evidence_completeness": "unverified",
+      "source_docs": []
+    },
+    "prod": {
+      "status": "promoted",
+      "method": "manual-prod-migration",
+      "store_ref": "platform-prod",
+      "verified_at": "2026-05-20T10:30:00Z",
+      "promoted_at": "2026-05-20T11:00:00Z",
+      "model_id_env": "01KS15PF531R1P99BMMM7SFMV1",
+      "evidence": {
+        "required_types_present": ["user", "report_group"],
+        "type_count": 10,
+        "allow_proof": {
+          "user": "user:1204",
+          "relation": "can_view",
+          "object": "report_group:HR_REPORTS",
+          "expected": "allow"
+        },
+        "deny_proof": {
+          "user": "user:9999",
+          "relation": "can_view",
+          "object": "report_group:HR_REPORTS",
+          "expected": "deny"
+        }
+      },
+      "evidence_completeness": "complete",
+      "source_docs": ["docs/runbooks/RB-openfga-model-promote.md"]
+    }
+  },
+  "metadata": {
+    "rollback_safe": true
+  },
+  "audit": {
+    "implementer": "claude",
+    "reviewer": "codex",
+    "created_at": "2026-05-20T11:00:00Z",
+    "approval_pathway": "emergency-bypass"
+  }
+}
