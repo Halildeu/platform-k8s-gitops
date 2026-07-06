@@ -15,29 +15,35 @@ unseal, host-level bootstrap, vs.).
 |---|---|
 | [`vault-auto-unseal.sh`](./vault-auto-unseal.sh) | Vault (test + prod) auto-unseal, share-count preflight'lı |
 
-## Deploy Chain
+## Deploy Chain (steady-state, initial apply sonrası)
 
-**Host clone** (staging-sw'de zaten mevcut, cron bootstrap script'leri kullanıyor):
+**Host clone** (staging-sw'de zaten mevcut, bootstrap `cron` iş yükleri buradan
+çalışıyor):
 
 ```
-/home/halil/platform-k8s-gitops/   ← ana clone (bootstrap crons buradan çalışıyor)
+/home/halil/platform-k8s-gitops/   ← ana clone
 ```
 
-**Runtime path'i** (cron ve manuel invoker'lar buraya bakar):
+**Runtime path** (cron ve manuel invoker'lar buraya bakar — initial apply
+sonrasında symlink):
 
 ```
 /home/halil/platform/scripts/vault-auto-unseal.sh
   → symlink → /home/halil/platform-k8s-gitops/deploy/staging-sw/vault-auto-unseal.sh
 ```
 
-**Deploy adımı** (bu dizinde herhangi bir değişiklik main'e mergelendikten sonra):
+**Steady-state deploy** (initial apply tamamlandıktan sonra herhangi bir
+değişiklik main'e merge edildiğinde):
 
 ```bash
 ssh halil@staging-sw 'cd /home/halil/platform-k8s-gitops && git pull --ff-only'
 ```
 
-Symlink zaten dosyaya işaret ettiği için ekstra kopya adımı YOK. `git pull`
-yeterli. İlk kurulum runbook için aşağıya bakın.
+Symlink dosyaya işaret ettiği için ekstra kopya adımı YOK. `git pull` yeterli.
+
+> **Initial apply** (bu PR merge edildikten hemen sonra, tek-seferlik):
+> Aşağıda "İlk Kurulum" bölümüne bakın. O adımlar tamamlanana kadar runtime
+> path hâlâ eski (ex-symlink) canlı dosyaya işaret ediyor.
 
 ## Cron Kontratı (`crontab -l` `halil` user)
 
@@ -78,16 +84,17 @@ init) fark edildikten sonra eklendi. Canonical init dosyaları
 `~/bootstrap-drill/vault-init-{test,prod}.json`; ayrıntı için
 `/home/halil/platform/state/vault/README.md` (stale-swapped incident).
 
-## İlk Kurulum (Runbook)
+## İlk Kurulum (Runbook — bu PR merge sonrası staging-sw'de uygulanacak)
 
-Bu adımlar 2026-07-06 tarihinde staging-sw'de zaten yapıldı; buradaki listing
-gelecekteki başka host'lar (staging-sw benzeri) için referans.
+Bu PR merge edildikten sonra tek-seferlik host apply. staging-sw benzeri
+ilerideki host'lar için de referans.
 
 ```bash
-# 1. Clone (zaten mevcutsa atla)
+# 1. Clone (staging-sw'de mevcut; başka host'ta ilk kez ise clone)
 sudo -u halil git clone git@github.com:Halildeu/platform-k8s-gitops.git /home/halil/platform-k8s-gitops
+# staging-sw'de: cd /home/halil/platform-k8s-gitops && git pull --ff-only
 
-# 2. Runtime symlink (mevcut canlı script'i backup + symlink değiştir)
+# 2. Runtime symlink (mevcut canlı script'i backup + symlink ile değiştir)
 cd /home/halil/platform/scripts
 mv vault-auto-unseal.sh vault-auto-unseal.sh.bak-<date>-pre-symlink
 ln -s /home/halil/platform-k8s-gitops/deploy/staging-sw/vault-auto-unseal.sh vault-auto-unseal.sh
@@ -96,33 +103,46 @@ ln -s /home/halil/platform-k8s-gitops/deploy/staging-sw/vault-auto-unseal.sh vau
 crontab -e
 # eski tek satırı sil, iki yeni @reboot satırını ekle (yukarıda "Cron Kontratı" bloğu).
 
-# 4. Dry-run test (canlı unseal'i tetiklemeden yalnızca preflight):
-VAULT_CONTAINER=platform-vault-test INIT_FILE=/home/halil/bootstrap-drill/vault-init-test.json /home/halil/platform/scripts/vault-auto-unseal.sh
-# beklenen: "already unsealed" (canlı vault unsealed durumdaysa)
-VAULT_CONTAINER=platform-vault-prod INIT_FILE=/home/halil/bootstrap-drill/vault-init-prod.json /home/halil/platform/scripts/vault-auto-unseal.sh
+# 4. Preflight dry-run (unseal YOK, PREFLIGHT_ONLY mode — canlı ya unsealed ya da sealed hangisi olursa olsun güvenli):
+VAULT_CONTAINER=platform-vault-test INIT_FILE=/home/halil/bootstrap-drill/vault-init-test.json PREFLIGHT_ONLY=1 \
+  /home/halil/platform/scripts/vault-auto-unseal.sh
+# beklenen (sealed): "preflight OK ... PREFLIGHT_ONLY set — exiting without unseal (dry-run OK)"
+# beklenen (already unsealed): "already unsealed"
+VAULT_CONTAINER=platform-vault-prod INIT_FILE=/home/halil/bootstrap-drill/vault-init-prod.json PREFLIGHT_ONLY=1 \
+  /home/halil/platform/scripts/vault-auto-unseal.sh
 # aynı.
 ```
 
-## Retired / Removed
+## Retired / Removed (host-side, PR merge sonrası uygulanacak)
 
-**`platform-start.sh`** (compose-era cold-start orkestratörü) 2026-07-06'da
-retire edildi:
+**`platform-start.sh`** (compose-era cold-start orkestratörü) retire ediliyor:
 
 - Referans verdiği `/home/halil/platform/repo/backend/docker-compose.prod.yml`
   host'ta yok
-- Cron / systemd / bash_history hiçbirinde invoker referansı yok
+- Cron / systemd / bash_history hiçbirinde invoker referansı yok (2026-07-06
+  taraması: bash_history 0 hit)
 - Gerçek workload k3d (in-docker) üzerinde; compose era bitmiş
 
-Host'ta `/home/halil/platform/scripts/.archive/platform-start.sh.retired-20260706`
-olarak arşivlendi. Repo'da tutulmuyor (compose-era relic; ana context yok).
+Post-merge host apply sırasında
+`/home/halil/platform/scripts/.archive/platform-start.sh.retired-20260706`
+altına arşivlenecek. Repo'da tutulmuyor (compose-era relic; SoT'a katkısı yok).
 
-**ssot host-residue**: `platform-ssot` repo'sunun deprecated clone'undan gelen
-4 stale `vault-auto-unseal.sh` (+ 4 `platform-start.sh`) kopyası 2026-07-06'da
-host'tan silindi (HARD RULE `platform-ssot` DEPRECATED).
+**ssot host-residue**: `platform-ssot` deprecated clone'undan gelen 4 stale
+`vault-auto-unseal.sh` (+ 4 `platform-start.sh`) kopyası post-merge host apply
+sırasında silinecek (HARD RULE `platform-ssot` DEPRECATED — canonical repo
+`platform-{backend,web,k8s-gitops}`; host'ta ssot residue tutulmuyor). Sayım
+(2026-07-06 tarama):
+
+- `/home/halil/platform/repo/deploy/ubuntu/vault-auto-unseal.sh` (ssot clone)
+- `/home/halil/platform/repo-worktrees/fix-stage-keycloak-detector/deploy/ubuntu/vault-auto-unseal.sh`
+- `/home/halil/platform/repo-worktrees/fix-stage-deploy-postgres-conflict/deploy/ubuntu/vault-auto-unseal.sh`
+- `/home/halil/actions-runner-stage/_work/platform-ssot/platform-ssot/deploy/ubuntu/vault-auto-unseal.sh`
+  (GHA runner working-dir; auto-regenerated by jobs but ssot workflows are
+  dead — no-op cleanup)
 
 ## History
 
 | Tarih | Ne oldu | Referans |
 |---|---|---|
-| 2026-07-06 | Host-deploy consolidation: SoT into repo + host symlink + cron env-explicit + platform-start retire + ssot residue temizliği | Board #2270, Codex thread `019f37e3-dd1e-7f40-95b2-66c2e0d0b223` |
-| 2026-07-06 | Preflight added (share-count match) — stale-swapped-init incident sonrası | `~/platform/state/vault/README.md` |
+| 2026-07-06 | Preflight added to live canonical script (share-count match) — stale-swapped-init incident sonrası | `~/platform/state/vault/README.md` |
+| 2026-07-06 | Host-deploy consolidation (bu PR): SoT into repo. Post-merge host apply plan: symlink + cron env-explicit + platform-start retire + ssot residue temizliği | Board #2270, Codex threads `019f37e3-…` (plan-time) + `019f37e9-…` (post-impl) |

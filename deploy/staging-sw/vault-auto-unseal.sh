@@ -5,7 +5,7 @@
 # Runtime path (staging-sw): /home/halil/platform/scripts/vault-auto-unseal.sh
 #                             (symlink to this file via the host clone at
 #                              /home/halil/platform-k8s-gitops/)
-# Invoked by: cron @reboot (see ../README.md for the two-line contract).
+# Invoked by: cron @reboot (see ./README.md for the two-line contract).
 #
 # Preflight (added 2026-07-06 after state/vault stale-swapped-init incident):
 #   Before feeding any shard, the script asserts that the key SOURCE share-count
@@ -25,10 +25,15 @@
 #                               ~/bootstrap-drill/vault-init-{test,prod}.json).
 #                               When set, shards come from .unseal_keys_b64;
 #                               KEYS_DIR is ignored.
+#   PREFLIGHT_ONLY  (optional)  when set to 1/true, exit after preflight passes
+#                               without feeding any shard (used by operators to
+#                               validate INIT_FILE ↔ live vault shape match
+#                               without side effects, on a sealed vault).
 
 VAULT_CONTAINER="${VAULT_CONTAINER:?VAULT_CONTAINER env var required (e.g. platform-vault-test or platform-vault-prod)}"
 KEYS_DIR="${KEYS_DIR:-/home/halil/platform/state/vault}"
 INIT_FILE="${INIT_FILE:-}"
+PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-}"
 
 log() { echo "[$(date)] vault-auto-unseal: $*"; }
 
@@ -75,6 +80,11 @@ if [ "$src_count" != "$live_total" ]; then
   exit 1
 fi
 log "preflight OK: source share-count $src_count == live Total Shares $live_total"
+
+if [ "$PREFLIGHT_ONLY" = "1" ] || [ "$PREFLIGHT_ONLY" = "true" ]; then
+  log "PREFLIGHT_ONLY set — exiting without unseal (dry-run OK)"
+  exit 0
+fi
 
 # --- Unseal ----------------------------------------------------------------
 log "unsealing..."
