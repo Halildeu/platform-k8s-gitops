@@ -168,9 +168,11 @@ docker inspect platform-vault-prod --format '{{json .NetworkSettings.Networks}}'
 kubectl --context k3d-prod -n platform-prod get endpoints vault -o yaml | grep ip
 
 # 2A. Network detach ise re-attach (container mevcut, network yok):
-docker network connect platform-prod-net platform-vault-prod
-# Docker DHCP yeni IP atar — compose ipv4_address ile pin'li olduğu için
-# static IP alınır. Doğrula:
+# --ip <reserved> ZORUNLU: bu flag olmadan Docker DHCP dinamik bir IP verir
+# ve bu bölümün çözdüğü drift sınıfını yeniden üretir (compose'daki
+# ipv4_address sadece `docker compose up`/recreate akışında etkilidir).
+docker network connect --ip 172.21.0.9 platform-prod-net platform-vault-prod
+# Doğrula:
 docker inspect platform-vault-prod --format '{{(index .NetworkSettings.Networks "platform-prod-net").IPAddress}}'
 # → 172.21.0.9 beklenir
 
@@ -203,6 +205,16 @@ açılmalı** (governance debt önleme).
 webhook. PrometheusRule + ServiceMonitor bu PR ile landed. Vault-kaynaklı
 secret delivery başarısızlığı 5dk içinde alert üretir; pg/kc endpoint
 drift'i için preflight + runbook birincil sinyal.
+
+**Alert bootstrap-ordering (fresh cluster):** ESO alert yolunun kanıt
+sayılması için iki apply yüzeyi birlikte devrede olmalı — (i) `base/eso`
+altındaki `external-secrets-metrics` Service (metrics port 8080'i selector
+ile controller Pod'una bağlar); (ii) `base/monitoring` altındaki
+`ServiceMonitor` + `PrometheusRule` (scrape + alert kuralları). Fresh
+cluster kurulumunda önce `kubectl apply -k kustomize/overlays/<env>/eso`
+sonra `kubectl apply -k kustomize/base/monitoring` (veya prod'da ArgoCD
+platform-system app'ini beklet). O ana kadar preflight (§5.1 detection)
+tek başına ground-truth detector.
 
 **Bağlantı:** platform-k8s-gitops#2268 (Faz 18 vault-ops). Original
 incident evidence: Vault container `NetworkSettings.Networks: {}` +

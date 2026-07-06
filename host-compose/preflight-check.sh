@@ -180,14 +180,17 @@ for svc in postgres keycloak vault; do
   container="platform-${container_of[$svc]}-${ENV}"
   want="${pin_ip[$svc]}"
 
-  # (a) network attachment
+  # (a) network attachment. Recovery MUST reattach with --ip <pin>, otherwise
+  # Docker DHCP will hand out a fresh dynamic address and reintroduce the
+  # very drift class this section detects (Codex 019f37d9 post-impl review
+  # bulgu 1).
   net_json=$(sshrun "docker inspect ${container} --format '{{json .NetworkSettings.Networks}}' 2>/dev/null" || echo "{}")
   if [[ "${net_json}" == "{}" || -z "${net_json}" ]]; then
-    check "Network drift ${container} attach" FAIL "container has NO network attachments; recover: docker network connect ${NET} ${container}"
+    check "Network drift ${container} attach" FAIL "container has NO network attachments; recover: docker network connect --ip ${want} ${NET} ${container}"
     continue
   fi
   if ! printf '%s' "${net_json}" | grep -q "\"${NET}\""; then
-    check "Network drift ${container} on ${NET}" FAIL "not attached to ${NET}; recover: docker network connect ${NET} ${container}"
+    check "Network drift ${container} on ${NET}" FAIL "not attached to ${NET}; recover: docker network connect --ip ${want} ${NET} ${container}"
     continue
   fi
 
