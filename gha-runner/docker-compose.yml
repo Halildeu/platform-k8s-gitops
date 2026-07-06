@@ -9,8 +9,8 @@
 #
 # Setup:
 #   1. .env dosyası oluştur (.env.example'ı kopyala + doldur)
-#   2. GitHub UI'da new self-hosted runner oluştur, registration token al
-#   3. RUNNER_REGISTRATION_TOKEN env'i set et
+#   2. RUNNER_PAT değerini least-privilege fine-grained PAT ile set et
+#   3. GitHub API egress preflight'i geçmeden runner'ı başlatma
 #   4. `docker compose up -d`
 #   5. GitHub Settings → Actions → Runners'da `staging-sw-testai-deploy` görünmeli
 #
@@ -42,6 +42,11 @@ services:
       # Codex S1: tek amaçlı label set
       RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,staging-sw,testai-deploy}
       RUNNER_GROUP: ${RUNNER_GROUP:-Default}
+      RUNNER_GITHUB_API_CONNECT_TIMEOUT: ${RUNNER_GITHUB_API_CONNECT_TIMEOUT:-5}
+      RUNNER_GITHUB_API_MAX_TIME: ${RUNNER_GITHUB_API_MAX_TIME:-20}
+      RUNNER_TOKEN_RETRY_SECONDS: ${RUNNER_TOKEN_RETRY_SECONDS:-30}
+      RUNNER_TOKEN_RETRY_MAX_SECONDS: ${RUNNER_TOKEN_RETRY_MAX_SECONDS:-300}
+      RUNNER_TOKEN_CONFIG_TMPDIR: ${RUNNER_TOKEN_CONFIG_TMPDIR:-/dev/shm}
 
     volumes:
       # kubeconfig — read-only (k3d-test context için)
