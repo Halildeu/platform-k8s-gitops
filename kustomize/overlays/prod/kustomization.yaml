@@ -538,6 +538,24 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_JWKS_URI
         value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      # 2026-07-07 prod login lockout ROOT CAUSE fix (browser-verified live).
+      # ai.acik.com login returned `auth.session.failed`: the frontend's
+      # `POST /api/auth/cookie` code-exchange was rejected 403 by the gateway's
+      # CORS filter *before the controller ran* (~10ms, no KC exchange). The
+      # gateway CORS allowlist reads `GATEWAY_CORS_ALLOWED_ORIGINS`
+      # (application.properties: `${GATEWAY_CORS_ALLOWED_ORIGINS:
+      # http://localhost:3000,http://localhost:3004}`). This key was never set
+      # for prod, so every browser request carrying `Origin: https://ai.acik.com`
+      # fell outside the localhost-only default and got a CORS 403 — while curl
+      # (no Origin header) reached the controller (400/200), masking the cause.
+      # Setting the prod origin makes the OPTIONS preflight return 200 +
+      # `access-control-allow-origin: https://ai.acik.com` and the cookie
+      # exchange succeed. Verified live on the CANONICAL gateway image
+      # (sha-bf605d73, unchanged) — proving the image was never the issue, only
+      # this missing config: /home reachable, /api/v1/authz/me -> 200.
+      - op: add
+        path: /data/GATEWAY_CORS_ALLOWED_ORIGINS
+        value: "https://ai.acik.com"
   - target:
       kind: ConfigMap
       name: variant-service-config
