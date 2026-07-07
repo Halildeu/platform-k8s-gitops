@@ -73,7 +73,15 @@ images:
     # overlay still pinned the pre-PR #141 auth-service image. The digest below
     # matches the test-proven ServiceJwt decoder @Profile gate fix
     # (platform-backend c5df886) and the live prod pod imageID.
-    digest: sha256:6820e91e57dacef71a965f49435b3503465e227542edb4dd6969ecb55dc002c2
+    #
+    # 2026-07-07 prod backend realign: promoted to the live testai auth-service
+    # digest (test/prod image parity) while investigating the ai.acik.com login
+    # `auth.session.failed`. NOTE: the actual login root cause was NOT this
+    # image — it was a missing gateway CORS allowlist entry (see the
+    # api-gateway-config `GATEWAY_CORS_ALLOWED_ORIGINS` patch below). This pin
+    # just keeps prod auth-service on the same artifact as testai; env-agnostic
+    # config (issuer/JWKS via ConfigMap) makes it safe for the serban realm.
+    digest: sha256:06e235606089c0e7a250009e18a42029016ab11b8473afb46d378ac9d9b641c5
   # 2026-05-04 Session 37: prod backend canonical realign — promote test cluster
   # digest (built from same canonical main HEAD) to bring ai.acik.com level
   # with testai. PR #331 first promoted to sha256:a0a48aa9 (test overlay yaml)
@@ -81,7 +89,11 @@ images:
   # sha256:16451b81. This cleanup PR uses the live test digest, GHCR-verified.
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
-    digest: sha256:6175711ae208da483828390ca9b528fe3fea52bb8305a7853694cf479c17319e
+    # 2026-07-07 prod realign to live testai gateway digest (test/prod parity)
+    # during the ai.acik.com login fix. The login root cause was the missing
+    # GATEWAY_CORS_ALLOWED_ORIGINS config (see api-gateway-config patch below),
+    # not this image; this pin keeps prod gateway on the testai-proven artifact.
+    digest: sha256:d1c7817c849b4b37030a8ffb9ec9c60bc220168558ebda5eb8661c6f527aa74e
   # 2026-05-18: M365 auto-provision bridge (platform-backend PR #245, merge
   # commit 53646b5). Lazy-provisions the backend `users` row on an M365 SSO
   # first-login JWT — required before M365 v2 is enabled on the `serban`
@@ -101,7 +113,8 @@ images:
   # Was sha256:c1316fbc (PR #818) → sha256:c94c057c (PR #825 M365 bridge).
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
-    digest: sha256:fce3096eb994cdd8c3911c3c9e64369b082ca066d5a24ce430146a22a8585541
+    # 2026-07-07 prod realign to live testai user-service digest (parity).
+    digest: sha256:f8c13bfd0e39914f58998120a72ff8bd3b44ff7d5bf6eea8c16fc7cf9dbfa25e
   # 2026-05-04 Session 37: variant-service canonical realign — was sha256:4a51a49f.
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
@@ -148,7 +161,9 @@ images:
     # InternalImpersonationAuditController, causing auth-service session create
     # to hit permission-service static-resource 404/500. This digest matches
     # test's PR-B internal controller image and the live prod pod imageID.
-    digest: sha256:a87b8c3959cd65581da95eca8cbec5662041935a5dbb85fc7b5f1ccf324fca26
+    #
+    # 2026-07-07 prod realign to live testai permission-service digest (parity).
+    digest: sha256:6795f96a72b401ca8bef7a3e0933bd6c0781b3caea9b439abef29c91ed18dd78
   # Frontend prod variant (ai.acik.com + serban realm)
   # 2026-05-03 Session 37: AG Grid lisans bytes-fix + single-source refactor +
   # buildx cache scope-v2 rename hotfix branch (`hotfix/ag-grid-license-rebuild`,
@@ -469,6 +484,34 @@ patches:
       # external `https://...` ama JWKS internal cluster Keycloak'tan okunur).
       - op: replace
         path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      # 2026-07-07 prod login lockout ROOT CAUSE fix (browser-verified live).
+      # ai.acik.com login returned `auth.session.failed`: the frontend's
+      # `POST /api/auth/cookie` code-exchange was rejected 403 by the gateway's
+      # CORS filter *before the controller ran* (~10ms, no KC exchange). The
+      # gateway's CORS allowlist reads `GATEWAY_CORS_ALLOWED_ORIGINS`
+      # (application.properties: `${GATEWAY_CORS_ALLOWED_ORIGINS:
+      # http://localhost:3000,http://localhost:3004}`). This key was never set
+      # for prod, so every browser request carrying `Origin: https://ai.acik.com`
+      # fell outside the localhost-only default and got a CORS 403. Setting the
+      # prod origin makes the OPTIONS preflight return 200 +
+      # `access-control-allow-origin: https://ai.acik.com` and the cookie
+      # exchange succeed (verified: /home reachable, /api/v1/authz/me → 200).
+      - op: add
+        path: /data/GATEWAY_CORS_ALLOWED_ORIGINS
+        value: "https://ai.acik.com"
+      # The realigned gateway image validates the exchanged JWT via the
+      # SECURITY_JWT_* keys (programmatic decoder). Base ships these as
+      # OVERLAY_MUST_OVERRIDE placeholders / absent; pin them to the serban
+      # realm so audience+issuer validation is fail-closed and matches testai.
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account,frontend,auth-service"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://ai.acik.com/realms/serban"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
         value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
   - target:
       kind: ConfigMap
@@ -997,9 +1040,19 @@ patches:
       kind: Endpoints
       name: postgres
     patch: |-
+      # 2026-05-20 vault-prod network-drift class — see docs/RB-vault-ops.md
+      # §"Network drift" and host-compose/{postgres,keycloak,vault}/prod/
+      # docker-compose.yml. All three prod host-bridge Endpoints IPs were
+      # drifted from committed overlay values (docker-assigned live IPs
+      # had rotated 172.21.0.{4,5,6} → 172.21.0.{10,3,9}); manual `kubectl
+      # patch endpoints ...` restored service but the overlay was stale
+      # until this commit. Compose ipv4_address now pins each container
+      # to the value below; overlay + docker + live k8s Endpoints all
+      # canonical after merge. Merge is heal, not break (Argo manual sync
+      # would have re-broken all three on next re-sync before this fix).
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.21.0.4"
+        value: "172.21.0.10"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
@@ -1009,7 +1062,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.21.0.5"
+        value: "172.21.0.3"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8080
@@ -1019,7 +1072,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.21.0.6"
+        value: "172.21.0.9"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8200
