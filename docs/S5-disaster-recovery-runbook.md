@@ -216,6 +216,42 @@ argocd app sync platform-prod
 # 6. Smoke (docs/S1-S2-acceptance-smoke-runbook.md 3 katman D29)
 ```
 
+### 3.5 Post-restore reconcile (intent-level, hand-applied prod state)
+
+**Süre:** ~5 dk. **Ne zaman:** her restore sonrası; özellikle §3.4 nuclear
+(fresh/from-migration rebuild) sonrası — o yol `kc_subject=NULL` ve realm
+manuel değişiklikleri olmadan başlar. §3.1 (pg_dumpall) ve §3.2 (KC realm
+export) çoğu state'i byte-level geri getirir; bu adım **intent-level** olanı
+kapatır: hangi hand-applied prod değişikliği kasıtlıydı.
+
+Canonical kayıt: [`docs/state/serban-realm-live-state-ledger.md`](state/serban-realm-live-state-ledger.md).
+
+```bash
+# 1) users_db.kc_subject reconcile (idempotent, dry-run default).
+#    Impersonation target-subject resolution kc_subject'e bağlı (NULL -> 422).
+#    Önce dry-run — ne değişeceğini gör:
+bash scripts/keycloak/reconcile-kc-subject-backfill.sh prod            # dry-run
+# Persist (owner-gated):
+RECONCILE_PROD_CONFIRM=yes bash scripts/keycloak/reconcile-kc-subject-backfill.sh prod --apply
+#    NOT: kalan NULL satırlar KC identity'si olmayan legacy ERP kullanıcıları
+#    (Workcube import) — alarm DEĞİL. --apply prod'da id 1201/1203/1204 admin
+#    için beklenen UUID'lere karşı EXACT assert yapar (mismatch -> exit 4);
+#    ayrıca yazımdan önce duplicate-email + kc_subject conflict precheck'i
+#    abort eder.
+
+# 2) serban 'frontend' client protocol mapper set doğrulaması.
+#    Ledger §1 tablosuyla karşılaştır. `auth-service-audience` mapper'ı
+#    OWNER kararına bağlı (keep-normalize vs revert) — ledger §1.1 +
+#    docs/runbooks/RB-serban-audience-mapper-decision.md. Restore edilen
+#    export bu mapper'ı içerebilir; owner accept etmediyse revert path uygula.
+docker exec platform-pg-prod psql -U postgres -d keycloak -c "
+  SELECT pm.name, cfg.name, cfg.value
+  FROM protocol_mapper pm
+  JOIN client c ON c.id=pm.client_id JOIN realm r ON r.id=c.realm_id
+  LEFT JOIN protocol_mapper_config cfg ON cfg.protocol_mapper_id=pm.id
+  WHERE r.name='serban' AND c.client_id='frontend' ORDER BY pm.name, cfg.name;"
+```
+
 ---
 
 ## 4. DR Drill Checklist (çeyrek yılda bir)
