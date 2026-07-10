@@ -74,7 +74,6 @@ class TestTransientClassification:
             "gh: HTTP 503",
             "gh: HTTP 504",
             "gh: HTTP 429",
-            "API rate limit exceeded",
             "connection reset by peer",
             "dial tcp: i/o timeout",
             "unexpected EOF",
@@ -112,9 +111,14 @@ class TestTransientClassification:
     def test_primary_rate_limit_429_is_transient(self):
         assert is_transient("gh: API rate limit exceeded (HTTP 429)") is True
 
-    def test_rate_limit_without_a_status_falls_back_to_the_message(self):
-        # No HTTP status in the text at all -> fall back to transport-level matching.
-        assert is_transient("API rate limit exceeded") is True
+    def test_rate_limit_without_a_status_is_not_retried(self):
+        # "rate limit" is an HTTP-level message, not a transport error. Without a status
+        # we cannot tell the retryable primary limit (429) from the terminal secondary
+        # one (403), so the ambiguous case must not be retried optimistically.
+        assert is_transient("API rate limit exceeded") is False
+
+    def test_transport_errors_without_a_status_still_fall_back_to_the_message(self):
+        assert is_transient("dial tcp 140.82.113.6:443: connect: connection refused") is True
 
     def test_unknown_status_is_not_retried(self):
         # A status we have not classified must not be optimistically retried.

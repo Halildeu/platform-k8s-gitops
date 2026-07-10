@@ -218,9 +218,11 @@ _TRANSIENT_STATUSES = frozenset({429, 500, 502, 503, 504})
 # happens to mention a rate limit.
 _TERMINAL_STATUSES = frozenset({400, 401, 403, 404, 409, 422})
 
-# Transport failures that never produced an HTTP response at all.
+# Transport failures that never produced an HTTP response at all. A bare "rate limit"
+# is deliberately absent: it is an HTTP-level message, and without a status we cannot
+# tell the retryable primary limit (429) from the terminal secondary one (403), so
+# retrying would be optimistic in exactly the ambiguous case.
 _TRANSIENT_TRANSPORT_PATTERNS = (
-    re.compile(r"\brate limit\b", re.IGNORECASE),
     re.compile(r"\b(?:connection reset|connection refused|timed? ?out|timeout)\b", re.IGNORECASE),
     re.compile(r"\bunexpected EOF\b", re.IGNORECASE),
     re.compile(r"\bTLS handshake\b", re.IGNORECASE),
