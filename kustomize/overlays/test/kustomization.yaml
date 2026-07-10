@@ -4114,7 +4114,21 @@ images:
     #   image build run 29086852906.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-29f0280
     #   digest sha256:42fe436b3c1842191e8feed183bd5d7161945e0de2acf66bc6f8977ca45abc92
-    digest: sha256:42fe436b3c1842191e8feed183bd5d7161945e0de2acf66bc6f8977ca45abc92
+    #
+    # 2026-07-10 update: sha-29f0280 -> sha-a8254d7 = main a8254d7 (platform-web
+    #   #866, ATS-0019 39c-7). interview-evidence F-liste: vaka/transkript
+    #   liste-secim + tek-sayfa akis baglama. Yuklemeden uretilen transkript
+    #   listeye duser + otomatik secilir; F3/F4-F5/F10 yuzeyleri SECILI
+    #   transkripte baglanir; silme TRANSKRIPT-BASINA (girdi denetim icin
+    #   listede kalir, SILINDI rozeti; diger transkriptler etkilenmez).
+    #   Kanit-baglama: CitationReceipt.transcriptKey ayri alan + openCase
+    #   tam-esitlik (tr-a/tr-a-b prefix cakismasi kapatildi); kayit-defteri
+    #   derin-klon (alias sizintisi yok). Codex 019f4bfd 3-iter REVISE->AGREE;
+    #   CI 25/25; 61/61 vitest. Durable overlay digest bump (selfHeal pattern).
+    #   image build run 29095854206.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-a8254d7
+    #   digest sha256:044153775992f6af6231b419a63f54959b8d65c35c8b99b3a216411cf7885a4f
+    digest: sha256:044153775992f6af6231b419a63f54959b8d65c35c8b99b3a216411cf7885a4f
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
