@@ -158,8 +158,14 @@ images:
     # run 28516713962 (workflow_dispatch) produced the immutable digest below;
     # source commit a3e01dd188cb contains PR #781 head 717708946c69 plus CI
     # branch-dispatch tag-safety. Test overlay only; prod remains D30-deferred.
+    # 2026-07-10 update: sha-f2ea5e1 — canonical MAIN build, replacing the pre-merge
+    # branch build above. platform-backend main head f2ea5e10 now carries the merged
+    # #781 (direct-STT audio window aggregation), #789 (OpenAPI spec) and #790
+    # (invalid-JWT test + maxSessionMinutes enforcement). Image build run 28873263594.
+    # Moves the overlay off a workflow_dispatch branch artifact onto the reviewed,
+    # merged main lineage. Test overlay only; prod remains D30-deferred.
     # D30 immutable digest pin.
-    digest: sha256:86b15b6e6e6a2a7652628a54796e77c953945b18ff11309603a61c94247ed300
+    digest: sha256:30d93e02140de6f4d5e9204db1df98d1073786df1144882cccab9cc06542763d
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
