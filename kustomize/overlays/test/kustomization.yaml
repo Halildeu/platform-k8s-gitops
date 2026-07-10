@@ -4095,7 +4095,19 @@ images:
     #   Durable overlay digest bump (ArgoCD platform-test selfHeal pattern).
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-c42c482
     #   digest sha256:e83c9dcacfc041865672ea99ec4cefcab26435ce7290c034020152a7237060d2
-    digest: sha256:e83c9dcacfc041865672ea99ec4cefcab26435ce7290c034020152a7237060d2
+    #
+    # 2026-07-10 update: sha-c42c482 -> sha-29f0280 = main 29f02806 (platform-web
+    #   #864 + #865, ATS-0019 39c-5 + 39c-6). interview-evidence MFE urun hattini
+    #   tamamlar: F1/F2 riza+kayit paneli (acik-riza UX, RIZA-KAPISI fail-closed
+    #   her isleme adiminda, icerik-hash SHA-256 kimlik, kanonik 6-MIME exact-set;
+    #   Codex 019f4b50 REVISE->AGREE) + F10 DSAR/silme paneli (talep-basina dsarKey,
+    #   FULFILLED-terminal cift-yurutme reddi, dar-kapsam yapisal reddi, iki-adimli
+    #   yikici onay, silme sonrasi icerik-yuzeyi kaldirma; Codex iter-2 AGREE).
+    #   Kok vitest 8 file/42 test. Durable overlay digest bump (selfHeal pattern).
+    #   image build run 29086852906.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-29f0280
+    #   digest sha256:42fe436b3c1842191e8feed183bd5d7161945e0de2acf66bc6f8977ca45abc92
+    digest: sha256:42fe436b3c1842191e8feed183bd5d7161945e0de2acf66bc6f8977ca45abc92
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
