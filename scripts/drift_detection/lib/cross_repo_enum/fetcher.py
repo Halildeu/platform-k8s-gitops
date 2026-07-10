@@ -204,12 +204,22 @@ class Fetcher:
         )
 
 
-# GitHub-side failures that say nothing about drift: retrying them is safe.
-# 403/404 are deliberately absent — they carry meaning (auth scope, missing spec
-# target) and must stay fail-closed.
-_TRANSIENT_PATTERNS = (
-    re.compile(r"\bHTTP\s+(?:500|502|503|504)\b", re.IGNORECASE),
-    re.compile(r"\bHTTP\s+429\b", re.IGNORECASE),
+# An HTTP status, when present, is authoritative — message text is not. GitHub's
+# secondary rate limit is served as **HTTP 403**, so a bare "rate limit" match would
+# have retried a response our own error mapping treats as an auth failure. Status
+# first, message only as a fallback for transport errors that never reach HTTP.
+_HTTP_STATUS_RE = re.compile(r"\bHTTP[\s:]+(\d{3})\b", re.IGNORECASE)
+
+# Retryable statuses: server-side hiccups and the primary rate limit.
+_TRANSIENT_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+# Statuses that carry a verdict (auth scope, missing spec target, bad request):
+# never retried, so ADR-0031 §I3's fail-closed contract holds even when the message
+# happens to mention a rate limit.
+_TERMINAL_STATUSES = frozenset({400, 401, 403, 404, 409, 422})
+
+# Transport failures that never produced an HTTP response at all.
+_TRANSIENT_TRANSPORT_PATTERNS = (
     re.compile(r"\brate limit\b", re.IGNORECASE),
     re.compile(r"\b(?:connection reset|connection refused|timed? ?out|timeout)\b", re.IGNORECASE),
     re.compile(r"\bunexpected EOF\b", re.IGNORECASE),
@@ -221,8 +231,19 @@ RETRY_BACKOFF_SECONDS = (2.0, 5.0)
 
 
 def is_transient(stderr: str) -> bool:
-    """True when stderr describes a GitHub/network hiccup rather than a verdict."""
-    return any(pattern.search(stderr) for pattern in _TRANSIENT_PATTERNS)
+    """True when stderr describes a GitHub/network hiccup rather than a verdict.
+
+    Resolution order matters: an explicit HTTP status wins over message text, so a
+    403 that mentions "rate limit" (GitHub's secondary rate limit) stays terminal
+    rather than being retried into the auth-failure path.
+    """
+    match = _HTTP_STATUS_RE.search(stderr)
+    if match:
+        status = int(match.group(1))
+        if status in _TERMINAL_STATUSES:
+            return False
+        return status in _TRANSIENT_STATUSES
+    return any(pattern.search(stderr) for pattern in _TRANSIENT_TRANSPORT_PATTERNS)
 
 
 def _run(

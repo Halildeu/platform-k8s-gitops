@@ -91,12 +91,34 @@ class TestTransientClassification:
             "gh: HTTP 403 Forbidden",
             "gh: Resource not accessible by integration (HTTP 403)",
             "gh: Validation Failed (HTTP 422)",
+            "gh: HTTP 401 Bad credentials",
         ],
     )
     def test_verdict_bearing_statuses_are_not_retryable(self, stderr):
         # These carry meaning (missing spec target / insufficient token scope) and must
         # stay fail-closed on the first attempt.
         assert is_transient(stderr) is False
+
+    def test_secondary_rate_limit_403_is_terminal_not_transient(self):
+        # GitHub serves its *secondary* rate limit as HTTP 403. A message-first
+        # classifier would have matched "rate limit" and retried a response that our
+        # own error mapping reports as an auth failure. Status wins over message.
+        stderr = (
+            "gh: You have exceeded a secondary rate limit. "
+            "Please wait a few minutes before you try again. (HTTP 403)"
+        )
+        assert is_transient(stderr) is False
+
+    def test_primary_rate_limit_429_is_transient(self):
+        assert is_transient("gh: API rate limit exceeded (HTTP 429)") is True
+
+    def test_rate_limit_without_a_status_falls_back_to_the_message(self):
+        # No HTTP status in the text at all -> fall back to transport-level matching.
+        assert is_transient("API rate limit exceeded") is True
+
+    def test_unknown_status_is_not_retried(self):
+        # A status we have not classified must not be optimistically retried.
+        assert is_transient("gh: HTTP 418 I'm a teapot") is False
 
 
 class TestRetryBehaviour:
@@ -124,6 +146,15 @@ class TestRetryBehaviour:
         with pytest.raises(FetchError, match="auth insufficient"):
             Fetcher().get_contents(KEY)
         assert len(spy["calls"]) == 1
+        assert spy["slept"] == []
+
+    def test_secondary_rate_limit_403_is_not_retried_end_to_end(self, spy):
+        spy["queue"].append(
+            _FakeProc(1, stderr="gh: exceeded a secondary rate limit (HTTP 403)")
+        )
+        with pytest.raises(FetchError, match="auth insufficient"):
+            Fetcher().get_contents(KEY)
+        assert len(spy["calls"]) == 1, "a 403 stays terminal even when it says 'rate limit'"
         assert spy["slept"] == []
 
     def test_persistent_transient_failure_exhausts_and_fails_closed(self, spy):
