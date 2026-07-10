@@ -7558,7 +7558,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-10-184-ws-streaming-v1"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-10-184-ws-streaming-rollback-v2"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -7573,21 +7573,16 @@ patches:
         path: /data/AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE
         value: "true"
 
-  # Faz 24 ai#184: test-only canli WebSocket streaming flip (#788 default-off
-  # koprusu). Upstream ayni app-mTLS hatti (transcribe-url ile ayni host/port,
-  # NetPol netpol-audio-gateway-live-stt-mtls kapsaminda). ROLLBACK: iki degeri
-  # base default'una dondur ("false" + "") + direct-stt-enable-rev annotation
-  # bump (pod roll sart; envFrom otomatik pickup etmez).
-  - target:
-      kind: ConfigMap
-      name: audio-gateway-config
-    patch: |-
-      - op: replace
-        path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED
-        value: "true"
-      - op: replace
-        path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_STREAM_URL
-        value: "wss://live-stt.denetim:8243/ws/stream"
+  # Faz 24 ai#184: canli WS streaming flip GERI ALINDI (2026-07-10).
+  # Aktivasyon denendi ve audio-gateway CRASHLOOP oldu: #788'in
+  # LiveSttWebSocketConfig.directSttWebSocketClient bean'i Spring Cloud
+  # Gateway'in reactorNettyWebSocketClient bean'i ile cakisiyor ->
+  # GatewayAutoConfiguration.websocketRoutingFilter "required a single bean,
+  # but 2 were found" -> APPLICATION FAILED TO START (exitCode 1, restarts=3).
+  # Base default'lari (ENABLED=false + bos URL) yeterli; flip yeniden
+  # denenmeden once platform-backend tarafinda bean cakismasi kalici olarak
+  # cozulmeli + streaming-enabled context-load testi eklenmeli.
+  # Rollout guvenligi: eski pod 1/1 Running kaldi (maxSurge), kesinti olmadi.
 
   # Test PDB gevşek (tek replica olunca anlamsız)
   - target:
