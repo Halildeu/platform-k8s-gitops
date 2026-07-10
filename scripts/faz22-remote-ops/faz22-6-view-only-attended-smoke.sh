@@ -64,6 +64,10 @@ fi
 REQUIRE_ACTIVE_GUI="${REQUIRE_ACTIVE_GUI:-1}"
 CONSENT_WAIT_SECONDS="${CONSENT_WAIT_SECONDS:-120}"
 FRAME_WAIT_SECONDS="${FRAME_WAIT_SECONDS:-20}"
+# Operator-REST readiness gate budget (Faz 22.6 #1580 device-key live-proof): retry the
+# idempotent operation-catalog GET across a transient broker-rollout tunnel drop.
+OPERATOR_REST_READY_ATTEMPTS="${OPERATOR_REST_READY_ATTEMPTS:-12}"
+OPERATOR_REST_READY_INTERVAL_SECONDS="${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}"
 VIEWER_PROBE_SECONDS="${VIEWER_PROBE_SECONDS:-8}"
 REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS:-420}"
 STEP_UP_RUNTIME_STABILIZE_SECONDS="${STEP_UP_RUNTIME_STABILIZE_SECONDS:-8}"
@@ -226,6 +230,8 @@ validate_inputs() {
   case "$VIEWER_PATH_DECISION" in owner-deferred|fanout-proven) ;; *) fail_smoke "viewer-path-decision-invalid" ;; esac
   [[ "$CONSENT_WAIT_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "consent-wait-seconds-invalid"
   [[ "$FRAME_WAIT_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "frame-wait-seconds-invalid"
+  [[ "${OPERATOR_REST_READY_ATTEMPTS:-12}" =~ ^[1-9][0-9]*$ ]] || fail_smoke "operator-rest-ready-attempts-invalid"
+  [[ "${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}" =~ ^[0-9]+$ ]] || fail_smoke "operator-rest-ready-interval-invalid"
   [[ "$VIEWER_PROBE_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "viewer-probe-seconds-invalid"
   if [[ "$AUTO_FINALIZE" == "1" ]]; then
     [[ "$EVIDENCE_URL" == https://* ]] || fail_smoke "evidence-url-required-for-auto-finalize"
@@ -925,11 +931,45 @@ main() {
   find_matching_step_up_private_key_or_generate
   start_port_forward
 
-  local operator_base approval_base body catalog_code
+  local operator_base approval_base body catalog_code catalog_rc
   operator_base="http://127.0.0.1:${REMOTE_BRIDGE_LOCAL_PORT}/internal/remote-bridge/operator"
   approval_base="http://127.0.0.1:${REMOTE_BRIDGE_LOCAL_PORT}/internal/remote-bridge/approval"
 
-  catalog_code="$(curl_json GET "$operator_base" /operation-catalog "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/catalog.body")"
+  # Operator-REST readiness gate (Faz 22.6 #1580 device-key live-proof reliability).
+  # The step-up run-scoped-key `rollout restart` above replaces the broker pod on a
+  # quota-tight test node (strategy is maxSurge:0 / maxUnavailable:1, so there is a
+  # brief no-pod window). rollout-status + the exec key-check confirm the NEW pod is
+  # Ready, but Ready precedes the operator REST fully serving, and the freshly opened
+  # port-forward can still be pinned to the terminating pod for a beat — so the first
+  # authenticated call intermittently sees a dead tunnel (curl 000) and the whole
+  # device-key live-proof fails on a transport race, not on any device-key defect.
+  # This gate re-establishes the port-forward on a 000 and re-issues the IDEMPOTENT
+  # catalog GET until the broker serves 200 (fully up) or the attempt budget is spent.
+  # A non-000 code (e.g. a 5xx application-readiness error) is NOT a transport failure,
+  # so it is only slept-and-retried — never masked by a tunnel rebuild. Only this read
+  # is retried; the non-idempotent session POSTs below run once, after the broker is
+  # proven stable, so there is no double-apply risk. Worst-case wall time ≈
+  # OPERATOR_REST_READY_ATTEMPTS × (curl --max-time 25 + start_port_forward's own ≤40s
+  # catalog wait on a 000); keep the attempt count modest — the healthy path exits on
+  # the first 200.
+  catalog_code=""
+  for _ in $(seq 1 "${OPERATOR_REST_READY_ATTEMPTS:-12}"); do
+    # curl_json can exit non-zero on a dead tunnel; under `set -e` that would abort the
+    # whole gate before the retry, so capture its status explicitly and normalise any
+    # failed/empty result to the 000 transport-failure code the loop keys on.
+    set +e
+    catalog_code="$(curl_json GET "$operator_base" /operation-catalog "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/catalog.body")"
+    catalog_rc=$?
+    set -e
+    [[ "$catalog_rc" == "0" && -n "$catalog_code" ]] || catalog_code="000"
+    [[ "$catalog_code" == "200" ]] && break
+    if [[ "$catalog_code" == "000" ]]; then
+      # tunnel died under the broker rollout — rebuild it and retry the idempotent GET
+      start_port_forward
+      continue
+    fi
+    sleep "${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}"
+  done
   assert_http "$catalog_code" 200 "operation catalog" "${EVIDENCE_DIR}/catalog.body"
 
   body="$(jq -nc --arg session "$SESSION_ID" --arg device "$DEVICE_ID" \
