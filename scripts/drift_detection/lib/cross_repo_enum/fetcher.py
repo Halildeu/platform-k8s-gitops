@@ -5,15 +5,23 @@ ADR-0031 §I3:
   - Auth errors NEVER silently pass as drift-free.
   - Token redacted; only set/unset boolean logged.
   - Cache keyed on (repo, path, ref) for contents; (repo, num) for pulls.
+
+Transient-failure retry (2026-07-10): GitHub returns 5xx/429 often enough that a
+single-attempt fetch turned the guard red on unrelated PRs (observed twice in one
+day: `os-type` mapping ERROR with `gh: HTTP 502`). Retrying only *transient*
+statuses preserves the fail-closed contract above: 403/404 and parse failures are
+never retried and never pass as drift-free.
 """
 from __future__ import annotations
 
 import base64
 import json
 import os
+import re
 import subprocess
+import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 
 class FetchError(RuntimeError):
@@ -196,17 +204,65 @@ class Fetcher:
         )
 
 
-def _run(cmd: list[str]) -> tuple[int, str, str]:
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise FetchError(
-            f"gh CLI not found (PATH issue?): {exc}",
-            exit_code=2,
-        ) from exc
-    return proc.returncode, proc.stdout, proc.stderr
+# GitHub-side failures that say nothing about drift: retrying them is safe.
+# 403/404 are deliberately absent — they carry meaning (auth scope, missing spec
+# target) and must stay fail-closed.
+_TRANSIENT_PATTERNS = (
+    re.compile(r"\bHTTP\s+(?:500|502|503|504)\b", re.IGNORECASE),
+    re.compile(r"\bHTTP\s+429\b", re.IGNORECASE),
+    re.compile(r"\brate limit\b", re.IGNORECASE),
+    re.compile(r"\b(?:connection reset|connection refused|timed? ?out|timeout)\b", re.IGNORECASE),
+    re.compile(r"\bunexpected EOF\b", re.IGNORECASE),
+    re.compile(r"\bTLS handshake\b", re.IGNORECASE),
+)
+
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = (2.0, 5.0)
+
+
+def is_transient(stderr: str) -> bool:
+    """True when stderr describes a GitHub/network hiccup rather than a verdict."""
+    return any(pattern.search(stderr) for pattern in _TRANSIENT_PATTERNS)
+
+
+def _run(
+    cmd: list[str],
+    *,
+    attempts: int = RETRY_ATTEMPTS,
+    backoff: tuple[float, ...] = RETRY_BACKOFF_SECONDS,
+    sleeper: Callable[[float], None] | None = None,
+) -> tuple[int, str, str]:
+    """Run `cmd`, retrying only transient GitHub/network failures.
+
+    A non-transient failure (403, 404, malformed response) returns on the first
+    attempt, so the caller's fail-closed error mapping is unchanged. The final
+    stderr of an exhausted retry is annotated with the attempt count so a red
+    check is not mistaken for a one-off.
+    """
+    # Resolved per call, not bound at def time, so `time.sleep` stays patchable.
+    sleep = sleeper if sleeper is not None else time.sleep
+    last: tuple[int, str, str] = (1, "", "")
+    for attempt in range(1, attempts + 1):
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise FetchError(
+                f"gh CLI not found (PATH issue?): {exc}",
+                exit_code=2,
+            ) from exc
+        if proc.returncode == 0:
+            return proc.returncode, proc.stdout, proc.stderr
+        last = (proc.returncode, proc.stdout, proc.stderr)
+        if not is_transient(proc.stderr) or attempt == attempts:
+            break
+        sleep(backoff[min(attempt - 1, len(backoff) - 1)])
+
+    rc, out, err = last
+    if is_transient(err):
+        err = f"{err.strip()} (transient failure persisted across {attempts} attempts)"
+    return rc, out, err
