@@ -173,7 +173,14 @@ images:
     # 0 dropped_saturation, exact 5s windowing). Image build: CI - Image Build +
     # GHCR Push @ main 4880d3c5 (success). Test overlay only; prod D30-deferred.
     # D30 immutable digest pin.
-    digest: sha256:8a24cc7cb85b297d227e638b4c1e383d45d0c2d565d69e17c3ec79f68a1977b2
+    # 2026-07-10 update 3: sha-b49a75d — platform-backend#803 fixes the startup-fatal
+    # WebSocketClient bean clash that #788 carried behind its default-off flag
+    # (GatewayAutoConfiguration.websocketRoutingFilter saw two unqualified candidates ->
+    # APPLICATION FAILED TO START the moment streaming.enabled=true; live evidence in
+    # gitops#2283/#2284). Ships @Bean(defaultCandidate=false) + a real-context
+    # LiveSttWebSocketWiringTest (183/183). Codex AGREE 019f4bfe.
+    # D30 immutable digest pin.
+    digest: sha256:f739f394b5ce366a3284f3d6378e0e2543de810193965a7eee8bfe01c27929d7
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -7558,7 +7565,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-10-184-ws-streaming-rollback-v2"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-10-184-ws-streaming-refix-v3"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
@@ -7573,16 +7580,26 @@ patches:
         path: /data/AUDIO_GATEWAY_SECURITY_REQUIRE_AUDIO_RECORD_ROLE
         value: "true"
 
-  # Faz 24 ai#184: canli WS streaming flip GERI ALINDI (2026-07-10).
-  # Aktivasyon denendi ve audio-gateway CRASHLOOP oldu: #788'in
-  # LiveSttWebSocketConfig.directSttWebSocketClient bean'i Spring Cloud
-  # Gateway'in reactorNettyWebSocketClient bean'i ile cakisiyor ->
-  # GatewayAutoConfiguration.websocketRoutingFilter "required a single bean,
-  # but 2 were found" -> APPLICATION FAILED TO START (exitCode 1, restarts=3).
-  # Base default'lari (ENABLED=false + bos URL) yeterli; flip yeniden
-  # denenmeden once platform-backend tarafinda bean cakismasi kalici olarak
-  # cozulmeli + streaming-enabled context-load testi eklenmeli.
-  # Rollout guvenligi: eski pod 1/1 Running kaldi (maxSurge), kesinti olmadi.
+  # Faz 24 ai#184: canli WS streaming flip (2. deneme, #803 fix'i ile birlikte).
+  # 1. deneme (gitops#2283) crashloop etti; kok neden #788'in tasidigi bean
+  # cakismasiydi ve platform-backend#803 ile kalici olarak cozuldu
+  # (@Bean(defaultCandidate=false) + gercek-context LiveSttWebSocketWiringTest;
+  # fix'siz halde test prod hatasinin ayni'sini uretiyor). Bu PR digest bump'i
+  # ve flip'i BIRLIKTE yapar -> pod tek roll'da hem fix'i hem flag'i alir.
+  # Upstream ayni app-mTLS hatti (transcribe-url ile ayni host/port, NetPol
+  # netpol-audio-gateway-live-stt-mtls kapsaminda); live-stt /ws/stream mTLS
+  # handshake'i 101 Switching Protocols ile canli dogrulandi.
+  # ROLLBACK: iki degeri base default'una dondur ("false" + "") + rev bump.
+  - target:
+      kind: ConfigMap
+      name: audio-gateway-config
+    patch: |-
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/AUDIO_GATEWAY_DIRECT_STT_STREAMING_STREAM_URL
+        value: "wss://live-stt.denetim:8243/ws/stream"
 
   # Test PDB gevşek (tek replica olunca anlamsız)
   - target:
