@@ -164,8 +164,16 @@ images:
     # (invalid-JWT test + maxSessionMinutes enforcement). Image build run 28873263594.
     # Moves the overlay off a workflow_dispatch branch artifact onto the reviewed,
     # merged main lineage. Test overlay only; prod remains D30-deferred.
+    # 2026-07-10 update 2: sha-4880d3c — platform-backend#788 (ai#184) authenticated
+    # WebSocket live STT stream proxy (/ws/stream): JWT-gated, per-session sequence
+    # tracker with terminal-signal state release, invalid-frame classification.
+    # Enables desktop "Canlı Transkript" live rendering against the gateway.
+    # Prior sha-f2ea5e1 lineage (#781/#789/#790) is contained in this main build.
+    # Aggregation live-proof on the previous digest: platform-ai#231 (closed,
+    # 0 dropped_saturation, exact 5s windowing). Image build: CI - Image Build +
+    # GHCR Push @ main 4880d3c5 (success). Test overlay only; prod D30-deferred.
     # D30 immutable digest pin.
-    digest: sha256:30d93e02140de6f4d5e9204db1df98d1073786df1144882cccab9cc06542763d
+    digest: sha256:8a24cc7cb85b297d227e638b4c1e383d45d0c2d565d69e17c3ec79f68a1977b2
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
