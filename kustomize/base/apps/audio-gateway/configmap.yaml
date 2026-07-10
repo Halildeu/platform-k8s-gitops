@@ -86,3 +86,8 @@ data:
   AUDIO_GATEWAY_DIRECT_STT_TLS_CLIENT_PRIVATE_KEY_PATH: "/etc/direct-stt-mtls/direct-stt-client.key"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_ENABLED: "true"
   AUDIO_GATEWAY_DIRECT_STT_TRANSCRIPT_RESULT_STREAM_KEY: "transcript:direct-stt-results"
+  # Faz 24 ai#184 (#788): gateway -> live-stt canli WebSocket koprusu.
+  # Default-off (fail-closed); test overlay flip eder. TLS acikken stream-url
+  # wss olmak ZORUNDA (AudioGatewayProperties.Streaming.validate fail-closed).
+  AUDIO_GATEWAY_DIRECT_STT_STREAMING_ENABLED: "false"
+  AUDIO_GATEWAY_DIRECT_STT_STREAMING_STREAM_URL: ""
