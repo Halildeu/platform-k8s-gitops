@@ -4134,7 +4134,21 @@ images:
     #   image build run 29095854206.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-a8254d7
     #   digest sha256:044153775992f6af6231b419a63f54959b8d65c35c8b99b3a216411cf7885a4f
-    digest: sha256:044153775992f6af6231b419a63f54959b8d65c35c8b99b3a216411cf7885a4f
+    #
+    # 2026-07-11 update: sha-a8254d7 -> sha-29ebe18 = main 29ebe18c
+    #   (platform-web #867, Faz 24). Meeting MFE now reads canonical meeting
+    #   list/detail APIs through the fail-closed shell auth epoch and hydrates
+    #   selected meeting detail without demo-only fallback. Source checks 39/39
+    #   plus typecheck/lint/build and cross-AI NO_P0_P1. Image build run
+    #   29152708606; immutable digest verified by rollout run 29152831069.
+    #   #2295 moves subsequent promotions to desired-state-first PR + ArgoCD
+    #   verification so selfHeal cannot revert an imperative set-image rollout.
+    #
+    # Machine-managed current pin. Historical provenance remains above; future
+    # automation rewrites only these fields and records evidence in its PR.
+    # sourceRevision: 29ebe18c8197fee7621cc3130c11d893ab9ecd3b
+    newTag: sha-29ebe18
+    digest: sha256:4ff08fd67234e11f655487d8524351abdc739713dcc6e15fd7472dcefd6a201b
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

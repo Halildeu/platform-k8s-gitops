@@ -1,0 +1,138 @@
+name: Verify testai frontend GitOps rollout
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kustomize/overlays/test/kustomization.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testai-frontend-promotion
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Reconcile merged pin and verify runtime
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout merged desired state
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 2
+
+      - name: Detect frontend pin change and resolve expectation
+        id: pin
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_REVISION: ${{ github.sha }}
+          KUSTOMIZATION: kustomize/overlays/test/kustomization.yaml
+        run: |
+          set -euo pipefail
+          current=$(python3 scripts/automation/test-overlay-frontend-image.py inspect \
+            --kustomization "$KUSTOMIZATION")
+          tag=$(jq -r '.tag // empty' <<< "$current")
+          source_sha=$(jq -r '.source_sha // empty' <<< "$current")
+          digest=$(jq -r '.digest // empty' <<< "$current")
+          [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "::error::frontend overlay is missing a machine-readable full sourceRevision"; exit 1;
+          }
+          [[ "$tag" =~ ^sha-[a-f0-9]{7}$ ]] || {
+            echo "::error::frontend overlay is missing a machine-readable sha-* newTag"; exit 1;
+          }
+          [[ "${source_sha:0:7}" == "${tag#sha-}" ]] || {
+            echo "::error::frontend sourceRevision and newTag disagree"; exit 1;
+          }
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::frontend overlay digest is malformed"; exit 1;
+          }
+
+          should_verify=true
+          reconcile_revision="$CURRENT_REVISION"
+
+          # A newer main commit may land while this run is queued. Never ask
+          # ArgoCD to move backwards. If latest main carries the same frontend
+          # pin, reconcile latest; if it carries a newer frontend pin, this run
+          # is superseded and the newer push owns verification.
+          git fetch origin main --depth=1 --quiet
+          latest_revision=$(git rev-parse FETCH_HEAD)
+          if [[ "$latest_revision" != "$CURRENT_REVISION" ]]; then
+            latest_file="$RUNNER_TEMP/frontend-overlay-latest.yaml"
+            git show "${latest_revision}:${KUSTOMIZATION}" > "$latest_file"
+            latest=$(python3 scripts/automation/test-overlay-frontend-image.py inspect \
+              --kustomization "$latest_file")
+            if [[ "$latest" == "$current" ]]; then
+              reconcile_revision="$latest_revision"
+              echo "::notice::newer main carries the same frontend pin; reconciling ${latest_revision}"
+            else
+              should_verify=false
+              echo "::notice::frontend pin superseded by ${latest_revision}; newer push owns verification"
+            fi
+          fi
+
+          if [[ "$EVENT_NAME" == "push" && "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            before_file="$RUNNER_TEMP/frontend-overlay-before.yaml"
+            if git show "${BEFORE_SHA}:${KUSTOMIZATION}" > "$before_file" 2>/dev/null; then
+              before=$(python3 scripts/automation/test-overlay-frontend-image.py inspect \
+                --kustomization "$before_file")
+              if [[ "$before" == "$current" ]]; then
+                should_verify=false
+                echo "::notice::test overlay changed outside the frontend image pin; frontend runtime verification skipped"
+              fi
+            fi
+          fi
+
+          {
+            echo "should_verify=$should_verify"
+            echo "reconcile_revision=$reconcile_revision"
+            echo "tag=$tag"
+            echo "source_sha=$source_sha"
+            echo "short_sha=${tag#sha-}"
+            echo "digest=$digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Reconcile main revision through ArgoCD
+        if: steps.pin.outputs.should_verify == 'true'
+        env:
+          REVISION: ${{ steps.pin.outputs.reconcile_revision }}
+          REPORT_PATH: ${{ runner.temp }}/platform-test-frontend-sync-report.json
+          ALLOW_KUBECTL_SELECTED_RESOURCE_FALLBACK: "false"
+        run: bash scripts/faz22/sync-platform-test-gitops.sh
+
+      - name: Verify exact pod digest, public entry, and build lineage
+        if: steps.pin.outputs.should_verify == 'true'
+        run: |
+          bash scripts/deploy/verify-testai-frontend-runtime.sh \
+            --expected-digest "${{ steps.pin.outputs.digest }}" \
+            --expected-sha "${{ steps.pin.outputs.source_sha }}" \
+            --expected-short-sha "${{ steps.pin.outputs.short_sha }}"
+
+      - name: Upload ArgoCD reconciliation report
+        if: always() && steps.pin.outputs.should_verify == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: testai-frontend-gitops-rollout-${{ steps.pin.outputs.reconcile_revision }}
+          path: ${{ runner.temp }}/platform-test-frontend-sync-report.json
+          retention-days: 14
+
+      - name: Verification summary
+        if: always()
+        run: |
+          {
+            echo "## testai frontend GitOps verification"
+            echo ""
+            echo "- merged revision: \`${{ github.sha }}\`"
+            echo "- reconciled revision: \`${{ steps.pin.outputs.reconcile_revision }}\`"
+            echo "- frontend changed: \`${{ steps.pin.outputs.should_verify }}\`"
+            echo "- expected tag: \`${{ steps.pin.outputs.tag }}\`"
+            echo "- expected source: \`${{ steps.pin.outputs.source_sha }}\`"
+            echo "- expected digest: \`${{ steps.pin.outputs.digest }}\`"
+            echo "- mutation path: ArgoCD application reconciliation only"
+            echo "- authenticated Meeting behavior: separate acceptance gate"
+          } >> "$GITHUB_STEP_SUMMARY"

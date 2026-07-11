@@ -79,14 +79,16 @@ GitHub → Settings → Developer settings → **GitHub Apps** → New GitHub Ap
 
 ## 🧑 ADIM 4 — Branch ruleset (önerilen hardening)
 
-`auto-test-overlay/` + `auto-promotion/` branch-prefix'lerinin güçlü bir sinyal
+`auto-test-overlay/` + `auto-test-frontend/` + `auto-promotion/` branch-prefix'lerinin güçlü bir sinyal
 olması için, Settings → Rules → Rulesets → New branch ruleset:
 
-- **Target branches**: `auto-test-overlay/**` · `auto-promotion/**`
+- **Target branches**: `auto-test-overlay/**` · `auto-test-frontend/**` · `auto-promotion/**`
 - **Restrict creations / updates**: yalnız `platform-automation` App bypass listesinde.
 
 Bu, bir insanın bu dallara push edip exemption'ı taşıyamamasını garanti eder.
-`auto-promotion/**` aynı `platform-automation` App'iyle açılır (#842 Part 2 —
+`auto-test-frontend/**` testai frontend desired-state PR'larını
+`.github/workflows/deploy-testai.yml` üzerinden açar (#2295). `auto-promotion/**`
+aynı `platform-automation` App'iyle açılır (#842 Part 2 —
 `promotion-bot-scan-candidates.yml`). `auto-verified/**` ayrı follow-up
 (`ledger-mark-verified.sh` staging-sw host-systemd'de koşar — host-minted App
 token gerektirir).
@@ -107,6 +109,17 @@ gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \
 - Auto-PR'da `cross-ai-audit` check'i automation-exemption path'iyle **PASS**.
 - Operator PR'ı inceler → CI yeşil → normal squash merge.
 
+Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir:
+
+- `deploy-testai.yml` doğrudan workload mutasyonu yapmaz; App kimliğiyle
+  `auto-test-frontend/testai` PR'ını açar/günceller.
+- Secret'lar yoksa workflow fail-closed kırmızı olur; eski `kubectl set image`
+  yoluna düşmez.
+- PR merge edilince `verify-testai-frontend-rollout.yml` merged revision'ı
+  ArgoCD üzerinden reconcile eder ve pod digest/public asset/build-info
+  lineage gate'lerini çalıştırır.
+- Authenticated Meeting davranış smoke'u bu artifact gate'inden ayrıdır.
+
 ## Disable / rollback
 
 - **Geçici devre dışı**: `AUTOMATION_APP_ID` + `AUTOMATION_APP_PRIVATE_KEY`
@@ -122,13 +135,16 @@ gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \
 - ❌ App'e `Contents` + `Pull requests` dışında permission verme — least-privilege.
 - ❌ App'i bir **insan hesabına** PAT olarak ikame etme — `#827` kontratı bot kimliği ister.
 - ❌ Auto-PR'ı admin-merge etme veya CI kırmızıyken merge etme — HARD RULE.
-- ❌ `auto-test-overlay/backend-testai` dalını manuel düzenleme — job her run `origin/main`'e reset eder, force-push üzerine yazar.
+- ❌ `auto-test-overlay/backend-testai` veya `auto-test-frontend/testai` dalını manuel düzenleme — job her run `origin/main`'e reset eder, force-push üzerine yazar.
 
 ## Referanslar
 
 - board #827 · Codex thread `019e4034` (design) · `019e4048` (PR-B token-model)
 - `.github/workflows/deploy-backend-testai.yml` — `sync-test-overlay-pr` job
+- `.github/workflows/deploy-testai.yml` — frontend desired-state-first PR producer
+- `.github/workflows/verify-testai-frontend-rollout.yml` — merged frontend pin runtime verifier
 - `scripts/automation/sync-test-overlay.sh` — PR aç/güncelle orchestrator
+- `scripts/automation/sync-test-overlay-frontend.sh` — frontend PR orchestrator
 - `scripts/automation/apply-test-overlay-digests.py` — comment-preserving digest rewrite
 - `scripts/ci/pr-cross-ai-audit.mjs` — `auditAutomation` + `AUTOMATION_PREFIX_ACTORS`
 - `#827` PR-A (#839) — automation-PR cross-AI exemption kontratı

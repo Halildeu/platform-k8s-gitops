@@ -64,6 +64,7 @@ const PROVIDER_ALIASES = {
 // strips an inline `#` as a YAML comment, so the source identifier must be #-free.
 const AUTOMATION_BRANCH_CONTRACT = {
   'auto-test-overlay/': '.github/workflows/deploy-backend-testai.yml',
+  'auto-test-frontend/': '.github/workflows/deploy-testai.yml',
   'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
   'auto-promotion/': 'scripts/promotion/scan-promotion-candidates.sh',
 };
@@ -88,8 +89,23 @@ const AUTOMATION_BRANCH_CONTRACT = {
 // (#842 / Codex `019e4094` Q3).
 const AUTOMATION_PREFIX_ACTORS = {
   'auto-test-overlay/': new Set(['platform-automation[bot]']),
+  'auto-test-frontend/': new Set(['platform-automation[bot]']),
   'auto-promotion/': new Set(['platform-automation[bot]']),
   'auto-verified/': new Set(['github-actions[bot]']),
+};
+
+// Desired-state sync bots are further bounded to the exact files their
+// deterministic writers own. A compromised bot identity therefore cannot use
+// the cross-AI exemption to carry an unrelated source or workflow change.
+const AUTOMATION_DIFF_ALLOWLIST = {
+  'auto-test-overlay/': new Set([
+    'kustomize/overlays/test/kustomization.yaml',
+    'kustomize/overlays/test/activation/endpoint-admin-remote-bridge/kustomization.yaml',
+    'kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/kustomization.yaml',
+  ]),
+  'auto-test-frontend/': new Set([
+    'kustomize/overlays/test/kustomization.yaml',
+  ]),
 };
 
 function matchedAutomationPrefix(headRef) {
@@ -485,6 +501,32 @@ function auditAutomation(body, prMeta) {
         ? `PR author "${prMeta.actor}" and event sender "${prMeta.sender}" are both the automation bot bound to "${prefix}"`
         : `PR author "${prMeta.actor}" / event sender "${prMeta.sender}" — both must be the automation bot bound to "${prefix}" (${[...allowedActors].join(', ') || 'none'}); denied`,
   });
+
+  // Desired-state automation prefixes have an exact changed-file allowlist.
+  // Missing file metadata fails closed; gate-cross-ai-audit.yml always injects
+  // the paginated list from the trusted base workflow.
+  const diffAllowlist = AUTOMATION_DIFF_ALLOWLIST[prefix];
+  if (diffAllowlist) {
+    const filesPresent =
+      Array.isArray(prMeta.changedFiles) && prMeta.changedFiles.length > 0;
+    const badPath = filesPresent
+      ? prMeta.changedFiles.find((file) => !diffAllowlist.has(file))
+      : null;
+    findings.push({
+      check: 'automation_changed_files_present',
+      pass: filesPresent,
+      detail: filesPresent
+        ? `${prMeta.changedFiles.length} changed file(s) declared`
+        : 'changedFiles null or empty — fail-closed',
+    });
+    findings.push({
+      check: 'automation_diff_allowlist',
+      pass: filesPresent && !badPath,
+      detail: filesPresent && !badPath
+        ? `${prMeta.changedFiles.length} file(s) inside the ${prefix} allowlist`
+        : `path "${badPath ?? '<missing list>'}" not in the ${prefix} allowlist`,
+    });
+  }
 
   // PR-body ## Cross-AI section fields
   const section = extractCrossAiSection(body);
