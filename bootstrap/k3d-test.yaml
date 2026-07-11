@@ -51,8 +51,18 @@ options:
         nodeFilters: [server:*]
       - arg: "--cluster-dns=10.45.0.10"
         nodeFilters: [server:*]
-      # Test küçük — pod limit düşük
-      - arg: "--kubelet-arg=max-pods=50"
+      # Pod cap: raised 50 -> 80 (#2306/#2308, Codex 019f533d "Controlled D").
+      # 50 was too small once Faz 24 (audio-gateway, meeting/transcript/audit
+      # pipeline, ...) + Faz 25 ats-* landed — node hit 51/50 and rollouts
+      # surge-blocked. 80 is a conservative intermediate (not 110) given the
+      # shared staging-sw host's ~6 GiB RAM; max-pods loosens only the kubelet
+      # pod-count gate, not memory, so re-evaluate before going higher.
+      # NOTE: this is the DESIRED source of truth. The live kubelet still runs
+      # max-pods=50 until k3d-test-server-0 is recreated in a coordinated
+      # maintenance window (tracked by #2306/#2308; recreate runbook pending).
+      # "capacity raised" is only true after live kubelet Allocatable pods == 80
+      # is verified post-recreate.
+      - arg: "--kubelet-arg=max-pods=80"
         nodeFilters: [server:*]
   kubeconfig:
     updateDefaultKubeconfig: true

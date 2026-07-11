@@ -7029,6 +7029,110 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/cpu
         value: "400m"
+  # 2026-07-12 #2306/#2308 (Codex 019f533d "Controlled D"): extend the test
+  # terminate-first rollout policy to the Faz 24/25 application Deployments that
+  # still render maxSurge=1 (or default 25%) and therefore surge-block on the
+  # full 50-pod node. Node is at 51/50; a surge pod cannot schedule, so any
+  # rollout of these hangs on "Too many pods" FailedScheduling (live: #2290
+  # device-key broker DOWN, #2307 meeting-service 12m Pending). maxSurge=0/
+  # maxUnavailable=1 = the new pod terminates the old first — no surge slot.
+  # `op: add /spec/strategy` (not replace) so it works whether or not the base
+  # declares an explicit strategy (audit-archive-exporter + redis-streams-
+  # exporter have none). Prod base is untouched (zero-downtime 1/0 preserved).
+  # frontend is EXCLUDED — it is public-facing and #2299 deliberately kept it
+  # maxSurge=1/maxUnavailable=0 + progressDeadline + a live-quota preflight,
+  # because terminate-first deleted the only serving pod and returned a public
+  # 503. These 8 are internal/behind-gateway (APIs, exporters, a consumer,
+  # audio ingest, the test-only artifact host) where a brief single-replica
+  # gap is acceptable — same contract the 8 core backends already carry above.
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: audio-gateway
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: transcript-service
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: audit-event-consumer-service
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: audit-archive-exporter
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: redis-streams-exporter
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+  - target:
+      kind: Deployment
+      name: artifact-host
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
   - target:
       kind: ConfigMap
       name: notification-orchestrator-config
