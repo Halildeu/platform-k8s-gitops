@@ -683,8 +683,15 @@ check_active_gui() {
 
 collect_endpoint_log() {
   [[ -n "$DENETIM_SSH_TARGET" ]] || return 1
+  # NOTE: no PowerShell `$` variables in the -Command string. The denetim SSH shell is
+  # itself PowerShell, so a `\$sid` / `\$_` here is expanded (to empty) by the OUTER
+  # PowerShell before the inner one runs — turning `$sid='...'` into `='...'` (a bogus
+  # command) and collecting nothing, which fails the device-key live-proof at the final
+  # evidence step even though the VIEW_ONLY relay succeeded. SESSION_ID is a validated
+  # slug ([A-Za-z0-9._:-]+, no quotes), so embed it directly in a PS single-quoted
+  # literal, and use Select-Object -ExpandProperty Line instead of ForEach-Object {$_.Line}.
   local ps
-  ps="powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$sid='${SESSION_ID}'; Get-Content 'C:\ProgramData\EndpointAgent\logs\endpoint-agent.log' -Tail 1200 -ErrorAction Stop | Select-String -SimpleMatch \$sid | ForEach-Object { \$_.Line }\""
+  ps="powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-Content 'C:\ProgramData\EndpointAgent\logs\endpoint-agent.log' -Tail 1200 -ErrorAction Stop | Select-String -SimpleMatch '${SESSION_ID}' | Select-Object -ExpandProperty Line\""
   ssh_denetim "$ps" \
     > "${EVIDENCE_DIR}/endpoint-agent-relevant.log" 2>"${EVIDENCE_DIR}/endpoint-agent-relevant.stderr" || return 1
   grep -F "session=\"$SESSION_ID\"" "${EVIDENCE_DIR}/endpoint-agent-relevant.log" >/dev/null

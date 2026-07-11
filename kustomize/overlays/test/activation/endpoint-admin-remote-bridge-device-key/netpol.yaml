@@ -97,9 +97,20 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # Keycloak host-bridge egress for operator-JWT JWKS verification
+    # (REMOTE_BRIDGE_OPERATOR_AUTH_JWT_JWK_SET_URI -> keycloak:8080). The Keycloak
+    # host container (platform-kc-test) is a docker-bridge endpoint whose IP is NOT
+    # statically pinned, so it drifts across host reboots / container recreation
+    # (observed 2026-07-10: 172.19.0.5 -> 172.19.0.7 after the host move). A /32 pin
+    # then silently blocks JWKS fetch -> Nimbus decoder times out (15s) -> every
+    # operator REST call 401s, which surfaced only as an attended-smoke failure.
+    # The `keycloak` Service Endpoints already re-track the live IP; scope this egress
+    # to the platform-test docker /24 so it stays valid wherever Keycloak lands in the
+    # bridge (still restricted to the test docker subnet + port 8080). A durable
+    # follow-up is to statically pin the host-service container IPs in host-compose.
     - to:
         - ipBlock:
-            cidr: 172.19.0.5/32
+            cidr: 172.19.0.0/24
       ports:
         - protocol: TCP
           port: 8080
