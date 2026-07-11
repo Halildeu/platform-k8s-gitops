@@ -40,10 +40,27 @@ Apply-yolu canlı dersleri: LimitRange 500m enjeksiyonu quota'ya çarptı (test 
 
 5. **Canlı STT promotion** (AYRI dilim, 39d-5): `ATS_AI_BASE_URL` patch'i GitOps değişikliğiyle; stub↔live OTOMATİK fallback YASAK.
 
+### 39d-6 MFE canlı READ (platform-web #869; Codex 019f50b7 AGREE)
+
+MFE (`mfe-interview-evidence`) canlı `/api/ats` READ'i **runtime env** ile açılır (build-arg değil):
+
+| Anahtar (window.__env__) | Değer | Davranış |
+|---|---|---|
+| `INTERVIEW_EVIDENCE_DATA_MODE` | *yok/boş* | **demo** (default — 39c-7 davranışı birebir) |
+| | `live` | transcript listesi + F3 segmentler shell-token'lı shared-http ile `/api/ats/v1`'den |
+| | başka değer | **config-error kartı** (fail-closed; sessiz demo düşüşü YOK) |
+| `INTERVIEW_EVIDENCE_INTERVIEW_ID` | live modda ZORUNLU | boşsa config-error (id uygulama koduna hardcode edilmez) |
+
+- testai değerleri `platform-web scripts/deploy/build-single-domain.mjs` STAGE spread'inden **explicit** enjekte edilir: `live` + `iv-smoke-1` (39d-4 D29 smoke'unun SENTETİK fixture'ı — gerçek aday verisi DEĞİL; ATS-0016/G0 sınırı). Prod build'de anahtarlar yok → demo.
+- Auth zinciri: shell `createProtectedRemoteApp` remote'u mount etmeden ÖNCE `configureShellServices` çağırır (Bearer/auth-ready/refresh shell'den; MFE token üretmez). UI hata ayrımı D29 aynası: **401→"Oturum hatası"** (rol atamak çözmez) ≠ **403→"Yetki hatası"** (ats-api client-role eksik); 200+bozuk gövde `AtsContractError` (sessiz boş-veri YOK).
+- Yazma yüzeyleri (rıza/inceleme/DSAR) canlı modda 39d-7'ye kadar gizli; tam akış demo modunda.
+- Doğrulama: browser network'te `GET /api/ats/v1/interviews/iv-smoke-1/transcripts` 200 + liste render + seçimde `transcript?key=` 200 + segment render.
+
 ## Rollback
 
 - Aktivasyonu geri al: `kubectl delete -k kustomize/overlays/test/activation/ats-interview-evidence` → `/api/ats` ana `platform` Ingress'ine (api-gateway 404) geri düşer; MFE demo-motorları etkilenmez.
 - İmaj geri alma: activation kustomization `images.digest` önceki değere → apply.
+- MFE canlı-mod geri alma (39d-6): test overlay `frontend` pin'ini önceki digest'e döndür (env bundle'a build'de gömülü — revert=pin-revert; ArgoCD sync'ler). Backend'e dokunmaz.
 - KC geri alma: `ats-api` client + `ats.*`/`ats-api-audience` client-scope'ları + persona kullanıcıları silinebilir (frontend default-scope bağları client silinince düşer).
 
 ## Sorun Giderme
