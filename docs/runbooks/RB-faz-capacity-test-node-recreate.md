@@ -1,10 +1,34 @@
-# RB — k3d-test node max-pods 50→80 recreate (Method B, coordinated window)
+# RB — k3d-test node max-pods recreate (Method A v2 commit-based, PROVEN)
 
-> **Amaç**: k3d-test-server-0 kubelet `max-pods` tavanını **50→80** canlıya geçirmek. Desired source (`bootstrap/k3d-test.yaml`) zaten 80 (gitops #2315); live kubelet hâlâ 50. Bu runbook o farkı **kontrollü clean rebuild** ile kapatır.
+> **Amaç**: k3d-test-server-0 kubelet `max-pods` tavanını canlıya geçirmek (örn. 50→80). Desired source (`bootstrap/k3d-test.yaml`) gitops #2315 ile 80.
 >
-> **Karar (Codex `019f533d`)**: Yöntem **B** (`k3d cluster delete/create --config`, k3d'nin desteklenen lifecycle yolu). **A** (elle `docker run` replikasyonu) = unsupported metadata drift → NO-GO. **C** (docker daemon restart) = prod-adjacent host-wide blast (k3d-prod + host data-plane) → HARD NO-GO. Yeni-agent = topology drift → NO-GO.
+> ## ✅ PRIMARY: Method A v2 — commit-based cluster-preserving recreate (LIVE-PROVEN 2026-07-12)
 >
-> **Tetik (ne zaman)**: Bir sonraki net-new Deployment'tan **ÖNCE**, incident baskısı olmadan, Mavis/aktif-session kontrolüyle bulunan ilk çakışmasız bakım penceresinde. Agent kullanıcıya tekrar dönmeden yürütür (Codex GO gate karşılanınca). Acute rollout-stuck pain zaten gitops #2315 (maxSurge:0 terminate-first) ile çözüldü — bu rebuild SADECE net-new pod headroom ekler.
+> **50→80 bu yöntemle canlı yapıldı** (#2306). Cluster identity (CA + state.db) korunur → **ArgoCD re-registration + Vault k8s-auth rebootstrap GEREKMEZ**, temiz rollback (eski container preserved), host data-plane etkilenmez.
+>
+> **Kritik teknik**: k3d, `/bin/k3d-entrypoint.sh`'ı container writable-layer'a inject eder (base `rancher/k3s` image'da yok). Elle `docker create` (Method A v1) bu yüzden `exec: /bin/k3d-entrypoint.sh: no such file` ile FAIL eder. **Çözüm**: eski container'ı `docker commit` ile snapshot al → yeni container'ı o committed image'dan yarat + değişen kubelet-arg + **AYNI 5 named volume** (state.db dahil) → entrypoint mevcut → başlar, state.db'den tüm workload resume.
+>
+> Named volume'lar `docker rm` (**ASLA `-v`**) ile KORUNUR → cluster identity survive. Method A v1 (base image) ve Method B (`k3d cluster delete/create`, re-reg + no-clean-rollback) fallback/tarihsel; A v2 üstün.
+>
+> **Method A v2 adımları** (Codex `019f533d` guard'lar, live-proven):
+> 1. Off-volume + integrity-checked backup (`docker cp` state.db+wal+shm → host home dışı-volume; `PRAGMA integrity_check=ok`).
+> 2. GO-gate: aktif Job/rollout/smoke yok (Mavis peer check).
+> 3. `export K3S_TOKEN=$(docker inspect OLD ...env...)` (token argv'de değil, env-inherit).
+> 4. `docker stop OLD` (SIGTERM → state.db flush) → `docker commit OLD k3d-test-snapshot:preSurge` → `docker rename OLD OLD-preSurge` → `docker network disconnect platform-test-net OLD-preSurge` (IP free).
+> 5. `docker inspect`'ten exact `docker create` üret (python generator: 5 volume + IP + tüm k3d.* label + privileged + tmpfs + cgroupns + entrypoint); **image = committed snapshot**; kubelet-arg değiştir.
+> 6. `docker create` new → **pre-start gate** (yeni container inspect: yeni arg + 5 volume + privileged doğrula) → `docker start`.
+> 7. Acceptance (aşağıda): `allocatable.pods==hedef` + Ready + no-pressure + pod'lar reschedule + ArgoCD connectivity (re-reg-siz) + ESO SecretSynced + edge.
+> 8. **Soak** sonrası eski container `docker rm OLD-preSurge` (**ASLA `-v`**).
+>
+> **Rollback** (v1'de live-proven temiz): `docker rm NEW` (ASLA -v) → `docker rename OLD-preSurge OLD` → `docker network connect --ip <IP> platform-test-net OLD` → `docker start OLD`.
+>
+> ---
+>
+> ## FALLBACK: Method B — `k3d cluster delete/create` (re-reg gerektirir, A başarısızsa)
+>
+> **Karar (Codex `019f533d`, A v2 keşfinden ÖNCE)**: Yöntem B (`k3d cluster delete/create --config`). **A v1** (elle `docker run`, commit YOK) = entrypoint-injection fail. **C** (docker daemon restart) = prod-adjacent host-wide blast → HARD NO-GO. B `bootstrap/k3d-test.yaml`'daki max-pods'u kullanır ama cluster identity kaybı → aşağıdaki reconstruction (ArgoCD re-reg + Vault k8s-auth) ŞART + temiz rollback yok. Yalnız A v2 uygulanamıyorsa.
+>
+> **Tetik**: net-new Deployment ÖNCESİ, çakışmasız pencere. Acute rollout-stuck zaten #2315 (maxSurge:0) ile çözüldü.
 
 ## Neden clean rebuild güvenli (stateless-ish cluster)
 

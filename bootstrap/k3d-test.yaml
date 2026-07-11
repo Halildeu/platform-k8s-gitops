@@ -57,11 +57,10 @@ options:
       # surge-blocked. 80 is a conservative intermediate (not 110) given the
       # shared staging-sw host's ~6 GiB RAM; max-pods loosens only the kubelet
       # pod-count gate, not memory, so re-evaluate before going higher.
-      # NOTE: this is the DESIRED source of truth. The live kubelet still runs
-      # max-pods=50 until k3d-test-server-0 is recreated in a coordinated
-      # maintenance window (tracked by #2306/#2308; recreate runbook pending).
-      # "capacity raised" is only true after live kubelet Allocatable pods == 80
-      # is verified post-recreate.
+      # LIVE 2026-07-12 (#2306): recreated via Method A v2 (commit-based, cluster-
+      # preserving) — node Allocatable pods == 80 verified, Ready, no pressure,
+      # cluster identity preserved (no ArgoCD re-reg / Vault rebootstrap), zero
+      # data loss. See docs/runbooks/RB-faz-capacity-test-node-recreate.md.
       - arg: "--kubelet-arg=max-pods=80"
         nodeFilters: [server:*]
   kubeconfig:
