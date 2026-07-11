@@ -8,6 +8,11 @@
 # Docs: docs/S2-B1-vault-property-matrix.md (tüm path + property tablosu)
 
 # --- Platform servis secret'ları (ESO per-service ExternalSecret'ler) ---
+# ATS Interview-Evidence backend (ATS-0019 39d) — DB creds (test'te seed'li)
+path "kv/data/platform/ats" {
+  capabilities = ["read"]
+}
+
 path "kv/data/platform/auth-service" {
   capabilities = ["read"]
 }

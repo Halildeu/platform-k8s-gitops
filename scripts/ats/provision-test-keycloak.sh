@@ -91,6 +91,24 @@ else
   fi
 fi
 
+# --- 3b) tenant claim mapper (ATS SecurityConfig TENANT_CLAIM="tenant" sabit,
+# fail-closed: claim yoksa HICBIR authority uretilmez). Platform token'inda
+# tenant claim'i yok — test realm'inde sentetik sabit deger: t-platform-test.
+if ! kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -qx "ats-tenant-claim-mapper"; then
+  kc create "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
+    -s name=ats-tenant-claim-mapper \
+    -s protocol=openid-connect \
+    -s protocolMapper=oidc-hardcoded-claim-mapper \
+    -s 'config."claim.name"=tenant' \
+    -s 'config."claim.value"=t-platform-test' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' >/dev/null
+  echo "KC: ats-tenant-claim-mapper CREATED (tenant=t-platform-test)"
+else
+  echo "KC: ats-tenant-claim-mapper exists"
+fi
+
 # --- 4) 10 permission client-scope (scope claim'ine ad girsin) ---
 for p in $PERMS; do
   SID=$(kc get client-scopes -r $REALM --fields id,name --format csv --noquotes 2>/dev/null | awk -F, -v n="$p" '$2==n{print $1}' | head -1 || true)
@@ -163,6 +181,32 @@ REVIEWER_UID=$(ensure_user ats-reviewer-persona)
 grant "$REVIEWER_UID" ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
 echo "KC: ats-reviewer-persona → reviewer rolleri (export/dsar/erasure YOK)"
 
+# operator persona (10 rol) — admin kullanıcısının şifresine DOKUNMADAN
+# export/dsar allow kanıtı için; roleless persona (0 rol) — rol-kapısının
+# canlı 403 kanıtı için (default scope'lar token'a girse bile yetki YOK).
+OPERATOR_UID=$(ensure_user ats-operator-persona)
+grant "$OPERATOR_UID" $PERMS
+echo "KC: ats-operator-persona → 10 rol (operator)"
+ROLELESS_UID=$(ensure_user ats-roleless-persona)
+echo "KC: ats-roleless-persona → rolsüz (kasıtlı)"
+
+# persona test-şifreleri: bu hostta üretilir → KC set-password + Vault
+# kv/platform/ats-smoke (39d-4 smoke tekrar-koşumları buradan okur; stdout'a düşmez)
+ROOT2=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
+VKV="docker exec -e VAULT_TOKEN=$ROOT2 -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test vault kv"
+declare -A PWMAP
+for u in ats-reader-persona ats-reviewer-persona ats-operator-persona ats-roleless-persona; do
+  PWMAP[$u]=$(openssl rand -hex 12)
+  UIDX=$(kc get users -r $REALM -q "username=$u" -q exact=true --fields id --format csv --noquotes | head -1)
+  docker exec -e P="${PWMAP[$u]}" platform-kc-test sh -c "/opt/keycloak/bin/kcadm.sh set-password -r $REALM --userid $UIDX --new-password \"\$P\"" >/dev/null
+done
+$VKV put kv/platform/ats-smoke \
+  READER_PW="${PWMAP[ats-reader-persona]}" \
+  REVIEWER_PW="${PWMAP[ats-reviewer-persona]}" \
+  OPERATOR_PW="${PWMAP[ats-operator-persona]}" \
+  ROLELESS_PW="${PWMAP[ats-roleless-persona]}" >/dev/null
+echo "KC: 4 persona şifresi set + Vault kv/platform/ats-smoke seed"
+
 # --- FINAL ASSERT (Codex 019f50b7 P1: fail-open yerine dogrulanmis durum) ---
 fail=0
 ROLE_N=$(kc get "clients/$ATS_CID/roles" -r $REALM --fields name --format csv --noquotes | grep -c '^ats\.') || true
@@ -187,6 +231,10 @@ assert_roles_exact() { # $1=uid $2=etiket $3..=beklenen roller (tam kume)
 [ -n "$ADMIN_UID" ] && assert_roles_exact "$ADMIN_UID" operator-admin $PERMS
 assert_roles_exact "$READER_UID" reader ats.transcript.read ats.review.read
 assert_roles_exact "$REVIEWER_UID" reviewer ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
+# shellcheck disable=SC2086
+assert_roles_exact "$OPERATOR_UID" operator $PERMS
+have_roleless=$(kc get "users/$ROLELESS_UID/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -c '^ats\.') || true
+[ "$have_roleless" -eq 0 ] || { echo "ASSERT FAIL: roleless persona rol tasiyor ($have_roleless)" >&2; fail=1; }
 [ "$fail" -eq 0 ] || exit 1
 echo "ASSERT OK: 10 rol + 11 default-scope + persona atamalari dogrulandi"
 echo "DONE 39d-2c"

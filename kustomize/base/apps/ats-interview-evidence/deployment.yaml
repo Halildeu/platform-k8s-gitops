@@ -21,6 +21,12 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
+        # imajdaki 'ats' kullanicisi ISIMLI — kubelet runAsNonRoot dogrulamasi
+        # numerik UID ister ('non-numeric user' CreateContainerConfigError).
+        # 10001 ile calisir (jar salt-okunur; /tmp emptyDir fsGroup ile yazilir).
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:

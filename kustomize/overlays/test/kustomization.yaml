@@ -7646,6 +7646,18 @@ patches:
   # Test ResourceQuota (2026-05-10: scale-to-zero deprecation sonrasi tum 12
   # deploy + STS replicas=1 sürekli çalışıyor; rolling update surge için
   # extra headroom gerek).
+  # 2026-07-11 ats-39d4a: node allocatable 50 pod TAVANINA dayanildi (Running=50;
+  # ats-interview-evidence Pending 'Too many pods'). artifact-host statik dosya
+  # sunucusu — test'te HA gereksiz; base 2 replika prod tercihi olarak kalir,
+  # test 1'e indirilir (Scale-to-Zero YASAK kuralina uygun: 0 degil, 1).
+  - target:
+      kind: Deployment
+      name: artifact-host
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
   - target:
       kind: ResourceQuota
       name: platform-quota
@@ -7661,9 +7673,12 @@ patches:
       - op: replace
         path: /spec/hard/requests.memory
         value: 12Gi
+      # 2026-07-11 ats-interview-evidence (39d-3): LimitRange 500m limit enjekte
+      # eder; 12000m tavan 11925m kullanimda 500m'e yer birakmadi (ReplicaSet
+      # exceeded quota kaniti). +1 CPU limit-overcommit (host gercek yuku degil).
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "12"
+        value: "13"
       - op: replace
         path: /spec/hard/limits.memory
         value: 24Gi
