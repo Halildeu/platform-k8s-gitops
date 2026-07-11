@@ -7647,9 +7647,12 @@ patches:
       - op: replace
         path: /spec/hard/requests.memory
         value: 12Gi
+      # 2026-07-11 ats-interview-evidence (39d-3): LimitRange 500m limit enjekte
+      # eder; 12000m tavan 11925m kullanimda 500m'e yer birakmadi (ReplicaSet
+      # exceeded quota kaniti). +1 CPU limit-overcommit (host gercek yuku degil).
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "12"
+        value: "13"
       - op: replace
         path: /spec/hard/limits.memory
         value: 24Gi
