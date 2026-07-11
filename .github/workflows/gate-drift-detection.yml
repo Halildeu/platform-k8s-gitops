@@ -1,8 +1,14 @@
-# ADR-0011 Drift Detection (umbrella workflow — DD-1 + DD-2 + future DD-N)
+# ADR-0011 Drift Detection (umbrella workflow — DD-1 + DD-2 + DD-4 + DD-5)
 #
 # Codex `019dd409` PARTIAL/AGREE-with-revisions: tek workflow, multiple drift
 # scripts. Failure CI red → blocks merge of any data_access schema / ETL
 # contract change PR.
+#
+# DD-5 (Codex `019f531e`, gitops #2313): the scripts/drift_detection/tests/
+# unit suite (deployment-contract + service-catalog drift guards) — a parallel
+# test tree that previously ran in NO workflow, letting #2287 sit red for 5+
+# weeks. Now discovered + run here; docs/operations/services.yaml is in the
+# path filter so a catalog-only prod-state regression triggers the guard.
 #
 # Triggers:
 #   - workflow_dispatch (manuel debug + ad-hoc run)
@@ -24,6 +30,9 @@ on:
       - ".github/workflows/gate-drift-detection.yml"
       - "scripts/drift_detection/**"
       - "tests/drift_detection/**"
+      # DD-5 reads the real service catalog; a catalog-only PR must trigger it
+      # (else a prod-state regression in services.yaml slips past the guard).
+      - "docs/operations/services.yaml"
       - "sql/migration/V*.sql"
       - "docs/migration/workcube-schema.json"
       - "docs/adr/0008-*.md"
@@ -41,7 +50,7 @@ on:
 
 jobs:
   drift-detection:
-    name: ADR-0011 — DD-1 + DD-2 + DD-4 drift guards
+    name: ADR-0011 — DD-1 + DD-2 + DD-4 + DD-5 drift guards
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -53,6 +62,9 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
+      - name: Install test deps (PyYAML + pytest — DD-5 mixed unittest/pytest suite)
+        run: python3 -m pip install --disable-pip-version-check "PyYAML==6.0.3" "pytest==8.3.3"
 
       - name: DD-1 — anchor table + V25/V26 contract drift check
         run: |
@@ -102,3 +114,16 @@ jobs:
             tests.drift_detection.test_check_drift_etl_contract \
             tests.drift_detection.test_check_drift_env_dockerfile \
             -v
+
+      # DD-5 — deployment-contract + service-catalog drift guards
+      # (scripts/drift_detection/tests/ was a parallel test tree wired NOWHERE;
+      # gitops #2287 sat red for 5+ weeks because nothing ran it. #2313.)
+      # pytest (NOT unittest discover): the suite is MIXED — 5 unittest-style
+      # files + test_cross_repo_enum_fetcher_retry.py which is pure pytest
+      # (fixtures/parametrize/monkeypatch). unittest discover errors importing
+      # that file (no pytest) and silently skips pytest-style tests; pytest runs
+      # the whole tree (86 tests) — and auto-covers any future test_*.py here.
+      - name: Run unit tests (DD-5 — service catalog + deployment contract)
+        working-directory: scripts/drift_detection
+        run: |
+          python3 -m pytest tests/ -v
