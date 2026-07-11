@@ -36,6 +36,10 @@
 
 Up: pod Running/ready + imageID==sha256:c2dcc1da… (pin). Edge: token'sız 401; healthz dışarı kapalı. Authn-deny: audience'sız token 401. Token (redacted): aud⊇ats-api, tenant=t-platform-test, roller tam-küme (reader 2 / reviewer 7 / operator 10 / roleless 0). Authz: reader read 200 + write 403; ROLSÜZ+scope'lu 403 (rol-kapısı canlı); reviewer dsar 403 / operator dsar 201. Functional-stub: consent 204 → raw-WAV upload 201 (ledgerSequence, pointer-only objectKey) → transcribe 201 (segmentCount:3) → transcript?key= read-back 200. Upload kontratı: RAW body (multipart değil) + X-ATS-Filename; transcribe {"sourceObjectKey"}. İSPATLAMAZ: canlı STT, gerçek KVKK pilotu, WORM, prod-hazırlık.
 
+### 39d-7a-fix KANIT (2026-07-12, duplicate→idempotent-replay; 14/14 PASS)
+
+Kök neden: aynı lexical içerik ikinci transcribe'da yeni uuid transcriptKey ürettiğinden adapter'ın birebir-aynı replay yolu tetiklenemiyor, idempotency-conflict "ledger_unavailable"+503'e dönüşüyordu (canlı: PG seq-4 + 503×2). Fix ats#102 (Codex 019f52f5 3-iter REVISE→REVISE→AGREE; hybrid pre-lookup + conflict-recovery + pointer-bütünlük [payload↔güncel-çağrı↔store-hash] + tombstone-matrisi; 282/282 + mutation-check). İmaj sha-7779119/3a84bbb9… apply → pod imageID doğrulandı → **d29-smoke 14/14 FAIL=0**; transcribe 201 cevabı ORİJİNAL kanıtın replay'i (transcriptKey=tr-9cd81b58…, yeni WORM satırı yok). Rollout notu: node 50-pod tavanında eski Running pod elle silinerek slot açıldı (bilinen desen).
+
 Apply-yolu canlı dersleri: LimitRange 500m enjeksiyonu quota'ya çarptı (test limits.cpu 13); eso-runtime allowlist'ine kv/platform/ats; node 50-pod tavanı (test artifact-host 1 replika); runAsNonRoot isimli-kullanıcı hatası → runAsUser 10001 (+ Dockerfile numerik-UID ats#100); rollout kilidi = eski-Pending pod quota işgali → pod sil + RS backoff'una RS-delete.
 
 5. **Canlı STT promotion** (AYRI dilim, 39d-5): `ATS_AI_BASE_URL` patch'i GitOps değişikliğiyle; stub↔live OTOMATİK fallback YASAK.

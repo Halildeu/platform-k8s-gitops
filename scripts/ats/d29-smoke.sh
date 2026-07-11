@@ -9,7 +9,7 @@ API="$EDGE/api/ats/v1/interviews/iv-smoke-1"
 # Beklenen imaj digest'i — default aktivasyon kustomization pin'i ile senkron
 # tutulur (pin bump PR'ı bu default'u da günceller); ad-hoc koşum için env
 # override: ATS_EXPECTED_DIGEST=sha256:... ./d29-smoke.sh
-PIN="${ATS_EXPECTED_DIGEST:-sha256:cf93a7be871f7e8a9ca0386312a6f6e964b4ab23528c6ad98268568f6793c460}"
+PIN="${ATS_EXPECTED_DIGEST:-sha256:3a84bbb9c5fa5412a854d6f56319273bd3e7cb3bb89cfd31c788fd0481b994a9}"
 PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
