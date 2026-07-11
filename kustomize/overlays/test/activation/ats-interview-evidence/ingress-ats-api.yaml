@@ -1,0 +1,38 @@
+# /api/ats yüzeyi — AYRI rewrite'lı Ingress (ATS-0019 39d-3; Codex 019f4c6c §4).
+# Ana `platform` Ingress'inde rewrite bilinçli YOK; farklı rewrite gereksinimi
+# ayrı Ingress kaynağıyla çözülür (ingress-nginx longest-path önceliği:
+# /api/ats/v1 > /api). YALNIZ /api/ats/v1 yüzeyi yayınlanır — /healthz,
+# /v3/api-docs, yönetim yüzeyleri DIŞARI AÇILMAZ.
+#   dış:  https://testai.acik.com/api/ats/v1/<rest>
+#   iç:   http://ats-interview-evidence:8080/api/v1/<rest>
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ats-api
+  namespace: platform-test
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /api/v1/$2
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    # upload kontratı: ATS_MAX_UPLOAD_BYTES (25 MiB) ile AYNI — tek kontrat
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # raw upload'ın ingress diskinde bufferlanmasını kapat (Codex: temp-disk sınırı)
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - testai.acik.com
+      secretName: wildcard-acik-com-tls
+  rules:
+    - host: testai.acik.com
+      http:
+        paths:
+          - path: /api/ats/v1(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ats-interview-evidence
+                port:
+                  number: 8080

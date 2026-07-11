@@ -1,0 +1,21 @@
+# ATS app-boot non-secret env (ATS-0019 39d-3). Secret sınıfı (DB creds,
+# ileride AI bearer) ESO ExternalSecret'ten gelir (activation overlay).
+# app-boot FAIL-CLOSED: eksik zorunlu değer boot'u düşürür — placeholder'lar
+# base'i yanlışlıkla apply etmeye karşı kasıtlı geçersizdir (D18 pattern'i).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ats-interview-evidence-config
+data:
+  ATS_PORT: "8080"
+  # test aktivasyonu bunları gerçek değerlerle patch'ler:
+  ATS_JWT_ISSUER: "OVERLAY_MUST_OVERRIDE"
+  ATS_JWKS_URI: "OVERLAY_MUST_OVERRIDE"
+  ATS_JWT_AUDIENCE: "ats-api"
+  ATS_AI_BASE_URL: "OVERLAY_MUST_OVERRIDE"
+  ATS_AI_TIMEOUT: "30s"
+  # ingress proxy-body-size ile TEK kontrat (aynı 25 MiB; en düşük limit gerçek limittir)
+  ATS_MAX_UPLOAD_BYTES: "26214400"
+  # retention default-off (Codex 019f4c6c: sentetik-fixture sınırında kabul;
+  # gerçek-veri kapısından önce retention/purge ayrı acceptance)
+  ATS_RETENTION_ENABLED: "false"
