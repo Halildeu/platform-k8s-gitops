@@ -1002,7 +1002,7 @@ options:
       - arg: "--cluster-cidr=10.44.0.0/16"   # farklı pod CIDR
       - arg: "--service-cidr=10.45.0.0/16"   # farklı svc CIDR
       - arg: "--kube-apiserver-arg=enable-admission-plugins=NamespaceLifecycle,ResourceQuota"
-      - arg: "--kubelet-arg=max-pods=50"     # test küçük
+      - arg: "--kubelet-arg=max-pods=80"     # 50->80 #2306 (live=50 until recreate)
 ```
 
 **Host-level nginx SNI proxy (`host-compose/proxy/nginx.conf`):**
