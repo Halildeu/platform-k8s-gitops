@@ -7676,9 +7676,15 @@ patches:
       # 2026-07-11 ats-interview-evidence (39d-3): LimitRange 500m limit enjekte
       # eder; 12000m tavan 11925m kullanimda 500m'e yer birakmadi (ReplicaSet
       # exceeded quota kaniti). +1 CPU limit-overcommit (host gercek yuku degil).
+      # 2026-07-11 faz22.6 device-key VIEW_ONLY smoke: broker step-up rollout
+      # (maxUnavailable:1) sirasinda 750m yeni-pod slot'u limits.cpu=13'te
+      # 12325m kullanimla sigmadi (FailedCreate exceeded quota) -> broker DOWN.
+      # 16 CPU: rolling-surge + ATS/audio-gateway buyumesi icin headroom
+      # (limits ceiling; host gercek CPU yuku %9, overcommit guvenli). Asil
+      # tavan node max-pods=50 (ayri kapasite-hardening isi, board item).
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "13"
+        value: "16"
       - op: replace
         path: /spec/hard/limits.memory
         value: 24Gi
