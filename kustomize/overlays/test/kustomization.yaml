@@ -180,7 +180,13 @@ images:
     # gitops#2283/#2284). Ships @Bean(defaultCandidate=false) + a real-context
     # LiveSttWebSocketWiringTest (183/183). Codex AGREE 019f4bfe.
     # D30 immutable digest pin.
-    digest: sha256:f739f394b5ce366a3284f3d6378e0e2543de810193965a7eee8bfe01c27929d7
+    # 2026-07-11 update 4: sha-a3bb113 — platform-backend#805 fixes the WS double-release
+    # that capped the #184 bridge at 1 frame per connection (reactor-netty-owned inbound
+    # frame released twice -> IllegalReferenceCountException). Ships a real reactor-netty
+    # loopback regression test (deterministic red without the fix). Codex AGREE. Superset
+    # of sha-b49a75d (#803 bean-clash fix). Streaming stays enabled (flip in #2285).
+    # D30 immutable digest pin.
+    digest: sha256:a1075e562a7b70a17ca21daa2939b13750b6164bab79e5aed10f0f2e1bdcacd0
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -7579,7 +7585,7 @@ patches:
               # envFrom too. Bump this rev whenever AUDIO_GATEWAY_DIRECT_STT_ENABLED
               # changes so ArgoCD/kustomize sync actually rolls the pod and it
               # re-reads the flag (rollback to "false" must also bump+roll).
-              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-10-184-ws-streaming-refix-v3"
+              audio-gateway.acik.com/direct-stt-enable-rev: "2026-07-11-184-ws-doublerelease-fix-v4"
 
   # Faz 24 #716: test-only audience/capability enforcement flip. Base remains
   # default-off so future prod inclusion requires its own D30 review.
