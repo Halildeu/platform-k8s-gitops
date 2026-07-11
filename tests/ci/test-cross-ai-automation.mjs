@@ -73,8 +73,10 @@ const peerBody =
   `Codex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n`;
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
+const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
 const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
+const PRIMARY_OVERLAY = 'kustomize/overlays/test/kustomization.yaml';
 
 // #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE).
 // Dependabot doesn't fill the Cross-AI body fields; the exemption is gated by
@@ -87,21 +89,31 @@ const dependabotBody =
 
 const cases = [
   ['valid automation PR (auto-test-overlay, App-bot author + App-bot sender)',
-    { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT, body: autoBody(WF) }, 0],
+    { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT, body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
+  ['valid frontend desired-state PR (auto-test-frontend, App-bot)',
+    { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid auto-verified PR (bot)',
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER) }, 0],
   ['valid auto-promotion PR (App-bot)',
     { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN) }, 0],
   ['#827 PR-B: auto-test-overlay + github-actions[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-test-overlay/x', actor: BOT, sender: BOT, body: autoBody(WF) }, 1],
+  ['#2295: auto-test-frontend + github-actions[bot] (wrong bot for prefix) -> blocked',
+    { branch: 'auto-test-frontend/x', actor: BOT, sender: BOT, body: autoBody(FRONTEND_WF) }, 1],
+  ['#2295: auto-test-frontend with backend workflow source -> blocked',
+    { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 1],
+  ['#2295: auto-test-frontend with unrelated changed file -> blocked',
+    { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY, '.github/workflows/ci.yml'] }, 1],
+  ['#2295: auto-test-frontend without changed-file evidence -> blocked',
+    { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF) }, 1],
   ['#827 PR-B: auto-verified + platform-automation[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-verified/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(LEDGER) }, 1],
   ['#842: auto-promotion + github-actions[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-promotion/x', actor: BOT, sender: BOT, body: autoBody(SCAN) }, 1],
   ['App-bot-opened auto-PR + HUMAN sender (synchronize bypass) -> blocked',
-    { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: 'mallory', body: autoBody(WF) }, 1],
+    { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: 'mallory', body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 1],
   ['human-opened auto-* branch -> blocked',
-    { branch: 'auto-test-overlay/sneaky', actor: 'mallory', sender: 'mallory', body: autoBody(WF) }, 1],
+    { branch: 'auto-test-overlay/sneaky', actor: 'mallory', sender: 'mallory', body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 1],
   ['auto-* + bot, missing Automation source -> fail',
     { branch: 'auto-verified/x', actor: BOT, sender: BOT,
       body: '## Cross-AI\nCross-AI exempt reason: machine PR no review claim\nAutomation evidence: https://x/y/z\n' }, 1],

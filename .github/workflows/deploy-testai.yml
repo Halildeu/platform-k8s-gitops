@@ -1,39 +1,9 @@
-name: Deploy testai (auto)
+name: Promote testai frontend desired state
 
-# iter-50 Step 3.3 — testai.acik.com auto-deploy on platform-web image push.
-# iter-50 Step 5 B — Tier 2 cleanup: host nginx static mount path
-# KALDIRILDI. Edge proxy SNI routing testai → k3d-test ingress yapıyor;
-# frontend pod doğrudan serve ediyor; pod imageID Gate 1a guarantee.
-#
-# Trigger: `repository_dispatch` event_type=testai-deploy fired by
-# platform-web's ci-web-image-push.yml after a successful testai variant
-# build + GHCR push. Payload carries the commit sha + image digest +
-# image tag so this workflow can pin by digest and verify deploy
-# reachability end-to-end (digest match + asset 200 + build-info.json sha
-# + behavior smoke opt-in).
-#
-# Why this lives in platform-k8s-gitops (not platform-web):
-#   - Deploy graph belongs with kustomize overlays + ci-live-smoke +
-#     drift-detection (see PR #129 revert message in platform-web).
-#   - Self-hosted runner runs on staging-sw (private intranet, can reach
-#     k3d-test cluster). GitHub-hosted runners cannot.
-#
-# Verify chain (Codex 019dded6 sertleştirme):
-#   Gate 1 (fail-fast):
-#     - kubectl rollout status (Deployment fresh)
-#     - pod imageID suffix == GHCR manifest digest
-#     - curl /build-info.json | jq .sha == expected sha
-#     - curl /assets/<rootEntry> -> 200
-#   Gate 2 (best-effort, blocking if SMOKE_AUTH_READY=1):
-#     - Playwright login → /admin/users → row dblclick → [role=dialog]
-#
-# Required secrets (gitops repo):
-#   - none — runner has kubeconfig + filesystem access mounted in.
-#   - (Optional) SMOKE_AUTH_USERNAME / SMOKE_AUTH_PASSWORD: test persona
-#     credentials for Gate 2. If absent, Gate 2 skips with warning.
-#
-# This workflow MUST NOT be reachable from PR events. repository_dispatch
-# only fires on actor-token-bearing API call from platform-web's CI.
+# platform-web dispatches this workflow only after publishing an immutable
+# testai image. The workflow opens/updates a reviewable desired-state PR; it
+# never mutates a Kubernetes workload. Runtime reconciliation is performed by
+# verify-testai-frontend-rollout.yml after that PR is reviewed and merged.
 
 on:
   repository_dispatch:
@@ -41,323 +11,143 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: 'Commit sha (40-char) — manuel override için'
+        description: "Canonical platform-web commit SHA (40 lowercase hex)"
         required: true
       short_sha:
-        description: 'Short sha (7-char)'
+        description: "First seven characters of sha"
         required: true
       image_digest:
-        description: 'GHCR manifest digest (sha256:...)'
+        description: "Immutable GHCR manifest digest (sha256:...)"
         required: true
       image:
-        description: 'Image ref (default: ghcr.io/halildeu/platform-web-frontend-testai)'
+        description: "Canonical testai frontend image"
         required: false
-        default: 'ghcr.io/halildeu/platform-web-frontend-testai'
+        default: "ghcr.io/halildeu/platform-web-frontend-testai"
       image_tag:
-        description: 'Image tag (sha-XXXXXXX) — kubectl set image hint'
+        description: "Source tag (sha-XXXXXXX)"
         required: false
-        default: ''
+        default: ""
 
 permissions:
   contents: read
 
-env:
-  K8S_CONTEXT: k3d-test
-  K8S_NAMESPACE: platform-test
-  K8S_DEPLOYMENT: frontend
-  K8S_LABEL_SELECTOR: app.kubernetes.io/name=frontend
-  TESTAI_URL: https://testai.acik.com
-  # iter-50 Step 5 B (Tier 2): host static mount references kaldırıldı.
-  # Edge proxy SNI routing zaten testai → k3d ingress yapıyor; pod doğrudan
-  # serve ediyor. HOST_RELEASES_DIR / HOST_NGINX_MOUNT_DIR artık
-  # gerekli değil (kullanılmıyordu — keşif Step 5 B sırasında doğrulandı).
+concurrency:
+  group: testai-frontend-promotion
+  cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy testai (digest pin + verify)
-    # Codex 019dded6 S1: tek amaçlı runner, label-fenced.
-    runs-on: [self-hosted, staging-sw, testai-deploy]
-    timeout-minutes: 15
-
-    # Codex S1: PR event'lerinde ASLA çalıştırma. repository_dispatch
-    # zaten PR'da tetiklenmez ama emniyet için event guard.
+  promote:
+    name: Open or update test overlay PR
     if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
-      - name: Resolve dispatch payload
+      - name: Resolve and validate immutable artifact payload
         id: payload
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_SHORT_SHA: ${{ inputs.short_sha }}
+          INPUT_IMAGE: ${{ inputs.image }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          INPUT_IMAGE_DIGEST: ${{ inputs.image_digest }}
+          DISPATCH_SHA: ${{ github.event.client_payload.sha }}
+          DISPATCH_SHORT_SHA: ${{ github.event.client_payload.short_sha }}
+          DISPATCH_IMAGE: ${{ github.event.client_payload.image }}
+          DISPATCH_IMAGE_TAG: ${{ github.event.client_payload.image_tag }}
+          DISPATCH_IMAGE_DIGEST: ${{ github.event.client_payload.image_digest }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SHA="${{ inputs.sha }}"
-            SHORT_SHA="${{ inputs.short_sha }}"
-            IMAGE="${{ inputs.image }}"
-            IMAGE_TAG="${{ inputs.image_tag }}"
-            IMAGE_DIGEST="${{ inputs.image_digest }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            SHA="$INPUT_SHA"
+            SHORT_SHA="$INPUT_SHORT_SHA"
+            IMAGE="${INPUT_IMAGE:-ghcr.io/halildeu/platform-web-frontend-testai}"
+            IMAGE_TAG="$INPUT_IMAGE_TAG"
+            IMAGE_DIGEST="$INPUT_IMAGE_DIGEST"
           else
-            SHA="${{ github.event.client_payload.sha }}"
-            SHORT_SHA="${{ github.event.client_payload.short_sha }}"
-            IMAGE="${{ github.event.client_payload.image }}"
-            IMAGE_TAG="${{ github.event.client_payload.image_tag }}"
-            IMAGE_DIGEST="${{ github.event.client_payload.image_digest }}"
+            SHA="$DISPATCH_SHA"
+            SHORT_SHA="$DISPATCH_SHORT_SHA"
+            IMAGE="$DISPATCH_IMAGE"
+            IMAGE_TAG="$DISPATCH_IMAGE_TAG"
+            IMAGE_DIGEST="$DISPATCH_IMAGE_DIGEST"
           fi
 
-          if [ -z "$SHA" ] || [ -z "$IMAGE" ] || [ -z "$IMAGE_DIGEST" ]; then
-            echo "::error::Missing required payload fields (sha/image/image_digest)"
-            exit 1
-          fi
-
-          # Codex S3: image@sha256:<digest> formatı (tag yerine digest pin).
-          PINNED_REF="${IMAGE}@${IMAGE_DIGEST}"
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::sha must be 40 lowercase hex"; exit 1; }
+          [[ "$SHORT_SHA" =~ ^[a-f0-9]{7}$ && "$SHORT_SHA" == "${SHA:0:7}" ]] || {
+            echo "::error::short_sha must equal sha[0:7]"; exit 1;
+          }
+          [[ "$IMAGE" == "ghcr.io/halildeu/platform-web-frontend-testai" ]] || {
+            echo "::error::noncanonical image rejected: $IMAGE"; exit 1;
+          }
+          IMAGE_TAG="${IMAGE_TAG:-sha-${SHORT_SHA}}"
+          [[ "$IMAGE_TAG" == "sha-${SHORT_SHA}" ]] || {
+            echo "::error::image_tag must equal sha-${SHORT_SHA}"; exit 1;
+          }
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::image_digest must match sha256:<64 lowercase hex>"; exit 1;
+          }
 
           {
-            echo "sha=${SHA}"
-            echo "short_sha=${SHORT_SHA}"
-            echo "image=${IMAGE}"
-            echo "image_tag=${IMAGE_TAG}"
-            echo "image_digest=${IMAGE_DIGEST}"
-            echo "pinned_ref=${PINNED_REF}"
+            echo "sha=$SHA"
+            echo "short_sha=$SHORT_SHA"
+            echo "image=$IMAGE"
+            echo "image_tag=$IMAGE_TAG"
+            echo "image_digest=$IMAGE_DIGEST"
           } >> "$GITHUB_OUTPUT"
 
-          {
-            echo "## Deploy testai — payload"
-            echo "- sha: \`${SHA}\`"
-            echo "- short_sha: \`${SHORT_SHA}\`"
-            echo "- image: \`${IMAGE}\`"
-            echo "- image_tag: \`${IMAGE_TAG}\`"
-            echo "- digest: \`${IMAGE_DIGEST}\`"
-            echo "- pinned_ref: \`${PINNED_REF}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: kubectl set image (digest pin)
+      - name: Require platform-automation GitHub App credentials
         env:
-          PINNED_REF: ${{ steps.payload.outputs.pinned_ref }}
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          kubectl --context="${K8S_CONTEXT}" set image \
-            "deployment/${K8S_DEPLOYMENT}" \
-            "${K8S_DEPLOYMENT}=${PINNED_REF}" \
-            -n "${K8S_NAMESPACE}"
+          if [[ -z "${APP_ID:-}" || -z "${APP_PRIVATE_KEY:-}" ]]; then
+            echo "::error title=desired-state promotion disabled::AUTOMATION_APP_ID and AUTOMATION_APP_PRIVATE_KEY are required."
+            echo "No cluster mutation was attempted. See docs/operations/RUNBOOKS/RB-automation-overlay-sync.md and #2295."
+            exit 1
+          fi
 
-      - name: kubectl rollout status
-        run: |
-          set -euo pipefail
-          kubectl --context="${K8S_CONTEXT}" rollout status \
-            "deployment/${K8S_DEPLOYMENT}" \
-            -n "${K8S_NAMESPACE}" \
-            --timeout=300s
+      - name: Generate least-privilege GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
 
-      # Sprint "Prod post-cutover compliance" PR-1: shared verify-pod-digest.sh
-      # helper kullanımı. Multi-replica strict mode (testai replicas=1 →
-      # trivial single-pod doğrulama; aynı helper prod replicas=2'de tüm
-      # pod'ları doğrular). Eski Capture+Gate 1a iki step'i tek "Gate 1a"
-      # step'inde birleşti; race fix, format check, mismatch reporting
-      # helper içinde.
-      - name: Checkout (for verify-pod-digest helper)
-        uses: actions/checkout@v6
+      - name: Checkout with App identity
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
 
-      - name: Gate 1a — pod digest match (fail-fast, multi-replica safe)
+      - name: Open or update immutable frontend promotion PR
         env:
-          EXPECTED: ${{ steps.payload.outputs.image_digest }}
-        run: |
-          set -euo pipefail
-          ./scripts/deploy/verify-pod-digest.sh \
-            --context "${K8S_CONTEXT}" \
-            --namespace "${K8S_NAMESPACE}" \
-            --selector "${K8S_LABEL_SELECTOR}" \
-            --expected-digest "${EXPECTED}"
-
-      # iter-50 Step 5 B (Tier 2 cleanup): "Sync host nginx static" step
-      # KALDIRILDI. Edge proxy nginx (host-compose/proxy) zaten
-      # testai.acik.com → http://test_k3d_ingress (127.0.0.1:31080)
-      # SNI routing yapıyor; trafiği direkt k3d-test ingress-nginx
-      # controller'a geçiriyor; ingress de frontend pod'a (`/` → frontend:80,
-      # `/api` → api-gateway:8080) yönlendiriyor. Pod imageID Gate 1a ile
-      # zaten doğrulandığı için ek host static rsync gereksizdir; pod
-      # serve eden bundle = Gate 1c'de doğrulanan bundle.
-      #
-      # Legacy `platform-web-nginx-stage` container artık trafik almıyor
-      # (Step 5 B keşif kanıtı: container down + testai still serving 200
-      # via k3d ingress); cleanup runbook docs/runbook-testai-deploy.md'de.
-
-      - name: Gate 1b — public surface 200 + entry asset reachable
-        env:
-          EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SHA: ${{ steps.payload.outputs.sha }}
           SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-        run: |
-          set -euo pipefail
+          IMAGE: ${{ steps.payload.outputs.image }}
+          IMAGE_TAG: ${{ steps.payload.outputs.image_tag }}
+          IMAGE_DIGEST: ${{ steps.payload.outputs.image_digest }}
+          RUN_ID: ${{ github.run_id }}
+        run: bash scripts/automation/sync-test-overlay-frontend.sh
 
-          # iter-49 follow-up (run 25189093564 ölçümü): pod imageID Gate 1a
-          # PASS olsa bile host nginx → k3d ingress → frontend pod chain'inde
-          # NodePort 31080 propagation race (~1-2 sn) 502 Bad Gateway dönebiliyor.
-          # Retry logic: 5 attempt × 3 sn sleep = max 15 sn tolerance.
-          # 200 + valid root entry pattern = chain alive.
-
-          # Module Federation refactor (platform-web 2026-05) renamed the
-          # entry bundle from /assets/index-<hash>.js to /mf-entry-bootstrap-<n>.js
-          # at the document root. Extract the actual src from the first
-          # type="module" script tag using a Perl pass that tolerates
-          # attribute order, spacing, single/double quotes and multiline
-          # tags (Codex iter-1 absorb on PR #383). Then enforce same-origin
-          # path layout via a case statement so a stray CDN/absolute URL
-          # fails closed instead of producing a wrong probe URL.
-          INDEX_BODY=""
-          ROOT_ENTRY=""
-          ENTRY_URL=""
-          for attempt in 1 2 3 4 5; do
-            INDEX_BODY=$(curl -sk "${TESTAI_URL}/" || true)
-            ROOT_ENTRY=$(printf '%s' "${INDEX_BODY}" | perl -0777 -ne '
-              while (m{<script\b([^>]*)>}gis) {
-                my $attrs = $1;
-                next unless $attrs =~ m{\btype\s*=\s*(['"'"'"])module\1}i;
-                next unless $attrs =~ m{\bsrc\s*=\s*(['"'"'"])([^'"'"'"]+\.js(?:\?[^'"'"'"]*)?)\1}i;
-                print "$2\n";
-                exit 0;
-              }
-            ' || true)
-            if [ -n "${ROOT_ENTRY}" ]; then
-              echo "✓ index.html valid (attempt ${attempt}/5): entry=${ROOT_ENTRY}"
-              break
-            fi
-            echo "⊘ attempt ${attempt}/5: index.html missing module entry script (502/race?), retrying in 3s..."
-            sleep 3
-          done
-
-          if [ -z "${ROOT_ENTRY}" ]; then
-            echo "::error::Could not extract module entry script from /index.html after 5 retries"
-            echo "${INDEX_BODY}" | head -50
-            exit 1
-          fi
-
-          # Same-origin path enforcement (fail-closed for CDN / cross-origin / relative).
-          # Accepted MF entry layouts (all same-origin):
-          #   - /mf-entry-bootstrap-*.js          — root, unhashed (legacy MF emit)
-          #   - /assets/mf-entry-bootstrap-*.js   — hashed, under /assets/ (current
-          #       Vite emit, e.g. /assets/mf-entry-bootstrap-0-<hash>.js). The build
-          #       moved the MF entry into the content-hashed /assets/ output; the
-          #       old root-only pattern rejected every post-move build with
-          #       "Unexpected module entry path layout" and blocked all frontend
-          #       deploys (run 28009051604). Accepting the /assets/ MF entry fixes
-          #       that false-red without weakening same-origin enforcement.
-          #   - /assets/index-*.js                — legacy Vite bundle, so a D30 warm
-          #       rollback to a pre-MF image still passes Gate 1b.
-          case "${ROOT_ENTRY}" in
-            *..*)
-              # Defense-in-depth (Codex 019ef363): the accept globs use `*`
-              # which also matches `/`, so reject any path-traversal segment
-              # up front — first-match arm, applies to ALL accepted layouts.
-              # Legit content-hashed entries never contain `..`.
-              echo "::error::Module entry path contains traversal segment, got: ${ROOT_ENTRY}"
-              exit 1
-              ;;
-            /mf-entry-bootstrap-*.js|/mf-entry-bootstrap-*.js\?*|/assets/mf-entry-bootstrap-*.js|/assets/mf-entry-bootstrap-*.js\?*|/assets/index-*.js|/assets/index-*.js\?*)
-              ENTRY_URL="${TESTAI_URL}${ROOT_ENTRY}"
-              ;;
-            http://*|https://*|//*)
-              echo "::error::Module entry must be same-origin path, got: ${ROOT_ENTRY}"
-              exit 1
-              ;;
-            *)
-              echo "::error::Unexpected module entry path layout, got: ${ROOT_ENTRY}"
-              exit 1
-              ;;
-          esac
-
-          ASSET_STATUS="000"
-          for attempt in 1 2 3; do
-            ASSET_STATUS=$(curl -sko /dev/null -w '%{http_code}' "${ENTRY_URL}" || echo "000")
-            if [ "${ASSET_STATUS}" = "200" ]; then
-              break
-            fi
-            echo "⊘ asset attempt ${attempt}/3: ${ASSET_STATUS}, retrying in 2s..."
-            sleep 2
-          done
-          if [ "${ASSET_STATUS}" != "200" ]; then
-            echo "::error::Root entry asset ${ROOT_ENTRY} returned ${ASSET_STATUS} after 3 retries"
-            exit 1
-          fi
-          echo "✓ root entry asset reachable: ${ROOT_ENTRY} (HTTP ${ASSET_STATUS})"
-
-      - name: Gate 1c — build-info.json sha match
-        env:
-          EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
-          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-        run: |
-          set -euo pipefail
-
-          BUILD_INFO=$(curl -sk "${TESTAI_URL}/build-info.json" || true)
-          if [ -z "${BUILD_INFO}" ] || ! echo "${BUILD_INFO}" | jq . >/dev/null 2>&1; then
-            echo "::warning::build-info.json missing or not JSON. Pre-Step-2 image likely."
-            echo "${BUILD_INFO}" | head -20
-            # Don't fail — fall back to Step 1 era (pre-iter-50 Step 2 image).
-            exit 0
-          fi
-
-          ACTUAL_SHA=$(echo "${BUILD_INFO}" | jq -r '.sha // empty')
-          ACTUAL_SHORT=$(echo "${BUILD_INFO}" | jq -r '.shortSha // empty')
-
-          if [ -z "${ACTUAL_SHA}" ]; then
-            echo "::error::build-info.json missing .sha field"
-            echo "${BUILD_INFO}"
-            exit 1
-          fi
-
-          if [ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]; then
-            echo "::error::build-info.json sha mismatch."
-            echo "  expected: ${EXPECTED_SHA}"
-            echo "  actual:   ${ACTUAL_SHA}"
-            echo "  short:    ${ACTUAL_SHORT}"
-            exit 1
-          fi
-          echo "✓ build-info.json sha == expected: ${ACTUAL_SHA}"
-
-      - name: Gate 2 — behavior smoke (Playwright, opt-in)
-        env:
-          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
-          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SMOKE_AUTH_USERNAME:-}" ] || [ -z "${SMOKE_AUTH_PASSWORD:-}" ]; then
-            echo "::warning::Behavior smoke (Gate 2) skipped — SMOKE_AUTH_USERNAME/PASSWORD not set."
-            echo "::warning::To enable, add test persona credentials to gitops repo secrets."
-            exit 0
-          fi
-
-          # Playwright self-hosted runner image içinde preinstalled.
-          # Test persona: read-only, sadece Users grid + dblclick için.
-          # NOT: kullanıcı login user'ının şifresine dokunmamak için
-          # ayrı persona zorunlu (CLAUDE.md HARD RULE).
-          npx playwright test \
-            --config=tests/smoke/playwright.testai.config.ts \
-            tests/smoke/users-grid-dblclick.spec.ts \
-            || {
-              echo "::error::Behavior smoke failed (Users grid dblclick)"
-              exit 1
-            }
-          echo "✓ behavior smoke pass: Users grid dblclick → drawer opens"
-
-      - name: Summary
+      - name: Promotion boundary summary
         if: always()
         env:
           SHA: ${{ steps.payload.outputs.sha }}
-          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-          DIGEST: ${{ steps.payload.outputs.image_digest }}
+          IMAGE_TAG: ${{ steps.payload.outputs.image_tag }}
+          IMAGE_DIGEST: ${{ steps.payload.outputs.image_digest }}
         run: |
           {
+            echo "## testai frontend desired-state promotion"
             echo ""
-            echo "## Verify chain"
-            echo ""
-            echo "- Gate 1a (digest match):     ✓"
-            echo "- Gate 1b (asset 200):        ✓"
-            echo "- Gate 1c (build-info.json):  ✓"
-            echo "- Gate 2 (behavior smoke):    ${{ secrets.SMOKE_AUTH_USERNAME && '✓' || '⊘ skipped (no creds)' }}"
-            echo ""
-            echo "## Manual verify"
-            echo ""
-            echo '```bash'
-            echo "curl -sk ${TESTAI_URL}/build-info.json | jq -r .sha"
-            echo "# expected: ${SHA}"
-            echo "kubectl --context=${K8S_CONTEXT} get pod -n ${K8S_NAMESPACE} -l ${K8S_LABEL_SELECTOR} -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'"
-            echo "# expected suffix: @${DIGEST}"
-            echo '```'
+            echo "- source: \`${SHA:-unresolved}\`"
+            echo "- tag: \`${IMAGE_TAG:-unresolved}\`"
+            echo "- digest: \`${IMAGE_DIGEST:-unresolved}\`"
+            echo "- direct Kubernetes workload mutation: **none**"
+            echo "- runtime verification: after normal PR review + merge"
           } >> "$GITHUB_STEP_SUMMARY"
