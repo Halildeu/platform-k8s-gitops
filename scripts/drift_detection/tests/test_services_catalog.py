@@ -41,11 +41,18 @@ class TestRealServicesCatalog(unittest.TestCase):
         self.assertIn("user-service", enabled)
         self.assertIn("endpoint-admin-service", enabled)
 
-    def test_endpoint_admin_deferred_in_prod(self):
+    def test_endpoint_admin_enabled_in_prod(self):
+        # Prod activation became canonical on 2026-06-06 (gitops #1241 ESO +
+        # #1242 workload/config MERGED; activation-time Up + Functional +
+        # Zanzibar-ready acceptance).
+        # This guard asserts only the catalog's prod CLASSIFICATION — that it
+        # stays `enabled` and cannot silently regress to `deferred`. It does NOT
+        # claim current runtime health (live Deployment / ArgoCD sync / a fresh
+        # D29 pass live on the prod cluster). Was test_endpoint_admin_deferred_in_prod.
         svc = self.catalog.get("endpoint-admin-service")
         self.assertIsNotNone(svc)
-        self.assertTrue(svc.is_deferred_in("prod"))
-        self.assertFalse(svc.is_enabled_in("prod"))
+        self.assertTrue(svc.is_enabled_in("prod"))
+        self.assertFalse(svc.is_deferred_in("prod"))
 
     def test_jvm_warmup_extra_set_for_known_services(self):
         auth = self.catalog.get("auth-service")
