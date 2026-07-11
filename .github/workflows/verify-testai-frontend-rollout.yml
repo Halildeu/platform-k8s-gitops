@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - "kustomize/overlays/test/kustomization.yaml"
+      - ".github/workflows/verify-testai-frontend-rollout.yml"
+      - "scripts/automation/test-overlay-frontend-image.py"
+      - "scripts/deploy/check-testai-frontend-rollout-headroom.py"
+      - "scripts/deploy/preflight-testai-frontend-rollout.sh"
+      - "scripts/deploy/verify-testai-frontend-runtime.sh"
+      - "scripts/faz22/sync-platform-test-gitops.sh"
   workflow_dispatch:
 
 permissions:
@@ -82,8 +88,18 @@ jobs:
               before=$(python3 scripts/automation/test-overlay-frontend-image.py inspect \
                 --kustomization "$before_file")
               if [[ "$before" == "$current" ]]; then
-                should_verify=false
-                echo "::notice::test overlay changed outside the frontend image pin; frontend runtime verification skipped"
+                if git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- \
+                  .github/workflows/verify-testai-frontend-rollout.yml \
+                  scripts/automation/test-overlay-frontend-image.py \
+                  scripts/deploy/check-testai-frontend-rollout-headroom.py \
+                  scripts/deploy/preflight-testai-frontend-rollout.sh \
+                  scripts/deploy/verify-testai-frontend-runtime.sh \
+                  scripts/faz22/sync-platform-test-gitops.sh; then
+                  should_verify=false
+                  echo "::notice::test overlay changed outside the frontend image/rollout contract; frontend runtime verification skipped"
+                else
+                  echo "::notice::frontend verification contract changed; reconciling and verifying the current immutable pin"
+                fi
               fi
             fi
           fi
@@ -96,6 +112,12 @@ jobs:
             echo "short_sha=${tag#sha-}"
             echo "digest=$digest"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Preflight live quota headroom before Argo mutation
+        if: steps.pin.outputs.should_verify == 'true'
+        env:
+          PREFLIGHT_REPORT_PATH: ${{ runner.temp }}/testai-frontend-quota-preflight.json
+        run: bash scripts/deploy/preflight-testai-frontend-rollout.sh
 
       - name: Reconcile main revision through ArgoCD
         if: steps.pin.outputs.should_verify == 'true'
@@ -118,7 +140,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: testai-frontend-gitops-rollout-${{ steps.pin.outputs.reconcile_revision }}
-          path: ${{ runner.temp }}/platform-test-frontend-sync-report.json
+          path: |
+            ${{ runner.temp }}/testai-frontend-quota-preflight.json
+            ${{ runner.temp }}/platform-test-frontend-sync-report.json
           retention-days: 14
 
       - name: Verification summary
@@ -133,6 +157,8 @@ jobs:
             echo "- expected tag: \`${{ steps.pin.outputs.tag }}\`"
             echo "- expected source: \`${{ steps.pin.outputs.source_sha }}\`"
             echo "- expected digest: \`${{ steps.pin.outputs.digest }}\`"
+            echo "- rollout policy: \`maxSurge=1 / maxUnavailable=0\`"
+            echo "- quota gate: rendered frontend + desired/live ResourceQuota"
             echo "- mutation path: ArgoCD application reconciliation only"
             echo "- authenticated Meeting behavior: separate acceptance gate"
           } >> "$GITHUB_STEP_SUMMARY"

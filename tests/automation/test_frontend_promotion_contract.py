@@ -21,6 +21,7 @@ class FrontendPromotionContractTests(unittest.TestCase):
         cls.diff_guard = (
             ROOT / "scripts/automation/validate-test-overlay-frontend-diff.sh"
         ).read_text()
+        cls.overlay = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text()
 
     def test_dispatch_path_has_no_direct_workload_mutation(self):
         forbidden = re.compile(r"kubectl\s+(set\s+image|patch|edit)")
@@ -51,6 +52,29 @@ class FrontendPromotionContractTests(unittest.TestCase):
         self.assertIn("verify-testai-frontend-runtime.sh", self.verify)
         self.assertIn("--expected-sha", self.verify)
         self.assertIn("sourceRevision", self.verify)
+        self.assertIn("frontend image/rollout contract", self.verify)
+
+    def test_live_quota_preflight_runs_immediately_before_argocd(self):
+        preflight = "bash scripts/deploy/preflight-testai-frontend-rollout.sh"
+        sync = "bash scripts/faz22/sync-platform-test-gitops.sh"
+        self.assertIn(preflight, self.verify)
+        self.assertLess(self.verify.index(preflight), self.verify.index(sync))
+        between = self.verify[self.verify.index(preflight) : self.verify.index(sync)]
+        self.assertNotRegex(
+            between, r"kubectl\s+(apply|patch|edit|replace|set\s+image)"
+        )
+
+    def test_test_frontend_rollout_keeps_the_ready_pod(self):
+        frontend_patch = re.search(
+            r"name: frontend\n\s+patch: \|-\n(?P<body>.*?)(?=\n\s+# 2026-04-29)",
+            self.overlay,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(frontend_patch)
+        body = frontend_patch.group("body")
+        self.assertRegex(body, r"maxSurge\n\s+value: 1")
+        self.assertRegex(body, r"maxUnavailable\n\s+value: 0")
+        self.assertRegex(body, r"progressDeadlineSeconds\n\s+value: 300")
 
     def test_new_actions_are_pinned_by_full_commit_sha(self):
         self.assertNotRegex(self.promote, r"uses:\s+[^\s]+@v\d+")

@@ -192,13 +192,13 @@ sync_argocd_application() {
 
   if [[ "$app_target_revision" == "$REVISION" ]]; then
     "${ARGOCD[@]}" app sync "$APP" --revision "$REVISION" --timeout "$TIMEOUT"
-    return 0
+    return $?
   fi
 
   if [[ ! "$app_target_revision" =~ ^[0-9a-f]{40}$ ]]; then
     echo "ArgoCD app targetRevision is $app_target_revision; syncing configured target and enforcing observed revision $REVISION"
     "${ARGOCD[@]}" app sync "$APP" --timeout "$TIMEOUT"
-    return 0
+    return $?
   fi
 
   fail "ArgoCD app targetRevision $app_target_revision does not match requested revision $REVISION"
@@ -280,12 +280,16 @@ if ! "${ARGOCD[@]}" app get "$APP"; then
 fi
 
 if ! sync_argocd_application; then
-  sync_with_kubectl_overlay_fallback
-  exit 0
+  fail "ArgoCD sync command failed; kubectl fallback was not attempted because the sync may have partially applied desired state"
 fi
 if ! "${ARGOCD[@]}" app wait "$APP" --sync --health --timeout "$TIMEOUT"; then
-  sync_with_kubectl_overlay_fallback
-  exit 0
+  sync_status="$(kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+    get application "$APP" -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+  health_status="$(kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+    get application "$APP" -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
+  observed_revision="$(kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+    get application "$APP" -o jsonpath='{.status.sync.revision}' 2>/dev/null || true)"
+  fail "ArgoCD sync completed but application did not reach Synced/Healthy within ${TIMEOUT}s (sync=${sync_status:-unknown} health=${health_status:-unknown} revision=${observed_revision:-unknown})"
 fi
 
 sync_status="$(kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \

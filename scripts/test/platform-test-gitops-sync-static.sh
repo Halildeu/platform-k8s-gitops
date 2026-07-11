@@ -67,6 +67,33 @@ if ! grep -Fq 'app sync "$APP" --timeout "$TIMEOUT"' "$sync_script"; then
   exit 1
 fi
 
+if ! grep -Fq 'ArgoCD sync completed but application did not reach Synced/Healthy within ${TIMEOUT}s' "$sync_script"; then
+  echo "post-sync health timeout must be classified explicitly" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'ArgoCD sync command failed; kubectl fallback was not attempted because the sync may have partially applied desired state' "$sync_script"; then
+  echo "failed ArgoCD sync must not fall through to a possibly conflicting kubectl mutation" >&2
+  exit 1
+fi
+
+python3 - "$sync_script" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+block = re.search(
+    r'if ! "\$\{ARGOCD\[@\]\}" app wait .*?\nfi\n',
+    text,
+    re.DOTALL,
+)
+if block is None:
+    raise SystemExit("post-sync app wait guard not found")
+if "sync_with_kubectl_overlay_fallback" in block.group(0):
+    raise SystemExit("post-sync health timeout must never enter kubectl fallback")
+PY
+
 if ! grep -Fq 'EXPECTED_MODEL_ID="${EXPECTED_MODEL_ID:-}"' "$verify_script"; then
   echo "OpenFGA verifier must not hard-code a stale default model id" >&2
   exit 1
