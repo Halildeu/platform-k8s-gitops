@@ -76,7 +76,19 @@ if [ -z "$AUD_SID" ]; then
     -s 'config."id.token.claim"=false' >/dev/null
   echo "KC: ats-api-audience scope+mapper CREATED"
 else
-  echo "KC: ats-api-audience scope exists"
+  # reconcile (Codex 019f50b7 P1): scope mevcutsa mapper varligi da dogrulanir
+  if ! kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -qx "ats-api-audience-mapper"; then
+    kc create "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
+      -s name=ats-api-audience-mapper \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-audience-mapper \
+      -s 'config."included.client.audience"=ats-api' \
+      -s 'config."access.token.claim"=true' \
+      -s 'config."id.token.claim"=false' >/dev/null
+    echo "KC: ats-api-audience mapper RECONCILED"
+  else
+    echo "KC: ats-api-audience scope+mapper exists"
+  fi
 fi
 
 # --- 4) 10 permission client-scope (scope claim'ine ad girsin) ---
@@ -99,9 +111,14 @@ if [ -z "$FE_CID" ]; then
   kc get clients -r $REALM --fields clientId --format csv --noquotes | head -20 >&2
   exit 1
 fi
+BOUND=$(kc get "clients/$FE_CID/default-client-scopes" -r $REALM --fields name --format csv --noquotes 2>/dev/null || true)
 for name in ats-api-audience $PERMS; do
-  SID=$(kc get client-scopes -r $REALM --fields id,name --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}' | head -1)
-  kc update "clients/$FE_CID/default-client-scopes/$SID" -r $REALM >/dev/null 2>&1 || true
+  if ! printf '%s\n' "$BOUND" | grep -qx "$name"; then
+    SID=$(kc get client-scopes -r $REALM --fields id,name --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}' | head -1)
+    [ -n "$SID" ] || { echo "FATAL: client-scope bulunamadi: $name" >&2; exit 1; }
+    kc update "clients/$FE_CID/default-client-scopes/$SID" -r $REALM >/dev/null
+    echo "KC: frontend += default-scope $name"
+  fi
 done
 echo "KC: frontend default-scopes bound (audience + 10 permission)"
 
@@ -119,10 +136,14 @@ ensure_user() { # $1=username -> stdout id
   fi
   printf '%s' "$uid"
 }
-grant() { # $1=userId $2..=roles
+grant() { # $1=userId $2..=roles — idempotent get-check; gercek hata YUTULMAZ
   local uid=$1; shift
+  local have
+  have=$(kc get "users/$uid/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null || true)
   for r in "$@"; do
-    kc add-roles -r $REALM --uid "$uid" --cclientid ats-api --rolename "$r" >/dev/null 2>&1 || true
+    if ! printf '%s\n' "$have" | grep -qx "$r"; then
+      kc add-roles -r $REALM --uid "$uid" --cclientid ats-api --rolename "$r" >/dev/null
+    fi
   done
 }
 
@@ -142,4 +163,20 @@ REVIEWER_UID=$(ensure_user ats-reviewer-persona)
 grant "$REVIEWER_UID" ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
 echo "KC: ats-reviewer-persona → reviewer rolleri (export/dsar/erasure YOK)"
 
+# --- FINAL ASSERT (Codex 019f50b7 P1: fail-open yerine dogrulanmis durum) ---
+fail=0
+ROLE_N=$(kc get "clients/$ATS_CID/roles" -r $REALM --fields name --format csv --noquotes | grep -c '^ats\.') || true
+[ "$ROLE_N" -eq 10 ] || { echo "ASSERT FAIL: ats-api rol sayisi=$ROLE_N (10 bekleniyor)" >&2; fail=1; }
+BOUND_N=$(kc get "clients/$FE_CID/default-client-scopes" -r $REALM --fields name --format csv --noquotes | grep -cE '^(ats\.|ats-api-audience)') || true
+[ "$BOUND_N" -eq 11 ] || { echo "ASSERT FAIL: frontend default ats-scope sayisi=$BOUND_N (11 bekleniyor)" >&2; fail=1; }
+assert_roles() { # $1=uid $2=beklenen-adet $3=etiket
+  local n
+  n=$(kc get "users/$1/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -c '^ats\.') || true
+  [ "$n" -ge "$2" ] || { echo "ASSERT FAIL: $3 rol=$n (>=$2 bekleniyor)" >&2; fail=1; }
+}
+[ -n "$ADMIN_UID" ] && assert_roles "$ADMIN_UID" 10 operator-admin
+assert_roles "$READER_UID" 2 reader
+assert_roles "$REVIEWER_UID" 7 reviewer
+[ "$fail" -eq 0 ] || exit 1
+echo "ASSERT OK: 10 rol + 11 default-scope + persona atamalari dogrulandi"
 echo "DONE 39d-2c"

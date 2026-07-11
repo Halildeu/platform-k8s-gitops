@@ -69,7 +69,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: stub
-          image: node:22-alpine
+          # digest-pin (Codex 019f50b7 P1: mutable tag zamanla farklı kod/CVE
+          # yüzeyi çeker) — node:22-alpine çok-mimarili index digest'i
+          image: node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2
           command: ["node", "/stub/ai-stub.mjs"]
           ports:
             - containerPort: 9452
