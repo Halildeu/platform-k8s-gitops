@@ -6,6 +6,10 @@ set -uo pipefail
 EDGE="https://testai.acik.com"
 KCTOK="$EDGE/realms/platform-test/protocol/openid-connect/token"
 API="$EDGE/api/ats/v1/interviews/iv-smoke-1"
+# Beklenen imaj digest'i — default aktivasyon kustomization pin'i ile senkron
+# tutulur (pin bump PR'ı bu default'u da günceller); ad-hoc koşum için env
+# override: ATS_EXPECTED_DIGEST=sha256:... ./d29-smoke.sh
+PIN="${ATS_EXPECTED_DIGEST:-sha256:cf93a7be871f7e8a9ca0386312a6f6e964b4ab23528c6ad98268568f6793c460}"
 PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
@@ -51,7 +55,7 @@ echo "== D29: Up + Immutable =="
 POD=$(kubectl --context k3d-test -n platform-test get pod -l app=ats-interview-evidence -o jsonpath='{.items[0].status.phase}/{.items[0].status.containerStatuses[0].ready}')
 IMG=$(kubectl --context k3d-test -n platform-test get pod -l app=ats-interview-evidence -o jsonpath='{.items[0].status.containerStatuses[0].imageID}')
 [ "$POD" = "Running/true" ] && ok "pod Running/ready" || bad "pod=$POD"
-case "$IMG" in *c2dcc1da2e169d676fec21a1acc60d6fd6be2b108e73ce705b0aa813010432b1*) ok "imageID == pinned digest (D30)";; *) bad "imageID=$IMG";; esac
+case "$IMG" in *"$PIN"*) ok "imageID == pinned digest (D30)";; *) bad "imageID=$IMG beklenen=$PIN";; esac
 
 echo "== D29: Edge + Authn deny =="
 C=$(code GET "$API/transcripts"); [ "$C" = "401" ] && ok "no-token GET transcripts -> 401" || bad "no-token -> $C"

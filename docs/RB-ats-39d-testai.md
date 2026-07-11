@@ -26,7 +26,7 @@
    - Beklenen: ExternalSecret Ready=True → Secret 3 key; ats-ai-stub Running; ats-interview-evidence Running (startup ≤3 dk: Flyway migration).
    - Fail sinyali: pod `CreateContainerConfigError` = Secret yok (ESO/Vault kontrol); `CrashLoopBackOff` + `AppProperties` log'u = eksik env.
 4. **D29 kanıt matrisi** (Codex düzeltmeli adlandırma):
-   - **Up**: pod Ready + `imageID == sha256:c2dcc1da…` (D30 immutable)
+   - **Up**: pod Ready + `imageID == aktivasyon kustomization'daki pinli digest` (D30 immutable; `d29-smoke.sh` default'u pin ile senkron, `ATS_EXPECTED_DIGEST` ile override)
    - **Edge**: `https://testai.acik.com/api/ats/v1/transcripts` → 401 (JWT challenge; HTML DEĞİL)
    - **Authn deny**: token'sız/bozuk-audience → 401
    - **Authz deny**: reader token'ı ile `POST consent` → 403; rolsüz+scope'lu → 403
