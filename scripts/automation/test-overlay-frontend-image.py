@@ -32,6 +32,14 @@ TAG_RE = re.compile(r"^sha-[a-f0-9]{7}$")
 SOURCE_REVISION_RE = re.compile(
     r"^(?P<indent>[ \t]+)#[ \t]+sourceRevision:[ \t]*(?P<sha>[a-f0-9]{40})[ \t]*$"
 )
+FRONTEND_PATCH_RE = re.compile(
+    r"^[ \t]*-[ \t]+target:[ \t]*\n"
+    r"[ \t]+kind:[ \t]*Deployment[ \t]*\n"
+    r"[ \t]+name:[ \t]*frontend[ \t]*\n"
+    r"[ \t]+patch:[ \t]*\|-[ \t]*\n"
+    r"(?P<body>.*?)(?=^[ \t]*-[ \t]+target:|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
 
 
 class ContractError(ValueError):
@@ -60,7 +68,9 @@ class FrontendPin:
         }
 
 
-def _single(values: list[tuple[int, str, str]], key: str) -> tuple[int, str, str] | None:
+def _single(
+    values: list[tuple[int, str, str]], key: str
+) -> tuple[int, str, str] | None:
     if len(values) > 1:
         raise ContractError(f"frontend entry has duplicate {key} fields")
     return values[0] if values else None
@@ -74,7 +84,9 @@ def inspect_lines(lines: list[str]) -> FrontendPin:
             entries.append((index, len(match.group("indent")), match.group("indent")))
 
     if len(entries) != 1:
-        raise ContractError(f"expected exactly one '- name: frontend' entry, found {len(entries)}")
+        raise ContractError(
+            f"expected exactly one '- name: frontend' entry, found {len(entries)}"
+        )
 
     start, entry_indent_len, _ = entries[0]
     end = len(lines)
@@ -137,9 +149,45 @@ def inspect_file(path: Path) -> FrontendPin:
     return inspect_lines(path.read_text(encoding="utf-8").splitlines(keepends=True))
 
 
-def validate_request(sha: str, short_sha: str, image: str, tag: str, digest: str) -> None:
+def inspect_rollout_contract(text: str) -> dict[str, int | str | None]:
+    matches = list(FRONTEND_PATCH_RE.finditer(text))
+    if len(matches) != 1:
+        raise ContractError(
+            f"expected exactly one frontend Deployment patch, found {len(matches)}"
+        )
+    body = matches[0].group("body")
+
+    def patch_value(path: str) -> str | None:
+        match = re.search(
+            rf"^[ \t]+path:[ \t]*{re.escape(path)}[ \t]*\n"
+            rf"[ \t]+value:[ \t]*(?P<value>\S+)[ \t]*$",
+            body,
+            re.MULTILINE,
+        )
+        return match.group("value") if match else None
+
+    return {
+        "replicas": patch_value("/spec/replicas"),
+        "max_surge": patch_value("/spec/strategy/rollingUpdate/maxSurge"),
+        "max_unavailable": patch_value("/spec/strategy/rollingUpdate/maxUnavailable"),
+        "progress_deadline_seconds": patch_value("/spec/progressDeadlineSeconds"),
+    }
+
+
+def inspect_contract_file(path: Path) -> dict[str, object]:
+    text = path.read_text(encoding="utf-8")
+    result: dict[str, object] = inspect_lines(text.splitlines(keepends=True)).as_dict()
+    result["rollout"] = inspect_rollout_contract(text)
+    return result
+
+
+def validate_request(
+    sha: str, short_sha: str, image: str, tag: str, digest: str
+) -> None:
     if not FULL_SHA_RE.fullmatch(sha):
-        raise ContractError("sha must be a 40-character lowercase hexadecimal commit id")
+        raise ContractError(
+            "sha must be a 40-character lowercase hexadecimal commit id"
+        )
     if not SHORT_SHA_RE.fullmatch(short_sha) or short_sha != sha[:7]:
         raise ContractError("short-sha must equal the first seven characters of sha")
     if image != CANONICAL_IMAGE:
@@ -211,10 +259,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    inspect_parser = subparsers.add_parser("inspect", help="print the current pin as JSON")
+    inspect_parser = subparsers.add_parser(
+        "inspect", help="print the current pin as JSON"
+    )
     inspect_parser.add_argument("--kustomization", default=DEFAULT_KUSTOMIZATION)
 
-    apply_parser = subparsers.add_parser("apply", help="atomically update newTag and digest")
+    apply_parser = subparsers.add_parser(
+        "apply", help="atomically update newTag and digest"
+    )
     apply_parser.add_argument("--kustomization", default=DEFAULT_KUSTOMIZATION)
     apply_parser.add_argument("--sha", required=True)
     apply_parser.add_argument("--short-sha", required=True)
@@ -230,7 +282,7 @@ def main(argv: list[str]) -> int:
     try:
         path = Path(args.kustomization)
         if args.command == "inspect":
-            print(json.dumps(inspect_file(path).as_dict(), sort_keys=True))
+            print(json.dumps(inspect_contract_file(path), sort_keys=True))
             return 0
         changes = apply_pin(
             path,

@@ -6883,22 +6883,22 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
-      # 2026-05-08: same quota-aware rollout pattern as the backend
-      # services below. Without maxSurge=0, an image bump tries to
-      # schedule the new pod alongside the old one; the combined
-      # frontend (200m) + sustained backend usage exceeds platform-
-      # quota.limits.cpu=8 and the new RS sits in FailedCreate
-      # forever (this caused the c539875 image drift where
-      # deployment.spec carried the new digest but the live pod
-      # still ran the old image). Test overlay accepts the brief
-      # single-pod outage during rollout in exchange for
-      # quota-fitting scheduling.
+      # 2026-07-11 #2299: the former maxSurge=0/maxUnavailable=1
+      # setting converted quota pressure into a public 503 by deleting
+      # the only ready frontend pod before the replacement was admitted.
+      # Keep the serving pod until its replacement is Ready. The promotion
+      # workflow now reads live ResourceQuota headroom before Argo mutation;
+      # admission/TOCTOU failure therefore stalls safely instead of causing
+      # an outage, and progressDeadlineSeconds bounds that stalled rollout.
       - op: replace
         path: /spec/strategy/rollingUpdate/maxSurge
-        value: 0
+        value: 1
       - op: replace
         path: /spec/strategy/rollingUpdate/maxUnavailable
-        value: 1
+        value: 0
+      - op: add
+        path: /spec/progressDeadlineSeconds
+        value: 300
 
   # 2026-04-29 (Codex 019dd818 PARTIAL feedback): test cluster ResourceQuota
   # 8 CPU limit + 9 service × 750m = 6.75 CPU + frontend 200m + api-gateway
