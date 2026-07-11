@@ -169,14 +169,24 @@ ROLE_N=$(kc get "clients/$ATS_CID/roles" -r $REALM --fields name --format csv --
 [ "$ROLE_N" -eq 10 ] || { echo "ASSERT FAIL: ats-api rol sayisi=$ROLE_N (10 bekleniyor)" >&2; fail=1; }
 BOUND_N=$(kc get "clients/$FE_CID/default-client-scopes" -r $REALM --fields name --format csv --noquotes | grep -cE '^(ats\.|ats-api-audience)') || true
 [ "$BOUND_N" -eq 11 ] || { echo "ASSERT FAIL: frontend default ats-scope sayisi=$BOUND_N (11 bekleniyor)" >&2; fail=1; }
-assert_roles() { # $1=uid $2=beklenen-adet $3=etiket
-  local n
-  n=$(kc get "users/$1/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -c '^ats\.') || true
-  [ "$n" -ge "$2" ] || { echo "ASSERT FAIL: $3 rol=$n (>=$2 bekleniyor)" >&2; fail=1; }
+# TAM-KUME esitligi (Codex 019f50b7: '>=' least-privilege drift'ini yakalamaz —
+# reader'a operator rolu eklense bile PASS olurdu; kume birebir eslesmeli)
+assert_roles_exact() { # $1=uid $2=etiket $3..=beklenen roller (tam kume)
+  local uid=$1 label=$2; shift 2
+  local want have
+  want=$(printf '%s\n' "$@" | sort)
+  have=$(kc get "users/$uid/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep '^ats\.' | sort) || true
+  if [ "$want" != "$have" ]; then
+    echo "ASSERT FAIL: $label rol kumesi birebir eslesmedi" >&2
+    echo "  beklenen: $(printf '%s ' $want)" >&2
+    echo "  mevcut:   $(printf '%s ' $have)" >&2
+    fail=1
+  fi
 }
-[ -n "$ADMIN_UID" ] && assert_roles "$ADMIN_UID" 10 operator-admin
-assert_roles "$READER_UID" 2 reader
-assert_roles "$REVIEWER_UID" 7 reviewer
+# shellcheck disable=SC2086
+[ -n "$ADMIN_UID" ] && assert_roles_exact "$ADMIN_UID" operator-admin $PERMS
+assert_roles_exact "$READER_UID" reader ats.transcript.read ats.review.read
+assert_roles_exact "$REVIEWER_UID" reviewer ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
 [ "$fail" -eq 0 ] || exit 1
 echo "ASSERT OK: 10 rol + 11 default-scope + persona atamalari dogrulandi"
 echo "DONE 39d-2c"
