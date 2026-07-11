@@ -56,6 +56,13 @@ jobs:
         run: bash scripts/test/faz22-6-acceptance-package-workflows-static.sh
       - name: platform-test GitOps sync static guard
         run: bash scripts/test/platform-test-gitops-sync-static.sh
+      - name: testai frontend desired-state promotion contract
+        run: |
+          python3 -m unittest \
+            tests.automation.test_test_overlay_frontend_image \
+            tests.automation.test_frontend_promotion_contract \
+            tests.automation.test_frontend_diff_guard \
+            -v
       # Faz 22.6 D10-8 — remote-bridge broker isolation. Desired-state, NOT in
       # the Argo root (owner-gated activation). Render sanity + isolation guards
       # (Codex 019ebc51 P2 — machine-enforced, not self-attestation).
