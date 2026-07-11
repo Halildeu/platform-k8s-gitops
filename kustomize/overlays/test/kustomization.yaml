@@ -217,11 +217,20 @@ images:
     # audio-gateway dependency on /api/v1/admin/meetings/{id}.
     # 2026-07-02 update: platform-backend#792 adds the backend-owned Meeting AI
     # submit adapter at /api/v1/admin/meetings/{meetingId}/intelligence/analyze.
-    # platform-backend main merge 389b3bc image build run 28625506330 produced
-    # this immutable digest; test overlay only, runtime smoke remains acceptance
-    # evidence.
+    # 2026-07-11 update: sha-577e532 — ai#244 BE-1 persistence chain 4/4
+    # (platform-backend #804 V3 schema + #806 internal security chain + #808 atomic
+    # ingestion endpoint + #809 transactional outbox). meeting-service becomes the
+    # canonical system of record for meeting-ai analysis results: POST
+    # /api/v1/internal/meetings/{id}/analysis-results (service-token, Idempotency-Key,
+    # single atomic TX) + committed-then-published outbox for meeting.summary.ready /
+    # meeting.action.assigned. Flyway V3+V4 (additive: meeting_analysis_runs +
+    # meeting_event_outbox) apply on rollout. The outbox poller stays OFF
+    # (meeting.events.outbox.poller.enabled default false) until an ops enable + the
+    # service-JWT JWKS are wired (BE-1b fail-closed: the internal chain grants no SVC_
+    # authority until MEETING_INTERNAL_SERVICE_JWT_JWK_SET_URI is set). Test overlay
+    # only; prod remains D30-deferred.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:e04759fdbfb5e748e63d476c7bb69dac16cf3220b2577537b9ddc786d18a6422
+    digest: sha256:28fc8f87d21021031abcb689a3ac16e574de980d4682a55fd0d5f1d2fe21fbc2
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
