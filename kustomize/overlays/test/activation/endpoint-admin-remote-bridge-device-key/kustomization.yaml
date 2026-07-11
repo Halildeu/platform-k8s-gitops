@@ -62,4 +62,4 @@ images:
   # Activation remains owner-gated; this prepares the live attended smoke retry.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:a5cf602f9936d31f96e8006f4221b46317a1422895b5a8585e16bb8533de1e44
+    digest: sha256:b646eec34b6681f71cfe53b14bd480fd196b231cdee903433438c71dcac0a04c

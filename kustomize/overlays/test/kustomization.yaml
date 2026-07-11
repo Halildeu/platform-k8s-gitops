@@ -5586,7 +5586,12 @@ images:
     # device-trust diagnostic audit records so best-effort diagnostics cannot
     # poison later clean duress-signal recording before the attended VIEW_ONLY
     # smoke reaches the operation path.
-    digest: sha256:a5cf602f9936d31f96e8006f4221b46317a1422895b5a8585e16bb8533de1e44
+    # 2026-07-11 Faz 22.6 #2290 → sha-d8b905e (platform-backend #810: device-staleness
+    # reconciler — demote false-ONLINE devices ONLINE→STALE(5m)→OFFLINE(30m), @Scheduled
+    # @ConditionalOnPrimaryEndpointPlane, self-heal on returning heartbeat). Strict
+    # superset over a5cf602f; reconciler runs on endpoint-admin-service (primary plane)
+    # only — the shared brokers get a functionally-identical newer image + reconnect.
+    digest: sha256:b646eec34b6681f71cfe53b14bd480fd196b231cdee903433438c71dcac0a04c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
