@@ -43,26 +43,61 @@ tek başına önlediğini kanıtlamaz.
 
 ## Pre-merge doğrulama
 
-- 28 automation test: PASS (ilk geniş tur; yeni fingerprint/sync testleriyle
-  sonraki tur sayısı ayrıca PR kanıtında yazılır).
+- 29 automation test: PASS.
 - `platform-test-gitops-sync-static.sh`: PASS.
 - `shellcheck`: PASS.
 - `actionlint`: PASS.
 - `yamllint`: PASS.
+- `black` ve `ruff`: PASS.
 - Rendered frontend strategy: `maxSurge=1/maxUnavailable=0`.
 - Rendered progress deadline: `300`.
 - Son erişilebilen canlı quota snapshot'ına karşı hesap:
   `limits.cpu margin=1175m`, `required=200m`; `pods margin=5`, `required=1`;
   verdict PASS.
+- Gerçek Claude final adversarial review: `NO_P0_P1`.
 
-## Açık acceptance kapıları
+## Post-merge runtime acceptance kanıtı
 
-Bu belge kapanış iddiası değildir. Aşağıdaki kanıtlar merge sonrası ayrıca
-toplanır:
+Kaynak PR
+[#2301](https://github.com/Halildeu/platform-k8s-gitops/pull/2301),
+`ea138e990da71193fc503f9be2bedfc81c409b97` merge SHA'sı ile `main`'e
+alındı. Post-merge self-hosted verifier run'ı
+[#29157600538](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29157600538)
+`success` verdi. Ham makine kanıtı
+[`testai-frontend-gitops-rollout-ea138e...`](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29157600538/artifacts/8249898645)
+artefaktındadır.
 
-1. PR CI ve gerçek Claude final adversarial review'de unresolved P0/P1 olmaması.
-2. Self-hosted runner canlı preflight artefaktı.
-3. Argo Synced/Healthy ve exact immutable digest/tam SHA/public module PASS.
-4. Frontend rollout sırasında aralıksız public availability probe.
-5. Project #2 ve `#2299` üzerinde acceptance kanıt comment'i; deliberate status
-   kararı.
+Canlı preflight sonucu:
+
+- resolved rollout: replicas `1`, `maxSurge=1`, `maxUnavailable=0`,
+  `progressDeadlineSeconds=300`;
+- `requests.cpu`: margin `3525m`, surge requirement `10m`;
+- `requests.memory`: margin `6752Mi`, surge requirement `32Mi`;
+- `limits.cpu`: margin `1175m`, surge requirement `200m`;
+- `limits.memory`: margin `12352Mi`, surge requirement `128Mi`;
+- `pods`: margin `5`, surge requirement `1`;
+- aggregate verdict: `PASS`.
+
+Reconcile/runtime sonucu:
+
+- Argo observed revision merge SHA ile eşleşti;
+- sync `Synced`, health `Healthy`;
+- rollout başarıyla gözlendi; yeni pod `frontend-76d85bdd74-bkgjp`;
+- exact runtime digest
+  `sha256:4ff08fd67234e11f655487d8524351abdc739713dcc6e15fd7472dcefd6a201b`;
+- public module entry `/mf-entry-bootstrap-0.js`: PASS;
+- build lineage full SHA
+  `29ebe18c8197fee7621cc3130c11d893ab9ecd3b`, immutable image lineage
+  `sha-29ebe18` ile eşleşti.
+
+Bağımsız public probe, gerçek Argo sync/rollout penceresini kapsayan
+`2026-07-11T15:16:31Z..15:17:18Z` aralığında `45/45` HTTP 200 gördü;
+non-200 `0`, maksimum toplam istek süresi `0.422s` oldu.
+
+## Acceptance sınırı
+
+Bu kanıt `testai` frontend GitOps promotion durability ve zero-downtime rollout
+sınıfı içindir. Faz 24'ün canlı transcript, doğruluk, diarization, toplantı
+çıktısı ve diğer ürün acceptance kapılarını doğrulamaz. Project #2 / `#2299`
+deliberate status kararı ayrı governance adımıdır; PR merge tek başına issue'yu
+`Done` yapmaz.

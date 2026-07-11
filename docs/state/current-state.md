@@ -602,6 +602,39 @@ matrix. Because no product command exists for TPM enrollment, this cannot be
 truthfully reclassified as an agent-only product-channel trigger from the
 current live state.
 
+## Live Delta — Faz 24 testai frontend rollout headroom accepted as bounded runtime evidence (2026-07-11)
+
+The Faz 24 test frontend promotion path advanced from source-side prevention to
+post-merge runtime evidence without changing the broader Meeting Intelligence
+acceptance boundary.
+
+- `platform-k8s-gitops#2301` merged at
+  `ea138e990da71193fc503f9be2bedfc81c409b97`.
+- The test frontend desired rollout contract is `maxSurge=1`,
+  `maxUnavailable=0`, `progressDeadlineSeconds=300`.
+- Workflow run
+  [`29157600538`](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29157600538)
+  passed the self-hosted live+desired quota preflight before Argo mutation. The
+  required one-pod surge fit every effective quota margin, including
+  `limits.cpu` (`1175m >= 200m`) and pods (`5 >= 1`).
+- The same run observed merge revision, Argo `Synced/Healthy`, successful
+  Deployment rollout, exact runtime digest
+  `sha256:4ff08fd67234e11f655487d8524351abdc739713dcc6e15fd7472dcefd6a201b`,
+  public `/mf-entry-bootstrap-0.js`, and full build SHA
+  `29ebe18c8197fee7621cc3130c11d893ab9ecd3b`.
+- An independent public probe covering the actual sync/rollout window recorded
+  `45/45` HTTP 200 responses, zero non-200 responses, and `0.422s` maximum
+  request duration.
+- Runtime artifact:
+  [`testai-frontend-gitops-rollout-ea138e...`](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29157600538/artifacts/8249898645).
+- Detailed incident and acceptance boundary:
+  [`docs/faz-24-evidence/2026-07-11-testai-frontend-rollout-headroom.md`](../faz-24-evidence/2026-07-11-testai-frontend-rollout-headroom.md).
+
+Boundary: this accepts the `testai` frontend GitOps promotion durability and
+zero-downtime rollout class only. It does not accept live transcript accuracy,
+diarization, Meeting AI outputs, desktop capture completeness, or full Faz 24
+readiness. Project #2 deliberate status remains separate from PR merge.
+
 ## Live Delta — Faz 24 live-STT source-readiness and ERP/CRM-agnostic scope refresh (2026-07-03)
 
 Faz 24 Meeting Intelligence source/product surface advanced after the
