@@ -1,0 +1,70 @@
+# NetPol — ats-interview-evidence (ATS-0019 39d-3).
+# ingress: yalnız ingress-nginx → 8080. egress: DNS + host-bridge PG/KC
+# (Endpoints IP'leri — Codex uyarısı: host-bridge hedefe podSelector işlemez,
+# ipBlock zorunlu; IP'ler overlay Endpoints pin'leriyle AYNI kaynaktan) + ai-stub.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ats-interview-evidence
+  namespace: platform-test
+spec:
+  podSelector:
+    matchLabels:
+      app: ats-interview-evidence
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8080
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # host-bridge postgres (Endpoints "postgres" 172.19.0.6:5432 — D20 pin)
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.6/32
+      ports:
+        - port: 5432
+    # host-bridge keycloak JWKS (Endpoints "keycloak" 172.19.0.7:8080)
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.7/32
+      ports:
+        - port: 8080
+    # ai-stub (cluster içi)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ats-ai-stub
+      ports:
+        - port: 9452
+---
+# ai-stub: yalnız ats-interview-evidence'ten istek kabul eder; egress YOK
+# (sentetik yanıt — dışarı hiçbir bağlantı ihtiyacı yok; fail-closed).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ats-ai-stub
+  namespace: platform-test
+spec:
+  podSelector:
+    matchLabels:
+      app: ats-ai-stub
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: ats-interview-evidence
+      ports:
+        - port: 9452
+  egress: []

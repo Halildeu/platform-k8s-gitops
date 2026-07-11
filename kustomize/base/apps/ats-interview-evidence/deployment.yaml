@@ -1,0 +1,77 @@
+# ATS app-boot deployment (ATS-0019 39d-3) — Codex 019f4c6c manifest güvenlik seti.
+# Image OVERLAY pin'ler (digest; base'de kasıtlı geçersiz placeholder — D30 immutable).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ats-interview-evidence
+  labels:
+    app: ats-interview-evidence
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 300
+  selector:
+    matchLabels:
+      app: ats-interview-evidence
+  template:
+    metadata:
+      labels:
+        app: ats-interview-evidence
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app-boot
+          image: ghcr.io/halildeu/ats-app-boot:OVERLAY_MUST_OVERRIDE
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: ats-interview-evidence-config
+            - secretRef:
+                name: ats-interview-evidence-secret
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # RO-rootfs altında tek yazılabilir alan; upload multipart temp'i
+            # dahil (sınırlı — büyüklüğü ATS_MAX_UPLOAD_BYTES kontratıyla uyumlu)
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          # /healthz gerçek DB ping yapar → readiness/startup İÇİN doğru sinyal;
+          # liveness KASITLI TCP (PG kesintisi pod-restart fırtınası yaratmasın —
+          # Codex: liveness dış-bağımlılık kesintisinde pod'u öldürmemeli).
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36   # Flyway + cold-boot penceresi ~3 dk
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 15
+            failureThreshold: 4
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

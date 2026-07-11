@@ -1,0 +1,55 @@
+# ats-interview-evidence ACTIVATION overlay — ATS-0019 39d-3 (test).
+#
+# Argo-root DIŞI (endpoint-admin-remote-bridge pattern'i): bu overlay
+# kustomize/overlays/test/kustomization.yaml tarafından REFERANSLANMAZ —
+# reconcile/full-apply ATS backend'ini kendiliğinden canlandıramaz.
+# İlk canlandırma bilinçli apply'dır (test-env agent-otonom):
+#
+#   kubectl --context k3d-test -n platform-test apply -k \
+#     kustomize/overlays/test/activation/ats-interview-evidence
+#
+# Önkoşullar (39d-2, 2026-07-11'de TAMAM):
+#   - PG: ats DB + ats_app kullanıcı (test compose PG; canlı login kanıtlı)
+#   - Vault: kv/platform/ats (DB url/user/pass) → ESO ClusterSecretStore
+#   - KC platform-test: ats-api client + 10 client-role + audience/permission
+#     scope'ları (Codex 019f50b7 verdict A: default scope + rol-kapısı ats#96)
+#
+# İmaj pin: İLK TEMİZ yayın (trivy CRITICAL kapısı 4 CVE'yi kesti → Boot
+# 3.5.16 fix → yeşil). Digest AUTHORITY, tag alias (D30 immutable):
+#   tag    ghcr.io/halildeu/ats-app-boot:sha-3a93cff
+#   digest sha256:c2dcc1da2e169d676fec21a1acc60d6fd6be2b108e73ce705b0aa813010432b1
+#   image build run: 29149994945 (public package — pull-secret gerekmez)
+#
+# Build sanity (apply'sız):
+#   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-test
+
+resources:
+  - ../../../../base/apps/ats-interview-evidence
+  - externalsecret.yaml
+  - ingress-ats-api.yaml
+  - netpol.yaml
+  - ai-stub.yaml
+
+images:
+  - name: ghcr.io/halildeu/ats-app-boot
+    digest: sha256:c2dcc1da2e169d676fec21a1acc60d6fd6be2b108e73ce705b0aa813010432b1
+
+patches:
+  # test ortam değerleri (base fail-closed placeholder'larını doldurur)
+  - target:
+      kind: ConfigMap
+      name: ats-interview-evidence-config
+    patch: |-
+      - op: replace
+        path: /data/ATS_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: replace
+        path: /data/ATS_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: replace
+        path: /data/ATS_AI_BASE_URL
+        value: "http://ats-ai-stub:9452"

@@ -1,0 +1,113 @@
+# ATS ai-stub (ATS-0019 39d-3) — Faz24 wire-contract'ının (/v1/transcribe +
+# /v1/cite) SENTETİK sağlayıcısı. İçerik: ats reposundaki dev ai-stub'ın
+# (web/mfe-interview-evidence/dev/ai-stub.mjs) 0.0.0.0-bind uyarlaması.
+#
+# DÜRÜST SINIR (Codex 019f4c6c §5): bu stub yalnız boot/routing/auth/DB
+# plumbing kabulü içindir; "Functional — stubbed AI dependency" olarak
+# etiketlenir. Canlı Faz24 STT'ye geçiş AYRI GitOps değişikliğidir
+# (ATS_AI_BASE_URL patch'i); istek-bazlı/health-bazlı OTOMATİK fallback YOK —
+# stub↔live seçimi yalnız deployment config'idir. Prod'a asla.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ats-ai-stub-script
+data:
+  ai-stub.mjs: |
+    import { createServer } from "node:http";
+    const PORT = 9452;
+    createServer(async (req, res) => {
+      if (req.url === "/v1/transcribe" && req.method === "POST") {
+        let data = ""; for await (const c of req) data += c;
+        try { JSON.parse(data); } catch { res.writeHead(400); res.end(); return; }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          language: "tr-TR",
+          segments: [
+            { speaker: "S1", start_ms: 0, end_ms: 4000, text: "Merhaba, deneyiminizi anlatir misiniz? (test-stub)" },
+            { speaker: "S2", start_ms: 4000, end_ms: 9000, text: "Aday deneyimini somut orneklerle anlatti. (test-stub)" },
+            { speaker: "S1", start_ms: 9000, end_ms: 10000, text: "Tesekkurler. (test-stub)" },
+          ],
+        }));
+        return;
+      }
+      if (req.url === "/v1/cite" && req.method === "POST") {
+        let data = ""; for await (const c of req) data += c;
+        let claim = "";
+        try { claim = JSON.parse(data).claim ?? ""; } catch { res.writeHead(400); res.end(); return; }
+        let entailment = "supported"; let refs = ["seg-0"];
+        if (claim.toLowerCase().includes("desteklenmeyen")) { entailment = "unsupported"; refs = []; }
+        else if (claim.toLowerCase().includes("yetersiz")) { entailment = "insufficient"; refs = []; }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ claim, source_segment_refs: refs, entailment }));
+        return;
+      }
+      res.writeHead(404); res.end();
+    }).listen(PORT, "0.0.0.0", () => console.log(`ats ai-stub :${PORT}`));
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ats-ai-stub
+  labels:
+    app: ats-ai-stub
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: ats-ai-stub
+  template:
+    metadata:
+      labels:
+        app: ats-ai-stub
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: stub
+          image: node:22-alpine
+          command: ["node", "/stub/ai-stub.mjs"]
+          ports:
+            - containerPort: 9452
+              name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: script
+              mountPath: /stub
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+      volumes:
+        - name: script
+          configMap:
+            name: ats-ai-stub-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ats-ai-stub
+  labels:
+    app: ats-ai-stub
+spec:
+  selector:
+    app: ats-ai-stub
+  ports:
+    - name: http
+      port: 9452
+      targetPort: http

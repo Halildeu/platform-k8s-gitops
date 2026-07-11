@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ats-interview-evidence
+  labels:
+    app: ats-interview-evidence
+spec:
+  selector:
+    app: ats-interview-evidence
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
