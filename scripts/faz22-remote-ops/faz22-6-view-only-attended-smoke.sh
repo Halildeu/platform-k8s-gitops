@@ -18,6 +18,9 @@ RBD_BRIDGE_OVERLAY="${RBD_BRIDGE_OVERLAY:-${REPO_ROOT}/kustomize/overlays/test/a
 RBD_DEVICE_KEY_BRIDGE_OVERLAY="${RBD_DEVICE_KEY_BRIDGE_OVERLAY:-${REPO_ROOT}/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key}"
 # shellcheck source=scripts/governance/lib-remote-bridge-digest.sh disable=SC1091
 source "${REPO_ROOT}/scripts/governance/lib-remote-bridge-digest.sh"
+# Canonical broker frame-flow parser shared with the finalizer (Codex 019f559d S2).
+# shellcheck source=scripts/faz22-remote-ops/lib-view-only-frame-flow.sh disable=SC1091
+source "${SCRIPT_DIR}/lib-view-only-frame-flow.sh"
 
 K8S_CONTEXT="${K8S_CONTEXT:-k3d-test}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-platform-test}"
@@ -800,7 +803,11 @@ broker_signals_json() {
   grep -F "HELLO_VERIFIED" "${EVIDENCE_DIR}/broker-relevant.log" >/dev/null 2>&1 && signals+=("HELLO_VERIFIED")
   grep -F "CONSENT_GRANTED" "${EVIDENCE_DIR}/broker-relevant.log" >/dev/null 2>&1 && signals+=("CONSENT_GRANTED")
   grep -F "CONSENT_DENIED" "${EVIDENCE_DIR}/broker-relevant.log" >/dev/null 2>&1 && signals+=("CONSENT_DENIED")
-  grep -E 'SCREEN_VIEW|VIEW_ONLY|VIEW_ONLY_FRAME|FRAME|DATA_FRAME|PERMIT_VIEW' "${EVIDENCE_DIR}/broker-relevant.log" >/dev/null 2>&1 && signals+=("SCREEN_VIEW")
+  # SCREEN_VIEW == broker RECEIVED >=2 real, non-inert PNG VIEW_ONLY frames for this
+  # session (the canonical "view-only frame: ... bytes=N type=image/png disposition=..."
+  # broker log; DROPPED_NO_VIEWER counts, viewer relay is gated #2183). Shared parser
+  # with the finalizer so the smoke's signal and the finalizer gate never drift.
+  broker_log_has_received_frame_flow "${EVIDENCE_DIR}/broker-relevant.log" "$SESSION_ID" && signals+=("SCREEN_VIEW")
   grep -E 'DATA|DATA_FRAME' "${EVIDENCE_DIR}/broker-relevant.log" >/dev/null 2>&1 && signals+=("DATA")
   grep -E 'PERMIT|PERMIT_VIEW' "${EVIDENCE_DIR}/broker-relevant.log" >/dev/null 2>&1 && signals+=("PERMIT")
   if ((${#signals[@]} == 0)); then
