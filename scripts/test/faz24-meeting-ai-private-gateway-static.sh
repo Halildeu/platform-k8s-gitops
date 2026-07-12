@@ -49,6 +49,16 @@ grep -Fq 'gateway reload failed; certificate pointer rolled back' \
   "${GW}/rotate-server-cert.sh" || fail "certificate reload rollback missing"
 grep -Fq 'vault token renew -format=json -increment=24h -self' \
   "${GW}/rotate-server-cert.sh" || fail "scoped Vault token renewal missing"
+# shellcheck disable=SC2016
+grep -Fq 'readonly VAULT_TRANSPORT="${VAULT_TRANSPORT:-https}"' \
+  "${GW}/rotate-server-cert.sh" || fail "Vault transport selector missing"
+grep -Fq "docker exec -i \"\${VAULT_DOCKER_CONTAINER}\"" \
+  "${GW}/rotate-server-cert.sh" || fail "test Vault container transport missing"
+grep -Fq 'Environment=VAULT_TRANSPORT=container' \
+  "${GW}/meeting-ai-server-cert-rotation.service" || fail "test Vault transport is not pinned"
+if grep -Eq 'docker exec[^|]*-e[[:space:]]+VAULT_TOKEN' "${GW}/rotate-server-cert.sh"; then
+  fail "Vault token must not be exposed through docker exec argv"
+fi
 grep -Fq "server-leaf.crt\" \"\${tmp_dir}/server-ca.crt\" >\"\${tmp_dir}/server.crt" \
   "${GW}/rotate-server-cert.sh" || fail "server fullchain assembly missing"
 grep -Fq 'meeting_ai_gateway_rotation_last_run_success' \

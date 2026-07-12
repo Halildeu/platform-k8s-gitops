@@ -123,7 +123,10 @@ Server cert rotation için scoped, renewable Vault token root-owned
 Token yalnız server issuance policy'sine bağlı, periodik ve en az 48 saatlik
 period ile üretilir; her sekiz saatlik başarılı job token'ı yeniler. Token expiry
 ve rotation failure systemd/monitoring alarmıdır; root token bu dosyada tutulmaz.
-Test Vault HTTPS listener CA'sı da
+Testte rotator root-only Docker Unix socket üzerinden Vault container içindeki
+CLI'ı kullanır; scoped token stdin ile taşınır ve HTTP container dışına çıkmaz.
+Hostta `vault` CLI veya ikinci bir plaintext listener gerekmez. Prod'da unit
+`VAULT_TRANSPORT=https` kullanır ve Vault CA
 `/etc/platform/meeting-ai-gateway/vault-ca.crt` altında pinlenir; TLS doğrulama
 kapatılmaz.
 Client CA public certificate:

@@ -4,8 +4,10 @@ umask 077
 
 readonly TLS_DIR="/etc/platform/meeting-ai-gateway/tls"
 readonly TOKEN_FILE="${VAULT_TOKEN_FILE:-/etc/platform/meeting-ai-gateway/vault-token}"
+readonly VAULT_TRANSPORT="${VAULT_TRANSPORT:-https}"
 readonly VAULT_ADDR_VALUE="${VAULT_ADDR:-https://127.0.0.1:8202}"
 readonly VAULT_CACERT_FILE="${VAULT_CACERT_FILE:-/etc/platform/meeting-ai-gateway/vault-ca.crt}"
+readonly VAULT_DOCKER_CONTAINER="${VAULT_DOCKER_CONTAINER:-platform-vault-test}"
 readonly METRIC_FILE="${METRIC_FILE:-/var/lib/node_exporter/meeting_ai_gateway.prom}"
 rotation_success=0
 last_success=0
@@ -18,7 +20,6 @@ die() {
 }
 
 [[ ${EUID} -eq 0 ]] || die "root is required"
-command -v vault >/dev/null 2>&1 || die "vault CLI is required"
 command -v jq >/dev/null 2>&1 || die "jq is required"
 command -v openssl >/dev/null 2>&1 || die "openssl is required"
 command -v caddy >/dev/null 2>&1 || die "caddy is required"
@@ -69,20 +70,42 @@ trap finish EXIT
 trap 'exit 130' INT TERM
 
 [[ -r "${TOKEN_FILE}" ]] || die "scoped Vault token file is unreadable"
-[[ -r "${VAULT_CACERT_FILE}" ]] || die "pinned Vault CA file is unreadable"
 [[ -d "$(dirname -- "${METRIC_FILE}")" ]] || die "node_exporter textfile directory is missing"
 
 tmp_dir="$(mktemp -d "${TLS_DIR}/.rotate.XXXXXX")"
 
-export VAULT_ADDR="${VAULT_ADDR_VALUE}"
-export VAULT_CACERT="${VAULT_CACERT_FILE}"
-export VAULT_TOKEN
 VAULT_TOKEN="$(<"${TOKEN_FILE}")"
-vault token renew -format=json -increment=24h -self >/dev/null
-response="$(vault write -format=json pki_meeting_ai_server/issue/staging-gateway \
-  common_name=meeting-ai-gateway.internal \
-  alt_names=meeting-ai-gateway.internal \
-  ttl=24h)"
+case "${VAULT_TRANSPORT}" in
+  https)
+    command -v vault >/dev/null 2>&1 || die "vault CLI is required for https transport"
+    [[ -r "${VAULT_CACERT_FILE}" ]] || die "pinned Vault CA file is unreadable"
+    export VAULT_ADDR="${VAULT_ADDR_VALUE}"
+    export VAULT_CACERT="${VAULT_CACERT_FILE}"
+    export VAULT_TOKEN
+    vault token renew -format=json -increment=24h -self >/dev/null
+    response="$(vault write -format=json pki_meeting_ai_server/issue/staging-gateway \
+      common_name=meeting-ai-gateway.internal \
+      alt_names=meeting-ai-gateway.internal \
+      ttl=24h)"
+    ;;
+  container)
+    command -v docker >/dev/null 2>&1 || die "docker CLI is required for container transport"
+    [[ "${VAULT_DOCKER_CONTAINER}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$ ]] || \
+      die "invalid Vault container name"
+    [[ "$(docker inspect -f '{{.State.Running}}' "${VAULT_DOCKER_CONTAINER}" 2>/dev/null)" == true ]] || \
+      die "Vault container is not running"
+    response="$(printf '%s\n' "${VAULT_TOKEN}" | docker exec -i "${VAULT_DOCKER_CONTAINER}" sh -ec '
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200
+      vault token renew -format=json -increment=24h -self >/dev/null
+      vault write -format=json pki_meeting_ai_server/issue/staging-gateway \
+        common_name=meeting-ai-gateway.internal \
+        alt_names=meeting-ai-gateway.internal \
+        ttl=24h
+    ')"
+    ;;
+  *) die "unsupported VAULT_TRANSPORT: ${VAULT_TRANSPORT}" ;;
+esac
 
 jq -er '.data.certificate' <<<"${response}" >"${tmp_dir}/server-leaf.crt"
 jq -er '.data.private_key' <<<"${response}" >"${tmp_dir}/server.key"
