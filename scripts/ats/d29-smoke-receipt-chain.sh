@@ -78,7 +78,7 @@ C=$(code POST "$API/review-case/finalize" "$OPERATOR" "{\"caseKey\":\"$CASE\",\"
 
 SCHEMA_DIGEST=$(printf '0%.0s' {1..64})
 EXPORT_BODY="{\"caseKey\":\"$CASE\",\"citationKeys\":[\"$CIT\"],\"context\":{\"generatorVersionRef\":\"gen-v1\",\"locale\":\"tr-TR\",\"timezone\":\"Europe/Istanbul\",\"aiAssistanceDisclosureRef\":\"disclosure-v1\",\"consentRefs\":[\"consent-smoke-1\"],\"rubricVersionRef\":\"rubric-v1\",\"criteria\":[{\"criterionId\":\"c-comm\",\"jobRelatednessRationaleRef\":\"jr-v1\"}],\"citationCriterion\":{\"$CIT\":\"c-comm\"},\"wormChainRefs\":[\"$CIT_EV\"],\"redactionPolicyRef\":\"red-pol-v1\",\"redactionRunRef\":\"red-run-1\",\"retentionPolicyRef\":\"ret-pol-v1\",\"schemaDigest\":\"$SCHEMA_DIGEST\",\"signatureRef\":\"sig-1\"}}"
-WORM_BEFORE=$(psq "SELECT count(*) FROM worm_ledger WHERE tenant_id='t-platform-test'")
+WORM_BEFORE=$(psq "SELECT count(*) FROM worm_ledger WHERE tenant_id='t-platform-test' AND event_type='evidence_packet.exported' AND payload->>'case_key'='$CASE'")
 C=$(code POST "$API/export" "$OPERATOR" "$EXPORT_BODY")
 ART=$(jfield artifactKey); PDIG=$(jfield packetDigest)
 [ "$C" = "201" ] && [ -n "$ART" ] && ok "export 201 (yeni üretim)" || bad "export -> $C ($(head -c 200 /tmp/rc-last.json))"
@@ -98,6 +98,7 @@ echo "== B) artifact: 200 verbatim (sha256==ledger.artifact_digest) + HEAD 403 =
 S=$(hdr GET "$API/export/artifact?caseKey=$CASE_ENC" "$OPERATOR")
 [ "$S" = "200" ] && ok "artifact 200" || bad "artifact -> $S"
 grep -qi '^content-type:.*application/json' /tmp/rc-hdr && ok "artifact Content-Type json" || bad "artifact content-type"
+grep -qi '^cache-control:.*no-store' /tmp/rc-hdr && ok "artifact 200 no-store" || bad "artifact 200 no-store yok"
 LDIG=$(psq "SELECT payload->>'artifact_digest' FROM worm_ledger WHERE tenant_id='t-platform-test' AND event_type='evidence_packet.exported' AND payload->>'case_key'='$CASE'")
 BDIG=$(python3 -c "import hashlib;print(hashlib.sha256(open('/tmp/rc-last.json','rb').read()).hexdigest())")
 [ -n "$LDIG" ] && [ "$LDIG" = "$BDIG" ] && ok "VERBATIM: sha256(gövde)==ledger.artifact_digest" || bad "verbatim: ledger=$LDIG gövde=$BDIG"
@@ -110,13 +111,13 @@ S=$(curl -sk --max-time 30 -D /tmp/rc-hdr -o /tmp/rc-last.json -w '%{http_code}'
 [ "$S" = "200" ] && ok "replay 200" || bad "replay -> $S ($(head -c 200 /tmp/rc-last.json))"
 grep -qi '^x-ats-replay: *true' /tmp/rc-hdr && ok "X-ATS-Replay: true" || bad "replay header yok"
 [ "$(jfield artifactKey)" = "$ART" ] && ok "replay makbuzu birebir (artifactKey)" || bad "replay artifactKey farklı"
-WORM_AFTER=$(psq "SELECT count(*) FROM worm_ledger WHERE tenant_id='t-platform-test'")
-[ "$WORM_AFTER" = "$(( WORM_BEFORE + 1 ))" ] && ok "WORM satır-sayısı: yalnız ilk export (+1); replay yazmadı" || bad "WORM: önce=$WORM_BEFORE sonra=$WORM_AFTER"
+WORM_AFTER=$(psq "SELECT count(*) FROM worm_ledger WHERE tenant_id='t-platform-test' AND event_type='evidence_packet.exported' AND payload->>'case_key'='$CASE'")
+[ "$WORM_BEFORE" = "0" ] && [ "$WORM_AFTER" = "1" ] && ok "case-scoped WORM: 0→1 (yalnız ilk export; replay yazmadı)" || bad "case-scoped WORM: önce=$WORM_BEFORE sonra=$WORM_AFTER (0→1 bekleniyor)"
 S=$(code POST "$API/export" "$OPERATOR" "${EXPORT_BODY/sig-1/sig-BASKA}")
 [ "$S" = "400" ] && ok "değişik gövde -> 400 conflict (makbuz sızmadı)" || bad "conflict -> $S"
 
 echo "== D) repair onay-kapısı: rolsüz(operator) 403 =="
-S=$(hdr POST "$API/export/repair" "$OPERATOR" 2>/dev/null); S=$(curl -sk --max-time 20 -o /tmp/rc-last.json -w '%{http_code}' -X POST -H "Authorization: Bearer $OPERATOR" -H 'Content-Type: application/json' -d "{\"caseKey\":\"$CASE\"}" "$API/export/repair")
+S=$(curl -sk --max-time 20 -o /tmp/rc-last.json -w '%{http_code}' -X POST -H "Authorization: Bearer $OPERATOR" -H 'Content-Type: application/json' -d "{\"caseKey\":\"$CASE\"}" "$API/export/repair")
 [ "$S" = "403" ] && ok "operator(repair-rolsüz) repair -> 403 (onay-kapısı)" || bad "repair kapısı -> $S"
 
 echo "== E) erasure-sonrası: artifact 404, receipt hâlâ 200 COMPLETED =="
