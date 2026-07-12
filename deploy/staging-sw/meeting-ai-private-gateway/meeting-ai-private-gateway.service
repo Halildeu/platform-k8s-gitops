@@ -1,0 +1,39 @@
+[Unit]
+Description=Faz 24 Meeting-AI private application-mTLS gateway
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/2321
+After=network-online.target meeting-ai-gateway-firewall.service
+Requires=meeting-ai-gateway-firewall.service
+
+[Service]
+Type=notify
+User=caddy
+Group=caddy
+ExecStartPre=/usr/bin/caddy validate --config /etc/caddy/meeting-ai-private.Caddyfile --adapter caddyfile
+ExecStart=/usr/bin/caddy run --config /etc/caddy/meeting-ai-private.Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --address unix//run/caddy/meeting-ai-admin.sock --config /etc/caddy/meeting-ai-private.Caddyfile --adapter caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+PrivateTmp=true
+RuntimeDirectory=caddy
+RuntimeDirectoryMode=0750
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+UMask=0027
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/var/log/platform/meeting-ai-gateway
+ReadOnlyPaths=/etc/caddy/meeting-ai-private.Caddyfile /etc/platform/meeting-ai-gateway/tls
+CapabilityBoundingSet=
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

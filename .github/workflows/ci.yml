@@ -56,6 +56,8 @@ jobs:
         run: bash scripts/test/faz22-6-acceptance-package-workflows-static.sh
       - name: platform-test GitOps sync static guard
         run: bash scripts/test/platform-test-gitops-sync-static.sh
+      - name: Faz 24 Meeting-AI private gateway static guard
+        run: bash scripts/test/faz24-meeting-ai-private-gateway-static.sh
       - name: testai frontend desired-state promotion contract
         run: |
           python3 -m unittest \

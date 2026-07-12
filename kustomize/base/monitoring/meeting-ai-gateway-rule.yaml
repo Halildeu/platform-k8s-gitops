@@ -1,0 +1,59 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: meeting-ai-gateway
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: meeting-ai.gateway
+      interval: 1m
+      rules:
+        - alert: MeetingAIGatewayCertificateRotationFailed
+          expr: meeting_ai_gateway_rotation_last_run_success == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: meeting-ai-gateway
+          annotations:
+            summary: Meeting-AI gateway certificate rotation failed
+            description: The latest scoped Vault issuance or atomic Caddy activation failed.
+            runbook_url: docs/runbooks/RB-faz24-meeting-ai-private-gateway.md
+
+        - alert: MeetingAIGatewayCertificateRotationStale
+          expr: time() - meeting_ai_gateway_rotation_last_success_timestamp_seconds > 43200
+          for: 15m
+          labels:
+            severity: critical
+            component: meeting-ai-gateway
+          annotations:
+            summary: Meeting-AI gateway certificate rotation is stale
+            description: No successful server certificate activation was recorded for more than 12 hours.
+            runbook_url: docs/runbooks/RB-faz24-meeting-ai-private-gateway.md
+
+        - alert: MeetingAIGatewayCertificateExpiring
+          expr: meeting_ai_gateway_certificate_not_after_timestamp_seconds - time() < 43200
+          for: 5m
+          labels:
+            severity: critical
+            component: meeting-ai-gateway
+          annotations:
+            summary: Meeting-AI gateway certificate expires within 12 hours
+            description: The active application-mTLS gateway leaf is inside the fail-closed expiry window.
+            runbook_url: docs/runbooks/RB-faz24-meeting-ai-private-gateway.md
+
+        - alert: MeetingAIGatewayTelemetryAbsent
+          expr: |
+            absent_over_time(meeting_ai_gateway_rotation_last_attempt_timestamp_seconds[15m]) == 1
+            and on() count(kube_ingress_info{namespace="platform-test",ingress="meeting-ai-private"}) > 0
+          for: 10m
+          labels:
+            severity: critical
+            component: meeting-ai-gateway
+          annotations:
+            summary: Meeting-AI gateway rotation telemetry is absent
+            description: The test private ingress is desired but staging-sw node-exporter has not exposed the gateway textfile metric for 15 minutes.
+            runbook_url: docs/runbooks/RB-faz24-meeting-ai-private-gateway.md

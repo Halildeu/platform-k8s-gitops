@@ -1,0 +1,86 @@
+{
+	admin unix//run/caddy/meeting-ai-admin.sock
+	auto_https disable_redirects
+	persist_config off
+}
+
+# GPU host (10.99.0.2) -> staging-sw (10.99.0.1), WireGuard only.
+# The dedicated client CA is issuance-policy scoped to the single meeting-ai
+# client role, constraining workload identity while permitting leaf rotation.
+https://meeting-ai-gateway.internal:9445 {
+	bind 10.99.0.1
+
+	tls /etc/platform/meeting-ai-gateway/tls/current/server.crt /etc/platform/meeting-ai-gateway/tls/current/server.key {
+		protocols tls1.2 tls1.3
+		client_auth {
+			mode require_and_verify
+			trust_pool file {
+				pem_file /etc/platform/meeting-ai-gateway/tls/client-ca.crt
+			}
+		}
+	}
+
+	log {
+		output file /var/log/platform/meeting-ai-gateway/access.json {
+			mode 0640
+			roll_size 10MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>headers>Set-Cookie delete
+			}
+		}
+	}
+
+	@health {
+		method GET
+		path /healthz
+	}
+	handle @health {
+		respond "ok" 200
+	}
+
+	@token {
+		method POST
+		path /oauth2/token
+	}
+	handle @token {
+		request_body {
+			max_size 16KiB
+		}
+		reverse_proxy http://127.0.0.1:31080 {
+			header_up Host meeting-ai-private.testai.internal
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 10s
+			}
+		}
+	}
+
+	@result {
+		method POST
+		path_regexp result ^/api/v1/internal/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/analysis-results$
+	}
+	handle @result {
+		request_body {
+			max_size 2MiB
+		}
+		reverse_proxy http://127.0.0.1:31080 {
+			header_up Host meeting-ai-private.testai.internal
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 20s
+			}
+		}
+	}
+
+	# No generic proxy fallback. Wrong method, identity or path is not routed.
+	handle {
+		respond 404
+	}
+}

@@ -1,0 +1,40 @@
+# Dedicated private-gateway upstream allows. The shared ingress policy does not
+# include backend ports 8088/8097. These selectors keep the additional exposure
+# limited to auth-service and meeting-service from ingress-nginx only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-meeting-ai-private-ingress-auth
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8088
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-meeting-ai-private-ingress-meeting
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: meeting-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8097

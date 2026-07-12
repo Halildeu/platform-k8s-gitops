@@ -78,6 +78,7 @@ resources:
   # (percentiles-histogram disabled → no _bucket series → would be fake coverage).
   # absent()-free → inert in prod (services D30-deferred → no Service → SM empty).
   - meeting-transcript-rule.yaml
+  - meeting-ai-gateway-rule.yaml      # Faz 24 #2321: host cert rotation failure/staleness/expiry
   - alertmanager-bridge           # Codex Sprint A follow-up — AlertManager → GitHub Issues bridge
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values

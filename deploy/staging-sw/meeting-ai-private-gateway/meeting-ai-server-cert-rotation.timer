@@ -1,0 +1,11 @@
+[Unit]
+Description=Eight-hourly Faz 24 Meeting-AI gateway certificate rotation
+
+[Timer]
+OnCalendar=*-*-* 02,10,18:15:00 Europe/Istanbul
+RandomizedDelaySec=10m
+Persistent=true
+Unit=meeting-ai-server-cert-rotation.service
+
+[Install]
+WantedBy=timers.target
