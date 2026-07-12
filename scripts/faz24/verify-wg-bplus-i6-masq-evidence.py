@@ -19,17 +19,23 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v1"
+SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v2"
+VERIFICATION_SCHEMA_VERSION = "faz24.wg-bplus.i6.masq-evidence-verification.v2"
+OWNED_NAT_CHAIN = "K3D_WG_MASQ_NAT"
 
 REQUIRED_CHECK_IDS = [
-    "host-namespace-nat-rule-present",
-    "pod-cidr-to-wg-masq-rule",
-    "pod-to-platform-ai-http",
+    "cluster-identity-bound",
+    "effective-cluster-cidr-matches-config",
+    "node-pod-cidrs-within-cluster-cidr",
+    "host-owned-chain-authority",
+    "peer-route-is-wireguard-path",
+    "pod-to-wg-peer-tcp-connect",
+    "snat-rule-counter-traversal",
     "reboot-persistence",
     "drift-detect",
     "rollback-defined",
-    "daemonset-not-assumed",
     "no-broad-lan-nat",
+    "daemonset-not-assumed",
 ]
 
 REDACTION_FLAGS = [
@@ -86,6 +92,17 @@ SECRET_VALUE_PATTERNS = [
 UTC_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 NAME_RE = re.compile(r"^[A-Za-z0-9_.:@-]{1,96}$")
 HASH_RE = re.compile(r"^[0-9a-f]{16}([0-9a-f]{48})?$")
+HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+
+# Same positive belt policy the collector enforces; re-declared here so the
+# verifier is an INDEPENDENT authority (it must not trust the collector's own
+# beltPolicyOk flag).
+CONTEXT_CIDR_POLICY = {
+    "k3d-test": "10.44.0.0/16",
+    "k3d-prod": "10.42.0.0/16",
+}
+# I6 acceptance-grade minimum fresh TCP connects. Rejects 0/1/2 as vacuous.
+MIN_PROBE_ATTEMPTS = 3
 
 
 @dataclass
@@ -227,7 +244,15 @@ def validate_topology(data: dict[str, Any]) -> list[Finding]:
         return [Finding("topology", "topology must be an object")]
 
     require_name(findings, "topology.clusterName", topology.get("clusterName"))
-    require_cidr(findings, "topology.podCIDR", topology.get("podCIDR"))
+    require_cidr(findings, "topology.clusterCIDR", topology.get("clusterCIDR"))
+
+    node_cidrs = topology.get("nodePodCIDRs")
+    if not isinstance(node_cidrs, list) or not node_cidrs:
+        findings.append(Finding("node_pod_cidrs", "topology.nodePodCIDRs must be a non-empty list"))
+    else:
+        for index, node_cidr in enumerate(node_cidrs):
+            require_cidr(findings, f"topology.nodePodCIDRs[{index}]", node_cidr)
+
     if "serviceCIDR" in topology and topology.get("serviceCIDR") not in ("", None):
         require_cidr(findings, "topology.serviceCIDR", topology.get("serviceCIDR"))
     require_name(findings, "topology.wgInterface", topology.get("wgInterface"))
@@ -262,6 +287,8 @@ def validate_mechanism(data: dict[str, Any]) -> list[Finding]:
         findings.append(Finding("iptables_table", "mechanism.iptablesTable must be 'nat'"))
     if mechanism.get("iptablesChain") != "POSTROUTING":
         findings.append(Finding("iptables_chain", "mechanism.iptablesChain must be 'POSTROUTING'"))
+    if mechanism.get("ownedNatChain") != OWNED_NAT_CHAIN:
+        findings.append(Finding("owned_nat_chain", f"mechanism.ownedNatChain must be '{OWNED_NAT_CHAIN}'"))
     require_hash(findings, "mechanism.expectedRuleHash", mechanism.get("expectedRuleHash"))
 
     return findings
@@ -344,6 +371,271 @@ def validate_checks(data: dict[str, Any]) -> list[Finding]:
     return findings
 
 
+def _obj(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _norm_cidr(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        network = ipaddress.ip_network(value, strict=True)
+    except ValueError:
+        return None
+    if network.version != 4:
+        return None
+    return str(network)
+
+
+def _subnet_of(child: Any, parent: Any) -> bool:
+    if not isinstance(child, str) or not isinstance(parent, str):
+        return False
+    try:
+        return ipaddress.ip_network(child).subnet_of(ipaddress.ip_network(parent))
+    except (ValueError, TypeError):
+        return False
+
+
+def _is_hash(value: Any) -> bool:
+    return isinstance(value, str) and bool(HASH_RE.match(value))
+
+
+def _is_plain_int(value: Any) -> bool:
+    """True only for real ints, never bool.
+
+    Guards against the type-confusion bypass where ``True``/``False`` satisfy
+    ``isinstance(x, int)`` and compare equal to 1/0 (so a bool counter/exit-code
+    could otherwise pass an arithmetic or ``== 0`` check).
+    """
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _nonempty_str(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
+    """Independently re-derive every v2 check from collector.* + topology metadata.
+
+    ``status == "pass"`` on a check remains NECESSARY (enforced by validate_checks)
+    but is NOT SUFFICIENT. This layer recomputes each pass predicate from the raw
+    metadata and rejects evidence whose declared pass contradicts what the metadata
+    actually says — closing the v1 false-positive structure. Fail-closed: any
+    missing/None/wrong-typed field yields a Finding.
+    """
+    findings: list[Finding] = []
+
+    def fail(check_id: str, message: str) -> None:
+        findings.append(Finding("check_semantic", f"{check_id}: {message}"))
+
+    collector = _obj(data.get("collector"))
+    topology = _obj(data.get("topology"))
+    mechanism = _obj(data.get("mechanism"))
+    rollback = _obj(data.get("rollback"))
+
+    cluster_cidr = topology.get("clusterCIDR")
+    wg_interface = topology.get("wgInterface")
+    context = topology.get("clusterName")
+
+    # 1) cluster-identity-bound
+    ci = _obj(collector.get("clusterIdentity"))
+    cid = "cluster-identity-bound"
+    if ci.get("bound") is not True:
+        fail(cid, "collector.clusterIdentity.bound must be true")
+    if ci.get("uidResolved") is not True:
+        fail(cid, "uidResolved must be true")
+    if not _is_hash(ci.get("clusterUidHash")):
+        fail(cid, "clusterUidHash must be a sha256 hash")
+    if not _is_hash(ci.get("apiServerHostHash")):
+        fail(cid, "apiServerHostHash must be a sha256 hash")
+    if not _nonempty_str(ci.get("nodeName")):
+        fail(cid, "nodeName must be non-empty")
+    if not _nonempty_str(ci.get("dockerNetwork")):
+        fail(cid, "dockerNetwork must be non-empty")
+    # Positive belt: the context MUST be a supported one; an unknown clusterName
+    # is rejected rather than silently skipping the policy.
+    if not isinstance(context, str) or context not in CONTEXT_CIDR_POLICY:
+        fail(cid, "clusterName must be a supported context (k3d-test or k3d-prod)")
+    elif _norm_cidr(cluster_cidr) != CONTEXT_CIDR_POLICY[context]:
+        fail(cid, f"belt policy: {context} requires clusterCIDR {CONTEXT_CIDR_POLICY[context]}")
+
+    # 2) effective-cluster-cidr-matches-config
+    ec = _obj(collector.get("effectiveCidr"))
+    cid = "effective-cluster-cidr-matches-config"
+    eff = _norm_cidr(ec.get("effectiveClusterCidr"))
+    conf = _norm_cidr(ec.get("configuredClusterCidr"))
+    if eff is None or conf is None:
+        fail(cid, "effective and configured cluster CIDR must both be valid CIDRs")
+    elif eff != conf:
+        fail(cid, "effectiveClusterCidr must equal configuredClusterCidr")
+    if ec.get("sourcesConflict") is not False:
+        fail(cid, "sourcesConflict must be false")
+    # The "effective" CIDR must be backed by at least one VALID observed source
+    # (config.yaml or /proc/1/cmdline); a self-declared effective with no valid
+    # observation is rejected, and any present source must equal effective.
+    cs = ec.get("configSourceCidr")
+    ms = ec.get("cmdlineSourceCidr")
+    ncs = _norm_cidr(cs) if cs is not None else None
+    nms = _norm_cidr(ms) if ms is not None else None
+    if cs is not None and ncs is None:
+        fail(cid, "configSourceCidr present but invalid")
+    if ms is not None and nms is None:
+        fail(cid, "cmdlineSourceCidr present but invalid")
+    if ncs is None and nms is None:
+        fail(cid, "at least one valid observed CIDR source (config.yaml or cmdline) is required")
+    if ncs is not None and eff is not None and ncs != eff:
+        fail(cid, "configSourceCidr must equal effectiveClusterCidr")
+    if nms is not None and eff is not None and nms != eff:
+        fail(cid, "cmdlineSourceCidr must equal effectiveClusterCidr")
+    if ncs is not None and nms is not None and ncs != nms:
+        fail(cid, "observed CIDR sources disagree")
+
+    # 3) node-pod-cidrs-within-cluster-cidr (recompute containment from topology)
+    cid = "node-pod-cidrs-within-cluster-cidr"
+    node_cidrs = topology.get("nodePodCIDRs")
+    if not isinstance(node_cidrs, list) or not node_cidrs:
+        fail(cid, "topology.nodePodCIDRs must be a non-empty list")
+    else:
+        if _norm_cidr(cluster_cidr) is None:
+            fail(cid, "topology.clusterCIDR must be a valid CIDR for containment")
+        for node_cidr in node_cidrs:
+            if _norm_cidr(node_cidr) is None:
+                fail(cid, f"node podCIDR {node_cidr!r} is not a valid CIDR")
+            elif not _subnet_of(node_cidr, cluster_cidr):
+                fail(cid, f"node podCIDR {node_cidr} is not contained within clusterCIDR {cluster_cidr}")
+
+    # 4) host-owned-chain-authority
+    hc = _obj(collector.get("hostOwnedChain"))
+    cid = "host-owned-chain-authority"
+    if hc.get("scriptFound") is not True:
+        fail(cid, "scriptFound must be true")
+    if not _is_plain_int(hc.get("checkExitCode")) or hc.get("checkExitCode") != 0:
+        fail(cid, "checkExitCode must be integer 0")
+    canonical_sha = hc.get("canonicalSha256")
+    if not (isinstance(canonical_sha, str) and HEX64_RE.match(canonical_sha)):
+        fail(cid, "canonicalSha256 must be 64 lowercase hex chars")
+    if hc.get("installedProvided") is True:
+        installed_sha = hc.get("installedSha256")
+        if not (isinstance(installed_sha, str) and installed_sha == canonical_sha):
+            fail(cid, "installedSha256 must equal canonicalSha256")
+        if hc.get("shaMatches") is not True:
+            fail(cid, "shaMatches must be true when an installed script is provided")
+
+    # 5) peer-route-is-wireguard-path
+    pr = _obj(collector.get("peerRoute"))
+    cid = "peer-route-is-wireguard-path"
+    if pr.get("routeResolved") is not True:
+        fail(cid, "routeResolved must be true")
+    if not (isinstance(pr.get("routeDevice"), str) and pr.get("routeDevice") == wg_interface):
+        fail(cid, "routeDevice must equal topology.wgInterface")
+    if pr.get("allowedIpsCoverPeer") is not True:
+        fail(cid, "allowedIpsCoverPeer must be true")
+    if not _is_hash(pr.get("peerFingerprint")):
+        fail(cid, "peerFingerprint must be a sha256 hash")
+
+    # 6) pod-to-wg-peer-tcp-connect
+    pp = _obj(collector.get("podProbe"))
+    cid = "pod-to-wg-peer-tcp-connect"
+    pp_attempts = pp.get("attempts")
+    pp_success = pp.get("successCount")
+    if not _is_plain_int(pp_attempts) or pp_attempts < MIN_PROBE_ATTEMPTS:
+        fail(cid, f"attempts must be an int >= {MIN_PROBE_ATTEMPTS} (non-vacuous acceptance grade)")
+    if not _is_plain_int(pp_success) or pp_success != pp_attempts:
+        fail(cid, "successCount must equal attempts")
+    if pp.get("ncMissing") is not False:
+        fail(cid, "ncMissing must be false")
+    if pp.get("podWithinNodeCidr") is not True:
+        fail(cid, "podWithinNodeCidr must be true")
+    # attemptExitCodes is MANDATORY: without the per-attempt evidence the verifier
+    # would be trusting the self-declared successCount.
+    codes = pp.get("attemptExitCodes")
+    if not isinstance(codes, list):
+        fail(cid, "attemptExitCodes must be a list")
+    elif not _is_plain_int(pp_attempts) or len(codes) != pp_attempts:
+        fail(cid, "len(attemptExitCodes) must equal attempts")
+    elif not all(_is_plain_int(code) and code == 0 for code in codes):
+        fail(cid, "every attempt exit code must be integer 0")
+    else:
+        recomputed = sum(1 for code in codes if code == 0)
+        if not _is_plain_int(pp_success) or pp_success != recomputed:
+            fail(cid, "successCount must equal recomputed count of zero exit codes")
+
+    # 7) snat-rule-counter-traversal (+ cross-check with check 6)
+    ct = _obj(collector.get("counterTraversal"))
+    cid = "snat-rule-counter-traversal"
+    if ct.get("ruleStable") is not True:
+        fail(cid, "ruleStable must be true")
+    if ct.get("counterNotReset") is not True:
+        fail(cid, "counterNotReset must be true")
+    counter_before = ct.get("counterBefore")
+    counter_after = ct.get("counterAfter")
+    counter_delta = ct.get("counterDelta")
+    if not _is_plain_int(counter_before) or counter_before < 0:
+        fail(cid, "counterBefore must be an int >= 0")
+    if not _is_plain_int(counter_after):
+        fail(cid, "counterAfter must be an int")
+    if _is_plain_int(counter_before) and _is_plain_int(counter_after) and counter_after < counter_before:
+        fail(cid, "counterAfter must be >= counterBefore")
+    if not _is_plain_int(counter_delta):
+        fail(cid, "counterDelta must be an int")
+    elif _is_plain_int(counter_before) and _is_plain_int(counter_after) and counter_delta != counter_after - counter_before:
+        fail(cid, "counterDelta must equal counterAfter - counterBefore")
+    fp_before = ct.get("ruleFingerprintBeforeHash")
+    fp_after = ct.get("ruleFingerprintAfterHash")
+    if not _is_hash(fp_before) or not _is_hash(fp_after):
+        fail(cid, "ruleFingerprintBeforeHash and ruleFingerprintAfterHash must both be hashes")
+    elif fp_before != fp_after:
+        fail(cid, "ruleFingerprintBeforeHash must equal ruleFingerprintAfterHash")
+    ct_attempts = ct.get("attempts")
+    ct_success = ct.get("successCount")
+    if not _is_plain_int(ct_attempts) or ct_attempts < MIN_PROBE_ATTEMPTS:
+        fail(cid, f"attempts must be an int >= {MIN_PROBE_ATTEMPTS}")
+    if not _is_plain_int(ct_success) or ct_success != ct_attempts:
+        fail(cid, "successCount must equal attempts")
+    if _is_plain_int(counter_delta) and _is_plain_int(ct_attempts) and counter_delta < ct_attempts:
+        fail(cid, "counterDelta must be >= attempts")
+    # cross-check the two checks agree and the TCP gate actually passed
+    if _is_plain_int(pp_attempts) and _is_plain_int(ct_attempts) and pp_attempts != ct_attempts:
+        fail(cid, "podProbe.attempts must equal counterTraversal.attempts")
+    if _is_plain_int(pp_success) and _is_plain_int(ct_success) and pp_success != ct_success:
+        fail(cid, "podProbe.successCount must equal counterTraversal.successCount")
+    if _is_plain_int(pp_success) and _is_plain_int(pp_attempts) and pp_success != pp_attempts:
+        fail(cid, "TCP gate: podProbe.successCount must equal podProbe.attempts")
+
+    # 8) reboot-persistence
+    systemd = _obj(collector.get("systemd"))
+    cid = "reboot-persistence"
+    if not (systemd.get("enabled") is True and systemd.get("active") is True and systemd.get("hasExecStart") is True):
+        fail(cid, "systemd unit must be enabled, active, and expose ExecStart")
+
+    # 9) drift-detect
+    cid = "drift-detect"
+    if not (systemd.get("driftTimerActive") is True or systemd.get("driftTimerEnabled") is True):
+        fail(cid, "drift timer must be active or enabled")
+
+    # 10) rollback-defined
+    cid = "rollback-defined"
+    if systemd.get("hasExecStop") is not True:
+        fail(cid, "systemd ExecStop must be present")
+    if rollback.get("tested") is not True:
+        fail(cid, "rollback.tested must be true")
+
+    # 11) no-broad-lan-nat
+    broad = _obj(collector.get("broadNat"))
+    cid = "no-broad-lan-nat"
+    if broad.get("queryable") is not True:
+        fail(cid, "nat table must be queryable")
+    if broad.get("broadNatDetected") is not False:
+        fail(cid, "broadNatDetected must be false")
+
+    # 12) daemonset-not-assumed
+    cid = "daemonset-not-assumed"
+    if mechanism.get("daemonSetAssumed") is not False:
+        fail(cid, "mechanism.daemonSetAssumed must be false")
+
+    return findings
+
+
 def validate_evidence(data: dict[str, Any]) -> list[Finding]:
     findings: list[Finding] = []
     findings.extend(validate_no_leaks(data))
@@ -352,6 +644,7 @@ def validate_evidence(data: dict[str, Any]) -> list[Finding]:
     findings.extend(validate_mechanism(data))
     findings.extend(validate_drift_and_rollback(data))
     findings.extend(validate_checks(data))
+    findings.extend(validate_v2_check_semantics(data))
     return findings
 
 
@@ -369,7 +662,7 @@ def main(argv: list[str]) -> int:
         findings.extend(validate_evidence(data))
 
     summary = {
-        "schemaVersion": "faz24.wg-bplus.i6.masq-evidence-verification.v1",
+        "schemaVersion": VERIFICATION_SCHEMA_VERSION,
         "status": "pass" if not findings else "fail",
         "findingCount": len(findings),
         "findings": [finding.__dict__ for finding in findings],
@@ -378,7 +671,7 @@ def main(argv: list[str]) -> int:
         topology = data.get("topology") if isinstance(data.get("topology"), dict) else {}
         mechanism = data.get("mechanism") if isinstance(data.get("mechanism"), dict) else {}
         summary["clusterName"] = topology.get("clusterName")
-        summary["podCIDR"] = topology.get("podCIDR")
+        summary["clusterCIDR"] = topology.get("clusterCIDR")
         summary["wgInterface"] = topology.get("wgInterface")
         summary["mechanismType"] = mechanism.get("type")
 
@@ -394,7 +687,7 @@ def main(argv: list[str]) -> int:
 
     print("Faz24 WG-B+ I6 MASQ evidence: PASS")
     print(f"- clusterName={summary.get('clusterName')}")
-    print(f"- podCIDR={summary.get('podCIDR')}")
+    print(f"- clusterCIDR={summary.get('clusterCIDR')}")
     print(f"- wgInterface={summary.get('wgInterface')}")
     print(f"- mechanismType={summary.get('mechanismType')}")
     return 0

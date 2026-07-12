@@ -34,8 +34,8 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
                 tmpdir,
                 "--target-host",
                 "staging-sw",
-                "--pod-cidr",
-                "10.42.0.0/16",
+                "--cluster-cidr",
+                "10.44.0.0/16",
                 "--wg-interface",
                 "auto",
                 "--rollback-tested-ref",
@@ -61,19 +61,26 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
             metadata = json.loads(
                 (output / "expected-i6-host-evidence-metadata.json").read_text(encoding="utf-8")
             )
-            self.assertEqual("faz24.i6.host-evidence-package.v1", metadata["schemaVersion"])
+            self.assertEqual("faz24.i6.host-evidence-package.v2", metadata["schemaVersion"])
             self.assertEqual("staging-sw", metadata["targetHost"])
-            self.assertEqual("10.42.0.0/16", metadata["defaults"]["podCIDR"])
+            self.assertEqual("10.44.0.0/16", metadata["defaults"]["clusterCIDR"])
+            self.assertEqual("k3d-test-server-0", metadata["defaults"]["wgNode"])
+            self.assertEqual("platform-test-net", metadata["defaults"]["dockerNetwork"])
+            self.assertNotIn("podCIDR", metadata["defaults"])
             self.assertFalse(metadata["boundary"]["hostMutationByPackageBuild"])
             self.assertFalse(metadata["boundary"]["hostMutationByWrapper"])
             self.assertFalse(metadata["redaction"]["rawCommandOutputIncluded"])
 
+            wrapper_text = wrapper.read_text(encoding="utf-8")
             all_text = "\n".join(path.read_text(encoding="utf-8") for path in output.iterdir())
             self.assertNotIn("BEGIN OPENSSH PRIVATE KEY", all_text)
             self.assertNotIn("Bearer ", all_text)
             self.assertNotIn("eyJ", json.dumps(metadata))
-            self.assertIn("--protected-evidence-path", wrapper.read_text(encoding="utf-8"))
-            self.assertIn("faz24-wg-bplus-i6-masq-evidence-ingest.yml", wrapper.read_text(encoding="utf-8"))
+            self.assertIn("--cluster-cidr", wrapper_text)
+            self.assertNotIn("--pod-cidr", wrapper_text)
+            self.assertIn("--peer-host", wrapper_text)
+            self.assertIn("--protected-evidence-path", wrapper_text)
+            self.assertIn("faz24-wg-bplus-i6-masq-evidence-ingest.yml", wrapper_text)
 
             sha_result = subprocess.run(
                 ["sha256sum", "--check", "SHA256SUMS"],
@@ -91,6 +98,8 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
                 tmpdir,
                 "--target-host",
                 "staging-sw",
+                "--cluster-cidr",
+                "10.44.0.0/16",
                 "--rollback-tested-ref",
                 "rollback/" + "-----BEGIN OPENSSH " + "PRIVATE KEY-----",
             )
@@ -105,12 +114,26 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
                 tmpdir,
                 "--target-host",
                 "staging-sw",
+                "--cluster-cidr",
+                "10.44.0.0/16",
                 "--rollback-tested-ref",
                 "../rollback.json",
             )
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("must be relative and stay under protected evidence path", result.stderr)
+
+    def test_requires_cluster_cidr(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = self.run_script(
+                "--output-dir",
+                tmpdir,
+                "--target-host",
+                "staging-sw",
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("--cluster-cidr", result.stderr)
 
     def test_workflow_uploads_expected_artifact_contract(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")

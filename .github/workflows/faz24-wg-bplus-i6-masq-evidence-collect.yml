@@ -8,10 +8,10 @@ name: Faz 24 WG-B+ I6 MASQ Evidence Collect
 on:
   workflow_dispatch:
     inputs:
-      pod_cidr:
-        description: "Pod CIDR expected to be MASQed toward WireGuard"
+      cluster_cidr:
+        description: "k3s cluster CIDR (test=10.44.0.0/16, prod=10.42.0.0/16). No wrong default."
         required: true
-        default: "10.42.0.0/16"
+        default: "10.44.0.0/16"
       service_cidr:
         description: "Optional service CIDR metadata"
         required: false
@@ -20,20 +20,36 @@ on:
         description: "WireGuard interface, or auto"
         required: true
         default: "auto"
-      platform_ai_host:
-        description: "platform-ai target host/IP reached over WG"
+      peer_host:
+        description: "WireGuard peer host/IP reached over WG"
         required: true
         default: "10.99.0.2"
-      platform_ai_port:
-        description: "platform-ai target port"
+      peer_port:
+        description: "WireGuard peer TCP port"
         required: true
-        default: "8200"
+        default: "8243"
+      wg_node:
+        description: "k3d node container that owns the pod CIDR"
+        required: true
+        default: "k3d-test-server-0"
+      docker_network:
+        description: "Docker network the k3d node is attached to"
+        required: true
+        default: "platform-test-net"
+      probe_attempts:
+        description: "Fresh pod-origin TCP connects (counter traversal gate)"
+        required: true
+        default: "3"
+      installed_host_rule_script:
+        description: "Optional path to the installed host-rule script (sha must match canonical)"
+        required: false
+        default: ""
       kube_context:
         description: "Kubernetes context on staging-sw"
         required: true
         default: "k3d-test"
       namespace:
-        description: "Namespace for existing pod-origin HTTP probe"
+        description: "Namespace for the pod-origin TCP probe"
         required: true
         default: "platform-test"
       systemd_unit:
@@ -74,11 +90,15 @@ jobs:
     steps:
       - name: Validate dispatch inputs
         env:
-          POD_CIDR: ${{ inputs.pod_cidr }}
+          CLUSTER_CIDR: ${{ inputs.cluster_cidr }}
           SERVICE_CIDR: ${{ inputs.service_cidr }}
           WG_INTERFACE: ${{ inputs.wg_interface }}
-          PLATFORM_AI_HOST: ${{ inputs.platform_ai_host }}
-          PLATFORM_AI_PORT: ${{ inputs.platform_ai_port }}
+          PEER_HOST: ${{ inputs.peer_host }}
+          PEER_PORT: ${{ inputs.peer_port }}
+          WG_NODE: ${{ inputs.wg_node }}
+          DOCKER_NETWORK: ${{ inputs.docker_network }}
+          PROBE_ATTEMPTS: ${{ inputs.probe_attempts }}
+          INSTALLED_HOST_RULE_SCRIPT: ${{ inputs.installed_host_rule_script }}
           KUBE_CONTEXT: ${{ inputs.kube_context }}
           KUBE_NAMESPACE: ${{ inputs.namespace }}
           SYSTEMD_UNIT: ${{ inputs.systemd_unit }}
@@ -99,11 +119,15 @@ jobs:
             esac
           }
 
-          reject_multiline pod_cidr "${POD_CIDR}"
+          reject_multiline cluster_cidr "${CLUSTER_CIDR}"
           reject_multiline service_cidr "${SERVICE_CIDR}"
           reject_multiline wg_interface "${WG_INTERFACE}"
-          reject_multiline platform_ai_host "${PLATFORM_AI_HOST}"
-          reject_multiline platform_ai_port "${PLATFORM_AI_PORT}"
+          reject_multiline peer_host "${PEER_HOST}"
+          reject_multiline peer_port "${PEER_PORT}"
+          reject_multiline wg_node "${WG_NODE}"
+          reject_multiline docker_network "${DOCKER_NETWORK}"
+          reject_multiline probe_attempts "${PROBE_ATTEMPTS}"
+          reject_multiline installed_host_rule_script "${INSTALLED_HOST_RULE_SCRIPT}"
           reject_multiline kube_context "${KUBE_CONTEXT}"
           reject_multiline namespace "${KUBE_NAMESPACE}"
           reject_multiline systemd_unit "${SYSTEMD_UNIT}"
@@ -111,20 +135,28 @@ jobs:
           reject_multiline rollback_tested_ref "${ROLLBACK_TESTED_REF}"
           reject_multiline protected_evidence_path "${PROTECTED_EVIDENCE_PATH}"
 
-          if ! printf '%s' "${POD_CIDR}" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$'; then
-            echo "::error::pod_cidr must be IPv4 CIDR"
+          if ! printf '%s' "${CLUSTER_CIDR}" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$'; then
+            echo "::error::cluster_cidr must be IPv4 CIDR"
             exit 1
           fi
           if [ -n "${SERVICE_CIDR}" ] && ! printf '%s' "${SERVICE_CIDR}" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$'; then
             echo "::error::service_cidr must be empty or IPv4 CIDR"
             exit 1
           fi
-          if ! printf '%s' "${PLATFORM_AI_PORT}" | grep -Eq '^[0-9]{1,5}$'; then
-            echo "::error::platform_ai_port must be numeric"
+          if ! printf '%s' "${PEER_PORT}" | grep -Eq '^[0-9]{1,5}$'; then
+            echo "::error::peer_port must be numeric"
             exit 1
           fi
-          if ! printf '%s' "${WG_INTERFACE}${KUBE_CONTEXT}${KUBE_NAMESPACE}${SYSTEMD_UNIT}${DRIFT_TIMER}" | grep -Eq '^[A-Za-z0-9_.:@-]+$'; then
+          if ! printf '%s' "${PROBE_ATTEMPTS}" | grep -Eq '^[0-9]{1,2}$'; then
+            echo "::error::probe_attempts must be numeric"
+            exit 1
+          fi
+          if ! printf '%s' "${WG_INTERFACE}${PEER_HOST}${WG_NODE}${DOCKER_NETWORK}${KUBE_CONTEXT}${KUBE_NAMESPACE}${SYSTEMD_UNIT}${DRIFT_TIMER}" | grep -Eq '^[A-Za-z0-9_.:@-]+$'; then
             echo "::error::name-like inputs contain unsupported characters"
+            exit 1
+          fi
+          if [ -n "${INSTALLED_HOST_RULE_SCRIPT}" ] && printf '%s' "${INSTALLED_HOST_RULE_SCRIPT}" | grep -Eq '(^|/)\.\.(/|$)'; then
+            echo "::error::installed_host_rule_script must not contain parent traversal segments"
             exit 1
           fi
           if [ -n "${ROLLBACK_TESTED_REF}" ] && printf '%s' "${ROLLBACK_TESTED_REF}" | grep -Eq '(^/|(^|/)\.\.(/|$)|^[A-Za-z]:)'; then
@@ -137,11 +169,15 @@ jobs:
 
       - name: Collect metadata-only I6 evidence
         env:
-          POD_CIDR: ${{ inputs.pod_cidr }}
+          CLUSTER_CIDR: ${{ inputs.cluster_cidr }}
           SERVICE_CIDR: ${{ inputs.service_cidr }}
           WG_INTERFACE: ${{ inputs.wg_interface }}
-          PLATFORM_AI_HOST: ${{ inputs.platform_ai_host }}
-          PLATFORM_AI_PORT: ${{ inputs.platform_ai_port }}
+          PEER_HOST: ${{ inputs.peer_host }}
+          PEER_PORT: ${{ inputs.peer_port }}
+          WG_NODE: ${{ inputs.wg_node }}
+          DOCKER_NETWORK: ${{ inputs.docker_network }}
+          PROBE_ATTEMPTS: ${{ inputs.probe_attempts }}
+          INSTALLED_HOST_RULE_SCRIPT: ${{ inputs.installed_host_rule_script }}
           KUBE_CONTEXT: ${{ inputs.kube_context }}
           KUBE_NAMESPACE: ${{ inputs.namespace }}
           SYSTEMD_UNIT: ${{ inputs.systemd_unit }}
@@ -153,11 +189,15 @@ jobs:
           mkdir -p "${EVIDENCE_DIR}"
           python3 scripts/faz24/collect-wg-bplus-i6-masq-evidence.py \
             --output "${EVIDENCE_JSON}" \
-            --pod-cidr "${POD_CIDR}" \
+            --cluster-cidr "${CLUSTER_CIDR}" \
             --service-cidr "${SERVICE_CIDR}" \
             --wg-interface "${WG_INTERFACE}" \
-            --platform-ai-host "${PLATFORM_AI_HOST}" \
-            --platform-ai-port "${PLATFORM_AI_PORT}" \
+            --peer-host "${PEER_HOST}" \
+            --peer-port "${PEER_PORT}" \
+            --wg-node "${WG_NODE}" \
+            --docker-network "${DOCKER_NETWORK}" \
+            --probe-attempts "${PROBE_ATTEMPTS}" \
+            --installed-host-rule-script "${INSTALLED_HOST_RULE_SCRIPT}" \
             --kube-context "${KUBE_CONTEXT}" \
             --namespace "${KUBE_NAMESPACE}" \
             --systemd-unit "${SYSTEMD_UNIT}" \

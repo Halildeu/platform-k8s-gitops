@@ -41,28 +41,35 @@ accepted by this gate.
 
 ## 3. Required Evidence Surfaces
 
-The metadata JSON must include all eight checks with `status: pass`:
+The v2 schema (`faz24.wg-bplus.i6.pod-cidr-wg-masq.v2`) requires all twelve
+checks with `status: pass`. v1 evidence is rejected by the verifier. v2 binds
+the evidence to the real cluster, proves the pod-origin TCP path actually
+traverses the owned SNAT rule, and rejects a wrong `--cluster-cidr`:
 
 | Check id | Required proof |
 |---|---|
-| `host-namespace-nat-rule-present` | Host namespace contains the expected NAT owner/rule metadata. |
-| `pod-cidr-to-wg-masq-rule` | Rule source CIDR equals the selected pod CIDR and egress target is the WireGuard interface. |
-| `pod-to-platform-ai-http` | A pod-origin HTTP probe to the platform-ai target returns the expected status class. |
-| `reboot-persistence` | Host reboot or service restart persistence was proven or replayed with preserved rule hash. |
-| `drift-detect` | Drift detector or timer compares live rule hash to expected rule hash. |
-| `rollback-defined` | Rollback command/path is defined and tested without relying on raw command output. |
+| `cluster-identity-bound` | Kube context resolves to a captured kube-system UID; the `--wg-node` container exists and is attached to `--docker-network`; the same node feeds the CIDR/counter reads; and the context+cluster-cidr belt policy is consistent. Fail-closed if anything is unresolved. |
+| `effective-cluster-cidr-matches-config` | The node's EFFECTIVE k3s cluster-cidr (config.yaml, else `/proc/1/cmdline`) equals `--cluster-cidr`. If both sources disagree, FAIL. This is the cluster `/16`, not a node `/24`. |
+| `node-pod-cidrs-within-cluster-cidr` | Every node `.spec.podCIDR[s]` allocation is a subnet of `--cluster-cidr` (a node `/24` inside the `/16` is correct). Empty/unreadable → FAIL. |
+| `host-owned-chain-authority` | Canonical host-rule script `check` exits 0 and its sha256 is recorded; if `--installed-host-rule-script` is given, its sha256 must match the canonical script. No script stdout/stderr in the JSON. |
+| `peer-route-is-wireguard-path` | `ip route get <peer>` dev equals the resolved wg interface AND a `wg show <wg> allowed-ips` peer covers the peer host. Only the peer key FINGERPRINT + handshake age are stored, never raw keys. |
+| `pod-to-wg-peer-tcp-connect` | An in-CIDR Running pod completes `--probe-attempts`/`--probe-attempts` fresh TCP connects to `<peer>:<port>` via `nc`. Missing `nc`, wrong pod, or partial success → FAIL. No host fallback. |
+| `snat-rule-counter-traversal` | The owned SNAT rule fingerprint is stable across the probe, its exact counter did not reset, `counterDelta >= probe-attempts`, AND the pod TCP probe fully succeeded. The counter alone is NOT sufficient. |
+| `reboot-persistence` | Systemd unit is enabled+active with a non-empty `ExecStart`. |
+| `drift-detect` | Drift timer is active or enabled. |
+| `rollback-defined` | `ExecStop` present AND a tested rollback evidence ref is supplied. |
+| `no-broad-lan-nat` | No `-s 0.0.0.0/0` or `-s 10.0.0.0/8` MASQUERADE in the nat table or owned chain. |
 | `daemonset-not-assumed` | Evidence explicitly records that a DaemonSet is not the authority. |
-| `no-broad-lan-nat` | NAT is scoped to the pod CIDR and WireGuard egress, not `0.0.0.0/0` or broad LAN. |
 
 ## 4. Evidence Contract
 
 Write a metadata-only JSON file using schema
-`faz24.wg-bplus.i6.pod-cidr-wg-masq.v1`:
+`faz24.wg-bplus.i6.pod-cidr-wg-masq.v2`:
 
 ```json
 {
-  "schemaVersion": "faz24.wg-bplus.i6.pod-cidr-wg-masq.v1",
-  "collectedAt": "2026-06-25T03:20:00Z",
+  "schemaVersion": "faz24.wg-bplus.i6.pod-cidr-wg-masq.v2",
+  "collectedAt": "2026-07-12T03:20:00Z",
   "status": "pass",
   "protectedEvidencePath": "github-actions://Halildeu/platform-k8s-gitops/actions/runs/0",
   "redaction": {
@@ -74,12 +81,13 @@ Write a metadata-only JSON file using schema
   },
   "topology": {
     "clusterName": "k3d-test",
-    "podCIDR": "10.44.0.0/16",
+    "clusterCIDR": "10.44.0.0/16",
+    "nodePodCIDRs": ["10.44.0.0/24"],
     "serviceCIDR": "10.45.0.0/16",
     "wgInterface": "wg0",
     "platformAiTarget": {
       "host": "10.99.0.2",
-      "port": 8200
+      "port": 8243
     }
   },
   "mechanism": {
@@ -90,6 +98,7 @@ Write a metadata-only JSON file using schema
     "systemdUnit": "k3d-wg-masq.service",
     "iptablesTable": "nat",
     "iptablesChain": "POSTROUTING",
+    "ownedNatChain": "K3D_WG_MASQ_NAT",
     "expectedRuleHash": "0123456789abcdef"
   },
   "driftDetection": {
@@ -107,15 +116,20 @@ Write a metadata-only JSON file using schema
   },
   "checks": [
     {
-      "id": "host-namespace-nat-rule-present",
+      "id": "cluster-identity-bound",
       "status": "pass",
-      "observedAt": "2026-06-25T03:20:00Z",
-      "summary": "Expected host NAT rule hash is present",
-      "evidenceRef": "checks/host-namespace-nat-rule-present.json"
+      "observedAt": "2026-07-12T03:20:00Z",
+      "summary": "Kube context, cluster uid, node and docker network are bound",
+      "evidenceRef": "checks/cluster-identity-bound.json"
     }
   ]
 }
 ```
+
+The `topology.clusterCIDR` is the k3s cluster `/16` and `topology.nodePodCIDRs`
+are the per-node `/24` allocations contained within it (containment, not
+equality). `mechanism.ownedNatChain` is the host-owned chain
+`K3D_WG_MASQ_NAT`.
 
 The real bundle must include all required check ids. Evidence references are
 relative metadata paths under the protected evidence path.
@@ -155,7 +169,7 @@ Expected output:
 ```text
 Faz24 WG-B+ I6 MASQ evidence: PASS
 - clusterName=k3d-test
-- podCIDR=10.44.0.0/16
+- clusterCIDR=10.44.0.0/16
 - wgInterface=wg0
 - mechanismType=host-systemd-iptables
 ```
@@ -204,16 +218,24 @@ gh workflow run faz24-wg-bplus-i6-host-evidence-package.yml \
   --repo Halildeu/platform-k8s-gitops \
   --ref main \
   -f target_host=staging-sw \
-  -f pod_cidr=10.42.0.0/16 \
+  -f cluster_cidr=10.44.0.0/16 \
   -f wg_interface=auto \
-  -f platform_ai_host=10.99.0.2 \
-  -f platform_ai_port=8200 \
+  -f peer_host=10.99.0.2 \
+  -f peer_port=8243 \
+  -f wg_node=k3d-test-server-0 \
+  -f docker_network=platform-test-net \
+  -f probe_attempts=3 \
   -f kube_context=k3d-test \
   -f namespace=platform-test \
   -f systemd_unit=k3d-wg-masq.service \
   -f drift_timer=k3d-wg-masq.timer \
   -f rollback_tested_ref=rollback/k3d-wg-masq-dry-run.json
 ```
+
+> NOTE: `cluster_cidr` must match the target context (test=`10.44.0.0/16`,
+> prod=`10.42.0.0/16`). The collector's belt policy rejects `k3d-test`+`10.42`
+> and `k3d-prod`+`10.44` before any node query. `peer_port` is the WireGuard
+> peer's TCP port used by the pod-origin connect probe.
 
 The uploaded artifact is `faz24-i6-host-evidence-package-<run_id>`. It
 contains only:
