@@ -17,8 +17,11 @@ log "start node=$NODE pod=$POD_CIDR wg=$WG_CIDR interval=$INTERVAL"
 while true; do
   if docker ps --format '{{.Names}}' | grep -q "^${NODE}$"; then
     if ! docker exec "$NODE" iptables -w -t nat -C POSTROUTING -s "$POD_CIDR" -d "$WG_CIDR" -j MASQUERADE 2>/dev/null; then
-      docker exec "$NODE" iptables -w -t nat -A POSTROUTING -s "$POD_CIDR" -d "$WG_CIDR" -j MASQUERADE 2>/dev/null \
-        && log "RE-APPLIED node masq (was missing)" || log "FAILED apply node masq"
+      if docker exec "$NODE" iptables -w -t nat -A POSTROUTING -s "$POD_CIDR" -d "$WG_CIDR" -j MASQUERADE 2>/dev/null; then
+        log "RE-APPLIED node masq (was missing)"
+      else
+        log "FAILED apply node masq"
+      fi
     fi
   else log "node $NODE not running"; fi
   sleep "$INTERVAL"

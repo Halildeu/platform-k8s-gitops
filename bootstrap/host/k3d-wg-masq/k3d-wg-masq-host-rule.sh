@@ -1,72 +1,81 @@
 #!/usr/bin/env bash
-# k3d pod -> WireGuard-overlay host NAT + FORWARD wrapper (flannel gap, #186 / #1867).
+# k3d node -> WireGuard-overlay HOST NAT + FORWARD wrapper (flannel gap, #186 / #1867).
 #
-# Root cause of the 2026-07-12 I6 false-positive (pod->WG never actually worked):
-#   1. masq CIDR was pinned to a WRONG value (prod's 10.42.0.0/16) while the test
-#      cluster CIDR is 10.44.0.0/16 -> SNAT rule matched 0 packets.
-#   2. the host FORWARD chain is `-P DROP` (+ufw-reject-forward); the wrapper set
-#      SNAT but NEVER a FORWARD ACCEPT for bridge<->wg0, so forwarded pod/node
-#      traffic to the overlay was dropped before egress.
-#
-# This wrapper idempotently reconciles THREE host rules (apply/check/rollback):
-#   1. nat POSTROUTING SNAT : pod-CIDR -> wg0 -> host wg src (10.99.0.1)
-#   2. filter FORWARD out   : k3d bridge -> wg0 (UFW default-DROP gap)
-#   3. filter FORWARD return: wg0 -> k3d bridge
+# Two-stage SNAT: the node container masquerades pod-CIDR (10.44) -> node docker IP
+# (k3d-wg-masq.sh, inside the node). This host wrapper owns the SECOND stage —
+# node docker IP -> wg0 SNAT, plus the bridge<->wg0 FORWARD that UFW's `-P DROP`
+# otherwise blocks. Reconciled into DEDICATED, service-OWNED iptables chains so:
+#   (a) the SNAT source is the actual node IP (not the dead pod-CIDR the old I6
+#       wrapper matched -> 0 hits), so the rule really carries traffic;
+#   (b) each apply FLUSHES+rebuilds the owned chains -> stale bridge/CIDR rules
+#       cannot accumulate on docker-network recreation;
+#   (c) rollback removes only owned jumps/chains, never UFW/Docker/kube rules.
 #
 # Config is deployment desired-state (EnvironmentFile), NOT script defaults —
-# test=10.44.0.0/16, prod=10.42.0.0/16 (bootstrap/k3d-{test,prod}.yaml). Fail-closed.
-#
-# BRIDGE recreation guard (Codex 019f55eb P2): the k3d docker bridge name is
-# br-<network-id[:12]> and CHANGES if the docker network is recreated. So we
-# derive it every run from the STABLE docker network NAME (WGMASQ_NETWORK), not a
-# hard-pinned bridge id. WGMASQ_BRIDGE may override but is verified to exist.
+# test=10.44.0.0/16 + platform-test-net; prod=10.42.0.0/16 (bootstrap/k3d-*.yaml).
 set -euo pipefail
 
-POD_CIDR="${WGMASQ_POD_CIDR:?WGMASQ_POD_CIDR required (test=10.44.0.0/16, prod=10.42.0.0/16)}"
 WG_CIDR="${WGMASQ_WG_CIDR:-10.99.0.0/24}"
 WG_IF="${WGMASQ_WG_IF:-wg0}"
+NODE="${WGMASQ_NODE:?WGMASQ_NODE required (e.g. k3d-test-server-0)}"
+NET="${WGMASQ_NETWORK:?WGMASQ_NETWORK required (docker network name, e.g. platform-test-net)}"
 LOG="${WGMASQ_HOST_LOG:-/var/log/k3d-wg-masq-host-rule.log}"
+NAT_CHAIN="K3D_WG_MASQ_NAT"
+FWD_CHAIN="K3D_WG_MASQ_FWD"
 
+net_driver() { docker network inspect "$NET" -f '{{.Driver}}' 2>/dev/null; }
 resolve_bridge() {
-  if [ -n "${WGMASQ_BRIDGE:-}" ]; then
-    printf '%s' "${WGMASQ_BRIDGE}"; return 0
-  fi
-  local net="${WGMASQ_NETWORK:?WGMASQ_NETWORK or WGMASQ_BRIDGE required}"
-  local id
-  id="$(docker network inspect "${net}" -f '{{.Id}}' 2>/dev/null | cut -c1-12)"
-  [ -n "${id}" ] || { echo "cannot resolve docker network '${net}'" >&2; return 1; }
-  printf 'br-%s' "${id}"
+  local b id
+  b="$(docker network inspect "$NET" -f '{{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null)"
+  [ -n "$b" ] && { printf '%s' "$b"; return 0; }
+  id="$(docker network inspect "$NET" -f '{{.Id}}' 2>/dev/null)"
+  [[ "$id" =~ ^[0-9a-f]{12,64}$ ]] || { echo "bad/empty network id for '$NET'" >&2; return 1; }
+  printf 'br-%s' "${id:0:12}"
 }
-BRIDGE="$(resolve_bridge)"
+resolve_node_ip() {
+  local ip
+  ip="$(docker inspect "$NODE" -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" 2>/dev/null)"
+  [[ "$ip" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || { echo "cannot resolve $NODE IP on $NET" >&2; return 1; }
+  printf '%s' "$ip"
+}
+log() { printf '%s action=%s net=%s node_ip=%s bridge=%s wg=%s status=%s\n' "$(date -Is)" "${1}" "${NET}" "${NODE_IP:-?}" "${BRIDGE:-?}" "${WG_CIDR}" "${2}" >>"${LOG}" 2>/dev/null || true; }
 
-log() { printf '%s action=%s pod=%s wg=%s if=%s br=%s status=%s\n' "$(date -Is)" "${1}" "${POD_CIDR}" "${WG_CIDR}" "${WG_IF}" "${BRIDGE}" "${2}" >>"${LOG}" 2>/dev/null || true; }
-require_iface() {
-  ip link show "${WG_IF}" >/dev/null 2>&1 || { echo "wg iface ${WG_IF} missing" >&2; return 1; }
-  ip link show "${BRIDGE}" >/dev/null 2>&1 || { echo "bridge ${BRIDGE} missing (network recreated? re-derive)" >&2; return 1; }
+preflight() {
+  [ "$(net_driver)" = "bridge" ] || { echo "network '$NET' is not a bridge driver" >&2; return 1; }
+  BRIDGE="$(resolve_bridge)"; NODE_IP="$(resolve_node_ip)"
+  ip link show "$WG_IF"  >/dev/null 2>&1 || { echo "wg iface $WG_IF missing" >&2; return 1; }
+  ip link show "$BRIDGE" >/dev/null 2>&1 || { echo "bridge $BRIDGE missing (network recreated? re-derive)" >&2; return 1; }
 }
-ensure() { local t="$1"; shift; iptables -w -t "$t" -C "$@" 2>/dev/null || iptables -w -t "$t" -I "$@"; }
-drop()   { local t="$1"; shift; local n=0; while iptables -w -t "$t" -C "$@" 2>/dev/null; do iptables -w -t "$t" -D "$@"; n=$((n+1)); done; echo "$n"; }
 
 case "${1:-apply}" in
   apply)
-    require_iface
-    ensure nat    POSTROUTING -s "${POD_CIDR}" -d "${WG_CIDR}" -o "${WG_IF}" -j MASQUERADE
-    ensure filter FORWARD -i "${BRIDGE}" -o "${WG_IF}" -d "${WG_CIDR}" -j ACCEPT
-    ensure filter FORWARD -i "${WG_IF}" -o "${BRIDGE}" -s "${WG_CIDR}" -j ACCEPT
+    preflight
+    iptables -w -t nat    -N "$NAT_CHAIN" 2>/dev/null || true
+    iptables -w -t filter -N "$FWD_CHAIN" 2>/dev/null || true
+    iptables -w -t nat    -C POSTROUTING -j "$NAT_CHAIN" 2>/dev/null || iptables -w -t nat    -I POSTROUTING 1 -j "$NAT_CHAIN"
+    iptables -w -t filter -C FORWARD     -j "$FWD_CHAIN" 2>/dev/null || iptables -w -t filter -I FORWARD 1     -j "$FWD_CHAIN"
+    iptables -w -t nat -F "$NAT_CHAIN"
+    iptables -w -t nat -A "$NAT_CHAIN" -s "$NODE_IP/32" -d "$WG_CIDR" -o "$WG_IF" -j MASQUERADE
+    iptables -w -t filter -F "$FWD_CHAIN"
+    iptables -w -t filter -A "$FWD_CHAIN" -i "$BRIDGE" -o "$WG_IF" -s "$NODE_IP/32" -d "$WG_CIDR" -j ACCEPT
+    iptables -w -t filter -A "$FWD_CHAIN" -i "$WG_IF" -o "$BRIDGE" -s "$WG_CIDR" -d "$NODE_IP/32" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     log apply ensured
     ;;
   check)
-    require_iface
-    iptables -w -t nat    -C POSTROUTING -s "${POD_CIDR}" -d "${WG_CIDR}" -o "${WG_IF}" -j MASQUERADE
-    iptables -w -t filter -C FORWARD -i "${BRIDGE}" -o "${WG_IF}" -d "${WG_CIDR}" -j ACCEPT
-    iptables -w -t filter -C FORWARD -i "${WG_IF}" -o "${BRIDGE}" -s "${WG_CIDR}" -j ACCEPT
+    preflight
+    iptables -w -t nat    -C POSTROUTING -j "$NAT_CHAIN"
+    iptables -w -t filter -C FORWARD     -j "$FWD_CHAIN"
+    iptables -w -t nat    -C "$NAT_CHAIN" -s "$NODE_IP/32" -d "$WG_CIDR" -o "$WG_IF" -j MASQUERADE
+    iptables -w -t filter -C "$FWD_CHAIN" -i "$BRIDGE" -o "$WG_IF" -s "$NODE_IP/32" -d "$WG_CIDR" -j ACCEPT
+    iptables -w -t filter -C "$FWD_CHAIN" -i "$WG_IF" -o "$BRIDGE" -s "$WG_CIDR" -d "$NODE_IP/32" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     log check present
     ;;
   rollback)
-    r1="$(drop nat    POSTROUTING -s "${POD_CIDR}" -d "${WG_CIDR}" -o "${WG_IF}" -j MASQUERADE)"
-    r2="$(drop filter FORWARD -i "${BRIDGE}" -o "${WG_IF}" -d "${WG_CIDR}" -j ACCEPT)"
-    r3="$(drop filter FORWARD -i "${WG_IF}" -o "${BRIDGE}" -s "${WG_CIDR}" -j ACCEPT)"
-    log rollback "nat=${r1} fwd_out=${r2} fwd_ret=${r3}"
+    iptables -w -t nat    -D POSTROUTING -j "$NAT_CHAIN" 2>/dev/null || true
+    iptables -w -t filter -D FORWARD     -j "$FWD_CHAIN" 2>/dev/null || true
+    iptables -w -t nat    -F "$NAT_CHAIN" 2>/dev/null || true; iptables -w -t nat    -X "$NAT_CHAIN" 2>/dev/null || true
+    iptables -w -t filter -F "$FWD_CHAIN" 2>/dev/null || true; iptables -w -t filter -X "$FWD_CHAIN" 2>/dev/null || true
+    log rollback removed
     ;;
   *) echo "usage: $0 {apply|check|rollback}" >&2; exit 2 ;;
 esac

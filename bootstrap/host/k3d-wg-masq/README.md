@@ -26,7 +26,7 @@ The old I6 collector checked only "a rule with the claimed CIDR is present" — 
 |---|---|---|
 | `k3d-wg-masq.sh` | `/usr/local/sbin/` | node-container SNAT reconcile loop (`ExecStart`) |
 | `k3d-wg-masq-host-rule.sh` | `/usr/local/sbin/` | host SNAT + FORWARD apply/check/rollback |
-| `environment/k3d-test.env` | `/etc/default/k3d-wg-masq` | desired-state config (CIDR, node, network) |
+| `environment/k3d-test.conf` | `/etc/default/k3d-wg-masq` | desired-state config (CIDR, node, network) |
 | `systemd/k3d-wg-masq.service` | `/etc/systemd/system/` | main service (loop + host-rule ExecStartPost/Stop) |
 | `systemd/k3d-wg-masq-drift.service` | `/etc/systemd/system/` | oneshot drift reconcile |
 | `systemd/k3d-wg-masq.timer` | `/etc/systemd/system/` | 5-min drift re-apply |
@@ -44,8 +44,14 @@ k3d node → host docker bridge
 staging-sw wg0 → denetim 10.99.0.2:8243
 ```
 
-The host `-s 10.44 -o wg0` SNAT rule is defensive; the effective source at the host
-is the node docker IP (`172.19.x`) which is masqueraded to `10.99.0.1` on wg0 egress.
+The host stage is **owned explicitly**: `k3d-wg-masq-host-rule.sh` derives the node's
+docker IP (`172.19.x`) from the network name and installs a `-s <node-ip>/32 -o wg0`
+MASQUERADE + scoped bridge↔wg0 FORWARD into service-owned chains (`K3D_WG_MASQ_NAT`
+/ `K3D_WG_MASQ_FWD`). The SNAT source is the real node IP (not the dead `10.44` the
+old I6 wrapper matched → 0 hits), so its counter actually increments. The return rule
+is `conntrack --ctstate ESTABLISHED,RELATED` only — denetim cannot open NEW inbound
+connections to bridge containers (PG/Vault/KC). Each apply flushes+rebuilds the owned
+chains, so stale old-bridge / wrong-CIDR rules cannot accumulate on network recreation.
 
 ## Bridge-recreation guard
 
@@ -59,7 +65,7 @@ stable docker network **name** (`WGMASQ_NETWORK=k3d-k3d-test`) on every run, and
 
 ```bash
 sudo install -m 0755 k3d-wg-masq.sh k3d-wg-masq-host-rule.sh /usr/local/sbin/
-sudo install -m 0644 environment/k3d-test.env /etc/default/k3d-wg-masq
+sudo install -m 0644 environment/k3d-test.conf /etc/default/k3d-wg-masq
 sudo install -m 0644 systemd/*.service systemd/*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now k3d-wg-masq.service k3d-wg-masq.timer
