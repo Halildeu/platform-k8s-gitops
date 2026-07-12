@@ -30,8 +30,11 @@ def _valid_token() -> str:
     return _token(
         {
             "iss": "https://testai.acik.com/realms/platform-test",
+            "sub": "11111111-2222-3333-8444-555555555555",
             "azp": "platform-desktop",
             "aud": ["audio-gateway-service", "meeting-service", "frontend"],
+            "org_id": "68c73eb9-c410-37dc-aff7-5ade8fbbcbb7",
+            "tenant_id": "68c73eb9-c410-37dc-aff7-5ade8fbbcbb7",
             "tenantId": "1",
             "companyId": "1",
             "userId": "990001",

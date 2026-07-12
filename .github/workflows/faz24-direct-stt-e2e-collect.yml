@@ -248,6 +248,7 @@ jobs:
           KC_BASE_URL: ${{ inputs.keycloak_base_url }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           RUN_EXTERNAL_SMOKE: "1"
+          CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"
           SMOKE_CHUNK_FILE: ${{ steps.prepare_chunk.outputs.chunk_file }}
           SMOKE_AUDIO_FORMAT: ${{ inputs.audio_format }}
           SMOKE_SAMPLE_RATE_HZ: ${{ inputs.sample_rate_hz }}
