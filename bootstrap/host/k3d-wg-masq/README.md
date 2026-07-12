@@ -57,7 +57,7 @@ chains, so stale old-bridge / wrong-CIDR rules cannot accumulate on network recr
 
 The k3d docker bridge is `br-<network-id[:12]>` and **changes if the docker network
 is recreated**. `k3d-wg-masq-host-rule.sh` therefore **derives** the bridge from the
-stable docker network **name** (`WGMASQ_NETWORK=k3d-k3d-test`) on every run, and
+stable docker network **name** (`WGMASQ_NETWORK=platform-test-net`) on every run, and
 `require_iface` fails closed if the derived bridge is absent. Do **not** hard-pin
 `WGMASQ_BRIDGE`.
 
@@ -87,8 +87,8 @@ kubectl -n platform-test debug <ats-pod> --image=busybox:1.36 --profile=restrict
 ## Rollback
 
 ```bash
-sudo env WGMASQ_POD_CIDR=10.44.0.0/16 WGMASQ_NETWORK=k3d-k3d-test \
-  /usr/local/sbin/k3d-wg-masq-host-rule.sh rollback
+# rollback needs the same env (WGMASQ_NODE + WGMASQ_NETWORK) — source the config:
+sudo bash -c 'set -a; . /etc/default/k3d-wg-masq; /usr/local/sbin/k3d-wg-masq-host-rule.sh rollback'
 sudo systemctl disable --now k3d-wg-masq.service k3d-wg-masq.timer
 ```
 

@@ -12,7 +12,7 @@ NODE="${WGMASQ_NODE:?WGMASQ_NODE required (e.g. k3d-test-server-0)}"
 WG_CIDR="${WGMASQ_WG_CIDR:-10.99.0.0/24}"
 INTERVAL="${WGMASQ_INTERVAL:-20}"
 LOG="${WGMASQ_LOG:-/var/log/k3d-wg-masq.log}"
-log(){ printf '%s %s\n' "$(date -Is)" "$*" >>"$LOG" 2>/dev/null || true; }
+log(){ printf '%s %s\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$*" >>"$LOG" 2>/dev/null || true; }
 log "start node=$NODE pod=$POD_CIDR wg=$WG_CIDR interval=$INTERVAL"
 while true; do
   if docker ps --format '{{.Names}}' | grep -q "^${NODE}$"; then
@@ -22,6 +22,14 @@ while true; do
       else
         log "FAILED apply node masq"
       fi
+    fi
+    # bounded legacy cleanup (#1867): drop known stale 10.42 node rule when this
+    # node is NOT the 10.42 (prod) leg — a CIDR-config change left it behind.
+    if [ "$POD_CIDR" != "10.42.0.0/16" ]; then
+      while docker exec "$NODE" iptables -w -t nat -C POSTROUTING -s 10.42.0.0/16 -d "$WG_CIDR" -j MASQUERADE 2>/dev/null; do
+        docker exec "$NODE" iptables -w -t nat -D POSTROUTING -s 10.42.0.0/16 -d "$WG_CIDR" -j MASQUERADE 2>/dev/null || break
+        log "removed stale legacy 10.42 node masq"
+      done
     fi
   else log "node $NODE not running"; fi
   sleep "$INTERVAL"
