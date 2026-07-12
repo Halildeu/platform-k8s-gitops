@@ -1,0 +1,17 @@
+[Unit]
+Description=k3d-test pod->WireGuard-overlay masquerade (flannel gap, #186/#1867)
+After=docker.service
+Requires=docker.service
+
+[Service]
+EnvironmentFile=/etc/default/k3d-wg-masq
+# node-container SNAT reconcile loop
+ExecStart=/usr/local/sbin/k3d-wg-masq.sh
+# host-side SNAT + FORWARD (bridge<->wg0) apply/rollback
+ExecStartPost=/usr/local/sbin/k3d-wg-masq-host-rule.sh apply
+ExecStop=/usr/local/sbin/k3d-wg-masq-host-rule.sh rollback
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
