@@ -169,25 +169,14 @@ chmod 0600 "${bundle}"/*
 Elevated Windows PowerShell 5.1'de, secure transfer hedef dosyalarıyla:
 
 ```powershell
-$hostsPath = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
-$mapping = '10.99.0.1 meeting-ai-gateway.internal'
-$existingMapping = Select-String -LiteralPath $hostsPath `
-  -Pattern '^\s*10\.99\.0\.1\s+meeting-ai-gateway\.internal(?:\s|$)' -Quiet
-if (-not $existingMapping) {
-  if (Select-String -LiteralPath $hostsPath `
-      -Pattern '^\s*\S+\s+meeting-ai-gateway\.internal(?:\s|$)' -Quiet) {
-    throw 'meeting-ai-gateway.internal already maps to another address.'
-  }
-  Add-Content -LiteralPath $hostsPath -Value "`r`n$mapping" -Encoding ASCII
-  ipconfig.exe /flushdns | Out-Null
-}
-$resolvedGateway = @([Net.Dns]::GetHostAddresses('meeting-ai-gateway.internal') |
-  Where-Object { $_.ToString() -eq '10.99.0.1' } |
-  Select-Object -First 1)
-if ($resolvedGateway.Count -ne 1) { throw 'Private gateway DNS resolution failed.' }
+Set-Location C:\platform-ai
+.\deploy\gpu-host\configure-private-gateway-host.ps1 `
+  -TestHostShim `
+  -GatewayHostname 'meeting-ai-gateway.internal' `
+  -GatewayIPv4 '10.99.0.1' `
+  -Confirm:$false
 
 $secret = Read-Host 'meeting-ai OAuth client secret' -AsSecureString
-Set-Location C:\platform-ai
 .\deploy\gpu-host\configure-meeting-ai.ps1 `
   -MeetingServiceBaseUrl 'https://meeting-ai-gateway.internal:9445' `
   -MeetingServiceTokenUrl 'https://meeting-ai-gateway.internal:9445/oauth2/token' `
@@ -203,6 +192,16 @@ Remove-Item -LiteralPath C:\secure-transfer\server-ca.crt, `
 schtasks.exe /End /TN platform-ai-meeting-ai 2>$null
 schtasks.exe /Run /TN platform-ai-meeting-ai
 ```
+
+Hosts bootstrap kaynağı en az `platform-ai` PR
+[#252](https://github.com/Halildeu/platform-ai/pull/252) merge commit'i
+`9b3d864cc2c5b7f8f18325485e04625c05aaf8c6` içermelidir. Script test-only
+managed block, aktif çakışma reddi, canonical IPv4/hostname validation,
+same-directory atomik replace, semantic ACL postcondition, backup/restore/remove
+ve DNS flush + exact IPv4 doğrulaması uygular. Resolver doğrulaması başarısızsa
+hosts dosyasını pre-mutation backup'tan otomatik geri alır. Production'da hosts
+shim kullanılmaz; `meeting-ai-gateway.internal` split-horizon private DNS ile
+çözülür. Ad çözümleme mTLS SAN/CA doğrulamasının yerine geçmez.
 
 ## 6. Fail-closed doğrulama
 
@@ -234,6 +233,19 @@ tamamını içermelidir:
 ## 7. Rollback
 
 Önce GPU ingestion default-off yapılır ve task kontrollü restart edilir. Sonra:
+
+```powershell
+Set-Location C:\platform-ai
+.\deploy\gpu-host\configure-private-gateway-host.ps1 `
+  -TestHostShim -Remove -Confirm:$false
+```
+
+Hosts rollback yalnız platform-ai managed block'unu ve varsa eski runbook'un
+aynı hedefe ait dedicated legacy satırını kaldırır; diğer hosts girdileri
+korunur. Son pre-mutation state'e dönmek gerekiyorsa `-Remove` yerine
+`-RestoreBackup` kullanılır.
+
+Gateway host servisleri için:
 
 ```bash
 sudo systemctl disable --now meeting-ai-server-cert-rotation.timer
