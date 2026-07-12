@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 39d-2c — platform-test KC realm: ats-api client + 12 client-role +
+# 39d-2c/39d-11 — platform-test KC realm: ats-api client + 12 client-role (11 PERMS + atanmayan export.repair) +
 # audience/permission client-scope'ları + persona rol atamaları.
 # Model: Codex 019f50b7 verdict A — permission scope'lar DEFAULT (yetki değil);
 # gerçek yetki YALNIZ ats-api client-role atamasıyla (rol-kapısı ats#96).
@@ -49,7 +49,7 @@ else
   echo "KC: ats-api client exists"
 fi
 
-# --- 2) 12 client-role ---
+# --- 2) client-role'ler (11 PERMS + atanmayan export.repair) ---
 # 39d-8..11: ats.export.read (receipt/artifact salt-okuma) PERMS'te — operator
 # sınıfına atanır. ats.export.repair BİLEREK PERMS DIŞI: rol+scope oluşturulur
 # ama HİÇBİR persona'ya otomatik ATANMAZ (runbook R4 onay-kapısı — Codex 39d-11).
@@ -113,7 +113,7 @@ else
   echo "KC: ats-tenant-claim-mapper exists"
 fi
 
-# --- 4) 11+1 permission client-scope (scope claim'ine ad girsin) ---
+# --- 4) permission client-scope'lar (11 PERMS + repair; scope claim'ine ad girsin) ---
 for p in $PERMS $REPAIR_PERM; do
   SID=$(kc get client-scopes -r $REALM --fields id,name --format csv --noquotes 2>/dev/null | awk -F, -v n="$p" '$2==n{print $1}' | head -1 || true)
   if [ -z "$SID" ]; then
@@ -142,10 +142,10 @@ for name in ats-api-audience $PERMS $REPAIR_PERM; do
     echo "KC: frontend += default-scope $name"
   fi
 done
-echo "KC: frontend default-scopes bound (audience + 10 permission)"
+echo "KC: frontend default-scopes bound (audience + 11 permission + repair)"
 
 # --- 6) persona'lar + rol atamaları ---
-# admin@example.com (test super-admin; yalnız ROL eklenir — şifreye dokunulmaz): operator (10 rol)
+# admin@example.com (test super-admin; yalnız ROL eklenir — şifreye dokunulmaz): operator (11 rol; repair HARİÇ)
 # ats-reader-persona: yalnız read; ats-reviewer-persona: consent/ingest/review/citation
 ensure_user() { # $1=username -> stdout id
   local uid
@@ -215,9 +215,9 @@ echo "KC: 4 persona şifresi set + Vault kv/platform/ats-smoke seed"
 # --- FINAL ASSERT (Codex 019f50b7 P1: fail-open yerine dogrulanmis durum) ---
 fail=0
 ROLE_N=$(kc get "clients/$ATS_CID/roles" -r $REALM --fields name --format csv --noquotes | grep -c '^ats\.') || true
-[ "$ROLE_N" -eq 10 ] || { echo "ASSERT FAIL: ats-api rol sayisi=$ROLE_N (10 bekleniyor)" >&2; fail=1; }
+[ "$ROLE_N" -eq 12 ] || { echo "ASSERT FAIL: ats-api rol sayisi=$ROLE_N (12 bekleniyor: 11 PERMS + export.repair)" >&2; fail=1; }
 BOUND_N=$(kc get "clients/$FE_CID/default-client-scopes" -r $REALM --fields name --format csv --noquotes | grep -cE '^(ats\.|ats-api-audience)') || true
-[ "$BOUND_N" -eq 11 ] || { echo "ASSERT FAIL: frontend default ats-scope sayisi=$BOUND_N (11 bekleniyor)" >&2; fail=1; }
+[ "$BOUND_N" -eq 13 ] || { echo "ASSERT FAIL: frontend default ats-scope sayisi=$BOUND_N (13 bekleniyor: audience + 11 PERMS + repair)" >&2; fail=1; }
 # TAM-KUME esitligi (Codex 019f50b7: '>=' least-privilege drift'ini yakalamaz —
 # reader'a operator rolu eklense bile PASS olurdu; kume birebir eslesmeli)
 assert_roles_exact() { # $1=uid $2=etiket $3..=beklenen roller (tam kume)
@@ -241,5 +241,5 @@ assert_roles_exact "$OPERATOR_UID" operator $PERMS
 have_roleless=$(kc get "users/$ROLELESS_UID/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -c '^ats\.') || true
 [ "$have_roleless" -eq 0 ] || { echo "ASSERT FAIL: roleless persona rol tasiyor ($have_roleless)" >&2; fail=1; }
 [ "$fail" -eq 0 ] || exit 1
-echo "ASSERT OK: 10 rol + 11 default-scope + persona atamalari dogrulandi"
+echo "ASSERT OK: 12 rol + 13 default-scope + persona atamalari dogrulandi (export.repair ATANMAMIS rol dahil)"
 echo "DONE 39d-2c"
