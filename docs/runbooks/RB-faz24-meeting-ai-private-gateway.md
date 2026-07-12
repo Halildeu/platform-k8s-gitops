@@ -277,6 +277,27 @@ shim kullanılmaz; `meeting-ai-gateway.internal` split-horizon private DNS ile
 Canlı kabul tek başarılı istek değildir. Redacted evidence aşağıdakilerin
 tamamını içermelidir:
 
+Gateway aktivasyonundan bağımsız backend claim ve persistence matrisi staging
+hostta aşağıdaki test-only araçla çalıştırılır. Araç client secret ve JWT'yi
+yalnız proses belleğinde tutar; argv, stdout ve evidence JSON'a yazmaz. Yazma
+seçeneği yalnız PII/transcript içermeyen sentetik bir canonical result üretir:
+
+```bash
+umask 077
+python3 scripts/faz24/run_meeting_ai_private_runtime_smoke.py \
+  --context k3d-test \
+  --namespace platform-test \
+  --meeting-id '<test-meeting-uuid>' \
+  --write-synthetic-result \
+  --output /secure/evidence/faz24-meeting-ai-private-runtime-smoke.json
+```
+
+Araç test dışı context/namespace'i fail-closed reddeder. Evidence ancak yanlış
+secret/audience/permission negatifleri, exact JWT claim/TTL bağları, unauthenticated
+ingestion, ilk `201`, idempotent replay `200` ve payload conflict `409`
+beklentilerinin tamamı geçerse `accepted=true` olur. Bu backend matrisi mTLS,
+GPU outbox veya Electron viewer kabulünün yerine geçmez.
+
 1. `ss -lntp`: Meeting-AI için yalnız `10.99.0.1:9447`, `0.0.0.0:9447` yok.
    Faz 22'ye ait ayrı listener bu kontrolün parçası değildir.
 2. `firewall.sh check` PASS; başka interface/source TCP/9447 deny.

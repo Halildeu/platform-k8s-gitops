@@ -1,0 +1,8 @@
+[Unit]
+Description=Faz24 I6 k3d pod-CIDR to WireGuard MASQ+FORWARD drift reconcile
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/1867
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/k3d-wg-masq
+ExecStart=/usr/local/sbin/k3d-wg-masq-host-rule.sh apply

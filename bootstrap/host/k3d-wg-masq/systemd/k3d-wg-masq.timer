@@ -1,0 +1,11 @@
+[Unit]
+Description=Faz24 I6 k3d MASQ+FORWARD drift re-apply timer
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/issues/1867
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=k3d-wg-masq-drift.service
+
+[Install]
+WantedBy=timers.target

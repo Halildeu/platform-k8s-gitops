@@ -278,7 +278,12 @@ jobs:
             echo
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
-            echo "- Target device: \`${{ inputs.device_hostname }}\` / \`${{ inputs.device_id }}\`"
+            # Target device hostname + UUID are private endpoint identifiers
+            # (RB-faz22.6-autonomous-completion-contract.md §"private identifiers").
+            # Publish only the already-redacted session hash + the deployment name
+            # to the public #1580 comment; the raw device stays in the private
+            # evidence bundle (summary.json deviceHostname/deviceId).
+            echo "- Target device: redacted (private evidence bundle only) — session hash \`${session_hash}\`"
             echo "- Remote bridge deployment: \`${{ inputs.remote_bridge_deployment }}\`"
             echo "- Status: \`${status}\`"
             echo "- Consent wait: \`${consent_wait}\`"

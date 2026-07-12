@@ -124,10 +124,20 @@ Open acceptance boundary:
 - this rollout branch pins auth-service and meeting-service to the immutable
   `sha-20ee06d` build (`fdd91cdb...` / `e0bc7bde...`) that carries
   platform-backend#816 client-bound minting and #814 canonical aggregate read.
-  The live pods still use the previous digests until merge and Argo CD rollout;
+  PR #2343 merged and the live test Deployments now use those exact digests;
+  both are Ready with observed generation current and restart count `0`;
+- the metadata-only backend runtime matrix is accepted in
+  `docs/faz-24-evidence/2026-07-12-meeting-ai-private-runtime-smoke.json`:
+  wrong secret `401`, wrong audience/permission `400`, valid mint `200`, exact
+  `iss/aud/sub/client_id/svc/perm` bindings with `60s` TTL, unauthenticated
+  ingestion `401`, first write `201`, replay `200` and changed-payload conflict
+  `409`. The synthetic persisted run has one redacted analysis row, no decision
+  or action rows, and contains no user transcript or PII;
 - activated private listener, mTLS negative matrix, JWT claim matrix,
   idempotent result POST, outbox drain, cert rotation fire drill and Electron
-  product-path acceptance remain open and are not claimed by ESO readiness;
+  product-path acceptance remain open where not covered by the backend matrix.
+  In particular, PKI/client material, TCP/9447 activation, GPU DPAPI/outbox and
+  Electron canonical viewer replay are not proven by the internal smoke;
 - `platform-k8s-gitops#2321` and `platform-ai#198` remain active until those
   live gates are evidenced and board acceptance is deliberate.
 
@@ -4132,6 +4142,20 @@ Accepted evidence chain:
 - local verifier output was `Faz24 WG-B+ I6 MASQ evidence: PASS` with
   `clusterName=k3d-test`, `podCIDR=10.42.0.0/16`, `wgInterface=wg0`, and
   `mechanismType=host-systemd-iptables`;
+
+> **⚠️ SUPERSEDED 2026-07-12 (#1867 reopened) — this I6 acceptance was a
+> FALSE-POSITIVE.** The `podCIDR=10.42.0.0/16` above is WRONG for `k3d-test`
+> (actual cluster CIDR `10.44.0.0/16`, `bootstrap/k3d-test.yaml`), so the masq
+> rule matched **0 packets**; and the host FORWARD chain (`-P DROP` + ufw) never
+> carried a `bridge↔wg0` ACCEPT, so the pod→WireGuard(denetim) path **never
+> worked end-to-end**. Both ATS `ats-interview-evidence` (39d-5 live-STT) and
+> Faz24 `audio-gateway` (direct-STT) were affected. Fixed 2026-07-12: masq CIDR
+> → `10.44.0.0/16` + host FORWARD ACCEPT (bridge **derived** from the stable
+> docker network name so it survives network recreation), now repo-owned under
+> `bootstrap/host/k3d-wg-masq/`. Pod-origin reachability **PROVEN** (netpol-allowed
+> `nc` + `kubectl debug` in the ATS pod netns; node SNAT counter 0→1). The old
+> collector checked only "a rule with the claimed CIDR is present" — not
+> "claimed CIDR == observed cluster CIDR" nor "a pod probe traversed it".
 - GitHub ingest workflow run `28165629939` concluded `success`; job
   `83416769870` passed input validation, evidence decode, verifier, private
   material scan, summary, artifact upload, cleanup, and reject-on-fail guard;

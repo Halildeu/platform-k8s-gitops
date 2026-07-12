@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""Collect metadata-only Faz 24 WG-B+ I6 MASQ evidence on staging-sw.
+"""Collect metadata-only Faz 24 WG-B+ I6 MASQ evidence on staging-sw (schema v2).
 
 This collector is intentionally fail-closed. It may read host, systemd,
-iptables, WireGuard and Kubernetes metadata, but it does not change host
+iptables, WireGuard, Docker and Kubernetes metadata, but it does not change host
 iptables/nftables, WireGuard, Kubernetes objects, platform-ai or production
 state. Raw command output is used only in memory for parsing and is not written
 to the evidence JSON.
+
+Schema v2 hardening (2026-07-12): the v1 tools green-lit a broken pod->WireGuard
+path because they never bound the evidence to the *real* cluster the counter
+belongs to, never proved the pod-origin TCP path actually traversed the owned
+SNAT rule, and accepted a wrong ``--pod-cidr`` default. v2 binds cluster
+identity, effective cluster CIDR, node podCIDR containment, the host-owned NAT
+chain authority, the WireGuard peer route, a pod-origin TCP probe, and the owned
+SNAT counter that WRAPS that probe. The counter alone is not sufficient: unless
+the pod TCP connects actually succeed, the check fails.
 """
 
 from __future__ import annotations
@@ -24,19 +33,49 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
-SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v1"
+SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v2"
+
+# v2 required checks. Every one must be status "pass" for evidence.status "pass".
 REQUIRED_CHECK_IDS = [
-    "host-namespace-nat-rule-present",
-    "pod-cidr-to-wg-masq-rule",
-    "pod-to-platform-ai-http",
+    "cluster-identity-bound",
+    "effective-cluster-cidr-matches-config",
+    "node-pod-cidrs-within-cluster-cidr",
+    "host-owned-chain-authority",
+    "peer-route-is-wireguard-path",
+    "pod-to-wg-peer-tcp-connect",
+    "snat-rule-counter-traversal",
     "reboot-persistence",
     "drift-detect",
     "rollback-defined",
-    "daemonset-not-assumed",
     "no-broad-lan-nat",
+    "daemonset-not-assumed",
 ]
+
+# Positive context -> cluster-cidr belt. A wrong default (prod 10.42 on the test
+# node) was the 2026-07-12 I6 root cause; this rejects the mismatch before any
+# node query even runs.
+CONTEXT_CIDR_POLICY = {
+    "k3d-test": "10.44.0.0/16",
+    "k3d-prod": "10.42.0.0/16",
+}
+
+# The host-owned NAT chain that k3d-wg-masq-host-rule.sh materializes. The owned
+# SNAT MASQUERADE rule lives here; we read its exact counter, never the chain
+# aggregate.
+OWNED_NAT_CHAIN = "K3D_WG_MASQ_NAT"
+
+# I6 acceptance-grade minimum number of fresh pod-origin TCP connects. Kept in
+# lock-step with the verifier: fewer than this is a vacuous / non-acceptance
+# probe, so the collector rejects it at parse time and never self-declares pass.
+MIN_PROBE_ATTEMPTS = 3
+
+# Repo-relative canonical host-rule script (run from the repo root on staging-sw).
+DEFAULT_HOST_RULE_SCRIPT = "bootstrap/host/k3d-wg-masq/k3d-wg-masq-host-rule.sh"
+
+LOOPBACK_HOSTS = {"127.0.0.1", "0.0.0.0", "::1", "localhost", "host.docker.internal"}
 
 
 @dataclass
@@ -50,11 +89,30 @@ def now_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def now_epoch() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
+
+
+def sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def sha256_short(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    return sha256_hex(value)[:16]
 
 
-def run_command(argv: list[str], timeout: int = 12) -> CommandResult:
+def sha256_file(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def run_command(argv: list[str], timeout: int = 12, env: dict[str, str] | None = None) -> CommandResult:
+    run_env: dict[str, str] | None = None
+    if env:
+        run_env = os.environ.copy()
+        run_env.update(env)
     try:
         proc = subprocess.run(
             argv,
@@ -62,6 +120,7 @@ def run_command(argv: list[str], timeout: int = 12) -> CommandResult:
             capture_output=True,
             timeout=timeout,
             check=False,
+            env=run_env,
         )
     except FileNotFoundError:
         return CommandResult(127, "", "not-found")
@@ -120,17 +179,31 @@ def host_command_variants(name: str, args: list[str], sudo: bool = False) -> lis
     return command_variants(name, args, sudo=sudo) + nsenter_variants(name, args, sudo=sudo)
 
 
-def first_success(commands: list[list[str]], timeout: int = 12) -> CommandResult:
+def first_success(
+    commands: list[list[str]], timeout: int = 12, env: dict[str, str] | None = None
+) -> CommandResult:
     last = CommandResult(127, "", "not-run")
     best_failure: CommandResult | None = None
     for command in commands:
-        result = run_command(command, timeout=timeout)
+        result = run_command(command, timeout=timeout, env=env)
         last = result
         if result.exit_code == 0:
             return result
         if result.exit_code not in {126, 127}:
             best_failure = result
     return best_failure or last
+
+
+def resolve_command(name: str) -> str:
+    """Resolve a single argv[0] for a command, preferring one that exists on disk.
+
+    Used for the pod TCP probe where every attempt must map to exactly one
+    execution (no cross-variant retry that would double-count fresh connects).
+    """
+    for candidate in command_paths(name):
+        if os.path.exists(candidate):
+            return candidate
+    return command_paths(name)[0]
 
 
 def safe_name(value: str, fallback: str = "unknown") -> str:
@@ -148,11 +221,37 @@ def normalize_cidr(value: str) -> str | None:
     return str(network)
 
 
+def cidr_subnet_of(child: str | None, parent: str | None) -> bool:
+    if not child or not parent:
+        return False
+    try:
+        return ipaddress.ip_network(child).subnet_of(ipaddress.ip_network(parent))
+    except (ValueError, TypeError):
+        return False
+
+
+def ip_in_cidr(ip: str, cidr: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip) in ipaddress.ip_network(cidr)
+    except ValueError:
+        return False
+
+
+def derive_wg_cidr(peer_host: str) -> str:
+    try:
+        return str(ipaddress.ip_network(f"{peer_host}/24", strict=False))
+    except ValueError:
+        return "10.99.0.0/24"
+
+
+CIDR_TOKEN_RE = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3}/\d{1,2})")
+
+
 def parse_wg_interface(requested: str) -> tuple[str, dict[str, Any]]:
     if requested != "auto":
         return safe_name(requested, "wg0"), {"requested": requested, "autoDetected": False}
 
-    result = first_success(command_variants("wg", ["show", "interfaces"], sudo=True), timeout=8)
+    result = first_success(host_command_variants("wg", ["show", "interfaces"], sudo=True), timeout=8)
     interfaces = [item for item in result.stdout.split() if re.match(r"^[A-Za-z0-9_.:@-]{1,96}$", item)]
     selected = interfaces[0] if interfaces else "wg0"
     return safe_name(selected, "wg0"), {
@@ -163,17 +262,17 @@ def parse_wg_interface(requested: str) -> tuple[str, dict[str, Any]]:
     }
 
 
-def expected_rule_hash(pod_cidr: str, wg_interface: str, target_host: str, target_port: int) -> str:
+def expected_rule_hash(cluster_cidr: str, wg_interface: str, peer_host: str, peer_port: int) -> str:
     normalized = (
-        "iptables:nat:POSTROUTING:"
-        f"source={pod_cidr}:wireguard={wg_interface}:target={target_host}:{target_port}:masquerade"
+        f"iptables:nat:{OWNED_NAT_CHAIN}:cluster={cluster_cidr}:wireguard={wg_interface}:"
+        f"peer={peer_host}:{peer_port}:masquerade"
     )
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return sha256_hex(normalized)
 
 
-def rollback_hash(unit: str, pod_cidr: str, wg_interface: str, target_host: str) -> str:
-    normalized = f"rollback:{unit}:source={pod_cidr}:wireguard={wg_interface}:target={target_host}"
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+def rollback_hash(unit: str, cluster_cidr: str, wg_interface: str, peer_host: str) -> str:
+    normalized = f"rollback:{unit}:cluster={cluster_cidr}:wireguard={wg_interface}:peer={peer_host}"
+    return sha256_hex(normalized)
 
 
 def protected_evidence_path(args: argparse.Namespace) -> str:
@@ -182,6 +281,530 @@ def protected_evidence_path(args: argparse.Namespace) -> str:
     return f"github-actions://Halildeu/platform-k8s-gitops/actions/runs/{args.github_run_id}"
 
 
+def probe_attempts_type(value: str) -> int:
+    """argparse type for --probe-attempts.
+
+    Rejects anything below MIN_PROBE_ATTEMPTS so the collector can never
+    self-declare pass on a probe count the verifier would reject as vacuous /
+    non-acceptance-grade (collector and verifier share the same floor).
+    """
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"must be an integer, got {value!r}")
+    if parsed < MIN_PROBE_ATTEMPTS:
+        raise argparse.ArgumentTypeError(f"must be >= {MIN_PROBE_ATTEMPTS}, got {parsed}")
+    return parsed
+
+
+# ---------------------------------------------------------------------------
+# Check 1: cluster-identity-bound
+# ---------------------------------------------------------------------------
+def collect_cluster_identity(args: argparse.Namespace, cluster_cidr: str | None) -> dict[str, Any]:
+    ctx = args.kube_context
+
+    uid_res = first_success(
+        command_variants(
+            "kubectl",
+            ["--context", ctx, "get", "namespace", "kube-system", "-o", "jsonpath={.metadata.uid}"],
+        ),
+        timeout=15,
+    )
+    uid_value = uid_res.stdout.strip() if uid_res.exit_code == 0 else ""
+    uid_resolved = bool(uid_value)
+
+    inspect = first_success(
+        host_command_variants(
+            "docker", ["inspect", args.wg_node, "--format", "{{json .NetworkSettings.Networks}}"], sudo=True
+        ),
+        timeout=12,
+    )
+    node_exists = inspect.exit_code == 0 and inspect.stdout.strip() not in {"", "null"}
+    node_on_network = False
+    if node_exists:
+        try:
+            networks = json.loads(inspect.stdout)
+            node_on_network = isinstance(networks, dict) and args.docker_network in networks
+        except json.JSONDecodeError:
+            node_on_network = False
+
+    server_res = first_success(
+        command_variants(
+            "kubectl",
+            ["--context", ctx, "config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}"],
+        ),
+        timeout=12,
+    )
+    server_url = server_res.stdout.strip() if server_res.exit_code == 0 else ""
+    api_host = urlsplit(server_url).hostname if server_url else None
+    is_loopback = bool(api_host) and (api_host in LOOPBACK_HOSTS or api_host.startswith("127."))
+    endpoint_ok = bool(is_loopback or ctx.startswith("k3d-"))
+
+    policy_cidr = CONTEXT_CIDR_POLICY.get(ctx)
+    belt_applied = policy_cidr is not None
+    belt_ok = True
+    if belt_applied:
+        belt_ok = cluster_cidr is not None and cluster_cidr == policy_cidr
+
+    bound = bool(
+        uid_resolved
+        and node_exists
+        and node_on_network
+        and bool(server_url)
+        and endpoint_ok
+        and belt_ok
+    )
+
+    return {
+        "contextName": safe_name(ctx),
+        "clusterUidHash": sha256_short(uid_value) if uid_value else None,
+        "uidResolved": uid_resolved,
+        "nodeName": safe_name(args.wg_node),
+        "dockerNetwork": safe_name(args.docker_network),
+        "nodeExists": node_exists,
+        "nodeOnNetwork": node_on_network,
+        "apiServerHostHash": sha256_short(api_host) if api_host else None,
+        "apiServerResolved": bool(server_url),
+        "endpointIsK3dLoopback": endpoint_ok,
+        "beltPolicyApplied": belt_applied,
+        "beltPolicyExpectedCidr": policy_cidr,
+        "beltPolicyOk": belt_ok,
+        "bound": bound,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Check 2: effective-cluster-cidr-matches-config
+# ---------------------------------------------------------------------------
+def collect_effective_cluster_cidr(args: argparse.Namespace, cluster_cidr: str | None) -> dict[str, Any]:
+    node = args.wg_node
+
+    config_res = first_success(
+        host_command_variants("docker", ["exec", node, "cat", "/etc/rancher/k3s/config.yaml"], sudo=True),
+        timeout=12,
+    )
+    config_cidr: str | None = None
+    if config_res.exit_code == 0:
+        for line in config_res.stdout.splitlines():
+            if "cluster-cidr" in line:
+                match = CIDR_TOKEN_RE.search(line)
+                if match:
+                    normalized = normalize_cidr(match.group(1))
+                    if normalized:
+                        config_cidr = normalized
+                        break
+
+    cmdline_res = first_success(
+        host_command_variants("docker", ["exec", node, "cat", "/proc/1/cmdline"], sudo=True),
+        timeout=12,
+    )
+    cmdline_cidr: str | None = None
+    if cmdline_res.exit_code == 0:
+        text = cmdline_res.stdout.replace("\x00", " ")
+        match = re.search(r"--cluster-cidr[=\s]+([0-9./,]+)", text)
+        if match:
+            token = CIDR_TOKEN_RE.search(match.group(1))
+            if token:
+                cmdline_cidr = normalize_cidr(token.group(1))
+
+    sources_conflict = bool(config_cidr and cmdline_cidr and config_cidr != cmdline_cidr)
+    effective = config_cidr or cmdline_cidr
+    matches_config = bool(effective and cluster_cidr and effective == cluster_cidr)
+    passed = bool(effective) and not sources_conflict and matches_config
+
+    return {
+        "configuredClusterCidr": cluster_cidr,
+        "effectiveClusterCidr": effective,
+        "configSourceCidr": config_cidr,
+        "cmdlineSourceCidr": cmdline_cidr,
+        "sourcesConflict": sources_conflict,
+        "matchesConfig": matches_config,
+        "resolved": bool(effective),
+        "passed": passed,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Check 3: node-pod-cidrs-within-cluster-cidr
+# ---------------------------------------------------------------------------
+def collect_node_pod_cidrs(args: argparse.Namespace, cluster_cidr: str | None) -> dict[str, Any]:
+    res = first_success(
+        command_variants("kubectl", ["--context", args.kube_context, "get", "nodes", "-o", "json"]),
+        timeout=20,
+    )
+    cidrs: list[str] = []
+    readable = False
+    if res.exit_code == 0:
+        try:
+            data = json.loads(res.stdout)
+            readable = True
+            for item in data.get("items", []):
+                spec = item.get("spec", {}) if isinstance(item, dict) else {}
+                raw = [spec.get("podCIDR")] + list(spec.get("podCIDRs") or [])
+                for cidr in raw:
+                    if not cidr:
+                        continue
+                    normalized = normalize_cidr(cidr)
+                    if normalized and normalized not in cidrs:
+                        cidrs.append(normalized)
+        except json.JSONDecodeError:
+            readable = False
+
+    all_within = bool(cidrs) and all(cidr_subnet_of(cidr, cluster_cidr) for cidr in cidrs)
+    passed = readable and bool(cidrs) and cluster_cidr is not None and all_within
+
+    return {
+        "nodePodCIDRs": cidrs,
+        "clusterCidr": cluster_cidr,
+        "sourceReadable": readable,
+        "allWithinClusterCidr": all_within,
+        "passed": passed,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Check 4: host-owned-chain-authority
+# ---------------------------------------------------------------------------
+def collect_host_owned_chain(args: argparse.Namespace, wg_interface: str) -> dict[str, Any]:
+    script_path = Path(args.host_rule_script)
+    script_exists = script_path.is_file()
+    canonical_sha = sha256_file(script_path) if script_exists else None
+
+    installed_provided = bool(args.installed_host_rule_script)
+    installed_sha: str | None = None
+    if installed_provided:
+        installed_path = Path(args.installed_host_rule_script)
+        installed_sha = sha256_file(installed_path) if installed_path.is_file() else None
+    # shaMatches is vacuously true when no installed script is supplied (no drift possible),
+    # otherwise it is the recomputed equality of installed vs canonical sha256.
+    if not installed_provided:
+        sha_matches = True
+    else:
+        sha_matches = bool(installed_sha and canonical_sha and installed_sha == canonical_sha)
+
+    check_exit: int | None = None
+    if script_exists:
+        env = {
+            "WGMASQ_NODE": args.wg_node,
+            "WGMASQ_NETWORK": args.docker_network,
+            "WGMASQ_WG_CIDR": derive_wg_cidr(args.peer_host),
+            "WGMASQ_WG_IF": wg_interface,
+        }
+        res = first_success(
+            command_variants("bash", [str(script_path), "check"], sudo=True), timeout=25, env=env
+        )
+        check_exit = res.exit_code
+
+    passed = bool(
+        script_exists
+        and check_exit == 0
+        and (not installed_provided or sha_matches)
+    )
+
+    return {
+        "hostRuleScript": str(script_path),
+        "scriptFound": script_exists,
+        "canonicalSha256": canonical_sha,
+        "checkExitCode": check_exit,
+        "installedProvided": installed_provided,
+        "installedSha256": installed_sha,
+        "shaMatches": sha_matches,
+        "ownedNatChain": OWNED_NAT_CHAIN,
+        "passed": passed,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Check 5: peer-route-is-wireguard-path
+# ---------------------------------------------------------------------------
+def collect_route_interface(target_host: str) -> dict[str, Any]:
+    result = first_success(host_command_variants("ip", ["route", "get", target_host], sudo=True), timeout=6)
+    route_interface = None
+    if result.exit_code == 0:
+        match = re.search(r"\bdev\s+([A-Za-z0-9_.:@-]{1,96})\b", result.stdout)
+        if match:
+            route_interface = match.group(1)
+    return {
+        "probeExitCode": result.exit_code,
+        "targetRouteInterface": safe_name(route_interface or "", "") if route_interface else None,
+    }
+
+
+def parse_wg_peer(
+    allowed_ips_stdout: str, handshakes_stdout: str, peer_host: str
+) -> tuple[bool, str | None, int | None]:
+    """Return (covers_peer, peer_pubkey_fingerprint, handshake_age_seconds).
+
+    Never returns raw key material; only a sha256 fingerprint of the public key.
+    """
+    try:
+        peer_ip = ipaddress.ip_address(peer_host)
+    except ValueError:
+        return False, None, None
+
+    matched_pubkey: str | None = None
+    for line in allowed_ips_stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        pubkey = parts[0]
+        for token in parts[1:]:
+            if token in {"(none)", ""}:
+                continue
+            try:
+                network = ipaddress.ip_network(token, strict=False)
+            except ValueError:
+                continue
+            if peer_ip in network:
+                matched_pubkey = pubkey
+                break
+        if matched_pubkey:
+            break
+
+    if not matched_pubkey:
+        return False, None, None
+
+    handshake_age: int | None = None
+    for line in handshakes_stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2 or parts[0] != matched_pubkey:
+            continue
+        try:
+            ts = int(parts[1])
+        except ValueError:
+            continue
+        if ts > 0:
+            handshake_age = max(0, now_epoch() - ts)
+        break
+
+    return True, sha256_short(matched_pubkey), handshake_age
+
+
+def collect_peer_route(args: argparse.Namespace, wg_interface: str) -> dict[str, Any]:
+    route = collect_route_interface(args.peer_host)
+    route_dev = route.get("targetRouteInterface")
+    route_is_wg = route_dev == wg_interface
+
+    allowed = first_success(
+        host_command_variants("wg", ["show", wg_interface, "allowed-ips"], sudo=True), timeout=8
+    )
+    handshakes = first_success(
+        host_command_variants("wg", ["show", wg_interface, "latest-handshakes"], sudo=True), timeout=8
+    )
+    covers, fingerprint, handshake_age = parse_wg_peer(
+        allowed.stdout if allowed.exit_code == 0 else "",
+        handshakes.stdout if handshakes.exit_code == 0 else "",
+        args.peer_host,
+    )
+
+    route_resolved = route_dev is not None
+    passed = bool(route_is_wg and covers and wg_interface)
+
+    return {
+        "expectedWgInterface": wg_interface,
+        "routeProbeExitCode": route.get("probeExitCode"),
+        "routeResolved": route_resolved,
+        "routeDevice": route_dev,
+        "routeDevIsWireguard": route_is_wg,
+        "allowedIpsProbeExitCode": allowed.exit_code,
+        "allowedIpsCoverPeer": covers,
+        "peerFingerprint": fingerprint,
+        "handshakeAgeSeconds": handshake_age,
+        "passed": passed,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Checks 6 + 7: pod-to-wg-peer-tcp-connect + snat-rule-counter-traversal
+#
+# One traversal measurement wraps the N pod-origin TCP probes:
+#   read owned rule fingerprint + counter (before)
+#   -> run N fresh TCP connects from the selected pod
+#   -> read owned rule fingerprint + counter (after)
+# Both check 6 (TCP) and check 7 (counter) derive from this single measurement.
+# ---------------------------------------------------------------------------
+def read_owned_chain_spec(args: argparse.Namespace) -> str | None:
+    commands: list[list[str]] = []
+    for binary in ["iptables", "iptables-nft", "iptables-legacy"]:
+        commands.extend(host_command_variants(binary, ["-w", "-t", "nat", "-S", OWNED_NAT_CHAIN], sudo=True))
+    result = first_success(commands, timeout=10)
+    if result.exit_code != 0:
+        return None
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(f"-A {OWNED_NAT_CHAIN}") and "-j MASQUERADE" in stripped:
+            return stripped
+    return None
+
+
+def read_owned_chain_counter(args: argparse.Namespace) -> int | None:
+    commands = host_command_variants("iptables-save", ["-c", "-t", "nat"], sudo=True)
+    result = first_success(commands, timeout=10)
+    if result.exit_code != 0:
+        return None
+    pattern = re.compile(
+        rf"^\[(\d+):\d+\]\s+(-A {re.escape(OWNED_NAT_CHAIN)}\b.*-j MASQUERADE.*)$"
+    )
+    for line in result.stdout.splitlines():
+        match = pattern.match(line.strip())
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def select_probe_pod(args: argparse.Namespace, node_cidrs: list[str]) -> dict[str, Any]:
+    res = first_success(
+        command_variants(
+            "kubectl", ["--context", args.kube_context, "-n", args.namespace, "get", "pods", "-o", "json"]
+        ),
+        timeout=20,
+    )
+    running: list[tuple[dict[str, Any], str]] = []
+    if res.exit_code == 0:
+        try:
+            data = json.loads(res.stdout)
+            for item in data.get("items", []):
+                if not isinstance(item, dict):
+                    continue
+                if item.get("status", {}).get("phase") != "Running":
+                    continue
+                pod_ip = item.get("status", {}).get("podIP")
+                if pod_ip:
+                    running.append((item, pod_ip))
+        except json.JSONDecodeError:
+            running = []
+
+    selected = None
+    for item, pod_ip in running:
+        if any(ip_in_cidr(pod_ip, cidr) for cidr in node_cidrs):
+            selected = (item, pod_ip)
+            break
+
+    return {
+        "podFound": bool(running),
+        "selected": selected,
+        "runningCount": len(running),
+    }
+
+
+def measure_traversal(args: argparse.Namespace, node_cidrs: list[str]) -> dict[str, Any]:
+    selection = select_probe_pod(args, node_cidrs)
+    selected = selection["selected"]
+    within_node_cidr = selected is not None
+
+    spec_before = read_owned_chain_spec(args)
+    counter_before = read_owned_chain_counter(args)
+
+    attempts = args.probe_attempts
+    attempt_exit_codes: list[int] = []
+    nc_missing = False
+    pod_identity: dict[str, Any] = {}
+
+    if selected is not None:
+        item, pod_ip = selected
+        metadata = item.get("metadata", {})
+        pod_name = metadata.get("name", "")
+        pod_uid = metadata.get("uid", "")
+        node_name = item.get("spec", {}).get("nodeName", "")
+        pod_identity = {
+            "podNameHash": sha256_short(pod_name) if pod_name else None,
+            "podUidHash": sha256_short(pod_uid) if pod_uid else None,
+            "podIpHash": sha256_short(pod_ip) if pod_ip else None,
+            "podScheduledNode": safe_name(node_name) if node_name else None,
+        }
+        kubectl_bin = resolve_command("kubectl")
+        exec_argv = [
+            kubectl_bin,
+            "--context",
+            args.kube_context,
+            "-n",
+            args.namespace,
+            "exec",
+            pod_name,
+            "--",
+            "nc",
+            "-w4",
+            "-z",
+            args.peer_host,
+            str(args.peer_port),
+        ]
+        for _ in range(attempts):
+            result = run_command(exec_argv, timeout=20)
+            attempt_exit_codes.append(result.exit_code)
+            if result.exit_code in {126, 127}:
+                nc_missing = True
+
+    success_count = sum(1 for code in attempt_exit_codes if code == 0)
+
+    spec_after = read_owned_chain_spec(args)
+    counter_after = read_owned_chain_counter(args)
+
+    rule_stable = bool(spec_before and spec_after and spec_before == spec_after)
+    counter_delta: int | None = None
+    if counter_before is not None and counter_after is not None:
+        counter_delta = counter_after - counter_before
+    counter_not_reset = bool(
+        counter_before is not None and counter_after is not None and counter_after >= counter_before
+    )
+
+    # Fail-closed against vacuous truth: with attempts==0 the probe loop never runs, so
+    # success_count==attempts==0 and counter_delta>=0 would both hold trivially. Require
+    # acceptance-grade attempts (>= MIN_PROBE_ATTEMPTS) AND full success — the same floor
+    # the verifier enforces, so the collector can never self-declare a pass the verifier
+    # would reject.
+    tcp_pass = bool(
+        within_node_cidr
+        and not nc_missing
+        and attempts >= MIN_PROBE_ATTEMPTS
+        and success_count == attempts
+    )
+    counter_pass = bool(
+        rule_stable
+        and counter_not_reset
+        and counter_delta is not None
+        and attempts >= MIN_PROBE_ATTEMPTS
+        and counter_delta >= attempts
+        and success_count == attempts
+    )
+
+    fingerprint_before_hash = sha256_short(spec_before) if spec_before else None
+    fingerprint_after_hash = sha256_short(spec_after) if spec_after else None
+
+    probe_block = {
+        "namespace": safe_name(args.namespace),
+        "targetHost": args.peer_host,
+        "targetPort": args.peer_port,
+        "attempts": attempts,
+        "successCount": success_count,
+        "attemptExitCodes": attempt_exit_codes,
+        "podFound": selection["podFound"],
+        "podWithinNodeCidr": within_node_cidr,
+        "ncMissing": nc_missing,
+        "passed": tcp_pass,
+        **pod_identity,
+    }
+    counter_wrap = probe_block["successCount"] == attempts and probe_block["podWithinNodeCidr"]
+    counter_block = {
+        "ownedNatChain": OWNED_NAT_CHAIN,
+        "attempts": attempts,
+        "successCount": success_count,
+        "counterBefore": counter_before,
+        "counterAfter": counter_after,
+        "counterDelta": counter_delta,
+        "ruleFingerprintHash": fingerprint_before_hash,
+        "ruleFingerprintBeforeHash": fingerprint_before_hash,
+        "ruleFingerprintAfterHash": fingerprint_after_hash,
+        "ruleStable": rule_stable,
+        "counterNotReset": counter_not_reset,
+        "tcpProbeGateSatisfied": bool(counter_wrap),
+        "passed": counter_pass,
+    }
+    return {"probe": probe_block, "counter": counter_block}
+
+
+# ---------------------------------------------------------------------------
+# Checks 8/9/10: systemd persistence + drift + rollback
+# ---------------------------------------------------------------------------
 def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
     active = first_success(host_command_variants("systemctl", ["is-active", unit], sudo=True), timeout=6)
     enabled = first_success(host_command_variants("systemctl", ["is-enabled", unit], sudo=True), timeout=6)
@@ -213,130 +836,32 @@ def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
     }
 
 
-def collect_route_interface(target_host: str) -> dict[str, Any]:
-    result = first_success(host_command_variants("ip", ["route", "get", target_host], sudo=True), timeout=6)
-    route_interface = None
-    if result.exit_code == 0:
-        match = re.search(r"\bdev\s+([A-Za-z0-9_.:@-]{1,96})\b", result.stdout)
-        if match:
-            route_interface = match.group(1)
-    return {
-        "probeExitCode": result.exit_code,
-        "targetRouteInterface": safe_name(route_interface or "", "") if route_interface else None,
-    }
-
-
-def collect_iptables(pod_cidr: str, wg_interface: str, target_host: str) -> dict[str, Any]:
+# ---------------------------------------------------------------------------
+# Check 11: no-broad-lan-nat
+# ---------------------------------------------------------------------------
+def collect_broad_nat(args: argparse.Namespace) -> dict[str, Any]:
     commands: list[list[str]] = []
     for binary in ["iptables", "iptables-nft", "iptables-legacy"]:
-        commands.extend(host_command_variants(binary, ["-t", "nat", "-S", "POSTROUTING"], sudo=True))
+        commands.extend(host_command_variants(binary, ["-w", "-t", "nat", "-S"], sudo=True))
     commands.extend(host_command_variants("iptables-save", ["-t", "nat"], sudo=True))
     result = first_success(commands, timeout=10)
-    lines = result.stdout.splitlines() if result.exit_code == 0 else []
-    target_networks = {f"{target_host}/32"}
-    try:
-        ip = ipaddress.ip_address(target_host)
-        if ip.version == 4:
-            target_networks.add(str(ipaddress.ip_network(f"{target_host}/24", strict=False)))
-    except ValueError:
-        pass
-
-    expected_present = False
-    scoped_to_wg = False
-    broad_nat = False
-    matching_rule_count = 0
-
-    for line in lines:
-        if "-j MASQUERADE" not in line or "POSTROUTING" not in line:
-            continue
-        if re.search(r"(^|\s)-s\s+0\.0\.0\.0/0(\s|$)", line):
-            broad_nat = True
-        if re.search(r"(^|\s)-s\s+10\.0\.0\.0/8(\s|$)", line):
-            broad_nat = True
-
-        source_matches = re.search(rf"(^|\s)-s\s+{re.escape(pod_cidr)}(\s|$)", line) is not None
-        if not source_matches:
-            continue
-        matching_rule_count += 1
-        expected_present = True
-        if re.search(rf"(^|\s)-o\s+{re.escape(wg_interface)}(\s|$)", line):
-            scoped_to_wg = True
-        for network in target_networks:
-            if re.search(rf"(^|\s)-d\s+{re.escape(network)}(\s|$)", line):
-                scoped_to_wg = True
-
+    queryable = result.exit_code == 0
+    broad = False
+    if queryable:
+        for line in result.stdout.splitlines():
+            if "-j MASQUERADE" not in line:
+                continue
+            if re.search(r"(^|\s)-s\s+0\.0\.0\.0/0(\s|$)", line):
+                broad = True
+            if re.search(r"(^|\s)-s\s+10\.0\.0\.0/8(\s|$)", line):
+                broad = True
+    passed = queryable and not broad
     return {
+        "queryable": queryable,
         "probeExitCode": result.exit_code,
-        "queryable": result.exit_code == 0,
-        "expectedRulePresent": expected_present,
-        "matchingRuleCount": matching_rule_count,
-        "scopedToWireGuardPath": scoped_to_wg,
-        "broadNatDetected": broad_nat,
+        "broadNatDetected": broad,
+        "passed": passed,
     }
-
-
-def collect_pod_http_probe(
-    kube_context: str,
-    namespace: str,
-    target_host: str,
-    target_port: int,
-    path: str,
-) -> dict[str, Any]:
-    pods = first_success(
-        command_variants("kubectl", ["--context", kube_context, "-n", namespace, "get", "pods", "-o", "json"]),
-        timeout=15,
-    )
-    if pods.exit_code != 0:
-        return {"probeExitCode": pods.exit_code, "podSelected": None, "httpStatus": None, "statusClass": None}
-
-    try:
-        payload = json.loads(pods.stdout)
-    except json.JSONDecodeError:
-        return {"probeExitCode": 1, "podSelected": None, "httpStatus": None, "statusClass": None}
-
-    url = f"http://{target_host}:{target_port}{path if path.startswith('/') else '/' + path}"
-    for item in payload.get("items", []):
-        pod_name = item.get("metadata", {}).get("name", "")
-        phase = item.get("status", {}).get("phase")
-        if phase != "Running" or not pod_name:
-            continue
-        probe = first_success(
-            command_variants(
-                "kubectl",
-                [
-                    "--context",
-                    kube_context,
-                    "-n",
-                    namespace,
-                    "exec",
-                    pod_name,
-                    "--",
-                    "sh",
-                    "-c",
-                    (
-                        "if command -v curl >/dev/null 2>&1; then "
-                        "curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \"$0\"; "
-                        "elif command -v wget >/dev/null 2>&1; then "
-                        "wget -q -T 5 -O /dev/null --server-response \"$0\" 2>&1 "
-                        "| awk '/HTTP\\//{code=$2} END{print code+0}'; "
-                        "else exit 127; fi"
-                    ),
-                    url,
-                ],
-            ),
-            timeout=20,
-        )
-        code_match = re.search(r"\b([1-5][0-9][0-9])\b", probe.stdout)
-        http_status = int(code_match.group(1)) if code_match else None
-        if http_status is not None:
-            return {
-                "probeExitCode": probe.exit_code,
-                "podSelectedHash": sha256_short(pod_name),
-                "httpStatus": http_status,
-                "statusClass": f"{http_status // 100}xx",
-            }
-
-    return {"probeExitCode": 1, "podSelected": None, "httpStatus": None, "statusClass": None}
 
 
 def check(check_id: str, passed: bool, observed_at: str, summary: str) -> dict[str, str]:
@@ -351,83 +876,123 @@ def check(check_id: str, passed: bool, observed_at: str, summary: str) -> dict[s
 
 def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
     collected_at = now_utc()
-    pod_cidr = normalize_cidr(args.pod_cidr)
-    if pod_cidr is None:
-        pod_cidr = args.pod_cidr
+    cluster_cidr = normalize_cidr(args.cluster_cidr)
 
     wg_interface, wg_meta = parse_wg_interface(args.wg_interface)
     host = safe_name(socket.gethostname(), "staging-sw")
-    route = collect_route_interface(args.platform_ai_host)
+
+    identity = collect_cluster_identity(args, cluster_cidr)
+    effective = collect_effective_cluster_cidr(args, cluster_cidr)
+    node_cidrs = collect_node_pod_cidrs(args, cluster_cidr)
+    host_chain = collect_host_owned_chain(args, wg_interface)
+    peer_route = collect_peer_route(args, wg_interface)
+    traversal = measure_traversal(args, node_cidrs["nodePodCIDRs"])
     systemd = collect_systemd(args.systemd_unit, args.drift_timer)
-    iptables = collect_iptables(pod_cidr, wg_interface, args.platform_ai_host)
-    pod_probe = collect_pod_http_probe(
-        args.kube_context,
-        args.namespace,
-        args.platform_ai_host,
-        args.platform_ai_port,
-        args.probe_path,
-    )
+    broad_nat = collect_broad_nat(args)
 
-    rule_hash = expected_rule_hash(pod_cidr, wg_interface, args.platform_ai_host, args.platform_ai_port)
-    rb_hash = rollback_hash(args.systemd_unit, pod_cidr, wg_interface, args.platform_ai_host)
-
-    route_is_wg = route.get("targetRouteInterface") == wg_interface
-    host_rule_present = bool(iptables["queryable"] and iptables["expectedRulePresent"])
-    pod_rule_pass = bool(host_rule_present and (iptables["scopedToWireGuardPath"] or route_is_wg))
-    http_pass = pod_probe.get("httpStatus") is not None and 200 <= int(pod_probe["httpStatus"]) < 500
     persistence_pass = bool(systemd["enabled"] and systemd["active"] and systemd["hasExecStart"])
     drift_pass = bool(systemd["driftTimerActive"] or systemd["driftTimerEnabled"])
     rollback_pass = bool(systemd["hasExecStop"] and args.rollback_tested_ref)
-    no_broad_nat_pass = bool(iptables["queryable"] and not iptables["broadNatDetected"])
+
+    rule_hash = expected_rule_hash(
+        cluster_cidr or args.cluster_cidr, wg_interface, args.peer_host, args.peer_port
+    )
+    rb_hash = rollback_hash(args.systemd_unit, cluster_cidr or args.cluster_cidr, wg_interface, args.peer_host)
 
     checks = [
         check(
-            "host-namespace-nat-rule-present",
-            host_rule_present,
+            "cluster-identity-bound",
+            identity["bound"],
             collected_at,
-            "Expected host NAT rule metadata is present" if host_rule_present else "Expected host NAT rule metadata is missing or not queryable",
+            "Kube context, cluster uid, node and docker network are bound and belt-policy consistent"
+            if identity["bound"]
+            else "Cluster identity is not bound (unresolved uid/node/network/endpoint or belt-policy mismatch)",
         ),
         check(
-            "pod-cidr-to-wg-masq-rule",
-            pod_rule_pass,
+            "effective-cluster-cidr-matches-config",
+            effective["passed"],
             collected_at,
-            "Pod CIDR MASQ rule is scoped to WireGuard path" if pod_rule_pass else "Pod CIDR MASQ rule is not proven scoped to WireGuard path",
+            "Effective node cluster-cidr matches the configured cluster CIDR"
+            if effective["passed"]
+            else "Effective node cluster-cidr is unresolved, conflicting, or does not match configured cluster CIDR",
         ),
         check(
-            "pod-to-platform-ai-http",
-            http_pass,
+            "node-pod-cidrs-within-cluster-cidr",
+            node_cidrs["passed"],
             collected_at,
-            f"Pod-origin HTTP probe status class {pod_probe.get('statusClass')}" if http_pass else "Pod-origin HTTP probe did not return bounded HTTP status",
+            "Every node podCIDR allocation is contained within the cluster CIDR"
+            if node_cidrs["passed"]
+            else "Node podCIDR allocations are unreadable, empty, or not contained within the cluster CIDR",
+        ),
+        check(
+            "host-owned-chain-authority",
+            host_chain["passed"],
+            collected_at,
+            "Canonical host-rule script check passed and (if provided) installed script matches canonical sha256"
+            if host_chain["passed"]
+            else "Host-owned chain authority not proven (missing script, non-zero check, or installed sha mismatch)",
+        ),
+        check(
+            "peer-route-is-wireguard-path",
+            peer_route["passed"],
+            collected_at,
+            "Peer route egresses the WireGuard interface and a peer AllowedIPs covers the target"
+            if peer_route["passed"]
+            else "Peer route is not proven to egress WireGuard with peer AllowedIPs covering the target",
+        ),
+        check(
+            "pod-to-wg-peer-tcp-connect",
+            traversal["probe"]["passed"],
+            collected_at,
+            f"Pod-origin TCP connect {traversal['probe']['successCount']}/{traversal['probe']['attempts']} to peer succeeded from in-CIDR pod"
+            if traversal["probe"]["passed"]
+            else "Pod-origin TCP connect to the WireGuard peer did not fully succeed from an in-CIDR pod",
+        ),
+        check(
+            "snat-rule-counter-traversal",
+            traversal["counter"]["passed"],
+            collected_at,
+            "Owned SNAT counter advanced by the pod probe with a stable rule fingerprint"
+            if traversal["counter"]["passed"]
+            else "Owned SNAT counter traversal not proven (unstable rule, reset counter, insufficient delta, or failed TCP gate)",
         ),
         check(
             "reboot-persistence",
             persistence_pass,
             collected_at,
-            "Systemd unit is enabled and active in current boot" if persistence_pass else "Systemd persistence is not proven by enabled active unit metadata",
+            "Systemd unit is enabled and active in current boot"
+            if persistence_pass
+            else "Systemd persistence is not proven by enabled active unit metadata",
         ),
         check(
             "drift-detect",
             drift_pass,
             collected_at,
-            "Systemd drift timer metadata is active or enabled" if drift_pass else "Systemd drift timer metadata is missing or inactive",
+            "Systemd drift timer metadata is active or enabled"
+            if drift_pass
+            else "Systemd drift timer metadata is missing or inactive",
         ),
         check(
             "rollback-defined",
             rollback_pass,
             collected_at,
-            "Rollback ExecStop and tested evidence reference are present" if rollback_pass else "Rollback tested evidence reference or ExecStop metadata is missing",
+            "Rollback ExecStop and tested evidence reference are present"
+            if rollback_pass
+            else "Rollback tested evidence reference or ExecStop metadata is missing",
+        ),
+        check(
+            "no-broad-lan-nat",
+            broad_nat["passed"],
+            collected_at,
+            "No broad LAN NAT was detected in the nat table or owned chain"
+            if broad_nat["passed"]
+            else "Broad LAN NAT absence is not proven",
         ),
         check(
             "daemonset-not-assumed",
             True,
             collected_at,
-            "Evidence authority is host-managed systemd iptables, not Kubernetes DaemonSet",
-        ),
-        check(
-            "no-broad-lan-nat",
-            no_broad_nat_pass,
-            collected_at,
-            "No broad LAN NAT was detected in POSTROUTING metadata" if no_broad_nat_pass else "Broad LAN NAT absence is not proven",
+            "Evidence authority is host-managed systemd iptables, not a Kubernetes DaemonSet",
         ),
     ]
 
@@ -446,11 +1011,12 @@ def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
         },
         "topology": {
             "clusterName": safe_name(args.kube_context),
-            "podCIDR": pod_cidr,
+            "clusterCIDR": cluster_cidr or args.cluster_cidr,
+            "nodePodCIDRs": node_cidrs["nodePodCIDRs"],
             "wgInterface": wg_interface,
             "platformAiTarget": {
-                "host": args.platform_ai_host,
-                "port": args.platform_ai_port,
+                "host": args.peer_host,
+                "port": args.peer_port,
             },
         },
         "mechanism": {
@@ -461,6 +1027,7 @@ def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
             "systemdUnit": safe_name(args.systemd_unit),
             "iptablesTable": "nat",
             "iptablesChain": "POSTROUTING",
+            "ownedNatChain": OWNED_NAT_CHAIN,
             "expectedRuleHash": rule_hash,
         },
         "driftDetection": {
@@ -480,10 +1047,15 @@ def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
         "collector": {
             "runner": "self-hosted-staging-sw",
             "wg": wg_meta,
-            "route": route,
-            "iptables": iptables,
+            "clusterIdentity": identity,
+            "effectiveCidr": effective,
+            "nodePodCidrs": node_cidrs,
+            "hostOwnedChain": host_chain,
+            "peerRoute": peer_route,
+            "podProbe": traversal["probe"],
+            "counterTraversal": traversal["counter"],
             "systemd": systemd,
-            "podProbe": pod_probe,
+            "broadNat": broad_nat,
             "blockers": [item["id"] for item in checks if item["status"] != "pass"],
         },
     }
@@ -497,12 +1069,32 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--kube-context", default=os.environ.get("KUBE_CONTEXT", "k3d-test"))
     parser.add_argument("--namespace", default=os.environ.get("KUBE_NAMESPACE", "platform-test"))
-    parser.add_argument("--pod-cidr", default=os.environ.get("POD_CIDR", "10.42.0.0/16"))
+    parser.add_argument(
+        "--cluster-cidr",
+        required=True,
+        help="Configured k3s cluster CIDR (e.g. 10.44.0.0/16 for k3d-test). No default on purpose.",
+    )
     parser.add_argument("--service-cidr", default=os.environ.get("SERVICE_CIDR", ""))
     parser.add_argument("--wg-interface", default=os.environ.get("WG_INTERFACE", "auto"))
-    parser.add_argument("--platform-ai-host", default=os.environ.get("PLATFORM_AI_HOST", "10.99.0.2"))
-    parser.add_argument("--platform-ai-port", type=int, default=int(os.environ.get("PLATFORM_AI_PORT", "8200")))
-    parser.add_argument("--probe-path", default=os.environ.get("PROBE_PATH", "/"))
+    parser.add_argument("--peer-host", default=os.environ.get("PEER_HOST", "10.99.0.2"))
+    parser.add_argument("--peer-port", type=int, default=int(os.environ.get("PEER_PORT", "8243")))
+    parser.add_argument("--wg-node", default=os.environ.get("WG_NODE", "k3d-test-server-0"))
+    parser.add_argument("--docker-network", default=os.environ.get("DOCKER_NETWORK", "platform-test-net"))
+    parser.add_argument(
+        "--host-rule-script",
+        default=os.environ.get("HOST_RULE_SCRIPT", DEFAULT_HOST_RULE_SCRIPT),
+        help="Repo-relative canonical host-rule script run with action 'check'.",
+    )
+    parser.add_argument(
+        "--installed-host-rule-script",
+        default=os.environ.get("INSTALLED_HOST_RULE_SCRIPT", ""),
+        help="Optional path to the installed host-rule script; its sha256 must match the canonical script.",
+    )
+    parser.add_argument(
+        "--probe-attempts",
+        type=probe_attempts_type,
+        default=probe_attempts_type(os.environ.get("PROBE_ATTEMPTS", str(MIN_PROBE_ATTEMPTS))),
+    )
     parser.add_argument("--systemd-unit", default=os.environ.get("SYSTEMD_UNIT", "k3d-wg-masq.service"))
     parser.add_argument("--drift-timer", default=os.environ.get("DRIFT_TIMER", "k3d-wg-masq.timer"))
     parser.add_argument("--drift-interval-minutes", type=int, default=int(os.environ.get("DRIFT_INTERVAL_MINUTES", "5")))

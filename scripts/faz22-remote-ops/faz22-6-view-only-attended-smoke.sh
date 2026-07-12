@@ -905,7 +905,10 @@ write_sha256sums() {
 }
 
 auto_finalize_if_requested() {
-  [[ "$AUTO_FINALIZE" == "1" ]] || return
+  # `return` with no argument would propagate the false [[ ]] status (1) under
+  # set -e, failing an otherwise-successful accepted-candidate run whenever
+  # auto_finalize is off (the default manual-seal path). Return 0 explicitly.
+  [[ "$AUTO_FINALIZE" == "1" ]] || return 0
   local manifest marker finalizer_summary
   manifest="${EVIDENCE_DIR}/view-only-engineering-evidence-manifest.json"
   marker="${EVIDENCE_DIR}/view-only-engineering-marker.txt"
