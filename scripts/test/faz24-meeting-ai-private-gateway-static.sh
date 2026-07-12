@@ -64,9 +64,12 @@ kustomize build "${ROOT}/kustomize/overlays/prod" >"${PROD_RENDER}"
 kustomize build "${ROOT}/kustomize/base/monitoring" >"${MONITOR_RENDER}"
 
 grep -Fq 'host: meeting-ai-private.testai.internal' "${TEST_RENDER}" || fail "private ingress missing"
-grep -Fq 'path: ^/oauth2/token$' "${TEST_RENDER}" || fail "exact token ingress route missing"
-grep -Fq 'path: ^/api/v1/internal/meetings/' "${TEST_RENDER}" || fail "UUID ingestion ingress route missing"
+grep -Fq 'path: /oauth2/token$' "${TEST_RENDER}" || fail "exact token ingress route missing"
+grep -Fq 'path: /api/v1/internal/meetings/' "${TEST_RENDER}" || fail "UUID ingestion ingress route missing"
 grep -Fq '/analysis-results$' "${TEST_RENDER}" || fail "exact analysis-result ingress suffix missing"
+if grep -Eq '^[[:space:]]+path: \^' "${TEST_RENDER}"; then
+  fail "Ingress paths must start with / for Kubernetes API validation"
+fi
 grep -Fq 'SERVICE_CLIENT_MEETING_AI_SECRET' "${TEST_RENDER}" || fail "meeting-ai auth secret ESO mapping missing"
 grep -Fq 'name: auth-service-meeting-ai-secret' "${TEST_RENDER}" || fail "isolated meeting-ai ExternalSecret missing"
 grep -Fq 'optional: true' "${TEST_RENDER}" || fail "meeting-ai secret must not block core auth startup"
