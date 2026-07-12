@@ -65,15 +65,21 @@ Source and staging evidence:
 Open acceptance boundary:
 
 - SSH-over-WireGuard to the GPU and staging SSH are reachable;
-- `auth-service-meeting-ai-secret` remains `Ready=False` because Vault key
-  `service_client_meeting_ai_secret` is absent. Test Vault is initialized and
-  unsealed with a 2-of-3 threshold, but all available root-token candidates are
-  invalid and the host has only one unseal share. The owner-held second share
-  must be used in an attended owner terminal and must not enter chat, issues or
-  command-line arguments;
-- no ESO `Ready=True`, activated private listener, mTLS negative matrix,
-  JWT claim matrix, idempotent result POST, outbox drain, cert rotation fire
-  drill or Electron product-path acceptance is claimed;
+- the prior Vault blocker is superseded by 2026-07-12 live evidence: test Vault
+  is initialized/unsealed, the protected owner bootstrap token is valid, the
+  git-reviewed test-only `vault-config-reconciler` was restored with KV/PKI
+  direct access denied, and a short-lived `platform-bootstrap-writer-test`
+  identity added only `service_client_meeting_ai_secret` with KV-v2 CAS version
+  `7 -> 8` (key count `8 -> 9`). The token was self-revoked and seed files were
+  shredded; `ExternalSecret/auth-service-meeting-ai-secret` is now `Ready=True`
+  and the generated Kubernetes Secret contains the expected 64-byte key;
+- this rollout branch pins auth-service and meeting-service to the immutable
+  `sha-20ee06d` build (`fdd91cdb...` / `e0bc7bde...`) that carries
+  platform-backend#816 client-bound minting and #814 canonical aggregate read.
+  The live pods still use the previous digests until merge and Argo CD rollout;
+- activated private listener, mTLS negative matrix, JWT claim matrix,
+  idempotent result POST, outbox drain, cert rotation fire drill and Electron
+  product-path acceptance remain open and are not claimed by ESO readiness;
 - `platform-k8s-gitops#2321` and `platform-ai#198` remain active until those
   live gates are evidenced and board acceptance is deliberate.
 
