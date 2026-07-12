@@ -12,6 +12,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GENERATOR="$SCRIPT_DIR/faz22-6-view-only-evidence-package.sh"
+# Canonical broker frame-flow parser shared with the attended smoke (Codex 019f559d S2).
+# shellcheck source=scripts/faz22-remote-ops/lib-view-only-frame-flow.sh
+source "$SCRIPT_DIR/lib-view-only-frame-flow.sh"
 
 SMOKE_DIR=""
 MANIFEST_OUT=""
@@ -163,9 +166,11 @@ recording_has_policy_event() {
 broker_log_has_frame_flow() {
   local broker_log="$1" session_id="$2"
   require_file "$broker_log"
-  grep -F "$session_id" "$broker_log" \
-    | grep -E '(^|[[:space:]])(event|kind|signal)=(SCREEN_VIEW|VIEW_ONLY|VIEW_ONLY_FRAME|FRAME|DATA_FRAME|PERMIT_VIEW)([[:space:]]|$)|"(event|kind|signal)"[[:space:]]*:[[:space:]]*"(SCREEN_VIEW|VIEW_ONLY|VIEW_ONLY_FRAME|FRAME|DATA_FRAME|PERMIT_VIEW)"' \
-      >/dev/null
+  # #1580 gate = broker-RECEIVED non-inert PNG frame flow (Codex 019f559d S1/S2/S3):
+  # DROPPED_NO_VIEWER counts (viewer relay is gated #2183; delivery is NOT required
+  # here). Delegates to the shared canonical parser matching the real broker
+  # "view-only frame: ... bytes=N type=image/png disposition=..." log format.
+  broker_log_has_received_frame_flow "$broker_log" "$session_id"
 }
 
 need jq
