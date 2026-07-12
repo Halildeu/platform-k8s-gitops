@@ -1,5 +1,59 @@
 # Current State — Platform K8s Migration
 
+## Source Proposal — Faz 24 Meeting-AI GPU -> staging private result path (2026-07-12)
+
+Tracked by [platform-k8s-gitops#2321](https://github.com/Halildeu/platform-k8s-gitops/issues/2321)
+and [platform-ai#198](https://github.com/Halildeu/platform-ai/issues/198).
+This delta records desired source state only. It is not merged, applied, or
+runtime-accepted evidence.
+
+Proposed fail-closed chain:
+
+`meeting-ai GPU 10.99.0.2 -> WireGuard wg0 -> staging-sw 10.99.0.1:9445 -> Caddy application mTLS -> 127.0.0.1:31080 -> meeting-ai-private Ingress -> auth-service/meeting-service`
+
+Source controls in the proposed change:
+
+- exact host firewall allow for `wg0`, source/destination `/32` and TCP/9445;
+- dedicated client/server PKI trust domains, 24-hour leafs, scoped 48-hour
+  periodic Vault token, fullchain serving and atomic cert/key pointer rollback;
+- no generic Caddy proxy: client-authenticated health plus exact token and
+  UUID-scoped analysis-result POST routes only;
+- test-only private Ingress and ingress-nginx-to-service NetworkPolicies;
+- isolated meeting-AI ExternalSecret with optional Deployment reference, so a
+  missing meeting-AI secret cannot stall core auth secret rotation or startup;
+- node-exporter rotation/expiry telemetry and four Prometheus alerts, including
+  a KSM-gated telemetry-absence rule;
+- meeting-service issuer/audience/client/JWKS verifier bindings; the GPU still
+  needs the short-lived `meeting:analysis-result:write` service JWT.
+
+Source verification completed before publication:
+
+- static contract, ShellCheck and `git diff --check` pass;
+- test/prod/monitoring Kustomize renders parse; isolated ESO and Deployment env
+  binding are semantically checked; no test secret or private host leaks to the
+  prod render;
+- Caddy 2.10.2 validates the strict-SNI fullchain configuration;
+- Ubuntu 24.04 `systemd-analyze verify` accepts all units and the eight-hour
+  Europe/Istanbul timer;
+- Prometheus 3.5 `promtool` accepts all four rules;
+- container behavior test passes initial atomic activation, stale-link
+  recovery, reload-failure pointer rollback, fullchain and success/failure
+  textfile metrics;
+- Claude Opus 4.8 adversarial review found no P0 landing blocker after two
+  rounds; its ExternalSecret, telemetry, fullchain and rollback findings are
+  absorbed in the proposed source.
+
+Open acceptance boundary:
+
+- local WireGuard routes are currently absent and `staging-sw` SSH times out;
+  no host or cluster mutation was attempted;
+- Vault PKI roles/token/client secret are not seeded by this source change;
+- no immutable rollout, ESO `Ready=True`, pod revision, mTLS negative matrix,
+  JWT claim matrix, idempotent result POST, outbox drain, cert rotation fire
+  drill, public-negative route or Electron product-path acceptance is claimed;
+- `platform-k8s-gitops#2321` and `platform-ai#198` remain active until those
+  live gates are evidenced and board acceptance is deliberate.
+
 ## Live Delta — Faz 22.6 #548 hardware marker accepted; VIEW_ONLY is sole completion blocker (2026-07-02)
 
 This delta supersedes the #548 marker-blocked interpretation in the entries

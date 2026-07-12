@@ -1,0 +1,41 @@
+# Internal upstream for the staging host's WireGuard + application-mTLS edge.
+#
+# This host has no public DNS/TLS route. k3d-test publishes ingress-nginx only
+# on host loopback (bootstrap/k3d-test.yaml: 127.0.0.1:31080), and the host Caddy
+# gateway is the sole intended caller. Caddy enforces client certificate + SAN,
+# method and UUID path before forwarding with this Host header.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: meeting-ai-private
+  labels:
+    app.kubernetes.io/name: meeting-ai-private-gateway
+    app.kubernetes.io/component: private-ingress
+    app.kubernetes.io/part-of: platform
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "3"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "20"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "20"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: meeting-ai-private.testai.internal
+      http:
+        paths:
+          - path: ^/oauth2/token$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8088
+          - path: ^/api/v1/internal/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/analysis-results$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: meeting-service
+                port:
+                  number: 8097

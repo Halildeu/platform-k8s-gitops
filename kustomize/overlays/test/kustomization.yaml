@@ -56,6 +56,9 @@ resources:
   - netpol-audio-gateway-live-stt-mtls.yaml  # Faz 24 #182/#198: audio-gateway -> platform-ai live-stt app-mTLS 10.99.0.2:8243
   - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
+  - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
+  - ingress-meeting-ai-private.yaml  # Faz 24 #2321: host-loopback-only upstream for WG+mTLS gateway
+  - netpol-meeting-ai-private-ingress.yaml  # ingress-nginx -> auth:8088 + meeting:8097 only
   # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
   # allow-egress-host-bridge (PG) + allow-monitoring-scrape (9187 added); no
   # dedicated netpol (part-of=platform is required by drift Check 5 — Codex 019ed602).
@@ -6012,6 +6015,15 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
         value: "-Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SERVICE_CLIENT_MEETING_AI_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-service-meeting-ai-secret
+              key: SERVICE_CLIENT_MEETING_AI_SECRET
+              optional: true  # core auth stays available; meeting-ai mint remains fail-closed
   - target:
       kind: Deployment
       name: api-gateway

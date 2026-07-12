@@ -47,6 +47,15 @@ data:
   SECURITY_AUTH_ALLOWED_CLIENT_IDS: "frontend,admin-cli,serban-web,account,platform-desktop"
   SECURITY_JWT_AUDIENCE: "meeting-service,frontend,account,serban-web"
 
+  # Meeting-AI durable result ingestion — auth-service issued, short-lived
+  # service JWT. The secondary decoder remains fail-closed unless all four
+  # bindings agree with the token. JWKS stays on the cluster network; it is not
+  # exposed through the GPU-facing private gateway.
+  MEETING_INTERNAL_SERVICE_JWT_JWK_SET_URI: "http://auth-service:8088/oauth2/jwks"
+  MEETING_INTERNAL_SERVICE_JWT_ISSUER: "auth-service"
+  MEETING_INTERNAL_SERVICE_JWT_AUDIENCE: "meeting-service"
+  MEETING_INTERNAL_SERVICE_JWT_CLIENT_ID: "meeting-ai"
+
   # Spring profile — activates application-k8s.yml (KEYCLOAK_JWKS_URI binding,
   # OpenFGA gate). Without it SecurityConfig falls back to the serban realm JWKS.
   SPRING_PROFILES_ACTIVE: "k8s"

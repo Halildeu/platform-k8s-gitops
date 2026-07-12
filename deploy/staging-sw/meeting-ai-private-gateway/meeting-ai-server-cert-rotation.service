@@ -1,0 +1,24 @@
+[Unit]
+Description=Rotate Faz 24 Meeting-AI private gateway server certificate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/platform/meeting-ai-gateway-rotate-server-cert
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+ReadWritePaths=/etc/platform/meeting-ai-gateway/tls /var/lib/node_exporter
+ReadOnlyPaths=/etc/platform/meeting-ai-gateway/vault-token /etc/platform/meeting-ai-gateway/vault-ca.crt

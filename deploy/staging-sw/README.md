@@ -14,6 +14,7 @@ unseal, host-level bootstrap, vs.).
 | Dosya | Rol |
 |---|---|
 | [`vault-auto-unseal.sh`](./vault-auto-unseal.sh) | Vault (test + prod) auto-unseal, share-count preflight'lı |
+| [`meeting-ai-private-gateway/`](./meeting-ai-private-gateway/) | Faz 24 GPU -> staging WireGuard + application-mTLS Caddy edge, exact firewall, rotation units |
 
 ## Deploy Chain (steady-state, initial apply sonrası)
 
