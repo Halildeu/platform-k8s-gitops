@@ -93,7 +93,31 @@ sha-8d2d81a — EDGE-LIVE: `App-yQDs4iSN.js` 5/5 marker: `live-export-panel`,
 `export-receipt-recover`, `export-recovered-receipt`, `export-receipt-note`,
 `not-found-unresolved`).
 
-**Aktivasyon pin hedefi (VPN-dönüşü): ats `f3ccad71` merge-commit build imajı**
+### 39d-8→12 CANLI KANIT (2026-07-12 VPN-oturumu — zincir tamam)
+
+KC #2328 koşumu: **ASSERT OK 12 rol + 13 default-scope** (export.repair
+ATANMADAN). Pin `sha-f3ccad7` apply → **canlı smoke İLK koşumda ürün-bulgusu
+yakaladı**: export 400 `ref-pattern ihlali: human_actor_ref` — canlı KC sub'ı
+UUID (rakam-başlı), packet REF_PATTERN ilk-karakter-harf şartına takılıyordu
+(E2E'ler harf-başlı sub kullandığından görünmemişti). Fix **ats#109 (39d-12)**:
+packet `human_actor_ref` → `actor.v1.<sha256>` (Codex kararı: koşullu-prefix
+collision üretir; ham sub packet'e taşınmaz; vaka/ledger raw; diğer ref
+alanları fail-closed). Yeni pin **`sha-e6b7409` /
+`sha256:b4b6a806…a8e9d7`** (gitops#2332) apply → pod imageID birebir.
+
+Kanıtlar (aynı oturum):
+- `d29-smoke.sh` (ATS_EXPECTED_DIGEST override): **14/14 FAIL=0**
+- `d29-smoke-receipt-chain.sh`: **20/20 FAIL=0** — receipt 200-COMPLETED+
+  no-store / reader-403 / anon-401; artifact 200 + Content-Type + no-store +
+  **VERBATIM (sha256(HTTP-gövdesi)==worm_ledger.artifact_digest)** + HEAD-403;
+  replay 200+`X-ATS-Replay`+birebir-makbuz+**case-scoped WORM 0→1** /
+  değişik-gövde-400; repair onay-kapısı rolsüz-403; erasure-sonrası artifact-404
+  (+no-store) / **makbuz 200-COMPLETED sağ çıktı**.
+
+İSPATLAMAZ: repair 200-REPAIRED canlı yolu (rol manuel atanınca — onay-kapısı;
+E2E'de kanıtlı), canlı STT (39d-5), browser-acceptance (login-gated).
+
+**Aktivasyon pin hedefi: ~~f3ccad71~~ → UYGULANDI; güncel pin `e6b7409` (39d-12 dahil)**
 (39d-8/8c/8d/9/10/**11** birlikte; #108 R4-repair dahil — KC koşumu
 `provision-test-keycloak.sh` gitops#2328 sürümüyle: 12 rol/13 scope,
 `ats.export.repair` ATANMADAN). Pin sonrası smoke EKLERİ (mevcut d29-smoke 14'üne):
