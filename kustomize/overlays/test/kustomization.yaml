@@ -233,11 +233,11 @@ images:
     # service-JWT JWKS are wired (BE-1b fail-closed: the internal chain grants no SVC_
     # authority until MEETING_INTERNAL_SERVICE_JWT_JWK_SET_URI is set). Test overlay
     # only; prod remains D30-deferred.
-    # 2026-07-12 update: sha-20ee06d includes platform-backend#814's canonical
-    # aggregate Meeting Intelligence result read and the #816 release-lineage build.
-    # Digest source: CI - Image Build + GHCR Push run 29177080417.
+    # 2026-07-12 update: sha-b3c93e2 includes platform-backend#819's successful
+    # canonical result-read audit and the prior #814/#816 result contract chain.
+    # Digest source: CI - Image Build + GHCR Push run 29202272289.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:e0bc7bde116d20d59bcfb66270375d6544d853a0eecbdf4a5f21a0032682e645
+    digest: sha256:379f6ef324afbed8e2e1fb195e668a28f8cae1c9ce5e896540b61ccde0c1b339
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -1037,10 +1037,10 @@ images:
     #
     # ReportContractGate reports=37 violations=0 (36→37 weekly-audit-digest).
     # D-chain progress: 5/5 LIVE pure-grid modules (post-deploy) — TARGET CLOSED.
-    # 2026-06-24 drift alignment: deploy-backend-testai.yml --fail-on-change
-    # reported this rollout-scope digest behind backend image run 28131649696.
-    newTag: sha-14322ac
-    digest: sha256:0a6c0d61a8b7642669e3b230d35a720acbfbcef084f4c29c11f032d57b3e65fd
+    # 2026-07-12 desired-state alignment: deploy-backend-testai.yml
+    # --fail-on-change reported this digest behind backend image run 29202272289.
+    newTag: sha-b3c93e2
+    digest: sha256:2d7dbbb52628eb957cb8eb1f8a72e84760afda73a16cd5f37d53ce5c081b6160
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
