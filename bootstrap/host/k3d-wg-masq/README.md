@@ -25,7 +25,7 @@ The old I6 collector checked only "a rule with the claimed CIDR is present" — 
 | File | Installs to | Role |
 |---|---|---|
 | `k3d-wg-masq.sh` | `/usr/local/sbin/` | node-container SNAT reconcile loop (`ExecStart`) |
-| `k3d-wg-masq-host-rule.sh` | `/usr/local/sbin/` | host SNAT + FORWARD apply/check/rollback |
+| `k3d-wg-masq-host-rule.sh` | `/usr/local/sbin/` | host SNAT + FORWARD apply/check/rollback/**drill** |
 | `environment/k3d-test.conf` | `/etc/default/k3d-wg-masq` | desired-state config (CIDR, node, network) |
 | `systemd/k3d-wg-masq.service` | `/etc/systemd/system/` | main service (loop + host-rule ExecStartPost/Stop) |
 | `systemd/k3d-wg-masq-drift.service` | `/etc/systemd/system/` | oneshot drift reconcile |
@@ -99,6 +99,30 @@ sudo systemctl disable --now k3d-wg-masq.service                    # its ExecSt
 # 2. explicit rollback last, with the same env (WGMASQ_NODE + WGMASQ_NETWORK):
 sudo bash -c 'set -a; . /etc/default/k3d-wg-masq; /usr/local/sbin/k3d-wg-masq-host-rule.sh rollback'
 ```
+
+### `drill` (non-destructive chain-body primitive proof — necessary, NOT sufficient)
+
+`k3d-wg-masq-host-rule.sh drill` proves ONLY the chain-body
+apply/populate/verify/flush/delete PRIMITIVES + rule shapes on THROWAWAY DETACHED
+scratch chains `K3D_WG_MASQ_NAT_DRILL` / `K3D_WG_MASQ_FWD_DRILL` that are **never
+jumped** from `POSTROUTING`/`FORWARD` — so they carry zero traffic and the live
+owned chains (`K3D_WG_MASQ_NAT`/`FWD`, the ATS live-STT masq path) are **never
+touched**. It creates+populates the scratch chains (same rule shapes as live),
+verifies rule cardinality, then flushes+deletes them and verifies they are gone,
+under a dedicated non-blocking `flock -n /run/lock/k3d-wg-masq-drill.lock` + a
+signal-safe cleanup trap, emitting one structured line:
+`DRILL applyOk=<0|1> rollbackOk=<0|1> chainsAbsentAfter=<0|1> rollbackMechanismVersion=k3d-wg-masq.rollback.v2 scope=detached-scratch-chain`
+(exit 0 only if all three are 1).
+
+It does **NOT** exercise the built-in `POSTROUTING`/`FORWARD` jump removal or
+hooked-chain deletion semantics — those are proven ONLY by a captured historical
+LIVE rollback. The I6 collector therefore closes `rollback-defined` only when a
+passing `--rollback-drill` is bound to a genuine, schema-valid,
+`rollbackResult=pass` historical evidence file (`--historical-live-rollback-ref`).
+No such evidence exists yet (PR #2345's live rollback was executed but not captured
+as a structured artifact — it will NOT be fabricated and a live rollback will NOT
+be re-run), so `rollback-defined` honestly stays fail-closed (11/12) until real
+evidence is committed. That is the correct No-Fake-Work outcome.
 
 ## Scope limits + follow-up (tracked, #1867)
 

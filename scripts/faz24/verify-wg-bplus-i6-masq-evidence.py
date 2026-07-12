@@ -36,6 +36,9 @@ IMAGE_DIGEST_RE = re.compile(r"sha256:([0-9a-f]{64})(?![0-9a-f])")
 # (non-root) modes are NOT authoritative.
 AUTHORITATIVE_EXECUTION_MODES = {"sudo-installed"}
 
+# Versioned rollback mechanism id — must match the collector/host-rule + historical evidence.
+ROLLBACK_MECHANISM_VERSION = "k3d-wg-masq.rollback.v2"
+
 REQUIRED_CHECK_IDS = [
     "cluster-identity-bound",
     "effective-cluster-cidr-matches-config",
@@ -719,12 +722,71 @@ def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
     if not (systemd.get("driftTimerActive") is True or systemd.get("driftTimerEnabled") is True):
         fail(cid, "drift timer must be active or enabled")
 
-    # 10) rollback-defined
+    # 10) rollback-defined — re-derive from raw. The scratch drill proves the chain-body
+    # primitives (necessary), but is NOT sufficient: it must be bound to the SAME installed
+    # root-owned script as host-owned-chain, AND a genuine historical LIVE rollback (which
+    # actually exercised the built-in POSTROUTING/FORWARD jump removal) must be present.
     cid = "rollback-defined"
     if systemd.get("hasExecStop") is not True:
         fail(cid, "systemd ExecStop must be present")
-    if rollback.get("tested") is not True:
-        fail(cid, "rollback.tested must be true")
+    drill = _obj(collector.get("rollbackDrill"))
+    hoc = _obj(collector.get("hostOwnedChain"))
+    ci = _obj(collector.get("clusterIdentity"))
+    # -- drill self-consistency --
+    if drill.get("executionMode") != "sudo-installed":
+        fail(cid, "rollbackDrill.executionMode must be 'sudo-installed'")
+    if drill.get("applyOk") is not True:
+        fail(cid, "rollbackDrill.applyOk must be true")
+    if drill.get("rollbackOk") is not True:
+        fail(cid, "rollbackDrill.rollbackOk must be true")
+    if drill.get("chainsAbsentAfter") is not True:
+        fail(cid, "rollbackDrill.chainsAbsentAfter must be true")
+    if drill.get("scope") != "detached-scratch-chain":
+        fail(cid, "rollbackDrill.scope must be 'detached-scratch-chain'")
+    if drill.get("rollbackMechanismVersion") != ROLLBACK_MECHANISM_VERSION:
+        fail(cid, f"rollbackDrill.rollbackMechanismVersion must be '{ROLLBACK_MECHANISM_VERSION}'")
+    drill_sha = drill.get("scriptSha256")
+    if not (isinstance(drill_sha, str) and HEX64_RE.match(drill_sha)):
+        fail(cid, "rollbackDrill.scriptSha256 must be 64 lowercase hex chars")
+    if not _is_plain_int(drill.get("installedScriptOwnerUid")) or drill.get("installedScriptOwnerUid") != 0:
+        fail(cid, "rollbackDrill.installedScriptOwnerUid must be integer 0 (root-owned)")
+    drill_mode = _parse_octal_mode(drill.get("installedScriptMode"))
+    if drill_mode is None:
+        fail(cid, "rollbackDrill.installedScriptMode must be an octal permission string")
+    elif (drill_mode & 0o022) != 0:
+        fail(cid, "rollbackDrill.installedScriptMode must not be group- or world-writable")
+    # -- cross-check: the SAME installed script really ran both drill + host-owned check --
+    hoc_installed = hoc.get("installedSha256")
+    hoc_canonical = hoc.get("canonicalSha256")
+    if not (isinstance(drill_sha, str) and drill_sha == hoc_installed and drill_sha == hoc_canonical):
+        fail(cid, "rollbackDrill.scriptSha256 must equal hostOwnedChain installed + canonical sha256")
+    if drill.get("executionMode") != hoc.get("executionMode"):
+        fail(cid, "rollbackDrill.executionMode must equal hostOwnedChain.executionMode")
+    if drill.get("installedScriptOwnerUid") != hoc.get("installedScriptOwnerUid"):
+        fail(cid, "rollbackDrill.installedScriptOwnerUid must equal hostOwnedChain.installedScriptOwnerUid")
+    if drill.get("installedScriptMode") != hoc.get("installedScriptMode"):
+        fail(cid, "rollbackDrill.installedScriptMode must equal hostOwnedChain.installedScriptMode")
+    # -- required historical LIVE rollback (scratch drill alone is not sufficient) --
+    hist = _obj(collector.get("historicalLiveRollback"))
+    if not hist:
+        fail(cid, "historicalLiveRollback evidence is required (the scratch drill does not exercise the built-in jump removal)")
+    else:
+        if hist.get("executionVerified") is not True:
+            fail(cid, "historicalLiveRollback.executionVerified must be true")
+        if hist.get("liveOwnedChainsExercised") is not True:
+            fail(cid, "historicalLiveRollback.liveOwnedChainsExercised must be true")
+        if hist.get("builtinHooksExercised") is not True:
+            fail(cid, "historicalLiveRollback.builtinHooksExercised must be true")
+        if hist.get("rollbackResult") != "pass":
+            fail(cid, "historicalLiveRollback.rollbackResult must be 'pass'")
+        if hist.get("rollbackMechanismVersion") != drill.get("rollbackMechanismVersion"):
+            fail(cid, "historicalLiveRollback.rollbackMechanismVersion must match rollbackDrill")
+        if hist.get("targetClusterHash") != ci.get("clusterUidHash"):
+            fail(cid, "historicalLiveRollback.targetClusterHash must match clusterIdentity.clusterUidHash")
+        if hist.get("nodeName") != ci.get("nodeName"):
+            fail(cid, "historicalLiveRollback.nodeName must match clusterIdentity.nodeName")
+        if hist.get("wgInterface") != topology.get("wgInterface"):
+            fail(cid, "historicalLiveRollback.wgInterface must match topology.wgInterface")
 
     # 11) no-broad-lan-nat
     broad = _obj(collector.get("broadNat"))

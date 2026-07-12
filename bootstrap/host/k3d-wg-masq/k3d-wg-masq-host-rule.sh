@@ -11,6 +11,15 @@
 #
 # Config is deployment desired-state (EnvironmentFile), NOT script defaults —
 # test=10.44.0.0/16 + platform-test-net; prod=10.42.0.0/16 (bootstrap/k3d-*.yaml).
+#
+# The `drill` action proves ONLY the chain-body apply/populate/verify/flush/delete
+# PRIMITIVES + rule shapes on THROWAWAY DETACHED scratch chains
+# K3D_WG_MASQ_NAT_DRILL / K3D_WG_MASQ_FWD_DRILL that are NEVER jumped from
+# POSTROUTING/FORWARD — so they carry ZERO traffic and the live owned chains
+# (K3D_WG_MASQ_NAT/FWD, the ATS live-STT masq path) are NEVER touched. It does NOT
+# exercise the built-in POSTROUTING/FORWARD jump removal or hooked-chain deletion
+# semantics — those are proven ONLY by a captured historical LIVE rollback. The drill
+# is therefore necessary-but-not-sufficient for `rollback-defined`.
 set -euo pipefail
 
 WG_CIDR="${WGMASQ_WG_CIDR:-10.99.0.0/24}"
@@ -21,6 +30,14 @@ LOG="${WGMASQ_HOST_LOG:-/var/log/k3d-wg-masq-host-rule.log}"
 LOCK="${WGMASQ_LOCK:-/run/lock/k3d-wg-masq.lock}"
 NAT_CHAIN="K3D_WG_MASQ_NAT"
 FWD_CHAIN="K3D_WG_MASQ_FWD"
+# Throwaway scratch chains for the `drill` action — NEVER jumped from a base chain.
+NAT_DRILL="${NAT_CHAIN}_DRILL"
+FWD_DRILL="${FWD_CHAIN}_DRILL"
+# Dedicated NON-BLOCKING lock so concurrent drills never adopt each other's scratch
+# state on the fixed chain names. Separate from the main $LOCK.
+DRILL_LOCK="${WGMASQ_DRILL_LOCK:-/run/lock/k3d-wg-masq-drill.lock}"
+# Versioned mechanism id, emitted on the DRILL line + expected in historical evidence.
+ROLLBACK_MECH_VERSION="k3d-wg-masq.rollback.v2"
 # Known legacy inline host signature (pre-#1867 wrapper wrote this into the base
 # POSTROUTING chain). Shape: <table> <chain> <spec...> (matches del_all's signature).
 LEGACY_NAT=(nat POSTROUTING -s 10.42.0.0/16 -d "$WG_CIDR" -o "$WG_IF" -j MASQUERADE)
@@ -93,9 +110,59 @@ do_rollback() {
   del_all "${LEGACY_NAT[@]}"
   log rollback removed
 }
+# --- drill (non-destructive scratch-chain apply+rollback mechanism proof) -----------
+drill_cleanup() { # flush+delete both scratch chains; idempotent, tolerant
+  iptables -w -t nat    -F "$NAT_DRILL" 2>/dev/null || true; iptables -w -t nat    -X "$NAT_DRILL" 2>/dev/null || true
+  iptables -w -t filter -F "$FWD_DRILL" 2>/dev/null || true; iptables -w -t filter -X "$FWD_DRILL" 2>/dev/null || true
+}
+drill_rules() { iptables -w -t "$1" -S "$2" 2>/dev/null | grep -c '^-A' || true; }
+chain_absent() { ! iptables -w -t "$1" -S "$2" >/dev/null 2>&1; }
+drill_line() { # $1=apply $2=rollback $3=chainsAbsent
+  printf 'DRILL applyOk=%s rollbackOk=%s chainsAbsentAfter=%s rollbackMechanismVersion=%s scope=detached-scratch-chain\n' \
+    "$1" "$2" "$3" "$ROLLBACK_MECH_VERSION"
+}
+do_drill() {
+  preflight
+  # Dedicated NON-BLOCKING lock: if another drill holds it, fail-closed rather than
+  # wait for / adopt its scratch-chain state on the fixed DRILL chain names.
+  exec 8>"$DRILL_LOCK"
+  if ! flock -n 8; then
+    echo "another drill holds $DRILL_LOCK; refusing to adopt its scratch state" >&2
+    drill_line 0 0 0
+    return 1
+  fi
+  drill_cleanup   # idempotent: clear any leftover scratch chains before applying
+  # Signal-safe safety net: from here until an explicit verified rollback, best-effort
+  # flush+delete both scratch chains on EXIT/INT/TERM.
+  trap 'drill_cleanup' EXIT INT TERM
+  # Create + populate the SCRATCH chains. NO `-I POSTROUTING`/`-I FORWARD` jump is ever
+  # emitted for them, so they are dead-ends carrying zero traffic. `|| true` keeps set -e
+  # from skipping the rollback below; the apply is verified by rule-count, not exit code.
+  iptables -w -t nat    -N "$NAT_DRILL" 2>/dev/null || true
+  iptables -w -t filter -N "$FWD_DRILL" 2>/dev/null || true
+  iptables -w -t nat    -A "$NAT_DRILL" -s "$NODE_IP/32" -d "$WG_CIDR" -o "$WG_IF" -j MASQUERADE 2>/dev/null || true
+  iptables -w -t filter -A "$FWD_DRILL" -i "$BRIDGE" -o "$WG_IF" -s "$NODE_IP/32" -d "$WG_CIDR" -j ACCEPT 2>/dev/null || true
+  iptables -w -t filter -A "$FWD_DRILL" -i "$WG_IF" -o "$BRIDGE" -s "$WG_CIDR" -d "$NODE_IP/32" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+  local apply_ok=0 rollback_ok=0 chains_absent=0
+  if iptables -w -t nat -S "$NAT_DRILL" >/dev/null 2>&1 \
+     && iptables -w -t filter -S "$FWD_DRILL" >/dev/null 2>&1 \
+     && [ "$(drill_rules nat "$NAT_DRILL")" = 1 ] \
+     && [ "$(drill_rules filter "$FWD_DRILL")" = 2 ]; then
+    apply_ok=1
+  fi
+  drill_cleanup   # explicit rollback: flush + delete both scratch chains
+  if chain_absent nat "$NAT_DRILL" && chain_absent filter "$FWD_DRILL"; then
+    chains_absent=1; rollback_ok=1
+    trap - EXIT INT TERM   # explicit rollback verified — disarm the safety net
+  fi
+  # success (all three = 1) is emitted ONLY after explicit rollback + absence verify.
+  drill_line "$apply_ok" "$rollback_ok" "$chains_absent"
+  log drill "apply=${apply_ok} rollback=${rollback_ok} absent=${chains_absent}"
+  [ "$apply_ok" = 1 ] && [ "$rollback_ok" = 1 ] && [ "$chains_absent" = 1 ]
+}
 
 ACTION="${1:-apply}"
-case "$ACTION" in apply|check|rollback) ;; *) echo "usage: $0 {apply|check|rollback}" >&2; exit 2;; esac
+case "$ACTION" in apply|check|rollback|drill) ;; *) echo "usage: $0 {apply|check|rollback|drill}" >&2; exit 2;; esac
 # serialize the WHOLE operation (service ExecStartPost + drift timer + manual apply)
 exec 9>"$LOCK"; flock 9
 "do_${ACTION}"

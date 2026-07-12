@@ -74,6 +74,10 @@ on:
         description: "Optional protected evidence URI override for operator-collected host evidence"
         required: false
         default: ""
+      run_rollback_drill:
+        description: "Run the SAFE scratch-chain rollback drill to close rollback-defined. Uses THROWAWAY chains K3D_WG_MASQ_NAT_DRILL/FWD_DRILL that are NEVER jumped from POSTROUTING/FORWARD — zero live-path impact. Default false keeps rollback-defined fail-closed."
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -323,9 +327,16 @@ jobs:
           DRIFT_TIMER: ${{ inputs.drift_timer }}
           ROLLBACK_TESTED_REF: ${{ inputs.rollback_tested_ref }}
           PROTECTED_EVIDENCE_PATH: ${{ inputs.protected_evidence_path }}
+          RUN_ROLLBACK_DRILL: ${{ inputs.run_rollback_drill }}
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
+          # Opt-in SAFE scratch-chain rollback drill (zero live-path impact). Default off
+          # keeps rollback-defined fail-closed on normal runs.
+          DRILL_ARGS=()
+          if [ "${RUN_ROLLBACK_DRILL}" = "true" ]; then
+            DRILL_ARGS=(--rollback-drill --rollback-drill-script "${INSTALLED_HOST_RULE_SCRIPT}")
+          fi
           python3 scripts/faz24/collect-wg-bplus-i6-masq-evidence.py \
             --output "${EVIDENCE_JSON}" \
             --cluster-cidr "${CLUSTER_CIDR}" \
@@ -338,6 +349,7 @@ jobs:
             --probe-attempts "${PROBE_ATTEMPTS}" \
             --probe-pod-selector "${PROBE_POD_SELECTOR}" \
             --installed-host-rule-script "${INSTALLED_HOST_RULE_SCRIPT}" \
+            "${DRILL_ARGS[@]}" \
             --kube-context "${KUBE_CONTEXT}" \
             --namespace "${KUBE_NAMESPACE}" \
             --systemd-unit "${SYSTEMD_UNIT}" \

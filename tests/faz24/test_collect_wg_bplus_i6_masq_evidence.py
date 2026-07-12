@@ -76,6 +76,9 @@ class FakeHostRunner:
         owned_source_after: str | None = None,
         broad_nat: bool = False,
         systemd_healthy: bool = True,
+        drill_apply_ok: bool = True,
+        drill_rollback_ok: bool = True,
+        drill_chains_absent: bool = True,
     ) -> None:
         self.commands: list[list[str]] = []
         self.uid = uid
@@ -109,6 +112,9 @@ class FakeHostRunner:
         self.owned_source_after = owned_source_after if owned_source_after is not None else owned_source_before
         self.broad_nat = broad_nat
         self.systemd_healthy = systemd_healthy
+        self.drill_apply_ok = drill_apply_ok
+        self.drill_rollback_ok = drill_rollback_ok
+        self.drill_chains_absent = drill_chains_absent
         self._chain_s_calls = 0
         self._save_c_calls = 0
 
@@ -188,6 +194,19 @@ class FakeHostRunner:
 
         # host-rule check is an env-wrapped command; inspect RAW argv (before
         # sudo-strip) so we can simulate sudo being unavailable -> direct fallback.
+        # scratch-chain rollback drill (env-wrapped, like the host-rule check)
+        if "drill" in argv and any(Path(a).name == "env" for a in argv):
+            a = 1 if self.drill_apply_ok else 0
+            r = 1 if self.drill_rollback_ok else 0
+            c = 1 if self.drill_chains_absent else 0
+            exit_code = 0 if (a and r and c) else 1
+            line = (
+                f"DRILL applyOk={a} rollbackOk={r} chainsAbsentAfter={c} "
+                f"rollbackMechanismVersion={collector.ROLLBACK_MECHANISM_VERSION} "
+                f"scope=detached-scratch-chain\n"
+            )
+            return collector.CommandResult(exit_code, line, "")
+
         if "check" in argv and any(Path(a).name == "env" for a in argv):
             if argv[:2] == ["sudo", "-n"] and not self.host_rule_sudo_ok:
                 return collector.CommandResult(127, "", "sudo: a password is required")
@@ -330,6 +349,9 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
             drift_timer="k3d-wg-masq.timer",
             drift_interval_minutes=5,
             rollback_tested_ref="rollback/k3d-wg-masq-dry-run.json",
+            rollback_drill=False,
+            rollback_drill_script="",
+            historical_live_rollback_ref="",
             protected_evidence_path="",
             github_run_id="12345",
         )
@@ -346,6 +368,26 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         collector._installed_script_stat = lambda path: stat_result
         collector.socket.gethostname = lambda: "staging-sw"
         return collector.build_evidence(self.args(**(arg_overrides or {})))
+
+    def historical_path(self, **overrides) -> str:
+        """Write a schema-valid historical live-rollback file bound to the fake's identity."""
+        self._hist_counter = getattr(self, "_hist_counter", 0) + 1
+        doc = {
+            "schemaVersion": collector.HISTORICAL_ROLLBACK_SCHEMA_VERSION,
+            "executionVerified": True,
+            "liveOwnedChainsExercised": True,
+            "builtinHooksExercised": True,
+            "rollbackResult": "pass",
+            # bound to the collector's derived identity (fake uid + node + wg iface)
+            "targetClusterHash": collector.sha256_short("kube-system-uid-abcdef"),
+            "nodeName": "k3d-test-server-0",
+            "wgInterface": "wg0",
+            "rollbackMechanismVersion": collector.ROLLBACK_MECHANISM_VERSION,
+        }
+        doc.update(overrides)
+        path = Path(self._tmp.name) / f"historical-{self._hist_counter}.json"
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return str(path)
 
     def checks(self, evidence: dict) -> dict:
         return {item["id"]: item for item in evidence["checks"]}
@@ -370,8 +412,14 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
 
     # -- positive ---------------------------------------------------------
     def test_healthy_calico_topology_passes_and_verifier_accepts(self):
+        # 12/12 requires BOTH a passing scratch drill AND bound historical live-rollback
+        # evidence (hypothetical: proves the framework is correct once real evidence exists).
         evidence = self.build(
-            arg_overrides={"protected_evidence_path": "operator://staging-sw/protected/faz24/i6/20260712T060000Z"}
+            arg_overrides={
+                "protected_evidence_path": "operator://staging-sw/protected/faz24/i6/20260712T060000Z",
+                "rollback_drill": True,
+                "historical_live_rollback_ref": self.historical_path(),
+            }
         )
 
         self.assertEqual("pass", evidence["status"])
@@ -396,11 +444,116 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         self.assertEqual("0755", host_chain["installedScriptMode"])
         self.assertTrue(host_chain["shaMatches"])
         self.assertEqual(3, evidence["collector"]["counterTraversal"]["counterDelta"])
+        # rollback-defined proven by drill + bound historical live-rollback (12/12).
+        self.assertCheckPasses(evidence, "rollback-defined")
+        drill = evidence["collector"]["rollbackDrill"]
+        self.assertEqual("sudo-installed", drill["executionMode"])
+        self.assertTrue(drill["applyOk"] and drill["rollbackOk"] and drill["chainsAbsentAfter"])
+        self.assertTrue(drill["passed"])
+        # honest scope labels: the drill only touches detached scratch chains.
+        self.assertEqual("detached-scratch-chain", drill["scope"])
+        self.assertFalse(drill["liveOwnedChainsTouched"])
+        self.assertFalse(drill["builtinHooksExercised"])
+        self.assertEqual(collector.ROLLBACK_MECHANISM_VERSION, drill["rollbackMechanismVersion"])
+        hist = evidence["collector"]["historicalLiveRollback"]
+        self.assertTrue(hist["executionVerified"] and hist["liveOwnedChainsExercised"])
+        self.assertEqual("pass", hist["rollbackResult"])
+        self.assertTrue(evidence["rollback"]["tested"])
+        self.assertEqual("scratch-chain-drill", evidence["rollback"]["driverMode"])
 
         result = self.run_verifier(evidence)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("Faz24 WG-B+ I6 MASQ evidence: PASS", result.stdout)
         self.assertIn("clusterCIDR=10.44.0.0/16", result.stdout)
+
+    # -- rollback-defined: drill is necessary-but-not-sufficient ----------
+    def test_default_no_rollback_drill_fails_rollback_defined(self):
+        # Fail-closed default: no drill, no historical -> rollback-defined FAILS.
+        evidence = self.build()
+        self.assertCheckFails(evidence, "rollback-defined")
+        self.assertIsNone(evidence["collector"]["rollbackDrill"])
+        self.assertIsNone(evidence["collector"]["historicalLiveRollback"])
+        self.assertFalse(evidence["rollback"]["tested"])
+
+    def test_drill_passes_but_no_historical_is_11_of_12(self):
+        # THE honest outcome: the scratch drill fully passes, but with no historical live
+        # rollback evidence, rollback-defined is the ONLY failing check (11/12).
+        evidence = self.build(arg_overrides={"rollback_drill": True})
+        self.assertIsNone(evidence["collector"]["historicalLiveRollback"])
+        self.assertTrue(evidence["collector"]["rollbackDrill"]["passed"])
+        failing = [c["id"] for c in evidence["checks"] if c["status"] != "pass"]
+        self.assertEqual(["rollback-defined"], failing)
+        self.assertFalse(evidence["rollback"]["tested"])
+
+    def test_rollback_drill_rollback_not_ok_fails(self):
+        evidence = self.build(
+            arg_overrides={"rollback_drill": True, "historical_live_rollback_ref": self.historical_path()},
+            runner_overrides={"drill_rollback_ok": False},
+        )
+        self.assertCheckFails(evidence, "rollback-defined")
+        self.assertFalse(evidence["collector"]["rollbackDrill"]["rollbackOk"])
+
+    def test_rollback_drill_chains_not_absent_fails(self):
+        evidence = self.build(
+            arg_overrides={"rollback_drill": True, "historical_live_rollback_ref": self.historical_path()},
+            runner_overrides={"drill_chains_absent": False},
+        )
+        self.assertCheckFails(evidence, "rollback-defined")
+        self.assertFalse(evidence["collector"]["rollbackDrill"]["chainsAbsentAfter"])
+
+    def test_rollback_drill_apply_not_ok_fails(self):
+        evidence = self.build(
+            arg_overrides={"rollback_drill": True, "historical_live_rollback_ref": self.historical_path()},
+            runner_overrides={"drill_apply_ok": False},
+        )
+        self.assertCheckFails(evidence, "rollback-defined")
+        self.assertFalse(evidence["collector"]["rollbackDrill"]["applyOk"])
+
+    def test_rollback_drill_not_authoritative_fails(self):
+        # drill script not root-owned -> executionMode unavailable -> rollback-defined fail.
+        evidence = self.build(
+            arg_overrides={"rollback_drill": True, "historical_live_rollback_ref": self.historical_path()},
+            stat_result=(1000, "0755"),
+        )
+        self.assertCheckFails(evidence, "rollback-defined")
+        self.assertEqual("unavailable", evidence["collector"]["rollbackDrill"]["executionMode"])
+
+    # -- historical live-rollback evidence binding ------------------------
+    def test_historical_schema_invalid_ignored_fails(self):
+        bad = Path(self._tmp.name) / "bad-hist.json"
+        bad.write_text('{"schemaVersion": "wrong"}', encoding="utf-8")
+        evidence = self.build(
+            arg_overrides={"rollback_drill": True, "historical_live_rollback_ref": str(bad)}
+        )
+        self.assertIsNone(evidence["collector"]["historicalLiveRollback"])
+        self.assertCheckFails(evidence, "rollback-defined")
+
+    def test_historical_result_not_pass_fails(self):
+        evidence = self.build(
+            arg_overrides={
+                "rollback_drill": True,
+                "historical_live_rollback_ref": self.historical_path(rollbackResult="fail"),
+            }
+        )
+        self.assertCheckFails(evidence, "rollback-defined")
+
+    def test_historical_builtin_hooks_not_exercised_fails(self):
+        evidence = self.build(
+            arg_overrides={
+                "rollback_drill": True,
+                "historical_live_rollback_ref": self.historical_path(builtinHooksExercised=False),
+            }
+        )
+        self.assertCheckFails(evidence, "rollback-defined")
+
+    def test_historical_target_cluster_mismatch_fails(self):
+        evidence = self.build(
+            arg_overrides={
+                "rollback_drill": True,
+                "historical_live_rollback_ref": self.historical_path(targetClusterHash="dead0000beef1111"),
+            }
+        )
+        self.assertCheckFails(evidence, "rollback-defined")
 
     # -- belt / effective / node containment (unchanged from v2) ----------
     def test_belt_policy_rejects_k3d_test_with_prod_cidr(self):
@@ -582,7 +735,9 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
 
     # -- leak guard + arg surface -----------------------------------------
     def test_forbidden_key_leaked_into_evidence_is_rejected_by_verifier(self):
-        evidence = self.build()
+        evidence = self.build(
+            arg_overrides={"rollback_drill": True, "historical_live_rollback_ref": self.historical_path()}
+        )
         self.assertEqual("pass", evidence["status"])
         evidence["collector"]["podProbe"]["command_output"] = "kubectl exec ... nc -z 10.99.0.2 8243"
         result = self.run_verifier(evidence)
