@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: faz22-6-view-only-evidence
+  # Faz 22.6 #1580 VIEW_ONLY attended live-proof engineering evidence manifest.
+  # Served read-only by artifact-host at
+  # https://testai.acik.com/artifacts/faz22-6/view-only-evidence-20260712.json
+  # so the F22_6_VIEW_ONLY_ENGINEERING: v2 marker's evidence_package_url is a
+  # durable, fetchable HTTPS source whose canonical (jq -cS) SHA256 matches the
+  # marker (6af2855481e48f73382c7ae9a204da18ac132c26551661d95f857dce71e1b791).
+  # Session rb-viewonly-attended-20260712T135122Z: 122 real ~90 KB PNG frames
+  # broker-RECEIVED (disposition=DROPPED_NO_VIEWER), human-attended consent.
+  # recording_mode=disabled, content_persistence=none — metadata-only, no screen
+  # bytes. pilot_device is a redacted public alias; the real device stays in the
+  # private evidence bundle (RB-faz22.6 private-identifier rule; Codex 019f56a8).
+data:
+  view-only-evidence-20260712.json: |
+    {"acceptance_scope":"bounded-pilot-view-only","active_indicator":"pass","approved_at":"2026-07-12","audit_negative_matrix":["no-auth","wrong-device","expired-session","dlp-deny","local-abort","no-control-attempt-denied","mtls-authz-enforced","ttl-revoke-kill","frame-flow-proven","audit-metadata-recorded","recording-disabled-no-persistence","metadata-audit-on"],"content_persistence":"none","d10_fail_closed":"pass","dlp_mask_policy":"pass","expires_at":"2026-10-10","forbidden_claims":["rdp","credential-entry","raw-shell","port-forward","5-device","50-device","800-device","production","broad-rollout"],"local_abort":"pass","metadata_audit":"active","owner_approved_by":"Halil Kocoglu","pilot_device":"pilot-1580-device-a","product_channel":"endpoint-agent-outbound-mtls-remote-bridge","recording_mode":"disabled","schema_version":"faz22.6-view-only-evidence-v2","session_id":"rb-viewonly-attended-20260712T135122Z","view_mode":"VIEW_ONLY","viewer_path_decision":"owner-deferred"}
