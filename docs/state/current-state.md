@@ -1,17 +1,18 @@
 # Current State — Platform K8s Migration
 
-## Source Proposal — Faz 24 Meeting-AI GPU -> staging private result path (2026-07-12)
+## Live Delta — Faz 24 Meeting-AI GPU -> staging private result path (2026-07-12)
 
 Tracked by [platform-k8s-gitops#2321](https://github.com/Halildeu/platform-k8s-gitops/issues/2321)
 and [platform-ai#198](https://github.com/Halildeu/platform-ai/issues/198).
-This delta records desired source state only. It is not merged, applied, or
-runtime-accepted evidence.
+The desired-state chain is merged and partially staged. Runtime acceptance is
+still open; source merge and host preparation do not prove mTLS/JWT ingestion,
+outbox recovery or the desktop product path.
 
-Proposed fail-closed chain:
+Fail-closed chain:
 
 `meeting-ai GPU 10.99.0.2 -> WireGuard wg0 -> staging-sw 10.99.0.1:9447 -> Caddy application mTLS -> 127.0.0.1:31080 -> meeting-ai-private Ingress -> auth-service/meeting-service`
 
-Source controls in the proposed change:
+Merged source controls:
 
 - exact host firewall allow for `wg0`, source/destination `/32` and TCP/9447;
 - dedicated client/server PKI trust domains, 24-hour leafs, scoped 48-hour
@@ -26,9 +27,10 @@ Source controls in the proposed change:
 - meeting-service issuer/audience/client/JWKS verifier bindings; the GPU still
   needs the short-lived `meeting:analysis-result:write` service JWT.
 
-Source verification completed before publication:
+Source and staging evidence:
 
-- static contract, ShellCheck and `git diff --check` pass;
+- GitOps PRs #2324, #2327, #2335, #2337, #2338 and #2339 are merged;
+  static contract, ShellCheck and rendered-policy gates pass;
 - test/prod/monitoring Kustomize renders parse; isolated ESO and Deployment env
   binding are semantically checked; no test secret or private host leaks to the
   prod render;
@@ -39,18 +41,39 @@ Source verification completed before publication:
 - container behavior test passes initial atomic activation, stale-link
   recovery, reload-failure pointer rollback, fullchain and success/failure
   textfile metrics;
-- Claude Opus 4.8 adversarial review found no P0 landing blocker after two
-  rounds; its ExternalSecret, telemetry, fullchain and rollback findings are
-  absorbed in the proposed source.
+- the Kubernetes API accepts the private Ingress and Argo CD created
+  `platform-test/meeting-ai-private` on host
+  `meeting-ai-private.testai.internal`;
+- staging Caddy 2.11.4 is package-managed, while the gateway, firewall and
+  rotation timer remain deliberately disabled/inactive until credentials are
+  provisioned; Meeting-AI has no listener on TCP/9447;
+- TCP/9445 remains owned by the independent Faz 22 forwarder and was not
+  mutated; Meeting-AI is isolated on WireGuard-only TCP/9447;
+- GPU deploy clone `C:\platform-ai` is detached and clean at approved commit
+  `5b716c3281ba5df4a63c391f6cf13cce62e68a45`; its hardened deployment ledger
+  matches and the live drift guard passes. Existing running tasks still point
+  to the prior development clone until private credentials are ready;
+- pre-cutover Scheduled Task XML backups are stored under the protected
+  `C:\ProgramData\Acik\platform-ai\rollback\pre-private-gateway` directory,
+  owned by Administrators with inheritance disabled and access limited to
+  SYSTEM/Administrators;
+- live public API gateway route inventory contains meeting/transcript admin
+  routes but no `/api/v1/internal/meetings/` route. Anonymous public probes
+  return `401` because security runs before route lookup; that status alone is
+  not used as route-absence evidence.
 
 Open acceptance boundary:
 
-- local WireGuard routes are currently absent and `staging-sw` SSH times out;
-  no host or cluster mutation was attempted;
-- Vault PKI roles/token/client secret are not seeded by this source change;
-- no immutable rollout, ESO `Ready=True`, pod revision, mTLS negative matrix,
+- SSH-over-WireGuard to the GPU and staging SSH are reachable;
+- `auth-service-meeting-ai-secret` remains `Ready=False` because Vault key
+  `service_client_meeting_ai_secret` is absent. Test Vault is initialized and
+  unsealed with a 2-of-3 threshold, but all available root-token candidates are
+  invalid and the host has only one unseal share. The owner-held second share
+  must be used in an attended owner terminal and must not enter chat, issues or
+  command-line arguments;
+- no ESO `Ready=True`, activated private listener, mTLS negative matrix,
   JWT claim matrix, idempotent result POST, outbox drain, cert rotation fire
-  drill, public-negative route or Electron product-path acceptance is claimed;
+  drill or Electron product-path acceptance is claimed;
 - `platform-k8s-gitops#2321` and `platform-ai#198` remain active until those
   live gates are evidenced and board acceptance is deliberate.
 

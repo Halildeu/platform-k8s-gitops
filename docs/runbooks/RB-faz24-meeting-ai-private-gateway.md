@@ -292,8 +292,33 @@ tamamını içermelidir:
    yanlış client/permission 403; geçerli ilk POST 201; aynı Idempotency-Key 200.
 10. Meeting-AI task restartında encrypted SQLite outbox korunur, geçici outage
     sonrası drain olur; raw transcript/Authorization/private key loglarda yoktur.
-11. Public negative: `testai.acik.com` ve `ai.acik.com` üzerinden
-    `/api/v1/internal/meetings/.../analysis-results` route edilmez.
+11. Public negative iki ayrı kanıtla doğrulanır:
+    - public `api-gateway-config` route envanterinde
+      `/api/v1/internal/meetings/` içeren hiçbir
+      `SPRING_CLOUD_GATEWAY_ROUTES_*` predicate yoktur;
+    - `testai.acik.com` ve `ai.acik.com` üzerinden anonymous internal-path
+      probe fail-closed `401` veya `404` döner; `2xx`, redirect ve `5xx`
+      kabul edilmez.
+
+    API gateway security filter'i route lookup'tan önce authentication
+    isteyebildiği için anonymous `401` tek başına "route yok" kanıtı değildir.
+    Route envanteri kontrolü zorunludur:
+
+    ```bash
+    kubectl --context k3d-test -n platform-test get configmap \
+      api-gateway-config -o json | jq -e '
+        [.data | to_entries[]
+          | select(.key | startswith("SPRING_CLOUD_GATEWAY_ROUTES_"))
+          | select(.value | contains("/api/v1/internal/meetings/"))]
+        | length == 0'
+
+    for host in testai.acik.com ai.acik.com; do
+      code="$(curl --silent --show-error --output /dev/null \
+        --write-out '%{http_code}' --max-time 15 \
+        "https://${host}/api/v1/internal/meetings/00000000-0000-0000-0000-000000000000/analysis-results")"
+      case "${code}" in 401|404) ;; *) exit 1 ;; esac
+    done
+    ```
 12. Sekiz saatlik sertifika rotation timer sonrası yeni leaf ile kesintisiz istek
     ve alert-fire drill sonucu kaydedilir. Caddy file trust pool CRL/OCSP
     tüketmediği için client leaf iptali anlık değildir; sızıntı halinde firewall
