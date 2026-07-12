@@ -43,7 +43,8 @@ images:
     digest: sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
 
 patches:
-  # 39d-5 Faz1: mTLS keystore/truststore mount + denetim hostAlias (provider STUB kalır)
+  # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
+  # Provider seçimi AŞAĞIDAKİ ConfigMap patch'inde stub → live-stt'ye çevrilir (Faz2).
   - path: patch-mtls-mount.yaml
   # test ortam değerleri (base fail-closed placeholder'larını doldurur)
   - target:
@@ -56,6 +57,22 @@ patches:
       - op: replace
         path: /data/ATS_JWKS_URI
         value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      # 39d-5 Faz2: provider flip stub → live-stt (Faz24 denetim STT, mTLS).
+      # transcribe canlı denetim-PC motoruna gider; cite live-stt'de bilinçli
+      # NOT_CONFIGURED (STT-only motor; F4 citation ayrı LLM işi, ADR-0043 T-C).
+      # ATS-0017: stub↔live OTO-FALLBACK YASAK (provider=live-stt fail-closed).
       - op: replace
         path: /data/ATS_AI_BASE_URL
-        value: "http://ats-ai-stub:9452"
+        value: "https://live-stt.denetim:8243"
+      - op: add
+        path: /data/ATS_AI_PROVIDER
+        value: "live-stt"
+      - op: add
+        path: /data/ATS_AI_MTLS_MODE
+        value: "required"
+      - op: add
+        path: /data/ATS_AI_MTLS_KEYSTORE
+        value: "/etc/ats-mtls/keystore.p12"
+      - op: add
+        path: /data/ATS_AI_MTLS_TRUSTSTORE
+        value: "/etc/ats-mtls/truststore.p12"

@@ -1,9 +1,9 @@
-# 39d-5 Faz1 (HAZIRLIK) — mTLS keystore/truststore mount + denetim hostAlias.
-# Provider STUB'da KALIR (Faz2 ConfigMap flip'e kadar bu env'ler inert): bu patch
-# yalnız p12 dosyalarını pod'a taşır + live-stt.denetim → 10.99.0.2 çözümü ekler
-# (Faz24 audio-gateway hostAliases aynası; Caddy SNI/Host route + server-cert SAN
-# hem DNS hem IP taşır). Codex 019f535a iki-aşamalı-apply BLOCKER'ı: ES+mount+
-# netpol ÖNCE (provider stub) → kapılar geçince Faz2 provider flip.
+# 39d-5 mTLS deployment patch — keystore/truststore mount + denetim hostAlias +
+# keystore parolası (Faz2). Faz1'de mount+hostAlias eklendi (provider stub);
+# Faz2'de ConfigMap provider flip (live-stt) + BU env (parola secretKeyRef).
+# hostAliases live-stt.denetim → 10.99.0.2 (Faz24 audio-gateway aynası; Caddy
+# SNI/Host route + server-cert SAN DNS+IP). Pod→WG yolu #1867 masq+FORWARD fix'le
+# onarıldı (cluster-cidr 10.44 + UFW FORWARD ACCEPT br↔wg0; canlı REACHABLE).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,6 +17,14 @@ spec:
             - live-stt.denetim
       containers:
         - name: app-boot
+          # 39d-5 Faz2: keystore parolası secretKeyRef ile (envFrom DEĞİL — binary
+          # p12'leri env'e taşımaz). Provider live-stt iken fromPkcs12 bunu okur.
+          env:
+            - name: ATS_AI_MTLS_KEYSTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ats-interview-evidence-mtls
+                  key: MTLS_PASSWORD
           volumeMounts:
             - name: ats-mtls
               mountPath: /etc/ats-mtls
