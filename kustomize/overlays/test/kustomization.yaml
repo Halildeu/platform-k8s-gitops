@@ -5594,7 +5594,12 @@ images:
     # @ConditionalOnPrimaryEndpointPlane, self-heal on returning heartbeat). Strict
     # superset over a5cf602f; reconciler runs on endpoint-admin-service (primary plane)
     # only — the shared brokers get a functionally-identical newer image + reconnect.
-    digest: sha256:b646eec34b6681f71cfe53b14bd480fd196b231cdee903433438c71dcac0a04c
+    # 2026-07-12 #1580 session-scoped HELLO_VERIFIED co-bump: backend #817 (main
+    # 60d89f27, image build run 29188033578, tag sha-60d89f2). b646eec3 (#793,
+    # ancestor of 60d89f27 — merge-base verified) -> 8e2187f0 is an additive superset
+    # (device-key hardening retained). Co-bumped with BOTH remote-bridge activation
+    # overlays so remote-bridge-digest-alignment stays green (same-image topology).
+    digest: sha256:8e2187f02e80d4c74efe9898f3e8a053b7fd560628d4002c377ef5dcb3fb6f8f
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571

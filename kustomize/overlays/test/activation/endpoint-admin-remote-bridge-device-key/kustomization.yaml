@@ -60,6 +60,17 @@ images:
   # with backend #797 / image build run 28683451172 after primary test moved
   # endpoint-admin-service to the recorder-safe diagnostic audit image.
   # Activation remains owner-gated; this prepares the live attended smoke retry.
+  # 2026-07-12 Faz 22.6 #1580 session-scoped HELLO_VERIFIED co-bump: backend
+  # #817 (main 60d89f27) / image build run 29188033578, tag sha-60d89f2. The
+  # attended-smoke evidence bundle is captured by session id, but onAgentHello
+  # recorded HELLO_VERIFIED to the peer-level "ledger" sink (pre-session), so a
+  # fully-green smoke still finalized to accepted-candidate (missing
+  # brokerSignals HELLO_VERIFIED). #817 also emits a session-scoped
+  # HELLO_VERIFIED:source=consent-refresh at consent-time re-verification.
+  # b646eec3 (#793..#797, ancestor of 60d89f27) -> 8e2187f0 is an additive
+  # superset (device-key hardening retained: incarnation guard, evidence-window,
+  # session_challenge_hash audit); verified via merge-base ancestry. Activation
+  # remains owner-gated; live VIEW_ONLY evidence + KVKK signoff still separate.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:b646eec34b6681f71cfe53b14bd480fd196b231cdee903433438c71dcac0a04c
+    digest: sha256:8e2187f02e80d4c74efe9898f3e8a053b7fd560628d4002c377ef5dcb3fb6f8f
