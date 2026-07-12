@@ -49,6 +49,7 @@ resources:
                                      # artifact host (test-only; prod deferred). Pairs with
                                      # the /artifacts ingress path patch + edge route flip.
   - agentpc2-bootstrap/configmap.yaml # Faz 22.6.3 AgentPC2 bounded public bootstrap script
+  - faz22-6-view-only-evidence/configmap.yaml # Faz 22.6 #1580 VIEW_ONLY live-proof evidence manifest (durable HTTPS host)
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
@@ -7594,6 +7595,29 @@ patches:
           name: agentpc2-first-install-bootstrap
           configMap:
             name: agentpc2-first-install-bootstrap
+
+  # Faz 22.6 #1580: mount the VIEW_ONLY attended live-proof evidence manifest
+  # read-only under artifact-host's /artifacts/faz22-6 tree so the
+  # F22_6_VIEW_ONLY_ENGINEERING: v2 marker's evidence_package_url is a durable,
+  # fetchable HTTPS source (jq -cS SHA256 matches the marker). Metadata-only —
+  # recording_mode=disabled, content_persistence=none (no screen bytes).
+  # Mirrors the bootstrap publication pattern above (test-only; prod deferred).
+  - target:
+      kind: Deployment
+      name: artifact-host
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: faz22-6-view-only-evidence
+          mountPath: /usr/share/nginx/html/artifacts/faz22-6
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: faz22-6-view-only-evidence
+          configMap:
+            name: faz22-6-view-only-evidence
 
   # Faz 22.5 M1: append the /artifacts path (test-only — NOT in base, so prod
   # ai.acik.com keeps falling through `/` to the SPA, not the real installer).
