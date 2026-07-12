@@ -236,8 +236,14 @@ images:
     # 2026-07-12 update: sha-b3c93e2 includes platform-backend#819's successful
     # canonical result-read audit and the prior #814/#816 result contract chain.
     # Digest source: CI - Image Build + GHCR Push run 29202272289.
+    # 2026-07-12 stable-owner rollout: platform-backend#825 moves Meeting object
+    # ownership to the immutable OIDC subject while keeping numeric userId only
+    # for the module-authorization compatibility path. Test enables the bounded
+    # legacy fallback + dual-write window below until #2360 backfill and desktop
+    # smoke prove both an existing and a newly-created meeting. Image build run
+    # 29210095540; prod remains unchanged.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:379f6ef324afbed8e2e1fb195e668a28f8cae1c9ce5e896540b61ccde0c1b339
+    digest: sha256:0064ae72d2776ad3c772ae3e075240e4c20a429cad5541b47545d22844594424
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -6001,6 +6007,15 @@ patches:
       - op: add
         path: /data/MEETING_AI_BASE_URL
         value: "http://meeting-ai-service:8080"
+      # #2360 test-only migration window. Defaults remain false in source and
+      # prod. Remove both flags only after stable-sub tuple backfill, exact
+      # allow/deny verification, and old/new desktop meeting smoke evidence.
+      - op: add
+        path: /data/MEETING_AUTHZ_LEGACY_USER_ID_FALLBACK_ENABLED
+        value: "true"
+      - op: add
+        path: /data/MEETING_AUTHZ_LEGACY_USER_ID_DUAL_WRITE_ENABLED
+        value: "true"
 
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The
   # base bootstrap Secret is for non-ESO bootstrap only; rendering both creates
