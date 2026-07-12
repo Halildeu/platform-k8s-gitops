@@ -60,6 +60,53 @@ MFE (`mfe-interview-evidence`) canlı `/api/ats` READ'i **runtime env** ile aç�
 - Yazma yüzeyleri (rıza/inceleme/DSAR) canlı modda 39d-7'ye kadar gizli; tam akış demo modunda.
 - Doğrulama: browser network'te `GET /api/ats/v1/interviews/iv-smoke-1/transcripts` 200 + liste render + seçimde `transcript?key=` 200 + segment render.
 
+### 39d-7b/7b-2/7c/7d KANIT (2026-07-12 — canlı ürün yüzeyi F1→F10 TAMAM)
+
+| Dilim | platform-web PR | gitops pin | Edge-LIVE marker (MF zinciri) |
+|---|---|---|---|
+| 7b citation (F4) | #871 | #2312 (sha-9dda59b) | — (7b-2 build'ine katlandı) |
+| 7b-2 insan-onay/finalize (F5) | #872 | #2319 (sha-2d6cebb) | `App-DapSGjkm.js`: `live-review-panel` |
+| 7c DSAR/erasure (F10) | #873 | #2320 (sha-92795e1) | `App-D7p-aR-M.js`: `live-dsar-panel` |
+| 7d export (F7) | #874 | #2322 (sha-31bee61) | `App-D-yVTgGe.js`: `live-export-panel` + `export-reconcile-error` |
+
+Edge-marker doğrulama (VPN'siz; esbuild non-ASCII'yi escape'ler → ASCII
+testid marker'ı kullan):
+
+```bash
+B=https://testai.acik.com/remotes/interview-evidence
+# remoteEntry → inner → exposes → App-shim → App-real zinciri; App-real'de:
+grep -c 'live-export-panel' <(curl -sk "$B/assets/App-<hash>.js")
+```
+
+## F7 export — operasyonel residual'lar (R1–R4) ve müdahale
+
+Single-export invariant'ı DB'dedir: `worm_ledger UNIQUE(tenant_id,
+idempotency_key)` + ExportService deterministik key
+(`tenant:interview:export:caseKey`). Frontend guard'ı yalnız aynı-sekme
+best-effort'tur. Aşağıdaki durumlar BAŞARI SAYILMAZ ve UI bunları
+ambiguous-kilit olarak gösterir:
+
+| # | Durum | Tespit | Müdahale |
+|---|---|---|---|
+| R1 | Ledger-conflict sonrası artifact telafi-DELETE'i başarısız → **öksüz artifact** (ledger-bağsız; packet lineage DIŞI) | app-boot log: `ledger append başarısız VE artifact telafi silmesi başarısız (operasyonel müdahale gerekir)` + 503 | Artifact store'da ledger'da `export_artifact_ref` karşılığı OLMAYAN kaydı belirle → sil. Vaka state'i bozulmaz; yeni export denenebilir. |
+| R2 | Ambiguous sonrası makbuz kimlikleri kayıp (receipt-recovery endpoint'i YOK — backlog) | UI `reconciled-exported (makbuz doğrulanamıyor)` | `worm_ledger`'dan ilgili idempotency_key satırını oku: payload `export_artifact_ref`, `packet_digest`, `claim_count` içerir — makbuz kimlikleri buradan. |
+| R3 | İkinci istek same-receipt replay ALMAZ (payload'lar artifact-ref'ten ötürü birebir olamaz) → deterministic conflict + telafi | 503 `artifact geri alındı` (net-zero) | Müdahale gerekmez — beklenen davranış; ilk makbuz geçerli. |
+| R4 | artifact + ledger yazıldı, `markExported` DÜŞTÜ → vaka FINALIZED kaldı | app-boot log: `EXPORTED geçişi başarısız (artifact + ledger kaydı MEVCUT ... yutulmadı)` + 400 | Ledger satırı + artifact MEVCUT ve geçerli; vaka state'ini manuel `EXPORTED`'a taşı (repair) — YENİ export DENEME (ledger key tüketildi; retry conflict'e düşer). |
+
+Frontend davranış sözleşmesi (platform-web `apps/mfe-interview-evidence/README.md`):
+400/5xx hiçbir zaman "uygulanmadı" sayılmaz; reconciliation'da EXPORTED
+görünürse makbuz UYDURULMAZ; FINALIZED görünmesi R4 nedeniyle kanıt değildir.
+
+## 39d-5 canlı-STT promotion (VPN+tünel-gated — bekleyen)
+
+Hedef: activation patch `ATS_AI_BASE_URL` `http://ats-ai-stub:9452` →
+`https://live-stt.denetim:8243` (denetim-PC GPU host; mTLS —
+`RB-faz24-direct-stt-mtls-enable.md` deseninin ATS aynası). Zincir (tek
+VPN-oturumu): ats app-boot mTLS env-adları keşfi → Vault `kv/platform/ats`
+STT cert/key/CA seed → activation ExternalSecret + mount + patch PR →
+scp+kubectl apply → canlı transcribe kanıtı (ATS-0017: stub↔live otomatik
+fallback YASAK; ayrı acceptance).
+
 ## Rollback
 
 - Aktivasyonu geri al: `kubectl delete -k kustomize/overlays/test/activation/ats-interview-evidence` → `/api/ats` ana `platform` Ingress'ine (api-gateway 404) geri düşer; MFE demo-motorları etkilenmez.
