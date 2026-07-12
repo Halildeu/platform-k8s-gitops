@@ -1,0 +1,114 @@
+{
+  "accepted": true,
+  "checks": [
+    {
+      "actualStatus": 401,
+      "errorCode": "invalid_client",
+      "expectedStatus": 401,
+      "id": "token-wrong-secret",
+      "pass": true,
+      "responseBodySha256": "8c30686ecd7a048207e47c8b75de8835bb5072d0a88ca5138a842d4e6bfb5647"
+    },
+    {
+      "actualStatus": 400,
+      "errorCode": "invalid_audience",
+      "expectedStatus": 400,
+      "id": "token-wrong-audience",
+      "pass": true,
+      "responseBodySha256": "d539d2e554c839908159d9da6741065fac9d75297bd3ee559ff87167f243e975"
+    },
+    {
+      "actualStatus": 400,
+      "errorCode": "invalid_permission",
+      "expectedStatus": 400,
+      "id": "token-wrong-permission",
+      "pass": true,
+      "responseBodySha256": "a5fc28d4fae8bcf4ddce491cbaa0c0b035f071463047bd3554d4bf90442677aa"
+    },
+    {
+      "actualStatus": 400,
+      "errorCode": "invalid_permission",
+      "expectedStatus": 400,
+      "id": "token-missing-permission",
+      "pass": true,
+      "responseBodySha256": "479bbed5a614cb7bdf41c14074ca44799a792135c5bf6a5742de63116ae4d8ec"
+    },
+    {
+      "actualStatus": 200,
+      "expectedStatus": 200,
+      "id": "token-valid",
+      "pass": true,
+      "responseBodySha256": "30c399930e4fc026eac732053de368c82cad99154dff3d1dca8e2fa4e0aea5f1"
+    },
+    {
+      "actualStatus": "bound",
+      "expectedStatus": "bound",
+      "id": "token-claims",
+      "pass": true
+    },
+    {
+      "actualStatus": 401,
+      "expectedStatus": 401,
+      "id": "ingest-no-token",
+      "pass": true,
+      "responseBodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "actualStatus": 401,
+      "expectedStatus": 401,
+      "id": "ingest-malformed-token",
+      "pass": true,
+      "responseBodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "actualStatus": 201,
+      "expectedStatus": 201,
+      "id": "ingest-first-write",
+      "pass": true,
+      "responseBodySha256": "da500d4570593aa57eedb2d8588b53963af7fb53ab6b587566aaa17976d56dc8"
+    },
+    {
+      "actualStatus": 200,
+      "expectedStatus": 200,
+      "id": "ingest-idempotent-replay",
+      "pass": true,
+      "responseBodySha256": "016fff849101cbcc36927c098bb6cf1913430b0d222a901444fa0cbbcc2fa534"
+    },
+    {
+      "actualStatus": 409,
+      "errorCode": "IDEMPOTENCY_CONFLICT",
+      "expectedStatus": 409,
+      "id": "ingest-idempotency-conflict",
+      "pass": true,
+      "responseBodySha256": "8ce5f9baa08ed3574c6b78c83dc8d4fc116cf9a6f4504c8ad490a770afc458b8"
+    }
+  ],
+  "claims": {
+    "audience": [
+      "meeting-service"
+    ],
+    "clientId": "meeting-ai",
+    "issuer": "auth-service",
+    "permissions": [
+      "meeting:analysis-result:write"
+    ],
+    "service": "meeting-ai",
+    "subject": "meeting-ai",
+    "ttlSeconds": 60
+  },
+  "environment": {
+    "baseUrlSha256": "fdf385354bf45cc624b76cebfb29199a0de23357956bcd544a42c3c0bb764589",
+    "context": "k3d-test",
+    "hostHeader": "meeting-ai-private.testai.internal",
+    "namespace": "platform-test"
+  },
+  "generatedAt": "2026-07-12T14:08:44Z",
+  "schemaVersion": "faz24-meeting-ai-private-runtime-smoke.v1",
+  "syntheticWrite": {
+    "analysisRunId": "e59e8a40-47b9-4404-a706-18a5e4c3e7c6",
+    "containsPii": false,
+    "containsUserTranscript": false,
+    "meetingId": "48c4ce5e-b61b-4719-ba8e-1d8984b010d5",
+    "requested": true
+  }
+}
