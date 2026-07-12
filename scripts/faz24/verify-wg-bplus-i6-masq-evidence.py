@@ -19,9 +19,22 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v2"
-VERIFICATION_SCHEMA_VERSION = "faz24.wg-bplus.i6.masq-evidence-verification.v2"
+SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v3"
+VERIFICATION_SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq-evidence-verification.v3"
 OWNED_NAT_CHAIN = "K3D_WG_MASQ_NAT"
+
+# Canonical pinned probe artifact — MUST match the collect workflow's PROBE_IMAGE and
+# the collector's EXPECTED_PROBE_IMAGE. The runtime image DIGEST is compared to the
+# requested digest (D30: a moving tag / a merely-present imageID is not proof).
+EXPECTED_PROBE_IMAGE = "busybox@sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f"
+
+# Extract an exact sha256:<64hex> digest (no loose substring).
+IMAGE_DIGEST_RE = re.compile(r"sha256:([0-9a-f]{64})(?![0-9a-f])")
+
+# Only an installed, root-owned script run under sudo is authoritative. The
+# `sudo-canonical` (running the user-writable checkout as root) and `direct`
+# (non-root) modes are NOT authoritative.
+AUTHORITATIVE_EXECUTION_MODES = {"sudo-installed"}
 
 REQUIRED_CHECK_IDS = [
     "cluster-identity-bound",
@@ -396,6 +409,37 @@ def _subnet_of(child: Any, parent: Any) -> bool:
         return False
 
 
+def _norm_ip(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return None
+
+
+def _ip_in_cidr(ip: Any, cidr: Any) -> bool:
+    if not isinstance(ip, str) or not isinstance(cidr, str):
+        return False
+    try:
+        return ipaddress.ip_address(ip) in ipaddress.ip_network(cidr)
+    except (ValueError, TypeError):
+        return False
+
+
+def _image_digest(ref: Any) -> str | None:
+    """Return the canonical `sha256:<64hex>` from any image ref form, else None.
+
+    Exact 64 hex only (no loose substring: a longer hex run does not match).
+    """
+    if not isinstance(ref, str):
+        return None
+    match = IMAGE_DIGEST_RE.search(ref)
+    if not match:
+        return None
+    return f"sha256:{match.group(1)}"
+
+
 def _is_hash(value: Any) -> bool:
     return isinstance(value, str) and bool(HASH_RE.match(value))
 
@@ -412,6 +456,15 @@ def _is_plain_int(value: Any) -> bool:
 
 def _nonempty_str(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _parse_octal_mode(value: Any) -> int | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return int(value, 8)
+    except ValueError:
+        return None
 
 
 def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
@@ -511,15 +564,29 @@ def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
         fail(cid, "scriptFound must be true")
     if not _is_plain_int(hc.get("checkExitCode")) or hc.get("checkExitCode") != 0:
         fail(cid, "checkExitCode must be integer 0")
+    # Only an installed, root-owned, non-writable-by-others script run under sudo is
+    # authoritative (running the checkout as root is a TOCTOU / priv-esc gap).
+    if hc.get("executionMode") not in AUTHORITATIVE_EXECUTION_MODES:
+        fail(cid, "executionMode must be 'sudo-installed' (installed root-owned script only)")
+    if hc.get("installedProvided") is not True:
+        fail(cid, "installedProvided must be true (an installed root-owned script is required)")
+    if not _is_plain_int(hc.get("installedScriptOwnerUid")) or hc.get("installedScriptOwnerUid") != 0:
+        fail(cid, "installedScriptOwnerUid must be integer 0 (root-owned)")
+    mode_bits = _parse_octal_mode(hc.get("installedScriptMode"))
+    if mode_bits is None:
+        fail(cid, "installedScriptMode must be an octal permission string")
+    elif (mode_bits & 0o022) != 0:
+        fail(cid, "installedScriptMode must not be group- or world-writable")
     canonical_sha = hc.get("canonicalSha256")
+    installed_sha = hc.get("installedSha256")
     if not (isinstance(canonical_sha, str) and HEX64_RE.match(canonical_sha)):
         fail(cid, "canonicalSha256 must be 64 lowercase hex chars")
-    if hc.get("installedProvided") is True:
-        installed_sha = hc.get("installedSha256")
-        if not (isinstance(installed_sha, str) and installed_sha == canonical_sha):
-            fail(cid, "installedSha256 must equal canonicalSha256")
-        if hc.get("shaMatches") is not True:
-            fail(cid, "shaMatches must be true when an installed script is provided")
+    if not (isinstance(installed_sha, str) and HEX64_RE.match(installed_sha)):
+        fail(cid, "installedSha256 must be 64 lowercase hex chars")
+    if isinstance(canonical_sha, str) and isinstance(installed_sha, str) and installed_sha != canonical_sha:
+        fail(cid, "installedSha256 must equal canonicalSha256")
+    if hc.get("shaMatches") is not True:
+        fail(cid, "shaMatches must be true")
 
     # 5) peer-route-is-wireguard-path
     pr = _obj(collector.get("peerRoute"))
@@ -533,9 +600,50 @@ def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
     if not _is_hash(pr.get("peerFingerprint")):
         fail(cid, "peerFingerprint must be a sha256 hash")
 
-    # 6) pod-to-wg-peer-tcp-connect
+    # 6) pod-to-wg-peer-tcp-connect (v3: re-derive from RAW pod metadata; do NOT
+    #    trust the informational podWithinClusterCidr / podOnTargetNode booleans)
     pp = _obj(collector.get("podProbe"))
     cid = "pod-to-wg-peer-tcp-connect"
+    identity_node = _obj(collector.get("clusterIdentity")).get("nodeName")
+
+    if pp.get("matchCount") != 1:
+        fail(cid, "matchCount must be exactly 1 (single label-selected probe pod)")
+    if pp.get("phase") != "Running":
+        fail(cid, "pod phase must be Running")
+    if pp.get("ready") is not True:
+        fail(cid, "pod Ready condition must be true")
+    if pp.get("deletionTimestampPresent") is not False:
+        fail(cid, "pod must not have a deletionTimestamp")
+    if pp.get("hostNetwork") is not False:
+        fail(cid, "pod must not use hostNetwork")
+
+    pod_ip = _norm_ip(pp.get("podIP"))
+    if pod_ip is None:
+        fail(cid, "podIP must be a valid IP address")
+    elif not _ip_in_cidr(pod_ip, cluster_cidr):
+        fail(cid, "podIP must be within topology.clusterCIDR")
+
+    pod_node = pp.get("nodeName")
+    if not _nonempty_str(pod_node):
+        fail(cid, "pod nodeName must be non-empty")
+    elif not _nonempty_str(identity_node) or pod_node != identity_node:
+        fail(cid, "pod nodeName must equal clusterIdentity.nodeName")
+
+    # Cryptographic digest binding: the pod's REQUESTED image must be exactly the
+    # pinned probe artifact, and the RUNTIME image digest must equal the requested
+    # digest (a moving tag / a merely-present imageID is not proof).
+    image_ref = pp.get("imageRef")
+    req_digest = _image_digest(image_ref)
+    run_digest = _image_digest(pp.get("runtimeImageID"))
+    if image_ref != EXPECTED_PROBE_IMAGE:
+        fail(cid, "probe imageRef must be the canonical expected probe artifact")
+    if req_digest is None:
+        fail(cid, "imageRef must be digest-pinned")
+    if run_digest is None:
+        fail(cid, "runtimeImageID must contain a sha256 digest")
+    if req_digest is not None and run_digest is not None and req_digest != run_digest:
+        fail(cid, "runtime image digest must equal requested image digest")
+
     pp_attempts = pp.get("attempts")
     pp_success = pp.get("successCount")
     if not _is_plain_int(pp_attempts) or pp_attempts < MIN_PROBE_ATTEMPTS:
@@ -544,8 +652,6 @@ def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
         fail(cid, "successCount must equal attempts")
     if pp.get("ncMissing") is not False:
         fail(cid, "ncMissing must be false")
-    if pp.get("podWithinNodeCidr") is not True:
-        fail(cid, "podWithinNodeCidr must be true")
     # attemptExitCodes is MANDATORY: without the per-attempt evidence the verifier
     # would be trusting the self-declared successCount.
     codes = pp.get("attemptExitCodes")

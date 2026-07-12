@@ -6,11 +6,14 @@
 
 ## 1. Acceptance Boundary
 
-I6 acceptance proves that pods in the selected cluster can reach the
-WireGuard-side platform-ai target through a bounded, host-owned NAT rule, and
-that the mechanism is drift-detectable and rollbackable.
+I6 acceptance proves **policy-approved probe pod → WireGuard peer TCP
+reachability**: a single ephemeral, digest-pinned, correctly-scheduled probe pod
+(reached only via a run-scoped egress NetworkPolicy) completes fresh TCP connects
+to the WireGuard-side peer through a bounded, host-owned NAT rule whose exact
+SNAT counter is observed to advance, and that mechanism is drift-detectable and
+rollbackable.
 
-It does not prove:
+It does **not** prove that all app workloads are reachable, nor:
 
 - direct audio e2e,
 - Denetim PC I3 audit acceptance,
@@ -41,20 +44,22 @@ accepted by this gate.
 
 ## 3. Required Evidence Surfaces
 
-The v2 schema (`faz24.wg-bplus.i6.pod-cidr-wg-masq.v2`) requires all twelve
-checks with `status: pass`. v1 evidence is rejected by the verifier. v2 binds
-the evidence to the real cluster, proves the pod-origin TCP path actually
-traverses the owned SNAT rule, and rejects a wrong `--cluster-cidr`:
+The v3 schema (`faz24.wg-bplus.i6.pod-cidr-wg-masq.v3`) requires all twelve
+checks with `status: pass`. v1 and v2 evidence are rejected by the verifier
+(schema mismatch; v2 blocked evidence stays historical). v3 keeps v2's cluster
+binding + SNAT-counter traversal and additionally makes the pod probe Calico-safe:
+the probe pod is selected by LABEL (not "first Running pod"), validated against
+the disclosed `clusterCIDR` + the bound node, and must run a digest-pinned image:
 
 | Check id | Required proof |
 |---|---|
-| `cluster-identity-bound` | Kube context resolves to a captured kube-system UID; the `--wg-node` container exists and is attached to `--docker-network`; the same node feeds the CIDR/counter reads; and the context+cluster-cidr belt policy is consistent. Fail-closed if anything is unresolved. |
-| `effective-cluster-cidr-matches-config` | The node's EFFECTIVE k3s cluster-cidr (config.yaml, else `/proc/1/cmdline`) equals `--cluster-cidr`. If both sources disagree, FAIL. This is the cluster `/16`, not a node `/24`. |
-| `node-pod-cidrs-within-cluster-cidr` | Every node `.spec.podCIDR[s]` allocation is a subnet of `--cluster-cidr` (a node `/24` inside the `/16` is correct). Empty/unreadable → FAIL. |
-| `host-owned-chain-authority` | Canonical host-rule script `check` exits 0 and its sha256 is recorded; if `--installed-host-rule-script` is given, its sha256 must match the canonical script. No script stdout/stderr in the JSON. |
+| `cluster-identity-bound` | Kube context resolves to a captured kube-system UID; the `--wg-node` container exists and is attached to `--docker-network`; the context is a supported one (`k3d-test`/`k3d-prod`) and the belt policy (context↔cluster-cidr) is consistent. Fail-closed if anything is unresolved. |
+| `effective-cluster-cidr-matches-config` | The node's EFFECTIVE k3s cluster-cidr (config.yaml, else `/proc/1/cmdline`) equals `--cluster-cidr`, backed by ≥1 valid observed source. If both sources disagree, FAIL. This is the cluster `/16`, not a node `/24`. |
+| `node-pod-cidrs-within-cluster-cidr` | Every node `.spec.podCIDR[s]` allocation is a subnet of `--cluster-cidr` (topology sanity only — a node `/24` inside the `/16` is correct). This is NO LONGER used for probe selection. Empty/unreadable → FAIL. |
+| `host-owned-chain-authority` | The host-rule `check` runs ONLY the INSTALLED root-owned script (`--installed-host-rule-script`) under sudo (env set AFTER sudo via `env`, since `sudo -n` strips the caller env), with `executionMode == sudo-installed`. Running the user-writable checkout as root is rejected (the `sudo-canonical` mode is removed — the checkout is only the sha256 comparison source). Pass requires: installed script owned by uid 0, not group/world writable, sha256 == canonical checkout, and `check` exit 0. No script stdout/stderr in the JSON. |
 | `peer-route-is-wireguard-path` | `ip route get <peer>` dev equals the resolved wg interface AND a `wg show <wg> allowed-ips` peer covers the peer host. Only the peer key FINGERPRINT + handshake age are stored, never raw keys. |
-| `pod-to-wg-peer-tcp-connect` | An in-CIDR Running pod completes `--probe-attempts`/`--probe-attempts` fresh TCP connects to `<peer>:<port>` via `nc`. Missing `nc`, wrong pod, or partial success → FAIL. No host fallback. |
-| `snat-rule-counter-traversal` | The owned SNAT rule fingerprint is stable across the probe, its exact counter did not reset, `counterDelta >= probe-attempts`, AND the pod TCP probe fully succeeded. The counter alone is NOT sufficient. |
+| `pod-to-wg-peer-tcp-connect` | EXACTLY ONE pod matches `--probe-pod-selector`; it is Running + Ready, has no `deletionTimestamp`, is not `hostNetwork`, its `podIP` is a valid IP inside `topology.clusterCIDR` (Calico: NOT the node `/24`), it is scheduled on `clusterIdentity.nodeName`, its `imageRef` is exactly the pinned expected probe artifact, and its RUNTIME image digest equals the requested digest (a moving tag / merely-present `imageID` is not proof). That pod completes `--probe-attempts`/`--probe-attempts` fresh TCP connects to `<peer>:<port>` via `nc`. Missing `nc`, wrong/absent pod, wrong image/digest, or partial success → FAIL. No host fallback. |
+| `snat-rule-counter-traversal` | The owned SNAT rule fingerprint is stable across the probe (before==after hash), its exact counter did not reset, `counterDelta >= probe-attempts`, AND the pod TCP probe fully succeeded (attempts/successCount cross-checked with the pod probe). The counter alone is NOT sufficient. |
 | `reboot-persistence` | Systemd unit is enabled+active with a non-empty `ExecStart`. |
 | `drift-detect` | Drift timer is active or enabled. |
 | `rollback-defined` | `ExecStop` present AND a tested rollback evidence ref is supplied. |
@@ -64,7 +69,7 @@ traverses the owned SNAT rule, and rejects a wrong `--cluster-cidr`:
 ## 4. Evidence Contract
 
 Write a metadata-only JSON file using schema
-`faz24.wg-bplus.i6.pod-cidr-wg-masq.v2`:
+`faz24.wg-bplus.i6.pod-cidr-wg-masq.v3`:
 
 ```json
 {
@@ -139,6 +144,9 @@ relative metadata paths under the protected evidence path.
 Allowed:
 
 - hostnames, cluster names, CIDRs, interface names, ports, timestamps,
+- the probe pod IP + node name and a digest-pinned image ref / runtime imageID
+  (ephemeral network/scheduling metadata inside the disclosed clusterCIDR — not
+  secret/PII),
 - pass/fail status names,
 - SHA-256 or 16-char SHA-256 prefixes of expected rules and commands,
 - bounded HTTP status metadata,
@@ -156,6 +164,25 @@ Keep raw host evidence, if required for audit, only in the protected path. The
 JSON contract carries hashes and bounded summaries.
 
 ## 6. Validate and Ingest
+
+### 6.0 Probe pod (v3)
+
+The collect workflow (`faz24-wg-bplus-i6-masq-evidence-collect.yml`) deploys the
+probe pod itself: a single ephemeral pod labelled `wg-i6-probe=true` +
+`wg-i6-probe-run=<run-id>`, pinned to the canonical `busybox@sha256:<digest>`
+artifact (`PROBE_IMAGE` — must equal the verifier's `EXPECTED_PROBE_IMAGE`; fill
+the `PLACEHOLDER_DIGEST_TO_FILL` before running), scheduled on `wg_node_k8s_name`,
+hardened (non-root, `readOnlyRootFilesystem`, `drop: [ALL]`,
+`automountServiceAccountToken: false`, bounded resources, `restartPolicy: Never`),
+and reachable only via a run-scoped egress NetworkPolicy that permits egress
+**only** to `<peer_host>/32` TCP `<peer_port>` (no DNS). The workflow waits for
+Ready, then hard-gates that the pod's spec image is the pinned ref AND its runtime
+image digest EQUALS the pinned digest, runs the collector with
+`--probe-pod-selector "wg-i6-probe=true,wg-i6-probe-run=<run-id>"` +
+`--installed-host-rule-script /usr/local/sbin/k3d-wg-masq-host-rule.sh` (the
+root-owned installed script), and deletes the pod + NetworkPolicy afterward
+(`if: always()`, run-scoped names only). The operator fallback path must deploy an
+equivalent single labelled pod before running the collector.
 
 Validate locally before attaching or ingesting:
 

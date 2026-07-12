@@ -14,6 +14,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "faz24" / "verify-wg-bplus-i6-masq-evidence.py"
 
+EXPECTED_DIGEST = "sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f"
+EXPECTED_PROBE_IMAGE = "busybox@" + EXPECTED_DIGEST
+
 V2_CHECK_IDS = [
     "cluster-identity-bound",
     "effective-cluster-cidr-matches-config",
@@ -44,7 +47,7 @@ def valid_evidence() -> dict:
         )
 
     return {
-        "schemaVersion": "faz24.wg-bplus.i6.pod-cidr-wg-masq.v2",
+        "schemaVersion": "faz24.wg-bplus.i6.pod-cidr-wg-masq.v3",
         "collectedAt": "2026-07-12T03:20:00Z",
         "status": "pass",
         "protectedEvidencePath": "github-actions://Halildeu/platform-k8s-gitops/actions/runs/1",
@@ -128,12 +131,16 @@ def valid_evidence() -> dict:
             },
             "hostOwnedChain": {
                 "hostRuleScript": "bootstrap/host/k3d-wg-masq/k3d-wg-masq-host-rule.sh",
+                "runScript": "/usr/local/sbin/k3d-wg-masq-host-rule.sh",
                 "scriptFound": True,
                 "canonicalSha256": "ab" * 32,
                 "checkExitCode": 0,
-                "installedProvided": False,
-                "installedSha256": None,
+                "installedProvided": True,
+                "installedSha256": "ab" * 32,
                 "shaMatches": True,
+                "installedScriptOwnerUid": 0,
+                "installedScriptMode": "0755",
+                "executionMode": "sudo-installed",
                 "ownedNatChain": "K3D_WG_MASQ_NAT",
                 "passed": True,
             },
@@ -156,14 +163,25 @@ def valid_evidence() -> dict:
                 "attempts": 3,
                 "successCount": 3,
                 "attemptExitCodes": [0, 0, 0],
-                "podFound": True,
-                "podWithinNodeCidr": True,
                 "ncMissing": False,
-                "passed": True,
+                "matchCount": 1,
+                "podIP": "10.44.5.99",
+                "podIpHash": "99990000aaaabbbb",
                 "podNameHash": "1111222233334444",
                 "podUidHash": "5555666677778888",
-                "podIpHash": "99990000aaaabbbb",
-                "podScheduledNode": "k3d-test-server-0",
+                "nodeName": "k3d-test-server-0",
+                "hostNetwork": False,
+                "phase": "Running",
+                "ready": True,
+                "deletionTimestampPresent": False,
+                "imageRef": EXPECTED_PROBE_IMAGE,
+                "runtimeImageID": "docker-pullable://" + EXPECTED_PROBE_IMAGE,
+                "requestedDigest": EXPECTED_DIGEST,
+                "runtimeDigest": EXPECTED_DIGEST,
+                "digestBindingMode": "manifest-exact",
+                "podWithinClusterCidr": True,
+                "podOnTargetNode": True,
+                "passed": True,
             },
             "counterTraversal": {
                 "ownedNatChain": "K3D_WG_MASQ_NAT",
@@ -221,9 +239,10 @@ class WgBplusI6MasqEvidenceValidatorTest(unittest.TestCase):
         self.assertIn("Faz24 WG-B+ I6 MASQ evidence: PASS", result.stdout)
         self.assertIn("clusterCIDR=10.44.0.0/16", result.stdout)
 
-    def test_v1_schema_string_is_rejected(self):
+    def test_v2_schema_string_is_rejected(self):
+        # v3 acceptance semantics differ; v2 (and v1) blocked evidence stays historical.
         data = valid_evidence()
-        data["schemaVersion"] = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v1"
+        data["schemaVersion"] = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v2"
 
         result = self.run_validator(data)
 
@@ -566,6 +585,131 @@ class WgBplusI6MasqEvidenceValidatorTest(unittest.TestCase):
         data["topology"]["clusterName"] = "unknown-cluster"
         self.assert_semantic_fail(data, "cluster-identity-bound")
 
+    # -- v3: pod-to-wg-peer-tcp-connect re-derived from RAW pod metadata --
+    def test_pod_ip_outside_cluster_cidr_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["podIP"] = "10.99.0.20"
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_pod_within_cluster_cidr_flag_ignored_when_raw_ip_outside(self):
+        # the informational boolean is a lie; the verifier recomputes from raw podIP.
+        data = valid_evidence()
+        data["collector"]["podProbe"]["podIP"] = "10.99.0.20"
+        data["collector"]["podProbe"]["podWithinClusterCidr"] = True
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_pod_on_wrong_node_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["nodeName"] = "k3d-test-server-1"
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_pod_on_target_node_flag_ignored_when_nodename_differs(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["nodeName"] = "k3d-test-server-1"
+        data["collector"]["podProbe"]["podOnTargetNode"] = True
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_pod_host_network_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["hostNetwork"] = True
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_match_count_zero_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["matchCount"] = 0
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_match_count_two_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["matchCount"] = 2
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_pod_not_ready_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["ready"] = False
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_pod_deletion_timestamp_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["deletionTimestampPresent"] = True
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_image_tag_only_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["imageRef"] = "busybox:1.36"
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_runtime_image_id_missing_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = None
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_execution_mode_direct_fails(self):
+        # a non-sudo "direct" host-rule run with checkExitCode 0 is not authoritative.
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["executionMode"] = "direct"
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    # -- Blocker 1: cryptographic probe image digest binding --
+    def test_runtime_digest_differs_from_requested_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = "docker-pullable://busybox@sha256:" + ("c" * 64)
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_runtime_image_id_no_sha256_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = "docker.io/library/busybox:1.36"
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_runtime_image_id_longer_hex_not_loose_matched_fails(self):
+        # A's digest hex followed by MORE hex -> no exact 64-hex extraction -> fail.
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = "docker-pullable://busybox@" + EXPECTED_DIGEST + "ff"
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_runtime_image_id_empty_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = ""
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_image_ref_not_expected_probe_artifact_fails(self):
+        data = valid_evidence()
+        other = "alpine@sha256:" + ("d" * 64)
+        data["collector"]["podProbe"]["imageRef"] = other
+        data["collector"]["podProbe"]["runtimeImageID"] = "docker-pullable://" + other
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    # -- Blocker 2: only installed root-owned sudo path is authoritative --
+    def test_execution_mode_sudo_canonical_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["executionMode"] = "sudo-canonical"
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_installed_script_owner_not_root_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["installedScriptOwnerUid"] = 1000
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_installed_script_group_writable_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["installedScriptMode"] = "0775"
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_installed_script_world_writable_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["installedScriptMode"] = "0757"
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_host_rule_check_exit_nonzero_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["checkExitCode"] = 1
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_installed_not_provided_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["installedProvided"] = False
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
     def test_summary_json_is_written(self):
         data = valid_evidence()
         with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8") as evidence_tmp:
@@ -590,7 +734,9 @@ class WgBplusI6MasqEvidenceValidatorTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("pass", summary["status"])
         self.assertEqual("10.44.0.0/16", summary["clusterCIDR"])
-        self.assertEqual("faz24.wg-bplus.i6.masq-evidence-verification.v2", summary["schemaVersion"])
+        self.assertEqual(
+            "faz24.wg-bplus.i6.pod-cidr-wg-masq-evidence-verification.v3", summary["schemaVersion"]
+        )
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -36,9 +37,11 @@ from typing import Any
 from urllib.parse import urlsplit
 
 
-SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v2"
+SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v3"
 
-# v2 required checks. Every one must be status "pass" for evidence.status "pass".
+# v3 required checks. Every one must be status "pass" for evidence.status "pass".
+# Only pod-to-wg-peer-tcp-connect's metadata + semantics change from v2 (Calico-safe
+# label-selected probe pod + digest-pinned image); the other 11 ids are unchanged.
 REQUIRED_CHECK_IDS = [
     "cluster-identity-bound",
     "effective-cluster-cidr-matches-config",
@@ -75,6 +78,27 @@ MIN_PROBE_ATTEMPTS = 3
 # Repo-relative canonical host-rule script (run from the repo root on staging-sw).
 DEFAULT_HOST_RULE_SCRIPT = "bootstrap/host/k3d-wg-masq/k3d-wg-masq-host-rule.sh"
 
+# Label selector for the ephemeral, policy-approved probe pod (deployed by the
+# collect workflow). Selection is by label, NOT "first Running pod", and must
+# match EXACTLY ONE pod (Calico IPAM means the pod IP is not in the node /24).
+DEFAULT_PROBE_POD_SELECTOR = "wg-i6-probe=true"
+
+# Canonical pinned probe artifact — the busybox 1.36 linux/amd64 manifest digest.
+# MUST stay identical to the collect workflow's PROBE_IMAGE and the verifier's
+# EXPECTED_PROBE_IMAGE (the runtime image digest is compared, not a moving tag).
+EXPECTED_PROBE_IMAGE = "busybox@sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f"
+
+# Extract an exact sha256:<64hex> digest (no loose substring: the 64 hex must not
+# be part of a longer hex run).
+IMAGE_DIGEST_RE = re.compile(r"sha256:([0-9a-f]{64})(?![0-9a-f])")
+
+# Absolute host binaries used to run the host-rule check under sudo. sudo -n
+# strips the caller env, so vars are set AFTER sudo via /usr/bin/env in the root
+# context (no shell). These paths are the ones present on staging-sw.
+SUDO_BIN = "sudo"
+ENV_BIN = "/usr/bin/env"
+BASH_BIN = "/bin/bash"
+
 LOOPBACK_HOSTS = {"127.0.0.1", "0.0.0.0", "::1", "localhost", "host.docker.internal"}
 
 
@@ -106,6 +130,30 @@ def sha256_file(path: Path) -> str | None:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
         return None
+
+
+def _image_digest(ref: str | None) -> str | None:
+    """Return the canonical `sha256:<64hex>` from any image ref form, else None.
+
+    Handles `busybox@sha256:X`, `docker.io/library/busybox@sha256:X`,
+    `docker-pullable://…@sha256:X`, and bare `sha256:X`. Exact 64 hex only — a
+    longer hex run does not match (no loose substring).
+    """
+    if not isinstance(ref, str):
+        return None
+    match = IMAGE_DIGEST_RE.search(ref)
+    if not match:
+        return None
+    return f"sha256:{match.group(1)}"
+
+
+def _installed_script_stat(path: Path) -> tuple[int | None, str | None]:
+    """Return (owner_uid, octal-mode-string like "0755") for path, or (None, None)."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None, None
+    return info.st_uid, format(stat.S_IMODE(info.st_mode), "04o")
 
 
 def run_command(argv: list[str], timeout: int = 12, env: dict[str, str] | None = None) -> CommandResult:
@@ -466,49 +514,77 @@ def collect_node_pod_cidrs(args: argparse.Namespace, cluster_cidr: str | None) -
 # Check 4: host-owned-chain-authority
 # ---------------------------------------------------------------------------
 def collect_host_owned_chain(args: argparse.Namespace, wg_interface: str) -> dict[str, Any]:
-    script_path = Path(args.host_rule_script)
-    script_exists = script_path.is_file()
-    canonical_sha = sha256_file(script_path) if script_exists else None
+    canonical_path = Path(args.host_rule_script)
+    canonical_found = canonical_path.is_file()
+    canonical_sha = sha256_file(canonical_path) if canonical_found else None
 
     installed_provided = bool(args.installed_host_rule_script)
-    installed_sha: str | None = None
-    if installed_provided:
-        installed_path = Path(args.installed_host_rule_script)
-        installed_sha = sha256_file(installed_path) if installed_path.is_file() else None
-    # shaMatches is vacuously true when no installed script is supplied (no drift possible),
-    # otherwise it is the recomputed equality of installed vs canonical sha256.
-    if not installed_provided:
-        sha_matches = True
-    else:
-        sha_matches = bool(installed_sha and canonical_sha and installed_sha == canonical_sha)
+    installed_path = Path(args.installed_host_rule_script) if installed_provided else None
+    installed_found = bool(installed_path and installed_path.is_file())
+    installed_sha = sha256_file(installed_path) if installed_found else None
+    owner_uid, mode_str = (
+        _installed_script_stat(installed_path) if installed_path is not None and installed_found else (None, None)
+    )
+
+    sha_matches = bool(installed_sha and canonical_sha and installed_sha == canonical_sha)
+
+    # The authoritative host-rule `check` runs ONLY the installed, root-owned script.
+    # Running the user-writable checkout as root would be a TOCTOU / priv-esc gap, so the
+    # canonical checkout is the sha256 comparison SOURCE, never a privileged exec target
+    # (the `sudo-canonical` mode is removed). A safe installed script is root-owned, not
+    # group/world writable, and byte-identical (sha256) to the canonical checkout.
+    perms_safe = bool(
+        owner_uid == 0
+        and mode_str is not None
+        and (int(mode_str, 8) & (stat.S_IWGRP | stat.S_IWOTH)) == 0
+    )
+    installed_authoritative = bool(installed_found and sha_matches and perms_safe)
+
+    node = safe_name(args.wg_node)
+    network = safe_name(args.docker_network)
+    wg_if = safe_name(wg_interface)
+    wg_cidr = normalize_cidr(derive_wg_cidr(args.peer_host))
+    env_valid = bool(node and network and wg_if and wg_cidr)
 
     check_exit: int | None = None
-    if script_exists:
-        env = {
-            "WGMASQ_NODE": args.wg_node,
-            "WGMASQ_NETWORK": args.docker_network,
-            "WGMASQ_WG_CIDR": derive_wg_cidr(args.peer_host),
-            "WGMASQ_WG_IF": wg_interface,
-        }
-        res = first_success(
-            command_variants("bash", [str(script_path), "check"], sudo=True), timeout=25, env=env
+    execution_mode = "unavailable"
+    if installed_authoritative and env_valid and installed_path is not None:
+        env_args = [
+            f"{key}={value}"
+            for key, value in {
+                "WGMASQ_NODE": node,
+                "WGMASQ_NETWORK": network,
+                "WGMASQ_WG_CIDR": wg_cidr,  # validated CIDR, raw (never safe_name'd — '/' matters)
+                "WGMASQ_WG_IF": wg_if,
+            }.items()
+        ]
+        # env set AFTER sudo (sudo -n strips the caller env); no shell.
+        res = run_command(
+            [SUDO_BIN, "-n", ENV_BIN, *env_args, BASH_BIN, str(installed_path), "check"], timeout=25
         )
         check_exit = res.exit_code
+        execution_mode = "sudo-installed"
 
     passed = bool(
-        script_exists
+        canonical_found
+        and installed_provided
+        and installed_authoritative
+        and execution_mode == "sudo-installed"
         and check_exit == 0
-        and (not installed_provided or sha_matches)
     )
 
     return {
-        "hostRuleScript": str(script_path),
-        "scriptFound": script_exists,
+        "hostRuleScript": str(canonical_path),
+        "runScript": str(installed_path) if installed_authoritative and installed_path is not None else None,
+        "scriptFound": canonical_found,
         "canonicalSha256": canonical_sha,
-        "checkExitCode": check_exit,
         "installedProvided": installed_provided,
         "installedSha256": installed_sha,
         "shaMatches": sha_matches,
+        "installedScriptOwnerUid": owner_uid,
+        "installedScriptMode": mode_str,
+        "checkExitCode": check_exit,
+        "executionMode": execution_mode,
         "ownedNatChain": OWNED_NAT_CHAIN,
         "passed": passed,
     }
@@ -652,45 +728,111 @@ def read_owned_chain_counter(args: argparse.Namespace) -> int | None:
     return None
 
 
-def select_probe_pod(args: argparse.Namespace, node_cidrs: list[str]) -> dict[str, Any]:
+def select_probe_pod(
+    args: argparse.Namespace, cluster_cidr: str | None, node_name: str | None
+) -> dict[str, Any]:
+    """Select the ephemeral probe pod by LABEL (not "first Running pod").
+
+    Calico IPAM means the pod IP is NOT inside the node's `.spec.podCIDR` /24, so
+    selection is by the policy-approved label and validated against the disclosed
+    clusterCIDR + the bound node instead. Requires EXACTLY ONE matching pod.
+    """
     res = first_success(
         command_variants(
-            "kubectl", ["--context", args.kube_context, "-n", args.namespace, "get", "pods", "-o", "json"]
+            "kubectl",
+            [
+                "--context", args.kube_context, "-n", args.namespace,
+                "get", "pods", "-l", args.probe_pod_selector, "-o", "json",
+            ],
         ),
         timeout=20,
     )
-    running: list[tuple[dict[str, Any], str]] = []
+    items: list[dict[str, Any]] = []
     if res.exit_code == 0:
         try:
             data = json.loads(res.stdout)
-            for item in data.get("items", []):
-                if not isinstance(item, dict):
-                    continue
-                if item.get("status", {}).get("phase") != "Running":
-                    continue
-                pod_ip = item.get("status", {}).get("podIP")
-                if pod_ip:
-                    running.append((item, pod_ip))
+            items = [item for item in data.get("items", []) if isinstance(item, dict)]
         except json.JSONDecodeError:
-            running = []
+            items = []
+    match_count = len(items)
 
-    selected = None
-    for item, pod_ip in running:
-        if any(ip_in_cidr(pod_ip, cidr) for cidr in node_cidrs):
-            selected = (item, pod_ip)
-            break
-
-    return {
-        "podFound": bool(running),
-        "selected": selected,
-        "runningCount": len(running),
+    info: dict[str, Any] = {
+        "matchCount": match_count,
+        "pod": None,
+        "valid": False,
+        "podName": None,
+        "podUid": None,
+        "podIP": None,
+        "nodeName": None,
+        "hostNetwork": None,
+        "phase": None,
+        "ready": None,
+        "deletionTimestampPresent": None,
+        "imageRef": None,
+        "runtimeImageID": None,
+        "podWithinClusterCidr": None,
+        "podOnTargetNode": None,
     }
+    if match_count != 1:
+        return info
+
+    pod = items[0]
+    meta = pod.get("metadata") if isinstance(pod.get("metadata"), dict) else {}
+    spec = pod.get("spec") if isinstance(pod.get("spec"), dict) else {}
+    status = pod.get("status") if isinstance(pod.get("status"), dict) else {}
+
+    phase = status.get("phase")
+    pod_ip = status.get("podIP")
+    host_network = bool(spec.get("hostNetwork", False))
+    deletion_present = bool(meta.get("deletionTimestamp"))
+    pod_node = spec.get("nodeName")
+    ready = any(
+        isinstance(cond, dict) and cond.get("type") == "Ready" and cond.get("status") == "True"
+        for cond in (status.get("conditions") or [])
+    )
+    containers = spec.get("containers") or []
+    image_ref = containers[0].get("image") if containers and isinstance(containers[0], dict) else None
+    cstatuses = status.get("containerStatuses") or []
+    runtime_image_id = (
+        cstatuses[0].get("imageID") if cstatuses and isinstance(cstatuses[0], dict) else None
+    )
+
+    within = bool(pod_ip and cluster_cidr and ip_in_cidr(pod_ip, cluster_cidr))
+    on_node = bool(pod_node and node_name and pod_node == node_name)
+    valid = bool(
+        phase == "Running"
+        and ready
+        and not deletion_present
+        and not host_network
+        and pod_ip
+        and within
+        and on_node
+    )
+
+    info.update(
+        pod=pod,
+        valid=valid,
+        podName=meta.get("name"),
+        podUid=meta.get("uid"),
+        podIP=pod_ip,
+        nodeName=pod_node,
+        hostNetwork=host_network,
+        phase=phase,
+        ready=ready,
+        deletionTimestampPresent=deletion_present,
+        imageRef=image_ref,
+        runtimeImageID=runtime_image_id,
+        podWithinClusterCidr=within,
+        podOnTargetNode=on_node,
+    )
+    return info
 
 
-def measure_traversal(args: argparse.Namespace, node_cidrs: list[str]) -> dict[str, Any]:
-    selection = select_probe_pod(args, node_cidrs)
-    selected = selection["selected"]
-    within_node_cidr = selected is not None
+def measure_traversal(
+    args: argparse.Namespace, cluster_cidr: str | None, node_name: str | None
+) -> dict[str, Any]:
+    selection = select_probe_pod(args, cluster_cidr, node_name)
+    pod_valid = bool(selection["valid"])
 
     spec_before = read_owned_chain_spec(args)
     counter_before = read_owned_chain_counter(args)
@@ -698,20 +840,9 @@ def measure_traversal(args: argparse.Namespace, node_cidrs: list[str]) -> dict[s
     attempts = args.probe_attempts
     attempt_exit_codes: list[int] = []
     nc_missing = False
-    pod_identity: dict[str, Any] = {}
 
-    if selected is not None:
-        item, pod_ip = selected
-        metadata = item.get("metadata", {})
-        pod_name = metadata.get("name", "")
-        pod_uid = metadata.get("uid", "")
-        node_name = item.get("spec", {}).get("nodeName", "")
-        pod_identity = {
-            "podNameHash": sha256_short(pod_name) if pod_name else None,
-            "podUidHash": sha256_short(pod_uid) if pod_uid else None,
-            "podIpHash": sha256_short(pod_ip) if pod_ip else None,
-            "podScheduledNode": safe_name(node_name) if node_name else None,
-        }
+    if pod_valid and selection["pod"] is not None:
+        pod_name = selection["podName"] or ""
         kubectl_bin = resolve_command("kubectl")
         exec_argv = [
             kubectl_bin,
@@ -749,11 +880,10 @@ def measure_traversal(args: argparse.Namespace, node_cidrs: list[str]) -> dict[s
 
     # Fail-closed against vacuous truth: with attempts==0 the probe loop never runs, so
     # success_count==attempts==0 and counter_delta>=0 would both hold trivially. Require
-    # acceptance-grade attempts (>= MIN_PROBE_ATTEMPTS) AND full success — the same floor
-    # the verifier enforces, so the collector can never self-declare a pass the verifier
-    # would reject.
+    # acceptance-grade attempts (>= MIN_PROBE_ATTEMPTS) AND full success from the VALID
+    # label-selected pod — the same floor the verifier enforces.
     tcp_pass = bool(
-        within_node_cidr
+        pod_valid
         and not nc_missing
         and attempts >= MIN_PROBE_ATTEMPTS
         and success_count == attempts
@@ -770,6 +900,7 @@ def measure_traversal(args: argparse.Namespace, node_cidrs: list[str]) -> dict[s
     fingerprint_before_hash = sha256_short(spec_before) if spec_before else None
     fingerprint_after_hash = sha256_short(spec_after) if spec_after else None
 
+    pod_ip = selection["podIP"]
     probe_block = {
         "namespace": safe_name(args.namespace),
         "targetHost": args.peer_host,
@@ -777,13 +908,27 @@ def measure_traversal(args: argparse.Namespace, node_cidrs: list[str]) -> dict[s
         "attempts": attempts,
         "successCount": success_count,
         "attemptExitCodes": attempt_exit_codes,
-        "podFound": selection["podFound"],
-        "podWithinNodeCidr": within_node_cidr,
         "ncMissing": nc_missing,
+        "matchCount": selection["matchCount"],
+        "podIP": pod_ip,
+        "podIpHash": sha256_short(pod_ip) if pod_ip else None,
+        "podNameHash": sha256_short(selection["podName"]) if selection["podName"] else None,
+        "podUidHash": sha256_short(selection["podUid"]) if selection["podUid"] else None,
+        "nodeName": selection["nodeName"],
+        "hostNetwork": selection["hostNetwork"],
+        "phase": selection["phase"],
+        "ready": selection["ready"],
+        "deletionTimestampPresent": selection["deletionTimestampPresent"],
+        "imageRef": selection["imageRef"],
+        "runtimeImageID": selection["runtimeImageID"],
+        "requestedDigest": _image_digest(selection["imageRef"]),
+        "runtimeDigest": _image_digest(selection["runtimeImageID"]),
+        "digestBindingMode": "manifest-exact",
+        "podWithinClusterCidr": selection["podWithinClusterCidr"],
+        "podOnTargetNode": selection["podOnTargetNode"],
         "passed": tcp_pass,
-        **pod_identity,
     }
-    counter_wrap = probe_block["successCount"] == attempts and probe_block["podWithinNodeCidr"]
+    counter_wrap = success_count == attempts and pod_valid
     counter_block = {
         "ownedNatChain": OWNED_NAT_CHAIN,
         "attempts": attempts,
@@ -886,7 +1031,9 @@ def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
     node_cidrs = collect_node_pod_cidrs(args, cluster_cidr)
     host_chain = collect_host_owned_chain(args, wg_interface)
     peer_route = collect_peer_route(args, wg_interface)
-    traversal = measure_traversal(args, node_cidrs["nodePodCIDRs"])
+    # v3: probe pod is selected by LABEL and validated against clusterCIDR + the bound
+    # node (Calico-safe), NOT against the node .spec.podCIDR /24.
+    traversal = measure_traversal(args, cluster_cidr, identity["nodeName"])
     systemd = collect_systemd(args.systemd_unit, args.drift_timer)
     broad_nat = collect_broad_nat(args)
 
@@ -1094,6 +1241,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--probe-attempts",
         type=probe_attempts_type,
         default=probe_attempts_type(os.environ.get("PROBE_ATTEMPTS", str(MIN_PROBE_ATTEMPTS))),
+    )
+    parser.add_argument(
+        "--probe-pod-selector",
+        default=os.environ.get("PROBE_POD_SELECTOR", DEFAULT_PROBE_POD_SELECTOR),
+        help="Label selector for the policy-approved probe pod; must match EXACTLY ONE pod.",
     )
     parser.add_argument("--systemd-unit", default=os.environ.get("SYSTEMD_UNIT", "k3d-wg-masq.service"))
     parser.add_argument("--drift-timer", default=os.environ.get("DRIFT_TIMER", "k3d-wg-masq.timer"))
