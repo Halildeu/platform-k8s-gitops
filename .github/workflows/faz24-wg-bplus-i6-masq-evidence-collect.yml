@@ -1,9 +1,11 @@
 name: Faz 24 WG-B+ I6 MASQ Evidence Collect
 
 # Collects metadata-only I6 evidence on the self-hosted staging-sw runner, then
-# validates it with the I6 verifier. Default mode is read-only and fail-closed:
-# no host iptables/nftables, WireGuard, Kubernetes object, platform-ai, or
-# production mutation is performed by this workflow.
+# validates it with the I6 verifier. Fail-closed. This workflow deploys and then
+# deletes ONE ephemeral, policy-approved, digest-pinned probe pod + a run-scoped
+# egress NetworkPolicy (egress only to the WG peer). It does NOT change host
+# iptables/nftables, WireGuard, platform-ai, or production state, and touches no
+# Kubernetes object other than its own run-scoped probe pod + NetworkPolicy.
 
 on:
   workflow_dispatch:
@@ -40,6 +42,10 @@ on:
         description: "Fresh pod-origin TCP connects (counter traversal gate)"
         required: true
         default: "3"
+      wg_node_k8s_name:
+        description: "Kubernetes node name for the probe-pod nodeSelector + nodeName check"
+        required: true
+        default: "k3d-test-server-0"
       installed_host_rule_script:
         description: "Optional path to the installed host-rule script (sha must match canonical)"
         required: false
@@ -86,6 +92,15 @@ jobs:
       EVIDENCE_DIR: /tmp/faz24-wg-bplus-i6-masq-collect-${{ github.run_id }}
       EVIDENCE_JSON: /tmp/faz24-wg-bplus-i6-masq-collect-${{ github.run_id }}/wg-bplus-i6-masq-evidence.json
       SUMMARY_JSON: /tmp/faz24-wg-bplus-i6-masq-collect-${{ github.run_id }}/verification-summary.json
+      PROBE_POD_NAME: wg-i6-probe-${{ github.run_id }}
+      PROBE_POD_SELECTOR: wg-i6-probe=true,wg-i6-probe-run=${{ github.run_id }}
+      # Pinned to the busybox 1.36 linux/amd64 MANIFEST digest (the staging-sw runner is
+      # X64; k3s/containerd reports .status.containerStatuses[].imageID as
+      # docker.io/library/busybox@sha256:<platform-manifest-digest>, so the amd64 manifest
+      # digest is what the "Verify probe pod runtime imageID" step below matches — not the
+      # multi-arch index digest, which would resolve to this same amd64 digest at runtime).
+      # The collector/verifier require a digest-pinned image + a present runtime imageID.
+      PROBE_IMAGE: busybox@sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f
 
     steps:
       - name: Validate dispatch inputs
@@ -98,6 +113,7 @@ jobs:
           WG_NODE: ${{ inputs.wg_node }}
           DOCKER_NETWORK: ${{ inputs.docker_network }}
           PROBE_ATTEMPTS: ${{ inputs.probe_attempts }}
+          WG_NODE_K8S_NAME: ${{ inputs.wg_node_k8s_name }}
           INSTALLED_HOST_RULE_SCRIPT: ${{ inputs.installed_host_rule_script }}
           KUBE_CONTEXT: ${{ inputs.kube_context }}
           KUBE_NAMESPACE: ${{ inputs.namespace }}
@@ -134,6 +150,7 @@ jobs:
           reject_multiline drift_timer "${DRIFT_TIMER}"
           reject_multiline rollback_tested_ref "${ROLLBACK_TESTED_REF}"
           reject_multiline protected_evidence_path "${PROTECTED_EVIDENCE_PATH}"
+          reject_multiline wg_node_k8s_name "${WG_NODE_K8S_NAME}"
 
           if ! printf '%s' "${CLUSTER_CIDR}" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$'; then
             echo "::error::cluster_cidr must be IPv4 CIDR"
@@ -151,7 +168,7 @@ jobs:
             echo "::error::probe_attempts must be numeric"
             exit 1
           fi
-          if ! printf '%s' "${WG_INTERFACE}${PEER_HOST}${WG_NODE}${DOCKER_NETWORK}${KUBE_CONTEXT}${KUBE_NAMESPACE}${SYSTEMD_UNIT}${DRIFT_TIMER}" | grep -Eq '^[A-Za-z0-9_.:@-]+$'; then
+          if ! printf '%s' "${WG_INTERFACE}${PEER_HOST}${WG_NODE}${DOCKER_NETWORK}${WG_NODE_K8S_NAME}${KUBE_CONTEXT}${KUBE_NAMESPACE}${SYSTEMD_UNIT}${DRIFT_TIMER}" | grep -Eq '^[A-Za-z0-9_.:@-]+$'; then
             echo "::error::name-like inputs contain unsupported characters"
             exit 1
           fi
@@ -166,6 +183,121 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Deploy ephemeral probe pod + egress NetworkPolicy
+        env:
+          KUBE_CONTEXT: ${{ inputs.kube_context }}
+          KUBE_NAMESPACE: ${{ inputs.namespace }}
+          PEER_HOST: ${{ inputs.peer_host }}
+          PEER_PORT: ${{ inputs.peer_port }}
+          WG_NODE_K8S_NAME: ${{ inputs.wg_node_k8s_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Egress-only NetworkPolicy: the probe pod may reach ONLY the WG peer
+          # <PEER_HOST>:<PEER_PORT>/TCP. No DNS egress, no other destinations.
+          kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" apply -f - <<EOF
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: ${PROBE_POD_NAME}
+            labels:
+              wg-i6-probe-run: "${RUN_ID}"
+          spec:
+            podSelector:
+              matchLabels:
+                wg-i6-probe: "true"
+                wg-i6-probe-run: "${RUN_ID}"
+            policyTypes: [Egress]
+            egress:
+              - to:
+                  - ipBlock:
+                      cidr: ${PEER_HOST}/32
+                ports:
+                  - protocol: TCP
+                    port: ${PEER_PORT}
+          EOF
+          kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" apply -f - <<EOF
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: ${PROBE_POD_NAME}
+            labels:
+              wg-i6-probe: "true"
+              wg-i6-probe-run: "${RUN_ID}"
+          spec:
+            automountServiceAccountToken: false
+            hostNetwork: false
+            hostPID: false
+            hostIPC: false
+            restartPolicy: Never
+            nodeSelector:
+              kubernetes.io/hostname: ${WG_NODE_K8S_NAME}
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: probe
+                image: ${PROBE_IMAGE}
+                command: ["sh", "-c", "sleep 600"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  runAsNonRoot: true
+                  runAsUser: 65534
+                  capabilities:
+                    drop: [ALL]
+                  seccompProfile:
+                    type: RuntimeDefault
+                resources:
+                  requests:
+                    cpu: 10m
+                    memory: 16Mi
+                  limits:
+                    cpu: 100m
+                    memory: 64Mi
+          EOF
+          kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            wait --for=condition=Ready "pod/${PROBE_POD_NAME}" --timeout=90s
+
+      - name: Verify probe pod runtime imageID is the pinned digest
+        env:
+          KUBE_CONTEXT: ${{ inputs.kube_context }}
+          KUBE_NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          set -euo pipefail
+          case "${PROBE_IMAGE}" in
+            *PLACEHOLDER_DIGEST_TO_FILL*)
+              echo "::error::PROBE_IMAGE still has the PLACEHOLDER digest; set a real busybox digest"
+              exit 1
+              ;;
+          esac
+          # Authoritative, arch-robust check: the pod's REQUESTED image must be exactly the
+          # pinned digest ref (immutable — no tag drift), and the container must actually be
+          # running (non-empty imageID). We do NOT hard-require imageID==pinned-digest:
+          # k3s/containerd may report the platform config digest rather than the manifest
+          # digest, so an exact substring match would be a fragile false-negative.
+          SPEC_IMAGE="$(kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            get pod "${PROBE_POD_NAME}" -o jsonpath='{.spec.containers[0].image}')"
+          IMAGE_ID="$(kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            get pod "${PROBE_POD_NAME}" -o jsonpath='{.status.containerStatuses[0].imageID}')"
+          echo "spec image: ${SPEC_IMAGE} | runtime imageID: ${IMAGE_ID}"
+          if [ "${SPEC_IMAGE}" != "${PROBE_IMAGE}" ]; then
+            echo "::error::probe pod spec image '${SPEC_IMAGE}' != pinned '${PROBE_IMAGE}'"
+            exit 1
+          fi
+          if [ -z "${IMAGE_ID}" ]; then
+            echo "::error::probe pod has no runtime imageID (image not pulled/running)"
+            exit 1
+          fi
+          DIGEST="${PROBE_IMAGE##*@}"
+          if printf '%s' "${IMAGE_ID}" | grep -q "${DIGEST}"; then
+            echo "runtime imageID matches the pinned amd64 manifest digest"
+          else
+            echo "note: runtime imageID does not literally contain ${DIGEST} (containerd may report the config digest); the spec-image digest pin + present imageID are authoritative"
+          fi
 
       - name: Collect metadata-only I6 evidence
         env:
@@ -197,6 +329,7 @@ jobs:
             --wg-node "${WG_NODE}" \
             --docker-network "${DOCKER_NETWORK}" \
             --probe-attempts "${PROBE_ATTEMPTS}" \
+            --probe-pod-selector "${PROBE_POD_SELECTOR}" \
             --installed-host-rule-script "${INSTALLED_HOST_RULE_SCRIPT}" \
             --kube-context "${KUBE_CONTEXT}" \
             --namespace "${KUBE_NAMESPACE}" \
@@ -247,7 +380,7 @@ jobs:
             echo "- Artifact: \`faz24-wg-bplus-i6-masq-collect-${{ github.run_id }}\`"
             echo "- Verifier exit code: \`${VERIFY_EXIT_CODE:-missing}\`"
             echo
-            echo "Boundary: metadata-only read-only collection plus validation. This workflow does not change host iptables/nftables, WireGuard, Kubernetes objects, platform-ai, or production state."
+            echo "Boundary: metadata-only collection plus validation. This workflow deploys+deletes only its own run-scoped ephemeral probe pod + egress NetworkPolicy; it does not change host iptables/nftables, WireGuard, platform-ai, production state, or any other Kubernetes object."
             echo
             echo '```text'
             sed -n '1,160p' "${EVIDENCE_DIR}/collector.stdout" 2>/dev/null || true
@@ -271,6 +404,19 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "${EVIDENCE_DIR}"
+
+      - name: Cleanup ephemeral probe pod + NetworkPolicy
+        if: always()
+        env:
+          KUBE_CONTEXT: ${{ inputs.kube_context }}
+          KUBE_NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          set -euo pipefail
+          # Delete ONLY this run's named resources; never touch other runs'.
+          kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            delete pod "${PROBE_POD_NAME}" --ignore-not-found --wait=false || true
+          kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
+            delete networkpolicy "${PROBE_POD_NAME}" --ignore-not-found || true
 
       - name: Fail workflow when evidence is rejected
         if: always()

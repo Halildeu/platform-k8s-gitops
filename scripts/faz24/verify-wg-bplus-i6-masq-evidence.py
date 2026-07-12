@@ -19,9 +19,16 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v2"
-VERIFICATION_SCHEMA_VERSION = "faz24.wg-bplus.i6.masq-evidence-verification.v2"
+SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq.v3"
+VERIFICATION_SCHEMA_VERSION = "faz24.wg-bplus.i6.pod-cidr-wg-masq-evidence-verification.v3"
 OWNED_NAT_CHAIN = "K3D_WG_MASQ_NAT"
+
+# Digest-pinned probe image, e.g. busybox@sha256:<64 hex>. A tag-only image is rejected.
+DIGEST_PINNED_IMAGE_RE = re.compile(r"^[^@]+@sha256:[0-9a-f]{64}$")
+
+# Execution modes that prove the host-rule `check` actually ran with root-capable
+# privilege. A non-sudo "direct" run is not authoritative.
+AUTHORITATIVE_EXECUTION_MODES = {"sudo-installed", "sudo-canonical"}
 
 REQUIRED_CHECK_IDS = [
     "cluster-identity-bound",
@@ -396,6 +403,24 @@ def _subnet_of(child: Any, parent: Any) -> bool:
         return False
 
 
+def _norm_ip(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return None
+
+
+def _ip_in_cidr(ip: Any, cidr: Any) -> bool:
+    if not isinstance(ip, str) or not isinstance(cidr, str):
+        return False
+    try:
+        return ipaddress.ip_address(ip) in ipaddress.ip_network(cidr)
+    except (ValueError, TypeError):
+        return False
+
+
 def _is_hash(value: Any) -> bool:
     return isinstance(value, str) and bool(HASH_RE.match(value))
 
@@ -511,6 +536,8 @@ def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
         fail(cid, "scriptFound must be true")
     if not _is_plain_int(hc.get("checkExitCode")) or hc.get("checkExitCode") != 0:
         fail(cid, "checkExitCode must be integer 0")
+    if hc.get("executionMode") not in AUTHORITATIVE_EXECUTION_MODES:
+        fail(cid, "executionMode must be sudo-installed or sudo-canonical (a direct run is not authoritative)")
     canonical_sha = hc.get("canonicalSha256")
     if not (isinstance(canonical_sha, str) and HEX64_RE.match(canonical_sha)):
         fail(cid, "canonicalSha256 must be 64 lowercase hex chars")
@@ -533,9 +560,41 @@ def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
     if not _is_hash(pr.get("peerFingerprint")):
         fail(cid, "peerFingerprint must be a sha256 hash")
 
-    # 6) pod-to-wg-peer-tcp-connect
+    # 6) pod-to-wg-peer-tcp-connect (v3: re-derive from RAW pod metadata; do NOT
+    #    trust the informational podWithinClusterCidr / podOnTargetNode booleans)
     pp = _obj(collector.get("podProbe"))
     cid = "pod-to-wg-peer-tcp-connect"
+    identity_node = _obj(collector.get("clusterIdentity")).get("nodeName")
+
+    if pp.get("matchCount") != 1:
+        fail(cid, "matchCount must be exactly 1 (single label-selected probe pod)")
+    if pp.get("phase") != "Running":
+        fail(cid, "pod phase must be Running")
+    if pp.get("ready") is not True:
+        fail(cid, "pod Ready condition must be true")
+    if pp.get("deletionTimestampPresent") is not False:
+        fail(cid, "pod must not have a deletionTimestamp")
+    if pp.get("hostNetwork") is not False:
+        fail(cid, "pod must not use hostNetwork")
+
+    pod_ip = _norm_ip(pp.get("podIP"))
+    if pod_ip is None:
+        fail(cid, "podIP must be a valid IP address")
+    elif not _ip_in_cidr(pod_ip, cluster_cidr):
+        fail(cid, "podIP must be within topology.clusterCIDR")
+
+    pod_node = pp.get("nodeName")
+    if not _nonempty_str(pod_node):
+        fail(cid, "pod nodeName must be non-empty")
+    elif not _nonempty_str(identity_node) or pod_node != identity_node:
+        fail(cid, "pod nodeName must equal clusterIdentity.nodeName")
+
+    image_ref = pp.get("imageRef")
+    if not (isinstance(image_ref, str) and DIGEST_PINNED_IMAGE_RE.match(image_ref)):
+        fail(cid, "imageRef must be digest-pinned (name@sha256:<64 hex>)")
+    if not _nonempty_str(pp.get("runtimeImageID")):
+        fail(cid, "runtimeImageID must be a non-empty string")
+
     pp_attempts = pp.get("attempts")
     pp_success = pp.get("successCount")
     if not _is_plain_int(pp_attempts) or pp_attempts < MIN_PROBE_ATTEMPTS:
@@ -544,8 +603,6 @@ def validate_v2_check_semantics(data: dict[str, Any]) -> list[Finding]:
         fail(cid, "successCount must equal attempts")
     if pp.get("ncMissing") is not False:
         fail(cid, "ncMissing must be false")
-    if pp.get("podWithinNodeCidr") is not True:
-        fail(cid, "podWithinNodeCidr must be true")
     # attemptExitCodes is MANDATORY: without the per-attempt evidence the verifier
     # would be trusting the self-declared successCount.
     codes = pp.get("attemptExitCodes")

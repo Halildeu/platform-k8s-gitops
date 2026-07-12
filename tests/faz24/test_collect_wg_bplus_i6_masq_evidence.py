@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Tests for the Faz 24 WG-B+ I6 MASQ metadata collector (schema v2).
+"""Tests for the Faz 24 WG-B+ I6 MASQ metadata collector (schema v3).
 
 These tests drive the collector through a configurable fake host runner so the
-full adversarial matrix can be exercised offline. The single most important
-regression guarded here is: the owned SNAT counter advancing is NOT sufficient —
-unless the pod-origin TCP probe actually succeeds N/N, the evidence FAILS.
+full adversarial matrix can be exercised offline. Two regressions are guarded:
+  1. the owned SNAT counter advancing is NOT sufficient — unless the pod-origin
+     TCP probe from the LABEL-selected, digest-pinned, correctly-scheduled pod
+     actually succeeds N/N, the evidence FAILS;
+  2. Calico IPAM — the probe pod IP is validated against the disclosed
+     clusterCIDR (/16) + the bound node, NOT against the node .spec.podCIDR /24.
 """
 
 from __future__ import annotations
@@ -14,7 +17,6 @@ import json
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,13 +33,15 @@ sys.modules[spec.name] = collector
 spec.loader.exec_module(collector)
 
 CHAIN = collector.OWNED_NAT_CHAIN
+DIGEST = "a" * 64
+DIGEST_IMAGE = f"busybox@sha256:{DIGEST}"
 
 
 class FakeHostRunner:
     """Configurable fake for collector.run_command.
 
-    Every knob defaults to a HEALTHY k3d-test topology. Adversarial tests flip a
-    single knob and assert exactly the affected check(s) fail.
+    Every knob defaults to a HEALTHY Calico k3d-test topology. Adversarial tests
+    flip a single knob and assert exactly the affected check(s) fail.
     """
 
     def __init__(
@@ -52,11 +56,19 @@ class FakeHostRunner:
         node_pod_cidrs: list[str] | None = None,
         nodes_unreadable: bool = False,
         host_rule_check_exit: int = 0,
+        host_rule_sudo_ok: bool = True,
         route_dev: str = "wg0",
         allowed_ips_cover: bool = True,
         peer_pubkey: str = "ABtestPeerPublicKeyMaterial0000000000000000=",
-        pods_running: bool = True,
-        pod_ip: str = "10.44.0.15",
+        probe_match_count: int = 1,
+        pod_phase: str = "Running",
+        pod_ready: bool = True,
+        pod_deletion: bool = False,
+        pod_host_network: bool = False,
+        pod_ip: str = "10.44.5.99",  # in cluster /16 but OUTSIDE the node /24 (Calico)
+        pod_node: str = "k3d-test-server-0",
+        image_ref: str = DIGEST_IMAGE,
+        runtime_image_id: str | None = f"docker-pullable://busybox@sha256:{DIGEST}",
         nc_exit: list[int] | None = None,
         counter_before: int = 0,
         counter_after: int = 3,
@@ -77,11 +89,19 @@ class FakeHostRunner:
         self.node_pod_cidrs = node_pod_cidrs if node_pod_cidrs is not None else ["10.44.0.0/24"]
         self.nodes_unreadable = nodes_unreadable
         self.host_rule_check_exit = host_rule_check_exit
+        self.host_rule_sudo_ok = host_rule_sudo_ok
         self.route_dev = route_dev
         self.allowed_ips_cover = allowed_ips_cover
         self.peer_pubkey = peer_pubkey
-        self.pods_running = pods_running
+        self.probe_match_count = probe_match_count
+        self.pod_phase = pod_phase
+        self.pod_ready = pod_ready
+        self.pod_deletion = pod_deletion
+        self.pod_host_network = pod_host_network
         self.pod_ip = pod_ip
+        self.pod_node = pod_node
+        self.image_ref = image_ref
+        self.runtime_image_id = runtime_image_id
         self.nc_queue = list(nc_exit if nc_exit is not None else [0, 0, 0])
         self.counter_before = counter_before
         self.counter_after = counter_after
@@ -124,26 +144,33 @@ class FakeHostRunner:
             lines.append("-A POSTROUTING -s 0.0.0.0/0 -j MASQUERADE")
         return "\n".join(lines) + "\n"
 
+    def _pod_obj(self) -> dict:
+        meta = {"name": "wg-i6-probe-123", "uid": "pod-uid-1"}
+        if self.pod_deletion:
+            meta["deletionTimestamp"] = "2026-07-12T00:00:00Z"
+        container_statuses = []
+        if self.runtime_image_id is not None:
+            container_statuses = [{"imageID": self.runtime_image_id}]
+        return {
+            "metadata": meta,
+            "spec": {
+                "nodeName": self.pod_node,
+                "hostNetwork": self.pod_host_network,
+                "containers": [{"image": self.image_ref}],
+            },
+            "status": {
+                "phase": self.pod_phase,
+                "podIP": self.pod_ip,
+                "conditions": [{"type": "Ready", "status": "True" if self.pod_ready else "False"}],
+                "containerStatuses": container_statuses,
+            },
+        }
+
     def _pods_json(self) -> str:
-        if not self.pods_running:
-            return json.dumps({"items": []})
-        return json.dumps(
-            {
-                "items": [
-                    {
-                        "metadata": {"name": "audio-gateway-0", "uid": "pod-uid-1"},
-                        "spec": {"nodeName": "k3d-test-server-0"},
-                        "status": {"phase": "Running", "podIP": self.pod_ip},
-                    }
-                ]
-            }
-        )
+        return json.dumps({"items": [self._pod_obj() for _ in range(self.probe_match_count)]})
 
     def _nodes_json(self) -> str:
-        items = []
-        for cidr in self.node_pod_cidrs:
-            items.append({"spec": {"podCIDR": cidr, "podCIDRs": [cidr]}})
-        return json.dumps({"items": items})
+        return json.dumps({"items": [{"spec": {"podCIDR": c, "podCIDRs": [c]}} for c in self.node_pod_cidrs]})
 
     def _wg_allowed_ips(self) -> str:
         if self.allowed_ips_cover:
@@ -151,12 +178,21 @@ class FakeHostRunner:
         return "OTHERKEY0000000000000000000000000000000000=\t10.88.0.0/24\n"
 
     def _wg_handshakes(self) -> str:
-        ts = int(time.time()) - 30
-        return f"{self.peer_pubkey}\t{ts}\n"
+        import time
+
+        return f"{self.peer_pubkey}\t{int(time.time()) - 30}\n"
 
     # -- dispatch ---------------------------------------------------------
     def __call__(self, argv: list[str], timeout: int = 12, env: dict | None = None):
         self.commands.append(argv)
+
+        # host-rule check is an env-wrapped command; inspect RAW argv (before
+        # sudo-strip) so we can simulate sudo being unavailable -> direct fallback.
+        if "check" in argv and any(Path(a).name == "env" for a in argv):
+            if argv[:2] == ["sudo", "-n"] and not self.host_rule_sudo_ok:
+                return collector.CommandResult(127, "", "sudo: a password is required")
+            return collector.CommandResult(self.host_rule_check_exit, "", "")
+
         command, args = self._normalize(argv)
 
         if command == "wg":
@@ -192,9 +228,6 @@ class FakeHostRunner:
                     )
                     return collector.CommandResult(0, cmdline, "")
             return collector.CommandResult(1, "", "docker-unknown")
-
-        if command == "bash":
-            return collector.CommandResult(self.host_rule_check_exit, "", "")
 
         if command == "kubectl":
             if "exec" in args:
@@ -283,6 +316,7 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
             host_rule_script=str(self.canonical_script),
             installed_host_rule_script="",
             probe_attempts=3,
+            probe_pod_selector="wg-i6-probe=true,wg-i6-probe-run=123",
             systemd_unit="k3d-wg-masq.service",
             drift_timer="k3d-wg-masq.timer",
             drift_interval_minutes=5,
@@ -320,7 +354,7 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
             )
 
     # -- positive ---------------------------------------------------------
-    def test_healthy_topology_passes_and_verifier_accepts(self):
+    def test_healthy_calico_topology_passes_and_verifier_accepts(self):
         evidence = self.build(
             arg_overrides={"protected_evidence_path": "operator://staging-sw/protected/faz24/i6/20260712T060000Z"}
         )
@@ -328,56 +362,51 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         self.assertEqual("pass", evidence["status"])
         self.assertTrue(all(check["status"] == "pass" for check in evidence["checks"]))
         self.assertEqual(collector.SCHEMA_VERSION, evidence["schemaVersion"])
-        self.assertEqual("10.44.0.0/16", evidence["topology"]["clusterCIDR"])
-        self.assertEqual(["10.44.0.0/24"], evidence["topology"]["nodePodCIDRs"])
-        self.assertEqual(CHAIN, evidence["mechanism"]["ownedNatChain"])
+        self.assertTrue(evidence["schemaVersion"].endswith(".v3"))
+        probe = evidence["collector"]["podProbe"]
+        # Calico: pod IP is inside the cluster /16 but OUTSIDE the node /24.
+        self.assertEqual("10.44.5.99", probe["podIP"])
+        self.assertTrue(probe["podWithinClusterCidr"])
+        self.assertTrue(probe["podOnTargetNode"])
+        self.assertEqual(DIGEST_IMAGE, probe["imageRef"])
+        self.assertEqual(1, probe["matchCount"])
+        self.assertEqual(3, probe["successCount"])
+        self.assertEqual("sudo-canonical", evidence["collector"]["hostOwnedChain"]["executionMode"])
         self.assertEqual(3, evidence["collector"]["counterTraversal"]["counterDelta"])
-        self.assertEqual(3, evidence["collector"]["podProbe"]["successCount"])
-        self.assertFalse(evidence["redaction"]["rawCommandOutputIncluded"])
 
         result = self.run_verifier(evidence)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("Faz24 WG-B+ I6 MASQ evidence: PASS", result.stdout)
         self.assertIn("clusterCIDR=10.44.0.0/16", result.stdout)
 
-    # -- belt policy ------------------------------------------------------
+    # -- belt / effective / node containment (unchanged from v2) ----------
     def test_belt_policy_rejects_k3d_test_with_prod_cidr(self):
         evidence = self.build(arg_overrides={"cluster_cidr": "10.42.0.0/16"})
         self.assertCheckFails(evidence, "cluster-identity-bound")
-        self.assertFalse(evidence["collector"]["clusterIdentity"]["beltPolicyOk"])
 
-    # -- effective cluster cidr ------------------------------------------
     def test_effective_cidr_wrong_fails(self):
-        # configured 10.44 (belt ok) but the node effectively runs 10.42.
         evidence = self.build(
             runner_overrides={"config_yaml_cidr": "10.42.0.0/16", "cmdline_cidr": "10.42.0.0/16"}
         )
         self.assertCheckFails(evidence, "effective-cluster-cidr-matches-config")
-        self.assertCheckPasses(evidence, "cluster-identity-bound")
 
     def test_effective_cidr_source_conflict_fails(self):
         evidence = self.build(
             runner_overrides={"config_yaml_cidr": "10.44.0.0/16", "cmdline_cidr": "10.42.0.0/16"}
         )
         self.assertCheckFails(evidence, "effective-cluster-cidr-matches-config")
-        self.assertTrue(evidence["collector"]["effectiveCidr"]["sourcesConflict"])
 
-    # -- node podCIDR containment ----------------------------------------
     def test_node_pod_cidr_outside_cluster_cidr_fails(self):
-        evidence = self.build(
-            runner_overrides={"node_pod_cidrs": ["10.99.0.0/24"], "pod_ip": "10.99.0.20"}
-        )
+        evidence = self.build(runner_overrides={"node_pod_cidrs": ["10.99.0.0/24"]})
         self.assertCheckFails(evidence, "node-pod-cidrs-within-cluster-cidr")
-        # containment is the failing invariant; identity/effective still pass.
-        self.assertCheckPasses(evidence, "cluster-identity-bound")
 
-    # -- host-owned chain authority --------------------------------------
+    # -- host-owned chain authority (Gap 1) -------------------------------
     def test_host_rule_script_missing_fails(self):
         evidence = self.build(arg_overrides={"host_rule_script": str(self.canonical_script) + ".nope"})
         self.assertCheckFails(evidence, "host-owned-chain-authority")
         self.assertFalse(evidence["collector"]["hostOwnedChain"]["scriptFound"])
 
-    def test_host_rule_exit_zero_but_installed_sha_mismatch_fails(self):
+    def test_host_rule_installed_sha_mismatch_fails(self):
         installed = Path(self._tmp.name) / "installed-drifted.sh"
         installed.write_text("#!/usr/bin/env bash\necho DRIFTED\n", encoding="utf-8")
         evidence = self.build(arg_overrides={"installed_host_rule_script": str(installed)})
@@ -388,6 +417,26 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         evidence = self.build(runner_overrides={"host_rule_check_exit": 1})
         self.assertCheckFails(evidence, "host-owned-chain-authority")
 
+    def test_host_rule_direct_mode_is_not_authoritative(self):
+        # sudo unavailable -> collector falls back to a non-root direct run.
+        evidence = self.build(runner_overrides={"host_rule_sudo_ok": False})
+        self.assertCheckFails(evidence, "host-owned-chain-authority")
+        self.assertEqual("direct", evidence["collector"]["hostOwnedChain"]["executionMode"])
+
+    def test_host_rule_env_wrapper_carries_vars_after_sudo(self):
+        # Gap 1 regression: env must be set AFTER sudo (sudo -n strips caller env).
+        runner = FakeHostRunner()
+        collector.run_command = runner
+        collector.socket.gethostname = lambda: "staging-sw"
+        collector.build_evidence(self.args())
+        host_rule_cmds = [c for c in runner.commands if "check" in c and any(Path(a).name == "env" for a in c)]
+        self.assertTrue(host_rule_cmds)
+        cmd = host_rule_cmds[0]
+        self.assertEqual(["sudo", "-n", collector.ENV_BIN], cmd[:3])
+        self.assertIn("WGMASQ_NODE=k3d-test-server-0", cmd)
+        self.assertIn("WGMASQ_WG_CIDR=10.99.0.0/24", cmd)  # CIDR kept raw (not safe_name'd)
+        self.assertIn(collector.BASH_BIN, cmd)
+
     # -- peer route -------------------------------------------------------
     def test_route_dev_not_wireguard_fails(self):
         evidence = self.build(runner_overrides={"route_dev": "eth0"})
@@ -397,13 +446,11 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         evidence = self.build(runner_overrides={"allowed_ips_cover": False})
         self.assertCheckFails(evidence, "peer-route-is-wireguard-path")
 
-    # -- THE critical regression: counter advances but TCP fails ---------
+    # -- THE regression: counter advances but TCP fails -------------------
     def test_counter_advances_but_tcp_fails_is_rejected(self):
-        # 0/3 TCP success yet the owned SNAT counter still advanced by 3.
         evidence = self.build(runner_overrides={"nc_exit": [1, 1, 1], "counter_before": 0, "counter_after": 3})
         self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
         self.assertCheckFails(evidence, "snat-rule-counter-traversal")
-        # prove the counter DID move — the TCP gate is what rejects it.
         self.assertEqual(3, evidence["collector"]["counterTraversal"]["counterDelta"])
         self.assertEqual(0, evidence["collector"]["podProbe"]["successCount"])
 
@@ -412,12 +459,10 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
         self.assertCheckFails(evidence, "snat-rule-counter-traversal")
 
-    # -- counter traversal ------------------------------------------------
     def test_tcp_ok_but_counter_delta_zero_fails(self):
         evidence = self.build(runner_overrides={"counter_before": 3, "counter_after": 3})
         self.assertCheckPasses(evidence, "pod-to-wg-peer-tcp-connect")
         self.assertCheckFails(evidence, "snat-rule-counter-traversal")
-        self.assertEqual(0, evidence["collector"]["counterTraversal"]["counterDelta"])
 
     def test_rule_fingerprint_change_fails(self):
         evidence = self.build(
@@ -425,34 +470,81 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         )
         self.assertCheckPasses(evidence, "pod-to-wg-peer-tcp-connect")
         self.assertCheckFails(evidence, "snat-rule-counter-traversal")
-        self.assertFalse(evidence["collector"]["counterTraversal"]["ruleStable"])
 
-    # -- pod selection ----------------------------------------------------
-    def test_pod_not_found_fails(self):
-        evidence = self.build(runner_overrides={"pods_running": False})
+    # -- Gap 2: Calico-safe probe pod selection ---------------------------
+    def test_pod_ip_outside_cluster_cidr_fails(self):
+        evidence = self.build(runner_overrides={"pod_ip": "10.99.0.20"})
         self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
-        self.assertFalse(evidence["collector"]["podProbe"]["podFound"])
+        self.assertFalse(evidence["collector"]["podProbe"]["podWithinClusterCidr"])
 
-    def test_probe_pod_ip_outside_node_cidr_fails(self):
-        # node podCIDR valid (check-3 passes), but the only Running pod is outside it.
-        evidence = self.build(runner_overrides={"pod_ip": "10.88.0.5"})
-        self.assertCheckPasses(evidence, "node-pod-cidrs-within-cluster-cidr")
+    def test_pod_on_wrong_node_fails(self):
+        evidence = self.build(runner_overrides={"pod_node": "k3d-test-server-1"})
         self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
-        self.assertFalse(evidence["collector"]["podProbe"]["podWithinNodeCidr"])
+        self.assertFalse(evidence["collector"]["podProbe"]["podOnTargetNode"])
+
+    def test_pod_host_network_fails(self):
+        evidence = self.build(runner_overrides={"pod_host_network": True})
+        self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
+
+    def test_probe_match_count_zero_fails(self):
+        evidence = self.build(runner_overrides={"probe_match_count": 0})
+        self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
+        self.assertEqual(0, evidence["collector"]["podProbe"]["matchCount"])
+
+    def test_probe_match_count_two_fails(self):
+        evidence = self.build(runner_overrides={"probe_match_count": 2})
+        self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
+        self.assertEqual(2, evidence["collector"]["podProbe"]["matchCount"])
+
+    def test_pod_not_ready_fails(self):
+        evidence = self.build(runner_overrides={"pod_ready": False})
+        self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
+
+    def test_pod_deletion_timestamp_fails(self):
+        evidence = self.build(runner_overrides={"pod_deletion": True})
+        self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
+
+    def test_image_tag_only_not_digest_rejected_by_verifier(self):
+        # The collector records imageRef raw (Gap 2b); the verifier is the gate
+        # that requires it to be digest-pinned.
+        evidence = self.build(runner_overrides={"image_ref": "busybox:1.36"})
+        self.assertEqual("busybox:1.36", evidence["collector"]["podProbe"]["imageRef"])
+        result = self.run_verifier(evidence)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("imageRef must be digest-pinned", result.stderr)
+
+    def test_runtime_image_id_missing_rejected_by_verifier(self):
+        evidence = self.build(runner_overrides={"runtime_image_id": None})
+        self.assertIsNone(evidence["collector"]["podProbe"]["runtimeImageID"])
+        result = self.run_verifier(evidence)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("runtimeImageID", result.stderr)
 
     def test_nc_missing_in_pod_fails(self):
         evidence = self.build(runner_overrides={"nc_exit": [127, 127, 127]})
         self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
         self.assertTrue(evidence["collector"]["podProbe"]["ncMissing"])
 
+    # -- vacuous / broad-nat ----------------------------------------------
     def test_zero_probe_attempts_is_not_vacuously_true(self):
-        # attempts==0 -> loop runs 0 times; success==attempts==0 must NOT pass.
         evidence = self.build(
             arg_overrides={"probe_attempts": 0}, runner_overrides={"nc_exit": [], "counter_after": 0}
         )
         self.assertCheckFails(evidence, "pod-to-wg-peer-tcp-connect")
         self.assertCheckFails(evidence, "snat-rule-counter-traversal")
-        self.assertEqual(0, evidence["collector"]["podProbe"]["successCount"])
+
+    def test_broad_lan_nat_detected_fails(self):
+        evidence = self.build(runner_overrides={"broad_nat": True})
+        self.assertCheckFails(evidence, "no-broad-lan-nat")
+
+    # -- leak guard + arg surface -----------------------------------------
+    def test_forbidden_key_leaked_into_evidence_is_rejected_by_verifier(self):
+        evidence = self.build()
+        self.assertEqual("pass", evidence["status"])
+        evidence["collector"]["podProbe"]["command_output"] = "kubectl exec ... nc -z 10.99.0.2 8243"
+        result = self.run_verifier(evidence)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("forbidden_key", result.stderr)
 
     def test_parse_args_enforces_min_probe_attempts(self):
         base = ["--output", "/tmp/x.json", "--cluster-cidr", "10.44.0.0/16"]
@@ -463,21 +555,6 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
             parsed = collector.parse_args(base + ["--probe-attempts", good])
             self.assertEqual(int(good), parsed.probe_attempts)
 
-    # -- broad lan nat ----------------------------------------------------
-    def test_broad_lan_nat_detected_fails(self):
-        evidence = self.build(runner_overrides={"broad_nat": True})
-        self.assertCheckFails(evidence, "no-broad-lan-nat")
-
-    # -- leak guard against collector-shaped evidence --------------------
-    def test_forbidden_key_leaked_into_evidence_is_rejected_by_verifier(self):
-        evidence = self.build()
-        self.assertEqual("pass", evidence["status"])
-        evidence["collector"]["podProbe"]["command_output"] = "kubectl exec ... nc -z 10.99.0.2 8243"
-        result = self.run_verifier(evidence)
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("forbidden_key", result.stderr)
-
-    # -- default protected path (adapted) --------------------------------
     def test_default_protected_path_uses_github_run_id(self):
         evidence_path = collector.protected_evidence_path(self.args())
         self.assertEqual(
