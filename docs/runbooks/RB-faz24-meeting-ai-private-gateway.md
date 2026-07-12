@@ -24,10 +24,10 @@ Kontroller birbirinin yerine geçmez:
 Bu runbook **test aktivasyonu** içindir. Kaynak/CI geçişi canlı bağlantı,
 sertifika rotasyonu veya ürün kabulü değildir.
 
-`9447` Meeting-AI kanalına ayrılmıştır. Canlı staging hostta `9445`, Faz 22
-endpoint remote-bridge'in `0.0.0.0:9445 -> 172.19.0.2:19445` forwarder'ı
-tarafından kullanılmaktadır. Meeting-AI gateway bu listener'ı taşımaz, kapatmaz
-veya paylaşmaz; iki fazın rollback ve kabul sınırları böylece ayrık kalır.
+`9447` Meeting-AI kanalına ayrılmıştır. Canlı staging hostta `0.0.0.0:9445`
+başka bir Faz 22 listener'ına aittir. Bu listener endpoint remote-bridge
+zincirinin parçasıdır. Meeting-AI gateway onu taşımaz, kapatmaz veya paylaşmaz;
+iki fazın rollback ve kabul sınırları böylece ayrık kalır.
 
 ## 2. Secret ve PKI trust-domain ayrımı
 
@@ -275,7 +275,7 @@ Canlı kabul tek başarılı istek değildir. Redacted evidence aşağıdakileri
 tamamını içermelidir:
 
 1. `ss -lntp`: Meeting-AI için yalnız `10.99.0.1:9447`, `0.0.0.0:9447` yok.
-   Faz 22'ye ait ayrı `0.0.0.0:9445` forwarder bu kontrolün parçası değildir.
+   Faz 22'ye ait ayrı listener bu kontrolün parçası değildir.
 2. `firewall.sh check` PASS; başka interface/source TCP/9447 deny.
 3. Doğru client cert `/healthz` HTTP 200.
 4. Client cert yok: TLS handshake fail.
