@@ -253,8 +253,11 @@ jobs:
                     type: RuntimeDefault
                 resources:
                   requests:
+                    # platform-test enforces a LimitRange min of 32Mi memory per
+                    # container; 16Mi is admission-rejected. 32Mi is the minimum that
+                    # satisfies it and is ample for a short-lived busybox nc probe.
                     cpu: 10m
-                    memory: 16Mi
+                    memory: 32Mi
                   limits:
                     cpu: 100m
                     memory: 64Mi
