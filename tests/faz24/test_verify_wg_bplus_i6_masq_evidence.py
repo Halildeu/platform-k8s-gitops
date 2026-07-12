@@ -14,6 +14,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "faz24" / "verify-wg-bplus-i6-masq-evidence.py"
 
+EXPECTED_DIGEST = "sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f"
+EXPECTED_PROBE_IMAGE = "busybox@" + EXPECTED_DIGEST
+
 V2_CHECK_IDS = [
     "cluster-identity-bound",
     "effective-cluster-cidr-matches-config",
@@ -128,14 +131,16 @@ def valid_evidence() -> dict:
             },
             "hostOwnedChain": {
                 "hostRuleScript": "bootstrap/host/k3d-wg-masq/k3d-wg-masq-host-rule.sh",
-                "runScript": "bootstrap/host/k3d-wg-masq/k3d-wg-masq-host-rule.sh",
+                "runScript": "/usr/local/sbin/k3d-wg-masq-host-rule.sh",
                 "scriptFound": True,
                 "canonicalSha256": "ab" * 32,
                 "checkExitCode": 0,
-                "installedProvided": False,
-                "installedSha256": None,
+                "installedProvided": True,
+                "installedSha256": "ab" * 32,
                 "shaMatches": True,
-                "executionMode": "sudo-canonical",
+                "installedScriptOwnerUid": 0,
+                "installedScriptMode": "0755",
+                "executionMode": "sudo-installed",
                 "ownedNatChain": "K3D_WG_MASQ_NAT",
                 "passed": True,
             },
@@ -169,8 +174,11 @@ def valid_evidence() -> dict:
                 "phase": "Running",
                 "ready": True,
                 "deletionTimestampPresent": False,
-                "imageRef": "busybox@sha256:" + ("a" * 64),
-                "runtimeImageID": "docker-pullable://busybox@sha256:" + ("a" * 64),
+                "imageRef": EXPECTED_PROBE_IMAGE,
+                "runtimeImageID": "docker-pullable://" + EXPECTED_PROBE_IMAGE,
+                "requestedDigest": EXPECTED_DIGEST,
+                "runtimeDigest": EXPECTED_DIGEST,
+                "digestBindingMode": "manifest-exact",
                 "podWithinClusterCidr": True,
                 "podOnTargetNode": True,
                 "passed": True,
@@ -640,6 +648,66 @@ class WgBplusI6MasqEvidenceValidatorTest(unittest.TestCase):
         # a non-sudo "direct" host-rule run with checkExitCode 0 is not authoritative.
         data = valid_evidence()
         data["collector"]["hostOwnedChain"]["executionMode"] = "direct"
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    # -- Blocker 1: cryptographic probe image digest binding --
+    def test_runtime_digest_differs_from_requested_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = "docker-pullable://busybox@sha256:" + ("c" * 64)
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_runtime_image_id_no_sha256_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = "docker.io/library/busybox:1.36"
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_runtime_image_id_longer_hex_not_loose_matched_fails(self):
+        # A's digest hex followed by MORE hex -> no exact 64-hex extraction -> fail.
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = "docker-pullable://busybox@" + EXPECTED_DIGEST + "ff"
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_runtime_image_id_empty_fails(self):
+        data = valid_evidence()
+        data["collector"]["podProbe"]["runtimeImageID"] = ""
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    def test_image_ref_not_expected_probe_artifact_fails(self):
+        data = valid_evidence()
+        other = "alpine@sha256:" + ("d" * 64)
+        data["collector"]["podProbe"]["imageRef"] = other
+        data["collector"]["podProbe"]["runtimeImageID"] = "docker-pullable://" + other
+        self.assert_semantic_fail(data, "pod-to-wg-peer-tcp-connect")
+
+    # -- Blocker 2: only installed root-owned sudo path is authoritative --
+    def test_execution_mode_sudo_canonical_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["executionMode"] = "sudo-canonical"
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_installed_script_owner_not_root_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["installedScriptOwnerUid"] = 1000
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_installed_script_group_writable_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["installedScriptMode"] = "0775"
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_installed_script_world_writable_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["installedScriptMode"] = "0757"
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_host_rule_check_exit_nonzero_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["checkExitCode"] = 1
+        self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    def test_installed_not_provided_fails(self):
+        data = valid_evidence()
+        data["collector"]["hostOwnedChain"]["installedProvided"] = False
         self.assert_semantic_fail(data, "host-owned-chain-authority")
 
     def test_summary_json_is_written(self):

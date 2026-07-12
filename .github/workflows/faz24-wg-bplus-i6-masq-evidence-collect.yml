@@ -47,9 +47,9 @@ on:
         required: true
         default: "k3d-test-server-0"
       installed_host_rule_script:
-        description: "Optional path to the installed host-rule script (sha must match canonical)"
-        required: false
-        default: ""
+        description: "Installed ROOT-OWNED host-rule script (must be uid 0, not group/world writable, sha == canonical). Required for host-owned-chain-authority."
+        required: true
+        default: "/usr/local/sbin/k3d-wg-masq-host-rule.sh"
       kube_context:
         description: "Kubernetes context on staging-sw"
         required: true
@@ -274,11 +274,10 @@ jobs:
               exit 1
               ;;
           esac
-          # Authoritative, arch-robust check: the pod's REQUESTED image must be exactly the
-          # pinned digest ref (immutable — no tag drift), and the container must actually be
-          # running (non-empty imageID). We do NOT hard-require imageID==pinned-digest:
-          # k3s/containerd may report the platform config digest rather than the manifest
-          # digest, so an exact substring match would be a fragile false-negative.
+          # HARD gate (same authority as the verifier's cryptographic digest binding):
+          # (1) the pod's REQUESTED image must be exactly the pinned digest ref (immutable —
+          # no tag drift); (2) the RUNTIME imageID must carry a sha256 digest that EQUALS the
+          # pinned digest. A moving tag or a merely-present imageID is not proof.
           SPEC_IMAGE="$(kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
             get pod "${PROBE_POD_NAME}" -o jsonpath='{.spec.containers[0].image}')"
           IMAGE_ID="$(kubectl --context "${KUBE_CONTEXT}" -n "${KUBE_NAMESPACE}" \
@@ -288,15 +287,18 @@ jobs:
             echo "::error::probe pod spec image '${SPEC_IMAGE}' != pinned '${PROBE_IMAGE}'"
             exit 1
           fi
-          if [ -z "${IMAGE_ID}" ]; then
-            echo "::error::probe pod has no runtime imageID (image not pulled/running)"
+          DIGEST="${PROBE_IMAGE##*@}"   # sha256:<64hex>
+          # Extract exactly one sha256:<64hex> from the runtime imageID (informational note:
+          # this is the "which digest form" logging — the equality below is the hard gate).
+          RUNTIME_DIGEST="$(printf '%s' "${IMAGE_ID}" | grep -oiE 'sha256:[0-9a-f]{64}' | head -n1 || true)"
+          echo "requested digest: ${DIGEST} | runtime digest: ${RUNTIME_DIGEST:-<none>}"
+          if [ -z "${RUNTIME_DIGEST}" ]; then
+            echo "::error::probe pod runtime imageID has no sha256 digest (image not pulled/running)"
             exit 1
           fi
-          DIGEST="${PROBE_IMAGE##*@}"
-          if printf '%s' "${IMAGE_ID}" | grep -q "${DIGEST}"; then
-            echo "runtime imageID matches the pinned amd64 manifest digest"
-          else
-            echo "note: runtime imageID does not literally contain ${DIGEST} (containerd may report the config digest); the spec-image digest pin + present imageID are authoritative"
+          if [ "${RUNTIME_DIGEST}" != "${DIGEST}" ]; then
+            echo "::error::runtime image digest ${RUNTIME_DIGEST} != pinned digest ${DIGEST}"
+            exit 1
           fi
 
       - name: Collect metadata-only I6 evidence

@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -82,6 +83,15 @@ DEFAULT_HOST_RULE_SCRIPT = "bootstrap/host/k3d-wg-masq/k3d-wg-masq-host-rule.sh"
 # match EXACTLY ONE pod (Calico IPAM means the pod IP is not in the node /24).
 DEFAULT_PROBE_POD_SELECTOR = "wg-i6-probe=true"
 
+# Canonical pinned probe artifact — the busybox 1.36 linux/amd64 manifest digest.
+# MUST stay identical to the collect workflow's PROBE_IMAGE and the verifier's
+# EXPECTED_PROBE_IMAGE (the runtime image digest is compared, not a moving tag).
+EXPECTED_PROBE_IMAGE = "busybox@sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f"
+
+# Extract an exact sha256:<64hex> digest (no loose substring: the 64 hex must not
+# be part of a longer hex run).
+IMAGE_DIGEST_RE = re.compile(r"sha256:([0-9a-f]{64})(?![0-9a-f])")
+
 # Absolute host binaries used to run the host-rule check under sudo. sudo -n
 # strips the caller env, so vars are set AFTER sudo via /usr/bin/env in the root
 # context (no shell). These paths are the ones present on staging-sw.
@@ -120,6 +130,30 @@ def sha256_file(path: Path) -> str | None:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
         return None
+
+
+def _image_digest(ref: str | None) -> str | None:
+    """Return the canonical `sha256:<64hex>` from any image ref form, else None.
+
+    Handles `busybox@sha256:X`, `docker.io/library/busybox@sha256:X`,
+    `docker-pullable://…@sha256:X`, and bare `sha256:X`. Exact 64 hex only — a
+    longer hex run does not match (no loose substring).
+    """
+    if not isinstance(ref, str):
+        return None
+    match = IMAGE_DIGEST_RE.search(ref)
+    if not match:
+        return None
+    return f"sha256:{match.group(1)}"
+
+
+def _installed_script_stat(path: Path) -> tuple[int | None, str | None]:
+    """Return (owner_uid, octal-mode-string like "0755") for path, or (None, None)."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None, None
+    return info.st_uid, format(stat.S_IMODE(info.st_mode), "04o")
 
 
 def run_command(argv: list[str], timeout: int = 12, env: dict[str, str] | None = None) -> CommandResult:
@@ -479,28 +513,6 @@ def collect_node_pod_cidrs(args: argparse.Namespace, cluster_cidr: str | None) -
 # ---------------------------------------------------------------------------
 # Check 4: host-owned-chain-authority
 # ---------------------------------------------------------------------------
-def _run_host_rule_check(
-    script_path: Path, env_vars: dict[str, str], run_mode: str
-) -> tuple[int | None, str]:
-    """Run `<script> check` with env set AFTER sudo (sudo -n strips the caller env).
-
-    Returns (exit_code, executionMode). If the sudo path itself is not runnable
-    (sudo/env/bash missing), fall back to a NON-sudo direct run recorded as
-    executionMode="direct" — which the caller must treat as non-authoritative
-    (it cannot be assumed to have CAP_NET_ADMIN).
-    """
-    env_args = [f"{key}={value}" for key, value in env_vars.items()]
-    sudo_cmd = [SUDO_BIN, "-n", ENV_BIN, *env_args, BASH_BIN, str(script_path), "check"]
-    res = run_command(sudo_cmd, timeout=25)
-    if res.exit_code not in {126, 127}:
-        # sudo actually executed (exit 0 = check passed; non-zero = genuine failure
-        # such as a denied `sudo -n`); either way this is the authoritative mode.
-        return res.exit_code, run_mode
-    direct_cmd = [ENV_BIN, *env_args, BASH_BIN, str(script_path), "check"]
-    res_direct = run_command(direct_cmd, timeout=25)
-    return res_direct.exit_code, "direct"
-
-
 def collect_host_owned_chain(args: argparse.Namespace, wg_interface: str) -> dict[str, Any]:
     canonical_path = Path(args.host_rule_script)
     canonical_found = canonical_path.is_file()
@@ -510,25 +522,23 @@ def collect_host_owned_chain(args: argparse.Namespace, wg_interface: str) -> dic
     installed_path = Path(args.installed_host_rule_script) if installed_provided else None
     installed_found = bool(installed_path and installed_path.is_file())
     installed_sha = sha256_file(installed_path) if installed_found else None
-    # shaMatches is vacuously true when no installed script is supplied (no drift possible),
-    # otherwise it is the recomputed equality of installed vs canonical sha256.
-    if not installed_provided:
-        sha_matches = True
-    else:
-        sha_matches = bool(installed_sha and canonical_sha and installed_sha == canonical_sha)
+    owner_uid, mode_str = (
+        _installed_script_stat(installed_path) if installed_path is not None and installed_found else (None, None)
+    )
 
-    # Prefer the installed root-owned script when provided AND its sha matches the
-    # canonical checkout (avoids the TOCTOU of running a user-writable checkout script
-    # as root); else fall back to the canonical checkout script.
-    if installed_provided and sha_matches and installed_found:
-        run_path: Path | None = installed_path
-        run_mode = "sudo-installed"
-    elif canonical_found:
-        run_path = canonical_path
-        run_mode = "sudo-canonical"
-    else:
-        run_path = None
-        run_mode = ""
+    sha_matches = bool(installed_sha and canonical_sha and installed_sha == canonical_sha)
+
+    # The authoritative host-rule `check` runs ONLY the installed, root-owned script.
+    # Running the user-writable checkout as root would be a TOCTOU / priv-esc gap, so the
+    # canonical checkout is the sha256 comparison SOURCE, never a privileged exec target
+    # (the `sudo-canonical` mode is removed). A safe installed script is root-owned, not
+    # group/world writable, and byte-identical (sha256) to the canonical checkout.
+    perms_safe = bool(
+        owner_uid == 0
+        and mode_str is not None
+        and (int(mode_str, 8) & (stat.S_IWGRP | stat.S_IWOTH)) == 0
+    )
+    installed_authoritative = bool(installed_found and sha_matches and perms_safe)
 
     node = safe_name(args.wg_node)
     network = safe_name(args.docker_network)
@@ -537,34 +547,43 @@ def collect_host_owned_chain(args: argparse.Namespace, wg_interface: str) -> dic
     env_valid = bool(node and network and wg_if and wg_cidr)
 
     check_exit: int | None = None
-    execution_mode: str | None = None
-    if run_path is not None and env_valid:
-        env_vars = {
-            "WGMASQ_NODE": node,
-            "WGMASQ_NETWORK": network,
-            "WGMASQ_WG_CIDR": wg_cidr,  # validated CIDR, passed raw (never safe_name'd — '/' matters)
-            "WGMASQ_WG_IF": wg_if,
-        }
-        check_exit, execution_mode = _run_host_rule_check(run_path, env_vars, run_mode)
+    execution_mode = "unavailable"
+    if installed_authoritative and env_valid and installed_path is not None:
+        env_args = [
+            f"{key}={value}"
+            for key, value in {
+                "WGMASQ_NODE": node,
+                "WGMASQ_NETWORK": network,
+                "WGMASQ_WG_CIDR": wg_cidr,  # validated CIDR, raw (never safe_name'd — '/' matters)
+                "WGMASQ_WG_IF": wg_if,
+            }.items()
+        ]
+        # env set AFTER sudo (sudo -n strips the caller env); no shell.
+        res = run_command(
+            [SUDO_BIN, "-n", ENV_BIN, *env_args, BASH_BIN, str(installed_path), "check"], timeout=25
+        )
+        check_exit = res.exit_code
+        execution_mode = "sudo-installed"
 
-    # Authoritative pass requires a sudo (root-capable) execution mode; a "direct"
-    # non-root run that could hide missing privilege is NOT sufficient.
     passed = bool(
         canonical_found
+        and installed_provided
+        and installed_authoritative
+        and execution_mode == "sudo-installed"
         and check_exit == 0
-        and execution_mode in {"sudo-installed", "sudo-canonical"}
-        and (not installed_provided or sha_matches)
     )
 
     return {
         "hostRuleScript": str(canonical_path),
-        "runScript": str(run_path) if run_path is not None else None,
+        "runScript": str(installed_path) if installed_authoritative and installed_path is not None else None,
         "scriptFound": canonical_found,
         "canonicalSha256": canonical_sha,
-        "checkExitCode": check_exit,
         "installedProvided": installed_provided,
         "installedSha256": installed_sha,
         "shaMatches": sha_matches,
+        "installedScriptOwnerUid": owner_uid,
+        "installedScriptMode": mode_str,
+        "checkExitCode": check_exit,
         "executionMode": execution_mode,
         "ownedNatChain": OWNED_NAT_CHAIN,
         "passed": passed,
@@ -902,6 +921,9 @@ def measure_traversal(
         "deletionTimestampPresent": selection["deletionTimestampPresent"],
         "imageRef": selection["imageRef"],
         "runtimeImageID": selection["runtimeImageID"],
+        "requestedDigest": _image_digest(selection["imageRef"]),
+        "runtimeDigest": _image_digest(selection["runtimeImageID"]),
+        "digestBindingMode": "manifest-exact",
         "podWithinClusterCidr": selection["podWithinClusterCidr"],
         "podOnTargetNode": selection["podOnTargetNode"],
         "passed": tcp_pass,

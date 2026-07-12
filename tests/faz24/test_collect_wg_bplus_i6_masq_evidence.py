@@ -33,8 +33,8 @@ sys.modules[spec.name] = collector
 spec.loader.exec_module(collector)
 
 CHAIN = collector.OWNED_NAT_CHAIN
-DIGEST = "a" * 64
-DIGEST_IMAGE = f"busybox@sha256:{DIGEST}"
+EXPECTED_PROBE_IMAGE = collector.EXPECTED_PROBE_IMAGE
+EXPECTED_DIGEST = EXPECTED_PROBE_IMAGE.split("@", 1)[1]  # sha256:<64hex>
 
 
 class FakeHostRunner:
@@ -67,8 +67,8 @@ class FakeHostRunner:
         pod_host_network: bool = False,
         pod_ip: str = "10.44.5.99",  # in cluster /16 but OUTSIDE the node /24 (Calico)
         pod_node: str = "k3d-test-server-0",
-        image_ref: str = DIGEST_IMAGE,
-        runtime_image_id: str | None = f"docker-pullable://busybox@sha256:{DIGEST}",
+        image_ref: str = EXPECTED_PROBE_IMAGE,
+        runtime_image_id: str | None = "docker-pullable://" + EXPECTED_PROBE_IMAGE,
         nc_exit: list[int] | None = None,
         counter_before: int = 0,
         counter_after: int = 3,
@@ -292,13 +292,22 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
     def setUp(self) -> None:
         self.original_runner = collector.run_command
         self.original_hostname = collector.socket.gethostname
+        self.original_stat = collector._installed_script_stat
         self._tmp = tempfile.TemporaryDirectory()
+        script_body = "#!/usr/bin/env bash\necho canonical\n"
         self.canonical_script = Path(self._tmp.name) / "k3d-wg-masq-host-rule.sh"
-        self.canonical_script.write_text("#!/usr/bin/env bash\necho canonical\n", encoding="utf-8")
+        self.canonical_script.write_text(script_body, encoding="utf-8")
+        # Installed script is byte-identical to canonical (sha matches). Its owner
+        # uid/mode come from the monkeypatched _installed_script_stat (default root 0755),
+        # since a real root-owned file cannot be created in the offline test env.
+        self.installed_script = Path(self._tmp.name) / "k3d-wg-masq-host-rule-installed.sh"
+        self.installed_script.write_text(script_body, encoding="utf-8")
+        collector._installed_script_stat = lambda path: (0, "0755")
 
     def tearDown(self) -> None:
         collector.run_command = self.original_runner
         collector.socket.gethostname = self.original_hostname
+        collector._installed_script_stat = self.original_stat
         self._tmp.cleanup()
 
     def args(self, **overrides) -> SimpleNamespace:
@@ -314,7 +323,7 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
             wg_node="k3d-test-server-0",
             docker_network="platform-test-net",
             host_rule_script=str(self.canonical_script),
-            installed_host_rule_script="",
+            installed_host_rule_script=str(self.installed_script),
             probe_attempts=3,
             probe_pod_selector="wg-i6-probe=true,wg-i6-probe-run=123",
             systemd_unit="k3d-wg-masq.service",
@@ -327,8 +336,14 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         base.update(overrides)
         return SimpleNamespace(**base)
 
-    def build(self, arg_overrides: dict | None = None, runner_overrides: dict | None = None) -> dict:
+    def build(
+        self,
+        arg_overrides: dict | None = None,
+        runner_overrides: dict | None = None,
+        stat_result: tuple = (0, "0755"),
+    ) -> dict:
         collector.run_command = FakeHostRunner(**(runner_overrides or {}))
+        collector._installed_script_stat = lambda path: stat_result
         collector.socket.gethostname = lambda: "staging-sw"
         return collector.build_evidence(self.args(**(arg_overrides or {})))
 
@@ -368,10 +383,18 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         self.assertEqual("10.44.5.99", probe["podIP"])
         self.assertTrue(probe["podWithinClusterCidr"])
         self.assertTrue(probe["podOnTargetNode"])
-        self.assertEqual(DIGEST_IMAGE, probe["imageRef"])
+        self.assertEqual(EXPECTED_PROBE_IMAGE, probe["imageRef"])
+        self.assertEqual(EXPECTED_DIGEST, probe["requestedDigest"])
+        self.assertEqual(EXPECTED_DIGEST, probe["runtimeDigest"])
+        self.assertEqual(probe["requestedDigest"], probe["runtimeDigest"])
+        self.assertEqual("manifest-exact", probe["digestBindingMode"])
         self.assertEqual(1, probe["matchCount"])
         self.assertEqual(3, probe["successCount"])
-        self.assertEqual("sudo-canonical", evidence["collector"]["hostOwnedChain"]["executionMode"])
+        host_chain = evidence["collector"]["hostOwnedChain"]
+        self.assertEqual("sudo-installed", host_chain["executionMode"])
+        self.assertEqual(0, host_chain["installedScriptOwnerUid"])
+        self.assertEqual("0755", host_chain["installedScriptMode"])
+        self.assertTrue(host_chain["shaMatches"])
         self.assertEqual(3, evidence["collector"]["counterTraversal"]["counterDelta"])
 
         result = self.run_verifier(evidence)
@@ -417,16 +440,34 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         evidence = self.build(runner_overrides={"host_rule_check_exit": 1})
         self.assertCheckFails(evidence, "host-owned-chain-authority")
 
-    def test_host_rule_direct_mode_is_not_authoritative(self):
-        # sudo unavailable -> collector falls back to a non-root direct run.
-        evidence = self.build(runner_overrides={"host_rule_sudo_ok": False})
+    def test_host_rule_installed_not_provided_fails(self):
+        # Blocker 2: the authoritative check requires an installed root-owned script.
+        evidence = self.build(arg_overrides={"installed_host_rule_script": ""})
         self.assertCheckFails(evidence, "host-owned-chain-authority")
-        self.assertEqual("direct", evidence["collector"]["hostOwnedChain"]["executionMode"])
+        self.assertEqual("unavailable", evidence["collector"]["hostOwnedChain"]["executionMode"])
 
-    def test_host_rule_env_wrapper_carries_vars_after_sudo(self):
-        # Gap 1 regression: env must be set AFTER sudo (sudo -n strips caller env).
+    def test_host_rule_installed_not_root_owned_fails(self):
+        # Blocker 2: installed script not owned by root -> not authoritative.
+        evidence = self.build(stat_result=(1000, "0755"))
+        self.assertCheckFails(evidence, "host-owned-chain-authority")
+        self.assertEqual("unavailable", evidence["collector"]["hostOwnedChain"]["executionMode"])
+        self.assertEqual(1000, evidence["collector"]["hostOwnedChain"]["installedScriptOwnerUid"])
+
+    def test_host_rule_installed_group_writable_fails(self):
+        evidence = self.build(stat_result=(0, "0775"))
+        self.assertCheckFails(evidence, "host-owned-chain-authority")
+        self.assertEqual("unavailable", evidence["collector"]["hostOwnedChain"]["executionMode"])
+
+    def test_host_rule_installed_world_writable_fails(self):
+        evidence = self.build(stat_result=(0, "0757"))
+        self.assertCheckFails(evidence, "host-owned-chain-authority")
+
+    def test_host_rule_env_wrapper_runs_installed_script_after_sudo(self):
+        # Blocker 1 regression (kept): env set AFTER sudo (sudo -n strips caller env);
+        # Blocker 2: the exec target is the INSTALLED root-owned script, not the checkout.
         runner = FakeHostRunner()
         collector.run_command = runner
+        collector._installed_script_stat = lambda path: (0, "0755")
         collector.socket.gethostname = lambda: "staging-sw"
         collector.build_evidence(self.args())
         host_rule_cmds = [c for c in runner.commands if "check" in c and any(Path(a).name == "env" for a in c)]
@@ -436,6 +477,8 @@ class WgBplusI6MasqEvidenceCollectorTest(unittest.TestCase):
         self.assertIn("WGMASQ_NODE=k3d-test-server-0", cmd)
         self.assertIn("WGMASQ_WG_CIDR=10.99.0.0/24", cmd)  # CIDR kept raw (not safe_name'd)
         self.assertIn(collector.BASH_BIN, cmd)
+        self.assertIn(str(self.installed_script), cmd)  # installed, not the canonical checkout
+        self.assertNotIn(str(self.canonical_script), cmd)
 
     # -- peer route -------------------------------------------------------
     def test_route_dev_not_wireguard_fails(self):
