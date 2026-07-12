@@ -17,8 +17,8 @@
 # İmaj pin: numerik-UID imajı (ats#100 — Dockerfile USER 10001:10001; imaj-
 # seviyesi ve deployment securityContext artık tutarlı). Digest AUTHORITY,
 # tag alias (D30 immutable):
-#   tag    ghcr.io/halildeu/ats-app-boot:sha-f3ccad7
-#   digest sha256:c22f0ef4e44d88abdce7659d73228f43d82f1f7ede1cb38248d4a1a0fc801def
+#   tag    ghcr.io/halildeu/ats-app-boot:sha-e6b7409
+#   digest sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
 #   image build run: 29168265806 (public package — pull-secret gerekmez)
 # Önceki pin (14/14 D29 kanıtının koşulduğu imaj): sha-3a93cff /
 #   sha256:c2dcc1da2e169d676fec21a1acc60d6fd6be2b108e73ce705b0aa813010432b1
@@ -39,7 +39,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:c22f0ef4e44d88abdce7659d73228f43d82f1f7ede1cb38248d4a1a0fc801def
+    digest: sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
 
 patches:
   # test ortam değerleri (base fail-closed placeholder'larını doldurur)

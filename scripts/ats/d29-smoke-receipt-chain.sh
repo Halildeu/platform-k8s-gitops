@@ -38,8 +38,8 @@ hdr(){ # $1=method $2=url $3=token — header'ları /tmp/rc-hdr'a, status stdout
 }
 psq(){ docker exec platform-pg-test psql -U postgres -d ats -tAc "$1"; }
 
-OPERATOR=$(tok frontend ats-operator-persona operator_pw)
-READER=$(tok frontend ats-reader-persona reader_pw)
+OPERATOR=$(tok frontend ats-operator-persona OPERATOR_PW)
+READER=$(tok frontend ats-reader-persona READER_PW)
 [ -n "$OPERATOR" ] || { echo "FATAL: operator token alınamadı"; exit 1; }
 [ -n "$READER" ] || { echo "FATAL: reader token alınamadı"; exit 1; }
 
