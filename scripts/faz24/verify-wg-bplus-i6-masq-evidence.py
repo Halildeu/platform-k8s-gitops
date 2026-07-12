@@ -26,7 +26,7 @@ OWNED_NAT_CHAIN = "K3D_WG_MASQ_NAT"
 # Canonical pinned probe artifact — MUST match the collect workflow's PROBE_IMAGE and
 # the collector's EXPECTED_PROBE_IMAGE. The runtime image DIGEST is compared to the
 # requested digest (D30: a moving tag / a merely-present imageID is not proof).
-EXPECTED_PROBE_IMAGE = "busybox@sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f"
+EXPECTED_PROBE_IMAGE = "busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
 
 # Extract an exact sha256:<64hex> digest (no loose substring).
 IMAGE_DIGEST_RE = re.compile(r"sha256:([0-9a-f]{64})(?![0-9a-f])")

@@ -94,13 +94,15 @@ jobs:
       SUMMARY_JSON: /tmp/faz24-wg-bplus-i6-masq-collect-${{ github.run_id }}/verification-summary.json
       PROBE_POD_NAME: wg-i6-probe-${{ github.run_id }}
       PROBE_POD_SELECTOR: wg-i6-probe=true,wg-i6-probe-run=${{ github.run_id }}
-      # Pinned to the busybox 1.36 linux/amd64 MANIFEST digest (the staging-sw runner is
-      # X64; k3s/containerd reports .status.containerStatuses[].imageID as
-      # docker.io/library/busybox@sha256:<platform-manifest-digest>, so the amd64 manifest
-      # digest is what the "Verify probe pod runtime imageID" step below matches — not the
-      # multi-arch index digest, which would resolve to this same amd64 digest at runtime).
-      # The collector/verifier require a digest-pinned image + a present runtime imageID.
-      PROBE_IMAGE: busybox@sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f
+      # Pinned to the busybox 1.36 multi-arch INDEX (manifest-list) digest. LIVE-PROVEN
+      # on this staging-sw k3s/containerd runtime (workflow_dispatch 29201436668):
+      # when a pod requests busybox by ANY digest, .status.containerStatuses[].imageID is
+      # reported as docker.io/library/busybox@sha256:<INDEX-digest> — NOT the platform
+      # (amd64) manifest digest. So the "Verify probe pod runtime imageID" step + the
+      # verifier's requestedDigest==runtimeDigest binding only hold when we pin the INDEX
+      # digest here. (An earlier attempt pinned the amd64 manifest digest and the digest
+      # gate correctly fail-closed on the mismatch — that is what surfaced this.)
+      PROBE_IMAGE: busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
 
     steps:
       - name: Validate dispatch inputs

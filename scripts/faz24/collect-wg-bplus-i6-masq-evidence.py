@@ -83,10 +83,13 @@ DEFAULT_HOST_RULE_SCRIPT = "bootstrap/host/k3d-wg-masq/k3d-wg-masq-host-rule.sh"
 # match EXACTLY ONE pod (Calico IPAM means the pod IP is not in the node /24).
 DEFAULT_PROBE_POD_SELECTOR = "wg-i6-probe=true"
 
-# Canonical pinned probe artifact — the busybox 1.36 linux/amd64 manifest digest.
+# Canonical pinned probe artifact — the busybox 1.36 multi-arch INDEX digest.
+# containerd/k3s reports .status.containerStatuses[].imageID as the INDEX digest (not
+# the platform manifest digest), so the collect workflow pins the same index digest and
+# the requestedDigest==runtimeDigest binding holds (LIVE-PROVEN 2026-07-12).
 # MUST stay identical to the collect workflow's PROBE_IMAGE and the verifier's
 # EXPECTED_PROBE_IMAGE (the runtime image digest is compared, not a moving tag).
-EXPECTED_PROBE_IMAGE = "busybox@sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f"
+EXPECTED_PROBE_IMAGE = "busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
 
 # Extract an exact sha256:<64hex> digest (no loose substring: the 64 hex must not
 # be part of a longer hex run).
