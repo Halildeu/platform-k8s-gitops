@@ -78,6 +78,32 @@ B=https://testai.acik.com/remotes/interview-evidence
 grep -c 'live-export-panel' <(curl -sk "$B/assets/App-<hash>.js")
 ```
 
+> KEŞİF KISAYOLU (2026-07-12 dersi): `https://testai.acik.com/build-info.json`
+> sha + remotes[].assets listesini verir — zinciri elle yürütme. DİKKAT: remote
+> path'i SLUG'ladır (`/remotes/interview-evidence/...`, `mfe-` önekli DEĞİL).
+
+### 39d-8→10 receipt/artifact/replay zinciri (MERGED — aktivasyon pin'i VPN-dönüşü)
+
+Backend (ats): **#103** receipt-recovery GET + **#104** no-store kontrat-hijyeni +
+**#105** 200-yolu E2E kontratı + **#106** artifact READ (ledger-bağlı
+`artifact_digest`; erasure'ın content-silmesi API'dan kanıtlı) + **#107**
+idempotent-replay (`request_digest`; 200+`X-ATS-Replay` / 409 R4-repair-first).
+FE (platform-web): **#875** makbuz-kurtarma UI (gitops **#2325** pin
+sha-8d2d81a — EDGE-LIVE: `App-yQDs4iSN.js` 5/5 marker: `live-export-panel`,
+`export-receipt-recover`, `export-recovered-receipt`, `export-receipt-note`,
+`not-found-unresolved`).
+
+**Aktivasyon pin hedefi (VPN-dönüşü): ats `2df7e4be` merge-commit build imajı**
+(39d-8/8c/8d/9/10 birlikte). Pin sonrası smoke EKLERİ (mevcut d29-smoke 14'üne):
+
+| Kanıt | Beklenen |
+|---|---|
+| operator token → `GET /export/receipt?caseKey=<exported>` | 200 COMPLETED + no-store; reader(export.read yok)→403; anon→401 |
+| `GET /export/artifact?caseKey=` | 200 verbatim (sha256(gövde)==ledger.artifact_digest) + `Content-Type: application/json`; HEAD→403; erasure-sonrası→404 |
+| AYNI gövdeyle ikinci export POST | 200 + `X-ATS-Replay: true` + birebir makbuz + WORM satır-sayısı SABİT |
+| DEĞİŞİK gövdeyle ikinci POST | 400 conflict (makbuz sızmaz) |
+| FINALIZED+ledger-satırlı vakada POST (R4) | 409 repair-first (üretimsiz); receipt GET 200 INCOMPLETE |
+
 ## F7 export — operasyonel residual'lar (R1–R4) ve müdahale
 
 Single-export invariant'ı DB'dedir: `worm_ledger UNIQUE(tenant_id,
@@ -88,10 +114,10 @@ ambiguous-kilit olarak gösterir:
 
 | # | Durum | Tespit | Müdahale |
 |---|---|---|---|
-| R1 | Ledger-conflict sonrası artifact telafi-DELETE'i başarısız → **öksüz artifact** (ledger-bağsız; packet lineage DIŞI) | app-boot log: `ledger append başarısız VE artifact telafi silmesi başarısız (operasyonel müdahale gerekir)` + 503 | SİLMEDEN ÖNCE doğrula: aynı tenant/interview'da HİÇBİR ledger satırı `export_artifact_ref` olarak bu artifact'i göstermiyor + devam eden export yok + retention/legal-hold engeli yok. Yalnız ledger-bağsız orphan KESİNLEŞİRSE onaylı artifact-store delete yolu; işlem + silinen ref audit'e. SONRA deterministik idempotency_key + vaka state'i YENİDEN doğrula: export ledger satırı VARSA yeni export DENEME (EXPORTED→R2; FINALIZED+ledger→R4); yalnız ledger satırı YOK + vaka FINALIZED + devam eden işlem YOK ise onaylı yeni export (otomatik retry değil). |
-| R2 | Ambiguous sonrası makbuz kimlikleri kayıp (receipt-recovery endpoint'i YOK — backlog) | UI `reconciled-exported (makbuz doğrulanamıyor)` | `worm_ledger`'da tenant + deterministik export idempotency_key satırını bul. `evidenceId` = satırın KENDİ `evidence_id` kolonu (payload'da DEĞİL); payload'dan `export_artifact_ref`→artifactKey, `packet_digest`→packetDigest, `claim_count`→claimCount; payload `case_key` hedef vakayla EXACT eşleşmeli — doğrulanmadan makbuz yeniden-oluşturulmuş sayılmaz. |
-| R3 | İkinci istek same-receipt replay ALMAZ (payload'lar artifact-ref'ten ötürü birebir olamaz) → deterministic conflict + telafi | 503 `artifact geri alındı` (net-zero) | Kaybeden istek net-zero — bu istek için orphan temizliği gerekmez. AMA kazananın tamamlandığı VARSAYILMAZ: ledger satırı + vaka state'i doğrula — EXPORTED ise etkili export var (makbuz yoksa R2); FINALIZED + ledger satırı varsa R4 repair. YENİ EXPORT DENEME. |
-| R4 | artifact + ledger yazıldı, `markExported` DÜŞTÜ → vaka FINALIZED kaldı | app-boot log: `EXPORTED geçişi başarısız (artifact + ledger kaydı MEVCUT ... yutulmadı)` + 400 (DİKKAT: her 400 R4 değildir — bu log satırı ŞART) | **YENİ export DENEME** (ledger key tüketildi; retry conflict'e düşer). Repair ÖN-KOŞULLARI: vaka hâlâ FINALIZED + deterministik idempotency_key için TEK export-tipli ledger satırı + payload `case_key` exact-eşleşme + `export_artifact_ref` artifact'i MEVCUT + artifact/ledger `packet_digest` bütünlüğü + aynı vaka için ikinci ledger-bağlı export YOK. TAMAMI sağlanıyorsa onaylı+AUDİTLİ repair mekanizmasıyla FINALIZED→EXPORTED (mevcut artifact ref'iyle); desteklenen repair yolu yoksa ad-hoc DB mutasyonu YAPMA — backend müdahalesine eskale et. Repair sonrası case=EXPORTED + tek ledger satırı + digest bağı yeniden doğrulanır. |
+| R1 | Ledger-conflict sonrası artifact telafi-DELETE'i başarısız → **öksüz artifact** (ledger-bağsız; packet lineage DIŞI). NOT (ats#107): telafi başarılı **VE kazanan ledger satırı görünürse** sistem otomatik reconcile eder (replay/409); satır yoksa operasyonel hata korunur — R1 yalnız telafi-FAIL'de | app-boot log: `ledger append başarısız VE artifact telafi silmesi başarısız (operasyonel müdahale gerekir)` + 503 | SİLMEDEN ÖNCE doğrula: aynı tenant/interview'da HİÇBİR ledger satırı `export_artifact_ref` olarak bu artifact'i göstermiyor + devam eden export yok + retention/legal-hold engeli yok. Yalnız ledger-bağsız orphan KESİNLEŞİRSE onaylı artifact-store delete yolu; işlem + silinen ref audit'e. SONRA deterministik idempotency_key + vaka state'i YENİDEN doğrula: export ledger satırı VARSA yeni export DENEME (EXPORTED→R2; FINALIZED+ledger→R4); yalnız ledger satırı YOK + vaka FINALIZED + devam eden işlem YOK ise onaylı yeni export (otomatik retry değil). |
+| R2 | Ambiguous sonrası makbuz kimlikleri kayıp | UI `reconciled-exported` / ambiguous-kilit | **BİRİNCİL YOL (ats#103 pinliyken)**: `GET /export/receipt?caseKey=` → 200 COMPLETED alanları makbuzdur (UI "Makbuzu getir" aynı işi yapar); 200 INCOMPLETE=R4; 404 "yok" KANITI DEĞİLDİR (in-flight yarışı/kapsam-düzlemesi — kilit çözülmez). **FALLBACK (pin öncesi/endpoint erişilemezken)**: `worm_ledger`'da tenant + deterministik export idempotency_key satırını bul. `evidenceId` = satırın KENDİ `evidence_id` kolonu (payload'da DEĞİL); payload'dan `export_artifact_ref`→artifactKey, `packet_digest`→packetDigest, `claim_count`→claimCount; payload `case_key` hedef vakayla EXACT eşleşmeli — doğrulanmadan makbuz yeniden-oluşturulmuş sayılmaz. |
+| R3 | ~~İkinci istek same-receipt replay ALMAZ~~ **ats#107 ile YENİ export'larda kapandı**: aynı-gövde POST → 200 replay (`X-ATS-Replay`); yarış kaybedeni otomatik reconcile (rollback-OK'ta replay/409). KALAN: legacy satırlar (request_digest'siz) POST-replay alamaz → receipt GET; rollback-FAIL hâlâ R1'e düşer | Pin-öncesi imajda eski davranış: 503 `artifact geri alındı` (net-zero) — bu imajda YENİ EXPORT DENEME; kazanan durumunu doğrula (EXPORTED→R2, FINALIZED+ledger→R4). **#107 pinliyken**: birincil yol receipt GET; POST yalnız BİREBİR AYNI gövdeyle güvenlidir (doğrulanmış 200-replay); FARKLI gövde YASAK (400 conflict — makbuz sızmaz). | Kaybeden istek net-zero — bu istek için orphan temizliği gerekmez. AMA kazananın tamamlandığı VARSAYILMAZ: ledger satırı + vaka state'i doğrula — EXPORTED ise etkili export var (makbuz yoksa R2); FINALIZED + ledger satırı varsa R4 repair. YENİ EXPORT DENEME. |
+| R4 | artifact + ledger yazıldı, `markExported` DÜŞTÜ → vaka FINALIZED kaldı | app-boot log: `EXPORTED geçişi başarısız (artifact + ledger kaydı MEVCUT ... yutulmadı)` + 400 (DİKKAT: her 400 R4 değildir — bu log satırı ŞART). **Pin sonrası ek sinyaller**: retry-POST → 409 `repair-first` (üretimsiz); `GET /export/receipt` → 200 **INCOMPLETE** | **YENİ üretim / DEĞİŞİK-gövde deneme YASAK** (ledger key tüketildi; pin-öncesi imajda retry conflict'e düşer, **#107 pinliyken aynı-gövde retry deterministik 409 döner — self-heal YAPMAZ**; durum kanıtı receipt GET 200 INCOMPLETE). Repair ÖN-KOŞULLARI: vaka hâlâ FINALIZED + deterministik idempotency_key için TEK export-tipli ledger satırı + payload `case_key` exact-eşleşme + `export_artifact_ref` artifact'i MEVCUT + artifact/ledger `packet_digest` bütünlüğü + aynı vaka için ikinci ledger-bağlı export YOK. TAMAMI sağlanıyorsa onaylı+AUDİTLİ repair mekanizmasıyla FINALIZED→EXPORTED (mevcut artifact ref'iyle); desteklenen repair yolu yoksa ad-hoc DB mutasyonu YAPMA — backend müdahalesine eskale et. Repair sonrası case=EXPORTED + tek ledger satırı + digest bağı yeniden doğrulanır. |
 
 Frontend davranış sözleşmesi (platform-web `apps/mfe-interview-evidence/README.md`):
 400/5xx hiçbir zaman "uygulanmadı" sayılmaz; reconciliation'da EXPORTED
