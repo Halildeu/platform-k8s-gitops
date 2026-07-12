@@ -25,14 +25,14 @@ spec:
     - host: meeting-ai-private.testai.internal
       http:
         paths:
-          - path: ^/oauth2/token$
+          - path: /oauth2/token$
             pathType: ImplementationSpecific
             backend:
               service:
                 name: auth-service
                 port:
                   number: 8088
-          - path: ^/api/v1/internal/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/analysis-results$
+          - path: /api/v1/internal/meetings/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/analysis-results$
             pathType: ImplementationSpecific
             backend:
               service:
