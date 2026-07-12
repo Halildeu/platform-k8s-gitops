@@ -5,7 +5,7 @@ readonly CHAIN="PLATFORM_MAI_WG_IN"
 readonly WG_INTERFACE="wg0"
 readonly CLIENT_IP="10.99.0.2/32"
 readonly SERVER_IP="10.99.0.1/32"
-readonly SERVER_PORT="9445"
+readonly SERVER_PORT="9447"
 
 die() {
   printf 'meeting-ai firewall: %s\n' "$*" >&2

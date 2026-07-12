@@ -9,11 +9,11 @@ runtime-accepted evidence.
 
 Proposed fail-closed chain:
 
-`meeting-ai GPU 10.99.0.2 -> WireGuard wg0 -> staging-sw 10.99.0.1:9445 -> Caddy application mTLS -> 127.0.0.1:31080 -> meeting-ai-private Ingress -> auth-service/meeting-service`
+`meeting-ai GPU 10.99.0.2 -> WireGuard wg0 -> staging-sw 10.99.0.1:9447 -> Caddy application mTLS -> 127.0.0.1:31080 -> meeting-ai-private Ingress -> auth-service/meeting-service`
 
 Source controls in the proposed change:
 
-- exact host firewall allow for `wg0`, source/destination `/32` and TCP/9445;
+- exact host firewall allow for `wg0`, source/destination `/32` and TCP/9447;
 - dedicated client/server PKI trust domains, 24-hour leafs, scoped 48-hour
   periodic Vault token, fullchain serving and atomic cert/key pointer rollback;
 - no generic Caddy proxy: client-authenticated health plus exact token and
