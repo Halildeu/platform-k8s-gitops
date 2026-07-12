@@ -39,9 +39,11 @@ class FakeRunner:
         self.wg_requires_sudo = wg_requires_sudo
         self.wg_binary_path_only = wg_binary_path_only
         self.commands: list[list[str]] = []
+        self.stdins: list[str | None] = []
 
     def __call__(self, argv: list[str], stdin: str | None = None, timeout: int = 30):
         self.commands.append(argv)
+        self.stdins.append(stdin)
         if argv[:3] == ["ip", "route", "get"]:
             return collector.CommandResult(0, "10.99.0.2 dev wg-denetim src 10.99.0.1\n", "")
         if argv and argv[0] == "journalctl":
@@ -221,6 +223,11 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
         self.assertEqual(1, len(ssh_commands))
         self.assertIn("-i", ssh_commands[0])
         self.assertIn("IdentitiesOnly=yes", ssh_commands[0])
+        self.assertIn("-EncodedCommand", ssh_commands[0])
+        encoded_index = ssh_commands[0].index("-EncodedCommand") + 1
+        self.assertGreater(len(ssh_commands[0][encoded_index]), 100)
+        ssh_command_index = runner.commands.index(ssh_commands[0])
+        self.assertIsNone(runner.stdins[ssh_command_index])
         self.assertTrue(preflight["sshIdentityConfigured"])
         self.assertTrue(preflight["sshIdentityPublicKeyPresent"])
         self.assertTrue(preflight["sshIdentityPublicKeyFingerprint"])
