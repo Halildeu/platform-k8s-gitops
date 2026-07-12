@@ -33,6 +33,7 @@ namespace: platform-test
 resources:
   - ../../../../base/apps/ats-interview-evidence
   - externalsecret.yaml
+  - externalsecret-mtls.yaml
   - ingress-ats-api.yaml
   - netpol.yaml
   - ai-stub.yaml
@@ -42,6 +43,8 @@ images:
     digest: sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
 
 patches:
+  # 39d-5 Faz1: mTLS keystore/truststore mount + denetim hostAlias (provider STUB kalır)
+  - path: patch-mtls-mount.yaml
   # test ortam değerleri (base fail-closed placeholder'larını doldurur)
   - target:
       kind: ConfigMap

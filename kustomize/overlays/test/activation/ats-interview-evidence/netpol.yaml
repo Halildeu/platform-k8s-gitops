@@ -53,6 +53,16 @@ spec:
               app: ats-ai-stub
       ports:
         - port: 9452
+    # live-STT (denetim-PC GPU host; WG 10.99.0.2:8243 Caddy mTLS) — 39d-5.
+    # audio-gateway allow-audio-gateway-egress-live-stt-mtls aynası (ipBlock/32,
+    # TCP/8243). Additive: DNS/PG/KC/ai-stub kuralları AYNEN kalır. Faz1'de
+    # pre-stage; provider Faz2 flip'e kadar stub → bu yol henüz kullanılmaz.
+    - to:
+        - ipBlock:
+            cidr: 10.99.0.2/32
+      ports:
+        - port: 8243
+          protocol: TCP
 ---
 # ai-stub: yalnız ats-interview-evidence'ten istek kabul eder; egress YOK
 # (sentetik yanıt — dışarı hiçbir bağlantı ihtiyacı yok; fail-closed).
