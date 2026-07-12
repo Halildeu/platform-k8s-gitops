@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 39d-2c — platform-test KC realm: ats-api client + 10 client-role +
+# 39d-2c — platform-test KC realm: ats-api client + 12 client-role +
 # audience/permission client-scope'ları + persona rol atamaları.
 # Model: Codex 019f50b7 verdict A — permission scope'lar DEFAULT (yetki değil);
 # gerçek yetki YALNIZ ats-api client-role atamasıyla (rol-kapısı ats#96).
@@ -49,9 +49,13 @@ else
   echo "KC: ats-api client exists"
 fi
 
-# --- 2) 10 client-role ---
-PERMS="ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read ats.export.write ats.dsar.write ats.erasure.execute"
-for p in $PERMS; do
+# --- 2) 12 client-role ---
+# 39d-8..11: ats.export.read (receipt/artifact salt-okuma) PERMS'te — operator
+# sınıfına atanır. ats.export.repair BİLEREK PERMS DIŞI: rol+scope oluşturulur
+# ama HİÇBİR persona'ya otomatik ATANMAZ (runbook R4 onay-kapısı — Codex 39d-11).
+PERMS="ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read ats.export.read ats.export.write ats.dsar.write ats.erasure.execute"
+REPAIR_PERM="ats.export.repair"
+for p in $PERMS $REPAIR_PERM; do
   if ! kc get "clients/$ATS_CID/roles/$p" -r $REALM >/dev/null 2>&1; then
     kc create "clients/$ATS_CID/roles" -r $REALM -s name="$p" >/dev/null
     echo "KC: role $p CREATED"
@@ -109,8 +113,8 @@ else
   echo "KC: ats-tenant-claim-mapper exists"
 fi
 
-# --- 4) 10 permission client-scope (scope claim'ine ad girsin) ---
-for p in $PERMS; do
+# --- 4) 11+1 permission client-scope (scope claim'ine ad girsin) ---
+for p in $PERMS $REPAIR_PERM; do
   SID=$(kc get client-scopes -r $REALM --fields id,name --format csv --noquotes 2>/dev/null | awk -F, -v n="$p" '$2==n{print $1}' | head -1 || true)
   if [ -z "$SID" ]; then
     kc create client-scopes -r $REALM \
@@ -130,7 +134,7 @@ if [ -z "$FE_CID" ]; then
   exit 1
 fi
 BOUND=$(kc get "clients/$FE_CID/default-client-scopes" -r $REALM --fields name --format csv --noquotes 2>/dev/null || true)
-for name in ats-api-audience $PERMS; do
+for name in ats-api-audience $PERMS $REPAIR_PERM; do
   if ! printf '%s\n' "$BOUND" | grep -qx "$name"; then
     SID=$(kc get client-scopes -r $REALM --fields id,name --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}' | head -1)
     [ -n "$SID" ] || { echo "FATAL: client-scope bulunamadi: $name" >&2; exit 1; }
@@ -168,7 +172,7 @@ grant() { # $1=userId $2..=roles — idempotent get-check; gercek hata YUTULMAZ
 ADMIN_UID=$(kc get users -r $REALM -q 'username=admin@example.com' -q exact=true --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
 if [ -n "$ADMIN_UID" ]; then
   grant "$ADMIN_UID" $PERMS
-  echo "KC: admin test kullanıcısına 10 ats-api rolü atandı (operator sınıfı)"
+  echo "KC: admin test kullanıcısına 11 ats-api rolü atandı (operator sınıfı; export.repair HARİÇ)"
 else
   echo "WARN: admin@example.com bulunamadı — operator ataması atlandı" >&2
 fi
@@ -181,12 +185,13 @@ REVIEWER_UID=$(ensure_user ats-reviewer-persona)
 grant "$REVIEWER_UID" ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
 echo "KC: ats-reviewer-persona → reviewer rolleri (export/dsar/erasure YOK)"
 
-# operator persona (10 rol) — admin kullanıcısının şifresine DOKUNMADAN
+# operator persona (11 rol) — admin kullanıcısının şifresine DOKUNMADAN
 # export/dsar allow kanıtı için; roleless persona (0 rol) — rol-kapısının
 # canlı 403 kanıtı için (default scope'lar token'a girse bile yetki YOK).
 OPERATOR_UID=$(ensure_user ats-operator-persona)
 grant "$OPERATOR_UID" $PERMS
-echo "KC: ats-operator-persona → 10 rol (operator)"
+echo "KC: ats-operator-persona → 11 rol (operator; export.repair HARİÇ)"
+echo "KC: $REPAIR_PERM rol+scope OLUŞTURULDU, kimseye ATANMADI (R4 repair onay-kapısı: runbook'la manuel atama)"
 ROLELESS_UID=$(ensure_user ats-roleless-persona)
 echo "KC: ats-roleless-persona → rolsüz (kasıtlı)"
 
