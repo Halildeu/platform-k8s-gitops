@@ -6,7 +6,8 @@ GW="${ROOT}/deploy/staging-sw/meeting-ai-private-gateway"
 TEST_RENDER="$(mktemp)"
 PROD_RENDER="$(mktemp)"
 MONITOR_RENDER="$(mktemp)"
-trap 'rm -f -- "${TEST_RENDER}" "${PROD_RENDER}" "${MONITOR_RENDER}"' EXIT
+PUBLIC_GATEWAY_RENDER="$(mktemp)"
+trap 'rm -f -- "${TEST_RENDER}" "${PROD_RENDER}" "${MONITOR_RENDER}" "${PUBLIC_GATEWAY_RENDER}"' EXIT
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -72,6 +73,20 @@ command -v kustomize >/dev/null 2>&1 || fail "kustomize is required"
 kustomize build "${ROOT}/kustomize/overlays/test" >"${TEST_RENDER}"
 kustomize build "${ROOT}/kustomize/overlays/prod" >"${PROD_RENDER}"
 kustomize build "${ROOT}/kustomize/base/monitoring" >"${MONITOR_RENDER}"
+
+# The private ingestion path may appear in the dedicated private Ingress, but
+# it must never become a Spring Cloud Gateway predicate on the public host.
+# Extract only the rendered api-gateway ConfigMap so the private Ingress path
+# itself does not create a false positive.
+awk 'BEGIN { RS="---" }
+  /kind:[[:space:]]*ConfigMap/ && /name:[[:space:]]*api-gateway-config/ { print }
+' "${TEST_RENDER}" >"${PUBLIC_GATEWAY_RENDER}"
+[[ -s "${PUBLIC_GATEWAY_RENDER}" ]] || fail "rendered public api-gateway ConfigMap missing"
+grep -Fq 'SPRING_CLOUD_GATEWAY_ROUTES_26_ID: meeting-admin-route' \
+  "${PUBLIC_GATEWAY_RENDER}" || fail "public gateway extraction is not the expected ConfigMap"
+if grep -Fq '/api/v1/internal/meetings/' "${PUBLIC_GATEWAY_RENDER}"; then
+  fail "private analysis-result path leaked into the public api-gateway route table"
+fi
 
 grep -Fq 'host: meeting-ai-private.testai.internal' "${TEST_RENDER}" || fail "private ingress missing"
 grep -Fq 'path: /oauth2/token$' "${TEST_RENDER}" || fail "exact token ingress route missing"
