@@ -313,7 +313,8 @@ function Ensure-EventLogReadersMembership {{
 
   $targetSid = Get-LocalAccountSid -UserName $UserName
   $groupSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-573')
-  $groupName = $groupSid.Translate([System.Security.Principal.NTAccount]).Value
+  $group = Get-LocalGroup -SID $groupSid.Value -ErrorAction Stop
+  $groupName = $group.Name
   $memberAccount = "$env:COMPUTERNAME\\$UserName"
   $members = @(Get-LocalGroupMember -Group $groupName -ErrorAction Stop)
   $present = (@($members | Where-Object {{ $_.SID.Value -eq $targetSid }}).Count -gt 0)
@@ -453,7 +454,12 @@ function Write-Evidence {{
     $body[$key] = $Extra[$key]
   }}
 
-  $body | ConvertTo-Json -Depth 8 | Out-File -LiteralPath $EvidencePath -Encoding utf8
+  $json = $body | ConvertTo-Json -Depth 8
+  [IO.File]::WriteAllText(
+    $EvidencePath,
+    $json + [Environment]::NewLine,
+    (New-Object Text.UTF8Encoding($false))
+  )
 }}
 
 try {{
