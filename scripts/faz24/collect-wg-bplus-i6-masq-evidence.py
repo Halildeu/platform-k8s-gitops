@@ -95,6 +95,15 @@ EXPECTED_PROBE_IMAGE = "busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2f
 # be part of a longer hex run).
 IMAGE_DIGEST_RE = re.compile(r"sha256:([0-9a-f]{64})(?![0-9a-f])")
 
+# Versioned rollback mechanism id — emitted on the host-rule DRILL line and required to
+# match the historical live-rollback evidence. Bump when the rollback semantics change.
+ROLLBACK_MECHANISM_VERSION = "k3d-wg-masq.rollback.v2"
+
+# Schema of a committed historical LIVE-rollback evidence file. The scratch drill proves
+# the chain-body primitives only; the built-in POSTROUTING/FORWARD jump removal is proven
+# ONLY by a captured live rollback bound via --historical-live-rollback-ref.
+HISTORICAL_ROLLBACK_SCHEMA_VERSION = "faz24.wg-bplus.i6.historical-live-rollback.v1"
+
 # Absolute host binaries used to run the host-rule check under sudo. sudo -n
 # strips the caller env, so vars are set AFTER sudo via /usr/bin/env in the root
 # context (no shell). These paths are the ones present on staging-sw.
@@ -157,6 +166,104 @@ def _installed_script_stat(path: Path) -> tuple[int | None, str | None]:
     except OSError:
         return None, None
     return info.st_uid, format(stat.S_IMODE(info.st_mode), "04o")
+
+
+def _installed_script_authority(
+    installed_path: Path | None, canonical_sha: str | None
+) -> tuple[bool, int | None, str | None, str | None]:
+    """Authority model shared by host-owned-chain + rollback-drill.
+
+    A safe installed script is a real file, root-owned (uid 0), not group/world
+    writable, and byte-identical (sha256) to the canonical checkout. Returns
+    (authoritative, owner_uid, mode_str, installed_sha).
+    """
+    if installed_path is None or not installed_path.is_file():
+        return False, None, None, None
+    installed_sha = sha256_file(installed_path)
+    owner_uid, mode_str = _installed_script_stat(installed_path)
+    perms_safe = bool(
+        owner_uid == 0
+        and mode_str is not None
+        and (int(mode_str, 8) & (stat.S_IWGRP | stat.S_IWOTH)) == 0
+    )
+    sha_ok = bool(installed_sha and canonical_sha and installed_sha == canonical_sha)
+    return bool(perms_safe and sha_ok), owner_uid, mode_str, installed_sha
+
+
+def _parse_drill_line(stdout: str) -> dict[str, Any]:
+    """Parse the host-rule DRILL line.
+
+    `DRILL applyOk=.. rollbackOk=.. chainsAbsentAfter=.. rollbackMechanismVersion=.. scope=..`
+    """
+    out: dict[str, Any] = {
+        "applyOk": None,
+        "rollbackOk": None,
+        "chainsAbsentAfter": None,
+        "rollbackMechanismVersion": None,
+        "scope": None,
+    }
+    for line in stdout.splitlines():
+        if not line.strip().startswith("DRILL "):
+            continue
+        for field in ("applyOk", "rollbackOk", "chainsAbsentAfter"):
+            match = re.search(rf"\b{field}=([01])\b", line)
+            if match:
+                out[field] = match.group(1) == "1"
+        for field in ("rollbackMechanismVersion", "scope"):
+            match = re.search(rf"\b{field}=(\S+)", line)
+            if match:
+                out[field] = match.group(1)
+        break
+    return out
+
+
+def collect_historical_live_rollback(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Load + validate a committed historical LIVE-rollback evidence file.
+
+    Returns the bound metadata when the ref resolves to a readable, schema-valid file,
+    else None. The scratch drill is necessary-but-not-sufficient; rollback.tested also
+    requires this genuine historical evidence — which does not exist yet, so the default
+    run honestly leaves rollback-defined failing (no fabrication).
+    """
+    ref = getattr(args, "historical_live_rollback_ref", "") or ""
+    if not ref:
+        return None
+    try:
+        raw = Path(ref).read_bytes()
+    except OSError:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("schemaVersion") != HISTORICAL_ROLLBACK_SCHEMA_VERSION:
+        return None
+    bool_fields = ["executionVerified", "liveOwnedChainsExercised", "builtinHooksExercised"]
+    if not all(isinstance(data.get(field), bool) for field in bool_fields):
+        return None
+    str_fields = [
+        "rollbackResult",
+        "targetClusterHash",
+        "nodeName",
+        "wgInterface",
+        "rollbackMechanismVersion",
+    ]
+    if not all(isinstance(data.get(field), str) and data.get(field) for field in str_fields):
+        return None
+    return {
+        "evidenceRef": ref,
+        "evidenceDigest": hashlib.sha256(raw).hexdigest(),
+        "executionVerified": data["executionVerified"],
+        "liveOwnedChainsExercised": data["liveOwnedChainsExercised"],
+        "builtinHooksExercised": data["builtinHooksExercised"],
+        "rollbackResult": data["rollbackResult"],
+        "targetClusterHash": data["targetClusterHash"],
+        "nodeName": data["nodeName"],
+        "wgInterface": data["wgInterface"],
+        "rollbackMechanismVersion": data["rollbackMechanismVersion"],
+    }
 
 
 def run_command(argv: list[str], timeout: int = 12, env: dict[str, str] | None = None) -> CommandResult:
@@ -523,25 +630,14 @@ def collect_host_owned_chain(args: argparse.Namespace, wg_interface: str) -> dic
 
     installed_provided = bool(args.installed_host_rule_script)
     installed_path = Path(args.installed_host_rule_script) if installed_provided else None
-    installed_found = bool(installed_path and installed_path.is_file())
-    installed_sha = sha256_file(installed_path) if installed_found else None
-    owner_uid, mode_str = (
-        _installed_script_stat(installed_path) if installed_path is not None and installed_found else (None, None)
-    )
-
-    sha_matches = bool(installed_sha and canonical_sha and installed_sha == canonical_sha)
-
     # The authoritative host-rule `check` runs ONLY the installed, root-owned script.
     # Running the user-writable checkout as root would be a TOCTOU / priv-esc gap, so the
     # canonical checkout is the sha256 comparison SOURCE, never a privileged exec target
-    # (the `sudo-canonical` mode is removed). A safe installed script is root-owned, not
-    # group/world writable, and byte-identical (sha256) to the canonical checkout.
-    perms_safe = bool(
-        owner_uid == 0
-        and mode_str is not None
-        and (int(mode_str, 8) & (stat.S_IWGRP | stat.S_IWOTH)) == 0
+    # (the `sudo-canonical` mode is removed).
+    installed_authoritative, owner_uid, mode_str, installed_sha = _installed_script_authority(
+        installed_path, canonical_sha
     )
-    installed_authoritative = bool(installed_found and sha_matches and perms_safe)
+    sha_matches = bool(installed_sha and canonical_sha and installed_sha == canonical_sha)
 
     node = safe_name(args.wg_node)
     network = safe_name(args.docker_network)
@@ -589,6 +685,89 @@ def collect_host_owned_chain(args: argparse.Namespace, wg_interface: str) -> dic
         "checkExitCode": check_exit,
         "executionMode": execution_mode,
         "ownedNatChain": OWNED_NAT_CHAIN,
+        "passed": passed,
+    }
+
+
+def collect_rollback_drill(args: argparse.Namespace, wg_interface: str) -> dict[str, Any] | None:
+    """Run the SAFE scratch-chain rollback drill (only when --rollback-drill).
+
+    Same authority model as collect_host_owned_chain: runs ONLY the installed
+    root-owned script (uid 0, not group/world writable, sha == canonical) via
+    `sudo -n /usr/bin/env WGMASQ_*=… /bin/bash <installed> drill`. The drill proves
+    apply+rollback on THROWAWAY scratch chains that never carry traffic — the live
+    owned chains are never touched. Returns None when the drill was not requested.
+    """
+    if not getattr(args, "rollback_drill", False):
+        return None
+
+    canonical_path = Path(args.host_rule_script)
+    canonical_sha = sha256_file(canonical_path) if canonical_path.is_file() else None
+
+    drill_script = args.rollback_drill_script or args.installed_host_rule_script
+    installed_path = Path(drill_script) if drill_script else None
+    authoritative, owner_uid, mode_str, installed_sha = _installed_script_authority(
+        installed_path, canonical_sha
+    )
+
+    node = safe_name(args.wg_node)
+    network = safe_name(args.docker_network)
+    wg_if = safe_name(wg_interface)
+    wg_cidr = normalize_cidr(derive_wg_cidr(args.peer_host))
+    env_valid = bool(node and network and wg_if and wg_cidr)
+
+    drive_exit: int | None = None
+    execution_mode = "unavailable"
+    apply_ok = rollback_ok = chains_absent = False
+    mechanism_version: str | None = None
+    if authoritative and env_valid and installed_path is not None:
+        env_args = [
+            f"{key}={value}"
+            for key, value in {
+                "WGMASQ_NODE": node,
+                "WGMASQ_NETWORK": network,
+                "WGMASQ_WG_CIDR": wg_cidr,
+                "WGMASQ_WG_IF": wg_if,
+            }.items()
+        ]
+        res = run_command(
+            [SUDO_BIN, "-n", ENV_BIN, *env_args, BASH_BIN, str(installed_path), "drill"], timeout=30
+        )
+        drive_exit = res.exit_code
+        execution_mode = "sudo-installed"
+        parsed = _parse_drill_line(res.stdout)
+        apply_ok = bool(parsed["applyOk"])
+        rollback_ok = bool(parsed["rollbackOk"])
+        chains_absent = bool(parsed["chainsAbsentAfter"])
+        mechanism_version = parsed["rollbackMechanismVersion"]
+
+    passed = bool(
+        authoritative
+        and execution_mode == "sudo-installed"
+        and drive_exit == 0
+        and apply_ok
+        and rollback_ok
+        and chains_absent
+        and mechanism_version == ROLLBACK_MECHANISM_VERSION
+    )
+
+    return {
+        "executionMode": execution_mode,
+        "applyOk": apply_ok,
+        "rollbackOk": rollback_ok,
+        "chainsAbsentAfter": chains_absent,
+        "scriptSha256": installed_sha,
+        "installedScriptOwnerUid": owner_uid,
+        "installedScriptMode": mode_str,
+        "driveExitCode": drive_exit,
+        "rollbackMechanismVersion": mechanism_version,
+        # Honest scope: the drill exercises DETACHED scratch chains only. It does NOT
+        # touch the live owned chains, the built-in hooks, or carry traffic. The built-in
+        # jump-removal semantics are proven ONLY by the historical live rollback.
+        "scope": "detached-scratch-chain",
+        "liveOwnedChainsTouched": False,
+        "builtinHooksExercised": False,
+        "trafficImpactExpected": False,
         "passed": passed,
     }
 
@@ -1039,10 +1218,29 @@ def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
     traversal = measure_traversal(args, cluster_cidr, identity["nodeName"])
     systemd = collect_systemd(args.systemd_unit, args.drift_timer)
     broad_nat = collect_broad_nat(args)
+    rollback_drill = collect_rollback_drill(args, wg_interface)
+    historical_rollback = collect_historical_live_rollback(args)
 
     persistence_pass = bool(systemd["enabled"] and systemd["active"] and systemd["hasExecStart"])
     drift_pass = bool(systemd["driftTimerActive"] or systemd["driftTimerEnabled"])
-    rollback_pass = bool(systemd["hasExecStop"] and args.rollback_tested_ref)
+    # rollback.tested requires BOTH a fully-passing scratch-chain drill AND a genuine,
+    # schema-valid, result=pass historical LIVE-rollback evidence entry (the scratch drill
+    # alone does not exercise the built-in POSTROUTING/FORWARD jump removal). No historical
+    # evidence exists yet, so the default run honestly leaves rollback-defined failing.
+    historical_ok = bool(
+        historical_rollback is not None
+        and historical_rollback.get("executionVerified") is True
+        and historical_rollback.get("liveOwnedChainsExercised") is True
+        and historical_rollback.get("builtinHooksExercised") is True
+        and historical_rollback.get("rollbackResult") == "pass"
+        and historical_rollback.get("rollbackMechanismVersion") == ROLLBACK_MECHANISM_VERSION
+        # bind the historical evidence to THIS run's cluster/node/wg identity
+        and historical_rollback.get("targetClusterHash") == identity["clusterUidHash"]
+        and historical_rollback.get("nodeName") == identity["nodeName"]
+        and historical_rollback.get("wgInterface") == wg_interface
+    )
+    rollback_tested = bool(rollback_drill is not None and rollback_drill["passed"] and historical_ok)
+    rollback_pass = bool(systemd["hasExecStop"] and rollback_tested)
 
     rule_hash = expected_rule_hash(
         cluster_cidr or args.cluster_cidr, wg_interface, args.peer_host, args.peer_port
@@ -1189,9 +1387,10 @@ def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
         },
         "rollback": {
             "defined": bool(systemd["hasExecStop"]),
-            "tested": bool(args.rollback_tested_ref),
+            "tested": rollback_tested,
+            "driverMode": "scratch-chain-drill",
             "commandHash": rb_hash,
-            "evidenceRef": args.rollback_tested_ref or "rollback/missing-tested-evidence.json",
+            "evidenceRef": args.rollback_tested_ref or "drill/rollback-drill-result.json",
         },
         "checks": checks,
         "collector": {
@@ -1206,6 +1405,8 @@ def build_evidence(args: argparse.Namespace) -> dict[str, Any]:
             "counterTraversal": traversal["counter"],
             "systemd": systemd,
             "broadNat": broad_nat,
+            "rollbackDrill": rollback_drill,
+            "historicalLiveRollback": historical_rollback,
             "blockers": [item["id"] for item in checks if item["status"] != "pass"],
         },
     }
@@ -1249,6 +1450,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--probe-pod-selector",
         default=os.environ.get("PROBE_POD_SELECTOR", DEFAULT_PROBE_POD_SELECTOR),
         help="Label selector for the policy-approved probe pod; must match EXACTLY ONE pod.",
+    )
+    parser.add_argument(
+        "--rollback-drill",
+        action="store_true",
+        default=os.environ.get("ROLLBACK_DRILL", "").lower() in {"1", "true", "yes"},
+        help="Run the SAFE scratch-chain rollback drill to close rollback-defined (default off).",
+    )
+    parser.add_argument(
+        "--rollback-drill-script",
+        default=os.environ.get("ROLLBACK_DRILL_SCRIPT", ""),
+        help="Installed root-owned script for the drill; defaults to --installed-host-rule-script.",
+    )
+    parser.add_argument(
+        "--historical-live-rollback-ref",
+        default=os.environ.get("HISTORICAL_LIVE_ROLLBACK_REF", ""),
+        help="Path to a committed schema-valid historical LIVE-rollback evidence JSON. "
+        "Required (with a passing drill) for rollback-defined; absent => fail-closed.",
     )
     parser.add_argument("--systemd-unit", default=os.environ.get("SYSTEMD_UNIT", "k3d-wg-masq.service"))
     parser.add_argument("--drift-timer", default=os.environ.get("DRIFT_TIMER", "k3d-wg-masq.timer"))

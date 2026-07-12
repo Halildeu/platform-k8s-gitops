@@ -90,8 +90,9 @@ def valid_evidence() -> dict:
         "rollback": {
             "defined": True,
             "tested": True,
+            "driverMode": "scratch-chain-drill",
             "commandHash": "fedcba9876543210",
-            "evidenceRef": "rollback/dry-run.json",
+            "evidenceRef": "drill/rollback-drill-result.json",
         },
         "checks": checks,
         "collector": {
@@ -214,6 +215,34 @@ def valid_evidence() -> dict:
                 "probeExitCode": 0,
                 "broadNatDetected": False,
                 "passed": True,
+            },
+            "rollbackDrill": {
+                "executionMode": "sudo-installed",
+                "applyOk": True,
+                "rollbackOk": True,
+                "chainsAbsentAfter": True,
+                "scriptSha256": "ab" * 32,
+                "installedScriptOwnerUid": 0,
+                "installedScriptMode": "0755",
+                "driveExitCode": 0,
+                "rollbackMechanismVersion": "k3d-wg-masq.rollback.v2",
+                "scope": "detached-scratch-chain",
+                "liveOwnedChainsTouched": False,
+                "builtinHooksExercised": False,
+                "trafficImpactExpected": False,
+                "passed": True,
+            },
+            "historicalLiveRollback": {
+                "evidenceRef": "docs/faz-24-evidence/historical-live-rollback.json",
+                "evidenceDigest": "cd" * 32,
+                "executionVerified": True,
+                "liveOwnedChainsExercised": True,
+                "builtinHooksExercised": True,
+                "rollbackResult": "pass",
+                "targetClusterHash": "0123456789abcdef",
+                "nodeName": "k3d-test-server-0",
+                "wgInterface": "wg0",
+                "rollbackMechanismVersion": "k3d-wg-masq.rollback.v2",
             },
             "blockers": [],
         },
@@ -709,6 +738,117 @@ class WgBplusI6MasqEvidenceValidatorTest(unittest.TestCase):
         data = valid_evidence()
         data["collector"]["hostOwnedChain"]["installedProvided"] = False
         self.assert_semantic_fail(data, "host-owned-chain-authority")
+
+    # -- rollback-defined re-derived from the scratch-chain drill --
+    def test_rollback_drill_rollback_not_ok_despite_tested_flag_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["rollbackOk"] = False  # rollback.tested still True
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_chains_not_absent_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["chainsAbsentAfter"] = False
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_apply_not_ok_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["applyOk"] = False
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_execution_mode_wrong_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["executionMode"] = "unavailable"
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_owner_not_root_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["installedScriptOwnerUid"] = 1000
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_mode_group_writable_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["installedScriptMode"] = "0775"
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_script_sha_not_hex_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["scriptSha256"] = "not-a-hash"
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_absent_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"] = None
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_scope_not_detached_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["scope"] = "live-owned-chain"
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_rollback_drill_mechanism_version_wrong_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["rollbackMechanismVersion"] = "k3d-wg-masq.rollback.v1"
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    # -- cross-check: the same installed script ran drill + host-owned --
+    def test_drill_sha_mismatch_vs_host_owned_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["scriptSha256"] = "cd" * 32  # != host-owned "ab"*32
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_drill_execution_mode_mismatch_vs_host_owned_fails(self):
+        data = valid_evidence()
+        # both must be sudo-installed; if host-owned differs the drill cross-check fails.
+        data["collector"]["hostOwnedChain"]["executionMode"] = "unavailable"
+        self.assert_semantic_fail(data)
+
+    def test_drill_owner_mismatch_vs_host_owned_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["installedScriptOwnerUid"] = 0
+        data["collector"]["hostOwnedChain"]["installedScriptOwnerUid"] = 1000
+        self.assert_semantic_fail(data)
+
+    def test_drill_mode_mismatch_vs_host_owned_fails(self):
+        data = valid_evidence()
+        data["collector"]["rollbackDrill"]["installedScriptMode"] = "0700"
+        # host-owned stays 0755 -> mismatch (drill mode not group/world writable but differs)
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    # -- required historical live-rollback binding --
+    def test_historical_absent_but_drill_passed_fails(self):
+        data = valid_evidence()
+        data["collector"]["historicalLiveRollback"] = None
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_historical_result_not_pass_fails(self):
+        data = valid_evidence()
+        data["collector"]["historicalLiveRollback"]["rollbackResult"] = "fail"
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_historical_builtin_hooks_not_exercised_fails(self):
+        data = valid_evidence()
+        data["collector"]["historicalLiveRollback"]["builtinHooksExercised"] = False
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_historical_live_owned_chains_not_exercised_fails(self):
+        data = valid_evidence()
+        data["collector"]["historicalLiveRollback"]["liveOwnedChainsExercised"] = False
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_historical_target_cluster_mismatch_fails(self):
+        data = valid_evidence()
+        data["collector"]["historicalLiveRollback"]["targetClusterHash"] = "ffffffffffffffff"
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_historical_node_mismatch_fails(self):
+        data = valid_evidence()
+        data["collector"]["historicalLiveRollback"]["nodeName"] = "k3d-test-server-9"
+        self.assert_semantic_fail(data, "rollback-defined")
+
+    def test_historical_mechanism_version_mismatch_fails(self):
+        data = valid_evidence()
+        data["collector"]["historicalLiveRollback"]["rollbackMechanismVersion"] = "k3d-wg-masq.rollback.v1"
+        self.assert_semantic_fail(data, "rollback-defined")
 
     def test_summary_json_is_written(self):
         data = valid_evidence()
