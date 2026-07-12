@@ -22,4 +22,7 @@ spec:
     # transcript (#411) + audit-event-consumer (#1249) + 2 yedek (Faz 24 sonu).
     services: "28"
     secrets: "30"
-    configmaps: "30"
+    # 30 → 31 (2026-07-12, #1580 VIEW_ONLY live-proof): the durable evidence
+    # host adds one read-only configmap (faz22-6-view-only-evidence) mounted into
+    # artifact-host. All 30 slots were in use, so the new configmap was Forbidden.
+    configmaps: "31"
