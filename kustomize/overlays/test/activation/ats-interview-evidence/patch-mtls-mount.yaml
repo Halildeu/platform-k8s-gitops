@@ -1,0 +1,33 @@
+# 39d-5 Faz1 (HAZIRLIK) — mTLS keystore/truststore mount + denetim hostAlias.
+# Provider STUB'da KALIR (Faz2 ConfigMap flip'e kadar bu env'ler inert): bu patch
+# yalnız p12 dosyalarını pod'a taşır + live-stt.denetim → 10.99.0.2 çözümü ekler
+# (Faz24 audio-gateway hostAliases aynası; Caddy SNI/Host route + server-cert SAN
+# hem DNS hem IP taşır). Codex 019f535a iki-aşamalı-apply BLOCKER'ı: ES+mount+
+# netpol ÖNCE (provider stub) → kapılar geçince Faz2 provider flip.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ats-interview-evidence
+spec:
+  template:
+    spec:
+      hostAliases:
+        - ip: 10.99.0.2
+          hostnames:
+            - live-stt.denetim
+      containers:
+        - name: app-boot
+          volumeMounts:
+            - name: ats-mtls
+              mountPath: /etc/ats-mtls
+              readOnly: true
+      volumes:
+        - name: ats-mtls
+          secret:
+            secretName: ats-interview-evidence-mtls
+            defaultMode: 0440
+            items:
+              - key: keystore.p12
+                path: keystore.p12
+              - key: truststore.p12
+                path: truststore.p12
