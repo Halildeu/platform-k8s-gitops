@@ -124,10 +124,20 @@ Open acceptance boundary:
 - this rollout branch pins auth-service and meeting-service to the immutable
   `sha-20ee06d` build (`fdd91cdb...` / `e0bc7bde...`) that carries
   platform-backend#816 client-bound minting and #814 canonical aggregate read.
-  The live pods still use the previous digests until merge and Argo CD rollout;
+  PR #2343 merged and the live test Deployments now use those exact digests;
+  both are Ready with observed generation current and restart count `0`;
+- the metadata-only backend runtime matrix is accepted in
+  `docs/faz-24-evidence/2026-07-12-meeting-ai-private-runtime-smoke.json`:
+  wrong secret `401`, wrong audience/permission `400`, valid mint `200`, exact
+  `iss/aud/sub/client_id/svc/perm` bindings with `60s` TTL, unauthenticated
+  ingestion `401`, first write `201`, replay `200` and changed-payload conflict
+  `409`. The synthetic persisted run has one redacted analysis row, no decision
+  or action rows, and contains no user transcript or PII;
 - activated private listener, mTLS negative matrix, JWT claim matrix,
   idempotent result POST, outbox drain, cert rotation fire drill and Electron
-  product-path acceptance remain open and are not claimed by ESO readiness;
+  product-path acceptance remain open where not covered by the backend matrix.
+  In particular, PKI/client material, TCP/9447 activation, GPU DPAPI/outbox and
+  Electron canonical viewer replay are not proven by the internal smoke;
 - `platform-k8s-gitops#2321` and `platform-ai#198` remain active until those
   live gates are evidenced and board acceptance is deliberate.
 
