@@ -9,6 +9,7 @@ contents, transcript text, raw audio, token material, or private keys.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -596,6 +597,7 @@ def collect_denetim_metadata(
     ssh_identity_path: str | None,
 ) -> tuple[dict[str, Any] | None, CommandResult]:
     script = build_powershell_collector(lookback_hours)
+    encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
     identity_metadata = inspect_ssh_identity(ssh_identity_path)
     identity_args: list[str] = []
     if identity_metadata["sshIdentityConfigured"] and ssh_identity_path is not None:
@@ -625,10 +627,10 @@ def collect_denetim_metadata(
             "-NonInteractive",
             "-ExecutionPolicy",
             "Bypass",
-            "-Command",
-            "-",
+            "-EncodedCommand",
+            encoded_script,
         ],
-        script,
+        None,
         max(60, connect_timeout_seconds + 45),
     )
     if ssh.returncode != 0:

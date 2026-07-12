@@ -1,5 +1,53 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 I3 runner SSH authorization restored; audit acceptance remains open (2026-07-12)
+
+Tracked by [platform-k8s-gitops#1864](https://github.com/Halildeu/platform-k8s-gitops/issues/1864).
+This delta narrows the I3 blocker without claiming the management-audit gate
+accepted.
+
+Live transport and authentication evidence:
+
+- `staging-sw` still routes `10.99.0.2` through `wg0` with source
+  `10.99.0.1`; a fresh WireGuard handshake and TCP/22 reachability were
+  observed. No WireGuard interface, peer, route or firewall rule was changed.
+- Denetim Windows OpenSSH had an active
+  `AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys`
+  directive at global scope followed by an empty `Match Group administrators`
+  block. This made the non-admin `svc-denetim-agent` account ignore its own
+  runner-authorized key file.
+- The config was backed up as
+  `C:\ProgramData\ssh\sshd_config.codex-20260712T121308Z.bak`, the directive
+  was moved under `Match Group administrators`, `sshd -t` passed and the
+  restarted service remained `Running`. Admin-key access to `denetimpc`
+  remained available.
+- Public-key-only package run `29160652492` was applied to the current
+  `svc-denetim-agent` profile. The exact self-hosted runner identity from run
+  `29160630820` then authenticated successfully; no private key was copied or
+  exported.
+- Metadata-only authorization ingest run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29192541478`
+  passed after transport-normalizing the historical PowerShell 5.1 UTF-8 BOM.
+
+Collector follow-up:
+
+- Main workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29192934768`
+  proves `tcp22Reachable=true`, `sshExitCode=0` and
+  `sshFailureClass=none`, but the old stdin-based `powershell -Command -`
+  transport returned no JSON.
+- The pending source fix sends the metadata-only collector through PowerShell
+  UTF-16LE `-EncodedCommand`, resolves the Event Log Readers well-known SID to
+  the localized local-group name, emits BOM-free JSON and keeps ingest
+  backward-compatible with historical BOM evidence.
+- A live temporary-script probe with that fix returned
+  `remoteCollectorReached=true`; `openssh-event-log=pass` and
+  `staging-connection-log=pass`.
+- I3 acceptance remains open on six independent Windows controls:
+  `powershell-transcription`, `powershell-script-block`, `failed-login`,
+  `wireguard-health`, `eset-firewall-drift` and `time-sync`. The SSH repair is
+  not broad Faz 24, direct-STT, I7 or production acceptance.
+
 ## Live Delta — Faz 24 Meeting-AI GPU -> staging private result path (2026-07-12)
 
 Tracked by [platform-k8s-gitops#2321](https://github.com/Halildeu/platform-k8s-gitops/issues/2321)

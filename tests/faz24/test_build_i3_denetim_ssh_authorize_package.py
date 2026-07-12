@@ -15,6 +15,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "faz24" / "build-i3-denetim-ssh-authorize-package.py"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "faz24-i3-denetim-ssh-authorize-package.yml"
+INGEST_WORKFLOW = (
+    REPO_ROOT / ".github" / "workflows" / "faz24-i3-denetim-ssh-authorize-evidence-ingest.yml"
+)
 
 SAMPLE_PUBLIC_KEY = (
     "ssh-ed25519 "
@@ -89,6 +92,9 @@ class BuildI3DenetimSshAuthorizePackageTest(unittest.TestCase):
             self.assertIn("[switch]$GrantEventLogReaders", powershell)
             self.assertIn("target-user-not-found", powershell)
             self.assertIn("New-RandomSecurePassword", powershell)
+            self.assertIn("Get-LocalGroup -SID $groupSid.Value", powershell)
+            self.assertIn("New-Object Text.UTF8Encoding($false)", powershell)
+            self.assertNotIn("Out-File -LiteralPath $EvidencePath -Encoding utf8", powershell)
             readme = (output / "README.md").read_text(encoding="utf-8")
             self.assertIn("Event Log Readers", readme)
             self.assertIn("Administrators read-only", readme)
@@ -157,6 +163,11 @@ class BuildI3DenetimSshAuthorizePackageTest(unittest.TestCase):
         )
         self.assertNotIn("PUBLIC_KEY_INPUT_FILE: /tmp/faz24-i3-denetim-ssh-authorize-package-", workflow)
         self.assertIn('rm -f "${PUBLIC_KEY_INPUT_FILE}"', workflow)
+
+    def test_ingest_workflow_accepts_historical_utf8_bom(self):
+        workflow = INGEST_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn('encoding="utf-8-sig"', workflow)
 
 
 if __name__ == "__main__":
