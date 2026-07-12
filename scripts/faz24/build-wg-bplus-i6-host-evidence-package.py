@@ -6,6 +6,11 @@ evidence while building, does not connect to staging-sw, and does not carry raw
 iptables/systemd/WireGuard output or secrets. The generated shell wrapper is
 intended to be run by an operator from a clean platform-k8s-gitops checkout on
 staging-sw.
+
+Schema v2 (2026-07-12): the wrapper now drives the hardened v2 collector arg
+surface. The v1 ``--pod-cidr`` default was the I6 false-positive root cause, so
+this package requires an explicit ``--cluster-cidr`` and passes the WireGuard
+peer + node + docker-network topology the v2 checks need.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = "faz24.i6.host-evidence-package.v1"
+SCHEMA_VERSION = "faz24.i6.host-evidence-package.v2"
 SCRIPT_NAME = "collect-staging-i6-host-evidence.sh"
 METADATA_NAME = "expected-i6-host-evidence-metadata.json"
 README_NAME = "README.md"
@@ -91,15 +96,29 @@ def validate_relative_ref(label: str, value: str) -> None:
         die(f"{label} contains unsupported characters")
 
 
+def validate_script_path(label: str, value: str) -> None:
+    validate_single_line(label, value)
+    if not value:
+        return
+    if ".." in re.split(r"[\\/]+", value):
+        die(f"{label} must not contain parent traversal segments")
+
+
 def validate_args(args: argparse.Namespace) -> None:
     validate_name("target-host", args.target_host)
-    validate_cidr("pod-cidr", args.pod_cidr)
+    validate_cidr("cluster-cidr", args.cluster_cidr)
     if args.service_cidr:
         validate_cidr("service-cidr", args.service_cidr)
     validate_name("wg-interface", args.wg_interface)
-    validate_host("platform-ai-host", args.platform_ai_host)
-    if not 1 <= args.platform_ai_port <= 65535:
-        die("platform-ai-port must be 1-65535")
+    validate_host("peer-host", args.peer_host)
+    if not 1 <= args.peer_port <= 65535:
+        die("peer-port must be 1-65535")
+    validate_name("wg-node", args.wg_node)
+    validate_name("docker-network", args.docker_network)
+    if not 1 <= args.probe_attempts <= 10:
+        die("probe-attempts must be 1-10")
+    if args.installed_host_rule_script:
+        validate_script_path("installed-host-rule-script", args.installed_host_rule_script)
     validate_name("kube-context", args.kube_context)
     validate_name("namespace", args.namespace)
     validate_name("systemd-unit", args.systemd_unit)
@@ -117,6 +136,12 @@ def render_wrapper(args: argparse.Namespace) -> str:
     service_arg = ""
     if args.service_cidr:
         service_arg = f"  --service-cidr {sh_single_quoted(args.service_cidr)} \\\n"
+
+    installed_arg = ""
+    if args.installed_host_rule_script:
+        installed_arg = (
+            f"  --installed-host-rule-script {sh_single_quoted(args.installed_host_rule_script)} \\\n"
+        )
 
     return f"""#!/usr/bin/env bash
 set -euo pipefail
@@ -145,16 +170,19 @@ esac
 
 sudo -E python3 scripts/faz24/collect-wg-bplus-i6-masq-evidence.py \\
   --output "${{OUT}}" \\
-  --pod-cidr {sh_single_quoted(args.pod_cidr)} \\
+  --cluster-cidr {sh_single_quoted(args.cluster_cidr)} \\
 {service_arg}  --wg-interface {sh_single_quoted(args.wg_interface)} \\
-  --platform-ai-host {sh_single_quoted(args.platform_ai_host)} \\
-  --platform-ai-port {args.platform_ai_port} \\
+  --peer-host {sh_single_quoted(args.peer_host)} \\
+  --peer-port {args.peer_port} \\
+  --wg-node {sh_single_quoted(args.wg_node)} \\
+  --docker-network {sh_single_quoted(args.docker_network)} \\
+  --probe-attempts {args.probe_attempts} \\
   --kube-context {sh_single_quoted(args.kube_context)} \\
   --namespace {sh_single_quoted(args.namespace)} \\
   --systemd-unit {sh_single_quoted(args.systemd_unit)} \\
   --drift-timer {sh_single_quoted(args.drift_timer)} \\
   --drift-interval-minutes {args.drift_interval_minutes} \\
-{rollback_arg}  --protected-evidence-path "${{PROTECTED_EVIDENCE_PATH}}"
+{installed_arg}{rollback_arg}  --protected-evidence-path "${{PROTECTED_EVIDENCE_PATH}}"
 
 python3 scripts/faz24/verify-wg-bplus-i6-masq-evidence.py "${{OUT}}"
 
@@ -176,11 +204,15 @@ def metadata(args: argparse.Namespace) -> dict[str, object]:
         "collector": "scripts/faz24/collect-wg-bplus-i6-masq-evidence.py",
         "verifier": "scripts/faz24/verify-wg-bplus-i6-masq-evidence.py",
         "defaults": {
-            "podCIDR": args.pod_cidr,
+            "clusterCIDR": args.cluster_cidr,
             "serviceCIDR": args.service_cidr,
             "wgInterface": args.wg_interface,
-            "platformAiHost": args.platform_ai_host,
-            "platformAiPort": args.platform_ai_port,
+            "peerHost": args.peer_host,
+            "peerPort": args.peer_port,
+            "wgNode": args.wg_node,
+            "dockerNetwork": args.docker_network,
+            "probeAttempts": args.probe_attempts,
+            "installedHostRuleScript": args.installed_host_rule_script,
             "kubeContext": args.kube_context,
             "namespace": args.namespace,
             "systemdUnit": args.systemd_unit,
@@ -211,7 +243,8 @@ def render_readme(args: argparse.Namespace) -> str:
     return f"""# Faz 24 WG-B+ I6 host evidence package
 
 Scope: platform-k8s-gitops#1867. This package helps an operator collect the
-metadata-only I6 pod-CIDR to WireGuard MASQ evidence from `{args.target_host}`.
+metadata-only I6 pod-CIDR to WireGuard MASQ evidence from `{args.target_host}`
+using the hardened v2 collector.
 
 ## Files
 
@@ -239,7 +272,7 @@ Optional overrides:
 
 ```bash
 OUT=/tmp/wg-bplus-i6-masq-evidence.json \\
-PROTECTED_EVIDENCE_PATH=operator://{args.target_host}/protected/faz24/i6/20260625T060000Z \\
+PROTECTED_EVIDENCE_PATH=operator://{args.target_host}/protected/faz24/i6/20260712T060000Z \\
 bash /path/to/{SCRIPT_NAME}
 ```
 
@@ -283,11 +316,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--target-host", default="staging-sw")
-    parser.add_argument("--pod-cidr", default="10.42.0.0/16")
+    parser.add_argument("--cluster-cidr", required=True)
     parser.add_argument("--service-cidr", default="")
     parser.add_argument("--wg-interface", default="auto")
-    parser.add_argument("--platform-ai-host", default="10.99.0.2")
-    parser.add_argument("--platform-ai-port", type=int, default=8200)
+    parser.add_argument("--peer-host", default="10.99.0.2")
+    parser.add_argument("--peer-port", type=int, default=8243)
+    parser.add_argument("--wg-node", default="k3d-test-server-0")
+    parser.add_argument("--docker-network", default="platform-test-net")
+    parser.add_argument("--probe-attempts", type=int, default=3)
+    parser.add_argument("--installed-host-rule-script", default="")
     parser.add_argument("--kube-context", default="k3d-test")
     parser.add_argument("--namespace", default="platform-test")
     parser.add_argument("--systemd-unit", default="k3d-wg-masq.service")
