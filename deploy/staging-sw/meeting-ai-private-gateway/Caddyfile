@@ -7,7 +7,7 @@
 # GPU host (10.99.0.2) -> staging-sw (10.99.0.1), WireGuard only.
 # The dedicated client CA is issuance-policy scoped to the single meeting-ai
 # client role, constraining workload identity while permitting leaf rotation.
-https://meeting-ai-gateway.internal:9445 {
+https://meeting-ai-gateway.internal:9447 {
 	bind 10.99.0.1
 
 	tls /etc/platform/meeting-ai-gateway/tls/current/server.crt /etc/platform/meeting-ai-gateway/tls/current/server.key {

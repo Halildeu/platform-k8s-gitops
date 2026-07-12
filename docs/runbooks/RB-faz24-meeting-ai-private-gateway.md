@@ -5,12 +5,12 @@
 `meeting-ai-service` GPU hostundan (`10.99.0.2`) staging-sw üzerindeki auth ve
 meeting servislerine yalnız aşağıdaki zincirle erişir:
 
-`GPU process -> WireGuard wg0 -> Caddy 10.99.0.1:9445 -> host loopback 127.0.0.1:31080 -> private Ingress -> service`
+`GPU process -> WireGuard wg0 -> Caddy 10.99.0.1:9447 -> host loopback 127.0.0.1:31080 -> private Ingress -> service`
 
 Kontroller birbirinin yerine geçmez:
 
 - WireGuard transit şifreleme ve iki host arasında private route sağlar.
-- Host firewall yalnız `wg0`, `10.99.0.2/32 -> 10.99.0.1/32`, TCP/9445 kabul eder.
+- Host firewall yalnız `wg0`, `10.99.0.2/32 -> 10.99.0.1/32`, TCP/9447 kabul eder.
 - Caddy TLS sunucu kimliğini ve yalnız `meeting-ai` issuance role'una ayrılmış
   dedicated client CA zincirini doğrular. Client role yalnız
   `meeting-ai.client.faz24.internal` adına clientAuth leaf üretebilir.
@@ -23,6 +23,11 @@ Kontroller birbirinin yerine geçmez:
 
 Bu runbook **test aktivasyonu** içindir. Kaynak/CI geçişi canlı bağlantı,
 sertifika rotasyonu veya ürün kabulü değildir.
+
+`9447` Meeting-AI kanalına ayrılmıştır. Canlı staging hostta `0.0.0.0:9445`
+başka bir Faz 22 listener'ına aittir. Bu listener endpoint remote-bridge
+zincirinin parçasıdır. Meeting-AI gateway onu taşımaz, kapatmaz veya paylaşmaz;
+iki fazın rollback ve kabul sınırları böylece ayrık kalır.
 
 ## 2. Secret ve PKI trust-domain ayrımı
 
@@ -238,8 +243,8 @@ Set-Location C:\platform-ai
 
 $secret = Read-Host 'meeting-ai OAuth client secret' -AsSecureString
 .\deploy\gpu-host\configure-meeting-ai.ps1 `
-  -MeetingServiceBaseUrl 'https://meeting-ai-gateway.internal:9445' `
-  -MeetingServiceTokenUrl 'https://meeting-ai-gateway.internal:9445/oauth2/token' `
+  -MeetingServiceBaseUrl 'https://meeting-ai-gateway.internal:9447' `
+  -MeetingServiceTokenUrl 'https://meeting-ai-gateway.internal:9447/oauth2/token' `
   -ClientId 'meeting-ai' -ClientSecret $secret `
   -Audience 'meeting-service' `
   -Permission 'meeting:analysis-result:write' `
@@ -269,8 +274,9 @@ shim kullanılmaz; `meeting-ai-gateway.internal` split-horizon private DNS ile
 Canlı kabul tek başarılı istek değildir. Redacted evidence aşağıdakilerin
 tamamını içermelidir:
 
-1. `ss -lntp`: yalnız `10.99.0.1:9445`, `0.0.0.0:9445` yok.
-2. `firewall.sh check` PASS; başka interface/source TCP/9445 deny.
+1. `ss -lntp`: Meeting-AI için yalnız `10.99.0.1:9447`, `0.0.0.0:9447` yok.
+   Faz 22'ye ait ayrı listener bu kontrolün parçası değildir.
+2. `firewall.sh check` PASS; başka interface/source TCP/9447 deny.
 3. Doğru client cert `/healthz` HTTP 200.
 4. Client cert yok: TLS handshake fail.
 5. Başka CA cert'i: TLS handshake fail.

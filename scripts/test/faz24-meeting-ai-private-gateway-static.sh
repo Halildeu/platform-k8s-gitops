@@ -19,7 +19,7 @@ for file in Caddyfile firewall.sh install.sh rotate-server-cert.sh \
   [[ -s "${GW}/${file}" ]] || fail "missing gateway artifact: ${file}"
 done
 
-grep -Fq 'https://meeting-ai-gateway.internal:9445' "${GW}/Caddyfile" || \
+grep -Fq 'https://meeting-ai-gateway.internal:9447' "${GW}/Caddyfile" || \
   fail "Caddy private SNI listener missing"
 grep -Fq $'\tbind 10.99.0.1' "${GW}/Caddyfile" || fail "Caddy exact bind missing"
 grep -Fq 'mode require_and_verify' "${GW}/Caddyfile" || fail "client cert is not required"
@@ -41,7 +41,7 @@ grep -Fq 'request>headers>Authorization delete' "${GW}/Caddyfile" || \
 grep -Fq 'readonly WG_INTERFACE="wg0"' "${GW}/firewall.sh" || fail "wg0 firewall pin missing"
 grep -Fq 'readonly CLIENT_IP="10.99.0.2/32"' "${GW}/firewall.sh" || fail "client /32 missing"
 grep -Fq 'readonly SERVER_IP="10.99.0.1/32"' "${GW}/firewall.sh" || fail "server /32 missing"
-grep -Fq 'readonly SERVER_PORT="9445"' "${GW}/firewall.sh" || fail "port pin missing"
+grep -Fq 'readonly SERVER_PORT="9447"' "${GW}/firewall.sh" || fail "port pin missing"
 grep -Fq -- '-j DROP' "${GW}/firewall.sh" || fail "firewall default drop missing"
 grep -Fq "mv -Tf -- \"\${TLS_DIR}/current.new\" \"\${TLS_DIR}/current\"" \
   "${GW}/rotate-server-cert.sh" || fail "atomic cert/key activation missing"
