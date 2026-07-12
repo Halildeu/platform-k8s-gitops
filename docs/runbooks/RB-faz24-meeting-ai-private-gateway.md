@@ -147,7 +147,66 @@ expiry pencerelerini prod monitoring hub'ına taşır. Test private Ingress KSM'
 göründüğü halde textfile serisi 15 dakika yoksa `MeetingAIGatewayTelemetryAbsent`
 ayrıca firing olur; kaynak merge tek başına bu absence alarmını açmaz.
 
-## 5. GPU client sertifikası ve DPAPI import
+## 5. GPU immutable source pin, client sertifikası ve DPAPI import
+
+### 5.1 Onaylı source revision'ı pinle
+
+GPU deploy clone'u geliştirme clone'u değildir. `origin/main` yalnız discovery
+ref'idir; deploy artifact'i olarak kullanılmaz. İlk private-gateway rollout'u
+Project #4 evidence alanına kaydedilmiş `platform-ai` PR
+[#254](https://github.com/Halildeu/platform-ai/pull/254) merge commit'ine
+pinlenir:
+
+```powershell
+$ApprovedCommit = '5b716c3281ba5df4a63c391f6cf13cce62e68a45'
+Set-Location C:\platform-ai
+
+# Guard, object ve origin/main ancestry kontrolleri; kaynak mutasyonu yapmaz.
+.\deploy\gpu-host\update.ps1 `
+  -TargetCommit $ApprovedCommit -NoRestart -WhatIf
+if ($LASTEXITCODE -ne 0) {
+  throw "Immutable source preflight failed with exit $LASTEXITCODE"
+}
+
+# Secret/config provisioning tamamlanmadan servisleri yeniden başlatma.
+.\deploy\gpu-host\update.ps1 `
+  -TargetCommit $ApprovedCommit -NoRestart -Confirm:$false
+if ($LASTEXITCODE -ne 0) {
+  throw "Immutable source pin failed with exit $LASTEXITCODE"
+}
+
+$StatePath = 'C:\ProgramData\Acik\platform-ai\deployment-state.json'
+$State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+if ($State.schemaVersion -ne 1 -or
+    $State.currentCommit -ne $ApprovedCommit -or
+    $State.lastResult -ne 'pinned-no-restart') {
+  throw 'Deployment ledger does not match the approved source pin'
+}
+
+$ActualCommit = (git rev-parse HEAD).Trim().ToLowerInvariant()
+git symbolic-ref -q HEAD 1>$null 2>$null
+if ($ActualCommit -ne $ApprovedCommit -or $LASTEXITCODE -eq 0) {
+  throw 'GPU deploy clone is not detached at the approved commit'
+}
+.\deploy\gpu-host\drift-guard.ps1
+if ($LASTEXITCODE -ne 0) {
+  throw "Immutable source drift guard failed with exit $LASTEXITCODE"
+}
+```
+
+`update.ps1` dirty tracked tree, push'lanmamış commit, eksik/short object,
+`origin/main` ancestry kopması, malformed/insecure ledger veya mevcut
+HEAD/ledger uyuşmazlığında kaynak mutasyonu yapmadan exit `2` döner. Source pin
+landed fakat scheduled-task restart başarısızsa exit `3`; rollback mutation ya
+da otomatik source restore başarısızsa exit `4` döner. Override, `git pull`,
+`git checkout main` ve `git reset --hard origin/main` kullanılmaz.
+
+Sonraki promotion'larda `$ApprovedCommit`, Project #4 Evidence alanındaki yeni
+tam 40-hex merge commit olur. Pin yeni `origin/main` soyunda doğrulanmadan
+değiştirilmez. İlk pin ledger'da `previousCommit=null` bırakabilir; bu durumda
+source rollback yoktur ve önceki revision operatör tarafından tahmin edilmez.
+
+### 5.2 Client sertifikası ve DPAPI import
 
 Yetkili operator client bundle'ı `0700` geçici klasöre üretir. Private key
 stdout'a yazılmaz, güvenli yönetim kanalıyla GPU'ya taşınır ve import sonrası
@@ -166,7 +225,8 @@ vault read -format=json pki_meeting_ai_server/cert/ca | \
 chmod 0600 "${bundle}"/*
 ```
 
-Elevated Windows PowerShell 5.1'de, secure transfer hedef dosyalarıyla:
+Source pin ve drift guard PASS sonrasında elevated Windows PowerShell 5.1'de,
+secure transfer hedef dosyalarıyla:
 
 ```powershell
 Set-Location C:\platform-ai
@@ -193,9 +253,10 @@ schtasks.exe /End /TN platform-ai-meeting-ai 2>$null
 schtasks.exe /Run /TN platform-ai-meeting-ai
 ```
 
-Hosts bootstrap kaynağı en az `platform-ai` PR
-[#252](https://github.com/Halildeu/platform-ai/pull/252) merge commit'i
-`9b3d864cc2c5b7f8f18325485e04625c05aaf8c6` içermelidir. Script test-only
+Hosts bootstrap kaynağı `platform-ai` PR
+[#254](https://github.com/Halildeu/platform-ai/pull/254) merge commit'i
+`5b716c3281ba5df4a63c391f6cf13cce62e68a45` üzerinde immutable pinli olmalıdır;
+bu revision PR #252'nin hardened hosts shim'ini de içerir. Script test-only
 managed block, aktif çakışma reddi, canonical IPv4/hostname validation,
 same-directory atomik replace, semantic ACL postcondition, backup/restore/remove
 ve DNS flush + exact IPv4 doğrulaması uygular. Resolver doğrulaması başarısızsa
@@ -232,7 +293,35 @@ tamamını içermelidir:
 
 ## 7. Rollback
 
-Önce GPU ingestion default-off yapılır ve task kontrollü restart edilir. Sonra:
+Önce GPU ingestion default-off yapılır ve task kontrollü restart edilir. Sorun
+source revision ile ilişkiliyse operator commit seçmez; yalnız hardened
+deployment ledger'daki tek `previousCommit` slotu kullanılır:
+
+```powershell
+Set-Location C:\platform-ai
+.\deploy\gpu-host\update.ps1 -Rollback -Confirm:$false
+switch ($LASTEXITCODE) {
+  0 {
+    .\deploy\gpu-host\drift-guard.ps1
+    if ($LASTEXITCODE -ne 0) {
+      throw "Post-rollback drift guard failed with exit $LASTEXITCODE"
+    }
+  }
+  2 { throw 'Rollback guard rejected the request without source mutation' }
+  3 { throw 'Previous source pin landed but scheduled-task restart failed' }
+  4 { throw 'Rollback mutation or automatic source restore failed' }
+  default { throw "Unexpected rollback exit code: $LASTEXITCODE" }
+}
+```
+
+Başarılı rollback previous slotunu tüketir; aynı iki revision arasında
+ping-pong üretmez. `previousCommit=null` ise rollback fail-closed exit `2`
+döner. Operator elle SHA vererek rollback yapmaz. Runtime config değişikliği
+source rollback gerektirmiyorsa önce DPAPI-protected config'in atomik backup'ı
+`configure-meeting-ai.ps1 -RestoreBackup` ile geri alınır ve task yeniden
+başlatılır.
+
+Private gateway hosts shim'i kaldırılacaksa:
 
 ```powershell
 Set-Location C:\platform-ai
