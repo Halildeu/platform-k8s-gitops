@@ -65,6 +65,17 @@ path "kv/data/platform/endpoint-admin-remote-bridge" {
   capabilities = ["read"]
 }
 
+# --- Faz 22.6 device-key remote-bridge activation path (#1580/#2306) ---
+# The device-key VIEW_ONLY broker (kustomize/overlays/test/activation/
+# endpoint-admin-remote-bridge-device-key) reads its own broker-scoped path
+# with device-key-specific PKI (own device_ca_pem/crl) + shared broker
+# operational material. Without this grant ESO returns 403 → the 3
+# *-device-key ExternalSecrets (secrets/signer/tls) sit SecretSyncedError and
+# the faz22-6-completion-audit REMOTE_BRIDGE_LIVE gate blocks reason=externalsecrets.
+path "kv/data/platform/endpoint-admin-remote-bridge-device-key" {
+  capabilities = ["read"]
+}
+
 # --- Faz 24 #410/#1615 meeting-service (foundation deploy 2026-06-17) ---
 # ExternalSecret reads kv/platform/meeting-service with 2 keys (db_username,
 # db_password). Same flat-path convention as endpoint-admin/auth/report.
