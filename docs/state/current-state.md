@@ -4132,6 +4132,20 @@ Accepted evidence chain:
 - local verifier output was `Faz24 WG-B+ I6 MASQ evidence: PASS` with
   `clusterName=k3d-test`, `podCIDR=10.42.0.0/16`, `wgInterface=wg0`, and
   `mechanismType=host-systemd-iptables`;
+
+> **⚠️ SUPERSEDED 2026-07-12 (#1867 reopened) — this I6 acceptance was a
+> FALSE-POSITIVE.** The `podCIDR=10.42.0.0/16` above is WRONG for `k3d-test`
+> (actual cluster CIDR `10.44.0.0/16`, `bootstrap/k3d-test.yaml`), so the masq
+> rule matched **0 packets**; and the host FORWARD chain (`-P DROP` + ufw) never
+> carried a `bridge↔wg0` ACCEPT, so the pod→WireGuard(denetim) path **never
+> worked end-to-end**. Both ATS `ats-interview-evidence` (39d-5 live-STT) and
+> Faz24 `audio-gateway` (direct-STT) were affected. Fixed 2026-07-12: masq CIDR
+> → `10.44.0.0/16` + host FORWARD ACCEPT (bridge **derived** from the stable
+> docker network name so it survives network recreation), now repo-owned under
+> `bootstrap/host/k3d-wg-masq/`. Pod-origin reachability **PROVEN** (netpol-allowed
+> `nc` + `kubectl debug` in the ATS pod netns; node SNAT counter 0→1). The old
+> collector checked only "a rule with the claimed CIDR is present" — not
+> "claimed CIDR == observed cluster CIDR" nor "a pod probe traversed it".
 - GitHub ingest workflow run `28165629939` concluded `success`; job
   `83416769870` passed input validation, evidence decode, verifier, private
   material scan, summary, artifact upload, cleanup, and reject-on-fail guard;
