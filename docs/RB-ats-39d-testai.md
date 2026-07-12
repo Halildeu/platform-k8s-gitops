@@ -88,10 +88,10 @@ ambiguous-kilit olarak gösterir:
 
 | # | Durum | Tespit | Müdahale |
 |---|---|---|---|
-| R1 | Ledger-conflict sonrası artifact telafi-DELETE'i başarısız → **öksüz artifact** (ledger-bağsız; packet lineage DIŞI) | app-boot log: `ledger append başarısız VE artifact telafi silmesi başarısız (operasyonel müdahale gerekir)` + 503 | Artifact store'da ledger'da `export_artifact_ref` karşılığı OLMAYAN kaydı belirle → sil. Vaka state'i bozulmaz; yeni export denenebilir. |
-| R2 | Ambiguous sonrası makbuz kimlikleri kayıp (receipt-recovery endpoint'i YOK — backlog) | UI `reconciled-exported (makbuz doğrulanamıyor)` | `worm_ledger`'dan ilgili idempotency_key satırını oku: payload `export_artifact_ref`, `packet_digest`, `claim_count` içerir — makbuz kimlikleri buradan. |
+| R1 | Ledger-conflict sonrası artifact telafi-DELETE'i başarısız → **öksüz artifact** (ledger-bağsız; packet lineage DIŞI) | app-boot log: `ledger append başarısız VE artifact telafi silmesi başarısız (operasyonel müdahale gerekir)` + 503 | SİLMEDEN ÖNCE doğrula: aynı tenant/interview'da HİÇBİR ledger satırı `export_artifact_ref` olarak bu artifact'i göstermiyor + devam eden export yok + retention/legal-hold engeli yok. Yalnız ledger-bağsız orphan KESİNLEŞİRSE onaylı artifact-store delete yolu; işlem + silinen ref audit'e. Vaka state'i bozulmaz; yeni export denenebilir. |
+| R2 | Ambiguous sonrası makbuz kimlikleri kayıp (receipt-recovery endpoint'i YOK — backlog) | UI `reconciled-exported (makbuz doğrulanamıyor)` | `worm_ledger`'da tenant + deterministik export idempotency_key satırını bul. `evidenceId` = satırın KENDİ `evidence_id` kolonu (payload'da DEĞİL); payload'dan `export_artifact_ref`→artifactKey, `packet_digest`→packetDigest, `claim_count`→claimCount; payload `case_key` hedef vakayla EXACT eşleşmeli — doğrulanmadan makbuz yeniden-oluşturulmuş sayılmaz. |
 | R3 | İkinci istek same-receipt replay ALMAZ (payload'lar artifact-ref'ten ötürü birebir olamaz) → deterministic conflict + telafi | 503 `artifact geri alındı` (net-zero) | Müdahale gerekmez — beklenen davranış; ilk makbuz geçerli. |
-| R4 | artifact + ledger yazıldı, `markExported` DÜŞTÜ → vaka FINALIZED kaldı | app-boot log: `EXPORTED geçişi başarısız (artifact + ledger kaydı MEVCUT ... yutulmadı)` + 400 | Ledger satırı + artifact MEVCUT ve geçerli; vaka state'ini manuel `EXPORTED`'a taşı (repair) — YENİ export DENEME (ledger key tüketildi; retry conflict'e düşer). |
+| R4 | artifact + ledger yazıldı, `markExported` DÜŞTÜ → vaka FINALIZED kaldı | app-boot log: `EXPORTED geçişi başarısız (artifact + ledger kaydı MEVCUT ... yutulmadı)` + 400 (DİKKAT: her 400 R4 değildir — bu log satırı ŞART) | **YENİ export DENEME** (ledger key tüketildi; retry conflict'e düşer). Repair ÖN-KOŞULLARI: vaka hâlâ FINALIZED + deterministik idempotency_key için TEK export-tipli ledger satırı + payload `case_key` exact-eşleşme + `export_artifact_ref` artifact'i MEVCUT + artifact/ledger `packet_digest` bütünlüğü + aynı vaka için ikinci ledger-bağlı export YOK. TAMAMI sağlanıyorsa onaylı+AUDİTLİ repair mekanizmasıyla FINALIZED→EXPORTED (mevcut artifact ref'iyle); desteklenen repair yolu yoksa ad-hoc DB mutasyonu YAPMA — backend müdahalesine eskale et. Repair sonrası case=EXPORTED + tek ledger satırı + digest bağı yeniden doğrulanır. |
 
 Frontend davranış sözleşmesi (platform-web `apps/mfe-interview-evidence/README.md`):
 400/5xx hiçbir zaman "uygulanmadı" sayılmaz; reconciliation'da EXPORTED
@@ -105,7 +105,9 @@ Hedef: activation patch `ATS_AI_BASE_URL` `http://ats-ai-stub:9452` →
 VPN-oturumu): ats app-boot mTLS env-adları keşfi → Vault `kv/platform/ats`
 STT cert/key/CA seed → activation ExternalSecret + mount + patch PR →
 scp+kubectl apply → canlı transcribe kanıtı (ATS-0017: stub↔live otomatik
-fallback YASAK; ayrı acceptance).
+fallback YASAK; ayrı acceptance). KEY-HİJYENİ: gerçek private-key materyali
+scp/terminal-çıktısı/shell-history/runbook-kanıtına YAZILMAZ — Vault'a güvenli
+kanaldan seed edilir, cluster'a YALNIZ ExternalSecret ile taşınır.
 
 ## Rollback
 
