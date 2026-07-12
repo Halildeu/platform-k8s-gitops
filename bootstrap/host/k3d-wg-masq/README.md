@@ -86,16 +86,34 @@ kubectl -n platform-test debug <ats-pod> --image=busybox:1.36 --profile=restrict
 
 ## Rollback
 
+`flock` prevents concurrent mutation but does NOT make the explicit rollback the
+*last* writer. Quiesce every apply producer (timer, in-flight drift, main loop)
+FIRST, then rollback — otherwise a pending/next drift `apply` can re-install the
+rules right after rollback.
+
 ```bash
-# rollback needs the same env (WGMASQ_NODE + WGMASQ_NETWORK) — source the config:
+# 1. stop all apply producers (order matters — rollback must be the last writer)
+sudo systemctl disable --now k3d-wg-masq.timer
+sudo systemctl stop k3d-wg-masq-drift.service 2>/dev/null || true   # inactive is fine
+sudo systemctl disable --now k3d-wg-masq.service                    # its ExecStop also rolls back
+# 2. explicit rollback last, with the same env (WGMASQ_NODE + WGMASQ_NETWORK):
 sudo bash -c 'set -a; . /etc/default/k3d-wg-masq; /usr/local/sbin/k3d-wg-masq-host-rule.sh rollback'
-sudo systemctl disable --now k3d-wg-masq.service k3d-wg-masq.timer
 ```
 
-## Follow-up (tracked, #1867)
+## Scope limits + follow-up (tracked, #1867)
 
-The Faz24 I6 collector/verifier (`scripts/faz24/collect-wg-bplus-i6-masq-evidence.py`,
-workflow, tests) still default to `10.42` and check rule-presence only. They must be
-hardened to assert `observed cluster CIDR == configured CIDR` **and** a counter-delta
-pod probe, and to reject `k3d-test + 10.42` / `k3d-prod + 10.44`. Tracked separately
-to keep this source-of-truth PR bounded.
+This PR bounds its claims honestly:
+
+- **Host stage** is a dedicated-chain, cardinality-checked, flock-serialized, exact
+  owned model. **Node stage** (`k3d-wg-masq.sh`) still `-A`-appends its SNAT directly
+  to the node `POSTROUTING` chain and only cleans the *known* legacy `10.42` signature
+  (guarded to the non-prod leg) — it is **not** a generic future-CIDR reconciler, and
+  host `rollback` does **not** remove the desired `10.44` node-namespace rule. Full
+  node owned-chain + node rollback is a separate #1867 acceptance item.
+- The offline `tests/test-host-rule.sh` covers fail-closed guards, the emitted owned
+  command set, and a minimal **stateful** normalize/check/rollback pass; a fuller
+  general iptables-emulator harness is a #1867 follow-up.
+- The Faz24 I6 collector/verifier (`scripts/faz24/collect-wg-bplus-i6-masq-evidence.py`,
+  workflow, tests) still default to `10.42` and check rule-presence only. They must be
+  hardened to assert `observed cluster CIDR == configured CIDR` **and** a counter-delta
+  pod probe, and to reject `k3d-test + 10.42` / `k3d-prod + 10.44`. Separate PR.

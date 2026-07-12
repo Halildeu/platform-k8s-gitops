@@ -75,6 +75,10 @@ do_check() {
   [ "$(count_jump filter FORWARD     "$FWD_CHAIN")" = 1 ] || { echo "fwd jump cardinality != 1" >&2; return 1; }
   [ "$(iptables -w -t nat    -S "$NAT_CHAIN" 2>/dev/null | grep -c '^-A')" = 1 ] || { echo "nat owned rules != 1" >&2; return 1; }
   [ "$(iptables -w -t filter -S "$FWD_CHAIN" 2>/dev/null | grep -c '^-A')" = 2 ] || { echo "fwd owned rules != 2" >&2; return 1; }
+  # position-1 invariant: the owned jump must be the FIRST rule in each base chain
+  # (else Docker/UFW may terminal-MASQUERADE first and our owned counter loses meaning)
+  [ "$(iptables -w -t nat    -S POSTROUTING 2>/dev/null | grep '^-A POSTROUTING' | head -1)" = "-A POSTROUTING -j $NAT_CHAIN" ] || { echo "nat jump not at position 1" >&2; return 1; }
+  [ "$(iptables -w -t filter -S FORWARD     2>/dev/null | grep '^-A FORWARD'     | head -1)" = "-A FORWARD -j $FWD_CHAIN" ]     || { echo "fwd jump not at position 1" >&2; return 1; }
   iptables -w -t nat    -C "$NAT_CHAIN" -s "$NODE_IP/32" -d "$WG_CIDR" -o "$WG_IF" -j MASQUERADE
   iptables -w -t filter -C "$FWD_CHAIN" -i "$BRIDGE" -o "$WG_IF" -s "$NODE_IP/32" -d "$WG_CIDR" -j ACCEPT
   iptables -w -t filter -C "$FWD_CHAIN" -i "$WG_IF" -o "$BRIDGE" -s "$WG_CIDR" -d "$NODE_IP/32" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
