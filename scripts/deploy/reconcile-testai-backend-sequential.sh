@@ -16,10 +16,16 @@ POLL_INTERVAL="${POLL_INTERVAL:-10}"
 EXPECTED_TARGET_REVISION="${EXPECTED_TARGET_REVISION:-main}"
 REQUIRED_STABLE_POLLS="${REQUIRED_STABLE_POLLS:-2}"
 SUPERSESSION_CHECK_INTERVAL="${SUPERSESSION_CHECK_INTERVAL:-60}"
+OUT_OF_SYNC_GRACE="${OUT_OF_SYNC_GRACE:-60}"
+REQUIRED_DRIFT_POLLS="${REQUIRED_DRIFT_POLLS:-3}"
+HARD_REFRESH_INTERVAL="${HARD_REFRESH_INTERVAL:-60}"
 REPORT_PATH="${REPORT_PATH:-}"
 CURRENT_PHASE="preflight"
 VERDICT="FAIL"
 NORMALIZED_DIGEST_MAP='{}'
+LAST_OUT_OF_SYNC_RESOURCES='[]'
+LAST_OPERATION_PHASE=""
+LAST_OPERATION_REVISION=""
 
 # Invoked indirectly by the EXIT trap below.
 # shellcheck disable=SC2329
@@ -29,6 +35,7 @@ write_report() {
   local health_status=""
   local observed_revision=""
   local expected_digests='{}'
+  local out_of_sync_resources='[]'
   local report_tmp="${REPORT_PATH}.tmp"
 
   sync_status=$(kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
@@ -38,6 +45,7 @@ write_report() {
   observed_revision=$(kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
     get application "$APP" -o jsonpath='{.status.sync.revision}' 2>/dev/null) || true
   expected_digests=$(jq -c . <<< "$NORMALIZED_DIGEST_MAP" 2>/dev/null) || expected_digests='{}'
+  out_of_sync_resources=$(jq -c . <<< "$LAST_OUT_OF_SYNC_RESOURCES" 2>/dev/null) || out_of_sync_resources='[]'
   mkdir -p "$(dirname "$REPORT_PATH")" || return 0
 
   jq -n \
@@ -47,18 +55,25 @@ write_report() {
     --arg observed_revision "$observed_revision" \
     --arg sync_status "$sync_status" \
     --arg health_status "$health_status" \
+    --arg operation_phase "$LAST_OPERATION_PHASE" \
+    --arg operation_revision "$LAST_OPERATION_REVISION" \
     --argjson expected_digests "$expected_digests" \
+    --argjson out_of_sync_resources "$out_of_sync_resources" \
     '{
-      schemaVersion: "testai-backend-argocd-auto-sync-v2",
+      schemaVersion: "testai-backend-argocd-auto-sync-v3",
       verdict: $verdict,
       failedOrLastPhase: $failed_or_last_phase,
       requestedRevision: $requested_revision,
       observedRevision: $observed_revision,
       syncStatus: $sync_status,
       healthStatus: $health_status,
+      operationPhase: $operation_phase,
+      operationRevision: $operation_revision,
       reconciliationOwner: "argocd-auto-sync-waves",
       verificationMode: "read-only-exact-convergence",
       verifierMutationPerformed: false,
+      diagnosticDataClassification: "resource-identifiers-only-no-manifest-diff",
+      outOfSyncResources: $out_of_sync_resources,
       expectedDigests: $expected_digests
     }' > "$report_tmp" || {
       echo "WARN: failed to render ArgoCD convergence report" >&2
@@ -95,6 +110,22 @@ trap 'write_report || true' EXIT
 }
 [[ "$SUPERSESSION_CHECK_INTERVAL" =~ ^[1-9][0-9]*$ ]] || {
   echo "FAIL: SUPERSESSION_CHECK_INTERVAL must be a positive integer" >&2
+  exit 1
+}
+[[ "$OUT_OF_SYNC_GRACE" =~ ^[1-9][0-9]*$ ]] || {
+  echo "FAIL: OUT_OF_SYNC_GRACE must be a positive integer" >&2
+  exit 1
+}
+(( OUT_OF_SYNC_GRACE >= 30 && OUT_OF_SYNC_GRACE <= 300 )) || {
+  echo "FAIL: OUT_OF_SYNC_GRACE must be between 30 and 300 seconds" >&2
+  exit 1
+}
+[[ "$REQUIRED_DRIFT_POLLS" =~ ^[2-9][0-9]*$ ]] || {
+  echo "FAIL: REQUIRED_DRIFT_POLLS must be an integer of at least 2" >&2
+  exit 1
+}
+[[ "$HARD_REFRESH_INTERVAL" =~ ^[1-9][0-9]*$ ]] || {
+  echo "FAIL: HARD_REFRESH_INTERVAL must be a positive integer" >&2
   exit 1
 }
 
@@ -145,14 +176,61 @@ operation_phase=""
 operation_revision=""
 stable_polls=0
 last_supersession_check=$SECONDS
+out_of_sync_since=-1
+drift_polls=0
+last_hard_refresh=$((SECONDS - HARD_REFRESH_INTERVAL))
 
 while (( SECONDS < deadline )); do
-  app_json=$("${ARGOCD[@]}" app get "$APP" --hard-refresh -o json)
+  hard_refresh=false
+  if (( SECONDS - last_hard_refresh >= HARD_REFRESH_INTERVAL )); then
+    hard_refresh=true
+    if ! app_json=$("${ARGOCD[@]}" app get "$APP" --hard-refresh -o json); then
+      LAST_OUT_OF_SYNC_RESOURCES='[]'
+      LAST_OPERATION_PHASE=""
+      LAST_OPERATION_REVISION=""
+      CURRENT_PHASE="argocd-status-read"
+      echo "FAIL: unable to read refreshed ArgoCD Application status" >&2
+      exit 1
+    fi
+    last_hard_refresh=$SECONDS
+  elif ! app_json=$("${ARGOCD[@]}" app get "$APP" -o json); then
+    LAST_OUT_OF_SYNC_RESOURCES='[]'
+    LAST_OPERATION_PHASE=""
+    LAST_OPERATION_REVISION=""
+    CURRENT_PHASE="argocd-status-read"
+    echo "FAIL: unable to read ArgoCD Application status" >&2
+    exit 1
+  fi
+  if ! jq -e 'type == "object" and (.status | type == "object")' \
+    >/dev/null <<< "$app_json"; then
+    LAST_OUT_OF_SYNC_RESOURCES='[]'
+    LAST_OPERATION_PHASE=""
+    LAST_OPERATION_REVISION=""
+    CURRENT_PHASE="argocd-status-read"
+    echo "FAIL: ArgoCD Application status response is not valid JSON status" >&2
+    exit 1
+  fi
   sync_status=$(jq -r '.status.sync.status // ""' <<< "$app_json")
   health_status=$(jq -r '.status.health.status // ""' <<< "$app_json")
   observed_revision=$(jq -r '.status.sync.revision // ""' <<< "$app_json")
   operation_phase=$(jq -r '.status.operationState.phase // ""' <<< "$app_json")
   operation_revision=$(jq -r '.status.operationState.syncResult.revision // ""' <<< "$app_json")
+  LAST_OPERATION_PHASE="$operation_phase"
+  LAST_OPERATION_REVISION="$operation_revision"
+  LAST_OUT_OF_SYNC_RESOURCES=$(jq -c '[
+    .status.resources[]?
+    | select(.status == "OutOfSync")
+    | (.kind == "Secret" or .kind == "ConfigMap") as $sensitive
+    | {
+        group: (.group // ""),
+        kind: (.kind // ""),
+        namespace: (.namespace // ""),
+        name: (if $sensitive then "[redacted-sensitive-resource-name]" else (.name // "") end),
+        sensitiveIdentifierRedacted: $sensitive,
+        status: (.status // ""),
+        health: (.health.status // "")
+      }
+  ]' <<< "$app_json")
 
   if [[ "$operation_revision" == "$REVISION" \
     && ( "$operation_phase" == "Failed" || "$operation_phase" == "Error" ) ]]; then
@@ -187,6 +265,39 @@ while (( SECONDS < deadline )); do
     stable_polls=0
   fi
 
+  # Once ArgoCD is idle at the exact healthy revision, persistent aggregate
+  # drift is not rollout latency. Fail with resource identifiers after a short
+  # grace window so desired-state drift can be repaired without exposing
+  # manifest values or secret-bearing diffs in CI artifacts.
+  # operationRevision is intentionally diagnostic only: manifest-neutral main
+  # commits can advance status.sync.revision while operationState remains on the
+  # previous successful revision.
+  if [[ "$observed_revision" == "$REVISION" \
+    && "$sync_status" == "OutOfSync" \
+    && "$health_status" == "Healthy" \
+    && "$operation_phase" != "Running" \
+    && "$operation_phase" != "Terminating" ]]; then
+    drift_polls=$((drift_polls + 1))
+    if (( out_of_sync_since < 0 )); then
+      out_of_sync_since=$SECONDS
+      echo "DRIFT: exact healthy revision remains OutOfSync; starting ${OUT_OF_SYNC_GRACE}s/${REQUIRED_DRIFT_POLLS}-poll diagnostic grace"
+    elif (( SECONDS - out_of_sync_since >= OUT_OF_SYNC_GRACE \
+      && drift_polls >= REQUIRED_DRIFT_POLLS )); then
+      CURRENT_PHASE="argocd-resource-drift"
+      echo "FAIL: ArgoCD remains OutOfSync at exact healthy revision $REVISION after ${OUT_OF_SYNC_GRACE}s" >&2
+      if [[ "$LAST_OUT_OF_SYNC_RESOURCES" == "[]" ]]; then
+        echo "DRIFT_RESOURCE: Application reported OutOfSync without resource-level status entries" >&2
+      else
+        jq -r '.[] | "DRIFT_RESOURCE: \(.group)/\(.kind) \(.namespace)/\(.name) status=\(.status) health=\(.health)"' \
+          <<< "$LAST_OUT_OF_SYNC_RESOURCES" >&2
+      fi
+      exit 1
+    fi
+  else
+    out_of_sync_since=-1
+    drift_polls=0
+  fi
+
   if (( SECONDS - last_supersession_check >= SUPERSESSION_CHECK_INTERVAL )); then
     CURRENT_PHASE="main-revision-fence"
     git fetch origin main --depth=1 --quiet
@@ -199,7 +310,7 @@ while (( SECONDS < deadline )); do
     last_supersession_check=$SECONDS
   fi
 
-  echo "WAIT: observed=${observed_revision:-none} sync=${sync_status:-none} health=${health_status:-none} operation=${operation_phase:-none}"
+  echo "WAIT: observed=${observed_revision:-none} sync=${sync_status:-none} health=${health_status:-none} operation=${operation_phase:-none} hardRefresh=${hard_refresh}"
   sleep "$POLL_INTERVAL"
 done
 
