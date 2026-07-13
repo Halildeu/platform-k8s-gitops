@@ -13,6 +13,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
 source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
 endpoint_agent_release_policy_load "$REPO_ROOT"
+# shellcheck source=scripts/faz22-remote-ops/lib-github-read-api.sh
+source "$SCRIPT_DIR/lib-github-read-api.sh"
 
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
 SSH_OPTS="${SSH_OPTS:-}"
@@ -202,7 +204,7 @@ check_release_lineage_waiver() {
     return 1
   fi
 
-  if ! issue_json="$(gh issue view "$number" -R "$repo_ref" --json state,body,title 2>&1)"; then
+  if ! issue_json="$(github_read_issue_json "$repo_ref" "$number" state,body,title 2>&1)"; then
     print_check 'RELEASE_LINEAGE_WAIVER' 'blocked' "ref=$ref reason=$(printf '%q' "$issue_json")"
     return 1
   fi
@@ -432,7 +434,7 @@ fetch_active_series_asset() {
 github_tag_commit() {
   # github_tag_commit <tag>
   local tag="$1" tag_ref object_sha object_type
-  tag_ref="$(gh api "repos/${AGENT_REPO}/git/ref/tags/${tag}")" || return 1
+  tag_ref="$(github_read_api "repos/${AGENT_REPO}/git/ref/tags/${tag}")" || return 1
   object_sha="$(printf '%s\n' "$tag_ref" | jq -r '.object.sha // ""')"
   object_type="$(printf '%s\n' "$tag_ref" | jq -r '.object.type // ""')"
   case "$object_type" in
@@ -440,7 +442,7 @@ github_tag_commit() {
       printf '%s' "$object_sha"
       ;;
     tag)
-      gh api "repos/${AGENT_REPO}/git/tags/${object_sha}" --jq .object.sha
+      github_read_api "repos/${AGENT_REPO}/git/tags/${object_sha}" | jq -er '.object.sha'
       ;;
     *)
       return 1
@@ -630,11 +632,17 @@ active_series_dense_lineage_audit() {
 }
 
 main() {
-  need gh
   need jq
   need curl
   need awk
   need grep
+
+  local github_backend
+  if ! github_read_api_preflight; then
+    printf 'F22_6_RELEASE_LINEAGE_ERROR=github-read-api-unavailable backend=%q\n' "$GITHUB_READ_API_BACKEND"
+    exit 2
+  fi
+  github_backend="$(github_read_api_backend)"
 
   local blocked=0
   local needs_hygiene=0
@@ -643,6 +651,7 @@ main() {
 
   printf 'F22_6_RELEASE_LINEAGE_SCOPE=endpoint-agent-release-hygiene\n'
   printf 'F22_6_RELEASE_LINEAGE_RUNBOOK=docs/runbooks/RB-faz22.6-release-lineage-audit.md\n'
+  printf 'F22_6_GITHUB_READ_BACKEND=%s\n' "$github_backend"
 
   local releases bounded_pilot_present is_draft is_prerelease is_immutable
   # RELEASE_LIST_JSON lets the audit run offline against an injected fixture
@@ -651,8 +660,7 @@ main() {
   if [ -n "${RELEASE_LIST_JSON:-}" ]; then
     releases="$RELEASE_LIST_JSON"
     print_check 'GITHUB_RELEASE_LIST' 'pass' 'source=RELEASE_LIST_JSON'
-  elif ! releases="$(gh release list -R "$AGENT_REPO" --limit "$RECENT_RELEASE_WINDOW" \
-      --json tagName,isLatest,isDraft,isPrerelease,isImmutable,publishedAt,name 2>&1)"; then
+  elif ! releases="$(github_read_releases_json "$AGENT_REPO" "$RECENT_RELEASE_WINDOW" 2>&1)"; then
     print_check 'GITHUB_RELEASE_LIST' 'blocked' "reason=$(printf '%q' "$releases")"
     blocked=1
     releases='[]'
@@ -730,10 +738,8 @@ main() {
     waiver_findings+=('GITHUB_RELEASE_IMMUTABLE')
   fi
 
-  local tag_ref tag_object tag_commit
-  if tag_ref="$(gh api "repos/${AGENT_REPO}/git/ref/tags/${EXPECTED_AGENT_TAG}" 2>&1)" \
-    && tag_object="$(printf '%s\n' "$tag_ref" | jq -r '.object.sha')" \
-    && tag_commit="$(gh api "repos/${AGENT_REPO}/git/tags/${tag_object}" --jq .object.sha 2>&1)"; then
+  local tag_commit
+  if tag_commit="$(github_tag_commit "$EXPECTED_AGENT_TAG" 2>&1)"; then
     if [ "$tag_commit" = "$EXPECTED_AGENT_COMMIT" ]; then
       print_check 'GITHUB_TAG_SOURCE_COMMIT' 'pass' "tag=$EXPECTED_AGENT_TAG commit=$tag_commit"
     else
@@ -741,7 +747,7 @@ main() {
       blocked=1
     fi
   else
-    print_check 'GITHUB_TAG_SOURCE_COMMIT' 'blocked' "reason=$(printf '%q' "${tag_ref:-tag-read-failed}")"
+    print_check 'GITHUB_TAG_SOURCE_COMMIT' 'blocked' "reason=$(printf '%q' "${tag_commit:-tag-read-failed}")"
     blocked=1
   fi
 
