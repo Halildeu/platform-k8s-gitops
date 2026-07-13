@@ -50,6 +50,8 @@ def test_runner_contract_restores_and_redacts():
     assert "for scope_kind in default optional" in text
     assert "${scope_kind}-client-scopes" in text
     assert "keycloak-controlled-claim-mapper-contract-failed" in text
+    assert 'write_user_attribute_mapper "tenant_id" "org_id"' in text
+    assert 'canonicalUserAttribute: "org_id"' in text
     assert "del(.credentials)" in text
     assert "chmod 0600 \"${RECONCILE_BACKUP_JSON}\"" in text
     assert "credentialsMutated: false" in text
@@ -97,7 +99,7 @@ def test_controlled_claim_mapper_jq_contract_compiles_and_rejects_duplicates():
             "protocolMapper": "oidc-usermodel-attribute-mapper",
             "config": {
                 "claim.name": claim,
-                "user.attribute": claim,
+                "user.attribute": "org_id" if claim == "tenant_id" else claim,
                 "access.token.claim": "true",
             },
         }
