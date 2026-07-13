@@ -13,18 +13,18 @@ umask 077
 
 MODE="dry-run"
 OUT_PATH="${OUT_PATH:-/tmp/faz24-meeting-intelligence-access.json}"
-MAILBOX="${MAILBOX:-ai@acik.com}"
-MAIL_SUBJECT="${MAIL_SUBJECT:-Platform Ai- Meeting Intelligence}"
-BASE_URL="${BASE_URL:-https://testai.acik.com}"
-KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
-KC_REALM="${KC_REALM:-platform-test}"
-KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
-KC_REALM_ROLE="${KC_REALM_ROLE:-MEETING_ADMIN}"
-KC_RESOURCE_CLIENT="${KC_RESOURCE_CLIENT:-audio-gateway-service}"
-KC_CLIENT_ROLE="${KC_CLIENT_ROLE:-audio_record}"
-PERMISSION_ROLE_NAME="${PERMISSION_ROLE_NAME:-MEETING_INTELLIGENCE_MANAGER}"
-VAULT_GRAPH_PATH="${VAULT_GRAPH_PATH:-kv/platform/graph}"
-VAULT_PERSONA_PATH="${VAULT_PERSONA_PATH:-kv/platform/d35-3}"
+readonly MAILBOX="ai@acik.com"
+readonly MAIL_SUBJECT="Platform Ai- Meeting Intelligence"
+readonly BASE_URL="https://testai.acik.com"
+readonly KC_BASE_URL="http://127.0.0.1:8082"
+readonly KC_REALM="platform-test"
+readonly KC_ADMIN_USER="admin"
+readonly KC_REALM_ROLE="MEETING_ADMIN"
+readonly KC_RESOURCE_CLIENT="audio-gateway-service"
+readonly KC_CLIENT_ROLE="audio_record"
+readonly PERMISSION_ROLE_NAME="MEETING_INTELLIGENCE_MANAGER"
+readonly VAULT_GRAPH_PATH="kv/platform/graph"
+readonly VAULT_PERSONA_PATH="kv/platform/d35-3"
 
 STATUS="running"
 FAILURE_REASON=""
@@ -54,11 +54,6 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
-
-if [[ "${KC_REALM}" != "platform-test" ]]; then
-  echo "ERROR: only platform-test is allowed" >&2
-  exit 2
-fi
 
 for command_name in curl jq docker; do
   command -v "${command_name}" >/dev/null 2>&1 || {
@@ -145,6 +140,13 @@ http_status() {
   curl -sS --max-time 20 -o "${output}" -w '%{http_code}' -X "${method}" "${url}" "$@" || printf '000'
 }
 
+write_bearer_config() {
+  local output="$1"
+  local token="$2"
+  printf 'header = "Authorization: Bearer %s"\n' "${token}" > "${output}"
+  chmod 600 "${output}"
+}
+
 read_vault_path() {
   local path="$1"
   local output="$2"
@@ -182,23 +184,34 @@ PERSONA_PASSWORD="$(jq -r '.data.data.admin_persona_password // empty' "${PERSON
   || die "persona-vault-fields-missing"
 [[ -n "${KC_ADMIN_PASSWORD:-}" ]] || die "keycloak-admin-password-missing"
 
+GRAPH_CLIENT_SECRET_FILE="${TMP_DIR}/graph-client-secret"
+PERSONA_USERNAME_FILE="${TMP_DIR}/persona-username"
+PERSONA_PASSWORD_FILE="${TMP_DIR}/persona-password"
+KC_ADMIN_PASSWORD_FILE="${TMP_DIR}/keycloak-admin-password"
+printf '%s' "${GRAPH_CLIENT_SECRET}" > "${GRAPH_CLIENT_SECRET_FILE}"
+printf '%s' "${PERSONA_USERNAME}" > "${PERSONA_USERNAME_FILE}"
+printf '%s' "${PERSONA_PASSWORD}" > "${PERSONA_PASSWORD_FILE}"
+printf '%s' "${KC_ADMIN_PASSWORD}" > "${KC_ADMIN_PASSWORD_FILE}"
+
 GRAPH_TOKEN_JSON="${TMP_DIR}/graph-token.json"
 code="$(http_status POST \
   "https://login.microsoftonline.com/${GRAPH_TENANT_ID}/oauth2/v2.0/token" \
   "${GRAPH_TOKEN_JSON}" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode "client_id=${GRAPH_CLIENT_ID}" \
-  --data-urlencode "client_secret=${GRAPH_CLIENT_SECRET}" \
+  --data-urlencode "client_secret@${GRAPH_CLIENT_SECRET_FILE}" \
   --data-urlencode 'scope=https://graph.microsoft.com/.default' \
   --data-urlencode 'grant_type=client_credentials')"
 [[ "${code}" == "200" ]] || die "graph-token-failed"
 GRAPH_ACCESS_TOKEN="$(jq -r '.access_token // empty' "${GRAPH_TOKEN_JSON}")"
 [[ -n "${GRAPH_ACCESS_TOKEN}" ]] || die "graph-token-missing"
+GRAPH_AUTH_CONFIG="${TMP_DIR}/graph-auth.curl"
+write_bearer_config "${GRAPH_AUTH_CONFIG}" "${GRAPH_ACCESS_TOKEN}"
 
 MAIL_JSON="${TMP_DIR}/mail.json"
 code="$(curl -sS --max-time 20 -o "${MAIL_JSON}" -w '%{http_code}' --get \
   "https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages" \
-  -H "Authorization: Bearer ${GRAPH_ACCESS_TOKEN}" \
+  --config "${GRAPH_AUTH_CONFIG}" \
   -H 'ConsistencyLevel: eventual' \
   --data-urlencode "\$top=50" \
   --data-urlencode "\$select=subject,from,receivedDateTime" \
@@ -215,10 +228,11 @@ TARGET_EMAIL="$(jq -r --arg subject "${MAIL_SUBJECT}" '
     | (.from.emailAddress.address // "")
     | ascii_downcase
     | select(endswith("@acik.com"))]
-  | unique
-  | if length == 1 then .[0] else "" end
+  | .[0] // ""
 ' "${MAIL_JSON}")"
 [[ -n "${TARGET_EMAIL}" ]] || die "exact-zeynep-mail-sender-not-found"
+TARGET_EMAIL_FILE="${TMP_DIR}/target-email"
+printf '%s' "${TARGET_EMAIL}" > "${TARGET_EMAIL_FILE}"
 
 KC_ADMIN_TOKEN_JSON="${TMP_DIR}/kc-admin-token.json"
 code="$(http_status POST \
@@ -228,16 +242,18 @@ code="$(http_status POST \
   --data-urlencode 'grant_type=password' \
   --data-urlencode 'client_id=admin-cli' \
   --data-urlencode "username=${KC_ADMIN_USER}" \
-  --data-urlencode "password=${KC_ADMIN_PASSWORD}")"
+  --data-urlencode "password@${KC_ADMIN_PASSWORD_FILE}")"
 [[ "${code}" == "200" ]] || die "keycloak-admin-login-failed"
 KC_ADMIN_TOKEN="$(jq -r '.access_token // empty' "${KC_ADMIN_TOKEN_JSON}")"
 [[ -n "${KC_ADMIN_TOKEN}" ]] || die "keycloak-admin-token-missing"
+KC_AUTH_CONFIG="${TMP_DIR}/keycloak-auth.curl"
+write_bearer_config "${KC_AUTH_CONFIG}" "${KC_ADMIN_TOKEN}"
 
 KC_USERS_JSON="${TMP_DIR}/kc-users.json"
 code="$(curl -sS --max-time 20 -o "${KC_USERS_JSON}" -w '%{http_code}' --get \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/users" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-  --data-urlencode "email=${TARGET_EMAIL}" \
+  --config "${KC_AUTH_CONFIG}" \
+  --data-urlencode "email@${TARGET_EMAIL_FILE}" \
   --data-urlencode 'exact=true' || printf '000')"
 [[ "${code}" == "200" ]] || die "keycloak-user-lookup-failed"
 [[ "$(jq 'length' "${KC_USERS_JSON}")" == "1" ]] || die "keycloak-user-not-exactly-one"
@@ -252,13 +268,13 @@ REALM_ROLE_JSON="${TMP_DIR}/realm-role.json"
 code="$(http_status GET \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/roles/${KC_REALM_ROLE}" \
   "${REALM_ROLE_JSON}" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}")"
+  --config "${KC_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "required-realm-role-missing"
 
 CLIENTS_JSON="${TMP_DIR}/clients.json"
 code="$(curl -sS --max-time 20 -o "${CLIENTS_JSON}" -w '%{http_code}' --get \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/clients" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
+  --config "${KC_AUTH_CONFIG}" \
   --data-urlencode "clientId=${KC_RESOURCE_CLIENT}" || printf '000')"
 [[ "${code}" == "200" && "$(jq 'length' "${CLIENTS_JSON}")" == "1" ]] \
   || die "resource-client-not-exactly-one"
@@ -268,7 +284,7 @@ CLIENT_ROLE_JSON="${TMP_DIR}/client-role.json"
 code="$(http_status GET \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/clients/${KC_CLIENT_UUID}/roles/${KC_CLIENT_ROLE}" \
   "${CLIENT_ROLE_JSON}" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}")"
+  --config "${KC_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "required-client-role-missing"
 
 PERSONA_TOKEN_JSON="${TMP_DIR}/persona-token.json"
@@ -278,17 +294,19 @@ code="$(http_status POST \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode 'grant_type=password' \
   --data-urlencode 'client_id=frontend' \
-  --data-urlencode "username=${PERSONA_USERNAME}" \
-  --data-urlencode "password=${PERSONA_PASSWORD}")"
+  --data-urlencode "username@${PERSONA_USERNAME_FILE}" \
+  --data-urlencode "password@${PERSONA_PASSWORD_FILE}")"
 [[ "${code}" == "200" ]] || die "permission-writer-login-failed"
 PERSONA_TOKEN="$(jq -r '.access_token // empty' "${PERSONA_TOKEN_JSON}")"
 [[ -n "${PERSONA_TOKEN}" ]] || die "permission-writer-token-missing"
+PERSONA_AUTH_CONFIG="${TMP_DIR}/persona-auth.curl"
+write_bearer_config "${PERSONA_AUTH_CONFIG}" "${PERSONA_TOKEN}"
 
 USER_JSON="${TMP_DIR}/user.json"
 code="$(curl -sS --max-time 20 -o "${USER_JSON}" -w '%{http_code}' --get \
   "${BASE_URL}/api/v1/users/by-email" \
-  -H "Authorization: Bearer ${PERSONA_TOKEN}" \
-  --data-urlencode "email=${TARGET_EMAIL}" || printf '000')"
+  --config "${PERSONA_AUTH_CONFIG}" \
+  --data-urlencode "email@${TARGET_EMAIL_FILE}" || printf '000')"
 [[ "${code}" == "200" ]] || die "user-service-exact-lookup-failed"
 PLATFORM_USER_ID="$(jq -r '.id // empty' "${USER_JSON}")"
 USER_EMAIL_NORMALIZED="$(jq -r '.email // empty | ascii_downcase' "${USER_JSON}")"
@@ -298,7 +316,7 @@ USER_SERVICE_MATCH=true
 
 ROLES_JSON="${TMP_DIR}/roles.json"
 code="$(http_status GET "${BASE_URL}/api/v1/roles" "${ROLES_JSON}" \
-  -H "Authorization: Bearer ${PERSONA_TOKEN}")"
+  --config "${PERSONA_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "permission-role-list-failed"
 ROLE_MATCH_COUNT="$(jq --arg name "${PERMISSION_ROLE_NAME}" '[.items[]? | select(.name == $name)] | length' "${ROLES_JSON}")"
 [[ "${ROLE_MATCH_COUNT}" == "0" || "${ROLE_MATCH_COUNT}" == "1" ]] \
@@ -308,7 +326,7 @@ ROLE_ID="$(jq -r --arg name "${PERMISSION_ROLE_NAME}" '[.items[]? | select(.name
 if [[ -n "${ROLE_ID}" ]]; then
   GRANULES_BEFORE_JSON="${TMP_DIR}/granules-before.json"
   code="$(http_status GET "${BASE_URL}/api/v1/roles/${ROLE_ID}/granules" "${GRANULES_BEFORE_JSON}" \
-    -H "Authorization: Bearer ${PERSONA_TOKEN}")"
+    --config "${PERSONA_AUTH_CONFIG}")"
   [[ "${code}" == "200" ]] || die "permission-granule-preflight-failed"
   jq -e 'all(.granules[]?;
     (.type == "MODULE" and .grant == "MANAGE" and (.key == "MEETING" or .key == "TRANSCRIPT")))' \
@@ -327,7 +345,7 @@ if [[ -z "${ROLE_ID}" ]]; then
     '{name: $name, description: "Meeting Intelligence least-privilege access"}' > "${CREATE_ROLE_BODY}"
   CREATE_ROLE_JSON="${TMP_DIR}/create-role-response.json"
   code="$(http_status POST "${BASE_URL}/api/v1/roles" "${CREATE_ROLE_JSON}" \
-    -H "Authorization: Bearer ${PERSONA_TOKEN}" \
+    --config "${PERSONA_AUTH_CONFIG}" \
     -H 'Content-Type: application/json' \
     --data-binary "@${CREATE_ROLE_BODY}")"
   [[ "${code}" == "201" ]] || die "permission-role-create-failed"
@@ -342,7 +360,7 @@ jq -n '{permissions: [
 ]}' > "${GRANULE_BODY}"
 MUTATION_RESPONSE="${TMP_DIR}/mutation-response.json"
 code="$(http_status PUT "${BASE_URL}/api/v1/roles/${ROLE_ID}/granules" "${MUTATION_RESPONSE}" \
-  -H "Authorization: Bearer ${PERSONA_TOKEN}" \
+  --config "${PERSONA_AUTH_CONFIG}" \
   -H 'Content-Type: application/json' \
   --data-binary "@${GRANULE_BODY}")"
 [[ "${code}" == "200" ]] || die "permission-granule-write-failed"
@@ -350,7 +368,7 @@ code="$(http_status PUT "${BASE_URL}/api/v1/roles/${ROLE_ID}/granules" "${MUTATI
 MEMBER_BODY="${TMP_DIR}/member.json"
 jq -n --argjson userId "${PLATFORM_USER_ID}" '{userIds: [$userId]}' > "${MEMBER_BODY}"
 code="$(http_status POST "${BASE_URL}/api/v1/roles/${ROLE_ID}/members" "${MUTATION_RESPONSE}" \
-  -H "Authorization: Bearer ${PERSONA_TOKEN}" \
+  --config "${PERSONA_AUTH_CONFIG}" \
   -H 'Content-Type: application/json' \
   --data-binary "@${MEMBER_BODY}")"
 [[ "${code}" == "200" ]] || die "permission-membership-write-failed"
@@ -359,7 +377,7 @@ jq -s '.' "${REALM_ROLE_JSON}" > "${TMP_DIR}/realm-role-array.json"
 code="$(http_status POST \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${KC_USER_ID}/role-mappings/realm" \
   "${MUTATION_RESPONSE}" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
+  --config "${KC_AUTH_CONFIG}" \
   -H 'Content-Type: application/json' \
   --data-binary "@${TMP_DIR}/realm-role-array.json")"
 [[ "${code}" == "204" ]] || die "realm-role-write-failed"
@@ -368,14 +386,14 @@ jq -s '.' "${CLIENT_ROLE_JSON}" > "${TMP_DIR}/client-role-array.json"
 code="$(http_status POST \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${KC_USER_ID}/role-mappings/clients/${KC_CLIENT_UUID}" \
   "${MUTATION_RESPONSE}" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
+  --config "${KC_AUTH_CONFIG}" \
   -H 'Content-Type: application/json' \
   --data-binary "@${TMP_DIR}/client-role-array.json")"
 [[ "${code}" == "204" ]] || die "client-role-write-failed"
 
 GRANULES_AFTER_JSON="${TMP_DIR}/granules-after.json"
 code="$(http_status GET "${BASE_URL}/api/v1/roles/${ROLE_ID}/granules" "${GRANULES_AFTER_JSON}" \
-  -H "Authorization: Bearer ${PERSONA_TOKEN}")"
+  --config "${PERSONA_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "permission-granule-readback-failed"
 jq -e '.granules == [
   {type: "MODULE", key: "MEETING", grant: "MANAGE"},
@@ -386,7 +404,7 @@ PERMISSION_ROLE_READY=true
 
 MEMBERS_JSON="${TMP_DIR}/members.json"
 code="$(http_status GET "${BASE_URL}/api/v1/roles/${ROLE_ID}/members" "${MEMBERS_JSON}" \
-  -H "Authorization: Bearer ${PERSONA_TOKEN}")"
+  --config "${PERSONA_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "permission-membership-readback-failed"
 jq -e --argjson userId "${PLATFORM_USER_ID}" 'any(.[]?; .userId == $userId)' \
   "${MEMBERS_JSON}" >/dev/null || die "permission-membership-readback-mismatch"
@@ -396,7 +414,7 @@ REALM_ROLES_AFTER="${TMP_DIR}/realm-roles-after.json"
 code="$(http_status GET \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${KC_USER_ID}/role-mappings/realm" \
   "${REALM_ROLES_AFTER}" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}")"
+  --config "${KC_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "realm-role-readback-failed"
 jq -e --arg role "${KC_REALM_ROLE}" 'any(.[]?; .name == $role)' "${REALM_ROLES_AFTER}" >/dev/null \
   || die "realm-role-readback-mismatch"
@@ -406,7 +424,7 @@ CLIENT_ROLES_AFTER="${TMP_DIR}/client-roles-after.json"
 code="$(http_status GET \
   "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${KC_USER_ID}/role-mappings/clients/${KC_CLIENT_UUID}" \
   "${CLIENT_ROLES_AFTER}" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}")"
+  --config "${KC_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "client-role-readback-failed"
 jq -e --arg role "${KC_CLIENT_ROLE}" 'any(.[]?; .name == $role)' "${CLIENT_ROLES_AFTER}" >/dev/null \
   || die "client-role-readback-mismatch"
