@@ -29,12 +29,20 @@ on:
     types: [backend-testai-deploy]
   workflow_dispatch:
     inputs:
+      operation:
+        description: 'Operation mode'
+        required: false
+        default: 'backend-rollout'
+        type: choice
+        options:
+          - backend-rollout
+          - audio-gateway-overlay-pr
       sha:
         description: 'Commit sha (40-char) — gitops commit (sadece summary için, image kimliği değil)'
-        required: true
+        required: false
       short_sha:
         description: 'Short sha (7-char) — gitops commit (sadece summary için)'
-        required: true
+        required: false
       digests:
         description: |
           OPSIYONEL per-service digest map JSON (workflow_dispatch için):
@@ -50,6 +58,22 @@ on:
 
           Tag-based fallback YASAK (PR #1170/#1171 incident — gitops commit
           SHA'sı yanlışlıkla image tag gibi yorumlandı).
+        required: false
+        default: ''
+      audio_gateway_digest:
+        description: 'audio-gateway-service image digest for test overlay staging (sha256:<64hex>)'
+        required: false
+        default: ''
+      audio_gateway_source_sha:
+        description: 'Optional platform-backend source commit sha for the audio-gateway digest'
+        required: false
+        default: ''
+      audio_gateway_source_ref:
+        description: 'Optional platform-backend source ref/PR for the audio-gateway digest'
+        required: false
+        default: ''
+      audio_gateway_evidence_url:
+        description: 'Optional image build or PR evidence URL for the audio-gateway digest'
         required: false
         default: ''
 
@@ -80,7 +104,9 @@ jobs:
     # Gate 1c (per-service curl) + buffer. 30m timeout was insufficient.
     timeout-minutes: 60
 
-    if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'repository_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && inputs.operation == 'backend-rollout')
 
     # #827 PR-B — expose the rolled-out digests + commit refs to the
     # sync-test-overlay-pr job.
@@ -103,7 +129,7 @@ jobs:
           fi
 
           if [ -z "$SHA" ] || [ -z "$SHORT_SHA" ]; then
-            echo "::error::Missing payload (sha/short_sha)"
+            echo "::error::Missing payload (sha/short_sha) for backend-rollout operation"
             exit 1
           fi
 
@@ -655,3 +681,86 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           GITHUB_REPO: ${{ github.repository }}
         run: bash scripts/automation/sync-test-overlay.sh
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Faz 24 audio-gateway test overlay staging
+  #
+  # audio-gateway has a different acceptance shape than the legacy 8-service
+  # backend rollout: Direct-STT latency/accuracy evidence, transcript stream
+  # delivery, mTLS, and Redis result/audit streams. This job does not mutate
+  # k3d-test directly. It opens/updates a GitOps-authoritative PR that rewrites
+  # only the audio-gateway-service digest in kustomize/overlays/test.
+  # ───────────────────────────────────────────────────────────────────────────
+  stage-audio-gateway-overlay-pr:
+    name: Stage audio-gateway test-overlay digest (auto-PR)
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'audio-gateway-overlay-pr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Validate audio-gateway inputs
+        env:
+          AUDIO_GATEWAY_DIGEST: ${{ inputs.audio_gateway_digest }}
+          AUDIO_GATEWAY_SOURCE_SHA: ${{ inputs.audio_gateway_source_sha }}
+          AUDIO_GATEWAY_SOURCE_REF: ${{ inputs.audio_gateway_source_ref }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${AUDIO_GATEWAY_DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::audio_gateway_digest must match ^sha256:[a-f0-9]{64}$"
+            exit 1
+          fi
+          if [ -z "${AUDIO_GATEWAY_SOURCE_SHA}" ] && [ -z "${AUDIO_GATEWAY_SOURCE_REF}" ]; then
+            echo "::warning::audio_gateway_source_sha/source_ref not set; PR body will carry workflow evidence only"
+          fi
+
+      - name: Preflight — automation App credentials present?
+        id: preflight
+        env:
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APP_ID:-}" ] && [ -n "${APP_PRIVATE_KEY:-}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "✓ AUTOMATION_APP_ID + AUTOMATION_APP_PRIVATE_KEY present — audio-gateway overlay staging active"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=audio-gateway-overlay-sync inactive::AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets absent or incomplete — source-ready but operator-disabled. Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md"
+            {
+              echo "## audio-gateway overlay staging — inactive (operator-disabled)"
+              echo ""
+              echo "AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets are absent or incomplete."
+              echo "The workflow is source-ready; see docs/operations/RUNBOOKS/RB-automation-overlay-sync.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
+      - name: Checkout (App-token credentials)
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Stage audio-gateway digest + open/update PR
+        if: steps.preflight.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          IMAGE_DIGEST: ${{ inputs.audio_gateway_digest }}
+          SOURCE_SHA: ${{ inputs.audio_gateway_source_sha }}
+          SOURCE_REF: ${{ inputs.audio_gateway_source_ref }}
+          EVIDENCE_URL: ${{ inputs.audio_gateway_evidence_url }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: bash scripts/automation/sync-audio-gateway-test-overlay.sh
