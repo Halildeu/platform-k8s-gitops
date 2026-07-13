@@ -1,0 +1,107 @@
+name: Faz 24 Zeynep Meeting Intelligence Access
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run only validates; apply performs bounded platform-test mutation"
+        required: true
+        type: choice
+        options:
+          - dry-run
+          - apply
+        default: dry-run
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-zeynep-meeting-access
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: exact identity + least-privilege access
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 10
+    env:
+      OUT_PATH: /tmp/faz24-zeynep-meeting-access-${{ github.run_id }}.json
+      KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Provision and verify
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          args=(--out "${OUT_PATH}")
+          if [ "${MODE}" = "apply" ]; then
+            args+=(--apply)
+          fi
+          bash scripts/faz24/provision-meeting-intelligence-access.sh "${args[@]}"
+
+      - name: Verify redacted result contract
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "${OUT_PATH}"
+          jq -e '
+            .schemaVersion == "faz24.meetingIntelligenceAccess.v1" and
+            .boundaries.productionMutation == false and
+            .boundaries.broadAdminGrant == false and
+            .boundaries.rawIdentityIncluded == false and
+            .boundaries.rawCredentialIncluded == false and
+            .boundaries.rawTokenIncluded == false and
+            (.target | has("email") | not) and
+            (.target | has("userId") | not)
+          ' "${OUT_PATH}" >/dev/null
+
+          if grep -aE \
+            -e 'Bearer ' \
+            -e 'Authorization:' \
+            -e 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.' \
+            -e '"(password|secret|access_token|refresh_token|email|userId)"[[:space:]]*:' \
+            "${OUT_PATH}"; then
+            echo "::error::result contains forbidden identity or credential material"
+            exit 1
+          fi
+
+      - name: Publish redacted summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -s "${OUT_PATH}" ]; then
+            echo "## Faz 24 Meeting Intelligence access" >> "${GITHUB_STEP_SUMMARY}"
+            echo "- Result: missing" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          {
+            echo "## Faz 24 Meeting Intelligence access"
+            echo
+            echo "- Mode: \`$(jq -r .mode "${OUT_PATH}")\`"
+            echo "- Status: \`$(jq -r .status "${OUT_PATH}")\`"
+            echo "- Failure: \`$(jq -r '.failureReason // "none"' "${OUT_PATH}")\`"
+            echo "- Exact Keycloak identity: \`$(jq -r .target.exactKeycloakMatch "${OUT_PATH}")\`"
+            echo "- Exact user-service identity: \`$(jq -r .target.exactUserServiceMatch "${OUT_PATH}")\`"
+            echo "- Realm role readback: \`$(jq -r .keycloak.realmRoleReady "${OUT_PATH}")\`"
+            echo "- Client role readback: \`$(jq -r .keycloak.clientRoleReady "${OUT_PATH}")\`"
+            echo "- Granule readback: \`$(jq -r .permissionService.granulesReady "${OUT_PATH}")\`"
+            echo "- Membership readback: \`$(jq -r .permissionService.membershipReady "${OUT_PATH}")\`"
+            echo
+            echo "Boundary: platform-test only; no broad ADMIN grant and no raw identity/credential/token evidence."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload redacted evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-zeynep-meeting-access-${{ github.run_id }}
+          path: ${{ env.OUT_PATH }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup runner file
+        if: always()
+        run: rm -f "${OUT_PATH}"
