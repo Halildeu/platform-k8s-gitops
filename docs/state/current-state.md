@@ -1,5 +1,41 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 Meeting-AI cert-rotation fire-drill acceptance gate added (source-side only) (2026-07-13)
+
+Tracked by [platform-k8s-gitops#2321](https://github.com/Halildeu/platform-k8s-gitops/issues/2321).
+This delta adds a source-side false-acceptance guard for the open #2321
+cert-rotation fire-drill residual. It does not run the live drill and does not
+claim runtime acceptance.
+
+What changed:
+
+- `scripts/faz24/verify_meeting_ai_cert_rotation_drill_evidence.py` gates a
+  redacted, metadata-only `faz24.meetingAiCertRotationDrillEvidence.v1` envelope
+  with the same D29-layered contract as the other Faz 24 verifiers. Up requires
+  the four node-exporter rotation gauges plus `lastRunSuccessValue=1`;
+  Functional requires a fresh 24h `pki_meeting_ai_server/issue/staging-gateway`
+  leaf (fingerprint rotated), atomic `tls/current` pointer swap, gateway reload
+  and an uninterrupted client-auth `/healthz` 200 on the new leaf; Secured
+  requires an induced reload failure that rolls the pointer back with no outage,
+  drives `rotation_last_run_success=0` and fires
+  `MeetingAIGatewayCertificateRotationFailed`, then clears after recovery.
+- The verifier fail-closed rejects PEM/private-key/issuing-CA/Vault-token/JWT/
+  URL-like values, `rootTokenUsed=true`, and any private-listener / mTLS-matrix
+  / JWT-matrix / outbox / Electron / production-ready overclaim.
+- `tests/faz24/test_verify_meeting_ai_cert_rotation_drill_evidence.py` (24 cases)
+  and a new `ci.yml` step ("Faz 24 Meeting-AI cert rotation drill evidence
+  verifier") enforce it on every PR; the acceptance gate is documented in
+  `docs/runbooks/RB-faz24-meeting-ai-private-gateway.md` §6.1.
+
+Boundary:
+
+- This is source-side acceptance-contract hardening only. The live operator
+  fire drill (scoped Vault token seed, timer/rotation trigger, induced reload
+  failure, alert fire/clear observation) is still owner-gated and unproven.
+- Activated private listener (TCP/9447), mTLS negative matrix, JWT claim matrix,
+  idempotent result POST, GPU outbox drain and Electron product-path acceptance
+  for #2321 remain open exactly as recorded in the 2026-07-12 delta below.
+
 ## Live Delta — Faz 24 I3 runner SSH authorization restored; audit acceptance remains open (2026-07-12)
 
 Tracked by [platform-k8s-gitops#1864](https://github.com/Halildeu/platform-k8s-gitops/issues/1864).
