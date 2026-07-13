@@ -7,6 +7,7 @@ B1_WORKFLOW="$ROOT/.github/workflows/faz22-6-b1-4-acceptance-package.yml"
 VIEW_ONLY_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-engineering-evidence-package.yml"
 B1_HELPER="$ROOT/scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh"
 VIEW_ONLY_HELPER="$ROOT/scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh"
+VIEWER_PRODUCT_VERIFIER="$ROOT/scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py"
 
 future_date_utc() {
   local days="$1"
@@ -36,11 +37,12 @@ require_grep() {
   }
 }
 
-for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER"; do
+for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER" "$VIEWER_PRODUCT_VERIFIER"; do
   require_file "$path"
 done
 
 bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER"
+python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER"
 
 require_grep "permissions:" "$B1_WORKFLOW"
 require_grep "contents: read" "$B1_WORKFLOW"
@@ -117,5 +119,7 @@ F22_6_ALLOW_LOCAL_EVIDENCE_URL_FOR_TESTS=1 "$VIEW_ONLY_HELPER" \
   --expires-at "$expires_at" >/dev/null
 jq -e '.schema_version == "faz22.6-view-only-evidence-v2" and .recording_mode == "disabled"' "$tmp_dir/view-only-manifest.json" >/dev/null
 grep -Fq "F22_6_VIEW_ONLY_ENGINEERING: v2" "$tmp_dir/view-only-marker.txt"
+
+python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_product_evidence_verifier
 
 echo "faz22-6-acceptance-package-workflows-static-ok"
