@@ -6016,6 +6016,12 @@ patches:
       - op: add
         path: /data/MEETING_AUTHZ_LEGACY_USER_ID_DUAL_WRITE_ENABLED
         value: "true"
+      # #2369 test-only tenant-claim transition. Canonical org_id remains the
+      # tenant authority while legacy tenant_id/tenantId emitters are aligned.
+      # Prod keeps the source default (strict consistency=true).
+      - op: add
+        path: /data/MEETING_TENANT_ENFORCE_CLAIM_CONSISTENCY
+        value: "false"
 
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The
   # base bootstrap Secret is for non-ESO bootstrap only; rendering both creates
@@ -6101,6 +6107,10 @@ patches:
         path: /spec/template/metadata/annotations
         value:
           platform.acik.com/faz24-meeting-ai-base-url-rev: "2026-07-03-2186"
+      # #2369 ConfigMap envFrom pickup; test-only, GitOps-authoritative rollout.
+      - op: add
+        path: /spec/template/metadata/annotations/platform.acik.com~1faz24-tenant-claim-transition-rev
+        value: "2026-07-13-2369"
 
   # Faz 24 Meeting Intelligence foundation (#411): replica 1 default
   # (HARD RULE — Scale-to-Zero YASAK). No mTLS connector → base 150s startup
