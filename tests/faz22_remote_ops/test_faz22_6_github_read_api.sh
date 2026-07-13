@@ -22,10 +22,20 @@ case "$url" in
     printf '%s\n' '{"state":"closed","body":"marker","title":"B1.4","html_url":"https://github.com/Halildeu/platform-backend/issues/548"}'
     ;;
   *'/repos/Halildeu/platform-agent/releases?per_page=2')
-    printf '%s\n' '[{"tag_name":"v0.3.11","draft":false,"prerelease":false,"immutable":true,"published_at":"2026-07-03T13:46:11Z","name":"v0.3.11"},{"tag_name":"v0.3.10","draft":false,"prerelease":false,"immutable":true,"published_at":"2026-07-03T12:00:00Z","name":"v0.3.10"}]'
+    printf '%s\n' '[{"id":311,"tag_name":"v0.3.11","draft":false,"prerelease":false,"immutable":true,"published_at":"2026-07-03T13:46:11Z","name":"v0.3.11"},{"id":310,"tag_name":"v0.3.10","draft":false,"prerelease":false,"immutable":true,"published_at":"2026-07-03T12:00:00Z","name":"v0.3.10"}]'
     ;;
   */repos/Halildeu/platform-agent/releases/latest)
-    printf '%s\n' '{"tag_name":"v0.3.11"}'
+    latest_call=0
+    if [ -f "$FAKE_LATEST_CALL_FILE" ]; then
+      latest_call="$(cat "$FAKE_LATEST_CALL_FILE")"
+    fi
+    latest_call=$((latest_call + 1))
+    printf '%s' "$latest_call" >"$FAKE_LATEST_CALL_FILE"
+    if [ "${FAKE_RELEASE_MODE:-stable}" = "race-once" ] && [ "$latest_call" = "1" ]; then
+      printf '%s\n' '{"id":310,"tag_name":"v0.3.10"}'
+    else
+      printf '%s\n' '{"id":311,"tag_name":"v0.3.11"}'
+    fi
     ;;
   */repos/Halildeu/platform-agent/git/ref/tags/v0.3.11)
     printf '%s\n' '{"object":{"type":"tag","sha":"tag-object-sha"}}'
@@ -41,12 +51,26 @@ esac
 SH
 chmod +x "$fake_bin/curl"
 
+cat >"$fake_bin/gh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
+  [ "${FAKE_GH_AUTH:-fail}" = "pass" ]
+  exit
+fi
+printf 'unexpected fake gh invocation: %s\n' "$*" >&2
+exit 2
+SH
+chmod +x "$fake_bin/gh"
+
 export PATH="$fake_bin:$PATH"
 export GITHUB_READ_API_BACKEND=curl
 export GITHUB_READ_API_URL=https://api.github.test
+export GITHUB_API_URL=https://api.github.test
 export GH_TOKEN=unit-test-token-not-a-secret
 export FAKE_CURL_ARGS_LOG="$tmp_dir/curl-args.log"
 export FAKE_CURL_CONFIG_LOG="$tmp_dir/curl-config.log"
+export FAKE_LATEST_CALL_FILE="$tmp_dir/latest-call"
 
 # shellcheck source=/dev/null
 source "$ROOT/scripts/faz22-remote-ops/lib-github-read-api.sh"
@@ -70,6 +94,14 @@ jq -e '
   and .[0].isImmutable == true
   and .[1].isLatest == false
 ' <<<"$releases_json" >/dev/null
+[ "$(cat "$FAKE_LATEST_CALL_FILE")" = "2" ]
+
+rm -f "$FAKE_LATEST_CALL_FILE"
+export FAKE_RELEASE_MODE=race-once
+race_releases_json="$(github_read_releases_json Halildeu/platform-agent 2)"
+jq -e '.[0].tagName == "v0.3.11" and .[0].isLatest == true' <<<"$race_releases_json" >/dev/null
+[ "$(cat "$FAKE_LATEST_CALL_FILE")" = "4" ]
+unset FAKE_RELEASE_MODE
 
 tag_ref="$(github_read_api repos/Halildeu/platform-agent/git/ref/tags/v0.3.11)"
 jq -e '.object.type == "tag" and .object.sha == "tag-object-sha"' <<<"$tag_ref" >/dev/null
@@ -82,6 +114,14 @@ if grep -q 'unit-test-token-not-a-secret' "$FAKE_CURL_ARGS_LOG"; then
 fi
 grep -q 'header = "Authorization: Bearer unit-test-token-not-a-secret"' "$FAKE_CURL_CONFIG_LOG"
 grep -q 'header = "X-GitHub-Api-Version: 2022-11-28"' "$FAKE_CURL_CONFIG_LOG"
+grep -q '^fail$' "$FAKE_CURL_CONFIG_LOG"
+if grep -q '^fail-with-body$' "$FAKE_CURL_CONFIG_LOG"; then
+  echo "curl backend must not forward HTTP error bodies into JSON parsers" >&2
+  exit 1
+fi
+
+[ "$(GITHUB_READ_API_BACKEND=auto FAKE_GH_AUTH=fail github_read_api_backend)" = "curl" ]
+[ "$(GITHUB_READ_API_BACKEND=auto FAKE_GH_AUTH=pass github_read_api_backend)" = "gh" ]
 
 calls_before="$(wc -l <"$FAKE_CURL_ARGS_LOG" | tr -d ' ')"
 set +e
@@ -89,12 +129,18 @@ GH_TOKEN=$'bad\ntoken' github_read_api repos/Halildeu/platform-agent/git/ref/tag
 unsafe_token_rc="$?"
 github_read_api '../unsafe' >/dev/null 2>&1
 unsafe_path_rc="$?"
+github_read_api 'repos/Halildeu/platform-agent/%2e%2e/releases' >/dev/null 2>&1
+encoded_path_rc="$?"
+GITHUB_READ_API_URL=https://api.github.test.evil.example github_read_api repos/Halildeu/platform-agent/releases/latest >/dev/null 2>&1
+unsafe_origin_rc="$?"
 github_read_issue_json 'bad repo' 548 >/dev/null 2>&1
 unsafe_repo_rc="$?"
 set -e
-[ "$unsafe_token_rc" != "0" ]
-[ "$unsafe_path_rc" != "0" ]
-[ "$unsafe_repo_rc" != "0" ]
+[ "$unsafe_token_rc" = "2" ]
+[ "$unsafe_path_rc" = "2" ]
+[ "$encoded_path_rc" = "2" ]
+[ "$unsafe_origin_rc" = "2" ]
+[ "$unsafe_repo_rc" = "2" ]
 calls_after="$(wc -l <"$FAKE_CURL_ARGS_LOG" | tr -d ' ')"
 [ "$calls_before" = "$calls_after" ]
 

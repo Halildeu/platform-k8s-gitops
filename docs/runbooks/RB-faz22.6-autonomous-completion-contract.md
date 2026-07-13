@@ -490,12 +490,15 @@ uses the short-lived read-only `github.token` rather than a long-lived
 repository secret.
 
 GitHub reads use `scripts/faz22-remote-ops/lib-github-read-api.sh`. Developer
-shells can use `gh`; minimal self-hosted runners use `curl+jq`, selected with
-`GITHUB_READ_API_BACKEND=curl`. The curl backend pins the GitHub REST API
-version, validates repository/API path inputs, retries bounded transient
-failures, and supplies the token through curl stdin config so it is not exposed
-in process arguments. Installing `gh` manually on the runner is therefore not
-an audit prerequisite.
+shells use `gh` only when `gh auth status` succeeds; otherwise `auto` falls back
+to `curl+jq`. Minimal self-hosted runners select that path explicitly with
+`GITHUB_READ_API_BACKEND=curl`. The curl backend requires the configured API
+origin to match `GITHUB_API_URL`, pins the GitHub REST API version, rejects
+encoded or traversal-capable paths, retries bounded transient failures, and
+supplies the token through curl stdin config so it is not exposed in process
+arguments. Release reads use a bounded latest-before/list/latest-after snapshot
+check so a concurrent publish cannot silently produce a mixed lineage view.
+Installing `gh` manually on the runner is therefore not an audit prerequisite.
 
 The audit is intentionally conservative. It prints `F22_6_COMPLETION=blocked`
 while `#548` lacks hardware-attestation acceptance or bounded risk acceptance,
