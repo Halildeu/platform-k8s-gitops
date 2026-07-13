@@ -3,8 +3,8 @@
 scripts/automation/apply-test-overlay-digests.py
 
 #827 PR-B — surgically rewrite the backend `digest:` lines of the test-overlay
-kustomization to a {service: digest} map produced by the deploy-backend-testai.yml
-rollout job (the containerd-resolved pod imageIDs of what is actually running).
+kustomization to a validated {service: digest} map produced by the immutable
+platform-backend image build before any runtime rollout.
 
 Comment-preserving by construction: only the `digest:` value of a matched
 `images:` entry is rewritten *in place*. Every other byte — including the

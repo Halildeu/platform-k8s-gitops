@@ -1,28 +1,10 @@
-name: Deploy backend testai (auto)
+name: Promote testai backend desired state
 
-# iter-49 backend deploy automation — Codex 019ddf43 PARTIAL+AGREE.
-#
-# Trigger: `repository_dispatch` event_type=backend-testai-deploy from
-# platform-backend's ci-image-push.yml after a successful backend GHCR push
-# (ayrı PR — bu workflow merge sonrası backend tarafına dispatch step eklenir).
-#
-# Codex sertleştirmeleri uygulanmış:
-#   S1 — sha+short_sha payload, kubectl set image TAG, pod imageID =
-#         containerd-resolved digest (skopeo runner credential yok hotfix)
-#   S2 — SEQUENTIAL rollout (paralel ResourceQuota riski; iter-50 frontend
-#         deploy'da 1000m+1000m=2000m > 8000m quota aşımı yaşandı)
-#   S3 — api-gateway entry-point EN SON deploy
-#   S4 — discovery-server SKIP; endpoint-admin-service and Faz 24
-#         audio-gateway/meeting/transcript/audit consumer services are part of
-#         the test runtime surface and must roll with backend digests.
-#   S5 — Gate 2 (auth flow) opt-in warn-only; primary blocking pod imageID
-#         + api-gateway health
-#
-# Self-hosted runner: testai-deploy label reuse (tek runner, generic deploy).
-#
-# Required secrets (gitops repo):
-#   - none — runner kubeconfig + GHCR pull credential mount in.
-#   - (Optional) SMOKE_AUTH_USERNAME/PASSWORD — Gate 2 functional smoke
+# platform-backend dispatches this workflow only after all immutable runtime
+# images have been published. This workflow validates the full digest contract
+# and opens/updates a reviewable desired-state PR. It has no cluster runner and
+# never mutates Kubernetes. Runtime reconciliation starts only after normal PR
+# review + merge, in verify-testai-backend-rollout.yml.
 
 on:
   repository_dispatch:
@@ -30,628 +12,126 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: 'Commit sha (40-char) — gitops commit (sadece summary için, image kimliği değil)'
+        description: "Canonical platform-backend commit SHA (40 lowercase hex)"
         required: true
       short_sha:
-        description: 'Short sha (7-char) — gitops commit (sadece summary için)'
+        description: "First seven characters of sha"
         required: true
       digests:
-        description: |
-          OPSIYONEL per-service digest map JSON (workflow_dispatch için):
-          {"auth-service":"sha256:<64hex>","permission-service":"sha256:<64hex>",...}
-
-          Boş bırakırsanız (default): workflow `kustomize/overlays/test/`
-          render edip per-service `@sha256:` digest'leri otomatik çıkarır
-          (PR-FOLLOW-UP-3 2026-06-01: overlay-render auto-extract).
-
-          Operator override istiyorsanız tam JSON map verin (tüm backend
-          runtime servisleri: auth/permission/user/variant/core-data/report/schema/
-          endpoint-admin/audio-gateway/meeting/transcript/audit-consumer/api-gateway).
-
-          Tag-based fallback YASAK (PR #1170/#1171 incident — gitops commit
-          SHA'sı yanlışlıkla image tag gibi yorumlandı).
-        required: false
-        default: ''
+        description: "Full immutable runtime digest map JSON (13 required services)"
+        required: true
 
 permissions:
   contents: read
 
-# #821 (Codex 019e3f2c AGREE): the rollout step pins backend services sequentially.
-# A run cancelled mid-rollout would leave k3d-test on a partial digest set;
-# two concurrent backend rollouts would race the same Deployments. Serialise
-# every run and never cancel in-flight (queue instead).
 concurrency:
-  group: backend-testai-deploy
+  group: testai-backend-promotion
   cancel-in-progress: false
 
-env:
-  K8S_CONTEXT: k3d-test
-  K8S_NAMESPACE: platform-test
-  TESTAI_URL: https://testai.acik.com
-  IMAGE_OWNER: halildeu
-
 jobs:
-  deploy:
-    name: Deploy backend testai (sequential digest pin + verify)
-    runs-on: [self-hosted, staging-sw, testai-deploy]
-    # Codex 019e233b review #1 — Gate 1d adds deterministic budget across the
-    # rolled services (auth + endpoint-admin jvm_warmup_extra 3min each + the
-    # rest 2min). Plus rollout (12 * 180s + endpoint-admin 300s ≈ 41m max) +
-    # Gate 1c (per-service curl) + buffer. 30m timeout was insufficient.
-    timeout-minutes: 60
-
+  promote:
+    name: Open or update test overlay PR
     if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
-
-    # #827 PR-B — expose the rolled-out digests + commit refs to the
-    # sync-test-overlay-pr job.
-    outputs:
-      digest_map: ${{ steps.rollout.outputs.digest_map }}
-      sha: ${{ steps.payload.outputs.sha }}
-      short_sha: ${{ steps.payload.outputs.short_sha }}
-
-    steps:
-      - name: Resolve dispatch payload
-        id: payload
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SHA="${{ inputs.sha }}"
-            SHORT_SHA="${{ inputs.short_sha }}"
-          else
-            SHA="${{ github.event.client_payload.sha }}"
-            SHORT_SHA="${{ github.event.client_payload.short_sha }}"
-          fi
-
-          if [ -z "$SHA" ] || [ -z "$SHORT_SHA" ]; then
-            echo "::error::Missing payload (sha/short_sha)"
-            exit 1
-          fi
-
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-
-          {
-            echo "## Backend deploy testai — payload"
-            echo "- sha: \`${SHA}\`"
-            echo "- short_sha: \`${SHORT_SHA}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      # iter-49 hotfix: skopeo bypass — runner GHCR pull credential yok
-      # (skopeo unauthorized canli kanit). Yerine kubectl set image TAG
-      # ile yapilir; k3d cluster image pull (kubelet credential) zaten
-      # configured. Pod imageID rollout sonrasi AUTHORITATIVE digest olur
-      # (containerd resolved tag→digest). D30 immutable artifact garanti
-      # kirilmaz: ayni tag iki farkli image'a isaret etmez.
-      #
-      # Codex S2 — sequential rollout, api-gateway EN SON.
-      # iter-49 B.3 hardening: digest-pin mode + tag-based fallback
-      # (backward-compat). client_payload.digests JSON map varsa
-      # @sha256:<digest> direct pin (D30 immutable cutover-ready);
-      # yoksa tag-based set image + pod imageID verification fallback
-      # (skopeo bypass continue, mevcut davranış).
-      #
-      # Sprint "Prod post-cutover compliance" PR-1: digest-pin mode
-      # assertion artık scripts/deploy/verify-pod-digest.sh helper'ını
-      # kullanır (multi-replica strict mode ortak helper).
-      - name: Checkout (for verify-pod-digest helper + overlay auto-extract)
-        uses: actions/checkout@v6
-
-      # 2026-06-01 PR-FOLLOW-UP-3 (Codex 019e82db AGREE D — tam B kısmı):
-      # workflow_dispatch'te operator'a JSON map yazdırmak yerine workflow
-      # gitops repo'yu (already checked out) kustomize render edip
-      # per-service digest'leri otomatik çıkarır. Bu adım sadece
-      # workflow_dispatch + inputs.digests boş olduğunda çalışır.
-      - name: Auto-extract digests from test overlay (workflow_dispatch fallback)
-        id: auto-extract
-        if: github.event_name == 'workflow_dispatch' && inputs.digests == ''
-        run: |
-          set -euo pipefail
-          DIGESTS_JSON=$(kubectl kustomize kustomize/overlays/test \
-            | grep -oE 'platform-backend-[a-z-]+(:[^[:space:]@]+)?@sha256:[a-f0-9]{64}' \
-            | sort -u \
-            | jq -Rn '[inputs | capture("platform-backend-(?<svc>[a-z-]+)(?::[^@]+)?@(?<dg>sha256:[a-f0-9]{64})") | {key:.svc, value:.dg}] | from_entries')
-
-          # Validation: digests JSON must be a non-empty object
-          if ! echo "${DIGESTS_JSON}" | jq -e 'type == "object" and length > 0' >/dev/null 2>&1; then
-            echo "::error::auto-extract produced empty/invalid digest map. Overlay render output:"
-            kubectl kustomize kustomize/overlays/test | grep -oE 'platform-backend-[a-z-]+(:[^[:space:]@]+)?@sha256:[a-f0-9]{64}' | head -20
-            exit 1
-          fi
-
-          # Required services check (Codex D fail-closed semantic)
-          REQUIRED_SVCS="auth-service permission-service user-service variant-service core-data-service report-service schema-service endpoint-admin-service audio-gateway-service meeting-service transcript-service audit-event-consumer-service api-gateway"
-          for svc in $REQUIRED_SVCS; do
-            if [ -z "$(echo "${DIGESTS_JSON}" | jq -r --arg s "$svc" '.[$s] // empty')" ]; then
-              echo "::error::auto-extract missing digest for ${svc} (overlay'de pin yok)"
-              exit 1
-            fi
-          done
-
-          {
-            echo "auto_extracted_digests<<EOF"
-            echo "${DIGESTS_JSON}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "✓ Auto-extracted $(echo "${DIGESTS_JSON}" | jq 'length') digests from kustomize/overlays/test"
-          echo "${DIGESTS_JSON}" | jq
-
-      - name: Sequential kubectl set image (digest-pin only — tag-fallback REMOVED)
-        id: rollout
-        env:
-          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-          # 2026-06-01 PR-FOLLOW-UP-2 + PR-FOLLOW-UP-3 (Codex 019e82db AGREE D):
-          # Source priority:
-          #   1. repository_dispatch → client_payload.digests (backend CI dispatch)
-          #   2. workflow_dispatch + inputs.digests verilirse → operator override
-          #   3. workflow_dispatch + inputs.digests boş → auto-extract step'inden
-          # Tag-based fallback fail-closed YASAK.
-          DIGESTS_JSON: >-
-            ${{ github.event_name == 'workflow_dispatch'
-              && (inputs.digests != '' && inputs.digests || steps.auto-extract.outputs.auto_extracted_digests)
-              || toJSON(github.event.client_payload.digests) }}
-        run: |
-          set -euo pipefail
-          # Codex S3: api-gateway en sonda.
-          # Format: digest-key|deployment|container|selector|image-suffix.
-          # audio-gateway-service is the GHCR/digest key, while Kubernetes
-          # Deployment/container/selector are intentionally audio-gateway.
-          SERVICE_SPECS=(
-            "auth-service|auth-service|auth-service|auth-service|auth-service"
-            "permission-service|permission-service|permission-service|permission-service|permission-service"
-            "user-service|user-service|user-service|user-service|user-service"
-            "variant-service|variant-service|variant-service|variant-service|variant-service"
-            "core-data-service|core-data-service|core-data-service|core-data-service|core-data-service"
-            "report-service|report-service|report-service|report-service|report-service"
-            "schema-service|schema-service|schema-service|schema-service|schema-service"
-            "endpoint-admin-service|endpoint-admin-service|endpoint-admin-service|endpoint-admin-service|endpoint-admin-service"
-            "audio-gateway-service|audio-gateway|audio-gateway|audio-gateway|audio-gateway-service"
-            "meeting-service|meeting-service|meeting-service|meeting-service|meeting-service"
-            "transcript-service|transcript-service|transcript-service|transcript-service|transcript-service"
-            "audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service"
-            "api-gateway|api-gateway|api-gateway|api-gateway|api-gateway"
-          )
-
-          # Digest-pin mode detect: dispatch payload digests map?
-          # toJSON(null) → "null"; geçerli JSON object → "{...}"
-          # iter-49 B.3 follow-up (run 25185749414 ölçümü): backend
-          # ci-image-push.yml `gh api -F client_payload[digests]=<json>`
-          # syntax'i ile gönderildiğinde GitHub webhook payload'da
-          # `digests` alanı STRING (escaped JSON) olarak gelir;
-          # toJSON sonrası "{\\\"svc\\\":\\\"...\\\"}". Bu yüzden
-          # 1. raw type check (object form, native nested case)
-          # 2. string→fromjson normalize (string form, gh api -F case)
-          # iki path'i de destekle.
-          #
-          # Codex 019de00f PARTIAL #2: payload'da digests ALANI VARSA
-          # (null değil) parse fail = hard fail (silent tag fallback'e
-          # düşme). Field yoksa (legacy dispatcher) tag fallback OK.
-          # Bu, prod cutover öncesi strict mode için temel: payload
-          # niyetle digest gönderdi ise, parse hatası → fail-closed.
-          # 2026-06-01 PR-FOLLOW-UP-2: tag-based fallback fail-closed
-          # kaldırıldı. Digests payload yoksa veya geçersizse hard fail.
-          # PR #1170/#1171 incident sebebiyle (gitops commit SHA'sı
-          # workflow_dispatch'te image tag gibi yorumlanıp auth-service'i
-          # ImagePullBackOff'a düşürmüştü).
-          if [ -z "${DIGESTS_JSON:-}" ] || [ "${DIGESTS_JSON}" = "null" ]; then
-            echo "::error::digests payload absent. workflow_dispatch'te 'digests' input zorunlu (per-service sha256 map JSON); repository_dispatch'te client_payload.digests dispatcher tarafından gönderilmeli."
-            echo "  raw DIGESTS_JSON: '${DIGESTS_JSON:-}'"
-            exit 1
-          fi
-
-          DIGESTS_PARSED=""
-          # Step 1: try direct object parse
-          if echo "${DIGESTS_JSON}" | jq -e 'type == "object"' >/dev/null 2>&1; then
-            DIGESTS_PARSED="${DIGESTS_JSON}"
-          # Step 2: try string→fromjson normalize (workflow_dispatch input ve
-          # gh api -F syntax'i her ikisi de stringified JSON üretir).
-          elif echo "${DIGESTS_JSON}" | jq -e 'type == "string"' >/dev/null 2>&1; then
-            CANDIDATE=$(echo "${DIGESTS_JSON}" | jq -r 'fromjson? // empty')
-            if [ -n "${CANDIDATE}" ] && echo "${CANDIDATE}" | jq -e 'type == "object"' >/dev/null 2>&1; then
-              DIGESTS_PARSED="${CANDIDATE}"
-            fi
-          fi
-          if [ -z "${DIGESTS_PARSED}" ]; then
-            echo "::error::digests present but unparseable (not object, not stringified-object). Refusing silent tag fallback."
-            echo "  raw: ${DIGESTS_JSON}"
-            exit 1
-          fi
-          if [ "$(echo "${DIGESTS_PARSED}" | jq 'length')" -eq 0 ]; then
-            echo "::error::digests is empty object — dispatcher/operator meant to send digests but produced none."
-            exit 1
-          fi
-          echo "✓ Digest-pin mode active ($(echo "${DIGESTS_PARSED}" | jq 'length') services in payload)"
-
-          # Override DIGESTS_JSON with normalized (object-form) for downstream jq
-          DIGESTS_JSON="${DIGESTS_PARSED}"
-
-          # ADR-0023 guard: the test overlay is GitOps-authoritative. Do not
-          # imperatively mutate k3d-test when the payload would drift from the
-          # checked-out desired-state; ArgoCD can otherwise reconcile the slow
-          # rollout back to the old digest before imageID verification (observed
-          # on report-service during #1616 / backend#676).
-          ROLLOUT_SERVICE_KEYS_JSON=$(
-            printf '%s\n' "${SERVICE_SPECS[@]}" \
-              | awk -F'|' '{print $1}' \
-              | jq -R . \
-              | jq -sc .
-          )
-          ROLLOUT_DIGESTS_JSON=$(jq -cn \
-            --argjson digests "${DIGESTS_JSON}" \
-            --argjson services "${ROLLOUT_SERVICE_KEYS_JSON}" \
-            'reduce $services[] as $svc ({}; . + {($svc): ($digests[$svc] // "")})')
-
-          python3 scripts/automation/apply-test-overlay-digests.py \
-            --digest-map "${ROLLOUT_DIGESTS_JSON}" \
-            --kustomization kustomize/overlays/test/kustomization.yaml \
-            --check \
-            --fail-on-change
-
-          {
-            echo "## Sequential rollout (digest-pin)"
-            echo ""
-            echo "| Service | Pod imageID (containerd-resolved digest) |"
-            echo "|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          # #827 PR-B: accumulate the {service: digest} map for the
-          # sync-test-overlay-pr job (emitted as a step output after the loop).
-          DIGEST_MAP_JSON="{}"
-
-          for spec in "${SERVICE_SPECS[@]}"; do
-            IFS='|' read -r svc deployment container selector image_suffix <<< "${spec}"
-            # Direct digest pin only (tag-based fallback REMOVED 2026-06-01
-            # PR-FOLLOW-UP-2). Codex 019de00f PARTIAL #2: regex-strict format
-            # ^sha256:[a-f0-9]{64}$ — sadece prefix değil tam doğrulama.
-            DIGEST=$(echo "${ROLLOUT_DIGESTS_JSON}" | jq -r --arg s "${svc}" '.[$s] // empty')
-            if [ -z "${DIGEST}" ]; then
-              echo "::error::${svc} digest missing from payload"
-              exit 1
-            fi
-            if ! [[ "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-              echo "::error::${svc} digest format invalid (expected ^sha256:[a-f0-9]{64}$): ${DIGEST}"
-              exit 1
-            fi
-            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${image_suffix}@${DIGEST}"
-
-            echo ""
-            echo "==============================================="
-            echo "Rolling out: ${svc} -> deployment/${deployment} container/${container}"
-            echo "Image: ${IMAGE}"
-            echo "==============================================="
-
-            kubectl --context="${K8S_CONTEXT}" set image \
-              "deployment/${deployment}" \
-              "${container}=${IMAGE}" \
-              -n "${K8S_NAMESPACE}"
-
-            # Per-service rollout-status budget. Default 180s; endpoint-admin-service
-            # gets 300s as a cold-boot safety margin: the #754-only swap adds NO new
-            # migration (V67..V74 incl. V74 endpoint_tpm_device_binding are already
-            # applied on the running base, commit eed9027), but the first boot after
-            # the re-pin still runs Hibernate ddl-auto=validate over the full
-            # endpoint_admin schema, which can exceed 180s cold.
-            ROLLOUT_TIMEOUT="180s"
-            if [ "${svc}" = "endpoint-admin-service" ]; then
-              ROLLOUT_TIMEOUT="300s"
-            fi
-            kubectl --context="${K8S_CONTEXT}" rollout status \
-              "deployment/${deployment}" \
-              -n "${K8S_NAMESPACE}" \
-              --timeout="${ROLLOUT_TIMEOUT}"
-
-            # Digest-pin verify: shared helper (multi-replica strict mode).
-            # Tüm non-terminating Running pod'lar expected digest ile
-            # eşleşmeli. Tek pod (testai replicas=1) için trivially geçer;
-            # prod replicas=2 için her iki pod doğrulanır.
-            ./scripts/deploy/verify-pod-digest.sh \
-              --context "${K8S_CONTEXT}" \
-              --namespace "${K8S_NAMESPACE}" \
-              --selector "app.kubernetes.io/name=${selector}" \
-              --expected-digest "${DIGEST}"
-            NORMALIZED="${DIGEST}"
-
-            echo "| ${svc} | \`${NORMALIZED}\` |" >> "$GITHUB_STEP_SUMMARY"
-
-            # #827 PR-B: record this service's resolved digest in the map.
-            DIGEST_MAP_JSON=$(jq -cn \
-              --argjson m "${DIGEST_MAP_JSON}" \
-              --arg s "${svc}" \
-              --arg d "${NORMALIZED}" \
-              '$m + {($s): $d}')
-          done
-
-          # #827 PR-B: expose the full {service: digest} map to the
-          # sync-test-overlay-pr job. Reached only after all services rolled
-          # out + verified — a failed run exits earlier, so the map (and the
-          # auto-PR) is never emitted for a partial rollout.
-          echo "digest_map=${DIGEST_MAP_JSON}" >> "$GITHUB_OUTPUT"
-          echo "✓ test-overlay digest map: ${DIGEST_MAP_JSON}"
-
-      # Gate 1b: api-gateway public edge chain health (Codex S5 primary blocking)
-      #
-      # iter-49 fix (run 25184239631): /actuator/health public exposure
-      # PROTECTED via JWT (return 401), prod security best-practice
-      # (info disclosure block). Liveness check management port'tan (Gate 1c).
-      #
-      # Bu gate edge → host nginx → k3d ingress → api-gateway POD chain'i
-      # doğrular. Geçerli sinyal:
-      #   - 200/401/403 → gateway ALIVE (request gateway pod'una ulaştı,
-      #     auth filter / route filter çalıştı)
-      #   - 502/503/504/000 → chain BROKEN (gateway pod down, ingress
-      #     misconfig, network split)
-      # 401 specifically iter-49 A.1 production fix (BadJwtException) ile
-      # pozitif sinyal: gateway JWT filter alive + audz chain reachable.
-      - name: Gate 1b — api-gateway public edge chain alive
-        run: |
-          set -euo pipefail
-          # /api/users/all → forces gateway routing (downstream user-service)
-          # + auth filter trigger; 401 unauthenticated = healthy edge chain
-          STATUS=$(curl -sko /dev/null -w '%{http_code}' "${TESTAI_URL}/api/users/all")
-          case "${STATUS}" in
-            200|401|403)
-              echo "✓ api-gateway edge chain alive (HTTP ${STATUS})"
-              ;;
-            *)
-              echo "::error::api-gateway edge chain BROKEN — /api/users/all returned ${STATUS} (expected 200/401/403)"
-              exit 1
-              ;;
-          esac
-
-      # Gate 1c: service in-cluster /actuator/health/readiness 200
-      # Codex S4: management port 8081, readiness sub-path
-      - name: Gate 1c — per-service in-cluster readiness
-        run: |
-          set -euo pipefail
-          SERVICES=(
-            "auth-service"
-            "permission-service"
-            "user-service"
-            "variant-service"
-            "core-data-service"
-            "report-service"
-            "schema-service"
-            "endpoint-admin-service"
-            "audio-gateway"
-            "meeting-service"
-            "transcript-service"
-            "audit-event-consumer-service"
-            "api-gateway"
-          )
-          FAILED=0
-          for svc in "${SERVICES[@]}"; do
-            # Codex 019de00f PARTIAL #1: items[0] race fix (Gate 1c).
-            # Aynı pattern rollout step'inde uygulandı; readiness
-            # gate'inde de tutarlı non-terminating + en yeni pod seçimi.
-            POD=$(kubectl --context="${K8S_CONTEXT}" get pod \
-              -n "${K8S_NAMESPACE}" \
-              -l "app.kubernetes.io/name=${svc}" \
-              --field-selector=status.phase=Running \
-              -o json \
-              | jq -r '.items
-                  | map(select(.metadata.deletionTimestamp == null))
-                  | sort_by(.metadata.creationTimestamp)
-                  | last
-                  | .metadata.name // empty')
-            if [ -z "${POD}" ]; then
-              echo "::warning::${svc} no live pod found for readiness check"
-              FAILED=$((FAILED + 1))
-              continue
-            fi
-            STATUS=$(kubectl --context="${K8S_CONTEXT}" exec "${POD}" \
-              -n "${K8S_NAMESPACE}" -- \
-              curl -sko /dev/null -w '%{http_code}' \
-              http://localhost:8081/actuator/health/readiness 2>/dev/null || echo "000")
-            if [ "${STATUS}" = "200" ]; then
-              echo "✓ ${svc} readiness 200"
-            else
-              echo "::warning::${svc} readiness returned ${STATUS}"
-              FAILED=$((FAILED + 1))
-            fi
-          done
-          if [ ${FAILED} -gt 0 ]; then
-            echo "::error::${FAILED} service(s) failed readiness probe"
-            exit 1
-          fi
-
-      # Gate 1d — Pod stability window (Codex 019e2319 iter-3 AGREE — PR-2)
-      #
-      # Runs AFTER Gate 1c (immediate readiness) and asserts the freshly
-      # rolled Deployments stay stable for a catalog-driven window (2 min
-      # default, 3 min for jvm_warmup_extra services like auth-service /
-      # endpoint-admin-service). Closes the bug class where rollout
-      # completes + Gate 1c sees readiness 200, then the new pod crashes
-      # 30-60 s later — the endpoint-admin /healthz/* probe drift
-      # fingerprint that caused 16h silent CrashLoopBackOff on 2026-05-13.
-      - name: Gate 1d — Pod stability window
-        run: |
-          set -euo pipefail
-          SERVICES=(
-            "auth-service"
-            "permission-service"
-            "user-service"
-            "variant-service"
-            "core-data-service"
-            "report-service"
-            "schema-service"
-            "endpoint-admin-service"
-            "audio-gateway"
-            "meeting-service"
-            "transcript-service"
-            "audit-event-consumer-service"
-            "api-gateway"
-          )
-          for svc in "${SERVICES[@]}"; do
-            echo ""
-            echo "==============================================="
-            echo "Stability window: ${svc}"
-            echo "==============================================="
-            ./scripts/deploy/gate-stability-window.sh \
-              --service "${svc}" \
-              --context "${K8S_CONTEXT}" \
-              --namespace "${K8S_NAMESPACE}" \
-              --catalog docs/operations/services.yaml
-          done
-
-      # Gate 2 — opt-in JWT auth flow (warn-only if persona yok)
-      - name: Gate 2 — JWT auth flow smoke (opt-in)
-        env:
-          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
-          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SMOKE_AUTH_USERNAME:-}" ] || [ -z "${SMOKE_AUTH_PASSWORD:-}" ]; then
-            echo "::warning::Gate 2 (JWT auth flow) skipped — SMOKE_AUTH_* secrets yok"
-            exit 0
-          fi
-          # Codex S5: persona/secret hazır olunca blocking'e yükselt.
-          # Şimdilik basic chain: token al + /api/users/all 401 değil 200
-          # (auth + audz + downstream forward zinciri test eder)
-          TOKEN=$(curl -sk -X POST \
-            "${TESTAI_URL}/realms/platform-test/protocol/openid-connect/token" \
-            -d "grant_type=password" \
-            -d "client_id=frontend" \
-            -d "username=${SMOKE_AUTH_USERNAME}" \
-            -d "password=${SMOKE_AUTH_PASSWORD}" | jq -r .access_token)
-          if [ -z "${TOKEN}" ] || [ "${TOKEN}" = "null" ]; then
-            echo "::error::Gate 2 token fetch failed"
-            exit 1
-          fi
-          STATUS=$(curl -sko /dev/null -w '%{http_code}' \
-            -H "Authorization: Bearer ${TOKEN}" \
-            "${TESTAI_URL}/api/users/all?page=1&pageSize=1")
-          if [ "${STATUS}" != "200" ]; then
-            echo "::error::Gate 2 /api/users/all returned ${STATUS} (expected 200)"
-            exit 1
-          fi
-          echo "✓ Gate 2 JWT auth flow PASS"
-
-      - name: Summary
-        if: always()
-        env:
-          SHA: ${{ steps.payload.outputs.sha }}
-          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-        run: |
-          {
-            echo ""
-            echo "## Backend deploy verify chain"
-            echo ""
-            echo "- Sequential rollout (13 services): ✓"
-            echo "- Gate 1a (per-service pod digest): ✓"
-            echo "- Gate 1b (api-gateway public health): ✓"
-            echo "- Gate 1c (in-cluster readiness): ✓"
-            echo "- Gate 1d (post-rollout stability window 2-3 min): ✓"
-            echo "- Gate 2 (JWT auth flow): ${{ secrets.SMOKE_AUTH_USERNAME && '✓' || '⊘ skipped (no creds)' }}"
-            echo ""
-            echo "## Manual workflow_dispatch retry"
-            echo ""
-            echo "ZORUNLU: digests JSON map (operator olarak per-service sha256)."
-            echo "Tag-based fallback YASAK (PR-FOLLOW-UP-2 2026-06-01)."
-            echo ""
-            echo 'Overlay-render ile digests JSON üretmek için (gitops repo root):'
-            echo ""
-            echo '```bash'
-            echo "DIGESTS_JSON=\$(kubectl kustomize kustomize/overlays/test \\"
-            echo "  | grep -oE 'platform-backend-[a-z-]+(:[^[:space:]@]+)?@sha256:[a-f0-9]{64}' \\"
-            echo "  | sort -u \\"
-            echo "  | jq -Rn '[inputs | capture(\"platform-backend-(?<svc>[a-z-]+)(?::[^@]+)?@(?<dg>sha256:[a-f0-9]{64})\") | {key:.svc, value:.dg}] | from_entries')"
-            echo ""
-            echo "# (Tek satırlık alternatif: awk + paste -sd ',' - + sed wrap)"
-            echo "# DIGESTS_JSON=\$(... | awk -F'platform-backend-|@' '{printf \"\\\"%s\\\":\\\"%s\\\",\", \$2, \$3}' \\"
-            echo "#   | sed 's/,\$//' | sed 's/^/{/;s/\$/}/')"
-            echo ""
-            echo "gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \\"
-            echo "  -f sha=${SHA} \\"
-            echo "  -f short_sha=${SHORT_SHA} \\"
-            echo "  -f digests=\"\$DIGESTS_JSON\""
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # #827 PR-B — test-overlay digest sync
-  #
-  # After a green rollout, open/update the auto-test-overlay/backend-testai PR
-  # that re-pins kustomize/overlays/test/kustomization.yaml's backend digest:
-  # lines to what was just deployed — so the recorded desired-state never
-  # silently drifts from the running cluster.
-  #
-  # The PR is opened with a GitHub App installation token (NOT GITHUB_TOKEN):
-  # a GITHUB_TOKEN-opened PR does not trigger the pull_request workflows the
-  # required cross-ai-audit check needs. The PR satisfies the #827 automation-PR
-  # governance contract (scripts/ci/pr-cross-ai-audit.mjs auditAutomation) via
-  # the auto-test-overlay/ branch prefix + the platform-automation[bot] App
-  # identity + the ## Cross-AI attestation block in the body.
-  #
-  # Operator dependency — until the AUTOMATION_APP_* repo secrets exist this
-  # job graceful-skips (source-ready, operator-disabled). Setup runbook:
-  # docs/operations/RUNBOOKS/RB-automation-overlay-sync.md
-  # ───────────────────────────────────────────────────────────────────────────
-  sync-test-overlay-pr:
-    name: Sync test-overlay digests (auto-PR)
-    needs: deploy
-    if: >-
-      needs.deploy.result == 'success' &&
-      needs.deploy.outputs.digest_map != '' &&
-      needs.deploy.outputs.digest_map != '{}'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
-    # #827 PR-B — per-job write scope (top-level workflow stays contents: read).
-    # The git push / PR create use the App installation token; these
-    # GITHUB_TOKEN scopes are belt-and-suspenders.
     permissions:
       contents: write
       pull-requests: write
 
     steps:
-      # secrets.* is unavailable in job/step `if:` — pass it via `env:` and
-      # branch in the script (Codex 019e4048 Q3). Skip is explicit, never
-      # silent: a ::notice:: + job summary records the operator-disabled state.
-      - name: Preflight — automation App credentials present?
-        id: preflight
+      - name: Checkout promotion contract
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Resolve and validate immutable full-map payload
+        id: payload
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_SHORT_SHA: ${{ inputs.short_sha }}
+          INPUT_DIGESTS: ${{ inputs.digests }}
+          DISPATCH_SHA: ${{ github.event.client_payload.sha }}
+          DISPATCH_SHORT_SHA: ${{ github.event.client_payload.short_sha }}
+          DISPATCH_DIGESTS: ${{ toJSON(github.event.client_payload.digests) }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            SHA="$INPUT_SHA"
+            SHORT_SHA="$INPUT_SHORT_SHA"
+            RAW_DIGESTS="$INPUT_DIGESTS"
+          else
+            SHA="$DISPATCH_SHA"
+            SHORT_SHA="$DISPATCH_SHORT_SHA"
+            RAW_DIGESTS="$DISPATCH_DIGESTS"
+          fi
+
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "::error::sha must be 40 lowercase hex"; exit 1;
+          }
+          [[ "$SHORT_SHA" =~ ^[a-f0-9]{7}$ && "$SHORT_SHA" == "${SHA:0:7}" ]] || {
+            echo "::error::short_sha must equal sha[0:7]"; exit 1;
+          }
+
+          DIGEST_MAP=$(printf '%s' "$RAW_DIGESTS" \
+            | python3 scripts/automation/backend-testai-digest-contract.py normalize)
+          [[ -n "$DIGEST_MAP" && "$DIGEST_MAP" != "{}" ]] || {
+            echo "::error::normalized backend digest map is empty"; exit 1;
+          }
+
+          {
+            echo "sha=$SHA"
+            echo "short_sha=$SHORT_SHA"
+            echo "digest_map=$DIGEST_MAP"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require platform-automation GitHub App credentials
         env:
           APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          # BOTH secrets required — checking only APP_ID would let a half-seeded
-          # config (ID present, key missing) fail RED at create-github-app-token
-          # instead of green-skipping (Codex 019e407c P2).
-          if [ -n "${APP_ID:-}" ] && [ -n "${APP_PRIVATE_KEY:-}" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "✓ AUTOMATION_APP_ID + AUTOMATION_APP_PRIVATE_KEY present — test-overlay sync active"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=test-overlay-sync inactive::AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets absent or incomplete — the test-overlay digest sync is source-ready but operator-disabled. Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md"
-            {
-              echo "## test-overlay-sync — inactive (operator-disabled)"
-              echo ""
-              echo "AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets are absent or incomplete."
-              echo "The sync job is source-ready; see docs/operations/RUNBOOKS/RB-automation-overlay-sync.md."
-            } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -z "${APP_ID:-}" || -z "${APP_PRIVATE_KEY:-}" ]]; then
+            echo "::error title=desired-state promotion disabled::AUTOMATION_APP_ID and AUTOMATION_APP_PRIVATE_KEY are required."
+            echo "No cluster mutation was attempted. See docs/operations/RUNBOOKS/RB-automation-overlay-sync.md and #2384."
+            exit 1
           fi
 
-      - name: Generate GitHub App token
+      - name: Generate least-privilege GitHub App token
         id: app-token
-        if: steps.preflight.outputs.enabled == 'true'
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ secrets.AUTOMATION_APP_ID }}
           private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
 
-      - name: Checkout (App-token credentials)
-        if: steps.preflight.outputs.enabled == 'true'
-        uses: actions/checkout@v6
+      - name: Checkout with App identity
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
-      - name: Sync test overlay + open/update PR
-        if: steps.preflight.outputs.enabled == 'true'
+      - name: Open or update immutable backend promotion PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          DIGEST_MAP: ${{ needs.deploy.outputs.digest_map }}
-          SHA: ${{ needs.deploy.outputs.sha }}
-          SHORT_SHA: ${{ needs.deploy.outputs.short_sha }}
+          DIGEST_MAP: ${{ steps.payload.outputs.digest_map }}
+          SHA: ${{ steps.payload.outputs.sha }}
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
           RUN_ID: ${{ github.run_id }}
           GITHUB_REPO: ${{ github.repository }}
         run: bash scripts/automation/sync-test-overlay.sh
+
+      - name: Promotion boundary summary
+        if: always()
+        env:
+          SHA: ${{ steps.payload.outputs.sha }}
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+          DIGEST_MAP: ${{ steps.payload.outputs.digest_map }}
+        run: |
+          {
+            echo "## testai backend desired-state promotion"
+            echo ""
+            echo "- source: \`${SHA:-unresolved}\`"
+            echo "- source tag family: \`sha-${SHORT_SHA:-unresolved}\`"
+            echo "- required runtime digests: \`$(jq 'length' <<< "${DIGEST_MAP:-{}}" 2>/dev/null || echo unresolved)\`"
+            echo "- direct Kubernetes workload mutation: **none**"
+            echo "- runtime reconciliation: after normal PR review + merge"
+            echo "- targeted single-service source builds: build-only; no dispatch"
+          } >> "$GITHUB_STEP_SUMMARY"
