@@ -484,9 +484,18 @@ REMOTE_BRIDGE_KUBECTL_MODE=local SSH_TARGET=local \
 The local-kubectl mode is intended for execution on `staging-sw` or the
 `[self-hosted, staging-sw, testai-deploy]` runner. The canonical workflow is
 `.github/workflows/faz22-6-live-audit.yml`; it is read-only, uploads the audit
-output, and fails if `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl` is not
-present. Because the gate repositories are public, the workflow uses the
-short-lived read-only `github.token` rather than a long-lived repository secret.
+output, and explicitly requires every machine-contract gate plus
+`F22_6_COMPLETION=pass`. Because the gate repositories are public, the workflow
+uses the short-lived read-only `github.token` rather than a long-lived
+repository secret.
+
+GitHub reads use `scripts/faz22-remote-ops/lib-github-read-api.sh`. Developer
+shells can use `gh`; minimal self-hosted runners use `curl+jq`, selected with
+`GITHUB_READ_API_BACKEND=curl`. The curl backend pins the GitHub REST API
+version, validates repository/API path inputs, retries bounded transient
+failures, and supplies the token through curl stdin config so it is not exposed
+in process arguments. Installing `gh` manually on the runner is therefore not
+an audit prerequisite.
 
 The audit is intentionally conservative. It prints `F22_6_COMPLETION=blocked`
 while `#548` lacks hardware-attestation acceptance or bounded risk acceptance,

@@ -11,8 +11,11 @@ on:
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
+      - 'scripts/faz22-remote-ops/lib-github-read-api.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_github_read_api.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh'
+      - '.github/workflows/faz22-6-live-audit.yml'
   push:
     branches:
       - main
@@ -25,8 +28,11 @@ on:
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
+      - 'scripts/faz22-remote-ops/lib-github-read-api.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_github_read_api.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh'
+      - '.github/workflows/faz22-6-live-audit.yml'
 
 permissions:
   contents: read
@@ -43,7 +49,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Parse audit scripts and waiver test
         run: |
@@ -53,7 +59,9 @@ jobs:
             scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh \
             scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh \
             scripts/faz22-remote-ops/endpoint-agent-release-policy.sh \
+            scripts/faz22-remote-ops/lib-github-read-api.sh \
             tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh \
+            tests/faz22_remote_ops/test_faz22_6_github_read_api.sh \
             tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh
 
       - name: Run completion release-lineage gate regression test
@@ -67,3 +75,9 @@ jobs:
           set -euo pipefail
           TMPDIR="$RUNNER_TEMP" \
             tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh
+
+      - name: Run portable GitHub read API regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_github_read_api.sh

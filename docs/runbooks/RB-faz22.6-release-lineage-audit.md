@@ -144,6 +144,13 @@ still reconciling; rerun the workflow after the test Application catches up
 instead of using direct `kubectl set image` or other imperative workload
 patches.
 
+The audit does not require a mutable host-level `gh` installation. Shared
+helper `scripts/faz22-remote-ops/lib-github-read-api.sh` selects `gh` for normal
+developer shells or a versioned GitHub REST `curl+jq` backend for minimal
+self-hosted runners. The workflow token is passed to curl through stdin config,
+not a process argument. Set `GITHUB_READ_API_BACKEND=curl` when validating
+runner parity explicitly.
+
 Expected current posture:
 
 ```text

@@ -16,6 +16,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
 source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
 endpoint_agent_release_policy_load "$REPO_ROOT"
+# shellcheck source=scripts/faz22-remote-ops/lib-github-read-api.sh
+source "$SCRIPT_DIR/lib-github-read-api.sh"
 # shellcheck source=scripts/governance/lib-remote-bridge-digest.sh
 source "$REPO_ROOT/scripts/governance/lib-remote-bridge-digest.sh"
 # Single SSOT for the remote-bridge expected digest: the rendered overlay
@@ -191,7 +193,7 @@ issue_json_for_ref() {
     printf '{"_audit_error":"bad-ref-format"}'
     return 1
   fi
-  if ! issue_json="$(gh issue view "$number" -R "$repo_ref" --json state,body,title,url 2>&1)"; then
+  if ! issue_json="$(github_read_issue_json "$repo_ref" "$number" state,body,title,url 2>&1)"; then
     printf '{"_audit_error":%s}' "$(jq -Rn --arg error "$issue_json" '$error')"
     return 1
   fi
@@ -459,7 +461,7 @@ check_release_lineage_waiver() {
     return 1
   fi
 
-  if ! issue_json="$(gh issue view "$number" -R "$repo_ref" --json state,body,title 2>&1)"; then
+  if ! issue_json="$(github_read_issue_json "$repo_ref" "$number" state,body,title 2>&1)"; then
     lineage_print_check 'RELEASE_LINEAGE_WAIVER' 'blocked' "ref=$ref reason=$(printf '%q' "$issue_json")"
     return 1
   fi
@@ -536,21 +538,15 @@ check_release_lineage_waiver() {
   return 0
 }
 
-issue_state() {
-  local repo="$1" number="$2"
-  gh issue view "$number" -R "$repo" --json state --jq .state
-}
-
-issue_title() {
-  local repo="$1" number="$2"
-  gh issue view "$number" -R "$repo" --json title --jq .title
-}
-
 pass_if_state() {
   local label="$1" repo="$2" number="$3" want="$4"
-  local state title
-  state="$(issue_state "$repo" "$number")"
-  title="$(issue_title "$repo" "$number")"
+  local issue_json state title
+  if ! issue_json="$(github_read_issue_json "$repo" "$number" state,body,title 2>&1)"; then
+    printf '%s=blocked expected=%s issue=%s#%s reason=%q\n' "$label" "$want" "$repo" "$number" "$issue_json"
+    return 1
+  fi
+  state="$(printf '%s\n' "$issue_json" | jq -r '.state // ""')"
+  title="$(printf '%s\n' "$issue_json" | jq -r '.title // ""')"
   if [ "$state" = "$want" ]; then
     printf '%s=pass state=%s issue=%s#%s title=%q\n' "$label" "$state" "$repo" "$number" "$title"
     return 0
@@ -1165,11 +1161,16 @@ check_release_lineage_gate() {
 }
 
 main() {
-  need gh
   need grep
   need awk
   need jq
   need curl
+  local github_backend
+  if ! github_read_api_preflight; then
+    printf 'F22_6_AUDIT_ERROR=github-read-api-unavailable backend=%q\n' "$GITHUB_READ_API_BACKEND"
+    exit 2
+  fi
+  github_backend="$(github_read_api_backend)"
   if [ "$REMOTE_BRIDGE_KUBECTL_MODE" = "local" ] || [ "$REMOTE_BRIDGE_KUBECTL_MODE" = "local-kubectl" ] || [ "$SSH_TARGET" = "local" ]; then
     need kubectl
   else
@@ -1181,6 +1182,7 @@ main() {
 
   printf 'F22_6_AUDIT_SCOPE=remote-ops-autonomous-completion\n'
   printf 'F22_6_AUDIT_CONTRACT=docs/runbooks/RB-faz22.6-autonomous-completion-contract.md\n'
+  printf 'F22_6_GITHUB_READ_BACKEND=%s\n' "$github_backend"
 
   pass_if_state 'GATE_22_6_1_OPERATION_CATALOG' "$BACKEND_REPO" 701 CLOSED || blocked=1
   pass_if_state 'GATE_22_6_2_APPROVED_SCRIPT_RUNNER' "$BACKEND_REPO" 702 CLOSED || blocked=1
