@@ -341,10 +341,66 @@ GPU outbox veya Electron viewer kabulünün yerine geçmez.
     done
     ```
 12. Sekiz saatlik sertifika rotation timer sonrası yeni leaf ile kesintisiz istek
-    ve alert-fire drill sonucu kaydedilir. Caddy file trust pool CRL/OCSP
-    tüketmediği için client leaf iptali anlık değildir; sızıntı halinde firewall
-    source block + client CA rollover uygulanır, normal üst sınır 24 saatlik leaf
-    TTL'idir.
+    ve alert-fire drill sonucu kaydedilir (aşağıda §6.1 cert-rotation fire-drill
+    kapısı). Caddy file trust pool CRL/OCSP tüketmediği için client leaf iptali
+    anlık değildir; sızıntı halinde firewall source block + client CA rollover
+    uygulanır, normal üst sınır 24 saatlik leaf TTL'idir.
+
+## 6.1 Cert-rotation fire-drill kabul kapısı (metadata-only)
+
+Server-leaf rotasyonunun canlı kabulü **tek başarılı rotasyon değildir**;
+fail-closed rollback ve alert fire/clear döngüsü de kanıtlanmalıdır (#2321 açık
+residual). Redacted, metadata-only fire-drill evidence zarfı
+`scripts/faz24/verify_meeting_ai_cert_rotation_drill_evidence.py` ile kapıdan
+geçer. Doğrulayıcı Vault/Kubernetes/Caddy/systemd/GitHub state'ini değiştirmez;
+private-listener aktivasyonu, mTLS negatif matris, JWT claim matris, GPU outbox
+drain, Electron ürün yolu veya production readiness'i kanıtlamaz.
+
+```bash
+umask 077
+python3 scripts/faz24/verify_meeting_ai_cert_rotation_drill_evidence.py \
+  /secure/evidence/faz24-meeting-ai-cert-rotation-drill.json \
+  --summary-json /secure/evidence/faz24-meeting-ai-cert-rotation-drill.verify.json
+```
+
+Zarf (`faz24.meetingAiCertRotationDrillEvidence.v1`) D29 katmanlarını ayrı ayrı
+taşımalıdır:
+
+- **Up** — `telemetry`: node-exporter textfile mevcut ve dört rotation gauge'ı
+  (`meeting_ai_gateway_rotation_last_attempt_timestamp_seconds`,
+  `..._rotation_last_success_timestamp_seconds`,
+  `..._rotation_last_run_success`,
+  `..._certificate_not_after_timestamp_seconds`) yayınlanıyor;
+  başarılı rotasyon sonrası `lastRunSuccessValue=1`, attempt/success ilerledi.
+- **Functional** — `successRotation`: `pki_meeting_ai_server/issue/staging-gateway`
+  yeni 24h leaf üretti (fingerprint önceki leaf'ten farklı), `tls/current`
+  pointer'ı atomik takas edildi (`issued-<UTC>-<hex8>`), gateway reload oldu,
+  `notAfterAdvanced=true` ve yeni leaf'le client-auth `/healthz` HTTP 200
+  kesintisiz döndü; aktif + iki önceki sürüm korundu.
+- **Secured** — `failureDrill` + `alertDrill`: induced reload failure pointer'ı
+  önceki leaf'e geri aldı, servis kesintisiz önceki cert'i sunmaya devam etti,
+  `rotation_last_run_success=0` oldu, yeni sürüm dizini temizlendi,
+  `MeetingAIGatewayCertificateRotationFailed` firing oldu ve recovery sonrası
+  clear oldu; `postDrillRecovered=true`.
+
+Doğrulayıcı; PEM/private key/issuing CA/Vault token/JWT/URL benzeri değerleri ve
+`rootTokenUsed=true`, `productionReady=true` gibi aşırı iddiaları fail-closed
+reddeder. Zarfın canonical şekli
+`tests/faz24/test_verify_meeting_ai_cert_rotation_drill_evidence.py`
+içindeki geçerli fixture'dır ve CI'da (`ci.yml` — "Faz 24 Meeting-AI cert
+rotation drill evidence verifier") her PR'da çalıştırılır. Bu kapının PASS'i
+kaynak-taraflı false-acceptance guard'ıdır; canlı operatör drill'ini yürütmek
+(scoped Vault token seed + timer/rotation tetikleme + induced reload failure)
+owner-gated adım olarak ayrı kalır.
+
+Bu kapı Faz 24 readiness-rollup'ında (#1615) `cert_rotation_drill` child gate'i
+olarak zorunludur (`scripts/faz24/verify_faz24_readiness_rollup.py`), yani canlı
+drill kabulü olmadan rollup PASS üretemez. No-mutation kanıt ingest yolu
+`.github/workflows/faz24-cert-rotation-drill-evidence-ingest.yml`
+(redacted base64 zarf → verifier → secret-scan → artifact); diğer Faz 24 ingest
+kapılarıyla aynı desendedir. Tüm `tests/faz24` verifier/ingest/rollup testleri
+artık her faz24-dokunan PR'da `.github/workflows/gate-faz24-verifier-tests.yml`
+ile koşar.
 
 ## 7. Rollback
 
