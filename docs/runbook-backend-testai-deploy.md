@@ -94,6 +94,17 @@ The verifier checks `origin/main` before accepting convergence and again before
 and after runtime evidence. If a newer relevant merge supersedes the requested
 revision, the current run fails closed and the newer queued run owns evidence.
 
+If the Application reaches the exact revision and aggregate `Healthy` state but
+remains `OutOfSync` while no operation is active, the verifier requires at least
+60 seconds and three consecutive drift observations before it fails in
+`argocd-resource-drift`. Hard refresh is bounded to once per minute; intervening
+polls read normal controller status. The evidence report
+contains only the affected resource group/kind/namespace/name plus sync/health
+status. Secret and ConfigMap names are redacted. Raw manifests and `argocd app
+diff` output are deliberately excluded so secret-bearing values cannot enter
+Actions logs or artifacts. Repair the listed resource through desired state; do
+not weaken the whole-Application gate before the drift is classified.
+
 The verifier bootstraps exact ArgoCD CLI `v2.13.1` through an OS/architecture
 allowlist and pinned official SHA-256. A global runner installation is not
 trusted. CLI use is read-only (`app get --hard-refresh -o json`); the workflow
@@ -134,6 +145,13 @@ kubectl --context k3d-prod -n argocd get application platform-test -o yaml
 If a wave resource is unhealthy, repair desired state through a new PR. Do not
 force a different SHA with `argocd app sync --revision`; the Application tracks
 `main` and auto-sync is authoritative.
+
+When the verifier reports `argocd-resource-drift`, inspect the redacted
+`outOfSyncResources` array in `testai-backend-argocd-auto-sync.json`. Use
+read-only, access-controlled cluster inspection for the listed resources to
+classify the exact field. Do not attach raw Secret/ConfigMap manifests or broad
+Application diffs to GitHub. Fix canonical desired state or add only a targeted
+runtime-field ignore allowed by the ArgoCD ignore-difference policy.
 
 ### Runtime digest or readiness fails
 

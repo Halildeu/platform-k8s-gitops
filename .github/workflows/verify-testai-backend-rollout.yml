@@ -145,6 +145,7 @@ jobs:
             echo "- rollout order: test-overlay ArgoCD sync waves (10..22; api-gateway last)"
             echo "- reconciliation owner: ArgoCD auto-sync on merged desired state"
             echo "- verifier mode: read-only exact revision convergence"
+            echo "- drift diagnostics: resource identifiers only; raw manifest diff excluded"
             echo "- direct Kubernetes workload mutation: **none**"
             echo "- acceptance: exact imageID + public edge + readiness + stability"
             echo "- rollback: revert immutable digest PR and reconcile through this same path"
