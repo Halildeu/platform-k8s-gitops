@@ -113,6 +113,9 @@ gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \
 - Operator PR'ı inceler → CI yeşil → normal squash merge.
 - Merge sonrası `verify-testai-backend-rollout.yml`, kota başlığını korumak için
   13 Deployment'ı ArgoCD üzerinden sıralı reconcile eder.
+- Runner'da global CLI kurulumuna güvenilmez; `ensure-argocd-cli.sh` ArgoCD
+  `v2.13.1` binary'sini OS/architecture allowlist'i ve repoya pinli resmi
+  SHA-256 ile doğrular. Doğrulanmamış binary çalıştırılmaz.
 - Final full Application sync revision eşitliğini; post-gate exact pod imageID,
   public edge, readiness ve 2-3 dakikalık stabilite penceresini doğrular.
 
@@ -158,6 +161,7 @@ Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir
 - `scripts/automation/apply-test-overlay-digests.py` — comment-preserving digest rewrite
 - `scripts/automation/backend-testai-digest-contract.py` — full-map normalization + overlay inspection
 - `scripts/deploy/reconcile-testai-backend-sequential.sh` — ArgoCD-only sıralı Deployment sync
+- `scripts/deploy/ensure-argocd-cli.sh` — pinned + SHA-256 verified ArgoCD CLI bootstrap
 - `scripts/deploy/verify-testai-backend-runtime.sh` — exact digest/edge/readiness/stability acceptance
 - `scripts/ci/pr-cross-ai-audit.mjs` — `auditAutomation` + `AUTOMATION_PREFIX_ACTORS`
 - `#827` PR-A (#839) — automation-PR cross-AI exemption kontratı
