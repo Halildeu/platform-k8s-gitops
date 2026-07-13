@@ -808,7 +808,7 @@ assign_capability_role() {
   if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
     "${KCADM[@]}" get "clients/${RESOURCE_CLIENT_UUID}/roles/${CAPABILITY_ROLE}" -r "${KC_REALM}" >/dev/null \
       || die "required-client-role-missing:${RESOURCE_CLIENT_ID}/${CAPABILITY_ROLE}"
-    "${KCADM[@]}" add-roles -r "${KC_REALM}" --uusername "${TEMP_USERNAME}" \
+    "${KCADM[@]}" add-roles -r "${KC_REALM}" --uid "${TEMP_USER_ID}" \
       --cclientid "${RESOURCE_CLIENT_ID}" --rolename "${CAPABILITY_ROLE}" >/dev/null \
       || die "required-client-role-assign-failed:${RESOURCE_CLIENT_ID}/${CAPABILITY_ROLE}"
   else
@@ -883,7 +883,7 @@ create_temp_user() {
 
     "${KCADM[@]}" get "roles/${REQUIRED_ROLE}" -r "${KC_REALM}" >/dev/null \
       || die "required-realm-role-missing:${REQUIRED_ROLE}"
-    "${KCADM[@]}" add-roles -r "${KC_REALM}" --uusername "${TEMP_USERNAME}" --rolename "${REQUIRED_ROLE}" >/dev/null \
+    "${KCADM[@]}" add-roles -r "${KC_REALM}" --uid "${TEMP_USER_ID}" --rolename "${REQUIRED_ROLE}" >/dev/null \
       || die "required-realm-role-assign-failed:${REQUIRED_ROLE}"
   else
     local reset_file="${TMP_DIR}/temp-user-reset-password.json"

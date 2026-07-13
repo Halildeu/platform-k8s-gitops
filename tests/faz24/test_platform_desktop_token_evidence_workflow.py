@@ -38,6 +38,8 @@ def test_runner_contract_restores_and_redacts():
     assert "CAPABILITY_ROLE" in text
     assert "audio_record" in text
     assert "role-mappings/clients/${RESOURCE_CLIENT_UUID}" in text
+    assert 'add-roles -r "${KC_REALM}" --uid "${TEMP_USER_ID}"' in text
+    assert '--uusername "${TEMP_USERNAME}"' not in text
     assert "required-client-role-missing" in text
     assert "CLIENT_ROLE_ASSIGNED" in text
     assert "preflight_existing_user_reconcile" in text
