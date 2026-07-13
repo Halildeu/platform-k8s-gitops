@@ -7,7 +7,9 @@ This runbook reconciles only the `platform-test` Keycloak realm and the
 credentials, sessions, roles, or user identifiers. The controlled access-token
 claims are:
 
-- `org_id` and `tenant_id`: canonical UUID user attributes;
+- `org_id`: the single canonical UUID user attribute;
+- `org_id` and `tenant_id`: token claims emitted from that same `org_id`
+  attribute, preventing duplicate user-state drift;
 - `tenantId` and `companyId`: legacy compatibility attributes;
 - `userId`: module-authorization compatibility attribute.
 
@@ -75,8 +77,9 @@ The run is accepted only when all of the following hold:
 1. Exactly one direct user-attribute mapper emits each controlled claim.
 2. No hardcoded or foreign direct mapper emits a controlled claim.
 3. No assigned default or optional client scope emits a controlled claim.
-4. Existing selected users have `org_id == tenant_id ==` the deterministic
-   company UUID; numeric compatibility attributes remain unchanged.
+4. Existing selected users have `org_id ==` the deterministic company UUID;
+   both `org_id` and `tenant_id` token claims are emitted from that single
+   attribute, and numeric compatibility attributes remain unchanged.
 5. The minted token validator reports all required claims present and
    `tenantAliases.consistent=true` without including claim values.
 6. The temporary user is deleted, direct grants are restored, and token files

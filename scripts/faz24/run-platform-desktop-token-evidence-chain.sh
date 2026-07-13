@@ -397,7 +397,7 @@ capture_client_state() {
           audienceMeetingService: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-audience-mapper" and .config["included.custom.audience"] == "meeting-service" and .config["access.token.claim"] == "true"),
           audienceFrontend: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-audience-mapper" and .config["included.custom.audience"] == "frontend" and .config["access.token.claim"] == "true"),
           tenantIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "tenantId" and .config["claim.name"] == "tenantId" and .config["access.token.claim"] == "true"),
-          tenantIdSnakeClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "tenant_id" and .config["claim.name"] == "tenant_id" and .config["access.token.claim"] == "true"),
+          tenantIdSnakeClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "org_id" and .config["claim.name"] == "tenant_id" and .config["access.token.claim"] == "true"),
           orgIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "org_id" and .config["claim.name"] == "org_id" and .config["access.token.claim"] == "true"),
           companyIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "companyId" and .config["claim.name"] == "companyId" and .config["access.token.claim"] == "true"),
           userIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "userId" and .config["claim.name"] == "userId" and .config["access.token.claim"] == "true"),
@@ -508,11 +508,12 @@ prune_conflicting_controlled_claim_mappers() {
   done < <(jq -r '
     .[]?
     | (.config["claim.name"] // "") as $claim
+    | (if $claim == "tenant_id" then "org_id" else $claim end) as $attribute
     | select((["org_id", "tenant_id", "tenantId", "companyId", "userId"] | index($claim)) != null)
     | select(
         .name != $claim
         or .protocolMapper != "oidc-usermodel-attribute-mapper"
-        or (.config["user.attribute"] // "") != $claim
+        or (.config["user.attribute"] // "") != $attribute
         or (.config["access.token.claim"] // "") != "true"
       )
     | .id // empty
@@ -527,11 +528,12 @@ guard_controlled_mapper_prune_confirmation() {
     [
       .[]?
       | (.config["claim.name"] // "") as $claim
+      | (if $claim == "tenant_id" then "org_id" else $claim end) as $attribute
       | select((["org_id", "tenant_id", "tenantId", "companyId", "userId"] | index($claim)) != null)
       | select(
-          .name != $claim
-          or .protocolMapper != "oidc-usermodel-attribute-mapper"
-          or (.config["user.attribute"] // "") != $claim
+        .name != $claim
+        or .protocolMapper != "oidc-usermodel-attribute-mapper"
+        or (.config["user.attribute"] // "") != $attribute
           or (.config["access.token.claim"] // "") != "true"
         )
     ] | length
@@ -584,11 +586,12 @@ verify_controlled_claim_mapper_contract() {
     | ["org_id", "tenant_id", "tenantId", "companyId", "userId"] as $claims
     | all($claims[];
         . as $claim
+        | (if $claim == "tenant_id" then "org_id" else $claim end) as $attribute
         | ([$mappers[]?
           | select((.config["claim.name"] // "") == $claim)
           | select(.name == $claim)
           | select(.protocolMapper == "oidc-usermodel-attribute-mapper")
-          | select((.config["user.attribute"] // "") == $claim)
+          | select((.config["user.attribute"] // "") == $attribute)
           | select((.config["access.token.claim"] // "") == "true")
         ] | length) == 1)
       and ([$mappers[]?
@@ -620,15 +623,17 @@ write_audience_mapper() {
 
 write_user_attribute_mapper() {
   local claim="$1"
+  local user_attribute="${2:-$claim}"
   local out="${TMP_DIR}/claim-${claim}.json"
   jq -n \
     --arg claim "${claim}" \
+    --arg userAttribute "${user_attribute}" \
     '{
       name: $claim,
       protocol: "openid-connect",
       protocolMapper: "oidc-usermodel-attribute-mapper",
       config: {
-        "user.attribute": $claim,
+        "user.attribute": $userAttribute,
         "claim.name": $claim,
         "jsonType.label": "String",
         "access.token.claim": "true",
@@ -648,7 +653,7 @@ converge_platform_desktop_mappers() {
   upsert_mapper "audience-meeting-service" "$(write_audience_mapper "audience-meeting-service" "meeting-service")"
   upsert_mapper "audience-frontend" "$(write_audience_mapper "audience-frontend" "frontend")"
   upsert_mapper "org_id" "$(write_user_attribute_mapper "org_id")"
-  upsert_mapper "tenant_id" "$(write_user_attribute_mapper "tenant_id")"
+  upsert_mapper "tenant_id" "$(write_user_attribute_mapper "tenant_id" "org_id")"
   upsert_mapper "tenantId" "$(write_user_attribute_mapper "tenantId")"
   upsert_mapper "companyId" "$(write_user_attribute_mapper "companyId")"
   upsert_mapper "userId" "$(write_user_attribute_mapper "userId")"
@@ -772,7 +777,6 @@ reconcile_existing_user_tenant_attributes() {
 
     if jq -e --arg canonical "${CANONICAL_TENANT_ID}" '
       .[0].attributes.org_id == [$canonical]
-      and .[0].attributes.tenant_id == [$canonical]
     ' "${user_file}" >/dev/null; then
       EXISTING_USERS_ALREADY_CORRECT=$((EXISTING_USERS_ALREADY_CORRECT + 1))
       continue
@@ -784,8 +788,7 @@ reconcile_existing_user_tenant_attributes() {
     jq --arg canonical "${CANONICAL_TENANT_ID}" '
       .[0]
       | .attributes = ((.attributes // {}) + {
-          org_id: [$canonical],
-          tenant_id: [$canonical]
+          org_id: [$canonical]
         })
     ' "${user_file}" > "${merged_file}"
     update_existing_user "${user_id}" "${merged_file}"
@@ -795,7 +798,6 @@ reconcile_existing_user_tenant_attributes() {
     jq -e --arg canonical "${CANONICAL_TENANT_ID}" '
       length == 1
       and .[0].attributes.org_id == [$canonical]
-      and .[0].attributes.tenant_id == [$canonical]
     ' "${verify_file}" >/dev/null || die "existing-user-tenant-alias-verify-failed"
     EXISTING_USERS_RECONCILED=$((EXISTING_USERS_RECONCILED + 1))
   done
@@ -850,7 +852,6 @@ create_temp_user() {
         tenantId: [$tenantId],
         companyId: [$companyId],
         userId: [$userId],
-        tenant_id: [$canonicalTenantId],
         company_id: [$companyId],
         org_id: [$canonicalTenantId]
       }
@@ -951,9 +952,9 @@ capture_user_diagnostic() {
           enabled: ($u.enabled // null),
           emailVerified: ($u.emailVerified // null),
           requiredActions: ($u.requiredActions // []),
+          canonicalTenantClaimSource: "org_id",
           attributesPresent: {
             org_id: (($u.attributes.org_id // []) | length > 0),
-            tenant_id: (($u.attributes.tenant_id // []) | length > 0),
             tenantId: (($u.attributes.tenantId // []) | length > 0),
             companyId: (($u.attributes.companyId // []) | length > 0),
             userId: (($u.attributes.userId // []) | length > 0)
@@ -1266,6 +1267,8 @@ write_diagnostic() {
         tokenFileRemoved: $tokenFileRemoved
       },
       tenantAliasReconcile: {
+        canonicalUserAttribute: "org_id",
+        tokenClaims: ["org_id", "tenant_id"],
         requested: ($existingUsersReconciled + $existingUsersAlreadyCorrect),
         reconciled: $existingUsersReconciled,
         alreadyCorrect: $existingUsersAlreadyCorrect,
