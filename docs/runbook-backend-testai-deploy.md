@@ -1,220 +1,169 @@
-# Runbook — backend testai auto-deploy
+# Runbook — backend testai desired-state promotion
 
-> iter-49 cycle close — `repository_dispatch` ile platform-backend image
-> push'undan testai k3d-test cluster'a otomatik 8-service rollout.
+> Canonical flow: immutable full digest map → reviewable test-overlay PR →
+> normal review/CI/merge → ArgoCD auto-sync waves → read-only runtime evidence.
 >
-> **Live verified**: gitops PR #296 + #297 + #294 + #295 + #298 + #299 +
-> #301 + backend PR #54 chain (Codex 019ddf43 + 019de00f cycle close).
+> Authority: ADR-0023. Main `k3d-test` workloads are changed only through
+> `kustomize/overlays/test`; direct `kubectl set image`, `kubectl patch`,
+> `kubectl edit` and workflow-owned resource sync are prohibited.
 
-## Bağlam
+## Scope
 
-`platform-backend` 9 microservice GHCR push (`ci-image-push.yml` matrix).
-Bu workflow + dispatch step tek event halinde gitops repo'ya gönderir,
-gitops deploy workflow digest-pin mode'da sequential rollout yapar.
+`platform-backend` publishes immutable images and dispatches one complete
+13-service digest map. `deploy-backend-testai.yml` validates that contract on a
+GitHub-hosted runner and opens or updates
+`auto-test-overlay/backend-testai`. It has no cluster credentials and performs
+no runtime mutation.
 
-**Codex sertleştirmeleri**:
-- Sequential rollout (paralel ResourceQuota riski)
-- `api-gateway` entry-point EN SON deploy
-- Per-service digest payload (B.3 hardening) → `image@sha256:` direct pin
-- Tag-based fallback backward-compat (legacy dispatcher için)
-- `maxSurge=0/maxUnavailable=1` test overlay'de 8 backend deployment'a
-  uygulanmış (Codex 019dd818 PARTIAL → genelleme PR #294)
-- 4 verify gate (1a digest match + 1b edge chain + 1c readiness + 2 JWT)
-- `endpoint-admin-service` + `discovery-server` ilk cut'tan SKIP
+After normal PR merge, ArgoCD's existing `main` auto-sync applies the desired
+state. Test-only `argocd.argoproj.io/sync-wave` annotations provide quota-aware
+dependency ordering. `verify-testai-backend-rollout.yml` only observes exact
+revision convergence and runs acceptance checks.
 
-## Servis sırası
+Targeted single-service source builds are build-only. They do not dispatch an
+incomplete promotion map.
 
-1. `auth-service`
-2. `permission-service` (Zanzibar hub)
-3. `user-service`
-4. `variant-service`
-5. `core-data-service`
-6. `report-service`
-7. `schema-service`
-8. `api-gateway` (entry-point, en son)
+## Service and wave contract
 
-## Trigger
+| Wave | Digest key | Deployment |
+|---:|---|---|
+| 10 | `auth-service` | `auth-service` |
+| 11 | `permission-service` | `permission-service` |
+| 12 | `user-service` | `user-service` |
+| 13 | `variant-service` | `variant-service` |
+| 14 | `core-data-service` | `core-data-service` |
+| 15 | `report-service` | `report-service` |
+| 16 | `schema-service` | `schema-service` |
+| 17 | `endpoint-admin-service` | `endpoint-admin-service` |
+| 18 | `audio-gateway-service` | `audio-gateway` |
+| 19 | `meeting-service` | `meeting-service` |
+| 20 | `transcript-service` | `transcript-service` |
+| 21 | `audit-event-consumer-service` | `audit-event-consumer-service` |
+| 22 | `api-gateway` | `api-gateway` |
 
-- `repository_dispatch` event_type=`backend-testai-deploy` (platform-backend
-  ci-image-push.yml dispatch job'undan otomatik)
-- `workflow_dispatch` (manuel acil-fix re-trigger)
+Unannotated infrastructure remains at ArgoCD's default wave `0`. ArgoCD waits
+for the current wave to become healthy before proceeding. `api-gateway` is last
+so the public entry point changes only after its dependencies.
 
-### Payload (B.3 sonrası)
+The test overlay also carries `maxSurge=0/maxUnavailable=1` for these
+single-replica, quota-sensitive Deployments. That permits a bounded test-only
+availability gap without needing an extra surge pod. Production rollout
+strategy is not changed by this contract.
 
-```json
-{
-  "sha": "<full-40-char>",
-  "short_sha": "<7-char>",
-  "ref": "<branch>",
-  "digests": {
-    "auth-service": "sha256:<64-hex>",
-    "permission-service": "sha256:<64-hex>",
-    "user-service": "sha256:<64-hex>",
-    "variant-service": "sha256:<64-hex>",
-    "core-data-service": "sha256:<64-hex>",
-    "report-service": "sha256:<64-hex>",
-    "schema-service": "sha256:<64-hex>",
-    "api-gateway": "sha256:<64-hex>",
-    "discovery-server": "sha256:<64-hex>"
-  }
-}
+## Trigger contract
+
+- Automatic: `repository_dispatch`, event type `backend-testai-deploy`.
+- Manual recovery: `workflow_dispatch` with `sha`, matching `short_sha`, and
+  the complete 13-service digest JSON.
+- Every digest must match `sha256:<64 lowercase hex>`.
+- Missing, extra, duplicate, malformed or partial service maps fail before PR
+  mutation.
+- Missing `AUTOMATION_APP_ID` or `AUTOMATION_APP_PRIVATE_KEY` fails before PR
+  mutation; there is no legacy direct-deploy fallback.
+
+Manual dispatch example:
+
+```bash
+gh workflow run deploy-backend-testai.yml \
+  -R Halildeu/platform-k8s-gitops \
+  -f sha='<40-lowercase-hex>' \
+  -f short_sha='<first-7-hex>' \
+  -f digests='<complete-13-service-json-map>'
 ```
 
-> Backend `ci-image-push.yml` her servis için `docker/build-push-action@v6`
-> `outputs.digest` → artifact upload → dispatch job download-artifact ile
-> JSON map aggregation → `gh api -F client_payload[digests]=...` syntax.
->
-> **Backward-compat**: `digests` field eksikse (legacy dispatcher) deploy
-> workflow tag-based fallback'e düşer; field VARSA strict mode (parse fail
-> + empty object + invalid digest format = hard fail).
+Do not place credentials or tokens in the digest payload. GitHub App secrets
+remain repository Actions secrets.
 
-## Verify chain
+## Merge and reconciliation
 
-| Gate | İçerik | Fail davranışı |
+1. Automation opens or updates `auto-test-overlay/backend-testai` from current
+   `origin/main`.
+2. Review confirms only allowlisted test-overlay digest fields changed. If
+   endpoint-admin changes, its two owner-gated bridge mirror digests must move
+   in lockstep.
+3. Required CI passes; merge uses the normal protected-branch path.
+4. ArgoCD auto-sync observes the merged `main` revision and processes waves
+   `10..22`.
+5. The self-hosted verifier waits until Application `platform-test` reports
+   exact merge revision + `Synced` + `Healthy` in at least two consecutive
+   polls, with no in-flight mismatched operation.
+6. Runtime acceptance checks all 13 imageID digests, public edge, readiness,
+   per-service stability and optional authenticated smoke.
+
+The verifier checks `origin/main` before accepting convergence and again before
+and after runtime evidence. If a newer relevant merge supersedes the requested
+revision, the current run fails closed and the newer queued run owns evidence.
+
+The verifier bootstraps exact ArgoCD CLI `v2.13.1` through an OS/architecture
+allowlist and pinned official SHA-256. A global runner installation is not
+trusted. CLI use is read-only (`app get --hard-refresh -o json`); the workflow
+does not call `argocd app sync`.
+
+## Acceptance evidence
+
+| Gate | Requirement | Failure behavior |
 |---|---|---|
-| 1a | Per-service pod imageID = digest assertion | fail-fast |
-| 1a | Digest mode'da: payload digest === pod imageID === GHCR digest D30 üçlü | fail-fast |
-| 1b | `https://testai.acik.com/api/users/all` HTTP 200/401/403 (edge chain alive) | fail-fast |
-| 1c | 8 servis in-cluster `/actuator/health/readiness` 200 (port 8081) | warn per-service, blocking eğer FAILED > 0 |
-| 2 | JWT auth flow smoke (token al + /api/users/all 200) | opt-in (skip if SMOKE_AUTH_* secret yok) |
+| Desired-state lineage | PR merged at immutable git revision | blocking |
+| ArgoCD convergence | exact revision, `Synced`, `Healthy` | blocking |
+| D30 runtime | every live pod `imageID` equals expected digest | blocking |
+| Public edge | `/api/users/all` returns `200`, `401` or `403`; never `5xx/0xx` | blocking |
+| Readiness | all 13 services return `200` from actuator readiness | blocking |
+| Stability | catalog-driven stability window passes per service | blocking |
+| JWT functional smoke | authenticated request returns `200` when dedicated smoke credentials exist | conditional; absence is recorded as skipped |
 
-> **Gate 1b semantik**: `/actuator/health` JWT-protected (401), security
-> best-practice. Gate 1b edge chain alive sinyali olarak `/api/users/all`
-> kontrol eder; 200 (JWT geçerli + permitted), 401 (JWT eksik = filter
-> alive), 403 (JWT geçerli + denied = audz alive) hepsi healthy. 5xx/0xx
-> = chain BROKEN.
+`Up`, `Functional` and Zanzibar-ready evidence remain separate under D29. A
+successful image promotion alone does not claim every product behavior.
 
-## Önkoşullar (precondition)
+## Failure triage
 
-**Aktif test çalışma modu** — deploy workflow her servis için Running pod
-varsayar (rollout status + pod imageID extract). Test overlay default'u
-D17 scale-to-zero (`replicas: 0`); önce hedef deployment'lar scale-up
-edilmeli. Şu an 8 backend deployment hepsi `replicas=1` (test-toggle.sh
-veya manuel scale).
+### Promotion workflow fails before PR
 
-**Hızlı kontrol**:
-```bash
-ssh halil@staging-sw "kubectl --context=k3d-test get deployment -n platform-test \
-  -o jsonpath='{range .items[*]}{.metadata.name}{\":\"}{.spec.replicas}{\"\n\"}{end}'"
-```
+Inspect payload validation and GitHub App credential presence. Do not bypass by
+running direct cluster mutation. Correct the source dispatch or App setup and
+re-run the promotion.
 
-Hepsi `:1` görünmeli. `:0` ise scale-up:
-```bash
-ssh halil@staging-sw "kubectl --context=k3d-test scale deployment <svc> --replicas=1 -n platform-test"
-```
+### ArgoCD exact revision times out
 
-## Manuel deploy
+Inspect the Application operation and resource health:
 
 ```bash
-gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \
-  -f sha=<full-40-char> \
-  -f short_sha=<7-char>
+argocd --core --kube-context k3d-prod app get platform-test --hard-refresh
+kubectl --context k3d-prod -n argocd get application platform-test -o yaml
 ```
 
-> `workflow_dispatch` payload digest taşımaz → tag-based fallback aktif.
-> Otomatik dispatch (`repository_dispatch`) digest-pin mode tetikler.
+If a wave resource is unhealthy, repair desired state through a new PR. Do not
+force a different SHA with `argocd app sync --revision`; the Application tracks
+`main` and auto-sync is authoritative.
 
-## Failure recovery
+### Runtime digest or readiness fails
 
-### Gate 1a fail (digest mismatch)
+Compare the merged overlay digest, Application observed revision, Deployment
+image and non-terminating pod imageID. Read-only inspection is allowed. Any
+correction to a workload spec or image pin goes through a new desired-state PR.
 
-**Sebep**: pod imageID dispatch payload digest ile uyuşmadı (image pull
-race veya yanlış pod yakalama).
+### Public edge fails
 
-iter-49 PR #299 + #301 race fix sonrası: deploy workflow non-terminating
-Running pod'lardan en yenisini seçer (deletionTimestamp null +
-creationTimestamp asc + last). Bu fail görülürse:
+Check ingress, host routing and `api-gateway` health separately. Internal
+cluster reachability is supporting evidence only; it does not replace the
+authoritative public entry check.
 
-```bash
-ssh halil@staging-sw
-kubectl --context=k3d-test rollout restart deployment/<svc> -n platform-test
-kubectl --context=k3d-test rollout status deployment/<svc> -n platform-test --timeout=180s
-kubectl --context=k3d-test get pod -l app.kubernetes.io/name=<svc> -n platform-test \
-  -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'
-```
+## Rollback
 
-### Sequential rollout stuck (ResourceQuota)
+Revert the immutable digest promotion commit through the normal PR path.
+ArgoCD auto-sync applies the previous digest set using the same waves, and the
+same exact-convergence/runtime verifier produces rollback evidence.
 
-PR #294 maxSurge=0/maxUnavailable=1 8 backend deployment'a uygulandı.
-ResourceQuota baskısı yok artık. Gene fail görülürse quota durumu:
+Never rollback with direct `kubectl set image`, direct Deployment patch/edit,
+or a workflow-owned resource sync. Break-glass requires the four ADR-0023
+conditions and same-incident Git reconciliation.
 
-```bash
-kubectl --context=k3d-test describe quota platform-quota -n platform-test
-```
+## References
 
-### Gate 1b fail (edge chain BROKEN)
-
-5xx veya 0xx → ingress, host nginx, veya gateway pod down.
-- `kubectl get pod -l app.kubernetes.io/name=api-gateway -n platform-test`
-- `kubectl logs deployment/api-gateway -n platform-test --tail=50`
-- `ssh halil@staging-sw "docker exec platform-web-nginx nginx -t"`
-
-### Gate 1c fail (readiness probe)
-
-Spring Boot Actuator `/actuator/health/readiness` management port 8081'de.
-Servis startup yavaşsa rollout-status PASS olabilir ama readiness probe
-FAIL. JVM heap genişletme veya readiness probe `initialDelaySeconds`
-artırma gerek olabilir.
-
-### Gate 2 fail (JWT auth)
-
-Test persona credentials secret'ları:
-- `SMOKE_AUTH_USERNAME`
-- `SMOKE_AUTH_PASSWORD`
-
-CLAUDE.md HARD RULE: kullanıcı login user'ına dokunma; ayrı test persona
-zorunlu. Keycloak'ta read-only viewer role oluştur, GitHub repo secret
-olarak ekle.
-
-## Drift guard
-
-Dispatch chain etkin mi?
-```bash
-# platform-backend ci-image-push son run + dispatch step
-gh run list --workflow=ci-image-push.yml -R Halildeu/platform-backend --limit=1 \
-  --json conclusion,status,event
-
-# gitops deploy-backend-testai son run
-gh run list --workflow=deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops --limit=3 \
-  --json status,conclusion,event
-```
-
-Digest-pin mode aktif mi (log inspeksiyonu)?
-```bash
-JOB_ID=$(gh run view <run-id> -R Halildeu/platform-k8s-gitops --json jobs --jq '.jobs[0].databaseId')
-gh api "repos/Halildeu/platform-k8s-gitops/actions/jobs/${JOB_ID}/logs" \
-  | grep -E "Digest-pin mode active|Tag-based fallback"
-```
-
-## Out-of-scope (follow-up)
-
-- **B.5** — Slack/PagerDuty paging receiver (iter-49 B.2 PR #291 warning
-  rule'lar pre-prod; receiver netleşince severity=critical paging ekle)
-- **endpoint-admin-service** + **discovery-server** dahil etme — manifest
-  contract netleşince ayrı PR (Faz 22)
-- **Production deploy** — `deploy-prod-gitops.yml` workflow_dispatch
-  (`production` env-gate'li ArgoCD GitOps sync). Bkz.
-  `docs/operations/RUNBOOKS/RB-prod-gitops-sync.md`. Eski image-only
-  `deploy-backend-prod.yml` 2026-05-18 PR-2 ile emekli edildi.
-- **Multi-replica pod doğrulama** — şu an replicas=1; prod scale 2+
-  olduğunda Gate 1a "all non-terminating Running pods digest match" gate'e
-  dönüştürülmeli (Codex 019de00f öneri)
-
-## Codex thread'leri
-
-- `019ddf43-e6eb-7dd0-9c30-d6c9b867e5dd` — initial cycle (B.3 chain)
-- `019de00f-4b40-75c1-8ead-01b79c5819c1` — post-iter-49 PARTIAL review
-  (#1 backend race fix + #2 strict digest mode)
-
-## Cycle close PR'ları
-
-| PR | Konu |
-|---|---|
-| #292 | Initial workflow + runbook |
-| #293 | Skopeo bypass tag-based |
-| #294 | maxSurge=0 generalize 8 backend |
-| #295 | Gate 1b 200/401/403 healthy |
-| #296 | Digest-pin mode initial |
-| #297 | String-form digest normalize |
-| backend #54 | Per-service digest aggregation |
-| #301 | Backend pod capture race + strict digest mode |
+- `docs/adr/0023-promotion-pipeline-test-overlay-authoritative.md`
+- `docs/operations/RUNBOOKS/RB-automation-overlay-sync.md`
+- `.github/workflows/deploy-backend-testai.yml`
+- `.github/workflows/verify-testai-backend-rollout.yml`
+- `scripts/automation/backend-testai-digest-contract.py`
+- `scripts/deploy/reconcile-testai-backend-sequential.sh`
+- `scripts/deploy/verify-testai-backend-runtime.sh`
+- issue `#2384`

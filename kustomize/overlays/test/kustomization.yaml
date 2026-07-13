@@ -6953,6 +6953,142 @@ patches:
         path: /spec/progressDeadlineSeconds
         value: 300
 
+  # 2026-07-14 #2384: ArgoCD owns backend rollout sequencing. The Application
+  # tracks main with auto-sync, so post-merge workflows must not race it with
+  # imperative per-resource sync calls. Distinct waves keep quota-sensitive,
+  # single-replica test rollouts dependency-ordered; api-gateway remains last.
+  # Infrastructure and unannotated resources stay at ArgoCD's default wave 0.
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: auth-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "10"
+  - target:
+      kind: Deployment
+      name: permission-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: permission-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "11"
+  - target:
+      kind: Deployment
+      name: user-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: user-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "12"
+  - target:
+      kind: Deployment
+      name: variant-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: variant-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "13"
+  - target:
+      kind: Deployment
+      name: core-data-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: core-data-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "14"
+  - target:
+      kind: Deployment
+      name: report-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: report-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "15"
+  - target:
+      kind: Deployment
+      name: schema-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: schema-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "16"
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: endpoint-admin-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "17"
+  - target:
+      kind: Deployment
+      name: audio-gateway
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: audio-gateway
+        annotations:
+          argocd.argoproj.io/sync-wave: "18"
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: meeting-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "19"
+  - target:
+      kind: Deployment
+      name: transcript-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: transcript-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "20"
+  - target:
+      kind: Deployment
+      name: audit-event-consumer-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: audit-event-consumer-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "21"
+  - target:
+      kind: Deployment
+      name: api-gateway
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api-gateway
+        annotations:
+          argocd.argoproj.io/sync-wave: "22"
+
   # 2026-04-29 (Codex 019dd818 PARTIAL feedback): test cluster ResourceQuota
   # 8 CPU limit + 9 service × 750m = 6.75 CPU + frontend 200m + api-gateway
   # 1 CPU = 7.95 CPU dolu. Surge-based rollout (maxSurge=1) yer açamadığı
