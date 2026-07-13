@@ -1,4 +1,4 @@
-# endpoint-admin-remote-bridge-viewer ACTIVATION overlay — Faz 22.6 #1580 VIEW_ONLY exposure
+# endpoint-admin-remote-bridge-viewer ACTIVATION overlay — Faz 22.6 #2373 VIEW_ONLY product pilot
 #
 # ⚠️ OWNER-GATED. A SUPERSET of ../endpoint-admin-remote-bridge (broker activation)
 # PLUS the operator VIEW_ONLY viewer HTTP exposure on 8096. It is DELIBERATELY NOT
@@ -20,8 +20,8 @@
 #
 # Activation is a deliberate operator action AFTER the §2 gate in the runbook
 # (KVKK/DPO sign-off + 8096-exposure sign-off + 1-person roster + consenting pilot
-# device). Applying this overlay does NOT close #1580; the §4.2
-# F22_6_VIEW_ONLY_ENGINEERING: v2 product-channel evidence is a separate gate.
+# device). Applying this overlay does NOT close #2373; browser render + product
+# evidence must pass F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v1 separately.
 #
 # Build sanity (no apply):
 #   kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer

@@ -1,4 +1,4 @@
-name: "Apply #1580 VIEW_ONLY viewer pilot surface"
+name: "Apply #2373 VIEW_ONLY viewer product pilot surface"
 
 on:
   workflow_dispatch:
@@ -52,7 +52,7 @@ env:
 
 jobs:
   viewer-pilot-surface:
-    name: "Apply or rollback owner-gated #1580 VIEW_ONLY viewer pilot surface"
+    name: "Apply or rollback owner-gated #2373 VIEW_ONLY viewer product pilot surface"
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 20
 
@@ -102,7 +102,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Render and guard viewer exposure overlay
         if: inputs.action != 'rollback'
@@ -145,7 +145,7 @@ jobs:
           fi
 
           {
-            echo "## #1580 VIEW_ONLY viewer pilot surface render"
+            echo "## #2373 VIEW_ONLY viewer product pilot surface render"
             echo ""
             echo "- action: \`${{ inputs.action }}\`"
             echo "- context: \`${K8S_CONTEXT}\`"
@@ -185,13 +185,15 @@ jobs:
 
           # ${sid} is a Spring RewritePath variable, not a shell variable.
           # shellcheck disable=SC2016
+          # MethodRoutePredicateFactory uses ShortcutType.GATHER_LIST; one comma-separated
+          # predicate is OR semantics. Two Method predicates would be AND and never match.
           patch_payload='{
             "data": {
               "SPRING_CLOUD_GATEWAY_ROUTES_28_ID": "remote-bridge-viewer-route",
               "SPRING_CLOUD_GATEWAY_ROUTES_28_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
               "SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER": "-10",
               "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
-              "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET",
+              "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET,POST",
               "SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
             }
           }'
@@ -241,6 +243,13 @@ jobs:
           printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ID=remote-bridge-viewer-route'
           printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_URI=http://endpoint-admin-remote-bridge-viewer:8096'
           printf '%s\n' "${gateway_env}" | grep -F 'SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER=-10'
+          route_method="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get configmap api-gateway-config \
+            -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1}')"
+          [ "${route_method}" = 'Method=GET,POST' ] || {
+            echo "::error::viewer route must permit only GET stream + POST render acknowledgement"
+            exit 1
+          }
           if printf '%s\n' "${gateway_env}" | grep -F 'OVERLAY_MUST_OVERRIDE'; then
             echo "::error::api-gateway KEYCLOAK overlay values were clobbered"
             exit 1
@@ -248,7 +257,7 @@ jobs:
 
           {
             echo ""
-            echo "## #1580 VIEW_ONLY viewer pilot live surface"
+            echo "## #2373 VIEW_ONLY viewer product pilot live surface"
             echo ""
             echo "- bridge rollout: \`ok\`"
             echo "- api-gateway rollout: \`ok\`"
@@ -344,7 +353,7 @@ jobs:
           fi
 
           {
-            echo "## #1580 VIEW_ONLY viewer rollback verification"
+            echo "## #2373 VIEW_ONLY viewer product pilot rollback verification"
             echo ""
             echo "- viewer service: \`absent\`"
             echo "- viewer NetworkPolicies: \`absent\`"
