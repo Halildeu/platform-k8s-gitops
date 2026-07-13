@@ -6,11 +6,13 @@ set -euo pipefail
 TEST_CONTEXT="${TEST_CONTEXT:-k3d-test}"
 TEST_NAMESPACE="${TEST_NAMESPACE:-platform-test}"
 TESTAI_URL="${TESTAI_URL:-https://testai.acik.com}"
+REVISION="${REVISION:-${GITHUB_SHA:-}}"
 DIGEST_MAP="${DIGEST_MAP:-}"
 REPORT_PATH="${REPORT_PATH:-}"
 CURRENT_GATE="preflight"
 VERDICT="FAIL"
 AUTH_GATE="skipped-no-credentials"
+NORMALIZED_DIGEST_MAP='{}'
 
 SERVICE_SPECS=(
   "auth-service|auth-service"
@@ -28,28 +30,55 @@ SERVICE_SPECS=(
   "api-gateway|api-gateway"
 )
 
+assert_current_main_revision() {
+  local latest_main
+
+  git fetch origin main --depth=1 --quiet
+  latest_main=$(git rev-parse FETCH_HEAD)
+  [[ "$latest_main" == "$REVISION" ]] || {
+    echo "FAIL: runtime verification revision $REVISION was superseded by main $latest_main" >&2
+    return 1
+  }
+}
+
+# Invoked indirectly by the EXIT trap below.
+# shellcheck disable=SC2329
 write_report() {
   [[ -n "$REPORT_PATH" ]] || return 0
-  set +e
+  local expected_digests='{}'
+  local report_tmp="${REPORT_PATH}.tmp"
+
+  expected_digests=$(jq -c . <<< "$NORMALIZED_DIGEST_MAP" 2>/dev/null) || expected_digests='{}'
+  mkdir -p "$(dirname "$REPORT_PATH")" || return 0
   jq -n \
     --arg verdict "$VERDICT" \
     --arg failed_or_last_gate "$CURRENT_GATE" \
     --arg auth_gate "$AUTH_GATE" \
     --arg testai_url "$TESTAI_URL" \
-    --argjson expected_digests "${NORMALIZED_DIGEST_MAP:-{}}" \
+    --argjson expected_digests "$expected_digests" \
     '{
       schemaVersion: "testai-backend-runtime-verification-v1",
       verdict: $verdict,
       failedOrLastGate: $failed_or_last_gate,
       authGate: $auth_gate,
       publicEntry: $testai_url,
-      mutationPath: "read-only-verification",
+      verificationMode: "read-only-runtime-evidence",
+      verifierMutationPerformed: false,
       expectedDigests: $expected_digests
-    }' > "$REPORT_PATH"
+    }' > "$report_tmp" || {
+      echo "WARN: failed to render backend runtime report" >&2
+      rm -f "$report_tmp"
+      return 0
+    }
+  if ! mv "$report_tmp" "$REPORT_PATH"; then
+    echo "WARN: failed to publish backend runtime report to $REPORT_PATH" >&2
+    rm -f "$report_tmp"
+  fi
+  return 0
 }
-trap write_report EXIT
+trap 'write_report || true' EXIT
 
-for command in kubectl jq python3 curl; do
+for command in git kubectl jq python3 curl; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "FAIL: required command not found: $command" >&2
     exit 1
@@ -59,8 +88,15 @@ done
   echo "FAIL: DIGEST_MAP is required" >&2
   exit 1
 }
+[[ "$REVISION" =~ ^[a-f0-9]{40}$ ]] || {
+  echo "FAIL: REVISION must be a 40-character lowercase git SHA" >&2
+  exit 1
+}
 NORMALIZED_DIGEST_MAP=$(printf '%s' "$DIGEST_MAP" \
   | python3 scripts/automation/backend-testai-digest-contract.py normalize)
+
+CURRENT_GATE="main-revision-fence-before-runtime"
+assert_current_main_revision
 
 CURRENT_GATE="exact-pod-imageid"
 for spec in "${SERVICE_SPECS[@]}"; do
@@ -163,6 +199,8 @@ else
   echo "NOTICE: JWT auth flow skipped; SMOKE_AUTH_* credentials are absent"
 fi
 
+CURRENT_GATE="main-revision-fence-after-runtime"
+assert_current_main_revision
 CURRENT_GATE="complete"
 VERDICT="PASS"
 echo "PASS: backend runtime digest, edge, readiness and stability gates"

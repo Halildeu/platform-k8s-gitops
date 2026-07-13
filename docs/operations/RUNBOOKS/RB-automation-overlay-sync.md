@@ -6,8 +6,10 @@
 > 13-servis immutable digest haritasını herhangi bir cluster mutasyonundan
 > **önce** `kustomize/overlays/test/kustomization.yaml` için PR'a dönüştürür
 > (`auto-test-overlay/backend-testai` dalı). Merge sonrası
-> `verify-testai-backend-rollout.yml` aynı revision'ı sıralı ArgoCD resource
-> sync ile reconcile eder ve çalışan pod imageID'lerini doğrular.
+> ArgoCD auto-sync, test overlay'deki `sync-wave` desired-state sözleşmesiyle
+> Deployment'ları sırayla reconcile eder. `verify-testai-backend-rollout.yml`
+> mutasyon yapmadan exact revision convergence ve çalışan pod imageID'lerini
+> doğrular.
 >
 > **Roller**: 🧑 = operator (GitHub App + secret seed) · 🤖 = agent/CI (PR aç/güncelle).
 >
@@ -41,7 +43,7 @@ kontratında (`scripts/ci/pr-cross-ai-audit.mjs` `AUTOMATION_PREFIX_ACTORS`)
 | Exemption | cross-AI peer-review **muaf** — `## Cross-AI` automation attestation bloğu |
 | Boundary | `[x] state-mutation (test cluster)` — user-approval **değil**, label gerekmez |
 | Secrets | `AUTOMATION_APP_ID`, `AUTOMATION_APP_PRIVATE_KEY` (repo Actions secrets) |
-| Merge sonrası | Sıralı ArgoCD Deployment sync → full Application sync → exact imageID/edge/readiness/stability |
+| Merge sonrası | ArgoCD auto-sync waves `10..22` → read-only exact revision convergence → exact imageID/edge/readiness/stability |
 
 **Fail-closed**: App secret'ları yoksa promotion kırmızı olur ve açıkça operator
 aksiyonu ister. Eski direct rollout veya green-skip yoluna düşmez. Cluster
@@ -111,13 +113,17 @@ gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \
 - **Farklıysa** → `auto-test-overlay/backend-testai` PR'ı açılır/güncellenir.
 - Auto-PR'da `cross-ai-audit` check'i automation-exemption path'iyle **PASS**.
 - Operator PR'ı inceler → CI yeşil → normal squash merge.
-- Merge sonrası `verify-testai-backend-rollout.yml`, kota başlığını korumak için
-  13 Deployment'ı ArgoCD üzerinden sıralı reconcile eder.
+- Merge sonrası ArgoCD auto-sync, 13 Deployment'ı test overlay'deki benzersiz
+  sync-wave'lerle bağımlılık sırasına göre uygular (`auth-service=10`,
+  `api-gateway=22`). Workflow ayrıca bir sync operasyonu başlatmaz.
 - Runner'da global CLI kurulumuna güvenilmez; `ensure-argocd-cli.sh` ArgoCD
   `v2.13.1` binary'sini OS/architecture allowlist'i ve repoya pinli resmi
   SHA-256 ile doğrular. Doğrulanmamış binary çalıştırılmaz.
-- Final full Application sync revision eşitliğini; post-gate exact pod imageID,
-  public edge, readiness ve 2-3 dakikalık stabilite penceresini doğrular.
+- Read-only convergence gate Application'ın exact merge revision'ında `Synced`
+  ve `Healthy` durumunu en az iki ardışık poll'da görmesini; `origin/main`
+  revision fence'ini; post-gate exact pod imageID, public edge, readiness ve
+  2-3 dakikalık stabilite penceresini doğrular. Yeni main gelirse eski koşu
+  fail-closed superseded olur.
 
 Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir:
 
@@ -148,6 +154,8 @@ Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir
 - ❌ App'i bir **insan hesabına** PAT olarak ikame etme — `#827` kontratı bot kimliği ister.
 - ❌ Auto-PR'ı admin-merge etme veya CI kırmızıyken merge etme — HARD RULE.
 - ❌ `auto-test-overlay/backend-testai` veya `auto-test-frontend/testai` dalını manuel düzenleme — job her run `origin/main`'e reset eder, force-push üzerine yazar.
+- ❌ Auto-sync açıkken workflow'dan `argocd app sync --revision/--resource`
+  çalıştırma — Application'ın `main` targetRevision authority'siyle yarışır.
 
 ## Referanslar
 
@@ -160,7 +168,7 @@ Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir
 - `scripts/automation/sync-test-overlay-frontend.sh` — frontend PR orchestrator
 - `scripts/automation/apply-test-overlay-digests.py` — comment-preserving digest rewrite
 - `scripts/automation/backend-testai-digest-contract.py` — full-map normalization + overlay inspection
-- `scripts/deploy/reconcile-testai-backend-sequential.sh` — ArgoCD-only sıralı Deployment sync
+- `scripts/deploy/reconcile-testai-backend-sequential.sh` — read-only ArgoCD auto-sync exact-convergence verifier
 - `scripts/deploy/ensure-argocd-cli.sh` — pinned + SHA-256 verified ArgoCD CLI bootstrap
 - `scripts/deploy/verify-testai-backend-runtime.sh` — exact digest/edge/readiness/stability acceptance
 - `scripts/ci/pr-cross-ai-audit.mjs` — `auditAutomation` + `AUTOMATION_PREFIX_ACTORS`

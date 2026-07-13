@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "kustomize/overlays/test/kustomization.yaml"
+      - "argocd/applications/platform-test.yaml"
       - ".github/workflows/deploy-backend-testai.yml"
       - ".github/workflows/verify-testai-backend-rollout.yml"
       - "scripts/automation/backend-testai-digest-contract.py"
@@ -26,7 +27,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Reconcile merged pins and verify runtime
+    name: Observe ArgoCD auto-sync and verify runtime
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 60
 
@@ -78,6 +79,7 @@ jobs:
                 if git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- \
                   .github/workflows/deploy-backend-testai.yml \
                   .github/workflows/verify-testai-backend-rollout.yml \
+                  argocd/applications/platform-test.yaml \
                   scripts/automation/backend-testai-digest-contract.py \
                   scripts/automation/sync-test-overlay.sh \
                   scripts/automation/apply-test-overlay-digests.py \
@@ -101,17 +103,18 @@ jobs:
             echo "digest_map=$current"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Sequential Deployment and exact full Application reconciliation
+      - name: Wait for sync-wave auto-sync and exact Application convergence
         if: steps.pin.outputs.should_verify == 'true'
         env:
           REVISION: ${{ steps.pin.outputs.reconcile_revision }}
           DIGEST_MAP: ${{ steps.pin.outputs.digest_map }}
-          REPORT_PATH: ${{ runner.temp }}/testai-backend-sequential-sync.json
+          REPORT_PATH: ${{ runner.temp }}/testai-backend-argocd-auto-sync.json
         run: bash scripts/deploy/reconcile-testai-backend-sequential.sh
 
       - name: Verify exact pod digests, public edge, readiness and stability
         if: steps.pin.outputs.should_verify == 'true'
         env:
+          REVISION: ${{ steps.pin.outputs.reconcile_revision }}
           DIGEST_MAP: ${{ steps.pin.outputs.digest_map }}
           REPORT_PATH: ${{ runner.temp }}/testai-backend-runtime-verification.json
           SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
@@ -124,7 +127,7 @@ jobs:
         with:
           name: testai-backend-gitops-rollout-${{ steps.pin.outputs.reconcile_revision }}
           path: |
-            ${{ runner.temp }}/testai-backend-sequential-sync.json
+            ${{ runner.temp }}/testai-backend-argocd-auto-sync.json
             ${{ runner.temp }}/testai-backend-runtime-verification.json
           if-no-files-found: warn
           retention-days: 14
@@ -139,8 +142,9 @@ jobs:
             echo "- reconciled revision: \`${{ steps.pin.outputs.reconcile_revision }}\`"
             echo "- backend verification required: \`${{ steps.pin.outputs.should_verify }}\`"
             echo "- runtime services: \`13\`"
-            echo "- rollout order: sequential ArgoCD Deployment resource sync"
-            echo "- final convergence: full ArgoCD Application sync"
+            echo "- rollout order: test-overlay ArgoCD sync waves (10..22; api-gateway last)"
+            echo "- reconciliation owner: ArgoCD auto-sync on merged desired state"
+            echo "- verifier mode: read-only exact revision convergence"
             echo "- direct Kubernetes workload mutation: **none**"
             echo "- acceptance: exact imageID + public edge + readiness + stability"
             echo "- rollback: revert immutable digest PR and reconcile through this same path"

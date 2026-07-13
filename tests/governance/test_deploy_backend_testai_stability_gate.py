@@ -9,14 +9,12 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "verify-testai-backend-rollout.yml"
 RUNTIME = REPO_ROOT / "scripts" / "deploy" / "verify-testai-backend-runtime.sh"
-RECONCILE = REPO_ROOT / "scripts" / "deploy" / "reconcile-testai-backend-sequential.sh"
 
 
 class DeployBackendTestaiStabilityGateTest(unittest.TestCase):
     def setUp(self):
         self.workflow = WORKFLOW.read_text(encoding="utf-8")
         self.runtime = RUNTIME.read_text(encoding="utf-8")
-        self.reconcile = RECONCILE.read_text(encoding="utf-8")
 
     def _gate_1d_services(self):
         match = re.search(r"SERVICE_SPECS=\(\n(?P<body>.*?)\n\)", self.runtime, re.DOTALL)
@@ -39,20 +37,20 @@ class DeployBackendTestaiStabilityGateTest(unittest.TestCase):
 
     def test_faz24_runtime_rollout_mappings_are_explicit(self):
         self.assertIn(
-            '"audio-gateway-service|audio-gateway|audio-gateway"',
-            self.reconcile,
+            '"audio-gateway-service|audio-gateway"',
+            self.runtime,
         )
         self.assertIn(
-            '"meeting-service|meeting-service|meeting-service"',
-            self.reconcile,
+            '"meeting-service|meeting-service"',
+            self.runtime,
         )
         self.assertIn(
-            '"transcript-service|transcript-service|transcript-service"',
-            self.reconcile,
+            '"transcript-service|transcript-service"',
+            self.runtime,
         )
         self.assertIn(
-            '"audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service"',
-            self.reconcile,
+            '"audit-event-consumer-service|audit-event-consumer-service"',
+            self.runtime,
         )
 
 
