@@ -2,11 +2,12 @@
 
 > board #827. Codex design thread `019e4034`, PR-B token-model thread `019e4048`.
 >
-> **Kapsam**: `deploy-backend-testai.yml` her başarılı 8-servis rollout sonrası,
-> k3d-test'te **gerçekten koşan** containerd-resolved pod imageID'lerini
-> `kustomize/overlays/test/kustomization.yaml`'a PR-aracılı geri yazar
-> (`auto-test-overlay/backend-testai` dalı). Amaç: kayıtlı desired-state'in
-> canlı cluster'dan **sessizce drift etmesini** önlemek.
+> **Kapsam**: `deploy-backend-testai.yml`, platform-backend'in yayımladığı tam
+> 13-servis immutable digest haritasını herhangi bir cluster mutasyonundan
+> **önce** `kustomize/overlays/test/kustomization.yaml` için PR'a dönüştürür
+> (`auto-test-overlay/backend-testai` dalı). Merge sonrası
+> `verify-testai-backend-rollout.yml` aynı revision'ı sıralı ArgoCD resource
+> sync ile reconcile eder ve çalışan pod imageID'lerini doğrular.
 >
 > **Roller**: 🧑 = operator (GitHub App + secret seed) · 🤖 = agent/CI (PR aç/güncelle).
 >
@@ -19,7 +20,7 @@
 
 ## Neden GitHub App — `GITHUB_TOKEN` değil
 
-`sync-test-overlay-pr` job'ı PR'ı default `GITHUB_TOKEN` ile açarsa, GitHub'ın
+Promotion job'ı PR'ı default `GITHUB_TOKEN` ile açarsa, GitHub'ın
 **recursion guard**'ı devreye girer: `GITHUB_TOKEN` ile açılan bir PR
 `pull_request` workflow'larını **tetiklemez**. Required `cross-ai-audit` check'i
 (ve diğer PR check'leri) hiç koşmaz → PR merge edilemez. Bu yüzden PR bir
@@ -32,18 +33,19 @@ kontratında (`scripts/ci/pr-cross-ai-audit.mjs` `AUTOMATION_PREFIX_ACTORS`)
 
 | Alan | Değer |
 |---|---|
-| Tetik | `deploy-backend-testai.yml` → `deploy` job başarılı (8-servis rollout + Gate 1b/1c/1d) |
-| Sync job | `sync-test-overlay-pr` (`needs: deploy`, `runs-on: ubuntu-latest`) |
+| Tetik | platform-backend tam image build → `backend-testai-deploy` dispatch |
+| Promotion job | `deploy-backend-testai.yml/promote` (`runs-on: ubuntu-latest`, cluster erişimi yok) |
 | Dal | `auto-test-overlay/backend-testai` (stabil, her run `origin/main`'e reset) |
-| Dosya | `kustomize/overlays/test/kustomization.yaml` — yalnız 8 backend `digest:` satırı |
+| Dosya | Ana test overlay'de 13 backend `digest:` satırı; endpoint-admin değişirse iki owner-gated bridge mirror satırı |
 | PR author | `platform-automation[bot]` (GitHub App) |
 | Exemption | cross-AI peer-review **muaf** — `## Cross-AI` automation attestation bloğu |
 | Boundary | `[x] state-mutation (test cluster)` — user-approval **değil**, label gerekmez |
 | Secrets | `AUTOMATION_APP_ID`, `AUTOMATION_APP_PRIVATE_KEY` (repo Actions secrets) |
+| Merge sonrası | Sıralı ArgoCD Deployment sync → full Application sync → exact imageID/edge/readiness/stability |
 
-**Graceful-skip**: secret'lar yokken `sync-test-overlay-pr` job'ı `preflight`
-adımında `enabled=false` üretir → sonraki adımlar atlanır → job **green skip**
-(`::notice::` + step summary "operator-disabled" der). CI kırmızı olmaz.
+**Fail-closed**: App secret'ları yoksa promotion kırmızı olur ve açıkça operator
+aksiyonu ister. Eski direct rollout veya green-skip yoluna düşmez. Cluster
+mutasyonu başlamaz.
 
 ## 🧑 ADIM 1 — GitHub App oluştur
 
@@ -95,19 +97,24 @@ token gerektirir).
 
 ## 🤖 ADIM 5 — Verify
 
-`deploy-backend-testai.yml` bir sonraki rollout'unda (`repository_dispatch` veya
+`deploy-backend-testai.yml` bir sonraki promotion'ında (`repository_dispatch` veya
 `workflow_dispatch`):
 
 ```bash
 gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \
-  -f sha=<40-char> -f short_sha=<7-char>
+  -f sha=<40-char> -f short_sha=<7-char> -f digests='<13-service-json-map>'
 ```
 
-- `deploy` job yeşil → `sync-test-overlay-pr` job koşar.
-- Overlay digest'leri rollout ile **aynıysa** → PR yok (idempotent no-op).
+- Payload eksik, kısmi, bilinmeyen servisli veya malformed digest içeriyorsa fail-closed.
+- Targeted tek-servis source build build-only'dir; GitOps dispatch üretmez.
+- Overlay digest'leri source map ile **aynıysa** → PR yok (idempotent no-op).
 - **Farklıysa** → `auto-test-overlay/backend-testai` PR'ı açılır/güncellenir.
 - Auto-PR'da `cross-ai-audit` check'i automation-exemption path'iyle **PASS**.
 - Operator PR'ı inceler → CI yeşil → normal squash merge.
+- Merge sonrası `verify-testai-backend-rollout.yml`, kota başlığını korumak için
+  13 Deployment'ı ArgoCD üzerinden sıralı reconcile eder.
+- Final full Application sync revision eşitliğini; post-gate exact pod imageID,
+  public edge, readiness ve 2-3 dakikalık stabilite penceresini doğrular.
 
 Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir:
 
@@ -123,10 +130,12 @@ Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir
 ## Disable / rollback
 
 - **Geçici devre dışı**: `AUTOMATION_APP_ID` + `AUTOMATION_APP_PRIVATE_KEY`
-  secret'larını sil → job tekrar graceful-skip eder (CI yeşil kalır).
+  secret'larını sil → promotion fail-closed olur; cluster mutasyonu yapmaz.
 - **Tam kaldırma**: App installation'ı repo'dan kaldır.
 - Açık `auto-test-overlay/backend-testai` PR'ı kapatmak güvenli — bir sonraki
-  rollout drift varsa yeniden açar.
+  source digest farkında yeniden açar.
+- **Runtime rollback**: immutable digest promotion PR'ını Git revert ile geri
+  al; aynı post-merge ArgoCD verifier önceki digest setini reconcile eder.
 
 ## NE YAPMA
 
@@ -140,12 +149,16 @@ Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir
 ## Referanslar
 
 - board #827 · Codex thread `019e4034` (design) · `019e4048` (PR-B token-model)
-- `.github/workflows/deploy-backend-testai.yml` — `sync-test-overlay-pr` job
+- `.github/workflows/deploy-backend-testai.yml` — backend desired-state PR producer
+- `.github/workflows/verify-testai-backend-rollout.yml` — merged backend pin runtime verifier
 - `.github/workflows/deploy-testai.yml` — frontend desired-state-first PR producer
 - `.github/workflows/verify-testai-frontend-rollout.yml` — merged frontend pin runtime verifier
 - `scripts/automation/sync-test-overlay.sh` — PR aç/güncelle orchestrator
 - `scripts/automation/sync-test-overlay-frontend.sh` — frontend PR orchestrator
 - `scripts/automation/apply-test-overlay-digests.py` — comment-preserving digest rewrite
+- `scripts/automation/backend-testai-digest-contract.py` — full-map normalization + overlay inspection
+- `scripts/deploy/reconcile-testai-backend-sequential.sh` — ArgoCD-only sıralı Deployment sync
+- `scripts/deploy/verify-testai-backend-runtime.sh` — exact digest/edge/readiness/stability acceptance
 - `scripts/ci/pr-cross-ai-audit.mjs` — `auditAutomation` + `AUTOMATION_PREFIX_ACTORS`
 - `#827` PR-A (#839) — automation-PR cross-AI exemption kontratı
 - ADR-0011 §2.3 — PR boundary declaration class'ları
