@@ -393,6 +393,15 @@ kaynak-taraflı false-acceptance guard'ıdır; canlı operatör drill'ini yürü
 (scoped Vault token seed + timer/rotation tetikleme + induced reload failure)
 owner-gated adım olarak ayrı kalır.
 
+Bu kapı Faz 24 readiness-rollup'ında (#1615) `cert_rotation_drill` child gate'i
+olarak zorunludur (`scripts/faz24/verify_faz24_readiness_rollup.py`), yani canlı
+drill kabulü olmadan rollup PASS üretemez. No-mutation kanıt ingest yolu
+`.github/workflows/faz24-cert-rotation-drill-evidence-ingest.yml`
+(redacted base64 zarf → verifier → secret-scan → artifact); diğer Faz 24 ingest
+kapılarıyla aynı desendedir. Tüm `tests/faz24` verifier/ingest/rollup testleri
+artık her faz24-dokunan PR'da `.github/workflows/gate-faz24-verifier-tests.yml`
+ile koşar.
+
 ## 7. Rollback
 
 Önce GPU ingestion default-off yapılır ve task kontrollü restart edilir. Sorun

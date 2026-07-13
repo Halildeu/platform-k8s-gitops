@@ -1,0 +1,48 @@
+name: Faz 24 verifier + ingest test suite
+
+# Per-PR gate for the Faz 24 evidence verifiers, evidence-ingest workflows and
+# rollup contract. Before this gate, tests/faz24/** ran only in the weekly
+# gate-drift-detection pytest sweep (its paths filter does not include the
+# Faz 24 surfaces), so a faz24 verifier / ingest-workflow regression could sit
+# red between weekly runs. This gate discovers and runs the whole tests/faz24
+# tree (mixed unittest + pytest) on every PR that touches a Faz 24 surface.
+#
+# Read-only static analysis: no runtime, Kubernetes, Vault, firewall, credential
+# or network mutation.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/faz24/**"
+      - "tests/faz24/**"
+      - ".github/workflows/faz24-*.yml"
+      - ".github/workflows/gate-faz24-verifier-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-faz24-verifier-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  faz24-tests:
+    name: Faz 24 verifier + ingest tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install test deps (pytest + PyYAML)
+        run: python3 -m pip install --disable-pip-version-check "pytest==8.3.3" "PyYAML==6.0.3"
+
+      - name: Run tests/faz24 suite (mixed unittest + pytest)
+        run: python3 -m pytest tests/faz24 -v

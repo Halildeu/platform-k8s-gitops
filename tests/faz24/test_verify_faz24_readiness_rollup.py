@@ -19,6 +19,7 @@ REQUIRED_GATES = [
     "wg_bplus_i6",
     "i7_live_stt_app_mtls",
     "i7_full_prod_gate",
+    "cert_rotation_drill",
     "gops_operability",
     "gcomp_engineering",
     "retention_lifecycle",
@@ -135,6 +136,20 @@ def test_missing_required_gate_blocks(tmp_path):
     assert proc.returncode == 3
     assert report["status"] == "blocked"
     assert "gcomp_engineering" in report["blockedGates"]
+    assert any("missing required gates" in failure for failure in report["failures"])
+
+
+def test_missing_cert_rotation_drill_gate_blocks(tmp_path):
+    data = valid_evidence()
+    data["gates"] = [gate for gate in data["gates"] if gate["name"] != "cert_rotation_drill"]
+
+    proc = run_verifier(tmp_path, data)
+    report = json.loads(proc.stdout)
+
+    assert proc.returncode == 3
+    assert report["status"] == "blocked"
+    assert "cert_rotation_drill" in report["blockedGates"]
+    assert "cert_rotation_drill" in report["requiredGates"]
     assert any("missing required gates" in failure for failure in report["failures"])
 
 

@@ -1,0 +1,154 @@
+name: Faz 24 Meeting-AI Cert Rotation Drill Evidence Ingest
+
+# Validates a redacted, metadata-only Meeting-AI gateway certificate
+# rotation fire-drill evidence envelope for #2321. This workflow does not run
+# the live drill, seed Vault, mutate Caddy/firewall/Vault/Kubernetes/systemd,
+# trigger rotation, or claim runtime/production acceptance.
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_json_base64:
+        description: "Base64 of faz24.meetingAiCertRotationDrillEvidence.v1 JSON"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-cert-rotation-drill-evidence-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: verify Meeting-AI cert rotation drill evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      EVIDENCE_DIR: /tmp/faz24-cert-rotation-drill-${{ github.run_id }}
+      EVIDENCE_JSON: /tmp/faz24-cert-rotation-drill-${{ github.run_id }}/faz24-cert-rotation-drill.json
+      SUMMARY_JSON: /tmp/faz24-cert-rotation-drill-${{ github.run_id }}/verification-summary.json
+
+    steps:
+      - name: Validate dispatch input
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+
+          case "${EVIDENCE_JSON_BASE64}" in
+            *$'\n'*|*$'\r'*)
+              echo "::error::evidence_json_base64 must be a single line"
+              exit 1
+              ;;
+          esac
+
+          if [ "${#EVIDENCE_JSON_BASE64}" -gt 200000 ]; then
+            echo "::error::evidence_json_base64 is too large"
+            exit 1
+          fi
+
+          if ! printf '%s' "${EVIDENCE_JSON_BASE64}" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            echo "::error::evidence_json_base64 must be plain base64"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Decode evidence JSON
+        env:
+          EVIDENCE_JSON_BASE64: ${{ inputs.evidence_json_base64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          printf '%s' "${EVIDENCE_JSON_BASE64}" | base64 -d > "${EVIDENCE_JSON}"
+          python3 -m json.tool "${EVIDENCE_JSON}" > "${EVIDENCE_JSON}.pretty"
+          mv "${EVIDENCE_JSON}.pretty" "${EVIDENCE_JSON}"
+
+      - name: Verify Meeting-AI cert rotation drill evidence
+        id: verify
+        run: |
+          set +e
+          python3 scripts/faz24/verify_meeting_ai_cert_rotation_drill_evidence.py \
+            "${EVIDENCE_JSON}" \
+            --summary-json "${SUMMARY_JSON}" \
+            > "${EVIDENCE_DIR}/verifier.stdout" \
+            2> "${EVIDENCE_DIR}/verifier.stderr"
+          exit_code="$?"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          cat "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+          cat "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+          exit 0
+
+      - name: Verify artifact excludes private material
+        id: secret_scan
+        if: always()
+        run: |
+          set -euo pipefail
+          if grep -R -I -q -E \
+            -e '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
+            -e '-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
+            -e '-----BEGIN CERTIFICATE-----' \
+            -e 'Bearer ' \
+            -e 'Authorization:' \
+            -e 'eyJ[A-Za-z0-9_-]+\.' \
+            -e 'hvs\.[A-Za-z0-9._-]+' \
+            -e 'data:audio/[A-Za-z0-9.+-]+;base64,' \
+            -e '"(access_token|refresh_token|token|jwt|password|secret|private_key|vault_token|root_token|issuing_ca|client_key|server_key|leaf_key|audio|raw_audio|transcript|prompt|response|payload|email|phone|telephone|full_name)"[[:space:]]*:' \
+            -- "${EVIDENCE_DIR}"; then
+            echo "::error::cert rotation drill artifact contains forbidden private/secret/raw media/personal material"
+            exit 1
+          fi
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 Meeting-AI cert rotation drill evidence ingest"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`faz24-cert-rotation-drill-${{ github.run_id }}\`"
+            echo "- Verifier exit code: \`${VERIFY_EXIT_CODE:-missing}\`"
+            echo
+            echo "Boundary: metadata-only evidence validation. This workflow does not run the live drill, seed Vault, mutate Caddy/firewall/Vault/Kubernetes/systemd, trigger rotation, or make production ready."
+            echo
+            echo '```text'
+            sed -n '1,200p' "${EVIDENCE_DIR}/verifier.stdout" 2>/dev/null || true
+            sed -n '1,200p' "${EVIDENCE_DIR}/verifier.stderr" 2>/dev/null || true
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload evidence ingest artifact
+        if: always() && steps.secret_scan.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-cert-rotation-drill-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup local evidence directory
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail workflow when evidence is rejected
+        if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERIFY_EXIT_CODE}" ]; then
+            echo "::error::cert rotation drill verifier did not expose an exit code"
+            exit 1
+          fi
+          if [ "${VERIFY_EXIT_CODE}" != "0" ]; then
+            echo "::error::Meeting-AI cert rotation drill evidence was rejected"
+            exit "${VERIFY_EXIT_CODE}"
+          fi

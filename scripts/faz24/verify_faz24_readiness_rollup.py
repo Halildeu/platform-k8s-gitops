@@ -35,6 +35,7 @@ REQUIRED_GATES: dict[str, str] = {
     "wg_bplus_i6": "WG-B+ I6 pod-CIDR to WireGuard MASQ",
     "i7_live_stt_app_mtls": "I7 live-stt app-mTLS preflight",
     "i7_full_prod_gate": "I7 full app-mTLS product gate",
+    "cert_rotation_drill": "Meeting-AI private gateway certificate rotation fire drill",
     "gops_operability": "G-OPS on-prem operability",
     "gcomp_engineering": "G-COMP engineering compliance controls",
     "retention_lifecycle": "retention and deletion lifecycle evidence",
