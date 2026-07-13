@@ -19,6 +19,9 @@ class BackendPromotionContractTests(unittest.TestCase):
         cls.reconcile = (
             ROOT / "scripts/deploy/reconcile-testai-backend-sequential.sh"
         ).read_text()
+        cls.bootstrap = (
+            ROOT / "scripts/deploy/ensure-argocd-cli.sh"
+        ).read_text()
         cls.runtime = (
             ROOT / "scripts/deploy/verify-testai-backend-runtime.sh"
         ).read_text()
@@ -61,6 +64,17 @@ class BackendPromotionContractTests(unittest.TestCase):
         self.assertIn('observed_revision" == "$REVISION"', self.reconcile)
         self.assertIn("verify-testai-backend-runtime.sh", self.verify)
         self.assertIn("verify-pod-digest.sh", self.runtime)
+
+    def test_argocd_cli_bootstrap_is_version_and_checksum_pinned(self):
+        self.assertIn('EXPECTED_VERSION="v2.13.1"', self.bootstrap)
+        self.assertIn(
+            "8e436f0429d2a88b3181d2cfc460c034070e0ee1c665467271e5d75eb4d55f7f",
+            self.bootstrap,
+        )
+        self.assertIn("actual_sha256", self.bootstrap)
+        self.assertIn("--proto '=https'", self.bootstrap)
+        self.assertIn("--tlsv1.2", self.bootstrap)
+        self.assertIn("ensure-argocd-cli.sh", self.reconcile)
 
     def test_new_actions_are_pinned_by_full_commit_sha(self):
         self.assertNotRegex(self.promote, r"uses:\s+[^\s]+@v\d+")

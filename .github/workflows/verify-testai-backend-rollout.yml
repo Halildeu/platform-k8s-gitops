@@ -11,6 +11,7 @@ on:
       - "scripts/automation/sync-test-overlay.sh"
       - "scripts/automation/apply-test-overlay-digests.py"
       - "scripts/deploy/reconcile-testai-backend-sequential.sh"
+      - "scripts/deploy/ensure-argocd-cli.sh"
       - "scripts/deploy/verify-testai-backend-runtime.sh"
       - "scripts/deploy/verify-pod-digest.sh"
       - "scripts/deploy/gate-stability-window.sh"
@@ -81,6 +82,7 @@ jobs:
                   scripts/automation/sync-test-overlay.sh \
                   scripts/automation/apply-test-overlay-digests.py \
                   scripts/deploy/reconcile-testai-backend-sequential.sh \
+                  scripts/deploy/ensure-argocd-cli.sh \
                   scripts/deploy/verify-testai-backend-runtime.sh \
                   scripts/deploy/verify-pod-digest.sh \
                   scripts/deploy/gate-stability-window.sh; then

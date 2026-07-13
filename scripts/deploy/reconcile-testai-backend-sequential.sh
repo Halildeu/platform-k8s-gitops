@@ -74,12 +74,17 @@ trap write_report EXIT
   exit 1
 }
 
-for command in argocd kubectl jq python3; do
+for command in kubectl jq python3; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "FAIL: required command not found: $command" >&2
     exit 1
   }
 done
+ARGOCD_BIN=$(bash scripts/deploy/ensure-argocd-cli.sh)
+[[ -x "$ARGOCD_BIN" ]] || {
+  echo "FAIL: verified ArgoCD CLI is not executable: $ARGOCD_BIN" >&2
+  exit 1
+}
 
 NORMALIZED_DIGEST_MAP=$(printf '%s' "$DIGEST_MAP" \
   | python3 scripts/automation/backend-testai-digest-contract.py normalize)
@@ -104,7 +109,7 @@ kubectl config view --raw > "$core_kubeconfig"
 kubectl --kubeconfig "$core_kubeconfig" config set-context \
   "$ARGOCD_CONTEXT" --namespace "$ARGOCD_NAMESPACE" >/dev/null
 export KUBECONFIG="$core_kubeconfig"
-ARGOCD=(argocd --core --kube-context "$ARGOCD_CONTEXT")
+ARGOCD=("$ARGOCD_BIN" --core --kube-context "$ARGOCD_CONTEXT")
 
 "${ARGOCD[@]}" app get "$APP" --hard-refresh >/dev/null
 
