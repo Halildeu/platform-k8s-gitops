@@ -36,6 +36,9 @@ run_waiver_suite() {
     cat >"$fake_bin/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
+  exit 0
+fi
 if [ "$#" -eq 7 ] \
   && [ "${1:-}" = "issue" ] \
   && [ "${2:-}" = "view" ] \
