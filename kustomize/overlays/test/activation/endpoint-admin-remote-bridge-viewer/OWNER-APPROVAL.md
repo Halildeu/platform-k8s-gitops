@@ -1,10 +1,10 @@
-# OWNER APPROVAL — Faz 22.6 #1580 VIEW_ONLY viewer exposure overlay
+# OWNER APPROVAL — Faz 22.6 #2373 VIEW_ONLY viewer product pilot overlay
 
 > ⚠️ This overlay is **owner-gated** and **NOT** referenced by the Argo root
 > (`kustomize/overlays/test/kustomization.yaml`). Applying it is a deliberate
 > operator action during a bounded VIEW_ONLY pilot enable window. It does **not**
-> by itself close `platform-k8s-gitops#1580` — acceptance is the separate §4.2
-> `F22_6_VIEW_ONLY_ENGINEERING: v2` product-channel evidence gate.
+> by itself close `platform-k8s-gitops#2373` — acceptance is the separate
+> `F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v1` product evidence gate.
 
 ## What this overlay does
 

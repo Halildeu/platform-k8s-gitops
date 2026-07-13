@@ -1,18 +1,16 @@
 # RB — Faz 22.6 VIEW_ONLY Operator Viewer Pilot Enable
 
-> **Status**: OPERATIONAL enable runbook for `platform-k8s-gitops#1580`. The
-> VIEW_ONLY operator screen-observation viewer is **engineering-COMPLETE +
-> disabled-by-default** (see §1; the chain merged 2026-06-28/29). This runbook is
-> the owner/ops sequence to turn the bounded 1-person pilot ON, and how to turn
-> it OFF instantly.
+> **Status**: OPERATIONAL enable and product-acceptance runbook for
+> `platform-k8s-gitops#2373`. The narrow #1580 broker-received engineering gate
+> is accepted; it proved 122 real PNG frames at the broker, but explicitly did
+> not prove viewer delivery or browser rendering. This runbook owns that
+> separate, disabled-by-default, bounded 1-person product pilot.
 >
-> It does **not** by itself close `#1580`. Acceptance is the ADR-0044 split gate
-> in [RB-faz22.6-autonomous-completion-contract.md](./RB-faz22.6-autonomous-completion-contract.md)
-> §4.2: the fail-closed **`F22_6_VIEW_ONLY_ENGINEERING: v2`** (`GATE_VIEW_ONLY_ENGINEERING`)
-> plus the tracked/non-blocking **`F22_6_VIEW_ONLY_KVKK: v1`** (`GATE_VIEW_ONLY_KVKK`).
-> The old bundled `F22_6_VIEW_ONLY_ACCEPTANCE` marker is **refused**
-> (`legacy_bundled_marker_detected`) — do not post it. This runbook produces the
-> live state that §4.2 then certifies.
+> It does not reopen #1580 or weaken the official `F22_6_COMPLETION=pass` result.
+> Product acceptance requires the separate
+> **`F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v1`** verifier result in §5.
+> Legal basis, notice/consent wording, retention governance and DPO approval stay
+> separately tracked by #2374; a product verifier cannot manufacture legal acceptance.
 
 ## 1. What is already built (disabled-by-default)
 
@@ -29,6 +27,12 @@ The end-to-end VIEW_ONLY chain is merged and inert until the flag in §3 is set:
 Invariants baked in: recording-OFF (ADR-0044), attended, 1:1 (`maxViewersPerSession=1`),
 observation-only (no input/clipboard/file channel), no-oracle 404 authz, metadata-only audit,
 **no observation without a committed `VIEW_START`** (#780 fail-closed gate).
+
+The #2373 extension adds an opaque per-subscription `viewerId`, broker
+observation/send timestamps and a bearer-authenticated `POST` acknowledgement
+after the browser image render path. The acknowledgement contains only
+`{viewerId, frameSeq}`. It carries no screen bytes and cannot dispatch an
+operation to the endpoint.
 
 ### 1.1 Topology — which Deployment serves the viewer (READ FIRST)
 
@@ -179,7 +183,7 @@ The manual steps below remain the break-glass/fallback form of the same contract
        "SPRING_CLOUD_GATEWAY_ROUTES_28_URI": "http://endpoint-admin-remote-bridge-viewer:8096",
        "SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER": "-10",
        "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0": "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
-       "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET",
+       "SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1": "Method=GET,POST",
        "SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0": "RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"
      }
    }'
@@ -205,7 +209,8 @@ The manual steps below remain the break-glass/fallback form of the same contract
 - **Up**: `endpoint-admin-remote-bridge` pod Running + Ready; the view route is
   reachable through the api-gateway (reaches the bridge viewer ClusterIP, not the
   primary service).
-- **Functional**: with NO token → `401`; with a token for a
+- **Functional**: `GET` opens the one-way SSE stream and `POST` acknowledges
+  metadata-only browser rendering on the same path. With NO token → `401`; with a token for a
   non-owned/non-active/no-stream session → the SAME opaque `404` (no oracle); a
   2nd viewer on the same session → `409`.
 - **8096 negative reachability** (the boundary, run from each origin):
@@ -219,7 +224,7 @@ The manual steps below remain the break-glass/fallback form of the same contract
 - **Audited (the #780 gate) — executable drill**:
   1. Baseline: run one real observation; confirm a `REMOTE_SUPPORT_SCREEN_OBSERVATION`
      `VIEW_START` row exists in the tenant hash-chain BEFORE the first frame and a
-     `VIEW_STOP` (with `framesDelivered`) on stream end.
+     `VIEW_STOP` (with `framesDelivered` and `framesRenderAcknowledged`) on stream end.
   2. Fault the audit write (drill): make `recordViewStart` fail — e.g. point the
      audit datasource at an unreachable host (or revoke the audit-write grant) and
      `rollout restart`. Then attempt a view:
@@ -234,20 +239,45 @@ The manual steps below remain the break-glass/fallback form of the same contract
      - Fail signal: any 2xx / any frame / a partial row → the #780 gate regressed.
   3. Restore the audit datasource + `rollout restart`; re-confirm baseline passes.
 
-## 5. Acceptance (closes the §4.2 split gate, not this runbook)
+## 5. #2373 product acceptance (separate from #1580 completion)
 
-Capture the [§4.2](./RB-faz22.6-autonomous-completion-contract.md)
-**`F22_6_VIEW_ONLY_ENGINEERING: v2`** evidence on the real product channel:
-`recording_mode=disabled` + `content_persistence=none` + `metadata_audit=active`,
-live operator view of the 1 pilot device, agent-side **visible active indicator**,
-**local-abort** ends the stream, `d10_fail_closed`/`dlp_mask_policy`/`active_indicator`
-pass, browser smoke (first frame renders + STOP closes + NO input controls —
-already browser-verified in CI for the MFE), the v2 negative matrix, and
-`viewer_path_decision: fanout-proven`. Record the KVKK side as the separate,
-non-blocking **`F22_6_VIEW_ONLY_KVKK: v1`** (legal/DPO allowlist only). Do **not**
-post the legacy `F22_6_VIEW_ONLY_ACCEPTANCE` marker — the audit refuses it
-(`legacy_bundled_marker_detected`). Only after the engineering marker passes does
-`docs/state/current-state.md` move off `GATE_VIEW_ONLY_ENGINEERING=blocked`.
+The test-pilot thresholds are fixed before the run:
+
+| Signal | Bounded test-pilot threshold |
+|---|---|
+| First browser-render acknowledgement | `<= 5000 ms` from broker observation |
+| Steady frame age | p95 `<= 2000 ms`, at least 5 samples |
+| Broker-to-viewer drop rate | `<= 20%` |
+| Reconnects | `<= 1` during the evidence window |
+| Backpressure | `latest-wins-single-slot`, max pending frame `1` |
+| Soak | at least `300 s` |
+
+Collect a redacted JSON envelope matching
+`faz22.6.viewOnlyViewerProductEvidence.v1`. It must correlate:
+
+1. `CAPTURED`, `BROKER_RECEIVED`, `VIEWER_DELIVERED`, `VIEWER_RENDERED` counts.
+2. Browser screenshot hash, independent non-blank pixel check, DOM-observed accepted render-ack count and clean console.
+3. No-auth/wrong-role/wrong-tenant/wrong-device/expired/revoked/replay/
+   over-concurrency/disconnected-viewer negative matrix.
+4. Local abort, revoke, TTL, heartbeat loss, consent withdrawal and indicator-loss termination.
+5. Delivered-path DLP proof by hash only, recording-off zero persistence, and no input channels.
+6. Backend + web desired digest equals live pod `imageID` digest (D30).
+7. Broker Prometheus window deltas independently match delivered/rendered counts.
+8. Hash-chain `VIEW_START` is committed before first delivery; `VIEW_STOP` counts and snapshot hash match delivered/rendered counts.
+
+Never place a bearer token, cookie, frame bytes, base64 image, raw screen content,
+private endpoint or credential in the envelope. Run:
+
+```bash
+python3 scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py \
+  --input /protected/path/viewer-product-evidence.json \
+  --output /protected/path/viewer-product-verifier-result.json
+```
+
+Only `status=pass` together with marker
+`F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v1` is #2373 product acceptance.
+It is explicitly bounded to test, recording-off and one viewer. Production,
+broad rollout, multi-viewer fanout and #2374 legal acceptance remain false.
 
 ## 6. Rollback — two modes (broker always survives)
 
@@ -294,8 +324,9 @@ revocation — mandatory, not optional):
 ## 7. References
 
 - Engineering: platform-backend #770/#778/#780, platform-web #847, platform-agent #240–#245.
-- Acceptance contract: [RB-faz22.6-autonomous-completion-contract.md](./RB-faz22.6-autonomous-completion-contract.md) §4.2 (`F22_6_VIEW_ONLY_ENGINEERING: v2` + `F22_6_VIEW_ONLY_KVKK: v1`).
+- Product acceptance follow-up: platform-k8s-gitops #2373; legal follow-up #2374.
+- Narrow completion contract: [RB-faz22.6-autonomous-completion-contract.md](./RB-faz22.6-autonomous-completion-contract.md) §4.2 (historical #1580 engineering/KVKK split; already accepted for `F22_6_COMPLETION`).
 - Audit enforcement: `scripts/faz22-remote-ops/faz22-6-completion-audit.sh` (`check_view_only_engineering_gate`, legacy fail-safe).
 - Activation overlay: [`kustomize/overlays/test/activation/endpoint-admin-remote-bridge`](../../kustomize/overlays/test/activation/endpoint-admin-remote-bridge/) (`OWNER-APPROVAL.md`, control #5/#6/#11).
 - ADRs: ADR-0034 §13 / D10 (owner-gated operator fan-out), ADR-0044 (recording-OFF + KVKK non-blocking split).
-- Board: `platform-k8s-gitops#1580`.
+- Product evidence verifier: `scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py`.
