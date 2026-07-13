@@ -242,6 +242,7 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "collect_direct_stt_e2e_evidence.py" in workflow
     assert "verify_direct_stt_e2e_evidence.py" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
+    assert 'CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"' in workflow
     assert "RUN_EXTERNAL_SMOKE: \"1\"" in workflow
     assert "Prepare privacy-safe smoke chunk fixture" in workflow
     assert "CHUNK_FILE_INPUT: ${{ inputs.chunk_file }}" in workflow

@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +24,14 @@ DEFAULT_REQUIRED_AUDIENCES = ("audio-gateway-service", "meeting-service")
 # Mirrors the current test api-gateway/auth-service accepted audience contract
 # recorded in GitOps config; override this when runtime config changes.
 DEFAULT_GATEWAY_AUDIENCES = ("frontend", "account", "auth-service")
-DEFAULT_REQUIRED_CLAIMS = ("tenantId", "companyId", "userId")
+DEFAULT_REQUIRED_CLAIMS = (
+    "sub",
+    "org_id",
+    "tenant_id",
+    "tenantId",
+    "companyId",
+    "userId",
+)
 DEFAULT_RESOURCE_CLIENT_ID = "audio-gateway-service"
 DEFAULT_REQUIRED_CLIENT_ROLES = ("audio_record",)
 
@@ -94,6 +103,34 @@ def _client_roles(payload: dict[str, Any], resource_client_id: str) -> list[str]
     return [str(role) for role in roles if role is not None]
 
 
+def _uuid_value(value: Any) -> uuid.UUID | None:
+    if value in (None, ""):
+        return None
+    try:
+        return uuid.UUID(str(value).strip())
+    except (ValueError, AttributeError):
+        return None
+
+
+def _company_tenant_uuid(company_id: Any) -> uuid.UUID | None:
+    if company_id in (None, ""):
+        return None
+    digest = bytearray(hashlib.md5(f"company:{str(company_id).strip()}".encode()).digest())
+    digest[6] = (digest[6] & 0x0F) | 0x30
+    digest[8] = (digest[8] & 0x3F) | 0x80
+    return uuid.UUID(bytes=bytes(digest))
+
+
+def _compat_tenant_uuid(value: Any) -> uuid.UUID | None:
+    parsed = _uuid_value(value)
+    if parsed is not None:
+        return parsed
+    text = "" if value is None else str(value).strip()
+    if text and text.isascii() and text.isdigit():
+        return _company_tenant_uuid(text)
+    return None
+
+
 def validate(
     payload: dict[str, Any],
     *,
@@ -122,6 +159,41 @@ def validate(
         item for item in required_client_roles if item not in client_roles
     ]
 
+    tenant_aliases: dict[str, uuid.UUID] = {}
+    invalid_tenant_aliases: list[str] = []
+    for claim in ("org_id", "tenant_id"):
+        if claim in payload and payload.get(claim) not in (None, ""):
+            parsed = _uuid_value(payload.get(claim))
+            if parsed is None:
+                invalid_tenant_aliases.append(claim)
+            else:
+                tenant_aliases[claim] = parsed
+    if "tenantId" in payload and payload.get("tenantId") not in (None, ""):
+        parsed = _compat_tenant_uuid(payload.get("tenantId"))
+        if parsed is None:
+            invalid_tenant_aliases.append("tenantId")
+        else:
+            tenant_aliases["tenantId"] = parsed
+    if "companyId" in payload and payload.get("companyId") not in (None, ""):
+        parsed = _company_tenant_uuid(payload.get("companyId"))
+        if parsed is None:
+            invalid_tenant_aliases.append("companyId")
+        else:
+            tenant_aliases["companyId"] = parsed
+
+    checked_tenant_aliases = ("org_id", "tenant_id", "tenantId", "companyId")
+    missing_tenant_aliases = [
+        claim
+        for claim in checked_tenant_aliases
+        if claim not in payload or payload.get(claim) in (None, "")
+    ]
+    distinct_tenants = {str(value) for value in tenant_aliases.values()}
+    tenant_aliases_consistent = (
+        not missing_tenant_aliases
+        and not invalid_tenant_aliases
+        and len(distinct_tenants) == 1
+    )
+
     if missing_required_audiences:
         failures.append(
             "missing required service audience(s): " + ",".join(missing_required_audiences)
@@ -133,6 +205,12 @@ def validate(
         )
     if missing_claims:
         failures.append("missing required claim(s): " + ",".join(missing_claims))
+    if invalid_tenant_aliases:
+        failures.append(
+            "invalid tenant claim alias(es): " + ",".join(invalid_tenant_aliases)
+        )
+    if len(distinct_tenants) > 1:
+        failures.append("conflicting tenant claim aliases")
     if payload.get("azp") != required_azp:
         failures.append(f"azp mismatch: expected {required_azp}")
     if required_role not in roles:
@@ -164,6 +242,14 @@ def validate(
         "claims": {
             claim: claim in payload and payload.get(claim) not in (None, "")
             for claim in required_claims
+        },
+        "tenantAliases": {
+            "checked": list(checked_tenant_aliases),
+            "present": [claim for claim in tenant_aliases],
+            "missing": missing_tenant_aliases,
+            "invalid": invalid_tenant_aliases,
+            "consistent": tenant_aliases_consistent,
+            "valuesIncluded": False,
         },
         "realmRole": {
             "required": required_role,

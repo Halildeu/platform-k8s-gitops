@@ -36,6 +36,10 @@ TENANT_ID="${TENANT_ID:-1}"
 COMPANY_ID="${COMPANY_ID:-1}"
 PLATFORM_USER_ID="${PLATFORM_USER_ID:-990001}"
 REQUIRED_ROLE="${REQUIRED_ROLE:-MEETING_ADMIN}"
+CANONICAL_TENANT_ID="${CANONICAL_TENANT_ID:-}"
+RECONCILE_EXISTING_USERNAMES="${RECONCILE_EXISTING_USERNAMES:-}"
+CONFIRM_EXISTING_USER_RECONCILE="${CONFIRM_EXISTING_USER_RECONCILE:-NO}"
+CONFIRM_CONTROLLED_MAPPER_PRUNE="${CONFIRM_CONTROLLED_MAPPER_PRUNE:-NO}"
 
 if [[ "${KC_REALM}" != "platform-test" ]]; then
   echo "ERROR: KC_REALM must be platform-test for this test-only evidence chain" >&2
@@ -59,6 +63,7 @@ ADMIN_PASS_FILE="${TMP_DIR}/kc-admin-password"
 USER_PASS_FILE="${TMP_DIR}/smoke-user-password"
 TOKEN_FILE="${TMP_DIR}/platform-desktop-token.jwt"
 ADMIN_TOKEN_FILE="${TMP_DIR}/kc-admin-token.jwt"
+RECONCILE_BACKUP_JSON="${OUT_DIR}/faz24-platform-desktop-tenant-reconcile-backup-${RUN_ID_SAFE}-${RUN_ATTEMPT_SAFE}.json"
 
 : > "${GRANT_ATTEMPTS_JSONL}"
 printf '{}\n' > "${CLIENT_BEFORE_JSON}"
@@ -85,6 +90,8 @@ SMOKE_VERIFY_EXIT="not-run"
 DIAGNOSTIC_WRITTEN="false"
 CLEANUP_DONE="false"
 KC_ADMIN_MODE=""
+EXISTING_USERS_RECONCILED=0
+EXISTING_USERS_ALREADY_CORRECT=0
 
 safe_error() {
   local value="${1:-}"
@@ -93,6 +100,29 @@ safe_error() {
     | sed -E 's/[^A-Za-z0-9_ .,:;@+\/=-]/?/g' \
     | cut -c1-180
 }
+
+derive_company_tenant_uuid() {
+  local company_id="$1"
+  python3 - "${company_id}" <<'PY'
+import hashlib
+import sys
+import uuid
+
+digest = bytearray(hashlib.md5(("company:" + sys.argv[1].strip()).encode()).digest())
+digest[6] = (digest[6] & 0x0F) | 0x30
+digest[8] = (digest[8] & 0x3F) | 0x80
+print(uuid.UUID(bytes=bytes(digest)))
+PY
+}
+
+if [[ -z "${CANONICAL_TENANT_ID}" ]]; then
+  CANONICAL_TENANT_ID="$(derive_company_tenant_uuid "${COMPANY_ID}")"
+fi
+python3 - "${CANONICAL_TENANT_ID}" <<'PY' >/dev/null
+import sys
+import uuid
+uuid.UUID(sys.argv[1])
+PY
 
 keycloak_admin_password_candidates() {
   printf '%s\t%s\n' \
@@ -264,6 +294,20 @@ kcadm_login() {
   die "keycloak-admin-login-failed"
 }
 
+kcadm_stage_file() {
+  local host_file="$1"
+  local label="$2"
+  local container_file="/tmp/faz24-${label}-$$.json"
+  docker exec -i "${KC_CONTAINER}" sh -c 'umask 077; cat > "$1"' sh "${container_file}" < "${host_file}" \
+    || die "keycloak-kcadm-stage-file-failed"
+  printf '%s' "${container_file}"
+}
+
+kcadm_remove_staged_file() {
+  local container_file="$1"
+  docker exec "${KC_CONTAINER}" rm -f "${container_file}" >/dev/null 2>&1 || true
+}
+
 admin_auth_header() {
   printf 'Authorization: Bearer %s' "$(tr -d '\n' < "${ADMIN_TOKEN_FILE}")"
 }
@@ -353,8 +397,14 @@ capture_client_state() {
           audienceMeetingService: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-audience-mapper" and .config["included.custom.audience"] == "meeting-service" and .config["access.token.claim"] == "true"),
           audienceFrontend: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-audience-mapper" and .config["included.custom.audience"] == "frontend" and .config["access.token.claim"] == "true"),
           tenantIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "tenantId" and .config["claim.name"] == "tenantId" and .config["access.token.claim"] == "true"),
+          tenantIdSnakeClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "tenant_id" and .config["claim.name"] == "tenant_id" and .config["access.token.claim"] == "true"),
+          orgIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "org_id" and .config["claim.name"] == "org_id" and .config["access.token.claim"] == "true"),
           companyIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "companyId" and .config["claim.name"] == "companyId" and .config["access.token.claim"] == "true"),
-          userIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "userId" and .config["claim.name"] == "userId" and .config["access.token.claim"] == "true")
+          userIdClaim: any(($c.protocolMappers // [])[]; .protocolMapper == "oidc-usermodel-attribute-mapper" and .config["user.attribute"] == "userId" and .config["claim.name"] == "userId" and .config["access.token.claim"] == "true"),
+          hardcodedControlledClaim: any(($c.protocolMappers // [])[];
+            . as $mapper
+            | $mapper.protocolMapper == "oidc-hardcoded-claim-mapper"
+              and (["org_id", "tenant_id", "tenantId", "companyId", "userId"] | index($mapper.config["claim.name"] // "")) != null)
         }
       }
       end' "${raw}" > "${out}"; then
@@ -385,17 +435,20 @@ upsert_mapper() {
   local mapper_file="$2"
   local existing_id
   if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    local container_file
+    container_file="$(kcadm_stage_file "${mapper_file}" "mapper")"
     existing_id="$("${KCADM[@]}" get "clients/${CLIENT_UUID}/protocol-mappers/models" -r "${KC_REALM}" \
       | jq -r --arg name "${name}" '.[]? | select(.name == $name) | .id' | head -n 1)"
     if [[ -n "${existing_id}" ]]; then
       "${KCADM[@]}" update "clients/${CLIENT_UUID}/protocol-mappers/models/${existing_id}" \
-        -r "${KC_REALM}" -f "${mapper_file}" >/dev/null \
-        || die "keycloak-mapper-update-failed:${name}"
+        -r "${KC_REALM}" -f "${container_file}" >/dev/null \
+        || { kcadm_remove_staged_file "${container_file}"; die "keycloak-mapper-update-failed:${name}"; }
     else
       "${KCADM[@]}" create "clients/${CLIENT_UUID}/protocol-mappers/models" \
-        -r "${KC_REALM}" -f "${mapper_file}" >/dev/null \
-        || die "keycloak-mapper-create-failed:${name}"
+        -r "${KC_REALM}" -f "${container_file}" >/dev/null \
+        || { kcadm_remove_staged_file "${container_file}"; die "keycloak-mapper-create-failed:${name}"; }
     fi
+    kcadm_remove_staged_file "${container_file}"
   else
     local list_file="${TMP_DIR}/mappers-${name}.json"
     local out_file="${TMP_DIR}/mapper-${name}-out.json"
@@ -413,6 +466,128 @@ upsert_mapper() {
       [[ "${code}" == "201" || "${code}" == "204" ]] || die "keycloak-mapper-create-failed:${name}"
     fi
   fi
+}
+
+read_client_mappers() {
+  local out="$1"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    "${KCADM[@]}" get "clients/${CLIENT_UUID}/protocol-mappers/models" -r "${KC_REALM}" > "${out}"
+    return $?
+  fi
+  local code
+  code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}/protocol-mappers/models" "${out}")"
+  [[ "${code}" == "200" ]]
+}
+
+delete_client_mapper() {
+  local mapper_id="$1"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    "${KCADM[@]}" delete "clients/${CLIENT_UUID}/protocol-mappers/models/${mapper_id}" -r "${KC_REALM}" >/dev/null \
+      || die "keycloak-mapper-delete-failed"
+    return 0
+  fi
+  local out_file="${TMP_DIR}/mapper-delete-${mapper_id}.out"
+  local code
+  code="$(kc_admin_rest DELETE "/clients/${CLIENT_UUID}/protocol-mappers/models/${mapper_id}" "${out_file}")"
+  [[ "${code}" == "204" || "${code}" == "404" ]] || die "keycloak-mapper-delete-failed"
+}
+
+prune_conflicting_controlled_claim_mappers() {
+  local mapper_file="${TMP_DIR}/controlled-mappers.json"
+  read_client_mappers "${mapper_file}" || die "keycloak-mapper-read-failed"
+  local mapper_id
+  while IFS= read -r mapper_id; do
+    [[ -n "${mapper_id}" ]] || continue
+    delete_client_mapper "${mapper_id}"
+  done < <(jq -r '
+    .[]?
+    | (.config["claim.name"] // "") as $claim
+    | select((["org_id", "tenant_id", "tenantId", "companyId", "userId"] | index($claim)) != null)
+    | select(
+        .name != $claim
+        or .protocolMapper != "oidc-usermodel-attribute-mapper"
+        or (.config["user.attribute"] // "") != $claim
+        or (.config["access.token.claim"] // "") != "true"
+      )
+    | .id // empty
+  ' "${mapper_file}")
+}
+
+guard_controlled_mapper_prune_confirmation() {
+  local mapper_file="${TMP_DIR}/controlled-mappers-preflight.json"
+  read_client_mappers "${mapper_file}" || die "keycloak-mapper-preflight-read-failed"
+  local conflict_count
+  conflict_count="$(jq '
+    [
+      .[]?
+      | (.config["claim.name"] // "") as $claim
+      | select((["org_id", "tenant_id", "tenantId", "companyId", "userId"] | index($claim)) != null)
+      | select(
+          .name != $claim
+          or .protocolMapper != "oidc-usermodel-attribute-mapper"
+          or (.config["user.attribute"] // "") != $claim
+          or (.config["access.token.claim"] // "") != "true"
+        )
+    ] | length
+  ' "${mapper_file}")"
+  if [[ "${conflict_count}" != "0" && "${CONFIRM_CONTROLLED_MAPPER_PRUNE}" != "YES" ]]; then
+    die "controlled-mapper-prune-requires-explicit-confirmation"
+  fi
+}
+
+verify_no_assigned_scope_controlled_claims() {
+  local scope_kind scopes_file scope_id mapper_file collision_count code
+  for scope_kind in default optional; do
+    scopes_file="${TMP_DIR}/${scope_kind}-client-scopes.json"
+    if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+      "${KCADM[@]}" get "clients/${CLIENT_UUID}/${scope_kind}-client-scopes" -r "${KC_REALM}" > "${scopes_file}" \
+        || die "keycloak-assigned-scope-read-failed:${scope_kind}"
+    else
+      code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}/${scope_kind}-client-scopes" "${scopes_file}")"
+      [[ "${code}" == "200" ]] || die "keycloak-assigned-scope-read-failed:${scope_kind}"
+    fi
+
+    while IFS= read -r scope_id; do
+      [[ -n "${scope_id}" ]] || continue
+      mapper_file="${TMP_DIR}/${scope_kind}-scope-${scope_id}.json"
+      if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+        "${KCADM[@]}" get "client-scopes/${scope_id}/protocol-mappers/models" -r "${KC_REALM}" > "${mapper_file}" \
+          || die "keycloak-assigned-scope-mapper-read-failed:${scope_kind}"
+      else
+        code="$(kc_admin_rest GET "/client-scopes/${scope_id}/protocol-mappers/models" "${mapper_file}")"
+        [[ "${code}" == "200" ]] || die "keycloak-assigned-scope-mapper-read-failed:${scope_kind}"
+      fi
+      collision_count="$(jq '
+        [
+          .[]?
+          | (.config["claim.name"] // "") as $claim
+          | select((["org_id", "tenant_id", "tenantId", "companyId", "userId"] | index($claim)) != null)
+        ] | length
+      ' "${mapper_file}")"
+      [[ "${collision_count}" == "0" ]] \
+        || die "assigned-scope-controlled-claim-collision:${scope_kind}"
+    done < <(jq -r '.[].id // empty' "${scopes_file}")
+  done
+}
+
+verify_controlled_claim_mapper_contract() {
+  local mapper_file="${TMP_DIR}/controlled-mappers-verify.json"
+  read_client_mappers "${mapper_file}" || die "keycloak-mapper-verify-read-failed"
+  jq -e '
+    ["org_id", "tenant_id", "tenantId", "companyId", "userId"] as $claims
+    | all($claims[] as $claim;
+        ([.[]?
+          | select((.config["claim.name"] // "") == $claim)
+          | select(.name == $claim)
+          | select(.protocolMapper == "oidc-usermodel-attribute-mapper")
+          | select((.config["user.attribute"] // "") == $claim)
+          | select((.config["access.token.claim"] // "") == "true")
+        ] | length) == 1)
+      and ([.[]?
+        | (.config["claim.name"] // "") as $claim
+        | select(($claims | index($claim)) != null)
+      ] | length) == ($claims | length)
+  ' "${mapper_file}" >/dev/null || die "keycloak-controlled-claim-mapper-contract-failed"
 }
 
 write_audience_mapper() {
@@ -459,12 +634,163 @@ write_user_attribute_mapper() {
 }
 
 converge_platform_desktop_mappers() {
+  guard_controlled_mapper_prune_confirmation
+  verify_no_assigned_scope_controlled_claims
   upsert_mapper "audience-audio-gateway-service" "$(write_audience_mapper "audience-audio-gateway-service" "audio-gateway-service")"
   upsert_mapper "audience-meeting-service" "$(write_audience_mapper "audience-meeting-service" "meeting-service")"
   upsert_mapper "audience-frontend" "$(write_audience_mapper "audience-frontend" "frontend")"
+  upsert_mapper "org_id" "$(write_user_attribute_mapper "org_id")"
+  upsert_mapper "tenant_id" "$(write_user_attribute_mapper "tenant_id")"
   upsert_mapper "tenantId" "$(write_user_attribute_mapper "tenantId")"
   upsert_mapper "companyId" "$(write_user_attribute_mapper "companyId")"
   upsert_mapper "userId" "$(write_user_attribute_mapper "userId")"
+  prune_conflicting_controlled_claim_mappers
+  verify_controlled_claim_mapper_contract
+  verify_no_assigned_scope_controlled_claims
+}
+
+preflight_existing_user_reconcile() {
+  [[ -n "${RECONCILE_EXISTING_USERNAMES}" ]] || return 0
+  [[ "${CONFIRM_EXISTING_USER_RECONCILE}" == "YES" ]] \
+    || die "existing-user-reconcile-requires-explicit-confirmation"
+
+  local username user_file count company_value tenant_value user_index=0
+  local usernames=()
+  IFS=',' read -r -a usernames <<< "${RECONCILE_EXISTING_USERNAMES}"
+  for username in "${usernames[@]}"; do
+    username="$(printf '%s' "${username}" | xargs)"
+    [[ -n "${username}" ]] || continue
+    user_index=$((user_index + 1))
+    user_file="${TMP_DIR}/reconcile-user-preflight-${user_index}.json"
+    read_user_list "${username}" "${user_file}" || die "existing-user-preflight-read-failed"
+    count="$(jq 'length' "${user_file}")"
+    [[ "${count}" == "1" ]] || die "existing-user-preflight-not-exactly-one"
+
+    company_value="$(jq -r '.[0].attributes.companyId[0] // empty' "${user_file}")"
+    tenant_value="$(jq -r '.[0].attributes.tenantId[0] // empty' "${user_file}")"
+    [[ -n "${company_value}" || -n "${tenant_value}" ]] \
+      || die "existing-user-missing-company-tenant-alias"
+    [[ -z "${company_value}" || "${company_value}" == "${COMPANY_ID}" ]] \
+      || die "existing-user-company-alias-out-of-scope"
+    [[ -z "${tenant_value}" || "${tenant_value}" == "${TENANT_ID}" ]] \
+      || die "existing-user-tenant-alias-out-of-scope"
+  done
+  [[ "${user_index}" -gt 0 ]] || die "existing-user-reconcile-list-empty"
+}
+
+write_reconcile_backup() {
+  local mappers_file="${TMP_DIR}/reconcile-mappers-before.json"
+  local users_file="${TMP_DIR}/reconcile-users-before.jsonl"
+  : > "${users_file}"
+  read_client_mappers "${mappers_file}" || die "keycloak-mapper-backup-read-failed"
+
+  if [[ -n "${RECONCILE_EXISTING_USERNAMES}" ]]; then
+    local username user_file count user_index=0
+    local usernames=()
+    IFS=',' read -r -a usernames <<< "${RECONCILE_EXISTING_USERNAMES}"
+    for username in "${usernames[@]}"; do
+      username="$(printf '%s' "${username}" | xargs)"
+      [[ -n "${username}" ]] || continue
+      user_index=$((user_index + 1))
+      user_file="${TMP_DIR}/reconcile-user-before-${user_index}.json"
+      read_user_list "${username}" "${user_file}" || die "existing-user-backup-read-failed"
+      count="$(jq 'length' "${user_file}")"
+      [[ "${count}" == "1" ]] || die "existing-user-backup-not-exactly-one"
+      jq -c '.[0] | del(.credentials)' "${user_file}" >> "${users_file}"
+    done
+  fi
+
+  jq -n \
+    --arg schemaVersion "faz24.platformDesktopTenantReconcileBackup.v1" \
+    --arg realm "${KC_REALM}" \
+    --arg clientId "${CLIENT_ID}" \
+    --arg canonicalTenantDerivation "java-name-uuid(company:<companyId>)" \
+    --slurpfile protocolMappers "${mappers_file}" \
+    --slurpfile users "${users_file}" \
+    '{
+      schemaVersion: $schemaVersion,
+      realm: $realm,
+      clientId: $clientId,
+      canonicalTenantDerivation: $canonicalTenantDerivation,
+      credentialsIncluded: false,
+      protocolMappers: ($protocolMappers[0] // []),
+      users: $users
+    }' > "${RECONCILE_BACKUP_JSON}"
+  chmod 0600 "${RECONCILE_BACKUP_JSON}"
+}
+
+update_existing_user() {
+  local user_id="$1"
+  local user_file="$2"
+  if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
+    local container_file
+    container_file="$(kcadm_stage_file "${user_file}" "existing-user")"
+    "${KCADM[@]}" update "users/${user_id}" -r "${KC_REALM}" -f "${container_file}" >/dev/null \
+      || { kcadm_remove_staged_file "${container_file}"; die "existing-user-tenant-alias-update-failed"; }
+    kcadm_remove_staged_file "${container_file}"
+    return 0
+  fi
+  local out_file="${TMP_DIR}/existing-user-update.out"
+  local code
+  code="$(kc_admin_rest PUT "/users/${user_id}" "${out_file}" "${user_file}")"
+  [[ "${code}" == "204" ]] || die "existing-user-tenant-alias-update-failed"
+}
+
+reconcile_existing_user_tenant_attributes() {
+  [[ -n "${RECONCILE_EXISTING_USERNAMES}" ]] || return 0
+  [[ "${CONFIRM_EXISTING_USER_RECONCILE}" == "YES" ]] \
+    || die "existing-user-reconcile-requires-explicit-confirmation"
+
+  local username user_file count user_id company_value tenant_value merged_file verify_file user_index=0
+  local usernames=()
+  IFS=',' read -r -a usernames <<< "${RECONCILE_EXISTING_USERNAMES}"
+  for username in "${usernames[@]}"; do
+    username="$(printf '%s' "${username}" | xargs)"
+    [[ -n "${username}" ]] || continue
+    user_index=$((user_index + 1))
+    user_file="${TMP_DIR}/reconcile-user-current-${user_index}.json"
+    read_user_list "${username}" "${user_file}" || die "existing-user-read-failed"
+    count="$(jq 'length' "${user_file}")"
+    [[ "${count}" == "1" ]] || die "existing-user-not-exactly-one"
+
+    company_value="$(jq -r '.[0].attributes.companyId[0] // empty' "${user_file}")"
+    tenant_value="$(jq -r '.[0].attributes.tenantId[0] // empty' "${user_file}")"
+    [[ -n "${company_value}" || -n "${tenant_value}" ]] \
+      || die "existing-user-missing-company-tenant-alias"
+    [[ -z "${company_value}" || "${company_value}" == "${COMPANY_ID}" ]] \
+      || die "existing-user-company-alias-out-of-scope"
+    [[ -z "${tenant_value}" || "${tenant_value}" == "${TENANT_ID}" ]] \
+      || die "existing-user-tenant-alias-out-of-scope"
+
+    if jq -e --arg canonical "${CANONICAL_TENANT_ID}" '
+      .[0].attributes.org_id == [$canonical]
+      and .[0].attributes.tenant_id == [$canonical]
+    ' "${user_file}" >/dev/null; then
+      EXISTING_USERS_ALREADY_CORRECT=$((EXISTING_USERS_ALREADY_CORRECT + 1))
+      continue
+    fi
+
+    user_id="$(jq -r '.[0].id // empty' "${user_file}")"
+    [[ -n "${user_id}" ]] || die "existing-user-id-missing"
+    merged_file="${TMP_DIR}/reconcile-user-update-${user_index}.json"
+    jq --arg canonical "${CANONICAL_TENANT_ID}" '
+      .[0]
+      | .attributes = ((.attributes // {}) + {
+          org_id: [$canonical],
+          tenant_id: [$canonical]
+        })
+    ' "${user_file}" > "${merged_file}"
+    update_existing_user "${user_id}" "${merged_file}"
+
+    verify_file="${TMP_DIR}/reconcile-user-verify-${user_index}.json"
+    read_user_list "${username}" "${verify_file}" || die "existing-user-verify-read-failed"
+    jq -e --arg canonical "${CANONICAL_TENANT_ID}" '
+      length == 1
+      and .[0].attributes.org_id == [$canonical]
+      and .[0].attributes.tenant_id == [$canonical]
+    ' "${verify_file}" >/dev/null || die "existing-user-tenant-alias-verify-failed"
+    EXISTING_USERS_RECONCILED=$((EXISTING_USERS_RECONCILED + 1))
+  done
 }
 
 assign_capability_role() {
@@ -504,6 +830,7 @@ create_temp_user() {
     --arg tenantId "${TENANT_ID}" \
     --arg companyId "${COMPANY_ID}" \
     --arg userId "${PLATFORM_USER_ID}" \
+    --arg canonicalTenantId "${CANONICAL_TENANT_ID}" \
     '{
       username: $username,
       enabled: true,
@@ -515,13 +842,17 @@ create_temp_user() {
         tenantId: [$tenantId],
         companyId: [$companyId],
         userId: [$userId],
-        tenant_id: [$tenantId],
+        tenant_id: [$canonicalTenantId],
         company_id: [$companyId],
-        org_id: [$tenantId]
+        org_id: [$canonicalTenantId]
       }
     }' > "${create_file}"
   if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
-    TEMP_USER_ID="$("${KCADM[@]}" create users -r "${KC_REALM}" -f "${create_file}" -i)"
+    local container_file
+    container_file="$(kcadm_stage_file "${create_file}" "temp-user")"
+    TEMP_USER_ID="$("${KCADM[@]}" create users -r "${KC_REALM}" -f "${container_file}" -i)" \
+      || { kcadm_remove_staged_file "${container_file}"; die "temp-user-create-failed"; }
+    kcadm_remove_staged_file "${container_file}"
   else
     local create_out="${TMP_DIR}/temp-user-create.out"
     local code
@@ -613,6 +944,8 @@ capture_user_diagnostic() {
           emailVerified: ($u.emailVerified // null),
           requiredActions: ($u.requiredActions // []),
           attributesPresent: {
+            org_id: (($u.attributes.org_id // []) | length > 0),
+            tenant_id: (($u.attributes.tenant_id // []) | length > 0),
             tenantId: (($u.attributes.tenantId // []) | length > 0),
             companyId: (($u.attributes.companyId // []) | length > 0),
             userId: (($u.attributes.userId // []) | length > 0)
@@ -868,6 +1201,8 @@ write_diagnostic() {
     --argjson tempUserCreated "${TEMP_USER_CREATED}" \
     --argjson tempUserDeleted "${TEMP_USER_DELETED}" \
     --argjson tokenFileRemoved "${TOKEN_FILE_REMOVED}" \
+    --argjson existingUsersReconciled "${EXISTING_USERS_RECONCILED}" \
+    --argjson existingUsersAlreadyCorrect "${EXISTING_USERS_ALREADY_CORRECT}" \
     --slurpfile kcSource "${KC_SOURCE_JSON}" \
     --slurpfile clientBefore "${CLIENT_BEFORE_JSON}" \
     --slurpfile clientAfter "${CLIENT_AFTER_JSON}" \
@@ -921,6 +1256,13 @@ write_diagnostic() {
         tempUserCreated: $tempUserCreated,
         tempUserDeleted: $tempUserDeleted,
         tokenFileRemoved: $tokenFileRemoved
+      },
+      tenantAliasReconcile: {
+        requested: ($existingUsersReconciled + $existingUsersAlreadyCorrect),
+        reconciled: $existingUsersReconciled,
+        alreadyCorrect: $existingUsersAlreadyCorrect,
+        usernamesIncluded: false,
+        credentialsMutated: false
       }
     }' > "${DIAG_JSON}"
   chmod 0600 "${DIAG_JSON}"
@@ -955,7 +1297,10 @@ echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SM
 kcadm_login
 resolve_client_uuid
 capture_client_state "${CLIENT_BEFORE_JSON}"
+preflight_existing_user_reconcile
+write_reconcile_backup
 converge_platform_desktop_mappers
+reconcile_existing_user_tenant_attributes
 create_temp_user
 capture_user_diagnostic
 enable_direct_grants_temporarily
@@ -971,6 +1316,7 @@ cleanup_live_state
 write_diagnostic
 
 echo "diagnostic=${DIAG_JSON}"
+echo "tenant_reconcile_backup=${RECONCILE_BACKUP_JSON}"
 if [[ -s "${TOKEN_CONTRACT_JSON}" ]]; then
   echo "token_contract=${TOKEN_CONTRACT_JSON}"
 fi

@@ -118,6 +118,10 @@ jobs:
           KC_BASE_URL: ${{ inputs.keycloak_base_url }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           RUN_EXTERNAL_SMOKE: ${{ inputs.run_external_smoke == 'true' && '1' || '0' }}
+          # The platform-desktop client owns these five direct claims. This
+          # explicit test-only confirmation removes foreign/hardcoded direct
+          # emitters only after a 0600 rollback snapshot is written.
+          CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"

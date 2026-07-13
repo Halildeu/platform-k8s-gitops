@@ -39,6 +39,19 @@ def test_runner_contract_restores_and_redacts():
     assert "role-mappings/clients/${RESOURCE_CLIENT_UUID}" in text
     assert "required-client-role-missing" in text
     assert "CLIENT_ROLE_ASSIGNED" in text
+    assert "preflight_existing_user_reconcile" in text
+    assert "existing-user-reconcile-requires-explicit-confirmation" in text
+    assert "existing-user-company-alias-out-of-scope" in text
+    assert "existing-user-tenant-alias-out-of-scope" in text
+    assert "controlled-mapper-prune-requires-explicit-confirmation" in text
+    assert "verify_no_assigned_scope_controlled_claims" in text
+    assert "assigned-scope-controlled-claim-collision" in text
+    assert "for scope_kind in default optional" in text
+    assert "${scope_kind}-client-scopes" in text
+    assert "keycloak-controlled-claim-mapper-contract-failed" in text
+    assert "del(.credentials)" in text
+    assert "chmod 0600 \"${RECONCILE_BACKUP_JSON}\"" in text
+    assert "credentialsMutated: false" in text
     assert "mapper-${name}-update.json" in text
     assert "jq --arg id" in text
     assert ".id = $id" in text
@@ -73,6 +86,7 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "runs-on: [self-hosted, staging-sw, testai-deploy]" in workflow
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
+    assert 'CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"' in workflow
     assert "faz24-platform-desktop-token-evidence-${{ github.run_id }}" in workflow
     assert "Verify artifact excludes private material" in workflow
     assert "directGrantsRestored" in workflow
