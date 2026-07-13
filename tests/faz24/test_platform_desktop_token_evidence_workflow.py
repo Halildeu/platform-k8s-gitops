@@ -53,6 +53,7 @@ def test_runner_contract_restores_and_redacts():
     assert "chmod 0600 \"${RECONCILE_BACKUP_JSON}\"" in text
     assert "credentialsMutated: false" in text
     assert "mapper-${name}-update.json" in text
+    assert "kcadm-mapper-${name}-update.json" in text
     assert "jq --arg id" in text
     assert ".id = $id" in text
     assert "keycloak-admin-login-failed" in text
