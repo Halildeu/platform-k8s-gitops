@@ -580,16 +580,18 @@ verify_controlled_claim_mapper_contract() {
   local mapper_file="${TMP_DIR}/controlled-mappers-verify.json"
   read_client_mappers "${mapper_file}" || die "keycloak-mapper-verify-read-failed"
   jq -e '
-    ["org_id", "tenant_id", "tenantId", "companyId", "userId"] as $claims
-    | all($claims[] as $claim;
-        ([.[]?
+    . as $mappers
+    | ["org_id", "tenant_id", "tenantId", "companyId", "userId"] as $claims
+    | all($claims[];
+        . as $claim
+        | ([$mappers[]?
           | select((.config["claim.name"] // "") == $claim)
           | select(.name == $claim)
           | select(.protocolMapper == "oidc-usermodel-attribute-mapper")
           | select((.config["user.attribute"] // "") == $claim)
           | select((.config["access.token.claim"] // "") == "true")
         ] | length) == 1)
-      and ([.[]?
+      and ([$mappers[]?
         | (.config["claim.name"] // "") as $claim
         | select(($claims | index($claim)) != null)
       ] | length) == ($claims | length)

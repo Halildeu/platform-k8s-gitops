@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import subprocess
 
 
@@ -79,6 +80,49 @@ def test_runner_contract_restores_and_redacts():
     }
     assert "path:" not in text
     assert "set -x" not in text
+
+
+def test_controlled_claim_mapper_jq_contract_compiles_and_rejects_duplicates():
+    text = SCRIPT.read_text(encoding="utf-8")
+    function = text.split("verify_controlled_claim_mapper_contract() {", 1)[1]
+    function = function.split("write_audience_mapper() {", 1)[0]
+    program = function.split("jq -e '\n", 1)[1].split(
+        "\n  ' \"${mapper_file}\"", 1
+    )[0]
+
+    claims = ["org_id", "tenant_id", "tenantId", "companyId", "userId"]
+    mappers = [
+        {
+            "name": claim,
+            "protocolMapper": "oidc-usermodel-attribute-mapper",
+            "config": {
+                "claim.name": claim,
+                "user.attribute": claim,
+                "access.token.claim": "true",
+            },
+        }
+        for claim in claims
+    ]
+
+    valid = subprocess.run(
+        ["jq", "-e", program],
+        input=json.dumps(mappers),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert valid.returncode == 0, valid.stderr
+
+    duplicate = subprocess.run(
+        ["jq", "-e", program],
+        input=json.dumps([*mappers, mappers[0]]),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert duplicate.returncode == 1, duplicate.stderr
 
 
 def test_workflow_runs_on_staging_sw_and_scans_artifacts():
