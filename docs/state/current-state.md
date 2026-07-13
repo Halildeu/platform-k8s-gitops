@@ -1,5 +1,64 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 completion contract passed; product/legal residuals remain separate (2026-07-13)
+
+Tracked by [platform-k8s-gitops#2372](https://github.com/Halildeu/platform-k8s-gitops/issues/2372).
+This delta supersedes the Faz 22.6 blocker interpretations below. It records
+the narrow engineering completion contract only; it does not claim VIEW_ONLY
+viewer delivery, fanout, recording, production or broad rollout readiness.
+
+Canonical evidence:
+
+- PR [#2376](https://github.com/Halildeu/platform-k8s-gitops/pull/2376)
+  removed the self-hosted runner's mutable `gh` dependency while preserving
+  read-only, fail-closed GitHub issue/release/tag verification.
+- The prior 2026-06-09 design-only / `#1388`-blocked roadmap posture is stale:
+  GitOps issues `#1388`, `#1400`, `#1401`, `#1402`, backend issues `#510`,
+  `#524` and agent issue `#116` are all closed. Their design and prerequisite
+  work remains historical evidence, not a current blocker.
+- Independent MiniMax-M3 review of the complete change returned `AGREE` with
+  zero blocking/P0/P1/P2 findings after origin pinning, path rejection,
+  authenticated `gh` selection, stable release snapshots and negative/race
+  regressions were absorbed.
+- The official `Faz 22.6 Live Audit` workflow ran from merged `main` commit
+  `0f7b9915088cb1e9cce5a166b17ee8a42c03eb03` and concluded `success`:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29284637555`.
+- Artifact `8292684208` is retained for 30 days with archive digest
+  `sha256:9d4feb2b461233f5720d676577df7371a1a9ace7ca43151d88a22248ffa01970`.
+
+Selected machine acceptance fields:
+
+```text
+F22_6_GITHUB_READ_BACKEND=curl
+GATE_22_6_1_OPERATION_CATALOG=pass state=CLOSED issue=Halildeu/platform-backend#701
+GATE_22_6_2_APPROVED_SCRIPT_RUNNER=pass state=CLOSED issue=Halildeu/platform-backend#702
+GATE_22_6_3_CONSTRAINED_EXECUTOR=pass state=CLOSED issue=Halildeu/platform-agent#208
+GATE_B1_4_HARDWARE_ATTESTATION=pass state=CLOSED issue=Halildeu/platform-backend#548 owner=Halil Kocoglu approved_at=2026-07-02
+GATE_VIEW_ONLY_ENGINEERING=pass state=CLOSED issue=Halildeu/platform-k8s-gitops#1580 owner=Halil Kocoglu recording_mode=disabled
+GATE_VIEW_ONLY_KVKK=tracked_pending issue=Halildeu/platform-k8s-gitops#1580 reason=no-kvkk-marker
+REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay
+RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene
+F22_6_RELEASE_LINEAGE=pass
+RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass
+F22_6_COMPLETION=pass
+```
+
+Residual boundary:
+
+- [#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373)
+  owns browser viewer delivery, rendered-frame proof, fanout, transport SLOs,
+  DLP-on-delivered-frame and product usability. The accepted #1580 evidence
+  proved capture and broker receipt, not viewer delivery.
+- [#2374](https://github.com/Halildeu/platform-k8s-gitops/issues/2374)
+  owns legal basis, notice/consent, retention and named DPO/legal approval.
+  `tracked_pending` is visible and non-blocking only for the narrow engineering
+  completion contract; an agent cannot manufacture this approval.
+- Sensitive runtime expansion, recording-enabled mode, production, multi-viewer
+  fanout and 5/50/800-device rollout retain their own acceptance gates.
+- Project #2 custom-field reconciliation remains pending while GitHub GraphQL
+  rate limiting prevents authoritative board mutation; issue and workflow truth
+  above are current.
+
 ## Live Delta — Faz 24 I3 runner SSH authorization restored; audit acceptance remains open (2026-07-12)
 
 Tracked by [platform-k8s-gitops#1864](https://github.com/Halildeu/platform-k8s-gitops/issues/1864).

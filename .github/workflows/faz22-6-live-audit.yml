@@ -27,6 +27,7 @@ jobs:
       # All referenced gate repositories are public. Use the workflow-scoped,
       # read-only token instead of a long-lived PAT secret on the self-hosted runner.
       GH_TOKEN: ${{ github.token }}
+      GITHUB_READ_API_BACKEND: curl
       REMOTE_BRIDGE_KUBECTL_MODE: local-kubectl
       SSH_TARGET: local
       KUBE_CONTEXT: k3d-test
@@ -34,15 +35,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
-      - name: Assert GitHub read token
+      - name: Assert audit runtime prerequisites
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
             echo "::error::github.token did not expand; Faz 22.6 completion audit cannot read issue gates"
             exit 1
           fi
+          for command_name in bash curl jq kubectl; do
+            if ! command -v "${command_name}" >/dev/null 2>&1; then
+              echo "::error::required audit command is missing: ${command_name}"
+              exit 1
+            fi
+          done
+          echo "GitHub read backend: ${GITHUB_READ_API_BACKEND}"
 
       - name: Validate EndpointAgent release policy
         run: |
@@ -55,12 +65,32 @@ jobs:
           bash scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
             | tee faz22-6-completion-audit.txt
 
-      - name: Assert remote bridge live evidence
+      - name: Assert complete machine contract
         run: |
           set -euo pipefail
-          if ! grep -q '^REMOTE_BRIDGE_LIVE=pass mode=local-kubectl ' faz22-6-completion-audit.txt; then
-            echo "::error::REMOTE_BRIDGE_LIVE did not pass in local-kubectl mode"
-            grep '^REMOTE_BRIDGE_LIVE=' faz22-6-completion-audit.txt || true
+          required_patterns=(
+            '^F22_6_GITHUB_READ_BACKEND=curl$'
+            '^GATE_22_6_1_OPERATION_CATALOG=pass '
+            '^GATE_22_6_2_APPROVED_SCRIPT_RUNNER=pass '
+            '^GATE_22_6_3_CONSTRAINED_EXECUTOR=pass '
+            '^GATE_B1_4_HARDWARE_ATTESTATION=pass '
+            '^GATE_VIEW_ONLY_ENGINEERING=pass '
+            '^GATE_VIEW_ONLY_KVKK=(tracked_pending|cleared|expired)( |$)'
+            '^REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay '
+            '^F22_6_RELEASE_LINEAGE=pass$'
+            '^RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass$'
+            '^F22_6_COMPLETION=pass$'
+          )
+          missing=0
+          for pattern in "${required_patterns[@]}"; do
+            if ! grep -Eq "${pattern}" faz22-6-completion-audit.txt; then
+              echo "::error::missing Faz 22.6 completion contract line matching: ${pattern}"
+              missing=1
+            fi
+          done
+          if [ "${missing}" != "0" ]; then
+            sed -n '/^F22_6_/p;/^GATE_/p;/^REMOTE_BRIDGE_LIVE/p;/^RELEASE_LINEAGE_GATE/p' \
+              faz22-6-completion-audit.txt || true
             exit 1
           fi
 
@@ -83,8 +113,9 @@ jobs:
 
       - name: Upload audit output
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: faz22-6-completion-audit
           path: faz22-6-completion-audit.txt
-          retention-days: 7
+          if-no-files-found: error
+          retention-days: 30

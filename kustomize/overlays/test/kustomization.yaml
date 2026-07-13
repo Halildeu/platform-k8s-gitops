@@ -4171,9 +4171,9 @@ images:
     #
     # Machine-managed current pin. Historical provenance remains above; future
     # automation rewrites only these fields and records evidence in its PR.
-    # sourceRevision: 092836e875013ada3387c933eff820385dbf941b
-    newTag: sha-092836e
-    digest: sha256:724f4a1a9afd8e0cee30374dde0b5729db3a9ece699b38e2b35b0c902cd129b3
+    # sourceRevision: e57f7201c93a48da05f546fbb2bc355b74b6306d
+    newTag: sha-e57f720
+    digest: sha256:a709f20d63ae7ee84c4ec5cac78cfdfc490007b8aecdb00bc37d8b62327e1fcb
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -5612,7 +5612,7 @@ images:
     # ancestor of 60d89f27 — merge-base verified) -> 8e2187f0 is an additive superset
     # (device-key hardening retained). Co-bumped with BOTH remote-bridge activation
     # overlays so remote-bridge-digest-alignment stays green (same-image topology).
-    digest: sha256:8e2187f02e80d4c74efe9898f3e8a053b7fd560628d4002c377ef5dcb3fb6f8f
+    digest: sha256:d8717514f82f827ef973b4b18e7dcafb05eeb7c66d018911faef59b453d2d593
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
@@ -6952,6 +6952,142 @@ patches:
       - op: add
         path: /spec/progressDeadlineSeconds
         value: 300
+
+  # 2026-07-14 #2384: ArgoCD owns backend rollout sequencing. The Application
+  # tracks main with auto-sync, so post-merge workflows must not race it with
+  # imperative per-resource sync calls. Distinct waves keep quota-sensitive,
+  # single-replica test rollouts dependency-ordered; api-gateway remains last.
+  # Infrastructure and unannotated resources stay at ArgoCD's default wave 0.
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: auth-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "10"
+  - target:
+      kind: Deployment
+      name: permission-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: permission-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "11"
+  - target:
+      kind: Deployment
+      name: user-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: user-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "12"
+  - target:
+      kind: Deployment
+      name: variant-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: variant-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "13"
+  - target:
+      kind: Deployment
+      name: core-data-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: core-data-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "14"
+  - target:
+      kind: Deployment
+      name: report-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: report-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "15"
+  - target:
+      kind: Deployment
+      name: schema-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: schema-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "16"
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: endpoint-admin-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "17"
+  - target:
+      kind: Deployment
+      name: audio-gateway
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: audio-gateway
+        annotations:
+          argocd.argoproj.io/sync-wave: "18"
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: meeting-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "19"
+  - target:
+      kind: Deployment
+      name: transcript-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: transcript-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "20"
+  - target:
+      kind: Deployment
+      name: audit-event-consumer-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: audit-event-consumer-service
+        annotations:
+          argocd.argoproj.io/sync-wave: "21"
+  - target:
+      kind: Deployment
+      name: api-gateway
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api-gateway
+        annotations:
+          argocd.argoproj.io/sync-wave: "22"
 
   # 2026-04-29 (Codex 019dd818 PARTIAL feedback): test cluster ResourceQuota
   # 8 CPU limit + 9 service × 750m = 6.75 CPU + frontend 200m + api-gateway

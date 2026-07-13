@@ -24,6 +24,8 @@ jobs:
 
       - name: Build overlays/test
         run: kustomize build kustomize/overlays/test > /tmp/test.yaml
+      - name: Verify rendered backend ArgoCD sync-wave contract
+        run: python3 scripts/test/verify-backend-sync-wave-render.py /tmp/test.yaml
       - name: Build overlays/prod
         run: kustomize build kustomize/overlays/prod > /tmp/prod.yaml
       - name: Build overlays/test/eso
@@ -64,6 +66,13 @@ jobs:
             tests.automation.test_test_overlay_frontend_image \
             tests.automation.test_frontend_promotion_contract \
             tests.automation.test_frontend_diff_guard \
+            -v
+      - name: testai backend desired-state promotion contract
+        run: |
+          python3 -m unittest \
+            tests.automation.test_backend_testai_digest_contract \
+            tests.automation.test_backend_promotion_contract \
+            tests.governance.test_deploy_backend_testai_stability_gate \
             -v
       # Faz 22.6 D10-8 — remote-bridge broker isolation. Desired-state, NOT in
       # the Argo root (owner-gated activation). Render sanity + isolation guards
