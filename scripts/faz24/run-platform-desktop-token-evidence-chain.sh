@@ -435,10 +435,16 @@ upsert_mapper() {
   local mapper_file="$2"
   local existing_id
   if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
-    local container_file
-    container_file="$(kcadm_stage_file "${mapper_file}" "mapper")"
+    local container_file payload_file update_file
     existing_id="$("${KCADM[@]}" get "clients/${CLIENT_UUID}/protocol-mappers/models" -r "${KC_REALM}" \
       | jq -r --arg name "${name}" '.[]? | select(.name == $name) | .id' | head -n 1)"
+    payload_file="${mapper_file}"
+    if [[ -n "${existing_id}" ]]; then
+      update_file="${TMP_DIR}/kcadm-mapper-${name}-update.json"
+      jq --arg id "${existing_id}" '.id = $id' "${mapper_file}" > "${update_file}"
+      payload_file="${update_file}"
+    fi
+    container_file="$(kcadm_stage_file "${payload_file}" "mapper")"
     if [[ -n "${existing_id}" ]]; then
       "${KCADM[@]}" update "clients/${CLIENT_UUID}/protocol-mappers/models/${existing_id}" \
         -r "${KC_REALM}" -f "${container_file}" >/dev/null \
