@@ -198,7 +198,9 @@ verify_negative() {
   code="${out##*$'\n'}"
   body="${out%$'\n'*}"
   [ "$code" = "200" ] || return 2
-  allowed="$(printf '%s' "$body" | jq -er '.allowed | select(type == "boolean")' 2>/dev/null)" || return 2
+  allowed="$(printf '%s' "$body" | jq -er \
+    'if (.allowed | type) == "boolean" then (.allowed | tostring) else error("allowed must be boolean") end' \
+    2>/dev/null)" || return 2
   [ "$allowed" = "false" ]
 }
 
