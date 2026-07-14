@@ -141,25 +141,40 @@ jobs:
                   return "array"
               return "object"
 
+          def one_sided(value, parts, kind):
+              if isinstance(value, dict) and value:
+                  findings = []
+                  for key in sorted(value):
+                      findings.extend(one_sided(value[key], parts + (key,), kind))
+                  return findings
+              if isinstance(value, list) and value:
+                  findings = []
+                  for index, item in enumerate(value):
+                      findings.extend(one_sided(item, parts + (index,), kind))
+                  return findings
+              if kind == "live_only":
+                  return [{
+                      "path": pointer(parts),
+                      "kind": kind,
+                      "desiredType": "missing",
+                      "liveType": value_type(value),
+                  }]
+              return [{
+                  "path": pointer(parts),
+                  "kind": kind,
+                  "desiredType": value_type(value),
+                  "liveType": "missing",
+              }]
+
           def compare(left, right, parts=()):
               findings = []
               if isinstance(left, dict) and isinstance(right, dict):
                   for key in sorted(set(left) | set(right)):
                       path = parts + (key,)
                       if key not in left:
-                          findings.append({
-                              "path": pointer(path),
-                              "kind": "live_only",
-                              "desiredType": "missing",
-                              "liveType": value_type(right[key]),
-                          })
+                          findings.extend(one_sided(right[key], path, "live_only"))
                       elif key not in right:
-                          findings.append({
-                              "path": pointer(path),
-                              "kind": "desired_only",
-                              "desiredType": value_type(left[key]),
-                              "liveType": "missing",
-                          })
+                          findings.extend(one_sided(left[key], path, "desired_only"))
                       else:
                           findings.extend(compare(left[key], right[key], path))
                   return findings
@@ -167,19 +182,9 @@ jobs:
                   for index in range(max(len(left), len(right))):
                       path = parts + (index,)
                       if index >= len(left):
-                          findings.append({
-                              "path": pointer(path),
-                              "kind": "live_only",
-                              "desiredType": "missing",
-                              "liveType": value_type(right[index]),
-                          })
+                          findings.extend(one_sided(right[index], path, "live_only"))
                       elif index >= len(right):
-                          findings.append({
-                              "path": pointer(path),
-                              "kind": "desired_only",
-                              "desiredType": value_type(left[index]),
-                              "liveType": "missing",
-                          })
+                          findings.extend(one_sided(left[index], path, "desired_only"))
                       else:
                           findings.extend(compare(left[index], right[index], path))
                   return findings
