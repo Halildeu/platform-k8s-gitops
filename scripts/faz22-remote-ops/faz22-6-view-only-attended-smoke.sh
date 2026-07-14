@@ -72,6 +72,11 @@ FRAME_WAIT_SECONDS="${FRAME_WAIT_SECONDS:-20}"
 OPERATOR_REST_READY_ATTEMPTS="${OPERATOR_REST_READY_ATTEMPTS:-12}"
 OPERATOR_REST_READY_INTERVAL_SECONDS="${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}"
 VIEWER_PROBE_SECONDS="${VIEWER_PROBE_SECONDS:-8}"
+BROWSER_EVIDENCE_SCRIPT="${BROWSER_EVIDENCE_SCRIPT:-}"
+VIEWER_PRODUCT_BASE_URL="${VIEWER_PRODUCT_BASE_URL:-https://testai.acik.com}"
+PRODUCT_PILOT_SECONDS="${PRODUCT_PILOT_SECONDS:-300}"
+SOURCE_REVISION="${SOURCE_REVISION:-}"
+PLAYWRIGHT_PACKAGE_ROOT="${PLAYWRIGHT_PACKAGE_ROOT:-}"
 REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS:-420}"
 STEP_UP_RUNTIME_STABILIZE_SECONDS="${STEP_UP_RUNTIME_STABILIZE_SECONDS:-8}"
 STEP_UP_EPHEMERAL_KEY_ENABLED="${STEP_UP_EPHEMERAL_KEY_ENABLED:-1}"
@@ -236,6 +241,20 @@ validate_inputs() {
   [[ "${OPERATOR_REST_READY_ATTEMPTS:-12}" =~ ^[1-9][0-9]*$ ]] || fail_smoke "operator-rest-ready-attempts-invalid"
   [[ "${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}" =~ ^[0-9]+$ ]] || fail_smoke "operator-rest-ready-interval-invalid"
   [[ "$VIEWER_PROBE_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "viewer-probe-seconds-invalid"
+  if [[ -n "$BROWSER_EVIDENCE_SCRIPT" ]]; then
+    [[ -r "$BROWSER_EVIDENCE_SCRIPT" ]] || fail_smoke "browser-evidence-script-not-readable"
+    [[ "$VIEWER_PRODUCT_BASE_URL" == "https://testai.acik.com" ]] \
+      || fail_smoke "viewer-product-base-url-must-be-testai"
+    if [[ ! "$PRODUCT_PILOT_SECONDS" =~ ^[0-9]+$ ]] \
+      || (( PRODUCT_PILOT_SECONDS < 300 || PRODUCT_PILOT_SECONDS > 1800 )); then
+      fail_smoke "product-pilot-seconds-must-be-300-1800"
+    fi
+    [[ "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]] || fail_smoke "source-revision-invalid"
+    [[ -n "$PLAYWRIGHT_PACKAGE_ROOT" && -r "$PLAYWRIGHT_PACKAGE_ROOT/package.json" ]] \
+      || fail_smoke "playwright-package-root-invalid"
+    [[ "$OPERATION_ID" =~ ^[A-Za-z0-9_-]{1,128}$ ]] \
+      || fail_smoke "browser-product-operation-id-invalid"
+  fi
   if [[ "$AUTO_FINALIZE" == "1" ]]; then
     [[ "$EVIDENCE_URL" == https://* ]] || fail_smoke "evidence-url-required-for-auto-finalize"
     [[ -n "$OWNER_APPROVED_BY" ]] || fail_smoke "owner-approved-by-required"
@@ -403,6 +422,7 @@ decode_jwt_claims() {
   local token_file="$1" out="$2"
   python3 - "$token_file" "$out" <<'PY'
 import base64
+import hashlib
 import json
 import sys
 
@@ -423,6 +443,8 @@ safe = {
     "realmRolesContainRemoteBridgeOperator": "remote-bridge-operator" in roles,
     "issuerPresent": bool(claims.get("iss")),
     "expiresAtEpoch": claims.get("exp"),
+    "subjectSha256": "sha256:" + hashlib.sha256(str(claims.get("sub", "")).encode()).hexdigest(),
+    "tenantSha256": "sha256:" + hashlib.sha256(str(claims.get("tenant_id", "")).encode()).hexdigest(),
 }
 open(out_path, "w", encoding="utf-8").write(json.dumps(safe, sort_keys=True, indent=2) + "\n")
 PY
@@ -749,6 +771,38 @@ probe_viewer() {
   fi
 }
 
+run_browser_evidence() {
+  [[ -n "$BROWSER_EVIDENCE_SCRIPT" ]] || return 0
+  local claims session_sha device_sha binding
+  claims="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
+  session_sha="sha256:$(sha256_text "$SESSION_ID")"
+  device_sha="sha256:$(sha256_text "$DEVICE_ID")"
+  binding="$(jq -nc \
+    --arg sessionSha256 "$session_sha" \
+    --arg tenantSha256 "$(jq -r '.tenantSha256' "$claims")" \
+    --arg operatorSha256 "$(jq -r '.subjectSha256' "$claims")" \
+    --arg deviceSha256 "$device_sha" \
+    '{sessionSha256:$sessionSha256,tenantSha256:$tenantSha256,
+      operatorSha256:$operatorSha256,deviceSha256:$deviceSha256}')"
+  if [[ "$(jq -r '[.[]] | unique | length' <<< "$binding")" != "4" ]]; then
+    fail_smoke "browser-evidence-binding-hashes-not-distinct"
+  fi
+  EVIDENCE_BINDING_JSON="$binding" \
+  VIEWER_URL="${VIEWER_PRODUCT_BASE_URL}/endpoint-admin/remote-access/sessions/${SESSION_ID}/view?streamId=${OPERATION_ID}" \
+  OPERATOR_TOKEN_FILE="$OPERATOR_TOKEN_FILE" \
+  EVIDENCE_OUTPUT="${EVIDENCE_DIR}/browser.json" \
+  SOURCE_REVISION="$SOURCE_REVISION" \
+  PILOT_SECONDS="$PRODUCT_PILOT_SECONDS" \
+  PLAYWRIGHT_PACKAGE_ROOT="$PLAYWRIGHT_PACKAGE_ROOT" \
+    node "$BROWSER_EVIDENCE_SCRIPT" \
+      > "${EVIDENCE_DIR}/browser-evidence.log" \
+      2> "${EVIDENCE_DIR}/browser-evidence.stderr" \
+    || fail_smoke "browser-product-evidence-failed"
+  jq -e '.evidenceType == "browser" and .payload.renderAckAcceptedCount >= 100' \
+    "${EVIDENCE_DIR}/browser.json" >/dev/null \
+    || fail_smoke "browser-product-evidence-invalid"
+}
+
 read_pg_credentials() {
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret "$PG_SECRET_NAME" \
     -o "jsonpath={.data.${PG_USER_SECRET_KEY}}" | base64 -d > "${TMP_DIR}/pg-user.txt"
@@ -1029,6 +1083,7 @@ main() {
     || fail_smoke "screen-view-operation-not-permit"
   transport_pushed="true"
 
+  run_browser_evidence
   sleep "$FRAME_WAIT_SECONDS"
   probe_viewer "$operator_base"
   collect_broker_logs

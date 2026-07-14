@@ -21,7 +21,7 @@
 # Activation is a deliberate operator action AFTER the §2 gate in the runbook
 # (KVKK/DPO sign-off + 8096-exposure sign-off + 1-person roster + consenting pilot
 # device). Applying this overlay does NOT close #2373; browser render + product
-# evidence must pass F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v1 separately.
+# evidence must pass F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v2 separately.
 #
 # Build sanity (no apply):
 #   kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
