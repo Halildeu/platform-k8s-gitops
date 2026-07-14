@@ -24,6 +24,10 @@ VIEWER_AUDIT_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-audi
 VIEWER_MATRIX_COLLECTOR_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-matrix-collector.yml"
 VIEWER_NEGATIVE_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-negative-evidence.yml"
 VIEWER_NEGATIVE_COLLECTOR="$ROOT/scripts/faz22-remote-ops/collect-view-only-viewer-negative-matrix.sh"
+VIEWER_TERMINATION_COLLECTOR_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-termination-collector.yml"
+VIEWER_TERMINATION_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-termination-evidence.yml"
+VIEWER_TERMINATION_COLLECTOR="$ROOT/scripts/faz22-remote-ops/collect-view-only-viewer-termination-case.sh"
+VIEWER_TERMINATION_AUDIT="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-termination-audit.py"
 VIEWER_MATRIX_PRODUCER="$ROOT/scripts/faz22-remote-ops/produce-view-only-viewer-matrix-evidence.py"
 VIEWER_SOURCE_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_viewer_source_common.py"
 VIEWER_FRAME_FLOW_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-frame-flow-summary.py"
@@ -68,17 +72,20 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_BROKER_WORKFLOW" "$VIEWER_BROKER_PRODUCER" \
   "$VIEWER_AUDIT_WORKFLOW" "$VIEWER_AUDIT_PRODUCER" "$VIEWER_AUDIT_BUILDER" \
   "$VIEWER_MATRIX_COLLECTOR_WORKFLOW" "$VIEWER_NEGATIVE_WORKFLOW" \
-  "$VIEWER_NEGATIVE_COLLECTOR" "$VIEWER_MATRIX_PRODUCER" \
+  "$VIEWER_NEGATIVE_COLLECTOR" "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW" \
+  "$VIEWER_TERMINATION_WORKFLOW" "$VIEWER_TERMINATION_COLLECTOR" \
+  "$VIEWER_TERMINATION_AUDIT" "$VIEWER_MATRIX_PRODUCER" \
   "$VIEWER_PRODUCT_ROOT_SCHEMA" "$VIEWER_PRODUCT_CHILD_SCHEMA" \
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_WATCHDOG"; do
   require_file "$path"
 done
 
-bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER" "$VIEWER_NEGATIVE_COLLECTOR"
+bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER" "$VIEWER_NEGATIVE_COLLECTOR" \
+  "$VIEWER_TERMINATION_COLLECTOR"
 python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_OPERATOR_PRODUCER" "$VIEWER_D30_PRODUCER" \
   "$VIEWER_BROKER_PRODUCER" "$VIEWER_AUDIT_PRODUCER" "$VIEWER_AUDIT_BUILDER" \
-  "$VIEWER_MATRIX_PRODUCER" \
+  "$VIEWER_MATRIX_PRODUCER" "$VIEWER_TERMINATION_AUDIT" \
   "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER"
 jq -e '.additionalProperties == false' "$VIEWER_PRODUCT_ROOT_SCHEMA" >/dev/null
 jq -e '.additionalProperties == false and (.allOf | length) == 7' "$VIEWER_PRODUCT_CHILD_SCHEMA" >/dev/null
@@ -158,6 +165,9 @@ require_grep "produce-view-only-viewer-matrix-evidence.py" "$VIEWER_NEGATIVE_WOR
 require_grep 'faz22-6-view-only-viewer-negative-evidence-${{ github.run_id }}' "$VIEWER_NEGATIVE_WORKFLOW"
 require_grep "environment:" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
 require_grep "name: faz22-view-only-pilot" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep "browser_run_id" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep "faz22-6-view-only-viewer-browser-evidence.yml" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep "MATRIX_ROOT_BINDING_FILE" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
 require_grep "collect-view-only-viewer-negative-matrix.sh" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
 require_grep "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6" \
   "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
@@ -166,11 +176,43 @@ require_grep "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #
 require_grep 'faz22-6-view-only-viewer-matrix-collector-negative-${{ github.run_id }}' \
   "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
 require_grep "raw_screen_persisted=false" "$VIEWER_NEGATIVE_COLLECTOR"
+require_grep "Remove transient protected runner material" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
 if grep -Eq '^[[:space:]]+[A-Za-z-]+:[[:space:]]+write([[:space:]]|$)' \
   "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"; then
   echo "matrix collector workflow must not have GitHub write permissions" >&2
   exit 1
 fi
+
+require_grep "actions: read" "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep "environment:" "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep "name: faz22-view-only-pilot" "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep "collect-view-only-viewer-termination-case.sh" "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6" \
+  "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7" \
+  "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep 'faz22-6-view-only-viewer-termination-collector-${{ inputs.case_name }}-${{ github.run_id }}' \
+  "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep "timeout-minutes: 30" "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep 'case_name:' "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep "retention-days: 2" "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+require_grep "raw_screen_persisted=false" "$VIEWER_TERMINATION_COLLECTOR"
+require_grep "Remove transient protected runner material" "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"
+if grep -Eq '^[[:space:]]+[A-Za-z-]+:[[:space:]]+write([[:space:]]|$)' \
+  "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"; then
+  echo "termination collector workflow must not have GitHub write permissions" >&2
+  exit 1
+fi
+
+require_grep "actions: read" "$VIEWER_TERMINATION_WORKFLOW"
+require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_TERMINATION_EVIDENCE" \
+  "$VIEWER_TERMINATION_WORKFLOW"
+require_grep "local_abort_run_id" "$VIEWER_TERMINATION_WORKFLOW"
+require_grep "indicator_loss_run_id" "$VIEWER_TERMINATION_WORKFLOW"
+require_grep '--termination-case-run' "$VIEWER_TERMINATION_WORKFLOW"
+require_grep "produce-view-only-viewer-matrix-evidence.py" "$VIEWER_TERMINATION_WORKFLOW"
+require_grep 'faz22-6-view-only-viewer-termination-evidence-${{ github.run_id }}' \
+  "$VIEWER_TERMINATION_WORKFLOW"
 
 require_grep "environment:" "$VIEWER_APPLY_WORKFLOW"
 require_grep "name: faz22-view-only-pilot" "$VIEWER_APPLY_WORKFLOW"
@@ -179,9 +221,17 @@ require_grep "VIEW_ONLY_PILOT_OPERATOR_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_DEVICE_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'sha256sum -c SHA256SUMS' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'rm -f "$out/issue-comments.json"' "$VIEWER_APPLY_WORKFLOW"
-require_grep "pilot_ttl_minutes must be between 5 and 30" "$VIEWER_APPLY_WORKFLOW"
+require_grep "pilot_ttl_minutes must be between 5 and 120" "$VIEWER_APPLY_WORKFLOW"
+require_grep "requested watchdog expiry exceeds the signed protected authorization" \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep "BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key" "$VIEWER_APPLY_WORKFLOW"
+require_grep "BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key" "$VIEWER_APPLY_WORKFLOW"
+require_grep "endpoint-admin-remote-bridge-device-key-live" "$VIEWER_APPLY_WORKFLOW"
+require_grep "endpoint-admin-remote-bridge-config-device-key" "$VIEWER_WATCHDOG"
+require_grep "deployments/endpoint-admin-remote-bridge-device-key" "$VIEWER_WATCHDOG"
 require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORKFLOW"
 require_grep "Compensating rollback after failed apply" "$VIEWER_APPLY_WORKFLOW"
+require_grep 'apply -k "${BROKER_ONLY_OVERLAY}"' "$VIEWER_APPLY_WORKFLOW"
 if grep -Eq 'ACK_KVKK_DPIA|ack_kvkk_dpia|ACK_ONE_PERSON_OPERATOR|ACK_CONSENTING_ATTENDED|ACK_OWNER_8096' "$VIEWER_APPLY_WORKFLOW"; then
   echo "typed legal/operator acknowledgement remains in viewer apply workflow" >&2
   exit 1

@@ -16,7 +16,7 @@ on:
         description: "Required literal per action: DRY_RUN_VIEW_ONLY_VIEWER_PILOT_ENABLE, APPLY_VIEW_ONLY_VIEWER_PILOT_ENABLE, or ROLLBACK_VIEW_ONLY_VIEWER_PILOT_ENABLE"
         required: true
       pilot_ttl_minutes:
-        description: "For apply: bounded viewer exposure TTL in minutes (5-30)"
+        description: "For apply: bounded test-only viewer exposure TTL in minutes (5-120)"
         required: false
         default: "10"
 
@@ -34,10 +34,11 @@ concurrency:
 env:
   K8S_CONTEXT: k3d-test
   K8S_NAMESPACE: platform-test
-  BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge
+  BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key
+  BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key
   GATEWAY_DEPLOYMENT: api-gateway
   VIEWER_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
-  BROKER_ONLY_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+  BROKER_ONLY_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
   TEST_ROOT_OVERLAY: kustomize/overlays/test
   WATCHDOG_TEMPLATE: scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml
 
@@ -52,6 +53,7 @@ jobs:
       url: https://github.com/Halildeu/platform-k8s-gitops/issues/2374
     outputs:
       authorization_sha256: ${{ steps.authorization.outputs.authorization_sha256 }}
+      authorization_expires_epoch: ${{ steps.authorization.outputs.authorization_expires_epoch }}
 
     steps:
       - name: Checkout canonical legal verifier and policy
@@ -135,6 +137,8 @@ jobs:
             | jq -cS . > "$out/protected-authorization.json"
           authorization_sha256="sha256:$(sha256sum "$out/protected-authorization.json" | awk '{print $1}')"
           printf 'authorization_sha256=%s\n' "$authorization_sha256" >> "$GITHUB_OUTPUT"
+          printf 'authorization_expires_epoch=%s\n' \
+            "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" >> "$GITHUB_OUTPUT"
           (cd "$out" && sha256sum \
             kvkk-marker.txt \
             kvkk-marker-verifier-result.json \
@@ -194,8 +198,8 @@ jobs:
               echo "::error::pilot_ttl_minutes must be an integer"
               exit 1
             }
-            [ "$PILOT_TTL_MINUTES" -ge 5 ] && [ "$PILOT_TTL_MINUTES" -le 30 ] || {
-              echo "::error::pilot_ttl_minutes must be between 5 and 30"
+            [ "$PILOT_TTL_MINUTES" -ge 5 ] && [ "$PILOT_TTL_MINUTES" -le 120 ] || {
+              echo "::error::pilot_ttl_minutes must be between 5 and 120"
               exit 1
             }
             printf '%s' "$AUTHORIZATION_SHA256" \
@@ -214,6 +218,23 @@ jobs:
           set -euo pipefail
 
           kubectl kustomize "${VIEWER_OVERLAY}" > /tmp/endpoint-admin-remote-bridge-viewer.yaml
+          kubectl create --dry-run=client --validate=false \
+            -f /tmp/endpoint-admin-remote-bridge-viewer.yaml \
+            -o json > /tmp/endpoint-admin-remote-bridge-viewer.json
+
+          jq -e --arg deploy "$BRIDGE_DEPLOYMENT" --arg config "$BRIDGE_CONFIGMAP" '
+            ([.items[] | select(.kind == "Deployment" and .metadata.name == $deploy)] | length) == 1
+            and ([.items[] | select(.kind == "Deployment" and .metadata.name == "endpoint-admin-remote-bridge")] | length) == 0
+            and ([.items[] | select(.kind == "ConfigMap" and .metadata.name == $config
+              and .data.REMOTE_BRIDGE_VIEWER_ENABLED == "true"
+              and .data.REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES == "image/png")] | length) == 1
+            and ([.items[] | select(.kind == "Service" and .metadata.name == "endpoint-admin-remote-bridge-viewer"
+              and .spec.type == "ClusterIP"
+              and .spec.selector["app.kubernetes.io/name"] == $deploy
+              and ([.spec.ports[] | select(.port == 8096 and .targetPort == "http")] | length) == 1)] | length) == 1
+            and ([.items[] | select(.kind == "Ingress" and .metadata.name == "endpoint-admin-remote-bridge-mtls")
+              | .spec.rules[].http.paths[].backend.service.name] | unique) == [$deploy]
+          ' /tmp/endpoint-admin-remote-bridge-viewer.json >/dev/null
 
           grep -A1 -F 'name: REMOTE_BRIDGE_ENABLED' /tmp/endpoint-admin-remote-bridge-viewer.yaml \
             | grep -F 'value: "true"'
@@ -274,9 +295,18 @@ jobs:
         env:
           PILOT_TTL_MINUTES: ${{ inputs.pilot_ttl_minutes }}
           AUTHORIZATION_SHA256: ${{ needs.authorize-live-apply.outputs.authorization_sha256 }}
+          AUTHORIZATION_EXPIRES_EPOCH: ${{ needs.authorize-live-apply.outputs.authorization_expires_epoch }}
         run: |
           set -euo pipefail
           expires_epoch="$(( $(date -u +%s) + PILOT_TTL_MINUTES * 60 ))"
+          printf '%s' "$AUTHORIZATION_EXPIRES_EPOCH" | grep -Eq '^[1-9][0-9]{9,12}$' || {
+            echo "::error::protected authorization expiry output is absent or invalid"
+            exit 1
+          }
+          [ "$expires_epoch" -le "$AUTHORIZATION_EXPIRES_EPOCH" ] || {
+            echo "::error::requested watchdog expiry exceeds the signed protected authorization"
+            exit 1
+          }
           active_deadline="$(( PILOT_TTL_MINUTES * 60 + 600 ))"
           sed \
             -e "s/__EXPIRES_EPOCH__/${expires_epoch}/g" \
@@ -365,7 +395,7 @@ jobs:
           printf '%s\n' "${bridge_env}" | grep -F 'REMOTE_BRIDGE_ENABLED=true'
 
           bridge_config="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            get configmap endpoint-admin-remote-bridge-config -o json)"
+            get configmap "${BRIDGE_CONFIGMAP}" -o json)"
           printf '%s\n' "${bridge_config}" \
             | jq -e '.data.REMOTE_BRIDGE_VIEWER_ENABLED == "true"'
           printf '%s\n' "${bridge_config}" \
@@ -406,7 +436,7 @@ jobs:
         run: |
           set +e
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            patch configmap endpoint-admin-remote-bridge-config --type merge \
+            patch configmap "${BRIDGE_CONFIGMAP}" --type merge \
             -p '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":"false"}}'
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" get configmap api-gateway-config -o json \
             | jq 'del(.data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID,.data.SPRING_CLOUD_GATEWAY_ROUTES_28_URI,
@@ -419,6 +449,10 @@ jobs:
             delete networkpolicy eab-bridge-viewer-allow-ingress-8096-from-api-gateway --ignore-not-found
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             delete networkpolicy eab-api-gateway-allow-egress-8096-to-bridge-viewer --ignore-not-found
+          # Reconcile the exact broker-only desired state so the viewer
+          # containerPort and ConfigMap keys are removed, not merely disabled.
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply -k "${BROKER_ONLY_OVERLAY}"
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" rollout restart \
             "deploy/${BRIDGE_DEPLOYMENT}" "deploy/${GATEWAY_DEPLOYMENT}"
           echo "::warning::apply failed; immediate compensating rollback requested. Cluster watchdog remains authoritative."
@@ -508,7 +542,7 @@ jobs:
           printf '%s\n' "${bridge_env}" | grep -F 'REMOTE_BRIDGE_ENABLED=true'
 
           bridge_config="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            get configmap endpoint-admin-remote-bridge-config -o json)"
+            get configmap "${BRIDGE_CONFIGMAP}" -o json)"
           if printf '%s\n' "${bridge_config}" \
             | jq -e '.data.REMOTE_BRIDGE_VIEWER_ENABLED == "true"' >/dev/null; then
             echo "::error::viewer flag is still true after rollback"

@@ -181,6 +181,9 @@ jobs:
 
           grep -F 'name: endpoint-admin-remote-bridge-viewer' /tmp/eab-bridge-viewer.yaml
           grep -F 'type: ClusterIP' /tmp/eab-bridge-viewer.yaml
+          grep -F 'name: endpoint-admin-remote-bridge-device-key' /tmp/eab-bridge-viewer.yaml
+          grep -F 'name: endpoint-admin-remote-bridge-config-device-key' /tmp/eab-bridge-viewer.yaml
+          grep -F 'host: remote-bridge-mtls.testai.acik.com' /tmp/eab-bridge-viewer.yaml
           if awk '
               /^---[[:space:]]*$/ { in_viewer_service = 0 }
               /name: endpoint-admin-remote-bridge-viewer/ { in_viewer_service = 1 }
@@ -190,7 +193,7 @@ jobs:
             echo "❌ viewer Service rendered a nodePort; 8096 must stay ClusterIP-only"
             exit 1
           fi
-          grep -F 'nodePort: 31944' /tmp/eab-bridge-viewer.yaml
+          grep -F 'nodePort: 31945' /tmp/eab-bridge-viewer.yaml
 
           grep -F 'name: eab-bridge-viewer-allow-ingress-8096-from-api-gateway' \
             /tmp/eab-bridge-viewer.yaml

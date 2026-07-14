@@ -1,12 +1,13 @@
 # endpoint-admin-remote-bridge-viewer ACTIVATION overlay — Faz 22.6 #2373 VIEW_ONLY product pilot
 #
-# ⚠️ OWNER-GATED. A SUPERSET of ../endpoint-admin-remote-bridge (broker activation)
+# OWNER-GATED. A SUPERSET of ../endpoint-admin-remote-bridge-device-key-live
+# (the broker that owns the public 443 SNI product route)
 # PLUS the operator VIEW_ONLY viewer HTTP exposure on 8096. It is DELIBERATELY NOT
 # referenced by kustomize/overlays/test/kustomization.yaml — it is NOT in the Argo
 # root, so an ArgoCD reconcile / `apply -k overlays/test` can NEVER expose the viewer.
 #
 # Two separate owner decisions:
-#   - broker only             → apply -k .../activation/endpoint-admin-remote-bridge
+#   - broker only             → apply -k .../activation/endpoint-admin-remote-bridge-device-key-live
 #   - broker + VIEW_ONLY view → apply -k .../activation/endpoint-admin-remote-bridge-viewer (this)
 #
 # This overlay stages ONLY the bridge-side viewer surface: the viewer flag + png
@@ -31,7 +32,7 @@ kind: Kustomization
 namespace: platform-test
 
 resources:
-  - ../endpoint-admin-remote-bridge          # broker activation (superset base)
+  - ../endpoint-admin-remote-bridge-device-key-live # public 443 SNI broker (superset base)
   - viewer-clusterip-service.yaml            # dedicated ClusterIP 8096 (NEVER NodePort)
   - viewer-from-api-gateway-netpol.yaml      # additive INGRESS 8096 (bridge ← api-gateway)
   - viewer-api-gateway-egress-netpol.yaml    # additive EGRESS 8096 (api-gateway → bridge); both sides required

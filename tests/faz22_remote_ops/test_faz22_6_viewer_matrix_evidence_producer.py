@@ -19,6 +19,14 @@ SPEC.loader.exec_module(PRODUCER)
 
 COLLECTOR_RUN_ID = 600001
 COLLECTOR_ARTIFACT_ID = 700003
+TERMINATION_RUN_IDS = {
+    name: 610000 + index
+    for index, name in enumerate(PRODUCER.common.VERIFIER.TERMINATION_CASES, start=1)
+}
+TERMINATION_ARTIFACT_IDS = {
+    name: 710000 + index
+    for index, name in enumerate(PRODUCER.common.VERIFIER.TERMINATION_CASES, start=1)
+}
 
 
 def archive(files):
@@ -55,14 +63,46 @@ def collector_files(evidence_type, mutate=None):
     return files
 
 
+def termination_case_files(case_name, mutate=None):
+    document = fixtures.child_documents()["termination"]
+    matrix_files = fixtures.matrix_attestation_files("termination", document)
+    observation = next(
+        line for line in matrix_files["observations/termination.jsonl"].splitlines(keepends=True)
+        if json.loads(line)["caseName"] == case_name
+    )
+    audit = next(
+        line for line in matrix_files["audit/termination.jsonl"].splitlines(keepends=True)
+        if json.loads(line)["caseName"] == case_name
+    )
+    files = {
+        f"observations/{case_name}.jsonl": observation,
+        f"audit/{case_name}.jsonl": audit,
+    }
+    if mutate:
+        mutate(files)
+    context = {
+        "schemaVersion": PRODUCER.TERMINATION_CASE_CONTEXT_SCHEMA,
+        "evidenceType": "termination",
+        "caseName": case_name,
+        "sourceRevision": fixtures.HEAD_SHA,
+        "collectedAt": "2026-07-14T00:05:00Z",
+        "authorizationSha256": document["payload"]["authorizationSha256"],
+        "rootBinding": fixtures.binding(),
+        "observationSha256": fixtures.VERIFIER.digest_bytes(files[f"observations/{case_name}.jsonl"]),
+        "auditSha256": fixtures.VERIFIER.digest_bytes(files[f"audit/{case_name}.jsonl"]),
+    }
+    files["context.json"] = fixtures.encode_json(context)
+    return files
+
+
 class MatrixCollectorClient(fixtures.FakeClient):
     def __init__(self, evidence_type="negative", mutate=None, head_sha=fixtures.HEAD_SHA,
-                 workflow_path=PRODUCER.COLLECTOR_WORKFLOW_PATH):
+                 workflow_path=None):
         super().__init__()
         self.evidence_type = evidence_type
         self.collector_archive = archive(collector_files(evidence_type, mutate))
         self.head_sha = head_sha
-        self.workflow_path = workflow_path
+        self.workflow_path = workflow_path or PRODUCER.COLLECTOR_WORKFLOWS[evidence_type][0]
 
     def get_json(self, path):
         repository = fixtures.VERIFIER.EXPECTED_REPOSITORY
@@ -75,7 +115,7 @@ class MatrixCollectorClient(fixtures.FakeClient):
                 "head_branch": "main",
                 "head_sha": self.head_sha,
                 "run_attempt": 1,
-                "name": PRODUCER.COLLECTOR_WORKFLOW_NAME,
+                "name": PRODUCER.COLLECTOR_WORKFLOWS[self.evidence_type][1],
                 "path": self.workflow_path,
                 "run_started_at": "2026-07-14T00:00:00Z",
                 "updated_at": "2026-07-14T00:05:30Z",
@@ -103,8 +143,55 @@ class MatrixCollectorClient(fixtures.FakeClient):
         return super().get_bytes(path)
 
 
+class TerminationCollectorClient(fixtures.FakeClient):
+    def __init__(self, mutate_case=None, mutate=None):
+        super().__init__()
+        self.archives = {
+            case_name: archive(termination_case_files(
+                case_name, mutate if case_name == mutate_case else None,
+            ))
+            for case_name in PRODUCER.common.VERIFIER.TERMINATION_CASES
+        }
+
+    def get_json(self, path):
+        repository = fixtures.VERIFIER.EXPECTED_REPOSITORY
+        for case_name, run_id in TERMINATION_RUN_IDS.items():
+            if path == f"/repos/{repository}/actions/runs/{run_id}":
+                return {
+                    "id": run_id, "status": "completed", "conclusion": "success",
+                    "event": "workflow_dispatch", "head_branch": "main",
+                    "head_sha": fixtures.HEAD_SHA, "run_attempt": 1,
+                    "name": PRODUCER.COLLECTOR_WORKFLOWS["termination"][1],
+                    "path": PRODUCER.COLLECTOR_WORKFLOWS["termination"][0],
+                    "run_started_at": "2026-07-14T00:00:00Z",
+                    "updated_at": "2026-07-14T00:05:30Z",
+                }
+            if path == f"/repos/{repository}/actions/runs/{run_id}/artifacts?per_page=100":
+                raw = self.archives[case_name]
+                return {"total_count": 1, "artifacts": [{
+                    "id": TERMINATION_ARTIFACT_IDS[case_name],
+                    "name": f"faz22-6-view-only-viewer-termination-collector-{case_name}-{run_id}",
+                    "expired": False, "digest": fixtures.VERIFIER.digest_bytes(raw),
+                    "workflow_run": {"id": run_id, "head_sha": fixtures.HEAD_SHA},
+                }]}
+        return super().get_json(path)
+
+    def get_bytes(self, path):
+        repository = fixtures.VERIFIER.EXPECTED_REPOSITORY
+        for case_name, artifact_id in TERMINATION_ARTIFACT_IDS.items():
+            if path == f"/repos/{repository}/actions/artifacts/{artifact_id}/zip":
+                return self.archives[case_name]
+        return super().get_bytes(path)
+
+
 class ViewerMatrixEvidenceProducerTest(unittest.TestCase):
     def produce(self, evidence_type, client=None):
+        if evidence_type == "termination":
+            return PRODUCER.produce_termination(
+                client or TerminationCollectorClient(),
+                fixtures.VERIFIER.EXPECTED_REPOSITORY,
+                TERMINATION_RUN_IDS, fixtures.HEAD_SHA,
+            )
         return PRODUCER.produce(
             client or MatrixCollectorClient(evidence_type),
             fixtures.VERIFIER.EXPECTED_REPOSITORY,
@@ -161,8 +248,8 @@ class ViewerMatrixEvidenceProducerTest(unittest.TestCase):
 
     def test_rejects_local_abort_without_digest_bound_consent_withdrawal(self):
         def mutate(files):
-            files["observations/termination.jsonl"] = fixtures.mutate_jsonl_case(
-                files["observations/termination.jsonl"], "localAbort",
+            files["observations/localAbort.jsonl"] = fixtures.mutate_jsonl_case(
+                files["observations/localAbort.jsonl"], "localAbort",
                 lambda value: value["terminal"].pop("consentLeaseRevoked"),
             )
 
@@ -170,7 +257,40 @@ class ViewerMatrixEvidenceProducerTest(unittest.TestCase):
             PRODUCER.common.VERIFIER.EvidenceError,
             "localAbort terminal runtime signals",
         ):
-            self.produce("termination", MatrixCollectorClient("termination", mutate=mutate))
+            self.produce("termination", TerminationCollectorClient("localAbort", mutate))
+
+    def test_termination_aggregation_rejects_reused_run_and_context_drift(self):
+        reused = dict(TERMINATION_RUN_IDS)
+        reused["indicatorLoss"] = reused["localAbort"]
+        with self.assertRaisesRegex(
+            PRODUCER.common.VERIFIER.EvidenceError, "collector runs must be distinct",
+        ):
+            PRODUCER.produce_termination(
+                TerminationCollectorClient(), fixtures.VERIFIER.EXPECTED_REPOSITORY,
+                reused, fixtures.HEAD_SHA,
+            )
+
+        client = TerminationCollectorClient()
+        files = termination_case_files("ttlExpiry")
+        context = json.loads(files["context.json"])
+        context["observationSha256"] = "sha256:" + "f" * 64
+        files["context.json"] = fixtures.encode_json(context)
+        client.archives["ttlExpiry"] = archive(files)
+        with self.assertRaisesRegex(
+            PRODUCER.common.VERIFIER.EvidenceError, "observation digest",
+        ):
+            self.produce("termination", client)
+
+        client = TerminationCollectorClient()
+        files = termination_case_files("heartbeatLoss")
+        context = json.loads(files["context.json"])
+        context["collectedAt"] = "2026-07-14T03:00:00Z"
+        files["context.json"] = fixtures.encode_json(context)
+        client.archives["heartbeatLoss"] = archive(files)
+        with self.assertRaisesRegex(
+            PRODUCER.common.VERIFIER.EvidenceError, "context is not fresh",
+        ):
+            self.produce("termination", client)
 
 
 if __name__ == "__main__":

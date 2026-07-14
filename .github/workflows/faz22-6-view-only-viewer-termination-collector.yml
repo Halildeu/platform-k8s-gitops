@@ -1,20 +1,30 @@
-name: Faz 22.6 VIEW_ONLY viewer matrix collector
+name: Faz 22.6 VIEW_ONLY viewer termination collector
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Required literal: RUN_FAZ22_6_VIEW_ONLY_VIEWER_MATRIX_COLLECTOR"
+        description: "Required literal: RUN_FAZ22_6_VIEW_ONLY_VIEWER_TERMINATION_COLLECTOR"
         required: true
         type: string
       activation_run_id:
-        description: "Successful protected apply-view-only-viewer-pilot-enable run ID"
+        description: "Successful protected viewer activation run ID"
         required: true
         type: string
       browser_run_id:
         description: "Successful same-revision protected browser evidence run ID"
         required: true
         type: string
+      case_name:
+        description: "One isolated termination case"
+        required: true
+        type: choice
+        options:
+          - localAbort
+          - killOrRevoke
+          - ttlExpiry
+          - heartbeatLoss
+          - indicatorLoss
       device_id:
         description: "Consented attended-pilot device UUID"
         required: true
@@ -29,14 +39,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: faz22-6-view-only-viewer-matrix-collector
+  group: faz22-6-view-only-viewer-termination-collector
   cancel-in-progress: false
 
 jobs:
   collect:
-    name: Protected attended matrix collector
+    name: One isolated protected termination case
     runs-on: [self-hosted, staging-sw, testai-deploy]
-    timeout-minutes: 60
+    timeout-minutes: 30
     environment:
       name: faz22-view-only-pilot
 
@@ -46,13 +56,18 @@ jobs:
           CONFIRM: ${{ inputs.confirm }}
           ACTIVATION_RUN_ID: ${{ inputs.activation_run_id }}
           BROWSER_RUN_ID: ${{ inputs.browser_run_id }}
+          CASE_NAME: ${{ inputs.case_name }}
           DEVICE_ID: ${{ inputs.device_id }}
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
         run: |
           set -euo pipefail
-          [ "$CONFIRM" = "RUN_FAZ22_6_VIEW_ONLY_VIEWER_MATRIX_COLLECTOR" ]
+          [ "$CONFIRM" = "RUN_FAZ22_6_VIEW_ONLY_VIEWER_TERMINATION_COLLECTOR" ]
           printf '%s' "$ACTIVATION_RUN_ID" | grep -Eq '^[1-9][0-9]{5,19}$'
           printf '%s' "$BROWSER_RUN_ID" | grep -Eq '^[1-9][0-9]{5,19}$'
+          case "$CASE_NAME" in
+            localAbort|killOrRevoke|ttlExpiry|heartbeatLoss|indicatorLoss) ;;
+            *) exit 1 ;;
+          esac
           printf '%s' "$DEVICE_ID" | grep -Eq '^[0-9a-fA-F-]{36}$'
           printf '%s' "$DEVICE_HOSTNAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{1,126}$'
 
@@ -65,14 +80,12 @@ jobs:
           ACTIVATION_RUN_ID: ${{ inputs.activation_run_id }}
         run: |
           set -euo pipefail
-          out="$RUNNER_TEMP/faz22-viewer-matrix-activation"
+          out="$RUNNER_TEMP/faz22-viewer-termination-authorization"
           mkdir -p "$out"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID" > "$out/run.json"
           jq -e --arg sha "$GITHUB_SHA" '
-            .status == "completed"
-            and .conclusion == "success"
-            and .event == "workflow_dispatch"
-            and .head_branch == "main"
+            .status == "completed" and .conclusion == "success"
+            and .event == "workflow_dispatch" and .head_branch == "main"
             and .head_sha == $sha
             and .name == "Apply #2373 VIEW_ONLY viewer product pilot surface"
             and .path == ".github/workflows/apply-view-only-viewer-pilot-enable.yml"
@@ -85,7 +98,6 @@ jobs:
           ' "$out/artifacts.json" >/dev/null
           artifact_id="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .id' "$out/artifacts.json")"
           artifact_digest="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .digest' "$out/artifacts.json")"
-          printf '%s' "$artifact_digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/authorization.zip"
           [ "sha256:$(sha256sum "$out/authorization.zip" | awk '{print $1}')" = "$artifact_digest" ]
           printf '%s\n' SHA256SUMS kvkk-marker-verifier-result.json kvkk-marker.txt \
@@ -106,8 +118,7 @@ jobs:
           jq -e --arg run "$ACTIVATION_RUN_ID" --arg marker "$marker_sha256" '
             .schemaVersion == "faz22.6-view-only-pilot-protected-authorization-v1"
             and .environment == "faz22-view-only-pilot"
-            and .onePersonRoster == true
-            and .consentingPilotDevice == true
+            and .onePersonRoster == true and .consentingPilotDevice == true
             and .exposureApprovedByProtectedEnvironment == true
             and (.authorizationRunId == ($run | tonumber))
             and (.expiresAt | fromdateiso8601) > now
@@ -121,7 +132,7 @@ jobs:
           BROWSER_RUN_ID: ${{ inputs.browser_run_id }}
         run: |
           set -euo pipefail
-          out="$RUNNER_TEMP/faz22-viewer-negative-browser-root"
+          out="$RUNNER_TEMP/faz22-viewer-termination-browser-root"
           mkdir -p "$out"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BROWSER_RUN_ID" > "$out/run.json"
           jq -e --arg sha "$GITHUB_SHA" '
@@ -145,7 +156,7 @@ jobs:
           [ "$(unzip -Z1 "$out/browser.zip")" = "evidence/browser.json" ]
           unzip -q "$out/browser.zip" -d "$out/artifact"
           jq -e --arg sha "$GITHUB_SHA" --slurpfile authorization \
-              "$RUNNER_TEMP/faz22-viewer-matrix-activation/receipt/protected-authorization.json" '
+              "$RUNNER_TEMP/faz22-viewer-termination-authorization/receipt/protected-authorization.json" '
             .schemaVersion == "faz22.6.viewOnlyViewerProductChildEvidence.v2"
             and .evidenceType == "browser" and .sourceRevision == $sha
             and .binding.operatorSha256 == $authorization[0].operatorSha256
@@ -165,7 +176,7 @@ jobs:
           printf '%s' "$expires" | grep -Eq '^[1-9][0-9]{9,12}$'
           [ "$(( expires - $(date -u +%s) ))" -ge 1200 ]
 
-      - name: Collect protected negative matrix
+      - name: Collect one isolated termination case
         env:
           KC_TEST_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           EMIT_GITHUB_MASK_COMMANDS: "1"
@@ -175,35 +186,49 @@ jobs:
           REMOTE_BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key
           REQUIRE_ACTIVE_GUI: "1"
           DENETIM_SSH_TARGET: svc-denetim-agent@10.99.0.2
-          EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-negative-collector
           AUTO_FINALIZE: "0"
-          MATRIX_HOOK_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/collect-view-only-viewer-negative-matrix.sh
-          MATRIX_ROOT_BINDING_FILE: ${{ runner.temp }}/faz22-viewer-negative-browser-root/root-binding.json
+          CASE_NAME: ${{ inputs.case_name }}
         run: |
           set -euo pipefail
-          mkdir -p "$EVIDENCE_DIR"
-          MATRIX_WRONG_TENANT_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
-          export MATRIX_WRONG_TENANT_ID
-          bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+          suffix="$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+          case_dir="$RUNNER_TEMP/faz22-viewer-termination-$CASE_NAME"
+          stage="$RUNNER_TEMP/faz22-viewer-termination-collector"
+          mkdir -p "$case_dir" "$stage/observations" "$stage/audit"
+          EVIDENCE_DIR="$case_dir" \
+          SESSION_ID="rb-viewonly-term-${CASE_NAME}-${suffix}" \
+          OPERATION_ID="op-view-term-${CASE_NAME}-${suffix}" \
+          MATRIX_TERMINATION_CASE="$CASE_NAME" \
+          MATRIX_AUTHORIZATION_SHA256="$MATRIX_AUTHORIZATION_SHA256" \
+          MATRIX_HOOK_SCRIPT="$GITHUB_WORKSPACE/scripts/faz22-remote-ops/collect-view-only-viewer-termination-case.sh" \
+            bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+          install -m 0600 "$case_dir/matrix/observations/$CASE_NAME.jsonl" \
+            "$stage/observations/$CASE_NAME.jsonl"
+          install -m 0600 "$case_dir/matrix/audit/$CASE_NAME.jsonl" \
+            "$stage/audit/$CASE_NAME.jsonl"
+          observation_sha="sha256:$(sha256sum "$stage/observations/$CASE_NAME.jsonl" | awk '{print $1}')"
+          audit_sha="sha256:$(sha256sum "$stage/audit/$CASE_NAME.jsonl" | awk '{print $1}')"
+          jq -cS -n \
+            --arg schemaVersion 'faz22.6.viewOnlyViewerTerminationCaseCollectorContext.v1' \
+            --arg evidenceType termination --arg caseName "$CASE_NAME" \
+            --arg sourceRevision "$GITHUB_SHA" \
+            --arg collectedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg authorizationSha256 "$MATRIX_AUTHORIZATION_SHA256" \
+            --argjson rootBinding "$(cat "$RUNNER_TEMP/faz22-viewer-termination-browser-root/root-binding.json")" \
+            --arg observationSha256 "$observation_sha" --arg auditSha256 "$audit_sha" '
+              {schemaVersion:$schemaVersion,evidenceType:$evidenceType,caseName:$caseName,
+               sourceRevision:$sourceRevision,collectedAt:$collectedAt,
+               authorizationSha256:$authorizationSha256,rootBinding:$rootBinding,
+               observationSha256:$observationSha256,auditSha256:$auditSha256}' \
+            > "$stage/context.json"
 
-      - name: Validate and stage exact collector envelope
+      - name: Validate exact case collector envelope
         env:
-          COLLECTOR_DIR: ${{ runner.temp }}/faz22-viewer-negative-collector/matrix
+          CASE_NAME: ${{ inputs.case_name }}
         run: |
           set -euo pipefail
-          test -s "$COLLECTOR_DIR/context.json"
-          test -s "$COLLECTOR_DIR/observations/negative.jsonl"
-          stage="$RUNNER_TEMP/faz22-viewer-matrix-source"
-          mkdir -p "$stage/observations"
-          install -m 0600 "$COLLECTOR_DIR/context.json" "$stage/context.json"
-          install -m 0600 "$COLLECTOR_DIR/observations/negative.jsonl" \
-            "$stage/observations/negative.jsonl"
-          test "$(find "$stage" -type f | wc -l | tr -d ' ')" = 2
-          if find "$stage" -type f ! -name '*.json' ! -name '*.jsonl' -print -quit | grep -q .; then
-            echo "collector envelope contains a non-JSON payload" >&2
-            exit 1
-          fi
-          python3 - "$stage" <<'PY'
+          stage="$RUNNER_TEMP/faz22-viewer-termination-collector"
+          test "$(find "$stage" -type f | wc -l | tr -d ' ')" = 3
+          python3 - "$stage" "$CASE_NAME" <<'PY'
           import importlib.util
           import pathlib
           import sys
@@ -218,30 +243,40 @@ jobs:
           sys.modules[spec.name] = module
           spec.loader.exec_module(module)
           stage = pathlib.Path(sys.argv[1])
-          context = module.load_context(
-              (stage / "context.json").read_bytes(), "negative",
-              module.common.VERIFIER.load_json_bytes(
-                  (stage / "context.json").read_bytes(), "context"
-              )["sourceRevision"],
+          case_name = sys.argv[2]
+          context_raw = (stage / "context.json").read_bytes()
+          context_json = module.common.VERIFIER.load_json_bytes(context_raw, "case context")
+          context = module.load_termination_case_context(
+              context_raw, case_name, context_json["sourceRevision"],
           )
-          raw = (stage / "observations/negative.jsonl").read_bytes()
+          observations = (stage / f"observations/{case_name}.jsonl").read_bytes()
+          audits = (stage / f"audit/{case_name}.jsonl").read_bytes()
           module.common.VERIFIER.require_equal(
-              module.common.VERIFIER.digest_bytes(raw), context["observationsSha256"],
-              "collector observations digest",
+              module.common.VERIFIER.digest_bytes(observations), context["observationSha256"],
+              "collector observation digest",
           )
-          child, files = module.build_negative(context, raw)
-          child_raw = module.encode_json(child)
-          files["evidence/negative.json"] = child_raw
-          module.common.VERIFIER.validate_matrix_source_attestations("negative", files, child_raw)
+          module.common.VERIFIER.require_equal(
+              module.common.VERIFIER.digest_bytes(audits), context["auditSha256"],
+              "collector audit digest",
+          )
+          snapshot, snapshot_raw = module.common.VERIFIER.load_canonical_matrix_jsonl(
+              observations, "case observation", (case_name,),
+          )[case_name]
+          audit, audit_raw = module.common.VERIFIER.load_canonical_matrix_jsonl(
+              audits, "case audit", (case_name,),
+          )[case_name]
+          module.build_termination_case(
+              context, case_name, snapshot, snapshot_raw, audit, audit_raw,
+          )
           PY
-          sha256sum "$stage/context.json" "$stage/observations/negative.jsonl" \
-            >> "$GITHUB_STEP_SUMMARY"
+          sha256sum "$stage/context.json" "$stage/observations/$CASE_NAME.jsonl" \
+            "$stage/audit/$CASE_NAME.jsonl" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload exact collector artifact
+      - name: Upload exact termination collector artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: faz22-6-view-only-viewer-matrix-collector-negative-${{ github.run_id }}
-          path: ${{ runner.temp }}/faz22-viewer-matrix-source/
+          name: faz22-6-view-only-viewer-termination-collector-${{ inputs.case_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-viewer-termination-collector/
           if-no-files-found: error
           include-hidden-files: false
           retention-days: 2
@@ -250,10 +285,9 @@ jobs:
         if: always()
         run: |
           rm -rf \
-            "$RUNNER_TEMP/faz22-viewer-negative-collector" \
-            "$RUNNER_TEMP/faz22-viewer-matrix-activation" \
-            "$RUNNER_TEMP/faz22-viewer-negative-browser-root"
+            "$RUNNER_TEMP/faz22-viewer-termination-${{ inputs.case_name }}" \
+            "$RUNNER_TEMP/faz22-viewer-termination-authorization" \
+            "$RUNNER_TEMP/faz22-viewer-termination-browser-root"
 
-      # The attended smoke directory contains transient response bodies and
-      # runtime logs. It is intentionally never uploaded. Only the exact staged
-      # context plus canonical observations may leave the protected runner.
+      # Per-case directories can contain transient HTTP bodies and runner logs.
+      # They are intentionally never uploaded.

@@ -138,7 +138,9 @@ MAX_EVIDENCE_AGE = timedelta(hours=24)
 MARKER_VALIDITY = timedelta(hours=24)
 RUN_CLOCK_SKEW = timedelta(minutes=5)
 MAX_ACTIVATION_TO_PILOT_DELAY = timedelta(minutes=35)
-MAX_MATRIX_WINDOW = timedelta(minutes=30)
+# Isolated negative and termination sessions share one protected authorization.
+# The cluster watchdog and signed authorization expiry remain the tighter bound.
+MAX_MATRIX_WINDOW = timedelta(minutes=120)
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 MAX_ARCHIVE_FILES = 32
@@ -592,7 +594,9 @@ def validate_matrix_supporting_evidence(
             require_equal(snapshot[field], attestation[field],
                           f"termination {case_name} runtime {field}")
         if set(snapshot["counters"]) != {
-            "viewerEndedBefore", "viewerEndedAfter", "framesSentAtTrigger", "framesSentAfterEnd",
+            "viewerEndedBefore", "viewerEndedAfter", "globalFramesSentAtEnd",
+            "globalFramesSentAfterObservationWindow", "sessionFramesDeliveredAtEnd",
+            "observationWindowMillis",
         }:
             raise EvidenceError(f"termination {case_name} runtime counter field set mismatch")
         counters = snapshot["counters"]
@@ -600,8 +604,13 @@ def validate_matrix_supporting_evidence(
             raise EvidenceError(f"termination {case_name} runtime counters are invalid")
         require_equal(counters["viewerEndedAfter"], counters["viewerEndedBefore"] + 1,
                       f"termination {case_name} viewer ended delta")
-        require_equal(counters["framesSentAfterEnd"], counters["framesSentAtTrigger"],
-                      f"termination {case_name} no post-termination frames")
+        require_equal(counters["globalFramesSentAfterObservationWindow"],
+                      counters["globalFramesSentAtEnd"],
+                      f"termination {case_name} no post-end frames")
+        require_equal(counters["observationWindowMillis"], 3_000,
+                      f"termination {case_name} post-end observation window")
+        if counters["sessionFramesDeliveredAtEnd"] < 1:
+            raise EvidenceError(f"termination {case_name} session delivered no frames")
         required_signals = expected_termination_product_signals(case_name)
         require_equal(snapshot["terminal"], required_signals,
                       f"termination {case_name} terminal runtime signals")
@@ -617,7 +626,7 @@ def validate_matrix_supporting_evidence(
     if set(audit) != {
         "schemaVersion", "caseName", "sourceRevision", "observedAt", "binding",
         "eventType", "outcome", "chainVerified", "chainSha256", "chainCheckedCount",
-        "verificationSource",
+        "framesDelivered", "verificationSource",
     }:
         raise EvidenceError(f"termination {case_name} audit record field set mismatch")
     require_equal(audit["schemaVersion"], "faz22.6.viewOnlyViewerMatrixAuditRecord.v1",
@@ -635,6 +644,8 @@ def validate_matrix_supporting_evidence(
                   f"termination {case_name} audit verification source")
     if not isinstance(audit["chainCheckedCount"], int) or audit["chainCheckedCount"] < 1:
         raise EvidenceError(f"termination {case_name} audit chain count is invalid")
+    require_equal(audit["framesDelivered"], counters["sessionFramesDeliveredAtEnd"],
+                  f"termination {case_name} session frame count")
     if not SHA256.fullmatch(str(audit["chainSha256"])):
         raise EvidenceError(f"termination {case_name} audit chain digest is invalid")
     require_equal(attestation["productSignals"]["viewStopAuditVerified"], audit["chainVerified"],
@@ -1026,6 +1037,7 @@ def validate_negative_and_termination(
 
     negative_evidence: set[str] = set()
     negative_observations: list[datetime] = []
+    negative_session: str | None = None
     for case_name in NEGATIVE_CASES:
         contract = NEGATIVE_CASE_CONTRACT[case_name]
         case = negative["cases"][case_name]
@@ -1037,11 +1049,15 @@ def validate_negative_and_termination(
         if case_name == "wrongDevice":
             if case_binding["deviceSha256"] == root_binding["deviceSha256"]:
                 raise EvidenceError("negative wrongDevice must use a different device binding")
-            if case_binding["sessionSha256"] == root_binding["sessionSha256"]:
+            if case_binding["sessionSha256"] in {root_binding["sessionSha256"], negative_session}:
                 raise EvidenceError("negative wrongDevice must use a distinct attempted session binding")
         else:
-            require_equal(case_binding["sessionSha256"], root_binding["sessionSha256"],
-                          f"negative {case_name} target session binding")
+            if negative_session is None:
+                negative_session = case_binding["sessionSha256"]
+                if negative_session == root_binding["sessionSha256"]:
+                    raise EvidenceError("negative matrix must use an isolated protected session")
+            require_equal(case_binding["sessionSha256"], negative_session,
+                          f"negative {case_name} isolated session binding")
             require_equal(case_binding["deviceSha256"], root_binding["deviceSha256"],
                           f"negative {case_name} deviceSha256")
         if len(set(case_binding.values())) != len(case_binding):
@@ -1055,6 +1071,8 @@ def validate_negative_and_termination(
         negative_evidence.add(case["evidenceSha256"])
     require_equal(max(negative_observations), child_observed_at["negative"],
                   "negative child latest observation")
+    if negative_session is None:
+        raise EvidenceError("negative matrix isolated session binding is absent")
 
     termination_sessions: set[str] = set()
     termination_evidence: set[str] = set()
@@ -1071,7 +1089,8 @@ def validate_negative_and_termination(
         if len(set(case_binding.values())) != len(case_binding):
             raise EvidenceError(f"termination {case_name} binding hashes must be distinct")
         session_digest = case_binding["sessionSha256"]
-        if session_digest == root_binding["sessionSha256"] or session_digest in termination_sessions:
+        if session_digest in {root_binding["sessionSha256"], negative_session} \
+                or session_digest in termination_sessions:
             raise EvidenceError("termination cases require distinct isolated sessions")
         termination_sessions.add(session_digest)
         observed = parse_utc(case["observedAt"], f"termination {case_name} observedAt")

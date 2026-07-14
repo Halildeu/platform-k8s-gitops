@@ -87,6 +87,8 @@ DURESS_SIGNAL_FOR_OPERATION="${DURESS_SIGNAL_FOR_OPERATION:-NONE}"
 MATRIX_HOOK_SCRIPT="${MATRIX_HOOK_SCRIPT:-}"
 MATRIX_AUTHORIZATION_SHA256="${MATRIX_AUTHORIZATION_SHA256:-}"
 MATRIX_WRONG_TENANT_ID="${MATRIX_WRONG_TENANT_ID:-}"
+MATRIX_TERMINATION_CASE="${MATRIX_TERMINATION_CASE:-}"
+MATRIX_ROOT_BINDING_FILE="${MATRIX_ROOT_BINDING_FILE:-}"
 
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/faz22-6-view-only-attended-${SESSION_ID}}"
 AUTO_FINALIZE="${AUTO_FINALIZE:-0}"
@@ -279,16 +281,27 @@ validate_inputs() {
   fi
   if [[ -n "$MATRIX_HOOK_SCRIPT" ]]; then
     [[ -r "$MATRIX_HOOK_SCRIPT" ]] || fail_smoke "matrix-hook-script-not-readable"
-    [[ "$(realpath "$MATRIX_HOOK_SCRIPT")" == \
-       "$(realpath "${SCRIPT_DIR}/collect-view-only-viewer-negative-matrix.sh")" ]] \
+    matrix_hook_real="$(realpath "$MATRIX_HOOK_SCRIPT")"
+    negative_hook_real="$(realpath "${SCRIPT_DIR}/collect-view-only-viewer-negative-matrix.sh")"
+    termination_hook_real="$(realpath "${SCRIPT_DIR}/collect-view-only-viewer-termination-case.sh")"
+    [[ "$matrix_hook_real" == "$negative_hook_real" || "$matrix_hook_real" == "$termination_hook_real" ]] \
       || fail_smoke "matrix-hook-script-outside-canonical-repo-path"
     [[ "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]] || fail_smoke "matrix-source-revision-invalid"
     [[ "$MATRIX_AUTHORIZATION_SHA256" =~ ^sha256:[a-f0-9]{64}$ ]] \
       || fail_smoke "matrix-authorization-sha256-invalid"
-    [[ "$MATRIX_WRONG_TENANT_ID" =~ ^[0-9a-fA-F-]{36}$ ]] \
-      || fail_smoke "matrix-wrong-tenant-id-invalid"
-    [[ "${MATRIX_WRONG_TENANT_ID,,}" != "${TENANT_ID,,}" ]] \
-      || fail_smoke "matrix-wrong-tenant-id-equals-authorized-tenant"
+    if [[ "$matrix_hook_real" == "$negative_hook_real" ]]; then
+      [[ -r "$MATRIX_ROOT_BINDING_FILE" ]] \
+        || fail_smoke "matrix-root-binding-file-not-readable"
+      [[ "$MATRIX_WRONG_TENANT_ID" =~ ^[0-9a-fA-F-]{36}$ ]] \
+        || fail_smoke "matrix-wrong-tenant-id-invalid"
+      [[ "${MATRIX_WRONG_TENANT_ID,,}" != "${TENANT_ID,,}" ]] \
+        || fail_smoke "matrix-wrong-tenant-id-equals-authorized-tenant"
+    else
+      case "$MATRIX_TERMINATION_CASE" in
+        localAbort|killOrRevoke|ttlExpiry|heartbeatLoss|indicatorLoss) ;;
+        *) fail_smoke "matrix-termination-case-invalid" ;;
+      esac
+    fi
   fi
   if [[ "$AUTO_FINALIZE" == "1" ]]; then
     [[ "$EVIDENCE_URL" == https://* ]] || fail_smoke "evidence-url-required-for-auto-finalize"
@@ -1315,17 +1328,35 @@ main() {
     MATRIX_WRONG_TENANT_TOKEN_FILE="$MATRIX_WRONG_TENANT_TOKEN_FILE" \
     MATRIX_WRONG_TENANT_CLAIMS_FILE="$MATRIX_WRONG_TENANT_CLAIMS_FILE" \
     MATRIX_WRONG_TENANT_ID="$MATRIX_WRONG_TENANT_ID" \
+    MATRIX_ROOT_BINDING_FILE="$MATRIX_ROOT_BINDING_FILE" \
+    MATRIX_TERMINATION_CASE="$MATRIX_TERMINATION_CASE" \
     MATRIX_SOURCE_REVISION="$SOURCE_REVISION" \
     MATRIX_AUTHORIZATION_SHA256="$MATRIX_AUTHORIZATION_SHA256" \
+    MATRIX_K8S_CONTEXT="$K8S_CONTEXT" \
+    MATRIX_K8S_NAMESPACE="$K8S_NAMESPACE" \
+    MATRIX_REMOTE_BRIDGE_DEPLOYMENT="$REMOTE_BRIDGE_DEPLOYMENT" \
+    MATRIX_TENANT_ID="$TENANT_ID" \
+    MATRIX_PG_CONTAINER="$PG_CONTAINER" \
+    MATRIX_PG_DATABASE="$PG_DATABASE" \
+    MATRIX_PG_USER="$PG_USER" \
+    MATRIX_DB_SCHEMA="$DB_SCHEMA" \
     MATRIX_OUTPUT_DIR="${EVIDENCE_DIR}/matrix" \
       bash "$MATRIX_HOOK_SCRIPT" || fail_smoke "matrix-hook-failed"
     test -s "${EVIDENCE_DIR}/matrix/context.json" \
+      || [[ -n "$MATRIX_TERMINATION_CASE" ]] \
       || fail_smoke "matrix-hook-context-missing"
-    test -s "${EVIDENCE_DIR}/matrix/observations/negative.jsonl" \
-      || fail_smoke "matrix-hook-observations-missing"
+    if [[ -n "$MATRIX_TERMINATION_CASE" ]]; then
+      test -s "${EVIDENCE_DIR}/matrix/observations/${MATRIX_TERMINATION_CASE}.jsonl" \
+        || fail_smoke "matrix-hook-termination-observation-missing"
+      test -s "${EVIDENCE_DIR}/matrix/audit/${MATRIX_TERMINATION_CASE}.jsonl" \
+        || fail_smoke "matrix-hook-termination-audit-missing"
+    else
+      test -s "${EVIDENCE_DIR}/matrix/observations/negative.jsonl" \
+        || fail_smoke "matrix-hook-observations-missing"
+    fi
     close_code="$(cat "${EVIDENCE_DIR}/matrix/close.code" 2>/dev/null || true)"
     status="accepted-candidate"
-    reason="VIEW_ONLY protected negative matrix collector produced digest-bound observations"
+    reason="VIEW_ONLY protected matrix collector produced digest-bound observations"
     write_summary
     write_sha256sums
     echo "ACCEPTED_CANDIDATE matrix_dir=${EVIDENCE_DIR}/matrix"

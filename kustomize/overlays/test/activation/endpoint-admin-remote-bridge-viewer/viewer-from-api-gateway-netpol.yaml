@@ -14,12 +14,12 @@ kind: NetworkPolicy
 metadata:
   name: eab-bridge-viewer-allow-ingress-8096-from-api-gateway
   labels:
-    app.kubernetes.io/name: endpoint-admin-remote-bridge
-    app.kubernetes.io/part-of: remote-bridge
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/part-of: remote-bridge-device-key
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: endpoint-admin-remote-bridge
+      app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
   policyTypes:
     - Ingress
   ingress:

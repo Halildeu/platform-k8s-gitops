@@ -10,6 +10,7 @@ required=(
   MATRIX_WRONG_ROLE_TOKEN_FILE MATRIX_WRONG_ROLE_CLAIMS_FILE
   MATRIX_WRONG_TENANT_TOKEN_FILE MATRIX_WRONG_TENANT_CLAIMS_FILE
   MATRIX_SOURCE_REVISION MATRIX_AUTHORIZATION_SHA256 MATRIX_OUTPUT_DIR
+  MATRIX_ROOT_BINDING_FILE
 )
 for name in "${required[@]}"; do
   [[ -n "${!name:-}" ]] || { echo "negative-matrix: missing $name" >&2; exit 2; }
@@ -154,6 +155,16 @@ ROOT_BINDING="$(jq -nc \
   --arg deviceSha256 "$(sha256_text "$MATRIX_DEVICE_ID")" \
   '{sessionSha256:$sessionSha256,tenantSha256:$tenantSha256,
     operatorSha256:$operatorSha256,deviceSha256:$deviceSha256}')"
+CANONICAL_ROOT_BINDING="$(jq -cS . "$MATRIX_ROOT_BINDING_FILE")"
+jq -e 'keys == ["deviceSha256","operatorSha256","sessionSha256","tenantSha256"]
+  and all(.[]; type == "string" and test("^sha256:[a-f0-9]{64}$"))
+  and ([.[]] | unique | length == 4)' <<< "$CANONICAL_ROOT_BINDING" >/dev/null
+jq -e --argjson isolated "$ROOT_BINDING" '
+  .tenantSha256 == $isolated.tenantSha256
+  and .operatorSha256 == $isolated.operatorSha256
+  and .deviceSha256 == $isolated.deviceSha256
+  and .sessionSha256 != $isolated.sessionSha256
+' <<< "$CANONICAL_ROOT_BINDING" >/dev/null
 OPERATOR_SUBJECT="$(jq -r '.subjectSha256' "$MATRIX_OPERATOR_CLAIMS_FILE")"
 OPERATOR_TENANT="$(jq -r '.tenantSha256' "$MATRIX_OPERATOR_CLAIMS_FILE")"
 WRONG_ROLE_SUBJECT="$(jq -r '.subjectSha256' "$MATRIX_WRONG_ROLE_CLAIMS_FILE")"
@@ -360,7 +371,7 @@ jq -cS -n \
   --arg evidenceType negative --arg sourceRevision "$MATRIX_SOURCE_REVISION" \
   --arg collectedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg authorizationSha256 "$MATRIX_AUTHORIZATION_SHA256" \
-  --argjson rootBinding "$ROOT_BINDING" \
+  --argjson rootBinding "$CANONICAL_ROOT_BINDING" \
   --arg observationsSha256 "$(sha256_file "$OBSERVATIONS")" '
     {schemaVersion:$schemaVersion,evidenceType:$evidenceType,sourceRevision:$sourceRevision,
      collectedAt:$collectedAt,authorizationSha256:$authorizationSha256,

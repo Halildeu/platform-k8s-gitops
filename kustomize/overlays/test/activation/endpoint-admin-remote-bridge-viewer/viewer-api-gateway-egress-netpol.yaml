@@ -6,7 +6,7 @@
 # to the bridge: the namespace default-denies egress
 # (kustomize/base/netpol/default-deny.yaml), and the existing allow-egress-intra-ns
 # only permits part-of=platform → part-of=platform. The bridge is deliberately
-# part-of=remote-bridge (broker isolation), so the standard intra-ns egress does NOT
+# part-of=remote-bridge-device-key (broker isolation), so the standard intra-ns egress does NOT
 # cover api-gateway → bridge → enable would 502/connect-fail without this.
 #
 # Narrowly scoped: api-gateway pods → the bridge pod, TCP 8096 only. Additive
@@ -29,7 +29,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: endpoint-admin-remote-bridge
+              app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
       ports:
         - protocol: TCP
           port: 8096

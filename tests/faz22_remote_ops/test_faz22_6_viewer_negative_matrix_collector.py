@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import os
 import subprocess
@@ -174,6 +175,14 @@ class NegativeMatrixCollectorTest(unittest.TestCase):
             }
             for name, content in files.items():
                 (tmp / name).write_text(content, encoding="utf-8")
+            device_id = "11111111-1111-4111-8111-111111111111"
+            root_binding = {
+                "sessionSha256": sha("a"),
+                "tenantSha256": sha("2"),
+                "operatorSha256": sha("3"),
+                "deviceSha256": "sha256:" + hashlib.sha256(device_id.encode()).hexdigest(),
+            }
+            (tmp / "root-binding.json").write_text(json.dumps(root_binding), encoding="utf-8")
 
             output = tmp / "output"
             env = os.environ.copy()
@@ -185,7 +194,7 @@ class NegativeMatrixCollectorTest(unittest.TestCase):
                 "MATRIX_MANAGEMENT_BASE": "http://collector/management",
                 "MATRIX_SESSION_ID": "matrix-session-1",
                 "MATRIX_STREAM_ID": "stream-1",
-                "MATRIX_DEVICE_ID": "11111111-1111-4111-8111-111111111111",
+                "MATRIX_DEVICE_ID": device_id,
                 "MATRIX_OPERATOR_TOKEN_FILE": str(tmp / "operator.jwt"),
                 "MATRIX_OPERATOR_CLAIMS_FILE": str(tmp / "operator-claims.json"),
                 "MATRIX_WRONG_ROLE_TOKEN_FILE": str(tmp / "wrong-role.jwt"),
@@ -195,6 +204,7 @@ class NegativeMatrixCollectorTest(unittest.TestCase):
                 "MATRIX_SOURCE_REVISION": "1" * 40,
                 "MATRIX_AUTHORIZATION_SHA256": sha("9"),
                 "MATRIX_OUTPUT_DIR": str(output),
+                "MATRIX_ROOT_BINDING_FILE": str(tmp / "root-binding.json"),
             })
             completed = subprocess.run(
                 ["bash", str(COLLECTOR)], env=env, text=True,
@@ -206,6 +216,7 @@ class NegativeMatrixCollectorTest(unittest.TestCase):
             context_raw = (output / "context.json").read_bytes()
             observations_raw = (output / "observations/negative.jsonl").read_bytes()
             context = PRODUCER.load_context(context_raw, "negative", "1" * 40)
+            self.assertEqual(root_binding, context["rootBinding"])
             self.assertEqual(PRODUCER.common.VERIFIER.digest_bytes(observations_raw),
                              context["observationsSha256"])
             child, produced = PRODUCER.build_negative(context, observations_raw)
