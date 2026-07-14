@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://acik.com/schemas/faz25-p5-frontend-lineage-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "phase",
+    "observedAt",
+    "cluster",
+    "deployment",
+    "replicaSet",
+    "pods",
+    "lineage"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "faz25-p5-frontend-lineage-v1" },
+    "phase": { "enum": ["pre", "post"] },
+    "observedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context", "serverSha256", "caSha256", "kubeSystemNamespaceUid"],
+      "properties": {
+        "context": { "const": "k3d-test" },
+        "serverSha256": {
+          "const": "72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29"
+        },
+        "caSha256": {
+          "const": "ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96"
+        },
+        "kubeSystemNamespaceUid": {
+          "const": "0a7f11d1-53d6-452f-bdac-3669507af073"
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "name",
+        "uid",
+        "resourceVersion",
+        "generation",
+        "observedGeneration",
+        "rolloutRevision",
+        "desiredReplicas",
+        "image"
+      ],
+      "properties": {
+        "namespace": { "const": "platform-test" },
+        "name": { "const": "frontend" },
+        "uid": { "$ref": "#/definitions/uuid" },
+        "resourceVersion": { "type": "string", "pattern": "^[0-9]+$" },
+        "generation": { "type": "integer", "minimum": 1 },
+        "observedGeneration": { "type": "integer", "minimum": 1 },
+        "rolloutRevision": { "type": "string", "pattern": "^[0-9]+$" },
+        "desiredReplicas": { "type": "integer", "minimum": 1 },
+        "image": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-7c8cef6@sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38$"
+        }
+      }
+    },
+    "replicaSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "uid", "rolloutRevision"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^frontend-[a-z0-9]+$" },
+        "uid": { "$ref": "#/definitions/uuid" },
+        "rolloutRevision": { "type": "string", "pattern": "^[0-9]+$" }
+      }
+    },
+    "pods": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["readyCount", "uids", "imageIds"],
+      "properties": {
+        "readyCount": { "type": "integer", "minimum": 1 },
+        "uids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/uuid" }
+        },
+        "imageIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^.*@sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38$"
+          }
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceSha",
+        "expectedDigest",
+        "observedDigest",
+        "buildRunId",
+        "buildRunUrl",
+        "buildArtifactId",
+        "buildArtifactName",
+        "buildArtifactDigest",
+        "buildArtifactSizeInBytes",
+        "buildProvenanceReceiptSha256",
+        "slsaProvenanceDigest"
+      ],
+      "properties": {
+        "sourceSha": { "const": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a" },
+        "expectedDigest": {
+          "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+        },
+        "observedDigest": {
+          "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+        },
+        "buildRunId": { "const": "29328643364" },
+        "buildRunUrl": {
+          "const": "https://github.com/Halildeu/platform-web/actions/runs/29328643364"
+        },
+        "buildArtifactId": { "const": "8309092914" },
+        "buildArtifactName": {
+          "const": "Halildeu~platform-web~R1TBO1.dockerbuild"
+        },
+        "buildArtifactDigest": {
+          "const": "sha256:4086a69a90e6557aadbd909bb6cbc83e339b7feac9254a8ffbe79f5b19558d6e"
+        },
+        "buildArtifactSizeInBytes": { "const": 107153 },
+        "buildProvenanceReceiptSha256": {
+          "const": "27c6ecc5812c8793c60d878a3bbeb16dff15a8a4f491ee437d924ce22b0f0dfd"
+        },
+        "slsaProvenanceDigest": {
+          "const": "sha256:97002a95d4ee8d5027d440bfb06094a9e0fc40dea55d824e5e127e7f5ebf8522"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

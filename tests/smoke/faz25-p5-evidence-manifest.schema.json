@@ -1,0 +1,176 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://acik.com/schemas/faz25-p5-evidence-manifest-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "verdict",
+    "artifactKind",
+    "startedAt",
+    "completedAt",
+    "github",
+    "binding",
+    "lineage",
+    "children"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "faz25-p5-evidence-manifest-v1" },
+    "verdict": { "enum": ["PASS", "FAIL"] },
+    "artifactKind": { "enum": ["acceptance", "diagnostic"] },
+    "startedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "completedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "workflow", "runId", "runAttempt", "eventName", "ref", "sha"],
+      "properties": {
+        "repository": { "const": "Halildeu/platform-k8s-gitops" },
+        "workflow": { "const": "Verify Faz 25 P5 authenticated product surface" },
+        "runId": { "type": "string", "pattern": "^[0-9]+$" },
+        "runAttempt": { "type": "string", "pattern": "^[0-9]+$" },
+        "eventName": { "const": "workflow_dispatch" },
+        "ref": { "const": "refs/heads/main" },
+        "sha": { "$ref": "#/definitions/gitSha" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonicalMainAtStart",
+        "prePostSameSession",
+        "freshWithinRun",
+        "strictChildSchemas",
+        "sensitiveValueScanPassed"
+      ],
+      "properties": {
+        "canonicalMainAtStart": { "type": "boolean" },
+        "prePostSameSession": { "type": "boolean" },
+        "freshWithinRun": { "type": "boolean" },
+        "strictChildSchemas": { "type": "boolean" },
+        "sensitiveValueScanPassed": { "type": "boolean" }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceSha", "frontendDigest", "buildRunId"],
+      "properties": {
+        "sourceSha": { "const": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a" },
+        "frontendDigest": {
+          "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+        },
+        "buildRunId": { "const": "29328643364" }
+      }
+    },
+    "children": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "sha256", "schemaVersion"],
+        "properties": {
+          "kind": { "enum": ["browser", "lineage-pre", "lineage-post"] },
+          "path": { "type": "string", "pattern": "^[a-z0-9-]+\\.json$" },
+          "sha256": { "$ref": "#/definitions/sha256" },
+          "schemaVersion": {
+            "enum": [
+              "faz25-p5-authenticated-product-surface-v2",
+              "faz25-p5-frontend-lineage-v1"
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "kind": { "const": "browser" },
+              "path": { "const": "browser-report.json" },
+              "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v2" }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "lineage-pre" },
+              "path": { "const": "lineage-pre.json" },
+              "schemaVersion": { "const": "faz25-p5-frontend-lineage-v1" }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "lineage-post" },
+              "path": { "const": "lineage-post.json" },
+              "schemaVersion": { "const": "faz25-p5-frontend-lineage-v1" }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "const": "PASS" } } },
+      "then": {
+        "properties": {
+          "artifactKind": { "const": "acceptance" },
+          "binding": {
+            "type": "object",
+            "properties": {
+              "canonicalMainAtStart": { "const": true },
+              "prePostSameSession": { "const": true },
+              "freshWithinRun": { "const": true },
+              "strictChildSchemas": { "const": true },
+              "sensitiveValueScanPassed": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "verdict": { "const": "FAIL" } } },
+      "then": { "properties": { "artifactKind": { "const": "diagnostic" } } }
+    },
+    {
+      "properties": {
+        "children": {
+          "allOf": [
+            {
+              "type": "array",
+              "contains": {
+                "type": "object",
+                "properties": { "kind": { "const": "browser" } }
+              }
+            },
+            {
+              "type": "array",
+              "contains": {
+                "type": "object",
+                "properties": { "kind": { "const": "lineage-pre" } }
+              }
+            },
+            {
+              "type": "array",
+              "contains": {
+                "type": "object",
+                "properties": { "kind": { "const": "lineage-post" } }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+  }
+}

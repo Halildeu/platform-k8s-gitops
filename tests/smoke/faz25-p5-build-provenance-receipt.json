@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "faz25-p5-build-provenance-receipt-v1",
+  "inspectedAt": "2026-07-14T20:40:00Z",
+  "sourceSha": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a",
+  "imageDigest": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38",
+  "buildRunId": "29328643364",
+  "artifact": {
+    "id": "8309092914",
+    "name": "Halildeu~platform-web~R1TBO1.dockerbuild",
+    "digest": "sha256:4086a69a90e6557aadbd909bb6cbc83e339b7feac9254a8ffbe79f5b19558d6e",
+    "sizeInBytes": 107153
+  },
+  "oci": {
+    "layoutManifestDigest": "sha256:39e63601a74be62965441896d0893f66d930e2a4a5b6f6c0a83d0f82940e25ac",
+    "historyRecordDigest": "sha256:64fecfff94e60219b2ac3f5e3ac9bbf816cb8788095866879ffa14a6b0b10182",
+    "slsaProvenanceDigest": "sha256:97002a95d4ee8d5027d440bfb06094a9e0fc40dea55d824e5e127e7f5ebf8522",
+    "subjectDigest": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38",
+    "vcsRevision": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a"
+  },
+  "inspection": {
+    "artifactDigestMatchedGitHub": true,
+    "ociDigestGraphVerified": true,
+    "slsaSubjectAndRevisionVerified": true,
+    "rawArtifactExcludedFromRepo": true,
+    "rawArtifactExclusionReason": "build record contains non-public build inputs; only the redacted content-addressed projection is committed"
+  }
+}

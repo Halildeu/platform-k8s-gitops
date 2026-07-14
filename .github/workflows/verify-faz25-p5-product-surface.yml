@@ -13,47 +13,40 @@ concurrency:
 jobs:
   verify:
     name: Named VIEW persona browser acceptance
+    environment: testai-product-acceptance
     runs-on: [self-hosted, staging-sw, testai-deploy]
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout canonical acceptance harness
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
 
-      - name: Bind harness revision and live frontend image
-        id: provenance
-        env:
-          EXPECTED_FRONTEND_DIGEST: sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38
+      - name: Bind canonical main and create run-scoped evidence workspace
+        id: workspace
         run: |
           set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "Halildeu/platform-k8s-gitops" ]]
+          [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
 
           harness_revision="$(git rev-parse HEAD)"
-          [[ "$harness_revision" == "$GITHUB_SHA" ]] || {
-            echo "::error::Checked-out harness revision does not match GITHUB_SHA"; exit 1;
-          }
-          [[ "$GITHUB_REPOSITORY" == "Halildeu/platform-k8s-gitops" ]] || {
-            echo "::error::Acceptance harness must run from the canonical GitOps repository"; exit 1;
-          }
+          [[ "$harness_revision" == "$GITHUB_SHA" ]]
+          git fetch --quiet --no-tags origin main
+          git merge-base --is-ancestor "$harness_revision" refs/remotes/origin/main
 
-          deployment_json="$(kubectl -n platform-test get deployment frontend -o json)"
-          jq -e --arg digest "$EXPECTED_FRONTEND_DIGEST" '
-            .metadata.generation == .status.observedGeneration and
-            (.status.availableReplicas // 0) == (.spec.replicas // 1) and
-            ([.spec.template.spec.containers[]
-              | select(.name == "frontend")
-              | .image
-              | endswith("@" + $digest)] == [true])
-          ' <<<"$deployment_json" >/dev/null
-
-          pods_json="$(kubectl -n platform-test get pods -l app.kubernetes.io/name=frontend -o json)"
-          jq -e --arg digest "$EXPECTED_FRONTEND_DIGEST" '
-            [.items[]
-              | select(.status.phase == "Running")
-              | .status.containerStatuses[]?
-              | select(.name == "frontend" and .ready == true)
-              | .imageID] as $ids
-            | ($ids | length) > 0 and all($ids[]; endswith("@" + $digest))
-          ' <<<"$pods_json" >/dev/null
+          test_root="$(mktemp -d \
+            "${RUNNER_TEMP}/faz25-p5-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")"
+          artifact_dir="${test_root}/evidence"
+          mkdir -p "$artifact_dir"
+          chmod 0700 "$test_root" "$artifact_dir"
+          rm -f \
+            "$artifact_dir/browser-report.json" \
+            "$artifact_dir/lineage-pre.json" \
+            "$artifact_dir/lineage-post.json" \
+            "$artifact_dir/evidence-manifest.json" \
+            "$artifact_dir/SHA256SUMS"
 
           sha256_file() {
             if command -v sha256sum >/dev/null 2>&1; then
@@ -64,124 +57,473 @@ jobs:
           }
           spec_sha256="$(sha256_file tests/smoke/faz25-p5-product-surface.spec.ts)"
           config_sha256="$(sha256_file tests/smoke/playwright.faz25-p5.config.ts)"
+          package_lock_sha256="$(sha256_file tests/smoke/faz25-p5-runtime/package-lock.json)"
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           {
+            echo "canonical_main=true"
             echo "harness_revision=$harness_revision"
+            echo "test_root=$test_root"
+            echo "artifact_dir=$artifact_dir"
+            echo "browser_report=$artifact_dir/browser-report.json"
+            echo "lineage_pre=$artifact_dir/lineage-pre.json"
+            echo "lineage_post=$artifact_dir/lineage-post.json"
+            echo "manifest=$artifact_dir/evidence-manifest.json"
             echo "spec_sha256=$spec_sha256"
             echo "config_sha256=$config_sha256"
-            echo "live_frontend_digest=$EXPECTED_FRONTEND_DIGEST"
+            echo "package_lock_sha256=$package_lock_sha256"
+            echo "started_at=$started_at"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Collect pre-browser Deployment to Pod lineage
+        id: pre_lineage
+        env:
+          REPORT_PATH: ${{ steps.workspace.outputs.lineage_pre }}
+          PHASE: pre
+          EXPECTED_CONTEXT: k3d-test
+          EXPECTED_SOURCE_SHA: 7c8cef6547d4408cc705f9c6afae49b67ed80d1a
+          EXPECTED_IMAGE_DIGEST: sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38
+          EXPECTED_BUILD_RUN_ID: "29328643364"
+          EXPECTED_CLUSTER_SERVER_SHA256: 72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29
+          EXPECTED_CLUSTER_CA_SHA256: ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96
+          EXPECTED_KUBE_SYSTEM_UID: 0a7f11d1-53d6-452f-bdac-3669507af073
+        run: |
+          set -euo pipefail
+          bash scripts/deploy/collect-faz25-p5-frontend-lineage.sh
+          echo "live_digest=$(jq -r '.lineage.observedDigest' "$REPORT_PATH")" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
 
-      - name: Require the named test persona
-        env:
-          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
-          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
-        run: |
-          set -euo pipefail
-          [[ -n "${SMOKE_AUTH_USERNAME:-}" ]] || {
-            echo "::error::SMOKE_AUTH_USERNAME is required"; exit 1;
-          }
-          [[ -n "${SMOKE_AUTH_PASSWORD:-}" ]] || {
-            echo "::error::SMOKE_AUTH_PASSWORD is required"; exit 1;
-          }
-
-      - name: Prepare isolated Playwright runtime
+      - name: Prepare locked headless Playwright runtime
         id: runtime
+        env:
+          TEST_ROOT: ${{ steps.workspace.outputs.test_root }}
         run: |
           set -euo pipefail
-          test_root="${RUNNER_TEMP}/faz25-p5-product-surface-${GITHUB_RUN_ID}"
-          mkdir -p "$test_root"
-          cp tests/smoke/faz25-p5-product-surface.spec.ts "$test_root/"
-          cp tests/smoke/playwright.faz25-p5.config.ts "$test_root/"
-          cd "$test_root"
-          npm init -y >/dev/null
-          [[ "$(npm view @playwright/test@1.60.0 version)" == "1.60.0" ]]
-          [[ "$(npm view playwright-core@1.60.0 version)" == "1.60.0" ]]
-          [[ "$(npm view @axe-core/playwright@4.11.3 version)" == "4.11.3" ]]
-          npm install --no-save --no-package-lock --no-audit --no-fund \
-            @playwright/test@1.60.0 \
-            playwright-core@1.60.0 \
-            @axe-core/playwright@4.11.3
+          cp tests/smoke/faz25-p5-runtime/package.json "$TEST_ROOT/package.json"
+          cp tests/smoke/faz25-p5-runtime/package-lock.json "$TEST_ROOT/package-lock.json"
+          cp tests/smoke/faz25-p5-runtime/validate-schema.cjs "$TEST_ROOT/validate-schema.cjs"
+          cp tests/smoke/faz25-p5-product-surface.spec.ts "$TEST_ROOT/"
+          cp tests/smoke/playwright.faz25-p5.config.ts "$TEST_ROOT/"
+          cd "$TEST_ROOT"
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx tsc --noEmit --strict --target ES2022 --module NodeNext \
+            --moduleResolution NodeNext --esModuleInterop --skipLibCheck \
+            faz25-p5-product-surface.spec.ts playwright.faz25-p5.config.ts
           npx playwright install chromium
-          echo "test_root=$test_root" >> "$GITHUB_OUTPUT"
+          playwright_version="$(npx playwright --version)"
+          [[ "$playwright_version" == "Version 1.60.0" ]]
+          read -r chromium_revision chromium_browser_version <<<"$(node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const packageRoot = path.dirname(require.resolve('playwright-core/package.json'));
+          const browsers = JSON.parse(
+            fs.readFileSync(path.join(packageRoot, 'browsers.json'), 'utf8'),
+          ).browsers;
+          const chromium = browsers.find((browser) => browser.name === 'chromium');
+          if (!chromium) process.exit(1);
+          process.stdout.write(`${chromium.revision} ${chromium.browserVersion}`);
+          NODE
+          )"
+          [[ "$chromium_revision" == "1223" ]]
+          [[ "$chromium_browser_version" == "148.0.7778.96" ]]
+          chromium_path="$(node -e \
+            'const { chromium } = require("playwright-core"); process.stdout.write(chromium.executablePath())')"
+          [[ -x "$chromium_path" ]]
+          chromium_executable_version="$("$chromium_path" --version)"
+          [[ "$chromium_executable_version" == *"148.0.7778.96"* ]]
+          if command -v sha256sum >/dev/null 2>&1; then
+            chromium_sha256="$(sha256sum "$chromium_path" | awk '{print $1}')"
+          else
+            chromium_sha256="$(shasum -a 256 "$chromium_path" | awk '{print $1}')"
+          fi
+          {
+            echo "playwright_version=$playwright_version"
+            echo "chromium_revision=$chromium_revision"
+            echo "chromium_browser_version=$chromium_browser_version"
+            echo "chromium_executable_version=$chromium_executable_version"
+            echo "chromium_sha256=$chromium_sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require the protected named test persona
+        env:
+          SMOKE_AUTH_USERNAME: ${{ secrets.P5_SMOKE_AUTH_USERNAME }}
+          SMOKE_AUTH_PASSWORD: ${{ secrets.P5_SMOKE_AUTH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ "$SMOKE_AUTH_USERNAME" == "p5-readiness-viewer" ]]
+          [[ -n "$SMOKE_AUTH_PASSWORD" ]]
 
       - name: Run authenticated product acceptance
         env:
-          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
-          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
+          SMOKE_AUTH_USERNAME: ${{ secrets.P5_SMOKE_AUTH_USERNAME }}
+          SMOKE_AUTH_PASSWORD: ${{ secrets.P5_SMOKE_AUTH_PASSWORD }}
           P5_BASE_URL: https://testai.acik.com
+          P5_KEYCLOAK_ISSUER: https://testai.acik.com/realms/platform-test
           P5_EXPECTED_USERNAME: p5-readiness-viewer
           P5_EXPECTED_ROLE: P5_READINESS_VIEWER
           P5_EXPECTED_USER_ID: "6"
           P5_EXPECTED_SUBSCRIBER_ID: "6"
           P5_EXPECTED_SOURCE_SHA: 7c8cef6547d4408cc705f9c6afae49b67ed80d1a
           P5_EXPECTED_FRONTEND_DIGEST: sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38
-          P5_LIVE_FRONTEND_DIGEST: ${{ steps.provenance.outputs.live_frontend_digest }}
+          P5_EXPECTED_BUILD_RUN_ID: "29328643364"
+          P5_LIVE_FRONTEND_DIGEST: ${{ steps.pre_lineage.outputs.live_digest }}
           P5_HARNESS_REPOSITORY: ${{ github.repository }}
-          P5_HARNESS_REVISION: ${{ steps.provenance.outputs.harness_revision }}
-          P5_SPEC_SHA256: ${{ steps.provenance.outputs.spec_sha256 }}
-          P5_CONFIG_SHA256: ${{ steps.provenance.outputs.config_sha256 }}
-          P5_REPORT_PATH: ${{ runner.temp }}/faz25-p5-authenticated-product-surface.json
+          P5_HARNESS_REVISION: ${{ steps.workspace.outputs.harness_revision }}
+          P5_SPEC_SHA256: ${{ steps.workspace.outputs.spec_sha256 }}
+          P5_CONFIG_SHA256: ${{ steps.workspace.outputs.config_sha256 }}
+          P5_PACKAGE_LOCK_SHA256: ${{ steps.workspace.outputs.package_lock_sha256 }}
+          P5_CHROMIUM_EXECUTABLE_SHA256: ${{ steps.runtime.outputs.chromium_sha256 }}
+          P5_CHROMIUM_REVISION: ${{ steps.runtime.outputs.chromium_revision }}
+          P5_CHROMIUM_BROWSER_VERSION: ${{ steps.runtime.outputs.chromium_browser_version }}
+          P5_CHROMIUM_EXECUTABLE_VERSION: ${{ steps.runtime.outputs.chromium_executable_version }}
+          P5_PLAYWRIGHT_VERSION: ${{ steps.runtime.outputs.playwright_version }}
+          P5_GITHUB_REPOSITORY: ${{ github.repository }}
+          P5_GITHUB_WORKFLOW: ${{ github.workflow }}
+          P5_GITHUB_RUN_ID: ${{ github.run_id }}
+          P5_GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          P5_GITHUB_EVENT_NAME: ${{ github.event_name }}
+          P5_GITHUB_REF: ${{ github.ref }}
+          P5_GITHUB_SHA: ${{ github.sha }}
+          P5_REPORT_PATH: ${{ steps.workspace.outputs.browser_report }}
+          TEST_ROOT: ${{ steps.workspace.outputs.test_root }}
         run: |
           set -euo pipefail
-          cd "${{ steps.runtime.outputs.test_root }}"
+          cd "$TEST_ROOT"
           npx playwright test \
             --config=playwright.faz25-p5.config.ts \
             faz25-p5-product-surface.spec.ts
 
-      - name: Validate sanitized evidence contract
-        id: evidence_contract
+      - name: Collect post-browser Deployment to Pod lineage
         if: always()
         env:
-          REPORT_PATH: ${{ runner.temp }}/faz25-p5-authenticated-product-surface.json
+          REPORT_PATH: ${{ steps.workspace.outputs.lineage_post }}
+          PHASE: post
+          EXPECTED_CONTEXT: k3d-test
+          EXPECTED_SOURCE_SHA: 7c8cef6547d4408cc705f9c6afae49b67ed80d1a
+          EXPECTED_IMAGE_DIGEST: sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38
+          EXPECTED_BUILD_RUN_ID: "29328643364"
+          EXPECTED_CLUSTER_SERVER_SHA256: 72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29
+          EXPECTED_CLUSTER_CA_SHA256: ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96
+          EXPECTED_KUBE_SYSTEM_UID: 0a7f11d1-53d6-452f-bdac-3669507af073
+        run: bash scripts/deploy/collect-faz25-p5-frontend-lineage.sh
+
+      - name: Build strict content-addressed evidence manifest
+        id: contract
+        if: always()
+        env:
+          TEST_ROOT: ${{ steps.workspace.outputs.test_root }}
+          ARTIFACT_DIR: ${{ steps.workspace.outputs.artifact_dir }}
+          BROWSER_REPORT: ${{ steps.workspace.outputs.browser_report }}
+          LINEAGE_PRE: ${{ steps.workspace.outputs.lineage_pre }}
+          LINEAGE_POST: ${{ steps.workspace.outputs.lineage_post }}
+          MANIFEST: ${{ steps.workspace.outputs.manifest }}
+          WORKFLOW_STARTED_AT: ${{ steps.workspace.outputs.started_at }}
+          CANONICAL_MAIN: ${{ steps.workspace.outputs.canonical_main }}
         run: |
           set -euo pipefail
-          [[ -f "$REPORT_PATH" ]]
-          if stat -c '%a' "$REPORT_PATH" >/dev/null 2>&1; then
-            report_mode="$(stat -c '%a' "$REPORT_PATH")"
-          else
-            report_mode="$(stat -f '%Lp' "$REPORT_PATH")"
-          fi
-          [[ "$report_mode" == "600" ]]
-          jq -e '
-            .schemaVersion == "faz25-p5-authenticated-product-surface-v2" and
-            (.verdict == "PASS" or .verdict == "FAIL") and
-            ([.. | strings
-              | select(test("Bearer[[:space:]]|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"; "i"))]
-              | length == 0)
-          ' "$REPORT_PATH" >/dev/null
+          [[ -f "$BROWSER_REPORT" && -f "$LINEAGE_PRE" && -f "$LINEAGE_POST" ]]
 
-      - name: Upload sanitized acceptance evidence
-        if: always() && steps.evidence_contract.outcome == 'success'
+          node "$TEST_ROOT/validate-schema.cjs" \
+            tests/smoke/faz25-p5-product-surface.schema.json "$BROWSER_REPORT"
+          node "$TEST_ROOT/validate-schema.cjs" \
+            tests/smoke/faz25-p5-frontend-lineage.schema.json "$LINEAGE_PRE"
+          node "$TEST_ROOT/validate-schema.cjs" \
+            tests/smoke/faz25-p5-frontend-lineage.schema.json "$LINEAGE_POST"
+
+          projection='{
+            cluster,
+            deployment: {
+              namespace: .deployment.namespace,
+              name: .deployment.name,
+              uid: .deployment.uid,
+              generation: .deployment.generation,
+              observedGeneration: .deployment.observedGeneration,
+              rolloutRevision: .deployment.rolloutRevision,
+              desiredReplicas: .deployment.desiredReplicas,
+              image: .deployment.image
+            },
+            replicaSet: {
+              uid: .replicaSet.uid,
+              rolloutRevision: .replicaSet.rolloutRevision
+            },
+            pods: {
+              readyCount: .pods.readyCount,
+              uids: .pods.uids,
+              imageIds: .pods.imageIds
+            },
+            lineage
+          }'
+          pre_projection="$(jq -cS "$projection" "$LINEAGE_PRE")"
+          post_projection="$(jq -cS "$projection" "$LINEAGE_POST")"
+          pre_post_same=false
+          [[ "$pre_projection" == "$post_projection" ]] && pre_post_same=true
+
+          fresh_within_run="$(python3 - \
+            "$WORKFLOW_STARTED_AT" "$LINEAGE_PRE" "$BROWSER_REPORT" "$LINEAGE_POST" <<'PY'
+          import datetime as dt
+          import json
+          import pathlib
+          import sys
+
+          def parse(value: str) -> dt.datetime:
+              return dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+
+          started = parse(sys.argv[1])
+          now = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=5)
+          points = []
+          for path in sys.argv[2:]:
+              payload = json.loads(pathlib.Path(path).read_text())
+              points.append(parse(payload.get('startedAt', payload['observedAt'])))
+              points.append(parse(payload['observedAt']))
+          within_budget = now - started <= dt.timedelta(minutes=31)
+          ordered = points == sorted(points)
+          fresh = within_budget and ordered and all(started <= point <= now for point in points)
+          print(str(fresh).lower())
+          PY
+          )"
+
+          sensitive_scan_passed=true
+          for report in "$BROWSER_REPORT" "$LINEAGE_PRE" "$LINEAGE_POST"; do
+            if ! jq -e '
+              ([.. | strings
+                | select(test(
+                    "Bearer[[:space:]]|BEGIN[[:space:]].*PRIVATE KEY|password[[:space:]]*[=:]|cookie[[:space:]]*[=:]|[?&#](code|state|session_state)=|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}";
+                    "i"
+                  ))] | length == 0) and
+              ([.. | strings | select(test("[\\u0000-\\u001F]"))] | length == 0)
+            ' "$report" >/dev/null; then
+              sensitive_scan_passed=false
+            fi
+          done
+
+          browser_verdict="$(jq -r '.verdict' "$BROWSER_REPORT")"
+          manifest_verdict=FAIL
+          artifact_kind=diagnostic
+          if [[ "$browser_verdict" == "PASS" && "$CANONICAL_MAIN" == "true" && \
+                "$pre_post_same" == "true" && "$fresh_within_run" == "true" && \
+                "$sensitive_scan_passed" == "true" ]]; then
+            manifest_verdict=PASS
+            artifact_kind=acceptance
+          fi
+
+          sha256_file() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1" | awk '{print $1}'
+            else
+              shasum -a 256 "$1" | awk '{print $1}'
+            fi
+          }
+          browser_sha="$(sha256_file "$BROWSER_REPORT")"
+          pre_sha="$(sha256_file "$LINEAGE_PRE")"
+          post_sha="$(sha256_file "$LINEAGE_POST")"
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          jq -n \
+            --arg verdict "$manifest_verdict" \
+            --arg artifact_kind "$artifact_kind" \
+            --arg started_at "$WORKFLOW_STARTED_AT" \
+            --arg completed_at "$completed_at" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$GITHUB_WORKFLOW" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg event_name "$GITHUB_EVENT_NAME" \
+            --arg ref "$GITHUB_REF" \
+            --arg sha "$GITHUB_SHA" \
+            --argjson canonical_main "$CANONICAL_MAIN" \
+            --argjson pre_post_same "$pre_post_same" \
+            --argjson fresh_within_run "$fresh_within_run" \
+            --argjson sensitive_scan_passed "$sensitive_scan_passed" \
+            --arg browser_sha "$browser_sha" \
+            --arg pre_sha "$pre_sha" \
+            --arg post_sha "$post_sha" '
+            {
+              schemaVersion: "faz25-p5-evidence-manifest-v1",
+              verdict: $verdict,
+              artifactKind: $artifact_kind,
+              startedAt: $started_at,
+              completedAt: $completed_at,
+              github: {
+                repository: $repository,
+                workflow: $workflow,
+                runId: $run_id,
+                runAttempt: $run_attempt,
+                eventName: $event_name,
+                ref: $ref,
+                sha: $sha
+              },
+              binding: {
+                canonicalMainAtStart: $canonical_main,
+                prePostSameSession: $pre_post_same,
+                freshWithinRun: $fresh_within_run,
+                strictChildSchemas: true,
+                sensitiveValueScanPassed: $sensitive_scan_passed
+              },
+              lineage: {
+                sourceSha: "7c8cef6547d4408cc705f9c6afae49b67ed80d1a",
+                frontendDigest: "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38",
+                buildRunId: "29328643364"
+              },
+              children: [
+                {
+                  kind: "browser",
+                  path: "browser-report.json",
+                  sha256: $browser_sha,
+                  schemaVersion: "faz25-p5-authenticated-product-surface-v2"
+                },
+                {
+                  kind: "lineage-pre",
+                  path: "lineage-pre.json",
+                  sha256: $pre_sha,
+                  schemaVersion: "faz25-p5-frontend-lineage-v1"
+                },
+                {
+                  kind: "lineage-post",
+                  path: "lineage-post.json",
+                  sha256: $post_sha,
+                  schemaVersion: "faz25-p5-frontend-lineage-v1"
+                }
+              ]
+            }
+          ' > "$MANIFEST"
+          chmod 0600 "$BROWSER_REPORT" "$LINEAGE_PRE" "$LINEAGE_POST" "$MANIFEST"
+
+          node "$TEST_ROOT/validate-schema.cjs" \
+            tests/smoke/faz25-p5-evidence-manifest.schema.json "$MANIFEST"
+
+          cd "$ARTIFACT_DIR"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum browser-report.json lineage-pre.json lineage-post.json evidence-manifest.json \
+              > SHA256SUMS
+          else
+            shasum -a 256 browser-report.json lineage-pre.json lineage-post.json \
+              evidence-manifest.json > SHA256SUMS
+          fi
+          chmod 0600 SHA256SUMS
+          {
+            echo "artifact_kind=$artifact_kind"
+            echo "manifest_verdict=$manifest_verdict"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload content-addressed acceptance or diagnostic evidence
+        if: always() && steps.contract.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: faz25-p5-authenticated-product-surface-${{ github.sha }}
-          path: ${{ runner.temp }}/faz25-p5-authenticated-product-surface.json
+          name: faz25-p5-${{ steps.contract.outputs.artifact_kind }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.workspace.outputs.artifact_dir }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare sanitized incomplete-contract diagnostics
+        id: incomplete_diagnostic
+        if: always() && steps.contract.outcome != 'success'
+        env:
+          BROWSER_REPORT: ${{ steps.workspace.outputs.browser_report }}
+          LINEAGE_PRE: ${{ steps.workspace.outputs.lineage_pre }}
+          LINEAGE_POST: ${{ steps.workspace.outputs.lineage_post }}
+        run: |
+          set -euo pipefail
+          umask 077
+          diagnostic_dir="$(mktemp -d \
+            "${RUNNER_TEMP}/faz25-p5-incomplete-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")"
+          chmod 0700 "$diagnostic_dir"
+          included='[]'
+          omitted=0
+
+          copy_if_sanitized() {
+            local source_path="$1"
+            local target_name="$2"
+            if [[ -n "$source_path" && -f "$source_path" && ! -L "$source_path" ]] && \
+              jq -e '
+                type == "object" and
+                ([.. | strings
+                  | select(test(
+                      "Bearer[[:space:]]|BEGIN[[:space:]].*PRIVATE KEY|password[[:space:]]*[=:]|cookie[[:space:]]*[=:]|[?&#](code|state|session_state)=|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}";
+                      "i"
+                    ))] | length == 0) and
+                ([.. | strings | select(test("[\\u0000-\\u001F]"))] | length == 0)
+              ' "$source_path" >/dev/null; then
+              cp -- "$source_path" "$diagnostic_dir/$target_name"
+              chmod 0600 "$diagnostic_dir/$target_name"
+              included="$(jq -c --arg name "$target_name" '. + [$name]' <<< "$included")"
+            else
+              omitted=$((omitted + 1))
+            fi
+          }
+
+          copy_if_sanitized "$BROWSER_REPORT" browser-report.json
+          copy_if_sanitized "$LINEAGE_PRE" lineage-pre.json
+          copy_if_sanitized "$LINEAGE_POST" lineage-post.json
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$GITHUB_WORKFLOW" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg sha "$GITHUB_SHA" \
+            --argjson included "$included" \
+            --argjson omitted "$omitted" '
+            {
+              schemaVersion: "faz25-p5-incomplete-diagnostic-v1",
+              verdict: "DIAGNOSTIC_ONLY",
+              terminalAcceptance: false,
+              reason: "strict-evidence-contract-step-failed",
+              github: {
+                repository: $repository,
+                workflow: $workflow,
+                runId: $run_id,
+                runAttempt: $run_attempt,
+                sha: $sha
+              },
+              includedSanitizedFiles: $included,
+              omittedMissingInvalidOrUnsafeCount: $omitted
+            }
+          ' > "$diagnostic_dir/diagnostic-receipt.json"
+          chmod 0600 "$diagnostic_dir/diagnostic-receipt.json"
+
+          cd "$diagnostic_dir"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum ./*.json > SHA256SUMS
+          else
+            shasum -a 256 ./*.json > SHA256SUMS
+          fi
+          chmod 0600 SHA256SUMS
+          echo "diagnostic_dir=$diagnostic_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Upload sanitized incomplete-contract diagnostics
+        if: always() && steps.contract.outcome != 'success' && steps.incomplete_diagnostic.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz25-p5-diagnostic-incomplete-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.incomplete_diagnostic.outputs.diagnostic_dir }}
           if-no-files-found: error
           retention-days: 14
 
       - name: Acceptance summary
         if: always()
         env:
-          REPORT_PATH: ${{ runner.temp }}/faz25-p5-authenticated-product-surface.json
+          MANIFEST: ${{ steps.workspace.outputs.manifest }}
         run: |
           {
             echo "## Faz 25 P5 authenticated product-surface acceptance"
             echo ""
-            if [[ -f "$REPORT_PATH" ]]; then
-              echo "- verdict: \`$(jq -r '.verdict' "$REPORT_PATH")\`"
-              echo "- named role: \`$(jq -r '(.authz.roles? // []) | join(",")' "$REPORT_PATH")\`"
-              echo "- module grant: \`$(jq -r '.authz.modules.INTERVIEW_EVIDENCE? // "UNVERIFIED"' "$REPORT_PATH")\`"
-              echo "- product topology: \`$(jq -r '.product.profileCount? // "UNVERIFIED"' "$REPORT_PATH") profiles / $(jq -r '.product.gateCount? // "UNVERIFIED"' "$REPORT_PATH") gates\`"
-              echo "- serious/critical Axe findings: \`$(jq -r '.accessibility.blockingViolationCount? // "UNVERIFIED"' "$REPORT_PATH")\`"
-              echo "- browser PKCE observed: \`$(jq -r '.authentication.codeExchangeObserved and .authentication.codeVerifierObserved' "$REPORT_PATH")\`"
-              echo "- live frontend digest: \`$(jq -r '.lineage.liveFrontendDigest' "$REPORT_PATH")\`"
+            if [[ -f "$MANIFEST" ]]; then
+              echo "- verdict: \`$(jq -r '.verdict' "$MANIFEST")\`"
+              echo "- protected main binding: \`$(jq -r '.binding.canonicalMainAtStart' "$MANIFEST")\`"
+              echo "- pre/post runtime binding: \`$(jq -r '.binding.prePostSameSession' "$MANIFEST")\`"
+              echo "- strict child schemas: \`$(jq -r '.binding.strictChildSchemas' "$MANIFEST")\`"
+              echo "- sensitive-value scan: \`$(jq -r '.binding.sensitiveValueScanPassed' "$MANIFEST")\`"
               echo "- browser mode: headless CLI; application window not used"
             else
-              echo "- verdict: \`NO_REPORT\`"
+              echo "- verdict: \`NO_MANIFEST\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce terminal acceptance verdict
+        if: always() && steps.contract.outcome == 'success'
+        env:
+          MANIFEST_VERDICT: ${{ steps.contract.outputs.manifest_verdict }}
+        run: test "$MANIFEST_VERDICT" = PASS

@@ -1,0 +1,420 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://acik.com/schemas/faz25-p5-authenticated-product-surface-v2.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "verdict",
+    "startedAt",
+    "observedAt",
+    "target",
+    "github",
+    "authentication",
+    "lineage"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v2" },
+    "verdict": { "enum": ["PASS", "FAIL"] },
+    "startedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "observedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "target": { "const": "https://testai.acik.com" },
+    "github": { "$ref": "#/definitions/github" },
+    "authentication": { "$ref": "#/definitions/authentication" },
+    "lineage": { "$ref": "#/definitions/lineage" },
+    "authz": { "$ref": "#/definitions/authz" },
+    "product": { "$ref": "#/definitions/product" },
+    "responsive": { "$ref": "#/definitions/responsive" },
+    "accessibility": { "$ref": "#/definitions/accessibility" },
+    "runtime": { "$ref": "#/definitions/runtime" },
+    "failedTestStatus": { "type": "string", "pattern": "^[A-Za-z]+$" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "const": "PASS" } } },
+      "then": {
+        "required": ["authz", "product", "responsive", "accessibility", "runtime"],
+        "not": {
+          "type": "object",
+          "properties": { "failedTestStatus": { "type": "string" } },
+          "required": ["failedTestStatus"]
+        },
+        "properties": {
+          "authentication": {
+            "allOf": [
+              { "$ref": "#/definitions/authentication" },
+              {
+                "type": "object",
+                "properties": {
+                  "browserFlow": { "const": "KEYCLOAK_AUTHORIZATION_CODE_PKCE" },
+                  "issuerMatched": { "const": true },
+                  "authorizeEndpointObserved": { "const": true },
+                  "pkceS256Observed": { "const": true },
+                  "authorizationCodeCallbackObserved": { "const": true },
+                  "callbackOriginMatched": { "const": true },
+                  "codeExchangeObserved": { "const": true },
+                  "codeVerifierObserved": { "const": true },
+                  "stateCorrelationMatched": { "const": true },
+                  "codeCorrelationMatched": { "const": true },
+                  "pkceChallengeMatched": { "const": true },
+                  "tokenResponseSuccessful": { "const": true },
+                  "oauthParametersCleared": { "const": true },
+                  "loginBlockingViolationCount": { "const": 0 }
+                }
+              }
+            ]
+          },
+          "authz": {
+            "allOf": [
+              { "$ref": "#/definitions/authz" },
+              {
+                "type": "object",
+                "properties": {
+                  "userIdMatched": { "const": true },
+                  "subscriberIdMatched": { "const": true },
+                  "superAdminFalse": { "const": true },
+                  "exactRolesMatched": { "const": true },
+                  "exactModulesMatched": { "const": true },
+                  "exactAllowedModulesMatched": { "const": true },
+                  "exactPermissionsMatched": { "const": true },
+                  "manageGrantAbsent": { "const": true },
+                  "exactViewOnlySnapshotMatched": { "const": true }
+                }
+              }
+            ]
+          },
+          "lineage": {
+            "allOf": [
+              { "$ref": "#/definitions/lineage" },
+              {
+                "type": "object",
+                "properties": {
+                  "expectedSourceSha": {
+                    "const": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a"
+                  },
+                  "observedSourceSha": {
+                    "const": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a"
+                  },
+                  "expectedFrontendDigest": {
+                    "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+                  },
+                  "liveFrontendDigest": {
+                    "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+                  }
+                }
+              }
+            ]
+          },
+          "product": {
+            "allOf": [
+              { "$ref": "#/definitions/product" },
+              {
+                "type": "object",
+                "properties": {
+                  "finalPath": { "const": "/admin/interview-evidence" },
+                  "profileIds": {
+                    "const": [
+                      "deployment-profile-MANAGED",
+                      "deployment-profile-DEDICATED",
+                      "deployment-profile-BYO_REGION",
+                      "deployment-profile-SOVEREIGN_ON_PREM"
+                    ]
+                  },
+                  "gateIds": {
+                    "const": [
+                      "deployment-gate-SUPPLY_CHAIN",
+                      "deployment-gate-PROFILE_RENDER",
+                      "deployment-gate-IDENTITY",
+                      "deployment-gate-EGRESS",
+                      "deployment-gate-SECRET_ROTATION",
+                      "deployment-gate-BACKUP_RESTORE",
+                      "deployment-gate-UPGRADE_ROLLBACK",
+                      "deployment-gate-AUDIT_EXPORT"
+                    ]
+                  },
+                  "gateOwnerZeroCount": { "const": 8 },
+                  "ownerAcceptance": { "const": "0/8" },
+                  "readinessPercentagePresent": { "const": false },
+                  "verifierAction": { "const": "UNAVAILABLE" },
+                  "releaseAction": { "const": "UNAVAILABLE" },
+                  "interactiveControlIds": {
+                    "const": [
+                      "deployment-profile-MANAGED",
+                      "deployment-profile-DEDICATED",
+                      "deployment-profile-BYO_REGION",
+                      "deployment-profile-SOVEREIGN_ON_PREM",
+                      "deployment-evidence-scroll-region"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "responsive": {
+            "allOf": [
+              { "$ref": "#/definitions/responsive" },
+              {
+                "type": "object",
+                "properties": {
+                  "viewportWidth": { "const": 390 },
+                  "rootOverflowPx": { "type": "number", "maximum": 1 },
+                  "consoleOverflowPx": { "type": "number", "maximum": 1 },
+                  "evidenceTableKeyboardScrollable": { "const": true }
+                }
+              }
+            ]
+          },
+          "accessibility": {
+            "allOf": [
+              { "$ref": "#/definitions/accessibility" },
+              {
+                "type": "object",
+                "properties": {
+                  "loginBlockingViolationCount": { "const": 0 },
+                  "productBlockingViolationCount": { "const": 0 },
+                  "blockingViolationCount": { "const": 0 },
+                  "violations": { "type": "array", "maxItems": 0 }
+                }
+              }
+            ]
+          },
+          "runtime": {
+            "allOf": [
+              { "$ref": "#/definitions/runtime" },
+              {
+                "type": "object",
+                "properties": { "uncaughtPageErrorCount": { "const": 0 } }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "workflow", "runId", "runAttempt", "eventName", "ref", "sha"],
+      "properties": {
+        "repository": { "const": "Halildeu/platform-k8s-gitops" },
+        "workflow": { "const": "Verify Faz 25 P5 authenticated product surface" },
+        "runId": { "type": "string", "pattern": "^[0-9]+$" },
+        "runAttempt": { "type": "string", "pattern": "^[0-9]+$" },
+        "eventName": { "const": "workflow_dispatch" },
+        "ref": { "const": "refs/heads/main" },
+        "sha": { "$ref": "#/definitions/gitSha" }
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "browserFlow",
+        "namedPersona",
+        "applicationWindowUsed",
+        "issuerMatched",
+        "authorizeEndpointObserved",
+        "pkceS256Observed",
+        "authorizationCodeCallbackObserved",
+        "callbackOriginMatched",
+        "codeExchangeObserved",
+        "codeVerifierObserved",
+        "stateCorrelationMatched",
+        "codeCorrelationMatched",
+        "pkceChallengeMatched",
+        "tokenResponseSuccessful",
+        "oauthParametersCleared",
+        "loginBlockingViolationCount"
+      ],
+      "properties": {
+        "browserFlow": { "enum": ["KEYCLOAK_AUTHORIZATION_CODE_PKCE", "UNVERIFIED"] },
+        "namedPersona": { "const": "p5-readiness-viewer" },
+        "applicationWindowUsed": { "const": false },
+        "issuerMatched": { "type": "boolean" },
+        "authorizeEndpointObserved": { "type": "boolean" },
+        "pkceS256Observed": { "type": "boolean" },
+        "authorizationCodeCallbackObserved": { "type": "boolean" },
+        "callbackOriginMatched": { "type": "boolean" },
+        "codeExchangeObserved": { "type": "boolean" },
+        "codeVerifierObserved": { "type": "boolean" },
+        "stateCorrelationMatched": { "type": "boolean" },
+        "codeCorrelationMatched": { "type": "boolean" },
+        "pkceChallengeMatched": { "type": "boolean" },
+        "tokenResponseSuccessful": { "type": "boolean" },
+        "oauthParametersCleared": { "type": "boolean" },
+        "loginBlockingViolationCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedSourceSha",
+        "observedSourceSha",
+        "expectedFrontendDigest",
+        "liveFrontendDigest",
+        "expectedBuildRunId",
+        "harnessRepository",
+        "harnessRevision",
+        "specSha256",
+        "configSha256",
+        "packageLockSha256",
+        "chromiumExecutableSha256",
+        "chromiumRevision",
+        "chromiumBrowserVersion",
+        "chromiumExecutableVersion",
+        "playwrightVersion"
+      ],
+      "properties": {
+        "expectedSourceSha": { "$ref": "#/definitions/gitSha" },
+        "observedSourceSha": { "type": "string", "pattern": "^$|^[0-9a-f]{40}$" },
+        "expectedFrontendDigest": { "$ref": "#/definitions/digest" },
+        "liveFrontendDigest": { "$ref": "#/definitions/digest" },
+        "expectedBuildRunId": { "const": "29328643364" },
+        "harnessRepository": { "const": "Halildeu/platform-k8s-gitops" },
+        "harnessRevision": { "$ref": "#/definitions/gitSha" },
+        "specSha256": { "$ref": "#/definitions/sha256" },
+        "configSha256": { "$ref": "#/definitions/sha256" },
+        "packageLockSha256": { "$ref": "#/definitions/sha256" },
+        "chromiumExecutableSha256": { "$ref": "#/definitions/sha256" },
+        "chromiumRevision": { "const": "1223" },
+        "chromiumBrowserVersion": { "const": "148.0.7778.96" },
+        "chromiumExecutableVersion": {
+          "type": "string",
+          "pattern": "^Chromium( Headless Shell)? 148\\.0\\.7778\\.96$"
+        },
+        "playwrightVersion": { "const": "Version 1.60.0" }
+      }
+    },
+    "authz": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "userIdMatched",
+        "subscriberIdMatched",
+        "superAdminFalse",
+        "exactRolesMatched",
+        "exactModulesMatched",
+        "exactAllowedModulesMatched",
+        "exactPermissionsMatched",
+        "manageGrantAbsent",
+        "exactViewOnlySnapshotMatched"
+      ],
+      "properties": {
+        "userIdMatched": { "type": "boolean" },
+        "subscriberIdMatched": { "type": "boolean" },
+        "superAdminFalse": { "type": "boolean" },
+        "exactRolesMatched": { "type": "boolean" },
+        "exactModulesMatched": { "type": "boolean" },
+        "exactAllowedModulesMatched": { "type": "boolean" },
+        "exactPermissionsMatched": { "type": "boolean" },
+        "manageGrantAbsent": { "type": "boolean" },
+        "exactViewOnlySnapshotMatched": { "type": "boolean" }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finalPath",
+        "profileIds",
+        "gateIds",
+        "headerLabels",
+        "gateOwnerZeroCount",
+        "ownerAcceptance",
+        "readinessPercentagePresent",
+        "verifierAction",
+        "releaseAction",
+        "interactiveControlIds"
+      ],
+      "properties": {
+        "finalPath": { "type": "string" },
+        "profileIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "gateIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "headerLabels": {
+          "const": [
+            "Kapı / authority",
+            "Exact durum",
+            "Kanıt sınıfı",
+            "Drill",
+            "Receipt / zaman",
+            "Owner"
+          ]
+        },
+        "gateOwnerZeroCount": { "type": "integer", "minimum": 0 },
+        "ownerAcceptance": { "type": "string" },
+        "readinessPercentagePresent": { "type": "boolean" },
+        "verifierAction": { "type": "string" },
+        "releaseAction": { "type": "string" },
+        "interactiveControlIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "responsive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "viewportWidth",
+        "rootOverflowPx",
+        "consoleOverflowPx",
+        "evidenceTableKeyboardScrollable"
+      ],
+      "properties": {
+        "viewportWidth": { "type": "integer", "minimum": 1 },
+        "rootOverflowPx": { "type": "number", "minimum": 0 },
+        "consoleOverflowPx": { "type": "number", "minimum": 0 },
+        "evidenceTableKeyboardScrollable": { "type": "boolean" }
+      }
+    },
+    "accessibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "loginBlockingViolationCount",
+        "productBlockingViolationCount",
+        "blockingViolationCount",
+        "violations"
+      ],
+      "properties": {
+        "loginBlockingViolationCount": { "type": "integer", "minimum": 0 },
+        "productBlockingViolationCount": { "type": "integer", "minimum": 0 },
+        "blockingViolationCount": { "type": "integer", "minimum": 0 },
+        "violations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["surface", "id", "impact", "nodeCount"],
+            "properties": {
+              "surface": { "enum": ["login", "product"] },
+              "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+              "impact": { "type": ["string", "null"] },
+              "nodeCount": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uncaughtPageErrorCount"],
+      "properties": {
+        "uncaughtPageErrorCount": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 import unittest
+import urllib.parse
 from pathlib import Path
 
 
@@ -87,8 +91,65 @@ class BackendPromotionContractTests(unittest.TestCase):
         self.assertIn("[redacted-sensitive-resource-name]", self.reconcile)
         self.assertIn('CURRENT_PHASE="argocd-status-read"', self.reconcile)
         self.assertNotIn("app diff", self.reconcile)
+        self.assertIn("refresh_semantic_main_fence", self.reconcile)
+        self.assertIn('latest_map" == "$NORMALIZED_DIGEST_MAP', self.reconcile)
+        self.assertIn("effectiveRevision", self.reconcile)
+        self.assertNotIn("was superseded by main", self.reconcile)
         self.assertIn("verify-testai-backend-runtime.sh", self.verify)
         self.assertIn("verify-pod-digest.sh", self.runtime)
+
+    def test_runtime_acceptance_uses_protected_p5_persona_and_semantic_map_fence(self):
+        self.assertIn("environment: testai-product-acceptance", self.verify)
+        self.assertIn("secrets.P5_SMOKE_AUTH_USERNAME", self.verify)
+        self.assertIn("secrets.P5_SMOKE_AUTH_PASSWORD", self.verify)
+        self.assertIn('SMOKE_AUTH_USERNAME:-}" == "p5-readiness-viewer"', self.runtime)
+        self.assertIn("pass-p5-readiness-viewer-exact-view", self.runtime)
+        self.assertIn("assert_current_backend_map", self.runtime)
+        self.assertIn('latest_map" == "$NORMALIZED_DIGEST_MAP', self.runtime)
+        self.assertNotIn('latest_main" == "$REVISION', self.runtime)
+        self.assertIn("curl --config -", self.runtime)
+        self.assertNotIn('-H "Authorization: Bearer ${token}"', self.runtime)
+        self.assertIn("MAP_FENCE_BEFORE_PASSED=true", self.runtime)
+        self.assertIn("MAP_FENCE_AFTER_PASSED=true", self.runtime)
+        self.assertIn("finalize_report", self.runtime)
+        self.assertIn("if-no-files-found: error", self.verify)
+        self.assertIn("Validate terminal backend evidence contract", self.verify)
+
+    def test_p5_token_form_preserves_exact_password_without_trailing_newline(self):
+        source_start = self.runtime.index("import os\nimport sys\nimport urllib.parse\n")
+        source_end = self.runtime.index("\nPY\n)", source_start)
+        source = self.runtime[source_start:source_end]
+        env = os.environ.copy()
+        env.update(
+            {
+                "SMOKE_AUTH_USERNAME": "p5-readiness-viewer",
+                "SMOKE_AUTH_PASSWORD": "exact-test-password",
+            }
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", source],
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+        self.assertFalse(result.stdout.endswith(b"\n"))
+        parsed = urllib.parse.parse_qs(result.stdout.decode(), strict_parsing=True)
+        self.assertEqual(parsed["username"], ["p5-readiness-viewer"])
+        self.assertEqual(parsed["password"], ["exact-test-password"])
+
+    def test_argocd_core_kubeconfig_is_scoped_private_and_deleted(self):
+        self.assertIn("mktemp", self.reconcile)
+        self.assertIn("config view --raw --minify --context", self.reconcile)
+        self.assertIn('chmod 0600 "$CORE_KUBECONFIG"', self.reconcile)
+        self.assertIn('rm -f -- "$CORE_KUBECONFIG"', self.reconcile)
+        self.assertIn(
+            "credential-bearing ArgoCD core kubeconfig could not be removed",
+            self.reconcile,
+        )
+        self.assertNotIn(
+            'core_kubeconfig="${RUNNER_TEMP:-/tmp}/argocd-core-${APP}-backend-kubeconfig"',
+            self.reconcile,
+        )
 
     def test_platform_test_application_keeps_main_auto_sync_authority(self):
         self.assertRegex(self.application, r"(?m)^\s+targetRevision: main$")

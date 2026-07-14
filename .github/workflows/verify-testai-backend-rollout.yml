@@ -28,6 +28,7 @@ concurrency:
 jobs:
   verify:
     name: Observe ArgoCD auto-sync and verify runtime
+    environment: testai-product-acceptance
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 60
 
@@ -117,19 +118,73 @@ jobs:
           REVISION: ${{ steps.pin.outputs.reconcile_revision }}
           DIGEST_MAP: ${{ steps.pin.outputs.digest_map }}
           REPORT_PATH: ${{ runner.temp }}/testai-backend-runtime-verification.json
-          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
-          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
+          SMOKE_AUTH_USERNAME: ${{ secrets.P5_SMOKE_AUTH_USERNAME }}
+          SMOKE_AUTH_PASSWORD: ${{ secrets.P5_SMOKE_AUTH_PASSWORD }}
         run: bash scripts/deploy/verify-testai-backend-runtime.sh
+
+      - name: Validate terminal backend evidence contract
+        id: evidence_contract
+        if: always() && steps.pin.outputs.should_verify == 'true'
+        env:
+          DIGEST_MAP: ${{ steps.pin.outputs.digest_map }}
+          RECONCILE_REPORT: ${{ runner.temp }}/testai-backend-argocd-auto-sync.json
+          RUNTIME_REPORT: ${{ runner.temp }}/testai-backend-runtime-verification.json
+        run: |
+          set -euo pipefail
+          echo "artifact_kind=diagnostic" >> "$GITHUB_OUTPUT"
+          evidence_passed=false
+          expected="$(printf '%s' "$DIGEST_MAP" \
+            | python3 scripts/automation/backend-testai-digest-contract.py normalize)"
+
+          if [[ -s "$RECONCILE_REPORT" && -s "$RUNTIME_REPORT" ]] && \
+            [[ "$(stat -c '%a' "$RECONCILE_REPORT")" == "600" ]] && \
+            [[ "$(stat -c '%a' "$RUNTIME_REPORT")" == "600" ]] && \
+            jq -e --argjson expected "$expected" '
+              .schemaVersion == "testai-backend-argocd-auto-sync-v4" and
+              .verdict == "PASS" and
+              (.requestedRevision | test("^[0-9a-f]{40}$")) and
+              (.effectiveRevision | test("^[0-9a-f]{40}$")) and
+              .observedRevision == .effectiveRevision and
+              .syncStatus == "Synced" and
+              .healthStatus == "Healthy" and
+              .reconciliationOwner == "argocd-auto-sync-waves" and
+              .verificationMode == "read-only-exact-convergence" and
+              .verifierMutationPerformed == false and
+              .outOfSyncResources == [] and
+              .expectedDigests == $expected
+            ' "$RECONCILE_REPORT" >/dev/null && \
+            jq -e --argjson expected "$expected" '
+              keys == [
+                "authGate", "expectedDigests", "failedOrLastGate",
+                "mapFenceAfterPassed", "mapFenceBeforePassed", "publicEntry",
+                "schemaVersion", "verificationMode", "verdict",
+                "verifierMutationPerformed"
+              ] and
+              .schemaVersion == "testai-backend-runtime-verification-v1" and
+              .verdict == "PASS" and
+              .failedOrLastGate == "complete" and
+              .authGate == "pass-p5-readiness-viewer-exact-view" and
+              .publicEntry == "https://testai.acik.com" and
+              .verificationMode == "read-only-runtime-evidence" and
+              .verifierMutationPerformed == false and
+              .mapFenceBeforePassed == true and
+              .mapFenceAfterPassed == true and
+              .expectedDigests == $expected
+            ' "$RUNTIME_REPORT" >/dev/null; then
+            evidence_passed=true
+            echo "artifact_kind=acceptance" >> "$GITHUB_OUTPUT"
+          fi
+          [[ "$evidence_passed" == "true" ]]
 
       - name: Upload GitOps reconciliation evidence
         if: always() && steps.pin.outputs.should_verify == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: testai-backend-gitops-rollout-${{ steps.pin.outputs.reconcile_revision }}
+          name: testai-backend-${{ steps.evidence_contract.outputs.artifact_kind }}-${{ steps.pin.outputs.reconcile_revision }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/testai-backend-argocd-auto-sync.json
             ${{ runner.temp }}/testai-backend-runtime-verification.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
       - name: Verification summary
