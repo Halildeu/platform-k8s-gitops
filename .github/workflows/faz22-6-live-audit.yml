@@ -46,13 +46,21 @@ jobs:
             echo "::error::github.token did not expand; Faz 22.6 completion audit cannot read issue gates"
             exit 1
           fi
-          for command_name in bash curl jq kubectl; do
+          for command_name in bash curl jq kubectl python3; do
             if ! command -v "${command_name}" >/dev/null 2>&1; then
               echo "::error::required audit command is missing: ${command_name}"
               exit 1
             fi
           done
           echo "GitHub read backend: ${GITHUB_READ_API_BACKEND}"
+
+      - name: Prepare isolated Ed25519 audit runtime
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/faz22-audit-venv"
+          "$RUNNER_TEMP/faz22-audit-venv/bin/python" -m pip install \
+            --disable-pip-version-check --quiet cryptography==46.0.7
+          echo "$RUNNER_TEMP/faz22-audit-venv/bin" >> "$GITHUB_PATH"
 
       - name: Validate EndpointAgent release policy
         run: |
