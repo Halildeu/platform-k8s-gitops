@@ -30,6 +30,8 @@ def _run_ambiguous_reset_scenario(
     writer_user_id: str = WRITER_USER_ID,
     vault_scenario: str = "ready",
     required_actions: tuple[str, ...] = (),
+    fresh_required_actions: tuple[str, ...] | None = None,
+    profile_put_scenario: str = "success",
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -125,9 +127,43 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users/'* && "${method}" == 'PU
   expected_url="http://127.0.0.1:8082/admin/realms/platform-test/users/${MOCK_EXPECTED_WRITER_USER_ID}"
   [[ "${url}" == "${expected_url}" ]] || exit 91
   [[ -n "${data_binary_file}" && -f "${data_binary_file}" ]] || exit 92
-  jq -e --arg id "${MOCK_EXPECTED_WRITER_USER_ID}" \
-    --arg email "${MOCK_EXPECTED_WRITER_EMAIL}" \
-    '. == {
+  jq -e '. == {requiredActions: []}' \
+    "${data_binary_file}" >/dev/null || exit 93
+  case "${MOCK_PROFILE_PUT_SCENARIO}" in
+    success)
+      printf '%s' '[]' > "${MOCK_LIVE_REQUIRED_ACTIONS_STATE}"
+      printf '%s\\n' 'keycloak-required-actions-clear' >> "${MOCK_EVENT_LOG}"
+      printf '%s' '204'
+      ;;
+    http-4xx)
+      printf '%s' '409'
+      ;;
+    http-5xx-applied)
+      printf '%s' '[]' > "${MOCK_LIVE_REQUIRED_ACTIONS_STATE}"
+      printf '%s\\n' 'keycloak-required-actions-clear' >> "${MOCK_EVENT_LOG}"
+      printf '%s' '503'
+      ;;
+    http-5xx-not-applied)
+      printf '%s' '503'
+      ;;
+    transport-applied)
+      printf '%s' '[]' > "${MOCK_LIVE_REQUIRED_ACTIONS_STATE}"
+      printf '%s\\n' 'keycloak-required-actions-clear' >> "${MOCK_EVENT_LOG}"
+      printf '%s' '000'
+      exit 7
+      ;;
+    transport-not-applied)
+      printf '%s' '000'
+      exit 7
+      ;;
+    *) exit 94 ;;
+  esac
+elif [[ "${url}" == *"/admin/realms/platform-test/users/${MOCK_EXPECTED_WRITER_USER_ID}" && "${method}" == 'GET' ]]; then
+  email="$(cat "${MOCK_KEYCLOAK_EMAIL_STATE}")"
+  required_actions="$(cat "${MOCK_LIVE_REQUIRED_ACTIONS_STATE}")"
+  jq -n --arg id "${MOCK_EXPECTED_WRITER_USER_ID}" --arg email "${email}" \
+    --argjson requiredActions "${required_actions}" \
+    '{
       id: $id,
       enabled: true,
       username: "d35-admin-persona",
@@ -136,12 +172,9 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users/'* && "${method}" == 'PU
       firstName: "D35",
       lastName: "Persona",
       attributes: {sentinel: ["keep"]},
-      requiredActions: []
-    }' \
-    "${data_binary_file}" >/dev/null || exit 93
-  printf '%s\\n' 'keycloak-required-actions-clear' >> "${MOCK_EVENT_LOG}"
-  printf '%s' '[]' > "${MOCK_REQUIRED_ACTIONS_STATE}"
-  printf '%s' '204'
+      requiredActions: $requiredActions
+    }' > "${output}"
+  printf '%s' '200'
 elif [[ "${url}" == *'/admin/realms/platform-test/users' ]]; then
   if [[ "$(cat "${MOCK_EMAIL_RECONCILIATION_STATE}")" == 'true' ]]; then
     case "${MOCK_EMAIL_SCENARIO}" in
@@ -189,7 +222,7 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users' ]]; then
 elif [[ "${url}" == *'/realms/platform-test/protocol/openid-connect/token' ]]; then
   password="$(cat "${password_file}")"
   keycloak_state="$(cat "${MOCK_KEYCLOAK_STATE}")"
-  if [[ "$(cat "${MOCK_REQUIRED_ACTIONS_STATE}")" != '[]' ]]; then
+  if [[ "$(cat "${MOCK_LIVE_REQUIRED_ACTIONS_STATE}")" != '[]' ]]; then
     printf '%s' '{"error":"invalid_grant","error_description":"Account is not fully set up"}' > "${output}"
     printf '%s' '400'
   elif [[ "${keycloak_state}" == 'new' && "${password}" == "${MOCK_NEW_PASSWORD}" ]] || \
@@ -232,6 +265,17 @@ fi
     required_actions_state.write_text(
         json.dumps(list(required_actions)), encoding="utf-8"
     )
+    live_required_actions_state = tmp_path / "live-required-actions-state.json"
+    live_required_actions_state.write_text(
+        json.dumps(
+            list(
+                required_actions
+                if fresh_required_actions is None
+                else fresh_required_actions
+            )
+        ),
+        encoding="utf-8",
+    )
     event_log = tmp_path / "events.log"
     event_log.write_text("", encoding="utf-8")
     result_path = tmp_path / "result.json"
@@ -252,6 +296,8 @@ fi
             "MOCK_EXPECTED_WRITER_EMAIL": initial_email,
             "MOCK_EXPECTED_WRITER_USER_ID": WRITER_USER_ID,
             "MOCK_REQUIRED_ACTIONS_STATE": str(required_actions_state),
+            "MOCK_LIVE_REQUIRED_ACTIONS_STATE": str(live_required_actions_state),
+            "MOCK_PROFILE_PUT_SCENARIO": profile_put_scenario,
             "MOCK_VAULT_SCENARIO": vault_scenario,
             "MOCK_EVENT_LOG": str(event_log),
         }
@@ -348,6 +394,109 @@ def test_update_profile_required_action_is_cleared_for_exact_writer(tmp_path):
         "vault-put",
         "keycloak-reset-ambiguous",
     ]
+
+
+@pytest.mark.parametrize(
+    "profile_put_scenario", ("http-5xx-applied", "transport-applied")
+)
+def test_ambiguous_profile_put_applied_is_accepted_only_after_readback(
+    tmp_path, profile_put_scenario
+):
+    proc, result, vault_state, events, _ = _run_ambiguous_reset_scenario(
+        tmp_path,
+        "new-success",
+        required_actions=("UPDATE_PROFILE",),
+        profile_put_scenario=profile_put_scenario,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert result["permissionWriter"]["requiredActionsReady"] is True
+    assert result["permissionWriter"]["requiredActionsCleared"] is True
+    assert vault_state["admin_persona_password"] == NEW_PASSWORD
+    assert events == [
+        "keycloak-required-actions-clear",
+        "vault-put",
+        "keycloak-reset-ambiguous",
+    ]
+
+
+@pytest.mark.parametrize(
+    "profile_put_scenario", ("http-5xx-not-applied", "transport-not-applied")
+)
+def test_ambiguous_profile_put_not_applied_blocks_before_vault_write(
+    tmp_path, profile_put_scenario
+):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            required_actions=("UPDATE_PROFILE",),
+            profile_put_scenario=profile_put_scenario,
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == (
+        "permission-writer-required-actions-readback-mismatch"
+    )
+    assert result["permissionWriter"]["requiredActionsReady"] is False
+    assert result["permissionWriter"]["requiredActionsCleared"] is False
+    assert vault_state == original_vault
+    assert events == []
+
+
+def test_profile_put_4xx_is_rejected_before_readback_or_vault_write(tmp_path):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            required_actions=("UPDATE_PROFILE",),
+            profile_put_scenario="http-4xx",
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == (
+        "permission-writer-required-actions-clear-rejected"
+    )
+    assert vault_state == original_vault
+    assert events == []
+
+
+def test_fresh_required_action_change_blocks_before_profile_or_vault_mutation(tmp_path):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            required_actions=("UPDATE_PROFILE",),
+            fresh_required_actions=("CONFIGURE_TOTP",),
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == (
+        "permission-writer-profile-precondition-actions-mismatch"
+    )
+    assert vault_state == original_vault
+    assert events == []
+
+
+def test_freshly_cleared_required_action_skips_profile_mutation(tmp_path):
+    proc, result, vault_state, events, _ = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            required_actions=("UPDATE_PROFILE",),
+            fresh_required_actions=(),
+        )
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert result["status"] == "repaired"
+    assert result["permissionWriter"]["requiredActionsReady"] is True
+    assert result["permissionWriter"]["requiredActionsCleared"] is False
+    assert vault_state["admin_persona_password"] == NEW_PASSWORD
+    assert events == ["vault-put", "keycloak-reset-ambiguous"]
 
 
 def test_unexpected_required_action_blocks_before_any_mutation(tmp_path):

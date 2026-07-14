@@ -280,64 +280,67 @@ case "${WRITER_REQUIRED_ACTIONS}" in
     WRITER_REQUIRED_ACTIONS_READY=true
     ;;
   '["UPDATE_PROFILE"]')
-    jq -e '
-      (.[0].email // "") | type == "string" and length > 0
-    ' "${KC_USERS_JSON}" >/dev/null \
-      || die "permission-writer-profile-email-missing"
-    jq -e '
-      (.[0].firstName // "") | type == "string" and length > 0
-    ' "${KC_USERS_JSON}" >/dev/null \
-      || die "permission-writer-profile-first-name-missing"
-    jq -e '
-      (.[0].lastName // "") | type == "string" and length > 0
-    ' "${KC_USERS_JSON}" >/dev/null \
-      || die "permission-writer-profile-last-name-missing"
-
-    WRITER_PROFILE_UPDATE="${TMP_DIR}/writer-profile-update.json"
-    jq '.[0] | {
-      id,
-      username,
-      enabled,
-      email,
-      emailVerified,
-      firstName,
-      lastName,
-      attributes,
-      requiredActions: []
-    }' "${KC_USERS_JSON}" > "${WRITER_PROFILE_UPDATE}"
-    PROFILE_UPDATE_RESPONSE="${TMP_DIR}/writer-profile-update-response.json"
-    code="$(http_status PUT \
+    KC_WRITER_FRESH_JSON="${TMP_DIR}/writer-user-fresh.json"
+    code="$(http_status GET \
       "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
-      "${PROFILE_UPDATE_RESPONSE}" \
-      --config "${KC_AUTH_CONFIG}" \
-      -H 'Content-Type: application/json' \
-      --data-binary "@${WRITER_PROFILE_UPDATE}")"
-    [[ "${code}" == "204" ]] \
-      || die "permission-writer-required-actions-clear-failed"
+      "${KC_WRITER_FRESH_JSON}" \
+      --config "${KC_AUTH_CONFIG}")"
+    [[ "${code}" == "200" ]] || die "permission-writer-profile-precondition-read-failed"
+    jq -e --arg writerId "${WRITER_USER_ID}" --arg writerUsername "${WRITER_USERNAME}" '
+      .id == $writerId and
+      .username == $writerUsername and
+      .enabled == true
+    ' "${KC_WRITER_FRESH_JSON}" >/dev/null \
+      || die "permission-writer-profile-precondition-identity-mismatch"
 
-    KC_USERS_READBACK_JSON="${TMP_DIR}/writer-users-readback.json"
-    code="$(curl -sS --max-time 20 -o "${KC_USERS_READBACK_JSON}" -w '%{http_code}' --get \
-      "${KC_BASE_URL}/admin/realms/${KC_REALM}/users" \
-      --config "${KC_AUTH_CONFIG}" \
-      --data-urlencode "username@${WRITER_USERNAME_FILE}" \
-      --data-urlencode 'exact=true' || printf '000')"
-    [[ "${code}" == "200" ]] \
-      || die "permission-writer-required-actions-readback-failed"
-    jq -s -e --arg writerId "${WRITER_USER_ID}" '
-      (.[1] | length) == 1 and
-      .[1][0].id == $writerId and
-      .[1][0].username == .[0][0].username and
-      .[1][0].enabled == .[0][0].enabled and
-      .[1][0].email == .[0][0].email and
-      .[1][0].emailVerified == .[0][0].emailVerified and
-      .[1][0].firstName == .[0][0].firstName and
-      .[1][0].lastName == .[0][0].lastName and
-      (.[1][0].attributes // {}) == (.[0][0].attributes // {}) and
-      (.[1][0].requiredActions // []) == []
-    ' "${KC_USERS_JSON}" "${KC_USERS_READBACK_JSON}" >/dev/null \
-      || die "permission-writer-required-actions-readback-mismatch"
-    WRITER_REQUIRED_ACTIONS_READY=true
-    WRITER_REQUIRED_ACTIONS_CLEARED=true
+    WRITER_FRESH_REQUIRED_ACTIONS="$(jq -c '.requiredActions // []' "${KC_WRITER_FRESH_JSON}")"
+    if [[ "${WRITER_FRESH_REQUIRED_ACTIONS}" == '[]' ]]; then
+      WRITER_REQUIRED_ACTIONS_READY=true
+    else
+      [[ "${WRITER_FRESH_REQUIRED_ACTIONS}" == '["UPDATE_PROFILE"]' ]] \
+        || die "permission-writer-profile-precondition-actions-mismatch"
+      jq -e '
+        (.email // "") | type == "string" and length > 0
+      ' "${KC_WRITER_FRESH_JSON}" >/dev/null \
+        || die "permission-writer-profile-email-missing"
+      jq -e '
+        (.firstName // "") | type == "string" and length > 0
+      ' "${KC_WRITER_FRESH_JSON}" >/dev/null \
+        || die "permission-writer-profile-first-name-missing"
+      jq -e '
+        (.lastName // "") | type == "string" and length > 0
+      ' "${KC_WRITER_FRESH_JSON}" >/dev/null \
+        || die "permission-writer-profile-last-name-missing"
+
+      WRITER_PROFILE_UPDATE="${TMP_DIR}/writer-profile-update.json"
+      jq -n '{requiredActions: []}' > "${WRITER_PROFILE_UPDATE}"
+      PROFILE_UPDATE_RESPONSE="${TMP_DIR}/writer-profile-update-response.json"
+      code="$(http_status PUT \
+        "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
+        "${PROFILE_UPDATE_RESPONSE}" \
+        --config "${KC_AUTH_CONFIG}" \
+        -H 'Content-Type: application/json' \
+        --data-binary "@${WRITER_PROFILE_UPDATE}")"
+      [[ ! "${code}" =~ ^4[0-9]{2}$ ]] \
+        || die "permission-writer-required-actions-clear-rejected"
+
+      KC_WRITER_READBACK_JSON="${TMP_DIR}/writer-user-readback.json"
+      code="$(http_status GET \
+        "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
+        "${KC_WRITER_READBACK_JSON}" \
+        --config "${KC_AUTH_CONFIG}")"
+      [[ "${code}" == "200" ]] \
+        || die "permission-writer-required-actions-readback-failed"
+      jq -e --arg writerId "${WRITER_USER_ID}" --arg writerUsername "${WRITER_USERNAME}" '
+        .id == $writerId and
+        .username == $writerUsername and
+        .enabled == true and
+        (.requiredActions // []) == []
+      ' "${KC_WRITER_READBACK_JSON}" >/dev/null \
+        || die "permission-writer-required-actions-readback-mismatch"
+      WRITER_REQUIRED_ACTIONS_READY=true
+      WRITER_REQUIRED_ACTIONS_CLEARED=true
+    fi
     ;;
   *)
     die "permission-writer-required-actions-unsupported"
