@@ -1,5 +1,79 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Denetim VIEW_ONLY endpoint least-privilege state (2026-07-14)
+
+This post-completion delta records endpoint preparation for
+[#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373). It does
+not reopen the accepted Faz 22.6 engineering completion contract and does not
+supply the separate human/legal inputs owned by
+[#2374](https://github.com/Halildeu/platform-k8s-gitops/issues/2374).
+
+- PR [#2425](https://github.com/Halildeu/platform-k8s-gitops/pull/2425)
+  merged the source change that writes and verifies the least-privilege
+  configuration. Its merge commit is
+  `bb2cc953cdb10b279f853e00333a8db00ac965ef`; this identifies the merged code,
+  not a runtime result.
+- The script file transferred to the endpoint was independently hash-checked
+  before execution. Its activation-script artifact SHA-256 is
+  `d30c3d52bf9f61fcfdb5d50a9a0d9f280dce8a15b5632623bfe1fb81d02e16fa`;
+  its effective-state assertion and evidence schema require
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT=false`. This digest proves
+  file identity only; the endpoint evidence below records execution outcome.
+- All PR checks passed. Separately, an out-of-band MiniMax
+  `minimax/MiniMax-M3` review returned `AGREE` for the source change.
+- The merged script was applied to the canonical Denetim endpoint. Protected
+  local evidence is
+  `C:\ProgramData\EndpointAgent\rollout-evidence\denetim-device-key-view-only-20260714T232818Z-58453860\summary.json`
+  with schema `faz22.6.denetimepc-device-key-view-only-activation.v3` and
+  status `configuration-written-service-running-awaiting-broker-proof`.
+- Endpoint-local evidence reports the service Running/Automatic. It also
+  records the following static effective-configuration values, which are
+  preconditions only and are not delivery, device-trust or consent-decision
+  results:
+  `operations=true`,
+  `device_key_session=true`, `view_only=true`,
+  `view_only_attended_consent=true`, `pilot_auto_consent=false` and
+  `plaintext=false`. These are effective configuration assertions, not
+  VIEW_ONLY delivery or human-consent results. The schema-v3 assertion binds
+  `pilot_auto_consent=false` to
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT=false`. TPM is present/ready
+  (`INTC`); the installed v0.3.12 binary digest and device-certificate metadata
+  match the activation policy. The permit public-key B64 SHA-256 is the pinned
+  policy value
+  `0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110`.
+  That fingerprint proves equality to the configured policy value, not runtime
+  permit validation or trust binding.
+  The protected evidence directory contains a compensating registry rollback
+  export and is restricted to SYSTEM and local Administrators.
+- The live separate broker reads
+  `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER=DEVICE_KEY_ATTESTATION_REAL` from its
+  ConfigMap. Idle pre-session mTLS evidence is
+  `HELLO_VERIFIED:cert=true,attestation=false,device=false`; this proves client
+  certificate acceptance, not the broker-nonced device-key challenge. Backend
+  source issues that challenge after an attended operator session opens, but
+  no attended-session challenge/response evidence is captured by this delta.
+  The endpoint-local evidence and this broker-side idle mTLS observation are
+  therefore separate, bounded facts rather than a correlated device-trust
+  proof.
+
+Faz 22.6 freshness reaffirmation:
+
+- Fresh named audit run
+  [29376047436](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29376047436)
+  passed with `REMOTE_BRIDGE_LIVE=pass`,
+  `GITHUB_RELEASE_IMMUTABLE=pass tag=v0.3.12`,
+  `RELEASE_LINEAGE_WAIVER=not_required`, `F22_6_RELEASE_LINEAGE=pass` and
+  `F22_6_COMPLETION=pass`.
+
+Acceptance boundary: audit run `29376047436` covers only the already-accepted
+narrow Faz 22.6 engineering contract and does not evaluate the #2373 endpoint
+preparation recorded in this delta. Neither the audit nor the endpoint-local
+evidence proves a broker-nonced device-key response, a human consent decision,
+VIEW_ONLY frame delivery, viewer rendering, #2373 product acceptance, #2374
+legal/DPO approval, production or broad rollout. Canonical issue evidence is
+recorded at
+[#2373 comment 4975020334](https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-4975020334).
+
 ## Live Delta — Faz 22.6 post-completion v0.3.12 evidence refresh (2026-07-14)
 
 This delta supersedes only the `v0.3.11` release/runtime values in the
