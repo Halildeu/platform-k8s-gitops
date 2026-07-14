@@ -60,6 +60,7 @@ class NegativeCaseContract(NamedTuple):
     method: str
     target_class: str
     credential_class: str
+    path_template: str
 
 
 NEGATIVE_CASE_CONTRACT = {
@@ -68,41 +69,62 @@ NEGATIVE_CASE_CONTRACT = {
     # used only after an operator identity has passed authentication.
     "noAuth": NegativeCaseContract(
         "unauthorized", 401, "GET", "viewer-product-channel", "absent",
+        "/internal/remote-bridge/operator/sessions/{session}/view?streamId={stream}",
     ),
     "wrongRole": NegativeCaseContract(
         "unauthorized", 401, "GET", "viewer-product-channel", "authenticated-wrong-role",
+        "/internal/remote-bridge/operator/sessions/{session}/view?streamId={stream}",
     ),
     "wrongTenant": NegativeCaseContract(
         "not-found", 404, "GET", "viewer-product-channel", "authenticated-wrong-tenant",
+        "/internal/remote-bridge/operator/sessions/{session}/view?streamId={stream}",
     ),
     "wrongDevice": NegativeCaseContract(
-        "not-found", 404, "GET", "viewer-product-channel", "authenticated-wrong-device",
+        "not-found", 404, "POST", "operator-session-open-channel", "authenticated-wrong-device",
+        "/internal/remote-bridge/operator/sessions",
     ),
     # Expiry and replay are agent-side signed-permit properties. The real
     # non-prod acceptance controller pushes the malformed permit to the agent
     # and returns 422 only after the agent's deny frame is observed.
     "expired": NegativeCaseContract(
         "expired", 422, "POST", "agent-permit-channel", "expired-permit",
+        "/internal/remote-bridge/operator/sessions/{session}/negative-probes/expired-permit",
     ),
     "revoked": NegativeCaseContract(
         "revoked", 404, "GET", "viewer-product-channel", "revoked-session",
+        "/internal/remote-bridge/operator/sessions/{session}/view?streamId={stream}",
     ),
     "replayed": NegativeCaseContract(
         "replay-rejected", 422, "POST", "agent-permit-channel", "replayed-permit",
+        "/internal/remote-bridge/operator/sessions/{session}/negative-probes/replay",
     ),
     "overConcurrency": NegativeCaseContract(
         "capacity-rejected", 409, "GET", "viewer-product-channel", "authorized-second-viewer",
+        "/internal/remote-bridge/operator/sessions/{session}/view?streamId={stream}",
     ),
     # A client disconnect ends an already-admitted SSE response; there is no
     # second HTTP response status to record, so the canonical value is null.
     "disconnectedViewer": NegativeCaseContract(
         "stream-closed", None, "GET", "viewer-product-channel", "authorized-disconnected-viewer",
+        "/internal/remote-bridge/operator/sessions/{session}/view?streamId={stream}",
     ),
 }
 TERMINATION_CASES = (
     "localAbort", "killOrRevoke", "ttlExpiry", "heartbeatLoss",
     "indicatorLoss",
 )
+
+
+def expected_termination_product_signals(case_name: str) -> dict[str, bool]:
+    signals = {
+        "viewerClosed": True,
+        "brokerSessionTerminal": True,
+        "agentEventObserved": True,
+        "viewStopAuditVerified": True,
+    }
+    if case_name == "localAbort":
+        signals.update({"endpointUserInitiated": True, "consentLeaseRevoked": True})
+    return signals
 
 FIRST_FRAME_MAX_MS = 5_000
 STEADY_P95_MAX_MS = 2_000
@@ -475,21 +497,25 @@ def validate_matrix_supporting_evidence(
     if evidence_type == "negative":
         require_equal(snapshot["request"], attestation["request"],
                       f"negative {case_name} runtime request")
-        expected_source = (
-            "agent-error-ledger-and-http-probe"
-            if case_name in {"expired", "replayed"}
-            else "viewer-http-and-metric-probe"
-        )
+        expected_source = {
+            "wrongDevice": "operator-session-open-http-probe",
+            "expired": "agent-error-ledger-and-http-probe",
+            "replayed": "agent-error-ledger-and-http-probe",
+        }.get(case_name, "viewer-http-and-metric-probe")
         require_equal(snapshot["evidenceSource"], expected_source,
                       f"negative {case_name} evidence source")
         if set(snapshot["response"]) != {
             "httpStatus", "bodyClass", "bodyLength", "bodySha256",
+            "screenContentPersisted", "artifactRepresentation",
         }:
             raise EvidenceError(f"negative {case_name} runtime response field set mismatch")
         require_equal(snapshot["response"]["httpStatus"], attestation["result"]["httpStatus"],
                       f"negative {case_name} runtime HTTP status")
-        expected_body_class = "agent-deny-redacted" if case_name in {"expired", "replayed"} \
+        expected_body_class = (
+            "agent-deny-redacted" if case_name in {"expired", "replayed"}
+            else "stream-content-digested-no-persistence" if case_name == "disconnectedViewer"
             else "empty-or-opaque"
+        )
         require_equal(snapshot["response"]["bodyClass"], expected_body_class,
                       f"negative {case_name} response body class")
         body_length = snapshot["response"]["bodyLength"]
@@ -499,9 +525,14 @@ def validate_matrix_supporting_evidence(
             raise EvidenceError(f"negative {case_name} agent deny response body is empty")
         if not SHA256.fullmatch(str(snapshot["response"]["bodySha256"])):
             raise EvidenceError(f"negative {case_name} response body digest is invalid")
+        require_equal(snapshot["response"]["screenContentPersisted"], False,
+                      f"negative {case_name} screen-content persistence")
+        require_equal(snapshot["response"]["artifactRepresentation"], "hash-and-length-only",
+                      f"negative {case_name} artifact representation")
         if set(snapshot["delivery"]) != {
             "framesBefore", "framesAfter", "streamClosed",
             "viewerRejectedBefore", "viewerRejectedAfter",
+            "metricsBeforeObservedAt", "metricsAfterObservedAt",
         }:
             raise EvidenceError(f"negative {case_name} runtime delivery field set mismatch")
         before = snapshot["delivery"]["framesBefore"]
@@ -516,7 +547,25 @@ def validate_matrix_supporting_evidence(
         if not all(isinstance(value, int) and value >= 0
                    for value in (rejected_before, rejected_after)):
             raise EvidenceError(f"negative {case_name} viewer rejection counters are invalid")
-        viewer_rejection_expected = case_name not in {"expired", "replayed", "disconnectedViewer"}
+        metrics_before = parse_utc(snapshot["delivery"]["metricsBeforeObservedAt"],
+                                   f"negative {case_name} metricsBeforeObservedAt")
+        metrics_after = parse_utc(snapshot["delivery"]["metricsAfterObservedAt"],
+                                  f"negative {case_name} metricsAfterObservedAt")
+        request_started = parse_utc(snapshot["request"]["startedAt"],
+                                    f"negative {case_name} request startedAt")
+        request_completed = parse_utc(snapshot["request"]["completedAt"],
+                                      f"negative {case_name} request completedAt")
+        observed_at = parse_utc(snapshot["observedAt"], f"negative {case_name} observedAt")
+        window_ordered = (
+            request_started <= request_completed <= metrics_before <= metrics_after <= observed_at
+            if case_name == "disconnectedViewer"
+            else metrics_before <= request_started <= request_completed <= metrics_after <= observed_at
+        )
+        if not window_ordered:
+            raise EvidenceError(f"negative {case_name} request/metric window ordering is invalid")
+        viewer_rejection_expected = case_name not in {
+            "wrongDevice", "expired", "replayed", "disconnectedViewer",
+        }
         if viewer_rejection_expected:
             if rejected_after <= rejected_before:
                 raise EvidenceError(f"negative {case_name} viewer rejection metric did not increase")
@@ -553,12 +602,11 @@ def validate_matrix_supporting_evidence(
                       f"termination {case_name} viewer ended delta")
         require_equal(counters["framesSentAfterEnd"], counters["framesSentAtTrigger"],
                       f"termination {case_name} no post-termination frames")
-        expected_terminal = {
-            key: attestation["productSignals"][key]
-            for key in ("viewerClosed", "brokerSessionTerminal", "agentEventObserved")
-        }
-        require_equal(snapshot["terminal"], expected_terminal,
+        required_signals = expected_termination_product_signals(case_name)
+        require_equal(snapshot["terminal"], required_signals,
                       f"termination {case_name} terminal runtime signals")
+        require_equal(attestation["productSignals"], required_signals,
+                      f"termination {case_name} attested product signals")
 
     if evidence_type == "negative":
         return
@@ -665,7 +713,11 @@ def validate_matrix_source_attestations(
         case = payload["cases"][case_name]
         if evidence_type == "negative":
             contract = NEGATIVE_CASE_CONTRACT[case_name]
-            if set(attestation["request"]) != {"method", "targetClass", "credentialClass"}:
+            if set(attestation["request"]) != {
+                "method", "targetClass", "credentialClass", "subjectSha256",
+                "tenantSha256", "rolePresent", "pathTemplate", "bodySha256",
+                "startedAt", "completedAt",
+            }:
                 raise EvidenceError(f"negative {case_name} request field set mismatch")
             require_equal(attestation["request"]["method"], contract.method,
                           f"negative {case_name} method")
@@ -673,6 +725,41 @@ def validate_matrix_source_attestations(
                           f"negative {case_name} target class")
             require_equal(attestation["request"]["credentialClass"], contract.credential_class,
                           f"negative {case_name} credential class")
+            require_equal(attestation["request"]["pathTemplate"], contract.path_template,
+                          f"negative {case_name} request path template")
+            request = attestation["request"]
+            body_digest = request["bodySha256"]
+            if contract.method == "GET":
+                require_equal(body_digest, None, f"negative {case_name} GET body digest")
+            elif not isinstance(body_digest, str) or not SHA256.fullmatch(body_digest):
+                raise EvidenceError(f"negative {case_name} request body digest is invalid")
+            if case_name == "wrongDevice" and body_digest == digest_bytes(b""):
+                raise EvidenceError("negative wrongDevice request body must be non-empty")
+            subject_digest = request["subjectSha256"]
+            tenant_digest = request["tenantSha256"]
+            if case_name == "noAuth":
+                require_equal(subject_digest, None, "negative noAuth subject identity")
+                require_equal(tenant_digest, None, "negative noAuth tenant identity")
+                require_equal(request["rolePresent"], False, "negative noAuth role presence")
+            else:
+                if not isinstance(subject_digest, str) or not SHA256.fullmatch(subject_digest):
+                    raise EvidenceError(f"negative {case_name} request subject digest is invalid")
+                if not isinstance(tenant_digest, str) or not SHA256.fullmatch(tenant_digest):
+                    raise EvidenceError(f"negative {case_name} request tenant digest is invalid")
+                if case_name in {"wrongRole", "wrongTenant"}:
+                    if subject_digest == child["binding"]["operatorSha256"]:
+                        raise EvidenceError(f"negative {case_name} must use a distinct request subject")
+                else:
+                    require_equal(subject_digest, child["binding"]["operatorSha256"],
+                                  f"negative {case_name} request subject binding")
+                if case_name == "wrongTenant":
+                    if tenant_digest == child["binding"]["tenantSha256"]:
+                        raise EvidenceError("negative wrongTenant must use a distinct request tenant")
+                else:
+                    require_equal(tenant_digest, child["binding"]["tenantSha256"],
+                                  f"negative {case_name} request tenant binding")
+                require_equal(request["rolePresent"], case_name != "wrongRole",
+                              f"negative {case_name} request role presence")
             if set(attestation["result"]) != {
                 "outcome", "requestAccepted", "deliveryContinued", "httpStatus",
             }:
@@ -704,19 +791,7 @@ def validate_matrix_source_attestations(
                 raise EvidenceError(f"termination {case_name} result field set mismatch")
             require_equal(attestation["result"]["deliveryTerminated"], True,
                           f"termination {case_name} delivery result")
-            required_signals = {
-                "viewerClosed": True, "brokerSessionTerminal": True,
-                "agentEventObserved": True, "viewStopAuditVerified": True,
-            }
-            if case_name == "localAbort":
-                # The endpoint's visible BITIR / END action is both the local
-                # abort and the attended-consent withdrawal. Requiring two
-                # synthetic sessions for the same product action would create
-                # fake mechanism diversity instead of stronger evidence.
-                required_signals.update({
-                    "endpointUserInitiated": True,
-                    "consentLeaseRevoked": True,
-                })
+            required_signals = expected_termination_product_signals(case_name)
             require_equal(attestation["productSignals"], required_signals,
                           f"termination {case_name} product signals")
             require_equal(attestation["viewStopAuditSha256"], case["viewStopAuditSha256"],
@@ -957,8 +1032,18 @@ def validate_negative_and_termination(
         require_equal(case["outcome"], contract.outcome, f"negative {case_name} outcome")
         require_equal(case["httpStatus"], contract.http_status, f"negative {case_name} HTTP status")
         case_binding = case["binding"]
-        for key in ("tenantSha256", "operatorSha256", "deviceSha256"):
+        for key in ("tenantSha256", "operatorSha256"):
             require_equal(case_binding[key], root_binding[key], f"negative {case_name} {key}")
+        if case_name == "wrongDevice":
+            if case_binding["deviceSha256"] == root_binding["deviceSha256"]:
+                raise EvidenceError("negative wrongDevice must use a different device binding")
+            if case_binding["sessionSha256"] == root_binding["sessionSha256"]:
+                raise EvidenceError("negative wrongDevice must use a distinct attempted session binding")
+        else:
+            require_equal(case_binding["sessionSha256"], root_binding["sessionSha256"],
+                          f"negative {case_name} target session binding")
+            require_equal(case_binding["deviceSha256"], root_binding["deviceSha256"],
+                          f"negative {case_name} deviceSha256")
         if len(set(case_binding.values())) != len(case_binding):
             raise EvidenceError(f"negative {case_name} binding hashes must be distinct")
         observed = parse_utc(case["observedAt"], f"negative {case_name} observedAt")

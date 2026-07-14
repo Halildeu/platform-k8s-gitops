@@ -1,0 +1,206 @@
+name: Faz 22.6 VIEW_ONLY viewer matrix collector
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Required literal: RUN_FAZ22_6_VIEW_ONLY_VIEWER_MATRIX_COLLECTOR"
+        required: true
+        type: string
+      activation_run_id:
+        description: "Successful protected apply-view-only-viewer-pilot-enable run ID"
+        required: true
+        type: string
+      device_id:
+        description: "Consented attended-pilot device UUID"
+        required: true
+        type: string
+      device_hostname:
+        description: "Consented attended-pilot device hostname"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: faz22-6-view-only-viewer-matrix-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Protected attended matrix collector
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 60
+    environment:
+      name: faz22-view-only-pilot
+
+    steps:
+      - name: Validate bounded dispatch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          ACTIVATION_RUN_ID: ${{ inputs.activation_run_id }}
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+        run: |
+          set -euo pipefail
+          [ "$CONFIRM" = "RUN_FAZ22_6_VIEW_ONLY_VIEWER_MATRIX_COLLECTOR" ]
+          printf '%s' "$ACTIVATION_RUN_ID" | grep -Eq '^[1-9][0-9]{5,19}$'
+          printf '%s' "$DEVICE_ID" | grep -Eq '^[0-9a-fA-F-]{36}$'
+          printf '%s' "$DEVICE_HOSTNAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{1,126}$'
+
+      - name: Checkout collector revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Verify protected activation authorization receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTIVATION_RUN_ID: ${{ inputs.activation_run_id }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/faz22-viewer-matrix-activation"
+          mkdir -p "$out"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID" > "$out/run.json"
+          jq -e --arg sha "$GITHUB_SHA" '
+            .status == "completed"
+            and .conclusion == "success"
+            and .event == "workflow_dispatch"
+            and .head_branch == "main"
+            and .head_sha == $sha
+            and .name == "Apply #2373 VIEW_ONLY viewer product pilot surface"
+            and .path == ".github/workflows/apply-view-only-viewer-pilot-enable.yml"
+          ' "$out/run.json" >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID/artifacts?per_page=100" \
+            > "$out/artifacts.json"
+          expected="faz22-view-only-pilot-protected-authorization-$ACTIVATION_RUN_ID"
+          jq -e --arg name "$expected" '
+            [.artifacts[] | select(.name == $name and .expired == false)] | length == 1
+          ' "$out/artifacts.json" >/dev/null
+          artifact_id="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .id' "$out/artifacts.json")"
+          artifact_digest="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .digest' "$out/artifacts.json")"
+          printf '%s' "$artifact_digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/authorization.zip"
+          [ "sha256:$(sha256sum "$out/authorization.zip" | awk '{print $1}')" = "$artifact_digest" ]
+          printf '%s\n' SHA256SUMS kvkk-marker-verifier-result.json kvkk-marker.txt \
+            protected-authorization.json | sort > "$out/expected-files.txt"
+          unzip -Z1 "$out/authorization.zip" | sort > "$out/actual-files.txt"
+          diff -u "$out/expected-files.txt" "$out/actual-files.txt"
+          unzip -q "$out/authorization.zip" -d "$out/receipt"
+          (cd "$out/receipt" && sha256sum -c SHA256SUMS)
+          python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
+          python3 scripts/faz22-remote-ops/verify-view-only-kvkk-decision.py \
+            --approver-policy config/faz22-6-view-only-kvkk-approver-policy.v1.json \
+            --verify-marker-input "$out/receipt/kvkk-marker.txt" \
+            --result-out "$out/reverified-kvkk-marker.json"
+          jq -e '.status == "pass" and .humanSignatureCount == 2' \
+            "$out/reverified-kvkk-marker.json" >/dev/null
+          authorization_sha256="sha256:$(sha256sum "$out/receipt/protected-authorization.json" | awk '{print $1}')"
+          marker_sha256="sha256:$(sha256sum "$out/receipt/kvkk-marker.txt" | awk '{print $1}')"
+          jq -e --arg run "$ACTIVATION_RUN_ID" --arg marker "$marker_sha256" '
+            .schemaVersion == "faz22.6-view-only-pilot-protected-authorization-v1"
+            and .environment == "faz22-view-only-pilot"
+            and .onePersonRoster == true
+            and .consentingPilotDevice == true
+            and .exposureApprovedByProtectedEnvironment == true
+            and (.authorizationRunId == ($run | tonumber))
+            and (.expiresAt | fromdateiso8601) > now
+            and .kvkkMarkerSha256 == $marker
+          ' "$out/receipt/protected-authorization.json" >/dev/null
+          echo "MATRIX_AUTHORIZATION_SHA256=$authorization_sha256" >> "$GITHUB_ENV"
+
+      - name: Verify live watchdog authorization and headroom
+        run: |
+          set -euo pipefail
+          expected="$MATRIX_AUTHORIZATION_SHA256"
+          actual="$(kubectl --context=k3d-test -n platform-test get job faz22-view-only-pilot-watchdog \
+            -o jsonpath='{.metadata.annotations.faz22\.6\.acik\.com/authorization-sha256}')"
+          expires="$(kubectl --context=k3d-test -n platform-test get job faz22-view-only-pilot-watchdog \
+            -o jsonpath='{.metadata.annotations.faz22\.6\.acik\.com/expires-at-epoch}')"
+          [ "$actual" = "$expected" ]
+          printf '%s' "$expires" | grep -Eq '^[1-9][0-9]{9,12}$'
+          [ "$(( expires - $(date -u +%s) ))" -ge 1200 ]
+
+      - name: Collect protected negative matrix
+        env:
+          KC_TEST_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+          EMIT_GITHUB_MASK_COMMANDS: "1"
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          SOURCE_REVISION: ${{ github.sha }}
+          REMOTE_BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key
+          REQUIRE_ACTIVE_GUI: "1"
+          DENETIM_SSH_TARGET: svc-denetim-agent@10.99.0.2
+          EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-negative-collector
+          AUTO_FINALIZE: "0"
+          MATRIX_HOOK_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/collect-view-only-viewer-negative-matrix.sh
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          MATRIX_WRONG_TENANT_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+          export MATRIX_WRONG_TENANT_ID
+          bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+
+      - name: Validate and stage exact collector envelope
+        env:
+          COLLECTOR_DIR: ${{ runner.temp }}/faz22-viewer-negative-collector/matrix
+        run: |
+          set -euo pipefail
+          test -s "$COLLECTOR_DIR/context.json"
+          test -s "$COLLECTOR_DIR/observations/negative.jsonl"
+          stage="$RUNNER_TEMP/faz22-viewer-matrix-source"
+          mkdir -p "$stage/observations"
+          install -m 0600 "$COLLECTOR_DIR/context.json" "$stage/context.json"
+          install -m 0600 "$COLLECTOR_DIR/observations/negative.jsonl" \
+            "$stage/observations/negative.jsonl"
+          test "$(find "$stage" -type f | wc -l | tr -d ' ')" = 2
+          if find "$stage" -type f ! -name '*.json' ! -name '*.jsonl' -print -quit | grep -q .; then
+            echo "collector envelope contains a non-JSON payload" >&2
+            exit 1
+          fi
+          python3 - "$stage" <<'PY'
+          import importlib.util
+          import pathlib
+          import sys
+
+          root = pathlib.Path.cwd()
+          scripts = root / "scripts/faz22-remote-ops"
+          sys.path.insert(0, str(scripts))
+          path = scripts / "produce-view-only-viewer-matrix-evidence.py"
+          spec = importlib.util.spec_from_file_location("matrix_producer", path)
+          module = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          sys.modules[spec.name] = module
+          spec.loader.exec_module(module)
+          stage = pathlib.Path(sys.argv[1])
+          context = module.load_context(
+              (stage / "context.json").read_bytes(), "negative",
+              module.common.VERIFIER.load_json_bytes(
+                  (stage / "context.json").read_bytes(), "context"
+              )["sourceRevision"],
+          )
+          raw = (stage / "observations/negative.jsonl").read_bytes()
+          module.common.VERIFIER.require_equal(
+              module.common.VERIFIER.digest_bytes(raw), context["observationsSha256"],
+              "collector observations digest",
+          )
+          child, files = module.build_negative(context, raw)
+          child_raw = module.encode_json(child)
+          files["evidence/negative.json"] = child_raw
+          module.common.VERIFIER.validate_matrix_source_attestations("negative", files, child_raw)
+          PY
+          sha256sum "$stage/context.json" "$stage/observations/negative.jsonl" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact collector artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-6-view-only-viewer-matrix-collector-negative-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-viewer-matrix-source/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 2
+
+      # The attended smoke directory contains transient response bodies and
+      # runtime logs. It is intentionally never uploaded. Only the exact staged
+      # context plus canonical observations may leave the protected runner.

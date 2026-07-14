@@ -84,6 +84,9 @@ STEP_UP_RUNTIME_STABILIZE_SECONDS="${STEP_UP_RUNTIME_STABILIZE_SECONDS:-8}"
 STEP_UP_EPHEMERAL_KEY_ENABLED="${STEP_UP_EPHEMERAL_KEY_ENABLED:-1}"
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
 DURESS_SIGNAL_FOR_OPERATION="${DURESS_SIGNAL_FOR_OPERATION:-NONE}"
+MATRIX_HOOK_SCRIPT="${MATRIX_HOOK_SCRIPT:-}"
+MATRIX_AUTHORIZATION_SHA256="${MATRIX_AUTHORIZATION_SHA256:-}"
+MATRIX_WRONG_TENANT_ID="${MATRIX_WRONG_TENANT_ID:-}"
 
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/faz22-6-view-only-attended-${SESSION_ID}}"
 AUTO_FINALIZE="${AUTO_FINALIZE:-0}"
@@ -102,6 +105,11 @@ APPROVER_TOKEN_FILE="${TMP_DIR}/approver.jwt"
 KC_ADMIN_PASS_FILE="${TMP_DIR}/kc-admin-password.txt"
 KC_ADMIN_TOKEN_FILE="${TMP_DIR}/kc-admin.jwt"
 REMOTE_BRIDGE_ORIGINAL_ENV_FILE="${TMP_DIR}/remote-bridge-original-env.json"
+MATRIX_WRONG_ROLE_TOKEN_FILE="${TMP_DIR}/matrix-wrong-role.jwt"
+MATRIX_WRONG_TENANT_TOKEN_FILE="${TMP_DIR}/matrix-wrong-tenant.jwt"
+MATRIX_WRONG_ROLE_CLAIMS_FILE="${TMP_DIR}/matrix-wrong-role-claims.redacted.json"
+MATRIX_WRONG_TENANT_CLAIMS_FILE="${TMP_DIR}/matrix-wrong-tenant-claims.redacted.json"
+TEMP_PERSONA_IDS=()
 
 status="starting"
 reason=""
@@ -177,6 +185,7 @@ cleanup() {
   stop_port_forward
   stop_management_port_forward
   restore_remote_bridge_runtime_env_override >/dev/null 2>&1 || true
+  delete_temporary_personas >/dev/null 2>&1 || true
   rm -rf "$TMP_DIR"
 }
 
@@ -267,6 +276,19 @@ validate_inputs() {
       || fail_smoke "playwright-package-root-invalid"
     [[ "$OPERATION_ID" =~ ^[A-Za-z0-9_-]{1,128}$ ]] \
       || fail_smoke "browser-product-operation-id-invalid"
+  fi
+  if [[ -n "$MATRIX_HOOK_SCRIPT" ]]; then
+    [[ -r "$MATRIX_HOOK_SCRIPT" ]] || fail_smoke "matrix-hook-script-not-readable"
+    [[ "$(realpath "$MATRIX_HOOK_SCRIPT")" == \
+       "$(realpath "${SCRIPT_DIR}/collect-view-only-viewer-negative-matrix.sh")" ]] \
+      || fail_smoke "matrix-hook-script-outside-canonical-repo-path"
+    [[ "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]] || fail_smoke "matrix-source-revision-invalid"
+    [[ "$MATRIX_AUTHORIZATION_SHA256" =~ ^sha256:[a-f0-9]{64}$ ]] \
+      || fail_smoke "matrix-authorization-sha256-invalid"
+    [[ "$MATRIX_WRONG_TENANT_ID" =~ ^[0-9a-fA-F-]{36}$ ]] \
+      || fail_smoke "matrix-wrong-tenant-id-invalid"
+    [[ "${MATRIX_WRONG_TENANT_ID,,}" != "${TENANT_ID,,}" ]] \
+      || fail_smoke "matrix-wrong-tenant-id-equals-authorized-tenant"
   fi
   if [[ "$AUTO_FINALIZE" == "1" ]]; then
     [[ "$EVIDENCE_URL" == https://* ]] || fail_smoke "evidence-url-required-for-auto-finalize"
@@ -376,7 +398,8 @@ admin_curl() {
 }
 
 ensure_persona() {
-  local username="$1" user_id_file="$2"
+  local username="$1" user_id_file="$2" tenant="${3:-$TENANT_ID}"
+  local role_mode="${4:-present}" temporary="${5:-0}"
   local lookup="${TMP_DIR}/${username}-lookup.json" code uid
   code="$(admin_curl GET "/users?username=${username}&exact=true" "$lookup")"
   assert_http "$code" 200 "keycloak lookup $username" "$lookup"
@@ -388,7 +411,7 @@ ensure_persona() {
     create_body="$(jq -nc \
       --arg username "$username" \
       --arg email "${username}@testai.acik.com" \
-      --arg tenant "$TENANT_ID" \
+      --arg tenant "$tenant" \
       '{username:$username, enabled:true, emailVerified:true, email:$email,
         firstName:"RemoteBridge", lastName:$username,
         attributes:{tenant_id:[$tenant], org_id:[$tenant], userId:[$username]}}')"
@@ -400,6 +423,7 @@ ensure_persona() {
   fi
   [[ -n "$uid" ]] || fail_smoke "keycloak user id missing for $username"
   printf '%s' "$uid" > "$user_id_file"
+  [[ "$temporary" == "1" ]] && TEMP_PERSONA_IDS+=("$uid")
 
   local update_out update_body pass_file reset_body reset_out role_file role_json role_out
   update_out="${TMP_DIR}/${username}-update.json"
@@ -407,7 +431,7 @@ ensure_persona() {
     --arg id "$uid" \
     --arg username "$username" \
     --arg email "${username}@testai.acik.com" \
-    --arg tenant "$TENANT_ID" \
+    --arg tenant "$tenant" \
     '{id:$id, username:$username, enabled:true, emailVerified:true, email:$email,
       firstName:"RemoteBridge", lastName:$username,
       attributes:{tenant_id:[$tenant], org_id:[$tenant], userId:[$username]}}')"
@@ -427,8 +451,36 @@ ensure_persona() {
   assert_http "$code" 200 "keycloak remote-bridge role lookup" "$role_file"
   role_json="$(jq -c '[.]' "$role_file")"
   role_out="${TMP_DIR}/${username}-role-map.json"
-  code="$(admin_curl POST "/users/${uid}/role-mappings/realm" "$role_out" "$role_json")"
-  [[ "$code" == "204" || "$code" == "409" ]] || fail_smoke "keycloak role-map $username returned $code"
+  case "$role_mode" in
+    present)
+      code="$(admin_curl POST "/users/${uid}/role-mappings/realm" "$role_out" "$role_json")"
+      [[ "$code" == "204" || "$code" == "409" ]] \
+        || fail_smoke "keycloak role-map $username returned $code"
+      ;;
+    absent)
+      code="$(admin_curl DELETE "/users/${uid}/role-mappings/realm" "$role_out" "$role_json")"
+      [[ "$code" == "204" || "$code" == "404" ]] \
+        || fail_smoke "keycloak role-unmap $username returned $code"
+      local effective_roles="${TMP_DIR}/${username}-effective-roles.json"
+      code="$(admin_curl GET "/users/${uid}/role-mappings/realm/composite" "$effective_roles")"
+      assert_http "$code" 200 "keycloak effective roles $username" "$effective_roles"
+      jq -e 'all(.[]; .name != "remote-bridge-operator")' "$effective_roles" >/dev/null \
+        || fail_smoke "keycloak wrong-role persona retained remote-bridge-operator"
+      ;;
+    *) fail_smoke "keycloak role mode invalid for $username" ;;
+  esac
+}
+
+delete_temporary_personas() {
+  local uid out code
+  [[ -s "$KC_ADMIN_TOKEN_FILE" ]] || return 0
+  for uid in "${TEMP_PERSONA_IDS[@]}"; do
+    out="${TMP_DIR}/delete-${uid}.json"
+    code="$(admin_curl DELETE "/users/${uid}" "$out" 2>/dev/null || true)"
+    if [[ "$code" != "204" && "$code" != "404" ]]; then
+      echo "WARN temporary Keycloak matrix persona cleanup failed (HTTP ${code:-transport-error})" >&2
+    fi
+  done
 }
 
 decode_jwt_claims() {
@@ -465,8 +517,10 @@ PY
 
 mint_persona_token() {
   local username="$1" token_file="$2" claims_file="$3"
+  local expected_role="${4:-true}" expected_tenant="${5:-$TENANT_ID}"
   local pass_file="${TMP_DIR}/${username}.password"
-  local client response token
+  local client response token expected_tenant_sha
+  expected_tenant_sha="sha256:$(sha256_text "$expected_tenant")"
   for client in $TOKEN_CLIENT_CANDIDATES; do
     response="$(curl -sS -X POST \
       "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
@@ -480,16 +534,17 @@ mint_persona_token() {
       chmod 0600 "$token_file"
       mask_file_value "$token_file"
       decode_jwt_claims "$token_file" "$claims_file"
-      if jq -e '
-        .realmRolesContainRemoteBridgeOperator == true
+      if jq -e --argjson expectedRole "$expected_role" --arg tenant "$expected_tenant_sha" '
+        .realmRolesContainRemoteBridgeOperator == $expectedRole
         and .tenant_id_present == true
+        and .tenantSha256 == $tenant
         and .audContainsRemoteBridgeOperatorApi == true
       ' "$claims_file" >/dev/null; then
         return
       fi
     fi
   done
-  fail_smoke "keycloak-persona-token-unusable:${username}:missing-required-role-tenant-or-audience"
+  fail_smoke "keycloak-persona-token-unusable:${username}:claim-contract-mismatch"
 }
 
 verify_runtime_digest() {
@@ -553,7 +608,7 @@ capture_viewer_metrics() {
   curl -fsS --max-time 10 \
     "http://127.0.0.1:${REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT}/actuator/prometheus" \
     -o "$raw" || fail_smoke "metrics-${phase}-query-failed"
-  grep -E '^(remote_access_bridge_(data_frames_total|view_only_fanout_frames_total|viewer_started_total|viewer_ended_total|viewer_frames_sent_total|viewer_render_ack_accepted_total|viewer_render_ack_rejected_total)|process_start_time_seconds)(\{|[[:space:]])' \
+  grep -E '^(remote_access_bridge_(data_frames_total|view_only_fanout_frames_total|viewer_started_total|viewer_ended_total|viewer_frames_sent_total|viewer_rejected_total|viewer_render_ack_accepted_total|viewer_render_ack_rejected_total)|process_start_time_seconds)(\{|[[:space:]])' \
     "$raw" | LC_ALL=C sort > "${EVIDENCE_DIR}/metrics-${phase}.prom"
   [[ -s "${EVIDENCE_DIR}/metrics-${phase}.prom" ]] || fail_smoke "metrics-${phase}-empty"
 }
@@ -1145,6 +1200,20 @@ main() {
   ensure_persona "$APPROVER_USERNAME" "${TMP_DIR}/approver.id"
   mint_persona_token "$OPERATOR_USERNAME" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
   mint_persona_token "$APPROVER_USERNAME" "$APPROVER_TOKEN_FILE" "${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
+  if [[ -n "$MATRIX_HOOK_SCRIPT" ]]; then
+    local matrix_suffix matrix_wrong_role_user matrix_wrong_tenant_user
+    matrix_suffix="${GITHUB_RUN_ID:-manual-$(date -u +%Y%m%d%H%M%S)}"
+    matrix_wrong_role_user="faz226-wrong-role-${matrix_suffix}"
+    matrix_wrong_tenant_user="faz226-wrong-tenant-${matrix_suffix}"
+    ensure_persona "$matrix_wrong_role_user" "${TMP_DIR}/matrix-wrong-role.id" \
+      "$TENANT_ID" absent 1
+    ensure_persona "$matrix_wrong_tenant_user" "${TMP_DIR}/matrix-wrong-tenant.id" \
+      "$MATRIX_WRONG_TENANT_ID" present 1
+    mint_persona_token "$matrix_wrong_role_user" "$MATRIX_WRONG_ROLE_TOKEN_FILE" \
+      "$MATRIX_WRONG_ROLE_CLAIMS_FILE" false "$TENANT_ID"
+    mint_persona_token "$matrix_wrong_tenant_user" "$MATRIX_WRONG_TENANT_TOKEN_FILE" \
+      "$MATRIX_WRONG_TENANT_CLAIMS_FILE" true "$MATRIX_WRONG_TENANT_ID"
+  fi
   export_step_up_public_key
   find_matching_step_up_private_key_or_generate
   start_port_forward
@@ -1232,6 +1301,36 @@ main() {
   jq -e '.kind == "PERMIT" and .transportPushed == true and .permit.capability == "VIEW_ONLY"' "${EVIDENCE_DIR}/operation.body" >/dev/null \
     || fail_smoke "screen-view-operation-not-permit"
   transport_pushed="true"
+
+  if [[ -n "$MATRIX_HOOK_SCRIPT" ]]; then
+    MATRIX_OPERATOR_BASE="$operator_base" \
+    MATRIX_MANAGEMENT_BASE="http://127.0.0.1:${REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT}" \
+    MATRIX_SESSION_ID="$SESSION_ID" \
+    MATRIX_STREAM_ID="$OPERATION_ID" \
+    MATRIX_DEVICE_ID="$DEVICE_ID" \
+    MATRIX_OPERATOR_TOKEN_FILE="$OPERATOR_TOKEN_FILE" \
+    MATRIX_OPERATOR_CLAIMS_FILE="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json" \
+    MATRIX_WRONG_ROLE_TOKEN_FILE="$MATRIX_WRONG_ROLE_TOKEN_FILE" \
+    MATRIX_WRONG_ROLE_CLAIMS_FILE="$MATRIX_WRONG_ROLE_CLAIMS_FILE" \
+    MATRIX_WRONG_TENANT_TOKEN_FILE="$MATRIX_WRONG_TENANT_TOKEN_FILE" \
+    MATRIX_WRONG_TENANT_CLAIMS_FILE="$MATRIX_WRONG_TENANT_CLAIMS_FILE" \
+    MATRIX_WRONG_TENANT_ID="$MATRIX_WRONG_TENANT_ID" \
+    MATRIX_SOURCE_REVISION="$SOURCE_REVISION" \
+    MATRIX_AUTHORIZATION_SHA256="$MATRIX_AUTHORIZATION_SHA256" \
+    MATRIX_OUTPUT_DIR="${EVIDENCE_DIR}/matrix" \
+      bash "$MATRIX_HOOK_SCRIPT" || fail_smoke "matrix-hook-failed"
+    test -s "${EVIDENCE_DIR}/matrix/context.json" \
+      || fail_smoke "matrix-hook-context-missing"
+    test -s "${EVIDENCE_DIR}/matrix/observations/negative.jsonl" \
+      || fail_smoke "matrix-hook-observations-missing"
+    close_code="$(cat "${EVIDENCE_DIR}/matrix/close.code" 2>/dev/null || true)"
+    status="accepted-candidate"
+    reason="VIEW_ONLY protected negative matrix collector produced digest-bound observations"
+    write_summary
+    write_sha256sums
+    echo "ACCEPTED_CANDIDATE matrix_dir=${EVIDENCE_DIR}/matrix"
+    return 0
+  fi
 
   run_browser_evidence
   wait_for_viewer_end_metric

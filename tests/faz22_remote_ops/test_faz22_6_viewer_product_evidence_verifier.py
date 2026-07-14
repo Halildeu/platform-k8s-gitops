@@ -67,7 +67,10 @@ def negative_payload():
     cases = {
         name: {
             "observedAt": "2026-07-14T00:05:00Z",
-            "binding": case_binding("1"),
+            "binding": (
+                {**case_binding("0"), "deviceSha256": sha("5")}
+                if name == "wrongDevice" else case_binding("1")
+            ),
             "result": "fail-closed",
             "outcome": VERIFIER.NEGATIVE_CASE_CONTRACT[name].outcome,
             "requestAccepted": False,
@@ -140,30 +143,62 @@ def matrix_attestation_files(evidence_type, document):
             contract = VERIFIER.NEGATIVE_CASE_CONTRACT[case_name]
             body_raw = f"redacted-product-response:{case_name}".encode()
             viewer_rejection_expected = case_name not in {
-                "expired", "replayed", "disconnectedViewer",
+                "wrongDevice", "expired", "replayed", "disconnectedViewer",
             }
             request = {
                 "method": contract.method,
                 "targetClass": contract.target_class,
                 "credentialClass": contract.credential_class,
+                "pathTemplate": contract.path_template,
+                "bodySha256": (
+                    None if contract.method == "GET"
+                    else VERIFIER.digest_bytes(
+                        b'{"deviceId":"different","sessionId":"attempted"}'
+                        if case_name == "wrongDevice" else b""
+                    )
+                ),
+                "startedAt": (
+                    "2026-07-14T00:01:00Z" if case_name == "disconnectedViewer"
+                    else "2026-07-14T00:04:56Z"
+                ),
+                "completedAt": (
+                    "2026-07-14T00:04:57Z" if case_name == "disconnectedViewer"
+                    else "2026-07-14T00:04:57Z"
+                ),
+                "subjectSha256": (
+                    None if case_name == "noAuth"
+                    else sha("6") if case_name in {"wrongRole", "wrongTenant"}
+                    else binding()["operatorSha256"]
+                ),
+                "tenantSha256": (
+                    None if case_name == "noAuth"
+                    else sha("7") if case_name == "wrongTenant"
+                    else binding()["tenantSha256"]
+                ),
+                "rolePresent": case_name not in {"noAuth", "wrongRole"},
             }
             snapshot = {
                 "schemaVersion": "faz22.6.viewOnlyViewerNegativeRuntimeSnapshot.v1",
                 **support_common,
-                "evidenceSource": (
-                    "agent-error-ledger-and-http-probe"
-                    if case_name in {"expired", "replayed"}
-                    else "viewer-http-and-metric-probe"
-                ),
+                "evidenceSource": {
+                    "wrongDevice": "operator-session-open-http-probe",
+                    "expired": "agent-error-ledger-and-http-probe",
+                    "replayed": "agent-error-ledger-and-http-probe",
+                }.get(case_name, "viewer-http-and-metric-probe"),
                 "request": request,
                 "response": {
                     "httpStatus": case["httpStatus"],
                     "bodyClass": (
                         "agent-deny-redacted"
-                        if case_name in {"expired", "replayed"} else "empty-or-opaque"
+                        if case_name in {"expired", "replayed"}
+                        else "stream-content-digested-no-persistence"
+                        if case_name == "disconnectedViewer"
+                        else "empty-or-opaque"
                     ),
                     "bodyLength": len(body_raw),
                     "bodySha256": VERIFIER.digest_bytes(body_raw),
+                    "screenContentPersisted": False,
+                    "artifactRepresentation": "hash-and-length-only",
                 },
                 "delivery": {
                     "framesBefore": 100 + ordinal,
@@ -171,6 +206,11 @@ def matrix_attestation_files(evidence_type, document):
                     "streamClosed": True,
                     "viewerRejectedBefore": 300 + ordinal,
                     "viewerRejectedAfter": 301 + ordinal if viewer_rejection_expected else 300 + ordinal,
+                    "metricsBeforeObservedAt": (
+                        "2026-07-14T00:04:58Z" if case_name == "disconnectedViewer"
+                        else "2026-07-14T00:04:55Z"
+                    ),
+                    "metricsAfterObservedAt": "2026-07-14T00:04:59Z",
                 },
                 "agentDeny": {
                     "required": case_name in {"expired", "replayed"},
@@ -217,10 +257,7 @@ def matrix_attestation_files(evidence_type, document):
                     "framesSentAtTrigger": 200 + ordinal,
                     "framesSentAfterEnd": 200 + ordinal,
                 },
-                "terminal": {
-                    key: product_signals[key]
-                    for key in ("viewerClosed", "brokerSessionTerminal", "agentEventObserved")
-                },
+                "terminal": product_signals,
             }
             audit = {
                 "schemaVersion": "faz22.6.viewOnlyViewerMatrixAuditRecord.v1",
@@ -403,6 +440,34 @@ def mutate_jsonl_case(raw, case_name, mutator):
     if not found:
         raise AssertionError(f"fixture case not found: {case_name}")
     return b"".join(output)
+
+
+def rewrite_negative_request(document, files, case_name, mutator):
+    observations_path = "observations/negative.jsonl"
+    snapshot = None
+
+    def mutate_snapshot(value):
+        nonlocal snapshot
+        mutator(value["request"])
+        snapshot = value
+
+    files[observations_path] = mutate_jsonl_case(
+        files[observations_path], case_name, mutate_snapshot,
+    )
+    assert snapshot is not None
+    snapshot_raw = canonical_jsonl_line(snapshot)
+    attestation_path = f"attestations/negative/{case_name}.json"
+    attestation = json.loads(files[attestation_path])
+    attestation["request"] = copy.deepcopy(snapshot["request"])
+    attestation["runtimeSnapshotSha256"] = VERIFIER.digest_bytes(snapshot_raw)
+    files[attestation_path] = encode_json(attestation)
+    case = document["payload"]["cases"][case_name]
+    case["evidenceSha256"] = VERIFIER.digest_bytes(files[attestation_path])
+    document["payload"]["suiteSha256"] = VERIFIER.digest_json({
+        "authorizationSha256": document["payload"]["authorizationSha256"],
+        "cases": document["payload"]["cases"],
+    })
+    return encode_json(document)
 
 
 def encode_zip(files):
@@ -983,7 +1048,7 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             "cases": document["payload"]["cases"],
         })
         raw_child = encode_json(document)
-        with self.assertRaisesRegex(VERIFIER.EvidenceError, "localAbort product signals"):
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "localAbort attested product signals"):
             VERIFIER.validate_matrix_source_attestations("termination", files, raw_child)
 
     def test_matrix_cases_must_fit_protected_authorization_expiry(self):
@@ -1011,11 +1076,63 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "wrongRole outcome"):
             self.validate_matrices(children)
 
+    def test_wrong_device_requires_distinct_device_and_attempted_session_bindings(self):
+        for field, expected_error in (
+            ("deviceSha256", "wrongDevice must use a different device"),
+            ("sessionSha256", "wrongDevice must use a distinct attempted session"),
+        ):
+            with self.subTest(field=field):
+                children = child_documents()
+                payload = children["negative"]["payload"]
+                payload["cases"]["wrongDevice"]["binding"][field] = binding()[field]
+                payload["suiteSha256"] = VERIFIER.digest_json({
+                    "authorizationSha256": payload["authorizationSha256"],
+                    "cases": payload["cases"],
+                })
+                with self.assertRaisesRegex(VERIFIER.EvidenceError, expected_error):
+                    self.validate_matrices(children)
+
+    def test_negative_request_identity_route_body_and_window_are_fail_closed(self):
+        mutations = (
+            (
+                "wrongTenant",
+                lambda request: request.update(tenantSha256=binding()["tenantSha256"]),
+                "wrongTenant must use a distinct request tenant",
+            ),
+            (
+                "wrongDevice",
+                lambda request: request.update(pathTemplate="/unrelated/not-found"),
+                "wrongDevice request path template",
+            ),
+            (
+                "wrongDevice",
+                lambda request: request.update(bodySha256=VERIFIER.digest_bytes(b"")),
+                "wrongDevice request body must be non-empty",
+            ),
+            (
+                "noAuth",
+                lambda request: request.update(completedAt="2026-07-14T00:05:01Z"),
+                "request/metric window ordering",
+            ),
+        )
+        for case_name, mutator, expected_error in mutations:
+            with self.subTest(case_name=case_name, expected_error=expected_error):
+                document = child_documents()["negative"]
+                files = matrix_attestation_files("negative", document)
+                raw_child = rewrite_negative_request(document, files, case_name, mutator)
+                with self.assertRaisesRegex(VERIFIER.EvidenceError, expected_error):
+                    VERIFIER.validate_matrix_source_attestations("negative", files, raw_child)
+
     def test_negative_case_must_use_the_real_product_channel_contract(self):
         # Wrong-role authentication must be 401, while signed-permit expiry is
         # exercised through the acceptance-only POST agent-permit channel.
         self.assertEqual(401, VERIFIER.NEGATIVE_CASE_CONTRACT["wrongRole"].http_status)
         self.assertEqual("POST", VERIFIER.NEGATIVE_CASE_CONTRACT["expired"].method)
+        self.assertEqual("POST", VERIFIER.NEGATIVE_CASE_CONTRACT["wrongDevice"].method)
+        self.assertEqual(
+            "operator-session-open-channel",
+            VERIFIER.NEGATIVE_CASE_CONTRACT["wrongDevice"].target_class,
+        )
         document = child_documents()["negative"]
         raw_child = encode_json(document)
         files = VERIFIER.safe_archive_files(source_archive("negative", raw_child))

@@ -21,6 +21,10 @@ VIEWER_BROKER_PRODUCER="$ROOT/scripts/faz22-remote-ops/produce-view-only-viewer-
 VIEWER_AUDIT_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-audit-evidence.yml"
 VIEWER_AUDIT_PRODUCER="$ROOT/scripts/faz22-remote-ops/produce-view-only-viewer-audit-evidence.py"
 VIEWER_AUDIT_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-audit-summary.py"
+VIEWER_MATRIX_COLLECTOR_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-matrix-collector.yml"
+VIEWER_NEGATIVE_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-negative-evidence.yml"
+VIEWER_NEGATIVE_COLLECTOR="$ROOT/scripts/faz22-remote-ops/collect-view-only-viewer-negative-matrix.sh"
+VIEWER_MATRIX_PRODUCER="$ROOT/scripts/faz22-remote-ops/produce-view-only-viewer-matrix-evidence.py"
 VIEWER_SOURCE_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_viewer_source_common.py"
 VIEWER_FRAME_FLOW_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-frame-flow-summary.py"
 VIEWER_PRODUCT_ROOT_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
@@ -63,15 +67,18 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_D30_WORKFLOW" "$VIEWER_D30_PRODUCER" "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER" \
   "$VIEWER_BROKER_WORKFLOW" "$VIEWER_BROKER_PRODUCER" \
   "$VIEWER_AUDIT_WORKFLOW" "$VIEWER_AUDIT_PRODUCER" "$VIEWER_AUDIT_BUILDER" \
+  "$VIEWER_MATRIX_COLLECTOR_WORKFLOW" "$VIEWER_NEGATIVE_WORKFLOW" \
+  "$VIEWER_NEGATIVE_COLLECTOR" "$VIEWER_MATRIX_PRODUCER" \
   "$VIEWER_PRODUCT_ROOT_SCHEMA" "$VIEWER_PRODUCT_CHILD_SCHEMA" \
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_WATCHDOG"; do
   require_file "$path"
 done
 
-bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER"
+bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER" "$VIEWER_NEGATIVE_COLLECTOR"
 python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_OPERATOR_PRODUCER" "$VIEWER_D30_PRODUCER" \
   "$VIEWER_BROKER_PRODUCER" "$VIEWER_AUDIT_PRODUCER" "$VIEWER_AUDIT_BUILDER" \
+  "$VIEWER_MATRIX_PRODUCER" \
   "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER"
 jq -e '.additionalProperties == false' "$VIEWER_PRODUCT_ROOT_SCHEMA" >/dev/null
 jq -e '.additionalProperties == false and (.allOf | length) == 7' "$VIEWER_PRODUCT_CHILD_SCHEMA" >/dev/null
@@ -145,6 +152,26 @@ require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_AUDIT_EVIDENCE" "$VIEWER_AUDIT_WO
 require_grep "produce-view-only-viewer-audit-evidence.py" "$VIEWER_AUDIT_WORKFLOW"
 require_grep 'faz22-6-view-only-viewer-audit-evidence-${{ github.run_id }}' "$VIEWER_AUDIT_WORKFLOW"
 
+require_grep "actions: read" "$VIEWER_NEGATIVE_WORKFLOW"
+require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_NEGATIVE_EVIDENCE" "$VIEWER_NEGATIVE_WORKFLOW"
+require_grep "produce-view-only-viewer-matrix-evidence.py" "$VIEWER_NEGATIVE_WORKFLOW"
+require_grep 'faz22-6-view-only-viewer-negative-evidence-${{ github.run_id }}' "$VIEWER_NEGATIVE_WORKFLOW"
+require_grep "environment:" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep "name: faz22-view-only-pilot" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep "collect-view-only-viewer-negative-matrix.sh" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6" \
+  "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7" \
+  "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep 'faz22-6-view-only-viewer-matrix-collector-negative-${{ github.run_id }}' \
+  "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"
+require_grep "raw_screen_persisted=false" "$VIEWER_NEGATIVE_COLLECTOR"
+if grep -Eq '^[[:space:]]+[A-Za-z-]+:[[:space:]]+write([[:space:]]|$)' \
+  "$VIEWER_MATRIX_COLLECTOR_WORKFLOW"; then
+  echo "matrix collector workflow must not have GitHub write permissions" >&2
+  exit 1
+fi
+
 require_grep "environment:" "$VIEWER_APPLY_WORKFLOW"
 require_grep "name: faz22-view-only-pilot" "$VIEWER_APPLY_WORKFLOW"
 require_grep "--verify-marker-input" "$VIEWER_APPLY_WORKFLOW"
@@ -166,7 +193,8 @@ require_grep "curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea
 require_grep 'REMOTE_BRIDGE_VIEWER_ENABLED":"false"' "$VIEWER_WATCHDOG"
 require_grep "SPRING_CLOUD_GATEWAY_ROUTES_28_ID\":null" "$VIEWER_WATCHDOG"
 
-for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"; do
+for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" \
+  "$VIEWER_PRODUCT_VERIFY_WORKFLOW" "$VIEWER_NEGATIVE_WORKFLOW"; do
   forbidden="$(
     grep -nE 'gh issue (edit|comment)|kubectl |secrets\.|GH_TOKEN|issues: write|pull-requests: write|contents: write' "$path" || true
   )"
@@ -226,6 +254,8 @@ python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_frame_flow_summar
 python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_broker_evidence_producer
 python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_audit_evidence_producer
 python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_audit_summary
+python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_matrix_evidence_producer
+python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_negative_matrix_collector
 
 if python3 "$VIEWER_PRODUCT_VERIFIER" --run-id 1 --input "$tmp_dir/fabricated.json" \
   >/dev/null 2>&1; then
