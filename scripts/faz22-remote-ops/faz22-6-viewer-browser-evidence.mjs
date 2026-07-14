@@ -11,6 +11,7 @@ const GIT_SHA = /^[a-f0-9]{40}$/;
 const VIEWER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
 const MIN_PILOT_SECONDS = 300;
 const MAX_PILOT_SECONDS = 1800;
+const MASK_BASIS_POINTS = 10_000;
 
 function required(name) {
   const value = process.env[name]?.trim();
@@ -59,12 +60,31 @@ function validateViewerUrl(raw) {
   return url.toString();
 }
 
+function validateMaskRect(raw) {
+  if (!/^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$/.test(raw)) {
+    throw new Error('DLP_MASK_RECT_BPS is not canonical x,y,width,height');
+  }
+  const values = raw.split(',').map((value) => Number.parseInt(value, 10));
+  const [x, y, width, height] = values;
+  if (
+    values.some((value) => !Number.isSafeInteger(value) || value < 0 || value > MASK_BASIS_POINTS) ||
+    width <= 0 ||
+    height <= 0 ||
+    x + width > MASK_BASIS_POINTS ||
+    y + height > MASK_BASIS_POINTS
+  ) {
+    throw new Error('DLP_MASK_RECT_BPS is empty or outside the primary monitor');
+  }
+  return { raw, x, y, width, height };
+}
+
 async function main() {
   const viewerUrl = validateViewerUrl(required('VIEWER_URL'));
   const tokenFile = required('OPERATOR_TOKEN_FILE');
   const output = required('EVIDENCE_OUTPUT');
   const sourceRevision = required('SOURCE_REVISION');
   if (!GIT_SHA.test(sourceRevision)) throw new Error('SOURCE_REVISION must be a full Git SHA');
+  const maskRect = validateMaskRect(required('DLP_MASK_RECT_BPS'));
   const binding = validateBinding(JSON.parse(required('EVIDENCE_BINDING_JSON')));
   const pilotSeconds = Number.parseInt(process.env.PILOT_SECONDS ?? '300', 10);
   if (!Number.isSafeInteger(pilotSeconds) || pilotSeconds < MIN_PILOT_SECONDS || pilotSeconds > MAX_PILOT_SECONDS) {
@@ -145,25 +165,68 @@ async function main() {
     });
 
     const screenshot = await page.screenshot({ type: 'png', fullPage: false });
-    const pixelCheckPassed = await page.getByTestId('remote-view-frame').evaluate((image) => {
+    const frameChecks = await page.getByTestId('remote-view-frame').evaluate(async (image, mask) => {
       if (!(image instanceof HTMLImageElement) || image.naturalWidth < 2 || image.naturalHeight < 2) return false;
       const canvas = document.createElement('canvas');
-      canvas.width = Math.min(image.naturalWidth, 160);
-      canvas.height = Math.min(image.naturalHeight, 100);
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return false;
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
       const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      const x = Math.floor((canvas.width * mask.x) / 10_000);
+      const y = Math.floor((canvas.height * mask.y) / 10_000);
+      const xEnd = Math.ceil((canvas.width * (mask.x + mask.width)) / 10_000);
+      const yEnd = Math.ceil((canvas.height * (mask.y + mask.height)) / 10_000);
+      if (xEnd <= x || yEnd <= y) return false;
+
+      let dlpMaskPixelCheckPassed = true;
+      for (let py = y; py < yEnd && dlpMaskPixelCheckPassed; py += 1) {
+        for (let px = x; px < xEnd; px += 1) {
+          const offset = (py * canvas.width + px) * 4;
+          if (pixels[offset] !== 0 || pixels[offset + 1] !== 0 || pixels[offset + 2] !== 0 || pixels[offset + 3] !== 255) {
+            dlpMaskPixelCheckPassed = false;
+            break;
+          }
+        }
+      }
+
+      let activeIndicatorPixelCheckPassed = true;
+      const indicatorEnd = Math.min(28, canvas.height);
+      for (let py = 0; py < indicatorEnd && activeIndicatorPixelCheckPassed; py += 1) {
+        for (let px = 0; px < canvas.width; px += 1) {
+          const offset = (py * canvas.width + px) * 4;
+          if (pixels[offset] !== 255 || pixels[offset + 1] !== 0 || pixels[offset + 2] !== 0 || pixels[offset + 3] !== 255) {
+            activeIndicatorPixelCheckPassed = false;
+            break;
+          }
+        }
+      }
+
       let min = 255;
       let max = 0;
-      for (let index = 0; index < pixels.length; index += 16) {
-        const luminance = Math.round((pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3);
-        min = Math.min(min, luminance);
-        max = Math.max(max, luminance);
+      for (let py = indicatorEnd; py < canvas.height; py += 2) {
+        for (let px = 0; px < canvas.width; px += 2) {
+          if (px >= x && px < xEnd && py >= y && py < yEnd) continue;
+          const offset = (py * canvas.width + px) * 4;
+          const luminance = Math.round((pixels[offset] + pixels[offset + 1] + pixels[offset + 2]) / 3);
+          min = Math.min(min, luminance);
+          max = Math.max(max, luminance);
+        }
       }
-      return max - min >= 8;
-    });
-    if (!pixelCheckPassed) throw new Error('rendered frame pixel variance check failed');
+      const digest = await crypto.subtle.digest('SHA-256', pixels);
+      return {
+        pixelCheckPassed: max - min >= 8,
+        dlpMaskPixelCheckPassed,
+        activeIndicatorPixelCheckPassed,
+        maskedFrameSha256: `sha256:${[...new Uint8Array(digest)]
+          .map((value) => value.toString(16).padStart(2, '0'))
+          .join('')}`,
+      };
+    }, maskRect);
+    if (!frameChecks || !frameChecks.pixelCheckPassed) throw new Error('rendered frame pixel variance check failed');
+    if (!frameChecks.dlpMaskPixelCheckPassed) throw new Error('delivered frame DLP mask pixel check failed');
+    if (!frameChecks.activeIndicatorPixelCheckPassed) throw new Error('delivered frame active indicator pixel check failed');
 
     const deadline = Date.now() + pilotSeconds * 1000;
     while (Date.now() < deadline) {
@@ -192,6 +255,25 @@ async function main() {
     if (telemetry.attempted !== telemetry.accepted || telemetry.accepted !== samples.length) {
       throw new Error('browser samples and render acknowledgement counts diverged');
     }
+    const replayStatus = await page.evaluate(
+      async ({ url, bearer, replayViewerId, replaySeq }) => {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${bearer}`,
+          },
+          cache: 'no-store',
+          body: JSON.stringify({ viewerId: replayViewerId, frameSeq: replaySeq }),
+        });
+        return response.status;
+      },
+      { url: viewerUrl, bearer: token, replayViewerId: viewerId, replaySeq: samples.at(-1).seq },
+    );
+    if (replayStatus !== 404) {
+      throw new Error('broker did not reject a replayed render acknowledgement');
+    }
     const ages = samples.map((sample) => Math.max(0, sample.sampledAt - sample.observedAt));
 
     const endedAt = new Date();
@@ -211,6 +293,10 @@ async function main() {
         pilotEndedAt: utcSeconds(endedAt),
         imageElementRendered: true,
         pixelCheckPassed: true,
+        dlpMaskRectBps: maskRect.raw,
+        dlpMaskPixelCheckPassed: true,
+        activeIndicatorPixelCheckPassed: true,
+        maskedFrameSha256: frameChecks.maskedFrameSha256,
         renderAckAttemptedCount: telemetry.attempted,
         renderAckAcceptedCount: telemetry.accepted,
         consoleErrorCount,

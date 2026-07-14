@@ -614,6 +614,10 @@ def validate_semantics(
     require_equal(broker["renderAckAcceptedMetricDelta"], rendered, "broker accepted render-ACK metric")
     require_equal(browser["renderAckAcceptedCount"], rendered, "browser accepted render-ACK count")
     require_equal(browser["renderAckAttemptedCount"], rendered, "browser attempted render-ACK count")
+    require_equal(
+        browser["maskedFrameSha256"], broker["dlp"]["maskedFrameSha256"],
+        "delivered-path DLP frame hash",
+    )
     require_equal(audit["framesDelivered"], delivered, "audit delivered-frame count")
     require_equal(audit["framesRenderAcknowledged"], rendered, "audit rendered-frame count")
     if broker["reconnectCount"] > MAX_RECONNECTS:
