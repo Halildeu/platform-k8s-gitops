@@ -327,27 +327,28 @@ def test_repair_script_exact_readback_and_noop_contract():
     assert "permission-service roles read access" in text
     assert f'readonly WRITER_USER_ID="{WRITER_USER_ID}"' in text
     assert "permission-writer-id-mismatch" in text
+    assert 'identityBinding: "username+immutable-user-id"' in text
+    assert "permissionWriterEmailMutation: false" in text
+    assert "WRITER_EMAIL" not in text
+    assert "email-reconcile" not in text
 
 
-def test_writer_email_drift_is_reconciled_before_vault_write(tmp_path):
+def test_writer_email_is_preserved_while_credential_is_repaired(tmp_path):
     proc, result, vault_state, events, _ = _run_ambiguous_reset_scenario(
         tmp_path,
         "new-success",
         initial_email="drifted@example.invalid",
-        email_scenario="success",
+        email_scenario="rejected",
     )
 
     assert proc.returncode == 0, proc.stderr
     assert result["permissionWriter"]["exactIdentityMatch"] is True
-    assert result["permissionWriter"]["canonicalEmailReady"] is True
-    assert result["permissionWriter"]["emailReconciliationAttempted"] is True
-    assert result["permissionWriter"]["emailReconciliationSucceeded"] is True
+    assert result["permissionWriter"]["identityBinding"] == (
+        "username+immutable-user-id"
+    )
+    assert result["boundaries"]["permissionWriterEmailMutation"] is False
     assert vault_state["admin_persona_password"] == NEW_PASSWORD
-    assert events == [
-        "keycloak-email-reconcile",
-        "vault-put",
-        "keycloak-reset-ambiguous",
-    ]
+    assert events == ["vault-put", "keycloak-reset-ambiguous"]
 
 
 def test_writer_uid_mismatch_blocks_before_any_mutation(tmp_path):
@@ -366,99 +367,6 @@ def test_writer_uid_mismatch_blocks_before_any_mutation(tmp_path):
     assert events == []
 
 
-def test_ambiguous_email_update_continues_only_after_canonical_readback(tmp_path):
-    proc, result, vault_state, events, _ = _run_ambiguous_reset_scenario(
-        tmp_path,
-        "new-success",
-        initial_email="drifted@example.invalid",
-        email_scenario="ambiguous-success",
-    )
-
-    assert proc.returncode == 0, proc.stderr
-    assert result["permissionWriter"]["canonicalEmailReady"] is True
-    assert result["permissionWriter"]["emailReconciliationSucceeded"] is True
-    assert vault_state["admin_persona_password"] == NEW_PASSWORD
-    assert events == [
-        "keycloak-email-reconcile",
-        "vault-put",
-        "keycloak-reset-ambiguous",
-    ]
-
-
-def test_ambiguous_email_update_without_canonical_readback_blocks_vault(tmp_path):
-    proc, result, vault_state, events, original_vault = (
-        _run_ambiguous_reset_scenario(
-            tmp_path,
-            "new-success",
-            initial_email="drifted@example.invalid",
-            email_scenario="unchanged",
-        )
-    )
-
-    assert proc.returncode == 1
-    assert result["failureReason"] == (
-        "permission-writer-email-reconcile-state-unverified"
-    )
-    assert result["permissionWriter"]["canonicalEmailReady"] is False
-    assert vault_state == original_vault
-    assert events == ["keycloak-email-reconcile"]
-
-
-def test_rejected_email_update_blocks_vault_without_readback_trust(tmp_path):
-    proc, result, vault_state, events, original_vault = (
-        _run_ambiguous_reset_scenario(
-            tmp_path,
-            "new-success",
-            initial_email="drifted@example.invalid",
-            email_scenario="rejected",
-        )
-    )
-
-    assert proc.returncode == 1
-    assert result["failureReason"] == "permission-writer-email-reconcile-rejected"
-    assert result["permissionWriter"]["canonicalEmailReady"] is False
-    assert vault_state == original_vault
-    assert events == ["keycloak-email-reconcile"]
-
-
-def test_successful_email_update_with_stale_readback_blocks_vault(tmp_path):
-    proc, result, vault_state, events, original_vault = (
-        _run_ambiguous_reset_scenario(
-            tmp_path,
-            "new-success",
-            initial_email="drifted@example.invalid",
-            email_scenario="readback-mismatch",
-        )
-    )
-
-    assert proc.returncode == 1
-    assert result["failureReason"] == (
-        "permission-writer-email-reconcile-readback-mismatch"
-    )
-    assert result["permissionWriter"]["canonicalEmailReady"] is False
-    assert vault_state == original_vault
-    assert events == ["keycloak-email-reconcile"]
-
-
-def test_email_update_with_wrong_readback_uid_blocks_vault(tmp_path):
-    proc, result, vault_state, events, original_vault = (
-        _run_ambiguous_reset_scenario(
-            tmp_path,
-            "new-success",
-            initial_email="drifted@example.invalid",
-            email_scenario="readback-wrong-id",
-        )
-    )
-
-    assert proc.returncode == 1
-    assert result["failureReason"] == (
-        "permission-writer-email-reconcile-identity-drift"
-    )
-    assert result["permissionWriter"]["canonicalEmailReady"] is False
-    assert vault_state == original_vault
-    assert events == ["keycloak-email-reconcile"]
-
-
 @pytest.mark.parametrize(
     ("vault_scenario", "expected_reason"),
     [
@@ -466,7 +374,7 @@ def test_email_update_with_wrong_readback_uid_blocks_vault(tmp_path):
         ("read-failure", "vault-persona-preflight-read-failed"),
     ],
 )
-def test_vault_preflight_failure_blocks_before_email_mutation(
+def test_vault_preflight_failure_blocks_before_credential_mutation(
     tmp_path, vault_scenario, expected_reason
 ):
     proc, result, vault_state, events, original_vault = (
@@ -481,71 +389,13 @@ def test_vault_preflight_failure_blocks_before_email_mutation(
 
     assert proc.returncode == 1
     assert result["failureReason"] == expected_reason
-    assert result["permissionWriter"]["emailReconciliationAttempted"] is False
+    assert result["permissionWriter"]["exactIdentityMatch"] is True
+    assert result["boundaries"]["permissionWriterEmailMutation"] is False
     assert vault_state == original_vault
     assert (tmp_path / "keycloak-email-state").read_text(encoding="utf-8") == (
         "drifted@example.invalid"
     )
     assert events == []
-
-
-def test_email_update_transport_failure_without_readback_blocks_vault(tmp_path):
-    proc, result, vault_state, events, original_vault = (
-        _run_ambiguous_reset_scenario(
-            tmp_path,
-            "new-success",
-            initial_email="drifted@example.invalid",
-            email_scenario="transport-failure",
-        )
-    )
-
-    assert proc.returncode == 1
-    assert result["failureReason"] == (
-        "permission-writer-email-reconcile-state-unverified"
-    )
-    assert result["permissionWriter"]["canonicalEmailReady"] is False
-    assert vault_state == original_vault
-    assert events == ["keycloak-email-reconcile"]
-
-
-@pytest.mark.parametrize(
-    ("email_scenario", "expected_reason"),
-    [
-        (
-            "readback-http-failure",
-            "permission-writer-email-reconcile-readback-failed",
-        ),
-        (
-            "readback-transport-failure",
-            "permission-writer-email-reconcile-readback-failed",
-        ),
-        (
-            "readback-empty",
-            "permission-writer-email-reconcile-identity-drift",
-        ),
-        (
-            "readback-duplicate",
-            "permission-writer-email-reconcile-identity-drift",
-        ),
-    ],
-)
-def test_email_update_invalid_readback_blocks_vault(
-    tmp_path, email_scenario, expected_reason
-):
-    proc, result, vault_state, events, original_vault = (
-        _run_ambiguous_reset_scenario(
-            tmp_path,
-            "new-success",
-            initial_email="drifted@example.invalid",
-            email_scenario=email_scenario,
-        )
-    )
-
-    assert proc.returncode == 1
-    assert result["failureReason"] == expected_reason
-    assert result["permissionWriter"]["canonicalEmailReady"] is False
-    assert vault_state == original_vault
-    assert events == ["keycloak-email-reconcile"]
 
 
 def test_ambiguous_reset_continues_when_new_password_is_live(tmp_path):
@@ -600,3 +450,6 @@ def test_workflow_blocks_unredacted_summary_and_artifact():
     assert "vaultRollbackAttempted" in text
     assert "vaultRollbackSucceeded" in text
     assert "rolesReadReady" in text
+    assert 'faz24.permissionWriterCredentialRepair.v2' in redaction
+    assert ".boundaries.permissionWriterEmailMutation == false" in redaction
+    assert 'identityBinding == "username+immutable-user-id"' in redaction
