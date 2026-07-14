@@ -34,7 +34,7 @@ jobs:
           harness_revision="$(git rev-parse HEAD)"
           [[ "$harness_revision" == "$GITHUB_SHA" ]]
           git fetch --quiet --no-tags origin main
-          git merge-base --is-ancestor "$harness_revision" refs/remotes/origin/main
+          [[ "$harness_revision" == "$(git rev-parse refs/remotes/origin/main)" ]]
 
           test_root="$(mktemp -d \
             "${RUNNER_TEMP}/faz25-p5-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")"
@@ -225,6 +225,11 @@ jobs:
         run: |
           set -euo pipefail
           [[ -f "$BROWSER_REPORT" && -f "$LINEAGE_PRE" && -f "$LINEAGE_POST" ]]
+          git fetch --quiet --no-tags origin main
+          canonical_main_at_end=false
+          if [[ "$GITHUB_SHA" == "$(git rev-parse refs/remotes/origin/main)" ]]; then
+            canonical_main_at_end=true
+          fi
 
           node "$TEST_ROOT/validate-schema.cjs" \
             tests/smoke/faz25-p5-product-surface.schema.json "$BROWSER_REPORT"
@@ -303,6 +308,7 @@ jobs:
           manifest_verdict=FAIL
           artifact_kind=diagnostic
           if [[ "$browser_verdict" == "PASS" && "$CANONICAL_MAIN" == "true" && \
+                "$canonical_main_at_end" == "true" && \
                 "$pre_post_same" == "true" && "$fresh_within_run" == "true" && \
                 "$sensitive_scan_passed" == "true" ]]; then
             manifest_verdict=PASS
@@ -334,6 +340,7 @@ jobs:
             --arg ref "$GITHUB_REF" \
             --arg sha "$GITHUB_SHA" \
             --argjson canonical_main "$CANONICAL_MAIN" \
+            --argjson canonical_main_at_end "$canonical_main_at_end" \
             --argjson pre_post_same "$pre_post_same" \
             --argjson fresh_within_run "$fresh_within_run" \
             --argjson sensitive_scan_passed "$sensitive_scan_passed" \
@@ -357,6 +364,7 @@ jobs:
               },
               binding: {
                 canonicalMainAtStart: $canonical_main,
+                canonicalMainAtEnd: $canonical_main_at_end,
                 prePostSameSession: $pre_post_same,
                 freshWithinRun: $fresh_within_run,
                 strictChildSchemas: true,
@@ -512,7 +520,7 @@ jobs:
             echo ""
             if [[ -f "$MANIFEST" ]]; then
               echo "- verdict: \`$(jq -r '.verdict' "$MANIFEST")\`"
-              echo "- protected main binding: \`$(jq -r '.binding.canonicalMainAtStart' "$MANIFEST")\`"
+              echo "- protected main binding (start/end): \`$(jq -r '.binding.canonicalMainAtStart' "$MANIFEST")/$(jq -r '.binding.canonicalMainAtEnd' "$MANIFEST")\`"
               echo "- pre/post runtime binding: \`$(jq -r '.binding.prePostSameSession' "$MANIFEST")\`"
               echo "- strict child schemas: \`$(jq -r '.binding.strictChildSchemas' "$MANIFEST")\`"
               echo "- sensitive-value scan: \`$(jq -r '.binding.sensitiveValueScanPassed' "$MANIFEST")\`"

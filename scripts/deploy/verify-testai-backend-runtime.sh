@@ -54,6 +54,23 @@ assert_current_backend_map() {
     echo "FAIL: runtime backend map was superseded on main" >&2
     return 1
   }
+  git diff --quiet "$REVISION" "$latest_main" -- \
+    kustomize/overlays/test/kustomization.yaml \
+    docs/operations/services.yaml \
+    .github/workflows/deploy-backend-testai.yml \
+    .github/workflows/verify-testai-backend-rollout.yml \
+    argocd/applications/platform-test.yaml \
+    scripts/automation/backend-testai-digest-contract.py \
+    scripts/automation/sync-test-overlay.sh \
+    scripts/automation/apply-test-overlay-digests.py \
+    scripts/deploy/reconcile-testai-backend-sequential.sh \
+    scripts/deploy/ensure-argocd-cli.sh \
+    scripts/deploy/verify-testai-backend-runtime.sh \
+    scripts/deploy/verify-pod-digest.sh \
+    scripts/deploy/gate-stability-window.sh || {
+      echo "FAIL: runtime verifier contract was superseded on main" >&2
+      return 1
+    }
 }
 
 write_report() {

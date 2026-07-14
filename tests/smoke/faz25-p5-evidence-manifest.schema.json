@@ -45,6 +45,7 @@
       "additionalProperties": false,
       "required": [
         "canonicalMainAtStart",
+        "canonicalMainAtEnd",
         "prePostSameSession",
         "freshWithinRun",
         "strictChildSchemas",
@@ -52,6 +53,7 @@
       ],
       "properties": {
         "canonicalMainAtStart": { "type": "boolean" },
+        "canonicalMainAtEnd": { "type": "boolean" },
         "prePostSameSession": { "type": "boolean" },
         "freshWithinRun": { "type": "boolean" },
         "strictChildSchemas": { "type": "boolean" },
@@ -126,6 +128,7 @@
             "type": "object",
             "properties": {
               "canonicalMainAtStart": { "const": true },
+              "canonicalMainAtEnd": { "const": true },
               "prePostSameSession": { "const": true },
               "freshWithinRun": { "const": true },
               "strictChildSchemas": { "const": true },

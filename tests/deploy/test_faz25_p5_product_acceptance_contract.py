@@ -29,6 +29,11 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
 
     def test_workflow_is_main_only_and_uses_protected_environment_secrets(self):
         self.assertIn('[[ "$GITHUB_REF" == "refs/heads/main" ]]', self.workflow)
+        self.assertIn(
+            '[[ "$harness_revision" == "$(git rev-parse refs/remotes/origin/main)" ]]',
+            self.workflow,
+        )
+        self.assertIn('canonical_main_at_end=true', self.workflow)
         self.assertIn("environment: testai-product-acceptance", self.workflow)
         self.assertIn("secrets.P5_SMOKE_AUTH_USERNAME", self.workflow)
         self.assertIn("secrets.P5_SMOKE_AUTH_PASSWORD", self.workflow)
@@ -108,6 +113,7 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             set(binding["required"]),
             {
                 "canonicalMainAtStart",
+                "canonicalMainAtEnd",
                 "prePostSameSession",
                 "freshWithinRun",
                 "strictChildSchemas",

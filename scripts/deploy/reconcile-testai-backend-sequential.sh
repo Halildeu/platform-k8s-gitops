@@ -148,8 +148,25 @@ refresh_semantic_main_fence() {
     echo "FAIL: requested backend map was superseded on main" >&2
     return 1
   }
+  git diff --quiet "$REVISION" "$latest_main" -- \
+    kustomize/overlays/test/kustomization.yaml \
+    docs/operations/services.yaml \
+    .github/workflows/deploy-backend-testai.yml \
+    .github/workflows/verify-testai-backend-rollout.yml \
+    argocd/applications/platform-test.yaml \
+    scripts/automation/backend-testai-digest-contract.py \
+    scripts/automation/sync-test-overlay.sh \
+    scripts/automation/apply-test-overlay-digests.py \
+    scripts/deploy/reconcile-testai-backend-sequential.sh \
+    scripts/deploy/ensure-argocd-cli.sh \
+    scripts/deploy/verify-testai-backend-runtime.sh \
+    scripts/deploy/verify-pod-digest.sh \
+    scripts/deploy/gate-stability-window.sh || {
+      echo "FAIL: backend verifier contract was superseded on main" >&2
+      return 1
+    }
 
-  echo "NOTICE: adopting newer main revision with the same immutable backend map"
+  echo "NOTICE: adopting newer main revision with the same immutable backend map and verifier contract"
   REVISION="$latest_main"
   REVISION_ADVANCED=true
 }

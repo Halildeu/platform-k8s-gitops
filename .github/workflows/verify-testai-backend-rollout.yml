@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "kustomize/overlays/test/kustomization.yaml"
+      - "docs/operations/services.yaml"
       - "argocd/applications/platform-test.yaml"
       - ".github/workflows/deploy-backend-testai.yml"
       - ".github/workflows/verify-testai-backend-rollout.yml"
@@ -63,8 +64,26 @@ jobs:
             latest=$(python3 scripts/automation/backend-testai-digest-contract.py inspect \
               --kustomization "$latest_file")
             if [[ "$latest" == "$current" ]]; then
-              reconcile_revision="$latest_revision"
-              echo "::notice::newer main carries the same backend map; reconciling ${latest_revision}"
+              if git diff --quiet "$CURRENT_REVISION" "$latest_revision" -- \
+                kustomize/overlays/test/kustomization.yaml \
+                docs/operations/services.yaml \
+                .github/workflows/deploy-backend-testai.yml \
+                .github/workflows/verify-testai-backend-rollout.yml \
+                argocd/applications/platform-test.yaml \
+                scripts/automation/backend-testai-digest-contract.py \
+                scripts/automation/sync-test-overlay.sh \
+                scripts/automation/apply-test-overlay-digests.py \
+                scripts/deploy/reconcile-testai-backend-sequential.sh \
+                scripts/deploy/ensure-argocd-cli.sh \
+                scripts/deploy/verify-testai-backend-runtime.sh \
+                scripts/deploy/verify-pod-digest.sh \
+                scripts/deploy/gate-stability-window.sh; then
+                reconcile_revision="$latest_revision"
+                echo "::notice::newer main carries the same backend map and verifier contract; reconciling ${latest_revision}"
+              else
+                should_verify=false
+                echo "::notice::backend verifier contract superseded by ${latest_revision}; newer push owns verification"
+              fi
             else
               should_verify=false
               echo "::notice::backend map superseded by ${latest_revision}; newer push owns verification"
@@ -78,6 +97,8 @@ jobs:
                 --kustomization "$before_file")
               if [[ "$before" == "$current" ]]; then
                 if git diff --quiet "$BEFORE_SHA" "$CURRENT_REVISION" -- \
+                  kustomize/overlays/test/kustomization.yaml \
+                  docs/operations/services.yaml \
                   .github/workflows/deploy-backend-testai.yml \
                   .github/workflows/verify-testai-backend-rollout.yml \
                   argocd/applications/platform-test.yaml \
@@ -127,11 +148,13 @@ jobs:
         if: always() && steps.pin.outputs.should_verify == 'true'
         env:
           DIGEST_MAP: ${{ steps.pin.outputs.digest_map }}
+          RECONCILE_REVISION: ${{ steps.pin.outputs.reconcile_revision }}
           RECONCILE_REPORT: ${{ runner.temp }}/testai-backend-argocd-auto-sync.json
           RUNTIME_REPORT: ${{ runner.temp }}/testai-backend-runtime-verification.json
         run: |
           set -euo pipefail
           echo "artifact_kind=diagnostic" >> "$GITHUB_OUTPUT"
+          echo "artifact_revision=$RECONCILE_REVISION" >> "$GITHUB_OUTPUT"
           evidence_passed=false
           expected="$(printf '%s' "$DIGEST_MAP" \
             | python3 scripts/automation/backend-testai-digest-contract.py normalize)"
@@ -139,10 +162,10 @@ jobs:
           if [[ -s "$RECONCILE_REPORT" && -s "$RUNTIME_REPORT" ]] && \
             [[ "$(stat -c '%a' "$RECONCILE_REPORT")" == "600" ]] && \
             [[ "$(stat -c '%a' "$RUNTIME_REPORT")" == "600" ]] && \
-            jq -e --argjson expected "$expected" '
+            jq -e --arg requested "$RECONCILE_REVISION" --argjson expected "$expected" '
               .schemaVersion == "testai-backend-argocd-auto-sync-v4" and
               .verdict == "PASS" and
-              (.requestedRevision | test("^[0-9a-f]{40}$")) and
+              .requestedRevision == $requested and
               (.effectiveRevision | test("^[0-9a-f]{40}$")) and
               .observedRevision == .effectiveRevision and
               .syncStatus == "Synced" and
@@ -172,7 +195,9 @@ jobs:
               .expectedDigests == $expected
             ' "$RUNTIME_REPORT" >/dev/null; then
             evidence_passed=true
+            effective_revision="$(jq -r '.effectiveRevision' "$RECONCILE_REPORT")"
             echo "artifact_kind=acceptance" >> "$GITHUB_OUTPUT"
+            echo "artifact_revision=$effective_revision" >> "$GITHUB_OUTPUT"
           fi
           [[ "$evidence_passed" == "true" ]]
 
@@ -180,7 +205,7 @@ jobs:
         if: always() && steps.pin.outputs.should_verify == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: testai-backend-${{ steps.evidence_contract.outputs.artifact_kind }}-${{ steps.pin.outputs.reconcile_revision }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: testai-backend-${{ steps.evidence_contract.outputs.artifact_kind }}-${{ steps.evidence_contract.outputs.artifact_revision }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/testai-backend-argocd-auto-sync.json
             ${{ runner.temp }}/testai-backend-runtime-verification.json

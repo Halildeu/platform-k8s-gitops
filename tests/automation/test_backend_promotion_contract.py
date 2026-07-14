@@ -93,6 +93,31 @@ class BackendPromotionContractTests(unittest.TestCase):
         self.assertNotIn("app diff", self.reconcile)
         self.assertIn("refresh_semantic_main_fence", self.reconcile)
         self.assertIn('latest_map" == "$NORMALIZED_DIGEST_MAP', self.reconcile)
+        self.assertIn("backend verifier contract was superseded on main", self.reconcile)
+        self.assertIn(
+            'git diff --quiet "$REVISION" "$latest_main" --',
+            self.reconcile,
+        )
+        self.assertIn(
+            'git diff --quiet "$CURRENT_REVISION" "$latest_revision" --',
+            self.verify,
+        )
+        self.assertIn(
+            "backend verifier contract superseded by ${latest_revision}",
+            self.verify,
+        )
+        self.assertEqual(3, self.verify.count("docs/operations/services.yaml"))
+        self.assertEqual(1, self.reconcile.count("docs/operations/services.yaml"))
+        self.assertIn(
+            "kustomize/overlays/test/kustomization.yaml \\\n"
+            "                docs/operations/services.yaml",
+            self.verify,
+        )
+        self.assertIn(
+            "kustomize/overlays/test/kustomization.yaml \\\n"
+            "    docs/operations/services.yaml",
+            self.reconcile,
+        )
         self.assertIn("effectiveRevision", self.reconcile)
         self.assertNotIn("was superseded by main", self.reconcile)
         self.assertIn("verify-testai-backend-runtime.sh", self.verify)
@@ -111,9 +136,21 @@ class BackendPromotionContractTests(unittest.TestCase):
         self.assertNotIn('-H "Authorization: Bearer ${token}"', self.runtime)
         self.assertIn("MAP_FENCE_BEFORE_PASSED=true", self.runtime)
         self.assertIn("MAP_FENCE_AFTER_PASSED=true", self.runtime)
+        self.assertIn(
+            'git diff --quiet "$REVISION" "$latest_main" --',
+            self.runtime,
+        )
+        self.assertIn("runtime verifier contract was superseded on main", self.runtime)
+        self.assertEqual(2, self.runtime.count("docs/operations/services.yaml"))
         self.assertIn("finalize_report", self.runtime)
         self.assertIn("if-no-files-found: error", self.verify)
         self.assertIn("Validate terminal backend evidence contract", self.verify)
+        self.assertIn('.requestedRevision == $requested', self.verify)
+        self.assertIn('artifact_revision=$effective_revision', self.verify)
+        self.assertIn(
+            'steps.evidence_contract.outputs.artifact_revision',
+            self.verify,
+        )
 
     def test_p5_token_form_preserves_exact_password_without_trailing_newline(self):
         source_start = self.runtime.index("import os\nimport sys\nimport urllib.parse\n")
