@@ -4171,9 +4171,9 @@ images:
     #
     # Machine-managed current pin. Historical provenance remains above; future
     # automation rewrites only these fields and records evidence in its PR.
-    # sourceRevision: b01255aa6abf4a2c6e90310a8d6e9c2287b0a3b8
-    newTag: sha-b01255a
-    digest: sha256:7283b23c2b5e88e66f56d427f1cd5eb07c30a57df739ab8b1503a3412a9b7f40
+    # sourceRevision: 7c8cef6547d4408cc705f9c6afae49b67ed80d1a
+    newTag: sha-7c8cef6
+    digest: sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
