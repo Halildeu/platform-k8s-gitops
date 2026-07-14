@@ -1,5 +1,92 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 post-completion v0.3.12 evidence refresh (2026-07-14)
+
+This delta supersedes only the `v0.3.11` release/runtime values in the
+same-day Faz 22.6 delta below. It does not rerun, replace or reopen the accepted
+Faz 22.6 engineering completion contract. The separate viewer-product and legal
+tracks remain visible under
+[#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373) and
+[#2374](https://github.com/Halildeu/platform-k8s-gitops/issues/2374).
+
+Immutable release and desired state:
+
+- `platform-agent` source commit
+  `6f69436b894949310cc228250ade32cf1357db73` produced immutable release
+  `v0.3.12` in workflow run
+  [29361708927](https://github.com/Halildeu/platform-agent/actions/runs/29361708927).
+  The signed `endpoint-agent.exe` SHA-256 is
+  `4421383b58d3afacf30b7f66187e52e1e248d2bb6106c32eaebfd9169a9f4f11`;
+  the artifact-host image digest is
+  `sha256:151b16a8081baa2e4944f024753edbd071094a668bd910a1c2bbcfa6165ee518`.
+- GitOps PR [#2413](https://github.com/Halildeu/platform-k8s-gitops/pull/2413)
+  merged the `v0.3.12` artifact-host pin and endpoint-admin image
+  `sha256:45b4b4f24a2429a564d0a2607915b570128db0e98d430a109a6de6bbe788c48c`
+  as `aee8f4222f81547967c87726b3122e6ca0dab6e5`.
+- Release-lineage run
+  [29365945419](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29365945419)
+  passed immutable release, release/previous-release/workflow/agent/ZIP/signing
+  parity and live artifact-host digest checks.
+
+Selected release-lineage fields:
+
+```text
+GITHUB_RELEASE_IMMUTABLE=pass tag=v0.3.12
+MANIFEST_WORKFLOW_RUN_PARITY=pass workflow_run_id=29361708927
+MANIFEST_AGENT_SHA_PARITY=pass sha256=4421383b58d3afacf30b7f66187e52e1e248d2bb6106c32eaebfd9169a9f4f11
+MANIFEST_ZIP_SHA_PARITY=pass sha256=4d0951f207685e1c89f20cc0c9cb1b43441ff6be00157e9435aaa244eb23db46
+MANIFEST_SIGNING_PARITY=pass thumbprint=D68F4F530137EB65CE44E3405E82B46205E753E5 tier=trusted-internal-ca
+ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl expected_digest=sha256:151b16a8081baa2e4944f024753edbd071094a668bd910a1c2bbcfa6165ee518 digest_hits=2
+RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene
+F22_6_RELEASE_LINEAGE=pass
+```
+
+Live runtime and drift acceptance:
+
+- A duplicate ArgoCD owner on
+  `platform-test/notification-orchestrator-secrets` initially blocked the
+  backend verifier. PR
+  [#2416](https://github.com/Halildeu/platform-k8s-gitops/pull/2416)
+  removed the workload-overlay duplicate, retained the ESO application as the
+  single owner and added a rendered single-owner CI verifier. Issue
+  [#2415](https://github.com/Halildeu/platform-k8s-gitops/issues/2415) is closed
+  with live acceptance evidence; this was a permanent desired-state fix, not
+  a drift ignore or direct cluster patch.
+- Current-main verifier run
+  [29367148688](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29367148688)
+  observed exact revision `4c56444ad7cc855c784dcd6a5b8352c29c24f9a5`,
+  ArgoCD `Synced/Healthy`, `outOfSyncResources=[]`, all 13 expected immutable
+  backend image digests, public-edge/readiness checks and the full stability
+  windows. Artifact `8325269846` contains
+  `testai-backend-argocd-auto-sync.json` and
+  `testai-backend-runtime-verification.json`; both reports returned
+  `verdict=PASS` and `verifierMutationPerformed=false`.
+- The backend runtime verifier's optional authenticated HTTP sub-gate was
+  `authGate=skipped-no-credentials`; it is not represented as a pass. This is
+  an orthogonal backend-promotion field, not an input to the separately named
+  `Faz 22.6 Live Audit` completion contract.
+
+Closure boundary:
+
+- The latest completed run of the specifically named `Faz 22.6 Live Audit`
+  workflow remains
+  [29318734855](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29318734855):
+  `GATE_B1_4_HARDWARE_ATTESTATION=pass`,
+  `GATE_VIEW_ONLY_ENGINEERING=pass`, `REMOTE_BRIDGE_LIVE=pass`,
+  `F22_6_RELEASE_LINEAGE=pass` and `F22_6_COMPLETION=pass`.
+  The later, narrower lineage and backend-runtime runs above do not emit a new
+  completion decision and therefore do not replace that result.
+- `#2373` is a post-completion viewer-delivery/product-acceptance follow-up;
+  source merge or endpoint preparation is not runtime acceptance.
+- `#2374` remains a distinct human legal/privacy track. The canonical approver
+  policy is absent and the issue has zero signed acceptance markers. An agent
+  cannot choose the legal basis or retention, provide two distinct human
+  signatures, or convert that absence into a pass.
+- Project #2 custom fields remain stale/pending while GitHub GraphQL rate
+  limiting prevents authoritative board mutation. The linked REST issue/PR and
+  workflow evidence is current, but it is not represented as synchronized
+  Project-field truth.
+
 ## Live Delta — Faz 22.6 signed KVKK lineage live; legal decision remains pending (#2374, 2026-07-14)
 
 This delta supersedes the older Faz 22.6 snapshot's
