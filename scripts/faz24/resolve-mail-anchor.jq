@@ -1,22 +1,30 @@
 def validated_internal_senders($expected_subject):
   if (."@odata.nextLink" // "") != "" then
     error("mail-anchor-page-incomplete")
-  elif (.value | type) != "array" or (.value | length) == 0 then
+  elif (.value | type) != "array" then
     error("mail-anchor-evidence-empty")
-  elif any(.value[]?;
-    (.subject // "") != $expected_subject
-    or ((.from.emailAddress.address // "") | length) == 0
-    or (((.from.emailAddress.address // "") | type) != "string")
-    or (((.from.emailAddress.address // "") | test("^[^@[:space:]]+@[^@[:space:]]+$")) | not)
-  ) then
-    error("mail-anchor-evidence-invalid")
   else
     [
       .value[]?
-      | (.from.emailAddress.address // "" | ascii_downcase)
-      | select(endswith("@acik.com"))
-    ]
-    | unique
+      | select((.subject // "") == $expected_subject)
+    ] as $exact_rows
+    | if ($exact_rows | length) == 0 then
+        error("mail-anchor-evidence-empty")
+      elif any($exact_rows[];
+        (.from.emailAddress.address // null) as $address
+        | ($address | type) != "string"
+        or ($address | length) == 0
+        or (($address | test("^[^@[:space:]]+@[^@[:space:]]+$")) | not)
+      ) then
+        error("mail-anchor-evidence-invalid")
+      else
+        [
+          $exact_rows[]
+          | (.from.emailAddress.address // "" | ascii_downcase)
+          | select(endswith("@acik.com"))
+        ]
+        | unique
+      end
   end;
 
 ($primary[0] | validated_internal_senders($primary_subject)) as $primary_senders

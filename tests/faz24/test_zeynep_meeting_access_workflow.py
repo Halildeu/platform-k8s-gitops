@@ -95,6 +95,31 @@ def test_mail_anchor_requires_one_shared_internal_sender(tmp_path):
     assert proc.stdout.strip() == "person@acik.com"
 
 
+def test_mail_anchor_ignores_graph_case_insensitive_subject_superset(tmp_path):
+    primary = _mail_response(PRIMARY_SUBJECT, "PERSON@ACIK.COM")
+    primary["value"].extend(
+        [
+            {
+                "subject": "faz 24",
+                "from": {"emailAddress": {"address": "other@acik.com"}},
+            },
+            {
+                "subject": "Faz 24",
+                "from": {"emailAddress": {}},
+            },
+        ]
+    )
+
+    proc = _resolve_mail_anchor(
+        tmp_path,
+        primary,
+        _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "person@acik.com"
+
+
 @pytest.mark.parametrize(
     ("primary", "corroborating"),
     [
@@ -147,6 +172,17 @@ def test_mail_anchor_requires_one_shared_internal_sender(tmp_path):
         ),
         (
             _mail_response(PRIMARY_SUBJECT, "person@acik.com", "not-an-email"),
+            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        ),
+        (
+            {
+                "value": [
+                    {
+                        "subject": PRIMARY_SUBJECT,
+                        "from": {"emailAddress": {"address": 24}},
+                    }
+                ]
+            },
             _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
         ),
         (
