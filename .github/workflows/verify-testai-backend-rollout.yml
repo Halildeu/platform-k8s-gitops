@@ -180,7 +180,7 @@ jobs:
               keys == [
                 "authGate", "expectedDigests", "failedOrLastGate",
                 "mapFenceAfterPassed", "mapFenceBeforePassed", "publicEntry",
-                "schemaVersion", "verificationMode", "verdict",
+                "schemaVersion", "verdict", "verificationMode",
                 "verifierMutationPerformed"
               ] and
               .schemaVersion == "testai-backend-runtime-verification-v1" and
