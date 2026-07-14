@@ -150,15 +150,13 @@ write_bearer_config() {
 read_vault_path() {
   local path="$1"
   local output="$2"
+  local vault_container="$3"
+  local init_file="$4"
   local root_token
-  root_token="$(jq -r '.root_token // empty' /home/halil/bootstrap-drill/vault-init-prod.json 2>/dev/null || true)"
-  if [[ -z "${root_token}" ]]; then
-    root_token="$(jq -r '.root_token // empty' /home/halil/bootstrap-drill/vault-init.json 2>/dev/null || true)"
-  fi
+  root_token="$(jq -r '.root_token // empty' "${init_file}" 2>/dev/null || true)"
   [[ -n "${root_token}" ]] || return 1
+  docker inspect "${vault_container}" >/dev/null 2>&1 || return 1
 
-  local vault_container="platform-vault"
-  docker inspect platform-vault-prod >/dev/null 2>&1 && vault_container="platform-vault-prod"
   printf '%s\n' "${root_token}" | docker exec -i "${vault_container}" sh -c '
     IFS= read -r VAULT_TOKEN
     export VAULT_TOKEN
@@ -169,8 +167,18 @@ read_vault_path() {
 
 GRAPH_VAULT_JSON="${TMP_DIR}/graph-vault.json"
 PERSONA_VAULT_JSON="${TMP_DIR}/persona-vault.json"
-read_vault_path "${VAULT_GRAPH_PATH}" "${GRAPH_VAULT_JSON}" || die "graph-vault-read-failed"
-read_vault_path "${VAULT_PERSONA_PATH}" "${PERSONA_VAULT_JSON}" || die "persona-vault-read-failed"
+read_vault_path \
+  "${VAULT_GRAPH_PATH}" \
+  "${GRAPH_VAULT_JSON}" \
+  "platform-vault-prod" \
+  "/home/halil/bootstrap-drill/vault-init-prod.json" \
+  || die "graph-prod-vault-read-failed"
+read_vault_path \
+  "${VAULT_PERSONA_PATH}" \
+  "${PERSONA_VAULT_JSON}" \
+  "platform-vault-test" \
+  "/home/halil/bootstrap-drill/vault-init-test.json" \
+  || die "persona-test-vault-read-failed"
 
 GRAPH_CLIENT_ID="$(jq -r '.data.data.graph_client_id // .data.data.client_id // empty' "${GRAPH_VAULT_JSON}")"
 GRAPH_CLIENT_SECRET="$(jq -r '.data.data.graph_client_secret // .data.data.client_secret // empty' "${GRAPH_VAULT_JSON}")"
