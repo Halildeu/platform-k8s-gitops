@@ -48,6 +48,7 @@ def runtime_archive(mismatch=False):
         "snapshots/metrics-before.prom": b"remote_access_bridge_viewer_started_total 0.0\n",
         "snapshots/metrics-after.prom": b"remote_access_bridge_viewer_started_total 1.0\n",
         "snapshots/frame-flow-summary.json": b'{"schemaVersion":"faz22.6-viewer-frame-flow-raw-v1"}\n',
+        "snapshots/audit-summary.json": b'{"schemaVersion":"faz22.6-viewer-audit-raw-v1"}\n',
     }
     files["SHA256SUMS"] = "".join(
         f"{hashlib.sha256(raw).hexdigest()}  {name}\n" for name, raw in sorted(files.items())

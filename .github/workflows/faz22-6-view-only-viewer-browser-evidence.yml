@@ -242,18 +242,18 @@ jobs:
           set -euo pipefail
           snapshot_dir="$RUNNER_TEMP/faz22-viewer-runtime-snapshots/snapshots"
           mkdir -p "$snapshot_dir"
-          for name in metrics-before.prom metrics-after.prom d30-snapshot.json frame-flow-summary.json; do
+          for name in metrics-before.prom metrics-after.prom d30-snapshot.json frame-flow-summary.json audit-summary.json; do
             test -s "$EVIDENCE_DIR/$name"
             install -m 0600 "$EVIDENCE_DIR/$name" "$snapshot_dir/$name"
           done
           (
             cd "$(dirname "$snapshot_dir")"
             sha256sum snapshots/d30-snapshot.json snapshots/frame-flow-summary.json \
-              snapshots/metrics-after.prom snapshots/metrics-before.prom \
+              snapshots/audit-summary.json snapshots/metrics-after.prom snapshots/metrics-before.prom \
               > SHA256SUMS
             sha256sum -c SHA256SUMS
           )
-          test "$(find "$(dirname "$snapshot_dir")" -type f | wc -l | tr -d ' ')" = "5"
+          test "$(find "$(dirname "$snapshot_dir")" -type f | wc -l | tr -d ' ')" = "6"
           if grep -Eiq 'Bearer |data:image/|BEGIN .*PRIVATE KEY|viewer-sse|sessionId|deviceId|operatorId' \
               "${snapshot_dir}"/*; then
             echo "::error::runtime snapshot allowlist contains forbidden raw content"

@@ -293,6 +293,7 @@ async function main() {
         pilotEndedAt: utcSeconds(endedAt),
         imageElementRendered: true,
         pixelCheckPassed: true,
+        inputChannelControlCount: interactive,
         dlpMaskRectBps: maskRect.raw,
         dlpMaskPixelCheckPassed: true,
         activeIndicatorPixelCheckPassed: true,
