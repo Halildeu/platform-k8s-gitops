@@ -1392,7 +1392,14 @@ images:
     # ("Toplantı") + TRANSCRIPT ("Transkript") VIEW/MANAGE + ADMIN MANAGE granule seed
     # 2026-06-23 #736 Slice-2b: distrust foreign userId claim + /authz/me
     # fail-closed (sha-45293e5). Prior: sha256:4383d25f (Codex 019ed603 writer-path).
-    digest: sha256:6795f96a72b401ca8bef7a3e0933bd6c0781b3caea9b439abef29c91ed18dd78
+    # 2026-07-14 update: sha-c87ec88 (platform-backend PR #834, merge
+    # c87ec88264e608a1f1c8a80933666070eacba79a) adds the exact
+    # INTERVIEW_EVIDENCE VIEW/MANAGE catalog contract for Faz 25 P5. The module
+    # remains explicit-grant-only: neither runtime ADMIN compatibility expansion
+    # nor PermissionDataInitializer ADMIN seeding grants it implicitly. Image
+    # build run 29354279680; permission-service job 87157899597 succeeded.
+    # Pinnable: ghcr.io/halildeu/platform-backend-permission-service@sha256:7e66b85a6158dd4bb9a9bfcdcaf6761b89f552788a34bd97ebc2d605234b0ec3
+    digest: sha256:7e66b85a6158dd4bb9a9bfcdcaf6761b89f552788a34bd97ebc2d605234b0ec3
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
