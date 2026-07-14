@@ -25,7 +25,9 @@ source "${SCRIPT_DIR}/lib-view-only-frame-flow.sh"
 K8S_CONTEXT="${K8S_CONTEXT:-k3d-test}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-platform-test}"
 REMOTE_BRIDGE_DEPLOYMENT="${REMOTE_BRIDGE_DEPLOYMENT:-endpoint-admin-remote-bridge}"
+FRONTEND_DEPLOYMENT="${FRONTEND_DEPLOYMENT:-frontend}"
 REMOTE_BRIDGE_LOCAL_PORT="${REMOTE_BRIDGE_LOCAL_PORT:-18096}"
+REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT="${REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT:-18097}"
 EXPECTED_DIGEST="${EXPECTED_DIGEST:-}"
 
 DEVICE_ID="${DEVICE_ID:-423b6fc3-7497-4083-bd2f-5e2fe543bfe9}"
@@ -93,6 +95,7 @@ VIEWER_PATH_DECISION="${VIEWER_PATH_DECISION:-owner-deferred}"
 
 TMP_DIR="$(mktemp -d)"
 PORT_FORWARD_PID=""
+MANAGEMENT_PORT_FORWARD_PID=""
 SUMMARY_FILE="${EVIDENCE_DIR}/summary.json"
 OPERATOR_TOKEN_FILE="${TMP_DIR}/operator.jwt"
 APPROVER_TOKEN_FILE="${TMP_DIR}/approver.jwt"
@@ -172,8 +175,17 @@ fail_smoke() {
 cleanup() {
   set +e
   stop_port_forward
+  stop_management_port_forward
   restore_remote_bridge_runtime_env_override >/dev/null 2>&1 || true
   rm -rf "$TMP_DIR"
+}
+
+stop_management_port_forward() {
+  if [[ -n "$MANAGEMENT_PORT_FORWARD_PID" ]]; then
+    kill "$MANAGEMENT_PORT_FORWARD_PID" >/dev/null 2>&1 || true
+    wait "$MANAGEMENT_PORT_FORWARD_PID" >/dev/null 2>&1 || true
+    MANAGEMENT_PORT_FORWARD_PID=""
+  fi
 }
 trap cleanup EXIT
 
@@ -513,6 +525,67 @@ start_port_forward() {
   fail_smoke "operator-rest-port-forward-timeout"
 }
 
+start_management_port_forward() {
+  stop_management_port_forward
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    port-forward "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" "${REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT}:8081" \
+    > "${EVIDENCE_DIR}/management-port-forward.log" 2>&1 &
+  MANAGEMENT_PORT_FORWARD_PID="$!"
+  for _ in $(seq 1 40); do
+    if ! kill -0 "$MANAGEMENT_PORT_FORWARD_PID" >/dev/null 2>&1; then
+      fail_smoke "management-port-forward-exited"
+    fi
+    if curl -fsS --max-time 2 \
+        "http://127.0.0.1:${REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT}/actuator/prometheus" \
+        -o /dev/null; then
+      return
+    fi
+    sleep 1
+  done
+  fail_smoke "management-port-forward-timeout"
+}
+
+capture_viewer_metrics() {
+  local phase="$1" raw="${TMP_DIR}/metrics-${phase}.raw.prom"
+  case "$phase" in before|after) ;; *) fail_smoke "metrics-phase-invalid" ;; esac
+  curl -fsS --max-time 10 \
+    "http://127.0.0.1:${REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT}/actuator/prometheus" \
+    -o "$raw" || fail_smoke "metrics-${phase}-query-failed"
+  grep -E '^remote_access_bridge_(data_frames_total|view_only_fanout_frames_total|viewer_started_total|viewer_ended_total|viewer_frames_sent_total|viewer_render_ack_accepted_total|viewer_render_ack_rejected_total)(\{|[[:space:]])' \
+    "$raw" | LC_ALL=C sort > "${EVIDENCE_DIR}/metrics-${phase}.prom"
+  [[ -s "${EVIDENCE_DIR}/metrics-${phase}.prom" ]] || fail_smoke "metrics-${phase}-empty"
+}
+
+capture_d30_snapshot() {
+  local output="${EVIDENCE_DIR}/d30-snapshot.json" component deployment desired live
+  jq -n --arg capturedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{schemaVersion:"faz22.6-viewer-d30-raw-v1",capturedAt:$capturedAt,images:[]}' > "$output"
+  for component in backend web; do
+    case "$component" in
+      backend) deployment="$REMOTE_BRIDGE_DEPLOYMENT" ;;
+      web) deployment="$FRONTEND_DEPLOYMENT" ;;
+    esac
+    desired="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$deployment" \
+      -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    live="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get pods \
+      -l "app.kubernetes.io/name=${deployment}" -o json \
+      | jq -r '[.items[] | select(.metadata.deletionTimestamp == null)
+        | .status.containerStatuses[0].imageID] | unique
+        | if length == 1 then .[0] else empty end')"
+    printf '%s' "$desired" | grep -Eq '@sha256:[a-f0-9]{64}$' \
+      || fail_smoke "d30-${component}-desired-digest-missing"
+    printf '%s' "$live" | grep -Eq '@sha256:[a-f0-9]{64}$' \
+      || fail_smoke "d30-${component}-live-imageid-digest-missing-or-nonunique"
+    [[ "${desired##*@}" == "${live##*@}" ]] || fail_smoke "d30-${component}-digest-mismatch"
+    jq --arg component "$component" --arg deployment "$deployment" \
+      --arg desiredImage "$desired" --arg liveImageId "$live" \
+      '.images += [{component:$component,deployment:$deployment,
+        desiredImage:$desiredImage,liveImageId:$liveImageId}]' \
+      "$output" > "${output}.tmp"
+    mv "${output}.tmp" "$output"
+  done
+}
+
 capture_remote_bridge_runtime_env() {
   [[ -s "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE" ]] && return
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" -o json \
@@ -723,10 +796,19 @@ collect_endpoint_log() {
 }
 
 collect_broker_logs() {
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" logs "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --tail=2000 \
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" logs "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --tail=12000 \
     > "${EVIDENCE_DIR}/remote-bridge-logs-tail.txt" 2>"${EVIDENCE_DIR}/remote-bridge-logs-tail.stderr" || true
   grep -F "$SESSION_ID" "${EVIDENCE_DIR}/remote-bridge-logs-tail.txt" \
     > "${EVIDENCE_DIR}/broker-relevant.log" 2>/dev/null || true
+}
+
+build_frame_flow_summary() {
+  SESSION_ID="$SESSION_ID" python3 \
+    "${SCRIPT_DIR}/build-view-only-viewer-frame-flow-summary.py" \
+    --broker-log "${EVIDENCE_DIR}/broker-relevant.log" \
+    --browser-evidence "${EVIDENCE_DIR}/browser.json" \
+    --output "${EVIDENCE_DIR}/frame-flow-summary.json" \
+    || fail_smoke "frame-flow-summary-invalid"
 }
 
 wait_for_consent() {
@@ -792,6 +874,7 @@ run_browser_evidence() {
   OPERATOR_TOKEN_FILE="$OPERATOR_TOKEN_FILE" \
   EVIDENCE_OUTPUT="${EVIDENCE_DIR}/browser.json" \
   SOURCE_REVISION="$SOURCE_REVISION" \
+  DLP_MASK_RECT_BPS="${DLP_MASK_RECT_BPS:-}" \
   PILOT_SECONDS="$PRODUCT_PILOT_SECONDS" \
   PLAYWRIGHT_PACKAGE_ROOT="$PLAYWRIGHT_PACKAGE_ROOT" \
     node "$BROWSER_EVIDENCE_SCRIPT" \
@@ -1001,6 +1084,7 @@ main() {
   export_step_up_public_key
   find_matching_step_up_private_key_or_generate
   start_port_forward
+  start_management_port_forward
 
   local operator_base approval_base body catalog_code catalog_rc
   operator_base="http://127.0.0.1:${REMOTE_BRIDGE_LOCAL_PORT}/internal/remote-bridge/operator"
@@ -1076,6 +1160,8 @@ main() {
   jq -e --arg signal "$DURESS_SIGNAL_FOR_OPERATION" '.signal == $signal and .terminal == false' "${EVIDENCE_DIR}/duress-signal.body" >/dev/null \
     || fail_smoke "duress-signal-not-recorded"
 
+  capture_d30_snapshot
+  capture_viewer_metrics before
   body="$(jq -nc --arg op "$OPERATION_ID" '{operationId:$op, operation:"SCREEN_VIEW", commandLine:null}')"
   operation_code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/operations" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/operation.body" "$body")"
   assert_http "$operation_code" 200 "screen-view operation" "${EVIDENCE_DIR}/operation.body"
@@ -1084,9 +1170,11 @@ main() {
   transport_pushed="true"
 
   run_browser_evidence
+  capture_viewer_metrics after
   sleep "$FRAME_WAIT_SECONDS"
   probe_viewer "$operator_base"
   collect_broker_logs
+  build_frame_flow_summary
   collect_endpoint_log || fail_smoke "endpoint-agent-consent-log-missing"
   grep -F "session=\"$SESSION_ID\"" "${EVIDENCE_DIR}/endpoint-agent-relevant.log" | grep -F "granted=true" >/dev/null \
     || fail_smoke "endpoint-agent-consent-not-granted"

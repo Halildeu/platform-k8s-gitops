@@ -25,6 +25,11 @@ on:
         default: "300"
         type: choice
         options: ["300", "600", "900", "1200", "1800"]
+      mask_rect_bps:
+        description: "Expected endpoint DLP mask x,y,width,height in primary-monitor basis points"
+        required: true
+        default: "7500,7500,2500,2500"
+        type: string
 
 permissions:
   contents: read
@@ -49,6 +54,7 @@ jobs:
           DEVICE_ID: ${{ inputs.device_id }}
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
           PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
         run: |
           set -euo pipefail
           [ "$CONFIRM" = "RUN_FAZ22_6_VIEW_ONLY_VIEWER_BROWSER_EVIDENCE" ] || {
@@ -68,6 +74,10 @@ jobs:
             exit 2
           }
           case "$PILOT_SECONDS" in 300|600|900|1200|1800) ;; *) exit 2 ;; esac
+          printf '%s' "$MASK_RECT_BPS" | grep -Eq '^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$' || {
+            echo "::error::mask_rect_bps must be canonical x,y,width,height"
+            exit 2
+          }
 
       - name: Checkout evidence producer revision
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -187,6 +197,7 @@ jobs:
           DENETIM_SSH_TARGET: svc-denetim-agent@10.99.0.2
           EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-browser-collector
           AUTO_FINALIZE: "0"
+          DLP_MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
@@ -224,11 +235,42 @@ jobs:
           include-hidden-files: false
           retention-days: 30
 
-      - name: Upload short-lived redacted collector evidence
+      - name: Stage allowlisted runtime snapshots
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-browser-collector
+        run: |
+          set -euo pipefail
+          snapshot_dir="$RUNNER_TEMP/faz22-viewer-runtime-snapshots/snapshots"
+          mkdir -p "$snapshot_dir"
+          for name in metrics-before.prom metrics-after.prom d30-snapshot.json frame-flow-summary.json; do
+            test -s "$EVIDENCE_DIR/$name"
+            install -m 0600 "$EVIDENCE_DIR/$name" "$snapshot_dir/$name"
+          done
+          (
+            cd "$(dirname "$snapshot_dir")"
+            sha256sum snapshots/d30-snapshot.json snapshots/frame-flow-summary.json \
+              snapshots/metrics-after.prom snapshots/metrics-before.prom \
+              > SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
+          test "$(find "$(dirname "$snapshot_dir")" -type f | wc -l | tr -d ' ')" = "5"
+          if grep -Eiq 'Bearer |data:image/|BEGIN .*PRIVATE KEY|viewer-sse|sessionId|deviceId|operatorId' \
+              "${snapshot_dir}"/*; then
+            echo "::error::runtime snapshot allowlist contains forbidden raw content"
+            exit 1
+          fi
+
+      - name: Upload allowlisted runtime snapshots
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: faz22-6-view-only-viewer-browser-collector-${{ github.run_id }}
-          path: ${{ runner.temp }}/faz22-viewer-browser-collector/
+          name: faz22-6-view-only-viewer-runtime-snapshots-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-viewer-runtime-snapshots/
           if-no-files-found: error
           include-hidden-files: false
           retention-days: 2
+
+      # The collector directory contains the transient SSE response body used by
+      # the attended harness. It is intentionally never uploaded: even a short
+      # retention period would persist raw screen frames outside the product's
+      # recording-off boundary. Only the strict browser child above may leave
+      # the self-hosted runner.

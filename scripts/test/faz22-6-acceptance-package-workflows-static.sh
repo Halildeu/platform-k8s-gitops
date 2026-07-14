@@ -12,6 +12,12 @@ VIEWER_PRODUCT_ASSEMBLER="$ROOT/scripts/faz22-remote-ops/assemble-view-only-view
 VIEWER_PRODUCT_VERIFY_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence-verify.yml"
 VIEWER_PRODUCT_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence.yml"
 VIEWER_BROWSER_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
+VIEWER_OPERATOR_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-operator-evidence.yml"
+VIEWER_OPERATOR_PRODUCER="$ROOT/scripts/faz22-remote-ops/produce-view-only-viewer-operator-evidence.py"
+VIEWER_D30_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-d30-evidence.yml"
+VIEWER_D30_PRODUCER="$ROOT/scripts/faz22-remote-ops/produce-view-only-viewer-d30-evidence.py"
+VIEWER_SOURCE_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_viewer_source_common.py"
+VIEWER_FRAME_FLOW_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-frame-flow-summary.py"
 VIEWER_PRODUCT_ROOT_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
 VIEWER_PRODUCT_CHILD_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
 VIEWER_APPLY_WORKFLOW="$ROOT/.github/workflows/apply-view-only-viewer-pilot-enable.yml"
@@ -48,13 +54,16 @@ require_grep() {
 for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER" \
   "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_PRODUCT_VERIFY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" "$VIEWER_BROWSER_WORKFLOW" \
+  "$VIEWER_OPERATOR_WORKFLOW" "$VIEWER_OPERATOR_PRODUCER" \
+  "$VIEWER_D30_WORKFLOW" "$VIEWER_D30_PRODUCER" "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER" \
   "$VIEWER_PRODUCT_ROOT_SCHEMA" "$VIEWER_PRODUCT_CHILD_SCHEMA" \
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_WATCHDOG"; do
   require_file "$path"
 done
 
 bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER"
-python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER"
+python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
+  "$VIEWER_OPERATOR_PRODUCER" "$VIEWER_D30_PRODUCER" "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER"
 jq -e '.additionalProperties == false' "$VIEWER_PRODUCT_ROOT_SCHEMA" >/dev/null
 jq -e '.additionalProperties == false and (.allOf | length) == 7' "$VIEWER_PRODUCT_CHILD_SCHEMA" >/dev/null
 
@@ -98,6 +107,24 @@ require_grep "name: faz22-view-only-pilot" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "activation_run_id" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "protected-authorization.json" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6" "$VIEWER_BROWSER_WORKFLOW"
+if grep -Fq 'faz22-6-view-only-viewer-browser-collector-' "$VIEWER_BROWSER_WORKFLOW" \
+  || grep -Eq 'path:.*faz22-viewer-browser-collector/?$' "$VIEWER_BROWSER_WORKFLOW"; then
+  echo "raw VIEW_ONLY collector must never be uploaded as a GitHub artifact" >&2
+  exit 1
+fi
+require_grep 'faz22-6-view-only-viewer-runtime-snapshots-${{ github.run_id }}' "$VIEWER_BROWSER_WORKFLOW"
+require_grep "metrics-before.prom metrics-after.prom d30-snapshot.json frame-flow-summary.json" "$VIEWER_BROWSER_WORKFLOW"
+require_grep "sha256sum -c SHA256SUMS" "$VIEWER_BROWSER_WORKFLOW"
+
+require_grep "actions: read" "$VIEWER_OPERATOR_WORKFLOW"
+require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_OPERATOR_EVIDENCE" "$VIEWER_OPERATOR_WORKFLOW"
+require_grep "produce-view-only-viewer-operator-evidence.py" "$VIEWER_OPERATOR_WORKFLOW"
+require_grep 'faz22-6-view-only-viewer-operator-evidence-${{ github.run_id }}' "$VIEWER_OPERATOR_WORKFLOW"
+
+require_grep "actions: read" "$VIEWER_D30_WORKFLOW"
+require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_D30_EVIDENCE" "$VIEWER_D30_WORKFLOW"
+require_grep "produce-view-only-viewer-d30-evidence.py" "$VIEWER_D30_WORKFLOW"
+require_grep 'faz22-6-view-only-viewer-d30-evidence-${{ github.run_id }}' "$VIEWER_D30_WORKFLOW"
 
 require_grep "environment:" "$VIEWER_APPLY_WORKFLOW"
 require_grep "name: faz22-view-only-pilot" "$VIEWER_APPLY_WORKFLOW"
@@ -174,6 +201,9 @@ grep -Fq "F22_6_VIEW_ONLY_ENGINEERING: v2" "$tmp_dir/view-only-marker.txt"
 
 python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_product_evidence_verifier
 python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_product_evidence_assembler
+python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_operator_evidence_producer
+python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_d30_evidence_producer
+python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_frame_flow_summary
 
 if python3 "$VIEWER_PRODUCT_VERIFIER" --run-id 1 --input "$tmp_dir/fabricated.json" \
   >/dev/null 2>&1; then
