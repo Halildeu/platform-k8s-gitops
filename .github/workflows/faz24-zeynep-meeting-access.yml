@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "dry-run validates; repair-persona rotates the test writer; apply grants bounded access"
+        description: "dry-run validates; repair-persona repairs/rotates the test writer; apply grants bounded access"
         required: true
         type: choice
         options:
@@ -56,7 +56,8 @@ jobs:
           jq -e '
             (.schemaVersion == "faz24.meetingIntelligenceAccess.v1" or
              .schemaVersion == "faz24.permissionWriterCredentialRepair.v1" or
-             .schemaVersion == "faz24.permissionWriterCredentialRepair.v2") and
+             .schemaVersion == "faz24.permissionWriterCredentialRepair.v2" or
+             .schemaVersion == "faz24.permissionWriterCredentialRepair.v3") and
             .boundaries.productionMutation == false and
             .boundaries.rawIdentityIncluded == false and
             .boundaries.rawCredentialIncluded == false and
@@ -67,13 +68,25 @@ jobs:
               (.target | has("userId") | not)
              else
               .boundaries.targetUserMutation == false and
-              (if .schemaVersion == "faz24.permissionWriterCredentialRepair.v2" then
+              (if .schemaVersion == "faz24.permissionWriterCredentialRepair.v3" then
+                (.boundaries.permissionWriterEmailMutation | type == "boolean") and
+                .permissionWriter.identityBinding == "username+immutable-user-id" and
+                (.permissionWriter.requiredActionsReady | type == "boolean") and
+                (.permissionWriter.profileReady | type == "boolean") and
+                (.permissionWriter.profileRepaired | type == "boolean") and
+                (.permissionWriter.profileEmailCollisionFree | type == "boolean") and
+                (.permissionWriter.existingAttributesPreserved | type == "boolean") and
+                (.permissionWriter.requiredActionsPreserved | type == "boolean") and
+                ((.permissionWriter.profileReady == false) or
+                 (.permissionWriter.requiredActionsReady == true and
+                  .permissionWriter.profileEmailCollisionFree == true and
+                  .permissionWriter.existingAttributesPreserved == true and
+                  .permissionWriter.requiredActionsPreserved == true))
+               elif .schemaVersion == "faz24.permissionWriterCredentialRepair.v2" then
                 .boundaries.permissionWriterEmailMutation == false and
                 .permissionWriter.identityBinding == "username+immutable-user-id" and
                 (.permissionWriter.requiredActionsReady | type == "boolean") and
-                (.permissionWriter.requiredActionsCleared | type == "boolean") and
-                ((.permissionWriter.requiredActionsCleared == false) or
-                 (.permissionWriter.requiredActionsReady == true))
+                (.permissionWriter.requiredActionsCleared | type == "boolean")
                else
                 true
                end)
@@ -105,7 +118,23 @@ jobs:
             echo "- Mode: \`$(jq -r .mode "${OUT_PATH}")\`"
             echo "- Status: \`$(jq -r .status "${OUT_PATH}")\`"
             echo "- Failure: \`$(jq -r '.failureReason // "none"' "${OUT_PATH}")\`"
-            if [ "$(jq -r .schemaVersion "${OUT_PATH}")" = "faz24.permissionWriterCredentialRepair.v2" ]; then
+            if [ "$(jq -r .schemaVersion "${OUT_PATH}")" = "faz24.permissionWriterCredentialRepair.v3" ]; then
+              echo "- Exact writer identity: \`$(jq -r .permissionWriter.exactIdentityMatch "${OUT_PATH}")\`"
+              echo "- Writer identity binding: \`$(jq -r .permissionWriter.identityBinding "${OUT_PATH}")\`"
+              echo "- Writer email mutation: \`$(jq -r .boundaries.permissionWriterEmailMutation "${OUT_PATH}")\`"
+              echo "- Writer required actions ready: \`$(jq -r .permissionWriter.requiredActionsReady "${OUT_PATH}")\`"
+              echo "- Writer profile ready: \`$(jq -r .permissionWriter.profileReady "${OUT_PATH}")\`"
+              echo "- Writer profile repaired: \`$(jq -r .permissionWriter.profileRepaired "${OUT_PATH}")\`"
+              echo "- Writer email collision-free: \`$(jq -r .permissionWriter.profileEmailCollisionFree "${OUT_PATH}")\`"
+              echo "- Writer attributes preserved: \`$(jq -r .permissionWriter.existingAttributesPreserved "${OUT_PATH}")\`"
+              echo "- Writer required actions preserved: \`$(jq -r .permissionWriter.requiredActionsPreserved "${OUT_PATH}")\`"
+              echo "- Keycloak credential reset: \`$(jq -r .permissionWriter.keycloakCredentialReset "${OUT_PATH}")\`"
+              echo "- Vault record synced: \`$(jq -r .permissionWriter.vaultRecordSynced "${OUT_PATH}")\`"
+              echo "- Vault rollback attempted: \`$(jq -r .permissionWriter.vaultRollbackAttempted "${OUT_PATH}")\`"
+              echo "- Vault rollback succeeded: \`$(jq -r .permissionWriter.vaultRollbackSucceeded "${OUT_PATH}")\`"
+              echo "- Writer login readback: \`$(jq -r .permissionWriter.loginReady "${OUT_PATH}")\`"
+              echo "- Permission-service roles readback: \`$(jq -r .permissionWriter.rolesReadReady "${OUT_PATH}")\`"
+            elif [ "$(jq -r .schemaVersion "${OUT_PATH}")" = "faz24.permissionWriterCredentialRepair.v2" ]; then
               echo "- Exact writer identity: \`$(jq -r .permissionWriter.exactIdentityMatch "${OUT_PATH}")\`"
               echo "- Writer identity binding: \`$(jq -r .permissionWriter.identityBinding "${OUT_PATH}")\`"
               echo "- Writer email mutation: \`$(jq -r .boundaries.permissionWriterEmailMutation "${OUT_PATH}")\`"
