@@ -290,8 +290,8 @@
         "chromiumRevision": { "const": "1223" },
         "chromiumBrowserVersion": { "const": "148.0.7778.96" },
         "chromiumExecutableVersion": {
-          "type": "string",
-          "pattern": "^Chromium( Headless Shell)? 148\\.0\\.7778\\.96$"
+          "$comment": "This protected lane launches the hashed full Chrome for Testing executable; Chromium Headless Shell is intentionally excluded.",
+          "const": "Google Chrome for Testing 148.0.7778.96"
         },
         "playwrightVersion": { "const": "Version 1.60.0" }
       }

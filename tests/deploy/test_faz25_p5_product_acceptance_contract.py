@@ -17,6 +17,9 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         cls.spec = (
             ROOT / "tests/smoke/faz25-p5-product-surface.spec.ts"
         ).read_text()
+        cls.config = (
+            ROOT / "tests/smoke/playwright.faz25-p5.config.ts"
+        ).read_text()
         cls.collector = (
             ROOT / "scripts/deploy/collect-faz25-p5-frontend-lineage.sh"
         ).read_text()
@@ -96,6 +99,30 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             "expect(Object.keys(buildInfo).sort()).toEqual",
         ):
             self.assertIn(marker, self.spec)
+
+    def test_browser_contract_maps_owner_by_all_direct_cells_without_waiting(self):
+        self.assertIn("toHaveCount(expectedHeaderLabels.length)", self.spec)
+        self.assertIn("toHaveCount(expectedGateIds.length)", self.spec)
+        self.assertIn("Array.from(row.children)", self.spec)
+        self.assertIn("cells.length !== expectedCellCount", self.spec)
+        self.assertIn("rows.map((row, rowIndex)", self.spec)
+        self.assertIn("ownerCell instanceof HTMLTableCellElement", self.spec)
+        self.assertNotIn("locator('td').nth(ownerColumnIndex)", self.spec)
+
+    def test_browser_launch_uses_the_versioned_and_hashed_executable(self):
+        self.assertIn("printf 'chromium_path=%s\\n' \"$chromium_path\"", self.workflow)
+        self.assertIn("tr -d '\\r'", self.workflow)
+        self.assertIn("P5_CHROMIUM_EXECUTABLE_PATH", self.workflow)
+        self.assertIn(
+            '[[ "$launch_chromium_sha256" == "$P5_CHROMIUM_EXECUTABLE_SHA256" ]]',
+            self.workflow,
+        )
+        self.assertIn(
+            '"Google Chrome for Testing 148.0.7778.96"',
+            self.workflow,
+        )
+        self.assertIn("P5_CHROMIUM_EXECUTABLE_PATH is required", self.config)
+        self.assertIn("executablePath: chromiumExecutablePath", self.config)
 
     def test_lineage_collector_binds_owner_chain_and_observed_image_id(self):
         self.assertIn('.metadata.ownerReferences[]?', self.collector)

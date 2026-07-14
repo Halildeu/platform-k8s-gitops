@@ -526,8 +526,10 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   const evidenceTable = page.getByTestId('deployment-evidence-table');
   await expect(evidenceTable).toBeVisible();
   const headers = evidenceTable.getByRole('columnheader');
-  await expect(headers).toHaveCount(6);
-  for (let index = 0; index < 6; index += 1) await expect(headers.nth(index)).toBeVisible();
+  await expect(headers).toHaveCount(expectedHeaderLabels.length);
+  for (let index = 0; index < expectedHeaderLabels.length; index += 1) {
+    await expect(headers.nth(index)).toBeVisible();
+  }
   const headerLabels = (await headers.allInnerTexts()).map((text) =>
     text.replace(/\s+/g, ' ').trim(),
   );
@@ -543,12 +545,23 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   for (let index = 0; index < expectedGateIds.length; index += 1) {
     await expect(gateRows.nth(index)).toBeVisible();
   }
-  const gateOwnerStates = await Promise.all(
-    Array.from({ length: await gateRows.count() }, async (_, index) =>
-      (await gateRows.nth(index).locator('td').nth(ownerColumnIndex).innerText())
-        .replace(/\s+/g, ' ')
-        .trim(),
-    ),
+  await expect(gateRows).toHaveCount(expectedGateIds.length);
+  const gateOwnerStates = await gateRows.evaluateAll(
+    (rows, { ownerIndex, expectedCellCount }) =>
+      rows.map((row, rowIndex) => {
+        const cells = Array.from(row.children);
+        if (cells.length !== expectedCellCount) {
+          throw new Error(
+            `Row ${rowIndex}: expected ${expectedCellCount} direct cells, got ${cells.length}`,
+          );
+        }
+        const ownerCell = cells[ownerIndex];
+        if (!(ownerCell instanceof HTMLTableCellElement)) {
+          throw new Error(`Row ${rowIndex}: owner cell ${ownerIndex} is not a table cell`);
+        }
+        return (ownerCell.textContent ?? '').replace(/\s+/g, ' ').trim();
+      }),
+    { ownerIndex: ownerColumnIndex, expectedCellCount: expectedHeaderLabels.length },
   );
   expect(gateOwnerStates).toEqual(Array.from({ length: 8 }, () => 'Kabul yok'));
 
