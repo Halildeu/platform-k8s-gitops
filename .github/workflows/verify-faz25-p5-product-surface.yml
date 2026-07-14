@@ -109,11 +109,16 @@ jobs:
           cp tests/smoke/playwright.faz25-p5.config.ts "$TEST_ROOT/"
           cd "$TEST_ROOT"
           npm ci --ignore-scripts --no-audit --no-fund
-          npx tsc --noEmit --strict --target ES2022 --module NodeNext \
+          ./node_modules/.bin/tsc --noEmit --strict --target ES2022 --module NodeNext \
             --moduleResolution NodeNext --esModuleInterop --skipLibCheck \
             faz25-p5-product-surface.spec.ts playwright.faz25-p5.config.ts
-          npx playwright install chromium
-          playwright_version="$(npx playwright --version)"
+          # Run 29376162382 proved the exact browser was present but its Linux
+          # libraries were not. Keep the pinned Playwright dependency installer.
+          export DEBIAN_FRONTEND=noninteractive
+          [[ -x ./node_modules/.bin/playwright ]]
+          sudo -n true
+          ./node_modules/.bin/playwright install --with-deps chromium
+          playwright_version="$(./node_modules/.bin/playwright --version)"
           [[ "$playwright_version" == "Version 1.60.0" ]]
           read -r chromium_revision chromium_browser_version <<<"$(node - <<'NODE'
           const fs = require('node:fs');
@@ -192,7 +197,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$TEST_ROOT"
-          npx playwright test \
+          ./node_modules/.bin/playwright test \
             --config=playwright.faz25-p5.config.ts \
             faz25-p5-product-surface.spec.ts
 

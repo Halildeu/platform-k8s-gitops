@@ -20,6 +20,12 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         cls.collector = (
             ROOT / "scripts/deploy/collect-faz25-p5-frontend-lineage.sh"
         ).read_text()
+        cls.runtime_package = json.loads(
+            (ROOT / "tests/smoke/faz25-p5-runtime/package.json").read_text()
+        )
+        cls.runtime_lock = json.loads(
+            (ROOT / "tests/smoke/faz25-p5-runtime/package-lock.json").read_text()
+        )
         cls.product_schema = json.loads(
             (ROOT / "tests/smoke/faz25-p5-product-surface.schema.json").read_text()
         )
@@ -43,6 +49,37 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertIn("Prepare sanitized incomplete-contract diagnostics", self.workflow)
         self.assertIn("Upload sanitized incomplete-contract diagnostics", self.workflow)
         self.assertIn('terminalAcceptance: false', self.workflow)
+
+    def test_locked_browser_runtime_installs_linux_dependencies_noninteractively(self):
+        npm_ci = self.workflow.index("npm ci --ignore-scripts --no-audit --no-fund")
+        sudo_preflight = self.workflow.index("sudo -n true")
+        install = self.workflow.index(
+            "./node_modules/.bin/playwright install --with-deps chromium"
+        )
+        version_probe = self.workflow.index(
+            "./node_modules/.bin/playwright --version"
+        )
+        self.assertLess(npm_ci, sudo_preflight)
+        self.assertLess(sudo_preflight, install)
+        self.assertLess(install, version_probe)
+        self.assertIn("export DEBIAN_FRONTEND=noninteractive", self.workflow)
+        self.assertNotIn("npx playwright", self.workflow)
+
+        dependencies = self.runtime_package["dependencies"]
+        self.assertEqual(dependencies["@playwright/test"], "1.60.0")
+        self.assertEqual(dependencies["playwright-core"], "1.60.0")
+        for name, tarball in (
+            ("@playwright/test", "@playwright/test/-/test-1.60.0.tgz"),
+            ("playwright", "playwright/-/playwright-1.60.0.tgz"),
+            ("playwright-core", "playwright-core/-/playwright-core-1.60.0.tgz"),
+        ):
+            package = self.runtime_lock["packages"][f"node_modules/{name}"]
+            self.assertEqual(package["version"], "1.60.0")
+            self.assertEqual(
+                package["resolved"],
+                f"https://registry.npmjs.org/{tarball}",
+            )
+            self.assertRegex(package["integrity"], r"^sha512-[A-Za-z0-9+/]+=*$")
 
     def test_browser_contract_binds_pkce_origin_and_exact_product_sets(self):
         for marker in (
