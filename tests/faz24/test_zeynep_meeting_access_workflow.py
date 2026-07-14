@@ -4,6 +4,8 @@ import os
 import shutil
 import subprocess
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REPAIR_SCRIPT = (
@@ -26,6 +28,7 @@ def _run_ambiguous_reset_scenario(
     initial_email: str = "d35-admin@example.com",
     email_scenario: str = "unchanged",
     writer_user_id: str = WRITER_USER_ID,
+    vault_scenario: str = "ready",
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -54,11 +57,15 @@ printf '%s\\n' '{NEW_PASSWORD}'
         """#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "inspect" ]]; then
+  if [[ "${MOCK_VAULT_SCENARIO}" == 'missing-container' ]]; then
+    exit 1
+  fi
   exit 0
 fi
 [[ "$1" == "exec" ]]
 if [[ "$*" == *'vault kv get'* ]]; then
   IFS= read -r _token
+  [[ "${MOCK_VAULT_SCENARIO}" != 'read-failure' ]] || exit 1
   data="$(cat "${MOCK_VAULT_STATE}")"
   version="$(cat "${MOCK_VAULT_VERSION}")"
   jq -n --argjson data "${data}" --argjson version "${version}" \
@@ -119,9 +126,20 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users/'* && "${method}" == 'PU
   [[ -n "${data_binary_file}" && -f "${data_binary_file}" ]] || exit 92
   jq -e --arg id "${MOCK_EXPECTED_WRITER_USER_ID}" \
     --arg email 'd35-admin@example.com' \
-    '.id == $id and .username == "d35-admin-persona" and .enabled == true and .email == $email' \
+    '. == {
+      id: $id,
+      enabled: true,
+      username: "d35-admin-persona",
+      email: $email,
+      emailVerified: false,
+      firstName: "D35",
+      lastName: "Persona",
+      attributes: {sentinel: ["keep"]},
+      requiredActions: ["UPDATE_PROFILE"]
+    }' \
     "${data_binary_file}" >/dev/null || exit 93
   printf '%s\\n' 'keycloak-email-reconcile' >> "${MOCK_EVENT_LOG}"
+  printf '%s' 'true' > "${MOCK_EMAIL_RECONCILIATION_STATE}"
   if [[ "${MOCK_EMAIL_SCENARIO}" == 'success' || "${MOCK_EMAIL_SCENARIO}" == 'ambiguous-success' ]]; then
     printf '%s' 'd35-admin@example.com' > "${MOCK_KEYCLOAK_EMAIL_STATE}"
   fi
@@ -134,14 +152,53 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users/'* && "${method}" == 'PU
     printf '%s' '204'
   elif [[ "${MOCK_EMAIL_SCENARIO}" == 'rejected' ]]; then
     printf '%s' '409'
+  elif [[ "${MOCK_EMAIL_SCENARIO}" == 'transport-failure' ]]; then
+    printf '%s' '000'
+    exit 7
   else
     printf '%s' '503'
   fi
 elif [[ "${url}" == *'/admin/realms/platform-test/users' ]]; then
+  if [[ "$(cat "${MOCK_EMAIL_RECONCILIATION_STATE}")" == 'true' ]]; then
+    case "${MOCK_EMAIL_SCENARIO}" in
+      readback-http-failure)
+        printf '%s' '503'
+        exit 0
+        ;;
+      readback-transport-failure)
+        printf '%s' '000'
+        exit 7
+        ;;
+      readback-empty)
+        printf '%s' '[]' > "${output}"
+        printf '%s' '200'
+        exit 0
+        ;;
+      readback-duplicate)
+        jq -n --arg id "${MOCK_EXPECTED_WRITER_USER_ID}" \
+          '[
+            {id: $id, enabled: true, username: "d35-admin-persona", email: "d35-admin@example.com"},
+            {id: "duplicate-id", enabled: true, username: "d35-admin-persona", email: "d35-admin@example.com"}
+          ]' > "${output}"
+        printf '%s' '200'
+        exit 0
+        ;;
+    esac
+  fi
   email="$(cat "${MOCK_KEYCLOAK_EMAIL_STATE}")"
   user_id="$(cat "${MOCK_KEYCLOAK_USER_ID_STATE}")"
   jq -n --arg id "${user_id}" --arg email "${email}" \\
-    '[{id: $id, enabled: true, username: "d35-admin-persona", email: $email}]' > "${output}"
+    '[{
+      id: $id,
+      enabled: true,
+      username: "d35-admin-persona",
+      email: $email,
+      emailVerified: false,
+      firstName: "D35",
+      lastName: "Persona",
+      attributes: {sentinel: ["keep"]},
+      requiredActions: ["UPDATE_PROFILE"]
+    }]' > "${output}"
   printf '%s' '200'
 elif [[ "${url}" == *'/realms/platform-test/protocol/openid-connect/token' ]]; then
   password="$(cat "${password_file}")"
@@ -180,6 +237,8 @@ fi
     keycloak_email_state.write_text(initial_email, encoding="utf-8")
     keycloak_user_id_state = tmp_path / "keycloak-user-id-state"
     keycloak_user_id_state.write_text(writer_user_id, encoding="utf-8")
+    email_reconciliation_state = tmp_path / "email-reconciliation-state"
+    email_reconciliation_state.write_text("false", encoding="utf-8")
     event_log = tmp_path / "events.log"
     event_log.write_text("", encoding="utf-8")
     result_path = tmp_path / "result.json"
@@ -195,8 +254,10 @@ fi
             "MOCK_KEYCLOAK_STATE": str(keycloak_state),
             "MOCK_KEYCLOAK_EMAIL_STATE": str(keycloak_email_state),
             "MOCK_KEYCLOAK_USER_ID_STATE": str(keycloak_user_id_state),
+            "MOCK_EMAIL_RECONCILIATION_STATE": str(email_reconciliation_state),
             "MOCK_EMAIL_SCENARIO": email_scenario,
             "MOCK_EXPECTED_WRITER_USER_ID": WRITER_USER_ID,
+            "MOCK_VAULT_SCENARIO": vault_scenario,
             "MOCK_EVENT_LOG": str(event_log),
         }
     )
@@ -393,6 +454,95 @@ def test_email_update_with_wrong_readback_uid_blocks_vault(tmp_path):
     assert result["failureReason"] == (
         "permission-writer-email-reconcile-identity-drift"
     )
+    assert result["permissionWriter"]["canonicalEmailReady"] is False
+    assert vault_state == original_vault
+    assert events == ["keycloak-email-reconcile"]
+
+
+@pytest.mark.parametrize(
+    ("vault_scenario", "expected_reason"),
+    [
+        ("missing-container", "vault-container-missing"),
+        ("read-failure", "vault-persona-preflight-read-failed"),
+    ],
+)
+def test_vault_preflight_failure_blocks_before_email_mutation(
+    tmp_path, vault_scenario, expected_reason
+):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            initial_email="drifted@example.invalid",
+            email_scenario="success",
+            vault_scenario=vault_scenario,
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == expected_reason
+    assert result["permissionWriter"]["emailReconciliationAttempted"] is False
+    assert vault_state == original_vault
+    assert (tmp_path / "keycloak-email-state").read_text(encoding="utf-8") == (
+        "drifted@example.invalid"
+    )
+    assert events == []
+
+
+def test_email_update_transport_failure_without_readback_blocks_vault(tmp_path):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            initial_email="drifted@example.invalid",
+            email_scenario="transport-failure",
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == (
+        "permission-writer-email-reconcile-state-unverified"
+    )
+    assert result["permissionWriter"]["canonicalEmailReady"] is False
+    assert vault_state == original_vault
+    assert events == ["keycloak-email-reconcile"]
+
+
+@pytest.mark.parametrize(
+    ("email_scenario", "expected_reason"),
+    [
+        (
+            "readback-http-failure",
+            "permission-writer-email-reconcile-readback-failed",
+        ),
+        (
+            "readback-transport-failure",
+            "permission-writer-email-reconcile-readback-failed",
+        ),
+        (
+            "readback-empty",
+            "permission-writer-email-reconcile-identity-drift",
+        ),
+        (
+            "readback-duplicate",
+            "permission-writer-email-reconcile-identity-drift",
+        ),
+    ],
+)
+def test_email_update_invalid_readback_blocks_vault(
+    tmp_path, email_scenario, expected_reason
+):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            initial_email="drifted@example.invalid",
+            email_scenario=email_scenario,
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == expected_reason
     assert result["permissionWriter"]["canonicalEmailReady"] is False
     assert vault_state == original_vault
     assert events == ["keycloak-email-reconcile"]

@@ -263,6 +263,18 @@ WRITER_USER_ID_LIVE="$(jq -r '.[0].id // empty' "${KC_USERS_JSON}")"
 [[ "${WRITER_USER_ID_LIVE}" == "${WRITER_USER_ID}" ]] \
   || die "permission-writer-id-mismatch"
 
+docker inspect "${VAULT_CONTAINER}" >/dev/null 2>&1 || die "vault-container-missing"
+ROOT_TOKEN="$(vault_root_token)" || die "vault-root-token-missing"
+
+VAULT_ORIGINAL_JSON="${TMP_DIR}/vault-original.json"
+VAULT_ORIGINAL_DATA="${TMP_DIR}/vault-original-data.json"
+read_vault_path "${ROOT_TOKEN}" "${VAULT_ORIGINAL_JSON}" || die "vault-persona-preflight-read-failed"
+VAULT_ORIGINAL_VERSION="$(jq -r '.data.metadata.version // empty' "${VAULT_ORIGINAL_JSON}")"
+[[ "${VAULT_ORIGINAL_VERSION}" =~ ^[0-9]+$ ]] || die "vault-persona-version-missing"
+jq -e '.data.data | type == "object"' "${VAULT_ORIGINAL_JSON}" >/dev/null \
+  || die "vault-persona-data-invalid"
+jq '.data.data' "${VAULT_ORIGINAL_JSON}" > "${VAULT_ORIGINAL_DATA}"
+
 if [[ "$(jq -r '.[0].email // empty | ascii_downcase' "${KC_USERS_JSON}")" != "${WRITER_EMAIL}" ]]; then
   EMAIL_RECONCILIATION_ATTEMPTED=true
   EMAIL_UPDATE_BODY="${TMP_DIR}/writer-email-update.json"
@@ -302,18 +314,6 @@ if [[ "$(jq -r '.[0].email // empty | ascii_downcase' "${KC_USERS_JSON}")" != "$
 fi
 CANONICAL_EMAIL_READY=true
 EXACT_WRITER_MATCH=true
-
-docker inspect "${VAULT_CONTAINER}" >/dev/null 2>&1 || die "vault-container-missing"
-ROOT_TOKEN="$(vault_root_token)" || die "vault-root-token-missing"
-
-VAULT_ORIGINAL_JSON="${TMP_DIR}/vault-original.json"
-VAULT_ORIGINAL_DATA="${TMP_DIR}/vault-original-data.json"
-read_vault_path "${ROOT_TOKEN}" "${VAULT_ORIGINAL_JSON}" || die "vault-persona-preflight-read-failed"
-VAULT_ORIGINAL_VERSION="$(jq -r '.data.metadata.version // empty' "${VAULT_ORIGINAL_JSON}")"
-[[ "${VAULT_ORIGINAL_VERSION}" =~ ^[0-9]+$ ]] || die "vault-persona-version-missing"
-jq -e '.data.data | type == "object"' "${VAULT_ORIGINAL_JSON}" >/dev/null \
-  || die "vault-persona-data-invalid"
-jq '.data.data' "${VAULT_ORIGINAL_JSON}" > "${VAULT_ORIGINAL_DATA}"
 
 EXISTING_WRITER_USERNAME="$(jq -r '.admin_persona_username // empty' "${VAULT_ORIGINAL_DATA}")"
 EXISTING_PASSWORD_FILE="${TMP_DIR}/existing-writer-password"
