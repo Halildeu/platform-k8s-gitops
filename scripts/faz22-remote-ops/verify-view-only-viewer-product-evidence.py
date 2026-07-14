@@ -25,7 +25,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +52,53 @@ NEGATIVE_CASES = (
     "noAuth", "wrongRole", "wrongTenant", "wrongDevice", "expired",
     "revoked", "replayed", "overConcurrency", "disconnectedViewer",
 )
+
+
+class NegativeCaseContract(NamedTuple):
+    outcome: str
+    http_status: int | None
+    method: str
+    target_class: str
+    credential_class: str
+
+
+NEGATIVE_CASE_CONTRACT = {
+    # JwtBearerOperatorAuthenticator treats a missing required role as an
+    # unauthenticated identity. That is deliberately a 401, not the opaque 404
+    # used only after an operator identity has passed authentication.
+    "noAuth": NegativeCaseContract(
+        "unauthorized", 401, "GET", "viewer-product-channel", "absent",
+    ),
+    "wrongRole": NegativeCaseContract(
+        "unauthorized", 401, "GET", "viewer-product-channel", "authenticated-wrong-role",
+    ),
+    "wrongTenant": NegativeCaseContract(
+        "not-found", 404, "GET", "viewer-product-channel", "authenticated-wrong-tenant",
+    ),
+    "wrongDevice": NegativeCaseContract(
+        "not-found", 404, "GET", "viewer-product-channel", "authenticated-wrong-device",
+    ),
+    # Expiry and replay are agent-side signed-permit properties. The real
+    # non-prod acceptance controller pushes the malformed permit to the agent
+    # and returns 422 only after the agent's deny frame is observed.
+    "expired": NegativeCaseContract(
+        "expired", 422, "POST", "agent-permit-channel", "expired-permit",
+    ),
+    "revoked": NegativeCaseContract(
+        "revoked", 404, "GET", "viewer-product-channel", "revoked-session",
+    ),
+    "replayed": NegativeCaseContract(
+        "replay-rejected", 422, "POST", "agent-permit-channel", "replayed-permit",
+    ),
+    "overConcurrency": NegativeCaseContract(
+        "capacity-rejected", 409, "GET", "viewer-product-channel", "authorized-second-viewer",
+    ),
+    # A client disconnect ends an already-admitted SSE response; there is no
+    # second HTTP response status to record, so the canonical value is null.
+    "disconnectedViewer": NegativeCaseContract(
+        "stream-closed", None, "GET", "viewer-product-channel", "authorized-disconnected-viewer",
+    ),
+}
 TERMINATION_CASES = (
     "localAbort", "killOrRevoke", "ttlExpiry", "heartbeatLoss",
     "indicatorLoss",
@@ -362,22 +409,6 @@ def validate_matrix_source_attestations(
     child = load_json_bytes(raw_child, f"evidence/{evidence_type}.json")
     payload = child["payload"]
     case_names = NEGATIVE_CASES if evidence_type == "negative" else TERMINATION_CASES
-    expected_negative_status = {
-        "noAuth": 401, "wrongRole": 404, "wrongTenant": 404, "wrongDevice": 404,
-        "expired": 422, "revoked": 404, "replayed": 422,
-        "overConcurrency": 409, "disconnectedViewer": None,
-    }
-    expected_credential = {
-        "noAuth": "absent",
-        "wrongRole": "authenticated-wrong-role",
-        "wrongTenant": "authenticated-wrong-tenant",
-        "wrongDevice": "authenticated-wrong-device",
-        "expired": "expired-permit",
-        "revoked": "revoked-session",
-        "replayed": "replayed-permit",
-        "overConcurrency": "authorized-second-viewer",
-        "disconnectedViewer": "authorized-disconnected-viewer",
-    }
     expected_trigger = {
         "localAbort": "local-abort", "killOrRevoke": "kill-or-revoke",
         "ttlExpiry": "ttl-expiry", "heartbeatLoss": "heartbeat-loss",
@@ -424,26 +455,30 @@ def validate_matrix_source_attestations(
 
         case = payload["cases"][case_name]
         if evidence_type == "negative":
+            contract = NEGATIVE_CASE_CONTRACT[case_name]
             if set(attestation["request"]) != {"method", "targetClass", "credentialClass"}:
                 raise EvidenceError(f"negative {case_name} request field set mismatch")
-            require_equal(attestation["request"]["method"], "GET", f"negative {case_name} method")
-            require_equal(attestation["request"]["targetClass"], "viewer-product-channel",
+            require_equal(attestation["request"]["method"], contract.method,
+                          f"negative {case_name} method")
+            require_equal(attestation["request"]["targetClass"], contract.target_class,
                           f"negative {case_name} target class")
-            require_equal(attestation["request"]["credentialClass"], expected_credential[case_name],
+            require_equal(attestation["request"]["credentialClass"], contract.credential_class,
                           f"negative {case_name} credential class")
             if set(attestation["result"]) != {
                 "outcome", "requestAccepted", "deliveryContinued", "httpStatus",
             }:
                 raise EvidenceError(f"negative {case_name} result field set mismatch")
+            require_equal(attestation["result"]["outcome"], contract.outcome,
+                          f"negative {case_name} contract outcome")
             require_equal(attestation["result"]["outcome"], case["outcome"],
                           f"negative {case_name} attested outcome")
             require_equal(attestation["result"]["requestAccepted"], False,
                           f"negative {case_name} request acceptance")
             require_equal(attestation["result"]["deliveryContinued"], False,
                           f"negative {case_name} delivery continuation")
-            require_equal(attestation["result"]["httpStatus"], expected_negative_status[case_name],
+            require_equal(attestation["result"]["httpStatus"], contract.http_status,
                           f"negative {case_name} HTTP status")
-            require_equal(case["httpStatus"], expected_negative_status[case_name],
+            require_equal(case["httpStatus"], contract.http_status,
                           f"negative {case_name} child HTTP status")
             if not SHA256.fullmatch(str(attestation["auditEventSha256"])):
                 raise EvidenceError(f"negative {case_name} audit event digest is invalid")
@@ -688,17 +723,6 @@ def validate_negative_and_termination(
     child_observed_at: dict[str, datetime],
 ) -> None:
     """Validate source-generated fail-closed matrices and isolated termination sessions."""
-    expected_negative = {
-        "noAuth": "unauthorized",
-        "wrongRole": "not-found",
-        "wrongTenant": "not-found",
-        "wrongDevice": "not-found",
-        "expired": "expired",
-        "revoked": "revoked",
-        "replayed": "replay-rejected",
-        "overConcurrency": "capacity-rejected",
-        "disconnectedViewer": "stream-closed",
-    }
     expected_termination = {
         "localAbort": ("local-abort", 5_000),
         "killOrRevoke": ("kill-or-revoke", 1_000),
@@ -720,9 +744,11 @@ def validate_negative_and_termination(
 
     negative_evidence: set[str] = set()
     negative_observations: list[datetime] = []
-    for case_name, expected_outcome in expected_negative.items():
+    for case_name in NEGATIVE_CASES:
+        contract = NEGATIVE_CASE_CONTRACT[case_name]
         case = negative["cases"][case_name]
-        require_equal(case["outcome"], expected_outcome, f"negative {case_name} outcome")
+        require_equal(case["outcome"], contract.outcome, f"negative {case_name} outcome")
+        require_equal(case["httpStatus"], contract.http_status, f"negative {case_name} HTTP status")
         case_binding = case["binding"]
         for key in ("tenantSha256", "operatorSha256", "deviceSha256"):
             require_equal(case_binding[key], root_binding[key], f"negative {case_name} {key}")
