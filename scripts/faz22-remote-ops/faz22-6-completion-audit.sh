@@ -39,6 +39,8 @@ KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 B1_4_ATTESTATION_ACCEPTANCE_REF="${B1_4_ATTESTATION_ACCEPTANCE_REF:-Halildeu/platform-backend#548}"
 B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS="${B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS:-tpm-complete,hardware-attestation-complete,5-device,50-device,800-device,production,broad-rollout}"
 VIEW_ONLY_ACCEPTANCE_REF="${VIEW_ONLY_ACCEPTANCE_REF:-Halildeu/platform-k8s-gitops#1580}"
+VIEW_ONLY_KVKK_REF="${VIEW_ONLY_KVKK_REF:-Halildeu/platform-k8s-gitops#2374}"
+VIEW_ONLY_KVKK_APPROVER_POLICY_PATH="${VIEW_ONLY_KVKK_APPROVER_POLICY_PATH:-$REPO_ROOT/config/faz22-6-view-only-kvkk-approver-policy.v1.json}"
 VIEW_ONLY_FORBIDDEN_CLAIMS="${VIEW_ONLY_FORBIDDEN_CLAIMS:-rdp,credential-entry,raw-shell,port-forward,5-device,50-device,800-device,production,broad-rollout}"
 # ADR-0044: VIEW_ONLY marker split. Engineering gate (fail-closed) + KVKK gate
 # (tracked, non-blocking). The KVKK non-blocking track is an ALLOWLIST: only the
@@ -47,7 +49,7 @@ VIEW_ONLY_FORBIDDEN_CLAIMS="${VIEW_ONLY_FORBIDDEN_CLAIMS:-rdp,credential-entry,r
 # mislabeled as "legal") is an allowlist violation and DOES block completion — the
 # non-blocking-ness applies to genuine legal items only, never to weakening a gate.
 VIEW_ONLY_EVIDENCE_SCHEMA_VERSION="${VIEW_ONLY_EVIDENCE_SCHEMA_VERSION:-faz22.6-view-only-evidence-v2}"
-VIEW_ONLY_KVKK_ALLOWED_KEYS="${VIEW_ONLY_KVKK_ALLOWED_KEYS:-kvkk_attended_pilot_signoff,legal_dpo_consent,retention_policy_approval,status,owner_approved_by,approved_at,expires_at}"
+VIEW_ONLY_KVKK_ALLOWED_KEYS="${VIEW_ONLY_KVKK_ALLOWED_KEYS:-kvkk_attended_pilot_signoff,legal_dpo_consent,retention_policy_approval,status,owner_approved_by,approved_at,expires_at,decision_payload_sha256,decision_record_sha256,decision_record_ref,approver_policy_sha256,approver_policy_ref,privacy_owner_key_id,privacy_owner_signed_at,privacy_owner_signature,legal_dpo_key_id,legal_dpo_signed_at,legal_dpo_signature}"
 EXPECTED_AGENT_TAG="${EXPECTED_AGENT_TAG:-$EXPECTED_AGENT_LATEST_TAG}"
 
 need() {
@@ -820,7 +822,7 @@ check_view_only_kvkk() {
   # as "legal" to sneak it into the non-blocking track), that IS an integrity
   # violation and returns 1 (blocks). Non-blocking-ness applies to genuine legal
   # items only, never to weakening a gate (Codex 019f05cc #3).
-  local ref="$VIEW_ONLY_ACCEPTANCE_REF" issue_json body title marker_count_value marker_body
+  local ref="$VIEW_ONLY_KVKK_REF" issue_json body title marker_count_value marker_body
   if ! issue_json="$(issue_json_for_ref "$ref")"; then
     # Non-blocking gate: surface fetch failure as tracked_pending, do not block.
     lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "ref=$ref reason=issue-fetch-failed"
@@ -868,29 +870,73 @@ check_view_only_kvkk() {
 
   marker_body="$(printf '%s\n' "$body" | marker_block 'F22_6_VIEW_ONLY_KVKK')"
 
-  local status owner approved_at expires_at date_errors
+  local status owner approved_at expires_at
+  local attended_signoff legal_consent retention_approval payload_digest decision_digest decision_ref policy_digest policy_ref
+  local privacy_key_id privacy_signed_at privacy_signature legal_key_id legal_signed_at legal_signature
   status="$(printf '%s\n' "$marker_body" | waiver_field 'status')"
+  attended_signoff="$(printf '%s\n' "$marker_body" | waiver_field 'kvkk_attended_pilot_signoff')"
+  legal_consent="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_consent')"
+  retention_approval="$(printf '%s\n' "$marker_body" | waiver_field 'retention_policy_approval')"
   owner="$(printf '%s\n' "$marker_body" | waiver_field 'owner_approved_by')"
   approved_at="$(printf '%s\n' "$marker_body" | waiver_field 'approved_at')"
   expires_at="$(printf '%s\n' "$marker_body" | waiver_field 'expires_at')"
+  payload_digest="$(printf '%s\n' "$marker_body" | waiver_field 'decision_payload_sha256')"
+  decision_digest="$(printf '%s\n' "$marker_body" | waiver_field 'decision_record_sha256')"
+  decision_ref="$(printf '%s\n' "$marker_body" | waiver_field 'decision_record_ref')"
+  policy_digest="$(printf '%s\n' "$marker_body" | waiver_field 'approver_policy_sha256')"
+  policy_ref="$(printf '%s\n' "$marker_body" | waiver_field 'approver_policy_ref')"
+  privacy_key_id="$(printf '%s\n' "$marker_body" | waiver_field 'privacy_owner_key_id')"
+  privacy_signed_at="$(printf '%s\n' "$marker_body" | waiver_field 'privacy_owner_signed_at')"
+  privacy_signature="$(printf '%s\n' "$marker_body" | waiver_field 'privacy_owner_signature')"
+  legal_key_id="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_key_id')"
+  legal_signed_at="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_signed_at')"
+  legal_signature="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_signature')"
 
   if [ "$status" = "cleared" ]; then
-    # A real clear needs a named DPO/owner + valid, non-expired dates. If the
-    # clear is incomplete it simply stays pending (non-blocking), never blocks.
-    date_errors="$(date_window_errors "$approved_at" "$expires_at")"
-    if owner_is_invalid "$owner"; then
-      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=incomplete-clear:owner_approved_by"
+    # A real clear is generated from a schema-valid, dual-human-signed decision
+    # record. The marker discloses only a content digest and its content-addressed
+    # URN, never the protected record location or pilot identifiers.
+    local incomplete=()
+    [ "$attended_signoff" = "pass" ] || incomplete+=("kvkk_attended_pilot_signoff")
+    [ "$legal_consent" = "pass" ] || incomplete+=("legal_dpo_consent")
+    [ "$retention_approval" = "pass" ] || incomplete+=("retention_policy_approval")
+    [[ "$owner" =~ ^dual-human-signature:[A-Za-z0-9._-]{3,120}$ ]] || incomplete+=("owner_approved_by")
+    [[ "$payload_digest" =~ ^sha256:[a-f0-9]{64}$ ]] || incomplete+=("decision_payload_sha256")
+    [[ "$decision_digest" =~ ^sha256:[a-f0-9]{64}$ ]] || incomplete+=("decision_record_sha256")
+    [ "$decision_ref" = "urn:decision-record:$decision_digest" ] || incomplete+=("decision_record_ref")
+    [[ "$policy_digest" =~ ^sha256:[a-f0-9]{64}$ ]] || incomplete+=("approver_policy_sha256")
+    [ "$policy_ref" = "urn:approver-policy:$policy_digest" ] || incomplete+=("approver_policy_ref")
+    [ -n "$approved_at" ] || incomplete+=("approved_at")
+    [ -n "$expires_at" ] || incomplete+=("expires_at")
+    [[ "$privacy_key_id" =~ ^kvkk-[a-z0-9][a-z0-9-]{2,62}$ ]] || incomplete+=("privacy_owner_key_id")
+    [ -n "$privacy_signed_at" ] || incomplete+=("privacy_owner_signed_at")
+    [[ "$privacy_signature" =~ ^[A-Za-z0-9+/]{86}==$ ]] || incomplete+=("privacy_owner_signature")
+    [[ "$legal_key_id" =~ ^kvkk-[a-z0-9][a-z0-9-]{2,62}$ ]] || incomplete+=("legal_dpo_key_id")
+    [ -n "$legal_signed_at" ] || incomplete+=("legal_dpo_signed_at")
+    [[ "$legal_signature" =~ ^[A-Za-z0-9+/]{86}==$ ]] || incomplete+=("legal_dpo_signature")
+    [ -f "$VIEW_ONLY_KVKK_APPROVER_POLICY_PATH" ] || incomplete+=("canonical-approver-policy-missing")
+    if [ "${#incomplete[@]}" -ne 0 ]; then
+      local incomplete_reason
+      incomplete_reason="$(IFS=,; printf '%s' "${incomplete[*]}")"
+      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=incomplete-clear:$incomplete_reason"
       return 0
     fi
-    if printf '%s' "$date_errors" | grep -q 'expires_at-expired'; then
-      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'expired' "issue=$ref owner=$owner expires_at=$expires_at"
+    local marker_verifier_result marker_verifier_status
+    if ! marker_verifier_result="$(printf '%s\n' "$marker_body" | python3 "$SCRIPT_DIR/verify-view-only-kvkk-decision.py" \
+      --approver-policy "$VIEW_ONLY_KVKK_APPROVER_POLICY_PATH" --verify-marker-input - 2>/dev/null)"; then
+      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=cryptographic-marker-verification-failed"
       return 0
     fi
-    if [ -n "$date_errors" ]; then
-      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=incomplete-clear:$date_errors"
+    marker_verifier_status="$(printf '%s\n' "$marker_verifier_result" | jq -r '.status // "fail"')"
+    if [ "$marker_verifier_status" = "expired" ]; then
+      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'expired' "issue=$ref owner=$owner expires_at=$expires_at decision_record_sha256=$decision_digest"
       return 0
     fi
-    lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'cleared' "issue=$ref owner=$owner approved_at=$approved_at expires_at=$expires_at"
+    if [ "$marker_verifier_status" != "pass" ]; then
+      lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'tracked_pending' "issue=$ref reason=cryptographic-marker-verifier-status:$marker_verifier_status"
+      return 0
+    fi
+    lineage_print_check 'GATE_VIEW_ONLY_KVKK' 'cleared' "issue=$ref owner=$owner approved_at=$approved_at expires_at=$expires_at decision_record_sha256=$decision_digest"
     return 0
   fi
 
@@ -1165,6 +1211,7 @@ main() {
   need awk
   need jq
   need curl
+  need python3
   local github_backend
   if ! github_read_api_preflight; then
     printf 'F22_6_AUDIT_ERROR=github-read-api-unavailable backend=%q\n' "$GITHUB_READ_API_BACKEND"

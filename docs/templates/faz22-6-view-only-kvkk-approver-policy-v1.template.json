@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "faz22.6-view-only-kvkk-approver-policy-v1",
+  "policyId": "__REQUIRED_REVIEWED_POLICY_ID__",
+  "identityDirectoryRef": "policy://__REQUIRED_PROTECTED_IDENTITY_DIRECTORY__",
+  "engineeringPrincipalIds": ["person:__required_engineering_principal__"],
+  "authorizedApprovers": [
+    {
+      "keyId": "kvkk-required-privacy-owner-key",
+      "principalId": "person:__required_privacy_owner__",
+      "role": "privacy-owner",
+      "ed25519PublicKeyBase64": "__REQUIRED_ED25519_PUBLIC_KEY__",
+      "validFrom": "1970-01-01T00:00:00Z",
+      "validUntil": "1970-01-01T00:00:00Z"
+    },
+    {
+      "keyId": "kvkk-required-legal-dpo-key",
+      "principalId": "person:__required_legal_or_dpo__",
+      "role": "legal-or-dpo",
+      "ed25519PublicKeyBase64": "__REQUIRED_ED25519_PUBLIC_KEY__",
+      "validFrom": "1970-01-01T00:00:00Z",
+      "validUntil": "1970-01-01T00:00:00Z"
+    }
+  ]
+}

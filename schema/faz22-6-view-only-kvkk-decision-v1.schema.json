@@ -1,0 +1,421 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/faz22-6-view-only-kvkk-decision-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY KVKK decision record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "processingActivityId",
+    "scope",
+    "processing",
+    "noticeAndConsent",
+    "retention",
+    "governance",
+    "pilotApprovals",
+    "uxVerification",
+    "lifecycle",
+    "boundaries",
+    "approvals"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "faz22.6-view-only-kvkk-decision-v1" },
+    "status": { "enum": ["approved", "withdrawn"] },
+    "processingActivityId": { "$ref": "#/$defs/nonPlaceholder" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "mode",
+        "recordingMode",
+        "productChannel",
+        "engineeringAcceptanceIssue",
+        "viewerProductAcceptanceIssue",
+        "kvkkTrackingIssue",
+        "viewerProductEvidenceSha256",
+        "viewerProductEvidenceRef",
+        "pilotOperatorRef",
+        "pilotDeviceRef",
+        "onePersonRosterRef"
+      ],
+      "properties": {
+        "environment": { "const": "test" },
+        "mode": { "const": "attended-view-only" },
+        "recordingMode": { "const": "disabled" },
+        "productChannel": { "const": "endpoint-agent-outbound-mtls-remote-bridge" },
+        "engineeringAcceptanceIssue": { "const": "https://github.com/Halildeu/platform-k8s-gitops/issues/1580" },
+        "viewerProductAcceptanceIssue": { "const": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373" },
+        "kvkkTrackingIssue": { "const": "https://github.com/Halildeu/platform-k8s-gitops/issues/2374" },
+        "viewerProductEvidenceSha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "viewerProductEvidenceRef": { "$ref": "#/$defs/protectedRef" },
+        "pilotOperatorRef": { "$ref": "#/$defs/protectedRef" },
+        "pilotDeviceRef": { "$ref": "#/$defs/protectedRef" },
+        "onePersonRosterRef": { "$ref": "#/$defs/protectedRef" }
+      }
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "legalBasis",
+        "legalAuthorityRef",
+        "screenDataCategories",
+        "specialCategoryData"
+      ],
+      "properties": {
+        "purpose": { "$ref": "#/$defs/longText" },
+        "legalBasis": { "$ref": "#/$defs/nonPlaceholder" },
+        "legalAuthorityRef": { "$ref": "#/$defs/evidenceRef" },
+        "screenDataCategories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonPlaceholder" }
+        },
+        "specialCategoryData": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["expected", "handlingDecision", "exposureResponse"],
+          "properties": {
+            "expected": { "type": "boolean" },
+            "handlingDecision": { "$ref": "#/$defs/longText" },
+            "exposureResponse": { "$ref": "#/$defs/longText" }
+          }
+        }
+      }
+    },
+    "noticeAndConsent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "noticeVersion",
+        "noticeRef",
+        "attendedConsentRequired",
+        "consentEvidenceRef",
+        "withdrawalMethod",
+        "localAbortMethod",
+        "visibleIndicatorRequired"
+      ],
+      "properties": {
+        "noticeVersion": { "$ref": "#/$defs/nonPlaceholder" },
+        "noticeRef": { "$ref": "#/$defs/evidenceRef" },
+        "attendedConsentRequired": { "const": true },
+        "consentEvidenceRef": { "$ref": "#/$defs/protectedRef" },
+        "withdrawalMethod": { "$ref": "#/$defs/longText" },
+        "localAbortMethod": { "$ref": "#/$defs/longText" },
+        "visibleIndicatorRequired": { "const": true }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "screenContent",
+        "sessionMetadata",
+        "auditRecords",
+        "recordingEnabledChangePolicy"
+      ],
+      "properties": {
+        "screenContent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["persisted", "retentionDays", "justification", "ownerPrincipalId"],
+          "properties": {
+            "persisted": { "const": false },
+            "retentionDays": { "const": 0 },
+            "justification": { "$ref": "#/$defs/longText" },
+            "ownerPrincipalId": { "$ref": "#/$defs/principalId" }
+          }
+        },
+        "sessionMetadata": { "$ref": "#/$defs/retentionDecision" },
+        "auditRecords": { "$ref": "#/$defs/retentionDecision" },
+        "recordingEnabledChangePolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "newDecisionRequired",
+            "newEngineeringAcceptanceRequired",
+            "wormRequired",
+            "recordBeforeFanoutRequired",
+            "parameterizedRetentionRequired"
+          ],
+          "properties": {
+            "newDecisionRequired": { "const": true },
+            "newEngineeringAcceptanceRequired": { "const": true },
+            "wormRequired": { "const": true },
+            "recordBeforeFanoutRequired": { "const": true },
+            "parameterizedRetentionRequired": { "const": true }
+          }
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "controller",
+        "processors",
+        "subprocessors",
+        "storageRegion",
+        "crossBorderTransfer",
+        "accessLogging",
+        "decisionRecordStorage",
+        "processingActivityRegisterRef",
+        "dataSubjectRights",
+        "incidentResponse"
+      ],
+      "properties": {
+        "controller": { "$ref": "#/$defs/nonPlaceholder" },
+        "processors": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/processor" }
+        },
+        "subprocessors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/processor" }
+        },
+        "storageRegion": { "$ref": "#/$defs/nonPlaceholder" },
+        "crossBorderTransfer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "decision", "safeguardRef"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "decision": { "$ref": "#/$defs/longText" },
+            "safeguardRef": { "$ref": "#/$defs/evidenceRef" }
+          }
+        },
+        "accessLogging": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "evidenceRef"],
+          "properties": {
+            "enabled": { "const": true },
+            "evidenceRef": { "$ref": "#/$defs/evidenceRef" }
+          }
+        },
+        "decisionRecordStorage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "encryptionAtRest",
+            "accessLogging",
+            "writeProtection",
+            "immutabilityMode",
+            "kmsCustodyRef",
+            "accessPolicyRef",
+            "writeProtectionEvidenceRef",
+            "recordRetention",
+            "humanReadableExportProcedureRef"
+          ],
+          "properties": {
+            "encryptionAtRest": { "const": true },
+            "accessLogging": { "const": true },
+            "writeProtection": { "const": true },
+            "immutabilityMode": { "enum": ["object-lock-compliance", "equivalent-write-once-control"] },
+            "kmsCustodyRef": { "$ref": "#/$defs/evidenceRef" },
+            "accessPolicyRef": { "$ref": "#/$defs/evidenceRef" },
+            "writeProtectionEvidenceRef": { "$ref": "#/$defs/evidenceRef" },
+            "recordRetention": { "$ref": "#/$defs/retentionDecision" },
+            "humanReadableExportProcedureRef": { "$ref": "#/$defs/evidenceRef" }
+          }
+        },
+        "processingActivityRegisterRef": { "$ref": "#/$defs/evidenceRef" },
+        "dataSubjectRights": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["access", "correction", "erasureOrRestriction", "objection", "requestPath"],
+          "properties": {
+            "access": { "$ref": "#/$defs/longText" },
+            "correction": { "$ref": "#/$defs/longText" },
+            "erasureOrRestriction": { "$ref": "#/$defs/longText" },
+            "objection": { "$ref": "#/$defs/longText" },
+            "requestPath": { "$ref": "#/$defs/evidenceRef" }
+          }
+        },
+        "incidentResponse": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contactRef", "notificationWindowHours", "runbookRef"],
+          "properties": {
+            "contactRef": { "$ref": "#/$defs/evidenceRef" },
+            "notificationWindowHours": { "type": "integer", "minimum": 1, "maximum": 72 },
+            "runbookRef": { "$ref": "#/$defs/evidenceRef" }
+          }
+        }
+      }
+    },
+    "pilotApprovals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowTest8096ClusterIPExposure",
+        "onePersonRosterApproved",
+        "consentingPilotDeviceApproved"
+      ],
+      "properties": {
+        "allowTest8096ClusterIPExposure": { "const": true },
+        "onePersonRosterApproved": { "const": true },
+        "consentingPilotDeviceApproved": { "const": true }
+      }
+    },
+    "uxVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verifiedAt",
+        "verifiedByPrincipalId",
+        "evidenceRef",
+        "noticeDisplayedBeforeStart",
+        "explicitConsentCaptured",
+        "withdrawalTerminatesSession",
+        "localAbortTerminatesSession",
+        "indicatorVisibleThroughout"
+      ],
+      "properties": {
+        "verifiedAt": { "$ref": "#/$defs/utcTimestamp" },
+        "verifiedByPrincipalId": { "$ref": "#/$defs/principalId" },
+        "evidenceRef": { "$ref": "#/$defs/protectedRef" },
+        "noticeDisplayedBeforeStart": { "const": true },
+        "explicitConsentCaptured": { "const": true },
+        "withdrawalTerminatesSession": { "const": true },
+        "localAbortTerminatesSession": { "const": true },
+        "indicatorVisibleThroughout": { "const": true }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvedAt", "reviewExpiresAt", "changeTriggers"],
+      "properties": {
+        "approvedAt": { "$ref": "#/$defs/utcTimestamp" },
+        "reviewExpiresAt": { "$ref": "#/$defs/utcTimestamp" },
+        "changeTriggers": {
+          "type": "array",
+          "minItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "purpose-or-legal-basis-change",
+              "recording-mode-change",
+              "data-category-change",
+              "controller-processor-or-transfer-change",
+              "retention-change",
+              "security-or-privacy-incident",
+              "material-product-scope-change",
+              "regulatory-guidance-change"
+            ]
+          }
+        }
+      }
+    },
+    "boundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productionReady",
+        "broadRolloutReady",
+        "multiViewerFanoutProven",
+        "recordingEnabled",
+        "fiveDeviceReady",
+        "fiftyDeviceReady",
+        "eightHundredDeviceReady"
+      ],
+      "properties": {
+        "productionReady": { "const": false },
+        "broadRolloutReady": { "const": false },
+        "multiViewerFanoutProven": { "const": false },
+        "recordingEnabled": { "const": false },
+        "fiveDeviceReady": { "const": false },
+        "fiftyDeviceReady": { "const": false },
+        "eightHundredDeviceReady": { "const": false }
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["privacyOwner", "legalOrDpo"],
+      "properties": {
+        "privacyOwner": { "$ref": "#/$defs/approval" },
+        "legalOrDpo": { "$ref": "#/$defs/approval" }
+      }
+    }
+  },
+  "$defs": {
+    "nonPlaceholder": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 500,
+      "pattern": "^(?!.*(?:__REQUIRED|<[^>]+>|\\bTBD\\b|\\bTODO\\b|DPO Example|John Doe|CHANGE[-_ ]?ME)).+$"
+    },
+    "longText": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 4000,
+      "pattern": "^(?!.*(?:__REQUIRED|<[^>]+>|\\bTBD\\b|\\bTODO\\b|DPO Example|John Doe|CHANGE[-_ ]?ME)).+$"
+    },
+    "principalId": {
+      "type": "string",
+      "pattern": "^person:[a-z0-9][a-z0-9._-]{2,63}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "evidenceRef": {
+      "type": "string",
+      "pattern": "^(?:github|policy|protected|runbook|ropa|contact|artifact)://[A-Za-z0-9_.:@/#%+-]{3,240}$"
+    },
+    "protectedRef": {
+      "type": "string",
+      "pattern": "^protected://[A-Za-z0-9_.:@/#%+-]{3,240}$"
+    },
+    "retentionDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retentionDays", "justification", "ownerPrincipalId", "effectiveFrom"],
+      "properties": {
+        "retentionDays": { "type": "integer", "minimum": 1 },
+        "justification": { "$ref": "#/$defs/longText" },
+        "ownerPrincipalId": { "$ref": "#/$defs/principalId" },
+        "effectiveFrom": { "$ref": "#/$defs/utcTimestamp" }
+      }
+    },
+    "processor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "location", "dataCategories", "safeguardsRef"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonPlaceholder" },
+        "role": { "$ref": "#/$defs/nonPlaceholder" },
+        "location": { "$ref": "#/$defs/nonPlaceholder" },
+        "dataCategories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonPlaceholder" }
+        },
+        "safeguardsRef": { "$ref": "#/$defs/evidenceRef" }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principalId", "role", "signedAt", "signatureAlgorithm", "signatureBase64"],
+      "properties": {
+        "principalId": { "$ref": "#/$defs/principalId" },
+        "role": { "enum": ["privacy-owner", "legal-or-dpo"] },
+        "signedAt": { "$ref": "#/$defs/utcTimestamp" },
+        "signatureAlgorithm": { "const": "ed25519" },
+        "signatureBase64": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    }
+  }
+}
