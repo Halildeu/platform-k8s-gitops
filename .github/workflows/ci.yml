@@ -30,6 +30,15 @@ jobs:
         run: kustomize build kustomize/overlays/prod > /tmp/prod.yaml
       - name: Build overlays/test/eso
         run: kustomize build kustomize/overlays/test/eso > /tmp/test-eso.yaml
+      - name: Install rendered ownership verifier dependency
+        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Verify notification ExternalSecret has one Argo owner
+        run: |
+          python3 scripts/test/verify-argocd-resource-single-owner.py \
+            --workload-render /tmp/test.yaml \
+            --eso-render /tmp/test-eso.yaml \
+            --workload-application argocd/applications/platform-test.yaml \
+            --eso-application argocd/applications/platform-eso-test.yaml
       - name: Build overlays/prod/eso
         run: kustomize build kustomize/overlays/prod/eso > /tmp/prod-eso.yaml
       - name: Build base/monitoring

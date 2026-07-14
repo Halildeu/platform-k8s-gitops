@@ -133,6 +133,14 @@ class BackendPromotionContractTests(unittest.TestCase):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
         self.assertIn("verify-backend-sync-wave-render.py /tmp/test.yaml", ci)
 
+    def test_ci_checks_notification_external_secret_single_owner_contract(self):
+        ci = (ROOT / ".github/workflows/ci.yml").read_text()
+        self.assertIn("verify-argocd-resource-single-owner.py", ci)
+        self.assertIn("--workload-render /tmp/test.yaml", ci)
+        self.assertIn("--eso-render /tmp/test-eso.yaml", ci)
+        self.assertIn("--workload-application argocd/applications/platform-test.yaml", ci)
+        self.assertIn("--eso-application argocd/applications/platform-eso-test.yaml", ci)
+
     def test_argocd_cli_bootstrap_is_version_and_checksum_pinned(self):
         self.assertIn('EXPECTED_VERSION="v2.13.1"', self.bootstrap)
         self.assertIn(
