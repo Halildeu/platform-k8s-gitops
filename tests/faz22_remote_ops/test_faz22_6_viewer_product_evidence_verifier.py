@@ -118,62 +118,142 @@ def termination_payload():
 
 def matrix_attestation_files(evidence_type, document):
     files = {}
+    observation_lines = []
+    audit_lines = []
     payload = document["payload"]
     termination_ordinals = {name: index for index, name in enumerate(VERIFIER.TERMINATION_CASES)}
-    for case_name, case in payload["cases"].items():
-        common = {
-            "schemaVersion": f"faz22.6.viewOnlyViewer{evidence_type.title()}CaseAttestation.v1",
+    case_names = VERIFIER.NEGATIVE_CASES if evidence_type == "negative" else VERIFIER.TERMINATION_CASES
+    for ordinal, case_name in enumerate(case_names):
+        case = payload["cases"][case_name]
+        support_common = {
             "caseName": case_name,
             "sourceRevision": document["sourceRevision"],
             "observedAt": case["observedAt"],
             "binding": case["binding"],
+        }
+        common = {
+            "schemaVersion": f"faz22.6.viewOnlyViewer{evidence_type.title()}CaseAttestation.v1",
+            **support_common,
             "authorizationSha256": payload["authorizationSha256"],
-            "runtimeSnapshotSha256": VERIFIER.digest_bytes(
-                f"{evidence_type}:{case_name}:runtime".encode()
-            ),
         }
         if evidence_type == "negative":
             contract = VERIFIER.NEGATIVE_CASE_CONTRACT[case_name]
+            body_raw = f"redacted-product-response:{case_name}".encode()
+            viewer_rejection_expected = case_name not in {
+                "expired", "replayed", "disconnectedViewer",
+            }
+            request = {
+                "method": contract.method,
+                "targetClass": contract.target_class,
+                "credentialClass": contract.credential_class,
+            }
+            snapshot = {
+                "schemaVersion": "faz22.6.viewOnlyViewerNegativeRuntimeSnapshot.v1",
+                **support_common,
+                "evidenceSource": (
+                    "agent-error-ledger-and-http-probe"
+                    if case_name in {"expired", "replayed"}
+                    else "viewer-http-and-metric-probe"
+                ),
+                "request": request,
+                "response": {
+                    "httpStatus": case["httpStatus"],
+                    "bodyClass": (
+                        "agent-deny-redacted"
+                        if case_name in {"expired", "replayed"} else "empty-or-opaque"
+                    ),
+                    "bodyLength": len(body_raw),
+                    "bodySha256": VERIFIER.digest_bytes(body_raw),
+                },
+                "delivery": {
+                    "framesBefore": 100 + ordinal,
+                    "framesAfter": 100 + ordinal,
+                    "streamClosed": True,
+                    "viewerRejectedBefore": 300 + ordinal,
+                    "viewerRejectedAfter": 301 + ordinal if viewer_rejection_expected else 300 + ordinal,
+                },
+                "agentDeny": {
+                    "required": case_name in {"expired", "replayed"},
+                    "observed": case_name in {"expired", "replayed"},
+                    "code": {
+                        "expired": "operation-dispatch-failed:permit-invalid",
+                        "replayed": "operation-dispatch-failed:seq-replay",
+                    }.get(case_name),
+                },
+            }
+            snapshot_raw = canonical_jsonl_line(snapshot)
             attestation = {
                 **common,
-                "request": {
-                    "method": contract.method,
-                    "targetClass": contract.target_class,
-                    "credentialClass": contract.credential_class,
-                },
+                "runtimeSnapshotSha256": VERIFIER.digest_bytes(snapshot_raw),
+                "request": request,
                 "result": {
                     "outcome": case["outcome"],
                     "requestAccepted": False,
                     "deliveryContinued": False,
                     "httpStatus": case["httpStatus"],
                 },
-                "auditEventSha256": VERIFIER.digest_bytes(
-                    f"negative:{case_name}:audit".encode()
-                ),
             }
         else:
             started = 1_752_451_500_000 + termination_ordinals[case_name] * 10_000
+            product_signals = {
+                "viewerClosed": True,
+                "brokerSessionTerminal": True,
+                "agentEventObserved": True,
+                "viewStopAuditVerified": True,
+                **({
+                    "endpointUserInitiated": True,
+                    "consentLeaseRevoked": True,
+                } if case_name == "localAbort" else {}),
+            }
+            snapshot = {
+                "schemaVersion": "faz22.6.viewOnlyViewerTerminationRuntimeSnapshot.v1",
+                **support_common,
+                "trigger": case["trigger"],
+                "triggeredAtEpochMillis": started,
+                "deliveryEndedAtEpochMillis": started + case["terminationLatencyMillis"],
+                "counters": {
+                    "viewerEndedBefore": ordinal,
+                    "viewerEndedAfter": ordinal + 1,
+                    "framesSentAtTrigger": 200 + ordinal,
+                    "framesSentAfterEnd": 200 + ordinal,
+                },
+                "terminal": {
+                    key: product_signals[key]
+                    for key in ("viewerClosed", "brokerSessionTerminal", "agentEventObserved")
+                },
+            }
+            audit = {
+                "schemaVersion": "faz22.6.viewOnlyViewerMatrixAuditRecord.v1",
+                **support_common,
+                "eventType": "VIEW_STOP",
+                "outcome": True,
+                "chainVerified": True,
+                "chainSha256": VERIFIER.digest_bytes(f"termination:{case_name}:chain".encode()),
+                "chainCheckedCount": ordinal + 1,
+                "verificationSource": "tenant-audit-chain-builder",
+            }
+            snapshot_raw = canonical_jsonl_line(snapshot)
+            audit_raw = canonical_jsonl_line(audit)
+            case["viewStopAuditSha256"] = VERIFIER.digest_bytes(audit_raw)
             attestation = {
                 **common,
+                "runtimeSnapshotSha256": VERIFIER.digest_bytes(snapshot_raw),
                 "trigger": case["trigger"],
                 "triggeredAtEpochMillis": started,
                 "deliveryEndedAtEpochMillis": started + case["terminationLatencyMillis"],
                 "result": {"deliveryTerminated": True},
                 "viewStopAuditSha256": case["viewStopAuditSha256"],
-                "productSignals": {
-                    "viewerClosed": True,
-                    "brokerSessionTerminal": True,
-                    "agentEventObserved": True,
-                    "viewStopAuditVerified": True,
-                    **({
-                        "endpointUserInitiated": True,
-                        "consentLeaseRevoked": True,
-                    } if case_name == "localAbort" else {}),
-                },
+                "productSignals": product_signals,
             }
         raw = encode_json(attestation)
         case["evidenceSha256"] = VERIFIER.digest_bytes(raw)
         files[f"attestations/{evidence_type}/{case_name}.json"] = raw
+        observation_lines.append(snapshot_raw)
+        if evidence_type == "termination":
+            audit_lines.append(audit_raw)
+    files[f"observations/{evidence_type}.jsonl"] = b"".join(observation_lines)
+    if evidence_type == "termination":
+        files["audit/termination.jsonl"] = b"".join(audit_lines)
     payload["suiteSha256"] = VERIFIER.digest_json({
         "authorizationSha256": payload["authorizationSha256"],
         "cases": payload["cases"],
@@ -305,6 +385,24 @@ def child_documents():
 
 def encode_json(value):
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
+
+
+def canonical_jsonl_line(value):
+    return VERIFIER.canonical_bytes(value) + b"\n"
+
+
+def mutate_jsonl_case(raw, case_name, mutator):
+    found = False
+    output = []
+    for line in raw.splitlines():
+        value = json.loads(line)
+        if value["caseName"] == case_name:
+            mutator(value)
+            found = True
+        output.append(canonical_jsonl_line(value))
+    if not found:
+        raise AssertionError(f"fixture case not found: {case_name}")
+    return b"".join(output)
 
 
 def encode_zip(files):
@@ -794,6 +892,82 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "attestation digest"):
             VERIFIER.validate_matrix_source_attestations("negative", files, raw_child)
 
+    def test_matrix_runtime_snapshot_and_audit_bytes_are_digest_bound(self):
+        document = child_documents()["negative"]
+        raw_child = encode_json(document)
+        files = VERIFIER.safe_archive_files(source_archive("negative", raw_child))
+        files["observations/negative.jsonl"] = mutate_jsonl_case(
+            files["observations/negative.jsonl"], "noAuth",
+            lambda value: value["delivery"].update({"framesAfter": 101}),
+        )
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "runtime snapshot digest"):
+            VERIFIER.validate_matrix_source_attestations("negative", files, raw_child)
+
+        document = child_documents()["termination"]
+        raw_child = encode_json(document)
+        files = VERIFIER.safe_archive_files(source_archive("termination", raw_child))
+        files["audit/termination.jsonl"] = mutate_jsonl_case(
+            files["audit/termination.jsonl"], "localAbort",
+            lambda value: value.update({"chainCheckedCount": 99}),
+        )
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "audit record digest"):
+            VERIFIER.validate_matrix_source_attestations("termination", files, raw_child)
+
+    def test_matrix_required_jsonl_files_fail_closed_when_missing(self):
+        for evidence_type, missing_path in (
+            ("negative", "observations/negative.jsonl"),
+            ("termination", "audit/termination.jsonl"),
+        ):
+            with self.subTest(evidence_type=evidence_type):
+                document = child_documents()[evidence_type]
+                raw_child = encode_json(document)
+                files = VERIFIER.safe_archive_files(source_archive(evidence_type, raw_child))
+                del files[missing_path]
+                with self.assertRaisesRegex(
+                    VERIFIER.EvidenceError,
+                    f"required source artifact file is missing: {missing_path}",
+                ):
+                    VERIFIER.validate_matrix_source_attestations(
+                        evidence_type, files, raw_child,
+                    )
+
+    def test_matrix_jsonl_rejects_noncanonical_bytes_and_order(self):
+        record = {
+            "caseName": "noAuth",
+            "schemaVersion": "fixture.v1",
+        }
+        canonical = canonical_jsonl_line(record)
+        variants = {
+            "missing-newline": canonical.rstrip(b"\n"),
+            "trailing-whitespace": canonical.rstrip(b"\n") + b" \n",
+            "blank-line": canonical + b"\n",
+            "utf8-bom": b"\xef\xbb\xbf" + canonical,
+        }
+        for label, raw in variants.items():
+            with self.subTest(label=label), self.assertRaises(VERIFIER.EvidenceError):
+                VERIFIER.load_canonical_matrix_jsonl(raw, label, ("noAuth",))
+
+        raw = canonical_jsonl_line({"caseName": "wrongRole"}) + canonical_jsonl_line(record)
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "case order mismatch"):
+            VERIFIER.load_canonical_matrix_jsonl(raw, "reordered", ("noAuth", "wrongRole"))
+
+    def test_matrix_observation_rejects_unknown_fields_after_digest_binding(self):
+        document = child_documents()["negative"]
+        raw_child = encode_json(document)
+        files = VERIFIER.safe_archive_files(source_archive("negative", raw_child))
+        attestation = json.loads(files["attestations/negative/noAuth.json"])
+        observations = VERIFIER.load_canonical_matrix_jsonl(
+            files["observations/negative.jsonl"], "observations", VERIFIER.NEGATIVE_CASES,
+        )
+        snapshot, _ = observations["noAuth"]
+        snapshot["unexpected"] = True
+        snapshot_raw = canonical_jsonl_line(snapshot)
+        attestation["runtimeSnapshotSha256"] = VERIFIER.digest_bytes(snapshot_raw)
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "runtime snapshot field set mismatch"):
+            VERIFIER.validate_matrix_supporting_evidence(
+                "negative", "noAuth", attestation, snapshot, snapshot_raw,
+            )
+
     def test_local_abort_must_also_prove_attended_consent_withdrawal(self):
         document = child_documents()["termination"]
         raw_child = encode_json(document)
@@ -857,7 +1031,9 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             "authorizationSha256": document["payload"]["authorizationSha256"],
             "cases": document["payload"]["cases"],
         })
-        with self.assertRaisesRegex(VERIFIER.EvidenceError, "wrongRole HTTP status"):
+        with self.assertRaisesRegex(
+            VERIFIER.EvidenceError, "negative wrongRole runtime HTTP status mismatch",
+        ):
             VERIFIER.validate_matrix_source_attestations(
                 "negative", files, encode_json(document),
             )
@@ -878,7 +1054,9 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             "authorizationSha256": document["payload"]["authorizationSha256"],
             "cases": document["payload"]["cases"],
         })
-        with self.assertRaisesRegex(VERIFIER.EvidenceError, "expired method"):
+        with self.assertRaisesRegex(
+            VERIFIER.EvidenceError, "negative expired runtime request mismatch",
+        ):
             VERIFIER.validate_matrix_source_attestations(
                 "negative", files, encode_json(document),
             )

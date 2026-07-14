@@ -394,11 +394,203 @@ def fetch_verified_archive(client: ApiClient, repository: str, run_id: int) -> V
 
 def source_artifact_files(evidence_type: str) -> set[str]:
     files = {f"evidence/{evidence_type}.json"}
-    if evidence_type == "negative":
-        files.update(f"attestations/negative/{name}.json" for name in NEGATIVE_CASES)
-    elif evidence_type == "termination":
-        files.update(f"attestations/termination/{name}.json" for name in TERMINATION_CASES)
+    if evidence_type in {"negative", "termination"}:
+        case_names = NEGATIVE_CASES if evidence_type == "negative" else TERMINATION_CASES
+        files.update(f"attestations/{evidence_type}/{name}.json" for name in case_names)
+        files.add(f"observations/{evidence_type}.jsonl")
+        if evidence_type == "termination":
+            # The product emits a durable, hash-chained VIEW_STOP only after an
+            # admitted viewer stream. Authentication/authorization rejects do
+            # not invent a tenant audit identity; their protected source
+            # artifact is the canonical runtime observation itself.
+            files.add("audit/termination.jsonl")
     return files
+
+
+def load_canonical_matrix_jsonl(
+    raw: bytes, label: str, expected_cases: tuple[str, ...],
+) -> dict[str, tuple[dict[str, Any], bytes]]:
+    try:
+        lines = raw.splitlines(keepends=True)
+        raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise EvidenceError(f"{label} is not UTF-8") from exc
+    entries: dict[str, tuple[dict[str, Any], bytes]] = {}
+    for line_number, line in enumerate(lines, 1):
+        if not line.endswith(b"\n") or not line.strip():
+            raise EvidenceError(f"{label} line {line_number} is not a canonical JSONL record")
+        try:
+            value = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise EvidenceError(f"{label} line {line_number} is invalid JSON") from exc
+        if not isinstance(value, dict) or canonical_bytes(value) + b"\n" != line:
+            raise EvidenceError(f"{label} line {line_number} is not canonical JSON")
+        case_name = value.get("caseName")
+        if case_name not in expected_cases or case_name in entries:
+            raise EvidenceError(f"{label} case identity is missing, unknown or duplicated")
+        entries[case_name] = (value, line)
+    if set(entries) != set(expected_cases):
+        raise EvidenceError(f"{label} case set mismatch")
+    if tuple(entries) != expected_cases:
+        raise EvidenceError(f"{label} case order mismatch")
+    return entries
+
+
+def require_archive_file(files: dict[str, bytes], path: str) -> bytes:
+    try:
+        return files[path]
+    except KeyError as exc:
+        raise EvidenceError(f"required source artifact file is missing: {path}") from exc
+
+
+def validate_matrix_supporting_evidence(
+    evidence_type: str, case_name: str, attestation: dict[str, Any],
+    snapshot: dict[str, Any], snapshot_raw: bytes,
+    audit: dict[str, Any] | None = None, audit_raw: bytes | None = None,
+) -> None:
+    require_equal(digest_bytes(snapshot_raw), attestation["runtimeSnapshotSha256"],
+                  f"{evidence_type} {case_name} runtime snapshot digest")
+
+    common_snapshot_keys = {
+        "schemaVersion", "caseName", "sourceRevision", "observedAt", "binding",
+    }
+    specific_snapshot_keys = (
+        {"request", "response", "delivery", "agentDeny", "evidenceSource"}
+        if evidence_type == "negative"
+        else {"trigger", "triggeredAtEpochMillis", "deliveryEndedAtEpochMillis", "counters", "terminal"}
+    )
+    if set(snapshot) != common_snapshot_keys | specific_snapshot_keys:
+        raise EvidenceError(f"{evidence_type} {case_name} runtime snapshot field set mismatch")
+    expected_snapshot_schema = (
+        "faz22.6.viewOnlyViewerNegativeRuntimeSnapshot.v1"
+        if evidence_type == "negative"
+        else "faz22.6.viewOnlyViewerTerminationRuntimeSnapshot.v1"
+    )
+    require_equal(snapshot["schemaVersion"], expected_snapshot_schema,
+                  f"{evidence_type} {case_name} runtime snapshot schema")
+    for field in ("caseName", "sourceRevision", "observedAt", "binding"):
+        require_equal(snapshot[field], attestation[field],
+                      f"{evidence_type} {case_name} runtime snapshot {field}")
+
+    if evidence_type == "negative":
+        require_equal(snapshot["request"], attestation["request"],
+                      f"negative {case_name} runtime request")
+        expected_source = (
+            "agent-error-ledger-and-http-probe"
+            if case_name in {"expired", "replayed"}
+            else "viewer-http-and-metric-probe"
+        )
+        require_equal(snapshot["evidenceSource"], expected_source,
+                      f"negative {case_name} evidence source")
+        if set(snapshot["response"]) != {
+            "httpStatus", "bodyClass", "bodyLength", "bodySha256",
+        }:
+            raise EvidenceError(f"negative {case_name} runtime response field set mismatch")
+        require_equal(snapshot["response"]["httpStatus"], attestation["result"]["httpStatus"],
+                      f"negative {case_name} runtime HTTP status")
+        expected_body_class = "agent-deny-redacted" if case_name in {"expired", "replayed"} \
+            else "empty-or-opaque"
+        require_equal(snapshot["response"]["bodyClass"], expected_body_class,
+                      f"negative {case_name} response body class")
+        body_length = snapshot["response"]["bodyLength"]
+        if not isinstance(body_length, int) or body_length < 0:
+            raise EvidenceError(f"negative {case_name} response body length is invalid")
+        if expected_body_class == "agent-deny-redacted" and body_length == 0:
+            raise EvidenceError(f"negative {case_name} agent deny response body is empty")
+        if not SHA256.fullmatch(str(snapshot["response"]["bodySha256"])):
+            raise EvidenceError(f"negative {case_name} response body digest is invalid")
+        if set(snapshot["delivery"]) != {
+            "framesBefore", "framesAfter", "streamClosed",
+            "viewerRejectedBefore", "viewerRejectedAfter",
+        }:
+            raise EvidenceError(f"negative {case_name} runtime delivery field set mismatch")
+        before = snapshot["delivery"]["framesBefore"]
+        after = snapshot["delivery"]["framesAfter"]
+        if not all(isinstance(value, int) and value >= 0 for value in (before, after)):
+            raise EvidenceError(f"negative {case_name} runtime frame counters are invalid")
+        require_equal(after, before, f"negative {case_name} no post-deny frame delivery")
+        require_equal(snapshot["delivery"]["streamClosed"], True,
+                      f"negative {case_name} stream closure")
+        rejected_before = snapshot["delivery"]["viewerRejectedBefore"]
+        rejected_after = snapshot["delivery"]["viewerRejectedAfter"]
+        if not all(isinstance(value, int) and value >= 0
+                   for value in (rejected_before, rejected_after)):
+            raise EvidenceError(f"negative {case_name} viewer rejection counters are invalid")
+        viewer_rejection_expected = case_name not in {"expired", "replayed", "disconnectedViewer"}
+        if viewer_rejection_expected:
+            if rejected_after <= rejected_before:
+                raise EvidenceError(f"negative {case_name} viewer rejection metric did not increase")
+        else:
+            require_equal(rejected_after, rejected_before,
+                          f"negative {case_name} unexpected viewer rejection metric delta")
+        if set(snapshot["agentDeny"]) != {"required", "observed", "code"}:
+            raise EvidenceError(f"negative {case_name} agent deny field set mismatch")
+        agent_deny_required = case_name in {"expired", "replayed"}
+        require_equal(snapshot["agentDeny"]["required"], agent_deny_required,
+                      f"negative {case_name} agent deny requirement")
+        require_equal(snapshot["agentDeny"]["observed"], agent_deny_required,
+                      f"negative {case_name} agent deny observation")
+        expected_code = {
+            "expired": "operation-dispatch-failed:permit-invalid",
+            "replayed": "operation-dispatch-failed:seq-replay",
+        }.get(case_name)
+        require_equal(snapshot["agentDeny"]["code"], expected_code,
+                      f"negative {case_name} agent deny code")
+        if not agent_deny_required and snapshot["agentDeny"]["code"] is not None:
+            raise EvidenceError(f"negative {case_name} must not claim an agent deny code")
+    else:
+        for field in ("trigger", "triggeredAtEpochMillis", "deliveryEndedAtEpochMillis"):
+            require_equal(snapshot[field], attestation[field],
+                          f"termination {case_name} runtime {field}")
+        if set(snapshot["counters"]) != {
+            "viewerEndedBefore", "viewerEndedAfter", "framesSentAtTrigger", "framesSentAfterEnd",
+        }:
+            raise EvidenceError(f"termination {case_name} runtime counter field set mismatch")
+        counters = snapshot["counters"]
+        if not all(isinstance(value, int) and value >= 0 for value in counters.values()):
+            raise EvidenceError(f"termination {case_name} runtime counters are invalid")
+        require_equal(counters["viewerEndedAfter"], counters["viewerEndedBefore"] + 1,
+                      f"termination {case_name} viewer ended delta")
+        require_equal(counters["framesSentAfterEnd"], counters["framesSentAtTrigger"],
+                      f"termination {case_name} no post-termination frames")
+        expected_terminal = {
+            key: attestation["productSignals"][key]
+            for key in ("viewerClosed", "brokerSessionTerminal", "agentEventObserved")
+        }
+        require_equal(snapshot["terminal"], expected_terminal,
+                      f"termination {case_name} terminal runtime signals")
+
+    if evidence_type == "negative":
+        return
+    if audit is None or audit_raw is None:
+        raise EvidenceError(f"termination {case_name} VIEW_STOP audit record is missing")
+    require_equal(digest_bytes(audit_raw), attestation["viewStopAuditSha256"],
+                  f"termination {case_name} audit record digest")
+    if set(audit) != {
+        "schemaVersion", "caseName", "sourceRevision", "observedAt", "binding",
+        "eventType", "outcome", "chainVerified", "chainSha256", "chainCheckedCount",
+        "verificationSource",
+    }:
+        raise EvidenceError(f"termination {case_name} audit record field set mismatch")
+    require_equal(audit["schemaVersion"], "faz22.6.viewOnlyViewerMatrixAuditRecord.v1",
+                  f"termination {case_name} audit record schema")
+    for field in ("caseName", "sourceRevision", "observedAt", "binding"):
+        require_equal(audit[field], attestation[field],
+                      f"termination {case_name} audit record {field}")
+    require_equal(audit["eventType"], "VIEW_STOP",
+                  f"termination {case_name} audit event type")
+    require_equal(audit["outcome"], attestation["result"]["deliveryTerminated"],
+                  f"termination {case_name} audit outcome")
+    require_equal(audit["chainVerified"], True,
+                  f"termination {case_name} audit chain verification")
+    require_equal(audit["verificationSource"], "tenant-audit-chain-builder",
+                  f"termination {case_name} audit verification source")
+    if not isinstance(audit["chainCheckedCount"], int) or audit["chainCheckedCount"] < 1:
+        raise EvidenceError(f"termination {case_name} audit chain count is invalid")
+    if not SHA256.fullmatch(str(audit["chainSha256"])):
+        raise EvidenceError(f"termination {case_name} audit chain digest is invalid")
+    require_equal(attestation["productSignals"]["viewStopAuditVerified"], audit["chainVerified"],
+                  f"termination {case_name} VIEW_STOP audit verification")
 
 
 def validate_matrix_source_attestations(
@@ -409,6 +601,17 @@ def validate_matrix_source_attestations(
     child = load_json_bytes(raw_child, f"evidence/{evidence_type}.json")
     payload = child["payload"]
     case_names = NEGATIVE_CASES if evidence_type == "negative" else TERMINATION_CASES
+    observations = load_canonical_matrix_jsonl(
+        require_archive_file(files, f"observations/{evidence_type}.jsonl"),
+        f"observations/{evidence_type}.jsonl", case_names,
+    )
+    audits = (
+        load_canonical_matrix_jsonl(
+            require_archive_file(files, "audit/termination.jsonl"),
+            "audit/termination.jsonl", case_names,
+        )
+        if evidence_type == "termination" else {}
+    )
     expected_trigger = {
         "localAbort": "local-abort", "killOrRevoke": "kill-or-revoke",
         "ttlExpiry": "ttl-expiry", "heartbeatLoss": "heartbeat-loss",
@@ -417,7 +620,7 @@ def validate_matrix_source_attestations(
 
     for case_name in case_names:
         path = f"attestations/{evidence_type}/{case_name}.json"
-        raw = files[path]
+        raw = require_archive_file(files, path)
         require_equal(digest_bytes(raw), payload["cases"][case_name]["evidenceSha256"],
                       f"{evidence_type} {case_name} attestation digest")
         attestation = load_json_bytes(raw, path)
@@ -425,7 +628,7 @@ def validate_matrix_source_attestations(
             "schemaVersion", "caseName", "sourceRevision", "observedAt", "binding",
             "authorizationSha256", "runtimeSnapshotSha256",
         }
-        expected_keys = common_keys | ({"request", "result", "auditEventSha256"}
+        expected_keys = common_keys | ({"request", "result"}
                                        if evidence_type == "negative" else {
                                            "trigger", "triggeredAtEpochMillis", "deliveryEndedAtEpochMillis",
                                            "result", "viewStopAuditSha256", "productSignals",
@@ -452,6 +655,12 @@ def validate_matrix_source_attestations(
         for digest_field in ("runtimeSnapshotSha256",):
             if not isinstance(attestation[digest_field], str) or not SHA256.fullmatch(attestation[digest_field]):
                 raise EvidenceError(f"{evidence_type} {case_name} {digest_field} is invalid")
+
+        snapshot, snapshot_raw = observations[case_name]
+        audit, audit_raw = audits.get(case_name, (None, None))
+        validate_matrix_supporting_evidence(
+            evidence_type, case_name, attestation, snapshot, snapshot_raw, audit, audit_raw,
+        )
 
         case = payload["cases"][case_name]
         if evidence_type == "negative":
@@ -480,8 +689,6 @@ def validate_matrix_source_attestations(
                           f"negative {case_name} HTTP status")
             require_equal(case["httpStatus"], contract.http_status,
                           f"negative {case_name} child HTTP status")
-            if not SHA256.fullmatch(str(attestation["auditEventSha256"])):
-                raise EvidenceError(f"negative {case_name} audit event digest is invalid")
         else:
             require_equal(attestation["trigger"], expected_trigger[case_name],
                           f"termination {case_name} attested trigger")

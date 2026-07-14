@@ -301,6 +301,24 @@ its exact file envelope and `SHA256SUMS`, and matches the authorized operator an
 device hashes to the browser session binding. A local file path, syntax-only URL,
 nonexistent run/artifact or hash-shaped placeholder is not accepted.
 
+Negative and termination source artifacts additionally carry one strict case
+attestation per case and one canonical, newline-terminated observation in
+`observations/<type>.jsonl`. The verifier digests the exact JSONL line bytes and
+requires equality with the attestation before checking the real request
+channel/status, zero post-deny or post-termination frame delivery, agent-deny
+code for expired/replayed permits, response byte length/SHA-256, viewer-reject
+counter movement for viewer-channel denials, and terminal viewer/broker/agent
+signals. The negative observation names its real source explicitly: viewer HTTP
+plus metric probe, or agent-error-ledger plus the acceptance-only HTTP probe.
+Termination artifacts also carry canonical `audit/termination.jsonl` records;
+each line is digest-bound to its case and must prove a real hash-chained
+`VIEW_STOP` through the tenant audit-chain builder. Negative authentication and
+authorization failures do not fabricate a tenant audit identity or a
+`VIEWER_DENY` event that the product does not emit. Their protected producer
+artifact and exact runtime observation are the evidence. A standalone
+hash-shaped `runtimeSnapshotSha256` or `viewStopAuditSha256` value is rejected
+when the corresponding bytes are absent.
+
 ### 5.1 Implementation and live-acceptance boundary
 
 | Source | Producer status | Live evidence status |
