@@ -322,6 +322,9 @@ class FakeClient:
         self.artifact_digest = VERIFIER.digest_bytes(self.archive)
         self.run_conclusion = "success"
         self.run_updated_at = "2026-07-14T00:07:00Z"
+        self.run_started_at = "2026-07-14T00:06:01Z"
+        self.source_run_started_at = {name: "2026-07-14T00:00:00Z" for name in SOURCE_TYPES}
+        self.source_run_updated_at = {name: "2026-07-14T00:06:00Z" for name in SOURCE_TYPES}
         self.artifact_expired = False
         self.source_run_missing = None
 
@@ -366,7 +369,7 @@ class FakeClient:
                 "run_attempt": 1,
                 "name": VERIFIER.EXPECTED_WORKFLOW_NAME,
                 "path": VERIFIER.EXPECTED_WORKFLOW_PATH,
-                "run_started_at": "2026-07-14T00:00:00Z",
+                "run_started_at": self.run_started_at,
                 "updated_at": self.run_updated_at,
             }
         for name in SOURCE_TYPES:
@@ -386,8 +389,8 @@ class FakeClient:
                     "run_attempt": 1,
                     "name": workflow_name,
                     "path": workflow_path,
-                    "run_started_at": "2026-07-14T00:00:00Z",
-                    "updated_at": "2026-07-14T00:07:00Z",
+                    "run_started_at": self.source_run_started_at[name],
+                    "updated_at": self.source_run_updated_at[name],
                 }
             if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/actions/runs/{run_id}/artifacts?per_page=100":
                 archive = self.source_archives[name]
@@ -444,6 +447,40 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         self.assertIn(f"evidence_root_sha256: {result['evidenceRootSha256']}", result["marker"])
         self.assertNotIn("sessionId", result["marker"])
         self.assertNotIn("deviceId", result["marker"])
+
+    def test_post_pilot_source_attestation_is_allowed_before_producer(self):
+        archive = build_archive(
+            mutate_root=lambda root: root.update({"generatedAt": "2026-07-14T00:08:02Z"})
+        )
+        client = FakeClient(archive)
+        client.source_run_started_at["broker"] = "2026-07-14T00:07:00Z"
+        client.source_run_updated_at["broker"] = "2026-07-14T00:08:00Z"
+        client.run_started_at = "2026-07-14T00:08:01Z"
+        client.run_updated_at = "2026-07-14T00:09:00Z"
+        self.assertEqual("pass", self.verify(client)["status"])
+
+    def test_source_attestation_24h_and_producer_order_boundaries(self):
+        observed = datetime(2026, 7, 14, 0, 0, tzinfo=timezone.utc)
+        VERIFIER.validate_source_attestation_timing(
+            observed,
+            datetime(2026, 7, 15, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 7, 15, 0, 0, 1, tzinfo=timezone.utc),
+            "broker",
+        )
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "attestation is stale"):
+            VERIFIER.validate_source_attestation_timing(
+                observed,
+                datetime(2026, 7, 15, 0, 0, 1, tzinfo=timezone.utc),
+                datetime(2026, 7, 15, 0, 0, 2, tzinfo=timezone.utc),
+                "broker",
+            )
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "before the producer"):
+            VERIFIER.validate_source_attestation_timing(
+                observed,
+                datetime(2026, 7, 14, 1, 0, 1, tzinfo=timezone.utc),
+                datetime(2026, 7, 14, 1, 0, tzinfo=timezone.utc),
+                "broker",
+            )
 
     def test_nonexistent_run_and_artifact_fail_closed(self):
         client = FakeClient()

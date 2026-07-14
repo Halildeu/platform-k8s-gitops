@@ -43,7 +43,7 @@ def require_equal(actual: Any, expected: Any, label: str) -> None:
 
 def fetch_source(
     client: Any, repository: str, evidence_type: str, run_id: int, head_sha: str,
-) -> tuple[dict[str, Any], bytes, dict[str, Any]]:
+) -> tuple[dict[str, Any], bytes, dict[str, Any], dict[str, Any]]:
     workflow_path, workflow_name = VERIFIER.EXPECTED_SOURCE_WORKFLOWS[evidence_type]
     run = VERIFIER.fetch_run(
         client, repository, run_id, workflow_name, workflow_path, f"{evidence_type} source",
@@ -81,11 +81,6 @@ def fetch_source(
     VERIFIER.validate_schema(child, VERIFIER.CHILD_SCHEMA, expected_file)
     require_equal(child["evidenceType"], evidence_type, f"{evidence_type} child type")
     require_equal(child["sourceRevision"], head_sha, f"{evidence_type} child source revision")
-    observed = VERIFIER.parse_utc(child["observedAt"], f"{evidence_type}.observedAt")
-    started = VERIFIER.parse_utc(run["run_started_at"], f"{evidence_type} source start")
-    updated = VERIFIER.parse_utc(run["updated_at"], f"{evidence_type} source update")
-    if observed < started - VERIFIER.RUN_CLOCK_SKEW or observed > updated + VERIFIER.RUN_CLOCK_SKEW:
-        raise AssemblyError(f"{evidence_type} observedAt is outside its source run window")
     if scan := VERIFIER.scan_hygiene(child):
         raise AssemblyError(f"{evidence_type} evidence hygiene failed: {'; '.join(scan[:20])}")
 
@@ -100,7 +95,7 @@ def fetch_source(
         "artifactDigest": artifact_digest,
         "artifactFile": expected_file,
     }
-    return child, raw, source
+    return child, raw, source, run
 
 
 def assemble(
@@ -123,12 +118,29 @@ def assemble(
     if len(set(source_run_ids.values())) != len(source_run_ids):
         raise AssemblyError("each evidence type must use a distinct source run")
 
+    producer_run = client.get_json(f"/repos/{repository}/actions/runs/{producer_run_id}")
+    require_equal(producer_run.get("id"), producer_run_id, "producer run id")
+    require_equal(producer_run.get("event"), "workflow_dispatch", "producer event")
+    require_equal(producer_run.get("head_branch"), "main", "producer branch")
+    require_equal(producer_run.get("head_sha"), head_sha, "producer head SHA")
+    require_equal(producer_run.get("run_attempt"), producer_run_attempt, "producer run attempt")
+    require_equal(producer_run.get("name"), VERIFIER.EXPECTED_WORKFLOW_NAME, "producer workflow name")
+    require_equal(producer_run.get("path"), VERIFIER.EXPECTED_WORKFLOW_PATH, "producer workflow path")
+    if producer_run.get("status") not in {"in_progress", "completed"}:
+        raise AssemblyError("producer run status is invalid")
+    producer_started = VERIFIER.parse_utc(producer_run.get("run_started_at"), "producer run start")
+
     children: dict[str, dict[str, Any]] = {}
     raw_children: dict[str, bytes] = {}
     sources: dict[str, dict[str, Any]] = {}
     for evidence_type in sorted(VERIFIER.EXPECTED_CHILD_TYPES):
-        child, raw, source = fetch_source(
+        child, raw, source, source_run = fetch_source(
             client, repository, evidence_type, source_run_ids[evidence_type], head_sha,
+        )
+        observed = VERIFIER.parse_utc(child["observedAt"], f"{evidence_type}.observedAt")
+        source_updated = VERIFIER.parse_utc(source_run["updated_at"], f"{evidence_type} source update")
+        VERIFIER.validate_source_attestation_timing(
+            observed, source_updated, producer_started, evidence_type,
         )
         children[evidence_type] = child
         raw_children[evidence_type] = raw

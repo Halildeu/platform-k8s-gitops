@@ -402,6 +402,17 @@ def require_equal(actual: Any, expected: Any, label: str) -> None:
         raise EvidenceError(f"{label} mismatch")
 
 
+def validate_source_attestation_timing(
+    observed: datetime, source_updated: datetime, producer_started: datetime, label: str,
+) -> None:
+    if observed > source_updated + RUN_CLOCK_SKEW:
+        raise EvidenceError(f"{label} source run completed before its observation")
+    if source_updated - observed > MAX_EVIDENCE_AGE:
+        raise EvidenceError(f"{label} source attestation is stale")
+    if source_updated > producer_started:
+        raise EvidenceError(f"{label} source run did not complete before the producer")
+
+
 def validate_d30(payload: dict[str, Any]) -> None:
     images = payload["images"]
     components = [image["component"] for image in images]
@@ -575,10 +586,8 @@ def validate_semantics(
         require_equal(child["binding"], binding, f"{evidence_type} same-session binding")
         observed = parse_utc(child["observedAt"], f"{evidence_type}.observedAt")
         source_run = source_runs[evidence_type]
-        source_run_started = parse_utc(source_run["run_started_at"], f"{evidence_type} source start")
         source_run_updated = parse_utc(source_run["updated_at"], f"{evidence_type} source update")
-        if observed < source_run_started - RUN_CLOCK_SKEW or observed > source_run_updated + RUN_CLOCK_SKEW:
-            raise EvidenceError(f"{evidence_type} observedAt is outside its source run window")
+        validate_source_attestation_timing(observed, source_run_updated, run_started, evidence_type)
         if observed < pilot_started - RUN_CLOCK_SKEW or observed > pilot_ended + RUN_CLOCK_SKEW:
             raise EvidenceError(f"{evidence_type} observedAt is outside the pilot window")
 
