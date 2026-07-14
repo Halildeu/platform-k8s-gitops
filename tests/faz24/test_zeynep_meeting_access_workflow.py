@@ -29,6 +29,7 @@ def _run_ambiguous_reset_scenario(
     email_scenario: str = "unchanged",
     writer_user_id: str = WRITER_USER_ID,
     vault_scenario: str = "ready",
+    required_actions: tuple[str, ...] = (),
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -125,7 +126,7 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users/'* && "${method}" == 'PU
   [[ "${url}" == "${expected_url}" ]] || exit 91
   [[ -n "${data_binary_file}" && -f "${data_binary_file}" ]] || exit 92
   jq -e --arg id "${MOCK_EXPECTED_WRITER_USER_ID}" \
-    --arg email 'd35-admin@example.com' \
+    --arg email "${MOCK_EXPECTED_WRITER_EMAIL}" \
     '. == {
       id: $id,
       enabled: true,
@@ -135,29 +136,12 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users/'* && "${method}" == 'PU
       firstName: "D35",
       lastName: "Persona",
       attributes: {sentinel: ["keep"]},
-      requiredActions: ["UPDATE_PROFILE"]
+      requiredActions: []
     }' \
     "${data_binary_file}" >/dev/null || exit 93
-  printf '%s\\n' 'keycloak-email-reconcile' >> "${MOCK_EVENT_LOG}"
-  printf '%s' 'true' > "${MOCK_EMAIL_RECONCILIATION_STATE}"
-  if [[ "${MOCK_EMAIL_SCENARIO}" == 'success' || "${MOCK_EMAIL_SCENARIO}" == 'ambiguous-success' ]]; then
-    printf '%s' 'd35-admin@example.com' > "${MOCK_KEYCLOAK_EMAIL_STATE}"
-  fi
-  if [[ "${MOCK_EMAIL_SCENARIO}" == 'readback-wrong-id' ]]; then
-    printf '%s' 'unexpected-readback-id' > "${MOCK_KEYCLOAK_USER_ID_STATE}"
-  fi
-  if [[ "${MOCK_EMAIL_SCENARIO}" == 'success' ]]; then
-    printf '%s' '204'
-  elif [[ "${MOCK_EMAIL_SCENARIO}" == 'readback-mismatch' || "${MOCK_EMAIL_SCENARIO}" == 'readback-wrong-id' ]]; then
-    printf '%s' '204'
-  elif [[ "${MOCK_EMAIL_SCENARIO}" == 'rejected' ]]; then
-    printf '%s' '409'
-  elif [[ "${MOCK_EMAIL_SCENARIO}" == 'transport-failure' ]]; then
-    printf '%s' '000'
-    exit 7
-  else
-    printf '%s' '503'
-  fi
+  printf '%s\\n' 'keycloak-required-actions-clear' >> "${MOCK_EVENT_LOG}"
+  printf '%s' '[]' > "${MOCK_REQUIRED_ACTIONS_STATE}"
+  printf '%s' '204'
 elif [[ "${url}" == *'/admin/realms/platform-test/users' ]]; then
   if [[ "$(cat "${MOCK_EMAIL_RECONCILIATION_STATE}")" == 'true' ]]; then
     case "${MOCK_EMAIL_SCENARIO}" in
@@ -187,7 +171,9 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users' ]]; then
   fi
   email="$(cat "${MOCK_KEYCLOAK_EMAIL_STATE}")"
   user_id="$(cat "${MOCK_KEYCLOAK_USER_ID_STATE}")"
+  required_actions="$(cat "${MOCK_REQUIRED_ACTIONS_STATE}")"
   jq -n --arg id "${user_id}" --arg email "${email}" \\
+    --argjson requiredActions "${required_actions}" \\
     '[{
       id: $id,
       enabled: true,
@@ -197,13 +183,16 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users' ]]; then
       firstName: "D35",
       lastName: "Persona",
       attributes: {sentinel: ["keep"]},
-      requiredActions: ["UPDATE_PROFILE"]
+      requiredActions: $requiredActions
     }]' > "${output}"
   printf '%s' '200'
 elif [[ "${url}" == *'/realms/platform-test/protocol/openid-connect/token' ]]; then
   password="$(cat "${password_file}")"
   keycloak_state="$(cat "${MOCK_KEYCLOAK_STATE}")"
-  if [[ "${keycloak_state}" == 'new' && "${password}" == "${MOCK_NEW_PASSWORD}" ]] || \
+  if [[ "$(cat "${MOCK_REQUIRED_ACTIONS_STATE}")" != '[]' ]]; then
+    printf '%s' '{"error":"invalid_grant","error_description":"Account is not fully set up"}' > "${output}"
+    printf '%s' '400'
+  elif [[ "${keycloak_state}" == 'new' && "${password}" == "${MOCK_NEW_PASSWORD}" ]] || \
      [[ "${keycloak_state}" == 'old' && "${password}" == 'old-password' ]]; then
     printf '%s' '{"access_token":"writer-token"}' > "${output}"
     printf '%s' '200'
@@ -239,6 +228,10 @@ fi
     keycloak_user_id_state.write_text(writer_user_id, encoding="utf-8")
     email_reconciliation_state = tmp_path / "email-reconciliation-state"
     email_reconciliation_state.write_text("false", encoding="utf-8")
+    required_actions_state = tmp_path / "required-actions-state.json"
+    required_actions_state.write_text(
+        json.dumps(list(required_actions)), encoding="utf-8"
+    )
     event_log = tmp_path / "events.log"
     event_log.write_text("", encoding="utf-8")
     result_path = tmp_path / "result.json"
@@ -256,7 +249,9 @@ fi
             "MOCK_KEYCLOAK_USER_ID_STATE": str(keycloak_user_id_state),
             "MOCK_EMAIL_RECONCILIATION_STATE": str(email_reconciliation_state),
             "MOCK_EMAIL_SCENARIO": email_scenario,
+            "MOCK_EXPECTED_WRITER_EMAIL": initial_email,
             "MOCK_EXPECTED_WRITER_USER_ID": WRITER_USER_ID,
+            "MOCK_REQUIRED_ACTIONS_STATE": str(required_actions_state),
             "MOCK_VAULT_SCENARIO": vault_scenario,
             "MOCK_EVENT_LOG": str(event_log),
         }
@@ -323,6 +318,8 @@ def test_repair_script_exact_readback_and_noop_contract():
     assert ".data.data.admin_persona_password ==" in text
     assert 'STATUS="already-ready"' in text
     assert "rolesReadReady" in text
+    assert "requiredActionsReady" in text
+    assert "requiredActionsCleared" in text
     assert "permissionServiceWriterReady" not in text
     assert "permission-service roles read access" in text
     assert f'readonly WRITER_USER_ID="{WRITER_USER_ID}"' in text
@@ -331,6 +328,62 @@ def test_repair_script_exact_readback_and_noop_contract():
     assert "permissionWriterEmailMutation: false" in text
     assert "WRITER_EMAIL" not in text
     assert "email-reconcile" not in text
+
+
+def test_update_profile_required_action_is_cleared_for_exact_writer(tmp_path):
+    proc, result, vault_state, events, _ = _run_ambiguous_reset_scenario(
+        tmp_path,
+        "new-success",
+        initial_email="drifted@example.invalid",
+        required_actions=("UPDATE_PROFILE",),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert result["permissionWriter"]["requiredActionsReady"] is True
+    assert result["permissionWriter"]["requiredActionsCleared"] is True
+    assert result["boundaries"]["permissionWriterEmailMutation"] is False
+    assert vault_state["admin_persona_password"] == NEW_PASSWORD
+    assert events == [
+        "keycloak-required-actions-clear",
+        "vault-put",
+        "keycloak-reset-ambiguous",
+    ]
+
+
+def test_unexpected_required_action_blocks_before_any_mutation(tmp_path):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            required_actions=("CONFIGURE_TOTP",),
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == (
+        "permission-writer-required-actions-unsupported"
+    )
+    assert result["permissionWriter"]["requiredActionsReady"] is False
+    assert result["permissionWriter"]["requiredActionsCleared"] is False
+    assert vault_state == original_vault
+    assert events == []
+
+
+def test_vault_preflight_blocks_before_required_action_clear(tmp_path):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            vault_scenario="missing-container",
+            required_actions=("UPDATE_PROFILE",),
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == "vault-container-missing"
+    assert result["permissionWriter"]["requiredActionsCleared"] is False
+    assert vault_state == original_vault
+    assert events == []
 
 
 def test_writer_email_is_preserved_while_credential_is_repaired(tmp_path):
@@ -450,6 +503,8 @@ def test_workflow_blocks_unredacted_summary_and_artifact():
     assert "vaultRollbackAttempted" in text
     assert "vaultRollbackSucceeded" in text
     assert "rolesReadReady" in text
+    assert "requiredActionsReady" in text
+    assert "requiredActionsCleared" in text
     assert 'faz24.permissionWriterCredentialRepair.v2' in redaction
     assert ".boundaries.permissionWriterEmailMutation == false" in redaction
     assert 'identityBinding == "username+immutable-user-id"' in redaction

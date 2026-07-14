@@ -69,7 +69,11 @@ jobs:
               .boundaries.targetUserMutation == false and
               (if .schemaVersion == "faz24.permissionWriterCredentialRepair.v2" then
                 .boundaries.permissionWriterEmailMutation == false and
-                .permissionWriter.identityBinding == "username+immutable-user-id"
+                .permissionWriter.identityBinding == "username+immutable-user-id" and
+                (.permissionWriter.requiredActionsReady | type == "boolean") and
+                (.permissionWriter.requiredActionsCleared | type == "boolean") and
+                ((.permissionWriter.requiredActionsCleared == false) or
+                 (.permissionWriter.requiredActionsReady == true))
                else
                 true
                end)
@@ -105,6 +109,8 @@ jobs:
               echo "- Exact writer identity: \`$(jq -r .permissionWriter.exactIdentityMatch "${OUT_PATH}")\`"
               echo "- Writer identity binding: \`$(jq -r .permissionWriter.identityBinding "${OUT_PATH}")\`"
               echo "- Writer email mutation: \`$(jq -r .boundaries.permissionWriterEmailMutation "${OUT_PATH}")\`"
+              echo "- Writer required actions ready: \`$(jq -r .permissionWriter.requiredActionsReady "${OUT_PATH}")\`"
+              echo "- Writer required actions cleared: \`$(jq -r .permissionWriter.requiredActionsCleared "${OUT_PATH}")\`"
               echo "- Keycloak credential reset: \`$(jq -r .permissionWriter.keycloakCredentialReset "${OUT_PATH}")\`"
               echo "- Vault record synced: \`$(jq -r .permissionWriter.vaultRecordSynced "${OUT_PATH}")\`"
               echo "- Vault rollback attempted: \`$(jq -r .permissionWriter.vaultRollbackAttempted "${OUT_PATH}")\`"
