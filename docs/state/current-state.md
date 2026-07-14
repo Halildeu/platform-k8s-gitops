@@ -65,17 +65,37 @@ Live runtime and drift acceptance:
   `authGate=skipped-no-credentials`; it is not represented as a pass. This is
   an orthogonal backend-promotion field, not an input to the separately named
   `Faz 22.6 Live Audit` completion contract.
+- Fresh audit run
+  [29370124031](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29370124031)
+  then detected a real D30 gap: the rendered device-key broker expected
+  endpoint-admin digest
+  `sha256:45b4b4f24a2429a564d0a2607915b570128db0e98d430a109a6de6bbe788c48c`,
+  while the live deployment and pod still used
+  `sha256:d8717514f82f827ef973b4b18e7dcafb05eeb7c66d018911faef59b453d2d593`.
+  It correctly emitted
+  `REMOTE_BRIDGE_LIVE=blocked` and `F22_6_COMPLETION=blocked`; this failed
+  result is retained rather than hidden.
+- The existing owner-gated activation workflow, run
+  [29371337821](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29371337821),
+  applied the rendered test activation overlay without a direct workload
+  patch. The device-key deployment converged at generation/observed
+  `233/233`, Ready/Updated/Available `1/1/1`; its non-terminating pod was Ready
+  with zero restarts and exact imageID
+  `sha256:45b4b4f24a2429a564d0a2607915b570128db0e98d430a109a6de6bbe788c48c`.
+  The public SNI continued to route to
+  `endpoint-admin-remote-bridge-device-key`.
 
 Closure boundary:
 
 - The latest completed run of the specifically named `Faz 22.6 Live Audit`
-  workflow remains
-  [29318734855](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29318734855):
+  workflow is
+  [29371450972](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29371450972):
   `GATE_B1_4_HARDWARE_ATTESTATION=pass`,
   `GATE_VIEW_ONLY_ENGINEERING=pass`, `REMOTE_BRIDGE_LIVE=pass`,
-  `F22_6_RELEASE_LINEAGE=pass` and `F22_6_COMPLETION=pass`.
-  The later, narrower lineage and backend-runtime runs above do not emit a new
-  completion decision and therefore do not replace that result.
+  `GITHUB_RELEASE_IMMUTABLE=pass tag=v0.3.12`,
+  `F22_6_RELEASE_LINEAGE=pass` and `F22_6_COMPLETION=pass`. Its
+  `REMOTE_BRIDGE_LIVE` expected digest is the exact live
+  `sha256:45b4b4f24a2429a564d0a2607915b570128db0e98d430a109a6de6bbe788c48c`.
 - `#2373` is a post-completion viewer-delivery/product-acceptance follow-up;
   source merge or endpoint preparation is not runtime acceptance.
 - `#2374` remains a distinct human legal/privacy track. The canonical approver
