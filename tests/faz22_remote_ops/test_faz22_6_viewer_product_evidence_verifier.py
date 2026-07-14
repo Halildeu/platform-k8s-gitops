@@ -64,29 +64,18 @@ def case_binding(session_char):
 
 
 def negative_payload():
-    outcomes = {
-        "noAuth": ("unauthorized", 401),
-        "wrongRole": ("not-found", 404),
-        "wrongTenant": ("not-found", 404),
-        "wrongDevice": ("not-found", 404),
-        "expired": ("expired", 422),
-        "revoked": ("revoked", 404),
-        "replayed": ("replay-rejected", 422),
-        "overConcurrency": ("capacity-rejected", 409),
-        "disconnectedViewer": ("stream-closed", None),
-    }
     cases = {
         name: {
             "observedAt": "2026-07-14T00:05:00Z",
             "binding": case_binding("1"),
             "result": "fail-closed",
-            "outcome": outcome,
+            "outcome": VERIFIER.NEGATIVE_CASE_CONTRACT[name].outcome,
             "requestAccepted": False,
             "deliveryContinued": False,
-            "httpStatus": status,
+            "httpStatus": VERIFIER.NEGATIVE_CASE_CONTRACT[name].http_status,
             "evidenceSha256": sha(format(index, "x")),
         }
-        for index, (name, (outcome, status)) in enumerate(outcomes.items())
+        for index, name in enumerate(VERIFIER.NEGATIVE_CASES)
     }
     payload = {
         "authorizationSha256": VERIFIER.digest_bytes(authorization_bytes()),
@@ -144,23 +133,13 @@ def matrix_attestation_files(evidence_type, document):
             ),
         }
         if evidence_type == "negative":
-            credentials = {
-                "noAuth": "absent",
-                "wrongRole": "authenticated-wrong-role",
-                "wrongTenant": "authenticated-wrong-tenant",
-                "wrongDevice": "authenticated-wrong-device",
-                "expired": "expired-permit",
-                "revoked": "revoked-session",
-                "replayed": "replayed-permit",
-                "overConcurrency": "authorized-second-viewer",
-                "disconnectedViewer": "authorized-disconnected-viewer",
-            }
+            contract = VERIFIER.NEGATIVE_CASE_CONTRACT[case_name]
             attestation = {
                 **common,
                 "request": {
-                    "method": "GET",
-                    "targetClass": "viewer-product-channel",
-                    "credentialClass": credentials[case_name],
+                    "method": contract.method,
+                    "targetClass": contract.target_class,
+                    "credentialClass": contract.credential_class,
                 },
                 "result": {
                     "outcome": case["outcome"],
@@ -848,14 +827,61 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             )
 
     def test_negative_case_name_cannot_be_relabelled_with_another_outcome(self):
+        self.assertEqual("unauthorized", VERIFIER.NEGATIVE_CASE_CONTRACT["wrongRole"].outcome)
         children = child_documents()
         payload = children["negative"]["payload"]
-        payload["cases"]["wrongRole"]["outcome"] = "unauthorized"
+        payload["cases"]["wrongRole"]["outcome"] = "not-found"
         payload["suiteSha256"] = VERIFIER.digest_json({
             "authorizationSha256": payload["authorizationSha256"], "cases": payload["cases"],
         })
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "wrongRole outcome"):
             self.validate_matrices(children)
+
+    def test_negative_case_must_use_the_real_product_channel_contract(self):
+        # Wrong-role authentication must be 401, while signed-permit expiry is
+        # exercised through the acceptance-only POST agent-permit channel.
+        self.assertEqual(401, VERIFIER.NEGATIVE_CASE_CONTRACT["wrongRole"].http_status)
+        self.assertEqual("POST", VERIFIER.NEGATIVE_CASE_CONTRACT["expired"].method)
+        document = child_documents()["negative"]
+        raw_child = encode_json(document)
+        files = VERIFIER.safe_archive_files(source_archive("negative", raw_child))
+
+        wrong_role_path = "attestations/negative/wrongRole.json"
+        wrong_role = json.loads(files[wrong_role_path])
+        wrong_role["result"]["httpStatus"] = 404
+        files[wrong_role_path] = encode_json(wrong_role)
+        document["payload"]["cases"]["wrongRole"]["httpStatus"] = 404
+        document["payload"]["cases"]["wrongRole"]["evidenceSha256"] = \
+            VERIFIER.digest_bytes(files[wrong_role_path])
+        document["payload"]["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": document["payload"]["authorizationSha256"],
+            "cases": document["payload"]["cases"],
+        })
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "wrongRole HTTP status"):
+            VERIFIER.validate_matrix_source_attestations(
+                "negative", files, encode_json(document),
+            )
+
+        document = child_documents()["negative"]
+        raw_child = encode_json(document)
+        files = VERIFIER.safe_archive_files(source_archive("negative", raw_child))
+        expired_path = "attestations/negative/expired.json"
+        expired = json.loads(files[expired_path])
+        expired["request"].update({
+            "method": "GET",
+            "targetClass": "viewer-product-channel",
+        })
+        files[expired_path] = encode_json(expired)
+        document["payload"]["cases"]["expired"]["evidenceSha256"] = \
+            VERIFIER.digest_bytes(files[expired_path])
+        document["payload"]["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": document["payload"]["authorizationSha256"],
+            "cases": document["payload"]["cases"],
+        })
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "expired method"):
+            VERIFIER.validate_matrix_source_attestations(
+                "negative", files, encode_json(document),
+            )
 
 
 if __name__ == "__main__":

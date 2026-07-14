@@ -306,19 +306,28 @@ nonexistent run/artifact or hash-shaped placeholder is not accepted.
 | Source | Producer status | Live evidence status |
 |---|---|---|
 | Browser render/ACK | Canonical protected workflow implemented | Not run; requires merged GitOps workflow, deployed #910 web digest, signed #2374 marker/policy, protected Environment and active bounded surface |
-| Broker Prometheus | Contract/schema only | Producer and live source run absent |
-| Hash-chain audit | Contract/schema only | Producer and live source run absent |
-| D30 backend + web | Contract/schema only | Producer and live source run absent |
-| Negative matrix | Contract/schema only | Producer and live source run absent |
-| Termination matrix | Contract/schema only | Producer and live source run absent |
-| Protected operator | Activation provenance verifier implemented | Source producer and live authorization artifact absent |
+| Broker Prometheus | Independent source producer implemented | Live source run absent |
+| Hash-chain audit | Independent source producer implemented | Live source run absent |
+| D30 backend + web | Independent source producer implemented | Live source run absent |
+| Negative matrix | Per-case attestation contract hardened; live collector/producer pending | Live source run absent |
+| Termination matrix | Per-case attestation contract hardened; live collector/producer pending | Live source run absent |
+| Protected operator | Activation provenance verifier and source producer implemented | Live authorization artifact absent |
 
 The seven-source assembler and independent verifier are implemented, but they
 cannot manufacture a missing source artifact. `#2373` therefore stays open until
-all seven source workflows have successful, same-revision, same-session runs and
-the independent verifier emits the content-addressed v2 marker. The canonical
+all seven source workflows have successful, same-revision, same-authorization
+runs inside the bounded matrix window (with distinct isolated sessions for each
+termination case) and the independent verifier emits the content-addressed v2 marker. The canonical
 approver policy file and protected GitHub Environment are intentionally not
 invented by an agent; their absence keeps live activation fail-closed.
+
+Negative evidence must be produced fresh against the current contract. A token
+missing the required operator role is rejected as unauthenticated (`401`);
+expired and replayed signed permits are exercised through the non-prod,
+acceptance-only agent-permit probe (`POST`, `422` only after a real agent deny),
+not relabelled as viewer-channel `GET` requests. Evidence generated with the
+older wrong-role `404` or expired/replay viewer-`GET` model is incompatible and
+must not be migrated or reused.
 
 Never place a bearer token, cookie, frame bytes, base64 image, raw screen content,
 raw session/operator/device identity, private endpoint or credential in the
