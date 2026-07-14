@@ -49,7 +49,7 @@ VIEW_ONLY_FORBIDDEN_CLAIMS="${VIEW_ONLY_FORBIDDEN_CLAIMS:-rdp,credential-entry,r
 # mislabeled as "legal") is an allowlist violation and DOES block completion — the
 # non-blocking-ness applies to genuine legal items only, never to weakening a gate.
 VIEW_ONLY_EVIDENCE_SCHEMA_VERSION="${VIEW_ONLY_EVIDENCE_SCHEMA_VERSION:-faz22.6-view-only-evidence-v2}"
-VIEW_ONLY_KVKK_ALLOWED_KEYS="${VIEW_ONLY_KVKK_ALLOWED_KEYS:-kvkk_attended_pilot_signoff,legal_dpo_consent,retention_policy_approval,status,owner_approved_by,approved_at,expires_at,decision_payload_sha256,decision_record_sha256,decision_record_ref,approver_policy_sha256,approver_policy_ref,privacy_owner_key_id,privacy_owner_signed_at,privacy_owner_signature,legal_dpo_key_id,legal_dpo_signed_at,legal_dpo_signature}"
+VIEW_ONLY_KVKK_ALLOWED_KEYS="${VIEW_ONLY_KVKK_ALLOWED_KEYS:-kvkk_attended_pilot_signoff,legal_dpo_consent,retention_policy_approval,status,owner_approved_by,approved_at,expires_at,decision_payload_sha256,decision_record_sha256,decision_record_ref,approver_policy_sha256,approver_policy_ref,privacy_owner_key_id,privacy_owner_public_key_sha256,privacy_owner_signed_at,privacy_owner_signature,legal_dpo_key_id,legal_dpo_public_key_sha256,legal_dpo_signed_at,legal_dpo_signature}"
 EXPECTED_AGENT_TAG="${EXPECTED_AGENT_TAG:-$EXPECTED_AGENT_LATEST_TAG}"
 
 need() {
@@ -872,7 +872,8 @@ check_view_only_kvkk() {
 
   local status owner approved_at expires_at
   local attended_signoff legal_consent retention_approval payload_digest decision_digest decision_ref policy_digest policy_ref
-  local privacy_key_id privacy_signed_at privacy_signature legal_key_id legal_signed_at legal_signature
+  local privacy_key_id privacy_key_fingerprint privacy_signed_at privacy_signature
+  local legal_key_id legal_key_fingerprint legal_signed_at legal_signature
   status="$(printf '%s\n' "$marker_body" | waiver_field 'status')"
   attended_signoff="$(printf '%s\n' "$marker_body" | waiver_field 'kvkk_attended_pilot_signoff')"
   legal_consent="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_consent')"
@@ -886,9 +887,11 @@ check_view_only_kvkk() {
   policy_digest="$(printf '%s\n' "$marker_body" | waiver_field 'approver_policy_sha256')"
   policy_ref="$(printf '%s\n' "$marker_body" | waiver_field 'approver_policy_ref')"
   privacy_key_id="$(printf '%s\n' "$marker_body" | waiver_field 'privacy_owner_key_id')"
+  privacy_key_fingerprint="$(printf '%s\n' "$marker_body" | waiver_field 'privacy_owner_public_key_sha256')"
   privacy_signed_at="$(printf '%s\n' "$marker_body" | waiver_field 'privacy_owner_signed_at')"
   privacy_signature="$(printf '%s\n' "$marker_body" | waiver_field 'privacy_owner_signature')"
   legal_key_id="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_key_id')"
+  legal_key_fingerprint="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_public_key_sha256')"
   legal_signed_at="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_signed_at')"
   legal_signature="$(printf '%s\n' "$marker_body" | waiver_field 'legal_dpo_signature')"
 
@@ -909,9 +912,11 @@ check_view_only_kvkk() {
     [ -n "$approved_at" ] || incomplete+=("approved_at")
     [ -n "$expires_at" ] || incomplete+=("expires_at")
     [[ "$privacy_key_id" =~ ^kvkk-[a-z0-9][a-z0-9-]{2,62}$ ]] || incomplete+=("privacy_owner_key_id")
+    [[ "$privacy_key_fingerprint" =~ ^sha256:[a-f0-9]{64}$ ]] || incomplete+=("privacy_owner_public_key_sha256")
     [ -n "$privacy_signed_at" ] || incomplete+=("privacy_owner_signed_at")
     [[ "$privacy_signature" =~ ^[A-Za-z0-9+/]{86}==$ ]] || incomplete+=("privacy_owner_signature")
     [[ "$legal_key_id" =~ ^kvkk-[a-z0-9][a-z0-9-]{2,62}$ ]] || incomplete+=("legal_dpo_key_id")
+    [[ "$legal_key_fingerprint" =~ ^sha256:[a-f0-9]{64}$ ]] || incomplete+=("legal_dpo_public_key_sha256")
     [ -n "$legal_signed_at" ] || incomplete+=("legal_dpo_signed_at")
     [[ "$legal_signature" =~ ^[A-Za-z0-9+/]{86}==$ ]] || incomplete+=("legal_dpo_signature")
     [ -f "$VIEW_ONLY_KVKK_APPROVER_POLICY_PATH" ] || incomplete+=("canonical-approver-policy-missing")

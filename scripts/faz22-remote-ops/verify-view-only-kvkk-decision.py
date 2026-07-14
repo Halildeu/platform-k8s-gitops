@@ -48,6 +48,16 @@ SENSITIVE_KEYS = {
     "credential", "password", "secret", "cookie", "private_key", "frame_bytes",
     "image_bytes", "raw_screen", "payload_b64", "screen_content_bytes",
 }
+MARKER_REQUIRED_FIELDS = frozenset({
+    "status", "kvkk_attended_pilot_signoff", "legal_dpo_consent",
+    "retention_policy_approval", "owner_approved_by", "approved_at",
+    "expires_at", "decision_payload_sha256", "decision_record_sha256",
+    "decision_record_ref", "approver_policy_sha256", "approver_policy_ref",
+    "privacy_owner_key_id", "privacy_owner_public_key_sha256",
+    "privacy_owner_signed_at", "privacy_owner_signature",
+    "legal_dpo_key_id", "legal_dpo_public_key_sha256",
+    "legal_dpo_signed_at", "legal_dpo_signature",
+})
 
 
 class DecisionError(Exception):
@@ -204,6 +214,21 @@ def policy_entry_by_key(policy: dict[str, Any], key_id: str, role: str) -> dict[
     return matches[0]
 
 
+def ed25519_public_key_bytes(public_key_b64: str, label: str) -> bytes:
+    try:
+        public_key = base64.b64decode(public_key_b64, validate=True)
+    except (TypeError, ValueError) as exc:
+        raise DecisionError(f"{label} public key is invalid Base64") from exc
+    if len(public_key) != 32:
+        raise DecisionError(f"{label} public key must be a raw 32-byte Ed25519 key")
+    return public_key
+
+
+def ed25519_public_key_sha256(public_key_b64: str, label: str) -> str:
+    public_key = ed25519_public_key_bytes(public_key_b64, label)
+    return f"sha256:{hashlib.sha256(public_key).hexdigest()}"
+
+
 def validate_policy_core(policy: dict[str, Any]) -> None:
     expected_top = {
         "schemaVersion", "policyId", "identityDirectoryRef",
@@ -227,7 +252,8 @@ def validate_policy_core(policy: dict[str, Any]) -> None:
         raise DecisionError("approver policy must contain at least two authorized approvers")
     expected_entry = {"keyId", "principalId", "role", "ed25519PublicKeyBase64", "validFrom", "validUntil"}
     key_ids: set[str] = set()
-    principal_roles: set[tuple[str, str]] = set()
+    principal_ids: set[str] = set()
+    public_keys: set[bytes] = set()
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != expected_entry:
             raise DecisionError("approver policy entry has missing or unknown keys")
@@ -237,12 +263,9 @@ def validate_policy_core(policy: dict[str, Any]) -> None:
             raise DecisionError("approver policy principalId is invalid")
         if entry["role"] not in {"privacy-owner", "legal-or-dpo"}:
             raise DecisionError("approver policy role is invalid")
-        try:
-            public_key = base64.b64decode(entry["ed25519PublicKeyBase64"], validate=True)
-        except (TypeError, ValueError) as exc:
-            raise DecisionError("approver policy public key is invalid Base64") from exc
-        if len(public_key) != 32:
-            raise DecisionError("approver policy public key must be a raw 32-byte Ed25519 key")
+        public_key = ed25519_public_key_bytes(
+            entry["ed25519PublicKeyBase64"], "approver policy"
+        )
         valid_from = parse_utc(entry["validFrom"], "approver policy validFrom")
         valid_until = parse_utc(entry["validUntil"], "approver policy validUntil")
         if valid_until <= valid_from:
@@ -250,9 +273,14 @@ def validate_policy_core(policy: dict[str, Any]) -> None:
         if entry["principalId"] in set(engineering):
             raise DecisionError("approver policy authorizes an engineering principal for legal approval")
         key_ids.add(entry["keyId"])
-        principal_roles.add((entry["principalId"], entry["role"]))
-    if len(key_ids) != len(entries) or len(principal_roles) != len(entries):
-        raise DecisionError("approver policy key IDs and principal-role pairs must be unique")
+        principal_ids.add(entry["principalId"])
+        public_keys.add(public_key)
+    if len(key_ids) != len(entries):
+        raise DecisionError("approver policy key IDs must be globally unique")
+    if len(principal_ids) != len(entries):
+        raise DecisionError("approver policy principal IDs must be globally unique")
+    if len(public_keys) != len(entries):
+        raise DecisionError("approver policy Ed25519 public keys must be globally unique")
 
 
 def verify_signature_with_openssl(message: bytes, signature: bytes, public_key: bytes, label: str) -> None:
@@ -364,6 +392,9 @@ def validate_semantics(
             )
         attestation_result[label] = {
             "keyId": entry["keyId"],
+            "publicKeySha256": ed25519_public_key_sha256(
+                entry["ed25519PublicKeyBase64"], f"policy.{label}"
+            ),
             "signedAt": approval["signedAt"],
             "signatureBase64": approval["signatureBase64"],
         }
@@ -420,9 +451,11 @@ def marker_text(result: dict[str, Any]) -> str:
         f"approver_policy_sha256: {result['approverPolicySha256']}",
         f"approver_policy_ref: {result['approverPolicyRef']}",
         f"privacy_owner_key_id: {owner_attestation['keyId']}",
+        f"privacy_owner_public_key_sha256: {owner_attestation['publicKeySha256']}",
         f"privacy_owner_signed_at: {owner_attestation['signedAt']}",
         f"privacy_owner_signature: {owner_attestation['signatureBase64']}",
         f"legal_dpo_key_id: {legal_attestation['keyId']}",
+        f"legal_dpo_public_key_sha256: {legal_attestation['publicKeySha256']}",
         f"legal_dpo_signed_at: {legal_attestation['signedAt']}",
         f"legal_dpo_signature: {legal_attestation['signatureBase64']}",
         "",
@@ -454,15 +487,7 @@ def parse_marker(raw: str) -> dict[str, str]:
 def verify_marker(raw: str, policy: dict[str, Any], now: datetime) -> dict[str, Any]:
     validate_policy_core(policy)
     fields = parse_marker(raw)
-    required = {
-        "status", "kvkk_attended_pilot_signoff", "legal_dpo_consent",
-        "retention_policy_approval", "owner_approved_by", "approved_at",
-        "expires_at", "decision_payload_sha256", "decision_record_sha256",
-        "decision_record_ref", "approver_policy_sha256", "approver_policy_ref",
-        "privacy_owner_key_id", "privacy_owner_signed_at", "privacy_owner_signature",
-        "legal_dpo_key_id", "legal_dpo_signed_at", "legal_dpo_signature",
-    }
-    if set(fields) != required:
+    if set(fields) != MARKER_REQUIRED_FIELDS:
         raise DecisionError("cleared marker has missing or unknown fields")
     if fields["status"] != "cleared" or any(
         fields[key] != "pass"
@@ -490,6 +515,7 @@ def verify_marker(raw: str, policy: dict[str, Any], now: datetime) -> dict[str, 
     engineering = set(policy["engineeringPrincipalIds"])
     signed_times: list[datetime] = []
     principals: list[str] = []
+    public_key_fingerprints: list[str] = []
     for prefix, role in (("privacy_owner", "privacy-owner"), ("legal_dpo", "legal-or-dpo")):
         key_id = fields[f"{prefix}_key_id"]
         entry = policy_entry_by_key(policy, key_id, role)
@@ -502,6 +528,16 @@ def verify_marker(raw: str, policy: dict[str, Any], now: datetime) -> dict[str, 
         valid_until = parse_utc(entry["validUntil"], f"policy {prefix} validUntil")
         if not valid_from <= signed_at <= valid_until:
             raise DecisionError(f"marker {prefix} signature is outside key validity")
+        fingerprint = fields[f"{prefix}_public_key_sha256"]
+        if not SHA256.fullmatch(fingerprint):
+            raise DecisionError(f"marker {prefix} public key fingerprint is invalid")
+        expected_fingerprint = ed25519_public_key_sha256(
+            entry["ed25519PublicKeyBase64"], f"policy {prefix}"
+        )
+        if fingerprint != expected_fingerprint:
+            raise DecisionError(
+                f"marker {prefix} public key fingerprint does not match canonical policy"
+            )
         verify_signature(
             approval_message_from_digest(
                 fields["decision_payload_sha256"],
@@ -520,8 +556,11 @@ def verify_marker(raw: str, policy: dict[str, Any], now: datetime) -> dict[str, 
         )
         signed_times.append(signed_at)
         principals.append(entry["principalId"])
+        public_key_fingerprints.append(fingerprint)
     if len(set(principals)) != 2:
         raise DecisionError("marker signatures must resolve to two different people")
+    if len(set(public_key_fingerprints)) != 2:
+        raise DecisionError("marker signatures must resolve to two different Ed25519 keys")
     if approved_at != max(signed_times):
         raise DecisionError("marker approved_at must equal the later human signature timestamp")
 

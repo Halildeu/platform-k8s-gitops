@@ -30,11 +30,18 @@ human principals with different roles:
 1. `privacy-owner`
 2. `legal-or-dpo`
 
-Neither principal may be listed in `engineeringPrincipalIds`. Each signature is
+Neither principal may be listed in `engineeringPrincipalIds`. Policy entries
+must use globally unique principal IDs, key IDs, and decoded Ed25519 public-key
+bytes. Two aliases, certificates, HSM labels, or key IDs backed by the same
+private key do not satisfy dual control. Each signature is
 Ed25519 over a domain-separated message that includes the canonical decision
 payload digest, principal, role, signing time, and decision status. Public keys
 and validity windows come from the separately reviewed approver policy. Private
-keys remain under the human signers' custody.
+keys remain under the separate human signers' custody; a shared private key or
+shared signing slot is forbidden. The protected identity directory and its
+independent reviewer must also establish that the two opaque principal IDs map
+to two different accountable humans; distinct IDs and keys alone cannot prove
+human separation of duties.
 
 ## 3. Prepare the records
 
@@ -118,10 +125,13 @@ recordContainsRawScreenOrSecret=false
 
 The marker exposes no pilot/operator/device reference, human name or storage
 location. It contains SHA-256 values and matching content-addressed URNs for the
-decision record and reviewed approver policy, plus opaque key IDs, timestamps
-and detached signatures. Store the canonical signed decision object under its
-URN in the controlled evidence system before publishing the marker. The
-evidence store must enforce encryption, access logging, KMS custody,
+decision record and reviewed approver policy, plus opaque key IDs, derived
+public-key SHA-256 fingerprints, timestamps and detached signatures. The
+verifier resolves each key ID against the canonical policy, recomputes each
+fingerprint and requires two distinct key fingerprints. Store the canonical
+signed decision object and its digest-matched canonical policy as an immutable
+pair under their URNs in the controlled evidence system before publishing the
+marker. The evidence store must enforce encryption, access logging, KMS custody,
 write-protection/object-lock-equivalent, parameterized retention and a
 human-readable export path for rights/audit requests.
 
