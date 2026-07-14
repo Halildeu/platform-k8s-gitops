@@ -185,6 +185,21 @@ expect_rc0 "$tmp_dir/kvkk-bad-ref.out" run_kvkk
 grep -q '^GATE_VIEW_ONLY_KVKK=tracked_pending ' "$tmp_dir/kvkk-bad-ref.out"
 grep -q 'decision_record_ref' "$tmp_dir/kvkk-bad-ref.out"
 
+# 5c) A cleared marker without both derived key fingerprints is incomplete.
+missing_fingerprint_body="$(printf '%s\n' "$cleared_body" | grep -v '^privacy_owner_public_key_sha256:')"
+write_issue CLOSED "$missing_fingerprint_body"
+expect_rc0 "$tmp_dir/kvkk-missing-fingerprint.out" run_kvkk
+grep -q '^GATE_VIEW_ONLY_KVKK=tracked_pending ' "$tmp_dir/kvkk-missing-fingerprint.out"
+grep -q 'privacy_owner_public_key_sha256' "$tmp_dir/kvkk-missing-fingerprint.out"
+
+# 5d) A syntactically valid fingerprint must still resolve to the policy key.
+privacy_fingerprint="$(printf '%s\n' "$cleared_body" | sed -n 's/^privacy_owner_public_key_sha256:[[:space:]]*//p')"
+bad_fingerprint_body="${cleared_body//$privacy_fingerprint/sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd}"
+write_issue CLOSED "$bad_fingerprint_body"
+expect_rc0 "$tmp_dir/kvkk-bad-fingerprint.out" run_kvkk
+grep -q '^GATE_VIEW_ONLY_KVKK=tracked_pending ' "$tmp_dir/kvkk-bad-fingerprint.out"
+grep -q 'reason=cryptographic-marker-verification-failed' "$tmp_dir/kvkk-bad-fingerprint.out"
+
 # 6) ALLOWLIST VIOLATION: a security/product field mislabeled as legal -> blocks.
 violation_body="$(printf 'F22_6_VIEW_ONLY_KVKK: v1\nstatus: cleared\nkvkk_attended_pilot_signoff: pass\ndlp_mask_policy: pass\nrecording_mode: disabled\nowner_approved_by: DPO Example\napproved_at: %s\nexpires_at: %s\n' "$approved_at" "$expires_at")"
 write_issue CLOSED "$violation_body"

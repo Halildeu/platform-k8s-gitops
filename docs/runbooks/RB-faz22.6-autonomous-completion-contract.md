@@ -332,9 +332,11 @@ decision_payload_sha256: sha256:<64-lowercase-hex>
 approver_policy_sha256: sha256:<64-lowercase-hex>
 approver_policy_ref: urn:approver-policy:sha256:<same-64-lowercase-hex>
 privacy_owner_key_id: kvkk-<opaque-key-id>
+privacy_owner_public_key_sha256: sha256:<64-lowercase-hex>
 privacy_owner_signed_at: <RFC3339-UTC-Z>
 privacy_owner_signature: <Ed25519-signature-base64>
 legal_dpo_key_id: kvkk-<opaque-key-id>
+legal_dpo_public_key_sha256: sha256:<64-lowercase-hex>
 legal_dpo_signed_at: <RFC3339-UTC-Z>
 legal_dpo_signature: <Ed25519-signature-base64>
 ```
@@ -343,10 +345,13 @@ Allowed keys only: `kvkk_attended_pilot_signoff`, `legal_dpo_consent`,
 `retention_policy_approval`, `status`, `owner_approved_by`, `approved_at`,
 `expires_at`, `decision_record_sha256`, `decision_record_ref`,
 `decision_payload_sha256`, `approver_policy_sha256`, `approver_policy_ref`,
-`privacy_owner_key_id`, `privacy_owner_signed_at`, `privacy_owner_signature`,
-`legal_dpo_key_id`, `legal_dpo_signed_at`, `legal_dpo_signature`. The owner field is emitted as a
+`privacy_owner_key_id`, `privacy_owner_public_key_sha256`,
+`privacy_owner_signed_at`, `privacy_owner_signature`, `legal_dpo_key_id`,
+`legal_dpo_public_key_sha256`, `legal_dpo_signed_at`, `legal_dpo_signature`.
+The owner field is emitted as a
 non-identifying `dual-human-signature:<policy-id>` reference. Each SHA/URN pair
-must match exactly. The audit recomputes the canonical repo policy digest and
+must match exactly. Both public-key fingerprints must match the canonical policy
+and must differ. The audit recomputes the canonical repo policy digest and
 verifies both detached signatures before `cleared`. Any other key →
 `allowlist_violation` (blocks). With no
 marker, or `status` not `cleared`, or an incomplete clear, the gate stays

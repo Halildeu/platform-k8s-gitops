@@ -269,6 +269,12 @@ class KvkkDecisionVerifierTest(unittest.TestCase):
         self.assertIn("status: cleared", marker)
         self.assertNotIn("person:", marker)
         self.assertNotIn("protected://", marker)
+        owner_fingerprint = result["approvalAttestations"]["privacyOwner"]["publicKeySha256"]
+        legal_fingerprint = result["approvalAttestations"]["legalOrDpo"]["publicKeySha256"]
+        self.assertRegex(owner_fingerprint, r"^sha256:[0-9a-f]{64}$")
+        self.assertNotEqual(owner_fingerprint, legal_fingerprint)
+        self.assertIn(f"privacy_owner_public_key_sha256: {owner_fingerprint}", marker)
+        self.assertIn(f"legal_dpo_public_key_sha256: {legal_fingerprint}", marker)
         marker_result = VERIFIER.verify_marker(marker, approver_policy, self.now)
         self.assertEqual("pass", marker_result["status"])
         self.assertEqual(2, marker_result["humanSignatureCount"])
@@ -302,6 +308,18 @@ class KvkkDecisionVerifierTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(VERIFIER.DecisionError, "signature verification failed"):
             VERIFIER.verify_marker(tampered_signature, approver_policy, self.now)
+
+        owner_fingerprint = result["approvalAttestations"]["privacyOwner"]["publicKeySha256"]
+        tampered_fingerprint = marker.replace(owner_fingerprint, "sha256:" + "d" * 64)
+        with self.assertRaisesRegex(VERIFIER.DecisionError, "fingerprint does not match"):
+            VERIFIER.verify_marker(tampered_fingerprint, approver_policy, self.now)
+
+        missing_fingerprint = "\n".join(
+            line for line in marker.splitlines()
+            if not line.startswith("privacy_owner_public_key_sha256:")
+        ) + "\n"
+        with self.assertRaisesRegex(VERIFIER.DecisionError, "missing or unknown fields"):
+            VERIFIER.verify_marker(missing_fingerprint, approver_policy, self.now)
 
         noncanonical = marker.replace("status: cleared", "status:  cleared")
         with self.assertRaisesRegex(VERIFIER.DecisionError, "non-canonical"):
@@ -352,6 +370,62 @@ class KvkkDecisionVerifierTest(unittest.TestCase):
         approver_policy["engineeringPrincipalIds"].append("person:privacy.owner")
         with self.assertRaisesRegex(VERIFIER.DecisionError, "engineering principal"):
             self.verify(record, approver_policy)
+
+    def test_policy_rejects_same_ed25519_key_under_distinct_people_and_roles(self):
+        shared_key = Ed25519PrivateKey.generate()
+        approver_policy = policy(self.now, shared_key, shared_key)
+        record = valid_unsigned_record(self.now)
+        self.assertNotEqual(
+            approver_policy["authorizedApprovers"][0]["keyId"],
+            approver_policy["authorizedApprovers"][1]["keyId"],
+        )
+        self.assertNotEqual(
+            approver_policy["authorizedApprovers"][0]["principalId"],
+            approver_policy["authorizedApprovers"][1]["principalId"],
+        )
+        record["approvals"]["privacyOwner"]["signatureBase64"] = base64.b64encode(
+            shared_key.sign(
+                VERIFIER.approval_message(
+                    record, record["approvals"]["privacyOwner"], approver_policy
+                )
+            )
+        ).decode("ascii")
+        record["approvals"]["legalOrDpo"]["signatureBase64"] = base64.b64encode(
+            shared_key.sign(
+                VERIFIER.approval_message(
+                    record, record["approvals"]["legalOrDpo"], approver_policy
+                )
+            )
+        ).decode("ascii")
+        with self.assertRaisesRegex(VERIFIER.DecisionError, "public keys must be globally unique"):
+            self.verify(record, approver_policy)
+
+    def test_policy_rejects_same_principal_under_different_roles(self):
+        approver_policy = policy(
+            self.now, Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+        )
+        approver_policy["authorizedApprovers"][1]["principalId"] = (
+            approver_policy["authorizedApprovers"][0]["principalId"]
+        )
+        with self.assertRaisesRegex(VERIFIER.DecisionError, "principal IDs must be globally unique"):
+            VERIFIER.validate_policy_core(approver_policy)
+
+    def test_marker_rejects_public_key_rotation_under_same_key_id(self):
+        record, approver_policy = signed_fixture(self.now)
+        marker = VERIFIER.marker_text(self.verify(record, approver_policy))
+        rotated_policy = json.loads(json.dumps(approver_policy))
+        rotated_policy["authorizedApprovers"][0]["ed25519PublicKeyBase64"] = public_key_b64(
+            Ed25519PrivateKey.generate()
+        )
+        with self.assertRaisesRegex(VERIFIER.DecisionError, "policy digest"):
+            VERIFIER.verify_marker(marker, rotated_policy, self.now)
+
+    def test_shell_and_python_marker_field_contracts_match(self):
+        audit = (ROOT / "scripts/faz22-remote-ops/faz22-6-completion-audit.sh").read_text()
+        prefix = 'VIEW_ONLY_KVKK_ALLOWED_KEYS="${VIEW_ONLY_KVKK_ALLOWED_KEYS:-'
+        line = next(line for line in audit.splitlines() if line.startswith(prefix))
+        shell_fields = set(line.removeprefix(prefix).removesuffix('}"').split(","))
+        self.assertEqual(VERIFIER.MARKER_REQUIRED_FIELDS, shell_fields)
 
     def test_tamper_after_signature_fails(self):
         record, approver_policy = signed_fixture(self.now)
