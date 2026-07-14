@@ -24,6 +24,8 @@ jobs:
 
       - name: Build overlays/test
         run: kustomize build kustomize/overlays/test > /tmp/test.yaml
+      - name: Verify rendered backend ArgoCD sync-wave contract
+        run: python3 scripts/test/verify-backend-sync-wave-render.py /tmp/test.yaml
       - name: Build overlays/prod
         run: kustomize build kustomize/overlays/prod > /tmp/prod.yaml
       - name: Build overlays/test/eso

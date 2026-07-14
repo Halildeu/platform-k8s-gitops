@@ -1,0 +1,101 @@
+name: Faz 22.6 VIEW_ONLY viewer product evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      browser_run_id: {description: "Verified browser evidence source run ID", required: true, type: string}
+      broker_run_id: {description: "Verified broker evidence source run ID", required: true, type: string}
+      audit_run_id: {description: "Verified audit evidence source run ID", required: true, type: string}
+      d30_run_id: {description: "Verified D30 evidence source run ID", required: true, type: string}
+      negative_run_id: {description: "Verified negative-matrix source run ID", required: true, type: string}
+      termination_run_id: {description: "Verified termination-matrix source run ID", required: true, type: string}
+      operator_run_id: {description: "Verified protected-authorization source run ID", required: true, type: string}
+      confirm:
+        description: "Required literal: ASSEMBLE_FAZ22_6_VIEW_ONLY_VIEWER_PRODUCT_EVIDENCE"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: faz22-6-view-only-viewer-product-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  assemble:
+    name: Assemble seven provenance-verified source artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          BROWSER_RUN_ID: ${{ inputs.browser_run_id }}
+          BROKER_RUN_ID: ${{ inputs.broker_run_id }}
+          AUDIT_RUN_ID: ${{ inputs.audit_run_id }}
+          D30_RUN_ID: ${{ inputs.d30_run_id }}
+          NEGATIVE_RUN_ID: ${{ inputs.negative_run_id }}
+          TERMINATION_RUN_ID: ${{ inputs.termination_run_id }}
+          OPERATOR_RUN_ID: ${{ inputs.operator_run_id }}
+        run: |
+          set -euo pipefail
+          [ "$CONFIRM" = "ASSEMBLE_FAZ22_6_VIEW_ONLY_VIEWER_PRODUCT_EVIDENCE" ] || {
+            echo "::error::invalid confirmation literal"
+            exit 2
+          }
+          run_ids=(
+            "$BROWSER_RUN_ID" "$BROKER_RUN_ID" "$AUDIT_RUN_ID" "$D30_RUN_ID"
+            "$NEGATIVE_RUN_ID" "$TERMINATION_RUN_ID" "$OPERATOR_RUN_ID"
+          )
+          [ "$(printf '%s\n' "${run_ids[@]}" | sort -u | wc -l)" -eq 7 ] || {
+            echo "::error::source run IDs must be distinct"
+            exit 2
+          }
+          for run_id in "${run_ids[@]}"; do
+            printf '%s' "$run_id" | grep -Eq '^[1-9][0-9]{5,19}$' || {
+              echo "::error::every source run ID must be a positive GitHub Actions run ID"
+              exit 2
+            }
+          done
+
+      - name: Checkout producer revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Install strict JSON Schema validator
+        run: python3 -m pip install --quiet jsonschema==4.25.1
+
+      - name: Assemble content-addressed evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/faz22-6-viewer-product-evidence"
+          mkdir -p "$out"
+          python3 scripts/faz22-remote-ops/assemble-view-only-viewer-product-evidence.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --producer-run-id "$GITHUB_RUN_ID" \
+            --producer-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --head-sha "$GITHUB_SHA" \
+            --browser-run-id "${{ inputs.browser_run_id }}" \
+            --broker-run-id "${{ inputs.broker_run_id }}" \
+            --audit-run-id "${{ inputs.audit_run_id }}" \
+            --d30-run-id "${{ inputs.d30_run_id }}" \
+            --negative-run-id "${{ inputs.negative_run_id }}" \
+            --termination-run-id "${{ inputs.termination_run_id }}" \
+            --operator-run-id "${{ inputs.operator_run_id }}" \
+            --output-dir "$out"
+          find "$out" -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/SHA256SUMS"
+          printf '## #2373 product evidence producer\n\n- Seven source runs and artifacts verified\n- Scope: test-only, attended, recording-off, one viewer\n- This run is not product acceptance until the independent verifier passes\n' \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact evidence artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-6-view-only-viewer-product-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-6-viewer-product-evidence/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 30

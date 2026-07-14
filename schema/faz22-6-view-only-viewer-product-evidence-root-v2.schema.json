@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY viewer product evidence root v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "environment",
+    "producer",
+    "generatedAt",
+    "pilot",
+    "binding",
+    "scope",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "faz22.6.viewOnlyViewerProductEvidence.v2"
+    },
+    "environment": {
+      "const": "test"
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "workflowPath", "runId", "runAttempt", "headSha"],
+      "properties": {
+        "repository": {"const": "Halildeu/platform-k8s-gitops"},
+        "workflowPath": {"const": ".github/workflows/faz22-6-view-only-viewer-product-evidence.yml"},
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"type": "integer", "minimum": 1},
+        "headSha": {"$ref": "#/$defs/gitSha"}
+      }
+    },
+    "generatedAt": {"$ref": "#/$defs/utcTimestamp"},
+    "pilot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startedAt", "endedAt"],
+      "properties": {
+        "startedAt": {"$ref": "#/$defs/utcTimestamp"},
+        "endedAt": {"$ref": "#/$defs/utcTimestamp"}
+      }
+    },
+    "binding": {"$ref": "#/$defs/binding"},
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "recordingMode",
+        "attended",
+        "maxViewers",
+        "productionReady",
+        "broadRolloutReady",
+        "multiViewerFanoutProven",
+        "legalAcceptance"
+      ],
+      "properties": {
+        "mode": {"const": "VIEW_ONLY"},
+        "recordingMode": {"const": "disabled"},
+        "attended": {"const": true},
+        "maxViewers": {"const": 1},
+        "productionReady": {"const": false},
+        "broadRolloutReady": {"const": false},
+        "multiViewerFanoutProven": {"const": false},
+        "legalAcceptance": {"const": false}
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "path", "sha256", "source"],
+        "properties": {
+          "type": {
+            "enum": ["browser", "broker", "audit", "d30", "negative", "termination", "operator"]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^evidence/(browser|broker|audit|d30|negative|termination|operator)\\.json$"
+          },
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "source": {"$ref": "#/$defs/sourceArtifact"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "gitSha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "sourceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "workflowPath",
+        "runId",
+        "runAttempt",
+        "headSha",
+        "artifactId",
+        "artifactName",
+        "artifactDigest",
+        "artifactFile"
+      ],
+      "properties": {
+        "repository": {"const": "Halildeu/platform-k8s-gitops"},
+        "workflowPath": {
+          "type": "string",
+          "pattern": "^\\.github/workflows/faz22-6-view-only-viewer-(browser|broker|audit|d30|negative|termination|operator)-evidence\\.yml$"
+        },
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"type": "integer", "minimum": 1},
+        "headSha": {"$ref": "#/$defs/gitSha"},
+        "artifactId": {"type": "integer", "minimum": 1},
+        "artifactName": {
+          "type": "string",
+          "pattern": "^faz22-6-view-only-viewer-(browser|broker|audit|d30|negative|termination|operator)-evidence-[1-9][0-9]*$"
+        },
+        "artifactDigest": {"$ref": "#/$defs/sha256"},
+        "artifactFile": {
+          "type": "string",
+          "pattern": "^evidence/(browser|broker|audit|d30|negative|termination|operator)\\.json$"
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionSha256", "tenantSha256", "operatorSha256", "deviceSha256"],
+      "properties": {
+        "sessionSha256": {"$ref": "#/$defs/sha256"},
+        "tenantSha256": {"$ref": "#/$defs/sha256"},
+        "operatorSha256": {"$ref": "#/$defs/sha256"},
+        "deviceSha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

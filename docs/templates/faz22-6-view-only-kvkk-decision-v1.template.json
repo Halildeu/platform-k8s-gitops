@@ -1,0 +1,167 @@
+{
+  "schemaVersion": "faz22.6-view-only-kvkk-decision-v1",
+  "status": "approved",
+  "processingActivityId": "__REQUIRED_ROPA_ACTIVITY_ID__",
+  "scope": {
+    "environment": "test",
+    "mode": "attended-view-only",
+    "recordingMode": "disabled",
+    "productChannel": "endpoint-agent-outbound-mtls-remote-bridge",
+    "engineeringAcceptanceIssue": "https://github.com/Halildeu/platform-k8s-gitops/issues/1580",
+    "viewerProductAcceptanceIssue": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373",
+    "kvkkTrackingIssue": "https://github.com/Halildeu/platform-k8s-gitops/issues/2374",
+    "viewerProductEvidenceSha256": "sha256:__REQUIRED_VIEWER_PRODUCT_EVIDENCE_SHA256__",
+    "viewerProductEvidenceRef": "protected://__REQUIRED_VIEWER_PRODUCT_EVIDENCE__",
+    "pilotOperatorRef": "protected://__REQUIRED_OPERATOR_RECORD__",
+    "pilotDeviceRef": "protected://__REQUIRED_DEVICE_RECORD__",
+    "onePersonRosterRef": "protected://__REQUIRED_ROSTER_RECORD__"
+  },
+  "processing": {
+    "purpose": "__REQUIRED_HUMAN_LEGAL_PURPOSE_AND_NECESSITY_RATIONALE__",
+    "legalBasis": "__REQUIRED_HUMAN_SELECTED_LEGAL_BASIS__",
+    "legalAuthorityRef": "policy://__REQUIRED_LEGAL_AUTHORITY__",
+    "screenDataCategories": ["__REQUIRED_VISIBLE_DATA_CATEGORY__"],
+    "specialCategoryData": {
+      "expected": false,
+      "handlingDecision": "__REQUIRED_SPECIAL_CATEGORY_HANDLING_DECISION__",
+      "exposureResponse": "__REQUIRED_STOP_ESCALATE_AND_INCIDENT_RESPONSE__"
+    }
+  },
+  "noticeAndConsent": {
+    "noticeVersion": "__REQUIRED_NOTICE_VERSION__",
+    "noticeRef": "policy://__REQUIRED_NOTICE_TEXT__",
+    "attendedConsentRequired": true,
+    "consentEvidenceRef": "protected://__REQUIRED_CONSENT_EVIDENCE__",
+    "withdrawalMethod": "__REQUIRED_WITHDRAWAL_METHOD_AND_EFFECT__",
+    "localAbortMethod": "__REQUIRED_LOCAL_ABORT_METHOD_AND_EFFECT__",
+    "visibleIndicatorRequired": true
+  },
+  "retention": {
+    "screenContent": {
+      "persisted": false,
+      "retentionDays": 0,
+      "justification": "Recording is disabled and no screen-content object is persisted.",
+      "ownerPrincipalId": "person:__required_privacy_owner__"
+    },
+    "sessionMetadata": {
+      "retentionDays": 0,
+      "justification": "__REQUIRED_HUMAN_RETENTION_JUSTIFICATION__",
+      "ownerPrincipalId": "person:__required_privacy_owner__",
+      "effectiveFrom": "1970-01-01T00:00:00Z"
+    },
+    "auditRecords": {
+      "retentionDays": 0,
+      "justification": "__REQUIRED_HUMAN_RETENTION_JUSTIFICATION__",
+      "ownerPrincipalId": "person:__required_privacy_owner__",
+      "effectiveFrom": "1970-01-01T00:00:00Z"
+    },
+    "recordingEnabledChangePolicy": {
+      "newDecisionRequired": true,
+      "newEngineeringAcceptanceRequired": true,
+      "wormRequired": true,
+      "recordBeforeFanoutRequired": true,
+      "parameterizedRetentionRequired": true
+    }
+  },
+  "governance": {
+    "controller": "__REQUIRED_CONTROLLER_LEGAL_ENTITY__",
+    "processors": [{
+      "name": "__REQUIRED_PROCESSOR__",
+      "role": "__REQUIRED_PROCESSOR_ROLE__",
+      "location": "__REQUIRED_PROCESSING_LOCATION__",
+      "dataCategories": ["__REQUIRED_DATA_CATEGORY__"],
+      "safeguardsRef": "policy://__REQUIRED_SAFEGUARDS__"
+    }],
+    "subprocessors": [],
+    "storageRegion": "__REQUIRED_STORAGE_REGION__",
+    "crossBorderTransfer": {
+      "enabled": false,
+      "decision": "__REQUIRED_TRANSFER_DECISION_AND_RATIONALE__",
+      "safeguardRef": "policy://__REQUIRED_TRANSFER_SAFEGUARD_OR_NO_TRANSFER_DECISION__"
+    },
+    "accessLogging": { "enabled": true, "evidenceRef": "artifact://__REQUIRED_ACCESS_LOGGING_EVIDENCE__" },
+    "decisionRecordStorage": {
+      "encryptionAtRest": true,
+      "accessLogging": true,
+      "writeProtection": true,
+      "immutabilityMode": "equivalent-write-once-control",
+      "kmsCustodyRef": "policy://__REQUIRED_KMS_CUSTODY__",
+      "accessPolicyRef": "policy://__REQUIRED_DECISION_RECORD_ACCESS_POLICY__",
+      "writeProtectionEvidenceRef": "artifact://__REQUIRED_WRITE_PROTECTION_EVIDENCE__",
+      "recordRetention": {
+        "retentionDays": 0,
+        "justification": "__REQUIRED_DECISION_RECORD_RETENTION_JUSTIFICATION__",
+        "ownerPrincipalId": "person:__required_privacy_owner__",
+        "effectiveFrom": "1970-01-01T00:00:00Z"
+      },
+      "humanReadableExportProcedureRef": "runbook://__REQUIRED_HUMAN_READABLE_EXPORT_PROCEDURE__"
+    },
+    "processingActivityRegisterRef": "ropa://__REQUIRED_ACTIVITY_RECORD__",
+    "dataSubjectRights": {
+      "access": "__REQUIRED_ACCESS_RESPONSE_PROCESS__",
+      "correction": "__REQUIRED_CORRECTION_RESPONSE_PROCESS__",
+      "erasureOrRestriction": "__REQUIRED_ERASURE_OR_RESTRICTION_PROCESS__",
+      "objection": "__REQUIRED_OBJECTION_RESPONSE_PROCESS__",
+      "requestPath": "contact://__REQUIRED_DATA_SUBJECT_REQUEST_CHANNEL__"
+    },
+    "incidentResponse": {
+      "contactRef": "contact://__REQUIRED_INCIDENT_CONTACT__",
+      "notificationWindowHours": 0,
+      "runbookRef": "runbook://__REQUIRED_INCIDENT_RUNBOOK__"
+    }
+  },
+  "pilotApprovals": {
+    "allowTest8096ClusterIPExposure": true,
+    "onePersonRosterApproved": true,
+    "consentingPilotDeviceApproved": true
+  },
+  "uxVerification": {
+    "verifiedAt": "1970-01-01T00:00:00Z",
+    "verifiedByPrincipalId": "person:__required_human_tester__",
+    "evidenceRef": "protected://__REQUIRED_UX_EVIDENCE__",
+    "noticeDisplayedBeforeStart": true,
+    "explicitConsentCaptured": true,
+    "withdrawalTerminatesSession": true,
+    "localAbortTerminatesSession": true,
+    "indicatorVisibleThroughout": true
+  },
+  "lifecycle": {
+    "approvedAt": "1970-01-01T00:00:00Z",
+    "reviewExpiresAt": "1970-01-01T00:00:00Z",
+    "changeTriggers": [
+      "purpose-or-legal-basis-change",
+      "recording-mode-change",
+      "data-category-change",
+      "controller-processor-or-transfer-change",
+      "retention-change",
+      "security-or-privacy-incident",
+      "material-product-scope-change",
+      "regulatory-guidance-change"
+    ]
+  },
+  "boundaries": {
+    "productionReady": false,
+    "broadRolloutReady": false,
+    "multiViewerFanoutProven": false,
+    "recordingEnabled": false,
+    "fiveDeviceReady": false,
+    "fiftyDeviceReady": false,
+    "eightHundredDeviceReady": false
+  },
+  "approvals": {
+    "privacyOwner": {
+      "principalId": "person:__required_privacy_owner__",
+      "role": "privacy-owner",
+      "signedAt": "1970-01-01T00:00:00Z",
+      "signatureAlgorithm": "ed25519",
+      "signatureBase64": "__REQUIRED_ED25519_SIGNATURE__"
+    },
+    "legalOrDpo": {
+      "principalId": "person:__required_legal_or_dpo__",
+      "role": "legal-or-dpo",
+      "signedAt": "1970-01-01T00:00:00Z",
+      "signatureAlgorithm": "ed25519",
+      "signatureBase64": "__REQUIRED_ED25519_SIGNATURE__"
+    }
+  }
+}

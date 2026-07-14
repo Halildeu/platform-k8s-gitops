@@ -69,7 +69,7 @@ evidence.
 | Broker live state | Dedicated remote-bridge deployment ready on immutable digest; ExternalSecrets Ready/SecretSynced | `docs/state/current-state.md` plus live `kubectl`; expected digest is **derived from the rendered activation overlay** (single SSOT, #2067 — no hardcoded literal; the audit prints the exact `expected_digest` + `expected_source=rendered-overlay`) |
 | B1.4 hardware attestation | Real device-key/TPM evidence on agent wire, broker verifier pass, root policy, positive and negative field evidence | `platform-backend#548` |
 | VIEW_ONLY screen-share — ENGINEERING (fail-closed) | Product-channel live VIEW_ONLY smoke, D10 fail-closed evidence, DLP/mask policy, local abort, active indicator, recording-mode-aware controls (`disabled`: no-content-persistence proof; `enabled`: WORM + record-before-fanout + parametric retention) | `platform-k8s-gitops#1580` (`F22_6_VIEW_ONLY_ENGINEERING: v2`) |
-| VIEW_ONLY screen-share — KVKK/legal (NON-BLOCKING, ADR-0044) | Tracked, never fail-closes completion: emitted `tracked_pending\|cleared\|expired`. Allowlist only; mislabeled non-legal field → `allowlist_violation` blocks | `platform-k8s-gitops#1580` (`F22_6_VIEW_ONLY_KVKK: v1`) |
+| VIEW_ONLY screen-share — KVKK/legal (NON-BLOCKING, ADR-0044) | Tracked, never fail-closes completion: emitted `tracked_pending\|cleared\|expired`. Allowlist only; mislabeled non-legal field → `allowlist_violation` blocks | `platform-k8s-gitops#2374` (`F22_6_VIEW_ONLY_KVKK: v1`) |
 | Release/version hygiene | Agent release, MSI/ProductVersion/FileVersion, artifact-host current, GitOps expected version, verifier defaults, and acceptance issue evidence agree | release artifacts plus GitOps verifier output |
 | Rollout boundary | 5/50/800 readiness is either explicitly out of scope or proven under separate signed MSI/GPO rollout gates | rollout issues, not `#208` |
 
@@ -196,7 +196,8 @@ gate issue.
 
 ### 4.2 VIEW_ONLY Screen-Share Acceptance (ADR-0044 split: ENGINEERING + KVKK)
 
-`platform-k8s-gitops#1580` is split into two markers ([ADR-0044](../adr/0044-faz22-6-kvkk-nonblocking-parametric-durations.md)):
+The original `platform-k8s-gitops#1580` marker contract is split by authority
+([ADR-0044](../adr/0044-faz22-6-kvkk-nonblocking-parametric-durations.md)):
 
 - **`F22_6_VIEW_ONLY_ENGINEERING: v2`** — the fail-closed completion gate
   (`GATE_VIEW_ONLY_ENGINEERING`). Bounded VIEW_ONLY product-channel evidence
@@ -207,7 +208,8 @@ gate issue.
   `tracked_pending | cleared | expired` so the legal obligation stays visible,
   but it does NOT fail-close `F22_6_COMPLETION`. The KVKK marker is an
   ALLOWLIST (only legal/DPO/retention keys); a security/product/audit field
-  mislabeled as legal is an `allowlist_violation` and DOES block.
+  mislabeled as legal is an `allowlist_violation` and DOES block. Engineering
+  authority remains `#1580`; legal decision/marker authority is `#2374`.
 
 **Legacy fail-safe:** the old bundled `F22_6_VIEW_ONLY_ACCEPTANCE: v1` marker is
 refused — if present, the engineering gate blocks with
@@ -321,15 +323,38 @@ status: cleared
 kvkk_attended_pilot_signoff: pass
 legal_dpo_consent: pass
 retention_policy_approval: pass
-owner_approved_by: <named DPO/owner>
-approved_at: YYYY-MM-DD
-expires_at: YYYY-MM-DD
+owner_approved_by: dual-human-signature:<policy-id>
+approved_at: YYYY-MM-DDTHH:MM:SSZ
+expires_at: YYYY-MM-DDTHH:MM:SSZ
+decision_record_sha256: sha256:<64-lowercase-hex>
+decision_record_ref: urn:decision-record:sha256:<same-64-lowercase-hex>
+decision_payload_sha256: sha256:<64-lowercase-hex>
+approver_policy_sha256: sha256:<64-lowercase-hex>
+approver_policy_ref: urn:approver-policy:sha256:<same-64-lowercase-hex>
+privacy_owner_key_id: kvkk-<opaque-key-id>
+privacy_owner_public_key_sha256: sha256:<64-lowercase-hex>
+privacy_owner_signed_at: <RFC3339-UTC-Z>
+privacy_owner_signature: <Ed25519-signature-base64>
+legal_dpo_key_id: kvkk-<opaque-key-id>
+legal_dpo_public_key_sha256: sha256:<64-lowercase-hex>
+legal_dpo_signed_at: <RFC3339-UTC-Z>
+legal_dpo_signature: <Ed25519-signature-base64>
 ```
 
 Allowed keys only: `kvkk_attended_pilot_signoff`, `legal_dpo_consent`,
 `retention_policy_approval`, `status`, `owner_approved_by`, `approved_at`,
-`expires_at`. Any other key → `allowlist_violation` (blocks). With no marker, or
-`status` not `cleared`, or an incomplete clear, the gate stays
+`expires_at`, `decision_record_sha256`, `decision_record_ref`,
+`decision_payload_sha256`, `approver_policy_sha256`, `approver_policy_ref`,
+`privacy_owner_key_id`, `privacy_owner_public_key_sha256`,
+`privacy_owner_signed_at`, `privacy_owner_signature`, `legal_dpo_key_id`,
+`legal_dpo_public_key_sha256`, `legal_dpo_signed_at`, `legal_dpo_signature`.
+The owner field is emitted as a
+non-identifying `dual-human-signature:<policy-id>` reference. Each SHA/URN pair
+must match exactly. Both public-key fingerprints must match the canonical policy
+and must differ. The audit recomputes the canonical repo policy digest and
+verifies both detached signatures before `cleared`. Any other key →
+`allowlist_violation` (blocks). With no
+marker, or `status` not `cleared`, or an incomplete clear, the gate stays
 `tracked_pending` (non-blocking). A cleared marker past `expires_at` reports
 `expired` (still non-blocking).
 
@@ -359,9 +384,13 @@ scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh \
 #   --recording-retention-days N --recording-retention-owner-ref <ref>
 ```
 
-The helper generates the ENGINEERING marker + manifest only; the KVKK marker is
-DPO/owner-authored. The helper does not approve #1580, does not write to GitHub,
-and does not prove a live VIEW_ONLY session by itself.
+The helper above generates the ENGINEERING marker + manifest only. The KVKK
+decision follows
+[`RB-faz22.6-view-only-kvkk-decision.md`](RB-faz22.6-view-only-kvkk-decision.md):
+two different authorized humans sign the strict decision payload and the
+verifier generates the content-addressed marker. The verifier does not approve
+for either human, does not write `#2374`, and cannot prove a live VIEW_ONLY
+session by itself.
 
 Marker parsing is fail-closed:
 

@@ -38,7 +38,6 @@ past_date_utc() {
 approved_at="$(date -u +%F)"
 expires_at="$(future_date_utc 7)"
 expired_at="$(past_date_utc 1)"
-expired_approved_at="$(past_date_utc 2)"
 
 fake_bin="$tmp_dir/bin"
 mkdir -p "$fake_bin"
@@ -51,7 +50,7 @@ fi
 if [ "$#" -eq 7 ] \
   && [ "${1:-}" = "issue" ] \
   && [ "${2:-}" = "view" ] \
-  && [ "${3:-}" = "1580" ] \
+  && { [ "${3:-}" = "1580" ] || [ "${3:-}" = "2374" ]; } \
   && [ "${4:-}" = "-R" ] \
   && [ "${5:-}" = "Halildeu/platform-k8s-gitops" ] \
   && [ "${6:-}" = "--json" ] \
@@ -71,7 +70,8 @@ write_issue() { # write_issue <state> <body>
 }
 run_kvkk() {
   PATH="$fake_bin:$PATH" FAKE_GH_ISSUE_JSON="$issue_json" \
-    VIEW_ONLY_ACCEPTANCE_REF="Halildeu/platform-k8s-gitops#1580" \
+    VIEW_ONLY_KVKK_REF="Halildeu/platform-k8s-gitops#2374" \
+    VIEW_ONLY_KVKK_APPROVER_POLICY_PATH="$tmp_dir/approver-policy.json" \
     check_view_only_kvkk
 }
 run_eng() {
@@ -90,6 +90,63 @@ expect_rc_nonzero() { # expect_rc_nonzero <out-file> <cmd...>
   [ "$rc" != "0" ] || { echo "expected rc!=0 (blocking): $*"; cat "$out"; exit 1; }
 }
 
+# Build real dual-human-signed current and expired markers. The shell gate must
+# cryptographically verify these against the same canonical public-key policy.
+python3 - "$tmp_dir" <<'PY'
+import base64
+import json
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from tests.faz22_remote_ops.test_faz22_6_view_only_kvkk_decision import (
+    VERIFIER, policy, utc, valid_unsigned_record,
+)
+
+out = Path(sys.argv[1])
+now = datetime.now(timezone.utc).replace(microsecond=0)
+owner_key = Ed25519PrivateKey.generate()
+legal_key = Ed25519PrivateKey.generate()
+approver_policy = policy(now, owner_key, legal_key)
+
+def sign(record):
+    record["approvals"]["privacyOwner"]["signatureBase64"] = base64.b64encode(
+        owner_key.sign(VERIFIER.approval_message(record, record["approvals"]["privacyOwner"], approver_policy))
+    ).decode("ascii")
+    record["approvals"]["legalOrDpo"]["signatureBase64"] = base64.b64encode(
+        legal_key.sign(VERIFIER.approval_message(record, record["approvals"]["legalOrDpo"], approver_policy))
+    ).decode("ascii")
+    return record
+
+current = sign(valid_unsigned_record(now))
+current_result = VERIFIER.validate_semantics(current, approver_policy, now, True)
+
+expired = valid_unsigned_record(now)
+expired_approved = now - timedelta(days=2)
+expired["approvals"]["privacyOwner"]["signedAt"] = utc(expired_approved - timedelta(hours=1))
+expired["approvals"]["legalOrDpo"]["signedAt"] = utc(expired_approved)
+expired["lifecycle"]["approvedAt"] = utc(expired_approved)
+expired["lifecycle"]["reviewExpiresAt"] = utc(now - timedelta(days=1))
+expired["uxVerification"]["verifiedAt"] = utc(expired_approved - timedelta(hours=2))
+for name in ("sessionMetadata", "auditRecords"):
+    expired["retention"][name]["effectiveFrom"] = utc(expired_approved - timedelta(days=1))
+expired["governance"]["decisionRecordStorage"]["recordRetention"]["effectiveFrom"] = utc(expired_approved - timedelta(days=1))
+expired = sign(expired)
+expired_result = VERIFIER.validate_semantics(
+    expired, approver_policy, expired_approved + timedelta(hours=1), True
+)
+
+(out / "approver-policy.json").write_text(json.dumps(approver_policy), encoding="utf-8")
+(out / "cleared-marker.txt").write_text(VERIFIER.marker_text(current_result), encoding="utf-8")
+(out / "expired-marker.txt").write_text(VERIFIER.marker_text(expired_result), encoding="utf-8")
+PY
+
+cleared_body="$(cat "$tmp_dir/cleared-marker.txt")"
+expired_body="$(cat "$tmp_dir/expired-marker.txt")"
+decision_digest="$(printf '%s\n' "$cleared_body" | sed -n 's/^decision_record_sha256:[[:space:]]*//p')"
+decision_ref="$(printf '%s\n' "$cleared_body" | sed -n 's/^decision_record_ref:[[:space:]]*//p')"
+
 # 1) No KVKK marker -> tracked_pending, non-blocking.
 write_issue CLOSED "some unrelated body text"
 expect_rc0 "$tmp_dir/kvkk-none.out" run_kvkk
@@ -103,14 +160,13 @@ expect_rc0 "$tmp_dir/kvkk-pending.out" run_kvkk
 grep -q '^GATE_VIEW_ONLY_KVKK=tracked_pending ' "$tmp_dir/kvkk-pending.out"
 
 # 3) KVKK cleared with valid DPO owner + dates -> cleared, non-blocking.
-cleared_body="$(printf 'F22_6_VIEW_ONLY_KVKK: v1\nstatus: cleared\nkvkk_attended_pilot_signoff: pass\nlegal_dpo_consent: pass\nretention_policy_approval: pass\nowner_approved_by: DPO Example\napproved_at: %s\nexpires_at: %s\n' "$approved_at" "$expires_at")"
 write_issue CLOSED "$cleared_body"
 expect_rc0 "$tmp_dir/kvkk-cleared.out" run_kvkk
 grep -q '^GATE_VIEW_ONLY_KVKK=cleared ' "$tmp_dir/kvkk-cleared.out"
-grep -q 'owner=DPO Example' "$tmp_dir/kvkk-cleared.out"
+grep -q 'owner=dual-human-signature:privacy-approvers-2026-v1' "$tmp_dir/kvkk-cleared.out"
+grep -q "decision_record_sha256=$decision_digest" "$tmp_dir/kvkk-cleared.out"
 
 # 4) KVKK cleared but expired -> expired, still non-blocking.
-expired_body="$(printf 'F22_6_VIEW_ONLY_KVKK: v1\nstatus: cleared\nkvkk_attended_pilot_signoff: pass\nlegal_dpo_consent: pass\nretention_policy_approval: pass\nowner_approved_by: DPO Example\napproved_at: %s\nexpires_at: %s\n' "$expired_approved_at" "$expired_at")"
 write_issue CLOSED "$expired_body"
 expect_rc0 "$tmp_dir/kvkk-expired.out" run_kvkk
 grep -q '^GATE_VIEW_ONLY_KVKK=expired ' "$tmp_dir/kvkk-expired.out"
@@ -121,6 +177,28 @@ write_issue CLOSED "$incomplete_body"
 expect_rc0 "$tmp_dir/kvkk-incomplete.out" run_kvkk
 grep -q '^GATE_VIEW_ONLY_KVKK=tracked_pending ' "$tmp_dir/kvkk-incomplete.out"
 grep -q 'incomplete-clear' "$tmp_dir/kvkk-incomplete.out"
+
+# 5b) A digest without the exact content-addressed URN cannot clear.
+bad_ref_body="${cleared_body//$decision_ref/https:\/\/storage.example\/records\/decision.json}"
+write_issue CLOSED "$bad_ref_body"
+expect_rc0 "$tmp_dir/kvkk-bad-ref.out" run_kvkk
+grep -q '^GATE_VIEW_ONLY_KVKK=tracked_pending ' "$tmp_dir/kvkk-bad-ref.out"
+grep -q 'decision_record_ref' "$tmp_dir/kvkk-bad-ref.out"
+
+# 5c) A cleared marker without both derived key fingerprints is incomplete.
+missing_fingerprint_body="$(printf '%s\n' "$cleared_body" | grep -v '^privacy_owner_public_key_sha256:')"
+write_issue CLOSED "$missing_fingerprint_body"
+expect_rc0 "$tmp_dir/kvkk-missing-fingerprint.out" run_kvkk
+grep -q '^GATE_VIEW_ONLY_KVKK=tracked_pending ' "$tmp_dir/kvkk-missing-fingerprint.out"
+grep -q 'privacy_owner_public_key_sha256' "$tmp_dir/kvkk-missing-fingerprint.out"
+
+# 5d) A syntactically valid fingerprint must still resolve to the policy key.
+privacy_fingerprint="$(printf '%s\n' "$cleared_body" | sed -n 's/^privacy_owner_public_key_sha256:[[:space:]]*//p')"
+bad_fingerprint_body="${cleared_body//$privacy_fingerprint/sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd}"
+write_issue CLOSED "$bad_fingerprint_body"
+expect_rc0 "$tmp_dir/kvkk-bad-fingerprint.out" run_kvkk
+grep -q '^GATE_VIEW_ONLY_KVKK=tracked_pending ' "$tmp_dir/kvkk-bad-fingerprint.out"
+grep -q 'reason=cryptographic-marker-verification-failed' "$tmp_dir/kvkk-bad-fingerprint.out"
 
 # 6) ALLOWLIST VIOLATION: a security/product field mislabeled as legal -> blocks.
 violation_body="$(printf 'F22_6_VIEW_ONLY_KVKK: v1\nstatus: cleared\nkvkk_attended_pilot_signoff: pass\ndlp_mask_policy: pass\nrecording_mode: disabled\nowner_approved_by: DPO Example\napproved_at: %s\nexpires_at: %s\n' "$approved_at" "$expires_at")"

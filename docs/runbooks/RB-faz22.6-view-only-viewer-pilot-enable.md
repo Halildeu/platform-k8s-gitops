@@ -8,7 +8,7 @@
 >
 > It does not reopen #1580 or weaken the official `F22_6_COMPLETION=pass` result.
 > Product acceptance requires the separate
-> **`F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v1`** verifier result in §5.
+> **`F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v2`** provenance-bound verifier result in §5.
 > Legal basis, notice/consent wording, retention governance and DPO approval stay
 > separately tracked by #2374; a product verifier cannot manufacture legal acceptance.
 
@@ -21,7 +21,7 @@ The end-to-end VIEW_ONLY chain is merged and inert until the flag in §3 is set:
 | Agent screen capture (banner/indicator/primary-parity/fail-closed/PID-anti-spoof) | platform-agent | #240–#245 (VM-live-proven) |
 | Broker recording-OFF fan-out (latest-wins, 1:1, incarnation-bound authz) | platform-backend `…/bridge/server/viewonly` | #770 (2026-06-28) |
 | Operator SSE controller (`/internal/remote-bridge/operator/sessions/{id}/view`) | platform-backend | #778 (2026-06-29) |
-| Web MFE viewer (`/endpoint-admin/remote-access/sessions/:sessionId/view`) | platform-web `apps/mfe-endpoint-admin` | #847 (2026-06-29) |
+| Web MFE viewer + fail-closed trusted metadata/evidence telemetry (`/endpoint-admin/remote-access/sessions/:sessionId/view`) | platform-web `apps/mfe-endpoint-admin` | #847 + #910 (2026-07-14) |
 | Fail-closed hash-chain audit (`REMOTE_SUPPORT_SCREEN_OBSERVATION` START/STOP) | platform-backend | #780 (2026-06-29) |
 
 Invariants baked in: recording-OFF (ADR-0044), attended, 1:1 (`maxViewersPerSession=1`),
@@ -69,12 +69,21 @@ This is the owner decision. Do not flip the flag until every box holds:
       the agent's visible indicator). Owner/legal-owned — never self-attested.
       Per ADR-0044 this is the **tracked, non-blocking** `F22_6_VIEW_ONLY_KVKK: v1`
       marker — it does **not** fail-close `F22_6_COMPLETION` — but a live pilot
-      still does not start without the owner/DPO sign-off.
+      still does not start without the owner/DPO sign-off. The apply workflow
+      fetches the single `F22_6_VIEW_ONLY_KVKK: v1` marker from #2374 and
+      re-verifies both Ed25519 signatures against the canonical reviewed policy;
+      a typed acknowledgement cannot substitute for it.
 - [ ] **1-person roster** fixed: exactly one authorized operator `(tenantId, subject)`.
 - [ ] **Owner sign-off to expose `8096`** (the §3 step 1 viewer overlay opens an
       HTTP listener that is deliberately closed today — a security-boundary
       decision, not a default).
 - [ ] A single **pilot device** identified + consenting (attended).
+- [ ] GitHub Environment `faz22-view-only-pilot` has a required human reviewer
+      and the three protected values `VIEW_ONLY_PILOT_OPERATOR_SHA256`,
+      `VIEW_ONLY_PILOT_DEVICE_SHA256`, and
+      `VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT`. The first two are distinct
+      `sha256:<64hex>` opaque bindings; raw identity/device values do not enter
+      workflow inputs or logs.
 
 ## 3. Enable steps (TEST/pilot env; each: command → expected → fail signal)
 
@@ -103,18 +112,26 @@ gh workflow run apply-view-only-viewer-pilot-enable.yml \
   --ref main \
   -f action=apply \
   -f confirm=APPLY_VIEW_ONLY_VIEWER_PILOT_ENABLE \
-  -f ack_kvkk_dpia=ACK_KVKK_DPIA_ATTENDED_PILOT_SIGNOFF_RECORDED \
-  -f ack_one_person_roster=ACK_ONE_PERSON_OPERATOR_ROSTER_FIXED \
-  -f ack_pilot_device_consent=ACK_CONSENTING_ATTENDED_PILOT_DEVICE \
-  -f ack_8096_exposure=ACK_OWNER_8096_EXPOSURE
+  -f pilot_ttl_minutes=10
 ```
 
-The workflow applies the bridge-side viewer overlay, patches only route-28 keys
+The `apply` run waits for the protected Environment reviewer, verifies the signed
+#2374 marker and emits a content-addressed protected-authorization receipt before
+the deployment job can start. The workflow then installs a cluster-side
+absolute-expiry watchdog **before** exposure, applies the bridge-side viewer
+overlay, patches only route-28 keys
 into the live `api-gateway-config`, restarts the bridge and gateway, and verifies:
 ClusterIP/no-NodePort, `REMOTE_BRIDGE_ENABLED=true`, viewer ConfigMap flags,
 gateway route binding, and absence of `OVERLAY_MUST_OVERRIDE` in the gateway's
 Keycloak environment. It does not mint the §4.2 marker and does not prove the
-product-channel VIEW_ONLY session by itself.
+product-channel VIEW_ONLY session by itself. The TTL starts when the watchdog is
+installed, so setup time reduces the usable pilot window rather than extending
+the security window. Allowed TTL is 5-30 minutes. The watchdog has narrow RBAC:
+it can disable only the viewer flag/route, delete only the three viewer-only
+network resources, and restart only the bridge/gateway Deployments. It cannot
+disable or mutate the 9444 broker Service. If the Actions runner dies, the
+cluster-side Job still closes the surface at the absolute expiry. A normal apply
+failure also triggers immediate compensating rollback.
 
 Rollback is also workflow-backed and leaves the broker enabled:
 
@@ -246,14 +263,19 @@ The test-pilot thresholds are fixed before the run:
 | Signal | Bounded test-pilot threshold |
 |---|---|
 | First browser-render acknowledgement | `<= 5000 ms` from broker observation |
-| Steady frame age | p95 `<= 2000 ms`, at least 5 samples |
+| Steady frame age | p95 `<= 2000 ms`, exactly one sample per rendered ACK and at least 100 rendered samples |
 | Broker-to-viewer drop rate | `<= 20%` |
+| Viewer-delivered to browser-rendered loss | `<= 5%` |
 | Reconnects | `<= 1` during the evidence window |
 | Backpressure | `latest-wins-single-slot`, max pending frame `1` |
-| Soak | at least `300 s` |
+| Soak | `300-1800 s`, derived from bound start/end timestamps (not a caller-authored duration) |
 
-Collect a redacted JSON envelope matching
-`faz22.6.viewOnlyViewerProductEvidence.v1`. It must correlate:
+The producer workflow creates one redacted artifact matching
+`faz22.6.viewOnlyViewerProductEvidence.v2`. The root and every child are strict
+JSON Schema objects with `additionalProperties:false`. The artifact must contain
+exactly seven source-specific child records: browser, broker metrics, hash-chain
+audit, D30, negative matrix, termination matrix and protected operator
+authorization. It must correlate:
 
 1. `CAPTURED`, `BROKER_RECEIVED`, `VIEWER_DELIVERED`, `VIEWER_RENDERED` counts.
 2. Browser screenshot hash, independent non-blank pixel check, DOM-observed accepted render-ack count and clean console.
@@ -265,17 +287,107 @@ Collect a redacted JSON envelope matching
 7. Broker Prometheus window deltas independently match delivered/rendered counts.
 8. Hash-chain `VIEW_START` is committed before first delivery; `VIEW_STOP` counts and snapshot hash match delivered/rendered counts.
 
+Every child carries the root opaque session/tenant/operator/device hash binding,
+source revision and run-window timestamp. Each matrix case repeats the authorized
+tenant/operator binding; termination cases and ordinary negative cases retain the
+authorized device binding. In a negative snapshot, `binding` is the protected
+resource/target session binding; `request.subjectSha256`, `request.tenantSha256`
+and `request.rolePresent` independently describe the actual caller JWT. Ordinary
+negative cases must retain the root target session exactly, while the
+`wrongDevice` operator-session-open probe must use
+a distinct attempted session and a different device hash, proving the resolver
+denial instead of relabelling a viewer stream miss. Each request is additionally
+bound to a closed path template and request-body SHA-256 (null only for bodyless
+GET), and its request timestamps must fall inside the before/after metric sample
+window. The root content-addresses each child;
+the assembler and independent verifier fetch each child from a distinct,
+source-specific successful workflow run and exact GitHub artifact. They verify
+workflow identity/conclusion/head SHA, artifact ID/name/run binding, recompute
+every downloaded ZIP SHA-256 against GitHub artifact metadata, reject unsafe ZIP
+entries, and require the aggregated child bytes to equal the source artifact
+bytes exactly. The operator child additionally binds the successful protected
+apply workflow, authorization artifact ID/digest, receipt digest and KVKK marker
+digest. The independent verifier re-downloads that activation artifact, checks
+its exact file envelope and `SHA256SUMS`, and matches the authorized operator and
+device hashes to the browser session binding. A local file path, syntax-only URL,
+nonexistent run/artifact or hash-shaped placeholder is not accepted.
+
+Negative and termination source artifacts additionally carry one strict case
+attestation per case and one canonical, newline-terminated observation in
+`observations/<type>.jsonl`. The verifier digests the exact JSONL line bytes and
+requires equality with the attestation before checking the real request
+channel/status, zero post-deny or post-termination frame delivery, agent-deny
+code for expired/replayed permits, response byte length/SHA-256, viewer-reject
+counter movement for viewer-channel denials, and terminal viewer/broker/agent
+signals. The negative observation names its real source explicitly: viewer HTTP
+plus metric probe; tenant/device resolver-backed operator session-open probe for
+`wrongDevice`; or agent-error-ledger plus the acceptance-only HTTP probe. The
+viewer endpoint has no caller-supplied device field, so a random viewer stream
+ID must not be relabelled as wrong-device evidence. Every negative request also
+binds redacted subject and tenant digests plus role presence from the actual JWT
+claims. `noAuth` requires null identities, `wrongRole` a distinct subject in the
+authorized tenant without the operator role, and `wrongTenant` a distinct subject
+and tenant with the operator role; labels alone are not accepted as identity proof.
+The protected collector creates run-scoped temporary Keycloak personas for
+`wrongRole` and `wrongTenant`, verifies their effective JWT claims, and deletes
+them during cleanup; a non-`204/404` deletion result is surfaced as an operator
+warning rather than silently ignored.
+The disconnected-viewer SSE body is consumed through a FIFO by a streaming
+hasher. Only length and SHA-256 are recorded; the protected workflow stages an
+exact two-file JSON/JSONL envelope, and raw screen/frame bytes are never uploaded.
+Termination artifacts also carry canonical `audit/termination.jsonl` records;
+each line is digest-bound to its case and must prove a real hash-chained
+`VIEW_STOP` through the tenant audit-chain builder. Negative authentication and
+authorization failures do not fabricate a tenant audit identity or a
+`VIEWER_DENY` event that the product does not emit. Their protected producer
+artifact and exact runtime observation are the evidence. A standalone
+hash-shaped `runtimeSnapshotSha256` or `viewStopAuditSha256` value is rejected
+when the corresponding bytes are absent.
+
+### 5.1 Implementation and live-acceptance boundary
+
+| Source | Producer status | Live evidence status |
+|---|---|---|
+| Browser render/ACK | Canonical protected workflow implemented | Not run; requires merged GitOps workflow, deployed #910 web digest, signed #2374 marker/policy, protected Environment and active bounded surface |
+| Broker Prometheus | Independent source producer implemented | Live source run absent |
+| Hash-chain audit | Independent source producer implemented | Live source run absent |
+| D30 backend + web | Independent source producer implemented | Live source run absent |
+| Negative matrix | Protected collector + exact-artifact producer + strict verifier implemented and source-ready | Live protected source run absent |
+| Termination matrix | Contract hardened; source audit found real product gaps tracked by backend `#830` and agent `#262`; collector intentionally not fabricated | Product fixes and live source run absent |
+| Protected operator | Activation provenance verifier and source producer implemented | Live authorization artifact absent |
+
+The seven-source assembler and independent verifier are implemented, but they
+cannot manufacture a missing source artifact. `#2373` therefore stays open until
+all seven source workflows have successful, same-revision, same-authorization
+runs inside the bounded matrix window (with distinct isolated sessions for each
+termination case) and the independent verifier emits the content-addressed v2 marker. The canonical
+approver policy file and protected GitHub Environment are intentionally not
+invented by an agent; their absence keeps live activation fail-closed.
+
+Negative evidence must be produced fresh against the current contract. A token
+missing the required operator role is rejected as unauthenticated (`401`);
+expired and replayed signed permits are exercised through the non-prod,
+acceptance-only agent-permit probe (`POST`, `422` only after a real agent deny),
+not relabelled as viewer-channel `GET` requests. Evidence generated with the
+older wrong-role `404` or expired/replay viewer-`GET` model is incompatible and
+must not be migrated or reused.
+
 Never place a bearer token, cookie, frame bytes, base64 image, raw screen content,
-private endpoint or credential in the envelope. Run:
+raw session/operator/device identity, private endpoint or credential in the
+artifact. Verify a completed producer run with the independent workflow:
 
 ```bash
-python3 scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py \
-  --input /protected/path/viewer-product-evidence.json \
-  --output /protected/path/viewer-product-verifier-result.json
+gh workflow run faz22-6-view-only-viewer-product-evidence-verify.yml \
+  --ref main \
+  -f producer_run_id=<COMPLETED_PRODUCER_RUN_ID> \
+  -f confirm=VERIFY_FAZ22_6_VIEW_ONLY_VIEWER_PRODUCT_EVIDENCE
 ```
 
 Only `status=pass` together with marker
-`F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v1` is #2373 product acceptance.
+`F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v2` is #2373 product acceptance.
+The marker binds the producer run/attempt/head SHA, GitHub artifact ID/digest,
+canonical evidence-root digest, opaque same-session binding, pilot window and
+verification expiry. It is not a constant marker and expires after at most 24h.
 It is explicitly bounded to test, recording-off and one viewer. Production,
 broad rollout, multi-viewer fanout and #2374 legal acceptance remain false.
 

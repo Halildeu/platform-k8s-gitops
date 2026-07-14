@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/faz22-6-view-only-kvkk-approver-policy-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY KVKK authorized approver policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "policyId", "identityDirectoryRef", "engineeringPrincipalIds", "authorizedApprovers"],
+  "properties": {
+    "schemaVersion": { "const": "faz22.6-view-only-kvkk-approver-policy-v1" },
+    "policyId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{3,120}$" },
+    "identityDirectoryRef": {
+      "type": "string",
+      "pattern": "^policy://[A-Za-z0-9_.:@/#%+-]{3,240}$"
+    },
+    "engineeringPrincipalIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/principalId" }
+    },
+    "authorizedApprovers": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["keyId", "principalId", "role", "ed25519PublicKeyBase64", "validFrom", "validUntil"],
+        "properties": {
+          "keyId": { "type": "string", "pattern": "^kvkk-[a-z0-9][a-z0-9-]{2,62}$" },
+          "principalId": { "$ref": "#/$defs/principalId" },
+          "role": { "enum": ["privacy-owner", "legal-or-dpo"] },
+          "ed25519PublicKeyBase64": { "type": "string", "pattern": "^[A-Za-z0-9+/]{43}=$" },
+          "validFrom": { "$ref": "#/$defs/utcTimestamp" },
+          "validUntil": { "$ref": "#/$defs/utcTimestamp" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "principalId": { "type": "string", "pattern": "^person:[a-z0-9][a-z0-9._-]{2,63}$" },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    }
+  }
+}

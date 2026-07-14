@@ -4,7 +4,7 @@
 > (`kustomize/overlays/test/kustomization.yaml`). Applying it is a deliberate
 > operator action during a bounded VIEW_ONLY pilot enable window. It does **not**
 > by itself close `platform-k8s-gitops#2373` — acceptance is the separate
-> `F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v1` product evidence gate.
+> `F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v2` provenance-bound product evidence gate.
 
 ## What this overlay does
 
@@ -26,19 +26,17 @@ runbook §3 step 4b to avoid clobbering the overlay's `KEYCLOAK_*` values). It d
 
 ## Gate — owner confirms ALL before apply
 
-- [ ] KVKK DPIA + attended pilot sign-off (`F22_6_VIEW_ONLY_KVKK: v1`, owner/DPO-owned).
-- [ ] 1-person operator roster fixed `(tenantId, subject)`.
-- [ ] Owner sign-off to expose 8096 (this overlay opens an HTTP listener that is closed by default).
-- [ ] A single consenting (attended) pilot device.
+- [ ] KVKK DPIA + attended pilot sign-off (`F22_6_VIEW_ONLY_KVKK: v1`) is dual-human signed and verifies against the canonical policy.
+- [ ] Protected Environment `faz22-view-only-pilot` approval is granted for this run.
+- [ ] Protected one-person operator and consenting pilot-device hashes are present, distinct and unexpired.
+- [ ] Owner sign-off to expose 8096 is represented by the protected Environment approval.
 
 ## Apply (bounded pilot, test env)
 
-```bash
-kubectl --context k3d-test -n platform-test apply -k \
-  kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
-kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge
-kubectl --context k3d-test -n platform-test rollout status  deploy/endpoint-admin-remote-bridge --timeout=180s
-```
+Use `.github/workflows/apply-view-only-viewer-pilot-enable.yml` with
+`action=apply` and a 5-30 minute TTL. Direct `kubectl apply -k` is break-glass
+only because it omits the signed-marker verifier, protected authorization receipt,
+absolute-expiry watchdog and automatic compensating rollback.
 
 Then wire the api-gateway route (runtime patch) per
 `docs/runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md` §3 step 4b, and verify
@@ -69,3 +67,9 @@ fail-closed drill).
 - Test overlay only; no prod overlay change.
 - Not in the Argo root → no reconcile can auto-expose the viewer.
 - Recording-OFF (ADR-0044): nothing is persisted; no data to purge on rollback.
+- The apply authorization receipt is not sufficient product evidence. The v2
+  product verifier must independently re-fetch and bind its run/artifact/digest
+  to the operator child and the browser session hashes.
+- As of 2026-07-14, the canonical approver policy, protected Environment and
+  live seven-source product evidence are absent. Keep the overlay inert until
+  those human-governed and runtime gates exist.

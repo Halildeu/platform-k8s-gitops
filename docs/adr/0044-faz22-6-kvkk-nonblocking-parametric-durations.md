@@ -30,12 +30,44 @@ KVKK/legal kalemleri **mühendislik completion blocker'ı olamaz**. Bu kural bir
 - `legal_dpo_consent` (DPO / hukuki onay)
 - `retention_policy_approval` (retention süresi owner/hukuk kararı)
 
+`status`, `owner_approved_by`, `approved_at`, `expires_at` standart lifecycle
+alanlaridir. `decision_record_sha256`, `decision_record_ref`,
+`approver_policy_sha256` ve `approver_policy_ref` ise yalnizca hukuki karar ve
+yetkili-imzaci policy lineage metadata'sidir: referanslar, storage yolu
+veya kisi/cihaz kimligi tasimayan
+`urn:decision-record:sha256:<64-lowercase-hex>` veya
+`urn:approver-policy:sha256:<64-lowercase-hex>` biciminde olmak ve ilgili digest
+ile birebir eslesmek zorundadir. `cleared`, ancak iki ayri yetkili insanin Ed25519
+imzasini dogrulayan karar-kaydi verifier'i tarafindan uretilir. AI, owner veya
+DPO yerine imza atamaz; ham karar kaydi issue marker'ina konmaz.
+Marker ayrica signed karar payload digest'ini, iki opaque approver key ID'sini,
+imza zamanlarini ve detached imzalari tasir. Audit, bunlari repoda review edilmis
+canonical public-key policy
+`config/faz22-6-view-only-kvkk-approver-policy.v1.json` ile yeniden dogrular;
+policy yoksa, digest'i uyusmuyorsa veya imzalardan biri gecersizse `cleared`
+imkansizdir. Canonical policy PII tasimaz; opaque principal'in gercek kisi
+eslemesi access-controlled `identityDirectoryRef` arkasindadir.
+
 **Asla** non-blocking'e taşınamaz (mislabel edilirse audit `blocked` döner — Codex constraint #3): `no_control_invariant`, `mtls`, `authz`, `dlp_mask_policy`, `audit_negative_matrix`, `local_abort`, `active_indicator`, `recording_mode`, `ttl_revoke_kill`, `exfiltration_control`, ve **engineering-acceptance owner** (`owner_approved_by` — DPO signoff'tan AYRI tutulur, kaldırılmaz).
 
 ### D2 — #1580 marker SPLIT (schema-v2 bump, legacy fail-safe)
 `F22_6_VIEW_ONLY_ACCEPTANCE: v1` sessizce mutate edilmez. İki yeni marker:
 - **`F22_6_VIEW_ONLY_ENGINEERING: v2`** — FAIL-CLOSED gate. Tam mühendislik kanıt listesini KORUR: non-inert `DataPlaneHandler`, VIEW_ONLY frame akışı, **no-control invariant**, mTLS + authz, TTL/revoke/kill, active indicator, local abort, DLP/mask, audit metadata, negatif matris, HTTPS manifest + `jq -cS` SHA256 eşleşmesi. Hiçbiri legal track'e taşınmaz.
 - **`F22_6_VIEW_ONLY_KVKK: v1`** — TRACKED, NON-BLOCKING. Durum: `tracked_pending | cleared | expired`. Görünür kalır, asla `F22_6_COMPLETION`'ı fail-close etmez.
+- `cleared` marker, schema-valid karar kaydinin SHA-256 digest'ini ve ayni
+  digest'e bagli content-addressed URN'yi tasir. Serbest metin owner/tarih kaydi
+  tek basina clearance degildir; iki farkli, engineering-chain disi insan
+  imzasi reviewed public-key policy ile dogrulanmadan marker uretilmez.
+- Engineering acceptance authority `#1580` olarak kalir. Hukuki karar ve
+  `F22_6_VIEW_ONLY_KVKK: v1` marker authority'si takip issue'su `#2374`'tur;
+  audit bu iki issue'yu ayri referanslarla okur. Bir issue'daki marker diger
+  gate'i geciremez.
+- Hukuki karar payload'i uc ayri authority/evidence bagini birlikte imzalar:
+  engineering `#1580`, viewer product `#2373`, legal tracking `#2374`; ayrica
+  `#2373` viewer-product evidence digest/ref'i protected kayitta zorunludur.
+- Marker `v1`, legal decision schema `faz22.6-...-decision-v1`, verifier result
+  `...verifier-v1` ve engineering evidence `v2` ayri version namespace'leridir;
+  biri digerinin schema versiyonu degildir.
 
 **Legacy fail-safe (Codex #2)**: eski bundled `F22_6_VIEW_ONLY_ACCEPTANCE: v1` marker'ı yeni engineering gate'i **otomatik geçemez**; audit `legacy_bundled_marker_detected` raporlar (acceptance sayılmaz). Yeni v2 engineering alanları manifest'te mevcut + hash'li olmadan pass yok.
 

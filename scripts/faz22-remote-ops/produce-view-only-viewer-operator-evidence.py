@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Produce #2373 operator evidence from independently verified GitHub artifacts."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+import view_only_viewer_source_common as common
+
+
+VERIFIER = common.VERIFIER
+
+
+def fetch_operator_payload(client: object, repository: str, activation_run_id: int, head_sha: str) -> dict:
+    run = VERIFIER.fetch_run(
+        client, repository, activation_run_id,
+        VERIFIER.EXPECTED_ACTIVATION_WORKFLOW_NAME,
+        VERIFIER.EXPECTED_ACTIVATION_WORKFLOW_PATH,
+        "protected activation",
+    )
+    VERIFIER.require_equal(run["head_sha"], head_sha, "protected activation head SHA")
+    listing = client.get_json(
+        f"/repos/{repository}/actions/runs/{activation_run_id}/artifacts?per_page=100"
+    )
+    expected_name = f"faz22-view-only-pilot-protected-authorization-{activation_run_id}"
+    matches = [
+        item for item in listing.get("artifacts", [])
+        if isinstance(item, dict) and item.get("name") == expected_name and item.get("expired") is False
+    ]
+    if len(matches) != 1:
+        raise VERIFIER.EvidenceError("protected authorization artifact identity is not unique")
+    artifact = matches[0]
+    if not isinstance(artifact.get("digest"), str) or not VERIFIER.SHA256.fullmatch(artifact["digest"]):
+        raise VERIFIER.EvidenceError("protected authorization artifact digest is invalid")
+    workflow_run = artifact.get("workflow_run")
+    if not isinstance(workflow_run, dict) or workflow_run.get("id") != activation_run_id:
+        raise VERIFIER.EvidenceError("protected authorization artifact run binding is invalid")
+    raw_archive = client.get_bytes(f"/repos/{repository}/actions/artifacts/{artifact['id']}/zip")
+    VERIFIER.require_equal(
+        VERIFIER.digest_bytes(raw_archive), artifact["digest"], "protected authorization archive digest"
+    )
+    files = VERIFIER.safe_archive_files(raw_archive)
+    expected_files = {
+        "SHA256SUMS", "kvkk-marker-verifier-result.json", "kvkk-marker.txt",
+        "protected-authorization.json",
+    }
+    if set(files) != expected_files:
+        raise VERIFIER.EvidenceError("protected authorization artifact file set mismatch")
+    VERIFIER.verify_sha256sums(files, expected_files - {"SHA256SUMS"})
+    authorization = VERIFIER.load_json_bytes(
+        files["protected-authorization.json"], "protected-authorization.json"
+    )
+    verifier_result = VERIFIER.load_json_bytes(
+        files["kvkk-marker-verifier-result.json"], "kvkk-marker-verifier-result.json"
+    )
+    if verifier_result.get("status") != "pass" or verifier_result.get("humanSignatureCount") != 2:
+        raise VERIFIER.EvidenceError("KVKK marker does not carry two verified human signatures")
+    return {
+        "onePersonRoster": authorization.get("onePersonRoster"),
+        "pilotDeviceConsented": authorization.get("consentingPilotDevice"),
+        "exposureApproved": authorization.get("exposureApprovedByProtectedEnvironment"),
+        "protectedEnvironment": authorization.get("environment"),
+        "activationRunId": activation_run_id,
+        "activationRunAttempt": run["run_attempt"],
+        "activationHeadSha": run["head_sha"],
+        "authorizationArtifactId": artifact["id"],
+        "authorizationArtifactDigest": artifact["digest"],
+        "authorizationSha256": VERIFIER.digest_bytes(files["protected-authorization.json"]),
+        "kvkkMarkerSha256": VERIFIER.digest_bytes(files["kvkk-marker.txt"]),
+    }
+
+
+def produce(client: object, repository: str, browser_run_id: int, activation_run_id: int,
+            head_sha: str) -> dict:
+    if repository != VERIFIER.EXPECTED_REPOSITORY:
+        raise VERIFIER.EvidenceError(f"repository must be exactly {VERIFIER.EXPECTED_REPOSITORY}")
+    if browser_run_id < 1 or activation_run_id < 1 or browser_run_id == activation_run_id:
+        raise VERIFIER.EvidenceError("browser and activation run IDs must be distinct positive integers")
+    if not VERIFIER.re.fullmatch(r"[a-f0-9]{40}", head_sha):
+        raise VERIFIER.EvidenceError("head SHA is invalid")
+    browser = common.fetch_browser_child(client, repository, browser_run_id, head_sha)
+    payload = fetch_operator_payload(client, repository, activation_run_id, head_sha)
+    pilot_started = VERIFIER.parse_utc(browser["payload"]["pilotStartedAt"], "browser pilot start")
+    pilot_ended = VERIFIER.parse_utc(browser["payload"]["pilotEndedAt"], "browser pilot end")
+    VERIFIER.verify_activation_authorization(
+        client, payload, head_sha, browser["binding"], pilot_started, pilot_ended,
+    )
+    child = {
+        "schemaVersion": "faz22.6.viewOnlyViewerProductChildEvidence.v2",
+        "evidenceType": "operator",
+        "sourceRevision": head_sha,
+        "observedAt": browser["payload"]["pilotStartedAt"],
+        "binding": browser["binding"],
+        "producer": {
+            "kind": "protected-authorization",
+            "tool": "scripts/faz22-remote-ops/produce-view-only-viewer-operator-evidence.py",
+            "toolVersion": "v2",
+        },
+        "payload": payload,
+    }
+    VERIFIER.validate_schema(child, VERIFIER.CHILD_SCHEMA, "operator child")
+    if VERIFIER.scan_hygiene(child):
+        raise VERIFIER.EvidenceError("operator child evidence hygiene failed")
+    return child
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--browser-run-id", required=True, type=int)
+    parser.add_argument("--activation-run-id", required=True, type=int)
+    parser.add_argument("--head-sha", required=True)
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--github-token-env", default="GITHUB_TOKEN")
+    args = parser.parse_args()
+    try:
+        result = produce(
+            VERIFIER.GitHubClient(os.environ.get(args.github_token_env, "")),
+            args.repository, args.browser_run_id, args.activation_run_id, args.head_sha,
+        )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return 0
+    except (VERIFIER.EvidenceError, OSError, ValueError) as exc:
+        print(f"operator_evidence=fail reason={exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
