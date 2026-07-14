@@ -43,8 +43,8 @@ resources:
   - ../../base/apps/transcript-service/ops   # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
                                                   # (services.yaml prod=deferred; test=enabled)
-  - eso/notify/externalsecret-notify.yaml    # notification-orchestrator-secrets ESO owner;
-                                             # pairs with delete patch below for the base stub Secret.
+                                                  # Its ExternalSecret is owned exclusively by
+                                                  # the separate platform-eso-test Application.
   - ../../base/apps/artifact-host    # Faz 22.5 M1: endpoint-agent one-command bootstrap
                                      # artifact host (test-only; prod deferred). Pairs with
                                      # the /artifacts ingress path patch + edge route flip.
@@ -6044,9 +6044,9 @@ patches:
         path: /data/MEETING_AUTHZ_LEGACY_USER_ID_DUAL_WRITE_ENABLED
         value: "true"
 
-  # notification-orchestrator-secrets is owned by the test ExternalSecret. The
-  # base bootstrap Secret is for non-ESO bootstrap only; rendering both creates
-  # permanent Argo drift against the ESO-managed live Secret.
+  # notification-orchestrator-secrets is owned by the ExternalSecret rendered
+  # exclusively by platform-eso-test. The base bootstrap Secret is for non-ESO
+  # bootstrap only; rendering it here would compete with the ESO-managed Secret.
   - target:
       version: v1
       kind: Secret
