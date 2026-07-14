@@ -287,8 +287,19 @@ authorization. It must correlate:
 7. Broker Prometheus window deltas independently match delivered/rendered counts.
 8. Hash-chain `VIEW_START` is committed before first delivery; `VIEW_STOP` counts and snapshot hash match delivered/rendered counts.
 
-Every child carries the same opaque session/tenant/operator/device hash binding,
-source revision and run-window timestamp. The root content-addresses each child;
+Every child carries the root opaque session/tenant/operator/device hash binding,
+source revision and run-window timestamp. Each matrix case repeats the authorized
+tenant/operator binding; termination cases and ordinary negative cases retain the
+authorized device binding. In a negative snapshot, `binding` is the protected
+resource/target session binding; `request.subjectSha256`, `request.tenantSha256`
+and `request.rolePresent` independently describe the actual caller JWT. Ordinary
+negative cases must retain the root target session exactly, while the
+`wrongDevice` operator-session-open probe must use
+a distinct attempted session and a different device hash, proving the resolver
+denial instead of relabelling a viewer stream miss. Each request is additionally
+bound to a closed path template and request-body SHA-256 (null only for bodyless
+GET), and its request timestamps must fall inside the before/after metric sample
+window. The root content-addresses each child;
 the assembler and independent verifier fetch each child from a distinct,
 source-specific successful workflow run and exact GitHub artifact. They verify
 workflow identity/conclusion/head SHA, artifact ID/name/run binding, recompute
@@ -309,7 +320,21 @@ channel/status, zero post-deny or post-termination frame delivery, agent-deny
 code for expired/replayed permits, response byte length/SHA-256, viewer-reject
 counter movement for viewer-channel denials, and terminal viewer/broker/agent
 signals. The negative observation names its real source explicitly: viewer HTTP
-plus metric probe, or agent-error-ledger plus the acceptance-only HTTP probe.
+plus metric probe; tenant/device resolver-backed operator session-open probe for
+`wrongDevice`; or agent-error-ledger plus the acceptance-only HTTP probe. The
+viewer endpoint has no caller-supplied device field, so a random viewer stream
+ID must not be relabelled as wrong-device evidence. Every negative request also
+binds redacted subject and tenant digests plus role presence from the actual JWT
+claims. `noAuth` requires null identities, `wrongRole` a distinct subject in the
+authorized tenant without the operator role, and `wrongTenant` a distinct subject
+and tenant with the operator role; labels alone are not accepted as identity proof.
+The protected collector creates run-scoped temporary Keycloak personas for
+`wrongRole` and `wrongTenant`, verifies their effective JWT claims, and deletes
+them during cleanup; a non-`204/404` deletion result is surfaced as an operator
+warning rather than silently ignored.
+The disconnected-viewer SSE body is consumed through a FIFO by a streaming
+hasher. Only length and SHA-256 are recorded; the protected workflow stages an
+exact two-file JSON/JSONL envelope, and raw screen/frame bytes are never uploaded.
 Termination artifacts also carry canonical `audit/termination.jsonl` records;
 each line is digest-bound to its case and must prove a real hash-chained
 `VIEW_STOP` through the tenant audit-chain builder. Negative authentication and
@@ -327,8 +352,8 @@ when the corresponding bytes are absent.
 | Broker Prometheus | Independent source producer implemented | Live source run absent |
 | Hash-chain audit | Independent source producer implemented | Live source run absent |
 | D30 backend + web | Independent source producer implemented | Live source run absent |
-| Negative matrix | Per-case attestation contract hardened; live collector/producer pending | Live source run absent |
-| Termination matrix | Per-case attestation contract hardened; live collector/producer pending | Live source run absent |
+| Negative matrix | Protected collector + exact-artifact producer + strict verifier implemented and source-ready | Live protected source run absent |
+| Termination matrix | Contract hardened; source audit found real product gaps tracked by backend `#830` and agent `#262`; collector intentionally not fabricated | Product fixes and live source run absent |
 | Protected operator | Activation provenance verifier and source producer implemented | Live authorization artifact absent |
 
 The seven-source assembler and independent verifier are implemented, but they

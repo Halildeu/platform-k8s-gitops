@@ -1,0 +1,54 @@
+name: Faz 22.6 VIEW_ONLY viewer negative evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      collector_run_id: {description: "Successful protected negative collector run ID", required: true, type: string}
+      confirm: {description: "Required literal: PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_NEGATIVE_EVIDENCE", required: true, type: string}
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: faz22-6-view-only-viewer-negative-evidence-${{ inputs.collector_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  negative-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate dispatch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          COLLECTOR_RUN_ID: ${{ inputs.collector_run_id }}
+        run: |
+          set -euo pipefail
+          [ "$CONFIRM" = "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_NEGATIVE_EVIDENCE" ]
+          printf '%s' "$COLLECTOR_RUN_ID" | grep -Eq '^[1-9][0-9]{5,19}$'
+      - name: Checkout producer revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Install strict schema validator
+        run: python3 -m pip install --quiet jsonschema==4.25.1
+      - name: Produce independently verified negative child
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/faz22-viewer-negative-source"
+          python3 scripts/faz22-remote-ops/produce-view-only-viewer-matrix-evidence.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --collector-run-id "${{ inputs.collector_run_id }}" \
+            --head-sha "$GITHUB_SHA" --evidence-type negative --output-dir "$out"
+          expected="$(( 1 + 9 + 1 ))"
+          test "$(find "$out" -type f | wc -l | tr -d ' ')" = "$expected"
+          find "$out" -type f -print0 | sort -z | xargs -0 sha256sum >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload exact negative source evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-6-view-only-viewer-negative-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-viewer-negative-source/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 30
