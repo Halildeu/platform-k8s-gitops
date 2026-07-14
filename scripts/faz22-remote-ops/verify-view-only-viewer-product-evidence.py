@@ -54,7 +54,7 @@ NEGATIVE_CASES = (
 )
 TERMINATION_CASES = (
     "localAbort", "killOrRevoke", "ttlExpiry", "heartbeatLoss",
-    "consentWithdrawal", "indicatorLoss",
+    "indicatorLoss",
 )
 
 FIRST_FRAME_MAX_MS = 5_000
@@ -381,7 +381,7 @@ def validate_matrix_source_attestations(
     expected_trigger = {
         "localAbort": "local-abort", "killOrRevoke": "kill-or-revoke",
         "ttlExpiry": "ttl-expiry", "heartbeatLoss": "heartbeat-loss",
-        "consentWithdrawal": "consent-withdrawal", "indicatorLoss": "indicator-loss",
+        "indicatorLoss": "indicator-loss",
     }
 
     for case_name in case_names:
@@ -466,6 +466,15 @@ def validate_matrix_source_attestations(
                 "viewerClosed": True, "brokerSessionTerminal": True,
                 "agentEventObserved": True, "viewStopAuditVerified": True,
             }
+            if case_name == "localAbort":
+                # The endpoint's visible BITIR / END action is both the local
+                # abort and the attended-consent withdrawal. Requiring two
+                # synthetic sessions for the same product action would create
+                # fake mechanism diversity instead of stronger evidence.
+                required_signals.update({
+                    "endpointUserInitiated": True,
+                    "consentLeaseRevoked": True,
+                })
             require_equal(attestation["productSignals"], required_signals,
                           f"termination {case_name} product signals")
             require_equal(attestation["viewStopAuditSha256"], case["viewStopAuditSha256"],
@@ -695,7 +704,6 @@ def validate_negative_and_termination(
         "killOrRevoke": ("kill-or-revoke", 1_000),
         "ttlExpiry": ("ttl-expiry", 5_000),
         "heartbeatLoss": ("heartbeat-loss", 120_000),
-        "consentWithdrawal": ("consent-withdrawal", 5_000),
         "indicatorLoss": ("indicator-loss", 5_000),
     }
     authorization_digest = operator["authorizationSha256"]

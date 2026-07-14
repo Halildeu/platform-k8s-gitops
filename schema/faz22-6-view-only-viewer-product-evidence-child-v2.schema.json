@@ -223,13 +223,12 @@
         "authorizationSha256": {"$ref": "#/$defs/sha256"},
         "cases": {
           "type": "object", "additionalProperties": false,
-          "required": ["localAbort", "killOrRevoke", "ttlExpiry", "heartbeatLoss", "consentWithdrawal", "indicatorLoss"],
+          "required": ["localAbort", "killOrRevoke", "ttlExpiry", "heartbeatLoss", "indicatorLoss"],
           "properties": {
             "localAbort": {"$ref": "#/$defs/terminationCase"},
             "killOrRevoke": {"$ref": "#/$defs/terminationCase"},
             "ttlExpiry": {"$ref": "#/$defs/terminationCase"},
             "heartbeatLoss": {"$ref": "#/$defs/terminationCase"},
-            "consentWithdrawal": {"$ref": "#/$defs/terminationCase"},
             "indicatorLoss": {"$ref": "#/$defs/terminationCase"}
           }
         }
@@ -260,7 +259,7 @@
         "observedAt": {"$ref": "#/$defs/utcTimestamp"},
         "binding": {"$ref": "#/$defs/binding"},
         "result": {"const": "terminated"},
-        "trigger": {"enum": ["local-abort", "kill-or-revoke", "ttl-expiry", "heartbeat-loss", "consent-withdrawal", "indicator-loss"]},
+        "trigger": {"enum": ["local-abort", "kill-or-revoke", "ttl-expiry", "heartbeat-loss", "indicator-loss"]},
         "deliveryTerminated": {"const": true},
         "terminationLatencyMillis": {"type": "integer", "minimum": 0, "maximum": 120000},
         "evidenceSha256": {"$ref": "#/$defs/sha256"},

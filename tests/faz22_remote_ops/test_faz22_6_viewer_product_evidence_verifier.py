@@ -102,12 +102,11 @@ def termination_payload():
         "killOrRevoke": ("kill-or-revoke", 500),
         "ttlExpiry": ("ttl-expiry", 900),
         "heartbeatLoss": ("heartbeat-loss", 30_000),
-        "consentWithdrawal": ("consent-withdrawal", 600),
         "indicatorLoss": ("indicator-loss", 800),
     }
-    session_chars = ("5", "6", "7", "8", "9", "a")
-    evidence_chars = ("a", "b", "c", "d", "e", "f")
-    audit_chars = ("0", "5", "6", "7", "8", "9")
+    session_chars = ("5", "6", "7", "8", "9")
+    evidence_chars = ("a", "b", "c", "d", "e")
+    audit_chars = ("0", "5", "6", "7", "8")
     cases = {}
     for index, (name, (trigger, latency)) in enumerate(specs.items()):
         cases[name] = {
@@ -187,6 +186,10 @@ def matrix_attestation_files(evidence_type, document):
                     "brokerSessionTerminal": True,
                     "agentEventObserved": True,
                     "viewStopAuditVerified": True,
+                    **({
+                        "endpointUserInitiated": True,
+                        "consentLeaseRevoked": True,
+                    } if case_name == "localAbort" else {}),
                 },
             }
         raw = encode_json(attestation)
@@ -811,6 +814,24 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         files[path] += b" "
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "attestation digest"):
             VERIFIER.validate_matrix_source_attestations("negative", files, raw_child)
+
+    def test_local_abort_must_also_prove_attended_consent_withdrawal(self):
+        document = child_documents()["termination"]
+        raw_child = encode_json(document)
+        files = VERIFIER.safe_archive_files(source_archive("termination", raw_child))
+        path = "attestations/termination/localAbort.json"
+        attestation = json.loads(files[path])
+        del attestation["productSignals"]["consentLeaseRevoked"]
+        files[path] = encode_json(attestation)
+        document["payload"]["cases"]["localAbort"]["evidenceSha256"] = \
+            VERIFIER.digest_bytes(files[path])
+        document["payload"]["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": document["payload"]["authorizationSha256"],
+            "cases": document["payload"]["cases"],
+        })
+        raw_child = encode_json(document)
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "localAbort product signals"):
+            VERIFIER.validate_matrix_source_attestations("termination", files, raw_child)
 
     def test_matrix_cases_must_fit_protected_authorization_expiry(self):
         children = child_documents()
