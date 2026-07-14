@@ -15,25 +15,15 @@ on:
       confirm:
         description: "Required literal per action: DRY_RUN_VIEW_ONLY_VIEWER_PILOT_ENABLE, APPLY_VIEW_ONLY_VIEWER_PILOT_ENABLE, or ROLLBACK_VIEW_ONLY_VIEWER_PILOT_ENABLE"
         required: true
-      ack_kvkk_dpia:
-        description: "For apply: literal ACK_KVKK_DPIA_ATTENDED_PILOT_SIGNOFF_RECORDED"
+      pilot_ttl_minutes:
+        description: "For apply: bounded viewer exposure TTL in minutes (5-30)"
         required: false
-        default: ""
-      ack_one_person_roster:
-        description: "For apply: literal ACK_ONE_PERSON_OPERATOR_ROSTER_FIXED"
-        required: false
-        default: ""
-      ack_pilot_device_consent:
-        description: "For apply: literal ACK_CONSENTING_ATTENDED_PILOT_DEVICE"
-        required: false
-        default: ""
-      ack_8096_exposure:
-        description: "For apply: literal ACK_OWNER_8096_EXPOSURE"
-        required: false
-        default: ""
+        default: "10"
 
 permissions:
+  actions: read
   contents: read
+  issues: read
 
 concurrency:
   # Shares the remote-bridge activation group: broker/device-key/viewer overlays
@@ -49,19 +39,136 @@ env:
   VIEWER_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
   BROKER_ONLY_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge
   TEST_ROOT_OVERLAY: kustomize/overlays/test
+  WATCHDOG_TEMPLATE: scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml
 
 jobs:
+  authorize-live-apply:
+    name: Verify signed legal marker and protected pilot authorization
+    if: inputs.action == 'apply'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: faz22-view-only-pilot
+      url: https://github.com/Halildeu/platform-k8s-gitops/issues/2374
+    outputs:
+      authorization_sha256: ${{ steps.authorization.outputs.authorization_sha256 }}
+
+    steps:
+      - name: Checkout canonical legal verifier and policy
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Install JSON Schema and Ed25519 dependencies
+        run: python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
+
+      - name: Verify canonical #2374 signed marker and protected authorization
+        id: authorization
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PILOT_OPERATOR_SHA256: ${{ secrets.VIEW_ONLY_PILOT_OPERATOR_SHA256 }}
+          PILOT_DEVICE_SHA256: ${{ secrets.VIEW_ONLY_PILOT_DEVICE_SHA256 }}
+          PILOT_AUTHORIZATION_EXPIRES_AT: ${{ secrets.VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT }}
+        run: |
+          set -euo pipefail
+          policy=config/faz22-6-view-only-kvkk-approver-policy.v1.json
+          [ -f "$policy" ] || {
+            echo "::error::canonical #2374 approver policy is absent; live viewer activation remains fail-closed"
+            exit 1
+          }
+          for name in PILOT_OPERATOR_SHA256 PILOT_DEVICE_SHA256; do
+            value="${!name:-}"
+            printf '%s' "$value" | grep -Eq '^sha256:[a-f0-9]{64}$' || {
+              echo "::error::protected environment secret $name is missing or invalid"
+              exit 1
+            }
+          done
+          [ "$PILOT_OPERATOR_SHA256" != "$PILOT_DEVICE_SHA256" ] || {
+            echo "::error::operator and device authorization hashes must be distinct"
+            exit 1
+          }
+          printf '%s' "${PILOT_AUTHORIZATION_EXPIRES_AT:-}" \
+            | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' || {
+              echo "::error::protected authorization expiry must be RFC3339 UTC"
+              exit 1
+            }
+          [ "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" -gt "$(date -u +%s)" ] || {
+            echo "::error::protected pilot authorization is expired"
+            exit 1
+          }
+
+          out="$RUNNER_TEMP/faz22-view-only-pilot-authorization"
+          mkdir -p "$out"
+          gh api repos/Halildeu/platform-k8s-gitops/issues/2374/comments --paginate > "$out/issue-comments.json"
+          python3 - "$out/issue-comments.json" "$out/kvkk-marker.txt" <<'PY'
+          import json
+          import re
+          import sys
+
+          comments = json.load(open(sys.argv[1], encoding="utf-8"))
+          pattern = re.compile(
+              r"(?m)^F22_6_VIEW_ONLY_KVKK: v1\n(?:[a-z0-9_]+: [^\r\n\t]{1,512}\n)+"
+          )
+          markers = [match.group(0) for comment in comments for match in pattern.finditer(comment.get("body", ""))]
+          if len(markers) != 1:
+              raise SystemExit(f"expected exactly one canonical #2374 marker, found {len(markers)}")
+          open(sys.argv[2], "w", encoding="utf-8").write(markers[0])
+          PY
+          python3 scripts/faz22-remote-ops/verify-view-only-kvkk-decision.py \
+            --approver-policy "$policy" \
+            --verify-marker-input "$out/kvkk-marker.txt" \
+            --result-out "$out/kvkk-marker-verifier-result.json"
+          jq -e '.status == "pass" and .humanSignatureCount == 2' \
+            "$out/kvkk-marker-verifier-result.json" >/dev/null
+
+          kvkk_marker_sha256="sha256:$(sha256sum "$out/kvkk-marker.txt" | awk '{print $1}')"
+          jq -n -S \
+            --arg schemaVersion 'faz22.6-view-only-pilot-protected-authorization-v1' \
+            --arg environment 'faz22-view-only-pilot' \
+            --arg operatorSha256 "$PILOT_OPERATOR_SHA256" \
+            --arg deviceSha256 "$PILOT_DEVICE_SHA256" \
+            --arg kvkkMarkerSha256 "$kvkk_marker_sha256" \
+            --arg expiresAt "$PILOT_AUTHORIZATION_EXPIRES_AT" \
+            --arg runId "$GITHUB_RUN_ID" \
+            '{schemaVersion:$schemaVersion, environment:$environment, onePersonRoster:true,
+              operatorSha256:$operatorSha256, consentingPilotDevice:true, deviceSha256:$deviceSha256,
+              exposureApprovedByProtectedEnvironment:true, kvkkMarkerSha256:$kvkkMarkerSha256,
+              expiresAt:$expiresAt, authorizationRunId:($runId|tonumber)}' \
+            | jq -cS . > "$out/protected-authorization.json"
+          authorization_sha256="sha256:$(sha256sum "$out/protected-authorization.json" | awk '{print $1}')"
+          printf 'authorization_sha256=%s\n' "$authorization_sha256" >> "$GITHUB_OUTPUT"
+          (cd "$out" && sha256sum \
+            kvkk-marker.txt \
+            kvkk-marker-verifier-result.json \
+            protected-authorization.json \
+            > SHA256SUMS)
+          (cd "$out" && sha256sum -c SHA256SUMS)
+          rm -f "$out/issue-comments.json"
+
+      - name: Upload protected authorization receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-view-only-pilot-protected-authorization-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-view-only-pilot-authorization/
+          if-no-files-found: error
+          retention-days: 30
+
   viewer-pilot-surface:
     name: "Apply or rollback owner-gated #2373 VIEW_ONLY viewer product pilot surface"
+    needs: [authorize-live-apply]
+    if: always() && (inputs.action != 'apply' || needs.authorize-live-apply.result == 'success')
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 20
 
     steps:
       - name: Validate dispatch inputs
+        env:
+          ACTION: ${{ inputs.action }}
+          CONFIRM: ${{ inputs.confirm }}
+          PILOT_TTL_MINUTES: ${{ inputs.pilot_ttl_minutes }}
+          AUTHORIZATION_SHA256: ${{ needs.authorize-live-apply.outputs.authorization_sha256 }}
         run: |
           set -euo pipefail
 
-          case "${{ inputs.action }}" in
+          case "$ACTION" in
             dry_run)
               expected_confirm="DRY_RUN_VIEW_ONLY_VIEWER_PILOT_ENABLE"
               ;;
@@ -72,33 +179,30 @@ jobs:
               expected_confirm="ROLLBACK_VIEW_ONLY_VIEWER_PILOT_ENABLE"
               ;;
             *)
-              echo "::error::unsupported action: ${{ inputs.action }}"
+              echo "::error::unsupported action: $ACTION"
               exit 1
               ;;
           esac
 
-          if [ "${{ inputs.confirm }}" != "${expected_confirm}" ]; then
+          if [ "$CONFIRM" != "${expected_confirm}" ]; then
             echo "::error::confirm input must be ${expected_confirm}"
             exit 1
           fi
 
-          if [ "${{ inputs.action }}" = "apply" ]; then
-            [ "${{ inputs.ack_kvkk_dpia }}" = "ACK_KVKK_DPIA_ATTENDED_PILOT_SIGNOFF_RECORDED" ] || {
-              echo "::error::apply requires KVKK/DPIA attended pilot signoff acknowledgement"
+          if [ "$ACTION" = "apply" ]; then
+            printf '%s' "$PILOT_TTL_MINUTES" | grep -Eq '^[0-9]+$' || {
+              echo "::error::pilot_ttl_minutes must be an integer"
               exit 1
             }
-            [ "${{ inputs.ack_one_person_roster }}" = "ACK_ONE_PERSON_OPERATOR_ROSTER_FIXED" ] || {
-              echo "::error::apply requires one-person operator roster acknowledgement"
+            [ "$PILOT_TTL_MINUTES" -ge 5 ] && [ "$PILOT_TTL_MINUTES" -le 30 ] || {
+              echo "::error::pilot_ttl_minutes must be between 5 and 30"
               exit 1
             }
-            [ "${{ inputs.ack_pilot_device_consent }}" = "ACK_CONSENTING_ATTENDED_PILOT_DEVICE" ] || {
-              echo "::error::apply requires consenting attended pilot device acknowledgement"
-              exit 1
-            }
-            [ "${{ inputs.ack_8096_exposure }}" = "ACK_OWNER_8096_EXPOSURE" ] || {
-              echo "::error::apply requires owner acknowledgement for exposing the 8096 viewer surface"
-              exit 1
-            }
+            printf '%s' "$AUTHORIZATION_SHA256" \
+              | grep -Eq '^sha256:[a-f0-9]{64}$' || {
+                echo "::error::protected authorization receipt is absent"
+                exit 1
+              }
           fi
 
       - name: Checkout
@@ -164,6 +268,37 @@ jobs:
 
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             apply --dry-run=server -f /tmp/endpoint-admin-remote-bridge-viewer.yaml
+
+      - name: Install absolute-expiry fail-closed watchdog
+        if: inputs.action == 'apply'
+        env:
+          PILOT_TTL_MINUTES: ${{ inputs.pilot_ttl_minutes }}
+          AUTHORIZATION_SHA256: ${{ needs.authorize-live-apply.outputs.authorization_sha256 }}
+        run: |
+          set -euo pipefail
+          expires_epoch="$(( $(date -u +%s) + PILOT_TTL_MINUTES * 60 ))"
+          active_deadline="$(( PILOT_TTL_MINUTES * 60 + 600 ))"
+          sed \
+            -e "s/__EXPIRES_EPOCH__/${expires_epoch}/g" \
+            -e "s/__ACTIVE_DEADLINE_SECONDS__/${active_deadline}/g" \
+            -e "s/__AUTHORIZATION_SHA256__/${AUTHORIZATION_SHA256}/g" \
+            "$WATCHDOG_TEMPLATE" > /tmp/faz22-view-only-pilot-watchdog.yaml
+          if grep -q '__[A-Z0-9_]*__' /tmp/faz22-view-only-pilot-watchdog.yaml; then
+            echo "::error::watchdog template contains unresolved placeholders"
+            exit 1
+          fi
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete job faz22-view-only-pilot-watchdog --ignore-not-found --wait=true
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply --dry-run=server -f /tmp/faz22-view-only-pilot-watchdog.yaml
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            apply -f /tmp/faz22-view-only-pilot-watchdog.yaml
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            wait --for=condition=Ready pod -l app.kubernetes.io/name=faz22-view-only-pilot-watchdog \
+            --timeout=120s
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            get job faz22-view-only-pilot-watchdog \
+            -o jsonpath='watchdog_expires_epoch={.metadata.annotations.faz22\.6\.acik\.com/expires-at-epoch}{"\n"}'
 
       - name: Apply viewer exposure overlay
         if: inputs.action == 'apply'
@@ -266,6 +401,28 @@ jobs:
             echo "- keycloak overlay placeholders: \`absent\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Compensating rollback after failed apply
+        if: always() && inputs.action == 'apply' && failure()
+        run: |
+          set +e
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            patch configmap endpoint-admin-remote-bridge-config --type merge \
+            -p '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":"false"}}'
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" get configmap api-gateway-config -o json \
+            | jq 'del(.data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID,.data.SPRING_CLOUD_GATEWAY_ROUTES_28_URI,
+                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER,.data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0,
+                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1,.data.SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0)' \
+            | kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" apply -f -
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete service endpoint-admin-remote-bridge-viewer --ignore-not-found
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete networkpolicy eab-bridge-viewer-allow-ingress-8096-from-api-gateway --ignore-not-found
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete networkpolicy eab-api-gateway-allow-egress-8096-to-bridge-viewer --ignore-not-found
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" rollout restart \
+            "deploy/${BRIDGE_DEPLOYMENT}" "deploy/${GATEWAY_DEPLOYMENT}"
+          echo "::warning::apply failed; immediate compensating rollback requested. Cluster watchdog remains authoritative."
+
       - name: Rollback viewer pilot surface
         if: inputs.action == 'rollback'
         run: |
@@ -301,6 +458,19 @@ jobs:
             rollout restart "deploy/${BRIDGE_DEPLOYMENT}"
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             rollout status "deploy/${BRIDGE_DEPLOYMENT}" --timeout=300s
+
+          # The viewer surface is already closed and the broker-only overlay is
+          # healthy. Remove the now-obsolete safety controller last.
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete job faz22-view-only-pilot-watchdog --ignore-not-found --wait=true
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete rolebinding faz22-view-only-pilot-watchdog --ignore-not-found
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete role faz22-view-only-pilot-watchdog --ignore-not-found
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete serviceaccount faz22-view-only-pilot-watchdog --ignore-not-found
+          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            delete networkpolicy allow-faz22-view-only-watchdog-kubernetes-api --ignore-not-found
 
       - name: Verify rollback posture
         if: inputs.action == 'rollback'

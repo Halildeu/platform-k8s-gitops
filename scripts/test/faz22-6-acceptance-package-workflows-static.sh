@@ -8,6 +8,14 @@ VIEW_ONLY_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-engineering-eviden
 B1_HELPER="$ROOT/scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh"
 VIEW_ONLY_HELPER="$ROOT/scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh"
 VIEWER_PRODUCT_VERIFIER="$ROOT/scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py"
+VIEWER_PRODUCT_ASSEMBLER="$ROOT/scripts/faz22-remote-ops/assemble-view-only-viewer-product-evidence.py"
+VIEWER_PRODUCT_VERIFY_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence-verify.yml"
+VIEWER_PRODUCT_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence.yml"
+VIEWER_BROWSER_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
+VIEWER_PRODUCT_ROOT_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
+VIEWER_PRODUCT_CHILD_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
+VIEWER_APPLY_WORKFLOW="$ROOT/.github/workflows/apply-view-only-viewer-pilot-enable.yml"
+VIEWER_WATCHDOG="$ROOT/scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
 
 future_date_utc() {
   local days="$1"
@@ -37,12 +45,18 @@ require_grep() {
   }
 }
 
-for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER" "$VIEWER_PRODUCT_VERIFIER"; do
+for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER" \
+  "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
+  "$VIEWER_PRODUCT_VERIFY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" "$VIEWER_BROWSER_WORKFLOW" \
+  "$VIEWER_PRODUCT_ROOT_SCHEMA" "$VIEWER_PRODUCT_CHILD_SCHEMA" \
+  "$VIEWER_APPLY_WORKFLOW" "$VIEWER_WATCHDOG"; do
   require_file "$path"
 done
 
 bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER"
-python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER"
+python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER"
+jq -e '.additionalProperties == false' "$VIEWER_PRODUCT_ROOT_SCHEMA" >/dev/null
+jq -e '.additionalProperties == false and (.allOf | length) == 7' "$VIEWER_PRODUCT_CHILD_SCHEMA" >/dev/null
 
 require_grep "permissions:" "$B1_WORKFLOW"
 require_grep "contents: read" "$B1_WORKFLOW"
@@ -68,7 +82,45 @@ require_grep "actions/upload-artifact@v4" "$VIEW_ONLY_WORKFLOW"
 require_grep "writes_github_issues: false" "$VIEW_ONLY_WORKFLOW"
 require_grep "contains_secrets: false" "$VIEW_ONLY_WORKFLOW"
 
-for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW"; do
+require_grep "actions: read" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
+require_grep "VERIFY_FAZ22_6_VIEW_ONLY_VIEWER_PRODUCT_EVIDENCE" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
+require_grep "--run-id" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
+require_grep "--marker-out" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
+require_grep "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
+require_grep "renderLossRate <= 0.05" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
+
+require_grep "actions: read" "$VIEWER_PRODUCT_WORKFLOW"
+require_grep "ASSEMBLE_FAZ22_6_VIEW_ONLY_VIEWER_PRODUCT_EVIDENCE" "$VIEWER_PRODUCT_WORKFLOW"
+require_grep "assemble-view-only-viewer-product-evidence.py" "$VIEWER_PRODUCT_WORKFLOW"
+require_grep "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7" "$VIEWER_PRODUCT_WORKFLOW"
+
+require_grep "name: faz22-view-only-pilot" "$VIEWER_BROWSER_WORKFLOW"
+require_grep "activation_run_id" "$VIEWER_BROWSER_WORKFLOW"
+require_grep "protected-authorization.json" "$VIEWER_BROWSER_WORKFLOW"
+require_grep "actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6" "$VIEWER_BROWSER_WORKFLOW"
+
+require_grep "environment:" "$VIEWER_APPLY_WORKFLOW"
+require_grep "name: faz22-view-only-pilot" "$VIEWER_APPLY_WORKFLOW"
+require_grep "--verify-marker-input" "$VIEWER_APPLY_WORKFLOW"
+require_grep "VIEW_ONLY_PILOT_OPERATOR_SHA256" "$VIEWER_APPLY_WORKFLOW"
+require_grep "VIEW_ONLY_PILOT_DEVICE_SHA256" "$VIEWER_APPLY_WORKFLOW"
+require_grep 'sha256sum -c SHA256SUMS' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'rm -f "$out/issue-comments.json"' "$VIEWER_APPLY_WORKFLOW"
+require_grep "pilot_ttl_minutes must be between 5 and 30" "$VIEWER_APPLY_WORKFLOW"
+require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORKFLOW"
+require_grep "Compensating rollback after failed apply" "$VIEWER_APPLY_WORKFLOW"
+if grep -Eq 'ACK_KVKK_DPIA|ack_kvkk_dpia|ACK_ONE_PERSON_OPERATOR|ACK_CONSENTING_ATTENDED|ACK_OWNER_8096' "$VIEWER_APPLY_WORKFLOW"; then
+  echo "typed legal/operator acknowledgement remains in viewer apply workflow" >&2
+  exit 1
+fi
+
+require_grep "activeDeadlineSeconds: __ACTIVE_DEADLINE_SECONDS__" "$VIEWER_WATCHDOG"
+require_grep "faz22.6.acik.com/authorization-sha256" "$VIEWER_WATCHDOG"
+require_grep "curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b" "$VIEWER_WATCHDOG"
+require_grep 'REMOTE_BRIDGE_VIEWER_ENABLED":"false"' "$VIEWER_WATCHDOG"
+require_grep "SPRING_CLOUD_GATEWAY_ROUTES_28_ID\":null" "$VIEWER_WATCHDOG"
+
+for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"; do
   forbidden="$(
     grep -nE 'gh issue (edit|comment)|kubectl |secrets\.|GH_TOKEN|issues: write|pull-requests: write|contents: write' "$path" || true
   )"
@@ -121,5 +173,12 @@ jq -e '.schema_version == "faz22.6-view-only-evidence-v2" and .recording_mode ==
 grep -Fq "F22_6_VIEW_ONLY_ENGINEERING: v2" "$tmp_dir/view-only-marker.txt"
 
 python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_product_evidence_verifier
+python3 -m unittest tests.faz22_remote_ops.test_faz22_6_viewer_product_evidence_assembler
+
+if python3 "$VIEWER_PRODUCT_VERIFIER" --run-id 1 --input "$tmp_dir/fabricated.json" \
+  >/dev/null 2>&1; then
+  echo "viewer product verifier must reject legacy local --input evidence" >&2
+  exit 1
+fi
 
 echo "faz22-6-acceptance-package-workflows-static-ok"

@@ -1,0 +1,189 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: faz22-view-only-pilot-watchdog
+  namespace: platform-test
+  labels:
+    app.kubernetes.io/name: faz22-view-only-pilot-watchdog
+    app.kubernetes.io/component: safety-controller
+    app.kubernetes.io/part-of: remote-bridge
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: faz22-view-only-pilot-watchdog
+  namespace: platform-test
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["endpoint-admin-remote-bridge-config", "api-gateway-config"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["endpoint-admin-remote-bridge-viewer"]
+    verbs: ["get", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["endpoint-admin-remote-bridge", "api-gateway"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    resourceNames:
+      - eab-bridge-viewer-allow-ingress-8096-from-api-gateway
+      - eab-api-gateway-allow-egress-8096-to-bridge-viewer
+    verbs: ["get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: faz22-view-only-pilot-watchdog
+  namespace: platform-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: faz22-view-only-pilot-watchdog
+subjects:
+  - kind: ServiceAccount
+    name: faz22-view-only-pilot-watchdog
+    namespace: platform-test
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-faz22-view-only-watchdog-kubernetes-api
+  namespace: platform-test
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: faz22-view-only-pilot-watchdog
+      app.kubernetes.io/component: safety-controller
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.45.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.0/16
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: faz22-view-only-pilot-watchdog
+  namespace: platform-test
+  labels:
+    app.kubernetes.io/name: faz22-view-only-pilot-watchdog
+    app.kubernetes.io/component: safety-controller
+    app.kubernetes.io/part-of: remote-bridge
+  annotations:
+    faz22.6.acik.com/expires-at-epoch: "__EXPIRES_EPOCH__"
+    faz22.6.acik.com/authorization-sha256: "__AUTHORIZATION_SHA256__"
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: __ACTIVE_DEADLINE_SECONDS__
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: faz22-view-only-pilot-watchdog
+        app.kubernetes.io/component: safety-controller
+        app.kubernetes.io/part-of: remote-bridge
+    spec:
+      serviceAccountName: faz22-view-only-pilot-watchdog
+      automountServiceAccountToken: true
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: watchdog
+          image: curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: EXPIRES_EPOCH
+              value: "__EXPIRES_EPOCH__"
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              # shellcheck shell=sh
+              while [ "$(date +%s)" -lt "$EXPIRES_EPOCH" ]; do
+                remaining=$((EXPIRES_EPOCH - $(date +%s)))
+                if [ "$remaining" -gt 30 ]; then
+                  sleep 30
+                else
+                  sleep "$remaining"
+                fi
+              done
+
+              token_file=/var/run/secrets/kubernetes.io/serviceaccount/token
+              ca_file=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              namespace="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
+              token="$(cat "$token_file")"
+              api=https://kubernetes.default.svc
+              auth="Authorization: Bearer $token"
+
+              request() {
+                method="$1"; path="$2"; content_type="$3"; body="$4"; expected="$5"
+                if [ -n "$body" ]; then
+                  code="$(curl -sS -o /tmp/response -w '%{http_code}' --cacert "$ca_file" \
+                    -H "$auth" -H "Content-Type: $content_type" -X "$method" \
+                    --data "$body" --max-time 20 "$api$path" || true)"
+                else
+                  code="$(curl -sS -o /tmp/response -w '%{http_code}' --cacert "$ca_file" \
+                    -H "$auth" -H "Content-Type: $content_type" -X "$method" \
+                    --max-time 20 "$api$path" || true)"
+                fi
+                case ",${expected}," in
+                  *",${code},"*) printf 'watchdog %s %s HTTP %s\n' "$method" "$path" "$code" ;;
+                  *) cat /tmp/response >&2 || true; printf 'watchdog request failed: %s %s HTTP %s\n' "$method" "$path" "$code" >&2; return 1 ;;
+                esac
+              }
+
+              ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              request PATCH "/api/v1/namespaces/$namespace/configmaps/endpoint-admin-remote-bridge-config" \
+                application/merge-patch+json '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":"false"}}' 200
+              request PATCH "/api/v1/namespaces/$namespace/configmaps/api-gateway-config" \
+                application/merge-patch+json '{"data":{"SPRING_CLOUD_GATEWAY_ROUTES_28_ID":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_URI":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0":null}}' 200
+              request DELETE "/api/v1/namespaces/$namespace/services/endpoint-admin-remote-bridge-viewer" \
+                application/json '' 200,202,404
+              request DELETE "/apis/networking.k8s.io/v1/namespaces/$namespace/networkpolicies/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \
+                application/json '' 200,202,404
+              request DELETE "/apis/networking.k8s.io/v1/namespaces/$namespace/networkpolicies/eab-api-gateway-allow-egress-8096-to-bridge-viewer" \
+                application/json '' 200,202,404
+              request PATCH "/apis/apps/v1/namespaces/$namespace/deployments/endpoint-admin-remote-bridge" \
+                application/merge-patch+json "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"faz22.6.acik.com/watchdog-restarted-at\":\"$ts\"}}}}}" 200
+              request PATCH "/apis/apps/v1/namespaces/$namespace/deployments/api-gateway" \
+                application/merge-patch+json "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"faz22.6.acik.com/watchdog-restarted-at\":\"$ts\"}}}}}" 200
+              echo "F22_6_VIEW_ONLY_PILOT_WATCHDOG_ROLLBACK=pass expires_epoch=$EXPIRES_EPOCH"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Mi

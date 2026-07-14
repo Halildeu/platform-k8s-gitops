@@ -11,7 +11,10 @@ WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-attended-smoke.yml"
 
 bash -n "$SCRIPT"
 
-help_out="$("$SCRIPT" --help)"
+# Invoke through bash explicitly. macOS provenance/endpoint controls can kill a
+# directly executed worktree script before its shebang runs, which is unrelated
+# to the Linux self-hosted runner contract this regression guard validates.
+help_out="$(bash "$SCRIPT" --help)"
 grep -Fq 'redacted evidence bundle' <<<"$help_out"
 grep -Fq 'EVIDENCE_URL=https://' <<<"$help_out"
 grep -Fq 'write #1580' <<<"$help_out"
@@ -25,6 +28,7 @@ grep -q 'contents: read' <<<"$workflow_text"
 grep -q 'issues: write' <<<"$workflow_text"
 grep -Fq "KC_TEST_ADMIN_PASSWORD: \${{ secrets.KC_TEST_ADMIN_PASSWORD }}" <<<"$workflow_text"
 grep -Fq 'EMIT_GITHUB_MASK_COMMANDS: "1"' <<<"$workflow_text"
+# shellcheck disable=SC2016 # Assert the workflow's literal shell expression.
 grep -q 'DEFAULT_DENETIM_SSH_CONFIG="${DEFAULT_DENETIM_SSH_CONFIG:-/home/runner/faz22-6-denetim-ssh/config}"' <<<"$workflow_text"
 grep -q 'ADD_TO_PROJECT_PAT || github.token' <<<"$workflow_text"
 grep -Fq "[[ \"\$line\" == ::add-mask::* ]]" <<<"$workflow_text"
