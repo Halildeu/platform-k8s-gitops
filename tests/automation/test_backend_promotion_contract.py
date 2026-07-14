@@ -71,6 +71,22 @@ class BackendPromotionContractTests(unittest.TestCase):
         self.assertIn('observed_revision" == "$REVISION"', self.reconcile)
         self.assertIn('REQUIRED_STABLE_POLLS="${REQUIRED_STABLE_POLLS:-2}"', self.reconcile)
         self.assertIn("git fetch origin main --depth=1 --quiet", self.reconcile)
+        self.assertIn('OUT_OF_SYNC_GRACE="${OUT_OF_SYNC_GRACE:-60}"', self.reconcile)
+        self.assertIn('REQUIRED_DRIFT_POLLS="${REQUIRED_DRIFT_POLLS:-3}"', self.reconcile)
+        self.assertIn('HARD_REFRESH_INTERVAL="${HARD_REFRESH_INTERVAL:-60}"', self.reconcile)
+        self.assertEqual(
+            1,
+            self.reconcile.count('app get "$APP" --hard-refresh -o json'),
+        )
+        self.assertIn('app get "$APP" -o json', self.reconcile)
+        self.assertIn("drift_polls >= REQUIRED_DRIFT_POLLS", self.reconcile)
+        self.assertIn('CURRENT_PHASE="argocd-resource-drift"', self.reconcile)
+        self.assertIn("outOfSyncResources", self.reconcile)
+        self.assertIn("resource-identifiers-only-no-manifest-diff", self.reconcile)
+        self.assertIn('select(.status == "OutOfSync")', self.reconcile)
+        self.assertIn("[redacted-sensitive-resource-name]", self.reconcile)
+        self.assertIn('CURRENT_PHASE="argocd-status-read"', self.reconcile)
+        self.assertNotIn("app diff", self.reconcile)
         self.assertIn("verify-testai-backend-runtime.sh", self.verify)
         self.assertIn("verify-pod-digest.sh", self.runtime)
 
