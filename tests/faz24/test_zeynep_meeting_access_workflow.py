@@ -12,6 +12,12 @@ REPAIR_SCRIPT = (
     REPO_ROOT / "scripts/faz24/repair-d35-permission-writer-credential.sh"
 )
 WORKFLOW = REPO_ROOT / ".github/workflows/faz24-zeynep-meeting-access.yml"
+PROVISION_SCRIPT = (
+    REPO_ROOT / "scripts/faz24/provision-meeting-intelligence-access.sh"
+)
+MAIL_ANCHOR_RESOLVER = REPO_ROOT / "scripts/faz24/resolve-mail-anchor.jq"
+PRIMARY_SUBJECT = "FAZ 24"
+CORROBORATING_SUBJECT = "Platform Ai- Meeting Intelligence"
 NEW_PASSWORD = "a" * 64
 WRITER_USER_ID = "cbc9a869-1833-4d9c-beea-a9fa52fa851e"
 WRITER_PROFILE_EMAIL = "d35-admin-persona@acik.com"
@@ -20,6 +26,145 @@ WRITER_PROFILE_EMAIL = "d35-admin-persona@acik.com"
 def _write_executable(path: Path, body: str) -> None:
     path.write_text(body, encoding="utf-8")
     path.chmod(0o755)
+
+
+def _resolve_mail_anchor(tmp_path: Path, primary: dict, corroborating: dict):
+    primary_path = tmp_path / "primary.json"
+    corroborating_path = tmp_path / "corroborating.json"
+    primary_path.write_text(json.dumps(primary), encoding="utf-8")
+    corroborating_path.write_text(json.dumps(corroborating), encoding="utf-8")
+
+    return subprocess.run(
+        [
+            "jq",
+            "-nr",
+            "--arg",
+            "primary_subject",
+            PRIMARY_SUBJECT,
+            "--arg",
+            "corroborating_subject",
+            CORROBORATING_SUBJECT,
+            "--slurpfile",
+            "primary",
+            str(primary_path),
+            "--slurpfile",
+            "corroborating",
+            str(corroborating_path),
+            "-f",
+            str(MAIL_ANCHOR_RESOLVER),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _mail_response(subject: str, *senders: str, next_link: bool = False) -> dict:
+    response = {
+        "value": [
+            {
+                "subject": subject,
+                "from": {"emailAddress": {"address": sender}},
+            }
+            for sender in senders
+        ]
+    }
+    if next_link:
+        response["@odata.nextLink"] = "https://graph.example.test/next"
+    return response
+
+
+def test_mail_anchor_requires_same_unique_internal_sender(tmp_path):
+    proc = _resolve_mail_anchor(
+        tmp_path,
+        _mail_response(PRIMARY_SUBJECT, "PERSON@ACIK.COM", "person@acik.com"),
+        _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "person@acik.com"
+
+
+@pytest.mark.parametrize(
+    ("primary", "corroborating"),
+    [
+        (
+            _mail_response(PRIMARY_SUBJECT),
+            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        ),
+        (
+            _mail_response(PRIMARY_SUBJECT, "person@acik.com", "other@acik.com"),
+            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        ),
+        (
+            _mail_response(PRIMARY_SUBJECT, "person@acik.com"),
+            _mail_response(CORROBORATING_SUBJECT, "other@acik.com"),
+        ),
+        (
+            _mail_response(PRIMARY_SUBJECT, "person@example.com"),
+            _mail_response(CORROBORATING_SUBJECT, "person@example.com"),
+        ),
+        (
+            _mail_response(PRIMARY_SUBJECT, "person@acik.com", next_link=True),
+            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        ),
+        (
+            _mail_response(PRIMARY_SUBJECT, "person@acik.com"),
+            _mail_response(
+                CORROBORATING_SUBJECT, "person@acik.com", next_link=True
+            ),
+        ),
+        (
+            _mail_response(
+                PRIMARY_SUBJECT, "person@acik.com", "external@example.com"
+            ),
+            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        ),
+        (
+            {
+                "value": [
+                    {
+                        "subject": PRIMARY_SUBJECT,
+                        "from": {"emailAddress": {}},
+                    },
+                    {
+                        "subject": PRIMARY_SUBJECT,
+                        "from": {
+                            "emailAddress": {"address": "person@acik.com"}
+                        },
+                    },
+                ]
+            },
+            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        ),
+        (
+            _mail_response("faz 24", "person@acik.com"),
+            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        ),
+    ],
+)
+def test_mail_anchor_fails_closed_for_ambiguous_or_incomplete_evidence(
+    tmp_path, primary, corroborating
+):
+    proc = _resolve_mail_anchor(tmp_path, primary, corroborating)
+
+    assert proc.returncode != 0
+    assert proc.stdout == ""
+
+
+def test_provisioner_queries_two_independent_subject_anchors():
+    text = PROVISION_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'MAIL_PRIMARY_SUBJECT="FAZ 24"' in text
+    assert (
+        'MAIL_CORROBORATING_SUBJECT="Platform Ai- Meeting Intelligence"' in text
+    )
+    assert text.count('read_mail_anchor "${MAIL_') == 2
+    assert '--data-urlencode "\\$filter=subject eq' in text
+    assert '--arg primary_subject "${MAIL_PRIMARY_SUBJECT}"' in text
+    assert '--arg corroborating_subject "${MAIL_CORROBORATING_SUBJECT}"' in text
+    assert "exact-zeynep-mail-anchor-inconsistent" in text
+    assert "from.emailAddress.name" not in text
 
 
 def _run_ambiguous_reset_scenario(

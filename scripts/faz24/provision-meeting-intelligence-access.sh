@@ -14,7 +14,9 @@ umask 077
 MODE="dry-run"
 OUT_PATH="${OUT_PATH:-/tmp/faz24-meeting-intelligence-access.json}"
 readonly MAILBOX="ai@acik.com"
-readonly MAIL_SUBJECT="Platform Ai- Meeting Intelligence"
+readonly MAIL_PRIMARY_SUBJECT="FAZ 24"
+readonly MAIL_CORROBORATING_SUBJECT="Platform Ai- Meeting Intelligence"
+readonly MAIL_ANCHOR_RESOLVER="scripts/faz24/resolve-mail-anchor.jq"
 readonly BASE_URL="https://testai.acik.com"
 readonly KC_BASE_URL="http://127.0.0.1:8082"
 readonly KC_REALM="platform-test"
@@ -216,29 +218,39 @@ GRAPH_ACCESS_TOKEN="$(jq -r '.access_token // empty' "${GRAPH_TOKEN_JSON}")"
 GRAPH_AUTH_CONFIG="${TMP_DIR}/graph-auth.curl"
 write_bearer_config "${GRAPH_AUTH_CONFIG}" "${GRAPH_ACCESS_TOKEN}"
 
-MAIL_JSON="${TMP_DIR}/mail.json"
-code="$(curl -sS --max-time 20 -o "${MAIL_JSON}" -w '%{http_code}' --get \
-  "https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages" \
-  --config "${GRAPH_AUTH_CONFIG}" \
-  -H 'ConsistencyLevel: eventual' \
-  --data-urlencode "\$top=50" \
-  --data-urlencode "\$select=subject,from,receivedDateTime" \
-  --data-urlencode "\$orderby=receivedDateTime desc" || printf '000')"
-[[ "${code}" == "200" ]] || die "graph-mail-read-failed"
+[[ -f "${MAIL_ANCHOR_RESOLVER}" ]] || die "mail-anchor-resolver-missing"
 
-TARGET_EMAIL="$(jq -r --arg subject "${MAIL_SUBJECT}" '
-  [.value[]?
-    | select((.subject // "") == $subject)
-    | select(
-        ((.from.emailAddress.name // "") | ascii_downcase) as $name
-        | ($name == "zeynep akkılıç" or $name == "zeynep akkilic")
-      )
-    | (.from.emailAddress.address // "")
-    | ascii_downcase
-    | select(endswith("@acik.com"))]
-  | .[0] // ""
-' "${MAIL_JSON}")"
-[[ -n "${TARGET_EMAIL}" ]] || die "exact-zeynep-mail-sender-not-found"
+read_mail_anchor() {
+  local subject="$1"
+  local output="$2"
+  local status
+
+  status="$(curl -sS --max-time 20 -o "${output}" -w '%{http_code}' --get \
+    "https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages" \
+    --config "${GRAPH_AUTH_CONFIG}" \
+    -H 'ConsistencyLevel: eventual' \
+    --data-urlencode "\$top=50" \
+    --data-urlencode "\$select=subject,from,receivedDateTime" \
+    --data-urlencode "\$filter=subject eq '${subject}'" || printf '000')"
+  [[ "${status}" == "200" ]]
+}
+
+PRIMARY_MAIL_JSON="${TMP_DIR}/primary-mail-anchor.json"
+CORROBORATING_MAIL_JSON="${TMP_DIR}/corroborating-mail-anchor.json"
+read_mail_anchor "${MAIL_PRIMARY_SUBJECT}" "${PRIMARY_MAIL_JSON}" \
+  || die "graph-primary-mail-anchor-read-failed"
+read_mail_anchor "${MAIL_CORROBORATING_SUBJECT}" "${CORROBORATING_MAIL_JSON}" \
+  || die "graph-corroborating-mail-anchor-read-failed"
+
+if ! TARGET_EMAIL="$(jq -nr \
+  --arg primary_subject "${MAIL_PRIMARY_SUBJECT}" \
+  --arg corroborating_subject "${MAIL_CORROBORATING_SUBJECT}" \
+  --slurpfile primary "${PRIMARY_MAIL_JSON}" \
+  --slurpfile corroborating "${CORROBORATING_MAIL_JSON}" \
+  -f "${MAIL_ANCHOR_RESOLVER}" 2>/dev/null)"; then
+  die "exact-zeynep-mail-anchor-inconsistent"
+fi
+[[ -n "${TARGET_EMAIL}" ]] || die "exact-zeynep-mail-anchor-inconsistent"
 TARGET_EMAIL_FILE="${TMP_DIR}/target-email"
 printf '%s' "${TARGET_EMAIL}" > "${TARGET_EMAIL_FILE}"
 
