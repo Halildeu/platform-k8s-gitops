@@ -231,12 +231,8 @@ CURRENT_GATE="jwt-auth-flow"
 
 # Keep username/password out of argv and logs. Python reads the inherited
 # environment and writes only an URL-encoded request body to curl stdin.
-token=$(python3 - <<'PY' \
-  | curl -fsS -X POST \
-      -H 'Content-Type: application/x-www-form-urlencoded' \
-      --data-binary @- \
-      "${TESTAI_URL}/realms/platform-test/protocol/openid-connect/token" \
-  | jq -r '.access_token // empty'
+token=$(
+  python3 -c '
 import os
 import sys
 import urllib.parse
@@ -247,7 +243,12 @@ sys.stdout.write(urllib.parse.urlencode({
     "username": os.environ["SMOKE_AUTH_USERNAME"],
     "password": os.environ["SMOKE_AUTH_PASSWORD"],
 }))
-PY
+' |
+    curl -fsS -X POST \
+      -H 'Content-Type: application/x-www-form-urlencoded' \
+      --data-binary @- \
+      "${TESTAI_URL}/realms/platform-test/protocol/openid-connect/token" \
+    | jq -r '.access_token // empty'
 )
 [[ -n "$token" ]] || {
   echo "FAIL: JWT smoke token fetch failed" >&2

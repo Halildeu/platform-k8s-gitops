@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 import urllib.parse
 from pathlib import Path
@@ -154,7 +155,7 @@ class BackendPromotionContractTests(unittest.TestCase):
 
     def test_p5_token_form_preserves_exact_password_without_trailing_newline(self):
         source_start = self.runtime.index("import os\nimport sys\nimport urllib.parse\n")
-        source_end = self.runtime.index("\nPY\n)", source_start)
+        source_end = self.runtime.index("\n' |\n", source_start)
         source = self.runtime[source_start:source_end]
         env = os.environ.copy()
         env.update(
@@ -173,6 +174,46 @@ class BackendPromotionContractTests(unittest.TestCase):
         parsed = urllib.parse.parse_qs(result.stdout.decode(), strict_parsing=True)
         self.assertEqual(parsed["username"], ["p5-readiness-viewer"])
         self.assertEqual(parsed["password"], ["exact-test-password"])
+
+    def test_p5_token_pipeline_is_valid_shell_and_preserves_form_bytes(self):
+        block_start = self.runtime.index("token=$(\n")
+        block_end = self.runtime.index("\n)\n[[ -n \"$token\" ]]", block_start) + 2
+        token_block = self.runtime[block_start:block_end]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            captured = temp / "request-body.bin"
+            curl = temp / "curl"
+            curl.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "python3 -c 'import os,pathlib,sys; "
+                "pathlib.Path(os.environ[\"CAPTURE_PATH\"]).write_bytes(sys.stdin.buffer.read())'\n"
+                "printf '%s' '{\"access_token\":\"header.payload.signature\"}'\n"
+            )
+            curl.chmod(0o700)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{temp}:{env['PATH']}",
+                    "CAPTURE_PATH": str(captured),
+                    "SMOKE_AUTH_USERNAME": "p5-readiness-viewer",
+                    "SMOKE_AUTH_PASSWORD": "exact-test-password",
+                    "TESTAI_URL": "https://example.invalid",
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", f"set -euo pipefail\n{token_block}\nprintf '%s' \"$token\""],
+                check=True,
+                capture_output=True,
+                env=env,
+            )
+            self.assertEqual(result.stdout, b"header.payload.signature")
+            body = captured.read_bytes()
+            self.assertFalse(body.endswith(b"\n"))
+            parsed = urllib.parse.parse_qs(body.decode(), strict_parsing=True)
+            self.assertEqual(parsed["username"], ["p5-readiness-viewer"])
+            self.assertEqual(parsed["password"], ["exact-test-password"])
 
     def test_argocd_core_kubeconfig_is_scoped_private_and_deleted(self):
         self.assertIn("mktemp", self.reconcile)
