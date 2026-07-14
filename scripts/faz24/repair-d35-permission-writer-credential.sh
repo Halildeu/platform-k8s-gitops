@@ -10,6 +10,7 @@ readonly KC_REALM="platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly WRITER_USERNAME="d35-admin-persona"
 readonly WRITER_EMAIL="d35-admin@example.com"
+readonly WRITER_USER_ID="cbc9a869-1833-4d9c-beea-a9fa52fa851e"
 readonly WRITER_CLIENT="frontend"
 readonly BASE_URL="https://testai.acik.com"
 readonly VAULT_PERSONA_PATH="kv/platform/d35-3"
@@ -19,6 +20,9 @@ readonly VAULT_INIT_FILE="/home/halil/bootstrap-drill/vault-init-test.json"
 STATUS="running"
 FAILURE_REASON=""
 EXACT_WRITER_MATCH=false
+CANONICAL_EMAIL_READY=false
+EMAIL_RECONCILIATION_ATTEMPTED=false
+EMAIL_RECONCILIATION_SUCCEEDED=false
 KEYCLOAK_RESET=false
 VAULT_SYNCED=false
 VAULT_ROLLBACK_ATTEMPTED=false
@@ -59,6 +63,9 @@ write_result() {
     --arg status "${STATUS}" \
     --arg failureReason "${FAILURE_REASON}" \
     --argjson exactWriterMatch "${EXACT_WRITER_MATCH}" \
+    --argjson canonicalEmailReady "${CANONICAL_EMAIL_READY}" \
+    --argjson emailReconciliationAttempted "${EMAIL_RECONCILIATION_ATTEMPTED}" \
+    --argjson emailReconciliationSucceeded "${EMAIL_RECONCILIATION_SUCCEEDED}" \
     --argjson keycloakReset "${KEYCLOAK_RESET}" \
     --argjson vaultSynced "${VAULT_SYNCED}" \
     --argjson vaultRollbackAttempted "${VAULT_ROLLBACK_ATTEMPTED}" \
@@ -73,6 +80,9 @@ write_result() {
       permissionWriter: {
         realm: "platform-test",
         exactIdentityMatch: $exactWriterMatch,
+        canonicalEmailReady: $canonicalEmailReady,
+        emailReconciliationAttempted: $emailReconciliationAttempted,
+        emailReconciliationSucceeded: $emailReconciliationSucceeded,
         keycloakCredentialReset: $keycloakReset,
         vaultRecordSynced: $vaultSynced,
         vaultRollbackAttempted: $vaultRollbackAttempted,
@@ -248,10 +258,49 @@ code="$(curl -sS --max-time 20 -o "${KC_USERS_JSON}" -w '%{http_code}' --get \
   || die "permission-writer-disabled"
 [[ "$(jq -r '.[0].username // empty' "${KC_USERS_JSON}")" == "${WRITER_USERNAME}" ]] \
   || die "permission-writer-username-mismatch"
-[[ "$(jq -r '.[0].email // empty | ascii_downcase' "${KC_USERS_JSON}")" == "${WRITER_EMAIL}" ]] \
-  || die "permission-writer-email-mismatch"
-WRITER_USER_ID="$(jq -r '.[0].id // empty' "${KC_USERS_JSON}")"
-[[ -n "${WRITER_USER_ID}" ]] || die "permission-writer-id-missing"
+WRITER_USER_ID_LIVE="$(jq -r '.[0].id // empty' "${KC_USERS_JSON}")"
+[[ -n "${WRITER_USER_ID_LIVE}" ]] || die "permission-writer-id-missing"
+[[ "${WRITER_USER_ID_LIVE}" == "${WRITER_USER_ID}" ]] \
+  || die "permission-writer-id-mismatch"
+
+if [[ "$(jq -r '.[0].email // empty | ascii_downcase' "${KC_USERS_JSON}")" != "${WRITER_EMAIL}" ]]; then
+  EMAIL_RECONCILIATION_ATTEMPTED=true
+  EMAIL_UPDATE_BODY="${TMP_DIR}/writer-email-update.json"
+  jq --arg email "${WRITER_EMAIL}" '.[0] | .email = $email' \
+    "${KC_USERS_JSON}" > "${EMAIL_UPDATE_BODY}"
+  EMAIL_UPDATE_RESPONSE="${TMP_DIR}/writer-email-update-response.json"
+  code="$(http_status PUT \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
+    "${EMAIL_UPDATE_RESPONSE}" \
+    --config "${KC_AUTH_CONFIG}" \
+    -H 'Content-Type: application/json' \
+    --data-binary "@${EMAIL_UPDATE_BODY}")"
+  [[ ! "${code}" =~ ^4[0-9][0-9]$ ]] \
+    || die "permission-writer-email-reconcile-rejected"
+
+  KC_USERS_READBACK_JSON="${TMP_DIR}/writer-users-readback.json"
+  readback_code="$(curl -sS --max-time 20 -o "${KC_USERS_READBACK_JSON}" -w '%{http_code}' --get \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users" \
+    --config "${KC_AUTH_CONFIG}" \
+    --data-urlencode "username@${WRITER_USERNAME_FILE}" \
+    --data-urlencode 'exact=true' || printf '000')"
+  [[ "${readback_code}" == "200" ]] \
+    || die "permission-writer-email-reconcile-readback-failed"
+  [[ "$(jq 'length' "${KC_USERS_READBACK_JSON}")" == "1" ]] \
+    || die "permission-writer-email-reconcile-identity-drift"
+  [[ "$(jq -r '.[0].id // empty' "${KC_USERS_READBACK_JSON}")" == "${WRITER_USER_ID}" &&
+     "$(jq -r '.[0].username // empty' "${KC_USERS_READBACK_JSON}")" == "${WRITER_USERNAME}" &&
+     "$(jq -r '.[0].enabled // false' "${KC_USERS_READBACK_JSON}")" == "true" ]] \
+    || die "permission-writer-email-reconcile-identity-drift"
+  if [[ "$(jq -r '.[0].email // empty | ascii_downcase' "${KC_USERS_READBACK_JSON}")" == "${WRITER_EMAIL}" ]]; then
+    EMAIL_RECONCILIATION_SUCCEEDED=true
+  elif [[ "${code}" == "204" ]]; then
+    die "permission-writer-email-reconcile-readback-mismatch"
+  else
+    die "permission-writer-email-reconcile-state-unverified"
+  fi
+fi
+CANONICAL_EMAIL_READY=true
 EXACT_WRITER_MATCH=true
 
 docker inspect "${VAULT_CONTAINER}" >/dev/null 2>&1 || die "vault-container-missing"

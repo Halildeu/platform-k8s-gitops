@@ -96,6 +96,9 @@ jobs:
             echo "- Failure: \`$(jq -r '.failureReason // "none"' "${OUT_PATH}")\`"
             if [ "$(jq -r .schemaVersion "${OUT_PATH}")" = "faz24.permissionWriterCredentialRepair.v1" ]; then
               echo "- Exact writer identity: \`$(jq -r .permissionWriter.exactIdentityMatch "${OUT_PATH}")\`"
+              echo "- Canonical writer email ready: \`$(jq -r .permissionWriter.canonicalEmailReady "${OUT_PATH}")\`"
+              echo "- Writer email reconciliation attempted: \`$(jq -r .permissionWriter.emailReconciliationAttempted "${OUT_PATH}")\`"
+              echo "- Writer email reconciliation succeeded: \`$(jq -r .permissionWriter.emailReconciliationSucceeded "${OUT_PATH}")\`"
               echo "- Keycloak credential reset: \`$(jq -r .permissionWriter.keycloakCredentialReset "${OUT_PATH}")\`"
               echo "- Vault record synced: \`$(jq -r .permissionWriter.vaultRecordSynced "${OUT_PATH}")\`"
               echo "- Vault rollback attempted: \`$(jq -r .permissionWriter.vaultRollbackAttempted "${OUT_PATH}")\`"
