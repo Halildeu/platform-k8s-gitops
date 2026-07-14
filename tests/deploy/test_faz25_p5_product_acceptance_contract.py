@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -83,6 +84,31 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
                 f"https://registry.npmjs.org/{tarball}",
             )
             self.assertRegex(package["integrity"], r"^sha512-[A-Za-z0-9+/]+=*$")
+
+    def test_control_character_scan_uses_real_unicode_range(self):
+        corrected = 'test("[\\u0000-\\u001F]")'
+        double_escaped = 'test("[\\\\u0000-\\\\u001F]")'
+        self.assertEqual(self.workflow.count(corrected), 2)
+        self.assertNotIn(double_escaped, self.workflow)
+
+        def jq_matches(value):
+            result = subprocess.run(
+                [
+                    "jq",
+                    "-n",
+                    "--arg",
+                    "value",
+                    value,
+                    r'$value | test("[\u0000-\u001F]")',
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout.strip()
+
+        self.assertEqual(jq_matches("PASS https://testai.acik.com"), "false")
+        self.assertEqual(jq_matches("line one\nline two"), "true")
 
     def test_browser_contract_binds_pkce_origin_and_exact_product_sets(self):
         for marker in (
