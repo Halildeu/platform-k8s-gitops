@@ -30,12 +30,12 @@ def logs(count=100, conflicting=False):
         disposition = "DELIVERED" if seq % 2 else "DROPPED_NO_VIEWER"
         lines.append(
             f"view-only frame: session=s-safe stream=op-safe seq={seq} bytes=90000 "
-            f"type=image/png disposition={disposition} ts=2026-07-14T00:05:00Z"
+            f"type=image/png disposition={disposition} ts={1783987500000 + seq}"
         )
     if conflicting:
         lines.append(
             "view-only frame: session=s-safe stream=op-safe seq=1 bytes=90000 "
-            "type=image/png disposition=DROPPED_NO_VIEWER ts=2026-07-14T00:05:01Z"
+            "type=image/png disposition=DROPPED_NO_VIEWER ts=1783987500001"
         )
     return ("\n".join(lines) + "\n").encode()
 
@@ -45,6 +45,8 @@ class ViewerFrameFlowSummaryTest(unittest.TestCase):
         result = MODULE.build(logs(), "s-safe", browser())
         self.assertEqual(100, result["producedSequenceCount"])
         self.assertEqual(100, result["brokerReceivedDistinctCount"])
+        self.assertEqual(1783987500000, result["firstObservedAtEpochMillis"])
+        self.assertEqual(1783987500099, result["lastObservedAtEpochMillis"])
         self.assertNotIn("s-safe", str(result))
 
     def test_rejects_conflicting_duplicate_sequence(self):
@@ -54,9 +56,14 @@ class ViewerFrameFlowSummaryTest(unittest.TestCase):
     def test_rejects_unknown_nonempty_disposition(self):
         raw = logs() + (
             "view-only frame: session=s-safe stream=op-safe seq=100 bytes=4 "
-            "type=image/png disposition=THROTTLED ts=2026-07-14T00:05:02Z\n"
+            "type=image/png disposition=THROTTLED ts=1783987500100\n"
         ).encode()
         with self.assertRaisesRegex(ValueError, "unexpected non-empty"):
+            MODULE.build(raw, "s-safe", browser())
+
+    def test_rejects_nonmonotonic_broker_timestamps(self):
+        raw = logs().replace(b"ts=1783987500050", b"ts=1783987500001")
+        with self.assertRaisesRegex(ValueError, "not monotonic"):
             MODULE.build(raw, "s-safe", browser())
 
 

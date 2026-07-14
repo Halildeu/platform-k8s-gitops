@@ -84,12 +84,13 @@
     "browserPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pilotStartedAt", "pilotEndedAt", "imageElementRendered", "pixelCheckPassed", "dlpMaskRectBps", "dlpMaskPixelCheckPassed", "activeIndicatorPixelCheckPassed", "maskedFrameSha256", "renderAckAttemptedCount", "renderAckAcceptedCount", "consoleErrorCount", "screenshotSha256", "firstFrameAgeMillis", "steadyFrameAgeMillis", "meta"],
+      "required": ["pilotStartedAt", "pilotEndedAt", "imageElementRendered", "pixelCheckPassed", "inputChannelControlCount", "dlpMaskRectBps", "dlpMaskPixelCheckPassed", "activeIndicatorPixelCheckPassed", "maskedFrameSha256", "renderAckAttemptedCount", "renderAckAcceptedCount", "consoleErrorCount", "screenshotSha256", "firstFrameAgeMillis", "steadyFrameAgeMillis", "meta"],
       "properties": {
         "pilotStartedAt": {"$ref": "#/$defs/utcTimestamp"},
         "pilotEndedAt": {"$ref": "#/$defs/utcTimestamp"},
         "imageElementRendered": {"const": true},
         "pixelCheckPassed": {"const": true},
+        "inputChannelControlCount": {"const": 0},
         "dlpMaskRectBps": {"type": "string", "pattern": "^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$"},
         "dlpMaskPixelCheckPassed": {"const": true},
         "activeIndicatorPixelCheckPassed": {"const": true},

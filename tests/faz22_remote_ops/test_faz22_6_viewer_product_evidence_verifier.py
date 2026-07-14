@@ -68,6 +68,7 @@ def child_documents():
                 "pilotEndedAt": "2026-07-14T00:06:00Z",
                 "imageElementRendered": True,
                 "pixelCheckPassed": True,
+                "inputChannelControlCount": 0,
                 "dlpMaskRectBps": "7500,7500,2500,2500",
                 "dlpMaskPixelCheckPassed": True,
                 "activeIndicatorPixelCheckPassed": True,

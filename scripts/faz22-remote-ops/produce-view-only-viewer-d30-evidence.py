@@ -14,7 +14,7 @@ import view_only_viewer_source_common as common
 
 def produce(client: object, repository: str, browser_run_id: int, head_sha: str) -> dict:
     browser = common.fetch_browser_child(client, repository, browser_run_id, head_sha)
-    files = common.fetch_runtime_snapshots(client, repository, browser_run_id)
+    files = common.fetch_runtime_snapshots(client, repository, browser_run_id, head_sha)
     raw = files["snapshots/d30-snapshot.json"]
     snapshot = common.VERIFIER.load_json_bytes(raw, "d30-snapshot.json")
     if set(snapshot) != {"schemaVersion", "capturedAt", "images"}:

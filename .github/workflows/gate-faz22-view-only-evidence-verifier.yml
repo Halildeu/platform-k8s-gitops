@@ -14,6 +14,8 @@ on:
       - '.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml'
       - '.github/workflows/faz22-6-view-only-viewer-operator-evidence.yml'
       - '.github/workflows/faz22-6-view-only-viewer-d30-evidence.yml'
+      - '.github/workflows/faz22-6-view-only-viewer-broker-evidence.yml'
+      - '.github/workflows/faz22-6-view-only-viewer-audit-evidence.yml'
       - '.github/workflows/apply-view-only-viewer-pilot-enable.yml'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
       - 'docs/runbooks/RB-faz22.6-view-only-kvkk-decision.md'
@@ -31,6 +33,9 @@ on:
       - 'scripts/faz22-remote-ops/assemble-view-only-viewer-product-evidence.py'
       - 'scripts/faz22-remote-ops/produce-view-only-viewer-operator-evidence.py'
       - 'scripts/faz22-remote-ops/produce-view-only-viewer-d30-evidence.py'
+      - 'scripts/faz22-remote-ops/produce-view-only-viewer-broker-evidence.py'
+      - 'scripts/faz22-remote-ops/produce-view-only-viewer-audit-evidence.py'
+      - 'scripts/faz22-remote-ops/build-view-only-viewer-audit-summary.py'
       - 'scripts/faz22-remote-ops/view_only_viewer_source_common.py'
       - 'scripts/faz22-remote-ops/build-view-only-viewer-frame-flow-summary.py'
       - 'scripts/faz22-remote-ops/verify-view-only-kvkk-decision.py'
@@ -46,6 +51,9 @@ on:
       - 'tests/faz22_remote_ops/test_faz22_6_viewer_operator_evidence_producer.py'
       - 'tests/faz22_remote_ops/test_faz22_6_viewer_d30_evidence_producer.py'
       - 'tests/faz22_remote_ops/test_faz22_6_viewer_frame_flow_summary.py'
+      - 'tests/faz22_remote_ops/test_faz22_6_viewer_broker_evidence_producer.py'
+      - 'tests/faz22_remote_ops/test_faz22_6_viewer_audit_evidence_producer.py'
+      - 'tests/faz22_remote_ops/test_faz22_6_viewer_audit_summary.py'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_kvkk_decision.py'
   push:
     branches:
@@ -62,6 +70,8 @@ on:
       - '.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml'
       - '.github/workflows/faz22-6-view-only-viewer-operator-evidence.yml'
       - '.github/workflows/faz22-6-view-only-viewer-d30-evidence.yml'
+      - '.github/workflows/faz22-6-view-only-viewer-broker-evidence.yml'
+      - '.github/workflows/faz22-6-view-only-viewer-audit-evidence.yml'
       - '.github/workflows/apply-view-only-viewer-pilot-enable.yml'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
       - 'docs/runbooks/RB-faz22.6-view-only-kvkk-decision.md'
@@ -79,6 +89,9 @@ on:
       - 'scripts/faz22-remote-ops/assemble-view-only-viewer-product-evidence.py'
       - 'scripts/faz22-remote-ops/produce-view-only-viewer-operator-evidence.py'
       - 'scripts/faz22-remote-ops/produce-view-only-viewer-d30-evidence.py'
+      - 'scripts/faz22-remote-ops/produce-view-only-viewer-broker-evidence.py'
+      - 'scripts/faz22-remote-ops/produce-view-only-viewer-audit-evidence.py'
+      - 'scripts/faz22-remote-ops/build-view-only-viewer-audit-summary.py'
       - 'scripts/faz22-remote-ops/view_only_viewer_source_common.py'
       - 'scripts/faz22-remote-ops/build-view-only-viewer-frame-flow-summary.py'
       - 'scripts/faz22-remote-ops/verify-view-only-kvkk-decision.py'
@@ -93,6 +106,9 @@ on:
       - 'tests/faz22_remote_ops/test_faz22_6_viewer_operator_evidence_producer.py'
       - 'tests/faz22_remote_ops/test_faz22_6_viewer_d30_evidence_producer.py'
       - 'tests/faz22_remote_ops/test_faz22_6_viewer_frame_flow_summary.py'
+      - 'tests/faz22_remote_ops/test_faz22_6_viewer_broker_evidence_producer.py'
+      - 'tests/faz22_remote_ops/test_faz22_6_viewer_audit_evidence_producer.py'
+      - 'tests/faz22_remote_ops/test_faz22_6_viewer_audit_summary.py'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_kvkk_decision.py'
 
 permissions:
@@ -133,6 +149,9 @@ jobs:
             scripts/faz22-remote-ops/assemble-view-only-viewer-product-evidence.py \
             scripts/faz22-remote-ops/produce-view-only-viewer-operator-evidence.py \
             scripts/faz22-remote-ops/produce-view-only-viewer-d30-evidence.py \
+            scripts/faz22-remote-ops/produce-view-only-viewer-broker-evidence.py \
+            scripts/faz22-remote-ops/produce-view-only-viewer-audit-evidence.py \
+            scripts/faz22-remote-ops/build-view-only-viewer-audit-summary.py \
             scripts/faz22-remote-ops/view_only_viewer_source_common.py \
             scripts/faz22-remote-ops/build-view-only-viewer-frame-flow-summary.py \
             scripts/faz22-remote-ops/verify-denetim-ssh-key-evidence.py \
@@ -203,6 +222,19 @@ jobs:
           set -euo pipefail
           python3 -m unittest \
             tests.faz22_remote_ops.test_faz22_6_viewer_frame_flow_summary
+
+      - name: Run VIEW_ONLY broker evidence producer regression test
+        run: |
+          set -euo pipefail
+          python3 -m unittest \
+            tests.faz22_remote_ops.test_faz22_6_viewer_broker_evidence_producer
+
+      - name: Run VIEW_ONLY audit evidence regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest \
+            tests.faz22_remote_ops.test_faz22_6_viewer_audit_evidence_producer \
+            tests.faz22_remote_ops.test_faz22_6_viewer_audit_summary
 
       - name: Run VIEW_ONLY KVKK signed-decision verifier regression test
         run: |

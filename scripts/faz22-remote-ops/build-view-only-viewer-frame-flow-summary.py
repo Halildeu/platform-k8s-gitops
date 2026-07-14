@@ -21,7 +21,7 @@ ALLOWED = {"DELIVERED", "DROPPED_NO_VIEWER"}
 def build(raw_log: bytes, session_id: str, browser: dict) -> dict:
     if not session_id or len(session_id) > 160 or not re.fullmatch(r"[A-Za-z0-9._:-]+", session_id):
         raise ValueError("session id is invalid")
-    sequences: dict[int, str] = {}
+    sequences: dict[int, tuple[str, int]] = {}
     disposition_counts = {"DELIVERED": 0, "DROPPED_NO_VIEWER": 0}
     for line in raw_log.decode("utf-8", errors="strict").splitlines():
         match = LINE.search(line)
@@ -32,13 +32,21 @@ def build(raw_log: bytes, session_id: str, browser: dict) -> dict:
         if match.group("content") != "image/png" or match.group("disposition") not in ALLOWED:
             raise ValueError("broker emitted an unexpected non-empty VIEW_ONLY frame classification")
         seq = int(match.group("seq"))
+        timestamp = int(match.group("timestamp"))
+        if timestamp <= 0:
+            raise ValueError("broker VIEW_ONLY frame timestamp is invalid")
         disposition = match.group("disposition")
-        prior = sequences.setdefault(seq, disposition)
-        if prior != disposition:
+        prior = sequences.setdefault(seq, (disposition, timestamp))
+        if prior != (disposition, timestamp):
             raise ValueError("one frame sequence has conflicting dispositions")
     if len(sequences) < 100:
         raise ValueError("fewer than 100 distinct broker-received VIEW_ONLY frames")
-    for disposition in sequences.values():
+    ordered = sorted(sequences.items())
+    prior_timestamp = 0
+    for _, (disposition, timestamp) in ordered:
+        if timestamp < prior_timestamp:
+            raise ValueError("broker VIEW_ONLY frame timestamps are not monotonic by sequence")
+        prior_timestamp = timestamp
         disposition_counts[disposition] += 1
     first_seq, last_seq = min(sequences), max(sequences)
     if first_seq != 0:
@@ -57,6 +65,8 @@ def build(raw_log: bytes, session_id: str, browser: dict) -> dict:
         "binding": binding,
         "firstSeq": first_seq,
         "lastSeq": last_seq,
+        "firstObservedAtEpochMillis": sequences[first_seq][1],
+        "lastObservedAtEpochMillis": sequences[last_seq][1],
         "producedSequenceCount": produced_sequence_count,
         "brokerReceivedDistinctCount": len(sequences),
         "sequenceGapCount": gap_count,

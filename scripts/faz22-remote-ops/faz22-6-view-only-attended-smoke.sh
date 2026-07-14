@@ -244,6 +244,7 @@ validate_inputs() {
   [[ "$DEVICE_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail_smoke "device-id-invalid"
   [[ "$SESSION_ID" =~ ^[A-Za-z0-9._:-]+$ ]] || fail_smoke "session-id-invalid"
   [[ "$OPERATION_ID" =~ ^[A-Za-z0-9._:-]+$ ]] || fail_smoke "operation-id-invalid"
+  [[ "$DB_SCHEMA" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || fail_smoke "db-schema-invalid"
   [[ "$DURESS_SIGNAL_FOR_OPERATION" == "NONE" ]] || fail_smoke "duress-signal-for-operation-must-be-none"
   case "$REQUIRE_ACTIVE_GUI" in 0|1) ;; *) fail_smoke "require-active-gui-invalid" ;; esac
   case "$AUTO_FINALIZE" in 0|1) ;; *) fail_smoke "auto-finalize-invalid" ;; esac
@@ -546,14 +547,36 @@ start_management_port_forward() {
 }
 
 capture_viewer_metrics() {
-  local phase="$1" raw="${TMP_DIR}/metrics-${phase}.raw.prom"
+  local phase="$1"
+  local raw="${TMP_DIR}/metrics-${phase}.raw.prom"
   case "$phase" in before|after) ;; *) fail_smoke "metrics-phase-invalid" ;; esac
   curl -fsS --max-time 10 \
     "http://127.0.0.1:${REMOTE_BRIDGE_MANAGEMENT_LOCAL_PORT}/actuator/prometheus" \
     -o "$raw" || fail_smoke "metrics-${phase}-query-failed"
-  grep -E '^remote_access_bridge_(data_frames_total|view_only_fanout_frames_total|viewer_started_total|viewer_ended_total|viewer_frames_sent_total|viewer_render_ack_accepted_total|viewer_render_ack_rejected_total)(\{|[[:space:]])' \
+  grep -E '^(remote_access_bridge_(data_frames_total|view_only_fanout_frames_total|viewer_started_total|viewer_ended_total|viewer_frames_sent_total|viewer_render_ack_accepted_total|viewer_render_ack_rejected_total)|process_start_time_seconds)(\{|[[:space:]])' \
     "$raw" | LC_ALL=C sort > "${EVIDENCE_DIR}/metrics-${phase}.prom"
   [[ -s "${EVIDENCE_DIR}/metrics-${phase}.prom" ]] || fail_smoke "metrics-${phase}-empty"
+}
+
+viewer_metric_value() {
+  local file="$1" metric="$2"
+  awk -v metric="$metric" '$1 == metric { print $2; found=1 } END { if (!found) print "0" }' "$file"
+}
+
+wait_for_viewer_end_metric() {
+  local before after
+  before="$(viewer_metric_value "${EVIDENCE_DIR}/metrics-before.prom" \
+    remote_access_bridge_viewer_ended_total)"
+  for _ in $(seq 1 15); do
+    capture_viewer_metrics after
+    after="$(viewer_metric_value "${EVIDENCE_DIR}/metrics-after.prom" \
+      remote_access_bridge_viewer_ended_total)"
+    if awk -v before="$before" -v after="$after" 'BEGIN { exit !((after - before) >= 1) }'; then
+      return
+    fi
+    sleep 1
+  done
+  fail_smoke "viewer-ended-metric-did-not-advance"
 }
 
 capture_d30_snapshot() {
@@ -935,6 +958,47 @@ ORDER BY seq;"
     || fail_smoke "recording-policy-event-missing"
 }
 
+export_viewer_audit_chain_jsonl() {
+  local output="${TMP_DIR}/endpoint-audit-chain.jsonl" sql
+  sql="
+SELECT jsonb_build_object(
+  'id', id::text,
+  'tenant_id', tenant_id::text,
+  'device_id', CASE WHEN device_id IS NULL THEN NULL ELSE device_id::text END,
+  'command_id', CASE WHEN command_id IS NULL THEN NULL ELSE command_id::text END,
+  'event_type', event_type,
+  'action', action,
+  'performed_by_subject', performed_by_subject,
+  'correlation_id', correlation_id,
+  'metadata', metadata,
+  'before_state', before_state,
+  'after_state', after_state,
+  'occurred_at', to_char(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'),
+  'prev_event_hash', prev_event_hash,
+  'event_hash', event_hash,
+  'event_hash_alg', event_hash_alg,
+  'event_hash_version', event_hash_version
+)::text
+FROM ${DB_SCHEMA}.endpoint_audit_events
+WHERE tenant_id = :'tenant'::uuid
+  AND event_hash IS NOT NULL
+ORDER BY occurred_at ASC, id ASC;"
+  psql_query "$sql" -v "tenant=${TENANT_ID}" > "$output" \
+    || fail_smoke "viewer-audit-chain-query-failed"
+  [[ -s "$output" ]] || fail_smoke "viewer-audit-chain-empty"
+}
+
+build_viewer_audit_summary() {
+  SESSION_ID="$SESSION_ID" OPERATION_ID="$OPERATION_ID" python3 \
+    "${SCRIPT_DIR}/build-view-only-viewer-audit-summary.py" \
+    --audit-chain-jsonl "${TMP_DIR}/endpoint-audit-chain.jsonl" \
+    --recording-tsv "${EVIDENCE_DIR}/recording.tsv" \
+    --browser-evidence "${EVIDENCE_DIR}/browser.json" \
+    --frame-flow-summary "${EVIDENCE_DIR}/frame-flow-summary.json" \
+    --output "${EVIDENCE_DIR}/audit-summary.json" \
+    || fail_smoke "viewer-audit-summary-invalid"
+}
+
 broker_signals_json() {
   local signals=()
   grep -F "HELLO_VERIFIED" "${EVIDENCE_DIR}/broker-relevant.log" >/dev/null 2>&1 && signals+=("HELLO_VERIFIED")
@@ -1170,7 +1234,7 @@ main() {
   transport_pushed="true"
 
   run_browser_evidence
-  capture_viewer_metrics after
+  wait_for_viewer_end_metric
   sleep "$FRAME_WAIT_SECONDS"
   probe_viewer "$operator_base"
   collect_broker_logs
@@ -1179,6 +1243,8 @@ main() {
   grep -F "session=\"$SESSION_ID\"" "${EVIDENCE_DIR}/endpoint-agent-relevant.log" | grep -F "granted=true" >/dev/null \
     || fail_smoke "endpoint-agent-consent-not-granted"
   export_recording_tsv
+  export_viewer_audit_chain_jsonl
+  build_viewer_audit_summary
 
   close_code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/close" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/close.body")"
   [[ "$close_code" == "204" || "$close_code" == "200" || "$close_code" == "404" ]] \

@@ -38,7 +38,7 @@ def fetch_browser_child(client: object, repository: str, run_id: int, head_sha: 
 
 
 def fetch_exact_artifact(client: object, repository: str, run_id: int, name: str,
-                         expected_files: set[str]) -> dict[str, bytes]:
+                         expected_files: set[str], expected_head_sha: str | None = None) -> dict[str, bytes]:
     listing = client.get_json(f"/repos/{repository}/actions/runs/{run_id}/artifacts?per_page=100")
     matches = [
         item for item in listing.get("artifacts", [])
@@ -54,6 +54,8 @@ def fetch_exact_artifact(client: object, repository: str, run_id: int, name: str
     workflow_run = artifact.get("workflow_run")
     if not isinstance(workflow_run, dict) or workflow_run.get("id") != run_id:
         raise VERIFIER.EvidenceError(f"artifact run binding is invalid: {name}")
+    if expected_head_sha is not None and workflow_run.get("head_sha") != expected_head_sha:
+        raise VERIFIER.EvidenceError(f"artifact source revision binding is invalid: {name}")
     raw_archive = client.get_bytes(f"/repos/{repository}/actions/artifacts/{artifact['id']}/zip")
     VERIFIER.require_equal(VERIFIER.digest_bytes(raw_archive), artifact["digest"], f"{name} archive digest")
     files = VERIFIER.safe_archive_files(raw_archive)
@@ -62,15 +64,18 @@ def fetch_exact_artifact(client: object, repository: str, run_id: int, name: str
     return files
 
 
-def fetch_runtime_snapshots(client: object, repository: str, browser_run_id: int) -> dict[str, bytes]:
+def fetch_runtime_snapshots(client: object, repository: str, browser_run_id: int,
+                            head_sha: str) -> dict[str, bytes]:
     expected = {
         "SHA256SUMS", "snapshots/d30-snapshot.json",
+        "snapshots/audit-summary.json",
         "snapshots/frame-flow-summary.json",
         "snapshots/metrics-before.prom", "snapshots/metrics-after.prom",
     }
     files = fetch_exact_artifact(
         client, repository, browser_run_id,
         f"faz22-6-view-only-viewer-runtime-snapshots-{browser_run_id}", expected,
+        expected_head_sha=head_sha,
     )
     try:
         lines = files["SHA256SUMS"].decode("ascii").splitlines()
