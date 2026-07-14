@@ -63,10 +63,162 @@ jobs:
             "${{ matrix.env }}" \
             --report-path "${{ github.workspace }}/drift-report-${{ matrix.env }}.json"
 
+      # Diagnostic-only branch tool for #2378. It compares the rendered and
+      # live ExternalSecret after removing Kubernetes runtime metadata plus the
+      # exact fields already ignored by platform-test. The artifact contains
+      # JSON pointer paths and value types only; secret paths/properties and all
+      # raw values remain undisclosed. kubectl is read-only except for the local
+      # client-side dry-run used to parse the desired YAML.
+      - name: Diagnose notification ExternalSecret drift paths (redacted)
+        if: always() && matrix.env == 'test' && (github.event_name == 'schedule' || inputs.env == 'both' || inputs.env == 'test')
+        env:
+          DESIRED_MANIFEST: kustomize/overlays/test/eso/notify/externalsecret-notify.yaml
+          LIVE_CONTEXT: k3d-test
+          LIVE_NAMESPACE: platform-test
+          RESOURCE_NAME: notification-orchestrator-secrets
+          REPORT_PATH: ${{ github.workspace }}/externalsecret-drift-paths-test.json
+        run: |
+          set -euo pipefail
+          desired_json="$RUNNER_TEMP/notification-externalsecret-desired.json"
+          live_json="$RUNNER_TEMP/notification-externalsecret-live.json"
+
+          kubectl --context "$LIVE_CONTEXT" create --dry-run=client \
+            -f "$DESIRED_MANIFEST" -o json > "$desired_json"
+          kubectl --context "$LIVE_CONTEXT" -n "$LIVE_NAMESPACE" \
+            get externalsecret "$RESOURCE_NAME" -o json > "$live_json"
+
+          python3 - "$desired_json" "$live_json" "$REPORT_PATH" <<'PY'
+          import copy
+          import json
+          import sys
+
+          desired_path, live_path, report_path = sys.argv[1:]
+          desired = json.load(open(desired_path, encoding="utf-8"))
+          live = json.load(open(live_path, encoding="utf-8"))
+
+          def normalize(value):
+              value = copy.deepcopy(value)
+              value.pop("status", None)
+              metadata = value.get("metadata", {})
+              for key in (
+                  "creationTimestamp",
+                  "generation",
+                  "managedFields",
+                  "resourceVersion",
+                  "uid",
+              ):
+                  metadata.pop(key, None)
+              annotations = metadata.get("annotations", {})
+              annotations.pop("force-sync", None)
+              annotations.pop("kubectl.kubernetes.io/last-applied-configuration", None)
+              if not annotations:
+                  metadata.pop("annotations", None)
+              for item in value.get("spec", {}).get("data", []):
+                  remote_ref = item.get("remoteRef", {})
+                  for key in (
+                      "conversionStrategy",
+                      "decodingStrategy",
+                      "metadataPolicy",
+                      "nullBytePolicy",
+                  ):
+                      remote_ref.pop(key, None)
+              return value
+
+          def pointer(parts):
+              encoded = [str(p).replace("~", "~0").replace("/", "~1") for p in parts]
+              return "/" + "/".join(encoded) if encoded else ""
+
+          def value_type(value):
+              if value is None:
+                  return "null"
+              if isinstance(value, bool):
+                  return "boolean"
+              if isinstance(value, (int, float)):
+                  return "number"
+              if isinstance(value, str):
+                  return "string"
+              if isinstance(value, list):
+                  return "array"
+              return "object"
+
+          def compare(left, right, parts=()):
+              findings = []
+              if isinstance(left, dict) and isinstance(right, dict):
+                  for key in sorted(set(left) | set(right)):
+                      path = parts + (key,)
+                      if key not in left:
+                          findings.append({
+                              "path": pointer(path),
+                              "kind": "live_only",
+                              "desiredType": "missing",
+                              "liveType": value_type(right[key]),
+                          })
+                      elif key not in right:
+                          findings.append({
+                              "path": pointer(path),
+                              "kind": "desired_only",
+                              "desiredType": value_type(left[key]),
+                              "liveType": "missing",
+                          })
+                      else:
+                          findings.extend(compare(left[key], right[key], path))
+                  return findings
+              if isinstance(left, list) and isinstance(right, list):
+                  for index in range(max(len(left), len(right))):
+                      path = parts + (index,)
+                      if index >= len(left):
+                          findings.append({
+                              "path": pointer(path),
+                              "kind": "live_only",
+                              "desiredType": "missing",
+                              "liveType": value_type(right[index]),
+                          })
+                      elif index >= len(right):
+                          findings.append({
+                              "path": pointer(path),
+                              "kind": "desired_only",
+                              "desiredType": value_type(left[index]),
+                              "liveType": "missing",
+                          })
+                      else:
+                          findings.extend(compare(left[index], right[index], path))
+                  return findings
+              if left != right:
+                  findings.append({
+                      "path": pointer(parts),
+                      "kind": "value_mismatch",
+                      "desiredType": value_type(left),
+                      "liveType": value_type(right),
+                  })
+              return findings
+
+          report = {
+              "schemaVersion": "externalsecret-drift-paths-v1",
+              "resource": "external-secrets.io/ExternalSecret platform-test/notification-orchestrator-secrets",
+              "redaction": "json-pointer-and-type-only-no-values",
+              "ignoredFields": [
+                  "/status",
+                  "/metadata/annotations/force-sync",
+                  "/metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration",
+                  "/spec/data/*/remoteRef/conversionStrategy",
+                  "/spec/data/*/remoteRef/decodingStrategy",
+                  "/spec/data/*/remoteRef/metadataPolicy",
+                  "/spec/data/*/remoteRef/nullBytePolicy",
+              ],
+              "differences": compare(normalize(desired), normalize(live)),
+          }
+          with open(report_path, "w", encoding="utf-8") as handle:
+              json.dump(report, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
       - name: Upload drift report (${{ matrix.env }})
         if: always() && (github.event_name == 'schedule' || inputs.env == 'both' || inputs.env == matrix.env)
         uses: actions/upload-artifact@v7
         with:
           name: drift-report-${{ matrix.env }}
-          path: ${{ github.workspace }}/drift-report-${{ matrix.env }}.json
+          path: |
+            ${{ github.workspace }}/drift-report-${{ matrix.env }}.json
+            ${{ github.workspace }}/externalsecret-drift-paths-${{ matrix.env }}.json
           retention-days: 14
