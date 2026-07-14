@@ -226,7 +226,7 @@ read_mail_anchor() {
   local status
 
   status="$(curl -sS --max-time 20 -o "${output}" -w '%{http_code}' --get \
-    "https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages" \
+    "https://graph.microsoft.com/v1.0/users/${MAILBOX}/mailFolders/inbox/messages" \
     --config "${GRAPH_AUTH_CONFIG}" \
     -H 'ConsistencyLevel: eventual' \
     --data-urlencode "\$top=50" \
