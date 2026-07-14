@@ -1,0 +1,187 @@
+name: Verify Faz 25 P5 authenticated product surface
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz25-p5-authenticated-product-surface
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Named VIEW persona browser acceptance
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout canonical acceptance harness
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Bind harness revision and live frontend image
+        id: provenance
+        env:
+          EXPECTED_FRONTEND_DIGEST: sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38
+        run: |
+          set -euo pipefail
+
+          harness_revision="$(git rev-parse HEAD)"
+          [[ "$harness_revision" == "$GITHUB_SHA" ]] || {
+            echo "::error::Checked-out harness revision does not match GITHUB_SHA"; exit 1;
+          }
+          [[ "$GITHUB_REPOSITORY" == "Halildeu/platform-k8s-gitops" ]] || {
+            echo "::error::Acceptance harness must run from the canonical GitOps repository"; exit 1;
+          }
+
+          deployment_json="$(kubectl -n platform-test get deployment frontend -o json)"
+          jq -e --arg digest "$EXPECTED_FRONTEND_DIGEST" '
+            .metadata.generation == .status.observedGeneration and
+            (.status.availableReplicas // 0) == (.spec.replicas // 1) and
+            ([.spec.template.spec.containers[]
+              | select(.name == "frontend")
+              | .image
+              | endswith("@" + $digest)] == [true])
+          ' <<<"$deployment_json" >/dev/null
+
+          pods_json="$(kubectl -n platform-test get pods -l app.kubernetes.io/name=frontend -o json)"
+          jq -e --arg digest "$EXPECTED_FRONTEND_DIGEST" '
+            [.items[]
+              | select(.status.phase == "Running")
+              | .status.containerStatuses[]?
+              | select(.name == "frontend" and .ready == true)
+              | .imageID] as $ids
+            | ($ids | length) > 0 and all($ids[]; endswith("@" + $digest))
+          ' <<<"$pods_json" >/dev/null
+
+          sha256_file() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1" | awk '{print $1}'
+            else
+              shasum -a 256 "$1" | awk '{print $1}'
+            fi
+          }
+          spec_sha256="$(sha256_file tests/smoke/faz25-p5-product-surface.spec.ts)"
+          config_sha256="$(sha256_file tests/smoke/playwright.faz25-p5.config.ts)"
+          {
+            echo "harness_revision=$harness_revision"
+            echo "spec_sha256=$spec_sha256"
+            echo "config_sha256=$config_sha256"
+            echo "live_frontend_digest=$EXPECTED_FRONTEND_DIGEST"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "22"
+
+      - name: Require the named test persona
+        env:
+          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
+          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ -n "${SMOKE_AUTH_USERNAME:-}" ]] || {
+            echo "::error::SMOKE_AUTH_USERNAME is required"; exit 1;
+          }
+          [[ -n "${SMOKE_AUTH_PASSWORD:-}" ]] || {
+            echo "::error::SMOKE_AUTH_PASSWORD is required"; exit 1;
+          }
+
+      - name: Prepare isolated Playwright runtime
+        id: runtime
+        run: |
+          set -euo pipefail
+          test_root="${RUNNER_TEMP}/faz25-p5-product-surface-${GITHUB_RUN_ID}"
+          mkdir -p "$test_root"
+          cp tests/smoke/faz25-p5-product-surface.spec.ts "$test_root/"
+          cp tests/smoke/playwright.faz25-p5.config.ts "$test_root/"
+          cd "$test_root"
+          npm init -y >/dev/null
+          [[ "$(npm view @playwright/test@1.60.0 version)" == "1.60.0" ]]
+          [[ "$(npm view playwright-core@1.60.0 version)" == "1.60.0" ]]
+          [[ "$(npm view @axe-core/playwright@4.11.3 version)" == "4.11.3" ]]
+          npm install --no-save --no-package-lock --no-audit --no-fund \
+            @playwright/test@1.60.0 \
+            playwright-core@1.60.0 \
+            @axe-core/playwright@4.11.3
+          npx playwright install chromium
+          echo "test_root=$test_root" >> "$GITHUB_OUTPUT"
+
+      - name: Run authenticated product acceptance
+        env:
+          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
+          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
+          P5_BASE_URL: https://testai.acik.com
+          P5_EXPECTED_USERNAME: p5-readiness-viewer
+          P5_EXPECTED_ROLE: P5_READINESS_VIEWER
+          P5_EXPECTED_USER_ID: "6"
+          P5_EXPECTED_SUBSCRIBER_ID: "6"
+          P5_EXPECTED_SOURCE_SHA: 7c8cef6547d4408cc705f9c6afae49b67ed80d1a
+          P5_EXPECTED_FRONTEND_DIGEST: sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38
+          P5_LIVE_FRONTEND_DIGEST: ${{ steps.provenance.outputs.live_frontend_digest }}
+          P5_HARNESS_REPOSITORY: ${{ github.repository }}
+          P5_HARNESS_REVISION: ${{ steps.provenance.outputs.harness_revision }}
+          P5_SPEC_SHA256: ${{ steps.provenance.outputs.spec_sha256 }}
+          P5_CONFIG_SHA256: ${{ steps.provenance.outputs.config_sha256 }}
+          P5_REPORT_PATH: ${{ runner.temp }}/faz25-p5-authenticated-product-surface.json
+        run: |
+          set -euo pipefail
+          cd "${{ steps.runtime.outputs.test_root }}"
+          npx playwright test \
+            --config=playwright.faz25-p5.config.ts \
+            faz25-p5-product-surface.spec.ts
+
+      - name: Validate sanitized evidence contract
+        id: evidence_contract
+        if: always()
+        env:
+          REPORT_PATH: ${{ runner.temp }}/faz25-p5-authenticated-product-surface.json
+        run: |
+          set -euo pipefail
+          [[ -f "$REPORT_PATH" ]]
+          if stat -c '%a' "$REPORT_PATH" >/dev/null 2>&1; then
+            report_mode="$(stat -c '%a' "$REPORT_PATH")"
+          else
+            report_mode="$(stat -f '%Lp' "$REPORT_PATH")"
+          fi
+          [[ "$report_mode" == "600" ]]
+          jq -e '
+            .schemaVersion == "faz25-p5-authenticated-product-surface-v2" and
+            (.verdict == "PASS" or .verdict == "FAIL") and
+            ([.. | strings
+              | select(test("Bearer[[:space:]]|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"; "i"))]
+              | length == 0)
+          ' "$REPORT_PATH" >/dev/null
+
+      - name: Upload sanitized acceptance evidence
+        if: always() && steps.evidence_contract.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz25-p5-authenticated-product-surface-${{ github.sha }}
+          path: ${{ runner.temp }}/faz25-p5-authenticated-product-surface.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Acceptance summary
+        if: always()
+        env:
+          REPORT_PATH: ${{ runner.temp }}/faz25-p5-authenticated-product-surface.json
+        run: |
+          {
+            echo "## Faz 25 P5 authenticated product-surface acceptance"
+            echo ""
+            if [[ -f "$REPORT_PATH" ]]; then
+              echo "- verdict: \`$(jq -r '.verdict' "$REPORT_PATH")\`"
+              echo "- named role: \`$(jq -r '(.authz.roles? // []) | join(",")' "$REPORT_PATH")\`"
+              echo "- module grant: \`$(jq -r '.authz.modules.INTERVIEW_EVIDENCE? // "UNVERIFIED"' "$REPORT_PATH")\`"
+              echo "- product topology: \`$(jq -r '.product.profileCount? // "UNVERIFIED"' "$REPORT_PATH") profiles / $(jq -r '.product.gateCount? // "UNVERIFIED"' "$REPORT_PATH") gates\`"
+              echo "- serious/critical Axe findings: \`$(jq -r '.accessibility.blockingViolationCount? // "UNVERIFIED"' "$REPORT_PATH")\`"
+              echo "- browser PKCE observed: \`$(jq -r '.authentication.codeExchangeObserved and .authentication.codeVerifierObserved' "$REPORT_PATH")\`"
+              echo "- live frontend digest: \`$(jq -r '.lineage.liveFrontendDigest' "$REPORT_PATH")\`"
+              echo "- browser mode: headless CLI; application window not used"
+            else
+              echo "- verdict: \`NO_REPORT\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
