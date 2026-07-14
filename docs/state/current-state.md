@@ -1,5 +1,69 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 signed KVKK lineage live; legal decision remains pending (#2374, 2026-07-14)
+
+This delta supersedes the older Faz 22.6 snapshot's
+`GATE_VIEW_ONLY_KVKK ... #1580` authority reference. Issue `#1580` remains the
+accepted engineering authority; legal/privacy acceptance is now fail-closed
+against [#2374](https://github.com/Halildeu/platform-k8s-gitops/issues/2374).
+
+Permanent source and review evidence:
+
+- PR [#2392](https://github.com/Halildeu/platform-k8s-gitops/pull/2392)
+  merged as `e6b95868032eeb8756c3b65cedf5f32ba552a033`. It added strict
+  Draft 2020-12 decision and approver-policy schemas, two distinct
+  non-engineering Ed25519 signatures, canonical payload/record/policy digest
+  binding, lifecycle controls, negative tests, a decision runbook and
+  fail-closed audit integration.
+- The committed decision and approver-policy templates are intentionally
+  invalid until real human identities, public keys, legal basis, retention and
+  signatures are supplied. No approval, private key, consent record, screen
+  data or raw legal record was manufactured or committed.
+- Provider-distinct MiniMax M3 adversarial review reached `AGREE` after signed
+  lineage, policy binding, exact lifecycle timestamps, strict marker parsing,
+  future-signature rejection and protected evidence controls were absorbed.
+- All PR checks passed, including the VIEW_ONLY evidence verifier, signed
+  decision negative matrix, Cross-AI audit, ADR-0011 boundary declaration,
+  secret scan, CodeQL, shell/YAML lint and immutable release-lineage guards.
+
+Live acceptance:
+
+- `Faz 22.6 Live Audit` run
+  [29297725603](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29297725603)
+  completed `success` from merged `main` in `1m8s`.
+- Artifact `8297387868`, archive digest
+  `sha256:6a16bc1aab8d5b151eac004291ce8452cf8892d3a29e7e80b48f91e0f5da5479`,
+  is retained until `2026-08-13T01:07:38Z`.
+
+Selected machine acceptance fields:
+
+```text
+GATE_VIEW_ONLY_ENGINEERING=pass state=CLOSED issue=Halildeu/platform-k8s-gitops#1580 recording_mode=disabled
+GATE_VIEW_ONLY_KVKK=tracked_pending issue=Halildeu/platform-k8s-gitops#2374 reason=no-kvkk-marker
+REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_source=rendered-overlay
+GITHUB_RELEASE_IMMUTABLE=pass tag=v0.3.11
+RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene
+F22_6_RELEASE_LINEAGE=pass
+F22_6_COMPLETION=pass
+```
+
+Residual boundary:
+
+- The narrow Faz 22.6 engineering completion contract remains `pass`; this is
+  not a legal/privacy clearance and does not accept the separate VIEW_ONLY
+  product viewer work in
+  [#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373).
+- `#2374` can become `cleared` only after a governance maintainer publishes the
+  canonical public-key policy, the DPO/privacy owner records the bounded legal
+  decision, two distinct authorized humans sign it, protected evidence is
+  stored and the generated digest-only marker is posted to the issue.
+- Missing, expired, withdrawn, tampered, non-canonical or insufficiently signed
+  evidence remains `tracked_pending` or `expired`; it cannot be converted to a
+  pass by manually typing marker fields.
+- Project #2 custom-field reconciliation remains pending while GitHub GraphQL
+  rate limiting prevents authoritative board mutation. REST issue/PR truth and
+  the live workflow evidence above are current.
+
 ## Live Delta — backend testai desired-state-first promotion accepted (#2384, 2026-07-14)
 
 The shared backend test promotion path now changes GitOps desired state before
