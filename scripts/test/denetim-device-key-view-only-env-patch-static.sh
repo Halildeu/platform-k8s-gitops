@@ -18,6 +18,9 @@ require() {
 # shellcheck disable=SC2016
 {
   require 'SupportsShouldProcess = $true' "activation patch must support WhatIf/ShouldProcess"
+  require '$requestedWhatIf = [bool]$WhatIfPreference' "activation patch must preserve the caller WhatIf request"
+  require '$WhatIfPreference = $false' "activation patch must run read-only preflight under WhatIf"
+  require '$WhatIfPreference = $requestedWhatIf' "activation patch must restore WhatIf before the mutation boundary"
   require '#requires -RunAsAdministrator' "activation patch must require an Administrator shell"
   require '[StringComparison]::OrdinalIgnoreCase' "activation patch must compare Windows identities case-insensitively"
   require 'Get-FileHash -LiteralPath $BinaryPath -Algorithm SHA256' "activation patch must pin the installed binary"

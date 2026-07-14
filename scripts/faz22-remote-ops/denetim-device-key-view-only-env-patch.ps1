@@ -36,6 +36,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+$requestedWhatIf = [bool]$WhatIfPreference
+$WhatIfPreference = $false
 
 function Read-ServiceEnvironmentMap {
   param([string]$Path)
@@ -210,9 +212,11 @@ if ($actualPermitPublicKeyB64Sha256 -ne $ExpectedPermitPublicKeyB64Sha256.ToLowe
   throw "Remote bridge permit public key differs from the approved test trust anchor"
 }
 
+$WhatIfPreference = $requestedWhatIf
 if (-not $PSCmdlet.ShouldProcess($ExpectedHostname, "activate TPM device-key and attended VIEW_ONLY service environment")) {
   return
 }
+$WhatIfPreference = $false
 
 New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
