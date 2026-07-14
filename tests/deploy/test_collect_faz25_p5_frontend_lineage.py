@@ -31,6 +31,7 @@ class CollectorTest(unittest.TestCase):
         self.fixture_path = self.temp_path / "fixtures.json"
         self.mock_kubectl = self.temp_path / "kubectl"
         self.mock_curl = self.temp_path / "curl"
+        self.kubectl_calls = self.temp_path / "kubectl-calls.jsonl"
         self.report = self.temp_path / "lineage.json"
         self._write_mocks()
 
@@ -49,19 +50,21 @@ class CollectorTest(unittest.TestCase):
 
                 fixtures = json.load(open(os.environ["FIXTURE_PATH"]))
                 args = sys.argv[1:]
+                with open(os.environ["KUBECTL_CALLS"], "a") as calls:
+                    calls.write(json.dumps(args) + "\\n")
                 if args == ["config", "current-context"]:
-                    print("k3d-test")
-                elif args[:3] == ["config", "view", "--minify"]:
+                    print("k3d-prod")
+                elif args[:4] == ["--context", "k3d-test", "config", "view"] and "--raw" not in args:
                     print("https://127.0.0.1:6445", end="")
-                elif args[:4] == ["config", "view", "--raw", "--minify"]:
+                elif args[:4] == ["--context", "k3d-test", "config", "view"] and "--raw" in args:
                     print(base64.b64encode(b"faz25-test-ca").decode(), end="")
-                elif args[:3] == ["get", "namespace", "kube-system"]:
+                elif args[:5] == ["--context", "k3d-test", "get", "namespace", "kube-system"]:
                     print("55555555-5555-4555-8555-555555555555", end="")
-                elif "deployment" in args:
+                elif args[:2] == ["--context", "k3d-test"] and "deployment" in args:
                     print(json.dumps(fixtures["deployment"]))
-                elif "replicasets" in args:
+                elif args[:2] == ["--context", "k3d-test"] and "replicasets" in args:
                     print(json.dumps(fixtures["replicasets"]))
-                elif "pods" in args:
+                elif args[:2] == ["--context", "k3d-test"] and "pods" in args:
                     print(json.dumps(fixtures["pods"]))
                 else:
                     raise SystemExit(f"unexpected kubectl args: {args}")
@@ -172,6 +175,7 @@ class CollectorTest(unittest.TestCase):
         self.fixture_path.write_text(json.dumps(fixtures))
         env = os.environ | {
             "FIXTURE_PATH": str(self.fixture_path),
+            "KUBECTL_CALLS": str(self.kubectl_calls),
             "KUBECTL_BIN": str(self.mock_kubectl),
             "CURL_BIN": str(self.mock_curl),
             "REPORT_PATH": str(self.report),
@@ -209,6 +213,36 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(payload["lineage"]["buildArtifactId"], "8309092914")
         self.assertEqual(payload["cluster"]["kubeSystemNamespaceUid"], KUBE_SYSTEM_UID)
         self.assertEqual(stat.S_IMODE(self.report.stat().st_mode), 0o600)
+
+    def test_ignores_current_context_and_pins_every_cluster_read(self):
+        result = self._run(self._fixtures())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [
+            json.loads(line)
+            for line in self.kubectl_calls.read_text().splitlines()
+        ]
+        self.assertNotIn(["config", "current-context"], calls)
+        self.assertEqual(len(calls), 6)
+        self.assertTrue(all(call[:2] == ["--context", "k3d-test"] for call in calls))
+        self.assertEqual(
+            [(call[2:4], "--raw" in call) for call in calls[:2]],
+            [(["config", "view"], False), (["config", "view"], True)],
+        )
+        self.assertEqual(
+            [call[2:] for call in calls[2:]],
+            [
+                ["get", "namespace", "kube-system", "-o", "jsonpath={.metadata.uid}"],
+                ["-n", "platform-test", "get", "deployment", "frontend", "-o", "json"],
+                ["-n", "platform-test", "get", "replicasets", "-l", "app.kubernetes.io/name=frontend", "-o", "json"],
+                ["-n", "platform-test", "get", "pods", "-l", "app.kubernetes.io/name=frontend", "-o", "json"],
+            ],
+        )
+
+    def test_rejects_non_test_context_before_any_kubectl_read(self):
+        result = self._run(self._fixtures(), {"EXPECTED_CONTEXT": "k3d-prod"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.kubectl_calls.exists())
+        self.assertFalse(self.report.exists())
 
     def test_rejects_pod_not_owned_by_active_replicaset(self):
         result = self._run(self._fixtures("44444444-4444-4444-8444-444444444444"))

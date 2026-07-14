@@ -29,6 +29,7 @@ fail_closed() {
 }
 
 [[ "$PHASE" == "pre" || "$PHASE" == "post" ]] || fail_closed
+[[ "$EXPECTED_CONTEXT" == "k3d-test" ]] || fail_closed
 [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || fail_closed
 [[ "$EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_BUILD_RUN_ID" =~ ^[0-9]+$ ]] || fail_closed
@@ -52,18 +53,22 @@ sha256_file() {
   fi
 }
 
+kubectl_test() {
+  "$KUBECTL_BIN" --context "$EXPECTED_CONTEXT" "$@"
+}
+
 mkdir -p "$(dirname "$REPORT_PATH")"
 umask 077
 rm -f "$REPORT_PATH"
 
-context="$($KUBECTL_BIN config current-context)"
-[[ "$context" == "$EXPECTED_CONTEXT" ]] || fail_closed
-cluster_server="$($KUBECTL_BIN config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+context="$EXPECTED_CONTEXT"
+cluster_server="$(kubectl_test config view --minify \
+  -o jsonpath='{.clusters[0].cluster.server}')"
 [[ -n "$cluster_server" ]] || fail_closed
 cluster_server_sha256="$(sha256_text "$cluster_server")"
 [[ "$cluster_server_sha256" == "$EXPECTED_CLUSTER_SERVER_SHA256" ]] || fail_closed
 unset cluster_server
-cluster_ca_data="$($KUBECTL_BIN config view --raw --minify \
+cluster_ca_data="$(kubectl_test config view --raw --minify \
   -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
 [[ -n "$cluster_ca_data" ]] || fail_closed
 cluster_ca_sha256="$(python3 -c '
@@ -76,7 +81,8 @@ print(hashlib.sha256(raw).hexdigest())
 ' <<<"$cluster_ca_data")"
 unset cluster_ca_data
 [[ "$cluster_ca_sha256" == "$EXPECTED_CLUSTER_CA_SHA256" ]] || fail_closed
-kube_system_uid="$($KUBECTL_BIN get namespace kube-system -o jsonpath='{.metadata.uid}')"
+kube_system_uid="$(kubectl_test get namespace kube-system \
+  -o jsonpath='{.metadata.uid}')"
 [[ "$kube_system_uid" == "$EXPECTED_KUBE_SYSTEM_UID" ]] || fail_closed
 
 build_run_url="https://github.com/Halildeu/platform-web/actions/runs/${EXPECTED_BUILD_RUN_ID}"
@@ -158,7 +164,8 @@ jq -e \
   ' <<<"$build_artifacts_json" >/dev/null || fail_closed
 unset build_artifacts_json
 
-deployment_json="$($KUBECTL_BIN -n "$NAMESPACE" get deployment "$DEPLOYMENT" -o json)"
+deployment_json="$(kubectl_test -n "$NAMESPACE" \
+  get deployment "$DEPLOYMENT" -o json)"
 deployment_uid="$(jq -r '.metadata.uid' <<<"$deployment_json")"
 deployment_resource_version="$(jq -r '.metadata.resourceVersion' <<<"$deployment_json")"
 deployment_generation="$(jq -r '.metadata.generation' <<<"$deployment_json")"
@@ -186,7 +193,8 @@ deployment_image="$(jq -r \
 [[ "$available_replicas" == "$desired_replicas" ]] || fail_closed
 [[ "$deployment_image" == *"@${EXPECTED_IMAGE_DIGEST}" ]] || fail_closed
 
-replicasets_json="$($KUBECTL_BIN -n "$NAMESPACE" get replicasets -l "$selector" -o json)"
+replicasets_json="$(kubectl_test -n "$NAMESPACE" \
+  get replicasets -l "$selector" -o json)"
 active_replicaset_json="$(jq -c \
   --arg deployment_uid "$deployment_uid" \
   --arg container "$CONTAINER" \
@@ -214,7 +222,8 @@ replicaset_revision="$(jq -r '.metadata.annotations["deployment.kubernetes.io/re
   <<<"$active_replicaset_json")"
 [[ "$replicaset_revision" == "$rollout_revision" ]] || fail_closed
 
-pods_json="$($KUBECTL_BIN -n "$NAMESPACE" get pods -l "$selector" -o json)"
+pods_json="$(kubectl_test -n "$NAMESPACE" \
+  get pods -l "$selector" -o json)"
 stable_pods_json="$(jq -c \
   --arg replicaset_uid "$replicaset_uid" \
   --arg container "$CONTAINER" \
