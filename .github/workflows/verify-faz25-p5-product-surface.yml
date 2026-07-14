@@ -137,8 +137,12 @@ jobs:
           chromium_path="$(node -e \
             'const { chromium } = require("playwright-core"); process.stdout.write(chromium.executablePath())')"
           [[ -x "$chromium_path" ]]
-          chromium_executable_version="$("$chromium_path" --version)"
-          [[ "$chromium_executable_version" == *"148.0.7778.96"* ]]
+          [[ "$chromium_path" != *$'\n'* && "$chromium_path" != *$'\r'* ]]
+          chromium_executable_version="$("$chromium_path" --version | \
+            tr -d '\r' | \
+            sed -E 's/[[:space:]]+$//')"
+          [[ "$chromium_executable_version" == \
+            "Google Chrome for Testing 148.0.7778.96" ]]
           if command -v sha256sum >/dev/null 2>&1; then
             chromium_sha256="$(sha256sum "$chromium_path" | awk '{print $1}')"
           else
@@ -150,6 +154,7 @@ jobs:
             echo "chromium_browser_version=$chromium_browser_version"
             echo "chromium_executable_version=$chromium_executable_version"
             echo "chromium_sha256=$chromium_sha256"
+            printf 'chromium_path=%s\n' "$chromium_path"
           } >> "$GITHUB_OUTPUT"
 
       - name: Require the protected named test persona
@@ -181,6 +186,7 @@ jobs:
           P5_CONFIG_SHA256: ${{ steps.workspace.outputs.config_sha256 }}
           P5_PACKAGE_LOCK_SHA256: ${{ steps.workspace.outputs.package_lock_sha256 }}
           P5_CHROMIUM_EXECUTABLE_SHA256: ${{ steps.runtime.outputs.chromium_sha256 }}
+          P5_CHROMIUM_EXECUTABLE_PATH: ${{ steps.runtime.outputs.chromium_path }}
           P5_CHROMIUM_REVISION: ${{ steps.runtime.outputs.chromium_revision }}
           P5_CHROMIUM_BROWSER_VERSION: ${{ steps.runtime.outputs.chromium_browser_version }}
           P5_CHROMIUM_EXECUTABLE_VERSION: ${{ steps.runtime.outputs.chromium_executable_version }}
@@ -196,6 +202,15 @@ jobs:
           TEST_ROOT: ${{ steps.workspace.outputs.test_root }}
         run: |
           set -euo pipefail
+          [[ -x "$P5_CHROMIUM_EXECUTABLE_PATH" ]]
+          if command -v sha256sum >/dev/null 2>&1; then
+            launch_chromium_sha256="$(sha256sum "$P5_CHROMIUM_EXECUTABLE_PATH" | \
+              awk '{print $1}')"
+          else
+            launch_chromium_sha256="$(shasum -a 256 "$P5_CHROMIUM_EXECUTABLE_PATH" | \
+              awk '{print $1}')"
+          fi
+          [[ "$launch_chromium_sha256" == "$P5_CHROMIUM_EXECUTABLE_SHA256" ]]
           cd "$TEST_ROOT"
           ./node_modules/.bin/playwright test \
             --config=playwright.faz25-p5.config.ts \
