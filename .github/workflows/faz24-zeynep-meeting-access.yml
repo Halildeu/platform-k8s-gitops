@@ -70,6 +70,14 @@ jobs:
               .boundaries.targetUserMutation == false and
               (if .schemaVersion == "faz24.permissionWriterCredentialRepair.v3" then
                 (.boundaries.permissionWriterEmailMutation | type == "boolean") and
+                (.boundaries.permissionWriterEmailMutationAttempted | type == "boolean") and
+                (.boundaries.permissionWriterEmailMutationConfirmed | type == "boolean") and
+                .boundaries.permissionWriterEmailMutation == .boundaries.permissionWriterEmailMutationAttempted and
+                ((.boundaries.permissionWriterEmailMutationConfirmed == false) or
+                 (.boundaries.permissionWriterEmailMutationAttempted == true)) and
+                ((.permissionWriter.profileReady == false) or
+                 (.boundaries.permissionWriterEmailMutationAttempted == false) or
+                 (.boundaries.permissionWriterEmailMutationConfirmed == true)) and
                 .permissionWriter.identityBinding == "username+immutable-user-id" and
                 (.permissionWriter.requiredActionsReady | type == "boolean") and
                 (.permissionWriter.profileReady | type == "boolean") and
@@ -121,7 +129,8 @@ jobs:
             if [ "$(jq -r .schemaVersion "${OUT_PATH}")" = "faz24.permissionWriterCredentialRepair.v3" ]; then
               echo "- Exact writer identity: \`$(jq -r .permissionWriter.exactIdentityMatch "${OUT_PATH}")\`"
               echo "- Writer identity binding: \`$(jq -r .permissionWriter.identityBinding "${OUT_PATH}")\`"
-              echo "- Writer email mutation: \`$(jq -r .boundaries.permissionWriterEmailMutation "${OUT_PATH}")\`"
+              echo "- Writer email mutation attempted: \`$(jq -r .boundaries.permissionWriterEmailMutationAttempted "${OUT_PATH}")\`"
+              echo "- Writer email mutation confirmed: \`$(jq -r .boundaries.permissionWriterEmailMutationConfirmed "${OUT_PATH}")\`"
               echo "- Writer required actions ready: \`$(jq -r .permissionWriter.requiredActionsReady "${OUT_PATH}")\`"
               echo "- Writer profile ready: \`$(jq -r .permissionWriter.profileReady "${OUT_PATH}")\`"
               echo "- Writer profile repaired: \`$(jq -r .permissionWriter.profileRepaired "${OUT_PATH}")\`"

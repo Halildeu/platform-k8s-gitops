@@ -34,7 +34,8 @@ WRITER_PROFILE_REPAIRED=false
 WRITER_PROFILE_EMAIL_COLLISION_FREE=false
 WRITER_PROFILE_ATTRIBUTES_PRESERVED=false
 WRITER_PROFILE_REQUIRED_ACTIONS_PRESERVED=false
-WRITER_PROFILE_EMAIL_MUTATED=false
+WRITER_PROFILE_EMAIL_MUTATION_ATTEMPTED=false
+WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED=false
 
 usage() {
   cat <<'EOF'
@@ -82,7 +83,8 @@ write_result() {
     --argjson profileEmailCollisionFree "${WRITER_PROFILE_EMAIL_COLLISION_FREE}" \
     --argjson profileAttributesPreserved "${WRITER_PROFILE_ATTRIBUTES_PRESERVED}" \
     --argjson profileRequiredActionsPreserved "${WRITER_PROFILE_REQUIRED_ACTIONS_PRESERVED}" \
-    --argjson permissionWriterEmailMutation "${WRITER_PROFILE_EMAIL_MUTATED}" \
+    --argjson permissionWriterEmailMutationAttempted "${WRITER_PROFILE_EMAIL_MUTATION_ATTEMPTED}" \
+    --argjson permissionWriterEmailMutationConfirmed "${WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED}" \
     '{
       schemaVersion: "faz24.permissionWriterCredentialRepair.v3",
       mode: "repair-persona",
@@ -108,7 +110,9 @@ write_result() {
       boundaries: {
         productionMutation: false,
         targetUserMutation: false,
-        permissionWriterEmailMutation: $permissionWriterEmailMutation,
+        permissionWriterEmailMutation: $permissionWriterEmailMutationAttempted,
+        permissionWriterEmailMutationAttempted: $permissionWriterEmailMutationAttempted,
+        permissionWriterEmailMutationConfirmed: $permissionWriterEmailMutationConfirmed,
         rawIdentityIncluded: false,
         rawCredentialIncluded: false,
         rawTokenIncluded: false
@@ -326,8 +330,7 @@ NEED_WRITER_LAST_NAME=false
 [[ -n "${WRITER_FIRST_NAME_BEFORE}" ]] || NEED_WRITER_FIRST_NAME=true
 [[ -n "${WRITER_LAST_NAME_BEFORE}" ]] || NEED_WRITER_LAST_NAME=true
 
-if [[ "${NEED_WRITER_EMAIL}" == "true" || \
-      "${WRITER_EMAIL_BEFORE}" == "${WRITER_PROFILE_EMAIL}" ]]; then
+if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
   WRITER_PROFILE_EMAIL_FILE="${TMP_DIR}/writer-profile-email"
   printf '%s' "${WRITER_PROFILE_EMAIL}" > "${WRITER_PROFILE_EMAIL_FILE}"
   WRITER_PROFILE_EMAIL_OWNERS="${TMP_DIR}/writer-profile-email-owners.json"
@@ -342,7 +345,17 @@ if [[ "${NEED_WRITER_EMAIL}" == "true" || \
   ' "${WRITER_PROFILE_EMAIL_OWNERS}" >/dev/null \
     || die "permission-writer-profile-email-conflict"
 fi
-WRITER_PROFILE_EMAIL_COLLISION_FREE=true
+
+WRITER_EMAIL_EXPECTED="${WRITER_EMAIL_BEFORE}"
+WRITER_FIRST_NAME_EXPECTED="${WRITER_FIRST_NAME_BEFORE}"
+WRITER_LAST_NAME_EXPECTED="${WRITER_LAST_NAME_BEFORE}"
+if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
+  WRITER_EMAIL_EXPECTED="${WRITER_PROFILE_EMAIL}"
+fi
+[[ "${NEED_WRITER_FIRST_NAME}" == "true" ]] \
+  && WRITER_FIRST_NAME_EXPECTED="${WRITER_PROFILE_FIRST_NAME}"
+[[ "${NEED_WRITER_LAST_NAME}" == "true" ]] \
+  && WRITER_LAST_NAME_EXPECTED="${WRITER_PROFILE_LAST_NAME}"
 
 if [[ "${NEED_WRITER_EMAIL}" == "true" || \
       "${NEED_WRITER_FIRST_NAME}" == "true" || \
@@ -367,6 +380,10 @@ if [[ "${NEED_WRITER_EMAIL}" == "true" || \
   ' "${WRITER_PROFILE_UPDATE}" >/dev/null \
     || die "permission-writer-profile-update-payload-invalid"
 
+  if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
+    WRITER_PROFILE_EMAIL_MUTATION_ATTEMPTED=true
+  fi
+
   PROFILE_UPDATE_RESPONSE="${TMP_DIR}/writer-profile-update-response.json"
   code="$(http_status PUT \
     "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
@@ -384,17 +401,6 @@ if [[ "${NEED_WRITER_EMAIL}" == "true" || \
     --config "${KC_AUTH_CONFIG}")"
   [[ "${code}" == "200" ]] || die "permission-writer-profile-readback-failed"
 
-  WRITER_EMAIL_EXPECTED="${WRITER_EMAIL_BEFORE}"
-  WRITER_FIRST_NAME_EXPECTED="${WRITER_FIRST_NAME_BEFORE}"
-  WRITER_LAST_NAME_EXPECTED="${WRITER_LAST_NAME_BEFORE}"
-  if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
-    WRITER_EMAIL_EXPECTED="${WRITER_PROFILE_EMAIL}"
-  fi
-  [[ "${NEED_WRITER_FIRST_NAME}" == "true" ]] \
-    && WRITER_FIRST_NAME_EXPECTED="${WRITER_PROFILE_FIRST_NAME}"
-  [[ "${NEED_WRITER_LAST_NAME}" == "true" ]] \
-    && WRITER_LAST_NAME_EXPECTED="${WRITER_PROFILE_LAST_NAME}"
-
   jq -e \
     --arg writerId "${WRITER_USER_ID}" \
     --arg writerUsername "${WRITER_USERNAME}" \
@@ -410,7 +416,7 @@ if [[ "${NEED_WRITER_EMAIL}" == "true" || \
     ' "${KC_WRITER_READBACK_JSON}" >/dev/null \
     || die "permission-writer-profile-readback-mismatch"
   [[ "${NEED_WRITER_EMAIL}" == "true" ]] \
-    && WRITER_PROFILE_EMAIL_MUTATED=true
+    && WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED=true
   jq -S '.attributes // {}' "${KC_WRITER_READBACK_JSON}" \
     | cmp -s "${WRITER_PROFILE_ATTRIBUTES_BEFORE}" - \
     || die "permission-writer-profile-attributes-changed"
@@ -419,13 +425,27 @@ if [[ "${NEED_WRITER_EMAIL}" == "true" || \
     | cmp -s "${WRITER_PROFILE_REQUIRED_ACTIONS_BEFORE}" - \
     || die "permission-writer-profile-required-actions-changed"
   WRITER_PROFILE_REQUIRED_ACTIONS_PRESERVED=true
-  WRITER_PROFILE_READY=true
   WRITER_PROFILE_REPAIRED=true
 else
   WRITER_PROFILE_ATTRIBUTES_PRESERVED=true
   WRITER_PROFILE_REQUIRED_ACTIONS_PRESERVED=true
-  WRITER_PROFILE_READY=true
 fi
+
+WRITER_EFFECTIVE_EMAIL_FILE="${TMP_DIR}/writer-effective-email"
+printf '%s' "${WRITER_EMAIL_EXPECTED}" > "${WRITER_EFFECTIVE_EMAIL_FILE}"
+WRITER_EFFECTIVE_EMAIL_OWNERS="${TMP_DIR}/writer-effective-email-owners.json"
+code="$(curl -sS --max-time 20 -o "${WRITER_EFFECTIVE_EMAIL_OWNERS}" -w '%{http_code}' --get \
+  "${KC_BASE_URL}/admin/realms/${KC_REALM}/users" \
+  --config "${KC_AUTH_CONFIG}" \
+  --data-urlencode "email@${WRITER_EFFECTIVE_EMAIL_FILE}" \
+  --data-urlencode 'exact=true' || printf '000')"
+[[ "${code}" == "200" ]] || die "permission-writer-profile-email-readback-failed"
+jq -e --arg writerId "${WRITER_USER_ID}" '
+  length == 1 and .[0].id == $writerId
+' "${WRITER_EFFECTIVE_EMAIL_OWNERS}" >/dev/null \
+  || die "permission-writer-profile-email-ownership-unverified"
+WRITER_PROFILE_EMAIL_COLLISION_FREE=true
+WRITER_PROFILE_READY=true
 
 EXISTING_WRITER_USERNAME="$(jq -r '.admin_persona_username // empty' "${VAULT_ORIGINAL_DATA}")"
 EXISTING_PASSWORD_FILE="${TMP_DIR}/existing-writer-password"

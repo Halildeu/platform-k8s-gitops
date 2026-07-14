@@ -98,6 +98,7 @@ url=''
 password_file=''
 data_binary_file=''
 email_query=false
+email_query_file=''
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) output="$2"; shift 2 ;;
@@ -107,6 +108,7 @@ while [[ $# -gt 0 ]]; do
         password_file="${2#password@}"
       elif [[ "$2" == email@* ]]; then
         email_query=true
+        email_query_file="${2#email@}"
       fi
       shift 2
       ;;
@@ -155,7 +157,7 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users/'* && "${method}" == 'PU
     printf '%s\\n' 'keycloak-profile-repair' >> "${MOCK_EVENT_LOG}"
   }
   case "${MOCK_PROFILE_PUT_SCENARIO}" in
-    success|success-drop-attributes|concurrent-required-action)
+    success|success-drop-attributes|concurrent-required-action|success-readback-http-failure|success-readback-transport-failure)
       apply_profile
       printf '%s' '204'
       ;;
@@ -181,6 +183,18 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users/'* && "${method}" == 'PU
     *) exit 94 ;;
   esac
 elif [[ "${url}" == *"/admin/realms/platform-test/users/${MOCK_EXPECTED_WRITER_USER_ID}" && "${method}" == 'GET' ]]; then
+  if [[ -s "${MOCK_EVENT_LOG}" ]]; then
+    case "${MOCK_PROFILE_PUT_SCENARIO}" in
+      success-readback-http-failure)
+        printf '%s' '503'
+        exit 0
+        ;;
+      success-readback-transport-failure)
+        printf '%s' '000'
+        exit 7
+        ;;
+    esac
+  fi
   email="$(cat "${MOCK_KEYCLOAK_EMAIL_STATE}")"
   first_name="$(cat "${MOCK_KEYCLOAK_FIRST_NAME_STATE}")"
   last_name="$(cat "${MOCK_KEYCLOAK_LAST_NAME_STATE}")"
@@ -205,8 +219,16 @@ elif [[ "${url}" == *'/admin/realms/platform-test/users' ]]; then
   if [[ "${email_query}" == 'true' ]]; then
     case "${MOCK_EMAIL_OWNER_SCENARIO}" in
       available)
-        if [[ "$(cat "${MOCK_KEYCLOAK_EMAIL_STATE}")" == "${MOCK_PROFILE_EMAIL}" ]]; then
+        if [[ "$(cat "${MOCK_KEYCLOAK_EMAIL_STATE}")" == "$(cat "${email_query_file}")" ]]; then
           jq -n --arg id "${MOCK_EXPECTED_WRITER_USER_ID}" '[{id:$id}]' > "${output}"
+        else
+          printf '%s' '[]' > "${output}"
+        fi
+        ;;
+      collision-after-put)
+        if [[ -s "${MOCK_EVENT_LOG}" ]]; then
+          jq -n --arg id "${MOCK_EXPECTED_WRITER_USER_ID}" \
+            '[{id:$id},{id:"different-user-id"}]' > "${output}"
         else
           printf '%s' '[]' > "${output}"
         fi
@@ -431,6 +453,8 @@ def test_missing_service_profile_is_repaired_without_replacing_owned_state(tmp_p
     assert result["permissionWriter"]["existingAttributesPreserved"] is True
     assert result["permissionWriter"]["requiredActionsPreserved"] is True
     assert result["boundaries"]["permissionWriterEmailMutation"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is True
     assert vault_state["admin_persona_password"] == NEW_PASSWORD
     assert events == [
         "keycloak-profile-repair",
@@ -508,6 +532,9 @@ def test_profile_put_4xx_is_rejected_before_readback_or_vault_write(tmp_path):
 
     assert proc.returncode == 1
     assert result["failureReason"] == "permission-writer-profile-repair-rejected"
+    assert result["boundaries"]["permissionWriterEmailMutation"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is False
     assert vault_state == original_vault
     assert events == []
 
@@ -528,6 +555,58 @@ def test_profile_email_collision_blocks_before_profile_or_vault_mutation(tmp_pat
     assert result["failureReason"] == "permission-writer-profile-email-conflict"
     assert vault_state == original_vault
     assert events == []
+
+
+@pytest.mark.parametrize(
+    "profile_put_scenario",
+    ("success-readback-http-failure", "success-readback-transport-failure"),
+)
+def test_applied_profile_put_with_failed_readback_reports_attempted_not_confirmed(
+    tmp_path, profile_put_scenario
+):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            initial_email="",
+            initial_first_name="",
+            initial_last_name="",
+            profile_put_scenario=profile_put_scenario,
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == "permission-writer-profile-readback-failed"
+    assert result["boundaries"]["permissionWriterEmailMutation"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is False
+    assert result["permissionWriter"]["profileReady"] is False
+    assert vault_state == original_vault
+    assert events == ["keycloak-profile-repair"]
+
+
+def test_post_write_email_collision_blocks_before_vault_write(tmp_path):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            initial_email="",
+            initial_first_name="",
+            initial_last_name="",
+            email_owner_scenario="collision-after-put",
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == (
+        "permission-writer-profile-email-ownership-unverified"
+    )
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is True
+    assert result["permissionWriter"]["profileEmailCollisionFree"] is False
+    assert result["permissionWriter"]["profileReady"] is False
+    assert vault_state == original_vault
+    assert events == ["keycloak-profile-repair"]
 
 
 def test_concurrent_required_action_is_preserved_and_detected(tmp_path):
@@ -571,12 +650,15 @@ def test_profile_attribute_loss_is_detected_before_vault_write(tmp_path):
     assert events == ["keycloak-profile-repair"]
 
 
-def test_unexpected_required_action_blocks_before_any_mutation(tmp_path):
+@pytest.mark.parametrize("required_action", ("CONFIGURE_TOTP", "UPDATE_PROFILE"))
+def test_operator_owned_required_action_blocks_before_any_mutation(
+    tmp_path, required_action
+):
     proc, result, vault_state, events, original_vault = (
         _run_ambiguous_reset_scenario(
             tmp_path,
             "new-success",
-            required_actions=("CONFIGURE_TOTP",),
+            required_actions=(required_action,),
         )
     )
 
@@ -622,7 +704,10 @@ def test_writer_email_is_preserved_while_credential_is_repaired(tmp_path):
         "username+immutable-user-id"
     )
     assert result["boundaries"]["permissionWriterEmailMutation"] is False
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is False
+    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is False
     assert result["permissionWriter"]["profileRepaired"] is False
+    assert result["permissionWriter"]["profileEmailCollisionFree"] is True
     assert vault_state["admin_persona_password"] == NEW_PASSWORD
     assert events == ["vault-put", "keycloak-reset-ambiguous"]
 
@@ -732,4 +817,6 @@ def test_workflow_blocks_unredacted_summary_and_artifact():
     assert "requiredActionsPreserved" in text
     assert 'faz24.permissionWriterCredentialRepair.v3' in redaction
     assert ".boundaries.permissionWriterEmailMutation | type" in redaction
+    assert ".boundaries.permissionWriterEmailMutationAttempted | type" in redaction
+    assert ".boundaries.permissionWriterEmailMutationConfirmed | type" in redaction
     assert 'identityBinding == "username+immutable-user-id"' in redaction
