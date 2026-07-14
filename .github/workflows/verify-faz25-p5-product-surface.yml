@@ -318,7 +318,7 @@ jobs:
                     "Bearer[[:space:]]|BEGIN[[:space:]].*PRIVATE KEY|password[[:space:]]*[=:]|cookie[[:space:]]*[=:]|[?&#](code|state|session_state)=|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}";
                     "i"
                   ))] | length == 0) and
-              ([.. | strings | select(test("[\\u0000-\\u001F]"))] | length == 0)
+              ([.. | strings | select(test("[\u0000-\u001F]"))] | length == 0)
             ' "$report" >/dev/null; then
               sensitive_scan_passed=false
             fi
@@ -472,7 +472,7 @@ jobs:
                       "Bearer[[:space:]]|BEGIN[[:space:]].*PRIVATE KEY|password[[:space:]]*[=:]|cookie[[:space:]]*[=:]|[?&#](code|state|session_state)=|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}";
                       "i"
                     ))] | length == 0) and
-                ([.. | strings | select(test("[\\u0000-\\u001F]"))] | length == 0)
+                ([.. | strings | select(test("[\u0000-\u001F]"))] | length == 0)
               ' "$source_path" >/dev/null; then
               cp -- "$source_path" "$diagnostic_dir/$target_name"
               chmod 0600 "$diagnostic_dir/$target_name"
