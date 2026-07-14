@@ -48,6 +48,7 @@ jobs:
           fi
 
       - name: Verify redacted result contract
+        id: redaction
         if: always()
         run: |
           set -euo pipefail
@@ -68,7 +69,7 @@ jobs:
              end)
           ' "${OUT_PATH}" >/dev/null
 
-          if grep -aE \
+          if grep -aEq \
             -e 'Bearer ' \
             -e 'Authorization:' \
             -e 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.' \
@@ -79,7 +80,7 @@ jobs:
           fi
 
       - name: Publish redacted summary
-        if: always()
+        if: ${{ always() && steps.redaction.outcome == 'success' }}
         run: |
           set -euo pipefail
           if [ ! -s "${OUT_PATH}" ]; then
@@ -97,8 +98,10 @@ jobs:
               echo "- Exact writer identity: \`$(jq -r .permissionWriter.exactIdentityMatch "${OUT_PATH}")\`"
               echo "- Keycloak credential reset: \`$(jq -r .permissionWriter.keycloakCredentialReset "${OUT_PATH}")\`"
               echo "- Vault record synced: \`$(jq -r .permissionWriter.vaultRecordSynced "${OUT_PATH}")\`"
+              echo "- Vault rollback attempted: \`$(jq -r .permissionWriter.vaultRollbackAttempted "${OUT_PATH}")\`"
+              echo "- Vault rollback succeeded: \`$(jq -r .permissionWriter.vaultRollbackSucceeded "${OUT_PATH}")\`"
               echo "- Writer login readback: \`$(jq -r .permissionWriter.loginReady "${OUT_PATH}")\`"
-              echo "- Permission-service writer readback: \`$(jq -r .permissionWriter.permissionServiceWriterReady "${OUT_PATH}")\`"
+              echo "- Permission-service roles readback: \`$(jq -r .permissionWriter.rolesReadReady "${OUT_PATH}")\`"
             else
               echo "- Exact Keycloak identity: \`$(jq -r .target.exactKeycloakMatch "${OUT_PATH}")\`"
               echo "- Exact user-service identity: \`$(jq -r .target.exactUserServiceMatch "${OUT_PATH}")\`"
@@ -112,7 +115,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload redacted evidence
-        if: always()
+        if: ${{ always() && steps.redaction.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: faz24-zeynep-meeting-access-${{ github.run_id }}

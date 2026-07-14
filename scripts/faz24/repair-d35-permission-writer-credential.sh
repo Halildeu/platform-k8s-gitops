@@ -21,16 +21,17 @@ FAILURE_REASON=""
 EXACT_WRITER_MATCH=false
 KEYCLOAK_RESET=false
 VAULT_SYNCED=false
+VAULT_ROLLBACK_ATTEMPTED=false
+VAULT_ROLLBACK_SUCCEEDED=false
 WRITER_LOGIN_READY=false
-WRITER_AUTHORIZED=false
-VAULT_CONTAINER_PATCH_FILE=""
+WRITER_ROLES_READ_READY=false
 
 usage() {
   cat <<'EOF'
 Usage: repair-d35-permission-writer-credential.sh [--out PATH]
 
 Explicitly rotates the platform-test D35 permission-writer password, patches the
-matching Vault record, and verifies login plus permission-service writer access.
+matching Vault record, and verifies login plus permission-service roles read access.
 No production object or target-user authorization is modified.
 EOF
 }
@@ -43,7 +44,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for command_name in curl jq docker openssl; do
+for command_name in curl jq docker openssl tr; do
   command -v "${command_name}" >/dev/null 2>&1 || {
     echo "ERROR: required command missing: ${command_name}" >&2
     exit 2
@@ -60,8 +61,10 @@ write_result() {
     --argjson exactWriterMatch "${EXACT_WRITER_MATCH}" \
     --argjson keycloakReset "${KEYCLOAK_RESET}" \
     --argjson vaultSynced "${VAULT_SYNCED}" \
+    --argjson vaultRollbackAttempted "${VAULT_ROLLBACK_ATTEMPTED}" \
+    --argjson vaultRollbackSucceeded "${VAULT_ROLLBACK_SUCCEEDED}" \
     --argjson writerLoginReady "${WRITER_LOGIN_READY}" \
-    --argjson writerAuthorized "${WRITER_AUTHORIZED}" \
+    --argjson rolesReadReady "${WRITER_ROLES_READ_READY}" \
     '{
       schemaVersion: "faz24.permissionWriterCredentialRepair.v1",
       mode: "repair-persona",
@@ -72,8 +75,10 @@ write_result() {
         exactIdentityMatch: $exactWriterMatch,
         keycloakCredentialReset: $keycloakReset,
         vaultRecordSynced: $vaultSynced,
+        vaultRollbackAttempted: $vaultRollbackAttempted,
+        vaultRollbackSucceeded: $vaultRollbackSucceeded,
         loginReady: $writerLoginReady,
-        permissionServiceWriterReady: $writerAuthorized
+        rolesReadReady: $rolesReadReady
       },
       boundaries: {
         productionMutation: false,
@@ -86,9 +91,6 @@ write_result() {
 }
 
 cleanup() {
-  if [[ -n "${VAULT_CONTAINER_PATCH_FILE}" ]]; then
-    docker exec "${VAULT_CONTAINER}" rm -f "${VAULT_CONTAINER_PATCH_FILE}" >/dev/null 2>&1 || true
-  fi
   rm -rf "${TMP_DIR}"
   unset KC_ADMIN_PASSWORD KC_ADMIN_TOKEN WRITER_TOKEN
 }
@@ -134,6 +136,84 @@ read_vault_path() {
   ' sh "${VAULT_PERSONA_PATH}" > "${output}" 2>/dev/null
 }
 
+vault_put_data() {
+  local root_token="$1"
+  local cas_version="$2"
+  local payload_file="$3"
+  {
+    printf '%s\n' "${root_token}"
+    cat "${payload_file}"
+  } | docker exec -i "${VAULT_CONTAINER}" sh -c '
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    vault kv put -cas="$2" "$1" - >/dev/null
+  ' sh "${VAULT_PERSONA_PATH}" "${cas_version}"
+}
+
+restore_vault_snapshot() {
+  local root_token="$1"
+  local snapshot_file="$2"
+  local expected_current_file="$3"
+  local current_json="${TMP_DIR}/vault-current-before-rollback.json"
+  local rollback_readback="${TMP_DIR}/vault-rollback-readback.json"
+  local current_version
+
+  VAULT_ROLLBACK_ATTEMPTED=true
+  read_vault_path "${root_token}" "${current_json}" || return 1
+  current_version="$(jq -r '.data.metadata.version // empty' "${current_json}")"
+  [[ "${current_version}" =~ ^[0-9]+$ ]] || return 1
+  jq -s -e '.[0].data.data == .[1]' "${current_json}" "${expected_current_file}" >/dev/null \
+    || return 1
+
+  vault_put_data "${root_token}" "${current_version}" "${snapshot_file}" || return 1
+  read_vault_path "${root_token}" "${rollback_readback}" || return 1
+  jq -s -e '.[0].data.data == .[1]' "${rollback_readback}" "${snapshot_file}" >/dev/null || return 1
+
+  VAULT_ROLLBACK_SUCCEEDED=true
+  VAULT_SYNCED=false
+}
+
+die_after_vault_write() {
+  local failure_reason="$1"
+  if restore_vault_snapshot "${ROOT_TOKEN}" "${VAULT_ORIGINAL_DATA}" "${VAULT_NEW_DATA}"; then
+    die "${failure_reason}-vault-rolled-back"
+  fi
+  die "${failure_reason}-vault-rollback-failed"
+}
+
+request_writer_token() {
+  local password_file="$1"
+  local token_json="$2"
+  local login_code
+  local candidate_token
+
+  login_code="$(http_status POST \
+    "${KC_BASE_URL}/realms/${KC_REALM}/protocol/openid-connect/token" \
+    "${token_json}" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode 'grant_type=password' \
+    --data-urlencode "client_id=${WRITER_CLIENT}" \
+    --data-urlencode "username@${WRITER_USERNAME_FILE}" \
+    --data-urlencode "password@${password_file}")"
+  [[ "${login_code}" == "200" ]] || return 1
+  candidate_token="$(jq -r '.access_token // empty' "${token_json}")"
+  [[ -n "${candidate_token}" ]] || return 1
+  WRITER_TOKEN="${candidate_token}"
+}
+
+verify_roles_read() {
+  local token="$1"
+  local auth_config="$2"
+  local roles_json="$3"
+  local roles_code
+
+  write_bearer_config "${auth_config}" "${token}"
+  roles_code="$(http_status GET "${BASE_URL}/api/v1/roles" "${roles_json}" \
+    --config "${auth_config}")"
+  [[ "${roles_code}" == "200" ]] || return 1
+  jq -e '.items | type == "array"' "${roles_json}" >/dev/null
+}
+
 [[ -n "${KC_ADMIN_PASSWORD:-}" ]] || die "keycloak-admin-password-missing"
 
 KC_ADMIN_PASSWORD_FILE="${TMP_DIR}/keycloak-admin-password"
@@ -177,9 +257,59 @@ EXACT_WRITER_MATCH=true
 docker inspect "${VAULT_CONTAINER}" >/dev/null 2>&1 || die "vault-container-missing"
 ROOT_TOKEN="$(vault_root_token)" || die "vault-root-token-missing"
 
+VAULT_ORIGINAL_JSON="${TMP_DIR}/vault-original.json"
+VAULT_ORIGINAL_DATA="${TMP_DIR}/vault-original-data.json"
+read_vault_path "${ROOT_TOKEN}" "${VAULT_ORIGINAL_JSON}" || die "vault-persona-preflight-read-failed"
+VAULT_ORIGINAL_VERSION="$(jq -r '.data.metadata.version // empty' "${VAULT_ORIGINAL_JSON}")"
+[[ "${VAULT_ORIGINAL_VERSION}" =~ ^[0-9]+$ ]] || die "vault-persona-version-missing"
+jq -e '.data.data | type == "object"' "${VAULT_ORIGINAL_JSON}" >/dev/null \
+  || die "vault-persona-data-invalid"
+jq '.data.data' "${VAULT_ORIGINAL_JSON}" > "${VAULT_ORIGINAL_DATA}"
+
+EXISTING_WRITER_USERNAME="$(jq -r '.admin_persona_username // empty' "${VAULT_ORIGINAL_DATA}")"
+EXISTING_PASSWORD_FILE="${TMP_DIR}/existing-writer-password"
+jq -j '.admin_persona_password // empty' "${VAULT_ORIGINAL_DATA}" > "${EXISTING_PASSWORD_FILE}"
+chmod 600 "${EXISTING_PASSWORD_FILE}"
+if [[ "${EXISTING_WRITER_USERNAME}" == "${WRITER_USERNAME}" && -s "${EXISTING_PASSWORD_FILE}" ]]; then
+  EXISTING_TOKEN_JSON="${TMP_DIR}/existing-writer-token.json"
+  if request_writer_token "${EXISTING_PASSWORD_FILE}" "${EXISTING_TOKEN_JSON}"; then
+    VAULT_SYNCED=true
+    WRITER_LOGIN_READY=true
+    EXISTING_AUTH_CONFIG="${TMP_DIR}/existing-writer-auth.curl"
+    EXISTING_ROLES_JSON="${TMP_DIR}/existing-roles.json"
+    verify_roles_read "${WRITER_TOKEN}" "${EXISTING_AUTH_CONFIG}" "${EXISTING_ROLES_JSON}" \
+      || die "permission-writer-roles-readback-failed"
+    WRITER_ROLES_READ_READY=true
+    STATUS="already-ready"
+    write_result
+    exit 0
+  fi
+fi
+
 NEW_PASSWORD_FILE="${TMP_DIR}/writer-password"
-openssl rand -hex 32 > "${NEW_PASSWORD_FILE}"
+openssl rand -hex 32 | tr -d '\n' > "${NEW_PASSWORD_FILE}"
 chmod 600 "${NEW_PASSWORD_FILE}"
+
+VAULT_NEW_DATA="${TMP_DIR}/vault-new-data.json"
+jq \
+  --arg username "${WRITER_USERNAME}" \
+  --rawfile password "${NEW_PASSWORD_FILE}" \
+  '. + {
+    admin_persona_username: $username,
+    admin_persona_password: ($password | rtrimstr("\n"))
+  }' "${VAULT_ORIGINAL_DATA}" > "${VAULT_NEW_DATA}"
+vault_put_data "${ROOT_TOKEN}" "${VAULT_ORIGINAL_VERSION}" "${VAULT_NEW_DATA}" \
+  || die "vault-persona-cas-write-failed"
+
+VAULT_READBACK_JSON="${TMP_DIR}/vault-readback.json"
+read_vault_path "${ROOT_TOKEN}" "${VAULT_READBACK_JSON}" \
+  || die_after_vault_write "vault-persona-readback-failed"
+jq -e --arg username "${WRITER_USERNAME}" --rawfile password "${NEW_PASSWORD_FILE}" '
+  .data.data.admin_persona_username == $username and
+  .data.data.admin_persona_password == ($password | rtrimstr("\n"))
+' "${VAULT_READBACK_JSON}" >/dev/null \
+  || die_after_vault_write "vault-persona-readback-mismatch"
+VAULT_SYNCED=true
 
 RESET_BODY="${TMP_DIR}/reset-password.json"
 jq -n --rawfile value "${NEW_PASSWORD_FILE}" \
@@ -191,56 +321,36 @@ code="$(http_status PUT \
   --config "${KC_AUTH_CONFIG}" \
   -H 'Content-Type: application/json' \
   --data-binary "@${RESET_BODY}")"
-[[ "${code}" == "204" ]] || die "permission-writer-password-reset-failed"
-KEYCLOAK_RESET=true
-
-VAULT_PATCH_BODY="${TMP_DIR}/vault-patch.json"
-jq -n \
-  --arg username "${WRITER_USERNAME}" \
-  --rawfile password "${NEW_PASSWORD_FILE}" \
-  '{admin_persona_username: $username, admin_persona_password: ($password | rtrimstr("\n"))}' \
-  > "${VAULT_PATCH_BODY}"
-VAULT_CONTAINER_PATCH_FILE="/tmp/faz24-writer-repair-${RANDOM}-${RANDOM}.json"
-docker cp "${VAULT_PATCH_BODY}" "${VAULT_CONTAINER}:${VAULT_CONTAINER_PATCH_FILE}" >/dev/null \
-  || die "vault-patch-file-copy-failed"
-docker exec "${VAULT_CONTAINER}" chmod 600 "${VAULT_CONTAINER_PATCH_FILE}" >/dev/null \
-  || die "vault-patch-file-permission-failed"
-printf '%s\n' "${ROOT_TOKEN}" | docker exec -i "${VAULT_CONTAINER}" sh -c '
-  IFS= read -r VAULT_TOKEN
-  export VAULT_TOKEN
-  vault kv patch "$1" "@$2" >/dev/null
-' sh "${VAULT_PERSONA_PATH}" "${VAULT_CONTAINER_PATCH_FILE}" \
-  || die "vault-persona-patch-failed"
-
-VAULT_READBACK_JSON="${TMP_DIR}/vault-readback.json"
-read_vault_path "${ROOT_TOKEN}" "${VAULT_READBACK_JSON}" || die "vault-persona-readback-failed"
-jq -e --arg username "${WRITER_USERNAME}" '
-  .data.data.admin_persona_username == $username and
-  ((.data.data.admin_persona_password // "") | length >= 32)
-' "${VAULT_READBACK_JSON}" >/dev/null || die "vault-persona-readback-mismatch"
-VAULT_SYNCED=true
+if [[ "${code}" == "204" ]]; then
+  KEYCLOAK_RESET=true
+elif [[ "${code}" =~ ^4[0-9][0-9]$ ]]; then
+  die_after_vault_write "permission-writer-password-reset-rejected"
+else
+  AMBIGUOUS_NEW_TOKEN_JSON="${TMP_DIR}/ambiguous-new-token.json"
+  if request_writer_token "${NEW_PASSWORD_FILE}" "${AMBIGUOUS_NEW_TOKEN_JSON}"; then
+    KEYCLOAK_RESET=true
+  else
+    unset WRITER_TOKEN
+    AMBIGUOUS_OLD_TOKEN_JSON="${TMP_DIR}/ambiguous-old-token.json"
+    if [[ -s "${EXISTING_PASSWORD_FILE}" ]] && \
+       request_writer_token "${EXISTING_PASSWORD_FILE}" "${AMBIGUOUS_OLD_TOKEN_JSON}"; then
+      unset WRITER_TOKEN
+      die_after_vault_write "permission-writer-password-reset-not-applied"
+    fi
+    die "permission-writer-password-reset-state-unverified"
+  fi
+fi
 
 WRITER_TOKEN_JSON="${TMP_DIR}/writer-token.json"
-code="$(http_status POST \
-  "${KC_BASE_URL}/realms/${KC_REALM}/protocol/openid-connect/token" \
-  "${WRITER_TOKEN_JSON}" \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode 'grant_type=password' \
-  --data-urlencode "client_id=${WRITER_CLIENT}" \
-  --data-urlencode "username@${WRITER_USERNAME_FILE}" \
-  --data-urlencode "password@${NEW_PASSWORD_FILE}")"
-[[ "${code}" == "200" ]] || die "permission-writer-login-readback-failed"
-WRITER_TOKEN="$(jq -r '.access_token // empty' "${WRITER_TOKEN_JSON}")"
-[[ -n "${WRITER_TOKEN}" ]] || die "permission-writer-token-readback-missing"
+request_writer_token "${NEW_PASSWORD_FILE}" "${WRITER_TOKEN_JSON}" \
+  || die "permission-writer-login-readback-failed"
 WRITER_LOGIN_READY=true
 
 WRITER_AUTH_CONFIG="${TMP_DIR}/writer-auth.curl"
-write_bearer_config "${WRITER_AUTH_CONFIG}" "${WRITER_TOKEN}"
 ROLES_JSON="${TMP_DIR}/roles.json"
-code="$(http_status GET "${BASE_URL}/api/v1/roles" "${ROLES_JSON}" \
-  --config "${WRITER_AUTH_CONFIG}")"
-[[ "${code}" == "200" ]] || die "permission-writer-authorization-readback-failed"
-WRITER_AUTHORIZED=true
+verify_roles_read "${WRITER_TOKEN}" "${WRITER_AUTH_CONFIG}" "${ROLES_JSON}" \
+  || die "permission-writer-roles-readback-failed"
+WRITER_ROLES_READ_READY=true
 
 STATUS="repaired"
 write_result
