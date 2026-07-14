@@ -10,6 +10,9 @@ readonly KC_REALM="platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly WRITER_USERNAME="d35-admin-persona"
 readonly WRITER_USER_ID="cbc9a869-1833-4d9c-beea-a9fa52fa851e"
+readonly WRITER_PROFILE_EMAIL="d35-admin-persona@acik.com"
+readonly WRITER_PROFILE_FIRST_NAME="D35"
+readonly WRITER_PROFILE_LAST_NAME="Admin Persona"
 readonly WRITER_CLIENT="frontend"
 readonly BASE_URL="https://testai.acik.com"
 readonly VAULT_PERSONA_PATH="kv/platform/d35-3"
@@ -25,14 +28,23 @@ VAULT_ROLLBACK_ATTEMPTED=false
 VAULT_ROLLBACK_SUCCEEDED=false
 WRITER_LOGIN_READY=false
 WRITER_ROLES_READ_READY=false
+WRITER_REQUIRED_ACTIONS_READY=false
+WRITER_PROFILE_READY=false
+WRITER_PROFILE_REPAIRED=false
+WRITER_PROFILE_EMAIL_COLLISION_FREE=false
+WRITER_PROFILE_ATTRIBUTES_PRESERVED=false
+WRITER_PROFILE_REQUIRED_ACTIONS_PRESERVED=false
+WRITER_PROFILE_EMAIL_MUTATION_ATTEMPTED=false
+WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED=false
 
 usage() {
   cat <<'EOF'
 Usage: repair-d35-permission-writer-credential.sh [--out PATH]
 
-Explicitly rotates the platform-test D35 permission-writer password, patches the
-matching Vault record, and verifies login plus permission-service roles read access.
-No production object or target-user authorization is modified.
+Repairs missing platform-test D35 permission-writer service-profile fields,
+rotates its password, patches the matching Vault record, and verifies login plus
+permission-service roles read access. No production object or target-user
+authorization is modified.
 EOF
 }
 
@@ -44,7 +56,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for command_name in curl jq docker openssl tr; do
+for command_name in cmp curl jq docker openssl tr; do
   command -v "${command_name}" >/dev/null 2>&1 || {
     echo "ERROR: required command missing: ${command_name}" >&2
     exit 2
@@ -65,8 +77,16 @@ write_result() {
     --argjson vaultRollbackSucceeded "${VAULT_ROLLBACK_SUCCEEDED}" \
     --argjson writerLoginReady "${WRITER_LOGIN_READY}" \
     --argjson rolesReadReady "${WRITER_ROLES_READ_READY}" \
+    --argjson requiredActionsReady "${WRITER_REQUIRED_ACTIONS_READY}" \
+    --argjson profileReady "${WRITER_PROFILE_READY}" \
+    --argjson profileRepaired "${WRITER_PROFILE_REPAIRED}" \
+    --argjson profileEmailCollisionFree "${WRITER_PROFILE_EMAIL_COLLISION_FREE}" \
+    --argjson profileAttributesPreserved "${WRITER_PROFILE_ATTRIBUTES_PRESERVED}" \
+    --argjson profileRequiredActionsPreserved "${WRITER_PROFILE_REQUIRED_ACTIONS_PRESERVED}" \
+    --argjson permissionWriterEmailMutationAttempted "${WRITER_PROFILE_EMAIL_MUTATION_ATTEMPTED}" \
+    --argjson permissionWriterEmailMutationConfirmed "${WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED}" \
     '{
-      schemaVersion: "faz24.permissionWriterCredentialRepair.v2",
+      schemaVersion: "faz24.permissionWriterCredentialRepair.v3",
       mode: "repair-persona",
       status: $status,
       failureReason: (if $failureReason == "" then null else $failureReason end),
@@ -78,13 +98,21 @@ write_result() {
         vaultRecordSynced: $vaultSynced,
         vaultRollbackAttempted: $vaultRollbackAttempted,
         vaultRollbackSucceeded: $vaultRollbackSucceeded,
+        requiredActionsReady: $requiredActionsReady,
+        profileReady: $profileReady,
+        profileRepaired: $profileRepaired,
+        profileEmailCollisionFree: $profileEmailCollisionFree,
+        existingAttributesPreserved: $profileAttributesPreserved,
+        requiredActionsPreserved: $profileRequiredActionsPreserved,
         loginReady: $writerLoginReady,
         rolesReadReady: $rolesReadReady
       },
       boundaries: {
         productionMutation: false,
         targetUserMutation: false,
-        permissionWriterEmailMutation: false,
+        permissionWriterEmailMutation: $permissionWriterEmailMutationAttempted,
+        permissionWriterEmailMutationAttempted: $permissionWriterEmailMutationAttempted,
+        permissionWriterEmailMutationConfirmed: $permissionWriterEmailMutationConfirmed,
         rawIdentityIncluded: false,
         rawCredentialIncluded: false,
         rawTokenIncluded: false
@@ -268,6 +296,157 @@ jq -e '.data.data | type == "object"' "${VAULT_ORIGINAL_JSON}" >/dev/null \
   || die "vault-persona-data-invalid"
 jq '.data.data' "${VAULT_ORIGINAL_JSON}" > "${VAULT_ORIGINAL_DATA}"
 
+KC_WRITER_FRESH_JSON="${TMP_DIR}/writer-user-fresh.json"
+code="$(http_status GET \
+  "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
+  "${KC_WRITER_FRESH_JSON}" \
+  --config "${KC_AUTH_CONFIG}")"
+[[ "${code}" == "200" ]] || die "permission-writer-profile-precondition-read-failed"
+jq -e --arg writerId "${WRITER_USER_ID}" --arg writerUsername "${WRITER_USERNAME}" '
+  .id == $writerId and
+  .username == $writerUsername and
+  .enabled == true
+' "${KC_WRITER_FRESH_JSON}" >/dev/null \
+  || die "permission-writer-profile-precondition-identity-mismatch"
+
+WRITER_FRESH_REQUIRED_ACTIONS="$(jq -c '.requiredActions // []' "${KC_WRITER_FRESH_JSON}")"
+[[ "${WRITER_FRESH_REQUIRED_ACTIONS}" == '[]' ]] \
+  || die "permission-writer-required-actions-unsupported"
+WRITER_REQUIRED_ACTIONS_READY=true
+
+WRITER_PROFILE_ATTRIBUTES_BEFORE="${TMP_DIR}/writer-profile-attributes-before.json"
+WRITER_PROFILE_REQUIRED_ACTIONS_BEFORE="${TMP_DIR}/writer-profile-required-actions-before.json"
+jq -S '.attributes // {}' "${KC_WRITER_FRESH_JSON}" > "${WRITER_PROFILE_ATTRIBUTES_BEFORE}"
+jq -S '.requiredActions // []' "${KC_WRITER_FRESH_JSON}" \
+  > "${WRITER_PROFILE_REQUIRED_ACTIONS_BEFORE}"
+
+WRITER_EMAIL_BEFORE="$(jq -r '.email // empty' "${KC_WRITER_FRESH_JSON}")"
+WRITER_FIRST_NAME_BEFORE="$(jq -r '.firstName // empty' "${KC_WRITER_FRESH_JSON}")"
+WRITER_LAST_NAME_BEFORE="$(jq -r '.lastName // empty' "${KC_WRITER_FRESH_JSON}")"
+NEED_WRITER_EMAIL=false
+NEED_WRITER_FIRST_NAME=false
+NEED_WRITER_LAST_NAME=false
+[[ -n "${WRITER_EMAIL_BEFORE}" ]] || NEED_WRITER_EMAIL=true
+[[ -n "${WRITER_FIRST_NAME_BEFORE}" ]] || NEED_WRITER_FIRST_NAME=true
+[[ -n "${WRITER_LAST_NAME_BEFORE}" ]] || NEED_WRITER_LAST_NAME=true
+
+if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
+  WRITER_PROFILE_EMAIL_FILE="${TMP_DIR}/writer-profile-email"
+  printf '%s' "${WRITER_PROFILE_EMAIL}" > "${WRITER_PROFILE_EMAIL_FILE}"
+  WRITER_PROFILE_EMAIL_OWNERS="${TMP_DIR}/writer-profile-email-owners.json"
+  code="$(curl -sS --max-time 20 -o "${WRITER_PROFILE_EMAIL_OWNERS}" -w '%{http_code}' --get \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users" \
+    --config "${KC_AUTH_CONFIG}" \
+    --data-urlencode "email@${WRITER_PROFILE_EMAIL_FILE}" \
+    --data-urlencode 'exact=true' || printf '000')"
+  [[ "${code}" == "200" ]] || die "permission-writer-profile-email-lookup-failed"
+  jq -e --arg writerId "${WRITER_USER_ID}" '
+    length == 0 or (length == 1 and .[0].id == $writerId)
+  ' "${WRITER_PROFILE_EMAIL_OWNERS}" >/dev/null \
+    || die "permission-writer-profile-email-conflict"
+fi
+
+WRITER_EMAIL_EXPECTED="${WRITER_EMAIL_BEFORE}"
+WRITER_FIRST_NAME_EXPECTED="${WRITER_FIRST_NAME_BEFORE}"
+WRITER_LAST_NAME_EXPECTED="${WRITER_LAST_NAME_BEFORE}"
+if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
+  WRITER_EMAIL_EXPECTED="${WRITER_PROFILE_EMAIL}"
+fi
+[[ "${NEED_WRITER_FIRST_NAME}" == "true" ]] \
+  && WRITER_FIRST_NAME_EXPECTED="${WRITER_PROFILE_FIRST_NAME}"
+[[ "${NEED_WRITER_LAST_NAME}" == "true" ]] \
+  && WRITER_LAST_NAME_EXPECTED="${WRITER_PROFILE_LAST_NAME}"
+
+if [[ "${NEED_WRITER_EMAIL}" == "true" || \
+      "${NEED_WRITER_FIRST_NAME}" == "true" || \
+      "${NEED_WRITER_LAST_NAME}" == "true" ]]; then
+  WRITER_PROFILE_UPDATE="${TMP_DIR}/writer-profile-update.json"
+  jq -n \
+    --arg email "${WRITER_PROFILE_EMAIL}" \
+    --arg firstName "${WRITER_PROFILE_FIRST_NAME}" \
+    --arg lastName "${WRITER_PROFILE_LAST_NAME}" \
+    --argjson setEmail "${NEED_WRITER_EMAIL}" \
+    --argjson setFirstName "${NEED_WRITER_FIRST_NAME}" \
+    --argjson setLastName "${NEED_WRITER_LAST_NAME}" '
+      {} +
+      (if $setEmail then {email: $email} else {} end) +
+      (if $setFirstName then {firstName: $firstName} else {} end) +
+      (if $setLastName then {lastName: $lastName} else {} end)
+    ' > "${WRITER_PROFILE_UPDATE}"
+  jq -e '
+    has("attributes") == false and
+    has("requiredActions") == false and
+    (keys | length) > 0
+  ' "${WRITER_PROFILE_UPDATE}" >/dev/null \
+    || die "permission-writer-profile-update-payload-invalid"
+
+  if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
+    WRITER_PROFILE_EMAIL_MUTATION_ATTEMPTED=true
+  fi
+
+  PROFILE_UPDATE_RESPONSE="${TMP_DIR}/writer-profile-update-response.json"
+  code="$(http_status PUT \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
+    "${PROFILE_UPDATE_RESPONSE}" \
+    --config "${KC_AUTH_CONFIG}" \
+    -H 'Content-Type: application/json' \
+    --data-binary "@${WRITER_PROFILE_UPDATE}")"
+  [[ ! "${code}" =~ ^4[0-9]{2}$ ]] \
+    || die "permission-writer-profile-repair-rejected"
+
+  KC_WRITER_READBACK_JSON="${TMP_DIR}/writer-user-readback.json"
+  code="$(http_status GET \
+    "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
+    "${KC_WRITER_READBACK_JSON}" \
+    --config "${KC_AUTH_CONFIG}")"
+  [[ "${code}" == "200" ]] || die "permission-writer-profile-readback-failed"
+
+  jq -e \
+    --arg writerId "${WRITER_USER_ID}" \
+    --arg writerUsername "${WRITER_USERNAME}" \
+    --arg email "${WRITER_EMAIL_EXPECTED}" \
+    --arg firstName "${WRITER_FIRST_NAME_EXPECTED}" \
+    --arg lastName "${WRITER_LAST_NAME_EXPECTED}" '
+      .id == $writerId and
+      .username == $writerUsername and
+      .enabled == true and
+      .email == $email and
+      .firstName == $firstName and
+      .lastName == $lastName
+    ' "${KC_WRITER_READBACK_JSON}" >/dev/null \
+    || die "permission-writer-profile-readback-mismatch"
+  [[ "${NEED_WRITER_EMAIL}" == "true" ]] \
+    && WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED=true
+  jq -S '.attributes // {}' "${KC_WRITER_READBACK_JSON}" \
+    | cmp -s "${WRITER_PROFILE_ATTRIBUTES_BEFORE}" - \
+    || die "permission-writer-profile-attributes-changed"
+  WRITER_PROFILE_ATTRIBUTES_PRESERVED=true
+  jq -S '.requiredActions // []' "${KC_WRITER_READBACK_JSON}" \
+    | cmp -s "${WRITER_PROFILE_REQUIRED_ACTIONS_BEFORE}" - \
+    || die "permission-writer-profile-required-actions-changed"
+  WRITER_PROFILE_REQUIRED_ACTIONS_PRESERVED=true
+  WRITER_PROFILE_REPAIRED=true
+else
+  WRITER_PROFILE_ATTRIBUTES_PRESERVED=true
+  WRITER_PROFILE_REQUIRED_ACTIONS_PRESERVED=true
+fi
+
+WRITER_EFFECTIVE_EMAIL_FILE="${TMP_DIR}/writer-effective-email"
+printf '%s' "${WRITER_EMAIL_EXPECTED}" > "${WRITER_EFFECTIVE_EMAIL_FILE}"
+WRITER_EFFECTIVE_EMAIL_OWNERS="${TMP_DIR}/writer-effective-email-owners.json"
+code="$(curl -sS --max-time 20 -o "${WRITER_EFFECTIVE_EMAIL_OWNERS}" -w '%{http_code}' --get \
+  "${KC_BASE_URL}/admin/realms/${KC_REALM}/users" \
+  --config "${KC_AUTH_CONFIG}" \
+  --data-urlencode "email@${WRITER_EFFECTIVE_EMAIL_FILE}" \
+  --data-urlencode 'exact=true' || printf '000')"
+[[ "${code}" == "200" ]] || die "permission-writer-profile-email-readback-failed"
+jq -e --arg writerId "${WRITER_USER_ID}" '
+  length == 1 and .[0].id == $writerId
+' "${WRITER_EFFECTIVE_EMAIL_OWNERS}" >/dev/null \
+  || die "permission-writer-profile-email-ownership-unverified"
+WRITER_PROFILE_EMAIL_COLLISION_FREE=true
+WRITER_PROFILE_READY=true
+
 EXISTING_WRITER_USERNAME="$(jq -r '.admin_persona_username // empty' "${VAULT_ORIGINAL_DATA}")"
 EXISTING_PASSWORD_FILE="${TMP_DIR}/existing-writer-password"
 jq -j '.admin_persona_password // empty' "${VAULT_ORIGINAL_DATA}" > "${EXISTING_PASSWORD_FILE}"
@@ -282,7 +461,11 @@ if [[ "${EXISTING_WRITER_USERNAME}" == "${WRITER_USERNAME}" && -s "${EXISTING_PA
     verify_roles_read "${WRITER_TOKEN}" "${EXISTING_AUTH_CONFIG}" "${EXISTING_ROLES_JSON}" \
       || die "permission-writer-roles-readback-failed"
     WRITER_ROLES_READ_READY=true
-    STATUS="already-ready"
+    if [[ "${WRITER_PROFILE_REPAIRED}" == "true" ]]; then
+      STATUS="profile-repaired"
+    else
+      STATUS="already-ready"
+    fi
     write_result
     exit 0
   fi
