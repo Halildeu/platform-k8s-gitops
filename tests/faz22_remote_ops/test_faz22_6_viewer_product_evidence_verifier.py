@@ -57,9 +57,154 @@ def child(evidence_type, kind, payload, observed_at="2026-07-14T00:05:00Z"):
     }
 
 
+def case_binding(session_char):
+    value = binding()
+    value["sessionSha256"] = sha(session_char)
+    return value
+
+
+def negative_payload():
+    outcomes = {
+        "noAuth": ("unauthorized", 401),
+        "wrongRole": ("not-found", 404),
+        "wrongTenant": ("not-found", 404),
+        "wrongDevice": ("not-found", 404),
+        "expired": ("expired", 422),
+        "revoked": ("revoked", 404),
+        "replayed": ("replay-rejected", 422),
+        "overConcurrency": ("capacity-rejected", 409),
+        "disconnectedViewer": ("stream-closed", None),
+    }
+    cases = {
+        name: {
+            "observedAt": "2026-07-14T00:05:00Z",
+            "binding": case_binding("1"),
+            "result": "fail-closed",
+            "outcome": outcome,
+            "requestAccepted": False,
+            "deliveryContinued": False,
+            "httpStatus": status,
+            "evidenceSha256": sha(format(index, "x")),
+        }
+        for index, (name, (outcome, status)) in enumerate(outcomes.items())
+    }
+    payload = {
+        "authorizationSha256": VERIFIER.digest_bytes(authorization_bytes()),
+        "cases": cases,
+    }
+    payload["suiteSha256"] = VERIFIER.digest_json(payload)
+    return payload
+
+
+def termination_payload():
+    specs = {
+        "localAbort": ("local-abort", 700),
+        "killOrRevoke": ("kill-or-revoke", 500),
+        "ttlExpiry": ("ttl-expiry", 900),
+        "heartbeatLoss": ("heartbeat-loss", 30_000),
+        "indicatorLoss": ("indicator-loss", 800),
+    }
+    session_chars = ("5", "6", "7", "8", "9")
+    evidence_chars = ("a", "b", "c", "d", "e")
+    audit_chars = ("0", "5", "6", "7", "8")
+    cases = {}
+    for index, (name, (trigger, latency)) in enumerate(specs.items()):
+        cases[name] = {
+            "observedAt": "2026-07-14T00:05:00Z",
+            "binding": case_binding(session_chars[index]),
+            "result": "terminated",
+            "trigger": trigger,
+            "deliveryTerminated": True,
+            "terminationLatencyMillis": latency,
+            "evidenceSha256": sha(evidence_chars[index]),
+            "viewStopAuditSha256": sha(audit_chars[index]),
+        }
+    payload = {
+        "authorizationSha256": VERIFIER.digest_bytes(authorization_bytes()),
+        "cases": cases,
+    }
+    payload["suiteSha256"] = VERIFIER.digest_json(payload)
+    return payload
+
+
+def matrix_attestation_files(evidence_type, document):
+    files = {}
+    payload = document["payload"]
+    termination_ordinals = {name: index for index, name in enumerate(VERIFIER.TERMINATION_CASES)}
+    for case_name, case in payload["cases"].items():
+        common = {
+            "schemaVersion": f"faz22.6.viewOnlyViewer{evidence_type.title()}CaseAttestation.v1",
+            "caseName": case_name,
+            "sourceRevision": document["sourceRevision"],
+            "observedAt": case["observedAt"],
+            "binding": case["binding"],
+            "authorizationSha256": payload["authorizationSha256"],
+            "runtimeSnapshotSha256": VERIFIER.digest_bytes(
+                f"{evidence_type}:{case_name}:runtime".encode()
+            ),
+        }
+        if evidence_type == "negative":
+            credentials = {
+                "noAuth": "absent",
+                "wrongRole": "authenticated-wrong-role",
+                "wrongTenant": "authenticated-wrong-tenant",
+                "wrongDevice": "authenticated-wrong-device",
+                "expired": "expired-permit",
+                "revoked": "revoked-session",
+                "replayed": "replayed-permit",
+                "overConcurrency": "authorized-second-viewer",
+                "disconnectedViewer": "authorized-disconnected-viewer",
+            }
+            attestation = {
+                **common,
+                "request": {
+                    "method": "GET",
+                    "targetClass": "viewer-product-channel",
+                    "credentialClass": credentials[case_name],
+                },
+                "result": {
+                    "outcome": case["outcome"],
+                    "requestAccepted": False,
+                    "deliveryContinued": False,
+                    "httpStatus": case["httpStatus"],
+                },
+                "auditEventSha256": VERIFIER.digest_bytes(
+                    f"negative:{case_name}:audit".encode()
+                ),
+            }
+        else:
+            started = 1_752_451_500_000 + termination_ordinals[case_name] * 10_000
+            attestation = {
+                **common,
+                "trigger": case["trigger"],
+                "triggeredAtEpochMillis": started,
+                "deliveryEndedAtEpochMillis": started + case["terminationLatencyMillis"],
+                "result": {"deliveryTerminated": True},
+                "viewStopAuditSha256": case["viewStopAuditSha256"],
+                "productSignals": {
+                    "viewerClosed": True,
+                    "brokerSessionTerminal": True,
+                    "agentEventObserved": True,
+                    "viewStopAuditVerified": True,
+                    **({
+                        "endpointUserInitiated": True,
+                        "consentLeaseRevoked": True,
+                    } if case_name == "localAbort" else {}),
+                },
+            }
+        raw = encode_json(attestation)
+        case["evidenceSha256"] = VERIFIER.digest_bytes(raw)
+        files[f"attestations/{evidence_type}/{case_name}.json"] = raw
+    payload["suiteSha256"] = VERIFIER.digest_json({
+        "authorizationSha256": payload["authorizationSha256"],
+        "cases": payload["cases"],
+    })
+    return files
+
+
 def child_documents():
     states = {"captured": 105, "brokerReceived": 105, "viewerDelivered": 100, "viewerRendered": 100}
-    return {
+    documents = {
         "browser": child(
             "browser",
             "browser-harness",
@@ -148,35 +293,12 @@ def child_documents():
         "negative": child(
             "negative",
             "negative-harness",
-            {
-                "suiteSha256": sha("d"),
-                "cases": {
-                    "noAuth": True,
-                    "wrongRole": True,
-                    "wrongTenant": True,
-                    "wrongDevice": True,
-                    "expired": True,
-                    "revoked": True,
-                    "replayed": True,
-                    "overConcurrency": True,
-                    "disconnectedViewer": True,
-                },
-            },
+            negative_payload(),
         ),
         "termination": child(
             "termination",
             "termination-harness",
-            {
-                "suiteSha256": sha("e"),
-                "cases": {
-                    "localAbort": True,
-                    "killOrRevoke": True,
-                    "ttlExpiry": True,
-                    "heartbeatLoss": True,
-                    "consentWithdrawal": True,
-                    "indicatorLoss": True,
-                },
-            },
+            termination_payload(),
         ),
         "operator": child(
             "operator",
@@ -197,6 +319,9 @@ def child_documents():
             observed_at="2026-07-14T00:00:30Z",
         ),
     }
+    matrix_attestation_files("negative", documents["negative"])
+    matrix_attestation_files("termination", documents["termination"])
+    return documents
 
 
 def encode_json(value):
@@ -244,7 +369,14 @@ def activation_archive():
 
 
 def source_archive(name, raw):
-    return encode_zip({f"evidence/{name}.json": raw})
+    files = {f"evidence/{name}.json": raw}
+    if name in {"negative", "termination"}:
+        document = json.loads(raw)
+        files.update(matrix_attestation_files(name, document))
+        regenerated = encode_json(document)
+        if regenerated != raw:
+            raise AssertionError(f"{name} fixture attestation digest drift")
+    return encode_zip(files)
 
 
 def source_entry(name, raw):
@@ -441,6 +573,20 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             client or FakeClient(), VERIFIER.EXPECTED_REPOSITORY, RUN_ID, now=now
         )
 
+    def validate_matrices(self, children):
+        VERIFIER.validate_negative_and_termination(
+            children["negative"]["payload"],
+            children["termination"]["payload"],
+            children["operator"]["payload"],
+            binding(),
+            datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
+            datetime(2026, 7, 14, 0, 20, tzinfo=timezone.utc),
+            {
+                "negative": datetime(2026, 7, 14, 0, 5, tzinfo=timezone.utc),
+                "termination": datetime(2026, 7, 14, 0, 5, tzinfo=timezone.utc),
+            },
+        )
+
     def test_valid_provenance_bound_artifact_passes_with_digest_marker(self):
         result = self.verify()
         self.assertEqual("pass", result["status"])
@@ -617,6 +763,99 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         children["operator"]["payload"]["authorization"] = "Bearer abcdefghijklmnop"
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "schema invalid"):
             self.verify(FakeClient(build_archive(children=children)))
+
+    def test_boolean_only_negative_claim_is_rejected(self):
+        children = child_documents()
+        children["negative"]["payload"]["cases"]["noAuth"] = True
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "schema invalid"):
+            VERIFIER.validate_schema(children["negative"], VERIFIER.CHILD_SCHEMA, "negative child")
+
+    def test_matrix_suite_digest_and_authorization_are_content_bound(self):
+        children = child_documents()
+        children["negative"]["payload"]["cases"]["noAuth"]["httpStatus"] = 403
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "negative suite digest"):
+            self.validate_matrices(children)
+
+        children = child_documents()
+        children["termination"]["payload"]["authorizationSha256"] = sha("f")
+        payload = children["termination"]["payload"]
+        payload["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": payload["authorizationSha256"],
+            "cases": payload["cases"],
+        })
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "protected authorization digest"):
+            self.validate_matrices(children)
+
+    def test_termination_cases_require_isolated_sessions_and_latency_slo(self):
+        children = child_documents()
+        cases = children["termination"]["payload"]["cases"]
+        cases["indicatorLoss"]["binding"]["sessionSha256"] = cases["localAbort"]["binding"]["sessionSha256"]
+        payload = children["termination"]["payload"]
+        payload["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": payload["authorizationSha256"], "cases": cases,
+        })
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "distinct isolated sessions"):
+            self.validate_matrices(children)
+
+        children = child_documents()
+        children["termination"]["payload"]["cases"]["killOrRevoke"]["terminationLatencyMillis"] = 1001
+        payload = children["termination"]["payload"]
+        payload["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": payload["authorizationSha256"], "cases": payload["cases"],
+        })
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "exceeded the 1000ms"):
+            self.validate_matrices(children)
+
+    def test_matrix_case_attestation_bytes_are_independently_digest_bound(self):
+        document = child_documents()["negative"]
+        raw_child = encode_json(document)
+        files = VERIFIER.safe_archive_files(source_archive("negative", raw_child))
+        path = "attestations/negative/noAuth.json"
+        files[path] += b" "
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "attestation digest"):
+            VERIFIER.validate_matrix_source_attestations("negative", files, raw_child)
+
+    def test_local_abort_must_also_prove_attended_consent_withdrawal(self):
+        document = child_documents()["termination"]
+        raw_child = encode_json(document)
+        files = VERIFIER.safe_archive_files(source_archive("termination", raw_child))
+        path = "attestations/termination/localAbort.json"
+        attestation = json.loads(files[path])
+        del attestation["productSignals"]["consentLeaseRevoked"]
+        files[path] = encode_json(attestation)
+        document["payload"]["cases"]["localAbort"]["evidenceSha256"] = \
+            VERIFIER.digest_bytes(files[path])
+        document["payload"]["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": document["payload"]["authorizationSha256"],
+            "cases": document["payload"]["cases"],
+        })
+        raw_child = encode_json(document)
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "localAbort product signals"):
+            VERIFIER.validate_matrix_source_attestations("termination", files, raw_child)
+
+    def test_matrix_cases_must_fit_protected_authorization_expiry(self):
+        children = child_documents()
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "authorized matrix window"):
+            VERIFIER.validate_negative_and_termination(
+                children["negative"]["payload"], children["termination"]["payload"],
+                children["operator"]["payload"], binding(),
+                datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
+                datetime(2026, 7, 14, 0, 4, 59, tzinfo=timezone.utc),
+                {
+                    "negative": datetime(2026, 7, 14, 0, 5, tzinfo=timezone.utc),
+                    "termination": datetime(2026, 7, 14, 0, 5, tzinfo=timezone.utc),
+                },
+            )
+
+    def test_negative_case_name_cannot_be_relabelled_with_another_outcome(self):
+        children = child_documents()
+        payload = children["negative"]["payload"]
+        payload["cases"]["wrongRole"]["outcome"] = "unauthorized"
+        payload["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": payload["authorizationSha256"], "cases": payload["cases"],
+        })
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "wrongRole outcome"):
+            self.validate_matrices(children)
 
 
 if __name__ == "__main__":

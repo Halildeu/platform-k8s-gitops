@@ -48,6 +48,14 @@ EXPECTED_SOURCE_WORKFLOWS = {
     )
     for evidence_type in EXPECTED_CHILD_TYPES
 }
+NEGATIVE_CASES = (
+    "noAuth", "wrongRole", "wrongTenant", "wrongDevice", "expired",
+    "revoked", "replayed", "overConcurrency", "disconnectedViewer",
+)
+TERMINATION_CASES = (
+    "localAbort", "killOrRevoke", "ttlExpiry", "heartbeatLoss",
+    "indicatorLoss",
+)
 
 FIRST_FRAME_MAX_MS = 5_000
 STEADY_P95_MAX_MS = 2_000
@@ -61,6 +69,7 @@ MAX_EVIDENCE_AGE = timedelta(hours=24)
 MARKER_VALIDITY = timedelta(hours=24)
 RUN_CLOCK_SKEW = timedelta(minutes=5)
 MAX_ACTIVATION_TO_PILOT_DELAY = timedelta(minutes=35)
+MAX_MATRIX_WINDOW = timedelta(minutes=30)
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 MAX_ARCHIVE_FILES = 32
@@ -336,6 +345,142 @@ def fetch_verified_archive(client: ApiClient, repository: str, run_id: int) -> V
     return VerifiedArchive(artifact=artifact, archive_digest=actual_digest, files=safe_archive_files(raw_archive))
 
 
+def source_artifact_files(evidence_type: str) -> set[str]:
+    files = {f"evidence/{evidence_type}.json"}
+    if evidence_type == "negative":
+        files.update(f"attestations/negative/{name}.json" for name in NEGATIVE_CASES)
+    elif evidence_type == "termination":
+        files.update(f"attestations/termination/{name}.json" for name in TERMINATION_CASES)
+    return files
+
+
+def validate_matrix_source_attestations(
+    evidence_type: str, files: dict[str, bytes], raw_child: bytes,
+) -> None:
+    if evidence_type not in {"negative", "termination"}:
+        return
+    child = load_json_bytes(raw_child, f"evidence/{evidence_type}.json")
+    payload = child["payload"]
+    case_names = NEGATIVE_CASES if evidence_type == "negative" else TERMINATION_CASES
+    expected_negative_status = {
+        "noAuth": 401, "wrongRole": 404, "wrongTenant": 404, "wrongDevice": 404,
+        "expired": 422, "revoked": 404, "replayed": 422,
+        "overConcurrency": 409, "disconnectedViewer": None,
+    }
+    expected_credential = {
+        "noAuth": "absent",
+        "wrongRole": "authenticated-wrong-role",
+        "wrongTenant": "authenticated-wrong-tenant",
+        "wrongDevice": "authenticated-wrong-device",
+        "expired": "expired-permit",
+        "revoked": "revoked-session",
+        "replayed": "replayed-permit",
+        "overConcurrency": "authorized-second-viewer",
+        "disconnectedViewer": "authorized-disconnected-viewer",
+    }
+    expected_trigger = {
+        "localAbort": "local-abort", "killOrRevoke": "kill-or-revoke",
+        "ttlExpiry": "ttl-expiry", "heartbeatLoss": "heartbeat-loss",
+        "indicatorLoss": "indicator-loss",
+    }
+
+    for case_name in case_names:
+        path = f"attestations/{evidence_type}/{case_name}.json"
+        raw = files[path]
+        require_equal(digest_bytes(raw), payload["cases"][case_name]["evidenceSha256"],
+                      f"{evidence_type} {case_name} attestation digest")
+        attestation = load_json_bytes(raw, path)
+        common_keys = {
+            "schemaVersion", "caseName", "sourceRevision", "observedAt", "binding",
+            "authorizationSha256", "runtimeSnapshotSha256",
+        }
+        expected_keys = common_keys | ({"request", "result", "auditEventSha256"}
+                                       if evidence_type == "negative" else {
+                                           "trigger", "triggeredAtEpochMillis", "deliveryEndedAtEpochMillis",
+                                           "result", "viewStopAuditSha256", "productSignals",
+                                       })
+        if set(attestation) != expected_keys:
+            raise EvidenceError(f"{evidence_type} {case_name} attestation field set mismatch")
+        expected_schema = (
+            "faz22.6.viewOnlyViewerNegativeCaseAttestation.v1"
+            if evidence_type == "negative"
+            else "faz22.6.viewOnlyViewerTerminationCaseAttestation.v1"
+        )
+        require_equal(attestation["schemaVersion"], expected_schema,
+                      f"{evidence_type} {case_name} attestation schema")
+        require_equal(attestation["caseName"], case_name, f"{evidence_type} case name")
+        require_equal(attestation["sourceRevision"], child["sourceRevision"],
+                      f"{evidence_type} {case_name} source revision")
+        require_equal(attestation["observedAt"], payload["cases"][case_name]["observedAt"],
+                      f"{evidence_type} {case_name} observedAt")
+        require_equal(attestation["binding"], payload["cases"][case_name]["binding"],
+                      f"{evidence_type} {case_name} binding")
+        require_equal(attestation["authorizationSha256"], payload["authorizationSha256"],
+                      f"{evidence_type} {case_name} authorization")
+        parse_utc(attestation["observedAt"], f"{evidence_type} {case_name} observedAt")
+        for digest_field in ("runtimeSnapshotSha256",):
+            if not isinstance(attestation[digest_field], str) or not SHA256.fullmatch(attestation[digest_field]):
+                raise EvidenceError(f"{evidence_type} {case_name} {digest_field} is invalid")
+
+        case = payload["cases"][case_name]
+        if evidence_type == "negative":
+            if set(attestation["request"]) != {"method", "targetClass", "credentialClass"}:
+                raise EvidenceError(f"negative {case_name} request field set mismatch")
+            require_equal(attestation["request"]["method"], "GET", f"negative {case_name} method")
+            require_equal(attestation["request"]["targetClass"], "viewer-product-channel",
+                          f"negative {case_name} target class")
+            require_equal(attestation["request"]["credentialClass"], expected_credential[case_name],
+                          f"negative {case_name} credential class")
+            if set(attestation["result"]) != {
+                "outcome", "requestAccepted", "deliveryContinued", "httpStatus",
+            }:
+                raise EvidenceError(f"negative {case_name} result field set mismatch")
+            require_equal(attestation["result"]["outcome"], case["outcome"],
+                          f"negative {case_name} attested outcome")
+            require_equal(attestation["result"]["requestAccepted"], False,
+                          f"negative {case_name} request acceptance")
+            require_equal(attestation["result"]["deliveryContinued"], False,
+                          f"negative {case_name} delivery continuation")
+            require_equal(attestation["result"]["httpStatus"], expected_negative_status[case_name],
+                          f"negative {case_name} HTTP status")
+            require_equal(case["httpStatus"], expected_negative_status[case_name],
+                          f"negative {case_name} child HTTP status")
+            if not SHA256.fullmatch(str(attestation["auditEventSha256"])):
+                raise EvidenceError(f"negative {case_name} audit event digest is invalid")
+        else:
+            require_equal(attestation["trigger"], expected_trigger[case_name],
+                          f"termination {case_name} attested trigger")
+            require_equal(attestation["trigger"], case["trigger"],
+                          f"termination {case_name} child trigger")
+            started = attestation["triggeredAtEpochMillis"]
+            ended = attestation["deliveryEndedAtEpochMillis"]
+            if not all(isinstance(value, int) and value > 0 for value in (started, ended)) or ended < started:
+                raise EvidenceError(f"termination {case_name} epoch timestamps are invalid")
+            require_equal(ended - started, case["terminationLatencyMillis"],
+                          f"termination {case_name} measured latency")
+            if set(attestation["result"]) != {"deliveryTerminated"}:
+                raise EvidenceError(f"termination {case_name} result field set mismatch")
+            require_equal(attestation["result"]["deliveryTerminated"], True,
+                          f"termination {case_name} delivery result")
+            required_signals = {
+                "viewerClosed": True, "brokerSessionTerminal": True,
+                "agentEventObserved": True, "viewStopAuditVerified": True,
+            }
+            if case_name == "localAbort":
+                # The endpoint's visible BITIR / END action is both the local
+                # abort and the attended-consent withdrawal. Requiring two
+                # synthetic sessions for the same product action would create
+                # fake mechanism diversity instead of stronger evidence.
+                required_signals.update({
+                    "endpointUserInitiated": True,
+                    "consentLeaseRevoked": True,
+                })
+            require_equal(attestation["productSignals"], required_signals,
+                          f"termination {case_name} product signals")
+            require_equal(attestation["viewStopAuditSha256"], case["viewStopAuditSha256"],
+                          f"termination {case_name} VIEW_STOP audit digest")
+
+
 def fetch_verified_source_child(
     client: ApiClient, evidence_type: str, entry: dict[str, Any], expected_head_sha: str,
 ) -> tuple[bytes, dict[str, Any]]:
@@ -385,10 +530,12 @@ def fetch_verified_source_child(
         actual_archive_digest, source["artifactDigest"], f"{evidence_type} downloaded source artifact digest"
     )
     files = safe_archive_files(raw_archive)
-    if set(files) != {expected_file}:
-        raise EvidenceError(f"{evidence_type} source artifact must contain exactly {expected_file}")
+    expected_files = source_artifact_files(evidence_type)
+    if set(files) != expected_files:
+        raise EvidenceError(f"{evidence_type} source artifact file set mismatch")
     raw_child = files[expected_file]
     require_equal(digest_bytes(raw_child), entry["sha256"], f"{evidence_type} source child digest")
+    validate_matrix_source_attestations(evidence_type, files, raw_child)
     return raw_child, run
 
 
@@ -443,7 +590,7 @@ def verify_sha256sums(files: dict[str, bytes], expected_names: set[str]) -> None
 def verify_activation_authorization(
     client: ApiClient, operator: dict[str, Any], expected_head_sha: str,
     binding: dict[str, str], pilot_started: datetime, pilot_ended: datetime,
-) -> None:
+) -> datetime:
     run_id = operator["activationRunId"]
     run = fetch_run(
         client, EXPECTED_REPOSITORY, run_id, EXPECTED_ACTIVATION_WORKFLOW_NAME,
@@ -532,6 +679,101 @@ def verify_activation_authorization(
     expires_at = parse_utc(authorization["expiresAt"], "protected authorization expiresAt")
     if expires_at < pilot_ended:
         raise EvidenceError("protected authorization expired before the pilot ended")
+    return expires_at
+
+
+def validate_negative_and_termination(
+    negative: dict[str, Any], termination: dict[str, Any], operator: dict[str, Any],
+    root_binding: dict[str, Any], pilot_started: datetime, authorization_expires_at: datetime,
+    child_observed_at: dict[str, datetime],
+) -> None:
+    """Validate source-generated fail-closed matrices and isolated termination sessions."""
+    expected_negative = {
+        "noAuth": "unauthorized",
+        "wrongRole": "not-found",
+        "wrongTenant": "not-found",
+        "wrongDevice": "not-found",
+        "expired": "expired",
+        "revoked": "revoked",
+        "replayed": "replay-rejected",
+        "overConcurrency": "capacity-rejected",
+        "disconnectedViewer": "stream-closed",
+    }
+    expected_termination = {
+        "localAbort": ("local-abort", 5_000),
+        "killOrRevoke": ("kill-or-revoke", 1_000),
+        "ttlExpiry": ("ttl-expiry", 5_000),
+        "heartbeatLoss": ("heartbeat-loss", 120_000),
+        "indicatorLoss": ("indicator-loss", 5_000),
+    }
+    authorization_digest = operator["authorizationSha256"]
+    matrix_deadline = min(pilot_started + MAX_MATRIX_WINDOW, authorization_expires_at)
+
+    for label, payload in (("negative", negative), ("termination", termination)):
+        require_equal(payload["authorizationSha256"], authorization_digest,
+                      f"{label} protected authorization digest")
+        expected_suite = digest_json({
+            "authorizationSha256": payload["authorizationSha256"],
+            "cases": payload["cases"],
+        })
+        require_equal(payload["suiteSha256"], expected_suite, f"{label} suite digest")
+
+    negative_evidence: set[str] = set()
+    negative_observations: list[datetime] = []
+    for case_name, expected_outcome in expected_negative.items():
+        case = negative["cases"][case_name]
+        require_equal(case["outcome"], expected_outcome, f"negative {case_name} outcome")
+        case_binding = case["binding"]
+        for key in ("tenantSha256", "operatorSha256", "deviceSha256"):
+            require_equal(case_binding[key], root_binding[key], f"negative {case_name} {key}")
+        if len(set(case_binding.values())) != len(case_binding):
+            raise EvidenceError(f"negative {case_name} binding hashes must be distinct")
+        observed = parse_utc(case["observedAt"], f"negative {case_name} observedAt")
+        negative_observations.append(observed)
+        if observed < pilot_started - RUN_CLOCK_SKEW or observed > matrix_deadline:
+            raise EvidenceError(f"negative {case_name} is outside the authorized matrix window")
+        if case["evidenceSha256"] in negative_evidence:
+            raise EvidenceError("negative cases must use distinct content evidence digests")
+        negative_evidence.add(case["evidenceSha256"])
+    require_equal(max(negative_observations), child_observed_at["negative"],
+                  "negative child latest observation")
+
+    termination_sessions: set[str] = set()
+    termination_evidence: set[str] = set()
+    termination_audits: set[str] = set()
+    termination_observations: list[datetime] = []
+    for case_name, (expected_trigger, max_latency) in expected_termination.items():
+        case = termination["cases"][case_name]
+        require_equal(case["trigger"], expected_trigger, f"termination {case_name} trigger")
+        if case["terminationLatencyMillis"] > max_latency:
+            raise EvidenceError(f"termination {case_name} exceeded the {max_latency}ms fail-closed SLO")
+        case_binding = case["binding"]
+        for key in ("tenantSha256", "operatorSha256", "deviceSha256"):
+            require_equal(case_binding[key], root_binding[key], f"termination {case_name} {key}")
+        if len(set(case_binding.values())) != len(case_binding):
+            raise EvidenceError(f"termination {case_name} binding hashes must be distinct")
+        session_digest = case_binding["sessionSha256"]
+        if session_digest == root_binding["sessionSha256"] or session_digest in termination_sessions:
+            raise EvidenceError("termination cases require distinct isolated sessions")
+        termination_sessions.add(session_digest)
+        observed = parse_utc(case["observedAt"], f"termination {case_name} observedAt")
+        termination_observations.append(observed)
+        if observed < pilot_started - RUN_CLOCK_SKEW or observed > matrix_deadline:
+            raise EvidenceError(f"termination {case_name} is outside the authorized matrix window")
+        if case["evidenceSha256"] in termination_evidence:
+            raise EvidenceError("termination cases must use distinct delivery evidence digests")
+        if case["viewStopAuditSha256"] in termination_audits:
+            raise EvidenceError("termination cases must use distinct VIEW_STOP audit digests")
+        if case["evidenceSha256"] == case["viewStopAuditSha256"]:
+            raise EvidenceError(f"termination {case_name} delivery and audit evidence must be distinct")
+        termination_evidence.add(case["evidenceSha256"])
+        termination_audits.add(case["viewStopAuditSha256"])
+    require_equal(max(termination_observations), child_observed_at["termination"],
+                  "termination child latest observation")
+    all_matrix_digests = negative_evidence | termination_evidence | termination_audits
+    expected_digest_count = len(negative_evidence) + len(termination_evidence) + len(termination_audits)
+    if len(all_matrix_digests) != expected_digest_count:
+        raise EvidenceError("negative and termination evidence digests must be globally distinct")
 
 
 def validate_semantics(
@@ -588,8 +830,11 @@ def validate_semantics(
         source_run = source_runs[evidence_type]
         source_run_updated = parse_utc(source_run["updated_at"], f"{evidence_type} source update")
         validate_source_attestation_timing(observed, source_run_updated, run_started, evidence_type)
-        if observed < pilot_started - RUN_CLOCK_SKEW or observed > pilot_ended + RUN_CLOCK_SKEW:
-            raise EvidenceError(f"{evidence_type} observedAt is outside the pilot window")
+        latest_observed = pilot_ended + RUN_CLOCK_SKEW
+        if evidence_type in {"negative", "termination"}:
+            latest_observed = pilot_started + MAX_MATRIX_WINDOW
+        if observed < pilot_started - RUN_CLOCK_SKEW or observed > latest_observed:
+            raise EvidenceError(f"{evidence_type} observedAt is outside the authorized evidence window")
 
     browser = children["browser"]["payload"]
     require_equal(browser["pilotStartedAt"], root["pilot"]["startedAt"], "browser pilot start")
@@ -636,8 +881,16 @@ def validate_semantics(
     operator = children["operator"]["payload"]
     if operator["authorizationSha256"] == operator["kvkkMarkerSha256"]:
         raise EvidenceError("operator authorization and KVKK marker must be distinct artifacts")
-    verify_activation_authorization(
+    authorization_expires_at = verify_activation_authorization(
         client, operator, run["head_sha"], binding, pilot_started, pilot_ended,
+    )
+    validate_negative_and_termination(
+        children["negative"]["payload"], children["termination"]["payload"],
+        operator, binding, pilot_started, authorization_expires_at,
+        {
+            "negative": parse_utc(children["negative"]["observedAt"], "negative observedAt"),
+            "termination": parse_utc(children["termination"]["observedAt"], "termination observedAt"),
+        },
     )
 
     binding_digest = digest_json(binding)

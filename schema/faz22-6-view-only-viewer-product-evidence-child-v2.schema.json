@@ -194,32 +194,76 @@
     },
     "negativePayload": {
       "type": "object", "additionalProperties": false,
-      "required": ["suiteSha256", "cases"],
+      "required": ["suiteSha256", "authorizationSha256", "cases"],
       "properties": {
         "suiteSha256": {"$ref": "#/$defs/sha256"},
+        "authorizationSha256": {"$ref": "#/$defs/sha256"},
         "cases": {
           "type": "object", "additionalProperties": false,
           "required": ["noAuth", "wrongRole", "wrongTenant", "wrongDevice", "expired", "revoked", "replayed", "overConcurrency", "disconnectedViewer"],
           "properties": {
-            "noAuth": {"const": true}, "wrongRole": {"const": true}, "wrongTenant": {"const": true}, "wrongDevice": {"const": true},
-            "expired": {"const": true}, "revoked": {"const": true}, "replayed": {"const": true}, "overConcurrency": {"const": true}, "disconnectedViewer": {"const": true}
+            "noAuth": {"$ref": "#/$defs/negativeCase"},
+            "wrongRole": {"$ref": "#/$defs/negativeCase"},
+            "wrongTenant": {"$ref": "#/$defs/negativeCase"},
+            "wrongDevice": {"$ref": "#/$defs/negativeCase"},
+            "expired": {"$ref": "#/$defs/negativeCase"},
+            "revoked": {"$ref": "#/$defs/negativeCase"},
+            "replayed": {"$ref": "#/$defs/negativeCase"},
+            "overConcurrency": {"$ref": "#/$defs/negativeCase"},
+            "disconnectedViewer": {"$ref": "#/$defs/negativeCase"}
           }
         }
       }
     },
     "terminationPayload": {
       "type": "object", "additionalProperties": false,
-      "required": ["suiteSha256", "cases"],
+      "required": ["suiteSha256", "authorizationSha256", "cases"],
       "properties": {
         "suiteSha256": {"$ref": "#/$defs/sha256"},
+        "authorizationSha256": {"$ref": "#/$defs/sha256"},
         "cases": {
           "type": "object", "additionalProperties": false,
-          "required": ["localAbort", "killOrRevoke", "ttlExpiry", "heartbeatLoss", "consentWithdrawal", "indicatorLoss"],
+          "required": ["localAbort", "killOrRevoke", "ttlExpiry", "heartbeatLoss", "indicatorLoss"],
           "properties": {
-            "localAbort": {"const": true}, "killOrRevoke": {"const": true}, "ttlExpiry": {"const": true},
-            "heartbeatLoss": {"const": true}, "consentWithdrawal": {"const": true}, "indicatorLoss": {"const": true}
+            "localAbort": {"$ref": "#/$defs/terminationCase"},
+            "killOrRevoke": {"$ref": "#/$defs/terminationCase"},
+            "ttlExpiry": {"$ref": "#/$defs/terminationCase"},
+            "heartbeatLoss": {"$ref": "#/$defs/terminationCase"},
+            "indicatorLoss": {"$ref": "#/$defs/terminationCase"}
           }
         }
+      }
+    },
+    "negativeCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observedAt", "binding", "result", "outcome", "requestAccepted", "deliveryContinued", "httpStatus", "evidenceSha256"],
+      "properties": {
+        "observedAt": {"$ref": "#/$defs/utcTimestamp"},
+        "binding": {"$ref": "#/$defs/binding"},
+        "result": {"const": "fail-closed"},
+        "outcome": {
+          "enum": ["unauthorized", "not-found", "conflict", "expired", "revoked", "replay-rejected", "capacity-rejected", "stream-closed"]
+        },
+        "requestAccepted": {"const": false},
+        "deliveryContinued": {"const": false},
+        "httpStatus": {"oneOf": [{"type": "integer", "minimum": 100, "maximum": 599}, {"type": "null"}]},
+        "evidenceSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "terminationCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observedAt", "binding", "result", "trigger", "deliveryTerminated", "terminationLatencyMillis", "evidenceSha256", "viewStopAuditSha256"],
+      "properties": {
+        "observedAt": {"$ref": "#/$defs/utcTimestamp"},
+        "binding": {"$ref": "#/$defs/binding"},
+        "result": {"const": "terminated"},
+        "trigger": {"enum": ["local-abort", "kill-or-revoke", "ttl-expiry", "heartbeat-loss", "indicator-loss"]},
+        "deliveryTerminated": {"const": true},
+        "terminationLatencyMillis": {"type": "integer", "minimum": 0, "maximum": 120000},
+        "evidenceSha256": {"$ref": "#/$defs/sha256"},
+        "viewStopAuditSha256": {"$ref": "#/$defs/sha256"}
       }
     },
     "operatorPayload": {
