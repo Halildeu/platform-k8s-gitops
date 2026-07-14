@@ -74,11 +74,12 @@ def fetch_source(
     require_equal(VERIFIER.digest_bytes(archive), artifact_digest, f"{evidence_type} source archive digest")
     expected_file = f"evidence/{evidence_type}.json"
     files = VERIFIER.safe_archive_files(archive)
-    if set(files) != {expected_file}:
-        raise AssemblyError(f"{evidence_type} source artifact must contain exactly {expected_file}")
+    if set(files) != VERIFIER.source_artifact_files(evidence_type):
+        raise AssemblyError(f"{evidence_type} source artifact file set mismatch")
     raw = files[expected_file]
     child = VERIFIER.load_json_bytes(raw, expected_file)
     VERIFIER.validate_schema(child, VERIFIER.CHILD_SCHEMA, expected_file)
+    VERIFIER.validate_matrix_source_attestations(evidence_type, files, raw)
     require_equal(child["evidenceType"], evidence_type, f"{evidence_type} child type")
     require_equal(child["sourceRevision"], head_sha, f"{evidence_type} child source revision")
     if scan := VERIFIER.scan_hygiene(child):
@@ -160,8 +161,11 @@ def assemble(
         raise AssemblyError("browser-measured pilot duration is outside the bounded window")
     for evidence_type, child in children.items():
         observed = VERIFIER.parse_utc(child["observedAt"], f"{evidence_type}.observedAt")
-        if observed < pilot_started - VERIFIER.RUN_CLOCK_SKEW or observed > pilot_ended + VERIFIER.RUN_CLOCK_SKEW:
-            raise AssemblyError(f"{evidence_type} observedAt is outside the browser-measured pilot window")
+        latest_observed = pilot_ended + VERIFIER.RUN_CLOCK_SKEW
+        if evidence_type in {"negative", "termination"}:
+            latest_observed = pilot_started + VERIFIER.MAX_MATRIX_WINDOW
+        if observed < pilot_started - VERIFIER.RUN_CLOCK_SKEW or observed > latest_observed:
+            raise AssemblyError(f"{evidence_type} observedAt is outside the authorized evidence window")
 
     generated = (generated_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     if generated < pilot_ended:
