@@ -242,6 +242,7 @@ foreach ($key in $current.Keys) {
   $patched[$key] = $current[$key]
 }
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_INSECURE_PLAINTEXT"] = "false"
+$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"] = "false"
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED"] = "true"
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ENABLED"] = "true"
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ATTENDED_CONSENT_ENABLED"] = "true"
@@ -269,12 +270,13 @@ try {
   )) {
     Assert-MapValue -Map $after -Key $required -Expected "true"
   }
+  Assert-MapValue -Map $after -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT" -Expected "false"
   if ($serviceAfter.Status -ne "Running") {
     throw "EndpointAgent did not return to Running after activation"
   }
 
   $result = [ordered]@{
-    schema = "faz22.6.denetimepc-device-key-view-only-activation.v2"
+    schema = "faz22.6.denetimepc-device-key-view-only-activation.v3"
     status = "configuration-written-service-running-awaiting-broker-proof"
     generatedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
     hostname = $env:COMPUTERNAME
@@ -318,6 +320,7 @@ try {
       brokerAddr = $ExpectedBrokerAddr
       tlsServerName = $ExpectedTlsServerName
       operationsEnabled = $true
+      constrainedPtyPilotAutoConsentEnabled = $false
       deviceKeySessionEnabled = $true
       viewOnlyEnabled = $true
       attendedConsentEnabled = $true
@@ -344,6 +347,7 @@ try {
         "on-disk TPM device certificate claims the expected hostname and broker client CA issuer",
         "TPM reports present and ready",
         "pinned test permit trust anchor and attended VIEW_ONLY configuration were written",
+        "CONSTRAINED_PTY pilot auto-consent was disabled",
         "EndpointAgent returned to Running"
       )
       doesNotProve = @(
