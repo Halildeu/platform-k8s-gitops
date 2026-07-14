@@ -69,6 +69,15 @@ spec:
         - .spec.data[].remoteRef.decodingStrategy
         - .spec.data[].remoteRef.metadataPolicy
         - .spec.data[].remoteRef.nullBytePolicy
+    # The notification ExternalSecret is the only live object observed with
+    # an ESO controller finalizer that survives the general diff normalization.
+    # Ignore that runtime lifecycle field on this exact resource only; its
+    # target/data/store spec remains fully GitOps-authoritative.
+    - group: external-secrets.io
+      kind: ExternalSecret
+      name: notification-orchestrator-secrets
+      jsonPointers:
+        - /metadata/finalizers
   # 2026-05-10: D17 scale-to-zero ignoreDifferences DEPRECATED.
   # HARD RULE — TEST Cluster Scale-to-Zero YASAK (kullanıcı 2026-05-10
   # kararı): multi-Claude paralel session geliştirme modelinde scale-down
