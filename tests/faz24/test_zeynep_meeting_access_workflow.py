@@ -160,6 +160,11 @@ def test_provisioner_queries_two_independent_subject_anchors():
         'MAIL_CORROBORATING_SUBJECT="Platform Ai- Meeting Intelligence"' in text
     )
     assert text.count('read_mail_anchor "${MAIL_') == 2
+    assert (
+        'https://graph.microsoft.com/v1.0/users/${MAILBOX}/mailFolders/inbox/messages'
+        in text
+    )
+    assert 'https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages' not in text
     assert '--data-urlencode "\\$filter=subject eq' in text
     assert '--arg primary_subject "${MAIL_PRIMARY_SUBJECT}"' in text
     assert '--arg corroborating_subject "${MAIL_CORROBORATING_SUBJECT}"' in text
