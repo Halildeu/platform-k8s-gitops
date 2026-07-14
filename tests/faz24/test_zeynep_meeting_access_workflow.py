@@ -74,11 +74,21 @@ def _mail_response(subject: str, *senders: str, next_link: bool = False) -> dict
     return response
 
 
-def test_mail_anchor_requires_same_unique_internal_sender(tmp_path):
+def test_mail_anchor_requires_one_shared_internal_sender(tmp_path):
     proc = _resolve_mail_anchor(
         tmp_path,
-        _mail_response(PRIMARY_SUBJECT, "PERSON@ACIK.COM", "person@acik.com"),
-        _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        _mail_response(
+            PRIMARY_SUBJECT,
+            "PERSON@ACIK.COM",
+            "other-primary@acik.com",
+            "external@example.com",
+        ),
+        _mail_response(
+            CORROBORATING_SUBJECT,
+            "person@acik.com",
+            "other-corroborating@acik.com",
+            "partner@example.com",
+        ),
     )
 
     assert proc.returncode == 0, proc.stderr
@@ -93,8 +103,12 @@ def test_mail_anchor_requires_same_unique_internal_sender(tmp_path):
             _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
         ),
         (
-            _mail_response(PRIMARY_SUBJECT, "person@acik.com", "other@acik.com"),
-            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+            _mail_response(
+                PRIMARY_SUBJECT, "person@acik.com", "other@acik.com"
+            ),
+            _mail_response(
+                CORROBORATING_SUBJECT, "person@acik.com", "other@acik.com"
+            ),
         ),
         (
             _mail_response(PRIMARY_SUBJECT, "person@acik.com"),
@@ -115,12 +129,6 @@ def test_mail_anchor_requires_same_unique_internal_sender(tmp_path):
             ),
         ),
         (
-            _mail_response(
-                PRIMARY_SUBJECT, "person@acik.com", "external@example.com"
-            ),
-            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
-        ),
-        (
             {
                 "value": [
                     {
@@ -135,6 +143,10 @@ def test_mail_anchor_requires_same_unique_internal_sender(tmp_path):
                     },
                 ]
             },
+            _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
+        ),
+        (
+            _mail_response(PRIMARY_SUBJECT, "person@acik.com", "not-an-email"),
             _mail_response(CORROBORATING_SUBJECT, "person@acik.com"),
         ),
         (
