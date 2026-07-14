@@ -1,8 +1,8 @@
 # Dedicated ClusterIP Service for the operator VIEW_ONLY viewer (HTTP 8096).
 #
 # NEVER NodePort — keeping this ClusterIP keeps 8096 off every node IP. The 9444
-# mTLS gRPC bridge stays a SEPARATE Service (NodePort 31944, patched by
-# ../endpoint-admin-remote-bridge/service-patch.yaml); this manifest does not touch it.
+# mTLS gRPC bridge stays a SEPARATE Service (NodePort 31945 in the device-key
+# activation); this manifest does not touch it.
 # Reachability is further constrained to api-gateway pods by
 # viewer-from-api-gateway-netpol.yaml.
 apiVersion: v1
@@ -10,12 +10,12 @@ kind: Service
 metadata:
   name: endpoint-admin-remote-bridge-viewer
   labels:
-    app.kubernetes.io/name: endpoint-admin-remote-bridge
-    app.kubernetes.io/part-of: remote-bridge
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
+    app.kubernetes.io/part-of: remote-bridge-device-key
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/name: endpoint-admin-remote-bridge-device-key
   ports:
     - name: http
       port: 8096

@@ -8,7 +8,8 @@
 
 ## What this overlay does
 
-Superset of `../endpoint-admin-remote-bridge` (broker activation) **plus** the
+Superset of `../endpoint-admin-remote-bridge-device-key-live` (the public 443 SNI
+broker activation) **plus** the
 bridge-side VIEW_ONLY operator-viewer HTTP exposure:
 
 | Surface | Manifest | Effect |
@@ -17,7 +18,7 @@ bridge-side VIEW_ONLY operator-viewer HTTP exposure:
 | http containerPort 8096 | `deployment-http-port-patch.yaml` | advertises 8096 (base advertises only 9444+8081) |
 | Dedicated ClusterIP 8096 | `viewer-clusterip-service.yaml` | `endpoint-admin-remote-bridge-viewer` ClusterIP — **never NodePort** |
 | Ingress 8096 (bridge ← api-gateway) | `viewer-from-api-gateway-netpol.yaml` | additive NetworkPolicy, narrow `app.kubernetes.io/name: api-gateway` podSelector |
-| Egress 8096 (api-gateway → bridge) | `viewer-api-gateway-egress-netpol.yaml` | additive NetworkPolicy — REQUIRED companion (ns default-denies egress; intra-ns allow is `part-of=platform`→`platform` only, bridge is `part-of=remote-bridge`) |
+| Egress 8096 (api-gateway → bridge) | `viewer-api-gateway-egress-netpol.yaml` | additive NetworkPolicy — REQUIRED companion (ns default-denies egress; intra-ns allow is `part-of=platform`→`platform` only, bridge is `part-of=remote-bridge-device-key`) |
 
 It does **not** include the api-gateway route (route 28 must merge into the single
 existing `api-gateway-config` ConfigMap; it stays a runtime `kubectl patch` per the
@@ -34,7 +35,7 @@ runbook §3 step 4b to avoid clobbering the overlay's `KEYCLOAK_*` values). It d
 ## Apply (bounded pilot, test env)
 
 Use `.github/workflows/apply-view-only-viewer-pilot-enable.yml` with
-`action=apply` and a 5-30 minute TTL. Direct `kubectl apply -k` is break-glass
+`action=apply` and a 5-120 minute TTL. Direct `kubectl apply -k` is break-glass
 only because it omits the signed-marker verifier, protected authorization receipt,
 absolute-expiry watchdog and automatic compensating rollback.
 
@@ -46,7 +47,7 @@ fail-closed drill).
 ## Rollback
 
 - **Kill viewer now:** set `REMOTE_BRIDGE_VIEWER_ENABLED=false` (keep
-  `REMOTE_BRIDGE_ENABLED=true`) + `rollout restart deploy/endpoint-admin-remote-bridge`.
+  `REMOTE_BRIDGE_ENABLED=true`) + `rollout restart deploy/endpoint-admin-remote-bridge-device-key`.
 - **Restore closed HTTP surface:** withdraw the api-gateway route 28 patch +
   `rollout restart deploy/api-gateway`. Then delete the **three viewer-only
   resources by name** (NEVER `kubectl delete -k` this overlay — it is a SUPERSET of
@@ -56,9 +57,9 @@ fail-closed drill).
   kubectl --context k3d-test -n platform-test delete networkpolicy eab-bridge-viewer-allow-ingress-8096-from-api-gateway
   kubectl --context k3d-test -n platform-test delete networkpolicy eab-api-gateway-allow-egress-8096-to-bridge-viewer
   ```
-  Then re-apply the **broker-only** overlay (`apply -k .../endpoint-admin-remote-bridge`)
+  Then re-apply the **broker-only** overlay (`apply -k .../endpoint-admin-remote-bridge-device-key-live`)
   to revert the 8096 containerPort + viewer ConfigMap flags (3-way merge drops
-  them) + `rollout restart deploy/endpoint-admin-remote-bridge`. Re-prove: 8096 not
+  them) + `rollout restart deploy/endpoint-admin-remote-bridge-device-key`. Re-prove: 8096 not
   published, no api-gateway↔8096 allow (both directions), 9444 NodePort intact. The
   broker (9444) + agent stream always survive (`REMOTE_BRIDGE_ENABLED` stays true).
 

@@ -39,11 +39,15 @@ operation to the endpoint.
 The viewer is **not** served by the primary `endpoint-admin-service`. The broker
 fan-out registry (#770) is in-process; the operator SSE controller (#778)
 subscribes to that same in-JVM registry, so both live on the **isolated broker
-Deployment** activated by
-[`kustomize/overlays/test/activation/endpoint-admin-remote-bridge`](../../kustomize/overlays/test/activation/endpoint-admin-remote-bridge/):
+Deployment** that owns the public 443 SNI product route, activated by
+[`kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live`](../../kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live/):
 
-- Deployment: `endpoint-admin-remote-bridge` (same image as endpoint-admin-service, `REMOTE_BRIDGE_ENABLED=true`, replicas=1).
-- Config: ConfigMap `endpoint-admin-remote-bridge-config`.
+- Deployment: `endpoint-admin-remote-bridge-device-key` (same image as endpoint-admin-service, `REMOTE_BRIDGE_ENABLED=true`, replicas=1).
+- Config: ConfigMap `endpoint-admin-remote-bridge-config-device-key`.
+- Public agent route: `remote-bridge-mtls.testai.acik.com:443` ->
+  `endpoint-admin-remote-bridge-device-key:9444`. The viewer Service MUST select
+  this exact Deployment because fan-out state is in-process and cannot cross to
+  the legacy broker pod.
 - The primary `endpoint-admin-service` keeps the bridge **OFF**; it never gets `remote-bridge.viewer.enabled`.
 
 **Port reality (`base/apps/endpoint-admin-remote-bridge`, control #5):** the bridge
@@ -53,7 +57,7 @@ bound in-pod but NOT declared as a containerPort, NOT published by the Service,
 and is denied by the activation netpol** (`netpol.yaml` adds no `8096` allow; the
 `9444` ingress rule is explicitly "Never api-gateway"). The activation
 `service-patch.yaml` makes the Service a **`NodePort`** publishing only `9444`
-(nodePort 31944, L4 fallback). Therefore exposing the operator viewer over `8096`
+(nodePort 31945, L4 fallback). Therefore exposing the operator viewer over `8096`
 is itself part of the owner-approved change (§3 step 1) — and it must use a
 **separate `ClusterIP` Service**, never a new port on the NodePort Service (that
 would allocate a node-wide NodePort for 8096 and blow the "api-gateway only"
@@ -88,7 +92,7 @@ This is the owner decision. Do not flip the flag until every box holds:
 ## 3. Enable steps (TEST/pilot env; each: command → expected → fail signal)
 
 > Credential/security mutations are TEST-autonomous / PROD-owner-gated. Run in the
-> pilot (test) env, against the **`endpoint-admin-remote-bridge`** Deployment only.
+> pilot (test) env, against the **`endpoint-admin-remote-bridge-device-key`** Deployment only.
 
 ### 3.0 Preferred path — audited workflow
 
@@ -112,7 +116,7 @@ gh workflow run apply-view-only-viewer-pilot-enable.yml \
   --ref main \
   -f action=apply \
   -f confirm=APPLY_VIEW_ONLY_VIEWER_PILOT_ENABLE \
-  -f pilot_ttl_minutes=10
+  -f pilot_ttl_minutes=120
 ```
 
 The `apply` run waits for the protected Environment reviewer, verifies the signed
@@ -126,7 +130,11 @@ gateway route binding, and absence of `OVERLAY_MUST_OVERRIDE` in the gateway's
 Keycloak environment. It does not mint the §4.2 marker and does not prove the
 product-channel VIEW_ONLY session by itself. The TTL starts when the watchdog is
 installed, so setup time reduces the usable pilot window rather than extending
-the security window. Allowed TTL is 5-30 minutes. The watchdog has narrow RBAC:
+the security window. Allowed TTL is 5-120 minutes. The longer window exists only
+to collect the isolated negative and five termination cases under one
+content-addressed protected authorization. The requested watchdog expiry must
+not exceed the signed protected-authorization `expiresAt`; otherwise activation
+fails closed before exposing the viewer. The watchdog has narrow RBAC:
 it can disable only the viewer flag/route, delete only the three viewer-only
 network resources, and restart only the bridge/gateway Deployments. It cannot
 disable or mutate the 9444 broker Service. If the Actions runner dies, the
@@ -174,8 +182,8 @@ The manual steps below remain the break-glass/fallback form of the same contract
      ```bash
      kubectl --context k3d-test -n platform-test apply -k \
        kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
-     kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge
-     kubectl --context k3d-test -n platform-test rollout status  deploy/endpoint-admin-remote-bridge --timeout=180s
+     kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge-device-key
+     kubectl --context k3d-test -n platform-test rollout status deploy/endpoint-admin-remote-bridge-device-key --timeout=180s
      ```
    - Expected: pod Ready (probes on `8081`); broker still bound on 9444; the
      `RemoteBridgeViewerController` bean present; the viewer ClusterIP resolvable.
@@ -400,7 +408,7 @@ the broker fan-out and the agent stream, not just the viewer).
 **Mode A — kill the viewer NOW** (viewer bug / stop observation immediately):
 ```bash
 # set REMOTE_BRIDGE_VIEWER_ENABLED=false in the activation ConfigMap, then:
-kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge
+kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge-device-key
 ```
 - Expected: the `@ConditionalOnProperty` controller is gone → the view route
   returns 404 at the service; any live SSE stream ends. Broker (9444) + audit stay up.
@@ -423,8 +431,8 @@ revocation — mandatory, not optional):
   ConfigMap flags (3-way merge drops them), then restart:
   ```bash
   kubectl --context k3d-test -n platform-test apply -k \
-    kustomize/overlays/test/activation/endpoint-admin-remote-bridge
-  kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge
+    kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
+  kubectl --context k3d-test -n platform-test rollout restart deploy/endpoint-admin-remote-bridge-device-key
   ```
 - Re-render + prove the §1.1 default posture is restored: route 28 gone from the
   api-gateway env, 8096 not published, no api-gateway→8096 allow, 9444 NodePort
@@ -439,6 +447,6 @@ revocation — mandatory, not optional):
 - Product acceptance follow-up: platform-k8s-gitops #2373; legal follow-up #2374.
 - Narrow completion contract: [RB-faz22.6-autonomous-completion-contract.md](./RB-faz22.6-autonomous-completion-contract.md) §4.2 (historical #1580 engineering/KVKK split; already accepted for `F22_6_COMPLETION`).
 - Audit enforcement: `scripts/faz22-remote-ops/faz22-6-completion-audit.sh` (`check_view_only_engineering_gate`, legacy fail-safe).
-- Activation overlay: [`kustomize/overlays/test/activation/endpoint-admin-remote-bridge`](../../kustomize/overlays/test/activation/endpoint-admin-remote-bridge/) (`OWNER-APPROVAL.md`, control #5/#6/#11).
+- Activation overlay: [`kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live`](../../kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live/) plus the owner-gated viewer superset (`OWNER-APPROVAL.md`, control #5/#6/#11).
 - ADRs: ADR-0034 §13 / D10 (owner-gated operator fan-out), ADR-0044 (recording-OFF + KVKK non-blocking split).
 - Product evidence verifier: `scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py`.

@@ -69,7 +69,7 @@ def negative_payload():
             "observedAt": "2026-07-14T00:05:00Z",
             "binding": (
                 {**case_binding("0"), "deviceSha256": sha("5")}
-                if name == "wrongDevice" else case_binding("1")
+                if name == "wrongDevice" else case_binding("f")
             ),
             "result": "fail-closed",
             "outcome": VERIFIER.NEGATIVE_CASE_CONTRACT[name].outcome,
@@ -254,8 +254,10 @@ def matrix_attestation_files(evidence_type, document):
                 "counters": {
                     "viewerEndedBefore": ordinal,
                     "viewerEndedAfter": ordinal + 1,
-                    "framesSentAtTrigger": 200 + ordinal,
-                    "framesSentAfterEnd": 200 + ordinal,
+                    "globalFramesSentAtEnd": 200 + ordinal,
+                    "globalFramesSentAfterObservationWindow": 200 + ordinal,
+                    "sessionFramesDeliveredAtEnd": 100 + ordinal,
+                    "observationWindowMillis": 3000,
                 },
                 "terminal": product_signals,
             }
@@ -267,6 +269,7 @@ def matrix_attestation_files(evidence_type, document):
                 "chainVerified": True,
                 "chainSha256": VERIFIER.digest_bytes(f"termination:{case_name}:chain".encode()),
                 "chainCheckedCount": ordinal + 1,
+                "framesDelivered": 100 + ordinal,
                 "verificationSource": "tenant-audit-chain-builder",
             }
             snapshot_raw = canonical_jsonl_line(snapshot)
@@ -930,6 +933,17 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
 
     def test_termination_cases_require_isolated_sessions_and_latency_slo(self):
         children = child_documents()
+        negative = children["negative"]["payload"]
+        for name, case in negative["cases"].items():
+            if name != "wrongDevice":
+                case["binding"]["sessionSha256"] = binding()["sessionSha256"]
+        negative["suiteSha256"] = VERIFIER.digest_json({
+            "authorizationSha256": negative["authorizationSha256"], "cases": negative["cases"],
+        })
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "isolated protected session"):
+            self.validate_matrices(children)
+
+        children = child_documents()
         cases = children["termination"]["payload"]["cases"]
         cases["indicatorLoss"]["binding"]["sessionSha256"] = cases["localAbort"]["binding"]["sessionSha256"]
         payload = children["termination"]["payload"]
@@ -1063,6 +1077,43 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
                     "negative": datetime(2026, 7, 14, 0, 5, tzinfo=timezone.utc),
                     "termination": datetime(2026, 7, 14, 0, 5, tzinfo=timezone.utc),
                 },
+            )
+
+    def test_matrix_collection_window_is_bounded_to_two_hours(self):
+        children = child_documents()
+        pilot_started = datetime(2026, 7, 14, 0, 0, tzinfo=timezone.utc)
+        authorization_expires = datetime(2026, 7, 14, 3, 0, tzinfo=timezone.utc)
+
+        def set_observed_at(value):
+            for payload in (children["negative"]["payload"], children["termination"]["payload"]):
+                for case in payload["cases"].values():
+                    case["observedAt"] = value
+                payload["suiteSha256"] = VERIFIER.digest_json({
+                    "authorizationSha256": payload["authorizationSha256"],
+                    "cases": payload["cases"],
+                })
+
+        set_observed_at("2026-07-14T01:30:00Z")
+        observed = {
+            "negative": datetime(2026, 7, 14, 1, 30, tzinfo=timezone.utc),
+            "termination": datetime(2026, 7, 14, 1, 30, tzinfo=timezone.utc),
+        }
+        VERIFIER.validate_negative_and_termination(
+            children["negative"]["payload"], children["termination"]["payload"],
+            children["operator"]["payload"], binding(), pilot_started,
+            authorization_expires, observed,
+        )
+
+        set_observed_at("2026-07-14T02:01:00Z")
+        observed = {
+            "negative": datetime(2026, 7, 14, 2, 1, tzinfo=timezone.utc),
+            "termination": datetime(2026, 7, 14, 2, 1, tzinfo=timezone.utc),
+        }
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "authorized matrix window"):
+            VERIFIER.validate_negative_and_termination(
+                children["negative"]["payload"], children["termination"]["payload"],
+                children["operator"]["payload"], binding(), pilot_started,
+                authorization_expires, observed,
             )
 
     def test_negative_case_name_cannot_be_relabelled_with_another_outcome(self):

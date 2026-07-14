@@ -17,7 +17,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
-    resourceNames: ["endpoint-admin-remote-bridge-config", "api-gateway-config"]
+    resourceNames: ["endpoint-admin-remote-bridge-config-device-key", "api-gateway-config"]
     verbs: ["get", "patch"]
   - apiGroups: [""]
     resources: ["services"]
@@ -25,7 +25,7 @@ rules:
     verbs: ["get", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    resourceNames: ["endpoint-admin-remote-bridge", "api-gateway"]
+    resourceNames: ["endpoint-admin-remote-bridge-device-key", "api-gateway"]
     verbs: ["get", "patch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
@@ -149,7 +149,7 @@ spec:
               }
 
               ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-              request PATCH "/api/v1/namespaces/$namespace/configmaps/endpoint-admin-remote-bridge-config" \
+              request PATCH "/api/v1/namespaces/$namespace/configmaps/endpoint-admin-remote-bridge-config-device-key" \
                 application/merge-patch+json '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":"false"}}' 200
               request PATCH "/api/v1/namespaces/$namespace/configmaps/api-gateway-config" \
                 application/merge-patch+json '{"data":{"SPRING_CLOUD_GATEWAY_ROUTES_28_ID":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_URI":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0":null}}' 200
@@ -159,7 +159,7 @@ spec:
                 application/json '' 200,202,404
               request DELETE "/apis/networking.k8s.io/v1/namespaces/$namespace/networkpolicies/eab-api-gateway-allow-egress-8096-to-bridge-viewer" \
                 application/json '' 200,202,404
-              request PATCH "/apis/apps/v1/namespaces/$namespace/deployments/endpoint-admin-remote-bridge" \
+              request PATCH "/apis/apps/v1/namespaces/$namespace/deployments/endpoint-admin-remote-bridge-device-key" \
                 application/merge-patch+json "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"faz22.6.acik.com/watchdog-restarted-at\":\"$ts\"}}}}}" 200
               request PATCH "/apis/apps/v1/namespaces/$namespace/deployments/api-gateway" \
                 application/merge-patch+json "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"faz22.6.acik.com/watchdog-restarted-at\":\"$ts\"}}}}}" 200

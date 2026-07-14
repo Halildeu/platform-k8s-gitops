@@ -1,0 +1,87 @@
+name: Faz 22.6 VIEW_ONLY viewer termination evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      local_abort_run_id:
+        description: "Successful localAbort collector run ID"
+        required: true
+        type: string
+      kill_or_revoke_run_id:
+        description: "Successful killOrRevoke collector run ID"
+        required: true
+        type: string
+      ttl_expiry_run_id:
+        description: "Successful ttlExpiry collector run ID"
+        required: true
+        type: string
+      heartbeat_loss_run_id:
+        description: "Successful heartbeatLoss collector run ID"
+        required: true
+        type: string
+      indicator_loss_run_id:
+        description: "Successful indicatorLoss collector run ID"
+        required: true
+        type: string
+      confirm:
+        description: "Required literal: PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_TERMINATION_EVIDENCE"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: faz22-6-view-only-viewer-termination-evidence
+  cancel-in-progress: false
+
+jobs:
+  termination-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate dispatch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          COLLECTOR_RUN_IDS: >-
+            ${{ inputs.local_abort_run_id }} ${{ inputs.kill_or_revoke_run_id }}
+            ${{ inputs.ttl_expiry_run_id }} ${{ inputs.heartbeat_loss_run_id }}
+            ${{ inputs.indicator_loss_run_id }}
+        run: |
+          set -euo pipefail
+          [ "$CONFIRM" = "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_TERMINATION_EVIDENCE" ]
+          read -r -a run_ids <<< "$COLLECTOR_RUN_IDS"
+          for run_id in "${run_ids[@]}"; do
+            printf '%s' "$run_id" | grep -Eq '^[1-9][0-9]{5,19}$'
+          done
+          test "$(printf '%s\n' "${run_ids[@]}" | sort -u | wc -l | tr -d ' ')" = 5
+      - name: Checkout producer revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Install strict schema validator
+        run: python3 -m pip install --quiet jsonschema==4.25.1
+      - name: Produce independently verified termination child
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/faz22-viewer-termination-source"
+          python3 scripts/faz22-remote-ops/produce-view-only-viewer-matrix-evidence.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --termination-case-run "localAbort=${{ inputs.local_abort_run_id }}" \
+            --termination-case-run "killOrRevoke=${{ inputs.kill_or_revoke_run_id }}" \
+            --termination-case-run "ttlExpiry=${{ inputs.ttl_expiry_run_id }}" \
+            --termination-case-run "heartbeatLoss=${{ inputs.heartbeat_loss_run_id }}" \
+            --termination-case-run "indicatorLoss=${{ inputs.indicator_loss_run_id }}" \
+            --head-sha "$GITHUB_SHA" --evidence-type termination --output-dir "$out"
+          expected="$(( 1 + 5 + 2 ))"
+          test "$(find "$out" -type f | wc -l | tr -d ' ')" = "$expected"
+          find "$out" -type f -print0 | sort -z | xargs -0 sha256sum >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload exact termination source evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-6-view-only-viewer-termination-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-viewer-termination-source/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 30

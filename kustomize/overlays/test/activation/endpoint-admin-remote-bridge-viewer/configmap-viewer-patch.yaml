@@ -1,8 +1,8 @@
 # Viewer enable patch — Faz 22.6 #1580 VIEW_ONLY.
 #
-# Strategic-merge ADDS two keys to endpoint-admin-remote-bridge-config (produced by
-# the broker activation overlay). Does NOT touch REMOTE_BRIDGE_ENABLED (the broker
-# gate, set by ../endpoint-admin-remote-bridge/patch-activate.yaml) or
+# Strategic-merge ADDS two keys to endpoint-admin-remote-bridge-config-device-key
+# (produced by the public 443 SNI broker overlay). Does NOT touch
+# REMOTE_BRIDGE_ENABLED or
 # REMOTE_BRIDGE_OPERATOR_REST_ENABLED (already true in the broker config).
 #
 #   - REMOTE_BRIDGE_VIEWER_ENABLED          → @ConditionalOnProperty gate for the
@@ -12,6 +12,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  # Kustomize patches by the original resource id; the child nameSuffix then
+  # renders this as endpoint-admin-remote-bridge-config-device-key.
   name: endpoint-admin-remote-bridge-config
 data:
   REMOTE_BRIDGE_VIEWER_ENABLED: "true"
