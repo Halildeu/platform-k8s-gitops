@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -152,6 +153,50 @@ class BackendPromotionContractTests(unittest.TestCase):
             'steps.evidence_contract.outputs.artifact_revision',
             self.verify,
         )
+
+    def test_terminal_runtime_key_contract_matches_real_jq_sort_order(self):
+        matches = list(
+            re.finditer(
+                r'keys == \[(?P<keys>.*?)\]\s+and\s+'
+                r'\.schemaVersion == "testai-backend-runtime-verification-v1"',
+                self.verify,
+                re.DOTALL,
+            )
+        )
+        self.assertEqual(1, len(matches))
+        match = matches[0]
+        workflow_keys = re.findall(
+            r'"([A-Za-z_][A-Za-z0-9_]*)"',
+            match.group("keys"),
+        )
+        expected_fields = {
+            "authGate",
+            "expectedDigests",
+            "failedOrLastGate",
+            "mapFenceAfterPassed",
+            "mapFenceBeforePassed",
+            "publicEntry",
+            "schemaVersion",
+            "verdict",
+            "verificationMode",
+            "verifierMutationPerformed",
+        }
+        self.assertEqual(expected_fields, set(workflow_keys))
+        self.assertEqual(len(expected_fields), len(workflow_keys))
+
+        scrambled_keys = list(reversed(sorted(expected_fields)))
+        self.assertNotEqual(scrambled_keys, sorted(expected_fields))
+        report = {key: None for key in scrambled_keys}
+        result = subprocess.run(
+            ["jq", "-c", "keys"],
+            input=json.dumps(report),
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+        jq_keys = json.loads(result.stdout)
+        self.assertEqual(sorted(expected_fields), jq_keys)
+        self.assertEqual(workflow_keys, jq_keys)
 
     def test_p5_token_form_preserves_exact_password_without_trailing_newline(self):
         source_start = self.runtime.index("import os\nimport sys\nimport urllib.parse\n")
