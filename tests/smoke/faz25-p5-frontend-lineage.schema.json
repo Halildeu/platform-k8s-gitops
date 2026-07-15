@@ -62,7 +62,7 @@
         "desiredReplicas": { "type": "integer", "minimum": 1 },
         "image": {
           "type": "string",
-          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-7c8cef6@sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38$"
+          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-7a764fe@sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e$"
         }
       }
     },
@@ -93,7 +93,7 @@
           "minItems": 1,
           "items": {
             "type": "string",
-            "pattern": "^.*@sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38$"
+            "pattern": "^.*@sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e$"
           }
         }
       }
@@ -115,30 +115,30 @@
         "slsaProvenanceDigest"
       ],
       "properties": {
-        "sourceSha": { "const": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a" },
+        "sourceSha": { "const": "7a764fe91deed655a83f44af7bc15d97481ee29d" },
         "expectedDigest": {
-          "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+          "const": "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e"
         },
         "observedDigest": {
-          "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+          "const": "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e"
         },
-        "buildRunId": { "const": "29328643364" },
+        "buildRunId": { "const": "29444176456" },
         "buildRunUrl": {
-          "const": "https://github.com/Halildeu/platform-web/actions/runs/29328643364"
+          "const": "https://github.com/Halildeu/platform-web/actions/runs/29444176456"
         },
-        "buildArtifactId": { "const": "8309092914" },
+        "buildArtifactId": { "const": "8354811686" },
         "buildArtifactName": {
-          "const": "Halildeu~platform-web~R1TBO1.dockerbuild"
+          "const": "Halildeu~platform-web~M3MVH6.dockerbuild"
         },
         "buildArtifactDigest": {
-          "const": "sha256:4086a69a90e6557aadbd909bb6cbc83e339b7feac9254a8ffbe79f5b19558d6e"
+          "const": "sha256:28efa00e47891ecb5b0f5aa5a58c05c8bcb6a37ccc9b8d4004e649318cc39b4e"
         },
-        "buildArtifactSizeInBytes": { "const": 107153 },
+        "buildArtifactSizeInBytes": { "const": 109522 },
         "buildProvenanceReceiptSha256": {
-          "const": "27c6ecc5812c8793c60d878a3bbeb16dff15a8a4f491ee437d924ce22b0f0dfd"
+          "const": "579fbd6dbca964d9bbc18305025cb070c7583a476fdcf54390e88594882a4ccf"
         },
         "slsaProvenanceDigest": {
-          "const": "sha256:97002a95d4ee8d5027d440bfb06094a9e0fc40dea55d824e5e127e7f5ebf8522"
+          "const": "sha256:0ad8176f5411ebbad7e791f39faebfdc4782b5b2a367cb05c778a8b1278dbbf1"
         }
       }
     }

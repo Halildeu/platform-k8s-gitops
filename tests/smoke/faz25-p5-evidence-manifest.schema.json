@@ -65,11 +65,11 @@
       "additionalProperties": false,
       "required": ["sourceSha", "frontendDigest", "buildRunId"],
       "properties": {
-        "sourceSha": { "const": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a" },
+        "sourceSha": { "const": "7a764fe91deed655a83f44af7bc15d97481ee29d" },
         "frontendDigest": {
-          "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+          "const": "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e"
         },
-        "buildRunId": { "const": "29328643364" }
+        "buildRunId": { "const": "29444176456" }
       }
     },
     "children": {
@@ -87,7 +87,7 @@
           "sha256": { "$ref": "#/definitions/sha256" },
           "schemaVersion": {
             "enum": [
-              "faz25-p5-authenticated-product-surface-v2",
+              "faz25-p5-authenticated-product-surface-v3",
               "faz25-p5-frontend-lineage-v1"
             ]
           }
@@ -97,7 +97,7 @@
             "properties": {
               "kind": { "const": "browser" },
               "path": { "const": "browser-report.json" },
-              "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v2" }
+              "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v3" }
             }
           },
           {
