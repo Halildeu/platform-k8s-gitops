@@ -265,6 +265,80 @@ jobs:
             and .payload.renderAckAcceptedCount == .payload.renderAckAttemptedCount
           ' "$EVIDENCE_DIR/browser.json" >/dev/null
 
+      - name: Stage redacted collector diagnostic
+        id: stage-diagnostic
+        if: ${{ always() }}
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-browser-collector
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          diagnostic_dir="$RUNNER_TEMP/faz22-viewer-collector-diagnostic"
+          mkdir -p "$diagnostic_dir"
+          summary_path="$EVIDENCE_DIR/summary.json"
+          operation_path="$EVIDENCE_DIR/operation.body"
+          if [ ! -s "$summary_path" ]; then
+            summary_path="$RUNNER_TEMP/faz22-viewer-empty-summary.json"
+            printf '{}\n' > "$summary_path"
+          fi
+          if [ ! -s "$operation_path" ]; then
+            operation_path="$RUNNER_TEMP/faz22-viewer-empty-operation.json"
+            printf '{}\n' > "$operation_path"
+          fi
+          jq -cS -n \
+            --arg sourceRevision "$SOURCE_REVISION" \
+            --slurpfile summary "$summary_path" \
+            --slurpfile operation "$operation_path" \
+            '($summary[0] // {}) as $summary
+            | ($operation[0] // {}) as $operation
+            | {
+              schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v1",
+              sourceRevision:$sourceRevision,
+              status:($summary.status // "collector-did-not-write-summary"),
+              failureReason:($summary.reason // null),
+              consentWait:($summary.consentWait // null),
+              operationHttp:($summary.http.operation // null),
+              operationKind:($operation.kind // null),
+              transportPushed:($operation.transportPushed // false),
+              deny:(if $operation.deny == null then null else {
+                reason:($operation.deny.reason // "denied"),
+                policyGate:($operation.deny.policyGate // null),
+                policyDetail:($operation.deny.policyDetail // null)
+              } end)
+            }' > "$diagnostic_dir/collector-diagnostic.json"
+          jq -e '
+            .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v1"
+            and (.sourceRevision | test("^[a-f0-9]{40}$"))
+            and (.status | test("^[A-Za-z0-9:._-]{1,64}$"))
+            and (.failureReason == null or (.failureReason | test("^[A-Za-z0-9:._ -]{1,160}$")))
+            and (.consentWait == null or (.consentWait | test("^[a-z-]{1,32}$")))
+            and (.operationHttp == null or (.operationHttp | test("^[0-9]{3}$")))
+            and (.operationKind == null or (.operationKind | test("^[A-Z_]{1,32}$")))
+            and (.transportPushed | type == "boolean")
+            and (.deny == null or (
+              (.deny.reason | test("^[A-Za-z0-9:_-]{1,64}$"))
+              and (.deny.policyGate == null or (.deny.policyGate | test("^[A-Z_]{1,32}$")))
+              and (.deny.policyDetail == null or (.deny.policyDetail | test("^[a-z0-9-]{1,64}$")))
+            ))
+          ' "$diagnostic_dir/collector-diagnostic.json" >/dev/null
+          if grep -Eiq 'bearer|BEGIN .*PRIVATE KEY|sessionId|deviceId|operatorId|decisionId|operationId|canonicalPayload' \
+              "$diagnostic_dir/collector-diagnostic.json"; then
+            echo "::error::collector diagnostic contains a forbidden identity or secret-bearing field"
+            exit 1
+          fi
+          sha256sum "$diagnostic_dir/collector-diagnostic.json" > "$diagnostic_dir/SHA256SUMS"
+          (cd "$diagnostic_dir" && sha256sum -c SHA256SUMS)
+
+      - name: Upload redacted collector diagnostic
+        if: ${{ always() && steps.stage-diagnostic.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-6-view-only-viewer-collector-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-viewer-collector-diagnostic/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 2
+
       - name: Stage exact redacted source artifact
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-browser-collector
