@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +17,24 @@ SPEC.loader.exec_module(PRODUCER)
 
 
 class ViewerOperatorEvidenceProducerTest(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.original_owner_policy = PRODUCER.VERIFIER.OWNER_POLICY
+        self.original_revocation_ledger = PRODUCER.VERIFIER.REVOCATION_LEDGER
+        PRODUCER.VERIFIER.OWNER_POLICY = Path(self.temp_dir.name) / "owner-policy.json"
+        PRODUCER.VERIFIER.REVOCATION_LEDGER = Path(self.temp_dir.name) / "revocations.json"
+        PRODUCER.VERIFIER.OWNER_POLICY.write_bytes(
+            fixtures.encode_json(fixtures.owner_policy_fixture())
+        )
+        PRODUCER.VERIFIER.REVOCATION_LEDGER.write_bytes(
+            fixtures.encode_json(fixtures.revocation_fixture())
+        )
+
+    def tearDown(self):
+        PRODUCER.VERIFIER.OWNER_POLICY = self.original_owner_policy
+        PRODUCER.VERIFIER.REVOCATION_LEDGER = self.original_revocation_ledger
+        self.temp_dir.cleanup()
+
     def test_produces_verified_operator_child(self):
         child = PRODUCER.produce(
             fixtures.FakeClient(),

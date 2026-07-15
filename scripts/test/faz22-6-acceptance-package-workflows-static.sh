@@ -35,6 +35,11 @@ VIEWER_PRODUCT_ROOT_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-eviden
 VIEWER_PRODUCT_CHILD_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
 VIEWER_APPLY_WORKFLOW="$ROOT/.github/workflows/apply-view-only-viewer-pilot-enable.yml"
 VIEWER_WATCHDOG="$ROOT/scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
+VIEWER_AUTH_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py"
+VIEWER_AUTH_VERIFIER="$ROOT/scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py"
+VIEWER_AUTH_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_pilot_authorization_common.py"
+VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
+VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 
 future_date_utc() {
   local days="$1"
@@ -76,7 +81,9 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_TERMINATION_WORKFLOW" "$VIEWER_TERMINATION_COLLECTOR" \
   "$VIEWER_TERMINATION_AUDIT" "$VIEWER_MATRIX_PRODUCER" \
   "$VIEWER_PRODUCT_ROOT_SCHEMA" "$VIEWER_PRODUCT_CHILD_SCHEMA" \
-  "$VIEWER_APPLY_WORKFLOW" "$VIEWER_WATCHDOG"; do
+  "$VIEWER_APPLY_WORKFLOW" "$VIEWER_WATCHDOG" \
+  "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
+  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS"; do
   require_file "$path"
 done
 
@@ -86,7 +93,8 @@ python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_OPERATOR_PRODUCER" "$VIEWER_D30_PRODUCER" \
   "$VIEWER_BROKER_PRODUCER" "$VIEWER_AUDIT_PRODUCER" "$VIEWER_AUDIT_BUILDER" \
   "$VIEWER_MATRIX_PRODUCER" "$VIEWER_TERMINATION_AUDIT" \
-  "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER"
+  "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER" \
+  "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON"
 jq -e '.additionalProperties == false' "$VIEWER_PRODUCT_ROOT_SCHEMA" >/dev/null
 jq -e '.additionalProperties == false and (.allOf | length) == 7' "$VIEWER_PRODUCT_CHILD_SCHEMA" >/dev/null
 
@@ -216,11 +224,20 @@ require_grep 'faz22-6-view-only-viewer-termination-evidence-${{ github.run_id }}
 
 require_grep "environment:" "$VIEWER_APPLY_WORKFLOW"
 require_grep "name: faz22-view-only-pilot" "$VIEWER_APPLY_WORKFLOW"
-require_grep "--verify-marker-input" "$VIEWER_APPLY_WORKFLOW"
+require_grep "build-view-only-pilot-owner-authorization.py" "$VIEWER_APPLY_WORKFLOW"
+require_grep "verify-view-only-pilot-authorization-receipt.py" "$VIEWER_APPLY_WORKFLOW"
+require_grep "--triggering-actor" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_OPERATOR_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_DEVICE_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'sha256sum -c SHA256SUMS' "$VIEWER_APPLY_WORKFLOW"
-require_grep 'rm -f "$out/issue-comments.json"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'rm -f "$out/owner-comment.json" "$out/advisory-comment.json"' \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep 'legalClearanceClaimed' "$VIEWER_AUTH_BUILDER"
+require_grep 'providerCryptographicAttestation' "$VIEWER_AUTH_BUILDER"
+require_grep 'canonical_receipt_bytes' "$VIEWER_AUTH_COMMON"
+require_grep 'canonical_receipt_bytes' "$VIEWER_AUTH_BUILDER"
+require_grep 'action=rollback' "$VIEWER_OWNER_POLICY"
+require_grep '"revokedAuthorizationSha256": []' "$VIEWER_REVOCATIONS"
 require_grep "pilot_ttl_minutes must be between 5 and 120" "$VIEWER_APPLY_WORKFLOW"
 require_grep "requested watchdog expiry exceeds the signed protected authorization" \
   "$VIEWER_APPLY_WORKFLOW"
@@ -234,6 +251,10 @@ require_grep "Compensating rollback after failed apply" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'apply -k "${BROKER_ONLY_OVERLAY}"' "$VIEWER_APPLY_WORKFLOW"
 if grep -Eq 'ACK_KVKK_DPIA|ack_kvkk_dpia|ACK_ONE_PERSON_OPERATOR|ACK_CONSENTING_ATTENDED|ACK_OWNER_8096' "$VIEWER_APPLY_WORKFLOW"; then
   echo "typed legal/operator acknowledgement remains in viewer apply workflow" >&2
+  exit 1
+fi
+if grep -Fq -- '--verify-marker-input' "$VIEWER_APPLY_WORKFLOW"; then
+  echo "signed legal-clearance verifier must not gate the bounded TEST apply path" >&2
   exit 1
 fi
 
