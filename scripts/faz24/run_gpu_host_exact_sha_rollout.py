@@ -75,22 +75,64 @@ function Get-TaskMetadata {
     [Parameter(Mandatory = $true)][string]$TaskName,
     [Parameter(Mandatory = $true)][string]$ExpectedScript
   )
+  $metadata = [ordered]@{
+    present = $false
+    state = -1
+    actionCanonical = $false
+    actionCount = 0
+    executeClass = 'missing'
+    scriptPathClass = 'missing'
+    actionArgumentsSha256 = ''
+  }
   try {
     $task = $RootFolder.GetTask($TaskName)
+    $metadata.present = $true
+    $metadata.state = [int]$task.State
+    $metadata.actionCount = [int]$task.Definition.Actions.Count
     $action = $task.Definition.Actions.Item(1)
+    $executeName = [IO.Path]::GetFileName([string]$action.Path).ToLowerInvariant()
     $arguments = [string]$action.Arguments
-    return [ordered]@{
-      present = $true
-      state = [int]$task.State
-      actionCanonical = $arguments.IndexOf($ExpectedScript, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+      $argumentBytes = [Text.Encoding]::UTF8.GetBytes($arguments)
+      $metadata.actionArgumentsSha256 = -join (
+        $sha.ComputeHash($argumentBytes) | ForEach-Object { $_.ToString('x2') }
+      )
+    } finally {
+      $sha.Dispose()
     }
+
+    if ($executeName -eq 'powershell.exe') {
+      $metadata.executeClass = 'windows-powershell'
+    } elseif ($executeName -eq 'pwsh.exe') {
+      $metadata.executeClass = 'powershell-core'
+    } else {
+      $metadata.executeClass = 'other'
+    }
+
+    $legacyScript = $ExpectedScript.Replace(
+      'C:\platform-ai\',
+      'C:\Users\denetimpc\platform-ai\'
+    )
+    if ($arguments.IndexOf($ExpectedScript, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+      $metadata.scriptPathClass = 'canonical-repo'
+    } elseif ($arguments.IndexOf($legacyScript, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+      $metadata.scriptPathClass = 'legacy-user-repo'
+    } else {
+      $metadata.scriptPathClass = 'other'
+    }
+    $metadata.actionCanonical = (
+      $metadata.actionCount -eq 1 -and
+      $metadata.executeClass -eq 'windows-powershell' -and
+      $metadata.scriptPathClass -eq 'canonical-repo'
+    )
   } catch {
-    return [ordered]@{
-      present = $false
-      state = -1
-      actionCanonical = $false
+    if ($metadata.present) {
+      $metadata.executeClass = 'inspection-error'
+      $metadata.scriptPathClass = 'inspection-error'
     }
   }
+  return $metadata
 }
 
 function Test-WebSocketReady {
@@ -187,8 +229,14 @@ $failureClass = 'none'
 $ledger = [ordered]@{ currentCommit = ''; previousCommit = ''; action = ''; lastResult = ''; timestampUtc = '' }
 $taskService = $null
 $taskRoot = $null
-$liveTask = [ordered]@{ present = $false; state = -1; actionCanonical = $false }
-$meetingTask = [ordered]@{ present = $false; state = -1; actionCanonical = $false }
+$liveTask = [ordered]@{
+  present = $false; state = -1; actionCanonical = $false; actionCount = 0
+  executeClass = 'missing'; scriptPathClass = 'missing'; actionArgumentsSha256 = ''
+}
+$meetingTask = [ordered]@{
+  present = $false; state = -1; actionCanonical = $false; actionCount = 0
+  executeClass = 'missing'; scriptPathClass = 'missing'; actionArgumentsSha256 = ''
+}
 
 try {
   if ($TargetCommit -notmatch '^[0-9a-f]{40}$') { throw 'invalid-target-commit' }

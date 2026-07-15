@@ -223,6 +223,8 @@ jobs:
           websocket_ready="false"
           live_status=""
           live_device=""
+          live_action_class="missing/missing"
+          meeting_action_class="missing/missing"
           if [ -f "${EVIDENCE_JSON}" ]; then
             status="$(jq -r '.status // "missing"' "${EVIDENCE_JSON}")"
             failure_class="$(
@@ -239,6 +241,22 @@ jobs:
             live_device="$(
               jq -r '.health.liveStt.device // ""' "${EVIDENCE_JSON}"
             )"
+            live_action_class="$(
+              jq -r '
+                [
+                  .tasks.liveStt.executeClass // "missing",
+                  .tasks.liveStt.scriptPathClass // "missing"
+                ] | join("/")
+              ' "${EVIDENCE_JSON}"
+            )"
+            meeting_action_class="$(
+              jq -r '
+                [
+                  .tasks.meetingAi.executeClass // "missing",
+                  .tasks.meetingAi.scriptPathClass // "missing"
+                ] | join("/")
+              ' "${EVIDENCE_JSON}"
+            )"
           fi
           comment="${RUNNER_TEMP}/faz24-gpu-rollout.md"
           {
@@ -252,6 +270,8 @@ jobs:
               "${ROLLOUT_EXIT_CODE:-missing}" \
               "${VERIFY_EXIT_CODE:-missing}"
             echo "- Failure class: \`${failure_class}\`"
+            printf "%s \`%s\` / \`%s\`\n" '- Task action classes:' \
+              "${live_action_class}" "${meeting_action_class}"
             echo "- Live STT: \`${live_status}\` / \`${live_device}\`"
             echo "- WebSocket ready: \`${websocket_ready}\`"
             artifact="faz24-gpu-rollout-evidence-${GITHUB_RUN_ID}"
