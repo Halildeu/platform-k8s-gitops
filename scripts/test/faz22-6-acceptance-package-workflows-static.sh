@@ -34,6 +34,7 @@ VIEWER_FRAME_FLOW_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer
 VIEWER_PRODUCT_ROOT_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
 VIEWER_PRODUCT_CHILD_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
 VIEWER_APPLY_WORKFLOW="$ROOT/.github/workflows/apply-view-only-viewer-pilot-enable.yml"
+VIEWER_ROLLBACK_CONFIG="$ROOT/scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh"
 VIEWER_WATCHDOG="$ROOT/scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
 VIEWER_AUTH_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py"
 VIEWER_AUTH_VERIFIER="$ROOT/scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py"
@@ -108,14 +109,14 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_TERMINATION_WORKFLOW" "$VIEWER_TERMINATION_COLLECTOR" \
   "$VIEWER_TERMINATION_AUDIT" "$VIEWER_MATRIX_PRODUCER" \
   "$VIEWER_PRODUCT_ROOT_SCHEMA" "$VIEWER_PRODUCT_CHILD_SCHEMA" \
-  "$VIEWER_APPLY_WORKFLOW" "$VIEWER_WATCHDOG" \
+  "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG" "$VIEWER_WATCHDOG" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
   "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS"; do
   require_file "$path"
 done
 
 bash -n "$B1_HELPER" "$VIEW_ONLY_HELPER" "$VIEWER_NEGATIVE_COLLECTOR" \
-  "$VIEWER_TERMINATION_COLLECTOR"
+  "$VIEWER_TERMINATION_COLLECTOR" "$VIEWER_ROLLBACK_CONFIG"
 python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_OPERATOR_PRODUCER" "$VIEWER_D30_PRODUCER" \
   "$VIEWER_BROKER_PRODUCER" "$VIEWER_AUDIT_PRODUCER" "$VIEWER_AUDIT_BUILDER" \
@@ -279,6 +280,17 @@ require_grep "deployments/endpoint-admin-remote-bridge-device-key" "$VIEWER_WATC
 require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORKFLOW"
 require_grep "Compensating rollback after failed apply" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'apply -k "${BROKER_ONLY_OVERLAY}"' "$VIEWER_APPLY_WORKFLOW"
+require_grep "GATEWAY_CONFIGMAP: api-gateway-config" "$VIEWER_APPLY_WORKFLOW"
+require_grep "rollback-view-only-viewer-pilot-config.sh" "$VIEWER_APPLY_WORKFLOW"
+require_grep '"REMOTE_BRIDGE_VIEWER_ENABLED":null' "$VIEWER_ROLLBACK_CONFIG"
+require_grep '"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null' "$VIEWER_ROLLBACK_CONFIG"
+require_grep '"SPRING_CLOUD_GATEWAY_ROUTES_28_ID":null' "$VIEWER_ROLLBACK_CONFIG"
+require_grep 'has("REMOTE_BRIDGE_VIEWER_ENABLED") | not' "$VIEWER_ROLLBACK_CONFIG"
+if grep -Eq '(^|[[:space:]])jq([[:space:]]|$).*del[[:space:]]*\(' \
+  "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG"; then
+  echo "viewer rollback must use merge-patch null deletion, not apply ownership" >&2
+  exit 1
+fi
 if grep -Eq 'ACK_KVKK_DPIA|ack_kvkk_dpia|ACK_ONE_PERSON_OPERATOR|ACK_CONSENTING_ATTENDED|ACK_OWNER_8096' "$VIEWER_APPLY_WORKFLOW"; then
   echo "typed legal/operator acknowledgement remains in viewer apply workflow" >&2
   exit 1
