@@ -4,6 +4,7 @@ import base64
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "faz24"))
 
 import run_gpu_host_exact_sha_rollout as runner  # noqa: E402
+import scan_metadata_evidence as scanner  # noqa: E402
 import verify_gpu_host_exact_sha_rollout_evidence as verifier  # noqa: E402
 
 
@@ -144,6 +146,44 @@ class VerifierContractTests(unittest.TestCase):
     def test_rejects_uppercase_expected_commit(self) -> None:
         with self.assertRaises(verifier.EvidenceError):
             verifier.verify(accepted_evidence(), COMMIT.upper())
+
+
+class EvidenceScannerTests(unittest.TestCase):
+    def test_accepts_metadata_only_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "evidence.json").write_text(
+                json.dumps(accepted_evidence()),
+                encoding="utf-8",
+            )
+            scanner.scan_directory(root)
+
+    def test_rejects_private_key_marker(self) -> None:
+        self._assert_rejected("-----BEGIN OPENSSH PRIVATE KEY-----")
+
+    def test_rejects_bearer_material(self) -> None:
+        self._assert_rejected("Bearer abcdefghijklmnopqrstuvwxyz")
+
+    def test_rejects_jwt_shaped_material(self) -> None:
+        self._assert_rejected(
+            "eyJabcdefghijklm.abcdefghijklmnop.abcdefghijk",
+        )
+
+    def test_rejects_symlink_in_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "safe.txt"
+            target.write_text("metadata only", encoding="utf-8")
+            (root / "linked.txt").symlink_to(target)
+            with self.assertRaises(scanner.EvidenceScanError):
+                scanner.scan_directory(root)
+
+    def _assert_rejected(self, content: str) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unsafe.txt").write_text(content, encoding="utf-8")
+            with self.assertRaises(scanner.EvidenceScanError):
+                scanner.scan_directory(root)
 
 
 if __name__ == "__main__":

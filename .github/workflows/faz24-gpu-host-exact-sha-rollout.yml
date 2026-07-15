@@ -97,7 +97,7 @@ jobs:
       - name: Verify pinned runner SSH material
         run: |
           set -euo pipefail
-          for tool in git jq python3 rg sha256sum ssh ssh-keygen; do
+          for tool in git jq python3 sha256sum ssh ssh-keygen; do
             if ! command -v "${tool}" >/dev/null; then
               echo "::error::required runner tool missing: ${tool}"
               exit 1
@@ -158,14 +158,8 @@ jobs:
             echo '::error::rollout evidence JSON is missing'
             exit 1
           fi
-          secret_pattern='-----BEGIN [A-Z ]+PRIVATE KEY-----'
-          secret_pattern+='|\bbearer\s+[A-Za-z0-9._~+/-]+=*'
-          secret_pattern+='|\beyJ[A-Za-z0-9_-]{12,}'
-          secret_pattern+='\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{8,}\b'
-          if rg -n -i --pcre2 "${secret_pattern}" "${EVIDENCE_DIR}"; then
-            echo '::error::secret-like material found in rollout evidence'
-            exit 1
-          fi
+          python3 gitops/scripts/faz24/scan_metadata_evidence.py \
+            "${EVIDENCE_DIR}"
           cd "${EVIDENCE_DIR}"
           sums_tmp="${RUNNER_TEMP}/faz24-gpu-rollout-${GITHUB_RUN_ID}.sha256"
           find . -type f ! -name SHA256SUMS -print0 \
