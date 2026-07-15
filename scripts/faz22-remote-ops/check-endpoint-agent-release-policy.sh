@@ -41,6 +41,8 @@ jq -e '
 	  and ($root.current_bounded_pilot.endpoint_agent_zip_sha256 | test("^[a-f0-9]{64}$"))
 	  and ($root.current_bounded_pilot.endpoint_agent_max_bytes > 0)
 	  and ($root.current_bounded_pilot.release_manifest_sha256 | test("^[a-f0-9]{64}$"))
+	  and ($root.current_bounded_pilot.remote_bridge_attestation_evidence_sha256 | test("^[a-f0-9]{64}$"))
+	  and ($root.current_bounded_pilot.remote_bridge_attestation_summary_sha256 | test("^[a-f0-9]{64}$"))
 	  and ($root.current_bounded_pilot.install_ps1_sha256 | test("^[a-f0-9]{64}$"))
 	  and ($root.current_bounded_pilot.bootstrap_package_ps1_sha256 | test("^[a-f0-9]{64}$"))
 	  and ($root.current_bounded_pilot.artifact_host_digest | test("^sha256:[a-f0-9]{64}$"))
@@ -100,15 +102,38 @@ fi
 # Set SKIP_MANIFEST_FETCH=1 in environments without outbound HTTPS (e.g. air-gapped).
 if [ "${SKIP_MANIFEST_FETCH:-0}" != "1" ]; then
   need curl
+  manifest_tmp="$(mktemp)"
+  trap 'rm -f "$manifest_tmp"' EXIT
   pinned_sha="$(jq -r '.current_bounded_pilot.release_manifest_sha256' "$POLICY_FILE")"
   manifest_url="$(jq -r '.current_bounded_pilot.github_release_base_url' "$POLICY_FILE")/release-manifest.json"
-  if ! actual_sha="$(curl --max-time 20 -fsSL -H 'Cache-Control: no-cache' "$manifest_url" | sha256_stdin)"; then
+  if ! curl --max-time 20 -fsSL -H 'Cache-Control: no-cache' "$manifest_url" > "$manifest_tmp"; then
     die "release-manifest.json SHA256 fetch failed: url=$manifest_url"
   fi
+  actual_sha="$(sha256_stdin < "$manifest_tmp")"
   if [ "$actual_sha" != "$pinned_sha" ]; then
     die "release-manifest.json SHA256 mismatch: expected=$pinned_sha actual=$actual_sha"
   fi
+  jq -e --slurpfile policy "$POLICY_FILE" '
+    $policy[0].current_bounded_pilot as $p |
+    .release_tag == $p.release_tag
+    and .source_commit == $p.source_commit
+    and .workflow_run_id == $p.workflow_run_id
+    and .release_class == $p.release_class
+    and .previous_release == $p.previous_release
+    and .endpoint_agent_sha256 == $p.endpoint_agent_sha256
+    and .endpoint_agent_zip_sha256 == $p.endpoint_agent_zip_sha256
+    and .signer_thumbprint == $p.signer_thumbprint
+    and .signing_tier == $p.signing_tier
+    and .artifact_host_digest == $p.artifact_host_digest
+    and .artifact_host_image_ref == $p.artifact_host_image_ref
+    and .remote_bridge_attestation.evidence_sha256 == $p.remote_bridge_attestation_evidence_sha256
+    and .remote_bridge_attestation.summary_sha256 == $p.remote_bridge_attestation_summary_sha256
+    and .remote_bridge_attestation.binary_digest == $p.endpoint_agent_sha256
+    and .remote_bridge_attestation.private_key_included == false
+  ' "$manifest_tmp" >/dev/null \
+    || die "release-manifest.json content does not match pinned release policy"
   printf 'release-manifest.json SHA256 verified: %s\n' "$actual_sha"
+  printf 'release-manifest.json policy content binding verified: %s\n' "$release_tag"
 fi
 
 printf 'ENDPOINT_AGENT_RELEASE_POLICY=pass path=%s release_tag=%s next_trusted_minor=%s\n' \
