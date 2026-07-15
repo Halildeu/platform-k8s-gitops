@@ -244,6 +244,7 @@ require_grep "requested watchdog expiry exceeds the signed protected authorizati
 require_grep "BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key" "$VIEWER_APPLY_WORKFLOW"
 require_grep "BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key" "$VIEWER_APPLY_WORKFLOW"
 require_grep "endpoint-admin-remote-bridge-device-key-live" "$VIEWER_APPLY_WORKFLOW"
+require_grep 'jq -s '\''{apiVersion:"v1", kind:"List", items:.}'\''' "$VIEWER_APPLY_WORKFLOW"
 require_grep "endpoint-admin-remote-bridge-config-device-key" "$VIEWER_WATCHDOG"
 require_grep "deployments/endpoint-admin-remote-bridge-device-key" "$VIEWER_WATCHDOG"
 require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORKFLOW"

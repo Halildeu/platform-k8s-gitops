@@ -205,7 +205,9 @@ jobs:
           kubectl kustomize "${VIEWER_OVERLAY}" > /tmp/endpoint-admin-remote-bridge-viewer.yaml
           kubectl create --dry-run=client --validate=false \
             -f /tmp/endpoint-admin-remote-bridge-viewer.yaml \
-            -o json > /tmp/endpoint-admin-remote-bridge-viewer.json
+            -o json \
+            | jq -s '{apiVersion:"v1", kind:"List", items:.}' \
+            > /tmp/endpoint-admin-remote-bridge-viewer.json
 
           jq -e --arg deploy "$BRIDGE_DEPLOYMENT" --arg config "$BRIDGE_CONFIGMAP" '
             ([.items[] | select(.kind == "Deployment" and .metadata.name == $deploy)] | length) == 1
