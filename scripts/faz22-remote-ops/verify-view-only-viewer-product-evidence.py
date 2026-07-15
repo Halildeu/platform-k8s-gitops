@@ -31,10 +31,13 @@ from typing import Any, NamedTuple, Protocol
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
 CHILD_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
+OWNER_POLICY = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json"
+REVOCATION_LEDGER = ROOT / "config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 
 EVIDENCE_SCHEMA = "faz22.6.viewOnlyViewerProductEvidence.v2"
 VERIFIER_SCHEMA = "faz22.6.viewOnlyViewerProductEvidenceVerifier.v2"
 MARKER = "F22_6_VIEW_ONLY_VIEWER_PRODUCT_ACCEPTANCE: v2"
+AUTHORIZATION_SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
 EXPECTED_REPOSITORY = "Halildeu/platform-k8s-gitops"
 EXPECTED_WORKFLOW_PATH = ".github/workflows/faz22-6-view-only-viewer-product-evidence.yml"
 EXPECTED_WORKFLOW_NAME = "Faz 22.6 VIEW_ONLY viewer product evidence"
@@ -238,6 +241,36 @@ def digest_json(value: Any) -> str:
     return digest_bytes(canonical_bytes(value))
 
 
+def canonical_environment_reviewer_set(
+    environment: dict[str, Any], triggering_actor: str,
+) -> tuple[int, str]:
+    rules = environment.get("protection_rules")
+    required = [
+        rule for rule in rules
+        if isinstance(rule, dict) and rule.get("type") == "required_reviewers"
+    ] if isinstance(rules, list) else []
+    if len(required) != 1 or required[0].get("prevent_self_review") is not True:
+        raise EvidenceError("protected environment self-review prevention is absent")
+    reviewers = required[0].get("reviewers")
+    if not isinstance(reviewers, list) or not reviewers:
+        raise EvidenceError("protected environment reviewer set is absent")
+    identities = []
+    for reviewer in reviewers:
+        if not isinstance(reviewer, dict) or reviewer.get("type") not in {"User", "Team"}:
+            raise EvidenceError("protected environment reviewer entry is invalid")
+        subject = reviewer.get("reviewer")
+        if not isinstance(subject, dict) or not isinstance(subject.get("id"), int):
+            raise EvidenceError("protected environment reviewer identity is invalid")
+        name = subject.get("login") if reviewer["type"] == "User" else subject.get("slug")
+        if not isinstance(name, str) or not name:
+            raise EvidenceError("protected environment reviewer name is invalid")
+        if reviewer["type"] == "User" and name.casefold() == triggering_actor.casefold():
+            raise EvidenceError("activation actor is also a protected environment reviewer")
+        identities.append({"type": reviewer["type"], "id": subject["id"], "name": name})
+    identities.sort(key=lambda item: (item["type"], item["id"], item["name"]))
+    return len(identities), digest_json(identities)
+
+
 def load_json_bytes(raw: bytes, label: str) -> dict[str, Any]:
     try:
         value = json.loads(raw.decode("utf-8"))
@@ -418,6 +451,9 @@ def fetch_verified_archive(client: ApiClient, repository: str, run_id: int) -> V
 
 def source_artifact_files(evidence_type: str) -> set[str]:
     files = {f"evidence/{evidence_type}.json"}
+    if evidence_type == "browser":
+        files.add("evidence/consent.json")
+        files.add("evidence/consent-source.json")
     if evidence_type in {"negative", "termination"}:
         case_names = NEGATIVE_CASES if evidence_type == "negative" else TERMINATION_CASES
         files.update(f"attestations/{evidence_type}/{name}.json" for name in case_names)
@@ -863,6 +899,72 @@ def fetch_verified_source_child(
         raise EvidenceError(f"{evidence_type} source artifact file set mismatch")
     raw_child = files[expected_file]
     require_equal(digest_bytes(raw_child), entry["sha256"], f"{evidence_type} source child digest")
+    if evidence_type == "browser":
+        child = load_json_bytes(raw_child, expected_file)
+        consent_raw = files["evidence/consent.json"]
+        require_equal(
+            digest_bytes(consent_raw), child["payload"]["consentEvidenceSha256"],
+            "browser consent evidence digest",
+        )
+        consent = load_json_bytes(consent_raw, "evidence/consent.json")
+        consent_source_raw = files["evidence/consent-source.json"]
+        consent_source = load_json_bytes(consent_source_raw, "evidence/consent-source.json")
+        expected_consent_keys = {
+            "schemaVersion", "sourceRevision", "observedAt", "binding",
+            "consentPromptSent", "decision", "decisionSignal", "decisionProtocol",
+            "decisionSource", "pilotAutoConsent", "recordingMode",
+            "screenContentPersisted", "sourceAttestationSha256",
+        }
+        if set(consent) != expected_consent_keys:
+            raise EvidenceError("browser consent evidence field set mismatch")
+        require_equal(consent["schemaVersion"], "faz22.6.viewOnlyViewerConsentEvidence.v1", "consent schema")
+        require_equal(consent["sourceRevision"], child["sourceRevision"], "consent source revision")
+        require_equal(consent["observedAt"], child["observedAt"], "consent observedAt")
+        require_equal(consent["binding"], child["binding"], "consent same-session binding")
+        require_equal(
+            consent["sourceAttestationSha256"], digest_bytes(consent_source_raw),
+            "consent source attestation digest",
+        )
+        expected_source_keys = {
+            "schemaVersion", "sourceRevision", "observedAt", "binding",
+            "smokeSummarySha256", "openSessionResponseSha256",
+            "endpointConsentLogLineSha256", "openSessionConsentPromptSent",
+            "brokerHelloVerified", "brokerConsentGranted",
+            "endpointConsentGranted", "transportPushed",
+        }
+        if set(consent_source) != expected_source_keys:
+            raise EvidenceError("browser consent source attestation field set mismatch")
+        require_equal(
+            consent_source["schemaVersion"],
+            "faz22.6.viewOnlyViewerConsentSourceAttestation.v1",
+            "consent source schema",
+        )
+        require_equal(consent_source["sourceRevision"], child["sourceRevision"], "consent source revision")
+        require_equal(consent_source["observedAt"], child["observedAt"], "consent source observedAt")
+        require_equal(consent_source["binding"], child["binding"], "consent source same-session binding")
+        for field in (
+            "smokeSummarySha256", "openSessionResponseSha256",
+            "endpointConsentLogLineSha256",
+        ):
+            if not isinstance(consent_source[field], str) or not SHA256.fullmatch(consent_source[field]):
+                raise EvidenceError(f"consent source {field} digest is invalid")
+        for field in (
+            "openSessionConsentPromptSent", "brokerHelloVerified",
+            "brokerConsentGranted", "endpointConsentGranted", "transportPushed",
+        ):
+            require_equal(consent_source[field], True, f"consent source {field}")
+        expected_consent = {
+            "consentPromptSent": True,
+            "decision": "granted",
+            "decisionSignal": "CONSENT_GRANTED",
+            "decisionProtocol": "remote-bridge-consent-signal-v1",
+            "decisionSource": "device-key-attested-endpoint-outbound-channel",
+            "pilotAutoConsent": False,
+            "recordingMode": "disabled",
+            "screenContentPersisted": False,
+        }
+        for field, expected_value in expected_consent.items():
+            require_equal(consent[field], expected_value, f"consent {field}")
     validate_matrix_source_attestations(evidence_type, files, raw_child)
     return raw_child, run
 
@@ -965,10 +1067,7 @@ def verify_activation_authorization(
         "downloaded protected authorization artifact digest",
     )
     files = safe_archive_files(raw_archive)
-    expected_files = {
-        "SHA256SUMS", "kvkk-marker-verifier-result.json", "kvkk-marker.txt",
-        "protected-authorization.json",
-    }
+    expected_files = {"SHA256SUMS", "protected-authorization.json"}
     if set(files) != expected_files:
         raise EvidenceError("protected authorization artifact file set mismatch")
     verify_sha256sums(files, expected_files - {"SHA256SUMS"})
@@ -977,34 +1076,176 @@ def verify_activation_authorization(
         digest_bytes(raw_authorization), operator["authorizationSha256"],
         "protected authorization receipt digest",
     )
-    require_equal(
-        digest_bytes(files["kvkk-marker.txt"]), operator["kvkkMarkerSha256"],
-        "protected KVKK marker digest",
-    )
     authorization = load_json_bytes(raw_authorization, "protected-authorization.json")
     expected_keys = {
-        "schemaVersion", "environment", "onePersonRoster", "operatorSha256",
-        "consentingPilotDevice", "deviceSha256", "exposureApprovedByProtectedEnvironment",
-        "kvkkMarkerSha256", "expiresAt", "authorizationRunId",
+        "schemaVersion", "minimumAcceptedAuthorizationSchema", "environment",
+        "onePersonRoster", "operatorSha256", "consentingPilotDevice", "deviceSha256",
+        "exposureApprovedByProtectedEnvironment", "protectedEnvironmentPreventSelfReview",
+        "protectedEnvironmentReviewerCount", "protectedEnvironmentReviewerSetSha256",
+        "ownerPolicySha256", "ownerDirectiveRef",
+        "ownerDirectiveSha256", "aiAdvisoryOnly", "aiAdvisoryRef", "aiAdvisorySha256",
+        "aiAdvisoryProvenanceClass", "aiProviderCryptographicAttestation",
+        "aiConsensusVerdict", "legalTrackingIssueRef", "legalTrackStatus",
+        "legalClearanceClaimed", "legalDependencyAcknowledgedBy",
+        "legalDependencyRationaleCode", "recordingMode", "screenContentPersisted",
+        "attendedConsentRequired", "pilotAutoConsent", "visibleIndicatorRequired",
+        "localAbortRequired", "killSwitchWorkflowRef", "revocationLedgerRef",
+        "issuedAt", "expiresAt", "authorizationRunId",
+        "authorizationHeadSha",
     }
     if set(authorization) != expected_keys:
         raise EvidenceError("protected authorization receipt field set mismatch")
     require_equal(
-        authorization["schemaVersion"], "faz22.6-view-only-pilot-protected-authorization-v1",
+        authorization["schemaVersion"], AUTHORIZATION_SCHEMA,
         "protected authorization schema",
+    )
+    require_equal(
+        authorization["minimumAcceptedAuthorizationSchema"], AUTHORIZATION_SCHEMA,
+        "minimum accepted authorization schema",
     )
     require_equal(authorization["environment"], "faz22-view-only-pilot", "protected environment")
     if not (
         authorization["onePersonRoster"] is True
         and authorization["consentingPilotDevice"] is True
         and authorization["exposureApprovedByProtectedEnvironment"] is True
+        and authorization["protectedEnvironmentPreventSelfReview"] is True
+        and isinstance(authorization["protectedEnvironmentReviewerCount"], int)
+        and authorization["protectedEnvironmentReviewerCount"] >= 1
+        and authorization["aiAdvisoryOnly"] is True
+        and authorization["aiAdvisoryProvenanceClass"] == "owner-attested-provider-session"
+        and authorization["aiProviderCryptographicAttestation"] is False
+        and authorization["legalTrackStatus"] == "tracked_pending"
+        and authorization["legalClearanceClaimed"] is False
+        and authorization["legalDependencyAcknowledgedBy"] == "owner"
+        and authorization["legalDependencyRationaleCode"] == "bounded-test-owner-risk-acceptance"
+        and authorization["recordingMode"] == "disabled"
+        and authorization["screenContentPersisted"] is False
+        and authorization["attendedConsentRequired"] is True
+        and authorization["pilotAutoConsent"] is False
+        and authorization["visibleIndicatorRequired"] is True
+        and authorization["localAbortRequired"] is True
     ):
         raise EvidenceError("protected authorization boolean controls are not all true")
     require_equal(authorization["authorizationRunId"], run_id, "authorization receipt run id")
+    require_equal(authorization["authorizationHeadSha"], expected_head_sha, "authorization head SHA")
     require_equal(authorization["operatorSha256"], binding["operatorSha256"], "authorized operator binding")
     require_equal(authorization["deviceSha256"], binding["deviceSha256"], "authorized device binding")
-    require_equal(authorization["kvkkMarkerSha256"], operator["kvkkMarkerSha256"], "authorization KVKK digest")
+    for field in (
+        "ownerPolicySha256", "ownerDirectiveSha256", "aiAdvisorySha256",
+        "legalTrackStatus", "legalClearanceClaimed",
+    ):
+        require_equal(authorization[field], operator[field], f"authorization operator {field}")
+
+    policy = load_json_bytes(OWNER_POLICY.read_bytes(), "canonical owner policy")
+    revocations = load_json_bytes(REVOCATION_LEDGER.read_bytes(), "authorization revocation ledger")
+    if set(policy) != {
+        "schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking",
+        "scope", "authorization", "lifecycle",
+    }:
+        raise EvidenceError("canonical owner policy field set mismatch")
+    require_equal(
+        policy["schemaVersion"], "faz22.6-view-only-pilot-owner-policy-v1",
+        "canonical owner policy schema",
+    )
+    require_equal(policy["status"], "active", "canonical owner policy status")
+    policy_digest = digest_json(policy)
+    require_equal(authorization["ownerPolicySha256"], policy_digest, "canonical owner policy digest")
+    if revocations.get("schemaVersion") != "faz22.6-view-only-pilot-authorization-revocations-v1":
+        raise EvidenceError("authorization revocation ledger schema mismatch")
+    revoked = revocations.get("revokedAuthorizationSha256")
+    if not isinstance(revoked, list) or any(not isinstance(value, str) or not SHA256.fullmatch(value) for value in revoked):
+        raise EvidenceError("authorization revocation ledger entries are invalid")
+    if operator["authorizationSha256"] in set(revoked):
+        raise EvidenceError("protected authorization has been revoked")
+
+    owner_contract = policy.get("ownerDirective")
+    advisory_contract = policy.get("aiAdvisory")
+    if not isinstance(owner_contract, dict) or not isinstance(advisory_contract, dict):
+        raise EvidenceError("canonical owner/advisory policy entries are missing")
+    require_equal(authorization["ownerDirectiveRef"], owner_contract.get("ref"), "owner directive ref")
+    require_equal(authorization["ownerDirectiveSha256"], owner_contract.get("bodySha256"), "owner directive digest")
+    require_equal(authorization["aiAdvisoryRef"], advisory_contract.get("ref"), "AI advisory ref")
+    require_equal(authorization["aiAdvisorySha256"], advisory_contract.get("bodySha256"), "AI advisory digest")
+    require_equal(
+        authorization["aiAdvisoryProvenanceClass"], advisory_contract.get("provenanceClass"),
+        "AI advisory provenance class",
+    )
+    require_equal(
+        authorization["aiProviderCryptographicAttestation"],
+        advisory_contract.get("providerCryptographicAttestation"),
+        "AI provider cryptographic-attestation boundary",
+    )
+    require_equal(authorization["aiConsensusVerdict"], "AGREE", "AI advisory consensus")
+    require_equal(advisory_contract.get("advisoryOnly"), True, "AI advisory-only policy")
+    require_equal(advisory_contract.get("consensusVerdict"), "AGREE", "AI advisory policy consensus")
+    require_equal(
+        advisory_contract.get("providers"),
+        ["MiniMax/minimax-MiniMax-M3", "OpenAI/Codex"],
+        "AI advisory provider pair",
+    )
+
+    legal_contract = policy.get("legalTracking")
+    if not isinstance(legal_contract, dict):
+        raise EvidenceError("canonical legal tracking policy entry is missing")
+    require_equal(legal_contract.get("ref"), authorization["legalTrackingIssueRef"], "legal tracking ref")
+    require_equal(legal_contract.get("status"), "tracked_pending", "legal tracking policy status")
+    require_equal(legal_contract.get("clearanceClaimed"), False, "legal tracking clearance claim")
+    require_equal(
+        authorization["killSwitchWorkflowRef"],
+        ".github/workflows/apply-view-only-viewer-pilot-enable.yml?action=rollback",
+        "kill-switch workflow ref",
+    )
+    require_equal(
+        authorization["revocationLedgerRef"],
+        "config/faz22-6-view-only-pilot-authorization-revocations.v1.json",
+        "revocation ledger ref",
+    )
+
+    for label, contract in (("owner directive", owner_contract), ("AI advisory", advisory_contract)):
+        comment_id = contract.get("commentId")
+        if not isinstance(comment_id, int) or comment_id < 1:
+            raise EvidenceError(f"{label} comment ID is invalid")
+        comment = client.get_json(f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}")
+        require_equal(comment.get("html_url"), contract.get("ref"), f"{label} URL")
+        require_equal(comment.get("author_association"), "OWNER", f"{label} author association")
+        user = comment.get("user")
+        require_equal(user.get("login") if isinstance(user, dict) else None, "Halildeu", f"{label} author")
+        body = comment.get("body")
+        if not isinstance(body, str):
+            raise EvidenceError(f"{label} body is missing")
+        require_equal(digest_bytes(body.encode()), contract.get("bodySha256"), f"{label} body digest")
+
+    require_equal(
+        authorization["legalTrackingIssueRef"],
+        "https://github.com/Halildeu/platform-k8s-gitops/issues/2374",
+        "legal tracking issue ref",
+    )
+    legal_issue = client.get_json(f"/repos/{EXPECTED_REPOSITORY}/issues/2374")
+    require_equal(legal_issue.get("state"), "open", "legal tracking state")
+    require_equal(legal_issue.get("html_url"), authorization["legalTrackingIssueRef"], "legal tracking URL")
+
+    environment = client.get_json(f"/repos/{EXPECTED_REPOSITORY}/environments/faz22-view-only-pilot")
+    actor = run.get("actor")
+    actor_login = actor.get("login") if isinstance(actor, dict) else None
+    if not isinstance(actor_login, str) or not actor_login:
+        raise EvidenceError("activation workflow actor identity is absent")
+    reviewer_count, reviewer_set_sha256 = canonical_environment_reviewer_set(environment, actor_login)
+    require_equal(
+        reviewer_count, authorization["protectedEnvironmentReviewerCount"],
+        "protected environment reviewer count",
+    )
+    require_equal(
+        reviewer_set_sha256, authorization["protectedEnvironmentReviewerSetSha256"],
+        "protected environment reviewer set digest",
+    )
+
+    issued_at = parse_utc(authorization["issuedAt"], "protected authorization issuedAt")
+    run_created = parse_utc(run["created_at"], "activation created_at")
+    if issued_at < run_created - RUN_CLOCK_SKEW or issued_at > activation_updated + RUN_CLOCK_SKEW:
+        raise EvidenceError("protected authorization issuance is outside the activation run window")
     expires_at = parse_utc(authorization["expiresAt"], "protected authorization expiresAt")
+    if expires_at - issued_at > timedelta(minutes=120):
+        raise EvidenceError("protected authorization exceeds the 120-minute absolute TTL")
     if expires_at < pilot_ended:
         raise EvidenceError("protected authorization expired before the pilot ended")
     return expires_at
@@ -1216,8 +1457,6 @@ def validate_semantics(
 
     validate_d30(children["d30"]["payload"])
     operator = children["operator"]["payload"]
-    if operator["authorizationSha256"] == operator["kvkkMarkerSha256"]:
-        raise EvidenceError("operator authorization and KVKK marker must be distinct artifacts")
     authorization_expires_at = verify_activation_authorization(
         client, operator, run["head_sha"], binding, pilot_started, pilot_ended,
     )

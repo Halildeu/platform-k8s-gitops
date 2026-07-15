@@ -99,6 +99,31 @@ Audit **İKİSİNİ DE** emit eder (Codex #4):
 ### D6 — #1580 issue state ikincil (Codex #5)
 Pass koşulu = marker + manifest + live evidence hash + geçerli **engineering** owner approval + non-expired pencere. Issue closed/open state'i tek başına ASLA yeterli değil. #1580 ancak **taze v2 engineering manifest** üretildikten sonra kapanır.
 
+### D7 — Dar test pilotu yetkisi hukuki clearance değildir
+
+Owner, `#2373` için tek cihazlı ve attended TEST pilotunda provider-distinct AI
+danışma mutabakatının mühendislik/risk yetkisi olarak kullanılmasına izin
+verebilir. Bu yetki yalnız aşağıdaki koşulların tümü fail-closed doğrulandığında
+geçerlidir:
+
+- owner direktifi ve MiniMax M3 + Codex `AGREE` danışma kaydı GitHub yorum ID,
+  OWNER association, URL ve içerik SHA-256 ile bağlanır;
+- AI kaydı `advisoryOnly=true` taşır; `#2374` açık ve `tracked_pending`,
+  `legalClearanceClaimed=false` kalır;
+- kapsam TEST, tek operator/cihaz, attended VIEW_ONLY, kayıt kapalı, ekran içeriği
+  kalıcı değil, auto-consent kapalı, görünür gösterge ve local-abort zorunludur;
+- GitHub Environment required reviewer + `prevent_self_review=true` uygular;
+  operator/cihaz opaque SHA-256 binding'leri farklıdır ve receipt en fazla 120
+  dakika geçerlidir;
+- güncel revocation ledger, cluster-side mutlak-expiry watchdog ve compensating
+  rollback exposure'u geri çekebilir;
+- ürün acceptance'ı yalnız gerçek endpoint `CONSENT_GRANTED` sinyaline bağlı,
+  content-addressed consent artefaktı dahil yedi bağımsız kaynakla kanıtlanır.
+
+Bu sözleşme `F22_6_VIEW_ONLY_KVKK: v1=cleared` üretmez, iki insan imzasının
+yerine geçmez ve production/broad-rollout/multi-viewer kabulü değildir. Hukuki
+clearance istenirse D1-D2'deki iki ayrı yetkili insan imzası aynen zorunludur.
+
 ---
 
 ## Acceptance criteria (implementation follow-up — Codex 019f05cc 5 constraint)

@@ -67,22 +67,20 @@ boundary; see OWNER-APPROVAL.md node-origin caveat).
 
 This is the owner decision. Do not flip the flag until every box holds:
 
-- [ ] **KVKK DPIA + attended pilot sign-off** recorded for purpose
-      `REMOTE_SUPPORT_SCREEN_OBSERVATION` (lawful basis, no content retention
-      since recording-OFF, access limited to the roster, data-subject notice via
-      the agent's visible indicator). Owner/legal-owned — never self-attested.
-      Per ADR-0044 this is the **tracked, non-blocking** `F22_6_VIEW_ONLY_KVKK: v1`
-      marker — it does **not** fail-close `F22_6_COMPLETION` — but a live pilot
-      still does not start without the owner/DPO sign-off. The apply workflow
-      fetches the single `F22_6_VIEW_ONLY_KVKK: v1` marker from #2374 and
-      re-verifies both Ed25519 signatures against the canonical reviewed policy;
-      a typed acknowledgement cannot substitute for it.
+- [ ] Canonical owner policy is active. It binds the owner directive and
+      provider-distinct MiniMax M3 + Codex `AGREE` advisory by immutable GitHub
+      comment identity and body SHA-256. AI is `advisoryOnly`; it is not a human
+      legal/DPO signature.
+- [ ] Legal ticket #2374 is still open with `tracked_pending` and
+      `legalClearanceClaimed=false`. This bounded TEST authorization does not
+      emit `GATE_VIEW_ONLY_KVKK=cleared`.
 - [ ] **1-person roster** fixed: exactly one authorized operator `(tenantId, subject)`.
 - [ ] **Owner sign-off to expose `8096`** (the §3 step 1 viewer overlay opens an
       HTTP listener that is deliberately closed today — a security-boundary
       decision, not a default).
 - [ ] A single **pilot device** identified + consenting (attended).
-- [ ] GitHub Environment `faz22-view-only-pilot` has a required human reviewer
+- [ ] GitHub Environment `faz22-view-only-pilot` has a required reviewer,
+      `prevent_self_review=true`,
       and the three protected values `VIEW_ONLY_PILOT_OPERATOR_SHA256`,
       `VIEW_ONLY_PILOT_DEVICE_SHA256`, and
       `VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT`. The first two are distinct
@@ -119,9 +117,11 @@ gh workflow run apply-view-only-viewer-pilot-enable.yml \
   -f pilot_ttl_minutes=120
 ```
 
-The `apply` run waits for the protected Environment reviewer, verifies the signed
-#2374 marker and emits a content-addressed protected-authorization receipt before
-the deployment job can start. The workflow then installs a cluster-side
+The `apply` run waits for the protected Environment reviewer, verifies the
+content-addressed owner directive, provider-distinct advisory consensus, open
+#2374 escalation, bounded scope and current revocation ledger, then emits a v2
+protected-authorization receipt before the deployment job can start. The
+workflow then installs a cluster-side
 absolute-expiry watchdog **before** exposure, applies the bridge-side viewer
 overlay, patches only route-28 keys
 into the live `api-gateway-config`, restarts the bridge and gateway, and verifies:
@@ -149,6 +149,13 @@ gh workflow run apply-view-only-viewer-pilot-enable.yml \
   -f action=rollback \
   -f confirm=ROLLBACK_VIEW_ONLY_VIEWER_PILOT_ENABLE
 ```
+
+The receipt is bound to one operator hash, one device hash, the exact workflow
+run/head SHA and an absolute expiry of at most 120 minutes. The mutable
+revocation ledger is deliberately **not** hashed into the receipt: every
+verification reads its current version and rejects only a listed receipt
+digest. This permits targeted emergency revocation without invalidating all
+unrelated receipts. The rollback action remains the immediate kill switch.
 
 The manual steps below remain the break-glass/fallback form of the same contract.
 
@@ -356,7 +363,7 @@ when the corresponding bytes are absent.
 
 | Source | Producer status | Live evidence status |
 |---|---|---|
-| Browser render/ACK | Canonical protected workflow implemented | Not run; requires merged GitOps workflow, deployed #910 web digest, signed #2374 marker/policy, protected Environment and active bounded surface |
+| Browser render/ACK + endpoint consent | Canonical protected workflow implemented | Not run; requires merged GitOps workflow, deployed #910 web digest, owner/advisory policy, protected Environment, active bounded surface and real `CONSENT_GRANTED` |
 | Broker Prometheus | Independent source producer implemented | Live source run absent |
 | Hash-chain audit | Independent source producer implemented | Live source run absent |
 | D30 backend + web | Independent source producer implemented | Live source run absent |
@@ -368,9 +375,11 @@ The seven-source assembler and independent verifier are implemented, but they
 cannot manufacture a missing source artifact. `#2373` therefore stays open until
 all seven source workflows have successful, same-revision, same-authorization
 runs inside the bounded matrix window (with distinct isolated sessions for each
-termination case) and the independent verifier emits the content-addressed v2 marker. The canonical
-approver policy file and protected GitHub Environment are intentionally not
-invented by an agent; their absence keeps live activation fail-closed.
+termination case) and the independent verifier emits the content-addressed v2 marker.
+The canonical owner/advisory policy is content-addressed. A missing protected
+GitHub Environment, missing required reviewer, self-review allowance, closed
+#2374 ticket, revoked receipt or absent real endpoint consent keeps live
+activation/product acceptance fail-closed.
 
 Negative evidence must be produced fresh against the current contract. A token
 missing the required operator role is rejected as unauthenticated (`401`);

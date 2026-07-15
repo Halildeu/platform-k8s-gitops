@@ -59,7 +59,11 @@ class ViewerProductEvidenceAssemblerTest(unittest.TestCase):
 
     def test_tampered_source_archive_fails_closed(self):
         client = fixtures.FakeClient()
-        client.source_archives["browser"] = fixtures.source_archive("browser", b"{}\n")
+        client.source_archives["browser"] = fixtures.encode_zip({
+            "evidence/browser.json": b"{}\n",
+            "evidence/consent.json": b"{}\n",
+            "evidence/consent-source.json": b"{}\n",
+        })
         with self.assertRaisesRegex(ASSEMBLER.VERIFIER.EvidenceError, "schema invalid"):
             self.assemble(client)
 

@@ -44,21 +44,21 @@ def fetch_operator_payload(client: object, repository: str, activation_run_id: i
         VERIFIER.digest_bytes(raw_archive), artifact["digest"], "protected authorization archive digest"
     )
     files = VERIFIER.safe_archive_files(raw_archive)
-    expected_files = {
-        "SHA256SUMS", "kvkk-marker-verifier-result.json", "kvkk-marker.txt",
-        "protected-authorization.json",
-    }
+    expected_files = {"SHA256SUMS", "protected-authorization.json"}
     if set(files) != expected_files:
         raise VERIFIER.EvidenceError("protected authorization artifact file set mismatch")
     VERIFIER.verify_sha256sums(files, expected_files - {"SHA256SUMS"})
     authorization = VERIFIER.load_json_bytes(
         files["protected-authorization.json"], "protected-authorization.json"
     )
-    verifier_result = VERIFIER.load_json_bytes(
-        files["kvkk-marker-verifier-result.json"], "kvkk-marker-verifier-result.json"
-    )
-    if verifier_result.get("status") != "pass" or verifier_result.get("humanSignatureCount") != 2:
-        raise VERIFIER.EvidenceError("KVKK marker does not carry two verified human signatures")
+    if authorization.get("schemaVersion") != VERIFIER.AUTHORIZATION_SCHEMA:
+        raise VERIFIER.EvidenceError("protected authorization is not the minimum accepted v2 schema")
+    if not (
+        authorization.get("legalTrackStatus") == "tracked_pending"
+        and authorization.get("legalClearanceClaimed") is False
+        and authorization.get("aiAdvisoryOnly") is True
+    ):
+        raise VERIFIER.EvidenceError("protected authorization legal/AI boundary is invalid")
     return {
         "onePersonRoster": authorization.get("onePersonRoster"),
         "pilotDeviceConsented": authorization.get("consentingPilotDevice"),
@@ -70,7 +70,12 @@ def fetch_operator_payload(client: object, repository: str, activation_run_id: i
         "authorizationArtifactId": artifact["id"],
         "authorizationArtifactDigest": artifact["digest"],
         "authorizationSha256": VERIFIER.digest_bytes(files["protected-authorization.json"]),
-        "kvkkMarkerSha256": VERIFIER.digest_bytes(files["kvkk-marker.txt"]),
+        "authorizationSchemaVersion": authorization["schemaVersion"],
+        "ownerPolicySha256": authorization["ownerPolicySha256"],
+        "ownerDirectiveSha256": authorization["ownerDirectiveSha256"],
+        "aiAdvisorySha256": authorization["aiAdvisorySha256"],
+        "legalTrackStatus": authorization["legalTrackStatus"],
+        "legalClearanceClaimed": authorization["legalClearanceClaimed"],
     }
 
 

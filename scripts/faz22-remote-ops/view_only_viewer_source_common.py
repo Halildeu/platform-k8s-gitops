@@ -25,11 +25,16 @@ def fetch_browser_child(client: object, repository: str, run_id: int, head_sha: 
     workflow_path, workflow_name = VERIFIER.EXPECTED_SOURCE_WORKFLOWS["browser"]
     run = VERIFIER.fetch_run(client, repository, run_id, workflow_name, workflow_path, "browser source")
     VERIFIER.require_equal(run["head_sha"], head_sha, "browser source head SHA")
-    raw = fetch_exact_artifact(
+    files = fetch_exact_artifact(
         client, repository, run_id,
         f"faz22-6-view-only-viewer-browser-evidence-{run_id}",
-        {"evidence/browser.json"},
-    )["evidence/browser.json"]
+        {
+            "evidence/browser.json",
+            "evidence/consent.json",
+            "evidence/consent-source.json",
+        },
+    )
+    raw = files["evidence/browser.json"]
     child = VERIFIER.load_json_bytes(raw, "evidence/browser.json")
     VERIFIER.validate_schema(child, VERIFIER.CHILD_SCHEMA, "browser child")
     VERIFIER.require_equal(child["evidenceType"], "browser", "browser evidence type")
