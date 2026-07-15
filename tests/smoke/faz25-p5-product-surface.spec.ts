@@ -637,6 +637,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   const candidateBoundary = page.getByTestId('ats-candidate-role-boundary');
   await expect(candidateBoundary).toBeVisible();
   await expect(candidateBoundary).toContainText('Bu yönetici adresi adaya verilmez');
+  const candidateBoundaryVisible = await candidateBoundary.isVisible();
 
   const cvImportCard = page.getByTestId('ats-capability-candidate-cv-pdf-import');
   await expect(cvImportCard).toBeVisible();
@@ -675,7 +676,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     targetRoleIds,
     visibleCapabilityCount: capabilityIds.length,
     candidateFilterVisible: await candidateFilter.isVisible(),
-    candidateBoundaryVisible: await candidateBoundary.isVisible(),
+    candidateBoundaryVisible,
     cvImportMode: 'OWNER_GATED',
     cvImportInteractiveControlCount,
     fileUploadControlCount,
