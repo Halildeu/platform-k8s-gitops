@@ -159,6 +159,24 @@ unrelated receipts. The rollback action remains the immediate kill switch.
 
 The manual steps below remain the break-glass/fallback form of the same contract.
 
+### 3.1 Attended consent timing boundary
+
+The test-only broker overlay explicitly sets the attended consent prompt TTL to
+`240000ms`. Runs `29406733575` and `29407140294` proved that the previous
+`120000ms` default could expire at the Windows approval edge: the endpoint
+recorded real human consent, but the broker had no remaining consent lease from
+which to compose the immediate SCREEN_VIEW policy. The browser collector waits
+the same bounded `240` seconds and its activation-headroom check includes that
+full wait plus a separate 120-second setup margin.
+
+This does **not** extend remote observation authority to four minutes. The signed
+operation permit remains `60000ms`, is requested immediately after consent and
+is still constrained by the owner-approved watchdog, one device, one operator,
+one viewer and recording-OFF policy. The activation workflow renders the value
+from the isolated viewer overlay and fails if this pilot key appears in the
+synced `kustomize/overlays/test` Argo root. Production routing is outside this
+runbook and receives no consent-TTL mutation.
+
 1. **Apply the pre-staged viewer-exposure overlay** — the bridge-side enable in one
    reviewed, render-proven `apply -k`. The overlay
    `kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer` is a

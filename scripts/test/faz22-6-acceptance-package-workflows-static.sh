@@ -42,6 +42,7 @@ VIEWER_AUTH_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_pilot_authorization
 VIEWER_EXACT_ZIP="$ROOT/scripts/faz22-remote-ops/extract-exact-zip.py"
 VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
+VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
 
 future_date_utc() {
   local days="$1"
@@ -113,7 +114,7 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG" "$VIEWER_WATCHDOG" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
   "$VIEWER_EXACT_ZIP" \
-  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS"; do
+  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG"; do
   require_file "$path"
 done
 
@@ -177,6 +178,36 @@ fi
 require_grep 'faz22-6-view-only-viewer-runtime-snapshots-${{ github.run_id }}' "$VIEWER_BROWSER_WORKFLOW"
 require_grep "metrics-before.prom metrics-after.prom d30-snapshot.json frame-flow-summary.json audit-summary.json" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "sha256sum -c SHA256SUMS" "$VIEWER_BROWSER_WORKFLOW"
+require_grep 'CONSENT_WAIT_SECONDS: "240"' "$VIEWER_BROWSER_WORKFLOW"
+require_grep 'required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + 120 ))"' \
+  "$VIEWER_BROWSER_WORKFLOW"
+python3 - "$VIEWER_DEVICE_KEY_CONFIG" <<'PY'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+prompt_matches = re.findall(
+    r'(?m)^  REMOTE_BRIDGE_CONSENT_PROMPT_TTL_MILLIS: "([0-9]+)"$', text
+)
+permit_matches = re.findall(
+    r'(?m)^  REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "([0-9]+)"$', text
+)
+if prompt_matches != ["240000"]:
+    raise SystemExit(
+        f"test-only attended consent prompt TTL must occur exactly once as 240000ms: {path}"
+    )
+if int(prompt_matches[0]) > 300000:
+    raise SystemExit(f"attended consent prompt TTL exceeds the 300000ms ceiling: {path}")
+if permit_matches != ["60000"]:
+    raise SystemExit(
+        f"operation permit TTL must remain exactly 60000ms: {path}"
+    )
+PY
+require_grep 'REMOTE_BRIDGE_CONSENT_PROMPT_TTL_MILLIS: "240000"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "60000"' "$VIEWER_APPLY_WORKFLOW"
+require_grep "attended consent pilot TTL leaked into the synced test Argo root" "$VIEWER_APPLY_WORKFLOW"
 
 for workflow in "$VIEWER_BROWSER_WORKFLOW" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW" \
   "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"; do
