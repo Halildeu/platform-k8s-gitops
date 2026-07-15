@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://acik.com/schemas/faz25-p5-authenticated-product-surface-v3.json",
+  "$id": "https://acik.com/schemas/faz25-p5-authenticated-product-surface-v4.json",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -14,7 +14,7 @@
     "lineage"
   ],
   "properties": {
-    "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v3" },
+    "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v4" },
     "verdict": { "enum": ["PASS", "FAIL"] },
     "startedAt": {
       "type": "string",
@@ -30,6 +30,7 @@
     "lineage": { "$ref": "#/definitions/lineage" },
     "authz": { "$ref": "#/definitions/authz" },
     "discovery": { "$ref": "#/definitions/discovery" },
+    "hub": { "$ref": "#/definitions/hub" },
     "product": { "$ref": "#/definitions/product" },
     "responsive": { "$ref": "#/definitions/responsive" },
     "accessibility": { "$ref": "#/definitions/accessibility" },
@@ -43,6 +44,7 @@
         "required": [
           "authz",
           "discovery",
+          "hub",
           "product",
           "responsive",
           "accessibility",
@@ -104,16 +106,16 @@
                 "type": "object",
                 "properties": {
                   "expectedSourceSha": {
-                    "const": "7a764fe91deed655a83f44af7bc15d97481ee29d"
+                    "const": "90768ed318ebfa547d2b3137aa317168f9c726d7"
                   },
                   "observedSourceSha": {
-                    "const": "7a764fe91deed655a83f44af7bc15d97481ee29d"
+                    "const": "90768ed318ebfa547d2b3137aa317168f9c726d7"
                   },
                   "expectedFrontendDigest": {
-                    "const": "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e"
+                    "const": "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6"
                   },
                   "liveFrontendDigest": {
-                    "const": "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e"
+                    "const": "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6"
                   }
                 }
               }
@@ -127,18 +129,66 @@
                 "properties": {
                   "desktopHomePath": { "const": "/home" },
                   "desktopSidebarVisible": { "const": true },
-                  "desktopSidebarHref": { "const": "/admin/interview-evidence" },
+                  "desktopSidebarHref": { "const": "/admin/ats" },
                   "desktopSearchQuery": { "const": "mülakat" },
                   "desktopSearchResultVisible": { "const": true },
-                  "desktopFinalPath": { "const": "/admin/interview-evidence" },
+                  "desktopHubPath": { "const": "/admin/ats" },
+                  "desktopHubRendered": { "const": true },
+                  "desktopLaunchPath": { "const": "/admin/interview-evidence" },
                   "desktopRemoteConsoleRendered": { "const": true },
                   "mobileViewportWidth": { "const": 390 },
                   "mobileHomePath": { "const": "/home" },
                   "mobileMenuOpened": { "const": true },
                   "mobileHrSectionOpened": { "const": true },
-                  "mobileInterviewEvidenceActionVisible": { "const": true },
-                  "mobileFinalPath": { "const": "/admin/interview-evidence" },
+                  "mobileAtsProductHubActionVisible": { "const": true },
+                  "mobileHubPath": { "const": "/admin/ats" },
+                  "mobileHubRendered": { "const": true },
+                  "mobileLaunchPath": { "const": "/admin/interview-evidence" },
                   "mobileRemoteConsoleRendered": { "const": true }
+                }
+              }
+            ]
+          },
+          "hub": {
+            "allOf": [
+              { "$ref": "#/definitions/hub" },
+              {
+                "type": "object",
+                "properties": {
+                  "path": { "const": "/admin/ats" },
+                  "rendered": { "const": true },
+                  "runtimeReady": { "const": true },
+                  "capabilityIds": {
+                    "const": [
+                      "interview-evidence-workspace",
+                      "candidate-cv-pdf-import",
+                      "candidate-review-and-appeal",
+                      "citation-backed-coaching",
+                      "fairness-audit",
+                      "quality-of-hire",
+                      "skills-evidence",
+                      "media-integrity",
+                      "agentic-screening"
+                    ]
+                  },
+                  "targetRoleIds": {
+                    "const": [
+                      "candidate",
+                      "recruiter",
+                      "hiring_manager",
+                      "interviewer",
+                      "auditor",
+                      "admin"
+                    ]
+                  },
+                  "visibleCapabilityCount": { "const": 9 },
+                  "candidateFilterVisible": { "const": true },
+                  "candidateBoundaryVisible": { "const": true },
+                  "cvImportMode": { "const": "OWNER_GATED" },
+                  "cvImportInteractiveControlCount": { "const": 0 },
+                  "fileUploadControlCount": { "const": 0 },
+                  "liveLaunchHref": { "const": "/admin/interview-evidence" },
+                  "productBoundaryVisible": { "const": true }
                 }
               }
             ]
@@ -195,6 +245,8 @@
                 "type": "object",
                 "properties": {
                   "viewportWidth": { "const": 390 },
+                  "hubRootOverflowPx": { "type": "number", "maximum": 1 },
+                  "hubOverflowPx": { "type": "number", "maximum": 1 },
                   "rootOverflowPx": { "type": "number", "maximum": 1 },
                   "consoleOverflowPx": { "type": "number", "maximum": 1 },
                   "evidenceTableKeyboardScrollable": { "const": true }
@@ -209,6 +261,7 @@
                 "type": "object",
                 "properties": {
                   "loginBlockingViolationCount": { "const": 0 },
+                  "hubBlockingViolationCount": { "const": 0 },
                   "productBlockingViolationCount": { "const": 0 },
                   "blockingViolationCount": { "const": 0 },
                   "violations": { "type": "array", "maxItems": 0 }
@@ -312,7 +365,7 @@
         "observedSourceSha": { "type": "string", "pattern": "^$|^[0-9a-f]{40}$" },
         "expectedFrontendDigest": { "$ref": "#/definitions/digest" },
         "liveFrontendDigest": { "$ref": "#/definitions/digest" },
-        "expectedBuildRunId": { "const": "29444176456" },
+        "expectedBuildRunId": { "const": "29451703189" },
         "harnessRepository": { "const": "Halildeu/platform-k8s-gitops" },
         "harnessRevision": { "$ref": "#/definitions/gitSha" },
         "specSha256": { "$ref": "#/definitions/sha256" },
@@ -363,14 +416,18 @@
         "desktopSidebarHref",
         "desktopSearchQuery",
         "desktopSearchResultVisible",
-        "desktopFinalPath",
+        "desktopHubPath",
+        "desktopHubRendered",
+        "desktopLaunchPath",
         "desktopRemoteConsoleRendered",
         "mobileViewportWidth",
         "mobileHomePath",
         "mobileMenuOpened",
         "mobileHrSectionOpened",
-        "mobileInterviewEvidenceActionVisible",
-        "mobileFinalPath",
+        "mobileAtsProductHubActionVisible",
+        "mobileHubPath",
+        "mobileHubRendered",
+        "mobileLaunchPath",
         "mobileRemoteConsoleRendered"
       ],
       "properties": {
@@ -379,15 +436,61 @@
         "desktopSidebarHref": { "type": "string" },
         "desktopSearchQuery": { "type": "string" },
         "desktopSearchResultVisible": { "type": "boolean" },
-        "desktopFinalPath": { "type": "string" },
+        "desktopHubPath": { "type": "string" },
+        "desktopHubRendered": { "type": "boolean" },
+        "desktopLaunchPath": { "type": "string" },
         "desktopRemoteConsoleRendered": { "type": "boolean" },
         "mobileViewportWidth": { "type": "integer", "minimum": 1 },
         "mobileHomePath": { "type": "string" },
         "mobileMenuOpened": { "type": "boolean" },
         "mobileHrSectionOpened": { "type": "boolean" },
-        "mobileInterviewEvidenceActionVisible": { "type": "boolean" },
-        "mobileFinalPath": { "type": "string" },
+        "mobileAtsProductHubActionVisible": { "type": "boolean" },
+        "mobileHubPath": { "type": "string" },
+        "mobileHubRendered": { "type": "boolean" },
+        "mobileLaunchPath": { "type": "string" },
         "mobileRemoteConsoleRendered": { "type": "boolean" }
+      }
+    },
+    "hub": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "rendered",
+        "runtimeReady",
+        "capabilityIds",
+        "targetRoleIds",
+        "visibleCapabilityCount",
+        "candidateFilterVisible",
+        "candidateBoundaryVisible",
+        "cvImportMode",
+        "cvImportInteractiveControlCount",
+        "fileUploadControlCount",
+        "liveLaunchHref",
+        "productBoundaryVisible"
+      ],
+      "properties": {
+        "path": { "type": "string" },
+        "rendered": { "type": "boolean" },
+        "runtimeReady": { "type": "boolean" },
+        "capabilityIds": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "uniqueItems": true
+        },
+        "targetRoleIds": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z_]+$" },
+          "uniqueItems": true
+        },
+        "visibleCapabilityCount": { "type": "integer", "minimum": 0 },
+        "candidateFilterVisible": { "type": "boolean" },
+        "candidateBoundaryVisible": { "type": "boolean" },
+        "cvImportMode": { "enum": ["OWNER_GATED"] },
+        "cvImportInteractiveControlCount": { "type": "integer", "minimum": 0 },
+        "fileUploadControlCount": { "type": "integer", "minimum": 0 },
+        "liveLaunchHref": { "type": "string" },
+        "productBoundaryVisible": { "type": "boolean" }
       }
     },
     "product": {
@@ -436,12 +539,16 @@
       "additionalProperties": false,
       "required": [
         "viewportWidth",
+        "hubRootOverflowPx",
+        "hubOverflowPx",
         "rootOverflowPx",
         "consoleOverflowPx",
         "evidenceTableKeyboardScrollable"
       ],
       "properties": {
         "viewportWidth": { "type": "integer", "minimum": 1 },
+        "hubRootOverflowPx": { "type": "number", "minimum": 0 },
+        "hubOverflowPx": { "type": "number", "minimum": 0 },
         "rootOverflowPx": { "type": "number", "minimum": 0 },
         "consoleOverflowPx": { "type": "number", "minimum": 0 },
         "evidenceTableKeyboardScrollable": { "type": "boolean" }
@@ -452,12 +559,14 @@
       "additionalProperties": false,
       "required": [
         "loginBlockingViolationCount",
+        "hubBlockingViolationCount",
         "productBlockingViolationCount",
         "blockingViolationCount",
         "violations"
       ],
       "properties": {
         "loginBlockingViolationCount": { "type": "integer", "minimum": 0 },
+        "hubBlockingViolationCount": { "type": "integer", "minimum": 0 },
         "productBlockingViolationCount": { "type": "integer", "minimum": 0 },
         "blockingViolationCount": { "type": "integer", "minimum": 0 },
         "violations": {
@@ -467,7 +576,7 @@
             "additionalProperties": false,
             "required": ["surface", "id", "impact", "nodeCount"],
             "properties": {
-              "surface": { "enum": ["login", "product"] },
+              "surface": { "enum": ["login", "hub", "product"] },
               "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
               "impact": { "type": ["string", "null"] },
               "nodeCount": { "type": "integer", "minimum": 1 }

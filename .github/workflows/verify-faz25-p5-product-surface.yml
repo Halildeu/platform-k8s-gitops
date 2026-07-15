@@ -80,9 +80,9 @@ jobs:
           REPORT_PATH: ${{ steps.workspace.outputs.lineage_pre }}
           PHASE: pre
           EXPECTED_CONTEXT: k3d-test
-          EXPECTED_SOURCE_SHA: 7a764fe91deed655a83f44af7bc15d97481ee29d
-          EXPECTED_IMAGE_DIGEST: sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e
-          EXPECTED_BUILD_RUN_ID: "29444176456"
+          EXPECTED_SOURCE_SHA: 90768ed318ebfa547d2b3137aa317168f9c726d7
+          EXPECTED_IMAGE_DIGEST: sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6
+          EXPECTED_BUILD_RUN_ID: "29451703189"
           EXPECTED_CLUSTER_SERVER_SHA256: 72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29
           EXPECTED_CLUSTER_CA_SHA256: ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96
           EXPECTED_KUBE_SYSTEM_UID: 0a7f11d1-53d6-452f-bdac-3669507af073
@@ -176,9 +176,9 @@ jobs:
           P5_EXPECTED_ROLE: P5_READINESS_VIEWER
           P5_EXPECTED_USER_ID: "6"
           P5_EXPECTED_SUBSCRIBER_ID: "6"
-          P5_EXPECTED_SOURCE_SHA: 7a764fe91deed655a83f44af7bc15d97481ee29d
-          P5_EXPECTED_FRONTEND_DIGEST: sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e
-          P5_EXPECTED_BUILD_RUN_ID: "29444176456"
+          P5_EXPECTED_SOURCE_SHA: 90768ed318ebfa547d2b3137aa317168f9c726d7
+          P5_EXPECTED_FRONTEND_DIGEST: sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6
+          P5_EXPECTED_BUILD_RUN_ID: "29451703189"
           P5_LIVE_FRONTEND_DIGEST: ${{ steps.pre_lineage.outputs.live_digest }}
           P5_HARNESS_REPOSITORY: ${{ github.repository }}
           P5_HARNESS_REVISION: ${{ steps.workspace.outputs.harness_revision }}
@@ -222,9 +222,9 @@ jobs:
           REPORT_PATH: ${{ steps.workspace.outputs.lineage_post }}
           PHASE: post
           EXPECTED_CONTEXT: k3d-test
-          EXPECTED_SOURCE_SHA: 7a764fe91deed655a83f44af7bc15d97481ee29d
-          EXPECTED_IMAGE_DIGEST: sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e
-          EXPECTED_BUILD_RUN_ID: "29444176456"
+          EXPECTED_SOURCE_SHA: 90768ed318ebfa547d2b3137aa317168f9c726d7
+          EXPECTED_IMAGE_DIGEST: sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6
+          EXPECTED_BUILD_RUN_ID: "29451703189"
           EXPECTED_CLUSTER_SERVER_SHA256: 72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29
           EXPECTED_CLUSTER_CA_SHA256: ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96
           EXPECTED_KUBE_SYSTEM_UID: 0a7f11d1-53d6-452f-bdac-3669507af073
@@ -391,16 +391,16 @@ jobs:
                 sensitiveValueScanPassed: $sensitive_scan_passed
               },
               lineage: {
-                sourceSha: "7a764fe91deed655a83f44af7bc15d97481ee29d",
-                frontendDigest: "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e",
-                buildRunId: "29444176456"
+                sourceSha: "90768ed318ebfa547d2b3137aa317168f9c726d7",
+                frontendDigest: "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6",
+                buildRunId: "29451703189"
               },
               children: [
                 {
                   kind: "browser",
                   path: "browser-report.json",
                   sha256: $browser_sha,
-                  schemaVersion: "faz25-p5-authenticated-product-surface-v3"
+                  schemaVersion: "faz25-p5-authenticated-product-surface-v4"
                 },
                 {
                   kind: "lineage-pre",

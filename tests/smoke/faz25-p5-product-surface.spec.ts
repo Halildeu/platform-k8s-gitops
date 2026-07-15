@@ -14,11 +14,11 @@ const expectedRole = process.env.P5_EXPECTED_ROLE ?? 'P5_READINESS_VIEWER';
 const expectedUserId = process.env.P5_EXPECTED_USER_ID ?? '6';
 const expectedSubscriberId = process.env.P5_EXPECTED_SUBSCRIBER_ID ?? '6';
 const expectedSourceSha =
-  process.env.P5_EXPECTED_SOURCE_SHA ?? '7a764fe91deed655a83f44af7bc15d97481ee29d';
+  process.env.P5_EXPECTED_SOURCE_SHA ?? '90768ed318ebfa547d2b3137aa317168f9c726d7';
 const expectedFrontendDigest =
   process.env.P5_EXPECTED_FRONTEND_DIGEST ??
-  'sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e';
-const expectedBuildRunId = process.env.P5_EXPECTED_BUILD_RUN_ID ?? '29444176456';
+  'sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6';
+const expectedBuildRunId = process.env.P5_EXPECTED_BUILD_RUN_ID ?? '29451703189';
 const liveFrontendDigest = process.env.P5_LIVE_FRONTEND_DIGEST ?? '';
 const harnessRepository = process.env.P5_HARNESS_REPOSITORY ?? '';
 const harnessRevision = process.env.P5_HARNESS_REVISION ?? '';
@@ -49,8 +49,29 @@ const issuerOrigin = issuerUrl.origin;
 const issuerPath = issuerUrl.pathname.replace(/\/$/, '');
 const authorizationPath = `${issuerPath}/protocol/openid-connect/auth`;
 const tokenPath = `${issuerPath}/protocol/openid-connect/token`;
+const expectedHubPath = '/admin/ats';
 const expectedFinalPath = '/admin/interview-evidence';
 const startedAt = new Date().toISOString();
+
+const expectedCapabilityIds = [
+  'interview-evidence-workspace',
+  'candidate-cv-pdf-import',
+  'candidate-review-and-appeal',
+  'citation-backed-coaching',
+  'fairness-audit',
+  'quality-of-hire',
+  'skills-evidence',
+  'media-integrity',
+  'agentic-screening',
+] as const;
+const expectedTargetRoleIds = [
+  'candidate',
+  'recruiter',
+  'hiring_manager',
+  'interviewer',
+  'auditor',
+  'admin',
+] as const;
 
 const expectedProfileIds = [
   'deployment-profile-MANAGED',
@@ -82,7 +103,7 @@ const expectedInteractiveControlIds = [
 ] as const;
 
 type AcceptanceReport = {
-  schemaVersion: 'faz25-p5-authenticated-product-surface-v3';
+  schemaVersion: 'faz25-p5-authenticated-product-surface-v4';
   verdict: 'PASS' | 'FAIL';
   startedAt: string;
   observedAt: string;
@@ -140,15 +161,34 @@ type AcceptanceReport = {
     desktopSidebarHref: string;
     desktopSearchQuery: string;
     desktopSearchResultVisible: boolean;
-    desktopFinalPath: string;
+    desktopHubPath: string;
+    desktopHubRendered: boolean;
+    desktopLaunchPath: string;
     desktopRemoteConsoleRendered: boolean;
     mobileViewportWidth: number;
     mobileHomePath: string;
     mobileMenuOpened: boolean;
     mobileHrSectionOpened: boolean;
-    mobileInterviewEvidenceActionVisible: boolean;
-    mobileFinalPath: string;
+    mobileAtsProductHubActionVisible: boolean;
+    mobileHubPath: string;
+    mobileHubRendered: boolean;
+    mobileLaunchPath: string;
     mobileRemoteConsoleRendered: boolean;
+  };
+  hub?: {
+    path: string;
+    rendered: boolean;
+    runtimeReady: boolean;
+    capabilityIds: string[];
+    targetRoleIds: string[];
+    visibleCapabilityCount: number;
+    candidateFilterVisible: boolean;
+    candidateBoundaryVisible: boolean;
+    cvImportMode: 'OWNER_GATED';
+    cvImportInteractiveControlCount: number;
+    fileUploadControlCount: number;
+    liveLaunchHref: string;
+    productBoundaryVisible: boolean;
   };
   product?: {
     finalPath: string;
@@ -164,16 +204,19 @@ type AcceptanceReport = {
   };
   responsive?: {
     viewportWidth: number;
+    hubRootOverflowPx: number;
+    hubOverflowPx: number;
     rootOverflowPx: number;
     consoleOverflowPx: number;
     evidenceTableKeyboardScrollable: boolean;
   };
   accessibility?: {
     loginBlockingViolationCount: number;
+    hubBlockingViolationCount: number;
     productBlockingViolationCount: number;
     blockingViolationCount: number;
     violations: Array<{
-      surface: 'login' | 'product';
+      surface: 'login' | 'hub' | 'product';
       id: string;
       impact: string | null;
       nodeCount: number;
@@ -186,7 +229,7 @@ type AcceptanceReport = {
 };
 
 const report: AcceptanceReport = {
-  schemaVersion: 'faz25-p5-authenticated-product-surface-v3',
+  schemaVersion: 'faz25-p5-authenticated-product-surface-v4',
   verdict: 'FAIL',
   startedAt,
   observedAt: startedAt,
@@ -343,7 +386,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     if (
       request.isNavigationRequest() &&
       url.origin === appOrigin &&
-      url.pathname === expectedFinalPath &&
+      url.pathname === expectedHubPath &&
       url.searchParams.has('code') &&
       url.searchParams.has('state')
     ) {
@@ -365,7 +408,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   page.on('framenavigated', (frame) => {
     if (frame !== page.mainFrame()) return;
     const url = new URL(frame.url());
-    if (url.origin !== appOrigin || url.pathname !== expectedFinalPath) return;
+    if (url.origin !== appOrigin || url.pathname !== expectedHubPath) return;
     const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
     const code = url.searchParams.get('code') ?? fragment.get('code') ?? '';
     const state = url.searchParams.get('state') ?? fragment.get('state') ?? '';
@@ -377,7 +420,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     }
   });
 
-  await page.goto('/login?redirect=%2Fadmin%2Finterview-evidence', {
+  await page.goto('/login?redirect=%2Fadmin%2Fats', {
     waitUntil: 'domcontentloaded',
   });
   const corporateLogin = page.getByTestId('corporate-login-button');
@@ -393,7 +436,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(keycloakLoginUrl.searchParams.get('code_challenge_method')).toBe('S256');
   const redirectUri = new URL(keycloakLoginUrl.searchParams.get('redirect_uri') ?? 'invalid:');
   expect(redirectUri.origin).toBe(appOrigin);
-  expect(redirectUri.pathname).toBe(expectedFinalPath);
+  expect(redirectUri.pathname).toBe(expectedHubPath);
 
   const loginAxeResults = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'])
@@ -435,16 +478,17 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   observed.tokenResponseSuccessful = tokenResponse.status() >= 200 && tokenResponse.status() < 300;
   expect(observed.tokenResponseSuccessful).toBe(true);
 
+  const hubSurface = page.getByTestId('ats-product-hub');
   const consoleSurface = page.getByTestId('deployment-readiness-console');
-  await expect(consoleSurface).toBeVisible({ timeout: 90_000 });
-  await expect(page).toHaveURL(/\/admin\/interview-evidence(?:[?#].*)?$/);
+  await expect(hubSurface).toBeVisible({ timeout: 90_000 });
+  await expect(page).toHaveURL(/\/admin\/ats(?:[?#].*)?$/);
   const finalUrl = new URL(page.url());
   const finalFragment = new URLSearchParams(finalUrl.hash.replace(/^#/, ''));
   observed.oauthParametersCleared = ['code', 'state', 'session_state'].every(
     (key) => !finalUrl.searchParams.has(key) && !finalFragment.has(key),
   );
   expect(finalUrl.origin).toBe(appOrigin);
-  expect(finalUrl.pathname).toBe(expectedFinalPath);
+  expect(finalUrl.pathname).toBe(expectedHubPath);
   expect(observed.oauthParametersCleared).toBe(true);
 
   observed.codeCorrelationMatched =
@@ -533,10 +577,10 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
 
   const desktopSidebar = page.getByRole('complementary', { name: 'Sidebar' });
   const desktopSidebarLink = desktopSidebar.getByRole('link', {
-    name: /Interview Evidence/,
+    name: /ATS Ürün Merkezi/,
   });
   await expect(desktopSidebarLink).toBeVisible();
-  await expect(desktopSidebarLink).toHaveAttribute('href', expectedFinalPath);
+  await expect(desktopSidebarLink).toHaveAttribute('href', expectedHubPath);
   const desktopSidebarVisible = await desktopSidebarLink.isVisible();
   const desktopSidebarHref = (await desktopSidebarLink.getAttribute('href')) ?? '';
 
@@ -551,16 +595,100 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   const desktopSearchQuery = await commandSearch.inputValue();
   expect(desktopSearchQuery).toBe('mülakat');
   const desktopSearchResult = commandPalette
-    .getByRole('button', { name: /Interview Evidence/ })
+    .getByRole('button', { name: /ATS Ürün Merkezi/ })
     .first();
   await expect(desktopSearchResult).toBeVisible();
   const desktopSearchResultVisible = await desktopSearchResult.isVisible();
   await desktopSearchResult.focus();
   await expect(desktopSearchResult).toBeFocused();
   await page.keyboard.press('Enter');
+  await expect(hubSurface).toBeVisible({ timeout: 90_000 });
+  const desktopHubPath = new URL(page.url()).pathname;
+  expect(desktopHubPath).toBe(expectedHubPath);
+  const desktopHubRendered = await hubSurface.isVisible();
+
+  const runtimeStatus = page.getByTestId('ats-runtime-status');
+  await expect(runtimeStatus).toContainText('Canlı mülakat çalışma alanı bu dağıtımda hazır.');
+  const runtimeReady = await runtimeStatus.isVisible();
+
+  const capabilityCards = page.locator('article[data-testid^="ats-capability-"]');
+  await expect(capabilityCards).toHaveCount(expectedCapabilityIds.length);
+  const capabilityIds = await capabilityCards.evaluateAll((cards) =>
+    cards.map((card) =>
+      (card.getAttribute('data-testid') ?? '').replace(/^ats-capability-/, ''),
+    ),
+  );
+  expect(capabilityIds).toEqual(expectedCapabilityIds);
+
+  const roleFilters = hubSurface.locator('button[data-testid^="ats-role-filter-"]');
+  await expect(roleFilters).toHaveCount(expectedTargetRoleIds.length + 1);
+  const targetRoleIds = (await roleFilters.evaluateAll((controls) =>
+    controls.map((control) =>
+      (control.getAttribute('data-testid') ?? '').replace(/^ats-role-filter-/, ''),
+    ),
+  )).filter((role) => role !== 'all');
+  expect(targetRoleIds).toEqual(expectedTargetRoleIds);
+
+  const candidateFilter = page.getByTestId('ats-role-filter-candidate');
+  await candidateFilter.focus();
+  await expect(candidateFilter).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(candidateFilter).toHaveAttribute('aria-pressed', 'true');
+  const candidateBoundary = page.getByTestId('ats-candidate-role-boundary');
+  await expect(candidateBoundary).toBeVisible();
+  await expect(candidateBoundary).toContainText('Bu yönetici adresi adaya verilmez');
+
+  const cvImportCard = page.getByTestId('ats-capability-candidate-cv-pdf-import');
+  await expect(cvImportCard).toBeVisible();
+  await expect(cvImportCard).toContainText('Onay kapılı');
+  await expect(cvImportCard).toContainText('yükleme kontrolü açılmaz');
+  const cvImportInteractiveControlCount = await cvImportCard
+    .locator(
+      'button, a[href], input, select, textarea, [contenteditable="true"], [role="button"], [role="link"]',
+    )
+    .count();
+  expect(cvImportInteractiveControlCount).toBe(0);
+  const fileUploadControlCount = await hubSurface.locator('input[type="file"]').count();
+  expect(fileUploadControlCount).toBe(0);
+
+  const allRolesFilter = page.getByTestId('ats-role-filter-all');
+  await allRolesFilter.focus();
+  await page.keyboard.press('Space');
+  await expect(allRolesFilter).toHaveAttribute('aria-pressed', 'true');
+  await expect(capabilityCards).toHaveCount(expectedCapabilityIds.length);
+
+  const liveLaunch = page.getByTestId('ats-live-interview-evidence-link');
+  await expect(liveLaunch).toBeVisible();
+  await expect(liveLaunch).toHaveAttribute('href', expectedFinalPath);
+  const liveLaunchHref = (await liveLaunch.getAttribute('href')) ?? '';
+  const productBoundary = page.getByTestId('ats-product-boundary');
+  await expect(productBoundary).toBeVisible();
+  await expect(productBoundary).toContainText(
+    'otomatik eleme veya sıralama, istihdam kararı, Legal/DPO, owner ve müşteri onayı bu merkezle açılmaz',
+  );
+
+  report.hub = {
+    path: desktopHubPath,
+    rendered: desktopHubRendered,
+    runtimeReady,
+    capabilityIds,
+    targetRoleIds,
+    visibleCapabilityCount: capabilityIds.length,
+    candidateFilterVisible: await candidateFilter.isVisible(),
+    candidateBoundaryVisible: await candidateBoundary.isVisible(),
+    cvImportMode: 'OWNER_GATED',
+    cvImportInteractiveControlCount,
+    fileUploadControlCount,
+    liveLaunchHref,
+    productBoundaryVisible: await productBoundary.isVisible(),
+  };
+
+  await liveLaunch.focus();
+  await expect(liveLaunch).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(consoleSurface).toBeVisible({ timeout: 90_000 });
-  const desktopFinalPath = new URL(page.url()).pathname;
-  expect(desktopFinalPath).toBe(expectedFinalPath);
+  const desktopLaunchPath = new URL(page.url()).pathname;
+  expect(desktopLaunchPath).toBe(expectedFinalPath);
   const desktopRemoteConsoleRendered = await consoleSurface.isVisible();
 
   const profileCatalog = page.getByTestId('deployment-profile-catalog');
@@ -680,7 +808,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   );
 
   report.product = {
-    finalPath: finalUrl.pathname,
+    finalPath: desktopLaunchPath,
     profileIds,
     gateIds,
     headerLabels,
@@ -712,19 +840,52 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   await mobileHrButton.focus();
   await expect(mobileHrButton).toBeFocused();
   await page.keyboard.press('Enter');
-  const mobileInterviewEvidenceAction = mobileNavigation.getByRole('button', {
-    name: /Interview Evidence/,
+  const mobileAtsProductHubAction = mobileNavigation.getByRole('button', {
+    name: /ATS Ürün Merkezi/,
   });
-  await expect(mobileInterviewEvidenceAction).toBeVisible();
-  const mobileHrSectionOpened = await mobileInterviewEvidenceAction.isVisible();
-  const mobileInterviewEvidenceActionVisible =
-    await mobileInterviewEvidenceAction.isVisible();
-  await mobileInterviewEvidenceAction.focus();
-  await expect(mobileInterviewEvidenceAction).toBeFocused();
+  await expect(mobileAtsProductHubAction).toBeVisible();
+  const mobileHrSectionOpened = await mobileAtsProductHubAction.isVisible();
+  const mobileAtsProductHubActionVisible = await mobileAtsProductHubAction.isVisible();
+  await mobileAtsProductHubAction.focus();
+  await expect(mobileAtsProductHubAction).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(hubSurface).toBeVisible({ timeout: 90_000 });
+  const mobileHubPath = new URL(page.url()).pathname;
+  expect(mobileHubPath).toBe(expectedHubPath);
+  const mobileHubRendered = await hubSurface.isVisible();
+
+  const hubLayout = await page.evaluate(() => ({
+    rootOverflowPx: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    rootOverflowModes: [document.documentElement, document.body, document.querySelector('main')]
+      .filter((element): element is HTMLElement => element instanceof HTMLElement)
+      .map((element) => window.getComputedStyle(element).overflowX),
+  }));
+  const hubOverflowPx = await hubSurface.evaluate(
+    (surface) => surface.scrollWidth - surface.clientWidth,
+  );
+  expect(hubLayout.rootOverflowPx).toBeLessThanOrEqual(1);
+  expect(hubLayout.rootOverflowModes).not.toContain('hidden');
+  expect(hubLayout.rootOverflowModes).not.toContain('clip');
+  expect(hubOverflowPx).toBeLessThanOrEqual(1);
+
+  const hubAxeResults = await new AxeBuilder({ page })
+    .include('[data-testid="ats-product-hub"]')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'])
+    .analyze();
+  const hubBlockingViolations = hubAxeResults.violations.filter(
+    (violation) => violation.impact === 'critical' || violation.impact === 'serious',
+  );
+  expect(hubBlockingViolations).toEqual([]);
+
+  const mobileLiveLaunch = page.getByTestId('ats-live-interview-evidence-link');
+  await expect(mobileLiveLaunch).toBeVisible();
+  await expect(mobileLiveLaunch).toHaveAttribute('href', expectedFinalPath);
+  await mobileLiveLaunch.focus();
+  await expect(mobileLiveLaunch).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(consoleSurface).toBeVisible({ timeout: 90_000 });
-  const mobileFinalPath = new URL(page.url()).pathname;
-  expect(mobileFinalPath).toBe(expectedFinalPath);
+  const mobileLaunchPath = new URL(page.url()).pathname;
+  expect(mobileLaunchPath).toBe(expectedFinalPath);
   const mobileRemoteConsoleRendered = await consoleSurface.isVisible();
   report.discovery = {
     desktopHomePath,
@@ -732,14 +893,18 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     desktopSidebarHref,
     desktopSearchQuery,
     desktopSearchResultVisible,
-    desktopFinalPath,
+    desktopHubPath,
+    desktopHubRendered,
+    desktopLaunchPath,
     desktopRemoteConsoleRendered,
     mobileViewportWidth,
     mobileHomePath,
     mobileMenuOpened,
     mobileHrSectionOpened,
-    mobileInterviewEvidenceActionVisible,
-    mobileFinalPath,
+    mobileAtsProductHubActionVisible,
+    mobileHubPath,
+    mobileHubRendered,
+    mobileLaunchPath,
     mobileRemoteConsoleRendered,
   };
 
@@ -774,6 +939,8 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(consoleOverflowPx).toBeLessThanOrEqual(1);
   report.responsive = {
     viewportWidth: 390,
+    hubRootOverflowPx: hubLayout.rootOverflowPx,
+    hubOverflowPx,
     rootOverflowPx: layout.rootOverflowPx,
     consoleOverflowPx,
     evidenceTableKeyboardScrollable: evidenceScrollLeft > 0,
@@ -797,6 +964,12 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
       impact: violation.impact ?? null,
       nodeCount: violation.nodes.length,
     })),
+    ...hubBlockingViolations.map((violation) => ({
+      surface: 'hub' as const,
+      id: violation.id,
+      impact: violation.impact ?? null,
+      nodeCount: violation.nodes.length,
+    })),
     ...productBlockingViolations.map((violation) => ({
       surface: 'product' as const,
       id: violation.id,
@@ -806,6 +979,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   ];
   report.accessibility = {
     loginBlockingViolationCount: loginBlockingViolations.length,
+    hubBlockingViolationCount: hubBlockingViolations.length,
     productBlockingViolationCount: productBlockingViolations.length,
     blockingViolationCount: violations.length,
     violations,
