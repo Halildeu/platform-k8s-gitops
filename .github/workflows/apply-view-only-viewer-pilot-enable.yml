@@ -206,7 +206,11 @@ jobs:
           kubectl create --dry-run=client --validate=false \
             -f /tmp/endpoint-admin-remote-bridge-viewer.yaml \
             -o json \
-            | jq -s '{apiVersion:"v1", kind:"List", items:.}' \
+            | jq -s '{apiVersion:"v1", kind:"List", items:[.[]
+                | if (.kind == "List" and (.items | type) == "array")
+                  then .items[]
+                  else .
+                  end]}' \
             > /tmp/endpoint-admin-remote-bridge-viewer.json
 
           jq -e --arg deploy "$BRIDGE_DEPLOYMENT" --arg config "$BRIDGE_CONFIGMAP" '

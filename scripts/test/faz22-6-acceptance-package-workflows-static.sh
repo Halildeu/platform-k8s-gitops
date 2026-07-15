@@ -69,6 +69,33 @@ require_grep() {
   }
 }
 
+verify_viewer_resource_normalizer() {
+  local filter normalized
+  filter='{apiVersion:"v1", kind:"List", items:[.[]
+    | if (.kind == "List" and (.items | type) == "array")
+      then .items[]
+      else .
+      end]}'
+
+  normalized="$({
+    printf '%s\n' '{"apiVersion":"v1","kind":"Service","metadata":{"name":"viewer"}}'
+    printf '%s\n' '{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"bridge"}}'
+  } | jq -cs "$filter")"
+  jq -e '
+    .apiVersion == "v1" and .kind == "List" and (.items | length) == 2
+    and [.items[].kind] == ["Service", "Deployment"]
+  ' <<<"$normalized" >/dev/null
+
+  normalized="$(printf '%s\n' \
+    '{"apiVersion":"v1","kind":"List","items":[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"viewer-config"}}]}' \
+    | jq -cs "$filter")"
+  jq -e '
+    .apiVersion == "v1" and .kind == "List" and (.items | length) == 1
+    and .items[0].kind == "ConfigMap"
+    and .items[0].metadata.name == "viewer-config"
+  ' <<<"$normalized" >/dev/null
+}
+
 for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER" \
   "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_PRODUCT_VERIFY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" "$VIEWER_BROWSER_WORKFLOW" \
@@ -244,7 +271,9 @@ require_grep "requested watchdog expiry exceeds the signed protected authorizati
 require_grep "BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key" "$VIEWER_APPLY_WORKFLOW"
 require_grep "BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key" "$VIEWER_APPLY_WORKFLOW"
 require_grep "endpoint-admin-remote-bridge-device-key-live" "$VIEWER_APPLY_WORKFLOW"
-require_grep 'jq -s '\''{apiVersion:"v1", kind:"List", items:.}'\''' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'jq -s '\''{apiVersion:"v1", kind:"List", items:[.[]' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'if (.kind == "List" and (.items | type) == "array")' "$VIEWER_APPLY_WORKFLOW"
+verify_viewer_resource_normalizer
 require_grep "endpoint-admin-remote-bridge-config-device-key" "$VIEWER_WATCHDOG"
 require_grep "deployments/endpoint-admin-remote-bridge-device-key" "$VIEWER_WATCHDOG"
 require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORKFLOW"
