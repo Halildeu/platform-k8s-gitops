@@ -90,11 +90,11 @@ jobs:
           printf '%s' "$artifact_digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
           github_read_api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/authorization.zip"
           [ "sha256:$(sha256sum "$out/authorization.zip" | awk '{print $1}')" = "$artifact_digest" ]
-          printf '%s\n' SHA256SUMS protected-authorization.json \
-            | sort > "$out/expected-files.txt"
-          unzip -Z1 "$out/authorization.zip" | sort > "$out/actual-files.txt"
-          diff -u "$out/expected-files.txt" "$out/actual-files.txt"
-          unzip -q "$out/authorization.zip" -d "$out/receipt"
+          python3 scripts/faz22-remote-ops/extract-exact-zip.py \
+            --archive "$out/authorization.zip" \
+            --destination "$out/receipt" \
+            --expected-file SHA256SUMS \
+            --expected-file protected-authorization.json
           (cd "$out/receipt" && sha256sum -c SHA256SUMS)
           authorization_sha256="sha256:$(sha256sum "$out/receipt/protected-authorization.json" | awk '{print $1}')"
           python3 scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py \
@@ -134,8 +134,10 @@ jobs:
           printf '%s' "$artifact_digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
           github_read_api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/browser.zip"
           [ "sha256:$(sha256sum "$out/browser.zip" | awk '{print $1}')" = "$artifact_digest" ]
-          [ "$(unzip -Z1 "$out/browser.zip")" = "evidence/browser.json" ]
-          unzip -q "$out/browser.zip" -d "$out/artifact"
+          python3 scripts/faz22-remote-ops/extract-exact-zip.py \
+            --archive "$out/browser.zip" \
+            --destination "$out/artifact" \
+            --expected-file evidence/browser.json
           jq -e --arg sha "$GITHUB_SHA" --slurpfile authorization \
               "$RUNNER_TEMP/faz22-viewer-matrix-activation/receipt/protected-authorization.json" '
             .schemaVersion == "faz22.6.viewOnlyViewerProductChildEvidence.v2"

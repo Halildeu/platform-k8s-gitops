@@ -29,6 +29,8 @@ on:
       - 'config/faz22-6-view-only-kvkk-approver-policy.v1.json'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/lib-github-read-api.sh'
+      - 'scripts/faz22-remote-ops/extract-exact-zip.py'
+      - 'tests/faz22_remote_ops/test_extract_exact_zip.py'
       - 'scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh'
       - 'scripts/faz22-remote-ops/verify-denetim-ssh-key-evidence.py'
       - 'scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh'
@@ -93,6 +95,8 @@ on:
       - 'config/faz22-6-view-only-kvkk-approver-policy.v1.json'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/lib-github-read-api.sh'
+      - 'scripts/faz22-remote-ops/extract-exact-zip.py'
+      - 'tests/faz22_remote_ops/test_extract_exact_zip.py'
       - 'scripts/faz22-remote-ops/faz22-6-denetim-ssh-preflight.sh'
       - 'scripts/faz22-remote-ops/verify-denetim-ssh-key-evidence.py'
       - 'scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh'
@@ -171,9 +175,13 @@ jobs:
             scripts/faz22-remote-ops/build-view-only-viewer-audit-summary.py \
             scripts/faz22-remote-ops/view_only_viewer_source_common.py \
             scripts/faz22-remote-ops/build-view-only-viewer-frame-flow-summary.py \
+            scripts/faz22-remote-ops/extract-exact-zip.py \
             scripts/faz22-remote-ops/verify-denetim-ssh-key-evidence.py \
             scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py \
             scripts/faz22-remote-ops/verify-view-only-kvkk-decision.py
+
+      - name: Run exact ZIP extraction regression test
+        run: python3 -m unittest tests.faz22_remote_ops.test_extract_exact_zip
 
       - name: Run Denetim SSH preflight workflow regression test
         run: |
