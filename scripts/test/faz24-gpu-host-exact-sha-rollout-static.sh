@@ -47,6 +47,10 @@ grep -Fq 'UserKnownHostsFile=' "${RUNNER}" || fail 'explicit pinned known-hosts 
 grep -Fq 'GlobalKnownHostsFile=/dev/null' "${RUNNER}" || fail 'global host-key bypass guard missing'
 grep -Fq 'CANONICAL_TARGET = "denetim-pc"' "${RUNNER}" || \
   fail 'canonical Denetim operator target missing'
+grep -Fq "scriptPathClass = 'legacy-user-repo'" "${RUNNER}" || \
+  fail 'secret-safe legacy task-action classification missing'
+grep -Fq 'actionArgumentsSha256' "${RUNNER}" || \
+  fail 'task-action metadata hash missing'
 grep -Fq 'rollout-principal-not-admin' "${RUNNER}" || \
   fail 'remote administrator guard missing'
 grep -Fq 'unexpected-rollout-identity' "${RUNNER}" || \
