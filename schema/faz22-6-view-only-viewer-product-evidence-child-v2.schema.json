@@ -84,7 +84,7 @@
     "browserPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pilotStartedAt", "pilotEndedAt", "imageElementRendered", "pixelCheckPassed", "inputChannelControlCount", "dlpMaskRectBps", "dlpMaskPixelCheckPassed", "activeIndicatorPixelCheckPassed", "maskedFrameSha256", "renderAckAttemptedCount", "renderAckAcceptedCount", "consoleErrorCount", "screenshotSha256", "firstFrameAgeMillis", "steadyFrameAgeMillis", "meta"],
+      "required": ["pilotStartedAt", "pilotEndedAt", "imageElementRendered", "pixelCheckPassed", "inputChannelControlCount", "dlpMaskRectBps", "dlpMaskPixelCheckPassed", "activeIndicatorPixelCheckPassed", "maskedFrameSha256", "renderAckAttemptedCount", "renderAckAcceptedCount", "consoleErrorCount", "screenshotSha256", "firstFrameAgeMillis", "steadyFrameAgeMillis", "consentEvidenceSha256", "meta"],
       "properties": {
         "pilotStartedAt": {"$ref": "#/$defs/utcTimestamp"},
         "pilotEndedAt": {"$ref": "#/$defs/utcTimestamp"},
@@ -101,6 +101,7 @@
         "screenshotSha256": {"$ref": "#/$defs/sha256"},
         "firstFrameAgeMillis": {"type": "integer", "minimum": 1, "maximum": 60000},
         "steadyFrameAgeMillis": {"type": "array", "minItems": 100, "maxItems": 100000, "items": {"type": "integer", "minimum": 0, "maximum": 60000}},
+        "consentEvidenceSha256": {"$ref": "#/$defs/sha256"},
         "meta": {
           "type": "object",
           "additionalProperties": false,
@@ -268,7 +269,7 @@
     },
     "operatorPayload": {
       "type": "object", "additionalProperties": false,
-      "required": ["onePersonRoster", "pilotDeviceConsented", "exposureApproved", "protectedEnvironment", "activationRunId", "activationRunAttempt", "activationHeadSha", "authorizationArtifactId", "authorizationArtifactDigest", "authorizationSha256", "kvkkMarkerSha256"],
+      "required": ["onePersonRoster", "pilotDeviceConsented", "exposureApproved", "protectedEnvironment", "activationRunId", "activationRunAttempt", "activationHeadSha", "authorizationArtifactId", "authorizationArtifactDigest", "authorizationSha256", "authorizationSchemaVersion", "ownerPolicySha256", "ownerDirectiveSha256", "aiAdvisorySha256", "legalTrackStatus", "legalClearanceClaimed"],
       "properties": {
         "onePersonRoster": {"const": true},
         "pilotDeviceConsented": {"const": true},
@@ -280,7 +281,12 @@
         "authorizationArtifactId": {"type": "integer", "minimum": 1},
         "authorizationArtifactDigest": {"$ref": "#/$defs/sha256"},
         "authorizationSha256": {"$ref": "#/$defs/sha256"},
-        "kvkkMarkerSha256": {"$ref": "#/$defs/sha256"}
+        "authorizationSchemaVersion": {"const": "faz22.6-view-only-pilot-protected-authorization-v2"},
+        "ownerPolicySha256": {"$ref": "#/$defs/sha256"},
+        "ownerDirectiveSha256": {"$ref": "#/$defs/sha256"},
+        "aiAdvisorySha256": {"$ref": "#/$defs/sha256"},
+        "legalTrackStatus": {"const": "tracked_pending"},
+        "legalClearanceClaimed": {"const": false}
       }
     }
   }

@@ -44,38 +44,34 @@ env:
 
 jobs:
   authorize-live-apply:
-    name: Verify signed legal marker and protected pilot authorization
+    name: Verify owner/AI-advisory bounded pilot authorization
     if: inputs.action == 'apply'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
       name: faz22-view-only-pilot
-      url: https://github.com/Halildeu/platform-k8s-gitops/issues/2374
+      url: https://github.com/Halildeu/platform-k8s-gitops/issues/2373
     outputs:
       authorization_sha256: ${{ steps.authorization.outputs.authorization_sha256 }}
       authorization_expires_epoch: ${{ steps.authorization.outputs.authorization_expires_epoch }}
 
     steps:
-      - name: Checkout canonical legal verifier and policy
+      - name: Checkout canonical owner policy and authorization builder
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - name: Install JSON Schema and Ed25519 dependencies
-        run: python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
-
-      - name: Verify canonical #2374 signed marker and protected authorization
+      - name: Verify owner directive, advisory provenance and protected authorization
         id: authorization
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           PILOT_OPERATOR_SHA256: ${{ secrets.VIEW_ONLY_PILOT_OPERATOR_SHA256 }}
           PILOT_DEVICE_SHA256: ${{ secrets.VIEW_ONLY_PILOT_DEVICE_SHA256 }}
           PILOT_AUTHORIZATION_EXPIRES_AT: ${{ secrets.VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT }}
         run: |
           set -euo pipefail
-          policy=config/faz22-6-view-only-kvkk-approver-policy.v1.json
-          [ -f "$policy" ] || {
-            echo "::error::canonical #2374 approver policy is absent; live viewer activation remains fail-closed"
-            exit 1
-          }
+          policy=config/faz22-6-view-only-pilot-owner-policy.v1.json
+          revocations=config/faz22-6-view-only-pilot-authorization-revocations.v1.json
+          test -s "$policy"
+          test -s "$revocations"
           for name in PILOT_OPERATOR_SHA256 PILOT_DEVICE_SHA256; do
             value="${!name:-}"
             printf '%s' "$value" | grep -Eq '^sha256:[a-f0-9]{64}$' || {
@@ -99,53 +95,42 @@ jobs:
 
           out="$RUNNER_TEMP/faz22-view-only-pilot-authorization"
           mkdir -p "$out"
-          gh api repos/Halildeu/platform-k8s-gitops/issues/2374/comments --paginate > "$out/issue-comments.json"
-          python3 - "$out/issue-comments.json" "$out/kvkk-marker.txt" <<'PY'
-          import json
-          import re
-          import sys
-
-          comments = json.load(open(sys.argv[1], encoding="utf-8"))
-          pattern = re.compile(
-              r"(?m)^F22_6_VIEW_ONLY_KVKK: v1\n(?:[a-z0-9_]+: [^\r\n\t]{1,512}\n)+"
-          )
-          markers = [match.group(0) for comment in comments for match in pattern.finditer(comment.get("body", ""))]
-          if len(markers) != 1:
-              raise SystemExit(f"expected exactly one canonical #2374 marker, found {len(markers)}")
-          open(sys.argv[2], "w", encoding="utf-8").write(markers[0])
-          PY
-          python3 scripts/faz22-remote-ops/verify-view-only-kvkk-decision.py \
-            --approver-policy "$policy" \
-            --verify-marker-input "$out/kvkk-marker.txt" \
-            --result-out "$out/kvkk-marker-verifier-result.json"
-          jq -e '.status == "pass" and .humanSignatureCount == 2' \
-            "$out/kvkk-marker-verifier-result.json" >/dev/null
-
-          kvkk_marker_sha256="sha256:$(sha256sum "$out/kvkk-marker.txt" | awk '{print $1}')"
-          jq -n -S \
-            --arg schemaVersion 'faz22.6-view-only-pilot-protected-authorization-v1' \
-            --arg environment 'faz22-view-only-pilot' \
-            --arg operatorSha256 "$PILOT_OPERATOR_SHA256" \
-            --arg deviceSha256 "$PILOT_DEVICE_SHA256" \
-            --arg kvkkMarkerSha256 "$kvkk_marker_sha256" \
-            --arg expiresAt "$PILOT_AUTHORIZATION_EXPIRES_AT" \
-            --arg runId "$GITHUB_RUN_ID" \
-            '{schemaVersion:$schemaVersion, environment:$environment, onePersonRoster:true,
-              operatorSha256:$operatorSha256, consentingPilotDevice:true, deviceSha256:$deviceSha256,
-              exposureApprovedByProtectedEnvironment:true, kvkkMarkerSha256:$kvkkMarkerSha256,
-              expiresAt:$expiresAt, authorizationRunId:($runId|tonumber)}' \
-            | jq -cS . > "$out/protected-authorization.json"
+          owner_comment_id="$(jq -er '.ownerDirective.commentId' "$policy")"
+          advisory_comment_id="$(jq -er '.aiAdvisory.commentId' "$policy")"
+          gh api "repos/$GITHUB_REPOSITORY/issues/comments/$owner_comment_id" > "$out/owner-comment.json"
+          gh api "repos/$GITHUB_REPOSITORY/issues/comments/$advisory_comment_id" > "$out/advisory-comment.json"
+          gh api "repos/$GITHUB_REPOSITORY/issues/2374" > "$out/legal-issue.json"
+          gh api "repos/$GITHUB_REPOSITORY/environments/faz22-view-only-pilot" > "$out/environment.json"
+          issued_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python3 scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py \
+            --policy "$policy" \
+            --owner-comment "$out/owner-comment.json" \
+            --advisory-comment "$out/advisory-comment.json" \
+            --legal-issue "$out/legal-issue.json" \
+            --environment "$out/environment.json" \
+            --revocations "$revocations" \
+            --operator-sha256 "$PILOT_OPERATOR_SHA256" \
+            --device-sha256 "$PILOT_DEVICE_SHA256" \
+            --issued-at "$issued_at" \
+            --expires-at "$PILOT_AUTHORIZATION_EXPIRES_AT" \
+            --run-id "$GITHUB_RUN_ID" \
+            --head-sha "$GITHUB_SHA" \
+            --triggering-actor "$GITHUB_ACTOR" \
+            --output "$out/protected-authorization.json"
+          python3 scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py \
+            --receipt "$out/protected-authorization.json" \
+            --policy "$policy" \
+            --revocations "$revocations" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-head-sha "$GITHUB_SHA"
           authorization_sha256="sha256:$(sha256sum "$out/protected-authorization.json" | awk '{print $1}')"
           printf 'authorization_sha256=%s\n' "$authorization_sha256" >> "$GITHUB_OUTPUT"
           printf 'authorization_expires_epoch=%s\n' \
             "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" >> "$GITHUB_OUTPUT"
-          (cd "$out" && sha256sum \
-            kvkk-marker.txt \
-            kvkk-marker-verifier-result.json \
-            protected-authorization.json \
-            > SHA256SUMS)
+          (cd "$out" && sha256sum protected-authorization.json > SHA256SUMS)
           (cd "$out" && sha256sum -c SHA256SUMS)
-          rm -f "$out/issue-comments.json"
+          rm -f "$out/owner-comment.json" "$out/advisory-comment.json" \
+            "$out/legal-issue.json" "$out/environment.json"
 
       - name: Upload protected authorization receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

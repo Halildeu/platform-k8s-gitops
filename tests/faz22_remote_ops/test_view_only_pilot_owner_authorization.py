@@ -1,0 +1,246 @@
+import importlib.util
+import sys
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+MODULE_PATH = Path(__file__).parents[2] / "scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py"
+sys.path.insert(0, str(MODULE_PATH.parent))
+SPEC = importlib.util.spec_from_file_location("view_only_pilot_owner_authorization", MODULE_PATH)
+AUTH = importlib.util.module_from_spec(SPEC)
+assert SPEC and SPEC.loader
+sys.modules[SPEC.name] = AUTH
+SPEC.loader.exec_module(AUTH)
+
+RECEIPT_MODULE_PATH = Path(__file__).parents[2] / "scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py"
+RECEIPT_SPEC = importlib.util.spec_from_file_location("view_only_pilot_authorization_receipt", RECEIPT_MODULE_PATH)
+RECEIPT = importlib.util.module_from_spec(RECEIPT_SPEC)
+assert RECEIPT_SPEC and RECEIPT_SPEC.loader
+sys.modules[RECEIPT_SPEC.name] = RECEIPT
+RECEIPT_SPEC.loader.exec_module(RECEIPT)
+
+
+OWNER_BODY = "Owner bounded-pilot directive"
+ADVISORY_BODY = "MiniMax M3 and Codex AGREE"
+
+
+def policy():
+    return {
+        "schemaVersion": AUTH.POLICY_SCHEMA,
+        "status": "active",
+        "ownerDirective": {
+            "commentId": 101,
+            "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-101",
+            "bodySha256": AUTH.digest_bytes(OWNER_BODY.encode()),
+            "authorLogin": "Halildeu",
+            "authorAssociation": "OWNER",
+        },
+        "aiAdvisory": {
+            "commentId": 102,
+            "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-102",
+            "bodySha256": AUTH.digest_bytes(ADVISORY_BODY.encode()),
+            "authorLogin": "Halildeu",
+            "authorAssociation": "OWNER",
+            "advisoryOnly": True,
+            "consensusVerdict": "AGREE",
+            "providers": ["MiniMax/minimax-MiniMax-M3", "OpenAI/Codex"],
+            "provenanceClass": "owner-attested-provider-session",
+            "providerCryptographicAttestation": False,
+        },
+        "legalTracking": {
+            "ref": AUTH.LEGAL_ISSUE_REF,
+            "status": "tracked_pending",
+            "clearanceClaimed": False,
+            "dependencyAcknowledgedBy": "owner",
+            "dependencyRationaleCode": "bounded-test-owner-risk-acceptance",
+        },
+        "scope": {
+            "environment": "test",
+            "mode": "attended-view-only",
+            "recordingMode": "disabled",
+            "screenContentPersisted": False,
+            "pilotAutoConsent": False,
+            "attendedConsentRequired": True,
+            "visibleIndicatorRequired": True,
+            "localAbortRequired": True,
+            "maxViewers": 1,
+            "productionReady": False,
+            "broadRolloutReady": False,
+            "multiViewerFanoutProven": False,
+        },
+        "authorization": {
+            "protectedEnvironment": AUTH.EXPECTED_ENVIRONMENT,
+            "requirePreventSelfReview": True,
+            "maxTtlMinutes": 120,
+            "killSwitchWorkflowRef": ".github/workflows/apply-view-only-viewer-pilot-enable.yml?action=rollback",
+            "revocationLedgerRef": "config/faz22-6-view-only-pilot-authorization-revocations.v1.json",
+        },
+        "lifecycle": {
+            "validFrom": "2026-07-15T00:00:00Z",
+            "validUntil": "2027-07-15T00:00:00Z",
+        },
+    }
+
+
+def comment(comment_id, body):
+    return {
+        "id": comment_id,
+        "html_url": f"https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-{comment_id}",
+        "issue_url": "https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/2373",
+        "author_association": "OWNER",
+        "user": {"login": "Halildeu"},
+        "body": body,
+    }
+
+
+def environment():
+    return {
+        "name": AUTH.EXPECTED_ENVIRONMENT,
+        "protection_rules": [{
+            "type": "required_reviewers",
+            "prevent_self_review": True,
+            "reviewers": [{
+                "type": "User",
+                "reviewer": {"id": 700001, "login": "security-reviewer"},
+            }],
+        }],
+    }
+
+
+def legal_issue():
+    return {"number": 2374, "state": "open", "html_url": AUTH.LEGAL_ISSUE_REF}
+
+
+def revocations(entries=None):
+    return {
+        "schemaVersion": AUTH.REVOCATION_SCHEMA,
+        "revokedAuthorizationSha256": entries or [],
+    }
+
+
+class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
+    def build(self, **overrides):
+        inputs = {
+            "policy": policy(),
+            "owner_comment": comment(101, OWNER_BODY),
+            "advisory_comment": comment(102, ADVISORY_BODY),
+            "legal_issue": legal_issue(),
+            "environment": environment(),
+            "revocations": revocations(),
+            "operator_sha256": "sha256:" + "1" * 64,
+            "device_sha256": "sha256:" + "2" * 64,
+            "expires_at": "2026-07-15T02:00:00Z",
+            "issued_at": "2026-07-15T00:00:00Z",
+            "run_id": 123,
+            "head_sha": "a" * 40,
+            "triggering_actor": "workflow-operator",
+        }
+        inputs.update(overrides)
+        return AUTH.build_authorization(**inputs)
+
+    def test_valid_bounded_authorization_is_advisory_only_and_not_legal_clearance(self):
+        result = self.build()
+        self.assertEqual(AUTH.SCHEMA, result["schemaVersion"])
+        self.assertTrue(result["aiAdvisoryOnly"])
+        self.assertEqual("AGREE", result["aiConsensusVerdict"])
+        self.assertEqual("tracked_pending", result["legalTrackStatus"])
+        self.assertFalse(result["legalClearanceClaimed"])
+        self.assertEqual("disabled", result["recordingMode"])
+        self.assertFalse(result["screenContentPersisted"])
+
+    def test_revise_or_legal_clearance_claim_fails_closed(self):
+        value = policy()
+        value["aiAdvisory"]["consensusVerdict"] = "REVISE"
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "consensus"):
+            self.build(policy=value)
+
+        value = policy()
+        value["legalTracking"]["clearanceClaimed"] = True
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "tracked_pending"):
+            self.build(policy=value)
+
+    def test_closed_legal_ticket_or_unprotected_environment_fails_closed(self):
+        issue = legal_issue()
+        issue["state"] = "closed"
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "must remain open"):
+            self.build(legal_issue=issue)
+
+        protected = environment()
+        protected["protection_rules"][0]["prevent_self_review"] = False
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "prevent self review"):
+            self.build(environment=protected)
+
+    def test_ttl_scope_and_identity_are_strict(self):
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "TTL"):
+            self.build(expires_at="2026-07-15T02:00:01Z")
+
+        value = policy()
+        value["scope"]["recordingMode"] = "enabled"
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "bounded privacy-safe"):
+            self.build(policy=value)
+
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "must be distinct"):
+            self.build(device_sha256="sha256:" + "1" * 64)
+
+    def test_policy_lifecycle_boundaries_fail_closed(self):
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "outside owner-policy lifecycle"):
+            self.build(
+                issued_at="2026-07-14T23:59:59Z",
+                expires_at="2026-07-15T00:30:00Z",
+            )
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "outside owner-policy lifecycle"):
+            self.build(
+                issued_at="2027-07-14T23:00:01Z",
+                expires_at="2027-07-15T00:00:01Z",
+            )
+
+    def test_reviewer_identity_is_bound_and_triggering_actor_cannot_review(self):
+        result = self.build()
+        self.assertEqual(1, result["protectedEnvironmentReviewerCount"])
+        self.assertRegex(result["protectedEnvironmentReviewerSetSha256"], r"^sha256:[a-f0-9]{64}$")
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "triggering actor"):
+            self.build(triggering_actor="security-reviewer")
+
+    def test_comment_body_is_content_bound(self):
+        tampered = comment(101, OWNER_BODY + " tampered")
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "body digest"):
+            self.build(owner_comment=tampered)
+
+    def test_single_authorization_can_be_revoked_without_a_ledger_digest_cycle(self):
+        result = self.build()
+        receipt_digest = AUTH.digest_bytes(AUTH.canonical_bytes(result) + b"\n")
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "already revoked"):
+            self.build(revocations=revocations([receipt_digest]))
+
+    def test_shared_receipt_verifier_is_strict_and_revocation_aware(self):
+        result = self.build()
+        raw = AUTH.canonical_bytes(result) + b"\n"
+        RECEIPT.verify(
+            result, raw, policy(), revocations(), 123, "a" * 40,
+            datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc),
+        )
+
+        tampered = dict(result)
+        tampered["unexpected"] = True
+        with self.assertRaisesRegex(RECEIPT.ReceiptError, "field set mismatch"):
+            RECEIPT.verify(
+                tampered, AUTH.canonical_bytes(tampered) + b"\n", policy(), revocations(),
+                123, "a" * 40, datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc),
+            )
+
+        with self.assertRaisesRegex(RECEIPT.ReceiptError, "has been revoked"):
+            RECEIPT.verify(
+                result, raw, policy(), revocations([AUTH.digest_bytes(raw)]), 123,
+                "a" * 40, datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc),
+            )
+
+        with self.assertRaisesRegex(RECEIPT.ReceiptError, "expired"):
+            RECEIPT.verify(
+                result, raw, policy(), revocations(), 123, "a" * 40,
+                datetime(2026, 7, 15, 2, 0, 1, tzinfo=timezone.utc),
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

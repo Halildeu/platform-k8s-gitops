@@ -100,30 +100,19 @@ jobs:
           artifact_digest="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .digest' "$out/artifacts.json")"
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/authorization.zip"
           [ "sha256:$(sha256sum "$out/authorization.zip" | awk '{print $1}')" = "$artifact_digest" ]
-          printf '%s\n' SHA256SUMS kvkk-marker-verifier-result.json kvkk-marker.txt \
-            protected-authorization.json | sort > "$out/expected-files.txt"
+          printf '%s\n' SHA256SUMS protected-authorization.json \
+            | sort > "$out/expected-files.txt"
           unzip -Z1 "$out/authorization.zip" | sort > "$out/actual-files.txt"
           diff -u "$out/expected-files.txt" "$out/actual-files.txt"
           unzip -q "$out/authorization.zip" -d "$out/receipt"
           (cd "$out/receipt" && sha256sum -c SHA256SUMS)
-          python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
-          python3 scripts/faz22-remote-ops/verify-view-only-kvkk-decision.py \
-            --approver-policy config/faz22-6-view-only-kvkk-approver-policy.v1.json \
-            --verify-marker-input "$out/receipt/kvkk-marker.txt" \
-            --result-out "$out/reverified-kvkk-marker.json"
-          jq -e '.status == "pass" and .humanSignatureCount == 2' \
-            "$out/reverified-kvkk-marker.json" >/dev/null
           authorization_sha256="sha256:$(sha256sum "$out/receipt/protected-authorization.json" | awk '{print $1}')"
-          marker_sha256="sha256:$(sha256sum "$out/receipt/kvkk-marker.txt" | awk '{print $1}')"
-          jq -e --arg run "$ACTIVATION_RUN_ID" --arg marker "$marker_sha256" '
-            .schemaVersion == "faz22.6-view-only-pilot-protected-authorization-v1"
-            and .environment == "faz22-view-only-pilot"
-            and .onePersonRoster == true and .consentingPilotDevice == true
-            and .exposureApprovedByProtectedEnvironment == true
-            and (.authorizationRunId == ($run | tonumber))
-            and (.expiresAt | fromdateiso8601) > now
-            and .kvkkMarkerSha256 == $marker
-          ' "$out/receipt/protected-authorization.json" >/dev/null
+          python3 scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py \
+            --receipt "$out/receipt/protected-authorization.json" \
+            --policy config/faz22-6-view-only-pilot-owner-policy.v1.json \
+            --revocations config/faz22-6-view-only-pilot-authorization-revocations.v1.json \
+            --expected-run-id "$ACTIVATION_RUN_ID" \
+            --expected-head-sha "$GITHUB_SHA"
           echo "MATRIX_AUTHORIZATION_SHA256=$authorization_sha256" >> "$GITHUB_ENV"
 
       - name: Fetch and bind canonical browser root

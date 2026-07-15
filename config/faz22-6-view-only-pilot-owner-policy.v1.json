@@ -1,0 +1,58 @@
+{
+  "aiAdvisory": {
+    "advisoryOnly": true,
+    "authorAssociation": "OWNER",
+    "authorLogin": "Halildeu",
+    "bodySha256": "sha256:2c30ab59f05085b31e282551269d9aa8f7b6cf680e3b0fa4eae9f45bf4a87b9d",
+    "commentId": 4978013233,
+    "consensusVerdict": "AGREE",
+    "provenanceClass": "owner-attested-provider-session",
+    "providerCryptographicAttestation": false,
+    "providers": [
+      "MiniMax/minimax-MiniMax-M3",
+      "OpenAI/Codex"
+    ],
+    "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-4978013233"
+  },
+  "authorization": {
+    "killSwitchWorkflowRef": ".github/workflows/apply-view-only-viewer-pilot-enable.yml?action=rollback",
+    "maxTtlMinutes": 120,
+    "protectedEnvironment": "faz22-view-only-pilot",
+    "requirePreventSelfReview": true,
+    "revocationLedgerRef": "config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
+  },
+  "legalTracking": {
+    "clearanceClaimed": false,
+    "dependencyAcknowledgedBy": "owner",
+    "dependencyRationaleCode": "bounded-test-owner-risk-acceptance",
+    "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2374",
+    "status": "tracked_pending"
+  },
+  "lifecycle": {
+    "validFrom": "2026-07-15T00:00:00Z",
+    "validUntil": "2026-10-15T00:00:00Z"
+  },
+  "ownerDirective": {
+    "authorAssociation": "OWNER",
+    "authorLogin": "Halildeu",
+    "bodySha256": "sha256:64aa83b0d12843570ff404a137ab854fcca7e9798f48bf6f69497c26790996db",
+    "commentId": 4977782172,
+    "ref": "https://github.com/Halildeu/platform-k8s-gitops/issues/2373#issuecomment-4977782172"
+  },
+  "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v1",
+  "scope": {
+    "attendedConsentRequired": true,
+    "broadRolloutReady": false,
+    "environment": "test",
+    "localAbortRequired": true,
+    "maxViewers": 1,
+    "mode": "attended-view-only",
+    "multiViewerFanoutProven": false,
+    "pilotAutoConsent": false,
+    "productionReady": false,
+    "recordingMode": "disabled",
+    "screenContentPersisted": false,
+    "visibleIndicatorRequired": true
+  },
+  "status": "active"
+}

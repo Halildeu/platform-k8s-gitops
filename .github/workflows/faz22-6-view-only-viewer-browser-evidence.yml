@@ -113,33 +113,18 @@ jobs:
           [ "sha256:$(sha256sum "$out/authorization.zip" | awk '{print $1}')" = "$artifact_digest" ]
           printf '%s\n' \
             SHA256SUMS \
-            kvkk-marker-verifier-result.json \
-            kvkk-marker.txt \
             protected-authorization.json \
             | sort > "$out/expected-files.txt"
           unzip -Z1 "$out/authorization.zip" | sort > "$out/actual-files.txt"
           diff -u "$out/expected-files.txt" "$out/actual-files.txt"
           unzip -q "$out/authorization.zip" -d "$out/receipt"
           (cd "$out/receipt" && sha256sum -c SHA256SUMS)
-          python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
-          python3 scripts/faz22-remote-ops/verify-view-only-kvkk-decision.py \
-            --approver-policy config/faz22-6-view-only-kvkk-approver-policy.v1.json \
-            --verify-marker-input "$out/receipt/kvkk-marker.txt" \
-            --result-out "$out/reverified-kvkk-marker.json"
-          jq -e '.status == "pass" and .humanSignatureCount == 2' \
-            "$out/reverified-kvkk-marker.json" >/dev/null
-          marker_sha256="sha256:$(sha256sum "$out/receipt/kvkk-marker.txt" | awk '{print $1}')"
-          jq -e --arg run "$ACTIVATION_RUN_ID" '
-            .schemaVersion == "faz22.6-view-only-pilot-protected-authorization-v1"
-            and .environment == "faz22-view-only-pilot"
-            and .onePersonRoster == true
-            and .consentingPilotDevice == true
-            and .exposureApprovedByProtectedEnvironment == true
-            and (.authorizationRunId == ($run | tonumber))
-            and (.expiresAt | fromdateiso8601) > now
-          ' "$out/receipt/protected-authorization.json" >/dev/null
-          jq -e --arg digest "$marker_sha256" '.kvkkMarkerSha256 == $digest' \
-            "$out/receipt/protected-authorization.json" >/dev/null
+          python3 scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py \
+            --receipt "$out/receipt/protected-authorization.json" \
+            --policy config/faz22-6-view-only-pilot-owner-policy.v1.json \
+            --revocations config/faz22-6-view-only-pilot-authorization-revocations.v1.json \
+            --expected-run-id "$ACTIVATION_RUN_ID" \
+            --expected-head-sha "$GITHUB_SHA"
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -203,6 +188,66 @@ jobs:
           mkdir -p "$EVIDENCE_DIR"
           bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
           test -s "$EVIDENCE_DIR/browser.json"
+          test -s "$EVIDENCE_DIR/summary.json"
+          test -s "$EVIDENCE_DIR/open-session.body"
+          jq -e '
+            .status == "accepted-candidate"
+            and .consentWait == "granted"
+            and (.brokerSignals | index("CONSENT_GRANTED") != null)
+            and (.brokerSignals | index("CONSENT_DENIED") == null)
+          ' "$EVIDENCE_DIR/summary.json" >/dev/null
+          jq -e '.consentPromptSent == true' "$EVIDENCE_DIR/open-session.body" >/dev/null
+          consent_session_id="$(jq -er '.sessionId' "$EVIDENCE_DIR/summary.json")"
+          consent_log_line="$(grep -F "session=\"$consent_session_id\"" \
+            "$EVIDENCE_DIR/endpoint-agent-relevant.log" | grep -F 'granted=true' | tail -n 1)"
+          test -n "$consent_log_line"
+          summary_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/summary.json" | awk '{print $1}')"
+          open_session_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/open-session.body" | awk '{print $1}')"
+          endpoint_consent_line_sha256="sha256:$(printf '%s' "$consent_log_line" | sha256sum | awk '{print $1}')"
+          jq -cS -n \
+            --slurpfile browser "$EVIDENCE_DIR/browser.json" \
+            --arg sourceRevision "$SOURCE_REVISION" \
+            --arg summarySha256 "$summary_sha256" \
+            --arg openSessionSha256 "$open_session_sha256" \
+            --arg endpointLineSha256 "$endpoint_consent_line_sha256" \
+            '{
+              schemaVersion:"faz22.6.viewOnlyViewerConsentSourceAttestation.v1",
+              sourceRevision:$sourceRevision,
+              observedAt:$browser[0].observedAt,
+              binding:$browser[0].binding,
+              smokeSummarySha256:$summarySha256,
+              openSessionResponseSha256:$openSessionSha256,
+              endpointConsentLogLineSha256:$endpointLineSha256,
+              openSessionConsentPromptSent:true,
+              brokerHelloVerified:true,
+              brokerConsentGranted:true,
+              endpointConsentGranted:true,
+              transportPushed:true
+            }' > "$EVIDENCE_DIR/consent-source.json"
+          consent_source_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/consent-source.json" | awk '{print $1}')"
+          jq -cS -n \
+            --slurpfile browser "$EVIDENCE_DIR/browser.json" \
+            --arg sourceRevision "$SOURCE_REVISION" \
+            --arg sourceAttestationSha256 "$consent_source_sha256" \
+            '{
+              schemaVersion:"faz22.6.viewOnlyViewerConsentEvidence.v1",
+              sourceRevision:$sourceRevision,
+              observedAt:$browser[0].observedAt,
+              binding:$browser[0].binding,
+              consentPromptSent:true,
+              decision:"granted",
+              decisionSignal:"CONSENT_GRANTED",
+              decisionProtocol:"remote-bridge-consent-signal-v1",
+              decisionSource:"device-key-attested-endpoint-outbound-channel",
+              sourceAttestationSha256:$sourceAttestationSha256,
+              pilotAutoConsent:false,
+              recordingMode:"disabled",
+              screenContentPersisted:false
+            }' > "$EVIDENCE_DIR/consent.json"
+          consent_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/consent.json" | awk '{print $1}')"
+          jq --arg digest "$consent_sha256" '.payload.consentEvidenceSha256 = $digest' \
+            "$EVIDENCE_DIR/browser.json" | jq -S . > "$EVIDENCE_DIR/browser.json.tmp"
+          mv "$EVIDENCE_DIR/browser.json.tmp" "$EVIDENCE_DIR/browser.json"
           jq -e '
             .schemaVersion == "faz22.6.viewOnlyViewerProductChildEvidence.v2"
             and .evidenceType == "browser"
@@ -219,12 +264,16 @@ jobs:
           source_dir="$RUNNER_TEMP/faz22-viewer-browser-source"
           mkdir -p "$source_dir/evidence"
           install -m 0600 "$EVIDENCE_DIR/browser.json" "$source_dir/evidence/browser.json"
+          install -m 0600 "$EVIDENCE_DIR/consent.json" "$source_dir/evidence/consent.json"
+          install -m 0600 "$EVIDENCE_DIR/consent-source.json" "$source_dir/evidence/consent-source.json"
           jq -e --slurpfile authorization "$RUNNER_TEMP/faz22-viewer-activation/receipt/protected-authorization.json" '
             .binding.operatorSha256 == $authorization[0].operatorSha256
             and .binding.deviceSha256 == $authorization[0].deviceSha256
           ' "$source_dir/evidence/browser.json" >/dev/null
-          test "$(find "$source_dir" -type f | wc -l | tr -d ' ')" = "1"
-          sha256sum "$source_dir/evidence/browser.json" >> "$GITHUB_STEP_SUMMARY"
+          test "$(find "$source_dir" -type f | wc -l | tr -d ' ')" = "3"
+          sha256sum "$source_dir/evidence/browser.json" "$source_dir/evidence/consent.json" \
+            "$source_dir/evidence/consent-source.json" \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload browser source evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

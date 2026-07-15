@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import sys
+import tempfile
 import unittest
 import zipfile
 from datetime import datetime, timezone
@@ -26,6 +27,10 @@ SOURCE_RUN_IDS = {name: 200000 + index for index, name in enumerate(SOURCE_TYPES
 SOURCE_ARTIFACT_IDS = {name: 300000 + index for index, name in enumerate(SOURCE_TYPES, start=1)}
 ACTIVATION_RUN_ID = 400001
 AUTHORIZATION_ARTIFACT_ID = 500001
+OWNER_COMMENT_ID = 900001
+ADVISORY_COMMENT_ID = 900002
+OWNER_COMMENT_BODY = "Owner authorizes the bounded attended VIEW_ONLY test pilot; legal clearance is not claimed."
+ADVISORY_COMMENT_BODY = "MiniMax M3 and Codex agree on the bounded engineering authorization with legal tracked_pending."
 
 
 def sha(char):
@@ -323,6 +328,7 @@ def child_documents():
                 "screenshotSha256": sha("5"),
                 "firstFrameAgeMillis": 900,
                 "steadyFrameAgeMillis": [200 + (index % 10) * 50 for index in range(100)],
+                "consentEvidenceSha256": sha("0"),
                 "meta": {
                     "recording": False,
                     "attended": True,
@@ -413,11 +419,19 @@ def child_documents():
                 "authorizationArtifactId": AUTHORIZATION_ARTIFACT_ID,
                 "authorizationArtifactDigest": VERIFIER.digest_bytes(activation_archive()),
                 "authorizationSha256": VERIFIER.digest_bytes(authorization_bytes()),
-                "kvkkMarkerSha256": VERIFIER.digest_bytes(KVKK_MARKER_BYTES),
+                "authorizationSchemaVersion": VERIFIER.AUTHORIZATION_SCHEMA,
+                "ownerPolicySha256": VERIFIER.digest_json(owner_policy_fixture()),
+                "ownerDirectiveSha256": VERIFIER.digest_bytes(OWNER_COMMENT_BODY.encode()),
+                "aiAdvisorySha256": VERIFIER.digest_bytes(ADVISORY_COMMENT_BODY.encode()),
+                "legalTrackStatus": "tracked_pending",
+                "legalClearanceClaimed": False,
             },
             observed_at="2026-07-14T00:00:30Z",
         ),
     }
+    documents["browser"]["payload"]["consentEvidenceSha256"] = VERIFIER.digest_bytes(
+        consent_bytes(documents["browser"])
+    )
     matrix_attestation_files("negative", documents["negative"])
     matrix_attestation_files("termination", documents["termination"])
     return documents
@@ -483,28 +497,121 @@ def encode_zip(files):
     return output.getvalue()
 
 
-KVKK_MARKER_BYTES = b"F22_6_VIEW_ONLY_KVKK: v1\nstatus: pass\n"
+def owner_policy_fixture():
+    return {
+        "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v1",
+        "status": "active",
+        "ownerDirective": {
+            "commentId": OWNER_COMMENT_ID,
+            "ref": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373#issuecomment-{OWNER_COMMENT_ID}",
+            "bodySha256": VERIFIER.digest_bytes(OWNER_COMMENT_BODY.encode()),
+            "authorLogin": "Halildeu",
+            "authorAssociation": "OWNER",
+        },
+        "aiAdvisory": {
+            "commentId": ADVISORY_COMMENT_ID,
+            "ref": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373#issuecomment-{ADVISORY_COMMENT_ID}",
+            "bodySha256": VERIFIER.digest_bytes(ADVISORY_COMMENT_BODY.encode()),
+            "authorLogin": "Halildeu",
+            "authorAssociation": "OWNER",
+            "advisoryOnly": True,
+            "consensusVerdict": "AGREE",
+            "providers": ["MiniMax/minimax-MiniMax-M3", "OpenAI/Codex"],
+            "provenanceClass": "owner-attested-provider-session",
+            "providerCryptographicAttestation": False,
+        },
+        "legalTracking": {
+            "ref": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374",
+            "status": "tracked_pending",
+            "clearanceClaimed": False,
+            "dependencyAcknowledgedBy": "owner",
+            "dependencyRationaleCode": "bounded-test-owner-risk-acceptance",
+        },
+        "scope": {
+            "environment": "test",
+            "mode": "attended-view-only",
+            "recordingMode": "disabled",
+            "screenContentPersisted": False,
+            "pilotAutoConsent": False,
+            "attendedConsentRequired": True,
+            "visibleIndicatorRequired": True,
+            "localAbortRequired": True,
+            "maxViewers": 1,
+            "productionReady": False,
+            "broadRolloutReady": False,
+            "multiViewerFanoutProven": False,
+        },
+        "authorization": {
+            "protectedEnvironment": "faz22-view-only-pilot",
+            "requirePreventSelfReview": True,
+            "maxTtlMinutes": 120,
+            "killSwitchWorkflowRef": ".github/workflows/apply-view-only-viewer-pilot-enable.yml?action=rollback",
+            "revocationLedgerRef": "config/faz22-6-view-only-pilot-authorization-revocations.v1.json",
+        },
+        "lifecycle": {
+            "validFrom": "2026-07-14T00:00:00Z",
+            "validUntil": "2027-07-14T00:00:00Z",
+        },
+    }
 
 
-def authorization_bytes():
-    return encode_json({
-        "schemaVersion": "faz22.6-view-only-pilot-protected-authorization-v1",
+def revocation_fixture():
+    return {
+        "schemaVersion": "faz22.6-view-only-pilot-authorization-revocations-v1",
+        "revokedAuthorizationSha256": [],
+    }
+
+
+def authorization_document():
+    return {
+        "schemaVersion": VERIFIER.AUTHORIZATION_SCHEMA,
+        "minimumAcceptedAuthorizationSchema": VERIFIER.AUTHORIZATION_SCHEMA,
         "environment": "faz22-view-only-pilot",
         "onePersonRoster": True,
         "operatorSha256": binding()["operatorSha256"],
         "consentingPilotDevice": True,
         "deviceSha256": binding()["deviceSha256"],
         "exposureApprovedByProtectedEnvironment": True,
-        "kvkkMarkerSha256": VERIFIER.digest_bytes(KVKK_MARKER_BYTES),
+        "protectedEnvironmentPreventSelfReview": True,
+        "protectedEnvironmentReviewerCount": 1,
+        "protectedEnvironmentReviewerSetSha256": VERIFIER.digest_json([
+            {"type": "User", "id": 700001, "name": "security-reviewer"}
+        ]),
+        "ownerPolicySha256": VERIFIER.digest_json(owner_policy_fixture()),
+        "ownerDirectiveRef": owner_policy_fixture()["ownerDirective"]["ref"],
+        "ownerDirectiveSha256": VERIFIER.digest_bytes(OWNER_COMMENT_BODY.encode()),
+        "aiAdvisoryOnly": True,
+        "aiAdvisoryProvenanceClass": "owner-attested-provider-session",
+        "aiProviderCryptographicAttestation": False,
+        "aiAdvisoryRef": owner_policy_fixture()["aiAdvisory"]["ref"],
+        "aiAdvisorySha256": VERIFIER.digest_bytes(ADVISORY_COMMENT_BODY.encode()),
+        "aiConsensusVerdict": "AGREE",
+        "legalTrackingIssueRef": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374",
+        "legalTrackStatus": "tracked_pending",
+        "legalClearanceClaimed": False,
+        "legalDependencyAcknowledgedBy": "owner",
+        "legalDependencyRationaleCode": "bounded-test-owner-risk-acceptance",
+        "recordingMode": "disabled",
+        "screenContentPersisted": False,
+        "attendedConsentRequired": True,
+        "pilotAutoConsent": False,
+        "visibleIndicatorRequired": True,
+        "localAbortRequired": True,
+        "killSwitchWorkflowRef": ".github/workflows/apply-view-only-viewer-pilot-enable.yml?action=rollback",
+        "revocationLedgerRef": "config/faz22-6-view-only-pilot-authorization-revocations.v1.json",
+        "issuedAt": "2026-07-14T00:00:10Z",
         "expiresAt": "2026-07-14T00:20:00Z",
         "authorizationRunId": ACTIVATION_RUN_ID,
-    })
+        "authorizationHeadSha": HEAD_SHA,
+    }
+
+
+def authorization_bytes():
+    return VERIFIER.canonical_bytes(authorization_document()) + b"\n"
 
 
 def activation_archive():
     files = {
-        "kvkk-marker.txt": KVKK_MARKER_BYTES,
-        "kvkk-marker-verifier-result.json": encode_json({"status": "pass", "humanSignatureCount": 2}),
         "protected-authorization.json": authorization_bytes(),
     }
     sums = "".join(
@@ -513,8 +620,52 @@ def activation_archive():
     return encode_zip({**files, "SHA256SUMS": sums})
 
 
+def consent_bytes(document):
+    consent = {
+        "schemaVersion": "faz22.6.viewOnlyViewerConsentEvidence.v1",
+        "sourceRevision": document["sourceRevision"],
+        "observedAt": document["observedAt"],
+        "binding": document["binding"],
+        "consentPromptSent": True,
+        "decision": "granted",
+        "decisionSignal": "CONSENT_GRANTED",
+        "decisionProtocol": "remote-bridge-consent-signal-v1",
+        "decisionSource": "device-key-attested-endpoint-outbound-channel",
+        "sourceAttestationSha256": VERIFIER.digest_bytes(consent_source_bytes(document)),
+        "pilotAutoConsent": False,
+        "recordingMode": "disabled",
+        "screenContentPersisted": False,
+    }
+    return VERIFIER.canonical_bytes(consent) + b"\n"
+
+
+def consent_source_bytes(document):
+    source = {
+        "schemaVersion": "faz22.6.viewOnlyViewerConsentSourceAttestation.v1",
+        "sourceRevision": document["sourceRevision"],
+        "observedAt": document["observedAt"],
+        "binding": document["binding"],
+        "smokeSummarySha256": sha("a"),
+        "openSessionResponseSha256": sha("b"),
+        "endpointConsentLogLineSha256": sha("c"),
+        "openSessionConsentPromptSent": True,
+        "brokerHelloVerified": True,
+        "brokerConsentGranted": True,
+        "endpointConsentGranted": True,
+        "transportPushed": True,
+    }
+    return VERIFIER.canonical_bytes(source) + b"\n"
+
+
 def source_archive(name, raw):
     files = {f"evidence/{name}.json": raw}
+    if name == "browser":
+        try:
+            document = json.loads(raw)
+            files["evidence/consent.json"] = consent_bytes(document)
+            files["evidence/consent-source.json"] = consent_source_bytes(document)
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
     if name in {"negative", "termination"}:
         document = json.loads(raw)
         files.update(matrix_attestation_files(name, document))
@@ -609,6 +760,14 @@ class FakeClient:
         self.source_run_updated_at = {name: "2026-07-14T00:06:00Z" for name in SOURCE_TYPES}
         self.artifact_expired = False
         self.source_run_missing = None
+        self.owner_comment_body = OWNER_COMMENT_BODY
+        self.advisory_comment_body = ADVISORY_COMMENT_BODY
+        self.legal_issue_state = "open"
+        self.environment_prevent_self_review = True
+        self.environment_reviewers = [{
+            "type": "User",
+            "reviewer": {"id": 700001, "login": "security-reviewer"},
+        }]
 
     def get_json(self, path):
         if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/actions/runs/{ACTIVATION_RUN_ID}":
@@ -622,6 +781,8 @@ class FakeClient:
                 "run_attempt": 1,
                 "name": VERIFIER.EXPECTED_ACTIVATION_WORKFLOW_NAME,
                 "path": VERIFIER.EXPECTED_ACTIVATION_WORKFLOW_PATH,
+                "actor": {"login": "workflow-operator"},
+                "created_at": "2026-07-14T00:00:00Z",
                 "run_started_at": "2026-07-14T00:00:00Z",
                 "updated_at": "2026-07-14T00:00:30Z",
             }
@@ -699,6 +860,39 @@ class FakeClient:
                 "workflow_run": {"id": RUN_ID, "head_sha": HEAD_SHA},
             }]
             return {"total_count": len(artifacts), "artifacts": artifacts}
+        if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/comments/{OWNER_COMMENT_ID}":
+            return {
+                "id": OWNER_COMMENT_ID,
+                "html_url": owner_policy_fixture()["ownerDirective"]["ref"],
+                "issue_url": f"https://api.github.com/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373",
+                "author_association": "OWNER",
+                "user": {"login": "Halildeu"},
+                "body": self.owner_comment_body,
+            }
+        if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/comments/{ADVISORY_COMMENT_ID}":
+            return {
+                "id": ADVISORY_COMMENT_ID,
+                "html_url": owner_policy_fixture()["aiAdvisory"]["ref"],
+                "issue_url": f"https://api.github.com/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373",
+                "author_association": "OWNER",
+                "user": {"login": "Halildeu"},
+                "body": self.advisory_comment_body,
+            }
+        if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374":
+            return {
+                "number": 2374,
+                "state": self.legal_issue_state,
+                "html_url": f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2374",
+            }
+        if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/environments/faz22-view-only-pilot":
+            return {
+                "name": "faz22-view-only-pilot",
+                "protection_rules": [{
+                    "type": "required_reviewers",
+                    "prevent_self_review": self.environment_prevent_self_review,
+                    "reviewers": self.environment_reviewers,
+                }],
+            }
         raise AssertionError(f"unexpected JSON API path: {path}")
 
     def get_bytes(self, path):
@@ -713,6 +907,20 @@ class FakeClient:
 
 
 class ViewerProductEvidenceVerifierTest(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.original_owner_policy = VERIFIER.OWNER_POLICY
+        self.original_revocation_ledger = VERIFIER.REVOCATION_LEDGER
+        VERIFIER.OWNER_POLICY = Path(self.temp_dir.name) / "owner-policy.json"
+        VERIFIER.REVOCATION_LEDGER = Path(self.temp_dir.name) / "revocations.json"
+        VERIFIER.OWNER_POLICY.write_bytes(encode_json(owner_policy_fixture()))
+        VERIFIER.REVOCATION_LEDGER.write_bytes(encode_json(revocation_fixture()))
+
+    def tearDown(self):
+        VERIFIER.OWNER_POLICY = self.original_owner_policy
+        VERIFIER.REVOCATION_LEDGER = self.original_revocation_ledger
+        self.temp_dir.cleanup()
+
     def verify(self, client=None, now=NOW):
         return VERIFIER.verify_product_evidence(
             client or FakeClient(), VERIFIER.EXPECTED_REPOSITORY, RUN_ID, now=now
@@ -867,6 +1075,82 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
                 datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
                 datetime(2026, 7, 14, 0, 6, tzinfo=timezone.utc),
             )
+
+    def test_revoked_authorization_fails_without_invalidating_other_receipts(self):
+        client = FakeClient()
+        revoked = revocation_fixture()
+        revoked["revokedAuthorizationSha256"] = [VERIFIER.digest_bytes(authorization_bytes())]
+        VERIFIER.REVOCATION_LEDGER.write_bytes(encode_json(revoked))
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "has been revoked"):
+            self.verify(client)
+
+    def test_owner_advisory_legal_and_environment_controls_fail_closed(self):
+        client = FakeClient()
+        client.owner_comment_body += " tampered"
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "owner directive body digest"):
+            self.verify(client)
+
+        client = FakeClient()
+        client.advisory_comment_body += " tampered"
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "AI advisory body digest"):
+            self.verify(client)
+
+        client = FakeClient()
+        client.legal_issue_state = "closed"
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "legal tracking state"):
+            self.verify(client)
+
+        client = FakeClient()
+        client.environment_prevent_self_review = False
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "self-review prevention"):
+            self.verify(client)
+
+    def test_tampered_or_automatic_consent_evidence_fails_closed(self):
+        base_archive = build_archive()
+        client = FakeClient(base_archive)
+        browser_raw = client.source_children["browser"]
+        original_source = client.source_archives["browser"]
+        with zipfile.ZipFile(io.BytesIO(original_source)) as archive:
+            source_files = {info.filename: archive.read(info) for info in archive.infolist()}
+        consent = json.loads(source_files["evidence/consent.json"])
+        consent["pilotAutoConsent"] = True
+        source_files["evidence/consent.json"] = VERIFIER.canonical_bytes(consent) + b"\n"
+        tampered_source = encode_zip(source_files)
+
+        with zipfile.ZipFile(io.BytesIO(base_archive)) as archive:
+            product_files = {info.filename: archive.read(info) for info in archive.infolist()}
+        root = json.loads(product_files["viewer-product-evidence.json"])
+        browser_entry = next(entry for entry in root["evidence"] if entry["type"] == "browser")
+        browser_entry["source"]["artifactDigest"] = VERIFIER.digest_bytes(tampered_source)
+        product_files["viewer-product-evidence.json"] = encode_json(root)
+        client = FakeClient(encode_zip(product_files))
+        client.source_archives["browser"] = tampered_source
+        self.assertEqual(browser_raw, client.source_children["browser"])
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "browser consent evidence digest"):
+            self.verify(client)
+
+        children = child_documents()
+        consent = json.loads(consent_bytes(children["browser"]))
+        consent["pilotAutoConsent"] = True
+        consent_raw = VERIFIER.canonical_bytes(consent) + b"\n"
+        children["browser"]["payload"]["consentEvidenceSha256"] = VERIFIER.digest_bytes(consent_raw)
+        browser_raw = encode_json(children["browser"])
+        semantic_source = encode_zip({
+            "evidence/browser.json": browser_raw,
+            "evidence/consent.json": consent_raw,
+            "evidence/consent-source.json": consent_source_bytes(children["browser"]),
+        })
+        product_archive = build_archive(children=children)
+        with zipfile.ZipFile(io.BytesIO(product_archive)) as archive:
+            product_files = {info.filename: archive.read(info) for info in archive.infolist()}
+        root = json.loads(product_files["viewer-product-evidence.json"])
+        browser_entry = next(entry for entry in root["evidence"] if entry["type"] == "browser")
+        browser_entry["source"]["artifactDigest"] = VERIFIER.digest_bytes(semantic_source)
+        product_files["viewer-product-evidence.json"] = encode_json(root)
+        client = FakeClient(encode_zip(product_files))
+        client.source_archives["browser"] = semantic_source
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "consent pilotAutoConsent"):
+            self.verify(client)
 
     def test_95_delivered_one_rendered_class_and_low_render_ratio_fail(self):
         children = child_documents()
