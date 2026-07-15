@@ -29,6 +29,11 @@ $RepoRoot = 'C:\platform-ai'
 $UpdateScript = Join-Path $RepoRoot 'deploy\gpu-host\update.ps1'
 $StatePath = 'C:\ProgramData\Acik\platform-ai\deployment-state.json'
 
+# Scope Git ownership trust to this rollout process and its updater child.
+$env:GIT_CONFIG_COUNT = '1'
+$env:GIT_CONFIG_KEY_0 = 'safe.directory'
+$env:GIT_CONFIG_VALUE_0 = 'C:/platform-ai'
+
 function Get-HealthMetadata {
   param([Parameter(Mandatory = $true)][string]$Url)
   try {

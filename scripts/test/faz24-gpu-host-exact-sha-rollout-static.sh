@@ -40,6 +40,12 @@ grep -Fq 'StrictHostKeyChecking=yes' "${RUNNER}" || fail 'strict host-key verifi
 grep -Fq 'GlobalKnownHostsFile=/dev/null' "${RUNNER}" || fail 'global host-key bypass guard missing'
 grep -Fq 'svc-denetim-agent@10.99.0.2' "${RUNNER}" || fail 'canonical Denetim target missing'
 grep -Fq "C:\\platform-ai" "${RUNNER}" || fail 'canonical GPU deploy clone missing'
+grep -Fq "GIT_CONFIG_COUNT = '1'" "${RUNNER}" || \
+  fail 'process-local Git config count missing'
+grep -Fq "GIT_CONFIG_KEY_0 = 'safe.directory'" "${RUNNER}" || \
+  fail 'process-local Git ownership trust missing'
+grep -Fq "GIT_CONFIG_VALUE_0 = 'C:/platform-ai'" "${RUNNER}" || \
+  fail 'process-local Git safe-directory path missing'
 grep -Fq 'Invoke-UpdaterChild -WhatIfOnly' "${RUNNER}" || fail 'WhatIf preflight missing'
 grep -Fq "sourceCommitVerified = \$sourceCommitVerified" "${RUNNER}" || \
   fail 'source verification must be derived from updater postconditions'
