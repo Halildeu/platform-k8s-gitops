@@ -198,6 +198,13 @@ if "DENETIM_SSH_TARGET: svc-denetim-agent@10.99.0.2" in text:
         f"VIEW_ONLY collector must not restore the non-functional least-privilege target: {path}"
     )
 PY
+
+  require_grep "source scripts/faz22-remote-ops/lib-github-read-api.sh" "$workflow"
+  require_grep "github_read_api_preflight" "$workflow"
+  if grep -Eq '^[[:space:]]*gh api ' "$workflow"; then
+    echo "protected VIEW_ONLY collector must not require gh on the minimal runner: $workflow" >&2
+    exit 1
+  fi
 done
 
 require_grep "actions: read" "$VIEWER_OPERATOR_WORKFLOW"
