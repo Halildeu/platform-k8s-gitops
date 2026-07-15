@@ -123,6 +123,12 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             "expect(buildInfoResponse.url()).toBe(buildInfoUrl)",
             "expect(buildInfoResponse.headers()['content-type']).toMatch",
             "expect(Object.keys(buildInfo).sort()).toEqual",
+            "desktopSidebarHref",
+            "const desktopSearchQuery = await commandSearch.inputValue()",
+            "const mobileViewportWidth = await page.evaluate(() => window.innerWidth)",
+            "mobileInterviewEvidenceActionVisible",
+            "mobileRemoteConsoleRendered",
+            "page.getByRole('button', { name: /Menüyü aç|Open menu/ })",
         ):
             self.assertIn(marker, self.spec)
 
@@ -165,7 +171,26 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         then_clause = self.product_schema["allOf"][0]["then"]
         self.assertEqual(
             then_clause["required"],
-            ["authz", "product", "responsive", "accessibility", "runtime"],
+            [
+                "authz",
+                "discovery",
+                "product",
+                "responsive",
+                "accessibility",
+                "runtime",
+            ],
+        )
+        discovery = then_clause["properties"]["discovery"]["allOf"][1]["properties"]
+        self.assertTrue(discovery["desktopSidebarVisible"]["const"])
+        self.assertEqual(
+            discovery["desktopSidebarHref"]["const"],
+            "/admin/interview-evidence",
+        )
+        self.assertEqual(discovery["desktopSearchQuery"]["const"], "mülakat")
+        self.assertEqual(discovery["mobileViewportWidth"]["const"], 390)
+        self.assertTrue(discovery["mobileRemoteConsoleRendered"]["const"])
+        self.assertFalse(
+            self.product_schema["definitions"]["discovery"]["additionalProperties"]
         )
         self.assertEqual(
             then_clause["properties"]["product"]["allOf"][1]["properties"]

@@ -14,8 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTOR = ROOT / "scripts/deploy/collect-faz25-p5-frontend-lineage.sh"
-SOURCE_SHA = "7c8cef6547d4408cc705f9c6afae49b67ed80d1a"
-DIGEST = "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+SOURCE_SHA = "7a764fe91deed655a83f44af7bc15d97481ee29d"
+DIGEST = "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e"
 DEPLOYMENT_UID = "11111111-1111-4111-8111-111111111111"
 REPLICASET_UID = "22222222-2222-4222-8222-222222222222"
 POD_UID = "33333333-3333-4333-8333-333333333333"
@@ -82,19 +82,19 @@ class CollectorTest(unittest.TestCase):
                 if "/artifacts" in url:
                     print(json.dumps({{
                         "artifacts": [{{
-                            "id": 8309092914,
-                            "name": "Halildeu~platform-web~R1TBO1.dockerbuild",
+                            "id": 8354811686,
+                            "name": "Halildeu~platform-web~M3MVH6.dockerbuild",
                             "digest": os.environ.get(
                                 "MOCK_ARTIFACT_DIGEST",
-                                "sha256:4086a69a90e6557aadbd909bb6cbc83e339b7feac9254a8ffbe79f5b19558d6e"
+                                "sha256:28efa00e47891ecb5b0f5aa5a58c05c8bcb6a37ccc9b8d4004e649318cc39b4e"
                             ),
-                            "size_in_bytes": 107153,
+                            "size_in_bytes": 109522,
                             "expired": False
                         }}]
                     }}))
                 else:
                     print(json.dumps({{
-                        "id": 29328643364,
+                        "id": 29444176456,
                         "status": "completed",
                         "conclusion": "success",
                         "event": "push",
@@ -109,7 +109,7 @@ class CollectorTest(unittest.TestCase):
         self.mock_curl.chmod(0o755)
 
     def _fixtures(self, pod_owner_uid=REPLICASET_UID):
-        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-7c8cef6@{DIGEST}"
+        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-7a764fe@{DIGEST}"
         return {
             "deployment": {
                 "metadata": {
@@ -183,7 +183,7 @@ class CollectorTest(unittest.TestCase):
             "EXPECTED_CONTEXT": "k3d-test",
             "EXPECTED_SOURCE_SHA": SOURCE_SHA,
             "EXPECTED_IMAGE_DIGEST": DIGEST,
-            "EXPECTED_BUILD_RUN_ID": "29328643364",
+            "EXPECTED_BUILD_RUN_ID": "29444176456",
             "EXPECTED_CLUSTER_SERVER_SHA256": hashlib.sha256(
                 CLUSTER_SERVER.encode()
             ).hexdigest(),
@@ -210,7 +210,7 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(payload["replicaSet"]["uid"], REPLICASET_UID)
         self.assertEqual(payload["pods"]["uids"], [POD_UID])
         self.assertEqual(payload["lineage"]["observedDigest"], DIGEST)
-        self.assertEqual(payload["lineage"]["buildArtifactId"], "8309092914")
+        self.assertEqual(payload["lineage"]["buildArtifactId"], "8354811686")
         self.assertEqual(payload["cluster"]["kubeSystemNamespaceUid"], KUBE_SYSTEM_UID)
         self.assertEqual(stat.S_IMODE(self.report.stat().st_mode), 0o600)
 

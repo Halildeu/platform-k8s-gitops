@@ -14,11 +14,11 @@ const expectedRole = process.env.P5_EXPECTED_ROLE ?? 'P5_READINESS_VIEWER';
 const expectedUserId = process.env.P5_EXPECTED_USER_ID ?? '6';
 const expectedSubscriberId = process.env.P5_EXPECTED_SUBSCRIBER_ID ?? '6';
 const expectedSourceSha =
-  process.env.P5_EXPECTED_SOURCE_SHA ?? '7c8cef6547d4408cc705f9c6afae49b67ed80d1a';
+  process.env.P5_EXPECTED_SOURCE_SHA ?? '7a764fe91deed655a83f44af7bc15d97481ee29d';
 const expectedFrontendDigest =
   process.env.P5_EXPECTED_FRONTEND_DIGEST ??
-  'sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38';
-const expectedBuildRunId = process.env.P5_EXPECTED_BUILD_RUN_ID ?? '29328643364';
+  'sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e';
+const expectedBuildRunId = process.env.P5_EXPECTED_BUILD_RUN_ID ?? '29444176456';
 const liveFrontendDigest = process.env.P5_LIVE_FRONTEND_DIGEST ?? '';
 const harnessRepository = process.env.P5_HARNESS_REPOSITORY ?? '';
 const harnessRevision = process.env.P5_HARNESS_REVISION ?? '';
@@ -82,7 +82,7 @@ const expectedInteractiveControlIds = [
 ] as const;
 
 type AcceptanceReport = {
-  schemaVersion: 'faz25-p5-authenticated-product-surface-v2';
+  schemaVersion: 'faz25-p5-authenticated-product-surface-v3';
   verdict: 'PASS' | 'FAIL';
   startedAt: string;
   observedAt: string;
@@ -134,6 +134,22 @@ type AcceptanceReport = {
     manageGrantAbsent: boolean;
     exactViewOnlySnapshotMatched: boolean;
   };
+  discovery?: {
+    desktopHomePath: string;
+    desktopSidebarVisible: boolean;
+    desktopSidebarHref: string;
+    desktopSearchQuery: string;
+    desktopSearchResultVisible: boolean;
+    desktopFinalPath: string;
+    desktopRemoteConsoleRendered: boolean;
+    mobileViewportWidth: number;
+    mobileHomePath: string;
+    mobileMenuOpened: boolean;
+    mobileHrSectionOpened: boolean;
+    mobileInterviewEvidenceActionVisible: boolean;
+    mobileFinalPath: string;
+    mobileRemoteConsoleRendered: boolean;
+  };
   product?: {
     finalPath: string;
     profileIds: string[];
@@ -170,7 +186,7 @@ type AcceptanceReport = {
 };
 
 const report: AcceptanceReport = {
-  schemaVersion: 'faz25-p5-authenticated-product-surface-v2',
+  schemaVersion: 'faz25-p5-authenticated-product-surface-v3',
   verdict: 'FAIL',
   startedAt,
   observedAt: startedAt,
@@ -510,6 +526,43 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   });
   report.authz = authz;
 
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/home', { waitUntil: 'domcontentloaded' });
+  const desktopHomePath = new URL(page.url()).pathname;
+  expect(desktopHomePath).toBe('/home');
+
+  const desktopSidebar = page.getByRole('complementary', { name: 'Sidebar' });
+  const desktopSidebarLink = desktopSidebar.getByRole('link', {
+    name: /Interview Evidence/,
+  });
+  await expect(desktopSidebarLink).toBeVisible();
+  await expect(desktopSidebarLink).toHaveAttribute('href', expectedFinalPath);
+  const desktopSidebarVisible = await desktopSidebarLink.isVisible();
+  const desktopSidebarHref = (await desktopSidebarLink.getAttribute('href')) ?? '';
+
+  const desktopSearchButton = page.getByRole('button', { name: /^(Ara|Search)$/ });
+  await desktopSearchButton.focus();
+  await expect(desktopSearchButton).toBeFocused();
+  await page.keyboard.press('Enter');
+  const commandPalette = page.getByRole('dialog');
+  await expect(commandPalette).toBeVisible();
+  const commandSearch = commandPalette.getByRole('textbox', { name: 'Command search' });
+  await commandSearch.pressSequentially('mülakat');
+  const desktopSearchQuery = await commandSearch.inputValue();
+  expect(desktopSearchQuery).toBe('mülakat');
+  const desktopSearchResult = commandPalette
+    .getByRole('button', { name: /Interview Evidence/ })
+    .first();
+  await expect(desktopSearchResult).toBeVisible();
+  const desktopSearchResultVisible = await desktopSearchResult.isVisible();
+  await desktopSearchResult.focus();
+  await expect(desktopSearchResult).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(consoleSurface).toBeVisible({ timeout: 90_000 });
+  const desktopFinalPath = new URL(page.url()).pathname;
+  expect(desktopFinalPath).toBe(expectedFinalPath);
+  const desktopRemoteConsoleRendered = await consoleSurface.isVisible();
+
   const profileCatalog = page.getByTestId('deployment-profile-catalog');
   await expect(profileCatalog).toBeVisible();
   const profileButtons = profileCatalog.getByRole('button');
@@ -640,6 +693,56 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   };
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/home', { waitUntil: 'domcontentloaded' });
+  const mobileViewportWidth = await page.evaluate(() => window.innerWidth);
+  expect(mobileViewportWidth).toBe(390);
+  const mobileHomePath = new URL(page.url()).pathname;
+  expect(mobileHomePath).toBe('/home');
+  const mobileMenuButton = page.getByRole('button', { name: /Menüyü aç|Open menu/ });
+  await mobileMenuButton.focus();
+  await expect(mobileMenuButton).toBeFocused();
+  await page.keyboard.press('Enter');
+  const mobileNavigation = page.getByRole('navigation', { name: 'Ana gezinme' });
+  await expect(mobileNavigation).toBeVisible();
+  const mobileHrButton = mobileNavigation.getByRole('button', {
+    name: /^(İK|HR|Personal|RRHH)$/,
+  });
+  await expect(mobileHrButton).toBeVisible();
+  const mobileMenuOpened = await mobileHrButton.isVisible();
+  await mobileHrButton.focus();
+  await expect(mobileHrButton).toBeFocused();
+  await page.keyboard.press('Enter');
+  const mobileInterviewEvidenceAction = mobileNavigation.getByRole('button', {
+    name: /Interview Evidence/,
+  });
+  await expect(mobileInterviewEvidenceAction).toBeVisible();
+  const mobileHrSectionOpened = await mobileInterviewEvidenceAction.isVisible();
+  const mobileInterviewEvidenceActionVisible =
+    await mobileInterviewEvidenceAction.isVisible();
+  await mobileInterviewEvidenceAction.focus();
+  await expect(mobileInterviewEvidenceAction).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(consoleSurface).toBeVisible({ timeout: 90_000 });
+  const mobileFinalPath = new URL(page.url()).pathname;
+  expect(mobileFinalPath).toBe(expectedFinalPath);
+  const mobileRemoteConsoleRendered = await consoleSurface.isVisible();
+  report.discovery = {
+    desktopHomePath,
+    desktopSidebarVisible,
+    desktopSidebarHref,
+    desktopSearchQuery,
+    desktopSearchResultVisible,
+    desktopFinalPath,
+    desktopRemoteConsoleRendered,
+    mobileViewportWidth,
+    mobileHomePath,
+    mobileMenuOpened,
+    mobileHrSectionOpened,
+    mobileInterviewEvidenceActionVisible,
+    mobileFinalPath,
+    mobileRemoteConsoleRendered,
+  };
+
   await consoleSurface.scrollIntoViewIfNeeded();
   await expect(profileButtons).toHaveCount(4);
   await expect(page.getByTestId('deployment-table-scroll-hint')).toBeVisible();

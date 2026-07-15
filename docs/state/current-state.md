@@ -129,6 +129,59 @@ elevated `Validate`, rollback drill plus baseline connectivity proof, second
 reviewer acceptance on #1864/#2434. Source merge never closes those runtime
 gates by implication.
 
+## Live Delta — Faz 25 authorized ATS discovery surface promoted; authenticated acceptance pending (2026-07-15)
+
+This delta records the current immutable `testai` frontend lineage for
+[#2455](https://github.com/Halildeu/platform-k8s-gitops/issues/2455) and keeps
+it separate from the older P5 acceptance snapshot below. It does not claim
+that every authorized role has completed live acceptance and does not close
+the Full ATS parent, Faz 25 or any production/human gate.
+
+Current source and runtime truth:
+
+- `platform-web` PR
+  [#918](https://github.com/Halildeu/platform-web/pull/918) merged source
+  `7a764fe91deed655a83f44af7bc15d97481ee29d`. It exposes the authorized ATS
+  entry through the desktop sidebar, HR mega menu, mobile HR drawer and global
+  command search. The route remains behind the outer authentication/module
+  guard; remote-off mode exposes only the safe product catalog and never a
+  live-write action.
+- Successful build run
+  [29444176456](https://github.com/Halildeu/platform-web/actions/runs/29444176456)
+  produced tag `sha-7a764fe` and immutable image digest
+  `sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e`.
+  Its build artifact is `8354811686`, named
+  `Halildeu~platform-web~M3MVH6.dockerbuild`, with GitHub artifact digest
+  `sha256:28efa00e47891ecb5b0f5aa5a58c05c8bcb6a37ccc9b8d4004e649318cc39b4e`
+  and size `109522` bytes. The inspected OCI subject digest and VCS revision
+  match the image digest and source SHA.
+- GitOps PR
+  [#2456](https://github.com/Halildeu/platform-k8s-gitops/pull/2456) promoted
+  only that tag+digest through `kustomize/overlays/test`; merge SHA is
+  `2e85b839ce1d80582a8b6821a6731d8bcc3a3b0c`. Canonical rollout run
+  [29446937247](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29446937247)
+  completed `success`: Argo was `Synced/Healthy` at the exact revision, the
+  sole ready frontend pod imageID matched the expected digest, the public
+  module entry passed and `build-info.json` reported source `7a764fe...`.
+  Rollout artifact `8355870516` has GitHub artifact digest
+  `sha256:86a304008a4c3df293b79d1a9f8b413ff0caa47b4e84a971bef495360ba5a79e`.
+
+Acceptance boundary and next evidence:
+
+- Anonymous `/api/v1/authz/me` remains `401`, while the Interview Evidence
+  remote entry is publicly fetchable as static code. Static reachability is
+  not authorization or authenticated product acceptance.
+- The protected named-persona workflow has not yet produced a fresh artifact
+  for this new source/digest. The older successful P5 run below remains valid
+  only for its pinned older lineage; it is not carried forward by implication.
+- The next required evidence is a fresh protected-Environment run that binds
+  the exact VIEW-only persona, desktop sidebar, keyboard command search,
+  390px mobile HR drawer, real remote console, responsive/Axe checks and
+  pre/post cluster lineage into one content-addressed same-session manifest.
+- Pricing, payment and packaging remain outside this product-access slice.
+  Production, real candidate data, live writes, automated employment
+  decisions and Legal/DPO/owner/customer approvals remain separate gates.
+
 ## Live Delta — Faz 25 / P5 Readiness Console testai bounded non-closure acceptance (2026-07-15)
 
 This delta records the bounded desired-state, runtime and authenticated

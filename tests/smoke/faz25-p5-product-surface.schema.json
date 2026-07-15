@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://acik.com/schemas/faz25-p5-authenticated-product-surface-v2.json",
+  "$id": "https://acik.com/schemas/faz25-p5-authenticated-product-surface-v3.json",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -14,7 +14,7 @@
     "lineage"
   ],
   "properties": {
-    "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v2" },
+    "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v3" },
     "verdict": { "enum": ["PASS", "FAIL"] },
     "startedAt": {
       "type": "string",
@@ -29,6 +29,7 @@
     "authentication": { "$ref": "#/definitions/authentication" },
     "lineage": { "$ref": "#/definitions/lineage" },
     "authz": { "$ref": "#/definitions/authz" },
+    "discovery": { "$ref": "#/definitions/discovery" },
     "product": { "$ref": "#/definitions/product" },
     "responsive": { "$ref": "#/definitions/responsive" },
     "accessibility": { "$ref": "#/definitions/accessibility" },
@@ -39,7 +40,14 @@
     {
       "if": { "properties": { "verdict": { "const": "PASS" } } },
       "then": {
-        "required": ["authz", "product", "responsive", "accessibility", "runtime"],
+        "required": [
+          "authz",
+          "discovery",
+          "product",
+          "responsive",
+          "accessibility",
+          "runtime"
+        ],
         "not": {
           "type": "object",
           "properties": { "failedTestStatus": { "type": "string" } },
@@ -96,17 +104,41 @@
                 "type": "object",
                 "properties": {
                   "expectedSourceSha": {
-                    "const": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a"
+                    "const": "7a764fe91deed655a83f44af7bc15d97481ee29d"
                   },
                   "observedSourceSha": {
-                    "const": "7c8cef6547d4408cc705f9c6afae49b67ed80d1a"
+                    "const": "7a764fe91deed655a83f44af7bc15d97481ee29d"
                   },
                   "expectedFrontendDigest": {
-                    "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+                    "const": "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e"
                   },
                   "liveFrontendDigest": {
-                    "const": "sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38"
+                    "const": "sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e"
                   }
+                }
+              }
+            ]
+          },
+          "discovery": {
+            "allOf": [
+              { "$ref": "#/definitions/discovery" },
+              {
+                "type": "object",
+                "properties": {
+                  "desktopHomePath": { "const": "/home" },
+                  "desktopSidebarVisible": { "const": true },
+                  "desktopSidebarHref": { "const": "/admin/interview-evidence" },
+                  "desktopSearchQuery": { "const": "mülakat" },
+                  "desktopSearchResultVisible": { "const": true },
+                  "desktopFinalPath": { "const": "/admin/interview-evidence" },
+                  "desktopRemoteConsoleRendered": { "const": true },
+                  "mobileViewportWidth": { "const": 390 },
+                  "mobileHomePath": { "const": "/home" },
+                  "mobileMenuOpened": { "const": true },
+                  "mobileHrSectionOpened": { "const": true },
+                  "mobileInterviewEvidenceActionVisible": { "const": true },
+                  "mobileFinalPath": { "const": "/admin/interview-evidence" },
+                  "mobileRemoteConsoleRendered": { "const": true }
                 }
               }
             ]
@@ -280,7 +312,7 @@
         "observedSourceSha": { "type": "string", "pattern": "^$|^[0-9a-f]{40}$" },
         "expectedFrontendDigest": { "$ref": "#/definitions/digest" },
         "liveFrontendDigest": { "$ref": "#/definitions/digest" },
-        "expectedBuildRunId": { "const": "29328643364" },
+        "expectedBuildRunId": { "const": "29444176456" },
         "harnessRepository": { "const": "Halildeu/platform-k8s-gitops" },
         "harnessRevision": { "$ref": "#/definitions/gitSha" },
         "specSha256": { "$ref": "#/definitions/sha256" },
@@ -320,6 +352,42 @@
         "exactPermissionsMatched": { "type": "boolean" },
         "manageGrantAbsent": { "type": "boolean" },
         "exactViewOnlySnapshotMatched": { "type": "boolean" }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "desktopHomePath",
+        "desktopSidebarVisible",
+        "desktopSidebarHref",
+        "desktopSearchQuery",
+        "desktopSearchResultVisible",
+        "desktopFinalPath",
+        "desktopRemoteConsoleRendered",
+        "mobileViewportWidth",
+        "mobileHomePath",
+        "mobileMenuOpened",
+        "mobileHrSectionOpened",
+        "mobileInterviewEvidenceActionVisible",
+        "mobileFinalPath",
+        "mobileRemoteConsoleRendered"
+      ],
+      "properties": {
+        "desktopHomePath": { "type": "string" },
+        "desktopSidebarVisible": { "type": "boolean" },
+        "desktopSidebarHref": { "type": "string" },
+        "desktopSearchQuery": { "type": "string" },
+        "desktopSearchResultVisible": { "type": "boolean" },
+        "desktopFinalPath": { "type": "string" },
+        "desktopRemoteConsoleRendered": { "type": "boolean" },
+        "mobileViewportWidth": { "type": "integer", "minimum": 1 },
+        "mobileHomePath": { "type": "string" },
+        "mobileMenuOpened": { "type": "boolean" },
+        "mobileHrSectionOpened": { "type": "boolean" },
+        "mobileInterviewEvidenceActionVisible": { "type": "boolean" },
+        "mobileFinalPath": { "type": "string" },
+        "mobileRemoteConsoleRendered": { "type": "boolean" }
       }
     },
     "product": {

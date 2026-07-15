@@ -116,17 +116,17 @@ jq -e \
     .imageDigest == $digest and
     .buildRunId == $run_id and
     (.artifact | keys) == ["digest", "id", "name", "sizeInBytes"] and
-    .artifact.id == "8309092914" and
-    .artifact.name == "Halildeu~platform-web~R1TBO1.dockerbuild" and
-    .artifact.digest == "sha256:4086a69a90e6557aadbd909bb6cbc83e339b7feac9254a8ffbe79f5b19558d6e" and
-    .artifact.sizeInBytes == 107153 and
+    .artifact.id == "8354811686" and
+    .artifact.name == "Halildeu~platform-web~M3MVH6.dockerbuild" and
+    .artifact.digest == "sha256:28efa00e47891ecb5b0f5aa5a58c05c8bcb6a37ccc9b8d4004e649318cc39b4e" and
+    .artifact.sizeInBytes == 109522 and
     (.oci | keys) == [
       "historyRecordDigest", "layoutManifestDigest", "slsaProvenanceDigest",
       "subjectDigest", "vcsRevision"
     ] and
-    .oci.layoutManifestDigest == "sha256:39e63601a74be62965441896d0893f66d930e2a4a5b6f6c0a83d0f82940e25ac" and
-    .oci.historyRecordDigest == "sha256:64fecfff94e60219b2ac3f5e3ac9bbf816cb8788095866879ffa14a6b0b10182" and
-    .oci.slsaProvenanceDigest == "sha256:97002a95d4ee8d5027d440bfb06094a9e0fc40dea55d824e5e127e7f5ebf8522" and
+    .oci.layoutManifestDigest == "sha256:d6e3f7c78afce5932bd919b93dce8c6263645a2d60ad5403278f8c5868910d56" and
+    .oci.historyRecordDigest == "sha256:004d287756bd0681f968c7b5ecc46188fa2d010bddcfe12869491e6e193a2b08" and
+    .oci.slsaProvenanceDigest == "sha256:0ad8176f5411ebbad7e791f39faebfdc4782b5b2a367cb05c778a8b1278dbbf1" and
     .oci.subjectDigest == $digest and
     .oci.vcsRevision == $source and
     (.inspection | keys) == [
