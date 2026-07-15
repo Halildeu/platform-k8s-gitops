@@ -4,6 +4,12 @@ name: Faz 24 I3 Denetim Audit Controls Package
 # This workflow does not connect to or mutate the Denetim Windows host.
 
 on:
+  pull_request:
+    paths:
+      - "scripts/faz24/build-i3-denetim-audit-controls-package.py"
+      - "tests/faz24/test_build_i3_denetim_audit_controls_package.py"
+      - "tests/faz24/windows/test-i3-audit-controls.ps1"
+      - ".github/workflows/faz24-i3-denetim-audit-controls-package.yml"
   workflow_dispatch:
     inputs:
       target_user:
@@ -34,8 +40,8 @@ jobs:
     steps:
       - name: Validate dispatch inputs
         env:
-          TARGET_USER: ${{ inputs.target_user }}
-          MANAGEMENT_ADDRESS: ${{ inputs.management_address }}
+          TARGET_USER: ${{ inputs.target_user || 'svc-denetim-agent' }}
+          MANAGEMENT_ADDRESS: ${{ inputs.management_address || '10.99.0.1' }}
         run: |
           set -euo pipefail
           if [ "${TARGET_USER}" != 'svc-denetim-agent' ]; then
@@ -52,8 +58,8 @@ jobs:
 
       - name: Build package
         env:
-          TARGET_USER: ${{ inputs.target_user }}
-          MANAGEMENT_ADDRESS: ${{ inputs.management_address }}
+          TARGET_USER: ${{ inputs.target_user || 'svc-denetim-agent' }}
+          MANAGEMENT_ADDRESS: ${{ inputs.management_address || '10.99.0.1' }}
         run: |
           set -euo pipefail
           python3 scripts/faz24/build-i3-denetim-audit-controls-package.py \
@@ -123,3 +129,24 @@ jobs:
       - name: Cleanup local package directory
         if: always()
         run: rm -rf "${PACKAGE_DIR}"
+
+  windows-behavior:
+    name: exercise generated Windows controls
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build package
+        shell: pwsh
+        run: |
+          $packageDirectory = Join-Path $env:RUNNER_TEMP 'faz24-i3-audit-controls'
+          python scripts/faz24/build-i3-denetim-audit-controls-package.py --output-dir $packageDirectory
+          "PACKAGE_DIR=$packageDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run Windows behavior tests
+        shell: pwsh
+        run: |
+          & tests/faz24/windows/test-i3-audit-controls.ps1 -PackageDirectory $env:PACKAGE_DIR

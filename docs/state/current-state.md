@@ -89,9 +89,12 @@ Source candidate tracked by
   `faz24.windows-audit-snapshot.v1` snapshot. The service account remains a
   read-only transport identity and the evidence collector consumes only that
   snapshot plus bounded OpenSSH metadata.
-- The installer supports separate `Validate`, `Apply` and `Rollback` modes,
-  records original registry/audit/exact-rule/task/ACL state before mutation,
-  protects the transcript/snapshot trees with explicit ACLs, uses exact allow
+- The installer supports separate `Apply`, `Validate` and `Rollback` modes,
+  binds rollback state to the package fingerprint, records original
+  registry/scoped-Logon-audit/exact-rule/task/ACL and pre-existing managed-file
+  state before mutation, automatically restores partial applies, protects the
+  transcript/snapshot trees with explicit ACLs, enforces transcript retention
+  at no more than 14 days and 1 GiB, uses exact allow
   rules from `10.99.0.1`, and fails closed on reserved-rule conflicts, stale
   snapshots or incomplete rollback state. Broad firewall conflicts are never
   changed by this package; they require a separate reviewed remediation with
@@ -105,17 +108,22 @@ Source candidate tracked by
   target to `svc-denetim-agent@10.99.0.2`, requires the route-device hash to
   equal the selected WireGuard-interface hash, requires exact snapshot
   directory/file ACL proof, validates language-independent w32time sync type,
-  and checks all critical firewall filter fields. Source-focused tests pass
-  `47/47`; the full Faz 24 test package passes `304/304`.
+  binds the canonical snapshot path hash, and checks all critical firewall
+  filter fields. SSH host identity is pinned out of band and checked with
+  `StrictHostKeyChecking=yes`; TOFU is rejected. Transcript retention rejects
+  descendant reparse points before traversal. Source-focused Python tests pass
+  `51/51`, the generated Windows behavior test passes, and the full Faz 24 test
+  package passes `538/538`.
 - A no-mutation GitHub workflow builds an immutable, checksummed restricted
   operator-configuration package. It is identity-bearing, secret-free and has
   one-day artifact retention. Package generation is not live installation or
   acceptance evidence.
 
 Open gates, in order: independent consultation/review, PR and CI acceptance,
-immutable package hash verification, elevated `Validate`, explicit firewall
-impact decision, controlled `Apply`, rollback drill, fresh self-hosted evidence
-run and v2 verifier acceptance. Consultation counts only through real Claude
+immutable package hash verification, explicit firewall impact decision,
+controlled `Apply` then elevated `Validate`, rollback drill and baseline
+connectivity proof, second `Apply`/`Validate`, fresh self-hosted evidence run and
+v2 verifier acceptance. Consultation counts only through real Claude
 and Mavis/MiniMax CLI/daemon paths; UI or simulated-provider results are not
 accepted and provider availability never authorizes bypassing technical gates.
 

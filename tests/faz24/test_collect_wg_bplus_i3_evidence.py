@@ -131,6 +131,9 @@ def remote_success_json() -> str:
                                 "protectedOutputAcl": True,
                                 "protectedSnapshotDirectoryAcl": True,
                                 "protectedSnapshotFileAcl": True,
+                                "retentionEnforced": True,
+                                "maximumRetentionDays": 14,
+                                "maximumTranscriptBytes": 1073741824,
                             },
                             {
                                 "queryOk": True,
@@ -139,6 +142,11 @@ def remote_success_json() -> str:
                                 "protectedOutputAcl": True,
                                 "protectedSnapshotDirectoryAcl": True,
                                 "protectedSnapshotFileAcl": True,
+                                "retentionEnforced": True,
+                                "transcriptBytes": 1024,
+                                "oldestTranscriptAgeSeconds": 60,
+                                "retentionDeleteCount": 0,
+                                "capacityDeleteCount": 0,
                             },
                         ),
                         "powershell-script-block": control(
@@ -224,19 +232,30 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
         runner: FakeRunner,
         wg_interface: str = "auto",
         ssh_identity_path: str | None = None,
+        ssh_known_hosts_path: str | None = None,
     ) -> dict:
-        if ssh_identity_path is None:
+        if ssh_identity_path is None or ssh_known_hosts_path is None:
             with tempfile.TemporaryDirectory() as tmpdir:
-                key_path = Path(tmpdir) / "faz24-i3-denetim_ed25519"
-                key_path.write_text("test-private-key-placeholder\n", encoding="utf-8")
-                key_path.with_name(key_path.name + ".pub").write_text(
-                    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakePublicKey faz24-i3\n",
-                    encoding="utf-8",
-                )
+                if ssh_identity_path is None:
+                    key_path = Path(tmpdir) / "faz24-i3-denetim_ed25519"
+                    key_path.write_text("test-private-key-placeholder\n", encoding="utf-8")
+                    key_path.with_name(key_path.name + ".pub").write_text(
+                        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakePublicKey faz24-i3\n",
+                        encoding="utf-8",
+                    )
+                    ssh_identity_path = str(key_path)
+                if ssh_known_hosts_path is None:
+                    known_hosts_path = Path(tmpdir) / "faz24-i3-denetim_known_hosts"
+                    known_hosts_path.write_text(
+                        "10.99.0.2 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeHostKey\n",
+                        encoding="utf-8",
+                    )
+                    ssh_known_hosts_path = str(known_hosts_path)
                 return self.build(
                     runner,
                     wg_interface=wg_interface,
-                    ssh_identity_path=str(key_path),
+                    ssh_identity_path=ssh_identity_path,
+                    ssh_known_hosts_path=ssh_known_hosts_path,
                 )
         timestamp = datetime.now(timezone.utc).replace(microsecond=0)
         return collector.build_evidence(
@@ -250,6 +269,7 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
             runner=runner,
             tcp_probe=self.tcp_ok,
             ssh_identity_path=ssh_identity_path,
+            ssh_known_hosts_path=ssh_known_hosts_path,
             clock=lambda: timestamp,
         )
 
@@ -321,6 +341,42 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("broad inbound conflict count must be zero", result.stderr)
 
+    def test_remote_snapshot_fields_are_allowlisted_and_expected_is_local(self):
+        remote = json.loads(remote_success_json())
+        control = remote["checks"]["auditSnapshot"]["controls"][
+            "powershell-transcription"
+        ]
+        control["expected"] = {
+            "queryOk": False,
+            "password": "must-never-leave-windows",
+        }
+        control["observed"]["commandContent"] = "must-never-leave-windows"
+        control["unexpectedTopLevel"] = "must-never-leave-windows"
+
+        evidence = self.build(FakeRunner(json.dumps(remote)))
+        check = next(
+            check
+            for check in evidence["checks"]
+            if check["id"] == "powershell-transcription"
+        )
+        serialized = json.dumps(evidence)
+
+        self.assertEqual(
+            collector.SNAPSHOT_CANONICAL_EXPECTED["powershell-transcription"],
+            check["control"]["expected"],
+        )
+        self.assertNotIn("commandContent", check["control"]["observed"])
+        self.assertNotIn("must-never-leave-windows", serialized)
+        self.assertEqual(0, self.run_verifier(evidence).returncode)
+
+    def test_workflow_uploads_only_accepted_evidence(self):
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "if: steps.collect.outputs.exit_code == '0' && steps.verify.outputs.exit_code == '0'",
+            workflow,
+        )
+
     def test_denetim_ssh_failure_writes_safe_rejected_evidence(self):
         evidence = self.build(FakeRunner(None, ssh_returncode=255))
         statuses = {check["id"]: check["status"] for check in evidence["checks"]}
@@ -372,6 +428,9 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
         self.assertEqual(1, len(ssh_commands))
         self.assertIn("-i", ssh_commands[0])
         self.assertIn("IdentitiesOnly=yes", ssh_commands[0])
+        self.assertIn("StrictHostKeyChecking=yes", ssh_commands[0])
+        self.assertIn("GlobalKnownHostsFile=/dev/null", ssh_commands[0])
+        self.assertNotIn("StrictHostKeyChecking=accept-new", ssh_commands[0])
         self.assertIn("-EncodedCommand", ssh_commands[0])
         encoded_index = ssh_commands[0].index("-EncodedCommand") + 1
         self.assertGreater(len(ssh_commands[0][encoded_index]), 100)
@@ -380,7 +439,30 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
         self.assertTrue(preflight["sshIdentityConfigured"])
         self.assertTrue(preflight["sshIdentityPublicKeyPresent"])
         self.assertTrue(preflight["sshIdentityPublicKeyFingerprint"])
+        self.assertTrue(preflight["sshKnownHostsConfigured"])
+        self.assertTrue(preflight["sshKnownHostsSafePermissions"])
+        self.assertTrue(preflight["sshKnownHostsContentFingerprint"])
         self.assertNotIn("FakePublicKey", json.dumps(evidence))
+
+    def test_missing_pinned_known_hosts_fails_before_ssh(self):
+        runner = FakeRunner(remote_success_json())
+        with tempfile.TemporaryDirectory() as tmpdir:
+            key_path = Path(tmpdir) / "faz24-i3-denetim_ed25519"
+            key_path.write_text("not-a-real-private-key\n", encoding="utf-8")
+            key_path.with_name(key_path.name + ".pub").write_text(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakePublicKey faz24-i3\n",
+                encoding="utf-8",
+            )
+            evidence = self.build(
+                runner,
+                ssh_identity_path=str(key_path),
+                ssh_known_hosts_path=str(Path(tmpdir) / "missing-known-hosts"),
+            )
+
+        preflight = evidence["collector"]["denetimSshPreflight"]
+        self.assertFalse(preflight["sshKnownHostsConfigured"])
+        self.assertFalse(any(argv and argv[0] == "ssh" for argv in runner.commands))
+        self.assertNotEqual(0, self.run_verifier(evidence).returncode)
 
     def test_staging_wireguard_uses_sudo_fallback(self):
         original_which = collector.shutil.which

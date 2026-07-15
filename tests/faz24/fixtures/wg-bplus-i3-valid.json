@@ -19,7 +19,7 @@
     "denetimTargetHash": "6a958354f76d4068",
     "lookbackHours": 2,
     "wgInterfaceSelection": "auto",
-    "remoteSnapshotPathHash": "1111111111111111",
+    "remoteSnapshotPathHash": "eec9f9cde2ce3d8a",
     "remoteSnapshotSchemaVersion": "faz24.windows-audit-snapshot.v1",
     "denetimSshPreflight": {
       "targetHostHash": "801d4b52b735d268",
@@ -40,7 +40,11 @@
       "sshIdentityConfigured": true,
       "sshIdentityPathHash": "4444444444444444",
       "sshIdentityPublicKeyPresent": true,
-      "sshIdentityPublicKeyFingerprint": "5555555555555555"
+      "sshIdentityPublicKeyFingerprint": "5555555555555555",
+      "sshKnownHostsConfigured": true,
+      "sshKnownHostsPathHash": "7777777777777777",
+      "sshKnownHostsContentFingerprint": "8888888888888888",
+      "sshKnownHostsSafePermissions": true
     },
     "stagingWireGuardProbe": {
       "requestedMode": "auto",
@@ -101,8 +105,8 @@
       "evidenceRef": "windows/powershell-transcription.metadata.json",
       "control": {
         "contractVersion": "faz24.windows-audit-control.v1",
-        "expected": {"queryOk": true, "policyEnabled": true, "invocationHeaderEnabled": true, "protectedOutputAcl": true, "protectedSnapshotDirectoryAcl": true, "protectedSnapshotFileAcl": true},
-        "observed": {"queryOk": true, "policyEnabled": true, "invocationHeaderEnabled": true, "protectedOutputAcl": true, "protectedSnapshotDirectoryAcl": true, "protectedSnapshotFileAcl": true},
+        "expected": {"queryOk": true, "policyEnabled": true, "invocationHeaderEnabled": true, "protectedOutputAcl": true, "protectedSnapshotDirectoryAcl": true, "protectedSnapshotFileAcl": true, "retentionEnforced": true, "maximumRetentionDays": 14, "maximumTranscriptBytes": 1073741824},
+        "observed": {"queryOk": true, "policyEnabled": true, "invocationHeaderEnabled": true, "protectedOutputAcl": true, "protectedSnapshotDirectoryAcl": true, "protectedSnapshotFileAcl": true, "retentionEnforced": true, "transcriptBytes": 1024, "oldestTranscriptAgeSeconds": 60, "retentionDeleteCount": 0, "capacityDeleteCount": 0},
         "verdict": "pass",
         "source": {"kind": "windows-system-snapshot", "locator": "faz24-i3-audit-snapshot"},
         "collectedAt": "2026-06-25T00:10:00Z",

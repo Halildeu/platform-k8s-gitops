@@ -323,7 +323,7 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 > **2026-07-15 I3 least-privilege addendum**: WG-B+ I3 için
 > `svc-denetim-agent` yetkisini genişletmek yerine LocalSystem collector ->
 > sanitize edilmiş atomik snapshot -> salt-okunur SSH evidence zinciri seçildi.
-> `faz24.wg-bplus.i3.audit.v2` kaynak adayı ve Validate/Apply/Rollback operator
+> `faz24.wg-bplus.i3.audit.v2` kaynak adayı ve Apply/Validate/Rollback operator
 > paketi #2434 altında ilerliyor. Bu, on-prem/self-host operability için gerekli
 > uzun vadeli G-OPS altyapısıdır; canlı Denetim hostuna uygulanmış değildir,
 > #1864 `Needs Verify` durumunu veya ürün-değer gate'lerini değiştirmez. Paket
@@ -332,9 +332,16 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 > eşikleri artefaktın bildirimine bırakmaz, doğrulama anında freshness'i yeniden
 > hesaplar ve staging korelasyonunu yalnız mevcut SSH denemesinin rastgele audit
 > kimliğine bağlar. Canonical hedef `svc-denetim-agent@10.99.0.2` olarak sabittir;
-> staging rotası seçili WireGuard arayüzüne, Windows snapshot dizin/dosya ACL'i
+> staging rotası seçili WireGuard arayüzüne ve out-of-band doğrulanmış pinned SSH
+> host key'e, Windows snapshot dizin/dosya ACL'i
 > salt-okunur transport kimliğine, zaman senkronu dil-bağımsız w32time `Type`
-> ayarına ve firewall kuralları tüm kritik filtre alanlarına birebir bağlanır.
+> ayarına, canonical snapshot yolu hash'ine ve firewall kuralları tüm kritik
+> filtre alanlarına birebir bağlanır.
+> Apply paket-fingerprint'ine bağlı transaction'dır; kısmi hata otomatik rollback
+> yapar, yalnız Logon audit alt-kategorisini geri alır ve reparse-point alt
+> ağaçlarına girmeden transcriptleri 14 gün / 1 GiB üst sınırında tutar. Kabul
+> sırası firewall kararı -> Apply -> Validate ->
+> rollback drill -> yeniden Apply/Validate -> fresh v2 evidence olarak sabittir.
 > Sağlayıcı istişaresi yalnız gerçek Claude ve Mavis/MiniMax
 > CLI/daemon yoluyla kabul edilir; UI veya simülasyon istişare kanıtı değildir.
 

@@ -255,6 +255,15 @@ class WgBplusI3EvidenceValidatorTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("canonical Denetim host", result.stderr)
 
+    def test_remote_snapshot_path_hash_cannot_be_rebound(self):
+        data = json.loads((FIXTURES / "wg-bplus-i3-valid.json").read_text(encoding="utf-8"))
+        data["collector"]["remoteSnapshotPathHash"] = "deadbeefdeadbeef"
+
+        result = self.run_data(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("canonical snapshot path", result.stderr)
+
     def test_route_hash_must_match_selected_wireguard_interface(self):
         data = json.loads((FIXTURES / "wg-bplus-i3-valid.json").read_text(encoding="utf-8"))
         preflight = data["collector"]["denetimSshPreflight"]

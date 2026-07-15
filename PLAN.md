@@ -49,18 +49,22 @@ Bu repo için güncel ana strateji:
 Project #2 issue [#2434](https://github.com/Halildeu/platform-k8s-gitops/issues/2434)
 `In Progress` altında LocalSystem collector -> sanitize atomik snapshot ->
 salt-okunur `svc-denetim-agent` evidence mimarisi ve
-`faz24.wg-bplus.i3.audit.v2` verifier adayı hazırlanıyor. Validate/Apply/Rollback
-paketi ilk state'i geri alma için saklar; snapshot dizin/dosya ACL'leri, exact
+`faz24.wg-bplus.i3.audit.v2` verifier adayı hazırlanıyor. Apply/Validate/Rollback
+paketi paket-fingerprint'ine bağlı transaction ile ilk state'i ve önceden var
+olan managed dosyaları geri alma için saklar; snapshot dizin/dosya ACL'leri, exact
 firewall allow semantics, dil-bağımsız w32time sync-type kanıtı, canonical
 `svc-denetim-agent@10.99.0.2` hedefi, seçili WireGuard arayüzüne bağlı rota,
-doğrulama-anı freshness ve redaction fail-closed'dur. Geniş inbound firewall
+TOFU'suz pinned SSH host-key, doğrulama-anı freshness ve redaction
+fail-closed'dur. Canonical snapshot yolu ayrıca hash ile bağlanır. PowerShell
+transcriptleri reparse-point alt ağaçlarına girmeden en fazla 14 gün ve 1 GiB
+ile sınırlıdır. Geniş inbound firewall
 çakışmaları paket tarafından otomatik değiştirilmez; ayrı, etkisi incelenmiş ve
 rollback'i tanımlı operatör işlemi ister. Restricted, identity-bearing ama
-secret-free paket artefaktı bir gün saklanır. Odaklı kaynak testleri `47/47`,
-tam Faz 24 test paketi `304/304` geçse de canlı
+secret-free paket artefaktı bir gün saklanır. Odaklı Python testleri `51/51`,
+Windows davranış testi PASS ve tam Faz 24 test paketi `538/538` geçse de canlı
 Denetim hostu bu delta ile değiştirilmedi; parent #1864 `Needs Verify` ve altı
-Windows kontrolü açık. PR/CI, immutable paket hash'i, elevated Validate,
-explicit firewall etki kararı, controlled Apply, rollback drill ve fresh v2
+Windows kontrolü açık. PR/CI, immutable paket hash'i, explicit firewall etki
+kararı, controlled Apply/Validate, rollback drill, yeniden Apply/Validate ve fresh v2
 evidence kabulü olmadan I3 veya G-OPS ilerlemiş sayılmaz. Sağlayıcı
 istişareleri yalnız gerçek Claude ve Mavis/MiniMax CLI/daemon yollarıyla yapılır;
 UI veya simülasyon sonucu kabul edilmez.

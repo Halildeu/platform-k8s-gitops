@@ -37,6 +37,7 @@ DEFAULT_DENETIM_TARGET = "svc-denetim-agent@10.99.0.2"
 DEFAULT_WG_INTERFACE = "auto"
 DEFAULT_RETENTION_DAYS = 14
 DEFAULT_SSH_IDENTITY_PATH = "~/.ssh/faz24-i3-denetim_ed25519"
+DEFAULT_SSH_KNOWN_HOSTS_PATH = "~/.ssh/faz24-i3-denetim_known_hosts"
 WG_BINARY_CANDIDATES = [
     "wg",
     "/usr/bin/wg",
@@ -57,6 +58,92 @@ CHECK_ORDER = [
     "staging-connection-log",
 ]
 
+SNAPSHOT_OBSERVED_FIELDS: dict[str, set[str]] = {
+    "powershell-transcription": {
+        "queryOk",
+        "policyEnabled",
+        "invocationHeaderEnabled",
+        "protectedOutputAcl",
+        "protectedSnapshotDirectoryAcl",
+        "protectedSnapshotFileAcl",
+        "retentionEnforced",
+        "transcriptBytes",
+        "oldestTranscriptAgeSeconds",
+        "retentionDeleteCount",
+        "capacityDeleteCount",
+    },
+    "powershell-script-block": {"queryOk", "policyEnabled", "eventCount"},
+    "failed-login": {"securityLogQueryable", "auditFailureEnabled", "eventCount"},
+    "wireguard-health": {
+        "queryOk",
+        "dumpExitCode",
+        "runningServiceCount",
+        "interfaceCount",
+        "peerCount",
+        "latestHandshakeAgeSeconds",
+    },
+    "eset-firewall-drift": {
+        "queryOk",
+        "expectedRuleCount",
+        "expectedRuleMatchCount",
+        "broadConflictCount",
+        "esetCoreRunningCount",
+    },
+    "time-sync": {
+        "queryOk",
+        "serviceState",
+        "statusCommandExitCode",
+        "sourcePresent",
+        "sourceSynchronized",
+        "syncTypeConfigured",
+        "latestSuccessEventAgeSeconds",
+    },
+}
+
+SNAPSHOT_CANONICAL_EXPECTED: dict[str, dict[str, Any]] = {
+    "powershell-transcription": {
+        "queryOk": True,
+        "policyEnabled": True,
+        "invocationHeaderEnabled": True,
+        "protectedOutputAcl": True,
+        "protectedSnapshotDirectoryAcl": True,
+        "protectedSnapshotFileAcl": True,
+        "retentionEnforced": True,
+        "maximumRetentionDays": 14,
+        "maximumTranscriptBytes": 1_073_741_824,
+    },
+    "powershell-script-block": {
+        "queryOk": True,
+        "policyEnabled": True,
+        "minimumEventCount": 1,
+    },
+    "failed-login": {
+        "securityLogQueryable": True,
+        "auditFailureEnabled": True,
+    },
+    "wireguard-health": {
+        "queryOk": True,
+        "minimumRunningServiceCount": 1,
+        "minimumInterfaceCount": 1,
+        "minimumPeerCount": 1,
+        "maximumHandshakeAgeSeconds": 300,
+    },
+    "eset-firewall-drift": {
+        "queryOk": True,
+        "expectedRuleCount": 3,
+        "minimumEsetCoreRunningCount": 2,
+    },
+    "time-sync": {
+        "queryOk": True,
+        "serviceState": "Running",
+        "statusCommandExitCode": 0,
+        "sourcePresent": True,
+        "sourceSynchronized": True,
+        "syncTypeConfigured": True,
+        "maximumSuccessEventAgeSeconds": 86_400,
+    },
+}
+
 POWERSHELL_COLLECTOR = r'''
 $ErrorActionPreference = "SilentlyContinue"
 $lookbackHours = __LOOKBACK_HOURS__
@@ -72,6 +159,52 @@ function To-UtcText($value) {
 function Count-Array($value) {
   if ($null -eq $value) { return 0 }
   return @($value).Count
+}
+
+function Select-SafeScalar($value) {
+  if ($null -eq $value) { return $null }
+  if (
+    $value -is [bool] -or
+    $value -is [byte] -or
+    $value -is [int16] -or
+    $value -is [int32] -or
+    $value -is [int64] -or
+    $value -is [string]
+  ) { return $value }
+  return $null
+}
+
+function Select-SnapshotControls($controls) {
+  $allowedObserved = [ordered]@{
+    'powershell-transcription' = @('queryOk','policyEnabled','invocationHeaderEnabled','protectedOutputAcl','protectedSnapshotDirectoryAcl','protectedSnapshotFileAcl','retentionEnforced','transcriptBytes','oldestTranscriptAgeSeconds','retentionDeleteCount','capacityDeleteCount')
+    'powershell-script-block' = @('queryOk','policyEnabled','eventCount')
+    'failed-login' = @('securityLogQueryable','auditFailureEnabled','eventCount')
+    'wireguard-health' = @('queryOk','dumpExitCode','runningServiceCount','interfaceCount','peerCount','latestHandshakeAgeSeconds')
+    'eset-firewall-drift' = @('queryOk','expectedRuleCount','expectedRuleMatchCount','broadConflictCount','esetCoreRunningCount')
+    'time-sync' = @('queryOk','serviceState','statusCommandExitCode','sourcePresent','sourceSynchronized','syncTypeConfigured','latestSuccessEventAgeSeconds')
+  }
+  $selected = [ordered]@{}
+  foreach ($controlId in $allowedObserved.Keys) {
+    $recordProperty = $controls.PSObject.Properties[$controlId]
+    if ($null -eq $recordProperty -or $null -eq $recordProperty.Value) { continue }
+    $record = $recordProperty.Value
+    $observed = [ordered]@{}
+    foreach ($field in $allowedObserved[$controlId]) {
+      $observedProperty = $record.observed.PSObject.Properties[$field]
+      if ($null -eq $observedProperty) { continue }
+      $safeValue = Select-SafeScalar $observedProperty.Value
+      if ($null -ne $safeValue) { $observed[$field] = $safeValue }
+    }
+    $selected[$controlId] = [ordered]@{
+      contractVersion = Select-SafeScalar $record.contractVersion
+      observed = $observed
+      verdict = Select-SafeScalar $record.verdict
+      collectedAt = Select-SafeScalar $record.collectedAt
+      maxAgeSeconds = Select-SafeScalar $record.maxAgeSeconds
+      errorClass = Select-SafeScalar $record.errorClass
+    }
+  }
+  return $selected
 }
 
 $checks = [ordered]@{}
@@ -96,12 +229,13 @@ try {
   $snapshot = $rawSnapshot | ConvertFrom-Json -ErrorAction Stop
   $schemaOk = ($snapshot.schemaVersion -eq "faz24.windows-audit-snapshot.v1")
   $controlsPresent = ($null -ne $snapshot.controls)
+  $selectedControls = if ($controlsPresent) { Select-SnapshotControls $snapshot.controls } else { $null }
   $checks.auditSnapshot = [ordered]@{
     ok = ($schemaOk -and $controlsPresent)
     queryOk = $true
     schemaVersion = [string]$snapshot.schemaVersion
     collectedAt = [string]$snapshot.collectedAt
-    controls = $snapshot.controls
+    controls = $selectedControls
   }
 } catch {
   $checks.auditSnapshot = [ordered]@{
@@ -215,6 +349,37 @@ def inspect_ssh_identity(identity_path: str | None) -> dict[str, Any]:
     }
 
 
+def inspect_ssh_known_hosts(known_hosts_path: str | None) -> dict[str, Any]:
+    if known_hosts_path is None or not known_hosts_path.strip():
+        return {
+            "sshKnownHostsConfigured": False,
+            "sshKnownHostsPathHash": "",
+            "sshKnownHostsContentFingerprint": "",
+            "sshKnownHostsSafePermissions": False,
+        }
+
+    path = Path(known_hosts_path).expanduser()
+    content = ""
+    regular = False
+    safe_permissions = False
+    try:
+        metadata = path.lstat()
+        regular = stat.S_ISREG(metadata.st_mode) and not path.is_symlink()
+        safe_permissions = regular and stat.S_IMODE(metadata.st_mode) & 0o022 == 0
+        if regular and metadata.st_size <= 1_048_576:
+            content = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+
+    configured = bool(regular and safe_permissions and non_empty_lines(content))
+    return {
+        "sshKnownHostsConfigured": configured,
+        "sshKnownHostsPathHash": sha256_short(str(path)),
+        "sshKnownHostsContentFingerprint": sha256_short(content) if configured else "",
+        "sshKnownHostsSafePermissions": safe_permissions,
+    }
+
+
 def classify_socket_error(exc: OSError) -> str:
     text = str(exc).lower()
     errno_value = getattr(exc, "errno", None)
@@ -284,6 +449,7 @@ def collect_denetim_ssh_preflight(
     ssh_result: CommandResult,
     timeout_seconds: int,
     ssh_identity_metadata: dict[str, Any],
+    ssh_known_hosts_metadata: dict[str, Any],
     selected_wireguard_interface_hash: str,
 ) -> dict[str, Any]:
     host = parse_ssh_target_host(target)
@@ -325,6 +491,18 @@ def collect_denetim_ssh_preflight(
         ),
         "sshIdentityPublicKeyFingerprint": str(
             ssh_identity_metadata["sshIdentityPublicKeyFingerprint"]
+        ),
+        "sshKnownHostsConfigured": bool(
+            ssh_known_hosts_metadata["sshKnownHostsConfigured"]
+        ),
+        "sshKnownHostsPathHash": str(
+            ssh_known_hosts_metadata["sshKnownHostsPathHash"]
+        ),
+        "sshKnownHostsContentFingerprint": str(
+            ssh_known_hosts_metadata["sshKnownHostsContentFingerprint"]
+        ),
+        "sshKnownHostsSafePermissions": bool(
+            ssh_known_hosts_metadata["sshKnownHostsSafePermissions"]
         ),
     }
 
@@ -555,6 +733,7 @@ def snapshot_control(
 
 def normalized_snapshot_contract(
     *,
+    check_id: str,
     record: dict[str, Any],
     snapshot_collected_at: str,
     bundle_collected_at: str,
@@ -577,13 +756,18 @@ def normalized_snapshot_contract(
             ),
         )
 
-    expected = record.get("expected")
-    observed = record.get("observed")
+    expected = dict(SNAPSHOT_CANONICAL_EXPECTED.get(check_id, {}))
+    raw_observed = record.get("observed")
     max_age = record.get("maxAgeSeconds", 900)
-    if not isinstance(expected, dict):
-        expected = {}
-    if not isinstance(observed, dict):
-        observed = {}
+    if not isinstance(raw_observed, dict):
+        raw_observed = {}
+    allowed_observed = SNAPSHOT_OBSERVED_FIELDS.get(check_id, set())
+    observed = {
+        key: value
+        for key, value in raw_observed.items()
+        if key in allowed_observed
+        and (value is None or isinstance(value, (bool, int, str)))
+    }
     if not isinstance(max_age, int) or not 60 <= max_age <= 86_400:
         max_age = 900
 
@@ -755,10 +939,14 @@ def collect_denetim_metadata(
     lookback_hours: int,
     connect_timeout_seconds: int,
     ssh_identity_path: str | None,
+    ssh_known_hosts_path: str | None,
 ) -> tuple[dict[str, Any] | None, CommandResult]:
     script = build_powershell_collector(lookback_hours)
     encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
     identity_metadata = inspect_ssh_identity(ssh_identity_path)
+    known_hosts_metadata = inspect_ssh_known_hosts(ssh_known_hosts_path)
+    if not known_hosts_metadata["sshKnownHostsConfigured"]:
+        return None, CommandResult(255, "", "pinned-known-hosts-not-configured")
     identity_args: list[str] = []
     if identity_metadata["sshIdentityConfigured"] and ssh_identity_path is not None:
         identity_args = [
@@ -773,7 +961,11 @@ def collect_denetim_metadata(
             "-o",
             "BatchMode=yes",
             "-o",
-            "StrictHostKeyChecking=accept-new",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            f"UserKnownHostsFile={Path(str(ssh_known_hosts_path)).expanduser()}",
+            "-o",
+            "GlobalKnownHostsFile=/dev/null",
             "-o",
             f"ConnectTimeout={connect_timeout_seconds}",
             "-o",
@@ -829,6 +1021,7 @@ def build_evidence(
     runner: CommandRunner,
     tcp_probe: TcpProbeRunner = probe_tcp_connect,
     ssh_identity_path: str | None = DEFAULT_SSH_IDENTITY_PATH,
+    ssh_known_hosts_path: str | None = DEFAULT_SSH_KNOWN_HOSTS_PATH,
     clock: Callable[[], datetime] = utc_now,
 ) -> dict[str, Any]:
     now = utc_text(timestamp)
@@ -841,6 +1034,7 @@ def build_evidence(
         lookback_hours=lookback_hours,
         connect_timeout_seconds=connect_timeout_seconds,
         ssh_identity_path=ssh_identity_path,
+        ssh_known_hosts_path=ssh_known_hosts_path,
     )
     remote_ok = remote is not None and ssh_result.returncode == 0
     staging = collect_staging_metadata(
@@ -852,6 +1046,7 @@ def build_evidence(
         clock=clock,
     )
     ssh_identity_metadata = inspect_ssh_identity(ssh_identity_path)
+    ssh_known_hosts_metadata = inspect_ssh_known_hosts(ssh_known_hosts_path)
     denetim_ssh_preflight = collect_denetim_ssh_preflight(
         runner,
         tcp_probe,
@@ -859,6 +1054,7 @@ def build_evidence(
         ssh_result,
         connect_timeout_seconds,
         ssh_identity_metadata,
+        ssh_known_hosts_metadata,
         str(staging["wgProbe"]["selectedInterfaceHash"]),
     )
     if not remote_ok:
@@ -938,6 +1134,7 @@ def build_evidence(
         }
         for check_id in CHECK_ORDER[1:7]:
             contract = normalized_snapshot_contract(
+                check_id=check_id,
                 record=snapshot_control(controls, check_id),
                 snapshot_collected_at=snapshot_collected_at,
                 bundle_collected_at=now,
@@ -1151,6 +1348,13 @@ def parse_args() -> argparse.Namespace:
         help="Optional runner-local SSH identity path for Denetim metadata SSH",
     )
     parser.add_argument(
+        "--ssh-known-hosts-path",
+        default=os.environ.get(
+            "FAZ24_I3_SSH_KNOWN_HOSTS_PATH", DEFAULT_SSH_KNOWN_HOSTS_PATH
+        ),
+        help="Runner-local pinned known_hosts file for Denetim metadata SSH",
+    )
+    parser.add_argument(
         "--protected-evidence-path",
         default=None,
         help="Override protectedEvidencePath; defaults to current GitHub Actions run artifact path",
@@ -1179,6 +1383,7 @@ def main() -> int:
         connect_timeout_seconds=args.connect_timeout_seconds,
         runner=run_command,
         ssh_identity_path=args.ssh_identity_path,
+        ssh_known_hosts_path=args.ssh_known_hosts_path,
     )
 
     try:

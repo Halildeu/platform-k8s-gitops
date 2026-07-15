@@ -286,6 +286,160 @@ function Get-WireGuardObservation {
   }
 }
 
+function Get-TranscriptFilesNoReparse {
+  param([Parameter(Mandatory=$true)][string]$Path)
+
+  $rootItem = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+  if (-not $rootItem.PSIsContainer) {
+    throw 'transcript-root-not-directory'
+  }
+  if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw 'transcript-root-reparse-point-rejected'
+  }
+
+  $pending = New-Object 'System.Collections.Generic.Stack[string]'
+  $files = New-Object 'System.Collections.Generic.List[System.IO.FileInfo]'
+  $pending.Push($rootItem.FullName)
+  while ($pending.Count -gt 0) {
+    $directory = $pending.Pop()
+    foreach ($child in @(Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop)) {
+      if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'transcript-descendant-reparse-point-rejected'
+      }
+      if ($child.PSIsContainer) {
+        $pending.Push($child.FullName)
+      } else {
+        $files.Add($child)
+      }
+    }
+  }
+  return @($files)
+}
+
+function Invoke-TranscriptRetention {
+  param(
+    [Parameter(Mandatory=$true)][string]$Path,
+    [Parameter(Mandatory=$true)][int]$RetentionDays,
+    [Parameter(Mandatory=$true)][long]$MaximumBytes
+  )
+  if ($RetentionDays -lt 1 -or $MaximumBytes -lt 1048576) {
+    throw 'invalid-transcript-retention-policy'
+  }
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return [ordered]@{
+      retentionEnforced=$true; transcriptBytes=0; oldestTranscriptAgeSeconds=0
+      retentionDeleteCount=0; capacityDeleteCount=0
+    }
+  }
+  $now = (Get-Date).ToUniversalTime()
+  $cutoff = $now.AddDays(-1 * $RetentionDays)
+  $retentionDeleteCount = 0
+  $capacityDeleteCount = 0
+  $files = @(Get-TranscriptFilesNoReparse -Path $Path)
+  foreach ($file in $files) {
+    if ($file.LastWriteTimeUtc -lt $cutoff) {
+      Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+      $retentionDeleteCount++
+    }
+  }
+
+  $remaining = @(Get-TranscriptFilesNoReparse -Path $Path | Sort-Object LastWriteTimeUtc)
+  [long]$totalBytes = 0
+  foreach ($file in $remaining) { $totalBytes += [long]$file.Length }
+  foreach ($file in $remaining) {
+    if ($totalBytes -le $MaximumBytes) { break }
+    $length = [long]$file.Length
+    Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+    $totalBytes = [Math]::Max(0, $totalBytes - $length)
+    $capacityDeleteCount++
+  }
+
+  $finalFiles = @(Get-TranscriptFilesNoReparse -Path $Path)
+  $oldestAge = 0
+  if ($finalFiles.Count -gt 0) {
+    $oldest = $finalFiles | Sort-Object LastWriteTimeUtc | Select-Object -First 1
+    $oldestAge = [Math]::Max(0, [int][Math]::Floor(($now - $oldest.LastWriteTimeUtc).TotalSeconds))
+  }
+  return [ordered]@{
+    retentionEnforced=($totalBytes -le $MaximumBytes -and $oldestAge -le ($RetentionDays * 86400))
+    transcriptBytes=$totalBytes
+    oldestTranscriptAgeSeconds=$oldestAge
+    retentionDeleteCount=$retentionDeleteCount
+    capacityDeleteCount=$capacityDeleteCount
+  }
+}
+
+function Invoke-TranscriptRetentionForPolicy {
+  param(
+    [Parameter(Mandatory=$true)][object]$Policy,
+    [Parameter(Mandatory=$true)][object]$Baseline
+  )
+  $outputPath = [string]$Policy.OutputDirectory
+  if ([string]::IsNullOrWhiteSpace($outputPath)) {
+    throw 'transcript-output-directory-missing'
+  }
+  return [ordered]@{
+    outputPath = $outputPath
+    retention = Invoke-TranscriptRetention `
+      -Path $outputPath `
+      -RetentionDays ([int]$Baseline.transcriptRetentionDays) `
+      -MaximumBytes ([long]$Baseline.maximumTranscriptBytes)
+  }
+}
+
+function Test-RemoteAddressBroad {
+  param([object[]]$RemoteAddresses)
+
+  $broadAliases = @(
+    'Any', '*', 'LocalSubnet', 'Internet', 'Intranet', 'RemoteIntranet',
+    'DefaultGateway', 'DHCP', 'DNS', 'WINS'
+  )
+  foreach ($rawValue in @($RemoteAddresses)) {
+    foreach ($value in @(([string]$rawValue) -split ',')) {
+      $candidate = $value.Trim()
+      if ([string]::IsNullOrWhiteSpace($candidate)) { return $true }
+      if (@($broadAliases | Where-Object { $_ -ieq $candidate }).Count -gt 0) {
+        return $true
+      }
+      if ($candidate -match '^(.+)/(\d{1,3})$') {
+        try {
+          $network = [System.Net.IPAddress]::Parse($Matches[1])
+          $prefixLength = [int]$Matches[2]
+          $maximumPrefix = if (
+            $network.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork
+          ) { 32 } elseif (
+            $network.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6
+          ) { 128 } else { 0 }
+          if ($maximumPrefix -eq 0 -or $prefixLength -lt 0 -or $prefixLength -gt $maximumPrefix) {
+            return $true
+          }
+          if ($prefixLength -lt $maximumPrefix) { return $true }
+          continue
+        } catch {
+          return $true
+        }
+      }
+      if ($candidate -match '^(.+)-(.+)$') {
+        try {
+          $rangeStart = [System.Net.IPAddress]::Parse($Matches[1].Trim())
+          $rangeEnd = [System.Net.IPAddress]::Parse($Matches[2].Trim())
+          if (-not $rangeStart.Equals($rangeEnd)) { return $true }
+          continue
+        } catch {
+          return $true
+        }
+      }
+      try {
+        [void][System.Net.IPAddress]::Parse($candidate)
+      } catch {
+        # Unknown Windows firewall keywords are rejected closed.
+        return $true
+      }
+    }
+  }
+  return $false
+}
+
 function Get-FirewallObservation {
   param([Parameter(Mandatory=$true)][object]$Baseline)
 
@@ -369,7 +523,7 @@ function Get-FirewallObservation {
     $ports = @($portFilter.LocalPort | ForEach-Object { [string]$_ })
     $remoteAddresses = @($addressFilter.RemoteAddress | ForEach-Object { [string]$_ })
     $portConflict = Test-ProhibitedPortCoverage -LocalPorts $ports -ProhibitedPorts $prohibitedPorts
-    $broadRemote = @($remoteAddresses | Where-Object { $_ -in @('Any', '*', '0.0.0.0/0', '::/0') }).Count -gt 0
+    $broadRemote = Test-RemoteAddressBroad -RemoteAddresses $remoteAddresses
     if ($portConflict -and $broadRemote) { [void]$conflicts.Add([string]$rule.Name) }
   }
 
@@ -399,7 +553,9 @@ $controls = [ordered]@{}
 
 try {
   $policy = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription' -ErrorAction Stop
-  $outputPath = [string]$policy.OutputDirectory
+  $retentionResult = Invoke-TranscriptRetentionForPolicy -Policy $policy -Baseline $baseline
+  $outputPath = [string]$retentionResult.outputPath
+  $retention = $retentionResult.retention
   $observed = [ordered]@{
     queryOk = $true
     policyEnabled = ($policy.EnableTranscripting -eq 1)
@@ -407,12 +563,17 @@ try {
     protectedOutputAcl = ($outputPath -and (Test-ExactProtectedAcl -Path $outputPath -Directory))
     protectedSnapshotDirectoryAcl = (Test-ExactProtectedAcl -Path $snapshotDirectory -ReadOnlySid $targetSid -Directory)
     protectedSnapshotFileAcl = ((Test-Path -LiteralPath $SnapshotPath) -and (Test-ExactProtectedAcl -Path $SnapshotPath -ReadOnlySid $targetSid))
+    retentionEnforced = [bool]$retention.retentionEnforced
+    transcriptBytes = [long]$retention.transcriptBytes
+    oldestTranscriptAgeSeconds = [int]$retention.oldestTranscriptAgeSeconds
+    retentionDeleteCount = [int]$retention.retentionDeleteCount
+    capacityDeleteCount = [int]$retention.capacityDeleteCount
   }
-  $expected = [ordered]@{ queryOk = $true; policyEnabled = $true; invocationHeaderEnabled = $true; protectedOutputAcl = $true; protectedSnapshotDirectoryAcl = $true; protectedSnapshotFileAcl = $true }
-  $pass = ($observed.queryOk -and $observed.policyEnabled -and $observed.invocationHeaderEnabled -and $observed.protectedOutputAcl -and $observed.protectedSnapshotDirectoryAcl -and $observed.protectedSnapshotFileAcl)
+  $expected = [ordered]@{ queryOk = $true; policyEnabled = $true; invocationHeaderEnabled = $true; protectedOutputAcl = $true; protectedSnapshotDirectoryAcl = $true; protectedSnapshotFileAcl = $true; retentionEnforced=$true; maximumRetentionDays=[int]$baseline.transcriptRetentionDays; maximumTranscriptBytes=[long]$baseline.maximumTranscriptBytes }
+  $pass = ($observed.queryOk -and $observed.policyEnabled -and $observed.invocationHeaderEnabled -and $observed.protectedOutputAcl -and $observed.protectedSnapshotDirectoryAcl -and $observed.protectedSnapshotFileAcl -and $observed.retentionEnforced -and $observed.transcriptBytes -le $expected.maximumTranscriptBytes -and $observed.oldestTranscriptAgeSeconds -le ($expected.maximumRetentionDays * 86400))
   $controls.'powershell-transcription' = New-Control -Expected $expected -Observed $observed -Pass $pass -CollectedAt $collectedAt -MaxAgeSeconds 900 -ErrorClass 'transcription-policy-drift'
 } catch {
-  $controls.'powershell-transcription' = New-Control -Expected @{ queryOk=$true; policyEnabled=$true; invocationHeaderEnabled=$true; protectedOutputAcl=$true; protectedSnapshotDirectoryAcl=$true; protectedSnapshotFileAcl=$true } -Observed @{ queryOk=$false; policyEnabled=$false; invocationHeaderEnabled=$false; protectedOutputAcl=$false; protectedSnapshotDirectoryAcl=$false; protectedSnapshotFileAcl=$false } -Pass $false -CollectedAt $collectedAt -MaxAgeSeconds 900 -ErrorClass $_.Exception.GetType().Name
+  $controls.'powershell-transcription' = New-Control -Expected @{ queryOk=$true; policyEnabled=$true; invocationHeaderEnabled=$true; protectedOutputAcl=$true; protectedSnapshotDirectoryAcl=$true; protectedSnapshotFileAcl=$true; retentionEnforced=$true; maximumRetentionDays=[int]$baseline.transcriptRetentionDays; maximumTranscriptBytes=[long]$baseline.maximumTranscriptBytes } -Observed @{ queryOk=$false; policyEnabled=$false; invocationHeaderEnabled=$false; protectedOutputAcl=$false; protectedSnapshotDirectoryAcl=$false; protectedSnapshotFileAcl=$false; retentionEnforced=$false; transcriptBytes=0; oldestTranscriptAgeSeconds=0; retentionDeleteCount=0; capacityDeleteCount=0 } -Pass $false -CollectedAt $collectedAt -MaxAgeSeconds 900 -ErrorClass $_.Exception.GetType().Name
 }
 
 try {
@@ -462,6 +623,10 @@ try {
 
 try {
   $service = Get-Service -Name 'w32time' -ErrorAction Stop
+  $serviceInstance = Get-CimInstance -ClassName Win32_Service -Filter "Name='w32time'" -ErrorAction Stop
+  if ([int]$serviceInstance.ProcessId -le 0) { throw 'w32time-process-not-running' }
+  $serviceProcess = Get-Process -Id ([int]$serviceInstance.ProcessId) -ErrorAction Stop
+  $serviceProcessStartedAt = $serviceProcess.StartTime.ToUniversalTime()
   $null = & w32tm /query /status 2>$null
   $statusExitCode = $LASTEXITCODE
   $sourceLines = @(& w32tm /query /source 2>$null)
@@ -475,20 +640,24 @@ try {
   foreach ($line in @($sourceLines)) {
     if (-not [string]::IsNullOrWhiteSpace([string]$line)) { $sourceValues.Add(([string]$line).Trim()) }
   }
-  if ($null -ne $latest) {
-    $eventXml = [xml]$latest.ToXml()
-    foreach ($dataValue in @($eventXml.Event.EventData.Data)) {
-      $text = [string]$dataValue.'#text'
-      if (-not [string]::IsNullOrWhiteSpace($text)) { $sourceValues.Add($text.Trim()) }
-    }
-  }
-  $sourcePresent = ($sourceExitCode -eq 0 -and $sourceValues.Count -gt 0)
+  $sourcePresent = ($sourceExitCode -eq 0 -and $sourceValues.Count -eq 1)
+  $sourceFormatSafe = (
+    $sourcePresent -and
+    $sourceValues[0] -notmatch '\s' -and
+    $sourceValues[0] -match '^[A-Za-z0-9][A-Za-z0-9._:-]*(?:,0x[0-9A-Fa-f]+)?$'
+  )
   $timeParameters = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters' -ErrorAction Stop
   $syncTypeConfigured = ([string]$timeParameters.Type -in @('NTP', 'NT5DS', 'AllSync'))
-  $unsynchronizedSource = @($sourceValues | Where-Object {
-    $_ -match '^(Local CMOS Clock|Free-running System Clock|Unknown|Unspecified)$'
-  }).Count -gt 0
-  $sourceSynchronized = ($sourcePresent -and $null -ne $latest -and $syncTypeConfigured -and -not $unsynchronizedSource)
+  $eventAfterServiceStart = (
+    $null -ne $latest -and
+    $latest.TimeCreated.ToUniversalTime() -ge $serviceProcessStartedAt
+  )
+  $sourceSynchronized = (
+    $statusExitCode -eq 0 -and
+    $sourceFormatSafe -and
+    $eventAfterServiceStart -and
+    $syncTypeConfigured
+  )
   $observed = [ordered]@{
     queryOk = $true
     serviceState = [string]$service.Status
@@ -537,7 +706,6 @@ $ErrorActionPreference = 'Stop'
 $TaskName = 'Faz24-I3-Audit-Snapshot'
 $StatePath = Join-Path $Root 'state\initial-rollback.json'
 $AclBackupPath = Join-Path $Root 'state\initial-acl.txt'
-$AuditPolicyBackupPath = Join-Path $Root 'state\initial-audit-policy.csv'
 $CollectorSource = Join-Path $PSScriptRoot 'collect-audit-snapshot.ps1'
 $BaselineSource = Join-Path $PSScriptRoot 'baseline.json'
 $CollectorPath = Join-Path $Root 'scripts\collect-audit-snapshot.ps1'
@@ -549,6 +717,103 @@ function Test-IsAdministrator {
   $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
   $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
   return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Initialize-AuditPolicyApi {
+  if ('Faz24.InstallerAuditPolicy.NativeMethods' -as [type]) { return }
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Faz24.InstallerAuditPolicy {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct AUDIT_POLICY_INFORMATION {
+    public Guid AuditSubCategoryGuid;
+    public uint AuditingInformation;
+    public Guid AuditCategoryGuid;
+  }
+  public static class NativeMethods {
+    [DllImport("advapi32.dll", SetLastError=true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AuditQuerySystemPolicy(
+      [In] Guid[] pSubCategoryGuids,
+      uint PolicyCount,
+      out IntPtr ppAuditPolicy
+    );
+    [DllImport("advapi32.dll")]
+    public static extern void AuditFree(IntPtr buffer);
+  }
+}
+'@
+}
+
+function Get-LogonAuditPolicyState {
+  Initialize-AuditPolicyApi
+  $logonGuid = [guid]'0CCE9215-69AE-11D9-BED3-505054503030'
+  $buffer = [IntPtr]::Zero
+  if (-not [Faz24.InstallerAuditPolicy.NativeMethods]::AuditQuerySystemPolicy(@($logonGuid), 1, [ref]$buffer)) {
+    throw ('AuditQuerySystemPolicy:' + [Runtime.InteropServices.Marshal]::GetLastWin32Error())
+  }
+  try {
+    $info = [Runtime.InteropServices.Marshal]::PtrToStructure(
+      $buffer,
+      [type][Faz24.InstallerAuditPolicy.AUDIT_POLICY_INFORMATION]
+    )
+    return [ordered]@{
+      successEnabled = (($info.AuditingInformation -band 1) -eq 1)
+      failureEnabled = (($info.AuditingInformation -band 2) -eq 2)
+    }
+  } finally {
+    [Faz24.InstallerAuditPolicy.NativeMethods]::AuditFree($buffer)
+  }
+}
+
+function Get-PackageFingerprint {
+  $collectorHash = (Get-FileHash -LiteralPath $CollectorSource -Algorithm SHA256).Hash.ToLowerInvariant()
+  $baselineHash = (Get-FileHash -LiteralPath $BaselineSource -Algorithm SHA256).Hash.ToLowerInvariant()
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($collectorHash + ':' + $baselineHash)
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+  } finally {
+    $sha.Dispose()
+  }
+}
+
+function Write-RollbackState {
+  param([Parameter(Mandatory=$true)][object]$State)
+  $stateDirectory = Split-Path -Parent $StatePath
+  New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+  $temporary = Join-Path $stateDirectory ('.rollback-' + [guid]::NewGuid().ToString('N') + '.tmp')
+  try {
+    $State | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $temporary -Encoding UTF8
+    Move-Item -LiteralPath $temporary -Destination $StatePath -Force
+  } finally {
+    Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Read-RollbackState {
+  if (-not (Test-Path -LiteralPath $StatePath)) { throw 'rollback-state-missing' }
+  $state = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if (
+    $state.schemaVersion -ne 'faz24.windows-audit-rollback.v2' -or
+    [string]::IsNullOrWhiteSpace([string]$state.transactionId) -or
+    [string]::IsNullOrWhiteSpace([string]$state.packageFingerprint) -or
+    [string]::IsNullOrWhiteSpace([string]$state.backupDirectory) -or
+    -not (Test-Path -LiteralPath ([string]$state.backupDirectory)) -or
+    ($state.rootExisted -and (
+      [string]::IsNullOrWhiteSpace([string]$state.aclRestoreRoot) -or
+      [string]$state.aclRestoreRoot -ne (Split-Path -Parent $Root) -or
+      -not (Test-Path -LiteralPath $AclBackupPath)
+    ))
+  ) { throw 'rollback-state-incomplete' }
+  return $state
+}
+
+function Get-StateFileEntries {
+  param([Parameter(Mandatory=$true)][object]$Files)
+  if ($Files -is [System.Collections.IDictionary]) { return @($Files.Values) }
+  return @($Files.PSObject.Properties | ForEach-Object { $_.Value })
 }
 
 function Get-RegistryState {
@@ -581,6 +846,59 @@ function Get-RuleState {
   return [ordered]@{ name=[string]$rule.Name; exists=$true }
 }
 
+function Test-RemoteAddressBroad {
+  param([object[]]$RemoteAddresses)
+
+  $broadAliases = @(
+    'Any', '*', 'LocalSubnet', 'Internet', 'Intranet', 'RemoteIntranet',
+    'DefaultGateway', 'DHCP', 'DNS', 'WINS'
+  )
+  foreach ($rawValue in @($RemoteAddresses)) {
+    foreach ($value in @(([string]$rawValue) -split ',')) {
+      $candidate = $value.Trim()
+      if ([string]::IsNullOrWhiteSpace($candidate)) { return $true }
+      if (@($broadAliases | Where-Object { $_ -ieq $candidate }).Count -gt 0) {
+        return $true
+      }
+      if ($candidate -match '^(.+)/(\d{1,3})$') {
+        try {
+          $network = [System.Net.IPAddress]::Parse($Matches[1])
+          $prefixLength = [int]$Matches[2]
+          $maximumPrefix = if (
+            $network.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork
+          ) { 32 } elseif (
+            $network.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6
+          ) { 128 } else { 0 }
+          if ($maximumPrefix -eq 0 -or $prefixLength -lt 0 -or $prefixLength -gt $maximumPrefix) {
+            return $true
+          }
+          if ($prefixLength -lt $maximumPrefix) { return $true }
+          continue
+        } catch {
+          return $true
+        }
+      }
+      if ($candidate -match '^(.+)-(.+)$') {
+        try {
+          $rangeStart = [System.Net.IPAddress]::Parse($Matches[1].Trim())
+          $rangeEnd = [System.Net.IPAddress]::Parse($Matches[2].Trim())
+          if (-not $rangeStart.Equals($rangeEnd)) { return $true }
+          continue
+        } catch {
+          return $true
+        }
+      }
+      try {
+        [void][System.Net.IPAddress]::Parse($candidate)
+      } catch {
+        # Unknown Windows firewall keywords are rejected closed.
+        return $true
+      }
+    }
+  }
+  return $false
+}
+
 function Get-BroadConflictRules {
   param([object]$Baseline)
 
@@ -611,57 +929,130 @@ function Get-BroadConflictRules {
     $address = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
     if ($null -eq $port -or $null -eq $address) { continue }
     $portConflict = Test-ProhibitedPortCoverage -LocalPorts @($port.LocalPort) -ProhibitedPorts $ports
-    $broadRemote = @(@($address.RemoteAddress) | Where-Object { [string]$_ -in @('Any','*','0.0.0.0/0','::/0') }).Count -gt 0
+    $broadRemote = Test-RemoteAddressBroad -RemoteAddresses @($address.RemoteAddress)
     if ($portConflict -and $broadRemote) { $results.Add($rule) }
   }
   return @($results)
 }
 
 function Save-InitialState {
-  param([object]$Baseline, [bool]$RootExisted)
+  param([object]$Baseline, [bool]$RootExisted, [string]$PackageFingerprint)
   if (Test-Path -LiteralPath $StatePath) {
-    $existing = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if (
-      $existing.schemaVersion -ne 'faz24.windows-audit-rollback.v1' -or
-      -not (Test-Path -LiteralPath $AuditPolicyBackupPath) -or
-      ($existing.rootExisted -and -not (Test-Path -LiteralPath $AclBackupPath))
-    ) { throw 'rollback-state-incomplete' }
-    return
+    $existing = Read-RollbackState
+    if ([string]$existing.packageFingerprint -ne $PackageFingerprint) {
+      throw 'rollback-required-before-package-change'
+    }
+    if ([string]$existing.applyStatus -ne 'applied') {
+      throw 'rollback-required-before-retry'
+    }
+    return $existing
   }
   $temporaryId = [guid]::NewGuid().ToString('N')
   $temporaryState = Join-Path $env:TEMP ('faz24-i3-state-' + $temporaryId + '.json')
   $temporaryAcl = Join-Path $env:TEMP ('faz24-i3-acl-' + $temporaryId + '.txt')
-  $temporaryAudit = Join-Path $env:TEMP ('faz24-i3-audit-' + $temporaryId + '.csv')
+  $stateDirectory = Split-Path -Parent $StatePath
+  $stateDirectoryExisted = Test-Path -LiteralPath $stateDirectory
+  $backupDirectory = Join-Path $stateDirectory ('backup-' + $temporaryId)
   $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   $taskXml = $null
   if ($null -ne $task) { $taskXml = Export-ScheduledTask -TaskName $TaskName }
   $transcriptionPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription'
   $scriptBlockPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'
   $state = [ordered]@{
-    schemaVersion='faz24.windows-audit-rollback.v1'; capturedAt=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-    rootExisted=$RootExisted; taskXml=$taskXml
+    schemaVersion='faz24.windows-audit-rollback.v2'; transactionId=$temporaryId
+    packageFingerprint=$PackageFingerprint; applyStatus='captured'
+    capturedAt=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    rootExisted=$RootExisted; stateDirectoryExisted=$stateDirectoryExisted
+    aclRestoreRoot=(Split-Path -Parent $Root)
+    backupDirectory=$backupDirectory; taskXml=$taskXml
     registry=[ordered]@{
       enableTranscripting=(Get-RegistryState $transcriptionPath 'EnableTranscripting')
       enableInvocationHeader=(Get-RegistryState $transcriptionPath 'EnableInvocationHeader')
       outputDirectory=(Get-RegistryState $transcriptionPath 'OutputDirectory')
       enableScriptBlockLogging=(Get-RegistryState $scriptBlockPath 'EnableScriptBlockLogging')
     }
+    logonAuditPolicy=(Get-LogonAuditPolicyState)
     exactRules=@($Baseline.expectedFirewallRules | ForEach-Object { Get-RuleState -Name ([string]$_.name) })
+    files=[ordered]@{
+      collector=[ordered]@{ path=$CollectorPath; existed=(Test-Path -LiteralPath $CollectorPath); backupName='collector.ps1' }
+      baseline=[ordered]@{ path=$BaselinePath; existed=(Test-Path -LiteralPath $BaselinePath); backupName='baseline.json' }
+      snapshot=[ordered]@{ path=$SnapshotPath; existed=(Test-Path -LiteralPath $SnapshotPath); backupName='snapshot.json' }
+    }
   }
   try {
     if ($RootExisted) {
       & icacls $Root /save $temporaryAcl /t /c /q | Out-Null
       if ($LASTEXITCODE -ne 0) { throw 'acl-backup-failed' }
     }
-    & auditpol /backup /file:$temporaryAudit | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'audit-policy-backup-failed' }
     $state | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $temporaryState -Encoding UTF8
-    New-Item -ItemType Directory -Path (Split-Path -Parent $StatePath) -Force | Out-Null
+    New-Item -ItemType Directory -Path $backupDirectory -Force | Out-Null
+    foreach ($fileState in @(Get-StateFileEntries -Files $state.files)) {
+      if ($fileState.existed) {
+        Copy-Item -LiteralPath ([string]$fileState.path) -Destination (Join-Path $backupDirectory ([string]$fileState.backupName)) -Force
+      }
+    }
     if ($RootExisted) { Move-Item -LiteralPath $temporaryAcl -Destination $AclBackupPath -Force }
-    Move-Item -LiteralPath $temporaryAudit -Destination $AuditPolicyBackupPath -Force
     Move-Item -LiteralPath $temporaryState -Destination $StatePath -Force
+    return Read-RollbackState
   } finally {
-    Remove-Item -LiteralPath $temporaryState,$temporaryAcl,$temporaryAudit -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $temporaryState,$temporaryAcl -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Restore-InitialState {
+  param([Parameter(Mandatory=$true)][object]$State)
+
+  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+  if ($State.taskXml) {
+    Register-ScheduledTask -TaskName $TaskName -Xml ([string]$State.taskXml) -Force | Out-Null
+  }
+  $transcriptionPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription'
+  $scriptBlockPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'
+  Set-RegistryState $transcriptionPath 'EnableTranscripting' $State.registry.enableTranscripting
+  Set-RegistryState $transcriptionPath 'EnableInvocationHeader' $State.registry.enableInvocationHeader
+  Set-RegistryState $transcriptionPath 'OutputDirectory' $State.registry.outputDirectory
+  Set-RegistryState $scriptBlockPath 'EnableScriptBlockLogging' $State.registry.enableScriptBlockLogging
+
+  $successSetting = if ($State.logonAuditPolicy.successEnabled) { 'enable' } else { 'disable' }
+  $failureSetting = if ($State.logonAuditPolicy.failureEnabled) { 'enable' } else { 'disable' }
+  & auditpol /set /subcategory:'{0CCE9215-69AE-11D9-BED3-505054503030}' ('/success:' + $successSetting) ('/failure:' + $failureSetting) | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'logon-audit-policy-restore-failed' }
+
+  foreach ($rule in @($State.exactRules)) {
+    if (-not $rule.exists) {
+      Remove-NetFirewallRule -Name ([string]$rule.name) -ErrorAction SilentlyContinue
+    }
+  }
+  foreach ($fileState in @(Get-StateFileEntries -Files $State.files)) {
+    $path = [string]$fileState.path
+    if ($fileState.existed) {
+      $backupPath = Join-Path ([string]$State.backupDirectory) ([string]$fileState.backupName)
+      if (-not (Test-Path -LiteralPath $backupPath)) { throw 'rollback-file-backup-missing' }
+      New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
+      Copy-Item -LiteralPath $backupPath -Destination $path -Force
+    } else {
+      Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  if ($State.rootExisted -and (Test-Path -LiteralPath $AclBackupPath)) {
+    $restoreRoot = [string]$State.aclRestoreRoot
+    if ([string]::IsNullOrWhiteSpace($restoreRoot) -or $restoreRoot -ne (Split-Path -Parent $Root)) {
+      throw 'rollback-acl-restore-root-mismatch'
+    }
+    & icacls $restoreRoot /restore $AclBackupPath /c /q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'acl-restore-failed' }
+    Remove-Item -LiteralPath ([string]$State.backupDirectory),$StatePath,$AclBackupPath -Recurse -Force -ErrorAction SilentlyContinue
+    $stateDirectory = Split-Path -Parent $StatePath
+    if (-not $State.stateDirectoryExisted -and (Test-Path -LiteralPath $stateDirectory)) {
+      if (@(Get-ChildItem -LiteralPath $stateDirectory -Force).Count -eq 0) {
+        Remove-Item -LiteralPath $stateDirectory -Force
+      }
+    }
+  } elseif (-not $State.rootExisted) {
+    Remove-Item -LiteralPath $Root -Recurse -Force
+  } else {
+    throw 'rollback-acl-backup-missing'
   }
 }
 
@@ -834,6 +1225,7 @@ if ($Mode -in @('Apply','Rollback') -and -not (Test-IsAdministrator)) { throw 'a
 if (-not (Test-Path -LiteralPath $BaselineSource)) { throw 'baseline-source-missing' }
 $baseline = Get-Content -LiteralPath $BaselineSource -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($baseline.schemaVersion -ne 'faz24.windows-audit-baseline.v1') { throw 'baseline-schema-mismatch' }
+$packageFingerprint = Get-PackageFingerprint
 
 if ($Mode -eq 'Apply') {
   if ($null -eq (Get-LocalUser -Name $TargetUser -ErrorAction SilentlyContinue)) { throw 'target-user-not-found' }
@@ -843,61 +1235,61 @@ if ($Mode -eq 'Apply') {
     throw ('broad-firewall-conflicts-require-separate-reviewed-remediation:' + $broad.Count)
   }
   $rootExisted = Test-Path -LiteralPath $Root
-  Save-InitialState -Baseline $baseline -RootExisted $rootExisted
-  foreach ($path in @($Root, (Join-Path $Root 'scripts'), (Join-Path $Root 'config'), (Join-Path $Root 'snapshot'), $TranscriptPath, (Join-Path $Root 'state'))) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
-  Set-ProtectedAcl -UserName $TargetUser
-  Copy-Item -LiteralPath $CollectorSource -Destination $CollectorPath -Force
-  Copy-Item -LiteralPath $BaselineSource -Destination $BaselinePath -Force
-  Set-ProtectedAcl -UserName $TargetUser
+  $state = Save-InitialState -Baseline $baseline -RootExisted $rootExisted -PackageFingerprint $packageFingerprint
+  if ([string]$state.applyStatus -eq 'applied') {
+    $snapshot = Invoke-SnapshotAndRead
+    $failed = @($snapshot.controls.PSObject.Properties.Value | Where-Object { $_.verdict -ne 'pass' })
+    if ($failed.Count -gt 0) { throw 'existing-apply-drift-detected-use-validate-or-rollback' }
+    Write-Output ('mode=Apply status=already-applied snapshot=' + $SnapshotPath + ' failedControls=0')
+    exit 0
+  }
 
-  $transcriptionPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription'
-  $scriptBlockPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'
-  New-Item -Path $transcriptionPath -Force | Out-Null
-  New-ItemProperty -Path $transcriptionPath -Name EnableTranscripting -Value 1 -PropertyType DWord -Force | Out-Null
-  New-ItemProperty -Path $transcriptionPath -Name EnableInvocationHeader -Value 1 -PropertyType DWord -Force | Out-Null
-  New-ItemProperty -Path $transcriptionPath -Name OutputDirectory -Value $TranscriptPath -PropertyType String -Force | Out-Null
-  New-Item -Path $scriptBlockPath -Force | Out-Null
-  New-ItemProperty -Path $scriptBlockPath -Name EnableScriptBlockLogging -Value 1 -PropertyType DWord -Force | Out-Null
-  & auditpol /set /subcategory:'{0CCE9215-69AE-11D9-BED3-505054503030}' /failure:enable | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'failed-login-audit-policy-apply-failed' }
+  $state.applyStatus = 'applying'
+  Write-RollbackState -State $state
+  try {
+    foreach ($path in @($Root, (Join-Path $Root 'scripts'), (Join-Path $Root 'config'), (Join-Path $Root 'snapshot'), $TranscriptPath, (Join-Path $Root 'state'))) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
+    Set-ProtectedAcl -UserName $TargetUser
+    Copy-Item -LiteralPath $CollectorSource -Destination $CollectorPath -Force
+    Copy-Item -LiteralPath $BaselineSource -Destination $BaselinePath -Force
+    Set-ProtectedAcl -UserName $TargetUser
 
-  Install-ExactRules -Baseline $baseline
-  Register-SnapshotTask
-  $null = Invoke-SnapshotAndRead
-  Set-ProtectedAcl -UserName $TargetUser
-  $snapshot = Invoke-SnapshotAndRead
-  $failed = @($snapshot.controls.PSObject.Properties.Value | Where-Object { $_.verdict -ne 'pass' })
-  Write-Output ('mode=Apply snapshot=' + $SnapshotPath + ' failedControls=' + $failed.Count + ' broadConflictsObserved=0')
-  exit $(if ($failed.Count -eq 0) { 0 } else { 3 })
+    $transcriptionPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription'
+    $scriptBlockPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'
+    New-Item -Path $transcriptionPath -Force | Out-Null
+    New-ItemProperty -Path $transcriptionPath -Name EnableTranscripting -Value 1 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path $transcriptionPath -Name EnableInvocationHeader -Value 1 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path $transcriptionPath -Name OutputDirectory -Value $TranscriptPath -PropertyType String -Force | Out-Null
+    New-Item -Path $scriptBlockPath -Force | Out-Null
+    New-ItemProperty -Path $scriptBlockPath -Name EnableScriptBlockLogging -Value 1 -PropertyType DWord -Force | Out-Null
+    & auditpol /set /subcategory:'{0CCE9215-69AE-11D9-BED3-505054503030}' /failure:enable | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'failed-login-audit-policy-apply-failed' }
+
+    Install-ExactRules -Baseline $baseline
+    Register-SnapshotTask
+    $null = Invoke-SnapshotAndRead
+    Set-ProtectedAcl -UserName $TargetUser
+    $snapshot = Invoke-SnapshotAndRead
+    $failed = @($snapshot.controls.PSObject.Properties.Value | Where-Object { $_.verdict -ne 'pass' })
+    if ($failed.Count -gt 0) { throw ('apply-validation-failed:' + $failed.Count) }
+    $state.applyStatus = 'applied'
+    Write-RollbackState -State $state
+    Set-ProtectedAcl -UserName $TargetUser
+    Write-Output ('mode=Apply snapshot=' + $SnapshotPath + ' failedControls=0 broadConflictsObserved=0')
+    exit 0
+  } catch {
+    $applyError = $_.Exception.Message
+    try {
+      Restore-InitialState -State $state
+    } catch {
+      throw ('apply-failed-and-auto-rollback-failed:' + $applyError + ':' + $_.Exception.Message)
+    }
+    throw ('apply-failed-auto-rollback-completed:' + $applyError)
+  }
 }
 
 if ($Mode -eq 'Rollback') {
-  if (-not (Test-Path -LiteralPath $StatePath)) { throw 'rollback-state-missing' }
-  $state = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-  if ($state.taskXml) { Register-ScheduledTask -TaskName $TaskName -Xml ([string]$state.taskXml) -Force | Out-Null }
-  $transcriptionPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription'
-  $scriptBlockPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'
-  Set-RegistryState $transcriptionPath 'EnableTranscripting' $state.registry.enableTranscripting
-  Set-RegistryState $transcriptionPath 'EnableInvocationHeader' $state.registry.enableInvocationHeader
-  Set-RegistryState $transcriptionPath 'OutputDirectory' $state.registry.outputDirectory
-  Set-RegistryState $scriptBlockPath 'EnableScriptBlockLogging' $state.registry.enableScriptBlockLogging
-  if (Test-Path -LiteralPath $AuditPolicyBackupPath) {
-    & auditpol /restore /file:$AuditPolicyBackupPath | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'audit-policy-restore-failed' }
-  }
-  foreach ($rule in @($state.exactRules)) {
-    if (-not $rule.exists) {
-      Remove-NetFirewallRule -Name ([string]$rule.name) -ErrorAction SilentlyContinue
-    }
-  }
-  if ($state.rootExisted -and (Test-Path -LiteralPath $AclBackupPath)) {
-    $restoreRoot = [System.IO.Path]::GetPathRoot($Root)
-    & icacls $restoreRoot /restore $AclBackupPath /c /q | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'acl-restore-failed' }
-  } elseif (-not $state.rootExisted) {
-    Remove-Item -LiteralPath $Root -Recurse -Force
-  }
+  $state = Read-RollbackState
+  Restore-InitialState -State $state
   Write-Output 'mode=Rollback status=restored-from-initial-state'
   exit 0
 }
@@ -964,6 +1356,8 @@ def baseline(target_user: str, management_address: str) -> dict[str, Any]:
         "lookbackHours": 24,
         "maximumHandshakeAgeSeconds": 300,
         "maximumSuccessEventAgeSeconds": 86_400,
+        "transcriptRetentionDays": 14,
+        "maximumTranscriptBytes": 1_073_741_824,
         "expectedFirewallRules": [
             {
                 "name": "FAZ24-I3-WG-SSH-22",
@@ -1034,14 +1428,25 @@ Run from an elevated PowerShell 5.1 session:
 .\\install-audit-controls.ps1 -Mode Validate
 ```
 
-`Apply` is idempotent and preserves the initial registry, audit-policy,
-scheduled-task, and ACL state. It creates only missing exact inbound rules
-limited to the WireGuard management address and never rewrites an existing
-reserved rule. Any broad inbound conflict is a fail-closed preflight error;
-remediation must be reviewed and performed separately so rollback never has to
-reconstruct a lossy firewall-rule snapshot.
+`Apply` is a package-fingerprint-bound transaction. Before mutation it backs
+up pre-existing managed files and captures the initial registry, scoped Logon
+audit bits, exact-rule existence, scheduled task and ACL state. A partial or
+failed apply automatically restores that state; an incomplete transaction or
+different package fingerprint requires an explicit rollback before retry.
+Repeated Apply with the same package validates without mutation. The package
+creates only missing exact inbound rules limited to the WireGuard management
+address and never rewrites an existing reserved rule. Any broad inbound alias,
+CIDR or range conflict is a fail-closed preflight error; remediation must be
+reviewed and performed separately.
 
-Rollback restores the captured initial state:
+PowerShell transcripts are local privileged operational data. The SYSTEM
+collector removes entries older than 14 days and then the oldest entries until
+the directory is at most 1 GiB; reparse points fail closed. Only bounded age,
+size and deletion counters enter the snapshot, never names or content.
+
+Rollback restores the captured initial state, including pre-existing managed
+files, and changes only the Windows Logon audit subcategory captured by this
+package; it never performs a full-machine `auditpol /restore`:
 
 ```powershell
 .\\rollback-audit-controls.ps1
@@ -1125,6 +1530,24 @@ def build(args: argparse.Namespace) -> None:
         "rollback": {
             "supported": True,
             "initialStateCapturedBeforeMutation": True,
+            "automaticOnPartialApplyFailure": True,
+            "packageFingerprintBound": True,
+            "preexistingManagedFilesRestored": True,
+            "auditPolicyRestoreScope": "logon-subcategory-only",
+        },
+        "operatorFlow": [
+            "firewall-impact-decision",
+            "apply",
+            "validate",
+            "rollback-drill",
+            "reapply",
+            "revalidate",
+            "fresh-evidence",
+        ],
+        "transcriptRetention": {
+            "maximumDays": values["transcriptRetentionDays"],
+            "maximumBytes": values["maximumTranscriptBytes"],
+            "reparsePointsRejected": True,
         },
         "components": component_hashes,
         "secretMaterialIncluded": False,

@@ -45,7 +45,7 @@ The bundle schema is `faz24.wg-bplus.i3.audit.v2`. Every check carries
 | Check id | Required semantic proof |
 |---|---|
 | `openssh-event-log` | OpenSSH Operational log query succeeds and the lookback contains at least one event |
-| `powershell-transcription` | Transcription and invocation header are enabled; transcript, snapshot directory and snapshot file ACLs exactly restrict write access to SYSTEM/Administrators and give the transport account read-only access only to the snapshot |
+| `powershell-transcription` | Transcription and invocation header are enabled; transcript, snapshot directory and snapshot file ACLs exactly restrict write access to SYSTEM/Administrators and give the transport account read-only access only to the snapshot; transcript retention rejects descendant reparse points before traversal and is enforced at no more than 14 days and 1 GiB without exporting names/content |
 | `powershell-script-block` | Script-block policy is enabled, log query succeeds and at least one 4104 event exists; content is omitted |
 | `failed-login` | Security log is queryable and native Windows Logon failure-audit bit is enabled; zero 4625 events is valid |
 | `wireguard-health` | `wg show all dump` succeeds, tunnel service/interface/peer exist and latest handshake is within threshold |
@@ -56,6 +56,9 @@ The bundle schema is `faz24.wg-bplus.i3.audit.v2`. Every check carries
 The verifier checks values, not only labels. For example, a check cannot pass
 with `broadConflictCount>0`, an absent handshake, a stale time event, or a
 failed-login count whose audit policy was not proven.
+The collector and verifier also bind `remoteSnapshotPathHash` to the canonical
+`C:\ProgramData\Acik\Faz24\I3\audit-controls\snapshot\audit-snapshot.json`
+path; a bundle cannot rebind the read-only transport to another snapshot path.
 
 ## 3. Redaction Contract
 
@@ -121,11 +124,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -Mode Apply
 ```
 
-`Apply` captures the initial registry, advanced audit policy, exact firewall
-rule existence, scheduled task and ACL state before mutation. It seeds the
-first snapshot, reapplies the exact protected ACL to the new file and then
-collects a second snapshot so directory/file ACL proof comes from live state.
-It is idempotent.
+`Apply` binds the rollback state to the immutable package fingerprint and,
+before mutation, captures the initial registry, scoped Logon audit bits, exact
+firewall rule existence, scheduled task, ACL state and any pre-existing managed
+collector/baseline/snapshot files. It seeds the first snapshot, reapplies the
+exact protected ACL to the new file and then collects a second snapshot so
+directory/file ACL proof comes from live state. Partial failure automatically
+restores the captured state. An incomplete transaction or a different package
+fingerprint requires explicit rollback before retry; same-package re-Apply is
+validation-only and does not mutate.
 If a reserved exact rule already exists, its address/port semantics must match
 exactly; the package never rewrites it. Rollback removes only exact rules that
 did not exist before Apply. A non-zero result with
@@ -142,19 +149,40 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -Mode Validate
 ```
 
-Rollback restores the initial captured state:
+Rollback restores the initial captured state. It restores only the captured
+Windows Logon audit success/failure bits, never the full machine audit policy:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\rollback-audit-controls.ps1
 ```
 
-Rollback is mandatory if SSH/WireGuard/STT/mTLS connectivity regresses, the
+For the first package qualification, perform the rollback drill after a clean
+Validate, verify the restored connectivity/baseline, then run Apply and
+Validate again before collecting repository evidence. Rollback is also
+mandatory if SSH/WireGuard/STT/mTLS connectivity regresses, the
 SYSTEM task cannot produce a bounded snapshot, or an exact rule blocks an
 approved management path. After rollback, collect fresh connectivity evidence
 before attempting another apply.
 
-## 6. Repository Evidence Run
+## 6. Pin The Denetim SSH Host Key
+
+The self-hosted runner must have an independently verified Denetim OpenSSH host
+key in the runner-local file below before the evidence workflow starts:
+
+```text
+${GITHUB_WORKSPACE}/../.faz24-i3-ssh/faz24-i3-denetim_known_hosts
+```
+
+The file must be a non-empty regular file, not a symlink, no larger than 1 MiB
+and not writable by group/other. Establish or rotate the fingerprint through an
+approved out-of-band Windows/operator channel; `ssh-keyscan` reachability alone
+is not identity proof. The collector uses `StrictHostKeyChecking=yes`, this
+single `UserKnownHostsFile`, and `GlobalKnownHostsFile=/dev/null`. TOFU and
+`accept-new` are not allowed. Evidence contains only file/path hashes and
+bounded status metadata, never the host key itself.
+
+## 7. Repository Evidence Run
 
 After elevated validation succeeds, rerun the self-hosted collector:
 
@@ -167,9 +195,11 @@ gh workflow run faz24-wg-bplus-i3-evidence.yml \
   -f wg_interface=auto
 ```
 
-The self-hosted `staging-sw` runner uses the existing private key locally. The
-artifact records only key/path fingerprints and target hashes. A failed
-workflow still uploads blocker evidence; never override its verifier result.
+The self-hosted `staging-sw` runner uses the existing private key and pinned
+known-hosts file locally. The artifact records only key/path fingerprints and
+target hashes. Rejected collector/verifier output remains visible only in the
+bounded workflow summary; no downloadable artifact is uploaded unless both
+collector and verifier return zero. Never override the verifier result.
 
 Run the verifier locally only against the downloaded bounded JSON:
 
@@ -178,24 +208,31 @@ python3 scripts/faz24/verify-wg-bplus-i3-evidence.py \
   /protected/path/wg-bplus-i3-evidence.json
 ```
 
-## 7. Acceptance Sequence
+## 8. Acceptance Sequence
 
 All of the following are required for bounded I3 review:
 
 1. Restricted package was built from exact canonical `main`; its one-day
    artifact was handled as identity-bearing configuration and `SHA256SUMS`
    passed.
-2. Elevated `Apply` captured rollback state before mutation.
-3. Elevated `Validate` reported zero failed controls.
-4. `svc-denetim-agent` remains non-admin and cannot write the snapshot.
-5. Fresh self-hosted evidence workflow completed successfully.
-6. Artifact schema v2 passed the semantic verifier and redaction scan.
-7. Reviewer accepted the bounded evidence on #1864/#2434.
+2. An explicit firewall impact decision found no broad conflict requiring the
+   separate remediation path.
+3. Elevated `Apply` captured rollback state before mutation and its internal
+   validation reported zero failed controls.
+4. Separate elevated `Validate` reported zero failed controls.
+5. Rollback drill restored the baseline; connectivity was verified; a second
+   Apply and Validate established the final candidate state.
+6. `svc-denetim-agent` remains non-admin and cannot write the snapshot.
+7. The independently verified pinned SSH host key passed strict checking.
+8. Fresh self-hosted evidence workflow completed successfully and was uploaded
+   only after collector and verifier both returned zero.
+9. Artifact schema v2 passed the semantic verifier and redaction scan.
+10. Reviewer accepted the bounded evidence on #1864/#2434.
 
 Passing I3 does not advance direct-STT, I7, product-value, legal, pilot or
 production acceptance by implication.
 
-## 8. Standards And Product Posture
+## 9. Standards And Product Posture
 
 This control set is vendor-neutral and maps to commonly used enterprise
 expectations:
@@ -215,7 +252,7 @@ quality, privacy and operational gates remain independent. Workcube can be a
 pilot vocabulary/integration context but is not embedded as a product
 dependency in this control plane.
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Evidence | Interpretation | Next action |
 |---|---|---|

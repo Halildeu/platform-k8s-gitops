@@ -26,6 +26,9 @@ BUNDLE_MAX_AGE_SECONDS = 900
 MAX_FUTURE_SKEW_SECONDS = 300
 CANONICAL_DENETIM_TARGET = "svc-denetim-agent@10.99.0.2"
 CANONICAL_DENETIM_HOST = "10.99.0.2"
+CANONICAL_REMOTE_SNAPSHOT_PATH = (
+    r"C:\ProgramData\Acik\Faz24\I3\audit-controls\snapshot\audit-snapshot.json"
+)
 
 
 def sha256_short(value: str) -> str:
@@ -34,6 +37,7 @@ def sha256_short(value: str) -> str:
 
 CANONICAL_DENETIM_TARGET_HASH = sha256_short(CANONICAL_DENETIM_TARGET)
 CANONICAL_DENETIM_HOST_HASH = sha256_short(CANONICAL_DENETIM_HOST)
+CANONICAL_REMOTE_SNAPSHOT_PATH_HASH = sha256_short(CANONICAL_REMOTE_SNAPSHOT_PATH)
 
 REQUIRED_CHECK_IDS = [
     "openssh-event-log",
@@ -168,6 +172,10 @@ SSH_PREFLIGHT_FIELDS = {
     "sshIdentityPathHash",
     "sshIdentityPublicKeyPresent",
     "sshIdentityPublicKeyFingerprint",
+    "sshKnownHostsConfigured",
+    "sshKnownHostsPathHash",
+    "sshKnownHostsContentFingerprint",
+    "sshKnownHostsSafePermissions",
 }
 WG_PROBE_FIELDS = {
     "requestedMode",
@@ -195,6 +203,9 @@ EXPECTED_FIELDS = {
         "protectedOutputAcl",
         "protectedSnapshotDirectoryAcl",
         "protectedSnapshotFileAcl",
+        "retentionEnforced",
+        "maximumRetentionDays",
+        "maximumTranscriptBytes",
     },
     "powershell-script-block": {"queryOk", "policyEnabled", "minimumEventCount"},
     "failed-login": {"securityLogQueryable", "auditFailureEnabled"},
@@ -242,6 +253,11 @@ OBSERVED_FIELDS = {
         "protectedOutputAcl",
         "protectedSnapshotDirectoryAcl",
         "protectedSnapshotFileAcl",
+        "retentionEnforced",
+        "transcriptBytes",
+        "oldestTranscriptAgeSeconds",
+        "retentionDeleteCount",
+        "capacityDeleteCount",
     },
     "powershell-script-block": {"queryOk", "policyEnabled", "eventCount"},
     "failed-login": {"securityLogQueryable", "auditFailureEnabled", "eventCount"},
@@ -293,6 +309,9 @@ CANONICAL_EXPECTED: dict[str, dict[str, Any]] = {
         "protectedOutputAcl": True,
         "protectedSnapshotDirectoryAcl": True,
         "protectedSnapshotFileAcl": True,
+        "retentionEnforced": True,
+        "maximumRetentionDays": 14,
+        "maximumTranscriptBytes": 1_073_741_824,
     },
     "powershell-script-block": {
         "queryOk": True,
@@ -576,6 +595,13 @@ def validate_collector_semantics(data: dict[str, Any]) -> list[Finding]:
         findings.append(
             Finding("collector_snapshot", "remote snapshot schema must be canonical")
         )
+    if collector.get("remoteSnapshotPathHash") != CANONICAL_REMOTE_SNAPSHOT_PATH_HASH:
+        findings.append(
+            Finding(
+                "collector_snapshot",
+                "collector.remoteSnapshotPathHash must bind to the canonical snapshot path",
+            )
+        )
 
     preflight = collector.get("denetimSshPreflight")
     wg_probe = collector.get("stagingWireGuardProbe")
@@ -623,6 +649,17 @@ def validate_collector_semantics(data: dict[str, Any]) -> list[Finding]:
     ):
         findings.append(
             Finding("collector_ssh", "dedicated SSH identity metadata must be proven")
+        )
+    if (
+        preflight.get("sshKnownHostsConfigured") is not True
+        or preflight.get("sshKnownHostsSafePermissions") is not True
+        or re.fullmatch(
+            r"[0-9a-f]{16}", str(preflight.get("sshKnownHostsContentFingerprint", ""))
+        )
+        is None
+    ):
+        findings.append(
+            Finding("collector_ssh", "pinned SSH known_hosts metadata must be proven")
         )
 
     return findings
@@ -780,9 +817,31 @@ def validate_control_semantics(
             "protectedOutputAcl",
             "protectedSnapshotDirectoryAcl",
             "protectedSnapshotFileAcl",
+            "retentionEnforced",
         ]:
             if not bool_is(expected, field) or not bool_is(observed, field):
                 semantic_failure(findings, check_id, f"{field} must be proven true")
+        maximum_days = expected.get("maximumRetentionDays")
+        maximum_bytes = expected.get("maximumTranscriptBytes")
+        transcript_bytes = nonnegative_int(observed, "transcriptBytes")
+        oldest_age = nonnegative_int(observed, "oldestTranscriptAgeSeconds")
+        for counter in ["retentionDeleteCount", "capacityDeleteCount"]:
+            if nonnegative_int(observed, counter) is None:
+                semantic_failure(findings, check_id, f"{counter} must be nonnegative")
+        if (
+            not is_int(maximum_days)
+            or maximum_days < 1
+            or oldest_age is None
+            or oldest_age > maximum_days * 86_400
+        ):
+            semantic_failure(findings, check_id, "transcript retention age must be bounded")
+        if (
+            not is_int(maximum_bytes)
+            or maximum_bytes < 1_048_576
+            or transcript_bytes is None
+            or transcript_bytes > maximum_bytes
+        ):
+            semantic_failure(findings, check_id, "transcript storage bytes must be bounded")
 
     elif check_id == "powershell-script-block":
         minimum = expected.get("minimumEventCount")
