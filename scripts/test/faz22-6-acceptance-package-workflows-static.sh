@@ -39,6 +39,7 @@ VIEWER_WATCHDOG="$ROOT/scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.
 VIEWER_AUTH_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py"
 VIEWER_AUTH_VERIFIER="$ROOT/scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py"
 VIEWER_AUTH_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_pilot_authorization_common.py"
+VIEWER_EXACT_ZIP="$ROOT/scripts/faz22-remote-ops/extract-exact-zip.py"
 VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 
@@ -111,6 +112,7 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_PRODUCT_ROOT_SCHEMA" "$VIEWER_PRODUCT_CHILD_SCHEMA" \
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG" "$VIEWER_WATCHDOG" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
+  "$VIEWER_EXACT_ZIP" \
   "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS"; do
   require_file "$path"
 done
@@ -123,6 +125,7 @@ python3 -m py_compile "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_MATRIX_PRODUCER" "$VIEWER_TERMINATION_AUDIT" \
   "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON"
+python3 -m py_compile "$VIEWER_EXACT_ZIP"
 jq -e '.additionalProperties == false' "$VIEWER_PRODUCT_ROOT_SCHEMA" >/dev/null
 jq -e '.additionalProperties == false and (.allOf | length) == 7' "$VIEWER_PRODUCT_CHILD_SCHEMA" >/dev/null
 
@@ -203,6 +206,11 @@ PY
   require_grep "github_read_api_preflight" "$workflow"
   if grep -Eq '^[[:space:]]*gh api ' "$workflow"; then
     echo "protected VIEW_ONLY collector must not require gh on the minimal runner: $workflow" >&2
+    exit 1
+  fi
+  require_grep "scripts/faz22-remote-ops/extract-exact-zip.py" "$workflow"
+  if grep -Eq '^[[:space:]]*unzip ' "$workflow"; then
+    echo "protected VIEW_ONLY collector must not require unzip on the minimal runner: $workflow" >&2
     exit 1
   fi
 done
