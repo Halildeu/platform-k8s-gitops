@@ -3,7 +3,7 @@ name: Faz 24 GPU exact-SHA rollout
 
 # Test-only immutable rollout for the Denetim GPU-host platform-ai mirror.
 # The only caller-controlled deployment value is a full platform-ai commit id.
-# Target, repo path, updater path and SSH identity are fixed in source.
+# Target, repo path, updater path and governed SSH alias are fixed in source.
 
 'on':
   workflow_dispatch:
@@ -35,10 +35,8 @@ jobs:
       EVIDENCE_DIR: /tmp/faz24-gpu-rollout-${{ github.run_id }}
       EVIDENCE_JSON: >-
         /tmp/faz24-gpu-rollout-${{ github.run_id }}/gpu-host-rollout.json
-      SSH_IDENTITY_PATH: >-
-        ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519
-      SSH_KNOWN_HOSTS_PATH: >-
-        ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_known_hosts
+      SSH_CONFIG_PATH: /home/halil/.ssh/config
+      SSH_TARGET: denetim-pc
 
     steps:
       - name: Validate dispatch contract
@@ -94,7 +92,7 @@ jobs:
             exit 1
           fi
 
-      - name: Verify pinned runner SSH material
+      - name: Verify governed runner SSH operator alias
         run: |
           set -euo pipefail
           for tool in git jq python3 sha256sum ssh ssh-keygen; do
@@ -103,28 +101,56 @@ jobs:
               exit 1
             fi
           done
-          if [ ! -f "${SSH_IDENTITY_PATH}" ]; then
-            echo '::error::runner SSH identity is missing'
+          if [ ! -r "${SSH_CONFIG_PATH}" ]; then
+            echo '::error::governed runner SSH config is missing'
             exit 1
           fi
-          if [ ! -f "${SSH_IDENTITY_PATH}.pub" ]; then
-            echo '::error::runner SSH public identity is missing'
+          ssh_config="$(
+            ssh -F "${SSH_CONFIG_PATH}" -G "${SSH_TARGET}" 2>/dev/null
+          )"
+          resolved_host="$(
+            awk 'tolower($1) == "hostname" { print $2; exit }' \
+              <<<"${ssh_config}"
+          )"
+          resolved_user="$(
+            awk 'tolower($1) == "user" { print $2; exit }' <<<"${ssh_config}"
+          )"
+          identity_file="$(
+            awk 'tolower($1) == "identityfile" { print $2; exit }' \
+              <<<"${ssh_config}"
+          )"
+          known_hosts_file="$(
+            awk 'tolower($1) == "userknownhostsfile" { print $2; exit }' \
+              <<<"${ssh_config}"
+          )"
+          identity_file="${identity_file/#\~/${HOME}}"
+          known_hosts_file="${known_hosts_file%% *}"
+          known_hosts_file="${known_hosts_file/#\~/${HOME}}"
+          if [ "${resolved_host}" != '10.99.0.2' ]; then
+            echo '::error::Denetim SSH alias hostname is not canonical'
             exit 1
           fi
-          if [ ! -f "${SSH_KNOWN_HOSTS_PATH}" ]; then
-            echo '::error::dedicated Denetim known-hosts file is missing'
+          if [ "${resolved_user}" != 'denetimpc' ]; then
+            echo '::error::Denetim SSH alias user is not the operator identity'
             exit 1
           fi
-          identity_mode="$(stat -c '%a' "${SSH_IDENTITY_PATH}")"
+          if [[ "${identity_file}" != *id_denetim* ]] || \
+            [ ! -f "${identity_file}" ]; then
+            echo '::error::Denetim operator identity is missing'
+            exit 1
+          fi
+          identity_mode="$(stat -c '%a' "${identity_file}")"
           if [ "${identity_mode}" != '600' ]; then
-            echo '::error::runner SSH identity mode must be 600'
+            echo '::error::Denetim operator identity mode must be 600'
             exit 1
           fi
-          if ! ssh-keygen -F 10.99.0.2 \
-            -f "${SSH_KNOWN_HOSTS_PATH}" >/dev/null; then
-            echo '::error::dedicated Denetim host-key entry is missing'
+          if [ ! -f "${known_hosts_file}" ] || ! ssh-keygen -F 10.99.0.2 \
+            -f "${known_hosts_file}" >/dev/null; then
+            echo '::error::pinned Denetim host-key entry is missing'
             exit 1
           fi
+          printf 'SSH_KNOWN_HOSTS_PATH=%s\n' "${known_hosts_file}" \
+            >> "${GITHUB_ENV}"
 
       - name: Run fixed-target immutable rollout
         id: rollout
@@ -135,7 +161,7 @@ jobs:
           mkdir -p "${EVIDENCE_DIR}"
           python3 scripts/faz24/run_gpu_host_exact_sha_rollout.py \
             --target-commit "${TARGET_COMMIT}" \
-            --ssh-identity "${SSH_IDENTITY_PATH}" \
+            --ssh-config "${SSH_CONFIG_PATH}" \
             --ssh-known-hosts "${SSH_KNOWN_HOSTS_PATH}" \
             --output "${EVIDENCE_JSON}" \
             --timeout-seconds 1200

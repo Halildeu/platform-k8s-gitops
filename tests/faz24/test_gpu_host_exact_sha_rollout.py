@@ -31,6 +31,7 @@ def accepted_evidence() -> dict:
         "whatIfExitCode": 0,
         "deployExitCode": 0,
         "failureClass": "none",
+        "principal": {"expectedIdentity": True, "administrator": True},
         "ledger": {
             "currentCommit": COMMIT,
             "previousCommit": "5b716c3281ba5df4a63c391f6cf13cce62e68a45",
@@ -83,15 +84,22 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("$env:GIT_CONFIG_COUNT = '1'", script)
         self.assertIn("$env:GIT_CONFIG_KEY_0 = 'safe.directory'", script)
         self.assertIn("$env:GIT_CONFIG_VALUE_0 = 'C:/platform-ai'", script)
+        self.assertIn("'\\denetimpc'", script)
+        self.assertIn("rollout-principal-not-admin", script)
         self.assertNotIn("__TARGET_COMMIT__", script)
         self.assertIn("Invoke-UpdaterChild -WhatIfOnly", script)
         self.assertIn("Test-WebSocketReady", script)
 
     def test_ssh_command_is_strict_and_fixed_target(self) -> None:
-        command = runner.ssh_command(Path("/key"), Path("/known_hosts"), "encoded")
+        command = runner.ssh_command(
+            Path("/ssh/config"), Path("/ssh/known_hosts"), "encoded"
+        )
+        self.assertIn("/ssh/config", command)
+        self.assertIn("UserKnownHostsFile=/ssh/known_hosts", command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn("IdentitiesOnly=yes", command)
         self.assertIn(runner.CANONICAL_TARGET, command)
+        self.assertNotIn("svc-denetim-agent", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
 
     def test_evidence_marker_is_parsed_without_other_output(self) -> None:
@@ -113,6 +121,8 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(evidence["status"], "no-go")
         self.assertEqual(evidence["targetCommit"], COMMIT)
         self.assertFalse(evidence["sourceCommitVerified"])
+        self.assertFalse(evidence["principal"]["expectedIdentity"])
+        self.assertFalse(evidence["principal"]["administrator"])
         self.assertFalse(evidence["privacy"]["rawAudioIncluded"])
         self.assertFalse(evidence["privacy"]["transcriptTextIncluded"])
         self.assertFalse(evidence["privacy"]["secretMaterialIncluded"])
@@ -131,6 +141,18 @@ class VerifierContractTests(unittest.TestCase):
     def test_rejects_noncanonical_task_action(self) -> None:
         data = accepted_evidence()
         data["tasks"]["liveStt"]["actionCanonical"] = False
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(data, COMMIT)
+
+    def test_rejects_non_admin_rollout_principal(self) -> None:
+        data = accepted_evidence()
+        data["principal"]["administrator"] = False
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(data, COMMIT)
+
+    def test_rejects_mock_meeting_ai_backend(self) -> None:
+        data = accepted_evidence()
+        data["health"]["meetingAi"]["backend"] = "mock"
         with self.assertRaises(verifier.EvidenceError):
             verifier.verify(data, COMMIT)
 
