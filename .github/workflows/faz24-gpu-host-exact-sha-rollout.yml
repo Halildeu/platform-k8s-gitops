@@ -1,0 +1,265 @@
+---
+name: Faz 24 GPU exact-SHA rollout
+
+# Test-only immutable rollout for the Denetim GPU-host platform-ai mirror.
+# The only caller-controlled deployment value is a full platform-ai commit id.
+# Target, repo path, updater path and SSH identity are fixed in source.
+
+'on':
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: 'Full 40-character platform-ai commit from origin/main'
+        required: true
+      confirm:
+        description: 'Required literal confirmation'
+        required: true
+        default: 'RUN_FAZ24_GPU_EXACT_SHA_ROLLOUT'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: faz24-gpu-host-exact-sha-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    name: immutable GPU rollout and metadata acceptance
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    environment: testai-product-acceptance
+    timeout-minutes: 30
+    env:
+      EVIDENCE_DIR: /tmp/faz24-gpu-rollout-${{ github.run_id }}
+      EVIDENCE_JSON: >-
+        /tmp/faz24-gpu-rollout-${{ github.run_id }}/gpu-host-rollout.json
+      SSH_IDENTITY_PATH: >-
+        ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519
+      SSH_KNOWN_HOSTS_PATH: >-
+        ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_known_hosts
+
+    steps:
+      - name: Validate dispatch contract
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          case "${TARGET_COMMIT}" in
+            *$'\n'*|*$'\r'*)
+              echo '::error::target_commit must be a single line'
+              exit 1
+              ;;
+          esac
+          if [[ ! "${TARGET_COMMIT}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::target_commit must be a 40-character lowercase SHA'
+            exit 1
+          fi
+          if [ "${CONFIRM}" != 'RUN_FAZ24_GPU_EXACT_SHA_ROLLOUT' ]; then
+            echo '::error::confirm must equal RUN_FAZ24_GPU_EXACT_SHA_ROLLOUT'
+            exit 1
+          fi
+          printf 'TARGET_COMMIT=%s\n' "${TARGET_COMMIT}" >> "${GITHUB_ENV}"
+
+      - name: Checkout GitOps authority
+        uses: actions/checkout@v6
+        with:
+          path: gitops
+          persist-credentials: false
+
+      - name: Checkout exact platform-ai source
+        uses: actions/checkout@v6
+        with:
+          repository: Halildeu/platform-ai
+          ref: ${{ inputs.target_commit }}
+          fetch-depth: 0
+          path: platform-ai-source
+          persist-credentials: false
+
+      - name: Verify exact commit belongs to platform-ai main
+        run: |
+          set -euo pipefail
+          actual="$(git -C platform-ai-source rev-parse HEAD)"
+          if [ "${actual}" != "${TARGET_COMMIT}" ]; then
+            echo '::error::platform-ai checkout does not match target_commit'
+            exit 1
+          fi
+          git -C platform-ai-source fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+          if ! git -C platform-ai-source merge-base --is-ancestor \
+            "${TARGET_COMMIT}" refs/remotes/origin/main; then
+            echo '::error::target_commit is not on platform-ai origin/main'
+            exit 1
+          fi
+
+      - name: Verify pinned runner SSH material
+        run: |
+          set -euo pipefail
+          for tool in git jq python3 rg sha256sum ssh ssh-keygen; do
+            if ! command -v "${tool}" >/dev/null; then
+              echo "::error::required runner tool missing: ${tool}"
+              exit 1
+            fi
+          done
+          test -f "${SSH_IDENTITY_PATH}"
+          test -f "${SSH_IDENTITY_PATH}.pub"
+          test -f "${SSH_KNOWN_HOSTS_PATH}"
+          identity_mode="$(stat -c '%a' "${SSH_IDENTITY_PATH}")"
+          if [ "${identity_mode}" != '600' ]; then
+            echo '::error::runner SSH identity mode must be 600'
+            exit 1
+          fi
+          ssh-keygen -F 10.99.0.2 -f "${SSH_KNOWN_HOSTS_PATH}" >/dev/null
+
+      - name: Run fixed-target immutable rollout
+        id: rollout
+        continue-on-error: true
+        working-directory: gitops
+        run: |
+          set +e
+          mkdir -p "${EVIDENCE_DIR}"
+          python3 scripts/faz24/run_gpu_host_exact_sha_rollout.py \
+            --target-commit "${TARGET_COMMIT}" \
+            --ssh-identity "${SSH_IDENTITY_PATH}" \
+            --ssh-known-hosts "${SSH_KNOWN_HOSTS_PATH}" \
+            --output "${EVIDENCE_JSON}" \
+            --timeout-seconds 1200
+          exit_code="$?"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Verify metadata-only rollout evidence
+        id: verify
+        continue-on-error: true
+        working-directory: gitops
+        run: |
+          set +e
+          python3 scripts/faz24/verify_gpu_host_exact_sha_rollout_evidence.py \
+            "${EVIDENCE_JSON}" \
+            --expected-commit "${TARGET_COMMIT}" \
+            > "${EVIDENCE_DIR}/verifier.stdout" \
+            2> "${EVIDENCE_DIR}/verifier.stderr"
+          exit_code="$?"
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          if [ "${exit_code}" = '0' ]; then
+            cat "${EVIDENCE_DIR}/verifier.stdout"
+          else
+            cat "${EVIDENCE_DIR}/verifier.stderr"
+          fi
+          exit 0
+
+      - name: Scan and hash evidence bundle
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -f "${EVIDENCE_JSON}" ]; then
+            echo '::error::rollout evidence JSON is missing'
+            exit 1
+          fi
+          secret_pattern='-----BEGIN [A-Z ]+PRIVATE KEY-----'
+          secret_pattern+='|\bbearer\s+[A-Za-z0-9._~+/-]+=*'
+          secret_pattern+='|\beyJ[A-Za-z0-9_-]{12,}'
+          secret_pattern+='\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{8,}\b'
+          if rg -n -i --pcre2 "${secret_pattern}" "${EVIDENCE_DIR}"; then
+            echo '::error::secret-like material found in rollout evidence'
+            exit 1
+          fi
+          cd "${EVIDENCE_DIR}"
+          sums_tmp="${RUNNER_TEMP}/faz24-gpu-rollout-${GITHUB_RUN_ID}.sha256"
+          find . -type f ! -name SHA256SUMS -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > "${sums_tmp}"
+          mv "${sums_tmp}" SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Publish redacted issue evidence
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROLLOUT_EXIT_CODE: ${{ steps.rollout.outputs.exit_code }}
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          workflow_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          workflow_url+="/actions/runs/${GITHUB_RUN_ID}"
+          status="missing"
+          failure_class="evidence-missing"
+          before_commit=""
+          after_commit=""
+          websocket_ready="false"
+          live_status=""
+          live_device=""
+          if [ -f "${EVIDENCE_JSON}" ]; then
+            status="$(jq -r '.status // "missing"' "${EVIDENCE_JSON}")"
+            failure_class="$(
+              jq -r '.failureClass // "missing"' "${EVIDENCE_JSON}"
+            )"
+            before_commit="$(jq -r '.beforeCommit // ""' "${EVIDENCE_JSON}")"
+            after_commit="$(jq -r '.afterCommit // ""' "${EVIDENCE_JSON}")"
+            websocket_ready="$(
+              jq -r '.webSocket.ready // false' "${EVIDENCE_JSON}"
+            )"
+            live_status="$(
+              jq -r '.health.liveStt.status // ""' "${EVIDENCE_JSON}"
+            )"
+            live_device="$(
+              jq -r '.health.liveStt.device // ""' "${EVIDENCE_JSON}"
+            )"
+          fi
+          comment="${RUNNER_TEMP}/faz24-gpu-rollout.md"
+          {
+            echo "EVIDENCE type=faz24-gpu-exact-sha-rollout status=${status}"
+            echo
+            echo "- Workflow: ${workflow_url}"
+            echo "- Target commit: \`${TARGET_COMMIT}\`"
+            printf "%s \`%s\` / \`%s\`\n" '- Before/after commit:' \
+              "${before_commit}" "${after_commit}"
+            printf "%s \`%s\` / \`%s\`\n" '- Updater/verifier exits:' \
+              "${ROLLOUT_EXIT_CODE:-missing}" \
+              "${VERIFY_EXIT_CODE:-missing}"
+            echo "- Failure class: \`${failure_class}\`"
+            echo "- Live STT: \`${live_status}\` / \`${live_device}\`"
+            echo "- WebSocket ready: \`${websocket_ready}\`"
+            artifact="faz24-gpu-rollout-evidence-${GITHUB_RUN_ID}"
+            echo "- Artifact: \`${artifact}\`"
+            echo
+            echo 'Boundary: test-only GPU runtime evidence.'
+            echo 'No audio, transcript text or secret material is included.'
+            echo 'Success does not prove real-microphone product acceptance,'
+            echo 'Meeting-AI output, role access, prod readiness or Faz 24.'
+          } > "${comment}"
+          gh issue comment 2454 \
+            --repo Halildeu/platform-k8s-gitops \
+            --body-file "${comment}"
+          cat "${comment}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload metadata-only evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: faz24-gpu-rollout-evidence-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup runner evidence
+        if: always()
+        run: rm -rf "${EVIDENCE_DIR}"
+
+      - name: Fail when rollout acceptance is rejected
+        if: always()
+        env:
+          ROLLOUT_EXIT_CODE: ${{ steps.rollout.outputs.exit_code }}
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ "${ROLLOUT_EXIT_CODE:-missing}" != '0' ]; then
+            echo '::error::GPU rollout rejected; inspect metadata evidence'
+            exit 1
+          fi
+          if [ "${VERIFY_EXIT_CODE:-missing}" != '0' ]; then
+            echo '::error::GPU rollout runtime evidence was rejected'
+            exit 1
+          fi
