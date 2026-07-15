@@ -1,5 +1,65 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 bounded TEST VIEW_ONLY source merged; runtime SoD pending (2026-07-15)
+
+Faz 22.6 engineering completion ile #2373 VIEW_ONLY product acceptance
+birbirinden ayrı kalır. Son Faz 22.6 audit kanıtı engineering completion'ı
+`pass`, legal track'i `tracked_pending` olarak raporlamaya devam eder; bu delta
+ürün kanıtı üretilmiş veya production/broad-rollout hazır anlamına gelmez.
+
+Source ve karar zinciri:
+
+- GitOps PR #2433 `main` üzerine
+  `a8d643ab9d56697f3e13bd24499920e324339d77` olarak squash-merge edildi.
+- Owner directive #2373 issue comment `4977782172` ve provider-distinct
+  MiniMax M3 + Codex dört adversarial tur sonucu `AGREE` kaydı issue comment
+  `4978013233` ile canonical policy'ye bağlandı.
+- AI mutabakatı yalnız bounded, attended, recording-off TEST VIEW_ONLY
+  engineering/risk authority'sidir. İnsan DPO/legal imzası olarak sunulmaz,
+  `GATE_VIEW_ONLY_KVKK=cleared` veya `F22_6_VIEW_ONLY_KVKK:v1` marker üretmez.
+- #2374 açık ve `tracked_pending` kalır; owner direktifi uyarınca Faz 22.6
+  engineering completion'ı veya bu dar TEST pilotunu bloklamaz. Production,
+  recording, unattended access, fanout ve broad rollout yetkisi vermez.
+
+Birleşen fail-closed sınırlar:
+
+- strict v2 authorization receipt ve canonical receipt bytes;
+- owner/advisory comment ref + body digest doğrulaması;
+- protected Environment reviewer-set digest, `prevent_self_review=true` ve
+  triggering actor ayrımı;
+- distinct opaque operator/device SHA-256 değerleri;
+- mutlak en fazla 120 dakika TTL, targeted revocation, local abort,
+  compensating rollback ve cluster-side expiry watchdog;
+- exact-session endpoint consent source attestation;
+- browser/operator/D30/broker/audit/negative/termination kaynaklarını gerçek
+  GitHub run, artifact ve digest'leri üzerinden yeniden doğrulayan product
+  evidence verifier.
+
+Verification:
+
+- PR revizyonu `e64edf2d06620526062ac9189651457bf790b88a` için 18/18 check
+  başarılıdır; VIEW_ONLY gate, Cross-AI audit, CodeQL ve gitleaks dahildir.
+- Merge SHA üzerinde `CI — Kustomize Build + Lint`, VIEW_ONLY, B1.4,
+  remote-bridge, secret gate, Runtime PR guard, enum drift, CodeQL ve
+  Dependabot push kontrolleri başarılıdır.
+- Kaynak-merge kanıtı ve sınır notu #2373 issue comment `4978110783` üzerinde,
+  body SHA-256
+  `c31d667a9034a37c7de66d936eabba2e434f1474ac4aed3d0714e7d4e65ce2ea`.
+
+Canlı runtime önkoşulu:
+
+- `GET /repos/Halildeu/platform-k8s-gitops/environments/faz22-view-only-pilot`
+  HTTP `404` döndürür.
+- Repo collaborator listesinde yalnız `Halildeu` vardır; team listesi boştur.
+- Triggering actor'dan farklı gerçek bir required reviewer olmadan GitHub
+  Environment separation-of-duties kurulamaz. Reviewer uydurulmadı,
+  `prevent_self_review` gevşetilmedi ve canlı apply denenmedi.
+
+#2373 bu nedenle `OPEN / Blocked` kalır. Sıradaki operatör önkoşulu bir gerçek
+GitHub collaborator veya team reviewer eklemektir. Sonrasında agent protected
+Environment'ı oluşturur, yalnız üç hash değerini configure eder ve attended
+pilot + yedi-kaynak product evidence zincirini çalıştırır.
+
 ## Live Delta — Faz 25 / P5 Readiness Console testai bounded non-closure acceptance (2026-07-15)
 
 This delta records the bounded desired-state, runtime and authenticated
