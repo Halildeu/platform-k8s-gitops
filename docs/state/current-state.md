@@ -1,5 +1,97 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 25 / P5 Readiness Console testai bounded non-closure acceptance (2026-07-15)
+
+This delta records the bounded desired-state, runtime and authenticated
+product-surface acceptance of
+[#2378](https://github.com/Halildeu/platform-k8s-gitops/issues/2378). It does
+not close the P5 parent, partner/customer/owner acceptance, Faz 25 or any
+production gate.
+
+Immutable source and test runtime lineage:
+
+- The `platform-web` source lineage is distinct from the GitOps harness
+  revision. Source `7c8cef6547d4408cc705f9c6afae49b67ed80d1a` was built by successful run
+  [29328643364](https://github.com/Halildeu/platform-web/actions/runs/29328643364).
+  Build artifact `8309092914`, named
+  `Halildeu~platform-web~R1TBO1.dockerbuild`, is still available with GitHub
+  artifact digest
+  `sha256:4086a69a90e6557aadbd909bb6cbc83e339b7feac9254a8ffbe79f5b19558d6e`
+  and size `107153` bytes. The promoted frontend image is pinned at
+  `sha256:d3a4b4e7f3fa752a3247eb49d0b1c842fd5be2463ce71e436b8454f341f3db38`.
+- GitOps PR
+  [#2379](https://github.com/Halildeu/platform-k8s-gitops/pull/2379)
+  promoted that immutable source/tag/digest through the test overlay. The
+  terminal product run below re-collected pre- and post-browser lineage from
+  explicit context `k3d-test`: Deployment generation/observedGeneration
+  `798/798`, Ready pods `1`, rollout revision `750`, and pod imageID equal to
+  the pinned digest. The normalized pre/post projections are identical.
+- Backend acceptance run
+  [29373919269](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29373919269)
+  completed `success` on the then-current exact GitOps main
+  `07a1a39fe41dce4f4cbc9a12e79814d9298ba277`. This backend baseline predates
+  the final browser-harness main below; it is retained as a separate exact-run
+  fact rather than presented as the final harness revision. Artifact
+  `8327708260` has
+  GitHub artifact digest
+  `sha256:eab1e2a5d573a53a40a2c82dc4ea39360fe42579e0e1e236f0af59bf832a70e6`.
+  Its Argo report is `PASS`, `Synced/Healthy`, with no OutOfSync resources and
+  all 13 expected service digests; its runtime report is `PASS` and records
+  the fail-closed internal label
+  `authGate=pass-p5-readiness-viewer-exact-view`. The exact persona,
+  role/module and permission snapshot is separately proven by the final
+  browser report below. The two downloaded report SHA-256 values are
+  respectively
+  `9a5cf1a8eeba00b75bed7b781abe69ba48e5d1dd68cff3dceb652477a64919c4`
+  and
+  `8e3cdb79bc1b5f172dca8a4da71489bbbff361b785c398300c8be7d562d92d19`.
+
+Protected authenticated product acceptance:
+
+- Owner-approved, test-only workflow run
+  [29377716055](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29377716055)
+  completed `success` on exact canonical `main`
+  `fb83d7ef29ccb7472c66874f793de8de73cab8e0`. GitHub records the repository's
+  named `testai-product-acceptance` protected Environment approval gate. This
+  is a workflow-execution gate, not partner, customer or owner acceptance;
+  production was excluded.
+- The sole uploaded artifact is acceptance artifact `8328513020`, named
+  `faz25-p5-acceptance-fb83d7ef29ccb7472c66874f793de8de73cab8e0-29377716055-1`,
+  with GitHub artifact digest
+  `sha256:3b65871902076f54a39008c43615b66964c0a6b33f2d66ec449a5b7b19a576c3`.
+  Independent download verification passed every `SHA256SUMS` entry and strict
+  AJV validation of the browser, pre-lineage, post-lineage and root-manifest
+  schemas.
+- The root manifest verdict is `PASS`, artifact kind is `acceptance`, and all
+  binding fields are true: canonical main at start/end, same-session pre/post
+  lineage, in-run freshness, strict child schemas and sensitive-value scan.
+  Its content-addressed children are browser
+  `77db69d540a2f4c9b6421416733a5a246e921cfc73b4ec7fa83fe58a3c85fbdf`,
+  pre-lineage
+  `21731d44df3eb304edc040384dce2134b0de0145b85d7b934679fb4f092b26d2`
+  and post-lineage
+  `0d572eca95444343272e0c9f4e4de1ad804b014c3347aa802f3065f236c992b9`.
+- The headless CLI browser report proves the real Keycloak Authorization Code
+  + PKCE flow for named persona `p5-readiness-viewer`; the expected P5 role,
+  module and exact VIEW-only permission snapshot match, `superAdmin=false`,
+  and no MANAGE grant is present. No AI or browser application window was used.
+- The product path `/admin/interview-evidence` renders exactly four deployment
+  profiles and eight gates. All eight Owner cells are empty,
+  `ownerAcceptance=0/8`, readiness percentage is absent, and verifier/release
+  actions remain `UNAVAILABLE`. At 390px the root and console have zero
+  horizontal overflow, the evidence table is keyboard-scrollable, blocking
+  Axe violations are zero and uncaught page errors are zero. These browser
+  facts are bound to the browser child SHA-256
+  `77db69d540a2f4c9b6421416733a5a246e921cfc73b4ec7fa83fe58a3c85fbdf`.
+
+Acceptance boundary: this is a testai-only, PRE-G0 fail-closed product-surface
+acceptance for #2378. The empty Owner cells, `0/8` owner acceptance and disabled
+verifier/release actions are required safety-state evidence, not partner,
+customer or owner approval. It does not activate production, authorize a
+customer release, satisfy the separate P5 parent, or close Faz 25.
+No P5 parent, Faz 25, partner, customer or owner acceptance is claimed or
+implied by this delta.
+
 ## Live Delta — Denetim VIEW_ONLY endpoint least-privilege state (2026-07-14)
 
 This post-completion delta records endpoint preparation for
