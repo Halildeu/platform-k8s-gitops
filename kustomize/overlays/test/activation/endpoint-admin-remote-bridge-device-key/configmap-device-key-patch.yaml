@@ -17,6 +17,11 @@ data:
   REMOTE_BRIDGE_RECORDING_ANCHOR_KEY_ALGORITHM: "SHA256withECDSA"
   REMOTE_BRIDGE_BROKER_POLICY_VERSION: "rb-test-denetim-device-key-v1"
   REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "60000"
+  # Runs 29406733575 and 29407140294 proved the 120000ms default can expire at
+  # the attended Windows approval edge, leaving no lease headroom for policy
+  # composition. The explicit 240000ms value is test-only, single-viewer,
+  # owner-gated and watchdog-bound; the operation permit remains 60000ms.
+  REMOTE_BRIDGE_CONSENT_PROMPT_TTL_MILLIS: "240000"
   REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS: "120000"
   REMOTE_BRIDGE_PEER_EVIDENCE_PARSER: "TRANSPORT_BOUND"
   REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: "DEVICE_KEY_ATTESTATION_REAL"

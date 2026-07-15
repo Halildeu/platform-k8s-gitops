@@ -146,6 +146,7 @@ jobs:
       - name: Verify live watchdog binding and pilot headroom
         env:
           PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          CONSENT_WAIT_SECONDS: "240"
         run: |
           set -euo pipefail
           receipt="$RUNNER_TEMP/faz22-viewer-activation/receipt/protected-authorization.json"
@@ -162,7 +163,7 @@ jobs:
           }
           printf '%s' "$expires_epoch" | grep -Eq '^[1-9][0-9]{9,12}$'
           remaining="$(( expires_epoch - $(date -u +%s) ))"
-          required="$(( PILOT_SECONDS + 120 ))"
+          required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + 120 ))"
           [ "$remaining" -ge "$required" ] || {
             echo "::error::watchdog has ${remaining}s remaining; ${required}s is required"
             exit 1
@@ -176,6 +177,7 @@ jobs:
           DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
           PILOT_SECONDS: ${{ inputs.pilot_seconds }}
           PRODUCT_PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          CONSENT_WAIT_SECONDS: "240"
           SOURCE_REVISION: ${{ github.sha }}
           BROWSER_EVIDENCE_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs
           PLAYWRIGHT_PACKAGE_ROOT: ${{ runner.temp }}/faz22-viewer-playwright
