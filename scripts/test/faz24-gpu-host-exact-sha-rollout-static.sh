@@ -5,13 +5,14 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKFLOW="${ROOT}/.github/workflows/faz24-gpu-host-exact-sha-rollout.yml"
 RUNNER="${ROOT}/scripts/faz24/run_gpu_host_exact_sha_rollout.py"
 VERIFIER="${ROOT}/scripts/faz24/verify_gpu_host_exact_sha_rollout_evidence.py"
+SCANNER="${ROOT}/scripts/faz24/scan_metadata_evidence.py"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
   exit 1
 }
 
-for file in "${WORKFLOW}" "${RUNNER}" "${VERIFIER}"; do
+for file in "${WORKFLOW}" "${RUNNER}" "${VERIFIER}" "${SCANNER}"; do
   [[ -s "${file}" ]] || fail "missing GPU rollout artifact: ${file}"
 done
 
@@ -24,6 +25,10 @@ grep -Fq "default: 'RUN_FAZ24_GPU_EXACT_SHA_ROLLOUT'" "${WORKFLOW}" || \
 grep -Fq '^[0-9a-f]{40}$' "${WORKFLOW}" || fail 'full lowercase SHA validation missing'
 grep -Fq 'merge-base --is-ancestor' "${WORKFLOW}" || fail 'main ancestry guard missing'
 grep -Fq 'persist-credentials: false' "${WORKFLOW}" || fail 'checkout credential persistence guard missing'
+grep -Fq 'scan_metadata_evidence.py' "${WORKFLOW}" || fail 'portable evidence scanner missing'
+if grep -Eq '(^|[[:space:]])rg([[:space:]]|$)' "${WORKFLOW}"; then
+  fail 'non-portable ripgrep runtime dependency found'
+fi
 grep -Fq 'StrictHostKeyChecking=yes' "${RUNNER}" || fail 'strict host-key verification missing'
 grep -Fq 'GlobalKnownHostsFile=/dev/null' "${RUNNER}" || fail 'global host-key bypass guard missing'
 grep -Fq 'svc-denetim-agent@10.99.0.2' "${RUNNER}" || fail 'canonical Denetim target missing'
