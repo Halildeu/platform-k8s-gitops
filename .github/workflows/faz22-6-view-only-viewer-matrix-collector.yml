@@ -65,9 +65,11 @@ jobs:
           ACTIVATION_RUN_ID: ${{ inputs.activation_run_id }}
         run: |
           set -euo pipefail
+          source scripts/faz22-remote-ops/lib-github-read-api.sh
+          github_read_api_preflight
           out="$RUNNER_TEMP/faz22-viewer-matrix-activation"
           mkdir -p "$out"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID" > "$out/run.json"
+          github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID" > "$out/run.json"
           jq -e --arg sha "$GITHUB_SHA" '
             .status == "completed"
             and .conclusion == "success"
@@ -77,7 +79,7 @@ jobs:
             and .name == "Apply #2373 VIEW_ONLY viewer product pilot surface"
             and .path == ".github/workflows/apply-view-only-viewer-pilot-enable.yml"
           ' "$out/run.json" >/dev/null
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID/artifacts?per_page=100" \
+          github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATION_RUN_ID/artifacts?per_page=100" \
             > "$out/artifacts.json"
           expected="faz22-view-only-pilot-protected-authorization-$ACTIVATION_RUN_ID"
           jq -e --arg name "$expected" '
@@ -86,7 +88,7 @@ jobs:
           artifact_id="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .id' "$out/artifacts.json")"
           artifact_digest="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .digest' "$out/artifacts.json")"
           printf '%s' "$artifact_digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/authorization.zip"
+          github_read_api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/authorization.zip"
           [ "sha256:$(sha256sum "$out/authorization.zip" | awk '{print $1}')" = "$artifact_digest" ]
           printf '%s\n' SHA256SUMS protected-authorization.json \
             | sort > "$out/expected-files.txt"
@@ -109,9 +111,11 @@ jobs:
           BROWSER_RUN_ID: ${{ inputs.browser_run_id }}
         run: |
           set -euo pipefail
+          source scripts/faz22-remote-ops/lib-github-read-api.sh
+          github_read_api_preflight
           out="$RUNNER_TEMP/faz22-viewer-negative-browser-root"
           mkdir -p "$out"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BROWSER_RUN_ID" > "$out/run.json"
+          github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$BROWSER_RUN_ID" > "$out/run.json"
           jq -e --arg sha "$GITHUB_SHA" '
             .status == "completed" and .conclusion == "success"
             and .event == "workflow_dispatch" and .head_branch == "main"
@@ -119,7 +123,7 @@ jobs:
             and .name == "Faz 22.6 VIEW_ONLY viewer browser evidence"
             and .path == ".github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
           ' "$out/run.json" >/dev/null
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BROWSER_RUN_ID/artifacts?per_page=100" \
+          github_read_api "repos/$GITHUB_REPOSITORY/actions/runs/$BROWSER_RUN_ID/artifacts?per_page=100" \
             > "$out/artifacts.json"
           expected="faz22-6-view-only-viewer-browser-evidence-$BROWSER_RUN_ID"
           jq -e --arg name "$expected" '
@@ -128,7 +132,7 @@ jobs:
           artifact_id="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .id' "$out/artifacts.json")"
           artifact_digest="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .digest' "$out/artifacts.json")"
           printf '%s' "$artifact_digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/browser.zip"
+          github_read_api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/browser.zip"
           [ "sha256:$(sha256sum "$out/browser.zip" | awk '{print $1}')" = "$artifact_digest" ]
           [ "$(unzip -Z1 "$out/browser.zip")" = "evidence/browser.json" ]
           unzip -q "$out/browser.zip" -d "$out/artifact"
