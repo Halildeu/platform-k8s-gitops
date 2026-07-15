@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/remote-view-session-policy-envelope-v1.schema.json",
+  "title": "Remote VIEW_ONLY same-session policy envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "envelopeId", "deploymentClass", "session", "policy", "enforcement", "notice", "dataHandling", "integrity"],
+  "properties": {
+    "schemaVersion": { "const": "remote-view-session-policy-envelope-v1" },
+    "envelopeId": { "$ref": "#/$defs/id" },
+    "deploymentClass": { "enum": ["bounded-test", "production"] },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "tenantId", "deviceId", "issuedAt", "expiresAt", "ttlSeconds", "nonceBase64"],
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/id" },
+        "tenantId": { "type": "string", "format": "uuid" },
+        "deviceId": { "$ref": "#/$defs/id" },
+        "issuedAt": { "$ref": "#/$defs/utc" },
+        "expiresAt": { "$ref": "#/$defs/utc" },
+        "ttlSeconds": { "type": "integer", "minimum": 60, "maximum": 28800 },
+        "nonceBase64": { "type": "string", "pattern": "^[A-Za-z0-9+/]{43}=$" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "policyVersion",
+        "policyDigest",
+        "sourcePolicyRef",
+        "baselineId",
+        "baselineVersion",
+        "baselineDigest",
+        "legalEvidenceStatus",
+        "legalEvidenceDigest"
+      ],
+      "properties": {
+        "policyId": { "$ref": "#/$defs/id" },
+        "policyVersion": { "$ref": "#/$defs/version" },
+        "policyDigest": { "$ref": "#/$defs/digest" },
+        "sourcePolicyRef": { "type": "string", "pattern": "^urn:remote-view-tenant-policy:sha256:[a-f0-9]{64}$" },
+        "baselineId": { "$ref": "#/$defs/id" },
+        "baselineVersion": { "$ref": "#/$defs/version" },
+        "baselineDigest": { "$ref": "#/$defs/digest" },
+        "legalEvidenceStatus": { "enum": ["tracked-pending", "approved"] },
+        "legalEvidenceDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "enforcement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "attendedConsentRequired",
+        "autoConsentAllowed",
+        "screenViewAllowed",
+        "keyboardInputAllowed",
+        "mouseInputAllowed",
+        "clipboardAllowed",
+        "fileTransferAllowed",
+        "tunnelAllowed",
+        "visibleIndicatorRequired",
+        "localAbortRequired",
+        "maskBeforeFrameEmissionRequired",
+        "denyOnMaskFailure",
+        "maxViewers",
+        "recordingMode"
+      ],
+      "properties": {
+        "mode": { "const": "attended-view-only" },
+        "attendedConsentRequired": { "const": true },
+        "autoConsentAllowed": { "const": false },
+        "screenViewAllowed": { "const": true },
+        "keyboardInputAllowed": { "const": false },
+        "mouseInputAllowed": { "const": false },
+        "clipboardAllowed": { "const": false },
+        "fileTransferAllowed": { "const": false },
+        "tunnelAllowed": { "const": false },
+        "visibleIndicatorRequired": { "const": true },
+        "localAbortRequired": { "const": true },
+        "maskBeforeFrameEmissionRequired": { "const": true },
+        "denyOnMaskFailure": { "const": true },
+        "maxViewers": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "recordingMode": { "enum": ["disabled", "enabled"] }
+      }
+    },
+    "notice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["noticeVersion", "locale", "title", "body", "allowLabel", "denyLabel", "withdrawalText", "localAbortText", "contentDigest"],
+      "properties": {
+        "noticeVersion": { "$ref": "#/$defs/version" },
+        "locale": { "type": "string", "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$" },
+        "title": { "type": "string", "minLength": 5, "maxLength": 160 },
+        "body": { "type": "string", "minLength": 40, "maxLength": 4000 },
+        "allowLabel": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "denyLabel": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "withdrawalText": { "type": "string", "minLength": 10, "maxLength": 500 },
+        "localAbortText": { "type": "string", "minLength": 10, "maxLength": 500 },
+        "contentDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "dataHandling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["screenContentTtlSeconds", "sessionMetadataTtlSeconds", "auditTtlSeconds", "storageRegions", "crossBorderTransfer", "specialCategoryAction"],
+      "properties": {
+        "screenContentTtlSeconds": { "type": "integer", "minimum": 0, "maximum": 31536000 },
+        "sessionMetadataTtlSeconds": { "type": "integer", "minimum": 86400, "maximum": 315360000 },
+        "auditTtlSeconds": { "type": "integer", "minimum": 86400, "maximum": 315360000 },
+        "storageRegions": { "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" } },
+        "crossBorderTransfer": { "enum": ["deny", "allow-with-safeguards"] },
+        "specialCategoryAction": { "enum": ["deny-session", "pause-and-mask", "mask-and-continue"] }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalization", "signatureAlgorithm", "keyId", "payloadDigest", "signatureBase64"],
+      "properties": {
+        "canonicalization": { "const": "JCS-RFC8785" },
+        "signatureAlgorithm": { "const": "Ed25519" },
+        "keyId": { "$ref": "#/$defs/id" },
+        "payloadDigest": { "$ref": "#/$defs/digest" },
+        "signatureBase64": { "type": "string", "pattern": "^[A-Za-z0-9+/]{86}==$" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "deploymentClass": { "const": "production" } } },
+      "then": { "properties": { "policy": { "properties": { "legalEvidenceStatus": { "const": "approved" } } } } }
+    },
+    {
+      "if": { "properties": { "deploymentClass": { "const": "bounded-test" } } },
+      "then": {
+        "properties": {
+          "enforcement": {
+            "properties": {
+              "maxViewers": { "const": 1 },
+              "recordingMode": { "const": "disabled" }
+            }
+          },
+          "dataHandling": {
+            "properties": {
+              "screenContentTtlSeconds": { "const": 0 },
+              "crossBorderTransfer": { "const": "deny" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$" },
+    "version": { "type": "string", "pattern": "^[1-9][0-9]*\\.[0-9]+\\.[0-9]+$" },
+    "utc": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}

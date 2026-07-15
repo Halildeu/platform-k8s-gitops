@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "remote-view-tenant-privacy-policy-v1",
+  "policyId": "example-tr-domestic-view-only",
+  "policyVersion": "1.0.0",
+  "tenantId": "00000000-0000-4000-8000-000000000245",
+  "deploymentClass": "bounded-test",
+  "baseline": {
+    "baselineId": "remote-view-platform-safety",
+    "baselineVersion": "1.0.0",
+    "baselineDigest": "sha256:54132a1b4d035db7011f1ce200433234aea7fe0d04420f0928dcf26a06386337"
+  },
+  "lifecycle": {
+    "validFrom": "2026-07-15T00:00:00Z",
+    "validUntil": "2026-10-15T00:00:00Z",
+    "reviewBy": "2026-10-01T00:00:00Z",
+    "supersedesPolicyDigest": null
+  },
+  "policy": {
+    "session": {
+      "maxSessionTtlSeconds": 7200,
+      "maxViewers": 1
+    },
+    "notice": {
+      "noticeVersion": "1.0.0",
+      "defaultLocale": "tr-TR",
+      "localizations": [
+        {
+          "locale": "tr-TR",
+          "title": "Ekran görüntüleme isteği",
+          "body": "Yetkili destek personeli, bildirilen destek amacıyla ekranınızı yalnızca görüntülemek istiyor. Bu oturum klavye, fare, pano, dosya aktarımı veya ağ tüneli yetkisi vermez; ekran içeriği kaydedilmez.",
+          "allowLabel": "Bu oturum için izin ver",
+          "denyLabel": "Reddet",
+          "withdrawalText": "İzninizi oturum sırasında istediğiniz anda geri çekebilirsiniz.",
+          "localAbortText": "Görünür oturum göstergesindeki Durdur denetimi bağlantıyı yerel olarak sonlandırır.",
+          "contentDigest": "sha256:3ae213d7a5f805b7b5c1c2a1bd968b67ad6b78b45acfc364c0dda9c68e0ffb4d"
+        }
+      ]
+    },
+    "recording": {
+      "mode": "disabled",
+      "recordingIndicatorRequired": true
+    },
+    "retention": {
+      "screenContent": {
+        "persisted": false,
+        "ttlSeconds": 0
+      },
+      "sessionMetadata": {
+        "persisted": true,
+        "ttlSeconds": 2592000
+      },
+      "auditRecords": {
+        "persisted": true,
+        "ttlSeconds": 2592000,
+        "immutable": true
+      },
+      "legalHoldSupported": true
+    },
+    "dataGovernance": {
+      "controller": {
+        "organizationId": "example-controller-tr",
+        "displayName": "Example Türkiye Controller",
+        "jurisdiction": "TR",
+        "policyRef": "https://privacy.example.invalid/remote-support"
+      },
+      "processors": [],
+      "storageRegions": ["tr-example-1"],
+      "residencyMode": "single-region",
+      "crossBorderTransfer": "deny",
+      "destinationRegions": [],
+      "transferSafeguardRef": null
+    },
+    "specialCategory": {
+      "detectionFailureAction": "deny-session",
+      "defaultAction": "pause-and-mask",
+      "rules": [
+        {
+          "categoryId": "secrets",
+          "action": "deny-session",
+          "justificationRef": "https://privacy.example.invalid/remote-support/sensitive-data"
+        },
+        {
+          "categoryId": "special-category-personal-data",
+          "action": "pause-and-mask",
+          "justificationRef": "https://privacy.example.invalid/remote-support/sensitive-data"
+        }
+      ]
+    },
+    "contacts": {
+      "privacyContactRef": "mailto:privacy@example.invalid",
+      "rightsRequestRef": "https://privacy.example.invalid/data-subject-request",
+      "incidentContactRef": "mailto:security@example.invalid"
+    }
+  },
+  "legalEvidence": {
+    "status": "tracked-pending",
+    "processingPurpose": "Sınırlı test ortamında, kullanıcının katıldığı teknik destek oturumunda yalnız ekran gözlemi sağlamak.",
+    "legalBasisCode": "tenant-defined-contract-performance",
+    "legalAuthorityRef": "https://privacy.example.invalid/legal-basis",
+    "processingActivityRef": "https://privacy.example.invalid/processing-register/remote-support",
+    "trackingRef": "https://github.com/Halildeu/platform-k8s-gitops/issues/2451",
+    "decisionRecordRef": null,
+    "decisionRecordDigest": null,
+    "approvedAt": null,
+    "reviewBy": "2026-10-01T00:00:00Z"
+  }
+}

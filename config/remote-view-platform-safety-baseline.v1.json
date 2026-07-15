@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "remote-view-platform-safety-baseline-v1",
+  "baselineId": "remote-view-platform-safety",
+  "baselineVersion": "1.0.0",
+  "limits": {
+    "maxSessionTtlSeconds": 7200,
+    "maxEnvelopeLifetimeSeconds": 7200,
+    "maxViewers": 16,
+    "maxScreenContentRetentionSeconds": 31536000,
+    "maxSessionMetadataRetentionSeconds": 315360000,
+    "maxAuditRetentionSeconds": 315360000
+  },
+  "invariants": {
+    "mode": "attended-view-only",
+    "attendedConsentRequired": true,
+    "autoConsentAllowed": false,
+    "screenViewAllowed": true,
+    "keyboardInputAllowed": false,
+    "mouseInputAllowed": false,
+    "clipboardAllowed": false,
+    "fileTransferAllowed": false,
+    "tunnelAllowed": false,
+    "visibleIndicatorRequired": true,
+    "localAbortRequired": true,
+    "denyOnMissingOrInvalidPolicy": true,
+    "maskBeforeFrameEmissionRequired": true,
+    "denyOnMaskFailure": true,
+    "sameSessionBindingRequired": true,
+    "signedEnvelopeRequired": true
+  },
+  "defaults": {
+    "recordingMode": "disabled",
+    "screenContentPersisted": false,
+    "crossBorderTransfer": "deny",
+    "dlpFailureAction": "deny-session"
+  },
+  "lifecycle": {
+    "validFrom": "2026-07-15T00:00:00Z",
+    "reviewBy": "2027-07-15T00:00:00Z"
+  }
+}

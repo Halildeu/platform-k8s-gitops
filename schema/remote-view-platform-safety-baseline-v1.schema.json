@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/remote-view-platform-safety-baseline-v1.schema.json",
+  "title": "Remote VIEW_ONLY platform safety baseline v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "baselineId",
+    "baselineVersion",
+    "limits",
+    "invariants",
+    "defaults",
+    "lifecycle"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "remote-view-platform-safety-baseline-v1" },
+    "baselineId": { "$ref": "#/$defs/id" },
+    "baselineVersion": { "$ref": "#/$defs/version" },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxSessionTtlSeconds",
+        "maxEnvelopeLifetimeSeconds",
+        "maxViewers",
+        "maxScreenContentRetentionSeconds",
+        "maxSessionMetadataRetentionSeconds",
+        "maxAuditRetentionSeconds"
+      ],
+      "properties": {
+        "maxSessionTtlSeconds": { "type": "integer", "minimum": 60, "maximum": 28800 },
+        "maxEnvelopeLifetimeSeconds": { "type": "integer", "minimum": 60, "maximum": 28800 },
+        "maxViewers": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "maxScreenContentRetentionSeconds": { "type": "integer", "minimum": 0, "maximum": 31536000 },
+        "maxSessionMetadataRetentionSeconds": { "type": "integer", "minimum": 86400, "maximum": 315360000 },
+        "maxAuditRetentionSeconds": { "type": "integer", "minimum": 86400, "maximum": 315360000 }
+      }
+    },
+    "invariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "attendedConsentRequired",
+        "autoConsentAllowed",
+        "screenViewAllowed",
+        "keyboardInputAllowed",
+        "mouseInputAllowed",
+        "clipboardAllowed",
+        "fileTransferAllowed",
+        "tunnelAllowed",
+        "visibleIndicatorRequired",
+        "localAbortRequired",
+        "denyOnMissingOrInvalidPolicy",
+        "maskBeforeFrameEmissionRequired",
+        "denyOnMaskFailure",
+        "sameSessionBindingRequired",
+        "signedEnvelopeRequired"
+      ],
+      "properties": {
+        "mode": { "const": "attended-view-only" },
+        "attendedConsentRequired": { "const": true },
+        "autoConsentAllowed": { "const": false },
+        "screenViewAllowed": { "const": true },
+        "keyboardInputAllowed": { "const": false },
+        "mouseInputAllowed": { "const": false },
+        "clipboardAllowed": { "const": false },
+        "fileTransferAllowed": { "const": false },
+        "tunnelAllowed": { "const": false },
+        "visibleIndicatorRequired": { "const": true },
+        "localAbortRequired": { "const": true },
+        "denyOnMissingOrInvalidPolicy": { "const": true },
+        "maskBeforeFrameEmissionRequired": { "const": true },
+        "denyOnMaskFailure": { "const": true },
+        "sameSessionBindingRequired": { "const": true },
+        "signedEnvelopeRequired": { "const": true }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recordingMode", "screenContentPersisted", "crossBorderTransfer", "dlpFailureAction"],
+      "properties": {
+        "recordingMode": { "const": "disabled" },
+        "screenContentPersisted": { "const": false },
+        "crossBorderTransfer": { "const": "deny" },
+        "dlpFailureAction": { "const": "deny-session" }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validFrom", "reviewBy"],
+      "properties": {
+        "validFrom": { "$ref": "#/$defs/utc" },
+        "reviewBy": { "$ref": "#/$defs/utc" }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$" },
+    "version": { "type": "string", "pattern": "^[1-9][0-9]*\\.[0-9]+\\.[0-9]+$" },
+    "utc": { "type": "string", "format": "date-time", "pattern": "Z$" }
+  }
+}

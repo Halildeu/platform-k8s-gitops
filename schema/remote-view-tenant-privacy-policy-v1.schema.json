@@ -1,0 +1,414 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/remote-view-tenant-privacy-policy-v1.schema.json",
+  "title": "Remote VIEW_ONLY tenant privacy policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policyId",
+    "policyVersion",
+    "tenantId",
+    "deploymentClass",
+    "baseline",
+    "lifecycle",
+    "policy",
+    "legalEvidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "remote-view-tenant-privacy-policy-v1" },
+    "policyId": { "$ref": "#/$defs/id" },
+    "policyVersion": { "$ref": "#/$defs/version" },
+    "tenantId": { "$ref": "#/$defs/uuid" },
+    "deploymentClass": { "enum": ["bounded-test", "production"] },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baselineId", "baselineVersion", "baselineDigest"],
+      "properties": {
+        "baselineId": { "$ref": "#/$defs/id" },
+        "baselineVersion": { "$ref": "#/$defs/version" },
+        "baselineDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validFrom", "validUntil", "reviewBy", "supersedesPolicyDigest"],
+      "properties": {
+        "validFrom": { "$ref": "#/$defs/utc" },
+        "validUntil": { "$ref": "#/$defs/utc" },
+        "reviewBy": { "$ref": "#/$defs/utc" },
+        "supersedesPolicyDigest": {
+          "oneOf": [
+            { "$ref": "#/$defs/digest" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session",
+        "notice",
+        "recording",
+        "retention",
+        "dataGovernance",
+        "specialCategory",
+        "contacts"
+      ],
+      "properties": {
+        "session": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxSessionTtlSeconds", "maxViewers"],
+          "properties": {
+            "maxSessionTtlSeconds": { "type": "integer", "minimum": 60, "maximum": 28800 },
+            "maxViewers": { "type": "integer", "minimum": 1, "maximum": 32 }
+          }
+        },
+        "notice": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["noticeVersion", "defaultLocale", "localizations"],
+          "properties": {
+            "noticeVersion": { "$ref": "#/$defs/version" },
+            "defaultLocale": { "$ref": "#/$defs/locale" },
+            "localizations": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/localization" }
+            }
+          }
+        },
+        "recording": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "recordingIndicatorRequired"],
+          "properties": {
+            "mode": { "enum": ["disabled", "enabled"] },
+            "recordingIndicatorRequired": { "const": true }
+          }
+        },
+        "retention": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["screenContent", "sessionMetadata", "auditRecords", "legalHoldSupported"],
+          "properties": {
+            "screenContent": { "$ref": "#/$defs/contentRetention" },
+            "sessionMetadata": { "$ref": "#/$defs/mandatoryRetention" },
+            "auditRecords": { "$ref": "#/$defs/auditRetention" },
+            "legalHoldSupported": { "type": "boolean" }
+          }
+        },
+        "dataGovernance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "controller",
+            "processors",
+            "storageRegions",
+            "residencyMode",
+            "crossBorderTransfer",
+            "destinationRegions",
+            "transferSafeguardRef"
+          ],
+          "properties": {
+            "controller": { "$ref": "#/$defs/organization" },
+            "processors": {
+              "type": "array",
+              "maxItems": 20,
+              "items": { "$ref": "#/$defs/organization" }
+            },
+            "storageRegions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/region" }
+            },
+            "residencyMode": { "enum": ["single-region", "regional", "customer-managed"] },
+            "crossBorderTransfer": { "enum": ["deny", "allow-with-safeguards"] },
+            "destinationRegions": {
+              "type": "array",
+              "maxItems": 20,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/region" }
+            },
+            "transferSafeguardRef": {
+              "oneOf": [
+                { "$ref": "#/$defs/httpsUri" },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "specialCategory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["detectionFailureAction", "defaultAction", "rules"],
+          "properties": {
+            "detectionFailureAction": { "enum": ["deny-session", "pause-session"] },
+            "defaultAction": { "enum": ["deny-session", "pause-and-mask", "mask-and-continue"] },
+            "rules": {
+              "type": "array",
+              "maxItems": 50,
+              "items": { "$ref": "#/$defs/categoryRule" }
+            }
+          }
+        },
+        "contacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["privacyContactRef", "rightsRequestRef", "incidentContactRef"],
+          "properties": {
+            "privacyContactRef": { "$ref": "#/$defs/contactUri" },
+            "rightsRequestRef": { "$ref": "#/$defs/contactUri" },
+            "incidentContactRef": { "$ref": "#/$defs/contactUri" }
+          }
+        }
+      }
+    },
+    "legalEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "processingPurpose",
+        "legalBasisCode",
+        "legalAuthorityRef",
+        "processingActivityRef",
+        "trackingRef",
+        "decisionRecordRef",
+        "decisionRecordDigest",
+        "approvedAt",
+        "reviewBy"
+      ],
+      "properties": {
+        "status": { "enum": ["tracked-pending", "approved", "withdrawn", "expired"] },
+        "processingPurpose": { "$ref": "#/$defs/longText" },
+        "legalBasisCode": { "$ref": "#/$defs/id" },
+        "legalAuthorityRef": { "$ref": "#/$defs/httpsUri" },
+        "processingActivityRef": { "$ref": "#/$defs/httpsUri" },
+        "trackingRef": { "$ref": "#/$defs/httpsUri" },
+        "decisionRecordRef": {
+          "oneOf": [
+            { "$ref": "#/$defs/contentAddressedRef" },
+            { "type": "null" }
+          ]
+        },
+        "decisionRecordDigest": {
+          "oneOf": [
+            { "$ref": "#/$defs/digest" },
+            { "type": "null" }
+          ]
+        },
+        "approvedAt": {
+          "oneOf": [
+            { "$ref": "#/$defs/utc" },
+            { "type": "null" }
+          ]
+        },
+        "reviewBy": { "$ref": "#/$defs/utc" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "deploymentClass": { "const": "production" } } },
+      "then": { "properties": { "legalEvidence": { "properties": { "status": { "const": "approved" } } } } }
+    },
+    {
+      "if": { "properties": { "deploymentClass": { "const": "bounded-test" } } },
+      "then": {
+        "properties": {
+          "policy": {
+            "properties": {
+              "session": { "properties": { "maxViewers": { "const": 1 } } },
+              "recording": { "properties": { "mode": { "const": "disabled" } } },
+              "dataGovernance": { "properties": { "crossBorderTransfer": { "const": "deny" } } }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "legalEvidence": { "properties": { "status": { "const": "tracked-pending" } } } } },
+      "then": { "properties": { "deploymentClass": { "const": "bounded-test" } } }
+    },
+    {
+      "if": { "properties": { "policy": { "properties": { "recording": { "properties": { "mode": { "const": "disabled" } } } } } } },
+      "then": {
+        "properties": {
+          "policy": {
+            "properties": {
+              "retention": {
+                "properties": {
+                  "screenContent": {
+                    "properties": {
+                      "persisted": { "const": false },
+                      "ttlSeconds": { "const": 0 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "legalEvidence": { "properties": { "status": { "const": "approved" } } },
+          "policy": {
+            "properties": {
+              "retention": {
+                "properties": {
+                  "screenContent": {
+                    "properties": {
+                      "persisted": { "const": true },
+                      "ttlSeconds": { "type": "integer", "minimum": 1 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "policy": { "properties": { "dataGovernance": { "properties": { "crossBorderTransfer": { "const": "deny" } } } } } } },
+      "then": {
+        "properties": {
+          "policy": {
+            "properties": {
+              "dataGovernance": {
+                "properties": {
+                  "destinationRegions": { "maxItems": 0 },
+                  "transferSafeguardRef": { "type": "null" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "policy": {
+            "properties": {
+              "dataGovernance": {
+                "properties": {
+                  "destinationRegions": { "minItems": 1 },
+                  "transferSafeguardRef": { "$ref": "#/$defs/httpsUri" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "legalEvidence": { "properties": { "status": { "const": "approved" } } } } },
+      "then": {
+        "properties": {
+          "legalEvidence": {
+            "properties": {
+              "decisionRecordRef": { "$ref": "#/$defs/contentAddressedRef" },
+              "decisionRecordDigest": { "$ref": "#/$defs/digest" },
+              "approvedAt": { "$ref": "#/$defs/utc" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$" },
+    "version": { "type": "string", "pattern": "^[1-9][0-9]*\\.[0-9]+\\.[0-9]+$" },
+    "uuid": { "type": "string", "format": "uuid" },
+    "utc": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "locale": { "type": "string", "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$" },
+    "region": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+    "longText": { "type": "string", "minLength": 20, "maxLength": 2000 },
+    "httpsUri": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "contactUri": { "type": "string", "format": "uri", "pattern": "^(https://|mailto:)" },
+    "contentAddressedRef": { "type": "string", "pattern": "^urn:remote-view-legal-decision:sha256:[a-f0-9]{64}$" },
+    "localization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "locale",
+        "title",
+        "body",
+        "allowLabel",
+        "denyLabel",
+        "withdrawalText",
+        "localAbortText",
+        "contentDigest"
+      ],
+      "properties": {
+        "locale": { "$ref": "#/$defs/locale" },
+        "title": { "type": "string", "minLength": 5, "maxLength": 160 },
+        "body": { "type": "string", "minLength": 40, "maxLength": 4000 },
+        "allowLabel": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "denyLabel": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "withdrawalText": { "type": "string", "minLength": 10, "maxLength": 500 },
+        "localAbortText": { "type": "string", "minLength": 10, "maxLength": 500 },
+        "contentDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "contentRetention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["persisted", "ttlSeconds"],
+      "properties": {
+        "persisted": { "type": "boolean" },
+        "ttlSeconds": { "type": "integer", "minimum": 0, "maximum": 31536000 }
+      }
+    },
+    "mandatoryRetention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["persisted", "ttlSeconds"],
+      "properties": {
+        "persisted": { "const": true },
+        "ttlSeconds": { "type": "integer", "minimum": 86400, "maximum": 315360000 }
+      }
+    },
+    "auditRetention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["persisted", "ttlSeconds", "immutable"],
+      "properties": {
+        "persisted": { "const": true },
+        "ttlSeconds": { "type": "integer", "minimum": 86400, "maximum": 315360000 },
+        "immutable": { "type": "boolean" }
+      }
+    },
+    "organization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["organizationId", "displayName", "jurisdiction", "policyRef"],
+      "properties": {
+        "organizationId": { "$ref": "#/$defs/id" },
+        "displayName": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "jurisdiction": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "policyRef": { "$ref": "#/$defs/httpsUri" }
+      }
+    },
+    "categoryRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["categoryId", "action", "justificationRef"],
+      "properties": {
+        "categoryId": { "$ref": "#/$defs/id" },
+        "action": { "enum": ["deny-session", "pause-and-mask", "mask-and-continue"] },
+        "justificationRef": { "$ref": "#/$defs/httpsUri" }
+      }
+    }
+  }
+}

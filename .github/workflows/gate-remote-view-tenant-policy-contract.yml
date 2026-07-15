@@ -1,0 +1,45 @@
+name: gate-remote-view-tenant-policy-contract
+
+on:
+  pull_request:
+    paths:
+      - 'schema/remote-view-*.schema.json'
+      - 'config/remote-view-platform-safety-baseline.v1.json'
+      - 'examples/remote-view/**'
+      - 'scripts/faz23/verify-remote-view-policy.py'
+      - 'tests/contracts/test_remote_view_tenant_privacy_policy_v1.py'
+      - 'docs/faz-23-remote-view-tenant-privacy-policy-contract-v1.md'
+      - '.github/workflows/gate-remote-view-tenant-policy-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'schema/remote-view-*.schema.json'
+      - 'config/remote-view-platform-safety-baseline.v1.json'
+      - 'examples/remote-view/**'
+      - 'scripts/faz23/verify-remote-view-policy.py'
+      - 'tests/contracts/test_remote_view_tenant_privacy_policy_v1.py'
+      - 'docs/faz-23-remote-view-tenant-privacy-policy-contract-v1.md'
+      - '.github/workflows/gate-remote-view-tenant-policy-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install schema validator
+        run: python3 -m pip install --disable-pip-version-check 'jsonschema==4.23.0'
+      - name: Run tenant policy and session-envelope contract tests
+        run: python3 -m unittest tests.contracts.test_remote_view_tenant_privacy_policy_v1 -v
+      - name: Verify the bounded example at its fixture time
+        run: >-
+          python3 scripts/faz23/verify-remote-view-policy.py
+          --baseline config/remote-view-platform-safety-baseline.v1.json
+          --policy examples/remote-view/example-tr-domestic-tenant-policy.v1.json
+          --at 2026-07-16T00:00:00Z
