@@ -37,6 +37,7 @@ env:
   BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key
   BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key
   GATEWAY_DEPLOYMENT: api-gateway
+  GATEWAY_CONFIGMAP: api-gateway-config
   VIEWER_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
   BROKER_ONLY_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
   TEST_ROOT_OVERLAY: kustomize/overlays/test
@@ -426,14 +427,7 @@ jobs:
         if: always() && inputs.action == 'apply' && failure()
         run: |
           set +e
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            patch configmap "${BRIDGE_CONFIGMAP}" --type merge \
-            -p '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":"false"}}'
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" get configmap api-gateway-config -o json \
-            | jq 'del(.data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID,.data.SPRING_CLOUD_GATEWAY_ROUTES_28_URI,
-                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER,.data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0,
-                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1,.data.SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0)' \
-            | kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" apply -f -
+          bash scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             delete service endpoint-admin-remote-bridge-viewer --ignore-not-found
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
@@ -453,17 +447,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            get configmap api-gateway-config -o json \
-            | jq 'del(
-                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID,
-                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_URI,
-                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER,
-                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0,
-                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1,
-                .data.SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0
-              )' \
-            | kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" apply -f -
+          bash scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh
 
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             rollout restart "deploy/${GATEWAY_DEPLOYMENT}"
@@ -534,9 +518,12 @@ jobs:
 
           bridge_config="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             get configmap "${BRIDGE_CONFIGMAP}" -o json)"
-          if printf '%s\n' "${bridge_config}" \
-            | jq -e '.data.REMOTE_BRIDGE_VIEWER_ENABLED == "true"' >/dev/null; then
-            echo "::error::viewer flag is still true after rollback"
+          if ! printf '%s\n' "${bridge_config}" \
+            | jq -e '
+                (.data | has("REMOTE_BRIDGE_VIEWER_ENABLED") | not)
+                and (.data | has("REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES") | not)
+              ' >/dev/null; then
+            echo "::error::viewer-only ConfigMap keys remain after rollback"
             exit 1
           fi
           bridge_ports="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
