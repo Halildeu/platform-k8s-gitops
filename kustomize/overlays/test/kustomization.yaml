@@ -4176,11 +4176,16 @@ images:
     #   #2295 moves subsequent promotions to desired-state-first PR + ArgoCD
     #   verification so selfHeal cannot revert an imperative set-image rollout.
     #
+    # 2026-07-15 Faz 25 FULLATS-WEB-ACCESS-04: platform-web #921 adds the
+    # permanent /admin/ats product hub, explicit live-module launch, nine
+    # bounded capabilities and six target-role filters. CV PDF import remains
+    # OWNER_GATED with no upload/PII control in this slice. Build run
+    # 29451703189 produced the immutable testai digest below. Tracked by #2463.
     # Machine-managed current pin. Historical provenance remains above; future
     # automation rewrites only these fields and records evidence in its PR.
-    # sourceRevision: 7a764fe91deed655a83f44af7bc15d97481ee29d
-    newTag: sha-7a764fe
-    digest: sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e
+    # sourceRevision: 90768ed318ebfa547d2b3137aa317168f9c726d7
+    newTag: sha-90768ed
+    digest: sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

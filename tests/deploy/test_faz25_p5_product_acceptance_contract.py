@@ -126,7 +126,14 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             "desktopSidebarHref",
             "const desktopSearchQuery = await commandSearch.inputValue()",
             "const mobileViewportWidth = await page.evaluate(() => window.innerWidth)",
-            "mobileInterviewEvidenceActionVisible",
+            "mobileAtsProductHubActionVisible",
+            "expect(capabilityIds).toEqual(expectedCapabilityIds)",
+            "expect(targetRoleIds).toEqual(expectedTargetRoleIds)",
+            "cvImportInteractiveControlCount",
+            "fileUploadControlCount",
+            "hubBlockingViolations",
+            "desktopHubRendered",
+            "mobileHubRendered",
             "mobileRemoteConsoleRendered",
             "page.getByRole('button', { name: /Menüyü aç|Open menu/ })",
         ):
@@ -174,6 +181,7 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             [
                 "authz",
                 "discovery",
+                "hub",
                 "product",
                 "responsive",
                 "accessibility",
@@ -184,14 +192,26 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertTrue(discovery["desktopSidebarVisible"]["const"])
         self.assertEqual(
             discovery["desktopSidebarHref"]["const"],
-            "/admin/interview-evidence",
+            "/admin/ats",
         )
         self.assertEqual(discovery["desktopSearchQuery"]["const"], "mülakat")
         self.assertEqual(discovery["mobileViewportWidth"]["const"], 390)
+        self.assertEqual(discovery["desktopHubPath"]["const"], "/admin/ats")
+        self.assertEqual(
+            discovery["desktopLaunchPath"]["const"],
+            "/admin/interview-evidence",
+        )
         self.assertTrue(discovery["mobileRemoteConsoleRendered"]["const"])
         self.assertFalse(
             self.product_schema["definitions"]["discovery"]["additionalProperties"]
         )
+        hub = then_clause["properties"]["hub"]["allOf"][1]["properties"]
+        self.assertEqual(hub["visibleCapabilityCount"]["const"], 9)
+        self.assertEqual(len(hub["targetRoleIds"]["const"]), 6)
+        self.assertEqual(hub["cvImportMode"]["const"], "OWNER_GATED")
+        self.assertEqual(hub["cvImportInteractiveControlCount"]["const"], 0)
+        self.assertEqual(hub["fileUploadControlCount"]["const"], 0)
+        self.assertFalse(self.product_schema["definitions"]["hub"]["additionalProperties"])
         self.assertEqual(
             then_clause["properties"]["product"]["allOf"][1]["properties"]
             ["ownerAcceptance"]["const"],
