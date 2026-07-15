@@ -179,7 +179,11 @@ jobs:
           VIEWER_PRODUCT_BASE_URL: https://testai.acik.com
           REMOTE_BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key
           REQUIRE_ACTIVE_GUI: "1"
-          DENETIM_SSH_TARGET: svc-denetim-agent@10.99.0.2
+          # Evidence-management SSH only; the product session remains the outbound,
+          # device-key-attested channel. The smoke fail-closed validates this protected
+          # runner alias as denetimpc@10.99.0.2 with an id_denetim identity.
+          DENETIM_SSH_TARGET: denetim-pc
+          DENETIM_SSH_OPTS: __SSH_CONFIG__
           EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-browser-collector
           AUTO_FINALIZE: "0"
           DLP_MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
