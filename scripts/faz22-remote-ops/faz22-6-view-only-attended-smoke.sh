@@ -1087,10 +1087,21 @@ broker_signals_json() {
 }
 
 write_summary() {
-  local broker_signals operation_kind operation_transport
+  local broker_signals operation_kind operation_transport operation_deny
   broker_signals="$(broker_signals_json)"
   operation_kind="$(jq -r '.kind // ""' "${EVIDENCE_DIR}/operation.body" 2>/dev/null || true)"
   operation_transport="$(jq -r '.transportPushed // false' "${EVIDENCE_DIR}/operation.body" 2>/dev/null || true)"
+  operation_deny="$(jq -c '
+    def bounded($pattern; $fallback):
+      if type == "string" and test($pattern) then . else $fallback end;
+    if .deny == null then null
+    else {
+      reason: ((.deny.reason // "denied") | bounded("^[A-Za-z0-9:_-]{1,64}$"; "denied")),
+      policyGate: ((.deny.policyGate // null) | if . == null then null else bounded("^[A-Z_]{1,32}$"; null) end),
+      policyDetail: ((.deny.policyDetail // null) | if . == null then null else bounded("^[a-z0-9-]{1,64}$"; null) end)
+    }
+    end
+  ' "${EVIDENCE_DIR}/operation.body" 2>/dev/null || printf 'null')"
   [[ "$operation_transport" == "true" ]] && transport_pushed="true"
   jq -n \
     --arg api "http://127.0.0.1:${REMOTE_BRIDGE_LOCAL_PORT}/internal/remote-bridge" \
@@ -1102,6 +1113,7 @@ write_summary() {
     --arg reason "$reason" \
     --arg consentWait "$consent_wait" \
     --arg operationKind "$operation_kind" \
+    --argjson operationDeny "$operation_deny" \
     --arg viewerCode "$viewer_code" \
     --argjson transportPushed "$transport_pushed" \
     --argjson brokerSignals "$broker_signals" \
@@ -1144,6 +1156,7 @@ write_summary() {
       },
       consentWait: $consentWait,
       operationKind: $operationKind,
+      operationDeny: $operationDeny,
       transportPushed: $transportPushed,
       brokerSignals: $brokerSignals,
       stepUp: {
@@ -1311,8 +1324,26 @@ main() {
   body="$(jq -nc --arg op "$OPERATION_ID" '{operationId:$op, operation:"SCREEN_VIEW", commandLine:null}')"
   operation_code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/operations" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/operation.body" "$body")"
   assert_http "$operation_code" 200 "screen-view operation" "${EVIDENCE_DIR}/operation.body"
-  jq -e '.kind == "PERMIT" and .transportPushed == true and .permit.capability == "VIEW_ONLY"' "${EVIDENCE_DIR}/operation.body" >/dev/null \
-    || fail_smoke "screen-view-operation-not-permit"
+  if ! jq -e '.kind == "PERMIT" and .transportPushed == true and .permit.capability == "VIEW_ONLY"' \
+      "${EVIDENCE_DIR}/operation.body" >/dev/null; then
+    # The controller already sanitizes DenyMetadata to bounded reason/gate/detail
+    # tokens. Emit only those fields: never the permit (which carries raw session
+    # and operation ids), request body, bearer token, device id, or screen data.
+    jq -c '
+      def bounded($pattern; $fallback):
+        if type == "string" and test($pattern) then . else $fallback end;
+      {
+        kind: ((.kind // "missing") | bounded("^[A-Z_]{1,32}$"; "missing")),
+        transportPushed: (if (.transportPushed | type) == "boolean" then .transportPushed else false end),
+        deny: (if .deny == null then null else {
+          reason: ((.deny.reason // "denied") | bounded("^[A-Za-z0-9:_-]{1,64}$"; "denied")),
+          policyGate: ((.deny.policyGate // null) | if . == null then null else bounded("^[A-Z_]{1,32}$"; null) end),
+          policyDetail: ((.deny.policyDetail // null) | if . == null then null else bounded("^[a-z0-9-]{1,64}$"; null) end)
+        } end)
+      }' \
+      "${EVIDENCE_DIR}/operation.body" | sed 's/^/OPERATION_DIAGNOSTIC /'
+    fail_smoke "screen-view-operation-not-permit"
+  fi
   transport_pushed="true"
 
   if [[ -n "$MATRIX_HOOK_SCRIPT" ]]; then
