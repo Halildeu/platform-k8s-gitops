@@ -78,6 +78,7 @@ Absorb edilen düzeltmeler: <liste veya N/A (AGREE initial verdict)>
 
 **Field semantik** (Codex `019e2693` REVISE absorb):
 - `Implementer AI` / `Reviewer AI`: known-canonical providers `Claude` / `Codex` / `Gemini` / `Other` (alias tolerance: `Anthropic Claude`, `OpenAI Codex`, `Google Gemini`)
+- Cursor CLI gate katılımcısıysa ilgili rol `Other` olur ve `Verdict reason` içinde `Channel=Cursor CLI; Model=<LIVE_MODEL_ID>; direct-provider-CLI=false` yazılır. Provider ayrımı kanıtlı değilse Cursor yalnız supplemental review'dur; gerçek gate reviewer alanı korunur ve Cursor bulguları `Absorb edilen düzeltmeler` altında kaydedilir.
 - `Codex thread`: full UUID (kısa hash YASAK); `N/A` sadece **`Cross-AI exempt reason:`** field dolu ise (docs-only/governance exempt durumlarda)
 - `Same-provider exception: user-explicit-approval` → zorunlu **`Exception reason:`** field (≥10 karakter, commit/comment evidence link)
 - `-` alias YASAK; explicit `N/A` + reason field zorunlu

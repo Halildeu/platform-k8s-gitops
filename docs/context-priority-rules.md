@@ -333,3 +333,88 @@ Mavis bildirimi **yerine geçmez**:
 
 - Repo: [AGENTS.md §3 HARD RULE](../AGENTS.md) (kısa canonical bullet) + [CLAUDE.md Ana Kurallar #0](../CLAUDE.md) (proje-spesifik genişletme)
 - Global: `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı geniş açıklama + akış detayları + HARD RULE bağlantıları)
+
+---
+
+## 11. Cursor CLI — Öncelikli İlave Adversarial Review
+
+Cursor, faz/plan/PR istişaresinde uygulama penceresi üzerinden kullanılmaz. Yalnız canlı doğrulanmış CLI veya mevcutsa aynı redaction ve salt-okunur sınırını sağlayan MCP yolu kabul edilir. CLI/MCP, credential veya somut verdict yoksa UI fallback yapılmaz ve Cursor review kanıtı yazılmaz.
+
+### 11.1 Rol sırası
+
+| Karar/kanıt yüzeyi | Canonical yol | Cursor rolü |
+|---|---|---|
+| Plan, mimari, deploy, rollback veya scope kararı | Oturumun üst-seviye talimatında tanımlı provider-distinct canonical istişare yolu; Claude oturumunda `CLAUDE.md` Codex MCP kuralı | İlave görüş; canonical karar yolunu düşürmez |
+| Post-implementation güvenlik ve merge-readiness incelemesi | Exact branch/diff + test/CI kanıtı | **Öncelikli ilave adversarial reviewer** |
+| PR provider-level cross-AI gate | PR `## Cross-AI` alanları + `gate-cross-ai-audit` | Ek review; structured gate'in yerine geçmez |
+| Runtime, ürün veya hukuk kabulü | Live evidence + board + Owner/Legal/DPO/InfoSec/customer gate | Yerine geçmez |
+
+Implementasyon Cursor worker ile üretildiyse aynı Cursor kanalı reviewer olarak provider-distinct kanıt sayılmaz. Cursor gate katılımcısı ancak worker/reviewer provider ayrımı canlı model ve gerçek implementer kaydıyla kanıtlanabiliyorsa structured alana yazılır. Ayrım doğrulanamıyorsa sonuç yalnız ek adversarial review'dur; gerçek provider-distinct review ayrıca alınır ve structured `Reviewer AI` alanını o reviewer doldurur.
+
+### 11.2 Her çağrıdan önce canlı doğrulama
+
+1. Önce PATH'teki `agent`, bulunamazsa `$HOME/.local/bin/agent` denenir.
+2. `--version` ve `--list-models` aynı oturumda çalıştırılır.
+3. Model adı, availability veya sürüm hafızadan alınmaz. Hız/derinlik seçimi yalnız canlı model listesi ve görev riskine göre yapılır.
+4. Repo dışı bir harness kullanılacaksa önce kendi availability/list komutuyla doğrulanır; host-specific mutlak yol canonical varsayım değildir.
+
+Salt-okunur doğrudan kalıp:
+
+```bash
+agent -p 'REDACTED_GOREV' \
+  --output-format text \
+  --mode ask \
+  --trust \
+  --workspace <ABSOLUTE_WORKTREE> \
+  --model <LIVE_MODEL_ID>
+```
+
+`--trust` yalnız `--mode ask` ile kullanılabilir. MCP yolu kullanılırsa da write/tool yetkisi kapalı olmalı ve exact diff/evidence referansı salt-okunur verilmelidir.
+
+### 11.3 Redaction ve process sınırı
+
+`-p` argümanı shell history ve process argv yüzeyine düşebilir. Prompt/argümana şunlar yazılmaz:
+
+- secret, JWT, refresh token, raw bearer
+- webhook URL, cookie, OAuth client secret
+- private key, signing key, HMAC secret
+- admin credential, root token veya password
+- kullanıcı email, telefon, UPN veya diğer PII
+
+Yalnız redacted görev özeti ile repo içi evidence path, issue veya PR referansı gönderilir. `ps`, `pgrep` veya eşdeğer araçlarla agent süreç komut satırı dump edilmez. Raw secret/PII içeren task-file da güvenli fallback değildir.
+
+### 11.4 Başarı ve attribution kontratı
+
+`exit=0` tek başına başarı değildir. Çıktı boşsa veya limit/auth/error metni ise review tamamlanmış sayılmaz. Kabul edilen kanıt exact branch/diff'i okuyan somut bulgular ve `AGREE|REVISE|PARTIAL|RED` benzeri net verdict taşır.
+
+Cursor içinden seçilen Claude/GPT/Composer modeli direct Anthropic/OpenAI CLI görüşü diye raporlanmaz. İki kayıt modu vardır:
+
+1. **Provider ayrımı kanıtlı gate katılımcısı:** Cursor reviewer ise `Reviewer AI: Other`, Cursor worker ise `Implementer AI: Other` kullanılır. İki durumda da kanal/model bilgisi `Verdict reason` içine yazılır.
+2. **Supplemental adversarial review:** Provider ayrımı kanıtlı değilse `Implementer AI` ve `Reviewer AI` gerçek provider-distinct gate çiftini gösterir; Cursor sonucu `Absorb edilen düzeltmeler` alanında `Supplemental Cursor CLI / <LIVE_MODEL_ID>` diye kaydedilir. Cursor structured reviewer slotunu devralmaz.
+
+Gate-katılımcısı reviewer örneği:
+
+```yaml
+Reviewer AI: Other
+Verdict reason: Channel=Cursor CLI; Model=<LIVE_MODEL_ID>; direct-provider-CLI=false; <somut özet>
+```
+
+Gate-katılımcısı worker örneğinde `Implementer AI: Other` kullanılır ve aynı `Verdict reason` kanal/model alanları korunur. Bu mapping yalnız kanal attribution'ını çözer; provider-distinct olmayı otomatik kanıtlamaz. Implementer/reviewer provider ayrımı ayrıca doğru ve denetlenebilir olmalıdır.
+
+### 11.5 Acceptance gate bypass değil
+
+Cursor review şunların yerine geçmez:
+
+- `gate-cross-ai-audit` ve PR `## Cross-AI` structured alanları
+- test, CI ve exact-head/digest kanıtı
+- board claim/status ve deliberate acceptance
+- D29 Up/Functional/Zanzibar-ready veya browser smoke
+- Owner/Product, Legal/DPO, InfoSec, customer veya production operator kararı
+
+Review sonucu önce bulgu listesine çevrilir; doğrulanan P0/P1 bulguları absorbe edilip exact diff yeniden incelenmeden merge-readiness dili kullanılmaz.
+
+### Detay
+
+- Kısa HARD RULE: [AGENTS.md §3](../AGENTS.md)
+- PR structured alanları: [.github/pull_request_template.md](../.github/pull_request_template.md)
+- Claude oturumlarının plan/mimari Codex MCP tamamlayıcısı: [CLAUDE.md Ana Kurallar #8](../CLAUDE.md)
