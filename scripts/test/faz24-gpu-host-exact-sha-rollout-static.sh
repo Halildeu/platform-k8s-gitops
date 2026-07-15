@@ -26,8 +26,15 @@ grep -Fq '^[0-9a-f]{40}$' "${WORKFLOW}" || fail 'full lowercase SHA validation m
 grep -Fq 'merge-base --is-ancestor' "${WORKFLOW}" || fail 'main ancestry guard missing'
 grep -Fq 'persist-credentials: false' "${WORKFLOW}" || fail 'checkout credential persistence guard missing'
 grep -Fq 'scan_metadata_evidence.py' "${WORKFLOW}" || fail 'portable evidence scanner missing'
+grep -Fq 'uses: actions/github-script@v8' "${WORKFLOW}" || \
+  fail 'portable GitHub evidence publisher missing'
+grep -Fq 'dedicated Denetim known-hosts file is missing' "${WORKFLOW}" || \
+  fail 'known-hosts preflight diagnostic missing'
 if grep -Eq '(^|[[:space:]])rg([[:space:]]|$)' "${WORKFLOW}"; then
   fail 'non-portable ripgrep runtime dependency found'
+fi
+if grep -Fq 'gh issue comment' "${WORKFLOW}"; then
+  fail 'non-portable GitHub CLI runtime dependency found'
 fi
 grep -Fq 'StrictHostKeyChecking=yes' "${RUNNER}" || fail 'strict host-key verification missing'
 grep -Fq 'GlobalKnownHostsFile=/dev/null' "${RUNNER}" || fail 'global host-key bypass guard missing'

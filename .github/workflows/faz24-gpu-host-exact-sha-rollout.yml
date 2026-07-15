@@ -103,15 +103,28 @@ jobs:
               exit 1
             fi
           done
-          test -f "${SSH_IDENTITY_PATH}"
-          test -f "${SSH_IDENTITY_PATH}.pub"
-          test -f "${SSH_KNOWN_HOSTS_PATH}"
+          if [ ! -f "${SSH_IDENTITY_PATH}" ]; then
+            echo '::error::runner SSH identity is missing'
+            exit 1
+          fi
+          if [ ! -f "${SSH_IDENTITY_PATH}.pub" ]; then
+            echo '::error::runner SSH public identity is missing'
+            exit 1
+          fi
+          if [ ! -f "${SSH_KNOWN_HOSTS_PATH}" ]; then
+            echo '::error::dedicated Denetim known-hosts file is missing'
+            exit 1
+          fi
           identity_mode="$(stat -c '%a' "${SSH_IDENTITY_PATH}")"
           if [ "${identity_mode}" != '600' ]; then
             echo '::error::runner SSH identity mode must be 600'
             exit 1
           fi
-          ssh-keygen -F 10.99.0.2 -f "${SSH_KNOWN_HOSTS_PATH}" >/dev/null
+          if ! ssh-keygen -F 10.99.0.2 \
+            -f "${SSH_KNOWN_HOSTS_PATH}" >/dev/null; then
+            echo '::error::dedicated Denetim host-key entry is missing'
+            exit 1
+          fi
 
       - name: Run fixed-target immutable rollout
         id: rollout
@@ -168,10 +181,9 @@ jobs:
           mv "${sums_tmp}" SHA256SUMS
           sha256sum -c SHA256SUMS
 
-      - name: Publish redacted issue evidence
+      - name: Build redacted issue evidence
         if: always()
         env:
-          GH_TOKEN: ${{ github.token }}
           ROLLOUT_EXIT_CODE: ${{ steps.rollout.outputs.exit_code }}
           VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
         run: |
@@ -224,10 +236,23 @@ jobs:
             echo 'Success does not prove real-microphone product acceptance,'
             echo 'Meeting-AI output, role access, prod readiness or Faz 24.'
           } > "${comment}"
-          gh issue comment 2454 \
-            --repo Halildeu/platform-k8s-gitops \
-            --body-file "${comment}"
           cat "${comment}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Publish redacted issue evidence
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          COMMENT_PATH: ${{ runner.temp }}/faz24-gpu-rollout.md
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync(process.env.COMMENT_PATH, 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 2454,
+              body,
+            });
 
       - name: Upload metadata-only evidence
         if: always()
