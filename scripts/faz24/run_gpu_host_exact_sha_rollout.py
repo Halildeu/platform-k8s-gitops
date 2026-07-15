@@ -380,7 +380,7 @@ def parse_evidence(stdout: str) -> dict[str, Any]:
     return evidence
 
 
-def ssh_command(ssh_config: Path, known_hosts: Path, encoded_script: str) -> list[str]:
+def ssh_command(ssh_config: Path, known_hosts: Path) -> list[str]:
     return [
         "ssh",
         "-F",
@@ -407,8 +407,12 @@ def ssh_command(ssh_config: Path, known_hosts: Path, encoded_script: str) -> lis
         "-NonInteractive",
         "-ExecutionPolicy",
         "Bypass",
-        "-EncodedCommand",
-        encoded_script,
+        "-InputFormat",
+        "Text",
+        "-OutputFormat",
+        "Text",
+        "-Command",
+        "-",
     ]
 
 
@@ -420,13 +424,13 @@ def run_rollout(
     timeout_seconds: int,
 ) -> tuple[int, dict[str, Any]]:
     script = build_remote_script(target_commit)
-    encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
-    command = ssh_command(ssh_config, known_hosts, encoded_script)
+    command = ssh_command(ssh_config, known_hosts)
     try:
         process = subprocess.run(
             command,
             check=False,
             capture_output=True,
+            input=script,
             text=True,
             timeout=timeout_seconds,
             env={**os.environ, "LC_ALL": "C"},

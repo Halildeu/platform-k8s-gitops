@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -96,16 +97,41 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("Test-WebSocketReady", script)
 
     def test_ssh_command_is_strict_and_fixed_target(self) -> None:
-        command = runner.ssh_command(
-            Path("/ssh/config"), Path("/ssh/known_hosts"), "encoded"
-        )
+        command = runner.ssh_command(Path("/ssh/config"), Path("/ssh/known_hosts"))
         self.assertIn("/ssh/config", command)
         self.assertIn("UserKnownHostsFile=/ssh/known_hosts", command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn("IdentitiesOnly=yes", command)
         self.assertIn(runner.CANONICAL_TARGET, command)
+        self.assertEqual(command[-2:], ["-Command", "-"])
+        self.assertNotIn("-EncodedCommand", command)
+        self.assertNotIn(COMMIT, command)
         self.assertNotIn("svc-denetim-agent", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
+
+    def test_rollout_streams_remote_script_over_stdin(self) -> None:
+        payload = accepted_evidence()
+        encoded = base64.b64encode(json.dumps(payload).encode()).decode()
+        completed = runner.subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=f"{runner.EVIDENCE_MARKER}{encoded}\n",
+            stderr="",
+        )
+        with patch.object(runner.subprocess, "run", return_value=completed) as run:
+            exit_code, evidence = runner.run_rollout(
+                target_commit=COMMIT,
+                ssh_config=Path("/ssh/config"),
+                known_hosts=Path("/ssh/known_hosts"),
+                timeout_seconds=1200,
+            )
+
+        command = run.call_args.args[0]
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(evidence["targetCommit"], COMMIT)
+        self.assertNotIn("-EncodedCommand", command)
+        self.assertNotIn(COMMIT, command)
+        self.assertEqual(run.call_args.kwargs["input"], runner.build_remote_script(COMMIT))
 
     def test_evidence_marker_is_parsed_without_other_output(self) -> None:
         payload = accepted_evidence()

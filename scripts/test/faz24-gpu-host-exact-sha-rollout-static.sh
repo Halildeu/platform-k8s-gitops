@@ -45,6 +45,10 @@ fi
 grep -Fq 'StrictHostKeyChecking=yes' "${RUNNER}" || fail 'strict host-key verification missing'
 grep -Fq 'UserKnownHostsFile=' "${RUNNER}" || fail 'explicit pinned known-hosts missing'
 grep -Fq 'GlobalKnownHostsFile=/dev/null' "${RUNNER}" || fail 'global host-key bypass guard missing'
+grep -Fq 'input=script' "${RUNNER}" || fail 'PowerShell stdin transport missing'
+if grep -Fq '"-EncodedCommand"' "${RUNNER}"; then
+  fail 'PowerShell script must not be transported in process arguments'
+fi
 grep -Fq 'CANONICAL_TARGET = "denetim-pc"' "${RUNNER}" || \
   fail 'canonical Denetim operator target missing'
 grep -Fq "scriptPathClass = 'legacy-user-repo'" "${RUNNER}" || \
