@@ -23,8 +23,8 @@ from typing import Any
 
 PACKAGE_SCHEMA_VERSION = "faz24.i3.denetim.audit-controls-package.v1"
 BASELINE_SCHEMA_VERSION = "faz24.windows-audit-baseline.v1"
-SNAPSHOT_SCHEMA_VERSION = "faz24.windows-audit-snapshot.v1"
-CONTROL_CONTRACT_VERSION = "faz24.windows-audit-control.v1"
+SNAPSHOT_SCHEMA_VERSION = "faz24.windows-audit-snapshot.v2"
+CONTROL_CONTRACT_VERSION = "faz24.windows-audit-control.v2"
 
 DEFAULT_TARGET_USER = "svc-denetim-agent"
 DEFAULT_MANAGEMENT_ADDRESS = "10.99.0.1"
@@ -58,12 +58,30 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$SnapshotSchemaVersion = 'faz24.windows-audit-snapshot.v1'
-$ControlContractVersion = 'faz24.windows-audit-control.v1'
+$SnapshotSchemaVersion = 'faz24.windows-audit-snapshot.v2'
+$ControlContractVersion = 'faz24.windows-audit-control.v2'
+$ApprovalStatePath = Join-Path $Root 'state\initial-rollback.json'
 
 function Get-UtcText {
   param([Parameter(Mandatory=$true)][datetime]$Value)
   return $Value.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+}
+
+function Get-InstalledPackageFingerprint {
+  if (
+    [string]::IsNullOrWhiteSpace([string]$PSCommandPath) -or
+    -not (Test-Path -LiteralPath $PSCommandPath) -or
+    -not (Test-Path -LiteralPath $BaselinePath)
+  ) { return $null }
+  $collectorHash = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  $baselineHash = (Get-FileHash -LiteralPath $BaselinePath -Algorithm SHA256).Hash.ToLowerInvariant()
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($collectorHash + ':' + $baselineHash)
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+  } finally {
+    $sha.Dispose()
+  }
 }
 
 function Get-NonNegativeAgeSeconds {
@@ -440,6 +458,36 @@ function Test-RemoteAddressBroad {
   return $false
 }
 
+function Test-FirewallFilterUnconstrained {
+  param([object[]]$Values)
+
+  $normalized = @($Values | ForEach-Object { ([string]$_).Trim() })
+  if ($normalized.Count -ne 1) { return $true }
+  $candidate = $normalized[0]
+  if ([string]::IsNullOrWhiteSpace($candidate)) { return $true }
+  $unconstrainedAliases = @('Any', '*', 'All', 'None', 'Unknown', 'NotApplicable', 'N/A')
+  if (@($unconstrainedAliases | Where-Object { $_ -ieq $candidate }).Count -gt 0) {
+    return $true
+  }
+  if ($candidate -match '[*?]' -or $candidate -match '[\x00-\x1F]') { return $true }
+  return $false
+}
+
+function Get-BroadInboundRuleTier {
+  param(
+    [bool]$PortConflict,
+    [bool]$BroadRemote,
+    [object[]]$Programs,
+    [object[]]$Services
+  )
+
+  if (-not ($PortConflict -and $BroadRemote)) { return 'none' }
+  $programUnconstrained = Test-FirewallFilterUnconstrained -Values $Programs
+  $serviceUnconstrained = Test-FirewallFilterUnconstrained -Values $Services
+  if ($programUnconstrained -and $serviceUnconstrained) { return 'hard-block' }
+  return 'constrained-review'
+}
+
 function Get-FirewallObservation {
   param([Parameter(Mandatory=$true)][object]$Baseline)
 
@@ -513,29 +561,69 @@ function Get-FirewallObservation {
     ) { $matched++ }
   }
 
-  $conflicts = New-Object System.Collections.Generic.HashSet[string]
+  $hardBlockConflicts = New-Object System.Collections.Generic.HashSet[string]
+  $constrainedBroadReviews = New-Object System.Collections.Generic.HashSet[string]
   $prohibitedPorts = @($Baseline.prohibitedBroadInboundPorts | ForEach-Object { [string]$_ })
   $candidateRules = @(Get-NetFirewallRule -Direction Inbound -Action Allow -Enabled True -ErrorAction Stop)
   foreach ($rule in $candidateRules) {
     $portFilter = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
     $addressFilter = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
+    $applicationFilter = $rule | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue
+    $serviceFilter = $rule | Get-NetFirewallServiceFilter -ErrorAction SilentlyContinue
     if ($null -eq $portFilter -or $null -eq $addressFilter) { continue }
     $ports = @($portFilter.LocalPort | ForEach-Object { [string]$_ })
     $remoteAddresses = @($addressFilter.RemoteAddress | ForEach-Object { [string]$_ })
+    $programs = if ($null -eq $applicationFilter) { @() } else { @($applicationFilter.Program) }
+    $services = if ($null -eq $serviceFilter) { @() } else { @($serviceFilter.Service) }
     $portConflict = Test-ProhibitedPortCoverage -LocalPorts $ports -ProhibitedPorts $prohibitedPorts
     $broadRemote = Test-RemoteAddressBroad -RemoteAddresses $remoteAddresses
-    if ($portConflict -and $broadRemote) { [void]$conflicts.Add([string]$rule.Name) }
+    $tier = Get-BroadInboundRuleTier `
+      -PortConflict $portConflict `
+      -BroadRemote $broadRemote `
+      -Programs $programs `
+      -Services $services
+    if ($tier -eq 'hard-block') {
+      [void]$hardBlockConflicts.Add([string]$rule.Name)
+    } elseif ($tier -eq 'constrained-review') {
+      [void]$constrainedBroadReviews.Add([string]$rule.Name)
+    }
   }
 
   $runningEset = @($Baseline.esetCoreServices | Where-Object {
     $service = Get-Service -Name ([string]$_) -ErrorAction SilentlyContinue
     $null -ne $service -and $service.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Running
   }).Count
+  $approvedConstrainedBroadReviewCount = $null
+  try {
+    $approvalState = Get-Content -LiteralPath $ApprovalStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $approvalValue = $approvalState.firewallApproval.approvedConstrainedBroadReviewCount
+    $installedPackageFingerprint = Get-InstalledPackageFingerprint
+    if (
+      $approvalState.schemaVersion -eq 'faz24.windows-audit-rollback.v3' -and
+      [string]$approvalState.applyStatus -in @('applying','applied') -and
+      -not [string]::IsNullOrWhiteSpace([string]$installedPackageFingerprint) -and
+      [string]$approvalState.packageFingerprint -eq $installedPackageFingerprint -and
+      $approvalValue -isnot [bool] -and
+      ($approvalValue -is [int] -or $approvalValue -is [long]) -and
+      [int64]$approvalValue -ge 0
+    ) {
+      $approvedConstrainedBroadReviewCount = [int64]$approvalValue
+    }
+  } catch {
+    $approvedConstrainedBroadReviewCount = $null
+  }
+  $constrainedBroadReviewApproved = (
+    $null -ne $approvedConstrainedBroadReviewCount -and
+    $approvedConstrainedBroadReviewCount -eq $constrainedBroadReviews.Count
+  )
   return [ordered]@{
     queryOk = $true
     expectedRuleCount = @($Baseline.expectedFirewallRules).Count
     expectedRuleMatchCount = $matched
-    broadConflictCount = $conflicts.Count
+    broadConflictCount = $hardBlockConflicts.Count
+    constrainedBroadReviewCount = $constrainedBroadReviews.Count
+    approvedConstrainedBroadReviewCount = $approvedConstrainedBroadReviewCount
+    constrainedBroadReviewApproved = $constrainedBroadReviewApproved
     esetCoreRunningCount = $runningEset
   }
 }
@@ -614,11 +702,11 @@ try {
 
 try {
   $observed = Get-FirewallObservation -Baseline $baseline
-  $expected = [ordered]@{ queryOk=$true; expectedRuleCount=@($baseline.expectedFirewallRules).Count; minimumEsetCoreRunningCount=@($baseline.esetCoreServices).Count }
-  $pass = ($observed.queryOk -and $observed.expectedRuleMatchCount -eq $expected.expectedRuleCount -and $observed.broadConflictCount -eq 0 -and $observed.esetCoreRunningCount -ge $expected.minimumEsetCoreRunningCount)
+  $expected = [ordered]@{ queryOk=$true; expectedRuleCount=@($baseline.expectedFirewallRules).Count; constrainedBroadReviewApproved=$true; minimumEsetCoreRunningCount=@($baseline.esetCoreServices).Count }
+  $pass = ($observed.queryOk -and $observed.expectedRuleMatchCount -eq $expected.expectedRuleCount -and $observed.broadConflictCount -eq 0 -and $observed.constrainedBroadReviewApproved -and $observed.esetCoreRunningCount -ge $expected.minimumEsetCoreRunningCount)
   $controls.'eset-firewall-drift' = New-Control -Expected $expected -Observed $observed -Pass $pass -CollectedAt $collectedAt -MaxAgeSeconds 900 -ErrorClass 'firewall-or-eset-drift'
 } catch {
-  $controls.'eset-firewall-drift' = New-Control -Expected @{ queryOk=$true; expectedRuleCount=@($baseline.expectedFirewallRules).Count; minimumEsetCoreRunningCount=@($baseline.esetCoreServices).Count } -Observed @{ queryOk=$false; expectedRuleCount=@($baseline.expectedFirewallRules).Count; expectedRuleMatchCount=0; broadConflictCount=0; esetCoreRunningCount=0 } -Pass $false -CollectedAt $collectedAt -MaxAgeSeconds 900 -ErrorClass $_.Exception.GetType().Name
+  $controls.'eset-firewall-drift' = New-Control -Expected @{ queryOk=$true; expectedRuleCount=@($baseline.expectedFirewallRules).Count; constrainedBroadReviewApproved=$true; minimumEsetCoreRunningCount=@($baseline.esetCoreServices).Count } -Observed @{ queryOk=$false; expectedRuleCount=@($baseline.expectedFirewallRules).Count; expectedRuleMatchCount=0; broadConflictCount=0; constrainedBroadReviewCount=0; approvedConstrainedBroadReviewCount=$null; constrainedBroadReviewApproved=$false; esetCoreRunningCount=0 } -Pass $false -CollectedAt $collectedAt -MaxAgeSeconds 900 -ErrorClass $_.Exception.GetType().Name
 }
 
 try {
@@ -697,7 +785,8 @@ INSTALLER = r'''#requires -Version 5.1
 param(
   [ValidateSet('Validate','Apply','Rollback')][string]$Mode = 'Validate',
   [string]$TargetUser = __TARGET_USER__,
-  [string]$Root = __ROOT__
+  [string]$Root = __ROOT__,
+  [int]$ApprovedConstrainedBroadRuleCount = -1
 )
 
 Set-StrictMode -Version Latest
@@ -795,15 +884,133 @@ function Write-RollbackState {
 function Read-RollbackState {
   if (-not (Test-Path -LiteralPath $StatePath)) { throw 'rollback-state-missing' }
   $state = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $readProperty = {
+    param([object]$Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+  }
+  $schemaVersion = & $readProperty $state 'schemaVersion'
+  $transactionId = & $readProperty $state 'transactionId'
+  $packageFingerprint = & $readProperty $state 'packageFingerprint'
+  $applyStatus = & $readProperty $state 'applyStatus'
+  $capturedAt = & $readProperty $state 'capturedAt'
+  $firewallApproval = & $readProperty $state 'firewallApproval'
+  $approvalCountValue = & $readProperty $firewallApproval 'approvedConstrainedBroadReviewCount'
+  $approvalRecordedAt = & $readProperty $firewallApproval 'recordedAt'
+  $backupDirectory = & $readProperty $state 'backupDirectory'
+  $rootExistedValue = & $readProperty $state 'rootExisted'
+  $stateDirectoryExistedValue = & $readProperty $state 'stateDirectoryExisted'
+  $aclRestoreRoot = & $readProperty $state 'aclRestoreRoot'
+  $registry = & $readProperty $state 'registry'
+  $logonAuditPolicy = & $readProperty $state 'logonAuditPolicy'
+  $exactRules = & $readProperty $state 'exactRules'
+  $files = & $readProperty $state 'files'
+  $taskXmlProperty = $state.PSObject.Properties['taskXml']
+  $approvedConstrainedBroadReviewCount = 0
+  $approvalCountValid = (
+    $null -ne $approvalCountValue -and
+    [int]::TryParse(
+      [string]$approvalCountValue,
+      [ref]$approvedConstrainedBroadReviewCount
+    )
+  )
+  $rootExistedValid = $rootExistedValue -is [bool]
+  $rootExisted = $rootExistedValid -and [bool]$rootExistedValue
+  $stateDirectoryExistedValid = $stateDirectoryExistedValue -is [bool]
+
+  $registryValid = $null -ne $registry
+  foreach ($name in @('enableTranscripting','enableInvocationHeader','outputDirectory','enableScriptBlockLogging')) {
+    if (-not $registryValid) { break }
+    $entry = & $readProperty $registry $name
+    $existsValue = & $readProperty $entry 'exists'
+    if ($null -eq $entry -or $existsValue -isnot [bool]) {
+      $registryValid = $false
+      break
+    }
+    if ([bool]$existsValue) {
+      $valueProperty = $entry.PSObject.Properties['value']
+      $kind = & $readProperty $entry 'kind'
+      if (
+        $null -eq $valueProperty -or
+        [string]$kind -notin @('String','ExpandString','Binary','DWord','MultiString','QWord')
+      ) {
+        $registryValid = $false
+        break
+      }
+    }
+  }
+
+  $successEnabled = & $readProperty $logonAuditPolicy 'successEnabled'
+  $failureEnabled = & $readProperty $logonAuditPolicy 'failureEnabled'
+  $logonAuditPolicyValid = (
+    $null -ne $logonAuditPolicy -and
+    $successEnabled -is [bool] -and
+    $failureEnabled -is [bool]
+  )
+
+  $exactRuleStates = @($exactRules)
+  $exactRulesValid = $null -ne $exactRules -and $exactRuleStates.Count -gt 0
+  foreach ($rule in $exactRuleStates) {
+    if (-not $exactRulesValid) { break }
+    $ruleName = & $readProperty $rule 'name'
+    $ruleExisted = & $readProperty $rule 'exists'
+    if (
+      [string]::IsNullOrWhiteSpace([string]$ruleName) -or
+      $ruleExisted -isnot [bool]
+    ) {
+      $exactRulesValid = $false
+      break
+    }
+  }
+
+  $expectedFileStates = [ordered]@{
+    collector = [ordered]@{ path=$CollectorPath; backupName='collector.ps1' }
+    baseline = [ordered]@{ path=$BaselinePath; backupName='baseline.json' }
+    snapshot = [ordered]@{ path=$SnapshotPath; backupName='snapshot.json' }
+  }
+  $filesValid = $null -ne $files
+  foreach ($name in $expectedFileStates.Keys) {
+    if (-not $filesValid) { break }
+    $expectedFileState = $expectedFileStates[$name]
+    $entry = & $readProperty $files $name
+    $path = & $readProperty $entry 'path'
+    $existed = & $readProperty $entry 'existed'
+    $backupName = & $readProperty $entry 'backupName'
+    if (
+      $null -eq $entry -or
+      [string]$path -ne [string]$expectedFileState.path -or
+      $existed -isnot [bool] -or
+      [string]$backupName -ne [string]$expectedFileState.backupName
+    ) {
+      $filesValid = $false
+      break
+    }
+  }
+
   if (
-    $state.schemaVersion -ne 'faz24.windows-audit-rollback.v2' -or
-    [string]::IsNullOrWhiteSpace([string]$state.transactionId) -or
-    [string]::IsNullOrWhiteSpace([string]$state.packageFingerprint) -or
-    [string]::IsNullOrWhiteSpace([string]$state.backupDirectory) -or
-    -not (Test-Path -LiteralPath ([string]$state.backupDirectory)) -or
-    ($state.rootExisted -and (
-      [string]::IsNullOrWhiteSpace([string]$state.aclRestoreRoot) -or
-      [string]$state.aclRestoreRoot -ne (Split-Path -Parent $Root) -or
+    [string]$schemaVersion -ne 'faz24.windows-audit-rollback.v3' -or
+    [string]$transactionId -notmatch '^[0-9a-f]{32}$' -or
+    [string]$packageFingerprint -notmatch '^[0-9a-f]{64}$' -or
+    [string]$applyStatus -notin @('captured','applying','applied') -or
+    [string]::IsNullOrWhiteSpace([string]$capturedAt) -or
+    $null -eq $firewallApproval -or
+    -not $approvalCountValid -or
+    $approvedConstrainedBroadReviewCount -lt 0 -or
+    [string]::IsNullOrWhiteSpace([string]$approvalRecordedAt) -or
+    [string]::IsNullOrWhiteSpace([string]$backupDirectory) -or
+    -not (Test-Path -LiteralPath ([string]$backupDirectory)) -or
+    -not $rootExistedValid -or
+    -not $stateDirectoryExistedValid -or
+    -not $registryValid -or
+    -not $logonAuditPolicyValid -or
+    -not $exactRulesValid -or
+    -not $filesValid -or
+    $null -eq $taskXmlProperty -or
+    ($rootExisted -and (
+      [string]::IsNullOrWhiteSpace([string]$aclRestoreRoot) -or
+      [string]$aclRestoreRoot -ne (Split-Path -Parent $Root) -or
       -not (Test-Path -LiteralPath $AclBackupPath)
     ))
   ) { throw 'rollback-state-incomplete' }
@@ -899,7 +1106,37 @@ function Test-RemoteAddressBroad {
   return $false
 }
 
-function Get-BroadConflictRules {
+function Test-FirewallFilterUnconstrained {
+  param([object[]]$Values)
+
+  $normalized = @($Values | ForEach-Object { ([string]$_).Trim() })
+  if ($normalized.Count -ne 1) { return $true }
+  $candidate = $normalized[0]
+  if ([string]::IsNullOrWhiteSpace($candidate)) { return $true }
+  $unconstrainedAliases = @('Any', '*', 'All', 'None', 'Unknown', 'NotApplicable', 'N/A')
+  if (@($unconstrainedAliases | Where-Object { $_ -ieq $candidate }).Count -gt 0) {
+    return $true
+  }
+  if ($candidate -match '[*?]' -or $candidate -match '[\x00-\x1F]') { return $true }
+  return $false
+}
+
+function Get-BroadInboundRuleTier {
+  param(
+    [bool]$PortConflict,
+    [bool]$BroadRemote,
+    [object[]]$Programs,
+    [object[]]$Services
+  )
+
+  if (-not ($PortConflict -and $BroadRemote)) { return 'none' }
+  $programUnconstrained = Test-FirewallFilterUnconstrained -Values $Programs
+  $serviceUnconstrained = Test-FirewallFilterUnconstrained -Values $Services
+  if ($programUnconstrained -and $serviceUnconstrained) { return 'hard-block' }
+  return 'constrained-review'
+}
+
+function Get-BroadConflictAssessment {
   param([object]$Baseline)
 
   function Test-ProhibitedPortCoverage {
@@ -923,20 +1160,72 @@ function Get-BroadConflictRules {
   }
 
   $ports = @($Baseline.prohibitedBroadInboundPorts | ForEach-Object { [string]$_ })
-  $results = New-Object System.Collections.Generic.List[object]
+  $hardBlockRules = New-Object System.Collections.Generic.List[object]
+  $constrainedReviewRules = New-Object System.Collections.Generic.List[object]
   foreach ($rule in @(Get-NetFirewallRule -Direction Inbound -Action Allow -Enabled True -ErrorAction Stop)) {
     $port = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
     $address = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
+    $application = $rule | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue
+    $service = $rule | Get-NetFirewallServiceFilter -ErrorAction SilentlyContinue
     if ($null -eq $port -or $null -eq $address) { continue }
     $portConflict = Test-ProhibitedPortCoverage -LocalPorts @($port.LocalPort) -ProhibitedPorts $ports
     $broadRemote = Test-RemoteAddressBroad -RemoteAddresses @($address.RemoteAddress)
-    if ($portConflict -and $broadRemote) { $results.Add($rule) }
+    $programs = if ($null -eq $application) { @() } else { @($application.Program) }
+    $services = if ($null -eq $service) { @() } else { @($service.Service) }
+    $tier = Get-BroadInboundRuleTier `
+      -PortConflict $portConflict `
+      -BroadRemote $broadRemote `
+      -Programs $programs `
+      -Services $services
+    if ($tier -eq 'hard-block') {
+      $hardBlockRules.Add($rule)
+    } elseif ($tier -eq 'constrained-review') {
+      $constrainedReviewRules.Add($rule)
+    }
   }
-  return @($results)
+  return [ordered]@{
+    hardBlockRules = @($hardBlockRules)
+    constrainedReviewRules = @($constrainedReviewRules)
+  }
+}
+
+function Assert-BroadConflictApproval {
+  param(
+    [Parameter(Mandatory=$true)][object]$Assessment,
+    [int]$ApprovedConstrainedBroadRuleCount
+  )
+
+  $hardBlockCount = @($Assessment.hardBlockRules).Count
+  $constrainedReviewCount = @($Assessment.constrainedReviewRules).Count
+  if ($hardBlockCount -gt 0) {
+    throw ('broad-firewall-conflicts-require-separate-reviewed-remediation:' + $hardBlockCount)
+  }
+  if ($ApprovedConstrainedBroadRuleCount -lt -1) {
+    throw ('approved-constrained-broad-firewall-rule-count-invalid:' + $ApprovedConstrainedBroadRuleCount)
+  }
+  if ($constrainedReviewCount -gt 0 -and $ApprovedConstrainedBroadRuleCount -lt 0) {
+    throw ('constrained-broad-firewall-rules-require-explicit-operator-approval:' + $constrainedReviewCount)
+  }
+  if (
+    $ApprovedConstrainedBroadRuleCount -ge 0 -and
+    $ApprovedConstrainedBroadRuleCount -ne $constrainedReviewCount
+  ) {
+    throw (
+      'constrained-broad-firewall-rule-count-changed:' +
+      $ApprovedConstrainedBroadRuleCount + ':' +
+      $constrainedReviewCount
+    )
+  }
+  return $constrainedReviewCount
 }
 
 function Save-InitialState {
-  param([object]$Baseline, [bool]$RootExisted, [string]$PackageFingerprint)
+  param(
+    [object]$Baseline,
+    [bool]$RootExisted,
+    [string]$PackageFingerprint,
+    [int]$ApprovedConstrainedBroadReviewCount
+  )
   if (Test-Path -LiteralPath $StatePath) {
     $existing = Read-RollbackState
     if ([string]$existing.packageFingerprint -ne $PackageFingerprint) {
@@ -944,6 +1233,12 @@ function Save-InitialState {
     }
     if ([string]$existing.applyStatus -ne 'applied') {
       throw 'rollback-required-before-retry'
+    }
+    if (
+      [int]$existing.firewallApproval.approvedConstrainedBroadReviewCount -ne
+      $ApprovedConstrainedBroadReviewCount
+    ) {
+      throw 'constrained-broad-firewall-approval-state-mismatch'
     }
     return $existing
   }
@@ -959,9 +1254,13 @@ function Save-InitialState {
   $transcriptionPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription'
   $scriptBlockPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'
   $state = [ordered]@{
-    schemaVersion='faz24.windows-audit-rollback.v2'; transactionId=$temporaryId
+    schemaVersion='faz24.windows-audit-rollback.v3'; transactionId=$temporaryId
     packageFingerprint=$PackageFingerprint; applyStatus='captured'
     capturedAt=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    firewallApproval=[ordered]@{
+      approvedConstrainedBroadReviewCount=$ApprovedConstrainedBroadReviewCount
+      recordedAt=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
     rootExisted=$RootExisted; stateDirectoryExisted=$stateDirectoryExisted
     aclRestoreRoot=(Split-Path -Parent $Root)
     backupDirectory=$backupDirectory; taskXml=$taskXml
@@ -1212,7 +1511,7 @@ function Invoke-SnapshotAndRead {
       $snapshotTime = [DateTimeOffset]::MinValue
       $timestampOk = [DateTimeOffset]::TryParse([string]$snapshot.collectedAt, [ref]$snapshotTime)
       if (
-        $snapshot.schemaVersion -eq 'faz24.windows-audit-snapshot.v1' -and
+        $snapshot.schemaVersion -eq 'faz24.windows-audit-snapshot.v2' -and
         $timestampOk -and
         $snapshotTime.UtcDateTime -ge $startedAt.AddSeconds(-5)
       ) { return $snapshot }
@@ -1230,17 +1529,21 @@ $packageFingerprint = Get-PackageFingerprint
 if ($Mode -eq 'Apply') {
   if ($null -eq (Get-LocalUser -Name $TargetUser -ErrorAction SilentlyContinue)) { throw 'target-user-not-found' }
   Assert-ReservedRuleNamesAvailable -Baseline $baseline
-  $broad = @(Get-BroadConflictRules -Baseline $baseline)
-  if ($broad.Count -gt 0) {
-    throw ('broad-firewall-conflicts-require-separate-reviewed-remediation:' + $broad.Count)
-  }
+  $broadAssessment = Get-BroadConflictAssessment -Baseline $baseline
+  $constrainedReviewCount = Assert-BroadConflictApproval `
+    -Assessment $broadAssessment `
+    -ApprovedConstrainedBroadRuleCount $ApprovedConstrainedBroadRuleCount
   $rootExisted = Test-Path -LiteralPath $Root
-  $state = Save-InitialState -Baseline $baseline -RootExisted $rootExisted -PackageFingerprint $packageFingerprint
+  $state = Save-InitialState `
+    -Baseline $baseline `
+    -RootExisted $rootExisted `
+    -PackageFingerprint $packageFingerprint `
+    -ApprovedConstrainedBroadReviewCount $constrainedReviewCount
   if ([string]$state.applyStatus -eq 'applied') {
     $snapshot = Invoke-SnapshotAndRead
     $failed = @($snapshot.controls.PSObject.Properties.Value | Where-Object { $_.verdict -ne 'pass' })
     if ($failed.Count -gt 0) { throw 'existing-apply-drift-detected-use-validate-or-rollback' }
-    Write-Output ('mode=Apply status=already-applied snapshot=' + $SnapshotPath + ' failedControls=0')
+    Write-Output ('mode=Apply status=already-applied snapshot=' + $SnapshotPath + ' failedControls=0 constrainedBroadReviewsAcknowledged=' + $constrainedReviewCount)
     exit 0
   }
 
@@ -1274,7 +1577,7 @@ if ($Mode -eq 'Apply') {
     $state.applyStatus = 'applied'
     Write-RollbackState -State $state
     Set-ProtectedAcl -UserName $TargetUser
-    Write-Output ('mode=Apply snapshot=' + $SnapshotPath + ' failedControls=0 broadConflictsObserved=0')
+    Write-Output ('mode=Apply snapshot=' + $SnapshotPath + ' failedControls=0 broadConflictsObserved=0 constrainedBroadReviewsAcknowledged=' + $constrainedReviewCount)
     exit 0
   } catch {
     $applyError = $_.Exception.Message
@@ -1428,6 +1731,14 @@ Run from an elevated PowerShell 5.1 session:
 .\\install-audit-controls.ps1 -Mode Validate
 ```
 
+If Apply reports program- or service-constrained broad rules, review their
+owners and impact first. Only after that explicit decision, repeat Apply with
+`-ApprovedConstrainedBroadRuleCount <reviewed-count>`. Apply rejects a changed
+count, persists the approved count in protected rollback state and exposes only
+the matching count/approval result in bounded snapshot evidence. The parameter
+never authorizes an unconstrained rule and never changes or disables an
+existing rule.
+
 `Apply` is a package-fingerprint-bound transaction. Before mutation it backs
 up pre-existing managed files and captures the initial registry, scoped Logon
 audit bits, exact-rule existence, scheduled task and ACL state. A partial or
@@ -1436,8 +1747,11 @@ different package fingerprint requires an explicit rollback before retry.
 Repeated Apply with the same package validates without mutation. The package
 creates only missing exact inbound rules limited to the WireGuard management
 address and never rewrites an existing reserved rule. Any broad inbound alias,
-CIDR or range conflict is a fail-closed preflight error; remediation must be
-reviewed and performed separately.
+CIDR or range conflict with unconstrained Program and Service filters is a
+fail-closed preflight error; unknown, blank and wildcard filters are treated as
+unconstrained. A concrete Program or Service filter moves the rule to the
+visible constrained-review tier, which still requires explicit operator
+approval. Remediation is reviewed and performed separately.
 
 PowerShell transcripts are local privileged operational data. The SYSTEM
 collector removes entries older than 14 days and then the oldest entries until
@@ -1537,6 +1851,7 @@ def build(args: argparse.Namespace) -> None:
         },
         "operatorFlow": [
             "firewall-impact-decision",
+            "constrained-broad-rule-review",
             "apply",
             "validate",
             "rollback-drill",
@@ -1548,6 +1863,14 @@ def build(args: argparse.Namespace) -> None:
             "maximumDays": values["transcriptRetentionDays"],
             "maximumBytes": values["maximumTranscriptBytes"],
             "reparsePointsRejected": True,
+        },
+        "firewallPreflight": {
+            "unconstrainedBroadRulesHardBlocked": True,
+            "constrainedBroadRulesRequireExplicitApproval": True,
+            "constrainedBroadRuleApprovalCountBound": True,
+            "constrainedBroadRuleApprovalPersisted": True,
+            "unknownBlankWildcardFiltersFailClosed": True,
+            "existingRulesMutated": False,
         },
         "components": component_hashes,
         "secretMaterialIncluded": False,

@@ -59,73 +59,75 @@ Canlı runtime önkoşulu:
 GitHub collaborator veya team reviewer eklemektir. Sonrasında agent protected
 Environment'ı oluşturur, yalnız üç hash değerini configure eder ve attended
 pilot + yedi-kaynak product evidence zincirini çalıştırır.
-## Live Delta — Faz 24 I3 least-privilege Windows audit source candidate (2026-07-15)
+## Live Delta — Faz 24 I3 Windows audit package and firewall preflight (2026-07-15)
 
-This delta records the source-side candidate and current live boundary for
-WG-B+ I3. It does not accept
+This delta separates canonical source/package evidence, read-only host
+diagnosis and the pending detector correction for WG-B+ I3. It does not accept
 [#1864](https://github.com/Halildeu/platform-k8s-gitops/issues/1864), mutate the
 Denetim Windows host, or advance broad Faz 24 readiness.
 
-Current live evidence:
+Canonical source and package evidence:
 
-- The latest canonical I3 run remains
+- [PR #2446](https://github.com/Halildeu/platform-k8s-gitops/pull/2446) merged at
+  exact `main` SHA `27db9094586a5f398eac5b3f57c9c1581c157c70`.
+- Restricted package run
+  [29424919398](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29424919398)
+  succeeded for that exact SHA; all `6/6` generated-file checksums passed. The
+  package remains identity-bearing operator configuration with one-day
+  retention. Build success is not live installation or acceptance evidence.
+- The latest canonical I3 host evidence remains
   [29200459859](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29200459859).
   Route, TCP/22, runner identity, service-account SSH, remote collector,
-  OpenSSH metadata and staging correlation pass. This supersedes the older
-  `Permission denied (publickey)` diagnosis.
-- Six Windows controls still fail live acceptance: PowerShell transcription,
-  PowerShell script-block logging, failed-login audit, WireGuard health,
-  ESET/firewall drift and time synchronization. Parent #1864 therefore remains
-  `Needs Verify`.
-- Read-only diagnosis proved that `svc-denetim-agent` can traverse the
-  WireGuard/SSH path but cannot safely query all six privileged Windows
-  surfaces. Expanding that account to local administrator is not the selected
-  remediation.
+  OpenSSH metadata and staging correlation pass. Six Windows controls still
+  fail live acceptance: PowerShell transcription, PowerShell script-block
+  logging, failed-login audit, WireGuard health, ESET/firewall drift and time
+  synchronization. Parent #1864 remains `Needs Verify`.
 
-Source candidate tracked by
+Read-only firewall preflight:
+
+- The first detector revision found `81` enabled inbound allow rules whose
+  remote scope and protected-port coverage were broad. `77` carry a concrete
+  Program or Service constraint; treating all 81 as equivalent hard blocks was
+  over-broad and would have produced a false operational stop.
+- Four rules are confirmed hard blocks because both Program and Service are
+  unconstrained: `SSH-Allow-All-22`, `live-stt-service 8200`, `live-stt 8200`
+  and `Caddy-mTLS-8243`. Their owner/dependency/impact/rollback decision is
+  tracked separately by
+  [#2450](https://github.com/Halildeu/platform-k8s-gitops/issues/2450).
+- No firewall rule was disabled, rewritten or created. Package `Apply` was not
+  run. The dedicated out-of-band `faz24-i3-denetim_known_hosts` file also
+  remains an unfulfilled acceptance prerequisite.
+
+Pending source correction tracked by
 [#2434](https://github.com/Halildeu/platform-k8s-gitops/issues/2434):
 
-- A LocalSystem scheduled collector produces a bounded, sanitized and atomic
-  `faz24.windows-audit-snapshot.v1` snapshot. The service account remains a
-  read-only transport identity and the evidence collector consumes only that
-  snapshot plus bounded OpenSSH metadata.
-- The installer supports separate `Apply`, `Validate` and `Rollback` modes,
-  binds rollback state to the package fingerprint, records original
-  registry/scoped-Logon-audit/exact-rule/task/ACL and pre-existing managed-file
-  state before mutation, automatically restores partial applies, protects the
-  transcript/snapshot trees with explicit ACLs, enforces transcript retention
-  at no more than 14 days and 1 GiB, uses exact allow
-  rules from `10.99.0.1`, and fails closed on reserved-rule conflicts, stale
-  snapshots or incomplete rollback state. Broad firewall conflicts are never
-  changed by this package; they require a separate reviewed remediation with
-  an independent rollback plan. Rollback removes only exact rules created by
-  this package and leaves pre-existing exact rules untouched.
-- The evidence contract is versioned as `faz24.wg-bplus.i3.audit.v2`; the six
-  controls carry canonical expected/observed/source/freshness fields. The
-  verifier recomputes freshness against validation time and rejects
-  artifact-weakened thresholds, unsynchronized/local-clock time sources,
-  stale/malformed data and current-attempt correlation gaps. It also pins the
-  target to `svc-denetim-agent@10.99.0.2`, requires the route-device hash to
-  equal the selected WireGuard-interface hash, requires exact snapshot
-  directory/file ACL proof, validates language-independent w32time sync type,
-  binds the canonical snapshot path hash, and checks all critical firewall
-  filter fields. SSH host identity is pinned out of band and checked with
-  `StrictHostKeyChecking=yes`; TOFU is rejected. Transcript retention rejects
-  descendant reparse points before traversal. Source-focused Python tests pass
-  `51/51`, the generated Windows behavior test passes, and the full Faz 24 test
-  package passes `538/538`.
-- A no-mutation GitHub workflow builds an immutable, checksummed restricted
-  operator-configuration package. It is identity-bearing, secret-free and has
-  one-day artifact retention. Package generation is not live installation or
-  acceptance evidence.
+- Broad protected-port rules whose Program and Service are both unconstrained
+  remain hard blocks. Rules with a concrete Program or Service are retained as
+  explicit constrained-review items rather than silently passing.
+- Apply requires the exact reviewed constrained-rule count, persists it in
+  protected `faz24.windows-audit-rollback.v3` state, and rejects a missing,
+  invalid or changed count. The snapshot exports only counts and the approval
+  boolean, never rule names or raw filter details.
+- The correction raises the remote snapshot to
+  `faz24.windows-audit-snapshot.v2` and each control to
+  `faz24.windows-audit-control.v2`. Historical v1 evidence is intentionally not
+  accepted as v2 evidence; a fresh snapshot and bundle are required.
+- The evidence bundle remains `faz24.wg-bplus.i3.audit.v2` and retains the
+  canonical freshness, route/interface, ACL, time-source, host-key, redaction
+  and current-attempt correlation checks. Focused tests pass `55/55`, generated
+  Windows behavior tests pass, generated checksums pass `6/6`, and both the
+  unittest-discovery and pytest full `tests/faz24` regressions pass. The exact
+  count is reported only with its runner because the two runners enumerate the
+  suite differently.
 
-Open gates, in order: independent consultation/review, PR and CI acceptance,
-immutable package hash verification, explicit firewall impact decision,
-controlled `Apply` then elevated `Validate`, rollback drill and baseline
-connectivity proof, second `Apply`/`Validate`, fresh self-hosted evidence run and
-v2 verifier acceptance. Consultation counts only through real Claude
-and Mavis/MiniMax CLI/daemon paths; UI or simulated-provider results are not
-accepted and provider availability never authorizes bypassing technical gates.
+The correction is not canonical until its PR and CI pass. Remaining gates, in
+order: second independent review of the revised contract, correction PR/CI,
+exact-`main` package rebuild and checksum verification, deliberate #2450
+operator/human decision with independent rollback, controlled `Apply` and
+elevated `Validate`, rollback drill plus baseline connectivity proof, second
+`Apply`/`Validate`, pinned host-key verification, fresh self-hosted evidence and
+reviewer acceptance on #1864/#2434. Source merge never closes those runtime
+gates by implication.
 
 ## Live Delta — Faz 25 / P5 Readiness Console testai bounded non-closure acceptance (2026-07-15)
 

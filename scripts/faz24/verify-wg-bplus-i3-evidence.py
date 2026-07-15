@@ -21,7 +21,7 @@ from typing import Any, Iterable
 
 
 SCHEMA_VERSION = "faz24.wg-bplus.i3.audit.v2"
-CONTROL_CONTRACT_VERSION = "faz24.windows-audit-control.v1"
+CONTROL_CONTRACT_VERSION = "faz24.windows-audit-control.v2"
 BUNDLE_MAX_AGE_SECONDS = 900
 MAX_FUTURE_SKEW_SECONDS = 300
 CANONICAL_DENETIM_TARGET = "svc-denetim-agent@10.99.0.2"
@@ -219,6 +219,7 @@ EXPECTED_FIELDS = {
     "eset-firewall-drift": {
         "queryOk",
         "expectedRuleCount",
+        "constrainedBroadReviewApproved",
         "minimumEsetCoreRunningCount",
     },
     "time-sync": {
@@ -274,6 +275,9 @@ OBSERVED_FIELDS = {
         "expectedRuleCount",
         "expectedRuleMatchCount",
         "broadConflictCount",
+        "constrainedBroadReviewCount",
+        "approvedConstrainedBroadReviewCount",
+        "constrainedBroadReviewApproved",
         "esetCoreRunningCount",
     },
     "time-sync": {
@@ -332,6 +336,7 @@ CANONICAL_EXPECTED: dict[str, dict[str, Any]] = {
     "eset-firewall-drift": {
         "queryOk": True,
         "expectedRuleCount": 3,
+        "constrainedBroadReviewApproved": True,
         "minimumEsetCoreRunningCount": 2,
     },
     "time-sync": {
@@ -591,7 +596,7 @@ def validate_collector_semantics(data: dict[str, Any]) -> list[Finding]:
                 "collector.denetimTargetHash must bind to the canonical Denetim target",
             )
         )
-    if collector.get("remoteSnapshotSchemaVersion") != "faz24.windows-audit-snapshot.v1":
+    if collector.get("remoteSnapshotSchemaVersion") != "faz24.windows-audit-snapshot.v2":
         findings.append(
             Finding("collector_snapshot", "remote snapshot schema must be canonical")
         )
@@ -890,7 +895,33 @@ def validate_control_semantics(
         ):
             semantic_failure(findings, check_id, "all exact expected rules must match")
         if nonnegative_int(observed, "broadConflictCount") != 0:
-            semantic_failure(findings, check_id, "broad inbound conflict count must be zero")
+            semantic_failure(
+                findings,
+                check_id,
+                "unconstrained broad inbound hard-block count must be zero",
+            )
+        constrained_count = nonnegative_int(observed, "constrainedBroadReviewCount")
+        approved_constrained_count = nonnegative_int(
+            observed,
+            "approvedConstrainedBroadReviewCount",
+        )
+        if constrained_count is None:
+            semantic_failure(
+                findings,
+                check_id,
+                "constrained broad review count must be a non-negative integer",
+            )
+        if (
+            expected.get("constrainedBroadReviewApproved") is not True
+            or observed.get("constrainedBroadReviewApproved") is not True
+            or approved_constrained_count is None
+            or approved_constrained_count != constrained_count
+        ):
+            semantic_failure(
+                findings,
+                check_id,
+                "constrained broad review approval must match the observed count",
+            )
         minimum_eset = expected.get("minimumEsetCoreRunningCount")
         running_eset = nonnegative_int(observed, "esetCoreRunningCount")
         if not is_int(minimum_eset) or minimum_eset < 1 or running_eset is None or running_eset < minimum_eset:

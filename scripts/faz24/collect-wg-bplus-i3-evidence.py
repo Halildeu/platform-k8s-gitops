@@ -28,8 +28,8 @@ from typing import Any, Callable
 
 
 SCHEMA_VERSION = "faz24.wg-bplus.i3.audit.v2"
-CONTROL_CONTRACT_VERSION = "faz24.windows-audit-control.v1"
-SNAPSHOT_SCHEMA_VERSION = "faz24.windows-audit-snapshot.v1"
+CONTROL_CONTRACT_VERSION = "faz24.windows-audit-control.v2"
+SNAPSHOT_SCHEMA_VERSION = "faz24.windows-audit-snapshot.v2"
 DEFAULT_REMOTE_SNAPSHOT_PATH = (
     r"C:\ProgramData\Acik\Faz24\I3\audit-controls\snapshot\audit-snapshot.json"
 )
@@ -87,6 +87,9 @@ SNAPSHOT_OBSERVED_FIELDS: dict[str, set[str]] = {
         "expectedRuleCount",
         "expectedRuleMatchCount",
         "broadConflictCount",
+        "constrainedBroadReviewCount",
+        "approvedConstrainedBroadReviewCount",
+        "constrainedBroadReviewApproved",
         "esetCoreRunningCount",
     },
     "time-sync": {
@@ -131,6 +134,7 @@ SNAPSHOT_CANONICAL_EXPECTED: dict[str, dict[str, Any]] = {
     "eset-firewall-drift": {
         "queryOk": True,
         "expectedRuleCount": 3,
+        "constrainedBroadReviewApproved": True,
         "minimumEsetCoreRunningCount": 2,
     },
     "time-sync": {
@@ -180,7 +184,7 @@ function Select-SnapshotControls($controls) {
     'powershell-script-block' = @('queryOk','policyEnabled','eventCount')
     'failed-login' = @('securityLogQueryable','auditFailureEnabled','eventCount')
     'wireguard-health' = @('queryOk','dumpExitCode','runningServiceCount','interfaceCount','peerCount','latestHandshakeAgeSeconds')
-    'eset-firewall-drift' = @('queryOk','expectedRuleCount','expectedRuleMatchCount','broadConflictCount','esetCoreRunningCount')
+    'eset-firewall-drift' = @('queryOk','expectedRuleCount','expectedRuleMatchCount','broadConflictCount','constrainedBroadReviewCount','approvedConstrainedBroadReviewCount','constrainedBroadReviewApproved','esetCoreRunningCount')
     'time-sync' = @('queryOk','serviceState','statusCommandExitCode','sourcePresent','sourceSynchronized','syncTypeConfigured','latestSuccessEventAgeSeconds')
   }
   $selected = [ordered]@{}
@@ -227,7 +231,7 @@ try {
 try {
   $rawSnapshot = Get-Content -LiteralPath $snapshotPath -Raw -Encoding UTF8 -ErrorAction Stop
   $snapshot = $rawSnapshot | ConvertFrom-Json -ErrorAction Stop
-  $schemaOk = ($snapshot.schemaVersion -eq "faz24.windows-audit-snapshot.v1")
+  $schemaOk = ($snapshot.schemaVersion -eq "faz24.windows-audit-snapshot.v2")
   $controlsPresent = ($null -ne $snapshot.controls)
   $selectedControls = if ($controlsPresent) { Select-SnapshotControls $snapshot.controls } else { $null }
   $checks.auditSnapshot = [ordered]@{
@@ -817,7 +821,10 @@ def control_summary(check_id: str, contract: dict[str, Any]) -> str:
             "Firewall/ESET metadata "
             f"expectedRules={int_field(observed, 'expectedRuleMatchCount')}/"
             f"{int_field(observed, 'expectedRuleCount')} "
-            f"broadConflicts={int_field(observed, 'broadConflictCount')}"
+            f"broadConflicts={int_field(observed, 'broadConflictCount')} "
+            f"constrainedBroadReviews={int_field(observed, 'constrainedBroadReviewCount')} "
+            f"approvedConstrainedBroadReviews="
+            f"{int_field(observed, 'approvedConstrainedBroadReviewCount')}"
         )
     if check_id == "time-sync":
         return (

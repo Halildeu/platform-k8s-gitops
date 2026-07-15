@@ -65,6 +65,7 @@ class BuildI3DenetimAuditControlsPackageTest(unittest.TestCase):
             self.assertEqual(
                 [
                     "firewall-impact-decision",
+                    "constrained-broad-rule-review",
                     "apply",
                     "validate",
                     "rollback-drill",
@@ -80,6 +81,24 @@ class BuildI3DenetimAuditControlsPackageTest(unittest.TestCase):
             self.assertFalse(manifest["secretMaterialIncluded"])
             self.assertEqual("restricted-operator-config", manifest["classification"])
             self.assertTrue(manifest["containsIdentityMetadata"])
+            self.assertTrue(
+                manifest["firewallPreflight"]["unconstrainedBroadRulesHardBlocked"]
+            )
+            self.assertTrue(
+                manifest["firewallPreflight"][
+                    "constrainedBroadRulesRequireExplicitApproval"
+                ]
+            )
+            self.assertTrue(
+                manifest["firewallPreflight"]["constrainedBroadRuleApprovalCountBound"]
+            )
+            self.assertTrue(
+                manifest["firewallPreflight"]["constrainedBroadRuleApprovalPersisted"]
+            )
+            self.assertTrue(
+                manifest["firewallPreflight"]["unknownBlankWildcardFiltersFailClosed"]
+            )
+            self.assertFalse(manifest["firewallPreflight"]["existingRulesMutated"])
             self.assertEqual([22, 8200, 8243], baseline["prohibitedBroadInboundPorts"])
             self.assertEqual(14, baseline["transcriptRetentionDays"])
             self.assertEqual(1073741824, baseline["maximumTranscriptBytes"])
@@ -114,6 +133,9 @@ class BuildI3DenetimAuditControlsPackageTest(unittest.TestCase):
             self.assertIn("$localAddresses.Count -eq 1", collector)
             self.assertIn("$profiles.Count -eq 1", collector)
             self.assertIn("function Test-RemoteAddressBroad", collector)
+            self.assertIn("function Test-FirewallFilterUnconstrained", collector)
+            self.assertIn("function Get-BroadInboundRuleTier", collector)
+            self.assertIn("constrainedBroadReviewCount", collector)
             self.assertIn("'LocalSubnet'", collector)
             self.assertIn("$prefixLength -lt $maximumPrefix", collector)
             self.assertIn("-RemoteAddresses $remoteAddresses", collector)
@@ -135,7 +157,7 @@ class BuildI3DenetimAuditControlsPackageTest(unittest.TestCase):
             self.assertIn("maximumTranscriptBytes", collector)
             self.assertIn("Save-InitialState", installer)
             self.assertIn("rollback-state-incomplete", installer)
-            self.assertIn("faz24.windows-audit-rollback.v2", installer)
+            self.assertIn("faz24.windows-audit-rollback.v3", installer)
             self.assertIn("rollback-required-before-package-change", installer)
             self.assertIn("apply-failed-auto-rollback-completed", installer)
             self.assertIn("Restore-InitialState -State $state", installer)
@@ -159,12 +181,26 @@ class BuildI3DenetimAuditControlsPackageTest(unittest.TestCase):
             self.assertIn("1 GiB", readme)
             self.assertIn("never performs a full-machine `auditpol /restore`", readme)
             self.assertIn("broad-firewall-conflicts-require-separate-reviewed-remediation", installer)
+            self.assertIn(
+                "constrained-broad-firewall-rules-require-explicit-operator-approval",
+                installer,
+            )
+            self.assertIn("ApprovedConstrainedBroadRuleCount", installer)
+            self.assertIn("constrained-broad-firewall-rule-count-changed", installer)
+            self.assertIn("approvedConstrainedBroadReviewCount", installer)
+            self.assertIn("function Get-InstalledPackageFingerprint", collector)
+            self.assertIn("$approvalState.packageFingerprint -eq $installedPackageFingerprint", collector)
+            self.assertIn("@('applying','applied')", collector)
+            self.assertIn("$approvalValue -is [int] -or $approvalValue -is [long]", collector)
+            self.assertNotIn("$approvalValue -is [ValueType]", collector)
+            self.assertIn("function Get-BroadConflictAssessment", installer)
             self.assertIn("function Test-RemoteAddressBroad", installer)
             self.assertIn("-RemoteAddresses @($address.RemoteAddress)", installer)
             self.assertIn("New-ExactDirectorySecurity", installer)
             self.assertIn("-LocalAddress Any", installer)
             self.assertIn("-Program Any", installer)
             self.assertIn("-Service Any", installer)
+            self.assertIn("constrainedBroadReviewsAcknowledged", installer)
             self.assertGreaterEqual(installer.count("Invoke-SnapshotAndRead"), 4)
             self.assertNotIn("Restore-RuleState", installer)
             self.assertIn("Register-ScheduledTask", installer)

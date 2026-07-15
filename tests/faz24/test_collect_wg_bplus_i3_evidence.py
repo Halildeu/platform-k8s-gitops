@@ -103,7 +103,7 @@ def remote_success_json() -> str:
 
     def control(expected: dict, observed: dict) -> dict:
         return {
-            "contractVersion": "faz24.windows-audit-control.v1",
+            "contractVersion": "faz24.windows-audit-control.v2",
             "expected": expected,
             "observed": observed,
             "verdict": "pass",
@@ -120,7 +120,7 @@ def remote_success_json() -> str:
                 "auditSnapshot": {
                     "ok": True,
                     "queryOk": True,
-                    "schemaVersion": "faz24.windows-audit-snapshot.v1",
+                    "schemaVersion": "faz24.windows-audit-snapshot.v2",
                     "collectedAt": collected_at,
                     "controls": {
                         "powershell-transcription": control(
@@ -182,6 +182,7 @@ def remote_success_json() -> str:
                             {
                                 "queryOk": True,
                                 "expectedRuleCount": 3,
+                                "constrainedBroadReviewApproved": True,
                                 "minimumEsetCoreRunningCount": 2,
                             },
                             {
@@ -189,6 +190,9 @@ def remote_success_json() -> str:
                                 "expectedRuleCount": 3,
                                 "expectedRuleMatchCount": 3,
                                 "broadConflictCount": 0,
+                                "constrainedBroadReviewCount": 0,
+                                "approvedConstrainedBroadReviewCount": 0,
+                                "constrainedBroadReviewApproved": True,
                                 "esetCoreRunningCount": 2,
                             },
                         ),
@@ -339,7 +343,26 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
         result = self.run_verifier(evidence)
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("broad inbound conflict count must be zero", result.stderr)
+        self.assertIn(
+            "unconstrained broad inbound hard-block count must be zero",
+            result.stderr,
+        )
+
+    def test_constrained_broad_review_count_is_preserved_as_bounded_metadata(self):
+        remote = json.loads(remote_success_json())
+        control = remote["checks"]["auditSnapshot"]["controls"]["eset-firewall-drift"]
+        control["observed"]["constrainedBroadReviewCount"] = 77
+        control["observed"]["approvedConstrainedBroadReviewCount"] = 77
+        evidence = self.build(FakeRunner(json.dumps(remote)))
+        check = next(check for check in evidence["checks"] if check["id"] == "eset-firewall-drift")
+
+        self.assertEqual(77, check["control"]["observed"]["constrainedBroadReviewCount"])
+        self.assertEqual(
+            77,
+            check["control"]["observed"]["approvedConstrainedBroadReviewCount"],
+        )
+        self.assertIn("constrainedBroadReviews=77", check["what"])
+        self.assertEqual(0, self.run_verifier(evidence).returncode)
 
     def test_remote_snapshot_fields_are_allowlisted_and_expected_is_local(self):
         remote = json.loads(remote_success_json())
