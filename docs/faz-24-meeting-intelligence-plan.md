@@ -320,6 +320,31 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 
 > **Kapsam**: Faz 24 artık belirli bir ERP'ye gömülü özellik olarak değil, Türkiye ve regüle/veri-hassas enterprise pazarına satılabilir bağımsız meeting-intelligence ürünü olarak planlanır. Rakip paritesi Otter, Fireflies, Gong, Teams Copilot ve Zoom AI Companion sınıfına göre okunur; farklılaşma ise Türkçe-first kalite, self-host/on-prem opsiyon, KVKK governance ve citation'lı intelligence kombinasyonudur.
 
+> **2026-07-15 I3 least-privilege addendum**: WG-B+ I3 için
+> `svc-denetim-agent` yetkisini genişletmek yerine LocalSystem collector ->
+> sanitize edilmiş atomik snapshot -> salt-okunur SSH evidence zinciri seçildi.
+> `faz24.wg-bplus.i3.audit.v2` kaynak adayı ve Apply/Validate/Rollback operator
+> paketi #2434 altında ilerliyor. Bu, on-prem/self-host operability için gerekli
+> uzun vadeli G-OPS altyapısıdır; canlı Denetim hostuna uygulanmış değildir,
+> #1864 `Needs Verify` durumunu veya ürün-değer gate'lerini değiştirmez. Paket
+> geniş inbound firewall çakışmalarını otomatik değiştirmez; bunun için ayrı,
+> etkisi incelenmiş ve rollback'i tanımlı operatör işlemi gerekir. Verifier
+> eşikleri artefaktın bildirimine bırakmaz, doğrulama anında freshness'i yeniden
+> hesaplar ve staging korelasyonunu yalnız mevcut SSH denemesinin rastgele audit
+> kimliğine bağlar. Canonical hedef `svc-denetim-agent@10.99.0.2` olarak sabittir;
+> staging rotası seçili WireGuard arayüzüne ve out-of-band doğrulanmış pinned SSH
+> host key'e, Windows snapshot dizin/dosya ACL'i
+> salt-okunur transport kimliğine, zaman senkronu dil-bağımsız w32time `Type`
+> ayarına, canonical snapshot yolu hash'ine ve firewall kuralları tüm kritik
+> filtre alanlarına birebir bağlanır.
+> Apply paket-fingerprint'ine bağlı transaction'dır; kısmi hata otomatik rollback
+> yapar, yalnız Logon audit alt-kategorisini geri alır ve reparse-point alt
+> ağaçlarına girmeden transcriptleri 14 gün / 1 GiB üst sınırında tutar. Kabul
+> sırası firewall kararı -> Apply -> Validate ->
+> rollback drill -> yeniden Apply/Validate -> fresh v2 evidence olarak sabittir.
+> Sağlayıcı istişaresi yalnız gerçek Claude ve Mavis/MiniMax
+> CLI/daemon yoluyla kabul edilir; UI veya simülasyon istişare kanıtı değildir.
+
 ### 11.1 Kazanma Formülü
 
 Savunulabilir pozisyon: **Türkçe-first + on-prem/self-host + compliance-grade governance + kaynaklı intelligence**. Tek başına STT, tek başına chat/summary veya tek başına self-host yeterli değildir. Hedef wedge, yatay self-serve SaaS değil; kamu, finans, sağlık, savunma, hukuk ve yönetim kurulu gibi veri hassasiyeti yüksek enterprise segmentleridir.
@@ -356,7 +381,7 @@ Deferred by design:
 | **G-CAP** | Teams/Calendar veya desktop recorder ile kayıt başlatma, consent alma, chunk upload, finish ve failure/retry oranı ölçülü; `scripts/faz24/verify_gcap_capture_gate_evidence.py` yalnız redacted verifier summary'lerini (`faz24.externalRecorderSmokeVerifier.v1`, `faz24.desktopCaptureEvidenceVerifier.v1`) aggregate eder, raw recorder/desktop evidence kabul etmez; external recorder summary'leri post-#2084 `directClientToStt=false` + `directSttTranscriptProven=false` boundary/check set'ini taşımadan aggregate success sayılmaz; `.github/workflows/faz24-product-gate-evidence-ingest.yml` bu kanıtı artifact'li no-mutation ingest path'e taşır, live pilot evidence bekler. Desktop mic+loopback smoke için ayrı `scripts/faz24/verify_desktop_capture_evidence.py` PASS gerekir; bu PASS aggregate G-CAP threshold'unu tek başına sağlamaz |
 | **G-COMP** | Consent, retention, legal hold, access audit ve deletion/export policy canlı; ADR-0030 engineering controls accepted + legal track parallel. `platform-ai#201` retention gate source-only evidence'ı reddeder, `platform-ai#211` source-only MinIO lifecycle evidence'ı active kabul etmeyecek şekilde sıkılaştırdı ve `platform-ai#212` test MinIO metadata-only lifecycle runtime evidence'ını ekledi; `platform-ai#203` raw-audio archive'i default live path'ten çıkarır. `scripts/faz24/verify_gcomp_compliance_gate_evidence.py` yalnız redacted metadata envelope'ını kabul eder ve legal acceptance yerine owner legal-track notification + fail-closed parametric retention/defaults + owner-provenance-required supplied retention values + consent required + deletion pipeline enabled + no legal/production overclaim boundaries ister; `.github/workflows/faz24-product-gate-evidence-ingest.yml` bu kanıtı artifact'li no-mutation ingest path'e taşır. #156 DB cleanup smoke ve test MinIO lifecycle export evidence var, ancak production lifecycle/deletion proof ve live G-COMP engineering/operator evidence olmadan G-COMP pass üretmez; VERBIS/legal owner acceptance paralel legal track'tir ve mühendislik blocker'ı değildir |
 | **G-LAT/COST** | Latency p50/p95, queue lag, cost/dakika ve GPU/CPU utilization ölçülür; `platform-ai#204` gate lab/synthetic/Common Voice performans kanıtını acceptance yerine kullanmayı bloklar; model/GPU kararı pilot ölçüme dayanır |
-| **G-OPS** | On-prem install/upgrade/backup/restore/runbook kanıtı; secret delivery ve rollback path test edilir; `scripts/faz24/verify_gops_operability_gate_evidence.py` redacted metadata envelope'ını RPO/RTO/coverage eşikleriyle gate eder, `.github/workflows/faz24-product-gate-evidence-ingest.yml` bu kanıtı artifact'li no-mutation ingest path'e taşır, live on-prem evidence bekler |
+| **G-OPS** | On-prem install/upgrade/backup/restore/runbook kanıtı; secret delivery ve rollback path test edilir; `scripts/faz24/verify_gops_operability_gate_evidence.py` redacted metadata envelope'ını RPO/RTO/coverage eşikleriyle gate eder, `.github/workflows/faz24-product-gate-evidence-ingest.yml` bu kanıtı artifact'li no-mutation ingest path'e taşır, live on-prem evidence bekler. WG-B+ I3 Windows yönetim-audit alt kapısı, LocalSystem'ın ürettiği sanitize snapshot'ı salt-okunur servis hesabıyla taşıyan ayrı least-privilege zinciridir; kaynak paket/CI tek başına G-OPS veya #1864 kabulü üretmez, kontrollü Apply + rollback drill + fresh v2 evidence gerekir |
 | **#1615 rollup** | `scripts/faz24/verify_faz24_readiness_rollup.py` tüm alt gate'lerin redacted verifier kabulünü tek `faz24.readinessRollupEvidence.v1` zarfında fail-closed kontrol eder; `.github/workflows/faz24-readiness-rollup-evidence-ingest.yml` no-mutation artifact'li ingest path sağlar. Bu rollup child gate yerine geçmez; direct-STT, desktop capture, I3, full I7, G-OPS/G-COMP, pilot WER/DER, G-INT, G-LAT/COST, retention lifecycle ve browser/client smoke kanıtları kendi verifier'larında accepted olmadan #1615 kabulü üretmez |
 
 ### 11.4 Aşama Sırası
@@ -364,7 +389,7 @@ Deferred by design:
 ```text
 Aşama-2 evidence line
   Gateway + Redis + foundation services + recorder edge lifecycle evidence
-  Boundary: direct-STT, compute-plane audit, desktop mic/loopback, WG-B+ I3 open; I6 MASQ accepted only for pod-CIDR-to-WG metadata evidence.
+  Boundary: direct-STT, desktop mic/loopback and WG-B+ I3 live acceptance open; I3 v2 least-privilege source candidate is not host acceptance. I6 MASQ accepted only for pod-CIDR-to-WG metadata evidence.
 
 Aşama-3 Core Product Value (P0)
   T-B WER/DER + G-LAT/COST + T-C G-INT + T-A G-CAP gate infrastructure main'de; gerçek pilot kanıtı pending

@@ -1,8 +1,10 @@
 name: Faz 24 WG-B+ I3 Evidence
 
-# Metadata-only live evidence collector for platform-k8s-gitops#1864.
+# Metadata-only v2 live evidence collector for platform-k8s-gitops#1864.
 # It runs on the self-hosted staging-sw runner because GitHub-hosted runners
 # cannot reach the WireGuard-canonical Denetim management path.
+# The six privileged Windows controls are read from a bounded LocalSystem
+# snapshot; the SSH service account remains a read-only transport identity.
 
 on:
   workflow_dispatch:
@@ -38,6 +40,7 @@ jobs:
       EVIDENCE_DIR: /tmp/faz24-wg-bplus-i3-evidence-${{ github.run_id }}
       EVIDENCE_JSON: /tmp/faz24-wg-bplus-i3-evidence-${{ github.run_id }}/wg-bplus-i3-evidence.json
       SSH_IDENTITY_PATH: ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519
+      SSH_KNOWN_HOSTS_PATH: ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_known_hosts
 
     steps:
       - name: Validate dispatch inputs
@@ -63,8 +66,8 @@ jobs:
           reject_multiline lookback_hours "${LOOKBACK_HOURS_INPUT}"
           reject_multiline wg_interface "${WG_INTERFACE_INPUT}"
 
-          if ! printf '%s' "${DENETIM_SSH_TARGET_INPUT}" | grep -Eq '^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$'; then
-            echo "::error::denetim_ssh_target must look like user@host"
+          if [ "${DENETIM_SSH_TARGET_INPUT}" != 'svc-denetim-agent@10.99.0.2' ]; then
+            echo "::error::denetim_ssh_target must match the canonical Denetim endpoint"
             exit 1
           fi
 
@@ -88,8 +91,9 @@ jobs:
           LOOKBACK_HOURS_INPUT: ${{ inputs.lookback_hours }}
           WG_INTERFACE_INPUT: ${{ inputs.wg_interface }}
           FAZ24_I3_SSH_IDENTITY_PATH: ${{ env.SSH_IDENTITY_PATH }}
+          FAZ24_I3_SSH_KNOWN_HOSTS_PATH: ${{ env.SSH_KNOWN_HOSTS_PATH }}
         run: |
-          set -euo pipefail
+          set +e
 
           mkdir -p "${EVIDENCE_DIR}"
           python3 scripts/faz24/collect-wg-bplus-i3-evidence.py \
@@ -98,8 +102,12 @@ jobs:
             --lookback-hours "${LOOKBACK_HOURS_INPUT}" \
             --wg-interface "${WG_INTERFACE_INPUT}" \
             --ssh-identity-path "${FAZ24_I3_SSH_IDENTITY_PATH}" \
+            --ssh-known-hosts-path "${FAZ24_I3_SSH_KNOWN_HOSTS_PATH}" \
             --retention-days 14 \
             | tee "${EVIDENCE_DIR}/collector-summary.txt"
+          collector_exit_code="${PIPESTATUS[0]}"
+          echo "exit_code=${collector_exit_code}" >> "${GITHUB_OUTPUT}"
+          exit 0
 
       - name: Verify evidence contract
         id: verify
@@ -122,6 +130,7 @@ jobs:
         if: always()
         env:
           VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+          COLLECT_EXIT_CODE: ${{ steps.collect.outputs.exit_code }}
         run: |
           set -euo pipefail
 
@@ -132,9 +141,12 @@ jobs:
             echo "- Runner: self-hosted staging-sw"
             echo "- Denetim target: redacted; stable hash is in the evidence JSON"
             echo "- Runner SSH identity: path hash and public-key metadata are in \`collector.denetimSshPreflight\`"
+            echo "- Windows control contract: \`faz24.windows-audit-control.v1\` via bounded LocalSystem snapshot"
+            echo "- Privilege boundary: SSH service account is read-only and is not a snapshot writer"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Artifact: \`faz24-wg-bplus-i3-evidence-${{ github.run_id }}\`"
             echo "- Verifier exit code: \`${verify_exit_code}\`"
+            echo "- Collector exit code: \`${COLLECT_EXIT_CODE:-missing}\`"
             echo
             echo "Boundary: metadata only. No raw audio, transcript text, command/script content, token, cookie, private key, or bearer material is intentionally exported."
             echo
@@ -146,7 +158,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload metadata evidence artifact
-        if: always()
+        if: steps.collect.outputs.exit_code == '0' && steps.verify.outputs.exit_code == '0'
         uses: actions/upload-artifact@v7
         with:
           name: faz24-wg-bplus-i3-evidence-${{ github.run_id }}
@@ -164,10 +176,20 @@ jobs:
         if: always()
         env:
           VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+          COLLECT_EXIT_CODE: ${{ steps.collect.outputs.exit_code }}
         run: |
           set -euo pipefail
 
           exit_code="${VERIFY_EXIT_CODE}"
+          collector_exit_code="${COLLECT_EXIT_CODE}"
+          if [ -z "${collector_exit_code}" ]; then
+            echo "::error::I3 collector did not expose an exit code"
+            exit 1
+          fi
+          if [ "${collector_exit_code}" != "0" ]; then
+            echo "::error::I3 collector produced rejected evidence"
+            exit "${collector_exit_code}"
+          fi
           if [ -z "${exit_code}" ]; then
             echo "::error::I3 verifier did not expose an exit code"
             exit 1
