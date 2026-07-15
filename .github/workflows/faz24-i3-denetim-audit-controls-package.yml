@@ -1,0 +1,125 @@
+name: Faz 24 I3 Denetim Audit Controls Package
+
+# Builds a least-privilege, rollback-capable operator artifact for #2434.
+# This workflow does not connect to or mutate the Denetim Windows host.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_user:
+        description: "Read-only Windows snapshot consumer"
+        required: true
+        default: "svc-denetim-agent"
+      management_address:
+        description: "WireGuard management peer IPv4 address"
+        required: true
+        default: "10.99.0.1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz24-i3-denetim-audit-controls-package
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: build and validate operator package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      PACKAGE_DIR: /tmp/faz24-i3-denetim-audit-controls-${{ github.run_id }}
+
+    steps:
+      - name: Validate dispatch inputs
+        env:
+          TARGET_USER: ${{ inputs.target_user }}
+          MANAGEMENT_ADDRESS: ${{ inputs.management_address }}
+        run: |
+          set -euo pipefail
+          if [ "${TARGET_USER}" != 'svc-denetim-agent' ]; then
+            echo "::error::target_user must match the canonical read-only identity"
+            exit 1
+          fi
+          if [ "${MANAGEMENT_ADDRESS}" != '10.99.0.1' ]; then
+            echo "::error::management_address must match the canonical WireGuard management peer"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build package
+        env:
+          TARGET_USER: ${{ inputs.target_user }}
+          MANAGEMENT_ADDRESS: ${{ inputs.management_address }}
+        run: |
+          set -euo pipefail
+          python3 scripts/faz24/build-i3-denetim-audit-controls-package.py \
+            --output-dir "${PACKAGE_DIR}" \
+            --target-user "${TARGET_USER}" \
+            --management-address "${MANAGEMENT_ADDRESS}"
+
+      - name: Parse generated PowerShell
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -LiteralPath $env:PACKAGE_DIR -Filter '*.ps1' | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              $errors | ForEach-Object { Write-Error ($_.Extent.File + ':' + $_.Extent.StartLineNumber + ' ' + $_.Message) }
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Verify package integrity and redaction
+        run: |
+          set -euo pipefail
+          (
+            cd "${PACKAGE_DIR}"
+            sha256sum --check SHA256SUMS
+          )
+          if grep -R -E -- '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----|Bearer |eyJ[A-Za-z0-9_-]+\.' "${PACKAGE_DIR}"; then
+            echo "::error::package contains forbidden private/secret-like material"
+            exit 1
+          fi
+          test -s "${PACKAGE_DIR}/collect-audit-snapshot.ps1"
+          test -s "${PACKAGE_DIR}/install-audit-controls.ps1"
+          test -s "${PACKAGE_DIR}/rollback-audit-controls.ps1"
+          test -s "${PACKAGE_DIR}/baseline.json"
+          test -s "${PACKAGE_DIR}/package-manifest.json"
+
+      - name: Write workflow summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Faz 24 I3 Denetim audit controls package"
+            echo
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`RESTRICTED-faz24-i3-denetim-audit-controls-${{ github.run_id }}\`"
+            echo "- Classification: restricted operator configuration; identity-bearing, secret-free"
+            echo
+            echo "Boundary: build-only restricted operator artifact. It keeps the transport identity read-only, captures initial state before mutation, and requires an elevated operator for apply/rollback. Host state is unchanged by this workflow."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload package artifact
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: RESTRICTED-faz24-i3-denetim-audit-controls-${{ github.run_id }}
+          path: ${{ env.PACKAGE_DIR }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Cleanup local package directory
+        if: always()
+        run: rm -rf "${PACKAGE_DIR}"

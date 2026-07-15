@@ -1,12 +1,12 @@
 {
-  "schemaVersion": "faz24.wg-bplus.i3.audit.v1",
+  "schemaVersion": "faz24.wg-bplus.i3.audit.v2",
   "collectedAt": "2026-06-25T00:10:00Z",
-  "protectedEvidencePath": "\\\\denetim-pc\\protected-audit$\\faz24\\i3\\2026-06-25T001000Z",
+  "protectedEvidencePath": "github-actions://Halildeu/platform-k8s-gitops/actions/runs/1/artifacts/faz24-wg-bplus-i3-evidence",
   "retentionDays": 90,
   "acl": {
     "mode": "protected",
     "readers": ["platform-ops-audit"],
-    "writers": ["svc-denetim-agent"]
+    "writers": ["github-actions:self-hosted-staging-sw", "windows-system:audit-snapshot"]
   },
   "redaction": {
     "rawAudioIncluded": false,
@@ -14,70 +14,223 @@
     "secretMaterialIncluded": false,
     "commandContentIncluded": false
   },
+  "collector": {
+    "runner": "self-hosted-management-runner",
+    "denetimTargetHash": "6a958354f76d4068",
+    "lookbackHours": 2,
+    "wgInterfaceSelection": "auto",
+    "remoteSnapshotPathHash": "1111111111111111",
+    "remoteSnapshotSchemaVersion": "faz24.windows-audit-snapshot.v1",
+    "denetimSshPreflight": {
+      "targetHostHash": "801d4b52b735d268",
+      "targetPort": 22,
+      "targetHostIsIpLiteral": true,
+      "routeQueryable": true,
+      "routeExitCode": 0,
+      "routeDeviceHash": "6666666666666666",
+      "routeUsesSelectedWireGuardInterface": true,
+      "tcp22Reachable": true,
+      "tcp22ErrorClass": "",
+      "tcp22Errno": null,
+      "sshExitCode": 0,
+      "sshFailureClass": "none",
+      "sshStdoutPresent": true,
+      "sshStderrPresent": false,
+      "sshErrorFingerprint": "3333333333333333",
+      "sshIdentityConfigured": true,
+      "sshIdentityPathHash": "4444444444444444",
+      "sshIdentityPublicKeyPresent": true,
+      "sshIdentityPublicKeyFingerprint": "5555555555555555"
+    },
+    "stagingWireGuardProbe": {
+      "requestedMode": "auto",
+      "requestedInterfaceHash": "",
+      "interfacesQueryable": true,
+      "interfacesExitCode": 0,
+      "detectedCount": 1,
+      "selectedInterfaceHash": "6666666666666666",
+      "probeCount": 1,
+      "selectedLatestExitCode": 0,
+      "selectedTransferExitCode": 0,
+      "selectedEndpointsExitCode": 0,
+      "wgToolFound": true,
+      "wgToolKind": "path-search",
+      "wgToolProbeExitCode": 0
+    },
+    "remoteCollectorReached": true,
+    "stagingJournalQueryable": true,
+    "stagingJournalMatchCount": 1,
+    "stagingWireGuardQueryable": true,
+    "stagingWireGuardPeerCount": 1,
+    "stagingSshSocketQueryable": true,
+    "stagingSshSocketCount": 1,
+    "localEvidenceWriteContract": {
+      "atomic": true,
+      "fileMode": "0600",
+      "directoryMode": "0700",
+      "symlinkRejected": true
+    }
+  },
   "checks": [
     {
       "id": "openssh-event-log",
       "status": "pass",
-      "who": "svc-denetim-agent",
-      "when": "2026-06-25T00:01:00Z",
-      "what": "OpenSSH publickey session accepted from WG peer",
-      "evidenceRef": "windows/OpenSSH-Operational.evtx.jsonl"
+      "who": "windows-transport-target:6a958354f76d4068",
+      "when": "2026-06-25T00:10:00Z",
+      "what": "OpenSSH metadata query count=1",
+      "evidenceRef": "windows/openssh-event-log.metadata.json",
+      "control": {
+        "contractVersion": "faz24.windows-audit-control.v1",
+        "expected": {"queryOk": true, "minimumEventCount": 1},
+        "observed": {"queryOk": true, "eventCount": 1},
+        "verdict": "pass",
+        "source": {"kind": "windows-event-log", "locator": "OpenSSH/Operational"},
+        "collectedAt": "2026-06-25T00:10:00Z",
+        "maxAgeSeconds": 900,
+        "ageSeconds": 0,
+        "fresh": true,
+        "errorClass": "none"
+      }
     },
     {
       "id": "powershell-transcription",
       "status": "pass",
-      "who": "svc-denetim-agent",
-      "when": "2026-06-25T00:02:00Z",
-      "what": "PowerShell transcription enabled; transcript content retained only in protected path",
-      "evidenceRef": "windows/powershell-transcription-metadata.json"
+      "who": "windows-system:audit-snapshot/powershell-policy",
+      "when": "2026-06-25T00:10:00Z",
+      "what": "PowerShell transcription policy and protected output ACL metadata evaluated",
+      "evidenceRef": "windows/powershell-transcription.metadata.json",
+      "control": {
+        "contractVersion": "faz24.windows-audit-control.v1",
+        "expected": {"queryOk": true, "policyEnabled": true, "invocationHeaderEnabled": true, "protectedOutputAcl": true, "protectedSnapshotDirectoryAcl": true, "protectedSnapshotFileAcl": true},
+        "observed": {"queryOk": true, "policyEnabled": true, "invocationHeaderEnabled": true, "protectedOutputAcl": true, "protectedSnapshotDirectoryAcl": true, "protectedSnapshotFileAcl": true},
+        "verdict": "pass",
+        "source": {"kind": "windows-system-snapshot", "locator": "faz24-i3-audit-snapshot"},
+        "collectedAt": "2026-06-25T00:10:00Z",
+        "maxAgeSeconds": 900,
+        "ageSeconds": 0,
+        "fresh": true,
+        "errorClass": "none"
+      }
     },
     {
       "id": "powershell-script-block",
       "status": "pass",
-      "who": "svc-denetim-agent",
-      "when": "2026-06-25T00:02:20Z",
-      "what": "Script-block logging enabled; metadata hash recorded, command text omitted",
-      "evidenceRef": "windows/powershell-scriptblock-metadata.json"
+      "who": "windows-system:audit-snapshot/powershell-events",
+      "when": "2026-06-25T00:10:00Z",
+      "what": "Script-block logging metadata eventCount=2; content omitted",
+      "evidenceRef": "windows/powershell-script-block.metadata.json",
+      "control": {
+        "contractVersion": "faz24.windows-audit-control.v1",
+        "expected": {"queryOk": true, "policyEnabled": true, "minimumEventCount": 1},
+        "observed": {"queryOk": true, "policyEnabled": true, "eventCount": 2},
+        "verdict": "pass",
+        "source": {"kind": "windows-system-snapshot", "locator": "faz24-i3-audit-snapshot"},
+        "collectedAt": "2026-06-25T00:10:00Z",
+        "maxAgeSeconds": 900,
+        "ageSeconds": 0,
+        "fresh": true,
+        "errorClass": "none"
+      }
     },
     {
       "id": "failed-login",
       "status": "pass",
-      "who": "Windows Security log",
-      "when": "2026-06-25T00:03:00Z",
-      "what": "Failed SSH/Windows logon count exported as metadata",
-      "evidenceRef": "windows/failed-logons-summary.json"
+      "who": "windows-system:audit-snapshot/security-audit",
+      "when": "2026-06-25T00:10:00Z",
+      "what": "Security log query succeeded with failedLogonCount=0; identities omitted",
+      "evidenceRef": "windows/failed-login.metadata.json",
+      "control": {
+        "contractVersion": "faz24.windows-audit-control.v1",
+        "expected": {"securityLogQueryable": true, "auditFailureEnabled": true},
+        "observed": {"securityLogQueryable": true, "auditFailureEnabled": true, "eventCount": 0},
+        "verdict": "pass",
+        "source": {"kind": "windows-system-snapshot", "locator": "faz24-i3-audit-snapshot"},
+        "collectedAt": "2026-06-25T00:10:00Z",
+        "maxAgeSeconds": 900,
+        "ageSeconds": 0,
+        "fresh": true,
+        "errorClass": "none"
+      }
     },
     {
       "id": "wireguard-health",
       "status": "pass",
-      "who": "denetim-pc WireGuard",
-      "when": "2026-06-25T00:04:00Z",
-      "what": "WG peer handshake age and rx/tx deltas inside threshold",
-      "evidenceRef": "windows/wireguard-health.json"
+      "who": "windows-system:audit-snapshot/wireguard",
+      "when": "2026-06-25T00:10:00Z",
+      "what": "WireGuard metadata interfaces=1 peers=1 latestHandshakeAgeSeconds=20",
+      "evidenceRef": "windows/wireguard-health.metadata.json",
+      "control": {
+        "contractVersion": "faz24.windows-audit-control.v1",
+        "expected": {"queryOk": true, "minimumRunningServiceCount": 1, "minimumInterfaceCount": 1, "minimumPeerCount": 1, "maximumHandshakeAgeSeconds": 300},
+        "observed": {"queryOk": true, "dumpExitCode": 0, "runningServiceCount": 1, "interfaceCount": 1, "peerCount": 1, "latestHandshakeAgeSeconds": 20},
+        "verdict": "pass",
+        "source": {"kind": "windows-system-snapshot", "locator": "faz24-i3-audit-snapshot"},
+        "collectedAt": "2026-06-25T00:10:00Z",
+        "maxAgeSeconds": 900,
+        "ageSeconds": 0,
+        "fresh": true,
+        "errorClass": "none"
+      }
     },
     {
       "id": "eset-firewall-drift",
       "status": "pass",
-      "who": "denetim-pc firewall policy",
-      "when": "2026-06-25T00:05:00Z",
-      "what": "ESET/WFP/firewall allow rules match expected WG-only management surface",
-      "evidenceRef": "windows/firewall-eset-drift.json"
+      "who": "windows-system:audit-snapshot/firewall-eset",
+      "when": "2026-06-25T00:10:00Z",
+      "what": "Firewall/ESET metadata expectedRules=3/3 broadConflicts=0",
+      "evidenceRef": "windows/eset-firewall-drift.metadata.json",
+      "control": {
+        "contractVersion": "faz24.windows-audit-control.v1",
+        "expected": {"queryOk": true, "expectedRuleCount": 3, "minimumEsetCoreRunningCount": 2},
+        "observed": {"queryOk": true, "expectedRuleCount": 3, "expectedRuleMatchCount": 3, "broadConflictCount": 0, "esetCoreRunningCount": 2},
+        "verdict": "pass",
+        "source": {"kind": "windows-system-snapshot", "locator": "faz24-i3-audit-snapshot"},
+        "collectedAt": "2026-06-25T00:10:00Z",
+        "maxAgeSeconds": 900,
+        "ageSeconds": 0,
+        "fresh": true,
+        "errorClass": "none"
+      }
     },
     {
       "id": "time-sync",
       "status": "pass",
-      "who": "denetim-pc w32time",
-      "when": "2026-06-25T00:06:00Z",
-      "what": "Clock offset is within audit correlation threshold",
-      "evidenceRef": "windows/time-sync.json"
+      "who": "windows-system:audit-snapshot/time-service",
+      "when": "2026-06-25T00:10:00Z",
+      "what": "Time-sync metadata serviceState=Running latestSuccessEventAgeSeconds=120",
+      "evidenceRef": "windows/time-sync.metadata.json",
+      "control": {
+        "contractVersion": "faz24.windows-audit-control.v1",
+        "expected": {"queryOk": true, "serviceState": "Running", "statusCommandExitCode": 0, "sourcePresent": true, "sourceSynchronized": true, "syncTypeConfigured": true, "maximumSuccessEventAgeSeconds": 86400},
+        "observed": {"queryOk": true, "serviceState": "Running", "statusCommandExitCode": 0, "sourcePresent": true, "sourceSynchronized": true, "syncTypeConfigured": true, "latestSuccessEventAgeSeconds": 120},
+        "verdict": "pass",
+        "source": {"kind": "windows-system-snapshot", "locator": "faz24-i3-audit-snapshot"},
+        "collectedAt": "2026-06-25T00:10:00Z",
+        "maxAgeSeconds": 900,
+        "ageSeconds": 0,
+        "fresh": true,
+        "errorClass": "none"
+      }
     },
     {
       "id": "staging-connection-log",
       "status": "pass",
-      "who": "staging-sw sshd/WireGuard",
-      "when": "2026-06-25T00:07:00Z",
-      "what": "Staging-side connection log correlates WG peer and SSH session metadata",
-      "evidenceRef": "staging/connection-log.json"
+      "who": "linux-management-plane:ssh-wireguard-correlation",
+      "when": "2026-06-25T00:10:00Z",
+      "what": "Staging metadata correlates Denetim SSH attempt with WireGuard peer state",
+      "evidenceRef": "staging/connection-log.metadata.json",
+      "control": {
+        "contractVersion": "faz24.windows-audit-control.v1",
+        "expected": {"remoteCollectorReached": true, "journalQueryable": true, "minimumJournalMatchCount": 1, "auditRecordWritten": true, "journalSinceAttemptStart": true, "maximumCorrelationWindowSeconds": 180, "sshSocketQueryable": true, "wireGuardQueryable": true, "minimumPeerCount": 1, "routeUsesSelectedWireGuardInterface": true},
+        "observed": {"remoteCollectorReached": true, "journalQueryable": true, "journalMatchCount": 1, "auditRecordWritten": true, "journalSinceAttemptStart": true, "correlationWindowSeconds": 1, "wireGuardQueryable": true, "peerCount": 1, "sshSocketQueryable": true, "sshSocketCount": 1, "routeUsesSelectedWireGuardInterface": true},
+        "verdict": "pass",
+        "source": {"kind": "linux-management-metadata", "locator": "staging-management-plane"},
+        "collectedAt": "2026-06-25T00:10:00Z",
+        "maxAgeSeconds": 900,
+        "ageSeconds": 0,
+        "fresh": true,
+        "errorClass": "none"
+      }
     }
   ]
 }

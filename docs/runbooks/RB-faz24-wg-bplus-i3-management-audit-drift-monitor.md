@@ -1,136 +1,162 @@
 # RB-faz24-wg-bplus-i3-management-audit-drift-monitor
 
-> Scope: `platform-k8s-gitops#1864` / Faz 24 WG-B+ I3. This runbook defines
-> metadata-only management audit and drift-monitor evidence for the
-> WireGuard-canonical Denetim PC management plane. It does not enable
-> direct-STT and does not prove `platform-ai#198` app-mTLS reachability.
+> Scope: [#1864](https://github.com/Halildeu/platform-k8s-gitops/issues/1864)
+> / [#2434](https://github.com/Halildeu/platform-k8s-gitops/issues/2434) /
+> Faz 24 WG-B+ I3. This runbook proves the Denetim Windows management-audit
+> controls without making the SSH transport account an administrator. It does
+> not prove direct-STT, app-mTLS, product quality, pilot acceptance, or any
+> production gate.
 
-## 1. Acceptance Boundary
+## 1. Current Boundary
 
-I3 acceptance is a management-plane auditability gate. A valid evidence bundle
-proves:
+The canonical path has two identities:
 
-- who used the management path,
-- when it happened,
-- what class of operation occurred,
-- whether the expected monitoring surfaces are active,
-- and that the exported evidence contains no secret, raw audio, transcript, or
-  command/script content.
-
-It does not prove:
-
-- product remote-ops acceptance,
-- direct audio e2e,
-- Denetim `8243` app-mTLS reachability,
-- or any production cutover gate.
-
-## 2. Required Evidence Surfaces
-
-The evidence bundle must carry these eight checks with `status: pass`:
-
-| Check id | Source | Required metadata |
+| Identity | Allowed role | Explicitly not allowed |
 |---|---|---|
-| `openssh-event-log` | Denetim PC OpenSSH Operational log | user, source WG peer, accepted/denied class, timestamp |
-| `powershell-transcription` | Protected transcription path | enabled state, file metadata, ACL, timestamp |
-| `powershell-script-block` | PowerShell 4104/script-block metadata | event count/hash metadata only, no command text |
-| `failed-login` | Windows Security/OpenSSH failure summary | count, time window, source class |
-| `wireguard-health` | Denetim WireGuard peer status | latest handshake age, rx/tx deltas |
-| `eset-firewall-drift` | Windows Firewall/WFP/ESET policy | expected WG-only allow surface, drift status |
-| `time-sync` | `w32tm` / NTP status | clock offset within audit correlation threshold |
-| `staging-connection-log` | `staging-sw` sshd/WireGuard logs | source/target metadata correlation |
+| `SYSTEM` scheduled task | Read protected policies/logs/services/firewall and atomically write the bounded snapshot | Network transport, GitHub access, raw evidence export |
+| `svc-denetim-agent` | Read the bounded snapshot over the existing WireGuard + SSH path | Administrator membership; policy, Security log, WireGuard, firewall, scheduled-task, transcript or snapshot writes |
 
-The verifier enforces `who`, `when`, `what`, and `evidenceRef` on each check.
+This split implements least privilege. Adding `svc-denetim-agent` to local
+Administrators, granting it firewall/task/policy mutation rights, or restoring
+direct protected-log queries is not an accepted shortcut.
 
-## 3. Evidence Contract
+The source contract is fail closed:
 
-Write a JSON file using schema `faz24.wg-bplus.i3.audit.v1`:
+- missing or malformed snapshot: fail,
+- unknown contract/schema: fail,
+- age above canonical `900` seconds at validation time: fail,
+- artifact-declared thresholds that differ from canonical policy: fail,
+- non-`none` error class: fail,
+- status/verdict mismatch: fail,
+- a syntactically passing but semantically weak observation: fail.
 
-```json
-{
-  "schemaVersion": "faz24.wg-bplus.i3.audit.v1",
-  "collectedAt": "2026-06-25T00:10:00Z",
-  "protectedEvidencePath": "\\\\denetim-pc\\protected-audit$\\faz24\\i3\\2026-06-25T001000Z",
-  "retentionDays": 90,
-  "acl": {
-    "mode": "protected",
-    "readers": ["platform-ops-audit"],
-    "writers": ["svc-denetim-agent"]
-  },
-  "redaction": {
-    "rawAudioIncluded": false,
-    "rawTranscriptIncluded": false,
-    "secretMaterialIncluded": false,
-    "commandContentIncluded": false
-  },
-  "checks": [
-    {
-      "id": "openssh-event-log",
-      "status": "pass",
-      "who": "svc-denetim-agent",
-      "when": "2026-06-25T00:01:00Z",
-      "what": "OpenSSH publickey session accepted from WG peer",
-      "evidenceRef": "windows/OpenSSH-Operational.evtx.jsonl"
-    }
-  ]
-}
-```
+## 2. Required Controls
 
-The real bundle includes all eight required check ids. The check `what` field
-must describe the operation class, not the raw command or script content.
+The bundle schema is `faz24.wg-bplus.i3.audit.v2`. Every check carries
+`control.contractVersion=faz24.windows-audit-control.v1` and these fields:
 
-## 4. Redaction Rules
+- `expected`: declared machine-readable threshold,
+- `observed`: bounded machine-readable measurement,
+- `verdict`: `pass` or `fail`,
+- `source.kind` and `source.locator`,
+- `collectedAt`, `maxAgeSeconds`, `ageSeconds`, `fresh`,
+- `errorClass`.
 
-Allowed:
+| Check id | Required semantic proof |
+|---|---|
+| `openssh-event-log` | OpenSSH Operational log query succeeds and the lookback contains at least one event |
+| `powershell-transcription` | Transcription and invocation header are enabled; transcript, snapshot directory and snapshot file ACLs exactly restrict write access to SYSTEM/Administrators and give the transport account read-only access only to the snapshot |
+| `powershell-script-block` | Script-block policy is enabled, log query succeeds and at least one 4104 event exists; content is omitted |
+| `failed-login` | Security log is queryable and native Windows Logon failure-audit bit is enabled; zero 4625 events is valid |
+| `wireguard-health` | `wg show all dump` succeeds, tunnel service/interface/peer exist and latest handshake is within threshold |
+| `eset-firewall-drift` | All WireGuard-scoped rules exactly match Enabled/Direction/Action/Protocol/LocalPort/RemoteAddress/Profile/LocalAddress/Program/Service, broad inbound conflicts are zero, and ESET core services are running |
+| `time-sync` | `w32time` is running, status/source queries succeed, the language-independent registry sync type is one of `NTP`/`NT5DS`/`AllSync`, the source is not local/free-running, and a Time-Service success event is fresh |
+| `staging-connection-log` | The exact canonical target is reached, its route-device hash equals the selected WireGuard-interface hash, staging WireGuard metadata has at least one peer, socket query is available, and a metadata-only audit record matches only the current SSH attempt's random correlation id within 180 seconds |
 
-- usernames, hostnames, source/target IPs, ports, timestamps,
-- event ids, event counts, status names, rule names,
-- SHA-256 hashes of protected transcript/script-block files,
-- relative evidence references under the protected evidence path.
+The verifier checks values, not only labels. For example, a check cannot pass
+with `broadConflictCount>0`, an absent handshake, a stale time event, or a
+failed-login count whose audit policy was not proven.
 
-Not allowed:
+## 3. Redaction Contract
 
-- passwords, tokens, JWTs, cookies, Vault secret ids, private keys,
-- raw PowerShell command lines,
-- script-block text,
-- transcript text,
-- raw audio bytes/base64,
-- transcribed meeting content.
+Allowed in the exported bundle:
 
-If raw protected files must be retained for audit, keep them only under the
-protected path with restricted ACL and reference them by metadata/hash in the
-JSON contract.
+- bounded counts, booleans, timestamps, exit codes and error classes,
+- stable hashes for target/path correlation,
+- fixed control/rule/log source names,
+- relative evidence references.
 
-## 5. Collection Commands
+Never export:
 
-### 5.0 Operator Handoff Coordination Package
+- passwords, cookies, JWT/bearer values, private keys or certificates,
+- event messages, user identities from Security events or raw event records,
+- PowerShell command/script/transcript contents,
+- WireGuard private/public keys or endpoint addresses from `wg dump`,
+- audio, transcript or meeting content,
+- raw SSH stderr.
 
-When #1864 I3 and #1867 I6 are being handed to an operator together, build the
-metadata-only coordination artifact first:
+The local transcript directory remains readable only by SYSTEM and local
+Administrators. `svc-denetim-agent` receives read-only access to the snapshot
+directory, not to transcripts or privileged logs.
+
+## 4. Build The Operator Package
+
+From canonical `main` after the source PR is merged:
 
 ```bash
-gh workflow run faz24-wg-bplus-operator-handoff.yml \
+gh workflow run faz24-i3-denetim-audit-controls-package.yml \
   --repo Halildeu/platform-k8s-gitops \
-  --ref main
+  --ref main \
+  -f target_user=svc-denetim-agent \
+  -f management_address=10.99.0.1
 ```
 
-The uploaded artifact is `faz24-wg-bplus-operator-handoff-<run_id>`. It
-contains only `README.md`, `faz24-wg-bplus-operator-handoff.json`, and
-`SHA256SUMS`. It does not connect to Denetim PC or `staging-sw`, does not
-collect live evidence, and does not change host, cluster, WireGuard,
-platform-ai, secret, or production state.
+Download `RESTRICTED-faz24-i3-denetim-audit-controls-<run_id>` and verify every
+entry in `SHA256SUMS` before copying it to Denetim PC. The artifact is a
+restricted operator configuration: it contains target identity metadata but no
+secret material, has one-day Actions retention, and must not be posted to an
+issue, chat or public file store. The package contains:
 
-Use the handoff artifact to keep the exact I3 package run id, public-key
-fingerprint/hash values, I3 ingest command, I3 evidence rerun command, and I6
-operator package command together. The handoff artifact is not acceptance
-evidence; #1864 still requires Denetim operator execution, Denetim authorize
-evidence ingest PASS, I3 evidence verifier PASS, and reviewer acceptance.
+- `collect-audit-snapshot.ps1`,
+- `install-audit-controls.ps1`,
+- `rollback-audit-controls.ps1`,
+- `baseline.json`,
+- `package-manifest.json`,
+- `README.md`,
+- `SHA256SUMS`.
 
-### 5.1 Preferred self-hosted workflow path
+Building the artifact does not connect to or mutate Denetim PC.
 
-Use the self-hosted `staging-sw` runner first. The workflow collects a
-metadata-only JSON bundle, validates it with the repository verifier, uploads
-the evidence artifact, and intentionally fails when any required I3 check is
-not proven.
+## 5. Elevated Apply And Rollback
+
+Run only from an approved elevated local PowerShell 5.1 session. Do not run
+from a network share.
+
+First apply the policies, exact rules, protected ACLs and SYSTEM task without
+disabling pre-existing broad rules:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\install-audit-controls.ps1 `
+  -Mode Apply
+```
+
+`Apply` captures the initial registry, advanced audit policy, exact firewall
+rule existence, scheduled task and ACL state before mutation. It seeds the
+first snapshot, reapplies the exact protected ACL to the new file and then
+collects a second snapshot so directory/file ACL proof comes from live state.
+It is idempotent.
+If a reserved exact rule already exists, its address/port semantics must match
+exactly; the package never rewrites it. Rollback removes only exact rules that
+did not exist before Apply. A non-zero result with
+`broad-firewall-conflicts-require-separate-reviewed-remediation` means an old
+inbound `Any` rule still covers `22`, `8200` or `8243`. Stop before mutation and
+open a separate reviewed operation that identifies rule owner, dependencies,
+impact and its own rollback. This package has no broad-rule disable switch.
+
+Validate the generated snapshot:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\install-audit-controls.ps1 `
+  -Mode Validate
+```
+
+Rollback restores the initial captured state:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\rollback-audit-controls.ps1
+```
+
+Rollback is mandatory if SSH/WireGuard/STT/mTLS connectivity regresses, the
+SYSTEM task cannot produce a bounded snapshot, or an exact rule blocks an
+approved management path. After rollback, collect fresh connectivity evidence
+before attempting another apply.
+
+## 6. Repository Evidence Run
+
+After elevated validation succeeds, rerun the self-hosted collector:
 
 ```bash
 gh workflow run faz24-wg-bplus-i3-evidence.yml \
@@ -141,270 +167,70 @@ gh workflow run faz24-wg-bplus-i3-evidence.yml \
   -f wg_interface=auto
 ```
 
-The artifact name is `faz24-wg-bplus-i3-evidence-<run_id>`. Its
-`protectedEvidencePath` is the GitHub Actions artifact URI for that run. A red
-workflow conclusion is still useful blocker evidence when the uploaded bundle
-shows which management-audit surface is missing. Do not override a verifier
-failure manually.
+The self-hosted `staging-sw` runner uses the existing private key locally. The
+artifact records only key/path fingerprints and target hashes. A failed
+workflow still uploads blocker evidence; never override its verifier result.
 
-When Denetim SSH exits non-zero, read `collector.denetimSshPreflight` before
-changing any host config. This field is metadata-only and may include:
-
-- `routeQueryable` / `routeExitCode` for the runner route probe,
-- `tcp22Reachable` / `tcp22ErrorClass` for TCP 22 reachability,
-- `sshExitCode` / `sshFailureClass` for the real metadata-collector SSH
-  attempt,
-- `sshErrorFingerprint` for correlating repeated failures without exporting
-  raw SSH stderr.
-
-The preflight metadata does not make I3 acceptable by itself. It only narrows
-the next action, for example `ssh-auth-publickey` versus `ssh-timeout` versus
-`ssh-hostkey`. The evidence bundle must still pass all eight checks before
-`platform-k8s-gitops#1864` can move forward.
-
-If the preflight reports `sshFailureClass=ssh-auth-publickey`, first ensure the
-self-hosted runner has the deterministic Faz 24 I3 SSH identity available:
-
-```bash
-gh workflow run faz24-i3-runner-ssh-identity.yml \
-  --repo Halildeu/platform-k8s-gitops \
-  --ref main \
-  -f mode=create \
-  -f confirm=CREATE_FAZ24_I3_DENETIM_SSH_IDENTITY
-```
-
-The uploaded artifact is `faz24-i3-runner-ssh-identity-<run_id>`. It contains
-`ssh-identity.json` and a copy of the public key only. The private key remains
-runner-local and must not be copied into issue comments, artifacts, Mavis,
-email, or chat. The Denetim PC must still authorize the uploaded public key
-for `svc-denetim-agent`; the workflow does not change Denetim PC, clusters,
-direct-STT, app-mTLS, or production state.
-
-Build the Denetim-side public-key authorization package from that identity
-artifact:
-
-```bash
-gh workflow run faz24-i3-denetim-ssh-authorize-package.yml \
-  --repo Halildeu/platform-k8s-gitops \
-  --ref main \
-  -f identity_run_id=<faz24-i3-runner-ssh-identity-run-id> \
-  -f target_user=svc-denetim-agent
-```
-
-The uploaded artifact is
-`faz24-i3-denetim-ssh-authorize-package-<run_id>`. It contains only:
-
-- `authorize-denetim-i3-public-key.ps1`
-- `faz24-i3-denetim_ed25519.pub`
-- `expected-public-key-metadata.json`
-- `README.md`
-- `SHA256SUMS`
-
-Boundary: the package workflow does not connect to Denetim PC and does not
-change Denetim host config. It is public-key-only and rejects private key
-material. A Denetim operator must copy the package to the Denetim PC, extract
-it to a local directory, and run the PowerShell script from an elevated session:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\authorize-denetim-i3-public-key.ps1 `
-  -TargetUser svc-denetim-agent
-```
-
-If the package reports `target-user-not-found:svc-denetim-agent`, rerun from
-the same elevated local Denetim directory with the explicit bootstrap flags:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass `
-  -File .\authorize-denetim-i3-public-key.ps1 `
-  -TargetUser svc-denetim-agent `
-  -CreateTargetUser `
-  -GrantEventLogReaders
-```
-
-Bootstrap mode creates the dedicated local account with a random non-exported
-password, keeps it non-admin, grants Event Log Readers for metadata collection,
-prepares the `.ssh` directory when Windows has not created the profile yet, and
-records only hashes/boolean state in `denetim-i3-ssh-authorize-evidence.json`.
-Without `-CreateTargetUser`, a missing target user remains a fail-closed
-condition.
-
-Do not run it from a network share. The script is idempotent: it validates the
-public key fingerprint and SHA256, resolves the local `svc-denetim-agent`
-profile, appends the key only when the key material is absent, sets the file
-owner to the target user, hardens `.ssh` and `authorized_keys` ACLs to the
-target user and SYSTEM with FullControl plus Administrators read-only access,
-requires `sshd` service status to be `Running`, and writes
-`denetim-i3-ssh-authorize-evidence.json`. This evidence file is not acceptance
-by itself; it is the Denetim-side authorization proof needed before the I3
-collector can reach the endpoint.
-
-Before rerunning the I3 evidence workflow, ingest the Denetim-side metadata
-evidence through the verifier workflow. The JSON is metadata-only and must not
-contain a raw public key, private key, bearer token, command content, or raw
-Windows profile path.
-
-From the elevated Denetim PowerShell session:
-
-```powershell
-$EvidenceB64 = [Convert]::ToBase64String(
-  [IO.File]::ReadAllBytes((Resolve-Path .\denetim-i3-ssh-authorize-evidence.json))
-)
-$EvidenceB64
-```
-
-Dispatch the ingest workflow with that single-line value:
-
-```bash
-gh workflow run faz24-i3-denetim-ssh-authorize-evidence-ingest.yml \
-  --repo Halildeu/platform-k8s-gitops \
-  --ref main \
-  -f evidence_json_base64='<single-line-base64-from-denetim>' \
-  -f expected_target_user=svc-denetim-agent \
-  -f expected_public_key_fingerprint='SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y' \
-  -f expected_public_key_line_sha256='83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff' \
-  -f expected_public_key_blob_sha256='e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756'
-```
-
-The uploaded artifact is
-`faz24-i3-denetim-ssh-authorize-evidence-<run_id>`. It contains the normalized
-metadata evidence, verifier stdout/stderr, and `verification-summary.json`.
-Boundary: a passing ingest only proves the Denetim-side authorization evidence
-is structurally acceptable. It does not make #1864 acceptable by itself and it
-does not replace the I3 evidence verifier.
-
-After Denetim authorization, rerun `faz24-wg-bplus-i3-evidence.yml`. The
-workflow passes the same runner-workspace identity path to the collector and
-records only path hash plus public-key fingerprint metadata under
-`collector.denetimSshPreflight`. Manual collector runs still default to
-`~/.ssh/faz24-i3-denetim_ed25519` unless `--ssh-identity-path` is set.
-
-Use `wg_interface=auto` unless the staging host's WireGuard interface is
-already confirmed. Auto mode runs `wg show interfaces` with the same
-non-interactive `sudo -n` fallback as the per-interface metadata probes and
-records only interface/probe metadata in the JSON bundle.
-
-If the evidence artifact reports `wgToolFound=false`, repair only the
-self-hosted runner prerequisite first:
-
-```bash
-gh workflow run faz24-i3-runner-wg-tool-repair.yml \
-  --repo Halildeu/platform-k8s-gitops \
-  --ref main \
-  -f mode=install \
-  -f confirm=INSTALL_WIREGUARD_TOOLS_FOR_FAZ24_I3 \
-  -f package_manager=auto
-```
-
-Boundary: this workflow is a controlled host prerequisite repair for
-`staging-sw` only. It may install `wireguard-tools` when the confirmation token
-matches. It does not touch Denetim PC config, clusters, direct-STT, app-mTLS, or
-production state. If it installed the package, rollback is host package-manager
-removal after confirming no other runner job depends on `wg`.
-
-### 5.2 Manual fallback
-
-Run these from an elevated Denetim PC PowerShell session or an approved
-operator automation wrapper. Do not paste secrets into the shell.
-
-OpenSSH Operational metadata:
-
-```powershell
-$since = (Get-Date).ToUniversalTime().AddHours(-2)
-Get-WinEvent -LogName 'OpenSSH/Operational' |
-  Where-Object { $_.TimeCreated.ToUniversalTime() -ge $since } |
-  Select-Object TimeCreated, Id, ProviderName, MachineName, LevelDisplayName |
-  ConvertTo-Json -Depth 4
-```
-
-PowerShell transcription metadata:
-
-```powershell
-$transcriptRoot = '\\denetim-pc\protected-audit$\PowerShellTranscripts'
-Get-ChildItem -Path $transcriptRoot -Recurse -File |
-  Sort-Object LastWriteTimeUtc -Descending |
-  Select-Object -First 20 FullName, Length, CreationTimeUtc, LastWriteTimeUtc |
-  ConvertTo-Json -Depth 4
-```
-
-PowerShell script-block metadata without command content:
-
-```powershell
-Get-WinEvent -LogName 'Microsoft-Windows-PowerShell/Operational' |
-  Where-Object { $_.Id -in 4103,4104 -and $_.TimeCreated.ToUniversalTime() -ge $since } |
-  Select-Object TimeCreated, Id, ProviderName, MachineName, LevelDisplayName |
-  ConvertTo-Json -Depth 4
-```
-
-Failed-login summary:
-
-```powershell
-Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625; StartTime=(Get-Date).AddHours(-2)} |
-  Group-Object ProviderName |
-  Select-Object Name, Count |
-  ConvertTo-Json -Depth 4
-```
-
-Firewall/WFP/ESET drift metadata:
-
-```powershell
-Get-NetFirewallRule |
-  Where-Object { $_.DisplayName -match 'WireGuard|OpenSSH|Caddy|8243|8200' } |
-  Select-Object DisplayName, Enabled, Direction, Action, Profile |
-  ConvertTo-Json -Depth 4
-```
-
-Time sync:
-
-```powershell
-w32tm /query /status
-w32tm /stripchart /computer:time.windows.com /samples:5 /dataonly
-```
-
-WireGuard health:
-
-```powershell
-# Do not copy full raw output into the JSON evidence. Derive metadata:
-# interface, latest-handshake age, endpoint class, rx/tx byte deltas.
-wg show | Select-String 'interface:|endpoint:|latest handshake:|transfer:'
-```
-
-On `staging-sw`, capture only connection metadata:
-
-```bash
-sudo journalctl -u ssh --since "2 hours ago" --no-pager |
-  rg 'svc-denetim-agent|10\.99\.0\.2|Accepted|Failed' || true
-# Avoid attaching raw wg output. Keep derived metadata only; shorten peer ids.
-sudo wg show wg0 latest-handshakes | awk '{print "peer_prefix=" substr($1,1,12) " latest_handshake=" $2}'
-sudo wg show wg0 transfer | awk '{print "peer_prefix=" substr($1,1,12) " rx_bytes=" $2 " tx_bytes=" $3}'
-sudo wg show wg0 endpoints | awk '{print "peer_prefix=" substr($1,1,12) " endpoint=" $2}'
-ss -Htn state established '( sport = :22 or dport = :22 )' || true
-```
-
-## 6. Verification
-
-Validate the final metadata JSON before attaching or referencing it:
+Run the verifier locally only against the downloaded bounded JSON:
 
 ```bash
 python3 scripts/faz24/verify-wg-bplus-i3-evidence.py \
-  docs/faz-24-evidence/<date>-wg-bplus-i3-management-audit.json
+  /protected/path/wg-bplus-i3-evidence.json
 ```
 
-Expected output shape:
+## 7. Acceptance Sequence
 
-```text
-Faz24 WG-B+ I3 evidence: PASS
-- openssh-event-log: who=... when=... what=...
-- powershell-transcription: who=... when=... what=...
-```
+All of the following are required for bounded I3 review:
 
-Any finding from the verifier means the bundle is not acceptable for #1864.
+1. Restricted package was built from exact canonical `main`; its one-day
+   artifact was handled as identity-bearing configuration and `SHA256SUMS`
+   passed.
+2. Elevated `Apply` captured rollback state before mutation.
+3. Elevated `Validate` reported zero failed controls.
+4. `svc-denetim-agent` remains non-admin and cannot write the snapshot.
+5. Fresh self-hosted evidence workflow completed successfully.
+6. Artifact schema v2 passed the semantic verifier and redaction scan.
+7. Reviewer accepted the bounded evidence on #1864/#2434.
 
-## 7. Follow-up Status
+Passing I3 does not advance direct-STT, I7, product-value, legal, pilot or
+production acceptance by implication.
 
-After verifier PASS:
+## 8. Standards And Product Posture
 
-1. Attach or reference the protected evidence path in `platform-k8s-gitops#1864`.
-2. Add an `EVIDENCE` comment with verifier output and the no-leak boundary.
-3. Move the issue to `Needs Verify` only if no I3 drift remains.
-4. Do not mark I7/#198, #188, or #182 based on this management-plane evidence.
+This control set is vendor-neutral and maps to commonly used enterprise
+expectations:
+
+| Practice | Mapping applied here |
+|---|---|
+| NIST SP 800-53 AC-6 | Privileged collection is separated from read-only transport |
+| NIST SP 800-53 AU-2/AU-3/AU-6 | Defined event sources, bounded evidence fields and machine evaluation |
+| NIST SP 800-53 CM-3/CM-6 | Versioned baseline, drift checks, deliberate apply and rollback |
+| CIS/Microsoft Windows security baseline | PowerShell logging, failed-logon auditing, host firewall and time service checks |
+| SOC 2 CC6/CC7 engineering evidence | Access restriction, monitored changes, fresh and reviewable evidence |
+
+Enterprise meeting products commonly expose administrative audit/compliance
+surfaces. Faz 24 does not copy a vendor-specific model: the evidence contract
+is reusable across ERP/CRM integrations and audio sources, while product
+quality, privacy and operational gates remain independent. Workcube can be a
+pilot vocabulary/integration context but is not embedded as a product
+dependency in this control plane.
+
+## 9. Troubleshooting
+
+| Evidence | Interpretation | Next action |
+|---|---|---|
+| `sshFailureClass=ssh-auth-publickey` | Transport identity not authorized | Use the existing public-key-only I3 authorization package; never export the private key |
+| `snapshot-control-missing` | SYSTEM task wrote an incomplete contract | Inspect local task history and collector hash; do not loosen verifier |
+| `stale-or-invalid-snapshot` | Task stopped or snapshot exceeded 15 minutes | Repair SYSTEM task execution and collect a new snapshot |
+| `broadConflictCount>0` or broad-conflict preflight error | Existing Any-source inbound rule still covers protected ports | Stop package Apply; use a separate reviewed remediation with owner/dependency evidence and independent rollback |
+| failed-login count `0` with both proofs true | No failures in lookback | Valid; do not synthesize an event |
+| `auditFailureEnabled=false` | Windows failure-audit bit is disabled | Re-apply elevated package; verify native audit policy |
+| handshake age above threshold | WireGuard peer is stale | Repair tunnel/keepalive before rerun |
+| time event stale, `syncTypeConfigured=false`, source absent or `sourceSynchronized=false` | Audit timestamp correlation is weak, `NoSync`, or bound to a local/free-running clock | Repair w32time/upstream source, set a supported sync type and wait for a fresh ID 35 success event |
+| `routeUsesSelectedWireGuardInterface=false` | TCP/22 may be reachable outside the canonical WireGuard management path | Repair route selection/interface binding; do not accept generic reachability |
+| current-attempt audit record missing or socket query unavailable | Staging proof came from an old/unrelated journal line or could not inspect the path | Repair the metadata-only `logger`/`journalctl` or socket-query prerequisite; never widen the lookback to manufacture a pass |
+
+Do not use local-language event messages, human-formatted `wg show`, or
+non-empty command output as pass criteria. The implementation relies on event
+IDs, native audit-policy bits, tabular WireGuard dump fields, exact rule
+properties, service states, exit codes and numeric freshness thresholds.
