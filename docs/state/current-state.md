@@ -129,58 +129,109 @@ elevated `Validate`, rollback drill plus baseline connectivity proof, second
 reviewer acceptance on #1864/#2434. Source merge never closes those runtime
 gates by implication.
 
-## Live Delta — Faz 25 authorized ATS discovery surface promoted; authenticated acceptance pending (2026-07-15)
+## Live Delta — Faz 25 ATS Product Hub testai bounded acceptance (2026-07-15)
 
-This delta records the current immutable `testai` frontend lineage for
-[#2455](https://github.com/Halildeu/platform-k8s-gitops/issues/2455) and keeps
-it separate from the older P5 acceptance snapshot below. It does not claim
-that every authorized role has completed live acceptance and does not close
-the Full ATS parent, Faz 25 or any production/human gate.
+This delta records the current immutable `testai` source, rollout and protected
+authenticated acceptance for
+[#2463](https://github.com/Halildeu/platform-k8s-gitops/issues/2463), following
+the earlier discovery work under
+[#2455](https://github.com/Halildeu/platform-k8s-gitops/issues/2455). It proves
+one named non-superadmin VIEW persona can discover the safe permanent Product
+Hub and launch the separate Interview Evidence workspace. It does not claim a
+live journey for every authorized role and does not close the Full ATS parent,
+Faz 25 or any production/human gate.
 
-Current source and runtime truth:
+Current source, build and rollout truth:
 
+- The earlier `platform-web` PR
+  [#918](https://github.com/Halildeu/platform-web/pull/918) source
+  `7a764fe91deed655a83f44af7bc15d97481ee29d` received its own successful
+  protected acceptance in run
+  [29449026157](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29449026157)
+  on exact GitOps main `044ca5e9c6cf797c4877a3591f9a09880cfa536a`.
+  Artifact `8356717090` has GitHub artifact digest
+  `sha256:8f8673b4f2ff6c2ffa07f660587bb74780c9a94f78b9f6f36f66588298f8dc81`.
+  That is retained as exact historical evidence and is superseded for current
+  Product Hub lineage by the source below.
 - `platform-web` PR
-  [#918](https://github.com/Halildeu/platform-web/pull/918) merged source
-  `7a764fe91deed655a83f44af7bc15d97481ee29d`. It exposes the authorized ATS
-  entry through the desktop sidebar, HR mega menu, mobile HR drawer and global
-  command search. The route remains behind the outer authentication/module
-  guard; remote-off mode exposes only the safe product catalog and never a
-  live-write action.
+  [#921](https://github.com/Halildeu/platform-web/pull/921) merged source
+  `90768ed318ebfa547d2b3137aa317168f9c726d7`. `/admin/ats` is the permanent
+  authenticated Product Hub reached from the desktop sidebar, HR navigation,
+  390px mobile HR drawer and command search. The actual federated workspace
+  remains the explicit `/admin/interview-evidence` launch target.
 - Successful build run
-  [29444176456](https://github.com/Halildeu/platform-web/actions/runs/29444176456)
-  produced tag `sha-7a764fe` and immutable image digest
-  `sha256:a5c7444b55203ac752fe664bc86c2bb4217c9bbf4b7598493e7a0543c1321c5e`.
-  Its build artifact is `8354811686`, named
-  `Halildeu~platform-web~M3MVH6.dockerbuild`, with GitHub artifact digest
-  `sha256:28efa00e47891ecb5b0f5aa5a58c05c8bcb6a37ccc9b8d4004e649318cc39b4e`
-  and size `109522` bytes. The inspected OCI subject digest and VCS revision
-  match the image digest and source SHA.
+  [29451703189](https://github.com/Halildeu/platform-web/actions/runs/29451703189)
+  produced tag `sha-90768ed` and immutable image digest
+  `sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6`.
+  Build artifact `8357836615`, named
+  `Halildeu~platform-web~XWOTK5.dockerbuild`, has GitHub artifact digest
+  `sha256:4d571d1bc48c63902a11958da33205539085f59549a810f8c827b2d9a6192a56`
+  and size `108583` bytes. The redacted provenance receipt SHA-256 is
+  `bb61a7f1f453b733f721156cbc3f4666813f667164609192d73c40260b7d7d0f`.
 - GitOps PR
-  [#2456](https://github.com/Halildeu/platform-k8s-gitops/pull/2456) promoted
+  [#2466](https://github.com/Halildeu/platform-k8s-gitops/pull/2466) promoted
   only that tag+digest through `kustomize/overlays/test`; merge SHA is
-  `2e85b839ce1d80582a8b6821a6731d8bcc3a3b0c`. Canonical rollout run
-  [29446937247](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29446937247)
-  completed `success`: Argo was `Synced/Healthy` at the exact revision, the
-  sole ready frontend pod imageID matched the expected digest, the public
-  module entry passed and `build-info.json` reported source `7a764fe...`.
-  Rollout artifact `8355870516` has GitHub artifact digest
-  `sha256:86a304008a4c3df293b79d1a9f8b413ff0caa47b4e84a971bef495360ba5a79e`.
+  `8e5575caf2814c9e6489a3006ebdff4b22ca5004`. Canonical rollout run
+  [29453691508](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29453691508)
+  completed `success`: Argo was `Synced/Healthy`, the sole ready frontend pod
+  imageID matched the expected digest, the public module entry passed and
+  `build-info.json` reported source `90768ed...`. Rollout artifact
+  `8358541424` has GitHub artifact digest
+  `sha256:bd0845658d5e47538a8a28e12ad66bf86e6e91ba6d4ce4fd745f725325a45535`.
 
-Acceptance boundary and next evidence:
+Protected authenticated Product Hub acceptance:
 
-- Anonymous `/api/v1/authz/me` remains `401`, while the Interview Evidence
-  remote entry is publicly fetchable as static code. Static reachability is
-  not authorization or authenticated product acceptance.
-- The protected named-persona workflow has not yet produced a fresh artifact
-  for this new source/digest. The older successful P5 run below remains valid
-  only for its pinned older lineage; it is not carried forward by implication.
-- The next required evidence is a fresh protected-Environment run that binds
-  the exact VIEW-only persona, desktop sidebar, keyboard command search,
-  390px mobile HR drawer, real remote console, responsive/Axe checks and
-  pre/post cluster lineage into one content-addressed same-session manifest.
-- Pricing, payment and packaging remain outside this product-access slice.
-  Production, real candidate data, live writes, automated employment
-  decisions and Legal/DPO/owner/customer approvals remain separate gates.
+- The first protected run
+  [29453819441](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29453819441)
+  passed its named-persona browser and pre/post lineage children but failed
+  safe at the strict manifest gate. The test had sampled the conditional
+  candidate boundary after resetting its role filter to `all`. Diagnostic
+  artifact `8358588370` has GitHub artifact digest
+  `sha256:3c9cdf0f04e372e14a80188c3eae4f6f8b5393d75fb455a998cd1ae372add09f`.
+  PR [#2467](https://github.com/Halildeu/platform-k8s-gitops/pull/2467)
+  bound the measurement to the successful pre-reset assertion and added an
+  `assertion -> capture -> reset -> report` regression contract.
+- Operator-approved, test-only protected-Environment run (an execution gate,
+  not product-owner acceptance)
+  [29454571752](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29454571752)
+  then completed `success` on exact canonical `main`
+  `d81e7b60884924797a35e4a8448a914e1980394f`. Acceptance artifact
+  `8358856536`, named
+  `faz25-p5-acceptance-d81e7b60884924797a35e4a8448a914e1980394f-29454571752-1`,
+  has GitHub artifact digest
+  `sha256:afd86b66b8f642b341fce22c9874d72af8d0736685460d81d6c4c6a94215adb8`.
+  Independent download verification passed all `SHA256SUMS` and the strict
+  browser, pre-lineage, post-lineage and root-manifest schemas. Root manifest
+  SHA-256 is
+  `96cf04d713c988f98a060ff85c0a216e7ded0cb4c1e8ff4f17db75ef206cebac`.
+- The root manifest is `PASS` / `acceptance`; canonical main at start/end,
+  same-session pre/post lineage, in-run freshness, strict child schemas and
+  sensitive-value scan are all true. The browser, pre-lineage and post-lineage
+  child SHA-256 values are respectively
+  `451b7f3380d1e76cbc7bb7c082f71b88769f9ef5a14ed7e312ca4eb5efbb5c59`,
+  `26401d2452a340207bf051c57559992a3622d3de24eae4279f1d75e14a4a3693`
+  and
+  `2d31f7771edb6ad7bbce5e4a01c832986b801f97cfbe24ce4b6f19a3df86d747`.
+- The headless browser proves real Keycloak Authorization Code + PKCE for
+  named persona `p5-readiness-viewer`, exact VIEW-only authorization,
+  `superAdmin=false` and no MANAGE grant. No AI application window was used.
+  Desktop sidebar/search and 390px mobile reach `/admin/ats`; the hub renders
+  the exact nine capabilities and six target-role filters plus an `all` filter,
+  including a visible candidate safety boundary. CV PDF import remains
+  `OWNER_GATED`, with zero upload or interactive controls, and only the
+  explicit launch opens `/admin/interview-evidence`.
+- The launched workspace still renders four deployment profiles x eight
+  evidence gates with empty Owner cells, `ownerAcceptance=0/8`, no readiness
+  percentage and unavailable verifier/release actions. Hub/product/login Axe
+  blocking violations, observed horizontal overflow and uncaught page errors
+  are zero; the horizontal-overflow contract tolerates at most one pixel.
+
+Acceptance boundary: anonymous authorization still fails closed, static module
+reachability is not authorization, and this acceptance belongs only to the
+pinned `testai` Product Hub slice. Pricing, payment and packaging remain
+outside this product-access slice. Production, real candidate data or PDF/PII,
+live writes, automated employment decisions and Legal/DPO/owner/customer
+approvals remain separate gates.
 
 ## Live Delta — Faz 25 / P5 Readiness Console testai bounded non-closure acceptance (2026-07-15)
 
