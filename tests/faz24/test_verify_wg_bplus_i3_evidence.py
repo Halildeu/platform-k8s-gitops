@@ -161,7 +161,54 @@ class WgBplusI3EvidenceValidatorTest(unittest.TestCase):
             result = self.run_validator(Path(tmp.name))
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("broad inbound conflict count must be zero", result.stderr)
+        self.assertIn(
+            "unconstrained broad inbound hard-block count must be zero",
+            result.stderr,
+        )
+
+    def test_negative_constrained_broad_review_count_fails(self):
+        data = json.loads((FIXTURES / "wg-bplus-i3-valid.json").read_text(encoding="utf-8"))
+        firewall = next(check for check in data["checks"] if check["id"] == "eset-firewall-drift")
+        firewall["control"]["observed"]["constrainedBroadReviewCount"] = -1
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8") as tmp:
+            json.dump(data, tmp)
+            tmp.flush()
+            result = self.run_validator(Path(tmp.name))
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "constrained broad review count must be a non-negative integer",
+            result.stderr,
+        )
+
+    def test_constrained_broad_review_approval_count_must_match(self):
+        data = json.loads((FIXTURES / "wg-bplus-i3-valid.json").read_text(encoding="utf-8"))
+        firewall = next(check for check in data["checks"] if check["id"] == "eset-firewall-drift")
+        firewall["control"]["observed"]["constrainedBroadReviewCount"] = 2
+        firewall["control"]["observed"]["approvedConstrainedBroadReviewCount"] = 1
+
+        result = self.run_data(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "constrained broad review approval must match the observed count",
+            result.stderr,
+        )
+
+    def test_v1_control_contract_is_not_reused_as_v2_evidence(self):
+        data = json.loads((FIXTURES / "wg-bplus-i3-valid.json").read_text(encoding="utf-8"))
+        data["checks"][0]["control"]["contractVersion"] = (
+            "faz24.windows-audit-control.v1"
+        )
+
+        result = self.run_data(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "control.contractVersion must be 'faz24.windows-audit-control.v2'",
+            result.stderr,
+        )
 
     def test_zero_failed_login_count_is_valid_with_native_audit_proof(self):
         result = self.run_validator(FIXTURES / "wg-bplus-i3-valid.json")

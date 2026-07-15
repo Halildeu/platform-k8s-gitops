@@ -33,9 +33,14 @@ function Get-GeneratedFunctionText {
 $collectorPath = Join-Path $PackageDirectory 'collect-audit-snapshot.ps1'
 $installerPath = Join-Path $PackageDirectory 'install-audit-controls.ps1'
 Invoke-Expression (Get-GeneratedFunctionText -Path $collectorPath -Name 'Test-RemoteAddressBroad')
+Invoke-Expression (Get-GeneratedFunctionText -Path $collectorPath -Name 'Test-FirewallFilterUnconstrained')
+Invoke-Expression (Get-GeneratedFunctionText -Path $collectorPath -Name 'Get-BroadInboundRuleTier')
 Invoke-Expression (Get-GeneratedFunctionText -Path $collectorPath -Name 'Get-TranscriptFilesNoReparse')
 Invoke-Expression (Get-GeneratedFunctionText -Path $collectorPath -Name 'Invoke-TranscriptRetention')
 Invoke-Expression (Get-GeneratedFunctionText -Path $collectorPath -Name 'Invoke-TranscriptRetentionForPolicy')
+Invoke-Expression (Get-GeneratedFunctionText -Path $installerPath -Name 'Assert-BroadConflictApproval')
+Invoke-Expression (Get-GeneratedFunctionText -Path $installerPath -Name 'Read-RollbackState')
+Invoke-Expression (Get-GeneratedFunctionText -Path $installerPath -Name 'Save-InitialState')
 
 Assert-True (Test-RemoteAddressBroad -RemoteAddresses @('Any')) 'Any must be broad'
 Assert-True (Test-RemoteAddressBroad -RemoteAddresses @('LocalSubnet')) 'LocalSubnet must be broad'
@@ -45,6 +50,144 @@ Assert-True (Test-RemoteAddressBroad -RemoteAddresses @('0.0.0.0/1')) 'split /1 
 Assert-True (Test-RemoteAddressBroad -RemoteAddresses @('10.99.0.1-10.99.0.9')) 'range must be broad'
 Assert-True (-not (Test-RemoteAddressBroad -RemoteAddresses @('10.99.0.1'))) 'single IPv4 must not be broad'
 Assert-True (-not (Test-RemoteAddressBroad -RemoteAddresses @('10.99.0.1/32'))) '/32 must not be broad'
+
+Assert-True (Test-FirewallFilterUnconstrained -Values @('Any')) 'Any program/service filter must be unconstrained'
+Assert-True (Test-FirewallFilterUnconstrained -Values @('')) 'blank program/service filter must fail closed'
+Assert-True (Test-FirewallFilterUnconstrained -Values @('Unknown')) 'unknown program/service filter must fail closed'
+Assert-True (Test-FirewallFilterUnconstrained -Values @('C:\Tools\*.exe')) 'wildcard program filter must fail closed'
+Assert-True (-not (Test-FirewallFilterUnconstrained -Values @('C:\Program Files\Vendor\agent.exe'))) 'concrete program path must be constrained'
+Assert-True (-not (Test-FirewallFilterUnconstrained -Values @('sshd'))) 'concrete service short name must be constrained'
+
+for ($index = 0; $index -lt 4; $index++) {
+  $tier = Get-BroadInboundRuleTier -PortConflict $true -BroadRemote $true -Programs @('Any') -Services @('Any')
+  Assert-True ($tier -eq 'hard-block') ('real Any/Any rule semantics must remain hard-blocked:' + $index)
+}
+$programTier = Get-BroadInboundRuleTier -PortConflict $true -BroadRemote $true -Programs @('C:\Program Files\Vendor\agent.exe') -Services @('Any')
+Assert-True ($programTier -eq 'constrained-review') 'concrete program rule must require constrained review'
+$serviceTier = Get-BroadInboundRuleTier -PortConflict $true -BroadRemote $true -Programs @('Any') -Services @('sshd')
+Assert-True ($serviceTier -eq 'constrained-review') 'concrete service rule must require constrained review'
+$unknownTier = Get-BroadInboundRuleTier -PortConflict $true -BroadRemote $true -Programs @('Unknown') -Services @('Any')
+Assert-True ($unknownTier -eq 'hard-block') 'unknown filter rule must remain hard-blocked'
+$scopedRemoteTier = Get-BroadInboundRuleTier -PortConflict $true -BroadRemote $false -Programs @('Any') -Services @('Any')
+Assert-True ($scopedRemoteTier -eq 'none') 'single-host remote address must not be a broad conflict'
+
+$constrainedAssessment = [pscustomobject]@{
+  hardBlockRules = @()
+  constrainedReviewRules = @([pscustomobject]@{ name='redacted-test-rule' })
+}
+$approvalRequired = $false
+try {
+  Assert-BroadConflictApproval -Assessment $constrainedAssessment -ApprovedConstrainedBroadRuleCount -1 | Out-Null
+} catch {
+  $approvalRequired = $_.Exception.Message -eq 'constrained-broad-firewall-rules-require-explicit-operator-approval:1'
+}
+Assert-True $approvalRequired 'constrained review must require explicit operator approval'
+$invalidApprovalRejected = $false
+try {
+  Assert-BroadConflictApproval -Assessment $constrainedAssessment -ApprovedConstrainedBroadRuleCount -2 | Out-Null
+} catch {
+  $invalidApprovalRejected = $_.Exception.Message -eq 'approved-constrained-broad-firewall-rule-count-invalid:-2'
+}
+Assert-True $invalidApprovalRejected 'approval count below the sentinel value must fail closed'
+$approvedCount = Assert-BroadConflictApproval -Assessment $constrainedAssessment -ApprovedConstrainedBroadRuleCount 1
+Assert-True ($approvedCount -eq 1) 'matching constrained review count must proceed'
+$changedCountRejected = $false
+try {
+  Assert-BroadConflictApproval -Assessment $constrainedAssessment -ApprovedConstrainedBroadRuleCount 0 | Out-Null
+} catch {
+  $changedCountRejected = $_.Exception.Message -eq 'constrained-broad-firewall-rule-count-changed:0:1'
+}
+Assert-True $changedCountRejected 'changed constrained review count must invalidate approval'
+$hardBlockAssessment = [pscustomobject]@{
+  hardBlockRules = @([pscustomobject]@{ name='redacted-hard-block-rule' })
+  constrainedReviewRules = @([pscustomobject]@{ name='redacted-test-rule' })
+}
+$hardBlockRejected = $false
+try {
+  Assert-BroadConflictApproval -Assessment $hardBlockAssessment -ApprovedConstrainedBroadRuleCount 1 | Out-Null
+} catch {
+  $hardBlockRejected = $_.Exception.Message -eq 'broad-firewall-conflicts-require-separate-reviewed-remediation:1'
+}
+Assert-True $hardBlockRejected 'hard block must override matching constrained review approval'
+
+$rollbackTestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('faz24-i3-rollback-state-' + [guid]::NewGuid().ToString('N'))
+try {
+  $Root = Join-Path $rollbackTestRoot 'managed-root'
+  $StatePath = Join-Path $rollbackTestRoot 'initial-rollback.json'
+  $AclBackupPath = Join-Path $rollbackTestRoot 'acl.txt'
+  $backupDirectory = Join-Path $rollbackTestRoot 'backup'
+  $CollectorPath = Join-Path $Root 'scripts\collect-audit-snapshot.ps1'
+  $BaselinePath = Join-Path $Root 'config\baseline.json'
+  $SnapshotPath = Join-Path $Root 'snapshot\audit-snapshot.json'
+  New-Item -ItemType Directory -Path $backupDirectory -Force | Out-Null
+  $packageFingerprint = ('a' * 64)
+  $completeState = [ordered]@{
+    schemaVersion = 'faz24.windows-audit-rollback.v3'
+    transactionId = ('b' * 32)
+    packageFingerprint = $packageFingerprint
+    applyStatus = 'applied'
+    capturedAt = '2026-07-15T00:00:00Z'
+    firewallApproval = [ordered]@{
+      approvedConstrainedBroadReviewCount = 1
+      recordedAt = '2026-07-15T00:00:00Z'
+    }
+    backupDirectory = $backupDirectory
+    rootExisted = $false
+    stateDirectoryExisted = $true
+    aclRestoreRoot = (Split-Path -Parent $Root)
+    taskXml = $null
+    registry = [ordered]@{
+      enableTranscripting = [ordered]@{ exists=$false }
+      enableInvocationHeader = [ordered]@{ exists=$false }
+      outputDirectory = [ordered]@{ exists=$false }
+      enableScriptBlockLogging = [ordered]@{ exists=$false }
+    }
+    logonAuditPolicy = [ordered]@{ successEnabled=$false; failureEnabled=$true }
+    exactRules = @([ordered]@{ name='redacted-test-rule'; exists=$false })
+    files = [ordered]@{
+      collector = [ordered]@{ path=$CollectorPath; existed=$false; backupName='collector.ps1' }
+      baseline = [ordered]@{ path=$BaselinePath; existed=$false; backupName='baseline.json' }
+      snapshot = [ordered]@{ path=$SnapshotPath; existed=$false; backupName='snapshot.json' }
+    }
+  }
+
+  $missingApprovalState = $completeState | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $missingApprovalState.firewallApproval.PSObject.Properties.Remove('approvedConstrainedBroadReviewCount')
+  $missingApprovalState | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $StatePath -Encoding UTF8
+  $incompleteStateRejected = $false
+  try {
+    Read-RollbackState | Out-Null
+  } catch {
+    $incompleteStateRejected = $_.Exception.Message -eq 'rollback-state-incomplete'
+  }
+  Assert-True $incompleteStateRejected 'missing v3 firewall approval count must fail with the bounded rollback-state error'
+
+  $missingRegistryState = $completeState | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $missingRegistryState.PSObject.Properties.Remove('registry')
+  $missingRegistryState | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $StatePath -Encoding UTF8
+  $missingRegistryRejected = $false
+  try {
+    Read-RollbackState | Out-Null
+  } catch {
+    $missingRegistryRejected = $_.Exception.Message -eq 'rollback-state-incomplete'
+  }
+  Assert-True $missingRegistryRejected 'missing nested restore state must fail before StrictMode property access'
+
+  $completeState | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $StatePath -Encoding UTF8
+  $reapplyMismatchRejected = $false
+  try {
+    Save-InitialState `
+      -Baseline ([pscustomobject]@{}) `
+      -RootExisted $false `
+      -PackageFingerprint $packageFingerprint `
+      -ApprovedConstrainedBroadReviewCount 2 | Out-Null
+  } catch {
+    $reapplyMismatchRejected = $_.Exception.Message -eq 'constrained-broad-firewall-approval-state-mismatch'
+  }
+  Assert-True $reapplyMismatchRejected 'same-package re-Apply must reject approval count drift'
+} finally {
+  Remove-Item -LiteralPath $rollbackTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('faz24-i3-behavior-' + [guid]::NewGuid().ToString('N'))
 try {

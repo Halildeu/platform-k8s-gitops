@@ -20,7 +20,7 @@
     "lookbackHours": 2,
     "wgInterfaceSelection": "auto",
     "remoteSnapshotPathHash": "eec9f9cde2ce3d8a",
-    "remoteSnapshotSchemaVersion": "faz24.windows-audit-snapshot.v1",
+    "remoteSnapshotSchemaVersion": "faz24.windows-audit-snapshot.v2",
     "denetimSshPreflight": {
       "targetHostHash": "801d4b52b735d268",
       "targetPort": 22,
@@ -84,7 +84,7 @@
       "what": "OpenSSH metadata query count=1",
       "evidenceRef": "windows/openssh-event-log.metadata.json",
       "control": {
-        "contractVersion": "faz24.windows-audit-control.v1",
+        "contractVersion": "faz24.windows-audit-control.v2",
         "expected": {"queryOk": true, "minimumEventCount": 1},
         "observed": {"queryOk": true, "eventCount": 1},
         "verdict": "pass",
@@ -104,7 +104,7 @@
       "what": "PowerShell transcription policy and protected output ACL metadata evaluated",
       "evidenceRef": "windows/powershell-transcription.metadata.json",
       "control": {
-        "contractVersion": "faz24.windows-audit-control.v1",
+        "contractVersion": "faz24.windows-audit-control.v2",
         "expected": {"queryOk": true, "policyEnabled": true, "invocationHeaderEnabled": true, "protectedOutputAcl": true, "protectedSnapshotDirectoryAcl": true, "protectedSnapshotFileAcl": true, "retentionEnforced": true, "maximumRetentionDays": 14, "maximumTranscriptBytes": 1073741824},
         "observed": {"queryOk": true, "policyEnabled": true, "invocationHeaderEnabled": true, "protectedOutputAcl": true, "protectedSnapshotDirectoryAcl": true, "protectedSnapshotFileAcl": true, "retentionEnforced": true, "transcriptBytes": 1024, "oldestTranscriptAgeSeconds": 60, "retentionDeleteCount": 0, "capacityDeleteCount": 0},
         "verdict": "pass",
@@ -124,7 +124,7 @@
       "what": "Script-block logging metadata eventCount=2; content omitted",
       "evidenceRef": "windows/powershell-script-block.metadata.json",
       "control": {
-        "contractVersion": "faz24.windows-audit-control.v1",
+        "contractVersion": "faz24.windows-audit-control.v2",
         "expected": {"queryOk": true, "policyEnabled": true, "minimumEventCount": 1},
         "observed": {"queryOk": true, "policyEnabled": true, "eventCount": 2},
         "verdict": "pass",
@@ -144,7 +144,7 @@
       "what": "Security log query succeeded with failedLogonCount=0; identities omitted",
       "evidenceRef": "windows/failed-login.metadata.json",
       "control": {
-        "contractVersion": "faz24.windows-audit-control.v1",
+        "contractVersion": "faz24.windows-audit-control.v2",
         "expected": {"securityLogQueryable": true, "auditFailureEnabled": true},
         "observed": {"securityLogQueryable": true, "auditFailureEnabled": true, "eventCount": 0},
         "verdict": "pass",
@@ -164,7 +164,7 @@
       "what": "WireGuard metadata interfaces=1 peers=1 latestHandshakeAgeSeconds=20",
       "evidenceRef": "windows/wireguard-health.metadata.json",
       "control": {
-        "contractVersion": "faz24.windows-audit-control.v1",
+        "contractVersion": "faz24.windows-audit-control.v2",
         "expected": {"queryOk": true, "minimumRunningServiceCount": 1, "minimumInterfaceCount": 1, "minimumPeerCount": 1, "maximumHandshakeAgeSeconds": 300},
         "observed": {"queryOk": true, "dumpExitCode": 0, "runningServiceCount": 1, "interfaceCount": 1, "peerCount": 1, "latestHandshakeAgeSeconds": 20},
         "verdict": "pass",
@@ -181,12 +181,12 @@
       "status": "pass",
       "who": "windows-system:audit-snapshot/firewall-eset",
       "when": "2026-06-25T00:10:00Z",
-      "what": "Firewall/ESET metadata expectedRules=3/3 broadConflicts=0",
+      "what": "Firewall/ESET metadata expectedRules=3/3 broadConflicts=0 constrainedBroadReviews=0 approvedConstrainedBroadReviews=0",
       "evidenceRef": "windows/eset-firewall-drift.metadata.json",
       "control": {
-        "contractVersion": "faz24.windows-audit-control.v1",
-        "expected": {"queryOk": true, "expectedRuleCount": 3, "minimumEsetCoreRunningCount": 2},
-        "observed": {"queryOk": true, "expectedRuleCount": 3, "expectedRuleMatchCount": 3, "broadConflictCount": 0, "esetCoreRunningCount": 2},
+        "contractVersion": "faz24.windows-audit-control.v2",
+        "expected": {"queryOk": true, "expectedRuleCount": 3, "constrainedBroadReviewApproved": true, "minimumEsetCoreRunningCount": 2},
+        "observed": {"queryOk": true, "expectedRuleCount": 3, "expectedRuleMatchCount": 3, "broadConflictCount": 0, "constrainedBroadReviewCount": 0, "approvedConstrainedBroadReviewCount": 0, "constrainedBroadReviewApproved": true, "esetCoreRunningCount": 2},
         "verdict": "pass",
         "source": {"kind": "windows-system-snapshot", "locator": "faz24-i3-audit-snapshot"},
         "collectedAt": "2026-06-25T00:10:00Z",
@@ -204,7 +204,7 @@
       "what": "Time-sync metadata serviceState=Running latestSuccessEventAgeSeconds=120",
       "evidenceRef": "windows/time-sync.metadata.json",
       "control": {
-        "contractVersion": "faz24.windows-audit-control.v1",
+        "contractVersion": "faz24.windows-audit-control.v2",
         "expected": {"queryOk": true, "serviceState": "Running", "statusCommandExitCode": 0, "sourcePresent": true, "sourceSynchronized": true, "syncTypeConfigured": true, "maximumSuccessEventAgeSeconds": 86400},
         "observed": {"queryOk": true, "serviceState": "Running", "statusCommandExitCode": 0, "sourcePresent": true, "sourceSynchronized": true, "syncTypeConfigured": true, "latestSuccessEventAgeSeconds": 120},
         "verdict": "pass",
@@ -224,7 +224,7 @@
       "what": "Staging metadata correlates Denetim SSH attempt with WireGuard peer state",
       "evidenceRef": "staging/connection-log.metadata.json",
       "control": {
-        "contractVersion": "faz24.windows-audit-control.v1",
+        "contractVersion": "faz24.windows-audit-control.v2",
         "expected": {"remoteCollectorReached": true, "journalQueryable": true, "minimumJournalMatchCount": 1, "auditRecordWritten": true, "journalSinceAttemptStart": true, "maximumCorrelationWindowSeconds": 180, "sshSocketQueryable": true, "wireGuardQueryable": true, "minimumPeerCount": 1, "routeUsesSelectedWireGuardInterface": true},
         "observed": {"remoteCollectorReached": true, "journalQueryable": true, "journalMatchCount": 1, "auditRecordWritten": true, "journalSinceAttemptStart": true, "correlationWindowSeconds": 1, "wireGuardQueryable": true, "peerCount": 1, "sshSocketQueryable": true, "sshSocketCount": 1, "routeUsesSelectedWireGuardInterface": true},
         "verdict": "pass",

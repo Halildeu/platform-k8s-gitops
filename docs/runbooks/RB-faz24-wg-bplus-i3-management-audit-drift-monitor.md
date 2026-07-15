@@ -32,8 +32,9 @@ The source contract is fail closed:
 
 ## 2. Required Controls
 
-The bundle schema is `faz24.wg-bplus.i3.audit.v2`. Every check carries
-`control.contractVersion=faz24.windows-audit-control.v1` and these fields:
+The bundle schema is `faz24.wg-bplus.i3.audit.v2`, the remote snapshot schema
+is `faz24.windows-audit-snapshot.v2`, and every check carries
+`control.contractVersion=faz24.windows-audit-control.v2` with these fields:
 
 - `expected`: declared machine-readable threshold,
 - `observed`: bounded machine-readable measurement,
@@ -49,13 +50,16 @@ The bundle schema is `faz24.wg-bplus.i3.audit.v2`. Every check carries
 | `powershell-script-block` | Script-block policy is enabled, log query succeeds and at least one 4104 event exists; content is omitted |
 | `failed-login` | Security log is queryable and native Windows Logon failure-audit bit is enabled; zero 4625 events is valid |
 | `wireguard-health` | `wg show all dump` succeeds, tunnel service/interface/peer exist and latest handshake is within threshold |
-| `eset-firewall-drift` | All WireGuard-scoped rules exactly match Enabled/Direction/Action/Protocol/LocalPort/RemoteAddress/Profile/LocalAddress/Program/Service, broad inbound conflicts are zero, and ESET core services are running |
+| `eset-firewall-drift` | All WireGuard-scoped rules exactly match Enabled/Direction/Action/Protocol/LocalPort/RemoteAddress/Profile/LocalAddress/Program/Service; the hard-block count is zero for broad protected-port rules whose Program and Service filters are both unconstrained; every broad rule with a concrete Program or Service is explicitly reviewed and its current count equals the count persisted at Apply; ESET core services are running |
 | `time-sync` | `w32time` is running, status/source queries succeed, the language-independent registry sync type is one of `NTP`/`NT5DS`/`AllSync`, the source is not local/free-running, and a Time-Service success event is fresh |
 | `staging-connection-log` | The exact canonical target is reached, its route-device hash equals the selected WireGuard-interface hash, staging WireGuard metadata has at least one peer, socket query is available, and a metadata-only audit record matches only the current SSH attempt's random correlation id within 180 seconds |
 
 The verifier checks values, not only labels. For example, a check cannot pass
-with `broadConflictCount>0`, an absent handshake, a stale time event, or a
-failed-login count whose audit policy was not proven.
+with `broadConflictCount>0`, a constrained-rule count that differs from the
+persisted approval count, an absent handshake, a stale time event, or a
+failed-login count whose audit policy was not proven. Snapshot/control v1
+evidence predates this approval binding and is intentionally rejected; collect
+fresh v2 evidence rather than rewriting historical artifacts.
 The collector and verifier also bind `remoteSnapshotPathHash` to the canonical
 `C:\ProgramData\Acik\Faz24\I3\audit-controls\snapshot\audit-snapshot.json`
 path; a bundle cannot rebind the read-only transport to another snapshot path.
@@ -124,6 +128,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -Mode Apply
 ```
 
+If preflight reports only constrained broad rules, first review their owner and
+dependency impact, then bind that exact observed count to the transaction:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\install-audit-controls.ps1 `
+  -Mode Apply `
+  -ApprovedConstrainedBroadRuleCount <reviewed-count>
+```
+
 `Apply` binds the rollback state to the immutable package fingerprint and,
 before mutation, captures the initial registry, scoped Logon audit bits, exact
 firewall rule existence, scheduled task, ACL state and any pre-existing managed
@@ -135,11 +149,17 @@ fingerprint requires explicit rollback before retry; same-package re-Apply is
 validation-only and does not mutate.
 If a reserved exact rule already exists, its address/port semantics must match
 exactly; the package never rewrites it. Rollback removes only exact rules that
-did not exist before Apply. A non-zero result with
+did not exist before Apply. A protected-port rule with a broad remote address
+is a hard block when both its Program and Service filters are unconstrained. A
+rule with at least one concrete Program or Service remains an explicit review
+item: Apply requires the exact reviewed count, persists it in protected rollback
+state and rejects a changed count. The exported snapshot contains only the
+bounded counts and approval boolean, not rule names. A non-zero result with
 `broad-firewall-conflicts-require-separate-reviewed-remediation` means an old
-inbound `Any` rule still covers `22`, `8200` or `8243`. Stop before mutation and
-open a separate reviewed operation that identifies rule owner, dependencies,
-impact and its own rollback. This package has no broad-rule disable switch.
+inbound rule with unconstrained Program and Service still covers `22`, `8200`
+or `8243`. Stop before mutation and open a separate reviewed operation that
+identifies rule owner, dependencies, impact and its own rollback. This package
+has no broad-rule disable switch and never changes pre-existing broad rules.
 
 Validate the generated snapshot:
 
@@ -215,8 +235,9 @@ All of the following are required for bounded I3 review:
 1. Restricted package was built from exact canonical `main`; its one-day
    artifact was handled as identity-bearing configuration and `SHA256SUMS`
    passed.
-2. An explicit firewall impact decision found no broad conflict requiring the
-   separate remediation path.
+2. An explicit firewall impact decision found zero unconstrained hard-block
+   rules; any constrained broad rules were reviewed and their exact current
+   count was bound to the protected Apply state.
 3. Elevated `Apply` captured rollback state before mutation and its internal
    validation reported zero failed controls.
 4. Separate elevated `Validate` reported zero failed controls.
@@ -226,7 +247,8 @@ All of the following are required for bounded I3 review:
 7. The independently verified pinned SSH host key passed strict checking.
 8. Fresh self-hosted evidence workflow completed successfully and was uploaded
    only after collector and verifier both returned zero.
-9. Artifact schema v2 passed the semantic verifier and redaction scan.
+9. Artifact schema v2, snapshot schema v2 and control contract v2 passed the
+   semantic verifier and redaction scan; historical v1 evidence was not reused.
 10. Reviewer accepted the bounded evidence on #1864/#2434.
 
 Passing I3 does not advance direct-STT, I7, product-value, legal, pilot or
@@ -259,7 +281,9 @@ dependency in this control plane.
 | `sshFailureClass=ssh-auth-publickey` | Transport identity not authorized | Use the existing public-key-only I3 authorization package; never export the private key |
 | `snapshot-control-missing` | SYSTEM task wrote an incomplete contract | Inspect local task history and collector hash; do not loosen verifier |
 | `stale-or-invalid-snapshot` | Task stopped or snapshot exceeded 15 minutes | Repair SYSTEM task execution and collect a new snapshot |
-| `broadConflictCount>0` or broad-conflict preflight error | Existing Any-source inbound rule still covers protected ports | Stop package Apply; use a separate reviewed remediation with owner/dependency evidence and independent rollback |
+| `broadConflictCount>0` or hard-block preflight error | A broad protected-port rule has both Program and Service unconstrained | Stop package Apply; use a separate reviewed remediation with owner/dependency evidence and independent rollback |
+| constrained broad-rule approval required or count changed | At least one broad protected-port rule has a concrete Program or Service, but the current set was not reviewed under the current count | Review owner/dependencies, rerun Apply with the exact current count, and stop if the count changes; the package does not alter these rules |
+| snapshot/control contract v1 | Evidence predates count-bound constrained-rule approval | Generate a fresh v2 snapshot and bundle; do not edit or relabel the historical artifact |
 | failed-login count `0` with both proofs true | No failures in lookback | Valid; do not synthesize an event |
 | `auditFailureEnabled=false` | Windows failure-audit bit is disabled | Re-apply elevated package; verify native audit policy |
 | handshake age above threshold | WireGuard peer is stale | Repair tunnel/keepalive before rerun |
