@@ -175,6 +175,31 @@ require_grep 'faz22-6-view-only-viewer-runtime-snapshots-${{ github.run_id }}' "
 require_grep "metrics-before.prom metrics-after.prom d30-snapshot.json frame-flow-summary.json audit-summary.json" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "sha256sum -c SHA256SUMS" "$VIEWER_BROWSER_WORKFLOW"
 
+for workflow in "$VIEWER_BROWSER_WORKFLOW" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW" \
+  "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"; do
+  python3 - "$workflow" <<'PY'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+pair = re.compile(
+    r"(?m)^(?P<indent>[ ]+)DENETIM_SSH_TARGET: denetim-pc\n"
+    r"(?P=indent)DENETIM_SSH_OPTS: __SSH_CONFIG__$"
+)
+matches = pair.findall(text)
+if len(matches) != 1:
+    raise SystemExit(
+        f"VIEW_ONLY collector must contain exactly one adjacent canonical Denetim SSH env pair: {path}"
+    )
+if "DENETIM_SSH_TARGET: svc-denetim-agent@10.99.0.2" in text:
+    raise SystemExit(
+        f"VIEW_ONLY collector must not restore the non-functional least-privilege target: {path}"
+    )
+PY
+done
+
 require_grep "actions: read" "$VIEWER_OPERATOR_WORKFLOW"
 require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_OPERATOR_EVIDENCE" "$VIEWER_OPERATOR_WORKFLOW"
 require_grep "produce-view-only-viewer-operator-evidence.py" "$VIEWER_OPERATOR_WORKFLOW"
