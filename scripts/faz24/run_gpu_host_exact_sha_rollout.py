@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 
 SCHEMA_VERSION = "faz24.gpu-host-exact-sha-rollout.v1"
-CANONICAL_TARGET = "svc-denetim-agent@10.99.0.2"
+CANONICAL_TARGET = "denetim-pc"
 CANONICAL_REPO_ROOT = r"C:\platform-ai"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 EVIDENCE_MARKER = "FAZ24_GPU_ROLLOUT_JSON:"
@@ -33,6 +33,17 @@ $StatePath = 'C:\ProgramData\Acik\platform-ai\deployment-state.json'
 $env:GIT_CONFIG_COUNT = '1'
 $env:GIT_CONFIG_KEY_0 = 'safe.directory'
 $env:GIT_CONFIG_VALUE_0 = 'C:/platform-ai'
+
+$windowsIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$windowsPrincipal = New-Object Security.Principal.WindowsPrincipal($windowsIdentity)
+$principalMetadata = [ordered]@{
+  expectedIdentity = $windowsIdentity.Name.EndsWith(
+    '\denetimpc', [StringComparison]::OrdinalIgnoreCase
+  )
+  administrator = $windowsPrincipal.IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+  )
+}
 
 function Get-HealthMetadata {
   param([Parameter(Mandatory = $true)][string]$Url)
@@ -181,6 +192,8 @@ $meetingTask = [ordered]@{ present = $false; state = -1; actionCanonical = $fals
 
 try {
   if ($TargetCommit -notmatch '^[0-9a-f]{40}$') { throw 'invalid-target-commit' }
+  if (-not $principalMetadata.expectedIdentity) { throw 'unexpected-rollout-identity' }
+  if (-not $principalMetadata.administrator) { throw 'rollout-principal-not-admin' }
   if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot '.git'))) { throw 'canonical-repo-missing' }
   if (-not (Test-Path -LiteralPath $UpdateScript -PathType Leaf)) { throw 'updater-missing' }
 
@@ -255,6 +268,7 @@ $go = (
   $meetingTask.present -and $meetingTask.state -eq 4 -and $meetingTask.actionCanonical -and
   $liveHealth.reachable -and $liveHealth.status -eq 'ok' -and $liveHealth.device -eq 'cuda' -and
   $meetingHealth.reachable -and $meetingHealth.status -eq 'ok' -and
+  $meetingHealth.backend -eq 'ollama' -and
   $stream.ready -and $stream.eventType -eq 'ready'
 )
 
@@ -269,6 +283,7 @@ $evidence = [ordered]@{
   whatIfExitCode = $whatIfExitCode
   deployExitCode = $deployExitCode
   failureClass = $failureClass
+  principal = $principalMetadata
   ledger = $ledger
   tasks = [ordered]@{ liveStt = $liveTask; meetingAi = $meetingTask }
   health = [ordered]@{ liveStt = $liveHealth; meetingAi = $meetingHealth }
@@ -317,9 +332,11 @@ def parse_evidence(stdout: str) -> dict[str, Any]:
     return evidence
 
 
-def ssh_command(identity: Path, known_hosts: Path, encoded_script: str) -> list[str]:
+def ssh_command(ssh_config: Path, known_hosts: Path, encoded_script: str) -> list[str]:
     return [
         "ssh",
+        "-F",
+        str(ssh_config),
         "-o",
         "BatchMode=yes",
         "-o",
@@ -334,8 +351,6 @@ def ssh_command(identity: Path, known_hosts: Path, encoded_script: str) -> list[
         "ServerAliveInterval=10",
         "-o",
         "ServerAliveCountMax=3",
-        "-i",
-        str(identity),
         "-o",
         "IdentitiesOnly=yes",
         CANONICAL_TARGET,
@@ -350,11 +365,15 @@ def ssh_command(identity: Path, known_hosts: Path, encoded_script: str) -> list[
 
 
 def run_rollout(
-    *, target_commit: str, identity: Path, known_hosts: Path, timeout_seconds: int
+    *,
+    target_commit: str,
+    ssh_config: Path,
+    known_hosts: Path,
+    timeout_seconds: int,
 ) -> tuple[int, dict[str, Any]]:
     script = build_remote_script(target_commit)
     encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
-    command = ssh_command(identity, known_hosts, encoded_script)
+    command = ssh_command(ssh_config, known_hosts, encoded_script)
     try:
         process = subprocess.run(
             command,
@@ -390,6 +409,7 @@ def failure_evidence(target_commit: str, failure_class: str) -> dict[str, Any]:
         "whatIfExitCode": -1,
         "deployExitCode": -1,
         "failureClass": failure_class,
+        "principal": {"expectedIdentity": False, "administrator": False},
         "ledger": {},
         "tasks": {},
         "health": {},
@@ -409,7 +429,7 @@ def failure_evidence(target_commit: str, failure_class: str) -> dict[str, Any]:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-commit", required=True)
-    parser.add_argument("--ssh-identity", required=True, type=Path)
+    parser.add_argument("--ssh-config", required=True, type=Path)
     parser.add_argument("--ssh-known-hosts", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=1200)
@@ -419,14 +439,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     target_commit = validate_commit(args.target_commit)
-    if not args.ssh_identity.is_file():
-        raise SystemExit("SSH identity is not configured")
+    if not args.ssh_config.is_file():
+        raise SystemExit("governed SSH config is not configured")
     if not args.ssh_known_hosts.is_file():
         raise SystemExit("pinned known_hosts is not configured")
     try:
         exit_code, evidence = run_rollout(
             target_commit=target_commit,
-            identity=args.ssh_identity,
+            ssh_config=args.ssh_config,
             known_hosts=args.ssh_known_hosts,
             timeout_seconds=args.timeout_seconds,
         )

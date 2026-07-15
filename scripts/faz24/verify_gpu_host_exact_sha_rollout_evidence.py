@@ -83,6 +83,16 @@ def verify(data: dict[str, Any], expected_commit: str) -> None:
     require(data.get("deployExitCode") == 0, "deploy updater failed")
     require(data.get("failureClass") == "none", "failureClass is not none")
 
+    principal = object_field(data, "principal")
+    require(
+        principal.get("expectedIdentity") is True,
+        "rollout principal identity is not canonical",
+    )
+    require(
+        principal.get("administrator") is True,
+        "rollout principal is not an administrator",
+    )
+
     ledger = object_field(data, "ledger")
     require(
         ledger.get("currentCommit") == expected_commit, "ledger currentCommit mismatch"
@@ -106,6 +116,7 @@ def verify(data: dict[str, Any], expected_commit: str) -> None:
     require(live_health.get("device") == "cuda", "live STT is not on CUDA")
     require(meeting_health.get("reachable") is True, "meeting AI health is unreachable")
     require(meeting_health.get("status") == "ok", "meeting AI health is not ok")
+    require(meeting_health.get("backend") == "ollama", "meeting AI is not on Ollama")
 
     web_socket = object_field(data, "webSocket")
     require(web_socket.get("ready") is True, "WebSocket did not become ready")
