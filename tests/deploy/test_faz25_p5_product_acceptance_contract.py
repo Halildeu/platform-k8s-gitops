@@ -148,6 +148,24 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertIn("ownerCell instanceof HTMLTableCellElement", self.spec)
         self.assertNotIn("locator('td').nth(ownerColumnIndex)", self.spec)
 
+    def test_candidate_boundary_evidence_is_captured_before_filter_reset(self):
+        assertion = self.spec.index(
+            "toContainText('Bu yönetici adresi adaya verilmez')"
+        )
+        capture = self.spec.index(
+            "const candidateBoundaryVisible = await candidateBoundary.isVisible()"
+        )
+        reset = self.spec.index("const allRolesFilter =")
+        report = self.spec.index("report.hub =")
+        self.assertLess(assertion, capture)
+        self.assertLess(capture, reset)
+        self.assertLess(reset, report)
+        self.assertIn("candidateBoundaryVisible,", self.spec[report:])
+        self.assertNotIn(
+            "candidateBoundaryVisible: await candidateBoundary.isVisible()",
+            self.spec[report:],
+        )
+
     def test_browser_launch_uses_the_versioned_and_hashed_executable(self):
         self.assertIn("printf 'chromium_path=%s\\n' \"$chromium_path\"", self.workflow)
         self.assertIn("tr -d '\\r'", self.workflow)
