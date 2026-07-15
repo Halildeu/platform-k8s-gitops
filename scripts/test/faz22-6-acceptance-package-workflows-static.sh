@@ -328,8 +328,18 @@ fi
 require_grep "activeDeadlineSeconds: __ACTIVE_DEADLINE_SECONDS__" "$VIEWER_WATCHDOG"
 require_grep "faz22.6.acik.com/authorization-sha256" "$VIEWER_WATCHDOG"
 require_grep "curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b" "$VIEWER_WATCHDOG"
+require_grep "memory: 48Mi" "$VIEWER_WATCHDOG"
+if grep -Eq "memory: (24|32)Mi" "$VIEWER_WATCHDOG"; then
+  echo "watchdog memory request must retain headroom above the platform-test 32Mi LimitRange minimum" >&2
+  exit 1
+fi
 require_grep 'REMOTE_BRIDGE_VIEWER_ENABLED":"false"' "$VIEWER_WATCHDOG"
 require_grep "SPRING_CLOUD_GATEWAY_ROUTES_28_ID\":null" "$VIEWER_WATCHDOG"
+require_grep 'VIEWER_APPLY_ATTEMPT_MARKER: ${{ runner.temp }}/faz22-view-only-pilot-overlay-attempted' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'rm -f "$VIEWER_APPLY_ATTEMPT_MARKER"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'touch "$VIEWER_APPLY_ATTEMPT_MARKER"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'if [ ! -e "$VIEWER_APPLY_ATTEMPT_MARKER" ]; then' "$VIEWER_APPLY_WORKFLOW"
+require_grep "failed watchdog resources removed" "$VIEWER_APPLY_WORKFLOW"
 
 for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" \
   "$VIEWER_PRODUCT_VERIFY_WORKFLOW" "$VIEWER_NEGATIVE_WORKFLOW"; do

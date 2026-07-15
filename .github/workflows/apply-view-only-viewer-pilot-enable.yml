@@ -288,8 +288,10 @@ jobs:
           PILOT_TTL_MINUTES: ${{ inputs.pilot_ttl_minutes }}
           AUTHORIZATION_SHA256: ${{ needs.authorize-live-apply.outputs.authorization_sha256 }}
           AUTHORIZATION_EXPIRES_EPOCH: ${{ needs.authorize-live-apply.outputs.authorization_expires_epoch }}
+          VIEWER_APPLY_ATTEMPT_MARKER: ${{ runner.temp }}/faz22-view-only-pilot-overlay-attempted
         run: |
           set -euo pipefail
+          rm -f "$VIEWER_APPLY_ATTEMPT_MARKER"
           expires_epoch="$(( $(date -u +%s) + PILOT_TTL_MINUTES * 60 ))"
           printf '%s' "$AUTHORIZATION_EXPIRES_EPOCH" | grep -Eq '^[1-9][0-9]{9,12}$' || {
             echo "::error::protected authorization expiry output is absent or invalid"
@@ -324,9 +326,15 @@ jobs:
 
       - name: Apply viewer exposure overlay
         if: inputs.action == 'apply'
+        env:
+          VIEWER_APPLY_ATTEMPT_MARKER: ${{ runner.temp }}/faz22-view-only-pilot-overlay-attempted
         run: |
           set -euo pipefail
 
+          # Compensation may remove a failed watchdog only before any viewer
+          # resource apply was attempted. Once this marker exists, the
+          # watchdog remains authoritative until explicit rollback succeeds.
+          touch "$VIEWER_APPLY_ATTEMPT_MARKER"
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             apply -f /tmp/endpoint-admin-remote-bridge-viewer.yaml
 
@@ -425,6 +433,8 @@ jobs:
 
       - name: Compensating rollback after failed apply
         if: always() && inputs.action == 'apply' && failure()
+        env:
+          VIEWER_APPLY_ATTEMPT_MARKER: ${{ runner.temp }}/faz22-view-only-pilot-overlay-attempted
         run: |
           set +e
           bash scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh
@@ -440,7 +450,21 @@ jobs:
             apply -k "${BROKER_ONLY_OVERLAY}"
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" rollout restart \
             "deploy/${BRIDGE_DEPLOYMENT}" "deploy/${GATEWAY_DEPLOYMENT}"
-          echo "::warning::apply failed; immediate compensating rollback requested. Cluster watchdog remains authoritative."
+          if [ ! -e "$VIEWER_APPLY_ATTEMPT_MARKER" ]; then
+            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+              delete job faz22-view-only-pilot-watchdog --ignore-not-found --wait=true
+            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+              delete rolebinding faz22-view-only-pilot-watchdog --ignore-not-found
+            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+              delete role faz22-view-only-pilot-watchdog --ignore-not-found
+            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+              delete serviceaccount faz22-view-only-pilot-watchdog --ignore-not-found
+            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+              delete networkpolicy allow-faz22-view-only-watchdog-kubernetes-api --ignore-not-found
+            echo "::warning::apply failed before viewer resources were attempted; failed watchdog resources removed."
+          else
+            echo "::warning::apply failed after viewer resource apply began; immediate compensation requested and cluster watchdog remains authoritative."
+          fi
 
       - name: Rollback viewer pilot surface
         if: inputs.action == 'rollback'
