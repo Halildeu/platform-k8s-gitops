@@ -64,6 +64,8 @@
         "tunnelAllowed",
         "visibleIndicatorRequired",
         "localAbortRequired",
+        "maskBeforeFrameEmissionRequired",
+        "denyOnMaskFailure",
         "maxViewers",
         "recordingMode"
       ],
@@ -79,6 +81,8 @@
         "tunnelAllowed": { "const": false },
         "visibleIndicatorRequired": { "const": true },
         "localAbortRequired": { "const": true },
+        "maskBeforeFrameEmissionRequired": { "const": true },
+        "denyOnMaskFailure": { "const": true },
         "maxViewers": { "type": "integer", "minimum": 1, "maximum": 32 },
         "recordingMode": { "enum": ["disabled", "enabled"] }
       }

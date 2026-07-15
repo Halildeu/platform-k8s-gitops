@@ -7,7 +7,7 @@
   "baseline": {
     "baselineId": "remote-view-platform-safety",
     "baselineVersion": "1.0.0",
-    "baselineDigest": "sha256:f910a70b4eba476d7d3efdc1c41ba2578ceff7d40ca2e69664338264ca864c4a"
+    "baselineDigest": "sha256:54132a1b4d035db7011f1ce200433234aea7fe0d04420f0928dcf26a06386337"
   },
   "lifecycle": {
     "validFrom": "2026-07-15T00:00:00Z",

@@ -23,6 +23,8 @@
     "visibleIndicatorRequired": true,
     "localAbortRequired": true,
     "denyOnMissingOrInvalidPolicy": true,
+    "maskBeforeFrameEmissionRequired": true,
+    "denyOnMaskFailure": true,
     "sameSessionBindingRequired": true,
     "signedEnvelopeRequired": true
   },

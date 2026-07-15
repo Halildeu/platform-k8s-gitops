@@ -53,6 +53,8 @@
         "visibleIndicatorRequired",
         "localAbortRequired",
         "denyOnMissingOrInvalidPolicy",
+        "maskBeforeFrameEmissionRequired",
+        "denyOnMaskFailure",
         "sameSessionBindingRequired",
         "signedEnvelopeRequired"
       ],
@@ -69,6 +71,8 @@
         "visibleIndicatorRequired": { "const": true },
         "localAbortRequired": { "const": true },
         "denyOnMissingOrInvalidPolicy": { "const": true },
+        "maskBeforeFrameEmissionRequired": { "const": true },
+        "denyOnMaskFailure": { "const": true },
         "sameSessionBindingRequired": { "const": true },
         "signedEnvelopeRequired": { "const": true }
       }

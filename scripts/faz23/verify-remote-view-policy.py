@@ -179,6 +179,13 @@ def validate_notice(policy: dict[str, Any]) -> None:
 def validate_policy_semantics(baseline: dict[str, Any], policy: dict[str, Any]) -> None:
     source = policy["policy"]
     governance = source["dataGovernance"]
+    invariants = baseline["invariants"]
+    if (
+        not invariants["maskBeforeFrameEmissionRequired"]
+        or not invariants["denyOnMaskFailure"]
+    ):
+        raise PolicyError("platform baseline must fail closed before emitting a frame when masking fails")
+
     if governance["residencyMode"] == "single-region" and len(governance["storageRegions"]) != 1:
         raise PolicyError("single-region residency requires exactly one storage region")
     if governance["crossBorderTransfer"] == "deny":

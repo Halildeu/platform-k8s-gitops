@@ -137,6 +137,24 @@ class RemoteViewTenantPrivacyPolicyV1Test(unittest.TestCase):
         with self.assertRaisesRegex(VERIFIER.PolicyError, "DLP failure action"):
             self.verify(policy=policy)
 
+    def test_baseline_cannot_allow_frame_emission_before_masking(self):
+        baseline = copy.deepcopy(self.baseline)
+        baseline["invariants"]["maskBeforeFrameEmissionRequired"] = False
+        with self.assertRaisesRegex(VERIFIER.PolicyError, "schema invalid"):
+            self.verify(baseline=baseline)
+
+    def test_baseline_cannot_tolerate_mask_failure(self):
+        baseline = copy.deepcopy(self.baseline)
+        baseline["invariants"]["denyOnMaskFailure"] = False
+        with self.assertRaisesRegex(VERIFIER.PolicyError, "schema invalid"):
+            self.verify(baseline=baseline)
+
+    def test_semantic_guard_denies_mask_failure_if_schema_validation_is_bypassed(self):
+        baseline = copy.deepcopy(self.baseline)
+        baseline["invariants"]["denyOnMaskFailure"] = False
+        with self.assertRaisesRegex(VERIFIER.PolicyError, "fail closed before emitting"):
+            VERIFIER.validate_policy_semantics(baseline, copy.deepcopy(self.policy))
+
     def test_cross_border_destination_cannot_repeat_storage_region(self):
         policy = self.approved_policy()
         governance = policy["policy"]["dataGovernance"]
@@ -209,6 +227,8 @@ class RemoteViewSessionPolicyEnvelopeV1Test(unittest.TestCase):
                 "tunnelAllowed": False,
                 "visibleIndicatorRequired": True,
                 "localAbortRequired": True,
+                "maskBeforeFrameEmissionRequired": True,
+                "denyOnMaskFailure": True,
                 "maxViewers": 1,
                 "recordingMode": "disabled",
             },
@@ -250,6 +270,16 @@ class RemoteViewSessionPolicyEnvelopeV1Test(unittest.TestCase):
     def test_envelope_cannot_disable_attended_consent(self):
         envelope = copy.deepcopy(self.envelope)
         envelope["enforcement"]["attendedConsentRequired"] = False
+        self.assertTrue(list(self.validator.iter_errors(envelope)))
+
+    def test_envelope_cannot_emit_before_masking(self):
+        envelope = copy.deepcopy(self.envelope)
+        envelope["enforcement"]["maskBeforeFrameEmissionRequired"] = False
+        self.assertTrue(list(self.validator.iter_errors(envelope)))
+
+    def test_envelope_cannot_tolerate_mask_failure(self):
+        envelope = copy.deepcopy(self.envelope)
+        envelope["enforcement"]["denyOnMaskFailure"] = False
         self.assertTrue(list(self.validator.iter_errors(envelope)))
 
     def test_envelope_unknown_field_is_rejected(self):

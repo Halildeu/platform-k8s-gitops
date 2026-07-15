@@ -41,6 +41,8 @@ The canonical baseline is
 - bounded session TTL and viewer count;
 - an envelope lifetime no longer than the platform session TTL;
 - deny on absent, malformed, stale or unsupported policy;
+- verify masking before frame emission and deny on mask failure, partial masking
+  or timeout;
 - a signed envelope bound to the same tenant, device and session.
 
 Tenant files do not contain these fields. This is intentional: omission avoids
@@ -57,7 +59,8 @@ The tenant policy may configure:
 - recording mode and separate screen-content, session-metadata and audit
   retention;
 - controller/processor metadata, storage regions and cross-border decision;
-- sensitive-category detection failure and mask/deny behavior;
+- sensitive-category behavior within the platform floor: detector failure denies,
+  and a selected mask action may continue only after verified masking;
 - privacy, data-subject-rights and incident contact references;
 - processing purpose, tenant-selected legal basis/reference and legal decision
   lifecycle.
@@ -90,7 +93,8 @@ Resolution is deterministic and fail-closed:
 8. Create and sign a new same-session envelope. Cache reuse across session IDs,
    tenant IDs or device IDs is prohibited.
 
-The initial verifier implements steps 1-6 for source artifacts:
+The initial verifier implements steps 1-5 and the source-validation portion of
+step 6. Request-time locale selection and fallback remain resolver behavior:
 
 ```bash
 python3 scripts/faz23/verify-remote-view-policy.py \
@@ -128,9 +132,11 @@ signature binds at least:
 - deployment class and explicit envelope TTL;
 - policy and baseline IDs, versions, source-policy URN and recomputed digests;
 - legal-evidence status and recomputed digest;
-- hard capability/consent/indicator/abort invariants;
+- hard capability/consent/indicator/abort and mask-before-emission invariants;
 - selected notice text and content digest;
-- recording, retention, residency, transfer and sensitive-data behavior;
+- recording, retention, transfer and sensitive-data behavior; selected storage
+  regions and transfer mode are explicit, while complete source residency details
+  remain transitively bound through the signed `policyDigest`;
 - signing `keyId` and signature algorithm.
 
 Before signing, the resolver must recompute `baselineDigest`, `policyDigest` and
@@ -143,7 +149,9 @@ must equal that localization's recomputed digest.
 The payload digest is SHA-256 of that same projection. `expiresAt` must be later
 than `issuedAt`; their exact difference must equal `session.ttlSeconds`, which
 must not exceed both baseline `maxEnvelopeLifetimeSeconds` and the resolved
-session TTL. Envelope IDs and nonces are single-use per session. An unknown/revoked key,
+session TTL. The envelope schema's broad structural TTL ceiling is not an
+authorization ceiling; the runtime resolver must clamp it to those active
+baseline and policy limits. Envelope IDs and nonces are single-use per session. An unknown/revoked key,
 signature failure, digest mismatch, tenant/device/session mismatch, stale
 `issuedAt`, or expired envelope is a typed deny. A server-private HMAC is not
 used because web and endpoint agent could not independently verify it.
@@ -178,6 +186,8 @@ explicit overlap window; unknown and revoked key IDs deny.
   showing consent or sending frames.
 - Render only the selected, digest-verified notice text. The current hardcoded
   English consent text is not a valid fallback after v1 policy mode is enabled.
+- Complete and verify masking before emitting a frame. A mask execution failure,
+  partial mask or timeout denies the session; it cannot silently continue.
 - Recheck expiry and local indicator/abort health throughout the session.
 
 ## 8. Repository ownership
@@ -198,7 +208,8 @@ and live evidence.
 
 - legal advice or automated lawful-basis selection;
 - legal clearance for Acik or another tenant;
-- full frame-level DLP implementation;
+- full frame-level DLP implementation beyond the signed fail-closed mask-ordering
+  and mask-failure invariants;
 - reseller/multiple-controller resolution;
 - air-gapped policy distribution;
 - production activation.
@@ -207,5 +218,8 @@ The example tenant UUID is a reserved test sentinel and must not be copied to a
 production tenant. Example policy digests are verifier outputs, not fields added
 to source policy JSON; downstream resolvers recompute them at load time.
 
-These are separate product decisions or implementation children. The v1 source
-contract only makes them explicit and prevents unsafe implicit defaults.
+These are separate product decisions or implementation children. Detector failure
+means the product cannot determine whether sensitive content exists; mask execution
+failure means detected content could not be safely redacted. Both deny under the
+platform floor, while the v1 source contract leaves the frame-level implementation
+to the agent child and prevents unsafe implicit defaults.
