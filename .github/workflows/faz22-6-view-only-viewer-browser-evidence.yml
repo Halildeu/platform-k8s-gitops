@@ -275,19 +275,23 @@ jobs:
           set -euo pipefail
           diagnostic_dir="$RUNNER_TEMP/faz22-viewer-collector-diagnostic"
           mkdir -p "$diagnostic_dir"
-          summary='{}'
-          operation='{}'
-          if [ -s "$EVIDENCE_DIR/summary.json" ]; then
-            summary="$(cat "$EVIDENCE_DIR/summary.json")"
+          summary_path="$EVIDENCE_DIR/summary.json"
+          operation_path="$EVIDENCE_DIR/operation.body"
+          if [ ! -s "$summary_path" ]; then
+            summary_path="$RUNNER_TEMP/faz22-viewer-empty-summary.json"
+            printf '{}\n' > "$summary_path"
           fi
-          if [ -s "$EVIDENCE_DIR/operation.body" ]; then
-            operation="$(cat "$EVIDENCE_DIR/operation.body")"
+          if [ ! -s "$operation_path" ]; then
+            operation_path="$RUNNER_TEMP/faz22-viewer-empty-operation.json"
+            printf '{}\n' > "$operation_path"
           fi
           jq -cS -n \
             --arg sourceRevision "$SOURCE_REVISION" \
-            --argjson summary "$summary" \
-            --argjson operation "$operation" \
-            '{
+            --slurpfile summary "$summary_path" \
+            --slurpfile operation "$operation_path" \
+            '($summary[0] // {}) as $summary
+            | ($operation[0] // {}) as $operation
+            | {
               schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v1",
               sourceRevision:$sourceRevision,
               status:($summary.status // "collector-did-not-write-summary"),
@@ -317,7 +321,7 @@ jobs:
               and (.deny.policyDetail == null or (.deny.policyDetail | test("^[a-z0-9-]{1,64}$")))
             ))
           ' "$diagnostic_dir/collector-diagnostic.json" >/dev/null
-          if grep -Eiq 'Bearer |BEGIN .*PRIVATE KEY|sessionId|deviceId|operatorId|decisionId|operationId|canonicalPayload' \
+          if grep -Eiq 'bearer|BEGIN .*PRIVATE KEY|sessionId|deviceId|operatorId|decisionId|operationId|canonicalPayload' \
               "$diagnostic_dir/collector-diagnostic.json"; then
             echo "::error::collector diagnostic contains a forbidden identity or secret-bearing field"
             exit 1

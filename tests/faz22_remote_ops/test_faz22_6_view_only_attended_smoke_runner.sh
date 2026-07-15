@@ -53,6 +53,14 @@ if [[ "$(grep -A2 'name: Upload redacted collector diagnostic' "$BROWSER_WORKFLO
   echo "browser collector diagnostic upload must require successful redaction validation" >&2
   exit 1
 fi
+# shellcheck disable=SC2016 # Assert the workflow shell variables literally.
+grep -Fq -- '--slurpfile operation "$operation_path"' <<<"$browser_workflow_text"
+# shellcheck disable=SC2016 # Assert the forbidden workflow pattern literally.
+if grep -Fq -- '--argjson operation "$operation"' <<<"$browser_workflow_text"; then
+  echo "browser collector diagnostic must not expose raw operation response in process arguments" >&2
+  exit 1
+fi
+grep -Fq "grep -Eiq 'bearer|BEGIN .*PRIVATE KEY" <<<"$browser_workflow_text"
 grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v1' <<<"$browser_workflow_text"
 grep -q 'sessionId|deviceId|operatorId|decisionId|operationId|canonicalPayload' <<<"$browser_workflow_text"
 diagnostic_step="$(sed -n \
