@@ -147,9 +147,10 @@ bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
 jq -e '.browserFailureCode == "browser-unclassified-failure"' \
   "$TMP/browser-missing/collector-diagnostic.json" >/dev/null
 
-printf '%064d\n' 0 > "$TMP/operator-token.txt"
+printf '%s\n' 'not-used-before-binding-validation' > "$TMP/operator-password.txt"
 if VIEWER_URL='https://testai.acik.com/endpoint-admin/remote-access/sessions/test-session/view?streamId=test-stream' \
-    OPERATOR_TOKEN_FILE="$TMP/operator-token.txt" \
+    BROWSER_OPERATOR_USERNAME='rb-operator-test' \
+    BROWSER_OPERATOR_PASSWORD_FILE="$TMP/operator-password.txt" \
     EVIDENCE_OUTPUT="$TMP/browser-evidence.json" \
     BROWSER_DIAGNOSTIC_OUTPUT="$TMP/browser-script-diagnostic.json" \
     SOURCE_REVISION=70d8286163651805cd5ebd537d3836d02fb1692d \
@@ -178,6 +179,15 @@ const { BROWSER_FAILURE_CODES } = await import(pathToFileURL(browserScript));
 const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'));
 assert.deepEqual([...BROWSER_FAILURE_CODES].sort(), [...allowlist.failureCodes].sort());
 NODE
+
+if grep -Fq "localStorage.setItem('token'" "$BROWSER_SCRIPT"; then
+  echo "browser evidence must not inject a bearer into localStorage" >&2
+  exit 1
+fi
+if grep -Fq 'OPERATOR_TOKEN_FILE' "$BROWSER_SCRIPT"; then
+  echo "browser evidence must use the product login journey, not the broker token file" >&2
+  exit 1
+fi
 
 while IFS= read -r static_reason; do
   jq -e --arg reason "$static_reason" \
