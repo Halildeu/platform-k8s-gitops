@@ -561,6 +561,15 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertIn("browserAssetPathsSha256", pass_properties)
         self.assertIn("--resource-version=", self.route_watcher)
         self.assertIn("--watch-only", self.route_watcher)
+        self.assertIn(
+            'INGRESS_LIST_PATH="/apis/networking.k8s.io/v1/ingresses"',
+            self.route_watcher,
+        )
+        self.assertIn('get --raw "$INGRESS_LIST_PATH"', self.route_watcher)
+        self.assertNotIn(
+            'get ingress -A -o json',
+            self.route_watcher,
+        )
         self.assertIn("route-event-observed", self.route_watcher)
         self.assertIn("browser-asset-route-policy-failure", self.route_watcher)
         self.assertIn("--additional-request-path", self.route_watcher)

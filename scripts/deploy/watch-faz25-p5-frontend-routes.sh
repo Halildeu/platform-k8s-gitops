@@ -19,6 +19,7 @@ ROUTE_VALIDATOR="${ROUTE_VALIDATOR:-scripts/deploy/verify-faz25-p5-frontend-rout
 KUBECTL_BIN="${KUBECTL_BIN:-kubectl}"
 INTERVAL_SECONDS="${INTERVAL_SECONDS:-0.25}"
 INTERVAL_MILLISECONDS="${INTERVAL_MILLISECONDS:-250}"
+INGRESS_LIST_PATH="/apis/networking.k8s.io/v1/ingresses"
 
 [[ "$EXPECTED_CONTEXT" == "k3d-test" ]]
 [[ "$EXPECTED_INGRESS_UID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]
@@ -66,6 +67,20 @@ sha256_text() {
   else
     shasum -a 256 | awk '{print $1}'
   fi
+}
+
+list_all_ingresses() {
+  local payload
+  if ! payload="$(
+    "$KUBECTL_BIN" --context "$EXPECTED_CONTEXT" get --raw "$INGRESS_LIST_PATH"
+  )"; then
+    return 1
+  fi
+  # A route-integrity snapshot must cover the complete collection.  The raw
+  # request omits limit, but still reject any server-provided continuation
+  # token instead of accepting a partial list if server behavior changes.
+  jq -e '(.metadata.continue // "") == ""' <<<"$payload" >/dev/null || return 1
+  printf '%s\n' "$payload"
 }
 
 write_report() {
@@ -145,8 +160,7 @@ fail() {
 
 baseline_payload="$(mktemp "$(dirname "$REPORT_PATH")/.route-baseline-XXXXXX")"
 validator_error="$(mktemp "$(dirname "$REPORT_PATH")/.route-validator-XXXXXX")"
-if ! "$KUBECTL_BIN" --context "$EXPECTED_CONTEXT" get ingress -A -o json \
-    > "$baseline_payload" 2>"$validator_error"; then
+if ! list_all_ingresses > "$baseline_payload" 2>"$validator_error"; then
   rm -f -- "$validator_error"
   fail route-policy-or-collection-failure
 fi
@@ -205,7 +219,7 @@ while [[ ! -e "$STOP_PATH" ]]; do
   observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   validator_error="$(mktemp "$(dirname "$REPORT_PATH")/.route-validator-XXXXXX")"
   projection=""
-  if ! projection="$($KUBECTL_BIN --context "$EXPECTED_CONTEXT" get ingress -A -o json | \
+  if ! projection="$(list_all_ingresses | \
       python3 "$ROUTE_VALIDATOR" --ingress-uid "$EXPECTED_INGRESS_UID" \
         2>"$validator_error")"; then
     rm -f -- "$validator_error"
@@ -264,8 +278,7 @@ for browser_path in "${browser_paths[@]}"; do
 done
 final_payload="$(mktemp "$(dirname "$REPORT_PATH")/.route-final-XXXXXX")"
 validator_error="$(mktemp "$(dirname "$REPORT_PATH")/.route-validator-XXXXXX")"
-if ! "$KUBECTL_BIN" --context "$EXPECTED_CONTEXT" get ingress -A -o json \
-    > "$final_payload" 2>"$validator_error" || \
+if ! list_all_ingresses > "$final_payload" 2>"$validator_error" || \
    ! python3 "$ROUTE_VALIDATOR" --ingress-uid "$EXPECTED_INGRESS_UID" \
       "${dynamic_route_args[@]}" < "$final_payload" >/dev/null 2>"$validator_error"; then
   rm -f -- "$final_payload" "$validator_error"
