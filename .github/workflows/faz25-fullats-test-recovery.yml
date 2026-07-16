@@ -107,7 +107,31 @@ jobs:
             [[ -n "$ready_pod" ]] && break
             sleep 5
           done
-          [[ -n "$ready_pod" ]]
+          if [[ -z "$ready_pod" ]]; then
+            echo "::error::ATS rollout timeout after 600s; no workload restart or patch attempted"
+            kubectl --context="$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" \
+              get deployment ats-interview-evidence -o json \
+              | jq -r '.status.conditions[]? |
+                  ["deployment-condition", .type, .status, (.reason // ""), (.message // "")] | @tsv' \
+              || echo "WARN deployment condition diagnosis unavailable"
+            jq -r '.items[] | .metadata.name as $pod | .status.phase as $phase |
+              .status.containerStatuses[]? | select(.name == "app-boot") |
+              ["pod-container", $pod, $phase, .name,
+               ("ready=" + (.ready | tostring)),
+               ("restartCount=" + (.restartCount | tostring)),
+               ("waiting=" + (.state.waiting.reason // "")),
+               ("terminated=" + (.state.terminated.reason // "")),
+               ("exitCode=" + ((.state.terminated.exitCode // "") | tostring))] | @tsv' \
+              <<<"$pods" || echo "WARN pod status diagnosis unavailable"
+            pod_names="$(jq -c '[.items[].metadata.name]' <<<"$pods")"
+            kubectl --context="$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" \
+              get events --field-selector involvedObject.kind=Pod -o json \
+              | jq -r --argjson names "$pod_names" '.items[] |
+                  select(.involvedObject.name as $name | $names | index($name)) |
+                  ["pod-event", .involvedObject.name, (.reason // ""), (.message // "")] | @tsv' \
+              || echo "WARN pod event diagnosis unavailable"
+            exit 1
+          fi
 
           migration_state="$(docker exec platform-pg-test psql -U postgres -d ats -At -F '|' -c \
             "SELECT version,success FROM flyway_schema_history WHERE version IN ('4','5') ORDER BY installed_rank")"
