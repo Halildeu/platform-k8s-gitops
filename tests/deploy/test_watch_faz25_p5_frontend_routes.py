@@ -68,11 +68,15 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
             "args = sys.argv[1:]\n"
             "with open(os.environ['KUBECTL_CALLS'], 'a') as calls:\n"
             "    calls.write(json.dumps(args) + '\\n')\n"
-            "if '--watch-only' in args:\n"
-            "    assert args[:6] == ['--context', 'k3d-test', 'get', 'ingress', '-A', '--watch-only']\n"
-            "    assert args[6].startswith('--resource-version=')\n"
-            "    assert len(args) == 9 and args[7] == '-o'\n"
-            "    assert args[8].startswith('jsonpath={.metadata.resourceVersion}')\n"
+            "watch_path = '/apis/networking.k8s.io/v1/ingresses?watch=true&allowWatchBookmarks=false&resourceVersion=101'\n"
+            "if args == ['--context', 'k3d-test', 'get', '--raw', watch_path]:\n"
+            "    failure = os.environ.get('FAKE_INGRESS_WATCH_FAILURE', '')\n"
+            "    if failure:\n"
+            "        print(failure, file=sys.stderr, flush=True)\n"
+            "        sys.exit(1)\n"
+            "    warning = os.environ.get('FAKE_INGRESS_WATCH_STDERR', '')\n"
+            "    if warning:\n"
+            "        print(warning, file=sys.stderr, flush=True)\n"
             "    event = os.environ.get('FAKE_INGRESS_EVENT', '')\n"
             "    if event:\n"
             "        print(event, flush=True)\n"
@@ -170,6 +174,7 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
         self.assertEqual(report["eventWatchResourceVersion"], "101")
         self.assertEqual(report["finalResourceVersion"], "101")
         self.assertEqual(report["eventCount"], 0)
+        self.assertEqual(report["eventWatchErrorSha256"], "")
         self.assertEqual(report["browserAssetPathCount"], 1)
         canonical_asset_paths = json.dumps(
             ["/assets/application.js"], sort_keys=True, separators=(",", ":")
@@ -181,6 +186,21 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
         self.assertEqual(len(report["routeProjectionSha256s"]), 1)
         self.assertEqual(
             report["target"]["canonicalIngress"]["uid"], INGRESS_UID
+        )
+        calls = [
+            json.loads(line)
+            for line in self.kubectl_calls.read_text().splitlines()
+            if line
+        ]
+        self.assertIn(
+            [
+                "--context",
+                "k3d-test",
+                "get",
+                "--raw",
+                "/apis/networking.k8s.io/v1/ingresses?watch=true&allowWatchBookmarks=false&resourceVersion=101",
+            ],
+            calls,
         )
 
     def test_route_collision_fails_closed_before_browser_ready(self):
@@ -223,7 +243,12 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
             )
         )
         environment = self.env()
-        environment["FAKE_INGRESS_EVENT"] = "102"
+        environment["FAKE_INGRESS_EVENT"] = json.dumps(
+            {
+                "type": "MODIFIED",
+                "object": {"metadata": {"resourceVersion": "102"}},
+            }
+        )
         result = subprocess.run(
             ["bash", str(WATCHER)],
             cwd=ROOT,
@@ -238,6 +263,96 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
         self.assertEqual(report["failureReason"], "route-event-observed")
         self.assertGreaterEqual(report["eventCount"], 1)
         self.assertEqual(report["violationCount"], 1)
+
+    def test_watch_error_event_is_distinct_and_fails_closed(self):
+        self.payload.write_text(
+            json.dumps(
+                {
+                    "metadata": {"resourceVersion": "101"},
+                    "items": [ingress()],
+                }
+            )
+        )
+        environment = self.env()
+        environment["FAKE_INGRESS_EVENT"] = json.dumps(
+            {
+                "type": "ERROR",
+                "object": {"code": 410, "reason": "Expired"},
+            }
+        )
+        result = subprocess.run(
+            ["bash", str(WATCHER)],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["failureReason"], "route-event-watch-error")
+        self.assertGreaterEqual(report["eventCount"], 1)
+
+    def test_watch_process_failure_records_only_stderr_fingerprint(self):
+        self.payload.write_text(
+            json.dumps(
+                {
+                    "metadata": {"resourceVersion": "101"},
+                    "items": [ingress()],
+                }
+            )
+        )
+        environment = self.env()
+        failure = "unknown flag: --resource-version"
+        environment["FAKE_INGRESS_WATCH_FAILURE"] = failure
+        result = subprocess.run(
+            ["bash", str(WATCHER)],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["failureReason"], "route-event-watch-terminated")
+        self.assertFalse(report["eventWatchEstablished"])
+        self.assertEqual(
+            report["eventWatchErrorSha256"],
+            hashlib.sha256(f"{failure}\n".encode()).hexdigest(),
+        )
+        self.assertNotIn(failure, self.report.read_text())
+
+    def test_live_watch_stderr_fails_closed_with_fingerprint(self):
+        self.payload.write_text(
+            json.dumps(
+                {
+                    "metadata": {"resourceVersion": "101"},
+                    "items": [ingress()],
+                }
+            )
+        )
+        environment = self.env()
+        warning = "server warning without process termination"
+        environment["FAKE_INGRESS_WATCH_STDERR"] = warning
+        result = subprocess.run(
+            ["bash", str(WATCHER)],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(self.report.read_text())
+        self.assertEqual(
+            report["failureReason"], "route-event-watch-stderr-observed"
+        )
+        self.assertEqual(
+            report["eventWatchErrorSha256"],
+            hashlib.sha256(f"{warning}\n".encode()).hexdigest(),
+        )
+        self.assertNotIn(warning, self.report.read_text())
 
     def test_missing_list_resource_version_fails_closed(self):
         self.payload.write_text(json.dumps({"items": [ingress()]}))

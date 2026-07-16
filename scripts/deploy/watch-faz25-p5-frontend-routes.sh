@@ -48,6 +48,7 @@ browser_asset_paths_sha256=""
 event_watch_pid=""
 event_watch_output=""
 event_watch_error=""
+event_watch_error_sha256=""
 baseline_payload=""
 
 cleanup() {
@@ -96,6 +97,7 @@ write_report() {
     --arg ingress_uid "$EXPECTED_INGRESS_UID" \
     --arg projection_sha256 "$projection_sha256" \
     --arg event_watch_resource_version "$event_watch_resource_version" \
+    --arg event_watch_error_sha256 "$event_watch_error_sha256" \
     --arg final_resource_version "$final_resource_version" \
     --arg browser_asset_paths_sha256 "$browser_asset_paths_sha256" \
     --argjson sample_count "$sample_count" \
@@ -125,6 +127,7 @@ write_report() {
         eventWatchMode: "KUBERNETES_RESOURCE_VERSION_STREAM",
         eventWatchEstablished: $event_watch_established,
         eventWatchResourceVersion: $event_watch_resource_version,
+        eventWatchErrorSha256: $event_watch_error_sha256,
         finalResourceVersion: $final_resource_version,
         eventCount: $event_count,
         browserAssetPathCount: $browser_asset_path_count,
@@ -139,7 +142,7 @@ write_report() {
 
 record_event_count() {
   if [[ -n "$event_watch_output" && -s "$event_watch_output" ]]; then
-    event_count="$(wc -l < "$event_watch_output" | tr -d '[:space:]')"
+    event_count="$(jq -s 'length' "$event_watch_output" 2>/dev/null || true)"
     if [[ ! "$event_count" =~ ^[0-9]+$ || "$event_count" -lt 1 ]]; then
       event_count=1
     fi
@@ -148,9 +151,26 @@ record_event_count() {
   fi
 }
 
+record_event_watch_error() {
+  if [[ -n "$event_watch_error" && -s "$event_watch_error" ]]; then
+    event_watch_error_sha256="$(sha256_text < "$event_watch_error")"
+  else
+    event_watch_error_sha256=""
+  fi
+}
+
+fail_event_observed() {
+  if jq -e -s 'any(.[]; .type == "ERROR")' \
+      "$event_watch_output" >/dev/null 2>&1; then
+    fail route-event-watch-error
+  fi
+  fail route-event-observed
+}
+
 fail() {
   local reason="$1"
   record_event_count
+  record_event_watch_error
   violation_count=$((violation_count + 1))
   write_report FAIL "$reason"
   : > "$READY_PATH"
@@ -183,9 +203,8 @@ projection_sha256="$(printf '%s\n' "$projection" | sha256_text)"
 sample_count=1
 event_watch_output="$(mktemp "$(dirname "$REPORT_PATH")/.route-events-XXXXXX")"
 event_watch_error="$(mktemp "$(dirname "$REPORT_PATH")/.route-events-error-XXXXXX")"
-"$KUBECTL_BIN" --context "$EXPECTED_CONTEXT" get ingress -A --watch-only \
-  --resource-version="$event_watch_resource_version" \
-  -o 'jsonpath={.metadata.resourceVersion}{"\n"}' \
+ingress_watch_path="${INGRESS_LIST_PATH}?watch=true&allowWatchBookmarks=false&resourceVersion=${event_watch_resource_version}"
+"$KUBECTL_BIN" --context "$EXPECTED_CONTEXT" get --raw "$ingress_watch_path" \
   > "$event_watch_output" 2> "$event_watch_error" &
 event_watch_pid=$!
 
@@ -199,7 +218,10 @@ if ! kill -0 "$event_watch_pid" 2>/dev/null; then
 fi
 record_event_count
 if [[ "$event_count" -ne 0 ]]; then
-  fail route-event-observed
+  fail_event_observed
+fi
+if [[ -s "$event_watch_error" ]]; then
+  fail route-event-watch-stderr-observed
 fi
 event_watch_established=true
 : > "$READY_PATH"
@@ -213,7 +235,10 @@ while [[ ! -e "$STOP_PATH" ]]; do
   fi
   record_event_count
   if [[ "$event_count" -ne 0 ]]; then
-    fail route-event-observed
+    fail_event_observed
+  fi
+  if [[ -s "$event_watch_error" ]]; then
+    fail route-event-watch-stderr-observed
   fi
 
   observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -240,7 +265,10 @@ done
 
 record_event_count
 if [[ "$event_count" -ne 0 ]]; then
-  fail route-event-observed
+  fail_event_observed
+fi
+if [[ -s "$event_watch_error" ]]; then
+  fail route-event-watch-stderr-observed
 fi
 if ! kill -0 "$event_watch_pid" 2>/dev/null; then
   wait "$event_watch_pid" 2>/dev/null || true
@@ -304,7 +332,10 @@ rm -f -- "$final_payload" "$validator_error"
 # this snapshot cannot evade the evidence window.
 record_event_count
 if [[ "$event_count" -ne 0 ]]; then
-  fail route-event-observed
+  fail_event_observed
+fi
+if [[ -s "$event_watch_error" ]]; then
+  fail route-event-watch-stderr-observed
 fi
 if ! kill -0 "$event_watch_pid" 2>/dev/null; then
   wait "$event_watch_pid" 2>/dev/null || true
@@ -317,7 +348,11 @@ wait "$event_watch_pid" 2>/dev/null || true
 event_watch_pid=""
 record_event_count
 if [[ "$event_count" -ne 0 ]]; then
-  fail route-event-observed
+  fail_event_observed
+fi
+record_event_watch_error
+if [[ -n "$event_watch_error_sha256" ]]; then
+  fail route-event-watch-stderr-observed
 fi
 
 write_report PASS ""

@@ -553,19 +553,27 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertEqual(pass_properties["sampleCount"]["minimum"], 2)
         self.assertTrue(pass_properties["eventWatchEstablished"]["const"])
         self.assertEqual(pass_properties["eventCount"]["const"], 0)
+        self.assertEqual(pass_properties["eventWatchErrorSha256"]["const"], "")
         self.assertIn("finalResourceVersion", pass_properties)
         self.assertIn(
             ".finalResourceVersion == .eventWatchResourceVersion", self.workflow
         )
         self.assertEqual(pass_properties["browserAssetPathCount"]["minimum"], 1)
         self.assertIn("browserAssetPathsSha256", pass_properties)
-        self.assertIn("--resource-version=", self.route_watcher)
-        self.assertIn("--watch-only", self.route_watcher)
+        self.assertNotIn("--resource-version=", self.route_watcher)
+        self.assertNotIn("--watch-only", self.route_watcher)
         self.assertIn(
             'INGRESS_LIST_PATH="/apis/networking.k8s.io/v1/ingresses"',
             self.route_watcher,
         )
         self.assertIn('get --raw "$INGRESS_LIST_PATH"', self.route_watcher)
+        self.assertIn(
+            '?watch=true&allowWatchBookmarks=false&resourceVersion=${event_watch_resource_version}',
+            self.route_watcher,
+        )
+        self.assertIn('get --raw "$ingress_watch_path"', self.route_watcher)
+        self.assertIn("route-event-watch-error", self.route_watcher)
+        self.assertIn("eventWatchErrorSha256", self.route_watcher)
         self.assertNotIn(
             'get ingress -A -o json',
             self.route_watcher,
@@ -605,6 +613,18 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
                 "strictChildSchemas",
                 "sensitiveValueScanPassed",
             },
+        )
+
+        stderr_watch_rule = self.route_watch_schema["allOf"][2]
+        self.assertEqual(
+            stderr_watch_rule["if"]["properties"]["failureReason"]["const"],
+            "route-event-watch-stderr-observed",
+        )
+        self.assertEqual(
+            stderr_watch_rule["then"]["properties"]["eventWatchErrorSha256"][
+                "pattern"
+            ],
+            "^[0-9a-f]{64}$",
         )
 
     def test_failed_browser_report_can_preserve_desktop_audit_before_mobile_runs(self):
