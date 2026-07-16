@@ -25,6 +25,7 @@ BASE_URL="${BASE_URL:-https://testai.acik.com}"
 EXPECTED_ISSUER="${EXPECTED_ISSUER:-https://testai.acik.com/realms/platform-test}"
 RUN_EXTERNAL_SMOKE="${RUN_EXTERNAL_SMOKE:-1}"
 RUN_SESSION_EXPIRY_SMOKE="${RUN_SESSION_EXPIRY_SMOKE:-0}"
+RECOVER_STALE_RUN_ID="${RECOVER_STALE_RUN_ID:-}"
 SESSION_EXPIRY_AUDIO_BASE_URL="${SESSION_EXPIRY_AUDIO_BASE_URL:-}"
 SESSION_EXPIRY_METRICS_BASE_URL="${SESSION_EXPIRY_METRICS_BASE_URL:-}"
 SESSION_EXPIRY_EXPECTED_IMAGE="${SESSION_EXPIRY_EXPECTED_IMAGE:-}"
@@ -36,7 +37,8 @@ SMOKE_CHANNELS="${SMOKE_CHANNELS:-1}"
 OUT_DIR="${OUT_DIR:-/tmp/faz24-platform-desktop-token-evidence}"
 RUN_ID_SAFE="${GITHUB_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_ATTEMPT_SAFE="${GITHUB_RUN_ATTEMPT:-1}"
-TEMP_USERNAME="${TEMP_USERNAME:-faz24-recorder-smoke-codex-${RUN_ID_SAFE}-${RUN_ATTEMPT_SAFE}}"
+TEMP_USERNAME_PREFIX="faz24-recorder-smoke-codex"
+TEMP_USERNAME="${TEMP_USERNAME:-${TEMP_USERNAME_PREFIX}-${RUN_ID_SAFE}-${RUN_ATTEMPT_SAFE}}"
 TEMP_EMAIL="${TEMP_EMAIL:-${TEMP_USERNAME}@testai.acik.com}"
 TENANT_ID="${TENANT_ID:-1}"
 COMPANY_ID="${COMPANY_ID:-1}"
@@ -46,6 +48,18 @@ CANONICAL_TENANT_ID="${CANONICAL_TENANT_ID:-}"
 RECONCILE_EXISTING_USERNAMES="${RECONCILE_EXISTING_USERNAMES:-}"
 CONFIRM_EXISTING_USER_RECONCILE="${CONFIRM_EXISTING_USER_RECONCILE:-NO}"
 CONFIRM_CONTROLLED_MAPPER_PRUNE="${CONFIRM_CONTROLLED_MAPPER_PRUNE:-NO}"
+
+# shellcheck source=scripts/faz24/lib/keycloak_admin_rest.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/keycloak_admin_rest.sh"
+
+if [[ -n "${RECOVER_STALE_RUN_ID}" && ! "${RECOVER_STALE_RUN_ID}" =~ ^[0-9]{6,20}$ ]]; then
+  echo "ERROR: RECOVER_STALE_RUN_ID must be an exact bounded GitHub run id" >&2
+  exit 2
+fi
+if [[ -n "${RECOVER_STALE_RUN_ID}" && "${RUN_SESSION_EXPIRY_SMOKE}" != "1" ]]; then
+  echo "ERROR: stale test-state recovery requires session-expiry smoke mode" >&2
+  exit 2
+fi
 
 if [[ "${KC_REALM}" != "platform-test" ]]; then
   echo "ERROR: KC_REALM must be platform-test for this test-only evidence chain" >&2
@@ -113,6 +127,12 @@ DIRECT_GRANTS_TOGGLED="false"
 DIRECT_GRANTS_RESTORED="false"
 TEMP_USER_DELETED="false"
 TOKEN_FILE_REMOVED="false"
+STALE_DIRECT_GRANTS_VERIFIED="false"
+STALE_TEMP_USERS_MATCHED=0
+STALE_TEMP_USERS_DELETED=0
+STALE_TEMP_USERS_REMAINING=-1
+CLEANUP_ADMIN_SESSION_REFRESH_ATTEMPTED="false"
+CLEANUP_ADMIN_SESSION_REFRESHED="false"
 TOKEN_PRESENT="false"
 TOKEN_CONTRACT_EXIT="not-run"
 SMOKE_EXIT="not-run"
@@ -298,32 +318,7 @@ kcadm_login() {
   read_keycloak_admin_password || die "keycloak-admin-password-source-missing"
   unset KC_ADMIN_PASSWORD
 
-  local response_file="${TMP_DIR}/admin-token-response.json"
-  local http_status
-  http_status="$(curl -sS -o "${response_file}" -w '%{http_code}' -X POST \
-    "${KC_BASE_URL}/realms/master/protocol/openid-connect/token" \
-    --data-urlencode "grant_type=password" \
-    --data-urlencode "client_id=admin-cli" \
-    --data-urlencode "username=${KC_ADMIN_USER}" \
-    --data-urlencode "password@${ADMIN_PASS_FILE}" || printf '000')"
-  jq -r '.access_token // empty' "${response_file}" > "${ADMIN_TOKEN_FILE}" 2>/dev/null \
-    || : > "${ADMIN_TOKEN_FILE}"
-  if [[ "${http_status}" == "200" && -s "${ADMIN_TOKEN_FILE}" ]] \
-      && grep -Eq '^[A-Za-z0-9_.-]+$' "${ADMIN_TOKEN_FILE}"; then
-    chmod 0600 "${ADMIN_TOKEN_FILE}"
-    python3 - "${ADMIN_TOKEN_FILE}" "${ADMIN_CURL_CONFIG}" <<'PY'
-import os
-import pathlib
-import sys
-
-token = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").strip()
-target = pathlib.Path(sys.argv[2])
-target.write_text(f'header = "Authorization: Bearer {token}"\n', encoding="utf-8")
-os.chmod(target, 0o600)
-PY
-    KC_ADMIN_MODE="rest"
-    return 0
-  fi
+  refresh_keycloak_admin_rest_session && return 0
 
   die "keycloak-admin-login-failed"
 }
@@ -342,23 +337,60 @@ kcadm_remove_staged_file() {
   docker exec "${KC_CONTAINER}" rm -f "${container_file}" >/dev/null 2>&1 || true
 }
 
-kc_admin_rest() {
-  local method="$1"
-  local path="$2"
-  local out="$3"
-  local body_file="${4:-}"
-  local url="${KC_BASE_URL}/admin/realms/${KC_REALM}${path}"
-  if [[ -n "${body_file}" ]]; then
-    curl -sS -o "${out}" -w '%{http_code}' -X "${method}" \
-      --config "${ADMIN_CURL_CONFIG}" \
-      "${url}" \
-      -H "Content-Type: application/json" \
-      --data-binary "@${body_file}" || printf '000'
-  else
-    curl -sS -o "${out}" -w '%{http_code}' -X "${method}" \
-      --config "${ADMIN_CURL_CONFIG}" \
-      "${url}" || printf '000'
+recover_stale_session_expiry_state() {
+  [[ -n "${RECOVER_STALE_RUN_ID}" ]] || return 0
+  [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" && "${KC_REALM}" == "platform-test" ]] \
+    || die "stale-test-state-recovery-boundary-mismatch"
+
+  local client_file="${TMP_DIR}/stale-recovery-client.json"
+  local client_update="${TMP_DIR}/stale-recovery-client-update.json"
+  local client_out="${TMP_DIR}/stale-recovery-client-update.out"
+  local client_verify="${TMP_DIR}/stale-recovery-client-verify.json"
+  local users_file="${TMP_DIR}/stale-recovery-users.json"
+  local users_verify="${TMP_DIR}/stale-recovery-users-verify.json"
+  local delete_out="${TMP_DIR}/stale-recovery-user-delete.out"
+  local code user_id user_count direct_grants_state
+  local recovery_username_prefix="${TEMP_USERNAME_PREFIX}-${RECOVER_STALE_RUN_ID}"
+  local recovery_username_pattern="^${TEMP_USERNAME_PREFIX}-${RECOVER_STALE_RUN_ID}-[0-9]+$"
+
+  code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}" "${client_file}")"
+  [[ "${code}" == "200" ]] || die "stale-test-state-client-read-failed"
+  # Direct grants are enabled only transiently by this platform-test evidence
+  # chain; false is the canonical baseline before a fresh smoke starts.
+  direct_grants_state="$(jq -er \
+    '.directAccessGrantsEnabled | select(type == "boolean") | tostring' \
+    "${client_file}")" || die "stale-test-state-direct-grants-invalid"
+  if [[ "${direct_grants_state}" == "true" ]]; then
+    jq '.directAccessGrantsEnabled = false' "${client_file}" > "${client_update}"
+    code="$(kc_admin_rest PUT "/clients/${CLIENT_UUID}" "${client_out}" "${client_update}")"
+    [[ "${code}" == "204" ]] || die "stale-test-state-direct-grants-restore-failed"
   fi
+  code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}" "${client_verify}")"
+  [[ "${code}" == "200" ]] || die "stale-test-state-client-verify-failed"
+  jq -e '.directAccessGrantsEnabled == false' "${client_verify}" >/dev/null \
+    || die "stale-test-state-direct-grants-verify-failed"
+  STALE_DIRECT_GRANTS_VERIFIED="true"
+
+  code="$(kc_admin_rest GET "/users?username=${recovery_username_prefix}-&exact=false&max=100" "${users_file}")"
+  [[ "${code}" == "200" ]] || die "stale-test-state-user-read-failed"
+  user_count="$(faz24_temp_user_count "${users_file}" "${recovery_username_pattern}")"
+  STALE_TEMP_USERS_MATCHED="${user_count}"
+  [[ "${user_count}" -ge 1 && "${user_count}" -le 20 ]] \
+    || die "stale-test-state-run-scoped-user-not-found"
+  while IFS= read -r user_id; do
+    [[ -n "${user_id}" ]] || continue
+    code="$(kc_admin_rest DELETE "/users/${user_id}" "${delete_out}")"
+    [[ "${code}" == "204" || "${code}" == "404" ]] \
+      || die "stale-test-state-user-delete-failed"
+    STALE_TEMP_USERS_DELETED=$((STALE_TEMP_USERS_DELETED + 1))
+  done < <(faz24_temp_user_ids "${users_file}" "${recovery_username_pattern}")
+
+  code="$(kc_admin_rest GET "/users?username=${recovery_username_prefix}-&exact=false&max=100" "${users_verify}")"
+  [[ "${code}" == "200" ]] || die "stale-test-state-user-verify-failed"
+  STALE_TEMP_USERS_REMAINING="$(faz24_temp_user_count "${users_verify}" "${recovery_username_pattern}")"
+  [[ "${STALE_TEMP_USERS_REMAINING}" == "0" \
+      && "${STALE_TEMP_USERS_DELETED}" == "${STALE_TEMP_USERS_MATCHED}" ]] \
+    || die "stale-test-state-users-remain-after-cleanup"
 }
 
 read_client_list_by_client_id() {
@@ -1202,6 +1234,17 @@ cleanup_live_state() {
     return 0
   fi
   set +e
+  if [[ "${KC_ADMIN_MODE}" == "rest" \
+      && ( "${DIRECT_GRANTS_TOGGLED}" == "true" || "${TEMP_USER_CREATED}" == "true" ) ]]; then
+    # Emitted by write_evidence after cleanup_live_state returns.
+    # shellcheck disable=SC2034
+    CLEANUP_ADMIN_SESSION_REFRESH_ATTEMPTED="true"
+    if refresh_keycloak_admin_rest_session; then
+      # Emitted by write_evidence after cleanup_live_state returns.
+      # shellcheck disable=SC2034
+      CLEANUP_ADMIN_SESSION_REFRESHED="true"
+    fi
+  fi
   if [[ -n "${CLIENT_UUID}" && "${DIRECT_GRANTS_TOGGLED}" == "true" && -n "${DIRECT_GRANTS_ORIGINAL}" ]]; then
     if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
       "${KCADM[@]}" update "clients/${CLIENT_UUID}" -r "${KC_REALM}" \
@@ -1211,13 +1254,21 @@ cleanup_live_state() {
       local client_file="${TMP_DIR}/client-direct-grants-restore.json"
       local update_file="${TMP_DIR}/client-direct-grants-restore-update.json"
       local update_out="${TMP_DIR}/client-direct-grants-restore.out"
+      local verify_file="${TMP_DIR}/client-direct-grants-restore-verify.json"
       local code
       code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}" "${client_file}")"
       if [[ "${code}" == "200" ]]; then
         jq --argjson enabled "${DIRECT_GRANTS_ORIGINAL}" \
           '.directAccessGrantsEnabled = $enabled' "${client_file}" > "${update_file}"
         code="$(kc_admin_rest PUT "/clients/${CLIENT_UUID}" "${update_out}" "${update_file}")"
-        [[ "${code}" == "204" ]] && DIRECT_GRANTS_RESTORED="true"
+        if [[ "${code}" == "204" ]]; then
+          code="$(kc_admin_rest GET "/clients/${CLIENT_UUID}" "${verify_file}")"
+          if [[ "${code}" == "200" ]] \
+              && jq -e --argjson expected "${DIRECT_GRANTS_ORIGINAL}" \
+                '.directAccessGrantsEnabled == $expected' "${verify_file}" >/dev/null; then
+            DIRECT_GRANTS_RESTORED="true"
+          fi
+        fi
       fi
     fi
   fi
@@ -1236,6 +1287,14 @@ cleanup_live_state() {
   rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${ADMIN_CURL_CONFIG}" \
     "${USER_PASS_FILE}" "${TOKEN_FILE}"
   [[ ! -e "${TOKEN_FILE}" ]] && TOKEN_FILE_REMOVED="true"
+  if ! faz24_cleanup_state_proven \
+      "${DIRECT_GRANTS_TOGGLED}" "${DIRECT_GRANTS_RESTORED}" \
+      "${TEMP_USER_CREATED}" "${TEMP_USER_DELETED}"; then
+    if [[ "${STATUS}" != "fail" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="live-state-cleanup-not-proven"
+    fi
+  fi
   CLEANUP_DONE="true"
   set -e
 }
@@ -1289,6 +1348,13 @@ write_diagnostic() {
     --argjson tempUserCreated "${TEMP_USER_CREATED}" \
     --argjson tempUserDeleted "${TEMP_USER_DELETED}" \
     --argjson tokenFileRemoved "${TOKEN_FILE_REMOVED}" \
+    --arg recoveryRunId "${RECOVER_STALE_RUN_ID}" \
+    --argjson staleDirectGrantsVerified "${STALE_DIRECT_GRANTS_VERIFIED}" \
+    --argjson staleTempUsersMatched "${STALE_TEMP_USERS_MATCHED}" \
+    --argjson staleTempUsersDeleted "${STALE_TEMP_USERS_DELETED}" \
+    --argjson staleTempUsersRemaining "${STALE_TEMP_USERS_REMAINING}" \
+    --argjson cleanupAdminSessionRefreshAttempted "${CLEANUP_ADMIN_SESSION_REFRESH_ATTEMPTED}" \
+    --argjson cleanupAdminSessionRefreshed "${CLEANUP_ADMIN_SESSION_REFRESHED}" \
     --argjson existingUsersReconciled "${EXISTING_USERS_RECONCILED}" \
     --argjson existingUsersAlreadyCorrect "${EXISTING_USERS_ALREADY_CORRECT}" \
     --slurpfile kcSource "${KC_SOURCE_JSON}" \
@@ -1347,7 +1413,15 @@ write_diagnostic() {
         directGrantsRestored: $directGrantsRestored,
         tempUserCreated: $tempUserCreated,
         tempUserDeleted: $tempUserDeleted,
-        tokenFileRemoved: $tokenFileRemoved
+        tokenFileRemoved: $tokenFileRemoved,
+        recoveryRequested: ($recoveryRunId != ""),
+        recoveryRunId: (if $recoveryRunId == "" then null else $recoveryRunId end),
+        staleDirectGrantsVerified: $staleDirectGrantsVerified,
+        staleTempUsersMatched: $staleTempUsersMatched,
+        staleTempUsersDeleted: $staleTempUsersDeleted,
+        staleTempUsersRemaining: $staleTempUsersRemaining,
+        adminSessionRefreshAttempted: $cleanupAdminSessionRefreshAttempted,
+        adminSessionRefreshed: $cleanupAdminSessionRefreshed
       },
       tenantAliasReconcile: {
         canonicalUserAttribute: "org_id",
@@ -1390,6 +1464,7 @@ echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SM
 
 kcadm_login
 resolve_client_uuid
+recover_stale_session_expiry_state
 capture_client_state "${CLIENT_BEFORE_JSON}"
 preflight_existing_user_reconcile
 write_reconcile_backup

@@ -2,9 +2,12 @@ from pathlib import Path
 import json
 import subprocess
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts/faz24/run-platform-desktop-token-evidence-chain.sh"
+REST_LIB = REPO_ROOT / "scripts/faz24/lib/keycloak_admin_rest.sh"
 WORKFLOW = REPO_ROOT / ".github/workflows/faz24-platform-desktop-token-evidence.yml"
 
 
@@ -22,10 +25,13 @@ def test_runner_script_is_shell_syntax_valid():
 
 def test_runner_contract_restores_and_redacts():
     text = SCRIPT.read_text(encoding="utf-8")
+    rest_text = REST_LIB.read_text(encoding="utf-8")
 
     assert "KC_REALM must be platform-test" in text
     assert "GITHUB_RUN_ATTEMPT" in text
     assert "directAccessGrantsEnabled=${DIRECT_GRANTS_ORIGINAL}" in text
+    assert "client-direct-grants-restore-verify.json" in text
+    assert "'.directAccessGrantsEnabled == $expected'" in text
     assert '"users/${TEMP_USER_ID}"' in text
     assert "TOKEN_FILE_REMOVED" in text
     assert "grant-attempts-array.json" in text
@@ -36,6 +42,16 @@ def test_runner_contract_restores_and_redacts():
     assert "ADMIN_TOKEN_FILE" in text
     assert "ADMIN_CURL_CONFIG" in text
     assert "kc_admin_rest" in text
+    assert "recover_stale_session_expiry_state" in text
+    assert "TEMP_USERNAME_PREFIX" in text
+    assert "faz24_temp_user_ids" in rest_text
+    assert "max=100" in text
+    assert "stale-test-state-run-scoped-user-not-found" in text
+    assert "stale-test-state-users-remain-after-cleanup" in text
+    assert "stale-test-state-direct-grants-invalid" in text
+    assert "'.directAccessGrantsEnabled == false'" in text
+    assert "faz24_cleanup_state_proven" in rest_text
+    assert 'FAILURE_REASON="live-state-cleanup-not-proven"' in text
     assert "RESOURCE_CLIENT_ID" in text
     assert "CAPABILITY_ROLE" in text
     assert "audio_record" in text
@@ -74,7 +90,7 @@ def test_runner_contract_restores_and_redacts():
     assert 'write_kc_source_diagnostic "actions-secret" "KC_TEST_ADMIN_PASSWORD"' in text
     assert "sudo -n cat" in text
     assert 'rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${ADMIN_CURL_CONFIG}"' in text
-    assert '--config "${ADMIN_CURL_CONFIG}"' in text
+    assert '--config "${ADMIN_CURL_CONFIG}"' in rest_text
     assert "session-expiry smoke target allowlist mismatch" in text
     assert 'if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then' in text
     assert "verify_controlled_claim_mapper_contract\n  verify_no_assigned_scope_controlled_claims\nelse\n  converge_platform_desktop_mappers" in text
@@ -102,6 +118,170 @@ def test_runner_contract_restores_and_redacts():
     }
     assert "path:" not in text
     assert "set -x" not in text
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_admin_rest_401_refreshes_once_and_retries_cleanup_once(tmp_path, method):
+    calls = tmp_path / "calls"
+    refreshes = tmp_path / "refreshes"
+    calls.write_text("0", encoding="utf-8")
+    refreshes.write_text("0", encoding="utf-8")
+    script = f"""
+set -euo pipefail
+source {REST_LIB!s}
+CALLS={calls!s}
+REFRESHES={refreshes!s}
+KC_ADMIN_MODE=rest
+kc_admin_rest_once() {{
+  value=$(cat "$CALLS")
+  value=$((value + 1))
+  printf '%s' "$value" > "$CALLS"
+  if [ "$value" -eq 1 ]; then printf '401'; else printf '204'; fi
+}}
+refresh_keycloak_admin_rest_session() {{
+  value=$(cat "$REFRESHES")
+  printf '%s' "$((value + 1))" > "$REFRESHES"
+  return 0
+}}
+code=$(kc_admin_rest {method} /cleanup/test /tmp/out /tmp/body)
+[ "$code" = 204 ]
+[ "$(cat "$CALLS")" = 2 ]
+[ "$(cat "$REFRESHES")" = 1 ]
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_admin_rest_failed_retry_keeps_cleanup_evidence_fail_closed(tmp_path, method):
+    calls = tmp_path / "calls"
+    refreshes = tmp_path / "refreshes"
+    calls.write_text("0", encoding="utf-8")
+    refreshes.write_text("0", encoding="utf-8")
+    script = f"""
+set -euo pipefail
+source {REST_LIB!s}
+CALLS={calls!s}
+REFRESHES={refreshes!s}
+KC_ADMIN_MODE=rest
+kc_admin_rest_once() {{
+  value=$(cat "$CALLS")
+  printf '%s' "$((value + 1))" > "$CALLS"
+  printf '401'
+}}
+refresh_keycloak_admin_rest_session() {{
+  value=$(cat "$REFRESHES")
+  printf '%s' "$((value + 1))" > "$REFRESHES"
+  return 0
+}}
+code=$(kc_admin_rest {method} /cleanup/test /tmp/out /tmp/body)
+[ "$code" = 401 ]
+cleanup_proven=false
+[ "$code" = 204 ] && cleanup_proven=true
+[ "$cleanup_proven" = false ]
+[ "$(cat "$CALLS")" = 2 ]
+[ "$(cat "$REFRESHES")" = 1 ]
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("direct_toggled", "direct_restored", "user_created", "user_deleted", "expected"),
+    [
+        ("false", "false", "false", "false", True),
+        ("true", "true", "false", "false", True),
+        ("false", "false", "true", "true", True),
+        ("true", "false", "false", "false", False),
+        ("false", "false", "true", "false", False),
+        ("true", "true", "true", "false", False),
+    ],
+)
+def test_cleanup_state_is_proven_only_when_each_mutation_is_reverted(
+    direct_toggled, direct_restored, user_created, user_deleted, expected
+):
+    script = f"""
+set -euo pipefail
+source {REST_LIB!s}
+if faz24_cleanup_state_proven {direct_toggled} {direct_restored} {user_created} {user_deleted}; then
+  result=true
+else
+  result=false
+fi
+[ "$result" = {str(expected).lower()} ]
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        ({"directAccessGrantsEnabled": False}, True),
+        ({"directAccessGrantsEnabled": True}, False),
+        ({}, False),
+        ({"directAccessGrantsEnabled": None}, False),
+    ],
+)
+def test_stale_direct_grants_requires_observed_exact_false(document, expected):
+    proc = subprocess.run(
+        ["jq", "-e", ".directAccessGrantsEnabled == false"],
+        input=json.dumps(document),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert (proc.returncode == 0) is expected
+
+
+def test_temp_user_filter_selects_only_exact_recovery_run(tmp_path):
+    users = tmp_path / "users.json"
+    users.write_text(
+        json.dumps(
+            [
+                {"id": "gha", "username": "faz24-recorder-smoke-codex-29534428064-1"},
+                {"id": "local", "username": "faz24-recorder-smoke-codex-20260717T010203Z-2"},
+                {"id": "manual", "username": "faz24-recorder-smoke-codex-manual"},
+                {"id": "other", "username": "another-user"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    pattern = "^faz24-recorder-smoke-codex-29534428064-[0-9]+$"
+    script = f"""
+set -euo pipefail
+source {REST_LIB!s}
+ids=$(faz24_temp_user_ids {users!s} '{pattern}')
+[ "$ids" = gha ]
+[ "$(faz24_temp_user_count {users!s} '{pattern}')" = 1 ]
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
 
 
 def test_controlled_claim_mapper_jq_contract_compiles_and_rejects_duplicates():
@@ -154,6 +334,7 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert "run_session_expiry_smoke:" in workflow
+    assert "recover_stale_run_id:" in workflow
     assert "expected_audio_gateway_image:" in workflow
     assert "run_audio_gateway_session_expiry_transient_smoke.sh" in workflow
     assert "EXPECTED_AUDIO_GATEWAY_IMAGE" in workflow
@@ -172,6 +353,11 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert 'secret in candidate.read_bytes()' in workflow
     assert "Verify artifact excludes private material" in workflow
     assert "directGrantsRestored" in workflow
+    assert "staleDirectGrantsVerified" in workflow
+    assert "staleTempUsersMatched" in workflow
+    assert "staleTempUsersRemaining" in workflow
+    assert "adminSessionRefreshAttempted" in workflow
+    assert "adminSessionRefreshed" in workflow
     assert "tempUserDeleted" in workflow
     assert "tokenFileRemoved" in workflow
     assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,'" in workflow
