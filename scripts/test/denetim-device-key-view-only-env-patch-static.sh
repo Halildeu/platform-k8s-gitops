@@ -25,6 +25,20 @@ require() {
   fi
 }
 
+if grep -Fq -- "-notmatch '^[a-f0-9]{64}$'" "$script" \
+  || grep -Fq -- "-notmatch '^[A-Z0-9_]+$'" "$script"; then
+  echo "canonical digest/key validators must not use culture-sensitive case-insensitive matching" >&2
+  exit 1
+fi
+[[ "$(grep -Fc -- "-cnotmatch '^[a-f0-9]{64}$'" "$script")" -eq 11 ]] || {
+  echo "all canonical digest validators must remain case-sensitive and culture-independent" >&2
+  exit 1
+}
+[[ "$(grep -Fc -- "-cnotmatch '^[A-Z0-9_]+$'" "$script")" -eq 1 ]] || {
+  echo "managed environment key validator must remain case-sensitive and culture-independent" >&2
+  exit 1
+}
+
 # PowerShell source assertions are intentionally literal shell strings.
 # shellcheck disable=SC2016
 {
@@ -313,19 +327,51 @@ pwsh -NoProfile -NonInteractive -Command '
     function Get-ScheduledTask { param($TaskName) [pscustomobject]@{ TaskName = $TaskName } }
 
     $tx = "a" * 32
-    Register-RollbackCleanupTask `
-      -BackupDirectory "C:\evidence\/denetim-device-key-view-only-$tx" `
-      -EvidenceRootPath "C:\evidence" `
-      -TransactionLockDirectory "C:\locks\migration.lock" `
-      -TransactionLockOwnerFile "C:\locks\migration.lock\owner.txt" `
-      -BoundTransactionId $tx `
-      -BoundServiceName EndpointAgent `
-      -ExpectedPreMutationServiceEnvironmentSha256 ("b" * 64) `
-      -ManagedEnvironmentKeys @("ENDPOINT_AGENT_REMOTE_BRIDGE_MIGRATION_TRANSACTION_ID") `
-      -DeleteAfterUtc ([DateTime]::UtcNow.AddHours(1).ToString("o")) | Out-Null
+    $originalCulture = [Threading.Thread]::CurrentThread.CurrentCulture
+    try {
+      [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo("tr-TR")
+      Register-RollbackCleanupTask `
+        -BackupDirectory "C:\evidence\/denetim-device-key-view-only-$tx" `
+        -EvidenceRootPath "C:\evidence" `
+        -TransactionLockDirectory "C:\locks\migration.lock" `
+        -TransactionLockOwnerFile "C:\locks\migration.lock\owner.txt" `
+        -BoundTransactionId $tx `
+        -BoundServiceName EndpointAgent `
+        -ExpectedPreMutationServiceEnvironmentSha256 ("b" * 64) `
+        -ManagedEnvironmentKeys @("ENDPOINT_AGENT_REMOTE_BRIDGE_MIGRATION_TRANSACTION_ID") `
+        -DeleteAfterUtc ([DateTime]::UtcNow.AddHours(1).ToString("o")) | Out-Null
+      $invalidKeyRejected = $false
+      try {
+        Register-RollbackCleanupTask `
+          -BackupDirectory "C:\evidence\/denetim-device-key-view-only-$tx" `
+          -EvidenceRootPath "C:\evidence" `
+          -TransactionLockDirectory "C:\locks\migration.lock" `
+          -TransactionLockOwnerFile "C:\locks\migration.lock\owner.txt" `
+          -BoundTransactionId $tx `
+          -BoundServiceName EndpointAgent `
+          -ExpectedPreMutationServiceEnvironmentSha256 ("b" * 64) `
+          -ManagedEnvironmentKeys @("endpoint_agent_remote_bridge_migration_transaction_id") `
+          -DeleteAfterUtc ([DateTime]::UtcNow.AddHours(1).ToString("o")) | Out-Null
+      } catch {
+        if ($_.Exception.Message -eq "Managed environment key set is invalid for cleanup registration") {
+          $invalidKeyRejected = $true
+        } else {
+          throw
+        }
+      }
+      if (-not $invalidKeyRejected) { throw "non-canonical managed environment key was accepted under tr-TR" }
+    } finally {
+      [Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
+    }
 
     $encoded = ($script:cleanupArgument -split " ")[-1]
     $cleanupCode = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encoded))
+    if ($cleanupCode.Contains("-notmatch")) {
+      throw "embedded cleanup body contains a culture-sensitive digest validator"
+    }
+    if (-not $cleanupCode.Contains("-cnotmatch")) {
+      throw "embedded cleanup body is missing culture-independent digest validation"
+    }
     $cleanupTokens = $null
     $cleanupErrors = $null
     [void][System.Management.Automation.Language.Parser]::ParseInput(
