@@ -179,8 +179,10 @@ require_grep 'faz22-6-view-only-viewer-runtime-snapshots-${{ github.run_id }}' "
 require_grep "metrics-before.prom metrics-after.prom d30-snapshot.json frame-flow-summary.json audit-summary.json" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "sha256sum -c SHA256SUMS" "$VIEWER_BROWSER_WORKFLOW"
 require_grep 'CONSENT_WAIT_SECONDS: "240"' "$VIEWER_BROWSER_WORKFLOW"
-require_grep 'required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + 120 ))"' \
+# shellcheck disable=SC2016 # Assert the workflow's literal headroom expression.
+require_grep 'required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + OPEN_SESSION_DEVICE_READY_SECONDS + 120 ))"' \
   "$VIEWER_BROWSER_WORKFLOW"
+require_grep 'OPEN_SESSION_DEVICE_READY_SECONDS: "180"' "$VIEWER_BROWSER_WORKFLOW"
 python3 - "$VIEWER_DEVICE_KEY_CONFIG" <<'PY'
 import pathlib
 import re
