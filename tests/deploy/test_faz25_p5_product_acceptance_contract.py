@@ -27,6 +27,9 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         cls.route_watcher = (
             ROOT / "scripts/deploy/watch-faz25-p5-frontend-routes.sh"
         ).read_text()
+        cls.canonical_main_guard = (
+            ROOT / "scripts/ci/verify-faz25-p5-canonical-main-equivalence.sh"
+        ).read_text()
         cls.runtime_package = json.loads(
             (ROOT / "tests/smoke/faz25-p5-runtime/package.json").read_text()
         )
@@ -52,9 +55,41 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
     def test_workflow_is_main_only_and_uses_protected_environment_secrets(self):
         self.assertIn('[[ "$GITHUB_REF" == "refs/heads/main" ]]', self.workflow)
         self.assertIn(
-            '[[ "$harness_revision" == "$(git rev-parse refs/remotes/origin/main)" ]]',
+            "verify-faz25-p5-canonical-main-equivalence.sh",
             self.workflow,
         )
+        self.assertIn("AUTHORITY_EQUIVALENT_DESCENDANT", self.canonical_main_guard)
+        self.assertIn("git merge-base --is-ancestor", self.canonical_main_guard)
+        self.assertIn('"kustomize"', self.canonical_main_guard)
+        self.assertIn('"argocd"', self.canonical_main_guard)
+        self.assertNotIn(
+            '"argocd/applications/platform-test.yaml"', self.canonical_main_guard
+        )
+        self.assertIn("baselineAuthorityTreeSha256", self.canonical_main_guard)
+        self.assertIn("candidateAuthorityTreeSha256", self.canonical_main_guard)
+        self.assertIn(
+            "faz25-p5-canonical-main-equivalence-v2", self.canonical_main_guard
+        )
+        self.assertIn(
+            '"faz25-p5-canonical-main-equivalence-v2"', self.workflow
+        )
+        self.assertEqual(
+            self.workflow.count("verify-faz25-p5-canonical-main-equivalence.sh"),
+            2,
+        )
+        self.assertIn('canonical_main_mode_at_end="REJECTED"', self.workflow)
+        for marker in (
+            "canonicalMainRevisionAtStart",
+            "canonicalMainModeAtStart",
+            "canonicalMainRevisionAtEnd",
+            "canonicalMainModeAtEnd",
+            "approvedBaselineRevision",
+            "authorityPathSetSha256",
+            "authorityTreeSha256",
+            "authorityTreeHashVerifiedAtStart",
+            "authorityTreeHashVerifiedAtEnd",
+        ):
+            self.assertIn(marker, self.workflow)
         self.assertIn('canonical_main_at_end=true', self.workflow)
         self.assertIn("environment: testai-product-acceptance", self.workflow)
         self.assertIn("secrets.P5_SMOKE_AUTH_USERNAME", self.workflow)
@@ -849,6 +884,15 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             {
                 "canonicalMainAtStart",
                 "canonicalMainAtEnd",
+                "canonicalMainRevisionAtStart",
+                "canonicalMainModeAtStart",
+                "canonicalMainRevisionAtEnd",
+                "canonicalMainModeAtEnd",
+                "approvedBaselineRevision",
+                "authorityPathSetSha256",
+                "authorityTreeSha256",
+                "authorityTreeHashVerifiedAtStart",
+                "authorityTreeHashVerifiedAtEnd",
                 "prePostSameSession",
                 "browserPodBuildInfoMatched",
                 "browserIngressLogMatched",
