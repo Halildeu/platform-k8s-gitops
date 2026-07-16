@@ -89,9 +89,13 @@ import os
 import sys
 
 # Token yüzeyini etkileyen config alanları. Raw JSON equality YASAK — KC `id`/server-default ekler.
+# `multivalued`/`aggregate.attrs` (Codex P1): jsonType.label=String tek başına SCALAR garantisi DEĞİL —
+# multivalued=true, userId/org_id claim'ini string LİSTESİNE çevirir ve token kontratının
+# `userId='987654'` / `org_id='default'` skaler varsayımını sessizce bozar.
 CONFIG_KEYS = (
     "user.attribute", "claim.name", "jsonType.label",
     "access.token.claim", "id.token.claim", "userinfo.token.claim",
+    "multivalued", "aggregate.attrs",
     "included.custom.audience", "included.client.audience",
 )
 
@@ -111,27 +115,41 @@ def load(d, name, default=None):
 
 
 def norm_mappers(ms):
-    out = {}
+    """→ (dict, duplicate_names). Duplicate isim (Codex P1): dict son mapper'ı tutar; ilkini gizler.
+    Gizlenen duplicate token üretiminde ÇALIŞMAYA devam eder ve aynı claim'i farklı biçimde yazabilir
+    → çağıran duplicate'i UNSAFE saymalı. (Repo precedent: setup-m365-broker.sh aynı ismi FAIL sayar.)"""
+    out, seen, dups = {}, set(), []
     for m in ms or []:
+        n = m["name"]
+        if n in seen:
+            dups.append(n)
+        seen.add(n)
         cfg = m.get("config") or {}
-        out[m["name"]] = {
+        out[n] = {
             "protocol": m.get("protocol"),
             "protocolMapper": m.get("protocolMapper"),
             "consentRequired": bool(m.get("consentRequired", False)),
             "config": {k: cfg.get(k) for k in CONFIG_KEYS if cfg.get(k) is not None},
         }
-    return out
+    return out, sorted(set(dups))
 
 
 def compare_scope(desired, live):
     issues = []
+    live_ms = live.get("protocolMappers") or []
     if live.get("protocol") != desired["protocol"]:
         issues.append("protocol=%r (beklenen %r)" % (live.get("protocol"), desired["protocol"]))
     for k, v in desired["attributes"].items():
         got = (live.get("attributes") or {}).get(k)
         if got != v:
             issues.append("attr %s=%r (beklenen %r)" % (k, got, v))
-    d_m, l_m = norm_mappers(desired["protocolMappers"]), norm_mappers(live.get("protocolMappers"))
+    d_m, _ = norm_mappers(desired["protocolMappers"])
+    l_m, dups = norm_mappers(live_ms)
+    if dups:
+        issues.append("DUPLICATE mapper adı: %s (aynı isimde >1 mapper — biri diğerini gizler ama ikisi de "
+                      "token üretiminde çalışır)" % ",".join(dups))
+    if len(live_ms) != len(desired["protocolMappers"]):
+        issues.append("mapper sayısı=%d (beklenen %d)" % (len(live_ms), len(desired["protocolMappers"])))
     missing = sorted(set(d_m) - set(l_m))
     extra = sorted(set(l_m) - set(d_m))
     if missing:
@@ -166,6 +184,18 @@ def main():
     RUNTIME, NOTIFY, CANARY = des_runtime["name"], des_notify["name"], "notify-canary"
 
     unsafe, missing, ok = [], [], []
+
+    # 0) SNAPSHOT BÜTÜNLÜĞÜ (Codex P1) — okuma hatası "boş state" değildir.
+    #    Bir GET başarısızsa collect `.unreadable` marker bırakır. Bilinmeyen state üzerinde
+    #    mutasyon yapmak yerine burada fail-closed duruyoruz (postcondition'da fark etmek GEÇ olur).
+    unreadable_path = os.path.join(d, ".unreadable")
+    if os.path.exists(unreadable_path):
+        with open(unreadable_path) as f:
+            failed = [ln.strip() for ln in f if ln.strip()]
+        print("  [UNSAFE] snapshot incomplete — şu kaynaklar OKUNAMADI: %s" % "; ".join(failed))
+        print("           (okuma hatası 'kaynak boş' sayılmaz; bilinmeyen state üzerinde mutasyon YASAK)")
+        print("VERDICT=UNSAFE:%d" % len(failed))
+        return 3
 
     # 1) realm rolü — JSON/type exact (grep DEĞİL: eksik/null alan false-positive "OK" üretiyordu)
     role = load(d, "role.json")
@@ -325,7 +355,10 @@ mappers = [{
     "name": "userId", "protocol": "openid-connect",
     "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": False,
     "config": {"user.attribute": "userId", "claim.name": "userId", "jsonType.label": "String",
-               "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false"},
+               "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false",
+               # scalar garanti: jsonType=String TEK BAŞINA yetmez — multivalued/aggregate claim'i
+               # string listesine çevirir ve auth-service'in Long.parseLong beklentisini bozar.
+               "multivalued": "false", "aggregate.attrs": "false"},
 }]
 for a in customs:
     mappers.append({"name": "aud-" + a, "protocol": "openid-connect",
@@ -356,7 +389,9 @@ json.dump({"name": name,
                "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": False,
                "config": {"user.attribute": "org_id", "claim.name": "org_id", "jsonType.label": "String",
                           "access.token.claim": "true", "id.token.claim": "false",
-                          "userinfo.token.claim": "false"}}]}, open(out, "w"))
+                          "userinfo.token.claim": "false",
+                          # scalar garanti (bkz. userId): org guard tek org_id string bekler
+                          "multivalued": "false", "aggregate.attrs": "false"}}]}, open(out, "w"))
 PY
 }
 
@@ -367,30 +402,55 @@ print(next((x["id"] for x in d if x.get("name") == sys.argv[2] or x.get("clientI
 }
 
 # ---- collect: TÜM state tek turda (fonksiyon başına tekrar kcadm çağrısı YOK → timeout'un da kökü) ----
+#
+# FAIL-CLOSED OKUMA (Codex P1): başarısız GET **asla** `[]`/`{}` gibi geçerli state'e çevrilmez.
+# "Kaynak gerçekten boş" ile "kaynak okunamadı" AYRI state'tir. Aksi halde ör. `clients/<id>/scope-mappings`
+# timeout ederse script `{}` yazar, beklenmeyen rol mapping'ini göremez ve BİLİNMEYEN canlı state üzerinde
+# mutasyon yapar. Her dosya yalnız komut başarılı dönerse atomik olarak yerine konur; aksi halde
+# `.unreadable` marker'ı bırakılır → audit `UNSAFE: snapshot incomplete`.
 CID=""; RSID=""; NSID=""
+
+kget_atomic() {  # $1=hedef dosya  $2..=kcadm get argümanları
+  local dest="$1"; shift
+  local tmp="$dest.part"
+  if K get "$@" -r "$REALM" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    mv -f "$tmp" "$dest"
+    return 0
+  fi
+  rm -f "$tmp"
+  # Okunamadı → marker (audit bunu UNSAFE sayar; "boş" DEĞİL)
+  printf '%s\n' "$*" >> "$(dirname "$dest")/.unreadable"
+  return 1
+}
+
 collect() {
   local d="$WORK/snap"
   rm -rf "$d"; mkdir -p "$d"
-  K get "roles/$REALM_ROLE" -r "$REALM" > "$d/role.json" 2>/dev/null || echo '{}' > "$d/role.json"
-  K get clients -r "$REALM" -q "clientId=$CLIENT_ID" > "$d/clients.json" 2>/dev/null || echo '[]' > "$d/clients.json"
-  CID="$(pick_id "$d/clients.json" "$CLIENT_ID")"
+  # roles/<role>: yoksa KC non-zero döner — bu GEÇERLİ "rol yok" bilgisi, okuma hatası değil.
+  # Ayrımı audit'e taşımak için ayrı marker kullanılır.
+  if ! K get "roles/$REALM_ROLE" -r "$REALM" > "$d/role.json.part" 2>"$d/role.err"; then
+    if grep -qiE "not found|404" "$d/role.err" 2>/dev/null; then
+      echo '{}' > "$d/role.json"          # gerçekten yok → audit "rol YOK" der (UNSAFE)
+    else
+      printf 'roles/%s\n' "$REALM_ROLE" >> "$d/.unreadable"   # okunamadı → snapshot incomplete
+    fi
+    rm -f "$d/role.json.part"
+  else
+    mv -f "$d/role.json.part" "$d/role.json"
+  fi
+  rm -f "$d/role.err"
+
+  kget_atomic "$d/clients.json" clients -q "clientId=$CLIENT_ID" || true
+  CID="$(pick_id "$d/clients.json" "$CLIENT_ID" 2>/dev/null || true)"
   if [ -n "$CID" ]; then
-    K get "clients/$CID/protocol-mappers/models" -r "$REALM" > "$d/client-mappers.json" 2>/dev/null \
-      || echo '[]' > "$d/client-mappers.json"
-    K get "clients/$CID/scope-mappings" -r "$REALM" > "$d/client-scope-mappings.json" 2>/dev/null \
-      || echo '{}' > "$d/client-scope-mappings.json"
+    kget_atomic "$d/client-mappers.json" "clients/$CID/protocol-mappers/models" || true
+    kget_atomic "$d/client-scope-mappings.json" "clients/$CID/scope-mappings" || true
   fi
-  K get client-scopes -r "$REALM" > "$d/scopes.json" 2>/dev/null || echo '[]' > "$d/scopes.json"
-  RSID="$(pick_id "$d/scopes.json" "$RUNTIME_SCOPE")"
-  NSID="$(pick_id "$d/scopes.json" "$NOTIFY_SCOPE")"
-  if [ -n "$RSID" ]; then
-    K get "client-scopes/$RSID/scope-mappings" -r "$REALM" > "$d/runtime-sm.json" 2>/dev/null \
-      || echo '{}' > "$d/runtime-sm.json"
-  fi
-  if [ -n "$NSID" ]; then
-    K get "client-scopes/$NSID/scope-mappings" -r "$REALM" > "$d/notify-sm.json" 2>/dev/null \
-      || echo '{}' > "$d/notify-sm.json"
-  fi
+  kget_atomic "$d/scopes.json" client-scopes || true
+  RSID="$(pick_id "$d/scopes.json" "$RUNTIME_SCOPE" 2>/dev/null || true)"
+  NSID="$(pick_id "$d/scopes.json" "$NOTIFY_SCOPE" 2>/dev/null || true)"
+  [ -n "$RSID" ] && { kget_atomic "$d/runtime-sm.json" "client-scopes/$RSID/scope-mappings" || true; }
+  [ -n "$NSID" ] && { kget_atomic "$d/notify-sm.json" "client-scopes/$NSID/scope-mappings" || true; }
   return 0
 }
 
@@ -478,16 +538,39 @@ case "$AUDIT_RC" in
 esac
 
 echo ""
-echo "-- apply (yalnız güvenli eksikler) --"
-# Scope create sonrası id'ler değişir → association/scope-mapping için snapshot tazelenir.
+echo "-- apply stage 1: yalnız eksik scope'ları yarat --"
+# İki aşama + ARADA YENİDEN AUDIT (Codex P1): ilk audit scope'u görmediği için shape'ini
+# inceleyememiştir. Create sonrası KC kendi normalize/default'unu uygulayabilir (canlı kanıt:
+# audience mapper'a `userinfo.token.claim=false` ekliyor). Bu yüzden create'ten sonra scope
+# YENİDEN denetlenmeden client'a BAĞLANMAZ ve association listesi ilk (stale) audit'ten
+# değil, TAZE audit çıktısından yeniden türetilir.
 FIRST_PASS="${VERDICT#MISSING:}"
 SCOPE_ITEMS="$(printf '%s' "$FIRST_PASS" | tr ',' '\n' | grep '^scope:' | paste -sd, - || true)"
-REST_ITEMS="$(printf '%s' "$FIRST_PASS" | tr ',' '\n' | grep -v '^scope:' | paste -sd, - || true)"
 if [ -n "$SCOPE_ITEMS" ]; then
   apply_missing "$SCOPE_ITEMS" || { echo "APPLY FAIL (scope create) — --check ile doğrula" >&2; exit 1; }
-  collect   # yeni scope id'leri
+  echo ""
+  echo "-- ikinci safety barrier: yeni scope'lar yeniden denetleniyor --"
+  collect
+  set +e
+  MID_OUT="$(audit)"; MID_RC=$?
+  set -e
+  printf '%s\n' "$MID_OUT"
+  case "$MID_RC" in
+    0) echo ""; echo "SONUÇ: scope create sonrası converged — association gerekmedi (exit 0)"; exit 0 ;;
+    3) echo ""
+       echo "SAFETY BARRIER (stage 2): yeni oluşturulan scope UNSAFE denetimden geçemedi —"
+       echo "association/scope-mapping YAPILMADI (exit 3). Scope KC tarafında oluşmuş olabilir;"
+       echo "shape'i incele, gerekirse elle düzelt/sil, sonra --check ile doğrula."
+       exit 3 ;;
+    2) VERDICT="$(printf '%s' "$MID_OUT" | sed -n 's/^VERDICT=//p' | tail -1)" ;;
+    *) echo "audit hatası (exit 1)"; exit 1 ;;
+  esac
 fi
+
+REST_ITEMS="$(printf '%s' "${VERDICT#MISSING:}" | tr ',' '\n' | grep -v '^scope:' | paste -sd, - || true)"
 if [ -n "$REST_ITEMS" ]; then
+  echo ""
+  echo "-- apply stage 2: association + scope-mapping (taze audit'ten türetildi) --"
   apply_missing "$REST_ITEMS" || { echo "APPLY FAIL (association/mapping) — --check ile doğrula" >&2; exit 1; }
 fi
 

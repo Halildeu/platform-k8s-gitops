@@ -21,7 +21,7 @@
 |---|---|---|
 | **A1** | Brute-force protection (`failureFactor=5` + 10-param converge) — `harden-realm-security.sh` | ✅ LIVE (PR #2479) |
 | **A2a** | Confidential `smoke-client` substrate + Vault secret — [`setup-smoke-client.sh`](../../../scripts/keycloak/setup-smoke-client.sh) | ✅ bu sürüm (source-ready + platform-test live shape/secret/grant kanıtı) |
-| **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | 🟡 **LIVE PARTIAL / Needs Verify** — KC desired-state + token projection live; permission `/authz/me` audience-only 200; **endpoint-admin allow/deny + variant scoped 200 + notification 202 pending** (persona seed) |
+| **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | 🟡 **LIVE PARTIAL / Needs Verify** — KC desired-state + token projection live; permission `/authz/me` audience-only 200; **endpoint-admin allow/deny + variant scoped 200 + notification 202 + impersonation 201 pending** (persona seed — ayrı fixture paketi) |
 | A2b.2 | 4 TEST runbook repoint (`client_id=frontend` → `smoke-client`) | A2b.1 live acceptance sonrası |
 | A2c | `frontend.directAccessGrantsEnabled=false` | ayrı cutover PR |
 | A3 | redirectUri + webOrigins narrowing | sonraki PR |
@@ -188,9 +188,22 @@ Prod realm `serban`; `CONFIRM_PROD_HARDEN=serban` olmadan script fail-closed dur
 `setup-smoke-token-contract.sh` **yalnız Keycloak**'ı converge eder; **consumer manifest mutasyonu YOK**.
 
 ```bash
-ssh halil@staging-sw 'REALM=platform-test bash -s -- --check' < scripts/keycloak/setup-smoke-token-contract.sh   # 0=converged 2=drift
-ssh halil@staging-sw 'REALM=platform-test bash -s -- --apply' < scripts/keycloak/setup-smoke-token-contract.sh   # 0=PASS 3=postcond-fail
+ssh halil@staging-sw 'REALM=platform-test bash -s -- --check' < scripts/keycloak/setup-smoke-token-contract.sh
+ssh halil@staging-sw 'REALM=platform-test bash -s -- --apply' < scripts/keycloak/setup-smoke-token-contract.sh
 ```
+
+**Exit sözleşmesi (her iki mod, canonical audit'ten):**
+
+| exit | Anlam |
+|---|---|
+| `0` | `SAFE` — converged (apply'da: mutasyon gerekmedi veya postcondition PASS) |
+| `2` | `MISSING` — yalnız **güvenli eksik** var (`--check`); `--apply` bunları yaratır |
+| `3` | `UNSAFE` — **`--check`**: güvenli-olmayan mevcut state · **`--apply`**: ya pre-mutation barrier (hiç mutasyon yapılmadı) ya stage-2 barrier (scope yaratıldı, association YAPILMADI) ya da postcondition-fail |
+| `1` | audit/girdi/mutasyon hatası (kısmi state kalmış olabilir → `--check` ile doğrula) |
+
+> **Snapshot bütünlüğü**: kcadm okuma hatası **"boş state" sayılmaz**. Bir GET başarısız olursa
+> audit `UNSAFE: snapshot incomplete` verir ve mutasyon yapılmaz — aksi halde script, okunamayan
+> bir scope-mapping'i "yok" sanıp **bilinmeyen canlı state üzerinde** mutasyon yapardı.
 
 ### Desired (v3.2)
 
@@ -219,7 +232,7 @@ token projection: azp=smoke-client · aud⊇6 · beklenmeyen aud yok · userId='
                   client_credentials → unauthorized_client ✓
 consumer        : permission /authz/me → 200  **canlı allow-list'te smoke-client YOK iken**
                   (= azp fallback ile değil, audience ile geçti — Codex acceptance kombinasyonu)
-                  endpoint-admin token-yok → 401 (fail-closed) · admin persona → 404 (auth geçti; route ayrı konu)
+                  endpoint-admin token-yok → 401 (fail-closed) · admin persona → 403 (aşağıya bak)
                   variant 1204/1205 → 403/403 (persona'da VARIANTS_READ + PROJECT:1204 seed yok — beklenen)
 ```
 
@@ -238,6 +251,15 @@ Script'in "UNSAFE state'te hiçbir mutasyon yapmaz" sözleşmesi TEST realm'de g
 ```
 
 Ayrıca idempotency: converged state'te `--apply` → "zaten converged — mutasyon yok (exit 0)".
+
+**Scalar-claim invariant canlı doğrulandı**: `multivalued`/`aggregate.attrs` audit'e eklendiğinde
+canlı mapper'larda bu alanların **hiç set edilmediği** ortaya çıktı (`live=None`) → audit `UNSAFE`
+verdi (script kendi düzeltmedi). Scope'lar silinip `--apply` ile yeniden yaratıldı (create → **ikinci
+barrier** → association → scope-mapping) → `13/13 [OK] VERDICT=SAFE`. Token projection tekrar koşuldu:
+`userId='987654'` skaler string (`^[0-9]+$`, liste DEĞİL) · `org_id='default'` skaler · `aud ⊇ 6` ·
+`azp=smoke-client` · admin `ENDPOINT_ADMIN` · normal token'da `org_id` yok — **8/8 PASS**.
+Gerekçe: `jsonType.label=String` tek başına skaler garantisi değildir; `multivalued=true` claim'i
+string listesine çevirip auth-service'in `Long.parseLong` beklentisini sessizce bozardı.
 
 ### `--apply` non-atomic (dürüst sınır)
 
