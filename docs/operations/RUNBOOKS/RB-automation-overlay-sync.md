@@ -182,6 +182,60 @@ Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir
   lineage gate'lerini çalıştırır.
 - Authenticated Meeting davranış smoke'u bu artifact gate'inden ayrıdır.
 
+## Precondition'lar + bilinen tuzaklar (2026-07-16 canlı aktivasyondan)
+
+#2295 aktivasyonu sırasında **kodda yaşamayan iki repo-state precondition'ı** canlıda
+ortaya çıktı. İkisi de artık script'te fail-closed/self-healing:
+
+### 1. PR label'ları — `gh pr create --label` fail-closed
+
+`scan-promotion-candidates.sh` PR'ı `--label "auto-promotion,env:prod,user-approval-required"`
+ile açar. **Bilinmeyen bir label TÜM create'i fail eder**:
+
+```
+[FAIL] gh pr create error: could not add label: 'auto-promotion' not found
+```
+
+Canlı sonuç (2026-07-16): 5/5 aday açılamadı, branch'ler orphan kaldı. Label'lar
+repo-state'tir, kodla gelmez. Script artık preflight'ta 3 label'ı **idempotent ensure**
+eder (yoksa oluşturur; oluşturamazsa `exit 2` — sessiz atlama yok).
+
+### 2. Orphan branch → non-fast-forward kilidi (PR-lifecycle + lease ile çözüldü)
+
+Bir run branch'i push edip PR'ı açamazsa branch remote'ta kalır. Sonraki run aynı isme
+push edince **non-fast-forward** reddedilir → aday **kalıcı olarak** açılamaz hâle gelir.
+Script artık push öncesi **PR lifecycle**'ını sorgular ve duruma göre davranır:
+
+| Durum | Davranış | Neden |
+|---|---|---|
+| PR sorgusu **hata** | `[FAIL]` fail-closed, **ref'e dokunulmaz** | API/auth/rate-limit hatası "PR yok" sayılamaz |
+| **OPEN** PR | `[SKIP]` | operator review'daki branch korunur |
+| **MERGED** PR | `[SKIP]` | ledger reconciliation gerekir; sessiz yeniden açma yok |
+| **CLOSED** PR | `[SKIP]` — **terminal** (rejected/superseded) | operator'ın "bu aday değil" kararı **kalıcıdır**. ⚠️ Bu scanner **otomatik rearm DESTEKLEMEZ**: ledger'da rearm alanı okumaz; aynı deterministic branch için CLOSED history durdukça her run SKIP eder. Yeniden adaylık ayrı governed lifecycle + **yeni branch identity** gerektirir (ayrı slice) |
+| Hiç PR kaydı yok + branch var | **gerçek orphan** → `git ls-remote` ile expected-SHA alınıp `--force-with-lease=ref:sha` ile atomik replace | delete+push yerine compare-and-swap: silme penceresi yok, dış değişiklik lease ile reddedilir |
+| Branch yok | normal push (`--force-with-lease=ref:` boş lease) | yeni aday |
+
+> **Neden delete değil**: GitHub ref-delete endpoint'i SHA precondition almaz → sorgu ile
+> mutasyon arası değişiklik korunmaz. Lease compare-and-swap bunu kapatır.
+>
+> **Concurrency**: workflow `concurrency: promotion-bot-scan-candidates` (cancel-in-progress:
+> false) ile serialize; `repo` filtresi group'a katılmaz ("all" scan ile filtered scan de
+> çakışır). Lease + concurrency birbirini tamamlar.
+
+### 3. Test-only servisler prod'da yok → `no diff` (doğru davranış)
+
+`artifact-host` gibi yalnız-test servisleri prod overlay'de bulunmaz; digest swap diff
+üretmez → `[WARN] no diff after digest swap` + PR açılmaz. Bu **fail-safe**, hata değil.
+
+### Aktivasyon kanıtı (referans)
+
+```
+run 29496854058 (12:05, secret'lardan sonra) : Generate GitHub App token = success
+run 29489757616 (10:08, secret'lardan önce)  : Generate GitHub App token = skipped
+PR #2489-#2493  : author = sender = platform-gitops-automation[bot]
+cross-ai-audit  : PASS — automation_actor_allowlist ✓ automation_branch_allowlist ✓
+```
+
 ## Disable / rollback
 
 - **Geçici devre dışı**: `AUTOMATION_APP_ID` + `AUTOMATION_APP_PRIVATE_KEY`

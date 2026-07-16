@@ -1,0 +1,46 @@
+name: Gate — promotion scanner behavioral contract
+
+# Codex 019f6af2: scan-promotion-candidates.sh'ın label preflight + PR-lifecycle
+# guard + expected-SHA lease state-machine'i `PROMOTION_DRY_RUN=1` smoke'unda
+# ÇALIŞMAZ (dry-run push'tan önce çıkar; label ensure non-dry-run dalında).
+# Bu gate o yolları izole biçimde yürütür: gerçek temp bare-git remote + fake gh.
+#
+# Read-only: App secret'ı YOK, write permission YOK. Canlı repo'ya dokunmaz.
+# Merge sonrası kontrollü canlı drill bunun YERİNE geçmez (farklı hata sınıfı:
+# gerçek installation token / ruleset bypass / GitHub PR lifecycle).
+
+on:
+  pull_request:
+    paths:
+      - "scripts/promotion/scan-promotion-candidates.sh"
+      - "tests/promotion/test_scan_promotion_candidates.sh"
+      - ".github/workflows/promotion-bot-scan-candidates.yml"
+      - ".github/workflows/gate-promotion-scanner.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-promotion-scanner-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scanner-contract:
+    name: scan-promotion-candidates behavioral tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Syntax + lint
+        run: |
+          set -euo pipefail
+          bash -n scripts/promotion/scan-promotion-candidates.sh
+          bash -n tests/promotion/test_scan_promotion_candidates.sh
+          shellcheck -S error \
+            scripts/promotion/scan-promotion-candidates.sh \
+            tests/promotion/test_scan_promotion_candidates.sh
+
+      - name: Behavioral contract tests (temp bare-git + fake gh)
+        run: bash tests/promotion/test_scan_promotion_candidates.sh
