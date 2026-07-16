@@ -536,6 +536,78 @@ grep -Fq "apply-denetim-attestation-migration.sh" "$workflow" || {
   echo "browser evidence workflow must run the transaction-bound migration wrapper" >&2
   exit 1
 }
+# shellcheck disable=SC2016
+grep -Fq 'collector_kubeconfig="$(mktemp "$RUNNER_TEMP/faz22-viewer-kubeconfig.XXXXXX")"' "$workflow" || {
+  echo "browser evidence workflow must create the collector kubeconfig atomically with a random name" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq 'kubectl config view --raw --flatten --minify --context=k3d-test > "$collector_kubeconfig"' "$workflow" || {
+  echo "browser evidence workflow must derive an isolated k3d-test-only kubeconfig" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq 'KUBECONFIG="$collector_kubeconfig" kubectl config use-context k3d-test' "$workflow" || {
+  echo "browser evidence workflow must scope context selection to the isolated kubeconfig" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq 'KUBECONFIG="$collector_kubeconfig" kubectl config current-context' "$workflow" || {
+  echo "browser evidence workflow must verify the isolated current context" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq 'chmod 600 "$collector_kubeconfig"' "$workflow" || {
+  echo "browser evidence workflow must protect the credential-bearing kubeconfig" >&2
+  exit 1
+}
+grep -Fq 'trap cleanup_collector_kubeconfig EXIT' "$workflow" || {
+  echo "browser evidence workflow must remove the isolated kubeconfig on every exit" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq 'shred -u -- "$path"' "$workflow" || {
+  echo "browser evidence workflow must securely remove the credential-bearing kubeconfig" >&2
+  exit 1
+}
+grep -Fq 'name: Remove isolated collector kubeconfig' "$workflow" || {
+  echo "browser evidence workflow must have an always-run kubeconfig cleanup step" >&2
+  exit 1
+}
+grep -Fq 'COLLECTOR_KUBECONFIG_CLEANUP_PATH=' "$workflow" || {
+  echo "browser evidence workflow must bind cleanup to the exact random kubeconfig path" >&2
+  exit 1
+}
+grep -Fq "printf 'COLLECTOR_KUBECONFIG_CLEANUP_PATH=\\n'" "$workflow" || {
+  echo "browser evidence workflow must clear the cross-step cleanup-path variable" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq '[ ! -L "$collector_kubeconfig" ]' "$workflow" || {
+  echo "browser evidence workflow must reject a symlinked collector kubeconfig" >&2
+  exit 1
+}
+grep -Fq 'umask 077' "$workflow" || {
+  echo "browser evidence workflow must create collector evidence and credentials owner-only" >&2
+  exit 1
+}
+grep -Fq "stat -c '%a'" "$workflow" || {
+  echo "browser evidence workflow must verify kubeconfig mode 0600 at runtime" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq 'export KUBECONFIG="$collector_kubeconfig"' "$workflow" || {
+  echo "browser evidence workflow must scope the isolated kubeconfig to collector children" >&2
+  exit 1
+}
+while IFS= read -r config_mutation; do
+  trimmed="${config_mutation#"${config_mutation%%[![:space:]]*}"}"
+  # shellcheck disable=SC2016
+  [[ "$trimmed" == 'KUBECONFIG="$collector_kubeconfig" kubectl config use-context k3d-test >/dev/null' ]] || {
+    echo "browser evidence workflow contains an unscoped or unexpected kubeconfig mutation" >&2
+    exit 1
+  }
+done < <(grep -E 'kubectl config (use-context|set|set-context|set-cluster|set-credentials|unset|rename-context|delete-context|delete-cluster|delete-user)([[:space:]]|$)' "$workflow" || true)
 
 # Execute the exact orchestrator evidence validator against valid, wrong-session,
 # wrong-broker-session, and insufficient-ACK fixtures.
