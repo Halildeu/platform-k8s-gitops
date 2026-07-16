@@ -209,11 +209,8 @@ echo "KC: ats-roleless-persona → rolsüz (kasıtlı)"
 
 # --- 6b) tenant claim mapper (ATS SecurityConfig TENANT_CLAIM="tenant" sabit,
 # fail-closed: claim yoksa HICBIR authority uretilmez). Persona attribute'lari
-# mapper gecisinden ONCE yazilir. Mevcut mapper dogru tipteyse atomik PUT ile
-# guncellenir; tip farkliysa Keycloak'in immutable mapper-type siniri onceden
-# siniflandirilip yalniz bu isimli mapper icin delete/create kullanilir. Bu kisa
-# pencerede tenant claim yoktur ve ATS backend fail-closed kalir; herhangi bir
-# update/recreate hatasi scripti durdurur.
+# mapper gecisinden ONCE yazilir; mevcut mapper atomik PUT ile guncellenir.
+# Delete→create penceresi YOK: create/update basarisizsa eski mapper korunur.
 if ! TENANT_MAPPER_ROWS=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
   --fields id,name --format csv --noquotes 2>/dev/null); then
   echo "FATAL: tenant mapper listesi okunamadi; kor provisioning fail-closed" >&2
@@ -221,11 +218,8 @@ if ! TENANT_MAPPER_ROWS=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models
 fi
 TENANT_MAPPER_ID=$(awk -F, '$2=="ats-tenant-claim-mapper"{print $1; exit}' <<<"$TENANT_MAPPER_ROWS")
 TENANT_MAPPER_OK="false"
-TENANT_MAPPER_KIND=""
 if [ -n "$TENANT_MAPPER_ID" ]; then
   TENANT_MAPPER_JSON=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" -r $REALM)
-  TENANT_MAPPER_KIND=$(printf '%s' "$TENANT_MAPPER_JSON" | python3 -c 'import json,sys
-print(json.load(sys.stdin).get("protocolMapper", ""))')
   TENANT_MAPPER_OK=$(printf '%s' "$TENANT_MAPPER_JSON" | python3 -c 'import json,sys
 m=json.load(sys.stdin); c=m.get("config",{})
 print(str(m.get("protocolMapper")=="oidc-usermodel-attribute-mapper" and c.get("user.attribute")=="ats_tenant" and c.get("claim.name")=="tenant" and c.get("access.token.claim")=="true").lower())')
@@ -245,21 +239,9 @@ if [ "$TENANT_MAPPER_OK" != "true" ]; then
     -s 'config."aggregate.attrs"=false'
   )
   if [ -n "$TENANT_MAPPER_ID" ]; then
-    if [ "$TENANT_MAPPER_KIND" = "oidc-usermodel-attribute-mapper" ]; then
-      kc update "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" \
-        -r $REALM "${MAPPER_ARGS[@]}" >/dev/null
-      echo "KC: ats-tenant-claim-mapper atomik UPDATE (user.attribute=ats_tenant)"
-    else
-      echo "KC: tenant mapper tipi '$TENANT_MAPPER_KIND'; fail-closed hedefli yeniden olusturma" >&2
-      kc delete "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" \
-        -r $REALM >/dev/null
-      kc create "client-scopes/$AUD_SID/protocol-mappers/models" \
-        -r $REALM "${MAPPER_ARGS[@]}" >/dev/null || {
-          echo "FATAL: tenant mapper yeniden olusturulamadi; ATS tenant claim fail-closed" >&2
-          exit 1
-        }
-      echo "KC: ats-tenant-claim-mapper RECREATED (user.attribute=ats_tenant)"
-    fi
+    kc update "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" \
+      -r $REALM "${MAPPER_ARGS[@]}" >/dev/null
+    echo "KC: ats-tenant-claim-mapper atomik UPDATE (user.attribute=ats_tenant)"
   else
     kc create "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM "${MAPPER_ARGS[@]}" >/dev/null
     echo "KC: ats-tenant-claim-mapper CREATED (user.attribute=ats_tenant)"
