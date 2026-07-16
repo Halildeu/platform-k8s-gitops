@@ -6057,6 +6057,21 @@ patches:
       - op: replace
         path: /data/USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED
         value: "true"
+      # board #2533 (umbrella #2530) — TEST-ONLY. Do NOT promote to the prod overlay.
+      #
+      # JwtAutoProvisionGate is fail-closed: without the M365 marker claim `entra_tid` it denies
+      # ("missing-entra-tid") unless auto-provision.allow-local-keycloak=true
+      # (${AUTO_PROVISION_ALLOW_LOCAL_KEYCLOAK:false} — never set anywhere until now).
+      # Consequence: users that authenticate against the LOCAL Keycloak realm (i.e. every TEST
+      # persona and every non-M365 login) never get a `user_service.users` row → no numeric user id
+      # → the whole authz chain reads with the wrong subject and returns 403.
+      #
+      # This does NOT weaken the activation gate: provisioned users still land disabled
+      # ("Passive by design"), so the journey stays provision → PENDING → admin activation →
+      # access. USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED above already surfaces that step.
+      - op: add
+        path: /data/AUTO_PROVISION_ALLOW_LOCAL_KEYCLOAK
+        value: "true"
   - target:
       kind: ConfigMap
       name: meeting-service-config
