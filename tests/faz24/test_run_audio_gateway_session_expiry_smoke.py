@@ -51,6 +51,8 @@ class _ExpiryHandler(BaseHTTPRequestHandler):
     finished = False
     bearer_seen = False
     redirect_sessions_to = None
+    prometheus_gauge_suffix_normalized = False
+    prometheus_gauge_alias_value = None
 
     def log_message(self, *_args):  # pragma: no cover - keep test output clean.
         return
@@ -93,6 +95,16 @@ class _ExpiryHandler(BaseHTTPRequestHandler):
             "audio_gateway_direct_stt_aggregation_chunks_buffered_total": cls.chunks,
             "audio_gateway_direct_stt_aggregation_dropped_capacity_total": 0,
         }
+        if cls.prometheus_gauge_suffix_normalized:
+            values["audio_gateway_direct_stt_audio_bound_negative_invariant"] = (
+                values.pop(
+                    "audio_gateway_direct_stt_audio_bound_negative_invariant_total"
+                )
+            )
+        if cls.prometheus_gauge_alias_value is not None:
+            values["audio_gateway_direct_stt_audio_bound_negative_invariant"] = (
+                cls.prometheus_gauge_alias_value
+            )
         raw = "".join(f"{name} {value}\n" for name, value in values.items()).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
@@ -172,6 +184,8 @@ def _serve(
     negative_after_expiry: bool = False,
     buffer_after_finish: bool = False,
     redirect_sessions_to=None,
+    prometheus_gauge_suffix_normalized: bool = False,
+    prometheus_gauge_alias_value: int | None = None,
 ):
     _ExpiryHandler.session_starts = 0
     _ExpiryHandler.active = False
@@ -183,6 +197,10 @@ def _serve(
     _ExpiryHandler.finished = False
     _ExpiryHandler.bearer_seen = False
     _ExpiryHandler.redirect_sessions_to = redirect_sessions_to
+    _ExpiryHandler.prometheus_gauge_suffix_normalized = (
+        prometheus_gauge_suffix_normalized
+    )
+    _ExpiryHandler.prometheus_gauge_alias_value = prometheus_gauge_alias_value
     server = ThreadingHTTPServer(("127.0.0.1", 0), _ExpiryHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
@@ -265,6 +283,64 @@ def test_expiry_smoke_proves_cleanup_and_capacity_reuse_without_token(tmp_path):
     assert token not in output_file.read_text(encoding="utf-8")
     assert stat.S_IMODE(output_file.stat().st_mode) == 0o600
     assert _ExpiryHandler.bearer_seen is True
+
+
+def test_expiry_smoke_accepts_micrometer_prometheus_gauge_suffix_normalization(
+    tmp_path,
+):
+    server = _serve(prometheus_gauge_suffix_normalized=True)
+    try:
+        token, proc = _run(tmp_path, server)
+    finally:
+        server.shutdown()
+
+    report = json.loads(proc.stdout)
+    assert proc.returncode == 0, proc.stderr
+    assert report["status"] == "pass"
+    assert (
+        report["metrics"]["afterFinish"][
+            "audio_gateway_direct_stt_audio_bound_negative_invariant_total"
+        ]
+        == 0
+    )
+    assert token not in proc.stdout
+    assert token not in proc.stderr
+
+
+def test_expiry_smoke_fails_closed_on_conflicting_canonical_and_alias_values(
+    tmp_path,
+):
+    server = _serve(prometheus_gauge_alias_value=1)
+    try:
+        token, proc = _run(tmp_path, server)
+    finally:
+        server.shutdown()
+
+    report = json.loads(proc.stdout)
+    assert proc.returncode == 1
+    assert report["status"] == "fail"
+    assert "conflicting metric exports" in report["failureReason"]
+    assert token not in proc.stdout
+    assert token not in proc.stderr
+
+
+def test_expiry_smoke_detects_nonzero_normalized_gauge_alias(tmp_path):
+    server = _serve(
+        negative_after_expiry=True,
+        prometheus_gauge_suffix_normalized=True,
+    )
+    try:
+        token, proc = _run(tmp_path, server)
+    finally:
+        server.shutdown()
+
+    report = json.loads(proc.stdout)
+    assert proc.returncode == 1
+    assert report["status"] == "fail"
+    assert report["boundaries"]["negativeInvariantStable"] is False
+    assert "metric convergence timeout" in report["failureReason"]
+    assert token not in proc.stdout
+    assert token not in proc.stderr
 
 
 def test_expiry_smoke_does_not_follow_authenticated_redirect(tmp_path):

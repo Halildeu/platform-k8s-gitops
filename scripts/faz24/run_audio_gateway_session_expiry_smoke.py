@@ -53,6 +53,23 @@ METRIC_NAMES = (
     "audio_gateway_direct_stt_aggregation_chunks_buffered_total",
     "audio_gateway_direct_stt_aggregation_dropped_capacity_total",
 )
+# Micrometer's Prometheus naming convention removes the reserved `_total`
+# suffix from a gauge. Keep this alias explicit so counter-name compatibility
+# does not turn into a broad, fail-open metric match.
+METRIC_ALIASES = {
+    "audio_gateway_direct_stt_audio_bound_negative_invariant_total": (
+        "audio_gateway_direct_stt_audio_bound_negative_invariant",
+    ),
+}
+METRIC_EXPORT_NAMES = frozenset(
+    name
+    for canonical in METRIC_NAMES
+    for name in (
+        canonical,
+        f"{canonical}_total",
+        *METRIC_ALIASES.get(canonical, ()),
+    )
+)
 METRIC_RE = re.compile(
     r"^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^\n]*\})?\s+"
     r"(?P<value>-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)$"
@@ -163,13 +180,24 @@ def _http_request_no_redirect(
 
 
 def _metric_value(values: dict[str, float], name: str) -> float:
-    if name in values:
-        return values[name]
-    # Micrometer may append _total to a Counter that already uses that suffix.
-    doubled = f"{name}_total"
-    if doubled in values:
-        return values[doubled]
-    raise SmokeError(f"required metric missing: {name}")
+    # Micrometer may append _total to a Counter that already uses that suffix,
+    # while Prometheus removes the reserved suffix from a Gauge. If more than
+    # one representation is exported, require agreement instead of silently
+    # preferring a value that could hide an invariant breach.
+    candidates = dict.fromkeys(
+        (name, f"{name}_total", *METRIC_ALIASES.get(name, ()))
+    )
+    present = [
+        (candidate, values[candidate])
+        for candidate in candidates
+        if candidate in values
+    ]
+    if not present:
+        raise SmokeError(f"required metric missing: {name}")
+    if any(value != present[0][1] for _, value in present[1:]):
+        exports = ", ".join(candidate for candidate, _ in present)
+        raise SmokeError(f"conflicting metric exports for {name}: {exports}")
+    return present[0][1]
 
 
 def _metrics_snapshot(base_url: str, timeout_seconds: int) -> dict[str, float]:
@@ -193,7 +221,7 @@ def _metrics_snapshot(base_url: str, timeout_seconds: int) -> dict[str, float]:
         if not match:
             continue
         name = match.group("name")
-        if name in METRIC_NAMES or name.removesuffix("_total") in METRIC_NAMES:
+        if name in METRIC_EXPORT_NAMES:
             parsed[name] = parsed.get(name, 0.0) + float(match.group("value"))
     return {name: _metric_value(parsed, name) for name in METRIC_NAMES}
 
