@@ -46,6 +46,15 @@
       "required": [
         "canonicalMainAtStart",
         "canonicalMainAtEnd",
+        "canonicalMainRevisionAtStart",
+        "canonicalMainModeAtStart",
+        "canonicalMainRevisionAtEnd",
+        "canonicalMainModeAtEnd",
+        "approvedBaselineRevision",
+        "authorityPathSetSha256",
+        "authorityTreeSha256",
+        "authorityTreeHashVerifiedAtStart",
+        "authorityTreeHashVerifiedAtEnd",
         "prePostSameSession",
         "browserPodBuildInfoMatched",
         "browserIngressLogMatched",
@@ -58,6 +67,19 @@
       "properties": {
         "canonicalMainAtStart": { "type": "boolean" },
         "canonicalMainAtEnd": { "type": "boolean" },
+        "canonicalMainRevisionAtStart": { "$ref": "#/definitions/gitSha" },
+        "canonicalMainModeAtStart": {
+          "enum": ["EXACT_HEAD", "AUTHORITY_EQUIVALENT_DESCENDANT"]
+        },
+        "canonicalMainRevisionAtEnd": { "$ref": "#/definitions/gitSha" },
+        "canonicalMainModeAtEnd": {
+          "enum": ["EXACT_HEAD", "AUTHORITY_EQUIVALENT_DESCENDANT", "REJECTED"]
+        },
+        "approvedBaselineRevision": { "$ref": "#/definitions/gitSha" },
+        "authorityPathSetSha256": { "$ref": "#/definitions/sha256" },
+        "authorityTreeSha256": { "$ref": "#/definitions/sha256" },
+        "authorityTreeHashVerifiedAtStart": { "type": "boolean" },
+        "authorityTreeHashVerifiedAtEnd": { "type": "boolean" },
         "prePostSameSession": { "type": "boolean" },
         "browserPodBuildInfoMatched": { "type": "boolean" },
         "browserIngressLogMatched": { "type": "boolean" },
@@ -145,6 +167,14 @@
             "properties": {
               "canonicalMainAtStart": { "const": true },
               "canonicalMainAtEnd": { "const": true },
+              "canonicalMainModeAtStart": {
+                "enum": ["EXACT_HEAD", "AUTHORITY_EQUIVALENT_DESCENDANT"]
+              },
+              "canonicalMainModeAtEnd": {
+                "enum": ["EXACT_HEAD", "AUTHORITY_EQUIVALENT_DESCENDANT"]
+              },
+              "authorityTreeHashVerifiedAtStart": { "const": true },
+              "authorityTreeHashVerifiedAtEnd": { "const": true },
               "prePostSameSession": { "const": true },
               "browserPodBuildInfoMatched": { "const": true },
               "browserIngressLogMatched": { "const": true },

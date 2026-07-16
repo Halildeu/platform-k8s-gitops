@@ -34,7 +34,31 @@ jobs:
           harness_revision="$(git rev-parse HEAD)"
           [[ "$harness_revision" == "$GITHUB_SHA" ]]
           git fetch --quiet --no-tags origin main
-          [[ "$harness_revision" == "$(git rev-parse refs/remotes/origin/main)" ]]
+          canonical_main_report="$(
+            bash scripts/ci/verify-faz25-p5-canonical-main-equivalence.sh \
+              "$harness_revision" refs/remotes/origin/main
+          )"
+          [[ "$(jq -r '.verdict' <<<"$canonical_main_report")" == "PASS" ]]
+          [[ "$(jq -r '.schemaVersion' <<<"$canonical_main_report")" == \
+             "faz25-p5-canonical-main-equivalence-v2" ]]
+          [[ "$(jq -r '.baselineRevision' <<<"$canonical_main_report")" == \
+             "$harness_revision" ]]
+          canonical_main_revision_at_start="$(
+            jq -r '.candidateRevision' <<<"$canonical_main_report"
+          )"
+          canonical_main_mode_at_start="$(
+            jq -r '.mode' <<<"$canonical_main_report"
+          )"
+          authority_path_set_sha256="$(
+            jq -r '.authorityPathSetSha256' <<<"$canonical_main_report"
+          )"
+          authority_tree_sha256="$(
+            jq -r '.authorityTreeSha256' <<<"$canonical_main_report"
+          )"
+          [[ "$(jq -r '.baselineAuthorityTreeSha256' \
+                 <<<"$canonical_main_report")" == "$authority_tree_sha256" ]]
+          [[ "$(jq -r '.candidateAuthorityTreeSha256' \
+                 <<<"$canonical_main_report")" == "$authority_tree_sha256" ]]
 
           test_root="$(mktemp -d \
             "${RUNNER_TEMP}/faz25-p5-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX")"
@@ -66,6 +90,10 @@ jobs:
           {
             echo "canonical_main=true"
             echo "harness_revision=$harness_revision"
+            echo "canonical_main_revision_at_start=$canonical_main_revision_at_start"
+            echo "canonical_main_mode_at_start=$canonical_main_mode_at_start"
+            echo "authority_path_set_sha256=$authority_path_set_sha256"
+            echo "authority_tree_sha256=$authority_tree_sha256"
             echo "test_root=$test_root"
             echo "artifact_dir=$artifact_dir"
             echo "browser_report=$artifact_dir/browser-report.json"
@@ -308,14 +336,48 @@ jobs:
           MANIFEST: ${{ steps.workspace.outputs.manifest }}
           WORKFLOW_STARTED_AT: ${{ steps.workspace.outputs.started_at }}
           CANONICAL_MAIN: ${{ steps.workspace.outputs.canonical_main }}
+          CANONICAL_MAIN_REVISION_AT_START: ${{ steps.workspace.outputs.canonical_main_revision_at_start }}
+          CANONICAL_MAIN_MODE_AT_START: ${{ steps.workspace.outputs.canonical_main_mode_at_start }}
+          AUTHORITY_PATH_SET_SHA256: ${{ steps.workspace.outputs.authority_path_set_sha256 }}
+          AUTHORITY_TREE_SHA256: ${{ steps.workspace.outputs.authority_tree_sha256 }}
         run: |
           set -euo pipefail
           [[ -f "$BROWSER_REPORT" && -f "$LINEAGE_PRE" && -f "$LINEAGE_POST" && \
              -f "$ROUTE_WATCH" ]]
           git fetch --quiet --no-tags origin main
           canonical_main_at_end=false
-          if [[ "$GITHUB_SHA" == "$(git rev-parse refs/remotes/origin/main)" ]]; then
+          canonical_main_revision_at_end="$(git rev-parse refs/remotes/origin/main)"
+          canonical_main_mode_at_end="REJECTED"
+          if canonical_main_report_at_end="$(
+            bash scripts/ci/verify-faz25-p5-canonical-main-equivalence.sh \
+              "$GITHUB_SHA" refs/remotes/origin/main
+          )"; then
             canonical_main_at_end=true
+            [[ "$(jq -r '.schemaVersion' \
+                   <<<"$canonical_main_report_at_end")" == \
+               "faz25-p5-canonical-main-equivalence-v2" ]]
+            [[ "$(jq -r '.baselineRevision' \
+                   <<<"$canonical_main_report_at_end")" == "$GITHUB_SHA" ]]
+            canonical_main_revision_at_end="$(
+              jq -r '.candidateRevision' <<<"$canonical_main_report_at_end"
+            )"
+            [[ "$canonical_main_revision_at_end" == \
+               "$(git rev-parse refs/remotes/origin/main)" ]]
+            canonical_main_mode_at_end="$(
+              jq -r '.mode' <<<"$canonical_main_report_at_end"
+            )"
+            [[ "$(jq -r '.authorityPathSetSha256' \
+                   <<<"$canonical_main_report_at_end")" == \
+               "$AUTHORITY_PATH_SET_SHA256" ]]
+            [[ "$(jq -r '.authorityTreeSha256' \
+                   <<<"$canonical_main_report_at_end")" == \
+               "$AUTHORITY_TREE_SHA256" ]]
+            [[ "$(jq -r '.baselineAuthorityTreeSha256' \
+                   <<<"$canonical_main_report_at_end")" == \
+               "$AUTHORITY_TREE_SHA256" ]]
+            [[ "$(jq -r '.candidateAuthorityTreeSha256' \
+                   <<<"$canonical_main_report_at_end")" == \
+               "$AUTHORITY_TREE_SHA256" ]]
           fi
 
           node "$TEST_ROOT/validate-schema.cjs" \
@@ -537,6 +599,12 @@ jobs:
             --arg sha "$GITHUB_SHA" \
             --argjson canonical_main "$CANONICAL_MAIN" \
             --argjson canonical_main_at_end "$canonical_main_at_end" \
+            --arg canonical_main_revision_at_start "$CANONICAL_MAIN_REVISION_AT_START" \
+            --arg canonical_main_mode_at_start "$CANONICAL_MAIN_MODE_AT_START" \
+            --arg canonical_main_revision_at_end "$canonical_main_revision_at_end" \
+            --arg canonical_main_mode_at_end "$canonical_main_mode_at_end" \
+            --arg authority_path_set_sha256 "$AUTHORITY_PATH_SET_SHA256" \
+            --arg authority_tree_sha256 "$AUTHORITY_TREE_SHA256" \
             --argjson pre_post_same "$pre_post_same" \
             --argjson browser_pod_build_info_matched "$browser_pod_build_info_matched" \
             --argjson browser_ingress_log_matched "$browser_ingress_log_matched" \
@@ -566,6 +634,15 @@ jobs:
               binding: {
                 canonicalMainAtStart: $canonical_main,
                 canonicalMainAtEnd: $canonical_main_at_end,
+                canonicalMainRevisionAtStart: $canonical_main_revision_at_start,
+                canonicalMainModeAtStart: $canonical_main_mode_at_start,
+                canonicalMainRevisionAtEnd: $canonical_main_revision_at_end,
+                canonicalMainModeAtEnd: $canonical_main_mode_at_end,
+                approvedBaselineRevision: $sha,
+                authorityPathSetSha256: $authority_path_set_sha256,
+                authorityTreeSha256: $authority_tree_sha256,
+                authorityTreeHashVerifiedAtStart: true,
+                authorityTreeHashVerifiedAtEnd: $canonical_main_at_end,
                 prePostSameSession: $pre_post_same,
                 browserPodBuildInfoMatched: $browser_pod_build_info_matched,
                 browserIngressLogMatched: $browser_ingress_log_matched,
