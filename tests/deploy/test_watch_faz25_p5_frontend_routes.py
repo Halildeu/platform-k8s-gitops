@@ -59,18 +59,27 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
         self.ready = self.root / "route-watch.ready"
         self.browser_report = self.root / "browser-report.json"
         self.payload = self.root / "ingresses.json"
+        self.kubectl_calls = self.root / "kubectl-calls.jsonl"
         self.fake_kubectl = self.root / "kubectl"
         self.fake_kubectl.write_text(
             "#!/usr/bin/env python3\n"
-            "import os, sys, time\n"
+            "import json, os, sys, time\n"
             "from pathlib import Path\n"
-            "if '--watch-only' in sys.argv:\n"
+            "args = sys.argv[1:]\n"
+            "with open(os.environ['KUBECTL_CALLS'], 'a') as calls:\n"
+            "    calls.write(json.dumps(args) + '\\n')\n"
+            "if '--watch-only' in args:\n"
+            "    assert args[:6] == ['--context', 'k3d-test', 'get', 'ingress', '-A', '--watch-only']\n"
+            "    assert args[6].startswith('--resource-version=')\n"
+            "    assert len(args) == 9 and args[7] == '-o'\n"
+            "    assert args[8].startswith('jsonpath={.metadata.resourceVersion}')\n"
             "    event = os.environ.get('FAKE_INGRESS_EVENT', '')\n"
             "    if event:\n"
             "        print(event, flush=True)\n"
             "    while True:\n"
             "        time.sleep(1)\n"
             "else:\n"
+            "    assert args == ['--context', 'k3d-test', 'get', '--raw', '/apis/networking.k8s.io/v1/ingresses']\n"
             "    source = os.environ['FAKE_INGRESS_JSON']\n"
             "    if Path(os.environ['STOP_PATH']).exists() and os.environ.get('FAKE_FINAL_INGRESS_JSON'):\n"
             "        source = os.environ['FAKE_FINAL_INGRESS_JSON']\n"
@@ -96,6 +105,7 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
             "BROWSER_REPORT_PATH": str(self.browser_report),
             "ROUTE_VALIDATOR": str(VALIDATOR),
             "KUBECTL_BIN": str(self.fake_kubectl),
+            "KUBECTL_CALLS": str(self.kubectl_calls),
             "FAKE_INGRESS_JSON": str(self.payload),
         }
 
@@ -106,6 +116,27 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
                 return
             time.sleep(0.025)
         self.fail("timed out waiting for route watcher")
+
+    def wait_for_raw_list_count(self, minimum=3):
+        expected = [
+            "--context",
+            "k3d-test",
+            "get",
+            "--raw",
+            "/apis/networking.k8s.io/v1/ingresses",
+        ]
+
+        def enough_calls():
+            if not self.kubectl_calls.exists():
+                return False
+            calls = [
+                json.loads(line)
+                for line in self.kubectl_calls.read_text().splitlines()
+                if line
+            ]
+            return sum(call == expected for call in calls) >= minimum
+
+        self.wait_until(enough_calls)
 
     def test_pass_report_spans_multiple_canonical_route_samples(self):
         self.payload.write_text(
@@ -125,7 +156,7 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
             text=True,
         )
         self.wait_until(lambda: self.ready.exists())
-        time.sleep(0.4)
+        self.wait_for_raw_list_count()
         self.stop.touch()
         stdout, stderr = process.communicate(timeout=5)
         self.assertEqual(process.returncode, 0, (stdout, stderr))
@@ -223,6 +254,31 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
         self.assertEqual(report["failureReason"], "missing-list-resource-version")
         self.assertFalse(report["eventWatchEstablished"])
 
+    def test_paginated_raw_ingress_list_fails_closed_before_watch(self):
+        self.payload.write_text(
+            json.dumps(
+                {
+                    "metadata": {
+                        "resourceVersion": "101",
+                        "continue": "opaque-next-page-token",
+                    },
+                    "items": [ingress()],
+                }
+            )
+        )
+        result = subprocess.run(
+            ["bash", str(WATCHER)],
+            cwd=ROOT,
+            env=self.env(),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["failureReason"], "route-policy-or-collection-failure")
+        self.assertFalse(report["eventWatchEstablished"])
+
     def test_observed_frontend_asset_route_collision_fails_closed(self):
         collision = ingress(
             namespace="attacker", name="asset-hijack", service="attacker"
@@ -246,7 +302,7 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
             text=True,
         )
         self.wait_until(lambda: self.ready.exists())
-        time.sleep(0.4)
+        self.wait_for_raw_list_count()
         self.stop.touch()
         stdout, stderr = process.communicate(timeout=5)
         self.assertNotEqual(process.returncode, 0, (stdout, stderr))
@@ -287,6 +343,7 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
             text=True,
         )
         self.wait_until(lambda: self.ready.exists())
+        self.wait_for_raw_list_count()
         self.stop.touch()
         stdout, stderr = process.communicate(timeout=5)
         self.assertNotEqual(process.returncode, 0, (stdout, stderr))
