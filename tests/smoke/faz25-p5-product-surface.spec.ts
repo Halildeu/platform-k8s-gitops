@@ -1819,9 +1819,23 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     wrapMutation(Storage.prototype, 'removeItem', 'storage.removeItem');
     wrapMutation(Storage.prototype, 'clear', 'storage.clear');
     const installStorageProxy = (property: 'localStorage' | 'sessionStorage') => {
-      const windowPrototype = Object.getPrototypeOf(window) as Window;
-      const nativeDescriptor = Object.getOwnPropertyDescriptor(windowPrototype, property);
-      if (!nativeDescriptor?.get || nativeDescriptor.configurable !== true) {
+      // Chromium does not guarantee that the WebIDL accessor is an own
+      // property of the first object returned by Object.getPrototypeOf(window).
+      // Resolve the actual descriptor owner instead of assuming a fixed
+      // prototype depth; otherwise the audit silently loses coverage when the
+      // browser changes its Window prototype layout.
+      let descriptorOwner: object | null = window;
+      let nativeDescriptor: PropertyDescriptor | undefined;
+      while (descriptorOwner) {
+        nativeDescriptor = Object.getOwnPropertyDescriptor(descriptorOwner, property);
+        if (nativeDescriptor) break;
+        descriptorOwner = Object.getPrototypeOf(descriptorOwner) as object | null;
+      }
+      if (
+        !descriptorOwner ||
+        !nativeDescriptor?.get ||
+        nativeDescriptor.configurable !== true
+      ) {
         instrumentationFailures.push(`${property}.native-getter`);
         return;
       }
@@ -1845,7 +1859,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
         },
       });
       try {
-        Object.defineProperty(windowPrototype, property, {
+        Object.defineProperty(descriptorOwner, property, {
           configurable: false,
           enumerable: nativeDescriptor.enumerable,
           get(this: Window) {
