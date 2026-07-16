@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-# A2b.1 — smoke-client token contract (desired-state, idempotent, fail-closed).
+# A2b.1 — smoke-client token contract (desired-state, idempotent, FAIL-CLOSED).
 #
-# board #2476 · Codex (OpenAI) thread 019f6b1d — v3.2 SEAL (REVISE ×3 → AGREE).
+# board #2476 · Codex (OpenAI) thread 019f6b1d — v3.2 matris SEAL + post-impl REVISE (6 blocker) absorb.
 # Runbook: docs/operations/RUNBOOKS/RB-kc-realm-security-hardening.md
+#
+# MİMARİ (Codex post-impl REVISE'ın kökü):  collect → audit → (SAFE/MISSING ise) mutate → collect → audit
+#   * TEK canonical audit: `--check`, `--apply` öncesi safety barrier ve `--apply` sonrası postcondition
+#     AYNI invariant setini kullanır. Ayrı kod yolları zamanla sapar → gerçekte bozuk kontrat için
+#     "converged" denebilir.
+#   * UNSAFE mevcut state'te HİÇBİR mutasyon yapılmaz. (Önceki sürüm driftli scope'u client'a
+#     bağlayıp EN SONDA exit 3 veriyordu — "fail-closed" yalnız son exit code'da yaşıyordu.)
+#   * Script hiçbir şeyi SİLMEZ / mutate ETMEZ; yalnız güvenli EKSİKLERİ yaratır.
 #
 # NE YAPAR (yalnız Keycloak; consumer manifest mutasyonu YOK):
 #   smoke-runtime-v1 (DEFAULT association)
@@ -10,17 +18,20 @@
 #     └── audience ×6: endpoint-admin-service, permission-service, variant-service,
 #                      notification-orchestrator, auth-service (custom) + account (gerçek client)
 #   smoke-notify-v1 (OPTIONAL association)
-#     └── org_id  (attr=org_id claim=org_id jsonType=String)
+#     └── org_id  (attr=org_id claim=org_id jsonType=String)   ← capability switch
 #   realm scope-mapping: ENDPOINT_ADMIN  (fullScopeAllowed=false kalır)
 #
-# NE YAPMAZ (Codex v3.2 gerekçeleriyle):
+# NE YAPMAZ (Codex v3.2 gerekçeleriyle — değiştirmeden önce runbook'u oku):
 #   - consumer `azp` allow-list'e smoke-client EKLEMEZ: endpoint-admin validator semantiği
 #     `audience OR azp OR client_id` → allow-list'e eklemek audience binding'ini BYPASS eden
-#     fallback açar; smoke'un audience'tan geçtiği kanıtı kaybolur.
-#   - notify-canary'ye DOKUNMAZ: shared scope (frontend'de DEFAULT); backend scope marker'ını
-#     okumuyor (guard: org_id → tenant_id → allowed_orgs → default). Sessizce sahiplenme YASAK.
-#   - tenant_id mapper EKLEMEZ: aynı org_id attribute'unun ikinci alias'ı = gereksiz genişleme.
-#   - client-level mapper EKLEMEZ: mapper'lar scope-owned kalır (client mapper sayısı 0).
+#     fallback açar ve "doğru audience ile geçti" kanıtını yok eder.
+#   - notify-canary'ye DOKUNMAZ: shared scope (frontend'de DEFAULT, 0 mapper); backend onu okumuyor
+#     (guard sırası: org_id → tenant_id → allowed_orgs → default). Sessizce sahiplenme YASAK.
+#   - tenant_id / VARIANT_SCOPE_CANARY / generic ADMIN / client-level mapper: eklemez.
+#
+# NON-ATOMIC UYARI: scope create + association + scope-mapping tek transaction DEĞİL. Ara adım
+# başarısız olursa kısmi state kalabilir. non-zero exit ASLA başarı değildir: token mint etmeden
+# önce `--check` koş; kısmi state'i tahmin etme; UNSAFE yoksa `--apply` tekrar çalıştır (idempotent).
 #
 # Secret disiplini: admin password stdout/log'a yazılmaz; `set -x` / process-dump YASAK.
 set -euo pipefail
@@ -31,6 +42,11 @@ CLIENT_ID="smoke-client"
 RUNTIME_SCOPE="smoke-runtime-v1"
 NOTIFY_SCOPE="smoke-notify-v1"
 REALM_ROLE="ENDPOINT_ADMIN"
+
+case "$MODE" in
+  --check|--apply) ;;
+  *) echo "kullanım: $0 [--check|--apply]   (env: REALM, CONFIRM_PROD_SMOKE_CONTRACT)" >&2; exit 1 ;;
+esac
 
 # ---- Ortam hard-bind (A2a Codex must-fix: cross-env drift engeli) ----
 case "$REALM" in
@@ -59,6 +75,236 @@ echo "realm=$REALM container=$KC_CONTAINER mode=$MODE"
 K() { docker exec "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh "$@"; }
 KI() { docker exec -i "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh "$@"; }
 
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/.kc-a2b1.XXXXXX")"
+cleanup() { rm -rf "$WORK"; }
+trap cleanup EXIT
+
+# =====================================================================================
+# Canonical audit — check / pre-mutation barrier / postcondition AYNI invariant setini kullanır.
+# exit: 0=SAFE  2=MISSING(güvenli eksik)  3=UNSAFE(mutasyon yapılmaz)  1=girdi hatası
+# =====================================================================================
+cat > "$WORK/audit.py" <<'AUDIT_PY'
+import json
+import os
+import sys
+
+# Token yüzeyini etkileyen config alanları. Raw JSON equality YASAK — KC `id`/server-default ekler.
+CONFIG_KEYS = (
+    "user.attribute", "claim.name", "jsonType.label",
+    "access.token.claim", "id.token.claim", "userinfo.token.claim",
+    "included.custom.audience", "included.client.audience",
+)
+
+
+def load(d, name, default=None):
+    p = os.path.join(d, name)
+    if not os.path.exists(p):
+        return default
+    with open(p) as f:
+        raw = f.read().strip()
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return "__PARSE_ERROR__"
+
+
+def norm_mappers(ms):
+    out = {}
+    for m in ms or []:
+        cfg = m.get("config") or {}
+        out[m["name"]] = {
+            "protocol": m.get("protocol"),
+            "protocolMapper": m.get("protocolMapper"),
+            "consentRequired": bool(m.get("consentRequired", False)),
+            "config": {k: cfg.get(k) for k in CONFIG_KEYS if cfg.get(k) is not None},
+        }
+    return out
+
+
+def compare_scope(desired, live):
+    issues = []
+    if live.get("protocol") != desired["protocol"]:
+        issues.append("protocol=%r (beklenen %r)" % (live.get("protocol"), desired["protocol"]))
+    for k, v in desired["attributes"].items():
+        got = (live.get("attributes") or {}).get(k)
+        if got != v:
+            issues.append("attr %s=%r (beklenen %r)" % (k, got, v))
+    d_m, l_m = norm_mappers(desired["protocolMappers"]), norm_mappers(live.get("protocolMappers"))
+    missing = sorted(set(d_m) - set(l_m))
+    extra = sorted(set(l_m) - set(d_m))
+    if missing:
+        issues.append("eksik mapper: %s" % ",".join(missing))
+    if extra:
+        issues.append("BEKLENMEYEN mapper: %s" % ",".join(extra))
+    for n in sorted(set(d_m) & set(l_m)):
+        if d_m[n] == l_m[n]:
+            continue
+        # Yalnız FARKLI alanları raporla (full-JSON dump okunamıyor + gerçek farkı gizliyor)
+        parts = []
+        for f in ("protocol", "protocolMapper", "consentRequired"):
+            if d_m[n][f] != l_m[n][f]:
+                parts.append("%s: live=%r beklenen=%r" % (f, l_m[n][f], d_m[n][f]))
+        dc, lc = d_m[n]["config"], l_m[n]["config"]
+        for k in sorted(set(dc) | set(lc)):
+            if dc.get(k) != lc.get(k):
+                parts.append("config[%s]: live=%r beklenen=%r" % (k, lc.get(k), dc.get(k)))
+        issues.append("mapper %s → %s" % (n, "; ".join(parts)))
+    return issues
+
+
+def main():
+    if len(sys.argv) != 5:
+        print("kullanim: audit.py <snap-dir> <desired-runtime> <desired-notify> <realm-role>", file=sys.stderr)
+        return 1
+    d, f_runtime, f_notify, realm_role = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+    with open(f_runtime) as f:
+        des_runtime = json.load(f)
+    with open(f_notify) as f:
+        des_notify = json.load(f)
+    RUNTIME, NOTIFY, CANARY = des_runtime["name"], des_notify["name"], "notify-canary"
+
+    unsafe, missing, ok = [], [], []
+
+    # 1) realm rolü — JSON/type exact (grep DEĞİL: eksik/null alan false-positive "OK" üretiyordu)
+    role = load(d, "role.json")
+    if role == "__PARSE_ERROR__" or not isinstance(role, dict):
+        unsafe.append("realm rolü %s okunamadı/parse edilemedi" % realm_role)
+    elif role.get("name") != realm_role:
+        unsafe.append("realm rolü %s YOK (name=%r)" % (realm_role, role.get("name")))
+    elif role.get("composite") is not False:
+        unsafe.append("%s composite=%r — yalnız `is False` kabul (eksik/null/true/\"false\" FAIL); "
+                      "composite ise child-role evreni incelenmeden apply YASAK"
+                      % (realm_role, role.get("composite")))
+    else:
+        ok.append("%s var, composite=false (JSON-exact)" % realm_role)
+
+    # 2) client shape — JSON/type exact
+    clients = load(d, "clients.json", [])
+    if clients == "__PARSE_ERROR__" or not clients:
+        unsafe.append("smoke-client okunamadı — önce A2a (setup-smoke-client.sh)")
+        client = {}
+    else:
+        client = clients[0]
+        if client.get("fullScopeAllowed") is not False:
+            unsafe.append("fullScopeAllowed=%r (yalnız False kabul)" % client.get("fullScopeAllowed"))
+        else:
+            ok.append("fullScopeAllowed=false")
+        if client.get("serviceAccountsEnabled") is not False:
+            unsafe.append("serviceAccountsEnabled=%r (A2a shape bozulmuş)" % client.get("serviceAccountsEnabled"))
+        else:
+            ok.append("serviceAccounts=false (A2a shape korunuyor)")
+
+    defaults = client.get("defaultClientScopes") or []
+    optionals = client.get("optionalClientScopes") or []
+
+    # 3) built-in `roles` default association — olmadan ENDPOINT_ADMIN token'a ÇIKMAZ
+    if "roles" in defaults:
+        ok.append("built-in `roles` default association'da (realm_access.roles üretimi mümkün)")
+    else:
+        unsafe.append("built-in `roles` default association'da DEĞİL → scope-mapping eklense bile "
+                      "realm_access.roles çıkmaz; 'converged' iddiası yanlış olur")
+
+    # 4) client-level mapper == 0 — check/barrier/postcondition AYNI invariant
+    cmaps = load(d, "client-mappers.json", [])
+    if cmaps == "__PARSE_ERROR__":
+        unsafe.append("client protocol-mappers okunamadı")
+    elif len(cmaps) != 0:
+        unsafe.append("client-level mapper sayısı=%d (beklenen 0; mapper'lar scope-owned kalmalı). "
+                      "Script bunları SİLMEZ — operatör incelemeli" % len(cmaps))
+    else:
+        ok.append("client-level mapper sayısı=0 (mapper'lar scope-owned)")
+
+    # 5) association polarity EXACT — notify DEFAULT'a kaçarsa org_id capability switch olmaktan çıkar
+    for name, want_default, want_optional in ((RUNTIME, True, False),
+                                              (NOTIFY, False, True),
+                                              (CANARY, False, False)):
+        in_d, in_o = name in defaults, name in optionals
+        if in_d == want_default and in_o == want_optional:
+            if want_default or want_optional:
+                ok.append("%s association exact (default=%s optional=%s)" % (name, in_d, in_o))
+            else:
+                ok.append("%s bağlı değil (shared scope'a dokunulmuyor)" % name)
+            continue
+        if in_d and not want_default:
+            unsafe.append("%s DEFAULT association'da olmamalı (live d=%s o=%s / beklenen d=%s o=%s)"
+                          % (name, in_d, in_o, want_default, want_optional))
+        elif in_o and not want_optional:
+            unsafe.append("%s OPTIONAL association'da olmamalı (live d=%s o=%s / beklenen d=%s o=%s)"
+                          % (name, in_d, in_o, want_default, want_optional))
+        elif want_default and not in_d:
+            missing.append("assoc-default:%s" % name)
+        elif want_optional and not in_o:
+            missing.append("assoc-optional:%s" % name)
+
+    # 6) role scope-mappings — client + iki owned scope (realm AND client tarafı)
+    def check_mappings(fname, label, want_realm):
+        sm = load(d, fname, None)
+        if sm is None:
+            return  # scope yok → eksiklik scope tarafında raporlanır
+        if sm == "__PARSE_ERROR__":
+            unsafe.append("%s scope-mappings okunamadı" % label)
+            return
+        realm_names = sorted(x["name"] for x in (sm.get("realmMappings") or []))
+        client_map = sm.get("clientMappings") or {}
+        if client_map:
+            unsafe.append("%s CLIENT role scope-mapping taşıyor: %s (beklenen {})"
+                          % (label, ",".join(sorted(client_map))))
+        if realm_names == want_realm:
+            if want_realm:
+                ok.append("%s realm scope-mapping exact: %s" % (label, want_realm))
+            else:
+                ok.append("%s rol taşımıyor (realm=[] client={})" % label)
+        elif not realm_names and want_realm:
+            missing.append("scope-mapping:%s" % want_realm[0])
+        else:
+            unsafe.append("%s realm scope-mapping=%s (beklenen %s) — beklenmeyen rol token'a açılabilir"
+                          % (label, realm_names, want_realm))
+
+    check_mappings("client-scope-mappings.json", "smoke-client", [realm_role])
+    check_mappings("runtime-sm.json", RUNTIME, [])
+    check_mappings("notify-sm.json", NOTIFY, [])
+
+    # 7) scope shape — protocol + protocolMapper + consentRequired + config whitelist
+    scopes = load(d, "scopes.json", [])
+    if scopes == "__PARSE_ERROR__":
+        unsafe.append("client-scopes okunamadı")
+        scopes = []
+    by_name = {s["name"]: s for s in scopes if isinstance(s, dict)}
+    for des in (des_runtime, des_notify):
+        live = by_name.get(des["name"])
+        if live is None:
+            missing.append("scope:%s" % des["name"])
+            continue
+        issues = compare_scope(des, live)
+        if issues:
+            unsafe.append("%s DRIFT → %s  [script mutate/sil ETMEZ; operatör incelemeli]"
+                          % (des["name"], " | ".join(issues)))
+        else:
+            ok.append("%s shape exact (%d mapper)" % (des["name"], len(des["protocolMappers"])))
+
+    for line in ok:
+        print("  [OK]     %s" % line)
+    for line in missing:
+        print("  [MISS]   %s" % line)
+    for line in unsafe:
+        print("  [UNSAFE] %s" % line)
+
+    if unsafe:
+        print("VERDICT=UNSAFE:%d" % len(unsafe))
+        return 3
+    if missing:
+        print("VERDICT=MISSING:%s" % ",".join(missing))
+        return 2
+    print("VERDICT=SAFE")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+AUDIT_PY
+
 kc_login() {
   local p
   p="$(docker exec "$KC_CONTAINER" sh -lc 'cat "$KEYCLOAK_ADMIN_PASSWORD_FILE"' | tr -d '\n')"
@@ -68,312 +314,194 @@ kc_login() {
 }
 
 # ---- Desired state (tek kaynak) ----
-# Audience mapper'ları: 5 custom + 1 gerçek client (account).
 DESIRED_AUDIENCES_CUSTOM="endpoint-admin-service permission-service variant-service notification-orchestrator auth-service"
 DESIRED_AUDIENCE_CLIENT="account"
 
-desired_runtime_json() {
-  python3 - "$RUNTIME_SCOPE" "$DESIRED_AUDIENCES_CUSTOM" "$DESIRED_AUDIENCE_CLIENT" <<'PY'
+write_desired() {
+  python3 - "$WORK/desired-runtime.json" "$RUNTIME_SCOPE" "$DESIRED_AUDIENCES_CUSTOM" "$DESIRED_AUDIENCE_CLIENT" <<'PY'
 import json, sys
-name, customs, client_aud = sys.argv[1], sys.argv[2].split(), sys.argv[3]
+out, name, customs, client_aud = sys.argv[1], sys.argv[2], sys.argv[3].split(), sys.argv[4]
 mappers = [{
-    "name": "userId",
-    "protocol": "openid-connect",
-    "protocolMapper": "oidc-usermodel-attribute-mapper",
-    "consentRequired": False,
-    "config": {
-        "user.attribute": "userId",
-        "claim.name": "userId",
-        "jsonType.label": "String",
-        "access.token.claim": "true",
-        "id.token.claim": "false",
-        "userinfo.token.claim": "false",
-    },
+    "name": "userId", "protocol": "openid-connect",
+    "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": False,
+    "config": {"user.attribute": "userId", "claim.name": "userId", "jsonType.label": "String",
+               "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false"},
 }]
 for a in customs:
-    mappers.append({
-        "name": f"aud-{a}",
-        "protocol": "openid-connect",
-        "protocolMapper": "oidc-audience-mapper",
-        "consentRequired": False,
-        "config": {
-            "included.custom.audience": a,
-            "access.token.claim": "true",
-            "id.token.claim": "false",
-        },
-    })
-mappers.append({
-    "name": f"aud-{client_aud}",
-    "protocol": "openid-connect",
-    "protocolMapper": "oidc-audience-mapper",
-    "consentRequired": False,
-    "config": {
-        "included.client.audience": client_aud,
-        "access.token.claim": "true",
-        "id.token.claim": "false",
-    },
-})
-print(json.dumps({
-    "name": name,
-    "description": "A2b.1 smoke-client runtime token contract (board #2476, Codex 019f6b1d v3.2)",
-    "protocol": "openid-connect",
-    "attributes": {"include.in.token.scope": "true", "display.on.consent.screen": "false"},
-    "protocolMappers": mappers,
-}))
+    mappers.append({"name": "aud-" + a, "protocol": "openid-connect",
+                    "protocolMapper": "oidc-audience-mapper", "consentRequired": False,
+                    "config": {"included.custom.audience": a,
+                               "access.token.claim": "true", "id.token.claim": "false",
+                               "userinfo.token.claim": "false"}})
+mappers.append({"name": "aud-" + client_aud, "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-mapper", "consentRequired": False,
+                "config": {"included.client.audience": client_aud,
+                           "access.token.claim": "true", "id.token.claim": "false",
+                           "userinfo.token.claim": "false"}})
+json.dump({"name": name,
+           "description": "A2b.1 smoke-client runtime token contract (board #2476, Codex 019f6b1d v3.2)",
+           "protocol": "openid-connect",
+           "attributes": {"include.in.token.scope": "true", "display.on.consent.screen": "false"},
+           "protocolMappers": mappers}, open(out, "w"))
+PY
+  python3 - "$WORK/desired-notify.json" "$NOTIFY_SCOPE" <<'PY'
+import json, sys
+out, name = sys.argv[1], sys.argv[2]
+json.dump({"name": name,
+           "description": "A2b.1 smoke-client optional org boundary claim (board #2476, Codex 019f6b1d v3.2)",
+           "protocol": "openid-connect",
+           "attributes": {"include.in.token.scope": "true", "display.on.consent.screen": "false"},
+           "protocolMappers": [{
+               "name": "org_id", "protocol": "openid-connect",
+               "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": False,
+               "config": {"user.attribute": "org_id", "claim.name": "org_id", "jsonType.label": "String",
+                          "access.token.claim": "true", "id.token.claim": "false",
+                          "userinfo.token.claim": "false"}}]}, open(out, "w"))
 PY
 }
 
-desired_notify_json() {
-  python3 - "$NOTIFY_SCOPE" <<'PY'
-import json, sys
-print(json.dumps({
-    "name": sys.argv[1],
-    "description": "A2b.1 smoke-client optional org boundary claim (board #2476, Codex 019f6b1d v3.2)",
-    "protocol": "openid-connect",
-    "attributes": {"include.in.token.scope": "true", "display.on.consent.screen": "false"},
-    "protocolMappers": [{
-        "name": "org_id",
-        "protocol": "openid-connect",
-        "protocolMapper": "oidc-usermodel-attribute-mapper",
-        "consentRequired": False,
-        "config": {
-            "user.attribute": "org_id",
-            "claim.name": "org_id",
-            "jsonType.label": "String",
-            "access.token.claim": "true",
-            "id.token.claim": "false",
-            "userinfo.token.claim": "false",
-        },
-    }],
-}))
-PY
+pick_id() {  # $1=json dosyası (liste)  $2=name → id
+  python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+print(next((x["id"] for x in d if x.get("name") == sys.argv[2] or x.get("clientId") == sys.argv[2]), ""))' "$1" "$2"
 }
 
-scope_id() {  # $1=scope name → id ("" yoksa)
-  K get client-scopes -r "$REALM" --fields id,name 2>/dev/null | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-print(next((x["id"] for x in d if x["name"] == sys.argv[1]), ""))' "$1"
-}
-
-client_uuid() {
-  K get clients -r "$REALM" -q "clientId=$CLIENT_ID" --fields id 2>/dev/null | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-print(d[0]["id"] if d else "")'
-}
-
-# Mevcut scope'un mapper shape'ini desired ile karşılaştırır.
-# stdout: MATCH | DRIFT:<detay>   (exit her zaman 0; karar çağırana ait)
-compare_scope() {  # $1=scope-id  $2=desired-json
-  # NOT: python heredoc stdin'i kullanır → desired/live PIPE ile verilemez (SC2259:
-  # heredoc pipe'ı ezer). İkisi de tmpfile + argv ile geçilir.
-  local sid="$1" desired="$2" lf df out
-  lf="$(mktemp "${TMPDIR:-/tmp}/.kcsc-live.XXXXXX")"
-  df="$(mktemp "${TMPDIR:-/tmp}/.kcsc-desired.XXXXXX")"
-  K get "client-scopes/$sid" -r "$REALM" > "$lf" 2>/dev/null || true
-  printf '%s' "$desired" > "$df"
-  out="$(python3 - "$df" "$lf" <<'PY'
-import json, sys
-with open(sys.argv[1]) as f:
-    desired = json.load(f)
-with open(sys.argv[2]) as f:
-    live = json.load(f)
-
-def norm(ms):
-    out = {}
-    for m in ms or []:
-        out[m["name"]] = {
-            "protocolMapper": m.get("protocolMapper"),
-            "config": {k: v for k, v in (m.get("config") or {}).items()
-                       if k in ("user.attribute", "claim.name", "jsonType.label",
-                                "access.token.claim", "id.token.claim",
-                                "userinfo.token.claim", "included.custom.audience",
-                                "included.client.audience")},
-        }
-    return out
-
-d_m, l_m = norm(desired["protocolMappers"]), norm(live.get("protocolMappers"))
-issues = []
-if live.get("protocol") != desired["protocol"]:
-    issues.append("protocol=%s (beklenen %s)" % (live.get("protocol"), desired["protocol"]))
-for k, v in desired["attributes"].items():
-    if (live.get("attributes") or {}).get(k) != v:
-        issues.append("attr %s=%s (beklenen %s)" % (k, (live.get("attributes") or {}).get(k), v))
-missing = sorted(set(d_m) - set(l_m))
-extra = sorted(set(l_m) - set(d_m))
-if missing:
-    issues.append("eksik mapper: %s" % ",".join(missing))
-if extra:
-    issues.append("BEKLENMEYEN mapper: %s" % ",".join(extra))
-for n in sorted(set(d_m) & set(l_m)):
-    if d_m[n] != l_m[n]:
-        issues.append("mapper %s config farkli: live=%s" % (n, json.dumps(l_m[n], sort_keys=True)))
-print("MATCH" if not issues else "DRIFT:" + " | ".join(issues))
-PY
-  )" || { rm -f "$lf" "$df"; echo "DRIFT:compare hatası (live JSON parse edilemedi)"; return 0; }
-  rm -f "$lf" "$df"
-  printf '%s\n' "$out"
-}
-
-ensure_scope() {  # $1=name $2=desired-json ; echo'lar: CREATED|MATCH|DRIFT:...
-  local name="$1" desired="$2" sid
-  sid="$(scope_id "$name")"
-  if [ -z "$sid" ]; then
-    if [ "$MODE" = "--apply" ]; then
-      printf '%s' "$desired" | KI create client-scopes -r "$REALM" -f - >/dev/null 2>&1 || {
-        echo "ERROR: client-scope create başarısız: $name" >&2; return 1; }
-      sid="$(scope_id "$name")"
-      [ -n "$sid" ] || { echo "ERROR: create sonrası scope bulunamadı: $name" >&2; return 1; }
-      echo "CREATED"
-    else
-      echo "DRIFT:scope YOK (create gerekli)"
-    fi
-    return 0
+# ---- collect: TÜM state tek turda (fonksiyon başına tekrar kcadm çağrısı YOK → timeout'un da kökü) ----
+CID=""; RSID=""; NSID=""
+collect() {
+  local d="$WORK/snap"
+  rm -rf "$d"; mkdir -p "$d"
+  K get "roles/$REALM_ROLE" -r "$REALM" > "$d/role.json" 2>/dev/null || echo '{}' > "$d/role.json"
+  K get clients -r "$REALM" -q "clientId=$CLIENT_ID" > "$d/clients.json" 2>/dev/null || echo '[]' > "$d/clients.json"
+  CID="$(pick_id "$d/clients.json" "$CLIENT_ID")"
+  if [ -n "$CID" ]; then
+    K get "clients/$CID/protocol-mappers/models" -r "$REALM" > "$d/client-mappers.json" 2>/dev/null \
+      || echo '[]' > "$d/client-mappers.json"
+    K get "clients/$CID/scope-mappings" -r "$REALM" > "$d/client-scope-mappings.json" 2>/dev/null \
+      || echo '{}' > "$d/client-scope-mappings.json"
   fi
-  compare_scope "$sid" "$desired"
+  K get client-scopes -r "$REALM" > "$d/scopes.json" 2>/dev/null || echo '[]' > "$d/scopes.json"
+  RSID="$(pick_id "$d/scopes.json" "$RUNTIME_SCOPE")"
+  NSID="$(pick_id "$d/scopes.json" "$NOTIFY_SCOPE")"
+  if [ -n "$RSID" ]; then
+    K get "client-scopes/$RSID/scope-mappings" -r "$REALM" > "$d/runtime-sm.json" 2>/dev/null \
+      || echo '{}' > "$d/runtime-sm.json"
+  fi
+  if [ -n "$NSID" ]; then
+    K get "client-scopes/$NSID/scope-mappings" -r "$REALM" > "$d/notify-sm.json" 2>/dev/null \
+      || echo '{}' > "$d/notify-sm.json"
+  fi
+  return 0
 }
 
-# ---- Preflight (Codex şartı) ----
-preflight() {
-  local rc=0
-  echo "-- preflight --"
-  local role_json
-  role_json="$(K get "roles/$REALM_ROLE" -r "$REALM" --fields name,composite 2>/dev/null || true)"
-  if ! printf '%s' "$role_json" | grep -q '"name"'; then
-    echo "  [FAIL] realm rolü '$REALM_ROLE' YOK — scope-mapping apply edilemez"; rc=1
-  elif printf '%s' "$role_json" | grep -q '"composite" : true'; then
-    echo "  [FAIL] '$REALM_ROLE' composite=true — effective child role listesi incelenmeden apply YASAK (Codex)"; rc=1
-  else
-    echo "  [OK] $REALM_ROLE var, composite=false"
-  fi
-
-  local cid; cid="$(client_uuid)"
-  [ -n "$cid" ] || { echo "  [FAIL] client '$CLIENT_ID' YOK — önce A2a (setup-smoke-client.sh)"; return 1; }
-  local cj; cj="$(K get "clients/$cid" -r "$REALM" --fields fullScopeAllowed,serviceAccountsEnabled 2>/dev/null)"
-  printf '%s' "$cj" | grep -q '"fullScopeAllowed" : false' \
-    && echo "  [OK] fullScopeAllowed=false" || { echo "  [FAIL] fullScopeAllowed=false DEĞİL"; rc=1; }
-  printf '%s' "$cj" | grep -q '"serviceAccountsEnabled" : false' \
-    && echo "  [OK] serviceAccounts=false (A2a shape korunuyor)" || { echo "  [FAIL] serviceAccountsEnabled≠false"; rc=1; }
-
-  # notify-canary'ye dokunmadığımızın kanıtı: association listesinde olmamalı
-  local assoc; assoc="$(K get "clients/$cid" -r "$REALM" --fields defaultClientScopes,optionalClientScopes 2>/dev/null)"
-  if printf '%s' "$assoc" | grep -q 'notify-canary'; then
-    echo "  [FAIL] smoke-client'a notify-canary bağlanmış — Codex v3.2: association YOK"; rc=1
-  else
-    echo "  [OK] notify-canary smoke-client'a bağlı değil (shared scope'a dokunulmuyor)"
-  fi
+audit() {
+  set +e
+  python3 "$WORK/audit.py" "$WORK/snap" "$WORK/desired-runtime.json" "$WORK/desired-notify.json" "$REALM_ROLE"
+  local rc=$?
+  set -e
   return $rc
 }
 
-# ---- Association + scope-mapping ----
-ensure_association() {  # $1=scope-name $2=default|optional
-  local name="$1" kind="$2" cid sid live
-  cid="$(client_uuid)"; sid="$(scope_id "$name")"
-  [ -n "$sid" ] || { echo "SKIP(scope yok)"; return 0; }
-  live="$(K get "clients/$cid/$kind-client-scopes" -r "$REALM" --fields name 2>/dev/null | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-print("YES" if any(x["name"] == sys.argv[1] for x in d) else "NO")' "$name")"
-  if [ "$live" = "YES" ]; then echo "MATCH"; return 0; fi
-  if [ "$MODE" = "--apply" ]; then
-    K update "clients/$cid/$kind-client-scopes/$sid" -r "$REALM" >/dev/null 2>&1 \
-      || { echo "ERROR: $kind association başarısız: $name" >&2; return 1; }
-    echo "ADDED"
-  else
-    echo "DRIFT:$kind association yok"
-  fi
-}
-
-ensure_scope_mapping() {
-  local cid; cid="$(client_uuid)"
-  local live
-  live="$(K get "clients/$cid/scope-mappings/realm" -r "$REALM" --fields name 2>/dev/null | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-print(",".join(sorted(x["name"] for x in d)) or "-")')"
-  if [ "$live" = "$REALM_ROLE" ]; then echo "MATCH"; return 0; fi
-  if [ "$live" != "-" ] && [ "$live" != "$REALM_ROLE" ]; then
-    echo "DRIFT:beklenmeyen scope-mapping: $live (beklenen yalnız $REALM_ROLE)"; return 0
-  fi
-  if [ "$MODE" = "--apply" ]; then
-    local rid
-    rid="$(K get "roles/$REALM_ROLE" -r "$REALM" --fields id 2>/dev/null | python3 -c '
-import json, sys
-print(json.load(sys.stdin).get("id", ""))')"
-    [ -n "$rid" ] || { echo "ERROR: rol id alınamadı" >&2; return 1; }
-    printf '[{"id":"%s","name":"%s"}]' "$rid" "$REALM_ROLE" \
-      | KI create "clients/$cid/scope-mappings/realm" -r "$REALM" -f - >/dev/null 2>&1 \
-      || { echo "ERROR: scope-mapping ekleme başarısız" >&2; return 1; }
-    echo "ADDED"
-  else
-    echo "DRIFT:$REALM_ROLE scope-mapping yok"
-  fi
+apply_missing() {  # $1 = "a,b,c"
+  local items="$1" it n sid rid
+  IFS=',' read -ra ITEMS <<< "$items"
+  for it in "${ITEMS[@]}"; do
+    case "$it" in
+      "scope:$RUNTIME_SCOPE")
+        KI create client-scopes -r "$REALM" -f - < "$WORK/desired-runtime.json" >/dev/null 2>&1 \
+          || { echo "ERROR: $RUNTIME_SCOPE create başarısız" >&2; return 1; }
+        echo "  + client-scope oluşturuldu: $RUNTIME_SCOPE" ;;
+      "scope:$NOTIFY_SCOPE")
+        KI create client-scopes -r "$REALM" -f - < "$WORK/desired-notify.json" >/dev/null 2>&1 \
+          || { echo "ERROR: $NOTIFY_SCOPE create başarısız" >&2; return 1; }
+        echo "  + client-scope oluşturuldu: $NOTIFY_SCOPE" ;;
+      assoc-default:*)
+        n="${it#assoc-default:}"
+        sid="$(pick_id "$WORK/snap/scopes.json" "$n")"
+        [ -n "$sid" ] || { echo "ERROR: $n scope id bulunamadı (create bu turda mı yapıldı?)" >&2; return 1; }
+        K update "clients/$CID/default-client-scopes/$sid" -r "$REALM" >/dev/null 2>&1 \
+          || { echo "ERROR: $n default association başarısız" >&2; return 1; }
+        echo "  + default association: $n" ;;
+      assoc-optional:*)
+        n="${it#assoc-optional:}"
+        sid="$(pick_id "$WORK/snap/scopes.json" "$n")"
+        [ -n "$sid" ] || { echo "ERROR: $n scope id bulunamadı" >&2; return 1; }
+        K update "clients/$CID/optional-client-scopes/$sid" -r "$REALM" >/dev/null 2>&1 \
+          || { echo "ERROR: $n optional association başarısız" >&2; return 1; }
+        echo "  + optional association: $n" ;;
+      scope-mapping:*)
+        n="${it#scope-mapping:}"
+        rid="$(python3 -c 'import json,sys
+print(json.load(open(sys.argv[1])).get("id",""))' "$WORK/snap/role.json")"
+        [ -n "$rid" ] || { echo "ERROR: rol id alınamadı" >&2; return 1; }
+        printf '[{"id":"%s","name":"%s"}]' "$rid" "$n" \
+          | KI create "clients/$CID/scope-mappings/realm" -r "$REALM" -f - >/dev/null 2>&1 \
+          || { echo "ERROR: scope-mapping ekleme başarısız" >&2; return 1; }
+        echo "  + realm scope-mapping: $n" ;;
+      *) echo "ERROR: bilinmeyen MISSING item: $it" >&2; return 1 ;;
+    esac
+  done
 }
 
 # ---- Main ----
-case "$MODE" in
-  --check|--apply) ;;
-  *) echo "kullanım: $0 [--check|--apply]   (env: REALM, CONFIRM_PROD_SMOKE_CONTRACT)" >&2; exit 1 ;;
-esac
-
 kc_login || exit 1
-preflight || { echo ""; echo "PREFLIGHT FAIL → mutasyon yapılmadı"; exit 1; }
+write_desired
+collect
 
 echo ""
-echo "-- desired-state converge --"
-R_RUNTIME="$(ensure_scope "$RUNTIME_SCOPE" "$(desired_runtime_json)")" || exit 1
-echo "  $RUNTIME_SCOPE : $R_RUNTIME"
-R_NOTIFY="$(ensure_scope "$NOTIFY_SCOPE" "$(desired_notify_json)")" || exit 1
-echo "  $NOTIFY_SCOPE  : $R_NOTIFY"
-R_ASSOC_D="$(ensure_association "$RUNTIME_SCOPE" default)" || exit 1
-echo "  assoc default  : $R_ASSOC_D"
-R_ASSOC_O="$(ensure_association "$NOTIFY_SCOPE" optional)" || exit 1
-echo "  assoc optional : $R_ASSOC_O"
-R_MAP="$(ensure_scope_mapping)" || exit 1
-echo "  scope-mapping  : $R_MAP"
-
-ALL="$R_RUNTIME|$R_NOTIFY|$R_ASSOC_D|$R_ASSOC_O|$R_MAP"
+echo "-- audit (salt-okunur) --"
+set +e
+AUDIT_OUT="$(audit)"; AUDIT_RC=$?
+set -e
+printf '%s\n' "$AUDIT_OUT"
+VERDICT="$(printf '%s' "$AUDIT_OUT" | sed -n 's/^VERDICT=//p' | tail -1)"
 
 if [ "$MODE" = "--check" ]; then
   echo ""
-  if printf '%s' "$ALL" | grep -q 'DRIFT'; then
-    echo "SONUÇ: DRIFT var (exit 2)"; exit 2
-  fi
-  echo "SONUÇ: converged (exit 0)"; exit 0
+  case "$AUDIT_RC" in
+    0) echo "SONUÇ: converged (exit 0)"; exit 0 ;;
+    2) echo "SONUÇ: güvenli eksik var — --apply yaratabilir (exit 2)"; exit 2 ;;
+    3) echo "SONUÇ: UNSAFE — --apply hiçbir mutasyon yapmadan durur (exit 3)"; exit 3 ;;
+    *) echo "SONUÇ: audit hatası (exit 1)"; exit 1 ;;
+  esac
 fi
 
-# --apply → exact read-back (Codex: postcondition)
-echo ""
-echo "-- exact read-back --"
-rc=0
-RB_RUNTIME="$(compare_scope "$(scope_id "$RUNTIME_SCOPE")" "$(desired_runtime_json)")"
-RB_NOTIFY="$(compare_scope "$(scope_id "$NOTIFY_SCOPE")" "$(desired_notify_json)")"
-echo "  $RUNTIME_SCOPE : $RB_RUNTIME"
-echo "  $NOTIFY_SCOPE  : $RB_NOTIFY"
-[ "$RB_RUNTIME" = "MATCH" ] || rc=3
-[ "$RB_NOTIFY" = "MATCH" ] || rc=3
-RB_D="$(MODE=--check ensure_association "$RUNTIME_SCOPE" default)"
-RB_O="$(MODE=--check ensure_association "$NOTIFY_SCOPE" optional)"
-RB_M="$(MODE=--check ensure_scope_mapping)"
-echo "  assoc default  : $RB_D"
-echo "  assoc optional : $RB_O"
-echo "  scope-mapping  : $RB_M"
-[ "$RB_D" = "MATCH" ] || rc=3
-[ "$RB_O" = "MATCH" ] || rc=3
-[ "$RB_M" = "MATCH" ] || rc=3
-
-CID="$(client_uuid)"
-CLIENT_MAPPERS="$(K get "clients/$CID/protocol-mappers/models" -r "$REALM" 2>/dev/null | python3 -c '
-import json, sys
-print(len(json.load(sys.stdin)))')"
-echo "  client-level mapper sayısı: $CLIENT_MAPPERS (beklenen 0 — mapper'lar scope-owned)"
-[ "$CLIENT_MAPPERS" = "0" ] || rc=3
+# --apply
+case "$AUDIT_RC" in
+  0) echo ""; echo "SONUÇ: zaten converged — mutasyon yok (exit 0)"; exit 0 ;;
+  3) echo ""
+     echo "SAFETY BARRIER: UNSAFE state — HİÇBİR mutasyon yapılmadı (exit 3)."
+     echo "Script drift'i silmez/düzeltmez (Codex: sessizce sahiplenme YASAK). Operatör incelemeli."
+     exit 3 ;;
+  2) : ;;
+  *) echo "audit hatası (exit 1)"; exit 1 ;;
+esac
 
 echo ""
-if [ "$rc" -eq 0 ]; then
-  echo "SONUÇ: APPLY PASS — token contract converged"
-else
-  echo "SONUÇ: POSTCONDITION FAIL (exit $rc)"
+echo "-- apply (yalnız güvenli eksikler) --"
+# Scope create sonrası id'ler değişir → association/scope-mapping için snapshot tazelenir.
+FIRST_PASS="${VERDICT#MISSING:}"
+SCOPE_ITEMS="$(printf '%s' "$FIRST_PASS" | tr ',' '\n' | grep '^scope:' | paste -sd, - || true)"
+REST_ITEMS="$(printf '%s' "$FIRST_PASS" | tr ',' '\n' | grep -v '^scope:' | paste -sd, - || true)"
+if [ -n "$SCOPE_ITEMS" ]; then
+  apply_missing "$SCOPE_ITEMS" || { echo "APPLY FAIL (scope create) — --check ile doğrula" >&2; exit 1; }
+  collect   # yeni scope id'leri
 fi
-exit $rc
+if [ -n "$REST_ITEMS" ]; then
+  apply_missing "$REST_ITEMS" || { echo "APPLY FAIL (association/mapping) — --check ile doğrula" >&2; exit 1; }
+fi
+
+echo ""
+echo "-- postcondition (aynı canonical audit) --"
+collect
+set +e
+POST_OUT="$(audit)"; POST_RC=$?
+set -e
+printf '%s\n' "$POST_OUT"
+echo ""
+if [ "$POST_RC" -eq 0 ]; then
+  echo "SONUÇ: APPLY PASS — token contract converged (exit 0)"
+  exit 0
+fi
+echo "SONUÇ: POSTCONDITION FAIL (exit $POST_RC) — apply sonrası state desired değil"
+exit 3

@@ -21,7 +21,7 @@
 |---|---|---|
 | **A1** | Brute-force protection (`failureFactor=5` + 10-param converge) — `harden-realm-security.sh` | ✅ LIVE (PR #2479) |
 | **A2a** | Confidential `smoke-client` substrate + Vault secret — [`setup-smoke-client.sh`](../../../scripts/keycloak/setup-smoke-client.sh) | ✅ bu sürüm (source-ready + platform-test live shape/secret/grant kanıtı) |
-| **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | ✅ bu sürüm (TEST live: token projection 14/14 + permission `/authz/me` **200 audience-only**) |
+| **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | 🟡 **LIVE PARTIAL / Needs Verify** — KC desired-state + token projection live; permission `/authz/me` audience-only 200; **endpoint-admin allow/deny + variant scoped 200 + notification 202 pending** (persona seed) |
 | A2b.2 | 4 TEST runbook repoint (`client_id=frontend` → `smoke-client`) | A2b.1 live acceptance sonrası |
 | A2c | `frontend.directAccessGrantsEnabled=false` | ayrı cutover PR |
 | A3 | redirectUri + webOrigins narrowing | sonraki PR |
@@ -223,11 +223,47 @@ consumer        : permission /authz/me → 200  **canlı allow-list'te smoke-cli
                   variant 1204/1205 → 403/403 (persona'da VARIANTS_READ + PROJECT:1204 seed yok — beklenen)
 ```
 
-### Bilinen açık (A2b.2 öncesi kapanacak)
+### Fail-closed kanıtı (canlı drill, 2026-07-16 — iddia değil, koşuldu)
 
-- **endpoint-admin 404**: auth geçiyor (401 değil) ama admin persona `/api/v1/endpoint-admin/devices` route'unda 404 — doğru path/route keşfi A2b.2'de.
-- **variant 200 kanıtı**: throwaway persona'ya permission DB/OpenFGA `VARIANTS_READ` + `PROJECT:1204` seed'i gerektirir.
-- **notification 202 kanıtı**: `scope=openid smoke-notify-v1` + persona `org_id` eşleşmesi ile A2b.2'de.
+Script'in "UNSAFE state'te hiçbir mutasyon yapmaz" sözleşmesi TEST realm'de geri-alınabilir drill ile kanıtlandı:
+
+```
+1. UNSAFE üret : notify-canary → smoke-client optional association (elle)
+2. --check     : [UNSAFE] notify-canary OPTIONAL association'da olmamalı (live d=False o=True / beklenen d=False o=False)
+                 VERDICT=UNSAFE:1 → exit 3
+3. --apply     : "SAFETY BARRIER: UNSAFE state — HİÇBİR mutasyon yapılmadı (exit 3)"
+                 → çıktıda TEK BİR mutasyon satırı ("+ …") YOK; drift silinmedi/düzeltilmedi
+4. drill geri al: notify-canary unbind
+5. --check     : VERDICT=SAFE → exit 0
+```
+
+Ayrıca idempotency: converged state'te `--apply` → "zaten converged — mutasyon yok (exit 0)".
+
+### `--apply` non-atomic (dürüst sınır)
+
+scope create + association + scope-mapping **tek transaction değildir**. Ara adım başarısız olursa
+kısmi state kalabilir. Disiplin: **non-zero exit asla başarı değildir**; token mint etmeden önce
+`--check` koş; kısmi state'i tahmin etme; UNSAFE yoksa `--apply`'ı tekrar çalıştır (idempotent);
+exact read-back `0` vermeden acceptance başlatma. (A2a'daki rotation failure-window dürüstlüğünün
+A2b.1 karşılığı.)
+
+### Bilinen açık (A2b.1 acceptance'ı kapatmak için gereken — Codex: A2b.2'ye ERTELENMEZ)
+
+- **endpoint-admin allow/deny**: doğru dış path **`/api/v1/endpoint-admin/endpoint-devices`**
+  (gateway rewrite `/api/v1/endpoint-admin/<seg>` → `/api/v1/admin/<seg>`; gerçek controller
+  `AdminEndpointDeviceController` = `/api/v1/admin/endpoint-devices`). `…/devices` **404 verir** —
+  route yok, bug değil. Canlı sonuç: token-yok → **401** ✓ · viewer → **403** ✓ · admin persona →
+  **403** (200 değil) çünkü `ENDPOINT_ADMIN` realm rolü tek başına yetmiyor; permission-service/OpenFGA
+  persona state gerekiyor.
+- **variant scoped 200**: persona'ya permission DB/OpenFGA `VARIANTS_READ` + numeric `PROJECT:1204` seed'i
+  gerekir (`1204 → 200`, scope-dışı `1205 → 403`). Şu an 403/403 = yalnız fail-closed kanıtı.
+- **notification 403/202**: `scope=openid smoke-notify-v1` + persona `org_id` eşleşmesi
+  (`NOTIFY_SECURITY_DEFAULT_ORG_ID=""` → fallback kapalı; guard sırası `org_id → tenant_id → allowed_orgs → default`).
+- **impersonation 403/201**: non-superAdmin → 403, gerçek superAdmin → 201 (`userId` claim + permission-service'e
+  forward edilen bearer zinciri).
+
+> **Persona seed script'e KOYULMAZ** (Codex): Keycloak client contract ile permission DB/OpenFGA persona
+> state **farklı lifecycle ve rollback yüzeyleri**. Seed ayrı/idempotent bir TEST helper'ı olarak yürütülür.
 
 ### Ayrı truth-item (A2b.1'e karıştırılmadı — Codex)
 
