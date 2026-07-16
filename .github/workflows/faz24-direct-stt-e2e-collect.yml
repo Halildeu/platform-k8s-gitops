@@ -65,7 +65,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: faz24-direct-stt-e2e-collect
+  group: faz24-platform-desktop-keycloak-test-mutation
   cancel-in-progress: false
 
 jobs:
