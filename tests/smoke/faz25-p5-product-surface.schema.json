@@ -107,16 +107,16 @@
                 "type": "object",
                 "properties": {
                   "expectedSourceSha": {
-                    "const": "125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b"
+                    "const": "bc33397de0a1eb097a1e045396c178d66c1bed95"
                   },
                   "observedSourceSha": {
-                    "const": "125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b"
+                    "const": "bc33397de0a1eb097a1e045396c178d66c1bed95"
                   },
                   "expectedFrontendDigest": {
-                    "const": "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f"
+                    "const": "sha256:aab566968dc0406fe5ca81143a3eac378fc8a877a00f0ab88e0f048603949f6d"
                   },
                   "liveFrontendDigest": {
-                    "const": "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f"
+                    "const": "sha256:aab566968dc0406fe5ca81143a3eac378fc8a877a00f0ab88e0f048603949f6d"
                   },
                   "buildInfoImageDigest": { "const": "" },
                   "buildInfoImageDigestStatus": { "const": "NOT_EMBEDDED" },
@@ -780,7 +780,7 @@
         "buildInfoProbeId": { "type": "string", "pattern": "^$|^[0-9a-f]{32}$" },
         "buildInfoCacheControl": { "type": "string" },
         "buildInfoCacheBypassHeadersAbsent": { "type": "boolean" },
-        "expectedBuildRunId": { "const": "29483736629" },
+        "expectedBuildRunId": { "const": "29487972095" },
         "harnessRepository": { "const": "Halildeu/platform-k8s-gitops" },
         "harnessRevision": { "$ref": "#/definitions/gitSha" },
         "specSha256": { "$ref": "#/definitions/sha256" },
