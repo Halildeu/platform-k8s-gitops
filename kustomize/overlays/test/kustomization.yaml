@@ -197,8 +197,16 @@ images:
     # 87658736442 in run 29509441575 succeeded even though the unrelated
     # meeting-service image job failed. Test overlay only; prod remains
     # D30-deferred. Runtime acceptance is tracked by gitops#2513.
+    # 2026-07-16 update 6: platform-backend#846 eagerly registers the
+    # aggregation_chunks_buffered and aggregation_dropped_capacity counters so
+    # a healthy zero-event process exposes an explicit 0 baseline instead of an
+    # absent series. Canonical main merge
+    # 149fd31893674b9b0575be09c1699408009230da; audio-gateway image-build job
+    # 87736557859 in run 29532708953 succeeded and produced the immutable digest
+    # below. Supersedes the #844 image; test only, prod remains D30-deferred.
+    # Runtime acceptance remains tracked by gitops#2513.
     # D30 immutable digest pin.
-    digest: sha256:23fdd43593d43c6eec224aac43407bc574cdaa80fab6c81da36463a94fc9f9cb
+    digest: sha256:1e723d8b671111cf046b825cc6f672c237762a23e40c3601d769bb271e5d2543
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
