@@ -32,7 +32,9 @@ def test_runner_contract_restores_and_redacts():
     assert "keycloak_admin_password_candidates" in text
     assert "hostFileCandidates" in text
     assert "KC_ADMIN_MODE" in text
+    assert 'KC_ADMIN_TRANSPORT="${KC_ADMIN_TRANSPORT:-rest}"' in text
     assert "ADMIN_TOKEN_FILE" in text
+    assert "ADMIN_CURL_CONFIG" in text
     assert "kc_admin_rest" in text
     assert "RESOURCE_CLIENT_ID" in text
     assert "CAPABILITY_ROLE" in text
@@ -71,12 +73,26 @@ def test_runner_contract_restores_and_redacts():
     assert 'write_kc_source_diagnostic "host-file-sudo"' in text
     assert 'write_kc_source_diagnostic "actions-secret" "KC_TEST_ADMIN_PASSWORD"' in text
     assert "sudo -n cat" in text
-    assert 'rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${USER_PASS_FILE}" "${TOKEN_FILE}"' in text
+    assert 'rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${ADMIN_CURL_CONFIG}"' in text
+    assert '--config "${ADMIN_CURL_CONFIG}"' in text
+    assert "session-expiry smoke target allowlist mismatch" in text
+    assert "keycloak-kcadm-password-argv-disabled" in text
+    assert 'unset KC_ADMIN_PASSWORD' in text
+    assert '--password "$(' not in text
+    assert '--new-password "$(' not in text
     assert "rawTokenLogged: false" in text
     assert "rawPasswordLogged: false" in text
     assert "rawAdminCredentialLogged: false" in text
     assert "run_external_recorder_smoke.py" in text
     assert "verify_external_recorder_smoke_evidence.py" in text
+    assert "RUN_SESSION_EXPIRY_SMOKE" in text
+    assert "SESSION_EXPIRY_AUDIO_BASE_URL" in text
+    assert "SESSION_EXPIRY_METRICS_BASE_URL" in text
+    assert "SESSION_EXPIRY_EXPECTED_IMAGE" in text
+    assert "SESSION_EXPIRY_POD_UID" in text
+    assert "session-expiry-smoke-loopback-url-invalid" in text
+    assert "run_audio_gateway_session_expiry_smoke.py" in text
+    assert "audioGatewaySessionExpirySmoke" in text
     assert "access_token" not in {
         line.strip()
         for line in text.splitlines()
