@@ -210,13 +210,28 @@ def main():
     else:
         ok.append("%s var, composite=false (JSON-exact)" % realm_role)
 
-    # 2) client shape — JSON/type exact
-    clients = load(d, "clients.json", [])
-    if clients == "__PARSE_ERROR__" or not clients:
-        unsafe.append("smoke-client okunamadı — önce A2a (setup-smoke-client.sh)")
-        client = {}
+    # 2) client identity + shape — EXACT (Codex P1: clients[0] YASAK)
+    #    Tam bir eşleşme + clientId exact + non-empty string id şart. Aksi halde child GET'ler
+    #    atlanır ve eksik snapshot "boş" sanılıp FALSE SAFE üretilirdi.
+    clients = load(d, "clients.json", None)
+    client = {}
+    client_ok = False
+    if clients == "__PARSE_ERROR__" or not isinstance(clients, list):
+        unsafe.append("clients.json okunamadı/liste değil")
     else:
-        client = clients[0]
+        hits = [x for x in clients if isinstance(x, dict) and x.get("clientId") == "smoke-client"]
+        if len(hits) == 0:
+            unsafe.append("smoke-client YOK (clients sorgusu eşleşme döndürmedi) — önce A2a")
+        elif len(hits) > 1:
+            unsafe.append("smoke-client için %d eşleşme (beklenen 1) — belirsiz identity" % len(hits))
+        else:
+            cid = hits[0].get("id")
+            if not (isinstance(cid, str) and cid.strip()):
+                unsafe.append("smoke-client nesnesinde non-empty string `id` YOK (id=%r) → client'a bağlı "
+                              "mapper/scope-mapping kaynakları OKUNAMAZ; eksik child 'boş' sayılamaz" % cid)
+            else:
+                client, client_ok = hits[0], True
+    if client_ok:
         if client.get("fullScopeAllowed") is not False:
             unsafe.append("fullScopeAllowed=%r (yalnız False kabul)" % client.get("fullScopeAllowed"))
         else:
@@ -225,6 +240,12 @@ def main():
             unsafe.append("serviceAccountsEnabled=%r (A2a shape bozulmuş)" % client.get("serviceAccountsEnabled"))
         else:
             ok.append("serviceAccounts=false (A2a shape korunuyor)")
+        # Geçerli client var → child snapshot'lar ZORUNLU (yoksa "boş" değil, EKSİK)
+        for child, label in (("client-mappers.json", "client protocol-mappers"),
+                             ("client-scope-mappings.json", "client scope-mappings")):
+            if not os.path.exists(os.path.join(d, child)):
+                unsafe.append("geçerli smoke-client var ama %s snapshot'ı YOK (%s) — "
+                              "okunmamış kaynak 'boş' sayılamaz" % (label, child))
 
     defaults = client.get("defaultClientScopes") or []
     optionals = client.get("optionalClientScopes") or []
@@ -237,9 +258,11 @@ def main():
                       "realm_access.roles çıkmaz; 'converged' iddiası yanlış olur")
 
     # 4) client-level mapper == 0 — check/barrier/postcondition AYNI invariant
-    cmaps = load(d, "client-mappers.json", [])
-    if cmaps == "__PARSE_ERROR__":
-        unsafe.append("client protocol-mappers okunamadı")
+    cmaps = load(d, "client-mappers.json", None)
+    if cmaps is None:
+        pass   # yukarıda "child snapshot YOK" olarak raporlandı (client_ok ise) — burada 0 SAYMA
+    elif cmaps == "__PARSE_ERROR__" or not isinstance(cmaps, list):
+        unsafe.append("client protocol-mappers okunamadı/liste değil")
     elif len(cmaps) != 0:
         unsafe.append("client-level mapper sayısı=%d (beklenen 0; mapper'lar scope-owned kalmalı). "
                       "Script bunları SİLMEZ — operatör incelemeli" % len(cmaps))
@@ -269,15 +292,26 @@ def main():
             missing.append("assoc-optional:%s" % name)
 
     # 6) role scope-mappings — client + iki owned scope (realm AND client tarafı)
-    def check_mappings(fname, label, want_realm):
+    def check_mappings(fname, label, want_realm, required):
         sm = load(d, fname, None)
         if sm is None:
-            return  # scope yok → eksiklik scope tarafında raporlanır
-        if sm == "__PARSE_ERROR__":
-            unsafe.append("%s scope-mappings okunamadı" % label)
+            if required:
+                unsafe.append("%s mevcut ama scope-mappings snapshot'ı YOK (%s) — okunmamış kaynak "
+                              "'rol taşımıyor' sayılamaz" % (label, fname))
             return
-        realm_names = sorted(x["name"] for x in (sm.get("realmMappings") or []))
-        client_map = sm.get("clientMappings") or {}
+        if sm == "__PARSE_ERROR__" or not isinstance(sm, dict):
+            unsafe.append("%s scope-mappings okunamadı/object değil" % label)
+            return
+        # Nested alan tipleri EXACT (Codex P1): `or []` / `or {}` normalizasyonu eksik/yanlış tipi gizler
+        rm_raw, cm_raw = sm.get("realmMappings"), sm.get("clientMappings")
+        if not isinstance(rm_raw, list):
+            unsafe.append("%s realmMappings alanı eksik/yanlış tip (%r) — [] kabul edilmez" % (label, type(rm_raw).__name__))
+            return
+        if not isinstance(cm_raw, dict):
+            unsafe.append("%s clientMappings alanı eksik/yanlış tip (%r) — {} kabul edilmez" % (label, type(cm_raw).__name__))
+            return
+        realm_names = sorted(x["name"] for x in rm_raw if isinstance(x, dict) and "name" in x)
+        client_map = cm_raw
         if client_map:
             unsafe.append("%s CLIENT role scope-mapping taşıyor: %s (beklenen {})"
                           % (label, ",".join(sorted(client_map))))
@@ -292,21 +326,29 @@ def main():
             unsafe.append("%s realm scope-mapping=%s (beklenen %s) — beklenmeyen rol token'a açılabilir"
                           % (label, realm_names, want_realm))
 
-    check_mappings("client-scope-mappings.json", "smoke-client", [realm_role])
-    check_mappings("runtime-sm.json", RUNTIME, [])
-    check_mappings("notify-sm.json", NOTIFY, [])
+    check_mappings("client-scope-mappings.json", "smoke-client", [realm_role], required=client_ok)
 
     # 7) scope shape — protocol + protocolMapper + consentRequired + config whitelist
     scopes = load(d, "scopes.json", [])
     if scopes == "__PARSE_ERROR__":
         unsafe.append("client-scopes okunamadı")
         scopes = []
-    by_name = {s["name"]: s for s in scopes if isinstance(s, dict)}
-    for des in (des_runtime, des_notify):
-        live = by_name.get(des["name"])
-        if live is None:
+    for des, sm_file in ((des_runtime, "runtime-sm.json"), (des_notify, "notify-sm.json")):
+        hits = [x for x in scopes if isinstance(x, dict) and x.get("name") == des["name"]]
+        if len(hits) == 0:
             missing.append("scope:%s" % des["name"])
             continue
+        if len(hits) > 1:
+            unsafe.append("%s için %d scope (beklenen 1) — duplicate scope adı" % (des["name"], len(hits)))
+            continue
+        live = hits[0]
+        sid = live.get("id")
+        if not (isinstance(sid, str) and sid.strip()):
+            unsafe.append("%s nesnesinde non-empty string `id` YOK (id=%r) → scope'un kendi "
+                          "scope-mappings kaynağı OKUNAMAZ; eksik child 'rol taşımıyor' sayılamaz"
+                          % (des["name"], sid))
+            continue
+        check_mappings(sm_file, des["name"], [], required=True)
         issues = compare_scope(des, live)
         if issues:
             unsafe.append("%s DRIFT → %s  [script mutate/sil ETMEZ; operatör incelemeli]"
@@ -395,10 +437,40 @@ json.dump({"name": name,
 PY
 }
 
-pick_id() {  # $1=json dosyası (liste)  $2=name → id
-  python3 -c 'import json,sys
-d = json.load(open(sys.argv[1]))
-print(next((x["id"] for x in d if x.get("name") == sys.argv[2] or x.get("clientId") == sys.argv[2]), ""))' "$1" "$2"
+# EXACT lookup (Codex P1): generic "name VEYA clientId" seçimi YASAK — client ve scope ayrı
+# identity alanları kullanır. Tam **bir** eşleşme + non-empty string `id` şart; aksi halde boş
+# döner ve audit bunu UNSAFE sayar (eskiden exception `|| true` ile yutulup CID="" kalıyordu →
+# child GET'ler atlanıyor → audit eksik dosyaları "boş" sanıp FALSE SAFE veriyordu).
+pick_client_uuid() {  # $1=clients.json → id ("" = exact-tek-eşleşme yok)
+  python3 -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print(""); raise SystemExit(0)
+if not isinstance(d, list):
+    print(""); raise SystemExit(0)
+hits = [x for x in d if isinstance(x, dict) and x.get("clientId") == sys.argv[2]]
+if len(hits) != 1:
+    print(""); raise SystemExit(0)
+i = hits[0].get("id")
+print(i if isinstance(i, str) and i.strip() else "")' "$1" "$CLIENT_ID" 2>/dev/null || true
+}
+
+pick_scope_id() {  # $1=scopes.json  $2=scope adı → id ("" = exact-tek-eşleşme yok)
+  python3 -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print(""); raise SystemExit(0)
+if not isinstance(d, list):
+    print(""); raise SystemExit(0)
+hits = [x for x in d if isinstance(x, dict) and x.get("name") == sys.argv[2]]
+if len(hits) != 1:
+    print(""); raise SystemExit(0)
+i = hits[0].get("id")
+print(i if isinstance(i, str) and i.strip() else "")' "$1" "$2" 2>/dev/null || true
 }
 
 # ---- collect: TÜM state tek turda (fonksiyon başına tekrar kcadm çağrısı YOK → timeout'un da kökü) ----
@@ -453,7 +525,8 @@ sys.exit(0 if (isinstance(d, list) if want == "list" else isinstance(d, dict)) e
 
 collect() {  # return 1 = LOKAL I/O hatası (fatal) · return 0 = snapshot alındı (eksikse marker'lı)
   local d="$WORK/snap"
-  rm -rf "$d"; mkdir -p "$d" || return 1
+  rm -rf "$d" || return 1
+  mkdir -p "$d" || return 1
   # roles/<role>: yoksa KC non-zero döner — bu GEÇERLİ "rol yok" bilgisi, okuma hatası DEĞİL.
   if ! K get "roles/$REALM_ROLE" -r "$REALM" > "$d/role.json.part" 2>"$d/role.err"; then
     if grep -qiE "not found|404" "$d/role.err" 2>/dev/null; then
@@ -469,14 +542,14 @@ collect() {  # return 1 = LOKAL I/O hatası (fatal) · return 0 = snapshot alın
   rm -f "$d/role.err"
 
   kget_atomic "$d/clients.json" list clients -q "clientId=$CLIENT_ID" || return 1
-  CID="$(pick_id "$d/clients.json" "$CLIENT_ID" 2>/dev/null || true)"
+  CID="$(pick_client_uuid "$d/clients.json")"
   if [ -n "$CID" ]; then
     kget_atomic "$d/client-mappers.json" list "clients/$CID/protocol-mappers/models" || return 1
     kget_atomic "$d/client-scope-mappings.json" object "clients/$CID/scope-mappings" || return 1
   fi
   kget_atomic "$d/scopes.json" list client-scopes || return 1
-  RSID="$(pick_id "$d/scopes.json" "$RUNTIME_SCOPE" 2>/dev/null || true)"
-  NSID="$(pick_id "$d/scopes.json" "$NOTIFY_SCOPE" 2>/dev/null || true)"
+  RSID="$(pick_scope_id "$d/scopes.json" "$RUNTIME_SCOPE")"
+  NSID="$(pick_scope_id "$d/scopes.json" "$NOTIFY_SCOPE")"
   if [ -n "$RSID" ]; then
     kget_atomic "$d/runtime-sm.json" object "client-scopes/$RSID/scope-mappings" || return 1
   fi
@@ -516,14 +589,14 @@ apply_missing() {  # $1 = "a,b,c"
         echo "  + client-scope oluşturuldu: $NOTIFY_SCOPE" ;;
       assoc-default:*)
         n="${it#assoc-default:}"
-        sid="$(pick_id "$WORK/snap/scopes.json" "$n")"
+        sid="$(pick_scope_id "$WORK/snap/scopes.json" "$n")"
         [ -n "$sid" ] || { echo "ERROR: $n scope id bulunamadı (create bu turda mı yapıldı?)" >&2; return 1; }
         K update "clients/$CID/default-client-scopes/$sid" -r "$REALM" >/dev/null 2>&1 \
           || { echo "ERROR: $n default association başarısız" >&2; return 1; }
         echo "  + default association: $n" ;;
       assoc-optional:*)
         n="${it#assoc-optional:}"
-        sid="$(pick_id "$WORK/snap/scopes.json" "$n")"
+        sid="$(pick_scope_id "$WORK/snap/scopes.json" "$n")"
         [ -n "$sid" ] || { echo "ERROR: $n scope id bulunamadı" >&2; return 1; }
         K update "clients/$CID/optional-client-scopes/$sid" -r "$REALM" >/dev/null 2>&1 \
           || { echo "ERROR: $n optional association başarısız" >&2; return 1; }

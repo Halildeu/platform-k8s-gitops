@@ -261,6 +261,94 @@ class TestUnsafeStateBlocksMutation(Harness):
         self.assertNoMutation(res)
 
 
+class TestSemanticSnapshotCompleteness(Harness):
+    """Codex P1 (false SAFE): identity alanı eksikse child kaynaklar HİÇ okunmaz;
+    audit eksik child'ı 'boş/rol taşımıyor' sanıp SAFE derdi — gizli drift'e rağmen."""
+
+    def test_18_client_without_id_hides_children(self):
+        """clientId exact ama `id` yok → client-mappers + client-scope-mappings okunamaz.
+        Fake state'te GİZLİ client mapper + GİZLİ ADMIN scope-mapping var; SAFE denemez."""
+        self.seed_converged()
+        clients = json.loads((self.state / "clients.json").read_text())
+        del clients[0]["id"]                       # ← identity alanı yok
+        self.write("clients", clients)
+        # okunmayacak olan child'lara tehlikeli içerik koy
+        self.write("client-mappers", [attr_mapper("hardcoded", "x", "hardcoded")])
+        self.write("client-scope-mappings",
+                   {"realmMappings": [{"id": "r", "name": "ADMIN"}], "clientMappings": {}})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"false SAFE!\n{res.stdout}")
+        self.assertIn("id", res.stdout)
+        self.assertNoMutation(res)
+
+    def test_19_scope_without_id_hides_scope_mappings(self):
+        """Owned scope doğru isim/shape ama `id` yok → kendi scope-mappings'i okunamaz.
+        Arkasında GİZLİ ADMIN realm mapping var; SAFE denemez."""
+        self.seed_converged()
+        rs = runtime_scope()
+        del rs["id"]                               # ← identity alanı yok
+        self.write("scopes", [rs, notify_scope()])
+        self.write("runtime-sm", {"realmMappings": [{"id": "r", "name": "ADMIN"}], "clientMappings": {}})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"false SAFE!\n{res.stdout}")
+        self.assertNoMutation(res)
+
+    def test_20_wrong_client_identity(self):
+        """clients sorgusu başka bir client döndürürse clients[0] KULLANILMAMALI."""
+        self.seed_converged()
+        self.write("clients", [{"id": "uuid-other", "clientId": "frontend",
+                                "fullScopeAllowed": True, "serviceAccountsEnabled": True,
+                                "defaultClientScopes": [], "optionalClientScopes": []}])
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"false SAFE!\n{res.stdout}")
+        self.assertIn("smoke-client YOK", res.stdout)
+        self.assertNoMutation(res)
+
+    def test_21_duplicate_client_match(self):
+        self.seed_converged()
+        clients = json.loads((self.state / "clients.json").read_text())
+        clients.append(dict(clients[0], id="uuid-dup"))
+        self.write("clients", clients)
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, res.stdout)
+        self.assertIn("eşleşme", res.stdout)
+        self.assertNoMutation(res)
+
+    def test_22_duplicate_owned_scope_name(self):
+        self.seed_converged()
+        self.write("scopes", [runtime_scope(), dict(runtime_scope(), id="sid-dup"), notify_scope()])
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, res.stdout)
+        self.assertIn("duplicate scope", res.stdout.lower())
+        self.assertNoMutation(res)
+
+    def test_23_nested_realm_mappings_wrong_type(self):
+        """realmMappings={} (list değil) → `or []` normalizasyonu bunu gizliyordu."""
+        self.seed_converged()
+        self.write("runtime-sm", {"realmMappings": {}, "clientMappings": {}})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"false SAFE!\n{res.stdout}")
+        self.assertIn("realmMappings", res.stdout)
+        self.assertNoMutation(res)
+
+    def test_24_nested_client_mappings_wrong_type(self):
+        self.seed_converged()
+        self.write("client-scope-mappings",
+                   {"realmMappings": [{"id": "role-id", "name": "ENDPOINT_ADMIN"}], "clientMappings": []})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"false SAFE!\n{res.stdout}")
+        self.assertIn("clientMappings", res.stdout)
+        self.assertNoMutation(res)
+
+    def test_25_nested_field_absent(self):
+        """realmMappings alanı hiç yok → `or []` bunu 'rol taşımıyor' sayıyordu."""
+        self.seed_converged()
+        self.write("notify-sm", {"clientMappings": {}})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"false SAFE!\n{res.stdout}")
+        self.assertNoMutation(res)
+
+
 class TestSecondBarrier(Harness):
     def test_10_post_create_drift_blocks_association(self):
         """Scope create edildi ama KC beklenmeyen shape döndürdü → association YAPILMAMALI."""
