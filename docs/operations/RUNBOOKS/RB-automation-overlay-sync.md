@@ -16,7 +16,7 @@
 > **Authentication ≠ merge**: otomasyon PR'ı **açar/günceller**; merge yine
 > insan/governance gate'ine bağlıdır (admin-merge YASAK, CI-red merge YASAK).
 >
-> **#842 Part 2**: aynı `platform-automation` App `auto-promotion/` PR'larını da
+> **#842 Part 2**: aynı `platform-gitops-automation` App `auto-promotion/` PR'larını da
 > açar (`promotion-bot-scan-candidates.yml` — scheduled prod-candidate scan).
 > Bu runbook'taki App kurulumu (ADIM 1-4) her iki otomasyonu da kapsar.
 
@@ -27,7 +27,7 @@ Promotion job'ı PR'ı default `GITHUB_TOKEN` ile açarsa, GitHub'ın
 `pull_request` workflow'larını **tetiklemez**. Required `cross-ai-audit` check'i
 (ve diğer PR check'leri) hiç koşmaz → PR merge edilemez. Bu yüzden PR bir
 **GitHub App installation token**'ı ile açılır (`actions/create-github-app-token`).
-App'in bot kimliği `platform-automation[bot]`, `#827` automation-PR governance
+App'in bot kimliği `platform-gitops-automation[bot]`, `#827` automation-PR governance
 kontratında (`scripts/ci/pr-cross-ai-audit.mjs` `AUTOMATION_PREFIX_ACTORS`)
 `auto-test-overlay/` prefix'ine **bağlı** kimliktir.
 
@@ -39,7 +39,7 @@ kontratında (`scripts/ci/pr-cross-ai-audit.mjs` `AUTOMATION_PREFIX_ACTORS`)
 | Promotion job | `deploy-backend-testai.yml/promote` (`runs-on: ubuntu-latest`, cluster erişimi yok) |
 | Dal | `auto-test-overlay/backend-testai` (stabil, her run `origin/main`'e reset) |
 | Dosya | Ana test overlay'de 13 backend `digest:` satırı; endpoint-admin değişirse iki owner-gated bridge mirror satırı |
-| PR author | `platform-automation[bot]` (GitHub App) |
+| PR author | `platform-gitops-automation[bot]` (GitHub App) |
 | Exemption | cross-AI peer-review **muaf** — `## Cross-AI` automation attestation bloğu |
 | Boundary | `[x] state-mutation (test cluster)` — user-approval **değil**, label gerekmez |
 | Secrets | `AUTOMATION_APP_ID`, `AUTOMATION_APP_PRIVATE_KEY` (repo Actions secrets) |
@@ -49,15 +49,56 @@ kontratında (`scripts/ci/pr-cross-ai-audit.mjs` `AUTOMATION_PREFIX_ACTORS`)
 aksiyonu ister. Eski direct rollout veya green-skip yoluna düşmez. Cluster
 mutasyonu başlamaz.
 
+## ⚠️ Aktivasyon önkoşulu — secret seed = activation boundary
+
+`platform-gitops-automation[bot]` actor contract'ını taşıyan değişiklik **`main`'e
+merge edilmeden `AUTOMATION_APP_ID` / `AUTOMATION_APP_PRIVATE_KEY` secret'larını
+SEED ETME.**
+
+Neden: `gate-cross-ai-audit.yml` audit script'ini PR head'inden değil **trusted base
+ref**'inden (`github.event.pull_request.base.ref`) çalıştırır. Eski `main`
+`platform-automation[bot]` beklerken yeni App `platform-gitops-automation[bot]` ile
+PR açarsa `automation_actor_allowlist` check'i PR'ı **reddeder** (kırmızı).
+
+App **creation ve installation merge'den önce yapılabilir** — App tek başına PR açmaz,
+otomasyonu etkinleştirmez. Otomasyonu fiilen açan adım **secret seed**'dir.
+
+**Canonical sıra:**
+
+```text
+code merge (actor contract main'de)
+  → App create/install
+  → ruleset bypass
+  → secret seed            ← activation boundary
+  → controlled dispatch
+  → ilk auto-PR actor/check doğrulaması
+```
+
 ## 🧑 ADIM 1 — GitHub App oluştur
 
 GitHub → Settings → Developer settings → **GitHub Apps** → New GitHub App:
 
-- **Name**: slug'ı `platform-automation`'a çözülecek şekilde (örn. literal
-  `platform-automation` veya `Platform Automation`). ⚠️ Slug `pr-cross-ai-audit.mjs`'de
-  **hardcoded** — farklı isim → actor check fail.
-- **Homepage URL**: repo URL'si (zorunlu alan, herhangi).
-- **Webhook**: `Active` işaretini **kaldır** (webhook gerekmez).
+- **Name**: **literal `platform-gitops-automation`** yaz (slug birebir bu olmalı).
+  ⚠️ Slug `pr-cross-ai-audit.mjs` (`AUTOMATION_PREFIX_ACTORS`) + `sync-test-overlay.sh` +
+  `sync-test-overlay-frontend.sh` + `promotion-bot-scan-candidates.yml` +
+  `tests/ci/test-cross-ai-automation.mjs` içinde **hardcoded** — farklı isim →
+  `automation_actor_allowlist` check fail.
+
+  > **NOT (2026-07-16 — kök neden)**: Bu runbook'un ilk sürümü `platform-automation`
+  > slug'ını şart koşuyordu; o ad **alınamaz**. GitHub'da 2021-11-01'den beri var olan
+  > **başka bir organizasyona** aittir (`@platform-automation`, `type=Organization`,
+  > `id=93530788`) ve App oluşturma formu
+  > `Name is reserved for the account @platform-automation` ile reddeder. Canonical slug
+  > bu yüzden `platform-gitops-automation`'a taşındı; kod + testler bu slug'a hizalandı.
+
+- **Homepage URL**: repo URL'si — **`https://` protokolü ŞART**:
+  `https://github.com/Halildeu/platform-k8s-gitops`. Protokolsüz değer
+  (`github.com/...`) `Homepage URL must be a valid URL` ile reddedilir.
+- **Webhook**: `Active` işaretini **kaldır** (webhook gerekmez). Bu tik **default
+  işaretli** gelir ve işaretliyken `Webhook URL` zorunludur (kırmızı `*`); tik
+  kalkınca zorunluluk düşer, URL boş bırakılır.
+- **Subscribe to events**: hiçbiri işaretlenmez (webhook kapalı → event gönderilmez;
+  App'in işi event dinlemek değil, PR açmak).
 - **Repository permissions** (yalnız bunlar — least-privilege):
   - Contents: **Read and write**
   - Pull requests: **Read and write**
@@ -70,7 +111,28 @@ GitHub → Settings → Developer settings → **GitHub Apps** → New GitHub Ap
 2. App → General → **Private keys** → Generate a private key → `.pem` indir.
 3. App ID'yi not al (App → General → About → App ID, numerik).
 
-## 🧑 ADIM 3 — Repo secret'larını seed et
+## 🧑 ADIM 3 — Branch ruleset (hardening — activation ÖNCESİ)
+
+`auto-test-overlay/` + `auto-test-frontend/` + `auto-promotion/` branch-prefix'lerinin güçlü bir sinyal
+olması için, Settings → Rules → Rulesets → New branch ruleset:
+
+- **Target branches**: `auto-test-overlay/**` · `auto-test-frontend/**` · `auto-promotion/**`
+- **Restrict creations / updates**: yalnız `platform-gitops-automation` App bypass listesinde.
+
+Bu, bir insanın bu dallara push edip exemption'ı taşıyamamasını garanti eder.
+`auto-test-frontend/**` testai frontend desired-state PR'larını
+`.github/workflows/deploy-testai.yml` üzerinden açar (#2295). `auto-promotion/**`
+aynı `platform-gitops-automation` App'iyle açılır (#842 Part 2 —
+`promotion-bot-scan-candidates.yml`). `auto-verified/**` ayrı follow-up
+(`ledger-mark-verified.sh` staging-sw host-systemd'de koşar — host-minted App
+token gerektirir).
+
+## 🧑 ADIM 4 — Repo secret'larını seed et ← **ACTIVATION BOUNDARY**
+
+> ⚠️ Bu adım otomasyonu **fiilen açar**. Önkoşul: actor contract
+> (`platform-gitops-automation[bot]`) **`main`'e merge edilmiş** olmalı (bkz.
+> "Aktivasyon önkoşulu"). Merge edilmeden seed edilirse yeni bot'un açtığı auto-PR
+> trusted-base'teki eski allowlist'e takılır (kırmızı).
 
 `Halildeu/platform-k8s-gitops` → Settings → Secrets and variables → Actions → New repository secret:
 
@@ -80,22 +142,6 @@ GitHub → Settings → Developer settings → **GitHub Apps** → New GitHub Ap
 | `AUTOMATION_APP_PRIVATE_KEY` | İndirilen `.pem` dosyasının **tam içeriği** (BEGIN/END satırları dahil) |
 
 `.pem` dosyasını seed sonrası **shred** et — `shred -u <file>.pem`.
-
-## 🧑 ADIM 4 — Branch ruleset (önerilen hardening)
-
-`auto-test-overlay/` + `auto-test-frontend/` + `auto-promotion/` branch-prefix'lerinin güçlü bir sinyal
-olması için, Settings → Rules → Rulesets → New branch ruleset:
-
-- **Target branches**: `auto-test-overlay/**` · `auto-test-frontend/**` · `auto-promotion/**`
-- **Restrict creations / updates**: yalnız `platform-automation` App bypass listesinde.
-
-Bu, bir insanın bu dallara push edip exemption'ı taşıyamamasını garanti eder.
-`auto-test-frontend/**` testai frontend desired-state PR'larını
-`.github/workflows/deploy-testai.yml` üzerinden açar (#2295). `auto-promotion/**`
-aynı `platform-automation` App'iyle açılır (#842 Part 2 —
-`promotion-bot-scan-candidates.yml`). `auto-verified/**` ayrı follow-up
-(`ledger-mark-verified.sh` staging-sw host-systemd'de koşar — host-minted App
-token gerektirir).
 
 ## 🤖 ADIM 5 — Verify
 
@@ -149,7 +195,7 @@ Frontend için `platform-web` image build'i `testai-deploy` dispatch'i gönderir
 ## NE YAPMA
 
 - ❌ PR'ı `GITHUB_TOKEN` ile açma — recursion guard `cross-ai-audit`'i bastırır, PR merge-bloklu kalır.
-- ❌ App'i `platform-automation` slug'ı dışında bir isimle oluşturma — `pr-cross-ai-audit.mjs` actor check fail eder.
+- ❌ App'i `platform-gitops-automation` slug'ı dışında bir isimle oluşturma — `pr-cross-ai-audit.mjs` actor check fail eder.
 - ❌ App'e `Contents` + `Pull requests` dışında permission verme — least-privilege.
 - ❌ App'i bir **insan hesabına** PAT olarak ikame etme — `#827` kontratı bot kimliği ister.
 - ❌ Auto-PR'ı admin-merge etme veya CI kırmızıyken merge etme — HARD RULE.

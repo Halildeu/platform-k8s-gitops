@@ -40,7 +40,7 @@ jobs:
       # #842 Part 2 — promotion-bot opens auto-promotion/ PRs. With the default
       # GITHUB_TOKEN those PRs do NOT trigger the required cross-ai-audit check
       # (GitHub recursion guard), so the scan is opened with a GitHub App
-      # installation token (the same platform-automation[bot] App as the
+      # installation token (the same platform-gitops-automation[bot] App as the
       # deploy-backend-testai.yml test-overlay sync — #827 PR-B).
       #
       # secrets.* is unavailable in job/step `if:` — pass it via `env:` and
@@ -89,8 +89,8 @@ jobs:
       - name: Configure git
         if: steps.preflight.outputs.enabled == 'true'
         run: |
-          git config user.name "platform-automation[bot]"
-          git config user.email "platform-automation[bot]@users.noreply.github.com"
+          git config user.name "platform-gitops-automation[bot]"
+          git config user.email "platform-gitops-automation[bot]@users.noreply.github.com"
 
       - name: Run scan-promotion-candidates
         if: steps.preflight.outputs.enabled == 'true'
