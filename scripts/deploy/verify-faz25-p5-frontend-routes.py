@@ -32,6 +32,10 @@ MATCH_LOCAL_ANNOTATION = re.compile(
     re.IGNORECASE,
 )
 HOST_GLOBAL_ANNOTATION = re.compile(r"(?:server-snippet)", re.IGNORECASE)
+FRONTEND_ASSET_PATH = re.compile(
+    r"^/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*"
+    r"[A-Za-z0-9_-][A-Za-z0-9._-]*\.(?:js|mjs|css)$"
+)
 
 
 def host_matches(rule_host: Any, request_host: str) -> bool:
@@ -116,6 +120,12 @@ def verify(payload: dict[str, Any], args: argparse.Namespace) -> list[dict[str, 
         in (ingress.get("metadata", {}).get("annotations") or {})
         for ingress in host_ingresses
     )
+
+    for additional_path in args.additional_request_path:
+        if not isinstance(additional_path, str) or not FRONTEND_ASSET_PATH.fullmatch(
+            additional_path
+        ):
+            raise ValueError("invalid additional protected request path")
 
     normalized: list[dict[str, Any]] = []
     request_paths = tuple(dict.fromkeys((*REQUEST_PATHS, *args.additional_request_path)))
