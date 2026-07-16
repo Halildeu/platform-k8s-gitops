@@ -310,6 +310,88 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             "const windowPrototype = Object.getPrototypeOf(window)", installer
         )
 
+    def test_product_journey_popup_ledger_starts_after_active_page_guard(self):
+        popup_listener = self.spec.index("page.context().on('page', (openedPage)")
+        navigation_listener = self.spec.index(
+            "openedPage.on('framenavigated', (frame)", popup_listener
+        )
+        close_listener = self.spec.index(
+            "openedPage.on('close', recordMainFrameUrl)", navigation_listener
+        )
+        inert_policy = self.spec.index("const popupHistoryIsInert =")
+        inert_policy_url_guard = self.spec.index(
+            "observedMainFrameUrls[0] === 'about:blank'", inert_policy
+        )
+        negative_control = self.spec.index(
+            "const popupLedgerNegativeControlPage = await page.context().newPage()",
+            inert_policy_url_guard,
+        )
+        negative_control_rejection = self.spec.index(
+            "popupHistoryIsInert([", negative_control
+        )
+        active_page_guard = self.spec.index(
+            "const activeSecondaryPagesAtProductJourneyStart = page",
+            negative_control_rejection,
+        )
+        history_snapshot = self.spec.index(
+            "const preJourneyPopupHistory = unexpectedPopupPages.map",
+            active_page_guard,
+        )
+        active_page_assertion = self.spec.index(
+            "expect(activeSecondaryPagesAtProductJourneyStart).toEqual([])",
+            history_snapshot,
+        )
+        bounded_history_assertion = self.spec.index(
+            "expect(preJourneyPopupHistory.length).toBeLessThanOrEqual(1)",
+            active_page_assertion,
+        )
+        inert_history_assertion = self.spec.index(
+            "expect(popupHistoryIsInert(preJourneyPopupHistory)).toBe(true)",
+            bounded_history_assertion,
+        )
+        ledger_reset = self.spec.index(
+            "unexpectedPopupPages.length = 0", inert_history_assertion
+        )
+        journey_start = self.spec.index(
+            "const productJourneyAuditStart = await page.evaluate", ledger_reset
+        )
+        no_product_popup = self.spec.index(
+            "expect(unexpectedPopupPages).toEqual([])", journey_start
+        )
+
+        self.assertIn(
+            "candidatePage !== page && !candidatePage.isClosed()",
+            self.spec[active_page_guard:history_snapshot],
+        )
+        self.assertIn(
+            "frame === openedPage.mainFrame()",
+            self.spec[navigation_listener:close_listener],
+        )
+        self.assertIn(
+            "observedMainFrameUrls.length === 1",
+            self.spec[inert_policy:inert_policy_url_guard],
+        )
+        self.assertIn(
+            "'data:text/html,popup-ledger-negative-control'",
+            self.spec[negative_control:negative_control_rejection],
+        )
+        self.assertIn(
+            ").toBe(false)",
+            self.spec[negative_control_rejection:active_page_guard],
+        )
+        self.assertLess(popup_listener, navigation_listener)
+        self.assertLess(navigation_listener, close_listener)
+        self.assertLess(close_listener, inert_policy)
+        self.assertLess(inert_policy_url_guard, negative_control)
+        self.assertLess(negative_control, negative_control_rejection)
+        self.assertLess(negative_control_rejection, active_page_guard)
+        self.assertLess(active_page_guard, active_page_assertion)
+        self.assertLess(active_page_assertion, bounded_history_assertion)
+        self.assertLess(bounded_history_assertion, inert_history_assertion)
+        self.assertLess(active_page_assertion, ledger_reset)
+        self.assertLess(ledger_reset, journey_start)
+        self.assertLess(journey_start, no_product_popup)
+
     def test_role_filter_transitions_prove_exclusive_selection(self):
         self.assertIn(
             "expect(pressedRoleIds).toEqual([roleId])", self.spec

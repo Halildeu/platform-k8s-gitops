@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -929,7 +929,10 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     fromServiceWorker: boolean;
   };
   const frontendAssetResponsePromises: Array<Promise<FrontendAssetResponse>> = [];
-  const unexpectedPopupPages: string[] = [];
+  const unexpectedPopupPages: Array<{
+    page: Page;
+    observedMainFrameUrls: string[];
+  }> = [];
   const unexpectedWebSockets: string[] = [];
   const unexpectedWorkers: string[] = [];
   let frameAttachmentCount = 0;
@@ -937,7 +940,19 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   let downloadEventCount = 0;
   let dialogEventCount = 0;
   page.context().on('page', (openedPage) => {
-    if (openedPage !== page) unexpectedPopupPages.push(openedPage.url());
+    if (openedPage === page) return;
+    const observedMainFrameUrls: string[] = [];
+    const recordMainFrameUrl = () => {
+      const url = openedPage.url();
+      if (observedMainFrameUrls.at(-1) !== url) observedMainFrameUrls.push(url);
+    };
+    const popupRecord = { page: openedPage, observedMainFrameUrls };
+    unexpectedPopupPages.push(popupRecord);
+    recordMainFrameUrl();
+    openedPage.on('framenavigated', (frame) => {
+      if (frame === openedPage.mainFrame()) recordMainFrameUrl();
+    });
+    openedPage.on('close', recordMainFrameUrl);
   });
   page.on('request', (request) => {
     const method = request.method();
@@ -1548,6 +1563,69 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   const desktopHubPath = new URL(page.url()).pathname;
   expect(desktopHubPath).toBe(expectedHubPath);
   const desktopHubRendered = await hubSurface.isVisible();
+
+  type PopupHistorySnapshot = {
+    closed: boolean;
+    observedMainFrameUrls: string[];
+  };
+  const popupHistoryIsInert = (history: PopupHistorySnapshot[]) =>
+    history.length <= 1 &&
+    history.every(
+      ({ closed, observedMainFrameUrls }) =>
+        closed &&
+        observedMainFrameUrls.length === 1 &&
+        observedMainFrameUrls[0] === 'about:blank',
+    );
+
+  // Exercise the real context-level listener with an isolated, network-free
+  // secondary page. The exact policy used below must reject a popup that
+  // navigated away from about:blank, even after that page has closed.
+  const popupLedgerNegativeControlPage = await page.context().newPage();
+  await popupLedgerNegativeControlPage.goto(
+    'data:text/html,popup-ledger-negative-control',
+  );
+  await popupLedgerNegativeControlPage.close();
+  const popupLedgerNegativeControlIndex = unexpectedPopupPages.findIndex(
+    (popupRecord) => popupRecord.page === popupLedgerNegativeControlPage,
+  );
+  if (popupLedgerNegativeControlIndex < 0) {
+    throw new Error('popup-ledger-negative-control-not-observed');
+  }
+  const [popupLedgerNegativeControl] = unexpectedPopupPages.splice(
+    popupLedgerNegativeControlIndex,
+    1,
+  );
+  if (!popupLedgerNegativeControl) {
+    throw new Error('popup-ledger-negative-control-missing');
+  }
+  expect(
+    popupHistoryIsInert([
+      {
+        closed: popupLedgerNegativeControl.page.isClosed(),
+        observedMainFrameUrls: popupLedgerNegativeControl.observedMainFrameUrls,
+      },
+    ]),
+  ).toBe(false);
+
+  // Browser and identity-provider setup may create and close one transient
+  // blank target before the audited product journey begins. Never carry that
+  // inert setup history into the product-journey ledger, but fail if any page
+  // is still active or if the transient target ever navigated away from
+  // about:blank. Any page created after this boundary remains an immediate
+  // acceptance failure through the context-level page listener.
+  const activeSecondaryPagesAtProductJourneyStart = page
+    .context()
+    .pages()
+    .filter((candidatePage) => candidatePage !== page && !candidatePage.isClosed())
+    .map((candidatePage) => candidatePage.url());
+  const preJourneyPopupHistory = unexpectedPopupPages.map((popupRecord) => ({
+    closed: popupRecord.page.isClosed(),
+    observedMainFrameUrls: popupRecord.observedMainFrameUrls,
+  }));
+  expect(activeSecondaryPagesAtProductJourneyStart).toEqual([]);
+  expect(preJourneyPopupHistory.length).toBeLessThanOrEqual(1);
+  expect(popupHistoryIsInert(preJourneyPopupHistory)).toBe(true);
+  unexpectedPopupPages.length = 0;
 
   const productJourneyAuditStart = await page.evaluate(() => {
     const auditWindow = window as Window & {
