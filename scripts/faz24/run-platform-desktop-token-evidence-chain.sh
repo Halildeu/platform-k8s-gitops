@@ -373,10 +373,11 @@ recover_stale_session_expiry_state() {
 
   code="$(kc_admin_rest GET "/users?username=${recovery_username_prefix}-&exact=false&max=100" "${users_file}")"
   [[ "${code}" == "200" ]] || die "stale-test-state-user-read-failed"
-  user_count="$(faz24_temp_user_count "${users_file}" "${recovery_username_pattern}")"
+  user_count="$(faz24_temp_user_count "${users_file}" "${recovery_username_pattern}")" \
+    || die "stale-test-state-user-count-invalid"
   STALE_TEMP_USERS_MATCHED="${user_count}"
-  [[ "${user_count}" -ge 1 && "${user_count}" -le 20 ]] \
-    || die "stale-test-state-run-scoped-user-not-found"
+  faz24_stale_user_count_allowed "${user_count}" \
+    || die "stale-test-state-run-scoped-user-limit-exceeded"
   while IFS= read -r user_id; do
     [[ -n "${user_id}" ]] || continue
     code="$(kc_admin_rest DELETE "/users/${user_id}" "${delete_out}")"
@@ -387,9 +388,10 @@ recover_stale_session_expiry_state() {
 
   code="$(kc_admin_rest GET "/users?username=${recovery_username_prefix}-&exact=false&max=100" "${users_verify}")"
   [[ "${code}" == "200" ]] || die "stale-test-state-user-verify-failed"
-  STALE_TEMP_USERS_REMAINING="$(faz24_temp_user_count "${users_verify}" "${recovery_username_pattern}")"
-  [[ "${STALE_TEMP_USERS_REMAINING}" == "0" \
-      && "${STALE_TEMP_USERS_DELETED}" == "${STALE_TEMP_USERS_MATCHED}" ]] \
+  STALE_TEMP_USERS_REMAINING="$(faz24_temp_user_count "${users_verify}" "${recovery_username_pattern}")" \
+    || die "stale-test-state-user-verify-count-invalid"
+  faz24_stale_cleanup_proven \
+    "${STALE_TEMP_USERS_MATCHED}" "${STALE_TEMP_USERS_DELETED}" "${STALE_TEMP_USERS_REMAINING}" \
     || die "stale-test-state-users-remain-after-cleanup"
 }
 
