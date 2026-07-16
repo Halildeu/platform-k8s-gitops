@@ -62,6 +62,8 @@ jobs:
       SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-external-recorder-smoke.json
       SMOKE_VERIFY_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-external-recorder-smoke.verify.json
       SESSION_EXPIRY_SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-audio-gateway-session-expiry-smoke.json
+      RUNNER_STDOUT: /tmp/faz24-platform-desktop-token-runner-${{ github.run_id }}-${{ github.run_attempt }}.stdout
+      RUNNER_STDERR: /tmp/faz24-platform-desktop-token-runner-${{ github.run_id }}-${{ github.run_attempt }}.stderr
 
     steps:
       - name: Validate dispatch inputs
@@ -170,6 +172,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
+          install -m 0600 /dev/null "${RUNNER_STDOUT}"
+          install -m 0600 /dev/null "${RUNNER_STDERR}"
+          trap 'rm -f -- "${RUNNER_STDOUT}" "${RUNNER_STDERR}"' EXIT
 
           promote_single_artifact() {
             name="$1"
@@ -191,12 +196,12 @@ jobs:
             EXPECTED_IMAGE="${EXPECTED_AUDIO_GATEWAY_IMAGE}" \
             OUT_DIR="${EVIDENCE_DIR}" \
               bash scripts/faz24/run_audio_gateway_session_expiry_transient_smoke.sh \
-                > "${EVIDENCE_DIR}/runner.stdout" \
-                2> "${EVIDENCE_DIR}/runner.stderr"
+                > "${RUNNER_STDOUT}" \
+                2> "${RUNNER_STDERR}"
           else
             bash scripts/faz24/run-platform-desktop-token-evidence-chain.sh \
-              > "${EVIDENCE_DIR}/runner.stdout" \
-              2> "${EVIDENCE_DIR}/runner.stderr"
+              > "${RUNNER_STDOUT}" \
+              2> "${RUNNER_STDERR}"
           fi
           exit_code="$?"
           set -e
@@ -210,6 +215,37 @@ jobs:
               "${SESSION_EXPIRY_SMOKE_JSON}" || exit_code=1
           fi
 
+          if [ ! -s "${DIAG_JSON}" ]; then
+            jq -n --argjson chainExitCode "${exit_code}" '{
+              schemaVersion: "faz24.platformDesktopTokenEvidenceChain.v1",
+              status: "fail",
+              failureReason: "evidence-chain-exited-before-diagnostic",
+              chainExitCode: $chainExitCode,
+              tokenIncluded: false,
+              boundaries: {
+                platformTestOnly: true,
+                productionMutation: false,
+                rawTokenLogged: false,
+                rawPasswordLogged: false,
+                rawAdminCredentialLogged: false
+              },
+              cleanup: {
+                directGrantsToggled: false,
+                directGrantsRestored: false,
+                tempUserCreated: false,
+                tempUserDeleted: false,
+                tokenFileRemoved: false
+              },
+              results: {
+                tokenContract: {status: "not-proven"},
+                externalRecorderSmoke: {status: "not-proven"},
+                externalRecorderVerifier: {status: "not-proven"},
+                audioGatewaySessionExpirySmoke: {status: "not-proven"}
+              }
+            }' > "${DIAG_JSON}"
+            chmod 0600 "${DIAG_JSON}"
+          fi
+
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
           exit 0
 
@@ -218,7 +254,6 @@ jobs:
         if: always()
         env:
           KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
-          RUN_SESSION_EXPIRY_SMOKE_INPUT: ${{ inputs.run_session_expiry_smoke }}
         run: |
           set -euo pipefail
 
@@ -237,9 +272,22 @@ jobs:
           for candidate in root.rglob("*"):
               if candidate.is_file() and secret in candidate.read_bytes():
                   raise SystemExit(f"evidence contains exact admin secret bytes: {candidate.name}")
+
+          import json
+
+          diagnostic = root / "faz24-platform-desktop-token-diagnostic.json"
+          data = json.load(diagnostic.open(encoding="utf-8"))
+          assert data["schemaVersion"] == "faz24.platformDesktopTokenEvidenceChain.v1"
+          assert data["tokenIncluded"] is False
+          assert data["boundaries"]["platformTestOnly"] is True
+          assert data["boundaries"]["productionMutation"] is False
+          assert data["boundaries"]["rawTokenLogged"] is False
+          assert data["boundaries"]["rawPasswordLogged"] is False
+          assert data["boundaries"]["rawAdminCredentialLogged"] is False
           PY
 
-          if grep -R -a -q -E \
+          sensitive_scan_rc=0
+          grep -R -a -q -E \
             -e '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
             -e '-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
             -e 'Bearer ' \
@@ -248,22 +296,41 @@ jobs:
             -e '-----BEGIN CERTIFICATE-----' \
             -e 'data:audio/[A-Za-z0-9.+-]+;base64,' \
             -- \
-            "${EVIDENCE_DIR}"; then
+            "${EVIDENCE_DIR}" || sensitive_scan_rc="$?"
+          if [ "${sensitive_scan_rc}" -eq 0 ]; then
             echo "::error::evidence artifact contains forbidden token/key/certificate material"
+            exit 1
+          elif [ "${sensitive_scan_rc}" -ne 1 ]; then
+            echo "::error::evidence artifact sensitive-material scan could not complete"
             exit 1
           fi
 
-          if grep -R -a -q -E \
+          key_scan_rc=0
+          grep -R -a -q -E \
             -e '"(access_token|refresh_token)"[[:space:]]*:' \
             -e '"(authorization|bearer|jwt|api_key|private_key)"[[:space:]]*:' \
             -e '"(client_secret|password|secret)"[[:space:]]*:' \
             -e '"(raw_audio|audio_bytes|audio_base64|transcript_text)"[[:space:]]*:' \
             -e '"(raw_request|raw_response|cookie)"[[:space:]]*:' \
             -- \
-            "${EVIDENCE_DIR}"; then
+            "${EVIDENCE_DIR}" || key_scan_rc="$?"
+          if [ "${key_scan_rc}" -eq 0 ]; then
             echo "::error::evidence artifact contains forbidden key names"
             exit 1
+          elif [ "${key_scan_rc}" -ne 1 ]; then
+            echo "::error::evidence artifact key-name scan could not complete"
+            exit 1
           fi
+
+      - name: Validate evidence acceptance
+        id: acceptance
+        if: always() && steps.secret_scan.outcome == 'success'
+        env:
+          RUN_SESSION_EXPIRY_SMOKE_INPUT: ${{ inputs.run_session_expiry_smoke }}
+        run: |
+          set -euo pipefail
+
+          test -s "${DIAG_JSON}"
 
           python3 - "${DIAG_JSON}" "${SESSION_EXPIRY_SMOKE_JSON}" "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" <<'PY'
           import json
@@ -271,13 +338,6 @@ jobs:
           import sys
 
           data = json.load(open(sys.argv[1], encoding="utf-8"))
-          assert data["schemaVersion"] == "faz24.platformDesktopTokenEvidenceChain.v1"
-          assert data["tokenIncluded"] is False
-          assert data["boundaries"]["platformTestOnly"] is True
-          assert data["boundaries"]["productionMutation"] is False
-          assert data["boundaries"]["rawTokenLogged"] is False
-          assert data["boundaries"]["rawPasswordLogged"] is False
-          assert data["boundaries"]["rawAdminCredentialLogged"] is False
           assert data["cleanup"]["directGrantsToggled"] in (True, False)
           if data["cleanup"]["directGrantsToggled"]:
               assert data["cleanup"]["directGrantsRestored"] is True
@@ -330,7 +390,7 @@ jobs:
             echo "- External recorder verifier: \`${verifier}\`"
             echo "- Audio-gateway session expiry: \`${session_expiry}\`"
             echo
-            echo "Boundary: platform-test only. The workflow restores direct grants, deletes the temporary smoke user, removes local token/password files, cleans transient Job/NetworkPolicy resources, and uploads only redacted JSON/runner logs. Session-expiry mode proves only transient test direct-STT capacity reuse; no production or desktop mic/loopback closure claim is made."
+            echo "Boundary: platform-test only. The workflow restores direct grants, deletes the temporary smoke user, removes local token/password files, cleans transient Job/NetworkPolicy resources, and uploads only structured redacted evidence. Free-form runner logs are ephemeral and never uploaded. Session-expiry mode proves only transient test direct-STT capacity reuse; no production or desktop mic/loopback closure claim is made."
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload platform-desktop token evidence artifact
@@ -347,16 +407,22 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "${EVIDENCE_DIR}"
+          rm -f "${RUNNER_STDOUT}" "${RUNNER_STDERR}"
 
       - name: Fail workflow when chain is not accepted
         if: always()
         env:
           CHAIN_EXIT_CODE: ${{ steps.run_chain.outputs.exit_code }}
           SECRET_SCAN_OUTCOME: ${{ steps.secret_scan.outcome }}
+          ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
         run: |
           set -euo pipefail
           if [ "${SECRET_SCAN_OUTCOME}" != "success" ]; then
             echo "::error::platform-desktop token evidence secret scan did not pass"
+            exit 1
+          fi
+          if [ "${ACCEPTANCE_OUTCOME}" != "success" ]; then
+            echo "::error::platform-desktop token evidence acceptance did not pass"
             exit 1
           fi
           if [ -z "${CHAIN_EXIT_CODE}" ]; then

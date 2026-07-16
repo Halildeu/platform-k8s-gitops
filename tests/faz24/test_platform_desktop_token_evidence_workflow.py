@@ -176,6 +176,15 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "tokenFileRemoved" in workflow
     assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,'" in workflow
     assert "SECRET_SCAN_OUTCOME" in workflow
+    assert "ACCEPTANCE_OUTCOME" in workflow
+    assert "- name: Validate evidence acceptance" in workflow
+    assert "RUNNER_STDOUT: /tmp/faz24-platform-desktop-token-runner-" in workflow
+    assert "RUNNER_STDERR: /tmp/faz24-platform-desktop-token-runner-" in workflow
+    assert '"${EVIDENCE_DIR}/runner.stdout"' not in workflow
+    assert '"${EVIDENCE_DIR}/runner.stderr"' not in workflow
+    assert 'trap \'rm -f -- "${RUNNER_STDOUT}" "${RUNNER_STDERR}"\' EXIT' in workflow
+    assert 'failureReason: "evidence-chain-exited-before-diagnostic"' in workflow
+    assert "Free-form runner logs are ephemeral and never uploaded" in workflow
     assert "no production or desktop mic/loopback closure claim" in workflow
     assert 'sed -n' not in workflow
     assert "cancel-in-progress: false" in workflow
@@ -185,11 +194,37 @@ def test_workflow_secret_scan_blocks_raw_audio_data_urls_before_upload():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     secret_scan = workflow.split("- name: Verify artifact excludes private material", 1)[1]
-    secret_scan = secret_scan.split("- name: Write workflow summary", 1)[0]
+    secret_scan = secret_scan.split("- name: Validate evidence acceptance", 1)[0]
 
     assert "grep -R -a -E --" not in secret_scan
     assert "grep -E --" not in secret_scan
     assert secret_scan.count("grep -R -a -q -E") == 2
+    assert 'data["tokenIncluded"] is False' in secret_scan
+    assert 'data["boundaries"]["rawTokenLogged"] is False' in secret_scan
+    assert 'data["boundaries"]["rawPasswordLogged"] is False' in secret_scan
+    assert 'data["boundaries"]["rawAdminCredentialLogged"] is False' in secret_scan
+    assert 'test -s "${DIAG_JSON}"' in secret_scan
+    assert "if diagnostic.is_file()" not in secret_scan
+    assert 'sensitive_scan_rc="$?"' in secret_scan
+    assert 'key_scan_rc="$?"' in secret_scan
+    assert '"${sensitive_scan_rc}" -ne 1' in secret_scan
+    assert '"${key_scan_rc}" -ne 1' in secret_scan
     assert "-e '-----BEGIN CERTIFICATE-----'" in secret_scan
     assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,' \\\n            -- \\" in secret_scan
+    assert 'session["status"] == "pass"' not in secret_scan
     assert "steps.secret_scan.outcome == 'success'" in workflow
+
+
+def test_workflow_uploads_secret_safe_failure_diagnostics_before_final_failure():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    acceptance = workflow.split("- name: Validate evidence acceptance", 1)[1]
+    acceptance = acceptance.split("- name: Write workflow summary", 1)[0]
+    upload = workflow.split("- name: Upload platform-desktop token evidence artifact", 1)[1]
+    upload = upload.split("- name: Cleanup local evidence directory", 1)[0]
+
+    assert "id: acceptance" in acceptance
+    assert 'test -s "${DIAG_JSON}"' in acceptance
+    assert 'session["status"] == "pass"' in acceptance
+    assert "if: always() && steps.secret_scan.outcome == 'success'" in upload
+    assert "steps.acceptance.outcome" not in upload
