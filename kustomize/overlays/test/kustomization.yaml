@@ -39,6 +39,9 @@ resources:
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
   - ../../base/apps/audit-archive-exporter        # Faz 24 PR-obs-02 (#1656, ADR-0042 §4): audit_archive.* DB-state metrics for the run-once worker (test-only; prod §5 gate)
   - ../../base/apps/audit-archive-exporter/ops    # ServiceMonitor (CRD-gated; test overlay only — prod sızıntısı yok)
+  # Faz 25 #2526: Full ATS aday + recruiter dikeyi kalıcı test ürünü.
+  # Önceden manuel activation overlay'iydi; artık ArgoCD self-heal kapsamındadır.
+  - activation/ats-interview-evidence
   - ../../base/apps/meeting-service/ops      # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
   - ../../base/apps/transcript-service/ops   # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
@@ -4199,15 +4202,14 @@ images:
     # 29451703189 produced the immutable testai digest below. Tracked by #2463.
     # Machine-managed current pin. Historical provenance remains above; future
     # automation rewrites only these fields and records evidence in its PR.
-    # 2026-07-16 current pin: platform-web #928 binds the shell's real HTML5
-    # root script set to build-info v2 path+bodySha256. Merge bc333975 carries
-    # the earlier Faz 25 #924 safe role journeys and Faz 22 product-surface arc.
-    # Manual promotion follows fail-closed dispatch run 29483976344 (#2295).
-    # Image build run 29487972095 / testai job 87586921662 produced the exact
-    # immutable digest below (containerimage.digest).
-    # sourceRevision: a6c3b799d5e13e032c8a08ed438ee26880b0e08f
-    newTag: sha-a6c3b79
-    digest: sha256:66209acb513b677047e592c7ea9d5e686b8bbed53621c597ab54c49761645207
+    # 2026-07-16 Faz 25 #2526: public jobs/apply/receipt/candidate tracking and
+    # authenticated recruiter inbox/status transitions (platform-web #938).
+    # Build run 29533847049 testai job 87740302536 published and independently
+    # reported the exact immutable digest below. Dispatch run 29534095913 found
+    # and this change fixes the promotion-script quoted-heredoc recursion bug.
+    # sourceRevision: 1067c04e264e00550708ae08aa0bc9fc5b32cb80
+    newTag: sha-1067c04
+    digest: sha256:2c00e87409dc778f2e2d45d14f9487d1daabb5249d712a4cadd1b7ef60b39993
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

@@ -10,8 +10,8 @@
 | Parça | Yer |
 |---|---|
 | İmaj | `ghcr.io/halildeu/ats-app-boot` (public; ats repo `image-push.yml` — trivy CRITICAL fail-closed push-öncesi; `digest:` log satırı AUTHORITY) |
-| Base manifest | `kustomize/base/apps/ats-interview-evidence/` (INERT — hiçbir overlay resources listesinde değil) |
-| Aktivasyon | `kustomize/overlays/test/activation/ats-interview-evidence/` (Argo-root DIŞI; bilinçli apply) |
+| Base manifest | `kustomize/base/apps/ats-interview-evidence/` (test activation overlay üzerinden kullanılır) |
+| Aktivasyon | `kustomize/overlays/test/activation/ats-interview-evidence/` (Faz 25 #2526: test Argo-root içinde, self-heal aktif) |
 | Provisioning | `scripts/ats/provision-test-pg-vault.sh` + `scripts/ats/provision-test-keycloak.sh` (idempotent; staging-sw'de koşulur; secret basmaz) |
 
 ## Akış (tetik → adımlar)
@@ -21,17 +21,27 @@
    - Not: her koşum DB parolasını ROTATE eder (Vault ile atomik) — pod restart gerektirir.
 2. **Keycloak** (~60 sn): `provision-test-keycloak.sh` aynı yolla.
    - Login `svc-kc-automation` (Vault `kv/platform/keycloak-automation`); user-izinleri eksikse KC26 `bootstrap-admin` geçici-admin yolu (bkz. §Sorun Giderme).
-   - Model (Codex `019f50b7` verdict A): audience + 10 permission client-scope **frontend'e DEFAULT**; **yetki YALNIZ `ats-api` client-role atamasıyla** (rol-kapısı ats#96: scope ∩ atanmış-rol ∩ bilinen-10). Persona'lar: `admin@example.com`=operator(10), `ats-reviewer-persona`(7, export/dsar/erasure YOK), `ats-reader-persona`(2 read).
-3. **Aktivasyon** (~2 dk): `kubectl --context k3d-test -n platform-test apply -k kustomize/overlays/test/activation/ats-interview-evidence`
-   - Beklenen: ExternalSecret Ready=True → Secret 3 key; ats-ai-stub Running; ats-interview-evidence Running (startup ≤3 dk: Flyway migration).
+   - Model: audience + 13 permission + atanmayan repair client-scope **frontend'e DEFAULT**; **yetki YALNIZ `ats-api` client-role atamasıyla** (scope ∩ atanmış-rol ∩ bilinen permission). Toplam 14 rol / 15 default scope. Tenant claim hardcoded değildir; `ats_tenant` user attribute mapper'ından gelir. `ats-recruiter-persona` yalnız public careers tenant + `ats.application.{read,status.write}` exact-set taşır.
+3. **Aktivasyon** (~2 dk): normal GitOps PR merge + ArgoCD reconcile (`kustomize/overlays/test` bu activation overlay'ini içerir).
+   - Beklenen: ExternalSecret Ready=True → Secret 3 key; ats-interview-evidence Running/Ready (startup ≤3 dk: Flyway migration). Provider live-stt fail-closed; kullanılmayan ai-stub pod'u desired-state dışıdır.
+   - `platform-test` Argo uygulamasında `prune:false` olduğu için eski manuel `ats-ai-stub` kaynakları otomatik silinmez. Argo `Synced/Healthy` ve `ATS_AI_PROVIDER=live-stt` kanıtından **sonra** tek-seferlik, isimle sınırlı temizlik: `kubectl --context k3d-test -n platform-test delete deployment/ats-ai-stub service/ats-ai-stub configmap/ats-ai-stub-script --ignore-not-found`. Önce aynı isimlerle `kubectl get` kanıtı al; wildcard/label tabanlı toplu silme kullanma.
    - Fail sinyali: pod `CreateContainerConfigError` = Secret yok (ESO/Vault kontrol); `CrashLoopBackOff` + `AppProperties` log'u = eksik env.
 4. **D29 kanıt matrisi** (Codex düzeltmeli adlandırma):
    - **Up**: pod Ready + `imageID == aktivasyon kustomization'daki pinli digest` (D30 immutable; `d29-smoke.sh` default'u pin ile senkron, `ATS_EXPECTED_DIGEST` ile override)
    - **Edge**: `https://testai.acik.com/api/ats/v1/transcripts` → 401 (JWT challenge; HTML DEĞİL)
    - **Authn deny**: token'sız/bozuk-audience → 401
    - **Authz deny**: reader token'ı ile `POST consent` → 403; rolsüz+scope'lu → 403
-   - **Functional — stubbed AI**: operator token'ı ile consent→upload(sentetik)→transcribe→read-back (stub segmentleri "test-stub" işaretli)
-   - **İSPATLAMAZ**: canlı STT, gerçek KVKK pilotu, WORM, prod-hazırlık
+   - **Functional — live-stt**: reviewer token'ı ile consent→upload(sentetik)→transcribe→read-back
+   - **İSPATLAMAZ**: gerçek KVKK pilotu, prod-hazırlık
+
+### Faz 25 Full ATS aday/recruiter acceptance (#2526)
+
+- Public careers tenant: `00000000-0000-0000-0000-000000000001`; request/header/body tenant seçemez.
+- Backend yalnız `.test` e-posta kabul eder; gerçek aday PII G0 kilidinde kalır.
+- Recruiter persona ayrı `ats_tenant` attribute'u ve yalnız iki application rolü taşır; interview persona'ları `t-platform-test` üzerinde değişmeden kalır.
+- Canlı API zinciri: `scripts/ats/fullats-application-smoke.sh` — TLS doğrulamalı public jobs → sentetik submit → idempotent replay → session-token candidate status (PII-free) → tenant-scoped recruiter inbox → aynı application rollerine sahip diğer tenant için negatif izolasyon → iki optimistic-lock status transition. `9/9 PASS` beklenir; JWT/parola/candidate token basmaz.
+- Ürün kabulü ayrıca browser'da `/jobs` → `/jobs/product-designer/apply` → receipt/takip ve `/admin/ats/recruiter` yolculuğunu gerektirir; API smoke browser kanıtı yerine geçmez.
+
 ### 39d-4 KANIT (2026-07-11, 14/14 PASS FAIL=0 — `scripts/ats/d29-smoke.sh`)
 
 Up: pod Running/ready + imageID==sha256:c2dcc1da… (pin). Edge: token'sız 401; healthz dışarı kapalı. Authn-deny: audience'sız token 401. Token (redacted): aud⊇ats-api, tenant=t-platform-test, roller tam-küme (reader 2 / reviewer 7 / operator 10 / roleless 0). Authz: reader read 200 + write 403; ROLSÜZ+scope'lu 403 (rol-kapısı canlı); reviewer dsar 403 / operator dsar 201. Functional-stub: consent 204 → raw-WAV upload 201 (ledgerSequence, pointer-only objectKey) → transcribe 201 (segmentCount:3) → transcript?key= read-back 200. Upload kontratı: RAW body (multipart değil) + X-ATS-Filename; transcribe {"sourceObjectKey"}. İSPATLAMAZ: canlı STT, gerçek KVKK pilotu, WORM, prod-hazırlık.
@@ -42,7 +52,7 @@ Kök neden: aynı lexical içerik ikinci transcribe'da yeni uuid transcriptKey �
 
 Apply-yolu canlı dersleri: LimitRange 500m enjeksiyonu quota'ya çarptı (test limits.cpu 13); eso-runtime allowlist'ine kv/platform/ats; node 50-pod tavanı (test artifact-host 1 replika); runAsNonRoot isimli-kullanıcı hatası → runAsUser 10001 (+ Dockerfile numerik-UID ats#100); rollout kilidi = eski-Pending pod quota işgali → pod sil + RS backoff'una RS-delete.
 
-5. **Canlı STT promotion** (AYRI dilim, 39d-5): `ATS_AI_BASE_URL` patch'i GitOps değişikliğiyle; stub↔live OTOMATİK fallback YASAK.
+5. **Canlı STT doğrulaması**: test desired-state `ATS_AI_BASE_URL=https://live-stt.denetim:8243`, `ATS_AI_PROVIDER=live-stt` ve mTLS-required pinlidir; stub↔live OTOMATİK fallback YASAK. ConfigMap + canlı sentetik transcribe/read-back birlikte kanıtlanır.
 
 ### 39d-6 MFE canlı READ (platform-web #869; Codex 019f50b7 AGREE)
 
@@ -150,24 +160,25 @@ Frontend davranış sözleşmesi (platform-web `apps/mfe-interview-evidence/READ
 400/5xx hiçbir zaman "uygulanmadı" sayılmaz; reconciliation'da EXPORTED
 görünürse makbuz UYDURULMAZ; FINALIZED görünmesi R4 nedeniyle kanıt değildir.
 
-## 39d-5 canlı-STT promotion (VPN+tünel-gated — bekleyen)
+## 39d-5 canlı-STT promotion (test desired-state'te aktif; canlı erişim ayrıca kanıtlanır)
 
-Hedef: activation patch `ATS_AI_BASE_URL` `http://ats-ai-stub:9452` →
+Desired-state: activation patch `ATS_AI_BASE_URL` =
 `https://live-stt.denetim:8243` (denetim-PC GPU host; mTLS —
 `RB-faz24-direct-stt-mtls-enable.md` deseninin ATS aynası). Zincir (tek
 VPN-oturumu): ats app-boot mTLS env-adları keşfi → Vault `kv/platform/ats`
-STT cert/key/CA seed → activation ExternalSecret + mount + patch PR →
-scp+kubectl apply → canlı transcribe kanıtı (ATS-0017: stub↔live otomatik
+STT cert/key/CA seed → activation ExternalSecret + mount + GitOps PR →
+ArgoCD reconcile → canlı transcribe kanıtı (ATS-0017: stub↔live otomatik
 fallback YASAK; ayrı acceptance). KEY-HİJYENİ: gerçek private-key materyali
 scp/terminal-çıktısı/shell-history/runbook-kanıtına YAZILMAZ — Vault'a güvenli
 kanaldan seed edilir, cluster'a YALNIZ ExternalSecret ile taşınır.
 
-## Rollback
+## Rollback (ArgoCD-aware)
 
-- Aktivasyonu geri al: `kubectl delete -k kustomize/overlays/test/activation/ats-interview-evidence` → `/api/ats` ana `platform` Ingress'ine (api-gateway 404) geri düşer; MFE demo-motorları etkilenmez.
-- İmaj geri alma: activation kustomization `images.digest` önceki değere → apply.
-- MFE canlı-mod geri alma (39d-6): test overlay `frontend` pin'ini önceki digest'e döndür (env bundle'a build'de gömülü — revert=pin-revert; ArgoCD sync'ler). Backend'e dokunmaz.
-- KC geri alma: `ats-api` client + `ats.*`/`ats-api-audience` client-scope'ları + persona kullanıcıları silinebilir (frontend default-scope bağları client silinince düşer).
+- **Sıra:** doğrudan `kubectl delete -k` kullanma; Argo `selfHeal:true` kaynağı geri getirir ve sahte rollback üretir. Önce rollback GitOps PR'ını merge et, Argo'nun yeni revision'ı `Synced/Healthy` yaptığını kanıtla, yalnız desired-state'ten çıkarılmış ve `prune:false` nedeniyle kalmış kaynakları sonra isimle sil.
+- **Yalnız backend sürümü:** activation `images.digest` değerini son kanıtlı digest'e döndüren PR → merge → Argo reconcile → pod `imageID` eşitliği + D29. Flyway V5 tablosu additive bırakılır; incident sırasında tablo/drop veya veri silme yapılmaz.
+- **Frontend sürümü:** test root `frontend` image tag+digest+sourceRevision üçlüsünü önceki kanıtlı immutable sürüme döndüren PR → merge → Argo reconcile → edge `build-info.json` + browser smoke.
+- **ATS yüzeyini test root'tan çıkarma:** PR ile `kustomize/overlays/test/kustomization.yaml` içindeki `activation/ats-interview-evidence` kaynağını kaldır → merge → Argo revision doğrula → `prune:false` nedeniyle kalan ATS kaynaklarını, `kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence` çıktısındaki kind/name çiftlerine göre tek tek sil. Wildcard veya namespace-wide silme yasaktır.
+- **Keycloak:** `ats-api`, audience scope'u ve interview persona'ları başka ATS akışlarınca paylaşılır; topluca silme yasaktır. Full ATS rollback'inde recruiter persona/iki application rolü inert bırakılabilir. Güvenlik gerekçesiyle kaldırılacaksa önce uygulama rollback'i doğrulanır, sonra yalnız `ats-recruiter-persona` rol eşlemeleri/kullanıcısı ve hiçbir token/policy tarafından kullanılmadığı kanıtlanan `ats.application.*` rolleri için ayrı, kayıtlı değişiklik yapılır. Hardcoded global tenant mapper'a sessiz geri dönüş yapılmaz.
 
 ## Sorun Giderme
 

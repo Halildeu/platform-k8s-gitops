@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 39d-2c/39d-11 — platform-test KC realm: ats-api client + 12 client-role (11 PERMS + atanmayan export.repair) +
+# 39d-2c/39d-11 + Faz 25 #2526 — platform-test KC realm: ats-api client +
+# 14 client-role (13 PERMS + atanmayan export.repair) +
 # audience/permission client-scope'ları + persona rol atamaları.
 # Model: Codex 019f50b7 verdict A — permission scope'lar DEFAULT (yetki değil);
 # gerçek yetki YALNIZ ats-api client-role atamasıyla (rol-kapısı ats#96).
@@ -17,14 +18,19 @@ kc() { docker exec "$KC" "$KCADM" "$@"; }
 # Bootstrap env parolası rotate edilmiş durumda (invalid_grant) — otomasyon
 # client'ı kanonik yol. Önce platform-test realm'i, olmazsa master denenir.
 ROOT=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
-AUTO_JSON=$(docker exec -e VAULT_TOKEN="$ROOT" -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
+AUTO_JSON=$(VAULT_TOKEN="$ROOT" docker exec -e VAULT_TOKEN \
+  -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
   vault kv get -format=json kv/platform/keycloak-automation)
 CID=$(printf '%s' "$AUTO_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin)["data"]["data"]["client_id"])')
 CSEC=$(printf '%s' "$AUTO_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin)["data"]["data"]["client_secret"])')
 login_ok=""
 for lr in "$REALM" master; do
-  if docker exec -e KCID="$CID" -e KCSEC="$CSEC" "$KC" sh -c \
-    "$KCADM config credentials --server http://localhost:8080 --realm $lr --client \"\$KCID\" --secret \"\$KCSEC\" >/dev/null 2>&1"; then
+  if printf '%s\n' "$CSEC" | docker exec -i -e KCID="$CID" -e KCREALM="$lr" "$KC" sh -c '
+    IFS= read -r KCSEC
+    /opt/keycloak/bin/kcadm.sh config credentials \
+      --server http://localhost:8080 --realm "$KCREALM" \
+      --client "$KCID" --secret "$KCSEC" >/dev/null 2>&1
+  '; then
     login_ok="$lr"; break
   fi
 done
@@ -49,11 +55,11 @@ else
   echo "KC: ats-api client exists"
 fi
 
-# --- 2) client-role'ler (11 PERMS + atanmayan export.repair) ---
+# --- 2) client-role'ler (13 PERMS + atanmayan export.repair) ---
 # 39d-8..11: ats.export.read (receipt/artifact salt-okuma) PERMS'te — operator
 # sınıfına atanır. ats.export.repair BİLEREK PERMS DIŞI: rol+scope oluşturulur
 # ama HİÇBİR persona'ya otomatik ATANMAZ (runbook R4 onay-kapısı — Codex 39d-11).
-PERMS="ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read ats.export.read ats.export.write ats.dsar.write ats.erasure.execute"
+PERMS="ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read ats.application.read ats.application.status.write ats.export.read ats.export.write ats.dsar.write ats.erasure.execute"
 REPAIR_PERM="ats.export.repair"
 for p in $PERMS $REPAIR_PERM; do
   if ! kc get "clients/$ATS_CID/roles/$p" -r $REALM >/dev/null 2>&1; then
@@ -95,25 +101,7 @@ else
   fi
 fi
 
-# --- 3b) tenant claim mapper (ATS SecurityConfig TENANT_CLAIM="tenant" sabit,
-# fail-closed: claim yoksa HICBIR authority uretilmez). Platform token'inda
-# tenant claim'i yok — test realm'inde sentetik sabit deger: t-platform-test.
-if ! kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -qx "ats-tenant-claim-mapper"; then
-  kc create "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
-    -s name=ats-tenant-claim-mapper \
-    -s protocol=openid-connect \
-    -s protocolMapper=oidc-hardcoded-claim-mapper \
-    -s 'config."claim.name"=tenant' \
-    -s 'config."claim.value"=t-platform-test' \
-    -s 'config."jsonType.label"=String' \
-    -s 'config."access.token.claim"=true' \
-    -s 'config."id.token.claim"=false' >/dev/null
-  echo "KC: ats-tenant-claim-mapper CREATED (tenant=t-platform-test)"
-else
-  echo "KC: ats-tenant-claim-mapper exists"
-fi
-
-# --- 4) permission client-scope'lar (11 PERMS + repair; scope claim'ine ad girsin) ---
+# --- 4) permission client-scope'lar (13 PERMS + repair; scope claim'ine ad girsin) ---
 for p in $PERMS $REPAIR_PERM; do
   SID=$(kc get client-scopes -r $REALM --fields id,name --format csv --noquotes 2>/dev/null | awk -F, -v n="$p" '$2==n{print $1}' | head -1 || true)
   if [ -z "$SID" ]; then
@@ -142,11 +130,12 @@ for name in ats-api-audience $PERMS $REPAIR_PERM; do
     echo "KC: frontend += default-scope $name"
   fi
 done
-echo "KC: frontend default-scopes bound (audience + 11 permission + repair)"
+echo "KC: frontend default-scopes bound (audience + 13 permission + repair)"
 
 # --- 6) persona'lar + rol atamaları ---
-# admin@example.com (test super-admin; yalnız ROL eklenir — şifreye dokunulmaz): operator (11 rol; repair HARİÇ)
-# ats-reader-persona: yalnız read; ats-reviewer-persona: consent/ingest/review/citation
+# admin@example.com (test super-admin; yalnız ROL+tenant attr; şifreye dokunulmaz): operator (13 rol; repair HARİÇ)
+# ats-reader-persona: yalnız interview read; ats-reviewer-persona: consent/ingest/review/citation
+# ats-recruiter-persona: yalnız application inbox + insan kontrollü status transition
 ensure_user() { # $1=username -> stdout id
   local uid
   uid=$(kc get users -r $REALM -q "username=$1" --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
@@ -168,56 +157,158 @@ grant() { # $1=userId $2..=roles — idempotent get-check; gercek hata YUTULMAZ
     fi
   done
 }
+set_tenant() { # $1=userId $2=tenant — user-attribute mapper kaynagi
+  kc update "users/$1" -r $REALM -s "attributes.ats_tenant=[\"$2\"]" >/dev/null
+}
 
 ADMIN_UID=$(kc get users -r $REALM -q 'username=admin@example.com' -q exact=true --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
 if [ -n "$ADMIN_UID" ]; then
+  set_tenant "$ADMIN_UID" t-platform-test
+  # shellcheck disable=SC2086
   grant "$ADMIN_UID" $PERMS
-  echo "KC: admin test kullanıcısına 11 ats-api rolü atandı (operator sınıfı; export.repair HARİÇ)"
+  echo "KC: admin test kullanıcısına tenant=t-platform-test + 13 ats-api rolü atandı (operator; repair HARİÇ)"
 else
   echo "WARN: admin@example.com bulunamadı — operator ataması atlandı" >&2
 fi
 
 READER_UID=$(ensure_user ats-reader-persona)
+set_tenant "$READER_UID" t-platform-test
 grant "$READER_UID" ats.transcript.read ats.review.read
 echo "KC: ats-reader-persona → read rolleri"
 
 REVIEWER_UID=$(ensure_user ats-reviewer-persona)
+set_tenant "$REVIEWER_UID" t-platform-test
 grant "$REVIEWER_UID" ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
 echo "KC: ats-reviewer-persona → reviewer rolleri (export/dsar/erasure YOK)"
 
-# operator persona (11 rol) — admin kullanıcısının şifresine DOKUNMADAN
+RECRUITER_UID=$(ensure_user ats-recruiter-persona)
+set_tenant "$RECRUITER_UID" 00000000-0000-0000-0000-000000000001
+grant "$RECRUITER_UID" ats.application.read ats.application.status.write
+echo "KC: ats-recruiter-persona → public careers tenant + application read/status rolleri"
+
+# operator persona (13 rol) — admin kullanıcısının şifresine DOKUNMADAN
 # export/dsar allow kanıtı için; roleless persona (0 rol) — rol-kapısının
 # canlı 403 kanıtı için (default scope'lar token'a girse bile yetki YOK).
 OPERATOR_UID=$(ensure_user ats-operator-persona)
+set_tenant "$OPERATOR_UID" t-platform-test
+# shellcheck disable=SC2086
 grant "$OPERATOR_UID" $PERMS
-echo "KC: ats-operator-persona → 11 rol (operator; export.repair HARİÇ)"
+echo "KC: ats-operator-persona → 13 rol (operator; export.repair HARİÇ)"
 echo "KC: $REPAIR_PERM rol+scope OLUŞTURULDU, kimseye ATANMADI (R4 repair onay-kapısı: runbook'la manuel atama)"
 ROLELESS_UID=$(ensure_user ats-roleless-persona)
+set_tenant "$ROLELESS_UID" t-platform-test
 echo "KC: ats-roleless-persona → rolsüz (kasıtlı)"
 
-# persona test-şifreleri: bu hostta üretilir → KC set-password + Vault
-# kv/platform/ats-smoke (39d-4 smoke tekrar-koşumları buradan okur; stdout'a düşmez)
+# --- 6b) tenant claim mapper (ATS SecurityConfig TENANT_CLAIM="tenant" sabit,
+# fail-closed: claim yoksa HICBIR authority uretilmez). Persona attribute'lari
+# mapper gecisinden ONCE yazilir; mevcut mapper atomik PUT ile guncellenir.
+# Delete→create penceresi YOK: create/update basarisizsa eski mapper korunur.
+TENANT_MAPPER_ID=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
+  --fields id,name --format csv --noquotes 2>/dev/null \
+  | awk -F, '$2=="ats-tenant-claim-mapper"{print $1}' | head -1 || true)
+TENANT_MAPPER_OK="false"
+if [ -n "$TENANT_MAPPER_ID" ]; then
+  TENANT_MAPPER_JSON=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" -r $REALM)
+  TENANT_MAPPER_OK=$(printf '%s' "$TENANT_MAPPER_JSON" | python3 -c 'import json,sys
+m=json.load(sys.stdin); c=m.get("config",{})
+print(str(m.get("protocolMapper")=="oidc-usermodel-attribute-mapper" and c.get("user.attribute")=="ats_tenant" and c.get("claim.name")=="tenant" and c.get("access.token.claim")=="true").lower())')
+fi
+if [ "$TENANT_MAPPER_OK" != "true" ]; then
+  MAPPER_ARGS=(
+    -s name=ats-tenant-claim-mapper
+    -s protocol=openid-connect
+    -s protocolMapper=oidc-usermodel-attribute-mapper
+    -s 'config."user.attribute"=ats_tenant'
+    -s 'config."claim.name"=tenant'
+    -s 'config."jsonType.label"=String'
+    -s 'config."access.token.claim"=true'
+    -s 'config."id.token.claim"=false'
+    -s 'config."userinfo.token.claim"=false'
+    -s 'config."multivalued"=false'
+    -s 'config."aggregate.attrs"=false'
+  )
+  if [ -n "$TENANT_MAPPER_ID" ]; then
+    kc update "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" -r $REALM "${MAPPER_ARGS[@]}" >/dev/null
+    echo "KC: ats-tenant-claim-mapper atomik UPDATE (user.attribute=ats_tenant)"
+  else
+    kc create "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM "${MAPPER_ARGS[@]}" >/dev/null
+    echo "KC: ats-tenant-claim-mapper CREATED (user.attribute=ats_tenant)"
+  fi
+else
+  echo "KC: ats-tenant-claim-mapper exists (user attribute)"
+fi
+TENANT_MAPPER_ID=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
+  --fields id,name --format csv --noquotes 2>/dev/null \
+  | awk -F, '$2=="ats-tenant-claim-mapper"{print $1}' | head -1 || true)
+[ -n "$TENANT_MAPPER_ID" ] || { echo "FATAL: tenant mapper bulunamadi" >&2; exit 1; }
+TENANT_MAPPER_JSON=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" -r $REALM)
+printf '%s' "$TENANT_MAPPER_JSON" | python3 -c 'import json,sys
+m=json.load(sys.stdin); c=m.get("config",{})
+assert m.get("protocolMapper")=="oidc-usermodel-attribute-mapper"
+assert c.get("user.attribute")=="ats_tenant"
+assert c.get("claim.name")=="tenant"
+assert c.get("access.token.claim")=="true"' || {
+  echo "FATAL: tenant mapper post-update dogrulamasi basarisiz" >&2
+  exit 1
+}
+
+# persona test-şifreleri: Vault degerleri kararlı tutulur; yalnız eksik anahtar
+# uretilir. KC her kosumda Vault'taki degerle uzlastirilir; secret argv/stdout'a
+# cikmaz. kv/platform/ats-smoke 39d-4 smoke tekrar-koşumlarının kaynağıdır.
 ROOT2=$(python3 -c 'import json;print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])')
-VKV="docker exec -e VAULT_TOKEN=$ROOT2 -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test vault kv"
+if ! EXISTING_SMOKE=$(VAULT_TOKEN="$ROOT2" docker exec -e VAULT_TOKEN \
+  -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
+  vault kv get -format=json kv/platform/ats-smoke 2>/dev/null); then
+  EXISTING_SMOKE='{"data":{"data":{}}}'
+fi
 declare -A PWMAP
-for u in ats-reader-persona ats-reviewer-persona ats-operator-persona ats-roleless-persona; do
-  PWMAP[$u]=$(openssl rand -hex 12)
+declare -A PWKEY=(
+  [ats-reader-persona]=READER_PW
+  [ats-reviewer-persona]=REVIEWER_PW
+  [ats-recruiter-persona]=RECRUITER_PW
+  [ats-operator-persona]=OPERATOR_PW
+  [ats-roleless-persona]=ROLELESS_PW
+)
+for u in ats-reader-persona ats-reviewer-persona ats-recruiter-persona ats-operator-persona ats-roleless-persona; do
+  k=${PWKEY[$u]}
+  PWMAP[$u]=$(printf '%s' "$EXISTING_SMOKE" | python3 -c 'import json,sys
+k=sys.argv[1]; print(json.load(sys.stdin).get("data",{}).get("data",{}).get(k,""))' "$k")
+  [ -n "${PWMAP[$u]}" ] || PWMAP[$u]=$(openssl rand -hex 12)
   UIDX=$(kc get users -r $REALM -q "username=$u" -q exact=true --fields id --format csv --noquotes | head -1)
-  docker exec -e P="${PWMAP[$u]}" platform-kc-test sh -c "/opt/keycloak/bin/kcadm.sh set-password -r $REALM --userid $UIDX --new-password \"\$P\"" >/dev/null
+  PW_JSON=$(printf '%s' "${PWMAP[$u]}" | python3 -c 'import json,sys
+print(json.dumps({"type":"password","temporary":False,"value":sys.stdin.read()}))')
+  printf '%s' "$PW_JSON" | docker exec -i "$KC" "$KCADM" \
+    update "users/$UIDX/reset-password" -r "$REALM" -f - >/dev/null
+  unset PW_JSON
 done
-$VKV put kv/platform/ats-smoke \
-  READER_PW="${PWMAP[ats-reader-persona]}" \
-  REVIEWER_PW="${PWMAP[ats-reviewer-persona]}" \
-  OPERATOR_PW="${PWMAP[ats-operator-persona]}" \
-  ROLELESS_PW="${PWMAP[ats-roleless-persona]}" >/dev/null
-echo "KC: 4 persona şifresi set + Vault kv/platform/ats-smoke seed"
+printf '%s\0' \
+  "${PWMAP[ats-reader-persona]}" \
+  "${PWMAP[ats-reviewer-persona]}" \
+  "${PWMAP[ats-recruiter-persona]}" \
+  "${PWMAP[ats-operator-persona]}" \
+  "${PWMAP[ats-roleless-persona]}" \
+  | python3 -c 'import json,sys
+keys=("READER_PW","REVIEWER_PW","RECRUITER_PW","OPERATOR_PW","ROLELESS_PW")
+raw=sys.stdin.buffer.read().split(b"\0")
+if raw and raw[-1]==b"": raw.pop()
+if len(raw)!=len(keys): raise SystemExit("password serialization arity mismatch")
+json.dump(dict(zip(keys,(v.decode("utf-8") for v in raw))),sys.stdout,separators=(",",":"))' \
+  | VAULT_TOKEN="$ROOT2" docker exec -i -e VAULT_TOKEN \
+      -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test sh -c '
+        set -eu
+        f=$(mktemp); chmod 600 "$f"; trap '\''rm -f "$f"'\'' EXIT
+        cat >"$f"
+        vault kv put kv/platform/ats-smoke @"$f" >/dev/null
+      '
+unset EXISTING_SMOKE ROOT2 ROOT
+echo "KC: 5 persona şifresi Vault ile kararlı uzlaştırıldı (secret argv/stdout yok)"
 
 # --- FINAL ASSERT (Codex 019f50b7 P1: fail-open yerine dogrulanmis durum) ---
 fail=0
 ROLE_N=$(kc get "clients/$ATS_CID/roles" -r $REALM --fields name --format csv --noquotes | grep -c '^ats\.') || true
-[ "$ROLE_N" -eq 12 ] || { echo "ASSERT FAIL: ats-api rol sayisi=$ROLE_N (12 bekleniyor: 11 PERMS + export.repair)" >&2; fail=1; }
+[ "$ROLE_N" -eq 14 ] || { echo "ASSERT FAIL: ats-api rol sayisi=$ROLE_N (14 bekleniyor: 13 PERMS + export.repair)" >&2; fail=1; }
 BOUND_N=$(kc get "clients/$FE_CID/default-client-scopes" -r $REALM --fields name --format csv --noquotes | grep -cE '^(ats\.|ats-api-audience)') || true
-[ "$BOUND_N" -eq 13 ] || { echo "ASSERT FAIL: frontend default ats-scope sayisi=$BOUND_N (13 bekleniyor: audience + 11 PERMS + repair)" >&2; fail=1; }
+[ "$BOUND_N" -eq 15 ] || { echo "ASSERT FAIL: frontend default ats-scope sayisi=$BOUND_N (15 bekleniyor: audience + 13 PERMS + repair)" >&2; fail=1; }
 # TAM-KUME esitligi (Codex 019f50b7: '>=' least-privilege drift'ini yakalamaz —
 # reader'a operator rolu eklense bile PASS olurdu; kume birebir eslesmeli)
 assert_roles_exact() { # $1=uid $2=etiket $3..=beklenen roller (tam kume)
@@ -227,19 +318,36 @@ assert_roles_exact() { # $1=uid $2=etiket $3..=beklenen roller (tam kume)
   have=$(kc get "users/$uid/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep '^ats\.' | sort) || true
   if [ "$want" != "$have" ]; then
     echo "ASSERT FAIL: $label rol kumesi birebir eslesmedi" >&2
-    echo "  beklenen: $(printf '%s ' $want)" >&2
-    echo "  mevcut:   $(printf '%s ' $have)" >&2
+    echo "  beklenen: $(printf '%s' "$want" | tr '\n' ' ')" >&2
+    echo "  mevcut:   $(printf '%s' "$have" | tr '\n' ' ')" >&2
     fail=1
   fi
 }
+assert_tenant_exact() { # $1=uid $2=etiket $3=beklenen tenant
+  local uid=$1 label=$2 want=$3 have
+  have=$(kc get "users/$uid" -r $REALM | python3 -c 'import json,sys
+d=json.load(sys.stdin); v=d.get("attributes",{}).get("ats_tenant",[])
+print(v[0] if len(v)==1 else "")')
+  [ "$have" = "$want" ] || {
+    echo "ASSERT FAIL: $label ats_tenant='$have' (beklenen '$want')" >&2
+    fail=1
+  }
+}
 # shellcheck disable=SC2086
 [ -n "$ADMIN_UID" ] && assert_roles_exact "$ADMIN_UID" operator-admin $PERMS
+[ -n "$ADMIN_UID" ] && assert_tenant_exact "$ADMIN_UID" operator-admin t-platform-test
 assert_roles_exact "$READER_UID" reader ats.transcript.read ats.review.read
 assert_roles_exact "$REVIEWER_UID" reviewer ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
+assert_roles_exact "$RECRUITER_UID" recruiter ats.application.read ats.application.status.write
 # shellcheck disable=SC2086
 assert_roles_exact "$OPERATOR_UID" operator $PERMS
+assert_tenant_exact "$READER_UID" reader t-platform-test
+assert_tenant_exact "$REVIEWER_UID" reviewer t-platform-test
+assert_tenant_exact "$RECRUITER_UID" recruiter 00000000-0000-0000-0000-000000000001
+assert_tenant_exact "$OPERATOR_UID" operator t-platform-test
+assert_tenant_exact "$ROLELESS_UID" roleless t-platform-test
 have_roleless=$(kc get "users/$ROLELESS_UID/role-mappings/clients/$ATS_CID" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -c '^ats\.') || true
 [ "$have_roleless" -eq 0 ] || { echo "ASSERT FAIL: roleless persona rol tasiyor ($have_roleless)" >&2; fail=1; }
 [ "$fail" -eq 0 ] || exit 1
-echo "ASSERT OK: 12 rol + 13 default-scope + persona atamalari dogrulandi (export.repair ATANMAMIS rol dahil)"
+echo "ASSERT OK: 14 rol + 15 default-scope + tenant-bagli persona atamalari dogrulandi (export.repair ATANMAMIS)"
 echo "DONE 39d-2c"

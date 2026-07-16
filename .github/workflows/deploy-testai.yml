@@ -133,6 +133,7 @@ jobs:
           IMAGE_TAG: ${{ steps.payload.outputs.image_tag }}
           IMAGE_DIGEST: ${{ steps.payload.outputs.image_digest }}
           RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: bash scripts/automation/sync-test-overlay-frontend.sh
 
       - name: Promotion boundary summary

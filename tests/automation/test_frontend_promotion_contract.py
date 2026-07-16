@@ -37,7 +37,23 @@ class FrontendPromotionContractTests(unittest.TestCase):
         self.assertIn("sync-test-overlay-frontend.sh", self.promote)
         self.assertIn("validate-test-overlay-frontend-diff.sh", self.sync)
         self.assertIn("gh pr create", self.sync)
-        self.assertIn('BRANCH="auto-test-frontend/testai"', self.sync)
+        self.assertIn(
+            'BRANCH="auto-test-frontend/testai-${SHORT_SHA}-${RUN_ID}-${RUN_ATTEMPT}"',
+            self.sync,
+        )
+
+    def test_promotion_branch_is_append_only_under_rulesets(self):
+        self.assertIn("RUN_ATTEMPT", self.promote)
+        self.assertIn('git push origin "HEAD:${BRANCH}"', self.sync)
+        self.assertNotIn("git push --force", self.sync)
+
+    def test_pr_body_markdown_cannot_execute_shell_commands(self):
+        # Markdown backticks inside an unquoted heredoc are command
+        # substitutions. The generated-by line then recursively executes the
+        # sync script. Pin the quoted-template boundary that prevents it.
+        self.assertIn("BODY=$(cat <<'EOF'", self.sync)
+        self.assertIn("BODY=${BODY//__SOURCE_SHA__/$SHA}", self.sync)
+        self.assertNotIn("BODY=$(cat <<EOF", self.sync)
 
     def test_promotion_and_verification_share_serial_concurrency(self):
         marker = "group: testai-frontend-promotion"

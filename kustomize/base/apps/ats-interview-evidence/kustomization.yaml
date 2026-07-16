@@ -1,9 +1,9 @@
 # ATS Interview-Evidence backend (app-boot) — base (ATS-0019 39d-3).
 #
-# INERT SÖZLEŞMESİ: bu base HİÇBİR ortam overlay'inin resources listesinde
-# DEĞİLDİR (prod'a asla; test'te bile Argo-root dışı). Aktivasyon yalnız
-# kustomize/overlays/test/activation/ats-interview-evidence üzerinden yapılır
-# (digest-pin + ESO secret + ingress + netpol orada). Namespace overlay set eder.
+# Bu base doğrudan apply edilmez. Yalnız
+# kustomize/overlays/test/activation/ats-interview-evidence üzerinden test
+# Argo-root'a alınır (digest-pin + ESO secret + ingress + netpol orada).
+# Prod overlay bu base'i referanslamaz. Namespace test activation set eder.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
