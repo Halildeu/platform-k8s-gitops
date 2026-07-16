@@ -280,6 +280,36 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
                 f"expect({state}AgenticControlSignatures).toEqual(", self.spec
             )
 
+    def test_persistent_storage_guard_resolves_the_webidl_descriptor_owner(self):
+        installer_start = self.spec.index(
+            "const installStorageProxy = (property: 'localStorage' | 'sessionStorage')"
+        )
+        installer_end = self.spec.index(
+            "installStorageProxy('localStorage')", installer_start
+        )
+        installer = self.spec[installer_start:installer_end]
+
+        self.assertIn("let descriptorOwner: object | null = window", installer)
+        self.assertIn("while (descriptorOwner)", installer)
+        self.assertIn(
+            "Object.getOwnPropertyDescriptor(descriptorOwner, property)",
+            installer,
+        )
+        self.assertIn(
+            "Object.getPrototypeOf(descriptorOwner) as object | null",
+            installer,
+        )
+        self.assertIn(
+            "Object.defineProperty(descriptorOwner, property", installer
+        )
+        self.assertIn(
+            "instrumentationFailures.push(`${property}.native-getter`)",
+            installer,
+        )
+        self.assertNotIn(
+            "const windowPrototype = Object.getPrototypeOf(window)", installer
+        )
+
     def test_role_filter_transitions_prove_exclusive_selection(self):
         self.assertIn(
             "expect(pressedRoleIds).toEqual([roleId])", self.spec
