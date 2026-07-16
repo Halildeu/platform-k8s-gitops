@@ -37,6 +37,10 @@ on:
           - "false"
           - "true"
         default: "false"
+      recover_stale_run_id:
+        description: "Exact prior GitHub run id whose platform-test smoke state must be recovered"
+        required: false
+        default: ""
       expected_audio_gateway_image:
         description: "Exact audio-gateway image@sha256 for session-expiry smoke"
         required: false
@@ -73,6 +77,7 @@ jobs:
           KEYCLOAK_BASE_URL_INPUT: ${{ inputs.keycloak_base_url }}
           RUN_EXTERNAL_SMOKE_INPUT: ${{ inputs.run_external_smoke }}
           RUN_SESSION_EXPIRY_SMOKE_INPUT: ${{ inputs.run_session_expiry_smoke }}
+          RECOVER_STALE_RUN_ID_INPUT: ${{ inputs.recover_stale_run_id }}
           EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT: ${{ inputs.expected_audio_gateway_image }}
         run: |
           set -euo pipefail
@@ -114,6 +119,7 @@ jobs:
           reject_multiline keycloak_base_url "${KEYCLOAK_BASE_URL_INPUT}"
           reject_multiline run_external_smoke "${RUN_EXTERNAL_SMOKE_INPUT}"
           reject_multiline run_session_expiry_smoke "${RUN_SESSION_EXPIRY_SMOKE_INPUT}"
+          reject_multiline recover_stale_run_id "${RECOVER_STALE_RUN_ID_INPUT}"
           reject_multiline expected_audio_gateway_image "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
           require_http_url base_url "${BASE_URL_INPUT}"
           require_http_url expected_issuer "${EXPECTED_ISSUER_INPUT}"
@@ -135,6 +141,18 @@ jobs:
               ;;
           esac
 
+          if [ -n "${RECOVER_STALE_RUN_ID_INPUT}" ] \
+              && ! printf '%s' "${RECOVER_STALE_RUN_ID_INPUT}" | grep -Eq '^[0-9]{6,20}$'; then
+            echo "::error::recover_stale_run_id must be an exact bounded GitHub run id"
+            exit 1
+          fi
+
+          if [ -n "${RECOVER_STALE_RUN_ID_INPUT}" ] \
+              && [ "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" != "true" ]; then
+            echo "::error::stale test-state recovery requires session-expiry smoke"
+            exit 1
+          fi
+
           if [ "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" = "true" ]; then
             if [ "${RUN_EXTERNAL_SMOKE_INPUT}" != "false" ]; then
               echo "::error::session-expiry and external-recorder smokes cannot run in the same dispatch"
@@ -145,7 +163,7 @@ jobs:
             require_audio_gateway_digest "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
           fi
 
-          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${RUN_EXTERNAL_SMOKE_INPUT}${RUN_SESSION_EXPIRY_SMOKE_INPUT}${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
+          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${RUN_EXTERNAL_SMOKE_INPUT}${RUN_SESSION_EXPIRY_SMOKE_INPUT}${RECOVER_STALE_RUN_ID_INPUT}${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
           if printf '%s' "${all_inputs}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|Bearer |Authorization:|eyJ[A-Za-z0-9_-]+\.'; then
             echo "::error::inputs must not contain token/private/secret-like material"
             exit 1
@@ -164,6 +182,7 @@ jobs:
           KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           RUN_EXTERNAL_SMOKE: ${{ inputs.run_external_smoke == 'true' && '1' || '0' }}
           RUN_SESSION_EXPIRY_SMOKE: ${{ inputs.run_session_expiry_smoke == 'true' && '1' || '0' }}
+          RECOVER_STALE_RUN_ID: ${{ inputs.recover_stale_run_id }}
           EXPECTED_AUDIO_GATEWAY_IMAGE: ${{ inputs.expected_audio_gateway_image }}
           # The platform-desktop client owns these five direct claims. This
           # explicit test-only confirmation removes foreign/hardcoded direct
@@ -234,7 +253,15 @@ jobs:
                 directGrantsRestored: false,
                 tempUserCreated: false,
                 tempUserDeleted: false,
-                tokenFileRemoved: false
+                tokenFileRemoved: false,
+                recoveryRequested: false,
+                recoveryRunId: null,
+                staleDirectGrantsVerified: false,
+                staleTempUsersMatched: 0,
+                staleTempUsersDeleted: 0,
+                staleTempUsersRemaining: -1,
+                adminSessionRefreshAttempted: false,
+                adminSessionRefreshed: false
               },
               results: {
                 tokenContract: {status: "not-proven"},
@@ -327,12 +354,13 @@ jobs:
         if: always() && steps.secret_scan.outcome == 'success'
         env:
           RUN_SESSION_EXPIRY_SMOKE_INPUT: ${{ inputs.run_session_expiry_smoke }}
+          RECOVER_STALE_RUN_ID_INPUT: ${{ inputs.recover_stale_run_id }}
         run: |
           set -euo pipefail
 
           test -s "${DIAG_JSON}"
 
-          python3 - "${DIAG_JSON}" "${SESSION_EXPIRY_SMOKE_JSON}" "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" <<'PY'
+          python3 - "${DIAG_JSON}" "${SESSION_EXPIRY_SMOKE_JSON}" "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" "${RECOVER_STALE_RUN_ID_INPUT}" <<'PY'
           import json
           import pathlib
           import sys
@@ -343,7 +371,17 @@ jobs:
               assert data["cleanup"]["directGrantsRestored"] is True
           if data["cleanup"]["tempUserCreated"]:
               assert data["cleanup"]["tempUserDeleted"] is True
+          if data["cleanup"]["directGrantsToggled"] or data["cleanup"]["tempUserCreated"]:
+              assert data["cleanup"]["adminSessionRefreshAttempted"] is True
+              assert data["cleanup"]["adminSessionRefreshed"] is True
           assert data["cleanup"]["tokenFileRemoved"] is True
+          if sys.argv[4]:
+              assert data["cleanup"]["recoveryRequested"] is True
+              assert data["cleanup"]["recoveryRunId"] == sys.argv[4]
+              assert data["cleanup"]["staleDirectGrantsVerified"] is True
+              assert data["cleanup"]["staleTempUsersMatched"] >= 1
+              assert data["cleanup"]["staleTempUsersDeleted"] == data["cleanup"]["staleTempUsersMatched"]
+              assert data["cleanup"]["staleTempUsersRemaining"] == 0
           if sys.argv[3] == "true":
               session_path = pathlib.Path(sys.argv[2])
               assert session_path.is_file()
