@@ -16,10 +16,10 @@ CONTAINER="${CONTAINER:-frontend}"
 EXPECTED_SOURCE_SHA="${EXPECTED_SOURCE_SHA:?EXPECTED_SOURCE_SHA is required}"
 EXPECTED_IMAGE_DIGEST="${EXPECTED_IMAGE_DIGEST:?EXPECTED_IMAGE_DIGEST is required}"
 EXPECTED_BUILD_RUN_ID="${EXPECTED_BUILD_RUN_ID:?EXPECTED_BUILD_RUN_ID is required}"
-EXPECTED_BUILD_ARTIFACT_ID="${EXPECTED_BUILD_ARTIFACT_ID:-8364186187}"
-EXPECTED_BUILD_ARTIFACT_NAME="${EXPECTED_BUILD_ARTIFACT_NAME:-Halildeu~platform-web~TJ1D9C.dockerbuild}"
-EXPECTED_BUILD_ARTIFACT_DIGEST="${EXPECTED_BUILD_ARTIFACT_DIGEST:-sha256:45721d20a3809bf1443f79d291cca99687b40a28dd94c5a8f804fa92aa81aebb}"
-EXPECTED_BUILD_ARTIFACT_SIZE="${EXPECTED_BUILD_ARTIFACT_SIZE:-109981}"
+EXPECTED_BUILD_ARTIFACT_ID="${EXPECTED_BUILD_ARTIFACT_ID:-8369610660}"
+EXPECTED_BUILD_ARTIFACT_NAME="${EXPECTED_BUILD_ARTIFACT_NAME:-Halildeu~platform-web~DJ1MVB.dockerbuild}"
+EXPECTED_BUILD_ARTIFACT_DIGEST="${EXPECTED_BUILD_ARTIFACT_DIGEST:-sha256:9895d20bab6389a0242a99d0bf338bb30afda02e38355b3a7a2c8176506bd2d5}"
+EXPECTED_BUILD_ARTIFACT_SIZE="${EXPECTED_BUILD_ARTIFACT_SIZE:-108385}"
 EXPECTED_CLUSTER_SERVER_SHA256="${EXPECTED_CLUSTER_SERVER_SHA256:?EXPECTED_CLUSTER_SERVER_SHA256 is required}"
 EXPECTED_CLUSTER_CA_SHA256="${EXPECTED_CLUSTER_CA_SHA256:?EXPECTED_CLUSTER_CA_SHA256 is required}"
 EXPECTED_KUBE_SYSTEM_UID="${EXPECTED_KUBE_SYSTEM_UID:?EXPECTED_KUBE_SYSTEM_UID is required}"
@@ -41,7 +41,7 @@ fail_closed() {
 [[ "$EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_BUILD_RUN_ID" =~ ^[0-9]+$ ]] || fail_closed
 [[ "$EXPECTED_BUILD_ARTIFACT_ID" =~ ^[0-9]+$ ]] || fail_closed
-[[ "$EXPECTED_BUILD_ARTIFACT_NAME" == "Halildeu~platform-web~TJ1D9C.dockerbuild" ]] || fail_closed
+[[ "$EXPECTED_BUILD_ARTIFACT_NAME" == "Halildeu~platform-web~DJ1MVB.dockerbuild" ]] || fail_closed
 [[ "$EXPECTED_BUILD_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_BUILD_ARTIFACT_SIZE" =~ ^[0-9]+$ ]] || fail_closed
 [[ "$EXPECTED_CLUSTER_SERVER_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail_closed
@@ -252,13 +252,18 @@ observed_digests="$(jq -c '
   ' <<<"$image_ids")"
 [[ "$observed_digests" == "[\"$EXPECTED_IMAGE_DIGEST\"]" ]] || fail_closed
 observed_digest="$(jq -r '.[0]' <<<"$observed_digests")"
+expected_short_sha="${EXPECTED_SOURCE_SHA:0:7}"
+expected_build_image="ghcr.io/halildeu/platform-web-frontend-testai:sha-${expected_short_sha}"
 
 pod_build_infos_json="$({
   while IFS=$'\t' read -r pod_name pod_uid; do
     [[ -n "$pod_name" && -n "$pod_uid" ]] || fail_closed
     pod_build_info="$(kubectl_test get --raw \
       "/api/v1/namespaces/${NAMESPACE}/pods/${pod_name}:80/proxy/build-info.json")"
-    jq -e --arg source "$EXPECTED_SOURCE_SHA" '
+    jq -e \
+      --arg source "$EXPECTED_SOURCE_SHA" \
+      --arg short_sha "$expected_short_sha" \
+      --arg image "$expected_build_image" '
       (keys | sort) == [
         "assets", "buildTime", "image", "imageDigest", "origin", "ref",
         "remotes", "rootEntry", "rootEntrypoints", "schemaVersion", "sha",
@@ -266,6 +271,8 @@ pod_build_infos_json="$({
       ] and
       .schemaVersion == "acik.platform.web-build-info/v2" and
       .sha == $source and
+      .shortSha == $short_sha and
+      .image == $image and
       .ref == "main" and
       .origin == "https://testai.acik.com" and
       .imageDigest == "" and

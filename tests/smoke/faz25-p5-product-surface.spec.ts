@@ -14,11 +14,11 @@ const expectedRole = process.env.P5_EXPECTED_ROLE ?? 'P5_READINESS_VIEWER';
 const expectedUserId = process.env.P5_EXPECTED_USER_ID ?? '6';
 const expectedSubscriberId = process.env.P5_EXPECTED_SUBSCRIBER_ID ?? '6';
 const expectedSourceSha =
-  process.env.P5_EXPECTED_SOURCE_SHA ?? '7a8c968a63bd8bbd5279c2f038cfac773613c402';
+  process.env.P5_EXPECTED_SOURCE_SHA ?? '125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b';
 const expectedFrontendDigest =
   process.env.P5_EXPECTED_FRONTEND_DIGEST ??
-  'sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc';
-const expectedBuildRunId = process.env.P5_EXPECTED_BUILD_RUN_ID ?? '29469166218';
+  'sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f';
+const expectedBuildRunId = process.env.P5_EXPECTED_BUILD_RUN_ID ?? '29483736629';
 const liveFrontendDigest = process.env.P5_LIVE_FRONTEND_DIGEST ?? '';
 const harnessRepository = process.env.P5_HARNESS_REPOSITORY ?? '';
 const harnessRevision = process.env.P5_HARNESS_REVISION ?? '';

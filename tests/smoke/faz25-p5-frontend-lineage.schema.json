@@ -63,7 +63,7 @@
         "desiredReplicas": { "type": "integer", "minimum": 1 },
         "image": {
           "type": "string",
-          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-7a8c968@sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc$"
+          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-125d2d8@sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f$"
         }
       }
     },
@@ -94,7 +94,7 @@
           "minItems": 1,
           "items": {
             "type": "string",
-            "pattern": "^.*@sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc$"
+            "pattern": "^.*@sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f$"
           }
         }
       }
@@ -117,25 +117,25 @@
         "buildAttestationBoundary"
       ],
       "properties": {
-        "sourceSha": { "const": "7a8c968a63bd8bbd5279c2f038cfac773613c402" },
+        "sourceSha": { "const": "125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b" },
         "expectedDigest": {
-          "const": "sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc"
+          "const": "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f"
         },
         "observedDigest": {
-          "const": "sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc"
+          "const": "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f"
         },
-        "buildRunId": { "const": "29469166218" },
+        "buildRunId": { "const": "29483736629" },
         "buildRunUrl": {
-          "const": "https://github.com/Halildeu/platform-web/actions/runs/29469166218"
+          "const": "https://github.com/Halildeu/platform-web/actions/runs/29483736629"
         },
-        "buildArtifactId": { "const": "8364186187" },
+        "buildArtifactId": { "const": "8369610660" },
         "buildArtifactName": {
-          "const": "Halildeu~platform-web~TJ1D9C.dockerbuild"
+          "const": "Halildeu~platform-web~DJ1MVB.dockerbuild"
         },
         "buildArtifactDigest": {
-          "const": "sha256:45721d20a3809bf1443f79d291cca99687b40a28dd94c5a8f804fa92aa81aebb"
+          "const": "sha256:9895d20bab6389a0242a99d0bf338bb30afda02e38355b3a7a2c8176506bd2d5"
         },
-        "buildArtifactSizeInBytes": { "const": 109981 },
+        "buildArtifactSizeInBytes": { "const": 108385 },
         "buildArtifactEvidenceClass": { "const": "METADATA_ONLY_NON_TERMINAL" },
         "buildAttestationStatus": { "const": "NOT_PUBLISHED" },
         "buildAttestationBoundary": {

@@ -14,8 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTOR = ROOT / "scripts/deploy/collect-faz25-p5-frontend-lineage.sh"
-SOURCE_SHA = "7a8c968a63bd8bbd5279c2f038cfac773613c402"
-DIGEST = "sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc"
+SOURCE_SHA = "125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b"
+DIGEST = "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f"
 DEPLOYMENT_UID = "11111111-1111-4111-8111-111111111111"
 REPLICASET_UID = "22222222-2222-4222-8222-222222222222"
 POD_UID = "33333333-3333-4333-8333-333333333333"
@@ -118,8 +118,8 @@ class CollectorTest(unittest.TestCase):
                 if "/artifacts" in url:
                     print(json.dumps({{
                         "artifacts": [{{
-                            "id": 8364186187,
-                            "name": "Halildeu~platform-web~TJ1D9C.dockerbuild",
+                            "id": 8369610660,
+                            "name": "Halildeu~platform-web~DJ1MVB.dockerbuild",
                             "digest": os.environ.get(
                                 "MOCK_ARTIFACT_DIGEST",
                                 os.environ["EXPECTED_BUILD_ARTIFACT_DIGEST"]
@@ -130,7 +130,7 @@ class CollectorTest(unittest.TestCase):
                     }}))
                 else:
                     print(json.dumps({{
-                        "id": 29469166218,
+                        "id": 29483736629,
                         "status": "completed",
                         "conclusion": "success",
                         "event": "push",
@@ -145,7 +145,7 @@ class CollectorTest(unittest.TestCase):
         self.mock_curl.chmod(0o755)
 
     def _fixtures(self, pod_owner_uid=REPLICASET_UID):
-        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-7a8c968@{DIGEST}"
+        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-125d2d8@{DIGEST}"
         fixtures = {
             "deployment": {
                 "metadata": {
@@ -291,7 +291,7 @@ class CollectorTest(unittest.TestCase):
             "pod_build_info": {
                 "assets": ["index-main.js"],
                 "buildTime": "2026-07-15T00:00:00Z",
-                "image": "ghcr.io/halildeu/platform-web-frontend-testai:sha-7a8c968",
+                "image": "ghcr.io/halildeu/platform-web-frontend-testai:sha-125d2d8",
                 "imageDigest": "",
                 "origin": "https://testai.acik.com",
                 "ref": "main",
@@ -302,7 +302,7 @@ class CollectorTest(unittest.TestCase):
                 ],
                 "schemaVersion": "acik.platform.web-build-info/v2",
                 "sha": SOURCE_SHA,
-                "shortSha": "7a8c968",
+                "shortSha": "125d2d8",
             },
             "controller_pods": {
                 "items": [
@@ -353,11 +353,11 @@ class CollectorTest(unittest.TestCase):
             "EXPECTED_CONTEXT": "k3d-test",
             "EXPECTED_SOURCE_SHA": SOURCE_SHA,
             "EXPECTED_IMAGE_DIGEST": DIGEST,
-            "EXPECTED_BUILD_RUN_ID": "29469166218",
-            "EXPECTED_BUILD_ARTIFACT_ID": "8364186187",
-            "EXPECTED_BUILD_ARTIFACT_NAME": "Halildeu~platform-web~TJ1D9C.dockerbuild",
-            "EXPECTED_BUILD_ARTIFACT_DIGEST": "sha256:45721d20a3809bf1443f79d291cca99687b40a28dd94c5a8f804fa92aa81aebb",
-            "EXPECTED_BUILD_ARTIFACT_SIZE": "109981",
+            "EXPECTED_BUILD_RUN_ID": "29483736629",
+            "EXPECTED_BUILD_ARTIFACT_ID": "8369610660",
+            "EXPECTED_BUILD_ARTIFACT_NAME": "Halildeu~platform-web~DJ1MVB.dockerbuild",
+            "EXPECTED_BUILD_ARTIFACT_DIGEST": "sha256:9895d20bab6389a0242a99d0bf338bb30afda02e38355b3a7a2c8176506bd2d5",
+            "EXPECTED_BUILD_ARTIFACT_SIZE": "108385",
             "EXPECTED_CLUSTER_SERVER_SHA256": hashlib.sha256(
                 CLUSTER_SERVER.encode()
             ).hexdigest(),
@@ -418,7 +418,7 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(payload["replicaSet"]["uid"], REPLICASET_UID)
         self.assertEqual(payload["pods"]["uids"], [POD_UID])
         self.assertEqual(payload["lineage"]["observedDigest"], DIGEST)
-        self.assertEqual(payload["lineage"]["buildArtifactId"], "8364186187")
+        self.assertEqual(payload["lineage"]["buildArtifactId"], "8369610660")
         self.assertEqual(
             payload["lineage"]["buildArtifactEvidenceClass"],
             "METADATA_ONLY_NON_TERMINAL",
@@ -879,6 +879,25 @@ class CollectorTest(unittest.TestCase):
                 {"schemaVersion": "acik.platform.web-build-info/v1"}
             ),
             lambda build_info: build_info.update({"unverified": True}),
+        ]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                fixtures = self._fixtures()
+                mutation(fixtures["pod_build_info"])
+                result = self._run(fixtures)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.report.exists())
+
+    def test_rejects_build_info_short_sha_or_image_tag_mismatch(self):
+        mutations = [
+            lambda build_info: build_info.update({"shortSha": "deadbee"}),
+            lambda build_info: build_info.update(
+                {
+                    "image": (
+                        "ghcr.io/halildeu/platform-web-frontend-testai:sha-deadbee"
+                    )
+                }
+            ),
         ]
         for mutation in mutations:
             with self.subTest(mutation=mutation):
