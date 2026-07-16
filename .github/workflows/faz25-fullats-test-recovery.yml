@@ -1,0 +1,144 @@
+name: Faz 25 Full ATS test recovery and acceptance
+
+# Mac-side SSH staging-sw'de kapali olsa da self-hosted runner test cluster ve
+# host Docker control'una erisebilir. Bu workflow yalniz test ortaminda,
+# kullanici tarafindan acikca dispatch edilen fail-closed recovery hattidir.
+# Flyway history'de failed satir varsa otomatik repair/silme yapmaz; runbook'a
+# yonlendiren acik hata ile mutation oncesi durur.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Requires zero failed Flyway rows. Live literal: APPLY_FAZ25_FULLATS_TEST_RECOVERY"
+        required: true
+        default: "DRY_RUN_ONLY"
+      dry_run:
+        description: "Only inspect role, Flyway and desired image state"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz25-fullats-test-recovery
+  cancel-in-progress: false
+
+env:
+  KUBE_CONTEXT: k3d-test
+  KUBE_NAMESPACE: platform-test
+  EXPECTED_ATS_DIGEST: sha256:49aa5da5ee294942a16c30405f1a3f7b3995faa85b6246f5a5fc5d05fc5600e1
+
+jobs:
+  recover:
+    name: Recover ATS migration and run Full ATS acceptance
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 25
+
+    steps:
+      - name: Validate canonical dispatch boundary
+        env:
+          CONFIRM_INPUT: ${{ inputs.confirm }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "Halildeu/platform-k8s-gitops" ]]
+          [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$CONFIRM_INPUT" != *$'\n'* && "$CONFIRM_INPUT" != *$'\r'* ]]
+          if [[ "$DRY_RUN_INPUT" == "false" && \
+                "$CONFIRM_INPUT" != "APPLY_FAZ25_FULLATS_TEST_RECOVERY" ]]; then
+            echo "::error::live test recovery requires exact confirmation literal"
+            exit 1
+          fi
+
+      - name: Checkout canonical recovery scripts
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Inspect pre-recovery role, Flyway and desired image state
+        run: |
+          set -euo pipefail
+          role_state="$(docker exec platform-pg-test psql -U postgres -At -F '|' -c \
+            "SELECT rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='ats_app'")"
+          [[ "$role_state" == "t|f|f|f|f|f" ]]
+
+          failed_history="$(docker exec platform-pg-test psql -U postgres -d ats -At -c \
+            "SELECT count(*) FROM flyway_schema_history WHERE success = false")"
+          if [[ "$failed_history" != "0" ]]; then
+            echo "::error::Flyway failed history row detected; no automatic repair. Inspect checksums/state per docs/RB-ats-39d-testai.md."
+            exit 1
+          fi
+
+          desired_image="$(kubectl --context="$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" \
+            get deployment ats-interview-evidence \
+            -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}')"
+          [[ "$desired_image" == *"@${EXPECTED_ATS_DIGEST}" ]]
+
+          echo "PASS pre-recovery ats_app has no admin attributes"
+          echo "PASS pre-recovery Flyway has no failed history row"
+          echo "PASS deployment desires the expected immutable ATS digest"
+
+      - name: Stop after read-only preflight
+        if: inputs.dry_run == 'true'
+        run: echo "Dry-run requested; no PostgreSQL, Keycloak or application state mutation performed."
+
+      - name: Bootstrap governance writer without credential mutation
+        if: inputs.dry_run == 'false'
+        run: bash scripts/ats/provision-test-pg-vault.sh --roles-only
+
+      - name: Wait for GitOps-owned ATS rollout and verify V4/V5
+        if: inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          ready_pod=""
+          for _ in $(seq 1 120); do
+            pods="$(kubectl --context="$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" \
+              get pods -l app=ats-interview-evidence -o json)"
+            ready_pod="$(jq -r --arg digest "$EXPECTED_ATS_DIGEST" '
+              [.items[]
+               | select(any(.status.containerStatuses[]?;
+                   .name == "app-boot" and .ready == true and
+                   (.imageID | endswith("@" + $digest))))
+               | .metadata.name][0] // ""' <<<"$pods")"
+            [[ -n "$ready_pod" ]] && break
+            sleep 5
+          done
+          [[ -n "$ready_pod" ]]
+
+          migration_state="$(docker exec platform-pg-test psql -U postgres -d ats -At -F '|' -c \
+            "SELECT version,success FROM flyway_schema_history WHERE version IN ('4','5') ORDER BY installed_rank")"
+          [[ "$migration_state" == $'4|t\n5|t' ]]
+
+          echo "PASS ATS Ready pod uses expected immutable digest"
+          echo "PASS Flyway V4 and V5 are successful"
+
+      - name: Provision tenant-scoped Keycloak application roles
+        if: inputs.dry_run == 'false'
+        run: bash scripts/ats/provision-test-keycloak.sh
+
+      - name: Run sentetik Full ATS 10 of 10 acceptance
+        if: inputs.dry_run == 'false'
+        run: bash scripts/ats/fullats-application-smoke.sh
+
+      - name: Publish redacted summary
+        if: always()
+        env:
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "## Faz 25 Full ATS test recovery"
+            echo ""
+            echo "- runner: self-hosted staging-sw"
+            echo "- canonical ref: \`$GITHUB_REF\`"
+            echo "- dry_run: \`$DRY_RUN_INPUT\`"
+            echo "- immutable ATS digest: \`$EXPECTED_ATS_DIGEST\`"
+            echo "- direct workload patch/restart: none"
+            echo "- password or Vault mutation in recovery: none"
+            echo "- production mutation: none"
+            echo ""
+            echo "Raw secrets, JWTs and candidate access tokens are never published."
+          } >> "$GITHUB_STEP_SUMMARY"
