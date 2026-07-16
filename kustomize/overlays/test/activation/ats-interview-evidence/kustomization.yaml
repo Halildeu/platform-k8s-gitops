@@ -1,17 +1,15 @@
 # ats-interview-evidence ACTIVATION overlay — ATS-0019 39d-3 (test).
 #
-# Argo-root DIŞI (endpoint-admin-remote-bridge pattern'i): bu overlay
-# kustomize/overlays/test/kustomization.yaml tarafından REFERANSLANMAZ —
-# reconcile/full-apply ATS backend'ini kendiliğinden canlandıramaz.
-# İlk canlandırma bilinçli apply'dır (test-env agent-otonom):
+# Faz 25 #2526 ile Argo-root'a dahil: test ortamında kalıcı ürün yüzeyi ve
+# self-heal sağlar. Doğrudan workload patch/set-image yok; tüm değişiklik bu
+# desired-state overlay'inden gelir. Bağımsız salt-okunur build kontrolü:
 #
-#   kubectl --context k3d-test -n platform-test apply -k \
-#     kustomize/overlays/test/activation/ats-interview-evidence
+#   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence
 #
 # Önkoşullar (39d-2, 2026-07-11'de TAMAM):
 #   - PG: ats DB + ats_app kullanıcı (test compose PG; canlı login kanıtlı)
 #   - Vault: kv/platform/ats (DB url/user/pass) → ESO ClusterSecretStore
-#   - KC platform-test: ats-api client + 10 client-role + audience/permission
+#   - KC platform-test: ats-api client + 14 client-role + 15 default-scope
 #     scope'ları (Codex 019f50b7 verdict A: default scope + rol-kapısı ats#96)
 #
 # İmaj pin: numerik-UID imajı (ats#100 — Dockerfile USER 10001:10001; imaj-
@@ -22,6 +20,11 @@
 #   image build run: 29168265806 (public package — pull-secret gerekmez)
 # Önceki pin (14/14 D29 kanıtının koşulduğu imaj): sha-3a93cff /
 #   sha256:c2dcc1da2e169d676fec21a1acc60d6fd6be2b108e73ce705b0aa813010432b1
+# Faz 25 #2526 Full ATS application vertical:
+#   source  ats main a3cfb76570575acf9f81f582d94bc1ca16c3da66 (ats#175)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-a3cfb76
+#   digest  sha256:49aa5da5ee294942a16c30405f1a3f7b3995faa85b6246f5a5fc5d05fc5600e1
+#   build   https://github.com/Halildeu/ats/actions/runs/29533845541
 #
 # Build sanity (apply'sız):
 #   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence
@@ -36,11 +39,12 @@ resources:
   - externalsecret-mtls.yaml
   - ingress-ats-api.yaml
   - netpol.yaml
-  - ai-stub.yaml
+  # ai-stub artık resource değildir: provider live-stt fail-closed; kullanılmayan
+  # fallback pod'u test node kapasitesini tüketmez.
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
+    digest: sha256:49aa5da5ee294942a16c30405f1a3f7b3995faa85b6246f5a5fc5d05fc5600e1
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
@@ -57,6 +61,9 @@ patches:
       - op: replace
         path: /data/ATS_JWKS_URI
         value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: replace
+        path: /data/ATS_PUBLIC_TENANT_ID
+        value: "00000000-0000-0000-0000-000000000001"
       # 39d-5 Faz2: provider flip stub → live-stt (Faz24 denetim STT, mTLS).
       # transcribe canlı denetim-PC motoruna gider; cite live-stt'de bilinçli
       # NOT_CONFIGURED (STT-only motor; F4 citation ayrı LLM işi, ADR-0043 T-C).

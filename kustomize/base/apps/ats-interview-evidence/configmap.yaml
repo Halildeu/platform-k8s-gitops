@@ -12,6 +12,8 @@ data:
   ATS_JWT_ISSUER: "OVERLAY_MUST_OVERRIDE"
   ATS_JWKS_URI: "OVERLAY_MUST_OVERRIDE"
   ATS_JWT_AUDIENCE: "ats-api"
+  # Public careers katalog tenant'ı request/header/body'den seçilemez.
+  ATS_PUBLIC_TENANT_ID: "OVERLAY_MUST_OVERRIDE"
   ATS_AI_BASE_URL: "OVERLAY_MUST_OVERRIDE"
   ATS_AI_TIMEOUT: "30s"
   # ingress proxy-body-size ile TEK kontrat (aynı 25 MiB; en düşük limit gerçek limittir)
