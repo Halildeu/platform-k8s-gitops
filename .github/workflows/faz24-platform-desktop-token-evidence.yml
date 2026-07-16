@@ -379,7 +379,8 @@ jobs:
               assert data["cleanup"]["recoveryRequested"] is True
               assert data["cleanup"]["recoveryRunId"] == sys.argv[4]
               assert data["cleanup"]["staleDirectGrantsVerified"] is True
-              assert data["cleanup"]["staleTempUsersMatched"] >= 1
+              assert type(data["cleanup"]["staleTempUsersMatched"]) is int
+              assert 0 <= data["cleanup"]["staleTempUsersMatched"] <= 20
               assert data["cleanup"]["staleTempUsersDeleted"] == data["cleanup"]["staleTempUsersMatched"]
               assert data["cleanup"]["staleTempUsersRemaining"] == 0
           if sys.argv[3] == "true":

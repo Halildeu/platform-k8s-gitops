@@ -88,6 +88,20 @@ faz24_temp_user_count() {
     "${users_file}"
 }
 
+faz24_stale_user_count_allowed() {
+  local count="$1"
+
+  [[ "${count}" =~ ^([0-9]|1[0-9]|20)$ ]]
+}
+
+faz24_stale_cleanup_proven() {
+  local matched="$1"
+  local deleted="$2"
+  local remaining="$3"
+
+  [[ "${remaining}" == "0" && "${deleted}" == "${matched}" ]]
+}
+
 faz24_cleanup_state_proven() {
   local direct_grants_toggled="$1"
   local direct_grants_restored="$2"

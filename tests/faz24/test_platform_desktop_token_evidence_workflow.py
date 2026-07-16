@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import shlex
 import subprocess
 
 import pytest
@@ -46,7 +47,11 @@ def test_runner_contract_restores_and_redacts():
     assert "TEMP_USERNAME_PREFIX" in text
     assert "faz24_temp_user_ids" in rest_text
     assert "max=100" in text
-    assert "stale-test-state-run-scoped-user-not-found" in text
+    assert "faz24_stale_user_count_allowed" in rest_text
+    assert "faz24_stale_cleanup_proven" in rest_text
+    assert "stale-test-state-run-scoped-user-limit-exceeded" in text
+    assert "stale-test-state-user-count-invalid" in text
+    assert "stale-test-state-user-verify-count-invalid" in text
     assert "stale-test-state-users-remain-after-cleanup" in text
     assert "stale-test-state-direct-grants-invalid" in text
     assert "'.directAccessGrantsEnabled == false'" in text
@@ -284,6 +289,97 @@ ids=$(faz24_temp_user_ids {users!s} '{pattern}')
     assert proc.returncode == 0, proc.stderr
 
 
+def test_temp_user_filter_returns_zero_for_already_absent_recovery_run(tmp_path):
+    users = tmp_path / "users.json"
+    users.write_text("[]", encoding="utf-8")
+    pattern = "^faz24-recorder-smoke-codex-29534428064-[0-9]+$"
+    script = f"""
+set -euo pipefail
+source {REST_LIB!s}
+[ -z "$(faz24_temp_user_ids {users!s} '{pattern}')" ]
+[ "$(faz24_temp_user_count {users!s} '{pattern}')" = 0 ]
+faz24_stale_user_count_allowed 0
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        ("0", True),
+        ("1", True),
+        ("20", True),
+        ("21", False),
+        ("-1", False),
+        ("", False),
+        ("05", False),
+        (" 5", False),
+        ("5 ", False),
+        ("not-a-count", False),
+    ],
+)
+def test_stale_user_count_allows_only_bounded_numeric_values(count, expected):
+    quoted_count = shlex.quote(count)
+    script = f"""
+set -euo pipefail
+source {REST_LIB!s}
+if faz24_stale_user_count_allowed {quoted_count}; then
+  result=true
+else
+  result=false
+fi
+[ "$result" = {str(expected).lower()} ]
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("matched", "deleted", "remaining", "expected"),
+    [
+        ("0", "0", "0", True),
+        ("1", "1", "0", True),
+        ("1", "0", "0", False),
+        ("1", "1", "1", False),
+        ("20", "19", "0", False),
+    ],
+)
+def test_stale_cleanup_requires_deleted_match_and_zero_remaining(
+    matched, deleted, remaining, expected
+):
+    script = f"""
+set -euo pipefail
+source {REST_LIB!s}
+if faz24_stale_cleanup_proven {matched} {deleted} {remaining}; then
+  result=true
+else
+  result=false
+fi
+[ "$result" = {str(expected).lower()} ]
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
 def test_controlled_claim_mapper_jq_contract_compiles_and_rejects_duplicates():
     text = SCRIPT.read_text(encoding="utf-8")
     function = text.split("verify_controlled_claim_mapper_contract() {", 1)[1]
@@ -355,6 +451,8 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "directGrantsRestored" in workflow
     assert "staleDirectGrantsVerified" in workflow
     assert "staleTempUsersMatched" in workflow
+    assert 'type(data["cleanup"]["staleTempUsersMatched"]) is int' in workflow
+    assert '0 <= data["cleanup"]["staleTempUsersMatched"] <= 20' in workflow
     assert "staleTempUsersRemaining" in workflow
     assert "adminSessionRefreshAttempted" in workflow
     assert "adminSessionRefreshed" in workflow
