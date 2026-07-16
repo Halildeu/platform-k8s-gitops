@@ -336,7 +336,21 @@ Mavis bildirimi **yerine geçmez**:
 
 ---
 
-## 11. Cursor CLI — Öncelikli İlave Adversarial Review
+## 11. Provider İstişare Sırası ve Cursor Adversarial Review
+
+Yüksek etkili işlerde Cursor adversarial-review/ikinci-görüş kanalı kullanılacaksa ilk model tercihi, yalnız live listede mevcut olduğunda `claude-opus-4-8-thinking-high` olur. Her çağrıdan önce `agent --version` ve `agent --list-models` canlı doğrulanır; slug hafızadan varsayılmaz. Live listede yoksa eşdeğer derin model seçilir ve exact kimliği kanıta yazılır. Model mevcut olduğundaki salt-okunur çağrı:
+
+```bash
+agent -p 'REDACTED_GOREV' --output-format text --mode ask --trust \
+  --workspace <ABSOLUTE_WORKTREE> \
+  --model <LIVE_MODEL_ID>
+```
+
+Attribution `Channel=Cursor CLI; Model=<LIVE_MODEL_ID>; direct-provider-CLI=false` olur. Bu yol direct Anthropic çağrısı değildir. Plan/mimari/deploy/rollback/scope kararlarında aşağıdaki rol tablosundaki canonical provider-distinct istişare yolu korunur; Cursor model önceliği bu karar yolunu düşürmez. İşletici/reviewer zaten Anthropic Claude ailesindeyse Cursor-routed Claude aynı-aile bağımsız reviewer sayılmaz ve provider-distinct gate Codex, MiniMax veya başka bağımsız sağlayıcıyla doldurulur. Doğrudan Claude CLI ek/fallback yolu olarak kullanılabilir; `claude --version`/`--help` doğrulamasından sonra JSON çıktı alınır ve gerçek model kimliği `modelUsage` anahtarından kaydedilir. Direct yol `Channel=Direct Anthropic Claude CLI; Model=<MODEL_USAGE_ID>; direct-provider-CLI=true` diye raporlanır; CLI'nin `--model opus` alias'ı exact sayısal sürüm diye varsayılmaz.
+
+Exact Cursor modeli unavailable, auth/limit hatalı, boş ya da somut verdict üretmiyorsa başarısızlık açık kaydedilir. Doğrudan Claude, MiniMax M3 veya başka provider-distinct kanal ikinci görüş/fallback olabilir; hiçbir durumda uygulama penceresi kullanılmaz. Prompt veya süreç girdisine secret, token, credential ya da PII konmaz. Cursor-routed Claude ile direct Claude aynı model sağlayıcı ailesine ait olabileceğinden tek başına iki bağımsız provider sayılmaz. Bu sıra, provider-distinct Cross-AI gereksinimini veya test/CI/live evidence/board/insan gate'lerini azaltmaz.
+
+### Cursor CLI — öncelikli ilave adversarial review
 
 Cursor, faz/plan/PR istişaresinde uygulama penceresi üzerinden kullanılmaz. Yalnız canlı doğrulanmış CLI veya mevcutsa aynı redaction ve salt-okunur sınırını sağlayan MCP yolu kabul edilir. CLI/MCP, credential veya somut verdict yoksa UI fallback yapılmaz ve Cursor review kanıtı yazılmaz.
 
