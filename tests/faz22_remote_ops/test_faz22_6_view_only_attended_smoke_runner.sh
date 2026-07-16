@@ -61,7 +61,15 @@ if grep -Fq -- '--argjson operation "$operation"' <<<"$browser_workflow_text"; t
   exit 1
 fi
 grep -Fq "grep -Eiq 'bearer|BEGIN .*PRIVATE KEY" <<<"$browser_workflow_text"
-grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v1' <<<"$browser_workflow_text"
+grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v2' <<<"$browser_workflow_text"
+grep -q 'failureReasonCode' <<<"$browser_workflow_text"
+grep -q 'openSessionHttp' <<<"$browser_workflow_text"
+grep -q 'open-session-http-404-expected-200' <<<"$browser_workflow_text"
+# shellcheck disable=SC2016 # Assert the workflow's literal jq expression.
+if grep -Fq 'failureReason:($summary.reason' <<<"$browser_workflow_text"; then
+  echo "browser collector diagnostic must not copy free-form failure reason text" >&2
+  exit 1
+fi
 grep -q 'sessionId|deviceId|operatorId|decisionId|operationId|canonicalPayload' <<<"$browser_workflow_text"
 diagnostic_step="$(sed -n \
   '/^      - name: Stage redacted collector diagnostic$/,/^      - name: Upload redacted collector diagnostic$/p' \
@@ -96,6 +104,21 @@ grep -q 'capabilities:\["FULL_RDP"\]' "$SCRIPT"
 grep -q 'consent-not-granted' "$SCRIPT"
 grep -q 'endpoint-agent-consent-log-missing' "$SCRIPT"
 grep -q 'screen-view-operation-not-permit' "$SCRIPT"
+grep -q 'open_session_after_agent_reconnect' "$SCRIPT"
+grep -Fq 'OPEN_SESSION_DEVICE_READY_SECONDS: "180"' <<<"$browser_workflow_text"
+grep -Fq 'OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS: "5"' <<<"$browser_workflow_text"
+grep -Fq 'if (( SECONDS >= deadline ))' "$SCRIPT"
+grep -Fq 'fail_smoke "open-session-device-not-connected-timeout"' "$SCRIPT"
+grep -Fq 'fail_smoke "open-session-transport-failure"' "$SCRIPT"
+retry_function="$(sed -n \
+  '/^open_session_after_agent_reconnect() {$/,/^}$/p' "$SCRIPT")"
+grep -Fq '404)' <<<"$retry_function"
+# shellcheck disable=SC2016 # Assert the helper's literal shell expression.
+grep -Fq 'assert_http "$open_code" 200 "open-session"' <<<"$retry_function"
+if grep -Eq '000\)|5[0-9][0-9]\)' <<<"$retry_function"; then
+  echo "open-session readiness must retry only the side-effect-free 404 response" >&2
+  exit 1
+fi
 grep -q 'OPERATION_DIAGNOSTIC' "$SCRIPT"
 grep -q 'operationDeny' "$SCRIPT"
 grep -q 'auto_finalize_if_requested' "$SCRIPT"

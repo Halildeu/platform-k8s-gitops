@@ -147,6 +147,7 @@ jobs:
         env:
           PILOT_SECONDS: ${{ inputs.pilot_seconds }}
           CONSENT_WAIT_SECONDS: "240"
+          OPEN_SESSION_DEVICE_READY_SECONDS: "180"
         run: |
           set -euo pipefail
           receipt="$RUNNER_TEMP/faz22-viewer-activation/receipt/protected-authorization.json"
@@ -163,7 +164,7 @@ jobs:
           }
           printf '%s' "$expires_epoch" | grep -Eq '^[1-9][0-9]{9,12}$'
           remaining="$(( expires_epoch - $(date -u +%s) ))"
-          required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + 120 ))"
+          required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + OPEN_SESSION_DEVICE_READY_SECONDS + 120 ))"
           [ "$remaining" -ge "$required" ] || {
             echo "::error::watchdog has ${remaining}s remaining; ${required}s is required"
             exit 1
@@ -189,6 +190,8 @@ jobs:
           # runner alias as denetimpc@10.99.0.2 with an id_denetim identity.
           DENETIM_SSH_TARGET: denetim-pc
           DENETIM_SSH_OPTS: __SSH_CONFIG__
+          OPEN_SESSION_DEVICE_READY_SECONDS: "180"
+          OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS: "5"
           EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-browser-collector
           AUTO_FINALIZE: "0"
           DLP_MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
@@ -292,11 +295,20 @@ jobs:
             '($summary[0] // {}) as $summary
             | ($operation[0] // {}) as $operation
             | {
-              schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v1",
+              schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v2",
               sourceRevision:$sourceRevision,
               status:($summary.status // "collector-did-not-write-summary"),
-              failureReason:($summary.reason // null),
+              failureReasonCode:(
+                if $summary.reason == null then null
+                elif $summary.reason == "open session expected 200, got 404"
+                  then "open-session-http-404-expected-200"
+                elif (($summary.reason | type) == "string")
+                  and ($summary.reason | test("^[A-Za-z0-9:._-]{1,160}$")) then $summary.reason
+                else "collector-no-go-unspecified"
+                end
+              ),
               consentWait:($summary.consentWait // null),
+              openSessionHttp:($summary.http.open // null),
               operationHttp:($summary.http.operation // null),
               operationKind:($operation.kind // null),
               transportPushed:($operation.transportPushed // false),
@@ -307,11 +319,12 @@ jobs:
               } end)
             }' > "$diagnostic_dir/collector-diagnostic.json"
           jq -e '
-            .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v1"
+            .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v2"
             and (.sourceRevision | test("^[a-f0-9]{40}$"))
             and (.status | test("^[A-Za-z0-9:._-]{1,64}$"))
-            and (.failureReason == null or (.failureReason | test("^[A-Za-z0-9:._ -]{1,160}$")))
+            and (.failureReasonCode == null or (.failureReasonCode | test("^[A-Za-z0-9:._-]{1,160}$")))
             and (.consentWait == null or (.consentWait | test("^[a-z-]{1,32}$")))
+            and (.openSessionHttp == null or (.openSessionHttp | test("^[0-9]{3}$")))
             and (.operationHttp == null or (.operationHttp | test("^[0-9]{3}$")))
             and (.operationKind == null or (.operationKind | test("^[A-Z_]{1,32}$")))
             and (.transportPushed | type == "boolean")
