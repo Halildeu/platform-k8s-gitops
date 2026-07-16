@@ -27,6 +27,15 @@ on:
         required: false
         default: false
 
+# Global serialization (Codex 019f6af2 must-fix 4): scheduled run + manual dispatch
+# (veya iki manual dispatch) aynı candidate branch'ine yarışabilir; scanner
+# branch başına deterministic isim üretir. `repo` filtresi group'a KATILMAZ —
+# "all repos" scan ile filtered scan de çakışır. Lease compare-and-swap ile
+# birlikte çalışır (concurrency normal parallelism'i, lease dış race'i keser).
+concurrency:
+  group: promotion-bot-scan-candidates
+  cancel-in-progress: false
+
 permissions:
   contents: write   # bot needs to push branch with prod overlay digest update
   pull-requests: write  # bot needs to open DRAFT PR
