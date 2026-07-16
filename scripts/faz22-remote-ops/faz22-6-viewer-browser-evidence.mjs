@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 const HASH = /^sha256:[a-f0-9]{64}$/;
 const GIT_SHA = /^[a-f0-9]{40}$/;
 const VIEWER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
+const TEST_USERNAME = /^[A-Za-z0-9][A-Za-z0-9._@+-]{2,127}$/;
 const MIN_PILOT_SECONDS = 300;
 const MAX_PILOT_SECONDS = 1800;
 const MASK_BASIS_POINTS = 10_000;
@@ -17,6 +18,8 @@ const MASK_BASIS_POINTS = 10_000;
 export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-ack-count-diverged',
   'browser-ack-minimum-not-met',
+  'browser-auth-callback-failed',
+  'browser-auth-session-missing',
   'browser-binding-invalid',
   'browser-console-error',
   'browser-diagnostic-write-failed',
@@ -26,17 +29,21 @@ export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-frame-inspection-failed',
   'browser-frame-not-visible',
   'browser-frame-pixel-variance-invalid',
+  'browser-idp-login-form-not-visible',
+  'browser-idp-login-submit-failed',
   'browser-input-invalid',
   'browser-left-live-state',
+  'browser-login-entry-not-visible',
   'browser-metadata-not-trusted',
   'browser-observer-install-failed',
   'browser-replay-not-rejected',
   'browser-replay-probe-failed',
   'browser-route-navigation-failed',
+  'browser-route-unauthorized',
   'browser-runtime-start-failed',
   'browser-screenshot-failed',
   'browser-telemetry-read-failed',
-  'browser-token-file-invalid',
+  'browser-test-credential-file-invalid',
   'browser-unclassified-failure',
   'browser-unexpected-input-control',
   'browser-view-attended-badge-missing',
@@ -77,9 +84,10 @@ export function classifyBrowserFailure(error) {
   if (message === 'EVIDENCE_BINDING_JSON is not a strict, distinct SHA-256 binding') {
     return 'browser-binding-invalid';
   }
-  if (message === 'operator token file is invalid') return 'browser-token-file-invalid';
+  if (message === 'browser test credential file is invalid') return 'browser-test-credential-file-invalid';
   if (
     message.endsWith(' is required') ||
+    message.startsWith('BROWSER_OPERATOR_USERNAME') ||
     message.startsWith('SOURCE_REVISION must be') ||
     message.startsWith('PILOT_SECONDS must be') ||
     message.startsWith('DLP_MASK_RECT_BPS') ||
@@ -157,19 +165,27 @@ function validateMaskRect(raw) {
 
 async function main() {
   const viewerUrl = validateViewerUrl(required('VIEWER_URL'));
-  const tokenFile = required('OPERATOR_TOKEN_FILE');
   const output = required('EVIDENCE_OUTPUT');
   const sourceRevision = required('SOURCE_REVISION');
   if (!GIT_SHA.test(sourceRevision)) throw new Error('SOURCE_REVISION must be a full Git SHA');
   const maskRect = validateMaskRect(required('DLP_MASK_RECT_BPS'));
   const binding = validateBinding(JSON.parse(required('EVIDENCE_BINDING_JSON')));
+  const operatorUsername = required('BROWSER_OPERATOR_USERNAME');
+  const operatorPasswordFile = required('BROWSER_OPERATOR_PASSWORD_FILE');
+  if (!TEST_USERNAME.test(operatorUsername)) throw new Error('BROWSER_OPERATOR_USERNAME is invalid');
   const pilotSeconds = Number.parseInt(process.env.PILOT_SECONDS ?? '300', 10);
   if (!Number.isSafeInteger(pilotSeconds) || pilotSeconds < MIN_PILOT_SECONDS || pilotSeconds > MAX_PILOT_SECONDS) {
     throw new Error(`PILOT_SECONDS must be ${MIN_PILOT_SECONDS}-${MAX_PILOT_SECONDS}`);
   }
 
-  const token = (await readFile(tokenFile, 'utf8')).trim();
-  if (token.length < 32 || /[\r\n]/.test(token)) throw new Error('operator token file is invalid');
+  const operatorPassword = (
+    await evidenceStep('browser-test-credential-file-invalid', async () =>
+      readFile(operatorPasswordFile, 'utf8'),
+    )
+  ).trim();
+  if (operatorPassword.length < 16 || operatorPassword.length > 256 || /[\r\n]/.test(operatorPassword)) {
+    throw new Error('browser test credential file is invalid');
+  }
 
   const packageRoot = process.env.PLAYWRIGHT_PACKAGE_ROOT ?? path.join(process.cwd(), 'platform-web');
   let browser = null;
@@ -181,14 +197,6 @@ async function main() {
     context = await evidenceStep('browser-runtime-start-failed', async () =>
       browser.newContext({ viewport: { width: 1440, height: 900 } }),
     );
-    await evidenceStep('browser-runtime-start-failed', async () => context.addInitScript(
-      ({ bearer, expiresAt }) => {
-        window.localStorage.setItem('token', bearer);
-        window.localStorage.setItem('tokenExpiresAt', String(expiresAt));
-      },
-      { bearer: token, expiresAt: Date.now() + (pilotSeconds + 900) * 1000 },
-    ));
-
     let consoleErrorCount = 0;
     const page = await evidenceStep('browser-runtime-start-failed', async () => context.newPage());
     page.on('console', (message) => {
@@ -202,10 +210,46 @@ async function main() {
     await evidenceStep('browser-route-navigation-failed', async () =>
       page.goto(viewerUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }),
     );
-    const root = page.getByTestId('remote-view-page');
-    await evidenceStep('browser-view-root-not-visible', async () =>
-      root.waitFor({ state: 'visible', timeout: 60_000 }),
+
+    // Exercise the same Authorization Code + PKCE journey as a real operator.
+    // A bearer copied into localStorage is intentionally rejected by the shell's
+    // Keycloak bootstrap and would bypass the product's cookie/authz readiness gates.
+    const loginEntry = page.getByTestId('corporate-login-button');
+    await evidenceStep('browser-login-entry-not-visible', async () =>
+      loginEntry.waitFor({ state: 'visible', timeout: 60_000 }),
     );
+    await evidenceStep('browser-idp-login-form-not-visible', async () => {
+      await loginEntry.click();
+      await page.locator('#username').waitFor({ state: 'visible', timeout: 60_000 });
+      await page.locator('#password').waitFor({ state: 'visible', timeout: 60_000 });
+      await page.locator('#kc-login').waitFor({ state: 'visible', timeout: 60_000 });
+    });
+    await evidenceStep('browser-idp-login-submit-failed', async () => {
+      await page.locator('#username').fill(operatorUsername);
+      await page.locator('#password').fill(operatorPassword);
+      await page.locator('#kc-login').click();
+    });
+
+    const root = page.getByTestId('remote-view-page');
+    await evidenceStep('browser-auth-callback-failed', async () => {
+      await Promise.race([
+        root.waitFor({ state: 'visible', timeout: 60_000 }),
+        page.waitForURL((url) => url.origin === 'https://testai.acik.com' && url.pathname === '/unauthorized', {
+          timeout: 60_000,
+        }),
+      ]);
+    });
+    if (new URL(page.url()).pathname === '/unauthorized') {
+      throw evidenceFailure('browser-route-unauthorized');
+    }
+    await evidenceStep('browser-view-root-not-visible', async () =>
+      root.waitFor({ state: 'visible', timeout: 5_000 }),
+    );
+    const browserAuthReady = await page.evaluate(() => {
+      const token = window.localStorage.getItem('token');
+      return typeof token === 'string' && token.length >= 32;
+    });
+    if (!browserAuthReady) throw evidenceFailure('browser-auth-session-missing');
     await evidenceStep('browser-metadata-not-trusted', async () =>
       page.waitForFunction(
         () => document.querySelector('[data-testid="remote-view-page"]')?.getAttribute('data-metadata-trusted') === 'true',
@@ -357,7 +401,9 @@ async function main() {
       throw evidenceFailure('browser-ack-count-diverged');
     }
     const replayStatus = await evidenceStep('browser-replay-probe-failed', async () => page.evaluate(
-      async ({ url, bearer, replayViewerId, replaySeq }) => {
+      async ({ url, replayViewerId, replaySeq }) => {
+        const bearer = window.localStorage.getItem('token');
+        if (!bearer) return 0;
         const response = await fetch(url, {
           method: 'POST',
           headers: {
@@ -370,7 +416,7 @@ async function main() {
         });
         return response.status;
       },
-      { url: viewerUrl, bearer: token, replayViewerId: viewerId, replaySeq: samples.at(-1).seq },
+      { url: viewerUrl, replayViewerId: viewerId, replaySeq: samples.at(-1).seq },
     ));
     if (replayStatus !== 404) {
       throw evidenceFailure('browser-replay-not-rejected');
@@ -406,6 +452,7 @@ async function main() {
         firstFrameAgeMillis: Math.max(1, ages[0]),
         steadyFrameAgeMillis: ages,
         meta: {
+          authentication: 'keycloak-authorization-code-pkce',
           recording: false,
           attended: true,
           capability: 'VIEW_ONLY',
