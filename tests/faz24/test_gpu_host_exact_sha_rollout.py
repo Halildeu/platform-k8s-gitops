@@ -32,6 +32,39 @@ def accepted_evidence() -> dict:
         "whatIfExitCode": 0,
         "deployExitCode": 0,
         "failureClass": "none",
+        "taskMigration": {
+            "required": True,
+            "pinWithoutRestartExitCode": 0,
+            "whatIfExitCode": 0,
+            "migrationExitCode": 0,
+            "sourceRollbackExitCode": -1,
+        },
+        "tasksBefore": {
+            "liveStt": {
+                "present": True,
+                "state": 4,
+                "actionCanonical": False,
+                "actionMigratable": True,
+                "actionCount": 1,
+                "executeClass": "windows-powershell",
+                "executeTrusted": True,
+                "scriptPathClass": "legacy-user-repo",
+                "workingDirectoryClass": "empty",
+                "actionArgumentsSha256": "a" * 64,
+            },
+            "meetingAi": {
+                "present": True,
+                "state": 4,
+                "actionCanonical": False,
+                "actionMigratable": True,
+                "actionCount": 1,
+                "executeClass": "windows-powershell",
+                "executeTrusted": True,
+                "scriptPathClass": "legacy-user-repo",
+                "workingDirectoryClass": "empty",
+                "actionArgumentsSha256": "b" * 64,
+            },
+        },
         "principal": {"expectedIdentity": True, "administrator": True},
         "ledger": {
             "currentCommit": COMMIT,
@@ -91,10 +124,33 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("scriptPathClass = 'canonical-repo'", script)
         self.assertIn("scriptPathClass = 'legacy-user-repo'", script)
         self.assertIn("executeClass = 'windows-powershell'", script)
+        self.assertIn("executeTrusted = $false", script)
+        self.assertIn("workingDirectoryClass = 'missing'", script)
+        self.assertIn("actionMigratable = $false", script)
+        self.assertIn(
+            "scriptPathClass -in @('canonical-repo', 'legacy-user-repo')",
+            script,
+        )
         self.assertNotIn("arguments = $arguments", script)
         self.assertNotIn("__TARGET_COMMIT__", script)
         self.assertIn("Invoke-UpdaterChild -WhatIfOnly", script)
+        self.assertIn("Invoke-UpdaterChild -NoRestartOnly", script)
+        self.assertIn("Invoke-TaskActionMigration -WhatIfOnly", script)
+        self.assertIn("$migrationExitCode = Invoke-TaskActionMigration", script)
+        self.assertIn("Invoke-UpdaterChild -RollbackOnly -NoRestartOnly", script)
+        self.assertIn("throw 'task-action-unrecognized'", script)
+        self.assertIn("Get-RolloutFailureClass -ErrorRecord $_", script)
         self.assertIn("Test-WebSocketReady", script)
+
+        reject_index = script.index("throw 'task-action-unrecognized'")
+        preflight_index = script.index("$whatIfExitCode = Invoke-UpdaterChild")
+        pin_index = script.index("$pinWithoutRestartExitCode = Invoke-UpdaterChild")
+        migration_index = script.index("$migrationExitCode = Invoke-TaskActionMigration")
+        final_deploy_index = script.index("$deployExitCode = Invoke-UpdaterChild")
+        self.assertLess(reject_index, preflight_index)
+        self.assertLess(preflight_index, pin_index)
+        self.assertLess(pin_index, migration_index)
+        self.assertLess(migration_index, final_deploy_index)
 
     def test_ssh_command_is_strict_and_fixed_target(self) -> None:
         command = runner.ssh_command(Path("/ssh/config"), Path("/ssh/known_hosts"))
@@ -154,6 +210,10 @@ class RunnerContractTests(unittest.TestCase):
         self.assertFalse(evidence["sourceCommitVerified"])
         self.assertFalse(evidence["principal"]["expectedIdentity"])
         self.assertFalse(evidence["principal"]["administrator"])
+        self.assertFalse(evidence["taskMigration"]["required"])
+        self.assertEqual(
+            evidence["taskMigration"]["pinWithoutRestartExitCode"], -1
+        )
         self.assertFalse(evidence["privacy"]["rawAudioIncluded"])
         self.assertFalse(evidence["privacy"]["transcriptTextIncluded"])
         self.assertFalse(evidence["privacy"]["secretMaterialIncluded"])
@@ -172,6 +232,47 @@ class VerifierContractTests(unittest.TestCase):
     def test_rejects_noncanonical_task_action(self) -> None:
         data = accepted_evidence()
         data["tasks"]["liveStt"]["actionCanonical"] = False
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(data, COMMIT)
+
+    def test_rejects_failed_required_task_migration(self) -> None:
+        data = accepted_evidence()
+        data["taskMigration"]["migrationExitCode"] = 1
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(data, COMMIT)
+
+    def test_accepts_canonical_task_path_without_migration(self) -> None:
+        data = accepted_evidence()
+        data["taskMigration"] = {
+            "required": False,
+            "pinWithoutRestartExitCode": -1,
+            "whatIfExitCode": -1,
+            "migrationExitCode": -1,
+            "sourceRollbackExitCode": -1,
+        }
+        for task in data["tasksBefore"].values():
+            task["actionCanonical"] = True
+            task["scriptPathClass"] = "canonical-repo"
+        verifier.verify(data, COMMIT)
+
+    def test_rejects_migration_flag_contradicting_tasks_before(self) -> None:
+        data = accepted_evidence()
+        data["taskMigration"]["required"] = False
+        data["taskMigration"]["pinWithoutRestartExitCode"] = -1
+        data["taskMigration"]["whatIfExitCode"] = -1
+        data["taskMigration"]["migrationExitCode"] = -1
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(data, COMMIT)
+
+    def test_rejects_untrusted_pre_migration_executable(self) -> None:
+        data = accepted_evidence()
+        data["tasksBefore"]["liveStt"]["executeTrusted"] = False
+        with self.assertRaises(verifier.EvidenceError):
+            verifier.verify(data, COMMIT)
+
+    def test_rejects_unexpected_source_rollback(self) -> None:
+        data = accepted_evidence()
+        data["taskMigration"]["sourceRollbackExitCode"] = 0
         with self.assertRaises(verifier.EvidenceError):
             verifier.verify(data, COMMIT)
 

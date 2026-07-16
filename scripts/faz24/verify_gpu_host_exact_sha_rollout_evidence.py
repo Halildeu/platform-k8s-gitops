@@ -83,6 +83,80 @@ def verify(data: dict[str, Any], expected_commit: str) -> None:
     require(data.get("deployExitCode") == 0, "deploy updater failed")
     require(data.get("failureClass") == "none", "failureClass is not none")
 
+    task_migration = object_field(data, "taskMigration")
+    migration_required = task_migration.get("required")
+    require(isinstance(migration_required, bool), "task migration required is invalid")
+    tasks_before = object_field(data, "tasksBefore")
+    before_actions_canonical: list[bool] = []
+    for task_name in ("liveStt", "meetingAi"):
+        task = object_field(tasks_before, task_name)
+        require(task.get("present") is True, f"{task_name} pre-migration task missing")
+        require(task.get("actionCount") == 1, f"{task_name} pre-migration action count")
+        require(
+            task.get("executeClass") == "windows-powershell",
+            f"{task_name} pre-migration executable class",
+        )
+        require(
+            task.get("executeTrusted") is True,
+            f"{task_name} pre-migration executable is untrusted",
+        )
+        require(
+            task.get("workingDirectoryClass") == "empty",
+            f"{task_name} pre-migration working directory is set",
+        )
+        require(
+            task.get("scriptPathClass") in {"canonical-repo", "legacy-user-repo"},
+            f"{task_name} pre-migration script path is unrecognized",
+        )
+        require(
+            task.get("actionMigratable") is True,
+            f"{task_name} pre-migration action is not migratable",
+        )
+        action_canonical = task.get("actionCanonical")
+        require(
+            isinstance(action_canonical, bool),
+            f"{task_name} pre-migration canonical flag is invalid",
+        )
+        before_actions_canonical.append(action_canonical)
+    require(
+        migration_required == (not all(before_actions_canonical)),
+        "task migration requirement contradicts pre-migration actions",
+    )
+    if migration_required:
+        require(
+            task_migration.get("pinWithoutRestartExitCode") == 0,
+            "source pin before task migration failed",
+        )
+        require(
+            task_migration.get("whatIfExitCode") == 0,
+            "task migration WhatIf failed",
+        )
+        require(
+            task_migration.get("migrationExitCode") == 0,
+            "task migration failed",
+        )
+        require(
+            task_migration.get("sourceRollbackExitCode") == -1,
+            "source rollback unexpectedly ran",
+        )
+    else:
+        require(
+            task_migration.get("pinWithoutRestartExitCode") == -1,
+            "unexpected migration source pin",
+        )
+        require(
+            task_migration.get("whatIfExitCode") == -1,
+            "unexpected task migration WhatIf",
+        )
+        require(
+            task_migration.get("migrationExitCode") == -1,
+            "unexpected task migration",
+        )
+        require(
+            task_migration.get("sourceRollbackExitCode") == -1,
+            "unexpected source rollback",
+        )
+
     principal = object_field(data, "principal")
     require(
         principal.get("expectedIdentity") is True,
