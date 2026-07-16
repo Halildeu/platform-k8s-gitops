@@ -253,6 +253,7 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "SMOKE_CHUNK_FILE: ${{ steps.prepare_chunk.outputs.chunk_file }}" in workflow
     assert "faz24-direct-stt-e2e-collect-${{ github.run_id }}" in workflow
     assert "cancel-in-progress: false" in workflow
+    assert "group: faz24-platform-desktop-keycloak-test-mutation" in workflow
     assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,'" in workflow
     assert '"(raw_audio|audio_bytes|audio_base64|transcript_text|textDraft)"' in workflow
     assert "metadata-only Gate 2 evidence collection" in workflow

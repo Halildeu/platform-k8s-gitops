@@ -42,6 +42,7 @@ cleanup_resources() {
     return 0
   fi
   local cleanup_rc=0
+  local found=""
   if [[ -n "${PORT_FORWARD_PID}" ]]; then
     kill "${PORT_FORWARD_PID}" >/dev/null 2>&1 || true
     wait "${PORT_FORWARD_PID}" >/dev/null 2>&1 || true
@@ -53,16 +54,39 @@ cleanup_resources() {
   kubectl --context "${KUBECTL_CONTEXT}" -n "${NAMESPACE}" \
     delete networkpolicy "${NETPOL_NAME}" --ignore-not-found \
     --wait=true --timeout=30s >/dev/null 2>&1 || cleanup_rc=1
+
+  if ! found="$(kubectl --context "${KUBECTL_CONTEXT}" -n "${NAMESPACE}" \
+      get job "${JOB_NAME}" --ignore-not-found -o name 2>/dev/null)" \
+      || [[ -n "${found}" ]]; then
+    cleanup_rc=1
+  fi
+  if ! found="$(kubectl --context "${KUBECTL_CONTEXT}" -n "${NAMESPACE}" \
+      get networkpolicy "${NETPOL_NAME}" --ignore-not-found -o name 2>/dev/null)" \
+      || [[ -n "${found}" ]]; then
+    cleanup_rc=1
+  fi
+
   rm -f "${PORT_FORWARD_LOG}"
-  CLEANUP_DONE="true"
+  if [[ "${cleanup_rc}" == "0" ]]; then
+    CLEANUP_DONE="true"
+  fi
   return "${cleanup_rc}"
 }
 
 cleanup() {
   local rc="$?"
+  local cleanup_ok="false"
+  local attempt
   trap - EXIT INT TERM
   set +e
-  if ! cleanup_resources; then
+  for attempt in 1 2 3; do
+    if cleanup_resources; then
+      cleanup_ok="true"
+      break
+    fi
+    sleep "${attempt}"
+  done
+  if [[ "${cleanup_ok}" != "true" ]]; then
     echo "ERROR: transient smoke cleanup could not be verified" >&2
     if [[ "${rc}" == "0" ]]; then
       rc=1
@@ -314,6 +338,8 @@ jq -e '.status == "pass"
   and .cleanup.tempUserDeleted == true
   and .cleanup.tokenFileRemoved == true
   and .clientBefore.directAccessGrantsEnabled == .clientAfter.directAccessGrantsEnabled
+  and (.clientBefore.protocolMappers | sort_by(.name, .protocolMapper))
+      == (.clientAfter.protocolMappers | sort_by(.name, .protocolMapper))
   and .tenantAliasReconcile.credentialsMutated == false' \
   "${DIAGNOSTIC_FILE}" >/dev/null
 

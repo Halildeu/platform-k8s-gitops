@@ -76,6 +76,8 @@ def test_runner_contract_restores_and_redacts():
     assert 'rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${ADMIN_CURL_CONFIG}"' in text
     assert '--config "${ADMIN_CURL_CONFIG}"' in text
     assert "session-expiry smoke target allowlist mismatch" in text
+    assert 'if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then' in text
+    assert "verify_controlled_claim_mapper_contract\n  verify_no_assigned_scope_controlled_claims\nelse\n  converge_platform_desktop_mappers" in text
     assert "keycloak-kcadm-password-argv-disabled" in text
     assert 'unset KC_ADMIN_PASSWORD' in text
     assert '--password "$(' not in text
@@ -151,17 +153,31 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "runs-on: [self-hosted, staging-sw, testai-deploy]" in workflow
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
-    assert 'CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"' in workflow
-    assert "faz24-platform-desktop-token-evidence-${{ github.run_id }}" in workflow
+    assert "run_session_expiry_smoke:" in workflow
+    assert "expected_audio_gateway_image:" in workflow
+    assert "run_audio_gateway_session_expiry_transient_smoke.sh" in workflow
+    assert "EXPECTED_AUDIO_GATEWAY_IMAGE" in workflow
+    assert "SESSION_EXPIRY_SMOKE_JSON" in workflow
+    assert "session-expiry and external-recorder smokes cannot run in the same dispatch" in workflow
+    assert "platform-backend-audio-gateway-service@sha256:[0-9a-f]{64}" in workflow
+    assert "CONFIRM_CONTROLLED_MAPPER_PRUNE: ${{ inputs.run_session_expiry_smoke == 'true' && 'NO' || 'YES' }}" in workflow
+    assert "promote_single_artifact" in workflow
+    assert 'session["boundaries"]["sessionRegistryCapacityReused"] is True' in workflow
+    assert 'session["boundaries"]["aggregationReservationReleased"] is True' in workflow
+    assert 'session["boundaries"]["negativeInvariantStable"] is True' in workflow
+    assert "faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
+    assert "group: faz24-platform-desktop-keycloak-test-mutation" in workflow
+    assert "required ${name} artifact was not produced" in workflow
+    assert 'KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}' in workflow
+    assert 'secret in candidate.read_bytes()' in workflow
     assert "Verify artifact excludes private material" in workflow
     assert "directGrantsRestored" in workflow
     assert "tempUserDeleted" in workflow
     assert "tokenFileRemoved" in workflow
     assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,'" in workflow
     assert "SECRET_SCAN_OUTCOME" in workflow
-    assert "No production, direct-STT, desktop mic/loopback" in workflow
-    assert 'sed -n \'1,80p\' "${EVIDENCE_DIR}/runner.stdout"' not in workflow
-    assert 'sed -n \'1,80p\' "${EVIDENCE_DIR}/runner.stderr"' not in workflow
+    assert "no production or desktop mic/loopback closure claim" in workflow
+    assert 'sed -n' not in workflow
     assert "cancel-in-progress: false" in workflow
 
 
@@ -173,6 +189,7 @@ def test_workflow_secret_scan_blocks_raw_audio_data_urls_before_upload():
 
     assert "grep -R -a -E --" not in secret_scan
     assert "grep -E --" not in secret_scan
+    assert secret_scan.count("grep -R -a -q -E") == 2
     assert "-e '-----BEGIN CERTIFICATE-----'" in secret_scan
     assert "-e 'data:audio/[A-Za-z0-9.+-]+;base64,' \\\n            -- \\" in secret_scan
     assert "steps.secret_scan.outcome == 'success'" in workflow

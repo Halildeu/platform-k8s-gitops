@@ -1393,7 +1393,12 @@ resolve_client_uuid
 capture_client_state "${CLIENT_BEFORE_JSON}"
 preflight_existing_user_reconcile
 write_reconcile_backup
-converge_platform_desktop_mappers
+if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then
+  verify_controlled_claim_mapper_contract
+  verify_no_assigned_scope_controlled_claims
+else
+  converge_platform_desktop_mappers
+fi
 reconcile_existing_user_tenant_attributes
 create_temp_user
 capture_user_diagnostic

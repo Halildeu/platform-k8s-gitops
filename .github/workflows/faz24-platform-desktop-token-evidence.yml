@@ -29,12 +29,24 @@ on:
           - "true"
           - "false"
         default: "true"
+      run_session_expiry_smoke:
+        description: "Run transient audio-gateway session-expiry capacity smoke"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
+      expected_audio_gateway_image:
+        description: "Exact audio-gateway image@sha256 for session-expiry smoke"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: faz24-platform-desktop-token-evidence
+  group: faz24-platform-desktop-keycloak-test-mutation
   cancel-in-progress: false
 
 jobs:
@@ -44,11 +56,12 @@ jobs:
     timeout-minutes: 20
 
     env:
-      EVIDENCE_DIR: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}
-      DIAG_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}/faz24-platform-desktop-token-diagnostic.json
-      TOKEN_CONTRACT_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}/faz24-platform-desktop-token-contract.json
-      SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}/faz24-external-recorder-smoke.json
-      SMOKE_VERIFY_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}/faz24-external-recorder-smoke.verify.json
+      EVIDENCE_DIR: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+      DIAG_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-platform-desktop-token-diagnostic.json
+      TOKEN_CONTRACT_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-platform-desktop-token-contract.json
+      SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-external-recorder-smoke.json
+      SMOKE_VERIFY_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-external-recorder-smoke.verify.json
+      SESSION_EXPIRY_SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-audio-gateway-session-expiry-smoke.json
 
     steps:
       - name: Validate dispatch inputs
@@ -57,6 +70,8 @@ jobs:
           EXPECTED_ISSUER_INPUT: ${{ inputs.expected_issuer }}
           KEYCLOAK_BASE_URL_INPUT: ${{ inputs.keycloak_base_url }}
           RUN_EXTERNAL_SMOKE_INPUT: ${{ inputs.run_external_smoke }}
+          RUN_SESSION_EXPIRY_SMOKE_INPUT: ${{ inputs.run_session_expiry_smoke }}
+          EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT: ${{ inputs.expected_audio_gateway_image }}
         run: |
           set -euo pipefail
 
@@ -84,10 +99,20 @@ jobs:
             fi
           }
 
+          require_audio_gateway_digest() {
+            value="$1"
+            if ! printf '%s' "$value" | grep -Eq '^ghcr\.io/halildeu/platform-backend-audio-gateway-service@sha256:[0-9a-f]{64}$'; then
+              echo "::error::expected_audio_gateway_image must be the exact governed audio-gateway image@sha256"
+              exit 1
+            fi
+          }
+
           reject_multiline base_url "${BASE_URL_INPUT}"
           reject_multiline expected_issuer "${EXPECTED_ISSUER_INPUT}"
           reject_multiline keycloak_base_url "${KEYCLOAK_BASE_URL_INPUT}"
           reject_multiline run_external_smoke "${RUN_EXTERNAL_SMOKE_INPUT}"
+          reject_multiline run_session_expiry_smoke "${RUN_SESSION_EXPIRY_SMOKE_INPUT}"
+          reject_multiline expected_audio_gateway_image "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
           require_http_url base_url "${BASE_URL_INPUT}"
           require_http_url expected_issuer "${EXPECTED_ISSUER_INPUT}"
           require_http_url keycloak_base_url "${KEYCLOAK_BASE_URL_INPUT}"
@@ -100,7 +125,25 @@ jobs:
               ;;
           esac
 
-          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${RUN_EXTERNAL_SMOKE_INPUT}"
+          case "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" in
+            true|false) ;;
+            *)
+              echo "::error::run_session_expiry_smoke must be true or false"
+              exit 1
+              ;;
+          esac
+
+          if [ "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" = "true" ]; then
+            if [ "${RUN_EXTERNAL_SMOKE_INPUT}" != "false" ]; then
+              echo "::error::session-expiry and external-recorder smokes cannot run in the same dispatch"
+              exit 1
+            fi
+            require_audio_gateway_digest "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
+          elif [ -n "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}" ]; then
+            require_audio_gateway_digest "${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
+          fi
+
+          all_inputs="${BASE_URL_INPUT}${EXPECTED_ISSUER_INPUT}${KEYCLOAK_BASE_URL_INPUT}${RUN_EXTERNAL_SMOKE_INPUT}${RUN_SESSION_EXPIRY_SMOKE_INPUT}${EXPECTED_AUDIO_GATEWAY_IMAGE_INPUT}"
           if printf '%s' "${all_inputs}" | grep -Eq -- '-----BEGIN .*PRIVATE KEY-----|Bearer |Authorization:|eyJ[A-Za-z0-9_-]+\.'; then
             echo "::error::inputs must not contain token/private/secret-like material"
             exit 1
@@ -118,34 +161,85 @@ jobs:
           KC_BASE_URL: ${{ inputs.keycloak_base_url }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           RUN_EXTERNAL_SMOKE: ${{ inputs.run_external_smoke == 'true' && '1' || '0' }}
+          RUN_SESSION_EXPIRY_SMOKE: ${{ inputs.run_session_expiry_smoke == 'true' && '1' || '0' }}
+          EXPECTED_AUDIO_GATEWAY_IMAGE: ${{ inputs.expected_audio_gateway_image }}
           # The platform-desktop client owns these five direct claims. This
           # explicit test-only confirmation removes foreign/hardcoded direct
           # emitters only after a 0600 rollback snapshot is written.
-          CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"
+          CONFIRM_CONTROLLED_MAPPER_PRUNE: ${{ inputs.run_session_expiry_smoke == 'true' && 'NO' || 'YES' }}
         run: |
           set -euo pipefail
           mkdir -p "${EVIDENCE_DIR}"
+
+          promote_single_artifact() {
+            name="$1"
+            target="$2"
+            mapfile -t matches < <(find "${EVIDENCE_DIR}" -mindepth 2 -maxdepth 2 -type f -name "$name" -print)
+            if [ "${#matches[@]}" -eq 0 ]; then
+              echo "::error::required ${name} artifact was not produced"
+              return 1
+            fi
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::expected one ${name} artifact, found ${#matches[@]}"
+              return 1
+            fi
+            install -m 0600 "${matches[0]}" "$target"
+          }
+
           set +e
-          bash scripts/faz24/run-platform-desktop-token-evidence-chain.sh \
-            > "${EVIDENCE_DIR}/runner.stdout" \
-            2> "${EVIDENCE_DIR}/runner.stderr"
+          if [ "${RUN_SESSION_EXPIRY_SMOKE}" = "1" ]; then
+            EXPECTED_IMAGE="${EXPECTED_AUDIO_GATEWAY_IMAGE}" \
+            OUT_DIR="${EVIDENCE_DIR}" \
+              bash scripts/faz24/run_audio_gateway_session_expiry_transient_smoke.sh \
+                > "${EVIDENCE_DIR}/runner.stdout" \
+                2> "${EVIDENCE_DIR}/runner.stderr"
+          else
+            bash scripts/faz24/run-platform-desktop-token-evidence-chain.sh \
+              > "${EVIDENCE_DIR}/runner.stdout" \
+              2> "${EVIDENCE_DIR}/runner.stderr"
+          fi
           exit_code="$?"
           set -e
+
+          if [ "${RUN_SESSION_EXPIRY_SMOKE}" = "1" ]; then
+            promote_single_artifact \
+              "faz24-platform-desktop-token-diagnostic.json" \
+              "${DIAG_JSON}" || exit_code=1
+            promote_single_artifact \
+              "faz24-audio-gateway-session-expiry-smoke.json" \
+              "${SESSION_EXPIRY_SMOKE_JSON}" || exit_code=1
+          fi
+
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
-          sed -n '1,120p' "${EVIDENCE_DIR}/runner.stdout" 2>/dev/null || true
-          sed -n '1,120p' "${EVIDENCE_DIR}/runner.stderr" 2>/dev/null || true
           exit 0
 
       - name: Verify artifact excludes private material
         id: secret_scan
         if: always()
+        env:
+          KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+          RUN_SESSION_EXPIRY_SMOKE_INPUT: ${{ inputs.run_session_expiry_smoke }}
         run: |
           set -euo pipefail
 
           test -d "${EVIDENCE_DIR}"
           test -s "${DIAG_JSON}"
 
-          if grep -R -a -E \
+          python3 - "${EVIDENCE_DIR}" <<'PY'
+          import os
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          secret = os.environ.get("KC_ADMIN_PASSWORD", "").encode()
+          if not secret:
+              raise SystemExit("KC_TEST_ADMIN_PASSWORD is missing")
+          for candidate in root.rglob("*"):
+              if candidate.is_file() and secret in candidate.read_bytes():
+                  raise SystemExit(f"evidence contains exact admin secret bytes: {candidate.name}")
+          PY
+
+          if grep -R -a -q -E \
             -e '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
             -e '-----END (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
             -e 'Bearer ' \
@@ -159,7 +253,7 @@ jobs:
             exit 1
           fi
 
-          if grep -R -a -E \
+          if grep -R -a -q -E \
             -e '"(access_token|refresh_token)"[[:space:]]*:' \
             -e '"(authorization|bearer|jwt|api_key|private_key)"[[:space:]]*:' \
             -e '"(client_secret|password|secret)"[[:space:]]*:' \
@@ -171,8 +265,9 @@ jobs:
             exit 1
           fi
 
-          python3 - <<'PY' "${DIAG_JSON}"
+          python3 - "${DIAG_JSON}" "${SESSION_EXPIRY_SMOKE_JSON}" "${RUN_SESSION_EXPIRY_SMOKE_INPUT}" <<'PY'
           import json
+          import pathlib
           import sys
 
           data = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -189,6 +284,16 @@ jobs:
           if data["cleanup"]["tempUserCreated"]:
               assert data["cleanup"]["tempUserDeleted"] is True
           assert data["cleanup"]["tokenFileRemoved"] is True
+          if sys.argv[3] == "true":
+              session_path = pathlib.Path(sys.argv[2])
+              assert session_path.is_file()
+              session = json.load(session_path.open(encoding="utf-8"))
+              assert data["status"] == "pass"
+              assert data["results"]["audioGatewaySessionExpirySmoke"]["status"] == "pass"
+              assert session["status"] == "pass"
+              assert session["boundaries"]["sessionRegistryCapacityReused"] is True
+              assert session["boundaries"]["aggregationReservationReleased"] is True
+              assert session["boundaries"]["negativeInvariantStable"] is True
           PY
 
       - name: Write workflow summary
@@ -202,34 +307,37 @@ jobs:
           token_contract="missing"
           smoke="missing"
           verifier="missing"
+          session_expiry="missing"
           if [ -s "${DIAG_JSON}" ]; then
             status="$(jq -r '.status // "missing"' "${DIAG_JSON}")"
             failure="$(jq -r '.failureReason // "none"' "${DIAG_JSON}")"
             token_contract="$(jq -r '.results.tokenContract.status // "missing"' "${DIAG_JSON}")"
             smoke="$(jq -r '.results.externalRecorderSmoke.status // "missing"' "${DIAG_JSON}")"
             verifier="$(jq -r '.results.externalRecorderVerifier.status // "missing"' "${DIAG_JSON}")"
+            session_expiry="$(jq -r '.results.audioGatewaySessionExpirySmoke.status // "missing"' "${DIAG_JSON}")"
           fi
           {
             echo "## Faz 24 platform-desktop token evidence"
             echo
             echo "- Runner: self-hosted staging-sw"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "- Artifact: \`faz24-platform-desktop-token-evidence-${{ github.run_id }}\`"
+            echo "- Artifact: \`faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}\`"
             echo "- Chain exit code: \`${CHAIN_EXIT_CODE:-missing}\`"
             echo "- Diagnostic status: \`${status}\`"
             echo "- Failure reason: \`${failure}\`"
             echo "- Token contract: \`${token_contract}\`"
             echo "- External recorder smoke: \`${smoke}\`"
             echo "- External recorder verifier: \`${verifier}\`"
+            echo "- Audio-gateway session expiry: \`${session_expiry}\`"
             echo
-            echo "Boundary: platform-test Keycloak only. The workflow restores direct grants, deletes the temporary smoke user, removes local token/password files, and uploads only redacted JSON/runner logs. No production, direct-STT, desktop mic/loopback, or #1615/#766 closure claim is made by this workflow."
+            echo "Boundary: platform-test only. The workflow restores direct grants, deletes the temporary smoke user, removes local token/password files, cleans transient Job/NetworkPolicy resources, and uploads only redacted JSON/runner logs. Session-expiry mode proves only transient test direct-STT capacity reuse; no production or desktop mic/loopback closure claim is made."
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload platform-desktop token evidence artifact
         if: always() && steps.secret_scan.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
-          name: faz24-platform-desktop-token-evidence-${{ github.run_id }}
+          name: faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: error
           retention-days: 14

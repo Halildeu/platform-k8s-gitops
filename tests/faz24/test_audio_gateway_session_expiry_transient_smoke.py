@@ -36,6 +36,10 @@ def test_transient_smoke_is_isolated_bounded_and_cleans_up():
     assert 'delete job "${JOB_NAME}"' in text
     assert "--cascade=foreground" in text
     assert "transient smoke cleanup could not be verified" in text
+    assert 'get job "${JOB_NAME}" --ignore-not-found -o name' in text
+    assert 'get networkpolicy "${NETPOL_NAME}" --ignore-not-found -o name' in text
+    assert 'for attempt in 1 2 3' in text
+    assert 'if [[ "${cleanup_rc}" == "0" ]]' in text
     assert 'AUDIO_GATEWAY_MAX_SESSION_MINUTES", value: "1"' in text
     assert 'AUDIO_GATEWAY_SESSION_EXPIRY_SWEEP_MS", value: "1000"' in text
     assert 'AUDIO_GATEWAY_BOUNDS_MAX_ACTIVE_SESSIONS", value: "1"' in text
@@ -59,6 +63,8 @@ def test_transient_smoke_is_isolated_bounded_and_cleans_up():
     assert ".cleanup.directGrantsRestored == true" in text
     assert ".cleanup.tempUserDeleted == true" in text
     assert ".cleanup.tokenFileRemoved == true" in text
+    assert ".clientBefore.protocolMappers | sort_by" in text
+    assert ".clientAfter.protocolMappers | sort_by" in text
     assert "run-platform-desktop-token-evidence-chain.sh" in text
     assert "kubectl set image" not in text
     assert "kubectl patch" not in text
