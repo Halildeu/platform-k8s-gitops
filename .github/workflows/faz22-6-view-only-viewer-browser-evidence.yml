@@ -197,8 +197,43 @@ jobs:
           DLP_MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
         run: |
           set -euo pipefail
+          collector_kubeconfig=""
+          cleanup_collector_kubeconfig() {
+            local path="${collector_kubeconfig:-}"
+            [ -n "$path" ] || return 0
+            if [ -L "$path" ]; then
+              rm -f -- "$path"
+              return 0
+            fi
+            if [ -e "$path" ]; then
+              shred -u -- "$path" 2>/dev/null || rm -f -- "$path"
+            fi
+          }
+          trap cleanup_collector_kubeconfig EXIT
+          umask 077
+          collector_kubeconfig="$(mktemp "$RUNNER_TEMP/faz22-viewer-kubeconfig.XXXXXX")"
+          # mktemp's exclusive random create is primary; cleanup re-checks for
+          # same-user path replacement before deleting credential material.
+          [ ! -L "$collector_kubeconfig" ] || {
+            echo "::error::isolated collector kubeconfig must not be a symlink"
+            exit 1
+          }
+          printf 'COLLECTOR_KUBECONFIG_CLEANUP_PATH=%s\n' "$collector_kubeconfig" >> "$GITHUB_ENV"
+          kubectl config view --raw --flatten --minify --context=k3d-test > "$collector_kubeconfig"
+          chmod 600 "$collector_kubeconfig"
+          KUBECONFIG="$collector_kubeconfig" kubectl config use-context k3d-test >/dev/null
+          [ "$(KUBECONFIG="$collector_kubeconfig" kubectl config current-context)" = "k3d-test" ] || {
+            echo "::error::isolated collector kubeconfig is not pinned to k3d-test"
+            exit 1
+          }
+          [ "$(stat -c '%a' "$collector_kubeconfig")" = "600" ] || {
+            echo "::error::isolated collector kubeconfig permissions are not 0600"
+            exit 1
+          }
+          export KUBECONFIG="$collector_kubeconfig"
           mkdir -p "$EVIDENCE_DIR"
-          bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+          bash scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh \
+            bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
           test -s "$EVIDENCE_DIR/browser.json"
           test -s "$EVIDENCE_DIR/summary.json"
           test -s "$EVIDENCE_DIR/open-session.body"
@@ -267,6 +302,29 @@ jobs:
             and .payload.renderAckAcceptedCount >= 100
             and .payload.renderAckAcceptedCount == .payload.renderAckAttemptedCount
           ' "$EVIDENCE_DIR/browser.json" >/dev/null
+
+      - name: Remove isolated collector kubeconfig
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          cleanup_path="${COLLECTOR_KUBECONFIG_CLEANUP_PATH:-}"
+          printf 'COLLECTOR_KUBECONFIG_CLEANUP_PATH=\n' >> "$GITHUB_ENV"
+          [ -n "$cleanup_path" ] || exit 0
+          case "$cleanup_path" in
+            "$RUNNER_TEMP"/faz22-viewer-kubeconfig.*) ;;
+            *)
+              echo "::error::refusing unexpected collector kubeconfig cleanup path"
+              exit 1
+              ;;
+          esac
+          if [ -L "$cleanup_path" ]; then
+            rm -f -- "$cleanup_path"
+            echo "::error::collector kubeconfig path became a symlink"
+            exit 1
+          fi
+          if [ -e "$cleanup_path" ]; then
+            shred -u -- "$cleanup_path" 2>/dev/null || rm -f -- "$cleanup_path"
+          fi
 
       - name: Stage redacted collector diagnostic
         id: stage-diagnostic

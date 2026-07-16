@@ -27,7 +27,7 @@ const REPO = 'Halildeu/platform-k8s-gitops';
 const BOT = 'github-actions[bot]';
 // #827 PR-B — the GitHub App identity bound to the auto-test-overlay/ prefix
 // (Codex 019e4048 Q2 — per-prefix actor contract).
-const APP_BOT = 'platform-automation[bot]';
+const APP_BOT = 'platform-gitops-automation[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
 
 // Build the GitHub event payload and run the real script; return its exit code.
@@ -106,7 +106,7 @@ const cases = [
     { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY, '.github/workflows/ci.yml'] }, 1],
   ['#2295: auto-test-frontend without changed-file evidence -> blocked',
     { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF) }, 1],
-  ['#827 PR-B: auto-verified + platform-automation[bot] (wrong bot for prefix) -> blocked',
+  ['#827 PR-B: auto-verified + platform-gitops-automation[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-verified/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(LEDGER) }, 1],
   ['#842: auto-promotion + github-actions[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-promotion/x', actor: BOT, sender: BOT, body: autoBody(SCAN) }, 1],

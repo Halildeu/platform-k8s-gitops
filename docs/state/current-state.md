@@ -1,5 +1,40 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — automation App slug root-cause identified (2026-07-16)
+
+`#2295` automation aktivasyonunun kök nedeni bulundu. Önceki canonical kayıt yalnız
+**semptomu** (`AUTOMATION_APP_ID` / `AUTOMATION_APP_PRIVATE_KEY` absent → workflow
+operator-disabled) taşıyordu; asıl neden App'in **hiç oluşturulamaması**ydı.
+
+Live root-cause evidence:
+
+- Runbook ve automation actor contract daha önce `platform-automation` slug'ını
+  şart koşuyordu.
+- GitHub App creation formu bu adı
+  `Name is reserved for the account @platform-automation` ile **reddetti** (operator
+  denemesi, 2026-07-16).
+- `@platform-automation`, **2021-11-01 tarihinden beri var olan, üçüncü tarafa ait
+  bir Organization** hesabıdır (`gh api users/platform-automation` → `type=Organization`,
+  `id=93530788`).
+- Bu nedenle beklenen `platform-automation[bot]` actor'u **hiçbir zaman
+  oluşturulamazdı**; absent `AUTOMATION_APP_*` secret'ları yalnız görünen aktivasyon
+  semptomuydu.
+
+Source state:
+
+- Actor contract `platform-gitops-automation[bot]` kimliğine taşındı (kod + test +
+  runbook 8 dosya; `tests/ci/test-cross-ai-automation.mjs` → `ALL PASS 24/24`).
+- `gh api users/platform-gitops-automation` → 404: user/org **reservation çakışması
+  bulunmadı**; kesin availability ancak App creation formu kabul edince kanıtlanır.
+- GitHub App creation, installation, ruleset bypass configuration ve
+  `AUTOMATION_APP_*` secret activation **ayrı operator adımlarıdır**.
+- **Aktivasyon sınırı**: `gate-cross-ai-audit.yml` audit script'ini trusted **base**
+  ref'ten çalıştırır → yeni actor allowlist `main`'e merge edilmeden secret seed
+  edilirse yeni bot'un açtığı auto-PR eski allowlist'e takılır. Canonical sıra:
+  `code merge → App create/install → ruleset bypass → secret seed → controlled verify`.
+- İlk bot-authored auto-PR ve required-check sonucu görülmeden otomasyon
+  **Functional veya accepted sayılmaz**.
+
 ## Live Delta — Faz 22.6 bounded TEST VIEW_ONLY source merged; runtime SoD pending (2026-07-15)
 
 Faz 22.6 engineering completion ile #2373 VIEW_ONLY product acceptance

@@ -79,8 +79,8 @@ const AUTOMATION_BRANCH_CONTRACT = {
 // GitHub App installation token — NOT GITHUB_TOKEN. A GITHUB_TOKEN-opened PR
 // does not trigger the `pull_request` workflows the required `cross-ai-audit`
 // check needs, so the App is mandatory; its bot login is
-// `platform-automation[bot]` (the operator names the GitHub App so its slug
-// resolves to `platform-automation` — see
+// `platform-gitops-automation[bot]` (the operator names the GitHub App so its slug
+// resolves to `platform-gitops-automation` — see
 // docs/operations/RUNBOOKS/RB-automation-overlay-sync.md).
 //
 // `auto-verified/` keeps `github-actions[bot]` from #827 PR-A:
@@ -88,9 +88,9 @@ const AUTOMATION_BRANCH_CONTRACT = {
 // migrating it to a host-minted App token is a separate follow-up
 // (#842 / Codex `019e4094` Q3).
 const AUTOMATION_PREFIX_ACTORS = {
-  'auto-test-overlay/': new Set(['platform-automation[bot]']),
-  'auto-test-frontend/': new Set(['platform-automation[bot]']),
-  'auto-promotion/': new Set(['platform-automation[bot]']),
+  'auto-test-overlay/': new Set(['platform-gitops-automation[bot]']),
+  'auto-test-frontend/': new Set(['platform-gitops-automation[bot]']),
+  'auto-promotion/': new Set(['platform-gitops-automation[bot]']),
   'auto-verified/': new Set(['github-actions[bot]']),
 };
 

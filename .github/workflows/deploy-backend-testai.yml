@@ -83,7 +83,7 @@ jobs:
             echo "digest_map=$DIGEST_MAP"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Require platform-automation GitHub App credentials
+      - name: Require platform-gitops-automation GitHub App credentials
         env:
           APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}

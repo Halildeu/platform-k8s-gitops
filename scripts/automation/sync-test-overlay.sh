@@ -13,7 +13,7 @@
 # The PR is exempt from the cross-AI peer-review requirement via the #827
 # automation-PR governance contract (scripts/ci/pr-cross-ai-audit.mjs
 # `auditAutomation`): the `auto-test-overlay/` head-branch prefix + the
-# `platform-automation[bot]` App identity + the `## Cross-AI` automation
+# `platform-gitops-automation[bot]` App identity + the `## Cross-AI` automation
 # attestation block in the body. The PR is therefore opened with a GitHub App
 # installation token, NOT GITHUB_TOKEN — a GITHUB_TOKEN-opened PR does not
 # trigger the `pull_request` workflows the required `cross-ai-audit` check needs.
@@ -52,8 +52,8 @@ DEVICE_KEY_BRIDGE_KUSTOMIZATION="kustomize/overlays/test/activation/endpoint-adm
 APPLY_SCRIPT="scripts/automation/apply-test-overlay-digests.py"
 GH_REPO="${GITHUB_REPO:-Halildeu/platform-k8s-gitops}"
 SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
-BOT_NAME="platform-automation[bot]"
-BOT_EMAIL="platform-automation[bot]@users.noreply.github.com"
+BOT_NAME="platform-gitops-automation[bot]"
+BOT_EMAIL="platform-gitops-automation[bot]@users.noreply.github.com"
 
 # ------------------------------------------------------------
 # Pre-flight
