@@ -44,6 +44,37 @@ if [[ "$PROMOTION_DRY_RUN" != "1" ]]; then
     echo "ERR: gh CLI not authenticated"
     exit 2
   fi
+
+  # Label precondition (live 2026-07-16, #2295 aktivasyonu): `gh pr create --label`
+  # bilinmeyen bir label'da TÜM create'i FAIL eder — "could not add label:
+  # 'auto-promotion' not found" → 5/5 aday açılamadı, branch'ler orphan kaldı.
+  # Label'lar REPOSITORY state'idir, kodla gelmez → idempotent ensure + fail-closed.
+  #
+  # Codex 019f6af2: enumeration hatası ASLA "label yok" sayılamaz (API/auth/rate-limit
+  # → yanlış create → "already exists" → yanlış exit). Bounded `--limit` de eksik
+  # sonuç verebilir → tam pagination.
+  if ! _existing_labels=$(gh api --paginate "repos/$GH_REPO/labels?per_page=100" --jq '.[].name'); then
+    echo "ERR: repository label state okunamadı (API/auth/rate-limit) — fail-closed."
+    echo "     Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md"
+    exit 2
+  fi
+  for _l in "auto-promotion" "env:prod" "user-approval-required"; do
+    if ! printf '%s\n' "$_existing_labels" | grep -qxF "$_l"; then
+      echo "[WARN] label '$_l' repo'da yok — oluşturuluyor (promotion-bot precondition)"
+      if ! gh label create "$_l" --repo "$GH_REPO" --color "1D76DB" \
+        --description "promotion-bot precondition — RB-automation-overlay-sync.md" > /dev/null 2>&1; then
+        echo "ERR: label '$_l' yok ve oluşturulamadı; 'gh pr create --label' tüm adayları FAIL eder."
+        echo "     Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md (ADIM 5)"
+        exit 2
+      fi
+      # Create sonrası görünürlük doğrulaması (fail-closed).
+      if ! gh api --paginate "repos/$GH_REPO/labels?per_page=100" --jq '.[].name' 2>/dev/null \
+        | grep -qxF "$_l"; then
+        echo "ERR: label '$_l' create sonrası doğrulanamadı — fail-closed."
+        exit 2
+      fi
+    fi
+  done
 fi
 
 if [[ ! -d "$LEDGER_DIR" ]]; then
@@ -216,8 +247,80 @@ EOM
 
     git commit -m "auto(promote): ${repo}/${service} sha-${short_sha} to prod (test-verified ${test_verified})" 2>&1 | tail -1
 
-    if ! git push origin "$branch" 2>&1 | tail -1; then
-      echo "  [FAIL] push failed for $branch"
+    # ── PR lifecycle + branch state (Codex 019f6af2 must-fix 1/2/3) ────────────
+    # Sıra: lifecycle sorgula → OPEN/CLOSED/MERGED skip → yalnız "hiç PR kaydı yok"
+    # gerçek orphan → explicit expected-SHA lease ile ATOMİK replace.
+    #
+    # Live 2026-07-16: PR'ı açılamayan run (label precondition eksik) branch'i
+    # remote'ta bıraktı; sonraki run aynı isme push edince non-fast-forward
+    # reddedildi → aday KALICI açılamaz hâle geldi. Fakat naif "açık PR yoksa sil"
+    # iki hata yapar: (a) API hatası "PR yok" sayılır → destructive delete;
+    # (b) operator'ın KAPATTIĞI stale candidate orphan sanılıp yeniden açılır
+    # (terminal karar kaybolur). Bu yüzden: fail-closed + CLOSED/MERGED terminal
+    # + delete YOK, compare-and-swap lease VAR.
+    if ! pr_json=$(gh pr list --repo "$GH_REPO" --head "$branch" --state all --limit 20 \
+      --json number,state 2>&1); then
+      echo "  [FAIL] $branch PR lifecycle sorgulanamadı — fail-closed (ref'e dokunulmadı)"
+      failed=$((failed + 1))
+      git checkout main 2>/dev/null
+      continue
+    fi
+    pr_state=$(printf '%s' "$pr_json" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("ERR"); raise SystemExit(0)
+if not d:
+    print("NONE"); raise SystemExit(0)
+states = [p.get("state", "") for p in d]
+if "OPEN" in states:
+    print("OPEN")
+elif "MERGED" in states:
+    print("MERGED")
+else:
+    print("CLOSED")
+' 2>/dev/null || echo "ERR")
+
+    case "$pr_state" in
+      ERR)
+        echo "  [FAIL] $branch PR lifecycle parse edilemedi — fail-closed"
+        failed=$((failed + 1)); git checkout main 2>/dev/null; continue ;;
+      OPEN)
+        echo "  [SKIP] $branch için AÇIK PR var — operator review'daki branch'e dokunulmuyor"
+        git checkout main 2>/dev/null; continue ;;
+      MERGED)
+        echo "  [SKIP] $branch MERGED PR'a sahip — ledger reconciliation gerekir, sessiz yeniden açma YOK"
+        git checkout main 2>/dev/null; continue ;;
+      CLOSED)
+        # Codex 019f6af2: "ledger'da rearm" DEMİYORUZ — scanner ledger'da rearm
+        # alanı OKUMUYOR; aynı deterministic branch için CLOSED history durdukça
+        # her run SKIP eder. Capability iddiası gerçekle sınırlı tutulur.
+        echo "  [SKIP] $branch PR'ı operator tarafından KAPATILMIŞ (terminal: rejected/superseded)"
+        echo "         Bu scanner otomatik rearm DESTEKLEMEZ; yeniden adaylık ayrı governed"
+        echo "         lifecycle + yeni branch identity gerektirir (ayrı slice)."
+        git checkout main 2>/dev/null; continue ;;
+    esac
+
+    # pr_state == NONE → bu head için hiç PR kaydı yok: yeni branch veya gerçek orphan.
+    ref="refs/heads/$branch"
+    if ! remote_sha=$(git ls-remote --refs origin "$ref" 2>/dev/null | awk 'NR == 1 { print $1 }'); then
+      echo "  [FAIL] $branch remote ref state okunamadı — fail-closed"
+      failed=$((failed + 1)); git checkout main 2>/dev/null; continue
+    fi
+    push_ok=0
+    if [[ -n "$remote_sha" ]]; then
+      echo "  [WARN] orphan branch $branch (hiç PR kaydı yok) — expected-SHA lease ile tazeleniyor"
+      if git push --force-with-lease="${ref}:${remote_sha}" origin "HEAD:${ref}" > /dev/null 2>&1; then
+        push_ok=1
+      fi
+    else
+      if git push --force-with-lease="${ref}:" origin "HEAD:${ref}" > /dev/null 2>&1; then
+        push_ok=1
+      fi
+    fi
+    if [[ "$push_ok" != "1" ]]; then
+      echo "  [FAIL] push failed for $branch (lease reddi ya da remote hata — ref'e ZORLA yazılmadı)"
       failed=$((failed + 1))
       git checkout main 2>/dev/null
       continue
