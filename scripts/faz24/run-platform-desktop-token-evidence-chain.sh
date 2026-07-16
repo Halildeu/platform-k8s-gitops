@@ -17,12 +17,18 @@ KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
 KC_INTERNAL_SERVER="${KC_INTERNAL_SERVER:-http://localhost:8080}"
+KC_ADMIN_TRANSPORT="${KC_ADMIN_TRANSPORT:-rest}"
 CLIENT_ID="${CLIENT_ID:-platform-desktop}"
 RESOURCE_CLIENT_ID="${RESOURCE_CLIENT_ID:-audio-gateway-service}"
 CAPABILITY_ROLE="${CAPABILITY_ROLE:-audio_record}"
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 EXPECTED_ISSUER="${EXPECTED_ISSUER:-https://testai.acik.com/realms/platform-test}"
 RUN_EXTERNAL_SMOKE="${RUN_EXTERNAL_SMOKE:-1}"
+RUN_SESSION_EXPIRY_SMOKE="${RUN_SESSION_EXPIRY_SMOKE:-0}"
+SESSION_EXPIRY_AUDIO_BASE_URL="${SESSION_EXPIRY_AUDIO_BASE_URL:-}"
+SESSION_EXPIRY_METRICS_BASE_URL="${SESSION_EXPIRY_METRICS_BASE_URL:-}"
+SESSION_EXPIRY_EXPECTED_IMAGE="${SESSION_EXPIRY_EXPECTED_IMAGE:-}"
+SESSION_EXPIRY_POD_UID="${SESSION_EXPIRY_POD_UID:-}"
 SMOKE_CHUNK_FILE="${SMOKE_CHUNK_FILE:-}"
 SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-WAV}"
 SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-48000}"
@@ -45,6 +51,28 @@ if [[ "${KC_REALM}" != "platform-test" ]]; then
   echo "ERROR: KC_REALM must be platform-test for this test-only evidence chain" >&2
   exit 2
 fi
+if [[ "${KC_ADMIN_TRANSPORT}" != "rest" ]]; then
+  echo "ERROR: KC_ADMIN_TRANSPORT must be rest; secret-bearing kcadm argv is disabled" >&2
+  exit 2
+fi
+if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then
+  if [[ "${KC_CONTAINER}" != "platform-kc-test" \
+      || "${KC_ADMIN_USER}" != "admin" \
+      || "${KC_BASE_URL}" != "http://127.0.0.1:8082" \
+      || "${KC_INTERNAL_SERVER}" != "http://localhost:8080" \
+      || "${CLIENT_ID}" != "platform-desktop" \
+      || "${RESOURCE_CLIENT_ID}" != "audio-gateway-service" \
+      || "${CAPABILITY_ROLE}" != "audio_record" \
+      || "${REQUIRED_ROLE}" != "MEETING_ADMIN" \
+      || "${BASE_URL}" != "https://testai.acik.com" \
+      || "${EXPECTED_ISSUER}" != "https://testai.acik.com/realms/platform-test" \
+      || -n "${RECONCILE_EXISTING_USERNAMES}" \
+      || "${CONFIRM_EXISTING_USER_RECONCILE}" != "NO" \
+      || "${CONFIRM_CONTROLLED_MAPPER_PRUNE}" != "NO" ]]; then
+    echo "ERROR: session-expiry smoke target allowlist mismatch" >&2
+    exit 2
+  fi
+fi
 
 mkdir -p "${OUT_DIR}"
 TMP_DIR="$(mktemp -d "${OUT_DIR}/.tmp.XXXXXX")"
@@ -54,6 +82,7 @@ DIAG_JSON="${OUT_DIR}/faz24-platform-desktop-token-diagnostic.json"
 TOKEN_CONTRACT_JSON="${OUT_DIR}/faz24-platform-desktop-token-contract.json"
 SMOKE_JSON="${OUT_DIR}/faz24-external-recorder-smoke.json"
 SMOKE_VERIFY_JSON="${OUT_DIR}/faz24-external-recorder-smoke.verify.json"
+SESSION_EXPIRY_SMOKE_JSON="${OUT_DIR}/faz24-audio-gateway-session-expiry-smoke.json"
 CLIENT_BEFORE_JSON="${TMP_DIR}/client-before.json"
 CLIENT_AFTER_JSON="${TMP_DIR}/client-after.json"
 USER_DIAG_JSON="${TMP_DIR}/user-diagnostic.json"
@@ -63,6 +92,7 @@ ADMIN_PASS_FILE="${TMP_DIR}/kc-admin-password"
 USER_PASS_FILE="${TMP_DIR}/smoke-user-password"
 TOKEN_FILE="${TMP_DIR}/platform-desktop-token.jwt"
 ADMIN_TOKEN_FILE="${TMP_DIR}/kc-admin-token.jwt"
+ADMIN_CURL_CONFIG="${TMP_DIR}/kc-admin-curl.config"
 RECONCILE_BACKUP_JSON="${OUT_DIR}/faz24-platform-desktop-tenant-reconcile-backup-${RUN_ID_SAFE}-${RUN_ATTEMPT_SAFE}.json"
 
 : > "${GRANT_ATTEMPTS_JSONL}"
@@ -87,6 +117,7 @@ TOKEN_PRESENT="false"
 TOKEN_CONTRACT_EXIT="not-run"
 SMOKE_EXIT="not-run"
 SMOKE_VERIFY_EXIT="not-run"
+SESSION_EXPIRY_SMOKE_EXIT="not-run"
 DIAGNOSTIC_WRITTEN="false"
 CLEANUP_DONE="false"
 KC_ADMIN_MODE=""
@@ -221,6 +252,7 @@ read_keycloak_admin_password() {
   if [[ -n "${KC_ADMIN_PASSWORD:-}" ]]; then
     printf '%s' "${KC_ADMIN_PASSWORD}" > "${ADMIN_PASS_FILE}"
     chmod 0600 "${ADMIN_PASS_FILE}"
+    unset KC_ADMIN_PASSWORD
     write_kc_source_diagnostic "actions-secret" "KC_TEST_ADMIN_PASSWORD"
     return 0
   fi
@@ -264,29 +296,31 @@ read_keycloak_admin_password() {
 
 kcadm_login() {
   read_keycloak_admin_password || die "keycloak-admin-password-source-missing"
-  if command -v docker >/dev/null 2>&1 && docker inspect "${KC_CONTAINER}" >/dev/null 2>&1; then
-    if "${KCADM[@]}" config credentials \
-        --server "${KC_INTERNAL_SERVER}" \
-        --realm master \
-        --user "${KC_ADMIN_USER}" \
-        --password "$(tr -d '\n' < "${ADMIN_PASS_FILE}")" >/dev/null 2>/dev/null; then
-      KC_ADMIN_MODE="kcadm"
-      return 0
-    fi
-  fi
+  unset KC_ADMIN_PASSWORD
 
   local response_file="${TMP_DIR}/admin-token-response.json"
-  local http_status token
+  local http_status
   http_status="$(curl -sS -o "${response_file}" -w '%{http_code}' -X POST \
     "${KC_BASE_URL}/realms/master/protocol/openid-connect/token" \
     --data-urlencode "grant_type=password" \
     --data-urlencode "client_id=admin-cli" \
     --data-urlencode "username=${KC_ADMIN_USER}" \
     --data-urlencode "password@${ADMIN_PASS_FILE}" || printf '000')"
-  token="$(jq -r '.access_token // empty' "${response_file}" 2>/dev/null || true)"
-  if [[ "${http_status}" == "200" && -n "${token}" ]]; then
-    printf '%s' "${token}" > "${ADMIN_TOKEN_FILE}"
+  jq -r '.access_token // empty' "${response_file}" > "${ADMIN_TOKEN_FILE}" 2>/dev/null \
+    || : > "${ADMIN_TOKEN_FILE}"
+  if [[ "${http_status}" == "200" && -s "${ADMIN_TOKEN_FILE}" ]] \
+      && grep -Eq '^[A-Za-z0-9_.-]+$' "${ADMIN_TOKEN_FILE}"; then
     chmod 0600 "${ADMIN_TOKEN_FILE}"
+    python3 - "${ADMIN_TOKEN_FILE}" "${ADMIN_CURL_CONFIG}" <<'PY'
+import os
+import pathlib
+import sys
+
+token = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").strip()
+target = pathlib.Path(sys.argv[2])
+target.write_text(f'header = "Authorization: Bearer {token}"\n', encoding="utf-8")
+os.chmod(target, 0o600)
+PY
     KC_ADMIN_MODE="rest"
     return 0
   fi
@@ -308,10 +342,6 @@ kcadm_remove_staged_file() {
   docker exec "${KC_CONTAINER}" rm -f "${container_file}" >/dev/null 2>&1 || true
 }
 
-admin_auth_header() {
-  printf 'Authorization: Bearer %s' "$(tr -d '\n' < "${ADMIN_TOKEN_FILE}")"
-}
-
 kc_admin_rest() {
   local method="$1"
   local path="$2"
@@ -320,14 +350,14 @@ kc_admin_rest() {
   local url="${KC_BASE_URL}/admin/realms/${KC_REALM}${path}"
   if [[ -n "${body_file}" ]]; then
     curl -sS -o "${out}" -w '%{http_code}' -X "${method}" \
+      --config "${ADMIN_CURL_CONFIG}" \
       "${url}" \
-      -H "$(admin_auth_header)" \
       -H "Content-Type: application/json" \
       --data-binary "@${body_file}" || printf '000'
   else
     curl -sS -o "${out}" -w '%{http_code}' -X "${method}" \
-      "${url}" \
-      -H "$(admin_auth_header)" || printf '000'
+      --config "${ADMIN_CURL_CONFIG}" \
+      "${url}" || printf '000'
   fi
 }
 
@@ -877,14 +907,7 @@ create_temp_user() {
   openssl rand -hex 24 | tr -d '\n' > "${USER_PASS_FILE}"
   chmod 0600 "${USER_PASS_FILE}"
   if [[ "${KC_ADMIN_MODE}" == "kcadm" ]]; then
-    "${KCADM[@]}" set-password -r "${KC_REALM}" --userid "${TEMP_USER_ID}" \
-      --new-password "$(cat "${USER_PASS_FILE}")" >/dev/null 2>/dev/null \
-      || die "temp-user-set-password-failed"
-
-    "${KCADM[@]}" get "roles/${REQUIRED_ROLE}" -r "${KC_REALM}" >/dev/null \
-      || die "required-realm-role-missing:${REQUIRED_ROLE}"
-    "${KCADM[@]}" add-roles -r "${KC_REALM}" --uid "${TEMP_USER_ID}" --rolename "${REQUIRED_ROLE}" >/dev/null \
-      || die "required-realm-role-assign-failed:${REQUIRED_ROLE}"
+    die "keycloak-kcadm-password-argv-disabled"
   else
     local reset_file="${TMP_DIR}/temp-user-reset-password.json"
     local reset_out="${TMP_DIR}/temp-user-reset-password.out"
@@ -1072,52 +1095,101 @@ run_token_contract_and_smoke() {
     return 1
   fi
 
-  if [[ "${RUN_EXTERNAL_SMOKE}" != "1" ]]; then
-    STATUS="pass"
-    FAILURE_REASON=""
-    return 0
+  if [[ "${RUN_EXTERNAL_SMOKE}" == "1" ]]; then
+    local smoke_args=(
+      --token-file "${TOKEN_FILE}" \
+      --base-url "${BASE_URL}" \
+      --expected-issuer "${EXPECTED_ISSUER}" \
+      --audio-format "${SMOKE_AUDIO_FORMAT}" \
+      --sample-rate-hz "${SMOKE_SAMPLE_RATE_HZ}" \
+      --channels "${SMOKE_CHANNELS}" \
+      --output-file "${SMOKE_JSON}"
+    )
+    if [[ -n "${SMOKE_CHUNK_FILE}" ]]; then
+      smoke_args+=(--chunk-file "${SMOKE_CHUNK_FILE}")
+    fi
+
+    set +e
+    python3 scripts/faz24/run_external_recorder_smoke.py \
+      "${smoke_args[@]}" \
+      > "${TMP_DIR}/smoke.stdout" \
+      2> "${TMP_DIR}/smoke.stderr"
+    SMOKE_EXIT="$?"
+    set -e
+
+    if [[ "${SMOKE_EXIT}" != "0" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="external-recorder-smoke-failed"
+      return 1
+    fi
+
+    set +e
+    python3 scripts/faz24/verify_external_recorder_smoke_evidence.py \
+      --evidence-file "${SMOKE_JSON}" \
+      --output-file "${SMOKE_VERIFY_JSON}" \
+      > "${TMP_DIR}/smoke-verify.stdout" \
+      2> "${TMP_DIR}/smoke-verify.stderr"
+    SMOKE_VERIFY_EXIT="$?"
+    set -e
+
+    if [[ "${SMOKE_VERIFY_EXIT}" != "0" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="external-recorder-smoke-verifier-failed"
+      return 1
+    fi
   fi
 
-  local smoke_args=(
-    --token-file "${TOKEN_FILE}" \
-    --base-url "${BASE_URL}" \
-    --expected-issuer "${EXPECTED_ISSUER}" \
-    --audio-format "${SMOKE_AUDIO_FORMAT}" \
-    --sample-rate-hz "${SMOKE_SAMPLE_RATE_HZ}" \
-    --channels "${SMOKE_CHANNELS}" \
-    --output-file "${SMOKE_JSON}"
-  )
-  if [[ -n "${SMOKE_CHUNK_FILE}" ]]; then
-    smoke_args+=(--chunk-file "${SMOKE_CHUNK_FILE}")
-  fi
+  if [[ "${RUN_SESSION_EXPIRY_SMOKE}" == "1" ]]; then
+    if [[ -z "${SESSION_EXPIRY_AUDIO_BASE_URL}" || -z "${SESSION_EXPIRY_METRICS_BASE_URL}" \
+        || -z "${SESSION_EXPIRY_EXPECTED_IMAGE}" || -z "${SESSION_EXPIRY_POD_UID}" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="session-expiry-smoke-runtime-binding-required"
+      return 1
+    fi
+    if ! python3 - "${SESSION_EXPIRY_AUDIO_BASE_URL}" "${SESSION_EXPIRY_METRICS_BASE_URL}" <<'PY'
+import sys
+import urllib.parse
 
-  set +e
-  python3 scripts/faz24/run_external_recorder_smoke.py \
-    "${smoke_args[@]}" \
-    > "${TMP_DIR}/smoke.stdout" \
-    2> "${TMP_DIR}/smoke.stderr"
-  SMOKE_EXIT="$?"
-  set -e
+for value in sys.argv[1:]:
+    parsed = urllib.parse.urlsplit(value)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.port is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise SystemExit(1)
+PY
+    then
+      STATUS="fail"
+      FAILURE_REASON="session-expiry-smoke-loopback-url-invalid"
+      return 1
+    fi
 
-  if [[ "${SMOKE_EXIT}" != "0" ]]; then
-    STATUS="fail"
-    FAILURE_REASON="external-recorder-smoke-failed"
-    return 1
-  fi
+    set +e
+    python3 scripts/faz24/run_audio_gateway_session_expiry_smoke.py \
+      --token-file "${TOKEN_FILE}" \
+      --public-base-url "${BASE_URL}" \
+      --audio-base-url "${SESSION_EXPIRY_AUDIO_BASE_URL}" \
+      --metrics-base-url "${SESSION_EXPIRY_METRICS_BASE_URL}" \
+      --expected-image "${SESSION_EXPIRY_EXPECTED_IMAGE}" \
+      --pod-uid "${SESSION_EXPIRY_POD_UID}" \
+      --expected-issuer "${EXPECTED_ISSUER}" \
+      --output-file "${SESSION_EXPIRY_SMOKE_JSON}" \
+      > "${TMP_DIR}/session-expiry-smoke.stdout" \
+      2> "${TMP_DIR}/session-expiry-smoke.stderr"
+    SESSION_EXPIRY_SMOKE_EXIT="$?"
+    set -e
 
-  set +e
-  python3 scripts/faz24/verify_external_recorder_smoke_evidence.py \
-    --evidence-file "${SMOKE_JSON}" \
-    --output-file "${SMOKE_VERIFY_JSON}" \
-    > "${TMP_DIR}/smoke-verify.stdout" \
-    2> "${TMP_DIR}/smoke-verify.stderr"
-  SMOKE_VERIFY_EXIT="$?"
-  set -e
-
-  if [[ "${SMOKE_VERIFY_EXIT}" != "0" ]]; then
-    STATUS="fail"
-    FAILURE_REASON="external-recorder-smoke-verifier-failed"
-    return 1
+    if [[ "${SESSION_EXPIRY_SMOKE_EXIT}" != "0" ]]; then
+      STATUS="fail"
+      FAILURE_REASON="audio-gateway-session-expiry-smoke-failed"
+      return 1
+    fi
   fi
 
   STATUS="pass"
@@ -1161,7 +1233,8 @@ cleanup_live_state() {
     fi
   fi
   capture_client_state "${CLIENT_AFTER_JSON}" "" || true
-  rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${USER_PASS_FILE}" "${TOKEN_FILE}"
+  rm -f "${ADMIN_PASS_FILE}" "${ADMIN_TOKEN_FILE}" "${ADMIN_CURL_CONFIG}" \
+    "${USER_PASS_FILE}" "${TOKEN_FILE}"
   [[ ! -e "${TOKEN_FILE}" ]] && TOKEN_FILE_REMOVED="true"
   CLEANUP_DONE="true"
   set -e
@@ -1171,6 +1244,7 @@ write_diagnostic() {
   local token_contract_status="not-run"
   local smoke_status="not-run"
   local smoke_verify_status="not-run"
+  local session_expiry_smoke_status="not-run"
   local grant_attempts_array="${TMP_DIR}/grant-attempts-array.json"
   if [[ -s "${TOKEN_CONTRACT_JSON}" ]]; then
     token_contract_status="$(jq -r '.status // "unknown"' "${TOKEN_CONTRACT_JSON}" 2>/dev/null || printf 'unknown')"
@@ -1180,6 +1254,9 @@ write_diagnostic() {
   fi
   if [[ -s "${SMOKE_VERIFY_JSON}" ]]; then
     smoke_verify_status="$(jq -r '.status // "unknown"' "${SMOKE_VERIFY_JSON}" 2>/dev/null || printf 'unknown')"
+  fi
+  if [[ -s "${SESSION_EXPIRY_SMOKE_JSON}" ]]; then
+    session_expiry_smoke_status="$(jq -r '.status // "unknown"' "${SESSION_EXPIRY_SMOKE_JSON}" 2>/dev/null || printf 'unknown')"
   fi
   if [[ -s "${GRANT_ATTEMPTS_JSONL}" ]]; then
     jq -s '.' "${GRANT_ATTEMPTS_JSONL}" > "${grant_attempts_array}" \
@@ -1205,6 +1282,8 @@ write_diagnostic() {
     --arg smokeStatus "${smoke_status}" \
     --arg smokeVerifyExit "${SMOKE_VERIFY_EXIT}" \
     --arg smokeVerifyStatus "${smoke_verify_status}" \
+    --arg sessionExpirySmokeExit "${SESSION_EXPIRY_SMOKE_EXIT}" \
+    --arg sessionExpirySmokeStatus "${session_expiry_smoke_status}" \
     --argjson directGrantsToggled "${DIRECT_GRANTS_TOGGLED}" \
     --argjson directGrantsRestored "${DIRECT_GRANTS_RESTORED}" \
     --argjson tempUserCreated "${TEMP_USER_CREATED}" \
@@ -1257,6 +1336,10 @@ write_diagnostic() {
         externalRecorderVerifier: {
           exitCode: $smokeVerifyExit,
           status: $smokeVerifyStatus
+        },
+        audioGatewaySessionExpirySmoke: {
+          exitCode: $sessionExpirySmokeExit,
+          status: $sessionExpirySmokeStatus
         }
       },
       cleanup: {
@@ -1303,7 +1386,7 @@ on_exit() {
 trap 'on_exit "$?"' EXIT
 
 echo "Faz 24 platform-desktop token evidence chain started"
-echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SMOKE}"
+echo "realm=${KC_REALM} client=${CLIENT_ID} run_external_smoke=${RUN_EXTERNAL_SMOKE} run_session_expiry_smoke=${RUN_SESSION_EXPIRY_SMOKE}"
 
 kcadm_login
 resolve_client_uuid
@@ -1336,6 +1419,9 @@ if [[ -s "${SMOKE_JSON}" ]]; then
 fi
 if [[ -s "${SMOKE_VERIFY_JSON}" ]]; then
   echo "external_smoke_verify=${SMOKE_VERIFY_JSON}"
+fi
+if [[ -s "${SESSION_EXPIRY_SMOKE_JSON}" ]]; then
+  echo "session_expiry_smoke=${SESSION_EXPIRY_SMOKE_JSON}"
 fi
 echo "status=${STATUS}"
 
