@@ -112,6 +112,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertNotIn("Doğrudan Claude CLI ek/fallback", self.context_rules)
         self.assertNotIn("Doğrudan Claude CLI ek/fallback", self.agents)
         self.assertNotIn("Doğrudan Claude, MiniMax M3", self.context_rules)
+        self.assertIn("--model claude-opus-4-8", self.agents)
+        self.assertIn("`claude-opus-4-8` dönmeden", self.context_rules)
+        self.assertIn("daha düşük modele sessiz fallback yapılmaz", self.agents)
 
 if __name__ == "__main__":
     unittest.main()

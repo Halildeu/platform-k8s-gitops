@@ -340,10 +340,13 @@ Mavis bildirimi **yerine geçmez**:
 
 **Kalıcı sıra:** birinci dış istişare kanalı doğrudan Anthropic Claude CLI'dır;
 Cursor CLI bundan sonra bağımsız/ilave adversarial ikinci kanaldır. Direct Claude
-`claude --version` ile canlı doğrulanır ve headless `claude -p` ile çağrılır;
-uzun redacted diff/bağlam stdin üzerinden verilebilir. Somut bulgu ve verdict
-üretmeyen boş/limit/auth/error çıktısı başarı değildir. Attribution
-`Channel=Direct Anthropic Claude CLI; Model=<modelUsage varsa exact kimlik>;
+`claude --version` ile canlı doğrulanır ve headless `claude -p` ile çağrılır.
+İlk model tercihi `--model claude-opus-4-8`'dir; JSON `modelUsage` gerçekten
+`claude-opus-4-8` dönmeden bu model kullanıldı denmez. Exact model erişilemiyorsa
+başarısızlık kaydedilir ve kullanıcı yeni model seçmedikçe daha düşük modele
+sessiz fallback yapılmaz. Uzun redacted diff/bağlam stdin üzerinden verilebilir.
+Somut bulgu ve verdict üretmeyen boş/limit/auth/error çıktısı başarı değildir.
+Attribution `Channel=Direct Anthropic Claude CLI; Model=<exact modelUsage kimliği>;
 direct-provider-CLI=true` olur. Cursor-routed Claude bu birinci kanalın yerine
 geçmez ve direct Claude ile ikinci bağımsız provider sayılmaz. Hiçbir kanalda
 uygulama penceresi fallback'i yoktur.
