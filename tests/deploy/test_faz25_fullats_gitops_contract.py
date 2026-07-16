@@ -34,6 +34,7 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         ).stdout
         cls.keycloak = (ROOT / "scripts/ats/provision-test-keycloak.sh").read_text()
         cls.fullats_smoke = (ROOT / "scripts/ats/fullats-application-smoke.sh").read_text()
+        cls.pg_bootstrap = (ROOT / "scripts/ats/provision-test-pg-vault.sh").read_text()
         cls.agents = (ROOT / "AGENTS.md").read_text()
         cls.context_rules = (ROOT / "docs/context-priority-rules.md").read_text()
 
@@ -100,6 +101,37 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn('[ "$N" -eq 10 ]', self.fullats_smoke)
         self.assertIn("status `PUT` 404", self.runbook)
         self.assertIn("`10/10 PASS`", self.runbook)
+
+    def test_pg_writer_role_is_admin_bootstrapped_without_runtime_createrole(self):
+        self.assertIn("--roles-only", self.pg_bootstrap)
+        self.assertIn("CREATE ROLE ats_governance_writer", self.pg_bootstrap)
+        self.assertIn(
+            "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS",
+            self.pg_bootstrap,
+        )
+        self.assertLess(
+            self.pg_bootstrap.index("CREATE ROLE ats_governance_writer"),
+            self.pg_bootstrap.index("PW=$(openssl rand"),
+        )
+        self.assertNotRegex(
+            self.pg_bootstrap,
+            r"ALTER\s+ROLE\s+ats_app[^\n;]*CREATEROLE",
+        )
+        self.assertIn(
+            "rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls",
+            self.pg_bootstrap,
+        )
+        self.assertIn('"t|f|f|f|f|f"', self.pg_bootstrap)
+        roles_only = self.pg_bootstrap.index('if [ "$MODE" = "--roles-only" ]')
+        roles_only_assert = self.pg_bootstrap.index("assert_ats_app_role", roles_only)
+        roles_only_exit = self.pg_bootstrap.index("exit 0", roles_only_assert)
+        self.assertLess(roles_only_assert, roles_only_exit)
+        self.assertLess(roles_only_exit, self.pg_bootstrap.index("PW=$(openssl rand"))
+        self.assertLess(roles_only_exit, self.pg_bootstrap.index("VAULT_TOKEN"))
+        self.assertIn("roles-only recovery OK (DB password/Vault degismedi)", self.pg_bootstrap)
+        self.assertIn("guvensiz role attribute tasiyor", self.runbook)
+        self.assertIn("Halildeu/ats#176", self.runbook)
+        self.assertIn("test `ats` veritabanı/şema/tablolarının sahibidir", self.runbook)
 
     def test_direct_claude_is_machine_pinned_as_first_consultation_channel(self):
         direct = "Doğrudan Claude CLI birinci istişare kanalı (KALICI)"

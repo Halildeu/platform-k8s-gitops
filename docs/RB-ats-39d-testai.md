@@ -4,6 +4,7 @@
 > Plan + acceptance matrisi: Codex thread `019f4c6c` (3-iter AGREE) + `019f50b7`.
 > Kanonik sınır: motor verisi SENTETİK (ATS-0016); gerçek aday verisi G0=GO'ya bağlı.
 > WORM iddiası test-PG'de YAPILMAZ (yalnız uygulama-seviyesi append-only guard).
+> Canlı test gerçeği: `ats_app` bugün test `ats` veritabanı/şema/tablolarının sahibidir; migration yorumlarındaki ayrı-owner/least-privilege hedefi testte sağlanmış sayılmaz. Ayrı Flyway migrator + runtime rolü ve ownership transferi prod/gerçek PII öncesi P0 kapısıdır: `Halildeu/ats#176`.
 
 ## Bileşenler
 
@@ -17,8 +18,9 @@
 ## Akış (tetik → adımlar)
 
 1. **PG + Vault** (~30 sn): `scp scripts/ats/provision-test-pg-vault.sh staging-sw:/tmp/ && ssh staging-sw bash /tmp/provision-test-pg-vault.sh`
-   - Beklenen: `PG: ats_app role + ats db OK` + `VAULT keys: ['ATS_DB_PASSWORD','ATS_DB_URL','ATS_DB_USERNAME']` + `PG login test: ats_app@ats`
+   - Beklenen: `PG: ats_governance_writer NOLOGIN role OK` + `PG: ats_app role + ats db OK` + `VAULT keys: ['ATS_DB_PASSWORD','ATS_DB_URL','ATS_DB_USERNAME']` + `PG login test: ats_app@ats`
    - Not: her koşum DB parolasını ROTATE eder (Vault ile atomik) — pod restart gerektirir.
+   - Flyway V4 `permission denied to create role` ile durmuş mevcut test DB'si için parolayı/Vault'u değiştirmeyen hedefli recovery: `ssh staging-sw bash /tmp/provision-test-pg-vault.sh --roles-only`. Bu yalnız `ats_governance_writer` rolünü idempotent oluşturur/doğrular, mevcut `ats_app` rolündeki admin-attribute drift'ini fail-closed reddeder ve `ats_app` rolüne `CREATEROLE` **vermez**. Canlı `flyway_schema_history` içinde başarısız V4 satırı bulunmadığı doğrulandıktan sonra GitOps rollout pinli imajıyla V4→V5'i yeniden dener; V4/V5 başarı satırları ve pod digest/Ready ayrıca kanıtlanır. Başarısız history satırı varsa otomatik `repair` yapılmaz; önce checksum/migration state ayrıca incelenir.
 2. **Keycloak** (~60 sn): `provision-test-keycloak.sh` aynı yolla.
    - Login `svc-kc-automation` (Vault `kv/platform/keycloak-automation`); user-izinleri eksikse KC26 `bootstrap-admin` geçici-admin yolu (bkz. §Sorun Giderme).
    - Model: audience + 13 permission + atanmayan repair client-scope **frontend'e DEFAULT**; **yetki YALNIZ `ats-api` client-role atamasıyla** (scope ∩ atanmış-rol ∩ bilinen permission). Toplam 14 rol / 15 default scope. Tenant claim hardcoded değildir; `ats_tenant` user attribute mapper'ından gelir. `ats-recruiter-persona` yalnız public careers tenant + `ats.application.{read,status.write}` exact-set taşır.
@@ -182,6 +184,7 @@ kanaldan seed edilir, cluster'a YALNIZ ExternalSecret ile taşınır.
 
 ## Sorun Giderme
 
+- **`guvensiz role attribute tasiyor` / `LOGIN/no-admin-attributes assert basarisiz`**: Recovery fail-closed durur; script `ALTER ROLE` ile ayrıcalığı sessizce sökmez ve Vault/parola yoluna geçmez. `pg_roles` altı attribute'u admin düzleminden oku, drift'in kaynağını issue/evidence olarak kaydet ve yalnız ayrı, incelenmiş bir least-privilege düzeltmesinden sonra yeniden çalıştır.
 - **kcadm `invalid_grant` (bootstrap env parolası)**: KC26 geçici admin: `kc.sh bootstrap-admin user` — DB parolası compose'ta `KC_DB_PASSWORD_FILE` wrapper-export'u olduğundan exec'te aynı export uygulanır + çalışan sunücüyle port çakışmasına karşı `KC_HTTP_PORT=8091 KC_HTTP_MANAGEMENT_PORT=9901`. İş bitince geçici admin SİLİNİR (kanıt: master'da `username=tmpboot*` sorgusu boş).
 - **svc-kc-automation 403 (users)**: service-account'a platform-test `realm-management` rolleri: `manage-users view-users query-users` (geçici-admin ile bir kez).
 - **İlk imaj yayını tarihi**: run `29149994945` — trivy kapısı ilk denemede 4 CRITICAL (tomcat 10.1.42 ×3 + spring-security-web 6.5.1) yakalayıp PUSH'U KESTİ; Boot BOM 3.5.16 (ats#99) sonrası yeşil. Kapı davranışı REFERANSTIR: kırmızı imaj GHCR'a çıkmaz.
