@@ -19,18 +19,51 @@
 
 | Slice | İçerik | Durum |
 |---|---|---|
-| **A1** | Brute-force protection (`failureFactor=5` + 10-param converge) | ✅ bu sürüm |
-| A2 | ROPC migrasyon → `frontend.directAccessGrants=false` | sonraki PR |
+| **A1** | Brute-force protection (`failureFactor=5` + 10-param converge) — `harden-realm-security.sh` | ✅ LIVE (PR #2479) |
+| **A2a** | Confidential `smoke-client` substrate + Vault secret — [`setup-smoke-client.sh`](../../../scripts/keycloak/setup-smoke-client.sh) | ✅ bu sürüm (source-ready + platform-test live shape/secret/grant kanıtı) |
+| A2b.1 | Token contract: `roles` scope-mappings + `smoke-runtime-v1` (userId + audience) + `notify-canary` optional + **consumer `azp` allow-list** (endpoint-admin/notification TEST overlay) | sonraki PR |
+| A2b.2 | 4 TEST runbook repoint (`client_id=frontend` → `smoke-client`) | A2b.1 live acceptance sonrası |
+| A2c | `frontend.directAccessGrantsEnabled=false` | ayrı cutover PR |
 | A3 | redirectUri + webOrigins narrowing | sonraki PR |
 | B | Conditional-OTP privileged (admin/manager) | ayrı flow PR |
 
-Sonraki slice'lar aynı script'in `DESIRED_JSON` bloğuna eklenir (tek declarative kaynak).
+Realm-level slice'lar `harden-realm-security.sh` `DESIRED_JSON`'a eklenir; **client-level** işler ayrı
+resource-specific script'lerde (Codex: realm ve client farklı lifecycle/rollback semantiği).
+
+> **A2a kapsam sınırı (dürüst)**: `smoke-client` **token üretiyor** (confidential ROPC, negatif
+> grant'lar fail-closed) ama **hedef servislerin tüketebileceği token kontratı henüz YOK**:
+> `fullScopeAllowed=false` + scope-mapping boş → `realm_access` düşer; `userId`/`org_id`/audience
+> mapper'ları yok; ve **`azp=smoke-client` consumer allow-list'lerinde bulunmuyor** (ör.
+> `endpoint-admin-service` `SECURITY_AUTH_ALLOWED_CLIENT_IDS: frontend,admin-cli,serban-web,account`)
+> → token doğru olsa bile reddedilir. Bunlar **A2b.1**'in işi. A2a ≠ #2476 kapanışı.
+
+### A2a `--rotate-secret` failure window
+
+Rotation iki bağımsız sistem arasında **atomik değildir**:
+
+1. Keycloak yeni client secret üretir
+2. Yeni secret Vault'a yazılır
+3. Vault↔Keycloak parity read-back yapılır
+
+Keycloak rotation başarılı fakat Vault write/read-back başarısız olursa **KC ve Vault
+geçici olarak mismatch kalır**. Script fail-closed non-zero döner ve başarı iddiasında
+bulunmaz. A2a anında henüz runtime consumer YOK → blast radius substrate ile sınırlı;
+**A2b.1 sonrası** aynı failure gerçek smoke consumer kesintisi üretir (o aşamada
+rotation maintenance window gerektirir + rotation sonrası tüm token-mint acceptance'ı
+yeniden koşulur).
+
+**Recovery**:
+- `--apply` mismatch'i **sessizce düzeltmez** ve yeniden rotate etmez (bilinçli fail-closed)
+- Operator mevcut KC secret + Vault state'ini doğrular
+- Vault erişimi düzeldikten sonra **explicit `--rotate-secret`** ile kontrollü rotation
+  (yeni secret üretir; "current KC secret'ı Vault'a reconcile et" modu A2a'da YOK)
+- Final gate: KC↔Vault parity + password grant `TOKEN` + `client_credentials` → `unauthorized_client`
 
 ## Ortam-kapsam (HARD RULE)
 
 | Realm | Container | Yetki |
 |---|---|---|
-| `platform-test` | `platform-kc-test` (127.0.0.1:8082) | 🤖 **agent-otonom** (pre-prod, test-env credential/security serbest) |
+| `platform-test` | `platform-kc-test` (127.0.0.1:8082) | 🤖 **agent-otonom** yürütme (pre-prod). ⚠️ Yürütme otonomisi ≠ audit sınıfı: credential **read/write** içeren işler (ör. A2a Vault secret seed/rotation) ADR-0011 §2.3 boundary declaration + `user-approval-required` label + approval-evidence disiplinine tabidir. |
 | `serban` (prod) | `platform-kc-prod` (127.0.0.1:8081) | 🧑 **owner-gated** — `CONFIRM_PROD_HARDEN=serban` env zorunlu |
 
 > `CONFIRM_PROD_HARDEN=serban` yalnız **intent-guard**'dır (yanlış-realm'e kaza-apply
