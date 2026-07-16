@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-collector-diagnostic.sh"
 SMOKE="$ROOT/scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh"
 ALLOWLIST="$ROOT/config/faz22-6-viewer-collector-diagnostic-allowlist.v1.json"
+BROWSER_ALLOWLIST="$ROOT/config/faz22-6-viewer-browser-diagnostic-codes.v1.json"
+BROWSER_SCRIPT="$ROOT/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -23,7 +25,9 @@ bash "$SCRIPT" "$TMP/summary.json" "$TMP/operation.json" \
   70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/out"
 jq -e '
   .status == "no-go"
+  and .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v3"
   and .failureReasonCode == "open-session-device-not-connected-timeout"
+  and .browserFailureCode == null
   and .openSessionHttp == "404"
   and .operationHttp == null
   and .operationKind == null
@@ -94,6 +98,86 @@ if grep -Fq '423b6fc3-7497-4083-bd2f-5e2fe543bfe9' \
   echo "identity-bearing deny value was not redacted" >&2
   exit 1
 fi
+
+cat > "$TMP/browser-summary.json" <<'JSON'
+{
+  "status": "no-go",
+  "reason": "browser-product-evidence-failed",
+  "consentWait": "granted",
+  "http": {"open": "200", "operation": "200"}
+}
+JSON
+cat > "$TMP/browser-diagnostic.json" <<'JSON'
+{
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v1",
+  "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
+  "failureCode": "browser-metadata-not-trusted"
+}
+JSON
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser" "$TMP/browser-diagnostic.json"
+jq -e '
+  .failureReasonCode == "browser-product-evidence-failed"
+  and .browserFailureCode == "browser-metadata-not-trusted"
+  and .consentWait == "granted"
+' "$TMP/browser/collector-diagnostic.json" >/dev/null
+
+jq '.failureCode = "sessionId=must-not-pass"' "$TMP/browser-diagnostic.json" \
+  > "$TMP/browser-diagnostic-unknown.json"
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-unknown" \
+  "$TMP/browser-diagnostic-unknown.json"
+jq -e '.browserFailureCode == "browser-unclassified-failure"' \
+  "$TMP/browser-unknown/collector-diagnostic.json" >/dev/null
+if grep -Fq 'sessionId=must-not-pass' "$TMP/browser-unknown/collector-diagnostic.json"; then
+  echo "unknown browser failure value was not redacted" >&2
+  exit 1
+fi
+
+jq '.sourceRevision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$TMP/browser-diagnostic.json" \
+  > "$TMP/browser-diagnostic-wrong-source.json"
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-wrong-source" \
+  "$TMP/browser-diagnostic-wrong-source.json"
+jq -e '.browserFailureCode == "browser-unclassified-failure"' \
+  "$TMP/browser-wrong-source/collector-diagnostic.json" >/dev/null
+
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-missing"
+jq -e '.browserFailureCode == "browser-unclassified-failure"' \
+  "$TMP/browser-missing/collector-diagnostic.json" >/dev/null
+
+printf '%064d\n' 0 > "$TMP/operator-token.txt"
+if VIEWER_URL='https://testai.acik.com/endpoint-admin/remote-access/sessions/test-session/view?streamId=test-stream' \
+    OPERATOR_TOKEN_FILE="$TMP/operator-token.txt" \
+    EVIDENCE_OUTPUT="$TMP/browser-evidence.json" \
+    BROWSER_DIAGNOSTIC_OUTPUT="$TMP/browser-script-diagnostic.json" \
+    SOURCE_REVISION=70d8286163651805cd5ebd537d3836d02fb1692d \
+    DLP_MASK_RECT_BPS=7500,7500,2500,2500 \
+    EVIDENCE_BINDING_JSON='{}' \
+    PILOT_SECONDS=300 \
+    node "$BROWSER_SCRIPT" >"$TMP/browser-script.out" 2>"$TMP/browser-script.err"; then
+  echo "invalid browser binding unexpectedly passed" >&2
+  exit 1
+fi
+jq -e '
+  .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v1"
+  and .sourceRevision == "70d8286163651805cd5ebd537d3836d02fb1692d"
+  and .failureCode == "browser-binding-invalid"
+' "$TMP/browser-script-diagnostic.json" >/dev/null
+grep -Fxq 'browser_evidence=fail code=browser-binding-invalid' "$TMP/browser-script.err"
+
+node --input-type=module - "$BROWSER_SCRIPT" "$BROWSER_ALLOWLIST" <<'NODE'
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import assert from 'node:assert/strict';
+
+const browserScript = process.argv[2];
+const allowlistPath = process.argv[3];
+const { BROWSER_FAILURE_CODES } = await import(pathToFileURL(browserScript));
+const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'));
+assert.deepEqual([...BROWSER_FAILURE_CODES].sort(), [...allowlist.failureCodes].sort());
+NODE
 
 while IFS= read -r static_reason; do
   jq -e --arg reason "$static_reason" \

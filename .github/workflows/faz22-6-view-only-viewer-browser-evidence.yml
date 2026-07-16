@@ -223,6 +223,7 @@ jobs:
           CONSENT_WAIT_SECONDS: "240"
           SOURCE_REVISION: ${{ github.sha }}
           BROWSER_EVIDENCE_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs
+          BROWSER_DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/faz22-viewer-browser-collector/browser-diagnostic.json
           PLAYWRIGHT_PACKAGE_ROOT: ${{ runner.temp }}/faz22-viewer-playwright
           VIEWER_PRODUCT_BASE_URL: https://testai.acik.com
           REMOTE_BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key
@@ -253,6 +254,15 @@ jobs:
           }
           trap cleanup_collector_kubeconfig EXIT
           umask 077
+          case "$EVIDENCE_DIR" in
+            "$RUNNER_TEMP"/faz22-viewer-browser-collector) ;;
+            *)
+              echo "::error::unexpected collector evidence directory"
+              exit 1
+              ;;
+          esac
+          rm -rf -- "$EVIDENCE_DIR"
+          mkdir -p "$EVIDENCE_DIR"
           collector_kubeconfig="$(mktemp "$RUNNER_TEMP/faz22-viewer-kubeconfig.XXXXXX")"
           # mktemp's exclusive random create is primary; cleanup re-checks for
           # same-user path replacement before deleting credential material.
@@ -273,7 +283,6 @@ jobs:
             exit 1
           }
           export KUBECONFIG="$collector_kubeconfig"
-          mkdir -p "$EVIDENCE_DIR"
           bash scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh \
             bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
           test -s "$EVIDENCE_DIR/browser.json"
@@ -381,7 +390,8 @@ jobs:
             "$EVIDENCE_DIR/summary.json" \
             "$EVIDENCE_DIR/operation.body" \
             "$SOURCE_REVISION" \
-            "$diagnostic_dir"
+            "$diagnostic_dir" \
+            "$EVIDENCE_DIR/browser-diagnostic.json"
 
       - name: Upload redacted collector diagnostic
         if: ${{ always() && steps.stage-diagnostic.outcome == 'success' }}

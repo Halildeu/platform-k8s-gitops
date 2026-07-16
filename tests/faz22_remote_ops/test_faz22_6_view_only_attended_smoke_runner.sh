@@ -9,6 +9,7 @@ BROWSER_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-browser-evide
 DIAGNOSTIC_SCRIPT="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-collector-diagnostic.sh"
 TARGET_PREFLIGHT_SCRIPT="$ROOT/scripts/faz22-remote-ops/verify-view-only-viewer-target.sh"
 DIAGNOSTIC_ALLOWLIST="$ROOT/config/faz22-6-viewer-collector-diagnostic-allowlist.v1.json"
+BROWSER_DIAGNOSTIC_ALLOWLIST="$ROOT/config/faz22-6-viewer-browser-diagnostic-codes.v1.json"
 
 [ -f "$SCRIPT" ] || { echo "missing script: $SCRIPT" >&2; exit 1; }
 [ -f "$WORKFLOW" ] || { echo "missing workflow: $WORKFLOW" >&2; exit 1; }
@@ -16,6 +17,7 @@ DIAGNOSTIC_ALLOWLIST="$ROOT/config/faz22-6-viewer-collector-diagnostic-allowlist
 [ -f "$DIAGNOSTIC_SCRIPT" ] || { echo "missing script: $DIAGNOSTIC_SCRIPT" >&2; exit 1; }
 [ -f "$TARGET_PREFLIGHT_SCRIPT" ] || { echo "missing script: $TARGET_PREFLIGHT_SCRIPT" >&2; exit 1; }
 [ -f "$DIAGNOSTIC_ALLOWLIST" ] || { echo "missing config: $DIAGNOSTIC_ALLOWLIST" >&2; exit 1; }
+[ -f "$BROWSER_DIAGNOSTIC_ALLOWLIST" ] || { echo "missing config: $BROWSER_DIAGNOSTIC_ALLOWLIST" >&2; exit 1; }
 
 bash -n "$SCRIPT"
 bash -n "$DIAGNOSTIC_SCRIPT"
@@ -72,8 +74,9 @@ if grep -Fq -- '--argjson operation "$operation"' <<<"$browser_workflow_text"; t
   echo "browser collector diagnostic must not expose raw operation response in process arguments" >&2
   exit 1
 fi
-grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v2' "$DIAGNOSTIC_SCRIPT"
+grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v3' "$DIAGNOSTIC_SCRIPT"
 grep -q 'failureReasonCode' "$DIAGNOSTIC_SCRIPT"
+grep -q 'browserFailureCode' "$DIAGNOSTIC_SCRIPT"
 grep -q 'openSessionHttp' "$DIAGNOSTIC_SCRIPT"
 grep -q 'open-session-http-404-expected-200' "$DIAGNOSTIC_SCRIPT"
 # shellcheck disable=SC2016 # Assert the workflow's literal jq expression.
@@ -82,9 +85,11 @@ if grep -Fq 'failureReason:($summary.reason' "$DIAGNOSTIC_SCRIPT"; then
   exit 1
 fi
 grep -q 'sessionId|deviceId|operatorId|decisionId|operationId|canonicalPayload' "$DIAGNOSTIC_SCRIPT"
+grep -q 'BROWSER_DIAGNOSTIC_OUTPUT:' <<<"$browser_workflow_text"
 diagnostic_step="$(sed -n \
   '/^      - name: Stage redacted collector diagnostic$/,/^      - name: Upload redacted collector diagnostic$/p' \
   "$BROWSER_WORKFLOW")"
+grep -q 'browser-diagnostic.json' <<<"$diagnostic_step"
 if grep -Eq '\.permit|\.sessionId|\.deviceId|\.operatorId|\.decisionId|\.operationId|\.canonicalPayload' \
     <<<"$diagnostic_step"; then
   echo "redacted browser diagnostic must not select permit or raw identity fields" >&2
