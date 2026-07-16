@@ -17,7 +17,9 @@ DIAGNOSTIC_ALLOWLIST="$ROOT/config/faz22-6-viewer-collector-diagnostic-allowlist
 [ -f "$TARGET_PREFLIGHT_SCRIPT" ] || { echo "missing script: $TARGET_PREFLIGHT_SCRIPT" >&2; exit 1; }
 [ -f "$DIAGNOSTIC_ALLOWLIST" ] || { echo "missing config: $DIAGNOSTIC_ALLOWLIST" >&2; exit 1; }
 
-bash -n "$SCRIPT" "$DIAGNOSTIC_SCRIPT" "$TARGET_PREFLIGHT_SCRIPT"
+bash -n "$SCRIPT"
+bash -n "$DIAGNOSTIC_SCRIPT"
+bash -n "$TARGET_PREFLIGHT_SCRIPT"
 
 # Invoke through bash explicitly. macOS provenance/endpoint controls can kill a
 # directly executed worktree script before its shebang runs, which is unrelated
