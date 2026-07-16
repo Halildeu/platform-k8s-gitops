@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
-import { createHash } from 'node:crypto';
+import { expect, test, type Locator } from '@playwright/test';
+import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -14,11 +14,11 @@ const expectedRole = process.env.P5_EXPECTED_ROLE ?? 'P5_READINESS_VIEWER';
 const expectedUserId = process.env.P5_EXPECTED_USER_ID ?? '6';
 const expectedSubscriberId = process.env.P5_EXPECTED_SUBSCRIBER_ID ?? '6';
 const expectedSourceSha =
-  process.env.P5_EXPECTED_SOURCE_SHA ?? '90768ed318ebfa547d2b3137aa317168f9c726d7';
+  process.env.P5_EXPECTED_SOURCE_SHA ?? '8ab48cd87725a3fa306c18785a144ab184044ccf';
 const expectedFrontendDigest =
   process.env.P5_EXPECTED_FRONTEND_DIGEST ??
-  'sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6';
-const expectedBuildRunId = process.env.P5_EXPECTED_BUILD_RUN_ID ?? '29451703189';
+  'sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564';
+const expectedBuildRunId = process.env.P5_EXPECTED_BUILD_RUN_ID ?? '29457457120';
 const liveFrontendDigest = process.env.P5_LIVE_FRONTEND_DIGEST ?? '';
 const harnessRepository = process.env.P5_HARNESS_REPOSITORY ?? '';
 const harnessRevision = process.env.P5_HARNESS_REVISION ?? '';
@@ -72,6 +72,402 @@ const expectedTargetRoleIds = [
   'auditor',
   'admin',
 ] as const;
+const expectedRoleCapabilityCounts = {
+  candidate: 3,
+  recruiter: 8,
+  hiring_manager: 6,
+  interviewer: 3,
+  auditor: 7,
+  admin: 6,
+} as const;
+const expectedRoleCapabilityIds = {
+  candidate: [
+    'candidate-cv-pdf-import',
+    'candidate-review-and-appeal',
+    'skills-evidence',
+  ],
+  recruiter: [
+    'interview-evidence-workspace',
+    'candidate-cv-pdf-import',
+    'candidate-review-and-appeal',
+    'citation-backed-coaching',
+    'quality-of-hire',
+    'skills-evidence',
+    'media-integrity',
+    'agentic-screening',
+  ],
+  hiring_manager: [
+    'interview-evidence-workspace',
+    'citation-backed-coaching',
+    'fairness-audit',
+    'quality-of-hire',
+    'skills-evidence',
+    'agentic-screening',
+  ],
+  interviewer: [
+    'interview-evidence-workspace',
+    'citation-backed-coaching',
+    'skills-evidence',
+  ],
+  auditor: [
+    'interview-evidence-workspace',
+    'candidate-review-and-appeal',
+    'citation-backed-coaching',
+    'fairness-audit',
+    'quality-of-hire',
+    'media-integrity',
+    'agentic-screening',
+  ],
+  admin: [
+    'interview-evidence-workspace',
+    'candidate-review-and-appeal',
+    'fairness-audit',
+    'quality-of-hire',
+    'media-integrity',
+    'agentic-screening',
+  ],
+} as const;
+const expectedSyntheticResumeProposalCount = 5;
+const expectedEditedEmail = 'aday.duzenlendi@example.invalid';
+const mutationQuietPeriodMs = 1_000;
+const expectedAgenticInteractiveControlSignatures = {
+  closed: ['BUTTON:button:Ajan önerisini güvenle dene'],
+  opened: [
+    'BUTTON:button:Güvenli denemeyi kapat',
+    'BUTTON:button:Sentetik çıktıyı üret',
+  ],
+  completed: ['BUTTON:button:Güvenli denemeyi kapat', 'BUTTON:button:Denemeyi sıfırla'],
+} as const;
+const expectedSafeScenarioJourneys = {
+  'candidate-review-and-appeal': {
+    action: 'Düzeltme taslağını dene',
+    scenario: 'Sentetik aday, transkriptteki görev süresi bilgisinin yanlış olduğunu işaretler.',
+    output: 'İnsan incelemesine gönderilecek kanıta bağlı düzeltme taslağı gösterilir.',
+    boundary: 'Talep gönderilmez; aday kimliği, kişisel veri ve üretim kaydı kullanılmaz.',
+  },
+  'citation-backed-coaching': {
+    action: 'Koçluk önerisini dene',
+    scenario: 'Sentetik görüşmede bir yetkinlik için takip sorusu eksik kalır.',
+    output: 'İlgili kanıt alıntısına bağlı, tarafsız bir takip sorusu taslağı gösterilir.',
+    boundary: 'Öneri uygulanamaz; duygu, kişilik, aldatma veya uygunluk çıkarımı yapılmaz.',
+  },
+  'fairness-audit': {
+    action: 'Adalet senaryosunu dene',
+    scenario:
+      'Tamamen sentetik iki değerlendirme grubunda ölçüt kullanım oranları karşılaştırılır.',
+    output: 'Tutarlılık farkı, örneklem uyarısı ve insan inceleme önerisi gösterilir.',
+    boundary: 'Gerçek aday, korunan özellik, sıralama veya otomatik aksiyon kullanılmaz.',
+  },
+  'quality-of-hire': {
+    action: 'Kalite ölçümünü dene',
+    scenario: 'Sentetik bir işe alım kohortunda kanıt kapsama oranı zaman içinde izlenir.',
+    output: 'Eksik kanıt alanları ve ölçüm belirsizliği gösterilir.',
+    boundary: 'Kişi puanı, performans tahmini, sıralama veya iş akışı mutasyonu yoktur.',
+  },
+  'skills-evidence': {
+    action: 'Beceri kanıtını dene',
+    scenario: 'Sentetik yanıt, problem çözme ölçütüyle ilişkili açık bir örnek içerir.',
+    output: 'Kanıt alıntısı ve insanın onaylayabileceği beceri etiketi taslağı gösterilir.',
+    boundary: 'Etiket kaydedilmez ve aday hakkında nihai çıkarım yapılmaz.',
+  },
+  'media-integrity': {
+    action: 'Bütünlük incelemesini dene',
+    scenario: 'Sentetik medya manifestinde beklenen dosya özeti ile gelen özet uyuşmaz.',
+    output: 'Teknik yeniden-doğrulama uyarısı ve insan inceleme adımı gösterilir.',
+    boundary: 'Kişi niyeti veya aldatma çıkarımı yapılmaz; aday kararı etkilenmez.',
+  },
+} as const;
+const allSafeExperienceCapabilityIds = [
+  'candidate-cv-pdf-import',
+  ...Object.keys(expectedSafeScenarioJourneys),
+  'agentic-screening',
+] as const;
+const expectedRoleJourneyCapabilityIds = {
+  candidate: ['candidate-cv-pdf-import', 'candidate-review-and-appeal', 'skills-evidence'],
+  recruiter: [
+    'candidate-cv-pdf-import',
+    'candidate-review-and-appeal',
+    'citation-backed-coaching',
+    'quality-of-hire',
+    'skills-evidence',
+    'media-integrity',
+    'agentic-screening',
+  ],
+  hiring_manager: [
+    'citation-backed-coaching',
+    'fairness-audit',
+    'quality-of-hire',
+    'skills-evidence',
+    'agentic-screening',
+  ],
+  interviewer: ['citation-backed-coaching', 'skills-evidence'],
+  auditor: [
+    'candidate-review-and-appeal',
+    'citation-backed-coaching',
+    'fairness-audit',
+    'quality-of-hire',
+    'media-integrity',
+    'agentic-screening',
+  ],
+  admin: [
+    'candidate-review-and-appeal',
+    'fairness-audit',
+    'quality-of-hire',
+    'media-integrity',
+    'agentic-screening',
+  ],
+} as const;
+const expectedAgenticJourney = {
+  action: 'Ajan önerisini güvenle dene',
+  scenario:
+    'Sentetik bir başvuruda eksik insan inceleme adımı için açıklanabilir sonraki-adım taslağı istenir.',
+  output:
+    'Gerekçe, gerekli insan onayları ve uygulanamayacak eylemlerle birlikte salt-okunur öneri gösterilir.',
+  boundary:
+    'Mesaj gönderilmez, aday durumu değişmez, red/teklif/sıralama üretilmez ve toplu onay yoktur.',
+} as const;
+const expectedInitialHubControlSignatures = [
+  'A::Canlı Interview Evidence modülünü aç',
+  'BUTTON:button:Tüm roller',
+  'BUTTON:button:Aday',
+  'BUTTON:button:İşe alım uzmanı',
+  'BUTTON:button:İşe alım yöneticisi',
+  'BUTTON:button:Mülakatçı',
+  'BUTTON:button:Denetçi',
+  'BUTTON:button:Yönetici',
+  'BUTTON:button:Sentetik PDF taslak akışını dene',
+  ...Object.values(expectedSafeScenarioJourneys).map(
+    (journey) => `BUTTON:button:${journey.action}`,
+  ),
+  'BUTTON:button:Ajan önerisini güvenle dene',
+].sort();
+
+const readInteractiveControlSignatures = (rootLocator: Locator) =>
+  rootLocator.evaluate((rootElement) => {
+    const selector = [
+      'button',
+      'a[href]',
+      'area[href]',
+      'input',
+      'select',
+      'textarea',
+      'summary',
+      'audio[controls]',
+      'video[controls]',
+      'iframe',
+      'frame',
+      'portal',
+      'object',
+      'embed',
+      'form[action]',
+      '[contenteditable]:not([contenteditable="false" i])',
+      '[role="button"]',
+      '[role="link"]',
+      '[role="menuitem"]',
+      '[role="menuitemcheckbox"]',
+      '[role="menuitemradio"]',
+      '[role="checkbox"]',
+      '[role="radio"]',
+      '[role="switch"]',
+      '[role="tab"]',
+      '[role="slider"]',
+      '[role="spinbutton"]',
+      '[role="textbox"]',
+      '[role="combobox"]',
+      '[role="listbox"]',
+      '[role="option"]',
+      '[role="treeitem"]',
+      '[tabindex]:not([tabindex="-1"])',
+      '[target="_blank"]',
+      '[formtarget="_blank"]',
+      '[onclick]',
+      '[ondblclick]',
+      '[onmousedown]',
+      '[onmouseup]',
+      '[onpointerdown]',
+      '[onpointerup]',
+      '[ontouchstart]',
+      '[ontouchend]',
+      '[onkeydown]',
+      '[onkeypress]',
+      '[onkeyup]',
+      '[onauxclick]',
+      '[onbeforeinput]',
+      '[onchange]',
+      '[oncontextmenu]',
+      '[ondragend]',
+      '[ondragstart]',
+      '[ondrop]',
+      '[oninput]',
+      '[onsubmit]',
+      '[draggable="true"]',
+    ].join(',');
+    const controls = new Set<Element>();
+    const syntheticSignatures = new Set<string>();
+    const actionHandlerNames = new Set([
+      'onClick',
+      'onAuxClick',
+      'onBeforeInput',
+      'onChange',
+      'onContextMenu',
+      'onDoubleClick',
+      'onDragEnd',
+      'onDragStart',
+      'onDrop',
+      'onInput',
+      'onMouseDown',
+      'onMouseUp',
+      'onPointerDown',
+      'onPointerUp',
+      'onTouchStart',
+      'onTouchEnd',
+      'onKeyDown',
+      'onKeyUp',
+      'onKeyPress',
+      'onSubmit',
+    ]);
+    const visit = (root: Element | ShadowRoot) => {
+      root.querySelectorAll(selector).forEach((control) => controls.add(control));
+      const elements = [
+        ...(root instanceof Element ? [root] : []),
+        ...Array.from(root.querySelectorAll('*')),
+      ];
+      elements.forEach((element) => {
+        const nativeEventTarget = element as HTMLElement;
+        if (
+          [
+            nativeEventTarget.onclick,
+            nativeEventTarget.onauxclick,
+            nativeEventTarget.onbeforeinput,
+            nativeEventTarget.onchange,
+            nativeEventTarget.oncontextmenu,
+            nativeEventTarget.ondblclick,
+            nativeEventTarget.ondragend,
+            nativeEventTarget.ondragstart,
+            nativeEventTarget.ondrop,
+            nativeEventTarget.oninput,
+            nativeEventTarget.onkeydown,
+            nativeEventTarget.onkeypress,
+            nativeEventTarget.onkeyup,
+            nativeEventTarget.onmousedown,
+            nativeEventTarget.onmouseup,
+            nativeEventTarget.onpointerdown,
+            nativeEventTarget.onpointerup,
+            nativeEventTarget.onsubmit,
+            nativeEventTarget.ontouchend,
+            nativeEventTarget.ontouchstart,
+          ].some((handler) => typeof handler === 'function')
+        ) {
+          controls.add(element);
+        }
+        for (const key of Object.getOwnPropertyNames(element)) {
+          if (!key.startsWith('__reactProps$')) continue;
+          const props = (element as unknown as Record<string, unknown>)[key];
+          if (
+            props &&
+            typeof props === 'object' &&
+            Object.entries(props).some(
+              ([name, value]) => actionHandlerNames.has(name) && typeof value === 'function',
+            )
+          ) {
+            controls.add(element);
+          }
+        }
+        if (element.shadowRoot) visit(element.shadowRoot);
+      });
+      const snapshot = (
+        window as Window & {
+          __p5BrowserAuditSnapshot?: () => {
+            actionTargets: Array<{
+              target: EventTarget;
+              listeners: Array<{ type: string; count: number }>;
+            }>;
+          };
+        }
+      ).__p5BrowserAuditSnapshot?.();
+      for (const entry of snapshot?.actionTargets ?? []) {
+        const target = entry.target;
+        const isReactDelegationRoot =
+          target instanceof Element &&
+          Object.getOwnPropertyNames(target).some(
+            (key) => key === '_reactRootContainer' || key.startsWith('__reactContainer$'),
+          );
+        const isWithinRoot =
+          target instanceof Element &&
+          (root instanceof Element
+            ? target === root || root.contains(target)
+            : root.contains(target));
+        const shadowHostWithinRoot =
+          target instanceof ShadowRoot &&
+          (root instanceof Element
+            ? root === target.host || root.contains(target.host)
+            : root.contains(target.host));
+        const listenerIdentity = entry.listeners
+          .map(({ type, count }) => `${type}=${count}`)
+          .sort()
+          .join(',');
+        if (isReactDelegationRoot && isWithinRoot) {
+          const rootIdentity =
+            target.getAttribute('id') ?? target.getAttribute('data-testid') ?? target.tagName;
+          syntheticSignatures.add(`REACT_ROOT:${rootIdentity}:${listenerIdentity}`);
+        } else if (isWithinRoot) {
+          controls.add(target);
+          const targetIdentity =
+            target.getAttribute('data-testid') ?? target.getAttribute('id') ?? target.tagName;
+          syntheticSignatures.add(`LISTENERS:${targetIdentity}:${listenerIdentity}`);
+        } else if (shadowHostWithinRoot) {
+          controls.add(target.host);
+          const targetIdentity =
+            target.host.getAttribute('data-testid') ??
+            target.host.getAttribute('id') ??
+            target.host.tagName;
+          syntheticSignatures.add(`SHADOW_LISTENERS:${targetIdentity}:${listenerIdentity}`);
+        }
+      }
+    };
+    visit(rootElement);
+    const controlSignatures = Array.from(controls).map((control) => {
+      const label =
+        control.getAttribute('aria-label') ??
+        (control.textContent ?? '').replace(/\s+/g, ' ').trim();
+      return `${control.tagName}:${control.getAttribute('type') ?? ''}:${label}`;
+    });
+    return [...controlSignatures, ...syntheticSignatures].sort();
+  });
+
+const replaceSignatureMultiset = (
+  baseline: string[],
+  removed: readonly string[],
+  added: readonly string[],
+) => {
+  const expected = [...baseline];
+  for (const signature of removed) {
+    const index = expected.indexOf(signature);
+    expect(index).toBeGreaterThanOrEqual(0);
+    expected.splice(index, 1);
+  }
+  return [...expected, ...added].sort();
+};
+
+const activateByKeyboard = async (control: Locator, key: 'Enter' | 'Space' = 'Enter') => {
+  await expect(control).toBeVisible();
+  await expect(control).toBeEnabled();
+  await control.focus();
+  await expect(control).toBeFocused();
+  await control.press(key);
+};
+
+const canonicalizeJson = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalizeJson(item)]),
+    );
+  }
+  return value;
+};
 
 const expectedProfileIds = [
   'deployment-profile-MANAGED',
@@ -103,7 +499,7 @@ const expectedInteractiveControlIds = [
 ] as const;
 
 type AcceptanceReport = {
-  schemaVersion: 'faz25-p5-authenticated-product-surface-v4';
+  schemaVersion: 'faz25-p5-authenticated-product-surface-v5';
   verdict: 'PASS' | 'FAIL';
   startedAt: string;
   observedAt: string;
@@ -132,6 +528,12 @@ type AcceptanceReport = {
     observedSourceSha: string;
     expectedFrontendDigest: string;
     liveFrontendDigest: string;
+    buildInfoImageDigest: string;
+    buildInfoImageDigestStatus: 'NOT_EMBEDDED';
+    buildInfoSha256: string;
+    buildInfoProbeId: string;
+    buildInfoCacheControl: string;
+    buildInfoCacheBypassHeadersAbsent: boolean;
     expectedBuildRunId: string;
     harnessRepository: string;
     harnessRevision: string;
@@ -182,11 +584,77 @@ type AcceptanceReport = {
     capabilityIds: string[];
     targetRoleIds: string[];
     visibleCapabilityCount: number;
+    roleCapabilityCounts: Record<string, number>;
+    roleCapabilityIds: Record<string, string[]>;
+    roleJourneyCapabilityIds: Record<string, string[]>;
+    roleJourneyEvidenceClass: 'TARGET_ROLE_FILTER_UNDER_NAMED_VIEW_PERSONA';
+    journeyLifecycleAudit: {
+      desktop: Record<string, number>;
+      mobile?: Record<string, number>;
+    };
     candidateFilterVisible: boolean;
     candidateBoundaryVisible: boolean;
     cvImportMode: 'OWNER_GATED';
     cvImportInteractiveControlCount: number;
     fileUploadControlCount: number;
+    syntheticResume: {
+      proposalCount: number;
+      invalidFixtureCount: number;
+      editableAfterFirstKeystroke: boolean;
+      editedEmail: string;
+      acceptAfterEditVisible: boolean;
+      rejectAfterEditVisible: boolean;
+      acceptedDraftFieldCount: number;
+      localDraftVisible: boolean;
+      localDraftContainsEditedEmail: boolean;
+      rejectAllSecondConfirmationRequired: boolean;
+      rejectAllApplied: boolean;
+      resetReturnedToStart: boolean;
+      persistentStoresUnchanged: boolean;
+      persistentWriteOperationCount: number;
+      mutationQuietPeriodMs: number;
+      mutationRequestCount: number;
+      networkRequestCount: number;
+      networkChannelConstructionCount: number;
+      workerConstructionCount: number;
+      popupCreationCount: number;
+      filePickerInvocationCount: number;
+      unsafeDelegatedActionListenerCount: number;
+    };
+    agentic: {
+      mode: 'PROPOSAL_ONLY' | 'UNVERIFIED';
+      runnerCompleted: boolean;
+      boundaryVisible: boolean;
+      interactiveControlSignatures: {
+        closed: string[];
+        opened: string[];
+        completed: string[];
+      };
+      forbiddenActionControlCount: number;
+      persistentStoresUnchanged: boolean;
+      persistentWriteOperationCount: number;
+      mutationQuietPeriodMs: number;
+      mutationRequestCount: number;
+      networkRequestCount: number;
+      networkChannelConstructionCount: number;
+      workerConstructionCount: number;
+      popupCreationCount: number;
+      filePickerInvocationCount: number;
+      unsafeDelegatedActionListenerCount: number;
+    };
+    safeExperienceCapabilityIds: string[];
+    safeScenarioAudit: {
+      completedCapabilityIds: string[];
+      persistentStoresUnchanged: boolean;
+      persistentWriteOperationCount: number;
+      networkRequestCount: number;
+      mutationRequestCount: number;
+      networkChannelConstructionCount: number;
+      workerConstructionCount: number;
+      popupCreationCount: number;
+      filePickerInvocationCount: number;
+      unsafeDelegatedActionListenerCount: number;
+    };
     liveLaunchHref: string;
     productBoundaryVisible: boolean;
   };
@@ -204,10 +672,29 @@ type AcceptanceReport = {
   };
   responsive?: {
     viewportWidth: number;
+    mobileUserAgentMatched: boolean;
+    mobileTouchPoints: number;
+    mobilePointerCoarse: boolean;
+    mobileDeviceScaleFactor: number;
     hubRootOverflowPx: number;
     hubOverflowPx: number;
     rootOverflowPx: number;
     consoleOverflowPx: number;
+    mobileSyntheticResumeControlsRendered: boolean;
+    mobileCandidateCapabilityIds: string[];
+    mobileCompletedSafeScenarioCapabilityIds: string[];
+    mobileSyntheticResumePersistentStoresUnchanged: boolean;
+    mobileSyntheticResumePersistentWriteOperationCount: number;
+    mobileSyntheticResumeMutationRequestCount: number;
+    mobileSyntheticResumeNetworkRequestCount: number;
+    mobileSyntheticResumeNetworkChannelConstructionCount: number;
+    mobileSyntheticResumeWorkerConstructionCount: number;
+    mobileSyntheticResumePopupCreationCount: number;
+    mobileSyntheticResumeFilePickerInvocationCount: number;
+    mobileSyntheticResumeUnsafeDelegatedActionListenerCount: number;
+    mobileRoleJourneyCapabilityIds: Record<string, string[]>;
+    mobileRoleJourneyEvidenceClass: string;
+    mobileTouchActivationCount: number;
     evidenceTableKeyboardScrollable: boolean;
   };
   accessibility?: {
@@ -224,12 +711,23 @@ type AcceptanceReport = {
   };
   runtime?: {
     uncaughtPageErrorCount: number;
+    frontendAssetPaths: string[];
+    frontendAssetResponses: Array<{
+      path: string;
+      resourceType: 'script' | 'stylesheet';
+      status: number;
+      contentType: string;
+      bodySha256: string;
+      fromServiceWorker: boolean;
+    }>;
+    buildInfoRootEntryMatched: boolean;
+    buildInfoAssetsMatched: boolean;
   };
   failedTestStatus?: string;
 };
 
 const report: AcceptanceReport = {
-  schemaVersion: 'faz25-p5-authenticated-product-surface-v4',
+  schemaVersion: 'faz25-p5-authenticated-product-surface-v5',
   verdict: 'FAIL',
   startedAt,
   observedAt: startedAt,
@@ -257,6 +755,12 @@ const report: AcceptanceReport = {
     observedSourceSha: '',
     expectedFrontendDigest,
     liveFrontendDigest,
+    buildInfoImageDigest: '',
+    buildInfoImageDigestStatus: 'NOT_EMBEDDED',
+    buildInfoSha256: '',
+    buildInfoProbeId: '',
+    buildInfoCacheControl: '',
+    buildInfoCacheBypassHeadersAbsent: false,
     expectedBuildRunId,
     harnessRepository,
     harnessRevision,
@@ -317,11 +821,13 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(playwrightVersion).toBe('Version 1.60.0');
 
   const buildInfoUrl = `${baseURL}/build-info.json`;
-  const buildInfoResponse = await page.request.get(buildInfoUrl, {
+  report.lineage.buildInfoProbeId = randomBytes(16).toString('hex');
+  const probedBuildInfoUrl = `${buildInfoUrl}?p5_probe=${report.lineage.buildInfoProbeId}`;
+  const buildInfoResponse = await page.request.get(probedBuildInfoUrl, {
     maxRedirects: 0,
   });
   expect(buildInfoResponse.ok(), 'build-info.json must be reachable').toBe(true);
-  expect(buildInfoResponse.url()).toBe(buildInfoUrl);
+  expect(buildInfoResponse.url()).toBe(probedBuildInfoUrl);
   expect(buildInfoResponse.headers()['content-type']).toMatch(
     /^application\/json(?:;|$)/i,
   );
@@ -343,12 +849,420 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   ]);
   expect(buildInfo.origin).toBe(baseURL);
   expect(buildInfo.ref).toBe('main');
+  const buildInfoAssets = Array.isArray(buildInfo.assets)
+    ? buildInfo.assets.filter((asset): asset is string => typeof asset === 'string')
+    : [];
+  expect(Array.isArray(buildInfo.assets)).toBe(true);
+  expect(buildInfoAssets).toHaveLength(
+    Array.isArray(buildInfo.assets) ? buildInfo.assets.length : -1,
+  );
+  expect(buildInfoAssets).toEqual([...buildInfoAssets].sort());
+  expect(buildInfoAssets.length).toBeGreaterThan(0);
+  const buildInfoRootEntry =
+    typeof buildInfo.rootEntry === 'string' ? buildInfo.rootEntry : '';
+  expect(buildInfoRootEntry).toMatch(/^index-[A-Za-z0-9_-]+\.js$/);
+  expect(buildInfoAssets).toContain(buildInfoRootEntry);
   report.lineage.observedSourceSha =
     typeof buildInfo.sha === 'string' ? buildInfo.sha : '';
   expect(report.lineage.observedSourceSha).toBe(expectedSourceSha);
+  report.lineage.buildInfoImageDigest =
+    typeof buildInfo.imageDigest === 'string' ? buildInfo.imageDigest : '';
+  expect(report.lineage.buildInfoImageDigest).toBe('');
+  expect(report.lineage.buildInfoImageDigestStatus).toBe('NOT_EMBEDDED');
+  const buildInfoHeaders = buildInfoResponse.headers();
+  report.lineage.buildInfoCacheControl = buildInfoHeaders['cache-control'] ?? '';
+  expect(report.lineage.buildInfoCacheControl).toBe('no-store');
+  const cacheBypassHeaders = [
+    'age',
+    'cf-cache-status',
+    'via',
+    'x-cache',
+    'x-proxy-cache',
+    'x-served-by',
+  ];
+  report.lineage.buildInfoCacheBypassHeadersAbsent = cacheBypassHeaders.every(
+    (header) => !(header in buildInfoHeaders),
+  );
+  expect(report.lineage.buildInfoCacheBypassHeadersAbsent).toBe(true);
+  report.lineage.buildInfoSha256 = createHash('sha256')
+    .update(JSON.stringify(canonicalizeJson(buildInfo)))
+    .digest('hex');
+  expect(report.lineage.buildInfoSha256).toMatch(/^[0-9a-f]{64}$/);
 
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.name));
+  const applicationNetworkRequests: Array<{ method: string; origin: string; path: string }> = [];
+  type FrontendAssetResponse = {
+    path: string;
+    resourceType: 'script' | 'stylesheet';
+    status: number;
+    contentType: string;
+    bodySha256: string;
+    fromServiceWorker: boolean;
+  };
+  const frontendAssetResponsePromises: Array<Promise<FrontendAssetResponse>> = [];
+  const unexpectedPopupPages: string[] = [];
+  const unexpectedWebSockets: string[] = [];
+  const unexpectedWorkers: string[] = [];
+  let frameAttachmentCount = 0;
+  let fileChooserEventCount = 0;
+  let downloadEventCount = 0;
+  let dialogEventCount = 0;
+  page.context().on('page', (openedPage) => {
+    if (openedPage !== page) unexpectedPopupPages.push(openedPage.url());
+  });
+  page.on('request', (request) => {
+    const method = request.method();
+    const url = new URL(request.url());
+    applicationNetworkRequests.push({ method, origin: url.origin, path: url.pathname });
+  });
+  page.on('response', (response) => {
+    const request = response.request();
+    const resourceType = request.resourceType();
+    const url = new URL(response.url());
+    if (
+      url.origin !== new URL(baseURL).origin ||
+      !url.pathname.startsWith('/assets/') ||
+      !['script', 'stylesheet'].includes(resourceType) ||
+      !/\.(?:js|css)$/.test(url.pathname)
+    ) {
+      return;
+    }
+    frontendAssetResponsePromises.push(
+      (async () => {
+        let bodySha256 = '';
+        try {
+          bodySha256 = createHash('sha256').update(await response.body()).digest('hex');
+        } catch {
+          bodySha256 = '';
+        }
+        return {
+          path: url.pathname,
+          resourceType: resourceType as 'script' | 'stylesheet',
+          status: response.status(),
+          contentType: response.headers()['content-type'] ?? '',
+          bodySha256,
+          fromServiceWorker: response.fromServiceWorker(),
+        };
+      })(),
+    );
+  });
+  page.on('websocket', (webSocket) => unexpectedWebSockets.push(webSocket.url()));
+  page.on('worker', (worker) => unexpectedWorkers.push(worker.url()));
+  page.on('frameattached', () => {
+    frameAttachmentCount += 1;
+  });
+  page.on('filechooser', () => {
+    fileChooserEventCount += 1;
+  });
+  page.on('download', () => {
+    downloadEventCount += 1;
+  });
+  page.on('dialog', (dialog) => {
+    dialogEventCount += 1;
+    void dialog.dismiss();
+  });
+  const mutationRequestCount = () =>
+    applicationNetworkRequests.filter(
+      ({ method }) => !['GET', 'HEAD', 'OPTIONS'].includes(method),
+    ).length;
+  await page.context().addInitScript(() => {
+    const auditWindow = window as Window & {
+      __p5BrowserAuditSnapshot?: () => {
+        workerConstructionCount: number;
+        popupCreationCount: number;
+        filePickerInvocationCount: number;
+        networkChannelConstructionCount: number;
+        historyMutationCount: number;
+        hashChangeCount: number;
+        closedShadowRootAttemptCount: number;
+        unsafeDomInsertionCount: number;
+        productJourneyBegun: boolean;
+        instrumentationFailureCount: number;
+        actionTargets: Array<{
+          target: EventTarget;
+          listeners: Array<{ type: string; count: number }>;
+        }>;
+      };
+      __p5BrowserAuditBeginProductJourney?: () => void;
+    };
+    const workerConstructions: string[] = [];
+    const popupConstructions: string[] = [];
+    const filePickerInvocations: string[] = [];
+    const networkChannelConstructions: string[] = [];
+    const historyMutations: string[] = [];
+    const hashChanges: string[] = [];
+    const closedShadowRootAttempts: string[] = [];
+    const unsafeDomInsertions: string[] = [];
+    const instrumentationFailures: string[] = [];
+    let productJourneyBegun = false;
+    const actionEventTargets = new Map<
+      EventTarget,
+      Map<string, Map<unknown, Set<boolean>>>
+    >();
+    Object.defineProperty(auditWindow, '__p5BrowserAuditSnapshot', {
+      configurable: false,
+      writable: false,
+      value: () => ({
+        workerConstructionCount: workerConstructions.length,
+        popupCreationCount: popupConstructions.length,
+        filePickerInvocationCount: filePickerInvocations.length,
+        networkChannelConstructionCount: networkChannelConstructions.length,
+        historyMutationCount: historyMutations.length,
+        hashChangeCount: hashChanges.length,
+        closedShadowRootAttemptCount: closedShadowRootAttempts.length,
+        unsafeDomInsertionCount: unsafeDomInsertions.length,
+        productJourneyBegun,
+        instrumentationFailureCount: instrumentationFailures.length,
+        actionTargets: Array.from(actionEventTargets.entries()).map(
+          ([target, listenersByType]) => ({
+            target,
+            listeners: Array.from(listenersByType.entries()).map(
+              ([type, listeners]) => ({
+                type,
+                count: Array.from(listeners.values()).reduce(
+                  (sum, captures) => sum + captures.size,
+                  0,
+                ),
+              }),
+            ),
+          }),
+        ),
+      }),
+    });
+    Object.defineProperty(auditWindow, '__p5BrowserAuditBeginProductJourney', {
+      configurable: false,
+      writable: false,
+      value: () => {
+        if (productJourneyBegun) {
+          instrumentationFailures.push('product-journey-reset-repeated');
+          return;
+        }
+        workerConstructions.length = 0;
+        popupConstructions.length = 0;
+        filePickerInvocations.length = 0;
+        networkChannelConstructions.length = 0;
+        historyMutations.length = 0;
+        hashChanges.length = 0;
+        closedShadowRootAttempts.length = 0;
+        unsafeDomInsertions.length = 0;
+        productJourneyBegun = true;
+      },
+    });
+    const installLockedValue = (target: object, property: string, value: unknown) => {
+      const descriptor = Object.getOwnPropertyDescriptor(target, property);
+      if (descriptor && descriptor.configurable === false && descriptor.writable === false) {
+        instrumentationFailures.push(property);
+        return;
+      }
+      Object.defineProperty(target, property, {
+        configurable: false,
+        writable: false,
+        value,
+      });
+    };
+    const blockedConstructor = (name: string, original: unknown) => {
+      if (typeof original !== 'function') return original;
+      return new Proxy(original, {
+        construct() {
+          workerConstructions.push(name);
+          throw new Error(`${name} is forbidden during the local-only acceptance flow`);
+        },
+      });
+    };
+    const auditedConstructor = (name: string, original: unknown) => {
+      if (typeof original !== 'function') return original;
+      return new Proxy(original, {
+        construct(target, args, newTarget) {
+          networkChannelConstructions.push(name);
+          return Reflect.construct(target, args, newTarget);
+        },
+      });
+    };
+    installLockedValue(window, 'Worker', blockedConstructor('Worker', window.Worker));
+    if ('SharedWorker' in window) {
+      installLockedValue(
+        window,
+        'SharedWorker',
+        blockedConstructor('SharedWorker', window.SharedWorker),
+      );
+    }
+    for (const channel of ['WebSocket', 'EventSource', 'WebTransport', 'RTCPeerConnection']) {
+      const original = (window as unknown as Record<string, unknown>)[channel];
+      if (typeof original === 'function') {
+        installLockedValue(window, channel, auditedConstructor(channel, original));
+      }
+    }
+    installLockedValue(
+      window,
+      'open',
+      function blockedWindowOpen() {
+        popupConstructions.push('WindowOpen');
+        throw new Error('Popup creation is forbidden during the local-only acceptance flow');
+      },
+    );
+    for (const picker of ['showOpenFilePicker', 'showSaveFilePicker', 'showDirectoryPicker']) {
+      const original = (window as unknown as Record<string, unknown>)[picker];
+      if (typeof original === 'function') {
+        installLockedValue(window, picker, () => {
+          filePickerInvocations.push(picker);
+          throw new Error(`${picker} is forbidden during the local-only acceptance flow`);
+        });
+      }
+    }
+    if (typeof HTMLInputElement.prototype.showPicker === 'function') {
+      installLockedValue(
+        HTMLInputElement.prototype,
+        'showPicker',
+        function blockedInputShowPicker() {
+          filePickerInvocations.push('HTMLInputElement.showPicker');
+          throw new Error('Input picker is forbidden during the local-only acceptance flow');
+        },
+      );
+    }
+    const actionEventTypes = new Set([
+      'auxclick',
+      'beforeinput',
+      'change',
+      'click',
+      'contextmenu',
+      'dblclick',
+      'dragend',
+      'dragstart',
+      'drop',
+      'input',
+      'keydown',
+      'keypress',
+      'keyup',
+      'mousedown',
+      'mouseup',
+      'pointerdown',
+      'pointerup',
+      'submit',
+      'touchend',
+      'touchstart',
+    ]);
+    const originalAddEventListener = EventTarget.prototype.addEventListener;
+    const captureFlag = (options?: boolean | AddEventListenerOptions | EventListenerOptions) =>
+      typeof options === 'boolean' ? options : Boolean(options?.capture);
+    const auditedAddEventListener = function auditedAddEventListener(
+      this: EventTarget,
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (actionEventTypes.has(type) && listener) {
+        const listenersByType =
+          actionEventTargets.get(this) ?? new Map<string, Map<unknown, Set<boolean>>>();
+        const listeners = listenersByType.get(type) ?? new Map<unknown, Set<boolean>>();
+        const captures = listeners.get(listener) ?? new Set<boolean>();
+        captures.add(captureFlag(options));
+        listeners.set(listener, captures);
+        listenersByType.set(type, listeners);
+        actionEventTargets.set(this, listenersByType);
+      }
+      return originalAddEventListener.call(this, type, listener, options);
+    };
+    const originalRemoveEventListener = EventTarget.prototype.removeEventListener;
+    const auditedRemoveEventListener = function auditedRemoveEventListener(
+      this: EventTarget,
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) {
+      const listenersByType = actionEventTargets.get(this);
+      const listeners = listenersByType?.get(type);
+      if (listener && listeners) {
+        const captures = listeners.get(listener);
+        captures?.delete(captureFlag(options));
+        if (captures?.size === 0) listeners.delete(listener);
+        if (listeners.size === 0) listenersByType?.delete(type);
+        if (listenersByType?.size === 0) actionEventTargets.delete(this);
+      }
+      return originalRemoveEventListener.call(this, type, listener, options);
+    };
+    installLockedValue(EventTarget.prototype, 'addEventListener', auditedAddEventListener);
+    installLockedValue(EventTarget.prototype, 'removeEventListener', auditedRemoveEventListener);
+    const serviceWorkerPrototype = navigator.serviceWorker
+      ? (Object.getPrototypeOf(navigator.serviceWorker) as ServiceWorkerContainer & {
+          register: ServiceWorkerContainer['register'];
+        })
+      : null;
+    if (serviceWorkerPrototype && typeof serviceWorkerPrototype.register === 'function') {
+      installLockedValue(
+        serviceWorkerPrototype,
+        'register',
+        function blockedServiceWorkerRegister() {
+          workerConstructions.push('ServiceWorker');
+          return Promise.reject(
+            new Error('ServiceWorker is forbidden during the local-only acceptance flow'),
+          );
+        },
+      );
+    }
+    const navigatorPrototype = Object.getPrototypeOf(navigator) as Navigator & {
+      sendBeacon?: Navigator['sendBeacon'];
+    };
+    if (typeof navigatorPrototype.sendBeacon === 'function') {
+      const originalSendBeacon = navigatorPrototype.sendBeacon;
+      installLockedValue(
+        navigatorPrototype,
+        'sendBeacon',
+        function auditedSendBeacon(this: Navigator, ...args: Parameters<Navigator['sendBeacon']>) {
+          networkChannelConstructions.push('sendBeacon');
+          return Reflect.apply(originalSendBeacon, this, args);
+        },
+      );
+    }
+    for (const historyMethod of ['pushState', 'replaceState'] as const) {
+      const original = History.prototype[historyMethod];
+      installLockedValue(
+        History.prototype,
+        historyMethod,
+        function auditedHistoryMutation(
+          this: History,
+          ...args: Parameters<History[typeof historyMethod]>
+        ) {
+          historyMutations.push(historyMethod);
+          return Reflect.apply(original, this, args);
+        },
+      );
+    }
+    window.addEventListener('hashchange', () => hashChanges.push('hashchange'));
+    const originalAttachShadow = Element.prototype.attachShadow;
+    installLockedValue(
+      Element.prototype,
+      'attachShadow',
+      function guardedAttachShadow(this: Element, init: ShadowRootInit) {
+        if (init.mode === 'closed') {
+          closedShadowRootAttempts.push('closed');
+          throw new Error('Closed shadow roots are forbidden on the audited product surface');
+        }
+        return originalAttachShadow.call(this, init);
+      },
+    );
+    const unsafeSelector = [
+      'input[type="file"]',
+      'iframe',
+      'frame',
+      'portal',
+      '[target="_blank"]',
+      '[formtarget="_blank"]',
+      'template[shadowrootmode="closed"]',
+    ].join(',');
+    const recordUnsafeInsertion = (node: Node) => {
+      if (!(node instanceof Element)) return;
+      if (node.matches(unsafeSelector)) unsafeDomInsertions.push(node.tagName);
+      node.querySelectorAll(unsafeSelector).forEach((element) =>
+        unsafeDomInsertions.push(element.tagName),
+      );
+    };
+    const unsafeDomObserver = new MutationObserver((records) => {
+      records.forEach((record) => record.addedNodes.forEach(recordUnsafeInsertion));
+    });
+    unsafeDomObserver.observe(document, { childList: true, subtree: true });
+  });
+  await page.context().addInitScript(persistentMutationAuditInstaller);
 
   const observed = {
     issuerMatched: false,
@@ -607,6 +1521,87 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(desktopHubPath).toBe(expectedHubPath);
   const desktopHubRendered = await hubSurface.isVisible();
 
+  const productJourneyAuditStart = await page.evaluate(() => {
+    const auditWindow = window as Window & {
+      __p5BrowserAuditBeginProductJourney?: () => void;
+      __p5PersistentMutationAuditBeginProductJourney?: () => void;
+      __p5BrowserAuditSnapshot?: () => Record<string, unknown>;
+      __p5PersistentMutationAuditSnapshot?: () => Record<string, unknown>;
+    };
+    auditWindow.__p5BrowserAuditBeginProductJourney?.();
+    auditWindow.__p5PersistentMutationAuditBeginProductJourney?.();
+    return {
+      browser: auditWindow.__p5BrowserAuditSnapshot?.(),
+      persistence: auditWindow.__p5PersistentMutationAuditSnapshot?.(),
+    };
+  });
+  expect(productJourneyAuditStart.browser).toMatchObject({
+    workerConstructionCount: 0,
+    popupCreationCount: 0,
+    filePickerInvocationCount: 0,
+    networkChannelConstructionCount: 0,
+    historyMutationCount: 0,
+    hashChangeCount: 0,
+    closedShadowRootAttemptCount: 0,
+    unsafeDomInsertionCount: 0,
+    productJourneyBegun: true,
+    instrumentationFailureCount: 0,
+  });
+  expect(productJourneyAuditStart.persistence).toMatchObject({
+    writeCount: 0,
+    instrumentationFailureCount: 0,
+    storageProxyCount: 2,
+    productJourneyBegun: true,
+  });
+
+  const eventListenerCaptureLedgerProbe = await page.evaluate(() => {
+    const probe = document.createElement('button');
+    const listener = () => undefined;
+    const count = () => {
+      const snapshot = (
+        window as Window & {
+          __p5BrowserAuditSnapshot?: () => {
+            actionTargets: Array<{
+              target: EventTarget;
+              listeners: Array<{ type: string; count: number }>;
+            }>;
+          };
+        }
+      ).__p5BrowserAuditSnapshot?.();
+      return (
+        snapshot?.actionTargets
+          .find(({ target }) => target === probe)
+          ?.listeners.find(({ type }) => type === 'click')?.count ?? 0
+      );
+    };
+    probe.addEventListener('click', listener, false);
+    probe.addEventListener('click', listener, true);
+    const afterDistinctCaptureRegistrations = count();
+    probe.removeEventListener('click', listener, false);
+    const afterRemovingBubbleRegistration = count();
+    probe.removeEventListener('click', listener, true);
+    const afterRemovingBothRegistrations = count();
+    return {
+      afterDistinctCaptureRegistrations,
+      afterRemovingBubbleRegistration,
+      afterRemovingBothRegistrations,
+    };
+  });
+  expect(eventListenerCaptureLedgerProbe).toEqual({
+    afterDistinctCaptureRegistrations: 2,
+    afterRemovingBubbleRegistration: 1,
+    afterRemovingBothRegistrations: 0,
+  });
+  expect(unexpectedPopupPages).toEqual([]);
+  expect(unexpectedWebSockets).toEqual([]);
+  expect(unexpectedWorkers).toEqual([]);
+  expect(frameAttachmentCount).toBe(0);
+  expect(fileChooserEventCount).toBe(0);
+  expect(downloadEventCount).toBe(0);
+  expect(dialogEventCount).toBe(0);
+  const productJourneyNetworkStart = applicationNetworkRequests.length;
+  const productJourneyMutationStart = mutationRequestCount();
+
   const runtimeStatus = page.getByTestId('ats-runtime-status');
   await expect(runtimeStatus).toContainText('Canlı mülakat çalışma alanı bu dağıtımda hazır.');
   const runtimeReady = await runtimeStatus.isVisible();
@@ -619,6 +1614,9 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     ),
   );
   expect(capabilityIds).toEqual(expectedCapabilityIds);
+  expect(await readInteractiveControlSignatures(hubSurface)).toEqual(
+    expectedInitialHubControlSignatures,
+  );
 
   const roleFilters = hubSurface.locator('button[data-testid^="ats-role-filter-"]');
   await expect(roleFilters).toHaveCount(expectedTargetRoleIds.length + 1);
@@ -628,12 +1626,46 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     ),
   )).filter((role) => role !== 'all');
   expect(targetRoleIds).toEqual(expectedTargetRoleIds);
+  const readPressedRoleIds = () =>
+    roleFilters.evaluateAll((controls) =>
+      controls
+        .filter((control) => control.getAttribute('aria-pressed') === 'true')
+        .map((control) =>
+          (control.getAttribute('data-testid') ?? '').replace(/^ats-role-filter-/, ''),
+        ),
+    );
+
+  const roleCapabilityCounts: Record<string, number> = {};
+  const roleCapabilityIds: Record<string, string[]> = {};
+  for (const [roleId, expectedCount] of Object.entries(expectedRoleCapabilityCounts)) {
+    const filter = page.getByTestId(`ats-role-filter-${roleId}`);
+    await filter.focus();
+    await expect(filter).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(filter).toHaveAttribute('aria-pressed', 'true');
+    const pressedRoleIds = await readPressedRoleIds();
+    expect(pressedRoleIds).toEqual([roleId]);
+    await expect(capabilityCards).toHaveCount(expectedCount);
+    roleCapabilityCounts[roleId] = await capabilityCards.count();
+    const visibleIds = await capabilityCards.evaluateAll((cards) =>
+      cards.map((card) =>
+        (card.getAttribute('data-testid') ?? '').replace(/^ats-capability-/, ''),
+      ),
+    );
+    expect(visibleIds).toEqual(
+      expectedRoleCapabilityIds[roleId as keyof typeof expectedRoleCapabilityIds],
+    );
+    roleCapabilityIds[roleId] = visibleIds;
+  }
+  expect(roleCapabilityCounts).toEqual(expectedRoleCapabilityCounts);
+  expect(roleCapabilityIds).toEqual(expectedRoleCapabilityIds);
 
   const candidateFilter = page.getByTestId('ats-role-filter-candidate');
   await candidateFilter.focus();
   await expect(candidateFilter).toBeFocused();
   await page.keyboard.press('Space');
   await expect(candidateFilter).toHaveAttribute('aria-pressed', 'true');
+  expect(await readPressedRoleIds()).toEqual(['candidate']);
   const candidateBoundary = page.getByTestId('ats-candidate-role-boundary');
   await expect(candidateBoundary).toBeVisible();
   await expect(candidateBoundary).toContainText('Bu yönetici adresi adaya verilmez');
@@ -648,15 +1680,1210 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
       'button, a[href], input, select, textarea, [contenteditable="true"], [role="button"], [role="link"]',
     )
     .count();
-  expect(cvImportInteractiveControlCount).toBe(0);
+  expect(cvImportInteractiveControlCount).toBe(1);
   const fileUploadControlCount = await hubSurface.locator('input[type="file"]').count();
   expect(fileUploadControlCount).toBe(0);
+
+  function persistentMutationAuditInstaller() {
+    const auditWindow = window as Window & {
+      __p5PersistentMutationAuditSnapshot?: () => {
+        writeCount: number;
+        instrumentationFailureCount: number;
+        storageProxyCount: number;
+        productJourneyBegun: boolean;
+      };
+      __p5PersistentMutationAuditBeginProductJourney?: () => void;
+    };
+    let writeCount = 0;
+    let storageProxyCount = 0;
+    let productJourneyBegun = false;
+    const instrumentationFailures: string[] = [];
+    const recordWrite = () => {
+      writeCount += 1;
+    };
+    Object.defineProperty(auditWindow, '__p5PersistentMutationAuditSnapshot', {
+      configurable: false,
+      writable: false,
+      value: () => ({
+        writeCount,
+        instrumentationFailureCount: instrumentationFailures.length,
+        storageProxyCount,
+        productJourneyBegun,
+      }),
+    });
+    Object.defineProperty(auditWindow, '__p5PersistentMutationAuditBeginProductJourney', {
+      configurable: false,
+      writable: false,
+      value: () => {
+        if (productJourneyBegun) {
+          instrumentationFailures.push('product-journey-reset-repeated');
+          return;
+        }
+        writeCount = 0;
+        productJourneyBegun = true;
+      },
+    });
+
+    const installLockedMethod = (target: object, method: string, value: unknown) => {
+      const descriptor = Object.getOwnPropertyDescriptor(target, method);
+      if (descriptor && descriptor.configurable === false && descriptor.writable === false) {
+        instrumentationFailures.push(method);
+        return;
+      }
+      Object.defineProperty(target, method, {
+        configurable: false,
+        writable: false,
+        value,
+      });
+    };
+    const wrapMutation = (target: object | undefined, method: string, label: string) => {
+      if (!target) return;
+      const record = target as Record<string, unknown>;
+      const original = record[method];
+      if (typeof original !== 'function') return;
+      installLockedMethod(
+        target,
+        method,
+        function wrappedMutation(this: unknown, ...args: unknown[]) {
+          void label;
+          recordWrite();
+          return Reflect.apply(original, this, args);
+        },
+      );
+    };
+    const wrapConditionalMutation = (
+      target: object | undefined,
+      method: string,
+      label: string,
+      isMutation: (args: unknown[]) => boolean,
+    ) => {
+      if (!target) return;
+      const record = target as Record<string, unknown>;
+      const original = record[method];
+      if (typeof original !== 'function') return;
+      installLockedMethod(
+        target,
+        method,
+        function wrappedConditionalMutation(this: unknown, ...args: unknown[]) {
+          void label;
+          if (isMutation(args)) recordWrite();
+          return Reflect.apply(original, this, args);
+        },
+      );
+    };
+    const wrapIndexedDbOpenMutation = () => {
+      const original = IDBFactory.prototype.open;
+      installLockedMethod(
+        IDBFactory.prototype,
+        'open',
+        function wrappedIndexedDbOpen(
+          this: IDBFactory,
+          ...args: Parameters<IDBFactory['open']>
+        ) {
+          const request = Reflect.apply(original, this, args) as IDBOpenDBRequest;
+          request.addEventListener('upgradeneeded', recordWrite, { once: true });
+          return request;
+        },
+      );
+    };
+
+    wrapMutation(Storage.prototype, 'setItem', 'storage.setItem');
+    wrapMutation(Storage.prototype, 'removeItem', 'storage.removeItem');
+    wrapMutation(Storage.prototype, 'clear', 'storage.clear');
+    const installStorageProxy = (property: 'localStorage' | 'sessionStorage') => {
+      const windowPrototype = Object.getPrototypeOf(window) as Window;
+      const nativeDescriptor = Object.getOwnPropertyDescriptor(windowPrototype, property);
+      if (!nativeDescriptor?.get || nativeDescriptor.configurable !== true) {
+        instrumentationFailures.push(`${property}.native-getter`);
+        return;
+      }
+      const nativeStorage = nativeDescriptor.get.call(window) as Storage;
+      const proxy = new Proxy(nativeStorage, {
+        get(target, key) {
+          const value = Reflect.get(target, key, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+        set(target, key, value) {
+          recordWrite();
+          return Reflect.set(target, key, value, target);
+        },
+        deleteProperty(target, key) {
+          recordWrite();
+          return Reflect.deleteProperty(target, key);
+        },
+        defineProperty(target, key, descriptor) {
+          recordWrite();
+          return Reflect.defineProperty(target, key, descriptor);
+        },
+      });
+      try {
+        Object.defineProperty(windowPrototype, property, {
+          configurable: false,
+          enumerable: nativeDescriptor.enumerable,
+          get(this: Window) {
+            if (this === window) return proxy;
+            return nativeDescriptor.get?.call(this) as Storage;
+          },
+        });
+        storageProxyCount += 1;
+      } catch {
+        instrumentationFailures.push(`${property}.proxy`);
+      }
+    };
+    installStorageProxy('localStorage');
+    installStorageProxy('sessionStorage');
+    wrapMutation(IDBObjectStore.prototype, 'add', 'indexeddb.add');
+    wrapMutation(IDBObjectStore.prototype, 'put', 'indexeddb.put');
+    wrapMutation(IDBObjectStore.prototype, 'delete', 'indexeddb.delete');
+    wrapMutation(IDBObjectStore.prototype, 'clear', 'indexeddb.clear');
+    wrapMutation(IDBCursor.prototype, 'update', 'indexeddb.cursor.update');
+    wrapMutation(IDBCursor.prototype, 'delete', 'indexeddb.cursor.delete');
+    wrapMutation(IDBDatabase.prototype, 'createObjectStore', 'indexeddb.createObjectStore');
+    wrapMutation(IDBDatabase.prototype, 'deleteObjectStore', 'indexeddb.deleteObjectStore');
+    wrapIndexedDbOpenMutation();
+    wrapMutation(IDBFactory.prototype, 'deleteDatabase', 'indexeddb.deleteDatabase');
+    wrapMutation(Cache.prototype, 'add', 'cache.add');
+    wrapMutation(Cache.prototype, 'addAll', 'cache.addAll');
+    wrapMutation(Cache.prototype, 'put', 'cache.put');
+    wrapMutation(Cache.prototype, 'delete', 'cache.delete');
+    wrapMutation(CacheStorage.prototype, 'delete', 'cacheStorage.delete');
+
+    const runtime = globalThis as unknown as Record<string, { prototype?: object } | undefined>;
+    wrapMutation(runtime.CookieStore?.prototype, 'set', 'cookieStore.set');
+    wrapMutation(runtime.CookieStore?.prototype, 'delete', 'cookieStore.delete');
+    wrapMutation(runtime.FileSystemFileHandle?.prototype, 'createWritable', 'opfs.createWritable');
+    wrapMutation(
+      runtime.FileSystemFileHandle?.prototype,
+      'createSyncAccessHandle',
+      'opfs.createSyncAccessHandle',
+    );
+    wrapMutation(runtime.FileSystemWritableFileStream?.prototype, 'write', 'opfs.write');
+    wrapMutation(runtime.FileSystemWritableFileStream?.prototype, 'truncate', 'opfs.truncate');
+    wrapMutation(runtime.FileSystemSyncAccessHandle?.prototype, 'write', 'opfs.sync.write');
+    wrapMutation(runtime.FileSystemSyncAccessHandle?.prototype, 'truncate', 'opfs.sync.truncate');
+    wrapMutation(runtime.FileSystemDirectoryHandle?.prototype, 'removeEntry', 'opfs.removeEntry');
+    wrapConditionalMutation(
+      runtime.FileSystemDirectoryHandle?.prototype,
+      'getFileHandle',
+      'opfs.createFile',
+      (args) => Boolean((args[1] as { create?: boolean } | undefined)?.create),
+    );
+    wrapConditionalMutation(
+      runtime.FileSystemDirectoryHandle?.prototype,
+      'getDirectoryHandle',
+      'opfs.createDirectory',
+      (args) => Boolean((args[1] as { create?: boolean } | undefined)?.create),
+    );
+    wrapMutation(runtime.FileSystemHandle?.prototype, 'remove', 'opfs.remove');
+    wrapMutation(runtime.FileSystemHandle?.prototype, 'move', 'opfs.move');
+
+    const cookieDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+    if (cookieDescriptor?.configurable && cookieDescriptor.get && cookieDescriptor.set) {
+      Object.defineProperty(Document.prototype, 'cookie', {
+        configurable: true,
+        enumerable: cookieDescriptor.enumerable,
+        get: cookieDescriptor.get,
+        set(this: Document, value: string) {
+          recordWrite();
+          cookieDescriptor.set?.call(this, value);
+        },
+      });
+      Object.defineProperty(Document.prototype, 'cookie', {
+        ...Object.getOwnPropertyDescriptor(Document.prototype, 'cookie'),
+        configurable: false,
+      });
+    } else {
+      instrumentationFailures.push('document.cookie');
+    }
+  }
+
+  const browserAuditSnapshot = () =>
+    page.evaluate(() => {
+      const snapshot = (
+        window as Window & {
+          __p5BrowserAuditSnapshot?: () => {
+            workerConstructionCount: number;
+            popupCreationCount: number;
+            filePickerInvocationCount: number;
+            networkChannelConstructionCount: number;
+            historyMutationCount: number;
+            hashChangeCount: number;
+            closedShadowRootAttemptCount: number;
+            unsafeDomInsertionCount: number;
+            productJourneyBegun: boolean;
+            instrumentationFailureCount: number;
+            actionTargets: Array<{
+              target: EventTarget;
+              listeners: Array<{ type: string; count: number }>;
+            }>;
+          };
+        }
+      ).__p5BrowserAuditSnapshot?.();
+      return snapshot
+        ? {
+            workerConstructionCount: snapshot.workerConstructionCount,
+            popupCreationCount: snapshot.popupCreationCount,
+            filePickerInvocationCount: snapshot.filePickerInvocationCount,
+            networkChannelConstructionCount: snapshot.networkChannelConstructionCount,
+            historyMutationCount: snapshot.historyMutationCount,
+            hashChangeCount: snapshot.hashChangeCount,
+            closedShadowRootAttemptCount: snapshot.closedShadowRootAttemptCount,
+            unsafeDomInsertionCount: snapshot.unsafeDomInsertionCount,
+            productJourneyBegun: snapshot.productJourneyBegun,
+            instrumentationFailureCount: snapshot.instrumentationFailureCount,
+          }
+        : null;
+    });
+  const workerConstructionCount = async () =>
+    (await browserAuditSnapshot())?.workerConstructionCount ?? -1;
+  const popupCreationCount = async () =>
+    (await browserAuditSnapshot())?.popupCreationCount ?? -1;
+  const filePickerInvocationCount = async () =>
+    (await browserAuditSnapshot())?.filePickerInvocationCount ?? -1;
+  const networkChannelConstructionCount = async () =>
+    (await browserAuditSnapshot())?.networkChannelConstructionCount ?? -1;
+  const crossPageCreationCount = async () =>
+    (await popupCreationCount()) + unexpectedPopupPages.length;
+  const unsafeDelegatedActionListenerCount = () =>
+    page.evaluate(() => {
+      const snapshot = (
+        window as Window & {
+          __p5BrowserAuditSnapshot?: () => {
+            actionTargets: Array<{
+              target: EventTarget;
+              listeners: Array<{ type: string; count: number }>;
+            }>;
+          };
+        }
+      ).__p5BrowserAuditSnapshot?.();
+      const pointerOrMutationEvents = new Set([
+        'auxclick',
+        'beforeinput',
+        'change',
+        'click',
+        'contextmenu',
+        'dblclick',
+        'dragend',
+        'dragstart',
+        'drop',
+        'input',
+        'keydown',
+        'keypress',
+        'keyup',
+        'mousedown',
+        'mouseup',
+        'pointerdown',
+        'pointerup',
+        'submit',
+        'touchend',
+        'touchstart',
+      ]);
+      let count = 0;
+      for (const { target, listeners } of snapshot?.actionTargets ?? []) {
+        const isReactDelegationRoot =
+          target instanceof Element &&
+          Object.getOwnPropertyNames(target).some(
+            (key) => key === '_reactRootContainer' || key.startsWith('__reactContainer$'),
+          );
+        if (isReactDelegationRoot) {
+          continue;
+        }
+        for (const listener of listeners) {
+          if (pointerOrMutationEvents.has(listener.type)) count += listener.count;
+        }
+      }
+      return count;
+    });
+
+  const persistentAuditSnapshot = () =>
+    page.evaluate(() =>
+      (
+        window as Window & {
+          __p5PersistentMutationAuditSnapshot?: () => {
+            writeCount: number;
+            instrumentationFailureCount: number;
+            storageProxyCount: number;
+            productJourneyBegun: boolean;
+          };
+        }
+      ).__p5PersistentMutationAuditSnapshot?.(),
+    );
+  const persistentWriteCount = async () =>
+    (await persistentAuditSnapshot())?.writeCount ?? -1;
+  const persistentStateSnapshot = () =>
+    page.evaluate(async () => {
+      const sha256 = async (value: string | ArrayBuffer) => {
+        const bytes =
+          typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value);
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
+          '',
+        );
+      };
+      let nextReference = 1;
+      const normalizeValue = async (
+        value: unknown,
+        seen = new WeakMap<object, number>(),
+      ): Promise<unknown> => {
+        if (
+          value === null ||
+          value === undefined ||
+          typeof value === 'string' ||
+          typeof value === 'number' ||
+          typeof value === 'boolean'
+        ) {
+          return value ?? null;
+        }
+        if (typeof value === 'bigint') return `bigint:${value.toString()}`;
+        if (typeof value !== 'object') return String(value);
+        const existingReference = seen.get(value);
+        if (existingReference !== undefined) return { reference: existingReference };
+        const reference = nextReference;
+        nextReference += 1;
+        seen.set(value, reference);
+        if (value instanceof Blob) {
+          return {
+            reference,
+            blobSize: value.size,
+            blobType: value.type,
+            blobSha256: await sha256(await value.arrayBuffer()),
+          };
+        }
+        if (value instanceof ArrayBuffer) {
+          return { reference, arrayBufferSha256: await sha256(value) };
+        }
+        if (ArrayBuffer.isView(value)) {
+          const bytes = Uint8Array.from(
+            new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+          ).buffer;
+          return { reference, typedArray: value.constructor.name, sha256: await sha256(bytes) };
+        }
+        if (value instanceof Date) return { reference, date: value.toISOString() };
+        if (value instanceof RegExp) return { reference, regexp: value.toString() };
+        if (value instanceof Map) {
+          const entries = [];
+          for (const [key, item] of value.entries()) {
+            entries.push([
+              await normalizeValue(key, seen),
+              await normalizeValue(item, seen),
+            ]);
+          }
+          entries.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+          return { reference, map: entries };
+        }
+        if (value instanceof Set) {
+          const items = [];
+          for (const item of value.values()) items.push(await normalizeValue(item, seen));
+          items.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+          return { reference, set: items };
+        }
+        if (Array.isArray(value)) {
+          return {
+            reference,
+            array: await Promise.all(value.map((item) => normalizeValue(item, seen))),
+          };
+        }
+        const normalized: Record<string, unknown> = { reference };
+        for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+          normalized[key] = await normalizeValue(
+            (value as Record<string, unknown>)[key],
+            seen,
+          );
+        }
+        return normalized;
+      };
+      const stableJson = (value: unknown) => JSON.stringify(value) ?? 'undefined';
+      const storageSnapshot = async (storage: Storage) => {
+        const entries =
+        Array.from({ length: storage.length }, (_, index) => {
+          const key = storage.key(index) ?? '';
+          return [key, storage.getItem(key) ?? ''] as const;
+        }).sort(([left], [right]) => left.localeCompare(right));
+        return { count: entries.length, sha256: await sha256(stableJson(entries)) };
+      };
+      const requestValue = <T,>(request: IDBRequest<T>) =>
+        new Promise<T>((resolve, reject) => {
+          request.addEventListener('success', () => resolve(request.result), { once: true });
+          request.addEventListener('error', () => reject(request.error), { once: true });
+        });
+      const databaseSnapshots = [];
+      for (const databaseInfo of (await window.indexedDB.databases()).sort((left, right) =>
+        (left.name ?? '').localeCompare(right.name ?? ''),
+      )) {
+        const name = databaseInfo.name ?? '';
+        if (!name) continue;
+        const database = await requestValue(window.indexedDB.open(name));
+        const stores = [];
+        for (const storeName of Array.from(database.objectStoreNames).sort()) {
+          const transaction = database.transaction(storeName, 'readonly');
+          const objectStore = transaction.objectStore(storeName);
+          const [keys, values] = await Promise.all([
+            requestValue(objectStore.getAllKeys()),
+            requestValue(objectStore.getAll()),
+          ]);
+          stores.push({
+            name: storeName,
+            recordCount: values.length,
+            sha256: await sha256(stableJson(await normalizeValue({ keys, values }))),
+          });
+        }
+        database.close();
+        databaseSnapshots.push({
+          name,
+          version: databaseInfo.version ?? 0,
+          stores,
+        });
+      }
+      const cacheSnapshots = [];
+      for (const cacheName of (await window.caches.keys()).sort()) {
+        const cache = await window.caches.open(cacheName);
+        const entries = [];
+        for (const request of Array.from(await cache.keys()).sort((left, right) =>
+          left.url.localeCompare(right.url),
+        )) {
+          const response = await cache.match(request);
+          entries.push({
+            method: request.method,
+            urlSha256: await sha256(request.url),
+            status: response?.status ?? 0,
+            bodySha256: response ? await sha256(await response.clone().arrayBuffer()) : '',
+          });
+        }
+        cacheSnapshots.push({ nameSha256: await sha256(cacheName), entries });
+      }
+      const opfsSnapshots: Array<{
+        pathSha256: string;
+        kind: 'directory' | 'file';
+        size?: number;
+        bodySha256?: string;
+      }> = [];
+      const storageWithDirectory = navigator.storage as StorageManager & {
+        getDirectory?: () => Promise<FileSystemDirectoryHandle>;
+      };
+      if (typeof storageWithDirectory.getDirectory === 'function') {
+        const visitDirectory = async (directory: FileSystemDirectoryHandle, prefix: string) => {
+          const iterableDirectory = directory as FileSystemDirectoryHandle & {
+            entries(): AsyncIterableIterator<[string, FileSystemHandle]>;
+          };
+          for await (const [name, handle] of iterableDirectory.entries()) {
+            const path = prefix ? `${prefix}/${name}` : name;
+            if (handle.kind === 'directory') {
+              opfsSnapshots.push({ pathSha256: await sha256(path), kind: 'directory' });
+              await visitDirectory(handle as FileSystemDirectoryHandle, path);
+            } else {
+              const file = await (handle as FileSystemFileHandle).getFile();
+              opfsSnapshots.push({
+                pathSha256: await sha256(path),
+                kind: 'file',
+                size: file.size,
+                bodySha256: await sha256(await file.arrayBuffer()),
+              });
+            }
+          }
+        };
+        await visitDirectory(await storageWithDirectory.getDirectory(), '');
+        opfsSnapshots.sort((left, right) => left.pathSha256.localeCompare(right.pathSha256));
+      }
+      return {
+        local: await storageSnapshot(window.localStorage),
+        session: await storageSnapshot(window.sessionStorage),
+        indexedDb: databaseSnapshots,
+        caches: cacheSnapshots,
+        opfs: opfsSnapshots,
+        cookieSha256: await sha256(document.cookie),
+      };
+    });
+  type CdpDomNode = {
+    shadowRootType?: string;
+    children?: CdpDomNode[];
+    shadowRoots?: CdpDomNode[];
+    contentDocument?: CdpDomNode;
+    templateContent?: CdpDomNode;
+  };
+  const cdpSession = await page.context().newCDPSession(page);
+  let mobileTouchActivationCount = 0;
+  const activateByTouch = async (control: Locator) => {
+    await control.scrollIntoViewIfNeeded();
+    await expect(control).toBeVisible();
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    const x = (box?.x ?? 0) + (box?.width ?? 0) / 2;
+    const y = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+    await cdpSession.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x, y, radiusX: 2, radiusY: 2, force: 1 }],
+    });
+    await cdpSession.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: [],
+    });
+    mobileTouchActivationCount += 1;
+  };
+  const closedShadowRootCount = async () => {
+    const documentSnapshot = (await cdpSession.send('DOM.getDocument', {
+      depth: -1,
+      pierce: true,
+    })) as { root: CdpDomNode };
+    const countNode = (node: CdpDomNode): number =>
+      (node.shadowRootType === 'closed' ? 1 : 0) +
+      (node.children ?? []).reduce((count, child) => count + countNode(child), 0) +
+      (node.shadowRoots ?? []).reduce((count, child) => count + countNode(child), 0) +
+      (node.contentDocument ? countNode(node.contentDocument) : 0) +
+      (node.templateContent ? countNode(node.templateContent) : 0);
+    return countNode(documentSnapshot.root);
+  };
+  const assertNoExternalProductSurface = async () => {
+    expect(
+      await page
+        .locator(
+          'input[type="file"], iframe, frame, portal, [target="_blank"], [formtarget="_blank"]',
+        )
+        .count(),
+    ).toBe(0);
+    expect(await closedShadowRootCount()).toBe(0);
+  };
+  const initialBrowserAudit = await browserAuditSnapshot();
+  expect(initialBrowserAudit?.instrumentationFailureCount).toBe(0);
+  expect(initialBrowserAudit?.productJourneyBegun).toBe(true);
+  expect(initialBrowserAudit).toMatchObject({
+    workerConstructionCount: 0,
+    popupCreationCount: 0,
+    filePickerInvocationCount: 0,
+    networkChannelConstructionCount: 0,
+    historyMutationCount: 0,
+    hashChangeCount: 0,
+    closedShadowRootAttemptCount: 0,
+    unsafeDomInsertionCount: 0,
+  });
+  const initialPersistentAudit = await persistentAuditSnapshot();
+  expect(initialPersistentAudit?.instrumentationFailureCount).toBe(0);
+  expect(initialPersistentAudit?.storageProxyCount).toBe(2);
+  expect(initialPersistentAudit?.productJourneyBegun).toBe(true);
+  expect(initialPersistentAudit?.writeCount).toBe(0);
+
+  const readJourneyLifecycleAudit = async (networkStart: number, mutationStart: number) => {
+    await page.waitForTimeout(2_000);
+    const browser = await browserAuditSnapshot();
+    const persistence = await persistentAuditSnapshot();
+    expect(browser).not.toBeNull();
+    expect(persistence).toBeDefined();
+    const audit = {
+      persistentWriteOperationCount: persistence?.writeCount ?? -1,
+      networkRequestCount: applicationNetworkRequests.length - networkStart,
+      mutationRequestCount: mutationRequestCount() - mutationStart,
+      networkChannelConstructionCount: browser?.networkChannelConstructionCount ?? -1,
+      workerConstructionCount: browser?.workerConstructionCount ?? -1,
+      popupCreationCount: (browser?.popupCreationCount ?? -1) + unexpectedPopupPages.length,
+      filePickerInvocationCount: browser?.filePickerInvocationCount ?? -1,
+      historyMutationCount: browser?.historyMutationCount ?? -1,
+      hashChangeCount: browser?.hashChangeCount ?? -1,
+      closedShadowRootAttemptCount: browser?.closedShadowRootAttemptCount ?? -1,
+      unsafeDomInsertionCount: browser?.unsafeDomInsertionCount ?? -1,
+      instrumentationFailureCount:
+        (browser?.instrumentationFailureCount ?? -1) +
+        (persistence?.instrumentationFailureCount ?? -1),
+      webSocketEventCount: unexpectedWebSockets.length,
+      workerEventCount: unexpectedWorkers.length,
+      frameAttachmentCount,
+      fileChooserEventCount,
+      downloadEventCount,
+      dialogEventCount,
+      unsafeDelegatedActionListenerCount: await unsafeDelegatedActionListenerCount(),
+      activePageWorkerCount: page.workers().length,
+      activeServiceWorkerCount: page.context().serviceWorkers().length,
+      closedShadowRootCount: await closedShadowRootCount(),
+    };
+    for (const count of Object.values(audit)) expect(count).toBe(0);
+    return audit;
+  };
+
+  const resumeFieldLabels = ['E-posta', 'Deneyim', 'Eğitim', 'Beceriler', 'Dil'] as const;
+  const resumeClosedControls = ['BUTTON:button:Sentetik PDF taslak akışını dene'].sort();
+  const resumeOpenedControls = [
+    'BUTTON:button:Sentetik taslak denemesini kapat',
+    'BUTTON:button:Sentetik PDF örneğini işle',
+  ].sort();
+  const resumeBaseProcessedControls = [
+    'BUTTON:button:Sentetik taslak denemesini kapat',
+    ...Array.from({ length: expectedSyntheticResumeProposalCount }, () => 'INPUT::'),
+    ...resumeFieldLabels.flatMap((label) => [
+      `BUTTON:button:${label} alanını kabul et`,
+      `BUTTON:button:${label} alanını reddet`,
+    ]),
+    'BUTTON:button:Seçtiğim alanları taslağa aktar (0)',
+    'BUTTON:button:Tümünü reddet',
+    'BUTTON:button:Denemeyi sıfırla',
+  ].sort();
+  const resumeEditedControls = resumeBaseProcessedControls
+    .filter(
+      (signature) =>
+        signature !== 'BUTTON:button:E-posta alanını kabul et' &&
+        signature !== 'BUTTON:button:E-posta alanını reddet',
+    )
+    .concat([
+      'BUTTON:button:E-posta düzenlemesini kabul et',
+      'BUTTON:button:E-posta düzenlemesini reddet',
+    ])
+    .sort();
+  const resumeReviewedControls = [
+    'BUTTON:button:Sentetik taslak denemesini kapat',
+    ...Array.from({ length: expectedSyntheticResumeProposalCount }, () => 'INPUT::'),
+    'BUTTON:button:Eğitim alanını kabul et',
+    'BUTTON:button:Eğitim alanını reddet',
+    'BUTTON:button:Dil alanını kabul et',
+    'BUTTON:button:Dil alanını reddet',
+    'BUTTON:button:Seçtiğim alanları taslağa aktar (2)',
+    'BUTTON:button:Tümünü reddet',
+    'BUTTON:button:Denemeyi sıfırla',
+  ].sort();
+  const resumeRejectArmedControls = resumeReviewedControls
+    .filter((signature) => signature !== 'BUTTON:button:Tümünü reddet')
+    .concat('BUTTON:button:Tümünü reddetmeyi onayla')
+    .sort();
+  const resumeAllRejectedControls = [
+    'BUTTON:button:Sentetik taslak denemesini kapat',
+    ...Array.from({ length: expectedSyntheticResumeProposalCount }, () => 'INPUT::'),
+    'BUTTON:button:Seçtiğim alanları taslağa aktar (0)',
+    'BUTTON:button:Tümünü reddet',
+    'BUTTON:button:Denemeyi sıfırla',
+  ].sort();
+  let resumeCardControls = await readInteractiveControlSignatures(cvImportCard);
+  expect(resumeCardControls).toEqual(resumeClosedControls);
+  let resumeDocumentControls = await readInteractiveControlSignatures(page.locator('body'));
+  const advanceResumeControlState = async (expectedControls: string[]) => {
+    const nextCardControls = await readInteractiveControlSignatures(cvImportCard);
+    expect(nextCardControls).toEqual(expectedControls);
+    const nextDocumentControls = await readInteractiveControlSignatures(page.locator('body'));
+    expect(nextDocumentControls).toEqual(
+      replaceSignatureMultiset(resumeDocumentControls, resumeCardControls, expectedControls),
+    );
+    resumeCardControls = nextCardControls;
+    resumeDocumentControls = nextDocumentControls;
+    await assertNoExternalProductSurface();
+    expect(await unsafeDelegatedActionListenerCount()).toBe(0);
+  };
+  await assertNoExternalProductSurface();
+  const persistentStateBeforeResume = await persistentStateSnapshot();
+  const resumePersistentWriteStart = await persistentWriteCount();
+  const resumeNetworkStart = applicationNetworkRequests.length;
+  const resumeMutationStart = mutationRequestCount();
+  const resumeWorkerConstructionStart = await workerConstructionCount();
+  const resumePopupCreationStart = await crossPageCreationCount();
+  const resumeFilePickerInvocationStart = await filePickerInvocationCount();
+  const resumeNetworkChannelConstructionStart = await networkChannelConstructionCount();
+  expect(resumeWorkerConstructionStart).toBe(0);
+  expect(resumePopupCreationStart).toBe(0);
+  expect(page.workers()).toHaveLength(0);
+  expect(page.context().serviceWorkers()).toHaveLength(0);
+  expect(await hubSurface.locator('[target="_blank"], [formtarget="_blank"]').count()).toBe(0);
+  expect(await hubSurface.locator('iframe, frame').count()).toBe(0);
+  const resumeUnsafeDelegatedActionListenerCountBefore =
+    await unsafeDelegatedActionListenerCount();
+  expect(resumeUnsafeDelegatedActionListenerCountBefore).toBe(0);
+
+  const resumeDemoButton = cvImportCard.getByRole('button', {
+    name: 'Sentetik PDF taslak akışını dene',
+  });
+  await resumeDemoButton.focus();
+  await expect(resumeDemoButton).toBeFocused();
+  await page.keyboard.press('Enter');
+  await advanceResumeControlState(resumeOpenedControls);
+  const resumeProcessButton = page.getByTestId('ats-synthetic-resume-process');
+  await expect(resumeProcessButton).toBeVisible();
+  await resumeProcessButton.focus();
+  await page.keyboard.press('Enter');
+  await advanceResumeControlState(resumeBaseProcessedControls);
+
+  const resumeProposals = page.getByTestId('ats-synthetic-resume-proposals');
+  const resumeFields = resumeProposals.locator('article[data-testid^="ats-resume-field-"]');
+  await expect(resumeFields).toHaveCount(expectedSyntheticResumeProposalCount);
+  const proposalCount = await resumeFields.count();
+  const invalidFixtureCount = await resumeProposals.locator('input').evaluateAll((inputs) =>
+    inputs.filter(
+      (input) => input instanceof HTMLInputElement && input.value.endsWith('@example.invalid'),
+    ).length,
+  );
+  expect(invalidFixtureCount).toBe(1);
+
+  const emailField = page.getByTestId('ats-resume-field-contact-email');
+  const emailInput = emailField.getByLabel('E-posta');
+  await expect(emailInput).not.toHaveAttribute('readonly');
+  await emailInput.selectText();
+  await emailInput.pressSequentially('a');
+  const editableAfterFirstKeystroke = (await emailInput.getAttribute('readonly')) === null;
+  expect(editableAfterFirstKeystroke).toBe(true);
+  await emailInput.pressSequentially('day.duzenlendi@example.invalid');
+  await expect(emailInput).toHaveValue(expectedEditedEmail);
+  await advanceResumeControlState(resumeEditedControls);
+  const editedEmail = await emailInput.inputValue();
+  const acceptAfterEdit = emailField.getByRole('button', {
+    name: 'E-posta düzenlemesini kabul et',
+  });
+  const rejectAfterEdit = emailField.getByRole('button', {
+    name: 'E-posta düzenlemesini reddet',
+  });
+  await expect(acceptAfterEdit).toBeVisible();
+  await expect(rejectAfterEdit).toBeVisible();
+  const acceptAfterEditVisible = await acceptAfterEdit.isVisible();
+  const rejectAfterEditVisible = await rejectAfterEdit.isVisible();
+  await activateByKeyboard(acceptAfterEdit, 'Space');
+  await expect(emailInput).toHaveAttribute('readonly');
+  await expect(emailField).toContainText('Kabul edildi');
+
+  await activateByKeyboard(
+    page
+      .getByTestId('ats-resume-field-skills')
+      .getByRole('button', { name: 'Beceriler alanını kabul et' }),
+    'Space',
+  );
+  await activateByKeyboard(
+    page
+      .getByTestId('ats-resume-field-experience')
+      .getByRole('button', { name: 'Deneyim alanını reddet' }),
+    'Space',
+  );
+  await advanceResumeControlState(resumeReviewedControls);
+
+  const transferSelected = page.getByTestId('ats-resume-transfer-selected');
+  await expect(transferSelected).toContainText('(2)');
+  await activateByKeyboard(transferSelected, 'Space');
+  await advanceResumeControlState(resumeReviewedControls);
+  const localDraft = page.getByTestId('ats-synthetic-resume-draft');
+  await expect(localDraft).toBeVisible();
+  await expect(localDraft).toContainText(expectedEditedEmail);
+  await expect(localDraft).toContainText('Araştırma, erişilebilir ürün tasarımı');
+  const acceptedDraftFieldCount = await localDraft.locator('dl > div').count();
+  expect(acceptedDraftFieldCount).toBe(2);
+  const localDraftVisible = await localDraft.isVisible();
+  const localDraftContainsEditedEmail = (await localDraft.innerText()).includes(expectedEditedEmail);
+
+  const rejectAll = cvImportCard.getByRole('button', { name: 'Tümünü reddet', exact: true });
+  await activateByKeyboard(rejectAll, 'Space');
+  const rejectAllAlert = cvImportCard.getByRole('alert');
+  await expect(rejectAllAlert).toBeVisible();
+  const rejectAllConfirm = cvImportCard.getByRole('button', {
+    name: 'Tümünü reddetmeyi onayla',
+  });
+  await expect(rejectAllConfirm).toBeVisible();
+  await advanceResumeControlState(resumeRejectArmedControls);
+  const rejectAllSecondConfirmationRequired = await rejectAllConfirm.isVisible();
+  expect(await emailField.innerText()).toContain('Kabul edildi');
+  await activateByKeyboard(rejectAllConfirm, 'Space');
+  for (const field of await resumeFields.all()) {
+    await expect(field).toContainText('Reddedildi');
+  }
+  await expect(localDraft).toHaveCount(0);
+  const rejectAllApplied =
+    (await resumeFields.filter({ hasText: 'Reddedildi' }).count()) ===
+    expectedSyntheticResumeProposalCount;
+  expect(rejectAllApplied).toBe(true);
+  await advanceResumeControlState(resumeAllRejectedControls);
+
+  await activateByKeyboard(
+    cvImportCard.getByRole('button', { name: 'Denemeyi sıfırla' }),
+    'Space',
+  );
+  await expect(page.getByTestId('ats-synthetic-resume-process')).toBeVisible();
+  await expect(page.getByTestId('ats-synthetic-resume-proposals')).toHaveCount(0);
+  await advanceResumeControlState(resumeOpenedControls);
+  const resetReturnedToStart = await page.getByTestId('ats-synthetic-resume-process').isVisible();
+  await activateByKeyboard(
+    cvImportCard.getByRole('button', { name: 'Sentetik taslak denemesini kapat' }),
+    'Space',
+  );
+  await advanceResumeControlState(resumeClosedControls);
+  await page.waitForTimeout(mutationQuietPeriodMs);
+  const persistentStateAfterResume = await persistentStateSnapshot();
+  const persistentStoresUnchanged =
+    JSON.stringify(persistentStateBeforeResume) === JSON.stringify(persistentStateAfterResume);
+  expect(persistentStoresUnchanged).toBe(true);
+  const resumePersistentWriteOperationCount =
+    (await persistentWriteCount()) - resumePersistentWriteStart;
+  expect(resumePersistentWriteOperationCount).toBe(0);
+  const resumeNetworkRequestCount = applicationNetworkRequests.length - resumeNetworkStart;
+  expect(resumeNetworkRequestCount).toBe(0);
+  const resumeMutationRequestCount = mutationRequestCount() - resumeMutationStart;
+  expect(resumeMutationRequestCount).toBe(0);
+  const resumeWorkerConstructionCount =
+    (await workerConstructionCount()) - resumeWorkerConstructionStart;
+  expect(resumeWorkerConstructionCount).toBe(0);
+  const resumePopupCreationCount =
+    (await crossPageCreationCount()) - resumePopupCreationStart;
+  expect(resumePopupCreationCount).toBe(0);
+  const resumeFilePickerInvocationCount =
+    (await filePickerInvocationCount()) - resumeFilePickerInvocationStart;
+  expect(resumeFilePickerInvocationCount).toBe(0);
+  const resumeNetworkChannelConstructionCount =
+    (await networkChannelConstructionCount()) - resumeNetworkChannelConstructionStart;
+  expect(resumeNetworkChannelConstructionCount).toBe(0);
+  const resumeUnsafeDelegatedActionListenerCountAfter =
+    await unsafeDelegatedActionListenerCount();
+  expect(resumeUnsafeDelegatedActionListenerCountAfter).toBe(0);
+  const resumeUnsafeDelegatedActionListenerCount = Math.max(
+    resumeUnsafeDelegatedActionListenerCountBefore,
+    resumeUnsafeDelegatedActionListenerCountAfter,
+  );
+  expect(await hubSurface.locator('input[type="file"]').count()).toBe(0);
 
   const allRolesFilter = page.getByTestId('ats-role-filter-all');
   await allRolesFilter.focus();
   await page.keyboard.press('Space');
   await expect(allRolesFilter).toHaveAttribute('aria-pressed', 'true');
+  expect(await readPressedRoleIds()).toEqual(['all']);
   await expect(capabilityCards).toHaveCount(expectedCapabilityIds.length);
+
+  const safeScenarioPersistentStateBefore = await persistentStateSnapshot();
+  const safeScenarioPersistentWriteStart = await persistentWriteCount();
+  const safeScenarioNetworkStart = applicationNetworkRequests.length;
+  const safeScenarioMutationStart = mutationRequestCount();
+  const safeScenarioWorkerStart = await workerConstructionCount();
+  const safeScenarioPopupStart = await crossPageCreationCount();
+  const safeScenarioFilePickerStart = await filePickerInvocationCount();
+  const safeScenarioNetworkChannelStart = await networkChannelConstructionCount();
+  const safeScenarioUnsafeDelegatedBefore = await unsafeDelegatedActionListenerCount();
+  expect(safeScenarioUnsafeDelegatedBefore).toBe(0);
+  const completedSafeScenarioCapabilityIds: string[] = [];
+  for (const [capabilityId, journey] of Object.entries(expectedSafeScenarioJourneys)) {
+    const card = page.getByTestId(`ats-capability-${capabilityId}`);
+    const closedControls = [`BUTTON:button:${journey.action}`].sort();
+    const openedControls = [
+      'BUTTON:button:Güvenli denemeyi kapat',
+      'BUTTON:button:Sentetik çıktıyı üret',
+    ].sort();
+    const completedControls = [
+      'BUTTON:button:Güvenli denemeyi kapat',
+      'BUTTON:button:Denemeyi sıfırla',
+    ].sort();
+    expect(await readInteractiveControlSignatures(card)).toEqual(closedControls);
+    const closedDocumentControls = await readInteractiveControlSignatures(page.locator('body'));
+    await activateByKeyboard(card.getByRole('button', { name: journey.action }), 'Space');
+    expect(await readInteractiveControlSignatures(card)).toEqual(openedControls);
+    const openedDocumentControls = await readInteractiveControlSignatures(page.locator('body'));
+    expect(openedDocumentControls).toEqual(
+      replaceSignatureMultiset(closedDocumentControls, closedControls, openedControls),
+    );
+    await assertNoExternalProductSurface();
+    await activateByKeyboard(page.getByTestId(`ats-safe-run-${capabilityId}`), 'Space');
+    await expect(card).toContainText(journey.scenario);
+    await expect(card).toContainText(journey.output);
+    await expect(card).toContainText(journey.boundary);
+    await expect(card).toContainText(
+      'Bu deneme tarayıcı belleğinde çalıştı; ağ isteği, kayıt, bildirim veya karar üretilmedi.',
+    );
+    expect(await readInteractiveControlSignatures(card)).toEqual(completedControls);
+    const completedDocumentControls = await readInteractiveControlSignatures(page.locator('body'));
+    expect(completedDocumentControls).toEqual(
+      replaceSignatureMultiset(openedDocumentControls, openedControls, completedControls),
+    );
+    await assertNoExternalProductSurface();
+    await activateByKeyboard(card.getByRole('button', { name: 'Denemeyi sıfırla' }), 'Space');
+    expect(await readInteractiveControlSignatures(card)).toEqual(openedControls);
+    expect(await readInteractiveControlSignatures(page.locator('body'))).toEqual(
+      openedDocumentControls,
+    );
+    await assertNoExternalProductSurface();
+    await activateByKeyboard(
+      card.getByRole('button', { name: 'Güvenli denemeyi kapat' }),
+      'Space',
+    );
+    expect(await readInteractiveControlSignatures(card)).toEqual(closedControls);
+    expect(await readInteractiveControlSignatures(page.locator('body'))).toEqual(
+      closedDocumentControls,
+    );
+    await assertNoExternalProductSurface();
+    completedSafeScenarioCapabilityIds.push(capabilityId);
+  }
+  expect(completedSafeScenarioCapabilityIds).toEqual(Object.keys(expectedSafeScenarioJourneys));
+  await page.waitForTimeout(mutationQuietPeriodMs);
+  const safeScenarioPersistentStateAfter = await persistentStateSnapshot();
+  const safeScenarioPersistentStoresUnchanged =
+    JSON.stringify(safeScenarioPersistentStateBefore) ===
+    JSON.stringify(safeScenarioPersistentStateAfter);
+  expect(safeScenarioPersistentStoresUnchanged).toBe(true);
+  const safeScenarioPersistentWriteOperationCount =
+    (await persistentWriteCount()) - safeScenarioPersistentWriteStart;
+  const safeScenarioNetworkRequestCount =
+    applicationNetworkRequests.length - safeScenarioNetworkStart;
+  const safeScenarioMutationRequestCount = mutationRequestCount() - safeScenarioMutationStart;
+  const safeScenarioWorkerConstructionCount =
+    (await workerConstructionCount()) - safeScenarioWorkerStart;
+  const safeScenarioPopupCreationCount =
+    (await crossPageCreationCount()) - safeScenarioPopupStart;
+  const safeScenarioFilePickerInvocationCount =
+    (await filePickerInvocationCount()) - safeScenarioFilePickerStart;
+  const safeScenarioNetworkChannelConstructionCount =
+    (await networkChannelConstructionCount()) - safeScenarioNetworkChannelStart;
+  const safeScenarioUnsafeDelegatedAfter = await unsafeDelegatedActionListenerCount();
+  for (const count of [
+    safeScenarioPersistentWriteOperationCount,
+    safeScenarioNetworkRequestCount,
+    safeScenarioMutationRequestCount,
+    safeScenarioWorkerConstructionCount,
+    safeScenarioPopupCreationCount,
+    safeScenarioFilePickerInvocationCount,
+    safeScenarioNetworkChannelConstructionCount,
+    safeScenarioUnsafeDelegatedAfter,
+  ]) {
+    expect(count).toBe(0);
+  }
+  const safeScenarioUnsafeDelegatedActionListenerCount = Math.max(
+    safeScenarioUnsafeDelegatedBefore,
+    safeScenarioUnsafeDelegatedAfter,
+  );
+
+  const persistentStateBeforeAgentic = await persistentStateSnapshot();
+  const agenticPersistentWriteStart = await persistentWriteCount();
+  const agenticNetworkStart = applicationNetworkRequests.length;
+  const agenticMutationStart = mutationRequestCount();
+  const agenticWorkerConstructionStart = await workerConstructionCount();
+  const agenticPopupCreationStart = await crossPageCreationCount();
+  const agenticFilePickerInvocationStart = await filePickerInvocationCount();
+  const agenticNetworkChannelConstructionStart = await networkChannelConstructionCount();
+  const agenticUnsafeDelegatedActionListenerCountBefore =
+    await unsafeDelegatedActionListenerCount();
+  expect(agenticUnsafeDelegatedActionListenerCountBefore).toBe(0);
+  const agenticCard = page.getByTestId('ats-capability-agentic-screening');
+  const agenticModeBadge = agenticCard.getByText('Yalnız öneri', { exact: true });
+  await expect(agenticModeBadge).toHaveCount(1);
+  await expect(agenticModeBadge).toBeVisible();
+  const agenticMode =
+    (await agenticModeBadge.innerText()).trim() === 'Yalnız öneri'
+      ? ('PROPOSAL_ONLY' as const)
+      : ('UNVERIFIED' as const);
+  expect(agenticMode).toBe('PROPOSAL_ONLY');
+  const closedAgenticControlSignatures = await readInteractiveControlSignatures(agenticCard);
+  expect(await page.locator('iframe, frame').count()).toBe(0);
+  const closedDocumentControlSignatures = await readInteractiveControlSignatures(
+    page.locator('body'),
+  );
+  expect(closedAgenticControlSignatures).toEqual(
+    [...expectedAgenticInteractiveControlSignatures.closed].sort(),
+  );
+  expect(await closedShadowRootCount()).toBe(0);
+  const agenticOpen = agenticCard.getByRole('button', {
+    name: 'Ajan önerisini güvenle dene',
+  });
+  await agenticOpen.focus();
+  await expect(agenticOpen).toBeFocused();
+  await page.keyboard.press('Enter');
+  const openedAgenticControlSignatures = await readInteractiveControlSignatures(agenticCard);
+  const openedDocumentControlSignatures = await readInteractiveControlSignatures(
+    page.locator('body'),
+  );
+  expect(openedAgenticControlSignatures).toEqual(
+    [...expectedAgenticInteractiveControlSignatures.opened].sort(),
+  );
+  expect([...openedDocumentControlSignatures].sort()).toEqual(
+    replaceSignatureMultiset(
+      closedDocumentControlSignatures,
+      expectedAgenticInteractiveControlSignatures.closed,
+      expectedAgenticInteractiveControlSignatures.opened,
+    ),
+  );
+  expect(await closedShadowRootCount()).toBe(0);
+  await activateByKeyboard(page.getByTestId('ats-safe-run-agentic-screening'), 'Space');
+  await expect(agenticCard).toContainText(
+    'Sentetik bir başvuruda eksik insan inceleme adımı için açıklanabilir sonraki-adım taslağı istenir.',
+  );
+  await expect(agenticCard).toContainText('Salt-okunur örnek çıktı');
+  await expect(agenticCard).toContainText(
+    'Gerekçe, gerekli insan onayları ve uygulanamayacak eylemlerle birlikte salt-okunur öneri gösterilir.',
+  );
+  await expect(agenticCard).toContainText(
+    'Mesaj gönderilmez, aday durumu değişmez, red/teklif/sıralama üretilmez ve toplu onay yoktur.',
+  );
+  const completedAgenticControlSignatures = await readInteractiveControlSignatures(agenticCard);
+  const completedDocumentControlSignatures = await readInteractiveControlSignatures(
+    page.locator('body'),
+  );
+  expect(completedAgenticControlSignatures).toEqual(
+    [...expectedAgenticInteractiveControlSignatures.completed].sort(),
+  );
+  expect([...completedDocumentControlSignatures].sort()).toEqual(
+    replaceSignatureMultiset(
+      openedDocumentControlSignatures,
+      expectedAgenticInteractiveControlSignatures.opened,
+      expectedAgenticInteractiveControlSignatures.completed,
+    ),
+  );
+  expect(await closedShadowRootCount()).toBe(0);
+  const agenticInteractiveControlSignatures = {
+    closed: closedAgenticControlSignatures,
+    opened: openedAgenticControlSignatures,
+    completed: completedAgenticControlSignatures,
+  };
+  const forbiddenActionControlCount = (
+    Object.keys(expectedAgenticInteractiveControlSignatures) as Array<
+      keyof typeof expectedAgenticInteractiveControlSignatures
+    >
+  ).reduce(
+    (count, state) =>
+      count +
+      agenticInteractiveControlSignatures[state].filter(
+        (signature) =>
+          !(expectedAgenticInteractiveControlSignatures[state] as readonly string[]).includes(
+            signature,
+          ),
+      ).length,
+    0,
+  );
+  expect(forbiddenActionControlCount).toBe(0);
+  const agenticRunnerCompleted = (await agenticCard.innerText()).includes(
+    'Salt-okunur örnek çıktı',
+  );
+  const agenticBoundaryVisible = (await agenticCard.innerText()).includes(
+    'Mesaj gönderilmez',
+  );
+  await activateByKeyboard(agenticCard.getByRole('button', { name: 'Denemeyi sıfırla' }), 'Space');
+  expect(await readInteractiveControlSignatures(agenticCard)).toEqual(
+    [...expectedAgenticInteractiveControlSignatures.opened].sort(),
+  );
+  await activateByKeyboard(
+    agenticCard.getByRole('button', { name: 'Güvenli denemeyi kapat' }),
+    'Space',
+  );
+  expect(await readInteractiveControlSignatures(agenticCard)).toEqual(
+    [...expectedAgenticInteractiveControlSignatures.closed].sort(),
+  );
+  expect(await readInteractiveControlSignatures(page.locator('body'))).toEqual(
+    closedDocumentControlSignatures,
+  );
+  await page.waitForTimeout(mutationQuietPeriodMs);
+  const persistentStateAfterAgentic = await persistentStateSnapshot();
+  const agenticPersistentStoresUnchanged =
+    JSON.stringify(persistentStateBeforeAgentic) === JSON.stringify(persistentStateAfterAgentic);
+  expect(agenticPersistentStoresUnchanged).toBe(true);
+  const agenticPersistentWriteOperationCount =
+    (await persistentWriteCount()) - agenticPersistentWriteStart;
+  expect(agenticPersistentWriteOperationCount).toBe(0);
+  const agenticNetworkRequestCount = applicationNetworkRequests.length - agenticNetworkStart;
+  expect(agenticNetworkRequestCount).toBe(0);
+  const agenticMutationRequestCount = mutationRequestCount() - agenticMutationStart;
+  expect(agenticMutationRequestCount).toBe(0);
+  const agenticWorkerConstructionCount =
+    (await workerConstructionCount()) - agenticWorkerConstructionStart;
+  expect(agenticWorkerConstructionCount).toBe(0);
+  const agenticPopupCreationCount =
+    (await crossPageCreationCount()) - agenticPopupCreationStart;
+  expect(agenticPopupCreationCount).toBe(0);
+  const agenticFilePickerInvocationCount =
+    (await filePickerInvocationCount()) - agenticFilePickerInvocationStart;
+  expect(agenticFilePickerInvocationCount).toBe(0);
+  const agenticNetworkChannelConstructionCount =
+    (await networkChannelConstructionCount()) - agenticNetworkChannelConstructionStart;
+  expect(agenticNetworkChannelConstructionCount).toBe(0);
+  const agenticUnsafeDelegatedActionListenerCountAfter =
+    await unsafeDelegatedActionListenerCount();
+  expect(agenticUnsafeDelegatedActionListenerCountAfter).toBe(0);
+  const agenticUnsafeDelegatedActionListenerCount = Math.max(
+    agenticUnsafeDelegatedActionListenerCountBefore,
+    agenticUnsafeDelegatedActionListenerCountAfter,
+  );
+
+  const roleJourneyCapabilityIds: Record<string, string[]> = {};
+  for (const [roleId, expectedJourneyIds] of Object.entries(
+    expectedRoleJourneyCapabilityIds,
+  )) {
+    const roleFilter = page.getByTestId(`ats-role-filter-${roleId}`);
+    await activateByKeyboard(roleFilter, 'Space');
+    expect(await readPressedRoleIds()).toEqual([roleId]);
+    const visibleRoleCapabilityIds = await capabilityCards.evaluateAll((cards) =>
+      cards.map((card) =>
+        (card.getAttribute('data-testid') ?? '').replace(/^ats-capability-/, ''),
+      ),
+    );
+    expect(visibleRoleCapabilityIds).toEqual(
+      expectedRoleCapabilityIds[roleId as keyof typeof expectedRoleCapabilityIds],
+    );
+    const journeyIds = visibleRoleCapabilityIds.filter((capabilityId) =>
+      (allSafeExperienceCapabilityIds as readonly string[]).includes(capabilityId),
+    );
+    expect(journeyIds).toEqual(expectedJourneyIds);
+
+    for (const capabilityId of journeyIds) {
+      const card = page.getByTestId(`ats-capability-${capabilityId}`);
+      if (capabilityId === 'candidate-cv-pdf-import') {
+        await activateByKeyboard(
+          card.getByRole('button', { name: 'Sentetik PDF taslak akışını dene' }),
+          'Space',
+        );
+        await activateByKeyboard(page.getByTestId('ats-synthetic-resume-process'), 'Space');
+        const proposals = card.locator('article[data-testid^="ats-resume-field-"]');
+        await expect(proposals).toHaveCount(expectedSyntheticResumeProposalCount);
+        const journeyEmail = card.getByLabel('E-posta');
+        await journeyEmail.selectText();
+        const expectedJourneyEmail = `${roleId}.journey@example.invalid`;
+        await journeyEmail.pressSequentially(expectedJourneyEmail);
+        await expect(journeyEmail).toHaveValue(expectedJourneyEmail);
+        await activateByKeyboard(
+          card.getByRole('button', { name: 'E-posta düzenlemesini kabul et' }),
+          'Space',
+        );
+        await activateByKeyboard(
+          card.getByRole('button', { name: 'Deneyim alanını reddet' }),
+          'Space',
+        );
+        const journeyTransfer = card.getByTestId('ats-resume-transfer-selected');
+        await expect(journeyTransfer).toContainText('(1)');
+        await activateByKeyboard(journeyTransfer, 'Space');
+        const journeyDraft = card.getByTestId('ats-synthetic-resume-draft');
+        await expect(journeyDraft).toContainText(expectedJourneyEmail);
+        await activateByKeyboard(
+          card.getByRole('button', { name: 'Tümünü reddet', exact: true }),
+          'Space',
+        );
+        const journeyRejectAllConfirm = card.getByRole('button', {
+          name: 'Tümünü reddetmeyi onayla',
+        });
+        await expect(journeyRejectAllConfirm).toBeVisible();
+        await activateByKeyboard(journeyRejectAllConfirm, 'Space');
+        await expect(journeyDraft).toHaveCount(0);
+        await activateByKeyboard(card.getByRole('button', { name: 'Denemeyi sıfırla' }), 'Space');
+        await expect(page.getByTestId('ats-synthetic-resume-process')).toBeVisible();
+        await activateByKeyboard(
+          card.getByRole('button', { name: 'Sentetik taslak denemesini kapat' }),
+          'Space',
+        );
+        expect(await readInteractiveControlSignatures(card)).toEqual(resumeClosedControls);
+        expect(await card.locator('input[type="file"]').count()).toBe(0);
+      } else {
+        const journey =
+          capabilityId === 'agentic-screening'
+            ? expectedAgenticJourney
+            : expectedSafeScenarioJourneys[
+                capabilityId as keyof typeof expectedSafeScenarioJourneys
+              ];
+        await activateByKeyboard(card.getByRole('button', { name: journey.action }), 'Space');
+        await expect(card).toContainText(journey.scenario);
+        await activateByKeyboard(page.getByTestId(`ats-safe-run-${capabilityId}`), 'Space');
+        await expect(card).toContainText(journey.output);
+        await expect(card).toContainText(journey.boundary);
+        await expect(card).toContainText(
+          'Bu deneme tarayıcı belleğinde çalıştı; ağ isteği, kayıt, bildirim veya karar üretilmedi.',
+        );
+        await activateByKeyboard(card.getByRole('button', { name: 'Denemeyi sıfırla' }), 'Space');
+        await activateByKeyboard(
+          card.getByRole('button', { name: 'Güvenli denemeyi kapat' }),
+          'Space',
+        );
+      }
+      await assertNoExternalProductSurface();
+      expect(await unsafeDelegatedActionListenerCount()).toBe(0);
+    }
+    roleJourneyCapabilityIds[roleId] = journeyIds;
+  }
+  expect(roleJourneyCapabilityIds).toEqual(expectedRoleJourneyCapabilityIds);
+  await activateByKeyboard(allRolesFilter, 'Space');
+  expect(await readPressedRoleIds()).toEqual(['all']);
+  await expect(capabilityCards).toHaveCount(expectedCapabilityIds.length);
+  expect(await readInteractiveControlSignatures(hubSurface)).toEqual(
+    expectedInitialHubControlSignatures,
+  );
+
+  const desktopJourneyLifecycleAudit = await readJourneyLifecycleAudit(
+    productJourneyNetworkStart,
+    productJourneyMutationStart,
+  );
 
   const liveLaunch = page.getByTestId('ats-live-interview-evidence-link');
   await expect(liveLaunch).toBeVisible();
@@ -675,11 +2902,72 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     capabilityIds,
     targetRoleIds,
     visibleCapabilityCount: capabilityIds.length,
+    roleCapabilityCounts,
+    roleCapabilityIds,
+    roleJourneyCapabilityIds,
+    roleJourneyEvidenceClass: 'TARGET_ROLE_FILTER_UNDER_NAMED_VIEW_PERSONA',
+    journeyLifecycleAudit: {
+      desktop: desktopJourneyLifecycleAudit,
+    },
     candidateFilterVisible: await candidateFilter.isVisible(),
     candidateBoundaryVisible,
     cvImportMode: 'OWNER_GATED',
     cvImportInteractiveControlCount,
     fileUploadControlCount,
+    syntheticResume: {
+      proposalCount,
+      invalidFixtureCount,
+      editableAfterFirstKeystroke,
+      editedEmail,
+      acceptAfterEditVisible,
+      rejectAfterEditVisible,
+      acceptedDraftFieldCount,
+      localDraftVisible,
+      localDraftContainsEditedEmail,
+      rejectAllSecondConfirmationRequired,
+      rejectAllApplied,
+      resetReturnedToStart,
+      persistentStoresUnchanged,
+      persistentWriteOperationCount: resumePersistentWriteOperationCount,
+      mutationQuietPeriodMs,
+      mutationRequestCount: resumeMutationRequestCount,
+      networkRequestCount: resumeNetworkRequestCount,
+      networkChannelConstructionCount: resumeNetworkChannelConstructionCount,
+      workerConstructionCount: resumeWorkerConstructionCount,
+      popupCreationCount: resumePopupCreationCount,
+      filePickerInvocationCount: resumeFilePickerInvocationCount,
+      unsafeDelegatedActionListenerCount: resumeUnsafeDelegatedActionListenerCount,
+    },
+    agentic: {
+      mode: agenticMode,
+      runnerCompleted: agenticRunnerCompleted,
+      boundaryVisible: agenticBoundaryVisible,
+      interactiveControlSignatures: agenticInteractiveControlSignatures,
+      forbiddenActionControlCount,
+      persistentStoresUnchanged: agenticPersistentStoresUnchanged,
+      persistentWriteOperationCount: agenticPersistentWriteOperationCount,
+      mutationQuietPeriodMs,
+      mutationRequestCount: agenticMutationRequestCount,
+      networkRequestCount: agenticNetworkRequestCount,
+      networkChannelConstructionCount: agenticNetworkChannelConstructionCount,
+      workerConstructionCount: agenticWorkerConstructionCount,
+      popupCreationCount: agenticPopupCreationCount,
+      filePickerInvocationCount: agenticFilePickerInvocationCount,
+      unsafeDelegatedActionListenerCount: agenticUnsafeDelegatedActionListenerCount,
+    },
+    safeExperienceCapabilityIds: [...allSafeExperienceCapabilityIds],
+    safeScenarioAudit: {
+      completedCapabilityIds: completedSafeScenarioCapabilityIds,
+      persistentStoresUnchanged: safeScenarioPersistentStoresUnchanged,
+      persistentWriteOperationCount: safeScenarioPersistentWriteOperationCount,
+      networkRequestCount: safeScenarioNetworkRequestCount,
+      mutationRequestCount: safeScenarioMutationRequestCount,
+      networkChannelConstructionCount: safeScenarioNetworkChannelConstructionCount,
+      workerConstructionCount: safeScenarioWorkerConstructionCount,
+      popupCreationCount: safeScenarioPopupCreationCount,
+      filePickerInvocationCount: safeScenarioFilePickerInvocationCount,
+      unsafeDelegatedActionListenerCount: safeScenarioUnsafeDelegatedActionListenerCount,
+    },
     liveLaunchHref,
     productBoundaryVisible: await productBoundary.isVisible(),
   };
@@ -822,15 +3110,41 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   };
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await cdpSession.send('Emulation.setDeviceMetricsOverride', {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 3,
+    mobile: true,
+    screenWidth: 390,
+    screenHeight: 844,
+  });
+  await cdpSession.send('Emulation.setTouchEmulationEnabled', {
+    enabled: true,
+    maxTouchPoints: 5,
+  });
+  await cdpSession.send('Network.setUserAgentOverride', {
+    userAgent:
+      'Mozilla/5.0 (Linux; Android 15; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36',
+  });
   await page.goto('/home', { waitUntil: 'domcontentloaded' });
   const mobileViewportWidth = await page.evaluate(() => window.innerWidth);
   expect(mobileViewportWidth).toBe(390);
+  const mobileEmulation = await page.evaluate(() => ({
+    userAgentMatched: /Android 15; Pixel 7/.test(navigator.userAgent),
+    touchPoints: navigator.maxTouchPoints,
+    pointerCoarse: window.matchMedia('(pointer: coarse)').matches,
+    deviceScaleFactor: window.devicePixelRatio,
+  }));
+  expect(mobileEmulation).toEqual({
+    userAgentMatched: true,
+    touchPoints: 5,
+    pointerCoarse: true,
+    deviceScaleFactor: 3,
+  });
   const mobileHomePath = new URL(page.url()).pathname;
   expect(mobileHomePath).toBe('/home');
   const mobileMenuButton = page.getByRole('button', { name: /Menüyü aç|Open menu/ });
-  await mobileMenuButton.focus();
-  await expect(mobileMenuButton).toBeFocused();
-  await page.keyboard.press('Enter');
+  await activateByTouch(mobileMenuButton);
   const mobileNavigation = page.getByRole('navigation', { name: 'Ana gezinme' });
   await expect(mobileNavigation).toBeVisible();
   const mobileHrButton = mobileNavigation.getByRole('button', {
@@ -838,23 +3152,361 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   });
   await expect(mobileHrButton).toBeVisible();
   const mobileMenuOpened = await mobileHrButton.isVisible();
-  await mobileHrButton.focus();
-  await expect(mobileHrButton).toBeFocused();
-  await page.keyboard.press('Enter');
+  await activateByTouch(mobileHrButton);
   const mobileAtsProductHubAction = mobileNavigation.getByRole('button', {
     name: /ATS Ürün Merkezi/,
   });
   await expect(mobileAtsProductHubAction).toBeVisible();
   const mobileHrSectionOpened = await mobileAtsProductHubAction.isVisible();
   const mobileAtsProductHubActionVisible = await mobileAtsProductHubAction.isVisible();
-  await mobileAtsProductHubAction.focus();
-  await expect(mobileAtsProductHubAction).toBeFocused();
-  await page.keyboard.press('Enter');
+  await activateByTouch(mobileAtsProductHubAction);
   await expect(hubSurface).toBeVisible({ timeout: 90_000 });
   const mobileHubPath = new URL(page.url()).pathname;
   expect(mobileHubPath).toBe(expectedHubPath);
   const mobileHubRendered = await hubSurface.isVisible();
+  const mobileProductJourneyAuditStart = await page.evaluate(() => {
+    const auditWindow = window as Window & {
+      __p5BrowserAuditBeginProductJourney?: () => void;
+      __p5PersistentMutationAuditBeginProductJourney?: () => void;
+      __p5BrowserAuditSnapshot?: () => Record<string, unknown>;
+      __p5PersistentMutationAuditSnapshot?: () => Record<string, unknown>;
+    };
+    auditWindow.__p5BrowserAuditBeginProductJourney?.();
+    auditWindow.__p5PersistentMutationAuditBeginProductJourney?.();
+    return {
+      browser: auditWindow.__p5BrowserAuditSnapshot?.(),
+      persistence: auditWindow.__p5PersistentMutationAuditSnapshot?.(),
+    };
+  });
+  expect(mobileProductJourneyAuditStart.browser).toMatchObject({
+    workerConstructionCount: 0,
+    popupCreationCount: 0,
+    filePickerInvocationCount: 0,
+    networkChannelConstructionCount: 0,
+    historyMutationCount: 0,
+    hashChangeCount: 0,
+    closedShadowRootAttemptCount: 0,
+    unsafeDomInsertionCount: 0,
+    productJourneyBegun: true,
+    instrumentationFailureCount: 0,
+  });
+  expect(mobileProductJourneyAuditStart.persistence).toMatchObject({
+    writeCount: 0,
+    instrumentationFailureCount: 0,
+    storageProxyCount: 2,
+    productJourneyBegun: true,
+  });
+  const mobileProductJourneyNetworkStart = applicationNetworkRequests.length;
+  const mobileProductJourneyMutationStart = mutationRequestCount();
+  const persistentStateBeforeMobileResume = await persistentStateSnapshot();
+  const mobileResumePersistentWriteStart = await persistentWriteCount();
+  const mobileResumeNetworkStart = applicationNetworkRequests.length;
+  const mobileResumeMutationStart = mutationRequestCount();
+  const mobileResumeWorkerConstructionStart = await workerConstructionCount();
+  const mobileResumePopupCreationStart = await crossPageCreationCount();
+  const mobileResumeFilePickerInvocationStart = await filePickerInvocationCount();
+  const mobileResumeNetworkChannelConstructionStart = await networkChannelConstructionCount();
+  expect(mobileResumeWorkerConstructionStart).toBe(0);
+  expect(mobileResumePopupCreationStart).toBe(0);
+  expect(page.workers()).toHaveLength(0);
+  expect(page.context().serviceWorkers()).toHaveLength(0);
+  const mobileSyntheticResumeUnsafeDelegatedActionListenerCountBefore =
+    await unsafeDelegatedActionListenerCount();
+  expect(mobileSyntheticResumeUnsafeDelegatedActionListenerCountBefore).toBe(0);
+  await assertNoExternalProductSurface();
 
+  const mobileCandidateFilter = page.getByTestId('ats-role-filter-candidate');
+  const mobileRoleFilters = hubSurface.locator('button[data-testid^="ats-role-filter-"]');
+  await expect(mobileRoleFilters).toHaveCount(expectedTargetRoleIds.length + 1);
+  await activateByTouch(mobileCandidateFilter);
+  const mobilePressedRoleIds = await mobileRoleFilters.evaluateAll((controls) =>
+    controls
+      .filter((control) => control.getAttribute('aria-pressed') === 'true')
+      .map((control) =>
+        (control.getAttribute('data-testid') ?? '').replace(/^ats-role-filter-/, ''),
+      ),
+  );
+  expect(mobilePressedRoleIds).toEqual(['candidate']);
+  const mobileCandidateCapabilityIds = await capabilityCards.evaluateAll((cards) =>
+    cards.map((card) =>
+      (card.getAttribute('data-testid') ?? '').replace(/^ats-capability-/, ''),
+    ),
+  );
+  expect(mobileCandidateCapabilityIds).toEqual(expectedRoleCapabilityIds.candidate);
+  const mobileCvImportCard = page.getByTestId('ats-capability-candidate-cv-pdf-import');
+  const mobileClosedResumeControls = await readInteractiveControlSignatures(mobileCvImportCard);
+  expect(mobileClosedResumeControls).toEqual(resumeClosedControls);
+  const mobileClosedDocumentControls = await readInteractiveControlSignatures(page.locator('body'));
+  await activateByTouch(
+    mobileCvImportCard.getByRole('button', { name: 'Sentetik PDF taslak akışını dene' }),
+  );
+  expect(await readInteractiveControlSignatures(mobileCvImportCard)).toEqual(
+    resumeOpenedControls,
+  );
+  const mobileOpenedDocumentControls = await readInteractiveControlSignatures(page.locator('body'));
+  expect(mobileOpenedDocumentControls).toEqual(
+    replaceSignatureMultiset(
+      mobileClosedDocumentControls,
+      mobileClosedResumeControls,
+      resumeOpenedControls,
+    ),
+  );
+  await assertNoExternalProductSurface();
+  await activateByTouch(page.getByTestId('ats-synthetic-resume-process'));
+  await expect(page.getByTestId('ats-synthetic-resume-proposals')).toBeVisible();
+  await expect(
+    page
+      .getByTestId('ats-synthetic-resume-proposals')
+      .locator('article[data-testid^="ats-resume-field-"]'),
+  ).toHaveCount(expectedSyntheticResumeProposalCount);
+  const mobileSyntheticResumeControlsRendered = await page
+    .getByTestId('ats-synthetic-resume-proposals')
+    .isVisible();
+  expect(await readInteractiveControlSignatures(mobileCvImportCard)).toEqual(
+    resumeBaseProcessedControls,
+  );
+  const mobileProcessedDocumentControls = await readInteractiveControlSignatures(
+    page.locator('body'),
+  );
+  expect(mobileProcessedDocumentControls).toEqual(
+    replaceSignatureMultiset(mobileOpenedDocumentControls, resumeOpenedControls, resumeBaseProcessedControls),
+  );
+  await assertNoExternalProductSurface();
+
+  const mobileEmailField = mobileCvImportCard.getByTestId('ats-resume-field-contact-email');
+  const mobileEmailInput = mobileEmailField.getByLabel('E-posta');
+  await mobileEmailInput.selectText();
+  await mobileEmailInput.pressSequentially('mobil.duzenlendi@example.invalid');
+  await expect(mobileEmailInput).toHaveValue('mobil.duzenlendi@example.invalid');
+  expect(await readInteractiveControlSignatures(mobileCvImportCard)).toEqual(
+    resumeEditedControls,
+  );
+  const mobileEditedDocumentControls = await readInteractiveControlSignatures(
+    page.locator('body'),
+  );
+  expect(mobileEditedDocumentControls).toEqual(
+    replaceSignatureMultiset(
+      mobileProcessedDocumentControls,
+      resumeBaseProcessedControls,
+      resumeEditedControls,
+    ),
+  );
+  await activateByTouch(
+    mobileEmailField.getByRole('button', { name: 'E-posta düzenlemesini kabul et' }),
+  );
+  await activateByTouch(
+    mobileCvImportCard
+      .getByTestId('ats-resume-field-skills')
+      .getByRole('button', { name: 'Beceriler alanını kabul et' }),
+  );
+  await activateByTouch(
+    mobileCvImportCard
+      .getByTestId('ats-resume-field-experience')
+      .getByRole('button', { name: 'Deneyim alanını reddet' }),
+  );
+  expect(await readInteractiveControlSignatures(mobileCvImportCard)).toEqual(
+    resumeReviewedControls,
+  );
+  const mobileReviewedDocumentControls = await readInteractiveControlSignatures(
+    page.locator('body'),
+  );
+  expect(mobileReviewedDocumentControls).toEqual(
+    replaceSignatureMultiset(
+      mobileEditedDocumentControls,
+      resumeEditedControls,
+      resumeReviewedControls,
+    ),
+  );
+  const mobileTransferSelected = mobileCvImportCard.getByTestId('ats-resume-transfer-selected');
+  await expect(mobileTransferSelected).toContainText('(2)');
+  await activateByTouch(mobileTransferSelected);
+  const mobileDraft = mobileCvImportCard.getByTestId('ats-synthetic-resume-draft');
+  await expect(mobileDraft).toContainText('mobil.duzenlendi@example.invalid');
+  await expect(mobileDraft).toContainText('Araştırma, erişilebilir ürün tasarımı');
+  await activateByTouch(
+    mobileCvImportCard.getByRole('button', { name: 'Tümünü reddet', exact: true }),
+  );
+  expect(await readInteractiveControlSignatures(mobileCvImportCard)).toEqual(
+    resumeRejectArmedControls,
+  );
+  const mobileRejectArmedDocumentControls = await readInteractiveControlSignatures(
+    page.locator('body'),
+  );
+  expect(mobileRejectArmedDocumentControls).toEqual(
+    replaceSignatureMultiset(
+      mobileReviewedDocumentControls,
+      resumeReviewedControls,
+      resumeRejectArmedControls,
+    ),
+  );
+  const mobileRejectAllConfirm = mobileCvImportCard.getByRole('button', {
+    name: 'Tümünü reddetmeyi onayla',
+  });
+  await expect(mobileRejectAllConfirm).toBeVisible();
+  await activateByTouch(mobileRejectAllConfirm);
+  await expect(mobileDraft).toHaveCount(0);
+  expect(await readInteractiveControlSignatures(mobileCvImportCard)).toEqual(
+    resumeAllRejectedControls,
+  );
+  const mobileAllRejectedDocumentControls = await readInteractiveControlSignatures(
+    page.locator('body'),
+  );
+  expect(mobileAllRejectedDocumentControls).toEqual(
+    replaceSignatureMultiset(
+      mobileRejectArmedDocumentControls,
+      resumeRejectArmedControls,
+      resumeAllRejectedControls,
+    ),
+  );
+  await activateByTouch(
+    mobileCvImportCard.getByRole('button', { name: 'Denemeyi sıfırla' }),
+  );
+  expect(await readInteractiveControlSignatures(mobileCvImportCard)).toEqual(
+    resumeOpenedControls,
+  );
+  expect(await readInteractiveControlSignatures(page.locator('body'))).toEqual(
+    mobileOpenedDocumentControls,
+  );
+  await activateByTouch(
+    mobileCvImportCard.getByRole('button', { name: 'Sentetik taslak denemesini kapat' }),
+  );
+  expect(await readInteractiveControlSignatures(mobileCvImportCard)).toEqual(
+    resumeClosedControls,
+  );
+  expect(await readInteractiveControlSignatures(page.locator('body'))).toEqual(
+    mobileClosedDocumentControls,
+  );
+  await assertNoExternalProductSurface();
+  const mobileCompletedSafeScenarioCapabilityIdSet = new Set<string>();
+  const mobileRoleJourneyCapabilityIds: Record<string, string[]> = {};
+  for (const roleId of expectedTargetRoleIds) {
+    await activateByTouch(page.getByTestId(`ats-role-filter-${roleId}`));
+    const pressedRoleIds = await mobileRoleFilters.evaluateAll((controls) =>
+      controls
+        .filter((control) => control.getAttribute('aria-pressed') === 'true')
+        .map((control) =>
+          (control.getAttribute('data-testid') ?? '').replace(/^ats-role-filter-/, ''),
+        ),
+    );
+    expect(pressedRoleIds).toEqual([roleId]);
+    const visibleCapabilityIds = await capabilityCards.evaluateAll((cards) =>
+      cards.map((card) =>
+        (card.getAttribute('data-testid') ?? '').replace(/^ats-capability-/, ''),
+      ),
+    );
+    expect(visibleCapabilityIds).toEqual(expectedRoleCapabilityIds[roleId]);
+    const journeyIds = visibleCapabilityIds.filter((capabilityId) =>
+      (allSafeExperienceCapabilityIds as readonly string[]).includes(capabilityId),
+    );
+    expect(journeyIds).toEqual(expectedRoleJourneyCapabilityIds[roleId]);
+
+    for (const capabilityId of journeyIds) {
+      const card = page.getByTestId(`ats-capability-${capabilityId}`);
+      if (capabilityId === 'candidate-cv-pdf-import') {
+        if (roleId !== 'candidate') {
+          await activateByTouch(
+            card.getByRole('button', { name: 'Sentetik PDF taslak akışını dene' }),
+          );
+          await activateByTouch(page.getByTestId('ats-synthetic-resume-process'));
+          await expect(
+            card.locator('article[data-testid^="ats-resume-field-"]'),
+          ).toHaveCount(expectedSyntheticResumeProposalCount);
+          const journeyEmail = card.getByLabel('E-posta');
+          await journeyEmail.selectText();
+          const journeyEmailValue = `${roleId}.mobile@example.invalid`;
+          await journeyEmail.pressSequentially(journeyEmailValue);
+          await expect(journeyEmail).toHaveValue(journeyEmailValue);
+          await activateByTouch(
+            card.getByRole('button', { name: 'E-posta düzenlemesini kabul et' }),
+          );
+          await activateByTouch(
+            card.getByRole('button', { name: 'Deneyim alanını reddet' }),
+          );
+          const journeyTransfer = card.getByTestId('ats-resume-transfer-selected');
+          await expect(journeyTransfer).toContainText('(1)');
+          await activateByTouch(journeyTransfer);
+          await expect(card.getByTestId('ats-synthetic-resume-draft')).toContainText(
+            journeyEmailValue,
+          );
+          await activateByTouch(
+            card.getByRole('button', { name: 'Tümünü reddet', exact: true }),
+          );
+          await activateByTouch(
+            card.getByRole('button', { name: 'Tümünü reddetmeyi onayla' }),
+          );
+          await expect(card.getByTestId('ats-synthetic-resume-draft')).toHaveCount(0);
+          await activateByTouch(card.getByRole('button', { name: 'Denemeyi sıfırla' }));
+          await activateByTouch(
+            card.getByRole('button', { name: 'Sentetik taslak denemesini kapat' }),
+          );
+          expect(await readInteractiveControlSignatures(card)).toEqual(resumeClosedControls);
+        }
+      } else {
+        const journey =
+          capabilityId === 'agentic-screening'
+            ? expectedAgenticJourney
+            : expectedSafeScenarioJourneys[
+                capabilityId as keyof typeof expectedSafeScenarioJourneys
+              ];
+        await activateByTouch(card.getByRole('button', { name: journey.action }));
+        await expect(card).toContainText(journey.scenario);
+        await activateByTouch(page.getByTestId(`ats-safe-run-${capabilityId}`));
+        await expect(card).toContainText(journey.output);
+        await expect(card).toContainText(journey.boundary);
+        await expect(card).toContainText(
+          'Bu deneme tarayıcı belleğinde çalıştı; ağ isteği, kayıt, bildirim veya karar üretilmedi.',
+        );
+        await activateByTouch(card.getByRole('button', { name: 'Denemeyi sıfırla' }));
+        await activateByTouch(
+          card.getByRole('button', { name: 'Güvenli denemeyi kapat' }),
+        );
+      }
+      await assertNoExternalProductSurface();
+      expect(await unsafeDelegatedActionListenerCount()).toBe(0);
+      mobileCompletedSafeScenarioCapabilityIdSet.add(capabilityId);
+    }
+    mobileRoleJourneyCapabilityIds[roleId] = journeyIds;
+  }
+  const mobileCompletedSafeScenarioCapabilityIds = allSafeExperienceCapabilityIds.filter(
+    (capabilityId) => mobileCompletedSafeScenarioCapabilityIdSet.has(capabilityId),
+  );
+  expect(mobileCompletedSafeScenarioCapabilityIds).toEqual(allSafeExperienceCapabilityIds);
+  expect(mobileRoleJourneyCapabilityIds).toEqual(expectedRoleJourneyCapabilityIds);
+  expect(mobileTouchActivationCount).toBeGreaterThanOrEqual(50);
+  await page.waitForTimeout(mutationQuietPeriodMs);
+  const persistentStateAfterMobileResume = await persistentStateSnapshot();
+  const mobileSyntheticResumePersistentStoresUnchanged =
+    JSON.stringify(persistentStateBeforeMobileResume) ===
+    JSON.stringify(persistentStateAfterMobileResume);
+  expect(mobileSyntheticResumePersistentStoresUnchanged).toBe(true);
+  const mobileSyntheticResumePersistentWriteOperationCount =
+    (await persistentWriteCount()) - mobileResumePersistentWriteStart;
+  expect(mobileSyntheticResumePersistentWriteOperationCount).toBe(0);
+  const mobileSyntheticResumeMutationRequestCount =
+    mutationRequestCount() - mobileResumeMutationStart;
+  expect(mobileSyntheticResumeMutationRequestCount).toBe(0);
+  const mobileSyntheticResumeNetworkRequestCount =
+    applicationNetworkRequests.length - mobileResumeNetworkStart;
+  expect(mobileSyntheticResumeNetworkRequestCount).toBe(0);
+  const mobileSyntheticResumeWorkerConstructionCount =
+    (await workerConstructionCount()) - mobileResumeWorkerConstructionStart;
+  expect(mobileSyntheticResumeWorkerConstructionCount).toBe(0);
+  const mobileSyntheticResumePopupCreationCount =
+    (await crossPageCreationCount()) - mobileResumePopupCreationStart;
+  expect(mobileSyntheticResumePopupCreationCount).toBe(0);
+  const mobileSyntheticResumeFilePickerInvocationCount =
+    (await filePickerInvocationCount()) - mobileResumeFilePickerInvocationStart;
+  expect(mobileSyntheticResumeFilePickerInvocationCount).toBe(0);
+  const mobileSyntheticResumeNetworkChannelConstructionCount =
+    (await networkChannelConstructionCount()) - mobileResumeNetworkChannelConstructionStart;
+  expect(mobileSyntheticResumeNetworkChannelConstructionCount).toBe(0);
+  const mobileSyntheticResumeUnsafeDelegatedActionListenerCountAfter =
+    await unsafeDelegatedActionListenerCount();
+  expect(mobileSyntheticResumeUnsafeDelegatedActionListenerCountAfter).toBe(0);
+  const mobileSyntheticResumeUnsafeDelegatedActionListenerCount = Math.max(
+    mobileSyntheticResumeUnsafeDelegatedActionListenerCountBefore,
+    mobileSyntheticResumeUnsafeDelegatedActionListenerCountAfter,
+  );
   const hubLayout = await page.evaluate(() => ({
     rootOverflowPx: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     rootOverflowModes: [document.documentElement, document.body, document.querySelector('main')]
@@ -877,6 +3529,12 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     (violation) => violation.impact === 'critical' || violation.impact === 'serious',
   );
   expect(hubBlockingViolations).toEqual([]);
+  const mobileJourneyLifecycleAudit = await readJourneyLifecycleAudit(
+    mobileProductJourneyNetworkStart,
+    mobileProductJourneyMutationStart,
+  );
+  expect(report.hub).toBeDefined();
+  report.hub!.journeyLifecycleAudit.mobile = mobileJourneyLifecycleAudit;
 
   const mobileLiveLaunch = page.getByTestId('ats-live-interview-evidence-link');
   await expect(mobileLiveLaunch).toBeVisible();
@@ -940,10 +3598,29 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(consoleOverflowPx).toBeLessThanOrEqual(1);
   report.responsive = {
     viewportWidth: 390,
+    mobileUserAgentMatched: mobileEmulation.userAgentMatched,
+    mobileTouchPoints: mobileEmulation.touchPoints,
+    mobilePointerCoarse: mobileEmulation.pointerCoarse,
+    mobileDeviceScaleFactor: mobileEmulation.deviceScaleFactor,
     hubRootOverflowPx: hubLayout.rootOverflowPx,
     hubOverflowPx,
     rootOverflowPx: layout.rootOverflowPx,
     consoleOverflowPx,
+    mobileSyntheticResumeControlsRendered,
+    mobileCandidateCapabilityIds,
+    mobileCompletedSafeScenarioCapabilityIds,
+    mobileSyntheticResumePersistentStoresUnchanged,
+    mobileSyntheticResumePersistentWriteOperationCount,
+    mobileSyntheticResumeMutationRequestCount,
+    mobileSyntheticResumeNetworkRequestCount,
+    mobileSyntheticResumeNetworkChannelConstructionCount,
+    mobileSyntheticResumeWorkerConstructionCount,
+    mobileSyntheticResumePopupCreationCount,
+    mobileSyntheticResumeFilePickerInvocationCount,
+    mobileSyntheticResumeUnsafeDelegatedActionListenerCount,
+    mobileRoleJourneyCapabilityIds,
+    mobileRoleJourneyEvidenceClass: 'TOUCH_EXECUTED_UNDER_NAMED_VIEW_PERSONA',
+    mobileTouchActivationCount,
     evidenceTableKeyboardScrollable: evidenceScrollLeft > 0,
   };
 
@@ -987,6 +3664,51 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   };
   expect(violations).toEqual([]);
 
-  report.runtime = { uncaughtPageErrorCount: pageErrors.length };
+  const observedFrontendAssetResponses = await Promise.all(frontendAssetResponsePromises);
+  expect(observedFrontendAssetResponses.length).toBeGreaterThan(0);
+  const frontendAssetResponsesByPath = new Map<string, FrontendAssetResponse>();
+  for (const response of observedFrontendAssetResponses) {
+    expect(response.status).toBe(200);
+    expect(response.bodySha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(response.fromServiceWorker).toBe(false);
+    expect(response.contentType).toMatch(
+      response.resourceType === 'script'
+        ? /^(?:application|text)\/(?:javascript|x-javascript)(?:;|$)/i
+        : /^text\/css(?:;|$)/i,
+    );
+    const prior = frontendAssetResponsesByPath.get(response.path);
+    if (prior) {
+      expect(response).toEqual(prior);
+    } else {
+      frontendAssetResponsesByPath.set(response.path, response);
+    }
+  }
+  const frontendAssetResponses = Array.from(frontendAssetResponsesByPath.values()).sort(
+    (left, right) => left.path.localeCompare(right.path),
+  );
+  const frontendAssetPaths = frontendAssetResponses.map(({ path }) => path);
+  expect(frontendAssetPaths.length).toBeGreaterThan(0);
+  expect(frontendAssetPaths.some((path) => path.startsWith('/assets/'))).toBe(true);
+  const expectedBuildInfoAssetPaths = new Set(
+    buildInfoAssets
+      .filter((asset) => /\.(?:js|css)$/.test(asset))
+      .map((asset) => `/assets/${asset}`),
+  );
+  const buildInfoAssetsMatched = frontendAssetPaths.every((path) =>
+    expectedBuildInfoAssetPaths.has(path),
+  );
+  expect(buildInfoAssetsMatched).toBe(true);
+  const buildInfoRootEntryMatched = frontendAssetPaths.includes(
+    `/assets/${buildInfoRootEntry}`,
+  );
+  expect(buildInfoRootEntryMatched).toBe(true);
+  report.runtime = {
+    uncaughtPageErrorCount: pageErrors.length,
+    frontendAssetPaths,
+    frontendAssetResponses,
+    buildInfoRootEntryMatched,
+    buildInfoAssetsMatched,
+  };
   expect(pageErrors).toEqual([]);
+  await cdpSession.detach();
 });

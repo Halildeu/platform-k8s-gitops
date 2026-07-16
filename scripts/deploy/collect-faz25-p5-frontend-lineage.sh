@@ -16,12 +16,19 @@ CONTAINER="${CONTAINER:-frontend}"
 EXPECTED_SOURCE_SHA="${EXPECTED_SOURCE_SHA:?EXPECTED_SOURCE_SHA is required}"
 EXPECTED_IMAGE_DIGEST="${EXPECTED_IMAGE_DIGEST:?EXPECTED_IMAGE_DIGEST is required}"
 EXPECTED_BUILD_RUN_ID="${EXPECTED_BUILD_RUN_ID:?EXPECTED_BUILD_RUN_ID is required}"
+EXPECTED_BUILD_ARTIFACT_ID="${EXPECTED_BUILD_ARTIFACT_ID:-8359963701}"
+EXPECTED_BUILD_ARTIFACT_NAME="${EXPECTED_BUILD_ARTIFACT_NAME:-Halildeu~platform-web~PBWNF0.dockerbuild}"
+EXPECTED_BUILD_ARTIFACT_DIGEST="${EXPECTED_BUILD_ARTIFACT_DIGEST:-sha256:f7f049ffe3d716045f287179f4e293fbbdbb891cb4a2d6ada0baddb1357a70c2}"
+EXPECTED_BUILD_ARTIFACT_SIZE="${EXPECTED_BUILD_ARTIFACT_SIZE:-108623}"
 EXPECTED_CLUSTER_SERVER_SHA256="${EXPECTED_CLUSTER_SERVER_SHA256:?EXPECTED_CLUSTER_SERVER_SHA256 is required}"
 EXPECTED_CLUSTER_CA_SHA256="${EXPECTED_CLUSTER_CA_SHA256:?EXPECTED_CLUSTER_CA_SHA256 is required}"
 EXPECTED_KUBE_SYSTEM_UID="${EXPECTED_KUBE_SYSTEM_UID:?EXPECTED_KUBE_SYSTEM_UID is required}"
-BUILD_PROVENANCE_RECEIPT_PATH="${BUILD_PROVENANCE_RECEIPT_PATH:-tests/smoke/faz25-p5-build-provenance-receipt.json}"
+EXPECTED_BROWSER_PROBE_ID="${EXPECTED_BROWSER_PROBE_ID:-}"
+EXPECTED_BROWSER_REPORT_PATH="${EXPECTED_BROWSER_REPORT_PATH:-}"
+WORKFLOW_STARTED_AT="${WORKFLOW_STARTED_AT:-}"
 KUBECTL_BIN="${KUBECTL_BIN:-kubectl}"
 CURL_BIN="${CURL_BIN:-curl}"
+ROUTE_VALIDATOR="${ROUTE_VALIDATOR:-scripts/deploy/verify-faz25-p5-frontend-routes.py}"
 
 fail_closed() {
   echo "Frontend lineage collection failed closed" >&2
@@ -33,9 +40,21 @@ fail_closed() {
 [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || fail_closed
 [[ "$EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_BUILD_RUN_ID" =~ ^[0-9]+$ ]] || fail_closed
+[[ "$EXPECTED_BUILD_ARTIFACT_ID" =~ ^[0-9]+$ ]] || fail_closed
+[[ "$EXPECTED_BUILD_ARTIFACT_NAME" == "Halildeu~platform-web~PBWNF0.dockerbuild" ]] || fail_closed
+[[ "$EXPECTED_BUILD_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail_closed
+[[ "$EXPECTED_BUILD_ARTIFACT_SIZE" =~ ^[0-9]+$ ]] || fail_closed
 [[ "$EXPECTED_CLUSTER_SERVER_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_CLUSTER_CA_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_KUBE_SYSTEM_UID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail_closed
+if [[ "$PHASE" == "pre" ]]; then
+  [[ -z "$EXPECTED_BROWSER_PROBE_ID" && -z "$EXPECTED_BROWSER_REPORT_PATH" && \
+     -z "$WORKFLOW_STARTED_AT" ]] || fail_closed
+else
+  [[ "$EXPECTED_BROWSER_PROBE_ID" =~ ^[0-9a-f]{32}$ ]] || fail_closed
+  [[ -f "$EXPECTED_BROWSER_REPORT_PATH" && ! -L "$EXPECTED_BROWSER_REPORT_PATH" ]] || fail_closed
+  [[ "$WORKFLOW_STARTED_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail_closed
+fi
 
 sha256_text() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -101,57 +120,13 @@ jq -e \
   ' <<<"$build_run_json" >/dev/null || fail_closed
 unset build_run_json
 
-[[ -f "$BUILD_PROVENANCE_RECEIPT_PATH" ]] || fail_closed
-build_provenance_receipt_sha256="$(sha256_file "$BUILD_PROVENANCE_RECEIPT_PATH")"
-jq -e \
-  --arg source "$EXPECTED_SOURCE_SHA" \
-  --arg digest "$EXPECTED_IMAGE_DIGEST" \
-  --arg run_id "$EXPECTED_BUILD_RUN_ID" '
-    keys == [
-      "artifact", "buildRunId", "imageDigest", "inspectedAt", "inspection",
-      "oci", "schemaVersion", "sourceSha"
-    ] and
-    .schemaVersion == "faz25-p5-build-provenance-receipt-v1" and
-    .sourceSha == $source and
-    .imageDigest == $digest and
-    .buildRunId == $run_id and
-    (.artifact | keys) == ["digest", "id", "name", "sizeInBytes"] and
-    .artifact.id == "8357836615" and
-    .artifact.name == "Halildeu~platform-web~XWOTK5.dockerbuild" and
-    .artifact.digest == "sha256:4d571d1bc48c63902a11958da33205539085f59549a810f8c827b2d9a6192a56" and
-    .artifact.sizeInBytes == 108583 and
-    (.oci | keys) == [
-      "historyRecordDigest", "layoutManifestDigest", "slsaProvenanceDigest",
-      "subjectDigest", "vcsRevision"
-    ] and
-    .oci.layoutManifestDigest == "sha256:ad40b72e1b01084c82fb2584c1fba1e845cfb1fd2b55c5f387788a9999ac109a" and
-    .oci.historyRecordDigest == "sha256:78cd630b2f7de905cd1068429044a85c564227e8ea0934dfc0f4516d92d17f22" and
-    .oci.slsaProvenanceDigest == "sha256:6fd32c43a78f33b60225b638efd1929e86f40e38f5c58707c818ff19f1fb46d2" and
-    .oci.subjectDigest == $digest and
-    .oci.vcsRevision == $source and
-    (.inspection | keys) == [
-      "artifactDigestMatchedGitHub", "ociDigestGraphVerified",
-      "rawArtifactExcludedFromRepo", "rawArtifactExclusionReason",
-      "slsaSubjectAndRevisionVerified"
-    ] and
-    .inspection.artifactDigestMatchedGitHub == true and
-    .inspection.ociDigestGraphVerified == true and
-    .inspection.slsaSubjectAndRevisionVerified == true and
-    .inspection.rawArtifactExcludedFromRepo == true
-  ' "$BUILD_PROVENANCE_RECEIPT_PATH" >/dev/null || fail_closed
-build_artifact_id="$(jq -r '.artifact.id' "$BUILD_PROVENANCE_RECEIPT_PATH")"
-build_artifact_name="$(jq -r '.artifact.name' "$BUILD_PROVENANCE_RECEIPT_PATH")"
-build_artifact_digest="$(jq -r '.artifact.digest' "$BUILD_PROVENANCE_RECEIPT_PATH")"
-build_artifact_size="$(jq -r '.artifact.sizeInBytes' "$BUILD_PROVENANCE_RECEIPT_PATH")"
-slsa_provenance_digest="$(jq -r '.oci.slsaProvenanceDigest' "$BUILD_PROVENANCE_RECEIPT_PATH")"
-
 build_artifacts_json="$($CURL_BIN -fsS --max-time 20 \
   "https://api.github.com/repos/Halildeu/platform-web/actions/runs/${EXPECTED_BUILD_RUN_ID}/artifacts?per_page=100")"
 jq -e \
-  --argjson artifact_id "$build_artifact_id" \
-  --arg artifact_name "$build_artifact_name" \
-  --arg artifact_digest "$build_artifact_digest" \
-  --argjson artifact_size "$build_artifact_size" '
+  --argjson artifact_id "$EXPECTED_BUILD_ARTIFACT_ID" \
+  --arg artifact_name "$EXPECTED_BUILD_ARTIFACT_NAME" \
+  --arg artifact_digest "$EXPECTED_BUILD_ARTIFACT_DIGEST" \
+  --argjson artifact_size "$EXPECTED_BUILD_ARTIFACT_SIZE" '
     [.artifacts[]
       | select(
           .id == $artifact_id and
@@ -162,7 +137,18 @@ jq -e \
         )]
     | length == 1
   ' <<<"$build_artifacts_json" >/dev/null || fail_closed
+build_artifact_id="$EXPECTED_BUILD_ARTIFACT_ID"
+build_artifact_name="$EXPECTED_BUILD_ARTIFACT_NAME"
+build_artifact_digest="$EXPECTED_BUILD_ARTIFACT_DIGEST"
+build_artifact_size="$EXPECTED_BUILD_ARTIFACT_SIZE"
 unset build_artifacts_json
+
+# Cross-repository artifact content requires a separately governed read token;
+# the current protected Environment intentionally has none. Keep the public
+# run/artifact metadata non-terminal. Terminal source-to-image proof below is
+# the same-session HTTPS host -> Ingress -> Service -> EndpointSlice -> Ready
+# Pod UID -> imageID chain, combined with the browser's exact build-info SHA.
+build_artifact_evidence_class="METADATA_ONLY_NON_TERMINAL"
 
 deployment_json="$(kubectl_test -n "$NAMESPACE" \
   get deployment "$DEPLOYMENT" -o json)"
@@ -267,6 +253,302 @@ observed_digests="$(jq -c '
 [[ "$observed_digests" == "[\"$EXPECTED_IMAGE_DIGEST\"]" ]] || fail_closed
 observed_digest="$(jq -r '.[0]' <<<"$observed_digests")"
 
+pod_build_info_hashes_json="$({
+  while IFS=$'\t' read -r pod_name pod_uid; do
+    [[ -n "$pod_name" && -n "$pod_uid" ]] || fail_closed
+    pod_build_info="$(kubectl_test get --raw \
+      "/api/v1/namespaces/${NAMESPACE}/pods/${pod_name}:80/proxy/build-info.json")"
+    jq -e --arg source "$EXPECTED_SOURCE_SHA" '
+      (keys | sort) == [
+        "assets", "buildTime", "image", "imageDigest", "origin", "ref",
+        "remotes", "rootEntry", "sha", "shortSha"
+      ] and
+      .sha == $source and
+      .ref == "main" and
+      .origin == "https://testai.acik.com" and
+      .imageDigest == ""
+    ' <<<"$pod_build_info" >/dev/null || fail_closed
+    canonical_build_info="$(jq -cS . <<<"$pod_build_info")"
+    printf '%s\n' "$(sha256_text "$canonical_build_info")"
+    unset pod_build_info canonical_build_info
+  done < <(jq -r '.[] | [.metadata.name, .metadata.uid] | @tsv' <<<"$stable_pods_json")
+} | jq -Rsc 'split("\n") | map(select(length > 0)) | unique | sort')"
+[[ "$(jq 'length' <<<"$pod_build_info_hashes_json")" == "1" ]] || fail_closed
+
+browser_asset_binding='{"status":"PRE_BROWSER"}'
+if [[ "$PHASE" == "post" ]]; then
+  browser_assets_json="$(jq -cS '.runtime.frontendAssetResponses' \
+    "$EXPECTED_BROWSER_REPORT_PATH")"
+  jq -e '
+    type == "array" and length >= 1 and
+    all(.[];
+      (keys | sort) == [
+        "bodySha256", "contentType", "fromServiceWorker", "path",
+        "resourceType", "status"
+      ] and
+      (.path | test("^/assets/[A-Za-z0-9._-]+\\.(js|css)$")) and
+      (.resourceType == "script" or .resourceType == "stylesheet") and
+      .status == 200 and
+      (.bodySha256 | test("^[0-9a-f]{64}$")) and
+      .fromServiceWorker == false
+    ) and
+    ([.[].path] | unique | length) == length
+  ' <<<"$browser_assets_json" >/dev/null || fail_closed
+  browser_asset_evidence_sha256="$(sha256_text "$browser_assets_json")"
+  browser_asset_count="$(jq 'length' <<<"$browser_assets_json")"
+  pod_asset_bindings="$({
+    while IFS=$'\t' read -r pod_name pod_uid; do
+      [[ -n "$pod_name" && -n "$pod_uid" ]] || fail_closed
+      while IFS=$'\t' read -r asset_path expected_asset_sha256; do
+        [[ "$asset_path" =~ ^/assets/[A-Za-z0-9._-]+\.(js|css)$ ]] || fail_closed
+        [[ "$expected_asset_sha256" =~ ^[0-9a-f]{64}$ ]] || fail_closed
+        asset_body="$(mktemp "$(dirname "$REPORT_PATH")/.frontend-asset-XXXXXX")"
+        if ! kubectl_test get --raw \
+          "/api/v1/namespaces/${NAMESPACE}/pods/${pod_name}:80/proxy${asset_path}" \
+          >"$asset_body"; then
+          rm -f -- "$asset_body"
+          fail_closed
+        fi
+        if ! observed_asset_sha256="$(sha256_file "$asset_body")"; then
+          rm -f -- "$asset_body"
+          fail_closed
+        fi
+        rm -f -- "$asset_body"
+        [[ "$observed_asset_sha256" == "$expected_asset_sha256" ]] || fail_closed
+        jq -cn \
+          --arg pod_uid "$pod_uid" \
+          --arg path "$asset_path" \
+          --arg body_sha256 "$observed_asset_sha256" \
+          '{podUid: $pod_uid, path: $path, bodySha256: $body_sha256}'
+      done < <(jq -r '.[] | [.path, .bodySha256] | @tsv' <<<"$browser_assets_json")
+    done < <(jq -r '.[] | [.metadata.name, .metadata.uid] | @tsv' <<<"$stable_pods_json")
+  } | jq -sc 'sort_by(.podUid, .path)')"
+  expected_pod_asset_binding_count=$((desired_replicas * browser_asset_count))
+  [[ "$(jq 'length' <<<"$pod_asset_bindings")" == \
+     "$expected_pod_asset_binding_count" ]] || fail_closed
+  browser_asset_binding="$(jq -cn \
+    --arg browser_asset_evidence_sha256 "$browser_asset_evidence_sha256" \
+    --argjson asset_count "$browser_asset_count" \
+    --argjson pod_count "$desired_replicas" \
+    --argjson pod_asset_bindings "$pod_asset_bindings" '
+      {
+        status: "BOUND",
+        browserAssetEvidenceSha256: $browser_asset_evidence_sha256,
+        assetCount: $asset_count,
+        podCount: $pod_count,
+        podAssetBindings: $pod_asset_bindings
+      }
+    ')"
+  unset browser_assets_json pod_asset_bindings
+fi
+
+ingress_json="$(kubectl_test -n "$NAMESPACE" get ingress platform -o json)"
+ingress_uid="$(jq -r '.metadata.uid // ""' <<<"$ingress_json")"
+jq -e '
+  .metadata.name == "platform" and
+  .metadata.namespace == "platform-test" and
+  .spec.ingressClassName == "nginx" and
+  ([.spec.tls[]?.hosts[]? | select(. == "testai.acik.com")] | length == 1) and
+  ([.spec.rules[]?
+    | select(.host == "testai.acik.com")
+    | .http.paths[]?
+    | select(
+        .path == "/" and
+        .pathType == "Prefix" and
+        .backend.service.name == "frontend" and
+        .backend.service.port.number == 80
+      )]
+    | length == 1)
+' <<<"$ingress_json" >/dev/null || fail_closed
+[[ "$ingress_uid" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail_closed
+
+all_ingresses_json="$(kubectl_test get ingress -A -o json)"
+[[ -f "$ROUTE_VALIDATOR" ]] || fail_closed
+matching_ingress_routes="$(python3 "$ROUTE_VALIDATOR" \
+  --host testai.acik.com \
+  --ingress-namespace "$NAMESPACE" \
+  --ingress-name platform \
+  --ingress-uid "$ingress_uid" \
+  --service-name frontend \
+  --service-port 80 \
+  <<<"$all_ingresses_json")"
+[[ -n "$matching_ingress_routes" ]] || fail_closed
+
+service_json="$(kubectl_test -n "$NAMESPACE" get service frontend -o json)"
+service_uid="$(jq -r '.metadata.uid // ""' <<<"$service_json")"
+service_cluster_ip="$(jq -r '.spec.clusterIP // ""' <<<"$service_json")"
+jq -e --argjson selector "$(jq -c '.spec.selector.matchLabels' <<<"$deployment_json")" '
+  .metadata.name == "frontend" and
+  .metadata.namespace == "platform-test" and
+  .spec.type == "ClusterIP" and
+  .spec.selector == $selector and
+  ([.spec.ports[]?
+    | select(
+        .name == "http" and
+        .protocol == "TCP" and
+        .port == 80 and
+        .targetPort == "http"
+      )]
+    | length == 1)
+' <<<"$service_json" >/dev/null || fail_closed
+[[ "$service_uid" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail_closed
+[[ -n "$service_cluster_ip" && "$service_cluster_ip" != "None" ]] || fail_closed
+
+endpoint_slices_json="$(kubectl_test -n "$NAMESPACE" get endpointslices \
+  -l kubernetes.io/service-name=frontend -o json)"
+jq -e \
+  --arg service_uid "$service_uid" \
+  --argjson desired "$desired_replicas" \
+  --argjson pod_uids "$pod_uids" '
+    (.items | length) as $slice_count |
+    $slice_count >= 1 and
+    ([.items[]
+      | select(
+          .metadata.labels["kubernetes.io/service-name"] == "frontend" and
+          ([.metadata.ownerReferences[]?
+            | select(
+                .kind == "Service" and
+                .name == "frontend" and
+                .uid == $service_uid
+              )]
+            | length == 1) and
+          ([.ports[]?
+            | select(.name == "http" and .protocol == "TCP" and .port == 80)]
+            | length == 1)
+        )]
+      | length == $slice_count) and
+    ([.items[].endpoints[]?] | length == $desired) and
+    ([.items[].endpoints[]?
+      | select(
+          .conditions.ready == true and
+          (.conditions.terminating // false) == false and
+          (.addresses | length) >= 1 and
+          .targetRef.kind == "Pod" and
+          .targetRef.namespace == "platform-test"
+        )
+      | .targetRef.uid]
+      | sort) == $pod_uids
+  ' <<<"$endpoint_slices_json" >/dev/null || fail_closed
+endpoint_slice_names="$(jq -c '[.items[].metadata.name] | sort' <<<"$endpoint_slices_json")"
+endpoint_slice_uids="$(jq -c '[.items[].metadata.uid] | sort' <<<"$endpoint_slices_json")"
+endpoint_pod_uids="$(jq -c '[.items[].endpoints[].targetRef.uid] | sort' \
+  <<<"$endpoint_slices_json")"
+pod_network_bindings="$(jq -c '
+  map({
+    podUid: .metadata.uid,
+    addresses: ([.status.podIPs[]?.ip, .status.podIP]
+      | map(select(. != null and . != ""))
+      | unique
+      | sort)
+  })
+  | sort_by(.podUid)
+' <<<"$stable_pods_json")"
+endpoint_network_bindings="$(jq -c '
+  [.items[].endpoints[]
+    | {podUid: .targetRef.uid, addresses: .addresses}]
+  | sort_by(.podUid)
+  | group_by(.podUid)
+  | map({
+      podUid: .[0].podUid,
+      addresses: ([.[].addresses[]] | unique | sort)
+    })
+' <<<"$endpoint_slices_json")"
+[[ "$pod_network_bindings" == "$endpoint_network_bindings" ]] || fail_closed
+[[ "$(jq '[.[].addresses | length > 0] | all' <<<"$pod_network_bindings")" == "true" ]] || fail_closed
+python3 -c '
+import ipaddress
+import json
+import sys
+
+for encoded_bindings in sys.argv[1:]:
+    bindings = json.loads(encoded_bindings)
+    for binding in bindings:
+        for address in binding["addresses"]:
+            ipaddress.ip_address(address)
+' "$pod_network_bindings" "$endpoint_network_bindings" || fail_closed
+
+if [[ "$PHASE" == "pre" ]]; then
+  browser_request_binding='{"status":"PRE_BROWSER"}'
+else
+  controller_pods_json="$(kubectl_test get pods -A \
+    -l 'app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller' \
+    -o json)"
+  jq -e '
+    (.items | length) as $controller_count |
+    $controller_count >= 1 and
+    ([.items[]
+      | select(
+          .metadata.deletionTimestamp == null and
+          .status.phase == "Running" and
+          ([.status.conditions[]?
+            | select(.type == "Ready" and .status == "True")]
+            | length == 1) and
+          ([.status.containerStatuses[]?
+            | select(.name == "controller" and .ready == true)]
+            | length == 1)
+        )]
+      | length == $controller_count)
+  ' <<<"$controller_pods_json" >/dev/null || fail_closed
+
+  browser_ingress_matches="$({
+    while IFS=$'\t' read -r controller_namespace controller_name controller_uid; do
+      [[ -n "$controller_namespace" && -n "$controller_name" && -n "$controller_uid" ]] || fail_closed
+      controller_logs="$(kubectl_test -n "$controller_namespace" logs "$controller_name" \
+        -c controller --since-time="$WORKFLOW_STARTED_AT")"
+      python3 -c '
+import hashlib
+import ipaddress
+import json
+import re
+import sys
+
+probe, namespace, name, uid, addresses_json = sys.argv[1:]
+addresses = json.loads(addresses_json)
+needle = f"GET /build-info.json?p5_probe={probe} "
+upstream = " [platform-test-frontend-80] "
+for raw_line in sys.stdin:
+    line = raw_line.rstrip("\n")
+    if needle not in line or upstream not in line:
+        continue
+    request_pattern = rf"\"GET /build-info\.json\?p5_probe={re.escape(probe)} HTTP/[0-9.]+\"\s+200\s"
+    if re.search(request_pattern, line) is None:
+        continue
+    upstream_segment = line.split(upstream, 1)[1]
+    ipv4_upstreams = re.findall(
+        r"(?<![0-9])((?:[0-9]{1,3}\.){3}[0-9]{1,3}):80(?![0-9])",
+        upstream_segment,
+    )
+    ipv6_upstreams = re.findall(r"\[([0-9A-Fa-f:]+)\]:80(?![0-9])", upstream_segment)
+    observed_upstreams = ipv4_upstreams + ipv6_upstreams
+    if len(observed_upstreams) != 1:
+        continue
+    observed_upstream = observed_upstreams[0]
+    ipaddress.ip_address(observed_upstream)
+    if observed_upstream not in addresses:
+        continue
+    if re.search(r"\s200\s+\S+\s*$", upstream_segment) is None:
+        continue
+    print(json.dumps({
+        "controllerNamespace": namespace,
+        "controllerPodName": name,
+        "controllerPodUid": uid,
+        "upstreamPodAddress": observed_upstream,
+        "logLineSha256": hashlib.sha256(line.encode()).hexdigest(),
+    }, sort_keys=True, separators=(",", ":")))
+' "$EXPECTED_BROWSER_PROBE_ID" "$controller_namespace" "$controller_name" \
+        "$controller_uid" "$(jq -c '[.[].addresses[]] | unique | sort' \
+          <<<"$endpoint_network_bindings")" <<<"$controller_logs"
+      unset controller_logs
+    done < <(jq -r '.items[] | [.metadata.namespace, .metadata.name, .metadata.uid] | @tsv' \
+      <<<"$controller_pods_json")
+  } | jq -sc 'unique_by(.logLineSha256)')"
+  [[ "$(jq 'length' <<<"$browser_ingress_matches")" == "1" ]] || fail_closed
+  browser_request_binding="$(jq -c \
+    --arg probe_id "$EXPECTED_BROWSER_PROBE_ID" '
+      .[0] + {status: "BOUND", probeId: $probe_id}
+    ' <<<"$browser_ingress_matches")"
+fi
+
 observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 report_tmp="${REPORT_PATH}.tmp"
 rm -f "$report_tmp"
@@ -300,10 +582,22 @@ jq -n \
   --arg build_artifact_name "$build_artifact_name" \
   --arg build_artifact_digest "$build_artifact_digest" \
   --argjson build_artifact_size "$build_artifact_size" \
-  --arg build_provenance_receipt_sha256 "$build_provenance_receipt_sha256" \
-  --arg slsa_provenance_digest "$slsa_provenance_digest" '
+  --arg build_artifact_evidence_class "$build_artifact_evidence_class" \
+  --arg build_attestation_status "NOT_PUBLISHED" \
+  --arg build_attestation_boundary "Cross-repository artifact content is not fetched because no least-privilege token is configured; artifact metadata is non-terminal and no SLSA attestation is claimed. Terminal browser-to-image binding is the same-session Ingress, Service, EndpointSlice, Ready Pod UID and imageID chain plus exact build-info source SHA." \
+  --arg ingress_uid "$ingress_uid" \
+  --arg service_uid "$service_uid" \
+  --arg service_cluster_ip "$service_cluster_ip" \
+  --argjson endpoint_slice_names "$endpoint_slice_names" \
+  --argjson endpoint_slice_uids "$endpoint_slice_uids" \
+  --argjson endpoint_pod_uids "$endpoint_pod_uids" \
+  --argjson endpoint_network_bindings "$endpoint_network_bindings" \
+  --argjson matching_ingress_routes "$matching_ingress_routes" \
+  --argjson pod_build_info_hashes "$pod_build_info_hashes_json" \
+  --argjson browser_request_binding "$browser_request_binding" \
+  --argjson browser_asset_binding "$browser_asset_binding" '
   {
-    schemaVersion: "faz25-p5-frontend-lineage-v1",
+    schemaVersion: "faz25-p5-frontend-lineage-v2",
     phase: $phase,
     observedAt: $observed_at,
     cluster: {
@@ -343,8 +637,37 @@ jq -n \
       buildArtifactName: $build_artifact_name,
       buildArtifactDigest: $build_artifact_digest,
       buildArtifactSizeInBytes: $build_artifact_size,
-      buildProvenanceReceiptSha256: $build_provenance_receipt_sha256,
-      slsaProvenanceDigest: $slsa_provenance_digest
+      buildArtifactEvidenceClass: $build_artifact_evidence_class,
+      buildAttestationStatus: $build_attestation_status,
+      buildAttestationBoundary: $build_attestation_boundary
+    },
+    route: {
+      host: "testai.acik.com",
+      ingress: {
+        name: "platform",
+        uid: $ingress_uid,
+        className: "nginx",
+        path: "/",
+        serviceName: "frontend",
+        servicePort: 80,
+        matchingRoutes: $matching_ingress_routes
+      },
+      service: {
+        name: "frontend",
+        uid: $service_uid,
+        type: "ClusterIP",
+        clusterIp: $service_cluster_ip,
+        selector: {"app.kubernetes.io/name": "frontend"}
+      },
+      endpointSlices: {
+        names: $endpoint_slice_names,
+        uids: $endpoint_slice_uids,
+        readyPodUids: $endpoint_pod_uids,
+        readyPodNetworkBindings: $endpoint_network_bindings
+      },
+      podBuildInfoSha256s: $pod_build_info_hashes,
+      browserRequestBinding: $browser_request_binding,
+      browserAssetBinding: $browser_asset_binding
     }
   }
   ' >"$report_tmp" || {

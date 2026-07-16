@@ -14,14 +14,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTOR = ROOT / "scripts/deploy/collect-faz25-p5-frontend-lineage.sh"
-SOURCE_SHA = "90768ed318ebfa547d2b3137aa317168f9c726d7"
-DIGEST = "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6"
+SOURCE_SHA = "8ab48cd87725a3fa306c18785a144ab184044ccf"
+DIGEST = "sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564"
 DEPLOYMENT_UID = "11111111-1111-4111-8111-111111111111"
 REPLICASET_UID = "22222222-2222-4222-8222-222222222222"
 POD_UID = "33333333-3333-4333-8333-333333333333"
+INGRESS_UID = "66666666-6666-4666-8666-666666666666"
+SERVICE_UID = "77777777-7777-4777-8777-777777777777"
+ENDPOINT_SLICE_UID = "88888888-8888-4888-8888-888888888888"
+CONTROLLER_UID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 KUBE_SYSTEM_UID = "55555555-5555-4555-8555-555555555555"
+PROBE_ID = "abcdef0123456789abcdef0123456789"
+WORKFLOW_STARTED_AT = "2026-07-15T23:00:00Z"
 CLUSTER_SERVER = "https://127.0.0.1:6445"
 CLUSTER_CA = b"faz25-test-ca"
+ASSET_PATH = "/assets/index-main.js"
+ASSET_BODY = "console.log('faz25 immutable asset');\n"
+ASSET_SHA256 = hashlib.sha256(ASSET_BODY.encode()).hexdigest()
 
 
 class CollectorTest(unittest.TestCase):
@@ -33,6 +42,7 @@ class CollectorTest(unittest.TestCase):
         self.mock_curl = self.temp_path / "curl"
         self.kubectl_calls = self.temp_path / "kubectl-calls.jsonl"
         self.report = self.temp_path / "lineage.json"
+        self.browser_report = self.temp_path / "browser-report.json"
         self._write_mocks()
 
     def tearDown(self):
@@ -60,12 +70,37 @@ class CollectorTest(unittest.TestCase):
                     print(base64.b64encode(b"faz25-test-ca").decode(), end="")
                 elif args[:5] == ["--context", "k3d-test", "get", "namespace", "kube-system"]:
                     print("55555555-5555-4555-8555-555555555555", end="")
+                elif args[:4] == ["--context", "k3d-test", "get", "--raw"]:
+                    raw_path = args[4]
+                    if raw_path.endswith("/proxy/build-info.json"):
+                        print(json.dumps(fixtures["pod_build_info"]))
+                    else:
+                        asset_path = raw_path.split("/proxy", 1)[1]
+                        sys.stdout.write(fixtures["pod_assets"][asset_path])
+                elif args == ["--context", "k3d-test", "get", "ingress", "-A", "-o", "json"]:
+                    print(json.dumps(fixtures["all_ingresses"]))
+                elif args == [
+                    "--context", "k3d-test", "get", "pods", "-A", "-l",
+                    "app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller",
+                    "-o", "json"
+                ]:
+                    print(json.dumps(fixtures["controller_pods"]))
+                elif args[:5] == [
+                    "--context", "k3d-test", "-n", "ingress-nginx", "logs"
+                ]:
+                    print(fixtures["controller_log"])
                 elif args[:2] == ["--context", "k3d-test"] and "deployment" in args:
                     print(json.dumps(fixtures["deployment"]))
                 elif args[:2] == ["--context", "k3d-test"] and "replicasets" in args:
                     print(json.dumps(fixtures["replicasets"]))
                 elif args[:2] == ["--context", "k3d-test"] and "pods" in args:
                     print(json.dumps(fixtures["pods"]))
+                elif args[:2] == ["--context", "k3d-test"] and "ingress" in args:
+                    print(json.dumps(fixtures["ingress"]))
+                elif args[:2] == ["--context", "k3d-test"] and "service" in args:
+                    print(json.dumps(fixtures["service"]))
+                elif args[:2] == ["--context", "k3d-test"] and "endpointslices" in args:
+                    print(json.dumps(fixtures["endpointslices"]))
                 else:
                     raise SystemExit(f"unexpected kubectl args: {args}")
                 """
@@ -78,23 +113,24 @@ class CollectorTest(unittest.TestCase):
                 import json
                 import os
                 import sys
-                url = sys.argv[-1]
+                args = sys.argv[1:]
+                url = next((arg for arg in args if arg.startswith("https://")), "")
                 if "/artifacts" in url:
                     print(json.dumps({{
                         "artifacts": [{{
-                            "id": 8357836615,
-                            "name": "Halildeu~platform-web~XWOTK5.dockerbuild",
+                            "id": 8359963701,
+                            "name": "Halildeu~platform-web~PBWNF0.dockerbuild",
                             "digest": os.environ.get(
                                 "MOCK_ARTIFACT_DIGEST",
-                                "sha256:4d571d1bc48c63902a11958da33205539085f59549a810f8c827b2d9a6192a56"
+                                os.environ["EXPECTED_BUILD_ARTIFACT_DIGEST"]
                             ),
-                            "size_in_bytes": 108583,
+                            "size_in_bytes": int(os.environ["EXPECTED_BUILD_ARTIFACT_SIZE"]),
                             "expired": False
                         }}]
                     }}))
                 else:
                     print(json.dumps({{
-                        "id": 29451703189,
+                        "id": 29457457120,
                         "status": "completed",
                         "conclusion": "success",
                         "event": "push",
@@ -109,8 +145,8 @@ class CollectorTest(unittest.TestCase):
         self.mock_curl.chmod(0o755)
 
     def _fixtures(self, pod_owner_uid=REPLICASET_UID):
-        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-90768ed@{DIGEST}"
-        return {
+        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-8ab48cd@{DIGEST}"
+        fixtures = {
             "deployment": {
                 "metadata": {
                     "uid": DEPLOYMENT_UID,
@@ -148,12 +184,15 @@ class CollectorTest(unittest.TestCase):
                 "items": [
                     {
                         "metadata": {
+                            "name": "frontend-abc123-pod",
                             "uid": POD_UID,
                             "deletionTimestamp": None,
                             "ownerReferences": [{"kind": "ReplicaSet", "uid": pod_owner_uid}],
                         },
                         "status": {
                             "phase": "Running",
+                            "podIP": "10.42.0.17",
+                            "podIPs": [{"ip": "10.42.0.17"}],
                             "conditions": [{"type": "Ready", "status": "True"}],
                             "containerStatuses": [
                                 {
@@ -169,9 +208,129 @@ class CollectorTest(unittest.TestCase):
                     }
                 ]
             },
+            "ingress": {
+                "metadata": {
+                    "name": "platform",
+                    "namespace": "platform-test",
+                    "uid": INGRESS_UID,
+                },
+                "spec": {
+                    "ingressClassName": "nginx",
+                    "tls": [{"hosts": ["testai.acik.com"]}],
+                    "rules": [
+                        {
+                            "host": "testai.acik.com",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "path": "/",
+                                        "pathType": "Prefix",
+                                        "backend": {
+                                            "service": {
+                                                "name": "frontend",
+                                                "port": {"number": 80},
+                                            }
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                },
+            },
+            "service": {
+                "metadata": {
+                    "name": "frontend",
+                    "namespace": "platform-test",
+                    "uid": SERVICE_UID,
+                },
+                "spec": {
+                    "type": "ClusterIP",
+                    "clusterIP": "10.43.0.42",
+                    "selector": {"app.kubernetes.io/name": "frontend"},
+                    "ports": [
+                        {
+                            "name": "http",
+                            "protocol": "TCP",
+                            "port": 80,
+                            "targetPort": "http",
+                        }
+                    ],
+                },
+            },
+            "endpointslices": {
+                "items": [
+                    {
+                        "metadata": {
+                            "name": "frontend-abc12",
+                            "uid": ENDPOINT_SLICE_UID,
+                            "labels": {"kubernetes.io/service-name": "frontend"},
+                            "ownerReferences": [
+                                {
+                                    "kind": "Service",
+                                    "name": "frontend",
+                                    "uid": SERVICE_UID,
+                                }
+                            ],
+                        },
+                        "ports": [{"name": "http", "protocol": "TCP", "port": 80}],
+                        "endpoints": [
+                            {
+                                "addresses": ["10.42.0.17"],
+                                "conditions": {"ready": True, "terminating": False},
+                                "targetRef": {
+                                    "kind": "Pod",
+                                    "namespace": "platform-test",
+                                    "uid": POD_UID,
+                                },
+                            }
+                        ],
+                    }
+                ]
+            },
+            "pod_build_info": {
+                "assets": ["index-main.js"],
+                "buildTime": "2026-07-15T00:00:00Z",
+                "image": "ghcr.io/halildeu/platform-web-frontend-testai:sha-8ab48cd",
+                "imageDigest": "",
+                "origin": "https://testai.acik.com",
+                "ref": "main",
+                "remotes": [],
+                "rootEntry": "index-main.js",
+                "sha": SOURCE_SHA,
+                "shortSha": "8ab48cd",
+            },
+            "controller_pods": {
+                "items": [
+                    {
+                        "metadata": {
+                            "name": "ingress-nginx-controller-abcd",
+                            "namespace": "ingress-nginx",
+                            "uid": CONTROLLER_UID,
+                            "deletionTimestamp": None,
+                        },
+                        "status": {
+                            "phase": "Running",
+                            "conditions": [{"type": "Ready", "status": "True"}],
+                            "containerStatuses": [
+                                {"name": "controller", "ready": True}
+                            ],
+                        },
+                    }
+                ]
+            },
+            "controller_log": (
+                '10.42.0.1 - - [16/Jul/2026:01:00:00 +0000] '
+                f'"GET /build-info.json?p5_probe={PROBE_ID} HTTP/2.0" 200 123 '
+                '"-" "Chrome" 321 0.001 [platform-test-frontend-80] [] '
+                '10.42.0.17:80 123 0.001 200 request-id'
+            ),
+            "pod_assets": {ASSET_PATH: ASSET_BODY},
         }
+        fixtures["all_ingresses"] = {"items": [fixtures["ingress"]]}
+        return fixtures
 
-    def _run(self, fixtures, extra_env=None):
+    def _run(self, fixtures, extra_env=None, phase="pre"):
         self.fixture_path.write_text(json.dumps(fixtures))
         env = os.environ | {
             "FIXTURE_PATH": str(self.fixture_path),
@@ -179,11 +338,15 @@ class CollectorTest(unittest.TestCase):
             "KUBECTL_BIN": str(self.mock_kubectl),
             "CURL_BIN": str(self.mock_curl),
             "REPORT_PATH": str(self.report),
-            "PHASE": "pre",
+            "PHASE": phase,
             "EXPECTED_CONTEXT": "k3d-test",
             "EXPECTED_SOURCE_SHA": SOURCE_SHA,
             "EXPECTED_IMAGE_DIGEST": DIGEST,
-            "EXPECTED_BUILD_RUN_ID": "29451703189",
+            "EXPECTED_BUILD_RUN_ID": "29457457120",
+            "EXPECTED_BUILD_ARTIFACT_ID": "8359963701",
+            "EXPECTED_BUILD_ARTIFACT_NAME": "Halildeu~platform-web~PBWNF0.dockerbuild",
+            "EXPECTED_BUILD_ARTIFACT_DIGEST": "sha256:f7f049ffe3d716045f287179f4e293fbbdbb891cb4a2d6ada0baddb1357a70c2",
+            "EXPECTED_BUILD_ARTIFACT_SIZE": "108623",
             "EXPECTED_CLUSTER_SERVER_SHA256": hashlib.sha256(
                 CLUSTER_SERVER.encode()
             ).hexdigest(),
@@ -192,6 +355,36 @@ class CollectorTest(unittest.TestCase):
         }
         if extra_env:
             env.update(extra_env)
+        if phase == "post":
+            self.browser_report.write_text(
+                json.dumps(
+                    {
+                        "runtime": {
+                            "frontendAssetPaths": [ASSET_PATH],
+                            "frontendAssetResponses": [
+                                {
+                                    "path": ASSET_PATH,
+                                    "resourceType": "script",
+                                    "status": 200,
+                                    "contentType": "application/javascript",
+                                    "bodySha256": ASSET_SHA256,
+                                    "fromServiceWorker": False,
+                                }
+                            ],
+                            "buildInfoRootEntryMatched": True,
+                            "buildInfoAssetsMatched": True,
+                            "uncaughtPageErrorCount": 0,
+                        }
+                    }
+                )
+            )
+            env.update(
+                {
+                    "EXPECTED_BROWSER_PROBE_ID": PROBE_ID,
+                    "EXPECTED_BROWSER_REPORT_PATH": str(self.browser_report),
+                    "WORKFLOW_STARTED_AT": WORKFLOW_STARTED_AT,
+                }
+            )
         return subprocess.run(
             ["bash", str(COLLECTOR)],
             cwd=ROOT,
@@ -205,12 +398,58 @@ class CollectorTest(unittest.TestCase):
         result = self._run(self._fixtures())
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(self.report.read_text())
-        self.assertEqual(payload["schemaVersion"], "faz25-p5-frontend-lineage-v1")
+        self.assertEqual(payload["schemaVersion"], "faz25-p5-frontend-lineage-v2")
         self.assertEqual(payload["deployment"]["uid"], DEPLOYMENT_UID)
         self.assertEqual(payload["replicaSet"]["uid"], REPLICASET_UID)
         self.assertEqual(payload["pods"]["uids"], [POD_UID])
         self.assertEqual(payload["lineage"]["observedDigest"], DIGEST)
-        self.assertEqual(payload["lineage"]["buildArtifactId"], "8357836615")
+        self.assertEqual(payload["lineage"]["buildArtifactId"], "8359963701")
+        self.assertEqual(
+            payload["lineage"]["buildArtifactEvidenceClass"],
+            "METADATA_ONLY_NON_TERMINAL",
+        )
+        self.assertEqual(payload["lineage"]["buildAttestationStatus"], "NOT_PUBLISHED")
+        self.assertIn(
+            "Terminal browser-to-image binding",
+            payload["lineage"]["buildAttestationBoundary"],
+        )
+        self.assertEqual(payload["route"]["ingress"]["uid"], INGRESS_UID)
+        self.assertEqual(
+            {route["requestPath"] for route in payload["route"]["ingress"]["matchingRoutes"]},
+            {
+                "/",
+                "/home",
+                "/login",
+                "/admin/ats",
+                "/admin/interview-evidence",
+                "/build-info.json",
+            },
+        )
+        self.assertEqual(payload["route"]["service"]["uid"], SERVICE_UID)
+        self.assertEqual(payload["route"]["endpointSlices"]["readyPodUids"], [POD_UID])
+        self.assertEqual(
+            payload["route"]["endpointSlices"]["readyPodNetworkBindings"],
+            [{"podUid": POD_UID, "addresses": ["10.42.0.17"]}],
+        )
+        expected_build_info_hash = hashlib.sha256(
+            json.dumps(
+                self._fixtures()["pod_build_info"],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        self.assertEqual(
+            payload["route"]["podBuildInfoSha256s"],
+            [expected_build_info_hash],
+        )
+        self.assertEqual(
+            payload["route"]["browserRequestBinding"],
+            {"status": "PRE_BROWSER"},
+        )
+        self.assertEqual(
+            payload["route"]["browserAssetBinding"],
+            {"status": "PRE_BROWSER"},
+        )
         self.assertEqual(payload["cluster"]["kubeSystemNamespaceUid"], KUBE_SYSTEM_UID)
         self.assertEqual(stat.S_IMODE(self.report.stat().st_mode), 0o600)
 
@@ -222,7 +461,7 @@ class CollectorTest(unittest.TestCase):
             for line in self.kubectl_calls.read_text().splitlines()
         ]
         self.assertNotIn(["config", "current-context"], calls)
-        self.assertEqual(len(calls), 6)
+        self.assertEqual(len(calls), 11)
         self.assertTrue(all(call[:2] == ["--context", "k3d-test"] for call in calls))
         self.assertEqual(
             [(call[2:4], "--raw" in call) for call in calls[:2]],
@@ -235,6 +474,11 @@ class CollectorTest(unittest.TestCase):
                 ["-n", "platform-test", "get", "deployment", "frontend", "-o", "json"],
                 ["-n", "platform-test", "get", "replicasets", "-l", "app.kubernetes.io/name=frontend", "-o", "json"],
                 ["-n", "platform-test", "get", "pods", "-l", "app.kubernetes.io/name=frontend", "-o", "json"],
+                ["get", "--raw", "/api/v1/namespaces/platform-test/pods/frontend-abc123-pod:80/proxy/build-info.json"],
+                ["-n", "platform-test", "get", "ingress", "platform", "-o", "json"],
+                ["get", "ingress", "-A", "-o", "json"],
+                ["-n", "platform-test", "get", "service", "frontend", "-o", "json"],
+                ["-n", "platform-test", "get", "endpointslices", "-l", "kubernetes.io/service-name=frontend", "-o", "json"],
             ],
         )
 
@@ -262,6 +506,301 @@ class CollectorTest(unittest.TestCase):
             self._fixtures(),
             {"MOCK_ARTIFACT_DIGEST": "sha256:" + "0" * 64},
         )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_endpoint_slice_not_bound_to_ready_pod(self):
+        fixtures = self._fixtures()
+        fixtures["endpointslices"]["items"][0]["endpoints"][0]["targetRef"]["uid"] = (
+            "99999999-9999-4999-8999-999999999999"
+        )
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_endpoint_slice_address_not_bound_to_ready_pod_ip(self):
+        fixtures = self._fixtures()
+        fixtures["endpointslices"]["items"][0]["endpoints"][0]["addresses"] = [
+            "10.42.0.99"
+        ]
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_equal_but_invalid_pod_and_endpoint_slice_addresses(self):
+        fixtures = self._fixtures()
+        fixtures["pods"]["items"][0]["status"]["podIP"] = ":::"
+        fixtures["pods"]["items"][0]["status"]["podIPs"] = [{"ip": ":::"}]
+        fixtures["endpointslices"]["items"][0]["endpoints"][0]["addresses"] = [
+            ":::"
+        ]
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_more_specific_competing_ingress_route(self):
+        fixtures = self._fixtures()
+        fixtures["all_ingresses"]["items"].append(
+            {
+                "metadata": {
+                    "name": "competing-admin",
+                    "namespace": "platform-test",
+                    "uid": "99999999-9999-4999-8999-999999999999",
+                },
+                "spec": {
+                    "ingressClassName": "nginx",
+                    "rules": [
+                        {
+                            "host": "testai.acik.com",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "path": "/admin",
+                                        "pathType": "Prefix",
+                                        "backend": {
+                                            "service": {
+                                                "name": "competing-service",
+                                                "port": {"number": 80},
+                                            }
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_hostless_catch_all_ingress_route(self):
+        fixtures = self._fixtures()
+        fixtures["all_ingresses"]["items"].append(
+            {
+                "metadata": {
+                    "name": "hostless-catch-all",
+                    "namespace": "attacker",
+                    "uid": "99999999-9999-4999-8999-999999999999",
+                },
+                "spec": {
+                    "ingressClassName": "nginx",
+                    "rules": [
+                        {
+                            "http": {
+                                "paths": [
+                                    {
+                                        "path": "/admin",
+                                        "pathType": "Prefix",
+                                        "backend": {
+                                            "service": {
+                                                "name": "competing-service",
+                                                "port": {"number": 80},
+                                            }
+                                        },
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                },
+            }
+        )
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_route_altering_ingress_annotation(self):
+        fixtures = self._fixtures()
+        fixtures["all_ingresses"]["items"][0]["metadata"]["annotations"] = {
+            "nginx.ingress.kubernetes.io/canary": "true"
+        }
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_accepts_disjoint_rewritten_implementation_specific_api_ingress(self):
+        fixtures = self._fixtures()
+        fixtures["all_ingresses"]["items"].append(
+            {
+                "metadata": {
+                    "name": "ats-api",
+                    "namespace": "platform-test",
+                    "uid": "99999999-9999-4999-8999-999999999999",
+                    "annotations": {
+                        "nginx.ingress.kubernetes.io/rewrite-target": "/api/v1/$2"
+                    },
+                },
+                "spec": {
+                    "ingressClassName": "nginx",
+                    "rules": [
+                        {
+                            "host": "testai.acik.com",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "path": "/api/ats/v1(/|$)(.*)",
+                                        "pathType": "ImplementationSpecific",
+                                        "backend": {
+                                            "service": {
+                                                "name": "ats-interview-evidence",
+                                                "port": {"number": 8080},
+                                            }
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+        result = self._run(fixtures)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rejects_cross_namespace_frontend_service_name_collision(self):
+        fixtures = self._fixtures()
+        fixtures["all_ingresses"]["items"].append(
+            {
+                "metadata": {
+                    "name": "competing-admin",
+                    "namespace": "attacker",
+                    "uid": "99999999-9999-4999-8999-999999999999",
+                },
+                "spec": {
+                    "ingressClassName": "nginx",
+                    "rules": [
+                        {
+                            "host": "testai.acik.com",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "path": "/admin",
+                                        "pathType": "Prefix",
+                                        "backend": {
+                                            "service": {
+                                                "name": "frontend",
+                                                "port": {"number": 80},
+                                            }
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_case_insensitive_regex_route_collision(self):
+        fixtures = self._fixtures()
+        fixtures["all_ingresses"]["items"].append(
+            {
+                "metadata": {
+                    "name": "competing-admin-regex",
+                    "namespace": "platform-test",
+                    "uid": "99999999-9999-4999-8999-999999999999",
+                    "annotations": {
+                        "nginx.ingress.kubernetes.io/use-regex": "true"
+                    },
+                },
+                "spec": {
+                    "ingressClassName": "nginx",
+                    "rules": [
+                        {
+                            "host": "testai.acik.com",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "path": "/ADMIN",
+                                        "pathType": "Prefix",
+                                        "backend": {
+                                            "service": {
+                                                "name": "competing-service",
+                                                "port": {"number": 80},
+                                            }
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                },
+            }
+        )
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_post_phase_binds_public_probe_to_ingress_log_and_endpoint_ip(self):
+        fixtures = self._fixtures()
+        result = self._run(fixtures, phase="post")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(self.report.read_text())
+        binding = payload["route"]["browserRequestBinding"]
+        self.assertEqual(binding["status"], "BOUND")
+        self.assertEqual(binding["probeId"], PROBE_ID)
+        self.assertEqual(binding["controllerPodUid"], CONTROLLER_UID)
+        self.assertEqual(binding["upstreamPodAddress"], "10.42.0.17")
+        self.assertEqual(
+            binding["logLineSha256"],
+            hashlib.sha256(fixtures["controller_log"].encode()).hexdigest(),
+        )
+        asset_binding = payload["route"]["browserAssetBinding"]
+        self.assertEqual(asset_binding["status"], "BOUND")
+        self.assertEqual(asset_binding["assetCount"], 1)
+        self.assertEqual(asset_binding["podCount"], 1)
+        self.assertEqual(
+            asset_binding["browserAssetEvidenceSha256"],
+            hashlib.sha256(
+                json.dumps(
+                    [
+                        {
+                            "bodySha256": ASSET_SHA256,
+                            "contentType": "application/javascript",
+                            "fromServiceWorker": False,
+                            "path": ASSET_PATH,
+                            "resourceType": "script",
+                            "status": 200,
+                        }
+                    ],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
+        )
+        self.assertEqual(
+            asset_binding["podAssetBindings"],
+            [{"podUid": POD_UID, "path": ASSET_PATH, "bodySha256": ASSET_SHA256}],
+        )
+
+    def test_post_phase_rejects_browser_asset_not_equal_to_ready_pod(self):
+        fixtures = self._fixtures()
+        fixtures["pod_assets"][ASSET_PATH] = "console.log('different pod body');\n"
+        result = self._run(fixtures, phase="post")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_post_phase_rejects_probe_log_for_unowned_upstream(self):
+        fixtures = self._fixtures()
+        fixtures["controller_log"] = fixtures["controller_log"].replace(
+            "10.42.0.17:80", "10.42.0.99:80"
+        )
+        result = self._run(fixtures, phase="post")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_post_phase_rejects_owned_failed_retry_then_unowned_success(self):
+        fixtures = self._fixtures()
+        fixtures["controller_log"] = fixtures["controller_log"].replace(
+            "10.42.0.17:80 123 0.001 200 request-id",
+            "10.42.0.17:80, 10.42.0.99:80 0, 123 0.001, 0.002 502, 200 request-id",
+        )
+        result = self._run(fixtures, phase="post")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.report.exists())
 

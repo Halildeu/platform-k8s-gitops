@@ -4183,9 +4183,14 @@ images:
     # 29451703189 produced the immutable testai digest below. Tracked by #2463.
     # Machine-managed current pin. Historical provenance remains above; future
     # automation rewrites only these fields and records evidence in its PR.
-    # sourceRevision: 90768ed318ebfa547d2b3137aa317168f9c726d7
-    newTag: sha-90768ed
-    digest: sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6
+    # 2026-07-16 Faz 25 FULLATS-WEB-ACCESS-05: platform-web #924 adds exact
+    # role-by-capability journeys, local-only scenario runners and the
+    # candidate-controlled synthetic resume draft. Real CV/PDF/PII upload
+    # remains OWNER_GATED; agentic screening remains PROPOSAL_ONLY. Image run
+    # 29457457120 produced the immutable testai digest below. Tracked by #2470.
+    # sourceRevision: 8ab48cd87725a3fa306c18785a144ab184044ccf
+    newTag: sha-8ab48cd
+    digest: sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
