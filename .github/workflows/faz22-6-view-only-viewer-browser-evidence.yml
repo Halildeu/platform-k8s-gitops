@@ -39,8 +39,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  target-preflight:
+    name: Verify attended endpoint target before approval
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 5
+    steps:
+      - name: Validate bounded dispatch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          ACTIVATION_RUN_ID: ${{ inputs.activation_run_id }}
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
+        run: |
+          set -euo pipefail
+          [ "$CONFIRM" = "RUN_FAZ22_6_VIEW_ONLY_VIEWER_BROWSER_EVIDENCE" ] || exit 2
+          printf '%s' "$ACTIVATION_RUN_ID" | grep -Eq '^[1-9][0-9]{5,19}$'
+          printf '%s' "$DEVICE_ID" | grep -Eq '^[0-9a-fA-F-]{36}$'
+          printf '%s' "$DEVICE_HOSTNAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{1,126}$'
+          case "$PILOT_SECONDS" in 300|600|900|1200|1800) ;; *) exit 2 ;; esac
+          printf '%s' "$MASK_RECT_BPS" | grep -Eq '^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$'
+
+      - name: Checkout target verifier revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Verify live device, trust rows, and attended endpoint hostname
+        env:
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          DENETIM_SSH_TARGET: denetim-pc
+          DENETIM_SSH_CONFIG: /home/halil/.ssh/config
+        run: bash scripts/faz22-remote-ops/verify-view-only-viewer-target.sh
+
   browser-evidence:
     name: Attended testai browser render and ACK evidence
+    needs: target-preflight
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 45
     environment:
@@ -81,6 +115,14 @@ jobs:
 
       - name: Checkout evidence producer revision
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Re-verify live target after protected approval
+        env:
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          DENETIM_SSH_TARGET: denetim-pc
+          DENETIM_SSH_CONFIG: /home/halil/.ssh/config
+        run: bash scripts/faz22-remote-ops/verify-view-only-viewer-target.sh
 
       - name: Verify protected activation authorization receipt
         env:
@@ -335,70 +377,11 @@ jobs:
         run: |
           set -euo pipefail
           diagnostic_dir="$RUNNER_TEMP/faz22-viewer-collector-diagnostic"
-          mkdir -p "$diagnostic_dir"
-          summary_path="$EVIDENCE_DIR/summary.json"
-          operation_path="$EVIDENCE_DIR/operation.body"
-          if [ ! -s "$summary_path" ]; then
-            summary_path="$RUNNER_TEMP/faz22-viewer-empty-summary.json"
-            printf '{}\n' > "$summary_path"
-          fi
-          if [ ! -s "$operation_path" ]; then
-            operation_path="$RUNNER_TEMP/faz22-viewer-empty-operation.json"
-            printf '{}\n' > "$operation_path"
-          fi
-          jq -cS -n \
-            --arg sourceRevision "$SOURCE_REVISION" \
-            --slurpfile summary "$summary_path" \
-            --slurpfile operation "$operation_path" \
-            '($summary[0] // {}) as $summary
-            | ($operation[0] // {}) as $operation
-            | {
-              schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v2",
-              sourceRevision:$sourceRevision,
-              status:($summary.status // "collector-did-not-write-summary"),
-              failureReasonCode:(
-                if $summary.reason == null then null
-                elif $summary.reason == "open session expected 200, got 404"
-                  then "open-session-http-404-expected-200"
-                elif (($summary.reason | type) == "string")
-                  and ($summary.reason | test("^[A-Za-z0-9:._-]{1,160}$")) then $summary.reason
-                else "collector-no-go-unspecified"
-                end
-              ),
-              consentWait:($summary.consentWait // null),
-              openSessionHttp:($summary.http.open // null),
-              operationHttp:($summary.http.operation // null),
-              operationKind:($operation.kind // null),
-              transportPushed:($operation.transportPushed // false),
-              deny:(if $operation.deny == null then null else {
-                reason:($operation.deny.reason // "denied"),
-                policyGate:($operation.deny.policyGate // null),
-                policyDetail:($operation.deny.policyDetail // null)
-              } end)
-            }' > "$diagnostic_dir/collector-diagnostic.json"
-          jq -e '
-            .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v2"
-            and (.sourceRevision | test("^[a-f0-9]{40}$"))
-            and (.status | test("^[A-Za-z0-9:._-]{1,64}$"))
-            and (.failureReasonCode == null or (.failureReasonCode | test("^[A-Za-z0-9:._-]{1,160}$")))
-            and (.consentWait == null or (.consentWait | test("^[a-z-]{1,32}$")))
-            and (.openSessionHttp == null or (.openSessionHttp | test("^[0-9]{3}$")))
-            and (.operationHttp == null or (.operationHttp | test("^[0-9]{3}$")))
-            and (.operationKind == null or (.operationKind | test("^[A-Z_]{1,32}$")))
-            and (.transportPushed | type == "boolean")
-            and (.deny == null or (
-              (.deny.reason | test("^[A-Za-z0-9:_-]{1,64}$"))
-              and (.deny.policyGate == null or (.deny.policyGate | test("^[A-Z_]{1,32}$")))
-              and (.deny.policyDetail == null or (.deny.policyDetail | test("^[a-z0-9-]{1,64}$")))
-            ))
-          ' "$diagnostic_dir/collector-diagnostic.json" >/dev/null
-          if grep -Eiq 'bearer|BEGIN .*PRIVATE KEY|sessionId|deviceId|operatorId|decisionId|operationId|canonicalPayload' \
-              "$diagnostic_dir/collector-diagnostic.json"; then
-            echo "::error::collector diagnostic contains a forbidden identity or secret-bearing field"
-            exit 1
-          fi
-          sha256sum "$diagnostic_dir/collector-diagnostic.json" > "$diagnostic_dir/SHA256SUMS"
-          (cd "$diagnostic_dir" && sha256sum -c SHA256SUMS)
+          bash scripts/faz22-remote-ops/build-view-only-viewer-collector-diagnostic.sh \
+            "$EVIDENCE_DIR/summary.json" \
+            "$EVIDENCE_DIR/operation.body" \
+            "$SOURCE_REVISION" \
+            "$diagnostic_dir"
 
       - name: Upload redacted collector diagnostic
         if: ${{ always() && steps.stage-diagnostic.outcome == 'success' }}
