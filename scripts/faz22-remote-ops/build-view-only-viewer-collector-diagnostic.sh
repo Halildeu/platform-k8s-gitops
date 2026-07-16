@@ -9,9 +9,11 @@ SUMMARY_PATH="${1:?summary path is required}"
 OPERATION_PATH="${2:?operation path is required}"
 SOURCE_REVISION="${3:?source revision is required}"
 OUTPUT_DIR="${4:?output directory is required}"
+BROWSER_DIAGNOSTIC_PATH="${5:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 ALLOWLIST_PATH="${DIAGNOSTIC_ALLOWLIST_PATH:-${REPO_ROOT}/config/faz22-6-viewer-collector-diagnostic-allowlist.v1.json}"
+BROWSER_ALLOWLIST_PATH="${BROWSER_DIAGNOSTIC_ALLOWLIST_PATH:-${REPO_ROOT}/config/faz22-6-viewer-browser-diagnostic-codes.v1.json}"
 
 [[ "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]] || {
   echo "collector-diagnostic: source-revision-invalid" >&2
@@ -27,6 +29,16 @@ jq -e '
   and (.policyDetails | length == (unique | length))
 ' "$ALLOWLIST_PATH" >/dev/null || {
   echo "collector-diagnostic: allowlist-invalid" >&2
+  exit 2
+}
+jq -e '
+  .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnosticCodes.v1"
+  and (.failureCodes | type == "array" and length > 0)
+  and (.failureCodes | all(type == "string" and test("^[a-z0-9-]{1,96}$")))
+  and (.failureCodes | length == (unique | length))
+  and (.failureCodes | index("browser-unclassified-failure") != null)
+' "$BROWSER_ALLOWLIST_PATH" >/dev/null || {
+  echo "collector-diagnostic: browser-allowlist-invalid" >&2
   exit 2
 }
 
@@ -46,13 +58,16 @@ safe_json_input() {
 
 summary_safe="$(safe_json_input "$SUMMARY_PATH" "$tmp_dir/summary.json")"
 operation_safe="$(safe_json_input "$OPERATION_PATH" "$tmp_dir/operation.json")"
+browser_safe="$(safe_json_input "$BROWSER_DIAGNOSTIC_PATH" "$tmp_dir/browser.json")"
 output="$OUTPUT_DIR/collector-diagnostic.json"
 
 jq -cS -n \
   --arg sourceRevision "$SOURCE_REVISION" \
   --slurpfile summary "$summary_safe" \
   --slurpfile operation "$operation_safe" \
+  --slurpfile browser "$browser_safe" \
   --slurpfile allowlist "$ALLOWLIST_PATH" \
+  --slurpfile browserAllowlist "$BROWSER_ALLOWLIST_PATH" \
   'def bounded($pattern; $fallback):
      if type == "string" and test($pattern) then . else $fallback end;
    def http_or_null:
@@ -60,10 +75,12 @@ jq -cS -n \
      elif type == "string" and test("^[0-9]{3}$") then .
      else null end;
    ($allowlist[0]) as $allowlist
+   | ($browserAllowlist[0]) as $browserAllowlist
    | ($summary[0] // {}) as $summary
    | ($operation[0] // {}) as $operation
+   | ($browser[0] // {}) as $browser
    | {
-       schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v2",
+       schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v3",
        sourceRevision:$sourceRevision,
        status:(($summary.status // "collector-did-not-write-summary") as $status
          | if ["starting", "no-go", "accepted-candidate", "collector-did-not-write-summary"]
@@ -76,6 +93,16 @@ jq -cS -n \
            and (($allowlist.collectorFailureReasonCodes | index($summary.reason)) != null)
            then $summary.reason
          else "collector-no-go-unspecified"
+         end
+       ),
+       browserFailureCode:(
+         if $summary.reason != "browser-product-evidence-failed" then null
+         elif $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v1"
+           and $browser.sourceRevision == $sourceRevision
+           and (($browser.failureCode | type) == "string")
+           and (($browserAllowlist.failureCodes | index($browser.failureCode)) != null)
+           then $browser.failureCode
+         else "browser-unclassified-failure"
          end
        ),
        consentWait:(($summary.consentWait // null)
@@ -102,10 +129,11 @@ jq -cS -n \
      }' > "$output"
 
 jq -e '
-  .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v2"
+  .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v3"
   and (.sourceRevision | test("^[a-f0-9]{40}$"))
   and (.status | test("^[A-Za-z0-9:._-]{1,64}$"))
   and (.failureReasonCode == null or (.failureReasonCode | test("^[A-Za-z0-9:._-]{1,160}$")))
+  and (.browserFailureCode == null or (.browserFailureCode | test("^[a-z0-9-]{1,96}$")))
   and (.consentWait == null or (.consentWait | test("^[a-z-]{1,32}$")))
   and (.openSessionHttp == null or (.openSessionHttp | test("^[0-9]{3}$")))
   and (.operationHttp == null or (.operationHttp | test("^[0-9]{3}$")))

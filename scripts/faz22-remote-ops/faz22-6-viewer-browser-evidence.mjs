@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 
 const HASH = /^sha256:[a-f0-9]{64}$/;
 const GIT_SHA = /^[a-f0-9]{40}$/;
@@ -12,6 +13,82 @@ const VIEWER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
 const MIN_PILOT_SECONDS = 300;
 const MAX_PILOT_SECONDS = 1800;
 const MASK_BASIS_POINTS = 10_000;
+
+export const BROWSER_FAILURE_CODES = Object.freeze([
+  'browser-ack-count-diverged',
+  'browser-ack-minimum-not-met',
+  'browser-binding-invalid',
+  'browser-console-error',
+  'browser-diagnostic-write-failed',
+  'browser-evidence-write-failed',
+  'browser-frame-active-indicator-invalid',
+  'browser-frame-dlp-mask-invalid',
+  'browser-frame-inspection-failed',
+  'browser-frame-not-visible',
+  'browser-frame-pixel-variance-invalid',
+  'browser-input-invalid',
+  'browser-left-live-state',
+  'browser-metadata-not-trusted',
+  'browser-observer-install-failed',
+  'browser-replay-not-rejected',
+  'browser-replay-probe-failed',
+  'browser-route-navigation-failed',
+  'browser-runtime-start-failed',
+  'browser-screenshot-failed',
+  'browser-telemetry-read-failed',
+  'browser-token-file-invalid',
+  'browser-unclassified-failure',
+  'browser-unexpected-input-control',
+  'browser-view-attended-badge-missing',
+  'browser-view-recording-off-badge-missing',
+  'browser-view-root-not-visible',
+  'browser-view-viewonly-badge-missing',
+  'browser-viewer-id-invalid',
+]);
+
+class BrowserEvidenceError extends Error {
+  constructor(code) {
+    super(code);
+    this.name = 'BrowserEvidenceError';
+    this.code = code;
+  }
+}
+
+function evidenceFailure(code) {
+  if (!BROWSER_FAILURE_CODES.includes(code)) {
+    return new BrowserEvidenceError('browser-unclassified-failure');
+  }
+  return new BrowserEvidenceError(code);
+}
+
+async function evidenceStep(code, action) {
+  try {
+    return await action();
+  } catch {
+    throw evidenceFailure(code);
+  }
+}
+
+export function classifyBrowserFailure(error) {
+  if (error instanceof BrowserEvidenceError && BROWSER_FAILURE_CODES.includes(error.code)) {
+    return error.code;
+  }
+  const message = error instanceof Error ? error.message : '';
+  if (message === 'EVIDENCE_BINDING_JSON is not a strict, distinct SHA-256 binding') {
+    return 'browser-binding-invalid';
+  }
+  if (message === 'operator token file is invalid') return 'browser-token-file-invalid';
+  if (
+    message.endsWith(' is required') ||
+    message.startsWith('SOURCE_REVISION must be') ||
+    message.startsWith('PILOT_SECONDS must be') ||
+    message.startsWith('DLP_MASK_RECT_BPS') ||
+    message.startsWith('VIEWER_URL')
+  ) {
+    return 'browser-input-invalid';
+  }
+  return 'browser-unclassified-failure';
+}
 
 function required(name) {
   const value = process.env[name]?.trim();
@@ -95,49 +172,67 @@ async function main() {
   if (token.length < 32 || /[\r\n]/.test(token)) throw new Error('operator token file is invalid');
 
   const packageRoot = process.env.PLAYWRIGHT_PACKAGE_ROOT ?? path.join(process.cwd(), 'platform-web');
-  const requireFromWeb = createRequire(path.join(packageRoot, 'package.json'));
-  const { chromium } = requireFromWeb('playwright');
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await context.addInitScript(
-    ({ bearer, expiresAt }) => {
-      window.localStorage.setItem('token', bearer);
-      window.localStorage.setItem('tokenExpiresAt', String(expiresAt));
-    },
-    { bearer: token, expiresAt: Date.now() + (pilotSeconds + 900) * 1000 },
-  );
-
-  let consoleErrorCount = 0;
-  const page = await context.newPage();
-  page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrorCount += 1;
-  });
-  page.on('pageerror', () => {
-    consoleErrorCount += 1;
-  });
-
-  const startedAt = new Date();
+  let browser = null;
+  let context = null;
   try {
-    await page.goto(viewerUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    const root = page.getByTestId('remote-view-page');
-    await root.waitFor({ state: 'visible', timeout: 60_000 });
-    await page.waitForFunction(
-      () => document.querySelector('[data-testid="remote-view-page"]')?.getAttribute('data-metadata-trusted') === 'true',
-      undefined,
-      { timeout: 60_000 },
+    const requireFromWeb = createRequire(path.join(packageRoot, 'package.json'));
+    const { chromium } = await evidenceStep('browser-runtime-start-failed', async () => requireFromWeb('playwright'));
+    browser = await evidenceStep('browser-runtime-start-failed', async () => chromium.launch({ headless: true }));
+    context = await evidenceStep('browser-runtime-start-failed', async () =>
+      browser.newContext({ viewport: { width: 1440, height: 900 } }),
     );
-    await page.getByTestId('remote-view-badge-viewonly').waitFor({ state: 'visible' });
-    await page.getByTestId('remote-view-badge-recording-off').waitFor({ state: 'visible' });
-    await page.getByTestId('remote-view-badge-attended').waitFor({ state: 'visible' });
-    await page.getByTestId('remote-view-frame').waitFor({ state: 'visible', timeout: 60_000 });
+    await evidenceStep('browser-runtime-start-failed', async () => context.addInitScript(
+      ({ bearer, expiresAt }) => {
+        window.localStorage.setItem('token', bearer);
+        window.localStorage.setItem('tokenExpiresAt', String(expiresAt));
+      },
+      { bearer: token, expiresAt: Date.now() + (pilotSeconds + 900) * 1000 },
+    ));
+
+    let consoleErrorCount = 0;
+    const page = await evidenceStep('browser-runtime-start-failed', async () => context.newPage());
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrorCount += 1;
+    });
+    page.on('pageerror', () => {
+      consoleErrorCount += 1;
+    });
+
+    const startedAt = new Date();
+    await evidenceStep('browser-route-navigation-failed', async () =>
+      page.goto(viewerUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }),
+    );
+    const root = page.getByTestId('remote-view-page');
+    await evidenceStep('browser-view-root-not-visible', async () =>
+      root.waitFor({ state: 'visible', timeout: 60_000 }),
+    );
+    await evidenceStep('browser-metadata-not-trusted', async () =>
+      page.waitForFunction(
+        () => document.querySelector('[data-testid="remote-view-page"]')?.getAttribute('data-metadata-trusted') === 'true',
+        undefined,
+        { timeout: 60_000 },
+      ),
+    );
+    await evidenceStep('browser-view-viewonly-badge-missing', async () =>
+      page.getByTestId('remote-view-badge-viewonly').waitFor({ state: 'visible' }),
+    );
+    await evidenceStep('browser-view-recording-off-badge-missing', async () =>
+      page.getByTestId('remote-view-badge-recording-off').waitFor({ state: 'visible' }),
+    );
+    await evidenceStep('browser-view-attended-badge-missing', async () =>
+      page.getByTestId('remote-view-badge-attended').waitFor({ state: 'visible' }),
+    );
+    await evidenceStep('browser-frame-not-visible', async () =>
+      page.getByTestId('remote-view-frame').waitFor({ state: 'visible', timeout: 60_000 }),
+    );
 
     const viewerId = await root.getAttribute('data-viewer-id');
-    if (!viewerId || !VIEWER_ID.test(viewerId)) throw new Error('trusted viewer id is absent or invalid');
+    if (!viewerId || !VIEWER_ID.test(viewerId)) throw evidenceFailure('browser-viewer-id-invalid');
     const interactive = await page.locator('input,textarea,select,[contenteditable="true"]').count();
     const buttons = await page.getByRole('button').count();
-    if (interactive !== 0 || buttons !== 1) throw new Error('VIEW_ONLY page exposes an unexpected input control');
+    if (interactive !== 0 || buttons !== 1) throw evidenceFailure('browser-unexpected-input-control');
 
-    await page.evaluate(() => {
+    await evidenceStep('browser-observer-install-failed', async () => page.evaluate(() => {
       const target = document.querySelector('[data-testid="remote-view-page"]');
       if (!target) throw new Error('remote view evidence root missing');
       const samples = [];
@@ -162,10 +257,13 @@ async function main() {
         attributeFilter: ['data-frame-seq', 'data-frame-observed-at', 'data-frame-sent-at'],
       });
       window.__faz226ViewerEvidence = { samples, stop: () => observer.disconnect() };
-    });
+    }));
 
-    const screenshot = await page.screenshot({ type: 'png', fullPage: false });
-    const frameChecks = await page.getByTestId('remote-view-frame').evaluate(async (image, mask) => {
+    const screenshot = await evidenceStep('browser-screenshot-failed', async () =>
+      page.screenshot({ type: 'png', fullPage: false }),
+    );
+    const frameChecks = await evidenceStep('browser-frame-inspection-failed', async () =>
+      page.getByTestId('remote-view-frame').evaluate(async (image, mask) => {
       if (!(image instanceof HTMLImageElement) || image.naturalWidth < 2 || image.naturalHeight < 2) return false;
       const canvas = document.createElement('canvas');
       canvas.width = image.naturalWidth;
@@ -223,21 +321,24 @@ async function main() {
           .map((value) => value.toString(16).padStart(2, '0'))
           .join('')}`,
       };
-    }, maskRect);
-    if (!frameChecks || !frameChecks.pixelCheckPassed) throw new Error('rendered frame pixel variance check failed');
-    if (!frameChecks.dlpMaskPixelCheckPassed) throw new Error('delivered frame DLP mask pixel check failed');
-    if (!frameChecks.activeIndicatorPixelCheckPassed) throw new Error('delivered frame active indicator pixel check failed');
+      }, maskRect),
+    );
+    if (!frameChecks || !frameChecks.pixelCheckPassed) throw evidenceFailure('browser-frame-pixel-variance-invalid');
+    if (!frameChecks.dlpMaskPixelCheckPassed) throw evidenceFailure('browser-frame-dlp-mask-invalid');
+    if (!frameChecks.activeIndicatorPixelCheckPassed) {
+      throw evidenceFailure('browser-frame-active-indicator-invalid');
+    }
 
     const deadline = Date.now() + pilotSeconds * 1000;
     while (Date.now() < deadline) {
       const status = await page.getByTestId('remote-view-status').textContent();
       if (!status || /error|hata|forbidden|yetkiniz|closed|kapandı/i.test(status)) {
-        throw new Error('viewer left the live state during the bounded pilot');
+        throw evidenceFailure('browser-left-live-state');
       }
       await page.waitForTimeout(1_000);
     }
 
-    const telemetry = await page.evaluate(() => {
+    const telemetry = await evidenceStep('browser-telemetry-read-failed', async () => page.evaluate(() => {
       const target = document.querySelector('[data-testid="remote-view-page"]');
       const evidence = window.__faz226ViewerEvidence;
       evidence?.stop();
@@ -246,16 +347,16 @@ async function main() {
         attempted: Number(target?.getAttribute('data-render-ack-attempted-count') ?? '-1'),
         accepted: Number(target?.getAttribute('data-render-ack-accepted-count') ?? '-1'),
       };
-    });
+    }));
     const unique = new Map(telemetry.samples.map((sample) => [sample.seq, sample]));
     const samples = [...unique.values()].sort((left, right) => left.seq - right.seq);
     if (samples.length < 100 || telemetry.attempted < 100 || telemetry.accepted < 100) {
-      throw new Error('minimum 100 real browser render acknowledgements were not observed');
+      throw evidenceFailure('browser-ack-minimum-not-met');
     }
     if (telemetry.attempted !== telemetry.accepted || telemetry.accepted !== samples.length) {
-      throw new Error('browser samples and render acknowledgement counts diverged');
+      throw evidenceFailure('browser-ack-count-diverged');
     }
-    const replayStatus = await page.evaluate(
+    const replayStatus = await evidenceStep('browser-replay-probe-failed', async () => page.evaluate(
       async ({ url, bearer, replayViewerId, replaySeq }) => {
         const response = await fetch(url, {
           method: 'POST',
@@ -270,9 +371,9 @@ async function main() {
         return response.status;
       },
       { url: viewerUrl, bearer: token, replayViewerId: viewerId, replaySeq: samples.at(-1).seq },
-    );
+    ));
     if (replayStatus !== 404) {
-      throw new Error('broker did not reject a replayed render acknowledgement');
+      throw evidenceFailure('browser-replay-not-rejected');
     }
     const ages = samples.map((sample) => Math.max(0, sample.sampledAt - sample.observedAt));
 
@@ -312,17 +413,39 @@ async function main() {
         },
       },
     };
-    if (consoleErrorCount !== 0) throw new Error('browser console/page errors were observed');
-    await writeFile(output, `${JSON.stringify(child, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    if (consoleErrorCount !== 0) throw evidenceFailure('browser-console-error');
+    await evidenceStep('browser-evidence-write-failed', async () =>
+      writeFile(output, `${JSON.stringify(child, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 }),
+    );
   } finally {
-    await context.close();
-    await browser.close();
+    await context?.close().catch(() => {});
+    await browser?.close().catch(() => {});
   }
 
   process.stdout.write(`browser_evidence=pass output=${path.basename(output)}\n`);
 }
 
-main().catch((error) => {
-  process.stderr.write(`browser_evidence=fail reason=${error instanceof Error ? error.message : 'unknown'}\n`);
-  process.exitCode = 1;
-});
+async function writeFailureDiagnostic(code) {
+  const output = process.env.BROWSER_DIAGNOSTIC_OUTPUT?.trim();
+  if (!output) return;
+  const sourceRevision = process.env.SOURCE_REVISION?.trim() ?? '';
+  const diagnostic = {
+    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v1',
+    sourceRevision: GIT_SHA.test(sourceRevision) ? sourceRevision : null,
+    failureCode: code,
+  };
+  await writeFile(output, `${JSON.stringify(diagnostic, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(async (error) => {
+    let code = classifyBrowserFailure(error);
+    try {
+      await writeFailureDiagnostic(code);
+    } catch {
+      code = 'browser-diagnostic-write-failed';
+    }
+    process.stderr.write(`browser_evidence=fail code=${code}\n`);
+    process.exitCode = 1;
+  });
+}
