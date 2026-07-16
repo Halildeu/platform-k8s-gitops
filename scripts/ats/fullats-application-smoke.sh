@@ -93,7 +93,12 @@ if [ "$C" != 200 ] || ! jq -e --arg r "$REF" \
   'all(.items[]; .publicRef!=$r)' "$T/other-inbox" >/dev/null; then
   die "cross-tenant application isolation"
 fi
-ok "ayni application rolleri baska tenantta basvuruyu goremez"
+printf '{"expectedVersion":0,"toStatus":"UNDER_REVIEW"}' > "$T/other-s1"
+C=$(curl -sS --max-time 20 --config "$T/operator.curl" -H 'Content-Type: application/json' \
+  -X PUT --data-binary @"$T/other-s1" -o "$T/other-o1" -w '%{http_code}' \
+  "$API/recruiter/applications/$REF/status")
+[ "$C" = 404 ] || die "cross-tenant status mutation HTTP $C (404 bekleniyor)"
+ok "ayni rollerle baska tenant listeleyemez ve basvuruyu degistiremez"
 
 printf '{"expectedVersion":0,"toStatus":"UNDER_REVIEW"}' > "$T/s1"
 C=$(curl -sS --max-time 20 --config "$T/recruiter.curl" -H 'Content-Type: application/json' \
@@ -118,5 +123,5 @@ if [ "$C" != 200 ] || ! jq -e '.status=="INTERVIEW_PENDING" and .version==2' "$T
 fi
 ok "UNDER_REVIEW -> INTERVIEW_PENDING"
 
-echo "SONUC: $N/9 PASS publicRef=$REF (sentetik; token/PII redacted)"
-[ "$N" -eq 9 ]
+echo "SONUC: $N/10 PASS publicRef=$REF (sentetik; token/PII redacted)"
+[ "$N" -eq 10 ]
