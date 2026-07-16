@@ -45,8 +45,12 @@ jobs:
             "$artifact_dir/browser-report.json" \
             "$artifact_dir/lineage-pre.json" \
             "$artifact_dir/lineage-post.json" \
+            "$artifact_dir/route-watch.json" \
             "$artifact_dir/evidence-manifest.json" \
             "$artifact_dir/SHA256SUMS"
+          route_watch_stop="$test_root/route-watch.stop"
+          route_watch_ready="$test_root/route-watch.ready"
+          rm -f "$route_watch_stop" "$route_watch_ready"
 
           sha256_file() {
             if command -v sha256sum >/dev/null 2>&1; then
@@ -67,6 +71,9 @@ jobs:
             echo "browser_report=$artifact_dir/browser-report.json"
             echo "lineage_pre=$artifact_dir/lineage-pre.json"
             echo "lineage_post=$artifact_dir/lineage-post.json"
+            echo "route_watch=$artifact_dir/route-watch.json"
+            echo "route_watch_stop=$route_watch_stop"
+            echo "route_watch_ready=$route_watch_ready"
             echo "manifest=$artifact_dir/evidence-manifest.json"
             echo "spec_sha256=$spec_sha256"
             echo "config_sha256=$config_sha256"
@@ -80,9 +87,9 @@ jobs:
           REPORT_PATH: ${{ steps.workspace.outputs.lineage_pre }}
           PHASE: pre
           EXPECTED_CONTEXT: k3d-test
-          EXPECTED_SOURCE_SHA: 90768ed318ebfa547d2b3137aa317168f9c726d7
-          EXPECTED_IMAGE_DIGEST: sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6
-          EXPECTED_BUILD_RUN_ID: "29451703189"
+          EXPECTED_SOURCE_SHA: 8ab48cd87725a3fa306c18785a144ab184044ccf
+          EXPECTED_IMAGE_DIGEST: sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564
+          EXPECTED_BUILD_RUN_ID: "29457457120"
           EXPECTED_CLUSTER_SERVER_SHA256: 72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29
           EXPECTED_CLUSTER_CA_SHA256: ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96
           EXPECTED_KUBE_SYSTEM_UID: 0a7f11d1-53d6-452f-bdac-3669507af073
@@ -90,6 +97,7 @@ jobs:
           set -euo pipefail
           bash scripts/deploy/collect-faz25-p5-frontend-lineage.sh
           echo "live_digest=$(jq -r '.lineage.observedDigest' "$REPORT_PATH")" >> "$GITHUB_OUTPUT"
+          echo "ingress_uid=$(jq -r '.route.ingress.uid' "$REPORT_PATH")" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -167,6 +175,7 @@ jobs:
           [[ -n "$SMOKE_AUTH_PASSWORD" ]]
 
       - name: Run authenticated product acceptance
+        id: browser_acceptance
         env:
           SMOKE_AUTH_USERNAME: ${{ secrets.P5_SMOKE_AUTH_USERNAME }}
           SMOKE_AUTH_PASSWORD: ${{ secrets.P5_SMOKE_AUTH_PASSWORD }}
@@ -176,9 +185,9 @@ jobs:
           P5_EXPECTED_ROLE: P5_READINESS_VIEWER
           P5_EXPECTED_USER_ID: "6"
           P5_EXPECTED_SUBSCRIBER_ID: "6"
-          P5_EXPECTED_SOURCE_SHA: 90768ed318ebfa547d2b3137aa317168f9c726d7
-          P5_EXPECTED_FRONTEND_DIGEST: sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6
-          P5_EXPECTED_BUILD_RUN_ID: "29451703189"
+          P5_EXPECTED_SOURCE_SHA: 8ab48cd87725a3fa306c18785a144ab184044ccf
+          P5_EXPECTED_FRONTEND_DIGEST: sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564
+          P5_EXPECTED_BUILD_RUN_ID: "29457457120"
           P5_LIVE_FRONTEND_DIGEST: ${{ steps.pre_lineage.outputs.live_digest }}
           P5_HARNESS_REPOSITORY: ${{ github.repository }}
           P5_HARNESS_REVISION: ${{ steps.workspace.outputs.harness_revision }}
@@ -199,6 +208,10 @@ jobs:
           P5_GITHUB_REF: ${{ github.ref }}
           P5_GITHUB_SHA: ${{ github.sha }}
           P5_REPORT_PATH: ${{ steps.workspace.outputs.browser_report }}
+          P5_ROUTE_WATCH_REPORT: ${{ steps.workspace.outputs.route_watch }}
+          P5_ROUTE_WATCH_STOP: ${{ steps.workspace.outputs.route_watch_stop }}
+          P5_ROUTE_WATCH_READY: ${{ steps.workspace.outputs.route_watch_ready }}
+          P5_EXPECTED_INGRESS_UID: ${{ steps.pre_lineage.outputs.ingress_uid }}
           TEST_ROOT: ${{ steps.workspace.outputs.test_root }}
         run: |
           set -euo pipefail
@@ -211,10 +224,57 @@ jobs:
               awk '{print $1}')"
           fi
           [[ "$launch_chromium_sha256" == "$P5_CHROMIUM_EXECUTABLE_SHA256" ]]
-          cd "$TEST_ROOT"
-          ./node_modules/.bin/playwright test \
-            --config=playwright.faz25-p5.config.ts \
-            faz25-p5-product-surface.spec.ts
+
+          [[ "$P5_EXPECTED_INGRESS_UID" =~ ^[0-9a-f-]{36}$ ]]
+          REPORT_PATH="$P5_ROUTE_WATCH_REPORT" \
+          STOP_PATH="$P5_ROUTE_WATCH_STOP" \
+          READY_PATH="$P5_ROUTE_WATCH_READY" \
+          EXPECTED_INGRESS_UID="$P5_EXPECTED_INGRESS_UID" \
+          BROWSER_REPORT_PATH="$P5_REPORT_PATH" \
+          ROUTE_VALIDATOR="$GITHUB_WORKSPACE/scripts/deploy/verify-faz25-p5-frontend-routes.py" \
+            bash "$GITHUB_WORKSPACE/scripts/deploy/watch-faz25-p5-frontend-routes.sh" &
+          route_watch_pid=$!
+
+          route_watch_ready=false
+          for _ in $(seq 1 120); do
+            if [[ -f "$P5_ROUTE_WATCH_READY" ]]; then
+              route_watch_ready=true
+              break
+            fi
+            if ! kill -0 "$route_watch_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+
+          browser_status=0
+          if [[ "$route_watch_ready" == "true" && \
+                ! -f "$P5_ROUTE_WATCH_REPORT" ]] && \
+             kill -0 "$route_watch_pid" 2>/dev/null; then
+            cd "$TEST_ROOT"
+            ./node_modules/.bin/playwright test \
+              --config=playwright.faz25-p5.config.ts \
+              faz25-p5-product-surface.spec.ts || browser_status=$?
+          else
+            browser_status=1
+          fi
+
+          : > "$P5_ROUTE_WATCH_STOP"
+          route_watch_status=0
+          wait "$route_watch_pid" || route_watch_status=$?
+          if [[ ! -f "$P5_ROUTE_WATCH_REPORT" ]] || \
+             ! jq -e '.verdict == "PASS"' "$P5_ROUTE_WATCH_REPORT" >/dev/null; then
+            route_watch_status=1
+          fi
+
+          if [[ -f "$P5_REPORT_PATH" ]]; then
+            probe_id="$(jq -r '.lineage.buildInfoProbeId // ""' "$P5_REPORT_PATH")"
+            [[ "$probe_id" =~ ^[0-9a-f]{32}$ ]]
+            echo "probe_id=$probe_id" >> "$GITHUB_OUTPUT"
+          fi
+          echo "route_watch_status=$route_watch_status" >> "$GITHUB_OUTPUT"
+          [[ "$route_watch_status" -eq 0 ]] || exit "$route_watch_status"
+          exit "$browser_status"
 
       - name: Collect post-browser Deployment to Pod lineage
         if: always()
@@ -222,12 +282,15 @@ jobs:
           REPORT_PATH: ${{ steps.workspace.outputs.lineage_post }}
           PHASE: post
           EXPECTED_CONTEXT: k3d-test
-          EXPECTED_SOURCE_SHA: 90768ed318ebfa547d2b3137aa317168f9c726d7
-          EXPECTED_IMAGE_DIGEST: sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6
-          EXPECTED_BUILD_RUN_ID: "29451703189"
+          EXPECTED_SOURCE_SHA: 8ab48cd87725a3fa306c18785a144ab184044ccf
+          EXPECTED_IMAGE_DIGEST: sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564
+          EXPECTED_BUILD_RUN_ID: "29457457120"
           EXPECTED_CLUSTER_SERVER_SHA256: 72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29
           EXPECTED_CLUSTER_CA_SHA256: ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96
           EXPECTED_KUBE_SYSTEM_UID: 0a7f11d1-53d6-452f-bdac-3669507af073
+          EXPECTED_BROWSER_PROBE_ID: ${{ steps.browser_acceptance.outputs.probe_id }}
+          EXPECTED_BROWSER_REPORT_PATH: ${{ steps.workspace.outputs.browser_report }}
+          WORKFLOW_STARTED_AT: ${{ steps.workspace.outputs.started_at }}
         run: bash scripts/deploy/collect-faz25-p5-frontend-lineage.sh
 
       - name: Build strict content-addressed evidence manifest
@@ -239,12 +302,14 @@ jobs:
           BROWSER_REPORT: ${{ steps.workspace.outputs.browser_report }}
           LINEAGE_PRE: ${{ steps.workspace.outputs.lineage_pre }}
           LINEAGE_POST: ${{ steps.workspace.outputs.lineage_post }}
+          ROUTE_WATCH: ${{ steps.workspace.outputs.route_watch }}
           MANIFEST: ${{ steps.workspace.outputs.manifest }}
           WORKFLOW_STARTED_AT: ${{ steps.workspace.outputs.started_at }}
           CANONICAL_MAIN: ${{ steps.workspace.outputs.canonical_main }}
         run: |
           set -euo pipefail
-          [[ -f "$BROWSER_REPORT" && -f "$LINEAGE_PRE" && -f "$LINEAGE_POST" ]]
+          [[ -f "$BROWSER_REPORT" && -f "$LINEAGE_PRE" && -f "$LINEAGE_POST" && \
+             -f "$ROUTE_WATCH" ]]
           git fetch --quiet --no-tags origin main
           canonical_main_at_end=false
           if [[ "$GITHUB_SHA" == "$(git rev-parse refs/remotes/origin/main)" ]]; then
@@ -257,6 +322,8 @@ jobs:
             tests/smoke/faz25-p5-frontend-lineage.schema.json "$LINEAGE_PRE"
           node "$TEST_ROOT/validate-schema.cjs" \
             tests/smoke/faz25-p5-frontend-lineage.schema.json "$LINEAGE_POST"
+          node "$TEST_ROOT/validate-schema.cjs" \
+            tests/smoke/faz25-p5-continuous-route-watch.schema.json "$ROUTE_WATCH"
 
           projection='{
             cluster,
@@ -279,15 +346,77 @@ jobs:
               uids: .pods.uids,
               imageIds: .pods.imageIds
             },
-            lineage
+            lineage,
+            route: {
+              host: .route.host,
+              ingress: .route.ingress,
+              service: .route.service,
+              endpointSlices: .route.endpointSlices,
+              podBuildInfoSha256s: .route.podBuildInfoSha256s
+            }
           }'
           pre_projection="$(jq -cS "$projection" "$LINEAGE_PRE")"
           post_projection="$(jq -cS "$projection" "$LINEAGE_POST")"
           pre_post_same=false
           [[ "$pre_projection" == "$post_projection" ]] && pre_post_same=true
+          browser_build_info_sha="$(jq -r '.lineage.buildInfoSha256' "$BROWSER_REPORT")"
+          browser_pod_build_info_matched=false
+          if jq -e --arg sha "$browser_build_info_sha" \
+              '.route.podBuildInfoSha256s == [$sha]' "$LINEAGE_PRE" >/dev/null && \
+             jq -e --arg sha "$browser_build_info_sha" \
+              '.route.podBuildInfoSha256s == [$sha]' "$LINEAGE_POST" >/dev/null; then
+            browser_pod_build_info_matched=true
+          fi
+          browser_probe_id="$(jq -r '.lineage.buildInfoProbeId' "$BROWSER_REPORT")"
+          browser_ingress_log_matched=false
+          if jq -e '.route.browserRequestBinding.status == "PRE_BROWSER"' \
+              "$LINEAGE_PRE" >/dev/null && \
+             jq -e --arg probe "$browser_probe_id" '
+               .route.browserRequestBinding.upstreamPodAddress as $upstream |
+               .route.browserRequestBinding.status == "BOUND" and
+               .route.browserRequestBinding.probeId == $probe and
+               ([.route.endpointSlices.readyPodNetworkBindings[].addresses[]]
+                 | index($upstream)) != null
+             ' "$LINEAGE_POST" >/dev/null; then
+            browser_ingress_log_matched=true
+          fi
+          browser_assets_json="$(jq -cS '.runtime.frontendAssetResponses' \
+            "$BROWSER_REPORT")"
+          if command -v sha256sum >/dev/null 2>&1; then
+            browser_assets_sha256="$(printf '%s' "$browser_assets_json" | \
+              sha256sum | awk '{print $1}')"
+          else
+            browser_assets_sha256="$(printf '%s' "$browser_assets_json" | \
+              shasum -a 256 | awk '{print $1}')"
+          fi
+          browser_asset_pod_matched=false
+          if jq -e '.route.browserAssetBinding.status == "PRE_BROWSER"' \
+              "$LINEAGE_PRE" >/dev/null && \
+             jq -e \
+              --arg evidence_sha "$browser_assets_sha256" \
+              --argjson assets "$browser_assets_json" '
+                .route.browserAssetBinding as $binding |
+                $binding.status == "BOUND" and
+                $binding.browserAssetEvidenceSha256 == $evidence_sha and
+                $binding.assetCount == ($assets | length) and
+                $binding.podCount == .pods.readyCount and
+                ([$binding.podAssetBindings[].podUid] | unique | sort) ==
+                  (.pods.uids | sort) and
+                all($assets[] as $asset;
+                  ([$binding.podAssetBindings[]
+                    | select(
+                        .path == $asset.path and
+                        .bodySha256 == $asset.bodySha256
+                      )]
+                    | length) == $binding.podCount
+                )
+              ' "$LINEAGE_POST" >/dev/null; then
+            browser_asset_pod_matched=true
+          fi
 
           fresh_within_run="$(python3 - \
-            "$WORKFLOW_STARTED_AT" "$LINEAGE_PRE" "$BROWSER_REPORT" "$LINEAGE_POST" <<'PY'
+            "$WORKFLOW_STARTED_AT" "$LINEAGE_PRE" "$ROUTE_WATCH" \
+            "$BROWSER_REPORT" "$LINEAGE_POST" <<'PY'
           import datetime as dt
           import json
           import pathlib
@@ -298,11 +427,18 @@ jobs:
 
           started = parse(sys.argv[1])
           now = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=5)
-          points = []
-          for path in sys.argv[2:]:
-              payload = json.loads(pathlib.Path(path).read_text())
-              points.append(parse(payload.get('startedAt', payload['observedAt'])))
-              points.append(parse(payload['observedAt']))
+          pre = json.loads(pathlib.Path(sys.argv[2]).read_text())
+          route = json.loads(pathlib.Path(sys.argv[3]).read_text())
+          browser = json.loads(pathlib.Path(sys.argv[4]).read_text())
+          post = json.loads(pathlib.Path(sys.argv[5]).read_text())
+          points = [
+              parse(pre['observedAt']),
+              parse(route['startedAt']),
+              parse(browser['startedAt']),
+              parse(browser['observedAt']),
+              parse(route['observedAt']),
+              parse(post['observedAt']),
+          ]
           within_budget = now - started <= dt.timedelta(minutes=31)
           ordered = points == sorted(points)
           fresh = within_budget and ordered and all(started <= point <= now for point in points)
@@ -311,7 +447,7 @@ jobs:
           )"
 
           sensitive_scan_passed=true
-          for report in "$BROWSER_REPORT" "$LINEAGE_PRE" "$LINEAGE_POST"; do
+          for report in "$BROWSER_REPORT" "$LINEAGE_PRE" "$LINEAGE_POST" "$ROUTE_WATCH"; do
             if ! jq -e '
               ([.. | strings
                 | select(test(
@@ -325,11 +461,44 @@ jobs:
           done
 
           browser_verdict="$(jq -r '.verdict' "$BROWSER_REPORT")"
+          route_watch_verdict="$(jq -r '.verdict' "$ROUTE_WATCH")"
+          browser_asset_paths_json="$(jq -cS '.runtime.frontendAssetPaths' \
+            "$BROWSER_REPORT")"
+          if command -v sha256sum >/dev/null 2>&1; then
+            browser_asset_paths_sha256="$(printf '%s\n' "$browser_asset_paths_json" | \
+              sha256sum | awk '{print $1}')"
+          else
+            browser_asset_paths_sha256="$(printf '%s\n' "$browser_asset_paths_json" | \
+              shasum -a 256 | awk '{print $1}')"
+          fi
+          continuous_route_watch_passed=false
+          if [[ "$route_watch_verdict" == "PASS" ]] && \
+             jq -e \
+             --arg uid "$(jq -r '.route.ingress.uid' "$LINEAGE_PRE")" \
+             --arg asset_paths_sha "$browser_asset_paths_sha256" '
+               .target.canonicalIngress.uid == $uid and
+               .violationCount == 0 and
+               .sampleCount >= 2 and
+               .eventWatchMode == "KUBERNETES_RESOURCE_VERSION_STREAM" and
+               .eventWatchEstablished == true and
+               (.eventWatchResourceVersion | test("^[0-9]+$")) and
+               .finalResourceVersion == .eventWatchResourceVersion and
+               .eventCount == 0 and
+               .browserAssetPathCount >= 1 and
+               .browserAssetPathsSha256 == $asset_paths_sha and
+               (.routeProjectionSha256s | length) == 1
+             ' "$ROUTE_WATCH" >/dev/null; then
+            continuous_route_watch_passed=true
+          fi
           manifest_verdict=FAIL
           artifact_kind=diagnostic
           if [[ "$browser_verdict" == "PASS" && "$CANONICAL_MAIN" == "true" && \
                 "$canonical_main_at_end" == "true" && \
                 "$pre_post_same" == "true" && "$fresh_within_run" == "true" && \
+                "$browser_pod_build_info_matched" == "true" && \
+                "$browser_ingress_log_matched" == "true" && \
+                "$browser_asset_pod_matched" == "true" && \
+                "$continuous_route_watch_passed" == "true" && \
                 "$sensitive_scan_passed" == "true" ]]; then
             manifest_verdict=PASS
             artifact_kind=acceptance
@@ -345,6 +514,7 @@ jobs:
           browser_sha="$(sha256_file "$BROWSER_REPORT")"
           pre_sha="$(sha256_file "$LINEAGE_PRE")"
           post_sha="$(sha256_file "$LINEAGE_POST")"
+          route_watch_sha="$(sha256_file "$ROUTE_WATCH")"
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           jq -n \
@@ -362,11 +532,16 @@ jobs:
             --argjson canonical_main "$CANONICAL_MAIN" \
             --argjson canonical_main_at_end "$canonical_main_at_end" \
             --argjson pre_post_same "$pre_post_same" \
+            --argjson browser_pod_build_info_matched "$browser_pod_build_info_matched" \
+            --argjson browser_ingress_log_matched "$browser_ingress_log_matched" \
+            --argjson browser_asset_pod_matched "$browser_asset_pod_matched" \
+            --argjson continuous_route_watch_passed "$continuous_route_watch_passed" \
             --argjson fresh_within_run "$fresh_within_run" \
             --argjson sensitive_scan_passed "$sensitive_scan_passed" \
             --arg browser_sha "$browser_sha" \
             --arg pre_sha "$pre_sha" \
-            --arg post_sha "$post_sha" '
+            --arg post_sha "$post_sha" \
+            --arg route_watch_sha "$route_watch_sha" '
             {
               schemaVersion: "faz25-p5-evidence-manifest-v1",
               verdict: $verdict,
@@ -386,49 +561,60 @@ jobs:
                 canonicalMainAtStart: $canonical_main,
                 canonicalMainAtEnd: $canonical_main_at_end,
                 prePostSameSession: $pre_post_same,
+                browserPodBuildInfoMatched: $browser_pod_build_info_matched,
+                browserIngressLogMatched: $browser_ingress_log_matched,
+                browserAssetPodMatched: $browser_asset_pod_matched,
+                continuousRouteWatchPassed: $continuous_route_watch_passed,
                 freshWithinRun: $fresh_within_run,
                 strictChildSchemas: true,
                 sensitiveValueScanPassed: $sensitive_scan_passed
               },
               lineage: {
-                sourceSha: "90768ed318ebfa547d2b3137aa317168f9c726d7",
-                frontendDigest: "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6",
-                buildRunId: "29451703189"
+                sourceSha: "8ab48cd87725a3fa306c18785a144ab184044ccf",
+                frontendDigest: "sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564",
+                buildRunId: "29457457120"
               },
               children: [
                 {
                   kind: "browser",
                   path: "browser-report.json",
                   sha256: $browser_sha,
-                  schemaVersion: "faz25-p5-authenticated-product-surface-v4"
+                  schemaVersion: "faz25-p5-authenticated-product-surface-v5"
                 },
                 {
                   kind: "lineage-pre",
                   path: "lineage-pre.json",
                   sha256: $pre_sha,
-                  schemaVersion: "faz25-p5-frontend-lineage-v1"
+                  schemaVersion: "faz25-p5-frontend-lineage-v2"
                 },
                 {
                   kind: "lineage-post",
                   path: "lineage-post.json",
                   sha256: $post_sha,
-                  schemaVersion: "faz25-p5-frontend-lineage-v1"
+                  schemaVersion: "faz25-p5-frontend-lineage-v2"
+                },
+                {
+                  kind: "route-watch",
+                  path: "route-watch.json",
+                  sha256: $route_watch_sha,
+                  schemaVersion: "faz25-p5-continuous-route-watch-v2"
                 }
               ]
             }
           ' > "$MANIFEST"
-          chmod 0600 "$BROWSER_REPORT" "$LINEAGE_PRE" "$LINEAGE_POST" "$MANIFEST"
+          chmod 0600 "$BROWSER_REPORT" "$LINEAGE_PRE" "$LINEAGE_POST" \
+            "$ROUTE_WATCH" "$MANIFEST"
 
           node "$TEST_ROOT/validate-schema.cjs" \
             tests/smoke/faz25-p5-evidence-manifest.schema.json "$MANIFEST"
 
           cd "$ARTIFACT_DIR"
           if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum browser-report.json lineage-pre.json lineage-post.json evidence-manifest.json \
-              > SHA256SUMS
+            sha256sum browser-report.json lineage-pre.json lineage-post.json route-watch.json \
+              evidence-manifest.json > SHA256SUMS
           else
             shasum -a 256 browser-report.json lineage-pre.json lineage-post.json \
-              evidence-manifest.json > SHA256SUMS
+              route-watch.json evidence-manifest.json > SHA256SUMS
           fi
           chmod 0600 SHA256SUMS
           {
@@ -452,6 +638,7 @@ jobs:
           BROWSER_REPORT: ${{ steps.workspace.outputs.browser_report }}
           LINEAGE_PRE: ${{ steps.workspace.outputs.lineage_pre }}
           LINEAGE_POST: ${{ steps.workspace.outputs.lineage_post }}
+          ROUTE_WATCH: ${{ steps.workspace.outputs.route_watch }}
         run: |
           set -euo pipefail
           umask 077
@@ -485,6 +672,7 @@ jobs:
           copy_if_sanitized "$BROWSER_REPORT" browser-report.json
           copy_if_sanitized "$LINEAGE_PRE" lineage-pre.json
           copy_if_sanitized "$LINEAGE_POST" lineage-post.json
+          copy_if_sanitized "$ROUTE_WATCH" route-watch.json
 
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
@@ -542,6 +730,7 @@ jobs:
               echo "- verdict: \`$(jq -r '.verdict' "$MANIFEST")\`"
               echo "- protected main binding (start/end): \`$(jq -r '.binding.canonicalMainAtStart' "$MANIFEST")/$(jq -r '.binding.canonicalMainAtEnd' "$MANIFEST")\`"
               echo "- pre/post runtime binding: \`$(jq -r '.binding.prePostSameSession' "$MANIFEST")\`"
+              echo "- continuous route watch: \`$(jq -r '.binding.continuousRouteWatchPassed' "$MANIFEST")\`"
               echo "- strict child schemas: \`$(jq -r '.binding.strictChildSchemas' "$MANIFEST")\`"
               echo "- sensitive-value scan: \`$(jq -r '.binding.sensitiveValueScanPassed' "$MANIFEST")\`"
               echo "- browser mode: headless CLI; application window not used"

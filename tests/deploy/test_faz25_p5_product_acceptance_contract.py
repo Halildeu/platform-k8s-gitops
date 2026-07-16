@@ -24,6 +24,9 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         cls.collector = (
             ROOT / "scripts/deploy/collect-faz25-p5-frontend-lineage.sh"
         ).read_text()
+        cls.route_watcher = (
+            ROOT / "scripts/deploy/watch-faz25-p5-frontend-routes.sh"
+        ).read_text()
         cls.runtime_package = json.loads(
             (ROOT / "tests/smoke/faz25-p5-runtime/package.json").read_text()
         )
@@ -35,6 +38,15 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         )
         cls.manifest_schema = json.loads(
             (ROOT / "tests/smoke/faz25-p5-evidence-manifest.schema.json").read_text()
+        )
+        cls.lineage_schema = json.loads(
+            (ROOT / "tests/smoke/faz25-p5-frontend-lineage.schema.json").read_text()
+        )
+        cls.route_watch_schema = json.loads(
+            (
+                ROOT
+                / "tests/smoke/faz25-p5-continuous-route-watch.schema.json"
+            ).read_text()
         )
 
     def test_workflow_is_main_only_and_uses_protected_environment_secrets(self):
@@ -53,6 +65,7 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertIn("Prepare sanitized incomplete-contract diagnostics", self.workflow)
         self.assertIn("Upload sanitized incomplete-contract diagnostics", self.workflow)
         self.assertIn('terminalAcceptance: false', self.workflow)
+        self.assertIn("lineage,\n            route", self.workflow)
 
     def test_locked_browser_runtime_installs_linux_dependencies_noninteractively(self):
         npm_ci = self.workflow.index("npm ci --ignore-scripts --no-audit --no-fund")
@@ -68,6 +81,7 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertLess(install, version_probe)
         self.assertIn("export DEBIAN_FRONTEND=noninteractive", self.workflow)
         self.assertNotIn("npx playwright", self.workflow)
+        self.assertIn("serviceWorkers: 'block'", self.config)
 
         dependencies = self.runtime_package["dependencies"]
         self.assertEqual(dependencies["@playwright/test"], "1.60.0")
@@ -120,21 +134,84 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             "expect(gateIds).toEqual(expectedGateIds)",
             "expect(headerLabels).toEqual(expectedHeaderLabels)",
             "maxRedirects: 0",
-            "expect(buildInfoResponse.url()).toBe(buildInfoUrl)",
+            "expect(buildInfoResponse.url()).toBe(probedBuildInfoUrl)",
+            "buildInfoProbeId = randomBytes(16).toString('hex')",
+            "buildInfoCacheControl",
+            "buildInfoCacheBypassHeadersAbsent",
             "expect(buildInfoResponse.headers()['content-type']).toMatch",
             "expect(Object.keys(buildInfo).sort()).toEqual",
+            "expect(report.lineage.buildInfoImageDigest).toBe('')",
+            "buildInfoImageDigestStatus: 'NOT_EMBEDDED'",
             "desktopSidebarHref",
             "const desktopSearchQuery = await commandSearch.inputValue()",
             "const mobileViewportWidth = await page.evaluate(() => window.innerWidth)",
             "mobileAtsProductHubActionVisible",
             "expect(capabilityIds).toEqual(expectedCapabilityIds)",
             "expect(targetRoleIds).toEqual(expectedTargetRoleIds)",
+            "expect(roleCapabilityCounts).toEqual(expectedRoleCapabilityCounts)",
+            "expect(roleCapabilityIds).toEqual(expectedRoleCapabilityIds)",
+            "expect(pressedRoleIds).toEqual([roleId])",
+            "safeExperienceCapabilityIds",
+            "safeScenarioAudit",
             "cvImportInteractiveControlCount",
             "fileUploadControlCount",
+            "expectedSyntheticResumeProposalCount",
+            "editableAfterFirstKeystroke",
+            "acceptAfterEditVisible",
+            "rejectAfterEditVisible",
+            "rejectAllSecondConfirmationRequired",
+            "persistentStoresUnchanged",
+            "resumePersistentWriteOperationCount",
+            "agenticPersistentStoresUnchanged",
+            "agenticPersistentWriteOperationCount",
+            "resumeMutationRequestCount",
+            "resumeNetworkRequestCount",
+            "resumeNetworkChannelConstructionCount",
+            "resumeFilePickerInvocationCount",
+            "agenticMutationRequestCount",
+            "agenticNetworkRequestCount",
+            "agenticNetworkChannelConstructionCount",
+            "agenticFilePickerInvocationCount",
+            "forbiddenActionControlCount",
+            "IDBCursor.prototype",
+            "CookieStore?.prototype",
+            "FileSystemSyncAccessHandle?.prototype",
+            "wrapIndexedDbOpenMutation",
+            "request.addEventListener('upgradeneeded', recordWrite",
+            "opfs.remove",
+            "blobSha256",
+            "opfsSnapshots",
+            "closedAgenticControlSignatures",
+            "openedAgenticControlSignatures",
+            "completedAgenticControlSignatures",
+            "__reactProps$",
+            "Closed shadow roots are forbidden",
+            "ServiceWorker is forbidden",
+            "workerConstructionCount",
+            "popupCreationCount",
+            "afterDistinctCaptureRegistrations: 2",
+            "afterRemovingBubbleRegistration: 1",
+            "afterRemovingBothRegistrations: 0",
+            "replaceSignatureMultiset",
+            "closedShadowRootCount",
+            "page.locator('iframe, frame')",
+            "mobilePressedRoleIds",
+            "mobileSyntheticResumePersistentStoresUnchanged",
+            "mobileSyntheticResumeControlsRendered",
+            "mobileRoleJourneyCapabilityIds",
+            "mobileRoleJourneyEvidenceClass",
+            "TOUCH_EXECUTED_UNDER_NAMED_VIEW_PERSONA",
+            "Input.dispatchTouchEvent",
+            "mobileTouchActivationCount",
             "hubBlockingViolations",
             "desktopHubRendered",
             "mobileHubRendered",
             "mobileRemoteConsoleRendered",
+            "frontendAssetPaths",
+            "frontendAssetResponses",
+            "response.fromServiceWorker()",
+            "buildInfoRootEntryMatched",
+            "buildInfoAssetsMatched",
             "page.getByRole('button', { name: /Menüyü aç|Open menu/ })",
         ):
             self.assertIn(marker, self.spec)
@@ -166,6 +243,53 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             self.spec[report:],
         )
 
+    def test_synthetic_resume_and_agentic_acceptance_stay_local_and_editable(self):
+        first_key = "await emailInput.pressSequentially('a')"
+        remaining_keys = (
+            "await emailInput.pressSequentially('day.duzenlendi@example.invalid')"
+        )
+        editability_probe = (
+            "const editableAfterFirstKeystroke = "
+            "(await emailInput.getAttribute('readonly')) === null"
+        )
+        self.assertIn(first_key, self.spec)
+        self.assertIn(remaining_keys, self.spec)
+        self.assertIn(editability_probe, self.spec)
+        self.assertLess(self.spec.index(first_key), self.spec.index(editability_probe))
+        self.assertLess(self.spec.index(editability_probe), self.spec.index(remaining_keys))
+        self.assertNotIn("emailInput.fill(expectedEditedEmail)", self.spec)
+        self.assertIn("expect(resumeMutationRequestCount).toBe(0)", self.spec)
+        self.assertIn("expect(agenticMutationRequestCount).toBe(0)", self.spec)
+        self.assertNotIn("page.off('request'", self.spec)
+        self.assertNotIn("page.context().off('page'", self.spec)
+        self.assertIn("readJourneyLifecycleAudit", self.spec)
+        self.assertIn("roleJourneyCapabilityIds", self.spec)
+        self.assertIn("expect(persistentStoresUnchanged).toBe(true)", self.spec)
+        self.assertIn(
+            "expect(resumePersistentWriteOperationCount).toBe(0)", self.spec
+        )
+        self.assertIn(
+            "expect(agenticPersistentStoresUnchanged).toBe(true)", self.spec
+        )
+        self.assertIn(
+            "expect(agenticPersistentWriteOperationCount).toBe(0)", self.spec
+        )
+        self.assertIn("expect(forbiddenActionControlCount).toBe(0)", self.spec)
+        for state in ("closed", "opened", "completed"):
+            self.assertIn(
+                f"expect({state}AgenticControlSignatures).toEqual(", self.spec
+            )
+
+    def test_role_filter_transitions_prove_exclusive_selection(self):
+        self.assertIn(
+            "expect(pressedRoleIds).toEqual([roleId])", self.spec
+        )
+        self.assertIn(
+            "expect(await readPressedRoleIds()).toEqual(['candidate'])",
+            self.spec,
+        )
+        self.assertIn("expect(await readPressedRoleIds()).toEqual(['all'])", self.spec)
+
     def test_browser_launch_uses_the_versioned_and_hashed_executable(self):
         self.assertIn("printf 'chromium_path=%s\\n' \"$chromium_path\"", self.workflow)
         self.assertIn("tr -d '\\r'", self.workflow)
@@ -189,8 +313,21 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertIn('mv "$report_tmp" "$REPORT_PATH"', self.collector)
         self.assertIn("EXPECTED_CLUSTER_CA_SHA256", self.collector)
         self.assertIn("EXPECTED_KUBE_SYSTEM_UID", self.collector)
-        self.assertIn("buildProvenanceReceiptSha256", self.collector)
-        self.assertIn("slsaProvenanceDigest", self.collector)
+        self.assertNotIn("buildProvenanceReceiptSha256", self.collector)
+        self.assertNotIn("slsaProvenanceDigest", self.collector)
+        self.assertIn('buildAttestationStatus: $build_attestation_status', self.collector)
+        self.assertIn("METADATA_ONLY_NON_TERMINAL", self.collector)
+        self.assertIn("Terminal browser-to-image binding", self.collector)
+        self.assertIn('get ingress platform -o json', self.collector)
+        self.assertIn('get service frontend -o json', self.collector)
+        self.assertIn('get endpointslices', self.collector)
+        self.assertIn('.targetRef.uid]', self.collector)
+        self.assertIn('get --raw', self.collector)
+        self.assertIn('get ingress -A -o json', self.collector)
+        self.assertIn('matchingRoutes: $matching_ingress_routes', self.collector)
+        self.assertIn('readyPodNetworkBindings: $endpoint_network_bindings', self.collector)
+        self.assertIn('podBuildInfoSha256s: $pod_build_info_hashes', self.collector)
+        self.assertNotIn("GITHUB_TOKEN", self.collector)
 
     def test_pass_schema_requires_terminal_product_evidence(self):
         then_clause = self.product_schema["allOf"][0]["then"]
@@ -226,10 +363,96 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         hub = then_clause["properties"]["hub"]["allOf"][1]["properties"]
         self.assertEqual(hub["visibleCapabilityCount"]["const"], 9)
         self.assertEqual(len(hub["targetRoleIds"]["const"]), 6)
+        self.assertEqual(
+            hub["roleCapabilityCounts"]["const"],
+            {
+                "candidate": 3,
+                "recruiter": 8,
+                "hiring_manager": 6,
+                "interviewer": 3,
+                "auditor": 7,
+                "admin": 6,
+            },
+        )
         self.assertEqual(hub["cvImportMode"]["const"], "OWNER_GATED")
-        self.assertEqual(hub["cvImportInteractiveControlCount"]["const"], 0)
+        self.assertEqual(hub["cvImportInteractiveControlCount"]["const"], 1)
         self.assertEqual(hub["fileUploadControlCount"]["const"], 0)
+        synthetic_resume = hub["syntheticResume"]["properties"]
+        self.assertEqual(synthetic_resume["proposalCount"]["const"], 5)
+        self.assertTrue(synthetic_resume["editableAfterFirstKeystroke"]["const"])
+        self.assertTrue(synthetic_resume["acceptAfterEditVisible"]["const"])
+        self.assertTrue(synthetic_resume["rejectAfterEditVisible"]["const"])
+        self.assertTrue(
+            synthetic_resume["rejectAllSecondConfirmationRequired"]["const"]
+        )
+        self.assertTrue(synthetic_resume["persistentStoresUnchanged"]["const"])
+        self.assertEqual(
+            synthetic_resume["persistentWriteOperationCount"]["const"], 0
+        )
+        self.assertEqual(synthetic_resume["mutationQuietPeriodMs"]["const"], 1000)
+        self.assertEqual(synthetic_resume["mutationRequestCount"]["const"], 0)
+        self.assertEqual(synthetic_resume["workerConstructionCount"]["const"], 0)
+        self.assertEqual(synthetic_resume["popupCreationCount"]["const"], 0)
+        self.assertEqual(
+            synthetic_resume["unsafeDelegatedActionListenerCount"]["const"], 0
+        )
+        agentic = hub["agentic"]["properties"]
+        self.assertEqual(agentic["mode"]["const"], "PROPOSAL_ONLY")
+        self.assertEqual(
+            agentic["interactiveControlSignatures"]["const"],
+            {
+                "closed": ["BUTTON:button:Ajan önerisini güvenle dene"],
+                "opened": [
+                    "BUTTON:button:Güvenli denemeyi kapat",
+                    "BUTTON:button:Sentetik çıktıyı üret",
+                ],
+                "completed": [
+                    "BUTTON:button:Denemeyi sıfırla",
+                    "BUTTON:button:Güvenli denemeyi kapat",
+                ],
+            },
+        )
+        self.assertEqual(agentic["forbiddenActionControlCount"]["const"], 0)
+        self.assertTrue(agentic["persistentStoresUnchanged"]["const"])
+        self.assertEqual(agentic["persistentWriteOperationCount"]["const"], 0)
+        self.assertEqual(agentic["mutationQuietPeriodMs"]["const"], 1000)
+        self.assertEqual(agentic["mutationRequestCount"]["const"], 0)
+        self.assertEqual(agentic["workerConstructionCount"]["const"], 0)
+        self.assertEqual(agentic["popupCreationCount"]["const"], 0)
+        self.assertEqual(agentic["unsafeDelegatedActionListenerCount"]["const"], 0)
         self.assertFalse(self.product_schema["definitions"]["hub"]["additionalProperties"])
+        self.assertFalse(
+            self.product_schema["definitions"]["hub"]["properties"]
+            ["syntheticResume"]["additionalProperties"]
+        )
+        self.assertFalse(
+            self.product_schema["definitions"]["hub"]["properties"]
+            ["agentic"]["additionalProperties"]
+        )
+        responsive = then_clause["properties"]["responsive"]["allOf"][1][
+            "properties"
+        ]
+        self.assertTrue(responsive["mobileSyntheticResumeControlsRendered"]["const"])
+        self.assertTrue(
+            responsive["mobileSyntheticResumePersistentStoresUnchanged"]["const"]
+        )
+        self.assertEqual(
+            responsive["mobileSyntheticResumePersistentWriteOperationCount"]["const"],
+            0,
+        )
+        self.assertEqual(
+            responsive["mobileSyntheticResumeMutationRequestCount"]["const"], 0
+        )
+        self.assertEqual(
+            responsive["mobileSyntheticResumeWorkerConstructionCount"]["const"], 0
+        )
+        self.assertEqual(
+            responsive["mobileSyntheticResumePopupCreationCount"]["const"], 0
+        )
+        self.assertEqual(
+            responsive["mobileSyntheticResumeUnsafeDelegatedActionListenerCount"]["const"],
+            0,
+        )
         self.assertEqual(
             then_clause["properties"]["product"]["allOf"][1]["properties"]
             ["ownerAcceptance"]["const"],
@@ -240,10 +463,60 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             ["blockingViolationCount"]["const"],
             0,
         )
-        self.assertIn(
+        self.assertNotIn(
             "loginBlockingViolationCount",
             self.product_schema["definitions"]["authentication"]["required"],
         )
+        self.assertIn(
+            "loginBlockingViolationCount",
+            then_clause["properties"]["authentication"]["allOf"][1]["required"],
+        )
+
+    def test_lineage_schema_requires_strict_live_route_to_ready_pod_chain(self):
+        self.assertIn("route", self.lineage_schema["required"])
+        route = self.lineage_schema["properties"]["route"]
+        self.assertFalse(route["additionalProperties"])
+        self.assertEqual(route["properties"]["host"]["const"], "testai.acik.com")
+        self.assertEqual(
+            route["properties"]["ingress"]["properties"]["serviceName"]["const"],
+            "frontend",
+        )
+        self.assertEqual(
+            route["properties"]["service"]["properties"]["selector"]["const"],
+            {"app.kubernetes.io/name": "frontend"},
+        )
+        self.assertTrue(
+            route["properties"]["endpointSlices"]["properties"]["readyPodUids"][
+                "uniqueItems"
+            ]
+        )
+        self.assertIn(
+            "matchingRoutes",
+            route["properties"]["ingress"]["required"],
+        )
+        self.assertIn(
+            "readyPodNetworkBindings",
+            route["properties"]["endpointSlices"]["required"],
+        )
+        self.assertIn("podBuildInfoSha256s", route["required"])
+        self.assertIn("browserAssetBinding", route["required"])
+        self.assertEqual(
+            route["properties"]["podBuildInfoSha256s"]["maxItems"], 1
+        )
+        bound_asset = route["properties"]["browserAssetBinding"]["oneOf"][1]
+        self.assertFalse(bound_asset["additionalProperties"])
+        self.assertEqual(
+            set(bound_asset["required"]),
+            {
+                "status",
+                "browserAssetEvidenceSha256",
+                "assetCount",
+                "podCount",
+                "podAssetBindings",
+            },
+        )
+        self.assertIn("EXPECTED_BROWSER_REPORT_PATH", self.workflow)
+        self.assertIn("browser_asset_pod_matched", self.workflow)
 
     def test_manifest_schema_requires_one_child_of_each_source(self):
         children_rules = self.manifest_schema["allOf"][2]["properties"]["children"]
@@ -251,7 +524,54 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             rule["contains"]["properties"]["kind"]["const"]
             for rule in children_rules["allOf"]
         }
-        self.assertEqual(kinds, {"browser", "lineage-pre", "lineage-post"})
+        self.assertEqual(
+            kinds,
+            {"browser", "lineage-pre", "lineage-post", "route-watch"},
+        )
+
+    def test_workflow_continuously_binds_routes_around_browser(self):
+        watcher_start = self.workflow.index("watch-faz25-p5-frontend-routes.sh")
+        browser_start = self.workflow.index("./node_modules/.bin/playwright test")
+        watcher_stop = self.workflow.index(': > "$P5_ROUTE_WATCH_STOP"')
+        watcher_wait = self.workflow.index('wait "$route_watch_pid"')
+        self.assertLess(watcher_start, browser_start)
+        self.assertLess(browser_start, watcher_stop)
+        self.assertLess(watcher_stop, watcher_wait)
+        self.assertIn("continuousRouteWatchPassed", self.workflow)
+        self.assertIn("faz25-p5-continuous-route-watch.schema.json", self.workflow)
+        self.assertIn("route-watch.json evidence-manifest.json", self.workflow)
+
+        self.assertFalse(self.route_watch_schema["additionalProperties"])
+        self.assertEqual(
+            self.route_watch_schema["properties"]["intervalMilliseconds"]["const"],
+            250,
+        )
+        pass_properties = self.route_watch_schema["allOf"][0]["then"][
+            "properties"
+        ]
+        self.assertEqual(pass_properties["violationCount"]["const"], 0)
+        self.assertEqual(pass_properties["sampleCount"]["minimum"], 2)
+        self.assertTrue(pass_properties["eventWatchEstablished"]["const"])
+        self.assertEqual(pass_properties["eventCount"]["const"], 0)
+        self.assertIn("finalResourceVersion", pass_properties)
+        self.assertIn(
+            ".finalResourceVersion == .eventWatchResourceVersion", self.workflow
+        )
+        self.assertEqual(pass_properties["browserAssetPathCount"]["minimum"], 1)
+        self.assertIn("browserAssetPathsSha256", pass_properties)
+        self.assertIn("--resource-version=", self.route_watcher)
+        self.assertIn("--watch-only", self.route_watcher)
+        self.assertIn("route-event-observed", self.route_watcher)
+        self.assertIn("browser-asset-route-policy-failure", self.route_watcher)
+        self.assertIn("--additional-request-path", self.route_watcher)
+        self.assertIn(
+            "jq -cS '.runtime.frontendAssetPaths'",
+            self.route_watcher,
+        )
+        self.assertIn(
+            "printf '%s\\n' \"$browser_asset_paths_json\"",
+            self.workflow,
+        )
 
     def test_manifest_fail_branch_is_strict_diagnostic_only(self):
         self.assertFalse(self.manifest_schema["additionalProperties"])
@@ -268,11 +588,24 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
                 "canonicalMainAtStart",
                 "canonicalMainAtEnd",
                 "prePostSameSession",
+                "browserPodBuildInfoMatched",
+                "browserIngressLogMatched",
+                "browserAssetPodMatched",
+                "continuousRouteWatchPassed",
                 "freshWithinRun",
                 "strictChildSchemas",
                 "sensitiveValueScanPassed",
             },
         )
+
+    def test_failed_browser_report_can_preserve_desktop_audit_before_mobile_runs(self):
+        journey = self.product_schema["definitions"]["hub"]["properties"][
+            "journeyLifecycleAudit"
+        ]
+        self.assertEqual(journey["required"], ["desktop"])
+        pass_hub = self.product_schema["allOf"][0]["then"]["properties"]["hub"]
+        pass_constraints = pass_hub["allOf"][1]["properties"]
+        self.assertIn("mobile", pass_constraints["journeyLifecycleAudit"]["const"])
 
 
 if __name__ == "__main__":

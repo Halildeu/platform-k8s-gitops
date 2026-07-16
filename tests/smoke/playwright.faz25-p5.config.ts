@@ -23,6 +23,7 @@ export default defineConfig({
     launchOptions: {
       executablePath: chromiumExecutablePath,
     },
+    serviceWorkers: 'block',
     viewport: { width: 1440, height: 1000 },
     screenshot: 'off',
     trace: 'off',

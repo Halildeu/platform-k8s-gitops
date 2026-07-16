@@ -47,6 +47,10 @@
         "canonicalMainAtStart",
         "canonicalMainAtEnd",
         "prePostSameSession",
+        "browserPodBuildInfoMatched",
+        "browserIngressLogMatched",
+        "browserAssetPodMatched",
+        "continuousRouteWatchPassed",
         "freshWithinRun",
         "strictChildSchemas",
         "sensitiveValueScanPassed"
@@ -55,6 +59,10 @@
         "canonicalMainAtStart": { "type": "boolean" },
         "canonicalMainAtEnd": { "type": "boolean" },
         "prePostSameSession": { "type": "boolean" },
+        "browserPodBuildInfoMatched": { "type": "boolean" },
+        "browserIngressLogMatched": { "type": "boolean" },
+        "browserAssetPodMatched": { "type": "boolean" },
+        "continuousRouteWatchPassed": { "type": "boolean" },
         "freshWithinRun": { "type": "boolean" },
         "strictChildSchemas": { "type": "boolean" },
         "sensitiveValueScanPassed": { "type": "boolean" }
@@ -65,30 +73,31 @@
       "additionalProperties": false,
       "required": ["sourceSha", "frontendDigest", "buildRunId"],
       "properties": {
-        "sourceSha": { "const": "90768ed318ebfa547d2b3137aa317168f9c726d7" },
+        "sourceSha": { "const": "8ab48cd87725a3fa306c18785a144ab184044ccf" },
         "frontendDigest": {
-          "const": "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6"
+          "const": "sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564"
         },
-        "buildRunId": { "const": "29451703189" }
+        "buildRunId": { "const": "29457457120" }
       }
     },
     "children": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 4,
+      "maxItems": 4,
       "uniqueItems": true,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["kind", "path", "sha256", "schemaVersion"],
         "properties": {
-          "kind": { "enum": ["browser", "lineage-pre", "lineage-post"] },
+          "kind": { "enum": ["browser", "lineage-pre", "lineage-post", "route-watch"] },
           "path": { "type": "string", "pattern": "^[a-z0-9-]+\\.json$" },
           "sha256": { "$ref": "#/definitions/sha256" },
           "schemaVersion": {
             "enum": [
-              "faz25-p5-authenticated-product-surface-v4",
-              "faz25-p5-frontend-lineage-v1"
+              "faz25-p5-authenticated-product-surface-v5",
+              "faz25-p5-frontend-lineage-v2",
+              "faz25-p5-continuous-route-watch-v2"
             ]
           }
         },
@@ -97,21 +106,28 @@
             "properties": {
               "kind": { "const": "browser" },
               "path": { "const": "browser-report.json" },
-              "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v4" }
+              "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v5" }
             }
           },
           {
             "properties": {
               "kind": { "const": "lineage-pre" },
               "path": { "const": "lineage-pre.json" },
-              "schemaVersion": { "const": "faz25-p5-frontend-lineage-v1" }
+              "schemaVersion": { "const": "faz25-p5-frontend-lineage-v2" }
             }
           },
           {
             "properties": {
               "kind": { "const": "lineage-post" },
               "path": { "const": "lineage-post.json" },
-              "schemaVersion": { "const": "faz25-p5-frontend-lineage-v1" }
+              "schemaVersion": { "const": "faz25-p5-frontend-lineage-v2" }
+            }
+          },
+          {
+            "properties": {
+              "kind": { "const": "route-watch" },
+              "path": { "const": "route-watch.json" },
+              "schemaVersion": { "const": "faz25-p5-continuous-route-watch-v2" }
             }
           }
         ]
@@ -130,6 +146,10 @@
               "canonicalMainAtStart": { "const": true },
               "canonicalMainAtEnd": { "const": true },
               "prePostSameSession": { "const": true },
+              "browserPodBuildInfoMatched": { "const": true },
+              "browserIngressLogMatched": { "const": true },
+              "browserAssetPodMatched": { "const": true },
+              "continuousRouteWatchPassed": { "const": true },
               "freshWithinRun": { "const": true },
               "strictChildSchemas": { "const": true },
               "sensitiveValueScanPassed": { "const": true }
@@ -165,6 +185,13 @@
               "contains": {
                 "type": "object",
                 "properties": { "kind": { "const": "lineage-post" } }
+              }
+            },
+            {
+              "type": "array",
+              "contains": {
+                "type": "object",
+                "properties": { "kind": { "const": "route-watch" } }
               }
             }
           ]

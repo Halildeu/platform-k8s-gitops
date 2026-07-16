@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://acik.com/schemas/faz25-p5-frontend-lineage-v1.json",
+  "$id": "https://acik.com/schemas/faz25-p5-frontend-lineage-v2.json",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,10 +11,11 @@
     "deployment",
     "replicaSet",
     "pods",
-    "lineage"
+    "lineage",
+    "route"
   ],
   "properties": {
-    "schemaVersion": { "const": "faz25-p5-frontend-lineage-v1" },
+    "schemaVersion": { "const": "faz25-p5-frontend-lineage-v2" },
     "phase": { "enum": ["pre", "post"] },
     "observedAt": {
       "type": "string",
@@ -62,7 +63,7 @@
         "desiredReplicas": { "type": "integer", "minimum": 1 },
         "image": {
           "type": "string",
-          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-90768ed@sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6$"
+          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-8ab48cd@sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564$"
         }
       }
     },
@@ -93,7 +94,7 @@
           "minItems": 1,
           "items": {
             "type": "string",
-            "pattern": "^.*@sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6$"
+            "pattern": "^.*@sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564$"
           }
         }
       }
@@ -111,40 +112,304 @@
         "buildArtifactName",
         "buildArtifactDigest",
         "buildArtifactSizeInBytes",
-        "buildProvenanceReceiptSha256",
-        "slsaProvenanceDigest"
+        "buildArtifactEvidenceClass",
+        "buildAttestationStatus",
+        "buildAttestationBoundary"
       ],
       "properties": {
-        "sourceSha": { "const": "90768ed318ebfa547d2b3137aa317168f9c726d7" },
+        "sourceSha": { "const": "8ab48cd87725a3fa306c18785a144ab184044ccf" },
         "expectedDigest": {
-          "const": "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6"
+          "const": "sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564"
         },
         "observedDigest": {
-          "const": "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6"
+          "const": "sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564"
         },
-        "buildRunId": { "const": "29451703189" },
+        "buildRunId": { "const": "29457457120" },
         "buildRunUrl": {
-          "const": "https://github.com/Halildeu/platform-web/actions/runs/29451703189"
+          "const": "https://github.com/Halildeu/platform-web/actions/runs/29457457120"
         },
-        "buildArtifactId": { "const": "8357836615" },
+        "buildArtifactId": { "const": "8359963701" },
         "buildArtifactName": {
-          "const": "Halildeu~platform-web~XWOTK5.dockerbuild"
+          "const": "Halildeu~platform-web~PBWNF0.dockerbuild"
         },
         "buildArtifactDigest": {
-          "const": "sha256:4d571d1bc48c63902a11958da33205539085f59549a810f8c827b2d9a6192a56"
+          "const": "sha256:f7f049ffe3d716045f287179f4e293fbbdbb891cb4a2d6ada0baddb1357a70c2"
         },
-        "buildArtifactSizeInBytes": { "const": 108583 },
-        "buildProvenanceReceiptSha256": {
-          "const": "bb61a7f1f453b733f721156cbc3f4666813f667164609192d73c40260b7d7d0f"
+        "buildArtifactSizeInBytes": { "const": 108623 },
+        "buildArtifactEvidenceClass": { "const": "METADATA_ONLY_NON_TERMINAL" },
+        "buildAttestationStatus": { "const": "NOT_PUBLISHED" },
+        "buildAttestationBoundary": {
+          "const": "Cross-repository artifact content is not fetched because no least-privilege token is configured; artifact metadata is non-terminal and no SLSA attestation is claimed. Terminal browser-to-image binding is the same-session Ingress, Service, EndpointSlice, Ready Pod UID and imageID chain plus exact build-info source SHA."
+        }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "ingress",
+        "service",
+        "endpointSlices",
+        "podBuildInfoSha256s",
+        "browserRequestBinding",
+        "browserAssetBinding"
+      ],
+      "properties": {
+        "host": { "const": "testai.acik.com" },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "uid",
+            "className",
+            "path",
+            "serviceName",
+            "servicePort",
+            "matchingRoutes"
+          ],
+          "properties": {
+            "name": { "const": "platform" },
+            "uid": { "$ref": "#/definitions/uuid" },
+            "className": { "const": "nginx" },
+            "path": { "const": "/" },
+            "serviceName": { "const": "frontend" },
+            "servicePort": { "const": 80 },
+            "matchingRoutes": {
+              "type": "array",
+              "minItems": 6,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "requestPath",
+                  "namespace",
+                  "ingressName",
+                  "ingressUid",
+                  "rulePath",
+                  "pathType",
+                  "serviceName",
+                  "servicePort"
+                ],
+                "properties": {
+                  "requestPath": {
+                    "enum": [
+                      "/",
+                      "/home",
+                      "/login",
+                      "/admin/ats",
+                      "/admin/interview-evidence",
+                      "/build-info.json"
+                    ]
+                  },
+                  "namespace": { "const": "platform-test" },
+                  "ingressName": { "const": "platform" },
+                  "ingressUid": { "$ref": "#/definitions/uuid" },
+                  "rulePath": { "const": "/" },
+                  "pathType": { "const": "Prefix" },
+                  "serviceName": { "const": "frontend" },
+                  "servicePort": { "const": 80 }
+                }
+              }
+            }
+          }
         },
-        "slsaProvenanceDigest": {
-          "const": "sha256:6fd32c43a78f33b60225b638efd1929e86f40e38f5c58707c818ff19f1fb46d2"
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "uid", "type", "clusterIp", "selector"],
+          "properties": {
+            "name": { "const": "frontend" },
+            "uid": { "$ref": "#/definitions/uuid" },
+            "type": { "const": "ClusterIP" },
+            "clusterIp": { "type": "string", "minLength": 1 },
+            "selector": {
+              "const": { "app.kubernetes.io/name": "frontend" }
+            }
+          }
+        },
+        "endpointSlices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["names", "uids", "readyPodUids", "readyPodNetworkBindings"],
+          "properties": {
+            "names": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^frontend-[a-z0-9]+$" }
+            },
+            "uids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/definitions/uuid" }
+            },
+            "readyPodUids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/definitions/uuid" }
+            },
+            "readyPodNetworkBindings": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["podUid", "addresses"],
+                "properties": {
+                  "podUid": { "$ref": "#/definitions/uuid" },
+                  "addresses": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": { "$ref": "#/definitions/ipAddress" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "podBuildInfoSha256s": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/sha256" }
+        },
+        "browserRequestBinding": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status"],
+              "properties": { "status": { "const": "PRE_BROWSER" } }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "probeId",
+                "controllerNamespace",
+                "controllerPodName",
+                "controllerPodUid",
+                "upstreamPodAddress",
+                "logLineSha256"
+              ],
+              "properties": {
+                "status": { "const": "BOUND" },
+                "probeId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+                "controllerNamespace": { "type": "string", "minLength": 1 },
+                "controllerPodName": { "type": "string", "minLength": 1 },
+                "controllerPodUid": { "$ref": "#/definitions/uuid" },
+                "upstreamPodAddress": { "$ref": "#/definitions/ipAddress" },
+                "logLineSha256": { "$ref": "#/definitions/sha256" }
+              }
+            }
+          ]
+        },
+        "browserAssetBinding": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status"],
+              "properties": { "status": { "const": "PRE_BROWSER" } }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "browserAssetEvidenceSha256",
+                "assetCount",
+                "podCount",
+                "podAssetBindings"
+              ],
+              "properties": {
+                "status": { "const": "BOUND" },
+                "browserAssetEvidenceSha256": { "$ref": "#/definitions/sha256" },
+                "assetCount": { "type": "integer", "minimum": 1 },
+                "podCount": { "type": "integer", "minimum": 1 },
+                "podAssetBindings": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["podUid", "path", "bodySha256"],
+                    "properties": {
+                      "podUid": { "$ref": "#/definitions/uuid" },
+                      "path": {
+                        "type": "string",
+                        "pattern": "^/assets/[A-Za-z0-9._-]+\\.(js|css)$"
+                      },
+                      "bodySha256": { "$ref": "#/definitions/sha256" }
+                    }
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "phase": { "const": "pre" } }, "required": ["phase"] },
+      "then": {
+        "properties": {
+          "route": {
+            "properties": {
+              "browserRequestBinding": {
+                "properties": { "status": { "const": "PRE_BROWSER" } }
+              },
+              "browserAssetBinding": {
+                "properties": { "status": { "const": "PRE_BROWSER" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "phase": { "const": "post" } }, "required": ["phase"] },
+      "then": {
+        "properties": {
+          "route": {
+            "properties": {
+              "browserRequestBinding": {
+                "properties": { "status": { "const": "BOUND" } }
+              },
+              "browserAssetBinding": {
+                "properties": { "status": { "const": "BOUND" } }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "definitions": {
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "ipAddress": {
+      "type": "string",
+      "anyOf": [
+        {
+          "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})$"
+        },
+        {
+          "pattern": "^(?!.*:::)(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}$"
+        }
+      ]
+    },
     "uuid": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"

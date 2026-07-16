@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://acik.com/schemas/faz25-p5-authenticated-product-surface-v4.json",
+  "$id": "https://acik.com/schemas/faz25-p5-authenticated-product-surface-v5.json",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -14,7 +14,7 @@
     "lineage"
   ],
   "properties": {
-    "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v4" },
+    "schemaVersion": { "const": "faz25-p5-authenticated-product-surface-v5" },
     "verdict": { "enum": ["PASS", "FAIL"] },
     "startedAt": {
       "type": "string",
@@ -61,6 +61,7 @@
               { "$ref": "#/definitions/authentication" },
               {
                 "type": "object",
+                "required": ["loginBlockingViolationCount"],
                 "properties": {
                   "browserFlow": { "const": "KEYCLOAK_AUTHORIZATION_CODE_PKCE" },
                   "issuerMatched": { "const": true },
@@ -106,17 +107,23 @@
                 "type": "object",
                 "properties": {
                   "expectedSourceSha": {
-                    "const": "90768ed318ebfa547d2b3137aa317168f9c726d7"
+                    "const": "8ab48cd87725a3fa306c18785a144ab184044ccf"
                   },
                   "observedSourceSha": {
-                    "const": "90768ed318ebfa547d2b3137aa317168f9c726d7"
+                    "const": "8ab48cd87725a3fa306c18785a144ab184044ccf"
                   },
                   "expectedFrontendDigest": {
-                    "const": "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6"
+                    "const": "sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564"
                   },
                   "liveFrontendDigest": {
-                    "const": "sha256:6bdbeeaa1870c34a3c6fe230a2f63ba050f48151ee4174a91b072677d69709f6"
-                  }
+                    "const": "sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564"
+                  },
+                  "buildInfoImageDigest": { "const": "" },
+                  "buildInfoImageDigestStatus": { "const": "NOT_EMBEDDED" },
+                  "buildInfoSha256": { "$ref": "#/definitions/sha256" },
+                  "buildInfoProbeId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+                  "buildInfoCacheControl": { "const": "no-store" },
+                  "buildInfoCacheBypassHeadersAbsent": { "const": true }
                 }
               }
             ]
@@ -182,11 +189,264 @@
                     ]
                   },
                   "visibleCapabilityCount": { "const": 9 },
+                  "roleCapabilityCounts": {
+                    "const": {
+                      "candidate": 3,
+                      "recruiter": 8,
+                      "hiring_manager": 6,
+                      "interviewer": 3,
+                      "auditor": 7,
+                      "admin": 6
+                    }
+                  },
+                  "roleCapabilityIds": {
+                    "const": {
+                      "candidate": [
+                        "candidate-cv-pdf-import",
+                        "candidate-review-and-appeal",
+                        "skills-evidence"
+                      ],
+                      "recruiter": [
+                        "interview-evidence-workspace",
+                        "candidate-cv-pdf-import",
+                        "candidate-review-and-appeal",
+                        "citation-backed-coaching",
+                        "quality-of-hire",
+                        "skills-evidence",
+                        "media-integrity",
+                        "agentic-screening"
+                      ],
+                      "hiring_manager": [
+                        "interview-evidence-workspace",
+                        "citation-backed-coaching",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "skills-evidence",
+                        "agentic-screening"
+                      ],
+                      "interviewer": [
+                        "interview-evidence-workspace",
+                        "citation-backed-coaching",
+                        "skills-evidence"
+                      ],
+                      "auditor": [
+                        "interview-evidence-workspace",
+                        "candidate-review-and-appeal",
+                        "citation-backed-coaching",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "media-integrity",
+                        "agentic-screening"
+                      ],
+                      "admin": [
+                        "interview-evidence-workspace",
+                        "candidate-review-and-appeal",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "media-integrity",
+                        "agentic-screening"
+                      ]
+                    }
+                  },
+                  "roleJourneyCapabilityIds": {
+                    "const": {
+                      "candidate": [
+                        "candidate-cv-pdf-import",
+                        "candidate-review-and-appeal",
+                        "skills-evidence"
+                      ],
+                      "recruiter": [
+                        "candidate-cv-pdf-import",
+                        "candidate-review-and-appeal",
+                        "citation-backed-coaching",
+                        "quality-of-hire",
+                        "skills-evidence",
+                        "media-integrity",
+                        "agentic-screening"
+                      ],
+                      "hiring_manager": [
+                        "citation-backed-coaching",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "skills-evidence",
+                        "agentic-screening"
+                      ],
+                      "interviewer": [
+                        "citation-backed-coaching",
+                        "skills-evidence"
+                      ],
+                      "auditor": [
+                        "candidate-review-and-appeal",
+                        "citation-backed-coaching",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "media-integrity",
+                        "agentic-screening"
+                      ],
+                      "admin": [
+                        "candidate-review-and-appeal",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "media-integrity",
+                        "agentic-screening"
+                      ]
+                    }
+                  },
+                  "roleJourneyEvidenceClass": {
+                    "const": "TARGET_ROLE_FILTER_UNDER_NAMED_VIEW_PERSONA"
+                  },
+                  "journeyLifecycleAudit": {
+                    "const": {
+                      "desktop": {
+                        "persistentWriteOperationCount": 0,
+                        "networkRequestCount": 0,
+                        "mutationRequestCount": 0,
+                        "networkChannelConstructionCount": 0,
+                        "workerConstructionCount": 0,
+                        "popupCreationCount": 0,
+                        "filePickerInvocationCount": 0,
+                        "historyMutationCount": 0,
+                        "hashChangeCount": 0,
+                        "closedShadowRootAttemptCount": 0,
+                        "unsafeDomInsertionCount": 0,
+                        "instrumentationFailureCount": 0,
+                        "webSocketEventCount": 0,
+                        "workerEventCount": 0,
+                        "frameAttachmentCount": 0,
+                        "fileChooserEventCount": 0,
+                        "downloadEventCount": 0,
+                        "dialogEventCount": 0,
+                        "unsafeDelegatedActionListenerCount": 0,
+                        "activePageWorkerCount": 0,
+                        "activeServiceWorkerCount": 0,
+                        "closedShadowRootCount": 0
+                      },
+                      "mobile": {
+                        "persistentWriteOperationCount": 0,
+                        "networkRequestCount": 0,
+                        "mutationRequestCount": 0,
+                        "networkChannelConstructionCount": 0,
+                        "workerConstructionCount": 0,
+                        "popupCreationCount": 0,
+                        "filePickerInvocationCount": 0,
+                        "historyMutationCount": 0,
+                        "hashChangeCount": 0,
+                        "closedShadowRootAttemptCount": 0,
+                        "unsafeDomInsertionCount": 0,
+                        "instrumentationFailureCount": 0,
+                        "webSocketEventCount": 0,
+                        "workerEventCount": 0,
+                        "frameAttachmentCount": 0,
+                        "fileChooserEventCount": 0,
+                        "downloadEventCount": 0,
+                        "dialogEventCount": 0,
+                        "unsafeDelegatedActionListenerCount": 0,
+                        "activePageWorkerCount": 0,
+                        "activeServiceWorkerCount": 0,
+                        "closedShadowRootCount": 0
+                      }
+                    }
+                  },
                   "candidateFilterVisible": { "const": true },
                   "candidateBoundaryVisible": { "const": true },
                   "cvImportMode": { "const": "OWNER_GATED" },
-                  "cvImportInteractiveControlCount": { "const": 0 },
+                  "cvImportInteractiveControlCount": { "const": 1 },
                   "fileUploadControlCount": { "const": 0 },
+                  "syntheticResume": {
+                    "type": "object",
+                    "properties": {
+                      "proposalCount": { "const": 5 },
+                      "invalidFixtureCount": { "const": 1 },
+                      "editableAfterFirstKeystroke": { "const": true },
+                      "editedEmail": { "const": "aday.duzenlendi@example.invalid" },
+                      "acceptAfterEditVisible": { "const": true },
+                      "rejectAfterEditVisible": { "const": true },
+                      "acceptedDraftFieldCount": { "const": 2 },
+                      "localDraftVisible": { "const": true },
+                      "localDraftContainsEditedEmail": { "const": true },
+                      "rejectAllSecondConfirmationRequired": { "const": true },
+                      "rejectAllApplied": { "const": true },
+                      "resetReturnedToStart": { "const": true },
+                      "persistentStoresUnchanged": { "const": true },
+                      "persistentWriteOperationCount": { "const": 0 },
+                      "mutationQuietPeriodMs": { "const": 1000 },
+                      "mutationRequestCount": { "const": 0 },
+                      "networkRequestCount": { "const": 0 },
+                      "networkChannelConstructionCount": { "const": 0 },
+                      "workerConstructionCount": { "const": 0 },
+                      "popupCreationCount": { "const": 0 },
+                      "filePickerInvocationCount": { "const": 0 },
+                      "unsafeDelegatedActionListenerCount": { "const": 0 }
+                    }
+                  },
+                  "agentic": {
+                    "type": "object",
+                    "properties": {
+                      "mode": { "const": "PROPOSAL_ONLY" },
+                      "runnerCompleted": { "const": true },
+                      "boundaryVisible": { "const": true },
+                      "interactiveControlSignatures": {
+                        "const": {
+                          "closed": ["BUTTON:button:Ajan önerisini güvenle dene"],
+                          "opened": [
+                            "BUTTON:button:Güvenli denemeyi kapat",
+                            "BUTTON:button:Sentetik çıktıyı üret"
+                          ],
+                          "completed": [
+                            "BUTTON:button:Denemeyi sıfırla",
+                            "BUTTON:button:Güvenli denemeyi kapat"
+                          ]
+                        }
+                      },
+                      "forbiddenActionControlCount": { "const": 0 },
+                      "persistentStoresUnchanged": { "const": true },
+                      "persistentWriteOperationCount": { "const": 0 },
+                      "mutationQuietPeriodMs": { "const": 1000 },
+                      "mutationRequestCount": { "const": 0 },
+                      "networkRequestCount": { "const": 0 },
+                      "networkChannelConstructionCount": { "const": 0 },
+                      "workerConstructionCount": { "const": 0 },
+                      "popupCreationCount": { "const": 0 },
+                      "filePickerInvocationCount": { "const": 0 },
+                      "unsafeDelegatedActionListenerCount": { "const": 0 }
+                    }
+                  },
+                  "safeExperienceCapabilityIds": {
+                    "const": [
+                      "candidate-cv-pdf-import",
+                      "candidate-review-and-appeal",
+                      "citation-backed-coaching",
+                      "fairness-audit",
+                      "quality-of-hire",
+                      "skills-evidence",
+                      "media-integrity",
+                      "agentic-screening"
+                    ]
+                  },
+                  "safeScenarioAudit": {
+                    "type": "object",
+                    "properties": {
+                      "completedCapabilityIds": {
+                        "const": [
+                          "candidate-review-and-appeal",
+                          "citation-backed-coaching",
+                          "fairness-audit",
+                          "quality-of-hire",
+                          "skills-evidence",
+                          "media-integrity"
+                        ]
+                      },
+                      "persistentStoresUnchanged": { "const": true },
+                      "persistentWriteOperationCount": { "const": 0 },
+                      "networkRequestCount": { "const": 0 },
+                      "mutationRequestCount": { "const": 0 },
+                      "networkChannelConstructionCount": { "const": 0 },
+                      "workerConstructionCount": { "const": 0 },
+                      "popupCreationCount": { "const": 0 },
+                      "filePickerInvocationCount": { "const": 0 },
+                      "unsafeDelegatedActionListenerCount": { "const": 0 }
+                    }
+                  },
                   "liveLaunchHref": { "const": "/admin/interview-evidence" },
                   "productBoundaryVisible": { "const": true }
                 }
@@ -245,10 +505,91 @@
                 "type": "object",
                 "properties": {
                   "viewportWidth": { "const": 390 },
+                  "mobileUserAgentMatched": { "const": true },
+                  "mobileTouchPoints": { "const": 5 },
+                  "mobilePointerCoarse": { "const": true },
+                  "mobileDeviceScaleFactor": { "const": 3 },
                   "hubRootOverflowPx": { "type": "number", "maximum": 1 },
                   "hubOverflowPx": { "type": "number", "maximum": 1 },
                   "rootOverflowPx": { "type": "number", "maximum": 1 },
                   "consoleOverflowPx": { "type": "number", "maximum": 1 },
+                  "mobileSyntheticResumeControlsRendered": { "const": true },
+                  "mobileCandidateCapabilityIds": {
+                    "const": [
+                      "candidate-cv-pdf-import",
+                      "candidate-review-and-appeal",
+                      "skills-evidence"
+                    ]
+                  },
+                  "mobileCompletedSafeScenarioCapabilityIds": {
+                    "const": [
+                      "candidate-cv-pdf-import",
+                      "candidate-review-and-appeal",
+                      "citation-backed-coaching",
+                      "fairness-audit",
+                      "quality-of-hire",
+                      "skills-evidence",
+                      "media-integrity",
+                      "agentic-screening"
+                    ]
+                  },
+                  "mobileSyntheticResumePersistentStoresUnchanged": { "const": true },
+                  "mobileSyntheticResumePersistentWriteOperationCount": { "const": 0 },
+                  "mobileSyntheticResumeMutationRequestCount": { "const": 0 },
+                  "mobileSyntheticResumeNetworkRequestCount": { "const": 0 },
+                  "mobileSyntheticResumeNetworkChannelConstructionCount": { "const": 0 },
+                  "mobileSyntheticResumeWorkerConstructionCount": { "const": 0 },
+                  "mobileSyntheticResumePopupCreationCount": { "const": 0 },
+                  "mobileSyntheticResumeFilePickerInvocationCount": { "const": 0 },
+                  "mobileSyntheticResumeUnsafeDelegatedActionListenerCount": { "const": 0 },
+                  "mobileRoleJourneyCapabilityIds": {
+                    "const": {
+                      "candidate": [
+                        "candidate-cv-pdf-import",
+                        "candidate-review-and-appeal",
+                        "skills-evidence"
+                      ],
+                      "recruiter": [
+                        "candidate-cv-pdf-import",
+                        "candidate-review-and-appeal",
+                        "citation-backed-coaching",
+                        "quality-of-hire",
+                        "skills-evidence",
+                        "media-integrity",
+                        "agentic-screening"
+                      ],
+                      "hiring_manager": [
+                        "citation-backed-coaching",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "skills-evidence",
+                        "agentic-screening"
+                      ],
+                      "interviewer": [
+                        "citation-backed-coaching",
+                        "skills-evidence"
+                      ],
+                      "auditor": [
+                        "candidate-review-and-appeal",
+                        "citation-backed-coaching",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "media-integrity",
+                        "agentic-screening"
+                      ],
+                      "admin": [
+                        "candidate-review-and-appeal",
+                        "fairness-audit",
+                        "quality-of-hire",
+                        "media-integrity",
+                        "agentic-screening"
+                      ]
+                    }
+                  },
+                  "mobileRoleJourneyEvidenceClass": {
+                    "const": "TOUCH_EXECUTED_UNDER_NAMED_VIEW_PERSONA"
+                  },
+                  "mobileTouchActivationCount": { "type": "integer", "minimum": 50 },
                   "evidenceTableKeyboardScrollable": { "const": true }
                 }
               }
@@ -274,7 +615,13 @@
               { "$ref": "#/definitions/runtime" },
               {
                 "type": "object",
-                "properties": { "uncaughtPageErrorCount": { "const": 0 } }
+                "properties": {
+                  "uncaughtPageErrorCount": { "const": 0 },
+                  "frontendAssetPaths": { "minItems": 1 },
+                  "frontendAssetResponses": { "minItems": 1 },
+                  "buildInfoRootEntryMatched": { "const": true },
+                  "buildInfoAssetsMatched": { "const": true }
+                }
               }
             ]
           }
@@ -286,6 +633,63 @@
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "capabilityIdList": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+      "uniqueItems": true
+    },
+    "journeyLifecycleAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persistentWriteOperationCount",
+        "networkRequestCount",
+        "mutationRequestCount",
+        "networkChannelConstructionCount",
+        "workerConstructionCount",
+        "popupCreationCount",
+        "filePickerInvocationCount",
+        "historyMutationCount",
+        "hashChangeCount",
+        "closedShadowRootAttemptCount",
+        "unsafeDomInsertionCount",
+        "instrumentationFailureCount",
+        "webSocketEventCount",
+        "workerEventCount",
+        "frameAttachmentCount",
+        "fileChooserEventCount",
+        "downloadEventCount",
+        "dialogEventCount",
+        "unsafeDelegatedActionListenerCount",
+        "activePageWorkerCount",
+        "activeServiceWorkerCount",
+        "closedShadowRootCount"
+      ],
+      "properties": {
+        "persistentWriteOperationCount": { "type": "integer", "minimum": 0 },
+        "networkRequestCount": { "type": "integer", "minimum": 0 },
+        "mutationRequestCount": { "type": "integer", "minimum": 0 },
+        "networkChannelConstructionCount": { "type": "integer", "minimum": 0 },
+        "workerConstructionCount": { "type": "integer", "minimum": 0 },
+        "popupCreationCount": { "type": "integer", "minimum": 0 },
+        "filePickerInvocationCount": { "type": "integer", "minimum": 0 },
+        "historyMutationCount": { "type": "integer", "minimum": 0 },
+        "hashChangeCount": { "type": "integer", "minimum": 0 },
+        "closedShadowRootAttemptCount": { "type": "integer", "minimum": 0 },
+        "unsafeDomInsertionCount": { "type": "integer", "minimum": 0 },
+        "instrumentationFailureCount": { "type": "integer", "minimum": 0 },
+        "webSocketEventCount": { "type": "integer", "minimum": 0 },
+        "workerEventCount": { "type": "integer", "minimum": 0 },
+        "frameAttachmentCount": { "type": "integer", "minimum": 0 },
+        "fileChooserEventCount": { "type": "integer", "minimum": 0 },
+        "downloadEventCount": { "type": "integer", "minimum": 0 },
+        "dialogEventCount": { "type": "integer", "minimum": 0 },
+        "unsafeDelegatedActionListenerCount": { "type": "integer", "minimum": 0 },
+        "activePageWorkerCount": { "type": "integer", "minimum": 0 },
+        "activeServiceWorkerCount": { "type": "integer", "minimum": 0 },
+        "closedShadowRootCount": { "type": "integer", "minimum": 0 }
+      }
+    },
     "github": {
       "type": "object",
       "additionalProperties": false,
@@ -318,8 +722,7 @@
         "codeCorrelationMatched",
         "pkceChallengeMatched",
         "tokenResponseSuccessful",
-        "oauthParametersCleared",
-        "loginBlockingViolationCount"
+        "oauthParametersCleared"
       ],
       "properties": {
         "browserFlow": { "enum": ["KEYCLOAK_AUTHORIZATION_CODE_PKCE", "UNVERIFIED"] },
@@ -348,6 +751,12 @@
         "observedSourceSha",
         "expectedFrontendDigest",
         "liveFrontendDigest",
+        "buildInfoImageDigest",
+        "buildInfoImageDigestStatus",
+        "buildInfoSha256",
+        "buildInfoProbeId",
+        "buildInfoCacheControl",
+        "buildInfoCacheBypassHeadersAbsent",
         "expectedBuildRunId",
         "harnessRepository",
         "harnessRevision",
@@ -365,7 +774,13 @@
         "observedSourceSha": { "type": "string", "pattern": "^$|^[0-9a-f]{40}$" },
         "expectedFrontendDigest": { "$ref": "#/definitions/digest" },
         "liveFrontendDigest": { "$ref": "#/definitions/digest" },
-        "expectedBuildRunId": { "const": "29451703189" },
+        "buildInfoImageDigest": { "type": "string" },
+        "buildInfoImageDigestStatus": { "const": "NOT_EMBEDDED" },
+        "buildInfoSha256": { "type": "string", "pattern": "^$|^[0-9a-f]{64}$" },
+        "buildInfoProbeId": { "type": "string", "pattern": "^$|^[0-9a-f]{32}$" },
+        "buildInfoCacheControl": { "type": "string" },
+        "buildInfoCacheBypassHeadersAbsent": { "type": "boolean" },
+        "expectedBuildRunId": { "const": "29457457120" },
         "harnessRepository": { "const": "Halildeu/platform-k8s-gitops" },
         "harnessRevision": { "$ref": "#/definitions/gitSha" },
         "specSha256": { "$ref": "#/definitions/sha256" },
@@ -461,11 +876,20 @@
         "capabilityIds",
         "targetRoleIds",
         "visibleCapabilityCount",
+        "roleCapabilityCounts",
+        "roleCapabilityIds",
+        "roleJourneyCapabilityIds",
+        "roleJourneyEvidenceClass",
+        "journeyLifecycleAudit",
         "candidateFilterVisible",
         "candidateBoundaryVisible",
         "cvImportMode",
         "cvImportInteractiveControlCount",
         "fileUploadControlCount",
+        "syntheticResume",
+        "agentic",
+        "safeExperienceCapabilityIds",
+        "safeScenarioAudit",
         "liveLaunchHref",
         "productBoundaryVisible"
       ],
@@ -484,11 +908,223 @@
           "uniqueItems": true
         },
         "visibleCapabilityCount": { "type": "integer", "minimum": 0 },
+        "roleCapabilityCounts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidate",
+            "recruiter",
+            "hiring_manager",
+            "interviewer",
+            "auditor",
+            "admin"
+          ],
+          "properties": {
+            "candidate": { "type": "integer", "minimum": 0 },
+            "recruiter": { "type": "integer", "minimum": 0 },
+            "hiring_manager": { "type": "integer", "minimum": 0 },
+            "interviewer": { "type": "integer", "minimum": 0 },
+            "auditor": { "type": "integer", "minimum": 0 },
+            "admin": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "roleCapabilityIds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidate",
+            "recruiter",
+            "hiring_manager",
+            "interviewer",
+            "auditor",
+            "admin"
+          ],
+          "properties": {
+            "candidate": { "$ref": "#/definitions/capabilityIdList" },
+            "recruiter": { "$ref": "#/definitions/capabilityIdList" },
+            "hiring_manager": { "$ref": "#/definitions/capabilityIdList" },
+            "interviewer": { "$ref": "#/definitions/capabilityIdList" },
+            "auditor": { "$ref": "#/definitions/capabilityIdList" },
+            "admin": { "$ref": "#/definitions/capabilityIdList" }
+          }
+        },
+        "roleJourneyCapabilityIds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidate",
+            "recruiter",
+            "hiring_manager",
+            "interviewer",
+            "auditor",
+            "admin"
+          ],
+          "properties": {
+            "candidate": { "$ref": "#/definitions/capabilityIdList" },
+            "recruiter": { "$ref": "#/definitions/capabilityIdList" },
+            "hiring_manager": { "$ref": "#/definitions/capabilityIdList" },
+            "interviewer": { "$ref": "#/definitions/capabilityIdList" },
+            "auditor": { "$ref": "#/definitions/capabilityIdList" },
+            "admin": { "$ref": "#/definitions/capabilityIdList" }
+          }
+        },
+        "roleJourneyEvidenceClass": {
+          "const": "TARGET_ROLE_FILTER_UNDER_NAMED_VIEW_PERSONA"
+        },
+        "journeyLifecycleAudit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["desktop"],
+          "properties": {
+            "desktop": { "$ref": "#/definitions/journeyLifecycleAudit" },
+            "mobile": { "$ref": "#/definitions/journeyLifecycleAudit" }
+          }
+        },
         "candidateFilterVisible": { "type": "boolean" },
         "candidateBoundaryVisible": { "type": "boolean" },
         "cvImportMode": { "enum": ["OWNER_GATED"] },
         "cvImportInteractiveControlCount": { "type": "integer", "minimum": 0 },
         "fileUploadControlCount": { "type": "integer", "minimum": 0 },
+        "syntheticResume": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "proposalCount",
+            "invalidFixtureCount",
+            "editableAfterFirstKeystroke",
+            "editedEmail",
+            "acceptAfterEditVisible",
+            "rejectAfterEditVisible",
+            "acceptedDraftFieldCount",
+            "localDraftVisible",
+            "localDraftContainsEditedEmail",
+            "rejectAllSecondConfirmationRequired",
+            "rejectAllApplied",
+            "resetReturnedToStart",
+            "persistentStoresUnchanged",
+            "persistentWriteOperationCount",
+            "mutationQuietPeriodMs",
+            "mutationRequestCount",
+            "networkRequestCount",
+            "networkChannelConstructionCount",
+            "workerConstructionCount",
+            "popupCreationCount",
+            "filePickerInvocationCount",
+            "unsafeDelegatedActionListenerCount"
+          ],
+          "properties": {
+            "proposalCount": { "type": "integer", "minimum": 0 },
+            "invalidFixtureCount": { "type": "integer", "minimum": 0 },
+            "editableAfterFirstKeystroke": { "type": "boolean" },
+            "editedEmail": { "type": "string", "pattern": "^[^@]+@example\\.invalid$" },
+            "acceptAfterEditVisible": { "type": "boolean" },
+            "rejectAfterEditVisible": { "type": "boolean" },
+            "acceptedDraftFieldCount": { "type": "integer", "minimum": 0 },
+            "localDraftVisible": { "type": "boolean" },
+            "localDraftContainsEditedEmail": { "type": "boolean" },
+            "rejectAllSecondConfirmationRequired": { "type": "boolean" },
+            "rejectAllApplied": { "type": "boolean" },
+            "resetReturnedToStart": { "type": "boolean" },
+            "persistentStoresUnchanged": { "type": "boolean" },
+            "persistentWriteOperationCount": { "type": "integer", "minimum": 0 },
+            "mutationQuietPeriodMs": { "type": "integer", "minimum": 0 },
+            "mutationRequestCount": { "type": "integer", "minimum": 0 },
+            "networkRequestCount": { "type": "integer", "minimum": 0 },
+            "networkChannelConstructionCount": { "type": "integer", "minimum": 0 },
+            "workerConstructionCount": { "type": "integer", "minimum": 0 },
+            "popupCreationCount": { "type": "integer", "minimum": 0 },
+            "filePickerInvocationCount": { "type": "integer", "minimum": 0 },
+            "unsafeDelegatedActionListenerCount": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "agentic": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "runnerCompleted",
+            "boundaryVisible",
+            "interactiveControlSignatures",
+            "forbiddenActionControlCount",
+            "persistentStoresUnchanged",
+            "persistentWriteOperationCount",
+            "mutationQuietPeriodMs",
+            "mutationRequestCount",
+            "networkRequestCount",
+            "networkChannelConstructionCount",
+            "workerConstructionCount",
+            "popupCreationCount",
+            "filePickerInvocationCount",
+            "unsafeDelegatedActionListenerCount"
+          ],
+          "properties": {
+            "mode": { "enum": ["PROPOSAL_ONLY"] },
+            "runnerCompleted": { "type": "boolean" },
+            "boundaryVisible": { "type": "boolean" },
+            "interactiveControlSignatures": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["closed", "opened", "completed"],
+              "properties": {
+                "closed": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "uniqueItems": true
+                },
+                "opened": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "uniqueItems": true
+                },
+                "completed": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "forbiddenActionControlCount": { "type": "integer", "minimum": 0 },
+            "persistentStoresUnchanged": { "type": "boolean" },
+            "persistentWriteOperationCount": { "type": "integer", "minimum": 0 },
+            "mutationQuietPeriodMs": { "type": "integer", "minimum": 0 },
+            "mutationRequestCount": { "type": "integer", "minimum": 0 },
+            "networkRequestCount": { "type": "integer", "minimum": 0 },
+            "networkChannelConstructionCount": { "type": "integer", "minimum": 0 },
+            "workerConstructionCount": { "type": "integer", "minimum": 0 },
+            "popupCreationCount": { "type": "integer", "minimum": 0 },
+            "filePickerInvocationCount": { "type": "integer", "minimum": 0 },
+            "unsafeDelegatedActionListenerCount": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "safeExperienceCapabilityIds": { "$ref": "#/definitions/capabilityIdList" },
+        "safeScenarioAudit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "completedCapabilityIds",
+            "persistentStoresUnchanged",
+            "persistentWriteOperationCount",
+            "networkRequestCount",
+            "mutationRequestCount",
+            "networkChannelConstructionCount",
+            "workerConstructionCount",
+            "popupCreationCount",
+            "filePickerInvocationCount",
+            "unsafeDelegatedActionListenerCount"
+          ],
+          "properties": {
+            "completedCapabilityIds": { "$ref": "#/definitions/capabilityIdList" },
+            "persistentStoresUnchanged": { "type": "boolean" },
+            "persistentWriteOperationCount": { "type": "integer", "minimum": 0 },
+            "networkRequestCount": { "type": "integer", "minimum": 0 },
+            "mutationRequestCount": { "type": "integer", "minimum": 0 },
+            "networkChannelConstructionCount": { "type": "integer", "minimum": 0 },
+            "workerConstructionCount": { "type": "integer", "minimum": 0 },
+            "popupCreationCount": { "type": "integer", "minimum": 0 },
+            "filePickerInvocationCount": { "type": "integer", "minimum": 0 },
+            "unsafeDelegatedActionListenerCount": { "type": "integer", "minimum": 0 }
+          }
+        },
         "liveLaunchHref": { "type": "string" },
         "productBoundaryVisible": { "type": "boolean" }
       }
@@ -539,18 +1175,95 @@
       "additionalProperties": false,
       "required": [
         "viewportWidth",
+        "mobileUserAgentMatched",
+        "mobileTouchPoints",
+        "mobilePointerCoarse",
+        "mobileDeviceScaleFactor",
         "hubRootOverflowPx",
         "hubOverflowPx",
         "rootOverflowPx",
         "consoleOverflowPx",
+        "mobileSyntheticResumeControlsRendered",
+        "mobileCandidateCapabilityIds",
+        "mobileCompletedSafeScenarioCapabilityIds",
+        "mobileSyntheticResumePersistentStoresUnchanged",
+        "mobileSyntheticResumePersistentWriteOperationCount",
+        "mobileSyntheticResumeMutationRequestCount",
+        "mobileSyntheticResumeNetworkRequestCount",
+        "mobileSyntheticResumeNetworkChannelConstructionCount",
+        "mobileSyntheticResumeWorkerConstructionCount",
+        "mobileSyntheticResumePopupCreationCount",
+        "mobileSyntheticResumeFilePickerInvocationCount",
+        "mobileSyntheticResumeUnsafeDelegatedActionListenerCount",
+        "mobileRoleJourneyCapabilityIds",
+        "mobileRoleJourneyEvidenceClass",
+        "mobileTouchActivationCount",
         "evidenceTableKeyboardScrollable"
       ],
       "properties": {
         "viewportWidth": { "type": "integer", "minimum": 1 },
+        "mobileUserAgentMatched": { "type": "boolean" },
+        "mobileTouchPoints": { "type": "integer", "minimum": 0 },
+        "mobilePointerCoarse": { "type": "boolean" },
+        "mobileDeviceScaleFactor": { "type": "number", "minimum": 1 },
         "hubRootOverflowPx": { "type": "number", "minimum": 0 },
         "hubOverflowPx": { "type": "number", "minimum": 0 },
         "rootOverflowPx": { "type": "number", "minimum": 0 },
         "consoleOverflowPx": { "type": "number", "minimum": 0 },
+        "mobileSyntheticResumeControlsRendered": { "type": "boolean" },
+        "mobileCandidateCapabilityIds": { "$ref": "#/definitions/capabilityIdList" },
+        "mobileCompletedSafeScenarioCapabilityIds": {
+          "$ref": "#/definitions/capabilityIdList"
+        },
+        "mobileSyntheticResumePersistentStoresUnchanged": { "type": "boolean" },
+        "mobileSyntheticResumePersistentWriteOperationCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mobileSyntheticResumeMutationRequestCount": { "type": "integer", "minimum": 0 },
+        "mobileSyntheticResumeNetworkRequestCount": { "type": "integer", "minimum": 0 },
+        "mobileSyntheticResumeNetworkChannelConstructionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mobileSyntheticResumeWorkerConstructionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mobileSyntheticResumePopupCreationCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mobileSyntheticResumeFilePickerInvocationCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mobileSyntheticResumeUnsafeDelegatedActionListenerCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mobileRoleJourneyCapabilityIds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidate",
+            "recruiter",
+            "hiring_manager",
+            "interviewer",
+            "auditor",
+            "admin"
+          ],
+          "properties": {
+            "candidate": { "$ref": "#/definitions/capabilityIdList" },
+            "recruiter": { "$ref": "#/definitions/capabilityIdList" },
+            "hiring_manager": { "$ref": "#/definitions/capabilityIdList" },
+            "interviewer": { "$ref": "#/definitions/capabilityIdList" },
+            "auditor": { "$ref": "#/definitions/capabilityIdList" },
+            "admin": { "$ref": "#/definitions/capabilityIdList" }
+          }
+        },
+        "mobileRoleJourneyEvidenceClass": { "type": "string", "minLength": 1 },
+        "mobileTouchActivationCount": { "type": "integer", "minimum": 0 },
         "evidenceTableKeyboardScrollable": { "type": "boolean" }
       }
     },
@@ -588,9 +1301,54 @@
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["uncaughtPageErrorCount"],
+      "required": [
+        "uncaughtPageErrorCount",
+        "frontendAssetPaths",
+        "frontendAssetResponses",
+        "buildInfoRootEntryMatched",
+        "buildInfoAssetsMatched"
+      ],
       "properties": {
-        "uncaughtPageErrorCount": { "type": "integer", "minimum": 0 }
+        "uncaughtPageErrorCount": { "type": "integer", "minimum": 0 },
+        "frontendAssetPaths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^/[^?#\\u0000-\\u001F]*$"
+          }
+        },
+        "frontendAssetResponses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "resourceType",
+              "status",
+              "contentType",
+              "bodySha256",
+              "fromServiceWorker"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^/assets/[A-Za-z0-9._-]+\\.(js|css)$"
+              },
+              "resourceType": { "enum": ["script", "stylesheet"] },
+              "status": { "const": 200 },
+              "contentType": { "type": "string", "minLength": 1 },
+              "bodySha256": { "$ref": "#/definitions/sha256" },
+              "fromServiceWorker": { "const": false }
+            }
+          }
+        },
+        "buildInfoRootEntryMatched": { "type": "boolean" },
+        "buildInfoAssetsMatched": { "type": "boolean" }
       }
     }
   }
