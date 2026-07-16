@@ -14,8 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTOR = ROOT / "scripts/deploy/collect-faz25-p5-frontend-lineage.sh"
-SOURCE_SHA = "8ab48cd87725a3fa306c18785a144ab184044ccf"
-DIGEST = "sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564"
+SOURCE_SHA = "7a8c968a63bd8bbd5279c2f038cfac773613c402"
+DIGEST = "sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc"
 DEPLOYMENT_UID = "11111111-1111-4111-8111-111111111111"
 REPLICASET_UID = "22222222-2222-4222-8222-222222222222"
 POD_UID = "33333333-3333-4333-8333-333333333333"
@@ -118,8 +118,8 @@ class CollectorTest(unittest.TestCase):
                 if "/artifacts" in url:
                     print(json.dumps({{
                         "artifacts": [{{
-                            "id": 8359963701,
-                            "name": "Halildeu~platform-web~PBWNF0.dockerbuild",
+                            "id": 8364186187,
+                            "name": "Halildeu~platform-web~TJ1D9C.dockerbuild",
                             "digest": os.environ.get(
                                 "MOCK_ARTIFACT_DIGEST",
                                 os.environ["EXPECTED_BUILD_ARTIFACT_DIGEST"]
@@ -130,7 +130,7 @@ class CollectorTest(unittest.TestCase):
                     }}))
                 else:
                     print(json.dumps({{
-                        "id": 29457457120,
+                        "id": 29469166218,
                         "status": "completed",
                         "conclusion": "success",
                         "event": "push",
@@ -145,7 +145,7 @@ class CollectorTest(unittest.TestCase):
         self.mock_curl.chmod(0o755)
 
     def _fixtures(self, pod_owner_uid=REPLICASET_UID):
-        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-8ab48cd@{DIGEST}"
+        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-7a8c968@{DIGEST}"
         fixtures = {
             "deployment": {
                 "metadata": {
@@ -291,14 +291,14 @@ class CollectorTest(unittest.TestCase):
             "pod_build_info": {
                 "assets": ["index-main.js"],
                 "buildTime": "2026-07-15T00:00:00Z",
-                "image": "ghcr.io/halildeu/platform-web-frontend-testai:sha-8ab48cd",
+                "image": "ghcr.io/halildeu/platform-web-frontend-testai:sha-7a8c968",
                 "imageDigest": "",
                 "origin": "https://testai.acik.com",
                 "ref": "main",
                 "remotes": [],
                 "rootEntry": "index-main.js",
                 "sha": SOURCE_SHA,
-                "shortSha": "8ab48cd",
+                "shortSha": "7a8c968",
             },
             "controller_pods": {
                 "items": [
@@ -342,11 +342,11 @@ class CollectorTest(unittest.TestCase):
             "EXPECTED_CONTEXT": "k3d-test",
             "EXPECTED_SOURCE_SHA": SOURCE_SHA,
             "EXPECTED_IMAGE_DIGEST": DIGEST,
-            "EXPECTED_BUILD_RUN_ID": "29457457120",
-            "EXPECTED_BUILD_ARTIFACT_ID": "8359963701",
-            "EXPECTED_BUILD_ARTIFACT_NAME": "Halildeu~platform-web~PBWNF0.dockerbuild",
-            "EXPECTED_BUILD_ARTIFACT_DIGEST": "sha256:f7f049ffe3d716045f287179f4e293fbbdbb891cb4a2d6ada0baddb1357a70c2",
-            "EXPECTED_BUILD_ARTIFACT_SIZE": "108623",
+            "EXPECTED_BUILD_RUN_ID": "29469166218",
+            "EXPECTED_BUILD_ARTIFACT_ID": "8364186187",
+            "EXPECTED_BUILD_ARTIFACT_NAME": "Halildeu~platform-web~TJ1D9C.dockerbuild",
+            "EXPECTED_BUILD_ARTIFACT_DIGEST": "sha256:45721d20a3809bf1443f79d291cca99687b40a28dd94c5a8f804fa92aa81aebb",
+            "EXPECTED_BUILD_ARTIFACT_SIZE": "109981",
             "EXPECTED_CLUSTER_SERVER_SHA256": hashlib.sha256(
                 CLUSTER_SERVER.encode()
             ).hexdigest(),
@@ -403,7 +403,7 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(payload["replicaSet"]["uid"], REPLICASET_UID)
         self.assertEqual(payload["pods"]["uids"], [POD_UID])
         self.assertEqual(payload["lineage"]["observedDigest"], DIGEST)
-        self.assertEqual(payload["lineage"]["buildArtifactId"], "8359963701")
+        self.assertEqual(payload["lineage"]["buildArtifactId"], "8364186187")
         self.assertEqual(
             payload["lineage"]["buildArtifactEvidenceClass"],
             "METADATA_ONLY_NON_TERMINAL",
