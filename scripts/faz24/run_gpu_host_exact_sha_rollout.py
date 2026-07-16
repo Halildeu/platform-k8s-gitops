@@ -221,6 +221,31 @@ function Test-WebSocketReady {
   }
 }
 
+function ConvertTo-PowerShellLiteral {
+  param([Parameter(Mandatory = $true)][string]$Value)
+  return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function Invoke-PowerShellChild {
+  param(
+    [Parameter(Mandatory = $true)][string]$Command,
+    [Parameter(Mandatory = $true)][string]$StdoutPath,
+    [Parameter(Mandatory = $true)][string]$StderrPath
+  )
+  $arguments = @(
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+    '-InputFormat', 'Text', '-OutputFormat', 'Text', '-Command', '-'
+  )
+  $oldEap = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    $Command | & powershell.exe @arguments 1> $StdoutPath 2> $StderrPath
+    return [int]$LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $oldEap
+  }
+}
+
 function Invoke-UpdaterChild {
   param(
     [switch]$WhatIfOnly,
@@ -230,27 +255,19 @@ function Invoke-UpdaterChild {
   $stdoutPath = Join-Path $env:TEMP ('faz24-gpu-rollout-' + [Guid]::NewGuid().ToString('N') + '.out')
   $stderrPath = Join-Path $env:TEMP ('faz24-gpu-rollout-' + [Guid]::NewGuid().ToString('N') + '.err')
   try {
-    $arguments = @(
-      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-File', $UpdateScript,
-      '-RepoRoot', $RepoRoot,
-      '-Confirm:$false'
-    )
+    $command = '$ConfirmPreference = ''None''; & ' +
+      (ConvertTo-PowerShellLiteral $UpdateScript) +
+      ' -RepoRoot ' + (ConvertTo-PowerShellLiteral $RepoRoot) +
+      ' -Confirm:$false'
     if ($RollbackOnly) {
-      $arguments += '-Rollback'
+      $command += ' -Rollback'
     } else {
-      $arguments += @('-TargetCommit', $TargetCommit)
+      $command += ' -TargetCommit ' + (ConvertTo-PowerShellLiteral $TargetCommit)
     }
-    if ($NoRestartOnly) { $arguments += '-NoRestart' }
-    if ($WhatIfOnly) { $arguments += '-WhatIf' }
-    $oldEap = $ErrorActionPreference
-    try {
-      $ErrorActionPreference = 'Continue'
-      & powershell.exe @arguments 1> $stdoutPath 2> $stderrPath
-      return [int]$LASTEXITCODE
-    } finally {
-      $ErrorActionPreference = $oldEap
-    }
+    if ($NoRestartOnly) { $command += ' -NoRestart' }
+    if ($WhatIfOnly) { $command += ' -WhatIf' }
+    return Invoke-PowerShellChild -Command $command -StdoutPath $stdoutPath `
+      -StderrPath $stderrPath
   } finally {
     Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
   }
@@ -261,21 +278,13 @@ function Invoke-TaskActionMigration {
   $stdoutPath = Join-Path $env:TEMP ('faz24-task-migration-' + [Guid]::NewGuid().ToString('N') + '.out')
   $stderrPath = Join-Path $env:TEMP ('faz24-task-migration-' + [Guid]::NewGuid().ToString('N') + '.err')
   try {
-    $arguments = @(
-      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-File', $MigrationScript,
-      '-RepoRoot', $RepoRoot,
-      '-Confirm:$false'
-    )
-    if ($WhatIfOnly) { $arguments += '-WhatIf' }
-    $oldEap = $ErrorActionPreference
-    try {
-      $ErrorActionPreference = 'Continue'
-      & powershell.exe @arguments 1> $stdoutPath 2> $stderrPath
-      return [int]$LASTEXITCODE
-    } finally {
-      $ErrorActionPreference = $oldEap
-    }
+    $command = '$ConfirmPreference = ''None''; & ' +
+      (ConvertTo-PowerShellLiteral $MigrationScript) +
+      ' -RepoRoot ' + (ConvertTo-PowerShellLiteral $RepoRoot) +
+      ' -Confirm:$false'
+    if ($WhatIfOnly) { $command += ' -WhatIf' }
+    return Invoke-PowerShellChild -Command $command -StdoutPath $stdoutPath `
+      -StderrPath $stderrPath
   } finally {
     Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
   }

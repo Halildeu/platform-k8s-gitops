@@ -49,6 +49,16 @@ grep -Fq 'input=script' "${RUNNER}" || fail 'PowerShell stdin transport missing'
 if grep -Fq '"-EncodedCommand"' "${RUNNER}"; then
   fail 'PowerShell script must not be transported in process arguments'
 fi
+if grep -Fq "'-File', \$UpdateScript" "${RUNNER}" || \
+  grep -Fq "'-File', \$MigrationScript" "${RUNNER}"; then
+  fail 'Windows PowerShell child scripts must not use -File switch binding'
+fi
+grep -Fq '$Command | & powershell.exe @arguments' "${RUNNER}" || \
+  fail 'Windows PowerShell child stdin transport missing'
+grep -Fq 'function ConvertTo-PowerShellLiteral' "${RUNNER}" || \
+  fail 'Windows PowerShell child literal escaping helper missing'
+grep -Fq "\$ConfirmPreference = ''None''; &" "${RUNNER}" || \
+  fail 'Windows PowerShell child confirmation suppression missing'
 grep -Fq 'CANONICAL_TARGET = "denetim-pc"' "${RUNNER}" || \
   fail 'canonical Denetim operator target missing'
 grep -Fq "scriptPathClass = 'legacy-user-repo'" "${RUNNER}" || \
