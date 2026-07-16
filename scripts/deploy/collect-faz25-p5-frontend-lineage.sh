@@ -16,10 +16,11 @@ CONTAINER="${CONTAINER:-frontend}"
 EXPECTED_SOURCE_SHA="${EXPECTED_SOURCE_SHA:?EXPECTED_SOURCE_SHA is required}"
 EXPECTED_IMAGE_DIGEST="${EXPECTED_IMAGE_DIGEST:?EXPECTED_IMAGE_DIGEST is required}"
 EXPECTED_BUILD_RUN_ID="${EXPECTED_BUILD_RUN_ID:?EXPECTED_BUILD_RUN_ID is required}"
-EXPECTED_BUILD_ARTIFACT_ID="${EXPECTED_BUILD_ARTIFACT_ID:-8369610660}"
-EXPECTED_BUILD_ARTIFACT_NAME="${EXPECTED_BUILD_ARTIFACT_NAME:-Halildeu~platform-web~DJ1MVB.dockerbuild}"
-EXPECTED_BUILD_ARTIFACT_DIGEST="${EXPECTED_BUILD_ARTIFACT_DIGEST:-sha256:9895d20bab6389a0242a99d0bf338bb30afda02e38355b3a7a2c8176506bd2d5}"
-EXPECTED_BUILD_ARTIFACT_SIZE="${EXPECTED_BUILD_ARTIFACT_SIZE:-108385}"
+EXPECTED_BUILD_ARTIFACT_ID="${EXPECTED_BUILD_ARTIFACT_ID:-8371284324}"
+EXPECTED_BUILD_ARTIFACT_NAME="${EXPECTED_BUILD_ARTIFACT_NAME:-Halildeu~platform-web~34268X.dockerbuild}"
+EXPECTED_BUILD_ARTIFACT_DIGEST="${EXPECTED_BUILD_ARTIFACT_DIGEST:-sha256:190c27aeb082b9040c856647766b2e02dc46738019458ed9994116364ebd584a}"
+EXPECTED_BUILD_ARTIFACT_SIZE="${EXPECTED_BUILD_ARTIFACT_SIZE:-108553}"
+EXPECTED_BUILD_IMAGE_CONTRACT_SHA256="${EXPECTED_BUILD_IMAGE_CONTRACT_SHA256:-00e2ff3f6862eb2d39c2df21d3adc3f885c6fd2346bc1dc0a9da66b08b1cfad6}"
 EXPECTED_CLUSTER_SERVER_SHA256="${EXPECTED_CLUSTER_SERVER_SHA256:?EXPECTED_CLUSTER_SERVER_SHA256 is required}"
 EXPECTED_CLUSTER_CA_SHA256="${EXPECTED_CLUSTER_CA_SHA256:?EXPECTED_CLUSTER_CA_SHA256 is required}"
 EXPECTED_KUBE_SYSTEM_UID="${EXPECTED_KUBE_SYSTEM_UID:?EXPECTED_KUBE_SYSTEM_UID is required}"
@@ -41,9 +42,10 @@ fail_closed() {
 [[ "$EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_BUILD_RUN_ID" =~ ^[0-9]+$ ]] || fail_closed
 [[ "$EXPECTED_BUILD_ARTIFACT_ID" =~ ^[0-9]+$ ]] || fail_closed
-[[ "$EXPECTED_BUILD_ARTIFACT_NAME" == "Halildeu~platform-web~DJ1MVB.dockerbuild" ]] || fail_closed
+[[ "$EXPECTED_BUILD_ARTIFACT_NAME" == "Halildeu~platform-web~34268X.dockerbuild" ]] || fail_closed
 [[ "$EXPECTED_BUILD_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_BUILD_ARTIFACT_SIZE" =~ ^[0-9]+$ ]] || fail_closed
+[[ "$EXPECTED_BUILD_IMAGE_CONTRACT_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_CLUSTER_SERVER_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_CLUSTER_CA_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail_closed
 [[ "$EXPECTED_KUBE_SYSTEM_UID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || fail_closed
@@ -142,6 +144,39 @@ build_artifact_name="$EXPECTED_BUILD_ARTIFACT_NAME"
 build_artifact_digest="$EXPECTED_BUILD_ARTIFACT_DIGEST"
 build_artifact_size="$EXPECTED_BUILD_ARTIFACT_SIZE"
 unset build_artifacts_json
+
+# The image-name/tag format is producer-owned. Fetch the reviewed contract at
+# the exact source commit instead of independently reconstructing it here.
+# Its content hash is pinned by this acceptance revision, so the pod's
+# build-info image field cannot select a caller-authored or moving contract.
+build_image_contract_url="https://raw.githubusercontent.com/Halildeu/platform-web/${EXPECTED_SOURCE_SHA}/scripts/deploy/build-image-contract.json"
+build_image_contract_json="$($CURL_BIN -fsS --max-time 20 "$build_image_contract_url")"
+build_image_contract_sha256="$(sha256_text "$build_image_contract_json")"
+[[ "$build_image_contract_sha256" == "$EXPECTED_BUILD_IMAGE_CONTRACT_SHA256" ]] || fail_closed
+jq -e '
+  (keys | sort) == [
+    "owner", "registry", "repositories", "schemaVersion",
+    "shortShaLength", "tagPrefix"
+  ] and
+  .schemaVersion == "acik.platform.web-build-image/v1" and
+  .registry == "ghcr.io" and
+  .owner == "halildeu" and
+  (.repositories | type == "object") and
+  (.repositories | keys | sort) == ["prod", "testai"] and
+  all(.repositories[]; type == "string" and test("^[a-z0-9]+(?:[._-][a-z0-9]+)*$")) and
+  (.tagPrefix | type == "string" and test("^[a-z0-9][a-z0-9._-]*$")) and
+  (.shortShaLength | type == "number" and floor == . and . >= 7 and . <= 40)
+' <<<"$build_image_contract_json" >/dev/null || fail_closed
+build_image_contract_schema_version="$(jq -r '.schemaVersion' <<<"$build_image_contract_json")"
+contract_short_sha_length="$(jq -r '.shortShaLength' <<<"$build_image_contract_json")"
+expected_short_sha="${EXPECTED_SOURCE_SHA:0:contract_short_sha_length}"
+expected_build_image="$(jq -r \
+  --arg short_sha "$expected_short_sha" '
+    .registry + "/" + .owner + "/" + .repositories.testai + ":" +
+    .tagPrefix + $short_sha
+  ' <<<"$build_image_contract_json")"
+[[ "$expected_build_image" =~ ^ghcr\.io/halildeu/[a-z0-9._-]+:[a-z0-9._-]+$ ]] || fail_closed
+unset build_image_contract_json
 
 # Cross-repository artifact content requires a separately governed read token;
 # the current protected Environment intentionally has none. Keep the public
@@ -252,8 +287,6 @@ observed_digests="$(jq -c '
   ' <<<"$image_ids")"
 [[ "$observed_digests" == "[\"$EXPECTED_IMAGE_DIGEST\"]" ]] || fail_closed
 observed_digest="$(jq -r '.[0]' <<<"$observed_digests")"
-expected_short_sha="${EXPECTED_SOURCE_SHA:0:7}"
-expected_build_image="ghcr.io/halildeu/platform-web-frontend-testai:sha-${expected_short_sha}"
 
 pod_build_infos_json="$({
   while IFS=$'\t' read -r pod_name pod_uid; do
@@ -637,6 +670,10 @@ jq -n \
   --arg build_artifact_digest "$build_artifact_digest" \
   --argjson build_artifact_size "$build_artifact_size" \
   --arg build_artifact_evidence_class "$build_artifact_evidence_class" \
+  --arg build_image_contract_url "$build_image_contract_url" \
+  --arg build_image_contract_sha256 "$build_image_contract_sha256" \
+  --arg build_image_contract_schema_version "$build_image_contract_schema_version" \
+  --arg expected_build_image "$expected_build_image" \
   --arg build_attestation_status "NOT_PUBLISHED" \
   --arg build_attestation_boundary "Cross-repository artifact content is not fetched because no least-privilege token is configured; artifact metadata is non-terminal and no SLSA attestation is claimed. Terminal browser-to-image binding is the same-session Ingress, Service, EndpointSlice, Ready Pod UID and imageID chain plus exact build-info source SHA." \
   --arg ingress_uid "$ingress_uid" \
@@ -692,6 +729,10 @@ jq -n \
       buildArtifactDigest: $build_artifact_digest,
       buildArtifactSizeInBytes: $build_artifact_size,
       buildArtifactEvidenceClass: $build_artifact_evidence_class,
+      buildImageContractUrl: $build_image_contract_url,
+      buildImageContractSha256: $build_image_contract_sha256,
+      buildImageContractSchemaVersion: $build_image_contract_schema_version,
+      expectedBuildImage: $expected_build_image,
       buildAttestationStatus: $build_attestation_status,
       buildAttestationBoundary: $build_attestation_boundary
     },

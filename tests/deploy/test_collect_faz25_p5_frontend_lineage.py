@@ -14,8 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTOR = ROOT / "scripts/deploy/collect-faz25-p5-frontend-lineage.sh"
-SOURCE_SHA = "125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b"
-DIGEST = "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f"
+SOURCE_SHA = "bc33397de0a1eb097a1e045396c178d66c1bed95"
+DIGEST = "sha256:aab566968dc0406fe5ca81143a3eac378fc8a877a00f0ab88e0f048603949f6d"
 DEPLOYMENT_UID = "11111111-1111-4111-8111-111111111111"
 REPLICASET_UID = "22222222-2222-4222-8222-222222222222"
 POD_UID = "33333333-3333-4333-8333-333333333333"
@@ -31,6 +31,21 @@ CLUSTER_CA = b"faz25-test-ca"
 ASSET_PATH = "/mf-entry-bootstrap-0.js"
 ASSET_BODY = "console.log('faz25 immutable root entry');\n"
 ASSET_SHA256 = hashlib.sha256(ASSET_BODY.encode()).hexdigest()
+BUILD_IMAGE_CONTRACT_TEXT = """{
+  "schemaVersion": "acik.platform.web-build-image/v1",
+  "registry": "ghcr.io",
+  "owner": "halildeu",
+  "repositories": {
+    "prod": "platform-web-frontend",
+    "testai": "platform-web-frontend-testai"
+  },
+  "tagPrefix": "sha-",
+  "shortShaLength": 7
+}"""
+BUILD_IMAGE_CONTRACT_RESPONSE = BUILD_IMAGE_CONTRACT_TEXT + "\n"
+BUILD_IMAGE_CONTRACT_SHA256 = hashlib.sha256(
+    BUILD_IMAGE_CONTRACT_TEXT.encode()
+).hexdigest()
 
 
 class CollectorTest(unittest.TestCase):
@@ -115,11 +130,13 @@ class CollectorTest(unittest.TestCase):
                 import sys
                 args = sys.argv[1:]
                 url = next((arg for arg in args if arg.startswith("https://")), "")
-                if "/artifacts" in url:
+                if "raw.githubusercontent.com" in url:
+                    sys.stdout.write(os.environ["MOCK_BUILD_IMAGE_CONTRACT_JSON"])
+                elif "/artifacts" in url:
                     print(json.dumps({{
                         "artifacts": [{{
-                            "id": 8369610660,
-                            "name": "Halildeu~platform-web~DJ1MVB.dockerbuild",
+                            "id": 8371284324,
+                            "name": "Halildeu~platform-web~34268X.dockerbuild",
                             "digest": os.environ.get(
                                 "MOCK_ARTIFACT_DIGEST",
                                 os.environ["EXPECTED_BUILD_ARTIFACT_DIGEST"]
@@ -130,7 +147,7 @@ class CollectorTest(unittest.TestCase):
                     }}))
                 else:
                     print(json.dumps({{
-                        "id": 29483736629,
+                        "id": 29487972095,
                         "status": "completed",
                         "conclusion": "success",
                         "event": "push",
@@ -145,7 +162,7 @@ class CollectorTest(unittest.TestCase):
         self.mock_curl.chmod(0o755)
 
     def _fixtures(self, pod_owner_uid=REPLICASET_UID):
-        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-125d2d8@{DIGEST}"
+        image = f"ghcr.io/halildeu/platform-web-frontend-testai:sha-bc33397@{DIGEST}"
         fixtures = {
             "deployment": {
                 "metadata": {
@@ -291,7 +308,7 @@ class CollectorTest(unittest.TestCase):
             "pod_build_info": {
                 "assets": ["index-main.js"],
                 "buildTime": "2026-07-15T00:00:00Z",
-                "image": "ghcr.io/halildeu/platform-web-frontend-testai:sha-125d2d8",
+                "image": "ghcr.io/halildeu/platform-web-frontend-testai:sha-bc33397",
                 "imageDigest": "",
                 "origin": "https://testai.acik.com",
                 "ref": "main",
@@ -302,7 +319,7 @@ class CollectorTest(unittest.TestCase):
                 ],
                 "schemaVersion": "acik.platform.web-build-info/v2",
                 "sha": SOURCE_SHA,
-                "shortSha": "125d2d8",
+                "shortSha": "bc33397",
             },
             "controller_pods": {
                 "items": [
@@ -353,11 +370,13 @@ class CollectorTest(unittest.TestCase):
             "EXPECTED_CONTEXT": "k3d-test",
             "EXPECTED_SOURCE_SHA": SOURCE_SHA,
             "EXPECTED_IMAGE_DIGEST": DIGEST,
-            "EXPECTED_BUILD_RUN_ID": "29483736629",
-            "EXPECTED_BUILD_ARTIFACT_ID": "8369610660",
-            "EXPECTED_BUILD_ARTIFACT_NAME": "Halildeu~platform-web~DJ1MVB.dockerbuild",
-            "EXPECTED_BUILD_ARTIFACT_DIGEST": "sha256:9895d20bab6389a0242a99d0bf338bb30afda02e38355b3a7a2c8176506bd2d5",
-            "EXPECTED_BUILD_ARTIFACT_SIZE": "108385",
+            "EXPECTED_BUILD_RUN_ID": "29487972095",
+            "EXPECTED_BUILD_ARTIFACT_ID": "8371284324",
+            "EXPECTED_BUILD_ARTIFACT_NAME": "Halildeu~platform-web~34268X.dockerbuild",
+            "EXPECTED_BUILD_ARTIFACT_DIGEST": "sha256:190c27aeb082b9040c856647766b2e02dc46738019458ed9994116364ebd584a",
+            "EXPECTED_BUILD_ARTIFACT_SIZE": "108553",
+            "EXPECTED_BUILD_IMAGE_CONTRACT_SHA256": BUILD_IMAGE_CONTRACT_SHA256,
+            "MOCK_BUILD_IMAGE_CONTRACT_JSON": BUILD_IMAGE_CONTRACT_RESPONSE,
             "EXPECTED_CLUSTER_SERVER_SHA256": hashlib.sha256(
                 CLUSTER_SERVER.encode()
             ).hexdigest(),
@@ -418,7 +437,15 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(payload["replicaSet"]["uid"], REPLICASET_UID)
         self.assertEqual(payload["pods"]["uids"], [POD_UID])
         self.assertEqual(payload["lineage"]["observedDigest"], DIGEST)
-        self.assertEqual(payload["lineage"]["buildArtifactId"], "8369610660")
+        self.assertEqual(payload["lineage"]["buildArtifactId"], "8371284324")
+        self.assertEqual(
+            payload["lineage"]["buildImageContractSha256"],
+            BUILD_IMAGE_CONTRACT_SHA256,
+        )
+        self.assertEqual(
+            payload["lineage"]["expectedBuildImage"],
+            "ghcr.io/halildeu/platform-web-frontend-testai:sha-bc33397",
+        )
         self.assertEqual(
             payload["lineage"]["buildArtifactEvidenceClass"],
             "METADATA_ONLY_NON_TERMINAL",
@@ -906,6 +933,30 @@ class CollectorTest(unittest.TestCase):
                 result = self._run(fixtures)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.report.exists())
+
+    def test_rejects_source_contract_tamper_or_unmatched_contract_driven_tag(self):
+        contract = json.loads(BUILD_IMAGE_CONTRACT_TEXT)
+        contract["repositories"]["testai"] = "platform-web-frontend-testai-v2"
+        drifted_contract = json.dumps(contract, indent=2) + "\n"
+
+        tampered = self._run(
+            self._fixtures(),
+            extra_env={"MOCK_BUILD_IMAGE_CONTRACT_JSON": drifted_contract},
+        )
+        self.assertNotEqual(tampered.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+        contract_driven_mismatch = self._run(
+            self._fixtures(),
+            extra_env={
+                "MOCK_BUILD_IMAGE_CONTRACT_JSON": drifted_contract,
+                "EXPECTED_BUILD_IMAGE_CONTRACT_SHA256": hashlib.sha256(
+                    drifted_contract.rstrip("\n").encode()
+                ).hexdigest(),
+            },
+        )
+        self.assertNotEqual(contract_driven_mismatch.returncode, 0)
+        self.assertFalse(self.report.exists())
 
     def test_post_phase_rejects_split_asset_path_and_response_channels(self):
         fixtures = self._fixtures()

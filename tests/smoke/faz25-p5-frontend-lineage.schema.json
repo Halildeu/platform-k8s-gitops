@@ -63,7 +63,7 @@
         "desiredReplicas": { "type": "integer", "minimum": 1 },
         "image": {
           "type": "string",
-          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-125d2d8@sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f$"
+          "pattern": "^ghcr\\.io/halildeu/platform-web-frontend-testai:sha-bc33397@sha256:aab566968dc0406fe5ca81143a3eac378fc8a877a00f0ab88e0f048603949f6d$"
         }
       }
     },
@@ -94,7 +94,7 @@
           "minItems": 1,
           "items": {
             "type": "string",
-            "pattern": "^.*@sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f$"
+            "pattern": "^.*@sha256:aab566968dc0406fe5ca81143a3eac378fc8a877a00f0ab88e0f048603949f6d$"
           }
         }
       }
@@ -113,30 +113,46 @@
         "buildArtifactDigest",
         "buildArtifactSizeInBytes",
         "buildArtifactEvidenceClass",
+        "buildImageContractUrl",
+        "buildImageContractSha256",
+        "buildImageContractSchemaVersion",
+        "expectedBuildImage",
         "buildAttestationStatus",
         "buildAttestationBoundary"
       ],
       "properties": {
-        "sourceSha": { "const": "125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b" },
+        "sourceSha": { "const": "bc33397de0a1eb097a1e045396c178d66c1bed95" },
         "expectedDigest": {
-          "const": "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f"
+          "const": "sha256:aab566968dc0406fe5ca81143a3eac378fc8a877a00f0ab88e0f048603949f6d"
         },
         "observedDigest": {
-          "const": "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f"
+          "const": "sha256:aab566968dc0406fe5ca81143a3eac378fc8a877a00f0ab88e0f048603949f6d"
         },
-        "buildRunId": { "const": "29483736629" },
+        "buildRunId": { "const": "29487972095" },
         "buildRunUrl": {
-          "const": "https://github.com/Halildeu/platform-web/actions/runs/29483736629"
+          "const": "https://github.com/Halildeu/platform-web/actions/runs/29487972095"
         },
-        "buildArtifactId": { "const": "8369610660" },
+        "buildArtifactId": { "const": "8371284324" },
         "buildArtifactName": {
-          "const": "Halildeu~platform-web~DJ1MVB.dockerbuild"
+          "const": "Halildeu~platform-web~34268X.dockerbuild"
         },
         "buildArtifactDigest": {
-          "const": "sha256:9895d20bab6389a0242a99d0bf338bb30afda02e38355b3a7a2c8176506bd2d5"
+          "const": "sha256:190c27aeb082b9040c856647766b2e02dc46738019458ed9994116364ebd584a"
         },
-        "buildArtifactSizeInBytes": { "const": 108385 },
+        "buildArtifactSizeInBytes": { "const": 108553 },
         "buildArtifactEvidenceClass": { "const": "METADATA_ONLY_NON_TERMINAL" },
+        "buildImageContractUrl": {
+          "const": "https://raw.githubusercontent.com/Halildeu/platform-web/bc33397de0a1eb097a1e045396c178d66c1bed95/scripts/deploy/build-image-contract.json"
+        },
+        "buildImageContractSha256": {
+          "const": "00e2ff3f6862eb2d39c2df21d3adc3f885c6fd2346bc1dc0a9da66b08b1cfad6"
+        },
+        "buildImageContractSchemaVersion": {
+          "const": "acik.platform.web-build-image/v1"
+        },
+        "expectedBuildImage": {
+          "const": "ghcr.io/halildeu/platform-web-frontend-testai:sha-bc33397"
+        },
         "buildAttestationStatus": { "const": "NOT_PUBLISHED" },
         "buildAttestationBoundary": {
           "const": "Cross-repository artifact content is not fetched because no least-privilege token is configured; artifact metadata is non-terminal and no SLSA attestation is claimed. Terminal browser-to-image binding is the same-session Ingress, Service, EndpointSlice, Ready Pod UID and imageID chain plus exact build-info source SHA."
