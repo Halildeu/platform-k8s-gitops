@@ -348,7 +348,7 @@
                       "podUid": { "$ref": "#/definitions/uuid" },
                       "path": {
                         "type": "string",
-                        "pattern": "^/assets/[A-Za-z0-9._-]+\\.(js|css)$"
+                        "pattern": "^/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.(js|mjs|css)$"
                       },
                       "bodySha256": { "$ref": "#/definitions/sha256" }
                     }

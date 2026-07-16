@@ -253,7 +253,7 @@ observed_digests="$(jq -c '
 [[ "$observed_digests" == "[\"$EXPECTED_IMAGE_DIGEST\"]" ]] || fail_closed
 observed_digest="$(jq -r '.[0]' <<<"$observed_digests")"
 
-pod_build_info_hashes_json="$({
+pod_build_infos_json="$({
   while IFS=$'\t' read -r pod_name pod_uid; do
     [[ -n "$pod_name" && -n "$pod_uid" ]] || fail_closed
     pod_build_info="$(kubectl_test get --raw \
@@ -261,38 +261,82 @@ pod_build_info_hashes_json="$({
     jq -e --arg source "$EXPECTED_SOURCE_SHA" '
       (keys | sort) == [
         "assets", "buildTime", "image", "imageDigest", "origin", "ref",
-        "remotes", "rootEntry", "sha", "shortSha"
+        "remotes", "rootEntry", "rootEntrypoints", "schemaVersion", "sha",
+        "shortSha"
       ] and
+      .schemaVersion == "acik.platform.web-build-info/v2" and
       .sha == $source and
       .ref == "main" and
       .origin == "https://testai.acik.com" and
-      .imageDigest == ""
+      .imageDigest == "" and
+      (.assets | type == "array") and
+      all(.assets[]; type == "string" and test("^[A-Za-z0-9._-]+\\.(js|css|map|json)$")) and
+      .assets == (.assets | sort) and
+      ([.assets[]] | unique | length) == (.assets | length) and
+      (.rootEntrypoints | type == "array" and length >= 1) and
+      all(.rootEntrypoints[];
+        (keys | sort) == ["bodySha256", "path"] and
+        (.path | test("^/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.(js|mjs)$")) and
+        (.path | contains("//") | not) and
+        (.path | split("/") | all(.[]; . != "." and . != "..")) and
+        (.bodySha256 | test("^[0-9a-f]{64}$"))
+      ) and
+      ([.rootEntrypoints[].path] | unique | length) == (.rootEntrypoints | length) and
+      .rootEntry == (.rootEntrypoints[0].path | split("/") | last)
     ' <<<"$pod_build_info" >/dev/null || fail_closed
     canonical_build_info="$(jq -cS . <<<"$pod_build_info")"
-    printf '%s\n' "$(sha256_text "$canonical_build_info")"
+    printf '%s\n' "$canonical_build_info"
     unset pod_build_info canonical_build_info
   done < <(jq -r '.[] | [.metadata.name, .metadata.uid] | @tsv' <<<"$stable_pods_json")
-} | jq -Rsc 'split("\n") | map(select(length > 0)) | unique | sort')"
-[[ "$(jq 'length' <<<"$pod_build_info_hashes_json")" == "1" ]] || fail_closed
+} | jq -sc 'unique')"
+[[ "$(jq 'length' <<<"$pod_build_infos_json")" == "1" ]] || fail_closed
+canonical_build_info="$(jq -cS '.[0]' <<<"$pod_build_infos_json")"
+root_entrypoints_json="$(jq -cS '.rootEntrypoints' <<<"$canonical_build_info")"
+manifest_asset_paths_json="$(jq -cS '
+  ([.assets[] | "/assets/" + .] + [.rootEntrypoints[].path]) | unique | sort
+' <<<"$canonical_build_info")"
+pod_build_info_hash="$(sha256_text "$canonical_build_info")"
+pod_build_info_hashes_json="$(jq -cn --arg hash "$pod_build_info_hash" '[$hash]')"
 
 browser_asset_binding='{"status":"PRE_BROWSER"}'
 if [[ "$PHASE" == "post" ]]; then
+  browser_paths_json="$(jq -cS '.runtime.frontendAssetPaths | sort' \
+    "$EXPECTED_BROWSER_REPORT_PATH")"
   browser_assets_json="$(jq -cS '.runtime.frontendAssetResponses' \
     "$EXPECTED_BROWSER_REPORT_PATH")"
-  jq -e '
+  browser_response_paths_json="$(jq -cS \
+    '[.runtime.frontendAssetResponses[].path] | sort' \
+    "$EXPECTED_BROWSER_REPORT_PATH")"
+  [[ "$browser_paths_json" == "$browser_response_paths_json" ]] || fail_closed
+  jq -e \
+    --argjson manifest_paths "$manifest_asset_paths_json" \
+    --argjson root_entrypoints "$root_entrypoints_json" '
+    . as $browser_assets |
     type == "array" and length >= 1 and
-    all(.[];
+    all($browser_assets[];
+      . as $asset |
       (keys | sort) == [
         "bodySha256", "contentType", "fromServiceWorker", "path",
         "resourceType", "status"
       ] and
-      (.path | test("^/assets/[A-Za-z0-9._-]+\\.(js|css)$")) and
+      (.path | test("^/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.(js|mjs|css)$")) and
+      (.path | contains("//") | not) and
+      (.path | split("/") | all(.[]; . != "." and . != "..")) and
+      ($manifest_paths | index($asset.path)) != null and
       (.resourceType == "script" or .resourceType == "stylesheet") and
       .status == 200 and
       (.bodySha256 | test("^[0-9a-f]{64}$")) and
       .fromServiceWorker == false
     ) and
-    ([.[].path] | unique | length) == length
+    ([$browser_assets[].path] | unique | length) == ($browser_assets | length) and
+    all($root_entrypoints[];
+      . as $root |
+      any($browser_assets[];
+        .path == $root.path and
+        .resourceType == "script" and
+        .bodySha256 == $root.bodySha256
+      )
+    )
   ' <<<"$browser_assets_json" >/dev/null || fail_closed
   browser_asset_evidence_sha256="$(sha256_text "$browser_assets_json")"
   browser_asset_count="$(jq 'length' <<<"$browser_assets_json")"
@@ -300,7 +344,10 @@ if [[ "$PHASE" == "post" ]]; then
     while IFS=$'\t' read -r pod_name pod_uid; do
       [[ -n "$pod_name" && -n "$pod_uid" ]] || fail_closed
       while IFS=$'\t' read -r asset_path expected_asset_sha256; do
-        [[ "$asset_path" =~ ^/assets/[A-Za-z0-9._-]+\.(js|css)$ ]] || fail_closed
+        [[ "$asset_path" =~ ^/([A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\.(js|mjs|css)$ ]] || fail_closed
+        [[ "$asset_path" != *//* ]] || fail_closed
+        jq -e --arg path "$asset_path" 'index($path) != null' \
+          <<<"$manifest_asset_paths_json" >/dev/null || fail_closed
         [[ "$expected_asset_sha256" =~ ^[0-9a-f]{64}$ ]] || fail_closed
         asset_body="$(mktemp "$(dirname "$REPORT_PATH")/.frontend-asset-XXXXXX")"
         if ! kubectl_test get --raw \
@@ -339,7 +386,7 @@ if [[ "$PHASE" == "post" ]]; then
         podAssetBindings: $pod_asset_bindings
       }
     ')"
-  unset browser_assets_json pod_asset_bindings
+  unset browser_paths_json browser_response_paths_json browser_assets_json pod_asset_bindings
 fi
 
 ingress_json="$(kubectl_test -n "$NAMESPACE" get ingress platform -o json)"

@@ -1316,7 +1316,7 @@
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "pattern": "^/[^?#\\u0000-\\u001F]*$"
+            "pattern": "^/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.(js|mjs|css)$"
           }
         },
         "frontendAssetResponses": {
@@ -1337,7 +1337,7 @@
             "properties": {
               "path": {
                 "type": "string",
-                "pattern": "^/assets/[A-Za-z0-9._-]+\\.(js|css)$"
+                "pattern": "^/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.(js|mjs|css)$"
               },
               "resourceType": { "enum": ["script", "stylesheet"] },
               "status": { "const": 200 },

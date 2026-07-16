@@ -844,9 +844,12 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     'ref',
     'remotes',
     'rootEntry',
+    'rootEntrypoints',
+    'schemaVersion',
     'sha',
     'shortSha',
   ]);
+  expect(buildInfo.schemaVersion).toBe('acik.platform.web-build-info/v2');
   expect(buildInfo.origin).toBe(baseURL);
   expect(buildInfo.ref).toBe('main');
   const buildInfoAssets = Array.isArray(buildInfo.assets)
@@ -858,10 +861,35 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   );
   expect(buildInfoAssets).toEqual([...buildInfoAssets].sort());
   expect(buildInfoAssets.length).toBeGreaterThan(0);
+  type BuildInfoRootEntrypoint = { path: string; bodySha256: string };
+  const buildInfoRootEntrypoints = Array.isArray(buildInfo.rootEntrypoints)
+    ? buildInfo.rootEntrypoints.filter(
+        (entry): entry is BuildInfoRootEntrypoint =>
+          typeof entry === 'object' && entry !== null && !Array.isArray(entry),
+      )
+    : [];
+  expect(Array.isArray(buildInfo.rootEntrypoints)).toBe(true);
+  expect(buildInfoRootEntrypoints).toHaveLength(
+    Array.isArray(buildInfo.rootEntrypoints) ? buildInfo.rootEntrypoints.length : -1,
+  );
+  expect(buildInfoRootEntrypoints.length).toBeGreaterThan(0);
+  const rootEntrypointPaths = new Set<string>();
+  for (const rootEntrypoint of buildInfoRootEntrypoints) {
+    expect(Object.keys(rootEntrypoint).sort()).toEqual(['bodySha256', 'path']);
+    expect(rootEntrypoint.path).toMatch(/^\/[A-Za-z0-9._/-]+\.(?:js|mjs)$/);
+    expect(rootEntrypoint.path).not.toContain('//');
+    expect(rootEntrypoint.path.split('/')).not.toContain('.');
+    expect(rootEntrypoint.path.split('/')).not.toContain('..');
+    expect(rootEntrypoint.bodySha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(rootEntrypointPaths.has(rootEntrypoint.path)).toBe(false);
+    rootEntrypointPaths.add(rootEntrypoint.path);
+  }
   const buildInfoRootEntry =
     typeof buildInfo.rootEntry === 'string' ? buildInfo.rootEntry : '';
-  expect(buildInfoRootEntry).toMatch(/^index-[A-Za-z0-9_-]+\.js$/);
-  expect(buildInfoAssets).toContain(buildInfoRootEntry);
+  expect(buildInfoRootEntry).toMatch(/^[A-Za-z0-9._-]+\.(?:js|mjs)$/);
+  expect(buildInfoRootEntry).toBe(
+    buildInfoRootEntrypoints[0].path.split('/').at(-1),
+  );
   report.lineage.observedSourceSha =
     typeof buildInfo.sha === 'string' ? buildInfo.sha : '';
   expect(report.lineage.observedSourceSha).toBe(expectedSourceSha);
@@ -922,9 +950,9 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     const url = new URL(response.url());
     if (
       url.origin !== new URL(baseURL).origin ||
-      !url.pathname.startsWith('/assets/') ||
+      (!url.pathname.startsWith('/assets/') && !rootEntrypointPaths.has(url.pathname)) ||
       !['script', 'stylesheet'].includes(resourceType) ||
-      !/\.(?:js|css)$/.test(url.pathname)
+      !/\.(?:js|mjs|css)$/.test(url.pathname)
     ) {
       return;
     }
@@ -3694,13 +3722,18 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
       .filter((asset) => /\.(?:js|css)$/.test(asset))
       .map((asset) => `/assets/${asset}`),
   );
+  for (const rootEntrypoint of buildInfoRootEntrypoints) {
+    expectedBuildInfoAssetPaths.add(rootEntrypoint.path);
+  }
   const buildInfoAssetsMatched = frontendAssetPaths.every((path) =>
     expectedBuildInfoAssetPaths.has(path),
   );
   expect(buildInfoAssetsMatched).toBe(true);
-  const buildInfoRootEntryMatched = frontendAssetPaths.includes(
-    `/assets/${buildInfoRootEntry}`,
-  );
+  const buildInfoRootEntryMatched = buildInfoRootEntrypoints.every((rootEntrypoint) => {
+    const response = frontendAssetResponsesByPath.get(rootEntrypoint.path);
+    return response?.resourceType === 'script' &&
+      response.bodySha256 === rootEntrypoint.bodySha256;
+  });
   expect(buildInfoRootEntryMatched).toBe(true);
   report.runtime = {
     uncaughtPageErrorCount: pageErrors.length,

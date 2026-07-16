@@ -203,6 +203,59 @@ class Faz25P5RouteWatcherTest(unittest.TestCase):
             calls,
         )
 
+    def test_rejects_traversal_path_from_browser_report(self):
+        self.payload.write_text(
+            json.dumps(
+                {
+                    "metadata": {"resourceVersion": "101"},
+                    "items": [ingress()],
+                }
+            )
+        )
+        self.browser_report.write_text(
+            json.dumps({"runtime": {"frontendAssetPaths": ["/../shadow.js"]}})
+        )
+        process = subprocess.Popen(
+            ["bash", str(WATCHER)],
+            cwd=ROOT,
+            env=self.env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.wait_until(lambda: self.ready.exists())
+        self.wait_for_raw_list_count()
+        self.stop.touch()
+        stdout, stderr = process.communicate(timeout=5)
+        self.assertNotEqual(process.returncode, 0, (stdout, stderr))
+        report = json.loads(self.report.read_text())
+        self.assertEqual(
+            report["failureReason"], "browser-route-path-evidence-missing"
+        )
+
+    def test_validator_rejects_non_asset_additional_path(self):
+        payload = {
+            "metadata": {"resourceVersion": "101"},
+            "items": [ingress()],
+        }
+        result = subprocess.run(
+            [
+                "python3",
+                str(VALIDATOR),
+                "--ingress-uid",
+                INGRESS_UID,
+                "--additional-request-path",
+                "/../shadow.js",
+            ],
+            input=json.dumps(payload),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid additional protected request path", result.stderr)
+
     def test_route_collision_fails_closed_before_browser_ready(self):
         collision = ingress(
             namespace="attacker", name="collision", service="frontend"

@@ -28,8 +28,8 @@ PROBE_ID = "abcdef0123456789abcdef0123456789"
 WORKFLOW_STARTED_AT = "2026-07-15T23:00:00Z"
 CLUSTER_SERVER = "https://127.0.0.1:6445"
 CLUSTER_CA = b"faz25-test-ca"
-ASSET_PATH = "/assets/index-main.js"
-ASSET_BODY = "console.log('faz25 immutable asset');\n"
+ASSET_PATH = "/mf-entry-bootstrap-0.js"
+ASSET_BODY = "console.log('faz25 immutable root entry');\n"
 ASSET_SHA256 = hashlib.sha256(ASSET_BODY.encode()).hexdigest()
 
 
@@ -296,7 +296,11 @@ class CollectorTest(unittest.TestCase):
                 "origin": "https://testai.acik.com",
                 "ref": "main",
                 "remotes": [],
-                "rootEntry": "index-main.js",
+                "rootEntry": "mf-entry-bootstrap-0.js",
+                "rootEntrypoints": [
+                    {"path": ASSET_PATH, "bodySha256": ASSET_SHA256}
+                ],
+                "schemaVersion": "acik.platform.web-build-info/v2",
                 "sha": SOURCE_SHA,
                 "shortSha": "7a8c968",
             },
@@ -330,7 +334,14 @@ class CollectorTest(unittest.TestCase):
         fixtures["all_ingresses"] = {"items": [fixtures["ingress"]]}
         return fixtures
 
-    def _run(self, fixtures, extra_env=None, phase="pre"):
+    def _run(
+        self,
+        fixtures,
+        extra_env=None,
+        phase="pre",
+        browser_assets=None,
+        browser_paths=None,
+    ):
         self.fixture_path.write_text(json.dumps(fixtures))
         env = os.environ | {
             "FIXTURE_PATH": str(self.fixture_path),
@@ -356,21 +367,25 @@ class CollectorTest(unittest.TestCase):
         if extra_env:
             env.update(extra_env)
         if phase == "post":
+            if browser_assets is None:
+                browser_assets = [
+                    {
+                        "path": ASSET_PATH,
+                        "resourceType": "script",
+                        "status": 200,
+                        "contentType": "application/javascript",
+                        "bodySha256": ASSET_SHA256,
+                        "fromServiceWorker": False,
+                    }
+                ]
+            if browser_paths is None:
+                browser_paths = [asset["path"] for asset in browser_assets]
             self.browser_report.write_text(
                 json.dumps(
                     {
                         "runtime": {
-                            "frontendAssetPaths": [ASSET_PATH],
-                            "frontendAssetResponses": [
-                                {
-                                    "path": ASSET_PATH,
-                                    "resourceType": "script",
-                                    "status": 200,
-                                    "contentType": "application/javascript",
-                                    "bodySha256": ASSET_SHA256,
-                                    "fromServiceWorker": False,
-                                }
-                            ],
+                            "frontendAssetPaths": browser_paths,
+                            "frontendAssetResponses": browser_assets,
                             "buildInfoRootEntryMatched": True,
                             "buildInfoAssetsMatched": True,
                             "uncaughtPageErrorCount": 0,
@@ -782,6 +797,101 @@ class CollectorTest(unittest.TestCase):
         fixtures = self._fixtures()
         fixtures["pod_assets"][ASSET_PATH] = "console.log('different pod body');\n"
         result = self._run(fixtures, phase="post")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_post_phase_rejects_root_entry_hash_not_equal_to_manifest(self):
+        fixtures = self._fixtures()
+        fixtures["pod_build_info"]["rootEntrypoints"][0]["bodySha256"] = "0" * 64
+        result = self._run(fixtures, phase="post")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_post_phase_rejects_browser_evidence_that_omits_manifest_root_entry(self):
+        fixtures = self._fixtures()
+        secondary_path = "/assets/index-main.js"
+        secondary_body = "console.log('secondary asset');\n"
+        fixtures["pod_assets"][secondary_path] = secondary_body
+        secondary_asset = {
+            "path": secondary_path,
+            "resourceType": "script",
+            "status": 200,
+            "contentType": "application/javascript",
+            "bodySha256": hashlib.sha256(secondary_body.encode()).hexdigest(),
+            "fromServiceWorker": False,
+        }
+        result = self._run(fixtures, phase="post", browser_assets=[secondary_asset])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_post_phase_rejects_browser_asset_absent_from_build_manifest(self):
+        fixtures = self._fixtures()
+        unlisted_path = "/assets/unlisted.js"
+        unlisted_body = "console.log('unlisted asset');\n"
+        fixtures["pod_assets"][unlisted_path] = unlisted_body
+        unlisted_asset = {
+            "path": unlisted_path,
+            "resourceType": "script",
+            "status": 200,
+            "contentType": "application/javascript",
+            "bodySha256": hashlib.sha256(unlisted_body.encode()).hexdigest(),
+            "fromServiceWorker": False,
+        }
+        result = self._run(fixtures, phase="post", browser_assets=[unlisted_asset])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_traversal_or_double_slash_root_entrypoint_paths(self):
+        for invalid_path in ["/../escape.js", "//double-slash.js"]:
+            with self.subTest(invalid_path=invalid_path):
+                fixtures = self._fixtures()
+                fixtures["pod_build_info"]["rootEntrypoints"][0]["path"] = invalid_path
+                result = self._run(fixtures)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.report.exists())
+
+    def test_accepts_multiple_unique_content_addressed_root_entrypoints(self):
+        fixtures = self._fixtures()
+        secondary_path = "/assets/index-main.js"
+        secondary_body = "console.log('secondary root entry');\n"
+        fixtures["pod_build_info"]["rootEntrypoints"].append(
+            {
+                "path": secondary_path,
+                "bodySha256": hashlib.sha256(secondary_body.encode()).hexdigest(),
+            }
+        )
+        fixtures["pod_assets"][secondary_path] = secondary_body
+        result = self._run(fixtures)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_rejects_duplicate_root_entrypoint_paths(self):
+        fixtures = self._fixtures()
+        fixtures["pod_build_info"]["rootEntrypoints"].append(
+            fixtures["pod_build_info"]["rootEntrypoints"][0].copy()
+        )
+        result = self._run(fixtures)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.report.exists())
+
+    def test_rejects_v1_or_extra_key_build_info_envelopes(self):
+        mutations = [
+            lambda build_info: build_info.update(
+                {"schemaVersion": "acik.platform.web-build-info/v1"}
+            ),
+            lambda build_info: build_info.update({"unverified": True}),
+        ]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                fixtures = self._fixtures()
+                mutation(fixtures["pod_build_info"])
+                result = self._run(fixtures)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.report.exists())
+
+    def test_post_phase_rejects_split_asset_path_and_response_channels(self):
+        fixtures = self._fixtures()
+        split_path = "/assets/shadow.js"
+        result = self._run(fixtures, phase="post", browser_paths=[split_path])
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.report.exists())
 

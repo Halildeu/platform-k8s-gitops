@@ -295,7 +295,10 @@ while IFS= read -r browser_path; do
   browser_paths+=("$browser_path")
 done < <(jq -er '
   .runtime.frontendAssetPaths[]
-  | select(type == "string" and startswith("/") and (test("[\u0000-\u001F]") | not))
+  | select(
+      type == "string" and
+      test("^/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.(js|mjs|css)$")
+    )
 ' "$BROWSER_REPORT_PATH")
 if [[ "${#browser_paths[@]}" -ne "$browser_path_count" ]]; then
   fail browser-route-path-evidence-missing
