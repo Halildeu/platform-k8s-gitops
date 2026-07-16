@@ -1054,6 +1054,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
         popupCreationCount: number;
         filePickerInvocationCount: number;
         networkChannelConstructionCount: number;
+        networkChannelConstructionTypes: string[];
         historyMutationCount: number;
         hashChangeCount: number;
         closedShadowRootAttemptCount: number;
@@ -1089,6 +1090,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
         popupCreationCount: popupConstructions.length,
         filePickerInvocationCount: filePickerInvocations.length,
         networkChannelConstructionCount: networkChannelConstructions.length,
+        networkChannelConstructionTypes: [...networkChannelConstructions],
         historyMutationCount: historyMutations.length,
         hashChangeCount: hashChanges.length,
         closedShadowRootAttemptCount: closedShadowRootAttempts.length,
@@ -2193,6 +2195,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
             popupCreationCount: number;
             filePickerInvocationCount: number;
             networkChannelConstructionCount: number;
+            networkChannelConstructionTypes: string[];
             historyMutationCount: number;
             hashChangeCount: number;
             closedShadowRootAttemptCount: number;
@@ -2212,6 +2215,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
             popupCreationCount: snapshot.popupCreationCount,
             filePickerInvocationCount: snapshot.filePickerInvocationCount,
             networkChannelConstructionCount: snapshot.networkChannelConstructionCount,
+            networkChannelConstructionTypes: snapshot.networkChannelConstructionTypes,
             historyMutationCount: snapshot.historyMutationCount,
             hashChangeCount: snapshot.hashChangeCount,
             closedShadowRootAttemptCount: snapshot.closedShadowRootAttemptCount,
@@ -2537,6 +2541,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     popupCreationCount: 0,
     filePickerInvocationCount: 0,
     networkChannelConstructionCount: 0,
+    networkChannelConstructionTypes: [],
     historyMutationCount: 0,
     hashChangeCount: 0,
     closedShadowRootAttemptCount: 0,
