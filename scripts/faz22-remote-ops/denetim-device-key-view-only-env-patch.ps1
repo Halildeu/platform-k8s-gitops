@@ -245,11 +245,17 @@ function Write-ServiceEnvironmentBackup {
 function Read-ServiceEnvironmentBackup {
   param([string]$Path)
 
-  $rows = @(Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json)
+  # Windows PowerShell 5.1 can preserve ConvertFrom-Json's top-level array as
+  # one nested pipeline object when the conversion runs directly inside @().
+  # Assign first so @($parsed) consistently enumerates the backup rows.
+  $parsed = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
+  $rows = @($parsed)
   $map = [ordered]@{}
   foreach ($row in $rows) {
-    if ($null -eq $row -or $null -eq $row.PSObject.Properties["key"] -or
-        $null -eq $row.PSObject.Properties["value"]) {
+    # PSMemberInfoCollection's string indexer is not reliable on Windows
+    # PowerShell 5.1; inspect the property-name collection instead.
+    if ($null -eq $row -or -not ($row.PSObject.Properties.Name -contains "key") -or
+        -not ($row.PSObject.Properties.Name -contains "value")) {
       throw "Service environment backup contains an invalid row"
     }
     $key = [string]$row.key
@@ -495,10 +501,11 @@ function New-ScopedRestorationMap([object]`$currentMap, [object]`$backupMap, [st
   return `$result
 }
 function Read-EnvironmentBackup {
-  `$rows = @(Get-Content -LiteralPath `$environmentBackup -Raw -ErrorAction Stop | ConvertFrom-Json)
+  `$parsed = Get-Content -LiteralPath `$environmentBackup -Raw -ErrorAction Stop | ConvertFrom-Json
+  `$rows = @(`$parsed)
   `$map = [ordered]@{}
   foreach (`$row in `$rows) {
-    if (`$null -eq `$row -or `$null -eq `$row.PSObject.Properties['key'] -or `$null -eq `$row.PSObject.Properties['value']) { throw 'environment backup row is invalid' }
+    if (`$null -eq `$row -or -not (`$row.PSObject.Properties.Name -contains 'key') -or -not (`$row.PSObject.Properties.Name -contains 'value')) { throw 'environment backup row is invalid' }
     `$key = [string]`$row.key
     if ([string]::IsNullOrWhiteSpace(`$key) -or `$key.Contains('=') -or `$map.Contains(`$key)) { throw 'environment backup key is invalid or duplicated' }
     `$map[`$key] = [string]`$row.value

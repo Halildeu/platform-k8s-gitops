@@ -242,6 +242,39 @@ pwsh -NoProfile -NonInteractive -Command '
 
 # Round-trip the exact scoped environment backup with characters that make
 # ad-hoc line parsing unsafe, then reject duplicate keys.
+# Keep the parser shape compatible with Windows PowerShell 5.1. Directly
+# wrapping ConvertFrom-Json in @() produces a nested top-level array there,
+# and PSMemberInfoCollection["name"] can return null for an existing property.
+# shellcheck disable=SC2016
+ps51_parse='$parsed = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json'
+# shellcheck disable=SC2016
+ps51_rows='$rows = @($parsed)'
+# shellcheck disable=SC2016
+ps51_direct_re='\$rows = @\(Get-Content -LiteralPath .*\| ConvertFrom-Json\)'
+# shellcheck disable=SC2016
+ps51_key_guard='$row.PSObject.Properties.Name -contains "key"'
+# shellcheck disable=SC2016
+ps51_value_guard='$row.PSObject.Properties.Name -contains "value"'
+grep -Fq "$ps51_parse" "$script" || {
+  echo "missing Windows PowerShell 5.1 two-stage JSON parse" >&2
+  exit 1
+}
+grep -Fq "$ps51_rows" "$script" || {
+  echo "missing Windows PowerShell 5.1 backup row enumeration" >&2
+  exit 1
+}
+if grep -Eq "$ps51_direct_re" "$script"; then
+  echo "direct ConvertFrom-Json array capture is incompatible with Windows PowerShell 5.1" >&2
+  exit 1
+fi
+grep -Fq "$ps51_key_guard" "$script" || {
+  echo "missing Windows PowerShell 5.1 key-property guard" >&2
+  exit 1
+}
+grep -Fq "$ps51_value_guard" "$script" || {
+  echo "missing Windows PowerShell 5.1 value-property guard" >&2
+  exit 1
+}
 # shellcheck disable=SC2016
 pwsh -NoProfile -NonInteractive -Command '
     $tokens = $null
@@ -287,6 +320,10 @@ pwsh -NoProfile -NonInteractive -Command '
       Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
     }
   '
+
+pwsh -NoProfile -NonInteractive -File \
+  scripts/test/denetim-device-key-view-only-env-patch-roundtrip.ps1 \
+  -ScriptPath "$script"
 
 # Materialize and parse the encoded SYSTEM cleanup body. The outer script parser
 # treats the here-string as data, so this catches syntax errors in the scheduled
@@ -371,6 +408,18 @@ pwsh -NoProfile -NonInteractive -Command '
     }
     if (-not $cleanupCode.Contains("-cnotmatch")) {
       throw "embedded cleanup body is missing culture-independent digest validation"
+    }
+    if ($cleanupCode -match "\`$rows = @\(Get-Content -LiteralPath .*\| ConvertFrom-Json\)") {
+      throw "embedded cleanup body uses the Windows PowerShell 5.1-incompatible JSON array capture"
+    }
+    if (-not $cleanupCode.Contains("`$parsed = Get-Content -LiteralPath `$environmentBackup -Raw -ErrorAction Stop | ConvertFrom-Json") -or
+        -not $cleanupCode.Contains("`$rows = @(`$parsed)")) {
+      throw "embedded cleanup body is missing the Windows PowerShell 5.1 two-stage JSON parse"
+    }
+    $singleQuote = [char]39
+    if (-not $cleanupCode.Contains("`$row.PSObject.Properties.Name -contains " + $singleQuote + "key" + $singleQuote) -or
+        -not $cleanupCode.Contains("`$row.PSObject.Properties.Name -contains " + $singleQuote + "value" + $singleQuote)) {
+      throw "embedded cleanup body is missing Windows PowerShell 5.1 property guards"
     }
     $cleanupTokens = $null
     $cleanupErrors = $null
