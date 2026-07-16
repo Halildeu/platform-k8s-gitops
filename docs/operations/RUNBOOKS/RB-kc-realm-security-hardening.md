@@ -21,7 +21,7 @@
 |---|---|---|
 | **A1** | Brute-force protection (`failureFactor=5` + 10-param converge) — `harden-realm-security.sh` | ✅ LIVE (PR #2479) |
 | **A2a** | Confidential `smoke-client` substrate + Vault secret — [`setup-smoke-client.sh`](../../../scripts/keycloak/setup-smoke-client.sh) | ✅ bu sürüm (source-ready + platform-test live shape/secret/grant kanıtı) |
-| A2b.1 | Token contract: `roles` scope-mappings + `smoke-runtime-v1` (userId + audience) + `notify-canary` optional + **consumer `azp` allow-list** (endpoint-admin/notification TEST overlay) | sonraki PR |
+| **A2b.1** | Token contract: `ENDPOINT_ADMIN` scope-mapping + `smoke-runtime-v1` (userId + aud×6) + `smoke-notify-v1` (org_id, optional) — [`setup-smoke-token-contract.sh`](../../../scripts/keycloak/setup-smoke-token-contract.sh) | ✅ bu sürüm (TEST live: token projection 14/14 + permission `/authz/me` **200 audience-only**) |
 | A2b.2 | 4 TEST runbook repoint (`client_id=frontend` → `smoke-client`) | A2b.1 live acceptance sonrası |
 | A2c | `frontend.directAccessGrantsEnabled=false` | ayrı cutover PR |
 | A3 | redirectUri + webOrigins narrowing | sonraki PR |
@@ -30,7 +30,10 @@
 Realm-level slice'lar `harden-realm-security.sh` `DESIRED_JSON`'a eklenir; **client-level** işler ayrı
 resource-specific script'lerde (Codex: realm ve client farklı lifecycle/rollback semantiği).
 
-> **A2a kapsam sınırı (dürüst)**: `smoke-client` **token üretiyor** (confidential ROPC, negatif
+> **A2b.1 ile kapanan A2a sınırı**: aşağıdaki "token kontratı YOK" tespiti **A2b.1'de giderildi**
+> (scope-mapping + `smoke-runtime-v1` + `smoke-notify-v1` live). Tarihsel kayıt olarak korunuyor:
+>
+> **A2a kapsam sınırı (o anki dürüst durum)**: `smoke-client` **token üretiyor** (confidential ROPC, negatif
 > grant'lar fail-closed) ama **hedef servislerin tüketebileceği token kontratı henüz YOK**:
 > `fullScopeAllowed=false` + scope-mapping boş → `realm_access` düşer; `userId`/`org_id`/audience
 > mapper'ları yok; ve **`azp=smoke-client` consumer allow-list'lerinde bulunmuyor** (ör.
@@ -179,3 +182,53 @@ Prod realm `serban`; `CONFIRM_PROD_HARDEN=serban` olmadan script fail-closed dur
 - `scripts/keycloak/harden-realm-security.sh`
 - `scripts/keycloak/setup-m365-broker.sh` (kcadm idempotent pattern kaynağı)
 - Global HARD RULE — Credential/Güvenlik Ortam-Kapsamlı (test serbest / prod owner-gated)
+
+## A2b.1 — smoke-client token contract (Codex `019f6b1d` v3.2 SEAL)
+
+`setup-smoke-token-contract.sh` **yalnız Keycloak**'ı converge eder; **consumer manifest mutasyonu YOK**.
+
+```bash
+ssh halil@staging-sw 'REALM=platform-test bash -s -- --check' < scripts/keycloak/setup-smoke-token-contract.sh   # 0=converged 2=drift
+ssh halil@staging-sw 'REALM=platform-test bash -s -- --apply' < scripts/keycloak/setup-smoke-token-contract.sh   # 0=PASS 3=postcond-fail
+```
+
+### Desired (v3.2)
+
+| Nesne | İçerik |
+|---|---|
+| `smoke-runtime-v1` (**default**) | `userId` (attr/claim=`userId`, **jsonType=String**) + audience ×6: `endpoint-admin-service`, `permission-service`, `variant-service`, `notification-orchestrator`, `auth-service` (custom) + `account` (**gerçek client audience**) |
+| `smoke-notify-v1` (**optional**) | `org_id` (attr/claim=`org_id`, String) — `scope=openid smoke-notify-v1` ile capability switch |
+| realm scope-mapping | yalnız `ENDPOINT_ADMIN` (`composite=false` preflight'ta doğrulanır; `fullScopeAllowed=false` kalır) |
+
+### Neden bunlar YOK (Codex gerekçeleri — değiştirmeden önce oku)
+
+- **Consumer `azp` allow-list'e `smoke-client` EKLENMEZ.** endpoint-admin validator semantiği `audience OR azp OR client_id`; allow-list'e eklemek **audience binding'ini bypass eden** bir fallback açar ve "doğru audience ile geçti" kanıtını yok eder. Canlı allow-list `frontend,admin-cli,serban-web,account` olarak **kalır**.
+- **`notify-canary`'ye DOKUNULMAZ.** Shared scope (`frontend`'de **DEFAULT**), mapper sayısı **0** → yalnız scope-string marker'ı; backend onu **okumuyor** (guard sırası `org_id → tenant_id → allowed_orgs → default`, ve TEST'te `NOTIFY_SECURITY_DEFAULT_ORG_ID=""`). Sessizce sahiplenip mutate etmek frontend'in tüm token'larını etkilerdi.
+- **`tenant_id` mapper EKLENMEZ** — aynı `org_id` attribute'unun ikinci alias'ı; gereksiz token genişlemesi.
+- **`VARIANT_SCOPE_CANARY` / generic `ADMIN` EKLENMEZ** — variant allow otoritesi permission DB/OpenFGA `allowedScopes` + numeric `PROJECT:<id>`; token rolü değil.
+- **`userId` `long` DEĞİL, `String`** — canlı `frontend` mapper'ı String; auth-service hem number hem numeric-string kabul ediyor. `long` yapmak smoke'a özgü parity sapması yaratırdı.
+- **Client-level mapper eklenmez** — mapper'lar scope-owned; read-back client mapper sayısını `0` bekler.
+
+### Canlı kanıt (2026-07-16, throwaway persona; token transcript'e yazılmaz)
+
+```
+apply read-back : smoke-runtime-v1=7 mapper · smoke-notify-v1=1 · default/optional assoc ✓ · scope-mapping=[ENDPOINT_ADMIN] ✓
+token projection: azp=smoke-client · aud⊇6 · beklenmeyen aud yok · userId='987654' (String, ^[0-9]+$)
+                  admin ENDPOINT_ADMIN ✓ / viewer yok ✓ / generic ADMIN yok ✓
+                  normal: org_id+tenant_id YOK · notify: org_id='default' · scope'ta notify-canary YOK
+                  client_credentials → unauthorized_client ✓
+consumer        : permission /authz/me → 200  **canlı allow-list'te smoke-client YOK iken**
+                  (= azp fallback ile değil, audience ile geçti — Codex acceptance kombinasyonu)
+                  endpoint-admin token-yok → 401 (fail-closed) · admin persona → 404 (auth geçti; route ayrı konu)
+                  variant 1204/1205 → 403/403 (persona'da VARIANTS_READ + PROJECT:1204 seed yok — beklenen)
+```
+
+### Bilinen açık (A2b.2 öncesi kapanacak)
+
+- **endpoint-admin 404**: auth geçiyor (401 değil) ama admin persona `/api/v1/endpoint-admin/devices` route'unda 404 — doğru path/route keşfi A2b.2'de.
+- **variant 200 kanıtı**: throwaway persona'ya permission DB/OpenFGA `VARIANTS_READ` + `PROJECT:1204` seed'i gerektirir.
+- **notification 202 kanıtı**: `scope=openid smoke-notify-v1` + persona `org_id` eşleşmesi ile A2b.2'de.
+
+### Ayrı truth-item (A2b.1'e karıştırılmadı — Codex)
+
+`auth-service` audience enforcement: TEST overlay `SECURITY_JWT_AUDIENCE`/"strict validator" yorumu ile kaynak `SecurityConfigKeycloak` davranışı örtüşmüyor (env açıkça tüketilmiyor olabilir). Ayrı backend/GitOps PR + kendi rollout acceptance'ı gerekir (impersonation gibi hassas consumer'ı etkiler).
