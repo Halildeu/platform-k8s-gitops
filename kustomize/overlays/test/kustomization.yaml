@@ -4183,14 +4183,15 @@ images:
     # 29451703189 produced the immutable testai digest below. Tracked by #2463.
     # Machine-managed current pin. Historical provenance remains above; future
     # automation rewrites only these fields and records evidence in its PR.
-    # 2026-07-16 Faz 25 FULLATS-WEB-ACCESS-05: platform-web #924 adds exact
-    # role-by-capability journeys, local-only scenario runners and the
-    # candidate-controlled synthetic resume draft. Real CV/PDF/PII upload
-    # remains OWNER_GATED; agentic screening remains PROPOSAL_ONLY. Image run
-    # 29457457120 produced the immutable testai digest below. Tracked by #2470.
-    # sourceRevision: 8ab48cd87725a3fa306c18785a144ab184044ccf
-    newTag: sha-8ab48cd
-    digest: sha256:94c734eee8efecf49285786ab302bb525123dd27bd9f27ce6659c7bfbbb02564
+    # 2026-07-16 Faz 22 product-surface arc: platform-web #922 — S1 in-MFE IA nav
+    # (#923) + S5 Overview landing (#925) + S4a honest capability/error states
+    # (#926) + S4b accessible manage-gate (#927), merge 7a8c968a. Sits ON TOP OF
+    # Faz 25 #924 (prev pin sha-8ab48cd) on platform-web main, so this carries #924
+    # + the arc. Manual promotion — auto-promote broken (#2295). Image build job
+    # 87528698303 produced the immutable testai digest below (containerimage.digest).
+    # sourceRevision: 7a8c968a63bd8bbd5279c2f038cfac773613c402
+    newTag: sha-7a8c968
+    digest: sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
