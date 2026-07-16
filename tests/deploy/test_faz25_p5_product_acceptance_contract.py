@@ -262,6 +262,9 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertIn("expect(agenticMutationRequestCount).toBe(0)", self.spec)
         self.assertNotIn("page.off('request'", self.spec)
         self.assertNotIn("page.context().off('page'", self.spec)
+        self.assertNotIn("page.off('frameattached'", self.spec)
+        self.assertNotIn("page.off('framenavigated'", self.spec)
+        self.assertNotIn("page.off('framedetached'", self.spec)
         self.assertIn("readJourneyLifecycleAudit", self.spec)
         self.assertIn("roleJourneyCapabilityIds", self.spec)
         self.assertIn("expect(persistentStoresUnchanged).toBe(true)", self.spec)
@@ -391,6 +394,121 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         self.assertLess(active_page_assertion, ledger_reset)
         self.assertLess(ledger_reset, journey_start)
         self.assertLess(journey_start, no_product_popup)
+
+    def test_product_journey_frame_ledger_binds_lifecycle_and_setup_allowlist(self):
+        attach_listener = self.spec.index("page.on('frameattached', (frame)")
+        navigate_listener = self.spec.index(
+            "page.on('framenavigated', (frame)", attach_listener
+        )
+        detach_listener = self.spec.index(
+            "page.on('framedetached', (frame)", navigate_listener
+        )
+        allowed_urls = self.spec.index("const allowedPreJourneyFrameUrls = new Set")
+        policy = self.spec.index("const frameHistoryIsExpectedSetup =", allowed_urls)
+        negative_control = self.spec.index(
+            "negativeControlFrame.src = 'data:text/html,frame-ledger-negative-control'",
+            policy,
+        )
+        identity_delete = self.spec.index(
+            "frameLifecycleByFrame.delete(frameLedgerNegativeControl.frame)",
+            negative_control,
+        )
+        negative_rejection = self.spec.index(
+            "frameHistoryIsExpectedSetup([", identity_delete
+        )
+        active_frame_guard = self.spec.index(
+            "const activeChildFramesAtProductJourneyStart = page",
+            negative_rejection,
+        )
+        active_frame_assertion = self.spec.index(
+            "expect(activeChildFramesAtProductJourneyStart).toEqual([])",
+            active_frame_guard,
+        )
+        history_assertion = self.spec.index(
+            "frameHistoryIsExpectedSetup(preJourneyFrameHistory)",
+            active_frame_assertion,
+        )
+        ledger_reset = self.spec.index(
+            "frameLifecycleRecords.length = 0", history_assertion
+        )
+        journey_start = self.spec.index(
+            "const productJourneyAuditStart = await page.evaluate", ledger_reset
+        )
+        no_product_frame = self.spec.index(
+            "expect(frameLifecycleRecords).toEqual([])", journey_start
+        )
+
+        self.assertLess(attach_listener, navigate_listener)
+        self.assertLess(navigate_listener, detach_listener)
+        self.assertIn(
+            "`${parsed.origin}${parsed.pathname}`",
+            self.spec[self.spec.index("const normalizeFrameUrl"):attach_listener],
+        )
+        self.assertNotIn(
+            "parsed.search",
+            self.spec[self.spec.index("const normalizeFrameUrl"):attach_listener],
+        )
+        for marker in (
+            "`${appOrigin}/silent-check-sso.html`",
+            "`${issuerOrigin}${authorizationPath}`",
+            "3p-cookies/step1.html",
+            "3p-cookies/step2.html",
+        ):
+            self.assertIn(marker, self.spec[allowed_urls:policy])
+        policy_end = self.spec.index(
+            "// Exercise the actual primary-page frame lifecycle listener",
+            policy,
+        )
+        policy_source = self.spec[policy:policy_end]
+        for marker in (
+            "history.length === 2",
+            "url !== 'about:blank'",
+            "observedUrls.includes(expectedSilentCheckFrameUrl)",
+            "observedUrls.includes(expectedAuthorizationFrameUrl)",
+        ):
+            self.assertIn(marker, policy_source)
+        self.assertIn("return '<malformed>'", self.spec)
+        self.assertIn(
+            "frameLifecycleByFrame.get(frameLedgerNegativeControlFrame)",
+            self.spec[negative_control:identity_delete],
+        )
+        self.assertIn(
+            ".poll(", self.spec[negative_control:identity_delete]
+        )
+        self.assertNotIn(
+            "findIndex(\n    (record) => record.observedUrls.includes('data:')",
+            self.spec[negative_control:identity_delete],
+        )
+        self.assertIn(
+            "frameLedgerNegativeControl.observedUrls).toContain('data:')",
+            self.spec[identity_delete:negative_rejection],
+        )
+        self.assertIn(
+            "allowedPreJourneyFrameUrls.has('data:')).toBe(false)",
+            self.spec[identity_delete:negative_rejection],
+        )
+        self.assertIn(
+            "expectedAuthorizationFrameUrl,\n          expectedSilentCheckFrameUrl",
+            self.spec[negative_rejection:active_frame_guard],
+        )
+        self.assertIn(
+            ").toBe(false)",
+            self.spec[negative_rejection:active_frame_guard],
+        )
+        self.assertIn(
+            "unexpected sanitized pre-journey frame history",
+            self.spec[history_assertion:ledger_reset],
+        )
+        self.assertLess(detach_listener, allowed_urls)
+        self.assertLess(policy, negative_control)
+        self.assertLess(negative_control, identity_delete)
+        self.assertLess(identity_delete, negative_rejection)
+        self.assertLess(negative_rejection, active_frame_guard)
+        self.assertLess(active_frame_guard, active_frame_assertion)
+        self.assertLess(active_frame_assertion, history_assertion)
+        self.assertLess(history_assertion, ledger_reset)
+        self.assertLess(ledger_reset, journey_start)
+        self.assertLess(journey_start, no_product_frame)
 
     def test_role_filter_transitions_prove_exclusive_selection(self):
         self.assertIn(
