@@ -198,7 +198,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
-          bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+          bash scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh \
+            bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
           test -s "$EVIDENCE_DIR/browser.json"
           test -s "$EVIDENCE_DIR/summary.json"
           test -s "$EVIDENCE_DIR/open-session.body"
