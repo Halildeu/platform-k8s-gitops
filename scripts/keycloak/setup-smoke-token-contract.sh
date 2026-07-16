@@ -410,48 +410,87 @@ print(next((x["id"] for x in d if x.get("name") == sys.argv[2] or x.get("clientI
 # `.unreadable` marker'ı bırakılır → audit `UNSAFE: snapshot incomplete`.
 CID=""; RSID=""; NSID=""
 
-kget_atomic() {  # $1=hedef dosya  $2..=kcadm get argümanları
-  local dest="$1"; shift
-  local tmp="$dest.part"
+# Sözleşme (Codex P1):
+#   remote GET hatası VEYA beklenmeyen JSON shape + marker yazıldı → return 0 (collect devam eder,
+#     audit "snapshot incomplete" ile UNSAFE verir)
+#   LOKAL hata (mv edilemedi / marker yazılamadı)                  → return 1 (collect FATAL, exit 1)
+# Not: exit 0 + non-empty YETMEZ — `{}` dönen bir protocol-mappers cevabı "0 mapper" gibi
+# görünüp invariant'ı yanlışlıkla OK yapardı. Bu yüzden beklenen JSON tipi de doğrulanır.
+kget_atomic() {  # $1=hedef dosya  $2=beklenen tip (list|object)  $3..=kcadm get argümanları
+  local dest="$1" want="$2"; shift 2
+  local tmp="$dest.part" dir; dir="$(dirname "$dest")"
+  local ok=0
   if K get "$@" -r "$REALM" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
-    mv -f "$tmp" "$dest"
+    if python3 -c '
+import json, sys
+want = sys.argv[2]
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if (isinstance(d, list) if want == "list" else isinstance(d, dict)) else 1)
+' "$tmp" "$want" 2>/dev/null; then
+      ok=1
+    fi
+  fi
+  if [ "$ok" -eq 1 ]; then
+    if ! mv -f "$tmp" "$dest"; then
+      rm -f "$tmp"
+      echo "ERROR: snapshot commit edilemedi (lokal I/O): $dest" >&2
+      return 1
+    fi
     return 0
   fi
   rm -f "$tmp"
-  # Okunamadı → marker (audit bunu UNSAFE sayar; "boş" DEĞİL)
-  printf '%s\n' "$*" >> "$(dirname "$dest")/.unreadable"
-  return 1
+  # Remote okunamadı / beklenmeyen shape → marker (audit UNSAFE sayar; "boş" DEĞİL)
+  if ! printf '%s (beklenen JSON %s)\n' "$*" "$want" >> "$dir/.unreadable"; then
+    echo "ERROR: snapshot unreadable marker yazılamadı (lokal I/O): $dir/.unreadable" >&2
+    return 1
+  fi
+  return 0
 }
 
-collect() {
+collect() {  # return 1 = LOKAL I/O hatası (fatal) · return 0 = snapshot alındı (eksikse marker'lı)
   local d="$WORK/snap"
-  rm -rf "$d"; mkdir -p "$d"
-  # roles/<role>: yoksa KC non-zero döner — bu GEÇERLİ "rol yok" bilgisi, okuma hatası değil.
-  # Ayrımı audit'e taşımak için ayrı marker kullanılır.
+  rm -rf "$d"; mkdir -p "$d" || return 1
+  # roles/<role>: yoksa KC non-zero döner — bu GEÇERLİ "rol yok" bilgisi, okuma hatası DEĞİL.
   if ! K get "roles/$REALM_ROLE" -r "$REALM" > "$d/role.json.part" 2>"$d/role.err"; then
     if grep -qiE "not found|404" "$d/role.err" 2>/dev/null; then
-      echo '{}' > "$d/role.json"          # gerçekten yok → audit "rol YOK" der (UNSAFE)
+      echo '{}' > "$d/role.json" || return 1   # gerçekten yok → audit "rol YOK" der (UNSAFE)
     else
-      printf 'roles/%s\n' "$REALM_ROLE" >> "$d/.unreadable"   # okunamadı → snapshot incomplete
+      printf 'roles/%s (okuma hatası)\n' "$REALM_ROLE" >> "$d/.unreadable" || return 1
     fi
     rm -f "$d/role.json.part"
   else
-    mv -f "$d/role.json.part" "$d/role.json"
+    mv -f "$d/role.json.part" "$d/role.json" || {
+      echo "ERROR: role snapshot commit edilemedi (lokal I/O)" >&2; return 1; }
   fi
   rm -f "$d/role.err"
 
-  kget_atomic "$d/clients.json" clients -q "clientId=$CLIENT_ID" || true
+  kget_atomic "$d/clients.json" list clients -q "clientId=$CLIENT_ID" || return 1
   CID="$(pick_id "$d/clients.json" "$CLIENT_ID" 2>/dev/null || true)"
   if [ -n "$CID" ]; then
-    kget_atomic "$d/client-mappers.json" "clients/$CID/protocol-mappers/models" || true
-    kget_atomic "$d/client-scope-mappings.json" "clients/$CID/scope-mappings" || true
+    kget_atomic "$d/client-mappers.json" list "clients/$CID/protocol-mappers/models" || return 1
+    kget_atomic "$d/client-scope-mappings.json" object "clients/$CID/scope-mappings" || return 1
   fi
-  kget_atomic "$d/scopes.json" client-scopes || true
+  kget_atomic "$d/scopes.json" list client-scopes || return 1
   RSID="$(pick_id "$d/scopes.json" "$RUNTIME_SCOPE" 2>/dev/null || true)"
   NSID="$(pick_id "$d/scopes.json" "$NOTIFY_SCOPE" 2>/dev/null || true)"
-  [ -n "$RSID" ] && { kget_atomic "$d/runtime-sm.json" "client-scopes/$RSID/scope-mappings" || true; }
-  [ -n "$NSID" ] && { kget_atomic "$d/notify-sm.json" "client-scopes/$NSID/scope-mappings" || true; }
+  if [ -n "$RSID" ]; then
+    kget_atomic "$d/runtime-sm.json" object "client-scopes/$RSID/scope-mappings" || return 1
+  fi
+  if [ -n "$NSID" ]; then
+    kget_atomic "$d/notify-sm.json" object "client-scopes/$NSID/scope-mappings" || return 1
+  fi
   return 0
+}
+
+collect_or_die() {
+  collect || {
+    echo "ERROR: snapshot collect tamamlanamadı (lokal I/O) — mutasyon YAPILMADI" >&2
+    exit 1
+  }
 }
 
 audit() {
@@ -506,7 +545,7 @@ print(json.load(open(sys.argv[1])).get("id",""))' "$WORK/snap/role.json")"
 # ---- Main ----
 kc_login || exit 1
 write_desired
-collect
+collect_or_die
 
 echo ""
 echo "-- audit (salt-okunur) --"
@@ -550,7 +589,7 @@ if [ -n "$SCOPE_ITEMS" ]; then
   apply_missing "$SCOPE_ITEMS" || { echo "APPLY FAIL (scope create) — --check ile doğrula" >&2; exit 1; }
   echo ""
   echo "-- ikinci safety barrier: yeni scope'lar yeniden denetleniyor --"
-  collect
+  collect_or_die
   set +e
   MID_OUT="$(audit)"; MID_RC=$?
   set -e
@@ -576,7 +615,7 @@ fi
 
 echo ""
 echo "-- postcondition (aynı canonical audit) --"
-collect
+collect_or_die
 set +e
 POST_OUT="$(audit)"; POST_RC=$?
 set -e

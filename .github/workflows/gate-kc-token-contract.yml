@@ -1,0 +1,38 @@
+name: gate-kc-token-contract
+
+# A2b.1 (board #2476) — Keycloak smoke token-contract script'inin fail-closed sözleşmesini doğrular.
+#
+# READ-ONLY: gerçek Keycloak/Vault/cluster'a DOKUNMAZ. Testler fake `docker` shim'i ile koşar;
+# secret/credential gerekmez (`permissions: contents: read`).
+on:
+  pull_request:
+    paths:
+      - 'scripts/keycloak/setup-smoke-token-contract.sh'
+      - 'tests/keycloak/**'
+      - '.github/workflows/gate-kc-token-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-kc-token-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash syntax
+        run: bash -n scripts/keycloak/setup-smoke-token-contract.sh
+
+      - name: shellcheck (error seviyesi)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S error scripts/keycloak/setup-smoke-token-contract.sh
+
+      - name: fault-injection matrisi (fake docker; gerçek KC yok)
+        run: python3 -m unittest discover -s tests/keycloak -v
