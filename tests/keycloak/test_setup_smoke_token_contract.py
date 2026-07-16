@@ -340,12 +340,18 @@ class TestSemanticSnapshotCompleteness(Harness):
         self.assertIn("clientMappings", res.stdout)
         self.assertNoMutation(res)
 
-    def test_25_nested_field_absent(self):
-        """realmMappings alanı hiç yok → `or []` bunu 'rol taşımıyor' sayıyordu."""
+    def test_25_nested_field_absent_is_kc_omit_empty(self):
+        """KC 26.5.5 omit-empty: boş koleksiyon JSON'dan çıkarılır → alan yokluğu GEÇERLİ 'boş'.
+        Canlı kanıt: clients/<id>/scope-mappings, ENDPOINT_ADMIN atanmışken clientMappings alanı YOK.
+        Bu yüzden 'alan mevcut olmalı' kuralı canlıda false-UNSAFE üretirdi; ama YANLIŞ TİP
+        (test_23/test_24) hâlâ UNSAFE."""
         self.seed_converged()
-        self.write("notify-sm", {"clientMappings": {}})
+        self.write("notify-sm", {})            # her iki alan da yok = boş
+        self.write("runtime-sm", {})
+        self.write("client-scope-mappings", {"realmMappings": [{"id": "role-id", "name": "ENDPOINT_ADMIN"}]})
         res = self.run_script("--apply")
-        self.assertEqual(res.returncode, 3, f"false SAFE!\n{res.stdout}")
+        self.assertEqual(res.returncode, 0, f"KC omit-empty şekli SAFE olmalıydı:\n{res.stdout}")
+        self.assertIn("zaten converged", res.stdout)
         self.assertNoMutation(res)
 
 

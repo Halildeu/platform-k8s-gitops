@@ -302,13 +302,25 @@ def main():
         if sm == "__PARSE_ERROR__" or not isinstance(sm, dict):
             unsafe.append("%s scope-mappings okunamadı/object değil" % label)
             return
-        # Nested alan tipleri EXACT (Codex P1): `or []` / `or {}` normalizasyonu eksik/yanlış tipi gizler
+        # Nested alan tipleri (Codex P1) — canlı KC davranışına göre uyarlanmış:
+        #   KC 26.5.5 **omit-empty** yapar: boş koleksiyon JSON'dan TAMAMEN çıkarılır.
+        #   Canlı kanıt (clients/<id>/scope-mappings, ENDPOINT_ADMIN atanmışken):
+        #       { "realmMappings": [ {...ENDPOINT_ADMIN...} ] }      ← clientMappings alanı YOK
+        #   Bu yüzden "alan mevcut olmalı" kuralı canlıda DAİMA UNSAFE üretirdi (false positive).
+        #   Sözleşme: alan YOKSA → boş (KC omit-empty, geçerli) · alan VARSA → tipi exact olmalı.
+        #   `sm.get(x) or []` YASAK kalır: o form `{}`/`[]` gibi YANLIŞ TİPİ de sessizce boşa çevirirdi.
         rm_raw, cm_raw = sm.get("realmMappings"), sm.get("clientMappings")
-        if not isinstance(rm_raw, list):
-            unsafe.append("%s realmMappings alanı eksik/yanlış tip (%r) — [] kabul edilmez" % (label, type(rm_raw).__name__))
+        if rm_raw is None:
+            rm_raw = []
+        elif not isinstance(rm_raw, list):
+            unsafe.append("%s realmMappings YANLIŞ TİP (%s) — list bekleniyor; boş için alan hiç "
+                          "bulunmamalı (KC omit-empty)" % (label, type(rm_raw).__name__))
             return
-        if not isinstance(cm_raw, dict):
-            unsafe.append("%s clientMappings alanı eksik/yanlış tip (%r) — {} kabul edilmez" % (label, type(cm_raw).__name__))
+        if cm_raw is None:
+            cm_raw = {}
+        elif not isinstance(cm_raw, dict):
+            unsafe.append("%s clientMappings YANLIŞ TİP (%s) — object bekleniyor; boş için alan hiç "
+                          "bulunmamalı (KC omit-empty)" % (label, type(cm_raw).__name__))
             return
         realm_names = sorted(x["name"] for x in rm_raw if isinstance(x, dict) and "name" in x)
         client_map = cm_raw
