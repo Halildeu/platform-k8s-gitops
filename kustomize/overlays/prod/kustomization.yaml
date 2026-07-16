@@ -225,7 +225,7 @@ images:
   #     have backend support; other backends 14-19d. Gate = prod browser smoke post-sync.
   #   • Image build run: https://github.com/Halildeu/platform-web/actions/runs/27142561876
   #   • Cross-AI: Codex thread 019ea776 (rebuild + deploy-chain AGREE)
-  #   • Push step `Pinnable`: ghcr.io/halildeu/platform-web-frontend@sha256:b85ca3898552deca5505090826ec82741dc6e3572774bf1a375b4ece69b47cda
+  #   • Push step `Pinnable`: ghcr.io/halildeu/platform-web-frontend@sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
   #
   # Rollback runbook (acil):
   #   gh workflow run "Deploy prod GitOps sync" --repo Halildeu/platform-k8s-gitops --ref main \
