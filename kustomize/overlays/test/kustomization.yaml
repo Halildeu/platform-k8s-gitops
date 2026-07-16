@@ -190,7 +190,15 @@ images:
     # loopback regression test (deterministic red without the fix). Codex AGREE. Superset
     # of sha-b49a75d (#803 bean-clash fix). Streaming stays enabled (flip in #2285).
     # D30 immutable digest pin.
-    digest: sha256:a1075e562a7b70a17ca21daa2939b13750b6164bab79e5aed10f0f2e1bdcacd0
+    # 2026-07-16 update 5: platform-backend#841/#844 reclaims expired or
+    # abandoned session aggregation reservations without early-uncharge during
+    # in-flight forwarding and without double refund. Canonical main merge
+    # 2ff9e049b9c0bb08596862a49ae33dc8bfd4e4b6; audio-gateway image-build job
+    # 87658736442 in run 29509441575 succeeded even though the unrelated
+    # meeting-service image job failed. Test overlay only; prod remains
+    # D30-deferred. Runtime acceptance is tracked by gitops#2513.
+    # D30 immutable digest pin.
+    digest: sha256:23fdd43593d43c6eec224aac43407bc574cdaa80fab6c81da36463a94fc9f9cb
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
