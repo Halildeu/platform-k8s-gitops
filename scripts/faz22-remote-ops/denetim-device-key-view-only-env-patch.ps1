@@ -125,13 +125,13 @@ function Get-ManifestAsset {
 
   # Do not use $matches here: PowerShell variables are case-insensitive, so it
   # aliases the automatic $Matches regex hashtable and is overwritten by
-  # the SHA256 -notmatch check below on Windows PowerShell 5.1.
+  # the SHA256 -cnotmatch check below on Windows PowerShell 5.1.
   $assetsFound = @($Manifest.assets | Where-Object { [string]$_.name -eq $Name })
   if ($assetsFound.Count -ne 1) {
     throw "Release manifest must contain exactly one $Name asset"
   }
   $sha256 = ([string]$assetsFound[0].sha256).ToLowerInvariant()
-  if ($sha256 -notmatch '^[a-f0-9]{64}$') {
+  if ($sha256 -cnotmatch '^[a-f0-9]{64}$') {
     throw "Release manifest asset $Name has an invalid SHA256"
   }
   return $assetsFound[0]
@@ -340,25 +340,29 @@ function Resolve-TransactionBoundRollback {
     throw "Rollback summary transaction ID does not match the requested transaction"
   }
   $expectedEnvironmentSha256 = [string]$rollbackSummary.rollback.preMutationServiceEnvironmentSha256
-  if ($expectedEnvironmentSha256 -notmatch '^[a-f0-9]{64}$') {
+  if ($expectedEnvironmentSha256 -cnotmatch '^[a-f0-9]{64}$') {
     throw "Rollback summary does not contain a canonical pre-mutation service environment SHA256"
   }
+  $expectedEnvironmentSha256 = $expectedEnvironmentSha256.ToLowerInvariant()
   $expectedEnvironmentBackupSha256 = [string]$rollbackSummary.rollback.environmentBackupSha256
-  if ($expectedEnvironmentBackupSha256 -notmatch '^[a-f0-9]{64}$') {
+  if ($expectedEnvironmentBackupSha256 -cnotmatch '^[a-f0-9]{64}$') {
     throw "Rollback summary does not contain a canonical environment backup SHA256"
   }
+  $expectedEnvironmentBackupSha256 = $expectedEnvironmentBackupSha256.ToLowerInvariant()
   $actualEnvironmentBackupSha256 = (Get-FileHash -LiteralPath $environmentBackupFull -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($actualEnvironmentBackupSha256 -ne $expectedEnvironmentBackupSha256) {
     throw "Rollback environment backup SHA256 differs from the protected pre-mutation summary"
   }
   $expectedManagedPostMutationSha256 = [string]$rollbackSummary.rollback.managedPostMutationSha256
-  if ($expectedManagedPostMutationSha256 -notmatch '^[a-f0-9]{64}$') {
+  if ($expectedManagedPostMutationSha256 -cnotmatch '^[a-f0-9]{64}$') {
     throw "Rollback summary does not contain a canonical managed post-mutation SHA256"
   }
+  $expectedManagedPostMutationSha256 = $expectedManagedPostMutationSha256.ToLowerInvariant()
   $expectedManagedPreMutationSha256 = [string]$rollbackSummary.rollback.managedPreMutationSha256
-  if ($expectedManagedPreMutationSha256 -notmatch '^[a-f0-9]{64}$') {
+  if ($expectedManagedPreMutationSha256 -cnotmatch '^[a-f0-9]{64}$') {
     throw "Rollback summary does not contain a canonical managed pre-mutation SHA256"
   }
+  $expectedManagedPreMutationSha256 = $expectedManagedPreMutationSha256.ToLowerInvariant()
 
   return [pscustomobject]@{
     environmentBackup = $environmentBackupFull
@@ -445,10 +449,10 @@ function Register-RollbackCleanupTask {
   $escapedServiceName = $BoundServiceName.Replace("'", "''")
   $escapedServiceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$BoundServiceName".Replace("'", "''")
   $escapedSummaryPath = (Join-Path $targetFull "summary.json").Replace("'", "''")
-  if ($ExpectedPreMutationServiceEnvironmentSha256 -notmatch '^[a-f0-9]{64}$') {
+  if ($ExpectedPreMutationServiceEnvironmentSha256 -cnotmatch '^[a-f0-9]{64}$') {
     throw "Pre-mutation environment SHA256 is invalid for cleanup registration"
   }
-  if ($ManagedEnvironmentKeys.Count -eq 0 -or @($ManagedEnvironmentKeys | Where-Object { $_ -notmatch '^[A-Z0-9_]+$' }).Count -gt 0) {
+  if ($ManagedEnvironmentKeys.Count -eq 0 -or @($ManagedEnvironmentKeys | Where-Object { $_ -cnotmatch '^[A-Z0-9_]+$' }).Count -gt 0) {
     throw "Managed environment key set is invalid for cleanup registration"
   }
   $managedKeyLiterals = @($ManagedEnvironmentKeys | Sort-Object -Unique | ForEach-Object { "'$_'" }) -join ', '
@@ -546,9 +550,11 @@ if (`$ownsLock) {
   `$summary = Get-Content -LiteralPath `$summaryPath -Raw | ConvertFrom-Json
   if ([string]`$summary.schema -ne 'faz22.6.denetimepc-device-key-view-only-activation.v4' -or [string]`$summary.transactionId -ne '$BoundTransactionId') { throw 'rollback summary transaction binding is invalid at cleanup deadline' }
   `$expectedEnvironmentSha256 = [string]`$summary.rollback.preMutationServiceEnvironmentSha256
-  if (`$expectedEnvironmentSha256 -notmatch '^[a-f0-9]{64}$') { throw 'pre-mutation environment digest is invalid at cleanup deadline' }
+  if (`$expectedEnvironmentSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'pre-mutation environment digest is invalid at cleanup deadline' }
+  `$expectedEnvironmentSha256 = `$expectedEnvironmentSha256.ToLowerInvariant()
   `$expectedManagedPreMutationSha256 = [string]`$summary.rollback.managedPreMutationSha256
-  if (`$expectedManagedPreMutationSha256 -notmatch '^[a-f0-9]{64}$') { throw 'managed pre-mutation environment digest is invalid at cleanup deadline' }
+  if (`$expectedManagedPreMutationSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'managed pre-mutation environment digest is invalid at cleanup deadline' }
+  `$expectedManagedPreMutationSha256 = `$expectedManagedPreMutationSha256.ToLowerInvariant()
   Stop-Service -Name '$escapedServiceName' -Force -ErrorAction Stop
   `$stopDeadline = (Get-Date).AddSeconds(60)
   do {
@@ -569,9 +575,13 @@ if (`$ownsLock) {
     if (`$marker -ne '$BoundTransactionId' -and -not `$alreadyRestored) { throw 'service environment is neither transaction-owned nor idempotently restored at cleanup deadline' }
     if (-not `$alreadyRestored) {
       `$expectedManagedPostMutationSha256 = [string]`$summary.rollback.managedPostMutationSha256
-      if (`$expectedManagedPostMutationSha256 -notmatch '^[a-f0-9]{64}$' -or `$currentManagedSha256 -ne `$expectedManagedPostMutationSha256) { throw 'managed service environment changed before deadline rollback' }
+      if (`$expectedManagedPostMutationSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'managed post-mutation environment digest is invalid at cleanup deadline' }
+      `$expectedManagedPostMutationSha256 = `$expectedManagedPostMutationSha256.ToLowerInvariant()
+      if (`$currentManagedSha256 -ne `$expectedManagedPostMutationSha256) { throw 'managed service environment changed before deadline rollback' }
       `$expectedEnvironmentBackupSha256 = [string]`$summary.rollback.environmentBackupSha256
-      if (`$expectedEnvironmentBackupSha256 -notmatch '^[a-f0-9]{64}$' -or -not (Test-Path -LiteralPath `$environmentBackup -PathType Leaf)) { throw 'environment backup is unavailable at cleanup deadline' }
+      if (`$expectedEnvironmentBackupSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'environment backup digest is invalid at cleanup deadline' }
+      `$expectedEnvironmentBackupSha256 = `$expectedEnvironmentBackupSha256.ToLowerInvariant()
+      if (-not (Test-Path -LiteralPath `$environmentBackup -PathType Leaf)) { throw 'environment backup is unavailable at cleanup deadline' }
       `$actualEnvironmentBackupSha256 = (Get-FileHash -LiteralPath `$environmentBackup -Algorithm SHA256).Hash.ToLowerInvariant()
       if (`$actualEnvironmentBackupSha256 -ne `$expectedEnvironmentBackupSha256) { throw 'environment backup digest mismatch at cleanup deadline' }
       `$backupMap = Read-EnvironmentBackup
@@ -778,7 +788,7 @@ if ($Action -eq "ReleaseLock") {
         throw "Activation summary is not a committed transaction-bound configuration result"
       }
       $expectedReleaseManagedSha256 = [string]$releaseSummary.rollback.managedPostMutationSha256
-      if ($expectedReleaseManagedSha256 -notmatch '^[a-f0-9]{64}$' -or
+      if ($expectedReleaseManagedSha256 -cnotmatch '^[a-f0-9]{64}$' -or
           (Get-ServiceEnvironmentSubsetSha256 -Map $releaseMap -Keys $managedEnvironmentKeys) -ne $expectedReleaseManagedSha256) {
         throw "Current managed service environment differs from the committed activation summary"
       }
