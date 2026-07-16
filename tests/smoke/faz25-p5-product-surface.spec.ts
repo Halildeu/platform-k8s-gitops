@@ -920,6 +920,27 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.name));
   const applicationNetworkRequests: Array<{ method: string; origin: string; path: string }> = [];
+  type EventSourceNetworkActivity = {
+    method: string;
+    target:
+      | 'same-origin-notify-inbox-me-stream'
+      | 'same-origin-other'
+      | 'cross-origin'
+      | 'malformed';
+  };
+  const eventSourceNetworkRequests: EventSourceNetworkActivity[] = [];
+  const eventSourceNetworkResponses: Array<EventSourceNetworkActivity & { status: number }> = [];
+  const classifyEventSourceTarget = (value: string): EventSourceNetworkActivity['target'] => {
+    try {
+      const url = new URL(value);
+      if (url.origin !== new URL(baseURL).origin) return 'cross-origin';
+      return url.pathname === '/api/v1/notify/inbox/me/stream'
+        ? 'same-origin-notify-inbox-me-stream'
+        : 'same-origin-other';
+    } catch {
+      return 'malformed';
+    }
+  };
   type FrontendAssetResponse = {
     path: string;
     resourceType: 'script' | 'stylesheet';
@@ -987,11 +1008,24 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     const method = request.method();
     const url = new URL(request.url());
     applicationNetworkRequests.push({ method, origin: url.origin, path: url.pathname });
+    if (request.resourceType() === 'eventsource') {
+      eventSourceNetworkRequests.push({
+        method,
+        target: classifyEventSourceTarget(request.url()),
+      });
+    }
   });
   page.on('response', (response) => {
     const request = response.request();
     const resourceType = request.resourceType();
     const url = new URL(response.url());
+    if (resourceType === 'eventsource') {
+      eventSourceNetworkResponses.push({
+        method: request.method(),
+        target: classifyEventSourceTarget(response.url()),
+        status: response.status(),
+      });
+    }
     if (
       url.origin !== new URL(baseURL).origin ||
       (!url.pathname.startsWith('/assets/') && !rootEntrypointPaths.has(url.pathname)) ||
@@ -1055,6 +1089,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
         filePickerInvocationCount: number;
         networkChannelConstructionCount: number;
         networkChannelConstructionTypes: string[];
+        networkChannelConstructions: Array<{ type: string; target: string }>;
         historyMutationCount: number;
         hashChangeCount: number;
         closedShadowRootAttemptCount: number;
@@ -1071,7 +1106,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     const workerConstructions: string[] = [];
     const popupConstructions: string[] = [];
     const filePickerInvocations: string[] = [];
-    const networkChannelConstructions: string[] = [];
+    const networkChannelConstructions: Array<{ type: string; target: string }> = [];
     const historyMutations: string[] = [];
     const hashChanges: string[] = [];
     const closedShadowRootAttempts: string[] = [];
@@ -1090,7 +1125,8 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
         popupCreationCount: popupConstructions.length,
         filePickerInvocationCount: filePickerInvocations.length,
         networkChannelConstructionCount: networkChannelConstructions.length,
-        networkChannelConstructionTypes: [...networkChannelConstructions],
+        networkChannelConstructionTypes: networkChannelConstructions.map(({ type }) => type),
+        networkChannelConstructions: networkChannelConstructions.map((record) => ({ ...record })),
         historyMutationCount: historyMutations.length,
         hashChangeCount: hashChanges.length,
         closedShadowRootAttemptCount: closedShadowRootAttempts.length,
@@ -1155,9 +1191,25 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     };
     const auditedConstructor = (name: string, original: unknown) => {
       if (typeof original !== 'function') return original;
+      const classifyTarget = (value: unknown) => {
+        try {
+          const parsed = new URL(String(value), window.location.href);
+          if (parsed.origin !== window.location.origin) return 'cross-origin';
+          return parsed.pathname === '/api/v1/notify/inbox/me/stream'
+            ? 'same-origin-notify-inbox-me-stream'
+            : 'same-origin-other';
+        } catch {
+          return 'malformed';
+        }
+      };
       return new Proxy(original, {
         construct(target, args, newTarget) {
-          networkChannelConstructions.push(name);
+          const urlBearingChannel = ['WebSocket', 'EventSource', 'WebTransport'].includes(name);
+          if (!urlBearingChannel) {
+            networkChannelConstructions.push({ type: name, target: 'non-url' });
+          } else {
+            networkChannelConstructions.push({ type: name, target: classifyTarget(args[0]) });
+          }
           return Reflect.construct(target, args, newTarget);
         },
       });
@@ -1292,7 +1344,18 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
         navigatorPrototype,
         'sendBeacon',
         function auditedSendBeacon(this: Navigator, ...args: Parameters<Navigator['sendBeacon']>) {
-          networkChannelConstructions.push('sendBeacon');
+          const parsedTarget = (() => {
+            try {
+              const parsed = new URL(String(args[0]), window.location.href);
+              if (parsed.origin !== window.location.origin) return 'cross-origin';
+              return parsed.pathname === '/api/v1/notify/inbox/me/stream'
+                ? 'same-origin-notify-inbox-me-stream'
+                : 'same-origin-other';
+            } catch {
+              return 'malformed';
+            }
+          })();
+          networkChannelConstructions.push({ type: 'sendBeacon', target: parsedTarget });
           return Reflect.apply(originalSendBeacon, this, args);
         },
       );
@@ -1796,6 +1859,9 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   frameLifecycleRecords.length = 0;
   frameLifecycleByFrame.clear();
 
+  const productJourneyNetworkStart = applicationNetworkRequests.length;
+  const productJourneyEventSourceRequestStart = eventSourceNetworkRequests.length;
+  const productJourneyEventSourceResponseStart = eventSourceNetworkResponses.length;
   const productJourneyAuditStart = await page.evaluate(() => {
     const auditWindow = window as Window & {
       __p5BrowserAuditBeginProductJourney?: () => void;
@@ -1874,7 +1940,6 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(fileChooserEventCount).toBe(0);
   expect(downloadEventCount).toBe(0);
   expect(dialogEventCount).toBe(0);
-  const productJourneyNetworkStart = applicationNetworkRequests.length;
   const productJourneyMutationStart = mutationRequestCount();
 
   const runtimeStatus = page.getByTestId('ats-runtime-status');
@@ -2196,6 +2261,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
             filePickerInvocationCount: number;
             networkChannelConstructionCount: number;
             networkChannelConstructionTypes: string[];
+            networkChannelConstructions: Array<{ type: string; target: string }>;
             historyMutationCount: number;
             hashChangeCount: number;
             closedShadowRootAttemptCount: number;
@@ -2216,6 +2282,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
             filePickerInvocationCount: snapshot.filePickerInvocationCount,
             networkChannelConstructionCount: snapshot.networkChannelConstructionCount,
             networkChannelConstructionTypes: snapshot.networkChannelConstructionTypes,
+            networkChannelConstructions: snapshot.networkChannelConstructions,
             historyMutationCount: snapshot.historyMutationCount,
             hashChangeCount: snapshot.hashChangeCount,
             closedShadowRootAttemptCount: snapshot.closedShadowRootAttemptCount,
@@ -2533,6 +2600,30 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     ).toBe(0);
     expect(await closedShadowRootCount()).toBe(0);
   };
+  await expect
+    .poll(
+      async () => ({
+        channels: (await browserAuditSnapshot())?.networkChannelConstructions,
+        requests: eventSourceNetworkRequests.slice(productJourneyEventSourceRequestStart),
+        responses: eventSourceNetworkResponses.slice(productJourneyEventSourceResponseStart),
+      }),
+      { timeout: 10_000 },
+    )
+    .toEqual({
+      channels: [
+        { type: 'EventSource', target: 'same-origin-notify-inbox-me-stream' },
+      ],
+      requests: [
+        { method: 'GET', target: 'same-origin-notify-inbox-me-stream' },
+      ],
+      responses: [
+        {
+          method: 'GET',
+          target: 'same-origin-notify-inbox-me-stream',
+          status: 200,
+        },
+      ],
+    });
   const initialBrowserAudit = await browserAuditSnapshot();
   expect(initialBrowserAudit?.instrumentationFailureCount).toBe(0);
   expect(initialBrowserAudit?.productJourneyBegun).toBe(true);
@@ -2540,8 +2631,11 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     workerConstructionCount: 0,
     popupCreationCount: 0,
     filePickerInvocationCount: 0,
-    networkChannelConstructionCount: 0,
-    networkChannelConstructionTypes: [],
+    networkChannelConstructionCount: 1,
+    networkChannelConstructionTypes: ['EventSource'],
+    networkChannelConstructions: [
+      { type: 'EventSource', target: 'same-origin-notify-inbox-me-stream' },
+    ],
     historyMutationCount: 0,
     hashChangeCount: 0,
     closedShadowRootAttemptCount: 0,
@@ -2553,7 +2647,11 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(initialPersistentAudit?.productJourneyBegun).toBe(true);
   expect(initialPersistentAudit?.writeCount).toBe(0);
 
-  const readJourneyLifecycleAudit = async (networkStart: number, mutationStart: number) => {
+  const readJourneyLifecycleAudit = async (
+    networkStart: number,
+    mutationStart: number,
+    networkChannelStart: number,
+  ) => {
     await page.waitForTimeout(2_000);
     const browser = await browserAuditSnapshot();
     const persistence = await persistentAuditSnapshot();
@@ -2563,7 +2661,8 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
       persistentWriteOperationCount: persistence?.writeCount ?? -1,
       networkRequestCount: applicationNetworkRequests.length - networkStart,
       mutationRequestCount: mutationRequestCount() - mutationStart,
-      networkChannelConstructionCount: browser?.networkChannelConstructionCount ?? -1,
+      networkChannelConstructionCount:
+        (browser?.networkChannelConstructionCount ?? -1) - networkChannelStart,
       workerConstructionCount: browser?.workerConstructionCount ?? -1,
       popupCreationCount: (browser?.popupCreationCount ?? -1) + unexpectedPopupPages.length,
       filePickerInvocationCount: browser?.filePickerInvocationCount ?? -1,
@@ -3175,6 +3274,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   const desktopJourneyLifecycleAudit = await readJourneyLifecycleAudit(
     productJourneyNetworkStart,
     productJourneyMutationStart,
+    initialBrowserAudit?.networkChannelConstructionCount ?? -1,
   );
 
   const liveLaunch = page.getByTestId('ats-live-interview-evidence-link');
@@ -3488,6 +3588,8 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     storageProxyCount: 2,
     productJourneyBegun: true,
   });
+  const mobileProductJourneyNetworkChannelStart = await networkChannelConstructionCount();
+  expect(mobileProductJourneyNetworkChannelStart).toBe(0);
   const mobileProductJourneyNetworkStart = applicationNetworkRequests.length;
   const mobileProductJourneyMutationStart = mutationRequestCount();
   const persistentStateBeforeMobileResume = await persistentStateSnapshot();
@@ -3824,6 +3926,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   const mobileJourneyLifecycleAudit = await readJourneyLifecycleAudit(
     mobileProductJourneyNetworkStart,
     mobileProductJourneyMutationStart,
+    mobileProductJourneyNetworkChannelStart,
   );
   expect(report.hub).toBeDefined();
   report.hub!.journeyLifecycleAudit.mobile = mobileJourneyLifecycleAudit;
