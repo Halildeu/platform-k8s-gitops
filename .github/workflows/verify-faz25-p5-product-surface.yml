@@ -390,7 +390,11 @@ jobs:
               shasum -a 256 | awk '{print $1}')"
           fi
           browser_asset_pod_matched=false
-          if jq -e '.route.browserAssetBinding.status == "PRE_BROWSER"' \
+          if jq -e '
+               (.runtime.frontendAssetPaths | sort) ==
+                 ([.runtime.frontendAssetResponses[].path] | sort)
+             ' "$BROWSER_REPORT" >/dev/null && \
+             jq -e '.route.browserAssetBinding.status == "PRE_BROWSER"' \
               "$LINEAGE_PRE" >/dev/null && \
              jq -e \
               --arg evidence_sha "$browser_assets_sha256" \
