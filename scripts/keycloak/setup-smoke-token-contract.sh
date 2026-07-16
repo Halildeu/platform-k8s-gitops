@@ -309,20 +309,34 @@ def main():
         #   Bu yüzden "alan mevcut olmalı" kuralı canlıda DAİMA UNSAFE üretirdi (false positive).
         #   Sözleşme: alan YOKSA → boş (KC omit-empty, geçerli) · alan VARSA → tipi exact olmalı.
         #   `sm.get(x) or []` YASAK kalır: o form `{}`/`[]` gibi YANLIŞ TİPİ de sessizce boşa çevirirdi.
-        rm_raw, cm_raw = sm.get("realmMappings"), sm.get("clientMappings")
-        if rm_raw is None:
-            rm_raw = []
-        elif not isinstance(rm_raw, list):
-            unsafe.append("%s realmMappings YANLIŞ TİP (%s) — list bekleniyor; boş için alan hiç "
-                          "bulunmamalı (KC omit-empty)" % (label, type(rm_raw).__name__))
-            return
-        if cm_raw is None:
+        #   ALAN YOK vs ALAN VAR-AMA-null AYRIMI (Codex P1-A): `dict.get()` ikisine de None döndürür →
+        #   explicit JSON `null` "omit-empty" sanılıp SAFE olurdu. `in` ile ayır.
+        if "realmMappings" not in sm:
+            rm_raw = []                      # KC omit-empty → geçerli boş
+        else:
+            rm_raw = sm["realmMappings"]
+            if not isinstance(rm_raw, list):
+                unsafe.append("%s realmMappings alanı VAR ama list DEĞİL (%s) — explicit null/yanlış tip "
+                              "omit-empty sayılmaz" % (label, type(rm_raw).__name__))
+                return
+        if "clientMappings" not in sm:
             cm_raw = {}
-        elif not isinstance(cm_raw, dict):
-            unsafe.append("%s clientMappings YANLIŞ TİP (%s) — object bekleniyor; boş için alan hiç "
-                          "bulunmamalı (KC omit-empty)" % (label, type(cm_raw).__name__))
+        else:
+            cm_raw = sm["clientMappings"]
+            if not isinstance(cm_raw, dict):
+                unsafe.append("%s clientMappings alanı VAR ama object DEĞİL (%s) — explicit null/yanlış tip "
+                              "omit-empty sayılmaz" % (label, type(cm_raw).__name__))
+                return
+        #   ELEMAN SHAPE (Codex P1-B): bozuk elemanı FİLTRELEMEK "mapping yok" demektir — bilinmeyen
+        #   state'i sessizce boşa çevirir. Önce doğrula, sonra oku.
+        bad = [i for i, item in enumerate(rm_raw)
+               if not (isinstance(item, dict) and isinstance(item.get("name"), str) and item["name"].strip())]
+        if bad:
+            unsafe.append("%s realmMappings içinde geçersiz eleman indeksleri: %s (dict + non-empty string "
+                          "`name` bekleniyor) — malformed eleman 'mapping yok' sayılamaz"
+                          % (label, ",".join(map(str, bad))))
             return
-        realm_names = sorted(x["name"] for x in rm_raw if isinstance(x, dict) and "name" in x)
+        realm_names = sorted(item["name"] for item in rm_raw)
         client_map = cm_raw
         if client_map:
             unsafe.append("%s CLIENT role scope-mapping taşıyor: %s (beklenen {})"

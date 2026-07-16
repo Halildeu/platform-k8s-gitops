@@ -355,6 +355,62 @@ class TestSemanticSnapshotCompleteness(Harness):
         self.assertNoMutation(res)
 
 
+class TestNullVsAbsentAndItemShape(Harness):
+    """Codex P1: `dict.get()` 'alan yok' ile 'alan var ama null'u ayırmıyordu; ve malformed
+    eleman filtrelenip 'mapping yok' sayılıyordu → ikisi de false SAFE üretiyordu."""
+
+    def test_26_realm_mappings_explicit_null(self):
+        self.seed_converged()
+        self.write("runtime-sm", {"realmMappings": None})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"explicit null omit-empty sayıldı!\n{res.stdout}")
+        self.assertIn("null", res.stdout.lower() + res.stdout)
+        self.assertNoMutation(res)
+
+    def test_27_client_mappings_explicit_null(self):
+        self.seed_converged()
+        self.write("client-scope-mappings",
+                   {"realmMappings": [{"id": "role-id", "name": "ENDPOINT_ADMIN"}], "clientMappings": None})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"explicit null omit-empty sayıldı!\n{res.stdout}")
+        self.assertNoMutation(res)
+
+    def test_28_realm_mapping_item_empty_object(self):
+        self.seed_converged()
+        self.write("runtime-sm", {"realmMappings": [{}]})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"malformed eleman filtrelendi!\n{res.stdout}")
+        self.assertIn("geçersiz eleman", res.stdout)
+        self.assertNoMutation(res)
+
+    def test_29_realm_mapping_item_bare_string(self):
+        self.seed_converged()
+        self.write("notify-sm", {"realmMappings": ["ADMIN"]})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"malformed eleman filtrelendi!\n{res.stdout}")
+        self.assertNoMutation(res)
+
+    def test_30_extra_malformed_item_alongside_valid(self):
+        """Geçerli ENDPOINT_ADMIN + `name`siz gizli eleman → filtreleme onu görünmez kılıyordu."""
+        self.seed_converged()
+        self.write("client-scope-mappings",
+                   {"realmMappings": [{"id": "role-id", "name": "ENDPOINT_ADMIN"}, {"id": "hidden-role"}],
+                    "clientMappings": {}})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 3, f"gizli eleman filtrelendi!\n{res.stdout}")
+        self.assertNoMutation(res)
+
+    def test_31_explicit_empty_containers_are_valid(self):
+        """Doğru tipte explicit boş container'lar GEÇERLİ kalmalı (omit-empty ile birlikte)."""
+        self.seed_converged()
+        self.write("runtime-sm", {"realmMappings": [], "clientMappings": {}})
+        self.write("notify-sm", {"realmMappings": [], "clientMappings": {}})
+        res = self.run_script("--apply")
+        self.assertEqual(res.returncode, 0, res.stdout)
+        self.assertIn("zaten converged", res.stdout)
+        self.assertNoMutation(res)
+
+
 class TestSecondBarrier(Harness):
     def test_10_post_create_drift_blocks_association(self):
         """Scope create edildi ama KC beklenmeyen shape döndürdü → association YAPILMAMALI."""
