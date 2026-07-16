@@ -34,6 +34,8 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         ).stdout
         cls.keycloak = (ROOT / "scripts/ats/provision-test-keycloak.sh").read_text()
         cls.fullats_smoke = (ROOT / "scripts/ats/fullats-application-smoke.sh").read_text()
+        cls.agents = (ROOT / "AGENTS.md").read_text()
+        cls.context_rules = (ROOT / "docs/context-priority-rules.md").read_text()
 
     def test_d29_default_digest_matches_activated_ats_image(self):
         desired = re.search(
@@ -98,6 +100,18 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn('[ "$N" -eq 10 ]', self.fullats_smoke)
         self.assertIn("status `PUT` 404", self.runbook)
         self.assertIn("`10/10 PASS`", self.runbook)
+
+    def test_direct_claude_is_machine_pinned_as_first_consultation_channel(self):
+        direct = "Doğrudan Claude CLI birinci istişare kanalı (KALICI)"
+        cursor = "Cursor CLI (öncelikli ilave adversarial-review kanalı)"
+        self.assertIn(direct, self.agents)
+        self.assertIn(cursor, self.agents)
+        self.assertLess(self.agents.index(direct), self.agents.index(cursor))
+        self.assertIn("**Kalıcı sıra:** birinci dış istişare kanalı", self.context_rules)
+        self.assertIn("Cursor CLI bundan sonra bağımsız/ilave", self.context_rules)
+        self.assertNotIn("Doğrudan Claude CLI ek/fallback", self.context_rules)
+        self.assertNotIn("Doğrudan Claude CLI ek/fallback", self.agents)
+        self.assertNotIn("Doğrudan Claude, MiniMax M3", self.context_rules)
 
 if __name__ == "__main__":
     unittest.main()

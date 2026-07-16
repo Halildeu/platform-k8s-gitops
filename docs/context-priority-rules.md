@@ -338,6 +338,16 @@ Mavis bildirimi **yerine geçmez**:
 
 ## 11. Provider İstişare Sırası ve Cursor Adversarial Review
 
+**Kalıcı sıra:** birinci dış istişare kanalı doğrudan Anthropic Claude CLI'dır;
+Cursor CLI bundan sonra bağımsız/ilave adversarial ikinci kanaldır. Direct Claude
+`claude --version` ile canlı doğrulanır ve headless `claude -p` ile çağrılır;
+uzun redacted diff/bağlam stdin üzerinden verilebilir. Somut bulgu ve verdict
+üretmeyen boş/limit/auth/error çıktısı başarı değildir. Attribution
+`Channel=Direct Anthropic Claude CLI; Model=<modelUsage varsa exact kimlik>;
+direct-provider-CLI=true` olur. Cursor-routed Claude bu birinci kanalın yerine
+geçmez ve direct Claude ile ikinci bağımsız provider sayılmaz. Hiçbir kanalda
+uygulama penceresi fallback'i yoktur.
+
 Yüksek etkili işlerde Cursor adversarial-review/ikinci-görüş kanalı kullanılacaksa ilk model tercihi, yalnız live listede mevcut olduğunda `claude-opus-4-8-thinking-high` olur. Her çağrıdan önce `agent --version` ve `agent --list-models` canlı doğrulanır; slug hafızadan varsayılmaz. Live listede yoksa eşdeğer derin model seçilir ve exact kimliği kanıta yazılır. Model mevcut olduğundaki salt-okunur çağrı:
 
 ```bash
@@ -346,9 +356,9 @@ agent -p 'REDACTED_GOREV' --output-format text --mode ask --trust \
   --model <LIVE_MODEL_ID>
 ```
 
-Attribution `Channel=Cursor CLI; Model=<LIVE_MODEL_ID>; direct-provider-CLI=false` olur. Bu yol direct Anthropic çağrısı değildir. Plan/mimari/deploy/rollback/scope kararlarında aşağıdaki rol tablosundaki canonical provider-distinct istişare yolu korunur; Cursor model önceliği bu karar yolunu düşürmez. İşletici/reviewer zaten Anthropic Claude ailesindeyse Cursor-routed Claude aynı-aile bağımsız reviewer sayılmaz ve provider-distinct gate Codex, MiniMax veya başka bağımsız sağlayıcıyla doldurulur. Doğrudan Claude CLI ek/fallback yolu olarak kullanılabilir; `claude --version`/`--help` doğrulamasından sonra JSON çıktı alınır ve gerçek model kimliği `modelUsage` anahtarından kaydedilir. Direct yol `Channel=Direct Anthropic Claude CLI; Model=<MODEL_USAGE_ID>; direct-provider-CLI=true` diye raporlanır; CLI'nin `--model opus` alias'ı exact sayısal sürüm diye varsayılmaz.
+Attribution `Channel=Cursor CLI; Model=<LIVE_MODEL_ID>; direct-provider-CLI=false` olur. Bu yol direct Anthropic çağrısı değildir. Plan/mimari/deploy/rollback/scope kararlarında aşağıdaki rol tablosundaki canonical provider-distinct istişare yolu korunur; Cursor model önceliği bu karar yolunu düşürmez. İşletici/reviewer zaten Anthropic Claude ailesindeyse Cursor-routed Claude aynı-aile bağımsız reviewer sayılmaz ve provider-distinct gate Codex, MiniMax veya başka bağımsız sağlayıcıyla doldurulur. Doğrudan Claude CLI birinci istişare yoludur; `claude --version`/`--help` doğrulamasından sonra mümkünse JSON çıktı alınır ve gerçek model kimliği `modelUsage` anahtarından kaydedilir. Direct yol `Channel=Direct Anthropic Claude CLI; Model=<MODEL_USAGE_ID>; direct-provider-CLI=true` diye raporlanır; CLI'nin `--model opus` alias'ı exact sayısal sürüm diye varsayılmaz.
 
-Exact Cursor modeli unavailable, auth/limit hatalı, boş ya da somut verdict üretmiyorsa başarısızlık açık kaydedilir. Doğrudan Claude, MiniMax M3 veya başka provider-distinct kanal ikinci görüş/fallback olabilir; hiçbir durumda uygulama penceresi kullanılmaz. Prompt veya süreç girdisine secret, token, credential ya da PII konmaz. Cursor-routed Claude ile direct Claude aynı model sağlayıcı ailesine ait olabileceğinden tek başına iki bağımsız provider sayılmaz. Bu sıra, provider-distinct Cross-AI gereksinimini veya test/CI/live evidence/board/insan gate'lerini azaltmaz.
+Exact Cursor modeli unavailable, auth/limit hatalı, boş ya da somut verdict üretmiyorsa başarısızlık açık kaydedilir. Cursor, MiniMax M3 veya başka provider-distinct kanal Direct Claude sonrasında ikinci görüş/fallback olabilir; hiçbir durumda uygulama penceresi kullanılmaz. Prompt veya süreç girdisine secret, token, credential ya da PII konmaz. Cursor-routed Claude ile direct Claude aynı model sağlayıcı ailesine ait olabileceğinden tek başına iki bağımsız provider sayılmaz. Bu sıra, provider-distinct Cross-AI gereksinimini veya test/CI/live evidence/board/insan gate'lerini azaltmaz.
 
 ### Cursor CLI — öncelikli ilave adversarial review
 
@@ -358,8 +368,8 @@ Cursor, faz/plan/PR istişaresinde uygulama penceresi üzerinden kullanılmaz. Y
 
 | Karar/kanıt yüzeyi | Canonical yol | Cursor rolü |
 |---|---|---|
-| Plan, mimari, deploy, rollback veya scope kararı | Oturumun üst-seviye talimatında tanımlı provider-distinct canonical istişare yolu; Claude oturumunda `CLAUDE.md` Codex MCP kuralı | İlave görüş; canonical karar yolunu düşürmez |
-| Post-implementation güvenlik ve merge-readiness incelemesi | Exact branch/diff + test/CI kanıtı | **Öncelikli ilave adversarial reviewer** |
+| Plan, mimari, deploy, rollback veya scope kararı | **Önce Direct Anthropic Claude CLI**; ardından gerekiyorsa provider-distinct kanal; Claude oturumunda `CLAUDE.md` Codex MCP kuralı | İkinci/ilave görüş; canonical karar yolunu düşürmez |
+| Post-implementation güvenlik ve merge-readiness incelemesi | Exact branch/diff + test/CI kanıtıyla **önce Direct Anthropic Claude CLI** | **İkinci ilave adversarial reviewer** |
 | PR provider-level cross-AI gate | PR `## Cross-AI` alanları + `gate-cross-ai-audit` | Ek review; structured gate'in yerine geçmez |
 | Runtime, ürün veya hukuk kabulü | Live evidence + board + Owner/Legal/DPO/InfoSec/customer gate | Yerine geçmez |
 
