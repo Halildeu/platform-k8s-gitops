@@ -87,7 +87,15 @@ if [ -z "$AUD_SID" ]; then
   echo "KC: ats-api-audience scope+mapper CREATED"
 else
   # reconcile (Codex 019f50b7 P1): scope mevcutsa mapper varligi da dogrulanir
-  if ! kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM --fields name --format csv --noquotes 2>/dev/null | grep -qx "ats-api-audience-mapper"; then
+  # `set -o pipefail` + `grep -q` upstream docker/kcadm'a SIGPIPE verip mapper
+  # gerçekten var olsa bile pipeline'i 141 ile false yapabiliyor. Cevabi önce
+  # tamamen materialize et; sonra lokal exact-line kontrolü yap.
+  if ! MAPPER_NAMES=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
+    --fields name --format csv --noquotes 2>/dev/null); then
+    echo "FATAL: audience mapper listesi okunamadi; kor provisioning fail-closed" >&2
+    exit 1
+  fi
+  if ! grep -Fqx "ats-api-audience-mapper" <<<"$MAPPER_NAMES"; then
     kc create "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
       -s name=ats-api-audience-mapper \
       -s protocol=openid-connect \
@@ -203,9 +211,12 @@ echo "KC: ats-roleless-persona → rolsüz (kasıtlı)"
 # fail-closed: claim yoksa HICBIR authority uretilmez). Persona attribute'lari
 # mapper gecisinden ONCE yazilir; mevcut mapper atomik PUT ile guncellenir.
 # Delete→create penceresi YOK: create/update basarisizsa eski mapper korunur.
-TENANT_MAPPER_ID=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
-  --fields id,name --format csv --noquotes 2>/dev/null \
-  | awk -F, '$2=="ats-tenant-claim-mapper"{print $1}' | head -1 || true)
+if ! TENANT_MAPPER_ROWS=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
+  --fields id,name --format csv --noquotes 2>/dev/null); then
+  echo "FATAL: tenant mapper listesi okunamadi; kor provisioning fail-closed" >&2
+  exit 1
+fi
+TENANT_MAPPER_ID=$(awk -F, '$2=="ats-tenant-claim-mapper"{print $1; exit}' <<<"$TENANT_MAPPER_ROWS")
 TENANT_MAPPER_OK="false"
 if [ -n "$TENANT_MAPPER_ID" ]; then
   TENANT_MAPPER_JSON=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" -r $REALM)
@@ -228,7 +239,8 @@ if [ "$TENANT_MAPPER_OK" != "true" ]; then
     -s 'config."aggregate.attrs"=false'
   )
   if [ -n "$TENANT_MAPPER_ID" ]; then
-    kc update "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" -r $REALM "${MAPPER_ARGS[@]}" >/dev/null
+    kc update "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" \
+      -r $REALM "${MAPPER_ARGS[@]}" >/dev/null
     echo "KC: ats-tenant-claim-mapper atomik UPDATE (user.attribute=ats_tenant)"
   else
     kc create "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM "${MAPPER_ARGS[@]}" >/dev/null
@@ -237,9 +249,12 @@ if [ "$TENANT_MAPPER_OK" != "true" ]; then
 else
   echo "KC: ats-tenant-claim-mapper exists (user attribute)"
 fi
-TENANT_MAPPER_ID=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
-  --fields id,name --format csv --noquotes 2>/dev/null \
-  | awk -F, '$2=="ats-tenant-claim-mapper"{print $1}' | head -1 || true)
+if ! TENANT_MAPPER_ROWS=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models" -r $REALM \
+  --fields id,name --format csv --noquotes 2>/dev/null); then
+  echo "FATAL: tenant mapper post-update listesi okunamadi" >&2
+  exit 1
+fi
+TENANT_MAPPER_ID=$(awk -F, '$2=="ats-tenant-claim-mapper"{print $1; exit}' <<<"$TENANT_MAPPER_ROWS")
 [ -n "$TENANT_MAPPER_ID" ] || { echo "FATAL: tenant mapper bulunamadi" >&2; exit 1; }
 TENANT_MAPPER_JSON=$(kc get "client-scopes/$AUD_SID/protocol-mappers/models/$TENANT_MAPPER_ID" -r $REALM)
 printf '%s' "$TENANT_MAPPER_JSON" | python3 -c 'import json,sys

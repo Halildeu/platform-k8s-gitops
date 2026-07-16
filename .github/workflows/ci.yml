@@ -73,12 +73,13 @@ jobs:
         run: bash scripts/test/faz24-meeting-ai-private-gateway-static.sh
       - name: Faz 24 GPU exact-SHA rollout static guard
         run: bash scripts/test/faz24-gpu-host-exact-sha-rollout-static.sh
-      - name: testai frontend desired-state promotion contract
+      - name: testai frontend and Full ATS desired-state promotion contracts
         run: |
           python3 -m unittest \
             tests.automation.test_test_overlay_frontend_image \
             tests.automation.test_frontend_promotion_contract \
             tests.automation.test_frontend_diff_guard \
+            tests.deploy.test_faz25_fullats_gitops_contract \
             -v
       - name: testai backend desired-state promotion contract
         run: |
