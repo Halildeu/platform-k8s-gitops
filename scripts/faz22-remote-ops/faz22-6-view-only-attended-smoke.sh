@@ -73,6 +73,12 @@ FRAME_WAIT_SECONDS="${FRAME_WAIT_SECONDS:-20}"
 # idempotent operation-catalog GET across a transient broker-rollout tunnel drop.
 OPERATOR_REST_READY_ATTEMPTS="${OPERATOR_REST_READY_ATTEMPTS:-12}"
 OPERATOR_REST_READY_INTERVAL_SECONDS="${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}"
+# The run-scoped step-up key rollout replaces the broker pod. Its REST surface
+# becomes ready before the endpoint agent has necessarily re-established its
+# outbound CONTROL stream. The operator API returns an opaque, side-effect-free
+# 404 while that verified peer is absent; wait only for that exact state.
+OPEN_SESSION_DEVICE_READY_SECONDS="${OPEN_SESSION_DEVICE_READY_SECONDS:-180}"
+OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS="${OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS:-5}"
 VIEWER_PROBE_SECONDS="${VIEWER_PROBE_SECONDS:-8}"
 BROWSER_EVIDENCE_SCRIPT="${BROWSER_EVIDENCE_SCRIPT:-}"
 VIEWER_PRODUCT_BASE_URL="${VIEWER_PRODUCT_BASE_URL:-https://testai.acik.com}"
@@ -264,6 +270,14 @@ validate_inputs() {
   [[ "$FRAME_WAIT_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "frame-wait-seconds-invalid"
   [[ "${OPERATOR_REST_READY_ATTEMPTS:-12}" =~ ^[1-9][0-9]*$ ]] || fail_smoke "operator-rest-ready-attempts-invalid"
   [[ "${OPERATOR_REST_READY_INTERVAL_SECONDS:-3}" =~ ^[0-9]+$ ]] || fail_smoke "operator-rest-ready-interval-invalid"
+  if [[ ! "$OPEN_SESSION_DEVICE_READY_SECONDS" =~ ^[0-9]+$ ]] \
+    || (( OPEN_SESSION_DEVICE_READY_SECONDS < 30 || OPEN_SESSION_DEVICE_READY_SECONDS > 300 )); then
+    fail_smoke "open-session-device-ready-seconds-invalid"
+  fi
+  if [[ ! "$OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS" =~ ^[0-9]+$ ]] \
+    || (( OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS < 1 || OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS > 10 )); then
+    fail_smoke "open-session-device-ready-interval-invalid"
+  fi
   [[ "$VIEWER_PROBE_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "viewer-probe-seconds-invalid"
   if [[ -n "$BROWSER_EVIDENCE_SCRIPT" ]]; then
     [[ -r "$BROWSER_EVIDENCE_SCRIPT" ]] || fail_smoke "browser-evidence-script-not-readable"
@@ -338,11 +352,13 @@ validate_denetim_ssh_target_config() {
 
 curl_json() {
   local method="$1" base="$2" path="$3" token_file="$4" out="$5" body="${6:-}"
-  local code_file="${out}.code"
+  local code_file="${out}.code" curl_rc=0
+  local max_time="${CURL_JSON_MAX_TIME_SECONDS:-25}"
+  [[ "$max_time" =~ ^[1-9][0-9]*$ ]] || return 2
   local args=(
     --silent
     --show-error
-    --max-time 25
+    --max-time "$max_time"
     --request "$method"
     --output "$out"
     --write-out '%{http_code}'
@@ -354,10 +370,11 @@ curl_json() {
   fi
   if [[ -n "$token_file" ]]; then
     printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\r\n' < "$token_file")" \
-      | curl --config - "${args[@]}" "${base}${path}" > "$code_file"
+      | curl --config - "${args[@]}" "${base}${path}" > "$code_file" || curl_rc=$?
   else
-    curl "${args[@]}" "${base}${path}" > "$code_file"
+    curl "${args[@]}" "${base}${path}" > "$code_file" || curl_rc=$?
   fi
+  (( curl_rc == 0 )) || return "$curl_rc"
   tr -d '\r\n[:space:]' < "$code_file"
 }
 
@@ -365,8 +382,65 @@ assert_http() {
   local actual="$1" expected="$2" label="$3" body_file="$4"
   if [[ "$actual" != "$expected" ]]; then
     [[ -f "$body_file" ]] && jq -c . "$body_file" 2>/dev/null | sed 's/^/BODY /' >&2 || true
-    fail_smoke "${label} expected ${expected}, got ${actual}"
+    fail_smoke "${label// /-}-http-${actual}-expected-${expected}"
   fi
+}
+
+open_session_after_agent_reconnect() {
+  local operator_base="$1" body="$2" started_at deadline curl_rc elapsed
+  local remaining sleep_seconds CURL_JSON_MAX_TIME_SECONDS
+  started_at="$SECONDS"
+  deadline=$((started_at + OPEN_SESSION_DEVICE_READY_SECONDS))
+  : > "${EVIDENCE_DIR}/open-session-readiness.log"
+
+  while :; do
+    if (( SECONDS >= deadline )); then
+      fail_smoke "open-session-device-not-connected-timeout"
+    fi
+    remaining=$((deadline - SECONDS))
+    CURL_JSON_MAX_TIME_SECONDS=25
+    if (( remaining < CURL_JSON_MAX_TIME_SECONDS )); then
+      CURL_JSON_MAX_TIME_SECONDS="$remaining"
+    fi
+
+    # A 404 is returned before operatorService.openSession is called when the
+    # verified device has no live broker peer. Reissuing the same sessionId is
+    # therefore side-effect-free for this exact response. No other response is
+    # retried: a lost/ambiguous transport response must never double-apply POST.
+    set +e
+    open_code="$(curl_json POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/open-session.body" "$body")"
+    curl_rc=$?
+    set -e
+    elapsed=$((SECONDS - started_at))
+
+    if (( SECONDS >= deadline )); then
+      fail_smoke "open-session-device-not-connected-timeout"
+    fi
+    if [[ "$curl_rc" != "0" || ! "$open_code" =~ ^[0-9]{3}$ ]]; then
+      printf 'result=transport-failure elapsedSeconds=%s\n' "$elapsed" \
+        >> "${EVIDENCE_DIR}/open-session-readiness.log"
+      fail_smoke "open-session-transport-failure"
+    fi
+
+    printf 'result=http-%s elapsedSeconds=%s\n' "$open_code" "$elapsed" \
+      >> "${EVIDENCE_DIR}/open-session-readiness.log"
+    case "$open_code" in
+      200)
+        return
+        ;;
+      404)
+        remaining=$((deadline - SECONDS))
+        sleep_seconds="$OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS"
+        if (( remaining < sleep_seconds )); then
+          sleep_seconds="$remaining"
+        fi
+        sleep "$sleep_seconds"
+        ;;
+      *)
+        assert_http "$open_code" 200 "open-session" "${EVIDENCE_DIR}/open-session.body"
+        ;;
+    esac
+  done
 }
 
 read_keycloak_admin_password() {
@@ -1288,8 +1362,7 @@ main() {
 
   body="$(jq -nc --arg session "$SESSION_ID" --arg device "$DEVICE_ID" \
     '{sessionId:$session, deviceId:$device, reason:"Faz 22.6 #1580 attended VIEW_ONLY smoke", capabilities:["VIEW_ONLY"]}')"
-  open_code="$(curl_json POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/open-session.body" "$body")"
-  assert_http "$open_code" 200 "open session" "${EVIDENCE_DIR}/open-session.body"
+  open_session_after_agent_reconnect "$operator_base" "$body"
   jq -e '.consentPromptSent == true' "${EVIDENCE_DIR}/open-session.body" >/dev/null \
     || fail_smoke "open-session-consent-prompt-not-sent"
 

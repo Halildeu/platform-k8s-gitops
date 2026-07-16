@@ -51,6 +51,7 @@ on:
       - 'tests/faz22_remote_ops/test_faz22_6_denetim_ssh_key_evidence_verifier.py'
       - 'tests/faz22_remote_ops/test_faz22_6_denetim_ssh_preflight_workflow.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_attended_smoke_runner.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_open_session_retry_contract.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh'
@@ -117,6 +118,7 @@ on:
       - 'tests/faz22_remote_ops/test_faz22_6_denetim_ssh_key_evidence_verifier.py'
       - 'tests/faz22_remote_ops/test_faz22_6_denetim_ssh_preflight_workflow.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_attended_smoke_runner.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_open_session_retry_contract.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_viewer_product_evidence_verifier.py'
@@ -162,6 +164,7 @@ jobs:
             scripts/test/faz22-6-acceptance-package-workflows-static.sh \
             tests/faz22_remote_ops/test_faz22_6_denetim_ssh_preflight_workflow.sh \
             tests/faz22_remote_ops/test_faz22_6_view_only_attended_smoke_runner.sh \
+            tests/faz22_remote_ops/test_faz22_6_open_session_retry_contract.sh \
             tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh \
             tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh \
             tests/faz22_remote_ops/test_faz22_6_view_only_split_gate.sh
@@ -199,6 +202,12 @@ jobs:
           set -euo pipefail
           TMPDIR="$RUNNER_TEMP" \
             tests/faz22_remote_ops/test_faz22_6_view_only_attended_smoke_runner.sh
+
+      - name: Run VIEW_ONLY open-session retry contract test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_open_session_retry_contract.sh
 
       - name: Run VIEW_ONLY evidence verifier regression test
         run: |
