@@ -4183,15 +4183,15 @@ images:
     # 29451703189 produced the immutable testai digest below. Tracked by #2463.
     # Machine-managed current pin. Historical provenance remains above; future
     # automation rewrites only these fields and records evidence in its PR.
-    # 2026-07-16 Faz 22 product-surface arc: platform-web #922 — S1 in-MFE IA nav
-    # (#923) + S5 Overview landing (#925) + S4a honest capability/error states
-    # (#926) + S4b accessible manage-gate (#927), merge 7a8c968a. Sits ON TOP OF
-    # Faz 25 #924 (prev pin sha-8ab48cd) on platform-web main, so this carries #924
-    # + the arc. Manual promotion — auto-promote broken (#2295). Image build job
-    # 87528698303 produced the immutable testai digest below (containerimage.digest).
-    # sourceRevision: 7a8c968a63bd8bbd5279c2f038cfac773613c402
-    newTag: sha-7a8c968
-    digest: sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc
+    # 2026-07-16 current pin: platform-web #928 binds the shell's real HTML5
+    # root script set to build-info v2 path+bodySha256. Merge 125d2d85 carries
+    # the earlier Faz 25 #924 safe role journeys and Faz 22 product-surface arc.
+    # Manual promotion follows fail-closed dispatch run 29483976344 (#2295).
+    # Image build run 29483736629 / testai job 87573201094 produced the exact
+    # immutable digest below (containerimage.digest).
+    # sourceRevision: 125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b
+    newTag: sha-125d2d8
+    digest: sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

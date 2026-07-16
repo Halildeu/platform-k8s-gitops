@@ -87,9 +87,9 @@ jobs:
           REPORT_PATH: ${{ steps.workspace.outputs.lineage_pre }}
           PHASE: pre
           EXPECTED_CONTEXT: k3d-test
-          EXPECTED_SOURCE_SHA: 7a8c968a63bd8bbd5279c2f038cfac773613c402
-          EXPECTED_IMAGE_DIGEST: sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc
-          EXPECTED_BUILD_RUN_ID: "29469166218"
+          EXPECTED_SOURCE_SHA: 125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b
+          EXPECTED_IMAGE_DIGEST: sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f
+          EXPECTED_BUILD_RUN_ID: "29483736629"
           EXPECTED_CLUSTER_SERVER_SHA256: 72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29
           EXPECTED_CLUSTER_CA_SHA256: ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96
           EXPECTED_KUBE_SYSTEM_UID: 0a7f11d1-53d6-452f-bdac-3669507af073
@@ -185,9 +185,9 @@ jobs:
           P5_EXPECTED_ROLE: P5_READINESS_VIEWER
           P5_EXPECTED_USER_ID: "6"
           P5_EXPECTED_SUBSCRIBER_ID: "6"
-          P5_EXPECTED_SOURCE_SHA: 7a8c968a63bd8bbd5279c2f038cfac773613c402
-          P5_EXPECTED_FRONTEND_DIGEST: sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc
-          P5_EXPECTED_BUILD_RUN_ID: "29469166218"
+          P5_EXPECTED_SOURCE_SHA: 125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b
+          P5_EXPECTED_FRONTEND_DIGEST: sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f
+          P5_EXPECTED_BUILD_RUN_ID: "29483736629"
           P5_LIVE_FRONTEND_DIGEST: ${{ steps.pre_lineage.outputs.live_digest }}
           P5_HARNESS_REPOSITORY: ${{ github.repository }}
           P5_HARNESS_REVISION: ${{ steps.workspace.outputs.harness_revision }}
@@ -282,9 +282,9 @@ jobs:
           REPORT_PATH: ${{ steps.workspace.outputs.lineage_post }}
           PHASE: post
           EXPECTED_CONTEXT: k3d-test
-          EXPECTED_SOURCE_SHA: 7a8c968a63bd8bbd5279c2f038cfac773613c402
-          EXPECTED_IMAGE_DIGEST: sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc
-          EXPECTED_BUILD_RUN_ID: "29469166218"
+          EXPECTED_SOURCE_SHA: 125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b
+          EXPECTED_IMAGE_DIGEST: sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f
+          EXPECTED_BUILD_RUN_ID: "29483736629"
           EXPECTED_CLUSTER_SERVER_SHA256: 72f91f37ac4b9d16dad5b443afdabaca0a2644f4b91cd91189a0be0550d17d29
           EXPECTED_CLUSTER_CA_SHA256: ad4b1f16b77cc270d3b0f4d1d6b8495d49b90c29ea8c78e1ed8dec36c9a8af96
           EXPECTED_KUBE_SYSTEM_UID: 0a7f11d1-53d6-452f-bdac-3669507af073
@@ -574,9 +574,9 @@ jobs:
                 sensitiveValueScanPassed: $sensitive_scan_passed
               },
               lineage: {
-                sourceSha: "7a8c968a63bd8bbd5279c2f038cfac773613c402",
-                frontendDigest: "sha256:7c2b237ad0cdf394ac2246ba10b03972dde2efe02669b7a3e96101b11e12cecc",
-                buildRunId: "29469166218"
+                sourceSha: "125d2d85f139cb2b8fcfee27eb6a0affbb4bcc2b",
+                frontendDigest: "sha256:c000e5bc58352c48305e8a67c1b019abf8a3cf2856d95423434d3bb42d423a9f",
+                buildRunId: "29483736629"
               },
               children: [
                 {
