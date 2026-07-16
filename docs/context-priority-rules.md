@@ -336,7 +336,19 @@ Mavis bildirimi **yerine geçmez**:
 
 ---
 
-## 11. Cursor CLI — Öncelikli İlave Adversarial Review
+## 11. Provider İstişare Sırası ve Cursor Adversarial Review
+
+Yüksek etkili plan, mimari, güvenlik, authz, kişisel-veri, migration, concurrency, cutover, faz kapanışı ve merge-readiness kararlarında ilk provider görüşü doğrudan Anthropic Claude CLI'dan alınır. Her çağrıdan önce `claude --version` ve `claude --help` canlı doğrulanır. Varsayılan derin çağrı:
+
+```bash
+printf '%s\n' 'REDACTED_GOREV' | claude -p --model opus --effort high
+```
+
+`opus`, CLI'nin canlı alias'ıdır; CLI exact sayısal sürümü bildirmiyorsa sonuç keyfi olarak "Claude Opus 4.8" diye etiketlenmez. Exact `claude-opus-4-8-thinking-high` istendiğinde bu kimlik Cursor `agent --list-models` çıktısında canlı doğrulanarak Cursor CLI üzerinden kullanılabilir; attribution `Channel=Cursor CLI; Model=claude-opus-4-8-thinking-high; direct-provider-CLI=false` olur. Bu yol direct Anthropic çağrısı değildir.
+
+Doğrudan Claude unavailable, auth/limit hatalı, boş ya da somut verdict üretmiyorsa başarısızlık açık kaydedilir. MiniMax M3, Cursor veya başka provider-distinct kanal ikinci görüş/fallback olabilir; hiçbir durumda uygulama penceresi kullanılmaz. Prompt veya süreç girdisine secret, token, credential ya da PII konmaz. Bu sıra, provider-distinct Cross-AI gereksinimini veya test/CI/live evidence/board/insan gate'lerini azaltmaz.
+
+### Cursor CLI — öncelikli ilave adversarial review
 
 Cursor, faz/plan/PR istişaresinde uygulama penceresi üzerinden kullanılmaz. Yalnız canlı doğrulanmış CLI veya mevcutsa aynı redaction ve salt-okunur sınırını sağlayan MCP yolu kabul edilir. CLI/MCP, credential veya somut verdict yoksa UI fallback yapılmaz ve Cursor review kanıtı yazılmaz.
 
