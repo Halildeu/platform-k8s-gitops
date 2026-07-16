@@ -4189,9 +4189,9 @@ images:
     # Manual promotion follows fail-closed dispatch run 29483976344 (#2295).
     # Image build run 29487972095 / testai job 87586921662 produced the exact
     # immutable digest below (containerimage.digest).
-    # sourceRevision: 6f74213403ae628c66f9aaaf93aeddf12769248a
-    newTag: sha-6f74213
-    digest: sha256:b629c6d2288f982402be68b1c59739fa0e31f50fe23c2fda1538fd4f8f9d30bb
+    # sourceRevision: 7db56c62945a761ccc8963994dd4382d22885ad2
+    newTag: sha-7db56c6
+    digest: sha256:45ae4d8b26a775ff45e59213cfda712530b8e3b294fbc22db8eb119ffc791bb0
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
