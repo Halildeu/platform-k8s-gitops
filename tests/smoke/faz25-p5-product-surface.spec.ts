@@ -1669,30 +1669,43 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
     detached: boolean;
     observedUrls: string[];
   };
-  const allowedPreJourneyFrameUrls = new Set([
-    'about:blank',
-    `${appOrigin}/silent-check-sso.html`,
-    `${issuerOrigin}${authorizationPath}`,
-    `${issuerOrigin}${issuerPath}/protocol/openid-connect/3p-cookies/step1.html`,
-    `${issuerOrigin}${issuerPath}/protocol/openid-connect/3p-cookies/step2.html`,
+  // Canonicalized from the query/hash-free failure evidence emitted by
+  // Chromium 148 run 29493204761. That run remained DIAGNOSTIC_ONLY; this is
+  // the source observation to be proven by the next exact-main run, not a
+  // claim that terminal acceptance already passed.
+  const expectedThirdPartyCookieFrameHistory: FrameHistorySnapshot = {
+    detached: true,
+    observedUrls: [
+      'about:blank',
+      `${issuerOrigin}${issuerPath}/protocol/openid-connect/3p-cookies/step1.html`,
+      `${issuerOrigin}${issuerPath}/protocol/openid-connect/3p-cookies/step2.html`,
+    ],
+  };
+  const expectedSilentCheckFrameHistory: FrameHistorySnapshot = {
+    detached: true,
+    observedUrls: ['about:blank', `${appOrigin}/silent-check-sso.html`],
+  };
+  const canonicalizeFrameHistory = (history: FrameHistorySnapshot[]) =>
+    history
+      .map(({ detached, observedUrls }) => ({
+        detached,
+        observedUrls: [...observedUrls],
+      }))
+      .sort((left, right) => {
+        const leftKey = left.observedUrls.join('\n');
+        const rightKey = right.observedUrls.join('\n');
+        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+      });
+  const expectedPreJourneyFrameHistory = canonicalizeFrameHistory([
+    expectedThirdPartyCookieFrameHistory,
+    expectedSilentCheckFrameHistory,
   ]);
-  const expectedSilentCheckFrameUrl = `${appOrigin}/silent-check-sso.html`;
-  const expectedAuthorizationFrameUrl = `${issuerOrigin}${authorizationPath}`;
+  const allowedPreJourneyFrameUrls = new Set(
+    expectedPreJourneyFrameHistory.flatMap(({ observedUrls }) => observedUrls),
+  );
   const frameHistoryIsExpectedSetup = (history: FrameHistorySnapshot[]) =>
-    history.length === 2 &&
-    history.every(
-      ({ detached, observedUrls }) =>
-        detached &&
-        observedUrls.length >= 1 &&
-        observedUrls.some((url) => url !== 'about:blank') &&
-        observedUrls.every((url) => allowedPreJourneyFrameUrls.has(url)),
-    ) &&
-    history.some(({ observedUrls }) =>
-      observedUrls.includes(expectedSilentCheckFrameUrl),
-    ) &&
-    history.some(({ observedUrls }) =>
-      observedUrls.includes(expectedAuthorizationFrameUrl),
-    );
+    JSON.stringify(canonicalizeFrameHistory(history)) ===
+    JSON.stringify(expectedPreJourneyFrameHistory);
 
   // Exercise the actual primary-page frame lifecycle listener with a
   // network-free data: iframe. The exact setup policy must reject this frame
@@ -1760,10 +1773,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
       },
       {
         detached: true,
-        observedUrls: [
-          expectedAuthorizationFrameUrl,
-          expectedSilentCheckFrameUrl,
-        ],
+        observedUrls: [...expectedThirdPartyCookieFrameHistory.observedUrls],
       },
     ]),
   ).toBe(false);

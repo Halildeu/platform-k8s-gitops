@@ -403,6 +403,9 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         detach_listener = self.spec.index(
             "page.on('framedetached', (frame)", navigate_listener
         )
+        expected_history = self.spec.index(
+            "const expectedThirdPartyCookieFrameHistory"
+        )
         allowed_urls = self.spec.index("const allowedPreJourneyFrameUrls = new Set")
         policy = self.spec.index("const frameHistoryIsExpectedSetup =", allowed_urls)
         negative_control = self.spec.index(
@@ -450,23 +453,33 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
         )
         for marker in (
             "`${appOrigin}/silent-check-sso.html`",
-            "`${issuerOrigin}${authorizationPath}`",
             "3p-cookies/step1.html",
             "3p-cookies/step2.html",
         ):
-            self.assertIn(marker, self.spec[allowed_urls:policy])
+            self.assertIn(marker, self.spec[expected_history:allowed_urls])
+        self.assertIn(
+            "Chromium 148 run 29493204761",
+            self.spec[expected_history - 400:expected_history],
+        )
+        self.assertNotIn(
+            "`${issuerOrigin}${authorizationPath}`",
+            self.spec[expected_history:policy],
+        )
         policy_end = self.spec.index(
             "// Exercise the actual primary-page frame lifecycle listener",
             policy,
         )
         policy_source = self.spec[policy:policy_end]
         for marker in (
-            "history.length === 2",
-            "url !== 'about:blank'",
-            "observedUrls.includes(expectedSilentCheckFrameUrl)",
-            "observedUrls.includes(expectedAuthorizationFrameUrl)",
+            "JSON.stringify(canonicalizeFrameHistory(history))",
+            "JSON.stringify(expectedPreJourneyFrameHistory)",
         ):
             self.assertIn(marker, policy_source)
+        canonicalizer_source = self.spec[
+            self.spec.index("const canonicalizeFrameHistory"):allowed_urls
+        ]
+        self.assertIn("leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0", canonicalizer_source)
+        self.assertNotIn("localeCompare", canonicalizer_source)
         self.assertIn("return '<malformed>'", self.spec)
         self.assertIn(
             "frameLifecycleByFrame.get(frameLedgerNegativeControlFrame)",
@@ -488,7 +501,7 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             self.spec[identity_delete:negative_rejection],
         )
         self.assertIn(
-            "expectedAuthorizationFrameUrl,\n          expectedSilentCheckFrameUrl",
+            "expectedThirdPartyCookieFrameHistory.observedUrls",
             self.spec[negative_rejection:active_frame_guard],
         )
         self.assertIn(
@@ -499,7 +512,9 @@ class Faz25P5ProductAcceptanceContractTest(unittest.TestCase):
             "unexpected sanitized pre-journey frame history",
             self.spec[history_assertion:ledger_reset],
         )
-        self.assertLess(detach_listener, allowed_urls)
+        self.assertLess(detach_listener, expected_history)
+        self.assertLess(expected_history, allowed_urls)
+        self.assertLess(allowed_urls, policy)
         self.assertLess(policy, negative_control)
         self.assertLess(negative_control, identity_delete)
         self.assertLess(identity_delete, negative_rejection)
