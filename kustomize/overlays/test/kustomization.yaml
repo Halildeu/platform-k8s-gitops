@@ -6062,16 +6062,45 @@ patches:
       # JwtAutoProvisionGate is fail-closed: without the M365 marker claim `entra_tid` it denies
       # ("missing-entra-tid") unless auto-provision.allow-local-keycloak=true
       # (${AUTO_PROVISION_ALLOW_LOCAL_KEYCLOAK:false} — never set anywhere until now).
-      # Consequence: users that authenticate against the LOCAL Keycloak realm (i.e. every TEST
-      # persona and every non-M365 login) never get a `user_service.users` row → no numeric user id
-      # → the whole authz chain reads with the wrong subject and returns 403.
+      # Consequence: local-Keycloak users never get a `user_service.users` row → no numeric user id
+      # → the authz chain reads with the wrong subject and returns 403.
       #
-      # This does NOT weaken the activation gate: provisioned users still land disabled
-      # ("Passive by design"), so the journey stays provision → PENDING → admin activation →
-      # access. USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED above already surfaces that step.
+      # Scope of this flag (precise): it removes ONLY the `entra_tid` requirement. The remaining
+      # fail-closed gates stay: issuer allow-list, valid `sub`, email present, email_verified.
+      # So this admits "local-Keycloak users that satisfy the remaining claim/issuer gates",
+      # not "every non-M365 login".
+      #
+      # What it does NOT change: the persisted activation state. UserService still creates the row
+      # role=USER, enabled=false, companyId=null (pinned by UserServiceTest). The cross-service
+      # invariant "a disabled account cannot consume protected product surfaces" is NOT proven by
+      # this PR — AuthenticatedUserLookupService resolves the numeric id without carrying `enabled`
+      # into the authorization decision. That gate is verified negatively during #2533 runtime
+      # acceptance (grant first, expect 403 while disabled, activate, expect 200 — activation the
+      # only variable). Until then no grant is issued to a persona before activation.
       - op: add
         path: /data/AUTO_PROVISION_ALLOW_LOCAL_KEYCLOAK
         value: "true"
+  # board #2533 — TEST-ONLY pod-template rollout marker.
+  # user-service reads the ConfigMap via `envFrom: configMapRef`, and Kubernetes computes process
+  # env ONLY at pod start: changing the ConfigMap alone leaves the running pod on the old value and
+  # does not change the Deployment/ReplicaSet hash, so Argo reports Synced while the flag never
+  # reaches the process. ADR-0023 forbids fixing that with an out-of-band `kubectl rollout restart`
+  # on this shared cluster, so the rollout must be GitOps-authoritative: bump this marker whenever
+  # the TEST-only env contract above changes. Strategic-merge (not a JSON patch on /annotations) so
+  # future pod annotations are merged rather than overwritten.
+  - target:
+      kind: Deployment
+      name: user-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: user-service
+      spec:
+        template:
+          metadata:
+            annotations:
+              user-service.acik.com/local-kc-provision-rev: "2533-1"
   - target:
       kind: ConfigMap
       name: meeting-service-config
