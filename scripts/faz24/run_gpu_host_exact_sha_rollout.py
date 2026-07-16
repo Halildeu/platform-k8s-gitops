@@ -27,6 +27,7 @@ $ProgressPreference = 'SilentlyContinue'
 $TargetCommit = '__TARGET_COMMIT__'
 $RepoRoot = 'C:\platform-ai'
 $UpdateScript = Join-Path $RepoRoot 'deploy\gpu-host\update.ps1'
+$MigrationScript = Join-Path $RepoRoot 'deploy\gpu-host\migrate-task-actions.ps1'
 $StatePath = 'C:\ProgramData\Acik\platform-ai\deployment-state.json'
 
 # Scope Git ownership trust to this rollout process and its updater child.
@@ -79,9 +80,12 @@ function Get-TaskMetadata {
     present = $false
     state = -1
     actionCanonical = $false
+    actionMigratable = $false
     actionCount = 0
     executeClass = 'missing'
+    executeTrusted = $false
     scriptPathClass = 'missing'
+    workingDirectoryClass = 'missing'
     actionArgumentsSha256 = ''
   }
   try {
@@ -91,6 +95,7 @@ function Get-TaskMetadata {
     $metadata.actionCount = [int]$task.Definition.Actions.Count
     $action = $task.Definition.Actions.Item(1)
     $executeName = [IO.Path]::GetFileName([string]$action.Path).ToLowerInvariant()
+    $executePath = [string]$action.Path
     $arguments = [string]$action.Arguments
     $sha = [Security.Cryptography.SHA256]::Create()
     try {
@@ -109,6 +114,18 @@ function Get-TaskMetadata {
     } else {
       $metadata.executeClass = 'other'
     }
+    $trustedPowerShell = @('powershell.exe')
+    if (-not [string]::IsNullOrWhiteSpace($env:SystemRoot)) {
+      $trustedPowerShell += (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')
+    }
+    $metadata.executeTrusted = ($trustedPowerShell -icontains $executePath)
+    $metadata.workingDirectoryClass = $(
+      if ([string]::IsNullOrWhiteSpace([string]$action.WorkingDirectory)) {
+        'empty'
+      } else {
+        'set'
+      }
+    )
 
     $legacyScript = $ExpectedScript.Replace(
       'C:\platform-ai\',
@@ -124,7 +141,16 @@ function Get-TaskMetadata {
     $metadata.actionCanonical = (
       $metadata.actionCount -eq 1 -and
       $metadata.executeClass -eq 'windows-powershell' -and
+      $metadata.executeTrusted -and
+      $metadata.workingDirectoryClass -eq 'empty' -and
       $metadata.scriptPathClass -eq 'canonical-repo'
+    )
+    $metadata.actionMigratable = (
+      $metadata.actionCount -eq 1 -and
+      $metadata.executeClass -eq 'windows-powershell' -and
+      $metadata.executeTrusted -and
+      $metadata.workingDirectoryClass -eq 'empty' -and
+      $metadata.scriptPathClass -in @('canonical-repo', 'legacy-user-repo')
     )
   } catch {
     if ($metadata.present) {
@@ -196,7 +222,11 @@ function Test-WebSocketReady {
 }
 
 function Invoke-UpdaterChild {
-  param([switch]$WhatIfOnly)
+  param(
+    [switch]$WhatIfOnly,
+    [switch]$NoRestartOnly,
+    [switch]$RollbackOnly
+  )
   $stdoutPath = Join-Path $env:TEMP ('faz24-gpu-rollout-' + [Guid]::NewGuid().ToString('N') + '.out')
   $stderrPath = Join-Path $env:TEMP ('faz24-gpu-rollout-' + [Guid]::NewGuid().ToString('N') + '.err')
   try {
@@ -204,7 +234,37 @@ function Invoke-UpdaterChild {
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
       '-File', $UpdateScript,
       '-RepoRoot', $RepoRoot,
-      '-TargetCommit', $TargetCommit,
+      '-Confirm:$false'
+    )
+    if ($RollbackOnly) {
+      $arguments += '-Rollback'
+    } else {
+      $arguments += @('-TargetCommit', $TargetCommit)
+    }
+    if ($NoRestartOnly) { $arguments += '-NoRestart' }
+    if ($WhatIfOnly) { $arguments += '-WhatIf' }
+    $oldEap = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = 'Continue'
+      & powershell.exe @arguments 1> $stdoutPath 2> $stderrPath
+      return [int]$LASTEXITCODE
+    } finally {
+      $ErrorActionPreference = $oldEap
+    }
+  } finally {
+    Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Invoke-TaskActionMigration {
+  param([switch]$WhatIfOnly)
+  $stdoutPath = Join-Path $env:TEMP ('faz24-task-migration-' + [Guid]::NewGuid().ToString('N') + '.out')
+  $stderrPath = Join-Path $env:TEMP ('faz24-task-migration-' + [Guid]::NewGuid().ToString('N') + '.err')
+  try {
+    $arguments = @(
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', $MigrationScript,
+      '-RepoRoot', $RepoRoot,
       '-Confirm:$false'
     )
     if ($WhatIfOnly) { $arguments += '-WhatIf' }
@@ -221,22 +281,49 @@ function Invoke-UpdaterChild {
   }
 }
 
+function Get-RolloutFailureClass {
+  param([Parameter(Mandatory = $true)]$ErrorRecord)
+  $message = [string]$ErrorRecord.Exception.Message
+  $known = @(
+    'invalid-target-commit', 'unexpected-rollout-identity',
+    'rollout-principal-not-admin', 'canonical-repo-missing', 'updater-missing',
+    'before-commit-invalid', 'required-task-missing', 'task-action-unrecognized',
+    'updater-whatif-rejected', 'updater-pin-rejected',
+    'task-migration-script-missing', 'task-migration-whatif-rejected',
+    'task-migration-rejected', 'task-migration-readback-rejected',
+    'updater-deploy-rejected'
+  )
+  if ($known -contains $message) { return $message }
+  $typeName = [string]$ErrorRecord.Exception.GetType().Name
+  if ($typeName -notmatch '^[A-Za-z0-9]+$') { $typeName = 'error' }
+  return 'rollout-unexpected-' + $typeName.ToLowerInvariant()
+}
+
 $beforeCommit = ''
 $afterCommit = ''
 $whatIfExitCode = -1
+$pinWithoutRestartExitCode = -1
+$migrationWhatIfExitCode = -1
+$migrationExitCode = -1
+$sourceRollbackExitCode = -1
 $deployExitCode = -1
 $failureClass = 'none'
+$migrationRequired = $false
+$sourcePinnedWithoutRestart = $false
 $ledger = [ordered]@{ currentCommit = ''; previousCommit = ''; action = ''; lastResult = ''; timestampUtc = '' }
 $taskService = $null
 $taskRoot = $null
 $liveTask = [ordered]@{
-  present = $false; state = -1; actionCanonical = $false; actionCount = 0
-  executeClass = 'missing'; scriptPathClass = 'missing'; actionArgumentsSha256 = ''
+  present = $false; state = -1; actionCanonical = $false; actionMigratable = $false; actionCount = 0
+  executeClass = 'missing'; executeTrusted = $false; scriptPathClass = 'missing'
+  workingDirectoryClass = 'missing'; actionArgumentsSha256 = ''
 }
 $meetingTask = [ordered]@{
-  present = $false; state = -1; actionCanonical = $false; actionCount = 0
-  executeClass = 'missing'; scriptPathClass = 'missing'; actionArgumentsSha256 = ''
+  present = $false; state = -1; actionCanonical = $false; actionMigratable = $false; actionCount = 0
+  executeClass = 'missing'; executeTrusted = $false; scriptPathClass = 'missing'
+  workingDirectoryClass = 'missing'; actionArgumentsSha256 = ''
 }
+$tasksBefore = [ordered]@{}
 
 try {
   if ($TargetCommit -notmatch '^[0-9a-f]{40}$') { throw 'invalid-target-commit' }
@@ -258,15 +345,49 @@ try {
   $meetingTask = Get-TaskMetadata -RootFolder $taskRoot -TaskName 'platform-ai-meeting-ai' `
     -ExpectedScript 'C:\platform-ai\deploy\gpu-host\start-meeting-ai.ps1'
   if (-not $liveTask.present -or -not $meetingTask.present) { throw 'required-task-missing' }
-  if (-not $liveTask.actionCanonical -or -not $meetingTask.actionCanonical) { throw 'task-action-not-canonical' }
+  $tasksBefore = [ordered]@{ liveStt = $liveTask; meetingAi = $meetingTask }
+  if (-not $liveTask.actionMigratable -or -not $meetingTask.actionMigratable) {
+    throw 'task-action-unrecognized'
+  }
+  $migrationRequired = (-not $liveTask.actionCanonical -or -not $meetingTask.actionCanonical)
 
   $whatIfExitCode = Invoke-UpdaterChild -WhatIfOnly
   if ($whatIfExitCode -ne 0) { throw 'updater-whatif-rejected' }
 
+  if ($migrationRequired) {
+    $pinWithoutRestartExitCode = Invoke-UpdaterChild -NoRestartOnly
+    if ($pinWithoutRestartExitCode -ne 0) { throw 'updater-pin-rejected' }
+    $sourcePinnedWithoutRestart = ($beforeCommit -ne $TargetCommit)
+    if (-not (Test-Path -LiteralPath $MigrationScript -PathType Leaf)) {
+      throw 'task-migration-script-missing'
+    }
+
+    $migrationWhatIfExitCode = Invoke-TaskActionMigration -WhatIfOnly
+    if ($migrationWhatIfExitCode -ne 0) { throw 'task-migration-whatif-rejected' }
+    $migrationExitCode = Invoke-TaskActionMigration
+    if ($migrationExitCode -ne 0) { throw 'task-migration-rejected' }
+
+    $liveTask = Get-TaskMetadata -RootFolder $taskRoot -TaskName 'platform-ai-live-stt' `
+      -ExpectedScript 'C:\platform-ai\deploy\gpu-host\start-live-stt.ps1'
+    $meetingTask = Get-TaskMetadata -RootFolder $taskRoot -TaskName 'platform-ai-meeting-ai' `
+      -ExpectedScript 'C:\platform-ai\deploy\gpu-host\start-meeting-ai.ps1'
+    if (-not $liveTask.actionCanonical -or -not $meetingTask.actionCanonical) {
+      throw 'task-migration-readback-rejected'
+    }
+    # From this point onward the final updater owns restart/recovery semantics.
+    $sourcePinnedWithoutRestart = $false
+  }
+
   $deployExitCode = Invoke-UpdaterChild
   if ($deployExitCode -ne 0) { throw 'updater-deploy-rejected' }
 } catch {
-  $failureClass = [string]$_.Exception.Message
+  $failureClass = Get-RolloutFailureClass -ErrorRecord $_
+  if ($sourcePinnedWithoutRestart) {
+    $sourceRollbackExitCode = Invoke-UpdaterChild -RollbackOnly -NoRestartOnly
+    if ($sourceRollbackExitCode -ne 0) {
+      $failureClass = $failureClass + '-source-rollback-failed'
+    }
+  }
 } finally {
   try {
     Set-Location $RepoRoot
@@ -299,6 +420,14 @@ try {
 $liveHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8200/health'
 $meetingHealth = Get-HealthMetadata -Url 'http://127.0.0.1:8300/health'
 $stream = Test-WebSocketReady
+$migrationAccepted = (
+  (-not $migrationRequired) -or (
+    $pinWithoutRestartExitCode -eq 0 -and
+    $migrationWhatIfExitCode -eq 0 -and
+    $migrationExitCode -eq 0 -and
+    $sourceRollbackExitCode -eq -1
+  )
+)
 $sourceCommitVerified = (
   $whatIfExitCode -eq 0 -and
   $deployExitCode -eq 0 -and
@@ -307,6 +436,7 @@ $sourceCommitVerified = (
 )
 $go = (
   $failureClass -eq 'none' -and
+  $migrationAccepted -and
   $whatIfExitCode -eq 0 -and
   $deployExitCode -eq 0 -and
   $afterCommit -eq $TargetCommit -and
@@ -333,6 +463,14 @@ $evidence = [ordered]@{
   failureClass = $failureClass
   principal = $principalMetadata
   ledger = $ledger
+  taskMigration = [ordered]@{
+    required = $migrationRequired
+    pinWithoutRestartExitCode = $pinWithoutRestartExitCode
+    whatIfExitCode = $migrationWhatIfExitCode
+    migrationExitCode = $migrationExitCode
+    sourceRollbackExitCode = $sourceRollbackExitCode
+  }
+  tasksBefore = $tasksBefore
   tasks = [ordered]@{ liveStt = $liveTask; meetingAi = $meetingTask }
   health = [ordered]@{ liveStt = $liveHealth; meetingAi = $meetingHealth }
   webSocket = $stream
@@ -463,6 +601,14 @@ def failure_evidence(target_commit: str, failure_class: str) -> dict[str, Any]:
         "failureClass": failure_class,
         "principal": {"expectedIdentity": False, "administrator": False},
         "ledger": {},
+        "taskMigration": {
+            "required": False,
+            "pinWithoutRestartExitCode": -1,
+            "whatIfExitCode": -1,
+            "migrationExitCode": -1,
+            "sourceRollbackExitCode": -1,
+        },
+        "tasksBefore": {},
         "tasks": {},
         "health": {},
         "webSocket": {

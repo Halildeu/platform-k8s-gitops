@@ -225,6 +225,9 @@ jobs:
           live_device=""
           live_action_class="missing/missing"
           meeting_action_class="missing/missing"
+          migration_required="false"
+          migration_exits="-1/-1/-1"
+          source_rollback_exit="-1"
           if [ -f "${EVIDENCE_JSON}" ]; then
             status="$(jq -r '.status // "missing"' "${EVIDENCE_JSON}")"
             failure_class="$(
@@ -257,6 +260,23 @@ jobs:
                 ] | join("/")
               ' "${EVIDENCE_JSON}"
             )"
+            migration_required="$(
+              jq -r '.taskMigration.required // false' "${EVIDENCE_JSON}"
+            )"
+            migration_exits="$(
+              jq -r '
+                [
+                  .taskMigration.pinWithoutRestartExitCode // -1,
+                  .taskMigration.whatIfExitCode // -1,
+                  .taskMigration.migrationExitCode // -1
+                ] | map(tostring) | join("/")
+              ' "${EVIDENCE_JSON}"
+            )"
+            source_rollback_exit="$(
+              jq -r '
+                .taskMigration.sourceRollbackExitCode // -1
+              ' "${EVIDENCE_JSON}"
+            )"
           fi
           comment="${RUNNER_TEMP}/faz24-gpu-rollout.md"
           {
@@ -272,6 +292,9 @@ jobs:
             echo "- Failure class: \`${failure_class}\`"
             printf "%s \`%s\` / \`%s\`\n" '- Task action classes:' \
               "${live_action_class}" "${meeting_action_class}"
+            echo "- Task migration required: \`${migration_required}\`"
+            echo "- Pin/migration exits: \`${migration_exits}\`"
+            echo "- Source rollback exit: \`${source_rollback_exit}\`"
             echo "- Live STT: \`${live_status}\` / \`${live_device}\`"
             echo "- WebSocket ready: \`${websocket_ready}\`"
             artifact="faz24-gpu-rollout-evidence-${GITHUB_RUN_ID}"
