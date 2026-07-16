@@ -16,6 +16,7 @@
     "eventWatchMode",
     "eventWatchEstablished",
     "eventWatchResourceVersion",
+    "eventWatchErrorSha256",
     "finalResourceVersion",
     "eventCount",
     "browserAssetPathCount",
@@ -32,6 +33,8 @@
         "route-projection-changed",
         "missing-list-resource-version",
         "route-event-watch-terminated",
+        "route-event-watch-stderr-observed",
+        "route-event-watch-error",
         "route-event-observed",
         "route-resource-version-changed",
         "browser-route-path-evidence-missing",
@@ -69,6 +72,10 @@
       "type": "string",
       "pattern": "^$|^[0-9]+$"
     },
+    "eventWatchErrorSha256": {
+      "type": "string",
+      "pattern": "^$|^[0-9a-f]{64}$"
+    },
     "finalResourceVersion": {
       "type": "string",
       "pattern": "^$|^[0-9]+$"
@@ -96,6 +103,7 @@
           "violationCount": { "const": 0 },
           "eventWatchEstablished": { "const": true },
           "eventWatchResourceVersion": { "pattern": "^[0-9]+$" },
+          "eventWatchErrorSha256": { "const": "" },
           "finalResourceVersion": { "pattern": "^[0-9]+$" },
           "eventCount": { "const": 0 },
           "browserAssetPathCount": { "type": "integer", "minimum": 1 },
@@ -110,6 +118,18 @@
         "properties": {
           "failureReason": { "not": { "const": "" } },
           "violationCount": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "failureReason": { "const": "route-event-watch-stderr-observed" }
+        }
+      },
+      "then": {
+        "properties": {
+          "eventWatchErrorSha256": { "pattern": "^[0-9a-f]{64}$" }
         }
       }
     }
