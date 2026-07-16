@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Frame, type Locator, type Page } from '@playwright/test';
 import { createHash, randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -935,7 +935,36 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   }> = [];
   const unexpectedWebSockets: string[] = [];
   const unexpectedWorkers: string[] = [];
-  let frameAttachmentCount = 0;
+  const frameLifecycleRecords: Array<{
+    frame: Frame;
+    observedUrls: string[];
+    detached: boolean;
+  }> = [];
+  const frameLifecycleByFrame = new Map<
+    Frame,
+    (typeof frameLifecycleRecords)[number]
+  >();
+  const normalizeFrameUrl = (value: string) => {
+    if (value === '' || value === 'about:blank') return 'about:blank';
+    try {
+      const parsed = new URL(value);
+      return ['http:', 'https:'].includes(parsed.protocol)
+        ? `${parsed.origin}${parsed.pathname}`
+        : parsed.protocol;
+    } catch {
+      // Never echo an unparseable raw URL into logs or evidence. The sentinel
+      // is deliberately absent from every allowlist and therefore fails closed.
+      return '<malformed>';
+    }
+  };
+  const recordFrameUrl = (frame: Frame) => {
+    const record = frameLifecycleByFrame.get(frame);
+    if (!record) return;
+    const normalizedUrl = normalizeFrameUrl(frame.url());
+    if (record.observedUrls.at(-1) !== normalizedUrl) {
+      record.observedUrls.push(normalizedUrl);
+    }
+  };
   let fileChooserEventCount = 0;
   let downloadEventCount = 0;
   let dialogEventCount = 0;
@@ -992,8 +1021,17 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   });
   page.on('websocket', (webSocket) => unexpectedWebSockets.push(webSocket.url()));
   page.on('worker', (worker) => unexpectedWorkers.push(worker.url()));
-  page.on('frameattached', () => {
-    frameAttachmentCount += 1;
+  page.on('frameattached', (frame) => {
+    const record = { frame, observedUrls: [] as string[], detached: false };
+    frameLifecycleRecords.push(record);
+    frameLifecycleByFrame.set(frame, record);
+    recordFrameUrl(frame);
+  });
+  page.on('framenavigated', (frame) => recordFrameUrl(frame));
+  page.on('framedetached', (frame) => {
+    recordFrameUrl(frame);
+    const record = frameLifecycleByFrame.get(frame);
+    if (record) record.detached = true;
   });
   page.on('filechooser', () => {
     fileChooserEventCount += 1;
@@ -1627,6 +1665,125 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(popupHistoryIsInert(preJourneyPopupHistory)).toBe(true);
   unexpectedPopupPages.length = 0;
 
+  type FrameHistorySnapshot = {
+    detached: boolean;
+    observedUrls: string[];
+  };
+  const allowedPreJourneyFrameUrls = new Set([
+    'about:blank',
+    `${appOrigin}/silent-check-sso.html`,
+    `${issuerOrigin}${authorizationPath}`,
+    `${issuerOrigin}${issuerPath}/protocol/openid-connect/3p-cookies/step1.html`,
+    `${issuerOrigin}${issuerPath}/protocol/openid-connect/3p-cookies/step2.html`,
+  ]);
+  const expectedSilentCheckFrameUrl = `${appOrigin}/silent-check-sso.html`;
+  const expectedAuthorizationFrameUrl = `${issuerOrigin}${authorizationPath}`;
+  const frameHistoryIsExpectedSetup = (history: FrameHistorySnapshot[]) =>
+    history.length === 2 &&
+    history.every(
+      ({ detached, observedUrls }) =>
+        detached &&
+        observedUrls.length >= 1 &&
+        observedUrls.some((url) => url !== 'about:blank') &&
+        observedUrls.every((url) => allowedPreJourneyFrameUrls.has(url)),
+    ) &&
+    history.some(({ observedUrls }) =>
+      observedUrls.includes(expectedSilentCheckFrameUrl),
+    ) &&
+    history.some(({ observedUrls }) =>
+      observedUrls.includes(expectedAuthorizationFrameUrl),
+    );
+
+  // Exercise the actual primary-page frame lifecycle listener with a
+  // network-free data: iframe. The exact setup policy must reject this frame
+  // after detach, then only the identity-matched negative-control record is
+  // removed before evaluating real authentication/setup history.
+  await page.evaluate(() => {
+    const negativeControlFrame = document.createElement('iframe');
+    negativeControlFrame.dataset.testid = 'frame-ledger-negative-control';
+    negativeControlFrame.src = 'data:text/html,frame-ledger-negative-control';
+    document.body.append(negativeControlFrame);
+  });
+  const frameLedgerNegativeControlElement = await page
+    .locator('iframe[data-testid="frame-ledger-negative-control"]')
+    .elementHandle();
+  if (!frameLedgerNegativeControlElement) {
+    throw new Error('frame-ledger-negative-control-element-missing');
+  }
+  const frameLedgerNegativeControlFrame =
+    await frameLedgerNegativeControlElement.contentFrame();
+  if (!frameLedgerNegativeControlFrame) {
+    throw new Error('frame-ledger-negative-control-frame-missing');
+  }
+  await frameLedgerNegativeControlFrame.waitForLoadState('load');
+  await expect
+    .poll(
+      () =>
+        frameLifecycleByFrame
+          .get(frameLedgerNegativeControlFrame)
+          ?.observedUrls.includes('data:') ?? false,
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    document
+      .querySelector('iframe[data-testid="frame-ledger-negative-control"]')
+      ?.remove();
+  });
+  await expect
+    .poll(
+      () =>
+        frameLifecycleByFrame.get(frameLedgerNegativeControlFrame)?.detached ?? false,
+    )
+    .toBe(true);
+  const frameLedgerNegativeControl = frameLifecycleByFrame.get(
+    frameLedgerNegativeControlFrame,
+  );
+  if (!frameLedgerNegativeControl) {
+    throw new Error('frame-ledger-negative-control-record-missing');
+  }
+  const frameLedgerNegativeControlIndex = frameLifecycleRecords.indexOf(
+    frameLedgerNegativeControl,
+  );
+  if (frameLedgerNegativeControlIndex < 0) {
+    throw new Error('frame-ledger-negative-control-index-missing');
+  }
+  frameLifecycleRecords.splice(frameLedgerNegativeControlIndex, 1);
+  frameLifecycleByFrame.delete(frameLedgerNegativeControl.frame);
+  expect(frameLedgerNegativeControl.detached).toBe(true);
+  expect(frameLedgerNegativeControl.observedUrls).toContain('data:');
+  expect(allowedPreJourneyFrameUrls.has('data:')).toBe(false);
+  expect(
+    frameHistoryIsExpectedSetup([
+      {
+        detached: frameLedgerNegativeControl.detached,
+        observedUrls: frameLedgerNegativeControl.observedUrls,
+      },
+      {
+        detached: true,
+        observedUrls: [
+          expectedAuthorizationFrameUrl,
+          expectedSilentCheckFrameUrl,
+        ],
+      },
+    ]),
+  ).toBe(false);
+
+  const activeChildFramesAtProductJourneyStart = page
+    .frames()
+    .filter((frame) => frame !== page.mainFrame())
+    .map((frame) => normalizeFrameUrl(frame.url()));
+  const preJourneyFrameHistory = frameLifecycleRecords.map((record) => ({
+    detached: record.detached,
+    observedUrls: record.observedUrls,
+  }));
+  expect(activeChildFramesAtProductJourneyStart).toEqual([]);
+  expect(
+    frameHistoryIsExpectedSetup(preJourneyFrameHistory),
+    `unexpected sanitized pre-journey frame history: ${JSON.stringify(preJourneyFrameHistory)}`,
+  ).toBe(true);
+  frameLifecycleRecords.length = 0;
+  frameLifecycleByFrame.clear();
+
   const productJourneyAuditStart = await page.evaluate(() => {
     const auditWindow = window as Window & {
       __p5BrowserAuditBeginProductJourney?: () => void;
@@ -1701,7 +1858,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
   expect(unexpectedPopupPages).toEqual([]);
   expect(unexpectedWebSockets).toEqual([]);
   expect(unexpectedWorkers).toEqual([]);
-  expect(frameAttachmentCount).toBe(0);
+  expect(frameLifecycleRecords).toEqual([]);
   expect(fileChooserEventCount).toBe(0);
   expect(downloadEventCount).toBe(0);
   expect(dialogEventCount).toBe(0);
@@ -2404,7 +2561,7 @@ test('proves the named VIEW-only persona on the live P5 product surface', async 
         (persistence?.instrumentationFailureCount ?? -1),
       webSocketEventCount: unexpectedWebSockets.length,
       workerEventCount: unexpectedWorkers.length,
-      frameAttachmentCount,
+      frameAttachmentCount: frameLifecycleRecords.length,
       fileChooserEventCount,
       downloadEventCount,
       dialogEventCount,
