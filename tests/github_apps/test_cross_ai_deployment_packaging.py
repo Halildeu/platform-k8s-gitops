@@ -134,6 +134,12 @@ class PackagingContractTests(unittest.TestCase):
                 "metadata": "read",
             },
         )
+        self.assertEqual(evaluator["name"], "Acik Cross-AI Deploy Protection")
+        self.assertLessEqual(
+            len(evaluator["name"]),
+            34,
+            "GitHub App registration rejects names longer than 34 characters",
+        )
         self.assertEqual(evaluator["default_events"], ["deployment_protection_rule"])
         self.assertEqual(
             dispatcher["default_permissions"],

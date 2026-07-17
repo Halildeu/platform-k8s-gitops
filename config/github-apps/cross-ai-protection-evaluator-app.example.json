@@ -1,5 +1,5 @@
 {
-  "name": "Acik Cross-AI Deployment Protection",
+  "name": "Acik Cross-AI Deploy Protection",
   "url": "https://github.com/Halildeu/platform-k8s-gitops",
   "hook_attributes": {
     "active": true,
