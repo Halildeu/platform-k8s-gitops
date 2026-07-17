@@ -125,17 +125,92 @@ try {
   await waitVisible(candidatePage.getByTestId('candidate-application-receipt'), 'persistent receipt');
   publicRef = (await candidatePage.getByTestId('candidate-receipt-id').textContent())?.trim() ?? '';
   if (!/^app_[A-Za-z0-9_-]{24}$/u.test(publicRef)) throw new Error('persistent receipt ref invalid');
-  const sessionShape = await candidatePage.evaluate(() => {
+  const sessionShape = await candidatePage.evaluate(async () => {
     const raw = sessionStorage.getItem('ats.candidate.latest.v1');
     const parsed = raw ? JSON.parse(raw) : null;
+    const token = typeof parsed?.candidateAccessToken === 'string' ? parsed.candidateAccessToken : '';
+    const tokenDigest = token
+      ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))))
+          .map((byte) => byte.toString(16).padStart(2, '0'))
+          .join('')
+      : '';
+    const localStorageContainsToken = token
+      ? Object.values(localStorage).some((value) => value.includes(token))
+      : false;
+    const documentCookieContainsToken = token ? document.cookie.includes(token) : false;
+
+    let cacheContainsToken = false;
+    if (token && 'caches' in globalThis) {
+      for (const cacheName of await caches.keys()) {
+        const cache = await caches.open(cacheName);
+        for (const request of await cache.keys()) {
+          const response = await cache.match(request);
+          const text = await response?.clone().text().catch(() => '');
+          if (text?.includes(token)) cacheContainsToken = true;
+        }
+      }
+    }
+
+    let indexedDbContainsToken = false;
+    const valueContainsToken = (value, seen = new WeakSet()) => {
+      if (typeof value === 'string') return token ? value.includes(token) : false;
+      if (!value || typeof value !== 'object') return false;
+      if (seen.has(value)) return false;
+      seen.add(value);
+      return Object.values(value).some((child) => valueContainsToken(child, seen));
+    };
+    const databaseNames = typeof indexedDB.databases === 'function'
+      ? (await indexedDB.databases()).map((database) => database.name).filter(Boolean)
+      : [];
+    for (const databaseName of databaseNames) {
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(databaseName);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        for (const storeName of Array.from(database.objectStoreNames)) {
+          const values = await new Promise((resolve, reject) => {
+            const transaction = database.transaction(storeName, 'readonly');
+            const request = transaction.objectStore(storeName).getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          if (values.some((value) => valueContainsToken(value))) {
+            indexedDbContainsToken = true;
+          }
+        }
+      } finally {
+        database.close();
+      }
+    }
     return {
       hasRef: typeof parsed?.publicRef === 'string',
-      hasToken: typeof parsed?.candidateAccessToken === 'string',
+      hasToken: token.length > 0,
+      tokenSha256: tokenDigest,
       localStorageToken: localStorage.getItem('ats.candidate.latest.v1'),
+      localStorageContainsToken,
+      documentCookieContainsToken,
+      cacheContainsToken,
+      indexedDbContainsToken,
+      urlContainsToken: token ? location.href.includes(token) : false,
       url: location.href,
     };
   });
-  if (!sessionShape.hasRef || !sessionShape.hasToken || sessionShape.localStorageToken !== null) {
+  const contextCookieContainsToken = (await candidateContext.cookies()).some(
+    (cookie) => sha256(cookie.value) === sessionShape.tokenSha256,
+  );
+  if (
+    !sessionShape.hasRef ||
+    !sessionShape.hasToken ||
+    sessionShape.localStorageToken !== null ||
+    sessionShape.localStorageContainsToken ||
+    sessionShape.documentCookieContainsToken ||
+    sessionShape.cacheContainsToken ||
+    sessionShape.indexedDbContainsToken ||
+    sessionShape.urlContainsToken ||
+    contextCookieContainsToken
+  ) {
     throw new Error('candidate session minimization contract failed');
   }
   if (sessionShape.url.includes(publicRef)) throw new Error('candidate reference leaked to URL');
