@@ -10,6 +10,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Protocol
 
+from .bootstrap import RunnerBootstrapAuthorizer, RunnerBootstrapRequest
 from .errors import PolicyError, reject
 from .evaluator import EvaluationResult
 from .github import CallbackResult
@@ -64,6 +65,7 @@ class ObserveService:
         registry: IntentRegistry | None = None,
         decision_client: DecisionClient | None = None,
         outcome_sweeper: BackgroundReconciler | None = None,
+        bootstrap_authorizer: RunnerBootstrapAuthorizer | None = None,
     ) -> None:
         if not secrets:
             reject("WEBHOOK_SECRET_MISSING", "observe service requires webhook secrets")
@@ -74,10 +76,11 @@ class ObserveService:
             or registry is None
             or decision_client is None
             or outcome_sweeper is None
+            or bootstrap_authorizer is None
         ):
             reject(
                 "ENFORCEMENT_DEPENDENCY_MISSING",
-                "enforcement requires evaluator, registry, decision client and outcome sweeper",
+                "enforcement requires evaluator, registry, decision client, outcome sweeper and runner bootstrap",
             )
         self.secrets = secrets
         self.ledger = ledger
@@ -87,6 +90,7 @@ class ObserveService:
         self.registry = registry
         self.decision_client = decision_client
         self.outcome_sweeper = outcome_sweeper
+        self.bootstrap_authorizer = bootstrap_authorizer
         self._reconcilers: list[BackgroundReconciler] = []
         self.queue: queue.Queue[DeploymentProtectionRequest | None] = queue.Queue(
             maxsize=queue_capacity
@@ -117,7 +121,9 @@ class ObserveService:
     def add_background_reconciler(self, reconciler: BackgroundReconciler) -> None:
         with self._accept_lock:
             if reconciler in self._reconcilers:
-                reject("RECONCILER_DUPLICATE", "background reconciler is already attached")
+                reject(
+                    "RECONCILER_DUPLICATE", "background reconciler is already attached"
+                )
             self._reconcilers.append(reconciler)
             reconciler.start()
 
@@ -208,9 +214,7 @@ class ObserveService:
             finally:
                 self.queue.task_done()
 
-    def _observe(
-        self, request: DeploymentProtectionRequest
-    ) -> EvaluationResult | None:
+    def _observe(self, request: DeploymentProtectionRequest) -> EvaluationResult | None:
         self.ledger.append_event(
             delivery_id=request.delivery_id,
             event_type="OBSERVED",
@@ -301,7 +305,9 @@ class ObserveService:
                 )
             self.ledger.append_event(
                 delivery_id=request.delivery_id,
-                event_type="DECISION_APPROVED" if state == "approved" else "DECISION_REJECTED",
+                event_type="DECISION_APPROVED"
+                if state == "approved"
+                else "DECISION_REJECTED",
                 reason_code=reason_code,
                 evidence_digest=evidence_digest,
             )
@@ -323,7 +329,9 @@ class ObserveService:
                 )
         self.ledger.append_event(
             delivery_id=request.delivery_id,
-            event_type="CALLBACK_UNKNOWN" if callback.ambiguous else "CALLBACK_DEFINITIVE_FAILURE",
+            event_type="CALLBACK_UNKNOWN"
+            if callback.ambiguous
+            else "CALLBACK_DEFINITIVE_FAILURE",
             reason_code=callback.reason_code,
             evidence_digest=evidence_digest,
         )
@@ -426,7 +434,12 @@ class PolicyHandler(BaseHTTPRequestHandler):
         )
 
     def _json(self, status: HTTPStatus, body: dict[str, Any]) -> None:
-        encoded = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
+        encoded = json.dumps(
+            body,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
@@ -460,6 +473,9 @@ class PolicyHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.NOT_FOUND, {"status": "not_found"})
 
     def do_POST(self) -> None:  # noqa: N802 (stdlib handler API)
+        if self.path == "/v1/runner-bootstrap":
+            self._runner_bootstrap()
+            return
         if self.path != "/webhooks/github":
             self._json(HTTPStatus.NOT_FOUND, {"accepted": False, "code": "NOT_FOUND"})
             return
@@ -530,6 +546,99 @@ class PolicyHandler(BaseHTTPRequestHandler):
                 "mode": self.service.mode,
             },
         )
+
+    def _runner_bootstrap(self) -> None:
+        if self.service.mode != "enforce" or self.service.bootstrap_authorizer is None:
+            self._json(HTTPStatus.NOT_FOUND, {"accepted": False, "code": "NOT_FOUND"})
+            return
+        if self.headers.get("Transfer-Encoding"):
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"accepted": False, "code": "CHUNKED_BODY_FORBIDDEN"},
+            )
+            return
+        content_types = self.headers.get_all("Content-Type", [])
+        if (
+            len(content_types) != 1
+            or self.headers.get_content_type() != "application/json"
+        ):
+            self._json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"accepted": False, "code": "BOOTSTRAP_CONTENT_TYPE_INVALID"},
+            )
+            return
+        authorization = self.headers.get_all("Authorization", [])
+        bootstrap_credentials = self.headers.get_all(
+            "X-Cross-AI-Bootstrap-Credential", []
+        )
+        if (
+            len(authorization) != 1
+            or not authorization[0].startswith("Bearer ")
+            or len(bootstrap_credentials) != 1
+        ):
+            self._json(
+                HTTPStatus.UNAUTHORIZED,
+                {"accepted": False, "code": "BOOTSTRAP_CREDENTIAL_MISSING"},
+            )
+            return
+        oidc_token = authorization[0][len("Bearer ") :]
+        try:
+            credential_bytes = bootstrap_credentials[0].encode("ascii")
+        except UnicodeEncodeError:
+            credential_bytes = b""
+        content_length_value = self.headers.get("Content-Length")
+        try:
+            content_length = int(content_length_value or "")
+        except ValueError:
+            content_length = -1
+        if not 1 <= content_length <= 16 * 1024:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"accepted": False, "code": "BOOTSTRAP_BODY_SIZE_INVALID"},
+            )
+            return
+        raw_body = self.rfile.read(content_length)
+        if len(raw_body) != content_length or b"\x00" in raw_body:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"accepted": False, "code": "BOOTSTRAP_BODY_INVALID"},
+            )
+            return
+
+        def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+            result: dict[str, object] = {}
+            for key, value in pairs:
+                if key in result:
+                    reject(
+                        "BOOTSTRAP_REQUEST_INVALID",
+                        "bootstrap request contains a duplicate key",
+                    )
+                result[key] = value
+            return result
+
+        try:
+            value = json.loads(raw_body, object_pairs_hook=unique_object)
+            request = RunnerBootstrapRequest.parse(value)
+            response = self.service.bootstrap_authorizer.authorize(
+                request=request,
+                credential=credential_bytes,
+                oidc_token=oidc_token,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"accepted": False, "code": "BOOTSTRAP_REQUEST_INVALID"},
+            )
+            return
+        except PolicyError as exc:
+            status = (
+                HTTPStatus.CONFLICT
+                if exc.code == "BOOTSTRAP_ALREADY_CONSUMED"
+                else HTTPStatus.FORBIDDEN
+            )
+            self._json(status, {"accepted": False, "code": exc.code})
+            return
+        self._json(HTTPStatus.OK, response)
 
 
 def make_server(

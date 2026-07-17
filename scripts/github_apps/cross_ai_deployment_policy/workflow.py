@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shlex
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +23,7 @@ from .policy import StagePolicy
 
 MAX_WORKFLOW_BYTES = 1024 * 1024
 FULL_COMMIT_SHA = re.compile(r"^[a-f0-9]{40}$")
+SHA256_DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 DOCKER_DIGEST = re.compile(r"^docker://[^\s@]+@sha256:[a-f0-9]{64}$")
 REMOTE_ACTION = re.compile(
     r"^(?P<repository>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)"
@@ -32,9 +34,21 @@ FORBIDDEN_AUTHORITY = re.compile(
     r"\$\{\{\s*(?:inputs\.|vars\.|github[.]event[.]inputs(?:[.\s}]))",
     re.IGNORECASE,
 )
-REMOTE_CONTROL = re.compile(
-    r"(?:\bcurl\b|\bwget\b)[^\n]*(?:https?://|\|\s*(?:ba)?sh\b)",
-    re.IGNORECASE,
+SECRET_CONTEXT = re.compile(r"\bsecrets\s*(?:[.]|\[)", re.IGNORECASE)
+BOOTSTRAP_SCRIPT = "scripts/github_apps/run_cross_ai_runner_bootstrap.py"
+BOOTSTRAP_OUTPUT_VALUE = "${{ runner.temp }}/cross-ai-bootstrap.json"
+BOOTSTRAP_CONFIG_PATH = re.compile(r"^config/github-apps/[A-Za-z0-9_.-]+[.]json$")
+BOOTSTRAP_ENV = {
+    "CROSS_AI_BOOTSTRAP_TOKEN": "${{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}",
+    "CROSS_AI_ENDPOINT_ID": "${{ secrets.CROSS_AI_ENDPOINT_ID }}",
+    "CROSS_AI_OPERATOR_ID": "${{ secrets.CROSS_AI_OPERATOR_ID }}",
+    "CROSS_AI_BOOTSTRAP_OUTPUT": BOOTSTRAP_OUTPUT_VALUE,
+}
+POST_BOOTSTRAP_ENV = {"CROSS_AI_BOOTSTRAP_FILE": BOOTSTRAP_OUTPUT_VALUE}
+PROTECTED_SECRET_NAMES = (
+    "CROSS_AI_BOOTSTRAP_TOKEN",
+    "CROSS_AI_ENDPOINT_ID",
+    "CROSS_AI_OPERATOR_ID",
 )
 
 
@@ -136,6 +150,15 @@ def _validate_trigger(workflow: dict[str, Any]) -> None:
         )
 
 
+def _validate_permissions(workflow: dict[str, Any]) -> None:
+    permissions = _mapping(workflow.get("permissions"), "permissions")
+    if permissions != {"contents": "read", "id-token": "write"}:
+        reject(
+            "WORKFLOW_OIDC_PERMISSION_INVALID",
+            "machine-gated workflow permissions must be exact least privilege",
+        )
+
+
 def _runs_on(value: object) -> tuple[tuple[str, ...], str | None]:
     group: str | None = None
     labels_value = value
@@ -151,8 +174,7 @@ def _runs_on(value: object) -> tuple[tuple[str, ...], str | None]:
         labels = (labels_value,)
     elif isinstance(labels_value, list):
         if not labels_value or not all(
-            isinstance(label, str) and 1 <= len(label) <= 100
-            for label in labels_value
+            isinstance(label, str) and 1 <= len(label) <= 100 for label in labels_value
         ):
             reject("WORKFLOW_RUNNER_INVALID", "runs-on labels are invalid")
         labels = tuple(labels_value)
@@ -168,7 +190,9 @@ def _environment_name(value: object) -> str | None:
         return value
     if isinstance(value, dict):
         if set(value) - {"name", "url"}:
-            reject("WORKFLOW_ENVIRONMENT_INVALID", "environment contains unknown fields")
+            reject(
+                "WORKFLOW_ENVIRONMENT_INVALID", "environment contains unknown fields"
+            )
         name = value.get("name")
         if not isinstance(name, str):
             reject("WORKFLOW_ENVIRONMENT_INVALID", "environment name must be literal")
@@ -185,7 +209,9 @@ def _inspect_use(
     external: set[str],
 ) -> None:
     if not isinstance(value, str) or not value or "${{" in value:
-        reject("WORKFLOW_DEPENDENCY_UNPINNED", "uses must be a literal pinned reference")
+        reject(
+            "WORKFLOW_DEPENDENCY_UNPINNED", "uses must be a literal pinned reference"
+        )
     if value.startswith("./"):
         if LOCAL_USE.fullmatch(value) is None or ".." in value.split("/"):
             reject("WORKFLOW_LOCAL_DEPENDENCY_INVALID", "local uses path is invalid")
@@ -193,13 +219,168 @@ def _inspect_use(
         return
     if value.startswith("docker://"):
         if DOCKER_DIGEST.fullmatch(value) is None:
-            reject("WORKFLOW_DEPENDENCY_UNPINNED", "container uses must pin a SHA-256 digest")
+            reject(
+                "WORKFLOW_DEPENDENCY_UNPINNED",
+                "container uses must pin a SHA-256 digest",
+            )
         external.add(value)
         return
     match = REMOTE_ACTION.fullmatch(value)
     if match is None or FULL_COMMIT_SHA.fullmatch(match.group("revision")) is None:
-        reject("WORKFLOW_DEPENDENCY_UNPINNED", "external actions must pin a full commit SHA")
+        reject(
+            "WORKFLOW_DEPENDENCY_UNPINNED",
+            "external actions must pin a full commit SHA",
+        )
     external.add(value)
+
+
+def _checkout_action(value: object) -> tuple[bool, bool]:
+    if not isinstance(value, str):
+        return False, False
+    match = REMOTE_ACTION.fullmatch(value)
+    if match is None or match.group("repository").casefold() != "actions/checkout":
+        return False, False
+    return True, match.group("path") is None
+
+
+def _protected_secret_reference_count(raw_text: str, secret_name: str) -> int:
+    name = re.escape(secret_name)
+    pattern = re.compile(
+        rf"\$\{{\{{\s*secrets\s*(?:\.\s*{name}|\[\s*['\"]{name}['\"]\s*\])\s*\}}\}}",
+        re.IGNORECASE,
+    )
+    return len(pattern.findall(raw_text))
+
+
+def _validate_bootstrap_command(command: object, stage_policy: StagePolicy) -> None:
+    if not isinstance(command, str) or any(
+        character in command for character in "\r\n"
+    ):
+        reject(
+            "WORKFLOW_BOOTSTRAP_INVALID",
+            "bootstrap command must be one literal command",
+        )
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        reject("WORKFLOW_BOOTSTRAP_INVALID", "bootstrap command quoting is invalid")
+    if tokens[:2] != ["python3", BOOTSTRAP_SCRIPT] or len(tokens) != 16:
+        reject(
+            "WORKFLOW_BOOTSTRAP_INVALID",
+            "bootstrap command must use only the pinned argument profile",
+        )
+    pairs = tokens[2:]
+    arguments = dict(zip(pairs[::2], pairs[1::2], strict=True))
+    required = {
+        "--stage",
+        "--workflow-path",
+        "--policy-file",
+        "--trust-root-file",
+        "--expected-trust-root-sha256",
+        "--revocations-file",
+        "--output",
+    }
+    if len(arguments) != 7 or set(arguments) != required:
+        reject(
+            "WORKFLOW_BOOTSTRAP_INVALID",
+            "bootstrap command arguments are not the pinned profile",
+        )
+    if (
+        arguments["--stage"] != stage_policy.stage
+        or arguments["--workflow-path"] != stage_policy.workflow_path
+        or arguments["--output"] != "$CROSS_AI_BOOTSTRAP_OUTPUT"
+        or SHA256_DIGEST.fullmatch(arguments["--expected-trust-root-sha256"]) is None
+        or any(
+            BOOTSTRAP_CONFIG_PATH.fullmatch(arguments[name]) is None
+            for name in ("--policy-file", "--trust-root-file", "--revocations-file")
+        )
+    ):
+        reject(
+            "WORKFLOW_BOOTSTRAP_INVALID",
+            "bootstrap command values differ from the signed stage profile",
+        )
+
+
+def _validate_bootstrap_step(
+    job: dict[str, Any],
+    job_name: str,
+    *,
+    stage_policy: StagePolicy,
+    expected_bootstrap_url: str,
+) -> None:
+    steps = _sequence(job.get("steps", []), f"jobs.{job_name}.steps")
+    matches: list[tuple[int, dict[str, Any]]] = []
+    for index, step_value in enumerate(steps):
+        step = _mapping(step_value, f"jobs.{job_name}.steps[]")
+        command = step.get("run")
+        if isinstance(command, str) and BOOTSTRAP_SCRIPT in command:
+            matches.append((index, step))
+    if len(matches) != 1:
+        reject(
+            "WORKFLOW_BOOTSTRAP_INVALID",
+            "governed job must call the pinned runner bootstrap exactly once",
+        )
+    bootstrap_index, bootstrap = matches[0]
+    if bootstrap_index != 1:
+        reject(
+            "WORKFLOW_BOOTSTRAP_ORDER_INVALID",
+            "runner bootstrap must immediately follow one pinned checkout step",
+        )
+    for prior_value in steps[:bootstrap_index]:
+        prior = _mapping(prior_value, f"jobs.{job_name}.steps[]")
+        use = prior.get("uses")
+        is_checkout, is_root_checkout = _checkout_action(use)
+        if set(prior) - {"name", "uses"} or not is_checkout or not is_root_checkout:
+            reject(
+                "WORKFLOW_BOOTSTRAP_ORDER_INVALID",
+                "only pinned checkout may run before runner bootstrap",
+            )
+    if set(bootstrap) - {"name", "env", "run"}:
+        reject(
+            "WORKFLOW_BOOTSTRAP_INVALID",
+            "bootstrap step contains an unsupported control field",
+        )
+    _validate_bootstrap_command(bootstrap.get("run"), stage_policy)
+    environment = _mapping(bootstrap.get("env"), "runner bootstrap env")
+    if set(environment) != set(BOOTSTRAP_ENV) | {"CROSS_AI_BOOTSTRAP_URL"}:
+        reject(
+            "WORKFLOW_BOOTSTRAP_CREDENTIAL_INVALID",
+            "runner bootstrap environment contains an unsupported value",
+        )
+    for name, expected in BOOTSTRAP_ENV.items():
+        if environment.get(name) != expected:
+            reject(
+                "WORKFLOW_BOOTSTRAP_CREDENTIAL_INVALID",
+                f"runner bootstrap must receive {name} only through protected env",
+            )
+    endpoint = environment.get("CROSS_AI_BOOTSTRAP_URL")
+    if endpoint != expected_bootstrap_url:
+        reject(
+            "WORKFLOW_BOOTSTRAP_ENDPOINT_INVALID",
+            "runner bootstrap endpoint differs from the signed policy",
+        )
+    post_bootstrap = steps[bootstrap_index + 1 :]
+    if not 1 <= len(post_bootstrap) <= 8:
+        reject(
+            "WORKFLOW_POST_BOOTSTRAP_INVALID",
+            "governed job must have a bounded pinned execution action",
+        )
+    for step_value in post_bootstrap:
+        step = _mapping(step_value, f"jobs.{job_name}.steps[]")
+        use = step.get("uses")
+        is_checkout, _is_root_checkout = _checkout_action(use)
+        if (
+            set(step) - {"name", "uses", "env"}
+            or not isinstance(use, str)
+            or use.startswith("./")
+            or is_checkout
+            or _mapping(step.get("env"), "post-bootstrap action env")
+            != POST_BOOTSTRAP_ENV
+        ):
+            reject(
+                "WORKFLOW_POST_BOOTSTRAP_INVALID",
+                "post-bootstrap execution must use only pinned actions with the verified file",
+            )
 
 
 def inspect_workflow(
@@ -207,42 +388,72 @@ def inspect_workflow(
     *,
     stage_policy: StagePolicy,
     environment: str,
+    expected_bootstrap_url: str,
 ) -> WorkflowInspection:
     """Return reproducible workflow bindings or reject the workflow closed."""
 
     workflow = _parse_yaml(raw)
+    if set(workflow) - {"name", "on", "permissions", "concurrency", "jobs"}:
+        reject(
+            "WORKFLOW_ROOT_CONTROL_INVALID",
+            "workflow contains an unsupported root control field",
+        )
     raw_text = raw.decode("utf-8")
     if FORBIDDEN_AUTHORITY.search(raw_text):
         reject(
             "WORKFLOW_INPUT_AUTHORITY_FORBIDDEN",
             "workflow reads an unavailable input or mutable vars authority",
         )
-    if REMOTE_CONTROL.search(raw_text):
+    for secret_name in PROTECTED_SECRET_NAMES:
+        if _protected_secret_reference_count(raw_text, secret_name) != 1:
+            reject(
+                "WORKFLOW_BOOTSTRAP_CREDENTIAL_INVALID",
+                "protected bootstrap values must appear only in the bootstrap step",
+            )
+    if len(SECRET_CONTEXT.findall(raw_text)) != len(PROTECTED_SECRET_NAMES):
         reject(
-            "WORKFLOW_REMOTE_CONTROL_FORBIDDEN",
-            "workflow may not download remote control content",
+            "WORKFLOW_BOOTSTRAP_CREDENTIAL_INVALID",
+            "governed workflow may reference only the three pinned bootstrap secrets",
         )
     _validate_trigger(workflow)
+    _validate_permissions(workflow)
 
     jobs = _mapping(workflow.get("jobs"), "jobs")
-    if not jobs:
-        reject("WORKFLOW_JOBS_INVALID", "workflow must contain jobs")
+    if len(jobs) != 1:
+        reject(
+            "WORKFLOW_JOBS_INVALID", "workflow must contain exactly one governed job"
+        )
     governed_jobs: list[str] = []
     local: set[str] = set()
     external: set[str] = set()
     governed_labels: tuple[str, ...] | None = None
     governed_group: str | None = None
+    governed_job_value: dict[str, Any] | None = None
 
     for job_name, job_value in jobs.items():
         job = _mapping(job_value, f"jobs.{job_name}")
+        if set(job) - {
+            "name",
+            "environment",
+            "runs-on",
+            "steps",
+            "timeout-minutes",
+            "concurrency",
+        }:
+            reject(
+                "WORKFLOW_JOB_CONTROL_INVALID",
+                "governed job contains an unsupported control field",
+            )
         if "continue-on-error" in job:
-            reject("WORKFLOW_CONTINUE_ON_ERROR_FORBIDDEN", "job continue-on-error is forbidden")
+            reject(
+                "WORKFLOW_CONTINUE_ON_ERROR_FORBIDDEN",
+                "job continue-on-error is forbidden",
+            )
         job_environment = _environment_name(job.get("environment"))
         if job_environment == environment:
             governed_jobs.append(job_name)
             governed_labels, governed_group = _runs_on(job.get("runs-on"))
-        if "uses" in job:
-            _inspect_use(job["uses"], local=local, external=external)
+            governed_job_value = job
         steps_value = job.get("steps", [])
         for step_value in _sequence(steps_value, f"jobs.{job_name}.steps"):
             step = _mapping(step_value, f"jobs.{job_name}.steps[]")
@@ -259,11 +470,23 @@ def inspect_workflow(
             "WORKFLOW_ENVIRONMENT_BINDING_INVALID",
             "exactly one job must bind the governed Environment",
         )
+    assert governed_job_value is not None
+    _validate_bootstrap_step(
+        governed_job_value,
+        governed_jobs[0],
+        stage_policy=stage_policy,
+        expected_bootstrap_url=expected_bootstrap_url,
+    )
     expected_labels = tuple(stage_policy.required_runs_on_labels)
     if governed_labels != expected_labels:
-        reject("WORKFLOW_RUNNER_MISMATCH", "governed job runs-on labels do not match policy")
+        reject(
+            "WORKFLOW_RUNNER_MISMATCH",
+            "governed job runs-on labels do not match policy",
+        )
     if stage_policy.require_runner_group != (governed_group is not None):
-        reject("WORKFLOW_RUNNER_MISMATCH", "runner-group requirement does not match policy")
+        reject(
+            "WORKFLOW_RUNNER_MISMATCH", "runner-group requirement does not match policy"
+        )
 
     dependency_projection = {
         "domain": "acik.cross-ai-workflow-dependency-lock.v1",

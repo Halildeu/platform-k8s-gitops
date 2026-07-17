@@ -194,6 +194,122 @@ class NotReadySweeper(FakeSweeper):
         return False
 
 
+class FakeBootstrapAuthorizer:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def authorize(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "schemaVersion": "acik.cross-ai-runner-bootstrap-response.v1",
+            "requestId": kwargs["request"].request_id,
+        }
+
+
+class BootstrapHTTPServerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.ledger = ObserveLedger(
+            Path(self.directory.name) / "bootstrap-ledger.sqlite3"
+        )
+        self.bootstrap = FakeBootstrapAuthorizer()
+        self.service = ObserveService(
+            secrets=(TEST_HMAC_KEY,),
+            ledger=self.ledger,
+            evaluator=FakeEvaluator(),
+            mode="enforce",
+            registry=FakeRegistry(),  # type: ignore[arg-type]
+            decision_client=FakeDecisionClient(
+                CallbackResult(True, False, 204, "CALLBACK_ACCEPTED_204")
+            ),
+            outcome_sweeper=FakeSweeper(),
+            bootstrap_authorizer=self.bootstrap,  # type: ignore[arg-type]
+        )
+        self.server = make_server("127.0.0.1", 0, self.service)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.host, self.port = self.server.server_address
+        self.body = json.dumps(
+            {
+                "requestId": "30000000-0000-4000-8000-000000000001",
+                "stage": "apply",
+                "runId": 999001,
+                "runAttempt": 1,
+                "intentRef": (
+                    "refs/tags/cross-ai-intent/" "30000000-0000-4000-8000-000000000001"
+                ),
+                "headSha": "a" * 40,
+                "workflowPath": ".github/workflows/apply-protected.yml",
+                "runnerName": "testai-deploy-runner",
+            },
+            separators=(",", ":"),
+        ).encode()
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+        self.service.stop()
+        self.ledger.close()
+        self.directory.cleanup()
+
+    def post(
+        self, body: bytes, headers: dict[str, str]
+    ) -> tuple[int, dict[str, object]]:
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=5)
+        try:
+            connection.request(
+                "POST", "/v1/runner-bootstrap", body=body, headers=headers
+            )
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close()
+
+    def test_accepts_bearer_only_in_header_and_passes_bytes_out_of_logs(self) -> None:
+        token = "x" * 40
+        status, response = self.post(
+            self.body,
+            {
+                "Authorization": "Bearer fake-oidc-token",
+                "X-Cross-AI-Bootstrap-Credential": token,
+                "Content-Type": "application/json",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(response["requestId"], "30000000-0000-4000-8000-000000000001")
+        self.assertEqual(self.bootstrap.calls[0]["credential"], token.encode())
+        self.assertEqual(self.bootstrap.calls[0]["oidc_token"], "fake-oidc-token")
+
+    def test_rejects_missing_credential_duplicate_key_and_chunked_shape(self) -> None:
+        status, response = self.post(self.body, {"Content-Type": "application/json"})
+        self.assertEqual(status, 401)
+        self.assertEqual(response["code"], "BOOTSTRAP_CREDENTIAL_MISSING")
+        duplicate = self.body[:-1] + b',"stage":"apply"}'
+        status, response = self.post(
+            duplicate,
+            {
+                "Authorization": "Bearer fake-oidc-token",
+                "X-Cross-AI-Bootstrap-Credential": "x" * 40,
+                "Content-Type": "application/json",
+            },
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(response["code"], "BOOTSTRAP_REQUEST_INVALID")
+
+    def test_rejects_non_json_content_type_before_authorization(self) -> None:
+        status, response = self.post(
+            self.body,
+            {
+                "Authorization": "Bearer fake-oidc-token",
+                "X-Cross-AI-Bootstrap-Credential": "x" * 64,
+                "Content-Type": "text/plain",
+            },
+        )
+        self.assertEqual(status, 415)
+        self.assertEqual(response["code"], "BOOTSTRAP_CONTENT_TYPE_INVALID")
+
+
 class EvaluatingObserveServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
@@ -264,6 +380,7 @@ class EnforcementServiceTest(unittest.TestCase):
             registry=registry,  # type: ignore[arg-type]
             decision_client=client,
             outcome_sweeper=sweeper,
+            bootstrap_authorizer=FakeBootstrapAuthorizer(),  # type: ignore[arg-type]
         )
         try:
             raw = json.dumps(payload(), separators=(",", ":")).encode()
@@ -321,6 +438,7 @@ class EnforcementServiceTest(unittest.TestCase):
                 CallbackResult(True, False, 204, "CALLBACK_ACCEPTED_204")
             ),
             outcome_sweeper=sweeper,
+            bootstrap_authorizer=FakeBootstrapAuthorizer(),  # type: ignore[arg-type]
         )
         try:
             self.assertFalse(service.reconciliation_ready)
@@ -328,7 +446,9 @@ class EnforcementServiceTest(unittest.TestCase):
             service.stop()
             ledger.close()
 
-    def test_polled_delivery_processes_synchronously_and_replays_idempotently(self) -> None:
+    def test_polled_delivery_processes_synchronously_and_replays_idempotently(
+        self,
+    ) -> None:
         ledger = ObserveLedger(Path(self.directory.name) / "polled.sqlite3")
         registry = FakeRegistry()
         client = FakeDecisionClient(
@@ -342,6 +462,7 @@ class EnforcementServiceTest(unittest.TestCase):
             registry=registry,  # type: ignore[arg-type]
             decision_client=client,
             outcome_sweeper=FakeSweeper(),
+            bootstrap_authorizer=FakeBootstrapAuthorizer(),  # type: ignore[arg-type]
         )
         try:
             request = parse_deployment_protection_delivery(
@@ -354,6 +475,7 @@ class EnforcementServiceTest(unittest.TestCase):
         finally:
             service.stop()
             ledger.close()
+
 
 if __name__ == "__main__":
     unittest.main()

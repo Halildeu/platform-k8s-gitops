@@ -105,7 +105,9 @@ class UrllibTransport:
                 data = response.read(MAX_GITHUB_RESPONSE_BYTES + 1)
                 if len(data) > MAX_GITHUB_RESPONSE_BYTES:
                     reject("GITHUB_RESPONSE_TOO_LARGE", "GitHub response exceeds limit")
-                return HTTPResponse(response.status, dict(response.headers.items()), data)
+                return HTTPResponse(
+                    response.status, dict(response.headers.items()), data
+                )
         except urllib.error.HTTPError as exc:
             data = exc.read(MAX_GITHUB_RESPONSE_BYTES + 1)
             return HTTPResponse(exc.code, dict(exc.headers.items()), data)
@@ -137,7 +139,9 @@ class GitHubAppTokenProvider:
             reject("GITHUB_APP_ID_INVALID", "GitHub App ID must be positive")
         parsed = urlsplit(api_origin)
         if parsed.scheme != "https" or parsed.path or parsed.query or parsed.fragment:
-            reject("GITHUB_API_ORIGIN_INVALID", "GitHub API origin must be canonical HTTPS")
+            reject(
+                "GITHUB_API_ORIGIN_INVALID", "GitHub API origin must be canonical HTTPS"
+            )
         self.app_id = app_id
         self.api_origin = api_origin
         self.transport = transport or UrllibTransport()
@@ -145,7 +149,9 @@ class GitHubAppTokenProvider:
         try:
             pem = private_key_file.read_bytes()
         except OSError as exc:
-            reject("GITHUB_APP_KEY_UNAVAILABLE", f"cannot read GitHub App key file: {exc}")
+            reject(
+                "GITHUB_APP_KEY_UNAVAILABLE", f"cannot read GitHub App key file: {exc}"
+            )
         if len(pem) > 64 * 1024:
             reject("GITHUB_APP_KEY_INVALID", "GitHub App key file exceeds limit")
         try:
@@ -153,7 +159,10 @@ class GitHubAppTokenProvider:
         except (TypeError, ValueError):
             reject("GITHUB_APP_KEY_INVALID", "GitHub App private key is invalid")
         if not isinstance(key, rsa.RSAPrivateKey) or key.key_size < 2048:
-            reject("GITHUB_APP_KEY_INVALID", "GitHub App key must be RSA 2048 bits or stronger")
+            reject(
+                "GITHUB_APP_KEY_INVALID",
+                "GitHub App key must be RSA 2048 bits or stronger",
+            )
         self._key = key
         self._tokens: dict[int, _CachedToken] = {}
 
@@ -196,14 +205,24 @@ class GitHubAppTokenProvider:
             body=b"{}",
         )
         if response.status != 201:
-            reject("GITHUB_INSTALLATION_TOKEN_FAILED", "installation token request failed")
+            reject(
+                "GITHUB_INSTALLATION_TOKEN_FAILED", "installation token request failed"
+            )
         payload = _json_object(response.body, "installation token")
         token = payload.get("token")
-        expires_at = parse_utc(payload.get("expires_at"), "installationToken.expires_at")
+        expires_at = parse_utc(
+            payload.get("expires_at"), "installationToken.expires_at"
+        )
         if not isinstance(token, str) or len(token) < 20:
-            reject("GITHUB_INSTALLATION_TOKEN_INVALID", "installation token response is invalid")
+            reject(
+                "GITHUB_INSTALLATION_TOKEN_INVALID",
+                "installation token response is invalid",
+            )
         if expires_at <= now + timedelta(minutes=2):
-            reject("GITHUB_INSTALLATION_TOKEN_INVALID", "installation token expires too soon")
+            reject(
+                "GITHUB_INSTALLATION_TOKEN_INVALID",
+                "installation token expires too soon",
+            )
         self._tokens[installation_id] = _CachedToken(token=token, expires_at=expires_at)
         return token
 
@@ -320,7 +339,10 @@ class GitHubHookDeliveryCycle:
             or parsed.path != "/app/hook/deliveries"
             or parsed.fragment
         ):
-            reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery link escaped API origin")
+            reject(
+                "GITHUB_DELIVERY_CURSOR_INVALID",
+                "next delivery link escaped API origin",
+            )
         try:
             query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
         except ValueError:
@@ -330,12 +352,20 @@ class GitHubHookDeliveryCycle:
         if query.get("per_page", ["100"]) != ["100"]:
             reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery page size changed")
         cursor = query["cursor"][0]
-        if not cursor or len(cursor) > 2048 or any(character.isspace() for character in cursor):
+        if (
+            not cursor
+            or len(cursor) > 2048
+            or any(character.isspace() for character in cursor)
+        ):
             reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery cursor is invalid")
         return cursor
 
     def delivery(self, delivery_id: int) -> dict[str, Any]:
-        if not isinstance(delivery_id, int) or isinstance(delivery_id, bool) or delivery_id < 1:
+        if (
+            not isinstance(delivery_id, int)
+            or isinstance(delivery_id, bool)
+            or delivery_id < 1
+        ):
             reject("GITHUB_DELIVERY_ID_INVALID", "delivery ID must be positive")
         response = self._get(
             f"{self.api_origin}/app/hook/deliveries/{delivery_id}",
@@ -409,7 +439,10 @@ class GitHubReader:
             },
         )
         if response.status != 200:
-            reject("GITHUB_TRUTH_READ_FAILED", f"GitHub truth read returned {response.status}")
+            reject(
+                "GITHUB_TRUTH_READ_FAILED",
+                f"GitHub truth read returned {response.status}",
+            )
         return _json_object(response.body, "GitHub truth")
 
     def repository(self, installation_id: int, repository: str) -> dict[str, Any]:
@@ -437,7 +470,9 @@ class GitHubReader:
     ) -> tuple[dict[str, Any], ...]:
         if (
             REPOSITORY_NAME.fullmatch(repository) is None
-            or re.fullmatch(r"[.]github/workflows/[A-Za-z0-9_.-]+[.]ya?ml", workflow_path)
+            or re.fullmatch(
+                r"[.]github/workflows/[A-Za-z0-9_.-]+[.]ya?ml", workflow_path
+            )
             is None
             or re.fullmatch(
                 r"cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-"
@@ -450,7 +485,9 @@ class GitHubReader:
         start = parse_utc(created_from, "dispatch.claimedAt")
         end = parse_utc(created_to, "dispatch.reconcileUntil")
         if end <= start or end - start > timedelta(minutes=15):
-            reject("GITHUB_DISPATCH_QUERY_INVALID", "dispatch run query window is invalid")
+            reject(
+                "GITHUB_DISPATCH_QUERY_INVALID", "dispatch run query window is invalid"
+            )
         workflow = quote(workflow_path, safe="")
         value = self._get(
             installation_id,
@@ -502,7 +539,9 @@ class GitHubReader:
                 annotated=False,
             )
         if target_type != "tag":
-            reject("GITHUB_REF_INVALID", "intent ref must target a commit or annotated tag")
+            reject(
+                "GITHUB_REF_INVALID", "intent ref must target a commit or annotated tag"
+            )
         tag = self._get(
             installation_id,
             f"/repos/{repository}/git/tags/{quote(target_sha, safe='')}",
@@ -542,7 +581,10 @@ class GitHubReader:
             query={"ref": head_sha},
         )
         if value.get("type") != "file" or value.get("encoding") != "base64":
-            reject("GITHUB_WORKFLOW_INVALID", "workflow content response is not a Base64 file")
+            reject(
+                "GITHUB_WORKFLOW_INVALID",
+                "workflow content response is not a Base64 file",
+            )
         content = value.get("content")
         if not isinstance(content, str):
             reject("GITHUB_WORKFLOW_INVALID", "workflow content is missing")
@@ -565,6 +607,32 @@ class GitHubReader:
             installation_id,
             f"/repos/{repository}/environments/{quote(environment, safe='')}",
         )
+
+    def repository_runners(
+        self,
+        installation_id: int,
+        repository: str,
+    ) -> tuple[dict[str, Any], ...]:
+        value = self._get(
+            installation_id,
+            f"/repos/{repository}/actions/runners",
+            query={"per_page": "100"},
+        )
+        runners = value.get("runners")
+        total = value.get("total_count")
+        if (
+            not isinstance(runners, list)
+            or not isinstance(total, int)
+            or isinstance(total, bool)
+            or total != len(runners)
+            or not 1 <= total <= 100
+            or not all(isinstance(runner, dict) for runner in runners)
+        ):
+            reject(
+                "GITHUB_RUNNER_INVENTORY_INVALID",
+                "repository runner inventory is incomplete or invalid",
+            )
+        return tuple(runners)
 
     def workflow_run_attempt(
         self,
@@ -605,7 +673,9 @@ class GitHubReader:
             or not all(isinstance(job, dict) for job in jobs)
             or any(job.get("run_attempt") != run_attempt for job in jobs)
         ):
-            reject("GITHUB_JOBS_INVALID", "workflow jobs response is incomplete or invalid")
+            reject(
+                "GITHUB_JOBS_INVALID", "workflow jobs response is incomplete or invalid"
+            )
         return tuple(jobs)
 
     def workflow_artifact(
@@ -629,13 +699,18 @@ class GitHubReader:
             or total != len(artifacts)
             or not 0 <= total <= 100
         ):
-            reject("GITHUB_ARTIFACT_LIST_INVALID", "artifact list is incomplete or invalid")
+            reject(
+                "GITHUB_ARTIFACT_LIST_INVALID", "artifact list is incomplete or invalid"
+            )
         matches = [
-            item for item in artifacts
+            item
+            for item in artifacts
             if isinstance(item, dict) and item.get("name") == artifact_name
         ]
         if len(matches) != 1:
-            reject("GITHUB_ARTIFACT_AMBIGUOUS", "exactly one stage artifact is required")
+            reject(
+                "GITHUB_ARTIFACT_AMBIGUOUS", "exactly one stage artifact is required"
+            )
         artifact = matches[0]
         artifact_id = artifact.get("id")
         size = artifact.get("size_in_bytes")
@@ -653,7 +728,9 @@ class GitHubReader:
         if workflow_run is not None and (
             not isinstance(workflow_run, dict) or workflow_run.get("id") != run_id
         ):
-            reject("GITHUB_ARTIFACT_INVALID", "artifact belongs to another workflow run")
+            reject(
+                "GITHUB_ARTIFACT_INVALID", "artifact belongs to another workflow run"
+            )
         return GitHubArtifact(
             artifact_id=artifact_id,
             name=artifact_name,
@@ -671,7 +748,9 @@ def _validated_artifact_redirect(value: str) -> str:
         parsed = urlsplit(value)
         port = parsed.port
     except ValueError:
-        reject("GITHUB_ARTIFACT_REDIRECT_INVALID", "artifact redirect is not allowlisted")
+        reject(
+            "GITHUB_ARTIFACT_REDIRECT_INVALID", "artifact redirect is not allowlisted"
+        )
     hostname = parsed.hostname or ""
     allowed = hostname == "objects.githubusercontent.com" or hostname.endswith(
         ".blob.core.windows.net"
@@ -685,7 +764,9 @@ def _validated_artifact_redirect(value: str) -> str:
         or not parsed.path.startswith("/")
         or parsed.fragment
     ):
-        reject("GITHUB_ARTIFACT_REDIRECT_INVALID", "artifact redirect is not allowlisted")
+        reject(
+            "GITHUB_ARTIFACT_REDIRECT_INVALID", "artifact redirect is not allowlisted"
+        )
     return value
 
 
@@ -709,8 +790,12 @@ class GitHubArtifactDownloader:
             with self._opener.open(request, timeout=15.0) as response:
                 data = response.read(MAX_STAGE_ARTIFACT_BYTES + 1)
                 if len(data) > MAX_STAGE_ARTIFACT_BYTES:
-                    reject("GITHUB_ARTIFACT_TOO_LARGE", "artifact archive exceeds limit")
-                return HTTPResponse(response.status, dict(response.headers.items()), data)
+                    reject(
+                        "GITHUB_ARTIFACT_TOO_LARGE", "artifact archive exceeds limit"
+                    )
+                return HTTPResponse(
+                    response.status, dict(response.headers.items()), data
+                )
         except urllib.error.HTTPError as exc:
             return HTTPResponse(exc.code, dict(exc.headers.items()), b"")
         except (urllib.error.URLError, TimeoutError, OSError):
@@ -743,7 +828,10 @@ class GitHubArtifactDownloader:
         )
         location = first.headers.get("Location") or first.headers.get("location")
         if first.status != 302 or not isinstance(location, str):
-            reject("GITHUB_ARTIFACT_DOWNLOAD_FAILED", "artifact API did not return a redirect")
+            reject(
+                "GITHUB_ARTIFACT_DOWNLOAD_FAILED",
+                "artifact API did not return a redirect",
+            )
         redirect = _validated_artifact_redirect(location)
         second = self._open(
             urllib.request.Request(
@@ -753,7 +841,9 @@ class GitHubArtifactDownloader:
             )
         )
         if second.status != 200 or len(second.body) != artifact.size_in_bytes:
-            reject("GITHUB_ARTIFACT_DOWNLOAD_FAILED", "artifact bytes differ from metadata")
+            reject(
+                "GITHUB_ARTIFACT_DOWNLOAD_FAILED", "artifact bytes differ from metadata"
+            )
         return second.body
 
 
@@ -795,7 +885,9 @@ class GitHubDecisionClient:
             or not 1 <= len(environment) <= 120
             or not isinstance(comment, str)
             or not 1 <= len(comment) <= 1024
-            or any(ord(character) < 0x20 or ord(character) > 0x7E for character in comment)
+            or any(
+                ord(character) < 0x20 or ord(character) > 0x7E for character in comment
+            )
         ):
             reject("GITHUB_CALLBACK_BODY_INVALID", "callback body is invalid")
         body = canonical_bytes(
@@ -830,8 +922,13 @@ class GitHubDecisionClient:
             if response.body:
                 return CallbackResult(False, True, 204, "CALLBACK_RESPONSE_AMBIGUOUS")
             return CallbackResult(True, False, 204, "CALLBACK_ACCEPTED_204")
-        if response.status in {408, 409, 422, 425, 429} or 500 <= response.status <= 599:
-            return CallbackResult(False, True, response.status, "CALLBACK_HTTP_AMBIGUOUS")
+        if (
+            response.status in {408, 409, 422, 425, 429}
+            or 500 <= response.status <= 599
+        ):
+            return CallbackResult(
+                False, True, response.status, "CALLBACK_HTTP_AMBIGUOUS"
+            )
         return CallbackResult(False, False, response.status, "CALLBACK_HTTP_REJECTED")
 
 
@@ -881,10 +978,14 @@ class GitHubDispatcherClient:
         request_id: str,
         head_sha: str,
     ) -> GitHubIntentRef:
-        if REPOSITORY_NAME.fullmatch(repository) is None or not re.fullmatch(
-            r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-            request_id,
-        ) or not re.fullmatch(r"[a-f0-9]{40}", head_sha):
+        if (
+            REPOSITORY_NAME.fullmatch(repository) is None
+            or not re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                request_id,
+            )
+            or not re.fullmatch(r"[a-f0-9]{40}", head_sha)
+        ):
             reject("GITHUB_INTENT_REF_INVALID", "intent ref request is invalid")
         response = self._post(
             installation_id=installation_id,
@@ -898,7 +999,9 @@ class GitHubDispatcherClient:
             reject("GITHUB_INTENT_REF_CREATE_FAILED", "intent ref creation failed")
         live_ref = self.reader.intent_ref(installation_id, repository, request_id)
         if live_ref.head_sha != head_sha:
-            reject("GITHUB_INTENT_REF_COLLISION", "existing intent ref points elsewhere")
+            reject(
+                "GITHUB_INTENT_REF_COLLISION", "existing intent ref points elsewhere"
+            )
         return live_ref
 
     def dispatch_workflow(
@@ -909,13 +1012,18 @@ class GitHubDispatcherClient:
         workflow_path: str,
         request_id: str,
     ) -> DispatchResult:
-        if REPOSITORY_NAME.fullmatch(repository) is None or not workflow_path.startswith(
-            ".github/workflows/"
-        ) or not re.fullmatch(
-            r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-            request_id,
+        if (
+            REPOSITORY_NAME.fullmatch(repository) is None
+            or not workflow_path.startswith(".github/workflows/")
+            or not re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                request_id,
+            )
         ):
-            reject("GITHUB_WORKFLOW_DISPATCH_INVALID", "workflow dispatch target is invalid")
+            reject(
+                "GITHUB_WORKFLOW_DISPATCH_INVALID",
+                "workflow dispatch target is invalid",
+            )
         workflow = quote(workflow_path, safe="")
         try:
             response = self._post(
@@ -934,8 +1042,10 @@ class GitHubDispatcherClient:
             raise
         if response.status == 204 and not response.body:
             return DispatchResult(True, False, 204, "DISPATCH_ACCEPTED_204")
-        if response.status == 204 or response.status in {408, 409, 422, 425, 429} or (
-            500 <= response.status <= 599
+        if (
+            response.status == 204
+            or response.status in {408, 409, 422, 425, 429}
+            or (500 <= response.status <= 599)
         ):
             return DispatchResult(
                 False,
@@ -949,6 +1059,7 @@ class GitHubDispatcherClient:
             response.status,
             "DISPATCH_HTTP_REJECTED",
         )
+
 
 __all__ = [
     "GitHubArtifact",

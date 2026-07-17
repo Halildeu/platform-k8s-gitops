@@ -97,7 +97,8 @@ Use distinct Ed25519 Transit keys and policies for:
 - direct Anthropic review issuer;
 - second provider review issuer;
 - evidence coordinator;
-- revocation authority.
+- revocation authority;
+- runner inventory/admission-lease management.
 
 Each workload may sign only through its own Transit key. Provider keys cannot
 sign bundles, the coordinator cannot sign provider leaves, and only the
@@ -143,8 +144,8 @@ key or policy readback drift.
 The bootstrap creates only:
 
 - the TEST-only `cross-ai/` Transit mount;
-- distinct `anthropic`, `provider-secondary`, `coordinator` and `revocation`
-  non-derived, non-exportable Ed25519 keys;
+- distinct `anthropic`, `provider-secondary`, `coordinator`, `revocation` and
+  `runner-management` non-derived, non-exportable Ed25519 keys;
 - the git-reviewed update of the already owner-gated
   `vault-config-reconciler` policy.
 
@@ -176,7 +177,7 @@ REPO_ROOT="$PWD" scripts/ops/vault-policy-reconcile.sh
 ```
 
 The reconciler may mint one-use credentials only for the Anthropic issuer,
-secondary issuer and coordinator roles. It cannot mint a revocation
+secondary issuer, coordinator and runner-management roles. It cannot mint a revocation
 secret-id. Every role can call only its exact `cross-ai/sign/<key>` endpoint;
 key read/export/backup/restore/datakey/encrypt/decrypt/rewrap/HMAC are denied. A missing
 second provider remains an authorization blocker; do not create a trust root
@@ -443,6 +444,55 @@ posted again. Use `reconcile-dispatch` only to read live GitHub truth; it can
 accept an ambiguous job only when exactly one signed-intent-bound run exists.
 Issue a new signed request ID when liveness must be recovered after a
 fail-closed no-run result.
+
+### 5.2.2 Source-ready runner bootstrap
+
+Each protected no-input workflow must declare workflow-level
+`permissions.id-token: write`. Its governed job may run only one pinned
+checkout step before invoking
+`scripts/github_apps/run_cross_ai_runner_bootstrap.py`. The bootstrap command
+receives the high-entropy Environment credential only through
+`CROSS_AI_BOOTSTRAP_TOKEN`; it must never place the credential or GitHub OIDC
+token in argv, logs, artifacts or workflow inputs.
+
+The policy's `runnerBootstrapUrl` is the exact full HTTPS endpoint, including
+`/v1/runner-bootstrap`, and is covered by the policy digest. The workflow
+literal and runtime `CROSS_AI_BOOTSTRAP_URL` must match it byte-for-byte. Do not
+substitute another HTTPS host, nonstandard port, redirect or loopback address.
+
+Generate this TEST-only value as at least 64 high-entropy ASCII characters
+directly into an owner-only file; do not print it:
+
+```bash
+umask 077
+openssl rand -base64 48 | tr -d '\n' > /OWNER/LOCAL/cross-ai-bootstrap-token.txt
+```
+
+Set the GitHub Environment secret from file/stdin through the attended owner
+flow and delete the handoff after redacted presence verification. A human-chosen
+password, a reused token or a value shorter than 64 characters is rejected.
+
+The client asks GitHub's runner-local OIDC endpoint for the fixed
+`acik-cross-ai-runner-bootstrap` audience. The policy service requires both
+`Authorization: Bearer <GitHub OIDC>` and the distinct
+`X-Cross-AI-Bootstrap-Credential` header, then re-verifies exact repository,
+Environment, intent ref, SHA, workflow, run/attempt, numeric actor and signed
+runner lease. One successful response is durably consumed; a retry returns a
+conflict and is not a safe automatic retry signal. The verified response is
+written as a new `0600` file and must be consumed before any mutation step.
+The workflow contains exactly one governed job. After bootstrap it may use only
+1-8 full-SHA or image-digest pinned execution actions, each with only
+`CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json`. Free-form
+or multiline `run:`, local actions, a second checkout, additional jobs and
+unbounded `with:` values are fail-closed. Place required mutation logic in the
+reviewed content-addressed execution action; do not fetch live control code.
+
+This path is source-ready only. Do not expose the endpoint or enable the
+Environment custom rule until the policy runtime has reviewed HTTPS, the
+public trust-root pin exists, the separate dispatcher identity is live, the
+protected workflows have landed, and negative/replay/rollback canaries pass.
+The static Environment credential does not replace GitHub OIDC, and GitHub
+OIDC does not replace the signed Cross-AI bundle or human-only gates.
 
 Poll interval is never below 30 seconds, success and failure paths have bounded
 jitter, exponential backoff caps at five minutes, and `/readyz` fails after a

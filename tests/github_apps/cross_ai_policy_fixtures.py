@@ -61,6 +61,7 @@ class FixtureFactory:
     XAI_KEY_ID = "vault-transit://cross-ai/xai#v1"
     COORDINATOR_KEY_ID = "vault-transit://cross-ai/coordinator#v1"
     REVOCATION_KEY_ID = "vault-transit://cross-ai/revocation#v1"
+    RUNNER_MANAGEMENT_KEY_ID = "vault-transit://cross-ai/runner-management#v1"
 
     def __init__(self) -> None:
         self.keys = {
@@ -68,6 +69,7 @@ class FixtureFactory:
             self.XAI_KEY_ID: _key(2),
             self.COORDINATOR_KEY_ID: _key(3),
             self.REVOCATION_KEY_ID: _key(4),
+            self.RUNNER_MANAGEMENT_KEY_ID: _key(5),
         }
         self.now = _utc("2026-07-16T20:30:00Z")
 
@@ -150,10 +152,19 @@ class FixtureFactory:
                 ),
                 entry(self.COORDINATOR_KEY_ID, "coordinator", None, [], None),
                 entry(self.REVOCATION_KEY_ID, "revocation", None, [], None),
+                entry(
+                    self.RUNNER_MANAGEMENT_KEY_ID,
+                    "runner-management",
+                    None,
+                    [],
+                    None,
+                ),
             ],
         }
 
-    def revocations(self, entries: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def revocations(
+        self, entries: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         payload = {
             "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
             "revocationSetId": "20000000-0000-4000-8000-000000000001",
@@ -222,6 +233,7 @@ class FixtureFactory:
         *,
         stage_overrides: dict[str, dict[str, Any]] | None = None,
         policy_digest: str | None = None,
+        bootstrap_credential: bytes = b"B" * 64,
     ) -> SignedFixture:
         request_id = "30000000-0000-4000-8000-000000000001"
         session_id = "30000000-0000-4000-8000-000000000002"
@@ -238,7 +250,10 @@ class FixtureFactory:
             "rollbackPlanSha256": digest("rollback"),
             "postDeployVerifierSha256": digest("verifier"),
             "runnerPolicySha256": digest("runner-policy"),
-            "runnerAdmissionLeaseSha256": digest("runner-lease"),
+            "runnerAdmissionLeaseSha256": "",
+            "bootstrapCredentialSha256": (
+                f"sha256:{hashlib.sha256(bootstrap_credential).hexdigest()}"
+            ),
             "sessionSha256": "",
             "endpointIdSha256": digest("endpoint"),
             "operatorIdSha256": digest("operator"),
@@ -261,6 +276,48 @@ class FixtureFactory:
             "sequence": ["apply", "browser-evidence"],
             "failureTransition": "apply->compensating-rollback",
         }
+        runner_lease = self.sign(
+            "application/vnd.acik.cross-ai-runner-admission-lease.v1+json",
+            {
+                "schemaVersion": "acik.cross-ai-runner-admission-lease.v1",
+                "leaseId": "35000000-0000-4000-8000-000000000001",
+                "requestId": request_id,
+                "repositoryId": subject["repositoryId"],
+                "repository": subject["repository"],
+                "environment": subject["environment"],
+                "headSha": subject["headSha"],
+                "intentRef": subject["intentRef"],
+                "runnerPolicySha256": subject["runnerPolicySha256"],
+                "inventoryGenerationSha256": sha256_digest(
+                    {
+                        "domain": "acik.cross-ai-runner-inventory-generation.v1",
+                        "runners": [
+                            {
+                                "runnerId": 98765,
+                                "runnerNameSha256": digest("testai-deploy-runner"),
+                                "labels": [
+                                    "self-hosted",
+                                    "staging-sw",
+                                    "testai-deploy",
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                "issuedAt": "2026-07-16T20:00:00Z",
+                "expiresAt": "2026-07-16T21:30:00Z",
+                "eligibleRunners": [
+                    {
+                        "runnerId": 98765,
+                        "runnerNameSha256": digest("testai-deploy-runner"),
+                        "labels": ["self-hosted", "staging-sw", "testai-deploy"],
+                        "attestationClass": "acik-testai-deploy-v1",
+                    }
+                ],
+            },
+            self.RUNNER_MANAGEMENT_KEY_ID,
+        )
+        subject["runnerAdmissionLeaseSha256"] = sha256_digest(runner_lease)
         subject["sessionSha256"] = sha256_digest(
             {
                 "domain": SESSION_DOMAIN,
@@ -270,6 +327,7 @@ class FixtureFactory:
                 "environment": subject["environment"],
                 "headSha": subject["headSha"],
                 "intentRef": subject["intentRef"],
+                "bootstrapCredentialSha256": subject["bootstrapCredentialSha256"],
                 "endpointIdSha256": subject["endpointIdSha256"],
                 "operatorIdSha256": subject["operatorIdSha256"],
             }
@@ -388,6 +446,7 @@ class FixtureFactory:
             "bundleId": "70000000-0000-4000-8000-000000000001",
             "subject": subject,
             "workflowStages": stages,
+            "runnerAdmissionLeaseEnvelope": runner_lease,
             "reviewEnvelopes": [a1, a2, a3, b1],
             "closure": {
                 "entries": closure_entries,

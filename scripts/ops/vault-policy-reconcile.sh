@@ -46,6 +46,7 @@ POLICIES=(
   "test/cross-ai-issuer-secondary.hcl|cross-ai-issuer-secondary-test"
   "test/cross-ai-coordinator.hcl|cross-ai-coordinator-test"
   "test/cross-ai-revocation.hcl|cross-ai-revocation-test"
+  "test/cross-ai-runner-management.hcl|cross-ai-runner-management-test"
 )
 
 # Content linter (Codex 019f1150): fail-closed reject any policy text that would
@@ -61,6 +62,7 @@ lint_policy() { # lint_policy <name> <file> ; echo OK / FAIL:<reason>
     cross-ai-issuer-secondary-test) expected_sign_path="cross-ai/sign/provider-secondary" ;;
     cross-ai-coordinator-test) expected_sign_path="cross-ai/sign/coordinator" ;;
     cross-ai-revocation-test) expected_sign_path="cross-ai/sign/revocation" ;;
+    cross-ai-runner-management-test) expected_sign_path="cross-ai/sign/runner-management" ;;
   esac
   if [[ -n "$expected_sign_path" ]]; then
     local granted_paths
@@ -93,6 +95,7 @@ APPROLES=(
   "cross-ai-issuer-secondary-test|cross-ai-issuer-secondary-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
   "cross-ai-coordinator-test|cross-ai-coordinator-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
   "cross-ai-revocation-test|cross-ai-revocation-test|token_ttl=5m token_max_ttl=5m token_explicit_max_ttl=5m token_num_uses=0 secret_id_ttl=5m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  "cross-ai-runner-management-test|cross-ai-runner-management-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
 )
 
 EMITTABLE_APPROLES=(
@@ -101,6 +104,7 @@ EMITTABLE_APPROLES=(
   "cross-ai-issuer-anthropic-test"
   "cross-ai-issuer-secondary-test"
   "cross-ai-coordinator-test"
+  "cross-ai-runner-management-test"
 )
 
 # ── reconciler AppRole auth ──────────────────────────────────────────────────

@@ -78,6 +78,10 @@ path "sys/policies/acl/cross-ai-revocation-test" {
   capabilities = ["create", "update", "read"]
 }
 
+path "sys/policies/acl/cross-ai-runner-management-test" {
+  capabilities = ["create", "update", "read"]
+}
+
 # ============================================================================
 # 2. ALLOW — manage the scoped seed AppRoles (EXPLICIT names, no glob)
 # ============================================================================
@@ -161,6 +165,18 @@ path "auth/approle/role/cross-ai-revocation-test" {
 
 path "auth/approle/role/cross-ai-revocation-test/role-id" {
   capabilities = ["read"]
+}
+
+path "auth/approle/role/cross-ai-runner-management-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "auth/approle/role/cross-ai-runner-management-test/role-id" {
+  capabilities = ["read"]
+}
+
+path "auth/approle/role/cross-ai-runner-management-test/secret-id" {
+  capabilities = ["create", "update"]
 }
 
 # Deliberately no cross-ai-revocation-test/secret-id capability. Revocation is

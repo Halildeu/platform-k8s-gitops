@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-runner-bootstrap-response-v1.schema.json",
+  "title": "Cross-AI runner bootstrap response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "stage",
+    "runId",
+    "runAttempt",
+    "runnerId",
+    "headSha",
+    "intentRef",
+    "workflowPath",
+    "bundleSha256",
+    "bundleEnvelope",
+    "priorStage",
+    "priorStageState",
+    "priorStageOutcomeSha256",
+    "priorStageOutcome",
+    "issuedAt",
+    "expiresAt",
+    "responseSha256"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "acik.cross-ai-runner-bootstrap-response.v1"
+    },
+    "requestId": {"type": "string", "format": "uuid"},
+    "stage": {"enum": ["apply", "browser-evidence", "compensating-rollback"]},
+    "runId": {"type": "integer", "minimum": 1},
+    "runAttempt": {"type": "integer", "minimum": 1},
+    "runnerId": {"type": "integer", "minimum": 1},
+    "headSha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "intentRef": {
+      "type": "string",
+      "pattern": "^refs/tags/cross-ai-intent/[0-9a-f-]{36}$"
+    },
+    "workflowPath": {
+      "type": "string",
+      "pattern": "^[.]github/workflows/[A-Za-z0-9_.-]+[.]ya?ml$"
+    },
+    "bundleSha256": {"$ref": "#/$defs/digest"},
+    "bundleEnvelope": {"$ref": "#/$defs/bundle_envelope"},
+    "priorStage": {
+      "oneOf": [
+        {"type": "null"},
+        {"const": "apply"}
+      ]
+    },
+    "priorStageState": {
+      "oneOf": [
+        {"type": "null"},
+        {"enum": ["Succeeded", "Failed", "CallbackUnknown"]}
+      ]
+    },
+    "priorStageOutcomeSha256": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/digest"}
+      ]
+    },
+    "priorStageOutcome": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "object"}
+      ]
+    },
+    "issuedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "responseSha256": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "bundle_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "payload", "signatures"],
+      "properties": {
+        "payloadType": {
+          "const": "application/vnd.acik.cross-ai-deployment-bundle.v1+json"
+        },
+        "payload": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4194304
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["keyid", "sig"],
+            "properties": {
+              "keyid": {"type": "string", "minLength": 1, "maxLength": 200},
+              "sig": {"type": "string", "minLength": 88, "maxLength": 88}
+            }
+          }
+        }
+      }
+    }
+  }
+}
