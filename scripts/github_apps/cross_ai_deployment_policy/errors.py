@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 
 class PolicyError(Exception):
     """A bounded policy rejection safe to map to a stable reason code."""
@@ -15,8 +17,5 @@ class PolicyError(Exception):
         return f"{self.code}: {self.message}"
 
 
-def reject(code: str, message: str) -> "NoReturn":
+def reject(code: str, message: str) -> NoReturn:
     raise PolicyError(code, message)
-
-
-from typing import NoReturn  # noqa: E402  (keeps the public error surface first)

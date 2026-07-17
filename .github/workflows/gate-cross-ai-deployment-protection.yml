@@ -7,6 +7,7 @@ on:
       - "scripts/github_apps/**"
       - "tests/github_apps/**"
       - "config/github-apps/**"
+      - "bootstrap/vault-policies/common/eso-runtime.hcl"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
       - ".github/workflows/gate-cross-ai-deployment-protection.yml"
   push:
@@ -16,6 +17,7 @@ on:
       - "scripts/github_apps/**"
       - "tests/github_apps/**"
       - "config/github-apps/**"
+      - "bootstrap/vault-policies/common/eso-runtime.hcl"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
 
 permissions:

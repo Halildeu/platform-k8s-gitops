@@ -35,3 +35,11 @@ App registration and written directly to
 `kv/platform/cross-ai-deployment-protection-test` property
 `github_webhook_secret_current`; never paste it into the repository, an issue,
 chat, shell argument or workflow log.
+
+Before the ExternalSecret is activated, an owner applies the reviewed
+`bootstrap/vault-policies/common/eso-runtime.hcl` to the test Vault.  Its
+dedicated rule grants ESO only `read` on
+`kv/data/platform/cross-ai-deployment-protection-test`; it does not grant
+secret creation, update or broad wildcard access.  Verify the live AppRole
+capability after the owner-gated policy apply rather than assuming the source
+file is already active.

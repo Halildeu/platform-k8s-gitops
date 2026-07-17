@@ -13,6 +13,7 @@ ACTIVATION = (
     ROOT
     / "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe"
 )
+ESO_POLICY = ROOT / "bootstrap/vault-policies/common/eso-runtime.hcl"
 
 
 def load_yaml(name: str) -> dict[str, object]:
@@ -100,6 +101,19 @@ class PackagingContractTests(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 re.compile(r"BEGIN (?:RSA )?PRIVATE KEY|github_webhook_secret_current:\s+[^\n]+"),
             )
+
+    def test_eso_policy_grants_only_read_on_dedicated_test_path(self) -> None:
+        policy = ESO_POLICY.read_text(encoding="utf-8")
+        match = re.search(
+            r'path "kv/data/platform/cross-ai-deployment-protection-test"\s*'
+            r'\{\s*capabilities\s*=\s*\[([^]]+)]\s*}',
+            policy,
+        )
+        self.assertIsNotNone(
+            match,
+            "ExternalSecret path must be allowlisted before receive-only activation",
+        )
+        self.assertEqual(match.group(1).strip(), '"read"')  # type: ignore[union-attr]
 
     def test_public_surface_is_exact_hmac_webhook_path_only(self) -> None:
         ingress = load_yaml("ingress.yaml")

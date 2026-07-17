@@ -83,10 +83,23 @@ key version in both `keyId` and trust root. Rotate by overlapping public-key
 validity, issuing a fresh trust root, then revoking the old version after all
 grants expire.
 
+Trust-root issuance must compare every candidate public key with the retained
+history of prior trust-root manifests. Reusing the same public key under a new
+`keyId`, provider family or role is a release rejection even when the current
+manifest has no duplicate. This cross-generation check belongs to the
+dual-control release ledger because one running verifier cannot infer deleted
+trust-root generations.
+
 The service reloads the mounted revocation envelope for every evaluation and
 verifies its signature and `nextUpdate` then. Replace the file atomically. A
 missing, partially written, stale or invalid envelope rejects the decision;
 revocation activation does not depend on a process restart.
+
+V1 evaluates only current, unconsumed authorizations. A matching revocation
+entry therefore takes effect immediately, even if its `effectiveAt` is in the
+future or the signed leaf predates it. `effectiveAt` remains historical audit
+metadata; it is not a grace-period switch. Issuers must not publish a
+future-dated entry unless this immediate preemption is intended.
 
 Direct Claude JSON reports `modelUsage`; the issuer requires the requested and
 reported model to match. Cursor JSON currently does not report backend model
@@ -122,10 +135,16 @@ does not prove evaluation, approval, deployment or product acceptance.
 Before activation, the owner creates the evaluator App with the reviewed
 projection in `config/github-apps/cross-ai-protection-evaluator-app.example.json`,
 installs it only on `Halildeu/platform-k8s-gitops`, and provisions the generated
-webhook secret directly into the test Vault path. The agent may then replace
-the image sentinel, render/server-dry-run the isolated activation overlay and
-add it to the test root through the normal GitOps PR. App creation/install and
-raw secret entry remain the one-time owner operation.
+webhook secret directly into the test Vault path. In the same owner-gated test
+Vault session, apply the reviewed
+`bootstrap/vault-policies/common/eso-runtime.hcl`; its dedicated entry grants
+the ESO AppRole only `read` on
+`kv/data/platform/cross-ai-deployment-protection-test`. The agent verifies the
+live AppRole capability and secret presence without printing either value,
+then may replace the image sentinel, render/server-dry-run the isolated
+activation overlay and add it to the test root through the normal GitOps PR.
+App creation/install, raw secret entry and test Vault root-token recovery remain
+one-time owner operations.
 
 ### 5.2 Local process and enforcement
 

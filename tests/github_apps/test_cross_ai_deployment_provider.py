@@ -130,6 +130,25 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertEqual(receipt.model_identity_class, "trusted-launch-attested")
         self.assertFalse(receipt.direct_provider_cli)
 
+    def test_cursor_rejects_unparseable_live_model_list(self) -> None:
+        calls = [
+            subprocess.CompletedProcess([], 0, stdout=b"2026.07\n", stderr=b""),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                stdout=b"Available models\n\ncursor-grok-4.5-high Cursor Grok 4.5\n",
+                stderr=b"",
+            ),
+        ]
+        with patch("subprocess.run", side_effect=calls):
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_MODEL_UNAVAILABLE"):
+                CursorRunner(Path("/bin/sh")).run(
+                    prompt="review this digest",
+                    model="cursor-grok-4.5-high",
+                    workspace=self.workspace,
+                    provider_family="xai",
+                )
+
 
 class ProviderIssuerTest(unittest.TestCase):
     def test_issuer_binds_fixed_provider_policy_and_signer_key(self) -> None:
