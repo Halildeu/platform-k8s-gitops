@@ -62,6 +62,12 @@ class EvidenceBuilderTests(unittest.TestCase):
         result = self.run_builder("P0\nP1\nP2\nVERDICT: AGREE\nson söz")
         self.assertEqual(result.returncode, 1)
 
+    def test_rejects_priority_names_only_in_prose(self) -> None:
+        result = self.run_builder(
+            "Bu cevapta P0, P1 ve P2 bolumleri yok.\nVERDICT: AGREE"
+        )
+        self.assertEqual(result.returncode, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

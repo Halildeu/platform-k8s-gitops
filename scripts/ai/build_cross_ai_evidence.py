@@ -62,6 +62,13 @@ def main() -> None:
         or not VERDICT_RE.fullmatch(lines[-1])
     ):
         fail("provider_verdict_missing_ambiguous_or_nonterminal")
+    for priority in ("P0", "P1", "P2"):
+        heading = re.compile(
+            rf"(?im)^\s*(?:#{{1,6}}\s*)?(?:\*\*)?{priority}(?:\*\*)?"
+            r"(?:\s*[—:-].*)?\s*$"
+        )
+        if not heading.search(response):
+            fail("provider_findings_sections_missing")
     verdict = verdicts[0].upper()
     response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
     print(

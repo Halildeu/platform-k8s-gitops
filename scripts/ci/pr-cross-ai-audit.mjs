@@ -38,6 +38,7 @@ const EVIDENCE_KEYS = [
   'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
 ];
+const EVIDENCE_AUTHORS = new Set(['halilkocoglu']);
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -200,6 +201,9 @@ function readChangedFiles(args) {
 
 function readEvidenceOverrides(args) {
   if (!args['evidence-file']) return {};
+  if (env.GITHUB_ACTIONS === 'true') {
+    throw new Error('evidence-file GitHub Actions event modunda yasaktır');
+  }
   const parsed = JSON.parse(readFileSync(args['evidence-file'], 'utf8'));
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
     throw new Error('evidence-file object map olmalı');
@@ -217,6 +221,8 @@ function loadInput(args) {
         headRef: '',
         headSha: args['head-sha'] ?? '',
         baseSha: args['base-tip-sha'] ?? '',
+        derivedBaseSha: args['derived-base-sha'] ?? '',
+        derivedScopeSha256: args['derived-scope-sha256'] ?? '',
         headRepo: '',
         baseRepo: '',
         actor: '',
@@ -234,6 +240,8 @@ function loadInput(args) {
         headRef: pr.head?.ref ?? '',
         headSha: pr.head?.sha ?? '',
         baseSha: pr.base?.sha ?? '',
+        derivedBaseSha: args['derived-base-sha'] ?? '',
+        derivedScopeSha256: args['derived-scope-sha256'] ?? '',
         headRepo: pr.head?.repo?.full_name ?? '',
         baseRepo: pr.base?.repo?.full_name ?? '',
         // `actor` = PR author (immutable once opened). `sender` = who
@@ -385,9 +393,23 @@ function sha256Utf8(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-async function loadEvidenceBody(ref, evidenceOverrides) {
+function parseProviderResponseVerdict(response) {
+  if (typeof response !== 'string') return null;
+  const matches = [...response.matchAll(/^VERDICT:\s*(AGREE|REVISE)\s*$/gim)];
+  const lines = response.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (matches.length !== 1 || !lines.length || !/^VERDICT:\s*(AGREE|REVISE)\s*$/i.test(lines.at(-1))) {
+    return null;
+  }
+  const sectionsPresent = ['P0', 'P1', 'P2'].every((priority) =>
+    new RegExp(`^\\s*(?:#{1,6}\\s*)?(?:\\*\\*)?${priority}(?:\\*\\*)?(?:\\s*[—:-].*)?\\s*$`, 'im').test(response)
+  );
+  return sectionsPresent ? matches[0][1].toUpperCase() : null;
+}
+
+async function loadEvidenceComment(ref, evidenceOverrides) {
   if (Object.hasOwn(evidenceOverrides, ref)) {
-    return typeof evidenceOverrides[ref] === 'string' ? evidenceOverrides[ref] : null;
+    const override = evidenceOverrides[ref];
+    return override && typeof override === 'object' ? override : null;
   }
   if (!validEvidenceRef(ref)) return null;
   const headers = { Accept: 'application/vnd.github+json' };
@@ -400,17 +422,31 @@ async function loadEvidenceBody(ref, evidenceOverrides) {
     });
     if (!response.ok) return null;
     const payload = await response.json();
-    return typeof payload?.body === 'string' ? payload.body : null;
+    return {
+      body: payload?.body,
+      author: payload?.user?.login,
+      authorAssociation: payload?.author_association,
+      createdAt: payload?.created_at,
+      updatedAt: payload?.updated_at,
+    };
   } catch {
     return null;
   }
 }
 
-function evidenceMatches(body, receipt, expected, baseTip, base, head, scope) {
-  if (!body || sha256Utf8(body) !== receipt.sha256.toLowerCase()) return false;
+function evidenceMatches(comment, receipt, expected, baseTip, base, head, scope) {
+  if (
+    !comment
+    || typeof comment.body !== 'string'
+    || !EVIDENCE_AUTHORS.has(comment.author)
+    || comment.authorAssociation !== 'OWNER'
+    || !comment.createdAt
+    || comment.createdAt !== comment.updatedAt
+    || sha256Utf8(comment.body) !== receipt.sha256.toLowerCase()
+  ) return false;
   let evidence;
   try {
-    evidence = JSON.parse(body);
+    evidence = JSON.parse(comment.body);
   } catch {
     return false;
   }
@@ -419,6 +455,7 @@ function evidenceMatches(body, receipt, expected, baseTip, base, head, scope) {
   if (keys.length !== EVIDENCE_KEYS.length || keys.some((key, index) => key !== EVIDENCE_KEYS[index])) {
     return false;
   }
+  const responseVerdict = parseProviderResponseVerdict(evidence.response);
   return Boolean(
     evidence.schema === 'cross-ai-provider-evidence/v1'
     && evidence.provider === expected.provider
@@ -429,6 +466,7 @@ function evidenceMatches(body, receipt, expected, baseTip, base, head, scope) {
     && evidence.head_sha?.toLowerCase() === head.toLowerCase()
     && evidence.scope_sha256?.toLowerCase() === scope.toLowerCase()
     && evidence.verdict === 'AGREE'
+    && responseVerdict === evidence.verdict
     && typeof evidence.response === 'string'
     && evidence.response.length > 0
     && SHA256_RE.test(evidence.response_sha256 || '')
@@ -464,10 +502,16 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
   const baseTipPresent = COMMIT_SHA_RE.test(prMeta?.baseSha || '');
   const baseTipMatches = baseTipPresent && baseTip.toLowerCase() === prMeta.baseSha.toLowerCase();
   const validBase = COMMIT_SHA_RE.test(base);
+  const derivedBasePresent = COMMIT_SHA_RE.test(prMeta?.derivedBaseSha || '');
+  const derivedBaseMatches = derivedBasePresent
+    && base.toLowerCase() === prMeta.derivedBaseSha.toLowerCase();
   const validFormat = COMMIT_SHA_RE.test(commit);
   const headPresent = COMMIT_SHA_RE.test(prMeta?.headSha || '');
   const matchesHead = headPresent && commit.toLowerCase() === prMeta.headSha.toLowerCase();
   const validScope = SHA256_RE.test(scope);
+  const derivedScopePresent = SHA256_RE.test(prMeta?.derivedScopeSha256 || '');
+  const derivedScopeMatches = derivedScopePresent
+    && scope.toLowerCase() === prMeta.derivedScopeSha256.toLowerCase();
   findings.push({
     check: 'consultation_base_tip_exact_event',
     pass: validBaseTip && baseTipMatches,
@@ -485,6 +529,15 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
     detail: validBase ? `consultation base ${base.slice(0, 12)} formatı geçerli` : 'Consultation base 40-char git SHA değil',
   });
   findings.push({
+    check: 'consultation_base_exact_ci_merge_base',
+    pass: validBase && derivedBaseMatches,
+    detail: !derivedBasePresent
+      ? 'CI-derived merge-base eksik; fail-closed'
+      : derivedBaseMatches
+        ? `consultation base ${base.slice(0, 12)} CI git merge-base ile eşleşiyor`
+        : `consultation base ${base.slice(0, 12)} CI merge-base ${prMeta.derivedBaseSha.slice(0, 12)} ile eşleşmiyor`,
+  });
+  findings.push({
     check: 'consultation_commit_exact_head',
     pass: validFormat && matchesHead,
     detail: !validFormat
@@ -499,6 +552,15 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
     check: 'consultation_scope_sha256',
     pass: validScope,
     detail: validScope ? `consultation scope sha256 ${scope.slice(0, 12)} formatı geçerli` : 'Consultation scope 64-char SHA-256 değil',
+  });
+  findings.push({
+    check: 'consultation_scope_exact_ci_derivation',
+    pass: validScope && derivedScopeMatches,
+    detail: !derivedScopePresent
+      ? 'CI-derived scope SHA-256 eksik; fail-closed'
+      : derivedScopeMatches
+        ? `consultation scope ${scope.slice(0, 12)} CI full-range derivation ile eşleşiyor`
+        : `consultation scope ${scope.slice(0, 12)} CI-derived ${prMeta.derivedScopeSha256.slice(0, 12)} ile eşleşmiyor`,
   });
 
   const refs = [];
@@ -518,11 +580,11 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
       && validEvidenceRef(receipt.ref)
       && SHA256_RE.test(receipt.sha256 || '')
     );
-    const evidenceBody = shapePass
-      ? await loadEvidenceBody(receipt.ref, evidenceOverrides)
+    const evidenceComment = shapePass
+      ? await loadEvidenceComment(receipt.ref, evidenceOverrides)
       : null;
     const pass = shapePass && evidenceMatches(
-      evidenceBody, receipt, expected, baseTip, base, commit, scope,
+      evidenceComment, receipt, expected, baseTip, base, commit, scope,
     );
     findings.push({
       check: field.replaceAll(' ', '_'),

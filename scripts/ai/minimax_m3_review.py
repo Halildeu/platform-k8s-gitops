@@ -30,10 +30,9 @@ VERDICT_RE = re.compile(r"^VERDICT:\s*(AGREE|REVISE)\s*$", re.IGNORECASE | re.MU
 
 
 def mavis_data_dir() -> Path:
-    configured = os.environ.get("__MAVIS_PARENT_DATA_DIR") or os.environ.get(
-        "MAVIS_HOME"
-    )
-    return Path(configured).expanduser() if configured else Path.home() / ".mavis"
+    # Canonical install root only. Environment overrides would let the caller
+    # redirect the executable trust path to an arbitrary user-controlled tree.
+    return Path.home() / ".mavis"
 
 
 MAVIS_DATA_DIR = mavis_data_dir()

@@ -51,13 +51,20 @@ const evidenceBody = (provider, model, response) => JSON.stringify({
   response_sha256: sha256(response),
   response,
 });
+const evidenceComment = (body) => ({
+  body,
+  author: 'halilkocoglu',
+  authorAssociation: 'OWNER',
+  createdAt: '2026-07-17T20:00:00Z',
+  updatedAt: '2026-07-17T20:00:00Z',
+});
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
 const CODEX_REF = evidenceRef(1003);
 const EVIDENCE = {
-  [CLAUDE_REF]: evidenceBody('anthropic', 'claude-opus-4-8', 'P0 none; P1 none; P2 none; AGREE'),
-  [MINIMAX_REF]: evidenceBody('minimax', 'minimax/MiniMax-M3', 'P0 none; P1 none; P2 none; AGREE'),
-  [CODEX_REF]: evidenceBody('openai', 'gpt-5.6-sol', 'P0 none; P1 none; P2 none; AGREE'),
+  [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')),
+  [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')),
+  [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')),
 };
 
 // Build the GitHub event payload and run the real script; return its exit code.
@@ -65,7 +72,7 @@ const EVIDENCE = {
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, evidence = EVIDENCE }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false }) {
   const event = {
     pull_request: {
       body,
@@ -79,14 +86,27 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
   writeFileSync(f, JSON.stringify(event));
   const evidenceFile = join(dir, 'evidence.json');
   writeFileSync(evidenceFile, JSON.stringify(evidence));
-  const cmdArgs = [SCRIPT, '--event-path', f, '--evidence-file', evidenceFile];
+  const cmdArgs = [
+    SCRIPT,
+    '--event-path',
+    f,
+    '--evidence-file',
+    evidenceFile,
+    '--derived-base-sha',
+    derivedBaseSha,
+    '--derived-scope-sha256',
+    derivedScopeSha256,
+  ];
   if (Array.isArray(changedFiles)) {
     const cf = join(dir, 'changed-files.txt');
     writeFileSync(cf, changedFiles.join('\n'));
     cmdArgs.push('--changed-files-file', cf);
   }
   try {
-    execFileSync('node', cmdArgs, { stdio: 'pipe' });
+    const childEnv = { ...process.env };
+    if (githubActions) childEnv.GITHUB_ACTIONS = 'true';
+    else delete childEnv.GITHUB_ACTIONS;
+    execFileSync('node', cmdArgs, { stdio: 'pipe', env: childEnv });
     return 0;
   } catch (e) {
     return e.status ?? -1;
@@ -107,19 +127,41 @@ const peerBody =
   `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
-  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF])}\n` +
-  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(EVIDENCE[MINIMAX_REF])}\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF])}\n`;
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n` +
+  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(EVIDENCE[MINIMAX_REF].body)}\n` +
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
 
 const staleClaudeBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF]),
+  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
   head_sha: 'f'.repeat(40),
 });
-const staleEvidence = { ...EVIDENCE, [CLAUDE_REF]: staleClaudeBody };
+const staleEvidence = { ...EVIDENCE, [CLAUDE_REF]: evidenceComment(staleClaudeBody) };
 const staleEvidencePeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF]),
+  sha256(EVIDENCE[CLAUDE_REF].body),
   sha256(staleClaudeBody),
 );
+const reviseResponse = '## P0\nFinding\n## P1\nNone\n## P2\nNone\nVERDICT: REVISE';
+const contradictoryClaudeBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  verdict: 'AGREE',
+  response_sha256: sha256(reviseResponse),
+  response: reviseResponse,
+});
+const contradictoryEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(contradictoryClaudeBody),
+};
+const contradictoryPeerBody = peerBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(contradictoryClaudeBody),
+);
+const editedEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: {
+    ...EVIDENCE[CLAUDE_REF],
+    updatedAt: '2026-07-17T20:01:00Z',
+  },
+};
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -172,6 +214,8 @@ const cases = [
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, headRepo: 'mallory/platform-k8s-gitops', body: autoBody(LEDGER) }, 1],
   ['normal PR + valid peer review -> normal audit pass',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody }, 0],
+  ['GitHub Actions mode rejects offline evidence-file override',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, githubActions: true }, 1],
   ['normal PR + missing three-channel receipts -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n' }, 1],
@@ -189,13 +233,19 @@ const cases = [
       body: peerBody.replace(CLAUDE_REF, 'old-ref-123') }, 1],
   ['normal PR + malformed receipt digest -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF]), 'not-a-sha256') }, 1],
+      body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF].body), 'not-a-sha256') }, 1],
   ['normal PR + well-formed but wrong evidence body digest -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF]), 'f'.repeat(64)) }, 1],
+      body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF].body), 'f'.repeat(64)) }, 1],
   ['normal PR + stale evidence internal head with matching body digest -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: staleEvidencePeerBody, evidence: staleEvidence }, 1],
+  ['normal PR + evidence says AGREE but response terminal verdict is REVISE -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: contradictoryPeerBody, evidence: contradictoryEvidence }, 1],
+  ['normal PR + edited evidence comment -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, evidence: editedEvidence }, 1],
   ['normal PR + event base tip mismatch -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       baseSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody }, 1],
@@ -207,6 +257,10 @@ const cases = [
       body: peerBody.replace(`scope=${SCOPE_SHA256}`, `scope=${'e'.repeat(64)}`) }, 1],
   ['normal PR + missing event head SHA -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', headSha: '', body: peerBody }, 1],
+  ['normal PR + missing CI-derived merge-base -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', derivedBaseSha: '', body: peerBody }, 1],
+  ['normal PR + missing CI-derived scope digest -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', derivedScopeSha256: '', body: peerBody }, 1],
   ['normal PR + overall REVISE -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace('Verdict: AGREE', 'Verdict: REVISE') }, 1],

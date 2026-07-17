@@ -470,13 +470,21 @@ Bu gövde elle yeniden yazılmaz. Provider'ın tam final response'u stdin'den
 formatını, tekil terminal verdict'i ve response digest'ini üretir. `REVISE`
 yanıtı dürüstçe `REVISE` evidence üretir ve gate'i açmaz.
 
-`gate-cross-ai-audit` normal PR'larda base tip'i event `pull_request.base.sha`,
-head'i event `pull_request.head.sha` ile karşılaştırır; her evidence comment'ini
-GitHub API'den fetch eder, comment body SHA-256 ve iç response SHA-256'yı yeniden
-hesaplar, sonra aynı base/head/scope'a bağlı exact provider/model ve `AGREE`
-alanlarını fail-closed doğrular. Top-level verdict de yalnız
+`gate-cross-ai-audit` trusted base checkout'ta PR head objesini checkout etmeden
+fetch eder; gerçek `git merge-base` ve aynı redaction algoritmasıyla full-range
+scope SHA-256'yı yeniden türetir. Gitleaks ayrı required security gate olarak
+kalır; bu adım `--derive-only` ile yalnız deterministik scope binding yapar.
+Base tip event `pull_request.base.sha`, head event `pull_request.head.sha`,
+merge-base ve scope ise bu CI türetimiyle eşleşmelidir. Gate her evidence
+comment'ini GitHub API'den fetch eder; yalnız repo owner `halilkocoglu` tarafından
+yazılmış ve hiç edit edilmemiş (`created_at == updated_at`) comment kabul edilir.
+Comment body SHA-256, iç response SHA-256 ve response'un tekil terminal
+`VERDICT: AGREE` semantiği yeniden hesaplanır; sonra aynı base-tip/base/head/scope'a
+bağlı exact provider/model ve `AGREE` alanları fail-closed doğrulanır. Top-level verdict de yalnız
 `AGREE` olabilir. PR body receipt'i provider'ın kriptografik imzası değildir;
-fetched audit declaration + content-addressed operator provenance'dır. Kaynak CLI receipt'i ve
+fetched audit declaration + content-addressed, unedited owner provenance'dır.
+Sağlayıcılar kullanıcı-CLI yanıtlarına doğrulanabilir imza sunmadığı için bu katman
+provider kriptografik attestation iddia etmez. Kaynak CLI receipt'i ve
 referans verilen evidence korunmadan bu alan tek başına provider çağrısını
 kanıtlamaz veya insan kapısını ikame etmez.
 

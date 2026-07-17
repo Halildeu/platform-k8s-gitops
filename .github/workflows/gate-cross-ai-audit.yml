@@ -118,6 +118,27 @@ jobs:
           echo "PR files:"
           cat /tmp/changed-files.txt
 
+      - name: Derive trusted merge-base and scope digest
+        id: scope
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1000 origin "pull/${PR_NUMBER}/head"
+          merge_base="$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")"
+          receipt="$(python3 scripts/ai/prepare_cross_ai_scope.py \
+            --derive-only \
+            --base-ref "$PR_BASE_SHA" \
+            --base-sha "$merge_base" \
+            --head-sha "$PR_HEAD_SHA" \
+            --output /tmp/cross-ai-derived-scope.patch)"
+          scope_sha256="$(printf '%s' "$receipt" | jq -r .scope_sha256)"
+          test -n "$merge_base"
+          test "$scope_sha256" != "null"
+          echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
+          echo "scope_sha256=$scope_sha256" >> "$GITHUB_OUTPUT"
+
       - name: Run cross-AI audit
         # `GITHUB_EVENT_PATH` carries the PR payload (head ref/sha, base, body,
         # actor, sender, labels) — the audit reads PR metadata from there, not
@@ -130,7 +151,9 @@ jobs:
         run: |
           node scripts/ci/pr-cross-ai-audit.mjs \
             --event-path "$GITHUB_EVENT_PATH" \
-            --changed-files-file /tmp/changed-files.txt
+            --changed-files-file /tmp/changed-files.txt \
+            --derived-base-sha "${{ steps.scope.outputs.merge_base }}" \
+            --derived-scope-sha256 "${{ steps.scope.outputs.scope_sha256 }}"
 
       # #827 — regression test for the automation-PR exemption logic
       # (auditAutomation): legit bot auto-PRs pass, human-on-auto-branch is

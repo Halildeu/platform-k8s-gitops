@@ -137,6 +137,11 @@ def main() -> None:
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--max-bytes", type=int, default=MAX_SCOPE_BYTES)
+    parser.add_argument(
+        "--derive-only",
+        action="store_true",
+        help="CI-only deterministic digest derivation; gitleaks remains a separate gate",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -164,7 +169,7 @@ def main() -> None:
     )
     if PRIVATE_KEY_RE.search(raw_scope) or BEARER_RE.search(raw_scope):
         fail("high_confidence_secret_detected")
-    if not gitleaks_clean(raw_scope):
+    if not args.derive_only and not gitleaks_clean(raw_scope):
         fail("gitleaks_finding_detected")
 
     try:
@@ -202,7 +207,7 @@ def main() -> None:
                 "scope_bytes": len(redacted_scope),
                 "email_redactions": email_count,
                 "phone_redactions": phone_count,
-                "secret_scan": "gitleaks-pass",
+                "secret_scan": "derive-only" if args.derive_only else "gitleaks-pass",
                 "scope_path": str(output),
             },
             ensure_ascii=False,
