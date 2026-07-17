@@ -113,7 +113,7 @@ try {
   attachNetworkEvidence(candidatePage, 'candidate');
 
   await candidatePage.goto(`${baseURL}/jobs`, { waitUntil: 'domcontentloaded' });
-  await waitVisible(candidatePage.getByRole('heading', { name: /Açık pozisyonlar/i }), 'jobs heading');
+  await waitVisible(candidatePage.getByRole('heading', { level: 2, name: 'Açık pozisyonlar', exact: true }), 'jobs heading');
   await candidatePage.goto(`${baseURL}/jobs/urun-yoneticisi/apply`, { waitUntil: 'domcontentloaded' });
   await waitVisible(candidatePage.getByTestId('candidate-application-page'), 'candidate application page');
   await waitVisible(candidatePage.getByRole('heading', { name: 'Ürün Yöneticisi' }), 'job title');
@@ -250,7 +250,8 @@ try {
   const workspace = recruiterPage.getByTestId('recruiter-workspace-page');
   if (!(await workspace.isVisible().catch(() => false))) {
     const corporateButton = recruiterPage.getByTestId('corporate-login-button');
-    if (await corporateButton.isVisible().catch(() => false)) await corporateButton.click();
+    await waitVisible(corporateButton, 'corporate login button', 30_000);
+    await corporateButton.click();
     await recruiterPage.waitForURL(/\/realms\/platform-test\//u, { timeout: 30_000 });
     await recruiterPage.locator('#username').fill(recruiterUsername);
     await recruiterPage.locator('#password').fill(recruiterPassword);
@@ -264,7 +265,7 @@ try {
   const applicationCard = candidateEmailText.locator('xpath=ancestor::article');
   await applicationCard.getByRole('button', { name: 'Başvuruyu incele' }).click();
   const reviewPanel = recruiterPage.getByTestId('recruiter-review-panel');
-  await waitVisible(reviewPanel.getByText(candidateEmail, { exact: true }), 'recruiter review details');
+  await waitVisible(reviewPanel.getByText(publicRef, { exact: true }), 'recruiter review details');
   await assertAxeClean(recruiterPage, 'recruiter-workspace-desktop');
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-desktop');
 

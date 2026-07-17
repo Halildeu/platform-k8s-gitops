@@ -27,6 +27,12 @@ with log_path.open("a", encoding="utf-8") as log:
     log.write(json.dumps({"method": method, "url": url}) + "\n")
 
 if url.endswith("/realms/master/protocol/openid-connect/token"):
+    password_arg = next((arg for arg in args if arg.startswith("password@")), "")
+    password_file = pathlib.Path(password_arg.removeprefix("password@"))
+    if not password_arg or password_file.read_bytes().endswith((b"\r", b"\n")):
+        output.write_text(json.dumps({"error": "invalid_grant"}))
+        print("401", end="")
+        raise SystemExit(0)
     output.write_text(json.dumps({"access_token": "test-admin-token-value-with-safe-length"}))
     print("200", end="")
     raise SystemExit(0)
