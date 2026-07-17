@@ -1443,7 +1443,7 @@ images:
     # remains explicit-grant-only: neither runtime ADMIN compatibility expansion
     # nor PermissionDataInitializer ADMIN seeding grants it implicitly. Image
     # build run 29354279680; permission-service job 87157899597 succeeded.
-    # Pinnable: ghcr.io/halildeu/platform-backend-permission-service@sha256:d26ad6b70483b60cf263f2cff639f270d652dc2e2a3af50ab9c5c28c94d4fa5b
+    # Pinnable: ghcr.io/halildeu/platform-backend-permission-service@sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e139a5256
     # 2026-07-17 · board #2531 (umbrella #2530) — canonical scope grants now take effect.
     # Source : platform-backend PR #847 squash f74d93cc863e544f634a8c7bee25d7a7c084cad1
     #          (verified main ancestor; PR CI 19/19; Codex AGREE 12f12dd44)
@@ -1461,7 +1461,7 @@ images:
     # NOTE   : provenance:false + no org.opencontainers.image.revision label -> the digest
     #          proves the artifact, not the full source lineage. Reconcile the Actions run
     #          / promotion ledger once GitHub recovers, before any prod promotion.
-    digest: sha256:d26ad6b70483b60cf263f2cff639f270d652dc2e2a3af50ab9c5c28c94d4fa5b
+    digest: sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e139a5256
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
