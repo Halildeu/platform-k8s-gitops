@@ -3,8 +3,8 @@
 > **Issue:** #2502 · **ADR:** ADR-0045 · **scope:** reversible test/non-prod only
 > **Current state (2026-07-17):** Phase 0 source/schema/tests, the live-found
 > webhook header normalization fix and the Phase 1 receive-only observer are
-> merged to `main` through
-> `ea9e6b587fd4e5c7381330762ace014508d046d3`. Main workflow
+> merged to `main`; the current truth-sync commit is
+> `d092db7e5a7fa9558369afca4762454c6b1f0639`. Main workflow
 > [29581180381](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29581180381)
 > published and attested
 > `ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection@sha256:0a79f6facfadb29daaeb096f5491e07fd8b01eabfbbb4db7d896f5663f9e9285`;
@@ -26,7 +26,12 @@
 > signed synthetic delivery was durably admitted and its replay was reported as
 > a duplicate. No protected workflow lane or Environment custom rule is enabled.
 > This is not GitHub-origin delivery, evaluator, callback, deployment or
-> production evidence.
+> production evidence. A 2026-07-17 GitHub UI redelivery of the App `ping`
+> still returned `failed to connect to host`; hosted-runner probe
+> [29600152003](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29600152003)
+> independently timed out on `testai.acik.com:443`. The rule must remain
+> disabled until the outbound failed-delivery reconciler is merged, deployed
+> and proven with a real test callback.
 
 ## 1. What this removes — and what it does not
 
@@ -246,7 +251,88 @@ Treat this as Phase 1 receive-only evidence only. A real GitHub-origin
 protected Environment custom-rule activation and deployment outcome remain
 separate Phase 2/3 gates.
 
-### 5.2 Local process and enforcement
+### 5.2 GitHub-origin reachability and failed-delivery recovery
+
+The 2026-07-17 App delivery log is authoritative for the current ingress path:
+
+- original `ping` and `installation.created` deliveries reported
+  `failed to connect to host`;
+- an owner-authorized UI redelivery of `ping` at 20:23:45 reported the same
+  failure;
+- hosted-runner run
+  [29600152003](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29600152003)
+  timed out connecting to `testai.acik.com:443`;
+- from the test-side network, DNS resolves to `212.115.26.190`, TLS verification
+  succeeds, the root returns HTTP 200 and an unsigned POST to the exact webhook
+  route reaches the service and fails as expected with
+  `WEBHOOK_EVENT_INVALID`/HTTP 400.
+
+This separates a GitHub-origin network reachability failure from service/TLS
+failure. Do not enable the Environment rule while only the inbound route
+exists: GitHub would wait on a callback the evaluator never received.
+
+The bounded recovery path reads the App's own webhook deliveries through:
+
+```text
+GET https://api.github.com/app/hook/deliveries
+GET https://api.github.com/app/hook/deliveries/{delivery_id}
+```
+
+These calls use one freshly minted App JWT per poll cycle. The JWT lifetime is
+at most five minutes from `iat`; it is never the credential used for the
+decision callback. The poller follows no redirects, walks at most five
+100-item pages, validates newest-first order and exact list/detail equality,
+requires the configured target URL and expected installation/repository, and
+processes only fresh failed `deployment_protection_rule/requested` records.
+
+The detail `request.payload` is parsed GitHub REST JSON, not the original raw
+webhook body. Its ledger provenance is therefore
+`github_app_delivery_api_v1`, never `github_webhook_hmac_sha256_v1`. The normal
+evaluator still re-fetches the exact run, workflow, Environment and signed
+evidence before any decision. The callback is reconstructed under the exact
+GitHub API origin, uses a repository installation access token and must return
+empty HTTP 204. The high-water advances only after that callback is durably
+`Succeeded`; overlap replay and decision idempotency repair a crash between
+callback and cursor update.
+
+Enforcement with recovery is explicit:
+
+```bash
+python3 scripts/github_apps/run_cross_ai_deployment_policy.py \
+  --mode enforce \
+  --delivery-poll \
+  --delivery-poll-interval 30 \
+  --expected-webhook-url \
+    https://testai.acik.com/github-apps/cross-ai-deployment-protection \
+  --db /var/lib/cross-ai/observe.sqlite3 \
+  --registry-db /var/lib/cross-ai/registry.sqlite3 \
+  --cas-dir /var/lib/cross-ai/cas \
+  --webhook-secret-file /run/secrets/github-webhook-current \
+  --policy-file /run/config/cross-ai-policy.json \
+  --trust-root-file /run/config/cross-ai-trust-root.json \
+  --expected-trust-root-sha256 'sha256:RELEASE_PIN_FROM_DUAL_CONTROL' \
+  --revocations-file /run/config/cross-ai-revocations.dsse.json \
+  --github-app-id "$GITHUB_APP_ID" \
+  --github-app-key-file /run/secrets/github-app.pem
+```
+
+This command is a reviewed shape, not permission to place the PEM or any token
+in arguments, Git or chat. Phase 2 first adds the exact PEM property to the
+test-only ExternalSecret and least-privilege Vault policy. Only then may the
+owner generate one App private key into a local `0600` handoff and the agent
+seed it through the existing short-lived `platform-bootstrap-writer-test`
+stdin/CAS/self-revoking flow. Verify only property presence, ESO readiness and
+redacted hash alignment. Production Vault, root-token recovery and raw PEM
+output remain forbidden.
+
+Poll interval is never below 30 seconds, success and failure paths have bounded
+jitter, exponential backoff caps at five minutes, and `/readyz` fails after a
+poll/API/callback error or stale success. An empty successful poll may make the
+poller ready; it does not prove a deployment callback. Phase 2 still requires
+one real failed delivery, evaluator result, HTTP 204 callback and retained
+human reviewer before the custom rule is considered live.
+
+### 5.3 Local process and enforcement
 
 Observe with evaluation but no callback:
 

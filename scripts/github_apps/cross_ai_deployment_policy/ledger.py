@@ -37,6 +37,14 @@ class DecisionRecord:
     callback_http_status: int | None
 
 
+@dataclass(frozen=True)
+class PollerState:
+    last_success_at: str | None
+    high_water_delivery_id: int | None
+    high_water_delivered_at: str | None
+    high_water_guid: str | None
+
+
 class ObserveLedger:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -70,7 +78,8 @@ class ObserveLedger:
                     head_sha TEXT NOT NULL,
                     intent_ref TEXT NOT NULL,
                     request_id TEXT NOT NULL,
-                    sender_id INTEGER NOT NULL
+                    sender_id INTEGER NOT NULL,
+                    provenance TEXT NOT NULL
                 ) STRICT;
 
                 CREATE TABLE IF NOT EXISTS ledger_events (
@@ -105,6 +114,15 @@ class ObserveLedger:
                     FOREIGN KEY (first_delivery_id) REFERENCES deliveries(delivery_id)
                 ) STRICT;
 
+                CREATE TABLE IF NOT EXISTS delivery_poller_state (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    last_success_at TEXT,
+                    high_water_delivery_id INTEGER,
+                    high_water_delivered_at TEXT,
+                    high_water_guid TEXT
+                ) STRICT;
+                INSERT OR IGNORE INTO delivery_poller_state (singleton) VALUES (1);
+
                 CREATE TRIGGER IF NOT EXISTS deliveries_no_update
                 BEFORE UPDATE ON deliveries BEGIN
                     SELECT RAISE(ABORT, 'append-only deliveries');
@@ -127,6 +145,15 @@ class ObserveLedger:
                 END;
                 """
             )
+            columns = {
+                row["name"]
+                for row in self._connection.execute("PRAGMA table_info(deliveries)")
+            }
+            if "provenance" not in columns:
+                self._connection.execute(
+                    "ALTER TABLE deliveries ADD COLUMN provenance TEXT NOT NULL "
+                    "DEFAULT 'github_webhook_hmac_sha256_v1'"
+                )
 
     def close(self) -> None:
         with self._lock:
@@ -152,6 +179,7 @@ class ObserveLedger:
             request.intent_ref,
             request.request_id,
             request.sender_id,
+            request.provenance,
         )
         with self._lock:
             self._connection.execute("BEGIN IMMEDIATE")
@@ -161,8 +189,8 @@ class ObserveLedger:
                     INSERT INTO deliveries (
                         delivery_id, received_at, payload_sha256, repository_id,
                         repository, installation_id, environment, run_id,
-                        head_sha, intent_ref, request_id, sender_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        head_sha, intent_ref, request_id, sender_id, provenance
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     values,
                 )
@@ -180,7 +208,7 @@ class ObserveLedger:
                     self._connection.execute("ROLLBACK")
                     reject(
                         "WEBHOOK_DELIVERY_COLLISION",
-                        "one delivery ID was reused with different payload bytes",
+                        "one delivery ID was reused with a different semantic payload",
                     )
                 self._connection.execute("COMMIT")
                 return False
@@ -268,6 +296,102 @@ class ObserveLedger:
                 "SELECT COUNT(*) AS count FROM ledger_events"
             ).fetchone()["count"]
         return int(deliveries), int(events)
+
+    def poller_state(self) -> PollerState:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM delivery_poller_state WHERE singleton = 1"
+            ).fetchone()
+        if row is None:
+            reject("POLLER_STATE_MISSING", "delivery poller state row is missing")
+        return PollerState(
+            last_success_at=row["last_success_at"],
+            high_water_delivery_id=row["high_water_delivery_id"],
+            high_water_delivered_at=row["high_water_delivered_at"],
+            high_water_guid=row["high_water_guid"],
+        )
+
+    def mark_poller_success(self, *, recorded_at: datetime | None = None) -> None:
+        timestamp = utc_seconds(recorded_at or utc_now())
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE delivery_poller_state SET last_success_at = ? WHERE singleton = 1",
+                (timestamp,),
+            )
+
+    def advance_poller_after_callback(
+        self,
+        *,
+        request: DeploymentProtectionRequest,
+        api_delivery_id: int,
+        delivered_at: datetime,
+        recorded_at: datetime | None = None,
+    ) -> None:
+        if api_delivery_id < 1:
+            reject("POLLER_STATE_INVALID", "API delivery ID must be positive")
+        delivered = utc_seconds(delivered_at)
+        timestamp = utc_seconds(recorded_at or utc_now())
+        key = (request.repository_id, request.environment, request.run_id)
+        with self._lock:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                decision = self._connection.execute(
+                    """
+                    SELECT callback_status FROM decision_records
+                    WHERE repository_id = ? AND environment = ? AND run_id = ?
+                    """,
+                    key,
+                ).fetchone()
+                if decision is None or decision["callback_status"] != "Succeeded":
+                    reject(
+                        "POLLER_CALLBACK_NOT_SUCCEEDED",
+                        "poller high-water requires a successful GitHub callback",
+                    )
+                state = self._connection.execute(
+                    "SELECT * FROM delivery_poller_state WHERE singleton = 1"
+                ).fetchone()
+                current = (
+                    state["high_water_delivered_at"] or "",
+                    int(state["high_water_delivery_id"] or 0),
+                )
+                candidate = (delivered, api_delivery_id)
+                if candidate >= current:
+                    self._connection.execute(
+                        """
+                        UPDATE delivery_poller_state
+                        SET last_success_at = ?, high_water_delivery_id = ?,
+                            high_water_delivered_at = ?, high_water_guid = ?
+                        WHERE singleton = 1
+                        """,
+                        (
+                            timestamp,
+                            api_delivery_id,
+                            delivered,
+                            request.delivery_id,
+                        ),
+                    )
+                else:
+                    self._connection.execute(
+                        "UPDATE delivery_poller_state SET last_success_at = ? "
+                        "WHERE singleton = 1",
+                        (timestamp,),
+                    )
+                self._connection.execute("COMMIT")
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+
+    def callback_succeeded(self, request: DeploymentProtectionRequest) -> bool:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT callback_status FROM decision_records
+                WHERE repository_id = ? AND environment = ? AND run_id = ?
+                """,
+                (request.repository_id, request.environment, request.run_id),
+            ).fetchone()
+        return row is not None and row["callback_status"] == "Succeeded"
 
     def events_for_delivery(self, delivery_id: str) -> tuple[LedgerEvent, ...]:
         with self._lock:
@@ -430,4 +554,4 @@ class ObserveLedger:
                 raise
 
 
-__all__ = ["DecisionRecord", "LedgerEvent", "ObserveLedger"]
+__all__ = ["DecisionRecord", "LedgerEvent", "ObserveLedger", "PollerState"]

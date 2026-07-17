@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import http.server
 import json
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,8 +19,11 @@ from scripts.github_apps.cross_ai_deployment_policy.github import (
     GitHubArtifactDownloader,
     GitHubDecisionClient,
     GitHubDispatcherClient,
+    GitHubHookDeliveryReader,
     GitHubReader,
+    GitHubRateLimitError,
     HTTPResponse,
+    UrllibTransport,
     _validated_artifact_redirect,
 )
 
@@ -31,9 +36,16 @@ class FakeTransport:
         self.calls: list[tuple[str, str, dict[str, str], bytes | None]] = []
         self.routes: dict[tuple[str, str], HTTPResponse] = {}
 
-    def add(self, method: str, url: str, status: int, payload: object) -> None:
+    def add(
+        self,
+        method: str,
+        url: str,
+        status: int,
+        payload: object,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
-        self.routes[(method, url)] = HTTPResponse(status, {}, body)
+        self.routes[(method, url)] = HTTPResponse(status, headers or {}, body)
 
     def request(
         self,
@@ -106,6 +118,95 @@ class GitHubReaderTest(unittest.TestCase):
         self.assertTrue(authorization.startswith("Bearer "))
         jwt = authorization.removeprefix("Bearer ")
         self.assertEqual(len(jwt.split(".")), 3)
+        encoded_payload = jwt.split(".")[1]
+        encoded_payload += "=" * (-len(encoded_payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(encoded_payload))
+        self.assertEqual(claims["exp"] - claims["iat"], 300)
+        self.assertEqual(claims["exp"], int(NOW.timestamp()) + 240)
+
+    def test_delivery_reader_uses_one_app_jwt_and_validates_next_cursor(self) -> None:
+        list_url = "https://api.github.com/app/hook/deliveries?per_page=100"
+        next_url = (
+            "https://api.github.com/app/hook/deliveries?per_page=100&cursor=opaque"
+        )
+        detail_url = "https://api.github.com/app/hook/deliveries/77"
+        self.transport.add(
+            "GET",
+            list_url,
+            200,
+            [{"id": 77}],
+            headers={"Link": f'<{next_url}>; rel="next"'},
+        )
+        self.transport.add("GET", detail_url, 200, {"id": 77})
+        cycle = GitHubHookDeliveryReader(
+            token_provider=self.provider,
+            transport=self.transport,
+        ).cycle()
+        page = cycle.list_deliveries()
+        self.assertEqual(page.next_cursor, "opaque")
+        self.assertEqual(cycle.delivery(77), {"id": 77})
+        delivery_calls = [call for call in self.transport.calls if "/app/hook/" in call[1]]
+        self.assertEqual(len(delivery_calls), 2)
+        self.assertEqual(
+            delivery_calls[0][2]["Authorization"],
+            delivery_calls[1][2]["Authorization"],
+        )
+        self.assertFalse(
+            delivery_calls[0][2]["Authorization"].startswith("Bearer ghs_")
+        )
+
+    def test_delivery_reader_rejects_rate_limit_and_cursor_origin_escape(self) -> None:
+        list_url = "https://api.github.com/app/hook/deliveries?per_page=100"
+        reader = GitHubHookDeliveryReader(
+            token_provider=self.provider,
+            transport=self.transport,
+        )
+        self.transport.add("GET", list_url, 403, {})
+        with self.assertRaises(GitHubRateLimitError):
+            reader.cycle().list_deliveries()
+        self.transport.add(
+            "GET",
+            list_url,
+            200,
+            [],
+            headers={
+                "Link": '<https://api.github.com.evil.test/app/hook/deliveries?cursor=x>; rel="next"'
+            },
+        )
+        with self.assertRaisesRegex(PolicyError, "GITHUB_DELIVERY_CURSOR_INVALID"):
+            reader.cycle().list_deliveries()
+
+    def test_default_transport_does_not_follow_redirects(self) -> None:
+        target_calls: list[str] = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                if self.path == "/start":
+                    self.send_response(302)
+                    self.send_header("Location", "/target")
+                    self.end_headers()
+                    return
+                target_calls.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, format, *args):  # noqa: A003
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address
+            response = UrllibTransport().request(
+                "GET", f"http://{host}:{port}/start", headers={}
+            )
+            self.assertEqual(response.status, 302)
+            self.assertEqual(target_calls, [])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
     def test_reads_run_ref_annotated_tag_workflow_and_environment(self) -> None:
         repository = "Halildeu/platform-k8s-gitops"

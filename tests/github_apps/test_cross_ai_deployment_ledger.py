@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
@@ -153,6 +154,39 @@ class ObserveLedgerTest(unittest.TestCase):
                 callback_status="Unknown",
                 callback_http_status=503,
             )
+
+    def test_poller_high_water_advances_only_after_callback_success(self) -> None:
+        deployment_request = request()
+        delivered_at = datetime(2026, 7, 17, 17, 0, tzinfo=timezone.utc)
+        self.ledger.record_delivery(deployment_request)
+        with self.assertRaisesRegex(PolicyError, "POLLER_CALLBACK_NOT_SUCCEEDED"):
+            self.ledger.advance_poller_after_callback(
+                request=deployment_request,
+                api_delivery_id=77,
+                delivered_at=delivered_at,
+            )
+        self.ledger.claim_decision(
+            request=deployment_request,
+            state="approved",
+            reason_code="SIGNED_EVIDENCE_VALID",
+            evidence_digest="sha256:" + ("a" * 64),
+            comment="APPROVED evidence=sha256:abc stage=apply",
+        )
+        self.ledger.complete_decision(
+            request=deployment_request,
+            callback_status="Succeeded",
+            callback_http_status=204,
+        )
+        self.ledger.advance_poller_after_callback(
+            request=deployment_request,
+            api_delivery_id=77,
+            delivered_at=delivered_at,
+            recorded_at=delivered_at,
+        )
+        state = self.ledger.poller_state()
+        self.assertEqual(state.high_water_delivery_id, 77)
+        self.assertEqual(state.high_water_guid, deployment_request.delivery_id)
+        self.assertEqual(state.last_success_at, "2026-07-17T17:00:00Z")
 
 
 if __name__ == "__main__":
