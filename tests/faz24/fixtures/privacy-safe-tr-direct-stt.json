@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "faz24.syntheticSpeechFixture.v1",
+  "kind": "synthetic-speech",
+  "locale": "tr-TR",
+  "generator": "macOS Yelda system voice",
+  "prompt": "Merhaba. Bu genel ama\u00e7l\u0131 toplant\u0131 asistan\u0131 i\u00e7in do\u011frudan konu\u015fma tan\u0131ma kan\u0131t\u0131d\u0131r.",
+  "format": {
+    "container": "WAVE",
+    "encoding": "PCM_S16LE",
+    "sampleRateHz": 16000,
+    "channels": 1
+  },
+  "sha256": "f1bc5b5596613a6cfb88e8f4d77d50a4b47880266aa45558e03ece7589872710",
+  "privacy": {
+    "containsHumanVoice": false,
+    "containsPersonalData": false,
+    "intendedUse": "platform-test Direct-STT end-to-end acceptance only"
+  }
+}

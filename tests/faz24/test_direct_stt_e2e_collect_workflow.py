@@ -1,15 +1,19 @@
 from pathlib import Path
 import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
 import sys
+import wave
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github/workflows/faz24-direct-stt-e2e-collect.yml"
 COLLECTOR = REPO_ROOT / "scripts/faz24/collect_direct_stt_e2e_evidence.py"
 RUNNER = REPO_ROOT / "scripts/faz24/run-platform-desktop-token-evidence-chain.sh"
+SPEECH_FIXTURE = REPO_ROOT / "tests/faz24/fixtures/privacy-safe-tr-direct-stt.wav"
+SPEECH_FIXTURE_METADATA = REPO_ROOT / "tests/faz24/fixtures/privacy-safe-tr-direct-stt.json"
 
 
 def _load_collector():
@@ -254,8 +258,8 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert 'chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.pcm"' in workflow
     assert 'test "${AUDIO_FORMAT_INPUT}" = "PCM16"' in workflow
     assert 'fixture_source="input-wav-converted"' in workflow
-    assert 'fixture_source="generated-pcm16"' in workflow
-    assert "contains no human speech" in workflow
+    assert 'fixture_source="repo-synthetic-speech-converted"' in workflow
+    assert "privacy-safe-tr-direct-stt.wav" in workflow
     assert "chunk_fixture_source=${fixture_source}" in workflow
     assert "CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}" in workflow
     assert "SMOKE_CHUNK_FILE: ${{ steps.prepare_chunk.outputs.chunk_file }}" in workflow
@@ -270,6 +274,23 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "collector.stderr.sha256=" in workflow
     assert "sed -n '1,120p' \"${EVIDENCE_DIR}/runner.stderr\"" not in workflow
     assert "sed -n '1,120p' \"${EVIDENCE_DIR}/collector.stderr\"" not in workflow
+
+
+def test_privacy_safe_speech_fixture_matches_direct_stt_pcm_contract():
+    assert SPEECH_FIXTURE.stat().st_size < 300_000
+    metadata = json.loads(SPEECH_FIXTURE_METADATA.read_text(encoding="utf-8"))
+    assert hashlib.sha256(SPEECH_FIXTURE.read_bytes()).hexdigest() == metadata["sha256"]
+    assert metadata["privacy"] == {
+        "containsHumanVoice": False,
+        "containsPersonalData": False,
+        "intendedUse": "platform-test Direct-STT end-to-end acceptance only",
+    }
+    with wave.open(str(SPEECH_FIXTURE), "rb") as fixture:
+        assert fixture.getcomptype() == "NONE"
+        assert fixture.getsampwidth() == 2
+        assert fixture.getframerate() == 16_000
+        assert fixture.getnchannels() == 1
+        assert 5.0 < fixture.getnframes() / fixture.getframerate() < 8.0
 
 
 def test_workflow_does_not_accept_secret_shaped_inputs():
