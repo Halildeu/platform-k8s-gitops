@@ -272,8 +272,22 @@ try {
   const reviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'İnsan incelemesinde' });
   await refreshUntilVisible(refreshStatusButton, reviewStep.getByText('Şimdi'), 'candidate sees under review');
 
+  const terminalTransitionResponse = recruiterPage.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      relevantPath(response.url()) === `/api/ats/v1/recruiter/applications/${publicRef}/status`,
+    { timeout: 30_000 },
+  );
   await reviewPanel.getByRole('button', { name: 'Mülakat planlamasına al' }).click();
-  await waitVisible(reviewPanel.getByText('Mülakat planlaması bekleniyor.'), 'interview pending transition');
+  const terminalResponse = await terminalTransitionResponse;
+  if (terminalResponse.status() !== 200) {
+    throw new Error(`interview pending transition HTTP ${terminalResponse.status()}`);
+  }
+  const terminalStatus = reviewPanel.getByRole('status');
+  await waitVisible(terminalStatus, 'interview pending terminal status');
+  if ((await terminalStatus.textContent())?.trim() !== 'Mülakat planlaması bekleniyor.') {
+    throw new Error('interview pending terminal status text mismatch');
+  }
   await assertAxeClean(recruiterPage, 'recruiter-workspace-terminal-desktop');
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-terminal-desktop');
   const interviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'Mülakat planlaması' });

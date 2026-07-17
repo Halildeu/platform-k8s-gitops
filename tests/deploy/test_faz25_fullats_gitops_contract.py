@@ -258,8 +258,18 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         initial_scan = self.fullats_browser.index(
             "await assertAxeClean(recruiterPage, 'recruiter-workspace-desktop')"
         )
-        terminal_transition = self.fullats_browser.index(
-            "await waitVisible(reviewPanel.getByText('Mülakat planlaması bekleniyor.')"
+        terminal_response_wait = self.fullats_browser.index(
+            "const terminalTransitionResponse = recruiterPage.waitForResponse("
+        )
+        terminal_transition_click = self.fullats_browser.index(
+            "await reviewPanel.getByRole('button', "
+            "{ name: 'Mülakat planlamasına al' }).click();"
+        )
+        terminal_response = self.fullats_browser.index(
+            "const terminalResponse = await terminalTransitionResponse;"
+        )
+        terminal_status = self.fullats_browser.index(
+            "await waitVisible(terminalStatus, 'interview pending terminal status')"
         )
         terminal_scan = self.fullats_browser.index(
             "await assertAxeClean(recruiterPage, "
@@ -268,9 +278,23 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         candidate_terminal_refresh = self.fullats_browser.index(
             "const interviewStep = candidatePage.getByRole('listitem')"
         )
-        self.assertLess(initial_scan, terminal_transition)
-        self.assertLess(terminal_transition, terminal_scan)
+        self.assertLess(initial_scan, terminal_response_wait)
+        self.assertLess(terminal_response_wait, terminal_transition_click)
+        self.assertLess(terminal_transition_click, terminal_response)
+        self.assertLess(terminal_response, terminal_status)
+        self.assertLess(terminal_status, terminal_scan)
         self.assertLess(terminal_scan, candidate_terminal_refresh)
+        self.assertIn(
+            "relevantPath(response.url()) === "
+            "`/api/ats/v1/recruiter/applications/${publicRef}/status`",
+            self.fullats_browser,
+        )
+        self.assertIn("terminalResponse.status() !== 200", self.fullats_browser)
+        self.assertIn(
+            "(await terminalStatus.textContent())?.trim() !== "
+            "'Mülakat planlaması bekleniyor.'",
+            self.fullats_browser,
+        )
         self.assertIn(
             "await assertNoHorizontalOverflow(recruiterPage, "
             "'recruiter-workspace-terminal-desktop')",
