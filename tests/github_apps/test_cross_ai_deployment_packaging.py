@@ -22,6 +22,7 @@ VAULT_RECONCILER = ROOT / "scripts/ops/vault-policy-reconcile.sh"
 BOOTSTRAP_WRITER_VERIFY = (
     ROOT / "bootstrap/vault-policies/test/bootstrap-writer-verify.sh"
 )
+LIVE_OBSERVER_WORKFLOW = ROOT / ".github/workflows/verify-cross-ai-observer.yml"
 
 
 def load_yaml(name: str) -> dict[str, object]:
@@ -32,6 +33,19 @@ def load_yaml(name: str) -> dict[str, object]:
 
 
 class PackagingContractTests(unittest.TestCase):
+    def test_live_probe_separates_workload_and_argocd_hub_contexts(self) -> None:
+        workflow = LIVE_OBSERVER_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("K8S_CONTEXT: k3d-test", workflow)
+        self.assertIn("ARGOCD_CONTEXT: k3d-prod", workflow)
+        self.assertEqual(
+            workflow.count('kubectl --context "$ARGOCD_CONTEXT" -n argocd'),
+            6,
+        )
+        self.assertNotIn(
+            'kubectl --context "$K8S_CONTEXT" -n argocd',
+            workflow,
+        )
+
     def test_dockerfile_is_pinned_hash_locked_and_non_root(self) -> None:
         dockerfile = (
             ROOT / "scripts/github_apps/cross_ai_deployment_policy/Dockerfile"
