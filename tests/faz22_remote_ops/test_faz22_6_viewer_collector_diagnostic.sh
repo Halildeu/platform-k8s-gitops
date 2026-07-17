@@ -176,9 +176,16 @@ import assert from 'node:assert/strict';
 
 const browserScript = process.argv[2];
 const allowlistPath = process.argv[3];
-const { BROWSER_FAILURE_CODES } = await import(pathToFileURL(browserScript));
+const { BROWSER_FAILURE_CODES, classifyPreflightApiStatus } = await import(pathToFileURL(browserScript));
 const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'));
 assert.deepEqual([...BROWSER_FAILURE_CODES].sort(), [...allowlist.failureCodes].sort());
+assert.equal(classifyPreflightApiStatus(null), 'browser-preflight-api-response-missing');
+assert.equal(classifyPreflightApiStatus(200), 'browser-preflight-api-status-unexpected-success');
+assert.equal(classifyPreflightApiStatus(401), 'browser-preflight-api-status-unauthorized');
+assert.equal(classifyPreflightApiStatus(403), 'browser-preflight-api-status-forbidden');
+assert.equal(classifyPreflightApiStatus(404), 'browser-preflight-api-status-invalid');
+assert.equal(classifyPreflightApiStatus(409), 'browser-preflight-api-status-conflict');
+assert.equal(classifyPreflightApiStatus(502), 'browser-preflight-api-status-server-error');
 NODE
 
 if grep -Fq "localStorage.setItem('token'" "$BROWSER_SCRIPT"; then
