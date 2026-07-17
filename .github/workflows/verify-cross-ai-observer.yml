@@ -1,0 +1,332 @@
+name: Verify — Cross-AI receive-only observer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-ai-observer-live-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Immutable runtime + signed HMAC + dedup
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 5
+
+    env:
+      K8S_CONTEXT: k3d-test
+      K8S_NAMESPACE: platform-test
+      DEPLOYMENT: cross-ai-deployment-protection
+      EXTERNAL_SECRET: cross-ai-deployment-protection-observe
+      K8S_SECRET: cross-ai-deployment-protection-observe
+      APP_NAME: platform-test
+      ENDPOINT: https://testai.acik.com/github-apps/cross-ai-deployment-protection
+
+    steps:
+      - name: Checkout immutable desired state
+        uses: actions/checkout@v6
+
+      - name: Verify immutable runtime and ESO readiness
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          emit_scalar() {
+            local key="$1"
+            local value="$2"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "::error::multiline output rejected for $key"
+              exit 1
+            fi
+            printf '%s=%s\n' "$key" "$value" >> "$GITHUB_OUTPUT"
+          }
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" || "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "::error::live verification accepts only the exact checked-out main revision"
+            exit 1
+          fi
+
+          manifest="kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/deployment.yaml"
+          expected_image="$(awk '/^[[:space:]]*image: ghcr.io\/halildeu\/platform-k8s-gitops-cross-ai-deployment-protection@sha256:/ {print $2}' "$manifest")"
+          if [[ ! "$expected_image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::immutable observer image is absent from desired state"
+            exit 1
+          fi
+
+          kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status \
+            "deployment/$DEPLOYMENT" --timeout=120s
+          actual_image="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+            get deployment "$DEPLOYMENT" \
+            -o jsonpath='{.spec.template.spec.containers[?(@.name=="observer")].image}')"
+          if [[ "$actual_image" != "$expected_image" ]]; then
+            echo "::error::live Deployment image differs from immutable desired state"
+            exit 1
+          fi
+
+          expected_digest="${expected_image##*@}"
+          scripts/deploy/verify-pod-digest.sh \
+            --context "$K8S_CONTEXT" \
+            --namespace "$K8S_NAMESPACE" \
+            --selector "app.kubernetes.io/name=$DEPLOYMENT" \
+            --expected-digest "$expected_digest"
+
+          pod_json="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+            get pod -l "app.kubernetes.io/name=$DEPLOYMENT" -o json)"
+          pod_count="$(jq '.items | length' <<<"$pod_json")"
+          container_count="$(jq '.items[0].status.containerStatuses | length' <<<"$pod_json")"
+          ready="$(jq -r '.items[0].status.containerStatuses[] | select(.name == "observer") | .ready // false' <<<"$pod_json")"
+          restarts="$(jq -r '.items[0].status.containerStatuses[] | select(.name == "observer") | .restartCount // -1' <<<"$pod_json")"
+          image_id="$(jq -r '.items[0].status.containerStatuses[] | select(.name == "observer") | .imageID // ""' <<<"$pod_json")"
+          if [[ "$pod_count" != "1" || "$container_count" != "1" || "$ready" != "true" || "$restarts" != "0" ]]; then
+            echo "::error::observer pod is not exactly one Ready single-container pod with zero restarts"
+            exit 1
+          fi
+
+          eso_ready="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+            get externalsecret "$EXTERNAL_SECRET" \
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')"
+          if [[ "$eso_ready" != "True" ]]; then
+            echo "::error::observer ExternalSecret is not Ready=True"
+            exit 1
+          fi
+
+          argo_revision="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+            get application "$APP_NAME" -o jsonpath='{.status.sync.revision}')"
+          argo_sync="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+            get application "$APP_NAME" -o jsonpath='{.status.sync.status}')"
+          argo_health="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+            get application "$APP_NAME" -o jsonpath='{.status.health.status}')"
+          if [[ "$argo_revision" != "$GITHUB_SHA" || "$argo_sync" != "Synced" || "$argo_health" != "Healthy" ]]; then
+            echo "::error::Argo application is not Synced/Healthy at the dispatched main SHA"
+            exit 1
+          fi
+
+          emit_scalar expected_image "$expected_image"
+          emit_scalar image_id "$image_id"
+          emit_scalar argo_revision "$argo_revision"
+          emit_scalar argo_sync "$argo_sync"
+          emit_scalar argo_health "$argo_health"
+
+      - name: Verify signed receive-only delivery and durable dedup
+        id: signed_probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          secret_pipe="$RUNNER_TEMP/cross-ai-webhook-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.fifo"
+          probe_result="$RUNNER_TEMP/cross-ai-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          writer_pid=""
+          cleanup() {
+            if [[ -n "$writer_pid" ]] && kill -0 "$writer_pid" 2>/dev/null; then
+              kill "$writer_pid" 2>/dev/null || true
+              wait "$writer_pid" 2>/dev/null || true
+            fi
+            rm -f "$secret_pipe" "$probe_result"
+          }
+          trap cleanup EXIT
+
+          emit_scalar() {
+            local key="$1"
+            local value="$2"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "::error::multiline output rejected for $key"
+              exit 1
+            fi
+            printf '%s=%s\n' "$key" "$value" >> "$GITHUB_OUTPUT"
+          }
+
+          ready_json() {
+            kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+              exec "deployment/$DEPLOYMENT" -c observer -- \
+              python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8080/readyz", timeout=3).read().decode())'
+          }
+
+          assert_runtime_attestation() {
+            local manifest expected_image expected_digest actual_image deployment_generation
+            local pod_json pod_count container_count pod_uid ready restarts image_id normalized
+            local eso_ready argo_revision argo_sync argo_health
+            manifest="kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/deployment.yaml"
+            expected_image="$(awk '/^[[:space:]]*image: ghcr.io\/halildeu\/platform-k8s-gitops-cross-ai-deployment-protection@sha256:/ {print $2}' "$manifest")"
+            if [[ ! "$expected_image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::immutable observer image is absent from desired state"
+              exit 1
+            fi
+            expected_digest="${expected_image##*@}"
+            actual_image="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+              get deployment "$DEPLOYMENT" \
+              -o jsonpath='{.spec.template.spec.containers[?(@.name=="observer")].image}')"
+            deployment_generation="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+              get deployment "$DEPLOYMENT" -o jsonpath='{.metadata.generation}')"
+            if [[ "$actual_image" != "$expected_image" ]]; then
+              echo "::error::live Deployment changed outside immutable desired state"
+              exit 1
+            fi
+
+            pod_json="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+              get pod -l "app.kubernetes.io/name=$DEPLOYMENT" \
+              --field-selector=status.phase=Running -o json)"
+            pod_count="$(jq '[.items[] | select(.metadata.deletionTimestamp == null)] | length' <<<"$pod_json")"
+            container_count="$(jq '[.items[] | select(.metadata.deletionTimestamp == null)][0].status.containerStatuses | length' <<<"$pod_json")"
+            pod_uid="$(jq -r '[.items[] | select(.metadata.deletionTimestamp == null)][0].metadata.uid // ""' <<<"$pod_json")"
+            ready="$(jq -r '[.items[] | select(.metadata.deletionTimestamp == null)][0].status.containerStatuses[] | select(.name == "observer") | .ready // false' <<<"$pod_json")"
+            restarts="$(jq -r '[.items[] | select(.metadata.deletionTimestamp == null)][0].status.containerStatuses[] | select(.name == "observer") | .restartCount // -1' <<<"$pod_json")"
+            image_id="$(jq -r '[.items[] | select(.metadata.deletionTimestamp == null)][0].status.containerStatuses[] | select(.name == "observer") | .imageID // ""' <<<"$pod_json")"
+            normalized="$(sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|' <<<"$image_id")"
+            if [[ "$pod_count" != "1" || "$container_count" != "1" || "$ready" != "true" || "$restarts" != "0" || "$normalized" != "$expected_digest" ]]; then
+              echo "::error::runtime attestation failed for the named observer container"
+              exit 1
+            fi
+
+            eso_ready="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+              get externalsecret "$EXTERNAL_SECRET" \
+              -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')"
+            argo_revision="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+              get application "$APP_NAME" -o jsonpath='{.status.sync.revision}')"
+            argo_sync="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+              get application "$APP_NAME" -o jsonpath='{.status.sync.status}')"
+            argo_health="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+              get application "$APP_NAME" -o jsonpath='{.status.health.status}')"
+            if [[ "$eso_ready" != "True" || "$argo_revision" != "$GITHUB_SHA" || "$argo_sync" != "Synced" || "$argo_health" != "Healthy" ]]; then
+              echo "::error::ESO/Argo attestation changed or is not authoritative"
+              exit 1
+            fi
+
+            ATTESTED_GENERATION="$deployment_generation"
+            ATTESTED_POD_UID="$pod_uid"
+            ATTESTED_IMAGE_ID="$image_id"
+            ATTESTED_EXPECTED_IMAGE="$expected_image"
+            ATTESTED_ARGO_REVISION="$argo_revision"
+            ATTESTED_ARGO_SYNC="$argo_sync"
+            ATTESTED_ARGO_HEALTH="$argo_health"
+          }
+
+          assert_runtime_attestation
+          before_generation="$ATTESTED_GENERATION"
+          before_pod_uid="$ATTESTED_POD_UID"
+          before_image_id="$ATTESTED_IMAGE_ID"
+          before_expected_image="$ATTESTED_EXPECTED_IMAGE"
+          before_argo_revision="$ATTESTED_ARGO_REVISION"
+          before="$(ready_json)"
+          before_deliveries="$(jq -er '.deliveries' <<<"$before")"
+          before_events="$(jq -er '.events' <<<"$before")"
+          if [[ "$(jq -r '.mode' <<<"$before")" != "observe" \
+            || "$(jq -r '.evaluationEnabled' <<<"$before")" != "false" \
+            || "$(jq -r '.reconciliationReady' <<<"$before")" != "true" ]]; then
+            echo "::error::observer is not in receive-only mode"
+            exit 1
+          fi
+
+          mkfifo -m 600 "$secret_pipe"
+          (
+            kubectl --request-timeout=10s --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+              get secret "$K8S_SECRET" \
+              -o jsonpath='{.data.github-webhook-current}' | base64 --decode > "$secret_pipe"
+          ) &
+          writer_pid="$!"
+
+          timeout 30s python3 scripts/ops/cross_ai_observer_probe.py \
+            --url "$ENDPOINT" \
+            --secret-file "$secret_pipe" \
+            --repository-id 1211415632 \
+            --repository Halildeu/platform-k8s-gitops \
+            --installation-id 147158710 \
+            --sender-id 186576227 \
+            --environment faz22-view-only-pilot \
+            --head-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" > "$probe_result"
+          wait "$writer_pid"
+          writer_pid=""
+          rm -f "$secret_pipe"
+
+          jq -e '.accepted == true and .mode == "observe" and .first == {"duplicate":false,"status":202} and .second == {"duplicate":true,"status":202}' \
+            "$probe_result" >/dev/null
+          secret_bytes="$(jq -er '.secretBytes' "$probe_result")"
+          if (( secret_bytes < 32 || secret_bytes > 512 )); then
+            echo "::error::ESO-delivered webhook property has invalid bounded length"
+            exit 1
+          fi
+
+          target_deliveries=$((before_deliveries + 1))
+          target_events=$((before_events + 1))
+          after=""
+          for _attempt in 1 2 3 4 5; do
+            after="$(ready_json)"
+            if (( $(jq -er '.deliveries' <<<"$after") == target_deliveries )) \
+              && (( $(jq -er '.events' <<<"$after") >= target_events )); then
+              break
+            fi
+            sleep 1
+          done
+          after_deliveries="$(jq -er '.deliveries' <<<"$after")"
+          after_events="$(jq -er '.events' <<<"$after")"
+          if (( after_deliveries != target_deliveries || after_events < target_events )) \
+            || [[ "$(jq -r '.mode' <<<"$after")" != "observe" \
+              || "$(jq -r '.evaluationEnabled' <<<"$after")" != "false" \
+              || "$(jq -r '.reconciliationReady' <<<"$after")" != "true" ]]; then
+            echo "::error::durable observe ledger did not record exactly one delivery and at least one event"
+            exit 1
+          fi
+
+          assert_runtime_attestation
+          if [[ "$ATTESTED_GENERATION" != "$before_generation" \
+            || "$ATTESTED_POD_UID" != "$before_pod_uid" \
+            || "$ATTESTED_IMAGE_ID" != "$before_image_id" \
+            || "$ATTESTED_EXPECTED_IMAGE" != "$before_expected_image" \
+            || "$ATTESTED_ARGO_REVISION" != "$before_argo_revision" ]]; then
+            echo "::error::runtime identity changed across the signed probe window"
+            exit 1
+          fi
+
+          delivery_id="$(jq -r '.deliveryId' "$probe_result")"
+          emit_scalar delivery_id "$delivery_id"
+          emit_scalar before_deliveries "$before_deliveries"
+          emit_scalar after_deliveries "$after_deliveries"
+          emit_scalar before_events "$before_events"
+          emit_scalar after_events "$after_events"
+          emit_scalar secret_bytes "$secret_bytes"
+          emit_scalar expected_image "$ATTESTED_EXPECTED_IMAGE"
+          emit_scalar image_id "$ATTESTED_IMAGE_ID"
+          emit_scalar pod_uid "$ATTESTED_POD_UID"
+          emit_scalar deployment_generation "$ATTESTED_GENERATION"
+          emit_scalar argo_revision "$ATTESTED_ARGO_REVISION"
+          emit_scalar argo_sync "$ATTESTED_ARGO_SYNC"
+          emit_scalar argo_health "$ATTESTED_ARGO_HEALTH"
+
+      - name: Record redacted live evidence
+        shell: bash
+        env:
+          EXPECTED_IMAGE: ${{ steps.signed_probe.outputs.expected_image }}
+          IMAGE_ID: ${{ steps.signed_probe.outputs.image_id }}
+          POD_UID: ${{ steps.signed_probe.outputs.pod_uid }}
+          DEPLOYMENT_GENERATION: ${{ steps.signed_probe.outputs.deployment_generation }}
+          ARGO_REVISION: ${{ steps.signed_probe.outputs.argo_revision }}
+          ARGO_SYNC: ${{ steps.signed_probe.outputs.argo_sync }}
+          ARGO_HEALTH: ${{ steps.signed_probe.outputs.argo_health }}
+          SECRET_BYTES: ${{ steps.signed_probe.outputs.secret_bytes }}
+          DELIVERY_ID: ${{ steps.signed_probe.outputs.delivery_id }}
+          BEFORE_DELIVERIES: ${{ steps.signed_probe.outputs.before_deliveries }}
+          AFTER_DELIVERIES: ${{ steps.signed_probe.outputs.after_deliveries }}
+          BEFORE_EVENTS: ${{ steps.signed_probe.outputs.before_events }}
+          AFTER_EVENTS: ${{ steps.signed_probe.outputs.after_events }}
+        run: |
+          {
+            echo "## Cross-AI receive-only observer — live evidence"
+            echo "- source revision: \`${GITHUB_SHA}\`"
+            echo "- desired/live image: \`${EXPECTED_IMAGE}\`"
+            echo "- pod imageID: \`${IMAGE_ID}\`"
+            echo "- probe-window identity: pod UID \`${POD_UID}\`; Deployment generation \`${DEPLOYMENT_GENERATION}\`"
+            echo "- Argo: \`${ARGO_REVISION}\`; \`${ARGO_SYNC}\` / \`${ARGO_HEALTH}\`"
+            echo "- ESO: \`Ready=True\`; delivered property bytes: \`${SECRET_BYTES}\`"
+            echo "- signed delivery: \`${DELIVERY_ID}\`"
+            echo "- first POST: \`202 duplicate=false\`; replay: \`202 duplicate=true\`"
+            echo "- durable deliveries: \`${BEFORE_DELIVERIES} -> ${AFTER_DELIVERIES}\`"
+            echo "- durable events: \`${BEFORE_EVENTS} -> ${AFTER_EVENTS}\`"
+            echo "- live readiness: \`mode=observe\`; \`evaluationEnabled=false\`; \`reconciliationReady=true\`"
+            echo "- callback attempted by this probe: no"
+            echo "- raw webhook secret, signature and payload: not emitted"
+          } >> "$GITHUB_STEP_SUMMARY"
