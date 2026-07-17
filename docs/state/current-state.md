@@ -1,5 +1,41 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — #2502 Cross-AI deployment protection remains fail-closed (2026-07-17)
+
+This delta supersedes the 2026-07-15 statement below that
+`faz22-view-only-pilot` returned `404`. The Environment now exists with one
+human required-reviewer rule; no custom deployment protection rule is enabled.
+The human reviewer remains authoritative and has not been impersonated or
+removed.
+
+Live/source evidence:
+
+- evaluator GitHub App `Acik Cross-AI Deploy Protection` exists as App ID
+  `4322193`, installation `147158710`, scoped only to this repository;
+- Phase-1 receive-only observer is `Synced/Healthy`, and synthetic signed
+  admission/replay proof passed in Actions run `29585694840` attempt 2;
+- GitHub-origin `ping`/`installation.created` deliveries still fail to connect;
+  hosted-runner reachability run `29600152003` timed out on
+  `testai.acik.com:443`;
+- outbound failed-delivery recovery is merged, immutable-image build and
+  attestation passed, but no real deployment-protection callback exists;
+- evaluator App private key is present at TEST Vault KV version 2 with redacted
+  file/hash-match verification. The observer does not mount or consume it;
+- live TEST Vault has no Transit mount. The existing root-free reconciler may
+  inspect mounts but cannot enable one. Owner-gated TEST Transit bootstrap is a
+  source package only and has not been executed;
+- direct Anthropic is currently the only provider route with provider-reported
+  model identity. Codex CLI JSON does not expose backend model identity, Mavis
+  CLI is absent, and the Cursor route was usage-limited. Two-provider quorum is
+  therefore unavailable and is not downgraded to a single-provider claim.
+
+Current semantics: observer `Up` and receive-only admission proof do not mean
+evaluator `Functional`, custom-rule callback, deployment or #2373 product
+acceptance. Production is untouched. Custom-rule activation remains blocked by
+Transit plus reviewed Vault HTTPS, a real second provider, separate dispatcher
+App, signed intent/trust material, no-input protected workflows and a retained
+dual-gate callback proof.
+
 ## Live Delta — automation App slug root-cause identified (2026-07-16)
 
 `#2295` automation aktivasyonunun kök nedeni bulundu. Önceki canonical kayıt yalnız

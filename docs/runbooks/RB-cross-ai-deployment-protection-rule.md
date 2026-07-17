@@ -29,9 +29,13 @@
 > production evidence. A 2026-07-17 GitHub UI redelivery of the App `ping`
 > still returned `failed to connect to host`; hosted-runner probe
 > [29600152003](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29600152003)
-> independently timed out on `testai.acik.com:443`. The rule must remain
-> disabled until the outbound failed-delivery reconciler is merged, deployed
-> and proven with a real test callback.
+> independently timed out on `testai.acik.com:443`. The outbound failed-delivery
+> reconciler and file-only Vault seed wrapper are merged. The evaluator App PEM
+> is present at the dedicated TEST KV path with redacted hash-match proof; the
+> receive-only observer does not mount or consume it. The TEST Vault still has
+> no Transit mount. The rule must remain disabled until owner-gated Transit/TLS,
+> a real second provider, dispatcher App, signed intent, protected workflows and
+> one real callback are all proven.
 
 ## 1. What this removes — and what it does not
 
@@ -125,6 +129,63 @@ reported model to match. Cursor JSON currently does not report backend model
 identity. Its leaf is therefore honestly marked `trusted-launch-attested`,
 bound to the live model list and launched route, never `provider-reported` or
 `direct-provider-CLI=true`.
+
+### 4.1 One-time TEST Transit owner bootstrap
+
+Current live truth is fail-closed: TEST Vault has no Transit mount and the
+root-free config reconciler can read but cannot create mounts. Do not recover,
+search for or use the owner root token from automation. The owner performs this
+step once with an explicitly supplied current-user-owned `0600` token file. The
+script rejects a symlink, weak mode, wrong Vault cluster ID, standby/sealed
+Vault, non-root token, non-Transit path collision, exportable/backup-enabled
+key or policy readback drift.
+
+The bootstrap creates only:
+
+- the TEST-only `cross-ai/` Transit mount;
+- distinct `anthropic`, `provider-secondary`, `coordinator` and `revocation`
+  non-derived, non-exportable Ed25519 keys;
+- the git-reviewed update of the already owner-gated
+  `vault-config-reconciler` policy.
+
+It does not enable the GitHub rule, create an Environment, mint issuer
+credentials, write Kubernetes state or touch production. Run only from the
+reviewed commit on `staging-sw`, substituting the live public cluster ID and
+owner-local file paths. Never paste the token value into the command:
+
+```bash
+chmod 600 /OWNER/LOCAL/ROOT_TOKEN_FILE
+python3 scripts/ops/bootstrap_cross_ai_transit.py \
+  --vault-addr http://127.0.0.1:8201 \
+  --root-token-file /OWNER/LOCAL/ROOT_TOKEN_FILE \
+  --expected-cluster-id LIVE_TEST_VAULT_CLUSTER_ID \
+  --reconciler-policy bootstrap/vault-policies/test/vault-config-reconciler.hcl \
+  --receipt-out /OWNER/LOCAL/cross-ai-transit-bootstrap-receipt.json
+```
+
+The output receipt contains only public key material and digests, but remains
+host-local until the owner verifies its cluster ID and printed canonical
+receipt digest. The caller, not the script, owns cleanup of the root-token
+handoff file.
+
+After that one-time owner action, normal TEST policy/AppRole reconciliation is
+root-free:
+
+```bash
+REPO_ROOT="$PWD" scripts/ops/vault-policy-reconcile.sh
+```
+
+The reconciler may mint one-use credentials only for the Anthropic issuer,
+secondary issuer and coordinator roles. It cannot mint a revocation
+secret-id. Every role can call only its exact `cross-ai/sign/<key>` endpoint;
+key read/export/backup/restore/datakey/encrypt/decrypt/rewrap/HMAC are denied. A missing
+second provider remains an authorization blocker; do not create a trust root
+that claims a provider route which has not been live-verified.
+
+The evaluator's Transit client requires a canonical HTTPS Vault origin. The
+loopback HTTP address above is accepted only by the attended owner bootstrap.
+If TEST Vault still lacks a reviewed HTTPS service identity, signed evidence
+issuance and enforcement remain disabled.
 
 ## 5. Service start and phase safety
 

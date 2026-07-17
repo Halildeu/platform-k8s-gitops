@@ -42,15 +42,36 @@ POLICIES=(
   "common/bootstrap-writer.hcl|platform-bootstrap-writer"
   "test/eso-runtime-extras.hcl|eso-runtime-test-extras"
   "test/audio-gateway-mtls-seeder.hcl|audio-gateway-mtls-seeder"
+  "test/cross-ai-issuer-anthropic.hcl|cross-ai-issuer-anthropic-test"
+  "test/cross-ai-issuer-secondary.hcl|cross-ai-issuer-secondary-test"
+  "test/cross-ai-coordinator.hcl|cross-ai-coordinator-test"
+  "test/cross-ai-revocation.hcl|cross-ai-revocation-test"
 )
 
 # Content linter (Codex 019f1150): fail-closed reject any policy text that would
 # grant escalation primitives — defense-in-depth against a malicious git change
 # that named-path scoping alone can't stop (the holder could otherwise widen an
 # allowlisted policy). A policy carrying these on a non-deny line is rejected.
-ESCALATION_RE='(auth/token/create|auth/token/root|sys/policies|sys/policy/|sys/auth|sys/raw|sys/storage|sys/audit|sys/generate-root|sys/seal|sys/unseal|sys/rekey|identity/)'
+ESCALATION_RE='(auth/token/create|auth/token/root|sys/policies|sys/policy/|sys/auth|sys/raw|sys/storage|sys/audit|sys/generate-root|sys/seal|sys/unseal|sys/rekey|identity/|cross-ai/(keys|export|backup|restore|datakey|encrypt|decrypt|rewrap|hmac)/)'
 lint_policy() { # lint_policy <name> <file> ; echo OK / FAIL:<reason>
   local name="$1" file="$2"
+  local expected_sign_path=""
+  case "$name" in
+    cross-ai-issuer-anthropic-test) expected_sign_path="cross-ai/sign/anthropic" ;;
+    cross-ai-issuer-secondary-test) expected_sign_path="cross-ai/sign/provider-secondary" ;;
+    cross-ai-coordinator-test) expected_sign_path="cross-ai/sign/coordinator" ;;
+    cross-ai-revocation-test) expected_sign_path="cross-ai/sign/revocation" ;;
+  esac
+  if [[ -n "$expected_sign_path" ]]; then
+    local granted_paths
+    granted_paths=$(grep -vE '^\s*#' "$file" \
+      | awk 'BEGIN{RS="}"} !/"deny"/' \
+      | grep -oE 'path "[^"]+"' 2>/dev/null | sort -u | tr '\n' ' ')
+    if [[ "$granted_paths" != "path \"$expected_sign_path\" " ]]; then
+      echo "FAIL: $name must grant only path \"$expected_sign_path\""
+      return
+    fi
+  fi
   # strip comments + deny lines, then look for escalation paths on grant lines
   local hits
   hits=$(grep -vE '^\s*#' "$file" \
@@ -68,11 +89,23 @@ APPROLES=(
   "eso-runtime|eso-runtime,eso-runtime-test-extras|token_ttl=1h token_max_ttl=24h secret_id_ttl=0"
   "platform-bootstrap-writer-test|platform-bootstrap-writer|token_ttl=30m token_max_ttl=60m secret_id_ttl=60m secret_id_num_uses=10 bind_secret_id=true"
   "audio-gateway-mtls-seeder-test|audio-gateway-mtls-seeder|token_ttl=15m token_max_ttl=15m token_num_uses=0 secret_id_ttl=30m secret_id_num_uses=1 bind_secret_id=true"
+  "cross-ai-issuer-anthropic-test|cross-ai-issuer-anthropic-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  "cross-ai-issuer-secondary-test|cross-ai-issuer-secondary-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  "cross-ai-coordinator-test|cross-ai-coordinator-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  "cross-ai-revocation-test|cross-ai-revocation-test|token_ttl=5m token_max_ttl=5m token_explicit_max_ttl=5m token_num_uses=0 secret_id_ttl=5m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+)
+
+EMITTABLE_APPROLES=(
+  "platform-bootstrap-writer-test"
+  "audio-gateway-mtls-seeder-test"
+  "cross-ai-issuer-anthropic-test"
+  "cross-ai-issuer-secondary-test"
+  "cross-ai-coordinator-test"
 )
 
 # ── reconciler AppRole auth ──────────────────────────────────────────────────
-ROLE_ID="${VAULT_RECONCILER_ROLE_ID:-$(cat "${VAULT_RECONCILER_ROLE_ID_FILE:-/home/halil/.vault/reconciler-role-id}" 2>/dev/null | tr -d '\r\n')}"
-SECRET_ID="${VAULT_RECONCILER_SECRET_ID:-$(cat "${VAULT_RECONCILER_SECRET_ID_FILE:-/home/halil/.vault/reconciler-secret-id}" 2>/dev/null | tr -d '\r\n')}"
+ROLE_ID="${VAULT_RECONCILER_ROLE_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_ROLE_ID_FILE:-/home/halil/.vault/reconciler-role-id}" 2>/dev/null)}"
+SECRET_ID="${VAULT_RECONCILER_SECRET_ID:-$(tr -d '\r\n' < "${VAULT_RECONCILER_SECRET_ID_FILE:-/home/halil/.vault/reconciler-secret-id}" 2>/dev/null)}"
 [[ -n "$ROLE_ID" && -n "$SECRET_ID" ]] || { echo "ERROR: reconciler role-id/secret-id missing (owner provision — README §6.6)" >&2; exit 2; }
 
 api() { # api METHOD PATH [JSON]
@@ -93,8 +126,10 @@ TOKEN_HEADER_FILE=$(mktemp)
 chmod 600 "$TOKEN_HEADER_FILE"
 printf 'X-Vault-Token: %s' "$TOKEN" > "$TOKEN_HEADER_FILE"
 cleanup() {
-  [[ -n "${TOKEN:-}" && -f "${TOKEN_HEADER_FILE:-}" ]] \
-    && curl -sf -X POST -H @"$TOKEN_HEADER_FILE" "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
+  if [[ -n "${TOKEN:-}" && -f "${TOKEN_HEADER_FILE:-}" ]]; then
+    curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
+      "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
+  fi
   if [[ -f "${TOKEN_HEADER_FILE:-}" ]]; then
     if command -v shred >/dev/null 2>&1; then
       shred -u "$TOKEN_HEADER_FILE" 2>/dev/null || true
@@ -133,6 +168,14 @@ done
 
 # ── optionally emit a fresh secret-id for one seed AppRole (for the agent) ────
 if [[ -n "$EMIT_SEED" && "$DRY_RUN" != "1" ]]; then
+  emit_allowed=0
+  for candidate in "${EMITTABLE_APPROLES[@]}"; do
+    [[ "$candidate" == "$EMIT_SEED" ]] && emit_allowed=1
+  done
+  [[ "$emit_allowed" == "1" ]] || {
+    echo "ERROR: secret-id emission is not permitted for $EMIT_SEED" >&2
+    exit 5
+  }
   RID=$(api GET "auth/approle/role/$EMIT_SEED/role-id" | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["role_id"])' 2>/dev/null)
   SID=$(api POST "auth/approle/role/$EMIT_SEED/secret-id" '' | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["secret_id"])' 2>/dev/null)
   umask 077

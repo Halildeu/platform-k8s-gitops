@@ -62,6 +62,22 @@ path "sys/policies/acl/audio-gateway-mtls-seeder" {
   capabilities = ["create", "update", "read"]
 }
 
+path "sys/policies/acl/cross-ai-issuer-anthropic-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "sys/policies/acl/cross-ai-issuer-secondary-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "sys/policies/acl/cross-ai-coordinator-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "sys/policies/acl/cross-ai-revocation-test" {
+  capabilities = ["create", "update", "read"]
+}
+
 # ============================================================================
 # 2. ALLOW — manage the scoped seed AppRoles (EXPLICIT names, no glob)
 # ============================================================================
@@ -102,6 +118,53 @@ path "auth/approle/role/audio-gateway-mtls-seeder-test/role-id" {
 path "auth/approle/role/audio-gateway-mtls-seeder-test/secret-id" {
   capabilities = ["create", "update"]
 }
+
+path "auth/approle/role/cross-ai-issuer-anthropic-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "auth/approle/role/cross-ai-issuer-anthropic-test/role-id" {
+  capabilities = ["read"]
+}
+
+path "auth/approle/role/cross-ai-issuer-anthropic-test/secret-id" {
+  capabilities = ["create", "update"]
+}
+
+path "auth/approle/role/cross-ai-issuer-secondary-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "auth/approle/role/cross-ai-issuer-secondary-test/role-id" {
+  capabilities = ["read"]
+}
+
+path "auth/approle/role/cross-ai-issuer-secondary-test/secret-id" {
+  capabilities = ["create", "update"]
+}
+
+path "auth/approle/role/cross-ai-coordinator-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "auth/approle/role/cross-ai-coordinator-test/role-id" {
+  capabilities = ["read"]
+}
+
+path "auth/approle/role/cross-ai-coordinator-test/secret-id" {
+  capabilities = ["create", "update"]
+}
+
+path "auth/approle/role/cross-ai-revocation-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "auth/approle/role/cross-ai-revocation-test/role-id" {
+  capabilities = ["read"]
+}
+
+# Deliberately no cross-ai-revocation-test/secret-id capability. Revocation is
+# an exceptional owner-authorized operation, not a routine automation token.
 
 # ============================================================================
 # 3. ALLOW — read-only introspection (idempotency + audit correlation)
