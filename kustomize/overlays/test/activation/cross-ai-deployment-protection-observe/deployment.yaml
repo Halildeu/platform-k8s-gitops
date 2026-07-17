@@ -37,9 +37,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: observer
-          # Main workflow 29577665709 published this exact OCI subject; registry
+          # Main workflow 29581180381 published this exact OCI subject; registry
           # manifest and GitHub provenance attestation were independently verified.
-          image: ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection@sha256:5b3532cdacc7d6f60bcf317982ab9bf7e1fcfe51f4c94de2a11aa3226c19af59
+          image: ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection@sha256:0a79f6facfadb29daaeb096f5491e07fd8b01eabfbbb4db7d896f5663f9e9285
           imagePullPolicy: IfNotPresent
           args:
             - --mode

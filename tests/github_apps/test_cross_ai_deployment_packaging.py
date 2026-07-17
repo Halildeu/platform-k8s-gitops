@@ -90,7 +90,7 @@ class PackagingContractTests(unittest.TestCase):
         self.assertEqual(
             container["image"],
             "ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection"
-            "@sha256:5b3532cdacc7d6f60bcf317982ab9bf7e1fcfe51f4c94de2a11aa3226c19af59",
+            "@sha256:0a79f6facfadb29daaeb096f5491e07fd8b01eabfbbb4db7d896f5663f9e9285",
         )
 
         test_root = yaml.safe_load(TEST_ROOT.read_text(encoding="utf-8"))
