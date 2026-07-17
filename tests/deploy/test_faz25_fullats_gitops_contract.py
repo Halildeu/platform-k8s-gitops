@@ -292,6 +292,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn("exact workflow commit", self.runbook)
         self.assertIn("pod `CrashLoopBackOff` kalabilir", self.runbook)
         self.assertIn("fixed-id append'i doğrulandıktan sonra boot gate açılır", self.runbook)
+        self.assertIn("Faz 25 #2526 desired pin: `6af613a`", self.runbook)
+        self.assertIn("canlı D29 pending", self.runbook)
+        self.assertIn("aynı exact-main koşumu yeniden dispatch etmek normal ve güvenlidir", self.runbook)
         self.assertIn("WiringConfig.flyway(DataSource)", self.runbook)
         self.assertIn("modelGovernanceLedgerReader(DataSource, Flyway)", self.runbook)
         self.assertNotRegex(

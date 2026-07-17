@@ -27,7 +27,7 @@
    - Model: audience + 13 permission + atanmayan repair client-scope **frontend'e DEFAULT**; **yetki YALNIZ `ats-api` client-role atamasıyla** (scope ∩ atanmış-rol ∩ bilinen permission). Toplam 14 rol / 15 default scope. Tenant claim hardcoded değildir; `ats_tenant` user attribute mapper'ından gelir. `ats-recruiter-persona` yalnız public careers tenant + `ats.application.{read,status.write}` exact-set taşır.
 3. **Aktivasyon** (~2 dk): normal GitOps PR merge + ArgoCD reconcile (`kustomize/overlays/test` bu activation overlay'ini içerir).
    - Beklenen ara durum: yeni pod Flyway V6'yı uygular; model-governance ledger henüz boşken boot gate kasıtlı fail-closed olduğu için pod `CrashLoopBackOff` kalabilir. Bu sırada `Ready` beklenmez ve workload'a doğrudan restart/patch yapılmaz.
-   - Beklenen son durum: §Faz 25 test model-governance ilk geçişi fixed-id append'i doğrulandıktan sonra boot gate açılır; ExternalSecret Ready=True → Secret 3 key; ats-interview-evidence Running/Ready olur. Provider live-stt fail-closed; kullanılmayan ai-stub pod'u desired-state dışıdır.
+   - Beklenen son durum: §Faz 25 test model-governance ilk geçişi fixed-id append'i doğrulandıktan sonra boot gate açılır; ExternalSecret Ready=True → Secret 3 key; ats-interview-evidence Running/Ready olur. Provider live-stt fail-closed; kullanılmayan ai-stub pod'u desired-state dışıdır. CrashLoop exponential backoff 600 saniyelik Ready penceresini aşarsa workflow fail-loud durur; fixed transition idempotent olduğu için aynı exact-main koşumu yeniden dispatch etmek normal ve güvenlidir, doğrudan workload restart/patch yapılmaz.
    - `platform-test` Argo uygulamasında `prune:false` olduğu için eski manuel `ats-ai-stub` kaynakları otomatik silinmez. Argo `Synced/Healthy` ve `ATS_AI_PROVIDER=live-stt` kanıtından **sonra** tek-seferlik, isimle sınırlı temizlik: `kubectl --context k3d-test -n platform-test delete deployment/ats-ai-stub service/ats-ai-stub configmap/ats-ai-stub-script networkpolicy/ats-ai-stub --ignore-not-found`. NetworkPolicy, önceki çok-belgeli `netpol.yaml` desired-state'inin ikinci nesnesiydi; güncel `ai-stub.yaml` içinde olmaması onu eski cluster'da hayalet yapmaz. Önce aynı isimlerle `kubectl get` kanıtı al; wildcard/label tabanlı toplu silme kullanma.
    - Fail sinyali: pod `CreateContainerConfigError` = Secret yok (ESO/Vault kontrol); `CrashLoopBackOff` + `AppProperties` log'u = eksik env.
 4. **D29 kanıt matrisi** (Codex düzeltmeli adlandırma):
@@ -143,7 +143,9 @@ Kanıtlar (aynı oturum):
 İSPATLAMAZ: repair 200-REPAIRED canlı yolu (rol manuel atanınca — onay-kapısı;
 E2E'de kanıtlı), canlı STT (39d-5), browser-acceptance (login-gated).
 
-**Aktivasyon pin hedefi: ~~f3ccad71~~ → UYGULANDI; güncel pin `e6b7409` (39d-12 dahil)**
+**39d-12 son canlı D29 baseline: `e6b7409` / `sha256:b4b6a806…a8e9d7`.**
+**Faz 25 #2526 desired pin: `6af613a` / `sha256:1df68ec1…e5f2`; canlı D29 pending ve yalnız recovery + acceptance koşumuyla kanıtlanacaktır.**
+(Tarihsel aktivasyon hedefi: ~~f3ccad71~~ → `e6b7409` UYGULANDI.)
 (39d-8/8c/8d/9/10/**11** birlikte; #108 R4-repair dahil — KC koşumu
 `provision-test-keycloak.sh` gitops#2328 sürümüyle: 12 rol/13 scope,
 `ats.export.repair` ATANMADAN). Pin sonrası smoke EKLERİ (mevcut d29-smoke 14'üne):
