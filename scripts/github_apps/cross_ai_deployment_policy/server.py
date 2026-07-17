@@ -17,6 +17,7 @@ from .intent_store import IntentRegistry, StageReservation
 from .ledger import ObserveLedger
 from .webhook import (
     MAX_WEBHOOK_BYTES,
+    WEBHOOK_HEADER_NAMES,
     DeploymentProtectionRequest,
     parse_deployment_protection_webhook,
 )
@@ -463,7 +464,17 @@ class PolicyHandler(BaseHTTPRequestHandler):
                 {"accepted": False, "code": "WEBHOOK_BODY_TRUNCATED"},
             )
             return
-        headers = {key: value for key, value in self.headers.items()}
+        headers: dict[str, str] = {}
+        for name in WEBHOOK_HEADER_NAMES:
+            values = self.headers.get_all(name, [])
+            if len(values) > 1:
+                self._json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"accepted": False, "code": "WEBHOOK_HEADER_DUPLICATE"},
+                )
+                return
+            if values:
+                headers[name] = values[0]
         try:
             request, duplicate = self.service.accept(
                 raw_body=raw_body,

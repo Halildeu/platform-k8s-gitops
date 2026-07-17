@@ -15,6 +15,14 @@ from .errors import reject
 
 
 MAX_WEBHOOK_BYTES = 1024 * 1024
+WEBHOOK_HEADER_NAMES = frozenset(
+    {
+        "content-type",
+        "x-github-event",
+        "x-github-delivery",
+        "x-hub-signature-256",
+    }
+)
 SIGNATURE = re.compile(r"^sha256=([a-f0-9]{64})$")
 DELIVERY_ID = re.compile(r"^[a-f0-9-]{16,64}$", re.IGNORECASE)
 REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -155,15 +163,33 @@ def parse_deployment_protection_webhook(
     secrets: Iterable[bytes],
     allowed_api_origins: Iterable[str] = ("https://api.github.com",),
 ) -> DeploymentProtectionRequest:
-    content_type = headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+    normalized_headers: dict[str, str] = {}
+    for raw_name, value in headers.items():
+        name = raw_name.casefold()
+        if name not in WEBHOOK_HEADER_NAMES:
+            continue
+        if name in normalized_headers:
+            reject(
+                "WEBHOOK_HEADER_DUPLICATE",
+                f"duplicate security-relevant webhook header {name}",
+            )
+        normalized_headers[name] = value
+
+    content_type = (
+        normalized_headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    )
     if content_type != "application/json":
         reject("WEBHOOK_CONTENT_TYPE_INVALID", "Content-Type must be application/json")
-    if headers.get("X-GitHub-Event") != "deployment_protection_rule":
+    if normalized_headers.get("x-github-event") != "deployment_protection_rule":
         reject("WEBHOOK_EVENT_INVALID", "unexpected GitHub webhook event")
-    delivery_id = headers.get("X-GitHub-Delivery", "")
+    delivery_id = normalized_headers.get("x-github-delivery", "")
     if DELIVERY_ID.fullmatch(delivery_id) is None:
         reject("WEBHOOK_DELIVERY_INVALID", "X-GitHub-Delivery is invalid")
-    verify_webhook_signature(raw_body, headers.get("X-Hub-Signature-256"), secrets)
+    verify_webhook_signature(
+        raw_body,
+        normalized_headers.get("x-hub-signature-256"),
+        secrets,
+    )
     try:
         payload = json.loads(raw_body, object_pairs_hook=_no_duplicate_object)
     except UnicodeDecodeError:
