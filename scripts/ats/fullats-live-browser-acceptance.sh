@@ -170,6 +170,25 @@ api_request() {
 echo "1/6 Canonical ATS Keycloak personasini uzlastir"
 bash scripts/ats/provision-test-keycloak.sh >/dev/null
 
+RECRUITER_KC_FILE="$(json_file recruiter-kc-user.json)"
+docker exec "$KC_CONTAINER" "$KCADM" get users -r "$REALM" \
+  -q "email=$RECRUITER_EMAIL" --fields id,username,email,enabled >"$RECRUITER_KC_FILE" 2>/dev/null
+python3 - "$RECRUITER_EMAIL" "$RECRUITER_USERNAME" "$RECRUITER_KC_FILE" <<'PY'
+import json, pathlib, sys
+
+rows = [
+    row
+    for row in json.loads(pathlib.Path(sys.argv[3]).read_text())
+    if row.get("email") == sys.argv[1]
+]
+if len(rows) != 1:
+    raise SystemExit(f"expected exactly one synthetic recruiter, got {len(rows)}")
+row = rows[0]
+if row.get("username") != sys.argv[2] or row.get("enabled") is not True:
+    raise SystemExit("synthetic recruiter identity or enabled state drifted")
+PY
+rm -f "$RECRUITER_KC_FILE"
+
 echo "2/6 Sentetik d35 admin credential ve product API authority hazirla"
 D35_JSON="$(docker exec "$KC_CONTAINER" "$KCADM" get users -r "$REALM" \
   -q "email=$D35_ADMIN_EMAIL" --fields id,username,email 2>/dev/null)"

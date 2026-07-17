@@ -209,6 +209,15 @@ try {
       throw new Error(`missing network evidence: ${persona} ${method} ${pathname} ${status}`);
     }
   }
+  const serverErrors = networkEvidence
+    .filter((entry) => entry.status >= 500)
+    .map((entry) => ({
+      ...entry,
+      pathname: entry.pathname.replace(publicRef, '[APPLICATION_REF]'),
+    }));
+  if (serverErrors.length > 0) {
+    throw new Error(`allowlisted ATS network path returned 5xx: ${JSON.stringify(serverErrors)}`);
+  }
 
   const summary = {
     schemaVersion: 'fullats-live-browser-acceptance/v1',
