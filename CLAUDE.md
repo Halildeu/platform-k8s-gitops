@@ -82,6 +82,10 @@ Faz/plan/PR review'u ve yüksek etkili kararlar aynı exact scope/head üzerinde
 Cursor CLI/MCP/model/harness veya Cursor-routed model bu zincirde kullanılmaz.
 Kararın stable provenance kaydı [#2601](https://github.com/Halildeu/platform-k8s-gitops/issues/2601)'dir.
 
+- **Birincil istişare ve her turun ilk dış çağrısı doğrudan
+  `claude-opus-4-8`'dir.** JSON `modelUsage` exact `claude-opus-4-8`
+  doğrulamıyorsa bu kanal tamamlanmış sayılmaz; alias veya daha düşük modele
+  sessiz fallback yapılmaz. Sonra MiniMax M3 ve Codex 5.6 SOL aynı scope'u inceler.
 - Yalnız headless CLI/daemon kullanılır; AI uygulama penceresi ve UI fallback yoktur.
 - Her çağrıda exact model kimliği canlı çıktıdan doğrulanır; model adı hafızadan uydurulmaz.
 - Auth/kota/fallback/boş çıktı gerçek review değildir ve kanal `tracked_pending` kalır.

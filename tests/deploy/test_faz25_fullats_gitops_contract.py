@@ -484,6 +484,8 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("`gpt-5.6-sol`", self.agents)
         self.assertIn("Cursor kullanım yolu kaldırılmıştır", self.agents)
         self.assertIn("Cursor-routed modeller kullanılmaz", self.agents)
+        self.assertIn("Birincil istişare Claude Opus 4.8'dir", self.agents)
+        self.assertIn("daha düşük modele sessiz fallback yapılmaz", self.agents)
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )
@@ -491,6 +493,11 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("**`claude-opus-4-8`**", self.context_rules)
         self.assertIn("**`minimax/MiniMax-M3`**", self.context_rules)
         self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
+        self.assertIn(
+            "Birincil istişare kanalı doğrudan Anthropic Claude Opus 4.8'dir",
+            self.context_rules,
+        )
+        self.assertIn("JSON `modelUsage`", self.context_rules)
         self.assertIn("Cursor kullanım yolu", self.context_rules)
         self.assertIn("kullanılamaz", self.context_rules)
 

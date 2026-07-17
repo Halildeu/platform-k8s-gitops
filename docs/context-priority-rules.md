@@ -344,6 +344,12 @@ Faz/plan/PR ikinci görüşü ile authz, kişisel veri, retention/silme, migrati
 concurrency, cutover, faz kapanışı ve merge-readiness gibi yüksek etkili kararlar
 aynı exact scope veya commit üzerinde aşağıdaki üç headless kanalda incelenir:
 
+**Birincil istişare kanalı doğrudan Anthropic Claude Opus 4.8'dir.** Her turun
+ilk dış çağrısı `claude --model claude-opus-4-8` ile yapılır. JSON `modelUsage`
+exact `claude-opus-4-8` dönmezse birincil istişare tamamlanmış sayılmaz; alias
+veya daha düşük modele sessiz fallback yapılmaz. Claude birincil görüşünden sonra
+MiniMax M3 ve Codex 5.6 SOL aynı content-addressed scope'u inceler.
+
 1. **Anthropic:** doğrudan Claude CLI ile **`claude-opus-4-8`**.
 2. **MiniMax:** resmi bundled headless provider CLI ile
    **`minimax/MiniMax-M3`**.
