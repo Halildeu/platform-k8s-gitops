@@ -113,7 +113,7 @@ try {
   attachNetworkEvidence(candidatePage, 'candidate');
 
   await candidatePage.goto(`${baseURL}/jobs`, { waitUntil: 'domcontentloaded' });
-  await waitVisible(candidatePage.getByRole('heading', { name: /Açık pozisyonlar/i }), 'jobs heading');
+  await waitVisible(candidatePage.getByRole('heading', { name: 'Açık pozisyonlar', exact: true }), 'jobs heading');
   await candidatePage.goto(`${baseURL}/jobs/urun-yoneticisi/apply`, { waitUntil: 'domcontentloaded' });
   await waitVisible(candidatePage.getByTestId('candidate-application-page'), 'candidate application page');
   await waitVisible(candidatePage.getByRole('heading', { name: 'Ürün Yöneticisi' }), 'job title');
