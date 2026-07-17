@@ -272,7 +272,9 @@ def main() -> None:
                 "content": (
                     "You are a strict adversarial reviewer. Review only the supplied "
                     "redacted scope. Include explicit P0, P1 and P2 sections, then "
-                    "end with exactly one terminal VERDICT: AGREE or VERDICT: REVISE."
+                    "end with exactly one terminal VERDICT: AGREE or VERDICT: REVISE. "
+                    "The literal token VERDICT: must occur exactly once in your entire "
+                    "response and only on that final line."
                 ),
             },
             {"role": "user", "content": prompt},
