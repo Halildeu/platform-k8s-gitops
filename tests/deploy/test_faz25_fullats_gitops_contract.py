@@ -35,6 +35,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.keycloak = (ROOT / "scripts/ats/provision-test-keycloak.sh").read_text()
         cls.fullats_smoke = (ROOT / "scripts/ats/fullats-application-smoke.sh").read_text()
         cls.pg_bootstrap = (ROOT / "scripts/ats/provision-test-pg-vault.sh").read_text()
+        cls.recovery_workflow = (
+            ROOT / ".github/workflows/faz25-fullats-test-recovery.yml"
+        ).read_text()
         cls.agents = (ROOT / "AGENTS.md").read_text()
         cls.context_rules = (ROOT / "docs/context-priority-rules.md").read_text()
 
@@ -132,6 +135,57 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn("guvensiz role attribute tasiyor", self.runbook)
         self.assertIn("Halildeu/ats#176", self.runbook)
         self.assertIn("test `ats` veritabanı/şema/tablolarının sahibidir", self.runbook)
+
+    def test_fullats_recovery_uses_canonical_self_hosted_runner_without_workload_patch(self):
+        self.assertIn("workflow_dispatch:", self.recovery_workflow)
+        self.assertIn('"refs/heads/main"', self.recovery_workflow)
+        self.assertIn("APPLY_FAZ25_FULLATS_TEST_RECOVERY", self.recovery_workflow)
+        self.assertIn("[self-hosted, staging-sw, testai-deploy]", self.recovery_workflow)
+        self.assertIn(
+            "bash scripts/ats/provision-test-pg-vault.sh --roles-only",
+            self.recovery_workflow,
+        )
+        self.assertIn("WHERE success = false", self.recovery_workflow)
+        self.assertIn("no automatic repair", self.recovery_workflow)
+        self.assertIn("CONFIRM_INPUT: ${{ inputs.confirm }}", self.recovery_workflow)
+        self.assertIn('"$CONFIRM_INPUT"', self.recovery_workflow)
+        self.assertNotIn('"${{ inputs.confirm }}"', self.recovery_workflow)
+        self.assertIn('@.name=="app-boot"', self.recovery_workflow)
+        self.assertIn('.name == "app-boot" and .ready == true', self.recovery_workflow)
+        self.assertIn("ATS rollout timeout after 600s", self.recovery_workflow)
+        self.assertIn('"restartCount="', self.recovery_workflow)
+        self.assertIn(".state.waiting.reason", self.recovery_workflow)
+        self.assertIn(".state.terminated.reason", self.recovery_workflow)
+        self.assertIn(".state.terminated.exitCode", self.recovery_workflow)
+        self.assertIn("involvedObject.kind=Pod", self.recovery_workflow)
+        self.assertNotIn("kubectl logs", self.recovery_workflow)
+        self.assertIn("$'4|t\\n5|t'", self.recovery_workflow)
+        self.assertIn("bash scripts/ats/provision-test-keycloak.sh", self.recovery_workflow)
+        self.assertIn("bash scripts/ats/fullats-application-smoke.sh", self.recovery_workflow)
+        self.assertIn("faz25-fullats-test-recovery.yml", self.runbook)
+        self.assertIn("APPLY_FAZ25_FULLATS_TEST_RECOVERY", self.runbook)
+        self.assertNotRegex(
+            self.recovery_workflow,
+            r"kubectl\s+(?:--[^\s]+\s+)*\b(?:patch|edit|delete|rollout restart|set image)\b",
+        )
+
+        desired = re.search(
+            r"name:\s*ghcr\.io/halildeu/ats-app-boot\s+digest:\s*(sha256:[0-9a-f]{64})",
+            self.activation,
+        )
+        workflow = re.search(
+            r"EXPECTED_ATS_DIGEST:\s*(sha256:[0-9a-f]{64})",
+            self.recovery_workflow,
+        )
+        runtime = re.search(
+            r'PIN="\$\{ATS_EXPECTED_DIGEST:-(sha256:[0-9a-f]{64})\}"',
+            self.d29,
+        )
+        self.assertIsNotNone(desired)
+        self.assertIsNotNone(workflow)
+        self.assertIsNotNone(runtime)
+        self.assertEqual(desired.group(1), workflow.group(1))
+        self.assertEqual(workflow.group(1), runtime.group(1))
 
     def test_direct_claude_is_machine_pinned_as_first_consultation_channel(self):
         direct = "Doğrudan Claude CLI birinci istişare kanalı (KALICI)"
