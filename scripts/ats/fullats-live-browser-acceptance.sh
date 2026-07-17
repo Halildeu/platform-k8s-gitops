@@ -10,6 +10,8 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-https://testai.acik.com}"
 REALM="${REALM:-platform-test}"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
+VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
+VAULT_INIT_JSON="${VAULT_INIT_JSON:-/home/halil/bootstrap-drill/vault-init-test.json}"
 KCADM="/opt/keycloak/bin/kcadm.sh"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
@@ -25,6 +27,8 @@ AXE_VERSION="4.11.3"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright@sha256:83192064c7510f7ee73dd63dc5f22a5e01a92c81a2e6a9c715d9e3fe55471fd9"
 PLAYWRIGHT_INTEGRITY="sha512-hheHdokM8cdqCb0lcE3s+zT4t4W+vvjpGxsZlDnikarzx8tSzMebh3UiFtgqwFwnTnjYQcsyMF8ei2mCO/tpeA=="
 AXE_INTEGRITY="sha512-h/kfksv4F0cVIDlKpT4700OehdRgpvuVskuQ2nb7/JmtWUXpe9ftHAPtwyXGvVSsa6SJ64A9ER7Zrzc/sIvC4w=="
+CURL_CONNECT_TIMEOUT=10
+CURL_MAX_TIME=45
 
 [[ "$BASE_URL" == "https://testai.acik.com" ]] || {
   echo "FATAL: bu acceptance yalniz https://testai.acik.com icin calisir" >&2
@@ -42,6 +46,17 @@ AXE_INTEGRITY="sha512-h/kfksv4F0cVIDlKpT4700OehdRgpvuVskuQ2nb7/JmtWUXpe9ftHAPtwy
 for cmd in curl docker jq openssl python3; do
   command -v "$cmd" >/dev/null 2>&1 || {
     echo "FATAL: eksik komut: $cmd" >&2
+    exit 2
+  }
+done
+
+if [[ ! -r "$VAULT_INIT_JSON" ]] || ! jq -e '.root_token | type == "string" and length > 0' "$VAULT_INIT_JSON" >/dev/null; then
+  echo "FATAL: test Vault init credential contract hazir degil" >&2
+  exit 2
+fi
+for container in "$KC_CONTAINER" "$VAULT_CONTAINER"; do
+  docker inspect "$container" >/dev/null 2>&1 || {
+    echo "FATAL: gerekli test container'i hazir degil: $container" >&2
     exit 2
   }
 done
@@ -76,14 +91,14 @@ json_file() {
 }
 
 vault_root_token() {
-  python3 -c 'import json; print(json.load(open("/home/halil/bootstrap-drill/vault-init-test.json"))["root_token"])'
+  jq -er '.root_token | strings | select(length > 0)' "$VAULT_INIT_JSON"
 }
 
 vault_field_to_file() {
   local path="$1" field="$2" destination="$3" root
   root="$(vault_root_token)"
   if VAULT_TOKEN="$root" docker exec -e VAULT_TOKEN \
-      -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
+      -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" \
       vault kv get -field="$field" "$path" >"$destination" 2>/dev/null; then
     chmod 600 "$destination"
     unset root
@@ -96,36 +111,14 @@ vault_field_to_file() {
 }
 
 persist_d35_password() {
-  local root current_json merged_json
+  local root
   root="$(vault_root_token)"
-  current_json="$SECRET_DIR/d35-current.json"
-  merged_json="$SECRET_DIR/d35-merged.json"
   chmod 600 "$ADMIN_PASSWORD_FILE"
-  if ! VAULT_TOKEN="$root" docker exec -e VAULT_TOKEN \
-      -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test \
-      vault kv get -format=json kv/platform/d35-3 >"$current_json" 2>/dev/null; then
-    printf '%s' '{"data":{"data":{}}}' >"$current_json"
-  fi
-  chmod 600 "$current_json"
-  python3 - "$current_json" "$ADMIN_PASSWORD_FILE" >"$merged_json" <<'PY'
-import json, pathlib, sys
-doc = json.loads(pathlib.Path(sys.argv[1]).read_text())
-data = doc.get("data", {}).get("data", {})
-if not isinstance(data, dict):
-    raise SystemExit("d35 Vault payload invalid")
-data["admin_persona_password"] = pathlib.Path(sys.argv[2]).read_text().strip()
-json.dump(data, sys.stdout, separators=(",", ":"))
-PY
-  chmod 600 "$merged_json"
-  cat "$merged_json" | VAULT_TOKEN="$root" docker exec -i -e VAULT_TOKEN \
-      -e VAULT_ADDR=http://127.0.0.1:8200 platform-vault-test sh -c '
-        set -eu
-        f=$(mktemp); chmod 600 "$f"; trap '\''rm -f "$f"'\'' EXIT
-        cat >"$f"
-        vault kv put kv/platform/d35-3 @"$f" >/dev/null
-      '
+  VAULT_TOKEN="$root" docker exec -i -e VAULT_TOKEN \
+      -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" \
+      vault kv patch kv/platform/d35-3 admin_persona_password=- \
+      <"$ADMIN_PASSWORD_FILE" >/dev/null
   unset root
-  rm -f "$current_json" "$merged_json"
 }
 
 token_from_password() {
@@ -133,7 +126,8 @@ token_from_password() {
   local response_file code username
   response_file="$(json_file token-response.json)"
   username="$(tr -d '\r\n' <"$username_file")"
-  code="$(curl -sS -o "$response_file" -w '%{http_code}' \
+  code="$(curl -sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+    -o "$response_file" -w '%{http_code}' \
     -X POST "$BASE_URL/realms/$REALM/protocol/openid-connect/token" \
     --data-urlencode 'grant_type=password' \
     --data-urlencode 'client_id=frontend' \
@@ -160,7 +154,8 @@ header_from_token() {
 
 api_request() {
   local method="$1" path="$2" header_file="$3" output_file="$4" body_file="${5:-}"
-  local args=(-sS -o "$output_file" -w '%{http_code}' -X "$method" -H "@$header_file" -H 'Accept: application/json')
+  local args=(-sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+    -o "$output_file" -w '%{http_code}' -X "$method" -H "@$header_file" -H 'Accept: application/json')
   if [[ -n "$body_file" ]]; then
     args+=(-H 'Content-Type: application/json' --data-binary "@$body_file")
   fi
@@ -191,7 +186,7 @@ rm -f "$RECRUITER_KC_FILE"
 
 echo "2/6 Sentetik d35 admin credential ve product API authority hazirla"
 D35_JSON="$(docker exec "$KC_CONTAINER" "$KCADM" get users -r "$REALM" \
-  -q "email=$D35_ADMIN_EMAIL" --fields id,username,email 2>/dev/null)"
+  -q "email=$D35_ADMIN_EMAIL" --fields id,username,email,enabled 2>/dev/null)"
 D35_FILE="$(json_file d35-user.json)"
 printf '%s' "$D35_JSON" >"$D35_FILE"
 python3 - "$D35_ADMIN_EMAIL" "$ADMIN_USERNAME_FILE" "$SECRET_DIR/d35-admin.uid" "$D35_FILE" <<'PY'
@@ -199,6 +194,8 @@ import json, pathlib, sys
 rows = [row for row in json.loads(pathlib.Path(sys.argv[4]).read_text()) if row.get("email") == sys.argv[1]]
 if len(rows) != 1:
     raise SystemExit(f"expected exactly one synthetic d35 admin, got {len(rows)}")
+if rows[0].get("enabled") is not True:
+    raise SystemExit("synthetic d35 admin is disabled")
 pathlib.Path(sys.argv[2]).write_text(rows[0]["username"])
 pathlib.Path(sys.argv[3]).write_text(rows[0]["id"])
 PY
@@ -238,6 +235,10 @@ vault_field_to_file kv/platform/ats-smoke RECRUITER_PW "$RECRUITER_PASSWORD_FILE
   echo "FATAL: recruiter parolasi Vault'ta yok" >&2
   exit 1
 }
+[[ "$(wc -c <"$RECRUITER_PASSWORD_FILE")" -ge 12 ]] || {
+  echo "FATAL: recruiter parolasi test policy minimumunun altinda" >&2
+  exit 1
+}
 printf '%s' "$RECRUITER_USERNAME" >"$SECRET_DIR/recruiter.username"
 chmod 600 "$SECRET_DIR/recruiter.username"
 token_from_password "$SECRET_DIR/recruiter.username" "$RECRUITER_PASSWORD_FILE" "$RECRUITER_TOKEN_FILE" || {
@@ -255,7 +256,8 @@ PROFILE_CODE="$(api_request GET /api/v1/users/me/profile "$RECRUITER_HEADER_FILE
 }
 
 LOOKUP_OUT="$(json_file recruiter-user.json)"
-LOOKUP_CODE="$(curl -sS -o "$LOOKUP_OUT" -w '%{http_code}' -G \
+LOOKUP_CODE="$(curl -sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+  -o "$LOOKUP_OUT" -w '%{http_code}' -G \
   -H "@$ADMIN_HEADER_FILE" -H 'Accept: application/json' \
   --data-urlencode "email=$RECRUITER_EMAIL" \
   "$BASE_URL/api/v1/users/by-email" || true)"
