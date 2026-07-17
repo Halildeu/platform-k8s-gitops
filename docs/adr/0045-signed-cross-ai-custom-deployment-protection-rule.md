@@ -1,9 +1,11 @@
 # ADR-0045 — Signed Cross-AI Evidence Custom Deployment Protection Rule
 
 > **Status:** PROPOSED — source implementation, fail-closed tests, GitHub App
-> registration and the Phase-1 receive-only test observer exist. Protected
-> workflow refactor, App private-key provisioning, Environment configuration
-> and live enforcement do not exist yet.
+> registration, the Phase-1 receive-only test observer, outbound failed-delivery
+> recovery and test-Vault App private-key provisioning exist. The owner-gated
+> TEST Transit bootstrap is source-ready but has not been executed. A second
+> provider route, protected workflow refactor, dispatcher App, Environment
+> configuration and live enforcement do not exist yet.
 > **Date:** 2026-07-16
 > **Owner issue:** [#2502](https://github.com/Halildeu/platform-k8s-gitops/issues/2502)
 > **Customer slice:** [#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373)
@@ -214,6 +216,18 @@ semantics are defined. They are not silently mixed into v1.
 The v1 verifier accepts only the DSSE/Vault-Transit profile above. A keyless or
 mixed trust-root envelope is a schema/policy rejection, not a configuration
 fallback.
+
+The initial trust-root manifest is not self-authorizing. The TEST Vault owner
+first verifies the bootstrap receipt's cluster ID, four versioned public keys
+and receipt digest out of band. A later trust-root release copies those public
+keys, binds the secondary key to one live provider family/channel, and pins the
+manifest digest in a separate reviewed deployment change. No Transit key signs
+or approves the trust-root manifest that first authorizes that same key.
+
+If only one provider route is live, no weaker single-provider mode is entered:
+the schema, trust root and verifier continue to require at least two distinct
+provider families. Capability unavailability therefore blocks authorization
+rather than changing the meaning of Cross-AI quorum.
 
 ### 3.4 Canonical evidence bundle
 

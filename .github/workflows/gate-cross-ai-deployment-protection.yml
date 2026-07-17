@@ -8,6 +8,10 @@ on:
       - "tests/github_apps/**"
       - "config/github-apps/**"
       - "bootstrap/vault-policies/common/eso-runtime.hcl"
+      - "bootstrap/vault-policies/test/cross-ai-*.hcl"
+      - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
+      - "scripts/ops/bootstrap_cross_ai_transit.py"
+      - "scripts/ops/vault-policy-reconcile.sh"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
       - ".github/workflows/gate-cross-ai-deployment-protection.yml"
   push:
@@ -18,6 +22,10 @@ on:
       - "tests/github_apps/**"
       - "config/github-apps/**"
       - "bootstrap/vault-policies/common/eso-runtime.hcl"
+      - "bootstrap/vault-policies/test/cross-ai-*.hcl"
+      - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
+      - "scripts/ops/bootstrap_cross_ai_transit.py"
+      - "scripts/ops/vault-policy-reconcile.sh"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
 
 permissions:
@@ -45,7 +53,10 @@ jobs:
             --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
 
       - name: Compile policy implementation
-        run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py tests/github_apps/*.py
+        run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py scripts/ops/bootstrap_cross_ai_transit.py tests/github_apps/*.py
+
+      - name: Lint TEST Vault reconciliation shell
+        run: shellcheck scripts/ops/vault-policy-reconcile.sh
 
       - name: Validate JSON schemas and example policy
         run: |
