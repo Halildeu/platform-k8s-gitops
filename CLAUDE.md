@@ -74,6 +74,25 @@ mavis communication peers
 - [docs/context-priority-rules.md §10 Agent İletişimi](./docs/context-priority-rules.md) (proje canonical detay)
 - Global `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı + örnek senaryolar)
 
+### 0.1 Zorunlu Üç Kanallı Cross-AI İstişare (2026-07-17)
+
+Faz/plan/PR review'u ve yüksek etkili kararlar aynı exact scope/head üzerinde
+**doğrudan `claude-opus-4-8` + MiniMax `minimax/MiniMax-M3` + doğrudan
+`gpt-5.6-sol`** kanallarına verilir. Cursor kullanım yolu kural setinden kaldırılmıştır;
+Cursor CLI/MCP/model/harness veya Cursor-routed model bu zincirde kullanılmaz.
+
+- Yalnız headless CLI/daemon kullanılır; AI uygulama penceresi ve UI fallback yoktur.
+- Her çağrıda exact model kimliği canlı çıktıdan doğrulanır; model adı hafızadan uydurulmaz.
+- Auth/kota/fallback/boş çıktı gerçek review değildir ve kanal `tracked_pending` kalır.
+- `REVISE -> düzeltme -> exact-head yeniden review -> AGREE` zinciri kaydedilir.
+- Uygulayıcı OpenAI ise Codex 5.6 SOL zorunlu challenger'dır ama bağımsız-provider
+  onayı değildir; bağımsızlık Claude + MiniMax ile sağlanır.
+- Üçlü AI görüşü test/CI/live evidence/browser smoke/human gate yerine geçmez.
+- Secret, PII veya raw credential prompt/argümana konmaz.
+
+Canonical çağrı, attribution ve failure semantiği:
+[docs/context-priority-rules.md §11](./docs/context-priority-rules.md#11-zorunlu-üç-kanallı-cross-ai-istişare).
+
 ### 1. No Closure Language
 
 "Kapandı/bitti/gün sonu/pause/bekle" kelimeleri **YASAK**. Kullanıcı "dur/yeter/bitti" demedikçe iş aktif devam eder. Her ara rapor sonunda **bir sonraki aksiyon** olmalı.
@@ -125,21 +144,26 @@ Agent'ın **staging-sw sunucusuna SSH** ile erişim ve kubectl operasyonlarını
 
 User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak kural olarak ekle genel kural"
 
-### 8. Continuous Autonomous Mode + Codex Decision Authority (KALICI ANA KURAL — kullanıcı 2026-04-25)
+### 8. Continuous Autonomous Mode + Üçlü Cross-AI Decision Authority (KALICI ANA KURAL — 2026-07-17 güncel)
 
 **HARD RULE**: Otomatik mod sürekli aktiftir; durmak yok, tüm işler bitene kadar devam.
 
 **Karar verme kuralı**:
-- Stratejik karar gerektiren noktada (mimari, deploy, rollback, scope değişimi) **Codex MCP'ye danış**
-- `mcp__codex__codex` (yeni thread) veya `mcp__codex__codex-reply` (mevcut thread) ile otomatik soruyu sor
-- **Codex'in cevabı kullanıcının kararı sayılır** — kullanıcıya sorma, beklemeden uygula
-- Codex AGREE / `ready_for_impl=true` → direkt impl
-- Codex PARTIAL / REVISE → absorb et, yeni iter submit et
-- Codex RED → bu durum istisna; kullanıcıya rapor ver yön sor (gerçek blocker)
+- Stratejik karar gerektiren noktada (mimari, deploy, rollback, scope değişimi)
+  §0.1'deki doğrudan `claude-opus-4-8` + `minimax/MiniMax-M3` + doğrudan
+  `gpt-5.6-sol`
+  zincirine danış.
+- Cursor veya Cursor-routed model kullanma.
+- Üç kanalın geçerli bulgularını absorb et; `REVISE` sonrası exact-head yeniden
+  review ile `AGREE` veya gerekçeli kalıcı ayrışma üret.
+- Devredilebilir engineering kararında mutabakatı uygula; gerçek human gate
+  istisnalarını AI kararıyla ikame etme.
+- Sağlayıcı/model erişilemiyorsa dürüstçe `tracked_pending` bırak; yapay `PASS` üretme.
 
 **Çıktı**:
-- Her Codex MCP danışmasından sonra yapılan işin Codex thread referansıyla raporlanır
-- Plan iterasyonları kullanıcıya gösterilmez (CNS-011 superseded; consensus yeterli)
+- Her turda sağlayıcı + exact model + exact commit/scope + verdict kaydedilir.
+- Plan iterasyonları kullanıcıya gösterilmez; nihai consensus ve absorbe edilen
+  somut bulgular kanıtlanır.
 
 **İstisnalar** (yine kullanıcı onayı gerek):
 - Repo arşivleme/silme/visibility değişimi (irreversible)
@@ -147,7 +171,9 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 - Credential paylaşımı (Vault token, admin password)
 - Para harcaması (cloud provider, GitHub Actions limit aşımı)
 
-**Mantık**: Kullanıcı sürekli iş + Codex adversarial istişare ile yüksek tempo iteration istiyor. Auto mode + Codex danışmanlığı consensus pattern'iyle her stratejik karar **çift onay** alır (sistem + Codex), kullanıcı interrupt edilmez.
+**Mantık**: Kullanıcı sürekli iş + üç sağlayıcılı adversarial istişare ile yüksek
+tempo iteration istiyor. Auto mode + provider-distinct consensus pattern'iyle
+stratejik kararlar bağımsız itirazlara açılır, kullanıcı gereksiz yere interrupt edilmez.
 
 User mesajı (2026-04-25): "durmak yok süreklid evam tüm işler biteene kadar otomaitk mode karar gerektğinde codex ile msp üzeri,nde otomaitk cevap al benim kararım sasyılacak kural olrak yaz bunu klıcı kural ana kural"
 

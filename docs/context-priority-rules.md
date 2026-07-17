@@ -336,112 +336,72 @@ Mavis bildirimi **yerine geçmez**:
 
 ---
 
-## 11. Provider İstişare Sırası ve Cursor Adversarial Review
+## 11. Zorunlu Üç Kanallı Cross-AI İstişare
 
-**Kalıcı sıra:** birinci dış istişare kanalı doğrudan Anthropic Claude CLI'dır;
-Cursor CLI bundan sonra bağımsız/ilave adversarial ikinci kanaldır. Direct Claude
-`claude --version` ile canlı doğrulanır ve headless `claude -p` ile çağrılır.
-İlk model tercihi `--model claude-opus-4-8`'dir; JSON `modelUsage` gerçekten
-`claude-opus-4-8` dönmeden bu model kullanıldı denmez. Exact model erişilemiyorsa
-başarısızlık kaydedilir ve kullanıcı yeni model seçmedikçe daha düşük modele
-sessiz fallback yapılmaz. Uzun redacted diff/bağlam stdin üzerinden verilebilir.
-Somut bulgu ve verdict üretmeyen boş/limit/auth/error çıktısı başarı değildir.
-Attribution `Channel=Direct Anthropic Claude CLI; Model=<exact modelUsage kimliği>;
-direct-provider-CLI=true` olur. Cursor-routed Claude bu birinci kanalın yerine
-geçmez ve direct Claude ile ikinci bağımsız provider sayılmaz. Hiçbir kanalda
-uygulama penceresi fallback'i yoktur.
+Faz/plan/PR ikinci görüşü ile authz, kişisel veri, retention/silme, migration,
+concurrency, cutover, faz kapanışı ve merge-readiness gibi yüksek etkili kararlar
+aynı exact scope veya commit üzerinde aşağıdaki üç headless kanalda incelenir:
 
-Yüksek etkili işlerde Cursor adversarial-review/ikinci-görüş kanalı kullanılacaksa ilk model tercihi, yalnız live listede mevcut olduğunda `claude-opus-4-8-thinking-high` olur. Her çağrıdan önce `agent --version` ve `agent --list-models` canlı doğrulanır; slug hafızadan varsayılmaz. Live listede yoksa eşdeğer derin model seçilir ve exact kimliği kanıta yazılır. Model mevcut olduğundaki salt-okunur çağrı:
+1. **Anthropic:** doğrudan Claude CLI ile **`claude-opus-4-8`**.
+2. **MiniMax:** resmi bundled headless provider CLI ile
+   **`minimax/MiniMax-M3`**.
+3. **OpenAI:** doğrudan Codex CLI ile **`gpt-5.6-sol`**.
 
-```bash
-agent -p 'REDACTED_GOREV' --output-format text --mode ask --trust \
-  --workspace <ABSOLUTE_WORKTREE> \
-  --model <LIVE_MODEL_ID>
-```
+Cursor kullanım yolu bu kural setinden kaldırılmıştır. Cursor CLI, Cursor MCP,
+Cursor modeli, Cursor harness'i ve Cursor-routed modeller bu üç kanaldan biri
+olarak kullanılamaz. Bir sağlayıcının başka wrapper üzerinden çağrılması da yeni
+ve bağımsız sağlayıcı sayılmaz.
 
-Attribution `Channel=Cursor CLI; Model=<LIVE_MODEL_ID>; direct-provider-CLI=false` olur. Bu yol direct Anthropic çağrısı değildir. Plan/mimari/deploy/rollback/scope kararlarında aşağıdaki rol tablosundaki canonical provider-distinct istişare yolu korunur; Cursor model önceliği bu karar yolunu düşürmez. İşletici/reviewer zaten Anthropic Claude ailesindeyse Cursor-routed Claude aynı-aile bağımsız reviewer sayılmaz ve provider-distinct gate Codex, MiniMax veya başka bağımsız sağlayıcıyla doldurulur. Doğrudan Claude CLI birinci istişare yoludur; `claude --version`/`--help` doğrulamasından sonra mümkünse JSON çıktı alınır ve gerçek model kimliği `modelUsage` anahtarından kaydedilir. Direct yol `Channel=Direct Anthropic Claude CLI; Model=<MODEL_USAGE_ID>; direct-provider-CLI=true` diye raporlanır; CLI'nin `--model opus` alias'ı exact sayısal sürüm diye varsayılmaz.
-
-Exact Cursor modeli unavailable, auth/limit hatalı, boş ya da somut verdict üretmiyorsa başarısızlık açık kaydedilir. Cursor, MiniMax M3 veya başka provider-distinct kanal Direct Claude sonrasında ikinci görüş/fallback olabilir; hiçbir durumda uygulama penceresi kullanılmaz. Prompt veya süreç girdisine secret, token, credential ya da PII konmaz. Cursor-routed Claude ile direct Claude aynı model sağlayıcı ailesine ait olabileceğinden tek başına iki bağımsız provider sayılmaz. Bu sıra, provider-distinct Cross-AI gereksinimini veya test/CI/live evidence/board/insan gate'lerini azaltmaz.
-
-### Cursor CLI — öncelikli ilave adversarial review
-
-Cursor, faz/plan/PR istişaresinde uygulama penceresi üzerinden kullanılmaz. Yalnız canlı doğrulanmış CLI veya mevcutsa aynı redaction ve salt-okunur sınırını sağlayan MCP yolu kabul edilir. CLI/MCP, credential veya somut verdict yoksa UI fallback yapılmaz ve Cursor review kanıtı yazılmaz.
-
-### 11.1 Rol sırası
-
-| Karar/kanıt yüzeyi | Canonical yol | Cursor rolü |
-|---|---|---|
-| Plan, mimari, deploy, rollback veya scope kararı | **Önce Direct Anthropic Claude CLI**; ardından gerekiyorsa provider-distinct kanal; Claude oturumunda `CLAUDE.md` Codex MCP kuralı | İkinci/ilave görüş; canonical karar yolunu düşürmez |
-| Post-implementation güvenlik ve merge-readiness incelemesi | Exact branch/diff + test/CI kanıtıyla **önce Direct Anthropic Claude CLI** | **İkinci ilave adversarial reviewer** |
-| PR provider-level cross-AI gate | PR `## Cross-AI` alanları + `gate-cross-ai-audit` | Ek review; structured gate'in yerine geçmez |
-| Runtime, ürün veya hukuk kabulü | Live evidence + board + Owner/Legal/DPO/InfoSec/customer gate | Yerine geçmez |
-
-Implementasyon Cursor worker ile üretildiyse aynı Cursor kanalı reviewer olarak provider-distinct kanıt sayılmaz. Cursor gate katılımcısı ancak worker/reviewer provider ayrımı canlı model ve gerçek implementer kaydıyla kanıtlanabiliyorsa structured alana yazılır. Ayrım doğrulanamıyorsa sonuç yalnız ek adversarial review'dur; gerçek provider-distinct review ayrıca alınır ve structured `Reviewer AI` alanını o reviewer doldurur.
-
-### 11.2 Her çağrıdan önce canlı doğrulama
-
-1. Önce PATH'teki `agent`, bulunamazsa `$HOME/.local/bin/agent` denenir.
-2. `--version` ve `--list-models` aynı oturumda çalıştırılır.
-3. Model adı, availability veya sürüm hafızadan alınmaz. Hız/derinlik seçimi yalnız canlı model listesi ve görev riskine göre yapılır.
-4. Repo dışı bir harness kullanılacaksa önce kendi availability/list komutuyla doğrulanır; host-specific mutlak yol canonical varsayım değildir.
-
-Salt-okunur doğrudan kalıp:
+### 11.1 Headless çağrı ve model kimliği
 
 ```bash
-agent -p 'REDACTED_GOREV' \
-  --output-format text \
-  --mode ask \
-  --trust \
-  --workspace <ABSOLUTE_WORKTREE> \
-  --model <LIVE_MODEL_ID>
+# Anthropic — exact Opus 4.8 kimliği çağrı öncesi/çıktıda doğrulanır
+claude -p 'REDACTED_GOREV' \
+  --model claude-opus-4-8 \
+  --permission-mode plan --tools '' \
+  --output-format json --no-session-persistence
+
+# OpenAI — exact Codex 5.6 SOL kimliği çağrı öncesi/çıktıda doğrulanır
+codex exec --model gpt-5.6-sol \
+  --sandbox read-only --ephemeral \
+  -C <ABSOLUTE_WORKTREE> 'REDACTED_GOREV'
 ```
 
-`--trust` yalnız `--mode ask` ile kullanılabilir. MCP yolu kullanılırsa da write/tool yetkisi kapalı olmalı ve exact diff/evidence referansı salt-okunur verilmelidir.
+MiniMax çağrısı kurulu paketin resmi bundled `llm-call` headless provider
+betiğinden yapılır; model sonucu `minimax/MiniMax-M3` olmalıdır. Geçici wrapper
+yolu canonical değildir: her oturumda kurulu paket/capability bulunur ve
+doğrulanır.
 
-### 11.3 Redaction ve process sınırı
+Model slug'ı hafızadan varsayılmaz. CLI `exit=0` olsa bile boş çıktı, auth/kota
+metni, model fallback'i veya model kimliği bulunmayan yanıt gerçek review
+değildir. Her turda sağlayıcı, exact model, incelenen commit/scope ve gerçek
+çıktıdaki `modelUsage` veya eşdeğer kimlik kaydedilir. Exact model yoksa kanal
+`tracked_pending` kalır; başka model, wrapper, uygulama penceresi veya sahte
+`PASS` ile ikame edilmez.
 
-`-p` argümanı shell history ve process argv yüzeyine düşebilir. Prompt/argümana şunlar yazılmaz:
+### 11.2 Mutabakat ve bağımsızlık
 
-- secret, JWT, refresh token, raw bearer
-- webhook URL, cookie, OAuth client secret
-- private key, signing key, HMAC secret
-- admin credential, root token veya password
-- kullanıcı email, telefon, UPN veya diğer PII
+- İlk `REVISE` bulguları kod/kanıtla doğrulanır ve geçerli olanlar absorbe edilir.
+- Düzeltmeden sonra aynı exact head üç kanala yeniden verilir; somut `AGREE`
+  veya gerekçeli kalıcı ayrışma oluşana kadar ping-pong sürer.
+- Uygulayıcı OpenAI/Codex ise üçüncü Codex 5.6 SOL turu zorunlu adversarial
+  challenger'dır fakat bağımsız-provider onayı değildir; provider bağımsızlığı
+  Claude + MiniMax ile sağlanır.
+- AI mutabakatı test, CI, canlı ortam, tarayıcı smoke, board claim, protected
+  Environment reviewer, gerçek kullanıcı rızası veya hukuk/secret-owner
+  kapılarının yerine geçmez.
 
-Yalnız redacted görev özeti ile repo içi evidence path, issue veya PR referansı gönderilir. `ps`, `pgrep` veya eşdeğer araçlarla agent süreç komut satırı dump edilmez. Raw secret/PII içeren task-file da güvenli fallback değildir.
+### 11.3 Redaction ve süreç sınırı
 
-### 11.4 Başarı ve attribution kontratı
-
-`exit=0` tek başına başarı değildir. Çıktı boşsa veya limit/auth/error metni ise review tamamlanmış sayılmaz. Kabul edilen kanıt exact branch/diff'i okuyan somut bulgular ve `AGREE|REVISE|PARTIAL|RED` benzeri net verdict taşır.
-
-Cursor içinden seçilen Claude/GPT/Composer modeli direct Anthropic/OpenAI CLI görüşü diye raporlanmaz. İki kayıt modu vardır:
-
-1. **Provider ayrımı kanıtlı gate katılımcısı:** Cursor reviewer ise `Reviewer AI: Other`, Cursor worker ise `Implementer AI: Other` kullanılır. İki durumda da kanal/model bilgisi `Verdict reason` içine yazılır.
-2. **Supplemental adversarial review:** Provider ayrımı kanıtlı değilse `Implementer AI` ve `Reviewer AI` gerçek provider-distinct gate çiftini gösterir; Cursor sonucu `Absorb edilen düzeltmeler` alanında `Supplemental Cursor CLI / <LIVE_MODEL_ID>` diye kaydedilir. Cursor structured reviewer slotunu devralmaz.
-
-Gate-katılımcısı reviewer örneği:
-
-```yaml
-Reviewer AI: Other
-Verdict reason: Channel=Cursor CLI; Model=<LIVE_MODEL_ID>; direct-provider-CLI=false; <somut özet>
-```
-
-Gate-katılımcısı worker örneğinde `Implementer AI: Other` kullanılır ve aynı `Verdict reason` kanal/model alanları korunur. Bu mapping yalnız kanal attribution'ını çözer; provider-distinct olmayı otomatik kanıtlamaz. Implementer/reviewer provider ayrımı ayrıca doğru ve denetlenebilir olmalıdır.
-
-### 11.5 Acceptance gate bypass değil
-
-Cursor review şunların yerine geçmez:
-
-- `gate-cross-ai-audit` ve PR `## Cross-AI` structured alanları
-- test, CI ve exact-head/digest kanıtı
-- board claim/status ve deliberate acceptance
-- D29 Up/Functional/Zanzibar-ready veya browser smoke
-- Owner/Product, Legal/DPO, InfoSec, customer veya production operator kararı
-
-Review sonucu önce bulgu listesine çevrilir; doğrulanan P0/P1 bulguları absorbe edilip exact diff yeniden incelenmeden merge-readiness dili kullanılmaz.
+Prompt, argüman ve receipt içine secret, JWT, refresh token, raw bearer, webhook
+URL, cookie, OAuth client secret, private/signing/HMAC key, admin credential veya
+kullanıcı PII yazılmaz. Yalnız redacted görev özeti ile repo içi evidence path,
+issue veya PR referansı verilir. Credential taşıyan süreçlerin komut satırı
+`ps`/`pgrep` ile dump edilmez. İstişare hiçbir AI uygulama penceresinden
+yürütülmez; CLI/daemon hazır değilse UI fallback yapılmaz.
 
 ### Detay
 
 - Kısa HARD RULE: [AGENTS.md §3](../AGENTS.md)
 - PR structured alanları: [.github/pull_request_template.md](../.github/pull_request_template.md)
-- Claude oturumlarının plan/mimari Codex MCP tamamlayıcısı: [CLAUDE.md Ana Kurallar #8](../CLAUDE.md)
+- Claude oturumlarının tamamlayıcısı: [CLAUDE.md Ana Kurallar #0.1 ve #8](../CLAUDE.md)
