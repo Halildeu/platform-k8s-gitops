@@ -99,6 +99,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -112,7 +113,7 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch --no-tags --depth=1000 origin "pull/${PR_NUMBER}/head"
+          git fetch --no-tags origin "pull/${PR_NUMBER}/head"
           fetched_head="$(git rev-parse FETCH_HEAD)"
           test "$fetched_head" = "$PR_HEAD_SHA"
           merge_base="$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")"

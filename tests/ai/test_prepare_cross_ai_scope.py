@@ -102,6 +102,11 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertIn("diff --name-only --no-renames", workflow)
         self.assertNotIn("--jq '.[].filename'", workflow)
 
+    def test_workflow_fetches_complete_history_for_real_merge_base(self) -> None:
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertNotIn("--depth=1000", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

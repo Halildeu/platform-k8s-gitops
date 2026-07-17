@@ -485,7 +485,7 @@ formatını, tekil terminal verdict'i ve response digest'ini üretir. `REVISE`
 yanıtı dürüstçe `REVISE` evidence üretir ve gate'i açmaz.
 
 `gate-cross-ai-audit` trusted base checkout'ta PR head objesini checkout etmeden
-fetch eder; gerçek `git merge-base` ve aynı redaction algoritmasıyla full-range
+tam git geçmişiyle fetch eder; gerçek `git merge-base` ve aynı redaction algoritmasıyla full-range
 scope SHA-256'yı yeniden türetir. Gitleaks ayrı required security gate olarak
 kalır; bu adım `--derive-only` ile yalnız deterministik scope binding yapar.
 Base tip event `pull_request.base.sha`, head event `pull_request.head.sha`,
