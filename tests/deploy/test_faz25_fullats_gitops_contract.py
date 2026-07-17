@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import unittest
@@ -37,6 +38,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.fullats_browser = (
             ROOT / "scripts/ats/fullats-live-browser-acceptance.cjs"
         ).read_text()
+        cls.fullats_axe_evidence = (
+            ROOT / "scripts/ats/fullats-axe-evidence.cjs"
+        )
         cls.pg_bootstrap = (ROOT / "scripts/ats/provision-test-pg-vault.sh").read_text()
         cls.governance_transition_path = (
             ROOT / "scripts/ats/transition-test-model-governance.sh"
@@ -192,16 +196,63 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn('[ "$C" = 404 ]', self.fullats_smoke)
         self.assertIn('SONUC: $N/10 PASS', self.fullats_smoke)
         self.assertIn('[ "$N" -eq 10 ]', self.fullats_smoke)
-
-    def test_fullats_browser_failure_evidence_is_actionable_and_redacted(self):
-        self.assertIn("nodeEvidence: item.nodes.map", self.fullats_browser)
-        self.assertIn("target: node.target.map", self.fullats_browser)
-        self.assertIn("failureSummary: String(node.failureSummary", self.fullats_browser)
-        self.assertIn("'[EMAIL]'", self.fullats_browser)
-        self.assertIn("'[APPLICATION_REF]'", self.fullats_browser)
-        self.assertNotIn("node.html", self.fullats_browser)
         self.assertIn("status `PUT` 404", self.runbook)
         self.assertIn("`10/10 PASS`", self.runbook)
+
+    def test_fullats_browser_failure_evidence_is_actionable_and_redacted(self):
+        node_script = r"""
+const { compactAxeViolations } = require(process.argv[1]);
+const nodes = Array.from({ length: 7 }, () => ({
+  target: [
+    'div#ahmet > span.candidate-ahmet.text-state-success-text.bg-state-success-bg[aria-label="Ahmet Yilmaz +905551112233 ahmet@example.test app_abcdefghijklmnopqrstuvwx"]',
+  ],
+  any: [{
+    id: 'color-contrast',
+    data: {
+      fgColor: '#008c3a', bgColor: '#e7f4ed', contrastRatio: 3.85,
+      expectedContrastRatio: '4.5:1', fontSize: '12px', fontWeight: '700',
+      unsafe: 'Ahmet Yilmaz +905551112233 ahmet@example.test',
+    },
+    message: 'Ahmet Yilmaz +905551112233 ahmet@example.test',
+  }],
+  all: [], none: [],
+  html: '<span>Ahmet Yilmaz ahmet@example.test</span>',
+  failureSummary: 'Ahmet Yilmaz +905551112233 ahmet@example.test',
+}));
+process.stdout.write(JSON.stringify(compactAxeViolations([
+  { id: 'color-contrast', impact: 'serious', nodes },
+])));
+"""
+        completed = subprocess.run(
+            ["node", "-e", node_script, str(self.fullats_axe_evidence)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        evidence = json.loads(completed.stdout)
+        serialized = completed.stdout
+        self.assertEqual(evidence[0]["nodes"], 7)
+        self.assertEqual(len(evidence[0]["sampledNodes"]), 5)
+        self.assertEqual(evidence[0]["omittedNodes"], 2)
+        self.assertIn(
+            "text-state-success-text",
+            evidence[0]["sampledNodes"][0]["target"][0]["classes"],
+        )
+        self.assertEqual(
+            evidence[0]["sampledNodes"][0]["contrast"]["contrastRatio"],
+            3.85,
+        )
+        for forbidden in (
+            "Ahmet",
+            "Yilmaz",
+            "+905551112233",
+            "ahmet@example.test",
+            "app_abcdefghijklmnopqrstuvwx",
+            "candidate-ahmet",
+            "<span>",
+        ):
+            self.assertNotIn(forbidden, serialized)
+        self.assertNotIn("node.html", self.fullats_browser)
 
     def test_pg_writer_role_is_admin_bootstrapped_without_runtime_createrole(self):
         self.assertIn("--roles-only", self.pg_bootstrap)

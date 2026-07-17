@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { chromium } = require('playwright');
 const AxeBuilder = require('@axe-core/playwright').default;
+const { compactAxeViolations } = require('./fullats-axe-evidence.cjs');
 
 const baseURL = process.env.BASE_URL;
 const recruiterUsername = process.env.RECRUITER_USERNAME;
@@ -63,22 +64,7 @@ const assertAxeClean = async (page, surface) => {
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
   if (result.violations.length > 0) {
-    const compact = result.violations.map((item) => ({
-      id: item.id,
-      impact: item.impact,
-      nodes: item.nodes.length,
-      nodeEvidence: item.nodes.map((node) => ({
-        target: node.target.map((selector) =>
-          String(selector)
-            .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, '[EMAIL]')
-            .replace(/app_[A-Za-z0-9_-]{24}/gu, '[APPLICATION_REF]')
-            .slice(0, 500),
-        ),
-        failureSummary: String(node.failureSummary ?? '')
-          .replace(/\s+/gu, ' ')
-          .slice(0, 500),
-      })),
-    }));
+    const compact = compactAxeViolations(result.violations);
     throw new Error(`${surface}: axe violations ${JSON.stringify(compact)}`);
   }
 };
