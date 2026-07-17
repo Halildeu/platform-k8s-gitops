@@ -20,6 +20,7 @@ from .timeutil import parse_utc, utc_now, utc_seconds
 
 ACTIVE_STAGE_STATES = {"Available", "Reserved", "ApprovedPendingOutcome"}
 FINAL_STAGE_STATES = {"Succeeded", "Failed", "CallbackUnknown", "RolledBack", "Rejected"}
+DISPATCH_STATES = {"Pending", "Sending", "Accepted", "Uncertain", "Rejected"}
 ALLOWED_STAGE_TRANSITIONS = {
     "Reserved": {
         "ApprovedPendingOutcome",
@@ -55,6 +56,7 @@ class IntentRecord:
     post_deploy_verifier_digest: str
     expires_at: str
     registration_principal: str
+    triggering_actor_id: int | None
     registered_at: str
     ref_object_id: str | None
     finalized_at: str | None
@@ -72,6 +74,23 @@ class StageReservation:
     reservation_expires_at: str
     state: str
     idempotent: bool
+
+
+@dataclass(frozen=True)
+class DispatchJob:
+    request_id: str
+    stage: str
+    installation_id: int
+    repository: str
+    workflow_path: str
+    expected_actor_id: int
+    state: str
+    queued_at: str
+    claimed_at: str | None
+    resolved_at: str | None
+    http_status: int | None
+    reason_code: str | None
+    run_id: int | None
 
 
 class ContentAddressedStore:
@@ -197,6 +216,7 @@ class IntentRegistry:
                     post_deploy_verifier_digest TEXT NOT NULL,
                     expires_at TEXT NOT NULL,
                     registration_principal TEXT NOT NULL,
+                    triggering_actor_id INTEGER NOT NULL,
                     registered_at TEXT NOT NULL,
                     ref_object_id TEXT,
                     finalized_at TEXT,
@@ -210,6 +230,7 @@ class IntentRegistry:
                     stage TEXT NOT NULL CHECK (stage IN ('apply', 'browser-evidence', 'compensating-rollback')),
                     stage_order INTEGER NOT NULL,
                     nonce_digest TEXT NOT NULL,
+                    workflow_path TEXT NOT NULL,
                     workflow_blob_digest TEXT NOT NULL,
                     state TEXT NOT NULL CHECK (state IN (
                         'Available', 'Reserved', 'ApprovedPendingOutcome', 'Succeeded',
@@ -229,6 +250,31 @@ class IntentRegistry:
                 ON intent_stages(
                     repository_id, environment, run_id, run_attempt, app_rule_id
                 )
+                WHERE run_id IS NOT NULL;
+
+                CREATE TABLE IF NOT EXISTS intent_dispatches (
+                    request_id TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    installation_id INTEGER NOT NULL,
+                    repository TEXT NOT NULL,
+                    workflow_path TEXT NOT NULL,
+                    expected_actor_id INTEGER NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN (
+                        'Pending', 'Sending', 'Accepted', 'Uncertain', 'Rejected'
+                    )),
+                    queued_at TEXT NOT NULL,
+                    claimed_at TEXT,
+                    resolved_at TEXT,
+                    http_status INTEGER,
+                    reason_code TEXT,
+                    run_id INTEGER,
+                    PRIMARY KEY (request_id, stage),
+                    FOREIGN KEY (request_id, stage)
+                        REFERENCES intent_stages(request_id, stage)
+                ) STRICT;
+
+                CREATE UNIQUE INDEX IF NOT EXISTS unique_dispatch_run
+                ON intent_dispatches(repository, run_id)
                 WHERE run_id IS NOT NULL;
 
                 CREATE TABLE IF NOT EXISTS intent_events (
@@ -276,6 +322,53 @@ class IntentRegistry:
                 CREATE TRIGGER IF NOT EXISTS stage_outcomes_no_delete
                 BEFORE DELETE ON stage_outcomes BEGIN
                     SELECT RAISE(ABORT, 'stage outcomes are immutable');
+                END;
+                """
+            )
+            stage_columns = {
+                row["name"]
+                for row in self._connection.execute("PRAGMA table_info(intent_stages)")
+            }
+            if "workflow_path" not in stage_columns:
+                # Existing observe-only registries predate dispatch orchestration.
+                # Their rows remain deliberately non-dispatchable because no
+                # signed workflow path can be reconstructed from the SQL row.
+                self._connection.execute(
+                    "ALTER TABLE intent_stages ADD COLUMN workflow_path TEXT"
+                )
+            intent_columns = {
+                row["name"]
+                for row in self._connection.execute("PRAGMA table_info(intents)")
+            }
+            if "triggering_actor_id" not in intent_columns:
+                self._connection.execute(
+                    "ALTER TABLE intents ADD COLUMN triggering_actor_id INTEGER"
+                )
+            self._connection.executescript(
+                """
+                CREATE TRIGGER IF NOT EXISTS intent_stage_workflow_path_insert_guard
+                BEFORE INSERT ON intent_stages
+                WHEN NEW.workflow_path IS NULL OR NEW.workflow_path = '' BEGIN
+                    SELECT RAISE(ABORT, 'signed workflow path is required');
+                END;
+                CREATE TRIGGER IF NOT EXISTS intent_stage_workflow_path_update_guard
+                BEFORE UPDATE OF workflow_path ON intent_stages
+                WHEN NEW.workflow_path IS NULL OR NEW.workflow_path = '' BEGIN
+                    SELECT RAISE(ABORT, 'signed workflow path is required');
+                END;
+                CREATE TRIGGER IF NOT EXISTS intent_actor_insert_guard
+                BEFORE INSERT ON intents
+                WHEN NEW.triggering_actor_id IS NULL
+                  OR typeof(NEW.triggering_actor_id) != 'integer'
+                  OR NEW.triggering_actor_id < 1 BEGIN
+                    SELECT RAISE(ABORT, 'signed triggering actor is required');
+                END;
+                CREATE TRIGGER IF NOT EXISTS intent_actor_update_guard
+                BEFORE UPDATE OF triggering_actor_id ON intents
+                WHEN NEW.triggering_actor_id IS NULL
+                  OR typeof(NEW.triggering_actor_id) != 'integer'
+                  OR NEW.triggering_actor_id < 1 BEGIN
+                    SELECT RAISE(ABORT, 'signed triggering actor is required');
                 END;
                 """
             )
@@ -370,6 +463,7 @@ class IntentRegistry:
             subject["postDeployVerifierSha256"],
             utc_seconds(verified.expires_at),
             registration_principal,
+            grant["triggeringActorId"],
             timestamp,
             "Registered",
         )
@@ -381,14 +475,15 @@ class IntentRegistry:
                     (verified.request_id,),
                 ).fetchone()
                 if existing is not None:
-                    immutable = tuple(existing[key] for key in (
+                    immutable_keys = (
                         "request_id", "bundle_digest", "subject_digest", "grant_digest",
                         "repository_id", "repository", "environment", "head_sha",
                         "intent_ref", "session_digest", "artifact_set_digest",
                         "rollback_plan_digest", "post_deploy_verifier_digest", "expires_at",
-                        "registration_principal", "registered_at",
-                    ))
-                    if immutable != row_values[:-1]:
+                        "registration_principal", "triggering_actor_id",
+                    )
+                    immutable = tuple(existing[key] for key in immutable_keys)
+                    if immutable != row_values[: len(immutable_keys)]:
                         reject("INTENT_REGISTRATION_COLLISION", "request ID already has another intent")
                     self._connection.execute("COMMIT")
                     return False
@@ -399,8 +494,8 @@ class IntentRegistry:
                         repository_id, repository, environment, head_sha, intent_ref,
                         session_digest, artifact_set_digest, rollback_plan_digest,
                         post_deploy_verifier_digest, expires_at, registration_principal,
-                        registered_at, state
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        triggering_actor_id, registered_at, state
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     row_values,
                 )
@@ -409,9 +504,9 @@ class IntentRegistry:
                         """
                         INSERT INTO intent_stages (
                             request_id, repository_id, environment, stage,
-                            stage_order, nonce_digest,
+                            stage_order, nonce_digest, workflow_path,
                             workflow_blob_digest, state
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Available')
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Available')
                         """,
                         (
                             verified.request_id,
@@ -420,6 +515,7 @@ class IntentRegistry:
                             stage["stage"],
                             stage["order"],
                             grant["stageNonceSha256"][stage["stage"]],
+                            stage["workflowPath"],
                             stage["workflowBlobSha256"],
                         ),
                     )
@@ -433,6 +529,333 @@ class IntentRegistry:
                 )
                 self._connection.execute("COMMIT")
                 return True
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+
+    @staticmethod
+    def _dispatch_from_row(row: sqlite3.Row) -> DispatchJob:
+        return DispatchJob(
+            request_id=row["request_id"],
+            stage=row["stage"],
+            installation_id=row["installation_id"],
+            repository=row["repository"],
+            workflow_path=row["workflow_path"],
+            expected_actor_id=row["expected_actor_id"],
+            state=row["state"],
+            queued_at=row["queued_at"],
+            claimed_at=row["claimed_at"],
+            resolved_at=row["resolved_at"],
+            http_status=row["http_status"],
+            reason_code=row["reason_code"],
+            run_id=row["run_id"],
+        )
+
+    def queue_dispatch(
+        self,
+        *,
+        request_id: str,
+        stage: str,
+        installation_id: int,
+        repository: str,
+        queued_at: datetime | None = None,
+    ) -> DispatchJob:
+        if installation_id < 1:
+            reject("DISPATCH_TARGET_INVALID", "dispatch App installation ID must be positive")
+        current = queued_at or utc_now()
+        timestamp = utc_seconds(current)
+        with self._lock:
+            self._begin()
+            try:
+                intent = self._connection.execute(
+                    "SELECT * FROM intents WHERE request_id = ?", (request_id,)
+                ).fetchone()
+                if intent is None or intent["state"] != "Finalized":
+                    reject("INTENT_NOT_FINALIZED", "intent is not ready for dispatch")
+                if intent["repository"] != repository:
+                    reject("DISPATCH_TARGET_MISMATCH", "dispatch repository differs from intent")
+                expected_actor_id = intent["triggering_actor_id"]
+                if (
+                    not isinstance(expected_actor_id, int)
+                    or isinstance(expected_actor_id, bool)
+                    or expected_actor_id < 1
+                ):
+                    reject(
+                        "DISPATCH_ACTOR_UNAVAILABLE",
+                        "legacy intent has no signed triggering actor and cannot be dispatched",
+                    )
+                expires_at = datetime.fromisoformat(intent["expires_at"].replace("Z", "+00:00"))
+                if expires_at <= current:
+                    reject("INTENT_EXPIRED", "intent grant has expired")
+                stage_row = self._connection.execute(
+                    "SELECT * FROM intent_stages WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if stage_row is None:
+                    reject("STAGE_NOT_FOUND", "stage is not part of the intent")
+                workflow_path = stage_row["workflow_path"]
+                if not isinstance(workflow_path, str) or not workflow_path:
+                    reject(
+                        "STAGE_WORKFLOW_UNAVAILABLE",
+                        "legacy stage has no signed workflow path and cannot be dispatched",
+                    )
+                existing = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if existing is not None:
+                    immutable = (
+                        installation_id,
+                        repository,
+                        workflow_path,
+                        expected_actor_id,
+                    )
+                    if immutable != tuple(
+                        existing[key]
+                        for key in (
+                            "installation_id",
+                            "repository",
+                            "workflow_path",
+                            "expected_actor_id",
+                        )
+                    ):
+                        reject(
+                            "DISPATCH_REGISTRATION_COLLISION",
+                            "stage already has another dispatch target",
+                        )
+                    self._connection.execute("COMMIT")
+                    return self._dispatch_from_row(existing)
+                if stage_row["state"] != "Available":
+                    reject("GRANT_REPLAY_OR_CONSUMED", "stage grant is already bound")
+                if not self._prerequisite_satisfied(request_id, stage):
+                    reject("PRIOR_STAGE_NOT_VERIFIED", "stage prerequisite is not satisfied")
+                self._connection.execute(
+                    """
+                    INSERT INTO intent_dispatches (
+                        request_id, stage, installation_id, repository, workflow_path,
+                        expected_actor_id, state, queued_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?)
+                    """,
+                    (
+                        request_id,
+                        stage,
+                        installation_id,
+                        repository,
+                        workflow_path,
+                        expected_actor_id,
+                        timestamp,
+                    ),
+                )
+                self._event(
+                    request_id=request_id,
+                    stage=stage,
+                    from_state=None,
+                    to_state="DispatchPending",
+                    reason_code="SIGNED_STAGE_DISPATCH_QUEUED",
+                    recorded_at=timestamp,
+                )
+                row = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                self._connection.execute("COMMIT")
+                assert row is not None
+                return self._dispatch_from_row(row)
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+
+    def get_dispatch(self, request_id: str, stage: str) -> DispatchJob:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                (request_id, stage),
+            ).fetchone()
+        if row is None:
+            reject("DISPATCH_NOT_FOUND", "stage dispatch does not exist")
+        return self._dispatch_from_row(row)
+
+    def claim_dispatch(
+        self,
+        *,
+        request_id: str,
+        stage: str,
+        claimed_at: datetime | None = None,
+    ) -> DispatchJob:
+        timestamp = utc_seconds(claimed_at or utc_now())
+        with self._lock:
+            self._begin()
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if row is None:
+                    reject("DISPATCH_NOT_FOUND", "stage dispatch does not exist")
+                if row["state"] != "Pending":
+                    reject(
+                        "DISPATCH_ALREADY_CLAIMED",
+                        "automatic dispatch is limited to one durable claim",
+                    )
+                cursor = self._connection.execute(
+                    """
+                    UPDATE intent_dispatches
+                    SET state = 'Sending', claimed_at = ?
+                    WHERE request_id = ? AND stage = ? AND state = 'Pending'
+                    """,
+                    (timestamp, request_id, stage),
+                )
+                if cursor.rowcount != 1:
+                    reject(
+                        "DISPATCH_ALREADY_CLAIMED",
+                        "durable dispatch claim lost its compare-and-swap",
+                    )
+                self._event(
+                    request_id=request_id,
+                    stage=stage,
+                    from_state="DispatchPending",
+                    to_state="DispatchSending",
+                    reason_code="DISPATCH_DURABLY_CLAIMED",
+                    recorded_at=timestamp,
+                )
+                updated = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                self._connection.execute("COMMIT")
+                assert updated is not None
+                return self._dispatch_from_row(updated)
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+
+    def resolve_dispatch(
+        self,
+        *,
+        request_id: str,
+        stage: str,
+        state: str,
+        reason_code: str,
+        http_status: int | None,
+        resolved_at: datetime | None = None,
+    ) -> DispatchJob:
+        if state not in {"Accepted", "Uncertain", "Rejected"}:
+            reject("DISPATCH_STATE_INVALID", "dispatch result state is invalid")
+        if not reason_code or len(reason_code) > 100:
+            reject("DISPATCH_REASON_INVALID", "dispatch reason code is invalid")
+        if http_status is not None and not 100 <= http_status <= 599:
+            reject("DISPATCH_STATUS_INVALID", "dispatch HTTP status is invalid")
+        timestamp = utc_seconds(resolved_at or utc_now())
+        with self._lock:
+            self._begin()
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if row is None:
+                    reject("DISPATCH_NOT_FOUND", "stage dispatch does not exist")
+                if row["state"] != "Sending":
+                    identical = (
+                        row["state"] == state
+                        and row["reason_code"] == reason_code
+                        and row["http_status"] == http_status
+                    )
+                    if identical:
+                        self._connection.execute("COMMIT")
+                        return self._dispatch_from_row(row)
+                    reject("DISPATCH_STATE_INVALID", "dispatch result cannot be rewritten")
+                cursor = self._connection.execute(
+                    """
+                    UPDATE intent_dispatches
+                    SET state = ?, resolved_at = ?, http_status = ?, reason_code = ?
+                    WHERE request_id = ? AND stage = ? AND state = 'Sending'
+                    """,
+                    (state, timestamp, http_status, reason_code, request_id, stage),
+                )
+                if cursor.rowcount != 1:
+                    reject(
+                        "DISPATCH_STATE_INVALID",
+                        "dispatch result lost its compare-and-swap",
+                    )
+                self._event(
+                    request_id=request_id,
+                    stage=stage,
+                    from_state="DispatchSending",
+                    to_state=f"Dispatch{state}",
+                    reason_code=reason_code,
+                    recorded_at=timestamp,
+                )
+                updated = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                self._connection.execute("COMMIT")
+                assert updated is not None
+                return self._dispatch_from_row(updated)
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+
+    def reconcile_dispatch(
+        self,
+        *,
+        request_id: str,
+        stage: str,
+        run_id: int,
+        reconciled_at: datetime | None = None,
+    ) -> DispatchJob:
+        if run_id < 1:
+            reject("DISPATCH_RUN_INVALID", "reconciled workflow run ID must be positive")
+        timestamp = utc_seconds(reconciled_at or utc_now())
+        with self._lock:
+            self._begin()
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if row is None:
+                    reject("DISPATCH_NOT_FOUND", "stage dispatch does not exist")
+                if row["state"] == "Accepted" and row["run_id"] == run_id:
+                    self._connection.execute("COMMIT")
+                    return self._dispatch_from_row(row)
+                if row["state"] not in {"Sending", "Uncertain"}:
+                    reject("DISPATCH_STATE_INVALID", "dispatch cannot be live-reconciled")
+                cursor = self._connection.execute(
+                    """
+                    UPDATE intent_dispatches
+                    SET state = 'Accepted', resolved_at = ?,
+                        reason_code = 'DISPATCH_RECONCILED_LIVE_RUN', run_id = ?
+                    WHERE request_id = ? AND stage = ?
+                      AND state IN ('Sending', 'Uncertain')
+                    """,
+                    (timestamp, run_id, request_id, stage),
+                )
+                if cursor.rowcount != 1:
+                    reject(
+                        "DISPATCH_STATE_INVALID",
+                        "dispatch reconciliation lost its compare-and-swap",
+                    )
+                self._event(
+                    request_id=request_id,
+                    stage=stage,
+                    from_state=f"Dispatch{row['state']}",
+                    to_state="DispatchAccepted",
+                    reason_code="DISPATCH_RECONCILED_LIVE_RUN",
+                    recorded_at=timestamp,
+                )
+                updated = self._connection.execute(
+                    "SELECT * FROM intent_dispatches WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                self._connection.execute("COMMIT")
+                assert updated is not None
+                return self._dispatch_from_row(updated)
             except Exception:
                 if self._connection.in_transaction:
                     self._connection.execute("ROLLBACK")
@@ -506,6 +929,7 @@ class IntentRegistry:
             post_deploy_verifier_digest=row["post_deploy_verifier_digest"],
             expires_at=row["expires_at"],
             registration_principal=row["registration_principal"],
+            triggering_actor_id=row["triggering_actor_id"],
             registered_at=row["registered_at"],
             ref_object_id=row["ref_object_id"],
             finalized_at=row["finalized_at"],
@@ -1041,6 +1465,7 @@ class IntentRegistry:
 
 __all__ = [
     "ContentAddressedStore",
+    "DispatchJob",
     "IntentRecord",
     "IntentRegistry",
     "StageReservation",

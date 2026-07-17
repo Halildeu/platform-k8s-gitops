@@ -13,6 +13,7 @@
     "environment",
     "allowedApiOrigins",
     "allowedInstallationIds",
+    "allowedDispatcherInstallationIds",
     "allowedDispatcherActorIds",
     "allowedDeploymentClasses",
     "maxGrantTtlMinutes",
@@ -54,6 +55,16 @@
       }
     },
     "allowedInstallationIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "allowedDispatcherInstallationIds": {
       "type": "array",
       "minItems": 1,
       "maxItems": 1,

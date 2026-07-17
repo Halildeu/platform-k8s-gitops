@@ -11,6 +11,9 @@
   "allowedInstallationIds": [
     900000002
   ],
+  "allowedDispatcherInstallationIds": [
+    900000004
+  ],
   "allowedDispatcherActorIds": [
     900000003
   ],

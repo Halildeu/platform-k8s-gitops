@@ -54,6 +54,7 @@ def policy_payload() -> dict[str, object]:
         "environment": ENVIRONMENT,
         "allowedApiOrigins": ["https://api.github.com"],
         "allowedInstallationIds": [2222],
+        "allowedDispatcherInstallationIds": [3333],
         "allowedDispatcherActorIds": [424242],
         "allowedDeploymentClasses": ["reversible-test"],
         "maxGrantTtlMinutes": 120,

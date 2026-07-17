@@ -8,6 +8,7 @@ import threading
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -262,6 +263,41 @@ class GitHubReaderTest(unittest.TestCase):
             if call[0] == "GET":
                 self.assertEqual(call[2]["Authorization"], "Bearer ghs_" + ("a" * 40))
 
+    def test_reads_one_bounded_dispatch_run_page(self) -> None:
+        repository = "Halildeu/platform-k8s-gitops"
+        workflow = ".github/workflows/apply.yml"
+        branch = "cross-ai-intent/30000000-0000-4000-8000-000000000001"
+        start = "2026-07-16T21:00:00Z"
+        end = "2026-07-16T21:10:00Z"
+        query = urlencode(
+            {
+                "event": "workflow_dispatch",
+                "created": f"{start}..{end}",
+                "per_page": "100",
+            }
+        )
+        url = (
+            f"https://api.github.com/repos/{repository}/actions/workflows/"
+            ".github%2Fworkflows%2Fapply.yml/runs?" + query
+        )
+        run = {"id": 77, "event": "workflow_dispatch"}
+        self.transport.add(
+            "GET", url, 200, {"total_count": 1, "workflow_runs": [run]}
+        )
+        self.assertEqual(
+            self.reader.workflow_runs_for_dispatch(
+                2222, repository, workflow, branch, start, end
+            ),
+            (run,),
+        )
+        self.transport.add(
+            "GET", url, 200, {"total_count": 2, "workflow_runs": [run]}
+        )
+        with self.assertRaisesRegex(PolicyError, "GITHUB_DISPATCH_RUNS_INVALID"):
+            self.reader.workflow_runs_for_dispatch(
+                2222, repository, workflow, branch, start, end
+            )
+
     def test_rejects_token_failure_invalid_key_and_origin_confusion(self) -> None:
         self.transport.add("POST", self.token_url, 403, {})
         with self.assertRaisesRegex(PolicyError, "GITHUB_INSTALLATION_TOKEN_FAILED"):
@@ -494,12 +530,38 @@ class GitHubReaderTest(unittest.TestCase):
             head_sha=head,
         )
         self.assertEqual(live_ref.head_sha, head)
-        dispatcher.dispatch_workflow(
+        self.transport.add("POST", create_url, 422, {})
+        self.transport.add(
+            "GET", ref_url, 200, {"object": {"type": "commit", "sha": head}}
+        )
+        recovered = dispatcher.create_intent_ref(
+            installation_id=2222,
+            repository=repository,
+            request_id=request_id,
+            head_sha=head,
+        )
+        self.assertEqual(recovered.head_sha, head)
+        self.transport.add(
+            "GET", ref_url, 200, {"object": {"type": "commit", "sha": "c" * 40}}
+        )
+        with self.assertRaisesRegex(PolicyError, "GITHUB_INTENT_REF_COLLISION"):
+            dispatcher.create_intent_ref(
+                installation_id=2222,
+                repository=repository,
+                request_id=request_id,
+                head_sha=head,
+            )
+        self.transport.add(
+            "GET", ref_url, 200, {"object": {"type": "commit", "sha": head}}
+        )
+        accepted = dispatcher.dispatch_workflow(
             installation_id=2222,
             repository=repository,
             workflow_path=".github/workflows/apply.yml",
             request_id=request_id,
         )
+        self.assertTrue(accepted.accepted)
+        self.assertFalse(accepted.ambiguous)
         create = [call for call in self.transport.calls if call[1] == create_url][-1]
         self.assertEqual(
             json.loads(create[3]),
@@ -510,6 +572,24 @@ class GitHubReaderTest(unittest.TestCase):
             json.loads(dispatch[3]),
             {"ref": f"cross-ai-intent/{request_id}"},
         )
+        self.transport.add("POST", dispatch_url, 503, {})
+        ambiguous = dispatcher.dispatch_workflow(
+            installation_id=2222,
+            repository=repository,
+            workflow_path=".github/workflows/apply.yml",
+            request_id=request_id,
+        )
+        self.assertTrue(ambiguous.ambiguous)
+        self.assertFalse(ambiguous.accepted)
+        self.transport.add("POST", dispatch_url, 400, {})
+        rejected = dispatcher.dispatch_workflow(
+            installation_id=2222,
+            repository=repository,
+            workflow_path=".github/workflows/apply.yml",
+            request_id=request_id,
+        )
+        self.assertFalse(rejected.ambiguous)
+        self.assertFalse(rejected.accepted)
 
 
 if __name__ == "__main__":

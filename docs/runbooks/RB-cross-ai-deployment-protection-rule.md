@@ -412,6 +412,38 @@ and cannot consume the key. A later reviewed enforcement overlay must select
 the property explicitly and prove ESO readiness plus redacted hash alignment.
 Production Vault, root-token recovery and raw PEM output remain forbidden.
 
+### 5.2.1 Source-ready intent dispatcher
+
+The dispatcher CLI is source-ready but must not be invoked against the live
+repository until the separate dispatcher App, tag ruleset/egress deny rules,
+real provider-distinct signed bundle, protected no-input workflows and TEST
+Vault HTTPS are proven. It re-verifies trust, revocations, policy, repository,
+Environment, dispatcher actor and workflow paths on every stage operation.
+
+```bash
+python3 scripts/github_apps/run_cross_ai_intent_dispatcher.py \
+  --db /var/lib/cross-ai/registry.sqlite3 \
+  --cas-dir /var/lib/cross-ai/cas \
+  --policy-file /run/config/cross-ai-policy.json \
+  --trust-root-file /run/config/cross-ai-trust-root.json \
+  --expected-trust-root-sha256 'sha256:RELEASE_PIN_FROM_DUAL_CONTROL' \
+  --revocations-file /run/config/cross-ai-revocations.dsse.json \
+  --github-app-id "$DISPATCHER_GITHUB_APP_ID" \
+  --github-app-key-file /run/secrets/dispatcher-github-app.pem \
+  --installation-id "$DISPATCHER_INSTALLATION_ID" \
+  register-and-dispatch-apply \
+  --bundle-file /run/evidence/cross-ai-deployment-bundle.dsse.json
+```
+
+The key and bundle are file mounts; never place their contents in arguments,
+logs, Git or chat. Exit `0` means GitHub accepted the dispatch with empty 204.
+Exit `3` means a durable non-accepted state such as `Uncertain`; it is not a
+retry signal. `Sending`, `Uncertain` and `Rejected` are never automatically
+posted again. Use `reconcile-dispatch` only to read live GitHub truth; it can
+accept an ambiguous job only when exactly one signed-intent-bound run exists.
+Issue a new signed request ID when liveness must be recovered after a
+fail-closed no-run result.
+
 Poll interval is never below 30 seconds, success and failure paths have bounded
 jitter, exponential backoff caps at five minutes, and `/readyz` fails after a
 poll/API/callback error or stale success. An empty successful poll may make the
