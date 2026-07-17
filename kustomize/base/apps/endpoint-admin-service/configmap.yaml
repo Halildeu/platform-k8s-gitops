@@ -126,6 +126,23 @@ data:
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED: "false"
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_PORT: "8443"
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID: ""
+  # Explicit `<orgUuid>=<tenantUuid>` aliases, comma-separated (board #2559).
+  #
+  # Measured on testai 2026-07-17: an admin reaches Yönetim -> Uç Birimler, the product surface is
+  # fully there, and the fleet is empty — all 11 enrolled devices carry the fixed tenant above,
+  # while the admin's token carries a real org, so the query correctly returns nothing. Tenant
+  # isolation works; the device-management product just has no devices in it. The cause is that
+  # enrollment stamps the tenant from configuration instead of deriving it from the org that
+  # registered the device.
+  #
+  # Empty here on purpose: production must stay untouched. Only an overlay that writes the exact
+  # pair down gets the redirect, and only for that one org — an unlisted org keeps its own id as
+  # tenant, so an alias can never widen anyone else's view. A malformed entry fails at startup
+  # rather than being skipped, because a typo would leave an admin staring at an empty fleet again.
+  #
+  # This is a bridge, not the fix: production needs enrollment to take the tenant from an
+  # operator-issued, tenant-scoped credential, after which this and the fixed tenant above go away.
+  ENDPOINT_ADMIN_TENANT_ORG_ALIASES: ""
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_KEY_STORE: "/etc/endpoint-admin/mtls/server-keystore.p12"
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_KEY_STORE_TYPE: "PKCS12"
   ENDPOINT_ADMIN_MTLS_PASSTHROUGH_TRUST_STORE: "/etc/endpoint-admin/mtls/truststore.p12"

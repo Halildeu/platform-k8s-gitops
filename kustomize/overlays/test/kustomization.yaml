@@ -39,9 +39,6 @@ resources:
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
   - ../../base/apps/audit-archive-exporter        # Faz 24 PR-obs-02 (#1656, ADR-0042 §4): audit_archive.* DB-state metrics for the run-once worker (test-only; prod §5 gate)
   - ../../base/apps/audit-archive-exporter/ops    # ServiceMonitor (CRD-gated; test overlay only — prod sızıntısı yok)
-  # Faz 25 #2526: Full ATS aday + recruiter dikeyi kalıcı test ürünü.
-  # Önceden manuel activation overlay'iydi; artık ArgoCD self-heal kapsamındadır.
-  - activation/ats-interview-evidence
   - ../../base/apps/meeting-service/ops      # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
   - ../../base/apps/transcript-service/ops   # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
@@ -193,23 +190,7 @@ images:
     # loopback regression test (deterministic red without the fix). Codex AGREE. Superset
     # of sha-b49a75d (#803 bean-clash fix). Streaming stays enabled (flip in #2285).
     # D30 immutable digest pin.
-    # 2026-07-16 update 5: platform-backend#841/#844 reclaims expired or
-    # abandoned session aggregation reservations without early-uncharge during
-    # in-flight forwarding and without double refund. Canonical main merge
-    # 2ff9e049b9c0bb08596862a49ae33dc8bfd4e4b6; audio-gateway image-build job
-    # 87658736442 in run 29509441575 succeeded even though the unrelated
-    # meeting-service image job failed. Test overlay only; prod remains
-    # D30-deferred. Runtime acceptance is tracked by gitops#2513.
-    # 2026-07-16 update 6: platform-backend#846 eagerly registers the
-    # aggregation_chunks_buffered and aggregation_dropped_capacity counters so
-    # a healthy zero-event process exposes an explicit 0 baseline instead of an
-    # absent series. Canonical main merge
-    # 149fd31893674b9b0575be09c1699408009230da; audio-gateway image-build job
-    # 87736557859 in run 29532708953 succeeded and produced the immutable digest
-    # below. Supersedes the #844 image; test only, prod remains D30-deferred.
-    # Runtime acceptance remains tracked by gitops#2513.
-    # D30 immutable digest pin.
-    digest: sha256:1e723d8b671111cf046b825cc6f672c237762a23e40c3601d769bb271e5d2543
+    digest: sha256:a1075e562a7b70a17ca21daa2939b13750b6164bab79e5aed10f0f2e1bdcacd0
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -1417,25 +1398,8 @@ images:
     # remains explicit-grant-only: neither runtime ADMIN compatibility expansion
     # nor PermissionDataInitializer ADMIN seeding grants it implicitly. Image
     # build run 29354279680; permission-service job 87157899597 succeeded.
-    # Pinnable: ghcr.io/halildeu/platform-backend-permission-service@sha256:d26ad6b70483b60cf263f2cff639f270d652dc2e2a3af50ab9c5c28c94d4fa5b
-    # 2026-07-17 · board #2531 (umbrella #2530) — canonical scope grants now take effect.
-    # Source : platform-backend PR #847 squash f74d93cc863e544f634a8c7bee25d7a7c084cad1
-    #          (verified main ancestor; PR CI 19/19; Codex AGREE 12f12dd44)
-    # Tag    : ci-image-push.yml -> `github.sha | cut -c1-7` -> sha-f74d93c
-    # Digest : taken from the registry because the GitHub Actions/Packages APIs were
-    #          503/502 during this rollout (Codex-approved outage fallback):
-    #            docker manifest inspect --verbose \
-    #              ghcr.io/halildeu/platform-backend-permission-service:sha-f74d93c
-    #            -> Descriptor.digest = sha256:d26ad6b7... (linux/amd64)
-    # Ships  : ADR-0008 canonical object-id codec (admin granted 201 but user still got 403
-    #          because the reader dropped `wc-project-1204` via bare Long.parseLong);
-    #          dual-subject scope read (verified numeric id + verified KC sub);
-    #          global authz-version bump after the FGA write/delete so a REVOKE is not
-    #          served stale for ~120s + jitter (privilege retention).
-    # NOTE   : provenance:false + no org.opencontainers.image.revision label -> the digest
-    #          proves the artifact, not the full source lineage. Reconcile the Actions run
-    #          / promotion ledger once GitHub recovers, before any prod promotion.
-    digest: sha256:d26ad6b70483b60cf263f2cff639f270d652dc2e2a3af50ab9c5c28c94d4fa5b
+    # Pinnable: ghcr.io/halildeu/platform-backend-permission-service@sha256:7e66b85a6158dd4bb9a9bfcdcaf6761b89f552788a34bd97ebc2d605234b0ec3
+    digest: sha256:7e66b85a6158dd4bb9a9bfcdcaf6761b89f552788a34bd97ebc2d605234b0ec3
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -4219,14 +4183,15 @@ images:
     # 29451703189 produced the immutable testai digest below. Tracked by #2463.
     # Machine-managed current pin. Historical provenance remains above; future
     # automation rewrites only these fields and records evidence in its PR.
-    # 2026-07-16 Faz 25 #2526: public jobs/apply/receipt/candidate tracking and
-    # authenticated recruiter inbox/status transitions (platform-web #938).
-    # Build run 29533847049 testai job 87740302536 published and independently
-    # reported the exact immutable digest below. Dispatch run 29534095913 found
-    # and this change fixes the promotion-script quoted-heredoc recursion bug.
-    # sourceRevision: a953992391e71751a18be07ca39ac624860944c0
-    newTag: sha-a953992
-    digest: sha256:a262f8a8d9af61567bff3fa1425dbd7520c97e74b859340b9c5d53bdd779664c
+    # 2026-07-16 current pin: platform-web #928 binds the shell's real HTML5
+    # root script set to build-info v2 path+bodySha256. Merge bc333975 carries
+    # the earlier Faz 25 #924 safe role journeys and Faz 22 product-surface arc.
+    # Manual promotion follows fail-closed dispatch run 29483976344 (#2295).
+    # Image build run 29487972095 / testai job 87586921662 produced the exact
+    # immutable digest below (containerimage.digest).
+    # sourceRevision: 6f74213403ae628c66f9aaaf93aeddf12769248a
+    newTag: sha-6f74213
+    digest: sha256:b629c6d2288f982402be68b1c59739fa0e31f50fe23c2fda1538fd4f8f9d30bb
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -6074,50 +6039,6 @@ patches:
       - op: replace
         path: /data/USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED
         value: "true"
-      # board #2533 (umbrella #2530) — TEST-ONLY. Do NOT promote to the prod overlay.
-      #
-      # JwtAutoProvisionGate is fail-closed: without the M365 marker claim `entra_tid` it denies
-      # ("missing-entra-tid") unless auto-provision.allow-local-keycloak=true
-      # (${AUTO_PROVISION_ALLOW_LOCAL_KEYCLOAK:false} — never set anywhere until now).
-      # Consequence: local-Keycloak users never get a `user_service.users` row → no numeric user id
-      # → the authz chain reads with the wrong subject and returns 403.
-      #
-      # Scope of this flag (precise): it removes ONLY the `entra_tid` requirement. The remaining
-      # fail-closed gates stay: issuer allow-list, valid `sub`, email present, email_verified.
-      # So this admits "local-Keycloak users that satisfy the remaining claim/issuer gates",
-      # not "every non-M365 login".
-      #
-      # What it does NOT change: the persisted activation state. UserService still creates the row
-      # role=USER, enabled=false, companyId=null (pinned by UserServiceTest). The cross-service
-      # invariant "a disabled account cannot consume protected product surfaces" is NOT proven by
-      # this PR — AuthenticatedUserLookupService resolves the numeric id without carrying `enabled`
-      # into the authorization decision. That gate is verified negatively during #2533 runtime
-      # acceptance (grant first, expect 403 while disabled, activate, expect 200 — activation the
-      # only variable). Until then no grant is issued to a persona before activation.
-      - op: add
-        path: /data/AUTO_PROVISION_ALLOW_LOCAL_KEYCLOAK
-        value: "true"
-  # board #2533 — TEST-ONLY pod-template rollout marker.
-  # user-service reads the ConfigMap via `envFrom: configMapRef`, and Kubernetes computes process
-  # env ONLY at pod start: changing the ConfigMap alone leaves the running pod on the old value and
-  # does not change the Deployment/ReplicaSet hash, so Argo reports Synced while the flag never
-  # reaches the process. ADR-0023 forbids fixing that with an out-of-band `kubectl rollout restart`
-  # on this shared cluster, so the rollout must be GitOps-authoritative: bump this marker whenever
-  # the TEST-only env contract above changes. Strategic-merge (not a JSON patch on /annotations) so
-  # future pod annotations are merged rather than overwritten.
-  - target:
-      kind: Deployment
-      name: user-service
-    patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: user-service
-      spec:
-        template:
-          metadata:
-            annotations:
-              user-service.acik.com/local-kc-provision-rev: "2533-1"
   - target:
       kind: ConfigMap
       name: meeting-service-config
@@ -6332,6 +6253,32 @@ patches:
       - op: replace
         path: /data/ENDPOINT_ADMIN_DOMAIN_OPS_ENABLED
         value: "true"
+
+  # board #2559 — TEST-only org -> tenant alias so an admin can actually see the fleet.
+  #
+  # Measured on testai 2026-07-17 through the browser: Yönetim -> Uç Birimler opens, the product
+  # surface is fully there (fleet/compliance panels, device grid, filters, CSV export) — and the
+  # fleet is empty. All 11 enrolled devices carry tenant 00000000-0000-0000-0000-000000000001 (the
+  # fixed tenant patched below), while the admin's token carries org
+  # 68c73eb9-c410-37dc-aff7-5ade8fbbcbb7, so the query correctly returns nothing. Tenant isolation
+  # is working exactly as designed; the device-management product simply has no devices in it.
+  #
+  # The cause is enrollment: the mTLS/TPM paths stamp the tenant from configuration rather than
+  # deriving it from the org that registered the device. The real fix is an operator-issued,
+  # tenant-scoped enrollment credential — a separate change, and a prerequisite before the fixed
+  # tenant above can go away in prod (Codex 019f6e50: "TEST için C şimdi; PROD'un kalıcı hedefi A").
+  #
+  # This alias is the bridge, and only for TEST: base leaves it empty, so prod is untouched unless
+  # someone writes the exact pair down. The mapping is a lookup, not a fallback — an org that is not
+  # listed keeps its own id as tenant, so this cannot widen any other org's view. `replace` is
+  # deliberate: if the base key disappears, render fails instead of silently inventing a runtime key.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_TENANT_ORG_ALIASES
+        value: "68c73eb9-c410-37dc-aff7-5ade8fbbcbb7=00000000-0000-0000-0000-000000000001"
 
   # Faz 22.5 M2 AD CS / edge mTLS activation (TEST only) — gitops #1359/#1376.
   # Preconditions live-proven 2026-06-14:
