@@ -3,12 +3,16 @@
 > **Issue:** #2502 · **ADR:** ADR-0045 · **scope:** reversible test/non-prod only
 > **Current state (2026-07-17):** source implementation, offline tests,
 > digest-pinned/non-root container definition, GHCR publication workflow and a
-> disabled-by-default receive-only test overlay exist. No GitHub App, App
-> installation, Vault webhook/signing keys, published image digest, live
-> webhook endpoint, protected workflow lane or enabled Environment custom rule
-> exists. The source includes attempt-specific terminal outcome polling and
-> restart reconciliation; it has not been exercised against a live App
-> installation.
+> disabled-by-default receive-only test overlay exist. The protection evaluator
+> App is registered as `Acik Cross-AI Deploy Protection` (App ID `4322193`) and
+> installed only on `Halildeu/platform-k8s-gitops` (installation ID
+> `147158710`). Its webhook is active with SSL verification and the reviewed
+> URL/event/permissions, but the webhook secret is not yet in test Vault. The
+> PR container-contract job passed while the main-only publish job correctly
+> skipped, so no published image digest, live webhook endpoint, protected
+> workflow lane or enabled Environment custom rule exists. The source includes
+> attempt-specific terminal outcome polling and restart reconciliation; it has
+> not been exercised against a live delivery.
 
 ## 1. What this removes — and what it does not
 
