@@ -198,6 +198,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
+      - name: Reconcile least-privilege VIEW_ONLY audit DB role
+        if: inputs.action == 'apply'
+        env:
+          VIEWER_AUDIT_DB_ROLE_CONFIRM: RECONCILE_FAZ22_6_VIEWER_AUDIT_DB_ROLE
+        run: bash scripts/faz22-remote-ops/reconcile-viewer-audit-db-role.sh apply
+
       - name: Render and guard viewer exposure overlay
         if: inputs.action != 'rollback'
         run: |

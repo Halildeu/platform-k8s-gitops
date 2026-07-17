@@ -34,6 +34,7 @@ VIEWER_FRAME_FLOW_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer
 VIEWER_PRODUCT_ROOT_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
 VIEWER_PRODUCT_CHILD_SCHEMA="$ROOT/schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
 VIEWER_APPLY_WORKFLOW="$ROOT/.github/workflows/apply-view-only-viewer-pilot-enable.yml"
+VIEWER_AUDIT_DB_ROLE_RECONCILER="$ROOT/scripts/faz22-remote-ops/reconcile-viewer-audit-db-role.sh"
 VIEWER_ROLLBACK_CONFIG="$ROOT/scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh"
 VIEWER_WATCHDOG="$ROOT/scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
 VIEWER_AUTH_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py"
@@ -210,6 +211,15 @@ PY
 require_grep 'REMOTE_BRIDGE_CONSENT_PROMPT_TTL_MILLIS: "240000"' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "60000"' "$VIEWER_APPLY_WORKFLOW"
 require_grep "attended consent pilot TTL leaked into the synced test Argo root" "$VIEWER_APPLY_WORKFLOW"
+require_file "$VIEWER_AUDIT_DB_ROLE_RECONCILER"
+bash -n "$VIEWER_AUDIT_DB_ROLE_RECONCILER"
+require_grep "reconcile-viewer-audit-db-role.sh apply" "$VIEWER_APPLY_WORKFLOW"
+require_grep "VIEWER_AUDIT_DB_ROLE_CONFIRM: RECONCILE_FAZ22_6_VIEWER_AUDIT_DB_ROLE" \
+  "$VIEWER_APPLY_WORKFLOW"
+require_grep "Verify least-privilege VIEW_ONLY audit DB role before approval" \
+  "$VIEWER_BROWSER_WORKFLOW"
+require_grep "Re-verify VIEW_ONLY audit DB role after protected approval" \
+  "$VIEWER_BROWSER_WORKFLOW"
 
 for workflow in "$VIEWER_BROWSER_WORKFLOW" "$VIEWER_MATRIX_COLLECTOR_WORKFLOW" \
   "$VIEWER_TERMINATION_COLLECTOR_WORKFLOW"; do

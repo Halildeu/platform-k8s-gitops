@@ -8980,6 +8980,29 @@ multi-device acceptance, or `acik.local` IT pilot evidence.
 
 ---
 
+## 2026-07-17 Faz 22.6 #2373 VIEW_ONLY attended run root cause
+
+- Attended run `29575794125` reached genuine Denetim consent `granted`; session
+  and operation creation were `200`, authorization was `PERMIT`, and transport
+  push was true. The run did not produce product acceptance.
+- The product viewer GET reached the dedicated viewer service and returned
+  fail-closed `503` before metadata/SSE delivery.
+- Live least-privilege inspection found the device-key broker role had schema
+  usage but lacked both `SELECT` and `INSERT` on
+  `endpoint_admin_service.endpoint_audit_events`. The controller must read the
+  tenant hash-chain tail and append `VIEW_START` before delivering a frame, so
+  this missing role contract is the exact blocker.
+- Durable remediation is tracked by `#2373`: reconcile only schema `USAGE` and
+  table `SELECT, INSERT`; reject effective schema `CREATE` or table `UPDATE`,
+  `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER`, column-level mutation grants,
+  or inherited role membership; transactionally prove SELECT+INSERT with a rolled
+  back probe; check before and after protected approval.
+- Boundary: user consent was valid and need not be repeated until the repaired
+  immutable revision passes source/CI/review and a fresh activation preflight.
+  `#2373` remains open; no marker or Faz 22.6 closure is asserted.
+
+---
+
 ## Live Delta — Faz 22.5 P1 visibility roll-up acceptance reconcile (#1134/#1164) (2026-06-07 15:25 Istanbul / 12:25Z UTC)
 
 **Session milestone**: the prior admin-JWT / WEB-015 evidence gap is
