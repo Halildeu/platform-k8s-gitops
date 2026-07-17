@@ -88,6 +88,18 @@ class ObserveServerTest(unittest.TestCase):
         self.service.queue.join()
         self.assertEqual(self.ledger.counts(), (1, 1))
 
+    def test_accepts_lowercase_upstream_header_names(self) -> None:
+        raw = json.dumps(payload(), separators=(",", ":")).encode()
+        headers, body = signed_request(raw)
+        status, response = self.request(
+            "POST",
+            "/webhooks/github",
+            body=body,
+            headers={name.lower(): value for name, value in headers.items()},
+        )
+        self.assertEqual(status, 202)
+        self.assertTrue(response["accepted"])
+
     def test_rejects_bad_signature_without_recording(self) -> None:
         raw = json.dumps(payload(), separators=(",", ":")).encode()
         headers, body = signed_request(raw)

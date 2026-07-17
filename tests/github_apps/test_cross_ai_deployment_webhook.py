@@ -81,6 +81,27 @@ class WebhookTest(unittest.TestCase):
         )
         self.assertEqual(request.environment, "faz22-view-only-pilot")
 
+    def test_accepts_lowercase_proxy_header_names(self) -> None:
+        raw = json.dumps(payload(), separators=(",", ":")).encode()
+        headers, body = signed_request(raw)
+        request = parse_deployment_protection_webhook(
+            raw_body=body,
+            headers={name.lower(): value for name, value in headers.items()},
+            secrets=(TEST_HMAC_KEY,),
+        )
+        self.assertEqual(request.run_id, 987654321)
+
+    def test_rejects_case_confused_duplicate_security_header(self) -> None:
+        raw = json.dumps(payload(), separators=(",", ":")).encode()
+        headers, body = signed_request(raw)
+        headers["content-type"] = "application/json"
+        with self.assertRaisesRegex(PolicyError, "WEBHOOK_HEADER_DUPLICATE"):
+            parse_deployment_protection_webhook(
+                raw_body=body,
+                headers=headers,
+                secrets=(TEST_HMAC_KEY,),
+            )
+
     def test_rejects_bad_hmac(self) -> None:
         raw = json.dumps(payload(), separators=(",", ":")).encode()
         headers, body = signed_request(raw)
