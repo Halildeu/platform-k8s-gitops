@@ -78,6 +78,20 @@ const waitVisible = async (locator, label, timeout = 60_000) => {
   });
 };
 
+const refreshUntilVisible = async (refreshButton, target, label, attempts = 3) => {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    await refreshButton.click();
+    try {
+      await waitVisible(target, label, 10_000);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(`${label} ${attempts} yenileme denemesinden sonra gorunmedi: ${lastError?.message ?? 'bilinmeyen hata'}`);
+};
+
 void (async () => {
 const buildInfo = await fetch(`${baseURL}/build-info.json`).then(async (response) => {
   if (!response.ok) throw new Error(`build-info HTTP ${response.status}`);
@@ -256,15 +270,14 @@ try {
 
   await reviewPanel.getByRole('button', { name: 'İnsan incelemesini başlat' }).click();
   await waitVisible(reviewPanel.getByRole('button', { name: 'Mülakat planlamasına al' }), 'under review transition');
-  await candidatePage.getByRole('button', { name: 'Durumu yenile' }).click();
+  const refreshStatusButton = candidatePage.getByRole('button', { name: 'Durumu yenile' });
   const reviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'İnsan incelemesinde' });
-  await waitVisible(reviewStep.getByText('Şimdi'), 'candidate sees under review');
+  await refreshUntilVisible(refreshStatusButton, reviewStep.getByText('Şimdi'), 'candidate sees under review');
 
   await reviewPanel.getByRole('button', { name: 'Mülakat planlamasına al' }).click();
   await waitVisible(reviewPanel.getByText('Mülakat planlaması bekleniyor.'), 'interview pending transition');
-  await candidatePage.getByRole('button', { name: 'Durumu yenile' }).click();
   const interviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'Mülakat planlaması' });
-  await waitVisible(interviewStep.getByText('Şimdi'), 'candidate sees interview pending');
+  await refreshUntilVisible(refreshStatusButton, interviewStep.getByText('Şimdi'), 'candidate sees interview pending');
 
   const journeyPanel = candidatePage.getByRole('heading', { name: 'Başvuru yolculuğum' }).locator('xpath=..').locator('xpath=..');
   await journeyPanel.screenshot({ path: path.join(evidenceDir, 'candidate-status-mobile.png') });
