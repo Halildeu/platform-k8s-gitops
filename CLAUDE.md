@@ -100,6 +100,10 @@ Kararın stable provenance kaydı [#2601](https://github.com/Halildeu/platform-k
   değişikliği ister.
 - Üçlü AI görüşü test/CI/live evidence/browser smoke/human gate yerine geçmez.
 - Secret, PII veya raw credential prompt/argümana konmaz.
+- İlk gate PR'ı kendi head kurallarını geçmiş sayılmaz; exact model kalıcı olarak
+  provider'dan kalkarsa yalnız context-rules §11.4'teki dar, insan-atıflı
+  model-pin migration break-glass yolu kullanılabilir. Timeout/kota/format/REVISE
+  bu yol için yeterli değildir.
 
 Canonical çağrı, attribution ve failure semantiği:
 [docs/context-priority-rules.md §11](./docs/context-priority-rules.md#cross-ai-three-channel).

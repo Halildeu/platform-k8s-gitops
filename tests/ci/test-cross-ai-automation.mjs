@@ -180,6 +180,13 @@ const wrongAuthorEvidence = {
     author: 'mallory',
   },
 };
+const wrongAssociationEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: {
+    ...EVIDENCE[CLAUDE_REF],
+    authorAssociation: 'MEMBER',
+  },
+};
 const minimaxReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
 const minimaxReviseBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[MINIMAX_REF].body),
@@ -290,6 +297,12 @@ const cases = [
   ['normal PR + evidence author differs from repository owner -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: wrongAuthorEvidence }, 1],
+  ['normal PR + owner login without OWNER association -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, evidence: wrongAssociationEvidence }, 1],
+  ['normal PR + duplicate provider evidence refs -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace(MINIMAX_REF, CLAUDE_REF) }, 1],
   ['Claude/Codex AGREE + MiniMax REVISE -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: minimaxRevisePeerBody, evidence: minimaxReviseEvidence }, 1],

@@ -504,6 +504,10 @@ Bu gövde elle yeniden yazılmaz. Provider'ın tam final response'u stdin'den
 formatını, tekil terminal verdict'i, response digest'ini ve serialize edilmiş
 nihai GitHub comment byte sınırını doğrular. `REVISE`
 yanıtı dürüstçe `REVISE` evidence üretir ve gate'i açmaz.
+Oluşan evidence dosyası `scripts/ai/post_cross_ai_evidence.py --repo
+Halildeu/platform-k8s-gitops --issue <ISSUE> --evidence-file <PATH>` ile post
+edilir. Yardımcı evidence gövdesini veya credential'ı argv/stdout'a yazmaz;
+yalnız API ref, body SHA-256, provider/model/verdict ve GitHub zamanlarını döndürür.
 
 `gate-cross-ai-audit` trusted base checkout'ta PR head objesini checkout etmeden
 tam git geçmişiyle fetch eder; gerçek `git merge-base` ve aynı redaction algoritmasıyla full-range
@@ -553,7 +557,40 @@ changed-files listesi tamamen `docs/session-handoff-*.md` veya
 `AGENTS.md`, `CLAUDE.md`, `PLAN.md`, ADR, governance, workflow, CI, manifest,
 authz, migration ve deployment değişiklikleri bu istisnaya giremez.
 
-### 11.4 Redaction ve süreç sınırı
+### 11.4 Bootstrap ve exact-model migration break-glass
+
+Bu üç-kanallı gate'i ilk kez ana dala getiren PR, `pull_request_target` güven
+sınırı gereği base branch'teki eski workflow/script ile değerlendirilir; PR'ın
+kendi head'indeki yeni gate'i kendisi için çalıştırmak güvenli değildir. Bu ilk
+merge yeni gate'in geçtiğine kanıt sayılmaz. Ana dala girişten sonraki ilk
+governance PR'ı yalnız doğrulama fixture'ı değiştirerek üç canlı kanal, CI-derived
+scope ve fetched evidence yolunu uçtan uca kanıtlar; kanıt oluşmadan yeni gate
+"operationally proven" diye sunulmaz.
+
+Exact modellerden biri provider tarafından kaldırılır/yeniden adlandırılırsa eski
+üç modeli isteyen gate, kendi model-pin güncelleme PR'ını açamaz. Bu durumda tek
+izinli break-glass aşağıdaki dar **model-pin migration** yoludur:
+
+1. Aynı exact model için en az üç headless sağlık denemesi ve provider-unavailable
+   çıktıları issue'ya redacted kaydedilir; UI fallback veya sessiz alt-model yoktur.
+2. PR yalnız canonical üç-kanal kuralı, exact model allowlist'i, ilgili wrapper,
+   test ve workflow dosyalarını değiştirir; ürün/runtime/authz/secret/deploy scope'u
+   aynı PR'a giremez.
+3. Erişilebilir kalan iki farklı direct provider aynı exact scope için `AGREE`
+   verir. Eksik provider sahte evidence ile doldurulmaz.
+4. Repository owner, GitHub ruleset'in insan-atıflı/audit-log'lu bypass yolunu
+   yalnız bu PR için kullanır; issue `cross-ai-provider-unavailable` etiketi,
+   gerekçe, old/new model ve rollback kaydı taşır. Agent owner kimliğiyle bu insan
+   bypass'ını taklit etmez.
+5. Yeni exact üçlü model zinciri ana dala girdikten sonra ilk doğrulama PR'ında
+   üç kanal da `AGREE` vermeden başka non-exempt PR merge/deploy edilemez.
+
+Bu break-glass normal `REVISE`, kota, geçici timeout, format hatası veya sağlayıcı
+anlaşmazlığı için kullanılamaz; yalnız kalıcı exact-model unavailability deadlock'unu
+çözmek içindir. Mevcut PR gate'i otomatik PASS yapmaz; insan ruleset bypass'ı ayrı
+ve görünür bir human gate olarak kalır.
+
+### 11.5 Redaction ve süreç sınırı
 
 Prompt, argüman ve receipt içine secret, JWT, refresh token, raw bearer, webhook
 URL, cookie, OAuth client secret, private/signing/HMAC key, admin credential veya
