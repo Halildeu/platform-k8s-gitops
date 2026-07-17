@@ -108,6 +108,11 @@ def test_runner_contract_restores_and_redacts():
     assert "rawAdminCredentialLogged: false" in text
     assert "run_external_recorder_smoke.py" in text
     assert "verify_external_recorder_smoke_evidence.py" in text
+    assert "RUN_MEETING_AI_RESULT_ACCEPTANCE" in text
+    assert "run_meeting_ai_user_result_acceptance.py" in text
+    assert "MEETING_AI_RESULT_ACCEPTANCE_JSON" in text
+    assert "meetingAiUserResultAcceptance" in text
+    assert '--token-file "${TOKEN_FILE}"' in text
     assert "RUN_SESSION_EXPIRY_SMOKE" in text
     assert "SESSION_EXPIRY_AUDIO_BASE_URL" in text
     assert "SESSION_EXPIRY_METRICS_BASE_URL" in text
@@ -430,18 +435,23 @@ def test_workflow_runs_on_staging_sw_and_scans_artifacts():
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert "run_session_expiry_smoke:" in workflow
+    assert "run_meeting_ai_result_acceptance:" in workflow
     assert "recover_stale_run_id:" in workflow
     assert "expected_audio_gateway_image:" in workflow
     assert "run_audio_gateway_session_expiry_transient_smoke.sh" in workflow
     assert "EXPECTED_AUDIO_GATEWAY_IMAGE" in workflow
     assert "SESSION_EXPIRY_SMOKE_JSON" in workflow
-    assert "session-expiry and external-recorder smokes cannot run in the same dispatch" in workflow
+    assert "MEETING_AI_RESULT_ACCEPTANCE_JSON" in workflow
+    assert "session-expiry excludes external-recorder and Meeting-AI result acceptance" in workflow
+    assert "Meeting-AI result acceptance requires external-recorder smoke" in workflow
     assert "platform-backend-audio-gateway-service@sha256:[0-9a-f]{64}" in workflow
     assert "CONFIRM_CONTROLLED_MAPPER_PRUNE: ${{ inputs.run_session_expiry_smoke == 'true' && 'NO' || 'YES' }}" in workflow
     assert "promote_single_artifact" in workflow
     assert 'session["boundaries"]["sessionRegistryCapacityReused"] is True' in workflow
     assert 'session["boundaries"]["aggregationReservationReleased"] is True' in workflow
     assert 'session["boundaries"]["negativeInvariantStable"] is True' in workflow
+    assert 'result["userRead"]["accepted"] is True' in workflow
+    assert 'result["metadataOnlyAudit"]["accepted"] is True' in workflow
     assert "faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}" in workflow
     assert "group: faz24-platform-desktop-keycloak-test-mutation" in workflow
     assert "required ${name} artifact was not produced" in workflow
