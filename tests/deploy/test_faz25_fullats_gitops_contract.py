@@ -153,6 +153,37 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         )
         self.assertIn("tenant mapper post-update", self.keycloak)
 
+    def test_keycloak_tenant_attribute_is_managed_admin_only_before_user_writes(self):
+        profile_guard = self.keycloak.index(
+            "ensure_tenant_user_profile_attribute\n"
+        )
+        first_tenant_write = self.keycloak.index('set_tenant "$ADMIN_UID"')
+        self.assertLess(profile_guard, first_tenant_write)
+        self.assertIn('kc get users/profile -r "$REALM"', self.keycloak)
+        self.assertIn(
+            "/opt/keycloak/bin/kcadm.sh update users/profile",
+            self.keycloak,
+        )
+        self.assertIn('"permissions":{"view":["admin"],"edit":["admin"]}', self.keycloak)
+        self.assertIn('"multivalued":False', self.keycloak)
+        self.assertIn('if len(matches)>1:', self.keycloak)
+        self.assertIn('admin_config="/tmp/kcadm-ats-profile-$$-$RANDOM.config"', self.keycloak)
+        self.assertIn('profile_payload="/tmp/ats-user-profile-$$-$RANDOM.json"', self.keycloak)
+        self.assertIn("umask 077", self.keycloak)
+        self.assertIn('cat "$KEYCLOAK_ADMIN_PASSWORD_FILE"', self.keycloak)
+        self.assertIn('KC_CLI_PASSWORD', self.keycloak)
+        self.assertIn('KC_CLI_CLIENT_SECRET', self.keycloak)
+        self.assertIn('--config "$KCADM_CONFIG"', self.keycloak)
+        self.assertIn('trap \'docker exec "$KC" rm -f "$admin_config"', self.keycloak)
+        self.assertNotIn("admin_pass=", self.keycloak)
+        self.assertNotIn("--password", self.keycloak)
+        self.assertNotIn('--secret "$KCSEC"', self.keycloak)
+        self.assertIn('update "users/$1" -r "$REALM" -f - --merge', self.keycloak)
+        self.assertNotIn(
+            '-s "attributes.ats_tenant=[\\"$2\\"]"',
+            self.keycloak,
+        )
+
     def test_fullats_smoke_enforces_cross_tenant_write_and_exact_counter(self):
         self.assertIn('-X PUT --data-binary @"$T/other-s1"', self.fullats_smoke)
         self.assertIn('[ "$C" = 404 ]', self.fullats_smoke)
