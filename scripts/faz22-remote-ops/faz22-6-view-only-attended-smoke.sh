@@ -12,6 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 FINALIZER="${SCRIPT_DIR}/faz22-6-view-only-smoke-finalize.sh"
+BROWSER_DIAGNOSTIC_READER="${SCRIPT_DIR}/read-view-only-viewer-browser-diagnostic.sh"
 
 RBD_PRIMARY_OVERLAY="${RBD_PRIMARY_OVERLAY:-${REPO_ROOT}/kustomize/overlays/test}"
 RBD_BRIDGE_OVERLAY="${RBD_BRIDGE_OVERLAY:-${REPO_ROOT}/kustomize/overlays/test/activation/endpoint-admin-remote-bridge}"
@@ -1081,7 +1082,7 @@ run_browser_evidence() {
       || fail_smoke "browser-auth-route-preflight-script-required"
     return 0
   fi
-  local claims session_sha device_sha binding
+  local claims session_sha device_sha binding browser_failure_code
   claims="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
   session_sha="sha256:$(sha256_text "$SESSION_ID")"
   device_sha="sha256:$(sha256_text "$DEVICE_ID")"
@@ -1095,20 +1096,31 @@ run_browser_evidence() {
   if [[ "$(jq -r '[.[]] | unique | length' <<< "$binding")" != "4" ]]; then
     fail_smoke "browser-evidence-binding-hashes-not-distinct"
   fi
-  EVIDENCE_BINDING_JSON="$binding" \
-  VIEWER_URL="${VIEWER_PRODUCT_BASE_URL}/endpoint-admin/remote-access/sessions/${SESSION_ID}/view?streamId=${OPERATION_ID}" \
-  BROWSER_OPERATOR_USERNAME="$OPERATOR_USERNAME" \
-  BROWSER_OPERATOR_PASSWORD_FILE="${TMP_DIR}/${OPERATOR_USERNAME}.password" \
-  AUTH_ROUTE_PREFLIGHT_ONLY="$AUTH_ROUTE_PREFLIGHT_ONLY" \
-  EVIDENCE_OUTPUT="${EVIDENCE_DIR}/browser.json" \
-  SOURCE_REVISION="$SOURCE_REVISION" \
-  DLP_MASK_RECT_BPS="${DLP_MASK_RECT_BPS:-}" \
-  PILOT_SECONDS="$PRODUCT_PILOT_SECONDS" \
-  PLAYWRIGHT_PACKAGE_ROOT="$PLAYWRIGHT_PACKAGE_ROOT" \
-    node "$BROWSER_EVIDENCE_SCRIPT" \
-      > "${EVIDENCE_DIR}/browser-evidence.log" \
-      2> "${EVIDENCE_DIR}/browser-evidence.stderr" \
-    || fail_smoke "browser-product-evidence-failed"
+  if ! EVIDENCE_BINDING_JSON="$binding" \
+    VIEWER_URL="${VIEWER_PRODUCT_BASE_URL}/endpoint-admin/remote-access/sessions/${SESSION_ID}/view?streamId=${OPERATION_ID}" \
+    BROWSER_OPERATOR_USERNAME="$OPERATOR_USERNAME" \
+    BROWSER_OPERATOR_PASSWORD_FILE="${TMP_DIR}/${OPERATOR_USERNAME}.password" \
+    BROWSER_DIAGNOSTIC_OUTPUT="${EVIDENCE_DIR}/browser-diagnostic.json" \
+    AUTH_ROUTE_PREFLIGHT_ONLY="$AUTH_ROUTE_PREFLIGHT_ONLY" \
+    EVIDENCE_OUTPUT="${EVIDENCE_DIR}/browser.json" \
+    SOURCE_REVISION="$SOURCE_REVISION" \
+    DLP_MASK_RECT_BPS="${DLP_MASK_RECT_BPS:-}" \
+    PILOT_SECONDS="$PRODUCT_PILOT_SECONDS" \
+    PLAYWRIGHT_PACKAGE_ROOT="$PLAYWRIGHT_PACKAGE_ROOT" \
+      node "$BROWSER_EVIDENCE_SCRIPT" \
+        > "${EVIDENCE_DIR}/browser-evidence.log" \
+        2> "${EVIDENCE_DIR}/browser-evidence.stderr"; then
+    browser_failure_code="$(
+      "$BROWSER_DIAGNOSTIC_READER" \
+        "${EVIDENCE_DIR}/browser-diagnostic.json" \
+        "$SOURCE_REVISION" 2>/dev/null || true
+    )"
+    if [[ -n "$browser_failure_code" ]]; then
+      printf 'BROWSER_NO_GO code=%s\n' "$browser_failure_code" >&2
+    fi
+    # The verified code is diagnostic only; every browser failure remains fatal.
+    fail_smoke "browser-product-evidence-failed"
+  fi
   if [[ "$AUTH_ROUTE_PREFLIGHT_ONLY" == "1" ]]; then
     jq -e '
       .schemaVersion == "faz22.6.viewOnlyViewerAuthRoutePreflight.v1"
