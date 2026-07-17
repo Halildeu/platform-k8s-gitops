@@ -254,6 +254,29 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.assertNotIn(forbidden, serialized)
         self.assertNotIn("node.html", self.fullats_browser)
 
+    def test_fullats_browser_scans_recruiter_before_and_after_terminal_transition(self):
+        initial_scan = self.fullats_browser.index(
+            "await assertAxeClean(recruiterPage, 'recruiter-workspace-desktop')"
+        )
+        terminal_transition = self.fullats_browser.index(
+            "await waitVisible(reviewPanel.getByText('Mülakat planlaması bekleniyor.')"
+        )
+        terminal_scan = self.fullats_browser.index(
+            "await assertAxeClean(recruiterPage, "
+            "'recruiter-workspace-terminal-desktop')"
+        )
+        candidate_terminal_refresh = self.fullats_browser.index(
+            "const interviewStep = candidatePage.getByRole('listitem')"
+        )
+        self.assertLess(initial_scan, terminal_transition)
+        self.assertLess(terminal_transition, terminal_scan)
+        self.assertLess(terminal_scan, candidate_terminal_refresh)
+        self.assertIn(
+            "await assertNoHorizontalOverflow(recruiterPage, "
+            "'recruiter-workspace-terminal-desktop')",
+            self.fullats_browser,
+        )
+
     def test_pg_writer_role_is_admin_bootstrapped_without_runtime_createrole(self):
         self.assertIn("--roles-only", self.pg_bootstrap)
         self.assertIn("CREATE ROLE ats_governance_writer", self.pg_bootstrap)

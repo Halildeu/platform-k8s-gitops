@@ -274,6 +274,8 @@ try {
 
   await reviewPanel.getByRole('button', { name: 'Mülakat planlamasına al' }).click();
   await waitVisible(reviewPanel.getByText('Mülakat planlaması bekleniyor.'), 'interview pending transition');
+  await assertAxeClean(recruiterPage, 'recruiter-workspace-terminal-desktop');
+  await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-terminal-desktop');
   const interviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'Mülakat planlaması' });
   await refreshUntilVisible(refreshStatusButton, interviewStep.getByText('Şimdi'), 'candidate sees interview pending');
 
