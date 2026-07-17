@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-stage-outcome-v1.schema.json",
+  "title": "Cross-AI deployment stage outcome v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "stage",
+    "runId",
+    "runAttempt",
+    "runStartedAt",
+    "repositoryId",
+    "repository",
+    "environment",
+    "headSha",
+    "intentRef",
+    "sessionSha256",
+    "workflowBlobSha256",
+    "criticalJobsSha256",
+    "sourceArtifactName",
+    "sourceArchiveSha256",
+    "artifactSetSha256",
+    "rollbackPlanSha256",
+    "postDeployVerifierSha256",
+    "watchdogExpiresAt",
+    "conclusion",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "acik.cross-ai-deployment-stage-outcome.v1"
+    },
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "stage": {
+      "enum": ["apply", "browser-evidence", "compensating-rollback"]
+    },
+    "runId": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "runAttempt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "runStartedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "repositoryId": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "environment": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,120}$"
+    },
+    "headSha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "intentRef": {
+      "type": "string",
+      "pattern": "^refs/tags/cross-ai-intent/[0-9a-f-]{36}$"
+    },
+    "sessionSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "workflowBlobSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "criticalJobsSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "sourceArtifactName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,200}$"
+    },
+    "sourceArchiveSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "artifactSetSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "rollbackPlanSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "postDeployVerifierSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "watchdogExpiresAt": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "conclusion": {
+      "enum": ["success", "failure", "rolled-back"]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "apply"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "conclusion": {
+            "enum": ["success", "failure"]
+          },
+          "watchdogExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "browser-evidence"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "conclusion": {
+            "enum": ["success", "failure"]
+          },
+          "watchdogExpiresAt": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "compensating-rollback"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "conclusion": {
+            "enum": ["rolled-back", "failure"]
+          },
+          "watchdogExpiresAt": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}

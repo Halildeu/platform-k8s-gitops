@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-policy-v1.schema.json",
+  "title": "Cross-AI deployment protection policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policyId",
+    "phase",
+    "repositoryId",
+    "repository",
+    "environment",
+    "allowedApiOrigins",
+    "allowedInstallationIds",
+    "allowedDispatcherActorIds",
+    "allowedDeploymentClasses",
+    "maxGrantTtlMinutes",
+    "requiredCustomRuleAppIds",
+    "workflowStages",
+    "humanRequiredClasses"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "acik.cross-ai-deployment-policy.v1"
+    },
+    "policyId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{2,63}$"
+    },
+    "phase": {
+      "enum": ["observe", "dual-gate", "machine-only-nonprod"]
+    },
+    "repositoryId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "environment": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,120}$"
+    },
+    "allowedApiOrigins": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^https://[A-Za-z0-9.-]+(?::[1-9][0-9]{0,4})?$"
+      }
+    },
+    "allowedInstallationIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "allowedDispatcherActorIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "allowedDeploymentClasses": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["reversible-test", "reversible-nonprod"]
+      }
+    },
+    "maxGrantTtlMinutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 120
+    },
+    "requiredCustomRuleAppIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "workflowStages": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/stage"
+      }
+    },
+    "humanRequiredClasses": {
+      "type": "array",
+      "minItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "attended-consent",
+          "legal-dpo",
+          "named-authority",
+          "production-secret-owner",
+          "irreversible-production",
+          "production",
+          "break-glass"
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage",
+        "workflowPath",
+        "requiredRunsOnLabels",
+        "requireRunnerGroup"
+      ],
+      "properties": {
+        "stage": {
+          "enum": ["apply", "browser-evidence", "compensating-rollback"]
+        },
+        "workflowPath": {
+          "type": "string",
+          "pattern": "^[.]github/workflows/[A-Za-z0-9_.-]+[.]ya?ml$"
+        },
+        "requiredRunsOnLabels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "requireRunnerGroup": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

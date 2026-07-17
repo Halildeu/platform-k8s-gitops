@@ -76,6 +76,15 @@ path "kv/data/platform/endpoint-admin-remote-bridge-device-key" {
   capabilities = ["read"]
 }
 
+# --- Signed Cross-AI deployment protection receive-only observer (#2502) ---
+# The isolated test activation ExternalSecret reads exactly one webhook-secret
+# property from this dedicated path.  The observer receives no Vault token and
+# the ESO AppRole remains read-only; secret creation/rotation stays in the
+# owner-gated test Vault operator boundary.
+path "kv/data/platform/cross-ai-deployment-protection-test" {
+  capabilities = ["read"]
+}
+
 # --- Faz 24 #410/#1615 meeting-service (foundation deploy 2026-06-17) ---
 # ExternalSecret reads kv/platform/meeting-service with 2 keys (db_username,
 # db_password). Same flat-path convention as endpoint-admin/auth/report.

@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cross-ai-deployment-protection-observe
+  labels:
+    app.kubernetes.io/name: cross-ai-deployment-protection
+    app.kubernetes.io/component: github-app-observer
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cross-ai-deployment-protection
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8080
+          protocol: TCP
+  # Receive-only observe mode performs no GitHub/Vault/runtime network calls.
+  egress: []
