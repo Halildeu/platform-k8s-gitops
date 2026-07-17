@@ -54,6 +54,9 @@ data:
   # stream-key consumer'ın AUDIT_CONSUMER_STREAM_KEY'i (audit:events) ile birebir aynı.
   AUDIO_GATEWAY_AUDIT_REDIS_ENABLED: "true"
   AUDIO_GATEWAY_AUDIT_STREAM_KEY: "audit:events"
+  # Consent grant/revoke kanıtı consumer DB'ye kalıcı yazılmadan producer
+  # tarafından trim edilemez (#802). Backend bu değeri fail-fast doğrular.
+  AUDIO_GATEWAY_AUDIT_STREAM_MAX_LEN: "0"
   # --- Faz 24 direct-STT runtime wiring (TEST-enabled 2026-06-29; prod excludes audio-gateway until D30) ---
   # Backend #725/#753/#768 ships the direct-STT WebClient + mTLS + result-stream.
   # mTLS material now delivered via the audio-gateway-direct-stt-mtls Secret (ESO
