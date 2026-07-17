@@ -74,18 +74,19 @@ Same-provider exception: N/A
 # Exception reason: <≥10 karakter — sadece "Same-provider exception: user-explicit-approval" durumunda zorunlu>
 # Cross-AI exempt reason: <yalnız event-bound historical-docs allowlist için; body-only beyan geçmez>
 Absorb edilen düzeltmeler: <liste veya N/A (AGREE initial verdict)>
+Consultation base tip: <40-char exact target branch tip SHA>
 Consultation base: <40-char exact merge-base SHA>
 Consultation commit: <40-char exact PR HEAD SHA>
 Consultation scope: <64-char prepared scope SHA-256>
-Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
-MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
-Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
+Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
+MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
+Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
 ```
 
 **Field semantik** (Codex `019e2693` REVISE absorb):
 - `Implementer AI` / `Reviewer AI`: known-canonical providers `Claude` / `Codex` / `Gemini` / `Other` (alias tolerance: `Anthropic Claude`, `OpenAI Codex`, `Google Gemini`)
-- `Consultation base/commit/scope`: exact merge-base, PR head ve üç kanalın okuduğu hazırlanmış artifact SHA-256'sı.
-- `Claude/MiniMax/Codex receipt`: exact provider + requested/actual model + aynı base/head/scope + `AGREE` + UUID/GitHub evidence referansı + provider response content digest'i. Eksik, mismatched veya non-`AGREE` receipt fail-closed'dur.
+- `Consultation base tip/base/commit/scope`: exact target tip, merge-base, PR head ve üç kanalın okuduğu hazırlanmış artifact SHA-256'sı.
+- `Claude/MiniMax/Codex receipt`: exact provider + requested/actual model + aynı base-tip/base/head/scope + `AGREE` + ayrı GitHub issue-comment API referansı + fetched comment body digest'i. Comment içindeki provider response digest'i de gate tarafından yeniden hesaplanır. Eksik, mismatched veya non-`AGREE` receipt fail-closed'dur.
 - Implementer ile aynı provider'ın receipt'i zorunlu challenger'dır ancak bağımsız reviewer sayılmaz; `Implementer AI` / `Reviewer AI` provider ayrımı ayrıca korunur.
 - `Codex thread`: full UUID (kısa hash YASAK); `N/A` yalnız event-bound changed-files listesi tamamen dar historical-docs allowlist'indeyse geçer; governance değişiklikleri exempt değildir.
 - `Same-provider exception: user-explicit-approval` → zorunlu **`Exception reason:`** field (≥10 karakter, commit/comment evidence link)

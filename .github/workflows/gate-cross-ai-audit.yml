@@ -125,6 +125,8 @@ jobs:
         # restrict what the audit can inspect about the PR (Codex Q3 onay).
         # #898: `--changed-files-file` feeds the Dependabot exemption diff
         # allowlist gate; ignored for non-Dependabot PRs.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node scripts/ci/pr-cross-ai-audit.mjs \
             --event-path "$GITHUB_EVENT_PATH" \

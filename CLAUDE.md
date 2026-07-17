@@ -169,8 +169,8 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 - Sağlayıcı/model erişilemiyorsa dürüstçe `tracked_pending` bırak; yapay `PASS` üretme.
 
 **Çıktı**:
-- Her turda sağlayıcı + exact model + exact base/head/scope + verdict + evidence
-  ref + provider response digest'i kaydedilir.
+- Her turda sağlayıcı + exact model + exact base-tip/base/head/scope + verdict +
+  ayrı GitHub evidence-comment ref'i + fetched comment/response digest'leri kaydedilir.
 - Plan iterasyonları kullanıcıya gösterilmez; nihai consensus ve absorbe edilen
   somut bulgular kanıtlanır.
 

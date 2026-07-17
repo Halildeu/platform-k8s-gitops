@@ -11,7 +11,8 @@
 //
 // Usage:
 //   node scripts/ci/pr-cross-ai-audit.mjs --event-path "$GITHUB_EVENT_PATH"
-//   node scripts/ci/pr-cross-ai-audit.mjs --body-file <path> --head-sha <sha>
+//   node scripts/ci/pr-cross-ai-audit.mjs --body-file <path> \
+//     --base-tip-sha <sha> --head-sha <sha> --evidence-file <json-map>
 //
 // Exit codes:
 //   0 — PASS
@@ -19,14 +20,24 @@
 //   2 — INPUT ERROR
 
 import { readFileSync } from 'node:fs';
-import { argv, exit } from 'node:process';
+import { createHash } from 'node:crypto';
+import { argv, env, exit } from 'node:process';
 
 const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
 const VALID_VERDICTS = new Set(['agree', 'revise', 'partial', 'red']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
-const GITHUB_EVIDENCE_REF_RE = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:issues\/\d+|pull\/\d+|actions\/runs\/\d+(?:\/artifacts\/\d+)?)$/;
+const GITHUB_EVIDENCE_REF_RE = /^https:\/\/api\.github\.com\/repos\/Halildeu\/platform-k8s-gitops\/issues\/comments\/\d+$/;
+const RECEIPT_KEYS = new Set([
+  'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
+  'verdict', 'ref', 'sha256',
+]);
+const EVIDENCE_KEYS = [
+  'actual_model', 'base_sha', 'base_tip_sha', 'head_sha', 'provider',
+  'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
+  'verdict',
+];
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -187,6 +198,15 @@ function readChangedFiles(args) {
     .filter(Boolean);
 }
 
+function readEvidenceOverrides(args) {
+  if (!args['evidence-file']) return {};
+  const parsed = JSON.parse(readFileSync(args['evidence-file'], 'utf8'));
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('evidence-file object map olmalı');
+  }
+  return parsed;
+}
+
 function loadInput(args) {
   if (args['body-file']) {
     // Local test mode still requires explicit head metadata; exact-head
@@ -196,6 +216,7 @@ function loadInput(args) {
       prMeta: {
         headRef: '',
         headSha: args['head-sha'] ?? '',
+        baseSha: args['base-tip-sha'] ?? '',
         headRepo: '',
         baseRepo: '',
         actor: '',
@@ -212,6 +233,7 @@ function loadInput(args) {
       prMeta: {
         headRef: pr.head?.ref ?? '',
         headSha: pr.head?.sha ?? '',
+        baseSha: pr.base?.sha ?? '',
         headRepo: pr.head?.repo?.full_name ?? '',
         baseRepo: pr.base?.repo?.full_name ?? '',
         // `actor` = PR author (immutable once opened). `sender` = who
@@ -311,7 +333,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -346,16 +368,72 @@ function parseReceipt(value) {
   const parsed = {};
   for (const item of value.split(';')) {
     const separator = item.indexOf('=');
-    if (separator < 1) continue;
+    if (separator < 1) return null;
     const key = item.slice(0, separator).trim().toLowerCase();
     const val = item.slice(separator + 1).trim();
-    if (key && val) parsed[key] = val;
+    if (!RECEIPT_KEYS.has(key) || !val || Object.hasOwn(parsed, key)) return null;
+    parsed[key] = val;
   }
-  return parsed;
+  return Object.keys(parsed).length === RECEIPT_KEYS.size ? parsed : null;
 }
 
 function validEvidenceRef(value) {
-  return UUID_RE.test(value || '') || GITHUB_EVIDENCE_REF_RE.test(value || '');
+  return GITHUB_EVIDENCE_REF_RE.test(value || '');
+}
+
+function sha256Utf8(value) {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+async function loadEvidenceBody(ref, evidenceOverrides) {
+  if (Object.hasOwn(evidenceOverrides, ref)) {
+    return typeof evidenceOverrides[ref] === 'string' ? evidenceOverrides[ref] : null;
+  }
+  if (!validEvidenceRef(ref)) return null;
+  const headers = { Accept: 'application/vnd.github+json' };
+  const token = env.GITHUB_TOKEN || env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  try {
+    const response = await fetch(ref, {
+      headers,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return typeof payload?.body === 'string' ? payload.body : null;
+  } catch {
+    return null;
+  }
+}
+
+function evidenceMatches(body, receipt, expected, baseTip, base, head, scope) {
+  if (!body || sha256Utf8(body) !== receipt.sha256.toLowerCase()) return false;
+  let evidence;
+  try {
+    evidence = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  if (!evidence || Array.isArray(evidence) || typeof evidence !== 'object') return false;
+  const keys = Object.keys(evidence).sort();
+  if (keys.length !== EVIDENCE_KEYS.length || keys.some((key, index) => key !== EVIDENCE_KEYS[index])) {
+    return false;
+  }
+  return Boolean(
+    evidence.schema === 'cross-ai-provider-evidence/v1'
+    && evidence.provider === expected.provider
+    && evidence.requested_model === expected.model
+    && evidence.actual_model === expected.model
+    && evidence.base_tip_sha?.toLowerCase() === baseTip.toLowerCase()
+    && evidence.base_sha?.toLowerCase() === base.toLowerCase()
+    && evidence.head_sha?.toLowerCase() === head.toLowerCase()
+    && evidence.scope_sha256?.toLowerCase() === scope.toLowerCase()
+    && evidence.verdict === 'AGREE'
+    && typeof evidence.response === 'string'
+    && evidence.response.length > 0
+    && SHA256_RE.test(evidence.response_sha256 || '')
+    && sha256Utf8(evidence.response) === evidence.response_sha256.toLowerCase()
+  );
 }
 
 function docsOnlyExemption(fields, prMeta) {
@@ -377,15 +455,30 @@ function docsOnlyExemption(fields, prMeta) {
   };
 }
 
-function appendConsultationFindings(findings, fields, prMeta) {
+async function appendConsultationFindings(findings, fields, prMeta, evidenceOverrides) {
+  const baseTip = fields['consultation base tip'] || '';
   const base = fields['consultation base'] || '';
   const commit = fields['consultation commit'] || '';
   const scope = fields['consultation scope'] || '';
+  const validBaseTip = COMMIT_SHA_RE.test(baseTip);
+  const baseTipPresent = COMMIT_SHA_RE.test(prMeta?.baseSha || '');
+  const baseTipMatches = baseTipPresent && baseTip.toLowerCase() === prMeta.baseSha.toLowerCase();
   const validBase = COMMIT_SHA_RE.test(base);
   const validFormat = COMMIT_SHA_RE.test(commit);
   const headPresent = COMMIT_SHA_RE.test(prMeta?.headSha || '');
   const matchesHead = headPresent && commit.toLowerCase() === prMeta.headSha.toLowerCase();
   const validScope = SHA256_RE.test(scope);
+  findings.push({
+    check: 'consultation_base_tip_exact_event',
+    pass: validBaseTip && baseTipMatches,
+    detail: !validBaseTip
+      ? 'Consultation base tip 40-char git SHA değil'
+      : !baseTipPresent
+        ? 'PR base SHA metadata eksik; base binding fail-closed'
+        : baseTipMatches
+          ? `consultation base tip ${baseTip.slice(0, 12)} event ile eşleşiyor`
+          : `consultation base tip ${baseTip.slice(0, 12)} PR base ${prMeta.baseSha.slice(0, 12)} ile eşleşmiyor`,
+  });
   findings.push({
     check: 'consultation_base_format',
     pass: validBase,
@@ -408,13 +501,16 @@ function appendConsultationFindings(findings, fields, prMeta) {
     detail: validScope ? `consultation scope sha256 ${scope.slice(0, 12)} formatı geçerli` : 'Consultation scope 64-char SHA-256 değil',
   });
 
+  const refs = [];
   for (const [field, expected] of Object.entries(CONSULTATION_RECEIPTS)) {
     const receipt = parseReceipt(fields[field]);
-    const pass = Boolean(
+    if (receipt?.ref) refs.push(receipt.ref);
+    const shapePass = Boolean(
       receipt
       && receipt.provider?.toLowerCase() === expected.provider
       && receipt.requested === expected.model
       && receipt.actual === expected.model
+      && receipt.base_tip?.toLowerCase() === baseTip.toLowerCase()
       && receipt.base?.toLowerCase() === base.toLowerCase()
       && receipt.head?.toLowerCase() === commit.toLowerCase()
       && receipt.scope?.toLowerCase() === scope.toLowerCase()
@@ -422,17 +518,28 @@ function appendConsultationFindings(findings, fields, prMeta) {
       && validEvidenceRef(receipt.ref)
       && SHA256_RE.test(receipt.sha256 || '')
     );
+    const evidenceBody = shapePass
+      ? await loadEvidenceBody(receipt.ref, evidenceOverrides)
+      : null;
+    const pass = shapePass && evidenceMatches(
+      evidenceBody, receipt, expected, baseTip, base, commit, scope,
+    );
     findings.push({
       check: field.replaceAll(' ', '_'),
       pass,
       detail: pass
-        ? `${expected.provider}/${expected.model} base/head/scope + AGREE + content digest doğrulandı`
-        : `${field}: exact provider/model + base/head/scope + verdict=AGREE + UUID/GitHub ref + sha256 zorunlu`,
+        ? `${expected.provider}/${expected.model} fetched evidence + response digest + base/head/scope doğrulandı`
+        : `${field}: strict receipt + GitHub issue-comment evidence + matching body/response SHA-256 zorunlu`,
     });
   }
+  findings.push({
+    check: 'consultation_evidence_refs_unique',
+    pass: refs.length === 3 && new Set(refs).size === 3,
+    detail: "Üç provider receipt ref'i birbirinden farklı olmalıdır",
+  });
 }
 
-function audit(body, prMeta = null) {
+async function audit(body, prMeta = null, evidenceOverrides = {}) {
   const findings = [];
   const section = extractCrossAiSection(body);
   if (!section) {
@@ -460,6 +567,7 @@ function audit(body, prMeta = null) {
   const required = ['implementer ai', 'reviewer ai', 'codex thread', 'verdict'];
   if (!consultationExempt) {
     required.push(
+      'consultation base tip',
       'consultation base',
       'consultation commit',
       'consultation scope',
@@ -536,7 +644,7 @@ function audit(body, prMeta = null) {
   }
 
   if (!consultationExempt) {
-    appendConsultationFindings(findings, fields, prMeta);
+    await appendConsultationFindings(findings, fields, prMeta, evidenceOverrides);
   }
 
   // Check 4: Codex thread format — Codex `019e2693` MED-3 absorb
@@ -837,6 +945,7 @@ function report(findings) {
 // when ANY of its 6 gates fails), then automation prefix, then normal audit.
 const args = parseArgs();
 const { body, prMeta } = loadInput(args);
+const evidenceOverrides = readEvidenceOverrides(args);
 let findings;
 if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
   console.log(
@@ -851,7 +960,7 @@ if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
     );
     findings = auditAutomation(body, prMeta);
   } else {
-    findings = audit(body, prMeta);
+    findings = await audit(body, prMeta, evidenceOverrides);
   }
 }
 const ok = report(findings);

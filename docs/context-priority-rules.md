@@ -368,7 +368,8 @@ python3 scripts/ai/minimax_m3_review.py --help
 BASE_SHA="$(git merge-base origin/main HEAD)"
 HEAD_SHA="$(git rev-parse HEAD)"
 SCOPE_RECEIPT="$(python3 scripts/ai/prepare_cross_ai_scope.py \
-  --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA")"
+  --base-ref origin/main --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA")"
+BASE_TIP_SHA="$(printf '%s' "$SCOPE_RECEIPT" | jq -r .base_tip_sha)"
 SCOPE_PATH="$(printf '%s' "$SCOPE_RECEIPT" | jq -r .scope_path)"
 SCOPE_SHA256="$(printf '%s' "$SCOPE_RECEIPT" | jq -r .scope_sha256)"
 
@@ -390,16 +391,24 @@ codex exec --model gpt-5.6-sol \
 ```
 
 Ham `git show/git diff | provider` kalıbı canonical değildir. Hazırlayıcı,
+verilen base'in `--base-ref` için gerçek merge-base olduğunu doğrulayıp
 `BASE...HEAD` aralığının tamamını alır; gitleaks veya yüksek güvenli secret
-bulgusunda hiçbir provider çağrılmadan durur, email-shaped PII'yi redakte eder ve
+bulgusunda hiçbir provider çağrılmadan durur, email/UPN ve Türkiye mobil telefon
+biçimli PII'yi redakte eder ve
 üç kanalın okuyacağı aynı mode-0600 artifact için SHA-256 üretir. Artifact
 tamamlanınca yerel dosya silinir. Her push/yeni head scope'u hükümsüz kılar;
 hazırlama ve üç review yeni exact head için baştan çalıştırılır.
+Otomatik tarayıcının kapsamadığı isim veya serbest metinli kişisel veri varsa
+çağrı yapılmaz; scope ayrıca elle redakte edilip yeniden content-address edilir.
+Varsayılan 2 MB sınırı `--max-bytes` ile en çok 16 MB'a çıkarılabilir; sağlayıcı
+context sınırına sığmayan scope tek tek eksiltilmez, aynı sıralı chunk manifesti
+üç kanala da verilene kadar `tracked_pending` kalır.
 
 `scripts/ai/minimax_m3_review.py`, kurulu resmi bundled `llm-call` betiğini
 kullanan onaylı headless **transport**tur; kendi başına provider değildir.
 Prompt'u yalnız stdin'den alır, auth materialini yazdırmaz, trusted bundled
-provider adı + resmi `agent.minimax.io` origin'ini doğrular ve provider response
+dosyanın current-user ownership/no-group-world-write sınırını, transport
+digest'ini, provider adı + resmi `agent.minimax.io` origin'ini doğrular ve provider response
 modeli `minimax/MiniMax-M3` değilse fail-closed olur. Terminal ve tekil
 `VERDICT: AGREE|REVISE` ile P0/P1/P2 bölümlerini ayrıca zorlar. Geçici wrapper, model
 değiştiren proxy, UI veya exact provider/model kimliği üretmeyen taşıma yolu
@@ -438,19 +447,31 @@ provider-distinct alt sınırı korur. Zorunlu üç kanal ayrıca şu structured
 alanlarla aynı PR head SHA'sına bağlanır:
 
 ```yaml
+Consultation base tip: <40-char exact target branch tip SHA>
 Consultation base: <40-char exact merge-base SHA>
 Consultation commit: <40-char exact PR HEAD SHA>
 Consultation scope: <64-char prepared scope SHA-256>
-Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
-MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
-Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
+Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
+MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
+Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
 ```
 
-`gate-cross-ai-audit` normal PR'larda base/head/scope alanları ile her receipt'in
-aynı base/head/scope'a bağlı exact provider/model, `AGREE`, UUID/GitHub evidence
-ref'i ve content digest'ini fail-closed doğrular. Top-level verdict de yalnız
+Her ref'in GitHub issue comment gövdesi yalnız `cross-ai-provider-evidence/v1`
+JSON olur; exact provider/model, `base_tip_sha`, `base_sha`, `head_sha`,
+`scope_sha256`, `verdict`, tam `response` ve onun `response_sha256` alanlarını
+taşır. Üç comment ref'i farklı olmalıdır.
+
+```json
+{"schema":"cross-ai-provider-evidence/v1","provider":"anthropic|minimax|openai","requested_model":"<exact>","actual_model":"<provider-reported-exact>","base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
+```
+
+`gate-cross-ai-audit` normal PR'larda base tip'i event `pull_request.base.sha`,
+head'i event `pull_request.head.sha` ile karşılaştırır; her evidence comment'ini
+GitHub API'den fetch eder, comment body SHA-256 ve iç response SHA-256'yı yeniden
+hesaplar, sonra aynı base/head/scope'a bağlı exact provider/model ve `AGREE`
+alanlarını fail-closed doğrular. Top-level verdict de yalnız
 `AGREE` olabilir. PR body receipt'i provider'ın kriptografik imzası değildir;
-audit declaration + content-addressed provenance'dır. Kaynak CLI receipt'i ve
+fetched audit declaration + content-addressed operator provenance'dır. Kaynak CLI receipt'i ve
 referans verilen evidence korunmadan bu alan tek başına provider çağrısını
 kanıtlamaz veya insan kapısını ikame etmez.
 

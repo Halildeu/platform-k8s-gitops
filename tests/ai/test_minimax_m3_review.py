@@ -42,6 +42,11 @@ class VerdictParsingTests(unittest.TestCase):
     def test_rejects_missing_priority_sections(self) -> None:
         self.assert_rejected("İnceleme tamam.\nVERDICT: AGREE")
 
+    def test_rejects_priority_names_embedded_in_prose(self) -> None:
+        self.assert_rejected(
+            "Bu cevapta P0 ve P1 ile P2 bölümleri yoktur.\nVERDICT: AGREE"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

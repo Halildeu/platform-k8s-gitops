@@ -16,6 +16,7 @@
 //
 // Run: node tests/ci/test-cross-ai-automation.mjs   (exit 0 = all pass)
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -30,30 +31,55 @@ const BOT = 'github-actions[bot]';
 const APP_BOT = 'platform-gitops-automation[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
 const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
+const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
 const SCOPE_SHA256 = 'a'.repeat(64);
-const CLAUDE_RECEIPT_SHA256 = 'b'.repeat(64);
-const MINIMAX_RECEIPT_SHA256 = 'c'.repeat(64);
-const CODEX_RECEIPT_SHA256 = 'd'.repeat(64);
+
+const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
+const evidenceRef = (id) =>
+  `https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/${id}`;
+const evidenceBody = (provider, model, response) => JSON.stringify({
+  schema: 'cross-ai-provider-evidence/v1',
+  provider,
+  requested_model: model,
+  actual_model: model,
+  base_tip_sha: BASE_TIP_SHA,
+  base_sha: BASE_SHA,
+  head_sha: HEAD_SHA,
+  scope_sha256: SCOPE_SHA256,
+  verdict: 'AGREE',
+  response_sha256: sha256(response),
+  response,
+});
+const CLAUDE_REF = evidenceRef(1001);
+const MINIMAX_REF = evidenceRef(1002);
+const CODEX_REF = evidenceRef(1003);
+const EVIDENCE = {
+  [CLAUDE_REF]: evidenceBody('anthropic', 'claude-opus-4-8', 'P0 none; P1 none; P2 none; AGREE'),
+  [MINIMAX_REF]: evidenceBody('minimax', 'minimax/MiniMax-M3', 'P0 none; P1 none; P2 none; AGREE'),
+  [CODEX_REF]: evidenceBody('openai', 'gpt-5.6-sol', 'P0 none; P1 none; P2 none; AGREE'),
+};
 
 // Build the GitHub event payload and run the real script; return its exit code.
 // `changedFiles` is an optional array → written to a temp file and passed via
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, body, changedFiles }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, evidence = EVIDENCE }) {
   const event = {
     pull_request: {
       body,
       head: { ref: branch, sha: headSha, repo: { full_name: headRepo } },
-      base: { repo: { full_name: REPO } },
+      base: { sha: baseSha, repo: { full_name: REPO } },
       user: { login: actor },
     },
     sender: { login: sender ?? actor },
   };
   const f = join(dir, 'ev.json');
   writeFileSync(f, JSON.stringify(event));
-  const cmdArgs = [SCRIPT, '--event-path', f];
+  const evidenceFile = join(dir, 'evidence.json');
+  writeFileSync(evidenceFile, JSON.stringify(evidence));
+  const cmdArgs = [SCRIPT, '--event-path', f, '--evidence-file', evidenceFile];
   if (Array.isArray(changedFiles)) {
     const cf = join(dir, 'changed-files.txt');
     writeFileSync(cf, changedFiles.join('\n'));
@@ -77,12 +103,23 @@ const peerBody =
   `## Summary\nx\n\n## Cross-AI\n` +
   `Implementer AI: Claude\nReviewer AI: Codex\n` +
   `Codex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n` +
+  `Consultation base tip: ${BASE_TIP_SHA}\n` +
   `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
-  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=d020f82b-2b35-4bd5-a96b-a53243e7eafc; sha256=${CLAUDE_RECEIPT_SHA256}\n` +
-  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=https://github.com/Halildeu/platform-k8s-gitops/issues/2601; sha256=${MINIMAX_RECEIPT_SHA256}\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=019f71ba-4e5f-7390-8590-635b9a57fb38; sha256=${CODEX_RECEIPT_SHA256}\n`;
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF])}\n` +
+  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(EVIDENCE[MINIMAX_REF])}\n` +
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF])}\n`;
+
+const staleClaudeBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CLAUDE_REF]),
+  head_sha: 'f'.repeat(40),
+});
+const staleEvidence = { ...EVIDENCE, [CLAUDE_REF]: staleClaudeBody };
+const staleEvidencePeerBody = peerBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF]),
+  sha256(staleClaudeBody),
+);
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -146,13 +183,25 @@ const cases = [
       body: peerBody.replace('actual=minimax/MiniMax-M3', 'actual=minimax/MiniMax-M2.7') }, 1],
   ['normal PR + Claude non-AGREE receipt -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace('verdict=AGREE; ref=d020f82b', 'verdict=REVISE; ref=d020f82b') }, 1],
+      body: peerBody.replace(`verdict=AGREE; ref=${CLAUDE_REF}`, `verdict=REVISE; ref=${CLAUDE_REF}`) }, 1],
   ['normal PR + arbitrary receipt ref -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace('d020f82b-2b35-4bd5-a96b-a53243e7eafc', 'old-ref-123') }, 1],
+      body: peerBody.replace(CLAUDE_REF, 'old-ref-123') }, 1],
   ['normal PR + malformed receipt digest -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(CLAUDE_RECEIPT_SHA256, 'not-a-sha256') }, 1],
+      body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF]), 'not-a-sha256') }, 1],
+  ['normal PR + well-formed but wrong evidence body digest -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF]), 'f'.repeat(64)) }, 1],
+  ['normal PR + stale evidence internal head with matching body digest -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: staleEvidencePeerBody, evidence: staleEvidence }, 1],
+  ['normal PR + event base tip mismatch -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      baseSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody }, 1],
+  ['normal PR + receipt merge-base mismatch -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace(`base=${BASE_SHA}`, `base=${'e'.repeat(40)}`) }, 1],
   ['normal PR + receipt scope mismatch -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace(`scope=${SCOPE_SHA256}`, `scope=${'e'.repeat(64)}`) }, 1],

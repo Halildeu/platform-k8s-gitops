@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import NoReturn
@@ -47,11 +48,29 @@ def fail(code: str) -> NoReturn:
     raise SystemExit(1)
 
 
+def validate_local_trust_file(path: Path, error_code: str) -> Path:
+    try:
+        resolved_root = MAVIS_DATA_DIR.resolve(strict=True)
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(resolved_root)
+        metadata = resolved.stat()
+    except (OSError, ValueError):
+        fail(error_code)
+    if metadata.st_uid != os.getuid():
+        fail(f"{error_code}_owner")
+    if stat.S_IMODE(metadata.st_mode) & 0o022:
+        fail(f"{error_code}_writable")
+    return resolved
+
+
 def load_bundled_module():
     if not BUNDLED_SKILL.is_file():
         fail("bundled_llm_call_missing")
+    trusted_path = validate_local_trust_file(
+        BUNDLED_SKILL, "bundled_llm_call_untrusted"
+    )
     spec = importlib.util.spec_from_file_location(
-        "mavis_bundled_llm_call", BUNDLED_SKILL
+        "mavis_bundled_llm_call", trusted_path
     )
     if spec is None or spec.loader is None:
         fail("bundled_llm_call_unloadable")
@@ -61,8 +80,9 @@ def load_bundled_module():
 
 
 def load_access_token() -> str:
+    trusted_auth_file = validate_local_trust_file(AUTH_FILE, "mavis_auth_untrusted")
     try:
-        payload = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+        payload = json.loads(trusted_auth_file.read_text(encoding="utf-8"))
         token = payload["auth"]["accessToken"]
     except (OSError, KeyError, TypeError, json.JSONDecodeError):
         fail("mavis_auth_unavailable")
@@ -86,7 +106,11 @@ def parse_verdict(result: str) -> str:
     if not nonempty_lines or not VERDICT_RE.fullmatch(nonempty_lines[-1]):
         fail("provider_verdict_not_terminal")
     for priority in ("P0", "P1", "P2"):
-        if not re.search(rf"(?im)^.*\b{priority}\b", result):
+        heading = re.compile(
+            rf"(?im)^\s*(?:#{{1,6}}\s*)?(?:\*\*)?{priority}(?:\*\*)?"
+            r"(?:\s*[—:-].*)?\s*$"
+        )
+        if not heading.search(result):
             fail("provider_findings_sections_missing")
     return matches[0].upper()
 
@@ -112,8 +136,8 @@ def main() -> None:
     if args.head_sha and not COMMIT_SHA_RE.fullmatch(args.head_sha):
         fail("invalid_head_sha")
 
-    prompt = sys.stdin.read().strip()
-    if not prompt:
+    prompt = sys.stdin.read()
+    if not prompt.strip():
         fail("stdin_prompt_required")
     prompt_bytes = prompt.encode("utf-8")
     if len(prompt_bytes) > MAX_PROMPT_BYTES:
@@ -190,6 +214,8 @@ def main() -> None:
     if not result:
         fail("provider_response_empty")
     verdict = parse_verdict(result)
+    response_sha256 = hashlib.sha256(result.encode("utf-8")).hexdigest()
+    transport_sha256 = hashlib.sha256(BUNDLED_SKILL.read_bytes()).hexdigest()
 
     print(
         json.dumps(
@@ -206,6 +232,8 @@ def main() -> None:
                 "verdict": verdict,
                 "findings_present": True,
                 "transport": "mavis-bundled-llm-call",
+                "transport_sha256": transport_sha256,
+                "response_sha256": response_sha256,
                 "response": result,
             },
             ensure_ascii=False,
