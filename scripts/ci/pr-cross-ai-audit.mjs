@@ -24,6 +24,21 @@ import { argv, exit } from 'node:process';
 const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
 const VALID_VERDICTS = new Set(['agree', 'revise', 'partial', 'red']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
+const CONSULTATION_RECEIPTS = {
+  'claude receipt': {
+    provider: 'anthropic',
+    model: 'claude-opus-4-8',
+  },
+  'minimax receipt': {
+    provider: 'minimax',
+    model: 'minimax/MiniMax-M3',
+  },
+  'codex receipt': {
+    provider: 'openai',
+    model: 'gpt-5.6-sol',
+  },
+};
 
 // Codex `019e2693` MED-3 absorb: known-provider canonicalizer (R2 question response)
 const PROVIDER_ALIASES = {
@@ -179,6 +194,7 @@ function loadInput(args) {
       body: pr.body ?? '',
       prMeta: {
         headRef: pr.head?.ref ?? '',
+        headSha: pr.head?.sha ?? '',
         headRepo: pr.head?.repo?.full_name ?? '',
         baseRepo: pr.base?.repo?.full_name ?? '',
         // `actor` = PR author (immutable once opened). `sender` = who
@@ -278,7 +294,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation commit|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -308,7 +324,55 @@ function normalizeProvider(s) {
   return PROVIDER_ALIASES[cleaned] ?? cleaned;
 }
 
-function audit(body) {
+function parseReceipt(value) {
+  if (!value) return null;
+  const parsed = {};
+  for (const item of value.split(';')) {
+    const separator = item.indexOf('=');
+    if (separator < 1) continue;
+    const key = item.slice(0, separator).trim().toLowerCase();
+    const val = item.slice(separator + 1).trim();
+    if (key && val) parsed[key] = val;
+  }
+  return parsed;
+}
+
+function appendConsultationFindings(findings, fields, prMeta) {
+  const commit = fields['consultation commit'] || '';
+  const validFormat = COMMIT_SHA_RE.test(commit);
+  const matchesHead = !prMeta?.headSha || commit.toLowerCase() === prMeta.headSha.toLowerCase();
+  findings.push({
+    check: 'consultation_commit_exact_head',
+    pass: validFormat && matchesHead,
+    detail: !validFormat
+      ? 'Consultation commit 40-char git SHA değil'
+      : matchesHead
+        ? `consultation commit ${commit.slice(0, 12)} exact-head ile eşleşiyor`
+        : `consultation commit ${commit.slice(0, 12)} PR head ${prMeta.headSha.slice(0, 12)} ile eşleşmiyor`,
+  });
+
+  for (const [field, expected] of Object.entries(CONSULTATION_RECEIPTS)) {
+    const receipt = parseReceipt(fields[field]);
+    const pass = Boolean(
+      receipt
+      && receipt.provider?.toLowerCase() === expected.provider
+      && receipt.requested === expected.model
+      && receipt.actual === expected.model
+      && receipt.verdict?.toLowerCase() === 'agree'
+      && receipt.ref
+      && receipt.ref.length >= 8
+    );
+    findings.push({
+      check: field.replaceAll(' ', '_'),
+      pass,
+      detail: pass
+        ? `${expected.provider}/${expected.model} actual model + AGREE + receipt doğrulandı`
+        : `${field}: provider=${expected.provider}; requested=${expected.model}; actual=${expected.model}; verdict=AGREE; ref=<evidence> zorunlu`,
+    });
+  }
+}
+
+function audit(body, prMeta = null) {
   const findings = [];
   const section = extractCrossAiSection(body);
   if (!section) {
@@ -324,7 +388,11 @@ function audit(body) {
   const fields = extractFields(section);
 
   // Check 1: required fields present
+  const consultationExempt = (fields['codex thread'] || '').trim().toLowerCase() === 'n/a';
   const required = ['implementer ai', 'reviewer ai', 'codex thread', 'verdict'];
+  if (!consultationExempt) {
+    required.push('consultation commit', ...Object.keys(CONSULTATION_RECEIPTS));
+  }
   const missing = required.filter((k) => !fields[k]);
   if (missing.length > 0) {
     findings.push({
@@ -392,6 +460,10 @@ function audit(body) {
         detail: `Implementer "${impl}" ≠ Reviewer "${rev}"`,
       });
     }
+  }
+
+  if (!consultationExempt) {
+    appendConsultationFindings(findings, fields, prMeta);
   }
 
   // Check 4: Codex thread format — Codex `019e2693` MED-3 absorb
@@ -704,7 +776,7 @@ if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
     );
     findings = auditAutomation(body, prMeta);
   } else {
-    findings = audit(body);
+    findings = audit(body, prMeta);
   }
 }
 const ok = report(findings);

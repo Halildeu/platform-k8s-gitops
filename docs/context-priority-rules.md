@@ -336,6 +336,8 @@ Mavis bildirimi **yerine geçmez**:
 
 ---
 
+<a id="cross-ai-three-channel"></a>
+
 ## 11. Zorunlu Üç Kanallı Cross-AI İstişare
 
 Faz/plan/PR ikinci görüşü ile authz, kişisel veri, retention/silme, migration,
@@ -347,57 +349,95 @@ aynı exact scope veya commit üzerinde aşağıdaki üç headless kanalda incel
    **`minimax/MiniMax-M3`**.
 3. **OpenAI:** doğrudan Codex CLI ile **`gpt-5.6-sol`**.
 
-Cursor kullanım yolu bu kural setinden kaldırılmıştır. Cursor CLI, Cursor MCP,
-Cursor modeli, Cursor harness'i ve Cursor-routed modeller bu üç kanaldan biri
-olarak kullanılamaz. Bir sağlayıcının başka wrapper üzerinden çağrılması da yeni
-ve bağımsız sağlayıcı sayılmaz.
+Cursor kullanım yolu, kullanıcının 2026-07-17 tarihli doğrudan üç sağlayıcı
+kararıyla bu kural setinden kaldırılmıştır. Cursor CLI, Cursor MCP, Cursor modeli,
+Cursor harness'i ve Cursor-routed modeller bu üç kanaldan biri olarak
+kullanılamaz. Bir sağlayıcının başka wrapper üzerinden çağrılması yeni ve
+bağımsız sağlayıcı sayılmaz.
 
 ### 11.1 Headless çağrı ve model kimliği
 
 ```bash
-# Anthropic — exact Opus 4.8 kimliği çağrı öncesi/çıktıda doğrulanır
-claude -p 'REDACTED_GOREV' \
+# Kurulu flag/capability doğrulaması
+claude --version && claude --help
+codex --version && codex exec --help
+python3 scripts/ai/minimax_m3_review.py --help
+
+# Anthropic — redacted exact diff stdin'den verilir
+git show --format=fuller --stat --patch <EXACT_COMMIT> | \
+claude -p 'Supplied exact commit için adversarial review yap.' \
   --model claude-opus-4-8 \
   --permission-mode plan --tools '' \
   --output-format json --no-session-persistence
 
-# OpenAI — exact Codex 5.6 SOL kimliği çağrı öncesi/çıktıda doğrulanır
+# MiniMax — bundled llm-call üstündeki repo-owned receipt transport
+git show --format=fuller --stat --patch <EXACT_COMMIT> | \
+python3 scripts/ai/minimax_m3_review.py
+
+# OpenAI — redacted exact diff stdin'den verilir
+git show --format=fuller --stat --patch <EXACT_COMMIT> | \
 codex exec --model gpt-5.6-sol \
   --sandbox read-only --ephemeral \
-  -C <ABSOLUTE_WORKTREE> 'REDACTED_GOREV'
+  -C <ABSOLUTE_WORKTREE> 'Supplied exact commit için adversarial review yap.'
 ```
 
-MiniMax çağrısı kurulu paketin resmi bundled `llm-call` headless provider
-betiğinden yapılır; model sonucu `minimax/MiniMax-M3` olmalıdır. Geçici wrapper
-yolu canonical değildir: her oturumda kurulu paket/capability bulunur ve
-doğrulanır.
+`scripts/ai/minimax_m3_review.py`, kurulu resmi bundled `llm-call` betiğini
+kullanan onaylı headless **transport**tur; kendi başına provider değildir.
+Prompt'u yalnız stdin'den alır, auth materialini yazdırmaz ve provider response
+modeli `minimax/MiniMax-M3` değilse fail-closed olur. Geçici wrapper, model
+değiştiren proxy, UI veya exact provider/model kimliği üretmeyen taşıma yolu
+canonical değildir.
 
 Model slug'ı hafızadan varsayılmaz. CLI `exit=0` olsa bile boş çıktı, auth/kota
 metni, model fallback'i veya model kimliği bulunmayan yanıt gerçek review
-değildir. Her turda sağlayıcı, exact model, incelenen commit/scope ve gerçek
-çıktıdaki `modelUsage` veya eşdeğer kimlik kaydedilir. Exact model yoksa kanal
-`tracked_pending` kalır; başka model, wrapper, uygulama penceresi veya sahte
-`PASS` ile ikame edilmez.
+değildir. Claude JSON `modelUsage`, MiniMax receipt JSON
+`provider/requested_model/actual_model`, Codex başlangıç receipt'i ise
+`provider/model/session id` alanlarını kanıtlar. Her turda provider,
+`requested_model`, provider-reported `actual_model`, exact commit/scope,
+`VERDICT: AGREE|REVISE`, somut P0/P1/P2 bulguları ve receipt referansı kaydedilir.
+Bu asgari yapıyı taşımayan özet/belirsiz metin `tracked_pending` sayılır.
 
 ### 11.2 Mutabakat ve bağımsızlık
 
 - İlk `REVISE` bulguları kod/kanıtla doğrulanır ve geçerli olanlar absorbe edilir.
-- Düzeltmeden sonra aynı exact head üç kanala yeniden verilir; somut `AGREE`
-  veya gerekçeli kalıcı ayrışma oluşana kadar ping-pong sürer.
-- Uygulayıcı OpenAI/Codex ise üçüncü Codex 5.6 SOL turu zorunlu adversarial
-  challenger'dır fakat bağımsız-provider onayı değildir; provider bağımsızlığı
-  Claude + MiniMax ile sağlanır.
+- Düzeltmeden sonra aynı exact head üç kanala yeniden verilir; her üç kanal
+  doğrulanmış `AGREE` verene kadar ping-pong sürer.
+- Implementer ile aynı sağlayıcının zorunlu kanalı adversarial challenger olarak
+  tutulur fakat bağımsız-provider onayı sayılmaz. Bağımsızlık her durumda
+  implementer dışındaki diğer iki doğrudan sağlayıcıdan gelir.
+- `tracked_pending`, `REVISE`, provider/model uyuşmazlığı veya çözümsüz ayrışma
+  `consensus=false` demektir; merge, deploy, faz kapanışı veya merge-readiness
+  yetkisi vermez. Yalnız isimli kullanıcı/owner exact gerekçe + evidence ile
+  istisna kararı verebilir; agent ayrışmayı kendi kendine aşamaz.
 - AI mutabakatı test, CI, canlı ortam, tarayıcı smoke, board claim, protected
   Environment reviewer, gerçek kullanıcı rızası veya hukuk/secret-owner
   kapılarının yerine geçmez.
 
-### 11.3 Redaction ve süreç sınırı
+### 11.3 PR receipt ve gate eşlemesi
+
+PR `## Cross-AI` bölümündeki `Implementer AI` / `Reviewer AI` alanları mevcut
+provider-distinct alt sınırı korur. Zorunlu üç kanal ayrıca şu structured
+alanlarla aynı PR head SHA'sına bağlanır:
+
+```yaml
+Consultation commit: <40-char exact PR HEAD SHA>
+Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; verdict=AGREE; ref=<session-or-evidence>
+MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; verdict=AGREE; ref=<session-or-evidence>
+Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; verdict=AGREE; ref=<session-or-evidence>
+```
+
+`gate-cross-ai-audit` normal PR'larda bu dört alanı fail-closed doğrular; commit
+PR head SHA ile aynı değilse, üç receipt'ten biri eksik/uyuşmaz/`AGREE` değilse
+kapı geçmez. Mevcut açık `Cross-AI exempt reason` yolu yalnız gerçekten exempt
+otomasyon/docs sınıfında kalır; yüksek etkili karar için kullanılamaz.
+
+### 11.4 Redaction ve süreç sınırı
 
 Prompt, argüman ve receipt içine secret, JWT, refresh token, raw bearer, webhook
 URL, cookie, OAuth client secret, private/signing/HMAC key, admin credential veya
 kullanıcı PII yazılmaz. Yalnız redacted görev özeti ile repo içi evidence path,
 issue veya PR referansı verilir. Credential taşıyan süreçlerin komut satırı
-`ps`/`pgrep` ile dump edilmez. İstişare hiçbir AI uygulama penceresinden
+ve argv'si `ps`/`pgrep` veya eşdeğer araçla dump edilmez. İstişare hiçbir AI uygulama penceresinden
 yürütülmez; CLI/daemon hazır değilse UI fallback yapılmaz.
 
 ### Detay

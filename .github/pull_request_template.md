@@ -74,11 +74,17 @@ Same-provider exception: N/A
 # Exception reason: <≥10 karakter — sadece "Same-provider exception: user-explicit-approval" durumunda zorunlu>
 # Cross-AI exempt reason: <≥10 karakter — sadece "Codex thread: N/A" durumunda zorunlu, örn. "docs-only handoff PR, no code change">
 Absorb edilen düzeltmeler: <liste veya N/A (AGREE initial verdict)>
+Consultation commit: <40-char exact PR HEAD SHA>
+Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; verdict=AGREE; ref=<session-or-evidence>
+MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; verdict=AGREE; ref=<session-or-evidence>
+Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; verdict=AGREE; ref=<session-or-evidence>
 ```
 
 **Field semantik** (Codex `019e2693` REVISE absorb):
 - `Implementer AI` / `Reviewer AI`: known-canonical providers `Claude` / `Codex` / `Gemini` / `Other` (alias tolerance: `Anthropic Claude`, `OpenAI Codex`, `Google Gemini`)
-- Cursor CLI gate katılımcısıysa ilgili rol `Other` olur ve `Verdict reason` içinde `Channel=Cursor CLI; Model=<LIVE_MODEL_ID>; direct-provider-CLI=false` yazılır. Provider ayrımı kanıtlı değilse Cursor yalnız supplemental review'dur; gerçek gate reviewer alanı korunur ve Cursor bulguları `Absorb edilen düzeltmeler` altında kaydedilir.
+- `Consultation commit`: PR'ın exact 40-karakter head SHA'sı; üç receipt aynı head'i incelemelidir.
+- `Claude/MiniMax/Codex receipt`: exact provider + requested/actual model + `AGREE` + denetlenebilir session/evidence referansı. Eksik, mismatched veya non-`AGREE` receipt fail-closed'dur.
+- Implementer ile aynı provider'ın receipt'i zorunlu challenger'dır ancak bağımsız reviewer sayılmaz; `Implementer AI` / `Reviewer AI` provider ayrımı ayrıca korunur.
 - `Codex thread`: full UUID (kısa hash YASAK); `N/A` sadece **`Cross-AI exempt reason:`** field dolu ise (docs-only/governance exempt durumlarda)
 - `Same-provider exception: user-explicit-approval` → zorunlu **`Exception reason:`** field (≥10 karakter, commit/comment evidence link)
 - `-` alias YASAK; explicit `N/A` + reason field zorunlu

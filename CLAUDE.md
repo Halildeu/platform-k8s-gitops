@@ -85,13 +85,16 @@ Cursor CLI/MCP/model/harness veya Cursor-routed model bu zincirde kullanılmaz.
 - Her çağrıda exact model kimliği canlı çıktıdan doğrulanır; model adı hafızadan uydurulmaz.
 - Auth/kota/fallback/boş çıktı gerçek review değildir ve kanal `tracked_pending` kalır.
 - `REVISE -> düzeltme -> exact-head yeniden review -> AGREE` zinciri kaydedilir.
-- Uygulayıcı OpenAI ise Codex 5.6 SOL zorunlu challenger'dır ama bağımsız-provider
-  onayı değildir; bağımsızlık Claude + MiniMax ile sağlanır.
+- Implementer ile aynı sağlayıcının kanalı challenger olarak kalır ama bağımsız
+  onay sayılmaz; bağımsızlık diğer iki direct-provider kanalından gelir.
+- Üç doğrulanmış `AGREE` yoksa consensus yoktur; `tracked_pending`, `REVISE`,
+  model/provider uyuşmazlığı veya çözümsüz ayrışma fail-closed kalır ve yalnız
+  isimli kullanıcı/owner gerekçeli evidence ile istisna verebilir.
 - Üçlü AI görüşü test/CI/live evidence/browser smoke/human gate yerine geçmez.
 - Secret, PII veya raw credential prompt/argümana konmaz.
 
 Canonical çağrı, attribution ve failure semantiği:
-[docs/context-priority-rules.md §11](./docs/context-priority-rules.md#11-zorunlu-üç-kanallı-cross-ai-istişare).
+[docs/context-priority-rules.md §11](./docs/context-priority-rules.md#cross-ai-three-channel).
 
 ### 1. No Closure Language
 
@@ -155,7 +158,8 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
   zincirine danış.
 - Cursor veya Cursor-routed model kullanma.
 - Üç kanalın geçerli bulgularını absorb et; `REVISE` sonrası exact-head yeniden
-  review ile `AGREE` veya gerekçeli kalıcı ayrışma üret.
+  review ile üç doğrulanmış `AGREE` üret. Kalıcı ayrışma `consensus=false` ve
+  fail-closed'dur; kendiliğinden karar/deploy/merge yetkisi vermez.
 - Devredilebilir engineering kararında mutabakatı uygula; gerçek human gate
   istisnalarını AI kararıyla ikame etme.
 - Sağlayıcı/model erişilemiyorsa dürüstçe `tracked_pending` bırak; yapay `PASS` üretme.

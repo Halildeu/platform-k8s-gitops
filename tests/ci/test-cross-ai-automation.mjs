@@ -29,17 +29,18 @@ const BOT = 'github-actions[bot]';
 // (Codex 019e4048 Q2 — per-prefix actor contract).
 const APP_BOT = 'platform-gitops-automation[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
+const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
 
 // Build the GitHub event payload and run the real script; return its exit code.
 // `changedFiles` is an optional array → written to a temp file and passed via
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, body, changedFiles }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, body, changedFiles }) {
   const event = {
     pull_request: {
       body,
-      head: { ref: branch, repo: { full_name: headRepo } },
+      head: { ref: branch, sha: headSha, repo: { full_name: headRepo } },
       base: { repo: { full_name: REPO } },
       user: { login: actor },
     },
@@ -70,7 +71,11 @@ const autoBody = (src) =>
 const peerBody =
   `## Summary\nx\n\n## Cross-AI\n` +
   `Implementer AI: Claude\nReviewer AI: Codex\n` +
-  `Codex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n`;
+  `Codex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n` +
+  `Consultation commit: ${HEAD_SHA}\n` +
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; verdict=AGREE; ref=claude-session-123\n` +
+  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; verdict=AGREE; ref=minimax-receipt-123\n` +
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; verdict=AGREE; ref=codex-session-123\n`;
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -123,6 +128,21 @@ const cases = [
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, headRepo: 'mallory/platform-k8s-gitops', body: autoBody(LEDGER) }, 1],
   ['normal PR + valid peer review -> normal audit pass',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody }, 0],
+  ['normal PR + missing three-channel receipts -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n' }, 1],
+  ['normal PR + receipt commit differs from PR head -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      headSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody }, 1],
+  ['normal PR + MiniMax actual-model mismatch -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('actual=minimax/MiniMax-M3', 'actual=minimax/MiniMax-M2.7') }, 1],
+  ['normal PR + Claude non-AGREE receipt -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('actual=claude-opus-4-8; verdict=AGREE', 'actual=claude-opus-4-8; verdict=REVISE') }, 1],
+  ['explicit docs-only exemption keeps existing N/A path without fake receipts',
+    { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: N/A\nVerdict: AGREE\nCross-AI exempt reason: docs-only historical handoff with no code or governance delta\n' }, 0],
   ['normal PR + no Cross-AI section -> fail',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: '## Summary\nno cross-ai here\n' }, 1],
 
