@@ -265,8 +265,15 @@ images:
     # legacy fallback + dual-write window below until #2360 backfill and desktop
     # smoke prove both an existing and a newly-created meeting. Image build run
     # 29210095540; prod remains unchanged.
+    # 2026-07-17 recording-lifecycle rollout: platform-backend#854/#855 adds
+    # the tenant-scoped, idempotent desktop start/finish lifecycle contract,
+    # canonical meeting-session persistence and Flyway V6 constraints.
+    # platform-backend#856/#857 restores the meeting-service image build by
+    # installing common-meeting-events in its Docker build layer. Image run
+    # 29582844787 pushed tag sha-2c77346 and the immutable digest below.
+    # Runtime acceptance is tracked by gitops#2587/#2568; prod remains unchanged.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:0064ae72d2776ad3c772ae3e075240e4c20a429cad5541b47545d22844594424
+    digest: sha256:b192903b94b66c915380360cc20be623bfb32ada6ac2a5574b5567d51369da69
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
