@@ -96,6 +96,38 @@ def test_collect_classifies_exact_request_without_copying_raw_logs(tmp_path):
     assert evidence["boundaries"]["rawLogsIncluded"] is False
 
 
+def test_collect_classifies_unmeterable_audio_before_redis(tmp_path):
+    collector = _load()
+    smoke = tmp_path / "smoke.json"
+    output = tmp_path / "diagnostic.json"
+    _smoke(smoke)
+
+    raw_line = (
+        "Direct-STT capacity unmeterable (non_pcm16_format); rejecting chunk "
+        "sessionId=SES-test-1 chunkSeq=0 correlationId=faz24-corr-1"
+    )
+
+    evidence = collector.collect(
+        smoke,
+        output,
+        context="k3d-test",
+        namespace="platform-test",
+        deployment="audio-gateway",
+        since="10m",
+        command_runner=lambda _argv, _timeout: collector.CommandResult(0, raw_line, ""),
+    )
+
+    assert evidence["status"] == "classified"
+    assert evidence["diagnostic"] == {
+        "classification": "direct-stt-capacity-unmeterable",
+        "exceptionClass": None,
+        "matchedCount": 1,
+        "matchBasis": "sessionId",
+        "correlationMatched": True,
+        "logQuery": "success",
+    }
+
+
 def test_collect_ignores_other_request_and_reports_inconclusive(tmp_path):
     collector = _load()
     smoke = tmp_path / "smoke.json"

@@ -251,7 +251,10 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "RUN_EXTERNAL_SMOKE: \"1\"" in workflow
     assert "Prepare privacy-safe smoke chunk fixture" in workflow
     assert "CHUNK_FILE_INPUT: ${{ inputs.chunk_file }}" in workflow
-    assert 'chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.wav"' in workflow
+    assert 'chunk_file="${RUNNER_TEMP}/faz24-synthetic-smoke-${GITHUB_RUN_ID}.pcm"' in workflow
+    assert 'test "${AUDIO_FORMAT_INPUT}" = "PCM16"' in workflow
+    assert 'fixture_source="input-wav-converted"' in workflow
+    assert 'fixture_source="generated-pcm16"' in workflow
     assert "contains no human speech" in workflow
     assert "chunk_fixture_source=${fixture_source}" in workflow
     assert "CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}" in workflow

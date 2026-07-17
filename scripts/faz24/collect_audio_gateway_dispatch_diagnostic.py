@@ -29,6 +29,8 @@ CLASSIFIERS = (
     ("redis-stream-capacity", "Redis stream at capacity; rejecting chunk QueueFull"),
     ("redis-consumer-lag", "Consumer group lag beyond threshold; rejecting chunk QueueFull"),
     ("redis-consumer-idle", "Consumer not draining (oldest pending idle beyond threshold); QueueFull"),
+    ("direct-stt-audio-bound", "Direct-STT audio bound reached; rejecting chunk"),
+    ("direct-stt-capacity-unmeterable", "Direct-STT capacity unmeterable"),
     ("direct-stt-saturated", "Direct-STT forward dropped (in-flight saturated"),
     ("direct-stt-copy", "Direct-STT byte copy failed"),
     ("direct-stt-schedule", "Direct-STT schedule rejected"),
