@@ -38,7 +38,16 @@ def run(tmp_path: Path, action: str, mappers: list[dict], **extra_env: str):
         )
         curl.chmod(0o755)
     docker = bin_dir / "docker"
-    docker.write_text("#!/usr/bin/env bash\nexit 1\n")
+    docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [[ \"${1:-}\" == exec && \"${2:-}\" == platform-kc-test "
+        "&& -n \"${FAKE_DOCKER_KC_PASSWORD+x}\" ]]; then\n"
+        "  printf '%s' \"${FAKE_DOCKER_KC_PASSWORD}\"\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n"
+    )
     docker.chmod(0o755)
     state = tmp_path / "state.json"
     state.write_text(json.dumps({"mappers": mappers}))
@@ -165,6 +174,37 @@ def test_non_test_target_is_rejected_before_admin_access(tmp_path: Path):
     assert result.returncode == 2
     assert summary is None
     assert log == ""
+
+
+def test_admin_password_line_breaks_are_normalized(tmp_path: Path):
+    result, _, summary, _ = run(
+        tmp_path,
+        "--check",
+        [exact_mapper()],
+        KC_ADMIN_PASSWORD="test-only-admin-password\r\n",
+    )
+    assert result.returncode == 0, result.stderr
+    assert summary["result"] == "converged"
+
+    docker_result, _, docker_summary, _ = run(
+        tmp_path / "docker-secret",
+        "--check",
+        [exact_mapper()],
+        KC_ADMIN_PASSWORD="",
+        FAKE_DOCKER_KC_PASSWORD="test-only-admin-password\r\n",
+    )
+    assert docker_result.returncode == 0, docker_result.stderr
+    assert docker_summary["result"] == "converged"
+
+    empty_result, _, empty_summary, empty_log = run(
+        tmp_path / "empty-after-normalize",
+        "--check",
+        [exact_mapper()],
+        KC_ADMIN_PASSWORD="\r\n",
+    )
+    assert empty_result.returncode == 1
+    assert empty_summary["result"] == "failed:keycloak-admin-password-source-missing"
+    assert empty_log == ""
 
 
 def test_workflow_keeps_test_and_secret_boundaries():
