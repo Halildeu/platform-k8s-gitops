@@ -30,6 +30,10 @@ class VerdictParsingTests(unittest.TestCase):
         response = "# P0\nYok.\n# P1\nYok.\n# P2\nYok.\nVERDICT: AGREE"
         self.assertEqual(MODULE.parse_verdict(response), "AGREE")
 
+    def test_accepts_supported_plain_bold_and_heading_section_variants(self) -> None:
+        response = "P0\nNone\n**P1**\nNone\n## P2\nNone\nVERDICT: AGREE"
+        self.assertEqual(MODULE.parse_verdict(response), "AGREE")
+
     def test_rejects_missing_verdict(self) -> None:
         self.assert_rejected("P0 yok\nP1 yok\nP2 yok")
 

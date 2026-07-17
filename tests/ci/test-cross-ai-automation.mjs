@@ -208,6 +208,8 @@ const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
 const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
 const PRIMARY_OVERLAY = 'kustomize/overlays/test/kustomization.yaml';
+const VERIFIED_LEDGER = `release-candidates/platform-backend/${'a'.repeat(40)}.json`;
+const PROD_OVERLAY = 'kustomize/overlays/prod/kustomization.yaml';
 
 // #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE).
 // Dependabot doesn't fill the Cross-AI body fields; the exemption is gated by
@@ -224,9 +226,9 @@ const cases = [
   ['valid frontend desired-state PR (auto-test-frontend, App-bot)',
     { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid auto-verified PR (bot)',
-    { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER) }, 0],
+    { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER] }, 0],
   ['valid auto-promotion PR (App-bot)',
-    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN) }, 0],
+    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN), changedFiles: [PROD_OVERLAY] }, 0],
   ['#827 PR-B: auto-test-overlay + github-actions[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-test-overlay/x', actor: BOT, sender: BOT, body: autoBody(WF) }, 1],
   ['#2295: auto-test-frontend + github-actions[bot] (wrong bot for prefix) -> blocked',
@@ -241,6 +243,14 @@ const cases = [
     { branch: 'auto-verified/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(LEDGER) }, 1],
   ['#842: auto-promotion + github-actions[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-promotion/x', actor: BOT, sender: BOT, body: autoBody(SCAN) }, 1],
+  ['auto-verified touching governance outside its ledger family -> blocked',
+    { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER, 'AGENTS.md'] }, 1],
+  ['auto-verified without changed-file evidence -> blocked',
+    { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(LEDGER) }, 1],
+  ['auto-promotion touching a workflow outside prod kustomization -> blocked',
+    { branch: 'auto-promotion/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN), changedFiles: [PROD_OVERLAY, '.github/workflows/gate-cross-ai-audit.yml'] }, 1],
+  ['auto-promotion without changed-file evidence -> blocked',
+    { branch: 'auto-promotion/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN) }, 1],
   ['App-bot-opened auto-PR + HUMAN sender (synchronize bypass) -> blocked',
     { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: 'mallory', body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 1],
   ['human-opened auto-* branch -> blocked',

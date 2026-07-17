@@ -127,18 +127,26 @@ const AUTOMATION_PREFIX_ACTORS = {
   'auto-verified/': new Set(['github-actions[bot]']),
 };
 
-// Desired-state sync bots are further bounded to the exact files their
-// deterministic writers own. A compromised bot identity therefore cannot use
-// the cross-AI exemption to carry an unrelated source or workflow change.
+// Every automation bot is further bounded to the exact file family its
+// deterministic writer owns. A compromised bot identity therefore cannot use
+// the cross-AI exemption to carry an unrelated source, workflow, or governance
+// change. Regexes are anchored and deliberately do not accept subdirectories
+// unless the writer's contract explicitly owns them.
 const AUTOMATION_DIFF_ALLOWLIST = {
-  'auto-test-overlay/': new Set([
-    'kustomize/overlays/test/kustomization.yaml',
-    'kustomize/overlays/test/activation/endpoint-admin-remote-bridge/kustomization.yaml',
-    'kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/kustomization.yaml',
-  ]),
-  'auto-test-frontend/': new Set([
-    'kustomize/overlays/test/kustomization.yaml',
-  ]),
+  'auto-test-overlay/': [
+    /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+    /^kustomize\/overlays\/test\/activation\/endpoint-admin-remote-bridge\/kustomization\.yaml$/,
+    /^kustomize\/overlays\/test\/activation\/endpoint-admin-remote-bridge-device-key\/kustomization\.yaml$/,
+  ],
+  'auto-test-frontend/': [
+    /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+  ],
+  'auto-verified/': [
+    /^release-candidates\/[A-Za-z0-9._-]+\/[0-9a-f]{40}\.json$/,
+  ],
+  'auto-promotion/': [
+    /^kustomize\/overlays\/prod\/kustomization\.yaml$/,
+  ],
 };
 
 function matchedAutomationPrefix(headRef) {
@@ -845,7 +853,7 @@ function auditAutomation(body, prMeta) {
         : `PR author "${prMeta.actor}" / event sender "${prMeta.sender}" — both must be the automation bot bound to "${prefix}" (${[...allowedActors].join(', ') || 'none'}); denied`,
   });
 
-  // Desired-state automation prefixes have an exact changed-file allowlist.
+  // Every automation prefix has an anchored changed-file allowlist.
   // Missing file metadata fails closed; gate-cross-ai-audit.yml always injects
   // the paginated list from the trusted base workflow.
   const diffAllowlist = AUTOMATION_DIFF_ALLOWLIST[prefix];
@@ -853,7 +861,9 @@ function auditAutomation(body, prMeta) {
     const filesPresent =
       Array.isArray(prMeta.changedFiles) && prMeta.changedFiles.length > 0;
     const badPath = filesPresent
-      ? prMeta.changedFiles.find((file) => !diffAllowlist.has(file))
+      ? prMeta.changedFiles.find(
+        (file) => !diffAllowlist.some((pattern) => pattern.test(file)),
+      )
       : null;
     findings.push({
       check: 'automation_changed_files_present',
