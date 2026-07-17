@@ -413,6 +413,10 @@ modeli `minimax/MiniMax-M3` değilse fail-closed olur. Terminal ve tekil
 `VERDICT: AGREE|REVISE` ile P0/P1/P2 bölümlerini ayrıca zorlar. Geçici wrapper, model
 değiştiren proxy, UI veya exact provider/model kimliği üretmeyen taşıma yolu
 canonical değildir.
+`transport_sha256` denetim kaydıdır; published vendor signature/allowlist olmadığı
+için provider imzası sayılmaz. Current-user owned `~/.mavis` bundled install
+yerel supply-chain trust boundary'sidir ve başka `MAVIS_HOME`/data-dir override'ı
+kabul edilmez.
 
 Model slug'ı hafızadan varsayılmaz. CLI `exit=0` olsa bile boş çıktı, auth/kota
 metni, model fallback'i veya model kimliği bulunmayan yanıt gerçek review
@@ -487,6 +491,9 @@ Sağlayıcılar kullanıcı-CLI yanıtlarına doğrulanabilir imza sunmadığı 
 provider kriptografik attestation iddia etmez. Kaynak CLI receipt'i ve
 referans verilen evidence korunmadan bu alan tek başına provider çağrısını
 kanıtlamaz veya insan kapısını ikame etmez.
+`--evidence-file` yalnız offline regresyon fixture'ı içindir; explicit
+`--allow-local-evidence-override true` ister ve `GITHUB_ACTIONS=true` iken koşulsuz
+reddedilir.
 
 `Codex thread: N/A` body-only istisna değildir. Yalnız workflow'un event-bound
 changed-files listesi tamamen `docs/session-handoff-*.md` veya

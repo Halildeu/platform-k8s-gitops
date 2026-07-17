@@ -126,6 +126,8 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git fetch --no-tags --depth=1000 origin "pull/${PR_NUMBER}/head"
+          fetched_head="$(git rev-parse FETCH_HEAD)"
+          test "$fetched_head" = "$PR_HEAD_SHA"
           merge_base="$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")"
           receipt="$(python3 scripts/ai/prepare_cross_ai_scope.py \
             --derive-only \

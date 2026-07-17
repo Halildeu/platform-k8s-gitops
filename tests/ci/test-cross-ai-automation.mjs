@@ -72,7 +72,7 @@ const EVIDENCE = {
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true' }) {
   const event = {
     pull_request: {
       body,
@@ -92,6 +92,8 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     f,
     '--evidence-file',
     evidenceFile,
+    '--allow-local-evidence-override',
+    allowLocalOverride,
     '--derived-base-sha',
     derivedBaseSha,
     '--derived-scope-sha256',
@@ -216,6 +218,8 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody }, 0],
   ['GitHub Actions mode rejects offline evidence-file override',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, githubActions: true }, 1],
+  ['local evidence-file requires explicit test override flag',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, allowLocalOverride: 'false' }, 1],
   ['normal PR + missing three-channel receipts -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n' }, 1],
@@ -273,6 +277,15 @@ const cases = [
   ['normal PR + overall tracked_pending -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace('Verdict: AGREE', 'Verdict: tracked_pending') }, 1],
+  ['normal PR + compound AGREE_REVISE -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Verdict: AGREE', 'Verdict: AGREE_REVISE') }, 1],
+  ['normal PR + compound AGREE:RED -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Verdict: AGREE', 'Verdict: AGREE:RED') }, 1],
+  ['normal PR + compound AGREE tracked_pending -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Verdict: AGREE', 'Verdict: AGREE tracked_pending') }, 1],
   ['historical docs-only exemption requires event-bound allowlisted path',
     { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       changedFiles: ['docs/session-handoff-2026-07-17-example.md'],

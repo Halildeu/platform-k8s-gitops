@@ -201,6 +201,9 @@ function readChangedFiles(args) {
 
 function readEvidenceOverrides(args) {
   if (!args['evidence-file']) return {};
+  if (args['allow-local-evidence-override'] !== 'true') {
+    throw new Error('evidence-file icin explicit allow-local-evidence-override=true gerekir');
+  }
   if (env.GITHUB_ACTIONS === 'true') {
     throw new Error('evidence-file GitHub Actions event modunda yasaktır');
   }
@@ -752,16 +755,15 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   }
 
   // Check 5: merge/readiness lane is fail-closed — only AGREE can pass.
-  const verdict = (fields['verdict'] || '').toLowerCase();
+  const verdict = (fields['verdict'] || '').trim().toLowerCase();
   if (verdict) {
-    const baseVerdict = verdict.split(/[\s_:]/)[0];
-    if (baseVerdict === 'agree') {
+    if (verdict === 'agree') {
       findings.push({ check: 'verdict_agree', pass: true });
     } else {
       findings.push({
         check: 'verdict_agree',
         pass: false,
-        detail: VALID_VERDICTS.has(baseVerdict)
+        detail: VALID_VERDICTS.has(verdict)
           ? `Verdict "${verdict}" consensus değildir; yalnız AGREE geçer`
           : `Verdict "${verdict}" invalid ve fail-closed`,
       });
