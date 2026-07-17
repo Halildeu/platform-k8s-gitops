@@ -1,0 +1,1271 @@
+# ADR-0045 — Signed Cross-AI Evidence Custom Deployment Protection Rule
+
+> **Status:** PROPOSED — offline source implementation and fail-closed tests
+> exist; GitHub App registration, protected workflow refactor, Environment
+> configuration and live enforcement do not exist yet.
+> **Date:** 2026-07-16
+> **Owner issue:** [#2502](https://github.com/Halildeu/platform-k8s-gitops/issues/2502)
+> **Customer slice:** [#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373)
+> **Governance prerequisite:** [#2504](https://github.com/Halildeu/platform-k8s-gitops/issues/2504)
+> **Scope:** reversible test/non-prod deployment authorization. Production and
+> named-human gates remain outside autonomous approval.
+
+## 1. Context
+
+Faz 22.6 VIEW_ONLY product acceptance uses two protected GitHub Actions paths:
+
+1. `.github/workflows/apply-view-only-viewer-pilot-enable.yml` activates a
+   bounded test-only viewer surface and installs an absolute-expiry watchdog.
+2. `.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml` runs the
+   attended browser/render evidence collector against that activation.
+
+Both target `faz22-view-only-pilot`. Today they can require separate GitHub
+Environment approvals even when the exact commit/digest, multi-provider
+engineering review, TTL, watchdog and compensating rollback contract have not
+changed. This repeated click is an engineering gate, not the product user's
+attended consent.
+
+The customer journey remains:
+
+> An authorized browser operator starts a VIEW_ONLY session for an approved
+> pilot endpoint; the endpoint user gives attended consent; real frames are
+> delivered and rendered through the product channel; the next verifier can
+> consume a content-addressed result.
+
+This ADR may remove repeated **machine-delegable** GitHub approval from that
+journey. It may not replace:
+
+- endpoint attended consent or consent withdrawal;
+- a named Legal/DPO/company-authority signature when policy requires one;
+- production secret-owner approval;
+- an irreversible production mutation;
+- a GitHub required-reviewer decision attributed to a human account.
+
+Cross-AI agreement is deployment input, not deployment truth. CI, security
+checks, ADR-0023 desired-state authority, D29 post-deploy proof, watchdog and
+rollback remain independent gates.
+
+### 1.1 Current evidence is not sufficient for machine approval
+
+The current VIEW_ONLY authorization builder binds an owner directive, an
+AI-advisory comment, an Environment configuration snapshot, an exact run and
+an exact head SHA. This is useful evidence, but the verifier deliberately
+requires:
+
+```text
+aiAdvisoryProvenanceClass = owner-attested-provider-session
+aiProviderCryptographicAttestation = false
+```
+
+Therefore the existing receipt is **not** a cryptographically signed
+provider-evidence chain and MUST NOT be treated as input that can replace the
+required-reviewer gate. ADR-0045 introduces a new evidence class; it does not
+silently reinterpret the old receipt.
+
+## 2. GitHub platform facts and constraints
+
+The design is based on the GitHub documentation snapshot
+`github/docs@b15cafc1cefdd69ec59d4faf19c1ba558b4f36fc` and the current GitHub
+REST OpenAPI description checked on 2026-07-16.
+
+| Constraint | Design consequence |
+|---|---|
+| A custom deployment protection rule is a GitHub App receiving `deployment_protection_rule` / `requested`. | The enforcement identity is a separate App, never a human account. |
+| GitHub documents Actions read and Deployments read/write for the rule; this design also needs Contents read to independently hash the workflow and local dependencies at the exact SHA. | The App gets no Contents write, Actions write, Secrets, Administration or cluster credential. |
+| The webhook includes environment, SHA, ref, repository, installation and `deployment_callback_url`. | These values seed evaluation but are re-fetched and cross-checked; none is trusted alone. |
+| Decision API is `POST /repos/{owner}/{repo}/actions/runs/{run_id}/deployment_protection_rule`. | Request body uses exact `environment_name` and `state=approved|rejected`; the App can only review its own rule. |
+| The App cannot approve a human/team required-reviewer rule. | Machine-only non-prod environments must explicitly replace the repeated reviewer rule; human-required environments retain it. |
+| Jobs cannot read Environment secrets until every enabled protection rule passes. | Existing Environment secret scope remains narrow; the App never reads those secrets. |
+| GitHub waits up to 30 days for a custom rule response. | Platform timeout is not the security policy: this App rejects or expires in minutes. |
+| Up to 10 status reports, each at most 1024 characters, can be posted before a decision. | The App uses at most three bounded, redacted status messages. |
+| At most six deployment protection rules can be enabled per Environment. | ADR-0045 consumes one slot and must be included in Environment capacity review. |
+| The feature is public preview. It is available for public repositories on all plans; private/internal use requires GitHub Enterprise. | Rollout is feature-flagged and has a required-reviewer rollback path. This repository is currently public. |
+| Custom App rules require a deployment object and are incompatible with `environment.deployment=false` where that option is available. | Governed jobs retain normal Environment deployment creation. |
+
+## 3. Decision
+
+Build a separate-service-identity GitHub App named provisionally
+`cross-ai-deployment-policy`. The App verifies a pre-registered, signed,
+content-addressed Cross-AI deployment intent and approves only allowlisted,
+reversible test/non-prod workflow stages.
+
+The App is a **policy enforcement point**, not an AI reviewer, workflow
+dispatcher, secret broker or deployment runner.
+
+### 3.1 Component boundary
+
+```mermaid
+flowchart LR
+  A["Provider-specific review issuers"] -->|"signed DSSE leaves"| B["Evidence coordinator"]
+  B -->|"canonical bundle + one-time intent"| C["Evidence store / intent registry"]
+  D["Trusted dispatcher"] -->|"immutable intent ref + workflow_dispatch"| E["GitHub Actions"]
+  E -->|"deployment_protection_rule.requested"| F["GitHub App policy evaluator"]
+  F -->|"read exact run, workflow and evidence"| C
+  F -->|"approved or rejected"| E
+  E -->|"GitOps apply + watchdog + evidence"| G["test/non-prod runtime"]
+  G -->|"D29 and rollback result"| C
+```
+
+Responsibilities:
+
+| Component | May do | Must not do |
+|---|---|---|
+| Provider review issuer | Invoke one real provider route, capture provider-reported identity or an explicitly weaker trusted-launch receipt, canonicalize and sign its own review leaf | Sign for another provider family; upgrade a requested/launch-only slug to provider-reported identity; contain deployment credentials |
+| Evidence coordinator | Verify leaves, close the REVISE chain, create bundle/root digest and one-time intent | Manufacture a missing reviewer signature; decide GitHub protection alone |
+| Intent registry | Enforce nonce, TTL, sequence, CAS reservation/consumption and revocation | Store raw secrets, screen content or unrestricted prompts |
+| GitHub App evaluator | Validate webhook, re-fetch GitHub truth, verify bundle/policy, approve/reject its own rule | Dispatch workflows, write repository contents, read Environment secrets, access Kubernetes |
+| Trusted dispatcher | Create the immutable intent ref, register intent, dispatch exact allowlisted workflow/stage | Approve a rule, edit evidence after registration |
+| Deployment workflow | Apply desired state, verify runtime, rollback on failure | Treat App approval as D29/product acceptance |
+
+### 3.2 Provider identity and independence
+
+Every review leaf records two independent dimensions:
+
+- `channel`: for example `direct-anthropic-cli`, `cursor-cli`,
+  `mavis-minimax`, or `openai-codex`;
+- `providerFamily`: for example `anthropic`, `xai`, `minimax`, or `openai`.
+
+Quorum counts distinct `providerFamily` values, not wrapper/channel names.
+Cursor-routed Claude remains `providerFamily=anthropic` and does not form a
+provider-distinct pair with direct Anthropic Claude. `directProviderCli` is
+recorded explicitly. The requested model slug is not authoritative; the
+issuer records live capability discovery and a mandatory `modelIdentityClass`.
+`provider-reported` requires a result field such as direct Claude
+`modelUsage`; `trusted-launch-attested` means the isolated issuer live-listed
+and launched the exact route but the wrapper did not report backend model
+identity. The latter is never promoted to direct provider evidence. Cursor's
+2026-07-17 JSON result has this weaker class; it exposes a request ID but no
+backend-model field.
+
+Leaf attribution is not self-authoritative. For every counted leaf the
+verifier requires:
+
+- `leaf.providerFamily == trustRoot.keys[keyId].providerFamily`;
+- `leaf.channel` is in `trustRoot.keys[keyId].allowedChannels`;
+- `leaf.directProviderCli` equals the channel class fixed by that trust-root
+  entry;
+- `leaf.modelIdentityClass` is in the identity classes fixed by that trust-root
+  entry.
+
+Quorum is counted only from the trust-root key mapping. The same key presented
+with two family labels still counts once and attribution mismatch rejects with
+`PROVIDER_ATTRIBUTION_MISMATCH`.
+
+Default non-prod policy:
+
+```yaml
+minimumProviderFamilies: 2
+maximumReviewsPerProviderFamilyCounted: 1
+minimumDirectProviderRoutes: 1
+requiredFinalVerdict: AGREE
+openMustFixFindings: 0
+```
+
+One direct route is the minimum, not proof against shared-host or common prompt
+injection. A higher-risk non-prod class may require two direct routes through a
+reviewed policy entry; wrappers never silently satisfy that stricter setting.
+
+A signature attests that the allowlisted issuer observed and recorded a
+provider exchange. It is not falsely described as a vendor-signed model
+answer unless the provider itself later exposes a verifiable response
+signature.
+
+### 3.3 Signature and content-addressing contract
+
+Review leaves and the final bundle use DSSE envelopes over RFC 8785 JSON
+Canonicalization Scheme bytes. Digests are `sha256:<64 lowercase hex>`.
+
+Initial trust model:
+
+- each provider issuer has a separate Vault Transit Ed25519 key and workload
+  identity;
+- the coordinator has a distinct bundle-signing key;
+- private keys never leave Vault Transit and never enter workflow arguments,
+  logs, Actions artifacts or the GitHub App container;
+- DSSE payload types are fixed separately to
+  `application/vnd.acik.cross-ai-deployment-review.v1+json` and
+  `application/vnd.acik.cross-ai-deployment-bundle.v1+json`; key IDs use
+  the versioned `vault-transit://<mount>/<key>#v<version>` form;
+- public keys, key IDs, provider-family mapping, validity window and revocation
+  state are versioned in a dual-control signed trust-root manifest;
+- the App pins the trust-root manifest digest in deployment configuration.
+  Issuer keys cannot sign that manifest, and a trust-root change cannot
+  authorize the deployment that activates the same change. It uses a separate
+  PR and named-human management approval, with two-root overlap during rotation
+  capped at 72 h by the manifest schema;
+- revocation manifests are signed by a key distinct from all issuer and
+  coordinator keys, have a bounded `nextUpdate`, and are re-read and verified
+  fail-closed for every decision so a mounted update requires no restart;
+- the App verifies every counted provider leaf and the coordinator envelope;
+  the coordinator signature alone is never quorum;
+- signer rotation has an overlap window; compromise causes immediate key and
+  bundle revocation plus rejection of every unconsumed intent that used the
+  key, regardless of the leaf's nominal issuance time. For historical
+  validation, a leaf issued at or after `effectiveAt - maxClockSkew` is also
+  invalid.
+
+Sigstore keyless identities may replace Vault Transit in a later ADR only if
+offline identity constraints, transparency-log availability and outage
+semantics are defined. They are not silently mixed into v1.
+
+The v1 verifier accepts only the DSSE/Vault-Transit profile above. A keyless or
+mixed trust-root envelope is a schema/policy rejection, not a configuration
+fallback.
+
+### 3.4 Canonical evidence bundle
+
+Illustrative v1 shape; implementation ships a strict JSON Schema with
+`additionalProperties: false` at every object boundary.
+
+```json
+{
+  "schemaVersion": "acik.cross-ai-deployment-evidence.v1",
+  "bundleId": "018f0000-0000-7000-8000-000000000000",
+  "subject": {
+    "repositoryId": 123456789,
+    "repository": "Halildeu/platform-k8s-gitops",
+    "headSha": "0123456789abcdef0123456789abcdef01234567",
+    "intentRef": "refs/tags/cross-ai-intent/018f0000-0000-7000-8000-000000000001",
+    "environment": "faz22-view-only-pilot",
+    "deploymentClass": "reversible-test",
+    "productSlice": "Halildeu/platform-k8s-gitops#2373",
+    "policySha256": "sha256:...",
+    "artifactSetSha256": "sha256:...",
+    "rollbackPlanSha256": "sha256:...",
+    "postDeployVerifierSha256": "sha256:...",
+    "runnerPolicySha256": "sha256:...",
+    "runnerAdmissionLeaseSha256": "sha256:...",
+    "sessionSha256": "sha256:...",
+    "endpointIdSha256": "sha256:...",
+    "operatorIdSha256": "sha256:...",
+    "attendedConsentPolicySha256": "sha256:..."
+  },
+  "workflowStages": [
+    {
+      "stage": "apply",
+      "order": 1,
+      "dependsOn": [],
+      "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-enable.yml",
+      "workflowBlobSha256": "sha256:...",
+      "dependencyLockSha256": "sha256:...",
+      "concurrencyGroupSha256": "sha256:...",
+      "runsOnLabels": ["ubuntu-latest"],
+      "maxUses": 1
+    },
+    {
+      "stage": "browser-evidence",
+      "order": 2,
+      "dependsOn": ["apply"],
+      "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence.yml",
+      "workflowBlobSha256": "sha256:...",
+      "dependencyLockSha256": "sha256:...",
+      "priorStageOutcomeSchemaSha256": "sha256:...",
+      "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
+      "runnerGroupId": 1234,
+      "runnerAttestationClass": "acik-testai-deploy-v1",
+      "maxUses": 1
+    },
+    {
+      "stage": "compensating-rollback",
+      "order": 3,
+      "dependsOnFailure": ["apply"],
+      "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot.yml",
+      "workflowBlobSha256": "sha256:...",
+      "dependencyLockSha256": "sha256:...",
+      "runsOnLabels": ["ubuntu-latest"],
+      "maxUses": 1
+    }
+  ],
+  "reviews": [
+    {
+      "reviewId": "...",
+      "providerFamily": "anthropic",
+      "channel": "direct-anthropic-cli",
+      "directProviderCli": true,
+      "modelId": "actual-result-identity",
+      "modelIdentityClass": "provider-reported",
+      "capabilitySnapshotSha256": "sha256:...",
+      "subjectSha256": "sha256:...",
+      "round": 4,
+      "verdict": "AGREE",
+      "inputSha256": "sha256:...",
+      "outputSha256": "sha256:...",
+      "findingsSha256": "sha256:...",
+      "previousRoundSha256": "sha256:...",
+      "closureRootSha256": "sha256:...",
+      "issuedAt": "2026-07-16T20:00:00Z",
+      "expiresAt": "2026-07-16T22:00:00Z",
+      "issuer": "cross-ai-issuer-anthropic",
+      "keyId": "vault-transit://cross-ai/anthropic#v7"
+    }
+  ],
+  "consensus": {
+    "providerFamilies": ["anthropic", "minimax"],
+    "finalAgreeReviewSha256": ["sha256:...", "sha256:..."],
+    "closureRootSha256": "sha256:...",
+    "openMustFixFindingCount": 0
+  },
+  "grant": {
+    "requestId": "018f0000-0000-7000-8000-000000000001",
+    "deploymentSessionId": "018f0000-0000-7000-8000-000000000002",
+    "stageNonceSha256": {
+      "apply": "sha256:...",
+      "browser-evidence": "sha256:...",
+      "compensating-rollback": "sha256:..."
+    },
+    "triggeringActorId": 12345678,
+    "triggeringActorLogin": "platform-automation[bot]",
+    "registrationPrincipal": "spiffe://acik/platform/trusted-dispatcher",
+    "workflowEvent": "workflow_dispatch",
+    "notBefore": "2026-07-16T20:00:00Z",
+    "expiresAt": "2026-07-16T22:00:00Z",
+    "sequence": ["apply", "browser-evidence"],
+    "failureTransition": "apply->compensating-rollback"
+  }
+}
+```
+
+Raw prompts and full transcripts are not part of the deployment bundle.
+Privacy-minimized leaves contain digests, bounded findings, verdict and
+attribution. If a raw transcript must be retained for a dispute, it is
+encrypted separately with shorter retention and never returned in the GitHub
+status comment.
+
+`sessionSha256` is not an informal label. It is:
+
+`SHA-256(JCS({domain, requestId, deploymentSessionId, repositoryId,
+environment, headSha, intentRef, endpointIdSha256, operatorIdSha256}))`,
+
+where `domain=acik.cross-ai-deployment-session.v1`. The coordinator generates
+`requestId`, a cryptographically random `deploymentSessionId` and independent
+256-bit stage nonces from the operating-system CSPRNG before review. Raw nonces
+are never logged or placed in GitHub-visible fields; the bundle carries only
+their digests. The hash excludes itself, so there is no circular digest. Every
+review leaf, workflow stage, outcome record and grant binds this same session
+hash.
+
+`artifactSetSha256` is the JCS digest of a strict CAS manifest, not a directory
+glob. Each entry has `logicalPath`, `role`, `mediaType`, `gitObjectId` where
+applicable, byte length and SHA-256. Entries cover the rendered desired-state
+manifest, complete Kustomize source tree, immutable image/runtime-artifact
+digests and policy inputs used by the reviewed mutation. They are sorted by
+UTF-8 byte order of `(role, logicalPath)`; duplicate paths, symlinks, missing
+roles and unstated files reject. Independent builders must reproduce the same
+root.
+
+### 3.5 Multi-round REVISE closure
+
+A single `AGREE` string is insufficient. The bundle verifier requires:
+
+1. each review leaf has a valid allowlisted issuer signature;
+2. each leaf binds its reviewed subject digest and exact artifact/plan inputs;
+3. verdict is one strict enum value: `AGREE`, `REVISE`, `RED` or
+   `PARTIAL`; free text never becomes policy state;
+4. every prior `REVISE`, `RED` or `PARTIAL` must-fix finding has a stable
+   finding ID, signed response/fix leaf and later acknowledgement by the
+   provider family that raised it;
+5. finding, fix and acknowledgement leaves form an ordered hash chain whose
+   `closureRootSha256` is identical in the consensus object and every counted
+   final `AGREE` leaf;
+6. the final exact subject has at least two counted `AGREE` leaves from
+   distinct provider families;
+7. no unexpired revocation entry matches a leaf, bundle, key, subject or
+   grant;
+8. the final bundle and all counted leaves are fresh at decision time.
+
+`subjectSha256` is normatively the JCS digest of the full authorization
+subject, ordered workflow stages and material grant constraints. The
+coordinator cannot reuse valid leaves with another stage list, actor, nonce,
+TTL or closure graph.
+
+If the commit, workflow blob, artifact set, policy, rollback plan or
+post-deploy verifier changes, the subject digest changes and the old agreement
+cannot authorize the new subject.
+
+## 4. Correlating a GitHub run to a signed intent
+
+The protection webhook does not provide an application-defined deployment
+intent ID. Trusting only `(repository, environment, head SHA)` would permit a
+confused-deputy/replay race. The 2026-07-16 GitHub REST OpenAPI
+`workflow-run` schema and a live `workflow_dispatch` run were both checked:
+the run response does **not** expose workflow inputs. Consequently neither a
+hidden input nor `display_title` is an authorization primitive.
+
+ADR-0045 uses a pre-registration plus an immutable, one-time Git ref. The
+official webhook/run fields remain the GitHub-side authority; the ref provides
+the missing application correlation.
+
+### 4.1 Registration
+
+Before review, the coordinator creates a UUIDv7 `requestId`, a random
+`deploymentSessionId`, independent 256-bit stage nonces and the deterministic
+ref name `refs/tags/cross-ai-intent/<requestId>`. After provider consensus, a
+dedicated trusted dispatcher:
+
+1. authenticates to `/v1/deployment-intents` with an allowlisted mTLS/SPIFFE
+   workload identity; generic repository workflow OIDC is not accepted in v1;
+2. registers exactly
+   `(requestId, bundleSha256, subjectSha256, grantSha256, intentRef)`;
+3. creates the lightweight intent tag at the exact reviewed `headSha` using a
+   separate dispatcher GitHub App identity;
+4. verifies the tag object/ref from GitHub and finalizes the registry record;
+5. dispatches the allowlisted workflow with
+   `ref=cross-ai-intent/<requestId>`.
+
+Repository tag rules restrict create/update/delete for
+`cross-ai-intent/**` to the dispatcher identity. An intent ref is never moved.
+Deletion is a retention task after the grant and audit window, never a retry
+mechanism. The evaluator re-fetches the ref and rejects if it is absent, moved
+or resolves through an unexpected object chain.
+
+The dispatcher App is a dedicated, single-repository installation. Although
+GitHub grants its required `contents: write` at repository scope, repository
+rulesets deny it branch writes and tag create/update outside
+`refs/tags/cross-ai-intent/**`; within that namespace it may create and later
+delete but never update/force-move. Its egress layer implements only create-ref,
+get-ref and retention delete-ref. Every other Contents write is blocked and
+alerted. Phase 1 cannot exit if these negative controls are not proven live.
+
+The registry accepts only the dispatcher numeric GitHub App/actor identity
+mapped to its mTLS principal. If GitHub OIDC is considered later, a new contract
+must hard-bind repository ID, exact workflow/job, ref/SHA, Environment,
+non-fork origin and audience. “Any workflow in this repository” is forbidden.
+
+The intent registry allows only one active intent for the same repository,
+Environment, head, intent ref, workflow stage and session. Ambiguity rejects
+closed.
+
+### 4.2 GitHub run binding
+
+The App extracts the run ID only after validating the callback URL shape, then
+fetches GitHub truth with its installation token. It verifies all of:
+
+- repository numeric ID and installation ID;
+- event is exactly `workflow_dispatch`; `push`, `workflow_run`,
+  `pull_request` and every other event reject;
+- exact head SHA and exact immutable intent tag/ref;
+- exact workflow ID/path and workflow blob digest at that head;
+- numeric triggering actor ID equals the registered dispatcher actor ID;
+- run creation is after registration and within the bounded dispatch window;
+- run ID and run attempt have not consumed the grant;
+- Environment and stage match the bundle.
+
+The run `display_title` may include the request ID for operator diagnostics,
+but it is never parsed for authorization. `triggeringActorLogin` is also
+diagnostic; the stable numeric actor ID is authoritative.
+
+The App uses Contents read to fetch the workflow and all same-repository local
+actions/reusable workflows at `headSha`. Every external `uses:` reference must
+be a full commit SHA. A signed dependency lock lists local Git object IDs and
+external `repository@commit` pairs; mutable tags/branches are a rejection.
+
+Runner selection is also part of the subject. A management reconciler key,
+distinct from issuer/coordinator keys, signs the exact `runs-on` labels,
+numeric runner-group ID, workflow access restrictions and inventory digest.
+`runnerInventoryMaxAge` is 60 s. For a self-hosted group, every currently
+eligible runner must satisfy the declared attestation class; one unknown/stale
+member rejects the stage.
+
+Before approval, the App also acquires a signed admission lease whose digest is
+`runnerAdmissionLeaseSha256`. It freezes additions and label/group changes for
+the grant window and binds the eligible runner IDs/inventory generation.
+Security quarantine/removal remains allowed but immediately revokes the lease
+and intent. A changed generation before assignment blocks execution. This
+check occurs before Environment approval because a later workflow step cannot
+protect secrets from an already-selected untrusted runner.
+
+Because GitHub does not expose dispatch inputs at this gate, v1 allowlisted
+machine-gated workflows declare **no `workflow_dispatch` inputs**. Stage comes
+from the allowlisted workflow path; TTL/watchdog comes from the signed grant;
+target/operator comes from the signed subject; prior apply run and artifact
+come only from the immutable outcome record. A CI policy rejects any governed
+workflow that reads `inputs.*`, authorization-relevant `vars.*`, mutable
+control-plane environment values or an unpinned remote control document. Static
+constants and Environment secret values are usable only where the pinned
+bootstrap compares their digests to the signed subject before side effects.
+
+The current `action`, `pilot_ttl_minutes`, `device_id`, `hostname` and
+`activation_run_id` surfaces are therefore not accepted in the machine-gated
+lane. Apply and compensating rollback become distinct workflow paths. After
+App approval, the first pinned bootstrap step fetches the bundle/outcome by
+`requestId` parsed from `github.ref`, recomputes every digest, and requires the
+Environment endpoint/operator secret digests to equal the signed opaque
+bindings before any other secret use or side effect. Phase 2 cannot start until
+that refactor and its negative tests land.
+
+The App never follows an arbitrary `deployment_callback_url`. On github.com it
+requires the exact `https://api.github.com/repos/<owner>/<repo>/actions/runs/<id>/deployment_protection_rule`
+shape and reconstructs the REST route from validated repository/run values.
+This prevents SSRF and cross-repository callback confusion.
+
+### 4.3 Ordered #2373 grant and failure transition
+
+One signed intent may authorize exactly this primary sequence plus one failure
+transition:
+
+1. `apply`: one callback/run/attempt; bounded TTL; watchdog and rollback plan
+   digests fixed.
+2. `browser-evidence`: one callback/run/attempt; same head/session; only after
+   the App has observed the apply run succeed and produced an immutable
+   prior-stage outcome record.
+3. `compensating-rollback`: not a normal successor; one callback/run/attempt
+   only from `Failed` or `CallbackUnknown`, using the original signed rollback
+   plan, a dedicated no-input workflow path and its own stage nonce.
+
+The authority is an Actions API reconciliation keyed by the already-bound
+`run_id/run_attempt`. The Phase-0 source uses a durable 30 s sweeper so missed
+webhooks and restarts do not strand terminal outcomes. A later live slice may
+add `workflow_run/completed` only as an immediate wake-up hint; it never
+replaces polling or becomes outcome authority. Reconciliation uses the
+attempt-specific run and jobs endpoints and requires:
+
+- the exact attempt is `completed` with a recognized terminal conclusion;
+- a successful run has every critical job and step conclusion `success`;
+- the pinned workflow contains no `continue-on-error` on those critical
+  jobs/steps;
+- exact artifact name
+  `cross-ai-stage-outcome-<requestId>-<stage>-<run_id>-<run_attempt>`;
+- the downloaded ZIP has exactly one safe canonical
+  `cross-ai-stage-evidence.json` entry; its digest and receipt fields match the
+  subject, session, TTL/watchdog and workflow policy.
+
+GitHub artifact metadata alone is not the digest authority; bytes are
+downloaded and hashed. The resulting outcome record binds apply
+`run_id/run_attempt`, artifact name/digest, critical-jobs digest, watchdog
+absolute expiry, head, intent ref and session. It is stored in immutable CAS
+and hash-chained into the registry before stage 2 can reserve a grant.
+
+The stage-2 decision requires this outcome digest plus the original opaque
+endpoint/operator digests. Attended consent is a separate session-local
+runtime receipt governed by `attendedConsentPolicySha256`; App approval never
+asserts that consent occurred.
+
+The rollback workflow is protected by the same Environment and App rule. It
+does not require a new AI quorum because the exact rollback plan/workflow was
+part of the original reviewed bundle, but the App requires the failed-intent
+binding, watchdog state and one-time rollback grant. No other workflow may
+mutate this pilot outside ADR-0045 except the already-armed in-workflow
+watchdog, whose identity and plan digest are also in the subject.
+
+An uncertain or failed apply quarantines the intent; stage 2 is rejected until
+the apply outcome is sealed. Callback ambiguity or outcome-deadline expiry
+moves the stage to `OutcomeOverdue`, which does **not** unlock rollback. Only
+attempt-specific GitHub truth proving the exact apply attempt terminal moves
+it to `CallbackUnknown`; the signed one-time compensating rollback grant may
+then reserve. A completion webhook alone, top-level `success`, or an
+input-supplied activation run ID is insufficient.
+
+Reruns do not inherit approval. A different `run_id` or `run_attempt` requires
+a new one-time grant. V1 does not reuse old final-AGREE leaves for a reissue.
+Reissue is allowed only from terminal `RolledBack` or a signed, CAS-addressed
+`Drained` verifier outcome; it sets `reissueOf`, creates a new session/nonces,
+and obtains final AGREE on the new exact subject. An absence probe or uncertain
+rollback is never sufficient.
+
+`Drained` is a strict outcome schema signed by the pinned post-deploy verifier.
+It binds the prior session/head/target, proves desired and live state equal the
+content-addressed pre-pilot baseline, proves pilot exposure/resources absent,
+records the watchdog terminal receipt, and shows no active mutation run or
+unconsumed stage grant for the session. The App re-fetches GitHub run truth and
+verifies every referenced byte before accepting it.
+
+## 5. Evaluation algorithm
+
+The App acknowledges a valid webhook quickly, enqueues evaluation and decides
+asynchronously. The deterministic decision order is:
+
+1. Verify `X-Hub-Signature-256` over the unmodified request body using
+   constant-time comparison; require expected event/action and a unique
+   `X-GitHub-Delivery`.
+2. Validate repository, installation, Environment, immutable intent ref and
+   callback URL allowlists. Re-fetch the Environment/rule configuration and
+   compare it with the signed phase policy snapshot; drift rejects.
+3. Re-fetch repository/run/workflow metadata using an installation token
+   scoped to this repository with Actions read, Contents read and Deployments
+   read/write.
+4. Parse `requestId` only from the exact intent ref, then locate exactly one
+   finalized active registry record. `display_title` is ignored for policy.
+5. Recompute workflow blob, transitive dependency lock, runner policy,
+   management-signed runner inventory/admission-lease, policy, evidence bundle
+   and subject digests. Require the lease signer, digest, eligible generation,
+   60 s inventory age and unrevoked/unexpired state to match. Statically reject
+   any governed workflow input declaration, authorization-relevant `vars.*`,
+   mutable control-plane environment read or unpinned remote control document.
+6. Verify strict schema, DSSE signatures, key policy, provider-family quorum,
+   multi-round closure, freshness and revocation.
+7. Verify deployment class, explicit stage order/dependencies, nonce/max-use,
+   numeric actor/registration principal and expected concurrency group.
+   Activate/reserve the already subject-bound runner admission lease. Where a
+   concurrency group is declared, require no other live mutating run and
+   acquire a registry group lease in the same transaction as the grant
+   reservation.
+8. For an apply stage, verify bounded TTL, watchdog headroom, rollback plan and
+   post-deploy verifier are mandatory and content-addressed. For stage 2,
+   verify the immutable apply outcome and target/session bindings.
+9. For an approval candidate, atomically reserve the stage grant for the exact
+   `(run_id, run_attempt)` plus any concurrency-group lease; reservation is not
+   approval and not consumption. Re-fetch run/group state, runner admission
+   lease revocation/generation and TTL/watchdog headroom immediately before
+   callback.
+10. POST the single chosen decision for the exact Environment. The documented
+    success response is HTTP 204 with no body; record status, bounded response
+    headers, delivery/run IDs and request digest in the append-only ledger.
+11. Only a successful 204 or later GitHub run progression proving acceptance
+    moves `reserved -> consumed/ApprovedPendingOutcome`.
+
+No parse, network, storage, provider, signature or policy error becomes an
+approval. Unknown fields, multiple candidate intents, clock ambiguity beyond
+the configured skew, missing artifacts, unavailable revocation state or stale
+keys all reject closed.
+
+An ambiguous network timeout after an approval POST never causes a
+contradictory rejection POST. The same idempotency record enters
+`OutcomeOverdue`; the primary successor remains blocked and no audit record
+claims approval. While the exact attempt is queued or executing, rollback is
+also blocked to prevent concurrent writers. Once the attempt-specific API
+proves a terminal conclusion, the state becomes `CallbackUnknown`; only the
+pre-signed compensating rollback lane may then reserve if no verified terminal
+outcome can be sealed.
+
+### 5.1 Decision reason codes
+
+GitHub comments are redacted and stable. Examples:
+
+```text
+APPROVED evidence=sha256:ab12... policy=v1 stage=apply ttl=90m
+REJECTED code=EVIDENCE_STALE evidence=sha256:ab12...
+REJECTED code=PROVIDER_FAMILY_QUORUM_MISSING
+REJECTED code=PROVIDER_ATTRIBUTION_MISMATCH
+REJECTED code=HEAD_OR_WORKFLOW_MISMATCH
+REJECTED code=INTENT_REF_OR_DEPENDENCY_LOCK_MISMATCH
+REJECTED code=RUNNER_POLICY_OR_INPUT_AUTHORITY_MISMATCH
+REJECTED code=PRIOR_STAGE_NOT_VERIFIED
+REJECTED code=GRANT_REPLAY_OR_CONSUMED
+REJECTED code=HUMAN_REQUIRED_CLASS
+```
+
+No comment contains prompts, transcripts, secrets, webhook URLs, operator or
+device identifiers, session IDs, tokens, cookies or raw evidence.
+
+## 6. State machine and idempotency
+
+```mermaid
+stateDiagram-v2
+  [*] --> Registered
+  Registered --> Evaluating: valid webhook and unique match
+  Registered --> Expired: TTL elapsed
+  Registered --> Revoked: revocation match
+  Evaluating --> Rejected: any fail-closed check
+  Evaluating --> Reserved: all checks pass and grant CAS
+  Reserved --> ApprovedPendingOutcome: callback 204 or proven run progression
+  Reserved --> Rejected: definitive pre-acceptance callback rejection
+  Reserved --> OutcomeOverdue: ambiguous callback or outcome deadline
+  ApprovedPendingOutcome --> OutcomeOverdue: outcome deadline
+  OutcomeOverdue --> CallbackUnknown: exact attempt terminal but outcome unsealed
+  CallbackUnknown --> ApprovedPendingOutcome: verified outcome proves progression
+  CallbackUnknown --> RollbackReserved: mutation possible and rollback grant CAS
+  CallbackUnknown --> Quarantined: rollback unavailable or uncertain
+  ApprovedPendingOutcome --> Succeeded: run + artifact verified
+  ApprovedPendingOutcome --> Failed: run failure or evidence mismatch
+  Failed --> RollbackReserved: one-time rollback grant CAS
+  RollbackReserved --> RolledBack: rollback callback + verifier succeed
+  RollbackReserved --> Quarantined: rollback absent, failed or uncertain
+  Succeeded --> [*]
+  RolledBack --> [*]
+  Rejected --> [*]
+  Expired --> [*]
+  Revoked --> [*]
+  Quarantined --> [*]
+```
+
+Database uniqueness keys include at minimum:
+
+- `github_delivery_id`;
+- `(repository_id, environment, run_id, run_attempt, app_rule_id)`;
+- `(repository_id, intent_ref, request_id, stage)`;
+- `(grant_id, stage, use_index)`.
+
+Redelivery returns the already-recorded decision. It neither consumes a
+second use nor posts contradictory callback state. Two workers race through a
+single compare-and-swap; the loser reads the committed decision.
+
+The Phase-0 reservation/outcome lease is
+`min(now + 30 min, grant.expiresAt - rollbackHeadroom)`, where apply reserves
+15 minutes of rollback headroom. On restart, the sweeper reconciles only the
+identical attempt. Lease expiry or callback ambiguity transitions to
+`OutcomeOverdue`, never frees the grant for another run, and never unlocks
+rollback while that attempt is non-terminal. Exact terminal proof changes the
+state to `CallbackUnknown`; a late verified success is accepted only while the
+rollback stage remains `Available`.
+
+## 7. Authorization matrix
+
+| Deployment class | App behavior | Human gate |
+|---|---|---|
+| Read-only/dry-run without Environment secrets or mutation | Outside ADR-0045 or policy-only check | None unless another contract requires it |
+| Reversible test/non-prod, synthetic or consent-safe data, exact rollback/watchdog | May auto-approve signed intent | Runtime attended consent remains where applicable |
+| Test/non-prod with attended endpoint action | May approve deployment stage | Endpoint user consent/withdrawal remains human and session-local |
+| Named Legal/DPO/company-authority decision required | Unconditional `HUMAN_REQUIRED_CLASS` reject in v1; no artifact unlocks this App | Required named human/legal authority on a separate human-gated path |
+| Production secret creation/rotation/use requiring owner approval | Reject | Secret owner |
+| Any irreversible production mutation | Reject | Named production operator/owner |
+| Production, even technically rollbackable, in ADR-0045 v1 | App may report advisory status but does not replace reviewer | Required reviewer remains |
+| Emergency/break-glass | Never normal auto-approval; separate runbook, TTL and audit | Authorized human break-glass identity |
+
+To obtain actual click reduction, an Environment in the approved
+test/non-prod class must remove its repeated required-reviewer rule and enable
+the App rule. Enabling both means both must pass and does not remove the human
+click. The change is deliberate and recorded; the App cannot and must not
+pretend to satisfy the human rule.
+
+At decision time, phase policy also requires a fresh Environment snapshot:
+the exact allowlisted protection-rule App IDs and no foreign App are present,
+the intent-tag deployment branch policy is allowed,
+admin bypass is disabled, and the required-reviewer presence/absence matches
+the declared rollout phase. If GitHub does not expose one of these settings in
+the pinned API contract, a separate management reconciler must provide a
+short-lived signed snapshot; absence or staleness blocks Phase 3 rather than
+being guessed. Repository visibility/plan eligibility is checked by the same
+canary, so a future public-to-private transition without GitHub Enterprise
+fails closed before Environment reconfiguration.
+
+## 8. Threat model
+
+| Threat | Control |
+|---|---|
+| Forged `AGREE` text or edited issue comment | Count only strict DSSE leaves signed by allowlisted issuer keys |
+| Same provider through two wrappers counted twice | Quorum on `providerFamily`; channel stored separately |
+| Leaf lies about provider/channel/direct route | Count only trust-root key mapping; leaf fields must equal mapped attributes |
+| Requested model slug differs from actual model | Live capability snapshot plus result identity; requested slug alone ignored |
+| Stale evidence reused after code/workflow change | Exact head plus workflow/artifact/policy/rollback/verifier digests and short TTL |
+| Valid grant replayed by another run | One-time nonce, immutable intent ref, numeric dispatcher actor, run/attempt binding and reserve/consume CAS |
+| Cross-repo/Environment confused deputy | Numeric repo/installation IDs, Environment allowlist, exact reconstructed callback route |
+| Callback URL SSRF | Never follow arbitrary URL; validate origin/path then reconstruct GitHub API endpoint |
+| Spoofed GitHub webhook | HMAC SHA-256 over raw body, event/action allowlist, delivery-ID uniqueness and GitHub truth re-fetch |
+| Workflow or action changed to exfiltrate Environment secrets | Exact workflow/local-object digests, external full-SHA pins and signed dependency lock fixed in subject |
+| Hidden dispatch input changes target/TTL/action | Governed v1 workflows declare no inputs; values derive only from ref/bundle/outcome |
+| Self-hosted runner label is taken by an untrusted node | Exact runner group/labels, fresh signed inventory and all-eligible-runner attestation before approval |
+| Evidence artifact substitution | Content-addressed store, recomputed download digest and immutable object identity |
+| Coordinator compromised | App verifies each counted provider leaf; coordinator signature alone has no quorum authority |
+| One issuer key compromised | Distinct-family threshold, key revocation, bundle revocation and rotation overlap |
+| GitHub App compromised | Least privilege; no Actions write, repo write, secrets or Kubernetes access; append-only decision audit |
+| Concurrent stage/rerun race | Unique active intent, stage sequence, idempotency keys and CAS state transition |
+| Apply approved but mutation fails ambiguously | No next-stage approval; quarantine until compensating rollback proof |
+| Unsigned rollback mutates the pilot | Dedicated no-input rollback workflow and one-time failure-bound grant under the same App rule |
+| Prompt injection in reviewed repository content | Review inputs are bounded artifacts/digests; provider output is untrusted data until schema/signature/policy validation |
+| Raw secret or PII leaks into evidence | Strict schema, redacted bounded findings, digest-only raw transcript reference, hygiene scanner |
+| Admin bypass defeats rule | Disable Environment admin bypass for machine-gated scope; alert on bypass/audit events |
+| App/GitHub outage | New deploy waits/rejects; existing product runtime continues; required-reviewer rollback path retained |
+| Public-preview API changes | Versioned feature flag, contract canary and fail-closed disable/rollback procedure |
+| Dispatcher confused deputy | mTLS/SPIFFE registration allowlist, numeric GitHub actor mapping, immutable ref and no generic workflow OIDC in v1 |
+| App token used for another Deployments write operation | Egress/method/path allowlist plus alert on every unrecognized GitHub API call |
+
+Two AI providers reduce correlated review error; they do not prove runtime
+correctness. Post-deploy verification remains mandatory.
+
+## 9. Least privilege and secret boundary
+
+GitHub App repository permissions:
+
+```yaml
+actions: read
+contents: read
+deployments: write  # includes read
+metadata: read  # implicit
+```
+
+Explicitly absent:
+
+```yaml
+contents: write
+actions: write
+administration: write
+secrets: any
+packages: write
+```
+
+The App private key and webhook secret live in the management secret store,
+not this repository. Installation tokens are repository-scoped, permission-
+downscoped and short-lived. Logs record key IDs and token expiry only.
+
+Runtime egress policy permits only the required GitHub token endpoint, bounded
+Actions/Contents/Environment reads and the exact protection-decision POST.
+Although `deployments: write` could authorize other deployment mutations, the
+service implements no create/delete deployment route; any unexpected
+method/path is blocked and alerted.
+
+Webhook-secret rotation accepts the old and new secret IDs for at most 24 h,
+verifies each delivery against both without timing disclosure, then revokes
+the old secret. An alert fires before the deadline and the old version is a
+hard rejection afterward. Logs contain only secret version IDs.
+
+`KC_TEST_ADMIN_PASSWORD` and every other Environment secret remain in their
+existing Environment scope. They are unavailable to both the App and the job
+until all protection rules pass. No value is copied to a repo secret to make
+automation easier.
+
+Provider credentials belong to provider-specific issuer identities. They are
+not shared with the GitHub App or evidence coordinator and never appear in
+prompts, argv, process listings or evidence bundles.
+
+## 10. Audit and retention
+
+Every registration, evaluation, decision, revocation, stage outcome and
+rollback outcome emits an append-only record containing:
+
+- decision/event ID and timestamp;
+- repository/environment/head/workflow/stage identifiers;
+- evidence root and policy digest;
+- counted provider families/model IDs/key IDs;
+- result/reason code;
+- GitHub delivery/run/attempt IDs, numeric triggering actor ID and registration
+  principal;
+- Environment snapshot digest and immutable intent-ref object ID;
+- previous ledger entry hash.
+
+The governance ledger contains no screen content or direct user/device
+identifier. Session/operator/device values are opaque SHA-256 bindings. A
+redacted summary is linked to #2502/#2373 or the relevant product-slice issue;
+the signed bundle and full decision record are stored in a content-addressed,
+tamper-evident/WORM-capable store. Storage implementation must not claim
+ADR-0035 production readiness while that ADR remains proposed/blocked.
+
+The v1 mutable registry stores only
+`requestId -> (bundleSha256, grantSha256, state, reservation)` plus CAS object
+identities. Bundle bytes are read only from immutable content-addressed
+storage. Every state transition includes the previous-entry hash and is
+periodically anchored to the audit ledger. This is the explicit v1 integrity
+baseline; it is not represented as completion of ADR-0035.
+
+Disaster recovery rebuilds the mutable registry by replaying the immutable CAS
+objects and hash-chained ledger into a clean store, then verifies the final
+anchor before re-enabling evaluation. Target RTO is 30 minutes, tested at least
+quarterly; during rebuild the App rejects new approvals.
+
+Proposed retention:
+
+- consumed/rejected decision and signed bundle: 365 days for non-prod
+  governance audit, subject to policy review;
+- unconsumed expired intent: 30 days;
+- raw provider transcript, only if explicitly retained: maximum 7 days,
+  encrypted and access-audited;
+- secrets and raw browser/screen evidence: never in this store.
+
+A dispatcher cleanup job deletes an immutable intent tag 30 days after its
+terminal/expired state, after confirming the ledger contains its ref object ID
+and bundle root. Deletion is audit-recorded; the CAS evidence remains for its
+longer retention. Namespace count/age alerts prevent silent ref accumulation.
+
+## 11. SLO and failure behavior
+
+GitHub permits a rule to wait up to 30 days; ADR-0045 uses much shorter limits:
+
+| Measure | Target |
+|---|---|
+| Webhook authentication + enqueue | p95 under 2 s; hard 8 s |
+| Normal cached evaluation | p95 under 30 s |
+| Evaluation including evidence fetch | hard 180 s |
+| Intent freshness | default 120 min; policy may be shorter |
+| Clock skew | maximum 60 s |
+| Status updates | maximum 3 of GitHub's 10-report limit |
+
+TTL is a pair of enforceable inequalities, not only a maximum number. At apply
+decision time:
+
+`now + maxApplyDuration + browserEvidenceWindow + rollbackMargin <= min(grant.expiresAt, watchdogAbsoluteExpiry)`
+
+and `grant.expiresAt <= watchdogAbsoluteExpiry - rollbackMargin`. At stage 2,
+the remaining browser duration plus rollback margin must still fit before the
+same watchdog absolute expiry. A queued run that no longer has this headroom is
+rejected, including delay in
+`endpoint-admin-remote-bridge-activation` concurrency.
+
+Behavior:
+
+- invalid/ambiguous/stale policy: immediate rejection;
+- temporary evidence-store or GitHub read failure: bounded retry within 180 s,
+  then rejection;
+- definitive callback failure before any request acceptance: reject locally
+  and alert; ambiguous timeout after POST: retry only the identical decision
+  while reserved, then quarantine without claiming approval;
+- App outage: no new machine-gated deploy; running product service is
+  unaffected;
+- after an approved run fails, block later stages and new same-session intents
+  until rollback/reconciliation evidence exists.
+
+The status budget is two non-final messages plus one final state/comment. A
+retry reuses the same ledgered message and does not create a new status. Budget
+exhaustion is an implementation fault: emit no sensitive fallback text and
+fail closed; never trade an approval check for another comment.
+
+## 12. Rollout plan
+
+### Phase 0 — schema, fixtures and offline replay
+
+- strict schemas, canonicalization, signature, quorum, revocation and state
+  machine tests;
+- deterministic artifact-manifest/CSPRNG fixtures and trust-root-derived
+  provider attribution tests;
+- recorded/redacted webhook fixtures and GitHub OpenAPI contract tests pinned
+  to a recorded OpenAPI SHA-256; schema drift fails the merge/canary gate;
+- a CI assertion that the existing unsigned
+  `aiProviderCryptographicAttestation=false` receipt cannot parse as this v1
+  signed-evidence schema;
+- no Environment configuration, callback or runtime mutation.
+
+Exit: all negative tests fail closed and two real provider issuer paths create
+a verifiable bundle for an exact synthetic subject.
+
+### Phase 1 — observe/evaluate without Environment authority
+
+- deploy the App evaluator and intent registry with no enabled custom rule;
+- deploy the dedicated dispatcher and prove live rulesets/egress deny every
+  branch write, tag write outside the intent namespace and intent-ref update;
+  the exit test actually attempts one branch write and one non-intent tag write
+  and requires both denial and the expected alert;
+- send recorded and coordinator-generated evaluation requests to `/v1/evaluate`;
+- compare decisions with current human decisions for at least ten test cases;
+- do not use an always-approve "shadow rule" because configuration drift could
+  accidentally make it authoritative.
+
+Exit: zero false approvals; failure reason and latency SLOs understood.
+
+### Phase 2 — dual gate on `faz22-view-only-pilot`
+
+- one-time human App registration, installation, webhook secret/private-key
+  provisioning and Environment rule enablement;
+- keep the existing required reviewer temporarily;
+- refactor governed workflows so authorization-relevant values come from the
+  immutable intent/outcome binding, not unavailable dispatch inputs;
+- App decisions are authoritative as an additional deny gate, while the human
+  reviewer still controls the run;
+- run at least five success and the complete negative matrix.
+
+Exit: App and human decisions agree; rollback procedure rehearsed. This phase
+does not reduce clicks yet.
+
+### Phase 3 — machine-only non-prod canary
+
+- after explicit acceptance evidence, remove the repeated required reviewer
+  from **only** the allowlisted reversible test Environment and retain the App;
+- do not duplicate Environment secrets into a broader scope;
+- permit exactly `apply -> browser-evidence`, one session, TTL at most 120 min;
+- endpoint attended consent, legal markers and rollback remain independent.
+
+Exit: three successful full sequences, all D29/evidence gates, one forced
+failure with proven compensating rollback and no unbounded exposure. The
+evidence record must separately prove App authorization, endpoint attended
+consent where applicable, and Legal #2374 status; none may be collapsed into
+another.
+
+### Phase 4 — bounded non-prod expansion
+
+- add environments/workflows only through reviewed policy entries tied to a
+  customer Product Slice issue;
+- each environment proves its own rollback and secret boundary;
+- production remains required-reviewer protected in ADR-0045 v1.
+
+## 13. Rollback and break-glass
+
+Configuration rollback is deliberate:
+
+1. stop new intent registration;
+2. revoke all unconsumed grants and affected keys/bundles;
+3. cancel waiting machine-gated runs;
+4. disable the App rule for the Environment;
+5. restore the named required-reviewer rule with prevent-self-review and
+   prevent-admin-bypass controls;
+6. verify Environment secret scope did not change;
+7. post a redacted audit record to #2502 and affected Product Slice issues.
+
+App disablement never disables the product runtime or a running watchdog.
+Runtime rollback is still the deployment workflow/runbook responsibility.
+
+Break-glass is not `state=approved` with weaker checks. The only v1 path is an
+authorized human Environment administrator performing the same safe rollback
+of the control plane: freeze registration, disable the App rule, restore the
+named required-reviewer rule on the same Environment, record the incident/board
+issue, and then use the original human-gated workflow. The normal evaluator has
+an unconditional reject for `deploymentClass=break-glass`; the dispatcher
+cannot select another binary/configuration path to weaken it. Restoring
+machine-only mode repeats Phase 2 validation. Production and irreversible
+mutation never enter the normal App auto-approval lane.
+
+## 14. Test matrix
+
+Minimum automated and live acceptance:
+
+| Class | Required cases |
+|---|---|
+| Webhook | valid signature; bad/missing signature; body mutation; wrong event/action; duplicate delivery |
+| Callback | wrong origin/path/repo/run; SSRF URL; GitHub 401/403/404/5xx; crash after reserve; timeout after POST; identical-decision retry; no contradictory state |
+| Schema | unknown/missing/wrong-type fields; non-canonical bytes; digest mismatch |
+| Signatures | valid two-family quorum; one signer; same family via two channels; same key with two family labels; channel/direct-route mismatch; bad key; revoked/expired key; coordinator-only signature |
+| Review chain | AGREE/AGREE; open REVISE; unacknowledged must-fix; mismatched closure root; final AGREE on old head/fix graph; model identity mismatch |
+| Binding | missing run inputs in official fixture; governed input/vars/mutable-control read; colliding display title; moved/deleted intent ref; wrong repo/environment/ref/head/workflow/dependency lock/artifact/numeric actor/session/stage/target/runner inventory or admission lease |
+| Replay | same grant/same delivery; same grant/new run; rerun attempt; concurrent workers; expired nonce |
+| Policy | workflow_dispatch only; test reversible pass; missing rollback/watchdog/D29 reject; trust-root self-update reject; stale revocation/environment snapshot reject; production/human/legal/secret-owner/irreversible reject |
+| Stage flow | browser before apply; apply approval but run failure; artifact mismatch; dedicated rollback success; unsigned/input-selected rollback reject; rollback uncertainty/quarantine; incomplete Drained reject; reissue before terminal verifier reject |
+| Privacy | secret/JWT/cookie/webhook URL/email/phone/raw device ID/prompt leakage scanner |
+| Availability | evidence store down; Vault verification unavailable; GitHub API degraded; App restart during evaluation/reservation; webhook dual-secret rotation |
+| Environment | secrets inaccessible before approval; admin bypass disabled; rule-set drift; max-rule capacity; trust-root overlap expiry; runner join-after-approval race; concurrency-group conflict/headroom recheck; public-to-private/plan transition; feature-preview canary |
+| Live canary | one normal two-stage test flow; forced reject before mutation; forced post-approval failure with watchdog/rollback proof |
+
+No success criterion is merely "workflow green". The canary separates source,
+desired state, runtime Up/Functional and product/browser evidence.
+
+## 15. Implementation slices
+
+This ADR authorizes no live mutation. Proposed PR sequence:
+
+1. **PR-A — contract:** schemas, trust-root/revocation policy examples,
+   canonicalization/signature/quorum fixtures and OpenAPI/webhook fixtures.
+2. **PR-B — App receive-only:** HMAC validation, queue, GitHub re-fetch,
+   callback URL hardening, idempotent ledger; no approval mode.
+3. **PR-C — issuer/coordinator:** two real provider issuer routes, Vault Transit
+   signing, bundle verifier and intent registration.
+4. **PR-D — workflow correlation:** immutable intent tags, numeric dispatcher
+   identity, exact workflow/dependency lock/stage policy, input-authority
+   refactor, tag cleanup and offline evaluation.
+5. **PR-E — dual gate:** GitHub App registration/install and Environment
+   configuration; required reviewer retained.
+6. **PR-F — non-prod canary:** deliberate reviewer removal only after Phase 2
+   acceptance; full #2373 sequence and forced rollback drill.
+
+Every enabler PR references #2502 and the customer step in #2373 it unblocks.
+Merge does not close #2502; live App/Environment/callback evidence and canary
+acceptance are required before deliberate closure.
+
+## 16. One-time human actions that remain
+
+Implementation will require, once:
+
+- register/install the GitHub App under the intended owner identity;
+- register the separate dispatcher App identity and install tag rules for
+  `cross-ai-intent/**`;
+- provision/rotate App private key and webhook secret in the management secret
+  store without publishing raw material;
+- establish the dual-control trust-root/revocation keys and approve any future
+  root-policy change outside the machine-approved lane;
+- enable the custom rule and later remove/restore the required reviewer in
+  GitHub Environment settings;
+- approve any named Legal/DPO/production-secret/irreversible-production step
+  that its own policy class still requires.
+
+These are not simulated by an agent. All other design, source, tests,
+reversible test dispatch and post-deploy evidence are agent-operable once the
+corresponding acceptance contract is implemented.
+
+## 17. Consequences
+
+Positive:
+
+- recurring non-prod GitHub approval becomes a deterministic service decision
+  with exact attribution instead of a fake human click;
+- evidence cannot move between commits, workflows, environments, sessions or
+  provider wrappers without detection;
+- the App has a smaller blast radius than a workflow dispatcher or cluster
+  credential;
+- one signed grant can safely govern the apply/evidence sequence while keeping
+  each GitHub callback single-use;
+- Environment secret scope and runtime attended consent remain intact.
+
+Costs and limitations:
+
+- a public HTTPS App, state store, signing issuers, Vault keys, WORM-capable
+  evidence store and operational monitoring are new control-plane components;
+- GitHub's feature is public preview and may change;
+- provider output is issuer-attested unless/until providers offer their own
+  verifiable response signatures;
+- App outage blocks new deployment but intentionally does not affect the
+  running product;
+- production approval repetition is not reduced by ADR-0045 v1.
+
+## 18. Alternatives rejected
+
+### Keep clicking `Approve and deploy`
+
+Safe as an interim boundary, but does not meet the repeated-approval reduction
+goal and encourages pressure to misattribute agent actions to a human.
+
+### Agent clicks the existing required-reviewer button
+
+Rejected. It creates a human-attributed approval the human did not give.
+
+### Trust a PR body, issue comment or unsigned JSON marker
+
+Rejected. Mutable/self-attested text has no signer, replay or same-subject
+guarantee. The current `aiProviderCryptographicAttestation=false` receipt is
+explicitly insufficient.
+
+### Use a required status check only
+
+Rejected as the Environment authorization point. A check can validate source,
+but it neither controls Environment secrets nor makes an App-owned deployment
+decision with Environment callback semantics.
+
+### Give the App Actions write or cluster credentials
+
+Rejected. Approval and execution are separated to cap a compromised App's
+blast radius.
+
+### Count two wrappers of the same provider as quorum
+
+Rejected. Independence is provider-family based; channel attribution is still
+recorded but cannot inflate quorum.
+
+### Put the evidence digest only in workflow input
+
+Rejected. Custom protection webhook payload does not promise arbitrary inputs.
+The current OpenAPI/run response does not expose them. The App needs
+pre-registration plus an immutable intent ref and re-fetched run/workflow
+binding; display title and inputs remain non-authoritative.
+
+### Always-approve shadow rule
+
+Rejected. A future Environment configuration mistake could turn observation
+mode into an unbounded bypass.
+
+### Auto-approve production after Cross-AI AGREE
+
+Rejected in v1. Cross-AI does not replace named production, legal, secret-owner
+or irreversible-mutation authority.
+
+## 19. References
+
+- [Creating custom deployment protection rules](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/create-custom-protection-rules)
+- [Configuring custom deployment protection rules](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/configure-custom-protection-rules)
+- [`deployment_protection_rule` webhook](https://docs.github.com/en/webhooks/webhook-events-and-payloads#deployment_protection_rule)
+- [Review custom deployment protection rules REST endpoint](https://docs.github.com/en/rest/actions/workflow-runs#review-custom-deployment-protection-rules-for-a-workflow-run)
+- [Validating GitHub webhook deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries)
+- [Authenticating as a GitHub App](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app)
+- [RFC 8785 — JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785)
+- [DSSE protocol](https://github.com/secure-systems-lab/dsse)
+- [ADR-0023](0023-promotion-pipeline-test-overlay-authoritative.md) — test overlay GitOps authority
+- [ADR-0035](0035-evidence-storage-contract.md) — evidence storage direction; current blocked status preserved
+
+## 20. Review record
+
+Round 1, 2026-07-16:
+
+- direct Anthropic CLI, actual `modelUsage=claude-opus-4-6`,
+  `direct-provider-CLI=true`: `REVISE`;
+- Cursor CLI routed `cursor-grok-4.5-high`, provider family xAI,
+  `direct-provider-CLI=false`: `REVISE`.
+
+Both reviews identified binding, callback reservation, transitive workflow,
+trust-root and stage-outcome gaps. The repairs are incorporated above. One
+Anthropic repair proposed reading `workflow_run.inputs`; official GitHub
+OpenAPI and live run evidence showed that field is absent, so the risk was
+accepted but the proposed mechanism was rejected. The replacement is an
+immutable intent ref plus registry/run/actor binding, with dispatch inputs
+explicitly non-authoritative.
+
+An earlier direct Anthropic tool-enabled attempt ended with an execution error
+and no verdict; it is not counted as a review.
+
+Round 2:
+
+- direct Anthropic CLI, actual `modelUsage=claude-opus-4-6`,
+  `direct-provider-CLI=true`: `AGREE`, with five P2 implementation-hardening
+  notes; all were absorbed;
+- Cursor CLI routed `cursor-grok-4.5-high`, provider family xAI,
+  `direct-provider-CLI=false`: `REVISE`.
+
+The second Cursor round found two remaining P0s: App-invisible authz-relevant
+workflow inputs and leaf-self-asserted provider family. It also required an
+unconditional v1 human-class reject, runner identity binding, dispatcher write
+containment, a normative rollback lane and terminal proof before reissue. The
+current text removes governed inputs entirely, derives attribution from the
+trust root, binds runner inventory, adds dedicated failure-bound rollback and
+forbids v1 leaf reuse. At that point the ADR remained `PROPOSED` and was not yet
+implementation-ready.
+
+Round 3:
+
+- direct Anthropic CLI, actual `modelUsage=claude-opus-4-6`,
+  `direct-provider-CLI=true`: `AGREE`, no P0/P1;
+- Cursor CLI routed `cursor-grok-4.5-high`, provider family xAI,
+  `direct-provider-CLI=false`: `AGREE`, no P0/P1.
+
+Both channels left only P2 hardening. Those notes are now absorbed as a
+management-signed/frozen runner admission lease, broader invisible-control
+input denial, a 72 h trust-root overlap ceiling, strict `Drained` evidence,
+live dispatcher denial/alert tests and concurrency-group lease/headroom
+recheck. Round 4 verifies this exact final subject.
+
+Round 4:
+
+- direct Anthropic CLI, actual `modelUsage=claude-opus-4-6`,
+  `direct-provider-CLI=true`: `AGREE`, no P0/P1;
+- Cursor CLI routed `cursor-grok-4.5-high`, provider family xAI,
+  `direct-provider-CLI=false`: `REVISE`, two P1 specification-consistency
+  findings.
+
+Cursor found that §4 required runner-lease and invisible-control checks but the
+deterministic §5 algorithm did not repeat them as mandatory decision steps. §5
+now requires the exact signed lease/generation/freshness/revocation checks and
+the full input/vars/mutable-control denial before reserve and again before
+callback. Round 5 verifies the final exact text.
+
+Round 5 final exact-subject result:
+
+- direct Anthropic CLI, actual `modelUsage=claude-opus-4-6`,
+  `direct-provider-CLI=true`: `AGREE`, no P0/P1;
+- Cursor CLI routed `cursor-grok-4.5-high`, provider family xAI,
+  `direct-provider-CLI=false`: `AGREE`, no P0/P1.
+
+Provider-distinct design consensus is therefore `AGREE`. This makes ADR-0045
+implementation-ready as a **PROPOSED design**; it does not claim the GitHub App,
+Environment rule, signed issuer chain, workflow refactor, canary or #2373
+customer journey is live or accepted.
+
+Source implementation review, 2026-07-17:
+
+- direct Anthropic CLI, actual
+  `modelUsage=claude-opus-4-6[1m]`, `direct-provider-CLI=true`: initial
+  executable review `AGREE`; final current-tree review `AGREE`, no P0/P1;
+- Cursor CLI routed `cursor-grok-4.5-high`, provider family xAI,
+  `direct-provider-CLI=false`, `modelIdentityClass=trusted-launch-attested`:
+  `REVISE`, then final current-tree `AGREE`, no P0/P1.
+
+The Cursor source review found three P1 control-plane gaps: an `observe`
+policy could be wired to enforcement, revocations were frozen at process
+start, and enforcement did not require explicit proof that administrators
+could not bypass Environment rules. The implementation now rejects
+`enforce + observe` at evaluator construction, reloads and verifies the signed
+revocation envelope for every evaluation, and requires the live Environment
+field `can_admins_bypass` to be exactly `false`. Both providers independently
+verified these repairs on the exact current tree. Failed/auth-blocked or
+tool-less provider attempts produced no verdict and are not counted.
+
+This is provider-distinct consensus for the Phase-0 source boundary only. The
+Phase-2/3 live prerequisites in §12 remain open and fail-closed; this record
+does not claim a registered App, deployed signer chain, protected workflows,
+runner lease, Environment custom rule, callback canary, rollback drill or
+customer acceptance.
+
+Stage-outcome and restart-reconciliation source review, 2026-07-17:
+
+- Cursor CLI routed `cursor-grok-4.5-high`, provider family xAI,
+  `direct-provider-CLI=false`, `modelIdentityClass=trusted-launch-attested`:
+  `REVISE` on latest-attempt confusion, outcome stranding/readiness and
+  repository-scoped replay; after repair, a second `REVISE` found rollback
+  could open while the exact apply attempt was still executing; final exact
+  code result `AGREE`, no P0/P1;
+- direct Anthropic CLI, actual
+  `modelUsage=claude-opus-4-6[1m]`, `direct-provider-CLI=true`: early `AGREE`
+  results that inspected the pre-repair expiry path were not counted as
+  closure; final exact code result after `OutcomeOverdue` and the
+  ambiguous-callback repair was `AGREE`, no P0/P1.
+
+The final state machine sends both bounded outcome expiry and ambiguous
+approval callbacks to `OutcomeOverdue`. Rollback remains blocked there. Only
+the attempt-specific Actions API proving the bound attempt `completed` with a
+recognized terminal conclusion permits `OutcomeOverdue -> CallbackUnknown`.
+The source also uses attempt-specific job reads, validates every job attempt,
+keeps App authentication off artifact redirects, scopes replay uniqueness by
+repository and Environment, exposes sweeper heartbeat readiness, and refuses
+to close the registry under a live sweeper. A locally executed 97-test suite,
+Ruff, mypy, JSON parsing and whitespace checks pass. This consensus still does
+not substitute for the Phase-2/3 live App, workflow, Environment and rollback
+canary evidence.

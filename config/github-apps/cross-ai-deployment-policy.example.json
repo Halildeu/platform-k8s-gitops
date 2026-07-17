@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "acik.cross-ai-deployment-policy.v1",
+  "policyId": "faz22-view-only-cross-ai-v1",
+  "phase": "observe",
+  "repositoryId": 1211415632,
+  "repository": "Halildeu/platform-k8s-gitops",
+  "environment": "faz22-view-only-pilot",
+  "allowedApiOrigins": [
+    "https://api.github.com"
+  ],
+  "allowedInstallationIds": [
+    900000002
+  ],
+  "allowedDispatcherActorIds": [
+    900000003
+  ],
+  "allowedDeploymentClasses": [
+    "reversible-test"
+  ],
+  "maxGrantTtlMinutes": 120,
+  "requiredCustomRuleAppIds": [
+    900000001
+  ],
+  "workflowStages": [
+    {
+      "stage": "apply",
+      "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
+      "requiredRunsOnLabels": [
+        "ubuntu-latest"
+      ],
+      "requireRunnerGroup": false
+    },
+    {
+      "stage": "browser-evidence",
+      "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
+      "requiredRunsOnLabels": [
+        "self-hosted",
+        "staging-sw",
+        "testai-deploy"
+      ],
+      "requireRunnerGroup": true
+    },
+    {
+      "stage": "compensating-rollback",
+      "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
+      "requiredRunsOnLabels": [
+        "ubuntu-latest"
+      ],
+      "requireRunnerGroup": false
+    }
+  ],
+  "humanRequiredClasses": [
+    "attended-consent",
+    "legal-dpo",
+    "named-authority",
+    "production-secret-owner",
+    "irreversible-production",
+    "production",
+    "break-glass"
+  ]
+}
