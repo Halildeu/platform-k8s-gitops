@@ -94,7 +94,7 @@ Kararın stable provenance kaydı [#2601](https://github.com/Halildeu/platform-k
   preflight'tan geçirilir ve üç kanal aynı content-addressed scope'u okur.
 - Implementer ile aynı sağlayıcının kanalı challenger olarak kalır ama bağımsız
   onay sayılmaz; bağımsızlık diğer iki direct-provider kanalından gelir.
-- Üç doğrulanmış `AGREE` yoksa consensus yoktur; `tracked_pending`, `REVISE`,
+- Üç ayrı owner-captured, exact-scope-bound `AGREE` evidence yoksa consensus yoktur; `tracked_pending`, `REVISE`,
   model/provider uyuşmazlığı veya çözümsüz ayrışma fail-closed kalır. PR body
   istisnası bu kapıyı aşmaz; politika değişikliği ayrı auditable governance
   değişikliği ister.
@@ -166,7 +166,7 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
   zincirine danış.
 - Cursor veya Cursor-routed model kullanma.
 - Üç kanalın geçerli bulgularını absorb et; `REVISE` sonrası exact-head yeniden
-  review ile üç doğrulanmış `AGREE` üret. Kalıcı ayrışma `consensus=false` ve
+  review ile üç ayrı owner-captured, exact-scope-bound `AGREE` evidence üret. Kalıcı ayrışma `consensus=false` ve
   fail-closed'dur; kendiliğinden karar/deploy/merge yetkisi vermez.
 - Devredilebilir engineering kararında mutabakatı uygula; gerçek human gate
   istisnalarını AI kararıyla ikame etme.
