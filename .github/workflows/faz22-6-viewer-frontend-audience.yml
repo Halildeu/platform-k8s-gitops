@@ -1,0 +1,87 @@
+name: Faz 22.6 VIEW_ONLY frontend audience reconcile
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Test Keycloak frontend audience action"
+        required: true
+        default: check
+        type: choice
+        options: [check, apply, rollback]
+      confirm:
+        description: "Exact action literal"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-test-keycloak-configuration
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile TEST frontend bridge audience
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 10
+    steps:
+      - name: Validate bounded dispatch
+        env:
+          ACTION: ${{ inputs.action }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            check) expected=CHECK_VIEWER_FRONTEND_AUDIENCE ;;
+            apply) expected=APPLY_VIEWER_FRONTEND_AUDIENCE ;;
+            rollback) expected=ROLLBACK_VIEWER_FRONTEND_AUDIENCE ;;
+            *) exit 2 ;;
+          esac
+          [ "$CONFIRM" = "$expected" ] || {
+            echo "::error::confirm must be $expected"
+            exit 2
+          }
+
+      - name: Checkout exact reconciler revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Reconcile TEST Keycloak audience
+        env:
+          OUT_DIR: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}
+        run: bash scripts/keycloak/reconcile-viewer-frontend-audience.sh --${{ inputs.action }}
+
+      - name: Verify redacted evidence contract
+        if: always()
+        env:
+          SUMMARY: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}/viewer-frontend-audience-summary.json
+        run: |
+          set -euo pipefail
+          test -s "$SUMMARY"
+          jq -e '
+            .schemaVersion == "faz22.6.viewerFrontendAudience.v1"
+            and .target.environment == "test"
+            and .target.realm == "platform-test"
+            and .target.frontendClient == "frontend"
+            and .target.resourceClient == "remote-bridge-operator-api"
+            and .securityBoundary.productionMutation == false
+            and .secretHygiene.adminPasswordIncluded == false
+            and .secretHygiene.adminTokenIncluded == false
+            and .secretHygiene.userTokenIncluded == false
+          ' "$SUMMARY" >/dev/null
+          if grep -Eqi '"[^"[:space:]]*(access[_-]?token|password|secret|private[_-]?key)[^"[:space:]]*"[[:space:]]*:[[:space:]]*"[^"]+"|bearer[[:space:]]+[A-Za-z0-9._-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' "$SUMMARY"; then
+            echo "::error::secret-like material found in evidence"
+            exit 1
+          fi
+          (cd "$(dirname "$SUMMARY")" && sha256sum "$(basename "$SUMMARY")" > SHA256SUMS)
+          (cd "$(dirname "$SUMMARY")" && sha256sum -c SHA256SUMS)
+
+      - name: Upload content-addressed redacted evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-viewer-frontend-audience-${{ github.run_id }}
+          path: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}/
+          if-no-files-found: error
+          retention-days: 30
