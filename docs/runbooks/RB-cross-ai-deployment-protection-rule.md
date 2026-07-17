@@ -198,6 +198,25 @@ activation remain outside this delegated flow. After the gates above pass, the
 agent may replace the image sentinel, render/server-dry-run the isolated
 activation overlay and add it to the test root through the normal GitOps PR.
 
+After the receive-only overlay is synced, run the dedicated self-hosted live
+verification from `main`:
+
+```bash
+gh workflow run verify-cross-ai-observer.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main
+```
+
+The workflow sandwiches one signed synthetic delivery and its replay between
+two identical runtime attestations. The Deployment generation, Pod UID, named
+`observer` imageID, Argo revision, ESO readiness and receive-only readiness
+tuple must remain stable. The ESO-delivered webhook value travels through an
+owner-only FIFO and is never written as a regular file, argument, log or
+artifact. A pass proves the pinned test observer accepted one valid HMAC
+delivery, deduplicated its replay and durably recorded the event. The delivery
+is synthetic, not GitHub-origin evidence; it does not enable or prove an
+Environment custom rule, approval callback, deployment or production gate.
+
 ### 5.2 Local process and enforcement
 
 Observe with evaluation but no callback:
