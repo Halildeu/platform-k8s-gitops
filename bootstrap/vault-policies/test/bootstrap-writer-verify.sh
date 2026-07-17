@@ -35,8 +35,9 @@ fi
 SECRET_ID=$(cat "$SECRET_ID_FILE")
 
 # --- AppRole login ---
-TOKEN=$(curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" \
-  -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" \
+TOKEN=$({ printf '%s\n' "$ROLE_ID"; printf '%s\n' "$SECRET_ID"; } \
+  | python3 -c 'import json,sys; print(json.dumps({"role_id": sys.stdin.readline().rstrip("\n"), "secret_id": sys.stdin.readline().rstrip("\n")}))' \
+  | curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" --data-binary @- \
   | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["client_token"])')
 
 if [[ -z "$TOKEN" ]]; then
@@ -44,7 +45,21 @@ if [[ -z "$TOKEN" ]]; then
   exit 1
 fi
 
-trap 'unset TOKEN; unset SECRET_ID' EXIT
+TOKEN_HEADER_FILE=$(mktemp)
+chmod 600 "$TOKEN_HEADER_FILE"
+printf 'X-Vault-Token: %s' "$TOKEN" > "$TOKEN_HEADER_FILE"
+cleanup() {
+  if [[ -f "${TOKEN_HEADER_FILE:-}" ]]; then
+    if command -v shred >/dev/null 2>&1; then
+      shred -u "$TOKEN_HEADER_FILE"
+    else
+      : > "$TOKEN_HEADER_FILE"
+      rm -f "$TOKEN_HEADER_FILE"
+    fi
+  fi
+  unset TOKEN SECRET_ID
+}
+trap cleanup EXIT
 
 PASS=0
 FAIL=0
@@ -69,10 +84,10 @@ assert_http_403() {
   local code
   if [[ -n "$body" ]]; then
     code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" \
-      -H "X-Vault-Token: $TOKEN" "$VAULT_ADDR/v1/$path" -d "$body")
+      -H @"$TOKEN_HEADER_FILE" "$VAULT_ADDR/v1/$path" -d "$body")
   else
     code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" \
-      -H "X-Vault-Token: $TOKEN" "$VAULT_ADDR/v1/$path")
+      -H @"$TOKEN_HEADER_FILE" "$VAULT_ADDR/v1/$path")
   fi
   if [[ "$code" == "403" ]]; then
     echo "  PASS  $label  (HTTP 403)"
@@ -90,10 +105,11 @@ assert_http_403() {
 echo "=== Positive — capabilities-self ==="
 
 services=(auth-service user-service variant-service core-data-service \
-          report-service schema-service permission-service openfga)
+          report-service schema-service permission-service \
+          cross-ai-deployment-protection-test openfga)
 
 for svc in "${services[@]}"; do
-  caps=$(curl -sf -X POST -H "X-Vault-Token: $TOKEN" \
+  caps=$(curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
     "$VAULT_ADDR/v1/sys/capabilities-self" \
     -d "{\"paths\":[\"kv/data/platform/$svc\"]}" \
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(','.join(sorted(d['capabilities'])))")
@@ -136,6 +152,10 @@ assert_http_403 "auth/token create" \
   POST "auth/token/create" \
   '{"policies":["root"]}'
 
+assert_http_403 "auth/token revoke-accessor" \
+  POST "auth/token/revoke-accessor" \
+  '{"accessor":"00000000-0000-0000-0000-000000000000"}'
+
 assert_http_403 "kv/data write on foreign path" \
   POST "kv/data/platform/non-existent-service" \
   '{"data":{"foo":"bar"}}'
@@ -160,7 +180,7 @@ if [[ "$FAIL" -gt 0 ]]; then
 fi
 
 # Self-revoke the AppRole token (defense-in-depth; TTL would expire anyway)
-curl -sf -X POST -H "X-Vault-Token: $TOKEN" \
+curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
   "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null
 
 echo "OK — bootstrap-writer boundary verified."

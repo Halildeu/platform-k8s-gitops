@@ -137,18 +137,63 @@ delivery passed HMAC/schema admission and entered the durable observe queue. It
 does not prove evaluation, approval, deployment or product acceptance.
 
 Before activation, the owner creates the evaluator App with the reviewed
-projection in `config/github-apps/cross-ai-protection-evaluator-app.example.json`,
-installs it only on `Halildeu/platform-k8s-gitops`, and provisions the generated
-webhook secret directly into the test Vault path. In the same owner-gated test
-Vault session, apply the reviewed
-`bootstrap/vault-policies/common/eso-runtime.hcl`; its dedicated entry grants
-the ESO AppRole only `read` on
-`kv/data/platform/cross-ai-deployment-protection-test`. The agent verifies the
-live AppRole capability and secret presence without printing either value,
-then may replace the image sentinel, render/server-dry-run the isolated
+projection in `config/github-apps/cross-ai-protection-evaluator-app.example.json`
+and installs it only on `Halildeu/platform-k8s-gitops`. The generated webhook
+secret stays in an owner-only `0600` handoff file; it is never copied into Git,
+chat, shell arguments or evidence.
+
+Test Vault policy and secret delivery use the established root-free flow:
+
+1. `scripts/ops/vault-policy-reconcile.sh` applies the git-reviewed
+   `eso-runtime` and `platform-bootstrap-writer` policies to the test Vault.
+2. The reconciler emits a short-lived `platform-bootstrap-writer-test` AppRole
+   secret-id into a host-local `0600` file.
+3. `scripts/ops/platform-ops-vault-patch.sh` reads the webhook value from stdin,
+   writes only `github_webhook_secret_current` at
+   `kv/data/platform/cross-ai-deployment-protection-test`, and self-revokes its
+   token. Use `--cleanup-secret-id-file`; the caller's exit trap shreds the
+   owner handoff even when login or write fails.
+4. The agent verifies ESO AppRole capability, property presence, ExternalSecret
+   `Ready=True` and value-hash alignment without printing the value.
+
+Run from the git-reviewed detached worktree on `staging-sw`; the handoff path is
+the owner-provided file path, not the value:
+
+```bash
+set -euo pipefail
+HANDOFF=/tmp/.cross-ai-webhook-secret-codex-2502
+SID=/tmp/platform-bootstrap-writer-test-secret-id.txt
+cleanup() {
+  shred -u "$HANDOFF" "$SID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+REPO_ROOT="$PWD" scripts/ops/vault-policy-reconcile.sh \
+  --emit-seed-secret-id platform-bootstrap-writer-test
+
+VAULT_BOOTSTRAP_ROLE_ID="$(cat /tmp/platform-bootstrap-writer-test-role-id.txt)" \
+VAULT_BOOTSTRAP_SECRET_ID_FILE="$SID" \
+scripts/ops/platform-ops-vault-patch.sh \
+  --vault-addr http://127.0.0.1:8201 \
+  --service cross-ai-deployment-protection-test \
+  --field-from-stdin github_webhook_secret_current \
+  --cleanup-secret-id-file < "$HANDOFF"
+```
+
+The wrapper uses KV v2 check-and-set: first creation requires `cas=0`; rotations
+require the version read immediately before the write. A concurrent mutation
+therefore fails closed instead of overwriting an unseen update. If the first
+seed is wrong, generate/rotate the GitHub App webhook secret and repeat this
+flow; do not soft-delete or destroy the Vault version. Before any observer pod
+exists, rollback is simply to leave the activation overlay disconnected. After
+activation, rotate the GitHub App secret, re-seed, force-sync ESO and restart the
+single observer pod as one coordinated operation.
+
+The reconciler is test-only and cannot read KV secret data. Test Vault root-token
+recovery, Vault root-of-trust, production Vault and Environment custom-rule
+activation remain outside this delegated flow. After the gates above pass, the
+agent may replace the image sentinel, render/server-dry-run the isolated
 activation overlay and add it to the test root through the normal GitOps PR.
-App creation/install, raw secret entry and test Vault root-token recovery remain
-one-time owner operations.
 
 ### 5.2 Local process and enforcement
 

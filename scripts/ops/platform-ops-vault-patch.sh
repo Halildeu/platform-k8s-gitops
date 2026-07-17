@@ -22,12 +22,15 @@
 #   --service <name>            Required. One of: auth-service, user-service,
 #                               variant-service, core-data-service,
 #                               report-service, schema-service,
-#                               permission-service, openfga, ghcr-token
+#                               permission-service,
+#                               cross-ai-deployment-protection-test, openfga,
+#                               ghcr-token
 #                               (ghcr-token uses kv/data/gitops/ghcr-token).
 #   --field key=value           Set a single key-value (value visible in argv;
 #                               use --field-from-stdin for sensitive values).
 #   --field-from-stdin <key>    Reads the key's value from stdin (one line).
 #                               Repeatable.
+#   --cleanup-secret-id-file    Securely removes the secret-id file on exit.
 #   --vault-addr <url>          Default: http://127.0.0.1:8301 (test).
 #                               Use http://127.0.0.1:8200 for prod.
 #   --dry-run                   Print the would-be PATCH body, don't write.
@@ -58,6 +61,8 @@ SERVICE=""
 declare -a FIELDS=()
 declare -a STDIN_KEYS=()
 DRY_RUN=0
+CLEANUP_SECRET_ID_FILE=0
+TOKEN_HEADER_FILE=""
 
 usage() {
   sed -n '/^# platform-ops-vault-patch/,/^# Audit trail:/p' "$0" \
@@ -72,6 +77,8 @@ while [[ $# -gt 0 ]]; do
       FIELDS+=("$2"); shift 2 ;;
     --field-from-stdin)
       STDIN_KEYS+=("$2"); shift 2 ;;
+    --cleanup-secret-id-file)
+      CLEANUP_SECRET_ID_FILE=1; shift ;;
     --vault-addr)
       VAULT_ADDR="$2"; shift 2 ;;
     --dry-run)
@@ -97,7 +104,8 @@ fi
 # Service path resolution
 case "$SERVICE" in
   auth-service|user-service|variant-service|core-data-service|\
-  report-service|schema-service|permission-service|openfga)
+  report-service|schema-service|permission-service|\
+  cross-ai-deployment-protection-test|openfga)
     KV_PATH="kv/data/platform/$SERVICE"
     ;;
   ghcr-token)
@@ -107,6 +115,18 @@ case "$SERVICE" in
     echo "ERROR: unknown --service $SERVICE" >&2
     exit 2 ;;
 esac
+
+# This dedicated path carries exactly one GitHub-generated HMAC secret. Lock the
+# wrapper contract to stdin-only and reject arbitrary fields even though Vault
+# ACLs are necessarily path-granular rather than property-granular.
+if [[ "$SERVICE" == "cross-ai-deployment-protection-test" ]]; then
+  if [[ "${#FIELDS[@]}" -ne 0 \
+        || "${#STDIN_KEYS[@]}" -ne 1 \
+        || "${STDIN_KEYS[0]:-}" != "github_webhook_secret_current" ]]; then
+    echo "ERROR: $SERVICE accepts only --field-from-stdin github_webhook_secret_current" >&2
+    exit 2
+  fi
+fi
 
 if [[ "${#FIELDS[@]}" -eq 0 && "${#STDIN_KEYS[@]}" -eq 0 ]]; then
   echo "ERROR: at least one --field or --field-from-stdin is required" >&2
@@ -150,10 +170,10 @@ done
 # AppRole login → short-lived token
 # ============================================================================
 
-LOGIN_RESPONSE=$(curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" \
-  -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" 2>&1) || {
-  echo "ERROR: AppRole login failed (HTTP error). Output:" >&2
-  echo "$LOGIN_RESPONSE" >&2
+LOGIN_RESPONSE=$({ printf '%s\n' "$ROLE_ID"; printf '%s\n' "$SECRET_ID"; } \
+  | python3 -c 'import json,sys; print(json.dumps({"role_id": sys.stdin.readline().rstrip("\n"), "secret_id": sys.stdin.readline().rstrip("\n")}))' \
+  | curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" --data-binary @- 2>/dev/null) || {
+  echo "ERROR: AppRole login failed (HTTP error)" >&2
   exit 3
 }
 
@@ -168,13 +188,36 @@ if [[ -z "$TOKEN" ]]; then
   exit 3
 fi
 
+TOKEN_HEADER_FILE=$(mktemp)
+chmod 600 "$TOKEN_HEADER_FILE"
+printf 'X-Vault-Token: %s' "$TOKEN" > "$TOKEN_HEADER_FILE"
+
 # Cleanup token + secrets on exit (defense-in-depth; TTL is short anyway)
 cleanup() {
-  if [[ -n "${TOKEN:-}" ]]; then
-    curl -sf -X POST -H "X-Vault-Token: $TOKEN" \
+  if [[ -n "${TOKEN:-}" && -f "${TOKEN_HEADER_FILE:-}" ]]; then
+    curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
       "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
   fi
-  unset TOKEN SECRET_ID FIELDS STDIN_FIELD_PAIRS LOGIN_RESPONSE
+  if [[ -f "${TOKEN_HEADER_FILE:-}" ]]; then
+    if command -v shred >/dev/null 2>&1; then
+      shred -u "$TOKEN_HEADER_FILE" 2>/dev/null || true
+    else
+      : > "$TOKEN_HEADER_FILE"
+      rm -f "$TOKEN_HEADER_FILE"
+    fi
+  fi
+  if [[ "$CLEANUP_SECRET_ID_FILE" -eq 1 \
+        && -n "${SECRET_ID_FILE:-}" \
+        && -f "$SECRET_ID_FILE" ]]; then
+    if command -v shred >/dev/null 2>&1; then
+      shred -u "$SECRET_ID_FILE" 2>/dev/null || true
+    else
+      : > "$SECRET_ID_FILE"
+      rm -f "$SECRET_ID_FILE"
+    fi
+  fi
+  unset TOKEN SECRET_ID FIELDS STDIN_FIELD_PAIRS LOGIN_RESPONSE \
+    PATCHED_DATA EXISTING_RESPONSE EXISTING_DATA
 }
 trap cleanup EXIT
 
@@ -182,7 +225,7 @@ trap cleanup EXIT
 # capabilities-self check (fail-fast pattern)
 # ============================================================================
 
-CAPS=$(curl -sf -X POST -H "X-Vault-Token: $TOKEN" \
+CAPS=$(curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
   "$VAULT_ADDR/v1/sys/capabilities-self" \
   -d "{\"paths\":[\"$KV_PATH\"]}" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(','.join(sorted(d['capabilities'])))")
@@ -204,33 +247,48 @@ fi
 # Read existing data + merge fields (KV v2 patch semantic)
 # ============================================================================
 
-EXISTING_RESPONSE=$(curl -sf -H "X-Vault-Token: $TOKEN" \
-  "$VAULT_ADDR/v1/$KV_PATH" 2>&1)
+EXISTING_RESPONSE=$(curl -sS -H @"$TOKEN_HEADER_FILE" \
+  -w $'\n%{http_code}' "$VAULT_ADDR/v1/$KV_PATH" 2>/dev/null) || {
+  echo "ERROR: Vault read failed for $KV_PATH" >&2
+  exit 5
+}
+EXISTING_CODE="${EXISTING_RESPONSE##*$'\n'}"
+EXISTING_BODY="${EXISTING_RESPONSE%$'\n'*}"
 
-if echo "$EXISTING_RESPONSE" | grep -q '"errors"' \
-   && echo "$EXISTING_RESPONSE" | grep -q '404'; then
+if [[ "$EXISTING_CODE" == "404" ]]; then
   EXISTING_DATA="{}"
+  CURRENT_VERSION=0
+elif [[ "$EXISTING_CODE" == "200" ]]; then
+  EXISTING_DATA=$(printf '%s' "$EXISTING_BODY" \
+    | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin)["data"]["data"]))')
+  CURRENT_VERSION=$(printf '%s' "$EXISTING_BODY" \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["metadata"]["version"])')
 else
-  EXISTING_DATA=$(echo "$EXISTING_RESPONSE" \
-    | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin)["data"]["data"]))' 2>/dev/null) \
-    || EXISTING_DATA="{}"
+  echo "ERROR: Vault read returned HTTP $EXISTING_CODE for $KV_PATH" >&2
+  exit 5
 fi
+unset EXISTING_BODY
 
 # Merge new fields into existing data
-PATCHED_DATA=$(python3 -c "
-import json, sys
-existing = json.loads('$EXISTING_DATA')
-fields = '''$(IFS=$'\n'; echo "${FIELDS[*]:-}"
-              IFS=$'\n'; echo "${STDIN_FIELD_PAIRS[*]:-}")'''
-for line in fields.splitlines():
-    line = line.strip()
+PATCHED_DATA=$({
+  printf '%s\n' "$EXISTING_DATA"
+  printf '%s\n' "${FIELDS[@]:-}"
+  printf '%s\n' "${STDIN_FIELD_PAIRS[@]:-}"
+} | CURRENT_VERSION="$CURRENT_VERSION" python3 -c '
+import json
+import os
+import sys
+
+existing = json.loads(sys.stdin.readline())
+for line in sys.stdin:
+    line = line.rstrip("\n")
     if not line:
         continue
-    k, _, v = line.partition('=')
-    if k:
-        existing[k] = v
-print(json.dumps({'data': existing}))
-")
+    key, separator, value = line.partition("=")
+    if separator and key:
+        existing[key] = value
+print(json.dumps({"options": {"cas": int(os.environ["CURRENT_VERSION"])}, "data": existing}))
+')
 
 # ============================================================================
 # Write (or dry-run)
@@ -254,11 +312,11 @@ print(json.dumps(d, indent=2))
   exit 0
 fi
 
-WRITE_RESPONSE=$(curl -sf -X POST -H "X-Vault-Token: $TOKEN" \
-  "$VAULT_ADDR/v1/$KV_PATH" \
-  -d "$PATCHED_DATA" 2>&1) || {
+WRITE_RESPONSE=$(printf '%s' "$PATCHED_DATA" \
+  | curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
+      "$VAULT_ADDR/v1/$KV_PATH" --data-binary @- 2>/dev/null) || {
   echo "ERROR: Vault write failed for $KV_PATH" >&2
-  echo "       response: $WRITE_RESPONSE" >&2
+  echo "       possible CAS conflict or HTTP error; no value was logged" >&2
   exit 5
 }
 
