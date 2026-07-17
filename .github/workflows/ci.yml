@@ -69,6 +69,10 @@ jobs:
         run: bash scripts/test/denetim-device-key-view-only-env-patch-static.sh
       - name: Faz 22.6 acceptance package workflows static guard
         run: bash scripts/test/faz22-6-acceptance-package-workflows-static.sh
+      - name: Faz 22.6 VIEW_ONLY audit DB role reconciler guard
+        run: bash tests/faz22_remote_ops/test_reconcile_viewer_audit_db_role.sh
+      - name: Faz 22.6 VIEW_ONLY audit DB role PostgreSQL integration
+        run: bash tests/faz22_remote_ops/test_reconcile_viewer_audit_db_role_postgres.sh
       - name: platform-test GitOps sync static guard
         run: bash scripts/test/platform-test-gitops-sync-static.sh
       - name: Faz 24 Meeting-AI private gateway static guard

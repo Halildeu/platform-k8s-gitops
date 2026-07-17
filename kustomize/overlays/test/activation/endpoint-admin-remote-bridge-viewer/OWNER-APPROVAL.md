@@ -44,6 +44,17 @@ Then wire the api-gateway route (runtime patch) per
 per §4 (Up / Functional 401-404-409 / 8096 negative reachability / executable audit
 fail-closed drill).
 
+The workflow also reconciles the broker database role before exposing the
+viewer. The durable contract is `USAGE` on `endpoint_admin_service` and only
+`SELECT, INSERT` on `endpoint_admin_service.endpoint_audit_events`; effective
+schema `CREATE` plus table `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, and
+`TRIGGER`, column-level `UPDATE`/`REFERENCES`, and any inherited role membership
+are a hard failure. Reconciliation proves the real role can select and insert inside one
+transaction, rolls the synthetic probe row back, and commits only the grants.
+The evidence workflow checks the same matrix both before requesting protected
+approval and again after approval. Role names, passwords, and raw secrets are
+never written to workflow output or artifacts.
+
 ## Rollback
 
 - **Kill viewer now:** set `REMOTE_BRIDGE_VIEWER_ENABLED=false` (keep
@@ -68,6 +79,9 @@ fail-closed drill).
 - Test overlay only; no prod overlay change.
 - Not in the Argo root → no reconcile can auto-expose the viewer.
 - Recording-OFF (ADR-0044): nothing is persisted; no data to purge on rollback.
+- Pilot rollback closes the viewer surface but intentionally keeps the narrow
+  audit-table grant: append-only audit is a permanent broker requirement, not a
+  temporary viewer exposure capability.
 - The apply authorization receipt is not sufficient product evidence. The v2
   product verifier must independently re-fetch and bind its run/artifact/digest
   to the operator child and the browser session hashes.
