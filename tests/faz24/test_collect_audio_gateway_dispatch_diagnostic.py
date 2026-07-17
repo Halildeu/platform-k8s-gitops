@@ -128,6 +128,32 @@ def test_collect_classifies_unmeterable_audio_before_redis(tmp_path):
     }
 
 
+def test_collect_classifies_successful_stt_response_with_empty_transcript(tmp_path):
+    collector = _load()
+    smoke = tmp_path / "smoke.json"
+    output = tmp_path / "diagnostic.json"
+    _smoke(smoke)
+
+    raw_line = (
+        "Direct-STT transcript received sessionId=SES-test-1 chunkSeq=0 "
+        "correlationId=faz24-corr-1 textLen=0 sttLang=tr elapsedMs=611 model=test"
+    )
+    evidence = collector.collect(
+        smoke,
+        output,
+        context="k3d-test",
+        namespace="platform-test",
+        deployment="audio-gateway",
+        since="10m",
+        command_runner=lambda _argv, _timeout: collector.CommandResult(0, raw_line, ""),
+    )
+
+    assert evidence["status"] == "classified"
+    assert evidence["diagnostic"]["classification"] == "direct-stt-empty-transcript"
+    assert evidence["diagnostic"]["correlationMatched"] is True
+    assert raw_line not in output.read_text(encoding="utf-8")
+
+
 def test_collect_ignores_other_request_and_reports_inconclusive(tmp_path):
     collector = _load()
     smoke = tmp_path / "smoke.json"

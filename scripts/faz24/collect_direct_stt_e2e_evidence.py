@@ -824,6 +824,79 @@ def find_record(
     return None
 
 
+def wait_for_result_record(
+    runner: CommandRunner,
+    *,
+    initial_records: list[tuple[str, dict[str, str]]],
+    session_id: str,
+    chunk_seq: int,
+    correlation_id: str,
+    container: str,
+    count: int,
+    context: str,
+    namespace: str,
+    service: str,
+    secret: str,
+    secret_key: str,
+    image: str,
+    exec_pod: str,
+    exec_container: str,
+    wait_seconds: float,
+    poll_interval_seconds: float,
+    sleeper: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> tuple[tuple[str, dict[str, str]] | None, int, list[str]]:
+    """Wait only for the exact async result without re-reading unrelated streams."""
+    match = find_record(
+        initial_records,
+        session_id=session_id,
+        chunk_seq=chunk_seq,
+        correlation_id=correlation_id,
+        event_type=EXPECTED_RESULT_EVENT,
+    )
+    if match:
+        return match, 0, []
+
+    bounded_wait = max(0.0, min(float(wait_seconds), 60.0))
+    bounded_interval = max(0.1, min(float(poll_interval_seconds), 5.0))
+    deadline = monotonic() + bounded_wait
+    attempts = 0
+    errors: list[str] = []
+
+    while monotonic() < deadline:
+        remaining = deadline - monotonic()
+        sleeper(min(bounded_interval, max(0.0, remaining)))
+        records, error = redis_records(
+            runner,
+            container=container,
+            stream=EXPECTED_RESULT_STREAM,
+            count=count,
+            context=context,
+            namespace=namespace,
+            service=service,
+            secret=secret,
+            secret_key=secret_key,
+            image=image,
+            exec_pod=exec_pod,
+            exec_container=exec_container,
+        )
+        attempts += 1
+        if error:
+            errors.append(error)
+            continue
+        match = find_record(
+            records,
+            session_id=session_id,
+            chunk_seq=chunk_seq,
+            correlation_id=correlation_id,
+            event_type=EXPECTED_RESULT_EVENT,
+        )
+        if match:
+            return match, attempts, errors[-3:]
+
+    return None, attempts, errors[-3:]
+
+
 def find_audio_chunk_record(
     *,
     records_by_stream: dict[str, list[tuple[str, dict[str, str]]]],
@@ -906,6 +979,8 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
     redis_secret = getattr(args, "redis_secret", DEFAULT_REDIS_SECRET)
     redis_secret_key = getattr(args, "redis_secret_key", DEFAULT_REDIS_SECRET_KEY)
     redis_cli_image = getattr(args, "redis_cli_image", DEFAULT_REDIS_CLI_IMAGE)
+    result_wait_seconds = getattr(args, "result_wait_seconds", 20.0)
+    result_poll_interval_seconds = getattr(args, "result_poll_interval_seconds", 1.0)
 
     if smoke.get("status") != "pass":
         failures.append("external-smoke-not-pass")
@@ -991,13 +1066,27 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
         failures.extend(redis_errors[:3])
 
     result_records = redis_records_by_stream.get(EXPECTED_RESULT_STREAM, [])
-    result_record = find_record(
-        result_records,
+    result_record, result_poll_attempts, result_poll_errors = wait_for_result_record(
+        runner,
+        initial_records=result_records,
         session_id=session_id,
         chunk_seq=chunk_seq,
         correlation_id=correlation_id,
-        event_type=EXPECTED_RESULT_EVENT,
+        container=args.redis_container,
+        count=args.redis_count,
+        context=args.context,
+        namespace=args.namespace,
+        service=redis_service,
+        secret=redis_secret,
+        secret_key=redis_secret_key,
+        image=redis_cli_image,
+        exec_pod=pod_name,
+        exec_container=args.deployment,
+        wait_seconds=result_wait_seconds,
+        poll_interval_seconds=result_poll_interval_seconds,
     )
+    if result_poll_errors and not result_record:
+        failures.extend(result_poll_errors)
     if not result_record:
         failures.append("result-stream-entry-not-found")
     else:
@@ -1096,6 +1185,9 @@ def collect(args: argparse.Namespace, runner: CommandRunner = run_command) -> di
             "resultStreamKey": EXPECTED_RESULT_STREAM,
             "resultStreamEntryFound": result_record is not None,
             "resultStreamRecordId": result_record[0] if result_record else "",
+            "resultPollAttempts": result_poll_attempts,
+            "resultPollReadErrors": len(result_poll_errors),
+            "resultWaitSeconds": max(0.0, min(float(result_wait_seconds), 60.0)),
             "transcriptTextIncluded": False,
             "transcriptSha256": transcript_hash,
             "transcriptCharCount": transcript_chars,
@@ -1160,6 +1252,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--gitops-commit")
     parser.add_argument("--probe-timeout", type=int, default=40)
     parser.add_argument("--redis-count", type=int, default=1000)
+    parser.add_argument("--result-wait-seconds", type=float, default=20.0)
+    parser.add_argument("--result-poll-interval-seconds", type=float, default=1.0)
     return parser.parse_args(argv)
 
 

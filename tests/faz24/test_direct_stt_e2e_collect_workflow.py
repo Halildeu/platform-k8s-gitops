@@ -246,6 +246,8 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "collect_direct_stt_e2e_evidence.py" in workflow
     assert "verify_direct_stt_e2e_evidence.py" in workflow
     assert "collect_audio_gateway_dispatch_diagnostic.py" in workflow
+    assert "--result-wait-seconds 20" in workflow
+    assert "--result-poll-interval-seconds 1" in workflow
     assert "Classify audio-gateway dispatch failure without raw logs" in workflow
     assert "faz24-audio-gateway-dispatch-diagnostic.json" in workflow
     assert "dispatch-diagnostic.stderr.sha256=" in workflow
@@ -527,3 +529,69 @@ def test_collector_builds_verifier_compatible_metadata_without_raw_transcript(tm
     assert evidence["audit"]["chunkSeqMatches"] is True
     assert "Merhaba dunya" not in rendered
     assert "textDraft" not in rendered
+
+
+def test_result_poll_waits_for_exact_async_record_without_rescanning_other_streams():
+    collector = _load_collector()
+    calls = []
+    clock = [0.0]
+
+    def fake_runner(argv, _timeout):
+        calls.append(argv)
+        if argv[:2] != ["docker", "exec"]:
+            raise AssertionError(f"unexpected command: {argv}")
+        if len(calls) == 1:
+            return collector.CommandResult(0, "[]", "")
+        return collector.CommandResult(
+            0,
+            json.dumps(
+                [
+                    [
+                        "1782471276845-0",
+                        [
+                            "eventType",
+                            "DIRECT_STT_TRANSCRIPT_RESULT",
+                            "sessionId",
+                            "SES-delayed",
+                            "chunkSeq",
+                            "0",
+                            "correlationId",
+                            "faz24-delayed",
+                            "textDraft",
+                            "Merhaba",
+                        ],
+                    ]
+                ]
+            ),
+            "",
+        )
+
+    def sleeper(seconds):
+        clock[0] += seconds
+
+    match, attempts, errors = collector.wait_for_result_record(
+        fake_runner,
+        initial_records=[],
+        session_id="SES-delayed",
+        chunk_seq=0,
+        correlation_id="faz24-delayed",
+        container="platform-redis-streams-test",
+        count=1000,
+        context="k3d-test",
+        namespace="platform-test",
+        service="redis-streams",
+        secret="audio-gateway-secrets",
+        secret_key="SPRING_DATA_REDIS_PASSWORD",
+        image="redis:7.4-alpine",
+        exec_pod="audio-gateway-abc",
+        exec_container="audio-gateway",
+        wait_seconds=5,
+        poll_interval_seconds=1,
+        sleeper=sleeper,
+        monotonic=lambda: clock[0],
+    )
+
+    assert errors == []
+    assert attempts == 2
+    assert match and match[0] == "1782471276845-0"
+    assert all(argv[-2] == "transcript:direct-stt-results" for argv in calls)

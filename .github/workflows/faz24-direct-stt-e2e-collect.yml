@@ -286,6 +286,8 @@ jobs:
             --redis-container "${{ inputs.redis_container }}" \
             --gitops-commit "${GITHUB_SHA}" \
             --probe-timeout "${{ inputs.probe_timeout }}" \
+            --result-wait-seconds 20 \
+            --result-poll-interval-seconds 1 \
             > "${EVIDENCE_DIR}/collector.stdout" \
             2> "${EVIDENCE_DIR}/collector.stderr"
           exit_code="$?"

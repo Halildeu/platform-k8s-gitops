@@ -39,6 +39,9 @@ CLASSIFIERS = (
     ("direct-stt-http", "Direct-STT forward HTTP error"),
     ("direct-stt-connection", "Direct-STT forward connection error"),
     ("direct-stt-failed", "Direct-STT forward failed"),
+    ("direct-stt-result-sink-schedule", "ALERT direct-STT transcript result sink scheduling failed"),
+    ("direct-stt-result-sink", "ALERT direct-STT transcript result sink failed"),
+    ("direct-stt-result-routed", "Direct-STT transcript result routed"),
 )
 
 
@@ -110,6 +113,9 @@ def classify_logs(
         if f"sessionId={session_id}" not in line:
             continue
         correlation_matched = f"correlationId={correlation_id}" in line
+        if "Direct-STT transcript received" in line and re.search(r"\btextLen=0\b", line):
+            matches.append(("direct-stt-empty-transcript", None, correlation_matched))
+            continue
         for classification, marker in CLASSIFIERS:
             if marker not in line:
                 continue
