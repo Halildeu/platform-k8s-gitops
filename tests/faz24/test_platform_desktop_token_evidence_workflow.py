@@ -108,6 +108,8 @@ def test_runner_contract_restores_and_redacts():
     assert "rawAdminCredentialLogged: false" in text
     assert "run_external_recorder_smoke.py" in text
     assert "verify_external_recorder_smoke_evidence.py" in text
+    assert 'SMOKE_AUDIO_FORMAT="${SMOKE_AUDIO_FORMAT:-PCM16}"' in text
+    assert 'SMOKE_SAMPLE_RATE_HZ="${SMOKE_SAMPLE_RATE_HZ:-16000}"' in text
     assert "RUN_MEETING_AI_RESULT_ACCEPTANCE" in text
     assert "run_meeting_ai_user_result_acceptance.py" in text
     assert "MEETING_AI_RESULT_ACCEPTANCE_JSON" in text

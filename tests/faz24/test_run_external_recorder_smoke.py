@@ -119,7 +119,7 @@ class _SmokeHandler(BaseHTTPRequestHandler):
         if self.path == "/api/v1/audio-gateway/sessions/SES-test-1/chunks":
             raw = self.rfile.read(int(self.headers.get("Content-Length", "0") or "0"))
             assert self.headers["X-Audio-Chunk-Seq"] == "0"
-            assert self.headers["X-Audio-Format"] == "WAV"
+            assert self.headers["X-Audio-Format"] == "PCM16"
             assert self.headers["X-Audio-Sample-Rate-Hz"] == "16000"
             assert self.headers["X-Audio-Channels"] == "1"
             assert self.headers["X-Audio-Byte-Length"] == str(len(raw))
@@ -290,6 +290,8 @@ def test_external_recorder_smoke_happy_path_redacts_token(tmp_path):
     assert report["ids"]["sessionId"] == "SES-test-1"
     assert report["sample"]["chunkSeq"] == 0
     assert report["sample"]["sampleSha256"]
+    assert report["sample"]["audioFormat"] == "PCM16"
+    assert report["sample"]["sampleRateHz"] == 16000
     assert report["sample"]["rawAudioIncluded"] is False
     assert "audioBytes" not in report["sample"]
     assert report["boundaries"]["externalMeetingAdminPathExercised"] is True
