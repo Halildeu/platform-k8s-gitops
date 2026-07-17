@@ -44,6 +44,7 @@ class DeploymentPolicy:
     environment: str
     allowed_api_origins: tuple[str, ...]
     allowed_installation_ids: frozenset[int]
+    allowed_dispatcher_installation_ids: frozenset[int]
     allowed_dispatcher_actor_ids: frozenset[int]
     allowed_deployment_classes: frozenset[str]
     max_grant_ttl_minutes: int
@@ -98,6 +99,9 @@ def load_policy(path: Path) -> DeploymentPolicy:
         environment=payload["environment"],
         allowed_api_origins=tuple(payload["allowedApiOrigins"]),
         allowed_installation_ids=frozenset(payload["allowedInstallationIds"]),
+        allowed_dispatcher_installation_ids=frozenset(
+            payload["allowedDispatcherInstallationIds"]
+        ),
         allowed_dispatcher_actor_ids=frozenset(payload["allowedDispatcherActorIds"]),
         allowed_deployment_classes=frozenset(payload["allowedDeploymentClasses"]),
         max_grant_ttl_minutes=payload["maxGrantTtlMinutes"],

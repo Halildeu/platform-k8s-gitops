@@ -51,6 +51,14 @@ class CallbackResult:
 
 
 @dataclass(frozen=True)
+class DispatchResult:
+    accepted: bool
+    ambiguous: bool
+    status: int | None
+    reason_code: str
+
+
+@dataclass(frozen=True)
 class GitHubArtifact:
     artifact_id: int
     name: str
@@ -417,6 +425,57 @@ class GitHubReader:
             installation_id,
             f"/repos/{repository}/actions/runs/{run_id}",
         )
+
+    def workflow_runs_for_dispatch(
+        self,
+        installation_id: int,
+        repository: str,
+        workflow_path: str,
+        intent_branch: str,
+        created_from: str,
+        created_to: str,
+    ) -> tuple[dict[str, Any], ...]:
+        if (
+            REPOSITORY_NAME.fullmatch(repository) is None
+            or re.fullmatch(r"[.]github/workflows/[A-Za-z0-9_.-]+[.]ya?ml", workflow_path)
+            is None
+            or re.fullmatch(
+                r"cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-"
+                r"[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                intent_branch,
+            )
+            is None
+        ):
+            reject("GITHUB_DISPATCH_QUERY_INVALID", "dispatch run query is invalid")
+        start = parse_utc(created_from, "dispatch.claimedAt")
+        end = parse_utc(created_to, "dispatch.reconcileUntil")
+        if end <= start or end - start > timedelta(minutes=15):
+            reject("GITHUB_DISPATCH_QUERY_INVALID", "dispatch run query window is invalid")
+        workflow = quote(workflow_path, safe="")
+        value = self._get(
+            installation_id,
+            f"/repos/{repository}/actions/workflows/{workflow}/runs",
+            query={
+                "event": "workflow_dispatch",
+                "created": f"{created_from}..{created_to}",
+                "per_page": "100",
+            },
+        )
+        runs = value.get("workflow_runs")
+        total = value.get("total_count")
+        if (
+            not isinstance(runs, list)
+            or not isinstance(total, int)
+            or isinstance(total, bool)
+            or total != len(runs)
+            or not 0 <= total <= 100
+            or not all(isinstance(run, dict) for run in runs)
+        ):
+            reject(
+                "GITHUB_DISPATCH_RUNS_INVALID",
+                "dispatch run list is incomplete or invalid",
+            )
+        return tuple(runs)
 
     def intent_ref(
         self,
@@ -849,7 +908,7 @@ class GitHubDispatcherClient:
         repository: str,
         workflow_path: str,
         request_id: str,
-    ) -> None:
+    ) -> DispatchResult:
         if REPOSITORY_NAME.fullmatch(repository) is None or not workflow_path.startswith(
             ".github/workflows/"
         ) or not re.fullmatch(
@@ -858,19 +917,45 @@ class GitHubDispatcherClient:
         ):
             reject("GITHUB_WORKFLOW_DISPATCH_INVALID", "workflow dispatch target is invalid")
         workflow = quote(workflow_path, safe="")
-        response = self._post(
-            installation_id=installation_id,
-            path=f"/repos/{repository}/actions/workflows/{workflow}/dispatches",
-            payload={"ref": f"cross-ai-intent/{request_id}"},
+        try:
+            response = self._post(
+                installation_id=installation_id,
+                path=f"/repos/{repository}/actions/workflows/{workflow}/dispatches",
+                payload={"ref": f"cross-ai-intent/{request_id}"},
+            )
+        except PolicyError as exc:
+            if exc.code == "GITHUB_API_UNAVAILABLE":
+                return DispatchResult(
+                    False,
+                    True,
+                    None,
+                    "DISPATCH_TRANSPORT_AMBIGUOUS",
+                )
+            raise
+        if response.status == 204 and not response.body:
+            return DispatchResult(True, False, 204, "DISPATCH_ACCEPTED_204")
+        if response.status == 204 or response.status in {408, 409, 422, 425, 429} or (
+            500 <= response.status <= 599
+        ):
+            return DispatchResult(
+                False,
+                True,
+                response.status,
+                "DISPATCH_HTTP_AMBIGUOUS",
+            )
+        return DispatchResult(
+            False,
+            False,
+            response.status,
+            "DISPATCH_HTTP_REJECTED",
         )
-        if response.status != 204 or response.body:
-            reject("GITHUB_WORKFLOW_DISPATCH_FAILED", "workflow dispatch was not accepted")
 
 __all__ = [
     "GitHubArtifact",
     "GitHubArtifactDownloader",
     "GitHubAppTokenProvider",
     "GitHubDecisionClient",
+    "DispatchResult",
     "GitHubDispatcherClient",
     "GitHubHookDeliveryCycle",
     "GitHubHookDeliveryReader",

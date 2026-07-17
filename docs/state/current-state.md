@@ -23,7 +23,11 @@ Live/source evidence:
   file/hash-match verification. The observer does not mount or consume it;
 - live TEST Vault has no Transit mount. The existing root-free reconciler may
   inspect mounts but cannot enable one. Owner-gated TEST Transit bootstrap is a
-  source package only and has not been executed;
+  source package merged by PR #2600 (`657d158ae0bdb1005bb78afcf2ac109011383651`)
+  and has not been executed;
+- the source dispatcher now has a durable at-most-once outbox, current
+  trust/revocation re-verification and exact live-run reconciliation. It has not
+  been connected to a live dispatcher App or workflow, and no dispatch occurred;
 - direct Anthropic is currently the only provider route with provider-reported
   model identity. Codex CLI JSON does not expose backend model identity, Mavis
   CLI is absent, and the Cursor route was usage-limited. Two-provider quorum is

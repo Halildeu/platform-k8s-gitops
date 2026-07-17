@@ -17,6 +17,11 @@ class DeploymentPolicyTest(unittest.TestCase):
             path.write_text(json.dumps(policy_payload()), encoding="utf-8")
             policy = load_policy(path)
             self.assertEqual(policy.repository, "Halildeu/platform-k8s-gitops")
+            self.assertEqual(policy.allowed_installation_ids, frozenset({2222}))
+            self.assertEqual(
+                policy.allowed_dispatcher_installation_ids,
+                frozenset({3333}),
+            )
             self.assertRegex(policy.digest, r"^sha256:[a-f0-9]{64}$")
 
     def test_rejects_duplicate_json_keys_and_eroded_human_boundary(self) -> None:

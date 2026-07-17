@@ -429,6 +429,23 @@ dedicated trusted dispatcher:
 5. dispatches the allowlisted workflow with
    `ref=cross-ai-intent/<requestId>`.
 
+`workflow_dispatch` has no GitHub idempotency key. The dispatcher therefore
+uses a durable at-most-once outbox rather than an unsafe automatic retry. It
+commits `Pending -> Sending` with `synchronous=FULL` before the external POST.
+Only an empty HTTP 204 becomes `Accepted`. Transport failure, 408, 409, 422,
+425, 429, 5xx or a non-empty 204 becomes `Uncertain`; every other response is
+`Rejected`. `Sending`, `Uncertain` and `Rejected` are never posted again. A
+crash before the POST may sacrifice liveness but cannot create a duplicate
+deployment.
+
+An ambiguous job becomes `Accepted` only when GitHub returns exactly one live
+workflow run matching the signed repository ID/name, immutable intent tag,
+head SHA, workflow path, numeric triggering actor and bounded creation window.
+Zero matches remain unresolved; multiple matches reject as ambiguous. The
+live intent ref is re-read before reconciliation. Every later stage also
+re-verifies the DSSE bundle against the current trust-root pin, revocations and
+policy, so a durable registry row cannot outlive a revocation decision.
+
 Repository tag rules restrict create/update/delete for
 `cross-ai-intent/**` to the dispatcher identity. An intent ref is never moved.
 Deletion is a retention task after the grant and audit window, never a retry

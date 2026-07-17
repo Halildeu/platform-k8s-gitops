@@ -54,12 +54,139 @@ class IntentStoreTest(unittest.TestCase):
     def test_registers_verified_bundle_in_cas_idempotently(self) -> None:
         self.assertTrue(self.register())
         self.assertFalse(self.register())
+        self.assertFalse(
+            self.registry.register(
+                envelope=self.fixture.bundle_envelope,
+                verified=self.verified,
+                registration_principal="spiffe://acik/platform/trusted-dispatcher",
+                registered_at=self.fixture.now + timedelta(seconds=30),
+            )
+        )
         self.assertTrue(self.finalize())
         self.assertFalse(self.finalize())
         record, envelope = self.registry.get_finalized(self.verified.request_id)
         self.assertEqual(record.bundle_digest, self.verified.bundle_digest)
         self.assertEqual(envelope, self.fixture.bundle_envelope)
         self.assertEqual(self.registry.event_count(), 2)
+
+    def test_dispatch_claim_is_at_most_once_and_live_reconcilable(self) -> None:
+        self.finalize()
+        queued = self.registry.queue_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            installation_id=2222,
+            repository="Halildeu/platform-k8s-gitops",
+            queued_at=self.fixture.now,
+        )
+        self.assertEqual(queued.state, "Pending")
+        self.assertEqual(
+            self.registry.queue_dispatch(
+                request_id=self.verified.request_id,
+                stage="apply",
+                installation_id=2222,
+                repository="Halildeu/platform-k8s-gitops",
+                queued_at=self.fixture.now + timedelta(seconds=1),
+            ).state,
+            "Pending",
+        )
+        claimed = self.registry.claim_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            claimed_at=self.fixture.now,
+        )
+        self.assertEqual(claimed.state, "Sending")
+        with self.assertRaisesRegex(PolicyError, "DISPATCH_ALREADY_CLAIMED"):
+            self.registry.claim_dispatch(
+                request_id=self.verified.request_id,
+                stage="apply",
+                claimed_at=self.fixture.now + timedelta(seconds=1),
+            )
+        uncertain = self.registry.resolve_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            state="Uncertain",
+            reason_code="DISPATCH_TRANSPORT_AMBIGUOUS",
+            http_status=None,
+            resolved_at=self.fixture.now + timedelta(seconds=2),
+        )
+        self.assertEqual(uncertain.state, "Uncertain")
+        with self.assertRaisesRegex(PolicyError, "DISPATCH_STATE_INVALID"):
+            self.registry.resolve_dispatch(
+                request_id=self.verified.request_id,
+                stage="apply",
+                state="Accepted",
+                reason_code="DISPATCH_ACCEPTED_204",
+                http_status=204,
+                resolved_at=self.fixture.now + timedelta(seconds=3),
+            )
+        reconciled = self.registry.reconcile_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            run_id=77,
+            reconciled_at=self.fixture.now + timedelta(seconds=4),
+        )
+        self.assertEqual(reconciled.state, "Accepted")
+        self.assertEqual(reconciled.run_id, 77)
+
+    def test_dispatch_target_and_stage_prerequisites_are_signed(self) -> None:
+        self.finalize()
+        with self.assertRaisesRegex(PolicyError, "DISPATCH_TARGET_MISMATCH"):
+            self.registry.queue_dispatch(
+                request_id=self.verified.request_id,
+                stage="apply",
+                installation_id=2222,
+                repository="Halildeu/other",
+                queued_at=self.fixture.now,
+            )
+        with self.assertRaisesRegex(PolicyError, "PRIOR_STAGE_NOT_VERIFIED"):
+            self.registry.queue_dispatch(
+                request_id=self.verified.request_id,
+                stage="browser-evidence",
+                installation_id=2222,
+                repository="Halildeu/platform-k8s-gitops",
+                queued_at=self.fixture.now,
+            )
+
+    def test_cross_connection_dispatch_claim_has_one_winner(self) -> None:
+        self.finalize()
+        self.registry.queue_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            installation_id=2222,
+            repository="Halildeu/platform-k8s-gitops",
+            queued_at=self.fixture.now,
+        )
+        second = IntentRegistry(
+            Path(self.directory.name) / "registry.sqlite3",
+            ContentAddressedStore(Path(self.directory.name) / "cas"),
+        )
+        barrier = threading.Barrier(2)
+        results: list[str] = []
+
+        def claim(registry: IntentRegistry) -> None:
+            barrier.wait()
+            try:
+                results.append(
+                    registry.claim_dispatch(
+                        request_id=self.verified.request_id,
+                        stage="apply",
+                        claimed_at=self.fixture.now,
+                    ).state
+                )
+            except PolicyError as exc:
+                results.append(exc.code)
+
+        threads = [
+            threading.Thread(target=claim, args=(registry,))
+            for registry in (self.registry, second)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        second.close()
+        self.assertEqual(results.count("Sending"), 1)
+        self.assertEqual(results.count("DISPATCH_ALREADY_CLAIMED"), 1)
 
     def test_rejects_wrong_principal_ref_and_tampered_cas(self) -> None:
         with self.assertRaisesRegex(PolicyError, "REGISTRATION_PRINCIPAL_MISMATCH"):
