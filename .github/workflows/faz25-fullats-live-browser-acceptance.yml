@@ -1,0 +1,83 @@
+name: Faz 25 Full ATS live browser acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Live literal: RUN_FAZ25_FULLATS_LIVE_BROWSER"
+        required: true
+        default: "DRY_RUN_ONLY"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faz25-fullats-live-browser-acceptance
+  cancel-in-progress: false
+
+jobs:
+  live-browser:
+    name: Candidate to recruiter to candidate on testai
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 25
+    steps:
+      - name: Validate test-only dispatch boundary
+        env:
+          CONFIRM_INPUT: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == "Halildeu/platform-k8s-gitops" ]]
+          [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$CONFIRM_INPUT" == "RUN_FAZ25_FULLATS_LIVE_BROWSER" ]]
+          [[ "$CONFIRM_INPUT" != *$'\n'* && "$CONFIRM_INPUT" != *$'\r'* ]]
+
+      - name: Checkout canonical acceptance scripts
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Assert canonical test runtime is healthy
+        run: |
+          set -euo pipefail
+          kubectl --context=k3d-test -n platform-test rollout status \
+            deployment/ats-interview-evidence --timeout=180s
+          desired="$(kubectl --context=k3d-test -n platform-test get deployment \
+            ats-interview-evidence -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}')"
+          [[ "$desired" == ghcr.io/halildeu/ats-app-boot@sha256:* ]]
+          kubectl --context=k3d-test -n platform-test get pods \
+            -l app=ats-interview-evidence -o json | jq -e --arg digest "${desired##*@}" '
+              [.items[].status.containerStatuses[]? | select(.name=="app-boot")] as $statuses |
+              ($statuses | length) > 0 and
+              ($statuses | all(.ready == true and (.imageID | endswith("@" + $digest))))
+            ' >/dev/null
+          curl -fsS https://testai.acik.com/build-info.json | jq -e \
+            '.sha | test("^[a-f0-9]{40}$")' >/dev/null
+
+      - name: Run product-path persona setup and real browser journey
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          EVIDENCE_DIR: ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash scripts/ats/fullats-live-browser-acceptance.sh
+
+      - name: Upload redacted live browser evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: faz25-fullats-live-browser-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Publish non-secret outcome
+        if: always()
+        run: |
+          {
+            echo "## Faz 25 Full ATS live browser acceptance"
+            echo ""
+            echo "- environment: testai.acik.com"
+            echo "- personas: synthetic candidate + synthetic recruiter"
+            echo "- journey: public job -> persistent application -> candidate status -> Keycloak recruiter login -> human status changes -> candidate observes changes"
+            echo "- recruiter module setup: user activation + role + granule + member product APIs"
+            echo "- direct DB/OpenFGA acceptance seed: none"
+            echo "- real PII / production mutation: none"
+            echo "- secrets/JWT/candidate access token in artifact: none"
+          } >> "$GITHUB_STEP_SUMMARY"
