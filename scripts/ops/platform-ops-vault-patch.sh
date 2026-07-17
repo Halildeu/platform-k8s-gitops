@@ -295,8 +295,14 @@ print(json.dumps({"options": {"cas": int(os.environ["CURRENT_VERSION"])}, "data"
 # ============================================================================
 
 CORRELATION_ID="vault-patch-$(date -u +%Y%m%dT%H%M%S)-$$"
-FIELD_KEY_LIST=$(printf '%s\n' "${FIELDS[@]:-}" "${STDIN_FIELD_PAIRS[@]:-}" \
-  | awk -F= '{print $1}' | sort -u | tr '\n' ',' | sed 's/,$//')
+FIELD_KEY_LIST=$({
+  if [[ "${#FIELDS[@]}" -gt 0 ]]; then
+    printf '%s\n' "${FIELDS[@]}"
+  fi
+  if [[ "${#STDIN_FIELD_PAIRS[@]}" -gt 0 ]]; then
+    printf '%s\n' "${STDIN_FIELD_PAIRS[@]}"
+  fi
+} | awk -F= '{print $1}' | sort -u | tr '\n' ',' | sed 's/,$//')
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "DRY-RUN — would PATCH $VAULT_ADDR/v1/$KV_PATH" >&2

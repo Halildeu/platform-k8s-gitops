@@ -110,6 +110,10 @@ class VaultPatchWrapperTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), "1")
             self.assertNotIn(webhook_secret, result.stdout + result.stderr)
+            self.assertIn(
+                "fields=[github_webhook_secret_current] version=1",
+                result.stderr,
+            )
             self.assertFalse(secret_id_file.exists())
 
         self.assertEqual(

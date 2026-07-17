@@ -42,6 +42,10 @@ resources:
   # Faz 25 #2526: Full ATS aday + recruiter dikeyi kalıcı test ürünü.
   # Önceden manuel activation overlay'iydi; artık ArgoCD self-heal kapsamındadır.
   - activation/ats-interview-evidence
+  # Faz 22.6 #2502 Phase 1: receive-only GitHub webhook observer. No evaluator
+  # App key, callback client, Kubernetes token or egress; Environment custom
+  # rule remains disabled until replay/negative-matrix acceptance.
+  - activation/cross-ai-deployment-protection-observe
   - ../../base/apps/meeting-service/ops      # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
   - ../../base/apps/transcript-service/ops   # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06

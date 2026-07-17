@@ -11,12 +11,14 @@
 > (App ID `4322193`) and installed only on
 > `Halildeu/platform-k8s-gitops` (installation ID `147158710`). Its webhook is
 > active with SSL verification and the reviewed URL/event/permissions. The
-> webhook secret is held in an owner-only staging handoff but is not yet in
-> test Vault; the merged canonical ESO policy source is likewise not yet
-> applied live because test Vault root recovery is owner-gated. The isolated
-> receive-only overlay remains disconnected from the canonical test root and
-> retains its impossible digest sentinel. No live webhook endpoint, protected
-> workflow lane or enabled Environment custom rule exists.
+> test Vault policy was reconciled from merged commit `bb0a1d658f7c38178f19847d99a91d277bde2f86`
+> without root-token recovery. The webhook secret was seeded through the
+> short-lived `platform-bootstrap-writer-test` flow at KV version 1; handoff and
+> emitted credential files were cleaned, and ESO read capability/property/hash
+> alignment passed without exposing the value. The Phase 1 activation change
+> pins the attested digest above and connects the receive-only overlay to the
+> canonical test root. This source change does not itself claim a live endpoint,
+> protected workflow lane or enabled Environment custom rule.
 
 ## 1. What this removes — and what it does not
 
@@ -117,10 +119,10 @@ bound to the live model list and launched route, never `provider-reported` or
 
 The first deployable slice is
 `kustomize/overlays/test/activation/cross-ai-deployment-protection-observe`.
-It is deliberately absent from the canonical test root and contains an
-impossible all-zero image digest. Do not add the activation directory to
-`kustomize/overlays/test/kustomization.yaml` until the main image workflow has
-published an attested digest and that exact digest replaces the sentinel.
+Its image is pinned to the exact main-workflow subject digest recorded above,
+and the activation directory is present in
+`kustomize/overlays/test/kustomization.yaml`. Runtime readiness, HMAC delivery
+and durable ledger evidence remain separate post-sync gates.
 
 Receive-only mode mounts only the current GitHub webhook secret and the SQLite
 PVC. It has no evaluator App private key, no Kubernetes service-account token,
