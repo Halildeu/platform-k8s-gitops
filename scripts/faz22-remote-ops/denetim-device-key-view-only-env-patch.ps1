@@ -44,6 +44,7 @@ param(
   [string]$ExpectedPermitPublicKeyB64Sha256 = "0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110",
   [string]$ExpectedBrokerAddr = "remote-bridge-mtls.testai.acik.com:443",
   [string]$ExpectedTlsServerName = "remote-bridge-mtls.testai.acik.com",
+  [string]$ExpectedViewOnlyMaskRectBps = "",
   [ValidatePattern('^[A-Za-z0-9._-]+$')]
   [string]$ServiceName = "EndpointAgent",
   [string]$BinaryPath = "C:\Program Files\EndpointAgent\endpoint-agent.exe",
@@ -117,6 +118,27 @@ function Get-Utf8Sha256 {
     ).Replace("-", "").ToLowerInvariant()
   } finally {
     $sha256.Dispose()
+  }
+}
+
+function Assert-ViewOnlyMaskRectBps {
+  param([string]$Value)
+
+  if ([string]::IsNullOrWhiteSpace($Value) -or
+      $Value -cnotmatch '^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$') {
+    throw "VIEW_ONLY mask policy must be canonical x,y,width,height basis points"
+  }
+  $parts = @($Value -split ',')
+  $numbers = @(
+    foreach ($part in $parts) {
+      [int]::Parse($part, [Globalization.NumberStyles]::None, [Globalization.CultureInfo]::InvariantCulture)
+    }
+  )
+  if (@($numbers | Where-Object { $_ -lt 0 -or $_ -gt 10000 }).Count -gt 0 -or
+      $numbers[2] -le 0 -or $numbers[3] -le 0 -or
+      ($numbers[0] + $numbers[2]) -gt 10000 -or
+      ($numbers[1] + $numbers[3]) -gt 10000) {
+    throw "VIEW_ONLY mask policy is empty or outside the primary monitor"
   }
 }
 
@@ -706,6 +728,7 @@ $managedEnvironmentKeys = @(
   "ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED",
   "ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ENABLED",
   "ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ATTENDED_CONSENT_ENABLED",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS",
   "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID",
   "ENDPOINT_AGENT_REMOTE_BRIDGE_ATTESTATION_EVIDENCE_B64",
   "ENDPOINT_AGENT_REMOTE_BRIDGE_MIGRATION_TRANSACTION_ID"
@@ -940,6 +963,7 @@ foreach ($releasePolicyName in $requiredReleasePolicy.Keys) {
     throw "Canonical release policy parameter is required for Action=Apply: $releasePolicyName"
   }
 }
+Assert-ViewOnlyMaskRectBps -Value $ExpectedViewOnlyMaskRectBps
 if (-not (Test-Path -LiteralPath $BinaryPath)) {
   throw "EndpointAgent binary is absent"
 }
@@ -1105,6 +1129,7 @@ $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"] = "false"
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED"] = "true"
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ENABLED"] = "true"
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ATTENDED_CONSENT_ENABLED"] = "true"
+$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS"] = $ExpectedViewOnlyMaskRectBps
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID"] = $ExpectedPermitKeyId
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_ATTESTATION_EVIDENCE_B64"] = $attestationEvidenceB64
 $patched["ENDPOINT_AGENT_REMOTE_BRIDGE_MIGRATION_TRANSACTION_ID"] = $TransactionId
@@ -1295,6 +1320,9 @@ try {
     Assert-MapValue -Map $after -Key $required -Expected "true"
   }
   Assert-MapValue -Map $after -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT" -Expected "false"
+  Assert-MapValue -Map $after `
+    -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS" `
+    -Expected $ExpectedViewOnlyMaskRectBps
   Assert-MapValue -Map $after -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID" -Expected $ExpectedPermitKeyId
   Assert-MapValue -Map $after -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_ATTESTATION_EVIDENCE_B64"
   Assert-MapValue -Map $after `
@@ -1381,6 +1409,8 @@ try {
       deviceKeySessionEnabled = $true
       viewOnlyEnabled = $true
       attendedConsentEnabled = $true
+      viewOnlyMaskRectBps = $ExpectedViewOnlyMaskRectBps
+      viewOnlyMaskEnabled = [bool](-not [string]::IsNullOrWhiteSpace($ExpectedViewOnlyMaskRectBps))
       insecurePlaintext = $false
       permitKeyId = $ExpectedPermitKeyId
       permitPublicKeyB64Sha256 = $actualPermitPublicKeyB64Sha256
