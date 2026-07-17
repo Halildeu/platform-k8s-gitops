@@ -67,6 +67,17 @@ const assertAxeClean = async (page, surface) => {
       id: item.id,
       impact: item.impact,
       nodes: item.nodes.length,
+      nodeEvidence: item.nodes.map((node) => ({
+        target: node.target.map((selector) =>
+          String(selector)
+            .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, '[EMAIL]')
+            .replace(/app_[A-Za-z0-9_-]{24}/gu, '[APPLICATION_REF]')
+            .slice(0, 500),
+        ),
+        failureSummary: String(node.failureSummary ?? '')
+          .replace(/\s+/gu, ' ')
+          .slice(0, 500),
+      })),
     }));
     throw new Error(`${surface}: axe violations ${JSON.stringify(compact)}`);
   }

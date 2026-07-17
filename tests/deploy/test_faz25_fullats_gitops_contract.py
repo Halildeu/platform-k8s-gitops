@@ -34,6 +34,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         ).stdout
         cls.keycloak = (ROOT / "scripts/ats/provision-test-keycloak.sh").read_text()
         cls.fullats_smoke = (ROOT / "scripts/ats/fullats-application-smoke.sh").read_text()
+        cls.fullats_browser = (
+            ROOT / "scripts/ats/fullats-live-browser-acceptance.cjs"
+        ).read_text()
         cls.pg_bootstrap = (ROOT / "scripts/ats/provision-test-pg-vault.sh").read_text()
         cls.governance_transition_path = (
             ROOT / "scripts/ats/transition-test-model-governance.sh"
@@ -189,6 +192,14 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn('[ "$C" = 404 ]', self.fullats_smoke)
         self.assertIn('SONUC: $N/10 PASS', self.fullats_smoke)
         self.assertIn('[ "$N" -eq 10 ]', self.fullats_smoke)
+
+    def test_fullats_browser_failure_evidence_is_actionable_and_redacted(self):
+        self.assertIn("nodeEvidence: item.nodes.map", self.fullats_browser)
+        self.assertIn("target: node.target.map", self.fullats_browser)
+        self.assertIn("failureSummary: String(node.failureSummary", self.fullats_browser)
+        self.assertIn("'[EMAIL]'", self.fullats_browser)
+        self.assertIn("'[APPLICATION_REF]'", self.fullats_browser)
+        self.assertNotIn("node.html", self.fullats_browser)
         self.assertIn("status `PUT` 404", self.runbook)
         self.assertIn("`10/10 PASS`", self.runbook)
 
