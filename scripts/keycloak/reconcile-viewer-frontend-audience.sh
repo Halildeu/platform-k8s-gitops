@@ -68,19 +68,22 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../faz24/lib" && pwd)/keycloak_admi
 
 read_admin_password() {
   if [[ -n "${KC_ADMIN_PASSWORD:-}" ]]; then
-    printf '%s' "${KC_ADMIN_PASSWORD}" > "${ADMIN_PASS_FILE}"
-    chmod 0600 "${ADMIN_PASS_FILE}"
+    printf '%s' "${KC_ADMIN_PASSWORD}" | tr -d '\r\n' > "${ADMIN_PASS_FILE}"
     unset KC_ADMIN_PASSWORD
+    [[ -s "${ADMIN_PASS_FILE}" ]] || return 1
+    chmod 0600 "${ADMIN_PASS_FILE}"
     return 0
   fi
-  if docker exec "${KC_CONTAINER}" sh -c 'cat /run/secrets/kc_admin_password' \
-      > "${ADMIN_PASS_FILE}" 2>/dev/null && [[ -s "${ADMIN_PASS_FILE}" ]]; then
+  if docker exec "${KC_CONTAINER}" sh -c 'cat /run/secrets/kc_admin_password' 2>/dev/null \
+      | tr -d '\r\n' \
+      > "${ADMIN_PASS_FILE}" && [[ -s "${ADMIN_PASS_FILE}" ]]; then
     chmod 0600 "${ADMIN_PASS_FILE}"
     return 0
   fi
   if docker exec "${KC_CONTAINER}" sh -c \
       'p="${KEYCLOAK_ADMIN_PASSWORD_FILE:-}"; [ -n "$p" ] && cat "$p"' \
-      > "${ADMIN_PASS_FILE}" 2>/dev/null && [[ -s "${ADMIN_PASS_FILE}" ]]; then
+      2>/dev/null | tr -d '\r\n' \
+      > "${ADMIN_PASS_FILE}" && [[ -s "${ADMIN_PASS_FILE}" ]]; then
     chmod 0600 "${ADMIN_PASS_FILE}"
     return 0
   fi
