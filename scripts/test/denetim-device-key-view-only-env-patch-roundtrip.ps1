@@ -23,6 +23,8 @@ foreach ($name in @(
     "Write-ServiceEnvironmentBackup",
     "Read-ServiceEnvironmentBackup",
     "Assert-MapsEqual",
+    "Assert-ViewOnlyMaskRectBps",
+    "New-ManagedEnvironmentRestorationMap",
     "Register-RollbackCleanupTask"
   )) {
   $functionAst = $ast.Find({
@@ -34,6 +36,46 @@ foreach ($name in @(
     throw "Required environment-backup function is missing: $name"
   }
   Invoke-Expression $functionAst.Extent.Text
+}
+
+$preMutation = [ordered]@{
+  ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS = "5000,5000,5000,5000"
+  UNRELATED_PRODUCT_SETTING = "pre-mutation"
+}
+$transactionOwned = [ordered]@{
+  ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS = "7500,7500,2500,2500"
+  UNRELATED_PRODUCT_SETTING = "concurrent-update"
+}
+$restored = New-ManagedEnvironmentRestorationMap `
+  -CurrentMap $transactionOwned `
+  -BackupMap $preMutation `
+  -ManagedKeys @("ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS")
+if ($restored["ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS"] -ne "5000,5000,5000,5000" -or
+    $restored["UNRELATED_PRODUCT_SETTING"] -ne "concurrent-update") {
+  throw "Managed VIEW_ONLY mask rollback did not restore the prior value while preserving unrelated updates"
+}
+
+Assert-ViewOnlyMaskRectBps -Value "7500,7500,2500,2500"
+Assert-ViewOnlyMaskRectBps -Value "0,0,10000,10000"
+foreach ($invalidMask in @(
+    "",
+    "0,0,0,1",
+    "7500,7500,2500,0",
+    "7500,7500,2501,2500",
+    "10000,0,1,1",
+    "99999,0,1,1",
+    "7500,7500,2500",
+    "a,7500,2500,2500"
+  )) {
+  $rejected = $false
+  try {
+    Assert-ViewOnlyMaskRectBps -Value $invalidMask
+  } catch {
+    $rejected = $true
+  }
+  if (-not $rejected) {
+    throw "Invalid VIEW_ONLY mask policy was accepted: $invalidMask"
+  }
 }
 
 $root = Join-Path ([IO.Path]::GetTempPath()) (
