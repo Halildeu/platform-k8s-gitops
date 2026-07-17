@@ -254,6 +254,53 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.assertNotIn(forbidden, serialized)
         self.assertNotIn("node.html", self.fullats_browser)
 
+    def test_fullats_browser_scans_recruiter_before_and_after_terminal_transition(self):
+        initial_scan = self.fullats_browser.index(
+            "await assertAxeClean(recruiterPage, 'recruiter-workspace-desktop')"
+        )
+        terminal_response_wait = self.fullats_browser.index(
+            "const terminalTransitionResponse = recruiterPage.waitForResponse("
+        )
+        terminal_transition_click = self.fullats_browser.index(
+            "await reviewPanel.getByRole('button', "
+            "{ name: 'Mülakat planlamasına al' }).click();"
+        )
+        terminal_response = self.fullats_browser.index(
+            "const terminalResponse = await terminalTransitionResponse;"
+        )
+        terminal_status = self.fullats_browser.index(
+            "await waitVisible(terminalStatus, 'interview pending terminal status')"
+        )
+        terminal_scan = self.fullats_browser.index(
+            "await assertAxeClean(recruiterPage, "
+            "'recruiter-workspace-terminal-desktop')"
+        )
+        candidate_terminal_refresh = self.fullats_browser.index(
+            "const interviewStep = candidatePage.getByRole('listitem')"
+        )
+        self.assertLess(initial_scan, terminal_response_wait)
+        self.assertLess(terminal_response_wait, terminal_transition_click)
+        self.assertLess(terminal_transition_click, terminal_response)
+        self.assertLess(terminal_response, terminal_status)
+        self.assertLess(terminal_status, terminal_scan)
+        self.assertLess(terminal_scan, candidate_terminal_refresh)
+        self.assertIn(
+            "relevantPath(response.url()) === "
+            "`/api/ats/v1/recruiter/applications/${publicRef}/status`",
+            self.fullats_browser,
+        )
+        self.assertIn("terminalResponse.status() !== 200", self.fullats_browser)
+        self.assertIn(
+            "(await terminalStatus.textContent())?.trim() !== "
+            "'Mülakat planlaması bekleniyor.'",
+            self.fullats_browser,
+        )
+        self.assertIn(
+            "await assertNoHorizontalOverflow(recruiterPage, "
+            "'recruiter-workspace-terminal-desktop')",
+            self.fullats_browser,
+        )
+
     def test_pg_writer_role_is_admin_bootstrapped_without_runtime_createrole(self):
         self.assertIn("--roles-only", self.pg_bootstrap)
         self.assertIn("CREATE ROLE ats_governance_writer", self.pg_bootstrap)
