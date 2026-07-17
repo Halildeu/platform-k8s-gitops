@@ -188,7 +188,7 @@ REPO_ROOT="$PWD" scripts/ops/vault-policy-reconcile.sh \
 
 VAULT_BOOTSTRAP_ROLE_ID="$(cat /tmp/platform-bootstrap-writer-test-role-id.txt)" \
 VAULT_BOOTSTRAP_SECRET_ID_FILE="$SID" \
-scripts/ops/platform-ops-vault-patch.sh \
+bash scripts/ops/platform-ops-vault-patch.sh \
   --vault-addr http://127.0.0.1:8201 \
   --service cross-ai-deployment-protection-test \
   --field-from-stdin github_webhook_secret_current \
@@ -317,13 +317,39 @@ python3 scripts/github_apps/run_cross_ai_deployment_policy.py \
 ```
 
 This command is a reviewed shape, not permission to place the PEM or any token
-in arguments, Git or chat. Phase 2 first adds the exact PEM property to the
-test-only ExternalSecret and least-privilege Vault policy. Only then may the
-owner generate one App private key into a local `0600` handoff and the agent
-seed it through the existing short-lived `platform-bootstrap-writer-test`
-stdin/CAS/self-revoking flow. Verify only property presence, ESO readiness and
-redacted hash alignment. Production Vault, root-token recovery and raw PEM
-output remain forbidden.
+in arguments, Git or chat. For Phase 2, the owner generates one App private key
+into a current-user-owned local `0600` handoff. Transfer only that file to an
+owner-only `0600` handoff on `staging-sw`; do not print or copy its contents.
+Reconcile a fresh short-lived test writer credential, then seed the distinct
+Vault property with the audited file-input operation:
+
+```bash
+set -euo pipefail
+HANDOFF=/tmp/.cross-ai-github-app-key-codex-2502.pem
+SID=/tmp/platform-bootstrap-writer-test-secret-id.txt
+chmod 600 "$HANDOFF"
+
+REPO_ROOT="$PWD" scripts/ops/vault-policy-reconcile.sh \
+  --emit-seed-secret-id platform-bootstrap-writer-test
+
+VAULT_BOOTSTRAP_ROLE_ID="$(cat /tmp/platform-bootstrap-writer-test-role-id.txt)" \
+VAULT_BOOTSTRAP_SECRET_ID_FILE="$SID" \
+bash scripts/ops/platform-ops-vault-patch.sh \
+  --vault-addr http://127.0.0.1:8201 \
+  --service cross-ai-deployment-protection-test \
+  --field-from-file "github_app_private_key_pem=$HANDOFF" \
+  --cleanup-field-files \
+  --cleanup-secret-id-file
+```
+
+The wrapper validates a bounded PEM shape and owner-only file mode, transports
+the multiline value internally without exposing it in argv, merges with KV v2
+CAS and self-revokes. Verify only the `github_app_private_key_pem` property
+presence and Vault metadata; do not read the value back. At this preparation
+stage the receive-only observer ExternalSecret and Deployment remain unchanged
+and cannot consume the key. A later reviewed enforcement overlay must select
+the property explicitly and prove ESO readiness plus redacted hash alignment.
+Production Vault, root-token recovery and raw PEM output remain forbidden.
 
 Poll interval is never below 30 seconds, success and failure paths have bounded
 jitter, exponential backoff caps at five minutes, and `/readyz` fails after a

@@ -30,6 +30,9 @@
 #                               use --field-from-stdin for sensitive values).
 #   --field-from-stdin <key>    Reads the key's value from stdin (one line).
 #                               Repeatable.
+#   --field-from-file <key=path> Reads a multiline value from an owner-only
+#                               regular file. The value never enters argv.
+#   --cleanup-field-files       Securely removes --field-from-file inputs.
 #   --cleanup-secret-id-file    Securely removes the secret-id file on exit.
 #   --vault-addr <url>          Default: http://127.0.0.1:8301 (test).
 #                               Use http://127.0.0.1:8200 for prod.
@@ -60,8 +63,11 @@ VAULT_ADDR="${VAULT_ADDR:-$VAULT_ADDR_DEFAULT}"
 SERVICE=""
 declare -a FIELDS=()
 declare -a STDIN_KEYS=()
+declare -a FILE_SPECS=()
+declare -a FILE_PATHS=()
 DRY_RUN=0
 CLEANUP_SECRET_ID_FILE=0
+CLEANUP_FIELD_FILES=0
 TOKEN_HEADER_FILE=""
 
 usage() {
@@ -77,6 +83,10 @@ while [[ $# -gt 0 ]]; do
       FIELDS+=("$2"); shift 2 ;;
     --field-from-stdin)
       STDIN_KEYS+=("$2"); shift 2 ;;
+    --field-from-file)
+      FILE_SPECS+=("$2"); shift 2 ;;
+    --cleanup-field-files)
+      CLEANUP_FIELD_FILES=1; shift ;;
     --cleanup-secret-id-file)
       CLEANUP_SECRET_ID_FILE=1; shift ;;
     --vault-addr)
@@ -116,22 +126,73 @@ case "$SERVICE" in
     exit 2 ;;
 esac
 
-# This dedicated path carries exactly one GitHub-generated HMAC secret. Lock the
-# wrapper contract to stdin-only and reject arbitrary fields even though Vault
-# ACLs are necessarily path-granular rather than property-granular.
+# This dedicated path permits one audited operation at a time: either the
+# single-line webhook HMAC secret over stdin, or the multiline GitHub App PEM
+# from an owner-only file. Vault ACLs are path-granular, so the wrapper closes
+# the property/method boundary and rejects arbitrary fields.
 if [[ "$SERVICE" == "cross-ai-deployment-protection-test" ]]; then
-  if [[ "${#FIELDS[@]}" -ne 0 \
-        || "${#STDIN_KEYS[@]}" -ne 1 \
-        || "${STDIN_KEYS[0]:-}" != "github_webhook_secret_current" ]]; then
-    echo "ERROR: $SERVICE accepts only --field-from-stdin github_webhook_secret_current" >&2
+  WEBHOOK_OPERATION=0
+  PEM_OPERATION=0
+  if [[ "${#FIELDS[@]}" -eq 0 \
+        && "${#STDIN_KEYS[@]}" -eq 1 \
+        && "${STDIN_KEYS[0]:-}" == "github_webhook_secret_current" \
+        && "${#FILE_SPECS[@]}" -eq 0 ]]; then
+    WEBHOOK_OPERATION=1
+  fi
+  if [[ "${#FIELDS[@]}" -eq 0 \
+        && "${#STDIN_KEYS[@]}" -eq 0 \
+        && "${#FILE_SPECS[@]}" -eq 1 \
+        && "${FILE_SPECS[0]%%=*}" == "github_app_private_key_pem" \
+        && "${FILE_SPECS[0]#*=}" != "${FILE_SPECS[0]}" ]]; then
+    PEM_OPERATION=1
+  fi
+  if [[ "$WEBHOOK_OPERATION" -ne 1 && "$PEM_OPERATION" -ne 1 ]]; then
+    echo "ERROR: $SERVICE accepts only github_webhook_secret_current from stdin or github_app_private_key_pem from file" >&2
     exit 2
   fi
 fi
 
-if [[ "${#FIELDS[@]}" -eq 0 && "${#STDIN_KEYS[@]}" -eq 0 ]]; then
-  echo "ERROR: at least one --field or --field-from-stdin is required" >&2
+if [[ "${#FIELDS[@]}" -eq 0 \
+      && "${#STDIN_KEYS[@]}" -eq 0 \
+      && "${#FILE_SPECS[@]}" -eq 0 ]]; then
+  echo "ERROR: at least one field input is required" >&2
   exit 2
 fi
+
+secure_remove() {
+  local path="$1"
+  if [[ -L "$path" ]]; then
+    rm -f "$path"
+    return 0
+  fi
+  [[ -f "$path" ]] || return 0
+  if command -v shred >/dev/null 2>&1; then
+    shred -u "$path" 2>/dev/null || true
+  else
+    : > "$path"
+    rm -f "$path"
+  fi
+}
+
+cleanup() {
+  if [[ -n "${TOKEN:-}" && -f "${TOKEN_HEADER_FILE:-}" ]]; then
+    curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
+      "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
+  fi
+  [[ -n "${TOKEN_HEADER_FILE:-}" ]] && secure_remove "$TOKEN_HEADER_FILE"
+  if [[ "$CLEANUP_SECRET_ID_FILE" -eq 1 \
+        && -n "${SECRET_ID_FILE:-}" ]]; then
+    secure_remove "$SECRET_ID_FILE"
+  fi
+  if [[ "$CLEANUP_FIELD_FILES" -eq 1 ]]; then
+    for path in "${FILE_PATHS[@]:-}"; do
+      [[ -n "$path" ]] && secure_remove "$path"
+    done
+  fi
+  unset TOKEN SECRET_ID FIELDS STDIN_FIELD_PAIRS FILE_FIELD_RECORDS \
+    LOGIN_RESPONSE PATCHED_DATA EXISTING_RESPONSE EXISTING_DATA
+}
+trap cleanup EXIT
 
 ROLE_ID="${VAULT_BOOTSTRAP_ROLE_ID:-${1:-}}"
 if [[ -z "$ROLE_ID" ]]; then
@@ -154,17 +215,57 @@ fi
 # ============================================================================
 
 declare -a STDIN_FIELD_PAIRS=()
-for key in "${STDIN_KEYS[@]}"; do
-  echo "Enter value for $key (1 line, hidden):" >&2
-  IFS='' read -rs value
-  echo "" >&2
-  if [[ -z "$value" ]]; then
-    echo "ERROR: empty value for $key" >&2
-    exit 2
-  fi
-  STDIN_FIELD_PAIRS+=("$key=$value")
-  unset value
-done
+if [[ "${#STDIN_KEYS[@]}" -gt 0 ]]; then
+  for key in "${STDIN_KEYS[@]}"; do
+    echo "Enter value for $key (1 line, hidden):" >&2
+    IFS='' read -rs value
+    echo "" >&2
+    if [[ -z "$value" ]]; then
+      echo "ERROR: empty value for $key" >&2
+      exit 2
+    fi
+    STDIN_FIELD_PAIRS+=("$key=$value")
+    unset value
+  done
+fi
+
+declare -a FILE_FIELD_RECORDS=()
+if [[ "${#FILE_SPECS[@]}" -gt 0 ]]; then
+  for spec in "${FILE_SPECS[@]}"; do
+    key="${spec%%=*}"
+    path="${spec#*=}"
+    FILE_PATHS+=("$path")
+    if [[ -z "$key" || "$path" == "$spec" || ! -f "$path" || -L "$path" ]]; then
+      echo "ERROR: --field-from-file requires key=regular-file" >&2
+      exit 2
+    fi
+    if ! python3 -c '
+import os, stat, sys
+metadata = os.stat(sys.argv[1])
+mode = stat.S_IMODE(metadata.st_mode)
+raise SystemExit(0 if metadata.st_uid == os.getuid() and mode & 0o077 == 0 else 1)
+' "$path"; then
+      echo "ERROR: field input file must not grant group/other permissions" >&2
+      exit 2
+    fi
+    if [[ "$key" == "github_app_private_key_pem" ]]; then
+      if ! python3 -c '
+import sys
+data = open(sys.argv[1], "rb").read()
+private_key = b"PRIVATE" + b" KEY"
+valid_header = data.startswith((b"-----BEGIN " + private_key + b"-----\n", b"-----BEGIN RSA " + private_key + b"-----\n"))
+valid_footer = data.rstrip().endswith((b"-----END " + private_key + b"-----", b"-----END RSA " + private_key + b"-----"))
+raise SystemExit(0 if 64 <= len(data) <= 65536 and b"\x00" not in data and valid_header and valid_footer else 1)
+' "$path"; then
+        echo "ERROR: GitHub App private-key file has invalid bounded PEM shape" >&2
+        exit 2
+      fi
+    fi
+    encoded=$(base64 < "$path" | tr -d '\r\n')
+    FILE_FIELD_RECORDS+=("base64:$key=$encoded")
+    unset encoded
+  done
+fi
 
 # ============================================================================
 # AppRole login → short-lived token
@@ -191,35 +292,6 @@ fi
 TOKEN_HEADER_FILE=$(mktemp)
 chmod 600 "$TOKEN_HEADER_FILE"
 printf 'X-Vault-Token: %s' "$TOKEN" > "$TOKEN_HEADER_FILE"
-
-# Cleanup token + secrets on exit (defense-in-depth; TTL is short anyway)
-cleanup() {
-  if [[ -n "${TOKEN:-}" && -f "${TOKEN_HEADER_FILE:-}" ]]; then
-    curl -sf -X POST -H @"$TOKEN_HEADER_FILE" \
-      "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
-  fi
-  if [[ -f "${TOKEN_HEADER_FILE:-}" ]]; then
-    if command -v shred >/dev/null 2>&1; then
-      shred -u "$TOKEN_HEADER_FILE" 2>/dev/null || true
-    else
-      : > "$TOKEN_HEADER_FILE"
-      rm -f "$TOKEN_HEADER_FILE"
-    fi
-  fi
-  if [[ "$CLEANUP_SECRET_ID_FILE" -eq 1 \
-        && -n "${SECRET_ID_FILE:-}" \
-        && -f "$SECRET_ID_FILE" ]]; then
-    if command -v shred >/dev/null 2>&1; then
-      shred -u "$SECRET_ID_FILE" 2>/dev/null || true
-    else
-      : > "$SECRET_ID_FILE"
-      rm -f "$SECRET_ID_FILE"
-    fi
-  fi
-  unset TOKEN SECRET_ID FIELDS STDIN_FIELD_PAIRS LOGIN_RESPONSE \
-    PATCHED_DATA EXISTING_RESPONSE EXISTING_DATA
-}
-trap cleanup EXIT
 
 # ============================================================================
 # capabilities-self check (fail-fast pattern)
@@ -274,7 +346,9 @@ PATCHED_DATA=$({
   printf '%s\n' "$EXISTING_DATA"
   printf '%s\n' "${FIELDS[@]:-}"
   printf '%s\n' "${STDIN_FIELD_PAIRS[@]:-}"
+  printf '%s\n' "${FILE_FIELD_RECORDS[@]:-}"
 } | CURRENT_VERSION="$CURRENT_VERSION" python3 -c '
+import base64
 import json
 import os
 import sys
@@ -284,8 +358,13 @@ for line in sys.stdin:
     line = line.rstrip("\n")
     if not line:
         continue
+    encoded = line.startswith("base64:")
+    if encoded:
+        line = line.removeprefix("base64:")
     key, separator, value = line.partition("=")
     if separator and key:
+        if encoded:
+            value = base64.b64decode(value, validate=True).decode("utf-8")
         existing[key] = value
 print(json.dumps({"options": {"cas": int(os.environ["CURRENT_VERSION"])}, "data": existing}))
 ')
@@ -301,6 +380,9 @@ FIELD_KEY_LIST=$({
   fi
   if [[ "${#STDIN_FIELD_PAIRS[@]}" -gt 0 ]]; then
     printf '%s\n' "${STDIN_FIELD_PAIRS[@]}"
+  fi
+  if [[ "${#FILE_SPECS[@]}" -gt 0 ]]; then
+    printf '%s\n' "${FILE_SPECS[@]}"
   fi
 } | awk -F= '{print $1}' | sort -u | tr '\n' ',' | sed 's/,$//')
 
