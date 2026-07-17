@@ -78,17 +78,33 @@ SECRET_ID="${VAULT_RECONCILER_SECRET_ID:-$(cat "${VAULT_RECONCILER_SECRET_ID_FIL
 api() { # api METHOD PATH [JSON]
   local m="$1" p="$2" body="${3:-}"
   if [[ -n "$body" ]]; then
-    curl -sf -X "$m" -H "X-Vault-Token: ${TOKEN:-}" "$VAULT_ADDR/v1/$p" -d "$body"
+    curl -sf -X "$m" -H @"$TOKEN_HEADER_FILE" "$VAULT_ADDR/v1/$p" -d "$body"
   else
-    curl -sf -X "$m" -H "X-Vault-Token: ${TOKEN:-}" "$VAULT_ADDR/v1/$p"
+    curl -sf -X "$m" -H @"$TOKEN_HEADER_FILE" "$VAULT_ADDR/v1/$p"
   fi
 }
 
-TOKEN=$(curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" \
-  -d "{\"role_id\":\"$ROLE_ID\",\"secret_id\":\"$SECRET_ID\"}" \
+TOKEN=$({ printf '%s\n' "$ROLE_ID"; printf '%s\n' "$SECRET_ID"; } \
+  | python3 -c 'import json,sys; print(json.dumps({"role_id": sys.stdin.readline().rstrip("\n"), "secret_id": sys.stdin.readline().rstrip("\n")}))' \
+  | curl -sf -X POST "$VAULT_ADDR/v1/auth/approle/login" --data-binary @- \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth"]["client_token"])' 2>/dev/null) \
   || { echo "ERROR: reconciler AppRole login failed" >&2; exit 3; }
-cleanup() { [[ -n "${TOKEN:-}" ]] && curl -sf -X POST -H "X-Vault-Token: $TOKEN" "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true; unset TOKEN SECRET_ID; }
+TOKEN_HEADER_FILE=$(mktemp)
+chmod 600 "$TOKEN_HEADER_FILE"
+printf 'X-Vault-Token: %s' "$TOKEN" > "$TOKEN_HEADER_FILE"
+cleanup() {
+  [[ -n "${TOKEN:-}" && -f "${TOKEN_HEADER_FILE:-}" ]] \
+    && curl -sf -X POST -H @"$TOKEN_HEADER_FILE" "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
+  if [[ -f "${TOKEN_HEADER_FILE:-}" ]]; then
+    if command -v shred >/dev/null 2>&1; then
+      shred -u "$TOKEN_HEADER_FILE" 2>/dev/null || true
+    else
+      : > "$TOKEN_HEADER_FILE"
+      rm -f "$TOKEN_HEADER_FILE"
+    fi
+  fi
+  unset TOKEN SECRET_ID
+}
 trap cleanup EXIT
 
 echo "=== reconcile @ $VAULT_ADDR (dry-run=$DRY_RUN) ==="

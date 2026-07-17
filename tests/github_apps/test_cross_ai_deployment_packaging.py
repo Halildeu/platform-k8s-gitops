@@ -14,6 +14,12 @@ ACTIVATION = (
     / "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe"
 )
 ESO_POLICY = ROOT / "bootstrap/vault-policies/common/eso-runtime.hcl"
+BOOTSTRAP_WRITER_POLICY = ROOT / "bootstrap/vault-policies/common/bootstrap-writer.hcl"
+VAULT_PATCH_WRAPPER = ROOT / "scripts/ops/platform-ops-vault-patch.sh"
+VAULT_RECONCILER = ROOT / "scripts/ops/vault-policy-reconcile.sh"
+BOOTSTRAP_WRITER_VERIFY = (
+    ROOT / "bootstrap/vault-policies/test/bootstrap-writer-verify.sh"
+)
 
 
 def load_yaml(name: str) -> dict[str, object]:
@@ -114,6 +120,42 @@ class PackagingContractTests(unittest.TestCase):
             "ExternalSecret path must be allowlisted before receive-only activation",
         )
         self.assertEqual(match.group(1).strip(), '"read"')  # type: ignore[union-attr]
+
+    def test_bootstrap_writer_and_wrapper_allow_only_audited_test_seed_path(self) -> None:
+        policy = BOOTSTRAP_WRITER_POLICY.read_text(encoding="utf-8")
+        match = re.search(
+            r'path "kv/data/platform/cross-ai-deployment-protection-test"\s*'
+            r'\{\s*capabilities\s*=\s*\[([^]]+)]\s*}',
+            policy,
+        )
+        self.assertIsNotNone(match, "test seed path must be explicitly allowlisted")
+        capabilities = {
+            value.strip().strip('"')
+            for value in match.group(1).split(",")  # type: ignore[union-attr]
+        }
+        self.assertEqual(capabilities, {"create", "update", "read"})
+        self.assertNotIn("delete", capabilities)
+
+        wrapper = VAULT_PATCH_WRAPPER.read_text(encoding="utf-8")
+        self.assertRegex(
+            wrapper,
+            r"cross-ai-deployment-protection-test\|openfga\)\s*\n\s*KV_PATH=",
+        )
+        self.assertIn("--field-from-stdin", wrapper)
+        self.assertIn("--cleanup-secret-id-file", wrapper)
+        self.assertIn('CURRENT_VERSION=0', wrapper)
+        self.assertIn('"options": {"cas":', wrapper)
+        self.assertIn(
+            "accepts only --field-from-stdin github_webhook_secret_current",
+            wrapper,
+        )
+
+        for path in (VAULT_PATCH_WRAPPER, VAULT_RECONCILER, BOOTSTRAP_WRITER_VERIFY):
+            script = path.read_text(encoding="utf-8")
+            self.assertNotIn('-H "X-Vault-Token: $TOKEN"', script)
+            self.assertNotIn('-d "{\\"role_id\\":\\"$ROLE_ID\\"', script)
+        self.assertNotIn('-d "$PATCHED_DATA"', wrapper)
+        self.assertIn("--data-binary @-", wrapper)
 
     def test_public_surface_is_exact_hmac_webhook_path_only(self) -> None:
         ingress = load_yaml("ingress.yaml")

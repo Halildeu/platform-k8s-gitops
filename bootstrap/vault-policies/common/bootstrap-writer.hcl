@@ -52,6 +52,14 @@ path "kv/data/platform/permission-service" {
   capabilities = ["create", "update", "read"]
 }
 
+# Signed Cross-AI deployment-protection observer (TEST activation first).
+# The App-generated webhook secret is seeded/rotated through the audited
+# platform-ops wrapper; ESO remains read-only through the separate eso-runtime
+# AppRole. Production activation is outside ADR-0045 v1.
+path "kv/data/platform/cross-ai-deployment-protection-test" {
+  capabilities = ["create", "update", "read"]
+}
+
 # Credential consolidation Faz A — shared `platform` PG role canonical path.
 # docs/architecture/runtime/credential-consolidation-plan.md §4-§5 (Codex 019e3386).
 # Operator creates + populates kv/platform/pg-platform-role (db_username=platform,
@@ -88,6 +96,12 @@ path "sys/capabilities-self" {
 
 path "auth/token/lookup-self" {
   capabilities = ["read"]
+}
+
+# Short-lived writer tokens must be able to revoke only themselves after one
+# audited operation. Revoking any other token remains explicitly denied below.
+path "auth/token/revoke-self" {
+  capabilities = ["update"]
 }
 
 # ============================================================================
@@ -132,7 +146,9 @@ path "sys/key-status"    { capabilities = ["deny"] }
 # No auth backend admin
 path "auth/approle/*"    { capabilities = ["deny"] }
 path "auth/token/create*" { capabilities = ["deny"] }
-path "auth/token/revoke*" { capabilities = ["deny"] }
+path "auth/token/revoke" { capabilities = ["deny"] }
+path "auth/token/revoke-accessor" { capabilities = ["deny"] }
+path "auth/token/revoke-orphan" { capabilities = ["deny"] }
 
 # No identity manipulation
 path "identity/*"        { capabilities = ["deny"] }
