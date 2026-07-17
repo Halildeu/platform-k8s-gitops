@@ -26,10 +26,11 @@ CSEC=$(printf '%s' "$AUTO_JSON" | python3 -c 'import json,sys;print(json.load(sy
 login_ok=""
 for lr in "$REALM" master; do
   if printf '%s\n' "$CSEC" | docker exec -i -e KCID="$CID" -e KCREALM="$lr" "$KC" sh -c '
-    IFS= read -r KCSEC
+    IFS= read -r KC_CLI_CLIENT_SECRET
+    export KC_CLI_CLIENT_SECRET
     /opt/keycloak/bin/kcadm.sh config credentials \
       --server http://localhost:8080 --realm "$KCREALM" \
-      --client "$KCID" --secret "$KCSEC" >/dev/null 2>&1
+      --client "$KCID" >/dev/null 2>&1
   '; then
     login_ok="$lr"; break
   fi
@@ -165,9 +166,102 @@ grant() { # $1=userId $2..=roles — idempotent get-check; gercek hata YUTULMAZ
     fi
   done
 }
-set_tenant() { # $1=userId $2=tenant — user-attribute mapper kaynagi
-  kc update "users/$1" -r $REALM -s "attributes.ats_tenant=[\"$2\"]" >/dev/null
+ensure_tenant_user_profile_attribute() {
+  # Keycloak 26 declarative user-profile, kayitli olmayan attribute'u HTTP
+  # basarili donse bile sessizce atabilir. ats_tenant'i admin-only managed
+  # attribute olarak once kaydet; mevcut profilin diger alanlarini aynen koru.
+  local current updated verified
+  current=$(kc get users/profile -r "$REALM")
+  if ! updated=$(printf '%s' "$current" | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+attrs=d.get("attributes")
+if not isinstance(attrs,list):
+    raise SystemExit("Keycloak user-profile attributes listesi gecersiz")
+matches=[a for a in attrs if a.get("name")=="ats_tenant"]
+if len(matches)>1:
+    raise SystemExit("Keycloak user-profile ats_tenant duplicate")
+desired={
+    "name":"ats_tenant",
+    "displayName":"ATS tenant",
+    "permissions":{"view":["admin"],"edit":["admin"]},
+    "multivalued":False,
 }
+changed=False
+if not matches:
+    attrs.append(desired)
+    changed=True
+else:
+    target=matches[0]
+    for key,value in desired.items():
+        if target.get(key)!=value:
+            target[key]=value
+            changed=True
+if changed:
+    json.dump(d,sys.stdout,separators=(",",":"))'); then
+    echo "FATAL: Keycloak user-profile ats_tenant uzlastirmasi hazirlanamadi" >&2
+    exit 1
+  fi
+  if [ -n "$updated" ]; then
+    # users/profile PUT manage-realm ister; kalici otomasyon hesabina bu genis
+    # rolu vermek yerine test admin'i yalniz bu exact islem icin izole kcadm
+    # config ile kullanilir. Parola container disina cikmaz; argv/log yok.
+    if ! (
+      set -e
+      admin_config="/tmp/kcadm-ats-profile-$$-$RANDOM.config"
+      profile_payload="/tmp/ats-user-profile-$$-$RANDOM.json"
+      trap 'docker exec "$KC" rm -f "$admin_config" "$profile_payload" >/dev/null 2>&1 || true' EXIT
+      printf '%s' "$updated" | docker exec -i \
+        -e KCADM_CONFIG="$admin_config" -e PROFILE_PAYLOAD="$profile_payload" \
+        -e TARGET_REALM="$REALM" "$KC" sh -c '
+          set -eu
+          umask 077
+          trap '\''rm -f "$KCADM_CONFIG" "$PROFILE_PAYLOAD"'\'' EXIT
+          cat >"$PROFILE_PAYLOAD"
+          KC_CLI_PASSWORD=$(cat "$KEYCLOAK_ADMIN_PASSWORD_FILE")
+          [ -n "$KC_CLI_PASSWORD" ]
+          export KC_CLI_PASSWORD
+          /opt/keycloak/bin/kcadm.sh config credentials \
+            --config "$KCADM_CONFIG" \
+            --server http://localhost:8080 --realm master --user admin \
+            >/dev/null 2>&1
+          unset KC_CLI_PASSWORD
+          /opt/keycloak/bin/kcadm.sh update users/profile \
+            --config "$KCADM_CONFIG" -r "$TARGET_REALM" \
+            -f "$PROFILE_PAYLOAD" >/dev/null
+        '
+    ); then
+      echo "FATAL: managed user-profile ats_tenant admin-only uzlastirmasi basarisiz" >&2
+      exit 1
+    fi
+    echo "KC: managed user-profile attribute ats_tenant RECONCILED (admin-only)"
+  else
+    echo "KC: managed user-profile attribute ats_tenant exists (admin-only)"
+  fi
+  verified=$(kc get users/profile -r "$REALM")
+  printf '%s' "$verified" | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+matches=[a for a in d.get("attributes",[]) if a.get("name")=="ats_tenant"]
+assert len(matches)==1
+a=matches[0]
+assert a.get("displayName")=="ATS tenant"
+assert a.get("permissions")=={"view":["admin"],"edit":["admin"]}
+assert a.get("multivalued") is False' || {
+    echo "FATAL: managed user-profile ats_tenant post-update dogrulamasi basarisiz" >&2
+    exit 1
+  }
+}
+set_tenant() { # $1=userId $2=tenant — user-attribute mapper kaynagi
+  local payload
+  payload=$(python3 -c 'import json,sys
+print(json.dumps({"attributes":{"ats_tenant":[sys.argv[1]]}},separators=(",",":")))' "$2")
+  # --merge mevcut user attribute'larini korur; -f stdin tenant degerinin
+  # argv disinda kalmasini ve JSON tipinin tek-elemanli liste olmasini saglar.
+  printf '%s' "$payload" | docker exec -i "$KC" "$KCADM" \
+    update "users/$1" -r "$REALM" -f - --merge >/dev/null
+  unset payload
+}
+
+ensure_tenant_user_profile_attribute
 
 ADMIN_UID=$(kc get users -r $REALM -q 'username=admin@example.com' -q exact=true --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
 if [ -n "$ADMIN_UID" ]; then
