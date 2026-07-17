@@ -14,13 +14,13 @@
 #
 # Güncel Faz 25 #2526 imaj pini. Numerik UID (10001:10001) ve deployment
 # securityContext tutarlıdır; digest AUTHORITY, tag yalnız provenance alias'ıdır:
-#   source  ats main 6af613a78ef751bc8685b4a2de872233d11844a9 (ats#179 + ats#180)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-6af613a
-#   digest  sha256:1df68ec1acb44660396b56024c2301495c04a94a36a1f197547c0b082533e5f2
-#   build   https://github.com/Halildeu/ats/actions/runs/29543975312
+#   source  ats main f34a761494938e8e634699a3864dc38af3c215fd (ats#181)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-f34a761
+#   digest  sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515
+#   build   https://github.com/Halildeu/ats/actions/runs/29549967637
 # Son canlı D29 kanıtlı baseline: sha-e6b7409 /
 #   sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
-# Yeni 1df68ec1 pini için canlı D29, #2526 recovery koşumunda üretilecektir.
+# Yeni dce33483 pini için canlı D29, #2526 recovery koşumunda üretilecektir.
 #
 # Build sanity (apply'sız):
 #   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence
@@ -40,7 +40,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:1df68ec1acb44660396b56024c2301495c04a94a36a1f197547c0b082533e5f2
+    digest: sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
@@ -72,7 +72,7 @@ patches:
         value: "faz24-stt-prod"
       - op: replace
         path: /data/ATS_AI_APPROVAL_TRANSCRIBE_REF
-        value: "mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d"
+        value: "mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43"
       - op: add
         path: /data/ATS_AI_PROVIDER
         value: "live-stt"

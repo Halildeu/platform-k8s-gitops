@@ -35,9 +35,9 @@ env:
   ARGOCD_NAMESPACE: argocd
   ARGOCD_APPLICATION: platform-test
   ATS_IMAGE_REPOSITORY: ghcr.io/halildeu/ats-app-boot
-  EXPECTED_ATS_DIGEST: sha256:1df68ec1acb44660396b56024c2301495c04a94a36a1f197547c0b082533e5f2
+  EXPECTED_ATS_DIGEST: sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515
   EXPECTED_ATS_ENDPOINT_REF: faz24-stt-prod
-  EXPECTED_ATS_APPROVAL_REF: mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d
+  EXPECTED_ATS_APPROVAL_REF: mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43
 
 jobs:
   recover:
@@ -154,7 +154,7 @@ jobs:
         if: inputs.dry_run == 'false'
         run: |
           set -euo pipefail
-          # ATS source 6af613a WiringConfig ordering is explicit: flyway() calls
+          # ATS source f34a761 WiringConfig ordering is explicit: flyway() calls
           # migrate(); modelGovernanceLedgerReader(DataSource, Flyway) depends
           # on that bean; the registry and boot gate depend on the reader.
           # Therefore the first fail-closed boot can materialize V6 before the
