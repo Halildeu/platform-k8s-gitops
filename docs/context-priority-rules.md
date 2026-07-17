@@ -405,9 +405,9 @@ tamamlanınca yerel dosya silinir. Her push/yeni head scope'u hükümsüz kılar
 hazırlama ve üç review yeni exact head için baştan çalıştırılır.
 Otomatik tarayıcının kapsamadığı isim veya serbest metinli kişisel veri varsa
 çağrı yapılmaz; scope ayrıca elle redakte edilip yeniden content-address edilir.
-Varsayılan 2 MB sınırı `--max-bytes` ile en çok 16 MB'a çıkarılabilir; sağlayıcı
-context sınırına sığmayan scope tek tek eksiltilmez, aynı sıralı chunk manifesti
-üç kanala da verilene kadar `tracked_pending` kalır.
+Ortak canonical scope sınırı 2 MB'tır ve `--max-bytes` bunu aşamaz. Daha büyük
+scope tek tek eksiltilmez; aynı sıralı, content-addressed chunk manifesti ayrıca
+uygulanana kadar hiçbir provider çağrılmaz ve iş `tracked_pending` kalır.
 
 `scripts/ai/minimax_m3_review.py`, kurulu resmi bundled `llm-call` betiğini
 kullanan onaylı headless **transport**tur; kendi başına provider değildir.
@@ -484,7 +484,8 @@ taşır. Şema bu on bir alanı exact zorunlu tutar (`additionalProperties=false
 
 Bu gövde elle yeniden yazılmaz. Provider'ın tam final response'u stdin'den
 `scripts/ai/build_cross_ai_evidence.py` betiğine verilir; builder model ve SHA
-formatını, tekil terminal verdict'i ve response digest'ini üretir. `REVISE`
+formatını, tekil terminal verdict'i, response digest'ini ve serialize edilmiş
+nihai GitHub comment byte sınırını doğrular. `REVISE`
 yanıtı dürüstçe `REVISE` evidence üretir ve gate'i açmaz.
 
 `gate-cross-ai-audit` trusted base checkout'ta PR head objesini checkout etmeden

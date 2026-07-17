@@ -25,6 +25,7 @@ PROVIDER_MODELS = {
     "openai": "gpt-5.6-sol",
 }
 MAX_RESPONSE_BYTES = 48_000
+MAX_EVIDENCE_BYTES = 60_000
 
 
 def fail(code: str) -> NoReturn:
@@ -74,25 +75,26 @@ def main() -> None:
             fail("provider_findings_sections_missing")
     verdict = verdicts[0].upper()
     response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
-    print(
-        json.dumps(
-            {
-                "schema": "cross-ai-provider-evidence/v1",
-                "provider": args.provider,
-                "requested_model": args.requested_model,
-                "actual_model": args.actual_model,
-                "base_tip_sha": args.base_tip_sha.lower(),
-                "base_sha": args.base_sha.lower(),
-                "head_sha": args.head_sha.lower(),
-                "scope_sha256": args.scope_sha256.lower(),
-                "verdict": verdict,
-                "response_sha256": response_sha256,
-                "response": response,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
+    evidence = json.dumps(
+        {
+            "schema": "cross-ai-provider-evidence/v1",
+            "provider": args.provider,
+            "requested_model": args.requested_model,
+            "actual_model": args.actual_model,
+            "base_tip_sha": args.base_tip_sha.lower(),
+            "base_sha": args.base_sha.lower(),
+            "head_sha": args.head_sha.lower(),
+            "scope_sha256": args.scope_sha256.lower(),
+            "verdict": verdict,
+            "response_sha256": response_sha256,
+            "response": response,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
+    if len(evidence.encode("utf-8")) > MAX_EVIDENCE_BYTES:
+        fail("evidence_comment_too_large")
+    print(evidence)
 
 
 if __name__ == "__main__":

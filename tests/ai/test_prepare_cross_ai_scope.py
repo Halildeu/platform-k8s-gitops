@@ -127,6 +127,12 @@ class WorkflowBindingTests(unittest.TestCase):
         self.assertIn("fetch-depth: 0", workflow)
         self.assertNotIn("--depth=1000", workflow)
 
+    def test_scope_limit_matches_minimax_transport_limit(self) -> None:
+        minimax_path = ROOT / "scripts/ai/minimax_m3_review.py"
+        minimax = minimax_path.read_text(encoding="utf-8")
+        self.assertEqual(MODULE.MAX_SCOPE_BYTES, 2_000_000)
+        self.assertIn("MAX_PROMPT_BYTES = 2_000_000", minimax)
+
 
 if __name__ == "__main__":
     unittest.main()

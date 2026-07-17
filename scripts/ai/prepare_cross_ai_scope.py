@@ -188,7 +188,7 @@ def main() -> None:
         fail("invalid_base_sha")
     if not COMMIT_SHA_RE.fullmatch(args.head_sha):
         fail("invalid_head_sha")
-    if args.max_bytes < 1 or args.max_bytes > 16_000_000:
+    if args.max_bytes < 1 or args.max_bytes > MAX_SCOPE_BYTES:
         fail("invalid_max_bytes")
     repo = args.repo.expanduser().resolve()
     if not (repo / ".git").exists():

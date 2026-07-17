@@ -85,6 +85,14 @@ class EvidenceBuilderTests(unittest.TestCase):
             json.loads(result.stdout)["error"], "provider_response_too_large"
         )
 
+    def test_rejects_json_escape_expansion_beyond_comment_limit(self) -> None:
+        response = "P0\n" + ('"' * 35_000) + "\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+        result = self.run_builder(response)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"], "evidence_comment_too_large"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
