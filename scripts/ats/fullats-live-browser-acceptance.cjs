@@ -265,7 +265,7 @@ try {
   const applicationCard = candidateEmailText.locator('xpath=ancestor::article');
   await applicationCard.getByRole('button', { name: 'Başvuruyu incele' }).click();
   const reviewPanel = recruiterPage.getByTestId('recruiter-review-panel');
-  await waitVisible(reviewPanel.getByText(candidateEmail, { exact: true }), 'recruiter review details');
+  await waitVisible(reviewPanel.getByText(publicRef, { exact: true }), 'recruiter review details');
   await assertAxeClean(recruiterPage, 'recruiter-workspace-desktop');
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-workspace-desktop');
 
