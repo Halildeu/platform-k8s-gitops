@@ -4224,9 +4224,9 @@ images:
     # Build run 29533847049 testai job 87740302536 published and independently
     # reported the exact immutable digest below. Dispatch run 29534095913 found
     # and this change fixes the promotion-script quoted-heredoc recursion bug.
-    # sourceRevision: 5ecc9e2eefdb9e897caf2922f2d88a845f5fa9e7
-    newTag: sha-5ecc9e2
-    digest: sha256:c1200bc48e9b3770e2328f86adc27f35bda32887d42f5ee30f837141fdc9a6a2
+    # sourceRevision: 742b23424fa30e4d897cacc24202c14b964565e5
+    newTag: sha-742b234
+    digest: sha256:aaa089ccded595152b17acc2455082f809c391a5bd59e708500e7a7f07a98239
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -5671,7 +5671,10 @@ images:
     # protected viewer TTL, agent heartbeat termination and correlated KILL ACK.
     # Immutable build evidence: Actions run 29357534277, endpoint-admin-service
     # job 87168852629, tag sha-d6b7188.
-    digest: sha256:45b4b4f24a2429a564d0a2607915b570128db0e98d430a109a6de6bbe788c48c
+    # board #2559 — sha-780a95c (platform-backend 780a95c29, PR #853): the resolver learns to
+    # apply an explicit org -> tenant alias, which is what makes the ConfigMap key above mean
+    # anything. Digest read from the registry manifest (linux/amd64), not from the tag.
+    digest: sha256:845ebd647bc7683e9a860755babac7b423b0efca501c587cc8b111fcc2148ab9
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
@@ -6067,6 +6070,33 @@ patches:
           remoteRef:
             key: kv/platform/user-service
             property: service_token_client_secret
+  # board #2559 (umbrella #2530) — TEST-ONLY. Do NOT promote to the prod overlay.
+  #
+  # Measured on testai 2026-07-17: an admin whose token resolves to org
+  # 68c73eb9-c410-37dc-aff7-5ade8fbbcbb7 saw an EMPTY fleet, because all 11 enrolled devices
+  # carry the fixed tenant 00000000-…-0001 that agent mTLS passthrough stamps at enrolment.
+  # Query returned 200 with zero rows — isolation was working; the two sides simply never met.
+  #
+  # `replace` (not `add`) on purpose: if the base ever drops the key, this fails loudly instead
+  # of silently reintroducing the empty fleet. The resolver applies an alias ONLY to a proven
+  # canonical org claim, and refuses a non-injective map at startup.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_TENANT_ORG_ALIASES
+        value: "68c73eb9-c410-37dc-aff7-5ade8fbbcbb7=00000000-0000-0000-0000-000000000001"
+  # A ConfigMap edit alone does NOT reach a running pod: env is computed at container start and
+  # envFrom leaves the Deployment hash untouched, so Argo reports Synced while the process keeps
+  # the old value (learned the hard way on #2533). This marker rolls the pods.
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1org-alias-rev
+        value: "2559-1"
   - target:
       kind: ConfigMap
       name: user-service-config

@@ -52,6 +52,15 @@ data:
   SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
   ENDPOINT_ADMIN_DB_SCHEMA: "endpoint_admin_service"
 
+  # Explicit org -> tenant aliases, "<orgUuid>=<tenantUuid>" comma-separated.
+  # EMPTY HERE ON PURPOSE, and empty is the whole contract for prod: with no alias the
+  # resolver derives the tenant exactly as before. Only an overlay that has measured the
+  # mismatch may declare one, and the resolver rejects a non-injective map at startup
+  # (two orgs sharing a tenant would hand both of them the same devices).
+  # Overlays override this key with a JSON6902 replace, which fails loudly if this
+  # line ever disappears — the base contract stays visible instead of silently absent.
+  ENDPOINT_ADMIN_TENANT_ORG_ALIASES: ""
+
   # Identity / OIDC — test=platform-test realm; prod overlay 'serban'
   KEYCLOAK_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
   KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"

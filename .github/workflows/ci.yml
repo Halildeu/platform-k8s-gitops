@@ -32,6 +32,8 @@ jobs:
         run: kustomize build kustomize/overlays/test/eso > /tmp/test-eso.yaml
       - name: Install rendered ownership verifier dependency
         run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Verify org -> tenant alias renders in test only (board #2559)
+        run: python3 scripts/test/verify-org-tenant-alias-render.py /tmp/test.yaml /tmp/prod.yaml
       - name: Verify notification ExternalSecret has one Argo owner
         run: |
           python3 scripts/test/verify-argocd-resource-single-owner.py \
