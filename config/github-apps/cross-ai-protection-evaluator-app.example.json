@@ -1,0 +1,20 @@
+{
+  "name": "Acik Cross-AI Deployment Protection",
+  "url": "https://github.com/Halildeu/platform-k8s-gitops",
+  "hook_attributes": {
+    "active": true,
+    "url": "https://testai.acik.com/github-apps/cross-ai-deployment-protection"
+  },
+  "redirect_url": "https://testai.acik.com/github-apps/cross-ai-deployment-protection/registration-callback-not-enabled",
+  "public": false,
+  "request_oauth_on_install": false,
+  "default_permissions": {
+    "actions": "read",
+    "contents": "read",
+    "deployments": "write",
+    "metadata": "read"
+  },
+  "default_events": [
+    "deployment_protection_rule"
+  ]
+}

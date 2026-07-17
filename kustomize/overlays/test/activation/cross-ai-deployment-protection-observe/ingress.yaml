@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cross-ai-deployment-protection
+  labels:
+    app.kubernetes.io/name: cross-ai-deployment-protection
+    app.kubernetes.io/component: github-app-observer
+    app.kubernetes.io/part-of: platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /webhooks/github
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "10"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - testai.acik.com
+      secretName: wildcard-acik-com-tls
+  rules:
+    - host: testai.acik.com
+      http:
+        paths:
+          - path: /github-apps/cross-ai-deployment-protection
+            pathType: Exact
+            backend:
+              service:
+                name: cross-ai-deployment-protection
+                port:
+                  number: 8080

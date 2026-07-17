@@ -1,0 +1,116 @@
+name: Build — Cross-AI deployment protection image
+
+on:
+  pull_request:
+    paths:
+      - "scripts/github_apps/**"
+      - "schema/cross-ai-deployment-*.schema.json"
+      - ".github/workflows/build-cross-ai-deployment-protection-image.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/github_apps/**"
+      - "schema/cross-ai-deployment-*.schema.json"
+      - ".github/workflows/build-cross-ai-deployment-protection-image.yml"
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection
+  DOCKERFILE: scripts/github_apps/cross_ai_deployment_policy/Dockerfile
+
+jobs:
+  container-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Build Linux x86_64 image from the pinned base and wheel lock
+        run: |
+          set -euo pipefail
+          docker build \
+            --file "$DOCKERFILE" \
+            --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
+            --tag cross-ai-deployment-protection:contract \
+            .
+
+      - name: Run non-root read-only receive-only smoke
+        run: |
+          set -euo pipefail
+          printf '%s' 'synthetic-contract-secret' > "$RUNNER_TEMP/github-webhook-current"
+          chmod 600 "$RUNNER_TEMP/github-webhook-current"
+          docker run --detach --rm \
+            --name cross-ai-deployment-protection-contract \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --publish 127.0.0.1:18080:8080 \
+            --volume "$RUNNER_TEMP/github-webhook-current:/run/secrets/github-webhook-current:ro" \
+            cross-ai-deployment-protection:contract \
+            --mode observe \
+            --listen 0.0.0.0 \
+            --port 8080 \
+            --db /tmp/observe.sqlite3 \
+            --webhook-secret-file /run/secrets/github-webhook-current
+          trap 'docker logs cross-ai-deployment-protection-contract; docker stop cross-ai-deployment-protection-contract' EXIT
+          for _ in $(seq 1 20); do
+            if curl --fail --silent --show-error http://127.0.0.1:18080/readyz \
+              | jq -e '.status == "ready" and .mode == "observe" and .evaluationEnabled == false' >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: container-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Authenticate to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push immutable main artifact
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          sbom: true
+          build-args: SOURCE_REVISION=${{ github.sha }}
+          tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
+
+      - name: Attest pushed image digest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record immutable desired-state input
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          printf 'image=%s@%s\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"

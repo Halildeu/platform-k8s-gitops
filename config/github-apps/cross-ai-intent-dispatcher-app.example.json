@@ -1,0 +1,17 @@
+{
+  "name": "Acik Cross-AI Intent Dispatcher",
+  "url": "https://github.com/Halildeu/platform-k8s-gitops",
+  "hook_attributes": {
+    "active": false,
+    "url": "https://testai.acik.com/github-apps/cross-ai-deployment-protection/dispatcher-webhook-disabled"
+  },
+  "redirect_url": "https://testai.acik.com/github-apps/cross-ai-deployment-protection/registration-callback-not-enabled",
+  "public": false,
+  "request_oauth_on_install": false,
+  "default_permissions": {
+    "actions": "write",
+    "contents": "write",
+    "metadata": "read"
+  },
+  "default_events": []
+}

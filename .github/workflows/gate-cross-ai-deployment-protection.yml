@@ -1,0 +1,60 @@
+name: Gate — signed Cross-AI deployment protection
+
+on:
+  pull_request:
+    paths:
+      - "schema/cross-ai-deployment-*.json"
+      - "scripts/github_apps/**"
+      - "tests/github_apps/**"
+      - "config/github-apps/**"
+      - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
+      - ".github/workflows/gate-cross-ai-deployment-protection.yml"
+  push:
+    branches: [main]
+    paths:
+      - "schema/cross-ai-deployment-*.json"
+      - "scripts/github_apps/**"
+      - "tests/github_apps/**"
+      - "config/github-apps/**"
+      - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
+
+permissions:
+  contents: read
+
+jobs:
+  fail-closed-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install content-addressed verifier dependencies
+        run: |
+          python3 -m pip install \
+            --disable-pip-version-check \
+            --require-hashes \
+            --only-binary=:all: \
+            --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
+
+      - name: Compile policy implementation
+        run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py tests/github_apps/*.py
+
+      - name: Validate JSON schemas and example policy
+        run: |
+          for schema in schema/cross-ai-deployment-*.json; do
+            jq -e . "$schema" >/dev/null
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          from scripts.github_apps.cross_ai_deployment_policy.policy import load_policy
+          load_policy(Path("config/github-apps/cross-ai-deployment-policy.example.json"))
+          PY
+
+      - name: Run signed-evidence, replay and callback negative matrix
+        run: python3 -m unittest discover -s tests/github_apps -p 'test_*.py' -v

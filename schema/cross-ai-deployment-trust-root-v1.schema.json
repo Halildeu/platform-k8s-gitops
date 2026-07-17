@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-trust-root-v1.schema.json",
+  "title": "Cross-AI deployment trust root v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "trustRootId",
+    "issuedAt",
+    "expiresAt",
+    "maxClockSkewSeconds",
+    "minimumProviderFamilies",
+    "minimumDirectProviderRoutes",
+    "keys"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "acik.cross-ai-deployment-trust-root.v1"
+    },
+    "trustRootId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "maxClockSkewSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 300
+    },
+    "minimumProviderFamilies": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 8
+    },
+    "minimumDirectProviderRoutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "keys": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/key"
+      }
+    }
+  },
+  "$defs": {
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyId",
+        "role",
+        "publicKeyBase64",
+        "notBefore",
+        "notAfter",
+        "providerFamily",
+        "allowedChannels",
+        "allowedModelIdentityClasses",
+        "directProviderCli"
+      ],
+      "properties": {
+        "keyId": {
+          "type": "string",
+          "pattern": "^vault-transit://[a-z0-9/_-]+#v[1-9][0-9]*$"
+        },
+        "role": {
+          "enum": ["provider-review", "coordinator", "revocation"]
+        },
+        "publicKeyBase64": {
+          "type": "string",
+          "minLength": 44,
+          "maxLength": 44
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "providerFamily": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,31}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allowedChannels": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,63}$"
+          }
+        },
+        "allowedModelIdentityClasses": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 2,
+          "items": {
+            "enum": ["provider-reported", "trusted-launch-attested"]
+          }
+        },
+        "directProviderCli": {
+          "oneOf": [
+            {"type": "boolean"},
+            {"type": "null"}
+          ]
+        }
+      }
+    }
+  }
+}
