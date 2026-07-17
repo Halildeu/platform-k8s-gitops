@@ -222,6 +222,24 @@ services:
       test: enabled
       prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
 
+  - name: cross-ai-deployment-protection
+    repo: platform-k8s-gitops
+    description: |
+      Faz 22.6 #2502 signed Cross-AI deployment-protection GitHub App observer.
+      Phase 1 receives only the exact HMAC-protected deployment-protection
+      webhook path and persists the accepted delivery in a local SQLite PVC.
+      It has no evaluator App private key, GitHub callback client, Kubernetes
+      service-account token or egress. An HTTP 202 is observe-queue admission,
+      not a deployment approval or product acceptance signal.
+    jwt_validates: false  # GitHub webhook HMAC; not a user JWT endpoint
+    route_external: true  # exact /github-apps/cross-ai-deployment-protection ingress
+    workload_kind: Deployment
+    runtime_class: lab-tool
+    probe_contract: exempt  # app-native /healthz + /readyz split
+    environments:
+      test: enabled
+      prod: deferred   # ADR-0045 v1 production/custom-rule activation out of scope
+
   - name: redis-streams-exporter
     repo: oliver006/redis_exporter
     description: |

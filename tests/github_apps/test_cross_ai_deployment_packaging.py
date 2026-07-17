@@ -14,6 +14,7 @@ ACTIVATION = (
     / "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe"
 )
 TEST_ROOT = ROOT / "kustomize/overlays/test/kustomization.yaml"
+SERVICES_CATALOG = ROOT / "docs/operations/services.yaml"
 ESO_POLICY = ROOT / "bootstrap/vault-policies/common/eso-runtime.hcl"
 BOOTSTRAP_WRITER_POLICY = ROOT / "bootstrap/vault-policies/common/bootstrap-writer.hcl"
 VAULT_PATCH_WRAPPER = ROOT / "scripts/ops/platform-ops-vault-patch.sh"
@@ -97,6 +98,16 @@ class PackagingContractTests(unittest.TestCase):
             "activation/cross-ai-deployment-protection-observe",
             test_root["resources"],
         )
+
+        catalog = yaml.safe_load(SERVICES_CATALOG.read_text(encoding="utf-8"))
+        service = next(
+            item
+            for item in catalog["services"]
+            if item["name"] == "cross-ai-deployment-protection"
+        )
+        self.assertEqual(service["environments"], {"test": "enabled", "prod": "deferred"})
+        self.assertEqual(service["route_external"], True)
+        self.assertEqual(service["probe_contract"], "exempt")
 
     def test_secret_is_vault_referenced_and_never_in_desired_state(self) -> None:
         external = load_yaml("externalsecret.yaml")
