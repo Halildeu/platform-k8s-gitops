@@ -36,6 +36,31 @@ App registration and written directly to
 `github_webhook_secret_current`; never paste it into the repository, an issue,
 chat, shell argument or workflow log.
 
+Phase 2 also stores the evaluator App private key at the same test-only Vault
+path under the distinct property `github_app_private_key_pem`. Keep the
+download in a current-user-owned `0600` regular file and use only the audited
+file-input operation:
+
+```bash
+VAULT_BOOTSTRAP_ROLE_ID="$(cat /tmp/platform-bootstrap-writer-test-role-id.txt)" \
+VAULT_BOOTSTRAP_SECRET_ID_FILE=/tmp/platform-bootstrap-writer-test-secret-id.txt \
+bash scripts/ops/platform-ops-vault-patch.sh \
+  --vault-addr http://127.0.0.1:8201 \
+  --service cross-ai-deployment-protection-test \
+  --field-from-file "github_app_private_key_pem=$HANDOFF" \
+  --cleanup-field-files \
+  --cleanup-secret-id-file
+```
+
+The wrapper accepts exactly one operation per invocation on this dedicated
+path: the webhook secret from one-line stdin, or the App PEM from an
+owner-only file. It rejects arbitrary property names, merges with KV v2 CAS,
+self-revokes the short-lived token and removes both handoff files when the
+cleanup flags are used. Never pass the PEM value as `--field`, environment
+text, chat, an issue comment or a log. Seeding the property does not authorize
+mounting it into the Phase 1 receive-only observer; only the future reviewed
+enforcement overlay may consume it.
+
 Before the ExternalSecret is activated, an owner applies the reviewed
 `bootstrap/vault-policies/common/eso-runtime.hcl` to the test Vault.  Its
 dedicated rule grants ESO only `read` on

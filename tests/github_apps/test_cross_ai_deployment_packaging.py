@@ -174,13 +174,17 @@ class PackagingContractTests(unittest.TestCase):
             r"cross-ai-deployment-protection-test\|openfga\)\s*\n\s*KV_PATH=",
         )
         self.assertIn("--field-from-stdin", wrapper)
+        self.assertIn("--field-from-file", wrapper)
+        self.assertIn("--cleanup-field-files", wrapper)
         self.assertIn("--cleanup-secret-id-file", wrapper)
         self.assertIn('CURRENT_VERSION=0', wrapper)
         self.assertIn('"options": {"cas":', wrapper)
         self.assertIn(
-            "accepts only --field-from-stdin github_webhook_secret_current",
+            "accepts only github_webhook_secret_current from stdin or "
+            "github_app_private_key_pem from file",
             wrapper,
         )
+        self.assertIn('private_key = b"PRIVATE" + b" KEY"', wrapper)
 
         for path in (VAULT_PATCH_WRAPPER, VAULT_RECONCILER, BOOTSTRAP_WRITER_VERIFY):
             script = path.read_text(encoding="utf-8")
