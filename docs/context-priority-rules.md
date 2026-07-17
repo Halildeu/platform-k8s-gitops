@@ -405,7 +405,8 @@ tamamlanınca yerel dosya silinir. Her push/yeni head scope'u hükümsüz kılar
 hazırlama ve üç review yeni exact head için baştan çalıştırılır.
 Otomatik tarayıcının kapsamadığı isim veya serbest metinli kişisel veri varsa
 çağrı yapılmaz; scope ayrıca elle redakte edilip yeniden content-address edilir.
-Ortak canonical scope sınırı 2 MB'tır ve `--max-bytes` bunu aşamaz. Daha büyük
+Ortak canonical scope sınırı hem ham hem redaksiyon sonrası artifact için 2 MB'tır
+ve `--max-bytes` bunu aşamaz. Daha büyük
 scope tek tek eksiltilmez; aynı sıralı, content-addressed chunk manifesti ayrıca
 uygulanana kadar hiçbir provider çağrılmaz ve iş `tracked_pending` kalır.
 

@@ -125,6 +125,11 @@ def write_exclusive_output(output: Path, content: bytes) -> None:
         fail("output_unwritable")
 
 
+def enforce_redacted_scope_size(content: bytes, max_scope_bytes: int) -> None:
+    if len(content) > max_scope_bytes:
+        fail("scope_too_large_after_redaction")
+
+
 def gitleaks_clean(raw_scope: bytes) -> bool:
     binary = shutil.which("gitleaks")
     if binary is None:
@@ -222,6 +227,7 @@ def main() -> None:
         "<redacted-phone>", scope_text
     )
     redacted_scope = scope_text.encode("utf-8")
+    enforce_redacted_scope_size(redacted_scope, args.max_bytes)
     digest = hashlib.sha256(redacted_scope).hexdigest()
 
     if args.output:

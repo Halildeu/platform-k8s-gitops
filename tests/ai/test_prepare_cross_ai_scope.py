@@ -43,6 +43,16 @@ class RedactionTests(unittest.TestCase):
         redacted = MODULE.TURKISH_PHONE_RE.sub("<redacted-phone>", redacted)
         self.assertEqual(redacted, "Aday <redacted-email> ve <redacted-phone>")
 
+    def test_redaction_expansion_is_rechecked_against_scope_limit(self) -> None:
+        raw = ("a@b.co " * 100).encode("utf-8")
+        redacted = MODULE.EMAIL_RE.sub(
+            "<redacted-email>", raw.decode("utf-8")
+        ).encode("utf-8")
+        self.assertGreater(len(redacted), len(raw))
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                MODULE.enforce_redacted_scope_size(redacted, len(raw))
+
 
 class OutputSafetyTests(unittest.TestCase):
     def test_exclusive_output_rejects_preexisting_symlink(self) -> None:
