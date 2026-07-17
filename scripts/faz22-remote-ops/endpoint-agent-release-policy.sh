@@ -65,6 +65,7 @@ endpoint_agent_release_policy_load() {
   _endpoint_agent_policy_default EXPECTED_ARTIFACT_HOST_DIGEST "$(_endpoint_agent_policy_read '.current_bounded_pilot.artifact_host_digest')"
   _endpoint_agent_policy_default EXPECTED_ARTIFACT_HOST_IMAGE_REF "$(_endpoint_agent_policy_read '.current_bounded_pilot.artifact_host_image_ref')"
   _endpoint_agent_policy_default ARTIFACT_BASE_URL "$(_endpoint_agent_policy_read '.current_bounded_pilot.artifact_base_url')"
+  _endpoint_agent_policy_default ARTIFACT_RELEASE_BASE_URL "$(_endpoint_agent_policy_read '.current_bounded_pilot.artifact_release_base_url')"
   _endpoint_agent_policy_default GITHUB_RELEASE_BASE_URL "$(_endpoint_agent_policy_read '.current_bounded_pilot.github_release_base_url')"
   _endpoint_agent_policy_default BINARY_URL "$GITHUB_RELEASE_BASE_URL/endpoint-agent.exe"
   _endpoint_agent_policy_default MANIFEST_URL "$GITHUB_RELEASE_BASE_URL/release-manifest.json"

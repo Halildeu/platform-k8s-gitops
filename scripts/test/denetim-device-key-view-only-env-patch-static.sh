@@ -52,8 +52,9 @@ fi
   require 'ExpectedReleaseManifestSha256' "activation patch must pin the immutable release manifest"
   require '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12' "activation patch must pin TLS 1.2 on Windows PowerShell 5.1"
   require 'Release asset base URL must use HTTPS' "activation patch must require HTTPS release assets"
-  require 'ReleaseManifestBaseUrl = "https://github.com/Halildeu/platform-agent/releases/download/v0.3.14"' "activation patch must fetch the canonical immutable release manifest"
-  require 'ReleaseAssetBaseUrl = "https://testai.acik.com/artifacts/endpoint-agent/v0.3.14"' "activation patch must fetch internal assets from the bounded artifact host"
+  require '[string]$ReleaseManifestBaseUrl = ""' "activation patch must not duplicate the canonical release manifest URL"
+  require '[string]$ReleaseAssetBaseUrl = ""' "activation patch must not duplicate the canonical internal artifact URL"
+  require 'Canonical release policy parameter is required for Action=Apply' "activation patch must fail closed without injected canonical release policy"
   require 'Assert-JsonBooleanProperty -Object $manifest -Name "publicly_trusted" -Expected $false' "activation patch must type-check manifest trust metadata"
   require 'Assert-JsonBooleanProperty -Object $attestationSummary -Name "signature_present" -Expected $true' "activation patch must type-check producer signature metadata"
   require 'remote-bridge-attestation-evidence.b64' "activation patch must fetch signed attestation evidence"
@@ -168,14 +169,44 @@ if grep -Fq 'reg.exe export' "$script" || grep -Fq 'reg.exe import' "$script"; t
   exit 1
 fi
 
-policy_manifest_sha256="$(jq -er '.current_bounded_pilot.release_manifest_sha256' "$policy")"
-policy_binary_sha256="$(jq -er '.current_bounded_pilot.endpoint_agent_sha256' "$policy")"
-policy_artifact_digest="$(jq -er '.current_bounded_pilot.artifact_host_digest' "$policy")"
-policy_artifact_ref="$(jq -er '.current_bounded_pilot.artifact_host_image_ref' "$policy")"
-require "[string]\$ExpectedReleaseManifestSha256 = \"$policy_manifest_sha256\"" "activation manifest pin must equal canonical release policy"
-require "[string]\$ExpectedBinarySha256 = \"$policy_binary_sha256\"" "activation binary pin must equal canonical release policy"
-require "[string]\$ExpectedArtifactHostDigest = \"$policy_artifact_digest\"" "activation artifact-host digest must equal canonical release policy"
-require "[string]\$ExpectedArtifactHostImageRef = \"$policy_artifact_ref\"" "activation artifact-host image ref must equal canonical release policy"
+for policy_literal in \
+  "$(jq -er '.current_bounded_pilot.release_tag' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.release_manifest_sha256' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.endpoint_agent_sha256' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.artifact_host_digest' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.artifact_host_image_ref' "$policy")"; do
+  if grep -Fq -- "$policy_literal" "$script"; then
+    echo "activation patch must not duplicate release-policy literal: $policy_literal" >&2
+    exit 1
+  fi
+done
+if grep -Eq 'v[0-9]+\.[0-9]+\.[0-9]+' "$script"; then
+  echo "activation patch must not carry any independently maintained release version" >&2
+  exit 1
+fi
+
+release_arguments="$(bash -c 'source scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh; release_policy_patch_arguments')"
+for injected_literal in \
+  "$(jq -er '.current_bounded_pilot.release_tag' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.github_release_base_url' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.artifact_release_base_url' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.release_manifest_sha256' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.endpoint_agent_sha256' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.artifact_host_digest' "$policy")" \
+  "$(jq -er '.current_bounded_pilot.artifact_host_image_ref' "$policy")"; do
+  if [[ "$release_arguments" != *"$injected_literal"* ]]; then
+    echo "migration orchestrator did not inject canonical policy value: $injected_literal" >&2
+    exit 1
+  fi
+done
+
+if EXPECTED_AGENT_TAG=v9.9.9 bash -c '
+  source scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh
+  validate_release_policy_bindings
+' >/dev/null 2>&1; then
+  echo "migration orchestrator accepted a release-policy environment override" >&2
+  exit 1
+fi
 
 # shellcheck disable=SC2016
 if grep -Fq 'signaturePresent = $true' "$script" || grep -Fq 'publicKeyVerification = "verified-by-release-producer' "$script"; then
@@ -589,6 +620,18 @@ pwsh -NoProfile -NonInteractive -Command '
   '
 
 bash -n "$orchestrator"
+grep -Fq 'source "${SCRIPT_DIR}/endpoint-agent-release-policy.sh"' "$orchestrator" || {
+  echo "migration orchestrator must source the canonical release policy loader" >&2
+  exit 1
+}
+grep -Fq 'endpoint_agent_release_policy_load "$REPO_ROOT"' "$orchestrator" || {
+  echo "migration orchestrator must load the canonical release policy" >&2
+  exit 1
+}
+grep -Fq 'release_policy_patch_arguments' "$orchestrator" || {
+  echo "migration orchestrator must inject a transaction-scoped release-policy snapshot" >&2
+  exit 1
+}
 grep -Fq 'trap rollback_on_failure EXIT' "$orchestrator" || {
   echo "migration orchestrator must arm automatic rollback after endpoint apply" >&2
   exit 1

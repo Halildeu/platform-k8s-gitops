@@ -31,13 +31,13 @@ param(
   [ValidatePattern('^[a-f0-9]{32}$')]
   [string]$TransactionId,
   [string]$ExpectedHostname = "SRB-AIDENETIMPC",
-  [string]$ExpectedReleaseTag = "v0.3.14",
-  [string]$ReleaseManifestBaseUrl = "https://github.com/Halildeu/platform-agent/releases/download/v0.3.14",
-  [string]$ReleaseAssetBaseUrl = "https://testai.acik.com/artifacts/endpoint-agent/v0.3.14",
-  [string]$ExpectedReleaseManifestSha256 = "a126314b5978f6f5c50b7721535a322695dd66b4e1f4e00057f76dc6164d5c0f",
-  [string]$ExpectedBinarySha256 = "d3bb50dd4758f6cdad250ecd2c703fbe9e71e31e09e4bec06c9d0c953eb98ce9",
-  [string]$ExpectedArtifactHostDigest = "sha256:35ab77067711fd48da752d65ba8af84c0d00bc71059752d77fcb111f0353a84e",
-  [string]$ExpectedArtifactHostImageRef = "ghcr.io/halildeu/platform-agent-artifacts:v0.3.14@sha256:35ab77067711fd48da752d65ba8af84c0d00bc71059752d77fcb111f0353a84e",
+  [string]$ExpectedReleaseTag = "",
+  [string]$ReleaseManifestBaseUrl = "",
+  [string]$ReleaseAssetBaseUrl = "",
+  [string]$ExpectedReleaseManifestSha256 = "",
+  [string]$ExpectedBinarySha256 = "",
+  [string]$ExpectedArtifactHostDigest = "",
+  [string]$ExpectedArtifactHostImageRef = "",
   [string]$ExpectedAttestationPublicKeySha256 = "7149268fca56d9adb1097a8148b620d99949f5fa440f31406804112ace04d467",
   [string]$ExpectedDeviceCertIssuer = "CN=platform-test endpoint device CA",
   [string]$ExpectedPermitKeyId = "rb-test-denetim-device-key-20260627-01",
@@ -922,6 +922,23 @@ if ($Action -eq "Rollback") {
 
 if (-not [string]::IsNullOrWhiteSpace($RollbackEnvironmentBackup)) {
   throw "RollbackEnvironmentBackup is accepted only with Action=Rollback"
+}
+if ($Action -ne "Apply") {
+  throw "Unsupported migration action reached the Apply-only release policy boundary"
+}
+$requiredReleasePolicy = [ordered]@{
+  ExpectedReleaseTag = $ExpectedReleaseTag
+  ReleaseManifestBaseUrl = $ReleaseManifestBaseUrl
+  ReleaseAssetBaseUrl = $ReleaseAssetBaseUrl
+  ExpectedReleaseManifestSha256 = $ExpectedReleaseManifestSha256
+  ExpectedBinarySha256 = $ExpectedBinarySha256
+  ExpectedArtifactHostDigest = $ExpectedArtifactHostDigest
+  ExpectedArtifactHostImageRef = $ExpectedArtifactHostImageRef
+}
+foreach ($releasePolicyName in $requiredReleasePolicy.Keys) {
+  if ([string]::IsNullOrWhiteSpace([string]$requiredReleasePolicy[$releasePolicyName])) {
+    throw "Canonical release policy parameter is required for Action=Apply: $releasePolicyName"
+  }
 }
 if (-not (Test-Path -LiteralPath $BinaryPath)) {
   throw "EndpointAgent binary is absent"

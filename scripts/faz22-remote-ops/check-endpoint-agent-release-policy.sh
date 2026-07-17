@@ -26,6 +26,15 @@ sha256_stdin() {
   fi
 }
 
+github_api_get() {
+  local url="$1" output="$2"
+  local -a args=(--max-time 20 -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  fi
+  curl "${args[@]}" "$url" >"$output"
+}
+
 need jq
 [ -f "$POLICY_FILE" ] || die "policy file not found: $POLICY_FILE"
 
@@ -51,6 +60,8 @@ jq -e '
 	  and ($root.current_bounded_pilot.signer_thumbprint | test("^[A-F0-9]{40}$"))
 	  and ($root.current_bounded_pilot.signer_sha256_fingerprint | test("^[A-F0-9]{64}$"))
   and ($root.current_bounded_pilot.signing_tier | length > 0)
+  and ($root.current_bounded_pilot.artifact_base_url == "https://testai.acik.com/artifacts/endpoint-agent/current")
+  and ($root.current_bounded_pilot.artifact_release_base_url == ("https://testai.acik.com/artifacts/endpoint-agent/" + $root.current_bounded_pilot.release_tag))
   and ($root.current_bounded_pilot.github_release_base_url | test("/" + $root.current_bounded_pilot.release_tag + "$"))
   and ($root.release_train_policy.frozen_minor != $root.release_train_policy.next_trusted_minor)
   and ($root.release_train_policy.recent_release_window >= $root.release_train_policy.recent_release_hygiene_threshold)
@@ -134,6 +145,57 @@ if [ "${SKIP_MANIFEST_FETCH:-0}" != "1" ]; then
     || die "release-manifest.json content does not match pinned release policy"
   printf 'release-manifest.json SHA256 verified: %s\n' "$actual_sha"
   printf 'release-manifest.json policy content binding verified: %s\n' "$release_tag"
+fi
+
+# Bind the policy to GitHub's immutable release record and to the exact
+# successful trusted release workflow run. This closes the gap where a policy
+# file and overlay could agree with each other but not with the producer.
+if [ "${SKIP_GITHUB_API_FETCH:-0}" != "1" ]; then
+  need curl
+  release_api_tmp="$(mktemp)"
+  workflow_api_tmp="$(mktemp)"
+  trap 'rm -f "${manifest_tmp:-}" "${release_api_tmp:-}" "${workflow_api_tmp:-}"' EXIT
+
+  release_api_url="https://api.github.com/repos/Halildeu/platform-agent/releases/tags/${release_tag}"
+  workflow_run_id="$(jq -r '.current_bounded_pilot.workflow_run_id' "$POLICY_FILE")"
+  workflow_api_url="https://api.github.com/repos/Halildeu/platform-agent/actions/runs/${workflow_run_id}"
+  github_api_get "$release_api_url" "$release_api_tmp" \
+    || die "GitHub immutable release metadata fetch failed: tag=$release_tag"
+  github_api_get "$workflow_api_url" "$workflow_api_tmp" \
+    || die "GitHub trusted release workflow metadata fetch failed: run=$workflow_run_id"
+
+  jq -e --slurpfile policy "$POLICY_FILE" '
+    $policy[0].current_bounded_pilot as $p |
+    def asset($name): [.assets[] | select(.name == $name)] | if length == 1 then .[0] else null end;
+    .tag_name == $p.release_tag
+    and .immutable == true
+    and .draft == false
+    and .prerelease == false
+    and (asset("release-manifest.json").digest == ("sha256:" + $p.release_manifest_sha256))
+    and (asset("endpoint-agent.exe").digest == ("sha256:" + $p.endpoint_agent_sha256))
+    and (asset("endpoint-agent.exe").size == $p.endpoint_agent_max_bytes)
+    and (asset("EndpointAgent.zip").digest == ("sha256:" + $p.endpoint_agent_zip_sha256))
+    and (asset("install.ps1").digest == ("sha256:" + $p.install_ps1_sha256))
+    and (asset("bootstrap-package.ps1").digest == ("sha256:" + $p.bootstrap_package_ps1_sha256))
+    and (asset("remote-bridge-attestation-evidence.b64").digest == ("sha256:" + $p.remote_bridge_attestation_evidence_sha256))
+    and (asset("remote-bridge-attestation-evidence-summary.json").digest == ("sha256:" + $p.remote_bridge_attestation_summary_sha256))
+  ' "$release_api_tmp" >/dev/null \
+    || die "GitHub immutable release assets do not match pinned release policy"
+
+  jq -e --slurpfile policy "$POLICY_FILE" '
+    $policy[0].current_bounded_pilot as $p |
+    (.id | tostring) == $p.workflow_run_id
+    and .status == "completed"
+    and .conclusion == "success"
+    and .event == "push"
+    and .head_sha == $p.source_commit
+    and .head_branch == $p.release_tag
+    and .path == ".github/workflows/release-exe-signed.yml"
+  ' "$workflow_api_tmp" >/dev/null \
+    || die "GitHub trusted release workflow run does not match pinned release policy"
+
+  printf 'GitHub immutable release assets verified: %s\n' "$release_tag"
+  printf 'GitHub trusted release workflow verified: %s\n' "$workflow_run_id"
 fi
 
 printf 'ENDPOINT_AGENT_RELEASE_POLICY=pass path=%s release_tag=%s next_trusted_minor=%s\n' \
