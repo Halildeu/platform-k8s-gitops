@@ -36,7 +36,13 @@ export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-login-entry-not-visible',
   'browser-metadata-not-trusted',
   'browser-observer-install-failed',
+  'browser-preflight-api-response-missing',
+  'browser-preflight-api-status-conflict',
+  'browser-preflight-api-status-forbidden',
   'browser-preflight-api-status-invalid',
+  'browser-preflight-api-status-server-error',
+  'browser-preflight-api-status-unauthorized',
+  'browser-preflight-api-status-unexpected-success',
   'browser-replay-not-rejected',
   'browser-replay-probe-failed',
   'browser-route-navigation-failed',
@@ -98,6 +104,16 @@ export function classifyBrowserFailure(error) {
     return 'browser-input-invalid';
   }
   return 'browser-unclassified-failure';
+}
+
+export function classifyPreflightApiStatus(status) {
+  if (status === null) return 'browser-preflight-api-response-missing';
+  if (status === 401) return 'browser-preflight-api-status-unauthorized';
+  if (status === 403) return 'browser-preflight-api-status-forbidden';
+  if (status === 409) return 'browser-preflight-api-status-conflict';
+  if (status >= 200 && status < 300) return 'browser-preflight-api-status-unexpected-success';
+  if (status >= 500 && status < 600) return 'browser-preflight-api-status-server-error';
+  return 'browser-preflight-api-status-invalid';
 }
 
 function required(name) {
@@ -272,7 +288,9 @@ async function main() {
       for (let attempt = 0; attempt < 100 && viewerApiStatus === null; attempt += 1) {
         await page.waitForTimeout(100);
       }
-      if (viewerApiStatus !== 404) throw evidenceFailure('browser-preflight-api-status-invalid');
+      if (viewerApiStatus !== 404) {
+        throw evidenceFailure(classifyPreflightApiStatus(viewerApiStatus));
+      }
       const routeMounted = await root.isVisible();
       const preflight = {
         schemaVersion: 'faz22.6.viewOnlyViewerAuthRoutePreflight.v1',
