@@ -6227,9 +6227,57 @@ patches:
       kind: Deployment
       name: transcript-service
     patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: transcript-service
+      spec:
+        replicas: 1
+        template:
+          metadata:
+            annotations:
+              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-17-2568-v2"
+          spec:
+            containers:
+              - name: transcript-service
+                env:
+                  # Fail closed until ESO has reconciled the required key.
+                  # A bulk envFrom does not enforce per-key presence and a
+                  # later Secret update would not refresh a running process.
+                  - name: TRANSCRIPT_REDIS_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: transcript-service-secrets
+                        key: TRANSCRIPT_REDIS_PASSWORD
+                        optional: false
+      # #2568: transcript-service consumes ConfigMap values through envFrom.
+      # Keep the activation rollbackable and force a pod roll whenever the
+      # direct-STT result-consumer contract changes.
+
+  # Faz 24 #2568: the source-side consumer shipped default-off in #187/#756.
+  # Enable it only in the test overlay after live evidence showed six routed
+  # Gateway results with no canonical transcript persistence. Rollback: remove
+  # this ConfigMap patch (or set both ENABLED and REDIS_HEALTH_ENABLED to
+  # "false") and bump the Deployment revision above.
+  - target:
+      kind: ConfigMap
+      name: transcript-service-config
+    patch: |-
+      - op: add
+        path: /data/TRANSCRIPT_DIRECT_STT_RESULT_CONSUMER_ENABLED
+        value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_DIRECT_STT_RESULT_STREAM_KEY
+        value: "transcript:direct-stt-results"
+      - op: add
+        path: /data/TRANSCRIPT_DIRECT_STT_RESULT_CONSUMER_DLQ_STREAM_KEY
+        value: "transcript:direct-stt-results:dlq"
+      - op: add
+        path: /data/TRANSCRIPT_DIRECT_STT_RESULT_CONSUMER_GROUP_NAME
+        value: "transcript-service-v1"
+      - op: add
+        path: /data/TRANSCRIPT_REDIS_HEALTH_ENABLED
+        value: "true"
 
   # Faz 24 KVKK audit pipeline (#1249): replica 1 default (HARD RULE —
   # Scale-to-Zero YASAK). Pure Redis consumer (no mTLS, no inbound API) → base
