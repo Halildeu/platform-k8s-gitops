@@ -77,6 +77,14 @@ class EvidenceBuilderTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["response"], response)
 
+    def test_rejects_response_too_large_for_issue_comment_transport(self) -> None:
+        response = "P0\n" + ("x" * 49_000) + "\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+        result = self.run_builder(response)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"], "provider_response_too_large"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

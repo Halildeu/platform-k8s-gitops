@@ -84,8 +84,28 @@ class DeterministicDiffTests(unittest.TestCase):
             ).strip()
             previous = os.environ.get("COLUMNS")
             try:
+                subprocess.run(
+                    ["git", "config", "diff.algorithm", "patience"],
+                    cwd=repo,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "diff.indentHeuristic", "true"],
+                    cwd=repo,
+                    check=True,
+                )
                 os.environ["COLUMNS"] = "20"
                 narrow = MODULE.run_git_diff(repo, base, head, 100_000)
+                subprocess.run(
+                    ["git", "config", "diff.algorithm", "histogram"],
+                    cwd=repo,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "diff.indentHeuristic", "false"],
+                    cwd=repo,
+                    check=True,
+                )
                 os.environ["COLUMNS"] = "200"
                 wide = MODULE.run_git_diff(repo, base, head, 100_000)
             finally:

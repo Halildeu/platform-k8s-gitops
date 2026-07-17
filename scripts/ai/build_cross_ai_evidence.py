@@ -24,6 +24,7 @@ PROVIDER_MODELS = {
     "minimax": "minimax/MiniMax-M3",
     "openai": "gpt-5.6-sol",
 }
+MAX_RESPONSE_BYTES = 48_000
 
 
 def fail(code: str) -> NoReturn:
@@ -54,6 +55,8 @@ def main() -> None:
     response = sys.stdin.read().strip()
     if not response:
         fail("provider_response_required")
+    if len(response.encode("utf-8")) > MAX_RESPONSE_BYTES:
+        fail("provider_response_too_large")
     verdicts = VERDICT_RE.findall(response)
     lines = [line.strip() for line in response.splitlines() if line.strip()]
     if (

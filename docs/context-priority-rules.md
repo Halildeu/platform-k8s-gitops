@@ -372,6 +372,7 @@ SCOPE_RECEIPT="$(python3 scripts/ai/prepare_cross_ai_scope.py \
 BASE_TIP_SHA="$(printf '%s' "$SCOPE_RECEIPT" | jq -r .base_tip_sha)"
 SCOPE_PATH="$(printf '%s' "$SCOPE_RECEIPT" | jq -r .scope_path)"
 SCOPE_SHA256="$(printf '%s' "$SCOPE_RECEIPT" | jq -r .scope_sha256)"
+trap 'rm -f -- "$SCOPE_PATH"' EXIT
 
 # Anthropic — hazırlanmış aynı scope artifact'i stdin'den verilir
 claude -p 'Supplied exact PR scope için adversarial review yap.' \
@@ -393,7 +394,8 @@ codex exec --model gpt-5.6-sol \
 Ham `git show/git diff | provider` kalıbı canonical değildir. Hazırlayıcı,
 verilen base'in `--base-ref` için gerçek merge-base olduğunu doğrulayıp
 `BASE...HEAD` aralığının tamamını sabit locale, stat genişliği, prefix,
-full-index ve `--no-renames` seçenekleriyle deterministik alır; gitleaks veya yüksek güvenli secret
+full-index, diff algoritması, indent heuristic ve `--no-renames` seçenekleriyle
+deterministik alır; gitleaks veya yüksek güvenli secret
 bulgusunda hiçbir provider çağrılmadan durur. Binary veya başka metinsel olmayan
 değişiklik `binary_scope_unsupported` ile fail-closed olur; bu kapsam için tam
 inceleme iddiası üretilmez. Hazırlayıcı email/UPN ve Türkiye mobil telefon
@@ -423,8 +425,9 @@ Mavis kurulumu ayrı, incelenebilir governance güncellemesiyle yeni digest kabu
 edilene kadar fail-closed olur. Canonical config exact byte'lardan okunur ve
 ortam proxy/CA override'ları devre dışıdır. Buna rağmen `transport_sha256`
 denetim kaydıdır; published vendor signature olmadığı için provider imzası
-sayılmaz. Current-user owned `~/.mavis` bundled install
-yerel supply-chain trust boundary'sidir ve başka `MAVIS_HOME`/data-dir override'ı
+sayılmaz. Current-user owned `~/.mavis` bundled install ile aynı kullanıcıya ait
+Python runtime dependency seti yerel supply-chain trust boundary'sidir ve başka
+`MAVIS_HOME`/data-dir override'ı
 kabul edilmez.
 
 Model slug'ı hafızadan varsayılmaz. CLI `exit=0` olsa bile boş çıktı, auth/kota
@@ -492,8 +495,9 @@ Base tip event `pull_request.base.sha`, head event `pull_request.head.sha`,
 merge-base ve scope ise bu CI türetimiyle eşleşmelidir. Gate her evidence
 comment ref'ini event'teki base repository adına bağlar ve GitHub API'den fetch
 eder; author login event'teki base repository
-owner'ıyla case-insensitive eşleşen, `author_association=OWNER` taşıyan ve hiç
-edit edilmemiş (`created_at == updated_at`) comment kabul edilir.
+owner'ıyla case-insensitive eşleşen, `author_association=OWNER` taşıyan ve GitHub
+REST metadata zaman çözünürlüğünde edit görülmeyen (`created_at == updated_at`)
+comment kabul edilir; bu eşitlik kriptografik immutability garantisi değildir.
 Comment en fazla yedi günlük olabilir ve beş dakikadan fazla gelecek zamanlı
 olamaz; daha eski immutable head için bile üç kanal yeniden çalıştırılıp yeni
 evidence üretilir.
