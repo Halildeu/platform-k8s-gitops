@@ -413,7 +413,8 @@ Prompt'u yalnız stdin'den alır, auth materialini yazdırmaz, trusted bundled
 dosyanın current-user ownership/no-group-world-write sınırını, transport
 dosyasından canonical `~/.mavis` köküne kadar tüm üst klasörlerin owner ve
 no-group-world-write sınırını, çalıştırılan exact byte'ların transport digest'ini,
-provider adı + resmi `agent.minimax.io` origin'ini doğrular ve provider response
+provider adı ile hem base hem oluşturulan nihai URL için resmi
+`agent.minimax.io` origin'ini doğrular, redirectleri kapatır ve provider response
 modeli `minimax/MiniMax-M3` değilse fail-closed olur. Terminal ve tekil
 `VERDICT: AGREE|REVISE` ile P0/P1/P2 bölümlerini ayrıca zorlar. Geçici wrapper, model
 değiştiren proxy, UI veya exact provider/model kimliği üretmeyen taşıma yolu
@@ -493,6 +494,9 @@ comment ref'ini event'teki base repository adına bağlar ve GitHub API'den fetc
 eder; author login event'teki base repository
 owner'ıyla case-insensitive eşleşen, `author_association=OWNER` taşıyan ve hiç
 edit edilmemiş (`created_at == updated_at`) comment kabul edilir.
+Comment en fazla yedi günlük olabilir ve beş dakikadan fazla gelecek zamanlı
+olamaz; daha eski immutable head için bile üç kanal yeniden çalıştırılıp yeni
+evidence üretilir.
 Comment body SHA-256, iç response SHA-256 ve response'un tekil terminal
 `VERDICT: AGREE` semantiği yeniden hesaplanır; sonra aynı base-tip/base/head/scope'a
 bağlı exact provider/model ve `AGREE` alanları fail-closed doğrulanır. Top-level verdict de yalnız

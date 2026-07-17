@@ -79,6 +79,35 @@ def validate_local_trust_file(path: Path, error_code: str) -> Path:
     return resolved
 
 
+def read_verified_local_file(path: Path, error_code: str) -> tuple[Path, bytes]:
+    resolved = validate_local_trust_file(path, error_code)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = None
+    try:
+        descriptor = os.open(resolved, flags)
+        metadata = os.fstat(descriptor)
+        current = resolved.stat()
+    except OSError:
+        if descriptor is not None:
+            os.close(descriptor)
+        fail(error_code)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+        or (metadata.st_dev, metadata.st_ino) != (current.st_dev, current.st_ino)
+    ):
+        os.close(descriptor)
+        fail(error_code)
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            return resolved, handle.read()
+    except OSError:
+        fail(error_code)
+
+
 def validate_transport_digest(source: bytes) -> str:
     digest = hashlib.sha256(source).hexdigest()
     if digest != EXPECTED_TRANSPORT_SHA256:
@@ -89,13 +118,12 @@ def validate_transport_digest(source: bytes) -> str:
 def load_bundled_module():
     if not BUNDLED_SKILL.is_file():
         fail("bundled_llm_call_missing")
-    trusted_path = validate_local_trust_file(
+    trusted_path, trusted_source = read_verified_local_file(
         BUNDLED_SKILL, "bundled_llm_call_untrusted"
     )
     try:
-        trusted_source = trusted_path.read_bytes()
         compiled = compile(trusted_source, str(trusted_path), "exec")
-    except (OSError, SyntaxError):
+    except SyntaxError:
         fail("bundled_llm_call_unloadable")
     transport_sha256 = validate_transport_digest(trusted_source)
     spec = importlib.util.spec_from_file_location("mavis_bundled_llm_call", trusted_path)
@@ -110,11 +138,10 @@ def load_bundled_module():
 
 
 def build_bundled_caller(module):
-    trusted_config = validate_local_trust_file(CONFIG_FILE, "mavis_config_untrusted")
+    _, config_source = read_verified_local_file(CONFIG_FILE, "mavis_config_untrusted")
     try:
-        config_source = trusted_config.read_bytes()
         config = module.yaml.safe_load(config_source)
-    except (OSError, UnicodeError, module.yaml.YAMLError):
+    except (UnicodeError, module.yaml.YAMLError):
         fail("mavis_config_unavailable")
     if not isinstance(config, dict):
         fail("mavis_config_unavailable")
@@ -129,11 +156,11 @@ def build_bundled_caller(module):
 
 
 def load_access_token() -> str:
-    trusted_auth_file = validate_local_trust_file(AUTH_FILE, "mavis_auth_untrusted")
+    _, auth_source = read_verified_local_file(AUTH_FILE, "mavis_auth_untrusted")
     try:
-        payload = json.loads(trusted_auth_file.read_text(encoding="utf-8"))
+        payload = json.loads(auth_source)
         token = payload["auth"]["accessToken"]
-    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+    except (UnicodeError, KeyError, TypeError, json.JSONDecodeError):
         fail("mavis_auth_unavailable")
     if not isinstance(token, str) or not token.strip():
         fail("mavis_auth_unavailable")
@@ -145,6 +172,25 @@ def normalize_actual_model(value: object) -> str:
         fail("provider_model_identity_missing")
     model = value.strip()
     return model if "/" in model else f"minimax/{model}"
+
+
+def validate_provider_url(value: object) -> None:
+    parsed = urlparse(value) if isinstance(value, str) else None
+    try:
+        port = parsed.port if parsed else None
+    except ValueError:
+        fail("invalid_provider_origin")
+    if (
+        parsed is None
+        or parsed.scheme != "https"
+        or parsed.hostname != EXPECTED_PROVIDER_HOST
+        or port not in {None, 443}
+        or parsed.username is not None
+        or parsed.password is not None
+        or bool(parsed.query)
+        or bool(parsed.fragment)
+    ):
+        fail("invalid_provider_origin")
 
 
 def parse_verdict(result: str) -> str:
@@ -208,13 +254,7 @@ def main() -> None:
 
     options = provider_config.get("options", {})
     base_url = options.get("baseURL", "")
-    parsed_origin = urlparse(base_url) if isinstance(base_url, str) else None
-    if (
-        parsed_origin is None
-        or parsed_origin.scheme != "https"
-        or parsed_origin.hostname != EXPECTED_PROVIDER_HOST
-    ):
-        fail("invalid_provider_origin")
+    validate_provider_url(base_url)
 
     headers = dict(options.get("headers", {}))
     if isinstance(model_config, dict) and model_config.get("headers"):
@@ -243,9 +283,12 @@ def main() -> None:
         extra_headers=headers,
         model_options=model_options,
     )
+    validate_provider_url(url)
 
     try:
-        with module.httpx.Client(timeout=args.timeout, trust_env=False) as client:
+        with module.httpx.Client(
+            timeout=args.timeout, trust_env=False, follow_redirects=False
+        ) as client:
             response = client.post(url, headers=request_headers, json=body)
     except module.httpx.HTTPError:
         fail("provider_transport_error")

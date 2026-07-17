@@ -34,6 +34,7 @@ const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
 const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
 const SCOPE_SHA256 = 'a'.repeat(64);
+const NOW = new Date().toISOString();
 
 const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
 const evidenceRef = (id) =>
@@ -55,8 +56,8 @@ const evidenceComment = (body) => ({
   body,
   author: 'Halildeu',
   authorAssociation: 'OWNER',
-  createdAt: '2026-07-17T20:00:00Z',
-  updatedAt: '2026-07-17T20:00:00Z',
+  createdAt: NOW,
+  updatedAt: NOW,
 });
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
@@ -161,7 +162,15 @@ const editedEvidence = {
   ...EVIDENCE,
   [CLAUDE_REF]: {
     ...EVIDENCE[CLAUDE_REF],
-    updatedAt: '2026-07-17T20:01:00Z',
+    updatedAt: new Date(Date.now() + 60_000).toISOString(),
+  },
+};
+const agedEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: {
+    ...EVIDENCE[CLAUDE_REF],
+    createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
   },
 };
 const wrongAuthorEvidence = {
@@ -275,6 +284,9 @@ const cases = [
   ['normal PR + edited evidence comment -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: editedEvidence }, 1],
+  ['normal PR + evidence older than seven days -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, evidence: agedEvidence }, 1],
   ['normal PR + evidence author differs from repository owner -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: wrongAuthorEvidence }, 1],

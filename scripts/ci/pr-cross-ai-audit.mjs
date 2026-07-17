@@ -28,6 +28,8 @@ const VALID_VERDICTS = new Set(['agree', 'revise', 'partial', 'red']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
+const EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const RECEIPT_KEYS = new Set([
   'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
   'verdict', 'ref', 'sha256',
@@ -452,6 +454,8 @@ async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
 function evidenceMatches(
   comment, receipt, expected, expectedOwner, baseTip, base, head, scope,
 ) {
+  const createdAtMs = Date.parse(comment?.createdAt || '');
+  const evidenceAgeMs = Date.now() - createdAtMs;
   if (
     !comment
     || typeof comment.body !== 'string'
@@ -460,6 +464,9 @@ function evidenceMatches(
     || comment.authorAssociation !== 'OWNER'
     || !comment.createdAt
     || comment.createdAt !== comment.updatedAt
+    || !Number.isFinite(createdAtMs)
+    || evidenceAgeMs < -EVIDENCE_FUTURE_SKEW_MS
+    || evidenceAgeMs > EVIDENCE_MAX_AGE_MS
     || sha256Utf8(comment.body) !== receipt.sha256.toLowerCase()
   ) return false;
   let evidence;
