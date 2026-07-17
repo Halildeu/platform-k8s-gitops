@@ -3,11 +3,12 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
 # PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
 #
-# Required check (V2.1 GOV-1 10 must-pass):
+# Required check (three-channel governance):
 # - Implementer AI ≠ Reviewer AI (case-insensitive provider name match)
 # - Codex thread UUID format veya N/A
-# - Verdict enum (AGREE/REVISE/PARTIAL/RED)
-# - Same-provider exception → user-explicit-approval beyanı PR body'de
+# - Verdict tam olarak AGREE
+# - Exact base tip / merge-base / head / deterministic scope binding
+# - Three provider receipt + fetched, unedited owner evidence declaration
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation
 # prefix (auto-test-overlay/ · auto-verified/ · auto-promotion/) is audited in
@@ -70,6 +71,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
   pull-requests: read
 
 # #842 Codex 019e42c7 Q8: concurrency guards parallel runs on the same PR.
@@ -103,21 +105,6 @@ jobs:
         with:
           node-version: 20
 
-      # #898 — Dependabot exemption diff-allowlist gate needs the PR file list.
-      # `gh api ... --paginate` over the read-only `pull-requests: read`
-      # permission (already granted above) keeps `pull_request_target`'s
-      # secrets-isolation model intact: no head checkout, no token scope
-      # expansion, deterministic regardless of GitHub UI ordering or PR size.
-      # GH_TOKEN is set explicitly so `gh` does not rely on runner-env auth.
-      - name: Fetch changed files (paginated, read-only)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-            --paginate --jq '.[].filename' > /tmp/changed-files.txt
-          echo "PR files:"
-          cat /tmp/changed-files.txt
-
       - name: Derive trusted merge-base and scope digest
         id: scope
         env:
@@ -129,6 +116,12 @@ jobs:
           fetched_head="$(git rev-parse FETCH_HEAD)"
           test "$fetched_head" = "$PR_HEAD_SHA"
           merge_base="$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")"
+          # Derive the exemption file list from the same fetched git objects.
+          # --no-renames emits both the deleted authority path and the added
+          # archive path, so a governance-file rename cannot enter docs-only.
+          git -c core.quotePath=true diff --name-only --no-renames \
+            "$merge_base...$PR_HEAD_SHA" > /tmp/changed-files.txt
+          test -s /tmp/changed-files.txt
           receipt="$(python3 scripts/ai/prepare_cross_ai_scope.py \
             --derive-only \
             --base-ref "$PR_BASE_SHA" \
@@ -138,6 +131,8 @@ jobs:
           scope_sha256="$(printf '%s' "$receipt" | jq -r .scope_sha256)"
           test -n "$merge_base"
           test "$scope_sha256" != "null"
+          echo "PR files:"
+          sed -n '1,400p' /tmp/changed-files.txt
           echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
           echo "scope_sha256=$scope_sha256" >> "$GITHUB_OUTPUT"
 

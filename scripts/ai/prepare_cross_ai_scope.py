@@ -63,20 +63,35 @@ def run_git(repo: Path, *arguments: str) -> str:
 def run_git_diff(
     repo: Path, base_sha: str, head_sha: str, max_scope_bytes: int
 ) -> bytes:
+    environment = os.environ.copy()
+    environment.update({"LC_ALL": "C", "LANG": "C", "TZ": "UTC", "COLUMNS": "999"})
     try:
         result = subprocess.run(
             [
                 "git",
+                "-c",
+                "core.abbrev=40",
+                "-c",
+                "core.quotePath=true",
+                "-c",
+                "color.ui=false",
                 "diff",
                 "--no-ext-diff",
-                "--stat",
+                "--no-textconv",
+                "--no-renames",
+                "--no-color",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                "--stat=999,999",
                 "--patch",
+                "--full-index",
                 f"{base_sha}...{head_sha}",
             ],
             cwd=repo,
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            env=environment,
         )
     except OSError:
         fail("git_unavailable")
@@ -87,6 +102,23 @@ def run_git_diff(
     if len(result.stdout) > max_scope_bytes:
         fail("scope_too_large")
     return result.stdout
+
+
+def write_exclusive_output(output: Path, content: bytes) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(output, flags, 0o600)
+    except FileExistsError:
+        fail("output_already_exists")
+    except OSError:
+        fail("output_unwritable")
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+    except OSError:
+        fail("output_unwritable")
 
 
 def gitleaks_clean(raw_scope: bytes) -> bool:
@@ -189,10 +221,11 @@ def main() -> None:
     digest = hashlib.sha256(redacted_scope).hexdigest()
 
     if args.output:
-        output = args.output.expanduser().resolve()
+        # Preserve the final path component so O_EXCL/O_NOFOLLOW below can
+        # reject a pre-existing symlink instead of resolving through it.
+        output = args.output.expanduser().absolute()
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(redacted_scope)
-        os.chmod(output, 0o600)
+        write_exclusive_output(output, redacted_scope)
     else:
         descriptor, name = tempfile.mkstemp(prefix="cross-ai-scope-", suffix=".patch")
         output = Path(name)

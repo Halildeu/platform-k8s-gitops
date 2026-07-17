@@ -88,5 +88,23 @@ class LocalTrustPathTests(unittest.TestCase):
                 MODULE.MAVIS_DATA_DIR = previous
 
 
+class TransportDigestTests(unittest.TestCase):
+    def test_accepts_exact_pinned_transport_bytes(self) -> None:
+        source = b"reviewed transport bytes"
+        previous = MODULE.EXPECTED_TRANSPORT_SHA256
+        MODULE.EXPECTED_TRANSPORT_SHA256 = MODULE.hashlib.sha256(source).hexdigest()
+        try:
+            self.assertEqual(
+                MODULE.validate_transport_digest(source),
+                MODULE.EXPECTED_TRANSPORT_SHA256,
+            )
+        finally:
+            MODULE.EXPECTED_TRANSPORT_SHA256 = previous
+
+    def test_rejects_unpinned_transport_bytes(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                MODULE.validate_transport_digest(b"replacement transport")
+
 if __name__ == "__main__":
     unittest.main()

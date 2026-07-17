@@ -392,7 +392,8 @@ codex exec --model gpt-5.6-sol \
 
 Ham `git show/git diff | provider` kalıbı canonical değildir. Hazırlayıcı,
 verilen base'in `--base-ref` için gerçek merge-base olduğunu doğrulayıp
-`BASE...HEAD` aralığının tamamını alır; gitleaks veya yüksek güvenli secret
+`BASE...HEAD` aralığının tamamını sabit locale, stat genişliği, prefix,
+full-index ve `--no-renames` seçenekleriyle deterministik alır; gitleaks veya yüksek güvenli secret
 bulgusunda hiçbir provider çağrılmadan durur. Binary veya başka metinsel olmayan
 değişiklik `binary_scope_unsupported` ile fail-closed olur; bu kapsam için tam
 inceleme iddiası üretilmez. Hazırlayıcı email/UPN ve Türkiye mobil telefon
@@ -416,9 +417,12 @@ provider adı + resmi `agent.minimax.io` origin'ini doğrular ve provider respon
 modeli `minimax/MiniMax-M3` değilse fail-closed olur. Terminal ve tekil
 `VERDICT: AGREE|REVISE` ile P0/P1/P2 bölümlerini ayrıca zorlar. Geçici wrapper, model
 değiştiren proxy, UI veya exact provider/model kimliği üretmeyen taşıma yolu
-canonical değildir.
-`transport_sha256` denetim kaydıdır; published vendor signature/allowlist olmadığı
-için provider imzası sayılmaz. Current-user owned `~/.mavis` bundled install
+canonical değildir. Transport byte SHA-256'sı repo içinde pinlidir; değişen bir
+Mavis kurulumu ayrı, incelenebilir governance güncellemesiyle yeni digest kabul
+edilene kadar fail-closed olur. Canonical config exact byte'lardan okunur ve
+ortam proxy/CA override'ları devre dışıdır. Buna rağmen `transport_sha256`
+denetim kaydıdır; published vendor signature olmadığı için provider imzası
+sayılmaz. Current-user owned `~/.mavis` bundled install
 yerel supply-chain trust boundary'sidir ve başka `MAVIS_HOME`/data-dir override'ı
 kabul edilmez.
 
@@ -434,8 +438,8 @@ Bu asgari yapıyı taşımayan özet/belirsiz metin `tracked_pending` sayılır.
 ### 11.2 Mutabakat ve bağımsızlık
 
 - İlk `REVISE` bulguları kod/kanıtla doğrulanır ve geçerli olanlar absorbe edilir.
-- Düzeltmeden sonra aynı exact head üç kanala yeniden verilir; her üç kanal
-  doğrulanmış `AGREE` verene kadar ping-pong sürer.
+- Düzeltmeden sonra aynı exact head üç kanala yeniden verilir; her üç kanal için
+  operator-provenanced, exact-scope-bound `AGREE` kaydı oluşana kadar ping-pong sürer.
 - Implementer ile aynı sağlayıcının zorunlu kanalı adversarial challenger olarak
   tutulur fakat bağımsız-provider onayı sayılmaz. Bağımsızlık her durumda
   implementer dışındaki diğer iki doğrudan sağlayıcıdan gelir.
@@ -467,7 +471,8 @@ Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_
 Her ref'in GitHub issue comment gövdesi yalnız `cross-ai-provider-evidence/v1`
 JSON olur; exact provider/model, `base_tip_sha`, `base_sha`, `head_sha`,
 `scope_sha256`, `verdict`, tam `response` ve onun `response_sha256` alanlarını
-taşır. Üç comment ref'i farklı olmalıdır.
+taşır. Şema bu on bir alanı exact zorunlu tutar (`additionalProperties=false`);
+şema genişlemesi ayrı governance değişikliğidir. Üç comment ref'i farklı olmalıdır.
 
 ```json
 {"schema":"cross-ai-provider-evidence/v1","provider":"anthropic|minimax|openai","requested_model":"<exact>","actual_model":"<provider-reported-exact>","base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
@@ -493,6 +498,9 @@ Comment body SHA-256, iç response SHA-256 ve response'un tekil terminal
 bağlı exact provider/model ve `AGREE` alanları fail-closed doğrulanır. Top-level verdict de yalnız
 `AGREE` olabilir. PR body receipt'i provider'ın kriptografik imzası değildir;
 fetched audit declaration + content-addressed, unedited owner provenance'dır.
+Bu kayıt **operator-captured, provider-unsigned** kabul edilir; makine doğrulanmış
+provider attestation veya owner hesabından bağımsız kriptografik konsensüs diye
+sunulamaz.
 Sağlayıcılar kullanıcı-CLI yanıtlarına doğrulanabilir imza sunmadığı için bu katman
 provider kriptografik attestation iddia etmez. Kaynak CLI receipt'i ve
 referans verilen evidence korunmadan bu alan tek başına provider çağrısını
@@ -500,6 +508,18 @@ kanıtlamaz veya insan kapısını ikame etmez.
 `--evidence-file` yalnız offline regresyon fixture'ı içindir; explicit
 `--allow-local-evidence-override true` ister ve `GITHUB_ACTIONS=true` iken koşulsuz
 reddedilir.
+
+Repository'nin ayrı `gitleaks` workflow'u aynı ana dal için required check
+kalmalıdır; `--derive-only` yalnız deterministik scope binding yaptığı için bu
+ayrı secret gate kaldırılırsa Cross-AI gate tek başına secret-scan iddiası taşımaz.
+
+Dar historical-docs ve önceden tanımlı rollbackable bot otomasyon istisnaları
+üç sağlayıcı receipt'i üretmez; bunlar üç kanallı bağımsız konsensüs olarak
+etiketlenemez. İstisna dosya listesi GitHub API özetinden değil trusted CI'daki
+aynı fetched `merge-base...head` git objelerinden `--no-renames` ile çıkarılır;
+böylece authority/governance dosyasını arşive rename etmek eski yolu da listeler
+ve fail-closed olur. Governance, authz, deployment veya faz kapanışı değişikliği
+bu istisnalara giremez.
 
 `Codex thread: N/A` body-only istisna değildir. Yalnız workflow'un event-bound
 changed-files listesi tamamen `docs/session-handoff-*.md` veya

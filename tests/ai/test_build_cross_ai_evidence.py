@@ -68,6 +68,15 @@ class EvidenceBuilderTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
 
+    def test_control_and_escape_characters_round_trip_in_json(self) -> None:
+        response = (
+            "P0\nNone\u0001\nP1\nNone\u2028\nP2\n"
+            "literal \\\\n remains escaped text\nVERDICT: AGREE"
+        )
+        result = self.run_builder(response)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["response"], response)
+
 
 if __name__ == "__main__":
     unittest.main()

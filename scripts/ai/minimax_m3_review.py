@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 MODEL_REF = "minimax/MiniMax-M3"
 EXPECTED_PROVIDER_NAME = "MiniMax"
 EXPECTED_PROVIDER_HOST = "agent.minimax.io"
+EXPECTED_TRANSPORT_SHA256 = "02c3da6c790c8e8bf68cc32d679f5077147d6ffbe57d84e31b25f2dc75538545"
 MAX_PROMPT_BYTES = 2_000_000
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 VERDICT_RE = re.compile(r"^VERDICT:\s*(AGREE|REVISE)\s*$", re.IGNORECASE | re.MULTILINE)
@@ -40,6 +41,7 @@ BUNDLED_SKILL = (
     MAVIS_DATA_DIR / ".builtin-skills/llm-call/scripts/llm_call.py"
 )
 AUTH_FILE = MAVIS_DATA_DIR / "local-runtime.auth.json"
+CONFIG_FILE = MAVIS_DATA_DIR / "config.yaml"
 
 
 def fail(code: str) -> NoReturn:
@@ -77,6 +79,13 @@ def validate_local_trust_file(path: Path, error_code: str) -> Path:
     return resolved
 
 
+def validate_transport_digest(source: bytes) -> str:
+    digest = hashlib.sha256(source).hexdigest()
+    if digest != EXPECTED_TRANSPORT_SHA256:
+        fail("bundled_llm_call_digest_mismatch")
+    return digest
+
+
 def load_bundled_module():
     if not BUNDLED_SKILL.is_file():
         fail("bundled_llm_call_missing")
@@ -88,6 +97,7 @@ def load_bundled_module():
         compiled = compile(trusted_source, str(trusted_path), "exec")
     except (OSError, SyntaxError):
         fail("bundled_llm_call_unloadable")
+    transport_sha256 = validate_transport_digest(trusted_source)
     spec = importlib.util.spec_from_file_location("mavis_bundled_llm_call", trusted_path)
     if spec is None or spec.loader is None:
         fail("bundled_llm_call_unloadable")
@@ -95,8 +105,27 @@ def load_bundled_module():
     # Execute the exact bytes that were validated and hashed; the loader must
     # not re-open a path that could change between validation and import.
     exec(compiled, module.__dict__)
-    module.__transport_sha256 = hashlib.sha256(trusted_source).hexdigest()
+    module.__transport_sha256 = transport_sha256
     return module
+
+
+def build_bundled_caller(module):
+    trusted_config = validate_local_trust_file(CONFIG_FILE, "mavis_config_untrusted")
+    try:
+        config_source = trusted_config.read_bytes()
+        config = module.yaml.safe_load(config_source)
+    except (OSError, UnicodeError, module.yaml.YAMLError):
+        fail("mavis_config_unavailable")
+    if not isinstance(config, dict):
+        fail("mavis_config_unavailable")
+    caller = module.LLMCaller.__new__(module.LLMCaller)
+    caller.config = config
+    caller.providers = config.get("provider", {})
+    caller.default_model = config.get("defaultModel")
+    if not isinstance(caller.providers, dict):
+        fail("mavis_config_unavailable")
+    caller.__config_sha256 = hashlib.sha256(config_source).hexdigest()
+    return caller
 
 
 def load_access_token() -> str:
@@ -165,7 +194,7 @@ def main() -> None:
     scope_sha256 = hashlib.sha256(prompt_bytes).hexdigest()
 
     module = load_bundled_module()
-    caller = module.LLMCaller()
+    caller = build_bundled_caller(module)
     listed_models = {item["ref"] for item in caller.list_models()}
     if MODEL_REF not in listed_models:
         fail("required_model_not_listed")
@@ -216,7 +245,7 @@ def main() -> None:
     )
 
     try:
-        with module.httpx.Client(timeout=args.timeout) as client:
+        with module.httpx.Client(timeout=args.timeout, trust_env=False) as client:
             response = client.post(url, headers=request_headers, json=body)
     except module.httpx.HTTPError:
         fail("provider_transport_error")
@@ -253,6 +282,7 @@ def main() -> None:
                 "findings_present": True,
                 "transport": "mavis-bundled-llm-call",
                 "transport_sha256": transport_sha256,
+                "config_sha256": caller.__config_sha256,
                 "response_sha256": response_sha256,
                 "response": result,
             },
