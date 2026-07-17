@@ -17,6 +17,7 @@ on:
       - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -41,6 +42,8 @@ jobs:
             scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
 
       - name: Validate policy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh

@@ -24,6 +24,15 @@ jobs:
 
       - name: Build overlays/test
         run: kustomize build kustomize/overlays/test > /tmp/test.yaml
+      - name: Verify EndpointAgent artifact-host release policy pin
+        run: |
+          set -euo pipefail
+          expected_ref="$(jq -er '.current_bounded_pilot.artifact_host_image_ref' config/faz22-6-endpoint-agent-release-policy.v1.json)"
+          rendered_hits="$(grep -Foc "image: ${expected_ref}" /tmp/test.yaml || true)"
+          if [ "$rendered_hits" -ne 1 ]; then
+            echo "Expected exactly one rendered artifact-host image bound to release policy; got $rendered_hits" >&2
+            exit 1
+          fi
       - name: Verify rendered backend ArgoCD sync-wave contract
         run: python3 scripts/test/verify-backend-sync-wave-render.py /tmp/test.yaml
       - name: Build overlays/prod

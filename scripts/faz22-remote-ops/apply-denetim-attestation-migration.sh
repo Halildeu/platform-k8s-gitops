@@ -10,6 +10,7 @@ set -euo pipefail
 umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PATCH_SCRIPT="${PATCH_SCRIPT:-${SCRIPT_DIR}/denetim-device-key-view-only-env-patch.ps1}"
 EXPECTED_STAGING_HOST="${EXPECTED_STAGING_HOST:-stagingsw}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
@@ -19,6 +20,14 @@ DENETIM_SSH_TARGET="${DENETIM_SSH_TARGET:-denetim-pc}"
 DENETIM_SSH_CONFIG="${DENETIM_SSH_CONFIG:-/home/halil/.ssh/config}"
 REMOTE_PATCH_SCRIPT=""
 PATCH_SCRIPT_SHA256=""
+
+# The release policy is the only release identity authority. The endpoint
+# patch receives a transaction-scoped snapshot; it contains no independently
+# maintained release tag or digest defaults.
+# Resolved from this committed script directory.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -61,6 +70,42 @@ verified_patch_body() {
   local arguments="$1"
   printf "\$p='%s'; \$expected='%s'; if (-not (Test-Path -LiteralPath \$p -PathType Leaf)) { throw 'transaction patch script is absent' }; \$actual=(Get-FileHash -LiteralPath \$p -Algorithm SHA256).Hash.ToLowerInvariant(); if (\$actual -ne \$expected) { throw 'transaction patch script SHA256 mismatch' }; & \$p %s" \
     "$REMOTE_PATCH_SCRIPT" "$PATCH_SCRIPT_SHA256" "$arguments"
+}
+
+powershell_single_quote() {
+  printf '%s' "$1" | sed "s/'/''/g"
+}
+
+release_policy_patch_arguments() {
+  validate_release_policy_bindings
+  printf -- "-ExpectedReleaseTag '%s' -ReleaseManifestBaseUrl '%s' -ReleaseAssetBaseUrl '%s' -ExpectedReleaseManifestSha256 '%s' -ExpectedBinarySha256 '%s' -ExpectedArtifactHostDigest '%s' -ExpectedArtifactHostImageRef '%s'" \
+    "$(powershell_single_quote "$EXPECTED_AGENT_TAG")" \
+    "$(powershell_single_quote "$GITHUB_RELEASE_BASE_URL")" \
+    "$(powershell_single_quote "$ARTIFACT_RELEASE_BASE_URL")" \
+    "$(powershell_single_quote "$EXPECTED_RELEASE_MANIFEST_SHA256")" \
+    "$(powershell_single_quote "$EXPECTED_AGENT_SHA256")" \
+    "$(powershell_single_quote "$EXPECTED_ARTIFACT_HOST_DIGEST")" \
+    "$(powershell_single_quote "$EXPECTED_ARTIFACT_HOST_IMAGE_REF")"
+}
+
+validate_release_policy_snapshot() {
+  local variable_name="$1" filter="$2" expected_value actual_value
+  expected_value="$(jq -er "$filter" "$ENDPOINT_AGENT_RELEASE_POLICY_PATH")"
+  actual_value="${!variable_name:-}"
+  [ "$actual_value" = "$expected_value" ] || {
+    echo "denetim-attestation-migration: release policy override rejected: $variable_name" >&2
+    exit 2
+  }
+}
+
+validate_release_policy_bindings() {
+  validate_release_policy_snapshot EXPECTED_AGENT_TAG '.current_bounded_pilot.release_tag'
+  validate_release_policy_snapshot GITHUB_RELEASE_BASE_URL '.current_bounded_pilot.github_release_base_url'
+  validate_release_policy_snapshot ARTIFACT_RELEASE_BASE_URL '.current_bounded_pilot.artifact_release_base_url'
+  validate_release_policy_snapshot EXPECTED_RELEASE_MANIFEST_SHA256 '.current_bounded_pilot.release_manifest_sha256'
+  validate_release_policy_snapshot EXPECTED_AGENT_SHA256 '.current_bounded_pilot.endpoint_agent_sha256'
+  validate_release_policy_snapshot EXPECTED_ARTIFACT_HOST_DIGEST '.current_bounded_pilot.artifact_host_digest'
+  validate_release_policy_snapshot EXPECTED_ARTIFACT_HOST_IMAGE_REF '.current_bounded_pilot.artifact_host_image_ref'
 }
 
 remove_remote_patch_best_effort() {
@@ -236,11 +281,13 @@ main() {
   need_cmd base64
   need_cmd awk
   need_cmd grep
+  need_cmd jq
+  need_cmd sed
   need_cmd rm
   need_cmd sleep
   validate_inputs
 
-  local session_id session_binding_sha256 apply_body apply_output evidence_summary summary_hash_output remote_scp_path
+  local session_id session_binding_sha256 apply_body apply_output evidence_summary summary_hash_output remote_scp_path release_policy_arguments
   if [[ -n "${TRANSACTION_ID_OVERRIDE:-}" ]]; then
     [[ "${ALLOW_TEST_TRANSACTION_ID_OVERRIDE:-0}" == "1" ]] || {
       echo "denetim-attestation-migration: TRANSACTION_ID_OVERRIDE is test-only and requires ALLOW_TEST_TRANSACTION_ID_OVERRIDE=1" >&2
@@ -272,7 +319,8 @@ main() {
   rollback_environment_backup="C:\\ProgramData\\EndpointAgent\\rollout-evidence\\denetim-device-key-view-only-${transaction_id}\\EndpointAgent-environment-before.json"
   session_id="rb-viewonly-attended-${transaction_id}"
   session_binding_sha256="sha256:$(printf '%s' "$session_id" | sha256_text)"
-  apply_body="$(verified_patch_body "-Action Apply -TransactionId '${transaction_id}' -Confirm:\$false")"
+  release_policy_arguments="$(release_policy_patch_arguments)"
+  apply_body="$(verified_patch_body "-Action Apply -TransactionId '${transaction_id}' ${release_policy_arguments} -Confirm:\$false")"
   rollback_armed=1
   trap rollback_on_failure EXIT
   apply_output="$(run_denetimepc_powershell "$apply_body")"
