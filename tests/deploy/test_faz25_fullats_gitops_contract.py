@@ -486,6 +486,19 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("Cursor-routed modeller kullanılmaz", self.agents)
         self.assertIn("Birincil istişare Claude Opus 4.8'dir", self.agents)
         self.assertIn("daha düşük modele sessiz fallback yapılmaz", self.agents)
+        primary_start = self.agents.index(
+            "- **Birincil istişare Claude Opus 4.8'dir (KALICI)**"
+        )
+        primary_end = self.agents.index("\n- ", primary_start)
+        primary_rule = self.agents[primary_start:primary_end]
+        self.assertLess(
+            primary_rule.index("claude --model claude-opus-4-8"),
+            primary_rule.index("MiniMax M3"),
+        )
+        self.assertLess(
+            primary_rule.index("MiniMax M3"),
+            primary_rule.index("Codex 5.6 SOL"),
+        )
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )

@@ -26,6 +26,8 @@ EXPECTED_PROVIDER_NAME = "MiniMax"
 EXPECTED_PROVIDER_HOST = "agent.minimax.io"
 EXPECTED_TRANSPORT_SHA256 = "02c3da6c790c8e8bf68cc32d679f5077147d6ffbe57d84e31b25f2dc75538545"
 MAX_PROMPT_BYTES = 2_000_000
+DEFAULT_MAX_TOKENS = 12_000
+DEFAULT_TIMEOUT_SECONDS = 300.0
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 VERDICT_RE = re.compile(r"^VERDICT:\s*(AGREE|REVISE)\s*$", re.IGNORECASE | re.MULTILINE)
 REVIEW_SYSTEM_PROMPT = (
@@ -286,9 +288,9 @@ def invoke_provider(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max-tokens", type=int, default=4096)
+    parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--base-sha")
     parser.add_argument("--head-sha")
     parser.add_argument("--format-retries", type=int, choices=(0, 1), default=1)
