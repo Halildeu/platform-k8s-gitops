@@ -1,9 +1,10 @@
 # RB — Signed Cross-AI Custom Deployment Protection Rule
 
 > **Issue:** #2502 · **ADR:** ADR-0045 · **scope:** reversible test/non-prod only
-> **Current state (2026-07-17):** Phase 0 source/schema/tests and the live-found
-> webhook header normalization fix are merged to `main` through
-> `502540f2a957f50f0b55f08d7af9105a4623d0eb`. Main workflow
+> **Current state (2026-07-17):** Phase 0 source/schema/tests, the live-found
+> webhook header normalization fix and the Phase 1 receive-only observer are
+> merged to `main` through
+> `ea9e6b587fd4e5c7381330762ace014508d046d3`. Main workflow
 > [29581180381](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29581180381)
 > published and attested
 > `ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection@sha256:0a79f6facfadb29daaeb096f5491e07fd8b01eabfbbb4db7d896f5663f9e9285`;
@@ -16,10 +17,16 @@
 > without root-token recovery. The webhook secret was seeded through the
 > short-lived `platform-bootstrap-writer-test` flow at KV version 1; handoff and
 > emitted credential files were cleaned, and ESO read capability/property/hash
-> alignment passed without exposing the value. The Phase 1 activation change
-> pins the attested digest above and connects the receive-only overlay to the
-> canonical test root. Post-sync functional evidence for this new digest remains
-> mandatory; no protected workflow lane or Environment custom rule is enabled.
+> alignment passed without exposing the value. The Phase 1 activation pins the
+> attested digest above and connects the receive-only overlay to the canonical
+> test root. Dedicated self-hosted verification
+> [29585694840 attempt 2](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29585694840/attempts/2)
+> passed against that exact digest and Argo revision: the observer stayed
+> Ready with zero restarts, ESO was `Ready=True`, Argo was `Synced/Healthy`, one
+> signed synthetic delivery was durably admitted and its replay was reported as
+> a duplicate. No protected workflow lane or Environment custom rule is enabled.
+> This is not GitHub-origin delivery, evaluator, callback, deployment or
+> production evidence.
 
 ## 1. What this removes — and what it does not
 
@@ -216,6 +223,28 @@ artifact. A pass proves the pinned test observer accepted one valid HMAC
 delivery, deduplicated its replay and durably recorded the event. The delivery
 is synthetic, not GitHub-origin evidence; it does not enable or prove an
 Environment custom rule, approval callback, deployment or production gate.
+
+The canonical 2026-07-17 pass is
+[run 29585694840 attempt 2](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29585694840/attempts/2)
+at source/Argo revision `ea9e6b587fd4e5c7381330762ace014508d046d3`:
+
+- desired image and live `imageID` both resolved to
+  `ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection@sha256:0a79f6facfadb29daaeb096f5491e07fd8b01eabfbbb4db7d896f5663f9e9285`;
+- the probe-window identity remained Pod UID
+  `5403c369-bd4b-4c1c-b333-3e963c4d759b`, Deployment generation `2`;
+- Argo remained `Synced/Healthy`, ESO remained `Ready=True`, and the delivered
+  secret property length was `64` bytes without disclosing the value;
+- synthetic delivery `d22e5c5d-4406-442e-a92c-a32245546926` returned
+  `202 duplicate=false`, then its replay returned `202 duplicate=true`;
+- durable delivery and event counters both moved exactly `0 -> 1`;
+- readiness reported `mode=observe`, `evaluationEnabled=false` and
+  `reconciliationReady=true`; the probe attempted no callback and emitted no
+  raw webhook secret, signature or payload.
+
+Treat this as Phase 1 receive-only evidence only. A real GitHub-origin
+`deployment_protection_rule` delivery, evaluator dependencies, App callback,
+protected Environment custom-rule activation and deployment outcome remain
+separate Phase 2/3 gates.
 
 ### 5.2 Local process and enforcement
 
