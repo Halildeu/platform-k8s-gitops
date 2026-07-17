@@ -14,6 +14,24 @@ const TEST_USERNAME = /^[A-Za-z0-9][A-Za-z0-9._@+-]{2,127}$/;
 const MIN_PILOT_SECONDS = 300;
 const MAX_PILOT_SECONDS = 1800;
 const MASK_BASIS_POINTS = 10_000;
+const VIEWER_INPUT_CONTROL_SELECTOR = [
+  'input',
+  'textarea',
+  'select',
+  'iframe',
+  'object',
+  'embed',
+  'a[href]',
+  '[contenteditable]:not([contenteditable="false"])',
+  '[draggable="true"]',
+  '[role="checkbox"]',
+  '[role="combobox"]',
+  '[role="radio"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
+  '[role="switch"]',
+  '[role="textbox"]',
+].join(',');
 
 export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-ack-count-diverged',
@@ -342,9 +360,15 @@ async function main() {
 
     const viewerId = await root.getAttribute('data-viewer-id');
     if (!viewerId || !VIEWER_ID.test(viewerId)) throw evidenceFailure('browser-viewer-id-invalid');
-    const interactive = await page.locator('input,textarea,select,[contenteditable="true"]').count();
-    const buttons = await page.getByRole('button').count();
-    if (interactive !== 0 || buttons !== 1) throw evidenceFailure('browser-unexpected-input-control');
+    // Product-shell navigation remains outside the VIEW_ONLY trust boundary.
+    // Prove that the viewer surface itself exposes no input/embed channel and
+    // that its only button is the explicit local stop control.
+    const interactive = await root.locator(VIEWER_INPUT_CONTROL_SELECTOR).count();
+    const buttons = await root.getByRole('button').count();
+    const stopButtons = await root.getByTestId('remote-view-stop').count();
+    if (interactive !== 0 || buttons !== 1 || stopButtons !== 1) {
+      throw evidenceFailure('browser-unexpected-input-control');
+    }
 
     await evidenceStep('browser-observer-install-failed', async () => page.evaluate(() => {
       const target = document.querySelector('[data-testid="remote-view-page"]');

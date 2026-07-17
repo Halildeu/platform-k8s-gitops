@@ -12,6 +12,7 @@ VIEWER_PRODUCT_ASSEMBLER="$ROOT/scripts/faz22-remote-ops/assemble-view-only-view
 VIEWER_PRODUCT_VERIFY_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence-verify.yml"
 VIEWER_PRODUCT_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-product-evidence.yml"
 VIEWER_BROWSER_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
+VIEWER_BROWSER_EVIDENCE="$ROOT/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
 VIEWER_OPERATOR_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-operator-evidence.yml"
 VIEWER_OPERATOR_PRODUCER="$ROOT/scripts/faz22-remote-ops/produce-view-only-viewer-operator-evidence.py"
 VIEWER_D30_WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-d30-evidence.yml"
@@ -103,6 +104,7 @@ verify_viewer_resource_normalizer() {
 for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER" \
   "$VIEWER_PRODUCT_VERIFIER" "$VIEWER_PRODUCT_ASSEMBLER" \
   "$VIEWER_PRODUCT_VERIFY_WORKFLOW" "$VIEWER_PRODUCT_WORKFLOW" "$VIEWER_BROWSER_WORKFLOW" \
+  "$VIEWER_BROWSER_EVIDENCE" \
   "$VIEWER_OPERATOR_WORKFLOW" "$VIEWER_OPERATOR_PRODUCER" \
   "$VIEWER_D30_WORKFLOW" "$VIEWER_D30_PRODUCER" "$VIEWER_SOURCE_COMMON" "$VIEWER_FRAME_FLOW_BUILDER" \
   "$VIEWER_BROKER_WORKFLOW" "$VIEWER_BROKER_PRODUCER" \
@@ -171,6 +173,19 @@ require_grep "name: faz22-view-only-pilot" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "activation_run_id" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "protected-authorization.json" "$VIEWER_BROWSER_WORKFLOW"
 require_grep "actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6" "$VIEWER_BROWSER_WORKFLOW"
+require_grep 'const VIEWER_INPUT_CONTROL_SELECTOR = [' "$VIEWER_BROWSER_EVIDENCE"
+require_grep "'iframe'," "$VIEWER_BROWSER_EVIDENCE"
+require_grep "'[contenteditable]:not([contenteditable=\"false\"])'," "$VIEWER_BROWSER_EVIDENCE"
+require_grep 'root.locator(VIEWER_INPUT_CONTROL_SELECTOR).count()' "$VIEWER_BROWSER_EVIDENCE"
+require_grep 'root.getByRole('\''button'\'').count()' "$VIEWER_BROWSER_EVIDENCE"
+require_grep 'root.getByTestId('\''remote-view-stop'\'').count()' "$VIEWER_BROWSER_EVIDENCE"
+require_grep 'interactive !== 0 || buttons !== 1 || stopButtons !== 1' "$VIEWER_BROWSER_EVIDENCE"
+if grep -Fq 'page.locator(VIEWER_INPUT_CONTROL_SELECTOR)' "$VIEWER_BROWSER_EVIDENCE" \
+  || grep -Fq "page.getByRole('button').count()" "$VIEWER_BROWSER_EVIDENCE" \
+  || grep -Fq "page.getByTestId('remote-view-stop').count()" "$VIEWER_BROWSER_EVIDENCE"; then
+  echo "VIEW_ONLY input isolation must be measured inside the viewer root, not the product shell" >&2
+  exit 1
+fi
 if grep -Fq 'faz22-6-view-only-viewer-browser-collector-' "$VIEWER_BROWSER_WORKFLOW" \
   || grep -Eq 'path:.*faz22-viewer-browser-collector/?$' "$VIEWER_BROWSER_WORKFLOW"; then
   echo "raw VIEW_ONLY collector must never be uploaded as a GitHub artifact" >&2
