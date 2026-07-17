@@ -212,8 +212,13 @@ images:
     # 87736557859 in run 29532708953 succeeded and produced the immutable digest
     # below. Supersedes the #844 image; test only, prod remains D30-deferred.
     # Runtime acceptance remains tracked by gitops#2513.
+    # 2026-07-17 consent-revocation rollout: platform-backend#858 adds the
+    # owner-scoped revoke endpoint, fail-closed recording admission and
+    # untrimmed consent grant/revoke audit events. platform-backend#861 fixes
+    # the audit-consumer image build; canonical main image run 29603219415
+    # produced the immutable digest below. Runtime proof: gitops#2594.
     # D30 immutable digest pin.
-    digest: sha256:1e723d8b671111cf046b825cc6f672c237762a23e40c3601d769bb271e5d2543
+    digest: sha256:f8148d31955336a585a8cfbf4dc12c8c40c14f8106f0aadb332006e69612b432
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -272,8 +277,12 @@ images:
     # installing common-meeting-events in its Docker build layer. Image run
     # 29582844787 pushed tag sha-2c77346 and the immutable digest below.
     # Runtime acceptance is tracked by gitops#2587/#2568; prod remains unchanged.
+    # 2026-07-17 #802 contract-family repin: platform-backend#858/#861 main
+    # carries the typed meeting.consent.revoked event contract used by the
+    # durable audit outbox relay. Canonical image run 29603219415 produced the
+    # immutable digest below. This test pin does not claim attended acceptance.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:b192903b94b66c915380360cc20be623bfb32ada6ac2a5574b5567d51369da69
+    digest: sha256:20b3918fb03037df70ced9ec8edd3d2d984831a0fb0474f164e2efbbdb459f11
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -304,9 +313,15 @@ images:
     # platform-backend#756. No audit-event-consumer functional source change is
     # claimed here; this keeps the Faz 24 runtime family aligned with the
     # 13-service deploy-backend-testai digest guard.
+    # 2026-07-17 consent-revocation rollout: platform-backend#858 adds durable
+    # consent ownership/revocation projection, PostgreSQL outbox, meeting event
+    # relay, atomic ACK+XDEL and bounded DLQ. platform-backend#861 repairs the
+    # Docker build dependency; main run 29603219415 produced the digest below.
+    # Test desired-state also moves the source consumer to audit-persist-v2 and
+    # enables the lease-fenced outbox poller. Runtime proof: gitops#2594.
     # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
     # 2026-06-17 D29 Up+Functional verified — health 200 + consumer-group joined).
-    digest: sha256:e46d10f223112d13c81800d2146fcd1457d3c89a680849382686fbd4e852a48f
+    digest: sha256:555f663fd973b3813a6b0c9ffea6a7324ca748ad0fb63f20347db3fa2af111eb
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker

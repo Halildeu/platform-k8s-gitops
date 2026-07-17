@@ -65,9 +65,28 @@ data:
   AUDIT_CONSUMER_REDIS_HOST: "redis-streams"
   AUDIT_CONSUMER_REDIS_PORT: "6379"
   AUDIT_CONSUMER_STREAM_KEY: "audit:events"
-  AUDIT_CONSUMER_GROUP_NAME: "audit-persist-v1"
+  # #802 rolling rollout isolation: eski v1 podu yeni consent kontratını ACK
+  # etmesin; v2 retained stream'i baştan okuyup idempotent projection yapar.
+  AUDIT_CONSUMER_GROUP_NAME: "audit-persist-v2"
   AUDIT_CONSUMER_DLQ_STREAM_KEY: "audit:events:dlq"
+  AUDIT_CONSUMER_DLQ_MAX_LEN: "10000"
+  AUDIT_CONSUMER_DLQ_TTL_SECONDS: "604800"
   AUDIT_CONSUMER_POLL_BATCH_SIZE: "64"
+  AUDIT_CONSUMER_HEALTH_MAX_PENDING: "50000"
+  AUDIT_CONSUMER_HEALTH_MAX_STREAM_LENGTH: "50000"
+
+  # #802 consent.revoked durable relay. Revocation first lands in the audit DB
+  # transaction with its outbox row; this poller publishes only committed rows
+  # to the shared meeting event stream. Owner is pod-derived and lease-fenced.
+  AUDIT_CONSENT_EVENTS_REDIS_ENABLED: "true"
+  AUDIT_CONSENT_EVENTS_REDIS_STREAM_KEY: "meeting:events"
+  AUDIT_CONSENT_EVENTS_OUTBOX_POLLER_ENABLED: "true"
+  AUDIT_CONSENT_EVENTS_OUTBOX_SCHEDULING_ENABLED: "true"
+  AUDIT_CONSENT_EVENTS_OUTBOX_POLL_DELAY_MS: "5000"
+  AUDIT_CONSENT_EVENTS_OUTBOX_BATCH_SIZE: "100"
+  AUDIT_CONSENT_EVENTS_OUTBOX_LEASE_DURATION_MS: "60000"
+  AUDIT_CONSENT_EVENTS_OUTBOX_MAX_ATTEMPTS: "8"
+  AUDIT_CONSENT_EVENTS_OUTBOX_RETRY_DELAY_MS: "5000"
 
   # Identity / OIDC — test=platform-test realm; prod overlay would patch 'serban'
   # (carried for parity with transcript/meeting; no inbound HTTP API to enforce).
