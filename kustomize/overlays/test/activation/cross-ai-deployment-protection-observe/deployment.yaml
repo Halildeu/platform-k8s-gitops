@@ -99,7 +99,9 @@ spec:
         - name: webhook-secret
           secret:
             secretName: cross-ai-deployment-protection-observe
-            defaultMode: 0400
+            # Files are root:fsGroup in the projected volume; grant only the
+            # pod security group the read bit needed by UID/GID 10001.
+            defaultMode: 0440
             items:
               - key: github-webhook-current
                 path: github-webhook-current

@@ -40,9 +40,12 @@ jobs:
       - name: Run non-root read-only receive-only smoke
         run: |
           set -euo pipefail
-          printf '%s' 'synthetic-contract-secret' > "$RUNNER_TEMP/github-webhook-current"
-          chmod 600 "$RUNNER_TEMP/github-webhook-current"
-          docker run --detach --rm \
+          printf '%s' 'synthetic-contract-secret-for-ci-only-0001' > "$RUNNER_TEMP/github-webhook-current"
+          # This is a non-secret CI fixture. A bind mount preserves the runner's
+          # host UID, so the image's non-root UID needs read permission.
+          chmod 444 "$RUNNER_TEMP/github-webhook-current"
+          trap 'docker logs cross-ai-deployment-protection-contract 2>&1 || true; docker rm --force cross-ai-deployment-protection-contract >/dev/null 2>&1 || true' EXIT
+          docker run --detach \
             --name cross-ai-deployment-protection-contract \
             --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,size=16m \
@@ -54,7 +57,6 @@ jobs:
             --port 8080 \
             --db /tmp/observe.sqlite3 \
             --webhook-secret-file /run/secrets/github-webhook-current
-          trap 'docker logs cross-ai-deployment-protection-contract; docker stop cross-ai-deployment-protection-contract' EXIT
           for _ in $(seq 1 20); do
             if curl --fail --silent --show-error http://127.0.0.1:18080/readyz \
               | jq -e '.status == "ready" and .mode == "observe" and .evaluationEnabled == false' >/dev/null; then

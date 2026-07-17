@@ -36,6 +36,25 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn("USER 10001:10001", dockerfile)
         self.assertNotIn("requirements.txt", dockerfile)
 
+    def test_container_smoke_uses_valid_fixture_and_retains_failure_logs(self) -> None:
+        workflow = (
+            ROOT
+            / ".github/workflows/build-cross-ai-deployment-protection-image.yml"
+        ).read_text(encoding="utf-8")
+        fixture = "synthetic-contract-secret-for-ci-only-0001"
+        self.assertGreaterEqual(len(fixture.encode("utf-8")), 32)
+        self.assertIn(fixture, workflow)
+        self.assertIn('chmod 444 "$RUNNER_TEMP/github-webhook-current"', workflow)
+        self.assertNotIn("docker run --detach --rm", workflow)
+        self.assertIn(
+            "docker logs cross-ai-deployment-protection-contract 2>&1 || true",
+            workflow,
+        )
+        self.assertIn(
+            "docker rm --force cross-ai-deployment-protection-contract",
+            workflow,
+        )
+
     def test_receive_only_deployment_cannot_enforce_or_call_github(self) -> None:
         deployment = load_yaml("deployment.yaml")
         pod_spec = deployment["spec"]["template"]["spec"]  # type: ignore[index]
@@ -55,6 +74,10 @@ class PackagingContractTests(unittest.TestCase):
         self.assertFalse(pod_spec["automountServiceAccountToken"])
         self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
         self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
+        secret_volume = next(
+            volume for volume in pod_spec["volumes"] if volume["name"] == "webhook-secret"
+        )
+        self.assertEqual(secret_volume["secret"]["defaultMode"], 0o440)
         self.assertRegex(
             container["image"],
             r"@sha256:0{64}$",
