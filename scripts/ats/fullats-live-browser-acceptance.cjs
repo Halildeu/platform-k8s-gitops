@@ -250,7 +250,8 @@ try {
   const workspace = recruiterPage.getByTestId('recruiter-workspace-page');
   if (!(await workspace.isVisible().catch(() => false))) {
     const corporateButton = recruiterPage.getByTestId('corporate-login-button');
-    if (await corporateButton.isVisible().catch(() => false)) await corporateButton.click();
+    await waitVisible(corporateButton, 'corporate login button', 30_000);
+    await corporateButton.click();
     await recruiterPage.waitForURL(/\/realms\/platform-test\//u, { timeout: 30_000 });
     await recruiterPage.locator('#username').fill(recruiterUsername);
     await recruiterPage.locator('#password').fill(recruiterPassword);
