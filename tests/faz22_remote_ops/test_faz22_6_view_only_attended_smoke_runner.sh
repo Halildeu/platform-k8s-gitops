@@ -10,6 +10,7 @@ DIAGNOSTIC_SCRIPT="$ROOT/scripts/faz22-remote-ops/build-view-only-viewer-collect
 TARGET_PREFLIGHT_SCRIPT="$ROOT/scripts/faz22-remote-ops/verify-view-only-viewer-target.sh"
 DIAGNOSTIC_ALLOWLIST="$ROOT/config/faz22-6-viewer-collector-diagnostic-allowlist.v1.json"
 BROWSER_DIAGNOSTIC_ALLOWLIST="$ROOT/config/faz22-6-viewer-browser-diagnostic-codes.v1.json"
+BROWSER_DIAGNOSTIC_READER="$ROOT/scripts/faz22-remote-ops/read-view-only-viewer-browser-diagnostic.sh"
 
 [ -f "$SCRIPT" ] || { echo "missing script: $SCRIPT" >&2; exit 1; }
 [ -f "$WORKFLOW" ] || { echo "missing workflow: $WORKFLOW" >&2; exit 1; }
@@ -18,10 +19,47 @@ BROWSER_DIAGNOSTIC_ALLOWLIST="$ROOT/config/faz22-6-viewer-browser-diagnostic-cod
 [ -f "$TARGET_PREFLIGHT_SCRIPT" ] || { echo "missing script: $TARGET_PREFLIGHT_SCRIPT" >&2; exit 1; }
 [ -f "$DIAGNOSTIC_ALLOWLIST" ] || { echo "missing config: $DIAGNOSTIC_ALLOWLIST" >&2; exit 1; }
 [ -f "$BROWSER_DIAGNOSTIC_ALLOWLIST" ] || { echo "missing config: $BROWSER_DIAGNOSTIC_ALLOWLIST" >&2; exit 1; }
+[ -f "$BROWSER_DIAGNOSTIC_READER" ] || { echo "missing script: $BROWSER_DIAGNOSTIC_READER" >&2; exit 1; }
 
 bash -n "$SCRIPT"
 bash -n "$DIAGNOSTIC_SCRIPT"
 bash -n "$TARGET_PREFLIGHT_SCRIPT"
+bash -n "$BROWSER_DIAGNOSTIC_READER"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+diagnostic_source='70d8286163651805cd5ebd537d3836d02fb1692d'
+cat > "$TMP/strict-browser-diagnostic.json" <<JSON
+{
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v1",
+  "sourceRevision": "$diagnostic_source",
+  "failureCode": "browser-binding-invalid"
+}
+JSON
+[[ "$(bash "$BROWSER_DIAGNOSTIC_READER" \
+  "$TMP/strict-browser-diagnostic.json" "$diagnostic_source")" == "browser-binding-invalid" ]]
+
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-diagnostic.json" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >/dev/null 2>&1; then
+  echo "browser diagnostic reader accepted the wrong source revision" >&2
+  exit 1
+fi
+
+jq '.failureCode = "browser-not-allowlisted"' "$TMP/strict-browser-diagnostic.json" \
+  > "$TMP/strict-browser-diagnostic-unknown.json"
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-diagnostic-unknown.json" "$diagnostic_source" >/dev/null 2>&1; then
+  echo "browser diagnostic reader accepted an unknown failure code" >&2
+  exit 1
+fi
+
+jq '.unexpected = "must-fail-closed"' "$TMP/strict-browser-diagnostic.json" \
+  > "$TMP/strict-browser-diagnostic-extra.json"
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-diagnostic-extra.json" "$diagnostic_source" >/dev/null 2>&1; then
+  echo "browser diagnostic reader accepted an extended schema" >&2
+  exit 1
+fi
 
 # Invoke through bash explicitly. macOS provenance/endpoint controls can kill a
 # directly executed worktree script before its shebang runs, which is unrelated
@@ -86,6 +124,10 @@ if grep -Fq 'failureReason:($summary.reason' "$DIAGNOSTIC_SCRIPT"; then
 fi
 grep -q 'sessionId|deviceId|operatorId|decisionId|operationId|canonicalPayload' "$DIAGNOSTIC_SCRIPT"
 grep -q 'BROWSER_DIAGNOSTIC_OUTPUT:' <<<"$browser_workflow_text"
+grep -Fq 'BROWSER_DIAGNOSTIC_OUTPUT="${EVIDENCE_DIR}/browser-diagnostic.json"' "$SCRIPT"
+grep -Fq 'BROWSER_DIAGNOSTIC_READER="${SCRIPT_DIR}/read-view-only-viewer-browser-diagnostic.sh"' "$SCRIPT"
+grep -Fq "printf 'BROWSER_NO_GO code=%s\\n'" "$SCRIPT"
+grep -Fq 'every browser failure remains fatal' "$SCRIPT"
 diagnostic_step="$(sed -n \
   '/^      - name: Stage redacted collector diagnostic$/,/^      - name: Upload redacted collector diagnostic$/p' \
   "$BROWSER_WORKFLOW")"
