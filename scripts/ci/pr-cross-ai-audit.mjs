@@ -11,7 +11,7 @@
 //
 // Usage:
 //   node scripts/ci/pr-cross-ai-audit.mjs --event-path "$GITHUB_EVENT_PATH"
-//   node scripts/ci/pr-cross-ai-audit.mjs --body-file <path>  (local test)
+//   node scripts/ci/pr-cross-ai-audit.mjs --body-file <path> --head-sha <sha>
 //
 // Exit codes:
 //   0 — PASS
@@ -25,6 +25,12 @@ const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
 const VALID_VERDICTS = new Set(['agree', 'revise', 'partial', 'red']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
+const SHA256_RE = /^[0-9a-f]{64}$/i;
+const GITHUB_EVIDENCE_REF_RE = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:issues\/\d+|pull\/\d+|actions\/runs\/\d+(?:\/artifacts\/\d+)?)$/;
+const DOCS_ONLY_EXEMPT_ALLOWLIST = [
+  /^docs\/session-handoff-[^/]+\.md$/,
+  /^docs\/archive\/[^/]+\.md$/,
+];
 const CONSULTATION_RECEIPTS = {
   'claude receipt': {
     provider: 'anthropic',
@@ -183,9 +189,20 @@ function readChangedFiles(args) {
 
 function loadInput(args) {
   if (args['body-file']) {
-    // Local test mode — no PR metadata, so the automation-exemption path is
-    // unavailable and the normal peer-review audit runs.
-    return { body: readFileSync(args['body-file'], 'utf8'), prMeta: null };
+    // Local test mode still requires explicit head metadata; exact-head
+    // consultation must never silently degrade to a body-only declaration.
+    return {
+      body: readFileSync(args['body-file'], 'utf8'),
+      prMeta: {
+        headRef: '',
+        headSha: args['head-sha'] ?? '',
+        headRepo: '',
+        baseRepo: '',
+        actor: '',
+        sender: '',
+        changedFiles: readChangedFiles(args),
+      },
+    };
   }
   if (args['event-path']) {
     const ev = JSON.parse(readFileSync(args['event-path'], 'utf8'));
@@ -294,7 +311,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation commit|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -337,18 +354,58 @@ function parseReceipt(value) {
   return parsed;
 }
 
+function validEvidenceRef(value) {
+  return UUID_RE.test(value || '') || GITHUB_EVIDENCE_REF_RE.test(value || '');
+}
+
+function docsOnlyExemption(fields, prMeta) {
+  const requested = (fields['codex thread'] || '').trim().toLowerCase() === 'n/a';
+  if (!requested) return { requested: false, pass: false, detail: '' };
+  const reason = fields['cross-ai exempt reason'] || '';
+  const files = prMeta?.changedFiles;
+  const filesPresent = Array.isArray(files) && files.length > 0;
+  const pathsAllowed = filesPresent && files.every((path) =>
+    DOCS_ONLY_EXEMPT_ALLOWLIST.some((pattern) => pattern.test(path))
+  );
+  const pass = reason.length >= 10 && pathsAllowed;
+  return {
+    requested: true,
+    pass,
+    detail: pass
+      ? `dar historical-docs allowlist doğrulandı (${files.length} path)`
+      : 'N/A yalnız event-bound changed-files listesi tamamen historical docs allowlist içindeyse geçerlidir',
+  };
+}
+
 function appendConsultationFindings(findings, fields, prMeta) {
+  const base = fields['consultation base'] || '';
   const commit = fields['consultation commit'] || '';
+  const scope = fields['consultation scope'] || '';
+  const validBase = COMMIT_SHA_RE.test(base);
   const validFormat = COMMIT_SHA_RE.test(commit);
-  const matchesHead = !prMeta?.headSha || commit.toLowerCase() === prMeta.headSha.toLowerCase();
+  const headPresent = COMMIT_SHA_RE.test(prMeta?.headSha || '');
+  const matchesHead = headPresent && commit.toLowerCase() === prMeta.headSha.toLowerCase();
+  const validScope = SHA256_RE.test(scope);
+  findings.push({
+    check: 'consultation_base_format',
+    pass: validBase,
+    detail: validBase ? `consultation base ${base.slice(0, 12)} formatı geçerli` : 'Consultation base 40-char git SHA değil',
+  });
   findings.push({
     check: 'consultation_commit_exact_head',
     pass: validFormat && matchesHead,
     detail: !validFormat
       ? 'Consultation commit 40-char git SHA değil'
-      : matchesHead
+        : !headPresent
+          ? 'PR head SHA metadata eksik; exact-head binding fail-closed'
+          : matchesHead
         ? `consultation commit ${commit.slice(0, 12)} exact-head ile eşleşiyor`
         : `consultation commit ${commit.slice(0, 12)} PR head ${prMeta.headSha.slice(0, 12)} ile eşleşmiyor`,
+  });
+  findings.push({
+    check: 'consultation_scope_sha256',
+    pass: validScope,
+    detail: validScope ? `consultation scope sha256 ${scope.slice(0, 12)} formatı geçerli` : 'Consultation scope 64-char SHA-256 değil',
   });
 
   for (const [field, expected] of Object.entries(CONSULTATION_RECEIPTS)) {
@@ -358,16 +415,19 @@ function appendConsultationFindings(findings, fields, prMeta) {
       && receipt.provider?.toLowerCase() === expected.provider
       && receipt.requested === expected.model
       && receipt.actual === expected.model
+      && receipt.base?.toLowerCase() === base.toLowerCase()
+      && receipt.head?.toLowerCase() === commit.toLowerCase()
+      && receipt.scope?.toLowerCase() === scope.toLowerCase()
       && receipt.verdict?.toLowerCase() === 'agree'
-      && receipt.ref
-      && receipt.ref.length >= 8
+      && validEvidenceRef(receipt.ref)
+      && SHA256_RE.test(receipt.sha256 || '')
     );
     findings.push({
       check: field.replaceAll(' ', '_'),
       pass,
       detail: pass
-        ? `${expected.provider}/${expected.model} actual model + AGREE + receipt doğrulandı`
-        : `${field}: provider=${expected.provider}; requested=${expected.model}; actual=${expected.model}; verdict=AGREE; ref=<evidence> zorunlu`,
+        ? `${expected.provider}/${expected.model} base/head/scope + AGREE + content digest doğrulandı`
+        : `${field}: exact provider/model + base/head/scope + verdict=AGREE + UUID/GitHub ref + sha256 zorunlu`,
     });
   }
 }
@@ -388,10 +448,23 @@ function audit(body, prMeta = null) {
   const fields = extractFields(section);
 
   // Check 1: required fields present
-  const consultationExempt = (fields['codex thread'] || '').trim().toLowerCase() === 'n/a';
+  const exemption = docsOnlyExemption(fields, prMeta);
+  const consultationExempt = exemption.pass;
+  if (exemption.requested) {
+    findings.push({
+      check: 'cross_ai_docs_only_exemption',
+      pass: exemption.pass,
+      detail: exemption.detail,
+    });
+  }
   const required = ['implementer ai', 'reviewer ai', 'codex thread', 'verdict'];
   if (!consultationExempt) {
-    required.push('consultation commit', ...Object.keys(CONSULTATION_RECEIPTS));
+    required.push(
+      'consultation base',
+      'consultation commit',
+      'consultation scope',
+      ...Object.keys(CONSULTATION_RECEIPTS),
+    );
   }
   const missing = required.filter((k) => !fields[k]);
   if (missing.length > 0) {
@@ -508,17 +581,19 @@ function audit(body, prMeta = null) {
     }
   }
 
-  // Check 5: Verdict enum (compound verdict tolerance)
+  // Check 5: merge/readiness lane is fail-closed — only AGREE can pass.
   const verdict = (fields['verdict'] || '').toLowerCase();
   if (verdict) {
     const baseVerdict = verdict.split(/[\s_:]/)[0];
-    if (VALID_VERDICTS.has(baseVerdict)) {
-      findings.push({ check: 'verdict_enum', pass: true });
+    if (baseVerdict === 'agree') {
+      findings.push({ check: 'verdict_agree', pass: true });
     } else {
       findings.push({
-        check: 'verdict_enum',
+        check: 'verdict_agree',
         pass: false,
-        detail: `Verdict "${verdict}" invalid (valid: ${[...VALID_VERDICTS].join(', ')})`,
+        detail: VALID_VERDICTS.has(baseVerdict)
+          ? `Verdict "${verdict}" consensus değildir; yalnız AGREE geçer`
+          : `Verdict "${verdict}" invalid ve fail-closed`,
       });
     }
   }

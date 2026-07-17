@@ -350,7 +350,8 @@ aynı exact scope veya commit üzerinde aşağıdaki üç headless kanalda incel
 3. **OpenAI:** doğrudan Codex CLI ile **`gpt-5.6-sol`**.
 
 Cursor kullanım yolu, kullanıcının 2026-07-17 tarihli doğrudan üç sağlayıcı
-kararıyla bu kural setinden kaldırılmıştır. Cursor CLI, Cursor MCP, Cursor modeli,
+kararıyla bu kural setinden kaldırılmıştır; canonical karar kaydı
+[#2601](https://github.com/Halildeu/platform-k8s-gitops/issues/2601)'dir. Cursor CLI, Cursor MCP, Cursor modeli,
 Cursor harness'i ve Cursor-routed modeller bu üç kanaldan biri olarak
 kullanılamaz. Bir sağlayıcının başka wrapper üzerinden çağrılması yeni ve
 bağımsız sağlayıcı sayılmaz.
@@ -363,28 +364,44 @@ claude --version && claude --help
 codex --version && codex exec --help
 python3 scripts/ai/minimax_m3_review.py --help
 
-# Anthropic — redacted exact diff stdin'den verilir
-git show --format=fuller --stat --patch <EXACT_COMMIT> | \
-claude -p 'Supplied exact commit için adversarial review yap.' \
+# Tüm PR aralığını bir kez hazırla; secret bulgusunda fail-closed, email PII redacted
+BASE_SHA="$(git merge-base origin/main HEAD)"
+HEAD_SHA="$(git rev-parse HEAD)"
+SCOPE_RECEIPT="$(python3 scripts/ai/prepare_cross_ai_scope.py \
+  --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA")"
+SCOPE_PATH="$(printf '%s' "$SCOPE_RECEIPT" | jq -r .scope_path)"
+SCOPE_SHA256="$(printf '%s' "$SCOPE_RECEIPT" | jq -r .scope_sha256)"
+
+# Anthropic — hazırlanmış aynı scope artifact'i stdin'den verilir
+claude -p 'Supplied exact PR scope için adversarial review yap.' \
   --model claude-opus-4-8 \
   --permission-mode plan --tools '' \
-  --output-format json --no-session-persistence
+  --output-format json --no-session-persistence < "$SCOPE_PATH"
 
 # MiniMax — bundled llm-call üstündeki repo-owned receipt transport
-git show --format=fuller --stat --patch <EXACT_COMMIT> | \
-python3 scripts/ai/minimax_m3_review.py
+python3 scripts/ai/minimax_m3_review.py \
+  --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA" < "$SCOPE_PATH"
 
-# OpenAI — redacted exact diff stdin'den verilir
-git show --format=fuller --stat --patch <EXACT_COMMIT> | \
+# OpenAI — aynı scope; user config/rules bu bounded review'a eklenmez
 codex exec --model gpt-5.6-sol \
-  --sandbox read-only --ephemeral \
-  -C <ABSOLUTE_WORKTREE> 'Supplied exact commit için adversarial review yap.'
+  --sandbox read-only --ephemeral --ignore-user-config --ignore-rules \
+  -C <ABSOLUTE_WORKTREE> \
+  'Supplied exact PR scope için adversarial review yap.' < "$SCOPE_PATH"
 ```
+
+Ham `git show/git diff | provider` kalıbı canonical değildir. Hazırlayıcı,
+`BASE...HEAD` aralığının tamamını alır; gitleaks veya yüksek güvenli secret
+bulgusunda hiçbir provider çağrılmadan durur, email-shaped PII'yi redakte eder ve
+üç kanalın okuyacağı aynı mode-0600 artifact için SHA-256 üretir. Artifact
+tamamlanınca yerel dosya silinir. Her push/yeni head scope'u hükümsüz kılar;
+hazırlama ve üç review yeni exact head için baştan çalıştırılır.
 
 `scripts/ai/minimax_m3_review.py`, kurulu resmi bundled `llm-call` betiğini
 kullanan onaylı headless **transport**tur; kendi başına provider değildir.
-Prompt'u yalnız stdin'den alır, auth materialini yazdırmaz ve provider response
-modeli `minimax/MiniMax-M3` değilse fail-closed olur. Geçici wrapper, model
+Prompt'u yalnız stdin'den alır, auth materialini yazdırmaz, trusted bundled
+provider adı + resmi `agent.minimax.io` origin'ini doğrular ve provider response
+modeli `minimax/MiniMax-M3` değilse fail-closed olur. Terminal ve tekil
+`VERDICT: AGREE|REVISE` ile P0/P1/P2 bölümlerini ayrıca zorlar. Geçici wrapper, model
 değiştiren proxy, UI veya exact provider/model kimliği üretmeyen taşıma yolu
 canonical değildir.
 
@@ -407,8 +424,9 @@ Bu asgari yapıyı taşımayan özet/belirsiz metin `tracked_pending` sayılır.
   implementer dışındaki diğer iki doğrudan sağlayıcıdan gelir.
 - `tracked_pending`, `REVISE`, provider/model uyuşmazlığı veya çözümsüz ayrışma
   `consensus=false` demektir; merge, deploy, faz kapanışı veya merge-readiness
-  yetkisi vermez. Yalnız isimli kullanıcı/owner exact gerekçe + evidence ile
-  istisna kararı verebilir; agent ayrışmayı kendi kendine aşamaz.
+  yetkisi vermez. PR metnine yazılan bir istisna bu kapıyı aşamaz. Kullanıcı bu
+  politikayı değiştirmek isterse #2601'e bağlı ayrı, denetlenebilir governance
+  değişikliği gerekir; agent ayrışmayı kendi kendine aşamaz.
 - AI mutabakatı test, CI, canlı ortam, tarayıcı smoke, board claim, protected
   Environment reviewer, gerçek kullanıcı rızası veya hukuk/secret-owner
   kapılarının yerine geçmez.
@@ -420,16 +438,27 @@ provider-distinct alt sınırı korur. Zorunlu üç kanal ayrıca şu structured
 alanlarla aynı PR head SHA'sına bağlanır:
 
 ```yaml
+Consultation base: <40-char exact merge-base SHA>
 Consultation commit: <40-char exact PR HEAD SHA>
-Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; verdict=AGREE; ref=<session-or-evidence>
-MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; verdict=AGREE; ref=<session-or-evidence>
-Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; verdict=AGREE; ref=<session-or-evidence>
+Consultation scope: <64-char prepared scope SHA-256>
+Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
+MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
+Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=<UUID-or-GitHub-evidence-URL>; sha256=<provider-response-sha256>
 ```
 
-`gate-cross-ai-audit` normal PR'larda bu dört alanı fail-closed doğrular; commit
-PR head SHA ile aynı değilse, üç receipt'ten biri eksik/uyuşmaz/`AGREE` değilse
-kapı geçmez. Mevcut açık `Cross-AI exempt reason` yolu yalnız gerçekten exempt
-otomasyon/docs sınıfında kalır; yüksek etkili karar için kullanılamaz.
+`gate-cross-ai-audit` normal PR'larda base/head/scope alanları ile her receipt'in
+aynı base/head/scope'a bağlı exact provider/model, `AGREE`, UUID/GitHub evidence
+ref'i ve content digest'ini fail-closed doğrular. Top-level verdict de yalnız
+`AGREE` olabilir. PR body receipt'i provider'ın kriptografik imzası değildir;
+audit declaration + content-addressed provenance'dır. Kaynak CLI receipt'i ve
+referans verilen evidence korunmadan bu alan tek başına provider çağrısını
+kanıtlamaz veya insan kapısını ikame etmez.
+
+`Codex thread: N/A` body-only istisna değildir. Yalnız workflow'un event-bound
+changed-files listesi tamamen `docs/session-handoff-*.md` veya
+`docs/archive/*.md` dar historical-docs allowlist'indeyse kullanılabilir.
+`AGENTS.md`, `CLAUDE.md`, `PLAN.md`, ADR, governance, workflow, CI, manifest,
+authz, migration ve deployment değişiklikleri bu istisnaya giremez.
 
 ### 11.4 Redaction ve süreç sınırı
 

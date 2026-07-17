@@ -136,3 +136,4 @@ jobs:
       - name: Run automation-exemption regression test
         run: |
           node tests/ci/test-cross-ai-automation.mjs
+          python3 -m unittest tests/ai/test_minimax_m3_review.py

@@ -80,16 +80,20 @@ Faz/plan/PR review'u ve yüksek etkili kararlar aynı exact scope/head üzerinde
 **doğrudan `claude-opus-4-8` + MiniMax `minimax/MiniMax-M3` + doğrudan
 `gpt-5.6-sol`** kanallarına verilir. Cursor kullanım yolu kural setinden kaldırılmıştır;
 Cursor CLI/MCP/model/harness veya Cursor-routed model bu zincirde kullanılmaz.
+Kararın stable provenance kaydı [#2601](https://github.com/Halildeu/platform-k8s-gitops/issues/2601)'dir.
 
 - Yalnız headless CLI/daemon kullanılır; AI uygulama penceresi ve UI fallback yoktur.
 - Her çağrıda exact model kimliği canlı çıktıdan doğrulanır; model adı hafızadan uydurulmaz.
 - Auth/kota/fallback/boş çıktı gerçek review değildir ve kanal `tracked_pending` kalır.
 - `REVISE -> düzeltme -> exact-head yeniden review -> AGREE` zinciri kaydedilir.
+- Her yeni push/head önceki receipt'leri hükümsüz kılar; full PR range secret/PII
+  preflight'tan geçirilir ve üç kanal aynı content-addressed scope'u okur.
 - Implementer ile aynı sağlayıcının kanalı challenger olarak kalır ama bağımsız
   onay sayılmaz; bağımsızlık diğer iki direct-provider kanalından gelir.
 - Üç doğrulanmış `AGREE` yoksa consensus yoktur; `tracked_pending`, `REVISE`,
-  model/provider uyuşmazlığı veya çözümsüz ayrışma fail-closed kalır ve yalnız
-  isimli kullanıcı/owner gerekçeli evidence ile istisna verebilir.
+  model/provider uyuşmazlığı veya çözümsüz ayrışma fail-closed kalır. PR body
+  istisnası bu kapıyı aşmaz; politika değişikliği ayrı auditable governance
+  değişikliği ister.
 - Üçlü AI görüşü test/CI/live evidence/browser smoke/human gate yerine geçmez.
 - Secret, PII veya raw credential prompt/argümana konmaz.
 
@@ -165,7 +169,8 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 - Sağlayıcı/model erişilemiyorsa dürüstçe `tracked_pending` bırak; yapay `PASS` üretme.
 
 **Çıktı**:
-- Her turda sağlayıcı + exact model + exact commit/scope + verdict kaydedilir.
+- Her turda sağlayıcı + exact model + exact base/head/scope + verdict + evidence
+  ref + provider response digest'i kaydedilir.
 - Plan iterasyonları kullanıcıya gösterilmez; nihai consensus ve absorbe edilen
   somut bulgular kanıtlanır.
 

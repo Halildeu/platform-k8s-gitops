@@ -30,6 +30,11 @@ const BOT = 'github-actions[bot]';
 const APP_BOT = 'platform-gitops-automation[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
 const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
+const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
+const SCOPE_SHA256 = 'a'.repeat(64);
+const CLAUDE_RECEIPT_SHA256 = 'b'.repeat(64);
+const MINIMAX_RECEIPT_SHA256 = 'c'.repeat(64);
+const CODEX_RECEIPT_SHA256 = 'd'.repeat(64);
 
 // Build the GitHub event payload and run the real script; return its exit code.
 // `changedFiles` is an optional array → written to a temp file and passed via
@@ -72,10 +77,12 @@ const peerBody =
   `## Summary\nx\n\n## Cross-AI\n` +
   `Implementer AI: Claude\nReviewer AI: Codex\n` +
   `Codex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n` +
+  `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
-  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; verdict=AGREE; ref=claude-session-123\n` +
-  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; verdict=AGREE; ref=minimax-receipt-123\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; verdict=AGREE; ref=codex-session-123\n`;
+  `Consultation scope: ${SCOPE_SHA256}\n` +
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=d020f82b-2b35-4bd5-a96b-a53243e7eafc; sha256=${CLAUDE_RECEIPT_SHA256}\n` +
+  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=https://github.com/Halildeu/platform-k8s-gitops/issues/2601; sha256=${MINIMAX_RECEIPT_SHA256}\n` +
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=019f71ba-4e5f-7390-8590-635b9a57fb38; sha256=${CODEX_RECEIPT_SHA256}\n`;
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -139,10 +146,38 @@ const cases = [
       body: peerBody.replace('actual=minimax/MiniMax-M3', 'actual=minimax/MiniMax-M2.7') }, 1],
   ['normal PR + Claude non-AGREE receipt -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace('actual=claude-opus-4-8; verdict=AGREE', 'actual=claude-opus-4-8; verdict=REVISE') }, 1],
-  ['explicit docs-only exemption keeps existing N/A path without fake receipts',
+      body: peerBody.replace('verdict=AGREE; ref=d020f82b', 'verdict=REVISE; ref=d020f82b') }, 1],
+  ['normal PR + arbitrary receipt ref -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('d020f82b-2b35-4bd5-a96b-a53243e7eafc', 'old-ref-123') }, 1],
+  ['normal PR + malformed receipt digest -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace(CLAUDE_RECEIPT_SHA256, 'not-a-sha256') }, 1],
+  ['normal PR + receipt scope mismatch -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace(`scope=${SCOPE_SHA256}`, `scope=${'e'.repeat(64)}`) }, 1],
+  ['normal PR + missing event head SHA -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', headSha: '', body: peerBody }, 1],
+  ['normal PR + overall REVISE -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Verdict: AGREE', 'Verdict: REVISE') }, 1],
+  ['normal PR + overall PARTIAL -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Verdict: AGREE', 'Verdict: PARTIAL') }, 1],
+  ['normal PR + overall RED -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Verdict: AGREE', 'Verdict: RED') }, 1],
+  ['normal PR + overall tracked_pending -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Verdict: AGREE', 'Verdict: tracked_pending') }, 1],
+  ['historical docs-only exemption requires event-bound allowlisted path',
     { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      changedFiles: ['docs/session-handoff-2026-07-17-example.md'],
       body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: N/A\nVerdict: AGREE\nCross-AI exempt reason: docs-only historical handoff with no code or governance delta\n' }, 0],
+  ['governance doc + body-only N/A claim -> fail closed',
+    { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      changedFiles: ['docs/context-priority-rules.md'],
+      body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: N/A\nVerdict: AGREE\nCross-AI exempt reason: claimed docs-only but this is governance\n' }, 1],
   ['normal PR + no Cross-AI section -> fail',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: '## Summary\nno cross-ai here\n' }, 1],
 
