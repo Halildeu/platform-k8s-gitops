@@ -393,7 +393,9 @@ codex exec --model gpt-5.6-sol \
 Ham `git show/git diff | provider` kalıbı canonical değildir. Hazırlayıcı,
 verilen base'in `--base-ref` için gerçek merge-base olduğunu doğrulayıp
 `BASE...HEAD` aralığının tamamını alır; gitleaks veya yüksek güvenli secret
-bulgusunda hiçbir provider çağrılmadan durur, email/UPN ve Türkiye mobil telefon
+bulgusunda hiçbir provider çağrılmadan durur. Binary veya başka metinsel olmayan
+değişiklik `binary_scope_unsupported` ile fail-closed olur; bu kapsam için tam
+inceleme iddiası üretilmez. Hazırlayıcı email/UPN ve Türkiye mobil telefon
 biçimli PII'yi redakte eder ve
 üç kanalın okuyacağı aynı mode-0600 artifact için SHA-256 üretir. Artifact
 tamamlanınca yerel dosya silinir. Her push/yeni head scope'u hükümsüz kılar;
@@ -408,7 +410,9 @@ context sınırına sığmayan scope tek tek eksiltilmez, aynı sıralı chunk m
 kullanan onaylı headless **transport**tur; kendi başına provider değildir.
 Prompt'u yalnız stdin'den alır, auth materialini yazdırmaz, trusted bundled
 dosyanın current-user ownership/no-group-world-write sınırını, transport
-digest'ini, provider adı + resmi `agent.minimax.io` origin'ini doğrular ve provider response
+dosyasından canonical `~/.mavis` köküne kadar tüm üst klasörlerin owner ve
+no-group-world-write sınırını, çalıştırılan exact byte'ların transport digest'ini,
+provider adı + resmi `agent.minimax.io` origin'ini doğrular ve provider response
 modeli `minimax/MiniMax-M3` değilse fail-closed olur. Terminal ve tekil
 `VERDICT: AGREE|REVISE` ile P0/P1/P2 bölümlerini ayrıca zorlar. Geçici wrapper, model
 değiştiren proxy, UI veya exact provider/model kimliği üretmeyen taşıma yolu
@@ -480,7 +484,8 @@ scope SHA-256'yı yeniden türetir. Gitleaks ayrı required security gate olarak
 kalır; bu adım `--derive-only` ile yalnız deterministik scope binding yapar.
 Base tip event `pull_request.base.sha`, head event `pull_request.head.sha`,
 merge-base ve scope ise bu CI türetimiyle eşleşmelidir. Gate her evidence
-comment'ini GitHub API'den fetch eder; author login event'teki base repository
+comment ref'ini event'teki base repository adına bağlar ve GitHub API'den fetch
+eder; author login event'teki base repository
 owner'ıyla case-insensitive eşleşen, `author_association=OWNER` taşıyan ve hiç
 edit edilmemiş (`created_at == updated_at`) comment kabul edilir.
 Comment body SHA-256, iç response SHA-256 ve response'un tekil terminal

@@ -6,6 +6,8 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -46,6 +48,44 @@ class VerdictParsingTests(unittest.TestCase):
         self.assert_rejected(
             "Bu cevapta P0 ve P1 ile P2 bölümleri yoktur.\nVERDICT: AGREE"
         )
+
+
+class LocalTrustPathTests(unittest.TestCase):
+    def test_accepts_owned_nonwritable_parent_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / ".builtin-skills/llm-call/scripts"
+            nested.mkdir(parents=True, mode=0o700)
+            target = nested / "llm_call.py"
+            target.write_text("x = 1\n", encoding="utf-8")
+            os.chmod(target, 0o600)
+            previous = MODULE.MAVIS_DATA_DIR
+            MODULE.MAVIS_DATA_DIR = root
+            try:
+                self.assertEqual(
+                    MODULE.validate_local_trust_file(target, "test"),
+                    target.resolve(),
+                )
+            finally:
+                MODULE.MAVIS_DATA_DIR = previous
+
+    def test_rejects_group_writable_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / "unsafe/scripts"
+            nested.mkdir(parents=True, mode=0o700)
+            target = nested / "llm_call.py"
+            target.write_text("x = 1\n", encoding="utf-8")
+            os.chmod(target, 0o600)
+            os.chmod(nested.parent, 0o770)
+            previous = MODULE.MAVIS_DATA_DIR
+            MODULE.MAVIS_DATA_DIR = root
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaises(SystemExit):
+                        MODULE.validate_local_trust_file(target, "test")
+            finally:
+                MODULE.MAVIS_DATA_DIR = previous
 
 
 if __name__ == "__main__":

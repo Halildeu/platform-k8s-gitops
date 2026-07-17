@@ -32,6 +32,9 @@ TURKISH_PHONE_RE = re.compile(
 )
 PRIVATE_KEY_RE = re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 BEARER_RE = re.compile(rb"(?i)authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}")
+BINARY_DIFF_RE = re.compile(
+    rb"(?m)^(?:Binary files .+ differ|GIT binary patch)$"
+)
 MAX_SCOPE_BYTES = 2_000_000
 
 
@@ -167,6 +170,8 @@ def main() -> None:
     raw_scope = run_git_diff(
         repo, merge_base_sha, resolved_head, max_scope_bytes=args.max_bytes
     )
+    if BINARY_DIFF_RE.search(raw_scope):
+        fail("binary_scope_unsupported")
     if PRIVATE_KEY_RE.search(raw_scope) or BEARER_RE.search(raw_scope):
         fail("high_confidence_secret_detected")
     if not args.derive_only and not gitleaks_clean(raw_scope):

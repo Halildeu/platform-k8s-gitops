@@ -59,6 +59,21 @@ def validate_local_trust_file(path: Path, error_code: str) -> Path:
         fail(f"{error_code}_owner")
     if stat.S_IMODE(metadata.st_mode) & 0o022:
         fail(f"{error_code}_writable")
+    current = resolved.parent
+    while True:
+        try:
+            parent_metadata = current.stat()
+        except OSError:
+            fail(f"{error_code}_parent")
+        if parent_metadata.st_uid not in {0, os.getuid()}:
+            fail(f"{error_code}_parent_owner")
+        if stat.S_IMODE(parent_metadata.st_mode) & 0o022:
+            fail(f"{error_code}_parent_writable")
+        if current == resolved_root:
+            break
+        if current == current.parent:
+            fail(f"{error_code}_parent_escape")
+        current = current.parent
     return resolved
 
 
@@ -68,13 +83,19 @@ def load_bundled_module():
     trusted_path = validate_local_trust_file(
         BUNDLED_SKILL, "bundled_llm_call_untrusted"
     )
-    spec = importlib.util.spec_from_file_location(
-        "mavis_bundled_llm_call", trusted_path
-    )
+    try:
+        trusted_source = trusted_path.read_bytes()
+        compiled = compile(trusted_source, str(trusted_path), "exec")
+    except (OSError, SyntaxError):
+        fail("bundled_llm_call_unloadable")
+    spec = importlib.util.spec_from_file_location("mavis_bundled_llm_call", trusted_path)
     if spec is None or spec.loader is None:
         fail("bundled_llm_call_unloadable")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Execute the exact bytes that were validated and hashed; the loader must
+    # not re-open a path that could change between validation and import.
+    exec(compiled, module.__dict__)
+    module.__transport_sha256 = hashlib.sha256(trusted_source).hexdigest()
     return module
 
 
@@ -214,7 +235,7 @@ def main() -> None:
         fail("provider_response_empty")
     verdict = parse_verdict(result)
     response_sha256 = hashlib.sha256(result.encode("utf-8")).hexdigest()
-    transport_sha256 = hashlib.sha256(BUNDLED_SKILL.read_bytes()).hexdigest()
+    transport_sha256 = module.__transport_sha256
 
     print(
         json.dumps(

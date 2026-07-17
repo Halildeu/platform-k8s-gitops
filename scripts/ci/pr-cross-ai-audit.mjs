@@ -28,7 +28,6 @@ const VALID_VERDICTS = new Set(['agree', 'revise', 'partial', 'red']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
-const GITHUB_EVIDENCE_REF_RE = /^https:\/\/api\.github\.com\/repos\/Halildeu\/platform-k8s-gitops\/issues\/comments\/\d+$/;
 const RECEIPT_KEYS = new Set([
   'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
   'verdict', 'ref', 'sha256',
@@ -387,8 +386,22 @@ function parseReceipt(value) {
   return Object.keys(parsed).length === RECEIPT_KEYS.size ? parsed : null;
 }
 
-function validEvidenceRef(value) {
-  return GITHUB_EVIDENCE_REF_RE.test(value || '');
+function validEvidenceRef(value, baseRepo) {
+  if (!value || !baseRepo) return false;
+  try {
+    const url = new URL(value);
+    const prefix = `/repos/${baseRepo}/issues/comments/`;
+    const commentId = url.pathname.toLowerCase().startsWith(prefix.toLowerCase())
+      ? url.pathname.slice(prefix.length)
+      : '';
+    return url.protocol === 'https:'
+      && url.hostname === 'api.github.com'
+      && url.search === ''
+      && url.hash === ''
+      && /^\d+$/.test(commentId);
+  } catch {
+    return false;
+  }
 }
 
 function sha256Utf8(value) {
@@ -408,12 +421,12 @@ function parseProviderResponseVerdict(response) {
   return sectionsPresent ? matches[0][1].toUpperCase() : null;
 }
 
-async function loadEvidenceComment(ref, evidenceOverrides) {
+async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
   if (Object.hasOwn(evidenceOverrides, ref)) {
     const override = evidenceOverrides[ref];
     return override && typeof override === 'object' ? override : null;
   }
-  if (!validEvidenceRef(ref)) return null;
+  if (!validEvidenceRef(ref, baseRepo)) return null;
   const headers = { Accept: 'application/vnd.github+json' };
   const token = env.GITHUB_TOKEN || env.GH_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -583,11 +596,11 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
       && receipt.head?.toLowerCase() === commit.toLowerCase()
       && receipt.scope?.toLowerCase() === scope.toLowerCase()
       && receipt.verdict?.toLowerCase() === 'agree'
-      && validEvidenceRef(receipt.ref)
+      && validEvidenceRef(receipt.ref, prMeta?.baseRepo)
       && SHA256_RE.test(receipt.sha256 || '')
     );
     const evidenceComment = shapePass
-      ? await loadEvidenceComment(receipt.ref, evidenceOverrides)
+      ? await loadEvidenceComment(receipt.ref, prMeta.baseRepo, evidenceOverrides)
       : null;
     const pass = shapePass && evidenceMatches(
       evidenceComment, receipt, expected, expectedOwner,
