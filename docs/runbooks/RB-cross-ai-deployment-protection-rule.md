@@ -1,18 +1,22 @@
 # RB — Signed Cross-AI Custom Deployment Protection Rule
 
 > **Issue:** #2502 · **ADR:** ADR-0045 · **scope:** reversible test/non-prod only
-> **Current state (2026-07-17):** source implementation, offline tests,
-> digest-pinned/non-root container definition, GHCR publication workflow and a
-> disabled-by-default receive-only test overlay exist. The protection evaluator
-> App is registered as `Acik Cross-AI Deploy Protection` (App ID `4322193`) and
-> installed only on `Halildeu/platform-k8s-gitops` (installation ID
-> `147158710`). Its webhook is active with SSL verification and the reviewed
-> URL/event/permissions, but the webhook secret is not yet in test Vault. The
-> PR container-contract job passed while the main-only publish job correctly
-> skipped, so no published image digest, live webhook endpoint, protected
-> workflow lane or enabled Environment custom rule exists. The source includes
-> attempt-specific terminal outcome polling and restart reconciliation; it has
-> not been exercised against a live delivery.
+> **Current state (2026-07-17):** Phase 0 source/schema/tests merged to `main`
+> as `d31bae376c9520d30ea655d80326536c59cf81f3`. Main workflow
+> [29577665709](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29577665709)
+> published and attested
+> `ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection@sha256:5b3532cdacc7d6f60bcf317982ab9bf7e1fcfe51f4c94de2a11aa3226c19af59`;
+> registry manifest and GitHub attestation verification both pass. The
+> protection evaluator App is registered as `Acik Cross-AI Deploy Protection`
+> (App ID `4322193`) and installed only on
+> `Halildeu/platform-k8s-gitops` (installation ID `147158710`). Its webhook is
+> active with SSL verification and the reviewed URL/event/permissions. The
+> webhook secret is held in an owner-only staging handoff but is not yet in
+> test Vault; the merged canonical ESO policy source is likewise not yet
+> applied live because test Vault root recovery is owner-gated. The isolated
+> receive-only overlay remains disconnected from the canonical test root and
+> retains its impossible digest sentinel. No live webhook endpoint, protected
+> workflow lane or enabled Environment custom rule exists.
 
 ## 1. What this removes — and what it does not
 
