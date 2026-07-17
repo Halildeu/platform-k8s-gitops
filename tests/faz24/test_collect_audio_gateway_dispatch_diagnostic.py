@@ -66,7 +66,8 @@ def test_collect_classifies_exact_request_without_copying_raw_logs(tmp_path):
 
     def runner(argv, timeout):
         assert argv[:6] == ["kubectl", "--context", "k3d-test", "-n", "platform-test", "logs"]
-        assert "deployment/audio-gateway" in argv
+        assert "app.kubernetes.io/name=audio-gateway" in argv
+        assert "--max-log-requests=10" in argv
         assert timeout == 30
         return collector.CommandResult(0, f"unrelated secret-like line\n{raw_line}\n", "")
 
@@ -85,6 +86,8 @@ def test_collect_classifies_exact_request_without_copying_raw_logs(tmp_path):
         "classification": "redis-dispatch-unavailable",
         "exceptionClass": "RedisConnectionFailureException",
         "matchedCount": 1,
+        "matchBasis": "sessionId",
+        "correlationMatched": True,
         "logQuery": "success",
     }
     persisted = output.read_text(encoding="utf-8")
@@ -120,6 +123,37 @@ def test_collect_ignores_other_request_and_reports_inconclusive(tmp_path):
     assert evidence["status"] == "inconclusive"
     assert evidence["diagnostic"]["classification"] == "no-allowlisted-match"
     assert evidence["diagnostic"]["exceptionClass"] is None
+
+
+def test_collect_uses_unique_session_when_response_correlation_differs(tmp_path):
+    collector = _load()
+    smoke = tmp_path / "smoke.json"
+    output = tmp_path / "diagnostic.json"
+    _smoke(smoke)
+
+    def runner(_argv, _timeout):
+        return collector.CommandResult(
+            0,
+            "ALERT Redis AUTH/ACL failure on dispatch err=RedisSystemException "
+            "sessionId=SES-test-1 chunkSeq=0 correlationId=controller-correlation streamKey=audio:chunks:p02\n",
+            "",
+        )
+
+    evidence = collector.collect(
+        smoke,
+        output,
+        context="k3d-test",
+        namespace="platform-test",
+        deployment="audio-gateway",
+        since="10m",
+        command_runner=runner,
+    )
+
+    assert evidence["status"] == "classified"
+    assert evidence["diagnostic"]["classification"] == "redis-auth-acl"
+    assert evidence["diagnostic"]["exceptionClass"] == "RedisSystemException"
+    assert evidence["diagnostic"]["matchBasis"] == "sessionId"
+    assert evidence["diagnostic"]["correlationMatched"] is False
 
 
 def test_collector_rejects_non_test_scope(tmp_path):

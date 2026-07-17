@@ -100,25 +100,34 @@ def extract_request_ids(smoke: dict) -> tuple[str, str]:
     )
 
 
-def classify_logs(raw_logs: str, session_id: str, correlation_id: str) -> tuple[str, str | None, int]:
-    matches: list[tuple[str, str | None]] = []
+def classify_logs(
+    raw_logs: str, session_id: str, correlation_id: str
+) -> tuple[str, str | None, int, bool]:
+    matches: list[tuple[str, str | None, bool]] = []
     for line in raw_logs.splitlines():
-        if f"sessionId={session_id}" not in line or f"correlationId={correlation_id}" not in line:
+        if f"sessionId={session_id}" not in line:
             continue
+        correlation_matched = f"correlationId={correlation_id}" in line
         for classification, marker in CLASSIFIERS:
             if marker not in line:
                 continue
             exception = EXCEPTION_RE.search(line)
-            matches.append((classification, exception.group(1) if exception else None))
+            matches.append(
+                (
+                    classification,
+                    exception.group(1) if exception else None,
+                    correlation_matched,
+                )
+            )
             break
 
     if not matches:
-        return "no-allowlisted-match", None, 0
-    unique = {(classification, exception) for classification, exception in matches}
+        return "no-allowlisted-match", None, 0, False
+    unique = {(classification, exception) for classification, exception, _ in matches}
     if len(unique) != 1:
-        return "multiple-allowlisted-matches", None, len(matches)
+        return "multiple-allowlisted-matches", None, len(matches), any(item[2] for item in matches)
     classification, exception = next(iter(unique))
-    return classification, exception, len(matches)
+    return classification, exception, len(matches), any(item[2] for item in matches)
 
 
 def collect(
@@ -145,14 +154,18 @@ def collect(
             "-n",
             namespace,
             "logs",
-            f"deployment/{deployment}",
+            "-l",
+            f"app.kubernetes.io/name={deployment}",
+            "-c",
+            deployment,
             f"--since={since}",
             "--tail=5000",
+            "--max-log-requests=10",
         ],
         30,
     )
     if result.returncode == 0:
-        classification, exception_class, matched_count = classify_logs(
+        classification, exception_class, matched_count, correlation_matched = classify_logs(
             result.stdout, session_id, correlation_id
         )
         status = "classified" if classification not in {
@@ -164,6 +177,7 @@ def collect(
         classification = "log-query-failed"
         exception_class = None
         matched_count = 0
+        correlation_matched = False
         status = "inconclusive"
         log_query = f"exit-{result.returncode}"
 
@@ -176,6 +190,8 @@ def collect(
             "classification": classification,
             "exceptionClass": exception_class,
             "matchedCount": matched_count,
+            "matchBasis": "sessionId",
+            "correlationMatched": correlation_matched,
             "logQuery": log_query,
         },
         "boundaries": {
