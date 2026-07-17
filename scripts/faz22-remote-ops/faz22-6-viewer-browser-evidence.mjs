@@ -36,6 +36,7 @@ export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-login-entry-not-visible',
   'browser-metadata-not-trusted',
   'browser-observer-install-failed',
+  'browser-preflight-api-status-invalid',
   'browser-replay-not-rejected',
   'browser-replay-probe-failed',
   'browser-route-navigation-failed',
@@ -88,6 +89,7 @@ export function classifyBrowserFailure(error) {
   if (
     message.endsWith(' is required') ||
     message.startsWith('BROWSER_OPERATOR_USERNAME') ||
+    message.startsWith('AUTH_ROUTE_PREFLIGHT_ONLY') ||
     message.startsWith('SOURCE_REVISION must be') ||
     message.startsWith('PILOT_SECONDS must be') ||
     message.startsWith('DLP_MASK_RECT_BPS') ||
@@ -172,6 +174,10 @@ async function main() {
   const binding = validateBinding(JSON.parse(required('EVIDENCE_BINDING_JSON')));
   const operatorUsername = required('BROWSER_OPERATOR_USERNAME');
   const operatorPasswordFile = required('BROWSER_OPERATOR_PASSWORD_FILE');
+  const authRoutePreflightOnly = process.env.AUTH_ROUTE_PREFLIGHT_ONLY?.trim() ?? '0';
+  if (!['0', '1'].includes(authRoutePreflightOnly)) {
+    throw new Error('AUTH_ROUTE_PREFLIGHT_ONLY must be 0 or 1');
+  }
   if (!TEST_USERNAME.test(operatorUsername)) throw new Error('BROWSER_OPERATOR_USERNAME is invalid');
   const pilotSeconds = Number.parseInt(process.env.PILOT_SECONDS ?? '300', 10);
   if (!Number.isSafeInteger(pilotSeconds) || pilotSeconds < MIN_PILOT_SECONDS || pilotSeconds > MAX_PILOT_SECONDS) {
@@ -198,12 +204,24 @@ async function main() {
       browser.newContext({ viewport: { width: 1440, height: 900 } }),
     );
     let consoleErrorCount = 0;
+    let viewerApiStatus = null;
     const page = await evidenceStep('browser-runtime-start-failed', async () => context.newPage());
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrorCount += 1;
     });
     page.on('pageerror', () => {
       consoleErrorCount += 1;
+    });
+    page.on('response', (response) => {
+      const responseUrl = new URL(response.url());
+      if (
+        responseUrl.origin === 'https://testai.acik.com' &&
+        /^\/api\/v1\/endpoint-admin\/remote-access\/sessions\/[A-Za-z0-9._:-]{1,160}\/view$/.test(
+          responseUrl.pathname,
+        )
+      ) {
+        viewerApiStatus = response.status();
+      }
     });
 
     const startedAt = new Date();
@@ -250,6 +268,40 @@ async function main() {
       return typeof token === 'string' && token.length >= 32;
     });
     if (!browserAuthReady) throw evidenceFailure('browser-auth-session-missing');
+    if (authRoutePreflightOnly === '1') {
+      for (let attempt = 0; attempt < 100 && viewerApiStatus === null; attempt += 1) {
+        await page.waitForTimeout(100);
+      }
+      if (viewerApiStatus !== 404) throw evidenceFailure('browser-preflight-api-status-invalid');
+      const routeMounted = await root.isVisible();
+      const preflight = {
+        schemaVersion: 'faz22.6.viewOnlyViewerAuthRoutePreflight.v1',
+        evidenceType: 'browser-auth-route-preflight',
+        status: 'pass',
+        sourceRevision,
+        observedAt: utcSeconds(),
+        binding,
+        producer: {
+          kind: 'browser-harness',
+          tool: 'scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs',
+          toolVersion: 'v2',
+        },
+        payload: {
+          authentication: 'keycloak-authorization-code-pkce',
+          productOrigin: new URL(page.url()).origin,
+          routeTemplate: '/endpoint-admin/remote-access/sessions/:sessionId/view',
+          routeMounted,
+          browserAuthSessionPresent: browserAuthReady,
+          viewerApiStatus,
+          consoleErrorCount,
+          viewerUrlSha256: sha256(viewerUrl),
+        },
+      };
+      await evidenceStep('browser-evidence-write-failed', async () =>
+        writeFile(output, `${JSON.stringify(preflight, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 }),
+      );
+      return;
+    }
     await evidenceStep('browser-metadata-not-trusted', async () =>
       page.waitForFunction(
         () => document.querySelector('[data-testid="remote-view-page"]')?.getAttribute('data-metadata-trusted') === 'true',

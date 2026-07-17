@@ -7,6 +7,7 @@ SMOKE="$ROOT/scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh"
 ALLOWLIST="$ROOT/config/faz22-6-viewer-collector-diagnostic-allowlist.v1.json"
 BROWSER_ALLOWLIST="$ROOT/config/faz22-6-viewer-browser-diagnostic-codes.v1.json"
 BROWSER_SCRIPT="$ROOT/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
+WORKFLOW="$ROOT/.github/workflows/faz22-6-view-only-viewer-browser-evidence.yml"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -188,6 +189,45 @@ if grep -Fq 'OPERATOR_TOKEN_FILE' "$BROWSER_SCRIPT"; then
   echo "browser evidence must use the product login journey, not the broker token file" >&2
   exit 1
 fi
+
+grep -Fq 'browser-auth-route-preflight-script-required' "$SMOKE" || {
+  echo "auth route preflight must fail closed when the browser harness is absent" >&2
+  exit 1
+}
+grep -Fq 'needs: [target-preflight, product-auth-preflight]' "$WORKFLOW" || {
+  echo "attended browser evidence must remain blocked by both preflights" >&2
+  exit 1
+}
+grep -Fq 'if: ${{ !inputs.preflight_only }}' "$WORKFLOW" || {
+  echo "preflight-only dispatch must not request protected attended approval" >&2
+  exit 1
+}
+product_preflight_block="$(sed -n '/^  product-auth-preflight:/,/^  browser-evidence:/p' "$WORKFLOW")"
+grep -Fq "if: \${{ github.ref == 'refs/heads/main' }}" <<< "$product_preflight_block" || {
+  echo "credential-bearing product preflight must be pinned to the protected main branch" >&2
+  exit 1
+}
+grep -Fq 'KC_TEST_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}' \
+    <<< "$product_preflight_block" || {
+  echo "main-only product preflight must use the managed test Keycloak secret" >&2
+  exit 1
+}
+grep -Fq 'session-side-effect-attestation.json' <<< "$product_preflight_block" || {
+  echo "product preflight must publish its scoped session side-effect attestation" >&2
+  exit 1
+}
+grep -Fq '/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt' "$SMOKE" || {
+  echo "viewer preflight must retain the canonical runner-local Keycloak credential source" >&2
+  exit 1
+}
+grep -Fq 'keycloak_admin_password_is_valid' "$SMOKE" || {
+  echo "viewer preflight must validate local Keycloak candidates before selecting one" >&2
+  exit 1
+}
+grep -Fq 'excludes:["test Keycloak persona lifecycle"]' "$SMOKE" || {
+  echo "session side-effect attestation must not overclaim Keycloak immutability" >&2
+  exit 1
+}
 
 while IFS= read -r static_reason; do
   jq -e --arg reason "$static_reason" \
