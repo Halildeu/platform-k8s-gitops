@@ -82,6 +82,7 @@ jobs:
       DIRECT_STT_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-direct-stt-e2e.json
       DIRECT_STT_VERIFY_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-direct-stt-e2e.verify.json
       REDIS_RUNTIME_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-redis-streams-runtime.json
+      DISPATCH_DIAGNOSTIC_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-audio-gateway-dispatch-diagnostic.json
 
     steps:
       - name: Validate dispatch inputs
@@ -302,6 +303,31 @@ jobs:
           echo "collector.stderr.sha256=$(sha256sum "${EVIDENCE_DIR}/collector.stderr" | awk '{print $1}')"
           exit 0
 
+      - name: Classify audio-gateway dispatch failure without raw logs
+        id: dispatch_diagnostic
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          set +e
+          python3 scripts/faz24/collect_audio_gateway_dispatch_diagnostic.py \
+            --external-smoke-file "${SMOKE_JSON}" \
+            --output "${DISPATCH_DIAGNOSTIC_JSON}" \
+            --context "${{ inputs.kube_context }}" \
+            --namespace "${{ inputs.namespace }}" \
+            --deployment "${{ inputs.deployment }}" \
+            --since "10m" \
+            > "${EVIDENCE_DIR}/dispatch-diagnostic.stdout" \
+            2> "${EVIDENCE_DIR}/dispatch-diagnostic.stderr"
+          exit_code="$?"
+          set -e
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          grep -E '^(dispatch_diagnostic=|dispatch_classification=)' \
+            "${EVIDENCE_DIR}/dispatch-diagnostic.stdout" || true
+          echo "dispatch-diagnostic.stderr.bytes=$(wc -c < "${EVIDENCE_DIR}/dispatch-diagnostic.stderr" | tr -d ' ')"
+          echo "dispatch-diagnostic.stderr.sha256=$(sha256sum "${EVIDENCE_DIR}/dispatch-diagnostic.stderr" | awk '{print $1}')"
+          exit 0
+
       - name: Verify direct-STT e2e evidence
         id: verify_e2e
         if: always()
@@ -334,6 +360,7 @@ jobs:
 
           test -d "${EVIDENCE_DIR}"
           test -s "${DIAG_JSON}"
+          test -s "${DISPATCH_DIAGNOSTIC_JSON}"
 
           if grep -R -a -E \
             -e '-----BEGIN (OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----' \
@@ -368,6 +395,7 @@ jobs:
           COLLECT_EXIT_CODE: ${{ steps.collect_e2e.outputs.exit_code }}
           VERIFY_EXIT_CODE: ${{ steps.verify_e2e.outputs.exit_code }}
           CHUNK_FIXTURE_SOURCE: ${{ steps.prepare_chunk.outputs.chunk_fixture_source }}
+          DISPATCH_DIAGNOSTIC_EXIT_CODE: ${{ steps.dispatch_diagnostic.outputs.exit_code }}
         run: |
           set -euo pipefail
           direct_status="missing"
@@ -375,6 +403,12 @@ jobs:
           if [ -s "${DIRECT_STT_JSON}" ]; then
             direct_status="$(jq -r '.status // "missing"' "${DIRECT_STT_JSON}")"
             direct_failures="$(jq -r '(.failures // []) | join(",")' "${DIRECT_STT_JSON}")"
+          fi
+          dispatch_classification="missing"
+          dispatch_exception="none"
+          if [ -s "${DISPATCH_DIAGNOSTIC_JSON}" ]; then
+            dispatch_classification="$(jq -r '.diagnostic.classification // "missing"' "${DISPATCH_DIAGNOSTIC_JSON}")"
+            dispatch_exception="$(jq -r '.diagnostic.exceptionClass // "none"' "${DISPATCH_DIAGNOSTIC_JSON}")"
           fi
           {
             echo "## Faz 24 direct-STT e2e collect"
@@ -388,6 +422,9 @@ jobs:
             echo "- Chunk fixture source: \`${CHUNK_FIXTURE_SOURCE:-missing}\`"
             echo "- Direct-STT evidence status: \`${direct_status}\`"
             echo "- Direct-STT failures: \`${direct_failures:-none}\`"
+            echo "- Dispatch diagnostic exit code: \`${DISPATCH_DIAGNOSTIC_EXIT_CODE:-missing}\`"
+            echo "- Dispatch classification: \`${dispatch_classification}\`"
+            echo "- Dispatch exception class: \`${dispatch_exception}\`"
             echo
             echo "Boundary: platform-test metadata-only Gate 2 evidence collection. The workflow uses a privacy-safe runner-local fixture, uploads only hashes/ids/status/timing metadata, and does not claim production readiness, desktop mic-loopback, or real confidential meeting audio."
           } >> "${GITHUB_STEP_SUMMARY}"

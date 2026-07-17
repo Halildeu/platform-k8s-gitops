@@ -241,6 +241,11 @@ def test_direct_stt_e2e_collect_workflow_boundary_and_secret_scan():
     assert "run-platform-desktop-token-evidence-chain.sh" in workflow
     assert "collect_direct_stt_e2e_evidence.py" in workflow
     assert "verify_direct_stt_e2e_evidence.py" in workflow
+    assert "collect_audio_gateway_dispatch_diagnostic.py" in workflow
+    assert "Classify audio-gateway dispatch failure without raw logs" in workflow
+    assert "faz24-audio-gateway-dispatch-diagnostic.json" in workflow
+    assert "dispatch-diagnostic.stderr.sha256=" in workflow
+    assert "Dispatch classification:" in workflow
     assert "KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}" in workflow
     assert 'CONFIRM_CONTROLLED_MAPPER_PRUNE: "YES"' in workflow
     assert "RUN_EXTERNAL_SMOKE: \"1\"" in workflow
