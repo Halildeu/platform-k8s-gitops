@@ -81,6 +81,7 @@ jobs:
       SMOKE_VERIFY_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-external-recorder-smoke.verify.json
       DIRECT_STT_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-direct-stt-e2e.json
       DIRECT_STT_VERIFY_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-direct-stt-e2e.verify.json
+      REDIS_RUNTIME_JSON: /tmp/faz24-direct-stt-e2e-collect-${{ github.run_id }}/faz24-redis-streams-runtime.json
 
     steps:
       - name: Validate dispatch inputs
@@ -238,6 +239,13 @@ jobs:
           echo "chunk_fixture_source=${fixture_source}"
           echo "chunk_fixture.bytes=$(wc -c < "${chunk_file}" | tr -d ' ')"
           echo "chunk_fixture.sha256=$(sha256sum "${chunk_file}" | awk '{print $1}')"
+
+      - name: Reconcile test Redis Streams runtime
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          OUT="${REDIS_RUNTIME_JSON}" \
+            bash scripts/faz24/reconcile_redis_streams_test_runtime.sh
 
       - name: Run token and external recorder lifecycle
         id: run_chain

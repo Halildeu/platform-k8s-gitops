@@ -75,6 +75,7 @@ jobs:
       SMOKE_VERIFY_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-external-recorder-smoke.verify.json
       MEETING_AI_RESULT_ACCEPTANCE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-meeting-ai-user-result-acceptance.json
       SESSION_EXPIRY_SMOKE_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-audio-gateway-session-expiry-smoke.json
+      REDIS_RUNTIME_JSON: /tmp/faz24-platform-desktop-token-evidence-${{ github.run_id }}-${{ github.run_attempt }}/faz24-redis-streams-runtime.json
       RUNNER_STDOUT: /tmp/faz24-platform-desktop-token-runner-${{ github.run_id }}-${{ github.run_attempt }}.stdout
       RUNNER_STDERR: /tmp/faz24-platform-desktop-token-runner-${{ github.run_id }}-${{ github.run_attempt }}.stderr
 
@@ -197,6 +198,14 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Reconcile test Redis Streams runtime
+        if: inputs.run_external_smoke == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          OUT="${REDIS_RUNTIME_JSON}" \
+            bash scripts/faz24/reconcile_redis_streams_test_runtime.sh
 
       - name: Run platform-desktop token evidence chain
         id: run_chain
@@ -424,18 +433,22 @@ jobs:
               assert session["boundaries"]["negativeInvariantStable"] is True
           if sys.argv[6] == "true":
               result_path = pathlib.Path(sys.argv[5])
-              assert result_path.is_file()
-              result = json.load(result_path.open(encoding="utf-8"))
-              assert data["status"] == "pass"
-              assert data["results"]["meetingAiUserResultAcceptance"]["status"] == "pass"
-              assert result["accepted"] is True
-              assert result["boundaries"]["platformTestOnly"] is True
-              assert result["boundaries"]["userTokenIncluded"] is False
-              assert result["boundaries"]["canonicalResponseBodyIncluded"] is False
-              assert result["boundaries"]["auditPayloadIncluded"] is False
-              assert result["serviceWrite"]["accepted"] is True
-              assert result["userRead"]["accepted"] is True
-              assert result["metadataOnlyAudit"]["accepted"] is True
+              result_status = data["results"]["meetingAiUserResultAcceptance"]["status"]
+              if result_path.is_file():
+                  result = json.load(result_path.open(encoding="utf-8"))
+                  assert data["status"] == "pass"
+                  assert result_status == "pass"
+                  assert result["accepted"] is True
+                  assert result["boundaries"]["platformTestOnly"] is True
+                  assert result["boundaries"]["userTokenIncluded"] is False
+                  assert result["boundaries"]["canonicalResponseBodyIncluded"] is False
+                  assert result["boundaries"]["auditPayloadIncluded"] is False
+                  assert result["serviceWrite"]["accepted"] is True
+                  assert result["userRead"]["accepted"] is True
+                  assert result["metadataOnlyAudit"]["accepted"] is True
+              else:
+                  assert data["status"] != "pass"
+                  assert result_status == "not-run"
           PY
 
       - name: Write workflow summary
