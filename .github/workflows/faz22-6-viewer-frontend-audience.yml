@@ -49,39 +49,20 @@ jobs:
 
       - name: Reconcile TEST Keycloak audience
         env:
-          OUT_DIR: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}
+          OUT_DIR: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash scripts/keycloak/reconcile-viewer-frontend-audience.sh --${{ inputs.action }}
 
       - name: Verify redacted evidence contract
         if: always()
         env:
-          SUMMARY: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}/viewer-frontend-audience-summary.json
-        run: |
-          set -euo pipefail
-          test -s "$SUMMARY"
-          jq -e '
-            .schemaVersion == "faz22.6.viewerFrontendAudience.v1"
-            and .target.environment == "test"
-            and .target.realm == "platform-test"
-            and .target.frontendClient == "frontend"
-            and .target.resourceClient == "remote-bridge-operator-api"
-            and .securityBoundary.productionMutation == false
-            and .secretHygiene.adminPasswordIncluded == false
-            and .secretHygiene.adminTokenIncluded == false
-            and .secretHygiene.userTokenIncluded == false
-          ' "$SUMMARY" >/dev/null
-          if grep -Eqi '"[^"[:space:]]*(access[_-]?token|password|secret|private[_-]?key)[^"[:space:]]*"[[:space:]]*:[[:space:]]*"[^"]+"|bearer[[:space:]]+[A-Za-z0-9._-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' "$SUMMARY"; then
-            echo "::error::secret-like material found in evidence"
-            exit 1
-          fi
-          (cd "$(dirname "$SUMMARY")" && sha256sum "$(basename "$SUMMARY")" > SHA256SUMS)
-          (cd "$(dirname "$SUMMARY")" && sha256sum -c SHA256SUMS)
+          SUMMARY: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}-${{ github.run_attempt }}/viewer-frontend-audience-summary.json
+        run: bash scripts/keycloak/verify-viewer-frontend-audience-evidence.sh "$SUMMARY"
 
       - name: Upload content-addressed redacted evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: faz22-viewer-frontend-audience-${{ github.run_id }}
-          path: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}/
+          name: faz22-viewer-frontend-audience-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/faz22-viewer-frontend-audience-${{ github.run_id }}-${{ github.run_attempt }}/
           if-no-files-found: error
           retention-days: 30
