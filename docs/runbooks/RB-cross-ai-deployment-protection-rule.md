@@ -1,11 +1,12 @@
 # RB — Signed Cross-AI Custom Deployment Protection Rule
 
 > **Issue:** #2502 · **ADR:** ADR-0045 · **scope:** reversible test/non-prod only
-> **Current state (2026-07-17):** Phase 0 source/schema/tests merged to `main`
-> as `d31bae376c9520d30ea655d80326536c59cf81f3`. Main workflow
-> [29577665709](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29577665709)
+> **Current state (2026-07-17):** Phase 0 source/schema/tests and the live-found
+> webhook header normalization fix are merged to `main` through
+> `502540f2a957f50f0b55f08d7af9105a4623d0eb`. Main workflow
+> [29581180381](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29581180381)
 > published and attested
-> `ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection@sha256:5b3532cdacc7d6f60bcf317982ab9bf7e1fcfe51f4c94de2a11aa3226c19af59`;
+> `ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection@sha256:0a79f6facfadb29daaeb096f5491e07fd8b01eabfbbb4db7d896f5663f9e9285`;
 > registry manifest and GitHub attestation verification both pass. The
 > protection evaluator App is registered as `Acik Cross-AI Deploy Protection`
 > (App ID `4322193`) and installed only on
@@ -17,8 +18,8 @@
 > emitted credential files were cleaned, and ESO read capability/property/hash
 > alignment passed without exposing the value. The Phase 1 activation change
 > pins the attested digest above and connects the receive-only overlay to the
-> canonical test root. This source change does not itself claim a live endpoint,
-> protected workflow lane or enabled Environment custom rule.
+> canonical test root. Post-sync functional evidence for this new digest remains
+> mandatory; no protected workflow lane or Environment custom rule is enabled.
 
 ## 1. What this removes — and what it does not
 
