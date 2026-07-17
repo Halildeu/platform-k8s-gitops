@@ -55,6 +55,7 @@ done
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 ACTIVATION_FILE="$REPO_ROOT/kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml"
+LEDGER_CONTRACT="$REPO_ROOT/scripts/ats/verify-model-governance-ledger.py"
 CANONICAL_DIGEST=$(python3 - "$ACTIVATION_FILE" <<'PY'
 import re
 import sys
@@ -80,7 +81,7 @@ PY
 }
 
 ENDPOINT_REF="faz24-stt-prod"
-APPROVAL_REF="mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d"
+APPROVAL_REF="mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43"
 
 assert_live_gitops_binding() {
   local live_image live_config_binding
@@ -107,7 +108,7 @@ flock -n 9 || { echo "FATAL: another model-governance transition is active" >&2;
 
 PG_CONTAINER="platform-pg-test"
 DB_URL="jdbc:postgresql://127.0.0.1:5432/ats"
-TRANSITION_ID="mgt_25260000-0000-4000-8000-000000000001"
+TRANSITION_ID="mgt_25260000-0000-4000-8000-000000000002"
 ACTOR_REF="cross-ai/faz25/2526"
 OPERATOR_ROLE="ats_governance_op_$(openssl rand -hex 8)"
 OPERATOR_PASSWORD="$(openssl rand -hex 32)"
@@ -212,19 +213,12 @@ MIGRATION_STATE=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -F '|' -d 
   echo "FATAL: Flyway V6 writer schema grant is not successful" >&2
   exit 1
 }
-LEDGER_POSITION_BEFORE=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -F '|' -d ats -c \
-  "SELECT count(*),COALESCE(max(sequence),-1) FROM model_governance_ledger")
-[[ "$LEDGER_POSITION_BEFORE" == "0|-1" || "$LEDGER_POSITION_BEFORE" == "1|0" ]] || {
-  echo "FATAL: unexpected model-governance ledger position for the fixed initial transition" >&2
+LEDGER_STATE_BEFORE=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -F '|' -d ats -c \
+  "SELECT sequence,transition_id,approval_ref,capability,from_status,to_status,actor_ref,reason_code,entry_hash,previous_hash FROM model_governance_ledger ORDER BY sequence")
+if ! printf '%s\n' "$LEDGER_STATE_BEFORE" \
+    | python3 "$LEDGER_CONTRACT" --phase before >"$TMP_DIR/ledger-before.out"; then
+  echo "FATAL: model-governance ledger does not preserve the exact legacy hash-chain prefix" >&2
   exit 1
-}
-if [[ "$LEDGER_POSITION_BEFORE" == "1|0" ]]; then
-  FIXED_ROW_COUNT=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -d ats -c \
-    "SELECT count(*) FROM model_governance_ledger WHERE sequence=0 AND transition_id='${TRANSITION_ID}' AND approval_ref='${APPROVAL_REF}' AND capability='TRANSCRIBE' AND from_status='UNINITIALIZED' AND to_status='APPROVED' AND actor_ref='${ACTOR_REF}' AND reason_code='INITIAL_APPROVAL' AND previous_hash=repeat('0',64) AND entry_hash ~ '^[0-9a-f]{64}$'")
-  [[ "$FIXED_ROW_COUNT" == "1" ]] || {
-    echo "FATAL: existing governance row is not the fixed initial transition" >&2
-    exit 1
-  }
 fi
 
 docker pull "$IMAGE_REF" >/dev/null
@@ -306,10 +300,10 @@ if ! grep -Eq \
 fi
 
 if [[ "$MODE" == check ]]; then
-  LEDGER_POSITION_AFTER=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -F '|' -d ats -c \
-    "SELECT count(*),COALESCE(max(sequence),-1) FROM model_governance_ledger")
-  [[ "$LEDGER_POSITION_AFTER" == "$LEDGER_POSITION_BEFORE" ]] || {
-    echo "FATAL: check mode changed the append-only ledger position" >&2
+  LEDGER_STATE_AFTER=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -F '|' -d ats -c \
+    "SELECT sequence,transition_id,approval_ref,capability,from_status,to_status,actor_ref,reason_code,entry_hash,previous_hash FROM model_governance_ledger ORDER BY sequence")
+  [[ "$LEDGER_STATE_AFTER" == "$LEDGER_STATE_BEFORE" ]] || {
+    echo "FATAL: check mode changed the append-only ledger state" >&2
     exit 1
   }
   CURRENT_STATE=$(grep -Eo 'current=(UNINITIALIZED|APPROVED) idempotent=(false|true)' "$TMP_DIR/check-before.out")
@@ -336,15 +330,17 @@ grep -Eq \
 IDEMPOTENCY=$(grep -Eo 'idempotent=(false|true)$' "$TMP_DIR/append.out")
 APPEND_SEQUENCE=$(grep -Eo 'sequence=[0-9]+' "$TMP_DIR/append.out" | cut -d= -f2)
 APPEND_HASH=$(grep -Eo 'entryHash=[0-9a-f]{64}' "$TMP_DIR/append.out" | cut -d= -f2)
-[[ "$APPEND_SEQUENCE" == "0" && "$APPEND_HASH" =~ ^[0-9a-f]{64}$ ]] || {
-  echo "FATAL: initial governance transition sequence/hash evidence mismatch" >&2
+[[ "$APPEND_SEQUENCE" == "1" && "$APPEND_HASH" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "FATAL: artifact governance transition sequence/hash evidence mismatch" >&2
   exit 1
 }
-GENESIS_HASH=$(printf '0%.0s' {1..64})
-LEDGER_STATE=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -F '|' -d ats -c \
-  "SELECT sequence,from_status,to_status,actor_ref,reason_code,entry_hash,previous_hash FROM model_governance_ledger WHERE transition_id='${TRANSITION_ID}' AND approval_ref='${APPROVAL_REF}' AND capability='TRANSCRIBE'")
-[[ "$LEDGER_STATE" == "0|UNINITIALIZED|APPROVED|${ACTOR_REF}|INITIAL_APPROVAL|${APPEND_HASH}|${GENESIS_HASH}" ]] || {
-  echo "FATAL: full content-addressed model-governance ledger identity mismatch" >&2
+LEDGER_STATE_AFTER=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -F '|' -d ats -c \
+  "SELECT sequence,transition_id,approval_ref,capability,from_status,to_status,actor_ref,reason_code,entry_hash,previous_hash FROM model_governance_ledger ORDER BY sequence")
+if ! printf '%s\n' "$LEDGER_STATE_AFTER" \
+    | python3 "$LEDGER_CONTRACT" --phase after \
+        --append-sequence "$APPEND_SEQUENCE" --append-hash "$APPEND_HASH" \
+        >"$TMP_DIR/ledger-after.out"; then
+  echo "FATAL: full content-addressed model-governance hash chain mismatch" >&2
   exit 1
-}
-echo "PASS model-governance test append APPROVED ${IDEMPOTENCY}; fixed transition identity verified"
+fi
+echo "PASS model-governance test append APPROVED ${IDEMPOTENCY}; retained legacy plus artifact hash chain verified"

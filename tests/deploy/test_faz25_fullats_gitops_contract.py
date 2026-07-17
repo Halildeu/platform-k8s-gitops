@@ -103,7 +103,7 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         )
         self.assertEqual(
             {values[name] for name in values if name.endswith("_approval")},
-            {"mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d"},
+            {"mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43"},
         )
 
     def test_ats_activation_is_argo_root_managed_without_stub_workload(self):
@@ -116,7 +116,7 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn("ATS_AI_ENDPOINT_REF: faz24-stt-prod", self.rendered_activation)
         self.assertIn(
             "ATS_AI_APPROVAL_TRANSCRIBE_REF: "
-            "mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d",
+            "mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43",
             self.rendered_activation,
         )
         self.assertNotIn("ATS_AI_ENDPOINT_REF: OVERLAY_MUST_OVERRIDE", self.rendered_activation)
@@ -261,10 +261,16 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertNotRegex(script, r"(?:-e|--env)[^\n]*OPERATOR_PASSWORD")
         self.assertIn("CHECK_MODEL_GOVERNANCE_TRANSITION", script)
         self.assertIn("APPEND_MODEL_GOVERNANCE_TRANSITION", script)
-        self.assertIn("mgt_25260000-0000-4000-8000-000000000001", script)
+        self.assertIn("mgt_25260000-0000-4000-8000-000000000002", script)
         self.assertIn("cross-ai/faz25/2526", script)
-        self.assertIn("sequence,from_status,to_status,actor_ref,reason_code,entry_hash,previous_hash", script)
-        self.assertIn("0|UNINITIALIZED|APPROVED", script)
+        self.assertIn("verify-model-governance-ledger.py", script)
+        self.assertIn(
+            "sequence,transition_id,approval_ref,capability,from_status,to_status,"
+            "actor_ref,reason_code,entry_hash,previous_hash",
+            script,
+        )
+        self.assertIn('"$APPEND_SEQUENCE" == "1"', script)
+        self.assertIn('--append-sequence "$APPEND_SEQUENCE"', script)
         self.assertIn("ats_app role drift detected across governance operation", script)
 
     def test_fullats_recovery_uses_canonical_self_hosted_runner_without_workload_patch(self):
@@ -333,7 +339,7 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn("Full acceptance sonunda overall Argo `Synced/Healthy`", self.runbook)
         self.assertIn("pod `CrashLoopBackOff` kalabilir", self.runbook)
         self.assertIn("fixed-id append'i doğrulandıktan sonra boot gate açılır", self.runbook)
-        self.assertIn("Faz 25 #2526 desired pin: `6af613a`", self.runbook)
+        self.assertIn("Faz 25 #2526 desired pin: `f34a761`", self.runbook)
         self.assertIn("canlı D29 pending", self.runbook)
         self.assertIn("aynı exact-main koşumu yeniden dispatch etmek normal ve güvenlidir", self.runbook)
         self.assertIn("WiringConfig.flyway(DataSource)", self.runbook)
