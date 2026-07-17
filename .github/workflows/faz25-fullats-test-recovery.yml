@@ -13,7 +13,7 @@ on:
         required: true
         default: "DRY_RUN_ONLY"
       dry_run:
-        description: "Only inspect role, Flyway and desired image state"
+        description: "Only verify exact Argo revision, image/config binding, role and Flyway state"
         required: true
         default: "true"
         type: choice
@@ -31,7 +31,13 @@ concurrency:
 env:
   KUBE_CONTEXT: k3d-test
   KUBE_NAMESPACE: platform-test
-  EXPECTED_ATS_DIGEST: sha256:49aa5da5ee294942a16c30405f1a3f7b3995faa85b6246f5a5fc5d05fc5600e1
+  ARGOCD_CONTEXT: k3d-prod
+  ARGOCD_NAMESPACE: argocd
+  ARGOCD_APPLICATION: platform-test
+  ATS_IMAGE_REPOSITORY: ghcr.io/halildeu/ats-app-boot
+  EXPECTED_ATS_DIGEST: sha256:1df68ec1acb44660396b56024c2301495c04a94a36a1f197547c0b082533e5f2
+  EXPECTED_ATS_ENDPOINT_REF: faz24-stt-prod
+  EXPECTED_ATS_APPROVAL_REF: mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d
 
 jobs:
   recover:
@@ -59,9 +65,48 @@ jobs:
       - name: Checkout canonical recovery scripts
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      - name: Inspect pre-recovery role, Flyway and desired image state
+      - name: Wait for exact GitOps reconciliation and inspect pre-recovery state
         run: |
           set -euo pipefail
+          argo_sync=""
+          argo_revision=""
+          desired_image=""
+          live_binding=""
+          for _ in $(seq 1 60); do
+            argo_sync="$(kubectl --context="$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+              get application "$ARGOCD_APPLICATION" \
+              -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+            argo_revision="$(kubectl --context="$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+              get application "$ARGOCD_APPLICATION" \
+              -o jsonpath='{.status.sync.revision}' 2>/dev/null || true)"
+            desired_image="$(kubectl --context="$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" \
+              get deployment ats-interview-evidence \
+              -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}' \
+              2>/dev/null || true)"
+            live_binding="$(kubectl --context="$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" \
+              get configmap ats-interview-evidence-config \
+              -o jsonpath='{.data.ATS_AI_ENDPOINT_REF}{"|"}{.data.ATS_AI_APPROVAL_TRANSCRIBE_REF}' \
+              2>/dev/null || true)"
+            if [[ "$argo_sync" == "Synced" && "$argo_revision" == "$GITHUB_SHA" && \
+                  "$desired_image" == "${ATS_IMAGE_REPOSITORY}@${EXPECTED_ATS_DIGEST}" && \
+                  "$live_binding" == "${EXPECTED_ATS_ENDPOINT_REF}|${EXPECTED_ATS_APPROVAL_REF}" ]]; then
+              break
+            fi
+            sleep 5
+          done
+          [[ "$argo_sync" == "Synced" && "$argo_revision" == "$GITHUB_SHA" ]] || {
+            echo "::error::ArgoCD did not reconcile the exact workflow commit within 300s"
+            exit 1
+          }
+          [[ "$desired_image" == "${ATS_IMAGE_REPOSITORY}@${EXPECTED_ATS_DIGEST}" ]] || {
+            echo "::error::live Deployment does not desire the exact immutable ATS image"
+            exit 1
+          }
+          [[ "$live_binding" == "${EXPECTED_ATS_ENDPOINT_REF}|${EXPECTED_ATS_APPROVAL_REF}" ]] || {
+            echo "::error::live ConfigMap endpoint/approval refs do not equal the fixed transition"
+            exit 1
+          }
+
           role_state="$(docker exec platform-pg-test psql -U postgres -At -F '|' -c \
             "SELECT rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='ats_app'")"
           [[ "$role_state" == "t|f|f|f|f|f" ]]
@@ -73,14 +118,10 @@ jobs:
             exit 1
           fi
 
-          desired_image="$(kubectl --context="$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" \
-            get deployment ats-interview-evidence \
-            -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}')"
-          [[ "$desired_image" == *"@${EXPECTED_ATS_DIGEST}" ]]
-
+          echo "PASS ArgoCD reconciled the exact workflow commit"
+          echo "PASS live Deployment and ConfigMap match the fixed image/endpoint/approval binding"
           echo "PASS pre-recovery ats_app has no admin attributes"
           echo "PASS pre-recovery Flyway has no failed history row"
-          echo "PASS deployment desires the expected immutable ATS digest"
 
       - name: Stop after read-only preflight
         if: inputs.dry_run == 'true'
@@ -90,7 +131,33 @@ jobs:
         if: inputs.dry_run == 'false'
         run: bash scripts/ats/provision-test-pg-vault.sh --roles-only
 
-      - name: Wait for GitOps-owned ATS rollout and verify V4/V5
+      - name: Wait for V6 and append fixed model-governance approval
+        if: inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          # ATS source 6af613a WiringConfig ordering is explicit: flyway() calls
+          # migrate(); modelGovernanceLedgerReader(DataSource, Flyway) depends
+          # on that bean; the registry and boot gate depend on the reader.
+          # Therefore the first fail-closed boot can materialize V6 before the
+          # empty governance ledger prevents application readiness.
+          migration_v6=""
+          for _ in $(seq 1 60); do
+            migration_v6="$(docker exec platform-pg-test psql -U postgres -d ats -At -F '|' -c \
+              "SELECT version,success FROM flyway_schema_history WHERE version='6'")"
+            [[ "$migration_v6" == "6|t" ]] && break
+            sleep 5
+          done
+          [[ "$migration_v6" == "6|t" ]] || {
+            echo "::error::Flyway V6 writer schema grant was not observed within 300s"
+            exit 1
+          }
+
+          bash scripts/ats/transition-test-model-governance.sh \
+            --mode append \
+            --image-ref "${ATS_IMAGE_REPOSITORY}@${EXPECTED_ATS_DIGEST}" \
+            --confirm APPEND_FAZ25_TEST_MODEL_GOVERNANCE
+
+      - name: Wait for GitOps-owned ATS rollout and verify V4/V5/V6
         if: inputs.dry_run == 'false'
         run: |
           set -euo pipefail
@@ -134,11 +201,11 @@ jobs:
           fi
 
           migration_state="$(docker exec platform-pg-test psql -U postgres -d ats -At -F '|' -c \
-            "SELECT version,success FROM flyway_schema_history WHERE version IN ('4','5') ORDER BY installed_rank")"
-          [[ "$migration_state" == $'4|t\n5|t' ]]
+            "SELECT version,success FROM flyway_schema_history WHERE version IN ('4','5','6') ORDER BY installed_rank")"
+          [[ "$migration_state" == $'4|t\n5|t\n6|t' ]]
 
           echo "PASS ATS Ready pod uses expected immutable digest"
-          echo "PASS Flyway V4 and V5 are successful"
+          echo "PASS Flyway V4, V5 and V6 are successful"
 
       - name: Provision tenant-scoped Keycloak application roles
         if: inputs.dry_run == 'false'
@@ -161,7 +228,9 @@ jobs:
             echo "- dry_run: \`$DRY_RUN_INPUT\`"
             echo "- immutable ATS digest: \`$EXPECTED_ATS_DIGEST\`"
             echo "- direct workload patch/restart: none"
-            echo "- password or Vault mutation in recovery: none"
+            echo "- ats_app password or Vault mutation: none"
+            echo "- ephemeral governance operator: random short-lived password via stdin only"
+            echo "- model-governance transition: fixed-id, idempotent, short-lived writer login"
             echo "- production mutation: none"
             echo ""
             echo "Raw secrets, JWTs and candidate access tokens are never published."

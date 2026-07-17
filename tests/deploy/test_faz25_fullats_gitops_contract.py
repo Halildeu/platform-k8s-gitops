@@ -35,6 +35,10 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.keycloak = (ROOT / "scripts/ats/provision-test-keycloak.sh").read_text()
         cls.fullats_smoke = (ROOT / "scripts/ats/fullats-application-smoke.sh").read_text()
         cls.pg_bootstrap = (ROOT / "scripts/ats/provision-test-pg-vault.sh").read_text()
+        cls.governance_transition_path = (
+            ROOT / "scripts/ats/transition-test-model-governance.sh"
+        )
+        cls.governance_transition = cls.governance_transition_path.read_text()
         cls.recovery_workflow = (
             ROOT / ".github/workflows/faz25-fullats-test-recovery.yml"
         ).read_text()
@@ -61,6 +65,47 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIsNotNone(provenance)
         self.assertEqual(desired.group(1), provenance.group(1))
 
+    def test_model_governance_endpoint_and_approval_refs_match_all_surfaces(self):
+        patterns = {
+            "activation_endpoint": (
+                self.activation,
+                r"path: /data/ATS_AI_ENDPOINT_REF\s+value: \"([^\"]+)\"",
+            ),
+            "workflow_endpoint": (
+                self.recovery_workflow,
+                r"EXPECTED_ATS_ENDPOINT_REF: ([^\s]+)",
+            ),
+            "script_endpoint": (
+                self.governance_transition,
+                r'ENDPOINT_REF="([^"]+)"',
+            ),
+            "activation_approval": (
+                self.activation,
+                r"path: /data/ATS_AI_APPROVAL_TRANSCRIBE_REF\s+value: \"([^\"]+)\"",
+            ),
+            "workflow_approval": (
+                self.recovery_workflow,
+                r"EXPECTED_ATS_APPROVAL_REF: ([^\s]+)",
+            ),
+            "script_approval": (
+                self.governance_transition,
+                r'APPROVAL_REF="([^"]+)"',
+            ),
+        }
+        values = {}
+        for name, (text, pattern) in patterns.items():
+            match = re.search(pattern, text)
+            self.assertIsNotNone(match, name)
+            values[name] = match.group(1)
+        self.assertEqual(
+            {values[name] for name in values if name.endswith("_endpoint")},
+            {"faz24-stt-prod"},
+        )
+        self.assertEqual(
+            {values[name] for name in values if name.endswith("_approval")},
+            {"mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d"},
+        )
+
     def test_ats_activation_is_argo_root_managed_without_stub_workload(self):
         self.assertRegex(
             self.test_root,
@@ -68,6 +113,17 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         )
         self.assertNotRegex(self.activation, r"(?m)^\s*-\s+ai-stub\.yaml\s*$")
         self.assertNotIn("ats-ai-stub", self.rendered_activation)
+        self.assertIn("ATS_AI_ENDPOINT_REF: faz24-stt-prod", self.rendered_activation)
+        self.assertIn(
+            "ATS_AI_APPROVAL_TRANSCRIBE_REF: "
+            "mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d",
+            self.rendered_activation,
+        )
+        self.assertNotIn("ATS_AI_ENDPOINT_REF: OVERLAY_MUST_OVERRIDE", self.rendered_activation)
+        self.assertNotIn(
+            "ATS_AI_APPROVAL_TRANSCRIBE_REF: OVERLAY_MUST_OVERRIDE",
+            self.rendered_activation,
+        )
 
     def test_prune_false_cleanup_names_every_retired_stub_resource(self):
         for resource in (
@@ -136,8 +192,53 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn("Halildeu/ats#176", self.runbook)
         self.assertIn("test `ats` veritabanı/şema/tablolarının sahibidir", self.runbook)
 
+    def test_model_governance_transition_is_digest_bound_secret_safe_and_compensated(self):
+        script = self.governance_transition
+        self.assertTrue(self.governance_transition_path.stat().st_mode & 0o100)
+        self.assertIn("canonical activation digest", script)
+        self.assertIn("live GitOps deployment image", script)
+        self.assertIn("ATS_AI_ENDPOINT_REF", script)
+        self.assertIn("ATS_AI_APPROVAL_TRANSCRIBE_REF", script)
+        self.assertIn("live GitOps endpoint/approval binding", script)
+        self.assertGreaterEqual(script.count("assert_live_gitops_binding"), 4)
+        self.assertIn("flock -n 9", script)
+        self.assertIn("stale ephemeral governance operator role", script)
+        self.assertIn("current_setting('log_statement')", script)
+        self.assertIn("current_setting('log_min_duration_statement')", script)
+        self.assertIn("current_setting('pgaudit.log',true)", script)
+        self.assertIn("PostgreSQL statement logging could retain", script)
+        self.assertIn("SET LOCAL log_min_error_statement = 'PANIC'", script)
+        self.assertIn('CREATE ROLE "${OPERATOR_ROLE}" LOGIN PASSWORD', script)
+        self.assertIn(
+            "NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS",
+            script,
+        )
+        self.assertIn('GRANT ats_governance_writer TO "${OPERATOR_ROLE}"', script)
+        self.assertIn('REVOKE ats_governance_writer FROM "${OPERATOR_ROLE}"', script)
+        self.assertIn('DROP ROLE "${OPERATOR_ROLE}"', script)
+        self.assertIn("for attempt in 1 2 3", script)
+        self.assertIn("orphan=${OPERATOR_ROLE}", script)
+        self.assertIn("trap 'exit 143' TERM", script)
+        self.assertIn("trap 'exit 130' INT", script)
+        self.assertIn('--network "container:${PG_CONTAINER}"', script)
+        self.assertIn("--read-only", script)
+        self.assertIn("--cap-drop=ALL", script)
+        self.assertIn("no-new-privileges:true", script)
+        self.assertIn("--pull=never", script)
+        self.assertIn("printf '{\"jdbcUrl\"", script)
+        self.assertNotIn("PGPASSWORD", script)
+        self.assertNotRegex(script, r"(?:-e|--env)[^\n]*OPERATOR_PASSWORD")
+        self.assertIn("CHECK_MODEL_GOVERNANCE_TRANSITION", script)
+        self.assertIn("APPEND_MODEL_GOVERNANCE_TRANSITION", script)
+        self.assertIn("mgt_25260000-0000-4000-8000-000000000001", script)
+        self.assertIn("cross-ai/faz25/2526", script)
+        self.assertIn("sequence,from_status,to_status,actor_ref,reason_code,entry_hash,previous_hash", script)
+        self.assertIn("0|UNINITIALIZED|APPROVED", script)
+        self.assertIn("ats_app role drift detected across governance operation", script)
+
     def test_fullats_recovery_uses_canonical_self_hosted_runner_without_workload_patch(self):
         self.assertIn("workflow_dispatch:", self.recovery_workflow)
+        self.assertIn("Only verify exact Argo revision, image/config binding", self.recovery_workflow)
         self.assertIn('"refs/heads/main"', self.recovery_workflow)
         self.assertIn("APPLY_FAZ25_FULLATS_TEST_RECOVERY", self.recovery_workflow)
         self.assertIn("[self-hosted, staging-sw, testai-deploy]", self.recovery_workflow)
@@ -151,6 +252,13 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn('"$CONFIRM_INPUT"', self.recovery_workflow)
         self.assertNotIn('"${{ inputs.confirm }}"', self.recovery_workflow)
         self.assertIn('@.name=="app-boot"', self.recovery_workflow)
+        self.assertIn('ARGOCD_APPLICATION: platform-test', self.recovery_workflow)
+        self.assertIn('"$argo_sync" == "Synced"', self.recovery_workflow)
+        self.assertIn('"$argo_revision" == "$GITHUB_SHA"', self.recovery_workflow)
+        self.assertIn("ATS_AI_ENDPOINT_REF", self.recovery_workflow)
+        self.assertIn("ATS_AI_APPROVAL_TRANSCRIBE_REF", self.recovery_workflow)
+        self.assertIn("live ConfigMap endpoint/approval refs", self.recovery_workflow)
+        self.assertIn("ArgoCD did not reconcile the exact workflow commit", self.recovery_workflow)
         self.assertIn('.name == "app-boot" and .ready == true', self.recovery_workflow)
         self.assertIn("ATS rollout timeout after 600s", self.recovery_workflow)
         self.assertIn('"restartCount="', self.recovery_workflow)
@@ -159,11 +267,33 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         self.assertIn(".state.terminated.exitCode", self.recovery_workflow)
         self.assertIn("involvedObject.kind=Pod", self.recovery_workflow)
         self.assertNotIn("kubectl logs", self.recovery_workflow)
-        self.assertIn("$'4|t\\n5|t'", self.recovery_workflow)
+        self.assertIn("$'4|t\\n5|t\\n6|t'", self.recovery_workflow)
+        self.assertIn(
+            "bash scripts/ats/transition-test-model-governance.sh",
+            self.recovery_workflow,
+        )
+        self.assertIn("APPEND_FAZ25_TEST_MODEL_GOVERNANCE", self.recovery_workflow)
+        self.assertIn("modelGovernanceLedgerReader(DataSource, Flyway)", self.recovery_workflow)
+        roles_only = self.recovery_workflow.index(
+            "bash scripts/ats/provision-test-pg-vault.sh --roles-only"
+        )
+        governance_append = self.recovery_workflow.index(
+            "bash scripts/ats/transition-test-model-governance.sh"
+        )
+        ready_wait = self.recovery_workflow.index(
+            "Wait for GitOps-owned ATS rollout and verify V4/V5/V6"
+        )
+        self.assertLess(roles_only, governance_append)
+        self.assertLess(governance_append, ready_wait)
         self.assertIn("bash scripts/ats/provision-test-keycloak.sh", self.recovery_workflow)
         self.assertIn("bash scripts/ats/fullats-application-smoke.sh", self.recovery_workflow)
         self.assertIn("faz25-fullats-test-recovery.yml", self.runbook)
         self.assertIn("APPLY_FAZ25_FULLATS_TEST_RECOVERY", self.runbook)
+        self.assertIn("exact workflow commit", self.runbook)
+        self.assertIn("pod `CrashLoopBackOff` kalabilir", self.runbook)
+        self.assertIn("fixed-id append'i doğrulandıktan sonra boot gate açılır", self.runbook)
+        self.assertIn("WiringConfig.flyway(DataSource)", self.runbook)
+        self.assertIn("modelGovernanceLedgerReader(DataSource, Flyway)", self.runbook)
         self.assertNotRegex(
             self.recovery_workflow,
             r"kubectl\s+(?:--[^\s]+\s+)*\b(?:patch|edit|delete|rollout restart|set image)\b",
