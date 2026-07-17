@@ -87,17 +87,19 @@ class ObserveService:
         self.registry = registry
         self.decision_client = decision_client
         self.outcome_sweeper = outcome_sweeper
+        self._reconcilers: list[BackgroundReconciler] = []
         self.queue: queue.Queue[DeploymentProtectionRequest | None] = queue.Queue(
             maxsize=queue_capacity
         )
         self._accept_lock = threading.Lock()
+        self._process_lock = threading.Lock()
         self._worker = threading.Thread(
             target=self._worker_loop,
             name="cross-ai-observe-worker",
             daemon=True,
         )
         if self.outcome_sweeper is not None:
-            self.outcome_sweeper.start()
+            self.add_background_reconciler(self.outcome_sweeper)
         self._worker.start()
 
     @property
@@ -110,7 +112,14 @@ class ObserveService:
 
     @property
     def reconciliation_ready(self) -> bool:
-        return self.outcome_sweeper is None or self.outcome_sweeper.ready()
+        return all(reconciler.ready() for reconciler in self._reconcilers)
+
+    def add_background_reconciler(self, reconciler: BackgroundReconciler) -> None:
+        with self._accept_lock:
+            if reconciler in self._reconcilers:
+                reject("RECONCILER_DUPLICATE", "background reconciler is already attached")
+            self._reconcilers.append(reconciler)
+            reconciler.start()
 
     def accept(
         self,
@@ -132,17 +141,37 @@ class ObserveService:
                 self.queue.put_nowait(request)
         return request, not inserted
 
+    def process_polled(self, request: DeploymentProtectionRequest) -> bool:
+        """Synchronously enforce one App-API-authenticated failed delivery.
+
+        The return value is true only after GitHub accepted the decision callback.
+        That lets the poller advance its durable high-water after, never before,
+        callback success.
+        """
+
+        if self.mode != "enforce":
+            reject("POLLER_MODE_INVALID", "delivery polling is enforce-mode only")
+        if request.provenance != "github_app_delivery_api_v1":
+            reject("POLLER_PROVENANCE_INVALID", "polled request provenance is invalid")
+        with self._process_lock:
+            self.ledger.record_delivery(request)
+            if self.ledger.callback_succeeded(request):
+                return True
+            self._enforce(request)
+            return self.ledger.callback_succeeded(request)
+
     def _worker_loop(self) -> None:
         while True:
             request = self.queue.get()
             try:
                 if request is None:
                     return
-                result: EvaluationResult | None
-                if self.mode == "observe":
-                    result = self._observe(request)
-                else:
-                    result = self._enforce(request)
+                with self._process_lock:
+                    result: EvaluationResult | None
+                    if self.mode == "observe":
+                        result = self._observe(request)
+                    else:
+                        result = self._enforce(request)
                 LOGGER.info(
                     json.dumps(
                         {
@@ -360,8 +389,8 @@ class ObserveService:
         self.queue.join()
         self.queue.put(None)
         self._worker.join(timeout=5)
-        if self.outcome_sweeper is not None:
-            self.outcome_sweeper.stop()
+        for reconciler in reversed(self._reconcilers):
+            reconciler.stop()
 
 
 class PolicyHTTPServer(ThreadingHTTPServer):

@@ -16,6 +16,9 @@ from scripts.github_apps.cross_ai_deployment_policy.server import (
     ObserveService,
     make_server,
 )
+from scripts.github_apps.cross_ai_deployment_policy.webhook import (
+    parse_deployment_protection_delivery,
+)
 from tests.github_apps.test_cross_ai_deployment_webhook import (
     TEST_HMAC_KEY,
     payload,
@@ -321,6 +324,33 @@ class EnforcementServiceTest(unittest.TestCase):
         )
         try:
             self.assertFalse(service.reconciliation_ready)
+        finally:
+            service.stop()
+            ledger.close()
+
+    def test_polled_delivery_processes_synchronously_and_replays_idempotently(self) -> None:
+        ledger = ObserveLedger(Path(self.directory.name) / "polled.sqlite3")
+        registry = FakeRegistry()
+        client = FakeDecisionClient(
+            CallbackResult(True, False, 204, "CALLBACK_ACCEPTED_204")
+        )
+        service = ObserveService(
+            secrets=(TEST_HMAC_KEY,),
+            ledger=ledger,
+            evaluator=FakeEvaluator(),
+            mode="enforce",
+            registry=registry,  # type: ignore[arg-type]
+            decision_client=client,
+            outcome_sweeper=FakeSweeper(),
+        )
+        try:
+            request = parse_deployment_protection_delivery(
+                payload=payload(),
+                delivery_id="11111111-2222-4333-8444-555555555555",
+            )
+            self.assertTrue(service.process_polled(request))
+            self.assertTrue(service.process_polled(request))
+            self.assertEqual(client.states, ["approved"])
         finally:
             service.stop()
             ledger.close()

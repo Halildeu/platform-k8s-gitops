@@ -11,6 +11,7 @@ from pathlib import Path
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.webhook import (
     load_secret_files,
+    parse_deployment_protection_delivery,
     parse_deployment_protection_webhook,
     validate_callback_url,
     verify_webhook_signature,
@@ -69,6 +70,29 @@ class WebhookTest(unittest.TestCase):
         self.assertEqual(request.run_id, 987654321)
         self.assertEqual(request.request_id, "30000000-0000-4000-8000-000000000001")
         self.assertEqual(request.repository_id, 123456789)
+        self.assertEqual(request.provenance, "github_webhook_hmac_sha256_v1")
+
+    def test_parses_app_api_delivery_with_distinct_non_hmac_provenance(self) -> None:
+        request = parse_deployment_protection_delivery(
+            payload=payload(),
+            delivery_id="11111111-2222-4333-8444-555555555555",
+        )
+        self.assertEqual(request.run_id, 987654321)
+        self.assertEqual(request.provenance, "github_app_delivery_api_v1")
+
+    def test_hmac_and_app_api_paths_share_semantic_payload_digest(self) -> None:
+        raw = json.dumps(payload(), indent=2).encode()
+        headers, body = signed_request(raw)
+        webhook = parse_deployment_protection_webhook(
+            raw_body=body,
+            headers=headers,
+            secrets=(TEST_HMAC_KEY,),
+        )
+        delivery = parse_deployment_protection_delivery(
+            payload=payload(),
+            delivery_id="11111111-2222-4333-8444-555555555555",
+        )
+        self.assertEqual(webhook.payload_sha256, delivery.payload_sha256)
 
     def test_accepts_rotation_secret_without_identifying_version(self) -> None:
         rotation_key = secrets.token_hex(32).encode()

@@ -10,11 +10,13 @@ import threading
 from pathlib import Path
 
 from scripts.github_apps.cross_ai_deployment_policy.ledger import ObserveLedger
+from scripts.github_apps.cross_ai_deployment_policy.delivery_poller import DeliveryPoller
 from scripts.github_apps.cross_ai_deployment_policy.evaluator import DeploymentEvaluator
 from scripts.github_apps.cross_ai_deployment_policy.github import (
     GitHubAppTokenProvider,
     GitHubArtifactDownloader,
     GitHubDecisionClient,
+    GitHubHookDeliveryReader,
     GitHubReader,
 )
 from scripts.github_apps.cross_ai_deployment_policy.intent_store import (
@@ -65,6 +67,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--github-app-id", type=int)
     parser.add_argument("--github-app-key-file", type=Path)
     parser.add_argument("--github-api-origin", default="https://api.github.com")
+    parser.add_argument(
+        "--delivery-poll",
+        action="store_true",
+        help="Reconcile failed App deliveries outbound; enforce mode only.",
+    )
+    parser.add_argument(
+        "--expected-webhook-url",
+        help="Exact GitHub App webhook target recorded in delivery details.",
+    )
+    parser.add_argument("--delivery-poll-interval", type=float, default=30.0)
     return parser.parse_args()
 
 
@@ -91,11 +103,19 @@ def main() -> int:
         raise SystemExit("all evaluator/GitHub App arguments must be supplied together")
     if args.mode == "enforce" and not configured:
         raise SystemExit("enforce mode requires evaluator/GitHub App arguments")
+    if args.delivery_poll and (
+        args.mode != "enforce" or not configured or args.expected_webhook_url is None
+    ):
+        raise SystemExit(
+            "delivery polling requires enforce mode, evaluator/App arguments and "
+            "--expected-webhook-url"
+        )
 
     registry = None
     evaluator = None
     decision_client = None
     outcome_sweeper = None
+    delivery_reader = None
     allowed_origins: tuple[str, ...] = (args.github_api_origin,)
     if configured:
         policy = load_policy(args.policy_file)
@@ -108,6 +128,10 @@ def main() -> int:
             api_origin=args.github_api_origin,
         )
         reader = GitHubReader(
+            token_provider=token_provider,
+            api_origin=args.github_api_origin,
+        )
+        delivery_reader = GitHubHookDeliveryReader(
             token_provider=token_provider,
             api_origin=args.github_api_origin,
         )
@@ -159,6 +183,24 @@ def main() -> int:
         decision_client=decision_client,
         outcome_sweeper=outcome_sweeper,
     )
+    if args.delivery_poll:
+        assert delivery_reader is not None
+        assert evaluator is not None
+        policy_installations = tuple(evaluator.policy.allowed_installation_ids)
+        if len(policy_installations) != 1:
+            raise SystemExit("delivery polling requires exactly one policy installation ID")
+        service.add_background_reconciler(
+            DeliveryPoller(
+                reader=delivery_reader,
+                processor=service,
+                ledger=ledger,
+                expected_webhook_url=args.expected_webhook_url,
+                expected_installation_id=policy_installations[0],
+                expected_repository_id=evaluator.policy.repository_id,
+                allowed_api_origins=allowed_origins,
+                interval_seconds=args.delivery_poll_interval,
+            )
+        )
     server = make_server(args.listen, args.port, service)
     shutdown_started = threading.Event()
 

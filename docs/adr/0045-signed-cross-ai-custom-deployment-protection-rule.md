@@ -1,8 +1,9 @@
 # ADR-0045 — Signed Cross-AI Evidence Custom Deployment Protection Rule
 
-> **Status:** PROPOSED — offline source implementation and fail-closed tests
-> exist; GitHub App registration, protected workflow refactor, Environment
-> configuration and live enforcement do not exist yet.
+> **Status:** PROPOSED — source implementation, fail-closed tests, GitHub App
+> registration and the Phase-1 receive-only test observer exist. Protected
+> workflow refactor, App private-key provisioning, Environment configuration
+> and live enforcement do not exist yet.
 > **Date:** 2026-07-16
 > **Owner issue:** [#2502](https://github.com/Halildeu/platform-k8s-gitops/issues/2502)
 > **Customer slice:** [#2373](https://github.com/Halildeu/platform-k8s-gitops/issues/2373)
@@ -73,6 +74,7 @@ REST OpenAPI description checked on 2026-07-16.
 | A custom deployment protection rule is a GitHub App receiving `deployment_protection_rule` / `requested`. | The enforcement identity is a separate App, never a human account. |
 | GitHub documents Actions read and Deployments read/write for the rule; this design also needs Contents read to independently hash the workflow and local dependencies at the exact SHA. | The App gets no Contents write, Actions write, Secrets, Administration or cluster credential. |
 | The webhook includes environment, SHA, ref, repository, installation and `deployment_callback_url`. | These values seed evaluation but are re-fetched and cross-checked; none is trusted alone. |
+| GitHub's App-authenticated REST API exposes App webhook delivery list/detail records, but `request.payload` is parsed JSON rather than the original signed body. | A bounded outbound reconciler may recover failed inbound deliveries. It records `github_app_delivery_api_v1` provenance and never claims raw-body HMAC verification. |
 | Decision API is `POST /repos/{owner}/{repo}/actions/runs/{run_id}/deployment_protection_rule`. | Request body uses exact `environment_name` and `state=approved|rejected`; the App can only review its own rule. |
 | The App cannot approve a human/team required-reviewer rule. | Machine-only non-prod environments must explicitly replace the repeated reviewer rule; human-required environments retain it. |
 | Jobs cannot read Environment secrets until every enabled protection rule passes. | Existing Environment secret scope remains narrow; the App never reads those secrets. |
@@ -100,6 +102,7 @@ flowchart LR
   B -->|"canonical bundle + one-time intent"| C["Evidence store / intent registry"]
   D["Trusted dispatcher"] -->|"immutable intent ref + workflow_dispatch"| E["GitHub Actions"]
   E -->|"deployment_protection_rule.requested"| F["GitHub App policy evaluator"]
+  H["GitHub App Delivery API"] -.->|"failed-delivery recovery"| F
   F -->|"read exact run, workflow and evidence"| C
   F -->|"approved or rejected"| E
   E -->|"GitOps apply + watchdog + evidence"| G["test/non-prod runtime"]
@@ -113,7 +116,7 @@ Responsibilities:
 | Provider review issuer | Invoke one real provider route, capture provider-reported identity or an explicitly weaker trusted-launch receipt, canonicalize and sign its own review leaf | Sign for another provider family; upgrade a requested/launch-only slug to provider-reported identity; contain deployment credentials |
 | Evidence coordinator | Verify leaves, close the REVISE chain, create bundle/root digest and one-time intent | Manufacture a missing reviewer signature; decide GitHub protection alone |
 | Intent registry | Enforce nonce, TTL, sequence, CAS reservation/consumption and revocation | Store raw secrets, screen content or unrestricted prompts |
-| GitHub App evaluator | Validate webhook, re-fetch GitHub truth, verify bundle/policy, approve/reject its own rule | Dispatch workflows, write repository contents, read Environment secrets, access Kubernetes |
+| GitHub App evaluator | Validate HMAC webhook or App-authenticated failed-delivery record, re-fetch GitHub truth, verify bundle/policy, approve/reject its own rule | Treat parsed REST payload as HMAC evidence, dispatch workflows, write repository contents, read Environment secrets, access Kubernetes |
 | Trusted dispatcher | Create the immutable intent ref, register intent, dispatch exact allowlisted workflow/stage | Approve a rule, edit evidence after registration |
 | Deployment workflow | Apply desired state, verify runtime, rollback on failure | Treat App approval as D29/product acceptance |
 
@@ -571,12 +574,23 @@ verifies every referenced byte before accepting it.
 
 ## 5. Evaluation algorithm
 
-The App acknowledges a valid webhook quickly, enqueues evaluation and decides
-asynchronously. The deterministic decision order is:
+The App acknowledges a valid inbound webhook quickly and enqueues evaluation.
+Where GitHub cannot reach the test edge, a fail-closed outbound reconciler may
+instead read failed App deliveries. Both routes converge only after their
+distinct authentication provenance is recorded. The deterministic decision
+order is:
 
-1. Verify `X-Hub-Signature-256` over the unmodified request body using
-   constant-time comparison; require expected event/action and a unique
-   `X-GitHub-Delivery`.
+1. Authenticate exactly one delivery channel:
+   - inbound: verify `X-Hub-Signature-256` over the unmodified request body
+     using constant-time comparison; or
+   - outbound recovery: mint one App JWT per bounded poll cycle with
+     `exp - iat <= 300 s`, follow no redirects, page at most five 100-item
+     pages, require a fresh failed `deployment_protection_rule/requested`
+     list item, fetch its detail, and require exact list/detail GUID, IDs,
+     timestamp, status, event/action and configured target-URL equality.
+   The REST `request.payload` is parsed JSON and is never described as HMAC
+   verified. Both routes require a unique delivery GUID and compute one
+   canonical semantic payload digest for collision detection.
 2. Validate repository, installation, Environment, immutable intent ref and
    callback URL allowlists. Re-fetch the Environment/rule configuration and
    compare it with the signed phase policy snapshot; drift rejects.
@@ -607,11 +621,19 @@ asynchronously. The deterministic decision order is:
    approval and not consumption. Re-fetch run/group state, runner admission
    lease revocation/generation and TTL/watchdog headroom immediately before
    callback.
-10. POST the single chosen decision for the exact Environment. The documented
-    success response is HTTP 204 with no body; record status, bounded response
-    headers, delivery/run IDs and request digest in the append-only ledger.
+10. POST the single chosen decision for the exact Environment using a
+    repository installation access token, never the App JWT. The callback
+    origin/path is reconstructed under the exact allowlisted GitHub API origin,
+    redirects are disabled, and the documented success response is HTTP 204
+    with no body. Record status, bounded response headers, delivery/run IDs and
+    request digest in the append-only ledger.
 11. Only a successful 204 or later GitHub run progression proving acceptance
     moves `reserved -> consumed/ApprovedPendingOutcome`.
+12. Outbound recovery advances its durable `(delivered_at, delivery_id)`
+    high-water only after the ledger proves callback status `Succeeded` in the
+    same locked check. It rescans a five-minute overlap after restart, polls no
+    faster than 30 seconds with bounded jitter, backs off exponentially to five
+    minutes on error/rate-limit and makes readiness fail on a stale/error cycle.
 
 No parse, network, storage, provider, signature or policy error becomes an
 approval. Unknown fields, multiple candidate intents, clock ambiguity beyond
@@ -740,7 +762,7 @@ fails closed before Environment reconfiguration.
 | Valid grant replayed by another run | One-time nonce, immutable intent ref, numeric dispatcher actor, run/attempt binding and reserve/consume CAS |
 | Cross-repo/Environment confused deputy | Numeric repo/installation IDs, Environment allowlist, exact reconstructed callback route |
 | Callback URL SSRF | Never follow arbitrary URL; validate origin/path then reconstruct GitHub API endpoint |
-| Spoofed GitHub webhook | HMAC SHA-256 over raw body, event/action allowlist, delivery-ID uniqueness and GitHub truth re-fetch |
+| Spoofed or stranded GitHub delivery | Inbound HMAC SHA-256 over raw body or distinct App-JWT-authenticated REST provenance; strict list/detail equality, event/action/scope/target/freshness allowlists, delivery-GUID uniqueness and GitHub truth re-fetch |
 | Workflow or action changed to exfiltrate Environment secrets | Exact workflow/local-object digests, external full-SHA pins and signed dependency lock fixed in subject |
 | Hidden dispatch input changes target/TTL/action | Governed v1 workflows declare no inputs; values derive only from ref/bundle/outcome |
 | Self-hosted runner label is taken by an untrusted node | Exact runner group/labels, fresh signed inventory and all-eligible-runner attestation before approval |
@@ -933,6 +955,10 @@ Exit: zero false approvals; failure reason and latency SLOs understood.
 
 - one-time human App registration, installation, webhook secret/private-key
   provisioning and Environment rule enablement;
+- if the GitHub-origin edge probe remains unreachable, enable the outbound
+  App Delivery API reconciler before the rule. Its readiness, overlap replay,
+  no-redirect, rate-limit/backoff and callback-before-high-water tests are
+  mandatory; a failed webhook is not silently treated as delivered;
 - keep the existing required reviewer temporarily;
 - refactor governed workflows so authorization-relevant values come from the
   immutable intent/outcome binding, not unavailable dispatch inputs;
@@ -1137,6 +1163,8 @@ or irreversible-mutation authority.
 - [`deployment_protection_rule` webhook](https://docs.github.com/en/webhooks/webhook-events-and-payloads#deployment_protection_rule)
 - [Review custom deployment protection rules REST endpoint](https://docs.github.com/en/rest/actions/workflow-runs#review-custom-deployment-protection-rules-for-a-workflow-run)
 - [Validating GitHub webhook deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries)
+- [List deliveries for an App webhook](https://docs.github.com/en/rest/apps/webhooks#list-deliveries-for-an-app-webhook)
+- [Get a delivery for an App webhook](https://docs.github.com/en/rest/apps/webhooks#get-a-delivery-for-an-app-webhook)
 - [Authenticating as a GitHub App](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app)
 - [RFC 8785 — JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785)
 - [DSSE protocol](https://github.com/secure-systems-lab/dsse)
@@ -1269,3 +1297,23 @@ to close the registry under a live sweeper. A locally executed 97-test suite,
 Ruff, mypy, JSON parsing and whitespace checks pass. This consensus still does
 not substitute for the Phase-2/3 live App, workflow, Environment and rollback
 canary evidence.
+
+Failed-delivery outbound-reconciliation review, 2026-07-17:
+
+- direct Anthropic CLI, actual
+  `modelUsage=claude-opus-4-6[1m]`, `direct-provider-CLI=true`: initial
+  `REVISE` required a five-minute App JWT, exact no-redirect callback,
+  installation-token-only decision POST, bounded poll/backoff and
+  callback-before-high-water persistence; second `REVISE` found negative
+  jitter could breach the 30-second floor; final exact-diff result `AGREE`;
+- Cursor CLI attempts were unavailable because the account's monthly usage
+  limit was reached. They returned no review and are not counted as consensus.
+
+The implementation keeps inbound HMAC and outbound App-API authentication as
+separate provenance classes, cross-checks list/detail records, reuses the
+existing live GitHub/run/evidence re-fetch before callback, follows no API
+redirect and remains unready after any ambiguous callback or poll failure.
+Local execution passes 126 GitHub-App tests before the final jitter repair and
+the focused 18-test regression set after it. This review authorizes a source
+PR only; App private-key provisioning, Environment rule activation and a real
+test deployment callback remain open Phase-2 gates.

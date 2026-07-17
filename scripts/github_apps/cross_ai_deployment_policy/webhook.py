@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 from urllib.parse import unquote, urlsplit
 
+from .canonical import canonical_bytes
 from .errors import reject
 
 
@@ -24,7 +25,11 @@ WEBHOOK_HEADER_NAMES = frozenset(
     }
 )
 SIGNATURE = re.compile(r"^sha256=([a-f0-9]{64})$")
-DELIVERY_ID = re.compile(r"^[a-f0-9-]{16,64}$", re.IGNORECASE)
+DELIVERY_ID = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 HEAD_SHA = re.compile(r"^[a-f0-9]{40}$")
 INTENT_REF = re.compile(
@@ -48,6 +53,7 @@ class DeploymentProtectionRequest:
     callback_url: str
     sender_id: int
     payload_sha256: str
+    provenance: str = "github_webhook_hmac_sha256_v1"
 
 
 def load_secret_files(paths: Iterable[Path]) -> tuple[bytes, ...]:
@@ -156,6 +162,88 @@ def validate_callback_url(
     return run_id, reconstructed
 
 
+def _parse_deployment_protection_payload(
+    *,
+    payload: dict[str, object],
+    delivery_id: str,
+    provenance: str,
+    allowed_api_origins: Iterable[str],
+) -> DeploymentProtectionRequest:
+    if payload.get("action") != "requested":
+        reject("WEBHOOK_ACTION_INVALID", "deployment protection action must be requested")
+
+    repository_object = _object(payload.get("repository"), "repository")
+    repository_id = _positive_int(repository_object.get("id"), "repository.id")
+    repository = repository_object.get("full_name")
+    if not isinstance(repository, str) or REPOSITORY.fullmatch(repository) is None:
+        reject("WEBHOOK_PAYLOAD_INVALID", "repository.full_name is invalid")
+    installation = _object(payload.get("installation"), "installation")
+    installation_id = _positive_int(installation.get("id"), "installation.id")
+    sender = _object(payload.get("sender"), "sender")
+    sender_id = _positive_int(sender.get("id"), "sender.id")
+    environment = payload.get("environment")
+    if (
+        not isinstance(environment, str)
+        or not 1 <= len(environment) <= 120
+        or any(
+            character
+            not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-"
+            for character in environment
+        )
+    ):
+        reject("WEBHOOK_PAYLOAD_INVALID", "environment is invalid")
+    head_sha = payload.get("sha")
+    if not isinstance(head_sha, str) or HEAD_SHA.fullmatch(head_sha) is None:
+        reject("WEBHOOK_PAYLOAD_INVALID", "sha must be a full lowercase Git SHA")
+    intent_ref = payload.get("ref")
+    if not isinstance(intent_ref, str):
+        reject("WEBHOOK_PAYLOAD_INVALID", "ref is missing")
+    ref_match = INTENT_REF.fullmatch(intent_ref)
+    if ref_match is None:
+        reject("INTENT_REF_INVALID", "ref is not an immutable Cross-AI intent ref")
+    run_id, callback_url = validate_callback_url(
+        payload.get("deployment_callback_url"),
+        repository=repository,
+        allowed_api_origins=allowed_api_origins,
+    )
+    semantic_payload = canonical_bytes(payload)
+    return DeploymentProtectionRequest(
+        delivery_id=delivery_id.lower(),
+        repository_id=repository_id,
+        repository=repository,
+        installation_id=installation_id,
+        environment=environment,
+        head_sha=head_sha,
+        intent_ref=intent_ref,
+        request_id=ref_match.group(1).lower(),
+        run_id=run_id,
+        callback_url=callback_url,
+        sender_id=sender_id,
+        payload_sha256=f"sha256:{hashlib.sha256(semantic_payload).hexdigest()}",
+        provenance=provenance,
+    )
+
+
+def parse_deployment_protection_delivery(
+    *,
+    payload: object,
+    delivery_id: str,
+    allowed_api_origins: Iterable[str] = ("https://api.github.com",),
+) -> DeploymentProtectionRequest:
+    """Parse App-API delivery JSON without claiming raw-body HMAC provenance."""
+
+    if DELIVERY_ID.fullmatch(delivery_id) is None:
+        reject("WEBHOOK_DELIVERY_INVALID", "GitHub delivery GUID is invalid")
+    if not isinstance(payload, dict) or any(not isinstance(key, str) for key in payload):
+        reject("WEBHOOK_PAYLOAD_INVALID", "delivery payload must be an object")
+    return _parse_deployment_protection_payload(
+        payload=payload,
+        delivery_id=delivery_id,
+        provenance="github_app_delivery_api_v1",
+        allowed_api_origins=allowed_api_origins,
+    )
+
+
 def parse_deployment_protection_webhook(
     *,
     raw_body: bytes,
@@ -198,52 +286,11 @@ def parse_deployment_protection_webhook(
         reject("WEBHOOK_JSON_INVALID", "webhook body is not valid JSON")
     if not isinstance(payload, dict):
         reject("WEBHOOK_PAYLOAD_INVALID", "webhook payload must be an object")
-    if payload.get("action") != "requested":
-        reject("WEBHOOK_ACTION_INVALID", "deployment protection action must be requested")
-
-    repository_object = _object(payload.get("repository"), "repository")
-    repository_id = _positive_int(repository_object.get("id"), "repository.id")
-    repository = repository_object.get("full_name")
-    if not isinstance(repository, str) or REPOSITORY.fullmatch(repository) is None:
-        reject("WEBHOOK_PAYLOAD_INVALID", "repository.full_name is invalid")
-    installation = _object(payload.get("installation"), "installation")
-    installation_id = _positive_int(installation.get("id"), "installation.id")
-    sender = _object(payload.get("sender"), "sender")
-    sender_id = _positive_int(sender.get("id"), "sender.id")
-    environment = payload.get("environment")
-    if (
-        not isinstance(environment, str)
-        or not 1 <= len(environment) <= 120
-        or any(character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-" for character in environment)
-    ):
-        reject("WEBHOOK_PAYLOAD_INVALID", "environment is invalid")
-    head_sha = payload.get("sha")
-    if not isinstance(head_sha, str) or HEAD_SHA.fullmatch(head_sha) is None:
-        reject("WEBHOOK_PAYLOAD_INVALID", "sha must be a full lowercase Git SHA")
-    intent_ref = payload.get("ref")
-    if not isinstance(intent_ref, str):
-        reject("WEBHOOK_PAYLOAD_INVALID", "ref is missing")
-    ref_match = INTENT_REF.fullmatch(intent_ref)
-    if ref_match is None:
-        reject("INTENT_REF_INVALID", "ref is not an immutable Cross-AI intent ref")
-    run_id, callback_url = validate_callback_url(
-        payload.get("deployment_callback_url"),
-        repository=repository,
+    return _parse_deployment_protection_payload(
+        payload=payload,
+        delivery_id=delivery_id,
+        provenance="github_webhook_hmac_sha256_v1",
         allowed_api_origins=allowed_api_origins,
-    )
-    return DeploymentProtectionRequest(
-        delivery_id=delivery_id.lower(),
-        repository_id=repository_id,
-        repository=repository,
-        installation_id=installation_id,
-        environment=environment,
-        head_sha=head_sha,
-        intent_ref=intent_ref,
-        request_id=ref_match.group(1).lower(),
-        run_id=run_id,
-        callback_url=callback_url,
-        sender_id=sender_id,
-        payload_sha256=f"sha256:{hashlib.sha256(raw_body).hexdigest()}",
     )
 
 
@@ -251,6 +298,7 @@ __all__ = [
     "DeploymentProtectionRequest",
     "MAX_WEBHOOK_BYTES",
     "load_secret_files",
+    "parse_deployment_protection_delivery",
     "parse_deployment_protection_webhook",
     "validate_callback_url",
     "verify_webhook_signature",

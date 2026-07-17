@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
@@ -70,6 +70,13 @@ class Transport(Protocol):
 
 
 class UrllibTransport:
+    class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+            return None
+
+    def __init__(self) -> None:
+        self._opener = urllib.request.build_opener(self._NoRedirectHandler())
+
     def request(
         self,
         method: str,
@@ -86,7 +93,7 @@ class UrllibTransport:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with self._opener.open(request, timeout=timeout) as response:
                 data = response.read(MAX_GITHUB_RESPONSE_BYTES + 1)
                 if len(data) > MAX_GITHUB_RESPONSE_BYTES:
                     reject("GITHUB_RESPONSE_TOO_LARGE", "GitHub response exceeds limit")
@@ -142,12 +149,17 @@ class GitHubAppTokenProvider:
         self._key = key
         self._tokens: dict[int, _CachedToken] = {}
 
-    def _jwt(self) -> str:
+    def app_jwt(self) -> str:
+        """Mint one short-lived App JWT; callers must never cache it."""
+
         now = self._now()
         header = {"alg": "RS256", "typ": "JWT"}
         payload = {
             "iat": int((now - timedelta(seconds=60)).timestamp()),
-            "exp": int((now + timedelta(minutes=9)).timestamp()),
+            # Five minutes from iat, and four minutes from wall clock. This is
+            # deliberately shorter than GitHub's maximum and bounded for one
+            # delivery-poll cycle.
+            "exp": int((now + timedelta(minutes=4)).timestamp()),
             "iss": str(self.app_id),
         }
         signing_input = (
@@ -168,7 +180,7 @@ class GitHubAppTokenProvider:
             f"{self.api_origin}/app/installations/{installation_id}/access_tokens",
             headers={
                 "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self._jwt()}",
+                "Authorization": f"Bearer {self.app_jwt()}",
                 "X-GitHub-Api-Version": API_VERSION,
                 "User-Agent": "acik-cross-ai-deployment-policy/1",
                 "Content-Type": "application/json",
@@ -196,6 +208,159 @@ def _json_object(body: bytes, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         reject("GITHUB_RESPONSE_INVALID", f"{label} response is not an object")
     return value
+
+
+def _json_array(body: bytes, label: str) -> list[Any]:
+    try:
+        value = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        reject("GITHUB_RESPONSE_INVALID", f"{label} response is not JSON")
+    if not isinstance(value, list):
+        reject("GITHUB_RESPONSE_INVALID", f"{label} response is not an array")
+    return value
+
+
+class GitHubRateLimitError(PolicyError):
+    """Retryable App API throttling without leaking response content."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(
+            "GITHUB_DELIVERY_RATE_LIMITED",
+            f"GitHub delivery API returned {status}",
+        )
+        self.status = status
+
+
+@dataclass(frozen=True)
+class HookDeliveryPage:
+    items: tuple[dict[str, Any], ...]
+    next_cursor: str | None
+
+
+class GitHubHookDeliveryCycle:
+    """One bounded webhook-delivery read cycle authenticated by one App JWT."""
+
+    def __init__(
+        self,
+        *,
+        app_jwt: str,
+        api_origin: str,
+        transport: Transport,
+    ) -> None:
+        self._app_jwt = app_jwt
+        self.api_origin = api_origin
+        self.transport = transport
+
+    def _get(self, url: str, label: str) -> HTTPResponse:
+        response = self.transport.request(
+            "GET",
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {self._app_jwt}",
+                "X-GitHub-Api-Version": API_VERSION,
+                "User-Agent": "acik-cross-ai-delivery-poller/1",
+            },
+        )
+        if response.status in {403, 429}:
+            raise GitHubRateLimitError(response.status)
+        if response.status != 200:
+            reject(
+                "GITHUB_DELIVERY_READ_FAILED",
+                f"{label} returned {response.status}",
+            )
+        return response
+
+    def list_deliveries(self, *, cursor: str | None = None) -> HookDeliveryPage:
+        if cursor is not None and (not cursor or len(cursor) > 2048):
+            reject("GITHUB_DELIVERY_CURSOR_INVALID", "delivery cursor is invalid")
+        query = {"per_page": "100"}
+        if cursor is not None:
+            query["cursor"] = cursor
+        response = self._get(
+            f"{self.api_origin}/app/hook/deliveries?{urlencode(query)}",
+            "GitHub delivery list",
+        )
+        values = _json_array(response.body, "GitHub delivery list")
+        if len(values) > 100 or any(not isinstance(item, dict) for item in values):
+            reject("GITHUB_DELIVERY_LIST_INVALID", "delivery list shape is invalid")
+        return HookDeliveryPage(
+            items=tuple(values),
+            next_cursor=self._next_cursor(response.headers),
+        )
+
+    def _next_cursor(self, headers: Mapping[str, str]) -> str | None:
+        link = next(
+            (value for name, value in headers.items() if name.casefold() == "link"),
+            None,
+        )
+        if link is None:
+            return None
+        next_links = [
+            part.strip()
+            for part in link.split(",")
+            if re.search(r';\s*rel="next"\s*$', part)
+        ]
+        if len(next_links) != 1:
+            reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery link is ambiguous")
+        match = re.fullmatch(r'<([^>]+)>;\s*rel="next"', next_links[0])
+        if match is None:
+            reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery link is malformed")
+        parsed = urlsplit(match.group(1))
+        if (
+            f"{parsed.scheme}://{parsed.netloc}" != self.api_origin
+            or parsed.path != "/app/hook/deliveries"
+            or parsed.fragment
+        ):
+            reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery link escaped API origin")
+        try:
+            query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+        except ValueError:
+            reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery query is malformed")
+        if set(query) - {"cursor", "per_page"} or len(query.get("cursor", [])) != 1:
+            reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery query is invalid")
+        if query.get("per_page", ["100"]) != ["100"]:
+            reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery page size changed")
+        cursor = query["cursor"][0]
+        if not cursor or len(cursor) > 2048 or any(character.isspace() for character in cursor):
+            reject("GITHUB_DELIVERY_CURSOR_INVALID", "next delivery cursor is invalid")
+        return cursor
+
+    def delivery(self, delivery_id: int) -> dict[str, Any]:
+        if not isinstance(delivery_id, int) or isinstance(delivery_id, bool) or delivery_id < 1:
+            reject("GITHUB_DELIVERY_ID_INVALID", "delivery ID must be positive")
+        response = self._get(
+            f"{self.api_origin}/app/hook/deliveries/{delivery_id}",
+            "GitHub delivery detail",
+        )
+        return _json_object(response.body, "GitHub delivery detail")
+
+
+class GitHubHookDeliveryReader:
+    """Creates fresh-JWT delivery cycles against the exact App API origin."""
+
+    def __init__(
+        self,
+        *,
+        token_provider: GitHubAppTokenProvider,
+        api_origin: str = "https://api.github.com",
+        transport: Transport | None = None,
+    ) -> None:
+        if api_origin != token_provider.api_origin:
+            reject(
+                "GITHUB_API_ORIGIN_MISMATCH",
+                "delivery reader and token provider must use the same API origin",
+            )
+        self.token_provider = token_provider
+        self.api_origin = api_origin
+        self.transport = transport or token_provider.transport
+
+    def cycle(self) -> GitHubHookDeliveryCycle:
+        return GitHubHookDeliveryCycle(
+            app_jwt=self.token_provider.app_jwt(),
+            api_origin=self.api_origin,
+            transport=self.transport,
+        )
 
 
 class GitHubReader:
@@ -707,7 +872,11 @@ __all__ = [
     "GitHubAppTokenProvider",
     "GitHubDecisionClient",
     "GitHubDispatcherClient",
+    "GitHubHookDeliveryCycle",
+    "GitHubHookDeliveryReader",
     "GitHubIntentRef",
+    "GitHubRateLimitError",
+    "HookDeliveryPage",
     "CallbackResult",
     "GitHubReader",
     "HTTPResponse",
