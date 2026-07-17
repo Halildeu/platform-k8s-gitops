@@ -465,6 +465,11 @@ taşır. Üç comment ref'i farklı olmalıdır.
 {"schema":"cross-ai-provider-evidence/v1","provider":"anthropic|minimax|openai","requested_model":"<exact>","actual_model":"<provider-reported-exact>","base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
 ```
 
+Bu gövde elle yeniden yazılmaz. Provider'ın tam final response'u stdin'den
+`scripts/ai/build_cross_ai_evidence.py` betiğine verilir; builder model ve SHA
+formatını, tekil terminal verdict'i ve response digest'ini üretir. `REVISE`
+yanıtı dürüstçe `REVISE` evidence üretir ve gate'i açmaz.
+
 `gate-cross-ai-audit` normal PR'larda base tip'i event `pull_request.base.sha`,
 head'i event `pull_request.head.sha` ile karşılaştırır; her evidence comment'ini
 GitHub API'den fetch eder, comment body SHA-256 ve iç response SHA-256'yı yeniden
