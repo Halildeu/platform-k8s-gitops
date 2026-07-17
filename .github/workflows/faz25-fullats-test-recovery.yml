@@ -68,17 +68,34 @@ jobs:
       - name: Wait for exact GitOps reconciliation and inspect pre-recovery state
         run: |
           set -euo pipefail
-          argo_sync=""
+          argo_state=""
           argo_revision=""
+          ats_deployment_sync=""
+          ats_configmap_sync=""
           desired_image=""
           live_binding=""
           for _ in $(seq 1 60); do
-            argo_sync="$(kubectl --context="$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+            # A transient Argo read/JSON failure must not reuse a prior
+            # iteration's successful resource/revision values.
+            argo_revision=""
+            ats_deployment_sync=""
+            ats_configmap_sync=""
+            argo_state="$(kubectl --context="$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
               get application "$ARGOCD_APPLICATION" \
-              -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
-            argo_revision="$(kubectl --context="$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
-              get application "$ARGOCD_APPLICATION" \
-              -o jsonpath='{.status.sync.revision}' 2>/dev/null || true)"
+              -o json 2>/dev/null || true)"
+            if [[ -n "$argo_state" ]] && jq -e . >/dev/null 2>&1 <<<"$argo_state"; then
+              argo_revision="$(jq -r '.status.sync.revision // ""' <<<"$argo_state")"
+              ats_deployment_sync="$(jq -r '
+                [.status.resources[]?
+                 | select(.group == "apps" and .kind == "Deployment" and
+                          .namespace == "platform-test" and .name == "ats-interview-evidence")]
+                | if length == 1 then (.[0].status // "") else "" end' <<<"$argo_state")"
+              ats_configmap_sync="$(jq -r '
+                [.status.resources[]?
+                 | select((.group // "") == "" and .kind == "ConfigMap" and
+                          .namespace == "platform-test" and .name == "ats-interview-evidence-config")]
+                | if length == 1 then (.[0].status // "") else "" end' <<<"$argo_state")"
+            fi
             desired_image="$(kubectl --context="$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" \
               get deployment ats-interview-evidence \
               -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}' \
@@ -87,15 +104,17 @@ jobs:
               get configmap ats-interview-evidence-config \
               -o jsonpath='{.data.ATS_AI_ENDPOINT_REF}{"|"}{.data.ATS_AI_APPROVAL_TRANSCRIBE_REF}' \
               2>/dev/null || true)"
-            if [[ "$argo_sync" == "Synced" && "$argo_revision" == "$GITHUB_SHA" && \
+            if [[ "$argo_revision" == "$GITHUB_SHA" && \
+                  "$ats_deployment_sync" == "Synced" && "$ats_configmap_sync" == "Synced" && \
                   "$desired_image" == "${ATS_IMAGE_REPOSITORY}@${EXPECTED_ATS_DIGEST}" && \
                   "$live_binding" == "${EXPECTED_ATS_ENDPOINT_REF}|${EXPECTED_ATS_APPROVAL_REF}" ]]; then
               break
             fi
             sleep 5
           done
-          [[ "$argo_sync" == "Synced" && "$argo_revision" == "$GITHUB_SHA" ]] || {
-            echo "::error::ArgoCD did not reconcile the exact workflow commit within 300s"
+          [[ "$argo_revision" == "$GITHUB_SHA" && \
+             "$ats_deployment_sync" == "Synced" && "$ats_configmap_sync" == "Synced" ]] || {
+            echo "::error::ArgoCD did not reconcile the exact ATS Deployment/ConfigMap at the workflow commit within 300s"
             exit 1
           }
           [[ "$desired_image" == "${ATS_IMAGE_REPOSITORY}@${EXPECTED_ATS_DIGEST}" ]] || {
@@ -118,7 +137,7 @@ jobs:
             exit 1
           fi
 
-          echo "PASS ArgoCD reconciled the exact workflow commit"
+          echo "PASS ArgoCD reconciled the exact ATS Deployment/ConfigMap at the workflow commit"
           echo "PASS live Deployment and ConfigMap match the fixed image/endpoint/approval binding"
           echo "PASS pre-recovery ats_app has no admin attributes"
           echo "PASS pre-recovery Flyway has no failed history row"

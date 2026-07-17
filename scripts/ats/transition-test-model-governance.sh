@@ -197,6 +197,9 @@ ORPHAN_COUNT=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -d postgres -
   echo "FATAL: stale ephemeral governance operator role requires reconciliation; count=${ORPHAN_COUNT}" >&2
   exit 1
 }
+# Bu preflight ve aşağıdaki parola taşıyan CREATE ROLE DDL aynı PostgreSQL
+# database context'inde (postgres) koşar; context değişirse bu kontrol de aynı
+# değişiklikte taşınmadan parola-DDL çalıştırılamaz.
 SERVER_STATEMENT_LOGGING=$(docker exec "$PG_CONTAINER" psql -X -U postgres -At -F '|' -d postgres -c \
   "SELECT current_setting('log_statement'),current_setting('log_min_duration_statement'),COALESCE(current_setting('pgaudit.log',true),'')")
 [[ "$SERVER_STATEMENT_LOGGING" == "none|-1|" || "$SERVER_STATEMENT_LOGGING" == "none|-1|none" ]] || {
