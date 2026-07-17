@@ -14,10 +14,10 @@
 #
 # Güncel Faz 25 #2526 imaj pini. Numerik UID (10001:10001) ve deployment
 # securityContext tutarlıdır; digest AUTHORITY, tag yalnız provenance alias'ıdır:
-#   source  ats main 6af613a78ef751bc8685b4a2de872233d11844a9 (ats#179 + ats#180)
-#   tag     ghcr.io/halildeu/ats-app-boot:sha-6af613a
-#   digest  sha256:1df68ec1acb44660396b56024c2301495c04a94a36a1f197547c0b082533e5f2
-#   build   https://github.com/Halildeu/ats/actions/runs/29543975312
+#   source  ats main a3cfb76570575acf9f81f582d94bc1ca16c3da66 (ats#175)
+#   tag     ghcr.io/halildeu/ats-app-boot:sha-a3cfb76
+#   digest  sha256:49aa5da5ee294942a16c30405f1a3f7b3995faa85b6246f5a5fc5d05fc5600e1
+#   build   https://github.com/Halildeu/ats/actions/runs/29533845541
 # Önceki canlı D29 kanıtlı pin: sha-3a93cff /
 #   sha256:c2dcc1da2e169d676fec21a1acc60d6fd6be2b108e73ce705b0aa813010432b1
 #
@@ -39,7 +39,7 @@ resources:
 
 images:
   - name: ghcr.io/halildeu/ats-app-boot
-    digest: sha256:1df68ec1acb44660396b56024c2301495c04a94a36a1f197547c0b082533e5f2
+    digest: sha256:49aa5da5ee294942a16c30405f1a3f7b3995faa85b6246f5a5fc5d05fc5600e1
 
 patches:
   # 39d-5: Faz1 mount+hostAlias; Faz2 keystore-parola secretKeyRef (patch içinde).
@@ -66,12 +66,6 @@ patches:
       - op: replace
         path: /data/ATS_AI_BASE_URL
         value: "https://live-stt.denetim:8243"
-      - op: replace
-        path: /data/ATS_AI_ENDPOINT_REF
-        value: "faz24-stt-prod"
-      - op: replace
-        path: /data/ATS_AI_APPROVAL_TRANSCRIBE_REF
-        value: "mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d"
       - op: add
         path: /data/ATS_AI_PROVIDER
         value: "live-stt"

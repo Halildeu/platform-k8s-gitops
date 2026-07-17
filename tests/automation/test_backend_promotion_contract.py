@@ -308,6 +308,9 @@ class BackendPromotionContractTests(unittest.TestCase):
             "transcript-service": "20",
             "audit-event-consumer-service": "21",
             "api-gateway": "22",
+            # Faz 25 ATS: isolated AFTER the core authz chain (board #2549) — a wave-0 boot
+            # failure here used to gate every backend wave.
+            "ats-interview-evidence": "30",
         }
         self.assertEqual(expected, dict(wave_patches))
         self.assertEqual(len(expected), len({wave for _, wave in wave_patches}))

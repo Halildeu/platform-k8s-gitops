@@ -15,10 +15,6 @@ data:
   # Public careers katalog tenant'ı request/header/body'den seçilemez.
   ATS_PUBLIC_TENANT_ID: "OVERLAY_MUST_OVERRIDE"
   ATS_AI_BASE_URL: "OVERLAY_MUST_OVERRIDE"
-  # Model-governance boot gate: endpoint and content-addressed approval refs
-  # activation overlay'de shipped catalog ile exact bağlanır.
-  ATS_AI_ENDPOINT_REF: "OVERLAY_MUST_OVERRIDE"
-  ATS_AI_APPROVAL_TRANSCRIBE_REF: "OVERLAY_MUST_OVERRIDE"
   ATS_AI_TIMEOUT: "30s"
   # ingress proxy-body-size ile TEK kontrat (aynı 25 MiB; en düşük limit gerçek limittir)
   ATS_MAX_UPLOAD_BYTES: "26214400"

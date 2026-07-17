@@ -22,6 +22,10 @@ EXPECTED = {
     "transcript-service": "20",
     "audit-event-consumer-service": "21",
     "api-gateway": "22",
+    # Faz 25 ATS: deliberately isolated AFTER the core authz chain (board #2549). A wave-0
+    # boot failure here used to gate every backend wave, so the fix that unblocks delivery
+    # cannot itself live inside that chain.
+    "ats-interview-evidence": "30",
 }
 
 
@@ -66,7 +70,7 @@ def main() -> int:
         print("FAIL: rendered backend sync-wave values are not unique", file=sys.stderr)
         return 1
 
-    print("PASS: rendered test overlay has 13 unique dependency-ordered backend sync waves")
+    print("PASS: rendered test overlay has 14 unique dependency-ordered backend sync waves")
     return 0
 
 

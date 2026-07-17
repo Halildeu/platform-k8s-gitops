@@ -1417,25 +1417,8 @@ images:
     # remains explicit-grant-only: neither runtime ADMIN compatibility expansion
     # nor PermissionDataInitializer ADMIN seeding grants it implicitly. Image
     # build run 29354279680; permission-service job 87157899597 succeeded.
-    # Pinnable: ghcr.io/halildeu/platform-backend-permission-service@sha256:d26ad6b70483b60cf263f2cff639f270d652dc2e2a3af50ab9c5c28c94d4fa5b
-    # 2026-07-17 · board #2531 (umbrella #2530) — canonical scope grants now take effect.
-    # Source : platform-backend PR #847 squash f74d93cc863e544f634a8c7bee25d7a7c084cad1
-    #          (verified main ancestor; PR CI 19/19; Codex AGREE 12f12dd44)
-    # Tag    : ci-image-push.yml -> `github.sha | cut -c1-7` -> sha-f74d93c
-    # Digest : taken from the registry because the GitHub Actions/Packages APIs were
-    #          503/502 during this rollout (Codex-approved outage fallback):
-    #            docker manifest inspect --verbose \
-    #              ghcr.io/halildeu/platform-backend-permission-service:sha-f74d93c
-    #            -> Descriptor.digest = sha256:d26ad6b7... (linux/amd64)
-    # Ships  : ADR-0008 canonical object-id codec (admin granted 201 but user still got 403
-    #          because the reader dropped `wc-project-1204` via bare Long.parseLong);
-    #          dual-subject scope read (verified numeric id + verified KC sub);
-    #          global authz-version bump after the FGA write/delete so a REVOKE is not
-    #          served stale for ~120s + jitter (privilege retention).
-    # NOTE   : provenance:false + no org.opencontainers.image.revision label -> the digest
-    #          proves the artifact, not the full source lineage. Reconcile the Actions run
-    #          / promotion ledger once GitHub recovers, before any prod promotion.
-    digest: sha256:d26ad6b70483b60cf263f2cff639f270d652dc2e2a3af50ab9c5c28c94d4fa5b
+    # Pinnable: ghcr.io/halildeu/platform-backend-permission-service@sha256:7e66b85a6158dd4bb9a9bfcdcaf6761b89f552788a34bd97ebc2d605234b0ec3
+    digest: sha256:7e66b85a6158dd4bb9a9bfcdcaf6761b89f552788a34bd97ebc2d605234b0ec3
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -6074,50 +6057,6 @@ patches:
       - op: replace
         path: /data/USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED
         value: "true"
-      # board #2533 (umbrella #2530) — TEST-ONLY. Do NOT promote to the prod overlay.
-      #
-      # JwtAutoProvisionGate is fail-closed: without the M365 marker claim `entra_tid` it denies
-      # ("missing-entra-tid") unless auto-provision.allow-local-keycloak=true
-      # (${AUTO_PROVISION_ALLOW_LOCAL_KEYCLOAK:false} — never set anywhere until now).
-      # Consequence: local-Keycloak users never get a `user_service.users` row → no numeric user id
-      # → the authz chain reads with the wrong subject and returns 403.
-      #
-      # Scope of this flag (precise): it removes ONLY the `entra_tid` requirement. The remaining
-      # fail-closed gates stay: issuer allow-list, valid `sub`, email present, email_verified.
-      # So this admits "local-Keycloak users that satisfy the remaining claim/issuer gates",
-      # not "every non-M365 login".
-      #
-      # What it does NOT change: the persisted activation state. UserService still creates the row
-      # role=USER, enabled=false, companyId=null (pinned by UserServiceTest). The cross-service
-      # invariant "a disabled account cannot consume protected product surfaces" is NOT proven by
-      # this PR — AuthenticatedUserLookupService resolves the numeric id without carrying `enabled`
-      # into the authorization decision. That gate is verified negatively during #2533 runtime
-      # acceptance (grant first, expect 403 while disabled, activate, expect 200 — activation the
-      # only variable). Until then no grant is issued to a persona before activation.
-      - op: add
-        path: /data/AUTO_PROVISION_ALLOW_LOCAL_KEYCLOAK
-        value: "true"
-  # board #2533 — TEST-ONLY pod-template rollout marker.
-  # user-service reads the ConfigMap via `envFrom: configMapRef`, and Kubernetes computes process
-  # env ONLY at pod start: changing the ConfigMap alone leaves the running pod on the old value and
-  # does not change the Deployment/ReplicaSet hash, so Argo reports Synced while the flag never
-  # reaches the process. ADR-0023 forbids fixing that with an out-of-band `kubectl rollout restart`
-  # on this shared cluster, so the rollout must be GitOps-authoritative: bump this marker whenever
-  # the TEST-only env contract above changes. Strategic-merge (not a JSON patch on /annotations) so
-  # future pod annotations are merged rather than overwritten.
-  - target:
-      kind: Deployment
-      name: user-service
-    patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: user-service
-      spec:
-        template:
-          metadata:
-            annotations:
-              user-service.acik.com/local-kc-provision-rev: "2533-1"
   - target:
       kind: ConfigMap
       name: meeting-service-config
@@ -7086,6 +7025,37 @@ patches:
         name: auth-service
         annotations:
           argocd.argoproj.io/sync-wave: "10"
+  # board #2549 — failure-domain ordering containment (NOT a health bypass).
+  #
+  # ats-interview-evidence has no sync-wave annotation, so Argo places it in the DEFAULT wave 0.
+  # Argo applies the lowest out-of-sync wave, then WAITS for its health before moving on. When the
+  # ATS Deployment's new revision cannot become Ready (board #2548: model-governance boot is
+  # fail-closed on the missing ats.ai.endpoint-ref / approvals.transcribe-ref contract), the whole
+  # 167-resource platform-test sync retries forever and waves 10-22 — auth, permission, user,
+  # gateway — are NEVER applied. An unrelated product slice thereby holds core authz delivery
+  # hostage (live: permission/user stuck OutOfSync on the previous revision while #2531/#2533 sat
+  # merged in main).
+  #
+  # This gives ATS an explicit LATE wave so core backend converges first. It does NOT mark ATS
+  # healthy and does NOT relax any gate: ATS still fails at wave 30 and the Application operation
+  # still ends Failed, honestly reflecting board #2548. It is dependency/failure-domain ordering
+  # only. The real fix is the ATS incident (#2548); the durable fix is bounded-context Application
+  # decomposition (#2549).
+  #
+  # Rejected alternatives (Codex 019f6c7e): RespectIgnoreDifferences (diff-only, not health) ·
+  # SkipDryRunOnMissingResource (CRD discovery) · Prune=false (delete semantics) ·
+  # raising progressDeadlineSeconds (defers the error) · custom health override (hides a genuinely
+  # broken revision = fake green) · kubectl rollout restart (ADR-0023, and drifts back next sync).
+  - target:
+      kind: Deployment
+      name: ats-interview-evidence
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ats-interview-evidence
+        annotations:
+          argocd.argoproj.io/sync-wave: "30"
   - target:
       kind: Deployment
       name: permission-service
