@@ -20,6 +20,7 @@ jobs:
     env:
       K8S_CONTEXT: k3d-test
       K8S_NAMESPACE: platform-test
+      ARGOCD_CONTEXT: k3d-prod
       DEPLOYMENT: cross-ai-deployment-protection
       EXTERNAL_SECRET: cross-ai-deployment-protection-observe
       K8S_SECRET: cross-ai-deployment-protection-observe
@@ -95,11 +96,11 @@ jobs:
             exit 1
           fi
 
-          argo_revision="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+          argo_revision="$(kubectl --context "$ARGOCD_CONTEXT" -n argocd \
             get application "$APP_NAME" -o jsonpath='{.status.sync.revision}')"
-          argo_sync="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+          argo_sync="$(kubectl --context "$ARGOCD_CONTEXT" -n argocd \
             get application "$APP_NAME" -o jsonpath='{.status.sync.status}')"
-          argo_health="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+          argo_health="$(kubectl --context "$ARGOCD_CONTEXT" -n argocd \
             get application "$APP_NAME" -o jsonpath='{.status.health.status}')"
           if [[ "$argo_revision" != "$GITHUB_SHA" || "$argo_sync" != "Synced" || "$argo_health" != "Healthy" ]]; then
             echo "::error::Argo application is not Synced/Healthy at the dispatched main SHA"
@@ -185,11 +186,11 @@ jobs:
             eso_ready="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
               get externalsecret "$EXTERNAL_SECRET" \
               -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')"
-            argo_revision="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+            argo_revision="$(kubectl --context "$ARGOCD_CONTEXT" -n argocd \
               get application "$APP_NAME" -o jsonpath='{.status.sync.revision}')"
-            argo_sync="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+            argo_sync="$(kubectl --context "$ARGOCD_CONTEXT" -n argocd \
               get application "$APP_NAME" -o jsonpath='{.status.sync.status}')"
-            argo_health="$(kubectl --context "$K8S_CONTEXT" -n argocd \
+            argo_health="$(kubectl --context "$ARGOCD_CONTEXT" -n argocd \
               get application "$APP_NAME" -o jsonpath='{.status.health.status}')"
             if [[ "$eso_ready" != "True" || "$argo_revision" != "$GITHUB_SHA" || "$argo_sync" != "Synced" || "$argo_health" != "Healthy" ]]; then
               echo "::error::ESO/Argo attestation changed or is not authoritative"
