@@ -8,6 +8,7 @@
   "allowedApiOrigins": [
     "https://api.github.com"
   ],
+  "runnerBootstrapUrl": "https://testai.acik.com/v1/runner-bootstrap",
   "allowedInstallationIds": [
     900000002
   ],
@@ -29,7 +30,9 @@
       "stage": "apply",
       "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
       "requiredRunsOnLabels": [
-        "ubuntu-latest"
+        "self-hosted",
+        "staging-sw",
+        "testai-deploy"
       ],
       "requireRunnerGroup": false
     },
@@ -41,13 +44,15 @@
         "staging-sw",
         "testai-deploy"
       ],
-      "requireRunnerGroup": true
+      "requireRunnerGroup": false
     },
     {
       "stage": "compensating-rollback",
       "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
       "requiredRunsOnLabels": [
-        "ubuntu-latest"
+        "self-hosted",
+        "staging-sw",
+        "testai-deploy"
       ],
       "requireRunnerGroup": false
     }

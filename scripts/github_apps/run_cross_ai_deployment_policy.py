@@ -10,7 +10,12 @@ import threading
 from pathlib import Path
 
 from scripts.github_apps.cross_ai_deployment_policy.ledger import ObserveLedger
-from scripts.github_apps.cross_ai_deployment_policy.delivery_poller import DeliveryPoller
+from scripts.github_apps.cross_ai_deployment_policy.bootstrap import (
+    RunnerBootstrapAuthorizer,
+)
+from scripts.github_apps.cross_ai_deployment_policy.delivery_poller import (
+    DeliveryPoller,
+)
 from scripts.github_apps.cross_ai_deployment_policy.evaluator import DeploymentEvaluator
 from scripts.github_apps.cross_ai_deployment_policy.github import (
     GitHubAppTokenProvider,
@@ -24,6 +29,7 @@ from scripts.github_apps.cross_ai_deployment_policy.intent_store import (
     IntentRegistry,
 )
 from scripts.github_apps.cross_ai_deployment_policy.jsonutil import load_json_file
+from scripts.github_apps.cross_ai_deployment_policy.oidc import GitHubOIDCVerifier
 from scripts.github_apps.cross_ai_deployment_policy.policy import load_policy
 from scripts.github_apps.cross_ai_deployment_policy.reconciler import (
     GitHubOutcomeReconciler,
@@ -115,6 +121,7 @@ def main() -> int:
     evaluator = None
     decision_client = None
     outcome_sweeper = None
+    bootstrap_authorizer = None
     delivery_reader = None
     allowed_origins: tuple[str, ...] = (args.github_api_origin,)
     if configured:
@@ -149,6 +156,10 @@ def main() -> int:
             mode=args.mode,
         )
         if args.mode == "enforce":
+            if len(policy.allowed_installation_ids) != 1:
+                raise SystemExit(
+                    "enforce mode requires exactly one policy installation ID"
+                )
             decision_client = GitHubDecisionClient(
                 token_provider=token_provider,
                 api_origin=args.github_api_origin,
@@ -172,6 +183,11 @@ def main() -> int:
                 registry=registry,
                 reconciler=outcome_reconciler,
             )
+            bootstrap_authorizer = RunnerBootstrapAuthorizer(
+                evaluator=evaluator,
+                installation_id=next(iter(policy.allowed_installation_ids)),
+                oidc_verifier=GitHubOIDCVerifier(),
+            )
         allowed_origins = policy.allowed_api_origins
     service = ObserveService(
         secrets=secrets,
@@ -182,13 +198,16 @@ def main() -> int:
         registry=registry,
         decision_client=decision_client,
         outcome_sweeper=outcome_sweeper,
+        bootstrap_authorizer=bootstrap_authorizer,
     )
     if args.delivery_poll:
         assert delivery_reader is not None
         assert evaluator is not None
         policy_installations = tuple(evaluator.policy.allowed_installation_ids)
         if len(policy_installations) != 1:
-            raise SystemExit("delivery polling requires exactly one policy installation ID")
+            raise SystemExit(
+                "delivery polling requires exactly one policy installation ID"
+            )
         service.add_background_reconciler(
             DeliveryPoller(
                 reader=delivery_reader,

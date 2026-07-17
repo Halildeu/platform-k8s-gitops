@@ -218,7 +218,7 @@ mixed trust-root envelope is a schema/policy rejection, not a configuration
 fallback.
 
 The initial trust-root manifest is not self-authorizing. The TEST Vault owner
-first verifies the bootstrap receipt's cluster ID, four versioned public keys
+first verifies the bootstrap receipt's cluster ID, five versioned public keys
 and receipt digest out of band. A later trust-root release copies those public
 keys, binds the secondary key to one live provider family/channel, and pins the
 manifest digest in a separate reviewed deployment change. No Transit key signs
@@ -461,9 +461,10 @@ get-ref and retention delete-ref. Every other Contents write is blocked and
 alerted. Phase 1 cannot exit if these negative controls are not proven live.
 
 The registry accepts only the dispatcher numeric GitHub App/actor identity
-mapped to its mTLS principal. If GitHub OIDC is considered later, a new contract
-must hard-bind repository ID, exact workflow/job, ref/SHA, Environment,
-non-fork origin and audience. “Any workflow in this repository” is forbidden.
+mapped to its mTLS principal. GitHub Actions OIDC is not accepted for intent
+registration or dispatch authority. It is used only as the post-approval runner
+bootstrap second factor described below; “any workflow in this repository” is
+forbidden in both paths.
 
 The intent registry allows only one active intent for the same repository,
 Environment, head, intent ref, workflow stage and session. Ambiguity rejects
@@ -501,8 +502,15 @@ eligible runner must satisfy the declared attestation class; one unknown/stale
 member rejects the stage.
 
 Before approval, the App also acquires a signed admission lease whose digest is
-`runnerAdmissionLeaseSha256`. It freezes additions and label/group changes for
-the grant window and binds the eligible runner IDs/inventory generation.
+`runnerAdmissionLeaseSha256`. The bundle also carries the corresponding DSSE
+envelope, signed by a fifth, role-distinct `runner-management` Transit key. It
+freezes additions and label/group changes for the grant window and binds the
+eligible runner IDs/inventory generation. The evaluator re-fetches the complete
+repo-scoped runner inventory through GitHub before approval; the bootstrap path
+then re-fetches the assigned job and requires its numeric `runner_id` and hashed
+runner name to occur exactly once in that lease. For the current personal-account
+repository, this exact repo inventory is authoritative; an organization runner
+group is not invented where GitHub does not provide one.
 Security quarantine/removal remains allowed but immediately revokes the lease
 and intent. A changed generation before assignment blocks execution. This
 check occurs before Environment approval because a later workflow step cannot
@@ -518,6 +526,16 @@ control-plane environment values or an unpinned remote control document. Static
 constants and Environment secret values are usable only where the pinned
 bootstrap compares their digests to the signed subject before side effects.
 
+The v1 execution profile contains exactly one governed job. One full-SHA
+`actions/checkout` step is followed immediately by the single-line bootstrap
+command with a fixed argument set. Every later step is a full-commit-SHA or
+image-digest `uses:` action; arbitrary/local `run:` steps, local actions,
+additional jobs, shell overrides, unbounded `with:` controls and a second
+checkout are rejected. Each execution action receives only the verified
+`$RUNNER_TEMP/cross-ai-bootstrap.json` path. This prevents multiline or
+alternate-tool download-and-execute bypasses while keeping the executable
+dependency set content-addressed in the signed lock.
+
 The current `action`, `pilot_ttl_minutes`, `device_id`, `hostname` and
 `activation_run_id` surfaces are therefore not accepted in the machine-gated
 lane. Apply and compensating rollback become distinct workflow paths. After
@@ -526,6 +544,43 @@ App approval, the first pinned bootstrap step fetches the bundle/outcome by
 Environment endpoint/operator secret digests to equal the signed opaque
 bindings before any other secret use or side effect. Phase 2 cannot start until
 that refactor and its negative tests land.
+
+The source implementation uses a one-time `POST /v1/runner-bootstrap` exchange.
+The high-entropy Environment credential is never an argv/input value; only its
+SHA-256 is part of the reviewed subject and session binding. It is necessary but
+not sufficient; source and client reject values shorter than 64 ASCII
+characters. The governed workflow must grant `id-token: write` and present a
+fresh GitHub Actions OIDC token with the fixed
+`acik-cross-ai-runner-bootstrap` audience. The service verifies GitHub's RS256
+signature and exact issuer, repository numeric ID/name, Environment, immutable
+ref, head SHA, workflow path/ref, `workflow_dispatch`, self-hosted runner class,
+run/attempt, numeric triggering actor, `sub`, `jti` and bounded token lifetime.
+Neither the OIDC token nor the Environment credential is accepted alone.
+The bootstrap endpoint is exact HTTPS on the standard port; loopback HTTP is
+not a production or test exception. GitHub's JWKS is cached for a bounded
+interval, with at most one rate-limited forced refresh on an unknown `kid`, and
+the RSA profile is pinned to RS256 with public exponent 65537.
+The full endpoint is the required `runnerBootstrapUrl` inside the signed policy
+digest. Both static workflow inspection and the runtime client require exact
+equality, so an otherwise valid attacker HTTPS host cannot receive the OIDC or
+subject-bound credential.
+
+A bootstrap request is accepted only for the exact finalized request, stage,
+run/attempt, workflow, immutable ref, head and live in-progress job runner. The
+App re-verifies the current revocation set, trust-root pin, policy, signed runner
+lease, live runner inventory and ref at serve time. SQLite then atomically
+records the canonical response digest; a second fetch rejects rather than
+replaying the bundle. Approval-to-bootstrap is bounded to two minutes. The
+client independently verifies the DSSE bundle, policy/trust-root pins, response
+digest, prior outcome and protected endpoint/operator digests before any
+mutation step.
+
+This is source-ready only. Enforcement remains disabled until the owner-gated
+five-key TEST Transit bootstrap, public trust-root release, HTTPS Vault/runtime
+path, separate dispatcher App identity, repository Administration-read permission
+for runner inventory, protected no-input workflows and a live negative/rollback
+canary are all proven. Attended endpoint consent remains a runtime human receipt;
+the bootstrap response never asserts it.
 
 The App never follows an arbitrary `deployment_callback_url`. On github.com it
 requires the exact `https://api.github.com/repos/<owner>/<repo>/actions/runs/<id>/deployment_protection_rule`
@@ -660,7 +715,12 @@ order is:
     request digest in the append-only ledger.
 11. Only a successful 204 or later GitHub run progression proving acceptance
     moves `reserved -> consumed/ApprovedPendingOutcome`.
-12. Outbound recovery advances its durable `(delivered_at, delivery_id)`
+12. The admitted job's first side-effect-capable step obtains a fresh GitHub
+    Actions OIDC token for the fixed bootstrap audience and combines it with
+    the subject-bound Environment credential. Re-verify the exact run/attempt,
+    actor, ref/SHA, workflow, assigned runner, current trust/revocations/policy
+    and signed runner lease before atomically consuming the bootstrap once.
+13. Outbound recovery advances its durable `(delivered_at, delivery_id)`
     high-water only after the ledger proves callback status `Succeeded` in the
     same locked check. It rescans a five-minute overlap after restart, polls no
     faster than 30 seconds with bounded jitter, backs off exponentially to five
@@ -791,10 +851,12 @@ fails closed before Environment reconfiguration.
 | Requested model slug differs from actual model | Live capability snapshot plus result identity; requested slug alone ignored |
 | Stale evidence reused after code/workflow change | Exact head plus workflow/artifact/policy/rollback/verifier digests and short TTL |
 | Valid grant replayed by another run | One-time nonce, immutable intent ref, numeric dispatcher actor, run/attempt binding and reserve/consume CAS |
+| Stolen Environment bootstrap credential reused by another workflow or run | Independent GitHub Actions OIDC proof with fixed audience and exact repo/Environment/ref/SHA/workflow/run/attempt/actor claims; one-use bootstrap CAS |
 | Cross-repo/Environment confused deputy | Numeric repo/installation IDs, Environment allowlist, exact reconstructed callback route |
 | Callback URL SSRF | Never follow arbitrary URL; validate origin/path then reconstruct GitHub API endpoint |
 | Spoofed or stranded GitHub delivery | Inbound HMAC SHA-256 over raw body or distinct App-JWT-authenticated REST provenance; strict list/detail equality, event/action/scope/target/freshness allowlists, delivery-GUID uniqueness and GitHub truth re-fetch |
-| Workflow or action changed to exfiltrate Environment secrets | Exact workflow/local-object digests, external full-SHA pins and signed dependency lock fixed in subject |
+| Workflow or action changed to exfiltrate Environment secrets | Exact workflow digest, one governed job, checkout/bootstrap-first order, no post-bootstrap shell/local action, external full-SHA/image-digest pins and signed dependency lock fixed in subject |
+| Bootstrap credential/OIDC sent to an attacker HTTPS host | Exact `runnerBootstrapUrl` is part of the signed policy and is checked in both workflow inspection and runtime client |
 | Hidden dispatch input changes target/TTL/action | Governed v1 workflows declare no inputs; values derive only from ref/bundle/outcome |
 | Self-hosted runner label is taken by an untrusted node | Exact runner group/labels, fresh signed inventory and all-eligible-runner attestation before approval |
 | Evidence artifact substitution | Content-addressed store, recomputed download digest and immutable object identity |
@@ -809,7 +871,7 @@ fails closed before Environment reconfiguration.
 | Admin bypass defeats rule | Disable Environment admin bypass for machine-gated scope; alert on bypass/audit events |
 | App/GitHub outage | New deploy waits/rejects; existing product runtime continues; required-reviewer rollback path retained |
 | Public-preview API changes | Versioned feature flag, contract canary and fail-closed disable/rollback procedure |
-| Dispatcher confused deputy | mTLS/SPIFFE registration allowlist, numeric GitHub actor mapping, immutable ref and no generic workflow OIDC in v1 |
+| Dispatcher confused deputy | mTLS/SPIFFE registration allowlist, numeric GitHub actor mapping and immutable ref; runner-bootstrap OIDC cannot register or dispatch intents |
 | App token used for another Deployments write operation | Egress/method/path allowlist plus alert on every unrecognized GitHub API call |
 
 Two AI providers reduce correlated review error; they do not prove runtime
@@ -1059,6 +1121,7 @@ Minimum automated and live acceptance:
 | Signatures | valid two-family quorum; one signer; same family via two channels; same key with two family labels; channel/direct-route mismatch; bad key; revoked/expired key; coordinator-only signature |
 | Review chain | AGREE/AGREE; open REVISE; unacknowledged must-fix; mismatched closure root; final AGREE on old head/fix graph; model identity mismatch |
 | Binding | missing run inputs in official fixture; governed input/vars/mutable-control read; colliding display title; moved/deleted intent ref; wrong repo/environment/ref/head/workflow/dependency lock/artifact/numeric actor/session/stage/target/runner inventory or admission lease |
+| Runner bootstrap | valid GitHub OIDC plus subject-bound credential; wrong audience/repo/Environment/ref/SHA/workflow/run/attempt/actor; bad/unknown key; expired token; missing `id-token: write`; wrong assigned runner; stale approval; credential replay; response tamper |
 | Replay | same grant/same delivery; same grant/new run; rerun attempt; concurrent workers; expired nonce |
 | Policy | workflow_dispatch only; test reversible pass; missing rollback/watchdog/D29 reject; trust-root self-update reject; stale revocation/environment snapshot reject; production/human/legal/secret-owner/irreversible reject |
 | Stage flow | browser before apply; apply approval but run failure; artifact mismatch; dedicated rollback success; unsigned/input-selected rollback reject; rollback uncertainty/quarantine; incomplete Drained reject; reissue before terminal verifier reject |
@@ -1082,7 +1145,7 @@ This ADR authorizes no live mutation. Proposed PR sequence:
    signing, bundle verifier and intent registration.
 4. **PR-D — workflow correlation:** immutable intent tags, numeric dispatcher
    identity, exact workflow/dependency lock/stage policy, input-authority
-   refactor, tag cleanup and offline evaluation.
+   refactor, runner OIDC/one-use bootstrap, tag cleanup and offline evaluation.
 5. **PR-E — dual gate:** GitHub App registration/install and Environment
    configuration; required reviewer retained.
 6. **PR-F — non-prod canary:** deliberate reviewer removal only after Phase 2
@@ -1348,3 +1411,31 @@ Local execution passes 126 GitHub-App tests before the final jitter repair and
 the focused 18-test regression set after it. This review authorizes a source
 PR only; App private-key provisioning, Environment rule activation and a real
 test deployment callback remain open Phase-2 gates.
+
+Runner-bootstrap trust-lane source review, 2026-07-17:
+
+- direct Anthropic CLI, actual
+  `modelUsage=claude-opus-4-6[1m]`, `direct-provider-CLI=true`: initial
+  `REVISE` on the OIDC RSA/JWKS profile and bootstrap transport hardening;
+  repair-round `AGREE`; final post-Cursor current-tree `AGREE`, no P0/P1;
+- Cursor CLI, live-listed `cursor-grok-4.5-high`, provider family xAI,
+  `direct-provider-CLI=false`, `modelIdentityClass=trusted-launch-attested`:
+  initial `REVISE` on bootstrap-origin phishing and free-form remote control;
+  second `REVISE` on case/path-variant second checkout; final current-tree
+  `AGREE`, no P0/P1.
+
+The absorbed repairs pin the GitHub OIDC profile and rate-limited JWKS refresh,
+require a 64-character subject-bound Environment credential, enforce exact JSON
+and HTTPS transport, bind the full bootstrap URL into the signed policy, and
+restrict the governed workflow to one job with checkout, one exact bootstrap
+command and only content-addressed post-bootstrap actions. Checkout identity
+is parsed case-insensitively, and only the three exact bootstrap secret
+references are permitted. Local execution passes 174 GitHub-App tests plus
+Ruff, compile, JSON Schema and whitespace checks.
+
+This consensus covers source only. TEST Vault Transit is still absent, the
+public trust-root/HTTPS runtime and separate dispatcher identity are not live,
+protected workflows and callback/rollback canaries have not run, and the
+Environment custom rule remains disabled. Human required-reviewer, attended
+consent, production secret-owner and irreversible production gates are not
+delegated by this record.

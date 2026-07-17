@@ -21,11 +21,17 @@ BUNDLE_SCHEMA = ROOT / "schema/cross-ai-deployment-bundle-v1.schema.json"
 REVIEW_SCHEMA = ROOT / "schema/cross-ai-deployment-review-v1.schema.json"
 TRUST_ROOT_SCHEMA = ROOT / "schema/cross-ai-deployment-trust-root-v1.schema.json"
 REVOCATIONS_SCHEMA = ROOT / "schema/cross-ai-deployment-revocations-v1.schema.json"
+RUNNER_ADMISSION_LEASE_SCHEMA = (
+    ROOT / "schema/cross-ai-runner-admission-lease-v1.schema.json"
+)
 
 BUNDLE_PAYLOAD_TYPE = "application/vnd.acik.cross-ai-deployment-bundle.v1+json"
 REVIEW_PAYLOAD_TYPE = "application/vnd.acik.cross-ai-deployment-review.v1+json"
 REVOCATIONS_PAYLOAD_TYPE = (
     "application/vnd.acik.cross-ai-deployment-revocations.v1+json"
+)
+RUNNER_ADMISSION_LEASE_PAYLOAD_TYPE = (
+    "application/vnd.acik.cross-ai-runner-admission-lease.v1+json"
 )
 SESSION_DOMAIN = "acik.cross-ai-deployment-session.v1"
 CLOSURE_DOMAIN = "acik.cross-ai-deployment-closure.v1"
@@ -59,6 +65,19 @@ class VerifiedReview:
 
 
 @dataclass(frozen=True)
+class VerifiedRunnerAdmissionLease:
+    digest: str
+    envelope: VerifiedEnvelope
+    key: TrustKey
+    issued_at: datetime
+    expires_at: datetime
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return self.envelope.payload
+
+
+@dataclass(frozen=True)
 class VerifiedBundle:
     bundle_id: str
     bundle_digest: str
@@ -69,6 +88,7 @@ class VerifiedBundle:
     provider_families: tuple[str, ...]
     final_review_digests: tuple[str, ...]
     coordinator_key_id: str
+    runner_admission_lease: VerifiedRunnerAdmissionLease
     payload: dict[str, Any]
 
 
@@ -135,7 +155,10 @@ class EvidenceVerifier:
                 reject("TRUST_KEY_DUPLICATE", f"duplicate key ID {key_id}")
             public_key = decode_public_key(entry["publicKeyBase64"], key_id)
             if public_key in public_keys:
-                reject("TRUST_KEY_REUSED", "one Ed25519 key must not serve two trust entries")
+                reject(
+                    "TRUST_KEY_REUSED",
+                    "one Ed25519 key must not serve two trust entries",
+                )
             public_keys.add(public_key)
             role = entry["role"]
             family = entry["providerFamily"]
@@ -153,7 +176,12 @@ class EvidenceVerifier:
                         "TRUST_KEY_ATTRIBUTION_INVALID",
                         f"provider key {key_id} lacks fixed family/channel/direct attribution",
                     )
-            elif family is not None or channels or model_identity_classes or direct is not None:
+            elif (
+                family is not None
+                or channels
+                or model_identity_classes
+                or direct is not None
+            ):
                 reject(
                     "TRUST_KEY_ATTRIBUTION_INVALID",
                     f"non-provider key {key_id} must not carry provider attribution",
@@ -161,7 +189,9 @@ class EvidenceVerifier:
             not_before = parse_utc(entry["notBefore"], f"keys[{key_id}].notBefore")
             not_after = parse_utc(entry["notAfter"], f"keys[{key_id}].notAfter")
             if not_after <= not_before:
-                reject("TRUST_KEY_LIFETIME_INVALID", f"key {key_id} lifetime is invalid")
+                reject(
+                    "TRUST_KEY_LIFETIME_INVALID", f"key {key_id} lifetime is invalid"
+                )
             parsed[key_id] = TrustKey(
                 key_id=key_id,
                 role=role,
@@ -174,15 +204,25 @@ class EvidenceVerifier:
                 not_after=not_after,
             )
         roles = {key.role for key in parsed.values()}
-        if not {"provider-review", "coordinator", "revocation"}.issubset(roles):
-            reject("TRUST_ROLE_MISSING", "provider, coordinator and revocation keys are required")
+        if not {
+            "provider-review",
+            "coordinator",
+            "revocation",
+            "runner-management",
+        }.issubset(roles):
+            reject(
+                "TRUST_ROLE_MISSING",
+                "provider, coordinator, revocation and runner-management keys are required",
+            )
         families = {
             key.provider_family
             for key in parsed.values()
             if key.role == "provider-review"
         }
         if len(families) < self.minimum_provider_families:
-            reject("TRUST_PROVIDER_QUORUM_IMPOSSIBLE", "trust root cannot satisfy quorum")
+            reject(
+                "TRUST_PROVIDER_QUORUM_IMPOSSIBLE", "trust root cannot satisfy quorum"
+            )
         return parsed
 
     def _validate_trust_root_lifetime(self) -> None:
@@ -200,7 +240,10 @@ class EvidenceVerifier:
         for key in self.keys.values():
             if key.role != role:
                 continue
-            if key.not_before <= self.now + self.max_skew and key.not_after >= self.now - self.max_skew:
+            if (
+                key.not_before <= self.now + self.max_skew
+                and key.not_after >= self.now - self.max_skew
+            ):
                 active[key.key_id] = key.public_key
         if not active:
             reject("TRUST_ACTIVE_KEY_MISSING", f"no active {role} key is available")
@@ -219,9 +262,14 @@ class EvidenceVerifier:
             "REVOCATIONS_SCHEMA_INVALID",
         )
         issued_at = parse_utc(verified.payload["issuedAt"], "revocations.issuedAt")
-        next_update = parse_utc(verified.payload["nextUpdate"], "revocations.nextUpdate")
+        next_update = parse_utc(
+            verified.payload["nextUpdate"], "revocations.nextUpdate"
+        )
         if issued_at > self.now + self.max_skew:
-            reject("REVOCATIONS_NOT_YET_VALID", "revocation set issue time is in the future")
+            reject(
+                "REVOCATIONS_NOT_YET_VALID",
+                "revocation set issue time is in the future",
+            )
         if next_update < self.now - self.max_skew:
             reject("REVOCATIONS_STALE", "revocation set nextUpdate is stale")
         if next_update <= issued_at:
@@ -245,7 +293,9 @@ class EvidenceVerifier:
         if check_revocation and self._is_revoked("key", key.key_id, issued_at):
             reject("SIGNING_KEY_REVOKED", f"key {key.key_id} is revoked")
 
-    def _is_revoked(self, kind: str, identifier: str, issued_at: datetime | None = None) -> bool:
+    def _is_revoked(
+        self, kind: str, identifier: str, issued_at: datetime | None = None
+    ) -> bool:
         for entry in self.revocations["entries"]:
             if entry["type"] != kind or entry["id"] != identifier:
                 continue
@@ -280,6 +330,7 @@ class EvidenceVerifier:
             }
         )
         self._verify_subject_and_grant(bundle, subject_digest)
+        runner_admission_lease = self._verify_runner_admission_lease(bundle)
 
         reviews = self._verify_reviews(bundle, subject_digest)
         closure_root = self._verify_closure(bundle, reviews, subject_digest)
@@ -308,9 +359,86 @@ class EvidenceVerifier:
             session_digest=bundle["subject"]["sessionSha256"],
             expires_at=parse_utc(bundle["grant"]["expiresAt"], "grant.expiresAt"),
             provider_families=tuple(sorted(families)),
-            final_review_digests=tuple(sorted(review.digest for review in final_reviews)),
+            final_review_digests=tuple(
+                sorted(review.digest for review in final_reviews)
+            ),
             coordinator_key_id=coordinator.key_id,
+            runner_admission_lease=runner_admission_lease,
             payload=bundle,
+        )
+
+    def _verify_runner_admission_lease(
+        self, bundle: dict[str, Any]
+    ) -> VerifiedRunnerAdmissionLease:
+        envelope = bundle["runnerAdmissionLeaseEnvelope"]
+        verified = verify_json_envelope(
+            envelope,
+            expected_payload_type=RUNNER_ADMISSION_LEASE_PAYLOAD_TYPE,
+            allowed_keys=self._active_keys("runner-management"),
+            exactly_one_signature=True,
+        )
+        _validate_schema(
+            verified.payload,
+            RUNNER_ADMISSION_LEASE_SCHEMA,
+            "RUNNER_ADMISSION_LEASE_SCHEMA_INVALID",
+        )
+        subject = bundle["subject"]
+        grant = bundle["grant"]
+        payload = verified.payload
+        if verified.envelope_digest != subject["runnerAdmissionLeaseSha256"]:
+            reject(
+                "RUNNER_ADMISSION_LEASE_DIGEST_MISMATCH",
+                "runner admission lease differs from the signed subject",
+            )
+        bindings = {
+            "requestId": grant["requestId"],
+            "repositoryId": subject["repositoryId"],
+            "repository": subject["repository"],
+            "environment": subject["environment"],
+            "headSha": subject["headSha"],
+            "intentRef": subject["intentRef"],
+            "runnerPolicySha256": subject["runnerPolicySha256"],
+        }
+        if any(payload.get(key) != value for key, value in bindings.items()):
+            reject(
+                "RUNNER_ADMISSION_LEASE_BINDING_MISMATCH",
+                "runner admission lease differs from deployment subject",
+            )
+        issued_at = parse_utc(payload["issuedAt"], "runnerLease.issuedAt")
+        expires_at = parse_utc(payload["expiresAt"], "runnerLease.expiresAt")
+        grant_start = parse_utc(grant["notBefore"], "grant.notBefore")
+        grant_end = parse_utc(grant["expiresAt"], "grant.expiresAt")
+        if (
+            issued_at > self.now + self.max_skew
+            or expires_at < self.now - self.max_skew
+            or expires_at <= issued_at
+            or issued_at < grant_start - self.max_skew
+            or expires_at < grant_end
+        ):
+            reject(
+                "RUNNER_ADMISSION_LEASE_LIFETIME_INVALID",
+                "runner admission lease does not cover the signed grant",
+            )
+        runners = payload["eligibleRunners"]
+        runner_ids = [entry["runnerId"] for entry in runners]
+        runner_names = [entry["runnerNameSha256"] for entry in runners]
+        if len(set(runner_ids)) != len(runner_ids) or len(set(runner_names)) != len(
+            runner_names
+        ):
+            reject(
+                "RUNNER_ADMISSION_LEASE_AMBIGUOUS",
+                "runner admission lease contains duplicate identities",
+            )
+        key = self.keys[verified.signing_key_ids[0]]
+        self._validate_key_time(key, issued_at, "runner admission lease")
+        if self._is_revoked("runner-lease", payload["leaseId"]):
+            reject("EVIDENCE_REVOKED", "runner admission lease is revoked")
+        return VerifiedRunnerAdmissionLease(
+            digest=verified.envelope_digest,
+            envelope=verified,
+            key=key,
+            issued_at=issued_at,
+            expires_at=expires_at,
         )
 
     def _verify_subject_and_grant(
@@ -328,8 +456,14 @@ class EvidenceVerifier:
             reject("GRANT_NOT_YET_VALID", "grant is not yet valid")
         if expires_at < self.now - self.max_skew:
             reject("GRANT_EXPIRED", "grant is expired")
-        if self.expected_policy_sha256 and subject["policySha256"] != self.expected_policy_sha256:
-            reject("POLICY_DIGEST_MISMATCH", "subject policy digest does not match pinned policy")
+        if (
+            self.expected_policy_sha256
+            and subject["policySha256"] != self.expected_policy_sha256
+        ):
+            reject(
+                "POLICY_DIGEST_MISMATCH",
+                "subject policy digest does not match pinned policy",
+            )
         request_id = grant["requestId"]
         if subject["intentRef"] != f"refs/tags/cross-ai-intent/{request_id}":
             reject("INTENT_REF_MISMATCH", "intent ref is not bound to requestId")
@@ -343,12 +477,16 @@ class EvidenceVerifier:
                 "environment": subject["environment"],
                 "headSha": subject["headSha"],
                 "intentRef": subject["intentRef"],
+                "bootstrapCredentialSha256": subject["bootstrapCredentialSha256"],
                 "endpointIdSha256": subject["endpointIdSha256"],
                 "operatorIdSha256": subject["operatorIdSha256"],
             }
         )
         if subject["sessionSha256"] != expected_session:
-            reject("SESSION_BINDING_MISMATCH", "sessionSha256 does not match canonical session")
+            reject(
+                "SESSION_BINDING_MISMATCH",
+                "sessionSha256 does not match canonical session",
+            )
 
         stages = bundle["workflowStages"]
         stage_names = [stage["stage"] for stage in stages]
@@ -381,11 +519,16 @@ class EvidenceVerifier:
                 allowed_keys=provider_keys,
                 exactly_one_signature=True,
             )
-            _validate_schema(leaf_envelope.payload, REVIEW_SCHEMA, "REVIEW_SCHEMA_INVALID")
+            _validate_schema(
+                leaf_envelope.payload, REVIEW_SCHEMA, "REVIEW_SCHEMA_INVALID"
+            )
             leaf = leaf_envelope.payload
             key_id = leaf_envelope.signing_key_ids[0]
             if leaf["keyId"] != key_id:
-                reject("PROVIDER_ATTRIBUTION_MISMATCH", "leaf keyId differs from DSSE signer")
+                reject(
+                    "PROVIDER_ATTRIBUTION_MISMATCH",
+                    "leaf keyId differs from DSSE signer",
+                )
             key = self.keys[key_id]
             if (
                 leaf["providerFamily"] != key.provider_family
@@ -398,7 +541,9 @@ class EvidenceVerifier:
                     "leaf provider/channel/direct attribution differs from trust root",
                 )
             if leaf["subjectSha256"] != subject_digest:
-                reject("REVIEW_SUBJECT_MISMATCH", "review does not bind the bundle subject")
+                reject(
+                    "REVIEW_SUBJECT_MISMATCH", "review does not bind the bundle subject"
+                )
             issued_at = parse_utc(leaf["issuedAt"], "review.issuedAt")
             expires_at = parse_utc(leaf["expiresAt"], "review.expiresAt")
             if issued_at > self.now + self.max_skew:
@@ -434,15 +579,25 @@ class EvidenceVerifier:
             ordered = sorted(chain, key=lambda item: item.payload["round"])
             families = {item.key.provider_family for item in ordered}
             if len(families) != 1:
-                reject("REVIEW_CHAIN_PROVIDER_MISMATCH", f"chain {chain_id} crosses providers")
+                reject(
+                    "REVIEW_CHAIN_PROVIDER_MISMATCH",
+                    f"chain {chain_id} crosses providers",
+                )
             rounds = [item.payload["round"] for item in ordered]
             if rounds != list(range(1, len(ordered) + 1)):
-                reject("REVIEW_CHAIN_GAP", f"chain {chain_id} rounds are not contiguous")
+                reject(
+                    "REVIEW_CHAIN_GAP", f"chain {chain_id} rounds are not contiguous"
+                )
             if ordered[0].payload["previousRoundSha256"] is not None:
-                reject("REVIEW_CHAIN_INVALID", f"chain {chain_id} first round has a predecessor")
+                reject(
+                    "REVIEW_CHAIN_INVALID",
+                    f"chain {chain_id} first round has a predecessor",
+                )
             for previous, current in zip(ordered, ordered[1:]):
                 if current.payload["previousRoundSha256"] != previous.digest:
-                    reject("REVIEW_CHAIN_INVALID", f"chain {chain_id} predecessor mismatch")
+                    reject(
+                        "REVIEW_CHAIN_INVALID", f"chain {chain_id} predecessor mismatch"
+                    )
 
     def _verify_closure(
         self,
@@ -456,23 +611,36 @@ class EvidenceVerifier:
         for entry in entries:
             finding_id = entry["findingId"]
             if finding_id in finding_ids:
-                reject("CLOSURE_DUPLICATE_FINDING", "closure finding IDs must be unique")
+                reject(
+                    "CLOSURE_DUPLICATE_FINDING", "closure finding IDs must be unique"
+                )
             finding_ids.add(finding_id)
             raised = reviews.get(entry["raisedByReviewSha256"])
             acknowledged = reviews.get(entry["acknowledgedByReviewSha256"])
             if raised is None or acknowledged is None:
                 reject("CLOSURE_REVIEW_MISSING", "closure references an unknown review")
-            if raised.payload["verdict"] == "AGREE" or finding_id not in raised.payload["findingIds"]:
-                reject("CLOSURE_RAISE_INVALID", "finding is not raised by a non-AGREE review")
+            if (
+                raised.payload["verdict"] == "AGREE"
+                or finding_id not in raised.payload["findingIds"]
+            ):
+                reject(
+                    "CLOSURE_RAISE_INVALID",
+                    "finding is not raised by a non-AGREE review",
+                )
             if raised.key.provider_family != acknowledged.key.provider_family:
-                reject("CLOSURE_ACK_PROVIDER_MISMATCH", "raiser provider must acknowledge fix")
+                reject(
+                    "CLOSURE_ACK_PROVIDER_MISMATCH",
+                    "raiser provider must acknowledge fix",
+                )
             if (
                 finding_id not in acknowledged.payload["resolvedFindingIds"]
                 or finding_id not in acknowledged.payload["acknowledgedFindingIds"]
             ):
                 reject("CLOSURE_ACK_MISSING", "fix lacks provider acknowledgement")
             if acknowledged.issued_at <= raised.issued_at:
-                reject("CLOSURE_ACK_ORDER_INVALID", "acknowledgement must follow finding")
+                reject(
+                    "CLOSURE_ACK_ORDER_INVALID", "acknowledgement must follow finding"
+                )
             closure_projection.append(
                 {
                     "findingId": finding_id,
@@ -488,12 +656,16 @@ class EvidenceVerifier:
             for finding_id in review.payload["findingIds"]
         }
         if finding_ids != raised_ids:
-            reject("CLOSURE_INCOMPLETE", "closure does not cover every must-fix finding")
+            reject(
+                "CLOSURE_INCOMPLETE", "closure does not cover every must-fix finding"
+            )
         closure_root = sha256_digest(
             {
                 "domain": CLOSURE_DOMAIN,
                 "subjectSha256": subject_digest,
-                "entries": sorted(closure_projection, key=lambda item: item["findingId"]),
+                "entries": sorted(
+                    closure_projection, key=lambda item: item["findingId"]
+                ),
             }
         )
         if bundle["closure"]["closureRootSha256"] != closure_root:
@@ -514,34 +686,53 @@ class EvidenceVerifier:
         for digest, review in reviews.items():
             chain_id = review.payload["reviewChainId"]
             current = chain_tips.get(chain_id)
-            if current is None or reviews[current].payload["round"] < review.payload["round"]:
+            if (
+                current is None
+                or reviews[current].payload["round"] < review.payload["round"]
+            ):
                 chain_tips[chain_id] = digest
         final_reviews: list[VerifiedReview] = []
         for digest in final_digests:
             if digest not in reviews:
-                reject("CONSENSUS_REVIEW_MISSING", "consensus references unknown review")
+                reject(
+                    "CONSENSUS_REVIEW_MISSING", "consensus references unknown review"
+                )
             review = reviews[digest]
             if chain_tips[review.payload["reviewChainId"]] != digest:
                 reject("CONSENSUS_NOT_CHAIN_TIP", "counted review is not its chain tip")
             if review.payload["verdict"] != "AGREE":
-                reject("CONSENSUS_VERDICT_INVALID", "counted final verdict must be AGREE")
+                reject(
+                    "CONSENSUS_VERDICT_INVALID", "counted final verdict must be AGREE"
+                )
             if review.payload["subjectSha256"] != subject_digest:
                 reject("CONSENSUS_SUBJECT_MISMATCH", "counted review subject differs")
             if review.payload["closureRootSha256"] != closure_root:
-                reject("CONSENSUS_CLOSURE_MISMATCH", "counted AGREE has old closure root")
+                reject(
+                    "CONSENSUS_CLOSURE_MISMATCH", "counted AGREE has old closure root"
+                )
             final_reviews.append(review)
         families = {
             review.key.provider_family
             for review in final_reviews
             if review.key.provider_family is not None
         }
-        direct_routes = sum(1 for review in final_reviews if review.key.direct_provider_cli)
+        direct_routes = sum(
+            1 for review in final_reviews if review.key.direct_provider_cli
+        )
         if len(families) < self.minimum_provider_families:
-            reject("PROVIDER_FAMILY_QUORUM_MISSING", "provider family quorum is missing")
+            reject(
+                "PROVIDER_FAMILY_QUORUM_MISSING", "provider family quorum is missing"
+            )
         if direct_routes < self.minimum_direct_routes:
-            reject("DIRECT_PROVIDER_QUORUM_MISSING", "direct provider route quorum is missing")
+            reject(
+                "DIRECT_PROVIDER_QUORUM_MISSING",
+                "direct provider route quorum is missing",
+            )
         if set(bundle["consensus"]["providerFamilies"]) != families:
-            reject("CONSENSUS_PROVIDER_MISMATCH", "consensus provider family list is invalid")
+            reject(
+                "CONSENSUS_PROVIDER_MISMATCH",
+                "consensus provider family list is invalid",
+            )
         return final_reviews, families
 
 

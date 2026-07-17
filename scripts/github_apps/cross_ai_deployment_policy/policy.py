@@ -43,6 +43,7 @@ class DeploymentPolicy:
     repository: str
     environment: str
     allowed_api_origins: tuple[str, ...]
+    runner_bootstrap_url: str
     allowed_installation_ids: frozenset[int]
     allowed_dispatcher_installation_ids: frozenset[int]
     allowed_dispatcher_actor_ids: frozenset[int]
@@ -64,13 +65,17 @@ def load_policy(path: Path) -> DeploymentPolicy:
         reject("POLICY_SCHEMA_INVALID", "policy must be a JSON object")
     Draft202012Validator.check_schema(schema)
     errors = sorted(
-        Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(payload),
+        Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(
+            payload
+        ),
         key=lambda item: list(item.path),
     )
     if errors:
         first = errors[0]
         location = ".".join(str(part) for part in first.absolute_path) or "$"
-        reject("POLICY_SCHEMA_INVALID", f"policy invalid at {location}: {first.message}")
+        reject(
+            "POLICY_SCHEMA_INVALID", f"policy invalid at {location}: {first.message}"
+        )
     human_classes = set(payload["humanRequiredClasses"])
     if human_classes != REQUIRED_HUMAN_CLASSES:
         reject(
@@ -98,6 +103,7 @@ def load_policy(path: Path) -> DeploymentPolicy:
         repository=payload["repository"],
         environment=payload["environment"],
         allowed_api_origins=tuple(payload["allowedApiOrigins"]),
+        runner_bootstrap_url=payload["runnerBootstrapUrl"],
         allowed_installation_ids=frozenset(payload["allowedInstallationIds"]),
         allowed_dispatcher_installation_ids=frozenset(
             payload["allowedDispatcherInstallationIds"]

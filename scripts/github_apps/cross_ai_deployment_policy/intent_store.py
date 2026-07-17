@@ -19,7 +19,13 @@ from .timeutil import parse_utc, utc_now, utc_seconds
 
 
 ACTIVE_STAGE_STATES = {"Available", "Reserved", "ApprovedPendingOutcome"}
-FINAL_STAGE_STATES = {"Succeeded", "Failed", "CallbackUnknown", "RolledBack", "Rejected"}
+FINAL_STAGE_STATES = {
+    "Succeeded",
+    "Failed",
+    "CallbackUnknown",
+    "RolledBack",
+    "Rejected",
+}
 DISPATCH_STATES = {"Pending", "Sending", "Accepted", "Uncertain", "Rejected"}
 ALLOWED_STAGE_TRANSITIONS = {
     "Reserved": {
@@ -91,6 +97,17 @@ class DispatchJob:
     http_status: int | None
     reason_code: str | None
     run_id: int | None
+
+
+@dataclass(frozen=True)
+class BootstrapConsumption:
+    request_id: str
+    stage: str
+    run_id: int
+    run_attempt: int
+    runner_id: int
+    response_digest: str
+    consumed_at: str
 
 
 class ContentAddressedStore:
@@ -187,7 +204,9 @@ class IntentRegistry:
         self.path = path
         self.cas = cas
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self._connection = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+        self._connection = sqlite3.connect(
+            path, check_same_thread=False, isolation_level=None
+        )
         self._connection.row_factory = sqlite3.Row
         self._lock = threading.RLock()
         self._initialize()
@@ -307,6 +326,19 @@ class IntentRegistry:
                         REFERENCES intent_stages(request_id, stage)
                 ) STRICT;
 
+                CREATE TABLE IF NOT EXISTS bootstrap_consumptions (
+                    request_id TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    run_id INTEGER NOT NULL,
+                    run_attempt INTEGER NOT NULL,
+                    runner_id INTEGER NOT NULL,
+                    response_digest TEXT NOT NULL UNIQUE,
+                    consumed_at TEXT NOT NULL,
+                    PRIMARY KEY (request_id, stage),
+                    FOREIGN KEY (request_id, stage)
+                        REFERENCES intent_stages(request_id, stage)
+                ) STRICT;
+
                 CREATE TRIGGER IF NOT EXISTS intent_events_no_update
                 BEFORE UPDATE ON intent_events BEGIN
                     SELECT RAISE(ABORT, 'append-only intent events');
@@ -322,6 +354,14 @@ class IntentRegistry:
                 CREATE TRIGGER IF NOT EXISTS stage_outcomes_no_delete
                 BEFORE DELETE ON stage_outcomes BEGIN
                     SELECT RAISE(ABORT, 'stage outcomes are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS bootstrap_consumptions_no_update
+                BEFORE UPDATE ON bootstrap_consumptions BEGIN
+                    SELECT RAISE(ABORT, 'bootstrap consumption is immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS bootstrap_consumptions_no_delete
+                BEFORE DELETE ON bootstrap_consumptions BEGIN
+                    SELECT RAISE(ABORT, 'bootstrap consumption is immutable');
                 END;
                 """
             )
@@ -436,12 +476,20 @@ class IntentRegistry:
         registration_principal: str,
         registered_at: datetime | None = None,
     ) -> bool:
-        if not registration_principal.startswith("spiffe://") or len(registration_principal) > 200:
-            reject("REGISTRATION_PRINCIPAL_INVALID", "registration principal must be SPIFFE")
+        if (
+            not registration_principal.startswith("spiffe://")
+            or len(registration_principal) > 200
+        ):
+            reject(
+                "REGISTRATION_PRINCIPAL_INVALID",
+                "registration principal must be SPIFFE",
+            )
         subject = verified.payload["subject"]
         grant = verified.payload["grant"]
         if grant["registrationPrincipal"] != registration_principal:
-            reject("REGISTRATION_PRINCIPAL_MISMATCH", "grant principal differs from caller")
+            reject(
+                "REGISTRATION_PRINCIPAL_MISMATCH", "grant principal differs from caller"
+            )
         if sha256_digest(envelope) != verified.bundle_digest:
             reject("INTENT_BUNDLE_MISMATCH", "envelope differs from verified bundle")
         self.cas.put_json(envelope, expected_digest=verified.bundle_digest)
@@ -476,15 +524,29 @@ class IntentRegistry:
                 ).fetchone()
                 if existing is not None:
                     immutable_keys = (
-                        "request_id", "bundle_digest", "subject_digest", "grant_digest",
-                        "repository_id", "repository", "environment", "head_sha",
-                        "intent_ref", "session_digest", "artifact_set_digest",
-                        "rollback_plan_digest", "post_deploy_verifier_digest", "expires_at",
-                        "registration_principal", "triggering_actor_id",
+                        "request_id",
+                        "bundle_digest",
+                        "subject_digest",
+                        "grant_digest",
+                        "repository_id",
+                        "repository",
+                        "environment",
+                        "head_sha",
+                        "intent_ref",
+                        "session_digest",
+                        "artifact_set_digest",
+                        "rollback_plan_digest",
+                        "post_deploy_verifier_digest",
+                        "expires_at",
+                        "registration_principal",
+                        "triggering_actor_id",
                     )
                     immutable = tuple(existing[key] for key in immutable_keys)
                     if immutable != row_values[: len(immutable_keys)]:
-                        reject("INTENT_REGISTRATION_COLLISION", "request ID already has another intent")
+                        reject(
+                            "INTENT_REGISTRATION_COLLISION",
+                            "request ID already has another intent",
+                        )
                     self._connection.execute("COMMIT")
                     return False
                 self._connection.execute(
@@ -562,7 +624,10 @@ class IntentRegistry:
         queued_at: datetime | None = None,
     ) -> DispatchJob:
         if installation_id < 1:
-            reject("DISPATCH_TARGET_INVALID", "dispatch App installation ID must be positive")
+            reject(
+                "DISPATCH_TARGET_INVALID",
+                "dispatch App installation ID must be positive",
+            )
         current = queued_at or utc_now()
         timestamp = utc_seconds(current)
         with self._lock:
@@ -574,7 +639,10 @@ class IntentRegistry:
                 if intent is None or intent["state"] != "Finalized":
                     reject("INTENT_NOT_FINALIZED", "intent is not ready for dispatch")
                 if intent["repository"] != repository:
-                    reject("DISPATCH_TARGET_MISMATCH", "dispatch repository differs from intent")
+                    reject(
+                        "DISPATCH_TARGET_MISMATCH",
+                        "dispatch repository differs from intent",
+                    )
                 expected_actor_id = intent["triggering_actor_id"]
                 if (
                     not isinstance(expected_actor_id, int)
@@ -585,7 +653,9 @@ class IntentRegistry:
                         "DISPATCH_ACTOR_UNAVAILABLE",
                         "legacy intent has no signed triggering actor and cannot be dispatched",
                     )
-                expires_at = datetime.fromisoformat(intent["expires_at"].replace("Z", "+00:00"))
+                expires_at = datetime.fromisoformat(
+                    intent["expires_at"].replace("Z", "+00:00")
+                )
                 if expires_at <= current:
                     reject("INTENT_EXPIRED", "intent grant has expired")
                 stage_row = self._connection.execute(
@@ -629,7 +699,10 @@ class IntentRegistry:
                 if stage_row["state"] != "Available":
                     reject("GRANT_REPLAY_OR_CONSUMED", "stage grant is already bound")
                 if not self._prerequisite_satisfied(request_id, stage):
-                    reject("PRIOR_STAGE_NOT_VERIFIED", "stage prerequisite is not satisfied")
+                    reject(
+                        "PRIOR_STAGE_NOT_VERIFIED",
+                        "stage prerequisite is not satisfied",
+                    )
                 self._connection.execute(
                     """
                     INSERT INTO intent_dispatches (
@@ -767,7 +840,9 @@ class IntentRegistry:
                     if identical:
                         self._connection.execute("COMMIT")
                         return self._dispatch_from_row(row)
-                    reject("DISPATCH_STATE_INVALID", "dispatch result cannot be rewritten")
+                    reject(
+                        "DISPATCH_STATE_INVALID", "dispatch result cannot be rewritten"
+                    )
                 cursor = self._connection.execute(
                     """
                     UPDATE intent_dispatches
@@ -810,7 +885,9 @@ class IntentRegistry:
         reconciled_at: datetime | None = None,
     ) -> DispatchJob:
         if run_id < 1:
-            reject("DISPATCH_RUN_INVALID", "reconciled workflow run ID must be positive")
+            reject(
+                "DISPATCH_RUN_INVALID", "reconciled workflow run ID must be positive"
+            )
         timestamp = utc_seconds(reconciled_at or utc_now())
         with self._lock:
             self._begin()
@@ -825,7 +902,9 @@ class IntentRegistry:
                     self._connection.execute("COMMIT")
                     return self._dispatch_from_row(row)
                 if row["state"] not in {"Sending", "Uncertain"}:
-                    reject("DISPATCH_STATE_INVALID", "dispatch cannot be live-reconciled")
+                    reject(
+                        "DISPATCH_STATE_INVALID", "dispatch cannot be live-reconciled"
+                    )
                 cursor = self._connection.execute(
                     """
                     UPDATE intent_dispatches
@@ -869,8 +948,12 @@ class IntentRegistry:
         resolved_head_sha: str,
         finalized_at: datetime | None = None,
     ) -> bool:
-        if len(ref_object_id) != 40 or any(c not in "0123456789abcdef" for c in ref_object_id):
-            reject("INTENT_REF_OBJECT_INVALID", "intent ref object ID must be a full SHA")
+        if len(ref_object_id) != 40 or any(
+            c not in "0123456789abcdef" for c in ref_object_id
+        ):
+            reject(
+                "INTENT_REF_OBJECT_INVALID", "intent ref object ID must be a full SHA"
+            )
         timestamp = utc_seconds(finalized_at or utc_now())
         with self._lock:
             self._begin()
@@ -881,14 +964,22 @@ class IntentRegistry:
                 if row is None:
                     reject("INTENT_NOT_FOUND", "intent does not exist")
                 if resolved_head_sha != row["head_sha"]:
-                    reject("INTENT_REF_MOVED", "intent ref does not resolve to reviewed head")
+                    reject(
+                        "INTENT_REF_MOVED",
+                        "intent ref does not resolve to reviewed head",
+                    )
                 if row["state"] == "Finalized":
                     if row["ref_object_id"] != ref_object_id:
-                        reject("INTENT_REF_MOVED", "finalized intent ref object changed")
+                        reject(
+                            "INTENT_REF_MOVED", "finalized intent ref object changed"
+                        )
                     self._connection.execute("COMMIT")
                     return False
                 if row["state"] != "Registered":
-                    reject("INTENT_STATE_INVALID", "intent cannot be finalized from current state")
+                    reject(
+                        "INTENT_STATE_INVALID",
+                        "intent cannot be finalized from current state",
+                    )
                 self._connection.execute(
                     """
                     UPDATE intents SET ref_object_id = ?, finalized_at = ?, state = 'Finalized'
@@ -968,9 +1059,8 @@ class IntentRegistry:
             row["reservation_id"],
             row["reservation_expires_at"],
         )
-        if (
-            row["state"] == "Available"
-            or not all(value is not None for value in required)
+        if row["state"] == "Available" or not all(
+            value is not None for value in required
         ):
             reject("STAGE_NOT_RESERVED", "stage has no bound run reservation")
         return StageReservation(
@@ -983,6 +1073,126 @@ class IntentRegistry:
             reservation_expires_at=row["reservation_expires_at"],
             state=row["state"],
             idempotent=True,
+        )
+
+    def get_stage_outcome(
+        self, request_id: str, stage: str
+    ) -> tuple[str, dict[str, Any]]:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT outcome_digest FROM stage_outcomes "
+                "WHERE request_id = ? AND stage = ?",
+                (request_id, stage),
+            ).fetchone()
+        if row is None:
+            reject(
+                "STAGE_OUTCOME_NOT_FOUND", "verified prior-stage outcome is unavailable"
+            )
+        digest = row["outcome_digest"]
+        return digest, self.cas.get_json(digest)
+
+    def stage_approved_at(self, request_id: str, stage: str) -> str:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT recorded_at FROM intent_events
+                WHERE request_id = ? AND stage = ?
+                  AND to_state = 'ApprovedPendingOutcome'
+                  AND reason_code != 'RUNNER_BOOTSTRAP_CONSUMED'
+                ORDER BY sequence DESC LIMIT 1
+                """,
+                (request_id, stage),
+            ).fetchone()
+        if row is None:
+            reject(
+                "BOOTSTRAP_STAGE_NOT_APPROVED", "stage approval event is unavailable"
+            )
+        return row["recorded_at"]
+
+    def consume_bootstrap(
+        self,
+        *,
+        request_id: str,
+        stage: str,
+        run_id: int,
+        run_attempt: int,
+        runner_id: int,
+        response_digest: str,
+        consumed_at: datetime | None = None,
+    ) -> BootstrapConsumption:
+        if min(run_id, run_attempt, runner_id) < 1:
+            reject(
+                "BOOTSTRAP_BINDING_INVALID",
+                "bootstrap run and runner IDs must be positive",
+            )
+        ContentAddressedStore._hex(response_digest)
+        timestamp = utc_seconds(consumed_at or utc_now())
+        with self._lock:
+            self._begin()
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM intent_stages WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if row is None:
+                    reject("STAGE_NOT_FOUND", "stage is not part of the intent")
+                if (
+                    row["state"] != "ApprovedPendingOutcome"
+                    or row["run_id"] != run_id
+                    or row["run_attempt"] != run_attempt
+                ):
+                    reject(
+                        "BOOTSTRAP_STAGE_NOT_APPROVED",
+                        "bootstrap is not bound to the approved run attempt",
+                    )
+                existing = self._connection.execute(
+                    "SELECT * FROM bootstrap_consumptions "
+                    "WHERE request_id = ? AND stage = ?",
+                    (request_id, stage),
+                ).fetchone()
+                if existing is not None:
+                    reject(
+                        "BOOTSTRAP_ALREADY_CONSUMED",
+                        "bootstrap credential is single-use",
+                    )
+                self._connection.execute(
+                    """
+                    INSERT INTO bootstrap_consumptions (
+                        request_id, stage, run_id, run_attempt, runner_id,
+                        response_digest, consumed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        request_id,
+                        stage,
+                        run_id,
+                        run_attempt,
+                        runner_id,
+                        response_digest,
+                        timestamp,
+                    ),
+                )
+                self._event(
+                    request_id=request_id,
+                    stage=stage,
+                    from_state="ApprovedPendingOutcome",
+                    to_state="ApprovedPendingOutcome",
+                    reason_code="RUNNER_BOOTSTRAP_CONSUMED",
+                    recorded_at=timestamp,
+                )
+                self._connection.execute("COMMIT")
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+        return BootstrapConsumption(
+            request_id=request_id,
+            stage=stage,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            runner_id=runner_id,
+            response_digest=response_digest,
+            consumed_at=timestamp,
         )
 
     def pending_stages(self, *, limit: int = 100) -> tuple[StageReservation, ...]:
@@ -1078,7 +1288,9 @@ class IntentRegistry:
         if apply is None:
             return False
         if stage == "browser-evidence":
-            return apply["state"] == "Succeeded" and apply["target_state"] == "Succeeded"
+            return (
+                apply["state"] == "Succeeded" and apply["target_state"] == "Succeeded"
+            )
         return apply["state"] == "CallbackUnknown" or (
             apply["state"] == "Failed" and apply["target_state"] == "Failed"
         )
@@ -1094,7 +1306,10 @@ class IntentRegistry:
         now: datetime | None = None,
     ) -> StageReservation:
         if min(run_id, run_attempt, app_rule_id) < 1:
-            reject("STAGE_RESERVATION_INVALID", "run, attempt and App rule IDs must be positive")
+            reject(
+                "STAGE_RESERVATION_INVALID",
+                "run, attempt and App rule IDs must be positive",
+            )
         current = now or utc_now()
         timestamp = utc_seconds(current)
         with self._lock:
@@ -1104,8 +1319,12 @@ class IntentRegistry:
                     "SELECT * FROM intents WHERE request_id = ?", (request_id,)
                 ).fetchone()
                 if intent is None or intent["state"] != "Finalized":
-                    reject("INTENT_NOT_FINALIZED", "intent is not ready for reservation")
-                expires_at = datetime.fromisoformat(intent["expires_at"].replace("Z", "+00:00"))
+                    reject(
+                        "INTENT_NOT_FINALIZED", "intent is not ready for reservation"
+                    )
+                expires_at = datetime.fromisoformat(
+                    intent["expires_at"].replace("Z", "+00:00")
+                )
                 if expires_at <= current:
                     reject("INTENT_EXPIRED", "intent grant has expired")
                 row = self._connection.execute(
@@ -1121,7 +1340,9 @@ class IntentRegistry:
                         and row["app_rule_id"] == app_rule_id
                     )
                     if not identical:
-                        reject("GRANT_REPLAY_OR_CONSUMED", "stage grant is already bound")
+                        reject(
+                            "GRANT_REPLAY_OR_CONSUMED", "stage grant is already bound"
+                        )
                     self._connection.execute("COMMIT")
                     return StageReservation(
                         request_id=request_id,
@@ -1135,12 +1356,13 @@ class IntentRegistry:
                         idempotent=True,
                     )
                 if not self._prerequisite_satisfied(request_id, stage):
-                    reject("PRIOR_STAGE_NOT_VERIFIED", "stage prerequisite is not satisfied")
+                    reject(
+                        "PRIOR_STAGE_NOT_VERIFIED",
+                        "stage prerequisite is not satisfied",
+                    )
                 reservation_id = str(uuid.uuid4())
                 rollback_headroom = (
-                    ROLLBACK_DISPATCH_HEADROOM
-                    if stage == "apply"
-                    else timedelta(0)
+                    ROLLBACK_DISPATCH_HEADROOM if stage == "apply" else timedelta(0)
                 )
                 reservation_deadline = min(
                     current + MAX_STAGE_OUTCOME_WAIT,
@@ -1171,7 +1393,10 @@ class IntentRegistry:
                         ),
                     )
                 except sqlite3.IntegrityError:
-                    reject("GRANT_REPLAY_OR_CONSUMED", "run/attempt/App rule is already reserved")
+                    reject(
+                        "GRANT_REPLAY_OR_CONSUMED",
+                        "run/attempt/App rule is already reserved",
+                    )
                 self._event(
                     request_id=request_id,
                     stage=stage,
@@ -1231,7 +1456,9 @@ class IntentRegistry:
                     self._connection.execute("COMMIT")
                     return
                 if to_state not in ALLOWED_STAGE_TRANSITIONS.get(from_state, set()):
-                    reject("STAGE_TRANSITION_INVALID", "stage transition is not allowed")
+                    reject(
+                        "STAGE_TRANSITION_INVALID", "stage transition is not allowed"
+                    )
                 self._connection.execute(
                     "UPDATE intent_stages SET state = ? WHERE request_id = ? AND stage = ?",
                     (to_state, request_id, stage),
@@ -1282,8 +1509,7 @@ class IntentRegistry:
             else None
         )
         if (
-            outcome.get("schemaVersion")
-            != "acik.cross-ai-deployment-stage-outcome.v1"
+            outcome.get("schemaVersion") != "acik.cross-ai-deployment-stage-outcome.v1"
             or outcome.get("requestId") != request_id
             or outcome.get("stage") != stage
             or outcome.get("runId") != run_id
@@ -1298,7 +1524,9 @@ class IntentRegistry:
             )
         source_archive_sha256 = outcome.get("sourceArchiveSha256")
         if not isinstance(source_archive_sha256, str):
-            reject("STAGE_OUTCOME_BINDING_MISMATCH", "outcome archive digest is missing")
+            reject(
+                "STAGE_OUTCOME_BINDING_MISMATCH", "outcome archive digest is missing"
+            )
         ContentAddressedStore._hex(source_archive_sha256)
         current = recorded_at or utc_now()
         timestamp = utc_seconds(current)
@@ -1321,7 +1549,10 @@ class IntentRegistry:
                 if row is None:
                     reject("STAGE_NOT_FOUND", "stage is not part of the intent")
                 if row["run_id"] != run_id or row["run_attempt"] != run_attempt:
-                    reject("STAGE_OUTCOME_BINDING_MISMATCH", "outcome run differs from reservation")
+                    reject(
+                        "STAGE_OUTCOME_BINDING_MISMATCH",
+                        "outcome run differs from reservation",
+                    )
                 durable_binding = {
                     "repositoryId": row["repository_id"],
                     "repository": row["repository"],
@@ -1334,14 +1565,20 @@ class IntentRegistry:
                     "rollbackPlanSha256": row["rollback_plan_digest"],
                     "postDeployVerifierSha256": row["post_deploy_verifier_digest"],
                 }
-                if any(outcome.get(key) != value for key, value in durable_binding.items()):
+                if any(
+                    outcome.get(key) != value for key, value in durable_binding.items()
+                ):
                     reject(
                         "STAGE_OUTCOME_BINDING_MISMATCH",
                         "outcome differs from the durable signed-intent projection",
                     )
-                expires_at = datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00"))
+                expires_at = datetime.fromisoformat(
+                    row["expires_at"].replace("Z", "+00:00")
+                )
                 if current > expires_at:
-                    reject("STAGE_OUTCOME_EXPIRED", "outcome arrived after intent expiry")
+                    reject(
+                        "STAGE_OUTCOME_EXPIRED", "outcome arrived after intent expiry"
+                    )
                 existing = self._connection.execute(
                     "SELECT * FROM stage_outcomes WHERE request_id = ? AND stage = ?",
                     (request_id, stage),
@@ -1352,7 +1589,10 @@ class IntentRegistry:
                         or existing["source_archive_sha256"] != source_archive_sha256
                         or existing["target_state"] != target_state
                     ):
-                        reject("STAGE_OUTCOME_CONFLICT", "stage already has another outcome")
+                        reject(
+                            "STAGE_OUTCOME_CONFLICT",
+                            "stage already has another outcome",
+                        )
                     self._connection.execute("COMMIT")
                     return False
                 from_state = row["state"]
@@ -1464,6 +1704,7 @@ class IntentRegistry:
 
 
 __all__ = [
+    "BootstrapConsumption",
     "ContentAddressedStore",
     "DispatchJob",
     "IntentRecord",

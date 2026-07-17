@@ -42,6 +42,7 @@ class EvidenceCoordinator:
         bundle_id: str,
         subject: dict[str, Any],
         workflow_stages: list[dict[str, Any]],
+        runner_admission_lease_envelope: dict[str, Any],
         grant: dict[str, Any],
         review_envelopes: list[dict[str, Any]],
         closure_entries: list[dict[str, Any]],
@@ -71,6 +72,7 @@ class EvidenceCoordinator:
             "bundleId": bundle_id,
             "subject": subject,
             "workflowStages": workflow_stages,
+            "runnerAdmissionLeaseEnvelope": runner_admission_lease_envelope,
             "reviewEnvelopes": review_envelopes,
             "closure": {
                 "entries": closure_entries,
