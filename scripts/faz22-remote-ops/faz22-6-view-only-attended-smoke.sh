@@ -81,6 +81,7 @@ OPEN_SESSION_DEVICE_READY_SECONDS="${OPEN_SESSION_DEVICE_READY_SECONDS:-180}"
 OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS="${OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS:-5}"
 VIEWER_PROBE_SECONDS="${VIEWER_PROBE_SECONDS:-8}"
 BROWSER_EVIDENCE_SCRIPT="${BROWSER_EVIDENCE_SCRIPT:-}"
+AUTH_ROUTE_PREFLIGHT_ONLY="${AUTH_ROUTE_PREFLIGHT_ONLY:-0}"
 VIEWER_PRODUCT_BASE_URL="${VIEWER_PRODUCT_BASE_URL:-https://testai.acik.com}"
 PRODUCT_PILOT_SECONDS="${PRODUCT_PILOT_SECONDS:-300}"
 SOURCE_REVISION="${SOURCE_REVISION:-}"
@@ -179,9 +180,11 @@ fail_smoke() {
   status="no-go"
   reason="$1"
   set +e
-  collect_broker_logs >/dev/null 2>&1
-  collect_endpoint_log >/dev/null 2>&1
-  write_summary >/dev/null 2>&1
+  if [[ "${AUTH_ROUTE_PREFLIGHT_ONLY:-0}" != "1" ]]; then
+    collect_broker_logs >/dev/null 2>&1
+    collect_endpoint_log >/dev/null 2>&1
+    write_summary >/dev/null 2>&1
+  fi
   write_sha256sums >/dev/null 2>&1
   set -e
   echo "NO_GO $reason"
@@ -222,6 +225,14 @@ sha256_text() {
   fi
 }
 
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
 sha256_public_key_material_file() {
   local file="$1" material
   material="$(grep -v -- '-----' "$file" | tr -d '\r\n[:space:]')"
@@ -246,7 +257,10 @@ future_date_utc() {
 }
 
 validate_inputs() {
-  if [[ -z "$EXPECTED_DIGEST" ]]; then
+  if [[ "$AUTH_ROUTE_PREFLIGHT_ONLY" == "1" && -z "$BROWSER_EVIDENCE_SCRIPT" ]]; then
+    fail_smoke "browser-auth-route-preflight-script-required"
+  fi
+  if [[ "$AUTH_ROUTE_PREFLIGHT_ONLY" != "1" && -z "$EXPECTED_DIGEST" ]]; then
     local expected_ref derive_rc
     derive_rc=0
     expected_ref="$(rbd_expected_digest)" || derive_rc=$?
@@ -257,13 +271,16 @@ validate_inputs() {
       *) fail_smoke "expected-digest-derive-failed:${derive_rc}" ;;
     esac
   fi
-  [[ "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || fail_smoke "expected-digest-invalid"
+  if [[ "$AUTH_ROUTE_PREFLIGHT_ONLY" != "1" ]]; then
+    [[ "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || fail_smoke "expected-digest-invalid"
+  fi
   [[ "$DEVICE_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail_smoke "device-id-invalid"
   [[ "$SESSION_ID" =~ ^[A-Za-z0-9._:-]+$ ]] || fail_smoke "session-id-invalid"
   [[ "$OPERATION_ID" =~ ^[A-Za-z0-9._:-]+$ ]] || fail_smoke "operation-id-invalid"
   [[ "$DB_SCHEMA" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || fail_smoke "db-schema-invalid"
   [[ "$DURESS_SIGNAL_FOR_OPERATION" == "NONE" ]] || fail_smoke "duress-signal-for-operation-must-be-none"
   case "$REQUIRE_ACTIVE_GUI" in 0|1) ;; *) fail_smoke "require-active-gui-invalid" ;; esac
+  case "$AUTH_ROUTE_PREFLIGHT_ONLY" in 0|1) ;; *) fail_smoke "auth-route-preflight-only-invalid" ;; esac
   case "$AUTO_FINALIZE" in 0|1) ;; *) fail_smoke "auto-finalize-invalid" ;; esac
   case "$VIEWER_PATH_DECISION" in owner-deferred|fanout-proven) ;; *) fail_smoke "viewer-path-decision-invalid" ;; esac
   [[ "$CONSENT_WAIT_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "consent-wait-seconds-invalid"
@@ -443,25 +460,65 @@ open_session_after_agent_reconnect() {
   done
 }
 
+keycloak_admin_password_candidates() {
+  printf '%s\n' \
+    "/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "/home/halil/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "$HOME/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "$HOME/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    | awk 'NF && !seen[$0]++'
+}
+
+keycloak_admin_password_is_valid() {
+  local response token
+  response="$(curl -sS -X POST \
+    "$KC_BASE_URL/realms/master/protocol/openid-connect/token" \
+    --data-urlencode "grant_type=password" \
+    --data-urlencode "client_id=admin-cli" \
+    --data-urlencode "username=$KC_ADMIN_USER" \
+    --data-urlencode "password@$KC_ADMIN_PASS_FILE" 2>/dev/null)" \
+    || return 1
+  token="$(jq -r '.access_token // empty' <<< "$response" 2>/dev/null)"
+  [[ -n "$token" ]]
+}
+
+accept_keycloak_admin_password_candidate() {
+  [[ -s "$KC_ADMIN_PASS_FILE" ]] || return 1
+  chmod 0600 "$KC_ADMIN_PASS_FILE"
+  keycloak_admin_password_is_valid
+}
+
 read_keycloak_admin_password() {
+  local candidate
   if [[ -n "${KC_TEST_ADMIN_PASSWORD:-}" ]]; then
     printf '%s' "$KC_TEST_ADMIN_PASSWORD" > "$KC_ADMIN_PASS_FILE"
-    chmod 0600 "$KC_ADMIN_PASS_FILE"
-    return
+    accept_keycloak_admin_password_candidate && return
   fi
   if [[ -n "${KC_ADMIN_PASSWORD:-}" ]]; then
     printf '%s' "$KC_ADMIN_PASSWORD" > "$KC_ADMIN_PASS_FILE"
-    chmod 0600 "$KC_ADMIN_PASS_FILE"
-    return
+    accept_keycloak_admin_password_candidate && return
   fi
   if command -v docker >/dev/null 2>&1; then
     if docker exec "$KC_CONTAINER" sh -c 'cat /run/secrets/kc_admin_password' \
-        > "$KC_ADMIN_PASS_FILE" 2>/dev/null && [[ -s "$KC_ADMIN_PASS_FILE" ]]; then
-      chmod 0600 "$KC_ADMIN_PASS_FILE"
+        > "$KC_ADMIN_PASS_FILE" 2>/dev/null \
+        && accept_keycloak_admin_password_candidate; then
+      return
+    fi
+    if docker exec "$KC_CONTAINER" sh -c \
+        'p="${KEYCLOAK_ADMIN_PASSWORD_FILE:-}"; [ -n "$p" ] && cat "$p"' \
+        > "$KC_ADMIN_PASS_FILE" 2>/dev/null \
+        && accept_keycloak_admin_password_candidate; then
       return
     fi
   fi
-  fail_smoke "keycloak-admin-password-source-missing"
+  while IFS= read -r candidate; do
+    if [[ -r "$candidate" ]]; then
+      cp "$candidate" "$KC_ADMIN_PASS_FILE"
+      accept_keycloak_admin_password_candidate && return
+    fi
+  done < <(keycloak_admin_password_candidates)
+  rm -f "$KC_ADMIN_PASS_FILE"
+  fail_smoke "keycloak-admin-password-source-unusable"
 }
 
 mint_admin_token() {
@@ -1019,7 +1076,11 @@ probe_viewer() {
 }
 
 run_browser_evidence() {
-  [[ -n "$BROWSER_EVIDENCE_SCRIPT" ]] || return 0
+  if [[ -z "$BROWSER_EVIDENCE_SCRIPT" ]]; then
+    [[ "$AUTH_ROUTE_PREFLIGHT_ONLY" != "1" ]] \
+      || fail_smoke "browser-auth-route-preflight-script-required"
+    return 0
+  fi
   local claims session_sha device_sha binding
   claims="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
   session_sha="sha256:$(sha256_text "$SESSION_ID")"
@@ -1038,6 +1099,7 @@ run_browser_evidence() {
   VIEWER_URL="${VIEWER_PRODUCT_BASE_URL}/endpoint-admin/remote-access/sessions/${SESSION_ID}/view?streamId=${OPERATION_ID}" \
   BROWSER_OPERATOR_USERNAME="$OPERATOR_USERNAME" \
   BROWSER_OPERATOR_PASSWORD_FILE="${TMP_DIR}/${OPERATOR_USERNAME}.password" \
+  AUTH_ROUTE_PREFLIGHT_ONLY="$AUTH_ROUTE_PREFLIGHT_ONLY" \
   EVIDENCE_OUTPUT="${EVIDENCE_DIR}/browser.json" \
   SOURCE_REVISION="$SOURCE_REVISION" \
   DLP_MASK_RECT_BPS="${DLP_MASK_RECT_BPS:-}" \
@@ -1047,9 +1109,23 @@ run_browser_evidence() {
       > "${EVIDENCE_DIR}/browser-evidence.log" \
       2> "${EVIDENCE_DIR}/browser-evidence.stderr" \
     || fail_smoke "browser-product-evidence-failed"
-  jq -e '.evidenceType == "browser" and .payload.renderAckAcceptedCount >= 100' \
-    "${EVIDENCE_DIR}/browser.json" >/dev/null \
-    || fail_smoke "browser-product-evidence-invalid"
+  if [[ "$AUTH_ROUTE_PREFLIGHT_ONLY" == "1" ]]; then
+    jq -e '
+      .schemaVersion == "faz22.6.viewOnlyViewerAuthRoutePreflight.v1"
+      and .evidenceType == "browser-auth-route-preflight"
+      and .status == "pass"
+      and .payload.authentication == "keycloak-authorization-code-pkce"
+      and .payload.productOrigin == "https://testai.acik.com"
+      and .payload.routeMounted == true
+      and .payload.browserAuthSessionPresent == true
+      and .payload.viewerApiStatus == 404
+    ' "${EVIDENCE_DIR}/browser.json" >/dev/null \
+      || fail_smoke "browser-auth-route-preflight-invalid"
+  else
+    jq -e '.evidenceType == "browser" and .payload.renderAckAcceptedCount >= 100' \
+      "${EVIDENCE_DIR}/browser.json" >/dev/null \
+      || fail_smoke "browser-product-evidence-invalid"
+  fi
 }
 
 read_pg_credentials() {
@@ -1078,6 +1154,17 @@ psql_query() {
     return
   fi
   fail_smoke "postgres-query-runner-missing"
+}
+
+preflight_side_effect_count() {
+  local sql
+  sql="
+SELECT
+  (SELECT count(*) FROM ${DB_SCHEMA}.session_recording_entry WHERE chain_id = :'sid')
+  +
+  (SELECT count(*) FROM ${DB_SCHEMA}.endpoint_audit_events AS event
+    WHERE to_jsonb(event)::text LIKE '%' || :'sid' || '%');"
+  psql_query "$sql" -v "sid=${SESSION_ID}"
 }
 
 export_recording_tsv() {
@@ -1289,6 +1376,60 @@ main() {
   done
   mkdir -p "$EVIDENCE_DIR"
   validate_inputs
+  if [[ "$AUTH_ROUTE_PREFLIGHT_ONLY" == "1" ]]; then
+    local before_side_effect_count after_side_effect_count browser_sha256
+    read_keycloak_admin_password
+    mint_admin_token
+    ensure_persona "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id"
+    mint_persona_token "$OPERATOR_USERNAME" "$OPERATOR_TOKEN_FILE" \
+      "${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
+    before_side_effect_count="$(preflight_side_effect_count)" \
+      || fail_smoke "browser-auth-route-preflight-side-effect-query-failed"
+    before_side_effect_count="$(tr -d '[:space:]' <<< "$before_side_effect_count")"
+    [[ "$before_side_effect_count" =~ ^[0-9]+$ ]] \
+      || fail_smoke "browser-auth-route-preflight-side-effect-query-failed"
+    run_browser_evidence
+    [[ -s "${EVIDENCE_DIR}/browser.json" ]] \
+      || fail_smoke "browser-auth-route-preflight-invalid"
+    after_side_effect_count="$(preflight_side_effect_count)" \
+      || fail_smoke "browser-auth-route-preflight-side-effect-query-failed"
+    after_side_effect_count="$(tr -d '[:space:]' <<< "$after_side_effect_count")"
+    [[ "$after_side_effect_count" =~ ^[0-9]+$ ]] \
+      || fail_smoke "browser-auth-route-preflight-side-effect-query-failed"
+    [[ "$before_side_effect_count" == "0" && "$after_side_effect_count" == "0" ]] \
+      || fail_smoke "browser-auth-route-preflight-mutation-detected"
+    browser_sha256="sha256:$(sha256_file "${EVIDENCE_DIR}/browser.json")"
+    jq -n \
+      --arg sourceRevision "$SOURCE_REVISION" \
+      --arg observedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --arg sessionSha256 "sha256:$(sha256_text "$SESSION_ID")" \
+      --arg browserSha256 "$browser_sha256" \
+      --arg dbSchema "$DB_SCHEMA" \
+      --argjson beforeCount "$before_side_effect_count" \
+      --argjson afterCount "$after_side_effect_count" \
+      '{
+        schemaVersion:"faz22.6.viewOnlyViewerAuthRouteSessionSideEffect.v1",
+        sourceRevision:$sourceRevision,
+        observedAt:$observedAt,
+        sessionSha256:$sessionSha256,
+        browserEvidenceSha256:$browserSha256,
+        assertedScope:{
+          databaseSchema:$dbSchema,
+          tables:["session_recording_entry", "endpoint_audit_events"],
+          correlation:"run-scoped opaque session identifier",
+          excludes:["test Keycloak persona lifecycle"]
+        },
+        beforeSideEffectRowCount:$beforeCount,
+        afterSideEffectRowCount:$afterCount,
+        viewerApiStatus:404,
+        sessionOpenAttempted:false,
+        consentPromptAttempted:false,
+        verdict:"PASS"
+      }' > "${EVIDENCE_DIR}/session-side-effect-attestation.json"
+    write_sha256sums
+    echo "PASS browser-auth-route-preflight"
+    return 0
+  fi
   validate_denetim_ssh_target_config
   session_hash="$(sha256_text "$SESSION_ID")"
 

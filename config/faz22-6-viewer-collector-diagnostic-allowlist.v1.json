@@ -1,7 +1,12 @@
 {
   "schemaVersion": "faz22.6.viewOnlyViewerCollectorDiagnosticAllowlist.v1",
   "collectorFailureReasonCodes": [
+    "auth-route-preflight-only-invalid",
     "auto-finalize-invalid",
+    "browser-auth-route-preflight-invalid",
+    "browser-auth-route-preflight-mutation-detected",
+    "browser-auth-route-preflight-script-required",
+    "browser-auth-route-preflight-side-effect-query-failed",
     "browser-evidence-binding-hashes-not-distinct",
     "browser-evidence-script-not-readable",
     "browser-product-evidence-failed",
@@ -31,6 +36,7 @@
     "frame-flow-summary-invalid",
     "frame-wait-seconds-invalid",
     "keycloak-admin-password-source-missing",
+    "keycloak-admin-password-source-unusable",
     "keycloak-admin-token-missing",
     "keycloak-admin-token-request-failed",
     "management-port-forward-exited",

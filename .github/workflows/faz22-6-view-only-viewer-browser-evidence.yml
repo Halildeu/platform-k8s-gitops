@@ -30,6 +30,11 @@ on:
         required: true
         default: "7500,7500,2500,2500"
         type: string
+      preflight_only:
+        description: "Run target and product-auth preflights only; do not request protected attended approval"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -72,9 +77,71 @@ jobs:
           DENETIM_SSH_CONFIG: /home/halil/.ssh/config
         run: bash scripts/faz22-remote-ops/verify-view-only-viewer-target.sh
 
+  product-auth-preflight:
+    name: Verify product PKCE login and viewer route before approval
+    needs: target-preflight
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout evidence producer revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "22"
+
+      - name: Install pinned browser preflight runtime
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/faz22-viewer-preflight-playwright"
+          mkdir -p "$runtime"
+          npm --prefix "$runtime" init --yes >/dev/null
+          npm --prefix "$runtime" install --no-audit --no-fund --save-exact playwright@1.60.0
+          npm --prefix "$runtime" exec playwright install chromium
+
+      - name: Run product auth and route preflight without endpoint consent
+        env:
+          KC_TEST_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+          EMIT_GITHUB_MASK_COMMANDS: "1"
+          AUTH_ROUTE_PREFLIGHT_ONLY: "1"
+          DEVICE_ID: ${{ inputs.device_id }}
+          SESSION_ID: rb-auth-route-preflight-${{ github.run_id }}
+          OPERATION_ID: auth-route-${{ github.run_id }}
+          SOURCE_REVISION: ${{ github.sha }}
+          BROWSER_EVIDENCE_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs
+          BROWSER_DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/browser-diagnostic.json
+          PLAYWRIGHT_PACKAGE_ROOT: ${{ runner.temp }}/faz22-viewer-preflight-playwright
+          VIEWER_PRODUCT_BASE_URL: https://testai.acik.com
+          PRODUCT_PILOT_SECONDS: "300"
+          DLP_MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
+          REQUIRE_ACTIVE_GUI: "0"
+          EVIDENCE_DIR: ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}
+          AUTO_FINALIZE: "0"
+        run: bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+
+      - name: Upload redacted auth and route preflight evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-viewer-auth-route-preflight-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/browser.json
+            ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/browser-diagnostic.json
+            ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/operator-jwt-claims.redacted.json
+            ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/browser-evidence.log
+            ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/browser-evidence.stderr
+            ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/session-side-effect-attestation.json
+            ${{ runner.temp }}/faz22-viewer-auth-route-preflight-${{ github.run_id }}/SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 14
+
   browser-evidence:
     name: Attended testai browser render and ACK evidence
-    needs: target-preflight
+    needs: [target-preflight, product-auth-preflight]
+    if: ${{ !inputs.preflight_only }}
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 45
     environment:
