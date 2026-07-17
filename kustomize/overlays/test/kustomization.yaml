@@ -6259,9 +6259,15 @@ patches:
   # Measured on testai 2026-07-17 through the browser: Yönetim -> Uç Birimler opens, the product
   # surface is fully there (fleet/compliance panels, device grid, filters, CSV export) — and the
   # fleet is empty. All 11 enrolled devices carry tenant 00000000-0000-0000-0000-000000000001 (the
-  # fixed tenant patched below), while the admin's token carries org
-  # 68c73eb9-c410-37dc-aff7-5ade8fbbcbb7, so the query correctly returns nothing. Tenant isolation
-  # is working exactly as designed; the device-management product simply has no devices in it.
+  # fixed tenant patched below), while the admin resolves to a different tenant, so the query
+  # correctly returns nothing. Tenant isolation works exactly as designed; the device-management
+  # product simply has no devices in it.
+  #
+  # Where the admin's tenant comes from: the token carries no org claim at all. JwtTenantContextResolver
+  # derives one from `companyId` via the "company:<id>" name-UUID, so companyId=1 deterministically
+  # becomes 68c73eb9-c410-37dc-aff7-5ade8fbbcbb7 — verified by computing the same UUIDv3 by hand. That
+  # is the org this alias redirects. (A principal with no companyId resolves to no tenant at all and is
+  # rejected outright, which is why a test persona without one gets 403 rather than an empty list.)
   #
   # The cause is enrollment: the mTLS/TPM paths stamp the tenant from configuration rather than
   # deriving it from the org that registered the device. The real fix is an operator-issued,
