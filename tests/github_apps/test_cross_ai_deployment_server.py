@@ -17,7 +17,7 @@ from scripts.github_apps.cross_ai_deployment_policy.server import (
     make_server,
 )
 from tests.github_apps.test_cross_ai_deployment_webhook import (
-    SECRET,
+    TEST_HMAC_KEY,
     payload,
     signed_request,
 )
@@ -27,7 +27,7 @@ class ObserveServerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.ledger = ObserveLedger(Path(self.directory.name) / "ledger.sqlite3")
-        self.service = ObserveService(secrets=(SECRET,), ledger=self.ledger)
+        self.service = ObserveService(secrets=(TEST_HMAC_KEY,), ledger=self.ledger)
         self.server = make_server("127.0.0.1", 0, self.service)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -190,7 +190,7 @@ class EvaluatingObserveServiceTest(unittest.TestCase):
 
     def accept(self, evaluator: FakeEvaluator) -> tuple[str, ...]:
         service = ObserveService(
-            secrets=(SECRET,), ledger=self.ledger, evaluator=evaluator
+            secrets=(TEST_HMAC_KEY,), ledger=self.ledger, evaluator=evaluator
         )
         try:
             raw = json.dumps(payload(), separators=(",", ":")).encode()
@@ -242,7 +242,7 @@ class EnforcementServiceTest(unittest.TestCase):
         client = FakeDecisionClient(callback)
         sweeper = FakeSweeper()
         service = ObserveService(
-            secrets=(SECRET,),
+            secrets=(TEST_HMAC_KEY,),
             ledger=ledger,
             evaluator=evaluator,
             mode="enforce",
@@ -297,7 +297,7 @@ class EnforcementServiceTest(unittest.TestCase):
         ledger = ObserveLedger(Path(self.directory.name) / "not-ready.sqlite3")
         sweeper = NotReadySweeper()
         service = ObserveService(
-            secrets=(SECRET,),
+            secrets=(TEST_HMAC_KEY,),
             ledger=ledger,
             evaluator=FakeEvaluator(),
             mode="enforce",
