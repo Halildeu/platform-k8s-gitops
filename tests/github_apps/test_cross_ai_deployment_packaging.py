@@ -13,6 +13,8 @@ ACTIVATION = (
     ROOT
     / "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe"
 )
+TEST_ROOT = ROOT / "kustomize/overlays/test/kustomization.yaml"
+SERVICES_CATALOG = ROOT / "docs/operations/services.yaml"
 ESO_POLICY = ROOT / "bootstrap/vault-policies/common/eso-runtime.hcl"
 BOOTSTRAP_WRITER_POLICY = ROOT / "bootstrap/vault-policies/common/bootstrap-writer.hcl"
 VAULT_PATCH_WRAPPER = ROOT / "scripts/ops/platform-ops-vault-patch.sh"
@@ -85,11 +87,27 @@ class PackagingContractTests(unittest.TestCase):
             volume for volume in pod_spec["volumes"] if volume["name"] == "webhook-secret"
         )
         self.assertEqual(secret_volume["secret"]["defaultMode"], 0o440)
-        self.assertRegex(
+        self.assertEqual(
             container["image"],
-            r"@sha256:0{64}$",
-            "activation must retain an impossible image sentinel before publication",
+            "ghcr.io/halildeu/platform-k8s-gitops-cross-ai-deployment-protection"
+            "@sha256:5b3532cdacc7d6f60bcf317982ab9bf7e1fcfe51f4c94de2a11aa3226c19af59",
         )
+
+        test_root = yaml.safe_load(TEST_ROOT.read_text(encoding="utf-8"))
+        self.assertIn(
+            "activation/cross-ai-deployment-protection-observe",
+            test_root["resources"],
+        )
+
+        catalog = yaml.safe_load(SERVICES_CATALOG.read_text(encoding="utf-8"))
+        service = next(
+            item
+            for item in catalog["services"]
+            if item["name"] == "cross-ai-deployment-protection"
+        )
+        self.assertEqual(service["environments"], {"test": "enabled", "prod": "deferred"})
+        self.assertEqual(service["route_external"], True)
+        self.assertEqual(service["probe_contract"], "exempt")
 
     def test_secret_is_vault_referenced_and_never_in_desired_state(self) -> None:
         external = load_yaml("externalsecret.yaml")
