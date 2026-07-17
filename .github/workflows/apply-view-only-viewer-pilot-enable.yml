@@ -225,7 +225,8 @@ jobs:
             and ([.items[] | select(.kind == "Deployment" and .metadata.name == "endpoint-admin-remote-bridge")] | length) == 0
             and ([.items[] | select(.kind == "ConfigMap" and .metadata.name == $config
               and .data.REMOTE_BRIDGE_VIEWER_ENABLED == "true"
-              and .data.REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES == "image/png")] | length) == 1
+              and .data.REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES == "image/png"
+              and .data.REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS == "600000")] | length) == 1
             and ([.items[] | select(.kind == "Service" and .metadata.name == "endpoint-admin-remote-bridge-viewer"
               and .spec.type == "ClusterIP"
               and .spec.selector["app.kubernetes.io/name"] == $deploy
@@ -242,6 +243,8 @@ jobs:
           grep -F 'REMOTE_BRIDGE_CONSENT_PROMPT_TTL_MILLIS: "240000"' \
             /tmp/endpoint-admin-remote-bridge-viewer.yaml
           grep -F 'REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "60000"' \
+            /tmp/endpoint-admin-remote-bridge-viewer.yaml
+          grep -F 'REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS: "600000"' \
             /tmp/endpoint-admin-remote-bridge-viewer.yaml
 
           grep -F 'name: endpoint-admin-remote-bridge-viewer' \
@@ -274,6 +277,10 @@ jobs:
             echo "::error::attended consent pilot TTL leaked into the synced test Argo root"
             exit 1
           fi
+          if grep -q 'REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS' /tmp/platform-test-root.yaml; then
+            echo "::error::VIEW_ONLY permit TTL leaked into the synced test Argo root"
+            exit 1
+          fi
 
           {
             echo "## #2373 VIEW_ONLY viewer product pilot surface render"
@@ -286,7 +293,8 @@ jobs:
             echo "- service type: \`ClusterIP\`"
             echo "- route: \`/api/v1/endpoint-admin/remote-access/sessions/*/view\`"
             echo "- attended consent prompt TTL: \`240000ms\` (test-only)"
-            echo "- operation permit TTL: \`60000ms\` (unchanged)"
+            echo "- constrained PTY permit TTL: \`60000ms\` (unchanged)"
+            echo "- VIEW_ONLY permit TTL: \`600000ms\` (owner-gated test overlay)"
             echo "- Argo root exposure: \`absent\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -416,6 +424,15 @@ jobs:
             | jq -e '.data.REMOTE_BRIDGE_VIEWER_ENABLED == "true"'
           printf '%s\n' "${bridge_config}" \
             | jq -e '.data.REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES == "image/png"'
+          printf '%s\n' "${bridge_config}" \
+            | jq -e '.data.REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS == "600000"'
+          bridge_runtime_view_only_ttl="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+            exec "deploy/${BRIDGE_DEPLOYMENT}" -- \
+            printenv REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS)"
+          if [ "${bridge_runtime_view_only_ttl}" != "600000" ]; then
+            echo "::error::broker runtime did not load the owner-gated 600000ms VIEW_ONLY permit TTL"
+            exit 1
+          fi
 
           gateway_env="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             exec "deploy/${GATEWAY_DEPLOYMENT}" -- printenv \
@@ -562,6 +579,7 @@ jobs:
             | jq -e '
                 (.data | has("REMOTE_BRIDGE_VIEWER_ENABLED") | not)
                 and (.data | has("REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES") | not)
+                and (.data | has("REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS") | not)
               ' >/dev/null; then
             echo "::error::viewer-only ConfigMap keys remain after rollback"
             exit 1

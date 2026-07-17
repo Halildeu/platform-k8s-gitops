@@ -45,6 +45,7 @@ VIEWER_EXACT_ZIP="$ROOT/scripts/faz22-remote-ops/extract-exact-zip.py"
 VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
+VIEWER_CONFIG_PATCH="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer/configmap-viewer-patch.yaml"
 
 future_date_utc() {
   local days="$1"
@@ -117,7 +118,7 @@ for path in "$B1_WORKFLOW" "$VIEW_ONLY_WORKFLOW" "$B1_HELPER" "$VIEW_ONLY_HELPER
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG" "$VIEWER_WATCHDOG" \
   "$VIEWER_AUTH_BUILDER" "$VIEWER_AUTH_VERIFIER" "$VIEWER_AUTH_COMMON" \
   "$VIEWER_EXACT_ZIP" \
-  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG"; do
+  "$VIEWER_OWNER_POLICY" "$VIEWER_REVOCATIONS" "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH"; do
   require_file "$path"
 done
 
@@ -199,18 +200,24 @@ require_grep 'CONSENT_WAIT_SECONDS: "240"' "$VIEWER_BROWSER_WORKFLOW"
 require_grep 'required="$(( PILOT_SECONDS + CONSENT_WAIT_SECONDS + OPEN_SESSION_DEVICE_READY_SECONDS + 120 ))"' \
   "$VIEWER_BROWSER_WORKFLOW"
 require_grep 'OPEN_SESSION_DEVICE_READY_SECONDS: "180"' "$VIEWER_BROWSER_WORKFLOW"
-python3 - "$VIEWER_DEVICE_KEY_CONFIG" <<'PY'
+python3 - "$VIEWER_DEVICE_KEY_CONFIG" "$VIEWER_CONFIG_PATCH" <<'PY'
 import pathlib
 import re
 import sys
 
 path = pathlib.Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
+viewer_path = pathlib.Path(sys.argv[2])
+viewer_text = viewer_path.read_text(encoding="utf-8")
 prompt_matches = re.findall(
     r'(?m)^  REMOTE_BRIDGE_CONSENT_PROMPT_TTL_MILLIS: "([0-9]+)"$', text
 )
 permit_matches = re.findall(
     r'(?m)^  REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "([0-9]+)"$', text
+)
+view_only_permit_matches = re.findall(
+    r'(?m)^  REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS: "([0-9]+)"$',
+    viewer_text,
 )
 if prompt_matches != ["240000"]:
     raise SystemExit(
@@ -220,11 +227,19 @@ if int(prompt_matches[0]) > 300000:
     raise SystemExit(f"attended consent prompt TTL exceeds the 300000ms ceiling: {path}")
 if permit_matches != ["60000"]:
     raise SystemExit(
-        f"operation permit TTL must remain exactly 60000ms: {path}"
+        f"constrained PTY permit TTL must remain exactly 60000ms: {path}"
+    )
+if view_only_permit_matches != ["600000"]:
+    raise SystemExit(
+        f"owner-gated VIEW_ONLY permit TTL must occur exactly once as 600000ms: {viewer_path}"
     )
 PY
 require_grep 'REMOTE_BRIDGE_CONSENT_PROMPT_TTL_MILLIS: "240000"' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'REMOTE_BRIDGE_BROKER_PERMIT_TTL_MILLIS: "60000"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS: "600000"' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'printenv REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'broker runtime did not load the owner-gated 600000ms VIEW_ONLY permit TTL' \
+  "$VIEWER_APPLY_WORKFLOW"
 require_grep "attended consent pilot TTL leaked into the synced test Argo root" "$VIEWER_APPLY_WORKFLOW"
 require_file "$VIEWER_AUDIT_DB_ROLE_RECONCILER"
 bash -n "$VIEWER_AUDIT_DB_ROLE_RECONCILER"
@@ -375,6 +390,8 @@ require_grep 'if (.kind == "List" and (.items | type) == "array")' "$VIEWER_APPL
 verify_viewer_resource_normalizer
 require_grep "endpoint-admin-remote-bridge-config-device-key" "$VIEWER_WATCHDOG"
 require_grep "deployments/endpoint-admin-remote-bridge-device-key" "$VIEWER_WATCHDOG"
+require_grep '"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null' "$VIEWER_WATCHDOG"
+require_grep '"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null' "$VIEWER_WATCHDOG"
 require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORKFLOW"
 require_grep "Compensating rollback after failed apply" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'apply -k "${BROKER_ONLY_OVERLAY}"' "$VIEWER_APPLY_WORKFLOW"
@@ -382,8 +399,10 @@ require_grep "GATEWAY_CONFIGMAP: api-gateway-config" "$VIEWER_APPLY_WORKFLOW"
 require_grep "rollback-view-only-viewer-pilot-config.sh" "$VIEWER_APPLY_WORKFLOW"
 require_grep '"REMOTE_BRIDGE_VIEWER_ENABLED":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null' "$VIEWER_ROLLBACK_CONFIG"
+require_grep '"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"SPRING_CLOUD_GATEWAY_ROUTES_28_ID":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep 'has("REMOTE_BRIDGE_VIEWER_ENABLED") | not' "$VIEWER_ROLLBACK_CONFIG"
+require_grep 'has("REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS") | not' "$VIEWER_ROLLBACK_CONFIG"
 if grep -Eq '(^|[[:space:]])jq([[:space:]]|$).*del[[:space:]]*\(' \
   "$VIEWER_APPLY_WORKFLOW" "$VIEWER_ROLLBACK_CONFIG"; then
   echo "viewer rollback must use merge-patch null deletion, not apply ownership" >&2
