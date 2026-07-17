@@ -480,8 +480,9 @@ scope SHA-256'yı yeniden türetir. Gitleaks ayrı required security gate olarak
 kalır; bu adım `--derive-only` ile yalnız deterministik scope binding yapar.
 Base tip event `pull_request.base.sha`, head event `pull_request.head.sha`,
 merge-base ve scope ise bu CI türetimiyle eşleşmelidir. Gate her evidence
-comment'ini GitHub API'den fetch eder; yalnız repo owner `halilkocoglu` tarafından
-yazılmış ve hiç edit edilmemiş (`created_at == updated_at`) comment kabul edilir.
+comment'ini GitHub API'den fetch eder; author login event'teki base repository
+owner'ıyla case-insensitive eşleşen, `author_association=OWNER` taşıyan ve hiç
+edit edilmemiş (`created_at == updated_at`) comment kabul edilir.
 Comment body SHA-256, iç response SHA-256 ve response'un tekil terminal
 `VERDICT: AGREE` semantiği yeniden hesaplanır; sonra aynı base-tip/base/head/scope'a
 bağlı exact provider/model ve `AGREE` alanları fail-closed doğrulanır. Top-level verdict de yalnız

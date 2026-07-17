@@ -53,7 +53,7 @@ const evidenceBody = (provider, model, response) => JSON.stringify({
 });
 const evidenceComment = (body) => ({
   body,
-  author: 'halilkocoglu',
+  author: 'Halildeu',
   authorAssociation: 'OWNER',
   createdAt: '2026-07-17T20:00:00Z',
   updatedAt: '2026-07-17T20:00:00Z',
@@ -164,6 +164,28 @@ const editedEvidence = {
     updatedAt: '2026-07-17T20:01:00Z',
   },
 };
+const wrongAuthorEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: {
+    ...EVIDENCE[CLAUDE_REF],
+    author: 'mallory',
+  },
+};
+const minimaxReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
+const minimaxReviseBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[MINIMAX_REF].body),
+  verdict: 'REVISE',
+  response_sha256: sha256(minimaxReviseResponse),
+  response: minimaxReviseResponse,
+});
+const minimaxReviseEvidence = {
+  ...EVIDENCE,
+  [MINIMAX_REF]: evidenceComment(minimaxReviseBody),
+};
+const minimaxRevisePeerBody = peerBody.replace(
+  sha256(EVIDENCE[MINIMAX_REF].body),
+  sha256(minimaxReviseBody),
+);
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -250,6 +272,12 @@ const cases = [
   ['normal PR + edited evidence comment -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: editedEvidence }, 1],
+  ['normal PR + evidence author differs from repository owner -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, evidence: wrongAuthorEvidence }, 1],
+  ['Claude/Codex AGREE + MiniMax REVISE -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: minimaxRevisePeerBody, evidence: minimaxReviseEvidence }, 1],
   ['normal PR + event base tip mismatch -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       baseSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody }, 1],
@@ -290,6 +318,14 @@ const cases = [
     { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       changedFiles: ['docs/session-handoff-2026-07-17-example.md'],
       body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: N/A\nVerdict: AGREE\nCross-AI exempt reason: docs-only historical handoff with no code or governance delta\n' }, 0],
+  ['archived historical doc is inside the narrow exemption allowlist',
+    { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      changedFiles: ['docs/archive/2025-historical.md'],
+      body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: N/A\nVerdict: AGREE\nCross-AI exempt reason: archived historical record only\n' }, 0],
+  ['historical doc mixed with governance path -> fail closed',
+    { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      changedFiles: ['docs/session-handoff-2026-07-17-example.md', 'CLAUDE.md'],
+      body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: N/A\nVerdict: AGREE\nCross-AI exempt reason: mixed change must not qualify\n' }, 1],
   ['governance doc + body-only N/A claim -> fail closed',
     { branch: 'docs-only-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       changedFiles: ['docs/context-priority-rules.md'],

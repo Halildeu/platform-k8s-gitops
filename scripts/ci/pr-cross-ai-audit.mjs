@@ -38,7 +38,6 @@ const EVIDENCE_KEYS = [
   'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
 ];
-const EVIDENCE_AUTHORS = new Set(['halilkocoglu']);
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -437,11 +436,14 @@ async function loadEvidenceComment(ref, evidenceOverrides) {
   }
 }
 
-function evidenceMatches(comment, receipt, expected, baseTip, base, head, scope) {
+function evidenceMatches(
+  comment, receipt, expected, expectedOwner, baseTip, base, head, scope,
+) {
   if (
     !comment
     || typeof comment.body !== 'string'
-    || !EVIDENCE_AUTHORS.has(comment.author)
+    || typeof comment.author !== 'string'
+    || comment.author.toLowerCase() !== expectedOwner.toLowerCase()
     || comment.authorAssociation !== 'OWNER'
     || !comment.createdAt
     || comment.createdAt !== comment.updatedAt
@@ -497,6 +499,7 @@ function docsOnlyExemption(fields, prMeta) {
 }
 
 async function appendConsultationFindings(findings, fields, prMeta, evidenceOverrides) {
+  const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
   const baseTip = fields['consultation base tip'] || '';
   const base = fields['consultation base'] || '';
   const commit = fields['consultation commit'] || '';
@@ -587,7 +590,8 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
       ? await loadEvidenceComment(receipt.ref, evidenceOverrides)
       : null;
     const pass = shapePass && evidenceMatches(
-      evidenceComment, receipt, expected, baseTip, base, commit, scope,
+      evidenceComment, receipt, expected, expectedOwner,
+      baseTip, base, commit, scope,
     );
     findings.push({
       check: field.replaceAll(' ', '_'),
