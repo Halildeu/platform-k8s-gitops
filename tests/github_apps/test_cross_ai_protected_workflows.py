@@ -149,7 +149,12 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             "bootstrap response differs from the current workflow run", script
         )
         self.assertIn("signed subject differs from the current workflow run", script)
-        self.assertIn('DENETIM_SSH_OPTS="-F /home/halil/.ssh/config"', script)
+        self.assertIn('cd -- "$GITHUB_WORKSPACE"', script)
+        self.assertIn(
+            'DENETIM_SSH_OPTS="-F /home/halil/.ssh/config -o StrictHostKeyChecking=yes"',
+            script,
+        )
+        self.assertGreaterEqual(script.count("StrictHostKeyChecking=yes"), 2)
         self.assertIn("expires_epoch - now_epoch + 600", script)
         rollback = (
             ROOT / "scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh"

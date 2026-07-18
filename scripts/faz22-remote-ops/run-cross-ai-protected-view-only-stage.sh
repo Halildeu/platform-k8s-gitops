@@ -3,6 +3,14 @@
 
 set -euo pipefail
 
+: "${GITHUB_WORKSPACE:?GitHub workspace is required}"
+cd -- "$GITHUB_WORKSPACE"
+[[ -f scripts/github_apps/cross_ai_deployment_policy/canonical.py \
+  && -f scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh ]] || {
+  echo "protected-view-only-stage: checked-out repository root is unavailable" >&2
+  exit 2
+}
+
 STAGE="${1:-}"
 case "$STAGE" in
   apply)
@@ -407,7 +415,8 @@ run_apply() {
 
 run_browser() {
   local hostname device_id actual_hash expires_epoch remaining runtime evidence source
-  hostname="$(ssh -n -F /home/halil/.ssh/config -o BatchMode=yes denetim-pc hostname \
+  hostname="$(ssh -n -F /home/halil/.ssh/config -o BatchMode=yes \
+    -o StrictHostKeyChecking=yes denetim-pc hostname \
     2>/dev/null)" || {
     echo "protected-view-only-stage: endpoint hostname query failed" >&2
     return 1
@@ -486,7 +495,7 @@ SQL
   # Keep the exact runner-owned SSH config path visible in this governed stage;
   # OpenSSH host-key checking remains enforced by that fixed config.
   export DENETIM_SSH_TARGET=denetim-pc
-  export DENETIM_SSH_OPTS="-F /home/halil/.ssh/config"
+  export DENETIM_SSH_OPTS="-F /home/halil/.ssh/config -o StrictHostKeyChecking=yes"
   export OPEN_SESSION_DEVICE_READY_SECONDS=180 OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS=5
   export EVIDENCE_DIR="$evidence" AUTO_FINALIZE=0 DLP_MASK_RECT_BPS=7500,7500,2500,2500
   bash scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh \
