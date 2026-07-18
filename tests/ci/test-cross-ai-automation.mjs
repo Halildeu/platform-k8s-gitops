@@ -165,6 +165,7 @@ const explicitSingleClaudeImplementerBody = explicitSingleBody.replace(
 );
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
+const GOVERNANCE_CONTRACT_TEST_PATH = 'tests/deploy/test_faz25_fullats_gitops_contract.py';
 
 const staleClaudeBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
@@ -425,6 +426,9 @@ const cases = [
   ['explicit none mode rejects consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [GOVERNANCE_PATH] }, 1],
+  ['explicit none mode rejects consultation governance contract-test changes',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [GOVERNANCE_CONTRACT_TEST_PATH] }, 1],
   ['explicit none mode rejects production promotion branch',
     { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH] }, 1],

@@ -77,6 +77,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
   /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|minimax_m3_review)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
+  /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES = ['auto-promotion/'];
 const DUAL_RISK_TRIGGER_RE = /^(irreversible-production|security-authz|privacy-retention|data-migration|concurrency|production-cutover|human-authority):\s+(.+)$/i;
