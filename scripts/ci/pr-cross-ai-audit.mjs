@@ -351,7 +351,10 @@ function sectionHasRequiredFields(section) {
   // not `.includes()` heuristic — audit table column headers da "Implementer AI" içerebilir
   // ama gerçek YAML key:value değildir. Field-aware selection parser semantik uyumlu olmalı.
   const fields = extractFields(section);
-  if (fields['consultation mode']) {
+  // Presence is authoritative even when the value is empty. Otherwise an
+  // explicitly declared but empty mode could fall through to the legacy
+  // three-receipt contract and bypass the invalid-mode fail-closed check.
+  if (Object.hasOwn(fields, 'consultation mode')) {
     return Boolean(
       fields['implementer ai']
       && fields['consultation reason']
@@ -936,7 +939,7 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   findings.push({ check: 'cross_ai_section_present', pass: true });
 
   const fields = extractFields(section);
-  if (fields['consultation mode']) {
+  if (Object.hasOwn(fields, 'consultation mode')) {
     findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
     return findings;
   }

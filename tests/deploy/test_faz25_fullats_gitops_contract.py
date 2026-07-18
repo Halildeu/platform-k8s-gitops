@@ -490,6 +490,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("Cursor ve AI uygulama pencereleri istişare yolu değildir", self.agents)
         self.assertIn("consultation governance dosyası değişiyorsa", self.agents)
         self.assertIn("Claude implementer kendi receipt'ini", self.agents)
+        self.assertIn("provider-distinct ikinci kanal ile `dual` gerekir", self.context_rules)
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )
