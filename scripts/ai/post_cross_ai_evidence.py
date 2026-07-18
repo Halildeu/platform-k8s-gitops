@@ -47,7 +47,9 @@ KNOWN_TOKEN_RE = re.compile(
 )
 SECRET_ASSIGNMENT_RE = re.compile(
     r"\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|"
-    r"access[_-]?token|refresh[_-]?token|session[_-]?secret)\b"
+    r"access[_-]?token|refresh[_-]?token|session[_-]?secret|"
+    r"secret[_-]?access[_-]?key|service[_-]?account[_-]?key|"
+    r"signing[_-]?key|hmac[_-]?key|private[_-]?key|credential)\b"
     r"\s*[:=]\s*[\"']?[A-Za-z0-9._~+/=-]{12,}[\"']?",
     re.IGNORECASE,
 )

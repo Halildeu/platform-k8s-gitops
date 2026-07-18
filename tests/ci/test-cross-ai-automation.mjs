@@ -189,10 +189,10 @@ const wrongAssociationEvidence = {
 };
 const outOfOrderEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: {
-    ...EVIDENCE[CLAUDE_REF],
-    createdAt: new Date(Date.now() + 60_000).toISOString(),
-    updatedAt: new Date(Date.now() + 60_000).toISOString(),
+  [MINIMAX_REF]: {
+    ...EVIDENCE[MINIMAX_REF],
+    createdAt: new Date(NOW_MS - 1_000).toISOString(),
+    updatedAt: new Date(NOW_MS - 1_000).toISOString(),
   },
 };
 const equalTimestampEvidence = {
@@ -278,6 +278,8 @@ const highConfidenceSensitiveFixtures = [
   ['JWT', 'eyJ' + 'a'.repeat(16) + '.' + 'b'.repeat(16) + '.' + 'c'.repeat(16)],
   ['known API key', 'ghp_' + 'a'.repeat(30)],
   ['secret assignment', 'password=' + 'a'.repeat(16)],
+  ['AWS secret assignment', 'secret_access_key=' + 'a'.repeat(32)],
+  ['service-account secret assignment', 'service_account_key=' + 'a'.repeat(32)],
   ['webhook URL', 'webhook_url=https://example.invalid/' + 'a'.repeat(20)],
   ['cookie header', 'Cookie: session=' + 'a'.repeat(20)],
 ].map(([label, value]) => {

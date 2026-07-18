@@ -83,6 +83,8 @@ class EvidenceBuilderTests(unittest.TestCase):
             "ghp_" + "a" * 30,
             "sk-" + "a" * 30,
             "password=" + "a" * 16,
+            "secret_access_key=" + "a" * 32,
+            "service_account_key=" + "a" * 32,
             "webhook_url=https://example.invalid/" + "a" * 20,
             "Cookie: session=" + "a" * 20,
         )

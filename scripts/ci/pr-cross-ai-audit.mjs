@@ -37,7 +37,7 @@ const PRIVATE_KEY_RE = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
 const BEARER_RE = /(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}/i;
 const JWT_RE = /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/;
 const KNOWN_TOKEN_RE = /(?<![A-Za-z0-9])(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{22,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{20,}|sk_live_[A-Za-z0-9]{16,})(?![A-Za-z0-9])/;
-const SECRET_ASSIGNMENT_RE = /\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|session[_-]?secret)\b\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{12,}["']?/i;
+const SECRET_ASSIGNMENT_RE = /\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|session[_-]?secret|secret[_-]?access[_-]?key|service[_-]?account[_-]?key|signing[_-]?key|hmac[_-]?key|private[_-]?key|credential)\b\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{12,}["']?/i;
 const WEBHOOK_URL_RE = /\bwebhook[_-]?url\b\s*[:=]\s*https?:\/\/[^\s"'<>]{12,}/i;
 const COOKIE_HEADER_RE = /^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$/im;
 const RECEIPT_KEYS = new Set([
