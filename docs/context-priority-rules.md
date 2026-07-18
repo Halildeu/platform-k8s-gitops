@@ -457,8 +457,8 @@ Bu asgari yapıyı taşımayan özet/belirsiz metin `tracked_pending` sayılır.
 Claude-first sıra bir **operasyon ve acceptance kuralıdır**: issue/evidence
 kaydında Claude CLI session/modelUsage kaydı MiniMax ve Codex kayıtlarından önce
 yer alır. GitHub gate owner-captured evidence yorumlarının yayın zamanını
-`Claude <= MiniMax <= Codex` olarak fail-closed denetler; aynı saniye timestamp'i
-eşit sıra kabul edilir. Bu yalnız yayın sırasını kanıtlar. Gate comment
+strict `Claude < MiniMax < Codex` olarak fail-closed denetler; aynı saniye
+timestamp'i sıra kanıtı sayılmaz. Bu yalnız yayın sırasını kanıtlar. Gate comment
 bütünlüğünü, freshness'i ve
 exact scope/head eşleşmesini denetler; provider çağrısının gerçekten yapıldığını
 veya çağrı zamanını kriptografik olarak kanıtladığı iddia edilmez. Provider
