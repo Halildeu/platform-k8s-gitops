@@ -6,7 +6,12 @@ runs:
     - name: Execute fixed attended browser stage
       id: execute
       shell: bash
-      run: bash scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh browser-evidence
+      env:
+        CROSS_AI_SOURCE_ROOT: ${{ github.action_path }}/../../..
+        CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json
+      run: |
+        cd -- "$CROSS_AI_SOURCE_ROOT"
+        bash scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh browser-evidence
 
     - name: Upload redacted product browser evidence
       id: product_evidence
@@ -26,19 +31,22 @@ runs:
       shell: bash
       env:
         STAGE_CONCLUSION: ${{ steps.execute.outcome == 'success' && steps.product_evidence.outcome == 'success' && 'success' || 'failure' }}
-      run: >-
-        python3 scripts/github_apps/build_cross_ai_stage_evidence.py
-        --bootstrap-file "$CROSS_AI_BOOTSTRAP_FILE"
-        --stage browser-evidence
-        --conclusion "$STAGE_CONCLUSION"
-        --output-dir "$RUNNER_TEMP/cross-ai-stage-outcome"
-        --github-output "$GITHUB_OUTPUT"
+        CROSS_AI_SOURCE_ROOT: ${{ github.action_path }}/../../..
+        CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json
+      run: |
+        cd -- "$CROSS_AI_SOURCE_ROOT"
+        python3 scripts/github_apps/build_cross_ai_stage_evidence.py \
+          --bootstrap-file "$CROSS_AI_BOOTSTRAP_FILE" \
+          --stage browser-evidence \
+          --conclusion "$STAGE_CONCLUSION" \
+          --output-dir "$RUNNER_TEMP/cross-ai-stage-outcome" \
+          --github-output "$GITHUB_OUTPUT"
 
     - name: Remove private bootstrap response
       id: cleanup
       if: ${{ always() }}
       shell: bash
-      run: rm -f -- "$CROSS_AI_BOOTSTRAP_FILE"
+      run: rm -f -- "$RUNNER_TEMP/cross-ai-bootstrap.json"
 
     - name: Upload canonical browser outcome evidence
       if: ${{ always() && steps.evidence.outcome == 'success' && steps.cleanup.outcome == 'success' }}

@@ -37,7 +37,7 @@ class StageEvidenceBuilderTest(unittest.TestCase):
             "bundleEnvelope": self.fixture.bundle_envelope,
         }
         self.bootstrap = self.root / "bootstrap.json"
-        self.bootstrap.write_bytes(canonical_bytes(self.response))
+        self._write_response()
         self.github_output = self.root / "github-output"
         self.github_output.touch(mode=0o600)
         self.environment = {
@@ -48,6 +48,14 @@ class StageEvidenceBuilderTest(unittest.TestCase):
             "GITHUB_REPOSITORY": bundle["subject"]["repository"],
             "GITHUB_REPOSITORY_ID": str(bundle["subject"]["repositoryId"]),
         }
+
+    def _write_response(self) -> None:
+        response = dict(self.response)
+        response.pop("responseSha256", None)
+        response["responseSha256"] = sha256_digest(response)
+        self.response = response
+        self.bootstrap.write_bytes(canonical_bytes(response))
+        self.bootstrap.chmod(0o600)
 
     def tearDown(self) -> None:
         self.directory.cleanup()
@@ -88,6 +96,7 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         changed = json.loads(self.bootstrap.read_text(encoding="utf-8"))
         changed["bundleSha256"] = "sha256:" + ("0" * 64)
         self.bootstrap.write_bytes(canonical_bytes(changed))
+        self.bootstrap.chmod(0o600)
         with patch.dict(os.environ, self.environment, clear=True), patch.object(
             builder, "utc_now", return_value=self.fixture.now
         ), self.assertRaisesRegex(PolicyError, "STAGE_EVIDENCE_BINDING_INVALID"):
@@ -98,7 +107,7 @@ class StageEvidenceBuilderTest(unittest.TestCase):
             self.fixture.bundle_envelope
         )["workflowStages"][0]["workflowPath"]
         self.response["bundleSha256"] = sha256_digest(self.fixture.bundle_envelope)
-        self.bootstrap.write_bytes(canonical_bytes(self.response))
+        self._write_response()
         with patch.dict(os.environ, self.environment, clear=True), patch.object(
             builder, "utc_now", return_value=self.fixture.now
         ), self.assertRaisesRegex(PolicyError, "STAGE_EVIDENCE_WATCHDOG_INVALID"):
@@ -109,7 +118,7 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.response["workflowPath"] = self.factory.decode_payload(
             self.fixture.bundle_envelope
         )["workflowStages"][0]["workflowPath"]
-        self.bootstrap.write_bytes(canonical_bytes(self.response))
+        self._write_response()
         with patch.dict(os.environ, self.environment, clear=True), patch.object(
             builder, "utc_now", return_value=self.fixture.now
         ):
@@ -124,7 +133,7 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.response["workflowPath"] = self.factory.decode_payload(
             self.fixture.bundle_envelope
         )["workflowStages"][0]["workflowPath"]
-        self.bootstrap.write_bytes(canonical_bytes(self.response))
+        self._write_response()
         receipt = self.root / "watchdog-expires-at"
         receipt.write_text("2026-07-16T21:00:00Z\n", encoding="ascii")
         receipt.chmod(0o600)

@@ -3,8 +3,8 @@
 
 set -euo pipefail
 
-: "${GITHUB_WORKSPACE:?GitHub workspace is required}"
-cd -- "$GITHUB_WORKSPACE"
+: "${CROSS_AI_SOURCE_ROOT:?Pinned Cross-AI source root is required}"
+cd -- "$CROSS_AI_SOURCE_ROOT"
 [[ -f scripts/github_apps/cross_ai_deployment_policy/canonical.py \
   && -f scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh ]] || {
   echo "protected-view-only-stage: checked-out repository root is unavailable" >&2

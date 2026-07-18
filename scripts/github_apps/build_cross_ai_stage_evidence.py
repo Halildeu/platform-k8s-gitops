@@ -36,6 +36,7 @@ STAGE_CONCLUSIONS = {
     "browser-evidence": {"success", "failure"},
     "compensating-rollback": {"rolled-back", "failure"},
 }
+MAX_BOOTSTRAP_BYTES = 4 * 1024 * 1024
 
 
 def _positive_env(name: str) -> int:
@@ -62,6 +63,38 @@ def _payload(envelope: dict[str, Any]) -> dict[str, Any]:
     if canonical_bytes(payload) != raw:
         reject("STAGE_EVIDENCE_BUNDLE_INVALID", "bundle payload is not canonical JSON")
     return payload
+
+
+def _load_private_bootstrap(path: Path) -> dict[str, Any]:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        reject("STAGE_EVIDENCE_BOOTSTRAP_INVALID", "bootstrap file is unavailable")
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or not 1 <= metadata.st_size <= MAX_BOOTSTRAP_BYTES
+        ):
+            reject(
+                "STAGE_EVIDENCE_BOOTSTRAP_INVALID",
+                "bootstrap file ownership, mode, or size is invalid",
+            )
+        raw = b""
+        while chunk := os.read(descriptor, 1024 * 1024):
+            raw += chunk
+            if len(raw) > MAX_BOOTSTRAP_BYTES:
+                reject(
+                    "STAGE_EVIDENCE_BOOTSTRAP_INVALID", "bootstrap file is too large"
+                )
+        return loads_json_bytes(raw, max_bytes=MAX_BOOTSTRAP_BYTES, label="bootstrap")
+    finally:
+        os.close(descriptor)
 
 
 def _read_private_ascii(path: Path, *, allow_missing: bool) -> str | None:
@@ -154,7 +187,11 @@ def _write_exclusive(path: Path, payload: dict[str, Any]) -> None:
 def build(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
     if args.conclusion not in STAGE_CONCLUSIONS[args.stage]:
         reject("STAGE_EVIDENCE_CONCLUSION_INVALID", "stage conclusion is invalid")
-    response = load_json_file(args.bootstrap_file)
+    response = _load_private_bootstrap(args.bootstrap_file)
+    unsigned_response = dict(response)
+    response_digest = unsigned_response.pop("responseSha256", None)
+    if response_digest != sha256_digest(unsigned_response):
+        reject("STAGE_EVIDENCE_BINDING_INVALID", "bootstrap response digest differs")
     if response.get("stage") != args.stage:
         reject("STAGE_EVIDENCE_BINDING_INVALID", "bootstrap stage differs")
     payload = _payload(response.get("bundleEnvelope", {}))
@@ -184,6 +221,8 @@ def build(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         or response.get("runAttempt") != run_attempt
         or response.get("headSha") != os.environ.get("GITHUB_SHA")
         or response.get("intentRef") != os.environ.get("GITHUB_REF")
+        or subject.get("headSha") != os.environ.get("GITHUB_SHA")
+        or subject.get("intentRef") != os.environ.get("GITHUB_REF")
         or subject.get("repository") != os.environ.get("GITHUB_REPOSITORY")
         or str(subject.get("repositoryId")) != os.environ.get("GITHUB_REPOSITORY_ID")
         or response.get("workflowPath") != signed_stage.get("workflowPath")
