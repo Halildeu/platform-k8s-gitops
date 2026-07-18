@@ -130,12 +130,16 @@ verify_rollback() {
 compensate_apply_error() {
   local exit_status="$?"
   trap - ERR
-  rollback_surface || true
+  if rollback_surface && verify_rollback; then
+    echo "protected-view-only-stage: apply failure compensation verified" >&2
+  else
+    echo "protected-view-only-stage: apply failure compensation incomplete; watchdog remains authoritative" >&2
+  fi
   exit "$exit_status"
 }
 
 run_apply() {
-  local work expires_epoch active_deadline
+  local work expires_epoch active_deadline existing_route_keys
   work="$RUNNER_TEMP/cross-ai-view-only-apply"
   rm -rf -- "$work"
   mkdir -m 0700 "$work"
@@ -159,6 +163,14 @@ run_apply() {
   fi
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     apply --dry-run=server -f "$work/viewer.yaml"
+
+  existing_route_keys="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get configmap "$GATEWAY_CONFIGMAP" -o json \
+    | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_28_"))')"
+  [[ -z "$existing_route_keys" ]] || {
+    echo "protected-view-only-stage: gateway route index 28 is not clean" >&2
+    return 1
+  }
 
   active_deadline="$(( expires_epoch - $(date -u +%s) + 600 ))"
   sed \
@@ -189,15 +201,6 @@ run_apply() {
     rollout restart "deploy/$BRIDGE_DEPLOYMENT"
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     rollout status "deploy/$BRIDGE_DEPLOYMENT" --timeout=300s
-
-  local existing_route_keys
-  existing_route_keys="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
-    get configmap "$GATEWAY_CONFIGMAP" -o json \
-    | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_28_"))')"
-  [[ -z "$existing_route_keys" ]] || {
-    echo "protected-view-only-stage: gateway route index 28 is not clean" >&2
-    return 1
-  }
 
   # The ${sid} token is a Spring RewritePath variable, not a shell expansion.
   local route_patch
@@ -268,6 +271,14 @@ SQL
   expires_epoch="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" get job \
     faz22-view-only-pilot-watchdog \
     -o jsonpath='{.metadata.annotations.faz22\.6\.acik\.com/expires-at-epoch}')"
+  [[ "$expires_epoch" =~ ^[1-9][0-9]{9}$ ]] || {
+    echo "protected-view-only-stage: watchdog expiry annotation is invalid" >&2
+    return 1
+  }
+  [[ "$expires_epoch" == "$GRANT_EXPIRES_EPOCH" ]] || {
+    echo "protected-view-only-stage: watchdog expiry differs from signed grant" >&2
+    return 1
+  }
   remaining="$(( expires_epoch - $(date -u +%s) ))"
   (( remaining >= 900 )) || {
     echo "protected-view-only-stage: watchdog has insufficient browser headroom" >&2

@@ -54,6 +54,8 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn('metadata.st_uid != os.getuid()', script)
         self.assertIn('stat.S_IMODE(metadata.st_mode) != 0o600', script)
         self.assertIn('gateway route index 28 is not clean', script)
+        self.assertIn('watchdog expiry differs from signed grant', script)
+        self.assertIn('apply failure compensation verified', script)
 
 
 if __name__ == "__main__":
