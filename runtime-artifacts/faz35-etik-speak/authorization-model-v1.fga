@@ -1,0 +1,25 @@
+model
+  schema 1.1
+
+type user
+
+type team
+  relations
+    define member: [user]
+
+type ethics_product
+  relations
+    define viewer: [user, team#member]
+    define triager: [user, team#member]
+    define handler: [user, team#member]
+    define technical_admin: [user, team#member]
+
+type ethics_case
+  relations
+    define product: [ethics_product]
+    define conflicted: [user]
+    define recused: [user]
+    define denied: technical_admin from product or conflicted or recused
+    define case_viewer: (viewer from product or triager from product or handler from product) but not denied
+    define case_triager: triager from product but not denied
+    define case_handler: handler from product but not denied

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ethics-service-config
+  labels:
+    app.kubernetes.io/name: ethics-service
+data:
+  SERVER_PORT: "8099"
+  ETHICS_DB_URL: "jdbc:postgresql://postgres:5432/ethics"
+  ETHICS_DB_SCHEMA: "ethics_service"
+  ETHICS_PUBLIC_ORG_ID: "00000000-0000-0000-0000-000000000035"
+  ETHICS_MAILBOX_SESSION_TTL: "15m"
+  ETHICS_SECRET_ITERATIONS: "210000"
+  SECURITY_JWT_ISSUER: "https://testai.acik.com/realms/platform-test"
+  SECURITY_JWT_JWK_SET_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
+  SPRING_FLYWAY_ENABLED: "true"

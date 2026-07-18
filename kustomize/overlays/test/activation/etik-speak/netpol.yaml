@@ -1,0 +1,44 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: etik-speak-public}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: etik-speak-public}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
+      ports: [{port: 8080, protocol: TCP}]
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: ethics-service}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: ethics-service}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: api-gateway}}
+      ports: [{port: 8099, protocol: TCP}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 172.19.0.6/32}}]
+      ports: [{port: 5432, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 172.19.0.7/32}}]
+      ports: [{port: 8080, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: openfga}}}]
+      ports: [{port: 8080, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: api-gateway-to-ethics-service}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: api-gateway}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: ethics-service}}}]
+      ports: [{port: 8099, protocol: TCP}]

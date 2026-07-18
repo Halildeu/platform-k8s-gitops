@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: platform-test
+resources:
+  - ../../../../base/apps/etik-speak
+  - externalsecret.yaml
+  - ingress-public-api.yaml
+  - ingress-public-ui.yaml
+  - netpol.yaml
+  - resource-quota.yaml
+  - priority-class.yaml
+images:
+  # Source-ready placeholder. Activation in the root test overlay is forbidden
+  # until the corresponding CI runs publish and evidence exact immutable digests.
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
+    newName: ghcr.io/halildeu/platform-backend-ethics-service
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
+    newName: ghcr.io/halildeu/platform-web-etik-speak-public
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+patches:
+  - target: {kind: Deployment, name: ethics-service}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test
+  - target: {kind: Deployment, name: etik-speak-public}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: etik-speak-test

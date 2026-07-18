@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ethics-service
+  labels:
+    app.kubernetes.io/name: ethics-service
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: ethics-service}
+  ports:
+    - {name: http, port: 8099, targetPort: http, protocol: TCP}

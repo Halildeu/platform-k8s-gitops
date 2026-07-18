@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: etik-speak-public-api
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [etik.acik.com, speakup.acik.com]
+      secretName: wildcard-acik-com-tls
+  rules:
+    - host: etik.acik.com
+      http: &publicApi
+        paths:
+          - path: /api/v1/public/ethics
+            pathType: Prefix
+            backend:
+              service: {name: ethics-service, port: {number: 8099}}
+    - host: speakup.acik.com
+      http: *publicApi
