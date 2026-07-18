@@ -17,6 +17,8 @@ source_revision="$2"
 
 schema_version="$(jq -r '.schemaVersion // empty' "$diagnostic" 2>/dev/null || true)"
 [[ "$schema_version" == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3" ]] || {
+  # Producer and reader come from the same github.sha checkout. Rejecting older
+  # external artifacts is deliberate; an in-flight run cannot mix revisions.
   echo "browser-diagnostic-schema-mismatch" >&2
   exit 1
 }

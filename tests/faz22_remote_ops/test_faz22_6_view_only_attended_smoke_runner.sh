@@ -126,6 +126,15 @@ grep -q 'name: Verify attended endpoint target before approval' <<<"$browser_wor
 grep -q 'needs: target-preflight' <<<"$browser_workflow_text"
 grep -q 'verify-view-only-viewer-target.sh' <<<"$browser_workflow_text"
 grep -q 'name: Re-verify live target after protected approval' <<<"$browser_workflow_text"
+# Every job checks out the workflow event revision, and all producer/reader
+# bindings use that same immutable revision. Schema upgrades cannot mix within
+# an already-running evidence job.
+[[ "$(grep -Fc 'uses: actions/checkout@' <<<"$browser_workflow_text")" -ge 3 ]]
+[[ "$(grep -Fc 'SOURCE_REVISION: ${{ github.sha }}' <<<"$browser_workflow_text")" -ge 3 ]]
+# VIEWER_URL is assembled inside the trusted runner from a fixed test origin;
+# workflow inputs cannot provide an alternate origin, path, or query key.
+grep -Fq 'VIEWER_PRODUCT_BASE_URL: https://testai.acik.com' <<<"$browser_workflow_text"
+grep -Fq 'VIEWER_URL="${VIEWER_PRODUCT_BASE_URL}/endpoint-admin/remote-access/sessions/${SESSION_ID}/view?streamId=${OPERATION_ID}"' "$SCRIPT"
 # shellcheck disable=SC2016 # Assert the workflow expression literally.
 if [[ "$(grep -A3 'name: Stage redacted collector diagnostic' "$BROWSER_WORKFLOW" \
     | grep -Fc 'if: ${{ always() }}')" != "1" ]]; then

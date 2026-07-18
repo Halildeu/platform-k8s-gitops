@@ -378,7 +378,8 @@ function validateViewerUrl(raw) {
 }
 
 export function deriveViewerAckUrl(raw) {
-  // validateViewerUrl pins the origin, route template, and sole streamId query before this prefix is added.
+  // The workflow constructs VIEWER_URL from its fixed testai base plus server-issued IDs.
+  // Revalidation here remains the authority boundary before the API prefix is added.
   const url = new URL(validateViewerUrl(raw));
   const streamId = url.searchParams.get('streamId');
   if (!streamId) throw new Error('VIEWER_URL streamId invariant failed');
