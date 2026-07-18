@@ -59,6 +59,10 @@ jobs:
     steps:
       - name: Checkout immutable source
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The contract proves that the action source commit is an ancestor of
+          # HEAD and byte-identical. A depth-1 clone cannot make that proof.
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
