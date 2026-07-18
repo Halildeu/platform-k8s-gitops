@@ -457,7 +457,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
 
     def test_fullats_rollback_content_verifier_executes_fail_closed_with_mocked_git_and_github(self):
-        promotion_base = "d3dd28fdaf478733b60438346a063009c37f1213"
+        promotion_base = "e06ba1ad140cdcada36e5d44c27887ce8c3faf0d"
         pr_base = "1" * 40
         pr_head = "2" * 40
         promotion_head = "3" * 40

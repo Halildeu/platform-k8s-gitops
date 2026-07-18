@@ -58,7 +58,7 @@ const FULLATS_ROLLBACK_PATHS = [
   'kustomize/overlays/test/fullats-promotion-state.txt',
   'kustomize/overlays/test/kustomization.yaml',
 ];
-const FULLATS_PROMOTION_BASE_SHA = 'd3dd28fdaf478733b60438346a063009c37f1213';
+const FULLATS_PROMOTION_BASE_SHA = 'e06ba1ad140cdcada36e5d44c27887ce8c3faf0d';
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
