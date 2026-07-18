@@ -37,6 +37,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
             / "kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml"
         ).read_text()
         cls.test_root = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text()
+        cls.test_frontend_nginx = (
+            ROOT / "kustomize/overlays/test/frontend-nginx-default.conf"
+        ).read_text()
         cls.promotion_state = (
             ROOT / "kustomize/overlays/test/fullats-promotion-state.txt"
         ).read_text().strip()
@@ -733,6 +736,22 @@ fi
         self.assertIn("redacted.replaceAll(value, marker)", self.fullats_browser)
         self.assertNotIn("containsRawCandidateAccessToken", self.fullats_browser)
         self.assertNotIn("containsRawPasswordOrJwt", self.fullats_browser)
+
+    def test_candidate_pdf_worker_has_test_only_javascript_mime_runtime_config(self):
+        self.assertIn("behavior: replace", self.test_root)
+        self.assertIn(
+            "default.conf=frontend-nginx-default.conf",
+            self.test_root,
+        )
+        self.assertIn(r"location ~* \.mjs$", self.test_frontend_nginx)
+        self.assertIn(
+            "default_type application/javascript;",
+            self.test_frontend_nginx,
+        )
+        self.assertIn(
+            "default_type application/javascript;",
+            self.rendered_test_root,
+        )
 
     def test_frontend_promotion_receipt_is_cross_file_bound(self):
         source_sha = "eee1310b33376013967482ae842bf15c797fe72c"
