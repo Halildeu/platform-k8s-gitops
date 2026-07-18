@@ -368,6 +368,14 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.cross_ai_workflow,
         )
         self.assertIn(
+            "ref: ${{ github.event.pull_request.base.sha }}",
+            self.cross_ai_workflow,
+        )
+        self.assertNotIn(
+            "ref: ${{ github.event.pull_request.base.ref }}",
+            self.cross_ai_workflow,
+        )
+        self.assertIn(
             "--automation-content-attestation-file",
             self.cross_ai_workflow,
         )

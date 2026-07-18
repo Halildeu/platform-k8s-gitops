@@ -89,13 +89,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout base ref (trusted main, not PR head)
-        # #842 Codex 019e42c7 Q8: `base.ref` (not `base.sha`) — track the latest
-        # commit on the base branch so a freshly-hardened audit script runs
-        # against PRs opened before the hardening landed. `base.sha` would
-        # pin to the SHA at PR-open time and miss subsequent fixes.
+        # Pull-request-target must execute only the immutable trusted base tree.
+        # Binding to the event's exact base SHA prevents a mutable-ref TOCTOU
+        # window after this privileged event starts. A later base hardening
+        # naturally appears on the next edited/synchronize/reopened event.
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - name: Setup Node
