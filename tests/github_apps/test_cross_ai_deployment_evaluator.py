@@ -288,6 +288,13 @@ class DeploymentEvaluatorTest(unittest.TestCase):
         self.github.run_value["triggering_actor"] = {"id": 999999}
         self.assert_rejected("RUN_ACTOR_MISMATCH")
 
+    def test_rejects_workflow_concurrency_group_drift(self) -> None:
+        self.github.workflow_value = WORKFLOW.replace(
+            b"faz22-view-only-protected-lanes",
+            b"faz22-view-only-protected-lanes-forked",
+        )
+        self.assert_rejected("INTENT_REF_OR_DEPENDENCY_LOCK_MISMATCH")
+
     def test_rejects_environment_rule_drift_and_moved_ref(self) -> None:
         self.github.environment_value["protection_rules"].append(
             {"id": 3, "type": "custom", "app": {"id": 777}}

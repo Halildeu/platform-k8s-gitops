@@ -82,7 +82,9 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.assertIn(f"artifact-name={artifact}\n", outputs)
         self.assertIn(f"evidence-file={output}\n", outputs)
 
-    def test_rejects_bundle_digest_drift_and_apply_without_watchdog(self) -> None:
+    def test_rejects_bundle_digest_drift_and_successful_apply_without_watchdog(
+        self,
+    ) -> None:
         changed = json.loads(self.bootstrap.read_text(encoding="utf-8"))
         changed["bundleSha256"] = "sha256:" + ("0" * 64)
         self.bootstrap.write_bytes(canonical_bytes(changed))
@@ -101,6 +103,21 @@ class StageEvidenceBuilderTest(unittest.TestCase):
             builder, "utc_now", return_value=self.fixture.now
         ), self.assertRaisesRegex(PolicyError, "STAGE_EVIDENCE_WATCHDOG_INVALID"):
             builder.build(self.args(stage="apply"))
+
+    def test_records_apply_failure_before_watchdog_creation(self) -> None:
+        self.response["stage"] = "apply"
+        self.response["workflowPath"] = self.factory.decode_payload(
+            self.fixture.bundle_envelope
+        )["workflowStages"][0]["workflowPath"]
+        self.bootstrap.write_bytes(canonical_bytes(self.response))
+        with patch.dict(os.environ, self.environment, clear=True), patch.object(
+            builder, "utc_now", return_value=self.fixture.now
+        ):
+            evidence, _artifact = builder.build(
+                self.args(stage="apply", conclusion="failure")
+            )
+        self.assertEqual(evidence["conclusion"], "failure")
+        self.assertIsNone(evidence["watchdogExpiresAt"])
 
 
 if __name__ == "__main__":

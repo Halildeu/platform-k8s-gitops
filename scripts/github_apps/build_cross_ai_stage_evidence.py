@@ -75,9 +75,11 @@ def _watchdog(
             reject("STAGE_EVIDENCE_WATCHDOG_INVALID", "non-apply stage has watchdog input")
         return None
     if path is None or not path.is_file() or path.is_symlink():
+        if conclusion == "failure":
+            return None
         reject(
             "STAGE_EVIDENCE_WATCHDOG_INVALID",
-            "apply evidence requires the live watchdog expiry receipt",
+            "successful apply evidence requires the live watchdog expiry receipt",
         )
     value = path.read_text(encoding="ascii").strip()
     parsed = parse_utc(value, "watchdogExpiresAt")

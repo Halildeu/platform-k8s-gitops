@@ -188,6 +188,15 @@ minting also remains owner-only. Key read/export/backup/restore/datakey/
 encrypt/decrypt/rewrap/HMAC are denied. Missing direct provider execution or
 exact backend model identity remains an authorization blocker.
 
+Role-definition write access is still a TEST activation blocker, not full
+issuer independence: the routine reconciler can currently set an issuer or
+coordinator AppRole to `bind_secret_id=false` and can read that role's role-id.
+Before enabling the custom rule, role-definition ownership must move out of the
+routine reconciler trust domain (or the reconciler must lose those write/read
+capabilities after bootstrap), and live Vault capability tests must prove the
+downgrade/login path is denied. Merely withholding normal SecretID minting is
+not sufficient evidence.
+
 This source contract does not make three local Transit signatures equivalent
 to three provider executions. Each dedicated issuer must execute its provider,
 validate the exact reported model and only then consume its one-use sign token.

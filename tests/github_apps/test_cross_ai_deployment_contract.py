@@ -66,11 +66,13 @@ class EvidenceContractTest(unittest.TestCase):
         bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
         review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
         review["providerFamily"] = "anthropic"
-        bundle["reviewEnvelopes"][-1] = self.factory.sign(
+        envelope = self.factory.sign(
             "application/vnd.acik.cross-ai-deployment-review.v1+json",
             review,
             self.factory.OPENAI_KEY_ID,
         )
+        bundle["reviewEnvelopes"][-1] = envelope
+        bundle["consensus"]["finalAgreeReviewSha256"][-1] = sha256_digest(envelope)
         self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
         with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
@@ -179,6 +181,28 @@ class EvidenceContractTest(unittest.TestCase):
         self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
         with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_required_provider_that_is_not_a_direct_route(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["directProviderCli"] = False
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        review["directProviderCli"] = False
+        envelope = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.OPENAI_KEY_ID,
+        )
+        bundle["reviewEnvelopes"][-1] = envelope
+        bundle["consensus"]["finalAgreeReviewSha256"][-1] = sha256_digest(envelope)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        verifier = EvidenceVerifier(
+            trust_root=trust_root,
+            revocations_envelope=self.fixture.revocations_envelope,
+            now=self.fixture.now,
+        )
+        with self.assertRaisesRegex(PolicyError, "DIRECT_PROVIDER_SET_MISMATCH"):
+            verifier.verify_bundle(self.fixture.bundle_envelope)
 
     def test_rejects_session_rebinding(self) -> None:
         self.mutate_bundle(
