@@ -76,8 +76,7 @@ Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
 # Consultation commit: <single/dual exact head>
 # Consultation scope: <single/dual content SHA-256>
 # Claude receipt: <single ve dual için exact receipt>
-# MiniMax receipt: <dual için opsiyonlardan yalnız biri>
-# Codex receipt: <dual için opsiyonlardan yalnız biri>
+# Codex receipt: <dual için zorunlu exact receipt>
 ```
 
 **Field semantik**:
@@ -85,8 +84,8 @@ Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
   governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
 - `single`: exact Claude Opus 4.8 receipt + exact base/head/scope + `AGREE`;
   Claude implementer için provider-distinct olmadığı için kullanılamaz.
-- `dual`: exact Claude + yalnız bir MiniMax veya Codex receipt; somut `Risk trigger`
-  zorunlu, üçüncü kanal yasak, publication order zorunlu değil.
+- `dual`: exact Claude + exact Codex receipt; somut `Risk trigger` zorunlu,
+  üçüncü kanal ve MiniMax receipt yasak, publication order zorunlu değil.
 - Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,
   exact model ve redaction kontrolleri fail-closed kalır.
 

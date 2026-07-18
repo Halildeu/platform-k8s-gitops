@@ -68,15 +68,12 @@ const CONSULTATION_RECEIPTS = {
     provider: 'anthropic',
     model: 'claude-opus-4-8',
   },
-  'minimax receipt': {
-    provider: 'minimax',
-    model: 'minimax/MiniMax-M3',
-  },
   'codex receipt': {
     provider: 'openai',
     model: 'gpt-5.6-sol',
   },
 };
+const FORBIDDEN_CONSULTATION_FIELDS = new Set(['minimax receipt']);
 const CONSULTATION_MODES = new Set(['none', 'single', 'dual']);
 const CONSULTATION_GOVERNANCE_PATHS = [
   /^AGENTS\.md$/,
@@ -85,14 +82,18 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^\.github\/pull_request_template\.md$/,
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|minimax_m3_review)\.py$/,
+  // Tombstone: deleting the retired wrapper remains a governance change, and
+  // any future MiniMax-named review helper cannot be reintroduced under none.
+  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];
 const CONSULTATION_DUAL_GOVERNANCE_PATHS = [
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|minimax_m3_review)\.py$/,
+  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
   /(?:^|\/)(?:[^/]+[-_.])?(?:rbac|clusterrole|clusterrolebinding|role|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|secretstore|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
@@ -791,7 +792,6 @@ async function appendConsultationFindings(
   });
 
   const refs = [];
-  const evidenceCreatedAt = [];
   for (const field of receiptFields) {
     const expected = CONSULTATION_RECEIPTS[field];
     const receipt = parseReceipt(fields[field]);
@@ -816,7 +816,6 @@ async function appendConsultationFindings(
       evidenceComment, receipt, expected, expectedOwner,
       baseTip, base, commit, scope,
     );
-    if (pass) evidenceCreatedAt.push(Date.parse(evidenceComment.createdAt));
     findings.push({
       check: field.replaceAll(' ', '_'),
       pass,
@@ -830,18 +829,6 @@ async function appendConsultationFindings(
     pass: refs.length === receiptFields.length && new Set(refs).size === receiptFields.length,
     detail: 'Seçilen provider receipt referansları birbirinden farklı olmalıdır',
   });
-  if (receiptFields.length === 3) {
-    const publicationOrderPass = evidenceCreatedAt.length === 3
-      && evidenceCreatedAt[0] < evidenceCreatedAt[1]
-      && evidenceCreatedAt[1] < evidenceCreatedAt[2];
-    findings.push({
-      check: 'consultation_publication_order_claude_minimax_codex',
-      pass: publicationOrderPass,
-      detail: publicationOrderPass
-        ? 'owner evidence publication order is strictly Claude -> MiniMax -> Codex'
-        : 'owner evidence comments must have strictly increasing Claude -> MiniMax -> Codex timestamps',
-    });
-  }
 }
 
 async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) {
@@ -851,6 +838,9 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const implementer = normalizeProvider(fields['implementer ai']);
   const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
   const presentReceipts = receiptNames.filter((field) => Object.hasOwn(fields, field));
+  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
+    Object.hasOwn(fields, field)
+  );
   const requiredFloor = minimumConsultationMode(prMeta);
   const modeRank = { none: 0, single: 1, dual: 2 };
   const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
@@ -1062,13 +1052,44 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
 
   const fields = extractFields(section);
   appendDuplicateFieldFinding(findings, fields);
+  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
+    Object.hasOwn(fields, field)
+  );
+  findings.push({
+    check: 'consultation_has_no_forbidden_minimax_receipt',
+    pass: forbiddenFields.length === 0,
+    detail: forbiddenFields.length === 0
+      ? 'MiniMax yeni istişare ve receipt zincirinde bulunmuyor'
+      : 'MiniMax receipt yeni istişarelerde yasaktır; historical evidence yalnız read-only kalır',
+  });
   if (Object.hasOwn(fields, 'consultation mode')) {
     findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
     return findings;
   }
 
-  // Check 1: required fields present
+  // Forward policy has no current legacy lane. Only the narrowly allowlisted
+  // docs-only exemption may retain the old body shape; it produces no provider
+  // receipt or acceptance authority. Every other PR must declare an explicit
+  // none|single|dual mode so legacy Claude+Codex fields cannot bypass the mode
+  // floor or the dual risk trigger.
   const exemption = docsOnlyExemption(fields, prMeta);
+  if (!exemption.pass) {
+    if (exemption.requested) {
+      findings.push({
+        check: 'cross_ai_docs_only_exemption',
+        pass: false,
+        detail: exemption.detail,
+      });
+    }
+    findings.push({
+      check: 'consultation_explicit_mode_required',
+      pass: false,
+      detail: 'Yeni PR yalnız explicit Consultation mode: none|single|dual ile değerlendirilebilir; legacy receipt gövdesi acceptance üretmez',
+    });
+    return findings;
+  }
+
+  // Narrow historical-docs exemption only; no provider evidence is accepted.
   const consultationExempt = exemption.pass;
   if (exemption.requested) {
     findings.push({

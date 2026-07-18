@@ -30,7 +30,7 @@ AUTHORIZATION_ARTIFACT_ID = 500001
 OWNER_COMMENT_ID = 900001
 ADVISORY_COMMENT_ID = 900002
 OWNER_COMMENT_BODY = "Owner authorizes the bounded attended VIEW_ONLY test pilot; legal clearance is not claimed."
-ADVISORY_COMMENT_BODY = "MiniMax M3 and Codex agree on the bounded engineering authorization with legal tracked_pending."
+ADVISORY_COMMENT_BODY = "Claude Opus 4.8 and Codex 5.6 SOL agree on the bounded engineering authorization with legal tracked_pending."
 
 
 def sha(char):
@@ -523,7 +523,7 @@ def owner_policy_fixture():
             "authorAssociation": "OWNER",
             "advisoryOnly": True,
             "consensusVerdict": "AGREE",
-            "providers": ["MiniMax/minimax-MiniMax-M3", "OpenAI/Codex"],
+            "providers": ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"],
             "provenanceClass": "owner-attested-provider-session",
             "providerCryptographicAttestation": False,
         },

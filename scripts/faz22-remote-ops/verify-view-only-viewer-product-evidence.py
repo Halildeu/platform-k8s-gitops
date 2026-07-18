@@ -1180,7 +1180,7 @@ def verify_activation_authorization(
     require_equal(advisory_contract.get("consensusVerdict"), "AGREE", "AI advisory policy consensus")
     require_equal(
         advisory_contract.get("providers"),
-        ["MiniMax/minimax-MiniMax-M3", "OpenAI/Codex"],
+        ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"],
         "AI advisory provider pair",
     )
 

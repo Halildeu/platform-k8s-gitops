@@ -1,5 +1,12 @@
 # ADR-0045 — Signed Cross-AI Evidence Custom Deployment Protection Rule
 
+> **Forward-policy status (2026-07-18, #2638): SUPERSEDED FOR NEW EVIDENCE.**
+> Bu v1 üç-sağlayıcı tasarımının şema ve fixture'ları yalnız arşiv/forensic kayıt
+> açıklaması için korunur; cutoff sonrası aktif verifier MiniMax taşıyan trust
+> root veya bundle'ı doğrulamaz. Yeni review, trust root, deployment grant veya
+> activation bu sözleşmeyle üretilemez; yeni aktif sürüm ayrı versioned contract
+> altında Claude Opus 4.8 + OpenAI Codex 5.6 SOL kullanmalıdır.
+
 > **Status:** PROPOSED — source implementation, fail-closed tests, GitHub App
 > registration, the Phase-1 receive-only test observer, outbound failed-delivery
 > recovery and test-Vault App private-key provisioning exist. The owner-gated

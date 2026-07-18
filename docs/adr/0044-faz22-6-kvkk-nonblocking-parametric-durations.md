@@ -106,8 +106,10 @@ danışma mutabakatının mühendislik/risk yetkisi olarak kullanılmasına izin
 verebilir. Bu yetki yalnız aşağıdaki koşulların tümü fail-closed doğrulandığında
 geçerlidir:
 
-- owner direktifi ve MiniMax M3 + Codex `AGREE` danışma kaydı GitHub yorum ID,
-  OWNER association, URL ve içerik SHA-256 ile bağlanır;
+- owner direktifi ve direct Anthropic Claude Opus 4.8 + direct OpenAI Codex
+  5.6 SOL `AGREE` danışma kaydı GitHub yorum ID, OWNER association, URL ve
+  içerik SHA-256 ile bağlanır; pre-#2638 MiniMax kayıtları tarihsel kalır ve
+  yeni authorization üretemez;
 - AI kaydı `advisoryOnly=true` taşır; `#2374` açık ve `tracked_pending`,
   `legalClearanceClaimed=false` kalır;
 - kapsam TEST, tek operator/cihaz, attended VIEW_ONLY, kayıt kapalı, ekran içeriği

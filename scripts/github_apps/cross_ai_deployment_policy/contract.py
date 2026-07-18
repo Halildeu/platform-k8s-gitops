@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,7 @@ RUNNER_ADMISSION_LEASE_PAYLOAD_TYPE = (
 SESSION_DOMAIN = "acik.cross-ai-deployment-session.v1"
 CLOSURE_DOMAIN = "acik.cross-ai-deployment-closure.v1"
 MAX_GRANT_TTL = timedelta(minutes=120)
+MINIMAX_NEW_REVIEW_CUTOFF = datetime(2026, 7, 18, tzinfo=timezone.utc)
 REQUIRED_PROVIDER_ROUTES = {
     "anthropic": (
         "direct-anthropic-cli",
@@ -163,6 +164,23 @@ class EvidenceVerifier:
         self.required_provider_families = frozenset(
             trust_root["requiredProviderFamilies"]
         )
+        if (
+            "minimax" in self.required_provider_families
+            and self.now >= MINIMAX_NEW_REVIEW_CUTOFF
+        ):
+            reject(
+                "MINIMAX_PROVIDER_DEPRECATED",
+                "active verification cannot use a MiniMax-bearing v1 trust root after the cutoff",
+            )
+        trust_root_expires_at = parse_utc(trust_root["expiresAt"], "trustRoot.expiresAt")
+        if (
+            "minimax" in self.required_provider_families
+            and trust_root_expires_at > MINIMAX_NEW_REVIEW_CUTOFF
+        ):
+            reject(
+                "MINIMAX_TRUST_ROOT_DEPRECATED",
+                "MiniMax trust roots may not remain valid after the forward-policy cutoff",
+            )
         self.minimum_provider_families = trust_root["minimumProviderFamilies"]
         self.minimum_direct_routes = trust_root["minimumDirectProviderRoutes"]
         self.keys = self._parse_trust_keys(trust_root)
@@ -594,6 +612,17 @@ class EvidenceVerifier:
                 )
             issued_at = parse_utc(leaf["issuedAt"], "review.issuedAt")
             expires_at = parse_utc(leaf["expiresAt"], "review.expiresAt")
+            if leaf["providerFamily"] == "minimax":
+                if self.now >= MINIMAX_NEW_REVIEW_CUTOFF:
+                    reject(
+                        "MINIMAX_PROVIDER_DEPRECATED",
+                        "active verification cannot accept MiniMax review leaves after the cutoff",
+                    )
+                if issued_at >= MINIMAX_NEW_REVIEW_CUTOFF:
+                    reject(
+                        "MINIMAX_REVIEW_DEPRECATED",
+                        "MiniMax reviews issued on or after the forward-policy cutoff are forbidden",
+                    )
             if issued_at > self.now + self.max_skew:
                 reject("REVIEW_NOT_YET_VALID", "review issue time is in the future")
             if expires_at < self.now - self.max_skew:
