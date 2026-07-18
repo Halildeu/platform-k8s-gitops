@@ -7,7 +7,9 @@ TEST_ESO_RENDER="$(mktemp)"
 PROD_RENDER="$(mktemp)"
 PROD_ESO_RENDER="$(mktemp)"
 MUTATED_EVIDENCE="$(mktemp)"
-trap 'rm -f -- "${TEST_RENDER}" "${TEST_ESO_RENDER}" "${PROD_RENDER}" "${PROD_ESO_RENDER}" "${MUTATED_EVIDENCE}"' EXIT
+MUTATED_PROD_RENDER="$(mktemp)"
+MUTATED_WORKFLOW="$(mktemp)"
+trap 'rm -f -- "${TEST_RENDER}" "${TEST_ESO_RENDER}" "${PROD_RENDER}" "${PROD_ESO_RENDER}" "${MUTATED_EVIDENCE}" "${MUTATED_PROD_RENDER}" "${MUTATED_WORKFLOW}"' EXIT
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -17,6 +19,7 @@ fail() {
 command -v kustomize >/dev/null 2>&1 || fail "kustomize is required"
 python3 -m py_compile \
   "${ROOT}/scripts/test/verify-faz24-finalization-rollout.py" \
+  "${ROOT}/scripts/test/verify-faz24-finalization-ci-wiring.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-source-evidence.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-remote-evidence.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-build-provenance.py"
@@ -48,12 +51,46 @@ if python3 "${ROOT}/scripts/test/verify-faz24-finalization-source-evidence.py" \
   fail "source verifier accepted an unauthorized image-provenance claim"
 fi
 
-grep -Fq 'verify-faz24-finalization-remote-evidence.py' \
-  "${ROOT}/.github/workflows/ci.yml" || \
-  fail "CI lost the fail-closed remote GitHub evidence guard"
-if grep -Fq 'verify-faz24-finalization-build-provenance.py' \
-    "${ROOT}/.github/workflows/ci.yml"; then
-  fail "operator-only image provenance verifier became a static CI acceptance gate"
+cp "${PROD_RENDER}" "${MUTATED_PROD_RENDER}"
+cat >>"${MUTATED_PROD_RENDER}" <<'YAML'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forbidden-transcript-secret-regression
+spec:
+  template:
+    spec:
+      containers:
+        - name: regression
+          env:
+            - name: TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: unexpected-prod-secret
+                  key: client-secret
+YAML
+if python3 "${ROOT}/scripts/test/verify-faz24-finalization-rollout.py" \
+    "${TEST_RENDER}" "${TEST_ESO_RENDER}" \
+    "${MUTATED_PROD_RENDER}" "${PROD_ESO_RENDER}" >/dev/null 2>&1; then
+  fail "prod leakage verifier accepted a transcript meeting client-secret binding"
+fi
+
+python3 "${ROOT}/scripts/test/verify-faz24-finalization-ci-wiring.py" \
+  "${ROOT}/.github/workflows/ci.yml"
+cat >"${MUTATED_WORKFLOW}" <<'YAML'
+name: regression
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      # python3 scripts/test/verify-faz24-finalization-remote-evidence.py docs/faz-24-evidence/2026-07-18-finalization-source-ci.json
+      - name: verify-faz24-finalization-remote-evidence.py
+        run: printf '%s\n' 'not the verifier'
+YAML
+if python3 "${ROOT}/scripts/test/verify-faz24-finalization-ci-wiring.py" \
+    "${MUTATED_WORKFLOW}" >/dev/null 2>&1; then
+  fail "CI wiring verifier accepted a comment/name-only false positive"
 fi
 
 grep -Fq 'MEETING_INTERNAL_SERVICE_JWT_CLIENT_IDS: meeting-ai,transcript-service' \

@@ -49,6 +49,7 @@ def anonymous_json(url: str) -> dict[str, Any] | None:
         result = subprocess.run(
             [
                 "curl",
+                "--disable",
                 "--fail",
                 "--silent",
                 "--show-error",
@@ -89,6 +90,8 @@ def github_json(url: str) -> dict[str, Any]:
                 [
                     "gh",
                     "api",
+                    "--hostname",
+                    "github.com",
                     "--method",
                     "GET",
                     "--header",

@@ -221,6 +221,12 @@ def reject_prod_leakage(
         "transcript resolver": "TRANSCRIPT_MEETING_SESSION_RESOLVER_ENABLED",
         "transcript finalizer": "TRANSCRIPT_FINALIZATION_WORKER_ENABLED",
         "transcript issuer secret": "SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET",
+        "transcript meeting client secret env": (
+            "TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET"
+        ),
+        "transcript meeting client secret Vault property": (
+            "service_client_transcript_service_secret"
+        ),
         "meeting rollout marker": "platform.acik.com/faz24-meeting-ai-base-url-rev",
         "transcript rollout marker": "transcript-service.acik.com/direct-stt-result-consumer-rev",
         "meeting test digest": "sha256:1da371209763f36119a05f87e5ed78a8439afc9427c03cf41f9e1aaa3d09d682",
