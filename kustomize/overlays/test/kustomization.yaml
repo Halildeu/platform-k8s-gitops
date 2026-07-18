@@ -4268,9 +4268,9 @@ images:
     # list/detail/apply routes on the minimal public shell so auth bootstrap
     # cannot reload and erase the candidate's browser-local PDF draft.
     # Build run 29645789815 testai job 88083697225.
-    # sourceRevision: eee1310b33376013967482ae842bf15c797fe72c
-    newTag: sha-eee1310
-    digest: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
+    # sourceRevision: f4a1f5822226fcb5452a7defd013933dac7fb440
+    newTag: sha-f4a1f58
+    digest: sha256:c77d4dc57e48eed8583bf26850ac61f0ca3e44439baf64b7d2da9d3709d000f2
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
