@@ -13,7 +13,7 @@ PR_HEAD_REF="${PR_HEAD_REF:-}"
 PR_HEAD_SHA="${PR_HEAD_SHA:-}"
 PR_BASE_SHA="${PR_BASE_SHA:-}"
 ATTESTATION_OUTPUT="${ATTESTATION_OUTPUT:-}"
-PROMOTION_BASE_SHA="e06ba1ad140cdcada36e5d44c27887ce8c3faf0d"
+PROMOTION_BASE_SHA="3833433f8f14cbbc1d6115a5edee0573e6a79f9b"
 SOURCE_WORKFLOW=".github/workflows/faz25-fullats-live-browser-acceptance.yml"
 
 [[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" && "$PROMOTION_PR" == "2632" ]] || exit 2
