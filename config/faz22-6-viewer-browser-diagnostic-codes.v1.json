@@ -33,6 +33,7 @@
     "browser-preflight-api-status-unexpected-success",
     "browser-replay-not-rejected",
     "browser-replay-probe-failed",
+    "browser-replay-token-missing",
     "browser-route-navigation-failed",
     "browser-route-unauthorized",
     "browser-runtime-start-failed",

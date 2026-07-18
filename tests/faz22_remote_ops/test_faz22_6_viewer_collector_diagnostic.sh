@@ -26,9 +26,10 @@ bash "$SCRIPT" "$TMP/summary.json" "$TMP/operation.json" \
   70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/out"
 jq -e '
   .status == "no-go"
-  and .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v4"
+  and .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v5"
   and .failureReasonCode == "open-session-device-not-connected-timeout"
   and .browserFailureCode == null
+  and .browserReplayHttpStatus == null
   and .openSessionHttp == "404"
   and .operationHttp == null
   and .operationKind == null
@@ -110,7 +111,7 @@ cat > "$TMP/browser-summary.json" <<'JSON'
 JSON
 cat > "$TMP/browser-diagnostic.json" <<'JSON'
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v2",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v3",
   "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
   "failureCode": "browser-ack-count-diverged",
   "ackTelemetry": {
@@ -120,7 +121,8 @@ cat > "$TMP/browser-diagnostic.json" <<'JSON'
     "pending": 0,
     "acceptedSamples": 704,
     "lastAcceptedSeq": 731
-  }
+  },
+  "replayHttpStatus": null
 }
 JSON
 bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
@@ -128,6 +130,7 @@ bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
 jq -e '
   .failureReasonCode == "browser-product-evidence-failed"
   and .browserFailureCode == "browser-ack-count-diverged"
+  and .browserReplayHttpStatus == null
   and .browserAckTelemetry == {
     attempted:705,
     accepted:704,
@@ -141,7 +144,7 @@ jq -e '
 
 cat > "$TMP/browser-diagnostic-all-rejected.json" <<'JSON'
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v2",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v3",
   "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
   "failureCode": "browser-ack-rejected",
   "ackTelemetry": {
@@ -151,7 +154,8 @@ cat > "$TMP/browser-diagnostic-all-rejected.json" <<'JSON'
     "pending": 0,
     "acceptedSamples": 0,
     "lastAcceptedSeq": null
-  }
+  },
+  "replayHttpStatus": null
 }
 JSON
 bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
@@ -168,6 +172,57 @@ jq -e '
     lastAcceptedSeq:null
   }
 ' "$TMP/browser-all-rejected/collector-diagnostic.json" >/dev/null
+
+cat > "$TMP/browser-diagnostic-replay.json" <<'JSON'
+{
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v3",
+  "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
+  "failureCode": "browser-replay-not-rejected",
+  "ackTelemetry": null,
+  "replayHttpStatus": 405
+}
+JSON
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-replay" \
+  "$TMP/browser-diagnostic-replay.json"
+jq -e '
+  .browserFailureCode == "browser-replay-not-rejected"
+  and .browserAckTelemetry == null
+  and .browserReplayHttpStatus == "405"
+' "$TMP/browser-replay/collector-diagnostic.json" >/dev/null
+
+jq '.replayHttpStatus = 404' "$TMP/browser-diagnostic-replay.json" \
+  > "$TMP/browser-diagnostic-replay-impossible.json"
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-replay-impossible" \
+  "$TMP/browser-diagnostic-replay-impossible.json"
+jq -e '
+  .browserFailureCode == "browser-unclassified-failure"
+  and .browserAckTelemetry == null
+  and .browserReplayHttpStatus == null
+' "$TMP/browser-replay-impossible/collector-diagnostic.json" >/dev/null
+
+jq '.failureCode = "browser-ack-count-diverged"' "$TMP/browser-diagnostic-replay.json" \
+  > "$TMP/browser-diagnostic-mismatched-fields.json"
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-mismatched-fields" \
+  "$TMP/browser-diagnostic-mismatched-fields.json"
+jq -e '
+  .browserFailureCode == "browser-unclassified-failure"
+  and .browserAckTelemetry == null
+  and .browserReplayHttpStatus == null
+' "$TMP/browser-mismatched-fields/collector-diagnostic.json" >/dev/null
+
+jq '.replayHttpStatus = 99' "$TMP/browser-diagnostic-replay.json" \
+  > "$TMP/browser-diagnostic-replay-invalid-status.json"
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-replay-invalid-status" \
+  "$TMP/browser-diagnostic-replay-invalid-status.json"
+jq -e '
+  .browserFailureCode == "browser-unclassified-failure"
+  and .browserAckTelemetry == null
+  and .browserReplayHttpStatus == null
+' "$TMP/browser-replay-invalid-status/collector-diagnostic.json" >/dev/null
 
 jq '.failureCode = "sessionId=must-not-pass"' "$TMP/browser-diagnostic.json" \
   > "$TMP/browser-diagnostic-unknown.json"
@@ -209,10 +264,11 @@ if VIEWER_URL='https://testai.acik.com/endpoint-admin/remote-access/sessions/tes
   exit 1
 fi
 jq -e '
-  .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v2"
+  .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
   and .sourceRevision == "70d8286163651805cd5ebd537d3836d02fb1692d"
   and .failureCode == "browser-binding-invalid"
   and .ackTelemetry == null
+  and .replayHttpStatus == null
 ' "$TMP/browser-script-diagnostic.json" >/dev/null
 grep -Fxq 'browser_evidence=fail code=browser-binding-invalid' "$TMP/browser-script.err"
 
@@ -227,8 +283,10 @@ const {
   BROWSER_FAILURE_CODES,
   ackDiagnostic,
   classifyAckDrainSnapshot,
+  classifyReplayProbeStatus,
   classifyViewerDrainSnapshot,
   classifyPreflightApiStatus,
+  deriveViewerAckUrl,
   drainAckSnapshots,
   installViewerEvidenceObserver,
 } = await import(pathToFileURL(browserScript));
@@ -241,6 +299,51 @@ assert.equal(classifyPreflightApiStatus(403), 'browser-preflight-api-status-forb
 assert.equal(classifyPreflightApiStatus(404), 'browser-preflight-api-status-invalid');
 assert.equal(classifyPreflightApiStatus(409), 'browser-preflight-api-status-conflict');
 assert.equal(classifyPreflightApiStatus(502), 'browser-preflight-api-status-server-error');
+assert.equal(classifyReplayProbeStatus(404), null);
+assert.equal(classifyReplayProbeStatus(405), 'browser-replay-not-rejected');
+assert.equal(classifyReplayProbeStatus(null), 'browser-replay-token-missing');
+assert.equal(classifyReplayProbeStatus(0), 'browser-replay-probe-failed');
+assert.equal(classifyReplayProbeStatus(200.5), 'browser-replay-probe-failed');
+assert.equal(
+  deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1'),
+  'https://testai.acik.com/api/v1/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1',
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com/api/v1/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('http://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://evil.example/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/other?streamId=stream_1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1&extra=1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view?streamId=trusted&streamId=conflicting'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com:444/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view/../admin/secret?streamId=stream_1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
 assert.equal(classifyAckDrainSnapshot({ attempted: 100, accepted: 100, rejected: 0, pending: 0, lastAcceptedSeq: 120 }), 'settled');
 assert.equal(classifyAckDrainSnapshot({ attempted: 101, accepted: 100, rejected: 0, pending: 1, lastAcceptedSeq: 120 }), 'pending');
 assert.equal(classifyAckDrainSnapshot({ attempted: 101, accepted: 100, rejected: 0, pending: 0, lastAcceptedSeq: 120 }), 'diverged');
