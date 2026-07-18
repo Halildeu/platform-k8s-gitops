@@ -222,6 +222,20 @@ class ProviderExecutionTest(unittest.TestCase):
 
 
 class ProviderIssuerTest(unittest.TestCase):
+    def test_v1_issuer_is_read_only(self) -> None:
+        factory = FixtureFactory()
+        with self.assertRaisesRegex(PolicyError, "LEGACY_CONTRACT_READ_ONLY"):
+            ProviderReviewIssuer(
+                signer=StaticSigner(factory, factory.ANTHROPIC_KEY_ID),
+                provider_family="anthropic",
+                channel="direct-anthropic-cli",
+                direct_provider_cli=True,
+                model_identity_class="provider-reported",
+                allowed_models=frozenset({"claude-opus-4-8"}),
+                issuer="cross-ai-issuer-anthropic",
+                contract_version="v1",
+            )
+
     def test_issuer_binds_fixed_provider_policy_and_signer_key(self) -> None:
         factory = FixtureFactory()
         signer = StaticSigner(factory, factory.ANTHROPIC_KEY_ID)

@@ -8,9 +8,7 @@ from typing import Any
 
 from .canonical import sha256_digest
 from .contract import (
-    BUNDLE_PAYLOAD_TYPE,
     BUNDLE_PAYLOAD_TYPE_V2,
-    CLOSURE_DOMAIN,
     CLOSURE_DOMAIN_V2,
     EvidenceVerifier,
     VerifiedBundle,
@@ -40,10 +38,11 @@ class EvidenceCoordinator:
         self.expected_policy_sha256 = expected_policy_sha256
         schema_version = trust_root.get("schemaVersion")
         if schema_version == "acik.cross-ai-deployment-trust-root.v1":
-            self.bundle_schema_version = "acik.cross-ai-deployment-bundle.v1"
-            self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE
-            self.closure_domain = CLOSURE_DOMAIN
-        elif schema_version == "acik.cross-ai-deployment-trust-root.v2":
+            reject(
+                "LEGACY_CONTRACT_READ_ONLY",
+                "v1 evidence may be verified for history but cannot be coordinated",
+            )
+        if schema_version == "acik.cross-ai-deployment-trust-root.v2":
             self.bundle_schema_version = "acik.cross-ai-deployment-bundle.v2"
             self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE_V2
             self.closure_domain = CLOSURE_DOMAIN_V2

@@ -16,9 +16,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from .canonical import sha256_digest
 from .contract import (
-    REVIEW_PAYLOAD_TYPE,
     REVIEW_PAYLOAD_TYPE_V2,
-    REVIEW_SCHEMA,
     REVIEW_SCHEMA_V2,
 )
 from .errors import reject
@@ -445,10 +443,11 @@ class ProviderReviewIssuer:
         self.allowed_models = allowed_models
         self.issuer = issuer
         if contract_version == "v1":
-            self.review_schema_version = "acik.cross-ai-deployment-review.v1"
-            self.review_schema = REVIEW_SCHEMA
-            self.review_payload_type = REVIEW_PAYLOAD_TYPE
-        elif contract_version == "v2":
+            reject(
+                "LEGACY_CONTRACT_READ_ONLY",
+                "v1 evidence may be verified for history but cannot be issued",
+            )
+        if contract_version == "v2":
             self.review_schema_version = "acik.cross-ai-deployment-review.v2"
             self.review_schema = REVIEW_SCHEMA_V2
             self.review_payload_type = REVIEW_PAYLOAD_TYPE_V2

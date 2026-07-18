@@ -14,6 +14,7 @@ import binascii
 import hashlib
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -390,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = _canonical_bytes(trust_root)
         _write_exclusive(args.out, payload)
     except TrustRootBuildError as exc:
-        print(f"trust_root_build_error={exc}", file=os.sys.stderr)
+        print(f"trust_root_build_error={exc}", file=sys.stderr)
         return 2
     print(f"trust_root_sha256=sha256:{hashlib.sha256(payload).hexdigest()}")
     print(f"trust_root={args.out}")

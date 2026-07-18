@@ -12,7 +12,9 @@
 > eski MiniMax issuer policy/AppRole kaydını idempotent olarak siler ve
 > yokluğunu doğrular; yeni reconcile yolu grant üretmez. Ayrı v2 activation
 > preflight'i credential göstermeden bu absence receipt'ini doğrulamalıdır. Bu
-> temizlik tarihsel Transit public-key/evidence kaydını silmez.
+> temizlik tarihsel Transit public-key/evidence kaydını silmez. V1 doğrulama
+> yalnız forensic replay içindir; provider issuer ve coordinator yeni v1
+> leaf/bundle üretimini kod seviyesinde reddeder.
 
 > **Issue:** #2502 · **ADR:** ADR-0045 · **scope:** reversible test/non-prod only
 > **Current state (2026-07-18):** Phase 0 source/schema/tests, the live-found
