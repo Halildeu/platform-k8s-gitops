@@ -163,6 +163,10 @@ const explicitSingleClaudeImplementerBody = explicitSingleBody.replace(
   'Implementer AI: Codex',
   'Implementer AI: Claude',
 );
+const explicitDualMiniMaxBody = explicitDualBody.replace(
+  /^Codex receipt:.*$/m,
+  peerBody.match(/^MiniMax receipt:.*$/m)[0],
+);
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
 const GOVERNANCE_CONTRACT_TEST_PATH = 'tests/deploy/test_faz25_fullats_gitops_contract.py';
@@ -440,6 +444,9 @@ const cases = [
   ['explicit none mode rejects ignored legacy controls',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitNoneBody}Reviewer AI: Codex\n`, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit none mode rejects an empty legacy control key',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitNoneBody}Reviewer AI:\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['field-aware selection prefers a complete explicit-mode section',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
@@ -461,6 +468,8 @@ const cases = [
       body: `${explicitSingleBody}${peerBody.match(/^Codex receipt:.*$/m)[0]}\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode accepts Claude plus one provider-distinct channel',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit dual mode accepts MiniMax as the one provider-distinct secondary',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode requires a concrete high-risk trigger',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitDualBody.replace(/^Risk trigger:.*\n/m, ''), changedFiles: [ROUTINE_PATH] }, 1],

@@ -406,6 +406,11 @@ oracle'ı değildir. Authz, retention/silme, migration, concurrency, cutover vey
 geri döndürülemez başka bir karar path adına yansımıyorsa agent doğru
 `single/dual` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
 
+`Consultation mode` içermeyen tarihsel PR gövdeleri geçiş uyumluluğu için eski,
+daha katı üç-receipt parser yolunda doğrulanmaya devam eder. Bu yol yeni iş için
+önerilen mod değildir ve receipt sayısını azaltarak bypass sağlayamaz; yeni PR
+şablonu yalnız açık `none|single|dual` sözleşmesini üretir.
+
 İstişare hiçbir modda test/CI/live evidence/browser smoke/board claim/protected
 Environment reviewer/gerçek kullanıcı rızası/hukuk veya secret-owner kapısının
 yerine geçmez. Prompt, argüman ve receipt'e secret, JWT, raw bearer, webhook,

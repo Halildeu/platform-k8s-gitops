@@ -401,9 +401,10 @@ function extractFields(section) {
       if (commentIdx >= 0) val = val.slice(0, commentIdx);
       // Strip surrounding quotes/backticks
       val = val.replace(/^[`"']|[`"']$/g, '').trim();
-      if (val.length > 0) {
-        fields[key] = val;
-      }
+      // Presence itself matters for incompatible legacy controls. Preserve an
+      // explicit empty value so `Consultation mode` cannot hide `Reviewer AI:`
+      // or another deprecated key by leaving only its value blank.
+      fields[key] = val;
     }
   }
   return fields;
@@ -764,7 +765,9 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const presentReceipts = receiptNames.filter((field) => Boolean(fields[field]));
   const requiredFloor = minimumConsultationMode(prMeta);
   const modeRank = { none: 0, single: 1, dual: 2 };
-  const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) => Boolean(fields[field]));
+  const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
+    Object.hasOwn(fields, field)
+  );
 
   findings.push({
     check: 'consultation_mode_valid',

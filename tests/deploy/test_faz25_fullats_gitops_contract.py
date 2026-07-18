@@ -508,6 +508,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.context_rules,
         )
         self.assertIn("JSON `modelUsage`", self.context_rules)
+        self.assertIn("Tek ve birincil kanal", self.context_rules)
         self.assertIn("Cursor CLI/MCP/model/harness", self.context_rules)
         self.assertIn("AI uygulama pencereleri istişare kanalı değildir", self.context_rules)
         self.assertIn("irreversible-production", self.context_rules)
