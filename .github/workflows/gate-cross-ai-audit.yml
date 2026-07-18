@@ -139,8 +139,9 @@ jobs:
         # actor, sender, labels) — the audit reads PR metadata from there, not
         # from the checked-out tree. So the base-ref checkout above does not
         # restrict what the audit can inspect about the PR (Codex Q3 onay).
-        # #898: `--changed-files-file` feeds the Dependabot exemption diff
-        # allowlist gate; ignored for non-Dependabot PRs.
+        # `--changed-files-file` feeds both the Dependabot exemption allowlist
+        # and normal explicit consultation-mode scope floor. Missing/empty
+        # metadata intentionally rejects `none` instead of silently bypassing it.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |

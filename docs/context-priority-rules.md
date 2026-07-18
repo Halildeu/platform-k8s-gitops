@@ -392,7 +392,7 @@ Codex receipt: <dual için opsiyonlardan yalnız biri>
 `human-authority` olur; açıklama en az üç farklı anlamlı kelime taşır ve
 serbest/placeholder/tekrarlı metin fail-closed reddedilir.
 `gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
-risk zeminini doğrular: `none` receipt veya legacy control field taşıyamaz,
+risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
 `single` yalnız exact Claude receipt'i taşır, `dual` exact Claude +
 yalnız bir provider-distinct receipt taşır. `dual` yayın sırası zorunlu değildir;
 paralel çağrı kabul edilir. `single/dual` çıktısı `P0/P1/P2` ve tek terminal

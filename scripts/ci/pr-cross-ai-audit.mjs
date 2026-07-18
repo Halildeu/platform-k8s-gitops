@@ -764,7 +764,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const reason = (fields['consultation reason'] || '').trim();
   const implementer = normalizeProvider(fields['implementer ai']);
   const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
-  const presentReceipts = receiptNames.filter((field) => Boolean(fields[field]));
+  const presentReceipts = receiptNames.filter((field) => Object.hasOwn(fields, field));
   const requiredFloor = minimumConsultationMode(prMeta);
   const modeRank = { none: 0, single: 1, dual: 2 };
   const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) =>
@@ -815,6 +815,15 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   });
 
   if (mode === 'none') {
+    const outcomeFields = [
+      'verdict',
+      'risk trigger',
+      'consultation base tip',
+      'consultation base',
+      'consultation commit',
+      'consultation scope',
+    ];
+    const presentOutcomeFields = outcomeFields.filter((field) => Object.hasOwn(fields, field));
     findings.push({
       check: 'consultation_none_has_no_receipts',
       pass: presentReceipts.length === 0,
@@ -824,10 +833,10 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
     findings.push({
       check: 'consultation_none_has_no_consultation_outcome_fields',
-      pass: !fields.verdict && !fields['risk trigger'],
-      detail: !fields.verdict && !fields['risk trigger']
-        ? 'none mode verdict veya risk trigger taşımıyor'
-        : 'none mode Verdict veya Risk trigger taşıyamaz',
+      pass: presentOutcomeFields.length === 0,
+      detail: presentOutcomeFields.length === 0
+        ? 'none mode binding, verdict veya risk trigger taşımıyor'
+        : `none mode outcome/binding field taşıyamaz: ${presentOutcomeFields.join(', ')}`,
     });
     return findings;
   }
