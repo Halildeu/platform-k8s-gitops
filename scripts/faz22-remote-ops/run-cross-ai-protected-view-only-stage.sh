@@ -486,7 +486,7 @@ SQL
   export DEVICE_ID="$device_id" DEVICE_HOSTNAME="$hostname"
   export PILOT_SECONDS=300 PRODUCT_PILOT_SECONDS=300 CONSENT_WAIT_SECONDS=240
   export SOURCE_REVISION="$GITHUB_SHA"
-  export BROWSER_EVIDENCE_SCRIPT="$GITHUB_WORKSPACE/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
+  export BROWSER_EVIDENCE_SCRIPT="$CROSS_AI_SOURCE_ROOT/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
   export BROWSER_DIAGNOSTIC_OUTPUT="$evidence/browser-diagnostic.json"
   export PLAYWRIGHT_PACKAGE_ROOT="$runtime/browser-runtime"
   export PLAYWRIGHT_BROWSERS_PATH="$runtime/browser-runtime/ms-playwright"

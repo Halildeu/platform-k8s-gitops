@@ -152,6 +152,11 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         )
         self.assertIn("signed subject differs from the current workflow run", script)
         self.assertIn('cd -- "$CROSS_AI_SOURCE_ROOT"', script)
+        self.assertNotIn("$GITHUB_WORKSPACE", script)
+        self.assertIn(
+            'BROWSER_EVIDENCE_SCRIPT="$CROSS_AI_SOURCE_ROOT/scripts/faz22-remote-ops/',
+            script,
+        )
         self.assertIn(
             'DENETIM_SSH_OPTS="-F /home/halil/.ssh/config -o StrictHostKeyChecking=yes"',
             script,
