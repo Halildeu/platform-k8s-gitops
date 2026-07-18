@@ -51,6 +51,7 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         ).read_text()
         cls.agents = (ROOT / "AGENTS.md").read_text()
         cls.context_rules = (ROOT / "docs/context-priority-rules.md").read_text()
+        cls.minimax_wrapper = (ROOT / "scripts/ai/minimax_m3_review.py").read_text()
 
     def test_d29_default_digest_matches_activated_ats_image(self):
         desired = re.search(
@@ -494,6 +495,8 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("provider-distinct ikinci kanal ile `dual` gerekir", self.context_rules)
         self.assertIn("İkincil kanal implementer sağlayıcısıyla da aynı olamaz", self.context_rules)
         self.assertIn("`other` bu iki modda", self.context_rules)
+        self.assertIn("P1 is only a concrete merge-blocking", self.minimax_wrapper)
+        self.assertIn("otherwise use AGREE even when P2 has suggestions", self.minimax_wrapper)
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )
