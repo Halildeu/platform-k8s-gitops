@@ -12,7 +12,10 @@ on:
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
       - "scripts/ops/vault-policy-reconcile.sh"
+      - "scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py"
       - "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
+      - "scripts/faz22-remote-ops/verify-watchdog-network-policy.jq"
+      - "scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
       - ".github/actions/protected-apply/**"
       - ".github/actions/protected-browser-evidence/**"
@@ -33,7 +36,10 @@ on:
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
       - "scripts/ops/vault-policy-reconcile.sh"
+      - "scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py"
       - "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
+      - "scripts/faz22-remote-ops/verify-watchdog-network-policy.jq"
+      - "scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
       - ".github/actions/protected-apply/**"
       - ".github/actions/protected-browser-evidence/**"
@@ -41,6 +47,7 @@ on:
       - ".github/workflows/apply-view-only-viewer-pilot-protected.yml"
       - ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml"
       - ".github/workflows/rollback-view-only-viewer-pilot-protected.yml"
+      - ".github/workflows/gate-cross-ai-deployment-protection.yml"
 
 permissions:
   contents: read
@@ -67,7 +74,7 @@ jobs:
             --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
 
       - name: Compile policy implementation
-        run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py scripts/ops/bootstrap_cross_ai_transit.py tests/github_apps/*.py
+        run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py scripts/ops/bootstrap_cross_ai_transit.py scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py tests/github_apps/*.py
 
       - name: Lint TEST Vault and protected-stage shell
         run: >-

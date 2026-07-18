@@ -34,8 +34,8 @@
 > is present at the dedicated TEST KV path with redacted hash-match proof; the
 > receive-only observer does not mount or consume it. The TEST Vault still has
 > no Transit mount. The rule must remain disabled until owner-gated Transit/TLS,
-> a real second provider, dispatcher App, signed intent, protected workflows and
-> one real callback are all proven.
+> direct exact-model Anthropic, MiniMax and OpenAI adapters, dispatcher App,
+> signed intent, protected workflows and one real callback are all proven.
 
 ## 1. What this removes — and what it does not
 

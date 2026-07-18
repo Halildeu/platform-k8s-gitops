@@ -3,8 +3,9 @@
 > **Status:** PROPOSED — source implementation, fail-closed tests, GitHub App
 > registration, the Phase-1 receive-only test observer, outbound failed-delivery
 > recovery and test-Vault App private-key provisioning exist. The owner-gated
-> TEST Transit bootstrap is source-ready but has not been executed. A second
-> provider route, protected workflow refactor, dispatcher App, Environment
+> TEST Transit bootstrap, exact three-provider contract and three protected
+> workflow lanes are source-ready but have not been activated. Direct
+> Anthropic/MiniMax/OpenAI adapter activation, dispatcher App, Environment
 > configuration and live enforcement do not exist yet.
 > **Date:** 2026-07-16
 > **Owner issue:** [#2502](https://github.com/Halildeu/platform-k8s-gitops/issues/2502)
@@ -227,10 +228,11 @@ family/channel/model IDs, and pins the
 manifest digest in a separate reviewed deployment change. No Transit key signs
 or approves the trust-root manifest that first authorizes that same key.
 
-If only one provider route is live, no weaker single-provider mode is entered:
-the schema, trust root and verifier continue to require at least two distinct
-provider families. Capability unavailability therefore blocks authorization
-rather than changing the meaning of Cross-AI quorum.
+If fewer than all three exact provider routes are live, no weaker quorum mode
+is entered: the schema, trust root and verifier continue to require Anthropic,
+MiniMax and OpenAI as three distinct direct provider families. Capability
+unavailability therefore blocks authorization rather than changing the meaning
+of Cross-AI quorum.
 
 ### 3.4 Canonical evidence bundle
 
@@ -323,8 +325,8 @@ Illustrative v1 shape; implementation ships a strict JSON Schema with
     }
   ],
   "consensus": {
-    "providerFamilies": ["anthropic", "minimax"],
-    "finalAgreeReviewSha256": ["sha256:...", "sha256:..."],
+    "providerFamilies": ["anthropic", "minimax", "openai"],
+    "finalAgreeReviewSha256": ["sha256:...", "sha256:...", "sha256:..."],
     "closureRootSha256": "sha256:...",
     "openMustFixFindingCount": 0
   },
@@ -398,8 +400,8 @@ A single `AGREE` string is insufficient. The bundle verifier requires:
 7. finding, fix and acknowledgement leaves form an ordered hash chain whose
    `closureRootSha256` is identical in the consensus object and every counted
    final `AGREE` leaf;
-8. the final exact subject has at least two counted `AGREE` leaves from
-   distinct provider families;
+8. the final exact subject has exactly three counted `AGREE` leaves, one from
+   each required direct provider family: Anthropic, MiniMax and OpenAI;
 9. no unexpired revocation entry matches a leaf, bundle, key, subject or
    grant;
 10. the final bundle and all counted leaves are fresh at decision time.

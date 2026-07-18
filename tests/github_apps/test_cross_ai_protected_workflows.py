@@ -6,6 +6,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+import yaml
+
 from scripts.github_apps.cross_ai_deployment_policy.policy import load_policy
 from scripts.github_apps.cross_ai_deployment_policy.workflow import inspect_workflow
 
@@ -17,6 +19,27 @@ ZERO_TRUST_PIN = "sha256:" + ("0" * 64)
 
 
 class ProtectedWorkflowSourceContractTest(unittest.TestCase):
+    def test_gate_triggers_for_every_protected_runtime_authority_file(self) -> None:
+        workflow = yaml.load(
+            (
+                ROOT / ".github/workflows/gate-cross-ai-deployment-protection.yml"
+            ).read_text(encoding="utf-8"),
+            Loader=yaml.BaseLoader,
+        )
+        required_paths = {
+            ".github/workflows/gate-cross-ai-deployment-protection.yml",
+            "scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py",
+            "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh",
+            "scripts/faz22-remote-ops/verify-watchdog-network-policy.jq",
+            "scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml",
+        }
+        for event in ("pull_request", "push"):
+            configured_paths = set(workflow["on"][event]["paths"])
+            self.assertTrue(
+                required_paths <= configured_paths,
+                f"{event} does not trigger the fail-closed gate for every authority file",
+            )
+
     def test_all_signed_stage_paths_are_no_input_and_statically_reproducible(
         self,
     ) -> None:
