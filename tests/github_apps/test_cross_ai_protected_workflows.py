@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -134,15 +135,24 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             ).stdout
             self.assertEqual(pinned, (ROOT / path).read_bytes(), path)
 
-        changed_after_pin = set(
-            subprocess.run(
-                ["git", "diff", "--name-only", f"{ACTION_COMMIT}..HEAD"],
-                cwd=ROOT,
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.splitlines()
-        )
+        changed_after_pin_raw = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                f"{ACTION_COMMIT}..HEAD",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        changed_after_pin = {
+            os.fsdecode(path)
+            for path in changed_after_pin_raw.split(b"\0")
+            if path
+        }
         action_package_drift = {
             path
             for path in changed_after_pin
