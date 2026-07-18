@@ -3,12 +3,15 @@ from __future__ import annotations
 import argparse
 import base64
 import importlib.util
+import json
 import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+from jsonschema import Draft202012Validator, FormatChecker
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +22,16 @@ if SPEC is None or SPEC.loader is None:
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+BUILDER_SCRIPT = ROOT / "scripts/ops/build_cross_ai_test_trust_root.py"
+BUILDER_SPEC = importlib.util.spec_from_file_location(
+    "cross_ai_test_trust_root_round_trip", BUILDER_SCRIPT
+)
+if BUILDER_SPEC is None or BUILDER_SPEC.loader is None:
+    raise RuntimeError("cannot load TEST trust-root builder")
+BUILDER = importlib.util.module_from_spec(BUILDER_SPEC)
+sys.modules[BUILDER_SPEC.name] = BUILDER
+BUILDER_SPEC.loader.exec_module(BUILDER)
 
 
 class FakeVaultClient:
@@ -152,6 +165,10 @@ class TransitBootstrapTests(unittest.TestCase):
         with patch.object(MODULE, "VaultClient", FakeVaultClient):
             receipt = MODULE.bootstrap(self.args())
         client = FakeVaultClient.instances[-1]
+        self.assertEqual(
+            receipt["schemaVersion"],
+            "acik.cross-ai-transit-bootstrap-receipt.v2",
+        )
         self.assertEqual(receipt["scope"], "test-only")
         self.assertEqual(len(receipt["keys"]), 5)
         self.assertEqual(
@@ -166,6 +183,22 @@ class TransitBootstrapTests(unittest.TestCase):
         )
         self.assertIn("mount:cross-ai", receipt["createdResources"])
         self.assertIn("policy:vault-config-reconciler", receipt["updatedResources"])
+        for item in receipt["keys"]:
+            self.assertEqual(item["keyType"], "ed25519")
+            self.assertIs(item["derived"], False)
+            self.assertIs(item["exportable"], False)
+            self.assertIs(item["allowPlaintextBackup"], False)
+            self.assertIs(item["deletionAllowed"], False)
+            self.assertIs(item["supportsSigning"], True)
+            self.assertEqual(
+                item["versionHistory"],
+                [
+                    {
+                        "version": item["keyVersion"],
+                        "publicKeyBase64": item["publicKeyBase64"],
+                    }
+                ],
+            )
         serialized = str(receipt)
         self.assertNotIn(self.test_token, serialized)
         mount_create = next(
@@ -187,6 +220,34 @@ class TransitBootstrapTests(unittest.TestCase):
                     "allow_plaintext_backup": False,
                 },
             )
+
+    def test_bootstrap_receipt_builds_schema_valid_v2_trust_root(self) -> None:
+        with patch.object(MODULE, "VaultClient", FakeVaultClient):
+            receipt = MODULE.bootstrap(self.args())
+        trust_root = BUILDER.build_trust_root(
+            receipt,
+            trust_root_id="10000000-0000-4000-8000-000000000099",
+            issued_at="2026-07-18T18:00:00Z",
+            expires_at="2026-07-18T21:00:00Z",
+        )
+        schema = json.loads(
+            (
+                ROOT / "schema/cross-ai-deployment-trust-root-v2.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        errors = list(
+            Draft202012Validator(
+                schema, format_checker=FormatChecker()
+            ).iter_errors(trust_root)
+        )
+        self.assertEqual(errors, [])
+        self.assertRegex(
+            trust_root["sourcePublicKeysetSha256"],
+            r"^sha256:[a-f0-9]{64}$",
+        )
+        self.assertEqual(
+            trust_root["requiredProviderFamilies"], ["anthropic", "openai"]
+        )
 
     def test_existing_safe_resources_are_verified_without_recreation(self) -> None:
         FakeVaultClient.existing = True
@@ -230,6 +291,19 @@ class TransitBootstrapTests(unittest.TestCase):
         with patch.object(MODULE, "VaultClient", FakeVaultClient):
             with self.assertRaisesRegex(MODULE.BootstrapError, "cluster ID"):
                 MODULE.bootstrap(args)
+
+    def test_rejects_incomplete_public_key_history(self) -> None:
+        FakeVaultClient.existing = True
+
+        class MissingHistoryClient(FakeVaultClient):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                anthropic = self.keys["anthropic"]
+                anthropic["latest_version"] = 2
+
+        with patch.object(MODULE, "VaultClient", MissingHistoryClient):
+            with self.assertRaisesRegex(MODULE.BootstrapError, "history is incomplete"):
+                MODULE.bootstrap(self.args())
 
     def test_rejects_non_root_sealed_vault_and_mount_type_collision(self) -> None:
         FakeVaultClient.root_policies = ["default", "operator"]

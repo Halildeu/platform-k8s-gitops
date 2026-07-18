@@ -156,15 +156,44 @@ class IntentDispatchOrchestrator:
             stage=stage,
             claimed_at=current,
         )
+        snapshot_at = self._now()
+        preexisting = self.reader.workflow_runs_for_dispatch(
+            claimed.installation_id,
+            claimed.repository,
+            claimed.workflow_path,
+            record.intent_ref.removeprefix("refs/tags/"),
+            record.finalized_at or record.registered_at,
+            utc_seconds(snapshot_at),
+        )
+        run_ids = [run.get("id") for run in preexisting]
+        if any(
+            not isinstance(run_id, int) or isinstance(run_id, bool) or run_id < 1
+            for run_id in run_ids
+        ):
+            reject("DISPATCH_WATERMARK_INVALID", "pre-dispatch run snapshot is invalid")
+        self.registry.record_dispatch_watermark(
+            request_id=request_id,
+            stage=stage,
+            watermark=max(run_ids, default=0),
+            snapshot_at=snapshot_at,
+        )
         result = self.dispatcher.dispatch_workflow(
             installation_id=claimed.installation_id,
             repository=claimed.repository,
             workflow_path=claimed.workflow_path,
             request_id=claimed.request_id,
         )
-        state = "Accepted" if result.accepted else (
-            "Uncertain" if result.ambiguous else "Rejected"
-        )
+        if result.accepted:
+            if result.status is None:
+                reject("DISPATCH_STATUS_INVALID", "accepted dispatch lacks HTTP status")
+            return self.registry.mark_dispatch_posted(
+                request_id=request_id,
+                stage=stage,
+                reason_code=result.reason_code,
+                http_status=result.status,
+                recorded_at=self._now(),
+            )
+        state = "Uncertain" if result.ambiguous else "Rejected"
         return self.registry.resolve_dispatch(
             request_id=request_id,
             stage=stage,
@@ -183,6 +212,7 @@ class IntentDispatchOrchestrator:
         window_start: datetime,
         window_end: datetime,
         now: datetime,
+        watermark: int,
     ) -> bool:
         repository = run.get("repository")
         head_repository = run.get("head_repository")
@@ -196,6 +226,7 @@ class IntentDispatchOrchestrator:
             or not isinstance(run_id, int)
             or isinstance(run_id, bool)
             or run_id < 1
+            or run_id <= watermark
             or not isinstance(run_attempt, int)
             or isinstance(run_attempt, bool)
             or run_attempt < 1
@@ -224,6 +255,11 @@ class IntentDispatchOrchestrator:
         job = self.registry.get_dispatch(request_id, stage)
         if job.state not in {"Sending", "Uncertain"} or job.claimed_at is None:
             reject("DISPATCH_STATE_INVALID", "dispatch is not eligible for reconciliation")
+        if job.snapshot_at is None or job.pre_dispatch_run_id_watermark is None:
+            reject(
+                "DISPATCH_CORRELATION_INVALID",
+                "dispatch has no durable pre-dispatch watermark",
+            )
         record, _, _ = self._verified_record(request_id)
         window_start = parse_utc(job.claimed_at, "dispatch.claimedAt")
         window_end = min(
@@ -250,6 +286,7 @@ class IntentDispatchOrchestrator:
                 window_start=window_start,
                 window_end=window_end,
                 now=current,
+                watermark=job.pre_dispatch_run_id_watermark,
             )
         ]
         if len(matches) > 1:

@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -15,7 +16,10 @@ from typing import Any, Protocol
 from jsonschema import Draft202012Validator, FormatChecker
 
 from .canonical import sha256_digest
-from .contract import REVIEW_PAYLOAD_TYPE, REVIEW_SCHEMA
+from .contract import (
+    REVIEW_PAYLOAD_TYPE_V2,
+    REVIEW_SCHEMA_V2,
+)
 from .errors import reject
 from .jsonutil import load_json_file
 from .timeutil import parse_utc
@@ -23,6 +27,9 @@ from .timeutil import parse_utc
 
 MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_PROMPT_BYTES = 512 * 1024
+REVIEW_RESULT_SCHEMA_VERSION = "acik.cross-ai-provider-review-result.v1"
+CODEX_MODEL = "gpt-5.6-sol"
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _bytes_digest(value: bytes) -> str:
@@ -171,6 +178,179 @@ class DirectClaudeRunner:
         )
 
 
+class DirectCodexRunner:
+    def __init__(self, executable: Path | None = None) -> None:
+        selected = executable or Path(shutil.which("codex") or "codex")
+        self.executable = DirectClaudeRunner._validated_executable(selected, "Codex")
+
+    @staticmethod
+    def _catalog_model(raw: bytes, model: str) -> dict[str, Any]:
+        payload = _provider_json(raw, "Codex model catalog")
+        models = payload.get("models")
+        if not isinstance(models, list):
+            reject("PROVIDER_CAPABILITY_UNAVAILABLE", "Codex model list is invalid")
+        matches = [entry for entry in models if isinstance(entry, dict) and entry.get("slug") == model]
+        if len(matches) != 1:
+            reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not live-listed")
+        selected = matches[0]
+        if selected.get("visibility") != "list" or selected.get("supported_in_api") is not True:
+            reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not supported")
+        return selected
+
+    @staticmethod
+    def _terminal_result(raw: bytes) -> str:
+        if not raw or len(raw) > MAX_PROVIDER_OUTPUT_BYTES:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex output size is invalid")
+        try:
+            lines = raw.decode("utf-8").splitlines()
+        except UnicodeDecodeError:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex output is not UTF-8")
+        events = [_provider_json(line.encode("utf-8"), "Codex event") for line in lines if line]
+        if not events or events[0].get("type") != "thread.started":
+            reject("PROVIDER_OUTPUT_INVALID", "Codex thread start is missing")
+        if len([event for event in events if event.get("type") == "turn.started"]) != 1:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex turn start is ambiguous")
+        completed = [event for event in events if event.get("type") == "turn.completed"]
+        if len(completed) != 1 or events[-1] is not completed[0]:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex completed turn is not terminal")
+        messages: list[str] = []
+        for event in events:
+            event_type = event.get("type")
+            if event_type in {"thread.started", "turn.started", "turn.completed"}:
+                continue
+            if event_type != "item.completed":
+                reject("PROVIDER_TOOL_EVENT_REJECTED", "Codex emitted a non-terminal event")
+            item = event.get("item")
+            if not isinstance(item, dict):
+                reject("PROVIDER_OUTPUT_INVALID", "Codex item is invalid")
+            item_type = item.get("type")
+            if item_type == "reasoning":
+                continue
+            if item_type != "agent_message":
+                reject("PROVIDER_TOOL_EVENT_REJECTED", "Codex used or exposed a tool")
+            text = item.get("text")
+            if not isinstance(text, str) or not text:
+                reject("PROVIDER_OUTPUT_INVALID", "Codex message is invalid")
+            messages.append(text)
+        if len(messages) != 1:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex terminal message is not singular")
+        return messages[0]
+
+    def run(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        workspace: Path,
+        timeout_seconds: int = 600,
+    ) -> ProviderExecutionReceipt:
+        if model != CODEX_MODEL:
+            reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not the pinned route")
+        prompt_bytes = prompt.encode("utf-8")
+        if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
+            reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
+        catalog_command = [str(self.executable), "debug", "models"]
+        execution_command = [
+            str(self.executable),
+            "exec",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "--model",
+            model,
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "--json",
+            "-C",
+            str(workspace.resolve()),
+            "-",
+        ]
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="cross-ai-codex-", dir=workspace.resolve()
+            ) as directory:
+                pinned_executable = Path(directory) / "codex"
+                shutil.copyfile(self.executable, pinned_executable)
+                pinned_executable.chmod(0o500)
+                pinned_digest = _bytes_digest(pinned_executable.read_bytes())
+                dispatch = {"executable": str(pinned_executable)}
+                version = subprocess.run(
+                    [str(self.executable), "--version"],
+                    cwd=workspace,
+                    capture_output=True,
+                    check=False,
+                    timeout=30,
+                    **dispatch,
+                )
+                catalog = subprocess.run(
+                    catalog_command,
+                    cwd=workspace,
+                    capture_output=True,
+                    check=False,
+                    timeout=60,
+                    **dispatch,
+                )
+                if (
+                    version.returncode != 0
+                    or not version.stdout
+                    or catalog.returncode != 0
+                ):
+                    reject(
+                        "PROVIDER_CAPABILITY_UNAVAILABLE",
+                        "Codex capability is unavailable",
+                    )
+                self._catalog_model(catalog.stdout, model)
+                result = subprocess.run(
+                    execution_command,
+                    cwd=workspace,
+                    input=prompt_bytes,
+                    capture_output=True,
+                    check=False,
+                    timeout=timeout_seconds,
+                    **dispatch,
+                )
+                if _bytes_digest(pinned_executable.read_bytes()) != pinned_digest:
+                    reject(
+                        "PROVIDER_EXECUTABLE_CHANGED",
+                        "Codex executable changed during execution",
+                    )
+        except OSError:
+            reject(
+                "PROVIDER_EXECUTABLE_PIN_FAILED",
+                "Codex executable could not be pinned for execution",
+            )
+        if result.returncode != 0:
+            reject("PROVIDER_EXECUTION_FAILED", "direct Codex execution failed")
+        text = self._terminal_result(result.stdout)
+        capability = sha256_digest(
+            {
+                "channel": "openai-codex",
+                "cliRealpath": str(self.executable),
+                "cliSha256": pinned_digest,
+                "executableIdentityClass": "private-content-copy",
+                "cliVersionSha256": _bytes_digest(version.stdout.strip()),
+                "liveModelCatalogSha256": _bytes_digest(catalog.stdout),
+                "requestedModel": CODEX_MODEL,
+                "providerReportedModel": None,
+                "launchConfiguration": {
+                    "catalogArguments": catalog_command[1:],
+                    "executionArguments": execution_command[1:],
+                },
+            }
+        )
+        return ProviderExecutionReceipt(
+            provider_family="openai",
+            channel="openai-codex",
+            direct_provider_cli=True,
+            model_id=CODEX_MODEL,
+            model_identity_class="trusted-launch-attested",
+            capability_snapshot_sha256=capability,
+            input_sha256=_bytes_digest(prompt_bytes),
+            output_sha256=_bytes_digest(text.encode("utf-8")),
+            result_text=text,
+        )
+
+
 class CursorRunner:
     def __init__(
         self,
@@ -280,6 +460,7 @@ class ProviderReviewIssuer:
         model_identity_class: str,
         allowed_models: frozenset[str],
         issuer: str,
+        contract_version: str = "v2",
     ) -> None:
         self.signer = signer
         self.provider_family = provider_family
@@ -288,19 +469,38 @@ class ProviderReviewIssuer:
         self.model_identity_class = model_identity_class
         self.allowed_models = allowed_models
         self.issuer = issuer
+        if contract_version == "v1":
+            reject(
+                "LEGACY_CONTRACT_READ_ONLY",
+                "v1 evidence may be verified for history but cannot be issued",
+            )
+        if contract_version == "v2":
+            self.review_schema_version = "acik.cross-ai-deployment-review.v2"
+            self.review_schema = REVIEW_SCHEMA_V2
+            self.review_payload_type = REVIEW_PAYLOAD_TYPE_V2
+        else:
+            reject(
+                "PROVIDER_CONTRACT_VERSION_INVALID",
+                "provider issuer contract version is unsupported",
+            )
 
     @staticmethod
     def _review_result(text: str) -> dict[str, Any]:
         payload = _provider_json(text.encode("utf-8"), "review result")
         expected = {
+            "schemaVersion",
             "verdict",
             "findingIds",
             "resolvedFindingIds",
             "acknowledgedFindingIds",
         }
-        if set(payload) != expected or payload.get("verdict") not in {"AGREE", "REVISE", "RED", "PARTIAL"}:
+        if (
+            set(payload) != expected
+            or payload.get("schemaVersion") != REVIEW_RESULT_SCHEMA_VERSION
+            or payload.get("verdict") not in {"AGREE", "REVISE", "RED", "PARTIAL"}
+        ):
             reject("PROVIDER_REVIEW_RESULT_INVALID", "provider review result shape is invalid")
-        for field in expected - {"verdict"}:
+        for field in expected - {"schemaVersion", "verdict"}:
             values = payload[field]
             if (
                 not isinstance(values, list)
@@ -341,7 +541,7 @@ class ProviderReviewIssuer:
             "acknowledgedFindingIds": result["acknowledgedFindingIds"],
         }
         payload = {
-            "schemaVersion": "acik.cross-ai-deployment-review.v1",
+            "schemaVersion": self.review_schema_version,
             "reviewId": coordinates.review_id,
             "reviewChainId": coordinates.review_chain_id,
             "providerFamily": self.provider_family,
@@ -366,7 +566,7 @@ class ProviderReviewIssuer:
             "issuer": self.issuer,
             "keyId": self.signer.key_id,
         }
-        schema = load_json_file(REVIEW_SCHEMA)
+        schema = load_json_file(self.review_schema)
         errors = sorted(
             Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(payload),
             key=lambda item: list(item.path),
@@ -374,15 +574,18 @@ class ProviderReviewIssuer:
         if errors:
             reject("PROVIDER_REVIEW_RESULT_INVALID", "issued review does not satisfy schema")
         return self.signer.sign_json_envelope(
-            payload_type=REVIEW_PAYLOAD_TYPE,
+            payload_type=self.review_payload_type,
             payload=payload,
         )
 
 
 __all__ = [
+    "CODEX_MODEL",
     "CursorRunner",
     "DirectClaudeRunner",
+    "DirectCodexRunner",
     "ProviderExecutionReceipt",
     "ProviderReviewIssuer",
+    "REVIEW_RESULT_SCHEMA_VERSION",
     "ReviewCoordinates",
 ]

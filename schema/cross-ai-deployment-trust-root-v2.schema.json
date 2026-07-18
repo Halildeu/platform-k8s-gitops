@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-trust-root-v2.schema.json",
+  "title": "Cross-AI deployment trust root v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "trustRootId",
+    "sourcePublicKeysetSha256",
+    "issuedAt",
+    "expiresAt",
+    "maxClockSkewSeconds",
+    "requiredProviderFamilies",
+    "minimumProviderFamilies",
+    "minimumDirectProviderRoutes",
+    "keys"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "acik.cross-ai-deployment-trust-root.v2"
+    },
+    "trustRootId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "maxClockSkewSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 300
+    },
+    "requiredProviderFamilies": {
+      "const": [
+        "anthropic",
+        "openai"
+      ]
+    },
+    "minimumProviderFamilies": {
+      "const": 2
+    },
+    "minimumDirectProviderRoutes": {
+      "const": 2
+    },
+    "keys": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/key"
+      }
+    },
+    "sourcePublicKeysetSha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  },
+  "$defs": {
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyId",
+        "role",
+        "publicKeyBase64",
+        "notBefore",
+        "notAfter",
+        "providerFamily",
+        "allowedChannels",
+        "allowedModelIds",
+        "allowedModelIdentityClasses",
+        "directProviderCli"
+      ],
+      "properties": {
+        "keyId": {
+          "type": "string",
+          "pattern": "^vault-transit://[a-z0-9/_-]+#v[1-9][0-9]*$"
+        },
+        "role": {
+          "enum": [
+            "provider-review",
+            "coordinator",
+            "revocation",
+            "runner-management"
+          ]
+        },
+        "publicKeyBase64": {
+          "type": "string",
+          "minLength": 44,
+          "maxLength": 44
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "providerFamily": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,31}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allowedChannels": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,63}$"
+          }
+        },
+        "allowedModelIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,159}$"
+          }
+        },
+        "allowedModelIdentityClasses": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 1,
+          "items": {
+            "enum": [
+              "provider-reported",
+              "trusted-launch-attested"
+            ]
+          }
+        },
+        "directProviderCli": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "provider-review"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "providerFamily": {
+                "enum": [
+                  "anthropic",
+                  "openai"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "provider-review"
+              },
+              "providerFamily": {
+                "const": "anthropic"
+              }
+            },
+            "required": [
+              "role",
+              "providerFamily"
+            ]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {
+                "const": [
+                  "direct-anthropic-cli"
+                ]
+              },
+              "allowedModelIds": {
+                "const": [
+                  "claude-opus-4-8"
+                ]
+              },
+              "allowedModelIdentityClasses": {
+                "const": [
+                  "provider-reported"
+                ]
+              },
+              "directProviderCli": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "provider-review"
+              },
+              "providerFamily": {
+                "const": "openai"
+              }
+            },
+            "required": [
+              "role",
+              "providerFamily"
+            ]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {
+                "const": [
+                  "openai-codex"
+                ]
+              },
+              "allowedModelIds": {
+                "const": [
+                  "gpt-5.6-sol"
+                ]
+              },
+              "allowedModelIdentityClasses": {
+                "const": [
+                  "trusted-launch-attested"
+                ]
+              },
+              "directProviderCli": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": [
+                  "coordinator",
+                  "revocation",
+                  "runner-management"
+                ]
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "providerFamily": {
+                "type": "null"
+              },
+              "allowedChannels": {
+                "maxItems": 0
+              },
+              "allowedModelIds": {
+                "maxItems": 0
+              },
+              "allowedModelIdentityClasses": {
+                "maxItems": 0
+              },
+              "directProviderCli": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

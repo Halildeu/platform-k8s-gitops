@@ -39,6 +39,7 @@ class DeploymentPolicy:
     payload: dict[str, Any]
     digest: str
     phase: str
+    machine_only_enabled: bool
     repository_id: int
     repository: str
     environment: str
@@ -99,6 +100,7 @@ def load_policy(path: Path) -> DeploymentPolicy:
         payload=payload,
         digest=sha256_digest(payload),
         phase=payload["phase"],
+        machine_only_enabled=payload["machineOnlyEnabled"],
         repository_id=payload["repositoryId"],
         repository=payload["repository"],
         environment=payload["environment"],
