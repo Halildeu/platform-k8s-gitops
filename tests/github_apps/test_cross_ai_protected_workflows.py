@@ -20,12 +20,15 @@ ZERO_TRUST_PIN = "sha256:" + ("0" * 64)
 
 class ProtectedWorkflowSourceContractTest(unittest.TestCase):
     def test_gate_triggers_for_declared_runtime_authority_inventory(self) -> None:
+        workflow_source = (
+            ROOT / ".github/workflows/gate-cross-ai-deployment-protection.yml"
+        ).read_text(encoding="utf-8")
         workflow = yaml.load(
-            (
-                ROOT / ".github/workflows/gate-cross-ai-deployment-protection.yml"
-            ).read_text(encoding="utf-8"),
+            workflow_source,
             Loader=yaml.BaseLoader,
         )
+        self.assertIn("schema/cross-ai-*.schema.json", workflow_source)
+        self.assertNotIn("schema/cross-ai-deployment-*.json", workflow_source)
         policy = load_policy(POLICY)
         inventory = (
             ROOT / "config/github-apps/cross-ai-runtime-authority-paths.txt"

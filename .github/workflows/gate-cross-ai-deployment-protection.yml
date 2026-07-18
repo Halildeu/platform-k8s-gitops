@@ -82,7 +82,7 @@ jobs:
 
       - name: Validate JSON schemas and example policy
         run: |
-          for schema in schema/cross-ai-deployment-*.json; do
+          for schema in schema/cross-ai-*.schema.json; do
             jq -e . "$schema" >/dev/null
           done
           python3 - <<'PY'
