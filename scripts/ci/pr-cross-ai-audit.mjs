@@ -11,7 +11,8 @@
 //
 // Usage:
 //   node scripts/ci/pr-cross-ai-audit.mjs --event-path "$GITHUB_EVENT_PATH"
-//   node scripts/ci/pr-cross-ai-audit.mjs --body-file <path>  (local test)
+//   node scripts/ci/pr-cross-ai-audit.mjs --body-file <path> \
+//     --base-tip-sha <sha> --head-sha <sha> --evidence-file <json-map>
 //
 // Exit codes:
 //   0 — PASS
@@ -19,11 +20,53 @@
 //   2 — INPUT ERROR
 
 import { readFileSync } from 'node:fs';
-import { argv, exit } from 'node:process';
+import { createHash } from 'node:crypto';
+import { argv, env, exit } from 'node:process';
 
 const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
-const VALID_VERDICTS = new Set(['agree', 'revise', 'partial', 'red']);
+const VALID_VERDICTS = new Set(['AGREE', 'REVISE', 'PARTIAL', 'RED']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
+const SHA256_RE = /^[0-9a-f]{64}$/i;
+const EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const NO_FINDINGS_RE = /^None$/;
+const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
+const TURKISH_PHONE_RE = /(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)/;
+const PRIVATE_KEY_RE = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
+const BEARER_RE = /(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}/i;
+const JWT_RE = /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/;
+const KNOWN_TOKEN_RE = /(?<![A-Za-z0-9])(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{22,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{20,}|sk_live_[A-Za-z0-9]{16,})(?![A-Za-z0-9])/;
+const SECRET_ASSIGNMENT_RE = /\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|session[_-]?secret|secret[_-]?access[_-]?key|service[_-]?account[_-]?key|signing[_-]?key|hmac[_-]?key|private[_-]?key|credential)\b\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{12,}["']?/i;
+const WEBHOOK_URL_RE = /\bwebhook[_-]?url\b\s*[:=]\s*https?:\/\/[^\s"'<>]{12,}/i;
+const COOKIE_HEADER_RE = /^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$/im;
+const RECEIPT_KEYS = new Set([
+  'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
+  'verdict', 'ref', 'sha256',
+]);
+const EVIDENCE_KEYS = [
+  'actual_model', 'base_sha', 'base_tip_sha', 'head_sha', 'provider',
+  'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
+  'verdict',
+];
+const DOCS_ONLY_EXEMPT_ALLOWLIST = [
+  /^docs\/session-handoff-[^/]+\.md$/,
+  /^docs\/archive\/[^/]+\.md$/,
+];
+const CONSULTATION_RECEIPTS = {
+  'claude receipt': {
+    provider: 'anthropic',
+    model: 'claude-opus-4-8',
+  },
+  'minimax receipt': {
+    provider: 'minimax',
+    model: 'minimax/MiniMax-M3',
+  },
+  'codex receipt': {
+    provider: 'openai',
+    model: 'gpt-5.6-sol',
+  },
+};
 
 // Codex `019e2693` MED-3 absorb: known-provider canonicalizer (R2 question response)
 const PROVIDER_ALIASES = {
@@ -66,7 +109,6 @@ const AUTOMATION_BRANCH_CONTRACT = {
   'auto-test-overlay/': '.github/workflows/deploy-backend-testai.yml',
   'auto-test-frontend/': '.github/workflows/deploy-testai.yml',
   'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
-  'auto-promotion/': 'scripts/promotion/scan-promotion-candidates.sh',
 };
 // Per-prefix actor contract (#827 PR-B, Codex `019e4048` Q2 REVISE). Each
 // automation prefix binds to the specific bot identity authorised to open its
@@ -74,15 +116,16 @@ const AUTOMATION_BRANCH_CONTRACT = {
 // prefix. The `auditAutomation` actor check requires BOTH the PR author and
 // the event sender to be in the matched prefix's set.
 //
-// `auto-test-overlay/` (deploy-backend-testai.yml sync-test-overlay-pr job)
-// and `auto-promotion/` (promotion-bot-scan-candidates.yml) are opened via a
-// GitHub App installation token — NOT GITHUB_TOKEN. A GITHUB_TOKEN-opened PR
+// `auto-test-overlay/` and `auto-test-frontend/` are opened via a GitHub App
+// installation token — NOT GITHUB_TOKEN. A GITHUB_TOKEN-opened PR
 // does not trigger the `pull_request` workflows the required `cross-ai-audit`
 // check needs, so the App is mandatory; its bot login is
 // `platform-gitops-automation[bot]` (the operator names the GitHub App so its slug
 // resolves to `platform-gitops-automation` — see
 // docs/operations/RUNBOOKS/RB-automation-overlay-sync.md).
 //
+// Production `auto-promotion/` is intentionally absent: it changes prod
+// desired state and therefore must pass the normal three-channel path.
 // `auto-verified/` keeps `github-actions[bot]` from #827 PR-A:
 // ledger-mark-verified.sh runs on a staging-sw host (not GitHub Actions), so
 // migrating it to a host-minted App token is a separate follow-up
@@ -90,22 +133,26 @@ const AUTOMATION_BRANCH_CONTRACT = {
 const AUTOMATION_PREFIX_ACTORS = {
   'auto-test-overlay/': new Set(['platform-gitops-automation[bot]']),
   'auto-test-frontend/': new Set(['platform-gitops-automation[bot]']),
-  'auto-promotion/': new Set(['platform-gitops-automation[bot]']),
   'auto-verified/': new Set(['github-actions[bot]']),
 };
 
-// Desired-state sync bots are further bounded to the exact files their
-// deterministic writers own. A compromised bot identity therefore cannot use
-// the cross-AI exemption to carry an unrelated source or workflow change.
+// Every automation bot is further bounded to the exact file family its
+// deterministic writer owns. A compromised bot identity therefore cannot use
+// the cross-AI exemption to carry an unrelated source, workflow, or governance
+// change. Regexes are anchored and deliberately do not accept subdirectories
+// unless the writer's contract explicitly owns them.
 const AUTOMATION_DIFF_ALLOWLIST = {
-  'auto-test-overlay/': new Set([
-    'kustomize/overlays/test/kustomization.yaml',
-    'kustomize/overlays/test/activation/endpoint-admin-remote-bridge/kustomization.yaml',
-    'kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/kustomization.yaml',
-  ]),
-  'auto-test-frontend/': new Set([
-    'kustomize/overlays/test/kustomization.yaml',
-  ]),
+  'auto-test-overlay/': [
+    /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+    /^kustomize\/overlays\/test\/activation\/endpoint-admin-remote-bridge\/kustomization\.yaml$/,
+    /^kustomize\/overlays\/test\/activation\/endpoint-admin-remote-bridge-device-key\/kustomization\.yaml$/,
+  ],
+  'auto-test-frontend/': [
+    /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+  ],
+  'auto-verified/': [
+    /^release-candidates\/(?:platform-agent|platform-backend|platform-web)\/[0-9a-f]{40}\.json$/,
+  ],
 };
 
 function matchedAutomationPrefix(headRef) {
@@ -166,11 +213,40 @@ function readChangedFiles(args) {
     .filter(Boolean);
 }
 
+function readEvidenceOverrides(args) {
+  if (!args['evidence-file']) return {};
+  if (args['allow-local-evidence-override'] !== 'true') {
+    throw new Error('evidence-file icin explicit allow-local-evidence-override=true gerekir');
+  }
+  if (env.GITHUB_ACTIONS === 'true') {
+    throw new Error('evidence-file GitHub Actions event modunda yasaktır');
+  }
+  const parsed = JSON.parse(readFileSync(args['evidence-file'], 'utf8'));
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('evidence-file object map olmalı');
+  }
+  return parsed;
+}
+
 function loadInput(args) {
   if (args['body-file']) {
-    // Local test mode — no PR metadata, so the automation-exemption path is
-    // unavailable and the normal peer-review audit runs.
-    return { body: readFileSync(args['body-file'], 'utf8'), prMeta: null };
+    // Local test mode still requires explicit head metadata; exact-head
+    // consultation must never silently degrade to a body-only declaration.
+    return {
+      body: readFileSync(args['body-file'], 'utf8'),
+      prMeta: {
+        headRef: '',
+        headSha: args['head-sha'] ?? '',
+        baseSha: args['base-tip-sha'] ?? '',
+        derivedBaseSha: args['derived-base-sha'] ?? '',
+        derivedScopeSha256: args['derived-scope-sha256'] ?? '',
+        headRepo: '',
+        baseRepo: '',
+        actor: '',
+        sender: '',
+        changedFiles: readChangedFiles(args),
+      },
+    };
   }
   if (args['event-path']) {
     const ev = JSON.parse(readFileSync(args['event-path'], 'utf8'));
@@ -179,6 +255,10 @@ function loadInput(args) {
       body: pr.body ?? '',
       prMeta: {
         headRef: pr.head?.ref ?? '',
+        headSha: pr.head?.sha ?? '',
+        baseSha: pr.base?.sha ?? '',
+        derivedBaseSha: args['derived-base-sha'] ?? '',
+        derivedScopeSha256: args['derived-scope-sha256'] ?? '',
         headRepo: pr.head?.repo?.full_name ?? '',
         baseRepo: pr.base?.repo?.full_name ?? '',
         // `actor` = PR author (immutable once opened). `sender` = who
@@ -278,7 +358,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -308,7 +388,298 @@ function normalizeProvider(s) {
   return PROVIDER_ALIASES[cleaned] ?? cleaned;
 }
 
-function audit(body) {
+function parseReceipt(value) {
+  if (!value) return null;
+  const parsed = {};
+  for (const item of value.split(';')) {
+    const separator = item.indexOf('=');
+    if (separator < 1) return null;
+    const key = item.slice(0, separator).trim().toLowerCase();
+    const val = item.slice(separator + 1).trim();
+    if (!RECEIPT_KEYS.has(key) || !val || Object.hasOwn(parsed, key)) return null;
+    parsed[key] = val;
+  }
+  return Object.keys(parsed).length === RECEIPT_KEYS.size ? parsed : null;
+}
+
+function validEvidenceRef(value, baseRepo) {
+  if (!value || !baseRepo) return false;
+  try {
+    const url = new URL(value);
+    const prefix = `/repos/${baseRepo}/issues/comments/`;
+    const commentId = url.pathname.toLowerCase().startsWith(prefix.toLowerCase())
+      ? url.pathname.slice(prefix.length)
+      : '';
+    return url.protocol === 'https:'
+      && url.hostname === 'api.github.com'
+      && url.search === ''
+      && url.hash === ''
+      && /^\d+$/.test(commentId);
+  } catch {
+    return false;
+  }
+}
+
+function sha256Utf8(value) {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function parseProviderResponseVerdict(response) {
+  if (typeof response !== 'string') return null;
+  const matches = [...response.matchAll(/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/gm)];
+  const lines = response.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (matches.length !== 1 || !lines.length || !/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/.test(lines.at(-1))) {
+    return null;
+  }
+  const headingRe = /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?(?:[ \t]*[—:-].*)?[ \t]*$/gim;
+  const headings = [...response.matchAll(headingRe)];
+  if (headings.map((match) => match[1].toUpperCase()).join(',') !== 'P0,P1,P2') {
+    return null;
+  }
+  const sectionContents = headings.map((heading, index) => {
+    const start = heading.index + heading[0].length;
+    const end = index < 2 ? headings[index + 1].index : matches[0].index;
+    return response.slice(start, end).trim();
+  });
+  if (sectionContents.some((content) => content.length === 0)) return null;
+  const verdict = matches[0][1].toUpperCase();
+  if (verdict === 'AGREE' && (
+    !NO_FINDINGS_RE.test(sectionContents[0]) || !NO_FINDINGS_RE.test(sectionContents[1])
+  )) return null;
+  return verdict;
+}
+
+function containsSensitiveResponse(response) {
+  return EMAIL_RE.test(response)
+    || TURKISH_PHONE_RE.test(response)
+    || PRIVATE_KEY_RE.test(response)
+    || BEARER_RE.test(response)
+    || JWT_RE.test(response)
+    || KNOWN_TOKEN_RE.test(response)
+    || SECRET_ASSIGNMENT_RE.test(response)
+    || WEBHOOK_URL_RE.test(response)
+    || COOKIE_HEADER_RE.test(response);
+}
+
+async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
+  if (Object.hasOwn(evidenceOverrides, ref)) {
+    const override = evidenceOverrides[ref];
+    return override && typeof override === 'object' ? override : null;
+  }
+  if (!validEvidenceRef(ref, baseRepo)) return null;
+  const headers = { Accept: 'application/vnd.github+json' };
+  const token = env.GITHUB_TOKEN || env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  try {
+    const response = await fetch(ref, {
+      headers,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return {
+      body: payload?.body,
+      author: payload?.user?.login,
+      authorAssociation: payload?.author_association,
+      createdAt: payload?.created_at,
+      updatedAt: payload?.updated_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function evidenceMatches(
+  comment, receipt, expected, expectedOwner, baseTip, base, head, scope,
+) {
+  const createdAtMs = Date.parse(comment?.createdAt || '');
+  const evidenceAgeMs = Date.now() - createdAtMs;
+  if (
+    !comment
+    || typeof comment.body !== 'string'
+    || typeof comment.author !== 'string'
+    || comment.author.toLowerCase() !== expectedOwner.toLowerCase()
+    || comment.authorAssociation !== 'OWNER'
+    || !comment.createdAt
+    || comment.createdAt !== comment.updatedAt
+    || !Number.isFinite(createdAtMs)
+    || evidenceAgeMs < -EVIDENCE_FUTURE_SKEW_MS
+    || evidenceAgeMs > EVIDENCE_MAX_AGE_MS
+    || sha256Utf8(comment.body) !== receipt.sha256.toLowerCase()
+  ) return false;
+  let evidence;
+  try {
+    evidence = JSON.parse(comment.body);
+  } catch {
+    return false;
+  }
+  if (!evidence || Array.isArray(evidence) || typeof evidence !== 'object') return false;
+  const keys = Object.keys(evidence).sort();
+  if (keys.length !== EVIDENCE_KEYS.length || keys.some((key, index) => key !== EVIDENCE_KEYS[index])) {
+    return false;
+  }
+  const responseVerdict = parseProviderResponseVerdict(evidence.response);
+  return Boolean(
+    evidence.schema === 'cross-ai-provider-evidence/v1'
+    && evidence.provider === expected.provider
+    && evidence.requested_model === expected.model
+    && evidence.actual_model === expected.model
+    && evidence.base_tip_sha?.toLowerCase() === baseTip.toLowerCase()
+    && evidence.base_sha?.toLowerCase() === base.toLowerCase()
+    && evidence.head_sha?.toLowerCase() === head.toLowerCase()
+    && evidence.scope_sha256?.toLowerCase() === scope.toLowerCase()
+    && evidence.verdict === 'AGREE'
+    && responseVerdict === evidence.verdict
+    && typeof evidence.response === 'string'
+    && evidence.response.length > 0
+    && !containsSensitiveResponse(evidence.response)
+    && SHA256_RE.test(evidence.response_sha256 || '')
+    && sha256Utf8(evidence.response) === evidence.response_sha256.toLowerCase()
+  );
+}
+
+function docsOnlyExemption(fields, prMeta) {
+  const requested = (fields['codex thread'] || '').trim().toLowerCase() === 'n/a';
+  if (!requested) return { requested: false, pass: false, detail: '' };
+  const reason = fields['cross-ai exempt reason'] || '';
+  const files = prMeta?.changedFiles;
+  const filesPresent = Array.isArray(files) && files.length > 0;
+  const pathsAllowed = filesPresent && files.every((path) =>
+    DOCS_ONLY_EXEMPT_ALLOWLIST.some((pattern) => pattern.test(path))
+  );
+  const pass = reason.length >= 10 && pathsAllowed;
+  return {
+    requested: true,
+    pass,
+    detail: pass
+      ? `dar historical-docs allowlist doğrulandı (${files.length} path)`
+      : 'N/A yalnız event-bound changed-files listesi tamamen historical docs allowlist içindeyse geçerlidir',
+  };
+}
+
+async function appendConsultationFindings(findings, fields, prMeta, evidenceOverrides) {
+  const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
+  const baseTip = fields['consultation base tip'] || '';
+  const base = fields['consultation base'] || '';
+  const commit = fields['consultation commit'] || '';
+  const scope = fields['consultation scope'] || '';
+  const validBaseTip = COMMIT_SHA_RE.test(baseTip);
+  const baseTipPresent = COMMIT_SHA_RE.test(prMeta?.baseSha || '');
+  const baseTipMatches = baseTipPresent && baseTip.toLowerCase() === prMeta.baseSha.toLowerCase();
+  const validBase = COMMIT_SHA_RE.test(base);
+  const derivedBasePresent = COMMIT_SHA_RE.test(prMeta?.derivedBaseSha || '');
+  const derivedBaseMatches = derivedBasePresent
+    && base.toLowerCase() === prMeta.derivedBaseSha.toLowerCase();
+  const validFormat = COMMIT_SHA_RE.test(commit);
+  const headPresent = COMMIT_SHA_RE.test(prMeta?.headSha || '');
+  const matchesHead = headPresent && commit.toLowerCase() === prMeta.headSha.toLowerCase();
+  const validScope = SHA256_RE.test(scope);
+  const derivedScopePresent = SHA256_RE.test(prMeta?.derivedScopeSha256 || '');
+  const derivedScopeMatches = derivedScopePresent
+    && scope.toLowerCase() === prMeta.derivedScopeSha256.toLowerCase();
+  findings.push({
+    check: 'consultation_base_tip_exact_event',
+    pass: validBaseTip && baseTipMatches,
+    detail: !validBaseTip
+      ? 'Consultation base tip 40-char git SHA değil'
+      : !baseTipPresent
+        ? 'PR base SHA metadata eksik; base binding fail-closed'
+        : baseTipMatches
+          ? `consultation base tip ${baseTip.slice(0, 12)} event ile eşleşiyor`
+          : `consultation base tip ${baseTip.slice(0, 12)} PR base ${prMeta.baseSha.slice(0, 12)} ile eşleşmiyor`,
+  });
+  findings.push({
+    check: 'consultation_base_format',
+    pass: validBase,
+    detail: validBase ? `consultation base ${base.slice(0, 12)} formatı geçerli` : 'Consultation base 40-char git SHA değil',
+  });
+  findings.push({
+    check: 'consultation_base_exact_ci_merge_base',
+    pass: validBase && derivedBaseMatches,
+    detail: !derivedBasePresent
+      ? 'CI-derived merge-base eksik; fail-closed'
+      : derivedBaseMatches
+        ? `consultation base ${base.slice(0, 12)} CI git merge-base ile eşleşiyor`
+        : `consultation base ${base.slice(0, 12)} CI merge-base ${prMeta.derivedBaseSha.slice(0, 12)} ile eşleşmiyor`,
+  });
+  findings.push({
+    check: 'consultation_commit_exact_head',
+    pass: validFormat && matchesHead,
+    detail: !validFormat
+      ? 'Consultation commit 40-char git SHA değil'
+        : !headPresent
+          ? 'PR head SHA metadata eksik; exact-head binding fail-closed'
+          : matchesHead
+        ? `consultation commit ${commit.slice(0, 12)} exact-head ile eşleşiyor`
+        : `consultation commit ${commit.slice(0, 12)} PR head ${prMeta.headSha.slice(0, 12)} ile eşleşmiyor`,
+  });
+  findings.push({
+    check: 'consultation_scope_sha256',
+    pass: validScope,
+    detail: validScope ? `consultation scope sha256 ${scope.slice(0, 12)} formatı geçerli` : 'Consultation scope 64-char SHA-256 değil',
+  });
+  findings.push({
+    check: 'consultation_scope_exact_ci_derivation',
+    pass: validScope && derivedScopeMatches,
+    detail: !derivedScopePresent
+      ? 'CI-derived scope SHA-256 eksik; fail-closed'
+      : derivedScopeMatches
+        ? `consultation scope ${scope.slice(0, 12)} CI full-range derivation ile eşleşiyor`
+        : `consultation scope ${scope.slice(0, 12)} CI-derived ${prMeta.derivedScopeSha256.slice(0, 12)} ile eşleşmiyor`,
+  });
+
+  const refs = [];
+  const evidenceCreatedAt = [];
+  for (const [field, expected] of Object.entries(CONSULTATION_RECEIPTS)) {
+    const receipt = parseReceipt(fields[field]);
+    if (receipt?.ref) refs.push(receipt.ref);
+    const shapePass = Boolean(
+      receipt
+      && receipt.provider?.toLowerCase() === expected.provider
+      && receipt.requested === expected.model
+      && receipt.actual === expected.model
+      && receipt.base_tip?.toLowerCase() === baseTip.toLowerCase()
+      && receipt.base?.toLowerCase() === base.toLowerCase()
+      && receipt.head?.toLowerCase() === commit.toLowerCase()
+      && receipt.scope?.toLowerCase() === scope.toLowerCase()
+      && receipt.verdict === 'AGREE'
+      && validEvidenceRef(receipt.ref, prMeta?.baseRepo)
+      && SHA256_RE.test(receipt.sha256 || '')
+    );
+    const evidenceComment = shapePass
+      ? await loadEvidenceComment(receipt.ref, prMeta.baseRepo, evidenceOverrides)
+      : null;
+    const pass = shapePass && evidenceMatches(
+      evidenceComment, receipt, expected, expectedOwner,
+      baseTip, base, commit, scope,
+    );
+    if (pass) evidenceCreatedAt.push(Date.parse(evidenceComment.createdAt));
+    findings.push({
+      check: field.replaceAll(' ', '_'),
+      pass,
+      detail: pass
+        ? `${expected.provider}/${expected.model} fetched evidence + response digest + base/head/scope doğrulandı`
+        : `${field}: strict receipt + GitHub issue-comment evidence + matching body/response SHA-256 zorunlu`,
+    });
+  }
+  findings.push({
+    check: 'consultation_evidence_refs_unique',
+    pass: refs.length === 3 && new Set(refs).size === 3,
+    detail: "Üç provider receipt ref'i birbirinden farklı olmalıdır",
+  });
+  const publicationOrderPass = evidenceCreatedAt.length === 3
+    && evidenceCreatedAt[0] < evidenceCreatedAt[1]
+    && evidenceCreatedAt[1] < evidenceCreatedAt[2];
+  findings.push({
+    check: 'consultation_publication_order_claude_minimax_codex',
+    pass: publicationOrderPass,
+    detail: publicationOrderPass
+      ? 'owner evidence publication order is strictly Claude -> MiniMax -> Codex'
+      : 'owner evidence comments must have strictly increasing Claude -> MiniMax -> Codex timestamps',
+  });
+}
+
+async function audit(body, prMeta = null, evidenceOverrides = {}) {
   const findings = [];
   const section = extractCrossAiSection(body);
   if (!section) {
@@ -324,7 +695,25 @@ function audit(body) {
   const fields = extractFields(section);
 
   // Check 1: required fields present
+  const exemption = docsOnlyExemption(fields, prMeta);
+  const consultationExempt = exemption.pass;
+  if (exemption.requested) {
+    findings.push({
+      check: 'cross_ai_docs_only_exemption',
+      pass: exemption.pass,
+      detail: exemption.detail,
+    });
+  }
   const required = ['implementer ai', 'reviewer ai', 'codex thread', 'verdict'];
+  if (!consultationExempt) {
+    required.push(
+      'consultation base tip',
+      'consultation base',
+      'consultation commit',
+      'consultation scope',
+      ...Object.keys(CONSULTATION_RECEIPTS),
+    );
+  }
   const missing = required.filter((k) => !fields[k]);
   if (missing.length > 0) {
     findings.push({
@@ -394,6 +783,10 @@ function audit(body) {
     }
   }
 
+  if (!consultationExempt) {
+    await appendConsultationFindings(findings, fields, prMeta, evidenceOverrides);
+  }
+
   // Check 4: Codex thread format — Codex `019e2693` MED-3 absorb
   const thread = fields['codex thread'];
   if (thread) {
@@ -436,17 +829,18 @@ function audit(body) {
     }
   }
 
-  // Check 5: Verdict enum (compound verdict tolerance)
-  const verdict = (fields['verdict'] || '').toLowerCase();
+  // Check 5: merge/readiness lane is fail-closed — only AGREE can pass.
+  const verdict = (fields['verdict'] || '').trim();
   if (verdict) {
-    const baseVerdict = verdict.split(/[\s_:]/)[0];
-    if (VALID_VERDICTS.has(baseVerdict)) {
-      findings.push({ check: 'verdict_enum', pass: true });
+    if (verdict === 'AGREE') {
+      findings.push({ check: 'verdict_agree', pass: true });
     } else {
       findings.push({
-        check: 'verdict_enum',
+        check: 'verdict_agree',
         pass: false,
-        detail: `Verdict "${verdict}" invalid (valid: ${[...VALID_VERDICTS].join(', ')})`,
+        detail: VALID_VERDICTS.has(verdict)
+          ? `Verdict "${verdict}" consensus değildir; yalnız AGREE geçer`
+          : `Verdict "${verdict}" invalid ve fail-closed`,
       });
     }
   }
@@ -502,7 +896,7 @@ function auditAutomation(body, prMeta) {
         : `PR author "${prMeta.actor}" / event sender "${prMeta.sender}" — both must be the automation bot bound to "${prefix}" (${[...allowedActors].join(', ') || 'none'}); denied`,
   });
 
-  // Desired-state automation prefixes have an exact changed-file allowlist.
+  // Every automation prefix has an anchored changed-file allowlist.
   // Missing file metadata fails closed; gate-cross-ai-audit.yml always injects
   // the paginated list from the trusted base workflow.
   const diffAllowlist = AUTOMATION_DIFF_ALLOWLIST[prefix];
@@ -510,7 +904,9 @@ function auditAutomation(body, prMeta) {
     const filesPresent =
       Array.isArray(prMeta.changedFiles) && prMeta.changedFiles.length > 0;
     const badPath = filesPresent
-      ? prMeta.changedFiles.find((file) => !diffAllowlist.has(file))
+      ? prMeta.changedFiles.find(
+        (file) => !diffAllowlist.some((pattern) => pattern.test(file)),
+      )
       : null;
     findings.push({
       check: 'automation_changed_files_present',
@@ -690,6 +1086,7 @@ function report(findings) {
 // when ANY of its 6 gates fails), then automation prefix, then normal audit.
 const args = parseArgs();
 const { body, prMeta } = loadInput(args);
+const evidenceOverrides = readEvidenceOverrides(args);
 let findings;
 if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
   console.log(
@@ -704,7 +1101,7 @@ if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
     );
     findings = auditAutomation(body, prMeta);
   } else {
-    findings = audit(body);
+    findings = await audit(body, prMeta, evidenceOverrides);
   }
 }
 const ok = report(findings);

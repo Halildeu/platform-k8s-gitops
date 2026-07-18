@@ -3,14 +3,15 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
 # PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
 #
-# Required check (V2.1 GOV-1 10 must-pass):
+# Required check (three-channel governance):
 # - Implementer AI ≠ Reviewer AI (case-insensitive provider name match)
 # - Codex thread UUID format veya N/A
-# - Verdict enum (AGREE/REVISE/PARTIAL/RED)
-# - Same-provider exception → user-explicit-approval beyanı PR body'de
+# - Verdict tam olarak AGREE
+# - Exact base tip / merge-base / head / deterministic scope binding
+# - Three provider receipt + fetched, unedited owner evidence declaration
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation
-# prefix (auto-test-overlay/ · auto-verified/ · auto-promotion/) is audited in
+# prefix (auto-test-overlay/ · auto-test-frontend/ · auto-verified/) is audited in
 # pr-cross-ai-audit.mjs `auditAutomation` mode — a bot-generated PR is exempt
 # from the peer-review claim iff a multi-signal predicate holds (same-repo +
 # actor allowlist + Automation source/exempt-reason/evidence).
@@ -28,14 +29,10 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #   * `concurrency` block cancels superseded runs on the same PR — guards
 #     against rapid `synchronize` push churn (an attacker or noisy author
 #     cannot pile up N parallel audit runs to exhaust CI minutes).
-#   * `ready_for_review` is deliberately omitted — an auto-* automation PR is
-#     opened DRAFT by a bot (auto-promotion/ prod candidates) and an operator
-#     marks it ready. The automation-exemption gate rejects human-triggered
-#     re-runs; re-running on `ready_for_review` would break the legit operator
-#     DRAFT→ready flow, and special-casing it to PASS would launder a prior
-#     malicious human `synchronize`. The audit already ran on `opened` /
-#     `synchronize` (the content-changing events); the draft→ready flip
-#     changes no content.
+#   * `ready_for_review` is deliberately omitted because it changes no content;
+#     the audit already ran on `opened` / `edited` / `synchronize`. Production
+#     `auto-promotion/` candidates are NOT automation-exempt and must acquire
+#     normal three-channel receipts before merge.
 
 on:
   # #842 PR-A2 cleanup (post-PR #868 merge): the transition `pull_request`
@@ -55,7 +52,8 @@ on:
       # currently label-agnostic (pr-cross-ai-audit.mjs reads PR body fields
       # only, not labels). Under label events the GitHub `sender` flips to
       # whoever toggled the label — usually a human operator. For
-      # automation PRs (auto-promotion/, auto-test-overlay/, auto-verified/)
+      # exempt automation PRs (auto-test-overlay/, auto-test-frontend/,
+      # auto-verified/)
       # the audit script's `auditAutomation` mode requires BOTH the PR
       # author AND the event sender to be in the prefix-specific bot
       # allowlist (pr-cross-ai-audit.mjs `auditAutomation` actor check).
@@ -70,6 +68,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
   pull-requests: read
 
 # #842 Codex 019e42c7 Q8: concurrency guards parallel runs on the same PR.
@@ -97,26 +96,43 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: 20
 
-      # #898 — Dependabot exemption diff-allowlist gate needs the PR file list.
-      # `gh api ... --paginate` over the read-only `pull-requests: read`
-      # permission (already granted above) keeps `pull_request_target`'s
-      # secrets-isolation model intact: no head checkout, no token scope
-      # expansion, deterministic regardless of GitHub UI ordering or PR size.
-      # GH_TOKEN is set explicitly so `gh` does not rely on runner-env auth.
-      - name: Fetch changed files (paginated, read-only)
+      - name: Derive trusted merge-base and scope digest
+        id: scope
         env:
-          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-            --paginate --jq '.[].filename' > /tmp/changed-files.txt
+          git fetch --no-tags origin "pull/${PR_NUMBER}/head"
+          fetched_head="$(git rev-parse FETCH_HEAD)"
+          test "$fetched_head" = "$PR_HEAD_SHA"
+          merge_base="$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")"
+          # Derive the exemption file list from the same fetched git objects.
+          # --no-renames emits both the deleted authority path and the added
+          # archive path, so a governance-file rename cannot enter docs-only.
+          git -c core.quotePath=true diff --name-only --no-renames \
+            "$merge_base...$PR_HEAD_SHA" > /tmp/changed-files.txt
+          test -s /tmp/changed-files.txt
+          receipt="$(python3 scripts/ai/prepare_cross_ai_scope.py \
+            --derive-only \
+            --base-ref "$PR_BASE_SHA" \
+            --base-sha "$merge_base" \
+            --head-sha "$PR_HEAD_SHA" \
+            --output /tmp/cross-ai-derived-scope.patch)"
+          scope_sha256="$(printf '%s' "$receipt" | jq -r .scope_sha256)"
+          test -n "$merge_base"
+          test "$scope_sha256" != "null"
           echo "PR files:"
-          cat /tmp/changed-files.txt
+          sed -n '1,400p' /tmp/changed-files.txt
+          echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
+          echo "scope_sha256=$scope_sha256" >> "$GITHUB_OUTPUT"
 
       - name: Run cross-AI audit
         # `GITHUB_EVENT_PATH` carries the PR payload (head ref/sha, base, body,
@@ -125,14 +141,11 @@ jobs:
         # restrict what the audit can inspect about the PR (Codex Q3 onay).
         # #898: `--changed-files-file` feeds the Dependabot exemption diff
         # allowlist gate; ignored for non-Dependabot PRs.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node scripts/ci/pr-cross-ai-audit.mjs \
             --event-path "$GITHUB_EVENT_PATH" \
-            --changed-files-file /tmp/changed-files.txt
-
-      # #827 — regression test for the automation-PR exemption logic
-      # (auditAutomation): legit bot auto-PRs pass, human-on-auto-branch is
-      # blocked, normal PRs still get the peer-review audit.
-      - name: Run automation-exemption regression test
-        run: |
-          node tests/ci/test-cross-ai-automation.mjs
+            --changed-files-file /tmp/changed-files.txt \
+            --derived-base-sha "${{ steps.scope.outputs.merge_base }}" \
+            --derived-scope-sha256 "${{ steps.scope.outputs.scope_sha256 }}"

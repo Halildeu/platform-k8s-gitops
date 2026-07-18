@@ -93,3 +93,11 @@ f3ceff9fe2ca1370ada8eff9410ad639fc08530c:docs/state/current-state.md:generic-api
 # Parolanin kendisi Vault'ta; README'de hicbir literal secret yok.
 .ost-compose/remote-write-bridge/README.md:curl-auth-user:46
 host-compose/remote-write-bridge/README.md:curl-auth-user:46
+
+# #2601 three-channel Cross-AI policy — both findings are policy vocabulary
+# describing forbidden credential classes and a scanner allowlist regex. They
+# contain no credential value. Earlier commits remain in the PR history, so
+# exact commit/path/rule/line fingerprints are suppressed rather than broadly
+# disabling the generic-api-key detector.
+55afd665d2819d1722127d60a63a16e873a16385:scripts/ai/prepare_cross_ai_scope.py:generic-api-key:87
+35a252748ff62a916a0bfc23fbe7fb82f544785b:docs/context-priority-rules.md:generic-api-key:397

@@ -476,20 +476,43 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertEqual(desired.group(1), workflow.group(1))
         self.assertEqual(workflow.group(1), runtime.group(1))
 
-    def test_direct_claude_is_machine_pinned_as_first_consultation_channel(self):
-        direct = "Doğrudan Claude CLI birinci istişare kanalı (KALICI)"
-        cursor = "Cursor CLI (öncelikli ilave adversarial-review kanalı)"
-        self.assertIn(direct, self.agents)
-        self.assertIn(cursor, self.agents)
-        self.assertLess(self.agents.index(direct), self.agents.index(cursor))
-        self.assertIn("**Kalıcı sıra:** birinci dış istişare kanalı", self.context_rules)
-        self.assertIn("Cursor CLI bundan sonra bağımsız/ilave", self.context_rules)
-        self.assertNotIn("Doğrudan Claude CLI ek/fallback", self.context_rules)
-        self.assertNotIn("Doğrudan Claude CLI ek/fallback", self.agents)
-        self.assertNotIn("Doğrudan Claude, MiniMax M3", self.context_rules)
-        self.assertIn("--model claude-opus-4-8", self.agents)
-        self.assertIn("`claude-opus-4-8` dönmeden", self.context_rules)
+    def test_three_channel_cross_ai_is_pinned_without_cursor_usage(self):
+        rule = "Zorunlu üç-kanallı Cross-AI istişare"
+        self.assertIn(rule, self.agents)
+        self.assertIn("`claude-opus-4-8`", self.agents)
+        self.assertIn("`minimax/MiniMax-M3`", self.agents)
+        self.assertIn("`gpt-5.6-sol`", self.agents)
+        self.assertIn("Cursor kullanım yolu kaldırılmıştır", self.agents)
+        self.assertIn("Cursor-routed modeller kullanılmaz", self.agents)
+        self.assertIn("Birincil istişare Claude Opus 4.8'dir", self.agents)
         self.assertIn("daha düşük modele sessiz fallback yapılmaz", self.agents)
+        primary_start = self.agents.index(
+            "- **Birincil istişare Claude Opus 4.8'dir (KALICI)**"
+        )
+        primary_end = self.agents.index("\n- ", primary_start)
+        primary_rule = self.agents[primary_start:primary_end]
+        self.assertLess(
+            primary_rule.index("claude --model claude-opus-4-8"),
+            primary_rule.index("MiniMax M3"),
+        )
+        self.assertLess(
+            primary_rule.index("MiniMax M3"),
+            primary_rule.index("Codex 5.6 SOL"),
+        )
+        self.assertNotIn(
+            "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
+        )
+        self.assertIn("## 11. Zorunlu Üç Kanallı Cross-AI İstişare", self.context_rules)
+        self.assertIn("**`claude-opus-4-8`**", self.context_rules)
+        self.assertIn("**`minimax/MiniMax-M3`**", self.context_rules)
+        self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
+        self.assertIn(
+            "Birincil istişare kanalı doğrudan Anthropic Claude Opus 4.8'dir",
+            self.context_rules,
+        )
+        self.assertIn("JSON `modelUsage`", self.context_rules)
+        self.assertIn("Cursor kullanım yolu", self.context_rules)
+        self.assertIn("kullanılamaz", self.context_rules)
 
 if __name__ == "__main__":
     unittest.main()
