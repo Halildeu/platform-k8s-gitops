@@ -79,9 +79,32 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];
+const CONSULTATION_DUAL_GOVERNANCE_PATHS = [
+  /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
+  /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|minimax_m3_review)\.py$/,
+];
+const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
+  /(?:^|\/)(?:rbac|networkpolic(?:y|ies)|vault-polic(?:y|ies)|external-secrets?|clustersecretstores?)(?:\/|[-_.])/i,
+  /(?:^|\/)(?:clusterrole|clusterrolebinding|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
+  /(?:^|\/)(?:db\/migration|migrations?)(?:\/|$)/i,
+];
 const CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES = ['auto-promotion/'];
-const DUAL_RISK_TRIGGER_RE = /^(irreversible-production|security-authz|privacy-retention|data-migration|concurrency|production-cutover|human-authority):\s+(.+)$/i;
-const PLACEHOLDER_WORD_RE = /\b(?:todo|tbd|fixme|placeholder|dummy|example|unknown|n\/a|none)\b/i;
+const DUAL_RISK_CATEGORIES = [
+  'irreversible-production',
+  'security-authz',
+  'privacy-retention',
+  'data-migration',
+  'concurrency',
+  'production-cutover',
+  'human-authority',
+];
+const DUAL_RISK_TRIGGER_RE = new RegExp(
+  `^(${DUAL_RISK_CATEGORIES.join('|')}):\\s+(.+)$`,
+  'i',
+);
+const PLACEHOLDER_WORD_RE = /\b(?:todo|tbd|fixme|placeholder|dummy|example|unknown)\b/i;
+const NON_ACTIONABLE_SENTINEL_RE = /^(?:n\/a|none)$/i;
 const EXPLICIT_MODE_LEGACY_FIELDS = [
   'reviewer ai',
   'codex thread',
@@ -93,6 +116,7 @@ const EXPLICIT_MODE_LEGACY_FIELDS = [
   'automation source',
   'automation evidence',
 ];
+const DUPLICATE_FIELDS = Symbol('duplicate-fields');
 
 // Codex `019e2693` MED-3 absorb: known-provider canonicalizer (R2 question response)
 const PROVIDER_ALIASES = {
@@ -390,6 +414,7 @@ function extractCrossAiSection(body) {
 // Inline YAML comment strip + key/value extract from Cross-AI section
 function extractFields(section) {
   const fields = {};
+  const duplicateFields = new Set();
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
@@ -398,6 +423,7 @@ function extractFields(section) {
     const m = line.match(keyRe);
     if (m) {
       const key = m[1].toLowerCase();
+      if (Object.hasOwn(fields, key)) duplicateFields.add(key);
       let val = m[2];
       // Strip inline YAML comments (e.g. "Claude # one of [...]")
       const commentIdx = val.indexOf('#');
@@ -410,7 +436,19 @@ function extractFields(section) {
       fields[key] = val;
     }
   }
+  fields[DUPLICATE_FIELDS] = [...duplicateFields];
   return fields;
+}
+
+function appendDuplicateFieldFinding(findings, fields) {
+  const duplicates = fields[DUPLICATE_FIELDS] ?? [];
+  findings.push({
+    check: 'cross_ai_structured_fields_unique',
+    pass: duplicates.length === 0,
+    detail: duplicates.length === 0
+      ? 'structured Cross-AI field keys are unique'
+      : `Yinelenen structured Cross-AI field reddedildi: ${duplicates.join(', ')}`,
+  });
 }
 
 function normalizeProvider(s) {
@@ -430,6 +468,7 @@ function meaningfulStatement(value) {
   return clean.length >= 10
     && !/[<>]/.test(clean)
     && !PLACEHOLDER_WORD_RE.test(clean)
+    && !NON_ACTIONABLE_SENTINEL_RE.test(clean)
     && words.length >= 3
     && new Set(words).size >= 3;
 }
@@ -446,6 +485,12 @@ function minimumConsultationMode(prMeta) {
   if (!Array.isArray(files) || files.length === 0) {
     return { mode: 'single', reason: 'changed-files metadata missing' };
   }
+  const dualGovernancePath = files.find((path) =>
+    CONSULTATION_DUAL_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
+  );
+  if (dualGovernancePath) {
+    return { mode: 'dual', reason: `consultation enforcement path: ${dualGovernancePath}` };
+  }
   const governancePath = files.find((path) =>
     CONSULTATION_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
   );
@@ -457,6 +502,12 @@ function minimumConsultationMode(prMeta) {
   );
   if (branchPrefix) {
     return { mode: 'single', reason: `production promotion branch: ${branchPrefix}` };
+  }
+  const highRiskPath = files.find((path) =>
+    CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS.some((pattern) => pattern.test(path))
+  );
+  if (highRiskPath) {
+    return { mode: 'single', reason: `high-confidence risk path: ${highRiskPath}` };
   }
   return { mode: 'none', reason: 'routine scope' };
 }
@@ -788,12 +839,17 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       ? `consultation reason recorded (${reason.length}c)`
       : 'Consultation reason somut olmalı; placeholder/tekrarlı metin olamaz ve en az 10 karakter olmalıdır',
   });
+  const implementerAllowed = Boolean(
+    implementer
+    && VALID_PROVIDERS.has(implementer)
+    && (mode === 'none' || implementer !== 'other')
+  );
   findings.push({
     check: 'implementer_provider_enum',
-    pass: Boolean(implementer && VALID_PROVIDERS.has(implementer)),
-    detail: implementer && VALID_PROVIDERS.has(implementer)
+    pass: implementerAllowed,
+    detail: implementerAllowed
       ? `implementer ${implementer}`
-      : 'Implementer AI canonical provider enum içinde olmalıdır',
+      : 'Implementer AI canonical provider enum içinde olmalıdır; single/dual modunda belirsiz other kullanılamaz',
   });
   findings.push({
     check: 'consultation_changed_files_present',
@@ -939,6 +995,7 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   findings.push({ check: 'cross_ai_section_present', pass: true });
 
   const fields = extractFields(section);
+  appendDuplicateFieldFinding(findings, fields);
   if (Object.hasOwn(fields, 'consultation mode')) {
     findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
     return findings;
@@ -1177,6 +1234,7 @@ function auditAutomation(body, prMeta) {
   // PR-body ## Cross-AI section fields
   const section = extractCrossAiSection(body);
   const fields = section ? extractFields(section) : {};
+  appendDuplicateFieldFinding(findings, fields);
 
   // 4. Automation source field present AND 1:1-consistent with the branch prefix
   const src = fields['automation source'] || '';

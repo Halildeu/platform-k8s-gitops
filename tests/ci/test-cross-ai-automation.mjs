@@ -67,6 +67,11 @@ const EVIDENCE = {
   [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 1_000),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
 };
+const REVERSED_DUAL_EVIDENCE = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 2_000),
+  [CODEX_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 0),
+};
 
 // Build the GitHub event payload and run the real script; return its exit code.
 // `changedFiles` is an optional array → written to a temp file and passed via
@@ -176,7 +181,10 @@ const explicitDualMiniMaxWrongDigestBody = explicitDualMiniMaxBody.replace(
   'f'.repeat(64),
 );
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
-const GOVERNANCE_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
+const GOVERNANCE_PATH = 'AGENTS.md';
+const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
+const RBAC_PATH = 'kustomize/base/security/clusterrolebinding-platform-admin.yaml';
+const MIGRATION_PATH = 'services/reporting/src/main/resources/db/migration/V42__grant.sql';
 const GOVERNANCE_CONTRACT_TEST_PATH = 'tests/deploy/test_faz25_fullats_gitops_contract.py';
 
 const staleClaudeBody = JSON.stringify({
@@ -432,6 +440,10 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody }, 0],
   ['explicit none mode lets routine work pass without provider receipts',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit none mode accepts substantive prose containing the word none',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody.replace(/^Consultation reason:.*$/m, 'Consultation reason: Reversible documentation update; none of the protected runtime paths apply.'),
+      changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit none mode rejects a fabricated or stale provider receipt',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitNoneBody}${peerBody.match(/^Claude receipt:.*$/m)[0]}\n`, changedFiles: [ROUTINE_PATH] }, 1],
@@ -452,6 +464,8 @@ const cases = [
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit none mode rejects missing changed-file metadata',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody }, 1],
+  ['explicit single mode also rejects missing changed-file metadata',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody }, 1],
   ['invalid explicit consultation mode fails closed without legacy fallback',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody.replace('Consultation mode: none', 'Consultation mode: sngle'), changedFiles: [ROUTINE_PATH] }, 1],
@@ -477,9 +491,34 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [GOVERNANCE_PATH] }, 0],
+  ['explicit single mode rejects consultation enforcement changes that require dual',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ENFORCEMENT_PATH] }, 1],
+  ['explicit dual mode accepts consultation enforcement changes',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
+  ['explicit none mode rejects a high-confidence RBAC path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [RBAC_PATH] }, 1],
+  ['explicit single mode accepts a high-confidence RBAC path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [RBAC_PATH] }, 0],
+  ['explicit none mode rejects a high-confidence database migration path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [MIGRATION_PATH] }, 1],
   ['explicit single mode rejects same-provider Claude self-review',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit single mode rejects an unidentifiable other implementer',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody.replace('Implementer AI: Codex', 'Implementer AI: other'), changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit mode rejects duplicate consultation-mode fields',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitSingleBody}Consultation mode: single\n`, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit mode rejects duplicate implementer fields',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitSingleBody}Implementer AI: Codex\n`, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit mode rejects duplicate receipt fields',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitSingleBody}${explicitSingleBody.match(/^Claude receipt:.*$/m)[0]}\n`, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit dual mode rejects duplicate risk-trigger fields',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitDualBody}Risk trigger: security-authz: Duplicate security authority must not override prior classification.\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit single mode rejects non-AGREE verdict',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody.replace('Verdict: AGREE', 'Verdict: REVISE'), changedFiles: [ROUTINE_PATH] }, 1],
@@ -498,6 +537,11 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts one independent channel for a Claude implementer',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit dual mode accepts reverse evidence publication timestamps',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH], evidence: REVERSED_DUAL_EVIDENCE }, 0],
+  ['explicit dual mode rejects an empty third receipt key',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitDualBody}MiniMax receipt:\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode rejects a mismatched MiniMax evidence digest',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxWrongDigestBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode requires a concrete high-risk trigger',
@@ -525,6 +569,9 @@ const cases = [
   ['normal PR + missing three-channel receipts -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: '## Cross-AI\nImplementer AI: Claude\nReviewer AI: Codex\nCodex thread: 019e3f5b-bfa2-71b1-b2df-96d424e4bda8\nVerdict: AGREE\n' }, 1],
+  ['normal legacy PR + empty required field still fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Reviewer AI: Codex', 'Reviewer AI:') }, 1],
   ['normal PR + receipt commit differs from PR head -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       headSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody }, 1],

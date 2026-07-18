@@ -350,8 +350,10 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
 
 1. **`none` — varsayılan:** Rutin implementation/test işinde provider çağrısı
    yapılmaz. PR'da somut `Consultation reason` yazılır; receipt üretilmez.
-   Changed-files kanıtı eksikse, consultation governance dosyası değişiyorsa
-   veya branch `auto-promotion/` ise gate en az `single` zorunlu tutar.
+   Changed-files kanıtı eksikse, consultation governance dosyası, yüksek güvenli
+   RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration yolu değişiyorsa veya
+   branch `auto-promotion/` ise gate en az `single` zorunlu tutar. Audit/evidence
+   enforcement kodunun kendisi değişiyorsa mekanik taban `dual` olur.
 2. **`single` — gerçekten ikinci görüş gerektiğinde:** Tek ve birincil kanal
    direct Anthropic `claude --model claude-opus-4-8` olur. JSON `modelUsage`
    exact `claude-opus-4-8` değilse kanal tamamlanmış sayılmaz. Claude
@@ -373,7 +375,7 @@ kanal veya kanallar değişen exact scope üzerinde yeniden inceler.
 PR structured alanları:
 
 ```yaml
-Implementer AI: Codex|Claude|other
+Implementer AI: Codex|Claude|Gemini|other # other yalnız none modunda
 Consultation mode: none|single|dual
 Consultation reason: <neden bu mod seçildi>
 Risk trigger: <kategori>: <somut açıklama> # yalnız dual
@@ -391,6 +393,9 @@ Codex receipt: <dual için opsiyonlardan yalnız biri>
 `privacy-retention`, `data-migration`, `concurrency`, `production-cutover` veya
 `human-authority` olur; açıklama en az üç farklı anlamlı kelime taşır ve
 serbest/placeholder/tekrarlı metin fail-closed reddedilir.
+`single` ve `dual` bağımsızlık kontrolünde implementer sağlayıcısı canonical
+olarak bilinmelidir; gerçek sağlayıcıyı saklayabilen `other` bu iki modda
+fail-closed reddedilir. `other` yalnız receipt taşımayan `none` modunda kullanılabilir.
 `gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
 risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
 `single` yalnız exact Claude receipt'i taşır, `dual` exact Claude +
@@ -401,9 +406,10 @@ onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
 freshness, digest, redaction ve provider/model eşlemesi korunur.
 
 Path/branch sınıflandırıcısı yalnız açık governance ve production-promotion
+ile yüksek güvenli RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration
 sinyallerini fail-closed yakalar; diff'in iş anlamını eksiksiz anlayan bir risk
-oracle'ı değildir. Authz, retention/silme, migration, concurrency, cutover veya
-geri döndürülemez başka bir karar path adına yansımıyorsa agent doğru
+oracle'ı değildir. Authz, retention/silme, concurrency, cutover veya geri
+döndürülemez başka bir karar path adına yansımıyorsa agent doğru
 `single/dual` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
 
 `Consultation mode` içermeyen tarihsel PR gövdeleri geçiş uyumluluğu için eski,
