@@ -117,7 +117,7 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PROMOTION_PR: "2617"
-          ATTESTATION_OUTPUT: /tmp/fullats-rollback-content-attestation.json
+          ATTESTATION_OUTPUT: ${{ runner.temp }}/fullats-rollback-content-attestation-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: bash scripts/ats/verify-fullats-test-rollback-content.sh
 
       - name: Derive trusted merge-base and scope digest
@@ -161,6 +161,7 @@ jobs:
         # metadata intentionally rejects `none` instead of silently bypassing it.
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          ATTESTATION_OUTPUT: ${{ runner.temp }}/fullats-rollback-content-attestation-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: |
           args=(
             --event-path "$GITHUB_EVENT_PATH"
@@ -168,10 +169,10 @@ jobs:
             --derived-base-sha "${{ steps.scope.outputs.merge_base }}"
             --derived-scope-sha256 "${{ steps.scope.outputs.scope_sha256 }}"
           )
-          if [[ -f /tmp/fullats-rollback-content-attestation.json ]]; then
+          if [[ -f "$ATTESTATION_OUTPUT" ]]; then
             args+=(
               --automation-content-attestation-file
-              /tmp/fullats-rollback-content-attestation.json
+              "$ATTESTATION_OUTPUT"
             )
           fi
           node scripts/ci/pr-cross-ai-audit.mjs "${args[@]}"

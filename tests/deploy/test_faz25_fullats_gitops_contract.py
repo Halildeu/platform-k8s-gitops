@@ -392,6 +392,10 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             "--automation-content-attestation-file",
             self.cross_ai_workflow,
         )
+        self.assertIn(
+            "${{ runner.temp }}/fullats-rollback-content-attestation-${{ github.run_id }}-${{ github.run_attempt }}.json",
+            self.cross_ai_workflow,
+        )
 
     def test_fullats_rollback_content_verifier_executes_fail_closed_with_mocked_git_and_github(self):
         promotion_base = "fc5f2735a49977d79b82e9d36d71642e54e67023"
@@ -989,6 +993,8 @@ fi
         self.assertIn("`other` bu iki modda", self.context_rules)
         self.assertIn("P1 is only a concrete merge-blocking", self.minimax_wrapper)
         self.assertIn("otherwise use AGREE even when P2 has suggestions", self.minimax_wrapper)
+        self.assertIn("git diff, not the full repository", self.minimax_wrapper)
+        self.assertIn("satisfies every existing rejection guard", self.minimax_wrapper)
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )
