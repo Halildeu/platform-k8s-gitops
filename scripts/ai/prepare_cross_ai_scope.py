@@ -31,7 +31,9 @@ TURKISH_PHONE_RE = re.compile(
     r"(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)"
 )
 PRIVATE_KEY_RE = re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
-BEARER_RE = re.compile(rb"(?i)authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}")
+BEARER_RE = re.compile(
+    rb"(?i)(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}"
+)
 BINARY_DIFF_RE = re.compile(
     rb"(?m)^(?:Binary files .+ differ|GIT binary patch)$"
 )

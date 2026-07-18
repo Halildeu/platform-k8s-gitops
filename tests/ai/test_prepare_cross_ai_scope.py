@@ -35,6 +35,10 @@ class BinaryScopeTests(unittest.TestCase):
         patch = b"diff --git a/a.txt b/a.txt\n+Binary files are discussed here\n"
         self.assertIsNone(MODULE.BINARY_DIFF_RE.search(patch))
 
+    def test_standalone_raw_bearer_is_high_confidence_secret(self) -> None:
+        value = ("Bearer " + "abcdefghijklmnop").encode("utf-8")
+        self.assertIsNotNone(MODULE.BEARER_RE.search(value))
+
 
 class RedactionTests(unittest.TestCase):
     def test_email_and_turkish_mobile_are_redacted(self) -> None:
