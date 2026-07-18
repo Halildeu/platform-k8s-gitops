@@ -879,8 +879,8 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
     findings.push({
       check: 'consultation_single_has_no_risk_trigger',
-      pass: !fields['risk trigger'],
-      detail: !fields['risk trigger']
+      pass: !Object.hasOwn(fields, 'risk trigger'),
+      detail: !Object.hasOwn(fields, 'risk trigger')
         ? 'single mode high-risk trigger iddiası taşımıyor'
         : 'Risk trigger yalnız dual modda bulunabilir',
     });
