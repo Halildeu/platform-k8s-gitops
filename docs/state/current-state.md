@@ -86,9 +86,13 @@ Source ve karar zinciri:
 
 - GitOps PR #2433 `main` üzerine
   `a8d643ab9d56697f3e13bd24499920e324339d77` olarak squash-merge edildi.
-- Owner directive #2373 issue comment `4977782172` ve provider-distinct
-  MiniMax M3 + Codex dört adversarial tur sonucu `AGREE` kaydı issue comment
-  `4978013233` ile canonical policy'ye bağlandı.
+- Owner directive #2373 issue comment `4977782172` ile canonical policy'ye
+  bağlıdır. Pre-#2638 MiniMax + Codex advisory comment `4978013233` yalnız
+  tarihsel audit girdisi olarak korunur; yeni authorization üretemez.
+- Forward owner-advisory migration direct Anthropic Claude Opus 4.8 + direct
+  OpenAI Codex 5.6 SOL `AGREE` kaydını issue comment `5011715034` ve exact body
+  SHA-256 ile canonical policy'ye bağlar. Bu kayıt da `advisoryOnly=true` ve
+  human approval/legal clearance yerine geçmez.
 - AI mutabakatı yalnız bounded, attended, recording-off TEST VIEW_ONLY
   engineering/risk authority'sidir. İnsan DPO/legal imzası olarak sunulmaz,
   `GATE_VIEW_ONLY_KVKK=cleared` veya `F22_6_VIEW_ONLY_KVKK:v1` marker üretmez.

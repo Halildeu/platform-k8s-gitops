@@ -66,8 +66,9 @@ Denetim hostu bu delta ile değiştirilmedi; parent #1864 `Needs Verify` ve alt�
 Windows kontrolü açık. PR/CI, immutable paket hash'i, explicit firewall etki
 kararı, controlled Apply/Validate, rollback drill, yeniden Apply/Validate ve fresh v2
 evidence kabulü olmadan I3 veya G-OPS ilerlemiş sayılmaz. Sağlayıcı
-istişareleri yalnız gerçek Claude ve Mavis/MiniMax CLI/daemon yollarıyla yapılır;
-UI veya simülasyon sonucu kabul edilmez.
+istişareleri yalnız doğrudan Claude Opus 4.8 ve gerektiğinde doğrudan OpenAI
+Codex 5.6 SOL CLI yollarıyla yapılır; MiniMax, UI veya simülasyon sonucu yeni
+istişare/acceptance zincirinde kabul edilmez.
 
 **Faz 24 testai frontend promotion durability delta (2026-07-11)**:
 `platform-k8s-gitops#2301` merged at

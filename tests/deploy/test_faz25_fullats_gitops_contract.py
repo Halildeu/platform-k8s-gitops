@@ -107,7 +107,6 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.cross_ai_audit = (ROOT / "scripts/ci/pr-cross-ai-audit.mjs").read_text()
         cls.agents = (ROOT / "AGENTS.md").read_text()
         cls.context_rules = (ROOT / "docs/context-priority-rules.md").read_text()
-        cls.minimax_wrapper = (ROOT / "scripts/ai/minimax_m3_review.py").read_text()
 
     def test_d29_default_digest_matches_activated_ats_image(self):
         desired = re.search(
@@ -428,7 +427,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             'require_exact_body_line "Verdict: AGREE"',
             "promotion consultation reason is missing or too short",
             "exact $receipt_label binding is missing or invalid",
-            "Codex implementer cannot use Codex as dual secondary",
+            "MiniMax receipt is forbidden by forward policy",
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
             self.assertIn(required, self.rollback_script)
@@ -551,7 +550,7 @@ if [[ "$*" == *"/pulls/2636"* ]]; then
     "Risk trigger: security-authz: Trusted rollback exemption changes the protected review boundary." \
     "Verdict: AGREE" \
     "Claude receipt: provider=anthropic; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 6)" \
-    "MiniMax receipt: provider=minimax; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
+    "Codex receipt: provider=openai; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
   jq -n \
     --arg merge "$PR_BASE_SHA" \
     --arg head "$PROMOTION_HEAD_SHA" \
@@ -1172,24 +1171,20 @@ fi
         self.assertIn("(`single`)", self.agents)
         self.assertIn("(`dual`)", self.agents)
         self.assertIn("`claude-opus-4-8`", self.agents)
-        self.assertIn("`minimax/MiniMax-M3`", self.agents)
         self.assertIn("`gpt-5.6-sol`", self.agents)
         self.assertIn("toplam iki kanal aşılmaz", self.agents)
-        self.assertIn("mümkünse paralel", self.agents)
+        self.assertIn("MiniMax yeni istişarelerde çağrılmaz", self.agents)
         self.assertIn("Cursor ve AI uygulama pencereleri istişare yolu değildir", self.agents)
         self.assertIn("consultation governance dosyası", self.agents)
         self.assertIn("audit/evidence enforcement kodunun kendisi `dual` ister", self.agents)
         self.assertIn("Claude implementer kendi receipt'ini", self.agents)
         self.assertIn("provider-distinct ikinci kanal ile `dual` gerekir", self.context_rules)
-        self.assertIn("İkincil kanal implementer sağlayıcısıyla da aynı olamaz", self.context_rules)
+        self.assertIn("exact Claude + exact Codex", self.context_rules)
         self.assertIn("`other` bu iki modda", self.context_rules)
-        self.assertIn("P1 is only a concrete merge-blocking", self.minimax_wrapper)
         self.assertIn("Varsayımsal istişare karar kanıtı değildir", self.agents)
         self.assertIn("non-authoritative direction exploration", self.context_rules)
         self.assertIn("tracked_pending", self.context_rules)
-        self.assertIn("otherwise use AGREE even when P2 has suggestions", self.minimax_wrapper)
-        self.assertIn("git diff, not the full repository", self.minimax_wrapper)
-        self.assertIn("satisfies every existing rejection guard", self.minimax_wrapper)
+        self.assertFalse((ROOT / "scripts/ai/minimax_m3_review.py").exists())
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )
@@ -1201,7 +1196,6 @@ fi
         self.assertIn("**`single` — gerçekten ikinci görüş gerektiğinde:**", self.context_rules)
         self.assertIn("**`dual` — istisnai yüksek risk:**", self.context_rules)
         self.assertIn("**`claude-opus-4-8`**", self.context_rules)
-        self.assertIn("**`minimax/MiniMax-M3`**", self.context_rules)
         self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
         self.assertIn(
             "İstişare bir teslimat ritüeli değil, yalnız karar",

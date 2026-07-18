@@ -28,6 +28,7 @@ class FakeVaultClient:
     root_policies = ["root"]
     sealed = False
     wrong_mount_type = False
+    legacy_delete_status = 204
 
     def __init__(self, *, origin: str, token: str) -> None:
         self.origin = origin
@@ -86,6 +87,19 @@ class FakeVaultClient:
         if path == "sys/mounts/cross-ai" and method == "POST":
             self.mount_exists = True
             return self._response(204)
+        if path in {
+            "auth/approle/role/cross-ai-issuer-minimax-test",
+            "sys/policies/acl/cross-ai-issuer-minimax-test",
+        }:
+            if method == "DELETE":
+                status = type(self).legacy_delete_status
+                if status not in expected:
+                    raise MODULE.BootstrapError(
+                        f"Vault rejected DELETE {path} with HTTP {status}"
+                    )
+                return self._response(status)
+            if method == "GET":
+                return self._response(404, {"errors": ["missing"]})
         if path.startswith("cross-ai/keys/"):
             name = path.rsplit("/", 1)[1]
             if method == "GET":
@@ -112,6 +126,7 @@ class TransitBootstrapTests(unittest.TestCase):
         FakeVaultClient.root_policies = ["root"]
         FakeVaultClient.sealed = False
         FakeVaultClient.wrong_mount_type = False
+        FakeVaultClient.legacy_delete_status = 204
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
         self.token = self.root / "root-token"
@@ -138,7 +153,14 @@ class TransitBootstrapTests(unittest.TestCase):
             receipt = MODULE.bootstrap(self.args())
         client = FakeVaultClient.instances[-1]
         self.assertEqual(receipt["scope"], "test-only")
-        self.assertEqual(len(receipt["keys"]), 6)
+        self.assertEqual(len(receipt["keys"]), 5)
+        self.assertEqual(
+            receipt["verifiedAbsentResources"],
+            [
+                "approle:cross-ai-issuer-minimax-test",
+                "policy:cross-ai-issuer-minimax-test",
+            ],
+        )
         self.assertEqual(
             {item["keyName"] for item in receipt["keys"]}, set(MODULE.KEY_NAMES)
         )
@@ -182,6 +204,18 @@ class TransitBootstrapTests(unittest.TestCase):
         client = ExistingClient.instances[-1]
         self.assertFalse(
             any(call[0] == "POST" and "/keys/" in call[1] for call in client.calls)
+        )
+
+    def test_decommission_is_idempotent_when_legacy_grants_are_already_absent(self) -> None:
+        FakeVaultClient.legacy_delete_status = 404
+        with patch.object(MODULE, "VaultClient", FakeVaultClient):
+            receipt = MODULE.bootstrap(self.args())
+        self.assertEqual(
+            receipt["verifiedAbsentResources"],
+            [
+                "approle:cross-ai-issuer-minimax-test",
+                "policy:cross-ai-issuer-minimax-test",
+            ],
         )
 
     def test_rejects_existing_exportable_key_and_wrong_cluster(self) -> None:
@@ -285,7 +319,6 @@ class TransitBootstrapTests(unittest.TestCase):
         self.assertIn("rewrap|hmac", reconciler)
         exact_paths = {
             "cross-ai-issuer-anthropic-test": "cross-ai/sign/anthropic",
-            "cross-ai-issuer-minimax-test": "cross-ai/sign/minimax",
             "cross-ai-issuer-openai-test": "cross-ai/sign/openai",
             "cross-ai-coordinator-test": "cross-ai/sign/coordinator",
             "cross-ai-revocation-test": "cross-ai/sign/revocation",
@@ -306,7 +339,6 @@ class TransitBootstrapTests(unittest.TestCase):
         )
         for role in (
             "cross-ai-issuer-anthropic-test",
-            "cross-ai-issuer-minimax-test",
             "cross-ai-issuer-openai-test",
             "cross-ai-coordinator-test",
         ):
@@ -316,6 +348,12 @@ class TransitBootstrapTests(unittest.TestCase):
                     config_policy,
                 )
             self.assertNotIn(f'"{role}|', routine_approles)
+        self.assertNotIn("cross-ai-issuer-minimax-test", reconciler)
+        self.assertFalse((policy_dir / "cross-ai-issuer-minimax.hcl").exists())
+        self.assertNotIn(
+            'path "sys/policies/acl/cross-ai-issuer-minimax-test"',
+            config_policy,
+        )
         self.assertNotRegex(
             reconciler,
             r"cross-ai-(?:issuer-[a-z]+|coordinator)-test\|[^\n]*token_num_uses=0",

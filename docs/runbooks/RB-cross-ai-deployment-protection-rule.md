@@ -1,5 +1,19 @@
 # RB — Signed Cross-AI Custom Deployment Protection Rule
 
+> **Forward-policy stop (#2638, 2026-07-18):** Bu v1 tasarımındaki üç-sağlayıcı
+> ve MiniMax issuer yolu yeni activation veya deployment acceptance için
+> kullanılamaz. Mevcut metin, şema ve fixture'lar yalnız arşiv/forensic kayıt
+> açıklaması için korunur; cutoff sonrası aktif verifier bunları doğrulamaz.
+> Yeni aktif sürüm Claude Opus 4.8 + OpenAI Codex 5.6 SOL ile ayrı versioned
+> contract/trust-root kullanmadan Phase 2/3'e ilerlemez. MiniMax içeren bir v1
+> trust root cutoff sonrasına taşamaz; pre-cutoff kayıt yeni acceptance üretemez.
+> Aktif verifier saati cutoff'a ulaştığında MiniMax taşıyan v1 trust root'u
+> payload zamanı backdate edilse bile reddeder. Owner-gated Transit bootstrap
+> eski MiniMax issuer policy/AppRole kaydını idempotent olarak siler ve
+> yokluğunu doğrular; yeni reconcile yolu grant üretmez. Ayrı v2 activation
+> preflight'i credential göstermeden bu absence receipt'ini doğrulamalıdır. Bu
+> temizlik tarihsel Transit public-key/evidence kaydını silmez.
+
 > **Issue:** #2502 · **ADR:** ADR-0045 · **scope:** reversible test/non-prod only
 > **Current state (2026-07-17):** Phase 0 source/schema/tests, the live-found
 > webhook header normalization fix and the Phase 1 receive-only observer are
@@ -34,7 +48,7 @@
 > is present at the dedicated TEST KV path with redacted hash-match proof; the
 > receive-only observer does not mount or consume it. The TEST Vault still has
 > no Transit mount. The rule must remain disabled until owner-gated Transit/TLS,
-> direct exact-model Anthropic, MiniMax and OpenAI adapters, dispatcher App,
+> versioned Claude Opus 4.8 + OpenAI Codex 5.6 SOL adapters, dispatcher App,
 > signed intent, protected workflows and one real callback are all proven.
 
 ## 1. What this removes — and what it does not

@@ -67,10 +67,12 @@ boundary; see OWNER-APPROVAL.md node-origin caveat).
 
 This is the owner decision. Do not flip the flag until every box holds:
 
-- [ ] Canonical owner policy is active. It binds the owner directive and
-      provider-distinct MiniMax M3 + Codex `AGREE` advisory by immutable GitHub
-      comment identity and body SHA-256. AI is `advisoryOnly`; it is not a human
-      legal/DPO signature.
+- [ ] Canonical owner policy is active. It binds the owner directive and the
+      direct Anthropic Claude Opus 4.8 + direct OpenAI Codex 5.6 SOL `AGREE`
+      advisory by immutable GitHub comment identity and body SHA-256. AI is
+      `advisoryOnly`; it is not a human legal/DPO signature. Pre-#2638 MiniMax
+      comments remain historical evidence only and cannot issue a new receipt
+      or authorization.
 - [ ] Legal ticket #2374 is still open with `tracked_pending` and
       `legalClearanceClaimed=false`. This bounded TEST authorization does not
       emit `GATE_VIEW_ONLY_KVKK=cleared`.
