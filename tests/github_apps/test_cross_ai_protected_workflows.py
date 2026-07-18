@@ -45,6 +45,15 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
                 f"{name} must enter through the separate trust-root release",
             )
 
+    def test_stage_runner_opens_bootstrap_as_private_owned_regular_file(self) -> None:
+        script = (
+            ROOT
+            / "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn('flags |= os.O_NOFOLLOW', script)
+        self.assertIn('metadata.st_uid != os.getuid()', script)
+        self.assertIn('stat.S_IMODE(metadata.st_mode) != 0o600', script)
+
 
 if __name__ == "__main__":
     unittest.main()

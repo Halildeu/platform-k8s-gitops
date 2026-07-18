@@ -37,9 +37,24 @@ mapfile -t BINDING < <(
   python3 - "$CROSS_AI_BOOTSTRAP_FILE" "$STAGE" <<'PY'
 import base64
 import json
+import os
+import stat
 import sys
 
-response = json.load(open(sys.argv[1], encoding="utf-8"))
+flags = os.O_RDONLY
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+descriptor = os.open(sys.argv[1], flags)
+metadata = os.fstat(descriptor)
+if (
+    not stat.S_ISREG(metadata.st_mode)
+    or metadata.st_uid != os.getuid()
+    or stat.S_IMODE(metadata.st_mode) != 0o600
+):
+    os.close(descriptor)
+    raise SystemExit("bootstrap file ownership or mode is invalid")
+with os.fdopen(descriptor, encoding="utf-8") as handle:
+    response = json.load(handle)
 if response.get("stage") != sys.argv[2]:
     raise SystemExit("bootstrap stage mismatch")
 bundle = json.loads(base64.b64decode(response["bundleEnvelope"]["payload"], validate=True))

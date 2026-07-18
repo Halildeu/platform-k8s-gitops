@@ -104,7 +104,12 @@ Use distinct Ed25519 Transit keys and policies for:
 Each workload may sign only through its own Transit key. Provider keys cannot
 sign bundles, the coordinator cannot sign provider leaves, and only the
 revocation identity may sign the short-lived revocation set. Pin the Transit
-key version in both `keyId` and trust root. Rotate by overlapping public-key
+key version in both `keyId` and trust root. Each provider key permits exactly
+one direct channel, one exact model ID and one model-identity class; aliases or
+fallback models require a new reviewed trust root and invalidate existing
+grants. The Transit client sends the pinned `key_version` on every signing
+request and rejects a response signed by any other version. Rotate by
+overlapping public-key
 validity, issuing a fresh trust root, then revoking the old version after all
 grants expire.
 

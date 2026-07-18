@@ -105,7 +105,7 @@
         "allowedChannels": {
           "type": "array",
           "uniqueItems": true,
-          "maxItems": 20,
+          "maxItems": 1,
           "items": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{1,63}$"
@@ -114,17 +114,16 @@
         "allowedModelIds": {
           "type": "array",
           "uniqueItems": true,
-          "maxItems": 4,
+          "maxItems": 1,
           "items": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 160
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,159}$"
           }
         },
         "allowedModelIdentityClasses": {
           "type": "array",
           "uniqueItems": true,
-          "maxItems": 2,
+          "maxItems": 1,
           "items": {
             "enum": ["provider-reported", "trusted-launch-attested"]
           }

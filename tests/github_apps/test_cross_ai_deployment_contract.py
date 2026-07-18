@@ -90,6 +90,16 @@ class EvidenceContractTest(unittest.TestCase):
         with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
+    def test_rejects_trust_key_with_more_than_one_allowed_model(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["allowedModelIds"].append("gpt-5.6-sol-alias")
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_SCHEMA_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
     def test_rejects_provider_issuer_mismatch(self) -> None:
         bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
         review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
