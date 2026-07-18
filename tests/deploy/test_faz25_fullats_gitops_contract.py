@@ -407,7 +407,14 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertNotIn("containsRawPasswordOrJwt", self.fullats_browser)
 
     def test_fullats_live_failure_opens_exact_atomic_gitops_rollback(self):
-        self.assertIn("if: failure()", self.fullats_browser_workflow)
+        self.assertIn("id: preflight", self.fullats_browser_workflow)
+        self.assertIn("id: runtime", self.fullats_browser_workflow)
+        self.assertIn("id: browser", self.fullats_browser_workflow)
+        self.assertIn(
+            "steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure'",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn("steps.rollback-checkout.outcome == 'success'", self.fullats_browser_workflow)
         self.assertIn("open-fullats-test-rollback-pr.sh", self.fullats_browser_workflow)
         self.assertIn('PROMOTION_PR: "2617"', self.fullats_browser_workflow)
         self.assertIn('[[ "$FAILED_SHA" == "$merge_sha" ]]', self.rollback_script)
