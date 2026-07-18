@@ -14,7 +14,7 @@ from scripts.github_apps.cross_ai_deployment_policy.workflow import inspect_work
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "config/github-apps/cross-ai-deployment-policy.example.json"
-ACTION_COMMIT = "e1ecc34b63cef3e8be63ae20fc7dbaa7987a62ab"
+ACTION_COMMIT = "4085f86ec299a7e76ad6ba646f976a83c7f11a1a"
 ZERO_TRUST_PIN = "sha256:" + ("0" * 64)
 
 
