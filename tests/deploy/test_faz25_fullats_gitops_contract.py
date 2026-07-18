@@ -435,6 +435,8 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.assertIn(digest, self.rollback_script)
         self.assertIn("kustomize build kustomize/overlays/test", self.rollback_script)
         self.assertIn('--squash --auto', self.rollback_script)
+        self.assertIn("## Boundary declaration (ADR-0011 §2.3)", self.rollback_script)
+        self.assertIn("- [x] state-mutation (test cluster)", self.rollback_script)
         self.assertIn("üç-artifact compensator", self.runbook)
 
     def test_pg_writer_role_is_admin_bootstrapped_without_runtime_createrole(self):

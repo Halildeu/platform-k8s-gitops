@@ -124,11 +124,11 @@ promotion scope after its fail-closed live acceptance. This PR introduces no
 new feature or architecture decision. Normal required repository checks remain
 mandatory before automatic merge.
 
-## Boundary declaration
+## Boundary declaration (ADR-0011 §2.3)
 
 - [ ] credential-read
 - [ ] credential-write
-- [x] state-mutation (test cluster, through GitOps reconciliation)
+- [x] state-mutation (test cluster)
 - [ ] state-mutation (production)
 - [ ] boundary-cross
 - [ ] user-communication
