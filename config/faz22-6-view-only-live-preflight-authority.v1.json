@@ -1,0 +1,345 @@
+{
+  "activation": {
+    "blockers": [
+      "github-oidc-claim-sets-not-live-proven",
+      "binding-handoff-endpoint-not-deployed",
+      "attestor-transit-key-not-provisioned",
+      "attestor-trust-root-not-pinned",
+      "external-checkpoint-cas-not-deployed",
+      "same-job-resume-supervisor-not-workflow-integrated",
+      "test-tenant-persona-pins-not-set",
+      "preprovisioned-test-persona-not-activated",
+      "runtime-trust-root-not-provisioned",
+      "response-loss-idempotency-fault-tests-not-live-proven"
+    ],
+    "state": "tracked_pending"
+  },
+  "bindingAuthority": {
+    "endpoint": {
+      "method": "POST",
+      "origin": "https://testai.acik.com",
+      "path": "/github-apps/cross-ai-deployment-protection/transaction-binding"
+    },
+    "maxRequestBytes": 4096,
+    "maxResponseBytes": 65536,
+    "idempotency": {
+      "domain": "faz22.6/view-only/transaction-binding-idempotency/v1",
+      "exactRetryReturnsByteIdenticalEnvelope": true,
+      "identityProjection": ["iss", "sub", "actor_id", "repository_id", "run_id", "run_attempt", "ref", "sha"],
+      "sameKeyDifferentBodyOrIdentityStatus": 409,
+      "storage": "atomic-unique-request-body-identity"
+    },
+    "requestSchemaRef": "schema/faz22-6-view-only-transaction-binding-request-v1.schema.json",
+    "receipt": {
+      "dsseEnvelopeSchemaRef": "schema/faz22-6-dsse-envelope-v1.schema.json",
+      "maxAgeSeconds": 300,
+      "maxClockSkewSeconds": 30,
+      "maxUses": 1,
+      "payloadSchemaRef": "schema/faz22-6-view-only-transaction-binding-handoff-v1.schema.json",
+      "payloadType": "application/vnd.acik.faz22-6-view-only-transaction-binding-handoff.v1+json",
+      "signingAlgorithm": "ed25519",
+      "transitKeyId": "vault-transit://cross-ai/coordinator#v1",
+      "trustRootSha256": "sha256:7023f16283e380da3b831f624451b522f327e2c3d247bf5bd3a0a36efec3b925"
+    }
+  },
+  "attestor": {
+    "endpoint": {
+      "method": "POST",
+      "origin": "https://testai.acik.com",
+      "path": "/api/v1/endpoint-admin/remote-access/preflight/attest"
+    },
+    "requestSchemaRef": "schema/faz22-6-view-only-live-preflight-request-v1.schema.json",
+    "maxRequestBytes": 262144,
+    "maxResponseBytes": 524288,
+    "idempotency": {
+      "domain": "faz22.6/view-only/live-preflight-idempotency/v1",
+      "exactRetryReturnsByteIdenticalEnvelope": true,
+      "identityProjection": ["iss", "sub", "actor_id", "repository_id", "run_id", "run_attempt", "ref", "sha"],
+      "sameKeyDifferentBodyOrIdentityStatus": 409,
+      "storage": "atomic-unique-request-body-identity"
+    },
+    "receipt": {
+      "dsseEnvelopeSchemaRef": "schema/faz22-6-dsse-envelope-v1.schema.json",
+      "maxAgeSeconds": 300,
+      "maxClockSkewSeconds": 30,
+      "maxUses": 1,
+      "payloadSchemaRef": "schema/faz22-6-view-only-live-preflight-attestation-v1.schema.json",
+      "payloadType": "application/vnd.acik.faz22-6-view-only-live-preflight-attestation.v1+json",
+      "signingAlgorithm": "ed25519",
+      "signerRole": "runtime-attestor",
+      "transitKeyId": "vault-transit://endpoint-admin/view-only-runtime-attestor#v1",
+      "trustRootSha256": null
+    }
+  },
+  "checkpointCas": {
+    "create": {
+      "method": "POST",
+      "maxRequestBytes": 524288,
+      "maxResponseBytes": 524288,
+      "origin": "https://testai.acik.com",
+      "path": "/api/v1/endpoint-admin/remote-access/preflight/checkpoints",
+      "requestSchemaRef": "schema/faz22-6-view-only-external-checkpoint-create-v1.schema.json"
+    },
+    "leaseRedeem": {
+      "method": "POST",
+      "maxRequestBytes": 1048576,
+      "maxResponseBytes": 1048576,
+      "origin": "https://testai.acik.com",
+      "path": "/api/v1/endpoint-admin/remote-access/preflight/checkpoint-leases/redeem",
+      "idempotency": {
+        "authorizationRedemptionCountOnExactRetry": 1,
+        "domain": "faz22.6/view-only/checkpoint-lease-redeem-idempotency/v1",
+        "exactRetryReturnsByteIdenticalEnvelope": true,
+        "identityProjection": ["iss", "sub", "actor_id", "repository_id", "run_id", "run_attempt", "ref", "sha"],
+        "sameKeyDifferentBodyOrIdentityStatus": 409,
+        "storage": "atomic-unique-request-body-identity"
+      },
+      "requestSchemaRef": "schema/faz22-6-view-only-checkpoint-lease-redeem-v1.schema.json",
+      "receiptPayloadSchemaRef": "schema/faz22-6-view-only-checkpoint-lease-v1.schema.json",
+      "receiptPayloadType": "application/vnd.acik.faz22-6-view-only-checkpoint-lease.v1+json",
+      "revalidation": {
+        "attendedConsentAttempted": false,
+        "machineDecisionReceiptMayBeExpiredAtRedeem": true,
+        "maximumEvaluationReceiptStalenessSeconds": 7200,
+        "mustNotExceedAuthorizationEnvelopeExpiry": true,
+        "mutationCount": 0,
+        "newEnvironmentApprovalRequired": false,
+        "requiredChecks": [
+          "targetIdentity",
+          "pkceAuthorizationCode",
+          "tokenRefresh",
+          "routeApi",
+          "browserConsole",
+          "replayIsolation",
+          "clusterContext",
+          "portsTunnels",
+          "imageDigests",
+          "policyMask",
+          "runnerCapacity",
+          "watchdogRollback"
+        ],
+        "returnsFreshSignedReceipt": true
+      }
+    },
+    "maxCheckpointTtlSeconds": 7200,
+    "maxWrites": 64,
+    "read": {
+      "method": "GET",
+      "origin": "https://testai.acik.com",
+      "pathTemplate": "/api/v1/endpoint-admin/remote-access/preflight/checkpoints/{transactionIdSha256}/{sequence}"
+    },
+    "receiptPayloadSchemaRef": "schema/faz22-6-view-only-external-checkpoint-receipt-v1.schema.json",
+    "receiptPayloadType": "application/vnd.acik.faz22-6-view-only-external-checkpoint-receipt.v1+json",
+    "receiptSignerRole": "checkpoint-signer",
+    "receiptTransitKeyId": "vault-transit://endpoint-admin/view-only-checkpoint#v1",
+    "resumePolicy": {
+      "backoffSeconds": [5, 15],
+      "hostOrJobLossResumable": false,
+      "maxSameJobChildProcessRestarts": 2,
+      "requiresExternalCheckpointVerification": true,
+      "requiresIdempotentSideEffects": true,
+      "runnerRerunAttemptAllowed": false
+    },
+    "stateMachine": {
+      "initialSequence": 0,
+      "initialState": "DECISION_AUTHORIZED",
+      "previousStateMustEqualPriorReceiptState": true,
+      "sequenceMustIncrementByOne": true,
+      "transitions": {
+        "DECISION_AUTHORIZED": ["LIVE_REVALIDATED", "FAILURE_CAPTURED", "ARTIFACTS_STAGE_FAILED"],
+        "LIVE_REVALIDATED": ["ACTIVATED", "FAILURE_CAPTURED", "ARTIFACTS_STAGE_FAILED"],
+        "ACTIVATED": ["CONSENT_PENDING", "FAILURE_CAPTURED", "ARTIFACTS_STAGE_FAILED"],
+        "CONSENT_PENDING": ["EVIDENCE_COLLECTED", "FAILURE_CAPTURED", "ARTIFACTS_STAGE_FAILED"],
+        "EVIDENCE_COLLECTED": ["EVIDENCE_VERIFIED", "FAILURE_CAPTURED", "ARTIFACTS_STAGE_FAILED"],
+        "EVIDENCE_VERIFIED": ["ARTIFACTS_STAGED", "FAILURE_CAPTURED", "ARTIFACTS_STAGE_FAILED"],
+        "FAILURE_CAPTURED": ["ARTIFACTS_STAGED", "ARTIFACTS_STAGE_FAILED"],
+        "ARTIFACTS_STAGE_FAILED": ["ROLLBACK_PENDING"],
+        "ARTIFACTS_STAGED": ["ROLLBACK_PENDING"],
+        "ROLLBACK_PENDING": ["ROLLED_BACK"],
+        "ROLLED_BACK": ["COMPLETED", "FAILED_CLEAN"],
+        "COMPLETED": [],
+        "FAILED_CLEAN": []
+      }
+    },
+    "sequenceMaximumInclusive": 63,
+    "sequenceMinimumInclusive": 0
+  },
+  "digestDomains": {
+    "authoritySetSha256": "JCS({domain:'acik.cross-ai-transaction-authority-set.v1',files:<stage.authorityFiles-sorted-by-path>})",
+    "bindingSha256": "JCS({domain:'faz22.6/view-only/transaction-binding/v1',binding:<exact-binding-object>})",
+    "checkpointStoredObjectSha256": "JCS({domain:'faz22.6/view-only/checkpoint-stored-object/v1',request:<validated-create-request-without-lease-envelope>})",
+    "dsseEnvelopeSha256": "JCS({domain:'faz22.6/view-only/dsse-envelope/v1',envelope:<exact-dsse-envelope>})",
+    "idempotencyKeySha256": "JCS({domain:<operation.idempotency.domain>,requestId:<request-uuid>,bodySha256:sha256(JCS(<validated-request-without-idempotencyKeySha256>)),identity:<stable-oidc-identity-projection>})",
+    "requestSha256": "JCS({domain:'faz22.6/view-only/live-preflight-request/v1',request:<exact-validated-request-body>})",
+    "transactionIdSha256": "JCS({domain:'faz22.6/view-only/transaction-id/v1',binding:<exact-binding-object>})"
+  },
+  "errorResponse": {
+    "schemaRef": "schema/faz22-6-view-only-preflight-error-v1.schema.json"
+  },
+  "githubOidcProfiles": {
+    "authorization": {
+      "audience": "faz22-view-only-checkpoint-lease",
+      "forbiddenClaims": [
+        "head_ref",
+        "base_ref",
+        "job_workflow_ref",
+        "job_workflow_sha"
+      ],
+      "issuer": "https://token.actions.githubusercontent.com",
+      "jwksUri": "https://token.actions.githubusercontent.com/.well-known/jwks",
+      "maxTokenAgeSeconds": 300,
+      "requiredBindingClaims": {
+        "actor_id": "decimal(binding.triggeringActorId)",
+        "ref": "binding.intentRef",
+        "run_attempt": "decimal(binding.runAttempt)",
+        "run_id": "decimal(binding.runId)",
+        "sha": "binding.headSha",
+        "workflow_sha": "binding.headSha",
+        "workflow_ref": "concat('Halildeu/platform-k8s-gitops/.github/workflows/faz22-6-view-only-viewer-transaction.yml@',binding.intentRef)"
+      },
+      "requiredStaticClaims": {
+        "environment": "faz22-view-only-pilot",
+        "event_name": "workflow_dispatch",
+        "ref_type": "tag",
+        "repository": "Halildeu/platform-k8s-gitops",
+        "repository_id": "1211415632",
+        "repository_owner": "Halildeu",
+        "repository_owner_id": "186576227",
+        "repository_visibility": "public",
+        "runner_environment": "github-hosted",
+        "sub": "repo:Halildeu/platform-k8s-gitops:environment:faz22-view-only-pilot"
+      },
+      "requiredUniqueClaims": ["jti"]
+    },
+    "executor": {
+      "audience": "faz22-view-only-checkpoint",
+      "forbiddenClaims": [
+        "environment",
+        "head_ref",
+        "base_ref",
+        "job_workflow_ref",
+        "job_workflow_sha"
+      ],
+      "issuer": "https://token.actions.githubusercontent.com",
+      "jwksUri": "https://token.actions.githubusercontent.com/.well-known/jwks",
+      "maxTokenAgeSeconds": 300,
+      "requiredBindingClaims": {
+        "actor_id": "decimal(binding.triggeringActorId)",
+        "ref": "binding.intentRef",
+        "run_attempt": "decimal(binding.runAttempt)",
+        "run_id": "decimal(binding.runId)",
+        "sha": "binding.headSha",
+        "sub": "concat('repo:Halildeu/platform-k8s-gitops:ref:',binding.intentRef)",
+        "workflow_ref": "concat('Halildeu/platform-k8s-gitops/.github/workflows/faz22-6-view-only-viewer-transaction.yml@',binding.intentRef)",
+        "workflow_sha": "binding.headSha"
+      },
+      "requiredStaticClaims": {
+        "event_name": "workflow_dispatch",
+        "ref_type": "tag",
+        "repository": "Halildeu/platform-k8s-gitops",
+        "repository_id": "1211415632",
+        "repository_owner": "Halildeu",
+        "repository_owner_id": "186576227",
+        "repository_visibility": "public",
+        "runner_environment": "self-hosted"
+      },
+      "requiredUniqueClaims": ["jti"]
+    },
+    "binding": {
+      "audience": "faz22-view-only-binding",
+      "forbiddenClaims": [
+        "environment",
+        "head_ref",
+        "base_ref",
+        "job_workflow_ref",
+        "job_workflow_sha"
+      ],
+      "issuer": "https://token.actions.githubusercontent.com",
+      "jwksUri": "https://token.actions.githubusercontent.com/.well-known/jwks",
+      "maxTokenAgeSeconds": 300,
+      "requiredBindingClaims": {
+        "actor_id": "decimal(bundle.grant.triggeringActorId)",
+        "ref": "registry.intentRef",
+        "run_attempt": "decimal(acceptedDispatch.runAttempt)",
+        "run_id": "decimal(acceptedDispatch.runId)",
+        "sha": "registry.headSha",
+        "sub": "concat('repo:Halildeu/platform-k8s-gitops:ref:',registry.intentRef)",
+        "workflow_ref": "concat('Halildeu/platform-k8s-gitops/.github/workflows/faz22-6-view-only-viewer-transaction.yml@',registry.intentRef)",
+        "workflow_sha": "registry.headSha"
+      },
+      "requiredStaticClaims": {
+        "event_name": "workflow_dispatch",
+        "ref_type": "tag",
+        "repository": "Halildeu/platform-k8s-gitops",
+        "repository_id": "1211415632",
+        "repository_owner": "Halildeu",
+        "repository_owner_id": "186576227",
+        "repository_visibility": "public",
+        "runner_environment": "github-hosted"
+      },
+      "requiredUniqueClaims": ["jti"]
+    },
+    "preflight": {
+      "audience": "faz22-view-only-preflight",
+      "forbiddenClaims": [
+        "environment",
+        "head_ref",
+        "base_ref",
+        "job_workflow_ref",
+        "job_workflow_sha"
+      ],
+      "issuer": "https://token.actions.githubusercontent.com",
+      "jwksUri": "https://token.actions.githubusercontent.com/.well-known/jwks",
+      "maxTokenAgeSeconds": 300,
+      "requiredBindingClaims": {
+        "actor_id": "decimal(binding.triggeringActorId)",
+        "ref": "binding.intentRef",
+        "run_attempt": "decimal(binding.runAttempt)",
+        "run_id": "decimal(binding.runId)",
+        "sha": "binding.headSha",
+        "sub": "concat('repo:Halildeu/platform-k8s-gitops:ref:',binding.intentRef)",
+        "workflow_ref": "concat('Halildeu/platform-k8s-gitops/.github/workflows/faz22-6-view-only-viewer-transaction.yml@',binding.intentRef)",
+        "workflow_sha": "binding.headSha"
+      },
+      "requiredStaticClaims": {
+        "event_name": "workflow_dispatch",
+        "ref_type": "tag",
+        "repository": "Halildeu/platform-k8s-gitops",
+        "repository_id": "1211415632",
+        "repository_owner": "Halildeu",
+        "repository_owner_id": "186576227",
+        "repository_visibility": "public",
+        "runner_environment": "github-hosted"
+      },
+      "requiredUniqueClaims": ["jti"]
+    }
+  },
+  "personaPolicy": {
+    "adminCredentialUsed": false,
+    "identitySha256": null,
+    "identitySource": "binding.preflightPersonaIdentitySha256",
+    "minimumValiditySeconds": 900,
+    "preprovisioned": true,
+    "tenantIdSha256": null,
+    "tenantSource": "binding.tenantIdSha256",
+    "userConfigurationMutationCount": 0
+  },
+  "runtimeTrustRoot": {
+    "digestDomain": "faz22.6/view-only/runtime-trust-root/v1",
+    "expectedSha256": null,
+    "path": "config/faz22-6-view-only-runtime-trust-root.v1.json",
+    "schemaRef": "schema/faz22-6-view-only-runtime-trust-root-v1.schema.json"
+  },
+  "repository": "Halildeu/platform-k8s-gitops",
+  "schemaVersion": "faz22.6.viewOnlyLivePreflightAuthority.v1",
+  "secretBoundary": {
+    "attestorReturnsCredentials": false,
+    "checkpointStoresCredentials": false,
+    "githubJobReceivesKeycloakAdminCredential": false,
+    "preflightJobReceivesClusterCredential": false,
+    "preflightJobReceivesSshPrivateKey": false,
+    "rawBearerInReceipt": false,
+    "rawOidcTokenPersisted": false
+  },
+  "transactionWorkflow": ".github/workflows/faz22-6-view-only-viewer-transaction.yml"
+}

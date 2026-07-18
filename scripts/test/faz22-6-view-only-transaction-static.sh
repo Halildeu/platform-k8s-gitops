@@ -9,14 +9,198 @@ STATE_HELPER="$ROOT/scripts/faz22-remote-ops/view_only_transaction_state.py"
 BROWSER_EVIDENCE="$ROOT/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
 ATTENDED_SMOKE="$ROOT/scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh"
 SCHEMA="$ROOT/schema/faz22-6-view-only-transaction-state-v1.schema.json"
+LIVE_PREFLIGHT_SCHEMA="$ROOT/schema/faz22-6-view-only-live-preflight-attestation-v1.schema.json"
+LIVE_PREFLIGHT_REQUEST_SCHEMA="$ROOT/schema/faz22-6-view-only-live-preflight-request-v1.schema.json"
+TRANSACTION_BINDING_SCHEMA="$ROOT/schema/faz22-6-view-only-transaction-binding-v1.schema.json"
+BINDING_REQUEST_SCHEMA="$ROOT/schema/faz22-6-view-only-transaction-binding-request-v1.schema.json"
+BINDING_HANDOFF_SCHEMA="$ROOT/schema/faz22-6-view-only-transaction-binding-handoff-v1.schema.json"
+DSSE_ENVELOPE_SCHEMA="$ROOT/schema/faz22-6-dsse-envelope-v1.schema.json"
+CHECKPOINT_CREATE_SCHEMA="$ROOT/schema/faz22-6-view-only-external-checkpoint-create-v1.schema.json"
+CHECKPOINT_RECEIPT_SCHEMA="$ROOT/schema/faz22-6-view-only-external-checkpoint-receipt-v1.schema.json"
+CHECKPOINT_LEASE_REDEEM_SCHEMA="$ROOT/schema/faz22-6-view-only-checkpoint-lease-redeem-v1.schema.json"
+CHECKPOINT_LEASE_SCHEMA="$ROOT/schema/faz22-6-view-only-checkpoint-lease-v1.schema.json"
+PREFLIGHT_ERROR_SCHEMA="$ROOT/schema/faz22-6-view-only-preflight-error-v1.schema.json"
+LIVE_PREFLIGHT_AUTHORITY="$ROOT/config/faz22-6-view-only-live-preflight-authority.v1.json"
+RUNTIME_TRUST_ROOT="$ROOT/config/faz22-6-view-only-runtime-trust-root.v1.json"
+RUNTIME_TRUST_ROOT_SCHEMA="$ROOT/schema/faz22-6-view-only-runtime-trust-root-v1.schema.json"
+LIVE_PREFLIGHT_ADR="$ROOT/docs/adr/0046-faz22-6-view-only-pre-gate-attestor-and-external-checkpoints.md"
 WATCHDOG="$ROOT/scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
+SAME_JOB_SUPERVISOR="$ROOT/scripts/faz22-remote-ops/run-view-only-same-job-supervisor.sh"
+SAME_JOB_SUPERVISOR_TEST="$ROOT/tests/faz22_remote_ops/test_view_only_same_job_supervisor.sh"
 
-for path in "$WORKFLOW" "$LEGACY_WORKFLOW" "$CONTROLLER" "$STATE_HELPER" "$BROWSER_EVIDENCE" "$ATTENDED_SMOKE" "$SCHEMA" "$WATCHDOG"; do
+for path in "$WORKFLOW" "$LEGACY_WORKFLOW" "$CONTROLLER" "$STATE_HELPER" "$BROWSER_EVIDENCE" "$ATTENDED_SMOKE" \
+  "$SCHEMA" "$LIVE_PREFLIGHT_SCHEMA" "$LIVE_PREFLIGHT_REQUEST_SCHEMA" "$TRANSACTION_BINDING_SCHEMA" \
+  "$BINDING_REQUEST_SCHEMA" "$BINDING_HANDOFF_SCHEMA" \
+  "$DSSE_ENVELOPE_SCHEMA" "$CHECKPOINT_CREATE_SCHEMA" "$CHECKPOINT_RECEIPT_SCHEMA" \
+  "$CHECKPOINT_LEASE_REDEEM_SCHEMA" "$CHECKPOINT_LEASE_SCHEMA" "$PREFLIGHT_ERROR_SCHEMA" \
+  "$LIVE_PREFLIGHT_AUTHORITY" "$RUNTIME_TRUST_ROOT" "$RUNTIME_TRUST_ROOT_SCHEMA" \
+  "$LIVE_PREFLIGHT_ADR" "$WATCHDOG" "$SAME_JOB_SUPERVISOR" "$SAME_JOB_SUPERVISOR_TEST"; do
   test -s "$path" || { echo "missing VIEW_ONLY transaction file: $path" >&2; exit 1; }
 done
 
 bash -n "$CONTROLLER"
-python3 -m json.tool "$SCHEMA" >/dev/null
+bash -n "$SAME_JOB_SUPERVISOR"
+bash -n "$SAME_JOB_SUPERVISOR_TEST"
+for json_path in \
+  "$SCHEMA" "$LIVE_PREFLIGHT_SCHEMA" "$LIVE_PREFLIGHT_REQUEST_SCHEMA" \
+  "$TRANSACTION_BINDING_SCHEMA" "$BINDING_REQUEST_SCHEMA" "$BINDING_HANDOFF_SCHEMA" \
+  "$DSSE_ENVELOPE_SCHEMA" "$CHECKPOINT_CREATE_SCHEMA" \
+  "$CHECKPOINT_RECEIPT_SCHEMA" "$CHECKPOINT_LEASE_REDEEM_SCHEMA" "$CHECKPOINT_LEASE_SCHEMA" \
+  "$PREFLIGHT_ERROR_SCHEMA" "$RUNTIME_TRUST_ROOT_SCHEMA" "$LIVE_PREFLIGHT_AUTHORITY" \
+  "$RUNTIME_TRUST_ROOT"; do
+  jq -e . "$json_path" >/dev/null
+done
+
+jq -e '
+  .schemaVersion == "faz22.6.viewOnlyLivePreflightAuthority.v1"
+  and .activation.state == "tracked_pending"
+  and (.activation.blockers | length == 10)
+  and .githubOidcProfiles.binding.audience == "faz22-view-only-binding"
+  and .githubOidcProfiles.preflight.audience == "faz22-view-only-preflight"
+  and .githubOidcProfiles.authorization.audience == "faz22-view-only-checkpoint-lease"
+  and .githubOidcProfiles.executor.audience == "faz22-view-only-checkpoint"
+  and .githubOidcProfiles.preflight.requiredStaticClaims.runner_environment == "github-hosted"
+  and .githubOidcProfiles.authorization.requiredStaticClaims.environment == "faz22-view-only-pilot"
+  and .githubOidcProfiles.executor.requiredStaticClaims.runner_environment == "self-hosted"
+  and .githubOidcProfiles.preflight.requiredBindingClaims.ref == "binding.intentRef"
+  and .githubOidcProfiles.preflight.requiredBindingClaims.sha == "binding.headSha"
+  and (.githubOidcProfiles.preflight.requiredBindingClaims.workflow_ref | contains("binding.intentRef"))
+  and (.githubOidcProfiles.executor.requiredBindingClaims.sub | contains("binding.intentRef"))
+  and .bindingAuthority.endpoint.path == "/github-apps/cross-ai-deployment-protection/transaction-binding"
+  and .bindingAuthority.receipt.transitKeyId == "vault-transit://cross-ai/coordinator#v1"
+  and .bindingAuthority.idempotency.exactRetryReturnsByteIdenticalEnvelope == true
+  and (.bindingAuthority.idempotency.identityProjection | index("actor_id") != null)
+  and .personaPolicy.identitySource == "binding.preflightPersonaIdentitySha256"
+  and .personaPolicy.tenantSource == "binding.tenantIdSha256"
+  and .personaPolicy.minimumValiditySeconds == 900
+  and .personaPolicy.identitySha256 == null
+  and .personaPolicy.tenantIdSha256 == null
+  and (.githubOidcProfiles.preflight.forbiddenClaims | index("environment") != null)
+  and (.githubOidcProfiles.preflight.forbiddenClaims | index("job_workflow_ref") != null)
+  and (.githubOidcProfiles.executor.forbiddenClaims | index("environment") != null)
+  and .attestor.endpoint.method == "POST"
+  and .attestor.endpoint.origin == "https://testai.acik.com"
+  and .attestor.maxRequestBytes == 262144
+  and .attestor.maxResponseBytes == 524288
+  and .attestor.receipt.maxUses == 1
+  and .attestor.receipt.transitKeyId == "vault-transit://endpoint-admin/view-only-runtime-attestor#v1"
+  and .attestor.receipt.trustRootSha256 == null
+  and .secretBoundary.preflightJobReceivesClusterCredential == false
+  and .secretBoundary.preflightJobReceivesSshPrivateKey == false
+  and .secretBoundary.githubJobReceivesKeycloakAdminCredential == false
+  and .secretBoundary.rawOidcTokenPersisted == false
+  and .checkpointCas.sequenceMinimumInclusive == 0
+  and .checkpointCas.sequenceMaximumInclusive == 63
+  and .checkpointCas.maxWrites == 64
+  and .checkpointCas.create.maxRequestBytes == 524288
+  and .checkpointCas.leaseRedeem.maxRequestBytes == 1048576
+  and .checkpointCas.leaseRedeem.revalidation.maximumEvaluationReceiptStalenessSeconds == 7200
+  and .checkpointCas.leaseRedeem.revalidation.mustNotExceedAuthorizationEnvelopeExpiry == true
+  and .checkpointCas.stateMachine.initialSequence == 0
+  and .checkpointCas.stateMachine.initialState == "DECISION_AUTHORIZED"
+  and .checkpointCas.stateMachine.transitions.ROLLED_BACK == ["COMPLETED", "FAILED_CLEAN"]
+  and .checkpointCas.receiptTransitKeyId == "vault-transit://endpoint-admin/view-only-checkpoint#v1"
+  and .checkpointCas.leaseRedeem.idempotency.authorizationRedemptionCountOnExactRetry == 1
+  and .runtimeTrustRoot.path == "config/faz22-6-view-only-runtime-trust-root.v1.json"
+  and .runtimeTrustRoot.expectedSha256 == null
+  and (.digestDomains.authoritySetSha256 | contains("acik.cross-ai-transaction-authority-set.v1"))
+  and (.digestDomains.idempotencyKeySha256 | contains("without-idempotencyKeySha256"))
+' "$LIVE_PREFLIGHT_AUTHORITY" >/dev/null
+
+jq -e '
+  .schemaVersion == "faz22.6.viewOnlyRuntimeTrustRoot.v1"
+  and .activationState == "tracked_pending"
+  and .algorithm == "ed25519"
+  and .keys == []
+  and .revocations == []
+' "$RUNTIME_TRUST_ROOT" >/dev/null
+
+jq -e '
+  .additionalProperties == false
+  and .properties.algorithm.const == "ed25519"
+  and .properties.keys.maxItems == 8
+  and (.properties.keys.items.properties.role.enum | index("runtime-attestor") != null)
+  and (.properties.keys.items.properties.role.enum | index("checkpoint-signer") != null)
+' "$RUNTIME_TRUST_ROOT_SCHEMA" >/dev/null
+
+jq -e '
+  .additionalProperties == false
+  and (.properties | has("verdict") | not)
+  and (.properties | has("checks") | not)
+  and (.required | index("bindingHandoffEnvelope") != null)
+  and (.required | index("idempotencyKeySha256") != null)
+  and (.properties | has("binding") | not)
+  and .properties.requestedChecks.minItems == 12
+  and .properties.requestedChecks.maxItems == 12
+' "$LIVE_PREFLIGHT_REQUEST_SCHEMA" >/dev/null
+
+jq -e '
+  .additionalProperties == false
+  and (.required | index("intentRef") != null)
+  and (.required | index("intentBundleSha256") != null)
+  and (.required | index("transactionSessionSha256") != null)
+  and (.required | index("machineAuthorityPolicySha256") != null)
+  and (.required | index("artifactSetSha256") != null)
+  and (.required | index("rollbackPlanSha256") != null)
+  and (.required | index("postDeployVerifierSha256") != null)
+  and (.required | index("bootstrapCredentialSha256") != null)
+  and (.required | index("tenantIdSha256") != null)
+  and (.required | index("preflightPersonaIdentitySha256") != null)
+  and (.required | index("operatorIdSha256") != null)
+  and (.required | index("runtimeImageDigest") != null)
+  and (.required | index("transactionScopeSha256") != null)
+' "$TRANSACTION_BINDING_SCHEMA" >/dev/null
+
+jq -e '
+  .properties.sequence.minimum == 0
+  and .properties.sequence.maximum == 63
+  and (.properties.state."$ref" == "#/$defs/state")
+  and (.required | index("previousStoredObjectSha256") != null)
+  and (.required | index("previousState") != null)
+  and (.required | index("leaseEnvelope") != null)
+' "$CHECKPOINT_CREATE_SCHEMA" >/dev/null
+
+jq -e '
+  .properties.sequence.minimum == 0
+  and .properties.sequence.maximum == 63
+  and (.required | index("binding") != null)
+  and (.required | index("evaluationPreflightReceiptEnvelopeSha256") != null)
+  and (.required | index("redemptionPreflightReceiptEnvelopeSha256") != null)
+  and (.required | index("authorizationEnvelopeSha256") != null)
+  and (.required | index("storedObjectSha256") != null)
+  and (.properties | has("checkpointSha256") | not)
+' "$CHECKPOINT_RECEIPT_SCHEMA" >/dev/null
+
+jq -e '
+  .properties.requestedMaxWrites.const == 64
+  and .properties.authorizationPayloadType.const == "application/vnd.acik.cross-ai-deployment-bundle.v3+json"
+  and (.required | index("evaluationPreflightReceiptEnvelope") != null)
+  and (.required | index("authorizationEnvelope") != null)
+  and (.required | index("idempotencyKeySha256") != null)
+' "$CHECKPOINT_LEASE_REDEEM_SCHEMA" >/dev/null
+
+jq -e '
+  .properties.sequenceMinimumInclusive.const == 0
+  and .properties.sequenceMaximumInclusive.const == 63
+  and .properties.maxWrites.const == 64
+  and .properties.authorizationRedemptionCount.const == 1
+  and (.required | index("evaluationPreflightReceiptEnvelopeSha256") != null)
+  and (.required | index("redemptionPreflightReceiptEnvelopeSha256") != null)
+  and (.required | index("redeemRequestId") != null)
+  and (.required | index("idempotencyKeySha256") != null)
+' "$CHECKPOINT_LEASE_SCHEMA" >/dev/null
+
+jq -e '
+  .additionalProperties == false
+  and .properties.mutationCount.const == 0
+  and .properties.credentialMaterialIncluded.const == false
+' "$PREFLIGHT_ERROR_SCHEMA" >/dev/null
+
+for required_check in targetIdentity pkceAuthorizationCode tokenRefresh routeApi browserConsole \
+  replayIsolation clusterContext portsTunnels imageDigests policyMask runnerCapacity watchdogRollback; do
+  jq -e --arg check "$required_check" '.properties.checks.required | index($check) != null' \
+    "$LIVE_PREFLIGHT_SCHEMA" >/dev/null
+done
 
 require() {
   grep -Fq -- "$1" "$2" || {
@@ -471,4 +655,6 @@ if GITHUB_RUN_ID="$cleanup_run_id" GITHUB_RUN_ATTEMPT="$cleanup_attempt" \
 fi
 
 python3 -m unittest tests.faz22_remote_ops.test_view_only_transaction_state -v
+python3 -m unittest tests.faz22_remote_ops.test_view_only_preflight_contract -v
+bash "$SAME_JOB_SUPERVISOR_TEST"
 echo "faz22-6-view-only-transaction-static-ok"

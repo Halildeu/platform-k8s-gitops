@@ -41,7 +41,7 @@
         "workflowRef": {"type": "string", "minLength": 1, "maxLength": 512},
         "headSha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
         "runId": {"type": "integer", "minimum": 1},
-        "runAttempt": {"type": "integer", "minimum": 1},
+        "runAttempt": {"const": 1},
         "endpointIdSha256": {"$ref": "#/$defs/sha256"},
         "deviceHostnameSha256": {"$ref": "#/$defs/sha256"},
         "policySha256": {"$ref": "#/$defs/sha256"},

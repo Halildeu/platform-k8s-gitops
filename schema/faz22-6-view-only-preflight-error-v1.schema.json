@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-preflight-error-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY bounded preflight and checkpoint error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "errorId",
+    "code",
+    "message",
+    "retryable",
+    "mutationCount",
+    "credentialMaterialIncluded"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyPreflightError.v1"},
+    "errorId": {"type": "string", "format": "uuid"},
+    "code": {
+      "type": "string",
+      "enum": [
+        "REQUEST_SCHEMA_INVALID",
+        "OIDC_INVALID",
+        "OIDC_CLAIM_MISMATCH",
+        "OIDC_CLAIM_FORBIDDEN",
+        "OIDC_REPLAYED",
+        "INTENT_BINDING_MISMATCH",
+        "PREFLIGHT_CHECK_FAILED",
+        "PREFLIGHT_REVALIDATION_FAILED",
+        "PREFLIGHT_RECEIPT_EXPIRED",
+        "PREFLIGHT_RECEIPT_REPLAYED",
+        "AUTHORIZATION_INVALID",
+        "AUTHORIZATION_EXPIRED",
+        "AUTHORIZATION_REPLAYED",
+        "LEASE_BINDING_MISMATCH",
+        "CHECKPOINT_PREVIOUS_DIGEST_MISMATCH",
+        "CHECKPOINT_SEQUENCE_CONFLICT",
+        "CHECKPOINT_LEASE_EXPIRED",
+        "CHECKPOINT_LEASE_CLOSED",
+        "CHECKPOINT_IDEMPOTENCY_CONFLICT",
+        "CHECKPOINT_STATE_INVALID",
+        "SIGNING_UNAVAILABLE"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[ -~]+$"
+    },
+    "retryable": {"type": "boolean"},
+    "mutationCount": {"const": 0},
+    "credentialMaterialIncluded": {"const": false}
+  }
+}

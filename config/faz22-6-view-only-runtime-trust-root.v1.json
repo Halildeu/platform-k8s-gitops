@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "faz22.6.viewOnlyRuntimeTrustRoot.v1",
+  "activationState": "tracked_pending",
+  "trustRootId": "faz22-view-only-runtime-test-v1",
+  "digestDomain": "faz22.6/view-only/runtime-trust-root/v1",
+  "algorithm": "ed25519",
+  "keys": [],
+  "revocations": [],
+  "generatedAt": "2026-07-18T00:00:00Z"
+}
