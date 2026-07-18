@@ -349,9 +349,11 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
     def test_fullats_rollback_is_bound_to_reviewed_tree_and_trusted_content_attestation(self):
         for required in (
             'require_exact_body_line "Consultation commit: $promotion_head"',
-            'require_exact_body_line "Consultation mode: none"',
+            'require_exact_body_line "Consultation mode: dual"',
+            'require_exact_body_line "Verdict: AGREE"',
             "promotion consultation reason is missing or too short",
-            "consultation mode none cannot carry provider receipts",
+            "exact $receipt_label binding is missing or invalid",
+            "Codex implementer cannot use Codex as dual secondary",
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
             self.assertIn(required, self.rollback_script)
@@ -392,7 +394,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
 
     def test_fullats_rollback_content_verifier_executes_fail_closed_with_mocked_git_and_github(self):
-        promotion_base = "5cec8606538a70388b1d02c59ce22ff9cc68ef9e"
+        promotion_base = "fc5f2735a49977d79b82e9d36d71642e54e67023"
         pr_base = "1" * 40
         pr_head = "2" * 40
         promotion_head = "3" * 40
@@ -467,8 +469,12 @@ if [[ "$*" == *"/pulls/2617"* ]]; then
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
     "Consultation scope: $PROMOTION_SCOPE_SHA256" \
-    "Consultation mode: none" \
-    "Consultation reason: Direct owner decision makes additional routine AI consultation unnecessary.")"
+    "Consultation mode: dual" \
+    "Consultation reason: Protected rollback enforcement requires two independent provider reviews." \
+    "Risk trigger: security-authz: Trusted rollback exemption changes the protected review boundary." \
+    "Verdict: AGREE" \
+    "Claude receipt: provider=anthropic; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 6)" \
+    "MiniMax receipt: provider=minimax; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
   jq -n \
     --arg merge "$PR_BASE_SHA" \
     --arg head "$PROMOTION_HEAD_SHA" \

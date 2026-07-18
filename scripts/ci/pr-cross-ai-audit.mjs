@@ -60,7 +60,7 @@ const FULLATS_ROLLBACK_PATHS = [
   'kustomize/overlays/test/kustomization.yaml',
   'scripts/ats/d29-smoke.sh',
 ];
-const FULLATS_PROMOTION_BASE_SHA = '5cec8606538a70388b1d02c59ce22ff9cc68ef9e';
+const FULLATS_PROMOTION_BASE_SHA = 'fc5f2735a49977d79b82e9d36d71642e54e67023';
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
