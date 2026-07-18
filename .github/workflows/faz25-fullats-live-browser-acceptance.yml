@@ -25,11 +25,11 @@ jobs:
     env:
       EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
-      EXPECTED_FRONTEND_DIGEST: sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0
-      EXPECTED_FRONTEND_SHA: 9f82edb249bcc4de3d83ce59a3800d835e88f410
+      EXPECTED_FRONTEND_DIGEST: sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d
+      EXPECTED_FRONTEND_SHA: d5846603ff278e97c3539c8c8bf04950cfd5f628
       ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29629811674
       PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29629811595
-      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29636197881
+      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29643674756
     steps:
       - name: Validate test-only dispatch boundary
         id: preflight
@@ -144,7 +144,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.rollback-app-token.outputs.token }}
           GH_REPO: Halildeu/platform-k8s-gitops
-          PROMOTION_PR: "2617"
+          PROMOTION_PR: "2632"
           FAILED_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}

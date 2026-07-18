@@ -137,7 +137,7 @@ const rollbackScriptSource = readFileSync(ROLLBACK_SCRIPT, 'utf8');
 const rollbackBodyMatch = rollbackScriptSource.match(/body="\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)"/u);
 if (!rollbackBodyMatch) throw new Error('rollback PR body heredoc not found');
 const renderedRollbackBody = rollbackBodyMatch[1]
-  .replaceAll('__PROMOTION_PR__', '2617')
+  .replaceAll('__PROMOTION_PR__', '2632')
   .replaceAll('__RUN_URL__', 'https://github.com/Halildeu/platform-k8s-gitops/actions/runs/123')
   .replaceAll('__FAILED_SHA__', HEAD_SHA);
 
@@ -403,10 +403,8 @@ const FULLATS_ROLLBACK_WF = '.github/workflows/faz25-fullats-live-browser-accept
 const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
 const PRIMARY_OVERLAY = 'kustomize/overlays/test/kustomization.yaml';
-const ATS_ACTIVATION = 'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml';
 const FULLATS_STATE = 'kustomize/overlays/test/fullats-promotion-state.txt';
-const D29_SMOKE = 'scripts/ats/d29-smoke.sh';
-const FULLATS_ROLLBACK_FILES = [ATS_ACTIVATION, FULLATS_STATE, PRIMARY_OVERLAY, D29_SMOKE];
+const FULLATS_ROLLBACK_FILES = [FULLATS_STATE, PRIMARY_OVERLAY];
 const FULLATS_ATTESTATION = {
   schema: 'fullats-rollback-content-attestation/v1',
   valid: true,
@@ -414,10 +412,10 @@ const FULLATS_ATTESTATION = {
   branch: 'auto-fullats-rollback/faz25-fullats-123-1',
   base_sha: BASE_TIP_SHA,
   head_sha: HEAD_SHA,
-  promotion_pr: 2617,
+  promotion_pr: 2632,
   promotion_merge_sha: BASE_TIP_SHA,
   promotion_head_sha: 'b'.repeat(40),
-  promotion_base_sha: 'fc5f2735a49977d79b82e9d36d71642e54e67023',
+  promotion_base_sha: 'd3dd28fdaf478733b60438346a063009c37f1213',
   promotion_scope_sha256: 'c'.repeat(64),
   changed_diff_sha256: 'd'.repeat(64),
   expected_paths: FULLATS_ROLLBACK_FILES,
@@ -438,7 +436,7 @@ const cases = [
     { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT, body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid frontend desired-state PR (auto-test-frontend, App-bot)',
     { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
-  ['valid Full ATS four-file rollback PR (App-bot)',
+  ['valid Full ATS two-file frontend rollback PR (App-bot)',
     { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: FULLATS_ATTESTATION }, 0],
   ['live Full ATS rollback script body passes automation audit',
     { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: renderedRollbackBody, changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: FULLATS_ATTESTATION }, 0],
