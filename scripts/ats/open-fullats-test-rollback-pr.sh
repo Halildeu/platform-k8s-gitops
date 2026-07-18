@@ -6,21 +6,21 @@
 set -euo pipefail
 
 GH_REPO="${GH_REPO:-Halildeu/platform-k8s-gitops}"
-PROMOTION_PR="${PROMOTION_PR:-2632}"
+PROMOTION_PR="${PROMOTION_PR:-2636}"
 FAILED_SHA="${FAILED_SHA:-}"
 RUN_ID="${RUN_ID:-0}"
 RUN_ATTEMPT="${RUN_ATTEMPT:-1}"
 SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
 BOT_NAME="platform-gitops-automation[bot]"
 BOT_EMAIL="platform-gitops-automation[bot]@users.noreply.github.com"
-PROMOTION_BASE_SHA="3833433f8f14cbbc1d6115a5edee0573e6a79f9b"
+PROMOTION_BASE_SHA="aa93f4743dc8254ce8e22a0317f92db1f5819268"
 
 : "${GH_TOKEN:?GH_TOKEN must be a platform-gitops-automation GitHub App token}"
 [[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" ]] || {
   echo "[fullats-rollback] unexpected repository" >&2
   exit 2
 }
-[[ "$PROMOTION_PR" == "2632" ]] || {
+[[ "$PROMOTION_PR" == "2636" ]] || {
   echo "[fullats-rollback] unexpected promotion PR" >&2
   exit 2
 }
@@ -115,11 +115,11 @@ trap 'rm -f "$rendered"' EXIT
 ATS_CURRENT="sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
 PERMISSION_CURRENT="sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
 FRONTEND_OLD="sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0"
-FRONTEND_NEW="sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d"
+FRONTEND_NEW="sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
 FRONTEND_OLD_SHA="9f82edb249bcc4de3d83ce59a3800d835e88f410"
-FRONTEND_NEW_SHA="d5846603ff278e97c3539c8c8bf04950cfd5f628"
+FRONTEND_NEW_SHA="eee1310b33376013967482ae842bf15c797fe72c"
 FRONTEND_OLD_TAG="sha-9f82edb"
-FRONTEND_NEW_TAG="sha-d584660"
+FRONTEND_NEW_TAG="sha-eee1310"
 
 test_root="kustomize/overlays/test/kustomization.yaml"
 state_marker="kustomize/overlays/test/fullats-promotion-state.txt"

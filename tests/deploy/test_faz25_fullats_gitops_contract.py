@@ -457,7 +457,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
 
     def test_fullats_rollback_content_verifier_executes_fail_closed_with_mocked_git_and_github(self):
-        promotion_base = "3833433f8f14cbbc1d6115a5edee0573e6a79f9b"
+        promotion_base = "aa93f4743dc8254ce8e22a0317f92db1f5819268"
         pr_base = "1" * 40
         pr_head = "2" * 40
         promotion_head = "3" * 40
@@ -473,7 +473,7 @@ shift || true
 printf 'git command=%s args=%s tamper=%s\n' "$command" "$*" "${FAKE_TAMPER:-unset}" >>"$FAKE_TRACE"
 case "$command" in
   fetch)
-    [[ "$*" == "--no-tags origin pull/2632/head" ]]
+    [[ "$*" == "--no-tags origin pull/2636/head" ]]
     ;;
   rev-list)
     target="${*: -1}"
@@ -525,7 +525,7 @@ esac
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'gh args=%s tree_mismatch=%s\n' "$*" "${FAKE_TREE_MISMATCH:-unset}" >>"$FAKE_TRACE"
-if [[ "$*" == *"/pulls/2632"* ]]; then
+if [[ "$*" == *"/pulls/2636"* ]]; then
   body="$(printf '%s\n' \
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
@@ -570,8 +570,8 @@ fi
                         **os.environ,
                         "PATH": f"{fake_bin}:{os.environ['PATH']}",
                         "GH_REPO": "Halildeu/platform-k8s-gitops",
-                        "PROMOTION_PR": "2632",
-                        "PR_NUMBER": "2632",
+                        "PROMOTION_PR": "2636",
+                        "PR_NUMBER": "2636",
                         "PR_HEAD_REF": branch,
                         "PR_HEAD_SHA": pr_head,
                         "PR_BASE_SHA": pr_base,
@@ -679,7 +679,7 @@ fi
         expected = {
             "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "frontend": "sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d",
+            "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
         self.assertIn(
@@ -691,9 +691,18 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "EXPECTED_FRONTEND_SHA: d5846603ff278e97c3539c8c8bf04950cfd5f628",
+            "EXPECTED_FRONTEND_SHA: eee1310b33376013967482ae842bf15c797fe72c",
             self.fullats_browser_workflow,
         )
+        self.assertIn(
+            "FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29645789815",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            "FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29645789815/job/88083697225",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn('echo "- frontend build job: ${FRONTEND_BUILD_JOB}"', self.fullats_browser_workflow)
         self.assertIn("body.sha !== expectedFrontendSha", self.fullats_browser)
         self.assertIn("fetchBuildInfo('pre')", self.fullats_browser)
         self.assertIn("fetchBuildInfo('post')", self.fullats_browser)
@@ -725,6 +734,36 @@ fi
         self.assertNotIn("containsRawCandidateAccessToken", self.fullats_browser)
         self.assertNotIn("containsRawPasswordOrJwt", self.fullats_browser)
 
+    def test_frontend_promotion_receipt_is_cross_file_bound(self):
+        source_sha = "eee1310b33376013967482ae842bf15c797fe72c"
+        tag = "sha-eee1310"
+        digest = "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
+        run_id = "29645789815"
+        job_id = "88083697225"
+
+        for exact in (
+            f"Build run {run_id} testai job {job_id}.",
+            f"sourceRevision: {source_sha}",
+            f"newTag: {tag}",
+            f"digest: {digest}",
+        ):
+            self.assertIn(exact, self.test_root)
+
+        for exact in (
+            f'FRONTEND_NEW="{digest}"',
+            f'FRONTEND_NEW_SHA="{source_sha}"',
+            f'FRONTEND_NEW_TAG="{tag}"',
+        ):
+            self.assertIn(exact, self.rollback_script)
+
+        for exact in (
+            f"EXPECTED_FRONTEND_DIGEST: {digest}",
+            f"EXPECTED_FRONTEND_SHA: {source_sha}",
+            f"actions/runs/{run_id}",
+            f"actions/runs/{run_id}/job/{job_id}",
+        ):
+            self.assertIn(exact, self.fullats_browser_workflow)
+
     def test_fullats_live_failure_opens_exact_atomic_gitops_rollback(self):
         self.assertIn("timeout-minutes: 90", self.fullats_browser_workflow)
         self.assertIn("id: preflight", self.fullats_browser_workflow)
@@ -752,7 +791,7 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn("open-fullats-test-rollback-pr.sh", self.fullats_browser_workflow)
-        self.assertIn('PROMOTION_PR: "2632"', self.fullats_browser_workflow)
+        self.assertIn('PROMOTION_PR: "2636"', self.fullats_browser_workflow)
         self.assertIn('[[ "$(git rev-parse origin/main)" == "$FAILED_SHA" ]]', self.rollback_script)
         self.assertIn('[[ "$merge_sha" == "$FAILED_SHA" ]]', self.rollback_script)
         self.assertIn(
@@ -780,7 +819,7 @@ fi
             "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
             "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
-            "sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d",
+            "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
         ):
             self.assertIn(digest, self.rollback_script)
         self.assertIn("kustomize build kustomize/overlays/test", self.rollback_script)
@@ -886,8 +925,8 @@ fi
         current_ats = "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
         current_permission = "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
         promoted = {
-            "frontend": "sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d",
-            "tag": "sha-d584660",
+            "frontend": "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402",
+            "tag": "sha-eee1310",
         }
         rolled_back = {
             "frontend": "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",

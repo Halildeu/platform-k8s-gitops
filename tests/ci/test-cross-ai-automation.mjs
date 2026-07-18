@@ -137,7 +137,7 @@ const rollbackScriptSource = readFileSync(ROLLBACK_SCRIPT, 'utf8');
 const rollbackBodyMatch = rollbackScriptSource.match(/body="\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)"/u);
 if (!rollbackBodyMatch) throw new Error('rollback PR body heredoc not found');
 const renderedRollbackBody = rollbackBodyMatch[1]
-  .replaceAll('__PROMOTION_PR__', '2632')
+  .replaceAll('__PROMOTION_PR__', '2636')
   .replaceAll('__RUN_URL__', 'https://github.com/Halildeu/platform-k8s-gitops/actions/runs/123')
   .replaceAll('__FAILED_SHA__', HEAD_SHA);
 
@@ -412,10 +412,10 @@ const FULLATS_ATTESTATION = {
   branch: 'auto-fullats-rollback/faz25-fullats-123-1',
   base_sha: BASE_TIP_SHA,
   head_sha: HEAD_SHA,
-  promotion_pr: 2632,
+  promotion_pr: 2636,
   promotion_merge_sha: BASE_TIP_SHA,
   promotion_head_sha: 'b'.repeat(40),
-  promotion_base_sha: '3833433f8f14cbbc1d6115a5edee0573e6a79f9b',
+  promotion_base_sha: 'aa93f4743dc8254ce8e22a0317f92db1f5819268',
   promotion_scope_sha256: 'c'.repeat(64),
   changed_diff_sha256: 'd'.repeat(64),
   expected_paths: FULLATS_ROLLBACK_FILES,
