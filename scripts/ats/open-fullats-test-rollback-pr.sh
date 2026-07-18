@@ -128,6 +128,7 @@ descendant_sensitive_changed="$(git diff --name-only "$merge_sha" "$FAILED_SHA" 
 expected_descendant_sensitive_changed="$(printf '%s\n' \
   .github/workflows/faz25-fullats-live-browser-acceptance.yml \
   kustomize/base/apps/ats-interview-evidence/configmap.yaml \
+  kustomize/base/apps/ats-interview-evidence/deployment.yaml \
   kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml \
   scripts/ats/install-pinned-gh-cli.sh \
   scripts/ats/install-pinned-kustomize.sh \

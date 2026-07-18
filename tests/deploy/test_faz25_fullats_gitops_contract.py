@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -22,6 +23,14 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         ).read_text()
         cls.ats_config = (
             ROOT / "kustomize/base/apps/ats-interview-evidence/configmap.yaml"
+        ).read_text()
+        cls.ats_config_sha256 = hashlib.sha256(
+            (
+                ROOT / "kustomize/base/apps/ats-interview-evidence/configmap.yaml"
+            ).read_bytes()
+        ).hexdigest()
+        cls.ats_deployment = (
+            ROOT / "kustomize/base/apps/ats-interview-evidence/deployment.yaml"
         ).read_text()
         cls.ats_netpol = (
             ROOT
@@ -139,6 +148,20 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
             ),
             1,
         )
+
+    def test_ats_configmap_bytes_are_bound_to_pod_template_rollout(self):
+        annotation = (
+            'fullats.acik.com/configmap-sha256: "'
+            f'{self.ats_config_sha256}"'
+        )
+        self.assertIn(annotation, self.ats_deployment)
+        rendered_annotation = re.search(
+            r"(?m)^\s*fullats\.acik\.com/configmap-sha256:\s*\"?"
+            r"([0-9a-f]{64})\"?\s*$",
+            self.rendered_test_root,
+        )
+        self.assertIsNotNone(rendered_annotation)
+        self.assertEqual(rendered_annotation.group(1), self.ats_config_sha256)
 
     def test_model_governance_endpoint_and_approval_refs_match_all_surfaces(self):
         patterns = {
@@ -752,6 +775,7 @@ fi
         for reviewed_sensitive_path in (
             ".github/workflows/faz25-fullats-live-browser-acceptance.yml",
             "kustomize/base/apps/ats-interview-evidence/configmap.yaml",
+            "kustomize/base/apps/ats-interview-evidence/deployment.yaml",
             "kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml",
             "scripts/ats/install-pinned-gh-cli.sh",
             "scripts/ats/install-pinned-kustomize.sh",
