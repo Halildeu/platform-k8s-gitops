@@ -97,6 +97,9 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         )
 
     def test_pinned_execution_action_commit_is_reachable_and_byte_exact(self) -> None:
+        readme = (ROOT / "config/github-apps/README.md").read_text(encoding="utf-8")
+        self.assertIn(ACTION_COMMIT, readme)
+        self.assertNotIn("bfb2a880f4fc26c727a02fda8ad5643cc03412d6", readme)
         subprocess.run(
             ["git", "merge-base", "--is-ancestor", ACTION_COMMIT, "HEAD"],
             cwd=ROOT,
