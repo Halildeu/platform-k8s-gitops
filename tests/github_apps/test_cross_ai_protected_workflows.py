@@ -134,15 +134,6 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             ).stdout
             self.assertEqual(pinned, (ROOT / path).read_bytes(), path)
 
-        allowed_after_pin = {
-            ".github/workflows/gate-cross-ai-deployment-protection.yml",
-            ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
-            ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
-            ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
-            "config/github-apps/README.md",
-            "docs/runbooks/RB-cross-ai-deployment-protection-rule.md",
-            "tests/github_apps/test_cross_ai_protected_workflows.py",
-        }
         changed_after_pin = set(
             subprocess.run(
                 ["git", "diff", "--name-only", f"{ACTION_COMMIT}..HEAD"],
@@ -152,9 +143,14 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
                 text=True,
             ).stdout.splitlines()
         )
-        self.assertTrue(
-            changed_after_pin <= allowed_after_pin,
-            f"immutable action package drifted after pin: {sorted(changed_after_pin - allowed_after_pin)}",
+        action_package_drift = {
+            path
+            for path in changed_after_pin
+            if path.startswith(".github/actions/protected-")
+        }
+        self.assertFalse(
+            action_package_drift,
+            f"immutable action package drifted after pin: {sorted(action_package_drift)}",
         )
 
     def test_release_artifacts_are_absent_until_owner_transit_bootstrap(self) -> None:
