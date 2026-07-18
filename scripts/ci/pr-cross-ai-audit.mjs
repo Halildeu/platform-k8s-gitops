@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 // PR-V2.1-GOV-1 Cross-AI Peer Review Audit
-// PMD v9.1 §7 + HARD RULE Cross-AI Peer Review (provider seviyesinde)
-// Codex `019e2693` tur-1 REVISE → 4 finding absorb:
-//   HIGH-1: workflow job name canonical `cross-ai-audit` (PMD §2.10 must-pass)
-//   HIGH-2: same-provider exception requires `exception_reason:` evidence field
-//   MED-3:  Codex thread `N/A` allowed only with explicit `cross_ai_exempt_reason:`
-//   MED-4:  parser scoped to `## Cross-AI` heading + inline YAML comment strip
+// Current explicit policy: none | isolated Codex single | optional Claude dual.
+// Legacy parser fields remain rejection/immutable-history compatibility only;
+// they do not define current provider-diversity requirements.
 //
 // CI gate: gate-cross-ai-audit (V2.1 GOV-1 10 must-pass'dan biri)
 //
@@ -45,10 +42,24 @@ const RECEIPT_KEYS = new Set([
   'execution', 'verdict', 'ref', 'sha256',
 ]);
 const EVIDENCE_KEYS = [
-  'actual_model', 'base_sha', 'base_tip_sha', 'execution_profile', 'head_sha', 'provider',
-  'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
+  'actual_model', 'base_sha', 'base_tip_sha', 'execution_profile', 'execution_provenance',
+  'head_sha', 'provider', 'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
 ];
+const UNATTESTED_ACTUAL_MODEL = 'not-provider-attested';
+const CODEX_NATIVE_TRUST_ROOT = 'repo-pinned-codex-native-sha256-v1';
+const CODEX_PROVENANCE_KEYS = [
+  'cli_native_sha256', 'cli_native_target', 'cli_version', 'schema',
+  'stderr_classification', 'thread_id', 'trust_root',
+];
+const TRUSTED_CODEX_NATIVE_SHA256 = new Map([
+  ['0.144.1:codex-darwin-arm64', '29915529b97697def1a957b0505e770aa6a45744435d62fc263e98d7619e167a'],
+  ['0.144.1:codex-darwin-x64', 'c6eb747e4145ecb3bed2647dbd0f8464b190a5ccba964666ef7c98d4681a4a4c'],
+  ['0.144.1:codex-linux-arm64', '9513fa3f5f4ad444ac1e40d972aef0e2664834ec54da987d54aba0dc2f13ea07'],
+  ['0.144.1:codex-linux-x64', 'a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902'],
+  ['0.144.1:codex-win32-arm64', 'd3d92e9c10a6f3371a425214c3df67eb97ec5c2ff1b88876410fe0e61d4791da'],
+  ['0.144.1:codex-win32-x64', 'cbacbb9726262ef558b4af0438a1b2a5bba9076132401d947b5b4d2bf92ab0e4'],
+]);
 const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
   'base_sha', 'branch', 'changed_diff_sha256', 'expected_paths', 'head_sha',
   'promotion_base_sha', 'promotion_head_sha', 'promotion_merge_sha',
@@ -66,12 +77,12 @@ const DOCS_ONLY_EXEMPT_ALLOWLIST = [
 const CONSULTATION_RECEIPTS = {
   'claude receipt': {
     provider: 'anthropic',
-    model: 'claude-opus-4-8',
+    models: ['claude-opus-4-8'],
     execution: 'claude-cli-no-session-persistence-exact-scope-v1',
   },
   'codex receipt': {
     provider: 'openai',
-    model: 'gpt-5.6-sol',
+    models: ['gpt-5.3-codex-spark', 'gpt-5.6-sol'],
     execution: 'codex-exec-ephemeral-read-only-exact-scope-v1',
   },
 };
@@ -87,7 +98,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   // Tombstone: deleting the retired wrapper remains a governance change, and
   // any future MiniMax-named review helper cannot be reintroduced under none.
   /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|run_isolated_codex_review)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];
@@ -665,13 +676,35 @@ function evidenceMatches(
   if (keys.length !== EVIDENCE_KEYS.length || keys.some((key, index) => key !== EVIDENCE_KEYS[index])) {
     return false;
   }
+  const provenance = evidence.execution_provenance;
+  const provenanceKeys = provenance && typeof provenance === 'object' && !Array.isArray(provenance)
+    ? Object.keys(provenance).sort()
+    : [];
+  const expectedNativeSha = expected.provider === 'openai' && provenance
+    ? TRUSTED_CODEX_NATIVE_SHA256.get(`${provenance.cli_version}:${provenance.cli_native_target}`)
+    : undefined;
+  const provenanceMatches = expected.provider === 'openai'
+    ? Boolean(
+      provenance
+      && provenanceKeys.length === CODEX_PROVENANCE_KEYS.length
+      && provenanceKeys.every((key, index) => key === CODEX_PROVENANCE_KEYS[index])
+      && provenance.schema === 'codex-native-execution-provenance/v1'
+      && UUID_RE.test(provenance.thread_id || '')
+      && provenance.trust_root === CODEX_NATIVE_TRUST_ROOT
+      && ['empty', 'allowlisted-model-cache-schema-warning-v1'].includes(provenance.stderr_classification)
+      && provenance.cli_native_sha256 === expectedNativeSha
+    )
+    : provenance === null;
   const responseVerdict = parseProviderResponseVerdict(evidence.response);
   return Boolean(
-    evidence.schema === 'cross-ai-provider-evidence/v2'
+    evidence.schema === 'cross-ai-provider-evidence/v3'
     && evidence.provider === expected.provider
-    && evidence.requested_model === expected.model
-    && evidence.actual_model === expected.model
+    && expected.models.includes(evidence.requested_model)
+    && evidence.actual_model === (
+      expected.provider === 'openai' ? UNATTESTED_ACTUAL_MODEL : evidence.requested_model
+    )
     && evidence.execution_profile === expected.execution
+    && provenanceMatches
     && evidence.base_tip_sha?.toLowerCase() === baseTip.toLowerCase()
     && evidence.base_sha?.toLowerCase() === base.toLowerCase()
     && evidence.head_sha?.toLowerCase() === head.toLowerCase()
@@ -790,8 +823,10 @@ async function appendConsultationFindings(
     const shapePass = Boolean(
       receipt
       && receipt.provider?.toLowerCase() === expected.provider
-      && receipt.requested === expected.model
-      && receipt.actual === expected.model
+      && expected.models.includes(receipt.requested)
+      && receipt.actual === (
+        expected.provider === 'openai' ? UNATTESTED_ACTUAL_MODEL : receipt.requested
+      )
       && receipt.execution === expected.execution
       && receipt.base_tip?.toLowerCase() === baseTip.toLowerCase()
       && receipt.base?.toLowerCase() === base.toLowerCase()
@@ -812,7 +847,7 @@ async function appendConsultationFindings(
       check: field.replaceAll(' ', '_'),
       pass,
       detail: pass
-        ? `${expected.provider}/${expected.model} fetched evidence + response digest + base/head/scope doğrulandı`
+        ? `${expected.provider}/${receipt.requested} fetched evidence + response digest + base/head/scope doğrulandı`
         : `${field}: strict receipt + GitHub issue-comment evidence + matching body/response SHA-256 zorunlu`,
     });
   }
@@ -945,6 +980,24 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     detail: fields.verdict === 'AGREE'
       ? 'consultation verdict AGREE'
       : 'single/dual consultation yalnız AGREE ile geçer',
+  });
+
+  const codexReceipt = parseReceipt(fields['codex receipt']);
+  const deepCodexRequired = mode === 'dual' || requiredFloor.mode === 'single';
+  const codexModelTierPass = Boolean(
+    codexReceipt
+    && (!deepCodexRequired || codexReceipt.requested === 'gpt-5.6-sol')
+  );
+  findings.push({
+    check: 'consultation_codex_model_tier',
+    pass: codexModelTierPass,
+    detail: codexModelTierPass
+      ? deepCodexRequired
+        ? 'high-impact scope exact gpt-5.6-sol reviewer kullanıyor'
+        : `routine scope ${codexReceipt.requested} reviewer kullanıyor; Spark varsayılan, SOL yükseltmesi geçerli`
+      : deepCodexRequired
+        ? 'governance/high-impact scope exact gpt-5.6-sol reviewer gerektirir; Spark yalnız routine scope içindir'
+        : 'Codex receipt desteklenen exact model kimliği taşımalıdır',
   });
 
   let selectedReceipts = ['codex receipt'];
@@ -1136,7 +1189,8 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
     findings.push({ check: 'reviewer_provider_enum', pass: true });
   }
 
-  // Check 3: different providers (HARD RULE) + Codex HIGH-2 evidence requirement
+  // Legacy-only compatibility checks. Explicit current mode returns above and
+  // uses process/context-isolated Codex without a provider-diversity floor.
   if (impl && rev) {
     const sameProvider = impl === rev;
     const exception = (fields['same-provider exception'] || '').toLowerCase();

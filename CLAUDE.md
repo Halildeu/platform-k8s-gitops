@@ -74,20 +74,25 @@ mavis communication peers
 - [docs/context-priority-rules.md §10 Agent İletişimi](./docs/context-priority-rules.md) (proje canonical detay)
 - Global `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı + örnek senaryolar)
 
-### 0.1 Durumsal Cross-AI İstişare — Az Kanal Varsayımı (2026-07-18)
+### 0.1 Durumsal Cross-AI İstişare — Codex Primary (2026-07-19)
 
 - Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
   adımlarında istişare açma: `Consultation mode: none`. Changed-files kanıtı
   eksikse, consultation governance dosyası değişiyorsa veya branch
   `auto-promotion/` ise gate `none` kabul etmez; en az `single` gerekir.
-- İkinci görüş gerçekten gerekiyorsa tek ve birincil kanal doğrudan
-  `claude --model claude-opus-4-8` olur: `Consultation mode: single`.
-  JSON `modelUsage` exact `claude-opus-4-8` değilse gerçek görüş sayılmaz;
-  Claude implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz.
-- Yalnız geri döndürülemez, çok yüksek riskli veya açık insan/yetkili kararı
-  gerektiren noktada Claude'a doğrudan OpenAI Codex 5.6 SOL ekle:
-  `Consultation mode: dual`. Toplam iki kanal aşılmaz. MiniMax çağrılmaz,
-  receipt'i üretilmez ve yeni acceptance zincirinde kabul edilmez.
+- İkinci görüş gerçekten gerekiyorsa tek ve birincil kanal yalnız
+  `scripts/ai/run_isolated_codex_review.py` üzerinden ayrı
+  `codex exec --ephemeral --sandbox read-only` sürecidir:
+  `Consultation mode: single`. Implementer Codex olsa da exact-scope süreç ve
+  bağlam izolasyonu nedeniyle bu receipt tek başına Cross-AI kabul edilir;
+  provider çeşitliliği aranmaz.
+- Routine scope'ta exact `gpt-5.3-codex-spark` + `xhigh`; governance,
+  güvenlik/authz, production promotion, migration ve diğer yüksek etkili
+  scope'ta `--review-tier high-impact` ile exact `gpt-5.6-sol` + `xhigh`
+  kullanılır. Spark yüksek etkili gate'i geçemez.
+- `dual` yalnız isteğe bağlı direct Claude Opus 4.8 challenger ekler; hiçbir
+  path Claude'u zorunlu primary yapmaz. MiniMax çağrılmaz, receipt'i üretilmez
+  ve yeni acceptance zincirinde kabul edilmez.
 - Cursor, wrapper-routed model ve AI uygulama penceresi istişare kanalı değildir.
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
   review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya
@@ -100,7 +105,7 @@ mavis communication peers
 - Secret, PII veya raw credential prompt/argümana konmaz; UI fallback yapılmaz.
 
 Canonical mod, attribution ve receipt semantiği:
-[docs/context-priority-rules.md §11](./docs/context-priority-rules.md#cross-ai-three-channel).
+[docs/context-priority-rules.md §11](./docs/context-priority-rules.md#cross-ai-consultation).
 
 ### 1. No Closure Language
 
@@ -153,16 +158,18 @@ Agent'ın **staging-sw sunucusuna SSH** ile erişim ve kubectl operasyonlarını
 
 User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak kural olarak ekle genel kural"
 
-### 8. Continuous Autonomous Mode + Durumsal Cross-AI (KALICI ANA KURAL — 2026-07-18 güncel)
+### 8. Continuous Autonomous Mode + Durumsal Cross-AI (KALICI ANA KURAL — 2026-07-19 güncel)
 
 **HARD RULE**: Otomatik mod sürekli aktiftir; durmak yok, tüm işler bitene kadar devam.
 
 **Karar verme kuralı**:
 - Normal implementation/test akışını istişareyle yavaşlatma; otonom ilerle.
-- Gerçek ikinci görüş noktasında yalnız direct Claude Opus 4.8 kullan.
-- Geri döndürülemez/çok yüksek riskli/insan-yetkili kararda en fazla bir ek
-  provider-distinct kanal kullan; bu kanal implementer sağlayıcısıyla aynı
-  olamaz, mümkünse iki çağrıyı paralel yürüt.
+- Gerçek ikinci görüş noktasında canonical isolated Codex harness kullan;
+  routine=Spark xhigh, yüksek etkili=SOL xhigh.
+- Ayrı ephemeral/read-only/exact-scope Codex süreci implementer Codex olsa da
+  tek başına Cross-AI kabul edilir; provider-distinct kanal zorunlu değildir.
+- Ek adversarial değer varsa en fazla bir direct Claude Opus 4.8 challenger
+  eklenebilir; Claude primary veya merge için zorunlu kanal değildir.
 - Cursor veya Cursor-routed model kullanma.
 - Geçerli bulguları absorb et; `REVISE` kapanmadan hazır/merge-ready deme.
 - Varsayımsal yol keşfini kesin karar veya receipt gibi sunma; yalnız mevcut
@@ -182,9 +189,10 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 - Credential paylaşımı (Vault token, admin password)
 - Para harcaması (cloud provider, GitHub Actions limit aşımı)
 
-**Mantık**: Kullanıcı sürekli iş + üç sağlayıcılı adversarial istişare ile yüksek
-tempo iteration istiyor. Auto mode + provider-distinct consensus pattern'iyle
-stratejik kararlar bağımsız itirazlara açılır, kullanıcı gereksiz yere interrupt edilmez.
+**Mantık**: Kullanıcı sürekli iş + gerektiğinde context-isolated Codex
+istişaresiyle yüksek tempo iteration istiyor. Süreç/bağlam izolasyonu bağımsız
+itiraz yüzeyi üretir; Spark xhigh rutin kotayı korur, SOL xhigh yüksek etkili
+kararı derinleştirir ve kullanıcı gereksiz yere interrupt edilmez.
 
 User mesajı (2026-04-25): "durmak yok süreklid evam tüm işler biteene kadar otomaitk mode karar gerektğinde codex ile msp üzeri,nde otomaitk cevap al benim kararım sasyılacak kural olrak yaz bunu klıcı kural ana kural"
 
@@ -229,12 +237,11 @@ kubectl --context k3d-<env> -n platform-<env> rollout restart deploy/<svc>
 
 ### Codex Adversarial Protokol
 
-Her büyük delta (10+ commit) sonrası Codex MCP **retrospektif ping-pong** yeni thread'de:
-- VERDICT: AGREE / PARTIAL / REVISE / RED
+İstişare gerektiren delta canonical `run_isolated_codex_review.py` harness'ıyla
+ephemeral/read-only/exact-scope yeni süreçte incelenir:
+- VERDICT: AGREE / REVISE
 - AGREE → direkt impl, plan onayı sorma (CLAUDE.md global kural)
-- PARTIAL → absorb et, yeni iter submit et
 - REVISE → absorb + karşı-tez + iter devam
-- RED → kullanıcıya rapor + yön sor
 
 ### Commit Message Pattern
 

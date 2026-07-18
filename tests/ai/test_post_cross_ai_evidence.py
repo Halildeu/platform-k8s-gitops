@@ -23,11 +23,20 @@ SPEC.loader.exec_module(MODULE)
 def evidence() -> dict:
     response = "## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE"
     return {
-        "schema": "cross-ai-provider-evidence/v2",
+        "schema": "cross-ai-provider-evidence/v3",
         "provider": "openai",
         "requested_model": "gpt-5.6-sol",
-        "actual_model": "gpt-5.6-sol",
+        "actual_model": "not-provider-attested",
         "execution_profile": "codex-exec-ephemeral-read-only-exact-scope-v1",
+        "execution_provenance": {
+            "schema": "codex-native-execution-provenance/v1",
+            "thread_id": "019f7785-c66d-7992-a21a-d4097d9eb3f9",
+            "cli_version": "0.144.1",
+            "cli_native_target": "codex-linux-x64",
+            "cli_native_sha256": "a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902",
+            "trust_root": "repo-pinned-codex-native-sha256-v1",
+            "stderr_classification": "empty",
+        },
         "base_tip_sha": "a" * 40,
         "base_sha": "b" * 40,
         "head_sha": "c" * 40,
@@ -50,6 +59,15 @@ class EvidenceValidationTests(unittest.TestCase):
         self.assertEqual(parsed["provider"], "openai")
         self.assertEqual(digest, hashlib.sha256(text.encode()).hexdigest())
 
+    def test_accepts_exact_spark_model(self) -> None:
+        payload = evidence()
+        payload["requested_model"] = "gpt-5.3-codex-spark"
+        payload["actual_model"] = "not-provider-attested"
+        parsed, _ = MODULE.validate_evidence_text(
+            json.dumps(payload, separators=(",", ":"))
+        )
+        self.assertEqual(parsed["requested_model"], "gpt-5.3-codex-spark")
+
     def test_rejects_extra_schema_key(self) -> None:
         payload = evidence()
         payload["untrusted"] = True
@@ -68,6 +86,16 @@ class EvidenceValidationTests(unittest.TestCase):
     def test_rejects_provider_model_mismatch_before_post(self) -> None:
         payload = evidence()
         payload["actual_model"] = "auto"
+        self.assert_rejected(payload)
+
+    def test_rejects_requested_model_repeated_as_provider_attested_actual(self) -> None:
+        payload = evidence()
+        payload["actual_model"] = payload["requested_model"]
+        self.assert_rejected(payload)
+
+    def test_rejects_unpinned_native_binary_provenance(self) -> None:
+        payload = evidence()
+        payload["execution_provenance"]["cli_native_sha256"] = "f" * 64
         self.assert_rejected(payload)
 
     def test_rejects_sensitive_response_before_gh_invocation(self) -> None:

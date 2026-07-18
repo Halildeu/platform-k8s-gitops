@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Build one strict cross-ai-provider-evidence/v2 JSON comment body.
+"""Build one strict Anthropic cross-ai-provider-evidence/v3 comment body.
 
 The full provider response is read from stdin so it never enters process argv.
 The resulting single-line JSON can be posted as an issue comment; the PR receipt
 uses SHA-256 of these exact UTF-8 bytes.
+
+OpenAI evidence is deliberately rejected here and must be produced by
+run_isolated_codex_review.py, which executes the fixed isolated Codex profile.
 """
 
 from __future__ import annotations
@@ -67,16 +70,14 @@ COOKIE_HEADER_RE = re.compile(
     r"^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$",
     re.IGNORECASE | re.MULTILINE,
 )
-PROVIDER_MODELS = {
-    "anthropic": "claude-opus-4-8",
-    "openai": "gpt-5.6-sol",
-}
+PROVIDER_MODELS = {"anthropic": ("claude-opus-4-8",)}
 PROVIDER_EXECUTION_PROFILES = {
     "anthropic": "claude-cli-no-session-persistence-exact-scope-v1",
-    "openai": "codex-exec-ephemeral-read-only-exact-scope-v1",
 }
+DIRECT_BUILDER_PROVIDERS = ("anthropic",)
 MAX_RESPONSE_BYTES = 48_000
 MAX_EVIDENCE_BYTES = 60_000
+UNATTESTED_ACTUAL_MODEL = "not-provider-attested"
 
 
 def fail(code: str) -> NoReturn:
@@ -115,27 +116,7 @@ def contains_sensitive_response(response: str) -> bool:
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=sorted(PROVIDER_MODELS), required=True)
-    parser.add_argument("--requested-model", required=True)
-    parser.add_argument("--actual-model", required=True)
-    parser.add_argument("--base-tip-sha", required=True)
-    parser.add_argument("--base-sha", required=True)
-    parser.add_argument("--head-sha", required=True)
-    parser.add_argument("--scope-sha256", required=True)
-    args = parser.parse_args()
-
-    expected_model = PROVIDER_MODELS[args.provider]
-    if args.requested_model != expected_model or args.actual_model != expected_model:
-        fail("provider_model_mismatch")
-    for value in (args.base_tip_sha, args.base_sha, args.head_sha):
-        if not COMMIT_SHA_RE.fullmatch(value):
-            fail("invalid_commit_sha")
-    if not SHA256_RE.fullmatch(args.scope_sha256):
-        fail("invalid_scope_sha256")
-
-    response = sys.stdin.read().strip()
+def validate_provider_response(response: str) -> str:
     if not response:
         fail("provider_response_required")
     if len(response.encode("utf-8")) > MAX_RESPONSE_BYTES:
@@ -159,18 +140,44 @@ def main() -> None:
         fail("provider_agree_contains_p0_or_p1_findings")
     if contains_sensitive_response(response):
         fail("provider_response_contains_sensitive_data")
+    return verdict
+
+
+def serialize_evidence(
+    *,
+    provider: str,
+    requested_model: str,
+    actual_model: str,
+    base_tip_sha: str,
+    base_sha: str,
+    head_sha: str,
+    scope_sha256: str,
+    response: str,
+) -> str:
+    expected_models = PROVIDER_MODELS.get(provider, ())
+    if provider != "anthropic":
+        fail("openai_evidence_requires_isolated_harness")
+    if requested_model not in expected_models or actual_model != requested_model:
+        fail("provider_model_mismatch")
+    for value in (base_tip_sha, base_sha, head_sha):
+        if not COMMIT_SHA_RE.fullmatch(value):
+            fail("invalid_commit_sha")
+    if not SHA256_RE.fullmatch(scope_sha256):
+        fail("invalid_scope_sha256")
+    verdict = validate_provider_response(response)
     response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
     evidence = json.dumps(
         {
-            "schema": "cross-ai-provider-evidence/v2",
-            "provider": args.provider,
-            "requested_model": args.requested_model,
-            "actual_model": args.actual_model,
-            "execution_profile": PROVIDER_EXECUTION_PROFILES[args.provider],
-            "base_tip_sha": args.base_tip_sha.lower(),
-            "base_sha": args.base_sha.lower(),
-            "head_sha": args.head_sha.lower(),
-            "scope_sha256": args.scope_sha256.lower(),
+            "schema": "cross-ai-provider-evidence/v3",
+            "provider": provider,
+            "requested_model": requested_model,
+            "actual_model": actual_model,
+            "execution_profile": PROVIDER_EXECUTION_PROFILES[provider],
+            "execution_provenance": None,
+            "base_tip_sha": base_tip_sha.lower(),
+            "base_sha": base_sha.lower(),
+            "head_sha": head_sha.lower(),
+            "scope_sha256": scope_sha256.lower(),
             "verdict": verdict,
             "response_sha256": response_sha256,
             "response": response,
@@ -180,7 +187,33 @@ def main() -> None:
     )
     if len(evidence.encode("utf-8")) > MAX_EVIDENCE_BYTES:
         fail("evidence_comment_too_large")
-    print(evidence)
+    return evidence
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--provider", choices=DIRECT_BUILDER_PROVIDERS, required=True)
+    parser.add_argument("--requested-model", required=True)
+    parser.add_argument("--actual-model", required=True)
+    parser.add_argument("--base-tip-sha", required=True)
+    parser.add_argument("--base-sha", required=True)
+    parser.add_argument("--head-sha", required=True)
+    parser.add_argument("--scope-sha256", required=True)
+    args = parser.parse_args()
+
+    response = sys.stdin.read().strip()
+    print(
+        serialize_evidence(
+            provider=args.provider,
+            requested_model=args.requested_model,
+            actual_model=args.actual_model,
+            base_tip_sha=args.base_tip_sha,
+            base_sha=args.base_sha,
+            head_sha=args.head_sha,
+            scope_sha256=args.scope_sha256,
+            response=response,
+        )
+    )
 
 
 if __name__ == "__main__":

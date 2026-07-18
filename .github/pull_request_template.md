@@ -83,7 +83,10 @@ Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
 - `none`: receipt yok; rutin implementation/test için somut gerekçe zorunlu;
   governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
 - `single`: exact context-isolated Codex receipt + exact base/head/scope +
-  `AGREE`; Codex implementer için de geçerlidir.
+  `AGREE`; Codex implementer için de geçerlidir. Evidence yalnız
+  `scripts/ai/run_isolated_codex_review.py` ile üretilir. Routine scope'ta
+  exact `gpt-5.3-codex-spark` + `xhigh`, governance/yüksek etkili scope'ta
+  `--review-tier high-impact` ile exact `gpt-5.6-sol` kullanılır.
 - `dual`: exact Codex primary + exact Claude challenger receipt; somut
   `Risk trigger` zorunlu, üçüncü kanal ve MiniMax receipt yasaktır.
 - Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,

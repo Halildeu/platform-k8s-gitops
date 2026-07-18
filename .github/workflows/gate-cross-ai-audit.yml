@@ -5,7 +5,8 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #
 # Required check (durumsal az-kanal governance, #2621):
 # - none: routine work + reason + zero receipt; governance/auto-promotion blocked
-# - single: exact context-isolated Codex exec ephemeral/read-only + scope + AGREE
+# - single: exact context-isolated Codex exec ephemeral/read-only + scope + AGREE;
+#   routine=Spark, governance/high-impact=SOL
 # - dual: optional exact Codex primary + direct Claude challenger; maximum two
 # - no path requires provider diversity; MiniMax remains forbidden
 # - Fetched owner evidence, model, freshness, digest and redaction remain strict

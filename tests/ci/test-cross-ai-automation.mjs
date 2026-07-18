@@ -45,11 +45,20 @@ const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex
 const evidenceRef = (id) =>
   `https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/${id}`;
 const evidenceBody = (provider, model, response) => JSON.stringify({
-  schema: 'cross-ai-provider-evidence/v2',
+  schema: 'cross-ai-provider-evidence/v3',
   provider,
   requested_model: model,
-  actual_model: model,
+  actual_model: provider === 'openai' ? 'not-provider-attested' : model,
   execution_profile: EXECUTION_PROFILE[provider] ?? 'retired-provider-not-accepted',
+  execution_provenance: provider === 'openai' ? {
+    schema: 'codex-native-execution-provenance/v1',
+    thread_id: '019f7785-c66d-7992-a21a-d4097d9eb3f9',
+    cli_version: '0.144.1',
+    cli_native_target: 'codex-linux-x64',
+    cli_native_sha256: 'a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902',
+    trust_root: 'repo-pinned-codex-native-sha256-v1',
+    stderr_classification: 'empty',
+  } : null,
   base_tip_sha: BASE_TIP_SHA,
   base_sha: BASE_SHA,
   head_sha: HEAD_SHA,
@@ -68,10 +77,12 @@ const evidenceComment = (body, offsetMs = 0) => ({
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
 const CODEX_REF = evidenceRef(1003);
+const SPARK_REF = evidenceRef(1004);
 const EVIDENCE = {
   [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 0),
   [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 1_000),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
+  [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
 };
 // Forward-policy dual channel is Claude + Codex; reverse their publication order
 // to prove the accepted dual path does not depend on receipt timestamp ordering.
@@ -164,7 +175,7 @@ const legacyPeerBody =
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
   `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; execution=claude-cli-no-session-persistence-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; execution=codex-exec-ephemeral-read-only-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
 
 const explicitNoneBody =
   `## Cross-AI\n` +
@@ -181,7 +192,11 @@ const explicitSingleBody =
   `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; execution=codex-exec-ephemeral-read-only-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+const explicitSparkSingleBody = explicitSingleBody.replace(
+  /^Codex receipt:.*$/m,
+  `Codex receipt: provider=openai; requested=gpt-5.3-codex-spark; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${SPARK_REF}; sha256=${sha256(EVIDENCE[SPARK_REF].body)}`,
+);
 const explicitDualBody =
   explicitSingleBody
     .replace('Consultation mode: single', 'Consultation mode: dual')
@@ -218,6 +233,7 @@ const explicitSingleMiniMaxBody =
   `${explicitSingleBody}${MINIMAX_RECEIPT_LINE}\n`;
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'AGENTS.md';
+const GATE_WORKFLOW_PATH = '.github/workflows/gate-cross-ai-audit.yml';
 const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
 const RETIRED_MINIMAX_WRAPPER_PATH = 'scripts/ai/minimax_m3_review.py';
 const RBAC_PATH = 'kustomize/base/security/clusterrolebinding-platform-admin.yaml';
@@ -245,6 +261,35 @@ const nonIsolatedCodexEvidence = {
 const nonIsolatedCodexReceiptBody = explicitSingleBody.replace(
   sha256(EVIDENCE[CODEX_REF].body),
   sha256(nonIsolatedCodexBody),
+);
+const overclaimedActualCodexBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CODEX_REF].body),
+  actual_model: 'gpt-5.6-sol',
+});
+const overclaimedActualCodexEvidence = {
+  ...EVIDENCE,
+  [CODEX_REF]: evidenceComment(overclaimedActualCodexBody),
+};
+const overclaimedActualCodexReceiptBody = explicitSingleBody
+  .replace('actual=not-provider-attested', 'actual=gpt-5.6-sol')
+  .replace(
+    sha256(EVIDENCE[CODEX_REF].body),
+    sha256(overclaimedActualCodexBody),
+  );
+const unpinnedNativeCodexBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CODEX_REF].body),
+  execution_provenance: {
+    ...JSON.parse(EVIDENCE[CODEX_REF].body).execution_provenance,
+    cli_native_sha256: 'f'.repeat(64),
+  },
+});
+const unpinnedNativeCodexEvidence = {
+  ...EVIDENCE,
+  [CODEX_REF]: evidenceComment(unpinnedNativeCodexBody),
+};
+const unpinnedNativeCodexReceiptBody = explicitSingleBody.replace(
+  sha256(EVIDENCE[CODEX_REF].body),
+  sha256(unpinnedNativeCodexBody),
 );
 const reviseResponse = '## P0\nFinding\n## P1\nNone\n## P2\nNone\nVERDICT: REVISE';
 const contradictoryClaudeBody = JSON.stringify({
@@ -483,8 +528,8 @@ const cases = [
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER] }, 0],
   ['auto-promotion draft cannot claim an automation exemption',
     { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN) }, 1],
-  ['auto-promotion passes only with required Claude and Codex receipts',
-    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: peerBody, changedFiles: [SCAN] }, 0],
+  ['auto-promotion accepts the required isolated Codex SOL receipt',
+    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: explicitSingleBody, changedFiles: [SCAN] }, 0],
   ['#827 PR-B: auto-test-overlay + github-actions[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-test-overlay/x', actor: BOT, sender: BOT, body: autoBody(WF) }, 1],
   ['#2295: auto-test-frontend + github-actions[bot] (wrong bot for prefix) -> blocked',
@@ -540,6 +585,9 @@ const cases = [
   ['explicit none mode rejects consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [GOVERNANCE_PATH] }, 1],
+  ['explicit none mode rejects the Cross-AI gate workflow path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [GATE_WORKFLOW_PATH] }, 1],
   ['explicit none mode rejects consultation governance contract-test changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [GOVERNANCE_CONTRACT_TEST_PATH] }, 1],
@@ -573,14 +621,28 @@ const cases = [
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts exact context-isolated Codex evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode accepts Spark for a routine voluntary consultation',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode rejects Spark for consultation governance changes',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: ['AGENTS.md'], expectedFailureCheck: 'consultation_codex_model_tier' }, 1],
+  ['explicit single mode rejects Spark for the Cross-AI gate workflow path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: [GATE_WORKFLOW_PATH], expectedFailureCheck: 'consultation_codex_model_tier' }, 1],
   ['explicit single mode rejects a receipt without the exact execution profile',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody.replace('; execution=codex-exec-ephemeral-read-only-exact-scope-v1', ''), changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit single mode rejects evidence from the current non-isolated Codex chat',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: nonIsolatedCodexReceiptBody, changedFiles: [ROUTINE_PATH], evidence: nonIsolatedCodexEvidence }, 1],
+  ['explicit single mode rejects a provider-attested actual-model overclaim',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: overclaimedActualCodexReceiptBody, changedFiles: [ROUTINE_PATH], evidence: overclaimedActualCodexEvidence, expectedFailureCheck: 'codex_receipt' }, 1],
+  ['explicit single mode rejects evidence from an unpinned native binary',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: unpinnedNativeCodexReceiptBody, changedFiles: [ROUTINE_PATH], evidence: unpinnedNativeCodexEvidence, expectedFailureCheck: 'codex_receipt' }, 1],
   ['explicit single mode accepts consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [GOVERNANCE_PATH] }, 0],
+  ['explicit single SOL mode accepts the Cross-AI gate workflow path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [GATE_WORKFLOW_PATH] }, 0],
   ['explicit single mode accepts consultation enforcement changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
   ['retired MiniMax wrapper tombstone accepts exact single review',

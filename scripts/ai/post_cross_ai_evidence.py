@@ -20,6 +20,10 @@ from typing import NoReturn
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+THREAD_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 EMAIL_RE = re.compile(
     r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
 )
@@ -62,12 +66,32 @@ COOKIE_HEADER_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 MAX_EVIDENCE_BYTES = 60_000
+UNATTESTED_ACTUAL_MODEL = "not-provider-attested"
+CODEX_NATIVE_TRUST_ROOT = "repo-pinned-codex-native-sha256-v1"
+TRUSTED_CODEX_NATIVE_SHA256 = {
+    ("0.144.1", "codex-darwin-arm64"): "29915529b97697def1a957b0505e770aa6a45744435d62fc263e98d7619e167a",
+    ("0.144.1", "codex-darwin-x64"): "c6eb747e4145ecb3bed2647dbd0f8464b190a5ccba964666ef7c98d4681a4a4c",
+    ("0.144.1", "codex-linux-arm64"): "9513fa3f5f4ad444ac1e40d972aef0e2664834ec54da987d54aba0dc2f13ea07",
+    ("0.144.1", "codex-linux-x64"): "a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902",
+    ("0.144.1", "codex-win32-arm64"): "d3d92e9c10a6f3371a425214c3df67eb97ec5c2ff1b88876410fe0e61d4791da",
+    ("0.144.1", "codex-win32-x64"): "cbacbb9726262ef558b4af0438a1b2a5bba9076132401d947b5b4d2bf92ab0e4",
+}
+CODEX_PROVENANCE_KEYS = {
+    "schema",
+    "thread_id",
+    "cli_version",
+    "cli_native_target",
+    "cli_native_sha256",
+    "trust_root",
+    "stderr_classification",
+}
 EVIDENCE_KEYS = {
     "schema",
     "provider",
     "requested_model",
     "actual_model",
     "execution_profile",
+    "execution_provenance",
     "base_tip_sha",
     "base_sha",
     "head_sha",
@@ -81,8 +105,8 @@ PROVIDER_EXECUTION_PROFILES = {
     "openai": "codex-exec-ephemeral-read-only-exact-scope-v1",
 }
 PROVIDER_MODELS = {
-    "anthropic": "claude-opus-4-8",
-    "openai": "gpt-5.6-sol",
+    "anthropic": ("claude-opus-4-8",),
+    "openai": ("gpt-5.3-codex-spark", "gpt-5.6-sol"),
 }
 
 
@@ -101,17 +125,40 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         fail("invalid_evidence_json")
     if not isinstance(evidence, dict) or set(evidence) != EVIDENCE_KEYS:
         fail("invalid_evidence_schema")
-    if evidence.get("schema") != "cross-ai-provider-evidence/v2":
+    if evidence.get("schema") != "cross-ai-provider-evidence/v3":
         fail("invalid_evidence_schema")
     expected_execution = PROVIDER_EXECUTION_PROFILES.get(evidence.get("provider"))
     if evidence.get("execution_profile") != expected_execution:
         fail("invalid_execution_profile")
-    expected_model = PROVIDER_MODELS.get(evidence.get("provider"))
-    if (
-        evidence.get("requested_model") != expected_model
-        or evidence.get("actual_model") != expected_model
-    ):
+    expected_models = PROVIDER_MODELS.get(evidence.get("provider"), ())
+    actual_model_valid = (
+        evidence.get("actual_model") == UNATTESTED_ACTUAL_MODEL
+        if evidence.get("provider") == "openai"
+        else evidence.get("actual_model") == evidence.get("requested_model")
+    )
+    if evidence.get("requested_model") not in expected_models or not actual_model_valid:
         fail("provider_model_mismatch")
+    provenance = evidence.get("execution_provenance")
+    if evidence.get("provider") == "openai":
+        if not isinstance(provenance, dict) or set(provenance) != CODEX_PROVENANCE_KEYS:
+            fail("invalid_execution_provenance")
+        pin = TRUSTED_CODEX_NATIVE_SHA256.get(
+            (provenance.get("cli_version"), provenance.get("cli_native_target"))
+        )
+        if (
+            provenance.get("schema") != "codex-native-execution-provenance/v1"
+            or provenance.get("trust_root") != CODEX_NATIVE_TRUST_ROOT
+            or provenance.get("stderr_classification") not in {
+                "empty",
+                "allowlisted-model-cache-schema-warning-v1",
+            }
+            or not isinstance(provenance.get("thread_id"), str)
+            or THREAD_ID_RE.fullmatch(provenance["thread_id"]) is None
+            or provenance.get("cli_native_sha256") != pin
+        ):
+            fail("invalid_execution_provenance")
+    elif provenance is not None:
+        fail("invalid_execution_provenance")
     response = evidence.get("response")
     response_digest = evidence.get("response_sha256")
     if (

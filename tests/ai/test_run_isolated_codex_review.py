@@ -1,0 +1,396 @@
+#!/usr/bin/env python3
+"""Regression tests for the isolated Codex review harness."""
+
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import importlib.util
+import io
+import json
+import os
+import platform
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts/ai/run_isolated_codex_review.py"
+sys.path.insert(0, str(SCRIPT.parent))
+SPEC = importlib.util.spec_from_file_location("run_isolated_codex_review", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+FAKE_CODEX = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+
+if sys.argv[1:] == ["--version"]:
+    print("codex-cli 0.144.1")
+    raise SystemExit(0)
+
+required = [
+    "exec", "--sandbox", "read-only",
+    "--ephemeral", "--ignore-user-config", "--ignore-rules", "--json",
+    'model_reasoning_effort="xhigh"',
+    "plugins", "apps", "remote_plugin", "memories",
+]
+if any(value not in sys.argv[1:] for value in required):
+    raise SystemExit(7)
+if sys.argv[1:].count("--disable") != 4:
+    raise SystemExit(10)
+model = sys.argv[sys.argv.index("--model") + 1]
+if model != os.environ.get("EXPECTED_MODEL", "gpt-5.3-codex-spark"):
+    raise SystemExit(9)
+if not sys.stdin.read():
+    raise SystemExit(8)
+print(json.dumps({"type":"thread.started","thread_id":"019f7785-c66d-7992-a21a-d4097d9eb3f9"}))
+if os.environ.get("FAKE_SKIP_TURN_STARTED") != "1":
+    print(json.dumps({"type":"turn.started"}))
+if os.environ.get("FAKE_DUPLICATE_TURN_STARTED") == "1":
+    print(json.dumps({"type":"turn.started"}))
+if os.environ.get("FAKE_STDERR") == "1":
+    print("model routing warning", file=sys.stderr)
+if os.environ.get("FAKE_ERROR_EVENT") == "1":
+    item = {"id":"item_e","type":"error","message":"model rerouted"}
+elif os.environ.get("FAKE_TOOL_EVENT") == "1":
+    item = {"id":"item_0","type":"command_execution","command":"git status"}
+else:
+    item = {"id":"item_0","type":"agent_message","text":"P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"}
+print(json.dumps({"type":"item.completed","item":item}))
+print(json.dumps({"type":"turn.completed","usage":{}}))
+'''
+
+
+class IsolatedCodexReviewTests(unittest.TestCase):
+    def test_stderr_allowlist_accepts_only_exact_bounded_cache_schema_warning(self) -> None:
+        timestamp = "2026-07-19T00:35:07.740892Z"
+        allowed = (
+            f"{timestamp} ERROR codex_models_manager::cache: "
+            "failed to load models cache: missing field "
+            "`supports_reasoning_summaries` at line 88 column 5\n"
+        )
+        self.assertEqual(
+            MODULE.classify_codex_stderr(allowed),
+            "allowlisted-model-cache-schema-warning-v1",
+        )
+        self.assertIsNone(
+            MODULE.classify_codex_stderr(
+                f"{timestamp} ERROR codex_models_manager::manager: model rerouted\n"
+            )
+        )
+
+    def test_every_declared_platform_package_has_a_release_pin(self) -> None:
+        package_suffixes = {value[0] for value in MODULE.PLATFORM_PACKAGES.values()}
+        pinned_suffixes = {
+            target
+            for (version, target) in MODULE.TRUSTED_CODEX_NATIVE_SHA256
+            if version == "0.144.1"
+        }
+        self.assertEqual(package_suffixes, pinned_suffixes)
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.bin_dir = self.root / "bin"
+        self.bin_dir.mkdir()
+        package_root = self.root / "lib" / "node_modules" / "@openai" / "codex"
+        launcher = package_root / "bin" / "codex.js"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+        launcher.chmod(0o700)
+        system = platform.system().lower()
+        machine = platform.machine().lower()
+        specs = {
+            ("darwin", "arm64"): ("codex-darwin-arm64", "aarch64-apple-darwin", "codex"),
+            ("darwin", "aarch64"): ("codex-darwin-arm64", "aarch64-apple-darwin", "codex"),
+            ("darwin", "x86_64"): ("codex-darwin-x64", "x86_64-apple-darwin", "codex"),
+            ("linux", "aarch64"): ("codex-linux-arm64", "aarch64-unknown-linux-musl", "codex"),
+            ("linux", "arm64"): ("codex-linux-arm64", "aarch64-unknown-linux-musl", "codex"),
+            ("linux", "x86_64"): ("codex-linux-x64", "x86_64-unknown-linux-musl", "codex"),
+        }
+        package_suffix, target, executable_name = specs[(system, machine)]
+        self.package_suffix = package_suffix
+        dependency_name = f"@openai/{package_suffix}"
+        dependency_version = f"0.144.1-{package_suffix.removeprefix('codex-')}"
+        (package_root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "@openai/codex",
+                    "version": "0.144.1",
+                    "bin": {"codex": "bin/codex.js"},
+                    "optionalDependencies": {
+                        dependency_name: f"npm:@openai/codex@{dependency_version}"
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        platform_root = package_root / "node_modules" / "@openai" / package_suffix
+        platform_root.mkdir(parents=True)
+        (platform_root / "package.json").write_text(
+            json.dumps({"name": "@openai/codex", "version": dependency_version}),
+            encoding="utf-8",
+        )
+        fake_codex = platform_root / "vendor" / target / "bin" / executable_name
+        fake_codex.parent.mkdir(parents=True)
+        fake_codex.write_text(FAKE_CODEX, encoding="utf-8")
+        fake_codex.chmod(0o700)
+        self.fake_codex = fake_codex
+        (self.bin_dir / "codex").symlink_to(launcher)
+        self.worktree = self.root / "worktree"
+        self.worktree.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=self.worktree, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.invalid"],
+            cwd=self.worktree,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Harness Test"],
+            cwd=self.worktree,
+            check=True,
+        )
+        source = self.worktree / "scope-source.txt"
+        source.write_text("base\n", encoding="utf-8")
+        subprocess.run(["git", "add", "scope-source.txt"], cwd=self.worktree, check=True)
+        subprocess.run(["git", "commit", "-qm", "base"], cwd=self.worktree, check=True)
+        self.base_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.worktree, text=True
+        ).strip()
+        subprocess.run(
+            ["git", "branch", "cross-ai-test-base", self.base_sha],
+            cwd=self.worktree,
+            check=True,
+        )
+        source.write_text("base\nhead\n", encoding="utf-8")
+        subprocess.run(["git", "add", "scope-source.txt"], cwd=self.worktree, check=True)
+        subprocess.run(["git", "commit", "-qm", "head"], cwd=self.worktree, check=True)
+        self.head_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.worktree, text=True
+        ).strip()
+        self.base_ref = "refs/heads/cross-ai-test-base"
+        self.scope = self.root / "scope.patch"
+        prepare = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/ai/prepare_cross_ai_scope.py"),
+                "--repo",
+                str(self.worktree),
+                "--base-ref",
+                self.base_ref,
+                "--base-sha",
+                self.base_sha,
+                "--head-sha",
+                self.head_sha,
+                "--output",
+                str(self.scope),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if prepare.returncode != 0:
+            raise RuntimeError(prepare.stdout + prepare.stderr)
+        self.scope_sha = json.loads(prepare.stdout)["scope_sha256"]
+        self.output = self.root / "evidence.json"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def run_harness(
+        self,
+        *,
+        tool_event: bool = False,
+        error_event: bool = False,
+        stderr_event: bool = False,
+        skip_turn_started: bool = False,
+        duplicate_turn_started: bool = False,
+        review_tier: str = "routine",
+        trusted_pin: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        env = {
+            **os.environ,
+            "PATH": f"{self.bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        }
+        if tool_event:
+            env["FAKE_TOOL_EVENT"] = "1"
+        if error_event:
+            env["FAKE_ERROR_EVENT"] = "1"
+        if stderr_event:
+            env["FAKE_STDERR"] = "1"
+        if skip_turn_started:
+            env["FAKE_SKIP_TURN_STARTED"] = "1"
+        if duplicate_turn_started:
+            env["FAKE_DUPLICATE_TURN_STARTED"] = "1"
+        if review_tier == "high-impact":
+            env["EXPECTED_MODEL"] = "gpt-5.6-sol"
+        arguments = [
+            str(SCRIPT),
+            "--worktree",
+            str(self.worktree),
+            "--scope-file",
+            str(self.scope),
+            "--scope-sha256",
+            self.scope_sha,
+            "--base-ref",
+            self.base_ref,
+            "--base-tip-sha",
+            self.base_sha,
+            "--base-sha",
+            self.base_sha,
+            "--head-sha",
+            self.head_sha,
+            "--evidence-output",
+            str(self.output),
+            "--review-tier",
+            review_tier,
+        ]
+        trusted = dict(MODULE.TRUSTED_CODEX_NATIVE_SHA256)
+        if trusted_pin:
+            trusted[("0.144.1", self.package_suffix)] = hashlib.sha256(
+                self.fake_codex.read_bytes()
+            ).hexdigest()
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        returncode = 0
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(MODULE, "TRUSTED_CODEX_NATIVE_SHA256", trusted),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            try:
+                MODULE.main()
+            except SystemExit as exc:
+                returncode = int(exc.code or 0)
+        return subprocess.CompletedProcess(
+            arguments,
+            returncode,
+            stdout.getvalue(),
+            stderr.getvalue(),
+        )
+
+    def test_runs_fixed_profile_and_writes_create_once_evidence(self) -> None:
+        result = self.run_harness()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(
+            summary["execution_profile"],
+            "codex-exec-ephemeral-read-only-exact-scope-v1",
+        )
+        evidence = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(evidence["provider"], "openai")
+        self.assertEqual(evidence["actual_model"], "not-provider-attested")
+        self.assertEqual(summary["requested_model"], "gpt-5.3-codex-spark")
+        self.assertEqual(summary["review_tier"], "routine")
+        self.assertEqual(summary["reasoning_effort"], "xhigh")
+        self.assertEqual(summary["cli_version"], "0.144.1")
+        self.assertRegex(summary["cli_native_sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            summary["cli_trust_root"],
+            "repo-pinned-codex-native-sha256-v1",
+        )
+        self.assertEqual(
+            evidence["execution_provenance"]["cli_native_sha256"],
+            summary["cli_native_sha256"],
+        )
+        self.assertEqual(evidence["scope_sha256"], self.scope_sha)
+        self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn(evidence["response"], result.stdout)
+
+    def test_high_impact_tier_uses_sol_model(self) -> None:
+        result = self.run_harness(review_tier="high-impact")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        evidence = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(summary["review_tier"], "high-impact")
+        self.assertEqual(summary["requested_model"], "gpt-5.6-sol")
+        self.assertEqual(evidence["actual_model"], "not-provider-attested")
+
+    def test_rejects_any_tool_or_repository_access_event(self) -> None:
+        result = self.run_harness(tool_event=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "codex_tool_or_non_message_event_forbidden",
+        )
+
+    def test_rejects_cli_error_or_reroute_event(self) -> None:
+        result = self.run_harness(error_event=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "codex_tool_or_non_message_event_forbidden",
+        )
+
+    def test_rejects_nonempty_cli_stderr(self) -> None:
+        result = self.run_harness(stderr_event=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(json.loads(result.stdout)["error"], "codex_execution_failed")
+
+    def test_rejects_missing_or_duplicate_turn_started_lifecycle(self) -> None:
+        for options in (
+            {"skip_turn_started": True},
+            {"duplicate_turn_started": True},
+        ):
+            with self.subTest(options=options):
+                result = self.run_harness(**options)
+                self.assertEqual(result.returncode, 1)
+                self.assertFalse(self.output.exists())
+                self.assertEqual(
+                    json.loads(result.stdout)["error"],
+                    "codex_event_sequence_invalid",
+                )
+
+    def test_rejects_scope_not_derived_from_bound_commits(self) -> None:
+        self.scope.write_text(
+            self.scope.read_text(encoding="utf-8") + "caller made claim\n",
+            encoding="utf-8",
+        )
+        self.scope_sha = hashlib.sha256(self.scope.read_bytes()).hexdigest()
+        result = self.run_harness()
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "canonical_scope_binding_mismatch",
+        )
+
+    def test_refuses_to_overwrite_existing_evidence(self) -> None:
+        self.output.write_text("existing", encoding="utf-8")
+        result = self.run_harness()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.output.read_text(encoding="utf-8"), "existing")
+
+    def test_rejects_untrusted_path_codex_without_official_package_layout(self) -> None:
+        launcher = self.bin_dir / "codex"
+        launcher.unlink()
+        launcher.write_text(FAKE_CODEX, encoding="utf-8")
+        launcher.chmod(0o700)
+        result = self.run_harness()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(json.loads(result.stdout)["error"], "codex_package_invalid")
+
+    def test_rejects_official_shaped_package_without_repo_pinned_native_digest(self) -> None:
+        result = self.run_harness(trusted_pin=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "codex_native_identity_unverifiable",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
