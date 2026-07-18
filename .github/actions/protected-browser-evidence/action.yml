@@ -39,6 +39,8 @@ runs:
           --bootstrap-file "$CROSS_AI_BOOTSTRAP_FILE" \
           --stage browser-evidence \
           --conclusion "$STAGE_CONCLUSION" \
+          --product-artifact-id "${{ steps.product_evidence.outputs['artifact-id'] }}" \
+          --product-artifact-digest "${{ steps.product_evidence.outputs['artifact-digest'] }}" \
           --output-dir "$RUNNER_TEMP/cross-ai-stage-outcome" \
           --github-output "$GITHUB_OUTPUT"
 

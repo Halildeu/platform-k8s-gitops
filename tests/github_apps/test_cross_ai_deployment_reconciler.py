@@ -73,7 +73,9 @@ class FakeReconciler:
         return object()
 
 
-def archive(evidence: dict[str, object], *, filename: str = "cross-ai-stage-evidence.json") -> bytes:
+def archive(
+    evidence: dict[str, object], *, filename: str = "cross-ai-stage-evidence.json"
+) -> bytes:
     output = io.BytesIO()
     info = zipfile.ZipInfo(filename, date_time=(2026, 7, 16, 20, 30, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
@@ -176,6 +178,9 @@ class GitHubOutcomeReconcilerTest(unittest.TestCase):
             "artifactSetSha256": subject["artifactSetSha256"],
             "rollbackPlanSha256": subject["rollbackPlanSha256"],
             "postDeployVerifierSha256": subject["postDeployVerifierSha256"],
+            "productArtifactId": None,
+            "productArtifactName": None,
+            "productArtifactDigest": None,
             "watchdogExpiresAt": "2026-07-16T21:00:00Z",
             "conclusion": "success",
             "createdAt": "2026-07-16T20:30:00Z",
@@ -192,7 +197,9 @@ class GitHubOutcomeReconcilerTest(unittest.TestCase):
         filename="cross-ai-stage-evidence.json",
         now=None,
     ):
-        source = FakeArtifactSource(archive(evidence or self.evidence, filename=filename))
+        source = FakeArtifactSource(
+            archive(evidence or self.evidence, filename=filename)
+        )
         value = GitHubOutcomeReconciler(
             installation_id=2222,
             registry=self.registry,
@@ -216,8 +223,12 @@ class GitHubOutcomeReconcilerTest(unittest.TestCase):
             source.requested_name,
             f"cross-ai-stage-outcome-{self.verified.request_id}-apply-101-1",
         )
-        self.assertRegex(outcome.payload["criticalJobsSha256"], r"^sha256:[a-f0-9]{64}$")
-        self.assertRegex(outcome.payload["sourceArchiveSha256"], r"^sha256:[a-f0-9]{64}$")
+        self.assertRegex(
+            outcome.payload["criticalJobsSha256"], r"^sha256:[a-f0-9]{64}$"
+        )
+        self.assertRegex(
+            outcome.payload["sourceArchiveSha256"], r"^sha256:[a-f0-9]{64}$"
+        )
         self.assertEqual(
             self.registry.cas.get_json(outcome.outcome_digest),
             outcome.payload,
@@ -228,7 +239,9 @@ class GitHubOutcomeReconcilerTest(unittest.TestCase):
         )
         self.assertEqual(repeated.outcome_digest, outcome.outcome_digest)
 
-    def test_rejects_wrong_run_binding_unsafe_zip_and_conclusion_confusion(self) -> None:
+    def test_rejects_wrong_run_binding_unsafe_zip_and_conclusion_confusion(
+        self,
+    ) -> None:
         self.run["head_sha"] = "f" * 40
         reconciler, _ = self.reconciler()
         with self.assertRaisesRegex(PolicyError, "STAGE_OUTCOME_RUN_MISMATCH"):
@@ -262,7 +275,9 @@ class GitHubOutcomeReconcilerTest(unittest.TestCase):
         with self.assertRaisesRegex(PolicyError, "GITHUB_JOBS_INVALID"):
             reconciler.reconcile(request_id=self.verified.request_id, stage="apply")
 
-    def test_overdue_apply_unlocks_rollback_only_after_exact_attempt_is_terminal(self) -> None:
+    def test_overdue_apply_unlocks_rollback_only_after_exact_attempt_is_terminal(
+        self,
+    ) -> None:
         current = self.fixture.now + timedelta(minutes=31)
         self.registry.expire_pending_stages(now=current)
         self.run["status"] = "in_progress"

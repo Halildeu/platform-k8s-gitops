@@ -104,8 +104,14 @@ expected_runtime = {
     "intentRef": os.environ["GITHUB_REF"],
     "workflowPath": sys.argv[3],
 }
+expected_workflow_ref = (
+    f'{os.environ["GITHUB_REPOSITORY"]}/{expected_runtime["workflowPath"]}'
+    f'@{expected_runtime["intentRef"]}'
+)
 if any(response.get(field) != value for field, value in expected_runtime.items()):
     raise SystemExit("bootstrap response differs from the current workflow run")
+if os.environ.get("GITHUB_WORKFLOW_REF") != expected_workflow_ref:
+    raise SystemExit("live workflow ref differs from the signed workflow path")
 if (
     subject.get("headSha") != expected_runtime["headSha"]
     or subject.get("intentRef") != expected_runtime["intentRef"]

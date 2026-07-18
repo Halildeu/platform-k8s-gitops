@@ -7,6 +7,7 @@ import argparse
 import base64
 import binascii
 import os
+import re
 import stat
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ STAGE_CONCLUSIONS = {
     "compensating-rollback": {"rolled-back", "failure"},
 }
 MAX_BOOTSTRAP_BYTES = 4 * 1024 * 1024
+DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 
 
 def _positive_env(name: str) -> int:
@@ -166,6 +168,41 @@ def _watchdog(
     return utc_seconds(parsed)
 
 
+def _product_artifact(
+    *,
+    stage: str,
+    conclusion: str,
+    run_id: int,
+    artifact_id: str | None,
+    digest: str | None,
+) -> tuple[int | None, str | None, str | None]:
+    raw_id = (artifact_id or "").strip()
+    raw_digest = (digest or "").strip()
+    if stage == "browser-evidence" and conclusion == "success":
+        if (
+            not raw_id.isascii()
+            or not raw_id.isdigit()
+            or raw_id.startswith("0")
+            or int(raw_id) > 9_007_199_254_740_991
+            or DIGEST_RE.fullmatch(raw_digest) is None
+        ):
+            reject(
+                "STAGE_EVIDENCE_PRODUCT_ARTIFACT_INVALID",
+                "successful browser evidence requires the uploaded artifact identity",
+            )
+        return (
+            int(raw_id),
+            f"faz22-6-view-only-viewer-browser-evidence-{run_id}",
+            raw_digest,
+        )
+    if raw_id or raw_digest:
+        reject(
+            "STAGE_EVIDENCE_PRODUCT_ARTIFACT_INVALID",
+            "only successful browser evidence may bind a product artifact",
+        )
+    return None, None, None
+
+
 def _write_exclusive(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=False, mode=0o700)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
@@ -216,6 +253,11 @@ def build(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
     request_id = response.get("requestId")
     run_id = _positive_env("GITHUB_RUN_ID")
     run_attempt = _positive_env("GITHUB_RUN_ATTEMPT")
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    intent_ref = os.environ.get("GITHUB_REF")
+    expected_workflow_ref = (
+        f"{repository}/{signed_stage.get('workflowPath')}@{intent_ref}"
+    )
     if (
         response.get("runId") != run_id
         or response.get("runAttempt") != run_attempt
@@ -223,9 +265,10 @@ def build(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         or response.get("intentRef") != os.environ.get("GITHUB_REF")
         or subject.get("headSha") != os.environ.get("GITHUB_SHA")
         or subject.get("intentRef") != os.environ.get("GITHUB_REF")
-        or subject.get("repository") != os.environ.get("GITHUB_REPOSITORY")
+        or subject.get("repository") != repository
         or str(subject.get("repositoryId")) != os.environ.get("GITHUB_REPOSITORY_ID")
         or response.get("workflowPath") != signed_stage.get("workflowPath")
+        or os.environ.get("GITHUB_WORKFLOW_REF") != expected_workflow_ref
     ):
         reject(
             "STAGE_EVIDENCE_BINDING_INVALID", "runtime differs from signed bootstrap"
@@ -236,6 +279,15 @@ def build(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         args.conclusion,
         current=current,
         grant_end=grant_end,
+    )
+    product_artifact_id, product_artifact_name, product_artifact_digest = (
+        _product_artifact(
+            stage=args.stage,
+            conclusion=args.conclusion,
+            run_id=run_id,
+            artifact_id=args.product_artifact_id,
+            digest=args.product_artifact_digest,
+        )
     )
     evidence = {
         "schemaVersion": "acik.cross-ai-deployment-stage-evidence.v1",
@@ -253,6 +305,9 @@ def build(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         "artifactSetSha256": subject["artifactSetSha256"],
         "rollbackPlanSha256": subject["rollbackPlanSha256"],
         "postDeployVerifierSha256": subject["postDeployVerifierSha256"],
+        "productArtifactId": product_artifact_id,
+        "productArtifactName": product_artifact_name,
+        "productArtifactDigest": product_artifact_digest,
         "watchdogExpiresAt": watchdog,
         "conclusion": args.conclusion,
         "createdAt": utc_seconds(current),
@@ -283,6 +338,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--stage", choices=sorted(STAGE_CONCLUSIONS), required=True)
     parser.add_argument("--conclusion", required=True)
     parser.add_argument("--watchdog-expires-file", type=Path)
+    parser.add_argument("--product-artifact-id")
+    parser.add_argument("--product-artifact-digest")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--github-output", type=Path, required=True)
     return parser.parse_args(argv)

@@ -171,6 +171,7 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn(
             "bootstrap response differs from the current workflow run", script
         )
+        self.assertIn("live workflow ref differs from the signed workflow path", script)
         self.assertIn("signed subject differs from the current workflow run", script)
         self.assertIn('cd -- "$CROSS_AI_SOURCE_ROOT"', script)
         self.assertNotIn("$GITHUB_WORKSPACE", script)
@@ -323,6 +324,12 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("id: product_evidence", browser)
         self.assertIn("steps.product_evidence.outcome == 'success'", browser)
+        self.assertIn("steps.product_evidence.outputs['artifact-id']", browser)
+        self.assertIn("steps.product_evidence.outputs['artifact-digest']", browser)
+        self.assertLess(
+            browser.index("Upload redacted product browser evidence"),
+            browser.index("Build canonical browser outcome evidence"),
+        )
 
 
 if __name__ == "__main__":

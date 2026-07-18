@@ -137,6 +137,11 @@ def verify_stage_outcome(
 
     conclusion = payload["conclusion"]
     watchdog_value = payload["watchdogExpiresAt"]
+    product_artifact = (
+        payload["productArtifactId"],
+        payload["productArtifactName"],
+        payload["productArtifactDigest"],
+    )
     if expected_stage == "apply":
         if conclusion not in {"success", "failure"}:
             reject(
@@ -161,12 +166,36 @@ def verify_stage_outcome(
                 "STAGE_OUTCOME_STATE_INVALID",
                 "browser outcome has an invalid conclusion or watchdog field",
             )
+        expected_product_name = (
+            f"faz22-6-view-only-viewer-browser-evidence-{expected_run_id}"
+        )
+        if conclusion == "success" and (
+            not isinstance(product_artifact[0], int)
+            or isinstance(product_artifact[0], bool)
+            or product_artifact[0] < 1
+            or product_artifact[1] != expected_product_name
+            or not isinstance(product_artifact[2], str)
+        ):
+            reject(
+                "STAGE_OUTCOME_PRODUCT_ARTIFACT_INVALID",
+                "successful browser outcome lacks the uploaded product artifact binding",
+            )
+        if conclusion == "failure" and product_artifact != (None, None, None):
+            reject(
+                "STAGE_OUTCOME_PRODUCT_ARTIFACT_INVALID",
+                "failed browser outcome must not assert a product artifact",
+            )
     else:
         if conclusion not in {"rolled-back", "failure"} or watchdog_value is not None:
             reject(
                 "STAGE_OUTCOME_STATE_INVALID",
                 "rollback outcome has an invalid conclusion or watchdog field",
             )
+    if expected_stage != "browser-evidence" and product_artifact != (None, None, None):
+        reject(
+            "STAGE_OUTCOME_PRODUCT_ARTIFACT_INVALID",
+            "non-browser outcome must not assert a product artifact",
+        )
 
     target_state = {
         "success": "Succeeded",

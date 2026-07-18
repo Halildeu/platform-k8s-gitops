@@ -20,6 +20,9 @@
     "artifactSetSha256",
     "rollbackPlanSha256",
     "postDeployVerifierSha256",
+    "productArtifactId",
+    "productArtifactName",
+    "productArtifactDigest",
     "watchdogExpiresAt",
     "conclusion",
     "createdAt"
@@ -40,6 +43,24 @@
     "artifactSetSha256": {"$ref": "#/$defs/digest"},
     "rollbackPlanSha256": {"$ref": "#/$defs/digest"},
     "postDeployVerifierSha256": {"$ref": "#/$defs/digest"},
+    "productArtifactId": {
+      "oneOf": [
+        {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        {"type": "null"}
+      ]
+    },
+    "productArtifactName": {
+      "oneOf": [
+        {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,200}$"},
+        {"type": "null"}
+      ]
+    },
+    "productArtifactDigest": {
+      "oneOf": [
+        {"$ref": "#/$defs/digest"},
+        {"type": "null"}
+      ]
+    },
     "watchdogExpiresAt": {
       "oneOf": [
         {"type": "string", "format": "date-time"},
@@ -78,6 +99,42 @@
         "properties": {
           "conclusion": {"enum": ["success", "failure"]},
           "watchdogExpiresAt": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {"const": "browser-evidence"},
+          "conclusion": {"const": "success"}
+        },
+        "required": ["stage", "conclusion"]
+      },
+      "then": {
+        "properties": {
+          "conclusion": {"enum": ["success", "failure"]},
+          "watchdogExpiresAt": {"type": "null"},
+          "productArtifactId": {"type": "integer", "minimum": 1},
+          "productArtifactName": {"type": "string"},
+          "productArtifactDigest": {"$ref": "#/$defs/digest"}
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "stage": {"const": "browser-evidence"},
+            "conclusion": {"const": "success"}
+          },
+          "required": ["stage", "conclusion"]
+        }
+      },
+      "then": {
+        "properties": {
+          "productArtifactId": {"type": "null"},
+          "productArtifactName": {"type": "null"},
+          "productArtifactDigest": {"type": "null"}
         }
       }
     },

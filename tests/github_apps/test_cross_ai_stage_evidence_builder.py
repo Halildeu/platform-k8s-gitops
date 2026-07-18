@@ -47,6 +47,11 @@ class StageEvidenceBuilderTest(unittest.TestCase):
             "GITHUB_REF": bundle["subject"]["intentRef"],
             "GITHUB_REPOSITORY": bundle["subject"]["repository"],
             "GITHUB_REPOSITORY_ID": str(bundle["subject"]["repositoryId"]),
+            "GITHUB_WORKFLOW_REF": (
+                f'{bundle["subject"]["repository"]}/'
+                f'{bundle["workflowStages"][1]["workflowPath"]}'
+                f'@{bundle["subject"]["intentRef"]}'
+            ),
         }
 
     def _write_response(self) -> None:
@@ -61,6 +66,8 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.directory.cleanup()
 
     def args(self, **overrides) -> argparse.Namespace:
+        stage = overrides.get("stage", "browser-evidence")
+        conclusion = overrides.get("conclusion", "success")
         values = {
             "bootstrap_file": self.bootstrap,
             "stage": "browser-evidence",
@@ -68,6 +75,16 @@ class StageEvidenceBuilderTest(unittest.TestCase):
             "watchdog_expires_file": None,
             "output_dir": self.root / "outcome",
             "github_output": self.github_output,
+            "product_artifact_id": (
+                "707"
+                if stage == "browser-evidence" and conclusion == "success"
+                else None
+            ),
+            "product_artifact_digest": (
+                "sha256:" + ("7" * 64)
+                if stage == "browser-evidence" and conclusion == "success"
+                else None
+            ),
         }
         values.update(overrides)
         return argparse.Namespace(**values)
@@ -81,6 +98,12 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.assertEqual(output.read_bytes(), canonical_bytes(evidence))
         self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
         self.assertEqual(evidence["watchdogExpiresAt"], None)
+        self.assertEqual(evidence["productArtifactId"], 707)
+        self.assertEqual(
+            evidence["productArtifactName"],
+            "faz22-6-view-only-viewer-browser-evidence-101",
+        )
+        self.assertEqual(evidence["productArtifactDigest"], "sha256:" + ("7" * 64))
         self.assertEqual(
             artifact,
             "cross-ai-stage-outcome-30000000-0000-4000-8000-000000000001-"
@@ -106,6 +129,10 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.response["workflowPath"] = self.factory.decode_payload(
             self.fixture.bundle_envelope
         )["workflowStages"][0]["workflowPath"]
+        self.environment["GITHUB_WORKFLOW_REF"] = (
+            f'{self.environment["GITHUB_REPOSITORY"]}/'
+            f'{self.response["workflowPath"]}@{self.environment["GITHUB_REF"]}'
+        )
         self.response["bundleSha256"] = sha256_digest(self.fixture.bundle_envelope)
         self._write_response()
         with patch.dict(os.environ, self.environment, clear=True), patch.object(
@@ -113,11 +140,33 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         ), self.assertRaisesRegex(PolicyError, "STAGE_EVIDENCE_WATCHDOG_INVALID"):
             builder.build(self.args(stage="apply"))
 
+    def test_rejects_workflow_ref_or_product_artifact_drift(self) -> None:
+        changed_environment = dict(self.environment)
+        changed_environment["GITHUB_WORKFLOW_REF"] = (
+            "Halildeu/platform-k8s-gitops/.github/workflows/other.yml@"
+            + self.environment["GITHUB_REF"]
+        )
+        with patch.dict(os.environ, changed_environment, clear=True), patch.object(
+            builder, "utc_now", return_value=self.fixture.now
+        ), self.assertRaisesRegex(PolicyError, "STAGE_EVIDENCE_BINDING_INVALID"):
+            builder.build(self.args())
+
+        with patch.dict(os.environ, self.environment, clear=True), patch.object(
+            builder, "utc_now", return_value=self.fixture.now
+        ), self.assertRaisesRegex(
+            PolicyError, "STAGE_EVIDENCE_PRODUCT_ARTIFACT_INVALID"
+        ):
+            builder.build(self.args(product_artifact_digest="sha256:" + ("0" * 63)))
+
     def test_records_apply_failure_before_watchdog_creation(self) -> None:
         self.response["stage"] = "apply"
         self.response["workflowPath"] = self.factory.decode_payload(
             self.fixture.bundle_envelope
         )["workflowStages"][0]["workflowPath"]
+        self.environment["GITHUB_WORKFLOW_REF"] = (
+            f'{self.environment["GITHUB_REPOSITORY"]}/'
+            f'{self.response["workflowPath"]}@{self.environment["GITHUB_REF"]}'
+        )
         self._write_response()
         with patch.dict(os.environ, self.environment, clear=True), patch.object(
             builder, "utc_now", return_value=self.fixture.now
@@ -133,6 +182,10 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.response["workflowPath"] = self.factory.decode_payload(
             self.fixture.bundle_envelope
         )["workflowStages"][0]["workflowPath"]
+        self.environment["GITHUB_WORKFLOW_REF"] = (
+            f'{self.environment["GITHUB_REPOSITORY"]}/'
+            f'{self.response["workflowPath"]}@{self.environment["GITHUB_REF"]}'
+        )
         self._write_response()
         receipt = self.root / "watchdog-expires-at"
         receipt.write_text("2026-07-16T21:00:00Z\n", encoding="ascii")
