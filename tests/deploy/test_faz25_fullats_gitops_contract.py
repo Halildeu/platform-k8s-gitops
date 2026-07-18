@@ -260,6 +260,19 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         )
         first_tenant_write = self.keycloak.index('set_tenant "$ADMIN_UID"')
         self.assertLess(profile_guard, first_tenant_write)
+        self.assertIn(
+            "FULLATS_PUBLIC_TENANT_ID='00000000-0000-0000-0000-000000000001'",
+            self.keycloak,
+        )
+        self.assertIn(
+            'set_tenant "$ADMIN_UID" "$FULLATS_PUBLIC_TENANT_ID"',
+            self.keycloak,
+        )
+        self.assertIn(
+            'assert_tenant_exact "$ADMIN_UID" fullats-admin "$FULLATS_PUBLIC_TENANT_ID"',
+            self.keycloak,
+        )
+        self.assertNotIn('set_tenant "$ADMIN_UID" t-platform-test', self.keycloak)
         self.assertIn('kc get users/profile -r "$REALM"', self.keycloak)
         self.assertIn(
             "/opt/keycloak/bin/kcadm.sh update users/profile",

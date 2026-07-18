@@ -11,6 +11,11 @@ set -euo pipefail
 KC=platform-kc-test
 REALM=platform-test
 KCADM='/opt/keycloak/bin/kcadm.sh'
+# Full ATS public careers tenant. Candidate applications are persisted here;
+# the human Platform Admin recruiter must resolve the same tenant or the
+# application is correctly hidden by tenant isolation. D29/interview operator
+# duties stay on the separate ats-operator-persona with t-platform-test.
+FULLATS_PUBLIC_TENANT_ID='00000000-0000-0000-0000-000000000001'
 
 kc() { docker exec "$KC" "$KCADM" "$@"; }
 
@@ -265,10 +270,10 @@ ensure_tenant_user_profile_attribute
 
 ADMIN_UID=$(kc get users -r $REALM -q 'username=admin@example.com' -q exact=true --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
 if [ -n "$ADMIN_UID" ]; then
-  set_tenant "$ADMIN_UID" t-platform-test
+  set_tenant "$ADMIN_UID" "$FULLATS_PUBLIC_TENANT_ID"
   # shellcheck disable=SC2086
   grant "$ADMIN_UID" $PERMS
-  echo "KC: admin test kullanıcısına tenant=t-platform-test + 13 ats-api rolü atandı (operator; repair HARİÇ)"
+  echo "KC: admin test kullanıcısına Full ATS public tenant + 13 ats-api rolü atandı (repair HARİÇ)"
 else
   echo "WARN: admin@example.com bulunamadı — operator ataması atlandı" >&2
 fi
@@ -444,7 +449,7 @@ print(v[0] if len(v)==1 else "")')
 }
 # shellcheck disable=SC2086
 [ -n "$ADMIN_UID" ] && assert_roles_exact "$ADMIN_UID" operator-admin $PERMS
-[ -n "$ADMIN_UID" ] && assert_tenant_exact "$ADMIN_UID" operator-admin t-platform-test
+[ -n "$ADMIN_UID" ] && assert_tenant_exact "$ADMIN_UID" fullats-admin "$FULLATS_PUBLIC_TENANT_ID"
 assert_roles_exact "$READER_UID" reader ats.transcript.read ats.review.read
 assert_roles_exact "$REVIEWER_UID" reviewer ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read
 assert_roles_exact "$RECRUITER_UID" recruiter ats.application.read ats.application.status.write
