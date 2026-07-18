@@ -467,7 +467,6 @@ def inspect_workflow(
             "runs-on",
             "steps",
             "timeout-minutes",
-            "concurrency",
         }:
             reject(
                 "WORKFLOW_JOB_CONTROL_INVALID",

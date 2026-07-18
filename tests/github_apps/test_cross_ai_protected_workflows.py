@@ -19,26 +19,57 @@ ZERO_TRUST_PIN = "sha256:" + ("0" * 64)
 
 
 class ProtectedWorkflowSourceContractTest(unittest.TestCase):
-    def test_gate_triggers_for_every_protected_runtime_authority_file(self) -> None:
+    def test_gate_triggers_for_declared_runtime_authority_inventory(self) -> None:
         workflow = yaml.load(
             (
                 ROOT / ".github/workflows/gate-cross-ai-deployment-protection.yml"
             ).read_text(encoding="utf-8"),
             Loader=yaml.BaseLoader,
         )
+        policy = load_policy(POLICY)
+        inventory = (
+            ROOT / "config/github-apps/cross-ai-runtime-authority-paths.txt"
+        ).read_text(encoding="utf-8")
         required_paths = {
-            ".github/workflows/gate-cross-ai-deployment-protection.yml",
-            "scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py",
-            "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh",
-            "scripts/faz22-remote-ops/verify-watchdog-network-policy.jq",
-            "scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml",
+            line for line in inventory.splitlines() if line and not line.startswith("#")
         }
+        required_paths.update(stage.workflow_path for stage in policy.stages.values())
+        required_paths.update(
+            f"{directory.relative_to(ROOT).as_posix()}/**"
+            for directory in (ROOT / ".github/actions").glob("protected-*")
+            if directory.is_dir()
+        )
+        required_paths.update(
+            {
+                ".github/workflows/gate-cross-ai-deployment-protection.yml",
+            }
+        )
         for event in ("pull_request", "push"):
             configured_paths = set(workflow["on"][event]["paths"])
             self.assertTrue(
                 required_paths <= configured_paths,
-                f"{event} does not trigger the fail-closed gate for every authority file",
+                f"{event} does not trigger the gate for the declared authority inventory",
             )
+
+    def test_canonical_adr_uses_exact_three_provider_contract(self) -> None:
+        adr = (
+            ROOT / "docs/adr/0045-signed-cross-ai-custom-deployment-protection-rule.md"
+        ).read_text(encoding="utf-8")
+        for stale_contract in (
+            "five-key TEST Transit bootstrap",
+            "two real provider issuer",
+            "valid two-family quorum",
+            "| Review chain | AGREE/AGREE; open REVISE",
+            '"schemaVersion": "acik.cross-ai-deployment-evidence.v1"',
+        ):
+            self.assertNotIn(stale_contract, adr)
+        self.assertIn("six-key TEST Transit bootstrap", adr)
+        self.assertIn("AGREE/AGREE/AGREE", adr)
+        self.assertIn("acik.cross-ai-deployment-bundle.v1", adr)
+        self.assertIn(
+            "tests/github_apps/cross_ai_policy_fixtures.py",
+            adr,
+        )
 
     def test_all_signed_stage_paths_are_no_input_and_statically_reproducible(
         self,

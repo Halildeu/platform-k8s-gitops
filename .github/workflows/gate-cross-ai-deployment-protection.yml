@@ -3,7 +3,7 @@ name: Gate — signed Cross-AI deployment protection
 on:
   pull_request:
     paths:
-      - "schema/cross-ai-deployment-*.json"
+      - "schema/cross-ai-*.json"
       - "scripts/github_apps/**"
       - "tests/github_apps/**"
       - "config/github-apps/**"
@@ -12,11 +12,10 @@ on:
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
       - "scripts/ops/vault-policy-reconcile.sh"
-      - "scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py"
-      - "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
-      - "scripts/faz22-remote-ops/verify-watchdog-network-policy.jq"
-      - "scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
+      - "scripts/faz22-remote-ops/**"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
+      - "docs/adr/0045-signed-cross-ai-custom-deployment-protection-rule.md"
+      - "docs/runbooks/RB-cross-ai-deployment-protection-rule.md"
       - ".github/actions/protected-apply/**"
       - ".github/actions/protected-browser-evidence/**"
       - ".github/actions/protected-rollback/**"
@@ -27,7 +26,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "schema/cross-ai-deployment-*.json"
+      - "schema/cross-ai-*.json"
       - "scripts/github_apps/**"
       - "tests/github_apps/**"
       - "config/github-apps/**"
@@ -36,11 +35,10 @@ on:
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
       - "scripts/ops/vault-policy-reconcile.sh"
-      - "scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py"
-      - "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
-      - "scripts/faz22-remote-ops/verify-watchdog-network-policy.jq"
-      - "scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
+      - "scripts/faz22-remote-ops/**"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
+      - "docs/adr/0045-signed-cross-ai-custom-deployment-protection-rule.md"
+      - "docs/runbooks/RB-cross-ai-deployment-protection-rule.md"
       - ".github/actions/protected-apply/**"
       - ".github/actions/protected-browser-evidence/**"
       - ".github/actions/protected-rollback/**"

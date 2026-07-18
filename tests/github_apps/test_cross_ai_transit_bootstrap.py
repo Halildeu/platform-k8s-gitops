@@ -266,6 +266,12 @@ class TransitBootstrapTests(unittest.TestCase):
                 )
 
         reconciler = (ROOT / "scripts/ops/vault-policy-reconcile.sh").read_text()
+        self.assertIn("APPLY_FAIL=0", reconciler)
+        self.assertIn("APPLY_FAIL=1", reconciler)
+        self.assertIn("manifest policy file missing", reconciler)
+        self.assertIn("one or more Vault policy/AppRole writes failed", reconciler)
+        self.assertIn("AppRole role-id retrieval failed", reconciler)
+        self.assertIn("AppRole secret-id emission failed", reconciler)
         emission_manifest = reconciler.split("EMITTABLE_APPROLES=(", 1)[1].split(
             ")", 1
         )[0]

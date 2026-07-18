@@ -101,6 +101,18 @@ class WorkflowInspectionTest(unittest.TestCase):
         )
         self.assert_rejected(cancelling, "WORKFLOW_CONCURRENCY_INVALID")
 
+    def test_rejects_job_level_concurrency_override(self) -> None:
+        job_concurrency = workflow().replace(
+            b"    steps:\n",
+            (
+                b"    concurrency:\n"
+                b"      group: ${{ github.ref }}\n"
+                b"      cancel-in-progress: true\n"
+                b"    steps:\n"
+            ),
+        )
+        self.assert_rejected(job_concurrency, "WORKFLOW_JOB_CONTROL_INVALID")
+
     def test_rejects_dispatch_inputs_and_input_reads(self) -> None:
         self.assert_rejected(
             workflow(
