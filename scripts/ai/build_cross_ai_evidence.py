@@ -19,6 +19,10 @@ from typing import NoReturn
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 VERDICT_RE = re.compile(r"^VERDICT:\s*(AGREE|REVISE)\s*$", re.IGNORECASE | re.MULTILINE)
+PRIORITY_HEADING_RE = re.compile(
+    r"(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?(P[012])(?:\*\*)?"
+    r"(?:\s*[—:-].*)?\s*$"
+)
 PROVIDER_MODELS = {
     "anthropic": "claude-opus-4-8",
     "minimax": "minimax/MiniMax-M3",
@@ -31,6 +35,20 @@ MAX_EVIDENCE_BYTES = 60_000
 def fail(code: str) -> NoReturn:
     print(json.dumps({"ok": False, "error": code}, ensure_ascii=False))
     raise SystemExit(1)
+
+
+def priority_sections_have_content(response: str) -> bool:
+    headings = list(PRIORITY_HEADING_RE.finditer(response))
+    if [match.group(1).upper() for match in headings] != ["P0", "P1", "P2"]:
+        return False
+    verdict_match = next(iter(VERDICT_RE.finditer(response)), None)
+    if verdict_match is None:
+        return False
+    for index, heading in enumerate(headings):
+        end = headings[index + 1].start() if index < 2 else verdict_match.start()
+        if not response[heading.end():end].strip():
+            return False
+    return True
 
 
 def main() -> None:
@@ -66,13 +84,8 @@ def main() -> None:
         or not VERDICT_RE.fullmatch(lines[-1])
     ):
         fail("provider_verdict_missing_ambiguous_or_nonterminal")
-    for priority in ("P0", "P1", "P2"):
-        heading = re.compile(
-            rf"(?im)^\s*(?:#{{1,6}}\s*)?(?:\*\*)?{priority}(?:\*\*)?"
-            r"(?:\s*[—:-].*)?\s*$"
-        )
-        if not heading.search(response):
-            fail("provider_findings_sections_missing")
+    if not priority_sections_have_content(response):
+        fail("provider_findings_sections_missing_empty_duplicate_or_out_of_order")
     verdict = verdicts[0].upper()
     response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
     evidence = json.dumps(

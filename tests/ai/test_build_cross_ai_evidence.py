@@ -68,6 +68,15 @@ class EvidenceBuilderTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
 
+    def test_rejects_empty_duplicate_or_out_of_order_priority_sections(self) -> None:
+        for response in (
+            "P0\nP1\nP2\nVERDICT: AGREE",
+            "P0\nNone\nP1\nNone\nP1\nAgain\nP2\nNone\nVERDICT: AGREE",
+            "P1\nNone\nP0\nNone\nP2\nNone\nVERDICT: AGREE",
+        ):
+            with self.subTest(response=response):
+                self.assertEqual(self.run_builder(response).returncode, 1)
+
     def test_control_and_escape_characters_round_trip_in_json(self) -> None:
         response = (
             "P0\nNone\u0001\nP1\nNone\u2028\nP2\n"

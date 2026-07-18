@@ -142,7 +142,7 @@ const AUTOMATION_DIFF_ALLOWLIST = {
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
   ],
   'auto-verified/': [
-    /^release-candidates\/[A-Za-z0-9._-]+\/[0-9a-f]{40}\.json$/,
+    /^release-candidates\/(?:platform-agent|platform-backend|platform-web)\/[0-9a-f]{40}\.json$/,
   ],
   'auto-promotion/': [
     /^kustomize\/overlays\/prod\/kustomization\.yaml$/,
@@ -425,10 +425,17 @@ function parseProviderResponseVerdict(response) {
   if (matches.length !== 1 || !lines.length || !/^VERDICT:\s*(AGREE|REVISE)\s*$/i.test(lines.at(-1))) {
     return null;
   }
-  const sectionsPresent = ['P0', 'P1', 'P2'].every((priority) =>
-    new RegExp(`^\\s*(?:#{1,6}\\s*)?(?:\\*\\*)?${priority}(?:\\*\\*)?(?:\\s*[—:-].*)?\\s*$`, 'im').test(response)
-  );
-  return sectionsPresent ? matches[0][1].toUpperCase() : null;
+  const headingRe = /^\s*(?:#{1,6}\s*)?(?:\*\*)?(P[012])(?:\*\*)?(?:\s*[—:-].*)?\s*$/gim;
+  const headings = [...response.matchAll(headingRe)];
+  if (headings.map((match) => match[1].toUpperCase()).join(',') !== 'P0,P1,P2') {
+    return null;
+  }
+  const sectionsHaveContent = headings.every((heading, index) => {
+    const start = heading.index + heading[0].length;
+    const end = index < 2 ? headings[index + 1].index : matches[0].index;
+    return response.slice(start, end).trim().length > 0;
+  });
+  return sectionsHaveContent ? matches[0][1].toUpperCase() : null;
 }
 
 async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {

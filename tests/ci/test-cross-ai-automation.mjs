@@ -202,6 +202,20 @@ const minimaxRevisePeerBody = peerBody.replace(
   sha256(EVIDENCE[MINIMAX_REF].body),
   sha256(minimaxReviseBody),
 );
+const emptySectionsResponse = 'P0\nP1\nP2\nVERDICT: AGREE';
+const emptySectionsClaudeBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  response_sha256: sha256(emptySectionsResponse),
+  response: emptySectionsResponse,
+});
+const emptySectionsEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(emptySectionsClaudeBody),
+};
+const emptySectionsPeerBody = peerBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(emptySectionsClaudeBody),
+);
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -316,6 +330,12 @@ const cases = [
   ['Claude/Codex AGREE + MiniMax REVISE -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: minimaxRevisePeerBody, evidence: minimaxReviseEvidence }, 1],
+  ['provider response with empty P0/P1/P2 sections -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: emptySectionsPeerBody, evidence: emptySectionsEvidence }, 1],
+  ['auto-verified ledger outside the three canonical product families -> blocked',
+    { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(LEDGER),
+      changedFiles: [`release-candidates/fake-product/${'a'.repeat(40)}.json`] }, 1],
   ['normal PR + event base tip mismatch -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       baseSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody }, 1],

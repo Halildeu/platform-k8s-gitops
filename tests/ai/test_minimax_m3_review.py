@@ -48,6 +48,15 @@ class VerdictParsingTests(unittest.TestCase):
     def test_rejects_missing_priority_sections(self) -> None:
         self.assert_rejected("İnceleme tamam.\nVERDICT: AGREE")
 
+    def test_rejects_empty_duplicate_or_out_of_order_priority_sections(self) -> None:
+        for response in (
+            "P0\nP1\nP2\nVERDICT: AGREE",
+            "P0\nNone\nP1\nNone\nP1\nAgain\nP2\nNone\nVERDICT: AGREE",
+            "P1\nNone\nP0\nNone\nP2\nNone\nVERDICT: AGREE",
+        ):
+            with self.subTest(response=response):
+                self.assert_rejected(response)
+
     def test_rejects_priority_names_embedded_in_prose(self) -> None:
         self.assert_rejected(
             "Bu cevapta P0 ve P1 ile P2 bölümleri yoktur.\nVERDICT: AGREE"
