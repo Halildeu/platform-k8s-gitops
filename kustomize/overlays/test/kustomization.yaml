@@ -1177,6 +1177,10 @@ images:
     digest: sha256:bfe2e825c575b04221f539cdc5d79b1277b51593e4cf080591a75d039474f5c2
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
+    # 2026-07-18 Faz 25 #2615 branch acceptance: platform-backend#868
+    # exact head e2feb24117f1c1dc76306535197edb67dccf974e. Adds ATS module/action
+    # catalog + implicit-admin policy required by the least-privilege recruiter
+    # persona. Build run 29629811595, tag sha-e2feb24; test-only.
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
     #
     # Phase 2 permanent fix for "rol tanımlama kaydetme güncellme mevcut kaydı
@@ -1461,7 +1465,7 @@ images:
     # NOTE   : provenance:false + no org.opencontainers.image.revision label -> the digest
     #          proves the artifact, not the full source lineage. Reconcile the Actions run
     #          / promotion ledger once GitHub recovers, before any prod promotion.
-    digest: sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e139a5256
+    digest: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -4250,6 +4254,9 @@ images:
     # Build run 29533847049 testai job 87740302536 published and independently
     # reported the exact immutable digest below. Dispatch run 29534095913 found
     # and this change fixes the promotion-script quoted-heredoc recursion bug.
+    # 2026-07-18 Faz 25 #2615 branch acceptance: platform-web#947 exact head
+    # adds recruiter job lifecycle, public list/detail/apply and browser-local
+    # PDF CV autofill/edit. Build run 29636197881 testai job 88058870412.
     # sourceRevision: 9f82edb249bcc4de3d83ce59a3800d835e88f410
     newTag: sha-9f82edb
     digest: sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0

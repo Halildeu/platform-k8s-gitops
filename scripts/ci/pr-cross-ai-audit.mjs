@@ -49,6 +49,18 @@ const EVIDENCE_KEYS = [
   'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
 ];
+const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
+  'base_sha', 'branch', 'changed_diff_sha256', 'expected_paths', 'head_sha',
+  'promotion_base_sha', 'promotion_head_sha', 'promotion_merge_sha',
+  'promotion_pr', 'promotion_scope_sha256', 'schema', 'source', 'valid',
+];
+const FULLATS_ROLLBACK_PATHS = [
+  'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml',
+  'kustomize/overlays/test/fullats-promotion-state.txt',
+  'kustomize/overlays/test/kustomization.yaml',
+  'scripts/ats/d29-smoke.sh',
+];
+const FULLATS_PROMOTION_BASE_SHA = 'fc5f2735a49977d79b82e9d36d71642e54e67023';
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -158,6 +170,7 @@ const PROVIDER_ALIASES = {
 const AUTOMATION_BRANCH_CONTRACT = {
   'auto-test-overlay/': '.github/workflows/deploy-backend-testai.yml',
   'auto-test-frontend/': '.github/workflows/deploy-testai.yml',
+  'auto-fullats-rollback/': '.github/workflows/faz25-fullats-live-browser-acceptance.yml',
   'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
 };
 // Per-prefix actor contract (#827 PR-B, Codex `019e4048` Q2 REVISE). Each
@@ -183,6 +196,7 @@ const AUTOMATION_BRANCH_CONTRACT = {
 const AUTOMATION_PREFIX_ACTORS = {
   'auto-test-overlay/': new Set(['platform-gitops-automation[bot]']),
   'auto-test-frontend/': new Set(['platform-gitops-automation[bot]']),
+  'auto-fullats-rollback/': new Set(['platform-gitops-automation[bot]']),
   'auto-verified/': new Set(['github-actions[bot]']),
 };
 
@@ -199,6 +213,15 @@ const AUTOMATION_DIFF_ALLOWLIST = {
   ],
   'auto-test-frontend/': [
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+  ],
+  // Faz 25 #2615: failure compensator can restore only the two desired-state
+  // image surfaces, the ATS digest mirror and the explicit promotion marker.
+  // It cannot carry workflow/governance/application changes in its bot PR.
+  'auto-fullats-rollback/': [
+    /^kustomize\/overlays\/test\/activation\/ats-interview-evidence\/kustomization\.yaml$/,
+    /^kustomize\/overlays\/test\/fullats-promotion-state\.txt$/,
+    /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+    /^scripts\/ats\/d29-smoke\.sh$/,
   ],
   'auto-verified/': [
     /^release-candidates\/(?:platform-agent|platform-backend|platform-web)\/[0-9a-f]{40}\.json$/,
@@ -263,6 +286,16 @@ function readChangedFiles(args) {
     .filter(Boolean);
 }
 
+function readAutomationContentAttestation(args) {
+  if (!args['automation-content-attestation-file']) return null;
+  const parsed = JSON.parse(
+    readFileSync(args['automation-content-attestation-file'], 'utf8'),
+  );
+  return parsed && !Array.isArray(parsed) && typeof parsed === 'object'
+    ? parsed
+    : null;
+}
+
 function readEvidenceOverrides(args) {
   if (!args['evidence-file']) return {};
   if (args['allow-local-evidence-override'] !== 'true') {
@@ -295,6 +328,7 @@ function loadInput(args) {
         actor: '',
         sender: '',
         changedFiles: readChangedFiles(args),
+        automationContentAttestation: readAutomationContentAttestation(args),
       },
     };
   }
@@ -322,6 +356,7 @@ function loadInput(args) {
         // `pull_request_target` permission expansion and giving the script
         // direct GitHub API access.
         changedFiles: readChangedFiles(args),
+        automationContentAttestation: readAutomationContentAttestation(args),
       },
     };
   }
@@ -1240,6 +1275,43 @@ function auditAutomation(body, prMeta) {
       detail: filesPresent && !badPath
         ? `${prMeta.changedFiles.length} file(s) inside the ${prefix} allowlist`
         : `path "${badPath ?? '<missing list>'}" not in the ${prefix} allowlist`,
+    });
+  }
+
+  if (prefix === 'auto-fullats-rollback/') {
+    const attestation = prMeta.automationContentAttestation;
+    const keys = attestation && typeof attestation === 'object'
+      ? Object.keys(attestation).sort()
+      : [];
+    const expectedPaths = Array.isArray(attestation?.expected_paths)
+      ? [...attestation.expected_paths].sort()
+      : [];
+    const actualChangedFiles = Array.isArray(prMeta.changedFiles)
+      ? [...prMeta.changedFiles].sort()
+      : [];
+    const attestationPass =
+      keys.join(',') === [...FULLATS_ROLLBACK_ATTESTATION_KEYS].sort().join(',')
+      && attestation.schema === 'fullats-rollback-content-attestation/v1'
+      && attestation.valid === true
+      && attestation.source === expectedSource
+      && /^auto-fullats-rollback\/faz25-fullats-[0-9]+-[0-9]+$/u.test(prMeta.headRef)
+      && attestation.branch === prMeta.headRef
+      && attestation.base_sha === prMeta.baseSha
+      && attestation.head_sha === prMeta.headSha
+      && attestation.promotion_pr === 2617
+      && attestation.promotion_merge_sha === prMeta.baseSha
+      && COMMIT_SHA_RE.test(attestation.promotion_head_sha || '')
+      && attestation.promotion_base_sha === FULLATS_PROMOTION_BASE_SHA
+      && SHA256_RE.test(attestation.promotion_scope_sha256 || '')
+      && SHA256_RE.test(attestation.changed_diff_sha256 || '')
+      && actualChangedFiles.join(',') === [...FULLATS_ROLLBACK_PATHS].sort().join(',')
+      && expectedPaths.join(',') === [...FULLATS_ROLLBACK_PATHS].sort().join(',');
+    findings.push({
+      check: 'automation_fullats_content_attestation',
+      pass: attestationPass,
+      detail: attestationPass
+        ? 'trusted-base verifier bound exact promotion tree, explicit consultation mode, one-commit rollback and four expected file blobs'
+        : 'trusted-base Full ATS rollback content attestation missing or does not match PR base/head/source/exact paths',
     });
   }
 

@@ -17,13 +17,14 @@
 // Run: node tests/ci/test-cross-ai-automation.mjs   (exit 0 = all pass)
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(REPO_ROOT, 'scripts', 'ci', 'pr-cross-ai-audit.mjs');
+const ROLLBACK_SCRIPT = join(REPO_ROOT, 'scripts', 'ats', 'open-fullats-test-rollback-pr.sh');
 const REPO = 'Halildeu/platform-k8s-gitops';
 const BOT = 'github-actions[bot]';
 // #827 PR-B — the GitHub App identity bound to the auto-test-overlay/ prefix
@@ -78,7 +79,7 @@ const REVERSED_DUAL_EVIDENCE = {
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true' }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true' }) {
   const event = {
     pull_request: {
       body,
@@ -110,6 +111,11 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     writeFileSync(cf, changedFiles.join('\n'));
     cmdArgs.push('--changed-files-file', cf);
   }
+  if (automationAttestation !== undefined) {
+    const af = join(dir, 'automation-content-attestation.json');
+    writeFileSync(af, JSON.stringify(automationAttestation));
+    cmdArgs.push('--automation-content-attestation-file', af);
+  }
   try {
     const childEnv = { ...process.env };
     if (githubActions) childEnv.GITHUB_ACTIONS = 'true';
@@ -126,6 +132,14 @@ const autoBody = (src) =>
   `Automation source: ${src}\n` +
   `Cross-AI exempt reason: Machine-generated rollout-verified PR; no AI peer-review claim is made.\n` +
   `Automation evidence: https://github.com/Halildeu/platform-k8s-gitops/actions/runs/123\n`;
+
+const rollbackScriptSource = readFileSync(ROLLBACK_SCRIPT, 'utf8');
+const rollbackBodyMatch = rollbackScriptSource.match(/body="\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)"/u);
+if (!rollbackBodyMatch) throw new Error('rollback PR body heredoc not found');
+const renderedRollbackBody = rollbackBodyMatch[1]
+  .replaceAll('__PROMOTION_PR__', '2617')
+  .replaceAll('__RUN_URL__', 'https://github.com/Halildeu/platform-k8s-gitops/actions/runs/123')
+  .replaceAll('__FAILED_SHA__', HEAD_SHA);
 
 const peerBody =
   `## Summary\nx\n\n## Cross-AI\n` +
@@ -385,9 +399,29 @@ const lowercaseVerdictPeerBody = peerBody.replace(
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
+const FULLATS_ROLLBACK_WF = '.github/workflows/faz25-fullats-live-browser-acceptance.yml';
 const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
 const PRIMARY_OVERLAY = 'kustomize/overlays/test/kustomization.yaml';
+const ATS_ACTIVATION = 'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml';
+const FULLATS_STATE = 'kustomize/overlays/test/fullats-promotion-state.txt';
+const D29_SMOKE = 'scripts/ats/d29-smoke.sh';
+const FULLATS_ROLLBACK_FILES = [ATS_ACTIVATION, FULLATS_STATE, PRIMARY_OVERLAY, D29_SMOKE];
+const FULLATS_ATTESTATION = {
+  schema: 'fullats-rollback-content-attestation/v1',
+  valid: true,
+  source: FULLATS_ROLLBACK_WF,
+  branch: 'auto-fullats-rollback/faz25-fullats-123-1',
+  base_sha: BASE_TIP_SHA,
+  head_sha: HEAD_SHA,
+  promotion_pr: 2617,
+  promotion_merge_sha: BASE_TIP_SHA,
+  promotion_head_sha: 'b'.repeat(40),
+  promotion_base_sha: 'fc5f2735a49977d79b82e9d36d71642e54e67023',
+  promotion_scope_sha256: 'c'.repeat(64),
+  changed_diff_sha256: 'd'.repeat(64),
+  expected_paths: FULLATS_ROLLBACK_FILES,
+};
 const VERIFIED_LEDGER = `release-candidates/platform-backend/${'a'.repeat(40)}.json`;
 
 // #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE).
@@ -404,6 +438,18 @@ const cases = [
     { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT, body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid frontend desired-state PR (auto-test-frontend, App-bot)',
     { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
+  ['valid Full ATS four-file rollback PR (App-bot)',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: FULLATS_ATTESTATION }, 0],
+  ['live Full ATS rollback script body passes automation audit',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: renderedRollbackBody, changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: FULLATS_ATTESTATION }, 0],
+  ['Full ATS rollback without trusted content attestation -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 1],
+  ['Full ATS rollback with attestation bound to a different head -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: { ...FULLATS_ATTESTATION, head_sha: 'e'.repeat(40) } }, 1],
+  ['Full ATS rollback with non-exact attested path set -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: { ...FULLATS_ATTESTATION, expected_paths: [...FULLATS_ROLLBACK_FILES, '.github/workflows/ci.yml'] } }, 1],
+  ['Full ATS rollback with extra self-authored attestation field -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: { ...FULLATS_ATTESTATION, claimed: 'pass' } }, 1],
   ['valid auto-verified PR (bot)',
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER] }, 0],
   ['auto-promotion draft cannot claim an automation exemption',
@@ -420,6 +466,12 @@ const cases = [
     { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY, '.github/workflows/ci.yml'] }, 1],
   ['#2295: auto-test-frontend without changed-file evidence -> blocked',
     { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF) }, 1],
+  ['Full ATS rollback with unrelated workflow change -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: [...FULLATS_ROLLBACK_FILES, '.github/workflows/ci.yml'] }, 1],
+  ['Full ATS rollback with wrong automation source -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 1],
+  ['Full ATS rollback with human sender -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: 'mallory', body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 1],
   ['#827 PR-B: auto-verified + platform-gitops-automation[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-verified/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(LEDGER) }, 1],
   ['auto-verified touching governance outside its ledger family -> blocked',

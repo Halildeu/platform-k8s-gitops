@@ -17,11 +17,18 @@ KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 EXPECTED_CONFIRM="RUN_FAZ25_FULLATS_LIVE_BROWSER"
 CONFIRM="${CONFIRM:-}"
+EXPECTED_FRONTEND_SHA="${EXPECTED_FRONTEND_SHA:-}"
+EXPECTED_ATS_DIGEST="${EXPECTED_ATS_DIGEST:-}"
+EXPECTED_PERMISSION_DIGEST="${EXPECTED_PERMISSION_DIGEST:-}"
+EXPECTED_FRONTEND_DIGEST="${EXPECTED_FRONTEND_DIGEST:-}"
 RECRUITER_USERNAME="ats-recruiter-persona"
 RECRUITER_EMAIL="ats-recruiter-persona@test.invalid"
 D35_ADMIN_EMAIL="d35-admin@example.com"
 ROLE_NAME="Full ATS Recruiter"
-MODULE_KEY="INTERVIEW_EVIDENCE"
+INTERVIEW_MODULE_KEY="INTERVIEW_EVIDENCE"
+ATS_MODULE_KEY="ATS"
+ATS_JOB_ACTION_KEY="ATS_JOB_MANAGE"
+ATS_APPLICATION_ACTION_KEY="ATS_APPLICATION_MANAGE"
 PLAYWRIGHT_VERSION="1.60.0"
 AXE_VERSION="4.11.3"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright@sha256:83192064c7510f7ee73dd63dc5f22a5e01a92c81a2e6a9c715d9e3fe55471fd9"
@@ -42,6 +49,16 @@ CURL_MAX_TIME=45
   echo "FATAL: exact test acceptance confirmation gerekli" >&2
   exit 2
 }
+[[ "$EXPECTED_FRONTEND_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "FATAL: exact reviewed frontend source SHA gerekli" >&2
+  exit 2
+}
+for digest in "$EXPECTED_ATS_DIGEST" "$EXPECTED_PERMISSION_DIGEST" "$EXPECTED_FRONTEND_DIGEST"; do
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    echo "FATAL: exact immutable runtime digest gerekli" >&2
+    exit 2
+  }
+done
 
 for cmd in curl docker jq openssl python3; do
   command -v "$cmd" >/dev/null 2>&1 || {
@@ -279,7 +296,7 @@ ACTIVATION_CODE="$(api_request PUT "/api/v1/users/$RECRUITER_USER_ID/activation"
   exit 1
 }
 
-echo "4/6 Recruiter module grant'ini role/granule/member API'leriyle kur"
+echo "4/6 Recruiter least-privilege ATS grant'lerini role/granule/member API'leriyle kur"
 ROLES_OUT="$(json_file roles.json)"
 ROLES_CODE="$(api_request GET /api/v1/roles "$ADMIN_HEADER_FILE" "$ROLES_OUT")"
 [[ "$ROLES_CODE" == "200" ]] || {
@@ -310,46 +327,98 @@ fi
 }
 
 GRANULE_BODY="$(json_file recruiter-granule.json)"
-jq -n --arg key "$MODULE_KEY" \
-  '{permissions:[{type:"MODULE",key:$key,grant:"VIEW"}]}' >"$GRANULE_BODY"
+jq -n \
+  --arg interview_key "$INTERVIEW_MODULE_KEY" \
+  --arg ats_key "$ATS_MODULE_KEY" \
+  --arg job_action "$ATS_JOB_ACTION_KEY" \
+  --arg application_action "$ATS_APPLICATION_ACTION_KEY" \
+  '{permissions:[
+    {type:"MODULE",key:$interview_key,grant:"VIEW"},
+    {type:"MODULE",key:$ats_key,grant:"VIEW"},
+    {type:"ACTION",key:$job_action,grant:"ALLOW"},
+    {type:"ACTION",key:$application_action,grant:"ALLOW"}
+  ]}' >"$GRANULE_BODY"
 GRANULE_OUT="$(json_file recruiter-granule-result.json)"
 GRANULE_CODE="$(api_request PUT "/api/v1/roles/$ROLE_ID/granules" "$ADMIN_HEADER_FILE" "$GRANULE_OUT" "$GRANULE_BODY")"
 [[ "$GRANULE_CODE" == "200" ]] || {
   echo "FATAL: role granule product API HTTP $GRANULE_CODE" >&2
   exit 1
 }
-MEMBER_BODY="$(json_file recruiter-member.json)"
-jq -n --argjson user_id "$RECRUITER_USER_ID" '{userIds:[$user_id]}' >"$MEMBER_BODY"
-MEMBER_OUT="$(json_file recruiter-member-result.json)"
-MEMBER_CODE="$(api_request POST "/api/v1/roles/$ROLE_ID/members" "$ADMIN_HEADER_FILE" "$MEMBER_OUT" "$MEMBER_BODY")"
-[[ "$MEMBER_CODE" == "200" ]] || {
-  echo "FATAL: role member product API HTTP $MEMBER_CODE" >&2
+GRANULE_SNAPSHOT_OUT="$(json_file recruiter-granule-snapshot.json)"
+GRANULE_SNAPSHOT_CODE="$(api_request GET "/api/v1/roles/$ROLE_ID/granules" "$ADMIN_HEADER_FILE" "$GRANULE_SNAPSHOT_OUT")"
+if [[ "$GRANULE_SNAPSHOT_CODE" != "200" ]] || ! jq -e --argjson role_id "$ROLE_ID" '
+    (.roleId == $role_id) and
+    ((.granules | map([.type, .key, .grant] | join(":")) | sort) == [
+      "ACTION:ATS_APPLICATION_MANAGE:ALLOW",
+      "ACTION:ATS_JOB_MANAGE:ALLOW",
+      "MODULE:ATS:VIEW",
+      "MODULE:INTERVIEW_EVIDENCE:VIEW"
+    ])
+  ' "$GRANULE_SNAPSHOT_OUT" >/dev/null; then
+  echo "FATAL: target recruiter role exact four-granule snapshot mismatch" >&2
+  exit 1
+fi
+ASSIGNMENT_BODY="$(json_file recruiter-assignment.json)"
+jq -n --argjson role_id "$ROLE_ID" '{roleIds:[$role_id]}' >"$ASSIGNMENT_BODY"
+ASSIGNMENT_OUT="$(json_file recruiter-assignment-result.json)"
+ASSIGNMENT_CODE="$(api_request POST "/api/v1/authz/users/$RECRUITER_USER_ID/assignments" "$ADMIN_HEADER_FILE" "$ASSIGNMENT_OUT" "$ASSIGNMENT_BODY")"
+[[ "$ASSIGNMENT_CODE" == "200" ]] || {
+  echo "FATAL: exact recruiter role replacement product API HTTP $ASSIGNMENT_CODE" >&2
   exit 1
 }
+USER_ROLES_OUT="$(json_file recruiter-user-roles.json)"
+USER_ROLES_CODE="$(api_request GET "/api/v1/authz/users/$RECRUITER_USER_ID/roles" "$ADMIN_HEADER_FILE" "$USER_ROLES_OUT")"
+if [[ "$USER_ROLES_CODE" != "200" ]] || ! jq -e \
+    --argjson role_id "$ROLE_ID" --arg role_name "$ROLE_NAME" '
+      length == 1 and .[0].roleId == $role_id and .[0].roleName == $role_name
+    ' "$USER_ROLES_OUT" >/dev/null; then
+  echo "FATAL: recruiter active product role set is not exact" >&2
+  exit 1
+fi
+ROLE_MEMBERS_OUT="$(json_file recruiter-role-members.json)"
+ROLE_MEMBERS_CODE="$(api_request GET "/api/v1/roles/$ROLE_ID/members" "$ADMIN_HEADER_FILE" "$ROLE_MEMBERS_OUT")"
+if [[ "$ROLE_MEMBERS_CODE" != "200" ]] || ! jq -e \
+    --argjson recruiter_user_id "$RECRUITER_USER_ID" '
+      length == 1 and .[0].userId == $recruiter_user_id and
+      (. | all((keys | sort) == ["assignedAt", "userId"]))
+    ' "$ROLE_MEMBERS_OUT" >/dev/null; then
+  echo "FATAL: recruiter role exact member snapshot mismatch" >&2
+  exit 1
+fi
 
 RECRUITER_AUTHZ_OUT="$(json_file recruiter-authz.json)"
 RECRUITER_AUTHZ_CODE=""
 for _ in $(seq 1 30); do
   RECRUITER_AUTHZ_CODE="$(api_request GET /api/v1/authz/me "$RECRUITER_HEADER_FILE" "$RECRUITER_AUTHZ_OUT")"
-  if [[ "$RECRUITER_AUTHZ_CODE" == "200" ]] && jq -e --arg key "$MODULE_KEY" '
-    (.superAdmin == false) and (
-      (((.modules[$key]? // "") | tostring | ascii_upcase) as $v |
-        ($v == "VIEW" or $v == "MANAGE" or $v == "ALLOW" or $v == "TRUE")) or
-      (((.allowedModules? // []) | index($key)) != null)
-    )
+  if [[ "$RECRUITER_AUTHZ_CODE" == "200" ]] && jq -e \
+      --arg interview_key "$INTERVIEW_MODULE_KEY" \
+      --arg ats_key "$ATS_MODULE_KEY" \
+      --arg job_action "$ATS_JOB_ACTION_KEY" \
+      --arg application_action "$ATS_APPLICATION_ACTION_KEY" \
+      --arg role_name "$ROLE_NAME" '
+    (.superAdmin == false) and
+    ((.roles // []) == [$role_name]) and
+    ((.modules // {}) == {($interview_key): "VIEW", ($ats_key): "VIEW"}) and
+    ((.actions // {}) == {($job_action): "ALLOW", ($application_action): "ALLOW"}) and
+    ((.reports // {}) == {})
   ' "$RECRUITER_AUTHZ_OUT" >/dev/null; then
     break
   fi
   sleep 2
 done
-if [[ "$RECRUITER_AUTHZ_CODE" != "200" ]] || ! jq -e --arg key "$MODULE_KEY" '
-    (.superAdmin == false) and (
-      (((.modules[$key]? // "") | tostring | ascii_upcase) as $v |
-        ($v == "VIEW" or $v == "MANAGE" or $v == "ALLOW" or $v == "TRUE")) or
-      (((.allowedModules? // []) | index($key)) != null)
-    )
+if [[ "$RECRUITER_AUTHZ_CODE" != "200" ]] || ! jq -e \
+    --arg interview_key "$INTERVIEW_MODULE_KEY" \
+    --arg ats_key "$ATS_MODULE_KEY" \
+    --arg job_action "$ATS_JOB_ACTION_KEY" \
+    --arg application_action "$ATS_APPLICATION_ACTION_KEY" \
+    --arg role_name "$ROLE_NAME" '
+    (.superAdmin == false) and
+    ((.roles // []) == [$role_name]) and
+    ((.modules // {}) == {($interview_key): "VIEW", ($ats_key): "VIEW"}) and
+    ((.actions // {}) == {($job_action): "ALLOW", ($application_action): "ALLOW"}) and
+    ((.reports // {}) == {})
   ' "$RECRUITER_AUTHZ_OUT" >/dev/null; then
-  echo "FATAL: recruiter module grant /authz/me'ye 60s icinde yansimadi" >&2
+  echo "FATAL: recruiter ATS least-privilege grant'leri /authz/me'ye 60s icinde yansimadi" >&2
   exit 1
 fi
 INBOX_OUT="$(json_file recruiter-inbox.json)"
@@ -359,7 +428,8 @@ INBOX_CODE="$(api_request GET '/api/ats/v1/recruiter/applications?page=0&size=1'
   exit 1
 }
 rm -f "$PROFILE_OUT" "$LOOKUP_OUT" "$ACTIVATION_BODY" "$ACTIVATION_OUT" \
-  "$ROLES_OUT" "$GRANULE_BODY" "$GRANULE_OUT" "$MEMBER_BODY" "$MEMBER_OUT" \
+  "$ROLES_OUT" "$GRANULE_BODY" "$GRANULE_OUT" "$GRANULE_SNAPSHOT_OUT" \
+  "$ASSIGNMENT_BODY" "$ASSIGNMENT_OUT" "$USER_ROLES_OUT" "$ROLE_MEMBERS_OUT" \
   "$RECRUITER_AUTHZ_OUT" "$INBOX_OUT"
 
 echo "5/6 Immutable Playwright runtime'i hazirla"
@@ -377,6 +447,10 @@ docker run --rm --ipc=host --network host \
   -e RECRUITER_USERNAME="$RECRUITER_USERNAME" \
   -e RECRUITER_PASSWORD_FILE=/run/secrets/recruiter.password \
   -e EVIDENCE_DIR=/evidence \
+  -e EXPECTED_FRONTEND_SHA="$EXPECTED_FRONTEND_SHA" \
+  -e EXPECTED_ATS_DIGEST="$EXPECTED_ATS_DIGEST" \
+  -e EXPECTED_PERMISSION_DIGEST="$EXPECTED_PERMISSION_DIGEST" \
+  -e EXPECTED_FRONTEND_DIGEST="$EXPECTED_FRONTEND_DIGEST" \
   -e PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION" \
   -e AXE_VERSION="$AXE_VERSION" \
   -e PLAYWRIGHT_INTEGRITY="$PLAYWRIGHT_INTEGRITY" \

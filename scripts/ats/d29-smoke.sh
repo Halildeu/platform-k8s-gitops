@@ -12,7 +12,7 @@ trap 'rm -rf "$T"; unset ROOT SMOKE READER REVIEWER OPERATOR ROLELESS RT' EXIT
 # Beklenen imaj digest'i — default aktivasyon kustomization pin'i ile senkron
 # tutulur (pin bump PR'ı bu default'u da günceller); ad-hoc koşum için env
 # override: ATS_EXPECTED_DIGEST=sha256:... ./d29-smoke.sh
-PIN="${ATS_EXPECTED_DIGEST:-sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515}"
+PIN="${ATS_EXPECTED_DIGEST:-sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11}"
 PASS=0; FAIL=0
 ok(){ echo "PASS: $1"; PASS=$((PASS+1)); }
 bad(){ echo "FAIL: $1"; FAIL=$((FAIL+1)); }
@@ -32,7 +32,7 @@ tok(){ # $1=client $2=user $3=pwkey -> access_token (bos = fail)
     printf 'data-urlencode = "client_id=%s"\n' "$1"
     printf 'data-urlencode = "username=%s"\n' "$2"
     printf 'data-urlencode = "password=%s"\n' "$p"
-  } | curl -sk --max-time 15 --config - "$KCTOK" \
+  } | curl -sS --max-time 15 --config - "$KCTOK" \
     | python3 -c 'import json,sys
 try: print(json.load(sys.stdin).get("access_token",""))
 except Exception: print("")'
@@ -52,9 +52,9 @@ code(){ # $1=method $2=url $3=token(optional) $4=body(optional json)
   : >"$cfg"
   [ -n "${3:-}" ] && printf 'header = "Authorization: Bearer %s"\n' "$3" >"$cfg"
   if [ -n "${4:-}" ]; then
-    curl -sk --max-time 20 --config "$cfg" -o "$T/last.json" -w '%{http_code}' -X "$1" -H 'Content-Type: application/json' -d "$4" "$2"
+    curl -sS --max-time 20 --config "$cfg" -o "$T/last.json" -w '%{http_code}' -X "$1" -H 'Content-Type: application/json' -d "$4" "$2"
   else
-    curl -sk --max-time 20 --config "$cfg" -o "$T/last.json" -w '%{http_code}' -X "$1" "$2"
+    curl -sS --max-time 20 --config "$cfg" -o "$T/last.json" -w '%{http_code}' -X "$1" "$2"
   fi
 }
 
@@ -100,13 +100,13 @@ C=$(code GET "$API/transcripts" "$ROLELESS"); [ "$C" = "403" ] && ok "ROLSUZ (sc
 echo "== D29: Functional — live-STT fail-closed (reviewer zinciri) =="
 C=$(code PUT "$API/recording-consent" "$REVIEWER" '{"subjectRef":"sub-smoke-1","state":"GRANTED"}')
 [ "${C:0:1}" = "2" ] && ok "consent GRANTED -> $C" || { bad "consent -> $C"; head -c 200 "$T/last.json" 2>/dev/null; echo; }
-UP=$(curl -sk --max-time 30 --config "$T/reviewer.curl" -o "$T/up.json" -w '%{http_code}' -X POST "$API/recordings" \
+UP=$(curl -sS --max-time 30 --config "$T/reviewer.curl" -o "$T/up.json" -w '%{http_code}' -X POST "$API/recordings" \
   -H "Content-Type: audio/wav" -H "X-ATS-Filename: d29-sentetik.wav" --data-binary @"$T/sentetik.wav")
 [ "${UP:0:1}" = "2" ] && ok "upload sentetik wav -> $UP" || { bad "upload -> $UP"; head -c 300 "$T/up.json"; echo; }
 EV=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("objectKey") or d.get("evidenceId") or "")' "$T/up.json" 2>/dev/null)
 echo "  upload cevap ozet: $(head -c 200 "$T/up.json" 2>/dev/null)"
 if [ -n "$EV" ]; then
-  TR=$(curl -sk --max-time 60 --config "$T/reviewer.curl" -o "$T/tr.json" -w '%{http_code}' -X POST "$API/transcribe" \
+  TR=$(curl -sS --max-time 60 --config "$T/reviewer.curl" -o "$T/tr.json" -w '%{http_code}' -X POST "$API/transcribe" \
     -H 'Content-Type: application/json' \
     -d "{\"sourceObjectKey\":\"$EV\"}")
   [ "${TR:0:1}" = "2" ] && ok "transcribe (live-STT) -> $TR" || { bad "transcribe -> $TR"; head -c 300 "$T/tr.json"; echo; }
