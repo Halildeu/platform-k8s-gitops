@@ -18,11 +18,15 @@ fail() {
 
 command -v kustomize >/dev/null 2>&1 || fail "kustomize is required"
 python3 -m py_compile \
+  "${ROOT}/scripts/faz24/transcript_ready_pre_enable_contract.py" \
+  "${ROOT}/scripts/faz24/collect_transcript_ready_pre_enable_evidence.py" \
+  "${ROOT}/scripts/faz24/verify_transcript_ready_pre_enable_evidence.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-rollout.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-ci-wiring.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-source-evidence.py" \
   "${ROOT}/scripts/test/verify-faz24-finalization-remote-evidence.py" \
-  "${ROOT}/scripts/test/verify-faz24-finalization-build-provenance.py"
+  "${ROOT}/scripts/test/verify-faz24-finalization-build-provenance.py" \
+  "${ROOT}/scripts/test/verify-faz24-transcript-ready-pre-enable-static.py"
 kustomize build "${ROOT}/kustomize/overlays/test" >"${TEST_RENDER}"
 kustomize build "${ROOT}/kustomize/overlays/test/eso" >"${TEST_ESO_RENDER}"
 kustomize build "${ROOT}/kustomize/overlays/prod" >"${PROD_RENDER}"
@@ -33,7 +37,13 @@ python3 "${ROOT}/scripts/test/verify-faz24-finalization-rollout.py" \
 python3 "${ROOT}/scripts/test/verify-faz24-finalization-source-evidence.py" \
   "${ROOT}/docs/faz-24-evidence/2026-07-18-finalization-source-ci.json"
 python3 -m unittest \
-  tests.faz24.test_finalization_evidence_verifiers
+  tests.faz24.test_finalization_evidence_verifiers \
+  tests.faz24.test_transcript_ready_pre_enable_gate
+python3 "${ROOT}/scripts/test/verify-faz24-transcript-ready-pre-enable-static.py" \
+  --test-render "${TEST_RENDER}" \
+  --test-eso-render "${TEST_ESO_RENDER}" \
+  --prod-render "${PROD_RENDER}" \
+  --prod-eso-render "${PROD_ESO_RENDER}"
 
 python3 - \
   "${ROOT}/docs/faz-24-evidence/2026-07-18-finalization-source-ci.json" \

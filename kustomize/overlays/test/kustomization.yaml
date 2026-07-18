@@ -62,6 +62,10 @@ resources:
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
   - netpol-audio-gateway-live-stt-mtls.yaml  # Faz 24 #182/#198: audio-gateway -> platform-ai live-stt app-mTLS 10.99.0.2:8243
+  # #2610: this bridge is reachability only. The Windows-host
+  # MAI_READY_CONSUMER_ENABLED flag remains absent/default-off. A later enable
+  # requires the fresh machine-bound gate in
+  # RB-faz24-transcript-ready-legacy-pre-enable.md; this overlay cannot turn it on.
   - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
   - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
