@@ -904,6 +904,17 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       ? 'explicit mode legacy control field taşımıyor'
       : `Explicit mode ile uyumsuz legacy field: ${legacyFields.join(', ')}`,
   });
+  // Forward policy: MiniMax is retired as an accepted consultation channel.
+  // The parser still recognizes a `MiniMax receipt` field so it can be detected,
+  // but any explicit-mode PR carrying it is fail-closed rejected in every mode.
+  const minimaxRejected = !Object.hasOwn(fields, 'minimax receipt');
+  findings.push({
+    check: 'consultation_minimax_receipt_rejected',
+    pass: minimaxRejected,
+    detail: minimaxRejected
+      ? 'MiniMax kanalı emekliye ayrıldı; hiçbir modda receipt taşınmıyor'
+      : 'MiniMax receipt hiçbir consultation modunda kabul edilmez; fail-closed reddedildi',
+  });
 
   if (mode === 'none') {
     const outcomeFields = [
@@ -977,12 +988,15 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
   } else if (mode === 'dual') {
     const riskTrigger = (fields['risk trigger'] || '').trim();
-    const secondaryReceipts = ['minimax receipt', 'codex receipt'].filter((field) => fields[field]);
-    const secondaryProvider = secondaryReceipts[0] === 'codex receipt'
-      ? 'codex'
-      : secondaryReceipts[0] === 'minimax receipt'
-        ? 'minimax'
-        : null;
+    // Forward policy: dual = exactly Claude Opus 4.8 + Codex gpt-5.6-sol.
+    // The only accepted secondary channel is Codex; no third channel exists.
+    const exactChannels = presentReceipts.length === 2
+      && Boolean(fields['claude receipt'])
+      && Boolean(fields['codex receipt']);
+    // Because the two channels are fixed (Claude + Codex), at least one provider
+    // always differs from the implementer regardless of whether the implementer
+    // is Claude or Codex. This preserves provider-distinct review.
+    const providerDistinct = ['claude', 'codex'].some((provider) => provider !== implementer);
     findings.push({
       check: 'consultation_dual_high_risk_trigger',
       pass: meaningfulRiskTrigger(riskTrigger),
@@ -992,19 +1006,24 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
     findings.push({
       check: 'consultation_dual_exact_channel_count',
-      pass: presentReceipts.length === 2
-        && Boolean(fields['claude receipt'])
-        && secondaryReceipts.length === 1,
-      detail: 'dual mode exact Claude plus one provider-distinct receipt requires two channels maximum',
+      pass: exactChannels,
+      detail: exactChannels
+        ? 'dual mode exact Claude Opus 4.8 + Codex gpt-5.6-sol iki kanal taşıyor'
+        : 'dual mode yalnız Claude Opus 4.8 + Codex gpt-5.6-sol iki receipt ile geçer; üçüncü kanal yok',
     });
     findings.push({
-      check: 'consultation_dual_secondary_is_provider_distinct',
-      pass: Boolean(secondaryProvider && secondaryProvider !== implementer),
-      detail: secondaryProvider && secondaryProvider !== implementer
-        ? `secondary reviewer ${secondaryProvider}, implementer ${implementer} providerından farklı`
-        : 'dual secondary receipt implementer sağlayıcısıyla aynı olamaz',
+      check: 'consultation_dual_provider_distinct_from_implementer',
+      pass: providerDistinct,
+      detail: providerDistinct
+        ? `dual kanallardan en az biri implementer ${implementer} providerından farklı`
+        : 'dual kanalların en az biri implementer sağlayıcısıyla farklı olmalıdır',
     });
-    selectedReceipts = ['claude receipt', ...(secondaryReceipts.length === 1 ? secondaryReceipts : [])];
+    // Even an invalid dual combination must still validate every present,
+    // allowlisted receipt. Retired MiniMax receipts are rejected above and are
+    // never fetched or treated as evidence.
+    selectedReceipts = ['claude receipt', 'codex receipt'].filter(
+      (field) => Boolean(fields[field]),
+    );
   }
 
   // Run strict provider/evidence checks even when a binding field is missing.
@@ -1012,7 +1031,10 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   // a malformed or fabricated receipt from escaping diagnostics on that path.
   if (
     ['single', 'dual'].includes(mode)
-    && selectedReceipts.length === (mode === 'dual' ? 2 : 1)
+    && (
+      (mode === 'single' && selectedReceipts.length === 1)
+      || (mode === 'dual' && selectedReceipts.length > 0)
+    )
   ) {
     await appendConsultationFindings(
       findings,
