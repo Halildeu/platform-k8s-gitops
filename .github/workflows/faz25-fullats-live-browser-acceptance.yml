@@ -19,7 +19,9 @@ jobs:
   live-browser:
     name: Recruiter job lifecycle to candidate application on testai
     runs-on: [self-hosted, staging-sw, testai-deploy]
-    timeout-minutes: 25
+    # Includes the customer journey plus a bounded wait for a protected
+    # compensating rollback PR if runtime/browser acceptance fails.
+    timeout-minutes: 45
     env:
       EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d

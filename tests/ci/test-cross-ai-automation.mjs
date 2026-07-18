@@ -79,7 +79,7 @@ const REVERSED_DUAL_EVIDENCE = {
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true' }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true' }) {
   const event = {
     pull_request: {
       body,
@@ -110,6 +110,11 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     const cf = join(dir, 'changed-files.txt');
     writeFileSync(cf, changedFiles.join('\n'));
     cmdArgs.push('--changed-files-file', cf);
+  }
+  if (automationAttestation !== undefined) {
+    const af = join(dir, 'automation-content-attestation.json');
+    writeFileSync(af, JSON.stringify(automationAttestation));
+    cmdArgs.push('--automation-content-attestation-file', af);
   }
   try {
     const childEnv = { ...process.env };
@@ -402,6 +407,21 @@ const ATS_ACTIVATION = 'kustomize/overlays/test/activation/ats-interview-evidenc
 const FULLATS_STATE = 'kustomize/overlays/test/fullats-promotion-state.txt';
 const D29_SMOKE = 'scripts/ats/d29-smoke.sh';
 const FULLATS_ROLLBACK_FILES = [ATS_ACTIVATION, FULLATS_STATE, PRIMARY_OVERLAY, D29_SMOKE];
+const FULLATS_ATTESTATION = {
+  schema: 'fullats-rollback-content-attestation/v1',
+  valid: true,
+  source: FULLATS_ROLLBACK_WF,
+  branch: 'auto-fullats-rollback/faz25-fullats-123-1',
+  base_sha: BASE_TIP_SHA,
+  head_sha: HEAD_SHA,
+  promotion_pr: 2617,
+  promotion_merge_sha: BASE_TIP_SHA,
+  promotion_head_sha: 'b'.repeat(40),
+  promotion_base_sha: '5cec8606538a70388b1d02c59ce22ff9cc68ef9e',
+  promotion_scope_sha256: 'c'.repeat(64),
+  changed_diff_sha256: 'd'.repeat(64),
+  expected_paths: FULLATS_ROLLBACK_FILES,
+};
 const VERIFIED_LEDGER = `release-candidates/platform-backend/${'a'.repeat(40)}.json`;
 
 // #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE).
@@ -419,9 +439,17 @@ const cases = [
   ['valid frontend desired-state PR (auto-test-frontend, App-bot)',
     { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid Full ATS four-file rollback PR (App-bot)',
-    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 0],
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: FULLATS_ATTESTATION }, 0],
   ['live Full ATS rollback script body passes automation audit',
-    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: renderedRollbackBody, changedFiles: FULLATS_ROLLBACK_FILES }, 0],
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: renderedRollbackBody, changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: FULLATS_ATTESTATION }, 0],
+  ['Full ATS rollback without trusted content attestation -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 1],
+  ['Full ATS rollback with attestation bound to a different head -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: { ...FULLATS_ATTESTATION, head_sha: 'e'.repeat(40) } }, 1],
+  ['Full ATS rollback with non-exact attested path set -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: { ...FULLATS_ATTESTATION, expected_paths: [...FULLATS_ROLLBACK_FILES, '.github/workflows/ci.yml'] } }, 1],
+  ['Full ATS rollback with extra self-authored attestation field -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES, automationAttestation: { ...FULLATS_ATTESTATION, claimed: 'pass' } }, 1],
   ['valid auto-verified PR (bot)',
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER] }, 0],
   ['auto-promotion draft cannot claim an automation exemption',

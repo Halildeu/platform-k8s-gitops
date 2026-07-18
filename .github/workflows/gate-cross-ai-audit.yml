@@ -134,6 +134,18 @@ jobs:
           echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
           echo "scope_sha256=$scope_sha256" >> "$GITHUB_OUTPUT"
 
+      - name: Verify exact Full ATS rollback content from trusted base
+        if: startsWith(github.event.pull_request.head.ref, 'auto-fullats-rollback/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PROMOTION_PR: "2617"
+          ATTESTATION_OUTPUT: /tmp/fullats-rollback-content-attestation.json
+        run: bash scripts/ats/verify-fullats-test-rollback-content.sh
+
       - name: Run cross-AI audit
         # `GITHUB_EVENT_PATH` carries the PR payload (head ref/sha, base, body,
         # actor, sender, labels) — the audit reads PR metadata from there, not
@@ -145,8 +157,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          node scripts/ci/pr-cross-ai-audit.mjs \
-            --event-path "$GITHUB_EVENT_PATH" \
-            --changed-files-file /tmp/changed-files.txt \
-            --derived-base-sha "${{ steps.scope.outputs.merge_base }}" \
+          args=(
+            --event-path "$GITHUB_EVENT_PATH"
+            --changed-files-file /tmp/changed-files.txt
+            --derived-base-sha "${{ steps.scope.outputs.merge_base }}"
             --derived-scope-sha256 "${{ steps.scope.outputs.scope_sha256 }}"
+          )
+          if [[ -f /tmp/fullats-rollback-content-attestation.json ]]; then
+            args+=(
+              --automation-content-attestation-file
+              /tmp/fullats-rollback-content-attestation.json
+            )
+          fi
+          node scripts/ci/pr-cross-ai-audit.mjs "${args[@]}"

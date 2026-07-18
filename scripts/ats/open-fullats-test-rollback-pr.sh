@@ -11,6 +11,7 @@ RUN_ATTEMPT="${RUN_ATTEMPT:-1}"
 SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
 BOT_NAME="platform-gitops-automation[bot]"
 BOT_EMAIL="platform-gitops-automation[bot]@users.noreply.github.com"
+PROMOTION_BASE_SHA="5cec8606538a70388b1d02c59ce22ff9cc68ef9e"
 
 : "${GH_TOKEN:?GH_TOKEN must be a platform-gitops-automation GitHub App token}"
 [[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" ]] || {
@@ -33,10 +34,46 @@ BOT_EMAIL="platform-gitops-automation[bot]@users.noreply.github.com"
 promotion_json="$(gh api "repos/$GH_REPO/pulls/$PROMOTION_PR")"
 merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$promotion_json")"
 merged_at="$(jq -r '.merged_at // empty' <<<"$promotion_json")"
+promotion_head="$(jq -r '.head.sha // empty' <<<"$promotion_json")"
+promotion_body="$(jq -r '.body // empty' <<<"$promotion_json")"
+promotion_body="${promotion_body//$'\r'/}"
 [[ -n "$merged_at" && "$merge_sha" =~ ^[0-9a-f]{40}$ ]] || {
   echo "[fullats-rollback] promotion PR is not merged" >&2
   exit 1
 }
+[[ "$promotion_head" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "[fullats-rollback] promotion PR head is invalid" >&2
+  exit 1
+}
+
+require_exact_body_line() {
+  local expected="$1"
+  local count
+  count="$(grep -Fxc -- "$expected" <<<"$promotion_body" || true)"
+  [[ "$count" == "1" ]] || {
+    echo "[fullats-rollback] promotion review binding line is missing or duplicated" >&2
+    exit 1
+  }
+}
+
+require_exact_body_line "Consultation base: $PROMOTION_BASE_SHA"
+require_exact_body_line "Consultation commit: $promotion_head"
+consultation_scope="$(sed -nE 's/^Consultation scope:[[:space:]]*([0-9a-f]{64})[[:space:]]*$/\1/p' <<<"$promotion_body")"
+[[ "$consultation_scope" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "[fullats-rollback] promotion consultation scope is missing or duplicated" >&2
+  exit 1
+}
+for receipt_label in "Claude receipt" "MiniMax receipt" "Codex receipt"; do
+  receipt_line="$(grep -F "$receipt_label:" <<<"$promotion_body" || true)"
+  [[ "$(grep -Fc "$receipt_label:" <<<"$promotion_body" || true)" == "1" ]] && \
+    [[ "$receipt_line" == *"base=$PROMOTION_BASE_SHA;"* ]] && \
+    [[ "$receipt_line" == *"head=$promotion_head;"* ]] && \
+    [[ "$receipt_line" == *"scope=$consultation_scope;"* ]] && \
+    [[ "$receipt_line" == *"verdict=AGREE;"* ]] || {
+      echo "[fullats-rollback] $receipt_label is not bound to the merged reviewed scope" >&2
+      exit 1
+    }
+done
 [[ "$FAILED_SHA" == "$merge_sha" ]] || {
   echo "[fullats-rollback] refusing stale/non-promotion workflow SHA" >&2
   exit 1
@@ -64,12 +101,20 @@ activation="kustomize/overlays/test/activation/ats-interview-evidence/kustomizat
 test_root="kustomize/overlays/test/kustomization.yaml"
 smoke="scripts/ats/d29-smoke.sh"
 state_marker="kustomize/overlays/test/fullats-promotion-state.txt"
-PROMOTION_BASE_SHA="5cec8606538a70388b1d02c59ce22ff9cc68ef9e"
 parent_count="$(git rev-list --parents -n 1 "$merge_sha" | awk '{print NF - 1}')"
 if [[ "$parent_count" != "1" || "$(git rev-parse "$merge_sha^")" != "$PROMOTION_BASE_SHA" ]]; then
   echo "[fullats-rollback] promotion must be one-parent squash directly on reviewed base" >&2
   exit 1
 fi
+promotion_head_commit="$(gh api "repos/$GH_REPO/git/commits/$promotion_head")"
+promotion_merge_commit="$(gh api "repos/$GH_REPO/git/commits/$merge_sha")"
+promotion_head_tree="$(jq -r '.tree.sha // empty' <<<"$promotion_head_commit")"
+promotion_merge_tree="$(jq -r '.tree.sha // empty' <<<"$promotion_merge_commit")"
+[[ "$promotion_head_tree" =~ ^[0-9a-f]{40}$ && \
+   "$promotion_merge_tree" == "$promotion_head_tree" ]] || {
+  echo "[fullats-rollback] squash tree differs from the exact reviewed promotion head" >&2
+  exit 1
+}
 
 # Restore only the three runtime binding surfaces from the reviewed promotion
 # base. Source scripts/workflows stay available but cannot pass their exact
@@ -159,8 +204,42 @@ body="${body//__FAILED_SHA__/$FAILED_SHA}"
 pr_url="$(gh pr create --repo "$GH_REPO" --base main --head "$branch" \
   --title "revert(faz25): compensate failed Full ATS test acceptance" \
   --body "$body")"
-gh pr merge "$pr_url" --repo "$GH_REPO" --squash --auto
-echo "[fullats-rollback] rollback PR opened with auto-merge: $pr_url"
+rollback_head="$(gh pr view "$pr_url" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')"
+[[ "$rollback_head" == "$(git rev-parse HEAD)" ]] || {
+  echo "[fullats-rollback] opened PR head differs from generated rollback commit" >&2
+  exit 1
+}
+
+# Repository auto-merge is intentionally not assumed. Wait for the protected
+# branch's required checks to materialize and pass, then perform a normal merge
+# bound to the exact generated head. Strict branch protection rejects the merge
+# if main advanced; no --admin bypass is used.
+required_checks=""
+for _ in $(seq 1 60); do
+  required_checks="$(gh pr checks "$pr_url" --repo "$GH_REPO" \
+    --required --json name,bucket 2>/dev/null)" || true
+  if jq -e 'type == "array" and length > 0' <<<"$required_checks" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+jq -e 'type == "array" and length > 0' <<<"$required_checks" >/dev/null || {
+  echo "[fullats-rollback] required checks did not materialize" >&2
+  exit 1
+}
+gh pr checks "$pr_url" --repo "$GH_REPO" --required --watch --fail-fast --interval 10
+[[ "$(gh pr view "$pr_url" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')" == \
+   "$rollback_head" ]] || {
+  echo "[fullats-rollback] rollback PR head changed while checks were running" >&2
+  exit 1
+}
+gh pr merge "$pr_url" --repo "$GH_REPO" --squash --match-head-commit "$rollback_head"
+merged_at="$(gh pr view "$pr_url" --repo "$GH_REPO" --json mergedAt --jq '.mergedAt // empty')"
+[[ -n "$merged_at" ]] || {
+  echo "[fullats-rollback] protected rollback merge did not complete" >&2
+  exit 1
+}
+echo "[fullats-rollback] rollback PR passed required checks and merged: $pr_url"
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   printf 'rollback_pr_url=%s\n' "$pr_url" >>"$GITHUB_OUTPUT"
 fi

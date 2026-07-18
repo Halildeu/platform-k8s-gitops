@@ -245,6 +245,10 @@ try {
   const jobPreview = recruiterPage.getByTestId('recruiter-job-preview');
   await waitVisible(jobPreview, 'job preview');
   await waitVisible(jobPreview.getByRole('heading', { name: jobTitle }), 'job preview title');
+  await waitVisible(
+    jobPreview.getByText(editedJobSummary, { exact: true }),
+    'job preview edited summary',
+  );
   await assertAxeClean(recruiterPage, 'recruiter-job-preview-desktop');
   await assertNoHorizontalOverflow(recruiterPage, 'recruiter-job-preview-desktop');
   await jobPreview.getByRole('button', { name: 'Önizlemeyi kapat' }).click();
@@ -280,6 +284,10 @@ try {
   await candidatePage.goto(`${baseURL}${publicJobPath}`, { waitUntil: 'domcontentloaded' });
   await waitVisible(candidatePage.getByTestId('public-job-detail-page'), 'public job detail');
   await waitVisible(candidatePage.getByRole('heading', { name: jobTitle }), 'published job title');
+  await waitVisible(
+    candidatePage.getByText(editedJobSummary, { exact: true }),
+    'published edited job summary',
+  );
   await assertAxeClean(candidatePage, 'public-job-detail-mobile');
   await assertNoHorizontalOverflow(candidatePage, 'public-job-detail-mobile');
   await candidatePage.getByRole('link', { name: 'Başvuru formuna geç' }).click();
