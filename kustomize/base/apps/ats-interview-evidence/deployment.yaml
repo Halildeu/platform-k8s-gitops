@@ -17,6 +17,11 @@ spec:
     metadata:
       labels:
         app: ats-interview-evidence
+      # envFrom ConfigMap değişiklikleri Kubernetes tarafından otomatik rollout
+      # tetiklemez. Değer, configmap.yaml exact byte SHA-256'sıdır; contract testi
+      # iki dosyayı bağlar ve stale config ile Ready pod kabulünü engeller.
+      annotations:
+        fullats.acik.com/configmap-sha256: "495313d9fac6f0da48190f7bc588a678b9f72f3349621744fce3fa0709585773"
     spec:
       automountServiceAccountToken: false
       securityContext:
