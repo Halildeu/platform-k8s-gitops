@@ -373,6 +373,32 @@ daemon, credential veya exact-model kimliği hazır değilse UI fallback yapılm
 tekrarlanmaz. Geçerli `REVISE` bulgusu düzeltildiğinde yalnız önceden seçilmiş
 kanal veya kanallar değişen exact scope üzerinde yeniden inceler.
 
+### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
+
+Varsayımsal senaryo yalnız erken yol/opsiyon keşfinde kullanılabilir. Böyle bir
+çıktı açıkça `non-authoritative direction exploration` olarak etiketlenir;
+`P0/P1/P2`, terminal `VERDICT`, provider receipt veya gate evidence üretmez ve
+merge, deploy, readiness, acceptance ya da kapanış kararı için kullanılamaz.
+Seçilen yol uygulanmadan önce karar gerekiyorsa ayrı bir kesin inceleme exact
+mevcut scope/head ve doğrulanabilir kod, test veya canlı kanıta bağlanır.
+
+Kesin `single`/`dual` incelemede bulgu:
+
+- sağlanan mevcut scope'ta bulunmalı,
+- somut ve yeniden üretilebilir olmalı,
+- dosya/satır/davranış ile beklenen-gerçek sonucu açıklamalı,
+- mevcut validator, test veya invariant tarafından zaten imkansız kılınmamış
+  olmalıdır.
+
+“İleride bu kontrol gevşetilirse”, “bir gün başka tüketici eklenirse”,
+“potansiyel olarak olabilir” veya gözlenmemiş dış durum varsayımı kesin
+`P0`/`P1` ya da `REVISE` gerekçesi olamaz. Bunlar ancak yol keşfinde seçenek
+etkisi veya kesin incelemede non-blocking yön önerisi olarak yazılabilir. Kanıt
+yetersizse sağlayıcı boşluğu varsayımla doldurmaz; `tracked_pending` ve karar
+için gereken exact eksik kanıtı yazar. Varsayımsal blocker içeren provider
+yanıtı düzeltilmiş gibi evidence'a çevrilmez; kesin-review prompt'u düzeltilip
+aynı scope yeniden incelenir.
+
 PR structured alanları:
 
 ```yaml

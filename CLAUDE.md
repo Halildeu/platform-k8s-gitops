@@ -93,6 +93,10 @@ mavis communication peers
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
   review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya
   kanallar değişen exact scope üzerinde yeniden inceler.
+- Varsayımsal senaryoyu yalnız yol/opsiyon keşfinde ve açıkça non-authoritative
+  kullan. Kesin review'da yalnız mevcut exact scope'tan somut, yeniden
+  üretilebilir bulgu yaz; “ileride gevşetilirse/olabilir/potansiyel” iddiasını
+  P0/P1/REVISE yapma. Kanıt eksikse `tracked_pending` + exact eksik kanıt yaz.
 - İstişare test/CI/live evidence/browser smoke/board/human gate yerine geçmez.
 - Secret, PII veya raw credential prompt/argümana konmaz; UI fallback yapılmaz.
 
@@ -162,6 +166,8 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
   olamaz, mümkünse iki çağrıyı paralel yürüt.
 - Cursor veya Cursor-routed model kullanma.
 - Geçerli bulguları absorb et; `REVISE` kapanmadan hazır/merge-ready deme.
+- Varsayımsal yol keşfini kesin karar veya receipt gibi sunma; yalnız mevcut
+  kanıttan yeniden üretilebilir P0/P1 kesin verdict'i etkileyebilir.
 - Gerçek human gate istisnalarını AI kararıyla ikame etme; sağlayıcı/model
   erişilemiyorsa dürüstçe `tracked_pending` bırak, yapay `PASS` üretme.
 
