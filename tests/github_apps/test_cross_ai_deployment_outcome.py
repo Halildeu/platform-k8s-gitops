@@ -148,7 +148,9 @@ class StageOutcomeTest(unittest.TestCase):
                 now=self.fixture.now,
             )
 
-    def test_rejects_self_asserted_jobs_wrong_binding_and_unbounded_watchdog(self) -> None:
+    def test_rejects_self_asserted_jobs_wrong_binding_and_unbounded_watchdog(
+        self,
+    ) -> None:
         with self.assertRaisesRegex(PolicyError, "STAGE_OUTCOME_BINDING_MISMATCH"):
             verify_stage_outcome(
                 self.payload,

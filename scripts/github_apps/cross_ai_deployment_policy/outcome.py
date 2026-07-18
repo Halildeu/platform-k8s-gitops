@@ -68,7 +68,8 @@ def verify_stage_outcome(
     subject = bundle.payload["subject"]
     grant = bundle.payload["grant"]
     stages = [
-        item for item in bundle.payload["workflowStages"]
+        item
+        for item in bundle.payload["workflowStages"]
         if item["stage"] == expected_stage
     ]
     if len(stages) != 1:
@@ -114,16 +115,25 @@ def verify_stage_outcome(
     run_started_at = parse_utc(payload["runStartedAt"], "stageOutcome.runStartedAt")
     grant_start = parse_utc(grant["notBefore"], "grant.notBefore")
     grant_end = parse_utc(grant["expiresAt"], "grant.expiresAt")
-    if created_at < grant_start - MAX_CLOCK_SKEW or created_at > grant_end + MAX_CLOCK_SKEW:
-        reject("STAGE_OUTCOME_TIME_INVALID", "stage outcome is outside the signed grant")
+    if (
+        created_at < grant_start - MAX_CLOCK_SKEW
+        or created_at > grant_end + MAX_CLOCK_SKEW
+    ):
+        reject(
+            "STAGE_OUTCOME_TIME_INVALID", "stage outcome is outside the signed grant"
+        )
     if created_at > current + MAX_CLOCK_SKEW:
-        reject("STAGE_OUTCOME_TIME_INVALID", "stage outcome creation time is in the future")
+        reject(
+            "STAGE_OUTCOME_TIME_INVALID", "stage outcome creation time is in the future"
+        )
     if (
         run_started_at < grant_start - MAX_CLOCK_SKEW
         or run_started_at > created_at
         or run_started_at > current + MAX_CLOCK_SKEW
     ):
-        reject("STAGE_OUTCOME_TIME_INVALID", "run start time is outside the signed outcome")
+        reject(
+            "STAGE_OUTCOME_TIME_INVALID", "run start time is outside the signed outcome"
+        )
 
     conclusion = payload["conclusion"]
     watchdog_value = payload["watchdogExpiresAt"]

@@ -55,7 +55,9 @@ def _payload(envelope: dict[str, Any]) -> dict[str, Any]:
     try:
         raw = base64.b64decode(encoded, validate=True)
     except (ValueError, binascii.Error):
-        reject("STAGE_EVIDENCE_BUNDLE_INVALID", "bundle payload is not canonical base64")
+        reject(
+            "STAGE_EVIDENCE_BUNDLE_INVALID", "bundle payload is not canonical base64"
+        )
     payload = loads_json_bytes(raw, max_bytes=4 * 1024 * 1024, label="bundle")
     if canonical_bytes(payload) != raw:
         reject("STAGE_EVIDENCE_BUNDLE_INVALID", "bundle payload is not canonical JSON")
@@ -106,7 +108,9 @@ def _watchdog(
 ) -> str | None:
     if stage != "apply":
         if path is not None:
-            reject("STAGE_EVIDENCE_WATCHDOG_INVALID", "non-apply stage has watchdog input")
+            reject(
+                "STAGE_EVIDENCE_WATCHDOG_INVALID", "non-apply stage has watchdog input"
+            )
         return None
     if path is None:
         if conclusion == "failure":
@@ -184,7 +188,9 @@ def build(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         or str(subject.get("repositoryId")) != os.environ.get("GITHUB_REPOSITORY_ID")
         or response.get("workflowPath") != signed_stage.get("workflowPath")
     ):
-        reject("STAGE_EVIDENCE_BINDING_INVALID", "runtime differs from signed bootstrap")
+        reject(
+            "STAGE_EVIDENCE_BINDING_INVALID", "runtime differs from signed bootstrap"
+        )
     watchdog = _watchdog(
         args.watchdog_expires_file,
         args.stage,

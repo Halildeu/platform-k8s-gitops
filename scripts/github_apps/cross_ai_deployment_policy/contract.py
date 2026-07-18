@@ -815,8 +815,7 @@ class EvidenceVerifier:
         direct_families = {
             review.key.provider_family
             for review in final_reviews
-            if review.key.direct_provider_cli
-            and review.key.provider_family is not None
+            if review.key.direct_provider_cli and review.key.provider_family is not None
         }
         if families != self.required_provider_families:
             reject(
