@@ -255,8 +255,9 @@ class DirectCodexRunner:
             check=False,
             timeout=30,
         )
+        catalog_command = [str(self.executable), "debug", "models"]
         catalog = subprocess.run(
-            [str(self.executable), "debug", "models"],
+            catalog_command,
             cwd=workspace,
             capture_output=True,
             check=False,
@@ -265,32 +266,23 @@ class DirectCodexRunner:
         if version.returncode != 0 or not version.stdout or catalog.returncode != 0:
             reject("PROVIDER_CAPABILITY_UNAVAILABLE", "Codex capability is unavailable")
         self._catalog_model(catalog.stdout, model)
-        launch = {
-            "ignoreUserConfig": True,
-            "sandbox": "read-only",
-            "ephemeral": True,
-            "json": True,
-            "mcp": False,
-            "plugins": False,
-            "search": False,
-            "write": False,
-        }
+        execution_command = [
+            str(self.executable),
+            "exec",
+            "--ignore-user-config",
+            "--ignore-rules",
+            "--model",
+            model,
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "--json",
+            "-C",
+            str(workspace.resolve()),
+            "-",
+        ]
         result = subprocess.run(
-            [
-                str(self.executable),
-                "exec",
-                "--ignore-user-config",
-                "--ignore-rules",
-                "--model",
-                model,
-                "--sandbox",
-                "read-only",
-                "--ephemeral",
-                "--json",
-                "-C",
-                str(workspace.resolve()),
-                "-",
-            ],
+            execution_command,
             cwd=workspace,
             input=prompt_bytes,
             capture_output=True,
@@ -309,7 +301,10 @@ class DirectCodexRunner:
                 "liveModelCatalogSha256": _bytes_digest(catalog.stdout),
                 "requestedModel": CODEX_MODEL,
                 "providerReportedModel": None,
-                "launchConfiguration": launch,
+                "launchConfiguration": {
+                    "catalogArguments": catalog_command[1:],
+                    "executionArguments": execution_command[1:],
+                },
             }
         )
         return ProviderExecutionReceipt(

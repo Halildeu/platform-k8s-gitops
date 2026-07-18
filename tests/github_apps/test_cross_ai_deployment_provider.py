@@ -202,8 +202,24 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertEqual(
             run.call_args_list[1].args[0], [str(runner.executable), "debug", "models"]
         )
-        self.assertIn("--ignore-user-config", run.call_args_list[2].args[0])
-        self.assertIn("--ignore-rules", run.call_args_list[2].args[0])
+        self.assertEqual(
+            run.call_args_list[2].args[0],
+            [
+                str(runner.executable),
+                "exec",
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--model",
+                CODEX_MODEL,
+                "--sandbox",
+                "read-only",
+                "--ephemeral",
+                "--json",
+                "-C",
+                str(self.workspace.resolve()),
+                "-",
+            ],
+        )
 
     def test_direct_codex_rejects_tool_or_multiple_terminal_messages(self) -> None:
         with self.assertRaisesRegex(PolicyError, "PROVIDER_TOOL_EVENT_REJECTED"):
