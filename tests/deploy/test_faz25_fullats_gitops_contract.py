@@ -477,7 +477,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertEqual(workflow.group(1), runtime.group(1))
 
     def test_consultation_defaults_to_none_then_single_claude_and_max_two(self):
-        rule = "Durumsal Cross-AI istişre — varsayılan az kanal"
+        rule = "Durumsal Cross-AI istişare — varsayılan az kanal"
         self.assertIn(rule, self.agents)
         self.assertIn("`Consultation mode: none`", self.agents)
         self.assertIn("(`single`)", self.agents)
@@ -487,12 +487,14 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("`gpt-5.6-sol`", self.agents)
         self.assertIn("toplam iki kanal aşılmaz", self.agents)
         self.assertIn("mümkünse paralel", self.agents)
-        self.assertIn("Cursor ve AI uygulama pencereleri istişre yolu değildir", self.agents)
+        self.assertIn("Cursor ve AI uygulama pencereleri istişare yolu değildir", self.agents)
+        self.assertIn("consultation governance dosyası değişiyorsa", self.agents)
+        self.assertIn("Claude implementer kendi receipt'ini", self.agents)
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )
         self.assertIn(
-            "## 11. Durumsal Cross-AI İstişre — Varsayılan Az Kanal",
+            "## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal",
             self.context_rules,
         )
         self.assertIn("**`none` — varsayılan:**", self.context_rules)
@@ -502,12 +504,14 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("**`minimax/MiniMax-M3`**", self.context_rules)
         self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
         self.assertIn(
-            "İstişre bir teslimat ritüeli değil, yalnız karar",
+            "İstişare bir teslimat ritüeli değil, yalnız karar",
             self.context_rules,
         )
         self.assertIn("JSON `modelUsage`", self.context_rules)
         self.assertIn("Cursor CLI/MCP/model/harness", self.context_rules)
-        self.assertIn("AI uygulama pencereleri istişre kanalı değildir", self.context_rules)
+        self.assertIn("AI uygulama pencereleri istişare kanalı değildir", self.context_rules)
+        self.assertIn("irreversible-production", self.context_rules)
+        self.assertIn("Path/branch sınıflandırıcısı", self.context_rules)
         self.assertIn("`none` receipt", self.context_rules)
         self.assertIn("`dual` yayın sırası zorunlu değildir", self.context_rules)
 

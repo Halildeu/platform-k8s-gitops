@@ -74,22 +74,25 @@ mavis communication peers
 - [docs/context-priority-rules.md §10 Agent İletişimi](./docs/context-priority-rules.md) (proje canonical detay)
 - Global `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı + örnek senaryolar)
 
-### 0.1 Durumsal Cross-AI İstişre — Az Kanal Varsayımı (2026-07-18)
+### 0.1 Durumsal Cross-AI İstişare — Az Kanal Varsayımı (2026-07-18)
 
 - Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
-  adımlarında istişre açma: `Consultation mode: none`.
+  adımlarında istişare açma: `Consultation mode: none`. Changed-files kanıtı
+  eksikse, consultation governance dosyası değişiyorsa veya branch
+  `auto-promotion/` ise gate `none` kabul etmez; en az `single` gerekir.
 - İkinci görüş gerçekten gerekiyorsa tek ve birincil kanal doğrudan
   `claude --model claude-opus-4-8` olur: `Consultation mode: single`.
-  JSON `modelUsage` exact `claude-opus-4-8` değilse gerçek görüş sayılmaz.
+  JSON `modelUsage` exact `claude-opus-4-8` değilse gerçek görüş sayılmaz;
+  Claude implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz.
 - Yalnız geri döndürülemez, çok yüksek riskli veya açık insan/yetkili kararı
   gerektiren noktada Claude'a bir provider-distinct ikincil kanal ekle:
   `Consultation mode: dual`. MiniMax M3 veya Codex 5.6 SOL'dan yalnız biri
   seçilir; toplam iki kanal aşılmaz ve mümkünse paralel çağrılır.
-- Cursor, wrapper-routed model ve AI uygulama penceresi istişre kanalı değildir.
+- Cursor, wrapper-routed model ve AI uygulama penceresi istişare kanalı değildir.
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
   review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya
   kanallar değişen exact scope üzerinde yeniden inceler.
-- İstişre test/CI/live evidence/browser smoke/board/human gate yerine geçmez.
+- İstişare test/CI/live evidence/browser smoke/board/human gate yerine geçmez.
 - Secret, PII veya raw credential prompt/argümana konmaz; UI fallback yapılmaz.
 
 Canonical mod, attribution ve receipt semantiği:
@@ -151,7 +154,7 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 **HARD RULE**: Otomatik mod sürekli aktiftir; durmak yok, tüm işler bitene kadar devam.
 
 **Karar verme kuralı**:
-- Normal implementation/test akışını istişreyle yavaşlatma; otonom ilerle.
+- Normal implementation/test akışını istişareyle yavaşlatma; otonom ilerle.
 - Gerçek ikinci görüş noktasında yalnız direct Claude Opus 4.8 kullan.
 - Geri döndürülemez/çok yüksek riskli/insan-yetkili kararda en fazla bir ek
   provider-distinct kanal kullan; mümkünse iki çağrıyı paralel yürüt.

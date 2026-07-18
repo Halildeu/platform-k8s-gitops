@@ -67,6 +67,30 @@ const CONSULTATION_RECEIPTS = {
     model: 'gpt-5.6-sol',
   },
 };
+const CONSULTATION_MODES = new Set(['none', 'single', 'dual']);
+const CONSULTATION_GOVERNANCE_PATHS = [
+  /^AGENTS\.md$/,
+  /^CLAUDE\.md$/,
+  /^docs\/context-priority-rules\.md$/,
+  /^\.github\/pull_request_template\.md$/,
+  /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
+  /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|minimax_m3_review)\.py$/,
+  /^tests\/ci\/test-cross-ai-automation\.mjs$/,
+];
+const CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES = ['auto-promotion/'];
+const DUAL_RISK_TRIGGER_RE = /^(?:irreversible-production|security-authz|privacy-retention|data-migration|production-cutover|human-authority):\s+\S.{9,}$/i;
+const EXPLICIT_MODE_LEGACY_FIELDS = [
+  'reviewer ai',
+  'codex thread',
+  'verdict reason',
+  'same-provider exception',
+  'exception reason',
+  'cross-ai exempt reason',
+  'absorb edilen düzeltmeler',
+  'automation source',
+  'automation evidence',
+];
 
 // Codex `019e2693` MED-3 absorb: known-provider canonicalizer (R2 question response)
 const PROVIDER_ALIASES = {
@@ -325,6 +349,12 @@ function sectionHasRequiredFields(section) {
   // not `.includes()` heuristic — audit table column headers da "Implementer AI" içerebilir
   // ama gerçek YAML key:value değildir. Field-aware selection parser semantik uyumlu olmalı.
   const fields = extractFields(section);
+  if (fields['consultation mode']) {
+    return Boolean(
+      fields['implementer ai']
+      && fields['consultation reason']
+    );
+  }
   return REQUIRED_FIELD_KEYS.every((k) => fields[k]);
 }
 
@@ -386,6 +416,33 @@ function normalizeProvider(s) {
     .toLowerCase();
   // Look up alias table
   return PROVIDER_ALIASES[cleaned] ?? cleaned;
+}
+
+function meaningfulStatement(value) {
+  const clean = (value || '').trim();
+  return clean.length >= 10
+    && !/[<>]/.test(clean)
+    && !/^(.)\1+$/.test(clean.replace(/\s+/g, ''));
+}
+
+function minimumConsultationMode(prMeta) {
+  const files = prMeta?.changedFiles;
+  if (!Array.isArray(files) || files.length === 0) {
+    return { mode: 'single', reason: 'changed-files metadata missing' };
+  }
+  const governancePath = files.find((path) =>
+    CONSULTATION_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
+  );
+  if (governancePath) {
+    return { mode: 'single', reason: `consultation governance path: ${governancePath}` };
+  }
+  const branchPrefix = CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES.find((prefix) =>
+    (prMeta?.headRef || '').startsWith(prefix)
+  );
+  if (branchPrefix) {
+    return { mode: 'single', reason: `production promotion branch: ${branchPrefix}` };
+  }
+  return { mode: 'none', reason: 'routine scope' };
 }
 
 function parseReceipt(value) {
@@ -695,20 +752,23 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const implementer = normalizeProvider(fields['implementer ai']);
   const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
   const presentReceipts = receiptNames.filter((field) => Boolean(fields[field]));
+  const requiredFloor = minimumConsultationMode(prMeta);
+  const modeRank = { none: 0, single: 1, dual: 2 };
+  const legacyFields = EXPLICIT_MODE_LEGACY_FIELDS.filter((field) => Boolean(fields[field]));
 
   findings.push({
     check: 'consultation_mode_valid',
-    pass: ['none', 'single', 'dual'].includes(mode),
-    detail: ['none', 'single', 'dual'].includes(mode)
+    pass: CONSULTATION_MODES.has(mode),
+    detail: CONSULTATION_MODES.has(mode)
       ? `consultation mode ${mode}`
       : 'Consultation mode yalnız none, single veya dual olabilir',
   });
   findings.push({
     check: 'consultation_reason_present',
-    pass: reason.length >= 10,
-    detail: reason.length >= 10
+    pass: meaningfulStatement(reason),
+    detail: meaningfulStatement(reason)
       ? `consultation reason recorded (${reason.length}c)`
-      : 'Consultation reason en az 10 karakter olmalıdır',
+      : 'Consultation reason somut olmalı; placeholder/tekrarlı metin olamaz ve en az 10 karakter olmalıdır',
   });
   findings.push({
     check: 'implementer_provider_enum',
@@ -716,6 +776,27 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     detail: implementer && VALID_PROVIDERS.has(implementer)
       ? `implementer ${implementer}`
       : 'Implementer AI canonical provider enum içinde olmalıdır',
+  });
+  findings.push({
+    check: 'consultation_changed_files_present',
+    pass: Array.isArray(prMeta?.changedFiles) && prMeta.changedFiles.length > 0,
+    detail: Array.isArray(prMeta?.changedFiles) && prMeta.changedFiles.length > 0
+      ? `${prMeta.changedFiles.length} changed file(s) classified`
+      : 'changed-files metadata eksik; explicit mode fail-closed',
+  });
+  findings.push({
+    check: 'consultation_mode_meets_scope_floor',
+    pass: CONSULTATION_MODES.has(mode) && modeRank[mode] >= modeRank[requiredFloor.mode],
+    detail: CONSULTATION_MODES.has(mode) && modeRank[mode] >= modeRank[requiredFloor.mode]
+      ? `${requiredFloor.reason}; ${mode} floor'u karşılıyor`
+      : `${requiredFloor.reason}; en az ${requiredFloor.mode} zorunlu`,
+  });
+  findings.push({
+    check: 'consultation_explicit_mode_has_no_legacy_controls',
+    pass: legacyFields.length === 0,
+    detail: legacyFields.length === 0
+      ? 'explicit mode legacy control field taşımıyor'
+      : `Explicit mode ile uyumsuz legacy field: ${legacyFields.join(', ')}`,
   });
 
   if (mode === 'none') {
@@ -725,6 +806,13 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       detail: presentReceipts.length === 0
         ? 'routine work carries no fabricated provider receipt'
         : 'Consultation mode none iken provider receipt bulunamaz',
+    });
+    findings.push({
+      check: 'consultation_none_has_no_consultation_outcome_fields',
+      pass: !fields.verdict && !fields['risk trigger'],
+      detail: !fields.verdict && !fields['risk trigger']
+        ? 'none mode verdict veya risk trigger taşımıyor'
+        : 'none mode Verdict veya Risk trigger taşıyamaz',
     });
     return findings;
   }
@@ -758,15 +846,29 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       pass: presentReceipts.length === 1 && presentReceipts[0] === 'claude receipt',
       detail: 'single mode exact direct Claude Opus 4.8 channel requires one receipt',
     });
+    findings.push({
+      check: 'consultation_single_is_provider_distinct',
+      pass: implementer !== 'claude',
+      detail: implementer !== 'claude'
+        ? 'direct Claude reviewer implementer providerından farklı'
+        : 'Claude implementer kendi Claude receiptini bağımsız single görüş sayamaz; dual gerekir',
+    });
+    findings.push({
+      check: 'consultation_single_has_no_risk_trigger',
+      pass: !fields['risk trigger'],
+      detail: !fields['risk trigger']
+        ? 'single mode high-risk trigger iddiası taşımıyor'
+        : 'Risk trigger yalnız dual modda bulunabilir',
+    });
   } else if (mode === 'dual') {
     const riskTrigger = (fields['risk trigger'] || '').trim();
     const secondaryReceipts = ['minimax receipt', 'codex receipt'].filter((field) => fields[field]);
     findings.push({
       check: 'consultation_dual_high_risk_trigger',
-      pass: riskTrigger.length >= 10,
-      detail: riskTrigger.length >= 10
-        ? `high-risk trigger recorded (${riskTrigger.length}c)`
-        : 'dual mode yalnız somut Risk trigger ile kullanılabilir',
+      pass: DUAL_RISK_TRIGGER_RE.test(riskTrigger),
+      detail: DUAL_RISK_TRIGGER_RE.test(riskTrigger)
+        ? `canonical high-risk trigger recorded (${riskTrigger.length}c)`
+        : 'Risk trigger canonical kategori ve somut açıklama taşımalıdır',
     });
     findings.push({
       check: 'consultation_dual_exact_channel_count',

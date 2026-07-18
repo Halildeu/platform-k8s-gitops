@@ -338,21 +338,25 @@ Mavis bildirimi **yerine geçmez**:
 
 <a id="cross-ai-three-channel"></a>
 
-## 11. Durumsal Cross-AI İstişre — Varsayılan Az Kanal
+## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal
 
 Kullanıcının [#2621](https://github.com/Halildeu/platform-k8s-gitops/issues/2621)
 kararı, 2026-07-17 tarihli zorunlu üç-kanal politikasını yürürlükten kaldırır.
 Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
-adımlarında istişre açılmaz. İstişre bir teslimat ritüeli değil, yalnız karar
+adımlarında istişare açılmaz. İstişare bir teslimat ritüeli değil, yalnız karar
 belirsizliği veya risk için kullanılan sınırlı araçtır.
 
 Üç açık mod vardır:
 
 1. **`none` — varsayılan:** Rutin implementation/test işinde provider çağrısı
-   yapılmaz. PR'da yalnız kısa `Consultation reason` yazılır; receipt üretilmez.
+   yapılmaz. PR'da somut `Consultation reason` yazılır; receipt üretilmez.
+   Changed-files kanıtı eksikse, consultation governance dosyası değişiyorsa
+   veya branch `auto-promotion/` ise gate en az `single` zorunlu tutar.
 2. **`single` — gerçekten ikinci görüş gerektiğinde:** Tek ve birincil kanal
    direct Anthropic `claude --model claude-opus-4-8` olur. JSON `modelUsage`
-   exact `claude-opus-4-8` değilse kanal tamamlanmış sayılmaz.
+   exact `claude-opus-4-8` değilse kanal tamamlanmış sayılmaz. Claude
+   implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz; bu
+   durumda provider-distinct ikinci kanal ile `dual` gerekir.
 3. **`dual` — istisnai yüksek risk:** Yalnız geri döndürülemez, çok yüksek
    riskli veya açık insan/yetkili kararı gerektiren noktada Claude'a **bir**
    provider-distinct kanal eklenir. İkincil kanal MiniMax
@@ -360,7 +364,7 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    kullanılmaz. Toplam iki kanal aşılmaz ve çağrılar mümkünse paralel yürür.
 
 Cursor CLI/MCP/model/harness, Cursor-routed model, wrapper ile aynı provider'ı
-ikinci kez çağırma ve AI uygulama pencereleri istişre kanalı değildir. CLI,
+ikinci kez çağırma ve AI uygulama pencereleri istişare kanalı değildir. CLI,
 daemon, credential veya exact-model kimliği hazır değilse UI fallback yapılmaz.
 `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta review
 tekrarlanmaz. Geçerli `REVISE` bulgusu düzeltildiğinde yalnız önceden seçilmiş
@@ -372,7 +376,7 @@ PR structured alanları:
 Implementer AI: Codex|Claude|other
 Consultation mode: none|single|dual
 Consultation reason: <neden bu mod seçildi>
-Risk trigger: <yalnız dual; geri döndürülemez/yüksek risk/insan-yetkili gerekçe>
+Risk trigger: <kategori>: <somut açıklama> # yalnız dual
 Verdict: AGREE # yalnız single/dual
 Consultation base tip: <single/dual exact target tip>
 Consultation base: <single/dual exact merge-base>
@@ -383,15 +387,25 @@ MiniMax receipt: <dual için opsiyonlardan yalnız biri>
 Codex receipt: <dual için opsiyonlardan yalnız biri>
 ```
 
-`gate-cross-ai-audit` açık modda kanal sayısını da doğrular: `none` receipt
-taşıyamaz, `single` yalnız exact Claude receipt'i taşır, `dual` exact Claude +
+`Risk trigger` kategori değeri `irreversible-production`, `security-authz`,
+`privacy-retention`, `data-migration`, `production-cutover` veya
+`human-authority` olur; serbest/placeholder metin fail-closed reddedilir.
+`gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
+risk zeminini doğrular: `none` receipt veya legacy control field taşıyamaz,
+`single` yalnız exact Claude receipt'i taşır, `dual` exact Claude +
 yalnız bir provider-distinct receipt taşır. `dual` yayın sırası zorunlu değildir;
 paralel çağrı kabul edilir. `single/dual` çıktısı `P0/P1/P2` ve tek terminal
 `VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim
 onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
 freshness, digest, redaction ve provider/model eşlemesi korunur.
 
-İstişre hiçbir modda test/CI/live evidence/browser smoke/board claim/protected
+Path/branch sınıflandırıcısı yalnız açık governance ve production-promotion
+sinyallerini fail-closed yakalar; diff'in iş anlamını eksiksiz anlayan bir risk
+oracle'ı değildir. Authz, retention/silme, migration, concurrency, cutover veya
+geri döndürülemez başka bir karar path adına yansımıyorsa agent doğru
+`single/dual` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
+
+İstişare hiçbir modda test/CI/live evidence/browser smoke/board claim/protected
 Environment reviewer/gerçek kullanıcı rızası/hukuk veya secret-owner kapısının
 yerine geçmez. Prompt, argüman ve receipt'e secret, JWT, raw bearer, webhook,
 cookie, private key, admin credential veya kullanıcı PII yazılmaz.
@@ -403,7 +417,7 @@ cookie, private key, admin credential veya kullanıcı PII yazılmaz.
 > kanal sayısı üretmez ve #2621 kararını geçersiz kılamaz. Yalnız eski receipt,
 > fixture ve migration kayıtlarını yorumlamak için korunur.
 
-### 11.H.1 Eski zorunlu üç-kanallı istişre metni
+### 11.H.1 Eski zorunlu üç-kanallı istişare metni
 
 Tarihsel politika aynı exact scope üzerinde şu üç headless kanalı zorunlu
 sayıyordu:

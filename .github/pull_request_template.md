@@ -57,7 +57,7 @@ Critical-Fix: no
 - [ ] **IP sanitize:** Dış kullanıcı-facing response/doc'ta iç ağ IP yok
 - [ ] **Handoff update:** Büyük delta ise `docs/session-handoff-<latest>.md` güncel
 
-## Cross-AI İstişre Modu
+## Cross-AI İstişare Modu
 
 > Varsayılan `none`; gerçekten ikinci görüş gerekiyorsa yalnız direct Claude Opus
 > 4.8 ile `single`; yalnız geri döndürülemez/çok yüksek riskli/insan-yetkili
@@ -69,7 +69,7 @@ Critical-Fix: no
 Implementer AI: Codex
 Consultation mode: none
 Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
-# Risk trigger: <yalnız dual>
+# Risk trigger: <irreversible-production|security-authz|privacy-retention|data-migration|production-cutover|human-authority>: <somut açıklama; yalnız dual>
 # Verdict: AGREE # yalnız single/dual
 # Consultation base tip: <single/dual exact target tip>
 # Consultation base: <single/dual exact merge-base>
@@ -81,8 +81,10 @@ Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
 ```
 
 **Field semantik**:
-- `none`: receipt yok; rutin implementation/test için kısa gerekçe zorunlu.
-- `single`: exact Claude Opus 4.8 receipt + exact base/head/scope + `AGREE`.
+- `none`: receipt yok; rutin implementation/test için somut gerekçe zorunlu;
+  governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
+- `single`: exact Claude Opus 4.8 receipt + exact base/head/scope + `AGREE`;
+  Claude implementer için provider-distinct olmadığı için kullanılamaz.
 - `dual`: exact Claude + yalnız bir MiniMax veya Codex receipt; somut `Risk trigger`
   zorunlu, üçüncü kanal yasak, publication order zorunlu değil.
 - Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,
