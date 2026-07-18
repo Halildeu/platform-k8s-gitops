@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
-# Faz 25 Full ATS canlı kabulü düşerse yalnız üç runtime pinini reviewed-base
-# artifact setine ve state marker'ını ROLLED_BACK durumuna alan dar test-only
-# compensator. Bu setin canlı sağlığı merge sonrasında yeniden kanıtlanır.
+# Faz 25 Full ATS canlı kabulü düşerse yalnız yeni frontend pinini reviewed-base
+# frontend artifactine döndüren ve state marker'ını ROLLED_BACK yapan test-only
+# compensator. ATS ve permission-service mevcut doğrulanmış baseline'da kalır;
+# telafi sonucu merge sonrasında canlı olarak yeniden kanıtlanır.
 set -euo pipefail
 
 GH_REPO="${GH_REPO:-Halildeu/platform-k8s-gitops}"
-PROMOTION_PR="${PROMOTION_PR:-2617}"
+PROMOTION_PR="${PROMOTION_PR:-2632}"
 FAILED_SHA="${FAILED_SHA:-}"
 RUN_ID="${RUN_ID:-0}"
 RUN_ATTEMPT="${RUN_ATTEMPT:-1}"
 SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
 BOT_NAME="platform-gitops-automation[bot]"
 BOT_EMAIL="platform-gitops-automation[bot]@users.noreply.github.com"
-PROMOTION_BASE_SHA="fc5f2735a49977d79b82e9d36d71642e54e67023"
+PROMOTION_BASE_SHA="3833433f8f14cbbc1d6115a5edee0573e6a79f9b"
 
 : "${GH_TOKEN:?GH_TOKEN must be a platform-gitops-automation GitHub App token}"
 [[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" ]] || {
   echo "[fullats-rollback] unexpected repository" >&2
   exit 2
 }
-[[ "$PROMOTION_PR" == "2617" ]] || {
+[[ "$PROMOTION_PR" == "2632" ]] || {
   echo "[fullats-rollback] unexpected promotion PR" >&2
   exit 2
 }
@@ -101,8 +102,8 @@ git fetch origin main --quiet
   echo "[fullats-rollback] main advanced; automatic revert requires a new reviewed scope" >&2
   exit 1
 }
-git merge-base --is-ancestor "$merge_sha" "$FAILED_SHA" || {
-  echo "[fullats-rollback] failed revision does not descend from the reviewed promotion" >&2
+[[ "$merge_sha" == "$FAILED_SHA" ]] || {
+  echo "[fullats-rollback] acceptance did not run on the exact reviewed promotion merge" >&2
   exit 1
 }
 
@@ -111,37 +112,17 @@ git checkout -B "$branch" origin/main --quiet
 rendered="$(mktemp)"
 trap 'rm -f "$rendered"' EXIT
 
-ATS_OLD="sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515"
-PERMISSION_OLD="sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e139a5256"
-FRONTEND_OLD="sha256:28da39d9402a27d825d637e65e409ecf601cbfd22540add04ce5a3b9bf566b2d"
-ATS_NEW="sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
-PERMISSION_NEW="sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
-FRONTEND_NEW="sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0"
+ATS_CURRENT="sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
+PERMISSION_CURRENT="sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
+FRONTEND_OLD="sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0"
+FRONTEND_NEW="sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d"
+FRONTEND_OLD_SHA="9f82edb249bcc4de3d83ce59a3800d835e88f410"
+FRONTEND_NEW_SHA="d5846603ff278e97c3539c8c8bf04950cfd5f628"
+FRONTEND_OLD_TAG="sha-9f82edb"
+FRONTEND_NEW_TAG="sha-d584660"
 
-activation="kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml"
 test_root="kustomize/overlays/test/kustomization.yaml"
-smoke="scripts/ats/d29-smoke.sh"
 state_marker="kustomize/overlays/test/fullats-promotion-state.txt"
-descendant_sensitive_changed="$(git diff --name-only "$merge_sha" "$FAILED_SHA" | awk '
-  /^(kustomize\/|argocd\/|helm-values\/|runtime-artifacts\/|config\/faz25|scripts\/ats\/|scripts\/automation\/(backend-testai|sync-test-overlay|apply-test-overlay)|scripts\/deploy\/(reconcile-testai|ensure-argocd|verify-testai|verify-pod|gate-stability)|\.github\/workflows\/(faz25-fullats|deploy-backend-testai|verify-testai-backend-rollout))/ {print}
-' | sort)"
-expected_descendant_sensitive_changed="$(printf '%s\n' \
-  .github/workflows/faz25-fullats-live-browser-acceptance.yml \
-  kustomize/base/apps/ats-interview-evidence/configmap.yaml \
-  kustomize/base/apps/ats-interview-evidence/deployment.yaml \
-  kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml \
-  scripts/ats/install-pinned-gh-cli.sh \
-  scripts/ats/install-pinned-kustomize.sh \
-  scripts/ats/open-fullats-test-rollback-pr.sh | sort)"
-[[ "$descendant_sensitive_changed" == "$expected_descendant_sensitive_changed" ]] || {
-  echo "[fullats-rollback] descendant main changed the protected Full ATS runtime/recovery scope" >&2
-  exit 1
-}
-git diff --quiet "$merge_sha" "$FAILED_SHA" -- \
-  "$activation" "$state_marker" "$test_root" "$smoke" || {
-  echo "[fullats-rollback] promoted runtime binding changed after the reviewed promotion" >&2
-  exit 1
-}
 parent_count="$(git rev-list --parents -n 1 "$merge_sha" | awk '{print NF - 1}')"
 if [[ "$parent_count" != "1" || "$(git rev-parse "$merge_sha^")" != "$PROMOTION_BASE_SHA" ]]; then
   echo "[fullats-rollback] promotion must be one-parent squash directly on reviewed base" >&2
@@ -157,51 +138,45 @@ promotion_merge_tree="$(jq -r '.tree.sha // empty' <<<"$promotion_merge_commit")
   exit 1
 }
 
-# Restore only the three runtime binding surfaces from the reviewed promotion
-# base. Source scripts/workflows stay available but cannot pass their exact
-# promoted-digest preflight while the marker is ROLLED_BACK.
-git show "$PROMOTION_BASE_SHA:$activation" >"$activation"
+# Restore only the frontend desired-state pin from the reviewed promotion base.
+# Source scripts/workflows stay available, while the marker makes the failed
+# promotion state explicit. ATS and permission-service pins remain unchanged.
 git show "$PROMOTION_BASE_SHA:$test_root" >"$test_root"
-git show "$PROMOTION_BASE_SHA:$smoke" >"$smoke"
 printf 'ROLLED_BACK\n' >"$state_marker"
 
 changed="$(git diff --name-only | sort)"
-expected_changed="$(printf '%s\n' "$activation" "$state_marker" "$test_root" "$smoke" | sort)"
+expected_changed="$(printf '%s\n' "$state_marker" "$test_root" | sort)"
 [[ "$changed" == "$expected_changed" ]] || {
-  echo "[fullats-rollback] changed-file set escaped four-file contract" >&2
+  echo "[fullats-rollback] changed-file set escaped two-file contract" >&2
   exit 1
 }
-grep -Fq -- "$ATS_OLD" "$activation"
-grep -Fq -- "$ATS_OLD" "$smoke"
-grep -Fq -- "$PERMISSION_OLD" "$test_root"
+grep -Fq -- "$PERMISSION_CURRENT" "$test_root"
 grep -Fq -- "$FRONTEND_OLD" "$test_root"
-grep -Fq -- "sourceRevision: 653752b7bcfb8343b3af0845499a749c4655052c" "$test_root"
-grep -Fq -- "newTag: sha-653752b" "$test_root"
-if grep -Fq -- "$ATS_NEW" "$activation" || \
-   grep -Fq -- "$ATS_NEW" "$smoke" || \
-   grep -Fq -- "$PERMISSION_NEW" "$test_root" || \
-   grep -Fq -- "$FRONTEND_NEW" "$test_root" || \
-   grep -Fq -- "newTag: sha-9f82edb" "$test_root"; then
-  echo "[fullats-rollback] promoted artifact survived deterministic revert" >&2
+grep -Fq -- "sourceRevision: $FRONTEND_OLD_SHA" "$test_root"
+grep -Fq -- "newTag: $FRONTEND_OLD_TAG" "$test_root"
+if grep -Fq -- "$FRONTEND_NEW" "$test_root" || \
+   grep -Fq -- "sourceRevision: $FRONTEND_NEW_SHA" "$test_root" || \
+   grep -Fq -- "newTag: $FRONTEND_NEW_TAG" "$test_root"; then
+  echo "[fullats-rollback] failed frontend artifact survived deterministic revert" >&2
   exit 1
 fi
 grep -Fxq -- "ROLLED_BACK" "$state_marker"
 
 kustomize build kustomize/overlays/test >"$rendered"
-grep -Fq -- "ghcr.io/halildeu/ats-app-boot@$ATS_OLD" "$rendered"
-grep -Fq -- "ghcr.io/halildeu/platform-backend-permission-service@$PERMISSION_OLD" "$rendered"
-grep -Fq -- "ghcr.io/halildeu/platform-web-frontend-testai:sha-653752b@$FRONTEND_OLD" "$rendered"
+grep -Fq -- "ghcr.io/halildeu/ats-app-boot@$ATS_CURRENT" "$rendered"
+grep -Fq -- "ghcr.io/halildeu/platform-backend-permission-service@$PERMISSION_CURRENT" "$rendered"
+grep -Fq -- "ghcr.io/halildeu/platform-web-frontend-testai:$FRONTEND_OLD_TAG@$FRONTEND_OLD" "$rendered"
 
-git add "$activation" "$state_marker" "$test_root" "$smoke"
+git add "$state_marker" "$test_root"
 git diff --cached --check
 git config user.name "$BOT_NAME"
 git config user.email "$BOT_EMAIL"
 run_url="$SERVER_URL/$GH_REPO/actions/runs/$RUN_ID"
-git commit --quiet -m "revert(faz25): compensate failed Full ATS test acceptance
+git commit --quiet -m "revert(faz25): compensate failed Full ATS frontend acceptance
 
-Exact four-file compensator for merged promotion PR #${PROMOTION_PR} after its
-live browser acceptance failed on the same main SHA. Restores the prior atomic
-ATS, permission-service and frontend test artifact set plus rollback marker.
+Exact two-file compensator for merged promotion PR #${PROMOTION_PR} after its
+live browser acceptance failed on the same main SHA. Restores only the prior
+frontend test artifact and rollback marker; ATS and permission stay current.
 
 Run: ${run_url}
 Tracked by #2615."
@@ -210,11 +185,10 @@ git push origin "HEAD:$branch" --quiet
 body="$(cat <<'EOF'
 ## Test-only compensating rollback
 
-The live Full ATS browser acceptance failed on an exact current-main descendant
-of promotion PR #__PROMOTION_PR__. The four promoted runtime-binding paths were
-unchanged from that reviewed promotion. This PR restores only the reviewed-base
-ATS + permission-service + frontend artifact set and marks the promotion
-ROLLED_BACK.
+The live Full ATS browser acceptance failed on the exact merge of promotion PR
+#__PROMOTION_PR__. This PR restores only the reviewed-base frontend pin and
+marks the promotion ROLLED_BACK. The current ATS and permission-service pins are
+preserved.
 
 - Failed acceptance run: __RUN_URL__
 - Failed main SHA: `__FAILED_SHA__`
@@ -226,7 +200,7 @@ ROLLED_BACK.
 ## Cross-AI
 
 Automation source: .github/workflows/faz25-fullats-live-browser-acceptance.yml
-Cross-AI exempt reason: Machine-generated four-file test artifact rollback; no AI peer-review claim is made.
+Cross-AI exempt reason: Machine-generated two-file frontend test rollback; no AI peer-review claim is made.
 Automation evidence: __RUN_URL__
 
 ## Boundary declaration (ADR-0011 §2.3)
@@ -287,8 +261,8 @@ rollback_merge_sha="$(jq -r '.mergeCommit.oid // empty' <<<"$rollback_merge_json
 
 # A merged compensator is not a successful rollback by itself. Wait for the
 # GitOps controller to observe the exact rollback merge, then re-prove the
-# reviewed-base artifact set at the desired Deployment, Ready Pod imageID,
-# public build-info and D29 functional/authz layers. This verifier performs no
+# reviewed-base frontend at the desired Deployment, Ready Pod imageID, public
+# build-info and current ATS/permission D29 functional/authz layers. This verifier performs no
 # direct workload mutation; a failed post-rollback check leaves this workflow
 # red and the already-merged compensator visible for incident handling.
 rollback_evidence_dir="${ROLLBACK_EVIDENCE_DIR:-${RUNNER_TEMP:-/tmp}/fullats-rollback-evidence-${RUN_ID}-${RUN_ATTEMPT}}"
@@ -303,15 +277,15 @@ REPORT_PATH="$rollback_evidence_dir/argocd-convergence.json" \
   bash scripts/deploy/reconcile-testai-backend-sequential.sh
 
 EXPECTED_GITOPS_SHA="$rollback_merge_sha" \
-EXPECTED_FRONTEND_SHA="653752b7bcfb8343b3af0845499a749c4655052c" \
-EXPECTED_ATS_DIGEST="$ATS_OLD" \
-EXPECTED_PERMISSION_DIGEST="$PERMISSION_OLD" \
+EXPECTED_FRONTEND_SHA="$FRONTEND_OLD_SHA" \
+EXPECTED_ATS_DIGEST="$ATS_CURRENT" \
+EXPECTED_PERMISSION_DIGEST="$PERMISSION_CURRENT" \
 EXPECTED_FRONTEND_DIGEST="$FRONTEND_OLD" \
 PHASE=post \
 EVIDENCE_DIR="$rollback_evidence_dir" \
 REQUIRE_HEAD_SHA=false \
   bash scripts/ats/verify-fullats-live-runtime.sh
-ATS_EXPECTED_DIGEST="$ATS_OLD" bash "$smoke"
+ATS_EXPECTED_DIGEST="$ATS_CURRENT" bash scripts/ats/d29-smoke.sh
 
 git fetch origin main --quiet
 [[ "$(git rev-parse origin/main)" == "$rollback_merge_sha" ]] || {
@@ -321,10 +295,10 @@ git fetch origin main --quiet
 jq -n \
   --arg rollback_pr "$pr_url" \
   --arg revision "$rollback_merge_sha" \
-  --arg ats_digest "$ATS_OLD" \
-  --arg permission_digest "$PERMISSION_OLD" \
+  --arg ats_digest "$ATS_CURRENT" \
+  --arg permission_digest "$PERMISSION_CURRENT" \
   --arg frontend_digest "$FRONTEND_OLD" \
-  --arg frontend_sha "653752b7bcfb8343b3af0845499a749c4655052c" \
+  --arg frontend_sha "$FRONTEND_OLD_SHA" \
   '{
     schema: "faz25-fullats-post-rollback-runtime/v1",
     verdict: "PASS",

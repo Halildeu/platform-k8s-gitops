@@ -419,7 +419,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         for required in (
             '"$(git rev-parse "$PR_HEAD_SHA^")" == "$PR_BASE_SHA"',
             '"$promotion_merge_tree" == "$promotion_head_tree"',
-            '"$(git rev-parse "$PROMOTION_BASE_SHA:$restored_path")"',
+            '"$(git rev-parse "$PROMOTION_BASE_SHA:$test_root")"',
             '"$(git show "$PR_HEAD_SHA:$state_marker")" == "ROLLED_BACK"',
             'fullats-rollback-content-attestation/v1',
         ):
@@ -457,7 +457,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         )
 
     def test_fullats_rollback_content_verifier_executes_fail_closed_with_mocked_git_and_github(self):
-        promotion_base = "fc5f2735a49977d79b82e9d36d71642e54e67023"
+        promotion_base = "3833433f8f14cbbc1d6115a5edee0573e6a79f9b"
         pr_base = "1" * 40
         pr_head = "2" * 40
         promotion_head = "3" * 40
@@ -473,7 +473,7 @@ shift || true
 printf 'git command=%s args=%s tamper=%s\n' "$command" "$*" "${FAKE_TAMPER:-unset}" >>"$FAKE_TRACE"
 case "$command" in
   fetch)
-    [[ "$*" == "--no-tags origin pull/2617/head" ]]
+    [[ "$*" == "--no-tags origin pull/2632/head" ]]
     ;;
   rev-list)
     target="${*: -1}"
@@ -508,10 +508,8 @@ case "$command" in
   diff)
     if [[ " $* " == *" --name-only "* ]]; then
       printf '%s\n' \
-        'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml' \
         'kustomize/overlays/test/fullats-promotion-state.txt' \
-        'kustomize/overlays/test/kustomization.yaml' \
-        'scripts/ats/d29-smoke.sh'
+        'kustomize/overlays/test/kustomization.yaml'
     else
       printf 'mock-binary-diff\n'
     fi
@@ -527,7 +525,7 @@ esac
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'gh args=%s tree_mismatch=%s\n' "$*" "${FAKE_TREE_MISMATCH:-unset}" >>"$FAKE_TRACE"
-if [[ "$*" == *"/pulls/2617"* ]]; then
+if [[ "$*" == *"/pulls/2632"* ]]; then
   body="$(printf '%s\n' \
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
@@ -572,8 +570,8 @@ fi
                         **os.environ,
                         "PATH": f"{fake_bin}:{os.environ['PATH']}",
                         "GH_REPO": "Halildeu/platform-k8s-gitops",
-                        "PROMOTION_PR": "2617",
-                        "PR_NUMBER": "2617",
+                        "PROMOTION_PR": "2632",
+                        "PR_NUMBER": "2632",
                         "PR_HEAD_REF": branch,
                         "PR_HEAD_SHA": pr_head,
                         "PR_BASE_SHA": pr_base,
@@ -681,7 +679,7 @@ fi
         expected = {
             "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "frontend": "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
+            "frontend": "sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d",
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
         self.assertIn(
@@ -693,7 +691,7 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "EXPECTED_FRONTEND_SHA: 9f82edb249bcc4de3d83ce59a3800d835e88f410",
+            "EXPECTED_FRONTEND_SHA: d5846603ff278e97c3539c8c8bf04950cfd5f628",
             self.fullats_browser_workflow,
         )
         self.assertIn("body.sha !== expectedFrontendSha", self.fullats_browser)
@@ -754,43 +752,13 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn("open-fullats-test-rollback-pr.sh", self.fullats_browser_workflow)
-        self.assertIn('PROMOTION_PR: "2617"', self.fullats_browser_workflow)
+        self.assertIn('PROMOTION_PR: "2632"', self.fullats_browser_workflow)
         self.assertIn('[[ "$(git rev-parse origin/main)" == "$FAILED_SHA" ]]', self.rollback_script)
+        self.assertIn('[[ "$merge_sha" == "$FAILED_SHA" ]]', self.rollback_script)
         self.assertIn(
-            'git merge-base --is-ancestor "$merge_sha" "$FAILED_SHA"',
+            "acceptance did not run on the exact reviewed promotion merge",
             self.rollback_script,
         )
-        self.assertIn(
-            'git diff --quiet "$merge_sha" "$FAILED_SHA"',
-            self.rollback_script,
-        )
-        self.assertIn(
-            "promoted runtime binding changed after the reviewed promotion",
-            self.rollback_script,
-        )
-        self.assertIn(
-            "descendant main changed the protected Full ATS runtime/recovery scope",
-            self.rollback_script,
-        )
-        for reviewed_sensitive_path in (
-            ".github/workflows/faz25-fullats-live-browser-acceptance.yml",
-            "kustomize/base/apps/ats-interview-evidence/configmap.yaml",
-            "kustomize/base/apps/ats-interview-evidence/deployment.yaml",
-            "kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml",
-            "scripts/ats/install-pinned-gh-cli.sh",
-            "scripts/ats/install-pinned-kustomize.sh",
-            "scripts/ats/open-fullats-test-rollback-pr.sh",
-        ):
-            self.assertIn(reviewed_sensitive_path, self.rollback_script)
-        for fail_closed_prefix in (
-            "kustomize\\/",
-            "argocd\\/",
-            "helm-values\\/",
-            "runtime-artifacts\\/",
-            "config\\/faz25",
-            "scripts\\/ats\\/",
-        ):
-            self.assertIn(fail_closed_prefix, self.rollback_script)
         self.assertIn(
             'echo "[fullats-rollback] missing command: $command"',
             self.rollback_script,
@@ -803,17 +771,16 @@ fi
             'branch="auto-fullats-rollback/faz25-fullats-${RUN_ID}-${RUN_ATTEMPT}"',
             self.rollback_script,
         )
-        self.assertIn('git show "$PROMOTION_BASE_SHA:$activation"', self.rollback_script)
         self.assertIn('parent_count="$(git rev-list --parents -n 1 "$merge_sha"', self.rollback_script)
         self.assertIn('"$(git rev-parse "$merge_sha^")" != "$PROMOTION_BASE_SHA"', self.rollback_script)
         self.assertIn('git show "$PROMOTION_BASE_SHA:$test_root"', self.rollback_script)
-        self.assertIn('git show "$PROMOTION_BASE_SHA:$smoke"', self.rollback_script)
         self.assertIn("printf 'ROLLED_BACK\\n'", self.rollback_script)
-        self.assertIn("changed-file set escaped four-file contract", self.rollback_script)
+        self.assertIn("changed-file set escaped two-file contract", self.rollback_script)
         for digest in (
-            "sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515",
-            "sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e139a5256",
-            "sha256:28da39d9402a27d825d637e65e409ecf601cbfd22540add04ce5a3b9bf566b2d",
+            "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
+            "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
+            "sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d",
         ):
             self.assertIn(digest, self.rollback_script)
         self.assertIn("kustomize build kustomize/overlays/test", self.rollback_script)
@@ -833,7 +800,7 @@ fi
         )
         self.assertIn("## Boundary declaration (ADR-0011 §2.3)", self.rollback_script)
         self.assertIn("- [x] state-mutation (test cluster)", self.rollback_script)
-        self.assertIn("reviewed-base artifact", self.rollback_script)
+        self.assertIn("reviewed-base frontend", self.rollback_script)
         self.assertNotIn("önceki kanıtlı", self.rollback_script)
         self.assertIn(
             "scripts/deploy/reconcile-testai-backend-sequential.sh",
@@ -846,7 +813,7 @@ fi
             self.rollback_script,
         )
         self.assertIn(
-            'EXPECTED_FRONTEND_SHA="653752b7bcfb8343b3af0845499a749c4655052c"',
+            'EXPECTED_FRONTEND_SHA="$FRONTEND_OLD_SHA"',
             self.rollback_script,
         )
         self.assertIn(
@@ -857,7 +824,7 @@ fi
         self.assertIn("fullats_run=$nonce", self.fullats_runtime)
         self.assertIn("ready_pod_image_ids_exact: true", self.rollback_script)
         self.assertIn(
-            'ATS_EXPECTED_DIGEST="$ATS_OLD" bash "$smoke"',
+            'ATS_EXPECTED_DIGEST="$ATS_CURRENT" bash scripts/ats/d29-smoke.sh',
             self.rollback_script,
         )
         self.assertIn("faz25-fullats-post-rollback-runtime/v1", self.rollback_script)
@@ -871,7 +838,7 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn("steps.rollback.outcome != 'success'", self.fullats_browser_workflow)
-        self.assertIn("üç-artifact compensator", self.runbook)
+        self.assertIn("frontend-only compensator", self.runbook)
 
     def test_fullats_rollback_installs_checksum_pinned_runner_local_github_cli(self):
         self.assertIn('VERSION="2.96.0"', self.pinned_gh_installer)
@@ -914,31 +881,29 @@ fi
         )
         self.assertNotIn("sudo", self.pinned_kustomize_installer)
 
-    def test_fullats_promotion_or_rollback_state_binds_one_exact_artifact_set(self):
+    def test_fullats_promotion_or_rollback_state_binds_exact_frontend_and_current_backends(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
+        current_ats = "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
+        current_permission = "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
         promoted = {
-            "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
-            "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "frontend": "sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d",
+            "tag": "sha-d584660",
+        }
+        rolled_back = {
             "frontend": "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
             "tag": "sha-9f82edb",
         }
-        rolled_back = {
-            "ats": "sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515",
-            "permission": "sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e139a5256",
-            "frontend": "sha256:28da39d9402a27d825d637e65e409ecf601cbfd22540add04ce5a3b9bf566b2d",
-            "tag": "sha-653752b",
-        }
         expected = promoted if self.promotion_state == "PROMOTED" else rolled_back
-        self.assertIn(expected["ats"], self.activation)
-        self.assertIn(expected["permission"], self.test_root)
+        self.assertIn(current_ats, self.activation)
+        self.assertIn(current_permission, self.test_root)
         self.assertIn(expected["frontend"], self.test_root)
         self.assertIn(
-            f"image: ghcr.io/halildeu/ats-app-boot@{expected['ats']}",
+            f"image: ghcr.io/halildeu/ats-app-boot@{current_ats}",
             self.rendered_test_root,
         )
         self.assertIn(
             "image: ghcr.io/halildeu/platform-backend-permission-service@"
-            f"{expected['permission']}",
+            f"{current_permission}",
             self.rendered_test_root,
         )
         self.assertIn(
@@ -947,15 +912,6 @@ fi
             self.rendered_test_root,
         )
         other = rolled_back if self.promotion_state == "PROMOTED" else promoted
-        self.assertNotIn(
-            f"image: ghcr.io/halildeu/ats-app-boot@{other['ats']}",
-            self.rendered_test_root,
-        )
-        self.assertNotIn(
-            "image: ghcr.io/halildeu/platform-backend-permission-service@"
-            f"{other['permission']}",
-            self.rendered_test_root,
-        )
         self.assertNotIn(
             "image: ghcr.io/halildeu/platform-web-frontend-testai:"
             f"{other['tag']}@{other['frontend']}",

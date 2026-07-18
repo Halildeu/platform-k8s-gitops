@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 # Trusted-base verifier for the narrow Full ATS test rollback automation lane.
-# It proves that the bot PR is the exact inverse of promotion PR #2617's three
-# runtime bindings plus the explicit ROLLED_BACK marker before Cross-AI grants
-# the machine-generated exemption.
+# It proves that the bot PR is the exact inverse of promotion PR #2632's
+# frontend pin plus the explicit ROLLED_BACK marker before Cross-AI grants the
+# machine-generated exemption. ATS and permission-service pins are deliberately
+# outside the compensator and remain on the current validated baseline.
 set -euo pipefail
 
 GH_REPO="${GH_REPO:-Halildeu/platform-k8s-gitops}"
-PROMOTION_PR="${PROMOTION_PR:-2617}"
+PROMOTION_PR="${PROMOTION_PR:-2632}"
 PR_NUMBER="${PR_NUMBER:-}"
 PR_HEAD_REF="${PR_HEAD_REF:-}"
 PR_HEAD_SHA="${PR_HEAD_SHA:-}"
 PR_BASE_SHA="${PR_BASE_SHA:-}"
 ATTESTATION_OUTPUT="${ATTESTATION_OUTPUT:-}"
-PROMOTION_BASE_SHA="fc5f2735a49977d79b82e9d36d71642e54e67023"
+PROMOTION_BASE_SHA="3833433f8f14cbbc1d6115a5edee0573e6a79f9b"
 SOURCE_WORKFLOW=".github/workflows/faz25-fullats-live-browser-acceptance.yml"
 
-[[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" && "$PROMOTION_PR" == "2617" ]] || exit 2
+[[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" && "$PROMOTION_PR" == "2632" ]] || exit 2
 [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 2
 [[ "$PR_HEAD_REF" =~ ^auto-fullats-rollback/faz25-fullats-[0-9]+-[0-9]+$ ]] || exit 2
 [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ && "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
@@ -68,18 +69,14 @@ promotion_head_tree="$(gh api "repos/$GH_REPO/git/commits/$promotion_head" --jq 
 promotion_merge_tree="$(gh api "repos/$GH_REPO/git/commits/$promotion_merge" --jq '.tree.sha')"
 [[ "$promotion_head_tree" =~ ^[0-9a-f]{40}$ && "$promotion_merge_tree" == "$promotion_head_tree" ]] || exit 1
 
-activation="kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml"
 state_marker="kustomize/overlays/test/fullats-promotion-state.txt"
 test_root="kustomize/overlays/test/kustomization.yaml"
-smoke="scripts/ats/d29-smoke.sh"
 changed="$(git -c core.quotePath=true diff --name-only --no-renames "$PR_BASE_SHA...$PR_HEAD_SHA" | sort)"
-expected_changed="$(printf '%s\n' "$activation" "$state_marker" "$test_root" "$smoke" | sort)"
+expected_changed="$(printf '%s\n' "$state_marker" "$test_root" | sort)"
 [[ "$changed" == "$expected_changed" ]] || exit 1
 
-for restored_path in "$activation" "$test_root" "$smoke"; do
-  [[ "$(git rev-parse "$PROMOTION_BASE_SHA:$restored_path")" == \
-     "$(git rev-parse "$PR_HEAD_SHA:$restored_path")" ]] || exit 1
-done
+[[ "$(git rev-parse "$PROMOTION_BASE_SHA:$test_root")" == \
+   "$(git rev-parse "$PR_HEAD_SHA:$test_root")" ]] || exit 1
 [[ "$(git show "$PR_HEAD_SHA:$state_marker")" == "ROLLED_BACK" ]] || exit 1
 
 changed_diff_sha256="$(git -c core.quotePath=true diff --binary --full-index --no-renames \
@@ -96,10 +93,8 @@ jq -n \
   --arg promotion_base "$PROMOTION_BASE_SHA" \
   --arg promotion_scope "$promotion_scope" \
   --arg changed_diff "$changed_diff_sha256" \
-  --arg activation "$activation" \
   --arg marker "$state_marker" \
   --arg test_root "$test_root" \
-  --arg smoke "$smoke" \
   '{
     schema:"fullats-rollback-content-attestation/v1",
     valid:true,
@@ -107,11 +102,11 @@ jq -n \
     branch:$branch,
     base_sha:$base,
     head_sha:$head,
-    promotion_pr:2617,
+    promotion_pr:2632,
     promotion_merge_sha:$promotion_merge,
     promotion_head_sha:$promotion_head,
     promotion_base_sha:$promotion_base,
     promotion_scope_sha256:$promotion_scope,
     changed_diff_sha256:$changed_diff,
-    expected_paths:[$activation,$marker,$test_root,$smoke]
+    expected_paths:[$marker,$test_root]
   }' >"$ATTESTATION_OUTPUT"

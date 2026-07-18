@@ -55,12 +55,10 @@ const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
   'promotion_pr', 'promotion_scope_sha256', 'schema', 'source', 'valid',
 ];
 const FULLATS_ROLLBACK_PATHS = [
-  'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml',
   'kustomize/overlays/test/fullats-promotion-state.txt',
   'kustomize/overlays/test/kustomization.yaml',
-  'scripts/ats/d29-smoke.sh',
 ];
-const FULLATS_PROMOTION_BASE_SHA = 'fc5f2735a49977d79b82e9d36d71642e54e67023';
+const FULLATS_PROMOTION_BASE_SHA = '3833433f8f14cbbc1d6115a5edee0573e6a79f9b';
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -214,14 +212,13 @@ const AUTOMATION_DIFF_ALLOWLIST = {
   'auto-test-frontend/': [
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
   ],
-  // Faz 25 #2615: failure compensator can restore only the two desired-state
-  // image surfaces, the ATS digest mirror and the explicit promotion marker.
+  // Faz 25 #2615: failure compensator can restore only the frontend pin in
+  // the test overlay and the explicit promotion marker. ATS and permission
+  // artifacts stay on the already-validated current baseline.
   // It cannot carry workflow/governance/application changes in its bot PR.
   'auto-fullats-rollback/': [
-    /^kustomize\/overlays\/test\/activation\/ats-interview-evidence\/kustomization\.yaml$/,
     /^kustomize\/overlays\/test\/fullats-promotion-state\.txt$/,
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
-    /^scripts\/ats\/d29-smoke\.sh$/,
   ],
   'auto-verified/': [
     /^release-candidates\/(?:platform-agent|platform-backend|platform-web)\/[0-9a-f]{40}\.json$/,
@@ -1298,7 +1295,7 @@ function auditAutomation(body, prMeta) {
       && attestation.branch === prMeta.headRef
       && attestation.base_sha === prMeta.baseSha
       && attestation.head_sha === prMeta.headSha
-      && attestation.promotion_pr === 2617
+      && attestation.promotion_pr === 2632
       && attestation.promotion_merge_sha === prMeta.baseSha
       && COMMIT_SHA_RE.test(attestation.promotion_head_sha || '')
       && attestation.promotion_base_sha === FULLATS_PROMOTION_BASE_SHA
