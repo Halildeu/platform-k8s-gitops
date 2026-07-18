@@ -17,11 +17,15 @@ KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 EXPECTED_CONFIRM="RUN_FAZ25_FULLATS_LIVE_BROWSER"
 CONFIRM="${CONFIRM:-}"
+EXPECTED_FRONTEND_SHA="${EXPECTED_FRONTEND_SHA:-}"
 RECRUITER_USERNAME="ats-recruiter-persona"
 RECRUITER_EMAIL="ats-recruiter-persona@test.invalid"
 D35_ADMIN_EMAIL="d35-admin@example.com"
 ROLE_NAME="Full ATS Recruiter"
-MODULE_KEY="INTERVIEW_EVIDENCE"
+INTERVIEW_MODULE_KEY="INTERVIEW_EVIDENCE"
+ATS_MODULE_KEY="ATS"
+ATS_JOB_ACTION_KEY="ATS_JOB_MANAGE"
+ATS_APPLICATION_ACTION_KEY="ATS_APPLICATION_MANAGE"
 PLAYWRIGHT_VERSION="1.60.0"
 AXE_VERSION="4.11.3"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright@sha256:83192064c7510f7ee73dd63dc5f22a5e01a92c81a2e6a9c715d9e3fe55471fd9"
@@ -40,6 +44,10 @@ CURL_MAX_TIME=45
 }
 [[ "$CONFIRM" == "$EXPECTED_CONFIRM" ]] || {
   echo "FATAL: exact test acceptance confirmation gerekli" >&2
+  exit 2
+}
+[[ "$EXPECTED_FRONTEND_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "FATAL: exact reviewed frontend source SHA gerekli" >&2
   exit 2
 }
 
@@ -279,7 +287,7 @@ ACTIVATION_CODE="$(api_request PUT "/api/v1/users/$RECRUITER_USER_ID/activation"
   exit 1
 }
 
-echo "4/6 Recruiter module grant'ini role/granule/member API'leriyle kur"
+echo "4/6 Recruiter least-privilege ATS grant'lerini role/granule/member API'leriyle kur"
 ROLES_OUT="$(json_file roles.json)"
 ROLES_CODE="$(api_request GET /api/v1/roles "$ADMIN_HEADER_FILE" "$ROLES_OUT")"
 [[ "$ROLES_CODE" == "200" ]] || {
@@ -310,8 +318,17 @@ fi
 }
 
 GRANULE_BODY="$(json_file recruiter-granule.json)"
-jq -n --arg key "$MODULE_KEY" \
-  '{permissions:[{type:"MODULE",key:$key,grant:"VIEW"}]}' >"$GRANULE_BODY"
+jq -n \
+  --arg interview_key "$INTERVIEW_MODULE_KEY" \
+  --arg ats_key "$ATS_MODULE_KEY" \
+  --arg job_action "$ATS_JOB_ACTION_KEY" \
+  --arg application_action "$ATS_APPLICATION_ACTION_KEY" \
+  '{permissions:[
+    {type:"MODULE",key:$interview_key,grant:"VIEW"},
+    {type:"MODULE",key:$ats_key,grant:"VIEW"},
+    {type:"ACTION",key:$job_action,grant:"ALLOW"},
+    {type:"ACTION",key:$application_action,grant:"ALLOW"}
+  ]}' >"$GRANULE_BODY"
 GRANULE_OUT="$(json_file recruiter-granule-result.json)"
 GRANULE_CODE="$(api_request PUT "/api/v1/roles/$ROLE_ID/granules" "$ADMIN_HEADER_FILE" "$GRANULE_OUT" "$GRANULE_BODY")"
 [[ "$GRANULE_CODE" == "200" ]] || {
@@ -331,25 +348,49 @@ RECRUITER_AUTHZ_OUT="$(json_file recruiter-authz.json)"
 RECRUITER_AUTHZ_CODE=""
 for _ in $(seq 1 30); do
   RECRUITER_AUTHZ_CODE="$(api_request GET /api/v1/authz/me "$RECRUITER_HEADER_FILE" "$RECRUITER_AUTHZ_OUT")"
-  if [[ "$RECRUITER_AUTHZ_CODE" == "200" ]] && jq -e --arg key "$MODULE_KEY" '
-    (.superAdmin == false) and (
+  if [[ "$RECRUITER_AUTHZ_CODE" == "200" ]] && jq -e \
+      --arg interview_key "$INTERVIEW_MODULE_KEY" \
+      --arg ats_key "$ATS_MODULE_KEY" \
+      --arg job_action "$ATS_JOB_ACTION_KEY" \
+      --arg application_action "$ATS_APPLICATION_ACTION_KEY" '
+    def module_allowed($key):
       (((.modules[$key]? // "") | tostring | ascii_upcase) as $v |
         ($v == "VIEW" or $v == "MANAGE" or $v == "ALLOW" or $v == "TRUE")) or
-      (((.allowedModules? // []) | index($key)) != null)
-    )
+      (((.allowedModules? // []) | index($key)) != null);
+    def action_allowed($key):
+      (((.actions[$key]? // "") | tostring | ascii_upcase) as $v |
+        ($v == "ALLOW" or $v == "TRUE")) or
+      (((.allowedActions? // []) | index($key)) != null);
+    (.superAdmin == false) and
+    module_allowed($interview_key) and
+    module_allowed($ats_key) and
+    action_allowed($job_action) and
+    action_allowed($application_action)
   ' "$RECRUITER_AUTHZ_OUT" >/dev/null; then
     break
   fi
   sleep 2
 done
-if [[ "$RECRUITER_AUTHZ_CODE" != "200" ]] || ! jq -e --arg key "$MODULE_KEY" '
-    (.superAdmin == false) and (
+if [[ "$RECRUITER_AUTHZ_CODE" != "200" ]] || ! jq -e \
+    --arg interview_key "$INTERVIEW_MODULE_KEY" \
+    --arg ats_key "$ATS_MODULE_KEY" \
+    --arg job_action "$ATS_JOB_ACTION_KEY" \
+    --arg application_action "$ATS_APPLICATION_ACTION_KEY" '
+    def module_allowed($key):
       (((.modules[$key]? // "") | tostring | ascii_upcase) as $v |
         ($v == "VIEW" or $v == "MANAGE" or $v == "ALLOW" or $v == "TRUE")) or
-      (((.allowedModules? // []) | index($key)) != null)
-    )
+      (((.allowedModules? // []) | index($key)) != null);
+    def action_allowed($key):
+      (((.actions[$key]? // "") | tostring | ascii_upcase) as $v |
+        ($v == "ALLOW" or $v == "TRUE")) or
+      (((.allowedActions? // []) | index($key)) != null);
+    (.superAdmin == false) and
+    module_allowed($interview_key) and
+    module_allowed($ats_key) and
+    action_allowed($job_action) and
+    action_allowed($application_action)
   ' "$RECRUITER_AUTHZ_OUT" >/dev/null; then
-  echo "FATAL: recruiter module grant /authz/me'ye 60s icinde yansimadi" >&2
+  echo "FATAL: recruiter ATS least-privilege grant'leri /authz/me'ye 60s icinde yansimadi" >&2
   exit 1
 fi
 INBOX_OUT="$(json_file recruiter-inbox.json)"
@@ -377,6 +418,7 @@ docker run --rm --ipc=host --network host \
   -e RECRUITER_USERNAME="$RECRUITER_USERNAME" \
   -e RECRUITER_PASSWORD_FILE=/run/secrets/recruiter.password \
   -e EVIDENCE_DIR=/evidence \
+  -e EXPECTED_FRONTEND_SHA="$EXPECTED_FRONTEND_SHA" \
   -e PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION" \
   -e AXE_VERSION="$AXE_VERSION" \
   -e PLAYWRIGHT_INTEGRITY="$PLAYWRIGHT_INTEGRITY" \

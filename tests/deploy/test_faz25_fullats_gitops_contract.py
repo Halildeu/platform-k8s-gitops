@@ -38,6 +38,12 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.fullats_browser = (
             ROOT / "scripts/ats/fullats-live-browser-acceptance.cjs"
         ).read_text()
+        cls.fullats_browser_shell = (
+            ROOT / "scripts/ats/fullats-live-browser-acceptance.sh"
+        ).read_text()
+        cls.fullats_browser_workflow = (
+            ROOT / ".github/workflows/faz25-fullats-live-browser-acceptance.yml"
+        ).read_text()
         cls.fullats_axe_evidence = (
             ROOT / "scripts/ats/fullats-axe-evidence.cjs"
         )
@@ -302,6 +308,73 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.fullats_browser,
         )
 
+    def test_fullats_browser_covers_real_job_lifecycle_and_fail_closed_intake(self):
+        ordered_steps = [
+            "getByRole('button', { name: 'Yeni ilan oluştur' })",
+            "getByRole('button', { name: 'Taslak oluştur' })",
+            "getByRole('button', { name: 'Değişiklikleri kaydet' })",
+            "getByRole('button', { name: 'Önizle' })",
+            "getByRole('button', { name: 'Yayınla' })",
+            "getByRole('link', { name: 'Başvuru formuna geç' })",
+            "getByTestId('create-application-receipt')",
+            "getByRole('button', { name: 'Duraklat' })",
+            "assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'PAUSED')",
+            "getByRole('button', { name: 'Yayınla' })",
+            "getByRole('button', { name: 'İlanı kapat' })",
+            "assertNewApplicationRejected(publicStatePage, publicApplicationApiPath, 'CLOSED')",
+        ]
+        cursor = -1
+        for step in ordered_steps:
+            cursor = self.fullats_browser.index(step, cursor + 1)
+        self.assertIn("jobTransitions.length !== 4", self.fullats_browser)
+        self.assertIn("rejectedApplications.length !== 2", self.fullats_browser)
+        self.assertIn("jobIdSha256: sha256(jobId)", self.fullats_browser)
+        self.assertIn("jobSlugSha256: sha256(jobSlug)", self.fullats_browser)
+        self.assertIn("finalJobState: 'CLOSED'", self.fullats_browser)
+        self.assertNotIn("/jobs/urun-yoneticisi/apply", self.fullats_browser)
+
+    def test_fullats_recruiter_setup_is_least_privilege_and_action_explicit(self):
+        for permission in (
+            '{type:"MODULE",key:$interview_key,grant:"VIEW"}',
+            '{type:"MODULE",key:$ats_key,grant:"VIEW"}',
+            '{type:"ACTION",key:$job_action,grant:"ALLOW"}',
+            '{type:"ACTION",key:$application_action,grant:"ALLOW"}',
+        ):
+            self.assertIn(permission, self.fullats_browser_shell)
+        self.assertIn("(.superAdmin == false)", self.fullats_browser_shell)
+        self.assertIn("module_allowed($interview_key)", self.fullats_browser_shell)
+        self.assertIn("module_allowed($ats_key)", self.fullats_browser_shell)
+        self.assertIn("action_allowed($job_action)", self.fullats_browser_shell)
+        self.assertIn("action_allowed($application_action)", self.fullats_browser_shell)
+        self.assertNotIn('{type:"MODULE",key:$ats_key,grant:"MANAGE"}', self.fullats_browser_shell)
+
+    def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
+        expected = {
+            "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
+            "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "frontend": "sha256:dc4c10c76359836da06d83bca9d977433313a43ae06da1e909e28cd31ec71ead",
+        }
+        self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
+        self.assertIn(
+            f"EXPECTED_PERMISSION_DIGEST: {expected['permission']}",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            f"EXPECTED_FRONTEND_DIGEST: {expected['frontend']}",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(expected["ats"], self.activation)
+        self.assertIn(expected["permission"], self.test_root)
+        self.assertIn(expected["frontend"], self.test_root)
+        self.assertIn(
+            "EXPECTED_FRONTEND_SHA: 07e9672d1e206544d95226d4a0d20111e269677c",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn("buildInfo.sha !== expectedFrontendSha", self.fullats_browser)
+        self.assertIn('-e EXPECTED_FRONTEND_SHA="$EXPECTED_FRONTEND_SHA"', self.fullats_browser_shell)
+        self.assertIn("deployment/permission-service --timeout=180s", self.fullats_browser_workflow)
+        self.assertIn("deployment/frontend --timeout=180s", self.fullats_browser_workflow)
+
     def test_pg_writer_role_is_admin_bootstrapped_without_runtime_createrole(self):
         self.assertIn("--roles-only", self.pg_bootstrap)
         self.assertIn("CREATE ROLE ats_governance_writer", self.pg_bootstrap)
@@ -449,7 +522,8 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("Full acceptance sonunda overall Argo `Synced/Healthy`", self.runbook)
         self.assertIn("pod `CrashLoopBackOff` kalabilir", self.runbook)
         self.assertIn("fixed-id append'i doğrulandıktan sonra boot gate açılır", self.runbook)
-        self.assertIn("Faz 25 #2526 desired pin: `f34a761`", self.runbook)
+        self.assertIn("Faz 25 #2615 branch-acceptance pini", self.runbook)
+        self.assertIn("ATS #183 exact head `f4d2b4f`", self.runbook)
         self.assertIn("canlı D29 pending", self.runbook)
         self.assertIn("aynı exact-main koşumu yeniden dispatch etmek normal ve güvenlidir", self.runbook)
         self.assertIn("WiringConfig.flyway(DataSource)", self.runbook)

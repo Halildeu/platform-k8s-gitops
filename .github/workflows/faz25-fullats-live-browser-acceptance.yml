@@ -17,9 +17,14 @@ concurrency:
 
 jobs:
   live-browser:
-    name: Candidate to recruiter to candidate on testai
+    name: Recruiter job lifecycle to candidate application on testai
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 25
+    env:
+      EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
+      EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
+      EXPECTED_FRONTEND_DIGEST: sha256:dc4c10c76359836da06d83bca9d977433313a43ae06da1e909e28cd31ec71ead
+      EXPECTED_FRONTEND_SHA: 07e9672d1e206544d95226d4a0d20111e269677c
     steps:
       - name: Validate test-only dispatch boundary
         env:
@@ -40,17 +45,41 @@ jobs:
           set -euo pipefail
           kubectl --context=k3d-test -n platform-test rollout status \
             deployment/ats-interview-evidence --timeout=180s
+          kubectl --context=k3d-test -n platform-test rollout status \
+            deployment/permission-service --timeout=180s
+          kubectl --context=k3d-test -n platform-test rollout status \
+            deployment/frontend --timeout=180s
           desired="$(kubectl --context=k3d-test -n platform-test get deployment \
             ats-interview-evidence -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}')"
-          [[ "$desired" == ghcr.io/halildeu/ats-app-boot@sha256:* ]]
+          [[ "$desired" == "ghcr.io/halildeu/ats-app-boot@$EXPECTED_ATS_DIGEST" ]]
           kubectl --context=k3d-test -n platform-test get pods \
             -l app=ats-interview-evidence -o json | jq -e --arg digest "${desired##*@}" '
               [.items[].status.containerStatuses[]? | select(.name=="app-boot")] as $statuses |
               ($statuses | length) > 0 and
               ($statuses | all(.ready == true and (.imageID | endswith("@" + $digest))))
             ' >/dev/null
+          permission_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
+            permission-service -o jsonpath='{.spec.template.spec.containers[?(@.name=="permission-service")].image}')"
+          [[ "$permission_desired" == "ghcr.io/halildeu/platform-backend-permission-service@$EXPECTED_PERMISSION_DIGEST" ]]
+          kubectl --context=k3d-test -n platform-test get pods \
+            -l app.kubernetes.io/name=permission-service -o json | jq -e \
+            --arg digest "${permission_desired##*@}" '
+              [.items[].status.containerStatuses[]? | select(.name=="permission-service")] as $statuses |
+              ($statuses | length) > 0 and
+              ($statuses | all(.ready == true and (.imageID | endswith("@" + $digest))))
+            ' >/dev/null
+          frontend_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
+            frontend -o jsonpath='{.spec.template.spec.containers[?(@.name=="frontend")].image}')"
+          [[ "$frontend_desired" == "ghcr.io/halildeu/platform-web-frontend-testai:sha-07e9672@$EXPECTED_FRONTEND_DIGEST" ]]
+          kubectl --context=k3d-test -n platform-test get pods \
+            -l app.kubernetes.io/name=frontend -o json | jq -e \
+            --arg digest "${frontend_desired##*@}" '
+              [.items[].status.containerStatuses[]? | select(.name=="frontend")] as $statuses |
+              ($statuses | length) > 0 and
+              ($statuses | all(.ready == true and (.imageID | endswith("@" + $digest))))
+            ' >/dev/null
           curl -fsS https://testai.acik.com/build-info.json | jq -e \
-            '.sha | test("^[a-f0-9]{40}$")' >/dev/null
+            --arg expected "$EXPECTED_FRONTEND_SHA" '.sha == $expected' >/dev/null
 
       - name: Run product-path persona setup and real browser journey
         env:
@@ -76,8 +105,8 @@ jobs:
             echo ""
             echo "- environment: testai.acik.com"
             echo "- personas: synthetic candidate + synthetic recruiter"
-            echo "- journey: public job -> persistent application -> candidate status -> Keycloak recruiter login -> human status changes -> candidate observes changes"
-            echo "- recruiter module setup: user activation + role + granule + member product APIs"
+            echo "- journey: recruiter draft -> edit -> preview -> publish -> candidate application -> recruiter inbox/status -> pause/republish/close -> new intake fail-closed -> existing receipt survives"
+            echo "- recruiter access setup: user activation + least-privilege ATS module/actions + role member product APIs"
             echo "- direct DB/OpenFGA acceptance seed: none"
             echo "- real PII / production mutation: none"
             echo "- secrets/JWT/candidate access token in artifact: none"
