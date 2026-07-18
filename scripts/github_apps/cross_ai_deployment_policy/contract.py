@@ -182,6 +182,11 @@ class EvidenceVerifier:
                         "TRUST_KEY_ATTRIBUTION_INVALID",
                         f"provider key {key_id} lacks fixed family/channel/direct attribution",
                     )
+                if direct and model_identity_classes != ("provider-reported",):
+                    reject(
+                        "TRUST_KEY_ATTRIBUTION_INVALID",
+                        f"direct provider key {key_id} lacks provider-reported identity",
+                    )
             elif (
                 family is not None
                 or channels
@@ -584,7 +589,9 @@ class EvidenceVerifier:
 
     def _verify_review_chains(self, reviews: dict[str, VerifiedReview]) -> None:
         chains: dict[str, list[VerifiedReview]] = defaultdict(list)
-        raised_occurrences: dict[str, list[str]] = defaultdict(list)
+        raised_occurrences: dict[str, list[VerifiedReview]] = defaultdict(list)
+        resolved_occurrences: dict[str, list[VerifiedReview]] = defaultdict(list)
+        acknowledged_occurrences: dict[str, list[VerifiedReview]] = defaultdict(list)
         for review in reviews.values():
             chains[review.payload["reviewChainId"]].append(review)
             finding_ids = set(review.payload["findingIds"])
@@ -602,13 +609,51 @@ class EvidenceVerifier:
                     "REVIEW_FINDING_STATE_INVALID",
                     "a review cannot raise and close the same finding",
                 )
+            if not acknowledged_ids.issubset(resolved_ids):
+                reject(
+                    "REVIEW_FINDING_STATE_INVALID",
+                    "acknowledged findings must be resolved in the same review",
+                )
             for finding_id in finding_ids:
-                raised_occurrences[finding_id].append(review.digest)
+                raised_occurrences[finding_id].append(review)
+            for finding_id in resolved_ids:
+                resolved_occurrences[finding_id].append(review)
+            for finding_id in acknowledged_ids:
+                acknowledged_occurrences[finding_id].append(review)
         if any(len(occurrences) != 1 for occurrences in raised_occurrences.values()):
             reject(
                 "REVIEW_FINDING_REUSED",
                 "finding IDs must identify exactly one raise event in the bundle",
             )
+        referenced_ids = set(resolved_occurrences) | set(acknowledged_occurrences)
+        if not referenced_ids.issubset(raised_occurrences):
+            reject(
+                "REVIEW_FINDING_REFERENCE_INVALID",
+                "resolved or acknowledged finding has no raise event",
+            )
+        if any(len(occurrences) != 1 for occurrences in resolved_occurrences.values()):
+            reject(
+                "REVIEW_FINDING_STATE_INVALID",
+                "finding IDs must identify exactly one resolve event",
+            )
+        if any(
+            len(occurrences) != 1 for occurrences in acknowledged_occurrences.values()
+        ):
+            reject(
+                "REVIEW_FINDING_STATE_INVALID",
+                "finding IDs must identify exactly one acknowledgement event",
+            )
+        for finding_id, acknowledgements in acknowledged_occurrences.items():
+            raised = raised_occurrences[finding_id][0]
+            acknowledged = acknowledgements[0]
+            if (
+                raised.key.provider_family != acknowledged.key.provider_family
+                or acknowledged.issued_at <= raised.issued_at
+            ):
+                reject(
+                    "REVIEW_FINDING_REFERENCE_INVALID",
+                    "finding acknowledgement must follow its same-provider raise event",
+                )
         for chain_id, chain in chains.items():
             ordered = sorted(chain, key=lambda item: item.payload["round"])
             families = {item.key.provider_family for item in ordered}

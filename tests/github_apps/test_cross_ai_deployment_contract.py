@@ -100,6 +100,18 @@ class EvidenceContractTest(unittest.TestCase):
                 now=self.fixture.now,
             )
 
+    def test_rejects_direct_provider_without_provider_reported_identity(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][0]["allowedModelIdentityClasses"] = [
+            "trusted-launch-attested"
+        ]
+        with self.assertRaisesRegex(PolicyError, "TRUST_KEY_ATTRIBUTION_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
     def test_rejects_provider_issuer_mismatch(self) -> None:
         bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
         review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
@@ -282,6 +294,43 @@ class EvidenceContractTest(unittest.TestCase):
     def test_rejects_same_round_finding_raise_and_acknowledgement(self) -> None:
         self._append_reopened_anthropic_finding(same_round_ack=True)
         with self.assertRaisesRegex(PolicyError, "REVIEW_FINDING_STATE_INVALID"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_phantom_resolve_and_acknowledgement(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        previous = sha256_digest(bundle["reviewEnvelopes"][2])
+        subject_digest = self.factory.decode_payload(bundle["reviewEnvelopes"][2])[
+            "subjectSha256"
+        ]
+        closure_root = bundle["closure"]["closureRootSha256"]
+        phantom = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000004",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=4,
+            verdict="PARTIAL",
+            previous=previous,
+            closure_root=closure_root,
+            resolved=["PHANTOM_FINDING"],
+            acknowledged=["PHANTOM_FINDING"],
+            issued_at="2026-07-16T20:18:00Z",
+            subject_digest=subject_digest,
+        )
+        final = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000005",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=5,
+            verdict="AGREE",
+            previous=sha256_digest(phantom),
+            closure_root=closure_root,
+            issued_at="2026-07-16T20:19:00Z",
+            subject_digest=subject_digest,
+        )
+        bundle["reviewEnvelopes"].extend([phantom, final])
+        bundle["consensus"]["finalAgreeReviewSha256"][0] = sha256_digest(final)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "REVIEW_FINDING_REFERENCE_INVALID"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
     def test_rejects_revoked_bundle(self) -> None:

@@ -74,6 +74,21 @@ ENDPOINT_ID_SHA256="${BINDING[2]}"
 [[ "$ENDPOINT_ID_SHA256" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 2
 GRANT_EXPIRES_EPOCH="$(date -u -d "$GRANT_EXPIRES_AT" +%s)" || exit 2
 
+verify_watchdog_active() {
+  local job_json
+  job_json="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get job faz22-view-only-pilot-watchdog -o json)"
+  jq -e \
+    --arg bundle "$BUNDLE_SHA256" \
+    --arg expiry "$GRANT_EXPIRES_EPOCH" '
+      .metadata.annotations["faz22.6.acik.com/authorization-sha256"] == $bundle
+      and .metadata.annotations["faz22.6.acik.com/expires-at-epoch"] == $expiry
+      and ((.status.active // 0) == 1)
+      and ((.status.failed // 0) == 0)
+      and ((.status.succeeded // 0) == 0)
+    ' <<<"$job_json" >/dev/null
+}
+
 rollback_surface() {
   local live_bundle status
   live_bundle="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
@@ -190,6 +205,7 @@ run_apply() {
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     wait --for=condition=Ready pod \
     -l app.kubernetes.io/name=faz22-view-only-pilot-watchdog --timeout=120s
+  verify_watchdog_active
   printf '%s\n' "$GRANT_EXPIRES_AT" > "$WATCHDOG_RECEIPT"
   chmod 0600 "$WATCHDOG_RECEIPT"
 
@@ -227,6 +243,7 @@ run_apply() {
     get configmap "$GATEWAY_CONFIGMAP" \
     -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID}')" == \
     "remote-bridge-viewer-route" ]]
+  verify_watchdog_active
   trap - ERR
 }
 
@@ -264,10 +281,7 @@ SQL
     bash scripts/faz22-remote-ops/verify-view-only-viewer-target.sh
   bash scripts/faz22-remote-ops/reconcile-viewer-audit-db-role.sh check
 
-  [[ "$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" get job \
-    faz22-view-only-pilot-watchdog \
-    -o jsonpath='{.metadata.annotations.faz22\.6\.acik\.com/authorization-sha256}')" \
-    == "$BUNDLE_SHA256" ]]
+  verify_watchdog_active
   expires_epoch="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" get job \
     faz22-view-only-pilot-watchdog \
     -o jsonpath='{.metadata.annotations.faz22\.6\.acik\.com/expires-at-epoch}')"
@@ -318,6 +332,7 @@ SQL
   install -m 0600 "$evidence/browser.json" "$source/browser.json"
   install -m 0600 "$evidence/consent.json" "$source/consent.json"
   install -m 0600 "$evidence/consent-source.json" "$source/consent-source.json"
+  verify_watchdog_active
 }
 
 run_rollback() {
@@ -327,8 +342,8 @@ run_rollback() {
     rollout status "deploy/$BRIDGE_DEPLOYMENT" --timeout=300s
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     rollout status "deploy/$GATEWAY_DEPLOYMENT" --timeout=300s
+  verify_rollback
   for resource in \
-    "job/faz22-view-only-pilot-watchdog" \
     "rolebinding/faz22-view-only-pilot-watchdog" \
     "role/faz22-view-only-pilot-watchdog" \
     "serviceaccount/faz22-view-only-pilot-watchdog" \
@@ -337,6 +352,12 @@ run_rollback() {
       delete "$resource" --ignore-not-found --wait=true
   done
   verify_rollback
+  # The authorization-bearing Job is the retry ownership marker. Delete it
+  # only after the full rollback surface and every other watchdog resource
+  # have been removed and re-verified. A pre-delete crash remains retriable;
+  # a post-delete crash can only occur after the surface is proven clean.
+  kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    delete job/faz22-view-only-pilot-watchdog --ignore-not-found --wait=true
 }
 
 case "$STAGE" in

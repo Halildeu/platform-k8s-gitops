@@ -386,7 +386,8 @@ A single `AGREE` string is insufficient. The bundle verifier requires:
    provider family that raised it;
 5. a finding ID identifies exactly one raise event in the whole bundle; it
    cannot be re-opened after acknowledgement or raised and acknowledged in the
-   same review, and an `AGREE` leaf carries no finding-state transition;
+   same review, a resolve/acknowledgement cannot reference a finding that was
+   never raised, and an `AGREE` leaf carries no finding-state transition;
 6. finding, fix and acknowledgement leaves form an ordered hash chain whose
    `closureRootSha256` is identical in the consensus object and every counted
    final `AGREE` leaf;
@@ -404,6 +405,10 @@ TTL or closure graph.
 If the commit, workflow blob, artifact set, policy, rollback plan or
 post-deploy verifier changes, the subject digest changes and the old agreement
 cannot authorize the new subject.
+
+Every direct provider-review key is restricted to the `provider-reported`
+model identity class in addition to one exact model ID and one direct channel;
+trusted-launch attribution cannot satisfy a direct-provider lane.
 
 ## 4. Correlating a GitHub run to a signed intent
 
@@ -647,6 +652,12 @@ part of the original reviewed bundle, but the App requires the failed-intent
 binding, watchdog state and one-time rollback grant. No other workflow may
 mutate this pilot outside ADR-0045 except the already-armed in-workflow
 watchdog, whose identity and plan digest are also in the subject.
+
+Apply and browser stages verify that the watchdog Job is still active, has no
+failed or succeeded terminal count, and carries the exact signed bundle and
+grant-expiry annotations. Compensating rollback keeps that Job as its retry
+ownership marker until the rollback surface, rollouts and every other watchdog
+resource have been removed and re-verified; the Job is deleted last.
 
 An uncertain or failed apply quarantines the intent; stage 2 is rejected until
 the apply outcome is sealed. Callback ambiguity or outcome-deadline expiry

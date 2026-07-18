@@ -56,6 +56,13 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn('gateway route index 28 is not clean', script)
         self.assertIn('watchdog expiry differs from signed grant', script)
         self.assertIn('apply failure compensation verified', script)
+        self.assertGreaterEqual(script.count('verify_watchdog_active'), 4)
+        self.assertIn('(.status.active // 0) == 1', script)
+        self.assertIn('(.status.failed // 0) == 0', script)
+        self.assertLess(
+            script.index('"networkpolicy/allow-faz22-view-only-watchdog-kubernetes-api"'),
+            script.index('delete job/faz22-view-only-pilot-watchdog'),
+        )
 
 
 if __name__ == "__main__":
