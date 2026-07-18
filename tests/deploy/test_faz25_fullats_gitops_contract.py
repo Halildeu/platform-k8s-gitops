@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -19,6 +20,21 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.activation = (
             ROOT
             / "kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml"
+        ).read_text()
+        cls.ats_config = (
+            ROOT / "kustomize/base/apps/ats-interview-evidence/configmap.yaml"
+        ).read_text()
+        cls.ats_config_sha256 = hashlib.sha256(
+            (
+                ROOT / "kustomize/base/apps/ats-interview-evidence/configmap.yaml"
+            ).read_bytes()
+        ).hexdigest()
+        cls.ats_deployment = (
+            ROOT / "kustomize/base/apps/ats-interview-evidence/deployment.yaml"
+        ).read_text()
+        cls.ats_netpol = (
+            ROOT
+            / "kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml"
         ).read_text()
         cls.test_root = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text()
         cls.promotion_state = (
@@ -76,6 +92,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.pinned_gh_installer = (
             ROOT / "scripts/ats/install-pinned-gh-cli.sh"
         ).read_text()
+        cls.pinned_kustomize_installer = (
+            ROOT / "scripts/ats/install-pinned-kustomize.sh"
+        ).read_text()
         cls.rollback_content_verifier = (
             ROOT / "scripts/ats/verify-fullats-test-rollback-content.sh"
         ).read_text()
@@ -106,6 +125,43 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(provenance)
         self.assertEqual(desired.group(1), provenance.group(1))
+
+    def test_recruiter_authz_uses_canonical_internal_projection_with_narrow_network_path(self):
+        self.assertIn(
+            'ATS_AUTHORIZATION_PLATFORM_BASE_URL: "http://api-gateway:8080"',
+            self.ats_config,
+        )
+        self.assertIn(
+            "name: api-gateway-authz-from-ats-interview-evidence",
+            self.ats_netpol,
+        )
+        self.assertIn("app: ats-interview-evidence", self.ats_netpol)
+        self.assertIn("app.kubernetes.io/name: api-gateway", self.ats_netpol)
+        self.assertIn("port: 8080", self.ats_netpol)
+        self.assertIn(
+            "ATS_AUTHORIZATION_PLATFORM_BASE_URL: http://api-gateway:8080",
+            self.rendered_test_root,
+        )
+        self.assertEqual(
+            self.rendered_test_root.count(
+                "name: api-gateway-authz-from-ats-interview-evidence"
+            ),
+            1,
+        )
+
+    def test_ats_configmap_bytes_are_bound_to_pod_template_rollout(self):
+        annotation = (
+            'fullats.acik.com/configmap-sha256: "'
+            f'{self.ats_config_sha256}"'
+        )
+        self.assertIn(annotation, self.ats_deployment)
+        rendered_annotation = re.search(
+            r"(?m)^\s*fullats\.acik\.com/configmap-sha256:\s*\"?"
+            r"([0-9a-f]{64})\"?\s*$",
+            self.rendered_test_root,
+        )
+        self.assertIsNotNone(rendered_annotation)
+        self.assertEqual(rendered_annotation.group(1), self.ats_config_sha256)
 
     def test_model_governance_endpoint_and_approval_refs_match_all_surfaces(self):
         patterns = {
@@ -692,6 +748,11 @@ fi
         self.assertIn("steps.rollback-checkout.outcome == 'success'", self.fullats_browser_workflow)
         self.assertIn("install-pinned-gh-cli.sh", self.fullats_browser_workflow)
         self.assertIn("steps.rollback-gh.outcome == 'success'", self.fullats_browser_workflow)
+        self.assertIn("install-pinned-kustomize.sh", self.fullats_browser_workflow)
+        self.assertIn(
+            "steps.rollback-kustomize.outcome == 'success'",
+            self.fullats_browser_workflow,
+        )
         self.assertIn("open-fullats-test-rollback-pr.sh", self.fullats_browser_workflow)
         self.assertIn('PROMOTION_PR: "2617"', self.fullats_browser_workflow)
         self.assertIn('[[ "$(git rev-parse origin/main)" == "$FAILED_SHA" ]]', self.rollback_script)
@@ -713,7 +774,11 @@ fi
         )
         for reviewed_sensitive_path in (
             ".github/workflows/faz25-fullats-live-browser-acceptance.yml",
+            "kustomize/base/apps/ats-interview-evidence/configmap.yaml",
+            "kustomize/base/apps/ats-interview-evidence/deployment.yaml",
+            "kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml",
             "scripts/ats/install-pinned-gh-cli.sh",
+            "scripts/ats/install-pinned-kustomize.sh",
             "scripts/ats/open-fullats-test-rollback-pr.sh",
         ):
             self.assertIn(reviewed_sensitive_path, self.rollback_script)
@@ -730,6 +795,10 @@ fi
             'echo "[fullats-rollback] missing command: $command"',
             self.rollback_script,
         )
+        self.assertIn("awk gh git grep jq kustomize python3", self.rollback_script)
+        self.assertNotIn("python3 rg", self.rollback_script)
+        self.assertNotIn("rg -F", self.rollback_script)
+        self.assertIn('grep -Fxq -- "ROLLED_BACK"', self.rollback_script)
         self.assertIn(
             'branch="auto-fullats-rollback/faz25-fullats-${RUN_ID}-${RUN_ATTEMPT}"',
             self.rollback_script,
@@ -819,6 +888,31 @@ fi
         self.assertIn('[[ "$(uname -s)" == "Linux" ]]', self.pinned_gh_installer)
         self.assertIn('printf \'%s\\n\' "$bin_dir" >>"$GITHUB_PATH"', self.pinned_gh_installer)
         self.assertNotIn("sudo", self.pinned_gh_installer)
+
+    def test_fullats_rollback_installs_checksum_pinned_runner_local_kustomize(self):
+        self.assertIn('VERSION="5.8.1"', self.pinned_kustomize_installer)
+        self.assertIn(
+            'expected_sha="029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d"',
+            self.pinned_kustomize_installer,
+        )
+        self.assertIn(
+            'expected_sha="0953ea3e476f66d6ddfcd911d750f5167b9365aa9491b2326398e289fef2c142"',
+            self.pinned_kustomize_installer,
+        )
+        self.assertIn("--retry-all-errors", self.pinned_kustomize_installer)
+        self.assertIn(
+            '[[ "$actual_sha" == "$expected_sha" ]]',
+            self.pinned_kustomize_installer,
+        )
+        self.assertIn(
+            '[[ "$(uname -s)" == "Linux" ]]',
+            self.pinned_kustomize_installer,
+        )
+        self.assertIn(
+            'printf \'%s\\n\' "$bin_dir" >>"$GITHUB_PATH"',
+            self.pinned_kustomize_installer,
+        )
+        self.assertNotIn("sudo", self.pinned_kustomize_installer)
 
     def test_fullats_promotion_or_rollback_state_binds_one_exact_artifact_set(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})

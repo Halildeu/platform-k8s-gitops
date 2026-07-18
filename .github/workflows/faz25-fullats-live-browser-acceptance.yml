@@ -133,8 +133,13 @@ jobs:
         id: rollback-gh
         run: bash scripts/ats/install-pinned-gh-cli.sh
 
-      - name: Open atomic compensating GitOps rollback PR
+      - name: Install pinned kustomize for rollback rendering
         if: failure() && steps.rollback-gh.outcome == 'success'
+        id: rollback-kustomize
+        run: bash scripts/ats/install-pinned-kustomize.sh
+
+      - name: Open atomic compensating GitOps rollback PR
+        if: failure() && steps.rollback-kustomize.outcome == 'success'
         id: rollback
         env:
           GH_TOKEN: ${{ steps.rollback-app-token.outputs.token }}
@@ -150,7 +155,7 @@ jobs:
         if: always() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure') && steps.rollback.outcome != 'success'
         run: |
           echo "::error::Full ATS acceptance failed and protected compensating rollback did not complete"
-          echo "convergence=${{ steps.convergence.outcome }} runtime=${{ steps.runtime.outcome }} browser=${{ steps.browser.outcome }} d29=${{ steps.d29.outcome }} final-runtime=${{ steps.final-runtime.outcome }} rollback-gh=${{ steps.rollback-gh.outcome }} rollback=${{ steps.rollback.outcome }}"
+          echo "convergence=${{ steps.convergence.outcome }} runtime=${{ steps.runtime.outcome }} browser=${{ steps.browser.outcome }} d29=${{ steps.d29.outcome }} final-runtime=${{ steps.final-runtime.outcome }} rollback-gh=${{ steps.rollback-gh.outcome }} rollback-kustomize=${{ steps.rollback-kustomize.outcome }} rollback=${{ steps.rollback.outcome }}"
           exit 1
 
       - name: Upload redacted live browser evidence
