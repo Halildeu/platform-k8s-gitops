@@ -375,6 +375,17 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             "ref: ${{ github.event.pull_request.base.ref }}",
             self.cross_ai_workflow,
         )
+        verifier_step = self.cross_ai_workflow.index(
+            "Verify exact Full ATS rollback content from trusted base"
+        )
+        scope_step = self.cross_ai_workflow.index(
+            "Derive trusted merge-base and scope digest"
+        )
+        self.assertLess(verifier_step, scope_step)
+        self.assertIn(
+            'git fetch --no-tags origin "pull/${PR_NUMBER}/head"',
+            self.rollback_content_verifier,
+        )
         self.assertIn(
             "--automation-content-attestation-file",
             self.cross_ai_workflow,
@@ -396,6 +407,9 @@ command="${1:-}"
 shift || true
 printf 'git command=%s args=%s tamper=%s\n' "$command" "$*" "${FAKE_TAMPER:-unset}" >>"$FAKE_TRACE"
 case "$command" in
+  fetch)
+    [[ "$*" == "--no-tags origin pull/2617/head" ]]
+    ;;
   rev-list)
     target="${*: -1}"
     if [[ "$target" == "$PR_HEAD_SHA" ]]; then
@@ -408,7 +422,9 @@ case "$command" in
     ;;
   rev-parse)
     target="${1:-}"
-    if [[ "$target" == "$PR_HEAD_SHA^" ]]; then
+    if [[ "$target" == "FETCH_HEAD" ]]; then
+      printf '%s\n' "$PR_HEAD_SHA"
+    elif [[ "$target" == "$PR_HEAD_SHA^" ]]; then
       printf '%s\n' "$PR_BASE_SHA"
     elif [[ "$target" == "$PR_BASE_SHA^" ]]; then
       printf '%s\n' "$PROMOTION_BASE_SHA"
@@ -488,6 +504,7 @@ fi
                         "PATH": f"{fake_bin}:{os.environ['PATH']}",
                         "GH_REPO": "Halildeu/platform-k8s-gitops",
                         "PROMOTION_PR": "2617",
+                        "PR_NUMBER": "2617",
                         "PR_HEAD_REF": branch,
                         "PR_HEAD_SHA": pr_head,
                         "PR_BASE_SHA": pr_base,

@@ -103,6 +103,23 @@ jobs:
         with:
           node-version: 20
 
+      # Run the trusted-base verifier before importing any PR-head git object
+      # into the job. The verifier opens from the immutable base checkout and
+      # fetches the exact rollback head internally only for content inspection;
+      # it never checks out or executes a file from that head.
+      - name: Verify exact Full ATS rollback content from trusted base
+        if: startsWith(github.event.pull_request.head.ref, 'auto-fullats-rollback/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PROMOTION_PR: "2617"
+          ATTESTATION_OUTPUT: /tmp/fullats-rollback-content-attestation.json
+        run: bash scripts/ats/verify-fullats-test-rollback-content.sh
+
       - name: Derive trusted merge-base and scope digest
         id: scope
         env:
@@ -133,18 +150,6 @@ jobs:
           sed -n '1,400p' /tmp/changed-files.txt
           echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
           echo "scope_sha256=$scope_sha256" >> "$GITHUB_OUTPUT"
-
-      - name: Verify exact Full ATS rollback content from trusted base
-        if: startsWith(github.event.pull_request.head.ref, 'auto-fullats-rollback/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PROMOTION_PR: "2617"
-          ATTESTATION_OUTPUT: /tmp/fullats-rollback-content-attestation.json
-        run: bash scripts/ats/verify-fullats-test-rollback-content.sh
 
       - name: Run cross-AI audit
         # `GITHUB_EVENT_PATH` carries the PR payload (head ref/sha, base, body,
