@@ -34,7 +34,7 @@ const recruiterPassword = fs.readFileSync(recruiterPasswordFile, 'utf8').trim();
 if (recruiterPassword.length < 12) throw new Error('recruiter credential invalid');
 
 const runSuffix = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-const candidateName = `Sentetik ATS Adayı ${runSuffix}`;
+const candidateName = `Sentetik ATS Adayi ${runSuffix}`;
 const candidateEmail = `fullats-${runSuffix}@example.test`;
 const jobTitle = `Sentetik Ürün Uzmanı ${runSuffix}`;
 const jobSlug = `sentetik-urun-uzmani-${Date.now()}`;
@@ -52,6 +52,9 @@ const allowedEvidencePaths = [
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const buildSyntheticResumePdf = ({ fullName, email }) => {
+  if (/[^\x20-\x7e]/u.test(`${fullName}${email}`)) {
+    throw new Error('synthetic PDF identity must be ASCII-safe');
+  }
   const lines = [
     `Ad Soyad: ${fullName}`,
     `E-posta: ${email}`,
