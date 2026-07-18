@@ -6,7 +6,7 @@
 set -euo pipefail
 
 GH_REPO="${GH_REPO:-Halildeu/platform-k8s-gitops}"
-PROMOTION_PR="${PROMOTION_PR:-2636}"
+PROMOTION_PR="${PROMOTION_PR:-2685}"
 FAILED_SHA="${FAILED_SHA:-}"
 RUN_ID="${RUN_ID:-0}"
 RUN_ATTEMPT="${RUN_ATTEMPT:-1}"
@@ -20,7 +20,7 @@ PROMOTION_BASE_SHA="6d77fbe809645cfa6e4b1c99481791070c5933d3"
   echo "[fullats-rollback] unexpected repository" >&2
   exit 2
 }
-[[ "$PROMOTION_PR" == "2636" ]] || {
+[[ "$PROMOTION_PR" == "2685" ]] || {
   echo "[fullats-rollback] unexpected promotion PR" >&2
   exit 2
 }

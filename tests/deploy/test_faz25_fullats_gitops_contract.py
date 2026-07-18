@@ -489,7 +489,7 @@ shift || true
 printf 'git command=%s args=%s tamper=%s\n' "$command" "$*" "${FAKE_TAMPER:-unset}" >>"$FAKE_TRACE"
 case "$command" in
   fetch)
-    [[ "$*" == "--no-tags origin pull/2636/head" ]]
+    [[ "$*" == "--no-tags origin pull/2685/head" ]]
     ;;
   rev-list)
     target="${*: -1}"
@@ -542,7 +542,7 @@ esac
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'gh args=%s tree_mismatch=%s\n' "$*" "${FAKE_TREE_MISMATCH:-unset}" >>"$FAKE_TRACE"
-if [[ "$*" == *"/pulls/2636"* ]]; then
+if [[ "$*" == *"/pulls/2685"* ]]; then
   body="$(printf '%s\n' \
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
@@ -587,8 +587,8 @@ fi
                         **os.environ,
                         "PATH": f"{fake_bin}:{os.environ['PATH']}",
                         "GH_REPO": "Halildeu/platform-k8s-gitops",
-                        "PROMOTION_PR": "2636",
-                        "PR_NUMBER": "2636",
+                        "PROMOTION_PR": "2685",
+                        "PR_NUMBER": "2685",
                         "PR_HEAD_REF": branch,
                         "PR_HEAD_SHA": pr_head,
                         "PR_BASE_SHA": pr_base,
@@ -863,7 +863,7 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn("open-fullats-test-rollback-pr.sh", self.fullats_browser_workflow)
-        self.assertIn('PROMOTION_PR: "2636"', self.fullats_browser_workflow)
+        self.assertIn('PROMOTION_PR: "2685"', self.fullats_browser_workflow)
         self.assertIn('[[ "$(git rev-parse origin/main)" == "$FAILED_SHA" ]]', self.rollback_script)
         self.assertIn('[[ "$merge_sha" == "$FAILED_SHA" ]]', self.rollback_script)
         self.assertIn(

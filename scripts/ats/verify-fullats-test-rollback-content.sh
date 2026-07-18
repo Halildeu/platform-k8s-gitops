@@ -7,7 +7,7 @@
 set -euo pipefail
 
 GH_REPO="${GH_REPO:-Halildeu/platform-k8s-gitops}"
-PROMOTION_PR="${PROMOTION_PR:-2636}"
+PROMOTION_PR="${PROMOTION_PR:-2685}"
 PR_NUMBER="${PR_NUMBER:-}"
 PR_HEAD_REF="${PR_HEAD_REF:-}"
 PR_HEAD_SHA="${PR_HEAD_SHA:-}"
@@ -16,7 +16,7 @@ ATTESTATION_OUTPUT="${ATTESTATION_OUTPUT:-}"
 PROMOTION_BASE_SHA="6d77fbe809645cfa6e4b1c99481791070c5933d3"
 SOURCE_WORKFLOW=".github/workflows/faz25-fullats-live-browser-acceptance.yml"
 
-[[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" && "$PROMOTION_PR" == "2636" ]] || exit 2
+[[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" && "$PROMOTION_PR" == "2685" ]] || exit 2
 [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 2
 [[ "$PR_HEAD_REF" =~ ^auto-fullats-rollback/faz25-fullats-[0-9]+-[0-9]+$ ]] || exit 2
 [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ && "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
@@ -106,7 +106,7 @@ jq -n \
     branch:$branch,
     base_sha:$base,
     head_sha:$head,
-    promotion_pr:2636,
+    promotion_pr:2685,
     promotion_merge_sha:$promotion_merge,
     promotion_head_sha:$promotion_head,
     promotion_base_sha:$promotion_base,
