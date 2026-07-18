@@ -14,7 +14,7 @@ from scripts.github_apps.cross_ai_deployment_policy.workflow import inspect_work
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "config/github-apps/cross-ai-deployment-policy.example.json"
-ACTION_COMMIT = "c40bf996353ccde2a6c475c4be5c94924d5da1d1"
+ACTION_COMMIT = "6816d7025b11cfc1145147597ad15d61ce51f134"
 ZERO_TRUST_PIN = "sha256:" + ("0" * 64)
 
 
@@ -121,6 +121,27 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
                 capture_output=True,
             ).stdout
             self.assertEqual(pinned, (ROOT / path).read_bytes(), path)
+
+        allowed_after_pin = {
+            ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
+            ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
+            ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
+            "config/github-apps/README.md",
+            "tests/github_apps/test_cross_ai_protected_workflows.py",
+        }
+        changed_after_pin = set(
+            subprocess.run(
+                ["git", "diff", "--name-only", f"{ACTION_COMMIT}..HEAD"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.splitlines()
+        )
+        self.assertTrue(
+            changed_after_pin <= allowed_after_pin,
+            f"immutable action package drifted after pin: {sorted(changed_after_pin - allowed_after_pin)}",
+        )
 
     def test_release_artifacts_are_absent_until_owner_transit_bootstrap(self) -> None:
         for name in (
