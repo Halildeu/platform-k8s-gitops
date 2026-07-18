@@ -24,8 +24,10 @@ from urllib.parse import urlparse
 MODEL_REF = "minimax/MiniMax-M3"
 EXPECTED_PROVIDER_NAME = "MiniMax"
 EXPECTED_PROVIDER_HOST = "agent.minimax.io"
+EXPECTED_PROVIDER_PATH = "/mavis/api/v1/llm/v1/messages"
 EXPECTED_TRANSPORT_SHA256 = "02c3da6c790c8e8bf68cc32d679f5077147d6ffbe57d84e31b25f2dc75538545"
 MAX_PROMPT_BYTES = 2_000_000
+MAX_RESPONSE_BYTES = 48_000
 DEFAULT_MAX_TOKENS = 12_000
 DEFAULT_TIMEOUT_SECONDS = 300.0
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
@@ -199,6 +201,7 @@ def validate_provider_url(value: object) -> None:
         or parsed.scheme != "https"
         or parsed.hostname != EXPECTED_PROVIDER_HOST
         or port not in {None, 443}
+        or parsed.path != EXPECTED_PROVIDER_PATH
         or parsed.username is not None
         or parsed.password is not None
         or bool(parsed.query)
@@ -290,6 +293,8 @@ def invoke_provider(
     result = protocol.extract_text(payload).strip()
     if not result:
         fail("provider_response_empty")
+    if len(result.encode("utf-8")) > MAX_RESPONSE_BYTES:
+        fail("provider_response_too_large")
     return actual_model, result
 
 

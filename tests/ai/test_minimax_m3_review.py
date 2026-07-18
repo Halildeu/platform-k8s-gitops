@@ -138,7 +138,9 @@ class TransportDigestTests(unittest.TestCase):
 
 class ProviderUrlTests(unittest.TestCase):
     def test_accepts_exact_minimax_https_origin(self) -> None:
-        MODULE.validate_provider_url("https://agent.minimax.io/anthropic/v1/messages")
+        MODULE.validate_provider_url(
+            "https://agent.minimax.io/mavis/api/v1/llm/v1/messages"
+        )
 
     def test_rejects_redirected_or_credentialed_origins(self) -> None:
         for value in (
@@ -146,6 +148,7 @@ class ProviderUrlTests(unittest.TestCase):
             "https://user@agent.minimax.io/v1/messages",
             "https://agent.minimax.io:8443/v1/messages",
             "https://agent.minimax.io/v1/messages?redirect=1",
+            "https://agent.minimax.io/mavis/api/v1/llm/v1/other",
         ):
             with self.subTest(value=value):
                 with contextlib.redirect_stdout(io.StringIO()):
