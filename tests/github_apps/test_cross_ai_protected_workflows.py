@@ -335,12 +335,14 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn("steps.product_evidence.outputs['artifact-id']", browser)
         self.assertIn("steps.product_evidence.outputs['artifact-digest']", browser)
         self.assertIn("PRODUCT_ARTIFACT_DIGEST_RAW", browser)
+        self.assertIn('if [ "$STAGE_CONCLUSION" = "success" ]; then', browser)
+        self.assertIn("product_artifact_args=()", browser)
         self.assertIn(
             'product_artifact_digest="sha256:$PRODUCT_ARTIFACT_DIGEST_RAW"',
             browser,
         )
         self.assertIn(
-            '--product-artifact-digest "$product_artifact_digest"',
+            '"${product_artifact_args[@]}"',
             browser,
         )
         self.assertLess(

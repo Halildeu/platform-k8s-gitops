@@ -113,6 +113,21 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.assertIn(f"artifact-name={artifact}\n", outputs)
         self.assertIn(f"evidence-file={output}\n", outputs)
 
+    def test_builds_browser_failure_without_product_artifact_binding(self) -> None:
+        with patch.dict(os.environ, self.environment, clear=True), patch.object(
+            builder, "utc_now", return_value=self.fixture.now
+        ):
+            evidence, artifact = builder.build(self.args(conclusion="failure"))
+        self.assertEqual(evidence["conclusion"], "failure")
+        self.assertIsNone(evidence["productArtifactId"])
+        self.assertIsNone(evidence["productArtifactName"])
+        self.assertIsNone(evidence["productArtifactDigest"])
+        self.assertEqual(
+            artifact,
+            "cross-ai-stage-outcome-30000000-0000-4000-8000-000000000001-"
+            "browser-evidence-101-1",
+        )
+
     def test_rejects_bundle_digest_drift_and_successful_apply_without_watchdog(
         self,
     ) -> None:
