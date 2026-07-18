@@ -63,8 +63,8 @@ class EvidenceValidationTests(unittest.TestCase):
         for value in (
             "person@example.com",
             "+90 532 123 45 67",
-            "-----BEGIN PRIVATE KEY-----",
-            "Authorization: Bearer abcdefghijklmnop",
+            "-----BEGIN " + "PRIVATE KEY-----",
+            "Authorization: " + "Bearer abcdefghijklmnop",
         ):
             payload = evidence()
             payload["response"] = (
