@@ -43,8 +43,10 @@ data:
   # --- Redis bağlantısı (host-bridge Service → host-compose/redis-streams) ---
   SPRING_DATA_REDIS_HOST: "redis-streams"
   SPRING_DATA_REDIS_PORT: "6379"
-  # SPRING_DATA_REDIS_PASSWORD → audio-gateway-secrets (ESO, Vault
-  # kv/platform/audio-gateway-service redis_password)
+  # SPRING_DATA_REDIS_PASSWORD → audio-gateway-secrets (ESO). The test
+  # overlay currently reads kv/platform/audio-gateway-service:redis_password;
+  # this shared-default-user compatibility boundary and per-service ACL
+  # migration are tracked in gitops#2614.
   # --- Faz 24 KVKK audit producer flip (gitops#1249 / #1615) ---
   # RedisStreamAuditSink'i aktive eder (default NoOpAudioGatewayAuditSink yerine
   # — backend application.yml audit.enabled=${AUDIO_GATEWAY_AUDIT_REDIS_ENABLED:false}).

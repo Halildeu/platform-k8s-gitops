@@ -1,0 +1,350 @@
+{
+  "accepted": true,
+  "acceptanceLevel": "immutable-source-and-workflow-outcomes",
+  "acceptedClaims": {
+    "reviewedSourceTree": true,
+    "workflowRunOutcomes": true,
+    "desiredImageProvenance": false,
+    "providerConsensus": false,
+    "runtime": false,
+    "downstreamAnalysis": false
+  },
+  "backend": {
+    "repository": "Halildeu/platform-backend",
+    "repositoryVisibility": "public",
+    "reviewedSourceCommit": "df812c57341fb9ea55a7662f3fd308fefd2a45dd",
+    "artifactCommit": "315f351a8ebf57d83f535617ccf8219749a2afc7",
+    "pullRequests": [
+      "https://github.com/Halildeu/platform-backend/pull/865",
+      "https://github.com/Halildeu/platform-backend/pull/866",
+      "https://github.com/Halildeu/platform-backend/pull/872"
+    ],
+    "testRun": {
+      "id": 29632738608,
+      "name": "CI - Maven Build Check",
+      "path": ".github/workflows/ci-mvn-check.yml",
+      "event": "pull_request",
+      "runAttempt": 1,
+      "workflowId": 265979888,
+      "headSha": "df812c57341fb9ea55a7662f3fd308fefd2a45dd",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 88049635369,
+          "name": "meeting-service unit + Testcontainers PG test (Faz 24",
+          "requiredStep": "Run meeting-service tests",
+          "conclusion": "success"
+        },
+        {
+          "id": 88049635387,
+          "name": "transcript-service unit + Testcontainers PG test (Faz 24",
+          "requiredStep": "Run transcript-service tests",
+          "conclusion": "success"
+        },
+        {
+          "id": 88049635354,
+          "name": "common-meeting-events contract test (Faz 24",
+          "requiredStep": "Run common-meeting-events tests",
+          "conclusion": "success"
+        }
+      ],
+      "url": "https://github.com/Halildeu/platform-backend/actions/runs/29632738608"
+    },
+    "authContractRun": {
+      "id": 29632738600,
+      "name": "CI - Auth Token Evidence",
+      "path": ".github/workflows/ci.yml",
+      "event": "pull_request",
+      "runAttempt": 1,
+      "workflowId": 315554443,
+      "headSha": "df812c57341fb9ea55a7662f3fd308fefd2a45dd",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 88049496472,
+          "name": "auth-service transcript token mint evidence",
+          "requiredStep": "Run exact auth-service token mint tests",
+          "conclusion": "success"
+        }
+      ],
+      "url": "https://github.com/Halildeu/platform-backend/actions/runs/29632738600"
+    },
+    "buildRun": {
+      "id": 29633149322,
+      "name": "CI - Image Build + GHCR Push",
+      "path": ".github/workflows/ci-image-push.yml",
+      "event": "push",
+      "runAttempt": 1,
+      "workflowId": 265996858,
+      "headSha": "315f351a8ebf57d83f535617ccf8219749a2afc7",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 88050625953,
+          "name": "Build + Push auth-service",
+          "requiredStep": "Build + Push image",
+          "conclusion": "success"
+        },
+        {
+          "id": 88050626007,
+          "name": "Build + Push meeting-service",
+          "requiredStep": "Build + Push image",
+          "conclusion": "success"
+        },
+        {
+          "id": 88050625972,
+          "name": "Build + Push transcript-service",
+          "requiredStep": "Build + Push image",
+          "conclusion": "success"
+        }
+      ],
+      "url": "https://github.com/Halildeu/platform-backend/actions/runs/29633149322"
+    },
+    "desiredImages": [
+      {
+        "service": "auth-service",
+        "image": "ghcr.io/halildeu/platform-backend-auth-service",
+        "digest": "sha256:a48e73bb6d89e56ae427103a54ed5358f29b04fd171771781655dae486397f03",
+        "buildJobId": 88050625953,
+        "artifactId": 8426177299,
+        "artifactName": "Halildeu~platform-backend~TSPWGN.dockerbuild",
+        "artifactUploadSha256": "9b27e5ded54520195c716a110c7320f259a87580fbd21593e61374f867922aa8",
+        "provenanceStatus": "pending-post-push-operator-preflight",
+        "acceptanceEffect": "excluded"
+      },
+      {
+        "service": "meeting-service",
+        "image": "ghcr.io/halildeu/platform-backend-meeting-service",
+        "digest": "sha256:1da371209763f36119a05f87e5ed78a8439afc9427c03cf41f9e1aaa3d09d682",
+        "buildJobId": 88050626007,
+        "artifactId": 8426172575,
+        "artifactName": "Halildeu~platform-backend~U1O1WU.dockerbuild",
+        "artifactUploadSha256": "f2d066754394f4b753e79a1c34fd5e331441ecd575c6dab556f9d4179d0cec6d",
+        "provenanceStatus": "pending-post-push-operator-preflight",
+        "acceptanceEffect": "excluded"
+      },
+      {
+        "service": "transcript-service",
+        "image": "ghcr.io/halildeu/platform-backend-transcript-service",
+        "digest": "sha256:22f4df7c042a2c8b19dd0e8f55111ca48057a6258e76d2bdd99c00597ec92be7",
+        "buildJobId": 88050625972,
+        "artifactId": 8426182932,
+        "artifactName": "Halildeu~platform-backend~VV4NZC.dockerbuild",
+        "artifactUploadSha256": "92d5c0b045230f79c79d1ec8ab5c87507e7f4b0bbb84c31cf26c7ed01dc9ab70",
+        "provenanceStatus": "pending-post-push-operator-preflight",
+        "acceptanceEffect": "excluded"
+      }
+    ]
+  },
+  "generatedAt": "2026-07-18T06:12:20Z",
+  "implementationContracts": [
+    {
+      "blobSha": "4d1a4169daae145057f46c6831e8f6dffbbc0a75",
+      "path": "transcript-service/src/main/java/com/example/transcript/finalization/TranscriptQuiescentFinalizationProcessor.java"
+    },
+    {
+      "blobSha": "e32ff2631ebd8ad7ddc9135e6a143572753fbd3b",
+      "path": "transcript-service/src/main/java/com/example/transcript/service/TranscriptFinalizationService.java"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "auth-transcript-service-token-contract",
+      "status": "source-pinned-job-level-success",
+      "tests": [
+        {
+          "blobSha": "12881b068025d2ceced8a12fa51e86eeaf94db32",
+          "method": "class-contract",
+          "path": "auth-service/src/test/java/com/example/auth/controller/MeetingAiServiceTokenMintTest.java"
+        },
+        {
+          "blobSha": "f05430b163c7ea9c619be048e648c9d76e180167",
+          "method": "class-contract",
+          "path": "auth-service/src/test/java/com/example/auth/controller/TranscriptServiceBlankSecretTokenMintTest.java"
+        }
+      ]
+    },
+    {
+      "id": "source-window-canonical-identity",
+      "status": "source-pinned-job-level-success",
+      "tests": [
+        {
+          "blobSha": "937003493495bf69176615d3f8d65ad0bc9537b3",
+          "method": "latestMigrationBackfillsWindowIdentityAndAddsRestartSafeFinalizationState",
+          "path": "transcript-service/src/test/java/com/example/transcript/repository/TranscriptAssociationMigrationIntegrationTest.java"
+        },
+        {
+          "blobSha": "fd01287fb0502d2654b09f9458c2b752fdab1535",
+          "method": "createsDraftWithSourceWindowAndCanonicalSessionUuid",
+          "path": "transcript-service/src/test/java/com/example/transcript/directstt/DirectSttTranscriptIngestionServiceTest.java"
+        },
+        {
+          "blobSha": "fd01287fb0502d2654b09f9458c2b752fdab1535",
+          "method": "postFinalizationNewWindowIsPersistedAndStartsAnotherCycle",
+          "path": "transcript-service/src/test/java/com/example/transcript/directstt/DirectSttTranscriptIngestionServiceTest.java"
+        }
+      ]
+    },
+    {
+      "id": "meeting-finish-and-outbox-are-atomic",
+      "status": "source-pinned-job-level-success",
+      "tests": [
+        {
+          "blobSha": "802ae62cbc01635b0c5400702ca2a0f003b00120",
+          "method": "class-contract",
+          "path": "meeting-service/src/test/java/com/example/meeting/repository/MeetingRecordingFinishedOutboxPostgresIntegrationTest.java"
+        }
+      ]
+    },
+    {
+      "id": "one-thin-ready-outbox-row-per-finalization-version",
+      "status": "source-pinned-job-level-success",
+      "tests": [
+        {
+          "blobSha": "2b2f6dcc109f6d864ca5fc35f291735f95556417",
+          "method": "duplicateOccurrenceCreatesOneThinOutboxEffect",
+          "path": "transcript-service/src/test/java/com/example/transcript/service/TranscriptFinalizationServiceTest.java"
+        }
+      ]
+    },
+    {
+      "id": "pt6m-pt1m-pt15m-boundaries-are-exact",
+      "status": "source-pinned-job-level-success",
+      "tests": [
+        {
+          "blobSha": "af6ade91c566ec790f1363cc4749cc72105f8b29",
+          "method": "class-contract",
+          "path": "transcript-service/src/test/java/com/example/transcript/finalization/TranscriptFinalizationStateMachineTest.java"
+        }
+      ]
+    },
+    {
+      "id": "finalization-and-ready-outbox-are-one-transactional-operation",
+      "status": "source-pinned-job-level-success",
+      "tests": [
+        {
+          "blobSha": "6ad44937387405f5aa955047698e5b34d2bdd6a2",
+          "method": "validSnapshotPersistsIntegrityRowAndReadyEventAtomically",
+          "path": "transcript-service/src/test/java/com/example/transcript/finalization/TranscriptQuiescentFinalizationProcessorTest.java"
+        }
+      ]
+    },
+    {
+      "id": "outbox-redelivery-does-not-duplicate-logical-effect",
+      "status": "source-pinned-job-level-success",
+      "tests": [
+        {
+          "blobSha": "a78d27567a2047f0e851e706c20ad62bcbd2a483",
+          "method": "redeliveryOfSameEventKey_appliesConsumerSideEffectOnlyOnce",
+          "path": "meeting-service/src/test/java/com/example/meeting/events/MeetingEventOutboxPollerPostgresIntegrationTest.java"
+        },
+        {
+          "blobSha": "4ab26951ac01f280cc5a74083f63af5a1e75d2bc",
+          "method": "successfulPublishUsesLeaseFenceBeforeMarkingPublished",
+          "path": "transcript-service/src/test/java/com/example/transcript/events/TranscriptEventOutboxPollerTest.java"
+        }
+      ]
+    }
+  ],
+  "productionGates": [
+    {
+      "id": "test-vault-dr-keyset-and-redis-acl-separation",
+      "issue": "https://github.com/Halildeu/platform-k8s-gitops/issues/2614",
+      "status": "tracked-open",
+      "blocksTestRollout": false,
+      "blocksProductionPromotion": true
+    },
+    {
+      "id": "github-protected-environment-approval",
+      "status": "human-only",
+      "blocksTestRollout": false,
+      "blocksProductionPromotion": true
+    },
+    {
+      "id": "production-secret-owner-and-named-legal-approval",
+      "status": "human-only",
+      "blocksTestRollout": false,
+      "blocksProductionPromotion": true
+    }
+  ],
+  "rolloutBoundary": {
+    "argoApplicationOwnership": {
+      "workloadApplication": {
+        "name": "platform-test",
+        "path": "kustomize/overlays/test",
+        "owns": [
+          "auth-service-transcript-service-secret",
+          "auth-service",
+          "meeting-service",
+          "transcript-service"
+        ],
+        "sameApplicationWaveOrder": [
+          "auth-service-transcript-service-secret:0",
+          "auth-service:10",
+          "meeting-service:19",
+          "transcript-service:20"
+        ]
+      },
+      "externalSecretsApplication": {
+        "name": "platform-eso-test",
+        "path": "kustomize/overlays/test/eso",
+        "owns": [
+          "audio-gateway-secrets",
+          "meeting-service-secrets",
+          "transcript-service-secrets"
+        ]
+      },
+      "crossApplicationWaveOrderingClaimed": false,
+      "externalSecretsControllerScope": "cluster-controller-reconciles-ExternalSecret-resources-independent-of-Argo-Application-labels"
+    },
+    "downstreamAnalysisAcceptance": false,
+    "nextConsumerGate": {
+      "issue": "https://github.com/Halildeu/platform-ai/issues/263",
+      "status": "tracked-open",
+      "requiredProof": "durable ready consumption, one canonical analysis run and persisted summary/decision/action outputs"
+    },
+    "testRedisCredential": {
+      "mode": "shared-default-user-compatibility",
+      "sharedSourcePath": "kv/platform/audio-gateway-service",
+      "sharedSourceTargets": [
+        "audio-gateway-secrets",
+        "transcript-service-secrets"
+      ],
+      "ownedMeetingSourcePath": "kv/platform/meeting-service",
+      "ownedMeetingTarget": "meeting-service-secrets",
+      "migrationIssue": "https://github.com/Halildeu/platform-k8s-gitops/issues/2614",
+      "productionPromotionAllowed": false
+    },
+    "postPushTestPreflight": {
+      "status": "pending",
+      "acceptanceEffect": "blocks-test-deploy-not-source-review",
+      "requiredChecks": [
+        "fresh namespace and node pod headroom supports three dependency-ordered surge pods",
+        "auth issuer Vault property exists and current meeting and transcript ExternalSecrets are healthy before main merge",
+        "auth, meeting and transcript ExternalSecrets are Ready before workload availability acceptance",
+        "meeting-service credential authenticates to live test Redis with redacted proof",
+        "all three immutable digests are pullable and match the reviewed build run"
+      ]
+    }
+  },
+  "reviewHistory": {
+    "headSha": "df812c57341fb9ea55a7662f3fd308fefd2a45dd",
+    "attestationLevel": "owner-recorded-provider-summary",
+    "independentRemoteAttestations": false,
+    "acceptanceEffect": "excluded",
+    "url": "https://github.com/Halildeu/platform-backend/pull/872#issuecomment-5010138585",
+    "remoteReceipt": {
+      "apiUrl": "https://api.github.com/repos/Halildeu/platform-backend/issues/comments/5010138585",
+      "commentId": 5010138585,
+      "nodeId": "IC_kwDOSLwN9M8AAAABKqCl2Q",
+      "author": "Halildeu",
+      "authorAssociation": "OWNER",
+      "createdAt": "2026-07-18T05:53:13Z",
+      "updatedAt": "2026-07-18T05:53:13Z",
+      "bodySha256": "0c954b0d61936ca08c67143214a05807a31f9a842738ffc530d236884788b901",
+      "remoteVerificationRequired": true
+    }
+  },
+  "runtimeAcceptance": false,
+  "schemaVersion": "faz24-finalization-source-ci.v4"
+}

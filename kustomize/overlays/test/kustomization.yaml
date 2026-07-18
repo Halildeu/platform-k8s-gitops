@@ -282,9 +282,12 @@ images:
     # carries the typed meeting.consent.revoked event contract used by the
     # durable audit outbox relay. Canonical image run 29603219415 produced the
     # immutable digest below. This test pin does not claim attended acceptance.
-    # 2026-07-18 canonical finalization rollout: platform-backend#865/#866
-    # binds source-window identity and publishes recording-finished through the
-    # transactional outbox. Image build run 29624668177, commit 45451bb.
+    # 2026-07-18 canonical finalization rollout: platform-backend#872 adds the
+    # exact PT6M/PT1M/PT15M bounded state machine, atomic meeting finish + outbox,
+    # thin transcript.ready payload and fail-closed transcript token minting.
+    # Reviewed source df812c57341f; squash merge 315f351a8ebf; immutable image
+    # build run 29633149322. Source/CI evidence remains separate from runtime
+    # acceptance in docs/faz-24-evidence/2026-07-18-finalization-source-ci.json.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
     digest: sha256:1da371209763f36119a05f87e5ed78a8439afc9427c03cf41f9e1aaa3d09d682
 
@@ -305,12 +308,14 @@ images:
     # 2026-06-26 retention runtime sync: platform-backend#764 adds metadata-only
     # transcript/KVKK access-log cleanup and destruction-audit accounting. This
     # desired-state pin does not by itself prove live deletion or legal closure.
-    # 2026-07-18 canonical finalization rollout: V6/V7 preserve source-window
-    # identity, consume recording-finished after Redis delivery, wait for
-    # bounded quiescence and publish transcript.ready durably. Image build run
-    # 29624668177, commit 45451bb.
+    # 2026-07-18 canonical finalization rollout: platform-backend#872 preserves
+    # source-window identity, consumes recording-finished after durable Redis
+    # delivery, waits for exact bounded quiescence and persists one thin
+    # transcript.ready outbox row per finalization version. Downstream analysis
+    # acceptance remains tracked separately by platform-ai#263. Reviewed source
+    # df812c57341f; squash merge 315f351a8ebf; build run 29633149322.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:373aff6ae2f1a86c89f8c06dd29f5d2a9eb1f263330e422522845ca68cc0c9b3
+    digest: sha256:22f4df7c042a2c8b19dd0e8f55111ca48057a6258e76d2bdd99c00597ec92be7
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -393,10 +398,12 @@ images:
     # 2026-07-12 update: sha-20ee06d (platform-backend#816) enforces the
     # client-bound meeting-ai service-token policy and blank-secret fail-closed
     # behavior. Digest source: CI - Image Build + GHCR Push run 29177080417.
-    # 2026-07-18 resolver rollout: platform-backend#865 registers the isolated
+    # 2026-07-18 resolver rollout: platform-backend#872 registers the isolated
     # transcript-service client with exact meeting-service audience and
-    # meeting:session:resolve permission. Image build run 29624668177.
-    digest: sha256:6de4965b3c1b0437f52bd8496b1bbeb4ec74b8d1392ecff315bcf0c3b3492660
+    # meeting:session:resolve permission, including blank-secret fail-closed
+    # coverage. Reviewed source df812c57341f; squash merge 315f351a8ebf;
+    # immutable image build run 29633149322.
+    digest: sha256:a48e73bb6d89e56ae427103a54ed5358f29b04fd171771781655dae486397f03
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -6199,6 +6206,12 @@ patches:
       - op: add
         path: /data/MEETING_AUTHZ_LEGACY_USER_ID_DUAL_WRITE_ENABLED
         value: "true"
+      # The pinned test image understands the plural allow-list. Keep this
+      # authorization expansion test-only until each later overlay pins that
+      # same contract deliberately.
+      - op: add
+        path: /data/MEETING_INTERNAL_SERVICE_JWT_CLIENT_IDS
+        value: "meeting-ai,transcript-service"
       - op: add
         path: /data/MEETING_REDIS_HOST
         value: "redis-streams"
@@ -6210,12 +6223,43 @@ patches:
       - op: add
         path: /data/MEETING_REDIS_HEALTH_ENABLED
         value: "true"
+      # Surface Redis health on Actuator without coupling the core API
+      # readiness group to the event transport. Finalization alarms can fire
+      # while non-Redis meeting journeys keep serving.
+      - op: add
+        path: /data/MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE
+        value: "readinessState"
       - op: add
         path: /data/MEETING_EVENTS_REDIS_ENABLED
         value: "true"
       - op: add
         path: /data/MEETING_EVENTS_OUTBOX_POLLER_ENABLED
         value: "true"
+
+  # meeting-service-secrets already exists before this rollout, so envFrom by
+  # itself cannot prove that ESO has reconciled the newly added Redis key. Make
+  # the key mandatory on the new pod template: Kubernetes retries pod startup
+  # after ESO writes the key and no process can start with a stale empty value.
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: meeting-service
+      spec:
+        template:
+          spec:
+            containers:
+              - name: meeting-service
+                env:
+                  - name: MEETING_REDIS_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: meeting-service-secrets
+                        key: MEETING_REDIS_PASSWORD
+                        optional: false
 
   # notification-orchestrator-secrets is owned by the ExternalSecret rendered
   # exclusively by platform-eso-test. The base bootstrap Secret is for non-ESO
@@ -6236,30 +6280,37 @@ patches:
       kind: Deployment
       name: auth-service
     patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-      - op: replace
-        path: /spec/template/spec/containers/0/env/1/value
-        value: "-Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value:
-          name: SERVICE_CLIENT_MEETING_AI_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: auth-service-meeting-ai-secret
-              key: SERVICE_CLIENT_MEETING_AI_SECRET
-              optional: true  # core auth stays available; meeting-ai mint remains fail-closed
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value:
-          name: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: auth-service-transcript-service-secret
-              key: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
-              optional: true  # core auth stays available; resolver remains fail-closed
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: auth-service
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: auth-service
+                env:
+                  - name: JAVA_TOOL_OPTIONS
+                    value: "-Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+                  - name: SERVICE_CLIENT_MEETING_AI_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: auth-service-meeting-ai-secret
+                        key: SERVICE_CLIENT_MEETING_AI_SECRET
+                        optional: true  # core auth stays available; mint remains fail-closed
+                  - name: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: auth-service-transcript-service-secret
+                        key: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
+                        # ExternalSecret reconciles at wave 0 before auth wave
+                        # 10. Keep the binding mandatory so a replacement never
+                        # starts without the issuer credential. maxUnavailable=0
+                        # keeps the old core-auth pod serving while Kubernetes
+                        # retries the new pod; token mint therefore fails closed
+                        # without turning a late Secret update into stale env.
+                        optional: false
   - target:
       kind: Deployment
       name: api-gateway
@@ -6302,10 +6353,9 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
-      # #2186 Meeting AI analyze bridge changes meeting-service ConfigMap
-      # envFrom data. Static ConfigMap data does not restart existing pods, so
-      # this test-only marker makes the env pickup rollout GitOps-authoritative
-      # and avoids a direct kubectl rollout restart on the shared test cluster.
+      # #2186 Meeting AI bridge and #2610 finalization both change
+      # meeting-service ConfigMap envFrom data. Static ConfigMap data does not
+      # restart existing pods, so this marker makes pickup GitOps-authoritative.
       - op: add
         path: /spec/template/metadata/annotations
         value:
@@ -6375,6 +6425,11 @@ patches:
       - op: add
         path: /data/TRANSCRIPT_REDIS_HEALTH_ENABLED
         value: "true"
+      # transcript-service cannot perform any durable work without Redis, so
+      # unlike meeting-service its readiness intentionally includes Redis.
+      - op: add
+        path: /data/MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE
+        value: "readinessState,redis"
       - op: add
         path: /data/TRANSCRIPT_REDIS_HOST
         value: "redis-streams"
@@ -7615,6 +7670,51 @@ patches:
           rollingUpdate:
             maxSurge: 0
             maxUnavailable: 1
+
+  # Faz 24 customer-critical chain exception to the historical test-cluster
+  # terminate-first policy. Live preflight on 2026-07-17 proved node pod
+  # capacity 50/80 and namespace pod quota 26/30, with enough CPU/memory for
+  # the three dependency-ordered surge pods. If headroom later disappears,
+  # these rollouts stall boundedly while the old Ready pod keeps serving.
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 1
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 0
+      - op: add
+        path: /spec/progressDeadlineSeconds
+        value: 300
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 1
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 0
+      - op: add
+        path: /spec/progressDeadlineSeconds
+        value: 300
+  - target:
+      kind: Deployment
+      name: transcript-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 1
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 0
+      - op: add
+        path: /spec/progressDeadlineSeconds
+        value: 300
   - target:
       kind: ConfigMap
       name: notification-orchestrator-config

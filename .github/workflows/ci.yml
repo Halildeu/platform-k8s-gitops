@@ -86,6 +86,14 @@ jobs:
         run: bash scripts/test/platform-test-gitops-sync-static.sh
       - name: Faz 24 Meeting-AI private gateway static guard
         run: bash scripts/test/faz24-meeting-ai-private-gateway-static.sh
+      - name: Faz 24 durable finalization rollout static guard
+        run: bash scripts/test/faz24-finalization-rollout-static.sh
+      - name: Faz 24 durable finalization GitHub evidence guard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/test/verify-faz24-finalization-remote-evidence.py
+          docs/faz-24-evidence/2026-07-18-finalization-source-ci.json
       - name: Faz 24 GPU exact-SHA rollout static guard
         run: bash scripts/test/faz24-gpu-host-exact-sha-rollout-static.sh
       - name: testai frontend and Full ATS desired-state promotion contracts

@@ -24,7 +24,6 @@ resources:
   - deployment.yaml
   - service.yaml
   # Secret ESO ile gelir (overlay-specific ExternalSecret —
-  # kustomize/overlays/test/eso/redis-streams-exporter/, Vault path
-  # kv/platform/audio-gateway-service property redis_password — Redis
-  # requirepass tek-parola olduğu için audio-gateway ile paylaşımlı;
-  # ACL ayrımı follow-up: gitops#1457)
+  # kustomize/overlays/test/eso/redis-streams-exporter/, dedicated Vault path
+# kv/platform/redis-streams-exporter. The exporter ACL separation landed in
+# gitops#1457; application-client ACL separation remains tracked by gitops#2614.

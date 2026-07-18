@@ -128,6 +128,7 @@ for binding in \
   'MEETING_INTERNAL_SERVICE_JWT_JWK_SET_URI: http://auth-service:8088/oauth2/jwks' \
   'MEETING_INTERNAL_SERVICE_JWT_ISSUER: auth-service' \
   'MEETING_INTERNAL_SERVICE_JWT_AUDIENCE: meeting-service' \
+  'MEETING_INTERNAL_SERVICE_JWT_CLIENT_ID: meeting-ai' \
   'MEETING_INTERNAL_SERVICE_JWT_CLIENT_IDS: meeting-ai,transcript-service'; do
   grep -Fq "${binding}" "${TEST_RENDER}" || fail "missing meeting verifier binding: ${binding}"
 done
