@@ -144,7 +144,7 @@ Kanıtlar (aynı oturum):
 E2E'de kanıtlı), canlı STT (39d-5), browser-acceptance (login-gated).
 
 **39d-12 son canlı D29 baseline: `e6b7409` / `sha256:b4b6a806…a8e9d7`.**
-**Faz 25 Full ATS acceptance adayı: ATS main `f8b9f40` / `sha256:5b8985c1…71b20d` (PDF CV, insan değerlendirmesi, görüşme, scorecard, teklif ve işe alım sonucu); canlı D29 pending ve yalnız recovery + iki-persona acceptance koşumuyla kanıtlanacaktır.**
+**Faz 25 #2615 branch-acceptance pini ve Full ATS acceptance adayı: ATS main `f8b9f40` / `sha256:5b8985c1…71b20d`, frontend main `f4a1f582` / `sha256:c77d4dc5…00f2` (PDF CV, insan değerlendirmesi, görüşme, scorecard, teklif ve işe alım sonucu); canlı D29 pending ve yalnız recovery + iki-persona acceptance koşumuyla kanıtlanacaktır.**
 (Tarihsel aktivasyon hedefi: ~~f3ccad71~~ → `e6b7409` UYGULANDI.)
 (39d-8/8c/8d/9/10/**11** birlikte; #108 R4-repair dahil — KC koşumu
 `provision-test-keycloak.sh` gitops#2328 sürümüyle: 12 rol/13 scope,
