@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Trusted-base verifier for the narrow Full ATS test rollback automation lane.
-# It proves that the bot PR is the exact inverse of promotion PR #2636's
-# frontend pin plus the explicit ROLLED_BACK marker before Cross-AI grants the
-# machine-generated exemption. ATS and permission-service pins are deliberately
-# outside the compensator and remain on the current validated baseline.
+# It proves that the bot PR is the exact inverse of the promotion's ATS and
+# frontend runtime pins plus the explicit ROLLED_BACK marker before Cross-AI
+# grants the machine-generated exemption. Permission-service remains on the
+# current validated baseline.
 set -euo pipefail
 
 GH_REPO="${GH_REPO:-Halildeu/platform-k8s-gitops}"
@@ -13,7 +13,7 @@ PR_HEAD_REF="${PR_HEAD_REF:-}"
 PR_HEAD_SHA="${PR_HEAD_SHA:-}"
 PR_BASE_SHA="${PR_BASE_SHA:-}"
 ATTESTATION_OUTPUT="${ATTESTATION_OUTPUT:-}"
-PROMOTION_BASE_SHA="aa93f4743dc8254ce8e22a0317f92db1f5819268"
+PROMOTION_BASE_SHA="6d77fbe809645cfa6e4b1c99481791070c5933d3"
 SOURCE_WORKFLOW=".github/workflows/faz25-fullats-live-browser-acceptance.yml"
 
 [[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" && "$PROMOTION_PR" == "2636" ]] || exit 2
@@ -71,12 +71,15 @@ promotion_merge_tree="$(gh api "repos/$GH_REPO/git/commits/$promotion_merge" --j
 
 state_marker="kustomize/overlays/test/fullats-promotion-state.txt"
 test_root="kustomize/overlays/test/kustomization.yaml"
+ats_activation="kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml"
 changed="$(git -c core.quotePath=true diff --name-only --no-renames "$PR_BASE_SHA...$PR_HEAD_SHA" | sort)"
-expected_changed="$(printf '%s\n' "$state_marker" "$test_root" | sort)"
+expected_changed="$(printf '%s\n' "$ats_activation" "$state_marker" "$test_root" | sort)"
 [[ "$changed" == "$expected_changed" ]] || exit 1
 
 [[ "$(git rev-parse "$PROMOTION_BASE_SHA:$test_root")" == \
    "$(git rev-parse "$PR_HEAD_SHA:$test_root")" ]] || exit 1
+[[ "$(git rev-parse "$PROMOTION_BASE_SHA:$ats_activation")" == \
+   "$(git rev-parse "$PR_HEAD_SHA:$ats_activation")" ]] || exit 1
 [[ "$(git show "$PR_HEAD_SHA:$state_marker")" == "ROLLED_BACK" ]] || exit 1
 
 changed_diff_sha256="$(git -c core.quotePath=true diff --binary --full-index --no-renames \
@@ -95,6 +98,7 @@ jq -n \
   --arg changed_diff "$changed_diff_sha256" \
   --arg marker "$state_marker" \
   --arg test_root "$test_root" \
+  --arg ats_activation "$ats_activation" \
   '{
     schema:"fullats-rollback-content-attestation/v1",
     valid:true,
@@ -108,5 +112,5 @@ jq -n \
     promotion_base_sha:$promotion_base,
     promotion_scope_sha256:$promotion_scope,
     changed_diff_sha256:$changed_diff,
-    expected_paths:[$marker,$test_root]
+    expected_paths:[$ats_activation,$marker,$test_root]
   }' >"$ATTESTATION_OUTPUT"

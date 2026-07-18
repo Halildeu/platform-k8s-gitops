@@ -55,10 +55,11 @@ const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
   'promotion_pr', 'promotion_scope_sha256', 'schema', 'source', 'valid',
 ];
 const FULLATS_ROLLBACK_PATHS = [
+  'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml',
   'kustomize/overlays/test/fullats-promotion-state.txt',
   'kustomize/overlays/test/kustomization.yaml',
 ];
-const FULLATS_PROMOTION_BASE_SHA = 'aa93f4743dc8254ce8e22a0317f92db1f5819268';
+const FULLATS_PROMOTION_BASE_SHA = '6d77fbe809645cfa6e4b1c99481791070c5933d3';
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -1350,7 +1351,7 @@ function auditAutomation(body, prMeta) {
       check: 'automation_fullats_content_attestation',
       pass: attestationPass,
       detail: attestationPass
-        ? 'trusted-base verifier bound exact promotion tree, explicit consultation mode, one-commit rollback and four expected file blobs'
+        ? 'trusted-base verifier bound exact promotion tree, explicit consultation mode, one-commit rollback and ATS/frontend runtime blobs'
         : 'trusted-base Full ATS rollback content attestation missing or does not match PR base/head/source/exact paths',
     });
   }
