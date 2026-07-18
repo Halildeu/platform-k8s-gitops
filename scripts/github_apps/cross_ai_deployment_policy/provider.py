@@ -256,7 +256,7 @@ class DirectCodexRunner:
             timeout=30,
         )
         catalog = subprocess.run(
-            [str(self.executable), "--ignore-user-config", "debug", "models"],
+            [str(self.executable), "debug", "models"],
             cwd=workspace,
             capture_output=True,
             check=False,
@@ -280,6 +280,7 @@ class DirectCodexRunner:
                 str(self.executable),
                 "exec",
                 "--ignore-user-config",
+                "--ignore-rules",
                 "--model",
                 model,
                 "--sandbox",

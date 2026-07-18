@@ -191,13 +191,19 @@ class ProviderExecutionTest(unittest.TestCase):
             subprocess.CompletedProcess([], 0, stdout=json.dumps(catalog).encode(), stderr=b""),
             subprocess.CompletedProcess([], 0, stdout=self.codex_events(REVIEW_RESULT), stderr=b""),
         ]
-        with patch("subprocess.run", side_effect=calls):
-            receipt = DirectCodexRunner(Path("/bin/sh")).run(
+        runner = DirectCodexRunner(Path("/bin/sh"))
+        with patch("subprocess.run", side_effect=calls) as run:
+            receipt = runner.run(
                 prompt="review this digest", model=CODEX_MODEL, workspace=self.workspace
             )
         self.assertEqual(receipt.model_id, CODEX_MODEL)
         self.assertEqual(receipt.model_identity_class, "trusted-launch-attested")
         self.assertTrue(receipt.direct_provider_cli)
+        self.assertEqual(
+            run.call_args_list[1].args[0], [str(runner.executable), "debug", "models"]
+        )
+        self.assertIn("--ignore-user-config", run.call_args_list[2].args[0])
+        self.assertIn("--ignore-rules", run.call_args_list[2].args[0])
 
     def test_direct_codex_rejects_tool_or_multiple_terminal_messages(self) -> None:
         with self.assertRaisesRegex(PolicyError, "PROVIDER_TOOL_EVENT_REJECTED"):
