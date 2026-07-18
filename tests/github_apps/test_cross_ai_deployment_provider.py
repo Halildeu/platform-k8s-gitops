@@ -11,10 +11,15 @@ from scripts.github_apps.cross_ai_deployment_policy.contract import REVIEW_PAYLO
 from scripts.github_apps.cross_ai_deployment_policy.dsse import verify_json_envelope
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
+    CODEX_MODEL,
     CursorRunner,
     DirectClaudeRunner,
+    DirectCodexRunner,
+    DirectMiniMaxRunner,
+    MINIMAX_MODEL,
     ProviderExecutionReceipt,
     ProviderReviewIssuer,
+    REVIEW_RESULT_SCHEMA_VERSION,
     ReviewCoordinates,
 )
 from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory, digest
@@ -22,6 +27,7 @@ from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory, digest
 
 REVIEW_RESULT = json.dumps(
     {
+        "schemaVersion": REVIEW_RESULT_SCHEMA_VERSION,
         "verdict": "PARTIAL",
         "findingIds": [],
         "resolvedFindingIds": ["FINDING_A"],
@@ -153,6 +159,141 @@ class ProviderExecutionTest(unittest.TestCase):
                     provider_family="xai",
                 )
 
+    def test_direct_minimax_binds_wrapper_reported_model_and_digests(self) -> None:
+        prompt = "review this digest"
+        response = REVIEW_RESULT
+        output = {
+            "ok": True,
+            "provider": "minimax",
+            "provider_claim_source": "trusted-bundled-config",
+            "provider_origin_host": "agent.minimax.io",
+            "requested_model": MINIMAX_MODEL,
+            "actual_model": MINIMAX_MODEL,
+            "base_sha": None,
+            "head_sha": None,
+            "scope_sha256": __import__("hashlib").sha256(prompt.encode()).hexdigest(),
+            "verdict": "PARTIAL",
+            "findings_present": True,
+            "transport": "mavis-bundled-llm-call",
+            "transport_sha256": "1" * 64,
+            "config_sha256": "2" * 64,
+            "response_sha256": __import__("hashlib").sha256(response.encode()).hexdigest(),
+            "response": response,
+        }
+        wrapper = self.workspace / "minimax.py"
+        wrapper.write_text("# test wrapper\n", encoding="utf-8")
+        with patch(
+            "subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(output).encode(), stderr=b""
+            ),
+        ):
+            receipt = DirectMiniMaxRunner(wrapper, Path("/bin/sh")).run(
+                prompt=prompt,
+                model=MINIMAX_MODEL,
+                workspace=self.workspace,
+            )
+        self.assertEqual(receipt.model_id, MINIMAX_MODEL)
+        self.assertEqual(receipt.model_identity_class, "provider-reported")
+        self.assertTrue(receipt.direct_provider_cli)
+
+    def test_direct_minimax_rejects_unknown_result_schema_digest_tamper(self) -> None:
+        output = {
+            "ok": True,
+            "provider": "minimax",
+            "provider_claim_source": "trusted-bundled-config",
+            "provider_origin_host": "agent.minimax.io",
+            "requested_model": MINIMAX_MODEL,
+            "actual_model": MINIMAX_MODEL,
+            "base_sha": None,
+            "head_sha": None,
+            "scope_sha256": "0" * 64,
+            "verdict": "AGREE",
+            "findings_present": True,
+            "transport": "mavis-bundled-llm-call",
+            "transport_sha256": "1" * 64,
+            "config_sha256": "2" * 64,
+            "response_sha256": "3" * 64,
+            "response": REVIEW_RESULT.replace(".v1", ".v2"),
+        }
+        wrapper = self.workspace / "minimax.py"
+        wrapper.write_text("# test wrapper\n", encoding="utf-8")
+        with patch(
+            "subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(output).encode(), stderr=b""
+            ),
+        ):
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_OUTPUT_INVALID"):
+                DirectMiniMaxRunner(wrapper, Path("/bin/sh")).run(
+                    prompt="review this digest",
+                    model=MINIMAX_MODEL,
+                    workspace=self.workspace,
+                )
+
+    @staticmethod
+    def codex_events(message: str, *, extra_item: dict | None = None) -> bytes:
+        events = [
+            {"type": "thread.started", "thread_id": "one"},
+            {"type": "turn.started"},
+            {
+                "type": "item.completed",
+                "item": {"id": "r", "type": "reasoning", "text": "reviewing"},
+            },
+        ]
+        if extra_item is not None:
+            events.append({"type": "item.completed", "item": extra_item})
+        events.extend(
+            [
+                {
+                    "type": "item.completed",
+                    "item": {"id": "m", "type": "agent_message", "text": message},
+                },
+                {"type": "turn.completed", "usage": {}},
+            ]
+        )
+        return ("\n".join(json.dumps(item) for item in events) + "\n").encode()
+
+    def test_direct_codex_records_launch_attestation_not_provider_report(self) -> None:
+        catalog = {
+            "models": [
+                {"slug": CODEX_MODEL, "visibility": "list", "supported_in_api": True}
+            ]
+        }
+        calls = [
+            subprocess.CompletedProcess([], 0, stdout=b"codex-cli 1\n", stderr=b""),
+            subprocess.CompletedProcess([], 0, stdout=json.dumps(catalog).encode(), stderr=b""),
+            subprocess.CompletedProcess([], 0, stdout=self.codex_events(REVIEW_RESULT), stderr=b""),
+        ]
+        with patch("subprocess.run", side_effect=calls):
+            receipt = DirectCodexRunner(Path("/bin/sh")).run(
+                prompt="review this digest", model=CODEX_MODEL, workspace=self.workspace
+            )
+        self.assertEqual(receipt.model_id, CODEX_MODEL)
+        self.assertEqual(receipt.model_identity_class, "trusted-launch-attested")
+        self.assertTrue(receipt.direct_provider_cli)
+
+    def test_direct_codex_rejects_tool_or_multiple_terminal_messages(self) -> None:
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_TOOL_EVENT_REJECTED"):
+            DirectCodexRunner._terminal_result(
+                self.codex_events(
+                    REVIEW_RESULT,
+                    extra_item={"id": "tool", "type": "command_execution", "command": "pwd"},
+                )
+            )
+        duplicated = self.codex_events(REVIEW_RESULT).decode().splitlines()
+        duplicated.insert(
+            -1,
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"id": "m2", "type": "agent_message", "text": REVIEW_RESULT},
+                }
+            ),
+        )
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_OUTPUT_INVALID"):
+            DirectCodexRunner._terminal_result(("\n".join(duplicated) + "\n").encode())
+
 
 class ProviderIssuerTest(unittest.TestCase):
     def test_issuer_binds_fixed_provider_policy_and_signer_key(self) -> None:
@@ -214,6 +355,43 @@ class ProviderIssuerTest(unittest.TestCase):
                     subject_sha256=digest("subject"),
                     round=3,
                     previous_round_sha256=digest("previous"),
+                    closure_root_sha256=digest("closure"),
+                    issued_at="2026-07-16T20:00:00Z",
+                    expires_at="2026-07-16T21:30:00Z",
+                ),
+            )
+
+    def test_issuer_rejects_unknown_review_result_schema(self) -> None:
+        factory = FixtureFactory()
+        issuer = ProviderReviewIssuer(
+            signer=StaticSigner(factory, factory.OPENAI_KEY_ID),
+            provider_family="openai",
+            channel="openai-codex",
+            direct_provider_cli=True,
+            model_identity_class="trusted-launch-attested",
+            allowed_models=frozenset({CODEX_MODEL}),
+            issuer="cross-ai-issuer-openai",
+        )
+        receipt = ProviderExecutionReceipt(
+            provider_family="openai",
+            channel="openai-codex",
+            direct_provider_cli=True,
+            model_id=CODEX_MODEL,
+            model_identity_class="trusted-launch-attested",
+            capability_snapshot_sha256=digest("capability"),
+            input_sha256=digest("input"),
+            output_sha256=digest("output"),
+            result_text=REVIEW_RESULT.replace(".v1", ".v2"),
+        )
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_REVIEW_RESULT_INVALID"):
+            issuer.issue(
+                execution=receipt,
+                coordinates=ReviewCoordinates(
+                    review_id="50000000-0000-4000-8000-000000000003",
+                    review_chain_id="40000000-0000-4000-8000-000000000001",
+                    subject_sha256=digest("subject"),
+                    round=1,
+                    previous_round_sha256=None,
                     closure_root_sha256=digest("closure"),
                     issued_at="2026-07-16T20:00:00Z",
                     expires_at="2026-07-16T21:30:00Z",

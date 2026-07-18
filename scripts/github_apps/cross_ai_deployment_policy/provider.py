@@ -23,6 +23,10 @@ from .timeutil import parse_utc
 
 MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_PROMPT_BYTES = 512 * 1024
+REVIEW_RESULT_SCHEMA_VERSION = "acik.cross-ai-provider-review-result.v1"
+MINIMAX_MODEL = "minimax/MiniMax-M3"
+CODEX_MODEL = "gpt-5.6-sol"
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _bytes_digest(value: bytes) -> str:
@@ -171,6 +175,278 @@ class DirectClaudeRunner:
         )
 
 
+class DirectMiniMaxRunner:
+    def __init__(
+        self,
+        wrapper: Path | None = None,
+        python_executable: Path | None = None,
+    ) -> None:
+        selected_wrapper = wrapper or ROOT / "scripts/ai/minimax_m3_review.py"
+        self.wrapper = selected_wrapper.expanduser().resolve()
+        if not self.wrapper.is_file():
+            reject("PROVIDER_EXECUTABLE_INVALID", "MiniMax wrapper is invalid")
+        selected_python = python_executable or Path(shutil.which("python3") or "python3")
+        self.python_executable = DirectClaudeRunner._validated_executable(
+            selected_python, "Python"
+        )
+
+    def run(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        workspace: Path,
+        timeout_seconds: int = 600,
+    ) -> ProviderExecutionReceipt:
+        if model != MINIMAX_MODEL:
+            reject("PROVIDER_MODEL_UNAVAILABLE", "MiniMax model is not the pinned route")
+        prompt_bytes = prompt.encode("utf-8")
+        if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
+            reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
+        result = subprocess.run(
+            [
+                str(self.python_executable),
+                str(self.wrapper),
+                "--response-contract",
+                "provider-review-json-v1",
+                "--timeout",
+                str(timeout_seconds),
+            ],
+            cwd=workspace,
+            input=prompt_bytes,
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds + 30,
+        )
+        if result.returncode != 0:
+            reject("PROVIDER_EXECUTION_FAILED", "direct MiniMax execution failed")
+        payload = _provider_json(result.stdout, "MiniMax")
+        expected = {
+            "ok",
+            "provider",
+            "provider_claim_source",
+            "provider_origin_host",
+            "requested_model",
+            "actual_model",
+            "base_sha",
+            "head_sha",
+            "scope_sha256",
+            "verdict",
+            "findings_present",
+            "transport",
+            "transport_sha256",
+            "config_sha256",
+            "response_sha256",
+            "response",
+        }
+        if set(payload) != expected:
+            reject("PROVIDER_OUTPUT_INVALID", "MiniMax receipt shape is invalid")
+        if (
+            payload["ok"] is not True
+            or payload["provider"] != "minimax"
+            or payload["provider_claim_source"] != "trusted-bundled-config"
+            or payload["provider_origin_host"] != "agent.minimax.io"
+            or payload["requested_model"] != MINIMAX_MODEL
+            or payload["actual_model"] != MINIMAX_MODEL
+            or payload["base_sha"] is not None
+            or payload["head_sha"] is not None
+            or payload["transport"] != "mavis-bundled-llm-call"
+        ):
+            reject("PROVIDER_MODEL_IDENTITY_MISMATCH", "MiniMax route differs")
+        response = payload["response"]
+        if not isinstance(response, str) or not response:
+            reject("PROVIDER_OUTPUT_INVALID", "MiniMax result text is invalid")
+        response_bytes = response.encode("utf-8")
+        prompt_hex = hashlib.sha256(prompt_bytes).hexdigest()
+        response_hex = hashlib.sha256(response_bytes).hexdigest()
+        digest_fields = (
+            payload["scope_sha256"],
+            payload["transport_sha256"],
+            payload["config_sha256"],
+            payload["response_sha256"],
+        )
+        if any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in digest_fields
+        ):
+            reject("PROVIDER_OUTPUT_INVALID", "MiniMax receipt digest is invalid")
+        if payload["scope_sha256"] != prompt_hex or payload["response_sha256"] != response_hex:
+            reject("PROVIDER_OUTPUT_INVALID", "MiniMax receipt digest differs")
+        capability = sha256_digest(
+            {
+                "channel": "direct-minimax-cli",
+                "wrapperRealpath": str(self.wrapper),
+                "wrapperSha256": _bytes_digest(self.wrapper.read_bytes()),
+                "pythonRealpath": str(self.python_executable),
+                "providerOriginHost": payload["provider_origin_host"],
+                "transportSha256": f"sha256:{payload['transport_sha256']}",
+                "configSha256": f"sha256:{payload['config_sha256']}",
+                "requestedModel": MINIMAX_MODEL,
+                "reportedModel": payload["actual_model"],
+            }
+        )
+        return ProviderExecutionReceipt(
+            provider_family="minimax",
+            channel="direct-minimax-cli",
+            direct_provider_cli=True,
+            model_id=MINIMAX_MODEL,
+            model_identity_class="provider-reported",
+            capability_snapshot_sha256=capability,
+            input_sha256=_bytes_digest(prompt_bytes),
+            output_sha256=_bytes_digest(response_bytes),
+            result_text=response,
+        )
+
+
+class DirectCodexRunner:
+    def __init__(self, executable: Path | None = None) -> None:
+        selected = executable or Path(shutil.which("codex") or "codex")
+        self.executable = DirectClaudeRunner._validated_executable(selected, "Codex")
+
+    @staticmethod
+    def _catalog_model(raw: bytes, model: str) -> dict[str, Any]:
+        payload = _provider_json(raw, "Codex model catalog")
+        models = payload.get("models")
+        if not isinstance(models, list):
+            reject("PROVIDER_CAPABILITY_UNAVAILABLE", "Codex model list is invalid")
+        matches = [entry for entry in models if isinstance(entry, dict) and entry.get("slug") == model]
+        if len(matches) != 1:
+            reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not live-listed")
+        selected = matches[0]
+        if selected.get("visibility") != "list" or selected.get("supported_in_api") is not True:
+            reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not supported")
+        return selected
+
+    @staticmethod
+    def _terminal_result(raw: bytes) -> str:
+        if not raw or len(raw) > MAX_PROVIDER_OUTPUT_BYTES:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex output size is invalid")
+        try:
+            lines = raw.decode("utf-8").splitlines()
+        except UnicodeDecodeError:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex output is not UTF-8")
+        events = [_provider_json(line.encode("utf-8"), "Codex event") for line in lines if line]
+        if not events or events[0].get("type") != "thread.started":
+            reject("PROVIDER_OUTPUT_INVALID", "Codex thread start is missing")
+        if len([event for event in events if event.get("type") == "turn.started"]) != 1:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex turn start is ambiguous")
+        completed = [event for event in events if event.get("type") == "turn.completed"]
+        if len(completed) != 1 or events[-1] is not completed[0]:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex completed turn is not terminal")
+        messages: list[str] = []
+        for event in events:
+            event_type = event.get("type")
+            if event_type in {"thread.started", "turn.started", "turn.completed"}:
+                continue
+            if event_type != "item.completed":
+                reject("PROVIDER_TOOL_EVENT_REJECTED", "Codex emitted a non-terminal event")
+            item = event.get("item")
+            if not isinstance(item, dict):
+                reject("PROVIDER_OUTPUT_INVALID", "Codex item is invalid")
+            item_type = item.get("type")
+            if item_type == "reasoning":
+                continue
+            if item_type != "agent_message":
+                reject("PROVIDER_TOOL_EVENT_REJECTED", "Codex used or exposed a tool")
+            text = item.get("text")
+            if not isinstance(text, str) or not text:
+                reject("PROVIDER_OUTPUT_INVALID", "Codex message is invalid")
+            messages.append(text)
+        if len(messages) != 1:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex terminal message is not singular")
+        return messages[0]
+
+    def run(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        workspace: Path,
+        timeout_seconds: int = 600,
+    ) -> ProviderExecutionReceipt:
+        if model != CODEX_MODEL:
+            reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not the pinned route")
+        prompt_bytes = prompt.encode("utf-8")
+        if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
+            reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
+        version = subprocess.run(
+            [str(self.executable), "--version"],
+            cwd=workspace,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        catalog = subprocess.run(
+            [str(self.executable), "--ignore-user-config", "debug", "models"],
+            cwd=workspace,
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+        if version.returncode != 0 or not version.stdout or catalog.returncode != 0:
+            reject("PROVIDER_CAPABILITY_UNAVAILABLE", "Codex capability is unavailable")
+        self._catalog_model(catalog.stdout, model)
+        launch = {
+            "ignoreUserConfig": True,
+            "sandbox": "read-only",
+            "ephemeral": True,
+            "json": True,
+            "mcp": False,
+            "plugins": False,
+            "search": False,
+            "write": False,
+        }
+        result = subprocess.run(
+            [
+                str(self.executable),
+                "exec",
+                "--ignore-user-config",
+                "--model",
+                model,
+                "--sandbox",
+                "read-only",
+                "--ephemeral",
+                "--json",
+                "-C",
+                str(workspace.resolve()),
+                "-",
+            ],
+            cwd=workspace,
+            input=prompt_bytes,
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+        if result.returncode != 0:
+            reject("PROVIDER_EXECUTION_FAILED", "direct Codex execution failed")
+        text = self._terminal_result(result.stdout)
+        capability = sha256_digest(
+            {
+                "channel": "openai-codex",
+                "cliRealpath": str(self.executable),
+                "cliSha256": _bytes_digest(self.executable.read_bytes()),
+                "cliVersionSha256": _bytes_digest(version.stdout.strip()),
+                "liveModelCatalogSha256": _bytes_digest(catalog.stdout),
+                "requestedModel": CODEX_MODEL,
+                "providerReportedModel": None,
+                "launchConfiguration": launch,
+            }
+        )
+        return ProviderExecutionReceipt(
+            provider_family="openai",
+            channel="openai-codex",
+            direct_provider_cli=True,
+            model_id=CODEX_MODEL,
+            model_identity_class="trusted-launch-attested",
+            capability_snapshot_sha256=capability,
+            input_sha256=_bytes_digest(prompt_bytes),
+            output_sha256=_bytes_digest(text.encode("utf-8")),
+            result_text=text,
+        )
+
+
 class CursorRunner:
     def __init__(
         self,
@@ -293,14 +569,19 @@ class ProviderReviewIssuer:
     def _review_result(text: str) -> dict[str, Any]:
         payload = _provider_json(text.encode("utf-8"), "review result")
         expected = {
+            "schemaVersion",
             "verdict",
             "findingIds",
             "resolvedFindingIds",
             "acknowledgedFindingIds",
         }
-        if set(payload) != expected or payload.get("verdict") not in {"AGREE", "REVISE", "RED", "PARTIAL"}:
+        if (
+            set(payload) != expected
+            or payload.get("schemaVersion") != REVIEW_RESULT_SCHEMA_VERSION
+            or payload.get("verdict") not in {"AGREE", "REVISE", "RED", "PARTIAL"}
+        ):
             reject("PROVIDER_REVIEW_RESULT_INVALID", "provider review result shape is invalid")
-        for field in expected - {"verdict"}:
+        for field in expected - {"schemaVersion", "verdict"}:
             values = payload[field]
             if (
                 not isinstance(values, list)
@@ -380,9 +661,14 @@ class ProviderReviewIssuer:
 
 
 __all__ = [
+    "CODEX_MODEL",
     "CursorRunner",
     "DirectClaudeRunner",
+    "DirectCodexRunner",
+    "DirectMiniMaxRunner",
+    "MINIMAX_MODEL",
     "ProviderExecutionReceipt",
     "ProviderReviewIssuer",
+    "REVIEW_RESULT_SCHEMA_VERSION",
     "ReviewCoordinates",
 ]

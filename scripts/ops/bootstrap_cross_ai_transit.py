@@ -201,23 +201,48 @@ def _public_key_record(key_name: str, data: dict[str, Any]) -> dict[str, Any]:
     keys = data.get("keys")
     if not isinstance(version, int) or version < 1 or not isinstance(keys, dict):
         raise BootstrapError(f"Transit key {key_name} version data is invalid")
-    version_data = keys.get(str(version))
-    if not isinstance(version_data, dict):
-        raise BootstrapError(f"Transit key {key_name} public version is missing")
-    public_key = version_data.get("public_key")
-    if not isinstance(public_key, str):
-        raise BootstrapError(f"Transit key {key_name} public key is missing")
-    try:
-        decoded = base64.b64decode(public_key, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise BootstrapError(f"Transit key {key_name} public key is invalid") from exc
-    if len(decoded) != 32:
-        raise BootstrapError(f"Transit key {key_name} is not an Ed25519 public key")
+    expected_versions = {str(item) for item in range(1, version + 1)}
+    if set(keys) != expected_versions:
+        raise BootstrapError(f"Transit key {key_name} public history is incomplete")
+    version_history: list[dict[str, Any]] = []
+    for historical_version in range(1, version + 1):
+        version_data = keys.get(str(historical_version))
+        if not isinstance(version_data, dict):
+            raise BootstrapError(
+                f"Transit key {key_name} public version is missing"
+            )
+        public_key = version_data.get("public_key")
+        if not isinstance(public_key, str):
+            raise BootstrapError(f"Transit key {key_name} public key is missing")
+        try:
+            decoded = base64.b64decode(public_key, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise BootstrapError(
+                f"Transit key {key_name} public key is invalid"
+            ) from exc
+        if len(decoded) != 32:
+            raise BootstrapError(
+                f"Transit key {key_name} is not an Ed25519 public key"
+            )
+        version_history.append(
+            {
+                "version": historical_version,
+                "publicKeyBase64": public_key,
+            }
+        )
+    public_key = version_history[-1]["publicKeyBase64"]
     return {
         "keyId": f"vault-transit://{MOUNT}/{key_name}#v{version}",
         "keyName": key_name,
         "keyVersion": version,
         "publicKeyBase64": public_key,
+        "keyType": "ed25519",
+        "derived": False,
+        "exportable": False,
+        "allowPlaintextBackup": False,
+        "deletionAllowed": False,
+        "supportsSigning": True,
+        "versionHistory": version_history,
     }
 
 
@@ -347,7 +372,7 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     receipt = {
-        "schemaVersion": "acik.cross-ai-transit-bootstrap-receipt.v1",
+        "schemaVersion": "acik.cross-ai-transit-bootstrap-receipt.v2",
         "scope": "test-only",
         "vaultOrigin": origin,
         "vaultClusterId": args.expected_cluster_id,

@@ -110,6 +110,39 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             1,
         )
 
+    def test_all_shipped_activation_surfaces_remain_observe_and_sentinel_inert(
+        self,
+    ) -> None:
+        policy = json.loads(POLICY.read_text(encoding="utf-8"))
+        self.assertEqual(policy["phase"], "observe")
+        self.assertIs(policy["machineOnlyEnabled"], False)
+        self.assertEqual(policy["requiredCustomRuleAppIds"], [900000001])
+        self.assertEqual(policy["allowedInstallationIds"], [900000002])
+        self.assertEqual(policy["allowedDispatcherActorIds"], [900000003])
+        self.assertEqual(policy["allowedDispatcherInstallationIds"], [900000004])
+        runner = (
+            ROOT / "scripts/github_apps/run_cross_ai_runner_bootstrap.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'ZERO_TRUST_ROOT_SHA256 = "sha256:" + ("0" * 64)',
+            runner,
+        )
+        overlay = yaml.safe_load(
+            (
+                ROOT
+                / "kustomize/overlays/test/activation/"
+                "cross-ai-deployment-protection-observe/deployment.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        args = overlay["spec"]["template"]["spec"]["containers"][0]["args"]
+        self.assertEqual(args[args.index("--mode") + 1], "observe")
+        for name in (
+            "cross-ai-deployment-policy.json",
+            "cross-ai-deployment-trust-root.json",
+            "cross-ai-deployment-revocations.json",
+        ):
+            self.assertFalse((ROOT / "config/github-apps" / name).exists())
+
     def test_pinned_execution_action_commit_is_reachable_and_byte_exact(self) -> None:
         readme = (ROOT / "config/github-apps/README.md").read_text(encoding="utf-8")
         self.assertIn(ACTION_COMMIT, readme)

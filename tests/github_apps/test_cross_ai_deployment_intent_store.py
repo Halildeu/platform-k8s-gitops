@@ -95,6 +95,12 @@ class IntentStoreTest(unittest.TestCase):
             claimed_at=self.fixture.now,
         )
         self.assertEqual(claimed.state, "Sending")
+        self.registry.record_dispatch_watermark(
+            request_id=self.verified.request_id,
+            stage="apply",
+            watermark=76,
+            snapshot_at=self.fixture.now,
+        )
         with self.assertRaisesRegex(PolicyError, "DISPATCH_ALREADY_CLAIMED"):
             self.registry.claim_dispatch(
                 request_id=self.verified.request_id,
@@ -127,6 +133,190 @@ class IntentStoreTest(unittest.TestCase):
         )
         self.assertEqual(reconciled.state, "Accepted")
         self.assertEqual(reconciled.run_id, 77)
+
+    def test_dispatch_correlation_rejects_run_at_or_below_watermark(self) -> None:
+        self.finalize()
+        self.registry.queue_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            installation_id=2222,
+            repository="Halildeu/platform-k8s-gitops",
+            queued_at=self.fixture.now,
+        )
+        self.registry.claim_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            claimed_at=self.fixture.now,
+        )
+        self.registry.record_dispatch_watermark(
+            request_id=self.verified.request_id,
+            stage="apply",
+            watermark=77,
+            snapshot_at=self.fixture.now,
+        )
+        with self.assertRaisesRegex(PolicyError, "DISPATCH_CORRELATION_INVALID"):
+            self.registry.reconcile_dispatch(
+                request_id=self.verified.request_id,
+                stage="apply",
+                run_id=77,
+                reconciled_at=self.fixture.now + timedelta(seconds=1),
+            )
+
+    def test_dispatch_post_result_is_idempotent_and_immutable(self) -> None:
+        self.finalize()
+        self.registry.queue_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            installation_id=2222,
+            repository="Halildeu/platform-k8s-gitops",
+            queued_at=self.fixture.now,
+        )
+        self.registry.claim_dispatch(
+            request_id=self.verified.request_id,
+            stage="apply",
+            claimed_at=self.fixture.now,
+        )
+        self.registry.record_dispatch_watermark(
+            request_id=self.verified.request_id,
+            stage="apply",
+            watermark=70,
+            snapshot_at=self.fixture.now,
+        )
+        first = self.registry.mark_dispatch_posted(
+            request_id=self.verified.request_id,
+            stage="apply",
+            reason_code="DISPATCH_ACCEPTED_204",
+            http_status=204,
+            recorded_at=self.fixture.now,
+        )
+        second = self.registry.mark_dispatch_posted(
+            request_id=self.verified.request_id,
+            stage="apply",
+            reason_code="DISPATCH_ACCEPTED_204",
+            http_status=204,
+            recorded_at=self.fixture.now + timedelta(seconds=1),
+        )
+        self.assertEqual(first, second)
+        with self.assertRaisesRegex(PolicyError, "DISPATCH_RESULT_IMMUTABLE"):
+            self.registry.mark_dispatch_posted(
+                request_id=self.verified.request_id,
+                stage="apply",
+                reason_code="ANOTHER_RESULT",
+                http_status=202,
+                recorded_at=self.fixture.now + timedelta(seconds=2),
+            )
+
+    def test_one_repository_run_cannot_correlate_to_two_dispatches(self) -> None:
+        self.finalize()
+        first_request = self.verified.request_id
+        self.registry.queue_dispatch(
+            request_id=first_request,
+            stage="apply",
+            installation_id=2222,
+            repository="Halildeu/platform-k8s-gitops",
+            queued_at=self.fixture.now,
+        )
+        self.registry.claim_dispatch(
+            request_id=first_request,
+            stage="apply",
+            claimed_at=self.fixture.now,
+        )
+        self.registry.record_dispatch_watermark(
+            request_id=first_request,
+            stage="apply",
+            watermark=76,
+            snapshot_at=self.fixture.now,
+        )
+        self.registry.reconcile_dispatch(
+            request_id=first_request,
+            stage="apply",
+            run_id=77,
+            reconciled_at=self.fixture.now,
+        )
+
+        second_request = "40000000-0000-4000-8000-000000000001"
+        connection = self.registry._connection
+        first_intent = connection.execute(
+            "SELECT * FROM intents WHERE request_id = ?", (first_request,)
+        ).fetchone()
+        first_stage = connection.execute(
+            "SELECT * FROM intent_stages WHERE request_id = ? AND stage = 'apply'",
+            (first_request,),
+        ).fetchone()
+        connection.execute(
+            """
+            INSERT INTO intents (
+                request_id, bundle_digest, subject_digest, grant_digest,
+                repository_id, repository, environment, head_sha, intent_ref,
+                session_digest, artifact_set_digest, rollback_plan_digest,
+                post_deploy_verifier_digest, expires_at, registration_principal,
+                triggering_actor_id, registered_at, ref_object_id, finalized_at, state
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Finalized')
+            """,
+            (
+                second_request,
+                "sha256:" + ("1" * 63) + "2",
+                first_intent["subject_digest"],
+                first_intent["grant_digest"],
+                first_intent["repository_id"],
+                first_intent["repository"],
+                first_intent["environment"],
+                first_intent["head_sha"],
+                f"refs/tags/cross-ai-intent/{second_request}",
+                first_intent["session_digest"],
+                first_intent["artifact_set_digest"],
+                first_intent["rollback_plan_digest"],
+                first_intent["post_deploy_verifier_digest"],
+                first_intent["expires_at"],
+                first_intent["registration_principal"],
+                first_intent["triggering_actor_id"],
+                first_intent["registered_at"],
+                "b" * 40,
+                first_intent["finalized_at"],
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO intent_stages (
+                request_id, repository_id, environment, stage, stage_order,
+                nonce_digest, workflow_path, workflow_blob_digest, state
+            ) VALUES (?, ?, ?, 'apply', ?, ?, ?, ?, 'Available')
+            """,
+            (
+                second_request,
+                first_stage["repository_id"],
+                first_stage["environment"],
+                first_stage["stage_order"],
+                "sha256:" + ("2" * 64),
+                first_stage["workflow_path"],
+                first_stage["workflow_blob_digest"],
+            ),
+        )
+        self.registry.queue_dispatch(
+            request_id=second_request,
+            stage="apply",
+            installation_id=2222,
+            repository="Halildeu/platform-k8s-gitops",
+            queued_at=self.fixture.now,
+        )
+        self.registry.claim_dispatch(
+            request_id=second_request,
+            stage="apply",
+            claimed_at=self.fixture.now,
+        )
+        self.registry.record_dispatch_watermark(
+            request_id=second_request,
+            stage="apply",
+            watermark=76,
+            snapshot_at=self.fixture.now,
+        )
+        with self.assertRaisesRegex(PolicyError, "DISPATCH_RUN_REUSED"):
+            self.registry.reconcile_dispatch(
+                request_id=second_request,
+                stage="apply",
+                run_id=77,
+                reconciled_at=self.fixture.now + timedelta(seconds=1),
+            )
 
     def test_dispatch_target_and_stage_prerequisites_are_signed(self) -> None:
         self.finalize()

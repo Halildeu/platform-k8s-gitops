@@ -52,7 +52,7 @@ REQUIRED_PROVIDER_ROUTES = {
     "openai": (
         "openai-codex",
         "gpt-5.6-sol",
-        "provider-reported",
+        "trusted-launch-attested",
         True,
     ),
 }
@@ -107,6 +107,7 @@ class VerifiedBundle:
     session_digest: str
     expires_at: datetime
     provider_families: tuple[str, ...]
+    provider_identity_classes: tuple[tuple[str, str], ...]
     final_review_digests: tuple[str, ...]
     coordinator_key_id: str
     runner_admission_lease: VerifiedRunnerAdmissionLease
@@ -201,11 +202,6 @@ class EvidenceVerifier:
                     reject(
                         "TRUST_KEY_ATTRIBUTION_INVALID",
                         f"provider key {key_id} lacks fixed family/channel/direct attribution",
-                    )
-                if direct and model_identity_classes != ("provider-reported",):
-                    reject(
-                        "TRUST_KEY_ATTRIBUTION_INVALID",
-                        f"direct provider key {key_id} lacks provider-reported identity",
                     )
                 expected_route = REQUIRED_PROVIDER_ROUTES.get(family)
                 actual_route = (
@@ -405,6 +401,15 @@ class EvidenceVerifier:
             session_digest=bundle["subject"]["sessionSha256"],
             expires_at=parse_utc(bundle["grant"]["expiresAt"], "grant.expiresAt"),
             provider_families=tuple(sorted(families)),
+            provider_identity_classes=tuple(
+                sorted(
+                    (
+                        review.key.provider_family or "",
+                        review.payload["modelIdentityClass"],
+                    )
+                    for review in final_reviews
+                )
+            ),
             final_review_digests=tuple(
                 sorted(review.digest for review in final_reviews)
             ),

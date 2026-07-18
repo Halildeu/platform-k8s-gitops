@@ -137,6 +137,10 @@ class TransitBootstrapTests(unittest.TestCase):
         with patch.object(MODULE, "VaultClient", FakeVaultClient):
             receipt = MODULE.bootstrap(self.args())
         client = FakeVaultClient.instances[-1]
+        self.assertEqual(
+            receipt["schemaVersion"],
+            "acik.cross-ai-transit-bootstrap-receipt.v2",
+        )
         self.assertEqual(receipt["scope"], "test-only")
         self.assertEqual(len(receipt["keys"]), 6)
         self.assertEqual(
@@ -144,6 +148,22 @@ class TransitBootstrapTests(unittest.TestCase):
         )
         self.assertIn("mount:cross-ai", receipt["createdResources"])
         self.assertIn("policy:vault-config-reconciler", receipt["updatedResources"])
+        for item in receipt["keys"]:
+            self.assertEqual(item["keyType"], "ed25519")
+            self.assertIs(item["derived"], False)
+            self.assertIs(item["exportable"], False)
+            self.assertIs(item["allowPlaintextBackup"], False)
+            self.assertIs(item["deletionAllowed"], False)
+            self.assertIs(item["supportsSigning"], True)
+            self.assertEqual(
+                item["versionHistory"],
+                [
+                    {
+                        "version": item["keyVersion"],
+                        "publicKeyBase64": item["publicKeyBase64"],
+                    }
+                ],
+            )
         serialized = str(receipt)
         self.assertNotIn(self.test_token, serialized)
         mount_create = next(
@@ -196,6 +216,19 @@ class TransitBootstrapTests(unittest.TestCase):
         with patch.object(MODULE, "VaultClient", FakeVaultClient):
             with self.assertRaisesRegex(MODULE.BootstrapError, "cluster ID"):
                 MODULE.bootstrap(args)
+
+    def test_rejects_incomplete_public_key_history(self) -> None:
+        FakeVaultClient.existing = True
+
+        class MissingHistoryClient(FakeVaultClient):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                anthropic = self.keys["anthropic"]
+                anthropic["latest_version"] = 2
+
+        with patch.object(MODULE, "VaultClient", MissingHistoryClient):
+            with self.assertRaisesRegex(MODULE.BootstrapError, "history is incomplete"):
+                MODULE.bootstrap(self.args())
 
     def test_rejects_non_root_sealed_vault_and_mount_type_collision(self) -> None:
         FakeVaultClient.root_policies = ["default", "operator"]

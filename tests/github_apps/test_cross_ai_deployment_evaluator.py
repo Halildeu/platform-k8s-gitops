@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import json
 import tempfile
 import unittest
@@ -69,6 +70,7 @@ def policy_payload() -> dict[str, object]:
         "schemaVersion": "acik.cross-ai-deployment-policy.v1",
         "policyId": "faz22-cross-ai-v1",
         "phase": "dual-gate",
+        "machineOnlyEnabled": False,
         "repositoryId": 123456789,
         "repository": REPOSITORY,
         "environment": ENVIRONMENT,
@@ -236,6 +238,30 @@ class DeploymentEvaluatorTest(unittest.TestCase):
             resolved_head_sha=HEAD,
             finalized_at=datetime(2026, 7, 16, 20, 1, tzinfo=timezone.utc),
         )
+        self.registry.queue_dispatch(
+            request_id=REQUEST_ID,
+            stage="apply",
+            installation_id=3333,
+            repository=REPOSITORY,
+            queued_at=datetime(2026, 7, 16, 20, 1, tzinfo=timezone.utc),
+        )
+        self.registry.claim_dispatch(
+            request_id=REQUEST_ID,
+            stage="apply",
+            claimed_at=datetime(2026, 7, 16, 20, 1, tzinfo=timezone.utc),
+        )
+        self.registry.record_dispatch_watermark(
+            request_id=REQUEST_ID,
+            stage="apply",
+            watermark=987654320,
+            snapshot_at=datetime(2026, 7, 16, 20, 1, tzinfo=timezone.utc),
+        )
+        self.registry.reconcile_dispatch(
+            request_id=REQUEST_ID,
+            stage="apply",
+            run_id=987654321,
+            reconciled_at=datetime(2026, 7, 16, 20, 2, tzinfo=timezone.utc),
+        )
         self.github = FakeGitHub()
         self.evaluator = DeploymentEvaluator(
             policy=self.policy,
@@ -283,6 +309,13 @@ class DeploymentEvaluatorTest(unittest.TestCase):
         )
         self.assertEqual(result.app_rule_id, 555)
 
+    def test_rejects_callback_without_exact_dispatch_correlation(self) -> None:
+        self.registry._connection.execute(
+            "UPDATE intent_dispatches SET run_id = ? WHERE request_id = ? AND stage = ?",
+            (987654322, REQUEST_ID, "apply"),
+        )
+        self.assert_rejected("DISPATCH_CORRELATION_MISMATCH")
+
     def test_rejects_workflow_dependency_or_actor_drift(self) -> None:
         self.github.workflow_value = WORKFLOW.replace(
             b"protected-apply", b"protected-other"
@@ -328,6 +361,66 @@ class DeploymentEvaluatorTest(unittest.TestCase):
                 mode="enforce",
                 now=lambda: NOW,
             )
+
+    def test_enforcement_rejects_zero_trust_pin_and_placeholder_authority_ids(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_PIN_SENTINEL"):
+            DeploymentEvaluator(
+                policy=self.policy,
+                registry=self.registry,
+                github=self.github,
+                trust_root=self.fixture.trust_root,
+                expected_trust_root_sha256="sha256:" + ("0" * 64),
+                revocations_loader=lambda: self.fixture.revocations_envelope,
+                mode="enforce",
+                now=lambda: NOW,
+            )
+        with self.assertRaisesRegex(PolicyError, "POLICY_AUTHORITY_SENTINEL"):
+            DeploymentEvaluator(
+                policy=replace(
+                    self.policy,
+                    required_custom_rule_app_ids=frozenset({900000001}),
+                ),
+                registry=self.registry,
+                github=self.github,
+                trust_root=self.fixture.trust_root,
+                expected_trust_root_sha256=sha256_digest(self.fixture.trust_root),
+                revocations_loader=lambda: self.fixture.revocations_envelope,
+                mode="enforce",
+                now=lambda: NOW,
+            )
+
+    def test_machine_only_kill_switch_and_launch_attestation_are_fail_closed(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(PolicyError, "MACHINE_ONLY_DISABLED"):
+            DeploymentEvaluator(
+                policy=replace(self.policy, phase="machine-only-nonprod"),
+                registry=self.registry,
+                github=self.github,
+                trust_root=self.fixture.trust_root,
+                expected_trust_root_sha256=sha256_digest(self.fixture.trust_root),
+                revocations_loader=lambda: self.fixture.revocations_envelope,
+                mode="enforce",
+                now=lambda: NOW,
+            )
+        evaluator = DeploymentEvaluator(
+            policy=replace(
+                self.policy,
+                phase="machine-only-nonprod",
+                machine_only_enabled=True,
+            ),
+            registry=self.registry,
+            github=self.github,
+            trust_root=self.fixture.trust_root,
+            expected_trust_root_sha256=sha256_digest(self.fixture.trust_root),
+            revocations_loader=lambda: self.fixture.revocations_envelope,
+            mode="enforce",
+            now=lambda: NOW,
+        )
+        with self.assertRaisesRegex(PolicyError, "MACHINE_ONLY_IDENTITY_UNTRUSTED"):
+            evaluator.evaluate(self.request)
 
     def test_reloads_revocations_for_every_decision(self) -> None:
         self.evaluator.evaluate(self.request)

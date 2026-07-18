@@ -116,13 +116,30 @@ class EvidenceContractTest(unittest.TestCase):
                 now=self.fixture.now,
             )
 
-    def test_rejects_direct_provider_without_provider_reported_identity(self) -> None:
+    def test_rejects_provider_identity_class_outside_canonical_route(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         trust_root["keys"][0]["allowedModelIdentityClasses"] = [
             "trusted-launch-attested"
         ]
         with self.assertRaisesRegex(
             PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_KEY_ATTRIBUTION_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_openai_route_requires_launch_attested_identity(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        openai = next(
+            entry
+            for entry in trust_root["keys"]
+            if entry["providerFamily"] == "openai"
+        )
+        openai["allowedModelIdentityClasses"] = ["provider-reported"]
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
         ):
             EvidenceVerifier(
                 trust_root=trust_root,

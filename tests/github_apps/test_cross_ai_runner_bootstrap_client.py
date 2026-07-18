@@ -118,6 +118,13 @@ class RunnerBootstrapClientTest(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o600)
         self.assertEqual(json.loads(self.output.read_bytes()), self.response)
 
+    def test_rejects_all_zero_trust_root_pin_before_network_or_secret_use(self) -> None:
+        args = self.args()
+        args.expected_trust_root_sha256 = "sha256:" + ("0" * 64)
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_PIN_SENTINEL"):
+                client.execute(args)
+
     def test_rejects_response_tamper_and_opaque_identity_mismatch(self) -> None:
         tampered = dict(self.response)
         tampered["runnerId"] = 12345

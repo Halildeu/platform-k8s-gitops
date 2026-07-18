@@ -7,6 +7,7 @@
   "required": [
     "schemaVersion",
     "trustRootId",
+    "sourcePublicKeysetSha256",
     "issuedAt",
     "expiresAt",
     "maxClockSkewSeconds",
@@ -22,6 +23,10 @@
     "trustRootId": {
       "type": "string",
       "format": "uuid"
+    },
+    "sourcePublicKeysetSha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
     },
     "issuedAt": {
       "type": "string",
@@ -195,7 +200,7 @@
             "properties": {
               "allowedChannels": {"const": ["openai-codex"]},
               "allowedModelIds": {"const": ["gpt-5.6-sol"]},
-              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
+              "allowedModelIdentityClasses": {"const": ["trusted-launch-attested"]},
               "directProviderCli": {"const": true}
             }
           }

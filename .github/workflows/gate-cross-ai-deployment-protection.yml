@@ -19,6 +19,7 @@ on:
       - "bootstrap/vault-policies/test/cross-ai-*.hcl"
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
+      - "scripts/ops/build_cross_ai_test_trust_root.py"
       - "scripts/ops/vault-policy-reconcile.sh"
       - "scripts/faz22-remote-ops/**"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
@@ -43,6 +44,7 @@ on:
       - "bootstrap/vault-policies/test/cross-ai-*.hcl"
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
+      - "scripts/ops/build_cross_ai_test_trust_root.py"
       - "scripts/ops/vault-policy-reconcile.sh"
       - "scripts/faz22-remote-ops/**"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
@@ -96,7 +98,7 @@ jobs:
             --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
 
       - name: Compile policy implementation
-        run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py scripts/ops/bootstrap_cross_ai_transit.py scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py tests/github_apps/*.py
+        run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py scripts/ops/bootstrap_cross_ai_transit.py scripts/ops/build_cross_ai_test_trust_root.py scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py tests/github_apps/*.py
 
       - name: Lint TEST Vault and protected-stage shell
         run: >-

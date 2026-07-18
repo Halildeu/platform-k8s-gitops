@@ -132,6 +132,7 @@ class FixtureFactory:
         return {
             "schemaVersion": "acik.cross-ai-deployment-trust-root.v1",
             "trustRootId": "10000000-0000-4000-8000-000000000001",
+            "sourcePublicKeysetSha256": digest("public-keyset"),
             "issuedAt": "2026-07-16T19:00:00Z",
             "expiresAt": "2026-07-16T22:00:00Z",
             "maxClockSkewSeconds": 60,
@@ -164,7 +165,7 @@ class FixtureFactory:
                     ["openai-codex"],
                     True,
                     ["gpt-5.6-sol"],
-                    ["provider-reported"],
+                    ["trusted-launch-attested"],
                 ),
                 entry(self.COORDINATOR_KEY_ID, "coordinator", None, [], None),
                 entry(self.REVOCATION_KEY_ID, "revocation", None, [], None),
@@ -225,7 +226,11 @@ class FixtureFactory:
             "channel": channel,
             "directProviderCli": direct,
             "modelId": model,
-            "modelIdentityClass": "provider-reported",
+            "modelIdentityClass": (
+                "trusted-launch-attested"
+                if key_id == self.OPENAI_KEY_ID
+                else "provider-reported"
+            ),
             "capabilitySnapshotSha256": digest(f"capability-{review_id}"),
             "subjectSha256": subject_digest,
             "round": round_number,
