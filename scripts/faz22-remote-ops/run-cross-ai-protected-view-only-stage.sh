@@ -21,6 +21,8 @@ BRIDGE_DEPLOYMENT="endpoint-admin-remote-bridge-device-key"
 BRIDGE_CONFIGMAP="endpoint-admin-remote-bridge-config-device-key"
 GATEWAY_DEPLOYMENT="api-gateway"
 GATEWAY_CONFIGMAP="api-gateway-config"
+GATEWAY_ROUTE_INDEX="28"
+GATEWAY_ROUTE_PREFIX="SPRING_CLOUD_GATEWAY_ROUTES_${GATEWAY_ROUTE_INDEX}_"
 VIEWER_OVERLAY="kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer"
 BROKER_ONLY_OVERLAY="kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live"
 WATCHDOG_TEMPLATE="scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
@@ -185,7 +187,8 @@ rollback_surface() {
     return 1
   fi
   status=0
-  bash scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh || status=1
+  GATEWAY_ROUTE_INDEX="$GATEWAY_ROUTE_INDEX" \
+    bash scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh || status=1
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     delete service endpoint-admin-remote-bridge-viewer --ignore-not-found || status=1
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
@@ -216,7 +219,8 @@ verify_rollback() {
   local route_keys
   route_keys="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     get configmap "$GATEWAY_CONFIGMAP" -o json \
-    | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_28_"))')"
+    | jq -r --arg prefix "$GATEWAY_ROUTE_PREFIX" \
+      '.data | keys[] | select(startswith($prefix))')"
   [[ -z "$route_keys" ]]
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     get configmap "$BRIDGE_CONFIGMAP" -o json \
@@ -239,12 +243,13 @@ compensate_apply_error() {
 }
 
 run_apply() {
-  local work expires_epoch active_deadline existing_route_keys
+  local work expires_epoch now_epoch active_deadline existing_route_keys
   work="$RUNNER_TEMP/cross-ai-view-only-apply"
   rm -rf -- "$work"
   mkdir -m 0700 "$work"
   expires_epoch="$GRANT_EXPIRES_EPOCH"
-  (( expires_epoch - $(date -u +%s) >= 1200 )) || {
+  now_epoch="$(date -u +%s)"
+  (( expires_epoch - now_epoch >= 1200 )) || {
     echo "protected-view-only-stage: signed grant has insufficient apply headroom" >&2
     return 1
   }
@@ -266,17 +271,22 @@ run_apply() {
 
   existing_route_keys="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     get configmap "$GATEWAY_CONFIGMAP" -o json \
-    | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_28_"))')"
+    | jq -r --arg prefix "$GATEWAY_ROUTE_PREFIX" \
+      '.data | keys[] | select(startswith($prefix))')"
   [[ -z "$existing_route_keys" ]] || {
-    echo "protected-view-only-stage: gateway route index 28 is not clean" >&2
+    echo "protected-view-only-stage: gateway route index $GATEWAY_ROUTE_INDEX is not clean" >&2
     return 1
   }
 
-  active_deadline="$(( expires_epoch - $(date -u +%s) + 600 ))"
+  # The watchdog receives exactly ten minutes beyond grant expiry to execute
+  # the pre-signed compensating rollback. Use the same captured clock sample as
+  # the headroom check so the relative deadline cannot drift between reads.
+  active_deadline="$(( expires_epoch - now_epoch + 600 ))"
   sed \
     -e "s/__EXPIRES_EPOCH__/${expires_epoch}/g" \
     -e "s/__ACTIVE_DEADLINE_SECONDS__/${active_deadline}/g" \
     -e "s/__AUTHORIZATION_SHA256__/${BUNDLE_SHA256}/g" \
+    -e "s/__GATEWAY_ROUTE_PREFIX__/${GATEWAY_ROUTE_PREFIX}/g" \
     "$WATCHDOG_TEMPLATE" > "$work/watchdog.yaml"
   if grep -q '__[A-Z0-9_]*__' "$work/watchdog.yaml"; then
     echo "protected-view-only-stage: watchdog template is unresolved" >&2
@@ -304,9 +314,22 @@ run_apply() {
     rollout status "deploy/$BRIDGE_DEPLOYMENT" --timeout=300s
 
   # The ${sid} token is a Spring RewritePath variable, not a shell expansion.
-  local route_patch
-  # shellcheck disable=SC2016
-  route_patch='{"data":{"SPRING_CLOUD_GATEWAY_ROUTES_28_ID":"remote-bridge-viewer-route","SPRING_CLOUD_GATEWAY_ROUTES_28_URI":"http://endpoint-admin-remote-bridge-viewer:8096","SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER":"-10","SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0":"Path=/api/v1/endpoint-admin/remote-access/sessions/*/view","SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1":"Method=GET,POST","SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0":"RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view"}}'
+  local route_patch route_filter_key
+  route_filter_key="${GATEWAY_ROUTE_PREFIX}FILTERS_0"
+  route_patch="$(jq -cn \
+    --arg prefix "$GATEWAY_ROUTE_PREFIX" \
+    --arg filter 'RewritePath=/api/v1/endpoint-admin/remote-access/sessions/(?<sid>[^/]+)/view, /internal/remote-bridge/operator/sessions/${sid}/view' '
+      {data: {
+        ($prefix + "ID"): "remote-bridge-viewer-route",
+        ($prefix + "URI"): "http://endpoint-admin-remote-bridge-viewer:8096",
+        ($prefix + "ORDER"): "-10",
+        ($prefix + "PREDICATES_0"): "Path=/api/v1/endpoint-admin/remote-access/sessions/*/view",
+        ($prefix + "PREDICATES_1"): "Method=GET,POST",
+        ($prefix + "FILTERS_0"): $filter
+      }}
+    ')"
+  jq -e --arg key "$route_filter_key" --arg token '${sid}' \
+    '.data[$key] | contains($token)' <<<"$route_patch" >/dev/null
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch configmap \
     "$GATEWAY_CONFIGMAP" --type merge -p "$route_patch"
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
@@ -324,10 +347,10 @@ run_apply() {
         and .data.REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES == "image/png"
         and .data.REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS == "600000"' \
       >/dev/null
-  [[ "$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
-    get configmap "$GATEWAY_CONFIGMAP" \
-    -o jsonpath='{.data.SPRING_CLOUD_GATEWAY_ROUTES_28_ID}')" == \
-    "remote-bridge-viewer-route" ]]
+  kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get configmap "$GATEWAY_CONFIGMAP" -o json \
+    | jq -e --arg key "${GATEWAY_ROUTE_PREFIX}ID" \
+      '.data[$key] == "remote-bridge-viewer-route"' >/dev/null
   verify_watchdog_active
   trap - ERR
 }
@@ -336,7 +359,11 @@ run_browser() {
   local hostname device_id actual_hash expires_epoch remaining runtime evidence source
   hostname="$(ssh -n -F /home/halil/.ssh/config -o BatchMode=yes denetim-pc hostname \
     2>/dev/null | tr -d '\r\n[:space:]')"
-  [[ "$hostname" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{0,126}$ ]]
+  if [[ ! "$hostname" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,124}[A-Za-z0-9])?$ \
+    || "$hostname" == *..* || "$hostname" == *.-* || "$hostname" == *-.* ]]; then
+    echo "protected-view-only-stage: endpoint hostname is not a bounded DNS name" >&2
+    return 1
+  fi
   device_id="$(docker exec -i platform-pg-test psql -U postgres -d endpoint_admin \
     -At -v ON_ERROR_STOP=1 -v "device_hostname=$hostname" <<'SQL'
 SELECT d.id::text

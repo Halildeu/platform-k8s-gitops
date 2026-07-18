@@ -55,6 +55,11 @@ mandatory.
 Create two repository-scoped GitHub Apps. This is a one-time account-owner
 bootstrap, not a recurring deployment approval.
 
+The two-App split is a GitHub permission boundary, not the provider quorum.
+Provider execution and signing remain three separate issuer workloads
+(Anthropic, MiniMax and OpenAI); none of those issuers inherits either GitHub
+App identity or its repository permissions.
+
 | App | Repository permissions | Events | Implemented operations |
 |---|---|---|---|
 | Protection evaluator | Actions read; Contents read; Deployments write; Metadata read | `deployment_protection_rule`, later `workflow_run` | exact read routes plus one reconstructed protection-decision POST |
@@ -529,6 +534,12 @@ This path is source-ready only. Do not expose the endpoint or enable the
 Environment custom rule until the policy runtime has reviewed HTTPS, the
 public trust-root pin exists, the separate dispatcher identity is live, the
 protected workflows have landed, and negative/replay/rollback canaries pass.
+The three checked-in protected workflows must retain the literal all-zero
+trust-root digest while the public policy/trust-root/revocation files are
+absent. Only the separate reviewed trust-root release may replace all three
+sentinels together with those public artifacts and their independently
+computed release digest; an operator must never substitute a live-file-derived
+digest or edit one workflow in place.
 The static Environment credential does not replace GitHub OIDC, and GitHub
 OIDC does not replace the signed Cross-AI bundle or human-only gates.
 

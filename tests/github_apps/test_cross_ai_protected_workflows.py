@@ -111,7 +111,23 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn("flags |= os.O_NOFOLLOW", script)
         self.assertIn("metadata.st_uid != os.getuid()", script)
         self.assertIn("stat.S_IMODE(metadata.st_mode) != 0o600", script)
-        self.assertIn("gateway route index 28 is not clean", script)
+        self.assertIn("gateway route index $GATEWAY_ROUTE_INDEX is not clean", script)
+        self.assertIn('GATEWAY_ROUTE_INDEX="28"', script)
+        self.assertIn("GATEWAY_ROUTE_PREFIX", script)
+        self.assertIn("contains($token)", script)
+        self.assertIn("bounded DNS name", script)
+        self.assertIn("expires_epoch - now_epoch + 600", script)
+        rollback = (
+            ROOT / "scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh"
+        ).read_text(encoding="utf-8")
+        watchdog = (
+            ROOT
+            / "scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("GATEWAY_ROUTE_PREFIX", rollback)
+        self.assertIn("__GATEWAY_ROUTE_PREFIX__", watchdog)
+        self.assertNotIn("SPRING_CLOUD_GATEWAY_ROUTES_28_", rollback)
+        self.assertNotIn("SPRING_CLOUD_GATEWAY_ROUTES_28_", watchdog)
         self.assertIn("watchdog expiry differs from signed grant", script)
         self.assertIn("apply failure compensation verified", script)
         self.assertNotIn("npm --prefix", script)

@@ -113,6 +113,13 @@ class WorkflowInspectionTest(unittest.TestCase):
         )
         self.assert_rejected(job_concurrency, "WORKFLOW_JOB_CONTROL_INVALID")
 
+    def test_rejects_job_level_permissions_override(self) -> None:
+        job_permissions = workflow().replace(
+            b"    steps:\n",
+            b"    permissions:\n      contents: write\n    steps:\n",
+        )
+        self.assert_rejected(job_permissions, "WORKFLOW_JOB_CONTROL_INVALID")
+
     def test_rejects_dispatch_inputs_and_input_reads(self) -> None:
         self.assert_rejected(
             workflow(

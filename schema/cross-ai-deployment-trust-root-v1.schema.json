@@ -134,7 +134,41 @@
             {"type": "null"}
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"role": {"const": "provider-review"}},
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "providerFamily": {
+                "enum": ["anthropic", "minimax", "openai"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": ["coordinator", "revocation", "runner-management"]
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "providerFamily": {"type": "null"},
+              "allowedChannels": {"maxItems": 0},
+              "allowedModelIds": {"maxItems": 0},
+              "allowedModelIdentityClasses": {"maxItems": 0},
+              "directProviderCli": {"type": "null"}
+            }
+          }
+        }
+      ]
     }
   }
 }

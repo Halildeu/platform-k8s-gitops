@@ -152,7 +152,7 @@ spec:
               request PATCH "/api/v1/namespaces/$namespace/configmaps/endpoint-admin-remote-bridge-config-device-key" \
                 application/merge-patch+json '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":"false","REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null,"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null}}' 200
               request PATCH "/api/v1/namespaces/$namespace/configmaps/api-gateway-config" \
-                application/merge-patch+json '{"data":{"SPRING_CLOUD_GATEWAY_ROUTES_28_ID":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_URI":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_ORDER":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_0":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_PREDICATES_1":null,"SPRING_CLOUD_GATEWAY_ROUTES_28_FILTERS_0":null}}' 200
+                application/merge-patch+json '{"data":{"__GATEWAY_ROUTE_PREFIX__ID":null,"__GATEWAY_ROUTE_PREFIX__URI":null,"__GATEWAY_ROUTE_PREFIX__ORDER":null,"__GATEWAY_ROUTE_PREFIX__PREDICATES_0":null,"__GATEWAY_ROUTE_PREFIX__PREDICATES_1":null,"__GATEWAY_ROUTE_PREFIX__FILTERS_0":null}}' 200
               request DELETE "/api/v1/namespaces/$namespace/services/endpoint-admin-remote-bridge-viewer" \
                 application/json '' 200,202,404
               request DELETE "/apis/networking.k8s.io/v1/namespaces/$namespace/networkpolicies/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \

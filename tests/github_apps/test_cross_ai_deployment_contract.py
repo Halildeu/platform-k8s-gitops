@@ -161,6 +161,16 @@ class EvidenceContractTest(unittest.TestCase):
                 now=self.fixture.now,
             )
 
+    def test_schema_rejects_unknown_provider_family_before_verification(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["providerFamily"] = "xai"
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_SCHEMA_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
     def test_rejects_public_key_reuse_across_provider_families(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         trust_root["keys"][2]["publicKeyBase64"] = trust_root["keys"][1][
