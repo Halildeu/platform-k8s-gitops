@@ -422,10 +422,8 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.rollback_script,
         )
         self.assertIn('git show "$PROMOTION_BASE_SHA:$activation"', self.rollback_script)
-        self.assertIn(
-            'git merge-base --is-ancestor "$PROMOTION_BASE_SHA" "$merge_sha"',
-            self.rollback_script,
-        )
+        self.assertIn('parent_count="$(git rev-list --parents -n 1 "$merge_sha"', self.rollback_script)
+        self.assertIn('"$(git rev-parse "$merge_sha^")" != "$PROMOTION_BASE_SHA"', self.rollback_script)
         self.assertIn('git show "$PROMOTION_BASE_SHA:$test_root"', self.rollback_script)
         self.assertIn('git show "$PROMOTION_BASE_SHA:$smoke"', self.rollback_script)
         self.assertIn("printf 'ROLLED_BACK\\n'", self.rollback_script)

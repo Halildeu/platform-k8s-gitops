@@ -17,13 +17,14 @@
 // Run: node tests/ci/test-cross-ai-automation.mjs   (exit 0 = all pass)
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(REPO_ROOT, 'scripts', 'ci', 'pr-cross-ai-audit.mjs');
+const ROLLBACK_SCRIPT = join(REPO_ROOT, 'scripts', 'ats', 'open-fullats-test-rollback-pr.sh');
 const REPO = 'Halildeu/platform-k8s-gitops';
 const BOT = 'github-actions[bot]';
 // #827 PR-B — the GitHub App identity bound to the auto-test-overlay/ prefix
@@ -126,6 +127,14 @@ const autoBody = (src) =>
   `Automation source: ${src}\n` +
   `Cross-AI exempt reason: Machine-generated rollout-verified PR; no AI peer-review claim is made.\n` +
   `Automation evidence: https://github.com/Halildeu/platform-k8s-gitops/actions/runs/123\n`;
+
+const rollbackScriptSource = readFileSync(ROLLBACK_SCRIPT, 'utf8');
+const rollbackBodyMatch = rollbackScriptSource.match(/body="\$\(cat <<'EOF'\n([\s\S]*?)\nEOF\n\)"/u);
+if (!rollbackBodyMatch) throw new Error('rollback PR body heredoc not found');
+const renderedRollbackBody = rollbackBodyMatch[1]
+  .replaceAll('__PROMOTION_PR__', '2617')
+  .replaceAll('__RUN_URL__', 'https://github.com/Halildeu/platform-k8s-gitops/actions/runs/123')
+  .replaceAll('__FAILED_SHA__', HEAD_SHA);
 
 const peerBody =
   `## Summary\nx\n\n## Cross-AI\n` +
@@ -411,6 +420,8 @@ const cases = [
     { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid Full ATS four-file rollback PR (App-bot)',
     { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 0],
+  ['live Full ATS rollback script body passes automation audit',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: renderedRollbackBody, changedFiles: FULLATS_ROLLBACK_FILES }, 0],
   ['valid auto-verified PR (bot)',
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER] }, 0],
   ['auto-promotion draft cannot claim an automation exemption',

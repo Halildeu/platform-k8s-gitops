@@ -65,10 +65,11 @@ test_root="kustomize/overlays/test/kustomization.yaml"
 smoke="scripts/ats/d29-smoke.sh"
 state_marker="kustomize/overlays/test/fullats-promotion-state.txt"
 PROMOTION_BASE_SHA="5cec8606538a70388b1d02c59ce22ff9cc68ef9e"
-git merge-base --is-ancestor "$PROMOTION_BASE_SHA" "$merge_sha" || {
-  echo "[fullats-rollback] reviewed promotion base is not an ancestor of merge SHA" >&2
+parent_count="$(git rev-list --parents -n 1 "$merge_sha" | awk '{print NF - 1}')"
+if [[ "$parent_count" != "1" || "$(git rev-parse "$merge_sha^")" != "$PROMOTION_BASE_SHA" ]]; then
+  echo "[fullats-rollback] promotion must be one-parent squash directly on reviewed base" >&2
   exit 1
-}
+fi
 
 # Restore only the three runtime binding surfaces from the reviewed promotion
 # base. Source scripts/workflows stay available but cannot pass their exact
