@@ -396,6 +396,8 @@ require_grep "view-only-viewer-pilot-watchdog.template.yaml" "$VIEWER_APPLY_WORK
 require_grep "Compensating rollback after failed apply" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'apply -k "${BROKER_ONLY_OVERLAY}"' "$VIEWER_APPLY_WORKFLOW"
 require_grep "GATEWAY_CONFIGMAP: api-gateway-config" "$VIEWER_APPLY_WORKFLOW"
+require_grep "GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_28_" "$VIEWER_APPLY_WORKFLOW"
+require_grep 's/__GATEWAY_ROUTE_PREFIX__/${GATEWAY_ROUTE_PREFIX}/g' "$VIEWER_APPLY_WORKFLOW"
 require_grep "rollback-view-only-viewer-pilot-config.sh" "$VIEWER_APPLY_WORKFLOW"
 require_grep '"REMOTE_BRIDGE_VIEWER_ENABLED":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null' "$VIEWER_ROLLBACK_CONFIG"

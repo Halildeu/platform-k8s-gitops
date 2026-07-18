@@ -38,6 +38,7 @@ env:
   BRIDGE_CONFIGMAP: endpoint-admin-remote-bridge-config-device-key
   GATEWAY_DEPLOYMENT: api-gateway
   GATEWAY_CONFIGMAP: api-gateway-config
+  GATEWAY_ROUTE_PREFIX: SPRING_CLOUD_GATEWAY_ROUTES_28_
   VIEWER_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer
   BROKER_ONLY_OVERLAY: kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live
   TEST_ROOT_OVERLAY: kustomize/overlays/test
@@ -330,6 +331,7 @@ jobs:
             -e "s/__EXPIRES_EPOCH__/${expires_epoch}/g" \
             -e "s/__ACTIVE_DEADLINE_SECONDS__/${active_deadline}/g" \
             -e "s/__AUTHORIZATION_SHA256__/${AUTHORIZATION_SHA256}/g" \
+            -e "s/__GATEWAY_ROUTE_PREFIX__/${GATEWAY_ROUTE_PREFIX}/g" \
             "$WATCHDOG_TEMPLATE" > /tmp/faz22-view-only-pilot-watchdog.yaml
           if grep -q '__[A-Z0-9_]*__' /tmp/faz22-view-only-pilot-watchdog.yaml; then
             echo "::error::watchdog template contains unresolved placeholders"
