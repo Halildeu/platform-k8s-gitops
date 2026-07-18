@@ -5700,7 +5700,7 @@ images:
     # board #2559 — sha-780a95c (platform-backend 780a95c29, PR #853): the resolver learns to
     # apply an explicit org -> tenant alias, which is what makes the ConfigMap key above mean
     # anything. Digest read from the registry manifest (linux/amd64), not from the tag.
-    digest: sha256:845ebd647bc7683e9a860755babac7b423b0efca501c587cc8b111fcc2148ab9
+    digest: sha256:bde478e9a0dd2aaf7cc8ced72592a4bf90b0920ac1feba5d51ec9b296fbcef82
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571

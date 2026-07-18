@@ -3,7 +3,7 @@
 
 The root token is read from an owner-only regular file. It is never accepted in
 argv or the environment and is never written to logs or the public receipt.
-The operation is deliberately narrow: one named Transit mount, four fixed
+The operation is deliberately narrow: one named Transit mount, five fixed
 non-exportable Ed25519 keys, and the git-reviewed config-reconciler policy.
 """
 
@@ -28,7 +28,13 @@ from typing import Any
 
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MOUNT = "cross-ai"
-KEY_NAMES = ("anthropic", "provider-secondary", "coordinator", "revocation")
+KEY_NAMES = (
+    "anthropic",
+    "provider-secondary",
+    "coordinator",
+    "revocation",
+    "runner-management",
+)
 RECONCILER_POLICY_NAME = "vault-config-reconciler"
 
 
@@ -178,8 +184,15 @@ def _data(response: VaultResponse, label: str) -> dict[str, Any]:
 
 
 def _public_key_record(key_name: str, data: dict[str, Any]) -> dict[str, Any]:
-    required_false = ("derived", "exportable", "allow_plaintext_backup", "deletion_allowed")
-    if data.get("type") != "ed25519" or any(data.get(field) is not False for field in required_false):
+    required_false = (
+        "derived",
+        "exportable",
+        "allow_plaintext_backup",
+        "deletion_allowed",
+    )
+    if data.get("type") != "ed25519" or any(
+        data.get(field) is not False for field in required_false
+    ):
         raise BootstrapError(f"Transit key {key_name} has unsafe immutable settings")
     if data.get("supports_signing") is not True:
         raise BootstrapError(f"Transit key {key_name} does not support signing")
@@ -229,7 +242,9 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
     token = _secure_token_file(args.root_token_file)
     client = VaultClient(origin=origin, token=token)
 
-    health = client.request("GET", "sys/health", expected=frozenset({200, 429, 472, 473})).payload
+    health = client.request(
+        "GET", "sys/health", expected=frozenset({200, 429, 472, 473})
+    ).payload
     if health is None:
         raise BootstrapError("Vault health response is missing")
     if health.get("initialized") is not True or health.get("sealed") is not False:
@@ -307,7 +322,10 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
     if existing_policy.status == 200:
         existing_data = _data(existing_policy, "reconciler policy")
         existing_rules = existing_data.get("policy") or existing_data.get("rules")
-    if not isinstance(existing_rules, str) or existing_rules.strip() != policy_text.strip():
+    if (
+        not isinstance(existing_rules, str)
+        or existing_rules.strip() != policy_text.strip()
+    ):
         client.request(
             "PUT",
             f"sys/policies/acl/{RECONCILER_POLICY_NAME}",
@@ -319,8 +337,13 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
         "reconciler policy readback",
     )
     verified_rules = verified_policy.get("policy") or verified_policy.get("rules")
-    if not isinstance(verified_rules, str) or verified_rules.strip() != policy_text.strip():
-        raise BootstrapError("reconciler policy readback differs from git-reviewed content")
+    if (
+        not isinstance(verified_rules, str)
+        or verified_rules.strip() != policy_text.strip()
+    ):
+        raise BootstrapError(
+            "reconciler policy readback differs from git-reviewed content"
+        )
 
     receipt = {
         "schemaVersion": "acik.cross-ai-transit-bootstrap-receipt.v1",
@@ -334,7 +357,10 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
         "reconcilerPolicySha256": f"sha256:{hashlib.sha256(policy_bytes).hexdigest()}",
         "createdResources": sorted(created),
         "updatedResources": sorted(updated),
-        "verifiedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "verifiedAt": datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z"),
         "requiresOutOfBandOwnerPin": True,
     }
     return receipt

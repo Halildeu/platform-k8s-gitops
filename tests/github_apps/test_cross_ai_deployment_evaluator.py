@@ -33,14 +33,27 @@ WORKFLOW = f"""
 name: protected apply
 on:
   workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
 jobs:
   apply:
     environment: {ENVIRONMENT}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@{'1' * 40}
-      - uses: ./actions/pinned-bootstrap
-      - run: ./scripts/apply.sh
+      - name: Verify signed runner bootstrap
+        env:
+          CROSS_AI_BOOTSTRAP_TOKEN: ${{{{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}}}
+          CROSS_AI_ENDPOINT_ID: ${{{{ secrets.CROSS_AI_ENDPOINT_ID }}}}
+          CROSS_AI_OPERATOR_ID: ${{{{ secrets.CROSS_AI_OPERATOR_ID }}}}
+          CROSS_AI_BOOTSTRAP_URL: https://testai.acik.com/v1/runner-bootstrap
+          CROSS_AI_BOOTSTRAP_OUTPUT: ${{{{ runner.temp }}}}/cross-ai-bootstrap.json
+        run: python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py --stage apply --workflow-path .github/workflows/apply-view-only-viewer-pilot-enable.yml --policy-file config/github-apps/cross-ai-deployment-policy.json --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json --expected-trust-root-sha256 sha256:{'2' * 64} --revocations-file config/github-apps/cross-ai-deployment-revocations.json --output "$CROSS_AI_BOOTSTRAP_OUTPUT"
+      - name: Execute reviewed stage
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{'1' * 40}
+        env:
+          CROSS_AI_BOOTSTRAP_FILE: ${{{{ runner.temp }}}}/cross-ai-bootstrap.json
 """.encode()
 
 
@@ -53,6 +66,7 @@ def policy_payload() -> dict[str, object]:
         "repository": REPOSITORY,
         "environment": ENVIRONMENT,
         "allowedApiOrigins": ["https://api.github.com"],
+        "runnerBootstrapUrl": "https://testai.acik.com/v1/runner-bootstrap",
         "allowedInstallationIds": [2222],
         "allowedDispatcherInstallationIds": [3333],
         "allowedDispatcherActorIds": [424242],
@@ -159,6 +173,7 @@ class DeploymentEvaluatorTest(unittest.TestCase):
             WORKFLOW,
             stage_policy=apply_stage,
             environment=ENVIRONMENT,
+            expected_bootstrap_url=self.policy.runner_bootstrap_url,
         )
         self.factory = FixtureFactory()
         self.fixture = self.factory.build(
@@ -237,7 +252,9 @@ class DeploymentEvaluatorTest(unittest.TestCase):
         self.assertEqual(result.app_rule_id, 555)
 
     def test_rejects_workflow_dependency_or_actor_drift(self) -> None:
-        self.github.workflow_value = WORKFLOW.replace(b"./scripts/apply.sh", b"./scripts/other.sh")
+        self.github.workflow_value = WORKFLOW.replace(
+            b"protected-apply", b"protected-other"
+        )
         self.assert_rejected("INTENT_REF_OR_DEPENDENCY_LOCK_MISMATCH")
         self.github.workflow_value = WORKFLOW
         self.github.run_value["triggering_actor"] = {"id": 999999}
@@ -252,7 +269,9 @@ class DeploymentEvaluatorTest(unittest.TestCase):
         self.github.ref_value = GitHubIntentRef("a" * 40, HEAD, True)
         self.assert_rejected("INTENT_REF_MOVED")
 
-    def test_rejects_unverified_admin_bypass_and_observe_policy_enforcement(self) -> None:
+    def test_rejects_unverified_admin_bypass_and_observe_policy_enforcement(
+        self,
+    ) -> None:
         self.github.environment_value.pop("can_admins_bypass")
         self.assert_rejected("ENVIRONMENT_ADMIN_BYPASS_UNVERIFIED")
         payload = policy_payload()

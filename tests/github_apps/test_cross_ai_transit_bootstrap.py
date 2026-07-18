@@ -138,7 +138,7 @@ class TransitBootstrapTests(unittest.TestCase):
             receipt = MODULE.bootstrap(self.args())
         client = FakeVaultClient.instances[-1]
         self.assertEqual(receipt["scope"], "test-only")
-        self.assertEqual(len(receipt["keys"]), 4)
+        self.assertEqual(len(receipt["keys"]), 5)
         self.assertEqual(
             {item["keyName"] for item in receipt["keys"]}, set(MODULE.KEY_NAMES)
         )
@@ -146,7 +146,9 @@ class TransitBootstrapTests(unittest.TestCase):
         self.assertIn("policy:vault-config-reconciler", receipt["updatedResources"])
         serialized = str(receipt)
         self.assertNotIn(self.test_token, serialized)
-        mount_create = next(call for call in client.calls if call[1] == "sys/mounts/cross-ai")
+        mount_create = next(
+            call for call in client.calls if call[1] == "sys/mounts/cross-ai"
+        )
         self.assertEqual(mount_create[2]["type"], "transit")
         for name in MODULE.KEY_NAMES:
             create = next(
@@ -178,7 +180,9 @@ class TransitBootstrapTests(unittest.TestCase):
         self.assertEqual(receipt["createdResources"], [])
         self.assertEqual(receipt["updatedResources"], [])
         client = ExistingClient.instances[-1]
-        self.assertFalse(any(call[0] == "POST" and "/keys/" in call[1] for call in client.calls))
+        self.assertFalse(
+            any(call[0] == "POST" and "/keys/" in call[1] for call in client.calls)
+        )
 
     def test_rejects_existing_exportable_key_and_wrong_cluster(self) -> None:
         FakeVaultClient.existing = True
@@ -201,7 +205,9 @@ class TransitBootstrapTests(unittest.TestCase):
         FakeVaultClient.root_policies = ["root"]
         FakeVaultClient.sealed = True
         with patch.object(MODULE, "VaultClient", FakeVaultClient):
-            with self.assertRaisesRegex(MODULE.BootstrapError, "initialized and unsealed"):
+            with self.assertRaisesRegex(
+                MODULE.BootstrapError, "initialized and unsealed"
+            ):
                 MODULE.bootstrap(self.args())
         FakeVaultClient.sealed = False
         FakeVaultClient.existing = True
@@ -227,7 +233,9 @@ class TransitBootstrapTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.BootstrapError, "unavailable"):
             MODULE._secure_token_file(link)
 
-    def test_policy_sources_are_sign_only_and_revocation_emission_is_denied(self) -> None:
+    def test_policy_sources_are_sign_only_and_revocation_emission_is_denied(
+        self,
+    ) -> None:
         policy_dir = ROOT / "bootstrap/vault-policies/test"
         for path in sorted(policy_dir.glob("cross-ai-*.hcl")):
             text = path.read_text(encoding="utf-8")
@@ -258,7 +266,9 @@ class TransitBootstrapTests(unittest.TestCase):
                 )
 
         reconciler = (ROOT / "scripts/ops/vault-policy-reconcile.sh").read_text()
-        emission_manifest = reconciler.split("EMITTABLE_APPROLES=(", 1)[1].split(")", 1)[0]
+        emission_manifest = reconciler.split("EMITTABLE_APPROLES=(", 1)[1].split(
+            ")", 1
+        )[0]
         self.assertNotIn("cross-ai-revocation-test", emission_manifest)
         self.assertIn("secret-id emission is not permitted", reconciler)
         self.assertIn("backup|restore|datakey", reconciler)
@@ -268,15 +278,16 @@ class TransitBootstrapTests(unittest.TestCase):
             "cross-ai-issuer-secondary-test": "cross-ai/sign/provider-secondary",
             "cross-ai-coordinator-test": "cross-ai/sign/coordinator",
             "cross-ai-revocation-test": "cross-ai/sign/revocation",
+            "cross-ai-runner-management-test": "cross-ai/sign/runner-management",
         }
         for policy_name, sign_path in exact_paths.items():
             self.assertIn(
                 f'{policy_name}) expected_sign_path="{sign_path}"',
                 reconciler,
             )
-        config_policy = (
-            policy_dir / "vault-config-reconciler.hcl"
-        ).read_text(encoding="utf-8")
+        config_policy = (policy_dir / "vault-config-reconciler.hcl").read_text(
+            encoding="utf-8"
+        )
         self.assertNotIn(
             'path "auth/approle/role/cross-ai-revocation-test/secret-id"',
             config_policy,

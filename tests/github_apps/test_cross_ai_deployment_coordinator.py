@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.github_apps.cross_ai_deployment_policy.coordinator import EvidenceCoordinator
+from scripts.github_apps.cross_ai_deployment_policy.coordinator import (
+    EvidenceCoordinator,
+)
 from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory
 from tests.github_apps.test_cross_ai_deployment_provider import StaticSigner
 
 
 class EvidenceCoordinatorTest(unittest.TestCase):
-    def test_coordinator_can_only_emit_bundle_that_passes_leaf_verification(self) -> None:
+    def test_coordinator_can_only_emit_bundle_that_passes_leaf_verification(
+        self,
+    ) -> None:
         factory = FixtureFactory()
         fixture = factory.build()
         original = factory.decode_payload(fixture.bundle_envelope)
@@ -22,6 +26,7 @@ class EvidenceCoordinatorTest(unittest.TestCase):
             bundle_id="70000000-0000-4000-8000-000000000002",
             subject=original["subject"],
             workflow_stages=original["workflowStages"],
+            runner_admission_lease_envelope=original["runnerAdmissionLeaseEnvelope"],
             grant=original["grant"],
             review_envelopes=original["reviewEnvelopes"],
             closure_entries=original["closure"]["entries"],

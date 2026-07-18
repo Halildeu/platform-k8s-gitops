@@ -12,7 +12,7 @@ kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
 
 kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
   patch configmap "${BRIDGE_CONFIGMAP}" --type merge \
-  -p '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":null,"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null}}'
+  -p '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":null,"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null,"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null}}'
 
 route_keys="$(kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
   get configmap "${GATEWAY_CONFIGMAP}" -o json \
@@ -28,6 +28,7 @@ kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
   | jq -e '
       (.data | has("REMOTE_BRIDGE_VIEWER_ENABLED") | not)
       and (.data | has("REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES") | not)
+      and (.data | has("REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS") | not)
     ' >/dev/null
 
 echo "viewer rollback config cleanup: route and viewer-only keys absent"

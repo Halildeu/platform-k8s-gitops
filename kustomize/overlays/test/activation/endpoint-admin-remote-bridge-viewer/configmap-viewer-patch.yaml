@@ -1,6 +1,6 @@
 # Viewer enable patch — Faz 22.6 #1580 VIEW_ONLY.
 #
-# Strategic-merge ADDS two keys to endpoint-admin-remote-bridge-config-device-key
+# Strategic-merge ADDS three keys to endpoint-admin-remote-bridge-config-device-key
 # (produced by the public 443 SNI broker overlay). Does NOT touch
 # REMOTE_BRIDGE_ENABLED or
 # REMOTE_BRIDGE_OPERATOR_REST_ENABLED (already true in the broker config).
@@ -9,6 +9,9 @@
 #     RemoteBridgeViewerController (operator SSE viewer). Separate from operator-rest.
 #   - REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES → pilot defense-in-depth:
 #     narrow the slice-1 png|jpeg|webp default to png-only for the bounded pilot.
+#   - REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS → capability-specific,
+#     signed VIEW_ONLY lease. The backend rejects values above 600000ms; removing
+#     this owner-gated overlay restores the fail-closed backend default of 0.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -18,3 +21,4 @@ metadata:
 data:
   REMOTE_BRIDGE_VIEWER_ENABLED: "true"
   REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES: "image/png"
+  REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS: "600000"

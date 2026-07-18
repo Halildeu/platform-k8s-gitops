@@ -72,6 +72,9 @@ fi
   require 'ENDPOINT_AGENT_REMOTE_BRIDGE_DEVICE_KEY_SESSION_ENABLED' "activation patch must enable the TPM device-key session"
   require 'ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ENABLED' "activation patch must explicitly enable VIEW_ONLY"
   require 'ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_ATTENDED_CONSENT_ENABLED' "activation patch must require attended consent"
+  require 'Assert-ViewOnlyMaskRectBps -Value $ExpectedViewOnlyMaskRectBps' "activation patch must validate the transaction-bound DLP mask policy"
+  require '$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_VIEW_ONLY_MASK_RECT_BPS"] = $ExpectedViewOnlyMaskRectBps' "activation patch must write the transaction-bound DLP mask policy"
+  require 'viewOnlyMaskRectBps = $ExpectedViewOnlyMaskRectBps' "activation evidence must record the transaction-bound DLP mask policy"
   require '$patched["ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"] = "false"' "activation patch must disable constrained PTY pilot auto-consent"
   require 'Assert-MapValue -Map $after -Key "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT" -Expected "false"' "activation patch must verify pilot auto-consent stayed disabled"
   require 'constrainedPtyPilotAutoConsentEnabled = $false' "activation evidence must record pilot auto-consent as disabled"
@@ -632,6 +635,34 @@ grep -Fq 'release_policy_patch_arguments' "$orchestrator" || {
   echo "migration orchestrator must inject a transaction-scoped release-policy snapshot" >&2
   exit 1
 }
+grep -Fq 'validate_mask_rect_bps' "$orchestrator" || {
+  echo "migration orchestrator must validate the transaction-bound DLP mask policy" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+if ! grep -Fq -- '-ExpectedViewOnlyMaskRectBps' "$orchestrator" \
+  || ! grep -Fq 'powershell_single_quote "$DLP_MASK_RECT_BPS"' "$orchestrator"; then
+  echo "migration orchestrator must inject the workflow DLP mask policy into the endpoint transaction" >&2
+  exit 1
+fi
+
+DLP_MASK_RECT_BPS=7500,7500,2500,2500 bash -c '
+  source scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh
+  validate_mask_rect_bps
+' || {
+  echo "migration orchestrator rejected a valid DLP mask policy" >&2
+  exit 1
+}
+for invalid_mask in "" "0,0,0,1" "7500,7500,2500,0" "7500,7500,2501,2500" \
+  "10000,0,1,1" "99999,0,1,1" "7500,7500,2500" "a,7500,2500,2500"; do
+  if DLP_MASK_RECT_BPS="$invalid_mask" bash -c '
+    source scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh
+    validate_mask_rect_bps
+  ' >/dev/null 2>&1; then
+    echo "migration orchestrator accepted invalid DLP mask policy: ${invalid_mask:-empty}" >&2
+    exit 1
+  fi
+done
 grep -Fq 'trap rollback_on_failure EXIT' "$orchestrator" || {
   echo "migration orchestrator must arm automatic rollback after endpoint apply" >&2
   exit 1
@@ -833,6 +864,7 @@ if [[ "$body" == *"-Action Apply"* ]]; then
   tx="$(grep -Eo -- "-TransactionId '[a-f0-9]{32}'" <<<"$body" | cut -d "'" -f2)"
   [[ "$body" == *"denetim-device-key-view-only-env-patch-${tx}.ps1"* ]] || exit 1
   [[ "$body" == *"transaction patch script SHA256 mismatch"* ]] || exit 1
+  [[ "$body" == *"-ExpectedViewOnlyMaskRectBps '7500,7500,2500,2500'"* ]] || exit 1
   if [[ "${FAKE_APPLY_RESPONSE_LOST:-0}" == "1" ]]; then
     exit 1
   fi
@@ -874,6 +906,25 @@ else
 fi
 SH
 chmod +x "$orchestrator_harness/bin/"*
+
+set +e
+env -u DLP_MASK_RECT_BPS \
+  PATH="$orchestrator_harness/bin:$PATH" \
+  PATCH_SCRIPT="$script" DENETIM_SSH_CONFIG="$orchestrator_harness/ssh-config" \
+  bash "$orchestrator" false >"$orchestrator_harness/missing-mask.out" 2>&1
+missing_mask_rc=$?
+set -e
+[[ "$missing_mask_rc" -eq 2 ]] || {
+  cat "$orchestrator_harness/missing-mask.out" >&2
+  echo "orchestrator accepted a missing DLP mask policy" >&2
+  exit 1
+}
+grep -Fq 'DLP_MASK_RECT_BPS must be canonical' "$orchestrator_harness/missing-mask.out" || {
+  echo "orchestrator did not explain the missing DLP mask policy" >&2
+  exit 1
+}
+
+export DLP_MASK_RECT_BPS=7500,7500,2500,2500
 
 set +e
 PATH="$orchestrator_harness/bin:$PATH" \

@@ -108,6 +108,21 @@ validate_release_policy_bindings() {
   validate_release_policy_snapshot EXPECTED_ARTIFACT_HOST_IMAGE_REF '.current_bounded_pilot.artifact_host_image_ref'
 }
 
+validate_mask_rect_bps() {
+  local value="${DLP_MASK_RECT_BPS:-}" x y width height
+  [[ "$value" =~ ^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$ ]] || {
+    echo "denetim-attestation-migration: DLP_MASK_RECT_BPS must be canonical x,y,width,height" >&2
+    return 2
+  }
+  IFS=',' read -r x y width height <<<"$value"
+  x=$((10#$x)); y=$((10#$y)); width=$((10#$width)); height=$((10#$height))
+  (( x <= 10000 && y <= 10000 && width > 0 && height > 0 \
+     && x + width <= 10000 && y + height <= 10000 )) || {
+    echo "denetim-attestation-migration: DLP_MASK_RECT_BPS is empty or outside the primary monitor" >&2
+    return 2
+  }
+}
+
 remove_remote_patch_best_effort() {
   [[ -n "$REMOTE_PATCH_SCRIPT" ]] || return 0
   if ! run_denetimepc_powershell "Remove-Item -LiteralPath '${REMOTE_PATCH_SCRIPT}' -Force -ErrorAction SilentlyContinue" \
@@ -127,6 +142,7 @@ validate_inputs() {
     echo "denetim-attestation-migration: patch script is absent" >&2
     exit 2
   }
+  validate_mask_rect_bps
   if ! current_context="$(kubectl config current-context 2>/dev/null)"; then
     current_context=""
   fi
@@ -287,7 +303,7 @@ main() {
   need_cmd sleep
   validate_inputs
 
-  local session_id session_binding_sha256 apply_body apply_output evidence_summary summary_hash_output remote_scp_path release_policy_arguments
+  local session_id session_binding_sha256 apply_body apply_output evidence_summary summary_hash_output remote_scp_path release_policy_arguments mask_policy_arguments
   if [[ -n "${TRANSACTION_ID_OVERRIDE:-}" ]]; then
     [[ "${ALLOW_TEST_TRANSACTION_ID_OVERRIDE:-0}" == "1" ]] || {
       echo "denetim-attestation-migration: TRANSACTION_ID_OVERRIDE is test-only and requires ALLOW_TEST_TRANSACTION_ID_OVERRIDE=1" >&2
@@ -320,7 +336,8 @@ main() {
   session_id="rb-viewonly-attended-${transaction_id}"
   session_binding_sha256="sha256:$(printf '%s' "$session_id" | sha256_text)"
   release_policy_arguments="$(release_policy_patch_arguments)"
-  apply_body="$(verified_patch_body "-Action Apply -TransactionId '${transaction_id}' ${release_policy_arguments} -Confirm:\$false")"
+  mask_policy_arguments="-ExpectedViewOnlyMaskRectBps '$(powershell_single_quote "$DLP_MASK_RECT_BPS")'"
+  apply_body="$(verified_patch_body "-Action Apply -TransactionId '${transaction_id}' ${release_policy_arguments} ${mask_policy_arguments} -Confirm:\$false")"
   rollback_armed=1
   trap rollback_on_failure EXIT
   apply_output="$(run_denetimepc_powershell "$apply_body")"
