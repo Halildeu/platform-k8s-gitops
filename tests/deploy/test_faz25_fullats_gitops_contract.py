@@ -595,6 +595,7 @@ fi
         self.assertNotIn("containsRawPasswordOrJwt", self.fullats_browser)
 
     def test_fullats_live_failure_opens_exact_atomic_gitops_rollback(self):
+        self.assertIn("timeout-minutes: 60", self.fullats_browser_workflow)
         self.assertIn("id: preflight", self.fullats_browser_workflow)
         self.assertIn("id: runtime", self.fullats_browser_workflow)
         self.assertIn("id: browser", self.fullats_browser_workflow)
@@ -641,6 +642,27 @@ fi
         )
         self.assertIn("## Boundary declaration (ADR-0011 §2.3)", self.rollback_script)
         self.assertIn("- [x] state-mutation (test cluster)", self.rollback_script)
+        self.assertIn("reviewed-base artifact", self.rollback_script)
+        self.assertNotIn("önceki kanıtlı", self.rollback_script)
+        self.assertIn(
+            "scripts/deploy/reconcile-testai-backend-sequential.sh",
+            self.rollback_script,
+        )
+        self.assertIn('REVISION="$rollback_merge_sha"', self.rollback_script)
+        self.assertIn("FULL_SYNC_TIMEOUT=600", self.rollback_script)
+        self.assertIn(
+            "deployment/ats-interview-evidence --timeout=180s",
+            self.rollback_script,
+        )
+        self.assertIn("wait_ready_image_set", self.rollback_script)
+        self.assertIn("rollback_revision=$rollback_merge_sha", self.rollback_script)
+        self.assertIn("ready_pod_image_ids_exact: true", self.rollback_script)
+        self.assertIn(
+            'ATS_EXPECTED_DIGEST="$ATS_OLD" bash "$smoke"',
+            self.rollback_script,
+        )
+        self.assertIn("faz25-fullats-post-rollback-runtime/v1", self.rollback_script)
+        self.assertIn("fullats-rollback-evidence-", self.fullats_browser_workflow)
         self.assertIn("üç-artifact compensator", self.runbook)
 
     def test_fullats_promotion_or_rollback_state_binds_one_exact_artifact_set(self):

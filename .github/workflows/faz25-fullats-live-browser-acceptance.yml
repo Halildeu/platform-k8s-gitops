@@ -21,7 +21,7 @@ jobs:
     runs-on: [self-hosted, staging-sw, testai-deploy]
     # Includes the customer journey plus a bounded wait for a protected
     # compensating rollback PR if runtime/browser acceptance fails.
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
@@ -137,6 +137,7 @@ jobs:
           FAILED_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          ROLLBACK_EVIDENCE_DIR: ${{ runner.temp }}/fullats-rollback-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash scripts/ats/open-fullats-test-rollback-pr.sh
 
       - name: Upload redacted live browser evidence
@@ -144,7 +145,9 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: faz25-fullats-live-browser-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/fullats-rollback-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
           retention-days: 7
 

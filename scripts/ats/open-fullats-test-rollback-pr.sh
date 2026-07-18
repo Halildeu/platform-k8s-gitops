@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Faz 25 Full ATS canlı kabulü düşerse yalnız üç runtime pinini önceki kanıtlı
-# sete ve state marker'ını ROLLED_BACK durumuna alan dar test-only compensator.
+# Faz 25 Full ATS canlı kabulü düşerse yalnız üç runtime pinini reviewed-base
+# artifact setine ve state marker'ını ROLLED_BACK durumuna alan dar test-only
+# compensator. Bu setin canlı sağlığı merge sonrasında yeniden kanıtlanır.
 set -euo pipefail
 
 GH_REPO="${GH_REPO:-Halildeu/platform-k8s-gitops}"
@@ -170,7 +171,7 @@ body="$(cat <<'EOF'
 ## Test-only compensating rollback
 
 The live Full ATS browser acceptance failed on the exact merge commit of
-promotion PR #__PROMOTION_PR__. This PR restores only the prior ATS +
+promotion PR #__PROMOTION_PR__. This PR restores only the reviewed-base ATS +
 permission-service + frontend artifact set and marks the promotion ROLLED_BACK.
 
 - Failed acceptance run: __RUN_URL__
@@ -234,12 +235,109 @@ gh pr checks "$pr_url" --repo "$GH_REPO" --required --watch --fail-fast --interv
   exit 1
 }
 gh pr merge "$pr_url" --repo "$GH_REPO" --squash --match-head-commit "$rollback_head"
-merged_at="$(gh pr view "$pr_url" --repo "$GH_REPO" --json mergedAt --jq '.mergedAt // empty')"
-[[ -n "$merged_at" ]] || {
+rollback_merge_json="$(gh pr view "$pr_url" --repo "$GH_REPO" --json mergedAt,mergeCommit)"
+merged_at="$(jq -r '.mergedAt // empty' <<<"$rollback_merge_json")"
+rollback_merge_sha="$(jq -r '.mergeCommit.oid // empty' <<<"$rollback_merge_json")"
+[[ -n "$merged_at" && "$rollback_merge_sha" =~ ^[0-9a-f]{40}$ ]] || {
   echo "[fullats-rollback] protected rollback merge did not complete" >&2
   exit 1
 }
-echo "[fullats-rollback] rollback PR passed required checks and merged: $pr_url"
+
+# A merged compensator is not a successful rollback by itself. Wait for the
+# GitOps controller to observe the exact rollback merge, then re-prove the
+# reviewed-base artifact set at the desired Deployment, Ready Pod imageID,
+# public build-info and D29 functional/authz layers. This verifier performs no
+# direct workload mutation; a failed post-rollback check leaves this workflow
+# red and the already-merged compensator visible for incident handling.
+rollback_evidence_dir="${ROLLBACK_EVIDENCE_DIR:-${RUNNER_TEMP:-/tmp}/fullats-rollback-evidence-${RUN_ID}-${RUN_ATTEMPT}}"
+mkdir -p "$rollback_evidence_dir"
+chmod 0700 "$rollback_evidence_dir"
+rollback_digest_map="$(python3 scripts/automation/backend-testai-digest-contract.py inspect \
+  --kustomization "$test_root")"
+REVISION="$rollback_merge_sha" \
+DIGEST_MAP="$rollback_digest_map" \
+FULL_SYNC_TIMEOUT=600 \
+REPORT_PATH="$rollback_evidence_dir/argocd-convergence.json" \
+  bash scripts/deploy/reconcile-testai-backend-sequential.sh
+
+kubectl --context=k3d-test -n platform-test rollout status \
+  deployment/ats-interview-evidence --timeout=180s
+kubectl --context=k3d-test -n platform-test rollout status \
+  deployment/permission-service --timeout=180s
+kubectl --context=k3d-test -n platform-test rollout status \
+  deployment/frontend --timeout=180s
+
+ats_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
+  ats-interview-evidence -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}')"
+permission_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
+  permission-service -o jsonpath='{.spec.template.spec.containers[?(@.name=="permission-service")].image}')"
+frontend_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
+  frontend -o jsonpath='{.spec.template.spec.containers[?(@.name=="frontend")].image}')"
+[[ "$ats_desired" == "ghcr.io/halildeu/ats-app-boot@$ATS_OLD" ]]
+[[ "$permission_desired" == "ghcr.io/halildeu/platform-backend-permission-service@$PERMISSION_OLD" ]]
+[[ "$frontend_desired" == "ghcr.io/halildeu/platform-web-frontend-testai:sha-653752b@$FRONTEND_OLD" ]]
+
+wait_ready_image_set() {
+  local selector="$1"
+  local container="$2"
+  local digest="$3"
+  local pods=""
+  for _ in $(seq 1 36); do
+    pods="$(kubectl --context=k3d-test -n platform-test get pods \
+      -l "$selector" -o json)"
+    if jq -e --arg container "$container" --arg digest "$digest" '
+      [.items[].status.containerStatuses[]? | select(.name==$container)] as $s |
+      ($s | length) > 0 and
+      ($s | all(.ready == true and (.imageID | endswith("@" + $digest))))
+    ' <<<"$pods" >/dev/null; then
+      return 0
+    fi
+    sleep 5
+  done
+  echo "[fullats-rollback] Ready pod imageID set did not converge for $container" >&2
+  return 1
+}
+wait_ready_image_set "app=ats-interview-evidence" "app-boot" "$ATS_OLD"
+wait_ready_image_set "app.kubernetes.io/name=permission-service" \
+  "permission-service" "$PERMISSION_OLD"
+wait_ready_image_set "app.kubernetes.io/name=frontend" "frontend" "$FRONTEND_OLD"
+
+build_info="$(curl -fsS -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+  "https://testai.acik.com/build-info.json?rollback_revision=$rollback_merge_sha")"
+jq -e '.sha == "653752b7bcfb8343b3af0845499a749c4655052c"' \
+  <<<"$build_info" >/dev/null
+ATS_EXPECTED_DIGEST="$ATS_OLD" bash "$smoke"
+
+git fetch origin main --quiet
+[[ "$(git rev-parse origin/main)" == "$rollback_merge_sha" ]] || {
+  echo "[fullats-rollback] main advanced during post-rollback verification" >&2
+  exit 1
+}
+jq -n \
+  --arg rollback_pr "$pr_url" \
+  --arg revision "$rollback_merge_sha" \
+  --arg ats_digest "$ATS_OLD" \
+  --arg permission_digest "$PERMISSION_OLD" \
+  --arg frontend_digest "$FRONTEND_OLD" \
+  --arg frontend_sha "653752b7bcfb8343b3af0845499a749c4655052c" \
+  '{
+    schema: "faz25-fullats-post-rollback-runtime/v1",
+    verdict: "PASS",
+    rollback_pr: $rollback_pr,
+    revision: $revision,
+    argocd: {sync: "Synced", health: "Healthy", exact_revision: true},
+    runtime: {
+      ats_digest: $ats_digest,
+      permission_digest: $permission_digest,
+      frontend_digest: $frontend_digest,
+      frontend_sha: $frontend_sha,
+      ready_pod_image_ids_exact: true,
+      d29_passed: true
+    }
+  }' >"$rollback_evidence_dir/runtime-acceptance.json"
+
+echo "[fullats-rollback] rollback PR merged and live re-verification passed: $pr_url"
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   printf 'rollback_pr_url=%s\n' "$pr_url" >>"$GITHUB_OUTPUT"
+  printf 'rollback_merge_sha=%s\n' "$rollback_merge_sha" >>"$GITHUB_OUTPUT"
 fi
