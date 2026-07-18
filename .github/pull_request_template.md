@@ -69,7 +69,7 @@ Critical-Fix: no
 Implementer AI: Codex
 Consultation mode: none
 Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
-# Risk trigger: <irreversible-production|security-authz|privacy-retention|data-migration|production-cutover|human-authority>: <somut açıklama; yalnız dual>
+# Risk trigger: <irreversible-production|security-authz|privacy-retention|data-migration|concurrency|production-cutover|human-authority>: <en az üç farklı anlamlı kelimelik somut açıklama; yalnız dual>
 # Verdict: AGREE # yalnız single/dual
 # Consultation base tip: <single/dual exact target tip>
 # Consultation base: <single/dual exact merge-base>

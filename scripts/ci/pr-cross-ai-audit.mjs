@@ -79,7 +79,8 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES = ['auto-promotion/'];
-const DUAL_RISK_TRIGGER_RE = /^(?:irreversible-production|security-authz|privacy-retention|data-migration|production-cutover|human-authority):\s+\S.{9,}$/i;
+const DUAL_RISK_TRIGGER_RE = /^(irreversible-production|security-authz|privacy-retention|data-migration|concurrency|production-cutover|human-authority):\s+(.+)$/i;
+const PLACEHOLDER_WORD_RE = /\b(?:todo|tbd|fixme|placeholder|dummy|example|unknown|n\/a|none)\b/i;
 const EXPLICIT_MODE_LEGACY_FIELDS = [
   'reviewer ai',
   'codex thread',
@@ -420,9 +421,17 @@ function normalizeProvider(s) {
 
 function meaningfulStatement(value) {
   const clean = (value || '').trim();
+  const words = clean.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_-]*/gu) ?? [];
   return clean.length >= 10
     && !/[<>]/.test(clean)
-    && !/^(.)\1+$/.test(clean.replace(/\s+/g, ''));
+    && !PLACEHOLDER_WORD_RE.test(clean)
+    && words.length >= 3
+    && new Set(words).size >= 3;
+}
+
+function meaningfulRiskTrigger(value) {
+  const match = (value || '').trim().match(DUAL_RISK_TRIGGER_RE);
+  return Boolean(match && meaningfulStatement(match[2]));
 }
 
 function minimumConsultationMode(prMeta) {
@@ -865,8 +874,8 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     const secondaryReceipts = ['minimax receipt', 'codex receipt'].filter((field) => fields[field]);
     findings.push({
       check: 'consultation_dual_high_risk_trigger',
-      pass: DUAL_RISK_TRIGGER_RE.test(riskTrigger),
-      detail: DUAL_RISK_TRIGGER_RE.test(riskTrigger)
+      pass: meaningfulRiskTrigger(riskTrigger),
+      detail: meaningfulRiskTrigger(riskTrigger)
         ? `canonical high-risk trigger recorded (${riskTrigger.length}c)`
         : 'Risk trigger canonical kategori ve somut açıklama taşımalıdır',
     });

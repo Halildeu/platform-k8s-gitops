@@ -388,8 +388,9 @@ Codex receipt: <dual için opsiyonlardan yalnız biri>
 ```
 
 `Risk trigger` kategori değeri `irreversible-production`, `security-authz`,
-`privacy-retention`, `data-migration`, `production-cutover` veya
-`human-authority` olur; serbest/placeholder metin fail-closed reddedilir.
+`privacy-retention`, `data-migration`, `concurrency`, `production-cutover` veya
+`human-authority` olur; açıklama en az üç farklı anlamlı kelime taşır ve
+serbest/placeholder/tekrarlı metin fail-closed reddedilir.
 `gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
 risk zeminini doğrular: `none` receipt veya legacy control field taşıyamaz,
 `single` yalnız exact Claude receipt'i taşır, `dual` exact Claude +
