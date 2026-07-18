@@ -563,12 +563,18 @@ try {
   if (rejectedApplications.length !== 2) {
     throw new Error(`expected 2 fail-closed application rejections, got ${rejectedApplications.length}`);
   }
-  const redactPath = (pathname) =>
-    pathname
-      .replace(publicRef, '[APPLICATION_REF]')
-      .replace(jobId, '[JOB_ID]')
-      .replace(publicHandle, '[PUBLIC_HANDLE]')
-      .replace(jobSlug, '[JOB_SLUG]');
+  const redactPath = (pathname) => {
+    let redacted = pathname;
+    for (const [value, marker] of [
+      [publicRef, '[APPLICATION_REF]'],
+      [jobId, '[JOB_ID]'],
+      [publicHandle, '[PUBLIC_HANDLE]'],
+      [jobSlug, '[JOB_SLUG]'],
+    ]) {
+      if (value) redacted = redacted.replaceAll(value, marker);
+    }
+    return redacted;
+  };
   const serverErrors = networkEvidence
     .filter((entry) => entry.status >= 500)
     .map((entry) => ({

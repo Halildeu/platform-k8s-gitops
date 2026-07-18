@@ -385,9 +385,14 @@ const lowercaseVerdictPeerBody = peerBody.replace(
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
+const FULLATS_ROLLBACK_WF = '.github/workflows/faz25-fullats-live-browser-acceptance.yml';
 const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
 const PRIMARY_OVERLAY = 'kustomize/overlays/test/kustomization.yaml';
+const ATS_ACTIVATION = 'kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml';
+const FULLATS_STATE = 'kustomize/overlays/test/fullats-promotion-state.txt';
+const D29_SMOKE = 'scripts/ats/d29-smoke.sh';
+const FULLATS_ROLLBACK_FILES = [ATS_ACTIVATION, FULLATS_STATE, PRIMARY_OVERLAY, D29_SMOKE];
 const VERIFIED_LEDGER = `release-candidates/platform-backend/${'a'.repeat(40)}.json`;
 
 // #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE).
@@ -404,6 +409,8 @@ const cases = [
     { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT, body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid frontend desired-state PR (auto-test-frontend, App-bot)',
     { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
+  ['valid Full ATS four-file rollback PR (App-bot)',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 0],
   ['valid auto-verified PR (bot)',
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER] }, 0],
   ['auto-promotion draft cannot claim an automation exemption',
@@ -420,6 +427,12 @@ const cases = [
     { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY, '.github/workflows/ci.yml'] }, 1],
   ['#2295: auto-test-frontend without changed-file evidence -> blocked',
     { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF) }, 1],
+  ['Full ATS rollback with unrelated workflow change -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: [...FULLATS_ROLLBACK_FILES, '.github/workflows/ci.yml'] }, 1],
+  ['Full ATS rollback with wrong automation source -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 1],
+  ['Full ATS rollback with human sender -> blocked',
+    { branch: 'auto-fullats-rollback/faz25-fullats-123-1', actor: APP_BOT, sender: 'mallory', body: autoBody(FULLATS_ROLLBACK_WF), changedFiles: FULLATS_ROLLBACK_FILES }, 1],
   ['#827 PR-B: auto-verified + platform-gitops-automation[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-verified/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(LEDGER) }, 1],
   ['auto-verified touching governance outside its ledger family -> blocked',

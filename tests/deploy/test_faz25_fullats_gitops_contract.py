@@ -18,6 +18,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
             / "kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml"
         ).read_text()
         cls.test_root = (ROOT / "kustomize/overlays/test/kustomization.yaml").read_text()
+        cls.promotion_state = (
+            ROOT / "kustomize/overlays/test/fullats-promotion-state.txt"
+        ).read_text().strip()
         cls.d29 = (ROOT / "scripts/ats/d29-smoke.sh").read_text()
         cls.runbook = (ROOT / "docs/RB-ats-39d-testai.md").read_text()
         cls.rendered_activation = subprocess.run(
@@ -64,6 +67,7 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.rollback_script = (
             ROOT / "scripts/ats/open-fullats-test-rollback-pr.sh"
         ).read_text()
+        cls.cross_ai_audit = (ROOT / "scripts/ci/pr-cross-ai-audit.mjs").read_text()
         cls.agents = (ROOT / "AGENTS.md").read_text()
         cls.context_rules = (ROOT / "docs/context-priority-rules.md").read_text()
         cls.minimax_wrapper = (ROOT / "scripts/ai/minimax_m3_review.py").read_text()
@@ -354,12 +358,22 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         ):
             self.assertIn(permission, self.fullats_browser_shell)
         self.assertIn("(.superAdmin == false)", self.fullats_browser_shell)
-        self.assertIn('ascii_upcase) == "VIEW"', self.fullats_browser_shell)
-        self.assertIn('ascii_upcase) == "ALLOW"', self.fullats_browser_shell)
         self.assertIn('GET "/api/v1/roles/$ROLE_ID/granules"', self.fullats_browser_shell)
         self.assertIn("target recruiter role exact four-granule snapshot mismatch", self.fullats_browser_shell)
+        self.assertIn(
+            'POST "/api/v1/authz/users/$RECRUITER_USER_ID/assignments"',
+            self.fullats_browser_shell,
+        )
+        self.assertIn(
+            'GET "/api/v1/authz/users/$RECRUITER_USER_ID/roles"',
+            self.fullats_browser_shell,
+        )
+        self.assertIn("recruiter active product role set is not exact", self.fullats_browser_shell)
+        self.assertIn('(.roles // []) == [$role_name]', self.fullats_browser_shell)
+        self.assertIn('(.reports // {}) == {}', self.fullats_browser_shell)
         self.assertNotIn("def module_allowed", self.fullats_browser_shell)
         self.assertNotIn("def action_allowed", self.fullats_browser_shell)
+        self.assertNotIn('/roles/$ROLE_ID/members', self.fullats_browser_shell)
         self.assertNotIn('{type:"MODULE",key:$ats_key,grant:"MANAGE"}', self.fullats_browser_shell)
 
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
@@ -377,23 +391,6 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             f"EXPECTED_FRONTEND_DIGEST: {expected['frontend']}",
             self.fullats_browser_workflow,
         )
-        self.assertIn(expected["ats"], self.activation)
-        self.assertIn(expected["permission"], self.test_root)
-        self.assertIn(expected["frontend"], self.test_root)
-        self.assertIn(
-            f"image: ghcr.io/halildeu/ats-app-boot@{expected['ats']}",
-            self.rendered_test_root,
-        )
-        self.assertIn(
-            "image: ghcr.io/halildeu/platform-backend-permission-service@"
-            f"{expected['permission']}",
-            self.rendered_test_root,
-        )
-        self.assertIn(
-            "image: ghcr.io/halildeu/platform-web-frontend-testai:sha-07e9672@"
-            f"{expected['frontend']}",
-            self.rendered_test_root,
-        )
         self.assertIn(
             "EXPECTED_FRONTEND_SHA: 07e9672d1e206544d95226d4a0d20111e269677c",
             self.fullats_browser_workflow,
@@ -403,6 +400,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("deployment/permission-service --timeout=180s", self.fullats_browser_workflow)
         self.assertIn("deployment/frontend --timeout=180s", self.fullats_browser_workflow)
         self.assertIn("capturedNetworkFields", self.fullats_browser)
+        self.assertIn("redacted.replaceAll(value, marker)", self.fullats_browser)
         self.assertNotIn("containsRawCandidateAccessToken", self.fullats_browser)
         self.assertNotIn("containsRawPasswordOrJwt", self.fullats_browser)
 
@@ -420,13 +418,18 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn('[[ "$FAILED_SHA" == "$merge_sha" ]]', self.rollback_script)
         self.assertIn('[[ "$(git rev-parse origin/main)" == "$FAILED_SHA" ]]', self.rollback_script)
         self.assertIn(
-            "Accept: application/vnd.github.patch",
+            'branch="auto-fullats-rollback/faz25-fullats-${RUN_ID}-${RUN_ATTEMPT}"',
             self.rollback_script,
         )
+        self.assertIn('git show "$PROMOTION_BASE_SHA:$activation"', self.rollback_script)
         self.assertIn(
-            'git apply --index --reverse "$rollback_patch"',
+            'git merge-base --is-ancestor "$PROMOTION_BASE_SHA" "$merge_sha"',
             self.rollback_script,
         )
+        self.assertIn('git show "$PROMOTION_BASE_SHA:$test_root"', self.rollback_script)
+        self.assertIn('git show "$PROMOTION_BASE_SHA:$smoke"', self.rollback_script)
+        self.assertIn("printf 'ROLLED_BACK\\n'", self.rollback_script)
+        self.assertIn("changed-file set escaped four-file contract", self.rollback_script)
         for digest in (
             "sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515",
             "sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e139a5256",
@@ -435,9 +438,65 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             self.assertIn(digest, self.rollback_script)
         self.assertIn("kustomize build kustomize/overlays/test", self.rollback_script)
         self.assertIn('--squash --auto', self.rollback_script)
+        self.assertIn("permission-contents: write", self.fullats_browser_workflow)
+        self.assertIn("permission-pull-requests: write", self.fullats_browser_workflow)
+        self.assertIn("'auto-fullats-rollback/'", self.cross_ai_audit)
+        self.assertIn("fullats-promotion-state", self.cross_ai_audit)
+        self.assertIn(
+            "Automation source: .github/workflows/faz25-fullats-live-browser-acceptance.yml",
+            self.rollback_script,
+        )
         self.assertIn("## Boundary declaration (ADR-0011 §2.3)", self.rollback_script)
         self.assertIn("- [x] state-mutation (test cluster)", self.rollback_script)
         self.assertIn("üç-artifact compensator", self.runbook)
+
+    def test_fullats_promotion_or_rollback_state_binds_one_exact_artifact_set(self):
+        self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
+        promoted = {
+            "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
+            "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
+            "frontend": "sha256:dc4c10c76359836da06d83bca9d977433313a43ae06da1e909e28cd31ec71ead",
+            "tag": "sha-07e9672",
+        }
+        rolled_back = {
+            "ats": "sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515",
+            "permission": "sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e139a5256",
+            "frontend": "sha256:28da39d9402a27d825d637e65e409ecf601cbfd22540add04ce5a3b9bf566b2d",
+            "tag": "sha-653752b",
+        }
+        expected = promoted if self.promotion_state == "PROMOTED" else rolled_back
+        self.assertIn(expected["ats"], self.activation)
+        self.assertIn(expected["permission"], self.test_root)
+        self.assertIn(expected["frontend"], self.test_root)
+        self.assertIn(
+            f"image: ghcr.io/halildeu/ats-app-boot@{expected['ats']}",
+            self.rendered_test_root,
+        )
+        self.assertIn(
+            "image: ghcr.io/halildeu/platform-backend-permission-service@"
+            f"{expected['permission']}",
+            self.rendered_test_root,
+        )
+        self.assertIn(
+            "image: ghcr.io/halildeu/platform-web-frontend-testai:"
+            f"{expected['tag']}@{expected['frontend']}",
+            self.rendered_test_root,
+        )
+        other = rolled_back if self.promotion_state == "PROMOTED" else promoted
+        self.assertNotIn(
+            f"image: ghcr.io/halildeu/ats-app-boot@{other['ats']}",
+            self.rendered_test_root,
+        )
+        self.assertNotIn(
+            "image: ghcr.io/halildeu/platform-backend-permission-service@"
+            f"{other['permission']}",
+            self.rendered_test_root,
+        )
+        self.assertNotIn(
+            "image: ghcr.io/halildeu/platform-web-frontend-testai:"
+            f"{other['tag']}@{other['frontend']}",
+            self.rendered_test_root,
+        )
 
     def test_pg_writer_role_is_admin_bootstrapped_without_runtime_createrole(self):
         self.assertIn("--roles-only", self.pg_bootstrap)

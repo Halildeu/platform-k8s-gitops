@@ -158,6 +158,7 @@ const PROVIDER_ALIASES = {
 const AUTOMATION_BRANCH_CONTRACT = {
   'auto-test-overlay/': '.github/workflows/deploy-backend-testai.yml',
   'auto-test-frontend/': '.github/workflows/deploy-testai.yml',
+  'auto-fullats-rollback/': '.github/workflows/faz25-fullats-live-browser-acceptance.yml',
   'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
 };
 // Per-prefix actor contract (#827 PR-B, Codex `019e4048` Q2 REVISE). Each
@@ -183,6 +184,7 @@ const AUTOMATION_BRANCH_CONTRACT = {
 const AUTOMATION_PREFIX_ACTORS = {
   'auto-test-overlay/': new Set(['platform-gitops-automation[bot]']),
   'auto-test-frontend/': new Set(['platform-gitops-automation[bot]']),
+  'auto-fullats-rollback/': new Set(['platform-gitops-automation[bot]']),
   'auto-verified/': new Set(['github-actions[bot]']),
 };
 
@@ -199,6 +201,15 @@ const AUTOMATION_DIFF_ALLOWLIST = {
   ],
   'auto-test-frontend/': [
     /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+  ],
+  // Faz 25 #2615: failure compensator can restore only the two desired-state
+  // image surfaces, the ATS digest mirror and the explicit promotion marker.
+  // It cannot carry workflow/governance/application changes in its bot PR.
+  'auto-fullats-rollback/': [
+    /^kustomize\/overlays\/test\/activation\/ats-interview-evidence\/kustomization\.yaml$/,
+    /^kustomize\/overlays\/test\/fullats-promotion-state\.txt$/,
+    /^kustomize\/overlays\/test\/kustomization\.yaml$/,
+    /^scripts\/ats\/d29-smoke\.sh$/,
   ],
   'auto-verified/': [
     /^release-candidates\/(?:platform-agent|platform-backend|platform-web)\/[0-9a-f]{40}\.json$/,

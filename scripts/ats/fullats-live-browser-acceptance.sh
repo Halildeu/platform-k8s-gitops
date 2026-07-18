@@ -358,14 +358,23 @@ if [[ "$GRANULE_SNAPSHOT_CODE" != "200" ]] || ! jq -e --argjson role_id "$ROLE_I
   echo "FATAL: target recruiter role exact four-granule snapshot mismatch" >&2
   exit 1
 fi
-MEMBER_BODY="$(json_file recruiter-member.json)"
-jq -n --argjson user_id "$RECRUITER_USER_ID" '{userIds:[$user_id]}' >"$MEMBER_BODY"
-MEMBER_OUT="$(json_file recruiter-member-result.json)"
-MEMBER_CODE="$(api_request POST "/api/v1/roles/$ROLE_ID/members" "$ADMIN_HEADER_FILE" "$MEMBER_OUT" "$MEMBER_BODY")"
-[[ "$MEMBER_CODE" == "200" ]] || {
-  echo "FATAL: role member product API HTTP $MEMBER_CODE" >&2
+ASSIGNMENT_BODY="$(json_file recruiter-assignment.json)"
+jq -n --argjson role_id "$ROLE_ID" '{roleIds:[$role_id]}' >"$ASSIGNMENT_BODY"
+ASSIGNMENT_OUT="$(json_file recruiter-assignment-result.json)"
+ASSIGNMENT_CODE="$(api_request POST "/api/v1/authz/users/$RECRUITER_USER_ID/assignments" "$ADMIN_HEADER_FILE" "$ASSIGNMENT_OUT" "$ASSIGNMENT_BODY")"
+[[ "$ASSIGNMENT_CODE" == "200" ]] || {
+  echo "FATAL: exact recruiter role replacement product API HTTP $ASSIGNMENT_CODE" >&2
   exit 1
 }
+USER_ROLES_OUT="$(json_file recruiter-user-roles.json)"
+USER_ROLES_CODE="$(api_request GET "/api/v1/authz/users/$RECRUITER_USER_ID/roles" "$ADMIN_HEADER_FILE" "$USER_ROLES_OUT")"
+if [[ "$USER_ROLES_CODE" != "200" ]] || ! jq -e \
+    --argjson role_id "$ROLE_ID" --arg role_name "$ROLE_NAME" '
+      length == 1 and .[0].roleId == $role_id and .[0].roleName == $role_name
+    ' "$USER_ROLES_OUT" >/dev/null; then
+  echo "FATAL: recruiter active product role set is not exact" >&2
+  exit 1
+fi
 
 RECRUITER_AUTHZ_OUT="$(json_file recruiter-authz.json)"
 RECRUITER_AUTHZ_CODE=""
@@ -375,12 +384,13 @@ for _ in $(seq 1 30); do
       --arg interview_key "$INTERVIEW_MODULE_KEY" \
       --arg ats_key "$ATS_MODULE_KEY" \
       --arg job_action "$ATS_JOB_ACTION_KEY" \
-      --arg application_action "$ATS_APPLICATION_ACTION_KEY" '
+      --arg application_action "$ATS_APPLICATION_ACTION_KEY" \
+      --arg role_name "$ROLE_NAME" '
     (.superAdmin == false) and
-    (((.modules[$interview_key]? // "") | tostring | ascii_upcase) == "VIEW") and
-    (((.modules[$ats_key]? // "") | tostring | ascii_upcase) == "VIEW") and
-    (((.actions[$job_action]? // "") | tostring | ascii_upcase) == "ALLOW") and
-    (((.actions[$application_action]? // "") | tostring | ascii_upcase) == "ALLOW")
+    ((.roles // []) == [$role_name]) and
+    ((.modules // {}) == {($interview_key): "VIEW", ($ats_key): "VIEW"}) and
+    ((.actions // {}) == {($job_action): "ALLOW", ($application_action): "ALLOW"}) and
+    ((.reports // {}) == {})
   ' "$RECRUITER_AUTHZ_OUT" >/dev/null; then
     break
   fi
@@ -390,12 +400,13 @@ if [[ "$RECRUITER_AUTHZ_CODE" != "200" ]] || ! jq -e \
     --arg interview_key "$INTERVIEW_MODULE_KEY" \
     --arg ats_key "$ATS_MODULE_KEY" \
     --arg job_action "$ATS_JOB_ACTION_KEY" \
-    --arg application_action "$ATS_APPLICATION_ACTION_KEY" '
+    --arg application_action "$ATS_APPLICATION_ACTION_KEY" \
+    --arg role_name "$ROLE_NAME" '
     (.superAdmin == false) and
-    (((.modules[$interview_key]? // "") | tostring | ascii_upcase) == "VIEW") and
-    (((.modules[$ats_key]? // "") | tostring | ascii_upcase) == "VIEW") and
-    (((.actions[$job_action]? // "") | tostring | ascii_upcase) == "ALLOW") and
-    (((.actions[$application_action]? // "") | tostring | ascii_upcase) == "ALLOW")
+    ((.roles // []) == [$role_name]) and
+    ((.modules // {}) == {($interview_key): "VIEW", ($ats_key): "VIEW"}) and
+    ((.actions // {}) == {($job_action): "ALLOW", ($application_action): "ALLOW"}) and
+    ((.reports // {}) == {})
   ' "$RECRUITER_AUTHZ_OUT" >/dev/null; then
   echo "FATAL: recruiter ATS least-privilege grant'leri /authz/me'ye 60s icinde yansimadi" >&2
   exit 1
@@ -408,7 +419,7 @@ INBOX_CODE="$(api_request GET '/api/ats/v1/recruiter/applications?page=0&size=1'
 }
 rm -f "$PROFILE_OUT" "$LOOKUP_OUT" "$ACTIVATION_BODY" "$ACTIVATION_OUT" \
   "$ROLES_OUT" "$GRANULE_BODY" "$GRANULE_OUT" "$GRANULE_SNAPSHOT_OUT" \
-  "$MEMBER_BODY" "$MEMBER_OUT" \
+  "$ASSIGNMENT_BODY" "$ASSIGNMENT_OUT" "$USER_ROLES_OUT" \
   "$RECRUITER_AUTHZ_OUT" "$INBOX_OUT"
 
 echo "5/6 Immutable Playwright runtime'i hazirla"
