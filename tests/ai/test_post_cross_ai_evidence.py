@@ -23,10 +23,11 @@ SPEC.loader.exec_module(MODULE)
 def evidence() -> dict:
     response = "## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE"
     return {
-        "schema": "cross-ai-provider-evidence/v1",
-        "provider": "anthropic",
-        "requested_model": "claude-opus-4-8",
-        "actual_model": "claude-opus-4-8",
+        "schema": "cross-ai-provider-evidence/v2",
+        "provider": "openai",
+        "requested_model": "gpt-5.6-sol",
+        "actual_model": "gpt-5.6-sol",
+        "execution_profile": "codex-exec-ephemeral-read-only-exact-scope-v1",
         "base_tip_sha": "a" * 40,
         "base_sha": "b" * 40,
         "head_sha": "c" * 40,
@@ -46,7 +47,7 @@ class EvidenceValidationTests(unittest.TestCase):
     def test_accepts_exact_builder_schema_and_digest(self) -> None:
         text = json.dumps(evidence(), separators=(",", ":"))
         parsed, digest = MODULE.validate_evidence_text(text)
-        self.assertEqual(parsed["provider"], "anthropic")
+        self.assertEqual(parsed["provider"], "openai")
         self.assertEqual(digest, hashlib.sha256(text.encode()).hexdigest())
 
     def test_rejects_extra_schema_key(self) -> None:
@@ -57,6 +58,16 @@ class EvidenceValidationTests(unittest.TestCase):
     def test_rejects_response_digest_mismatch(self) -> None:
         payload = evidence()
         payload["response_sha256"] = "f" * 64
+        self.assert_rejected(payload)
+
+    def test_rejects_non_isolated_codex_execution_profile(self) -> None:
+        payload = evidence()
+        payload["execution_profile"] = "codex-current-chat"
+        self.assert_rejected(payload)
+
+    def test_rejects_provider_model_mismatch_before_post(self) -> None:
+        payload = evidence()
+        payload["actual_model"] = "auto"
         self.assert_rejected(payload)
 
     def test_rejects_sensitive_response_before_gh_invocation(self) -> None:

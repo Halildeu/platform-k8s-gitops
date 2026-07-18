@@ -67,6 +67,7 @@ EVIDENCE_KEYS = {
     "provider",
     "requested_model",
     "actual_model",
+    "execution_profile",
     "base_tip_sha",
     "base_sha",
     "head_sha",
@@ -74,6 +75,14 @@ EVIDENCE_KEYS = {
     "verdict",
     "response_sha256",
     "response",
+}
+PROVIDER_EXECUTION_PROFILES = {
+    "anthropic": "claude-cli-no-session-persistence-exact-scope-v1",
+    "openai": "codex-exec-ephemeral-read-only-exact-scope-v1",
+}
+PROVIDER_MODELS = {
+    "anthropic": "claude-opus-4-8",
+    "openai": "gpt-5.6-sol",
 }
 
 
@@ -92,8 +101,17 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         fail("invalid_evidence_json")
     if not isinstance(evidence, dict) or set(evidence) != EVIDENCE_KEYS:
         fail("invalid_evidence_schema")
-    if evidence.get("schema") != "cross-ai-provider-evidence/v1":
+    if evidence.get("schema") != "cross-ai-provider-evidence/v2":
         fail("invalid_evidence_schema")
+    expected_execution = PROVIDER_EXECUTION_PROFILES.get(evidence.get("provider"))
+    if evidence.get("execution_profile") != expected_execution:
+        fail("invalid_execution_profile")
+    expected_model = PROVIDER_MODELS.get(evidence.get("provider"))
+    if (
+        evidence.get("requested_model") != expected_model
+        or evidence.get("actual_model") != expected_model
+    ):
+        fail("provider_model_mismatch")
     response = evidence.get("response")
     response_digest = evidence.get("response_sha256")
     if (
@@ -170,6 +188,7 @@ def main() -> None:
                 "ok": True,
                 "provider": evidence["provider"],
                 "actual_model": evidence["actual_model"],
+                "execution_profile": evidence["execution_profile"],
                 "verdict": evidence["verdict"],
                 "ref": api_ref,
                 "sha256": body_sha256,

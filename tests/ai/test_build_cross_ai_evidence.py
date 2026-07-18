@@ -18,11 +18,11 @@ BASE_ARGS = [
     sys.executable,
     str(SCRIPT),
     "--provider",
-    "anthropic",
+    "openai",
     "--requested-model",
-    "claude-opus-4-8",
+    "gpt-5.6-sol",
     "--actual-model",
-    "claude-opus-4-8",
+    "gpt-5.6-sol",
     "--base-tip-sha",
     SHA,
     "--base-sha",
@@ -49,7 +49,11 @@ class EvidenceBuilderTests(unittest.TestCase):
         result = self.run_builder("P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE")
         self.assertEqual(result.returncode, 0)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["schema"], "cross-ai-provider-evidence/v1")
+        self.assertEqual(payload["schema"], "cross-ai-provider-evidence/v2")
+        self.assertEqual(
+            payload["execution_profile"],
+            "codex-exec-ephemeral-read-only-exact-scope-v1",
+        )
         self.assertEqual(payload["verdict"], "AGREE")
         self.assertEqual(payload["scope_sha256"], SCOPE)
 
@@ -60,7 +64,7 @@ class EvidenceBuilderTests(unittest.TestCase):
 
     def test_rejects_minimax_as_a_new_evidence_provider(self) -> None:
         args = [
-            "minimax" if value == "anthropic" else value
+            "minimax" if value == "openai" else value
             for value in BASE_ARGS
         ]
         result = subprocess.run(

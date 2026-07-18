@@ -59,9 +59,9 @@ Critical-Fix: no
 
 ## Cross-AI İstişare Modu
 
-> Varsayılan `none`; gerçekten ikinci görüş gerekiyorsa yalnız direct Claude Opus
-> 4.8 ile `single`; yalnız geri döndürülemez/çok yüksek riskli/insan-yetkili
-> kararda Claude + bir provider-distinct kanal ile `dual` (en fazla iki kanal).
+> Varsayılan `none`; istişare gerekiyorsa exact scope/head ile context-isolated
+> `codex exec --ephemeral --sandbox read-only` tek başına `single` Cross-AI
+> review'dur. Ek adversarial görüş yararlıysa direct Claude ile `dual` seçilebilir.
 > Detay: `docs/context-priority-rules.md` §11.
 
 ```yaml
@@ -75,17 +75,17 @@ Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
 # Consultation base: <single/dual exact merge-base>
 # Consultation commit: <single/dual exact head>
 # Consultation scope: <single/dual content SHA-256>
-# Claude receipt: <single ve dual için exact receipt>
-# Codex receipt: <dual için zorunlu exact receipt>
+# Codex receipt: <single ve dual için exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-v1>
+# Claude receipt: <yalnız dual için exact optional challenger receipt>
 ```
 
 **Field semantik**:
 - `none`: receipt yok; rutin implementation/test için somut gerekçe zorunlu;
   governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
-- `single`: exact Claude Opus 4.8 receipt + exact base/head/scope + `AGREE`;
-  Claude implementer için provider-distinct olmadığı için kullanılamaz.
-- `dual`: exact Claude + exact Codex receipt; somut `Risk trigger` zorunlu,
-  üçüncü kanal ve MiniMax receipt yasak, publication order zorunlu değil.
+- `single`: exact context-isolated Codex receipt + exact base/head/scope +
+  `AGREE`; Codex implementer için de geçerlidir.
+- `dual`: exact Codex primary + exact Claude challenger receipt; somut
+  `Risk trigger` zorunlu, üçüncü kanal ve MiniMax receipt yasaktır.
 - Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,
   exact model ve redaction kontrolleri fail-closed kalır.
 

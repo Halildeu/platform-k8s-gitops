@@ -42,10 +42,10 @@ const WEBHOOK_URL_RE = /\bwebhook[_-]?url\b\s*[:=]\s*https?:\/\/[^\s"'<>]{12,}/i
 const COOKIE_HEADER_RE = /^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$/im;
 const RECEIPT_KEYS = new Set([
   'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
-  'verdict', 'ref', 'sha256',
+  'execution', 'verdict', 'ref', 'sha256',
 ]);
 const EVIDENCE_KEYS = [
-  'actual_model', 'base_sha', 'base_tip_sha', 'head_sha', 'provider',
+  'actual_model', 'base_sha', 'base_tip_sha', 'execution_profile', 'head_sha', 'provider',
   'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
 ];
@@ -67,10 +67,12 @@ const CONSULTATION_RECEIPTS = {
   'claude receipt': {
     provider: 'anthropic',
     model: 'claude-opus-4-8',
+    execution: 'claude-cli-no-session-persistence-exact-scope-v1',
   },
   'codex receipt': {
     provider: 'openai',
     model: 'gpt-5.6-sol',
+    execution: 'codex-exec-ephemeral-read-only-exact-scope-v1',
   },
 };
 const FORBIDDEN_CONSULTATION_FIELDS = new Set(['minimax receipt']);
@@ -88,12 +90,6 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
-];
-const CONSULTATION_DUAL_GOVERNANCE_PATHS = [
-  /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
-  /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
-  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence)\.py$/,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
   /(?:^|\/)(?:[^/]+[-_.])?(?:rbac|clusterrole|clusterrolebinding|role|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|secretstore|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
@@ -518,12 +514,6 @@ function minimumConsultationMode(prMeta) {
   if (!Array.isArray(files) || files.length === 0) {
     return { mode: 'single', reason: 'changed-files metadata missing' };
   }
-  const dualGovernancePath = files.find((path) =>
-    CONSULTATION_DUAL_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
-  );
-  if (dualGovernancePath) {
-    return { mode: 'dual', reason: `consultation enforcement path: ${dualGovernancePath}` };
-  }
   const governancePath = files.find((path) =>
     CONSULTATION_GOVERNANCE_PATHS.some((pattern) => pattern.test(path))
   );
@@ -677,10 +667,11 @@ function evidenceMatches(
   }
   const responseVerdict = parseProviderResponseVerdict(evidence.response);
   return Boolean(
-    evidence.schema === 'cross-ai-provider-evidence/v1'
+    evidence.schema === 'cross-ai-provider-evidence/v2'
     && evidence.provider === expected.provider
     && evidence.requested_model === expected.model
     && evidence.actual_model === expected.model
+    && evidence.execution_profile === expected.execution
     && evidence.base_tip_sha?.toLowerCase() === baseTip.toLowerCase()
     && evidence.base_sha?.toLowerCase() === base.toLowerCase()
     && evidence.head_sha?.toLowerCase() === head.toLowerCase()
@@ -801,6 +792,7 @@ async function appendConsultationFindings(
       && receipt.provider?.toLowerCase() === expected.provider
       && receipt.requested === expected.model
       && receipt.actual === expected.model
+      && receipt.execution === expected.execution
       && receipt.base_tip?.toLowerCase() === baseTip.toLowerCase()
       && receipt.base?.toLowerCase() === base.toLowerCase()
       && receipt.head?.toLowerCase() === commit.toLowerCase()
@@ -955,19 +947,23 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       : 'single/dual consultation yalnız AGREE ile geçer',
   });
 
-  let selectedReceipts = ['claude receipt'];
+  let selectedReceipts = ['codex receipt'];
   if (mode === 'single') {
     findings.push({
       check: 'consultation_single_exact_channel_count',
-      pass: presentReceipts.length === 1 && presentReceipts[0] === 'claude receipt',
-      detail: 'single mode exact direct Claude Opus 4.8 channel requires one receipt',
+      pass: presentReceipts.length === 1 && presentReceipts[0] === 'codex receipt',
+      detail: 'single mode exact context-isolated Codex exec channel requires one receipt',
     });
     findings.push({
-      check: 'consultation_single_is_provider_distinct',
-      pass: implementer !== 'claude',
-      detail: implementer !== 'claude'
-        ? 'direct Claude reviewer implementer providerından farklı'
-        : 'Claude implementer kendi Claude receiptini bağımsız single görüş sayamaz; dual gerekir',
+      check: 'consultation_single_is_process_context_isolated',
+      pass: fields['codex receipt']?.includes(
+        'execution=codex-exec-ephemeral-read-only-exact-scope-v1',
+      ),
+      detail: fields['codex receipt']?.includes(
+        'execution=codex-exec-ephemeral-read-only-exact-scope-v1',
+      )
+        ? 'Codex reviewer ayrı ephemeral süreçte, read-only sandbox ve exact scope ile çalıştı'
+        : 'single mode codex-exec-ephemeral-read-only-exact-scope-v1 execution binding ister',
     });
     findings.push({
       check: 'consultation_single_has_no_risk_trigger',
@@ -978,15 +974,10 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     });
   } else if (mode === 'dual') {
     const riskTrigger = (fields['risk trigger'] || '').trim();
-    // Forward policy: dual = exactly Claude Opus 4.8 + Codex gpt-5.6-sol.
-    // The only accepted secondary channel is Codex; no third channel exists.
+    // Optional dual policy: exact Codex primary + Claude Opus 4.8 challenger.
     const exactChannels = presentReceipts.length === 2
       && Boolean(fields['claude receipt'])
       && Boolean(fields['codex receipt']);
-    // Because the two channels are fixed (Claude + Codex), at least one provider
-    // always differs from the implementer regardless of whether the implementer
-    // is Claude or Codex. This preserves provider-distinct review.
-    const providerDistinct = ['claude', 'codex'].some((provider) => provider !== implementer);
     findings.push({
       check: 'consultation_dual_high_risk_trigger',
       pass: meaningfulRiskTrigger(riskTrigger),
@@ -998,20 +989,24 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       check: 'consultation_dual_exact_channel_count',
       pass: exactChannels,
       detail: exactChannels
-        ? 'dual mode exact Claude Opus 4.8 + Codex gpt-5.6-sol iki kanal taşıyor'
-        : 'dual mode yalnız Claude Opus 4.8 + Codex gpt-5.6-sol iki receipt ile geçer; üçüncü kanal yok',
+        ? 'dual mode exact Codex primary + Claude Opus 4.8 challenger taşıyor'
+        : 'dual mode yalnız Codex primary + Claude Opus 4.8 challenger receiptleri ile geçer',
     });
     findings.push({
-      check: 'consultation_dual_provider_distinct_from_implementer',
-      pass: providerDistinct,
-      detail: providerDistinct
-        ? `dual kanallardan en az biri implementer ${implementer} providerından farklı`
-        : 'dual kanalların en az biri implementer sağlayıcısıyla farklı olmalıdır',
+      check: 'consultation_dual_codex_primary_is_process_context_isolated',
+      pass: fields['codex receipt']?.includes(
+        'execution=codex-exec-ephemeral-read-only-exact-scope-v1',
+      ),
+      detail: fields['codex receipt']?.includes(
+        'execution=codex-exec-ephemeral-read-only-exact-scope-v1',
+      )
+        ? `Codex primary implementer ${implementer} değerinden bağımsız olarak süreç ve bağlam izolasyonlu`
+        : 'dual mode Codex primary için exact ephemeral/read-only execution binding ister',
     });
     // Even an invalid dual combination must still validate every present,
     // allowlisted receipt. Retired MiniMax receipts are rejected above and are
     // never fetched or treated as evidence.
-    selectedReceipts = ['claude receipt', 'codex receipt'].filter(
+    selectedReceipts = ['codex receipt', 'claude receipt'].filter(
       (field) => Boolean(fields[field]),
     );
   }

@@ -343,7 +343,9 @@ Mavis bildirimi **yerine geçmez**:
 Kullanıcının [#2621](https://github.com/Halildeu/platform-k8s-gitops/issues/2621)
 ve [#2638](https://github.com/Halildeu/platform-k8s-gitops/issues/2638)
 kararları, 2026-07-17 tarihli zorunlu üç-kanal politikasını yürürlükten kaldırır
-ve MiniMax'i yeni istişare/receipt zincirinden çıkarır.
+ve MiniMax'i yeni istişare/receipt zincirinden çıkarır. Kullanıcının 2026-07-19
+kararı ayrıca zorunlu Claude primary kapısını kaldırır; context-isolated direct
+Codex exec'i birincil ve tek başına yeterli Cross-AI reviewer yapar.
 Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
 adımlarında istişare açılmaz. İstişare bir teslimat ritüeli değil, yalnız karar
 belirsizliği veya risk için kullanılan sınırlı araçtır.
@@ -355,22 +357,35 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    Changed-files kanıtı eksikse, consultation governance dosyası, yüksek güvenli
    RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration yolu değişiyorsa veya
    branch `auto-promotion/` ise gate en az `single` zorunlu tutar. Audit/evidence
-   enforcement kodunun kendisi değişiyorsa mekanik taban `dual` olur.
-2. **`single` — gerçekten ikinci görüş gerektiğinde:** Tek ve birincil kanal
-   direct Anthropic `claude --model claude-opus-4-8` olur. JSON `modelUsage`
-   exact `claude-opus-4-8` değilse kanal tamamlanmış sayılmaz. Claude
-   implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz; bu
-   durumda provider-distinct ikinci kanal ile `dual` gerekir.
-3. **`dual` — istisnai yüksek risk:** Yalnız geri döndürülemez, çok yüksek
-   riskli veya açık insan/yetkili kararı gerektiren noktada Claude'a doğrudan
-   OpenAI `gpt-5.6-sol` eklenir. Toplam iki kanal aşılmaz. Implementer bu iki
-   sağlayıcıdan biri olsa bile diğer kanal provider-distinct bağımsız reviewer
-   alt sınırını sağlar. MiniMax çağrısı, makbuzu veya wrapper'ı yeni karar için
-   kabul edilmez.
+   enforcement kodunun kendisi değişse de mekanik taban `single` kalır.
+2. **`single` — kesin bağımsız Cross-AI review:** Tek ve birincil kanal direct
+   OpenAI Codex'tir. Çağrı ayrı bir süreçte, yalnız hazırlanmış exact scope/head
+   ile ve şu zorunlu profil üzerinden çalışır:
 
-Cursor CLI/MCP/model/harness, Cursor-routed model, wrapper ile aynı provider'ı
-ikinci kez çağırma ve AI uygulama pencereleri istişare kanalı değildir. CLI,
-daemon, credential veya exact-model kimliği hazır değilse UI fallback yapılmaz.
+   ```bash
+   codex exec --model <LIVE_CODEX_ID> \
+     --sandbox read-only --ephemeral \
+     -C <ABSOLUTE_WORKTREE> < /path/to/canonical-scope.patch
+   ```
+
+   CLI başlığındaki provider/model/sandbox kaydı doğrulanır; receipt execution
+   profili exact `codex-exec-ephemeral-read-only-exact-scope-v1` olur. Yeni
+   süreç bu sohbet geçmişini, önceki Claude/Codex bulgularını veya uygulayıcı
+   yorumunu almaz. Implementer Codex olsa dahi bu process/context isolation,
+   proje acceptance sözleşmesinde bağımsız Cross-AI reviewer sayılır ve tek
+   başına `single` kapısını karşılar. Provider çeşitliliği zorunlu değildir.
+3. **`dual` — isteğe bağlı ek adversarial görüş:** Exact Codex `single` primary
+   korunur ve direct Anthropic `claude --model claude-opus-4-8` challenger
+   eklenir. Toplam iki kanal aşılmaz. Hiçbir path/risk kategorisi otomatik
+   `dual` zorunluluğu üretmez; Claude erişilemezliği geçerli Codex `single`
+   hükmünü `tracked_pending` yapmaz. MiniMax çağrısı, makbuzu veya wrapper'ı
+   yeni karar için kabul edilmez.
+
+Cursor CLI/MCP/model/harness, Cursor-routed model ve AI uygulama pencereleri
+istişare kanalı değildir. Normal/current sohbet içindeki öz-yorum da bağımsız
+kanal sayılmaz; kabul yalnız ayrı `codex exec` süreci + ephemeral + read-only +
+exact-scope profilinin tamamı sağlanırsa verilir. CLI, credential, exact model,
+sandbox veya ephemeral capability hazır değilse UI/wrapper fallback yapılmaz.
 `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta review
 tekrarlanmaz. Geçerli `REVISE` bulgusu düzeltildiğinde yalnız önceden seçilmiş
 kanal veya kanallar değişen exact scope üzerinde yeniden inceler.
@@ -413,25 +428,39 @@ Consultation base tip: <single/dual exact target tip>
 Consultation base: <single/dual exact merge-base>
 Consultation commit: <single/dual exact head>
 Consultation scope: <single/dual content SHA-256>
-Claude receipt: <single/dual exact receipt>
-Codex receipt: <dual için zorunlu exact receipt>
+Codex receipt: <single/dual exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-v1>
+Claude receipt: <yalnız dual exact challenger receipt>
 ```
 
 `Risk trigger` kategori değeri `irreversible-production`, `security-authz`,
 `privacy-retention`, `data-migration`, `concurrency`, `production-cutover` veya
 `human-authority` olur; açıklama en az üç farklı anlamlı kelime taşır ve
 serbest/placeholder/tekrarlı metin fail-closed reddedilir.
-`single` ve `dual` bağımsızlık kontrolünde implementer sağlayıcısı canonical
-olarak bilinmelidir; gerçek sağlayıcıyı saklayabilen `other` bu iki modda
-fail-closed reddedilir. `other` yalnız receipt taşımayan `none` modunda kullanılabilir.
+`single` ve `dual` audit attribution için implementer kimliğini canonical tutar;
+`other` yalnız receipt taşımayan `none` modunda kullanılabilir. Codex implementer
+ile Codex `single` aynı sağlayıcı olsa da ayrı ephemeral/read-only exact-scope
+süreç sözleşmesi nedeniyle kabul edilir; farklı sağlayıcı iddiası yazılmaz.
 `gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
 risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
-`single` yalnız exact Claude receipt'i taşır, `dual` exact Claude + exact Codex
-receipt taşır. MiniMax alanı fail-closed reddedilir. `dual` yayın sırası zorunlu değildir;
+`single` yalnız exact Codex execution-profile receipt'i taşır, `dual` exact Codex
++ exact Claude receipt taşır. MiniMax alanı fail-closed reddedilir. `dual` yayın sırası zorunlu değildir;
 paralel çağrı kabul edilir. `single/dual` çıktısı `P0/P1/P2` ve tek terminal
 `VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim
 onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
 freshness, digest, redaction ve provider/model eşlemesi korunur.
+
+Güncel evidence comment gövdesi exact `cross-ai-provider-evidence/v2` JSON'dur.
+`additionalProperties` kabul edilmez; `single` Codex kanıtında aşağıdaki
+`execution_profile` değeri exact olmalıdır:
+
+```json
+{"schema":"cross-ai-provider-evidence/v2","provider":"openai","requested_model":"gpt-5.6-sol","actual_model":"gpt-5.6-sol","execution_profile":"codex-exec-ephemeral-read-only-exact-scope-v1","base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
+```
+
+Bu alan yalnız bir beyan değildir: builder provider'a göre sabit üretir,
+poster exact şema/profil dışında fail-closed olur ve CI receipt ile GitHub
+comment gövdesindeki profili birlikte doğrular. Böylece normal sohbet içi
+Codex yanıtı `single` evidence olarak yeniden etiketlenemez.
 
 Path/branch sınıflandırıcısı yalnız açık governance ve production-promotion
 ile yüksek güvenli RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration
@@ -444,8 +473,8 @@ döndürülemez başka bir karar path adına yansımıyorsa agent doğru
 olarak kalabilir; güncel gate bunları yeniden doğrulamaz ve `PASS`/acceptance
 üretmez. Yalnız dar `docs-only historical` allowlist'i receiptsiz muafiyet
 olarak kalır. Güncel parser'da görülen her MiniMax receipt fail-closed reddedilir.
-Yeni PR şablonu yalnız açık `none|single|dual` sözleşmesini üretir ve dual için
-Claude + Codex ister.
+Yeni PR şablonu yalnız açık `none|single|dual` sözleşmesini üretir; single için
+Codex, dual için Codex + Claude ister.
 
 İstişare hiçbir modda test/CI/live evidence/browser smoke/board claim/protected
 Environment reviewer/gerçek kullanıcı rızası/hukuk veya secret-owner kapısının
