@@ -138,7 +138,7 @@ class TransitBootstrapTests(unittest.TestCase):
             receipt = MODULE.bootstrap(self.args())
         client = FakeVaultClient.instances[-1]
         self.assertEqual(receipt["scope"], "test-only")
-        self.assertEqual(len(receipt["keys"]), 5)
+        self.assertEqual(len(receipt["keys"]), 6)
         self.assertEqual(
             {item["keyName"] for item in receipt["keys"]}, set(MODULE.KEY_NAMES)
         )
@@ -266,16 +266,27 @@ class TransitBootstrapTests(unittest.TestCase):
                 )
 
         reconciler = (ROOT / "scripts/ops/vault-policy-reconcile.sh").read_text()
+        self.assertIn("APPLY_FAIL=0", reconciler)
+        self.assertIn("APPLY_FAIL=1", reconciler)
+        self.assertIn("manifest policy file missing", reconciler)
+        self.assertIn("one or more Vault policy/AppRole writes failed", reconciler)
+        self.assertIn("AppRole role-id retrieval failed", reconciler)
+        self.assertIn("AppRole secret-id emission failed", reconciler)
         emission_manifest = reconciler.split("EMITTABLE_APPROLES=(", 1)[1].split(
             ")", 1
         )[0]
         self.assertNotIn("cross-ai-revocation-test", emission_manifest)
+        self.assertNotIn("cross-ai-issuer-anthropic-test", emission_manifest)
+        self.assertNotIn("cross-ai-issuer-minimax-test", emission_manifest)
+        self.assertNotIn("cross-ai-issuer-openai-test", emission_manifest)
+        self.assertNotIn("cross-ai-coordinator-test", emission_manifest)
         self.assertIn("secret-id emission is not permitted", reconciler)
         self.assertIn("backup|restore|datakey", reconciler)
         self.assertIn("rewrap|hmac", reconciler)
         exact_paths = {
             "cross-ai-issuer-anthropic-test": "cross-ai/sign/anthropic",
-            "cross-ai-issuer-secondary-test": "cross-ai/sign/provider-secondary",
+            "cross-ai-issuer-minimax-test": "cross-ai/sign/minimax",
+            "cross-ai-issuer-openai-test": "cross-ai/sign/openai",
             "cross-ai-coordinator-test": "cross-ai/sign/coordinator",
             "cross-ai-revocation-test": "cross-ai/sign/revocation",
             "cross-ai-runner-management-test": "cross-ai/sign/runner-management",
@@ -288,9 +299,26 @@ class TransitBootstrapTests(unittest.TestCase):
         config_policy = (policy_dir / "vault-config-reconciler.hcl").read_text(
             encoding="utf-8"
         )
+        routine_approles = reconciler.split("APPROLES=(", 1)[1].split(")", 1)[0]
         self.assertNotIn(
             'path "auth/approle/role/cross-ai-revocation-test/secret-id"',
             config_policy,
+        )
+        for role in (
+            "cross-ai-issuer-anthropic-test",
+            "cross-ai-issuer-minimax-test",
+            "cross-ai-issuer-openai-test",
+            "cross-ai-coordinator-test",
+        ):
+            for suffix in ("", "/role-id", "/secret-id"):
+                self.assertNotIn(
+                    f'path "auth/approle/role/{role}{suffix}"',
+                    config_policy,
+                )
+            self.assertNotIn(f'"{role}|', routine_approles)
+        self.assertNotRegex(
+            reconciler,
+            r"cross-ai-(?:issuer-[a-z]+|coordinator)-test\|[^\n]*token_num_uses=0",
         )
 
 

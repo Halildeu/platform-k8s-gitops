@@ -1,0 +1,13 @@
+schema/cross-ai-*.json
+scripts/github_apps/**
+tests/github_apps/**
+config/github-apps/**
+bootstrap/vault-policies/common/eso-runtime.hcl
+bootstrap/vault-policies/test/cross-ai-*.hcl
+bootstrap/vault-policies/test/vault-config-reconciler.hcl
+scripts/ops/bootstrap_cross_ai_transit.py
+scripts/ops/vault-policy-reconcile.sh
+scripts/faz22-remote-ops/**
+kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**
+docs/adr/0045-signed-cross-ai-custom-deployment-protection-rule.md
+docs/runbooks/RB-cross-ai-deployment-protection-rule.md

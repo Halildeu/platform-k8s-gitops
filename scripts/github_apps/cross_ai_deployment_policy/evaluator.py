@@ -472,6 +472,8 @@ class DeploymentEvaluator:
         if (
             inspection.workflow_sha256 != signed_stage["workflowBlobSha256"]
             or inspection.dependency_lock_sha256 != signed_stage["dependencyLockSha256"]
+            or inspection.concurrency_group_sha256
+            != signed_stage["concurrencyGroupSha256"]
         ):
             reject(
                 "INTENT_REF_OR_DEPENDENCY_LOCK_MISMATCH",

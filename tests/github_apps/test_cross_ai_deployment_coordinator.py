@@ -34,7 +34,10 @@ class EvidenceCoordinatorTest(unittest.TestCase):
             provider_families=original["consensus"]["providerFamilies"],
             now=fixture.now,
         )
-        self.assertEqual(coordinated.verified.provider_families, ("anthropic", "xai"))
+        self.assertEqual(
+            coordinated.verified.provider_families,
+            ("anthropic", "minimax", "openai"),
+        )
         self.assertEqual(
             coordinated.verified.bundle_id,
             "70000000-0000-4000-8000-000000000002",

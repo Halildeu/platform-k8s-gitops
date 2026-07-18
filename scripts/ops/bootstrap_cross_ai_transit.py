@@ -3,7 +3,7 @@
 
 The root token is read from an owner-only regular file. It is never accepted in
 argv or the environment and is never written to logs or the public receipt.
-The operation is deliberately narrow: one named Transit mount, five fixed
+The operation is deliberately narrow: one named Transit mount, six fixed
 non-exportable Ed25519 keys, and the git-reviewed config-reconciler policy.
 """
 
@@ -30,7 +30,8 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MOUNT = "cross-ai"
 KEY_NAMES = (
     "anthropic",
-    "provider-secondary",
+    "minimax",
+    "openai",
     "coordinator",
     "revocation",
     "runner-management",

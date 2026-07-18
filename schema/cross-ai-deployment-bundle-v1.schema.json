@@ -39,7 +39,7 @@
     },
     "reviewEnvelopes": {
       "type": "array",
-      "minItems": 2,
+      "minItems": 3,
       "maxItems": 100,
       "items": {
         "$ref": "#/$defs/dsse_envelope"
@@ -156,6 +156,8 @@
         "workflowPath",
         "workflowBlobSha256",
         "dependencyLockSha256",
+        "runtimeBundleSha256",
+        "concurrencyGroupSha256",
         "runsOnLabels",
         "maxUses"
       ],
@@ -192,6 +194,12 @@
         "dependencyLockSha256": {
           "$ref": "#/$defs/digest"
         },
+        "runtimeBundleSha256": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/digest"}
+          ]
+        },
         "concurrencyGroupSha256": {
           "$ref": "#/$defs/digest"
         },
@@ -219,7 +227,21 @@
         "maxUses": {
           "const": 1
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"stage": {"const": "browser-evidence"}},
+            "required": ["stage"]
+          },
+          "then": {
+            "properties": {"runtimeBundleSha256": {"$ref": "#/$defs/digest"}}
+          },
+          "else": {
+            "properties": {"runtimeBundleSha256": {"type": "null"}}
+          }
+        }
+      ]
     },
     "dsse_signature": {
       "type": "object",
@@ -337,16 +359,17 @@
       "properties": {
         "providerFamilies": {
           "type": "array",
-          "minItems": 2,
+          "minItems": 3,
+          "maxItems": 3,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+            "enum": ["anthropic", "minimax", "openai"]
           }
         },
         "finalAgreeReviewSha256": {
           "type": "array",
-          "minItems": 2,
+          "minItems": 3,
+          "maxItems": 3,
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/digest"

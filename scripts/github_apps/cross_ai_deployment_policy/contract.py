@@ -36,6 +36,26 @@ RUNNER_ADMISSION_LEASE_PAYLOAD_TYPE = (
 SESSION_DOMAIN = "acik.cross-ai-deployment-session.v1"
 CLOSURE_DOMAIN = "acik.cross-ai-deployment-closure.v1"
 MAX_GRANT_TTL = timedelta(minutes=120)
+REQUIRED_PROVIDER_ROUTES = {
+    "anthropic": (
+        "direct-anthropic-cli",
+        "claude-opus-4-8",
+        "provider-reported",
+        True,
+    ),
+    "minimax": (
+        "direct-minimax-cli",
+        "minimax/MiniMax-M3",
+        "provider-reported",
+        True,
+    ),
+    "openai": (
+        "openai-codex",
+        "gpt-5.6-sol",
+        "provider-reported",
+        True,
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -45,6 +65,7 @@ class TrustKey:
     public_key: bytes
     provider_family: str | None
     allowed_channels: tuple[str, ...]
+    allowed_model_ids: tuple[str, ...]
     allowed_model_identity_classes: tuple[str, ...]
     direct_provider_cli: bool | None
     not_before: datetime
@@ -139,6 +160,9 @@ class EvidenceVerifier:
             )
         _validate_schema(trust_root, TRUST_ROOT_SCHEMA, "TRUST_ROOT_SCHEMA_INVALID")
         self.max_skew = timedelta(seconds=trust_root["maxClockSkewSeconds"])
+        self.required_provider_families = frozenset(
+            trust_root["requiredProviderFamilies"]
+        )
         self.minimum_provider_families = trust_root["minimumProviderFamilies"]
         self.minimum_direct_routes = trust_root["minimumDirectProviderRoutes"]
         self.keys = self._parse_trust_keys(trust_root)
@@ -163,12 +187,14 @@ class EvidenceVerifier:
             role = entry["role"]
             family = entry["providerFamily"]
             channels = tuple(entry["allowedChannels"])
+            model_ids = tuple(entry["allowedModelIds"])
             model_identity_classes = tuple(entry["allowedModelIdentityClasses"])
             direct = entry["directProviderCli"]
             if role == "provider-review":
                 if (
                     not family
                     or not channels
+                    or not model_ids
                     or not model_identity_classes
                     or not isinstance(direct, bool)
                 ):
@@ -176,9 +202,27 @@ class EvidenceVerifier:
                         "TRUST_KEY_ATTRIBUTION_INVALID",
                         f"provider key {key_id} lacks fixed family/channel/direct attribution",
                     )
+                if direct and model_identity_classes != ("provider-reported",):
+                    reject(
+                        "TRUST_KEY_ATTRIBUTION_INVALID",
+                        f"direct provider key {key_id} lacks provider-reported identity",
+                    )
+                expected_route = REQUIRED_PROVIDER_ROUTES.get(family)
+                actual_route = (
+                    channels[0],
+                    model_ids[0],
+                    model_identity_classes[0],
+                    direct,
+                )
+                if expected_route is None or actual_route != expected_route:
+                    reject(
+                        "TRUST_PROVIDER_ROUTE_INVALID",
+                        f"provider key {key_id} differs from the canonical direct route",
+                    )
             elif (
                 family is not None
                 or channels
+                or model_ids
                 or model_identity_classes
                 or direct is not None
             ):
@@ -198,6 +242,7 @@ class EvidenceVerifier:
                 public_key=public_key,
                 provider_family=family,
                 allowed_channels=channels,
+                allowed_model_ids=model_ids,
                 allowed_model_identity_classes=model_identity_classes,
                 direct_provider_cli=direct,
                 not_before=not_before,
@@ -219,9 +264,10 @@ class EvidenceVerifier:
             for key in parsed.values()
             if key.role == "provider-review"
         }
-        if len(families) < self.minimum_provider_families:
+        if families != self.required_provider_families:
             reject(
-                "TRUST_PROVIDER_QUORUM_IMPOSSIBLE", "trust root cannot satisfy quorum"
+                "TRUST_PROVIDER_SET_INVALID",
+                "trust root provider families differ from the required signed set",
             )
         return parsed
 
@@ -533,8 +579,10 @@ class EvidenceVerifier:
             if (
                 leaf["providerFamily"] != key.provider_family
                 or leaf["channel"] not in key.allowed_channels
+                or leaf["modelId"] not in key.allowed_model_ids
                 or leaf["directProviderCli"] is not key.direct_provider_cli
                 or leaf["modelIdentityClass"] not in key.allowed_model_identity_classes
+                or leaf["issuer"] != f"cross-ai-issuer-{key.provider_family}"
             ):
                 reject(
                     "PROVIDER_ATTRIBUTION_MISMATCH",
@@ -573,8 +621,83 @@ class EvidenceVerifier:
 
     def _verify_review_chains(self, reviews: dict[str, VerifiedReview]) -> None:
         chains: dict[str, list[VerifiedReview]] = defaultdict(list)
+        raised_occurrences: dict[str, list[VerifiedReview]] = defaultdict(list)
+        resolved_occurrences: dict[str, list[VerifiedReview]] = defaultdict(list)
+        acknowledged_occurrences: dict[str, list[VerifiedReview]] = defaultdict(list)
         for review in reviews.values():
             chains[review.payload["reviewChainId"]].append(review)
+            finding_ids = set(review.payload["findingIds"])
+            resolved_ids = set(review.payload["resolvedFindingIds"])
+            acknowledged_ids = set(review.payload["acknowledgedFindingIds"])
+            if review.payload["verdict"] == "AGREE" and (
+                finding_ids or resolved_ids or acknowledged_ids
+            ):
+                reject(
+                    "REVIEW_AGREE_FINDINGS_INVALID",
+                    "AGREE review must not carry finding state transitions",
+                )
+            if review.payload["verdict"] in {"REVISE", "RED"} and not finding_ids:
+                reject(
+                    "REVIEW_DISSENT_FINDINGS_REQUIRED",
+                    "REVISE and RED reviews must raise at least one finding",
+                )
+            if review.payload["verdict"] == "PARTIAL" and not (
+                finding_ids or resolved_ids or acknowledged_ids
+            ):
+                reject(
+                    "REVIEW_PARTIAL_TRANSITION_REQUIRED",
+                    "PARTIAL review must carry a finding state transition",
+                )
+            if finding_ids & (resolved_ids | acknowledged_ids):
+                reject(
+                    "REVIEW_FINDING_STATE_INVALID",
+                    "a review cannot raise and close the same finding",
+                )
+            if not acknowledged_ids.issubset(resolved_ids):
+                reject(
+                    "REVIEW_FINDING_STATE_INVALID",
+                    "acknowledged findings must be resolved in the same review",
+                )
+            for finding_id in finding_ids:
+                raised_occurrences[finding_id].append(review)
+            for finding_id in resolved_ids:
+                resolved_occurrences[finding_id].append(review)
+            for finding_id in acknowledged_ids:
+                acknowledged_occurrences[finding_id].append(review)
+        if any(len(occurrences) != 1 for occurrences in raised_occurrences.values()):
+            reject(
+                "REVIEW_FINDING_REUSED",
+                "finding IDs must identify exactly one raise event in the bundle",
+            )
+        referenced_ids = set(resolved_occurrences) | set(acknowledged_occurrences)
+        if not referenced_ids.issubset(raised_occurrences):
+            reject(
+                "REVIEW_FINDING_REFERENCE_INVALID",
+                "resolved or acknowledged finding has no raise event",
+            )
+        if any(len(occurrences) != 1 for occurrences in resolved_occurrences.values()):
+            reject(
+                "REVIEW_FINDING_STATE_INVALID",
+                "finding IDs must identify exactly one resolve event",
+            )
+        if any(
+            len(occurrences) != 1 for occurrences in acknowledged_occurrences.values()
+        ):
+            reject(
+                "REVIEW_FINDING_STATE_INVALID",
+                "finding IDs must identify exactly one acknowledgement event",
+            )
+        for finding_id, acknowledgements in acknowledged_occurrences.items():
+            raised = raised_occurrences[finding_id][0]
+            acknowledged = acknowledgements[0]
+            if (
+                raised.key.provider_family != acknowledged.key.provider_family
+                or acknowledged.issued_at <= raised.issued_at
+            ):
+                reject(
+                    "REVIEW_FINDING_REFERENCE_INVALID",
+                    "finding acknowledgement must follow its same-provider raise event",
+                )
         for chain_id, chain in chains.items():
             ordered = sorted(chain, key=lambda item: item.payload["round"])
             families = {item.key.provider_family for item in ordered}
@@ -711,22 +834,30 @@ class EvidenceVerifier:
                     "CONSENSUS_CLOSURE_MISMATCH", "counted AGREE has old closure root"
                 )
             final_reviews.append(review)
+        if set(chain_tips.values()) != set(final_digests):
+            reject(
+                "CONSENSUS_UNCOUNTED_CHAIN",
+                "every provider review chain tip must be selected by consensus",
+            )
         families = {
             review.key.provider_family
             for review in final_reviews
             if review.key.provider_family is not None
         }
-        direct_routes = sum(
-            1 for review in final_reviews if review.key.direct_provider_cli
-        )
-        if len(families) < self.minimum_provider_families:
+        direct_families = {
+            review.key.provider_family
+            for review in final_reviews
+            if review.key.direct_provider_cli and review.key.provider_family is not None
+        }
+        if families != self.required_provider_families:
             reject(
-                "PROVIDER_FAMILY_QUORUM_MISSING", "provider family quorum is missing"
+                "PROVIDER_FAMILY_SET_MISMATCH",
+                "final provider families differ from the signed required set",
             )
-        if direct_routes < self.minimum_direct_routes:
+        if direct_families != self.required_provider_families:
             reject(
-                "DIRECT_PROVIDER_QUORUM_MISSING",
-                "direct provider route quorum is missing",
+                "DIRECT_PROVIDER_SET_MISMATCH",
+                "every required provider family must use its signed direct route",
             )
         if set(bundle["consensus"]["providerFamilies"]) != families:
             reject(

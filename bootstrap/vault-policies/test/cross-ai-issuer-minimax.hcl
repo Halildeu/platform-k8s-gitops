@@ -1,7 +1,6 @@
-# TEST-only signed deployment evidence issuer for the second provider route.
-# The eventual trust-root release binds this generic key to one provider family
-# and channel. Until that live route exists, no trust root may count this key.
-path "cross-ai/sign/provider-secondary" {
+# TEST-only MiniMax review issuer. It can sign with exactly one Transit key.
+
+path "cross-ai/sign/minimax" {
   capabilities = ["update"]
 }
 

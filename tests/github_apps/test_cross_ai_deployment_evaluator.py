@@ -36,20 +36,27 @@ on:
 permissions:
   contents: read
   id-token: write
+concurrency:
+  group: faz22-view-only-protected-lanes
+  cancel-in-progress: false
 jobs:
   apply:
     environment: {ENVIRONMENT}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, staging-sw, testai-deploy]
     steps:
       - uses: actions/checkout@{'1' * 40}
       - name: Verify signed runner bootstrap
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-bootstrap@{'1' * 40}
         env:
           CROSS_AI_BOOTSTRAP_TOKEN: ${{{{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}}}
           CROSS_AI_ENDPOINT_ID: ${{{{ secrets.CROSS_AI_ENDPOINT_ID }}}}
           CROSS_AI_OPERATOR_ID: ${{{{ secrets.CROSS_AI_OPERATOR_ID }}}}
           CROSS_AI_BOOTSTRAP_URL: https://testai.acik.com/v1/runner-bootstrap
           CROSS_AI_BOOTSTRAP_OUTPUT: ${{{{ runner.temp }}}}/cross-ai-bootstrap.json
-        run: python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py --stage apply --workflow-path .github/workflows/apply-view-only-viewer-pilot-enable.yml --policy-file config/github-apps/cross-ai-deployment-policy.json --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json --expected-trust-root-sha256 sha256:{'2' * 64} --revocations-file config/github-apps/cross-ai-deployment-revocations.json --output "$CROSS_AI_BOOTSTRAP_OUTPUT"
+        with:
+          stage: apply
+          workflow-path: .github/workflows/apply-view-only-viewer-pilot-protected.yml
+          expected-trust-root-sha256: sha256:{'2' * 64}
       - name: Execute reviewed stage
         uses: Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{'1' * 40}
         env:
@@ -76,20 +83,28 @@ def policy_payload() -> dict[str, object]:
         "workflowStages": [
             {
                 "stage": "apply",
-                "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-enable.yml",
-                "requiredRunsOnLabels": ["ubuntu-latest"],
+                "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
+                "requiredRunsOnLabels": [
+                    "self-hosted",
+                    "staging-sw",
+                    "testai-deploy",
+                ],
                 "requireRunnerGroup": False,
             },
             {
                 "stage": "browser-evidence",
-                "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence.yml",
+                "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
                 "requiredRunsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
-                "requireRunnerGroup": True,
+                "requireRunnerGroup": False,
             },
             {
                 "stage": "compensating-rollback",
-                "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot.yml",
-                "requiredRunsOnLabels": ["ubuntu-latest"],
+                "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
+                "requiredRunsOnLabels": [
+                    "self-hosted",
+                    "staging-sw",
+                    "testai-deploy",
+                ],
                 "requireRunnerGroup": False,
             },
         ],
@@ -122,7 +137,7 @@ class FakeGitHub:
             "triggering_actor": {"id": 424242, "login": "platform-automation[bot]"},
             "run_attempt": 1,
             "status": "queued",
-            "path": ".github/workflows/apply-view-only-viewer-pilot-enable.yml",
+            "path": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
             "created_at": "2026-07-16T20:02:00Z",
         }
         self.environment_value = {
@@ -157,6 +172,20 @@ class FakeGitHub:
         self, installation_id: int, repository: str, workflow_path: str, head_sha: str
     ):
         return self.workflow_value
+
+    def repository_runners(self, installation_id: int, repository: str):
+        return (
+            {
+                "id": 98765,
+                "name": "testai-deploy-runner",
+                "status": "online",
+                "busy": False,
+                "labels": [
+                    {"name": label, "type": "custom"}
+                    for label in ("self-hosted", "staging-sw", "testai-deploy")
+                ],
+            },
+        )
 
     def environment(self, installation_id: int, repository: str, environment: str):
         return copy.deepcopy(self.environment_value)
@@ -248,7 +277,10 @@ class DeploymentEvaluatorTest(unittest.TestCase):
         result = self.evaluator.evaluate(self.request)
         self.assertTrue(result.approval_candidate)
         self.assertEqual(result.stage, "apply")
-        self.assertEqual(result.provider_families, ("anthropic", "xai"))
+        self.assertEqual(
+            result.provider_families,
+            ("anthropic", "minimax", "openai"),
+        )
         self.assertEqual(result.app_rule_id, 555)
 
     def test_rejects_workflow_dependency_or_actor_drift(self) -> None:
@@ -259,6 +291,13 @@ class DeploymentEvaluatorTest(unittest.TestCase):
         self.github.workflow_value = WORKFLOW
         self.github.run_value["triggering_actor"] = {"id": 999999}
         self.assert_rejected("RUN_ACTOR_MISMATCH")
+
+    def test_rejects_workflow_concurrency_group_drift(self) -> None:
+        self.github.workflow_value = WORKFLOW.replace(
+            b"faz22-view-only-protected-lanes",
+            b"faz22-view-only-protected-lanes-forked",
+        )
+        self.assert_rejected("INTENT_REF_OR_DEPENDENCY_LOCK_MISMATCH")
 
     def test_rejects_environment_rule_drift_and_moved_ref(self) -> None:
         self.github.environment_value["protection_rules"].append(

@@ -58,7 +58,8 @@ class SignedFixture:
 
 class FixtureFactory:
     ANTHROPIC_KEY_ID = "vault-transit://cross-ai/anthropic#v1"
-    XAI_KEY_ID = "vault-transit://cross-ai/xai#v1"
+    MINIMAX_KEY_ID = "vault-transit://cross-ai/minimax#v1"
+    OPENAI_KEY_ID = "vault-transit://cross-ai/openai#v1"
     COORDINATOR_KEY_ID = "vault-transit://cross-ai/coordinator#v1"
     REVOCATION_KEY_ID = "vault-transit://cross-ai/revocation#v1"
     RUNNER_MANAGEMENT_KEY_ID = "vault-transit://cross-ai/runner-management#v1"
@@ -66,10 +67,11 @@ class FixtureFactory:
     def __init__(self) -> None:
         self.keys = {
             self.ANTHROPIC_KEY_ID: _key(1),
-            self.XAI_KEY_ID: _key(2),
-            self.COORDINATOR_KEY_ID: _key(3),
-            self.REVOCATION_KEY_ID: _key(4),
-            self.RUNNER_MANAGEMENT_KEY_ID: _key(5),
+            self.MINIMAX_KEY_ID: _key(2),
+            self.OPENAI_KEY_ID: _key(3),
+            self.COORDINATOR_KEY_ID: _key(4),
+            self.REVOCATION_KEY_ID: _key(5),
+            self.RUNNER_MANAGEMENT_KEY_ID: _key(6),
         }
         self.now = _utc("2026-07-16T20:30:00Z")
 
@@ -111,6 +113,7 @@ class FixtureFactory:
             family: str | None,
             channels: list[str],
             direct: bool | None,
+            model_ids: list[str] | None = None,
             identity_classes: list[str] | None = None,
         ) -> dict[str, Any]:
             return {
@@ -121,6 +124,7 @@ class FixtureFactory:
                 "notAfter": "2026-07-16T22:00:00Z",
                 "providerFamily": family,
                 "allowedChannels": channels,
+                "allowedModelIds": model_ids or [],
                 "allowedModelIdentityClasses": identity_classes or [],
                 "directProviderCli": direct,
             }
@@ -131,8 +135,9 @@ class FixtureFactory:
             "issuedAt": "2026-07-16T19:00:00Z",
             "expiresAt": "2026-07-16T22:00:00Z",
             "maxClockSkewSeconds": 60,
-            "minimumProviderFamilies": 2,
-            "minimumDirectProviderRoutes": 1,
+            "requiredProviderFamilies": ["anthropic", "minimax", "openai"],
+            "minimumProviderFamilies": 3,
+            "minimumDirectProviderRoutes": 3,
             "keys": [
                 entry(
                     self.ANTHROPIC_KEY_ID,
@@ -140,15 +145,26 @@ class FixtureFactory:
                     "anthropic",
                     ["direct-anthropic-cli"],
                     True,
+                    ["claude-opus-4-8"],
                     ["provider-reported"],
                 ),
                 entry(
-                    self.XAI_KEY_ID,
+                    self.MINIMAX_KEY_ID,
                     "provider-review",
-                    "xai",
-                    ["cursor-cli"],
-                    False,
-                    ["trusted-launch-attested"],
+                    "minimax",
+                    ["direct-minimax-cli"],
+                    True,
+                    ["minimax/MiniMax-M3"],
+                    ["provider-reported"],
+                ),
+                entry(
+                    self.OPENAI_KEY_ID,
+                    "provider-review",
+                    "openai",
+                    ["openai-codex"],
+                    True,
+                    ["gpt-5.6-sol"],
+                    ["provider-reported"],
                 ),
                 entry(self.COORDINATOR_KEY_ID, "coordinator", None, [], None),
                 entry(self.REVOCATION_KEY_ID, "revocation", None, [], None),
@@ -192,10 +208,15 @@ class FixtureFactory:
     ) -> dict[str, Any]:
         if key_id == self.ANTHROPIC_KEY_ID:
             family, channel, direct = "anthropic", "direct-anthropic-cli", True
-            model = "claude-opus-4-6"
+            model = "claude-opus-4-8"
+        elif key_id == self.MINIMAX_KEY_ID:
+            family, channel, direct = "minimax", "direct-minimax-cli", True
+            model = "minimax/MiniMax-M3"
+        elif key_id == self.OPENAI_KEY_ID:
+            family, channel, direct = "openai", "openai-codex", True
+            model = "gpt-5.6-sol"
         else:
-            family, channel, direct = "xai", "cursor-cli", False
-            model = "cursor-grok-4.5-high"
+            raise ValueError(f"unsupported provider key {key_id}")
         payload = {
             "schemaVersion": "acik.cross-ai-deployment-review.v1",
             "reviewId": review_id,
@@ -204,11 +225,7 @@ class FixtureFactory:
             "channel": channel,
             "directProviderCli": direct,
             "modelId": model,
-            "modelIdentityClass": (
-                "provider-reported"
-                if key_id == self.ANTHROPIC_KEY_ID
-                else "trusted-launch-attested"
-            ),
+            "modelIdentityClass": "provider-reported",
             "capabilitySnapshotSha256": digest(f"capability-{review_id}"),
             "subjectSha256": subject_digest,
             "round": round_number,
@@ -332,25 +349,34 @@ class FixtureFactory:
                 "operatorIdSha256": subject["operatorIdSha256"],
             }
         )
+        concurrency_group_sha256 = sha256_digest(
+            {
+                "domain": "acik.cross-ai-workflow-concurrency-group.v1",
+                "group": "faz22-view-only-protected-lanes",
+            }
+        )
         stages = [
             {
                 "stage": "apply",
                 "order": 1,
                 "dependsOn": [],
-                "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-enable.yml",
+                "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
                 "workflowBlobSha256": digest("apply-workflow"),
                 "dependencyLockSha256": digest("apply-lock"),
-                "concurrencyGroupSha256": digest("activation-group"),
-                "runsOnLabels": ["ubuntu-latest"],
+                "runtimeBundleSha256": None,
+                "concurrencyGroupSha256": concurrency_group_sha256,
+                "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
                 "maxUses": 1,
             },
             {
                 "stage": "browser-evidence",
                 "order": 2,
                 "dependsOn": ["apply"],
-                "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence.yml",
+                "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
                 "workflowBlobSha256": digest("browser-workflow"),
                 "dependencyLockSha256": digest("browser-lock"),
+                "runtimeBundleSha256": digest("browser-runtime"),
+                "concurrencyGroupSha256": concurrency_group_sha256,
                 "priorStageOutcomeSchemaSha256": digest("outcome-schema"),
                 "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
                 "runnerGroupId": 1234,
@@ -361,10 +387,12 @@ class FixtureFactory:
                 "stage": "compensating-rollback",
                 "order": 3,
                 "dependsOnFailure": ["apply"],
-                "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot.yml",
+                "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
                 "workflowBlobSha256": digest("rollback-workflow"),
                 "dependencyLockSha256": digest("rollback-lock"),
-                "runsOnLabels": ["ubuntu-latest"],
+                "runtimeBundleSha256": None,
+                "concurrencyGroupSha256": concurrency_group_sha256,
+                "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
                 "maxUses": 1,
             },
         ]
@@ -431,7 +459,7 @@ class FixtureFactory:
         b1 = self._review(
             review_id="60000000-0000-4000-8000-000000000001",
             chain_id="40000000-0000-4000-8000-000000000002",
-            key_id=self.XAI_KEY_ID,
+            key_id=self.MINIMAX_KEY_ID,
             round_number=1,
             verdict="AGREE",
             previous=None,
@@ -439,22 +467,34 @@ class FixtureFactory:
             issued_at="2026-07-16T20:16:00Z",
             subject_digest=subject_digest,
         )
+        c1 = self._review(
+            review_id="60000000-0000-4000-8000-000000000002",
+            chain_id="40000000-0000-4000-8000-000000000003",
+            key_id=self.OPENAI_KEY_ID,
+            round_number=1,
+            verdict="AGREE",
+            previous=None,
+            closure_root=closure_root,
+            issued_at="2026-07-16T20:17:00Z",
+            subject_digest=subject_digest,
+        )
         a3_digest = sha256_digest(a3)
         b1_digest = sha256_digest(b1)
+        c1_digest = sha256_digest(c1)
         bundle = {
             "schemaVersion": "acik.cross-ai-deployment-bundle.v1",
             "bundleId": "70000000-0000-4000-8000-000000000001",
             "subject": subject,
             "workflowStages": stages,
             "runnerAdmissionLeaseEnvelope": runner_lease,
-            "reviewEnvelopes": [a1, a2, a3, b1],
+            "reviewEnvelopes": [a1, a2, a3, b1, c1],
             "closure": {
                 "entries": closure_entries,
                 "closureRootSha256": closure_root,
             },
             "consensus": {
-                "providerFamilies": ["anthropic", "xai"],
-                "finalAgreeReviewSha256": [a3_digest, b1_digest],
+                "providerFamilies": ["anthropic", "minimax", "openai"],
+                "finalAgreeReviewSha256": [a3_digest, b1_digest, c1_digest],
                 "closureRootSha256": closure_root,
                 "openMustFixFindingCount": 0,
             },

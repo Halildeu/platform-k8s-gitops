@@ -400,7 +400,9 @@ require_grep "rollback-view-only-viewer-pilot-config.sh" "$VIEWER_APPLY_WORKFLOW
 require_grep '"REMOTE_BRIDGE_VIEWER_ENABLED":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep '"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null' "$VIEWER_ROLLBACK_CONFIG"
-require_grep '"SPRING_CLOUD_GATEWAY_ROUTES_28_ID":null' "$VIEWER_ROLLBACK_CONFIG"
+require_grep 'GATEWAY_ROUTE_INDEX="${GATEWAY_ROUTE_INDEX:-28}"' "$VIEWER_ROLLBACK_CONFIG"
+require_grep 'GATEWAY_ROUTE_PREFIX="SPRING_CLOUD_GATEWAY_ROUTES_${GATEWAY_ROUTE_INDEX}_"' "$VIEWER_ROLLBACK_CONFIG"
+require_grep '($prefix + "ID"): null' "$VIEWER_ROLLBACK_CONFIG"
 require_grep 'has("REMOTE_BRIDGE_VIEWER_ENABLED") | not' "$VIEWER_ROLLBACK_CONFIG"
 require_grep 'has("REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS") | not' "$VIEWER_ROLLBACK_CONFIG"
 if grep -Eq '(^|[[:space:]])jq([[:space:]]|$).*del[[:space:]]*\(' \
@@ -426,7 +428,7 @@ if grep -Eq "memory: (24|32)Mi" "$VIEWER_WATCHDOG"; then
   exit 1
 fi
 require_grep 'REMOTE_BRIDGE_VIEWER_ENABLED":"false"' "$VIEWER_WATCHDOG"
-require_grep "SPRING_CLOUD_GATEWAY_ROUTES_28_ID\":null" "$VIEWER_WATCHDOG"
+require_grep '__GATEWAY_ROUTE_PREFIX__ID":null' "$VIEWER_WATCHDOG"
 require_grep 'VIEWER_APPLY_ATTEMPT_MARKER: ${{ runner.temp }}/faz22-view-only-pilot-overlay-attempted' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'rm -f "$VIEWER_APPLY_ATTEMPT_MARKER"' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'touch "$VIEWER_APPLY_ATTEMPT_MARKER"' "$VIEWER_APPLY_WORKFLOW"

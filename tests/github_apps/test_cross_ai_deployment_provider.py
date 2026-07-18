@@ -22,7 +22,7 @@ from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory, digest
 
 REVIEW_RESULT = json.dumps(
     {
-        "verdict": "AGREE",
+        "verdict": "PARTIAL",
         "findingIds": [],
         "resolvedFindingIds": ["FINDING_A"],
         "acknowledgedFindingIds": ["FINDING_A"],
@@ -92,14 +92,18 @@ class ProviderExecutionTest(unittest.TestCase):
             ),
         ]
         with patch("subprocess.run", side_effect=calls):
-            with self.assertRaisesRegex(PolicyError, "PROVIDER_MODEL_IDENTITY_MISMATCH"):
+            with self.assertRaisesRegex(
+                PolicyError, "PROVIDER_MODEL_IDENTITY_MISMATCH"
+            ):
                 DirectClaudeRunner(Path("/bin/sh")).run(
                     prompt="review this digest",
                     model="claude-opus-4-6",
                     workspace=self.workspace,
                 )
 
-    def test_cursor_attests_live_listed_launch_without_claiming_provider_report(self) -> None:
+    def test_cursor_attests_live_listed_launch_without_claiming_provider_report(
+        self,
+    ) -> None:
         output = {
             "type": "result",
             "subtype": "success",
@@ -191,9 +195,9 @@ class ProviderIssuerTest(unittest.TestCase):
             envelope,
             expected_payload_type=REVIEW_PAYLOAD_TYPE,
             allowed_keys={
-                factory.ANTHROPIC_KEY_ID: factory.keys[
-                    factory.ANTHROPIC_KEY_ID
-                ].public_key().public_bytes_raw()
+                factory.ANTHROPIC_KEY_ID: factory.keys[factory.ANTHROPIC_KEY_ID]
+                .public_key()
+                .public_bytes_raw()
             },
         )
         self.assertEqual(verified.payload["modelIdentityClass"], "provider-reported")

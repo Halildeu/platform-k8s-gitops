@@ -33,9 +33,26 @@ class EvidenceContractTest(unittest.TestCase):
 
     def test_accepts_provider_distinct_closed_bundle(self) -> None:
         result = self.verifier().verify_bundle(self.fixture.bundle_envelope)
-        self.assertEqual(result.provider_families, ("anthropic", "xai"))
+        self.assertEqual(
+            result.provider_families,
+            ("anthropic", "minimax", "openai"),
+        )
         self.assertEqual(result.request_id, "30000000-0000-4000-8000-000000000001")
-        self.assertEqual(len(result.final_review_digests), 2)
+        self.assertEqual(len(result.final_review_digests), 3)
+
+    def test_rejects_browser_stage_without_signed_runtime_bundle(self) -> None:
+        self.fixture = self.factory.build(
+            stage_overrides={"browser-evidence": {"runtimeBundleSha256": None}}
+        )
+        with self.assertRaisesRegex(PolicyError, "BUNDLE_SCHEMA_INVALID"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_runtime_bundle_on_non_browser_stage(self) -> None:
+        self.fixture = self.factory.build(
+            stage_overrides={"apply": {"runtimeBundleSha256": "sha256:" + ("1" * 64)}}
+        )
+        with self.assertRaisesRegex(PolicyError, "BUNDLE_SCHEMA_INVALID"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
     def test_rejects_trust_root_that_differs_from_deployment_pin(self) -> None:
         with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_DIGEST_MISMATCH"):
@@ -56,20 +73,244 @@ class EvidenceContractTest(unittest.TestCase):
         envelope = copy.deepcopy(self.fixture.bundle_envelope)
         noncanonical = b'{ "schemaVersion": "acik.cross-ai-deployment-bundle.v1" }'
         envelope["payload"] = base64.b64encode(noncanonical).decode()
-        with self.assertRaisesRegex(PolicyError, "DSSE_SIGNATURE_INVALID|DSSE_PAYLOAD_NON_CANONICAL"):
+        with self.assertRaisesRegex(
+            PolicyError, "DSSE_SIGNATURE_INVALID|DSSE_PAYLOAD_NON_CANONICAL"
+        ):
             self.verifier().verify_bundle(envelope)
 
     def test_rejects_provider_family_self_assertion(self) -> None:
         bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
         review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
         review["providerFamily"] = "anthropic"
+        envelope = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.OPENAI_KEY_ID,
+        )
+        bundle["reviewEnvelopes"][-1] = envelope
+        bundle["consensus"]["finalAgreeReviewSha256"][-1] = sha256_digest(envelope)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_unpinned_model_even_with_valid_provider_signature(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        review["modelId"] = "gpt-5.6"
         bundle["reviewEnvelopes"][-1] = self.factory.sign(
             "application/vnd.acik.cross-ai-deployment-review.v1+json",
             review,
-            self.factory.XAI_KEY_ID,
+            self.factory.OPENAI_KEY_ID,
         )
         self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
         with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_trust_key_with_more_than_one_allowed_model(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["allowedModelIds"].append("gpt-5.6-sol-alias")
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_SCHEMA_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_direct_provider_without_provider_reported_identity(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][0]["allowedModelIdentityClasses"] = [
+            "trusted-launch-attested"
+        ]
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_KEY_ATTRIBUTION_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_provider_issuer_mismatch(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        review["issuer"] = "cross-ai-issuer-anthropic"
+        bundle["reviewEnvelopes"][-1] = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.OPENAI_KEY_ID,
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_consensus_without_exact_provider_set(self) -> None:
+        self.mutate_bundle(
+            lambda bundle: bundle["consensus"].__setitem__(
+                "providerFamilies", ["anthropic", "minimax", "xai"]
+            )
+        )
+        with self.assertRaisesRegex(
+            PolicyError, "BUNDLE_SCHEMA_INVALID|CONSENSUS_PROVIDER_MISMATCH"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_wrapper_channel_marked_as_direct_provider(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][1]["allowedChannels"] = ["wrapper-minimax"]
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_noncanonical_exact_model_in_trust_root(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["allowedModelIds"] = ["gpt-5.6"]
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_same_provider_wrappers_as_three_provider_trust(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["providerFamily"] = "anthropic"
+        trust_root["keys"][2]["allowedChannels"] = ["direct-anthropic-cli-alt"]
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_SET_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_schema_rejects_unknown_provider_family_before_verification(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["providerFamily"] = "xai"
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_SCHEMA_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_public_key_reuse_across_provider_families(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["publicKeyBase64"] = trust_root["keys"][1][
+            "publicKeyBase64"
+        ]
+        with self.assertRaisesRegex(PolicyError, "TRUST_KEY_REUSED"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_public_key_reuse_across_provider_and_coordinator(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][3]["publicKeyBase64"] = trust_root["keys"][0][
+            "publicKeyBase64"
+        ]
+        with self.assertRaisesRegex(PolicyError, "TRUST_KEY_REUSED"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_non_agree_review_selected_as_final(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        review["verdict"] = "REVISE"
+        envelope = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.OPENAI_KEY_ID,
+        )
+        bundle["reviewEnvelopes"][-1] = envelope
+        bundle["consensus"]["finalAgreeReviewSha256"][-1] = sha256_digest(envelope)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(
+            PolicyError, "REVIEW_SCHEMA_INVALID|CONSENSUS_VERDICT_INVALID"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_hidden_empty_dissent_before_final_agree(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        partial = bundle["reviewEnvelopes"][1]
+        subject_digest = self.factory.decode_payload(partial)["subjectSha256"]
+        hidden_red = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000004",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=3,
+            verdict="RED",
+            previous=sha256_digest(partial),
+            closure_root=bundle["closure"]["closureRootSha256"],
+            finding_ids=[],
+            issued_at="2026-07-16T20:14:00Z",
+            subject_digest=subject_digest,
+        )
+        final = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000005",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=4,
+            verdict="AGREE",
+            previous=sha256_digest(hidden_red),
+            closure_root=bundle["closure"]["closureRootSha256"],
+            issued_at="2026-07-16T20:15:00Z",
+            subject_digest=subject_digest,
+        )
+        bundle["reviewEnvelopes"][2:3] = [hidden_red, final]
+        bundle["consensus"]["finalAgreeReviewSha256"][0] = sha256_digest(final)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(
+            PolicyError, "REVIEW_SCHEMA_INVALID|REVIEW_DISSENT_FINDINGS_REQUIRED"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_partial_without_finding_transition(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][1])
+        review["findingIds"] = []
+        review["resolvedFindingIds"] = []
+        review["acknowledgedFindingIds"] = []
+        bundle["reviewEnvelopes"][1] = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.ANTHROPIC_KEY_ID,
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(
+            PolicyError, "REVIEW_SCHEMA_INVALID|REVIEW_PARTIAL_TRANSITION_REQUIRED"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_unselected_parallel_chain_from_required_provider(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        selected = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        dissent = self.factory._review(
+            review_id="60000000-0000-4000-8000-000000000003",
+            chain_id="40000000-0000-4000-8000-000000000004",
+            key_id=self.factory.OPENAI_KEY_ID,
+            round_number=1,
+            verdict="AGREE",
+            previous=None,
+            closure_root=bundle["closure"]["closureRootSha256"],
+            issued_at="2026-07-16T20:18:00Z",
+            subject_digest=selected["subjectSha256"],
+        )
+        bundle["reviewEnvelopes"].append(dissent)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "CONSENSUS_UNCOUNTED_CHAIN"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
     def test_rejects_model_identity_class_outside_key_policy(self) -> None:
@@ -84,6 +325,18 @@ class EvidenceContractTest(unittest.TestCase):
         self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
         with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_required_provider_that_is_not_a_direct_route(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["directProviderCli"] = False
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
 
     def test_rejects_session_rebinding(self) -> None:
         self.mutate_bundle(
@@ -106,7 +359,92 @@ class EvidenceContractTest(unittest.TestCase):
 
     def test_rejects_open_or_missing_closure(self) -> None:
         self.mutate_bundle(lambda bundle: bundle["closure"].__setitem__("entries", []))
-        with self.assertRaisesRegex(PolicyError, "CLOSURE_INCOMPLETE|CLOSURE_ROOT_MISMATCH"):
+        with self.assertRaisesRegex(
+            PolicyError, "CLOSURE_INCOMPLETE|CLOSURE_ROOT_MISMATCH"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def _append_reopened_anthropic_finding(self, *, same_round_ack: bool) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        previous = sha256_digest(bundle["reviewEnvelopes"][2])
+        subject_digest = self.factory.decode_payload(bundle["reviewEnvelopes"][2])[
+            "subjectSha256"
+        ]
+        closure_root = bundle["closure"]["closureRootSha256"]
+        reopened = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000004",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=4,
+            verdict="PARTIAL" if same_round_ack else "REVISE",
+            previous=previous,
+            closure_root=closure_root,
+            finding_ids=["FINDING_A"],
+            resolved=["FINDING_A"] if same_round_ack else None,
+            acknowledged=["FINDING_A"] if same_round_ack else None,
+            issued_at="2026-07-16T20:18:00Z",
+            subject_digest=subject_digest,
+        )
+        final = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000005",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=5,
+            verdict="AGREE",
+            previous=sha256_digest(reopened),
+            closure_root=closure_root,
+            issued_at="2026-07-16T20:19:00Z",
+            subject_digest=subject_digest,
+        )
+        bundle["reviewEnvelopes"].extend([reopened, final])
+        bundle["consensus"]["finalAgreeReviewSha256"][0] = sha256_digest(final)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+
+    def test_rejects_finding_id_reopened_after_acknowledgement(self) -> None:
+        self._append_reopened_anthropic_finding(same_round_ack=False)
+        with self.assertRaisesRegex(PolicyError, "REVIEW_FINDING_REUSED"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_same_round_finding_raise_and_acknowledgement(self) -> None:
+        self._append_reopened_anthropic_finding(same_round_ack=True)
+        with self.assertRaisesRegex(PolicyError, "REVIEW_FINDING_STATE_INVALID"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_phantom_resolve_and_acknowledgement(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        previous = sha256_digest(bundle["reviewEnvelopes"][2])
+        subject_digest = self.factory.decode_payload(bundle["reviewEnvelopes"][2])[
+            "subjectSha256"
+        ]
+        closure_root = bundle["closure"]["closureRootSha256"]
+        phantom = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000004",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=4,
+            verdict="PARTIAL",
+            previous=previous,
+            closure_root=closure_root,
+            resolved=["PHANTOM_FINDING"],
+            acknowledged=["PHANTOM_FINDING"],
+            issued_at="2026-07-16T20:18:00Z",
+            subject_digest=subject_digest,
+        )
+        final = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000005",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=5,
+            verdict="AGREE",
+            previous=sha256_digest(phantom),
+            closure_root=closure_root,
+            issued_at="2026-07-16T20:19:00Z",
+            subject_digest=subject_digest,
+        )
+        bundle["reviewEnvelopes"].extend([phantom, final])
+        bundle["consensus"]["finalAgreeReviewSha256"][0] = sha256_digest(final)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "REVIEW_FINDING_REFERENCE_INVALID"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
     def test_rejects_revoked_bundle(self) -> None:

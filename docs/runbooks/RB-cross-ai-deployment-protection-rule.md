@@ -34,8 +34,8 @@
 > is present at the dedicated TEST KV path with redacted hash-match proof; the
 > receive-only observer does not mount or consume it. The TEST Vault still has
 > no Transit mount. The rule must remain disabled until owner-gated Transit/TLS,
-> a real second provider, dispatcher App, signed intent, protected workflows and
-> one real callback are all proven.
+> direct exact-model Anthropic, MiniMax and OpenAI adapters, dispatcher App,
+> signed intent, protected workflows and one real callback are all proven.
 
 ## 1. What this removes — and what it does not
 
@@ -54,6 +54,16 @@ mandatory.
 
 Create two repository-scoped GitHub Apps. This is a one-time account-owner
 bootstrap, not a recurring deployment approval.
+
+The two-App split is a GitHub permission boundary, not the provider quorum.
+Provider execution and signing remain three separate issuer workloads
+(Anthropic, MiniMax and OpenAI); none of those issuers inherits either GitHub
+App identity or its repository permissions.
+The provider routes are not a configurable wrapper allowlist. V1 fixes exactly
+`direct-anthropic-cli` + `claude-opus-4-8`, `direct-minimax-cli` +
+`minimax/MiniMax-M3`, and `openai-codex` + `gpt-5.6-sol`; all require
+provider-reported model identity and `directProviderCli=true`. A different
+channel or model needs a reviewed contract migration, not a trust-root edit.
 
 | App | Repository permissions | Events | Implemented operations |
 |---|---|---|---|
@@ -94,8 +104,9 @@ same policy bytes in place while unexpired grants exist.
 
 Use distinct Ed25519 Transit keys and policies for:
 
-- direct Anthropic review issuer;
-- second provider review issuer;
+- direct Anthropic review issuer (`claude-opus-4-8`);
+- direct MiniMax review issuer (`minimax/MiniMax-M3`);
+- direct OpenAI Codex review issuer (`gpt-5.6-sol`);
 - evidence coordinator;
 - revocation authority;
 - runner inventory/admission-lease management.
@@ -103,7 +114,12 @@ Use distinct Ed25519 Transit keys and policies for:
 Each workload may sign only through its own Transit key. Provider keys cannot
 sign bundles, the coordinator cannot sign provider leaves, and only the
 revocation identity may sign the short-lived revocation set. Pin the Transit
-key version in both `keyId` and trust root. Rotate by overlapping public-key
+key version in both `keyId` and trust root. Each provider key permits exactly
+one direct channel, one exact model ID and one model-identity class; aliases or
+fallback models require a new reviewed trust root and invalidate existing
+grants. The Transit client sends the pinned `key_version` on every signing
+request and rejects a response signed by any other version. Rotate by
+overlapping public-key
 validity, issuing a fresh trust root, then revoking the old version after all
 grants expire.
 
@@ -144,7 +160,7 @@ key or policy readback drift.
 The bootstrap creates only:
 
 - the TEST-only `cross-ai/` Transit mount;
-- distinct `anthropic`, `provider-secondary`, `coordinator`, `revocation` and
+- distinct `anthropic`, `minimax`, `openai`, `coordinator`, `revocation` and
   `runner-management` non-derived, non-exportable Ed25519 keys;
 - the git-reviewed update of the already owner-gated
   `vault-config-reconciler` policy.
@@ -169,19 +185,35 @@ host-local until the owner verifies its cluster ID and printed canonical
 receipt digest. The caller, not the script, owns cleanup of the root-token
 handoff file.
 
-After that one-time owner action, normal TEST policy/AppRole reconciliation is
-root-free:
+After that one-time owner action, normal TEST policy reconciliation and the
+non-issuer AppRole subset are root-free:
 
 ```bash
 REPO_ROOT="$PWD" scripts/ops/vault-policy-reconcile.sh
 ```
 
-The reconciler may mint one-use credentials only for the Anthropic issuer,
-secondary issuer, coordinator and runner-management roles. It cannot mint a revocation
-secret-id. Every role can call only its exact `cross-ai/sign/<key>` endpoint;
-key read/export/backup/restore/datakey/encrypt/decrypt/rewrap/HMAC are denied. A missing
-second provider remains an authorization blocker; do not create a trust root
-that claims a provider route which has not been live-verified.
+The routine reconciler cannot create, update or read the named issuer and
+coordinator AppRole definitions, role IDs or SecretIDs. It may emit only the
+separate runner-management credential. Provider issuer and coordinator roles
+must be created by the owner or a dedicated workload-identity controller
+outside this reconciler trust domain with `bind_secret_id=true`, one-use
+SecretIDs and tokens, a ten-minute explicit maximum token TTL, no default
+policy and exactly one `cross-ai/sign/<key>` policy. Revocation SecretID
+minting also remains owner-only. Key read/export/backup/restore/datakey/
+encrypt/decrypt/rewrap/HMAC are denied. Missing direct provider execution or
+exact backend model identity remains an authorization blocker.
+
+Before enabling the custom rule, live Vault capability tests must prove that
+the routine reconciler is denied on every issuer/coordinator role definition,
+role-id and secret-id path and that a `bind_secret_id=false` downgrade/login is
+unavailable. This PR changes the reviewed source policy only; it does not claim
+that the owner-gated live policy replacement or role provisioning has occurred.
+
+This source contract does not make three local Transit signatures equivalent
+to three provider executions. Each dedicated issuer must execute its provider,
+validate the exact reported model and only then consume its one-use sign token.
+Until the direct MiniMax and OpenAI execution adapters and their redacted,
+content-addressed receipts are accepted, enforcement remains `tracked_pending`.
 
 The evaluator's Transit client requires a canonical HTTPS Vault origin. The
 loopback HTTP address above is accepted only by the attended owner bootstrap.
@@ -480,17 +512,74 @@ Environment, intent ref, SHA, workflow, run/attempt, numeric actor and signed
 runner lease. One successful response is durably consumed; a retry returns a
 conflict and is not a safe automatic retry signal. The verified response is
 written as a new `0600` file and must be consumed before any mutation step.
+The stage consumer independently recomputes the response and bundle digests and
+requires its run ID, run attempt, head SHA, intent ref, workflow path,
+repository ID/name and signed subject to match the current GitHub runtime
+before the first Kubernetes or endpoint side effect. A stale or locally
+substituted bootstrap file therefore fails closed even on a trusted runner.
+
+The browser runner also requires one pre-provisioned, non-secret runtime
+archive at the fixed path
+`/opt/acik/cross-ai/browser-runtime/playwright-1.60.0-linux-x64.tar`. Build it
+in the controlled runner-image pipeline with normalized root ownership and the
+exact `browser-runtime/runtime-manifest.json` profile, then record the complete
+archive SHA-256 as the browser stage's signed `runtimeBundleSha256`. The stage
+does not call npm or a browser CDN: it opens the fixed archive without
+following symlinks, rejects unsafe tar members and extracts only after the
+signed digest matches. Applying a new runtime archive therefore requires new
+provider leaves for the changed exact subject; do not copy a mutable cache into
+this path or derive the expected digest from the live file.
+
 The workflow contains exactly one governed job. After bootstrap it may use only
 1-8 full-SHA or image-digest pinned execution actions, each with only
 `CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json`. Free-form
 or multiline `run:`, local actions, a second checkout, additional jobs and
 unbounded `with:` values are fail-closed. Place required mutation logic in the
 reviewed content-addressed execution action; do not fetch live control code.
+The remote composite action is pinned to a commit that is an ancestor of the
+protected workflow branch and whose action bytes equal the checked-in action.
+Its shell commands execute against the single signed-head checkout: the runner
+bootstrap binds `GITHUB_SHA`, workflow blob and repository identity before the
+action can run, while `scripts/faz22-remote-ops/**` is part of the declared
+runtime-authority inventory that retriggers this gate. The browser stage uses
+the fixed runner-owned `/home/halil/.ssh/config`; OpenSSH host-key verification,
+the signed endpoint-ID digest, live certificate/channel checks and attended
+consent remain cumulative gates rather than interchangeable identity claims.
+The watchdog NetworkPolicy permits only the Kubernetes service ClusterIP
+`10.45.0.1/32:443` and the k3d node CIDR `172.19.0.0/16:6443`. The second rule
+is required because the test cluster's policy engine observes the apiserver's
+post-DNAT node endpoint; it is not general workload egress. Both CIDRs, ports
+and the empty-ingress posture are byte-checked by the protected-workflow
+contract, so widening them requires a reviewed authority change.
+
+The protected action pin must remain an ancestor of the landed branch. Merge
+this PR with a **merge commit**; squash and rebase merge are prohibited because
+they would orphan the reviewed action-source commit. The Cross-AI gate requires
+this PR to have merge-commit auto-merge selected and reruns on both
+`auto_merge_enabled` and `auto_merge_disabled`; a missing or different merge
+method fails closed. Enabling repository-level auto-merge only exposes the
+feature: selecting it on this PR remains a deliberate merge authorization and
+is not performed by the deployment App. If that topology cannot be guaranteed,
+do not merge these protected workflows; first land the source package
+separately and open a new exact-main pin/review PR.
+
+Exact provider model IDs are part of the signed contract. On model retirement,
+existing grants remain bound to the retired ID and are not rewritten: revoke
+unconsumed grants, land and review a contract/trust-root migration, rotate the
+affected issuer identity as required, and issue fresh grants. Until that full
+migration reaches three-provider consensus, new and existing executions remain
+fail-closed as `tracked_pending`.
 
 This path is source-ready only. Do not expose the endpoint or enable the
 Environment custom rule until the policy runtime has reviewed HTTPS, the
 public trust-root pin exists, the separate dispatcher identity is live, the
 protected workflows have landed, and negative/replay/rollback canaries pass.
+The three checked-in protected workflows must retain the literal all-zero
+trust-root digest while the public policy/trust-root/revocation files are
+absent. Only the separate reviewed trust-root release may replace all three
+sentinels together with those public artifacts and their independently
+computed release digest; an operator must never substitute a live-file-derived
+digest or edit one workflow in place.
 The static Environment credential does not replace GitHub OIDC, and GitHub
 OIDC does not replace the signed Cross-AI bundle or human-only gates.
 
