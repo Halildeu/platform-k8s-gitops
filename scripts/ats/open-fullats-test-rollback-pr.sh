@@ -13,7 +13,7 @@ RUN_ATTEMPT="${RUN_ATTEMPT:-1}"
 SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
 BOT_NAME="platform-gitops-automation[bot]"
 BOT_EMAIL="platform-gitops-automation[bot]@users.noreply.github.com"
-PROMOTION_BASE_SHA="6d77fbe809645cfa6e4b1c99481791070c5933d3"
+PROMOTION_BASE_SHA="c341e5c4f8616bf0693e4aab2823db2d96426d72"
 
 : "${GH_TOKEN:?GH_TOKEN must be a platform-gitops-automation GitHub App token}"
 [[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" ]] || {
