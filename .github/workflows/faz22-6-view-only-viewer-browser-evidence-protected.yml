@@ -21,15 +21,19 @@ jobs:
       - name: Checkout signed intent head
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - name: Verify signed runner bootstrap
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-bootstrap@c40bf996353ccde2a6c475c4be5c94924d5da1d1
         env:
           CROSS_AI_BOOTSTRAP_TOKEN: ${{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}
           CROSS_AI_ENDPOINT_ID: ${{ secrets.CROSS_AI_ENDPOINT_ID }}
           CROSS_AI_OPERATOR_ID: ${{ secrets.CROSS_AI_OPERATOR_ID }}
           CROSS_AI_BOOTSTRAP_URL: https://testai.acik.com/v1/runner-bootstrap
           CROSS_AI_BOOTSTRAP_OUTPUT: ${{ runner.temp }}/cross-ai-bootstrap.json
-        run: python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py --stage browser-evidence --workflow-path .github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml --policy-file config/github-apps/cross-ai-deployment-policy.json --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json --expected-trust-root-sha256 sha256:0000000000000000000000000000000000000000000000000000000000000000 --revocations-file config/github-apps/cross-ai-deployment-revocations.json --output "$CROSS_AI_BOOTSTRAP_OUTPUT"
+        with:
+          stage: browser-evidence
+          workflow-path: .github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml
+          expected-trust-root-sha256: sha256:0000000000000000000000000000000000000000000000000000000000000000
 
       - name: Execute reviewed stage
-        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-browser-evidence@a53d870cacb6e7c99762d62bdd60c098a56c4e70
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-browser-evidence@c40bf996353ccde2a6c475c4be5c94924d5da1d1
         env:
           CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json

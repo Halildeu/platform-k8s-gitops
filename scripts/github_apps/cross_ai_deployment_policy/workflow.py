@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import shlex
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,9 +34,9 @@ FORBIDDEN_AUTHORITY = re.compile(
     re.IGNORECASE,
 )
 SECRET_CONTEXT = re.compile(r"\bsecrets\s*(?:[.]|\[)", re.IGNORECASE)
-BOOTSTRAP_SCRIPT = "scripts/github_apps/run_cross_ai_runner_bootstrap.py"
 BOOTSTRAP_OUTPUT_VALUE = "${{ runner.temp }}/cross-ai-bootstrap.json"
-BOOTSTRAP_CONFIG_PATH = re.compile(r"^config/github-apps/[A-Za-z0-9_.-]+[.]json$")
+BOOTSTRAP_ACTION_REPOSITORY = "halildeu/platform-k8s-gitops"
+BOOTSTRAP_ACTION_PATH = "/.github/actions/protected-bootstrap"
 BOOTSTRAP_ENV = {
     "CROSS_AI_BOOTSTRAP_TOKEN": "${{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}",
     "CROSS_AI_ENDPOINT_ID": "${{ secrets.CROSS_AI_ENDPOINT_ID }}",
@@ -280,53 +279,18 @@ def _protected_secret_reference_count(raw_text: str, secret_name: str) -> int:
     return len(pattern.findall(raw_text))
 
 
-def _validate_bootstrap_command(command: object, stage_policy: StagePolicy) -> None:
-    if not isinstance(command, str) or any(
-        character in command for character in "\r\n"
-    ):
-        reject(
-            "WORKFLOW_BOOTSTRAP_INVALID",
-            "bootstrap command must be one literal command",
-        )
-    try:
-        tokens = shlex.split(command, posix=True)
-    except ValueError:
-        reject("WORKFLOW_BOOTSTRAP_INVALID", "bootstrap command quoting is invalid")
-    if tokens[:2] != ["python3", BOOTSTRAP_SCRIPT] or len(tokens) != 16:
-        reject(
-            "WORKFLOW_BOOTSTRAP_INVALID",
-            "bootstrap command must use only the pinned argument profile",
-        )
-    pairs = tokens[2:]
-    arguments = dict(zip(pairs[::2], pairs[1::2], strict=True))
-    required = {
-        "--stage",
-        "--workflow-path",
-        "--policy-file",
-        "--trust-root-file",
-        "--expected-trust-root-sha256",
-        "--revocations-file",
-        "--output",
-    }
-    if len(arguments) != 7 or set(arguments) != required:
-        reject(
-            "WORKFLOW_BOOTSTRAP_INVALID",
-            "bootstrap command arguments are not the pinned profile",
-        )
+def _bootstrap_action(value: object) -> tuple[bool, str | None]:
+    if not isinstance(value, str):
+        return False, None
+    match = REMOTE_ACTION.fullmatch(value)
     if (
-        arguments["--stage"] != stage_policy.stage
-        or arguments["--workflow-path"] != stage_policy.workflow_path
-        or arguments["--output"] != "$CROSS_AI_BOOTSTRAP_OUTPUT"
-        or SHA256_DIGEST.fullmatch(arguments["--expected-trust-root-sha256"]) is None
-        or any(
-            BOOTSTRAP_CONFIG_PATH.fullmatch(arguments[name]) is None
-            for name in ("--policy-file", "--trust-root-file", "--revocations-file")
-        )
+        match is None
+        or match.group("repository").casefold() != BOOTSTRAP_ACTION_REPOSITORY
+        or match.group("path") != BOOTSTRAP_ACTION_PATH
+        or FULL_COMMIT_SHA.fullmatch(match.group("revision")) is None
     ):
-        reject(
-            "WORKFLOW_BOOTSTRAP_INVALID",
-            "bootstrap command values differ from the signed stage profile",
-        )
+        return False, None
+    return True, match.group("revision")
 
 
 def _validate_bootstrap_step(
@@ -340,13 +304,13 @@ def _validate_bootstrap_step(
     matches: list[tuple[int, dict[str, Any]]] = []
     for index, step_value in enumerate(steps):
         step = _mapping(step_value, f"jobs.{job_name}.steps[]")
-        command = step.get("run")
-        if isinstance(command, str) and BOOTSTRAP_SCRIPT in command:
+        is_bootstrap, _revision = _bootstrap_action(step.get("uses"))
+        if is_bootstrap:
             matches.append((index, step))
     if len(matches) != 1:
         reject(
             "WORKFLOW_BOOTSTRAP_INVALID",
-            "governed job must call the pinned runner bootstrap exactly once",
+            "governed job must call the immutable runner bootstrap action exactly once",
         )
     bootstrap_index, bootstrap = matches[0]
     if bootstrap_index != 1:
@@ -363,12 +327,26 @@ def _validate_bootstrap_step(
                 "WORKFLOW_BOOTSTRAP_ORDER_INVALID",
                 "only pinned checkout may run before runner bootstrap",
             )
-    if set(bootstrap) - {"name", "env", "run"}:
+    if set(bootstrap) - {"name", "env", "uses", "with"}:
         reject(
             "WORKFLOW_BOOTSTRAP_INVALID",
             "bootstrap step contains an unsupported control field",
         )
-    _validate_bootstrap_command(bootstrap.get("run"), stage_policy)
+    is_bootstrap, bootstrap_revision = _bootstrap_action(bootstrap.get("uses"))
+    if not is_bootstrap or bootstrap_revision is None:
+        reject("WORKFLOW_BOOTSTRAP_INVALID", "bootstrap action pin is invalid")
+    arguments = _mapping(bootstrap.get("with"), "runner bootstrap inputs")
+    if (
+        set(arguments) != {"stage", "workflow-path", "expected-trust-root-sha256"}
+        or arguments.get("stage") != stage_policy.stage
+        or arguments.get("workflow-path") != stage_policy.workflow_path
+        or SHA256_DIGEST.fullmatch(str(arguments.get("expected-trust-root-sha256", "")))
+        is None
+    ):
+        reject(
+            "WORKFLOW_BOOTSTRAP_INVALID",
+            "bootstrap action inputs differ from the signed stage profile",
+        )
     environment = _mapping(bootstrap.get("env"), "runner bootstrap env")
     if set(environment) != set(BOOTSTRAP_ENV) | {"CROSS_AI_BOOTSTRAP_URL"}:
         reject(
@@ -402,6 +380,8 @@ def _validate_bootstrap_step(
             or not isinstance(use, str)
             or use.startswith("./")
             or is_checkout
+            or REMOTE_ACTION.fullmatch(use) is None
+            or REMOTE_ACTION.fullmatch(use).group("revision") != bootstrap_revision
             or _mapping(step.get("env"), "post-bootstrap action env")
             != POST_BOOTSTRAP_ENV
         ):

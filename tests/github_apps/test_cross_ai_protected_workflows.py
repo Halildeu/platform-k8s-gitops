@@ -14,7 +14,7 @@ from scripts.github_apps.cross_ai_deployment_policy.workflow import inspect_work
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "config/github-apps/cross-ai-deployment-policy.example.json"
-ACTION_COMMIT = "a53d870cacb6e7c99762d62bdd60c098a56c4e70"
+ACTION_COMMIT = "c40bf996353ccde2a6c475c4be5c94924d5da1d1"
 ZERO_TRUST_PIN = "sha256:" + ("0" * 64)
 
 
@@ -90,6 +90,7 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             )
             inspections.append(inspection)
             self.assertIn(f"@{ACTION_COMMIT}", raw.decode("utf-8"))
+            self.assertEqual(raw.decode("utf-8").count(f"@{ACTION_COMMIT}"), 2)
             self.assertIn(ZERO_TRUST_PIN, raw.decode("utf-8"))
         self.assertEqual(
             len({item.concurrency_group_sha256 for item in inspections}),
@@ -107,6 +108,7 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             capture_output=True,
         )
         for action in (
+            "protected-bootstrap",
             "protected-apply",
             "protected-browser-evidence",
             "protected-rollback",
