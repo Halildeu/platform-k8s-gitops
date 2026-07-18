@@ -152,6 +152,57 @@
         {
           "if": {
             "properties": {
+              "role": {"const": "provider-review"},
+              "providerFamily": {"const": "anthropic"}
+            },
+            "required": ["role", "providerFamily"]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {"const": ["direct-anthropic-cli"]},
+              "allowedModelIds": {"const": ["claude-opus-4-8"]},
+              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
+              "directProviderCli": {"const": true}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {"const": "provider-review"},
+              "providerFamily": {"const": "minimax"}
+            },
+            "required": ["role", "providerFamily"]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {"const": ["direct-minimax-cli"]},
+              "allowedModelIds": {"const": ["minimax/MiniMax-M3"]},
+              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
+              "directProviderCli": {"const": true}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {"const": "provider-review"},
+              "providerFamily": {"const": "openai"}
+            },
+            "required": ["role", "providerFamily"]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {"const": ["openai-codex"]},
+              "allowedModelIds": {"const": ["gpt-5.6-sol"]},
+              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
+              "directProviderCli": {"const": true}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
               "role": {
                 "enum": ["coordinator", "revocation", "runner-management"]
               }

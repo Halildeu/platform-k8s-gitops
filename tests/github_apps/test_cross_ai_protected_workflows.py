@@ -142,7 +142,13 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn('GATEWAY_ROUTE_INDEX="28"', script)
         self.assertIn("GATEWAY_ROUTE_PREFIX", script)
         self.assertIn("contains($token)", script)
-        self.assertIn("bounded DNS name", script)
+        self.assertIn("one bounded DNS line", script)
+        self.assertIn("bootstrap response digest mismatch", script)
+        self.assertIn("bootstrap bundle digest mismatch", script)
+        self.assertIn(
+            "bootstrap response differs from the current workflow run", script
+        )
+        self.assertIn("signed subject differs from the current workflow run", script)
         self.assertIn('DENETIM_SSH_OPTS="-F /home/halil/.ssh/config"', script)
         self.assertIn("expires_epoch - now_epoch + 600", script)
         rollback = (

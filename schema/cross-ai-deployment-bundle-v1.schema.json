@@ -363,8 +363,7 @@
           "maxItems": 3,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+            "enum": ["anthropic", "minimax", "openai"]
           }
         },
         "finalAgreeReviewSha256": {

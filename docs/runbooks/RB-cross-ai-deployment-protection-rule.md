@@ -59,6 +59,11 @@ The two-App split is a GitHub permission boundary, not the provider quorum.
 Provider execution and signing remain three separate issuer workloads
 (Anthropic, MiniMax and OpenAI); none of those issuers inherits either GitHub
 App identity or its repository permissions.
+The provider routes are not a configurable wrapper allowlist. V1 fixes exactly
+`direct-anthropic-cli` + `claude-opus-4-8`, `direct-minimax-cli` +
+`minimax/MiniMax-M3`, and `openai-codex` + `gpt-5.6-sol`; all require
+provider-reported model identity and `directProviderCli=true`. A different
+channel or model needs a reviewed contract migration, not a trust-root edit.
 
 | App | Repository permissions | Events | Implemented operations |
 |---|---|---|---|
@@ -507,6 +512,11 @@ Environment, intent ref, SHA, workflow, run/attempt, numeric actor and signed
 runner lease. One successful response is durably consumed; a retry returns a
 conflict and is not a safe automatic retry signal. The verified response is
 written as a new `0600` file and must be consumed before any mutation step.
+The stage consumer independently recomputes the response and bundle digests and
+requires its run ID, run attempt, head SHA, intent ref, workflow path,
+repository ID/name and signed subject to match the current GitHub runtime
+before the first Kubernetes or endpoint side effect. A stale or locally
+substituted bootstrap file therefore fails closed even on a trusted runner.
 
 The browser runner also requires one pre-provisioned, non-secret runtime
 archive at the fixed path

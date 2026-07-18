@@ -121,7 +121,9 @@ class EvidenceContractTest(unittest.TestCase):
         trust_root["keys"][0]["allowedModelIdentityClasses"] = [
             "trusted-launch-attested"
         ]
-        with self.assertRaisesRegex(PolicyError, "TRUST_KEY_ATTRIBUTION_INVALID"):
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_KEY_ATTRIBUTION_INVALID"
+        ):
             EvidenceVerifier(
                 trust_root=trust_root,
                 revocations_envelope=self.fixture.revocations_envelope,
@@ -147,14 +149,42 @@ class EvidenceContractTest(unittest.TestCase):
                 "providerFamilies", ["anthropic", "minimax", "xai"]
             )
         )
-        with self.assertRaisesRegex(PolicyError, "CONSENSUS_PROVIDER_MISMATCH"):
+        with self.assertRaisesRegex(
+            PolicyError, "BUNDLE_SCHEMA_INVALID|CONSENSUS_PROVIDER_MISMATCH"
+        ):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_wrapper_channel_marked_as_direct_provider(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][1]["allowedChannels"] = ["wrapper-minimax"]
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_noncanonical_exact_model_in_trust_root(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["allowedModelIds"] = ["gpt-5.6"]
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
 
     def test_rejects_same_provider_wrappers_as_three_provider_trust(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         trust_root["keys"][2]["providerFamily"] = "anthropic"
         trust_root["keys"][2]["allowedChannels"] = ["direct-anthropic-cli-alt"]
-        with self.assertRaisesRegex(PolicyError, "TRUST_PROVIDER_SET_INVALID"):
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_SET_INVALID"
+        ):
             EvidenceVerifier(
                 trust_root=trust_root,
                 revocations_envelope=self.fixture.revocations_envelope,
@@ -174,6 +204,18 @@ class EvidenceContractTest(unittest.TestCase):
     def test_rejects_public_key_reuse_across_provider_families(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         trust_root["keys"][2]["publicKeyBase64"] = trust_root["keys"][1][
+            "publicKeyBase64"
+        ]
+        with self.assertRaisesRegex(PolicyError, "TRUST_KEY_REUSED"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_public_key_reuse_across_provider_and_coordinator(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][3]["publicKeyBase64"] = trust_root["keys"][0][
             "publicKeyBase64"
         ]
         with self.assertRaisesRegex(PolicyError, "TRUST_KEY_REUSED"):
@@ -287,24 +329,14 @@ class EvidenceContractTest(unittest.TestCase):
     def test_rejects_required_provider_that_is_not_a_direct_route(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         trust_root["keys"][2]["directProviderCli"] = False
-        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
-        review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
-        review["directProviderCli"] = False
-        envelope = self.factory.sign(
-            "application/vnd.acik.cross-ai-deployment-review.v1+json",
-            review,
-            self.factory.OPENAI_KEY_ID,
-        )
-        bundle["reviewEnvelopes"][-1] = envelope
-        bundle["consensus"]["finalAgreeReviewSha256"][-1] = sha256_digest(envelope)
-        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
-        verifier = EvidenceVerifier(
-            trust_root=trust_root,
-            revocations_envelope=self.fixture.revocations_envelope,
-            now=self.fixture.now,
-        )
-        with self.assertRaisesRegex(PolicyError, "DIRECT_PROVIDER_SET_MISMATCH"):
-            verifier.verify_bundle(self.fixture.bundle_envelope)
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
 
     def test_rejects_session_rebinding(self) -> None:
         self.mutate_bundle(

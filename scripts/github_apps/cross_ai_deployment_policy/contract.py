@@ -36,6 +36,26 @@ RUNNER_ADMISSION_LEASE_PAYLOAD_TYPE = (
 SESSION_DOMAIN = "acik.cross-ai-deployment-session.v1"
 CLOSURE_DOMAIN = "acik.cross-ai-deployment-closure.v1"
 MAX_GRANT_TTL = timedelta(minutes=120)
+REQUIRED_PROVIDER_ROUTES = {
+    "anthropic": (
+        "direct-anthropic-cli",
+        "claude-opus-4-8",
+        "provider-reported",
+        True,
+    ),
+    "minimax": (
+        "direct-minimax-cli",
+        "minimax/MiniMax-M3",
+        "provider-reported",
+        True,
+    ),
+    "openai": (
+        "openai-codex",
+        "gpt-5.6-sol",
+        "provider-reported",
+        True,
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -186,6 +206,18 @@ class EvidenceVerifier:
                     reject(
                         "TRUST_KEY_ATTRIBUTION_INVALID",
                         f"direct provider key {key_id} lacks provider-reported identity",
+                    )
+                expected_route = REQUIRED_PROVIDER_ROUTES.get(family)
+                actual_route = (
+                    channels[0],
+                    model_ids[0],
+                    model_identity_classes[0],
+                    direct,
+                )
+                if expected_route is None or actual_route != expected_route:
+                    reject(
+                        "TRUST_PROVIDER_ROUTE_INVALID",
+                        f"provider key {key_id} differs from the canonical direct route",
                     )
             elif (
                 family is not None

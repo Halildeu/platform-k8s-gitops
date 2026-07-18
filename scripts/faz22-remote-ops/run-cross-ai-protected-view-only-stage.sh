@@ -5,7 +5,15 @@ set -euo pipefail
 
 STAGE="${1:-}"
 case "$STAGE" in
-  apply|browser-evidence|compensating-rollback) ;;
+  apply)
+    EXPECTED_WORKFLOW_PATH=".github/workflows/apply-view-only-viewer-pilot-protected.yml"
+    ;;
+  browser-evidence)
+    EXPECTED_WORKFLOW_PATH=".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml"
+    ;;
+  compensating-rollback)
+    EXPECTED_WORKFLOW_PATH=".github/workflows/rollback-view-only-viewer-pilot-protected.yml"
+    ;;
   *) echo "protected-view-only-stage: invalid stage" >&2; exit 2 ;;
 esac
 
@@ -38,12 +46,15 @@ for command in bash date docker jq kubectl python3 sha256sum ssh; do
 done
 
 mapfile -t BINDING < <(
-  python3 - "$CROSS_AI_BOOTSTRAP_FILE" "$STAGE" <<'PY'
+  python3 - "$CROSS_AI_BOOTSTRAP_FILE" "$STAGE" "$EXPECTED_WORKFLOW_PATH" <<'PY'
 import base64
+import binascii
 import json
 import os
 import stat
 import sys
+
+from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 
 flags = os.O_RDONLY
 if hasattr(os, "O_NOFOLLOW"):
@@ -61,13 +72,43 @@ with os.fdopen(descriptor, encoding="utf-8") as handle:
     response = json.load(handle)
 if response.get("stage") != sys.argv[2]:
     raise SystemExit("bootstrap stage mismatch")
-bundle = json.loads(base64.b64decode(response["bundleEnvelope"]["payload"], validate=True))
+unsigned_response = dict(response)
+response_digest = unsigned_response.pop("responseSha256", None)
+if response_digest != sha256_digest(unsigned_response):
+    raise SystemExit("bootstrap response digest mismatch")
+envelope = response.get("bundleEnvelope")
+if not isinstance(envelope, dict) or response.get("bundleSha256") != sha256_digest(envelope):
+    raise SystemExit("bootstrap bundle digest mismatch")
+try:
+    bundle = json.loads(base64.b64decode(envelope["payload"], validate=True))
+except (KeyError, TypeError, binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit("bootstrap bundle payload is invalid") from None
 stages = [item for item in bundle["workflowStages"] if item["stage"] == sys.argv[2]]
 if len(stages) != 1:
     raise SystemExit("signed workflow stage is ambiguous")
+subject = bundle.get("subject")
+if not isinstance(subject, dict):
+    raise SystemExit("signed subject is unavailable")
+expected_runtime = {
+    "runId": int(os.environ["GITHUB_RUN_ID"]),
+    "runAttempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+    "headSha": os.environ["GITHUB_SHA"],
+    "intentRef": os.environ["GITHUB_REF"],
+    "workflowPath": sys.argv[3],
+}
+if any(response.get(field) != value for field, value in expected_runtime.items()):
+    raise SystemExit("bootstrap response differs from the current workflow run")
+if (
+    subject.get("headSha") != expected_runtime["headSha"]
+    or subject.get("intentRef") != expected_runtime["intentRef"]
+    or subject.get("repository") != os.environ["GITHUB_REPOSITORY"]
+    or str(subject.get("repositoryId")) != os.environ["GITHUB_REPOSITORY_ID"]
+    or stages[0].get("workflowPath") != expected_runtime["workflowPath"]
+):
+    raise SystemExit("signed subject differs from the current workflow run")
 print(response["bundleSha256"])
 print(bundle["grant"]["expiresAt"])
-print(bundle["subject"]["endpointIdSha256"])
+print(subject["endpointIdSha256"])
 print(stages[0]["runtimeBundleSha256"] or "")
 PY
 )
@@ -358,10 +399,14 @@ run_apply() {
 run_browser() {
   local hostname device_id actual_hash expires_epoch remaining runtime evidence source
   hostname="$(ssh -n -F /home/halil/.ssh/config -o BatchMode=yes denetim-pc hostname \
-    2>/dev/null | tr -d '\r\n[:space:]')"
-  if [[ ! "$hostname" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,124}[A-Za-z0-9])?$ \
+    2>/dev/null)" || {
+    echo "protected-view-only-stage: endpoint hostname query failed" >&2
+    return 1
+  }
+  if [[ "$hostname" == *$'\n'* || "$hostname" == *$'\r'* \
+    || ! "$hostname" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,124}[A-Za-z0-9])?$ \
     || "$hostname" == *..* || "$hostname" == *.-* || "$hostname" == *-.* ]]; then
-    echo "protected-view-only-stage: endpoint hostname is not a bounded DNS name" >&2
+    echo "protected-view-only-stage: endpoint hostname is not one bounded DNS line" >&2
     return 1
   fi
   device_id="$(docker exec -i platform-pg-test psql -U postgres -d endpoint_admin \
