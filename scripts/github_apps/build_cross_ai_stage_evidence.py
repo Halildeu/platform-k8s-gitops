@@ -62,6 +62,40 @@ def _payload(envelope: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _read_private_ascii(path: Path, *, allow_missing: bool) -> str | None:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        if allow_missing:
+            return None
+        reject("STAGE_EVIDENCE_WATCHDOG_INVALID", "watchdog receipt is unavailable")
+    except OSError:
+        reject("STAGE_EVIDENCE_WATCHDOG_INVALID", "watchdog receipt is unavailable")
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
+            reject(
+                "STAGE_EVIDENCE_WATCHDOG_INVALID",
+                "watchdog receipt ownership or mode is invalid",
+            )
+        with os.fdopen(descriptor, encoding="ascii", closefd=False) as handle:
+            value = handle.read(257)
+        if len(value) > 256:
+            reject("STAGE_EVIDENCE_WATCHDOG_INVALID", "watchdog receipt is too large")
+        return value.strip()
+    except (OSError, UnicodeError):
+        reject("STAGE_EVIDENCE_WATCHDOG_INVALID", "watchdog receipt is invalid")
+    finally:
+        os.close(descriptor)
+
+
 def _watchdog(
     path: Path | None,
     stage: str,
@@ -74,14 +108,16 @@ def _watchdog(
         if path is not None:
             reject("STAGE_EVIDENCE_WATCHDOG_INVALID", "non-apply stage has watchdog input")
         return None
-    if path is None or not path.is_file() or path.is_symlink():
+    if path is None:
         if conclusion == "failure":
             return None
         reject(
             "STAGE_EVIDENCE_WATCHDOG_INVALID",
             "successful apply evidence requires the live watchdog expiry receipt",
         )
-    value = path.read_text(encoding="ascii").strip()
+    value = _read_private_ascii(path, allow_missing=conclusion == "failure")
+    if value is None:
+        return None
     parsed = parse_utc(value, "watchdogExpiresAt")
     if parsed <= current or parsed > grant_end:
         reject(

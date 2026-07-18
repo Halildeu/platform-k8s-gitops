@@ -119,6 +119,35 @@ class StageEvidenceBuilderTest(unittest.TestCase):
         self.assertEqual(evidence["conclusion"], "failure")
         self.assertIsNone(evidence["watchdogExpiresAt"])
 
+    def test_apply_success_requires_private_owned_watchdog_receipt(self) -> None:
+        self.response["stage"] = "apply"
+        self.response["workflowPath"] = self.factory.decode_payload(
+            self.fixture.bundle_envelope
+        )["workflowStages"][0]["workflowPath"]
+        self.bootstrap.write_bytes(canonical_bytes(self.response))
+        receipt = self.root / "watchdog-expires-at"
+        receipt.write_text("2026-07-16T21:00:00Z\n", encoding="ascii")
+        receipt.chmod(0o600)
+        with patch.dict(os.environ, self.environment, clear=True), patch.object(
+            builder, "utc_now", return_value=self.fixture.now
+        ):
+            evidence, _artifact = builder.build(
+                self.args(stage="apply", watchdog_expires_file=receipt)
+            )
+        self.assertEqual(evidence["watchdogExpiresAt"], "2026-07-16T21:00:00Z")
+
+        receipt.chmod(0o644)
+        with patch.dict(os.environ, self.environment, clear=True), patch.object(
+            builder, "utc_now", return_value=self.fixture.now
+        ), self.assertRaisesRegex(PolicyError, "STAGE_EVIDENCE_WATCHDOG_INVALID"):
+            builder.build(
+                self.args(
+                    stage="apply",
+                    watchdog_expires_file=receipt,
+                    output_dir=self.root / "rejected-outcome",
+                )
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

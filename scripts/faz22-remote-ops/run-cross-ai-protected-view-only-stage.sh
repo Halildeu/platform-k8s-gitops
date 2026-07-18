@@ -75,7 +75,7 @@ ENDPOINT_ID_SHA256="${BINDING[2]}"
 GRANT_EXPIRES_EPOCH="$(date -u -d "$GRANT_EXPIRES_AT" +%s)" || exit 2
 
 rollback_surface() {
-  local live_bundle
+  local live_bundle status
   live_bundle="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     get job faz22-view-only-pilot-watchdog \
     -o jsonpath='{.metadata.annotations.faz22\.6\.acik\.com/authorization-sha256}' \
@@ -84,16 +84,18 @@ rollback_surface() {
     echo "protected-view-only-stage: rollback ownership marker differs" >&2
     return 1
   fi
-  set +e
-  bash scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh
+  status=0
+  bash scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh || status=1
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
-    delete service endpoint-admin-remote-bridge-viewer --ignore-not-found
+    delete service endpoint-admin-remote-bridge-viewer --ignore-not-found || status=1
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     delete networkpolicy eab-bridge-viewer-allow-ingress-8096-from-api-gateway \
-    eab-api-gateway-allow-egress-8096-to-bridge-viewer --ignore-not-found
-  kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" apply -k "$BROKER_ONLY_OVERLAY"
+    eab-api-gateway-allow-egress-8096-to-bridge-viewer --ignore-not-found || status=1
+  kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    apply -k "$BROKER_ONLY_OVERLAY" || status=1
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart \
-    "deploy/$BRIDGE_DEPLOYMENT" "deploy/$GATEWAY_DEPLOYMENT"
+    "deploy/$BRIDGE_DEPLOYMENT" "deploy/$GATEWAY_DEPLOYMENT" || status=1
+  return "$status"
 }
 
 verify_rollback() {
@@ -187,6 +189,15 @@ run_apply() {
     rollout restart "deploy/$BRIDGE_DEPLOYMENT"
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     rollout status "deploy/$BRIDGE_DEPLOYMENT" --timeout=300s
+
+  local existing_route_keys
+  existing_route_keys="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get configmap "$GATEWAY_CONFIGMAP" -o json \
+    | jq -r '.data | keys[] | select(startswith("SPRING_CLOUD_GATEWAY_ROUTES_28_"))')"
+  [[ -z "$existing_route_keys" ]] || {
+    echo "protected-view-only-stage: gateway route index 28 is not clean" >&2
+    return 1
+  }
 
   # The ${sid} token is a Spring RewritePath variable, not a shell expansion.
   local route_patch
