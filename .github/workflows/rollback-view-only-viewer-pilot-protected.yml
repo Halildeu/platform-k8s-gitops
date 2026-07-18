@@ -21,7 +21,7 @@ jobs:
       - name: Checkout signed intent head
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - name: Verify signed runner bootstrap
-        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-bootstrap@4085f86ec299a7e76ad6ba646f976a83c7f11a1a
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-bootstrap@4bad56b0f2c01a481b7437f9a122a25574671af1
         env:
           CROSS_AI_BOOTSTRAP_TOKEN: ${{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}
           CROSS_AI_ENDPOINT_ID: ${{ secrets.CROSS_AI_ENDPOINT_ID }}
@@ -34,6 +34,6 @@ jobs:
           expected-trust-root-sha256: sha256:0000000000000000000000000000000000000000000000000000000000000000
 
       - name: Execute reviewed stage
-        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-rollback@4085f86ec299a7e76ad6ba646f976a83c7f11a1a
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-rollback@4bad56b0f2c01a481b7437f9a122a25574671af1
         env:
           CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json
