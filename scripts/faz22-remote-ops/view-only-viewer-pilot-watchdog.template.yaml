@@ -62,7 +62,8 @@ spec:
   egress:
     - to:
         # k3d-test service CIDR is 10.45.0.0/16; this is the fixed
-        # kubernetes.default.svc ClusterIP used by the readiness probe.
+        # kubernetes.default.svc ClusterIP. The watchdog pins curl --resolve to
+        # this injected service IP, so no DNS egress is required.
         - ipBlock:
             cidr: 10.45.0.1/32
       ports:
@@ -130,17 +131,22 @@ spec:
               ca_file=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
               namespace="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
               token="$(cat "$token_file")"
+              test "$KUBERNETES_SERVICE_HOST" = "10.45.0.1"
+              test "${KUBERNETES_SERVICE_PORT_HTTPS:-443}" = "443"
               api=https://kubernetes.default.svc
+              api_resolve="kubernetes.default.svc:${KUBERNETES_SERVICE_PORT_HTTPS:-443}:${KUBERNETES_SERVICE_HOST}"
               auth="Authorization: Bearer $token"
 
               request() {
                 method="$1"; path="$2"; content_type="$3"; body="$4"; expected="$5"
                 if [ -n "$body" ]; then
                   code="$(curl -sS -o /tmp/response -w '%{http_code}' --cacert "$ca_file" \
+                    --resolve "$api_resolve" \
                     -H "$auth" -H "Content-Type: $content_type" -X "$method" \
                     --data "$body" --max-time 20 "$api$path" || true)"
                 else
                   code="$(curl -sS -o /tmp/response -w '%{http_code}' --cacert "$ca_file" \
+                    --resolve "$api_resolve" \
                     -H "$auth" -H "Content-Type: $content_type" -X "$method" \
                     --max-time 20 "$api$path" || true)"
                 fi
@@ -194,7 +200,11 @@ spec:
                   test -r "$token_file" -a -r "$ca_file" -a -r "$namespace_file"
                   namespace="$(cat "$namespace_file")"
                   token="$(cat "$token_file")"
+                  test "$KUBERNETES_SERVICE_HOST" = "10.45.0.1"
+                  test "${KUBERNETES_SERVICE_PORT_HTTPS:-443}" = "443"
+                  api_resolve="kubernetes.default.svc:${KUBERNETES_SERVICE_PORT_HTTPS:-443}:${KUBERNETES_SERVICE_HOST}"
                   curl -fsS --cacert "$ca_file" \
+                    --resolve "$api_resolve" \
                     -H "Authorization: Bearer $token" --max-time 5 \
                     "https://kubernetes.default.svc/api/v1/namespaces/$namespace/configmaps/api-gateway-config" \
                     >/dev/null

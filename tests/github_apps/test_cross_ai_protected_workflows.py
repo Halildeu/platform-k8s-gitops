@@ -149,9 +149,7 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             capture_output=True,
         ).stdout
         changed_after_pin = {
-            os.fsdecode(path)
-            for path in changed_after_pin_raw.split(b"\0")
-            if path
+            os.fsdecode(path) for path in changed_after_pin_raw.split(b"\0") if path
         }
         action_package_drift = {
             path
@@ -325,6 +323,22 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("readinessProbe:", template)
         self.assertIn("kubernetes.default.svc/api/v1/namespaces/", template)
+        self.assertEqual(
+            template.count(
+                'api_resolve="kubernetes.default.svc:'
+                "${KUBERNETES_SERVICE_PORT_HTTPS:-443}:"
+                '${KUBERNETES_SERVICE_HOST}"'
+            ),
+            2,
+        )
+        self.assertEqual(template.count('--resolve "$api_resolve"'), 3)
+        self.assertEqual(
+            template.count('test "$KUBERNETES_SERVICE_HOST" = "10.45.0.1"'), 2
+        )
+        self.assertEqual(
+            template.count('test "${KUBERNETES_SERVICE_PORT_HTTPS:-443}" = "443"'),
+            2,
+        )
         self.assertIn("configmaps/api-gateway-config", template)
         self.assertIn("Authorization: Bearer $token", template)
 
