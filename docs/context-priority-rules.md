@@ -507,8 +507,10 @@ yalnız case-sensitive exact `None` sentinel'i taşımalıdır; terminal provide
 receipt ve PR verdict değerleri de case-sensitive exact `AGREE|REVISE`/`AGREE`
 olmalıdır. Bulgu + `AGREE` çelişkisi
 builder ve gate tarafından reddedilir. Provider response'u evidence olmadan önce
-e-posta, Türk mobil numara, private-key marker ve raw bearer için fail-closed
-taranır; eşleşme redakte edilmeden GitHub'a post edilmez. Provider'ın tam final response'u stdin'den
+e-posta, Türk mobil numara, private-key marker, raw bearer, JWT, yaygın
+provider/API token biçimleri, secret/parola ataması, webhook URL ve cookie
+header için fail-closed taranır; eşleşme redakte edilmeden GitHub'a post
+edilmez. Provider'ın tam final response'u stdin'den
 `scripts/ai/build_cross_ai_evidence.py` betiğine verilir; builder model ve SHA
 formatını, tekil terminal verdict'i, response digest'ini ve serialize edilmiş
 nihai GitHub comment byte sınırını doğrular. `REVISE`
@@ -532,6 +534,10 @@ comment kabul edilir; bu eşitlik kriptografik immutability garantisi değildir.
 Comment en fazla yedi günlük olabilir ve beş dakikadan fazla gelecek zamanlı
 olamaz; daha eski immutable head için bile üç kanal yeniden çalıştırılıp yeni
 evidence üretilir.
+Üç final evidence comment'inin GitHub `created_at` değerleri strict
+`Claude < MiniMax < Codex` olmalıdır; eşit zaman damgası sıralama kanıtı
+sayılmaz ve gate fail-closed kalır. Bu yalnız owner publication order kanıtıdır;
+provider çağrı zamanına ilişkin kriptografik attestation iddiası değildir.
 Comment body SHA-256, iç response SHA-256 ve response'un tekil terminal
 `VERDICT: AGREE` semantiği yeniden hesaplanır; sonra aynı base-tip/base/head/scope'a
 bağlı exact provider/model ve `AGREE` alanları fail-closed doğrulanır. Top-level verdict de yalnız

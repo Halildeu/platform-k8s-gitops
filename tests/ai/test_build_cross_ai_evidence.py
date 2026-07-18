@@ -78,6 +78,13 @@ class EvidenceBuilderTests(unittest.TestCase):
             "-----BEGIN " + "PRIVATE KEY-----",
             "Authorization: " + "Bearer " + "abcdefghijklmnop",
             "Bearer " + "abcdefghijklmnop",
+            "eyJ" + "a" * 16 + "." + "b" * 16 + "." + "c" * 16,
+            "AKIA" + "A" * 16,
+            "ghp_" + "a" * 30,
+            "sk-" + "a" * 30,
+            "password=" + "a" * 16,
+            "webhook_url=https://example.invalid/" + "a" * 20,
+            "Cookie: session=" + "a" * 20,
         )
         for value in values:
             with self.subTest(value=value):

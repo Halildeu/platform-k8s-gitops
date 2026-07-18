@@ -36,6 +36,35 @@ PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
 BEARER_RE = re.compile(
     r"(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
 )
+JWT_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\."
+    r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])"
+)
+KNOWN_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:"
+    r"(?:AKIA|ASIA)[0-9A-Z]{16}"
+    r"|gh[pousr]_[A-Za-z0-9]{20,}"
+    r"|github_pat_[A-Za-z0-9_]{22,}"
+    r"|sk-(?:proj-)?[A-Za-z0-9_-]{20,}"
+    r"|AIza[0-9A-Za-z_-]{35}"
+    r"|xox[baprs]-[A-Za-z0-9-]{20,}"
+    r"|sk_live_[A-Za-z0-9]{16,}"
+    r")(?![A-Za-z0-9])"
+)
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|"
+    r"access[_-]?token|refresh[_-]?token|session[_-]?secret)\b"
+    r"\s*[:=]\s*[\"']?[A-Za-z0-9._~+/=-]{12,}[\"']?",
+    re.IGNORECASE,
+)
+WEBHOOK_URL_RE = re.compile(
+    r"\bwebhook[_-]?url\b\s*[:=]\s*https?://[^\s\"'<>]{12,}",
+    re.IGNORECASE,
+)
+COOKIE_HEADER_RE = re.compile(
+    r"^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$",
+    re.IGNORECASE | re.MULTILINE,
+)
 PROVIDER_MODELS = {
     "anthropic": "claude-opus-4-8",
     "minimax": "minimax/MiniMax-M3",
@@ -73,6 +102,11 @@ def contains_sensitive_response(response: str) -> bool:
         or TURKISH_PHONE_RE.search(response)
         or PRIVATE_KEY_RE.search(response)
         or BEARER_RE.search(response)
+        or JWT_RE.search(response)
+        or KNOWN_TOKEN_RE.search(response)
+        or SECRET_ASSIGNMENT_RE.search(response)
+        or WEBHOOK_URL_RE.search(response)
+        or COOKIE_HEADER_RE.search(response)
     )
 
 

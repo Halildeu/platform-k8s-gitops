@@ -34,7 +34,7 @@ const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
 const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
 const SCOPE_SHA256 = 'a'.repeat(64);
-const NOW = new Date().toISOString();
+const NOW_MS = Date.now();
 
 const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
 const evidenceRef = (id) =>
@@ -52,20 +52,20 @@ const evidenceBody = (provider, model, response) => JSON.stringify({
   response_sha256: sha256(response),
   response,
 });
-const evidenceComment = (body) => ({
+const evidenceComment = (body, offsetMs = 0) => ({
   body,
   author: 'Halildeu',
   authorAssociation: 'OWNER',
-  createdAt: NOW,
-  updatedAt: NOW,
+  createdAt: new Date(NOW_MS + offsetMs).toISOString(),
+  updatedAt: new Date(NOW_MS + offsetMs).toISOString(),
 });
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
 const CODEX_REF = evidenceRef(1003);
 const EVIDENCE = {
-  [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')),
-  [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')),
-  [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')),
+  [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 0),
+  [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 1_000),
+  [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
 };
 
 // Build the GitHub event payload and run the real script; return its exit code.
@@ -195,6 +195,14 @@ const outOfOrderEvidence = {
     updatedAt: new Date(Date.now() + 60_000).toISOString(),
   },
 };
+const equalTimestampEvidence = {
+  ...EVIDENCE,
+  [MINIMAX_REF]: {
+    ...EVIDENCE[MINIMAX_REF],
+    createdAt: EVIDENCE[CLAUDE_REF].createdAt,
+    updatedAt: EVIDENCE[CLAUDE_REF].updatedAt,
+  },
+};
 const minimaxReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
 const minimaxReviseBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[MINIMAX_REF].body),
@@ -266,6 +274,30 @@ const rawBearerPeerBody = peerBody.replace(
   sha256(EVIDENCE[CLAUDE_REF].body),
   sha256(rawBearerBody),
 );
+const highConfidenceSensitiveFixtures = [
+  ['JWT', 'eyJ' + 'a'.repeat(16) + '.' + 'b'.repeat(16) + '.' + 'c'.repeat(16)],
+  ['known API key', 'ghp_' + 'a'.repeat(30)],
+  ['secret assignment', 'password=' + 'a'.repeat(16)],
+  ['webhook URL', 'webhook_url=https://example.invalid/' + 'a'.repeat(20)],
+  ['cookie header', 'Cookie: session=' + 'a'.repeat(20)],
+].map(([label, value]) => {
+  const response = `P0\nNone\nP1\nNone\nP2\n${value}\nVERDICT: AGREE`;
+  const body = JSON.stringify({
+    ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+    response_sha256: sha256(response),
+    response,
+  });
+  return [label, {
+    body: peerBody.replace(
+      sha256(EVIDENCE[CLAUDE_REF].body),
+      sha256(body),
+    ),
+    evidence: {
+      ...EVIDENCE,
+      [CLAUDE_REF]: evidenceComment(body),
+    },
+  }];
+});
 const nonExactNoneResponse = 'P0\nnOnE\nP1\nNone\nP2\nNone\nVERDICT: AGREE';
 const nonExactNoneBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
@@ -400,6 +432,9 @@ const cases = [
   ['normal PR + evidence publication order is not Claude then MiniMax then Codex -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: outOfOrderEvidence }, 1],
+  ['normal PR + equal provider evidence timestamps -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, evidence: equalTimestampEvidence }, 1],
   ['normal PR + duplicate provider evidence refs -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace(MINIMAX_REF, CLAUDE_REF) }, 1],
@@ -418,6 +453,11 @@ const cases = [
   ['provider response contains raw bearer without Authorization prefix -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: rawBearerPeerBody, evidence: rawBearerEvidence }, 1],
+  ...highConfidenceSensitiveFixtures.map(([label, fixture]) => [
+    `provider response contains ${label} -> fail closed`,
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', ...fixture },
+    1,
+  ]),
   ['provider AGREE uses a non-exact None sentinel -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: nonExactNonePeerBody, evidence: nonExactNoneEvidence }, 1],

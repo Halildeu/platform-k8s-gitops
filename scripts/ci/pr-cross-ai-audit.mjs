@@ -35,6 +35,11 @@ const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z
 const TURKISH_PHONE_RE = /(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)/;
 const PRIVATE_KEY_RE = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
 const BEARER_RE = /(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}/i;
+const JWT_RE = /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/;
+const KNOWN_TOKEN_RE = /(?<![A-Za-z0-9])(?:(?:AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{22,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{20,}|sk_live_[A-Za-z0-9]{16,})(?![A-Za-z0-9])/;
+const SECRET_ASSIGNMENT_RE = /\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|session[_-]?secret)\b\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{12,}["']?/i;
+const WEBHOOK_URL_RE = /\bwebhook[_-]?url\b\s*[:=]\s*https?:\/\/[^\s"'<>]{12,}/i;
+const COOKIE_HEADER_RE = /^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$/im;
 const RECEIPT_KEYS = new Set([
   'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
   'verdict', 'ref', 'sha256',
@@ -448,7 +453,12 @@ function containsSensitiveResponse(response) {
   return EMAIL_RE.test(response)
     || TURKISH_PHONE_RE.test(response)
     || PRIVATE_KEY_RE.test(response)
-    || BEARER_RE.test(response);
+    || BEARER_RE.test(response)
+    || JWT_RE.test(response)
+    || KNOWN_TOKEN_RE.test(response)
+    || SECRET_ASSIGNMENT_RE.test(response)
+    || WEBHOOK_URL_RE.test(response)
+    || COOKIE_HEADER_RE.test(response);
 }
 
 async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
@@ -658,14 +668,14 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
     detail: "Üç provider receipt ref'i birbirinden farklı olmalıdır",
   });
   const publicationOrderPass = evidenceCreatedAt.length === 3
-    && evidenceCreatedAt[0] <= evidenceCreatedAt[1]
-    && evidenceCreatedAt[1] <= evidenceCreatedAt[2];
+    && evidenceCreatedAt[0] < evidenceCreatedAt[1]
+    && evidenceCreatedAt[1] < evidenceCreatedAt[2];
   findings.push({
     check: 'consultation_publication_order_claude_minimax_codex',
     pass: publicationOrderPass,
     detail: publicationOrderPass
-      ? 'owner evidence publication order is Claude -> MiniMax -> Codex'
-      : 'owner evidence comments must be published in Claude -> MiniMax -> Codex order',
+      ? 'owner evidence publication order is strictly Claude -> MiniMax -> Codex'
+      : 'owner evidence comments must have strictly increasing Claude -> MiniMax -> Codex timestamps',
   });
 }
 
