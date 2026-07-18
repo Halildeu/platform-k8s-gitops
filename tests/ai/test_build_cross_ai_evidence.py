@@ -77,6 +77,7 @@ class EvidenceBuilderTests(unittest.TestCase):
             "+90 532 123 45 67",
             "-----BEGIN " + "PRIVATE KEY-----",
             "Authorization: " + "Bearer abcdefghijklmnop",
+            "Bearer " + "abcdefghijklmnop",
         )
         for value in values:
             with self.subTest(value=value):
@@ -87,6 +88,18 @@ class EvidenceBuilderTests(unittest.TestCase):
                 self.assertEqual(
                     json.loads(result.stdout)["error"],
                     "provider_response_contains_sensitive_data",
+                )
+
+    def test_rejects_non_exact_none_sentinel_for_agree(self) -> None:
+        for sentinel in ("None.", "none", "nOnE"):
+            with self.subTest(sentinel=sentinel):
+                result = self.run_builder(
+                    f"P0\n{sentinel}\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+                )
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(
+                    json.loads(result.stdout)["error"],
+                    "provider_agree_contains_p0_or_p1_findings",
                 )
 
     def test_rejects_nonterminal_verdict(self) -> None:

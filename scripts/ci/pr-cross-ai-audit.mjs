@@ -30,11 +30,11 @@ const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 const EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
-const NO_FINDINGS_RE = /^None\.?$/i;
+const NO_FINDINGS_RE = /^None$/;
 const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
 const TURKISH_PHONE_RE = /(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)/;
 const PRIVATE_KEY_RE = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
-const BEARER_RE = /authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}/i;
+const BEARER_RE = /(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}/i;
 const RECEIPT_KEYS = new Set([
   'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
   'verdict', 'ref', 'sha256',

@@ -252,6 +252,34 @@ const sensitivePeerBody = peerBody.replace(
   sha256(EVIDENCE[CLAUDE_REF].body),
   sha256(sensitiveBody),
 );
+const rawBearerResponse = 'P0\nNone\nP1\nNone\nP2\nBearer ' + 'abcdefghijklmnop\nVERDICT: AGREE';
+const rawBearerBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  response_sha256: sha256(rawBearerResponse),
+  response: rawBearerResponse,
+});
+const rawBearerEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(rawBearerBody),
+};
+const rawBearerPeerBody = peerBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(rawBearerBody),
+);
+const nonExactNoneResponse = 'P0\nnOnE\nP1\nNone\nP2\nNone\nVERDICT: AGREE';
+const nonExactNoneBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  response_sha256: sha256(nonExactNoneResponse),
+  response: nonExactNoneResponse,
+});
+const nonExactNoneEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(nonExactNoneBody),
+};
+const nonExactNonePeerBody = peerBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(nonExactNoneBody),
+);
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -373,6 +401,12 @@ const cases = [
   ['provider response contains PII -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: sensitivePeerBody, evidence: sensitiveEvidence }, 1],
+  ['provider response contains raw bearer without Authorization prefix -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: rawBearerPeerBody, evidence: rawBearerEvidence }, 1],
+  ['provider AGREE uses a non-exact None sentinel -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: nonExactNonePeerBody, evidence: nonExactNoneEvidence }, 1],
   ['auto-verified ledger outside the three canonical product families -> blocked',
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(LEDGER),
       changedFiles: [`release-candidates/fake-product/${'a'.repeat(40)}.json`] }, 1],

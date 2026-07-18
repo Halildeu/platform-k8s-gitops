@@ -73,7 +73,7 @@ def run_git_diff(
     environment = os.environ.copy()
     environment.update({"LC_ALL": "C", "LANG": "C", "TZ": "UTC", "COLUMNS": "999"})
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             [
                 "git",
                 "-c",
@@ -99,20 +99,39 @@ def run_git_diff(
                 f"{base_sha}...{head_sha}",
             ],
             cwd=repo,
-            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             env=environment,
         )
     except OSError:
         fail("git_unavailable")
-    if result.returncode != 0:
+    if process.stdout is None:
+        process.kill()
         fail("git_diff_failed")
-    if not result.stdout.strip():
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        remaining = max_scope_bytes + 1 - total
+        if remaining <= 0:
+            process.stdout.close()
+            process.kill()
+            process.wait()
+            fail("scope_too_large")
+        chunk = process.stdout.read(min(65_536, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    process.stdout.close()
+    returncode = process.wait()
+    if returncode != 0:
+        fail("git_diff_failed")
+    raw_scope = b"".join(chunks)
+    if not raw_scope.strip():
         fail("scope_empty")
-    if len(result.stdout) > max_scope_bytes:
+    if len(raw_scope) > max_scope_bytes:
         fail("scope_too_large")
-    return result.stdout
+    return raw_scope
 
 
 def write_exclusive_output(output: Path, content: bytes) -> None:

@@ -503,7 +503,7 @@ taşır. Şema bu on bir alanı exact zorunlu tutar (`additionalProperties=false
 ```
 
 Bu gövde elle yeniden yazılmaz. `AGREE` yanıtında P0 ve P1 bölümlerinin her biri
-yalnız exact `None`/`None.` sentinel'i taşımalıdır; bulgu + `AGREE` çelişkisi
+yalnız case-sensitive exact `None` sentinel'i taşımalıdır; bulgu + `AGREE` çelişkisi
 builder ve gate tarafından reddedilir. Provider response'u evidence olmadan önce
 e-posta, Türk mobil numara, private-key marker ve raw bearer için fail-closed
 taranır; eşleşme redakte edilmeden GitHub'a post edilmez. Provider'ın tam final response'u stdin'den

@@ -27,7 +27,7 @@ class VerdictParsingTests(unittest.TestCase):
                 MODULE.parse_verdict(response)
 
     def test_accepts_single_terminal_verdict_with_priority_sections(self) -> None:
-        response = "# P0\nNone.\n# P1\nNone.\n# P2\nNone.\nVERDICT: AGREE"
+        response = "# P0\nNone\n# P1\nNone\n# P2\nNone\nVERDICT: AGREE"
         self.assertEqual(MODULE.parse_verdict(response), "AGREE")
 
     def test_accepts_supported_plain_bold_and_heading_section_variants(self) -> None:
@@ -75,6 +75,13 @@ class VerdictParsingTests(unittest.TestCase):
         ):
             with self.subTest(response=response):
                 self.assert_rejected(response)
+
+    def test_rejects_non_exact_none_sentinel_for_agree(self) -> None:
+        for sentinel in ("None.", "none", "nOnE"):
+            with self.subTest(sentinel=sentinel):
+                self.assert_rejected(
+                    f"P0\n{sentinel}\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+                )
 
     def test_system_prompt_rejects_diff_instructions(self) -> None:
         self.assertIn("untrusted git-diff data", MODULE.REVIEW_SYSTEM_PROMPT)

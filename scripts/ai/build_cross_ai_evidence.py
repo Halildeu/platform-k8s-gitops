@@ -25,7 +25,7 @@ PRIORITY_HEADING_RE = re.compile(
     r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?"
     r"(?:[ \t]*[—:-].*)?[ \t]*$"
 )
-NO_FINDINGS_RE = re.compile(r"^None\.?$", re.IGNORECASE)
+NO_FINDINGS_RE = re.compile(r"^None$")
 EMAIL_RE = re.compile(
     r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
 )
@@ -34,7 +34,7 @@ TURKISH_PHONE_RE = re.compile(
 )
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 BEARER_RE = re.compile(
-    r"authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
+    r"(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
 )
 PROVIDER_MODELS = {
     "anthropic": "claude-opus-4-8",

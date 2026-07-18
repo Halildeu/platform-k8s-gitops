@@ -77,6 +77,34 @@ class OutputSafetyTests(unittest.TestCase):
 
 
 class DeterministicDiffTests(unittest.TestCase):
+    def test_git_diff_stops_at_scope_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "config", "user.name", "Test"], cwd=repo, check=True
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=repo,
+                check=True,
+            )
+            source = repo / "scope.txt"
+            source.write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "scope.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+            base = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+            ).strip()
+            source.write_text("x" * 20_000, encoding="utf-8")
+            subprocess.run(["git", "commit", "-qam", "head"], cwd=repo, check=True)
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+            ).strip()
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    MODULE.run_git_diff(repo, base, head, 1_000)
+
     def test_scope_is_independent_of_caller_columns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

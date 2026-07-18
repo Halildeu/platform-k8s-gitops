@@ -28,7 +28,7 @@ TURKISH_PHONE_RE = re.compile(
 )
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 BEARER_RE = re.compile(
-    r"authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
+    r"(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
 )
 MAX_EVIDENCE_BYTES = 60_000
 EVIDENCE_KEYS = {
