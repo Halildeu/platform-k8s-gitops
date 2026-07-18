@@ -139,7 +139,8 @@ class TransportDigestTests(unittest.TestCase):
 class ProviderUrlTests(unittest.TestCase):
     def test_accepts_exact_minimax_https_origin(self) -> None:
         MODULE.validate_provider_url(
-            "https://agent.minimax.io/mavis/api/v1/llm/v1/messages"
+            "https://agent.minimax.io/mavis/api/v1/llm/v1/messages",
+            MODULE.EXPECTED_PROVIDER_REQUEST_PATH,
         )
 
     def test_rejects_redirected_or_credentialed_origins(self) -> None:
@@ -153,7 +154,21 @@ class ProviderUrlTests(unittest.TestCase):
             with self.subTest(value=value):
                 with contextlib.redirect_stdout(io.StringIO()):
                     with self.assertRaises(SystemExit):
-                        MODULE.validate_provider_url(value)
+                        MODULE.validate_provider_url(
+                            value, MODULE.EXPECTED_PROVIDER_REQUEST_PATH
+                        )
+
+    def test_base_and_final_request_paths_are_distinct_and_exact(self) -> None:
+        MODULE.validate_provider_url(
+            "https://agent.minimax.io/mavis/api/v1/llm/v1",
+            MODULE.EXPECTED_PROVIDER_BASE_PATH,
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                MODULE.validate_provider_url(
+                    "https://agent.minimax.io/mavis/api/v1/llm/v1",
+                    MODULE.EXPECTED_PROVIDER_REQUEST_PATH,
+                )
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,7 +24,8 @@ from urllib.parse import urlparse
 MODEL_REF = "minimax/MiniMax-M3"
 EXPECTED_PROVIDER_NAME = "MiniMax"
 EXPECTED_PROVIDER_HOST = "agent.minimax.io"
-EXPECTED_PROVIDER_PATH = "/mavis/api/v1/llm/v1/messages"
+EXPECTED_PROVIDER_BASE_PATH = "/mavis/api/v1/llm/v1"
+EXPECTED_PROVIDER_REQUEST_PATH = f"{EXPECTED_PROVIDER_BASE_PATH}/messages"
 EXPECTED_TRANSPORT_SHA256 = "02c3da6c790c8e8bf68cc32d679f5077147d6ffbe57d84e31b25f2dc75538545"
 MAX_PROMPT_BYTES = 2_000_000
 MAX_RESPONSE_BYTES = 48_000
@@ -190,7 +191,7 @@ def normalize_actual_model(value: object) -> str:
     return model if "/" in model else f"minimax/{model}"
 
 
-def validate_provider_url(value: object) -> None:
+def validate_provider_url(value: object, expected_path: str) -> None:
     parsed = urlparse(value) if isinstance(value, str) else None
     try:
         port = parsed.port if parsed else None
@@ -201,7 +202,7 @@ def validate_provider_url(value: object) -> None:
         or parsed.scheme != "https"
         or parsed.hostname != EXPECTED_PROVIDER_HOST
         or port not in {None, 443}
-        or parsed.path != EXPECTED_PROVIDER_PATH
+        or parsed.path != expected_path
         or parsed.username is not None
         or parsed.password is not None
         or bool(parsed.query)
@@ -273,7 +274,7 @@ def invoke_provider(
         extra_headers=headers,
         model_options=model_options,
     )
-    validate_provider_url(url)
+    validate_provider_url(url, EXPECTED_PROVIDER_REQUEST_PATH)
     try:
         with module.httpx.Client(
             timeout=timeout, trust_env=False, follow_redirects=False
@@ -343,7 +344,7 @@ def main() -> None:
 
     options = provider_config.get("options", {})
     base_url = options.get("baseURL", "")
-    validate_provider_url(base_url)
+    validate_provider_url(base_url, EXPECTED_PROVIDER_BASE_PATH)
 
     headers = dict(options.get("headers", {}))
     if isinstance(model_config, dict) and model_config.get("headers"):
