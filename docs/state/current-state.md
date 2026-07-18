@@ -1,5 +1,57 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — #2615 basic Full ATS customer path accepted; expanded journey not live (2026-07-18)
+
+This delta records the testai-only customer acceptance that was completed under
+[#2615](https://github.com/Halildeu/platform-k8s-gitops/issues/2615). It proves
+the basic recruiter → public candidate → recruiter journey and the user's
+subsequent confirmation that the submitted application is visible in the
+recruiter inbox. It does not promote the later PDF CV, full candidate portal,
+structured evaluation, interview, offer or hire source slices to live truth.
+
+Accepted immutable test runtime:
+
+- ATS source `f4d2b4f79b10fa879e610a102acf1eb54eba9964` from
+  [ats#183](https://github.com/Halildeu/ats/pull/183), digest
+  `sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11`;
+- frontend source `eee1310b33376013967482ae842bf15c797fe72c` from
+  [platform-web#947](https://github.com/Halildeu/platform-web/pull/947), digest
+  `sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402`;
+- permission-service source `e2feb24117f1c1dc76306535197edb67dccf974e`
+  from [platform-backend#868](https://github.com/Halildeu/platform-backend/pull/868),
+  digest `sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d`.
+
+Live evidence and bounded result:
+
+- protected Full ATS browser run
+  [29648350919](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/29648350919)
+  proved least-privilege recruiter setup, draft/edit/preview/publish, dynamic
+  public discovery, synthetic `.test` application, persistent receipt,
+  recruiter inbox visibility, pause/republish/close and fail-closed new intake;
+- the durable tenant/product-grant correction is
+  [GitOps PR #2642](https://github.com/Halildeu/platform-k8s-gitops/pull/2642);
+- the user explicitly confirmed on 2026-07-18, after a fresh login, that the
+  submitted application appeared in the recruiter surface. The owner-captured
+  acceptance and boundary remain canonical in #2615.
+
+Expanded Full ATS source is ready but is **not current live truth**. ATS main
+`f8b9f40d45a07e421ebfdfe610d304cc56bc1527` / digest
+`sha256:5b8985c1a5287588e3338bf569136c6eb6091a4475d4226a0b80c8603571b20d`
+and frontend main `f4a1f5822226fcb5452a7defd013933dac7fb440` / digest
+`sha256:c77d4dc57e48eed8583bf26850ac61f0ca3e44439baf64b7d2da9d3709d000f2`
+contain candidate-controlled PDF import, candidate history, human evaluation,
+interview scheduling/scorecards, offer response and human-controlled hire.
+They are only promotion candidates in draft
+[#2685](https://github.com/Halildeu/platform-k8s-gitops/pull/2685). Normal CI is
+green, but exact-head Cross-AI receipts, merge, GitOps reconcile, Ready-pod
+digest equality, V4–V11 migrations and the combined two-persona browser
+acceptance are pending. Source merge and immutable images do not make those
+features live or accepted.
+
+Boundary: test-only synthetic data; production, real CV/PII, Legal/DPO,
+commercial activation and employment-contract/e-signature authority remain
+separate gates. Pricing/payment does not block the safe test customer journey.
+
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 
 This delta supersedes only the 2026-07-17 statements below that TEST Vault had
