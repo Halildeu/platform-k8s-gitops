@@ -338,17 +338,102 @@ Mavis bildirimi **yerine geçmez**:
 
 <a id="cross-ai-three-channel"></a>
 
-## 11. Zorunlu Üç Kanallı Cross-AI İstişare
+## 11. Durumsal Cross-AI İstişare — Varsayılan Az Kanal
 
-Faz/plan/PR ikinci görüşü ile authz, kişisel veri, retention/silme, migration,
-concurrency, cutover, faz kapanışı ve merge-readiness gibi yüksek etkili kararlar
-aynı exact scope veya commit üzerinde aşağıdaki üç headless kanalda incelenir:
+Kullanıcının [#2621](https://github.com/Halildeu/platform-k8s-gitops/issues/2621)
+kararı, 2026-07-17 tarihli zorunlu üç-kanal politikasını yürürlükten kaldırır.
+Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
+adımlarında istişare açılmaz. İstişare bir teslimat ritüeli değil, yalnız karar
+belirsizliği veya risk için kullanılan sınırlı araçtır.
 
-**Birincil istişare kanalı doğrudan Anthropic Claude Opus 4.8'dir.** Her turun
-ilk dış çağrısı `claude --model claude-opus-4-8` ile yapılır. JSON `modelUsage`
-exact `claude-opus-4-8` dönmezse birincil istişare tamamlanmış sayılmaz; alias
-veya daha düşük modele sessiz fallback yapılmaz. Claude birincil görüşünden sonra
-MiniMax M3 ve Codex 5.6 SOL aynı content-addressed scope'u inceler.
+Üç açık mod vardır:
+
+1. **`none` — varsayılan:** Rutin implementation/test işinde provider çağrısı
+   yapılmaz. PR'da somut `Consultation reason` yazılır; receipt üretilmez.
+   Changed-files kanıtı eksikse, consultation governance dosyası, yüksek güvenli
+   RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration yolu değişiyorsa veya
+   branch `auto-promotion/` ise gate en az `single` zorunlu tutar. Audit/evidence
+   enforcement kodunun kendisi değişiyorsa mekanik taban `dual` olur.
+2. **`single` — gerçekten ikinci görüş gerektiğinde:** Tek ve birincil kanal
+   direct Anthropic `claude --model claude-opus-4-8` olur. JSON `modelUsage`
+   exact `claude-opus-4-8` değilse kanal tamamlanmış sayılmaz. Claude
+   implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz; bu
+   durumda provider-distinct ikinci kanal ile `dual` gerekir.
+3. **`dual` — istisnai yüksek risk:** Yalnız geri döndürülemez, çok yüksek
+   riskli veya açık insan/yetkili kararı gerektiren noktada Claude'a **bir**
+   provider-distinct kanal eklenir. İkincil kanal MiniMax
+   `minimax/MiniMax-M3` veya OpenAI `gpt-5.6-sol` olabilir; ikisi birden
+   kullanılmaz. İkincil kanal implementer sağlayıcısıyla da aynı olamaz.
+   Toplam iki kanal aşılmaz ve çağrılar mümkünse paralel yürür.
+
+Cursor CLI/MCP/model/harness, Cursor-routed model, wrapper ile aynı provider'ı
+ikinci kez çağırma ve AI uygulama pencereleri istişare kanalı değildir. CLI,
+daemon, credential veya exact-model kimliği hazır değilse UI fallback yapılmaz.
+`REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta review
+tekrarlanmaz. Geçerli `REVISE` bulgusu düzeltildiğinde yalnız önceden seçilmiş
+kanal veya kanallar değişen exact scope üzerinde yeniden inceler.
+
+PR structured alanları:
+
+```yaml
+Implementer AI: Codex|Claude|Gemini|other # other yalnız none modunda
+Consultation mode: none|single|dual
+Consultation reason: <neden bu mod seçildi>
+Risk trigger: <kategori>: <somut açıklama> # yalnız dual
+Verdict: AGREE # yalnız single/dual
+Consultation base tip: <single/dual exact target tip>
+Consultation base: <single/dual exact merge-base>
+Consultation commit: <single/dual exact head>
+Consultation scope: <single/dual content SHA-256>
+Claude receipt: <single/dual exact receipt>
+MiniMax receipt: <dual için opsiyonlardan yalnız biri>
+Codex receipt: <dual için opsiyonlardan yalnız biri>
+```
+
+`Risk trigger` kategori değeri `irreversible-production`, `security-authz`,
+`privacy-retention`, `data-migration`, `concurrency`, `production-cutover` veya
+`human-authority` olur; açıklama en az üç farklı anlamlı kelime taşır ve
+serbest/placeholder/tekrarlı metin fail-closed reddedilir.
+`single` ve `dual` bağımsızlık kontrolünde implementer sağlayıcısı canonical
+olarak bilinmelidir; gerçek sağlayıcıyı saklayabilen `other` bu iki modda
+fail-closed reddedilir. `other` yalnız receipt taşımayan `none` modunda kullanılabilir.
+`gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
+risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
+`single` yalnız exact Claude receipt'i taşır, `dual` exact Claude +
+yalnız bir provider-distinct receipt taşır. `dual` yayın sırası zorunlu değildir;
+paralel çağrı kabul edilir. `single/dual` çıktısı `P0/P1/P2` ve tek terminal
+`VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim
+onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
+freshness, digest, redaction ve provider/model eşlemesi korunur.
+
+Path/branch sınıflandırıcısı yalnız açık governance ve production-promotion
+ile yüksek güvenli RBAC/NetworkPolicy/Vault-policy/ExternalSecret/migration
+sinyallerini fail-closed yakalar; diff'in iş anlamını eksiksiz anlayan bir risk
+oracle'ı değildir. Authz, retention/silme, concurrency, cutover veya geri
+döndürülemez başka bir karar path adına yansımıyorsa agent doğru
+`single/dual` modunu beyan etmek zorundadır; `none` bu sorumluluğu kaldırmaz.
+
+`Consultation mode` içermeyen tarihsel PR gövdeleri geçiş uyumluluğu için eski,
+daha katı üç-receipt parser yolunda doğrulanmaya devam eder. Bu yol yeni iş için
+önerilen mod değildir ve receipt sayısını azaltarak bypass sağlayamaz; yeni PR
+şablonu yalnız açık `none|single|dual` sözleşmesini üretir.
+
+İstişare hiçbir modda test/CI/live evidence/browser smoke/board claim/protected
+Environment reviewer/gerçek kullanıcı rızası/hukuk veya secret-owner kapısının
+yerine geçmez. Prompt, argüman ve receipt'e secret, JWT, raw bearer, webhook,
+cookie, private key, admin credential veya kullanıcı PII yazılmaz.
+
+<details>
+<summary>11.H — Yürürlükten kaldırılmış 2026-07-17 üç-kanal sözleşmesi (yalnız tarihsel denetim)</summary>
+
+> **HARD DEPRECATION:** Aşağıdaki tarihsel metin yeni işte uygulanmaz, zorunlu
+> kanal sayısı üretmez ve #2621 kararını geçersiz kılamaz. Yalnız eski receipt,
+> fixture ve migration kayıtlarını yorumlamak için korunur.
+
+### 11.H.1 Eski zorunlu üç-kanallı istişare metni
+
+Tarihsel politika aynı exact scope üzerinde şu üç headless kanalı zorunlu
+sayıyordu:
 
 1. **Anthropic:** doğrudan Claude CLI ile **`claude-opus-4-8`**.
 2. **MiniMax:** resmi bundled headless provider CLI ile
@@ -621,6 +706,8 @@ kullanıcı PII yazılmaz. Yalnız redacted görev özeti ile repo içi evidence
 issue veya PR referansı verilir. Credential taşıyan süreçlerin komut satırı
 ve argv'si `ps`/`pgrep` veya eşdeğer araçla dump edilmez. İstişare hiçbir AI uygulama penceresinden
 yürütülmez; CLI/daemon hazır değilse UI fallback yapılmaz.
+
+</details>
 
 ### Detay
 

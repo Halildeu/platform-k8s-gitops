@@ -57,40 +57,38 @@ Critical-Fix: no
 - [ ] **IP sanitize:** Dış kullanıcı-facing response/doc'ta iç ağ IP yok
 - [ ] **Handoff update:** Büyük delta ise `docs/session-handoff-<latest>.md` güncel
 
-## Cross-AI Peer Review (HARD RULE — provider seviyesinde)
+## Cross-AI İstişare Modu
 
-> **ZORUNLU** (V2.1-GOV-1): Code yazan AI sağlayıcı (provider) ≠ Reviewer sağlayıcı. Aynı sağlayıcının farklı session/subagent'i de YASAK. CI gate `gate-cross-ai-audit` aşağıdaki structured field'ları validate eder.
->
-> Detay: `docs/performance/PERF-INIT-V2-prod-readiness-v9.1.md` §7.
+> Varsayılan `none`; gerçekten ikinci görüş gerekiyorsa yalnız direct Claude Opus
+> 4.8 ile `single`; yalnız geri döndürülemez/çok yüksek riskli/insan-yetkili
+> kararda Claude + bir provider-distinct kanal ile `dual` (en fazla iki kanal).
+> Detay: `docs/context-priority-rules.md` §11.
 
 ```yaml
-# Cross-AI structured field enum — CI parser bu blok'u okur (## Cross-AI heading altı, scoped)
-Implementer AI:   Claude
-Reviewer AI:      Codex
-Codex thread:     019eXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
-Verdict:          AGREE
-Verdict reason:   <1-2 cümle>
-Same-provider exception: N/A
-# Exception reason: <≥10 karakter — sadece "Same-provider exception: user-explicit-approval" durumunda zorunlu>
-# Cross-AI exempt reason: <yalnız event-bound historical-docs allowlist için; body-only beyan geçmez>
-Absorb edilen düzeltmeler: <liste veya N/A (AGREE initial verdict)>
-Consultation base tip: <40-char exact target branch tip SHA>
-Consultation base: <40-char exact merge-base SHA>
-Consultation commit: <40-char exact PR HEAD SHA>
-Consultation scope: <64-char prepared scope SHA-256>
-Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
-MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
-Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=<base-tip>; base=<base>; head=<head>; scope=<scope-sha256>; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/<id>; sha256=<evidence-comment-body-sha256>
+# CI parser bu structured alanları ## Cross-AI altında okur.
+Implementer AI: Codex
+Consultation mode: none
+Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
+# Risk trigger: <irreversible-production|security-authz|privacy-retention|data-migration|concurrency|production-cutover|human-authority>: <en az üç farklı anlamlı kelimelik somut açıklama; yalnız dual>
+# Verdict: AGREE # yalnız single/dual
+# Consultation base tip: <single/dual exact target tip>
+# Consultation base: <single/dual exact merge-base>
+# Consultation commit: <single/dual exact head>
+# Consultation scope: <single/dual content SHA-256>
+# Claude receipt: <single ve dual için exact receipt>
+# MiniMax receipt: <dual için opsiyonlardan yalnız biri>
+# Codex receipt: <dual için opsiyonlardan yalnız biri>
 ```
 
-**Field semantik** (Codex `019e2693` REVISE absorb):
-- `Implementer AI` / `Reviewer AI`: known-canonical providers `Claude` / `Codex` / `Gemini` / `Other` (alias tolerance: `Anthropic Claude`, `OpenAI Codex`, `Google Gemini`)
-- `Consultation base tip/base/commit/scope`: exact target tip, merge-base, PR head ve üç kanalın okuduğu hazırlanmış artifact SHA-256'sı.
-- `Claude/MiniMax/Codex receipt`: exact provider + requested/actual model + aynı base-tip/base/head/scope + `AGREE` + ayrı GitHub issue-comment API referansı + fetched comment body digest'i. Comment içindeki provider response digest'i de gate tarafından yeniden hesaplanır. Eksik, mismatched veya non-`AGREE` receipt fail-closed'dur.
-- Implementer ile aynı provider'ın receipt'i zorunlu challenger'dır ancak bağımsız reviewer sayılmaz; `Implementer AI` / `Reviewer AI` provider ayrımı ayrıca korunur.
-- `Codex thread`: full UUID (kısa hash YASAK); `N/A` yalnız event-bound changed-files listesi tamamen dar historical-docs allowlist'indeyse geçer; governance değişiklikleri exempt değildir.
-- `Same-provider exception: user-explicit-approval` → zorunlu **`Exception reason:`** field (≥10 karakter, commit/comment evidence link)
-- `-` alias YASAK; explicit `N/A` + reason field zorunlu
+**Field semantik**:
+- `none`: receipt yok; rutin implementation/test için somut gerekçe zorunlu;
+  governance path, eksik changed-files veya `auto-promotion/` en az `single` ister.
+- `single`: exact Claude Opus 4.8 receipt + exact base/head/scope + `AGREE`;
+  Claude implementer için provider-distinct olmadığı için kullanılamaz.
+- `dual`: exact Claude + yalnız bir MiniMax veya Codex receipt; somut `Risk trigger`
+  zorunlu, üçüncü kanal yasak, publication order zorunlu değil.
+- Provider çıktısı kullanıldıysa fetched evidence, freshness, response digest,
+  exact model ve redaction kontrolleri fail-closed kalır.
 
 ## Referans
 

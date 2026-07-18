@@ -3,12 +3,12 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
 # PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
 #
-# Required check (three-channel governance):
-# - Implementer AI ≠ Reviewer AI (case-insensitive provider name match)
-# - Codex thread UUID format veya N/A
-# - Verdict tam olarak AGREE
-# - Exact base tip / merge-base / head / deterministic scope binding
-# - Three provider receipt + fetched, unedited owner evidence declaration
+# Required check (durumsal az-kanal governance, #2621):
+# - none: routine work + reason + zero receipt; governance/auto-promotion blocked
+# - single: exact direct Claude Opus 4.8 + exact scope + AGREE + provider-distinct
+# - dual: irreversible/high-risk/human-authority trigger + Claude + exactly one
+#   provider-distinct channel; maximum two, parallel publication allowed
+# - Fetched owner evidence, model, freshness, digest and redaction remain strict
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation
 # prefix (auto-test-overlay/ · auto-test-frontend/ · auto-verified/) is audited in
@@ -32,7 +32,7 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #   * `ready_for_review` is deliberately omitted because it changes no content;
 #     the audit already ran on `opened` / `edited` / `synchronize`. Production
 #     `auto-promotion/` candidates are NOT automation-exempt and must acquire
-#     normal three-channel receipts before merge.
+#     normal explicit consultation-mode contract before merge.
 
 on:
   # #842 PR-A2 cleanup (post-PR #868 merge): the transition `pull_request`
@@ -139,8 +139,9 @@ jobs:
         # actor, sender, labels) — the audit reads PR metadata from there, not
         # from the checked-out tree. So the base-ref checkout above does not
         # restrict what the audit can inspect about the PR (Codex Q3 onay).
-        # #898: `--changed-files-file` feeds the Dependabot exemption diff
-        # allowlist gate; ignored for non-Dependabot PRs.
+        # `--changed-files-file` feeds both the Dependabot exemption allowlist
+        # and normal explicit consultation-mode scope floor. Missing/empty
+        # metadata intentionally rejects `none` instead of silently bypassing it.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
