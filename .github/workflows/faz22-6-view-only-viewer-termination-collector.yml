@@ -154,6 +154,17 @@ jobs:
               "$RUNNER_TEMP/faz22-viewer-termination-authorization/receipt/protected-authorization.json" '
             .schemaVersion == "faz22.6.viewOnlyViewerProductChildEvidence.v2"
             and .evidenceType == "browser" and .sourceRevision == $sha
+            and .producer.kind == "browser-harness"
+            and .producer.toolVersion == "v3-ack-drain"
+            and .payload.ackDrainCompleted == true
+            and .payload.ackDrainCutoffAt == .payload.pilotEndedAt
+            and (.payload.ackDrainNonceSha256 | test("^sha256:[a-f0-9]{64}$"))
+            and (.payload.ackDrainClosureKind == "none"
+              or .payload.ackDrainClosureKind == "stream-ended-after-drain")
+            and .payload.renderAckRejectedCount == 0
+            and .payload.renderAckPendingCount == 0
+            and .payload.renderAckAcceptedCount >= 100
+            and .payload.renderAckAcceptedCount == .payload.renderAckAttemptedCount
             and .binding.operatorSha256 == $authorization[0].operatorSha256
             and .binding.deviceSha256 == $authorization[0].deviceSha256
           ' "$out/artifact/evidence/browser.json" >/dev/null

@@ -117,7 +117,11 @@ def child(evidence_type: str, kind: str, tool: str, head_sha: str, observed_at: 
         "sourceRevision": head_sha,
         "observedAt": observed_at,
         "binding": binding,
-        "producer": {"kind": kind, "tool": tool, "toolVersion": "v2"},
+        "producer": {
+            "kind": kind,
+            "tool": tool,
+            "toolVersion": "v3-ack-drain" if evidence_type == "browser" else "v2",
+        },
         "payload": payload,
     }
     VERIFIER.validate_schema(value, VERIFIER.CHILD_SCHEMA, f"{evidence_type} child")

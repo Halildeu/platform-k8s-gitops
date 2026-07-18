@@ -80,7 +80,7 @@ jq -cS -n \
    | ($operation[0] // {}) as $operation
    | ($browser[0] // {}) as $browser
    | {
-       schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v3",
+       schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v4",
        sourceRevision:$sourceRevision,
        status:(($summary.status // "collector-did-not-write-summary") as $status
          | if ["starting", "no-go", "accepted-candidate", "collector-did-not-write-summary"]
@@ -97,12 +97,38 @@ jq -cS -n \
        ),
        browserFailureCode:(
          if $summary.reason != "browser-product-evidence-failed" then null
-         elif $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v1"
+         elif $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v2"
            and $browser.sourceRevision == $sourceRevision
            and (($browser.failureCode | type) == "string")
            and (($browserAllowlist.failureCodes | index($browser.failureCode)) != null)
            then $browser.failureCode
          else "browser-unclassified-failure"
+         end
+       ),
+       browserAckTelemetry:(
+         if $summary.reason != "browser-product-evidence-failed"
+           or $browser.schemaVersion != "faz22.6.viewOnlyViewerBrowserDiagnostic.v2"
+           or $browser.sourceRevision != $sourceRevision
+           or ($browser.ackTelemetry | type) != "object"
+           or ($browser.ackTelemetry | keys) != ["accepted", "acceptedSamples", "attempted", "lastAcceptedSeq", "pending", "rejected"]
+           then null
+         elif ([
+             $browser.ackTelemetry.attempted,
+             $browser.ackTelemetry.accepted,
+             $browser.ackTelemetry.acceptedSamples,
+             $browser.ackTelemetry.rejected
+           ] | all(type == "number" and floor == . and . >= 0 and . <= 10000000))
+           and (($browser.ackTelemetry.accepted == 0 and $browser.ackTelemetry.lastAcceptedSeq == null)
+             or ($browser.ackTelemetry.accepted > 0
+               and ($browser.ackTelemetry.lastAcceptedSeq | type == "number"
+                 and floor == . and . >= 0 and . <= 10000000)))
+           and ($browser.ackTelemetry.acceptedSamples <= $browser.ackTelemetry.accepted)
+           and (($browser.ackTelemetry.accepted + $browser.ackTelemetry.rejected)
+             <= $browser.ackTelemetry.attempted)
+           and ($browser.ackTelemetry.pending | type == "number"
+             and floor == . and . >= 0 and . <= 1000)
+           then $browser.ackTelemetry
+         else null
          end
        ),
        consentWait:(($summary.consentWait // null)
@@ -129,11 +155,26 @@ jq -cS -n \
      }' > "$output"
 
 jq -e '
-  .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v3"
+  .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v4"
   and (.sourceRevision | test("^[a-f0-9]{40}$"))
   and (.status | test("^[A-Za-z0-9:._-]{1,64}$"))
   and (.failureReasonCode == null or (.failureReasonCode | test("^[A-Za-z0-9:._-]{1,160}$")))
   and (.browserFailureCode == null or (.browserFailureCode | test("^[a-z0-9-]{1,96}$")))
+  and (.browserAckTelemetry == null or (
+    (.browserAckTelemetry | keys) == ["accepted", "acceptedSamples", "attempted", "lastAcceptedSeq", "pending", "rejected"]
+    and ([.browserAckTelemetry.attempted, .browserAckTelemetry.accepted,
+      .browserAckTelemetry.acceptedSamples, .browserAckTelemetry.rejected]
+      | all(type == "number" and floor == . and . >= 0 and . <= 10000000))
+    and ((.browserAckTelemetry.accepted == 0 and .browserAckTelemetry.lastAcceptedSeq == null)
+      or (.browserAckTelemetry.accepted > 0
+        and (.browserAckTelemetry.lastAcceptedSeq | type == "number"
+          and floor == . and . >= 0 and . <= 10000000)))
+    and (.browserAckTelemetry.acceptedSamples <= .browserAckTelemetry.accepted)
+    and ((.browserAckTelemetry.accepted + .browserAckTelemetry.rejected)
+      <= .browserAckTelemetry.attempted)
+    and (.browserAckTelemetry.pending | type == "number"
+      and floor == . and . >= 0 and . <= 1000)
+  ))
   and (.consentWait == null or (.consentWait | test("^[a-z-]{1,32}$")))
   and (.openSessionHttp == null or (.openSessionHttp | test("^[0-9]{3}$")))
   and (.operationHttp == null or (.operationHttp | test("^[0-9]{3}$")))

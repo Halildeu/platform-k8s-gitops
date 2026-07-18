@@ -2,7 +2,10 @@
   "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnosticCodes.v1",
   "failureCodes": [
     "browser-ack-count-diverged",
+    "browser-ack-drain-cutoff-failed",
+    "browser-ack-drain-timeout",
     "browser-ack-minimum-not-met",
+    "browser-ack-rejected",
     "browser-auth-callback-failed",
     "browser-auth-session-missing",
     "browser-binding-invalid",

@@ -28,7 +28,7 @@
   "allOf": [
     {
       "if": {"properties": {"evidenceType": {"const": "browser"}}},
-      "then": {"properties": {"producer": {"properties": {"kind": {"const": "browser-harness"}}}, "payload": {"$ref": "#/$defs/browserPayload"}}}
+      "then": {"properties": {"producer": {"properties": {"kind": {"const": "browser-harness"}, "toolVersion": {"const": "v3-ack-drain"}}}, "payload": {"$ref": "#/$defs/browserPayload"}}}
     },
     {
       "if": {"properties": {"evidenceType": {"const": "broker"}}},
@@ -84,10 +84,14 @@
     "browserPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pilotStartedAt", "pilotEndedAt", "imageElementRendered", "pixelCheckPassed", "inputChannelControlCount", "dlpMaskRectBps", "dlpMaskPixelCheckPassed", "activeIndicatorPixelCheckPassed", "maskedFrameSha256", "renderAckAttemptedCount", "renderAckAcceptedCount", "consoleErrorCount", "screenshotSha256", "firstFrameAgeMillis", "steadyFrameAgeMillis", "consentEvidenceSha256", "meta"],
+      "required": ["pilotStartedAt", "pilotEndedAt", "ackDrainCompleted", "ackDrainCutoffAt", "ackDrainNonceSha256", "ackDrainClosureKind", "imageElementRendered", "pixelCheckPassed", "inputChannelControlCount", "dlpMaskRectBps", "dlpMaskPixelCheckPassed", "activeIndicatorPixelCheckPassed", "maskedFrameSha256", "renderAckAttemptedCount", "renderAckAcceptedCount", "renderAckRejectedCount", "renderAckPendingCount", "consoleErrorCount", "screenshotSha256", "firstFrameAgeMillis", "steadyFrameAgeMillis", "consentEvidenceSha256", "meta"],
       "properties": {
         "pilotStartedAt": {"$ref": "#/$defs/utcTimestamp"},
         "pilotEndedAt": {"$ref": "#/$defs/utcTimestamp"},
+        "ackDrainCompleted": {"const": true},
+        "ackDrainCutoffAt": {"$ref": "#/$defs/utcTimestamp"},
+        "ackDrainNonceSha256": {"$ref": "#/$defs/sha256"},
+        "ackDrainClosureKind": {"enum": ["none", "stream-ended-after-drain"]},
         "imageElementRendered": {"const": true},
         "pixelCheckPassed": {"const": true},
         "inputChannelControlCount": {"const": 0},
@@ -97,6 +101,8 @@
         "maskedFrameSha256": {"$ref": "#/$defs/sha256"},
         "renderAckAttemptedCount": {"type": "integer", "minimum": 1},
         "renderAckAcceptedCount": {"type": "integer", "minimum": 1},
+        "renderAckRejectedCount": {"const": 0},
+        "renderAckPendingCount": {"const": 0},
         "consoleErrorCount": {"const": 0},
         "screenshotSha256": {"$ref": "#/$defs/sha256"},
         "firstFrameAgeMillis": {"type": "integer", "minimum": 1, "maximum": 60000},
@@ -105,8 +111,9 @@
         "meta": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["recording", "attended", "capability", "viewerIdSha256"],
+          "required": ["authentication", "recording", "attended", "capability", "viewerIdSha256"],
           "properties": {
+            "authentication": {"const": "keycloak-authorization-code-pkce"},
             "recording": {"const": false},
             "attended": {"const": true},
             "capability": {"const": "VIEW_ONLY"},
