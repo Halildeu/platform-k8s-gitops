@@ -31,7 +31,7 @@ PROMOTION_BASE_SHA="fc5f2735a49977d79b82e9d36d71642e54e67023"
   echo "[fullats-rollback] run identity is invalid" >&2
   exit 2
 }
-for command in awk gh git jq kustomize python3 rg; do
+for command in awk gh git grep jq kustomize python3; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "[fullats-rollback] missing command: $command" >&2
     exit 2
@@ -171,26 +171,26 @@ expected_changed="$(printf '%s\n' "$activation" "$state_marker" "$test_root" "$s
   echo "[fullats-rollback] changed-file set escaped four-file contract" >&2
   exit 1
 }
-rg -Fq "$ATS_OLD" "$activation"
-rg -Fq "$ATS_OLD" "$smoke"
-rg -Fq "$PERMISSION_OLD" "$test_root"
-rg -Fq "$FRONTEND_OLD" "$test_root"
-rg -Fq "sourceRevision: 653752b7bcfb8343b3af0845499a749c4655052c" "$test_root"
-rg -Fq "newTag: sha-653752b" "$test_root"
-if rg -Fq "$ATS_NEW" "$activation" || \
-   rg -Fq "$ATS_NEW" "$smoke" || \
-   rg -Fq "$PERMISSION_NEW" "$test_root" || \
-   rg -Fq "$FRONTEND_NEW" "$test_root" || \
-   rg -Fq "newTag: sha-9f82edb" "$test_root"; then
+grep -Fq -- "$ATS_OLD" "$activation"
+grep -Fq -- "$ATS_OLD" "$smoke"
+grep -Fq -- "$PERMISSION_OLD" "$test_root"
+grep -Fq -- "$FRONTEND_OLD" "$test_root"
+grep -Fq -- "sourceRevision: 653752b7bcfb8343b3af0845499a749c4655052c" "$test_root"
+grep -Fq -- "newTag: sha-653752b" "$test_root"
+if grep -Fq -- "$ATS_NEW" "$activation" || \
+   grep -Fq -- "$ATS_NEW" "$smoke" || \
+   grep -Fq -- "$PERMISSION_NEW" "$test_root" || \
+   grep -Fq -- "$FRONTEND_NEW" "$test_root" || \
+   grep -Fq -- "newTag: sha-9f82edb" "$test_root"; then
   echo "[fullats-rollback] promoted artifact survived deterministic revert" >&2
   exit 1
 fi
-rg -Fxq "ROLLED_BACK" "$state_marker"
+grep -Fxq -- "ROLLED_BACK" "$state_marker"
 
 kustomize build kustomize/overlays/test >"$rendered"
-rg -Fq "ghcr.io/halildeu/ats-app-boot@$ATS_OLD" "$rendered"
-rg -Fq "ghcr.io/halildeu/platform-backend-permission-service@$PERMISSION_OLD" "$rendered"
-rg -Fq "ghcr.io/halildeu/platform-web-frontend-testai:sha-653752b@$FRONTEND_OLD" "$rendered"
+grep -Fq -- "ghcr.io/halildeu/ats-app-boot@$ATS_OLD" "$rendered"
+grep -Fq -- "ghcr.io/halildeu/platform-backend-permission-service@$PERMISSION_OLD" "$rendered"
+grep -Fq -- "ghcr.io/halildeu/platform-web-frontend-testai:sha-653752b@$FRONTEND_OLD" "$rendered"
 
 git add "$activation" "$state_marker" "$test_root" "$smoke"
 git diff --cached --check
