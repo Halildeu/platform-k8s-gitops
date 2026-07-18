@@ -272,6 +272,7 @@ const {
   BROWSER_FAILURE_CODES,
   ackDiagnostic,
   classifyAckDrainSnapshot,
+  classifyReplayProbeStatus,
   classifyViewerDrainSnapshot,
   classifyPreflightApiStatus,
   deriveViewerAckUrl,
@@ -287,6 +288,11 @@ assert.equal(classifyPreflightApiStatus(403), 'browser-preflight-api-status-forb
 assert.equal(classifyPreflightApiStatus(404), 'browser-preflight-api-status-invalid');
 assert.equal(classifyPreflightApiStatus(409), 'browser-preflight-api-status-conflict');
 assert.equal(classifyPreflightApiStatus(502), 'browser-preflight-api-status-server-error');
+assert.equal(classifyReplayProbeStatus(404), null);
+assert.equal(classifyReplayProbeStatus(405), 'browser-replay-not-rejected');
+assert.equal(classifyReplayProbeStatus(null), 'browser-replay-token-missing');
+assert.equal(classifyReplayProbeStatus(0), 'browser-replay-probe-failed');
+assert.equal(classifyReplayProbeStatus(200.5), 'browser-replay-probe-failed');
 assert.equal(
   deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1'),
   'https://testai.acik.com/api/v1/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1',
@@ -313,6 +319,18 @@ assert.throws(
 );
 assert.throws(
   () => deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1&extra=1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view?streamId=trusted&streamId=conflicting'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com:444/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1'),
+  /outside the bounded test VIEW_ONLY product route/,
+);
+assert.throws(
+  () => deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view/../admin/secret?streamId=stream_1'),
   /outside the bounded test VIEW_ONLY product route/,
 );
 assert.equal(classifyAckDrainSnapshot({ attempted: 100, accepted: 100, rejected: 0, pending: 0, lastAcceptedSeq: 120 }), 'settled');

@@ -129,8 +129,8 @@ grep -q 'name: Re-verify live target after protected approval' <<<"$browser_work
 # Every job checks out the workflow event revision, and all producer/reader
 # bindings use that same immutable revision. Schema upgrades cannot mix within
 # an already-running evidence job.
-[[ "$(grep -Fc 'uses: actions/checkout@' <<<"$browser_workflow_text")" -ge 3 ]]
-[[ "$(grep -Fc 'SOURCE_REVISION: ${{ github.sha }}' <<<"$browser_workflow_text")" -ge 3 ]]
+[[ "$(grep -Fc 'uses: actions/checkout@' <<<"$browser_workflow_text")" == "3" ]]
+[[ "$(grep -Fc 'SOURCE_REVISION: ${{ github.sha }}' <<<"$browser_workflow_text")" == "3" ]]
 # VIEWER_URL is assembled inside the trusted runner from a fixed test origin;
 # workflow inputs cannot provide an alternate origin, path, or query key.
 grep -Fq 'VIEWER_PRODUCT_BASE_URL: https://testai.acik.com' <<<"$browser_workflow_text"
