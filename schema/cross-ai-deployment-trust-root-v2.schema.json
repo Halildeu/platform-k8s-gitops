@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-trust-root-v1.schema.json",
-  "title": "Cross-AI deployment trust root v1",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-deployment-trust-root-v2.schema.json",
+  "title": "Cross-AI deployment trust root v2",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
     "trustRootId",
+    "sourcePublicKeysetSha256",
     "issuedAt",
     "expiresAt",
     "maxClockSkewSeconds",
@@ -17,7 +18,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "acik.cross-ai-deployment-trust-root.v1"
+      "const": "acik.cross-ai-deployment-trust-root.v2"
     },
     "trustRootId": {
       "type": "string",
@@ -37,21 +38,28 @@
       "maximum": 300
     },
     "requiredProviderFamilies": {
-      "const": ["anthropic", "minimax", "openai"]
+      "const": [
+        "anthropic",
+        "openai"
+      ]
     },
     "minimumProviderFamilies": {
-      "const": 3
+      "const": 2
     },
     "minimumDirectProviderRoutes": {
-      "const": 3
+      "const": 2
     },
     "keys": {
       "type": "array",
-      "minItems": 6,
+      "minItems": 5,
       "maxItems": 100,
       "items": {
         "$ref": "#/$defs/key"
       }
+    },
+    "sourcePublicKeysetSha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
     }
   },
   "$defs": {
@@ -76,7 +84,12 @@
           "pattern": "^vault-transit://[a-z0-9/_-]+#v[1-9][0-9]*$"
         },
         "role": {
-          "enum": ["provider-review", "coordinator", "revocation", "runner-management"]
+          "enum": [
+            "provider-review",
+            "coordinator",
+            "revocation",
+            "runner-management"
+          ]
         },
         "publicKeyBase64": {
           "type": "string",
@@ -125,78 +138,43 @@
           "uniqueItems": true,
           "maxItems": 1,
           "items": {
-            "enum": ["provider-reported", "trusted-launch-attested"]
+            "enum": [
+              "provider-reported",
+              "trusted-launch-attested"
+            ]
           }
         },
         "directProviderCli": {
           "oneOf": [
-            {"type": "boolean"},
-            {"type": "null"}
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
       "allOf": [
         {
           "if": {
-            "properties": {"role": {"const": "provider-review"}},
-            "required": ["role"]
+            "properties": {
+              "role": {
+                "const": "provider-review"
+              }
+            },
+            "required": [
+              "role"
+            ]
           },
           "then": {
             "properties": {
               "providerFamily": {
-                "enum": ["anthropic", "minimax", "openai"]
+                "enum": [
+                  "anthropic",
+                  "openai"
+                ]
               }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {"const": "provider-review"},
-              "providerFamily": {"const": "anthropic"}
-            },
-            "required": ["role", "providerFamily"]
-          },
-          "then": {
-            "properties": {
-              "allowedChannels": {"const": ["direct-anthropic-cli"]},
-              "allowedModelIds": {"const": ["claude-opus-4-8"]},
-              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
-              "directProviderCli": {"const": true}
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {"const": "provider-review"},
-              "providerFamily": {"const": "minimax"}
-            },
-            "required": ["role", "providerFamily"]
-          },
-          "then": {
-            "properties": {
-              "allowedChannels": {"const": ["direct-minimax-cli"]},
-              "allowedModelIds": {"const": ["minimax/MiniMax-M3"]},
-              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
-              "directProviderCli": {"const": true}
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {"const": "provider-review"},
-              "providerFamily": {"const": "openai"}
-            },
-            "required": ["role", "providerFamily"]
-          },
-          "then": {
-            "properties": {
-              "allowedChannels": {"const": ["openai-codex"]},
-              "allowedModelIds": {"const": ["gpt-5.6-sol"]},
-              "allowedModelIdentityClasses": {"const": ["provider-reported"]},
-              "directProviderCli": {"const": true}
             }
           }
         },
@@ -204,18 +182,110 @@
           "if": {
             "properties": {
               "role": {
-                "enum": ["coordinator", "revocation", "runner-management"]
+                "const": "provider-review"
+              },
+              "providerFamily": {
+                "const": "anthropic"
               }
             },
-            "required": ["role"]
+            "required": [
+              "role",
+              "providerFamily"
+            ]
           },
           "then": {
             "properties": {
-              "providerFamily": {"type": "null"},
-              "allowedChannels": {"maxItems": 0},
-              "allowedModelIds": {"maxItems": 0},
-              "allowedModelIdentityClasses": {"maxItems": 0},
-              "directProviderCli": {"type": "null"}
+              "allowedChannels": {
+                "const": [
+                  "direct-anthropic-cli"
+                ]
+              },
+              "allowedModelIds": {
+                "const": [
+                  "claude-opus-4-8"
+                ]
+              },
+              "allowedModelIdentityClasses": {
+                "const": [
+                  "provider-reported"
+                ]
+              },
+              "directProviderCli": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "provider-review"
+              },
+              "providerFamily": {
+                "const": "openai"
+              }
+            },
+            "required": [
+              "role",
+              "providerFamily"
+            ]
+          },
+          "then": {
+            "properties": {
+              "allowedChannels": {
+                "const": [
+                  "openai-codex"
+                ]
+              },
+              "allowedModelIds": {
+                "const": [
+                  "gpt-5.6-sol"
+                ]
+              },
+              "allowedModelIdentityClasses": {
+                "const": [
+                  "trusted-launch-attested"
+                ]
+              },
+              "directProviderCli": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "enum": [
+                  "coordinator",
+                  "revocation",
+                  "runner-management"
+                ]
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "providerFamily": {
+                "type": "null"
+              },
+              "allowedChannels": {
+                "maxItems": 0
+              },
+              "allowedModelIds": {
+                "maxItems": 0
+              },
+              "allowedModelIdentityClasses": {
+                "maxItems": 0
+              },
+              "directProviderCli": {
+                "type": "null"
+              }
             }
           }
         }

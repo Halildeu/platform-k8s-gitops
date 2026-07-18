@@ -15,7 +15,12 @@ from typing import Any, Protocol
 from jsonschema import Draft202012Validator, FormatChecker
 
 from .canonical import sha256_digest
-from .contract import REVIEW_PAYLOAD_TYPE, REVIEW_SCHEMA
+from .contract import (
+    REVIEW_PAYLOAD_TYPE,
+    REVIEW_PAYLOAD_TYPE_V2,
+    REVIEW_SCHEMA,
+    REVIEW_SCHEMA_V2,
+)
 from .errors import reject
 from .jsonutil import load_json_file
 from .timeutil import parse_utc
@@ -24,7 +29,6 @@ from .timeutil import parse_utc
 MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_PROMPT_BYTES = 512 * 1024
 REVIEW_RESULT_SCHEMA_VERSION = "acik.cross-ai-provider-review-result.v1"
-MINIMAX_MODEL = "minimax/MiniMax-M3"
 CODEX_MODEL = "gpt-5.6-sol"
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -172,131 +176,6 @@ class DirectClaudeRunner:
             input_sha256=_bytes_digest(prompt_bytes),
             output_sha256=_bytes_digest(text.encode("utf-8")),
             result_text=text,
-        )
-
-
-class DirectMiniMaxRunner:
-    def __init__(
-        self,
-        wrapper: Path | None = None,
-        python_executable: Path | None = None,
-    ) -> None:
-        selected_wrapper = wrapper or ROOT / "scripts/ai/minimax_m3_review.py"
-        self.wrapper = selected_wrapper.expanduser().resolve()
-        if not self.wrapper.is_file():
-            reject("PROVIDER_EXECUTABLE_INVALID", "MiniMax wrapper is invalid")
-        selected_python = python_executable or Path(shutil.which("python3") or "python3")
-        self.python_executable = DirectClaudeRunner._validated_executable(
-            selected_python, "Python"
-        )
-
-    def run(
-        self,
-        *,
-        prompt: str,
-        model: str,
-        workspace: Path,
-        timeout_seconds: int = 600,
-    ) -> ProviderExecutionReceipt:
-        if model != MINIMAX_MODEL:
-            reject("PROVIDER_MODEL_UNAVAILABLE", "MiniMax model is not the pinned route")
-        prompt_bytes = prompt.encode("utf-8")
-        if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
-            reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
-        result = subprocess.run(
-            [
-                str(self.python_executable),
-                str(self.wrapper),
-                "--response-contract",
-                "provider-review-json-v1",
-                "--timeout",
-                str(timeout_seconds),
-            ],
-            cwd=workspace,
-            input=prompt_bytes,
-            capture_output=True,
-            check=False,
-            timeout=timeout_seconds + 30,
-        )
-        if result.returncode != 0:
-            reject("PROVIDER_EXECUTION_FAILED", "direct MiniMax execution failed")
-        payload = _provider_json(result.stdout, "MiniMax")
-        expected = {
-            "ok",
-            "provider",
-            "provider_claim_source",
-            "provider_origin_host",
-            "requested_model",
-            "actual_model",
-            "base_sha",
-            "head_sha",
-            "scope_sha256",
-            "verdict",
-            "findings_present",
-            "transport",
-            "transport_sha256",
-            "config_sha256",
-            "response_sha256",
-            "response",
-        }
-        if set(payload) != expected:
-            reject("PROVIDER_OUTPUT_INVALID", "MiniMax receipt shape is invalid")
-        if (
-            payload["ok"] is not True
-            or payload["provider"] != "minimax"
-            or payload["provider_claim_source"] != "trusted-bundled-config"
-            or payload["provider_origin_host"] != "agent.minimax.io"
-            or payload["requested_model"] != MINIMAX_MODEL
-            or payload["actual_model"] != MINIMAX_MODEL
-            or payload["base_sha"] is not None
-            or payload["head_sha"] is not None
-            or payload["transport"] != "mavis-bundled-llm-call"
-        ):
-            reject("PROVIDER_MODEL_IDENTITY_MISMATCH", "MiniMax route differs")
-        response = payload["response"]
-        if not isinstance(response, str) or not response:
-            reject("PROVIDER_OUTPUT_INVALID", "MiniMax result text is invalid")
-        response_bytes = response.encode("utf-8")
-        prompt_hex = hashlib.sha256(prompt_bytes).hexdigest()
-        response_hex = hashlib.sha256(response_bytes).hexdigest()
-        digest_fields = (
-            payload["scope_sha256"],
-            payload["transport_sha256"],
-            payload["config_sha256"],
-            payload["response_sha256"],
-        )
-        if any(
-            not isinstance(value, str)
-            or len(value) != 64
-            or any(character not in "0123456789abcdef" for character in value)
-            for value in digest_fields
-        ):
-            reject("PROVIDER_OUTPUT_INVALID", "MiniMax receipt digest is invalid")
-        if payload["scope_sha256"] != prompt_hex or payload["response_sha256"] != response_hex:
-            reject("PROVIDER_OUTPUT_INVALID", "MiniMax receipt digest differs")
-        capability = sha256_digest(
-            {
-                "channel": "direct-minimax-cli",
-                "wrapperRealpath": str(self.wrapper),
-                "wrapperSha256": _bytes_digest(self.wrapper.read_bytes()),
-                "pythonRealpath": str(self.python_executable),
-                "providerOriginHost": payload["provider_origin_host"],
-                "transportSha256": f"sha256:{payload['transport_sha256']}",
-                "configSha256": f"sha256:{payload['config_sha256']}",
-                "requestedModel": MINIMAX_MODEL,
-                "reportedModel": payload["actual_model"],
-            }
-        )
-        return ProviderExecutionReceipt(
-            provider_family="minimax",
-            channel="direct-minimax-cli",
-            direct_provider_cli=True,
-            model_id=MINIMAX_MODEL,
-            model_identity_class="provider-reported",
-            capability_snapshot_sha256=capability,
-            input_sha256=_bytes_digest(prompt_bytes),
-            output_sha256=_bytes_digest(response_bytes),
-            result_text=response,
         )
 
 
@@ -556,6 +435,7 @@ class ProviderReviewIssuer:
         model_identity_class: str,
         allowed_models: frozenset[str],
         issuer: str,
+        contract_version: str = "v2",
     ) -> None:
         self.signer = signer
         self.provider_family = provider_family
@@ -564,6 +444,19 @@ class ProviderReviewIssuer:
         self.model_identity_class = model_identity_class
         self.allowed_models = allowed_models
         self.issuer = issuer
+        if contract_version == "v1":
+            self.review_schema_version = "acik.cross-ai-deployment-review.v1"
+            self.review_schema = REVIEW_SCHEMA
+            self.review_payload_type = REVIEW_PAYLOAD_TYPE
+        elif contract_version == "v2":
+            self.review_schema_version = "acik.cross-ai-deployment-review.v2"
+            self.review_schema = REVIEW_SCHEMA_V2
+            self.review_payload_type = REVIEW_PAYLOAD_TYPE_V2
+        else:
+            reject(
+                "PROVIDER_CONTRACT_VERSION_INVALID",
+                "provider issuer contract version is unsupported",
+            )
 
     @staticmethod
     def _review_result(text: str) -> dict[str, Any]:
@@ -622,7 +515,7 @@ class ProviderReviewIssuer:
             "acknowledgedFindingIds": result["acknowledgedFindingIds"],
         }
         payload = {
-            "schemaVersion": "acik.cross-ai-deployment-review.v1",
+            "schemaVersion": self.review_schema_version,
             "reviewId": coordinates.review_id,
             "reviewChainId": coordinates.review_chain_id,
             "providerFamily": self.provider_family,
@@ -647,7 +540,7 @@ class ProviderReviewIssuer:
             "issuer": self.issuer,
             "keyId": self.signer.key_id,
         }
-        schema = load_json_file(REVIEW_SCHEMA)
+        schema = load_json_file(self.review_schema)
         errors = sorted(
             Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(payload),
             key=lambda item: list(item.path),
@@ -655,7 +548,7 @@ class ProviderReviewIssuer:
         if errors:
             reject("PROVIDER_REVIEW_RESULT_INVALID", "issued review does not satisfy schema")
         return self.signer.sign_json_envelope(
-            payload_type=REVIEW_PAYLOAD_TYPE,
+            payload_type=self.review_payload_type,
             payload=payload,
         )
 
@@ -665,8 +558,6 @@ __all__ = [
     "CursorRunner",
     "DirectClaudeRunner",
     "DirectCodexRunner",
-    "DirectMiniMaxRunner",
-    "MINIMAX_MODEL",
     "ProviderExecutionReceipt",
     "ProviderReviewIssuer",
     "REVIEW_RESULT_SCHEMA_VERSION",

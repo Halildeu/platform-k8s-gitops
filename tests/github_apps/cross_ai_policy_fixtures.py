@@ -19,10 +19,14 @@ from scripts.github_apps.cross_ai_deployment_policy.canonical import (
 )
 from scripts.github_apps.cross_ai_deployment_policy.contract import (
     BUNDLE_PAYLOAD_TYPE,
+    BUNDLE_PAYLOAD_TYPE_V2,
     CLOSURE_DOMAIN,
+    CLOSURE_DOMAIN_V2,
     REVIEW_PAYLOAD_TYPE,
+    REVIEW_PAYLOAD_TYPE_V2,
     REVOCATIONS_PAYLOAD_TYPE,
     SESSION_DOMAIN,
+    SESSION_DOMAIN_V2,
 )
 from scripts.github_apps.cross_ai_deployment_policy.dsse import pae
 
@@ -64,7 +68,23 @@ class FixtureFactory:
     REVOCATION_KEY_ID = "vault-transit://cross-ai/revocation#v1"
     RUNNER_MANAGEMENT_KEY_ID = "vault-transit://cross-ai/runner-management#v1"
 
-    def __init__(self) -> None:
+    def __init__(self, contract_version: str = "v1") -> None:
+        if contract_version not in {"v1", "v2"}:
+            raise ValueError("unsupported fixture contract version")
+        self.contract_version = contract_version
+        self.day = "2026-07-16" if contract_version == "v1" else "2026-07-18"
+        self.bundle_payload_type = (
+            BUNDLE_PAYLOAD_TYPE if contract_version == "v1" else BUNDLE_PAYLOAD_TYPE_V2
+        )
+        self.review_payload_type = (
+            REVIEW_PAYLOAD_TYPE if contract_version == "v1" else REVIEW_PAYLOAD_TYPE_V2
+        )
+        self.session_domain = (
+            SESSION_DOMAIN if contract_version == "v1" else SESSION_DOMAIN_V2
+        )
+        self.closure_domain = (
+            CLOSURE_DOMAIN if contract_version == "v1" else CLOSURE_DOMAIN_V2
+        )
         self.keys = {
             self.ANTHROPIC_KEY_ID: _key(1),
             self.MINIMAX_KEY_ID: _key(2),
@@ -73,7 +93,7 @@ class FixtureFactory:
             self.REVOCATION_KEY_ID: _key(5),
             self.RUNNER_MANAGEMENT_KEY_ID: _key(6),
         }
-        self.now = _utc("2026-07-16T20:30:00Z")
+        self.now = _utc(f"{self.day}T20:30:00Z")
 
     def sign(
         self,
@@ -99,7 +119,7 @@ class FixtureFactory:
 
     def resign_bundle(self, envelope: dict[str, Any], bundle: dict[str, Any]) -> None:
         replacement = self.sign(
-            BUNDLE_PAYLOAD_TYPE,
+            self.bundle_payload_type,
             bundle,
             self.COORDINATOR_KEY_ID,
         )
@@ -120,8 +140,8 @@ class FixtureFactory:
                 "keyId": key_id,
                 "role": role,
                 "publicKeyBase64": _public_b64(self.keys[key_id]),
-                "notBefore": "2026-07-16T19:00:00Z",
-                "notAfter": "2026-07-16T22:00:00Z",
+                "notBefore": f"{self.day}T19:00:00Z",
+                "notAfter": f"{self.day}T22:00:00Z",
                 "providerFamily": family,
                 "allowedChannels": channels,
                 "allowedModelIds": model_ids or [],
@@ -129,26 +149,20 @@ class FixtureFactory:
                 "directProviderCli": direct,
             }
 
-        return {
-            "schemaVersion": "acik.cross-ai-deployment-trust-root.v1",
-            "trustRootId": "10000000-0000-4000-8000-000000000001",
-            "sourcePublicKeysetSha256": digest("public-keyset"),
-            "issuedAt": "2026-07-16T19:00:00Z",
-            "expiresAt": "2026-07-16T22:00:00Z",
-            "maxClockSkewSeconds": 60,
-            "requiredProviderFamilies": ["anthropic", "minimax", "openai"],
-            "minimumProviderFamilies": 3,
-            "minimumDirectProviderRoutes": 3,
-            "keys": [
-                entry(
-                    self.ANTHROPIC_KEY_ID,
-                    "provider-review",
-                    "anthropic",
-                    ["direct-anthropic-cli"],
-                    True,
-                    ["claude-opus-4-8"],
-                    ["provider-reported"],
-                ),
+        providers = ["anthropic", "minimax", "openai"]
+        provider_entries = [
+            entry(
+                self.ANTHROPIC_KEY_ID,
+                "provider-review",
+                "anthropic",
+                ["direct-anthropic-cli"],
+                True,
+                ["claude-opus-4-8"],
+                ["provider-reported"],
+            )
+        ]
+        if self.contract_version == "v1":
+            provider_entries.append(
                 entry(
                     self.MINIMAX_KEY_ID,
                     "provider-review",
@@ -157,16 +171,40 @@ class FixtureFactory:
                     True,
                     ["minimax/MiniMax-M3"],
                     ["provider-reported"],
-                ),
-                entry(
-                    self.OPENAI_KEY_ID,
-                    "provider-review",
-                    "openai",
-                    ["openai-codex"],
-                    True,
-                    ["gpt-5.6-sol"],
-                    ["trusted-launch-attested"],
-                ),
+                )
+            )
+        else:
+            providers = ["anthropic", "openai"]
+        provider_entries.append(
+            entry(
+                self.OPENAI_KEY_ID,
+                "provider-review",
+                "openai",
+                ["openai-codex"],
+                True,
+                ["gpt-5.6-sol"],
+                [
+                    "provider-reported"
+                    if self.contract_version == "v1"
+                    else "trusted-launch-attested"
+                ],
+            )
+        )
+        trust_root = {
+            "schemaVersion": (
+                "acik.cross-ai-deployment-trust-root.v1"
+                if self.contract_version == "v1"
+                else "acik.cross-ai-deployment-trust-root.v2"
+            ),
+            "trustRootId": "10000000-0000-4000-8000-000000000001",
+            "issuedAt": f"{self.day}T19:00:00Z",
+            "expiresAt": f"{self.day}T22:00:00Z",
+            "maxClockSkewSeconds": 60,
+            "requiredProviderFamilies": providers,
+            "minimumProviderFamilies": len(providers),
+            "minimumDirectProviderRoutes": len(providers),
+            "keys": provider_entries
+            + [
                 entry(self.COORDINATOR_KEY_ID, "coordinator", None, [], None),
                 entry(self.REVOCATION_KEY_ID, "revocation", None, [], None),
                 entry(
@@ -178,6 +216,9 @@ class FixtureFactory:
                 ),
             ],
         }
+        if self.contract_version == "v2":
+            trust_root["sourcePublicKeysetSha256"] = digest("public-keyset-v2")
+        return trust_root
 
     def revocations(
         self, entries: list[dict[str, Any]] | None = None
@@ -185,8 +226,8 @@ class FixtureFactory:
         payload = {
             "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
             "revocationSetId": "20000000-0000-4000-8000-000000000001",
-            "issuedAt": "2026-07-16T20:00:00Z",
-            "nextUpdate": "2026-07-16T21:30:00Z",
+            "issuedAt": f"{self.day}T20:00:00Z",
+            "nextUpdate": f"{self.day}T21:30:00Z",
             "entries": entries or [],
         }
         return self.sign(REVOCATIONS_PAYLOAD_TYPE, payload, self.REVOCATION_KEY_ID)
@@ -219,7 +260,7 @@ class FixtureFactory:
         else:
             raise ValueError(f"unsupported provider key {key_id}")
         payload = {
-            "schemaVersion": "acik.cross-ai-deployment-review.v1",
+            "schemaVersion": f"acik.cross-ai-deployment-review.{self.contract_version}",
             "reviewId": review_id,
             "reviewChainId": chain_id,
             "providerFamily": family,
@@ -228,7 +269,7 @@ class FixtureFactory:
             "modelId": model,
             "modelIdentityClass": (
                 "trusted-launch-attested"
-                if key_id == self.OPENAI_KEY_ID
+                if key_id == self.OPENAI_KEY_ID and self.contract_version == "v2"
                 else "provider-reported"
             ),
             "capabilitySnapshotSha256": digest(f"capability-{review_id}"),
@@ -244,11 +285,11 @@ class FixtureFactory:
             "acknowledgedFindingIds": acknowledged or [],
             "closureRootSha256": closure_root,
             "issuedAt": issued_at,
-            "expiresAt": "2026-07-16T21:30:00Z",
+            "expiresAt": f"{self.day}T21:30:00Z",
             "issuer": f"cross-ai-issuer-{family}",
             "keyId": key_id,
         }
-        return self.sign(REVIEW_PAYLOAD_TYPE, payload, key_id)
+        return self.sign(self.review_payload_type, payload, key_id)
 
     def build(
         self,
@@ -293,8 +334,8 @@ class FixtureFactory:
             "triggeringActorLogin": "platform-automation[bot]",
             "registrationPrincipal": "spiffe://acik/platform/trusted-dispatcher",
             "workflowEvent": "workflow_dispatch",
-            "notBefore": "2026-07-16T20:00:00Z",
-            "expiresAt": "2026-07-16T21:30:00Z",
+            "notBefore": f"{self.day}T20:00:00Z",
+            "expiresAt": f"{self.day}T21:30:00Z",
             "sequence": ["apply", "browser-evidence"],
             "failureTransition": "apply->compensating-rollback",
         }
@@ -326,8 +367,8 @@ class FixtureFactory:
                         ],
                     }
                 ),
-                "issuedAt": "2026-07-16T20:00:00Z",
-                "expiresAt": "2026-07-16T21:30:00Z",
+                "issuedAt": f"{self.day}T20:00:00Z",
+                "expiresAt": f"{self.day}T21:30:00Z",
                 "eligibleRunners": [
                     {
                         "runnerId": 98765,
@@ -342,7 +383,7 @@ class FixtureFactory:
         subject["runnerAdmissionLeaseSha256"] = sha256_digest(runner_lease)
         subject["sessionSha256"] = sha256_digest(
             {
-                "domain": SESSION_DOMAIN,
+                "domain": self.session_domain,
                 "requestId": request_id,
                 "deploymentSessionId": session_id,
                 "repositoryId": subject["repositoryId"],
@@ -417,7 +458,7 @@ class FixtureFactory:
             previous=None,
             closure_root=empty_closure,
             finding_ids=["FINDING_A"],
-            issued_at="2026-07-16T20:05:00Z",
+            issued_at=f"{self.day}T20:05:00Z",
             subject_digest=subject_digest,
         )
         a1_digest = sha256_digest(a1)
@@ -431,7 +472,7 @@ class FixtureFactory:
             closure_root=empty_closure,
             resolved=["FINDING_A"],
             acknowledged=["FINDING_A"],
-            issued_at="2026-07-16T20:10:00Z",
+            issued_at=f"{self.day}T20:10:00Z",
             subject_digest=subject_digest,
         )
         a2_digest = sha256_digest(a2)
@@ -445,7 +486,7 @@ class FixtureFactory:
         ]
         closure_root = sha256_digest(
             {
-                "domain": CLOSURE_DOMAIN,
+                "domain": self.closure_domain,
                 "subjectSha256": subject_digest,
                 "entries": closure_entries,
             }
@@ -458,18 +499,7 @@ class FixtureFactory:
             verdict="AGREE",
             previous=a2_digest,
             closure_root=closure_root,
-            issued_at="2026-07-16T20:15:00Z",
-            subject_digest=subject_digest,
-        )
-        b1 = self._review(
-            review_id="60000000-0000-4000-8000-000000000001",
-            chain_id="40000000-0000-4000-8000-000000000002",
-            key_id=self.MINIMAX_KEY_ID,
-            round_number=1,
-            verdict="AGREE",
-            previous=None,
-            closure_root=closure_root,
-            issued_at="2026-07-16T20:16:00Z",
+            issued_at=f"{self.day}T20:15:00Z",
             subject_digest=subject_digest,
         )
         c1 = self._review(
@@ -480,26 +510,44 @@ class FixtureFactory:
             verdict="AGREE",
             previous=None,
             closure_root=closure_root,
-            issued_at="2026-07-16T20:17:00Z",
+            issued_at=f"{self.day}T20:17:00Z",
             subject_digest=subject_digest,
         )
         a3_digest = sha256_digest(a3)
-        b1_digest = sha256_digest(b1)
         c1_digest = sha256_digest(c1)
+        review_envelopes = [a1, a2, a3]
+        provider_families = ["anthropic", "openai"]
+        final_review_digests = [a3_digest, c1_digest]
+        if self.contract_version == "v1":
+            b1 = self._review(
+                review_id="60000000-0000-4000-8000-000000000001",
+                chain_id="40000000-0000-4000-8000-000000000002",
+                key_id=self.MINIMAX_KEY_ID,
+                round_number=1,
+                verdict="AGREE",
+                previous=None,
+                closure_root=closure_root,
+                issued_at=f"{self.day}T20:16:00Z",
+                subject_digest=subject_digest,
+            )
+            review_envelopes.append(b1)
+            provider_families = ["anthropic", "minimax", "openai"]
+            final_review_digests = [a3_digest, sha256_digest(b1), c1_digest]
+        review_envelopes.append(c1)
         bundle = {
-            "schemaVersion": "acik.cross-ai-deployment-bundle.v1",
+            "schemaVersion": f"acik.cross-ai-deployment-bundle.{self.contract_version}",
             "bundleId": "70000000-0000-4000-8000-000000000001",
             "subject": subject,
             "workflowStages": stages,
             "runnerAdmissionLeaseEnvelope": runner_lease,
-            "reviewEnvelopes": [a1, a2, a3, b1, c1],
+            "reviewEnvelopes": review_envelopes,
             "closure": {
                 "entries": closure_entries,
                 "closureRootSha256": closure_root,
             },
             "consensus": {
-                "providerFamilies": ["anthropic", "minimax", "openai"],
-                "finalAgreeReviewSha256": [a3_digest, b1_digest, c1_digest],
+                "providerFamilies": provider_families,
+                "finalAgreeReviewSha256": final_review_digests,
                 "closureRootSha256": closure_root,
                 "openMustFixFindingCount": 0,
             },
@@ -509,7 +557,7 @@ class FixtureFactory:
             trust_root=self.trust_root(),
             revocations_envelope=self.revocations(),
             bundle_envelope=self.sign(
-                BUNDLE_PAYLOAD_TYPE,
+                self.bundle_payload_type,
                 bundle,
                 self.COORDINATOR_KEY_ID,
             ),

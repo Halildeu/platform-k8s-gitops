@@ -9,10 +9,13 @@ from typing import Any
 from .canonical import sha256_digest
 from .contract import (
     BUNDLE_PAYLOAD_TYPE,
+    BUNDLE_PAYLOAD_TYPE_V2,
     CLOSURE_DOMAIN,
+    CLOSURE_DOMAIN_V2,
     EvidenceVerifier,
     VerifiedBundle,
 )
+from .errors import reject
 from .provider import EnvelopeSigner
 
 
@@ -35,6 +38,20 @@ class EvidenceCoordinator:
         self.trust_root = trust_root
         self.revocations_envelope = revocations_envelope
         self.expected_policy_sha256 = expected_policy_sha256
+        schema_version = trust_root.get("schemaVersion")
+        if schema_version == "acik.cross-ai-deployment-trust-root.v1":
+            self.bundle_schema_version = "acik.cross-ai-deployment-bundle.v1"
+            self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE
+            self.closure_domain = CLOSURE_DOMAIN
+        elif schema_version == "acik.cross-ai-deployment-trust-root.v2":
+            self.bundle_schema_version = "acik.cross-ai-deployment-bundle.v2"
+            self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE_V2
+            self.closure_domain = CLOSURE_DOMAIN_V2
+        else:
+            reject(
+                "TRUST_ROOT_SCHEMA_INVALID",
+                "trust root contract version is unsupported",
+            )
 
     def coordinate(
         self,
@@ -59,7 +76,7 @@ class EvidenceCoordinator:
         )
         closure_root = sha256_digest(
             {
-                "domain": CLOSURE_DOMAIN,
+                "domain": self.closure_domain,
                 "subjectSha256": subject_digest,
                 "entries": sorted(
                     closure_entries,
@@ -68,7 +85,7 @@ class EvidenceCoordinator:
             }
         )
         payload = {
-            "schemaVersion": "acik.cross-ai-deployment-bundle.v1",
+            "schemaVersion": self.bundle_schema_version,
             "bundleId": bundle_id,
             "subject": subject,
             "workflowStages": workflow_stages,
@@ -87,7 +104,7 @@ class EvidenceCoordinator:
             "grant": grant,
         }
         envelope = self.signer.sign_json_envelope(
-            payload_type=BUNDLE_PAYLOAD_TYPE,
+            payload_type=self.bundle_payload_type,
             payload=payload,
         )
         verified = EvidenceVerifier(

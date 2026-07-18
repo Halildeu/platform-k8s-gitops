@@ -43,6 +43,36 @@ class EvidenceCoordinatorTest(unittest.TestCase):
             "70000000-0000-4000-8000-000000000002",
         )
 
+    def test_v2_coordinator_emits_claude_and_codex_bundle(self) -> None:
+        factory = FixtureFactory("v2")
+        fixture = factory.build()
+        original = factory.decode_payload(fixture.bundle_envelope)
+        coordinated = EvidenceCoordinator(
+            signer=StaticSigner(factory, factory.COORDINATOR_KEY_ID),
+            trust_root=fixture.trust_root,
+            revocations_envelope=fixture.revocations_envelope,
+            expected_policy_sha256=original["subject"]["policySha256"],
+        ).coordinate(
+            bundle_id="70000000-0000-4000-8000-000000000003",
+            subject=original["subject"],
+            workflow_stages=original["workflowStages"],
+            runner_admission_lease_envelope=original[
+                "runnerAdmissionLeaseEnvelope"
+            ],
+            grant=original["grant"],
+            review_envelopes=original["reviewEnvelopes"],
+            closure_entries=original["closure"]["entries"],
+            final_agree_review_sha256=original["consensus"][
+                "finalAgreeReviewSha256"
+            ],
+            provider_families=original["consensus"]["providerFamilies"],
+            now=fixture.now,
+        )
+        self.assertEqual(
+            coordinated.verified.provider_families,
+            ("anthropic", "openai"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

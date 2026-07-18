@@ -66,10 +66,6 @@ path "sys/policies/acl/cross-ai-issuer-anthropic-test" {
   capabilities = ["create", "update", "read"]
 }
 
-path "sys/policies/acl/cross-ai-issuer-minimax-test" {
-  capabilities = ["create", "update", "read"]
-}
-
 path "sys/policies/acl/cross-ai-issuer-openai-test" {
   capabilities = ["create", "update", "read"]
 }

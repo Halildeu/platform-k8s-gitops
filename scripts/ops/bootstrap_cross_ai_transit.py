@@ -3,7 +3,7 @@
 
 The root token is read from an owner-only regular file. It is never accepted in
 argv or the environment and is never written to logs or the public receipt.
-The operation is deliberately narrow: one named Transit mount, six fixed
+The operation is deliberately narrow: one named Transit mount, five fixed
 non-exportable Ed25519 keys, and the git-reviewed config-reconciler policy.
 """
 
@@ -30,13 +30,14 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MOUNT = "cross-ai"
 KEY_NAMES = (
     "anthropic",
-    "minimax",
     "openai",
     "coordinator",
     "revocation",
     "runner-management",
 )
 RECONCILER_POLICY_NAME = "vault-config-reconciler"
+LEGACY_MINIMAX_APPROLE = "cross-ai-issuer-minimax-test"
+LEGACY_MINIMAX_POLICY = "cross-ai-issuer-minimax-test"
 
 
 class BootstrapError(RuntimeError):
@@ -308,6 +309,33 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
     elif not isinstance(mount, dict) or mount.get("type") != "transit":
         raise BootstrapError("cross-ai mount exists with a non-Transit type")
 
+    # Remove signing authority without deleting the Transit key. Public-key
+    # history remains verifiable, while existing AppRole tokens lose policy
+    # capabilities as soon as the ACL policy is deleted.
+    decommission_statuses = frozenset({200, 204, 404})
+    client.request(
+        "DELETE",
+        f"auth/approle/role/{LEGACY_MINIMAX_APPROLE}",
+        expected=decommission_statuses,
+    )
+    client.request(
+        "DELETE",
+        f"sys/policies/acl/{LEGACY_MINIMAX_POLICY}",
+        expected=decommission_statuses,
+    )
+    if client.request(
+        "GET",
+        f"auth/approle/role/{LEGACY_MINIMAX_APPROLE}",
+        expected=frozenset({404}),
+    ).status != 404:
+        raise BootstrapError("legacy MiniMax AppRole still exists after decommission")
+    if client.request(
+        "GET",
+        f"sys/policies/acl/{LEGACY_MINIMAX_POLICY}",
+        expected=frozenset({404}),
+    ).status != 404:
+        raise BootstrapError("legacy MiniMax ACL policy still exists after decommission")
+
     key_records: list[dict[str, Any]] = []
     for key_name in KEY_NAMES:
         current = client.request(
@@ -383,6 +411,10 @@ def bootstrap(args: argparse.Namespace) -> dict[str, Any]:
         "reconcilerPolicySha256": f"sha256:{hashlib.sha256(policy_bytes).hexdigest()}",
         "createdResources": sorted(created),
         "updatedResources": sorted(updated),
+        "verifiedAbsentResources": [
+            f"approle:{LEGACY_MINIMAX_APPROLE}",
+            f"policy:{LEGACY_MINIMAX_POLICY}",
+        ],
         "verifiedAt": datetime.now(timezone.utc)
         .replace(microsecond=0)
         .isoformat()

@@ -22,10 +22,9 @@ from uuid import UUID
 
 MAX_RECEIPT_BYTES = 2 * 1024 * 1024
 RECEIPT_SCHEMA_VERSION = "acik.cross-ai-transit-bootstrap-receipt.v2"
-TRUST_ROOT_SCHEMA_VERSION = "acik.cross-ai-deployment-trust-root.v1"
+TRUST_ROOT_SCHEMA_VERSION = "acik.cross-ai-deployment-trust-root.v2"
 EXPECTED_KEY_NAMES = (
     "anthropic",
-    "minimax",
     "openai",
     "coordinator",
     "revocation",
@@ -44,6 +43,7 @@ RECEIPT_FIELDS = frozenset(
         "reconcilerPolicySha256",
         "createdResources",
         "updatedResources",
+        "verifiedAbsentResources",
         "verifiedAt",
         "requiresOutOfBandOwnerPin",
     }
@@ -154,6 +154,11 @@ def _validate_receipt(receipt: dict[str, Any]) -> tuple[list[dict[str, Any]], st
         or receipt["reconcilerPolicyName"] != "vault-config-reconciler"
     ):
         raise TrustRootBuildError("public Transit receipt is outside the TEST trust scope")
+    if receipt["verifiedAbsentResources"] != [
+        "approle:cross-ai-issuer-minimax-test",
+        "policy:cross-ai-issuer-minimax-test",
+    ]:
+        raise TrustRootBuildError("legacy MiniMax signing authority absence is unverified")
     for field in ("vaultOrigin", "vaultClusterId", "vaultClusterName"):
         value = receipt[field]
         if (
@@ -192,7 +197,7 @@ def _validate_receipt(receipt: dict[str, Any]) -> tuple[list[dict[str, Any]], st
         raise TrustRootBuildError("reconciler policy digest is invalid") from exc
     keys = receipt["keys"]
     if not isinstance(keys, list) or len(keys) != len(EXPECTED_KEY_NAMES):
-        raise TrustRootBuildError("exactly six public Transit keys are required")
+        raise TrustRootBuildError("exactly five public Transit keys are required")
 
     parsed: dict[str, dict[str, Any]] = {}
     public_keys: set[bytes] = set()
@@ -254,6 +259,7 @@ def _validate_receipt(receipt: dict[str, Any]) -> tuple[list[dict[str, Any]], st
         "mount": receipt["mount"],
         "reconcilerPolicyName": receipt["reconcilerPolicyName"],
         "reconcilerPolicySha256": receipt["reconcilerPolicySha256"],
+        "verifiedAbsentResources": receipt["verifiedAbsentResources"],
         "keys": [parsed[name] for name in EXPECTED_KEY_NAMES],
     }
     source_digest = f"sha256:{hashlib.sha256(_canonical_bytes(stable_source)).hexdigest()}"
@@ -315,9 +321,9 @@ def build_trust_root(
         "issuedAt": issued_at,
         "expiresAt": expires_at,
         "maxClockSkewSeconds": max_clock_skew_seconds,
-        "requiredProviderFamilies": ["anthropic", "minimax", "openai"],
-        "minimumProviderFamilies": 3,
-        "minimumDirectProviderRoutes": 3,
+        "requiredProviderFamilies": ["anthropic", "openai"],
+        "minimumProviderFamilies": 2,
+        "minimumDirectProviderRoutes": 2,
         "keys": [
             trust_key(
                 by_name["anthropic"],
@@ -325,14 +331,6 @@ def build_trust_root(
                 "anthropic",
                 "direct-anthropic-cli",
                 "claude-opus-4-8",
-                "provider-reported",
-            ),
-            trust_key(
-                by_name["minimax"],
-                "provider-review",
-                "minimax",
-                "direct-minimax-cli",
-                "minimax/MiniMax-M3",
                 "provider-reported",
             ),
             trust_key(

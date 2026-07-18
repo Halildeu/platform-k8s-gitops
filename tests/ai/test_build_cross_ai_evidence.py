@@ -58,6 +58,22 @@ class EvidenceBuilderTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["verdict"], "REVISE")
 
+    def test_rejects_minimax_as_a_new_evidence_provider(self) -> None:
+        args = [
+            "minimax" if value == "anthropic" else value
+            for value in BASE_ARGS
+        ]
+        result = subprocess.run(
+            args,
+            input="P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid choice", result.stderr)
+
     def test_rejects_agree_when_p0_or_p1_contains_a_finding(self) -> None:
         for response in (
             "P0\nCritical finding\nP1\nNone\nP2\nNone\nVERDICT: AGREE",

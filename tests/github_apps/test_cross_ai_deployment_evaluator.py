@@ -405,22 +405,54 @@ class DeploymentEvaluatorTest(unittest.TestCase):
                 mode="enforce",
                 now=lambda: NOW,
             )
+        v2_factory = FixtureFactory("v2")
+        v2_fixture = v2_factory.build(policy_digest=self.policy.digest)
+        v2_verified = EvidenceVerifier(
+            trust_root=v2_fixture.trust_root,
+            revocations_envelope=v2_fixture.revocations_envelope,
+            now=v2_fixture.now,
+            expected_policy_sha256=self.policy.digest,
+        ).verify_bundle(v2_fixture.bundle_envelope)
+        v2_registry = IntentRegistry(
+            Path(self.directory.name) / "machine-only-registry.sqlite3",
+            ContentAddressedStore(Path(self.directory.name) / "machine-only-cas"),
+        )
+        v2_registry.register(
+            envelope=v2_fixture.bundle_envelope,
+            verified=v2_verified,
+            registration_principal="spiffe://acik/platform/trusted-dispatcher",
+            registered_at=v2_fixture.now,
+        )
+        v2_registry.finalize_ref(
+            request_id=REQUEST_ID,
+            ref_object_id=HEAD,
+            resolved_head_sha=HEAD,
+            finalized_at=v2_fixture.now,
+        )
         evaluator = DeploymentEvaluator(
             policy=replace(
                 self.policy,
                 phase="machine-only-nonprod",
                 machine_only_enabled=True,
             ),
-            registry=self.registry,
+            registry=v2_registry,
             github=self.github,
-            trust_root=self.fixture.trust_root,
-            expected_trust_root_sha256=sha256_digest(self.fixture.trust_root),
-            revocations_loader=lambda: self.fixture.revocations_envelope,
+            trust_root=v2_fixture.trust_root,
+            expected_trust_root_sha256=sha256_digest(v2_fixture.trust_root),
+            revocations_loader=lambda: v2_fixture.revocations_envelope,
             mode="enforce",
-            now=lambda: NOW,
+            now=lambda: v2_fixture.now,
         )
-        with self.assertRaisesRegex(PolicyError, "MACHINE_ONLY_IDENTITY_UNTRUSTED"):
-            evaluator.evaluate(self.request)
+        self.github.environment_value["protection_rules"] = [
+            {"id": 2, "type": "custom", "app": {"id": 555}}
+        ]
+        try:
+            with self.assertRaisesRegex(
+                PolicyError, "MACHINE_ONLY_IDENTITY_UNTRUSTED"
+            ):
+                evaluator.evaluate(self.request)
+        finally:
+            v2_registry.close()
 
     def test_reloads_revocations_for_every_decision(self) -> None:
         self.evaluator.evaluate(self.request)

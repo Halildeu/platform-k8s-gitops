@@ -66,6 +66,10 @@ def receipt() -> dict[str, object]:
         "reconcilerPolicySha256": "sha256:" + ("a" * 64),
         "createdResources": ["key:anthropic"],
         "updatedResources": ["policy:vault-config-reconciler"],
+        "verifiedAbsentResources": [
+            "approle:cross-ai-issuer-minimax-test",
+            "policy:cross-ai-issuer-minimax-test",
+        ],
         "verifiedAt": "2026-07-18T17:59:00Z",
         "requiresOutOfBandOwnerPin": True,
     }
@@ -85,7 +89,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         trust_root = build(receipt())
         schema = json.loads(
             (
-                ROOT / "schema/cross-ai-deployment-trust-root-v1.schema.json"
+                ROOT / "schema/cross-ai-deployment-trust-root-v2.schema.json"
             ).read_text(encoding="utf-8")
         )
         self.assertEqual(
@@ -98,9 +102,9 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         )
         self.assertEqual(
             trust_root["requiredProviderFamilies"],
-            ["anthropic", "minimax", "openai"],
+            ["anthropic", "openai"],
         )
-        self.assertEqual(len(trust_root["keys"]), 6)
+        self.assertEqual(len(trust_root["keys"]), 5)
         providers = {
             item["providerFamily"]: item
             for item in trust_root["keys"]
@@ -108,9 +112,6 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         }
         self.assertEqual(
             providers["anthropic"]["allowedModelIds"], ["claude-opus-4-8"]
-        )
-        self.assertEqual(
-            providers["minimax"]["allowedModelIds"], ["minimax/MiniMax-M3"]
         )
         self.assertEqual(
             providers["openai"]["allowedModelIdentityClasses"],
@@ -129,7 +130,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "48fc80152739022e7dba01a4952ddc09081e400242fc77786d42331dde3c5c86",
+            "476d5a81af5ce338259230cf550cc396be90f51f2853800df21a5492908457d7",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:
@@ -176,12 +177,12 @@ class TestTrustRootBuilderTests(unittest.TestCase):
 
         missing = receipt()
         missing["keys"].pop()
-        with self.assertRaisesRegex(MODULE.TrustRootBuildError, "exactly six"):
+        with self.assertRaisesRegex(MODULE.TrustRootBuildError, "exactly five"):
             build(missing)
 
         extra = receipt()
         extra["keys"].append(copy.deepcopy(extra["keys"][0]))
-        with self.assertRaisesRegex(MODULE.TrustRootBuildError, "exactly six"):
+        with self.assertRaisesRegex(MODULE.TrustRootBuildError, "exactly five"):
             build(extra)
 
         duplicate = receipt()

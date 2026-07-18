@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,9 @@ ROOT = Path(__file__).resolve().parents[3]
 BUNDLE_SCHEMA = ROOT / "schema/cross-ai-deployment-bundle-v1.schema.json"
 REVIEW_SCHEMA = ROOT / "schema/cross-ai-deployment-review-v1.schema.json"
 TRUST_ROOT_SCHEMA = ROOT / "schema/cross-ai-deployment-trust-root-v1.schema.json"
+BUNDLE_SCHEMA_V2 = ROOT / "schema/cross-ai-deployment-bundle-v2.schema.json"
+REVIEW_SCHEMA_V2 = ROOT / "schema/cross-ai-deployment-review-v2.schema.json"
+TRUST_ROOT_SCHEMA_V2 = ROOT / "schema/cross-ai-deployment-trust-root-v2.schema.json"
 REVOCATIONS_SCHEMA = ROOT / "schema/cross-ai-deployment-revocations-v1.schema.json"
 RUNNER_ADMISSION_LEASE_SCHEMA = (
     ROOT / "schema/cross-ai-runner-admission-lease-v1.schema.json"
@@ -27,6 +30,8 @@ RUNNER_ADMISSION_LEASE_SCHEMA = (
 
 BUNDLE_PAYLOAD_TYPE = "application/vnd.acik.cross-ai-deployment-bundle.v1+json"
 REVIEW_PAYLOAD_TYPE = "application/vnd.acik.cross-ai-deployment-review.v1+json"
+BUNDLE_PAYLOAD_TYPE_V2 = "application/vnd.acik.cross-ai-deployment-bundle.v2+json"
+REVIEW_PAYLOAD_TYPE_V2 = "application/vnd.acik.cross-ai-deployment-review.v2+json"
 REVOCATIONS_PAYLOAD_TYPE = (
     "application/vnd.acik.cross-ai-deployment-revocations.v1+json"
 )
@@ -35,7 +40,10 @@ RUNNER_ADMISSION_LEASE_PAYLOAD_TYPE = (
 )
 SESSION_DOMAIN = "acik.cross-ai-deployment-session.v1"
 CLOSURE_DOMAIN = "acik.cross-ai-deployment-closure.v1"
+SESSION_DOMAIN_V2 = "acik.cross-ai-deployment-session.v2"
+CLOSURE_DOMAIN_V2 = "acik.cross-ai-deployment-closure.v2"
 MAX_GRANT_TTL = timedelta(minutes=120)
+MINIMAX_NEW_REVIEW_CUTOFF = datetime(2026, 7, 18, tzinfo=timezone.utc)
 REQUIRED_PROVIDER_ROUTES = {
     "anthropic": (
         "direct-anthropic-cli",
@@ -46,6 +54,20 @@ REQUIRED_PROVIDER_ROUTES = {
     "minimax": (
         "direct-minimax-cli",
         "minimax/MiniMax-M3",
+        "provider-reported",
+        True,
+    ),
+    "openai": (
+        "openai-codex",
+        "gpt-5.6-sol",
+        "provider-reported",
+        True,
+    ),
+}
+REQUIRED_PROVIDER_ROUTES_V2 = {
+    "anthropic": (
+        "direct-anthropic-cli",
+        "claude-opus-4-8",
         "provider-reported",
         True,
     ),
@@ -151,6 +173,32 @@ class EvidenceVerifier:
         self.now = now or utc_now()
         self.expected_policy_sha256 = expected_policy_sha256
         self.trust_root = trust_root
+        schema_version = trust_root.get("schemaVersion")
+        if schema_version == "acik.cross-ai-deployment-trust-root.v1":
+            self.contract_version = "v1"
+            self.trust_root_schema = TRUST_ROOT_SCHEMA
+            self.bundle_schema = BUNDLE_SCHEMA
+            self.review_schema = REVIEW_SCHEMA
+            self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE
+            self.review_payload_type = REVIEW_PAYLOAD_TYPE
+            self.session_domain = SESSION_DOMAIN
+            self.closure_domain = CLOSURE_DOMAIN
+            self.required_provider_routes = REQUIRED_PROVIDER_ROUTES
+        elif schema_version == "acik.cross-ai-deployment-trust-root.v2":
+            self.contract_version = "v2"
+            self.trust_root_schema = TRUST_ROOT_SCHEMA_V2
+            self.bundle_schema = BUNDLE_SCHEMA_V2
+            self.review_schema = REVIEW_SCHEMA_V2
+            self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE_V2
+            self.review_payload_type = REVIEW_PAYLOAD_TYPE_V2
+            self.session_domain = SESSION_DOMAIN_V2
+            self.closure_domain = CLOSURE_DOMAIN_V2
+            self.required_provider_routes = REQUIRED_PROVIDER_ROUTES_V2
+        else:
+            reject(
+                "TRUST_ROOT_SCHEMA_INVALID",
+                "trust root contract version is unsupported",
+            )
         if (
             expected_trust_root_sha256 is not None
             and sha256_digest(trust_root) != expected_trust_root_sha256
@@ -159,11 +207,32 @@ class EvidenceVerifier:
                 "TRUST_ROOT_DIGEST_MISMATCH",
                 "trust root differs from the deployment-configured digest",
             )
-        _validate_schema(trust_root, TRUST_ROOT_SCHEMA, "TRUST_ROOT_SCHEMA_INVALID")
+        _validate_schema(
+            trust_root, self.trust_root_schema, "TRUST_ROOT_SCHEMA_INVALID"
+        )
         self.max_skew = timedelta(seconds=trust_root["maxClockSkewSeconds"])
         self.required_provider_families = frozenset(
             trust_root["requiredProviderFamilies"]
         )
+        if (
+            self.contract_version == "v1"
+            and "minimax" in self.required_provider_families
+            and self.now >= MINIMAX_NEW_REVIEW_CUTOFF
+        ):
+            reject(
+                "MINIMAX_PROVIDER_DEPRECATED",
+                "active verification cannot use a MiniMax-bearing v1 trust root after the cutoff",
+            )
+        trust_root_expires_at = parse_utc(trust_root["expiresAt"], "trustRoot.expiresAt")
+        if (
+            self.contract_version == "v1"
+            and "minimax" in self.required_provider_families
+            and trust_root_expires_at > MINIMAX_NEW_REVIEW_CUTOFF
+        ):
+            reject(
+                "MINIMAX_TRUST_ROOT_DEPRECATED",
+                "MiniMax trust roots may not remain valid after the forward-policy cutoff",
+            )
         self.minimum_provider_families = trust_root["minimumProviderFamilies"]
         self.minimum_direct_routes = trust_root["minimumDirectProviderRoutes"]
         self.keys = self._parse_trust_keys(trust_root)
@@ -203,7 +272,7 @@ class EvidenceVerifier:
                         "TRUST_KEY_ATTRIBUTION_INVALID",
                         f"provider key {key_id} lacks fixed family/channel/direct attribution",
                     )
-                expected_route = REQUIRED_PROVIDER_ROUTES.get(family)
+                expected_route = self.required_provider_routes.get(family)
                 actual_route = (
                     channels[0],
                     model_ids[0],
@@ -354,11 +423,13 @@ class EvidenceVerifier:
         coordinator_keys = self._active_keys("coordinator")
         outer = verify_json_envelope(
             envelope,
-            expected_payload_type=BUNDLE_PAYLOAD_TYPE,
+            expected_payload_type=self.bundle_payload_type,
             allowed_keys=coordinator_keys,
             exactly_one_signature=True,
         )
-        _validate_schema(outer.payload, BUNDLE_SCHEMA, "BUNDLE_SCHEMA_INVALID")
+        _validate_schema(
+            outer.payload, self.bundle_schema, "BUNDLE_SCHEMA_INVALID"
+        )
         bundle = outer.payload
         coordinator = self.keys[outer.signing_key_ids[0]]
         grant_not_before = parse_utc(bundle["grant"]["notBefore"], "grant.notBefore")
@@ -521,7 +592,7 @@ class EvidenceVerifier:
 
         expected_session = sha256_digest(
             {
-                "domain": SESSION_DOMAIN,
+                "domain": self.session_domain,
                 "requestId": request_id,
                 "deploymentSessionId": grant["deploymentSessionId"],
                 "repositoryId": subject["repositoryId"],
@@ -566,12 +637,14 @@ class EvidenceVerifier:
         for envelope in bundle["reviewEnvelopes"]:
             leaf_envelope = verify_json_envelope(
                 envelope,
-                expected_payload_type=REVIEW_PAYLOAD_TYPE,
+                expected_payload_type=self.review_payload_type,
                 allowed_keys=provider_keys,
                 exactly_one_signature=True,
             )
             _validate_schema(
-                leaf_envelope.payload, REVIEW_SCHEMA, "REVIEW_SCHEMA_INVALID"
+                leaf_envelope.payload,
+                self.review_schema,
+                "REVIEW_SCHEMA_INVALID",
             )
             leaf = leaf_envelope.payload
             key_id = leaf_envelope.signing_key_ids[0]
@@ -599,6 +672,17 @@ class EvidenceVerifier:
                 )
             issued_at = parse_utc(leaf["issuedAt"], "review.issuedAt")
             expires_at = parse_utc(leaf["expiresAt"], "review.expiresAt")
+            if self.contract_version == "v1" and leaf["providerFamily"] == "minimax":
+                if self.now >= MINIMAX_NEW_REVIEW_CUTOFF:
+                    reject(
+                        "MINIMAX_PROVIDER_DEPRECATED",
+                        "active verification cannot accept MiniMax review leaves after the cutoff",
+                    )
+                if issued_at >= MINIMAX_NEW_REVIEW_CUTOFF:
+                    reject(
+                        "MINIMAX_REVIEW_DEPRECATED",
+                        "MiniMax reviews issued on or after the forward-policy cutoff are forbidden",
+                    )
             if issued_at > self.now + self.max_skew:
                 reject("REVIEW_NOT_YET_VALID", "review issue time is in the future")
             if expires_at < self.now - self.max_skew:
@@ -789,7 +873,7 @@ class EvidenceVerifier:
             )
         closure_root = sha256_digest(
             {
-                "domain": CLOSURE_DOMAIN,
+                "domain": self.closure_domain,
                 "subjectSha256": subject_digest,
                 "entries": sorted(
                     closure_projection, key=lambda item: item["findingId"]

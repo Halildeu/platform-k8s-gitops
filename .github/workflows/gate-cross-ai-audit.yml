@@ -6,8 +6,8 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # Required check (durumsal az-kanal governance, #2621):
 # - none: routine work + reason + zero receipt; governance/auto-promotion blocked
 # - single: exact direct Claude Opus 4.8 + exact scope + AGREE + provider-distinct
-# - dual: irreversible/high-risk/human-authority trigger + Claude + exactly one
-#   provider-distinct channel; maximum two, parallel publication allowed
+# - dual: irreversible/high-risk/human-authority trigger + exact Claude + Codex;
+#   maximum two, MiniMax forbidden, parallel publication allowed
 # - Fetched owner evidence, model, freshness, digest and redaction remain strict
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation

@@ -1,5 +1,19 @@
 # RB — Signed Cross-AI Custom Deployment Protection Rule
 
+> **Forward-policy stop (#2638, 2026-07-18):** Bu v1 tasarımındaki üç-sağlayıcı
+> ve MiniMax issuer yolu yeni activation veya deployment acceptance için
+> kullanılamaz. Mevcut metin, şema ve fixture'lar yalnız arşiv/forensic kayıt
+> açıklaması için korunur; cutoff sonrası aktif verifier bunları doğrulamaz.
+> Yeni aktif sürüm Claude Opus 4.8 + OpenAI Codex 5.6 SOL ile ayrı versioned
+> contract/trust-root kullanmadan Phase 2/3'e ilerlemez. MiniMax içeren bir v1
+> trust root cutoff sonrasına taşamaz; pre-cutoff kayıt yeni acceptance üretemez.
+> Aktif verifier saati cutoff'a ulaştığında MiniMax taşıyan v1 trust root'u
+> payload zamanı backdate edilse bile reddeder. Owner-gated Transit bootstrap
+> eski MiniMax issuer policy/AppRole kaydını idempotent olarak siler ve
+> yokluğunu doğrular; yeni reconcile yolu grant üretmez. Ayrı v2 activation
+> preflight'i credential göstermeden bu absence receipt'ini doğrulamalıdır. Bu
+> temizlik tarihsel Transit public-key/evidence kaydını silmez.
+
 > **Issue:** #2502 · **ADR:** ADR-0045 · **scope:** reversible test/non-prod only
 > **Current state (2026-07-18):** Phase 0 source/schema/tests, the live-found
 > webhook header normalization fix and the Phase 1 receive-only observer are
@@ -33,13 +47,15 @@
 > reconciler and file-only Vault seed wrapper are merged. The evaluator App PEM
 > is present at the dedicated TEST KV path with redacted hash-match proof; the
 > receive-only observer does not mount or consume it. TEST Vault now has the
-> audited `cross-ai/` Transit mount and six non-exportable Ed25519 v1 keys. The
-> public bootstrap receipt digest is
-> `sha256:81e629fe61b2cb81578861d7c82b61802a05b4aa2fa4b720706330e6b642c8ac`;
-> root-free sign policies are reconciled, but provider issuer/coordinator
-> AppRoles and SecretIDs are not live and no bundle has been signed. The rule
-> must remain disabled until the reviewed public trust-root release/TLS,
-> direct exact-model Anthropic, MiniMax and OpenAI adapters, dispatcher App,
+> audited `cross-ai/` Transit mount. Its historical six non-exportable
+> Ed25519 v1 keys remain as public forensic history; #2638 removes MiniMax
+> AppRole/policy signing authority without deleting that public key. The
+> owner-local v1 bootstrap receipt digest is
+> `sha256:81e629fe61b2cb81578861d7c82b61802a05b4aa2fa4b720706330e6b642c8ac`.
+> Provider issuer/coordinator AppRoles and SecretIDs are not live and no bundle
+> has been signed. The rule remains disabled until the reviewed five-key v2
+> public trust-root release/TLS, exact Claude Opus 4.8 + OpenAI Codex 5.6 SOL
+> adapters, dispatcher App,
 > signed intent, protected workflows and one real callback are all proven.
 
 ## 1. What this removes — and what it does not
@@ -61,16 +77,17 @@ Create two repository-scoped GitHub Apps. This is a one-time account-owner
 bootstrap, not a recurring deployment approval.
 
 The two-App split is a GitHub permission boundary, not the provider quorum.
-Provider execution and signing remain three separate issuer workloads
-(Anthropic, MiniMax and OpenAI); none of those issuers inherits either GitHub
-App identity or its repository permissions.
-The provider routes are not a configurable wrapper allowlist. V1 fixes exactly
-`direct-anthropic-cli` + `claude-opus-4-8`, `direct-minimax-cli` +
-`minimax/MiniMax-M3`, and `openai-codex` + `gpt-5.6-sol`; Anthropic and MiniMax
-require provider-reported model identity. Codex is honestly fixed to
+Active v2 provider execution and signing use two separate issuer workloads
+(Anthropic and OpenAI); neither issuer inherits either GitHub App identity or
+its repository permissions. MiniMax is not an active issuer and its historical
+v1 material cannot authorize a new deployment.
+The provider routes are not a configurable wrapper allowlist. V2 fixes exactly
+`direct-anthropic-cli` + `claude-opus-4-8` and `openai-codex` +
+`gpt-5.6-sol`; Anthropic requires provider-reported model identity. Codex is
+honestly fixed to
 `trusted-launch-attested` because its JSON stream does not report backend model
 identity; that weaker class is accepted only while the required reviewer is
-retained and is unconditionally rejected by machine-only mode. All three routes
+retained and is unconditionally rejected by machine-only mode. Both routes
 require `directProviderCli=true`. A different channel, model or identity class
 needs a reviewed contract migration, not a trust-root edit.
 
@@ -114,11 +131,14 @@ same policy bytes in place while unexpired grants exist.
 Use distinct Ed25519 Transit keys and policies for:
 
 - direct Anthropic review issuer (`claude-opus-4-8`);
-- direct MiniMax review issuer (`minimax/MiniMax-M3`);
 - direct OpenAI Codex review issuer (`gpt-5.6-sol`);
 - evidence coordinator;
 - revocation authority;
 - runner inventory/admission-lease management.
+
+The historical `minimax` Transit public key may remain for forensic validation,
+but no active v2 trust root includes it and no AppRole or ACL policy may grant
+signing authority for it.
 
 Each workload may sign only through its own Transit key. Provider keys cannot
 sign bundles, the coordinator cannot sign provider leaves, and only the
@@ -151,8 +171,7 @@ metadata; it is not a grace-period switch. Issuers must not publish a
 future-dated entry unless this immediate preemption is intended.
 
 Direct Claude JSON reports `modelUsage`; the issuer requires the requested and
-reported model to match. The direct MiniMax transport likewise requires the
-provider response to report exact `minimax/MiniMax-M3`. Codex JSONL does not
+reported model to match. Codex JSONL does not
 report backend model identity: its leaf is therefore honestly marked
 `trusted-launch-attested`, bound to the live supported-model catalog, exact
 executable/version/digest and no-tool read-only launch. It is never upgraded to
@@ -160,9 +179,11 @@ executable/version/digest and no-tool read-only launch. It is never upgraded to
 
 ### 4.1 One-time TEST Transit owner bootstrap
 
-Current live truth is fail-closed: the one-time TEST bootstrap has created the
-Transit mount and six v1 keys, but this does not authorize signing or the GitHub
-rule. The root-free config reconciler still cannot create mounts or issuer
+Current live truth is fail-closed: the earlier TEST bootstrap created the
+Transit mount and six historical v1 keys, but this does not authorize signing
+or the GitHub rule. The reviewed v2 bootstrap retains the historical MiniMax
+public key while deleting its AppRole/policy authority and emits only the five
+active-key records. The root-free config reconciler still cannot create mounts or issuer
 credentials. Do not recover, search for or use the owner root token from
 automation. Any owner refresh uses only an explicitly supplied
 current-user-owned `0600` token file. The script rejects a symlink, weak mode,
@@ -170,11 +191,13 @@ wrong Vault cluster ID, standby/sealed Vault, non-root token, non-Transit path
 collision, exportable/backup-enabled key, incomplete public version history or
 policy readback drift.
 
-The bootstrap creates only:
+The bootstrap creates or reconciles only:
 
 - the TEST-only `cross-ai/` Transit mount;
-- distinct `anthropic`, `minimax`, `openai`, `coordinator`, `revocation` and
+- distinct `anthropic`, `openai`, `coordinator`, `revocation` and
   `runner-management` non-derived, non-exportable Ed25519 keys;
+- deletion and verified absence of the legacy MiniMax issuer AppRole/policy,
+  without deleting its historical Transit public key;
 - the git-reviewed update of the already owner-gated
   `vault-config-reconciler` policy.
 
@@ -243,11 +266,12 @@ role-id and secret-id path and that a `bind_secret_id=false` downgrade/login is
 unavailable. This PR changes the reviewed source policy only; it does not claim
 that the owner-gated live policy replacement or role provisioning has occurred.
 
-This source contract does not make three local Transit signatures equivalent
-to three provider executions. Each dedicated issuer must execute its provider,
-validate the exact reported model and only then consume its one-use sign token.
-Until the direct MiniMax and OpenAI execution adapters and their redacted,
-content-addressed receipts are accepted, enforcement remains `tracked_pending`.
+This source contract does not make two local Transit signatures equivalent to
+two provider executions. Each dedicated issuer must execute its provider,
+validate its exact allowed identity class and only then consume its one-use
+sign token. Until the direct Claude and OpenAI execution adapters and their
+redacted, content-addressed receipts are accepted, enforcement remains
+`tracked_pending`.
 
 The evaluator's Transit client requires a canonical HTTPS Vault origin. The
 loopback HTTP address above is accepted only by the attended owner bootstrap.
@@ -601,7 +625,7 @@ Exact provider model IDs are part of the signed contract. On model retirement,
 existing grants remain bound to the retired ID and are not rewritten: revoke
 unconsumed grants, land and review a contract/trust-root migration, rotate the
 affected issuer identity as required, and issue fresh grants. Until that full
-migration reaches three-provider consensus, new and existing executions remain
+migration reaches the exact v2 Claude+Codex consensus, new and existing executions remain
 fail-closed as `tracked_pending`.
 
 This path is source-ready only. Do not expose the endpoint or enable the
@@ -688,7 +712,7 @@ reviewer has been deliberately removed.
 4. **Phase 3:** only after recorded acceptance, remove the repeated reviewer
    from this one reversible test Environment. Retain the App rule, admin-bypass
    prohibition, secret scope, watchdog and compensating rollback.
-5. **Production:** out of scope for ADR-0045 v1; required human reviewer stays.
+5. **Production:** out of scope for the active v2 TEST contract; required human reviewer stays.
 
 If App availability or decision integrity is uncertain: freeze registrations,
 revoke unconsumed grants, cancel waiting runs, disable the App rule, restore

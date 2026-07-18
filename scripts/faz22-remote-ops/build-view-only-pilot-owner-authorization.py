@@ -27,6 +27,10 @@ UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 EXPECTED_REPOSITORY = "Halildeu/platform-k8s-gitops"
 EXPECTED_ENVIRONMENT = "faz22-view-only-pilot"
 LEGAL_ISSUE_REF = "https://github.com/Halildeu/platform-k8s-gitops/issues/2374"
+EXPECTED_ADVISORY_PROVIDERS = [
+    "Anthropic/claude-opus-4-8",
+    "OpenAI/gpt-5.6-sol",
+]
 
 
 class AuthorizationError(Exception):
@@ -152,7 +156,7 @@ def build_authorization(
     if policy["aiAdvisory"]["advisoryOnly"] is not True or policy["aiAdvisory"]["consensusVerdict"] != "AGREE":
         raise AuthorizationError("provider-distinct AI advisory consensus is not AGREE/advisory-only")
     providers = policy["aiAdvisory"]["providers"]
-    if providers != ["MiniMax/minimax-MiniMax-M3", "OpenAI/Codex"]:
+    if providers != EXPECTED_ADVISORY_PROVIDERS:
         raise AuthorizationError("AI advisory providers are not the reviewed provider-distinct pair")
     if (
         policy["aiAdvisory"]["provenanceClass"] != "owner-attested-provider-session"

@@ -1,11 +1,13 @@
 import importlib.util
+import json
 import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).parents[2] / "scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py"
+REPO_ROOT = Path(__file__).parents[2]
+MODULE_PATH = REPO_ROOT / "scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py"
 sys.path.insert(0, str(MODULE_PATH.parent))
 SPEC = importlib.util.spec_from_file_location("view_only_pilot_owner_authorization", MODULE_PATH)
 AUTH = importlib.util.module_from_spec(SPEC)
@@ -22,7 +24,7 @@ RECEIPT_SPEC.loader.exec_module(RECEIPT)
 
 
 OWNER_BODY = "Owner bounded-pilot directive"
-ADVISORY_BODY = "MiniMax M3 and Codex AGREE"
+ADVISORY_BODY = "Claude Opus 4.8 and Codex 5.6 SOL AGREE"
 
 
 def policy():
@@ -44,7 +46,7 @@ def policy():
             "authorAssociation": "OWNER",
             "advisoryOnly": True,
             "consensusVerdict": "AGREE",
-            "providers": ["MiniMax/minimax-MiniMax-M3", "OpenAI/Codex"],
+            "providers": ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"],
             "provenanceClass": "owner-attested-provider-session",
             "providerCryptographicAttestation": False,
         },
@@ -120,6 +122,20 @@ def revocations(entries=None):
 
 
 class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
+    def test_canonical_policy_uses_the_supported_advisory_pair(self):
+        policy_path = REPO_ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json"
+        canonical = json.loads(policy_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            AUTH.EXPECTED_ADVISORY_PROVIDERS,
+            canonical["aiAdvisory"]["providers"],
+        )
+        self.assertNotIn("MiniMax", json.dumps(canonical, sort_keys=True))
+        self.assertEqual(5011715034, canonical["aiAdvisory"]["commentId"])
+        self.assertEqual(
+            "sha256:a5895d569cdf6343cf26872bdd92645ffcc22fdf1006eb09b6f74c1e03694d16",
+            canonical["aiAdvisory"]["bodySha256"],
+        )
+
     def build(self, **overrides):
         inputs = {
             "policy": policy(),
@@ -158,6 +174,15 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         value = policy()
         value["legalTracking"]["clearanceClaimed"] = True
         with self.assertRaisesRegex(AUTH.AuthorizationError, "tracked_pending"):
+            self.build(policy=value)
+
+    def test_legacy_minimax_advisory_cannot_issue_new_authorization(self):
+        value = policy()
+        value["aiAdvisory"]["providers"] = [
+            "MiniMax/minimax-MiniMax-M3",
+            "OpenAI/Codex",
+        ]
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "provider-distinct pair"):
             self.build(policy=value)
 
     def test_closed_legal_ticket_or_unprotected_environment_fails_closed(self):

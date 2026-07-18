@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import copy
 import unittest
+from datetime import datetime, timezone
 
 from scripts.github_apps.cross_ai_deployment_policy.canonical import canonical_bytes
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
@@ -39,6 +40,45 @@ class EvidenceContractTest(unittest.TestCase):
         )
         self.assertEqual(result.request_id, "30000000-0000-4000-8000-000000000001")
         self.assertEqual(len(result.final_review_digests), 3)
+
+    def test_rejects_new_minimax_review_after_forward_policy_cutoff(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        minimax_envelope = bundle["reviewEnvelopes"][3]
+        old_digest = sha256_digest(minimax_envelope)
+        review = self.factory.decode_payload(minimax_envelope)
+        review["issuedAt"] = "2026-07-18T00:00:00Z"
+        review["expiresAt"] = "2026-07-18T00:30:00Z"
+        replacement = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.MINIMAX_KEY_ID,
+        )
+        bundle["reviewEnvelopes"][3] = replacement
+        bundle["consensus"]["finalAgreeReviewSha256"] = [
+            sha256_digest(replacement) if value == old_digest else value
+            for value in bundle["consensus"]["finalAgreeReviewSha256"]
+        ]
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "MINIMAX_REVIEW_DEPRECATED"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_minimax_trust_root_valid_after_forward_policy_cutoff(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["expiresAt"] = "2026-07-18T00:00:01Z"
+        with self.assertRaisesRegex(PolicyError, "MINIMAX_TRUST_ROOT_DEPRECATED"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_active_time_rejects_backdated_minimax_bundle_after_cutoff(self) -> None:
+        with self.assertRaisesRegex(PolicyError, "MINIMAX_PROVIDER_DEPRECATED"):
+            EvidenceVerifier(
+                trust_root=self.fixture.trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=datetime(2026, 7, 18, tzinfo=timezone.utc),
+            )
 
     def test_rejects_browser_stage_without_signed_runtime_bundle(self) -> None:
         self.fixture = self.factory.build(
@@ -130,14 +170,14 @@ class EvidenceContractTest(unittest.TestCase):
                 now=self.fixture.now,
             )
 
-    def test_openai_route_requires_launch_attested_identity(self) -> None:
+    def test_archived_v1_openai_route_requires_provider_reported_identity(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         openai = next(
             entry
             for entry in trust_root["keys"]
             if entry["providerFamily"] == "openai"
         )
-        openai["allowedModelIdentityClasses"] = ["provider-reported"]
+        openai["allowedModelIdentityClasses"] = ["trusted-launch-attested"]
         with self.assertRaisesRegex(
             PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
         ):
@@ -526,6 +566,76 @@ class EvidenceContractTest(unittest.TestCase):
             base64.b64decode(self.fixture.bundle_envelope["payload"], validate=True),
             canonical_bytes(bundle),
         )
+
+
+class EvidenceContractV2Test(unittest.TestCase):
+    def setUp(self) -> None:
+        self.factory = FixtureFactory("v2")
+        self.fixture = self.factory.build()
+
+    def verifier(self) -> EvidenceVerifier:
+        return EvidenceVerifier(
+            trust_root=self.fixture.trust_root,
+            revocations_envelope=self.fixture.revocations_envelope,
+            now=self.fixture.now,
+        )
+
+    def test_accepts_post_cutoff_claude_codex_v2_bundle(self) -> None:
+        result = self.verifier().verify_bundle(self.fixture.bundle_envelope)
+        self.assertEqual(result.provider_families, ("anthropic", "openai"))
+        self.assertEqual(len(result.final_review_digests), 2)
+        self.assertEqual(
+            result.provider_identity_classes,
+            (
+                ("anthropic", "provider-reported"),
+                ("openai", "trusted-launch-attested"),
+            ),
+        )
+        payload = self.factory.decode_payload(self.fixture.bundle_envelope)
+        self.assertEqual(
+            payload["schemaVersion"], "acik.cross-ai-deployment-bundle.v2"
+        )
+        self.assertEqual(
+            self.fixture.bundle_envelope["payloadType"],
+            "application/vnd.acik.cross-ai-deployment-bundle.v2+json",
+        )
+
+    def test_v2_rejects_minimax_and_openai_provider_report_upgrade(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        openai = next(
+            item
+            for item in trust_root["keys"]
+            if item["providerFamily"] == "openai"
+        )
+        openai["allowedModelIdentityClasses"] = ["provider-reported"]
+        with self.assertRaisesRegex(
+            PolicyError, "TRUST_ROOT_SCHEMA_INVALID|TRUST_PROVIDER_ROUTE_INVALID"
+        ):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+        minimax = copy.deepcopy(self.factory.trust_root()["keys"][0])
+        minimax.update(
+            {
+                "keyId": self.factory.MINIMAX_KEY_ID,
+                "publicKeyBase64": base64.b64encode(b"\x09" * 32).decode("ascii"),
+                "providerFamily": "minimax",
+                "allowedChannels": ["direct-minimax-cli"],
+                "allowedModelIds": ["minimax/MiniMax-M3"],
+                "allowedModelIdentityClasses": ["provider-reported"],
+            }
+        )
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"].append(minimax)
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_SCHEMA_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
 
 
 if __name__ == "__main__":

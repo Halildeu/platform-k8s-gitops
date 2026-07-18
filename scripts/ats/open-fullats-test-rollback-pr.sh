@@ -83,7 +83,7 @@ risk_trigger="$(sed -nE 's/^Risk trigger:[[:space:]]*(security-authz|production-
   echo "[fullats-rollback] dual consultation risk trigger is missing or invalid" >&2
   exit 1
 }
-for receipt_label in "Claude receipt" "MiniMax receipt"; do
+for receipt_label in "Claude receipt" "Codex receipt"; do
   receipt_line="$(grep -E "^${receipt_label}: " <<<"$promotion_body" || true)"
   [[ "$(grep -Ec "^${receipt_label}: " <<<"$promotion_body" || true)" == "1" && \
      "$receipt_line" == *"head=$promotion_head;"* && \
@@ -93,8 +93,8 @@ for receipt_label in "Claude receipt" "MiniMax receipt"; do
     exit 1
   }
 done
-[[ "$(grep -Fc "Codex receipt:" <<<"$promotion_body" || true)" == "0" ]] || {
-  echo "[fullats-rollback] Codex implementer cannot use Codex as dual secondary" >&2
+[[ "$(grep -Fc "MiniMax receipt:" <<<"$promotion_body" || true)" == "0" ]] || {
+  echo "[fullats-rollback] MiniMax receipt is forbidden by forward policy" >&2
   exit 1
 }
 git fetch origin main --quiet

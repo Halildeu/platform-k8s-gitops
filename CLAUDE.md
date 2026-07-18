@@ -85,10 +85,9 @@ mavis communication peers
   JSON `modelUsage` exact `claude-opus-4-8` değilse gerçek görüş sayılmaz;
   Claude implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz.
 - Yalnız geri döndürülemez, çok yüksek riskli veya açık insan/yetkili kararı
-  gerektiren noktada Claude'a bir provider-distinct ikincil kanal ekle:
-  `Consultation mode: dual`. MiniMax M3 veya Codex 5.6 SOL'dan yalnız biri
-  seçilir; ikincil kanal implementer sağlayıcısıyla aynı olamaz, toplam iki
-  kanal aşılmaz ve mümkünse paralel çağrılır.
+  gerektiren noktada Claude'a doğrudan OpenAI Codex 5.6 SOL ekle:
+  `Consultation mode: dual`. Toplam iki kanal aşılmaz. MiniMax çağrılmaz,
+  receipt'i üretilmez ve yeni acceptance zincirinde kabul edilmez.
 - Cursor, wrapper-routed model ve AI uygulama penceresi istişare kanalı değildir.
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
   review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya

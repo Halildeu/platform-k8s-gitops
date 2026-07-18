@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.github_apps.cross_ai_deployment_policy.contract import REVIEW_PAYLOAD_TYPE
+from scripts.github_apps.cross_ai_deployment_policy.contract import REVIEW_PAYLOAD_TYPE_V2
 from scripts.github_apps.cross_ai_deployment_policy.dsse import verify_json_envelope
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
@@ -15,8 +15,6 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
     CursorRunner,
     DirectClaudeRunner,
     DirectCodexRunner,
-    DirectMiniMaxRunner,
-    MINIMAX_MODEL,
     ProviderExecutionReceipt,
     ProviderReviewIssuer,
     REVIEW_RESULT_SCHEMA_VERSION,
@@ -159,78 +157,6 @@ class ProviderExecutionTest(unittest.TestCase):
                     provider_family="xai",
                 )
 
-    def test_direct_minimax_binds_wrapper_reported_model_and_digests(self) -> None:
-        prompt = "review this digest"
-        response = REVIEW_RESULT
-        output = {
-            "ok": True,
-            "provider": "minimax",
-            "provider_claim_source": "trusted-bundled-config",
-            "provider_origin_host": "agent.minimax.io",
-            "requested_model": MINIMAX_MODEL,
-            "actual_model": MINIMAX_MODEL,
-            "base_sha": None,
-            "head_sha": None,
-            "scope_sha256": __import__("hashlib").sha256(prompt.encode()).hexdigest(),
-            "verdict": "PARTIAL",
-            "findings_present": True,
-            "transport": "mavis-bundled-llm-call",
-            "transport_sha256": "1" * 64,
-            "config_sha256": "2" * 64,
-            "response_sha256": __import__("hashlib").sha256(response.encode()).hexdigest(),
-            "response": response,
-        }
-        wrapper = self.workspace / "minimax.py"
-        wrapper.write_text("# test wrapper\n", encoding="utf-8")
-        with patch(
-            "subprocess.run",
-            return_value=subprocess.CompletedProcess(
-                [], 0, stdout=json.dumps(output).encode(), stderr=b""
-            ),
-        ):
-            receipt = DirectMiniMaxRunner(wrapper, Path("/bin/sh")).run(
-                prompt=prompt,
-                model=MINIMAX_MODEL,
-                workspace=self.workspace,
-            )
-        self.assertEqual(receipt.model_id, MINIMAX_MODEL)
-        self.assertEqual(receipt.model_identity_class, "provider-reported")
-        self.assertTrue(receipt.direct_provider_cli)
-
-    def test_direct_minimax_rejects_unknown_result_schema_digest_tamper(self) -> None:
-        output = {
-            "ok": True,
-            "provider": "minimax",
-            "provider_claim_source": "trusted-bundled-config",
-            "provider_origin_host": "agent.minimax.io",
-            "requested_model": MINIMAX_MODEL,
-            "actual_model": MINIMAX_MODEL,
-            "base_sha": None,
-            "head_sha": None,
-            "scope_sha256": "0" * 64,
-            "verdict": "AGREE",
-            "findings_present": True,
-            "transport": "mavis-bundled-llm-call",
-            "transport_sha256": "1" * 64,
-            "config_sha256": "2" * 64,
-            "response_sha256": "3" * 64,
-            "response": REVIEW_RESULT.replace(".v1", ".v2"),
-        }
-        wrapper = self.workspace / "minimax.py"
-        wrapper.write_text("# test wrapper\n", encoding="utf-8")
-        with patch(
-            "subprocess.run",
-            return_value=subprocess.CompletedProcess(
-                [], 0, stdout=json.dumps(output).encode(), stderr=b""
-            ),
-        ):
-            with self.assertRaisesRegex(PolicyError, "PROVIDER_OUTPUT_INVALID"):
-                DirectMiniMaxRunner(wrapper, Path("/bin/sh")).run(
-                    prompt="review this digest",
-                    model=MINIMAX_MODEL,
-                    workspace=self.workspace,
-                )
-
     @staticmethod
     def codex_events(message: str, *, extra_item: dict | None = None) -> bytes:
         events = [
@@ -334,7 +260,7 @@ class ProviderIssuerTest(unittest.TestCase):
         )
         verified = verify_json_envelope(
             envelope,
-            expected_payload_type=REVIEW_PAYLOAD_TYPE,
+            expected_payload_type=REVIEW_PAYLOAD_TYPE_V2,
             allowed_keys={
                 factory.ANTHROPIC_KEY_ID: factory.keys[factory.ANTHROPIC_KEY_ID]
                 .public_key()
