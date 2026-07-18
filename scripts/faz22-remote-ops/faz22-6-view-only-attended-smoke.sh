@@ -83,6 +83,7 @@ OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS="${OPEN_SESSION_DEVICE_READY_INTERVAL
 VIEWER_PROBE_SECONDS="${VIEWER_PROBE_SECONDS:-8}"
 BROWSER_EVIDENCE_SCRIPT="${BROWSER_EVIDENCE_SCRIPT:-}"
 AUTH_ROUTE_PREFLIGHT_ONLY="${AUTH_ROUTE_PREFLIGHT_ONLY:-0}"
+TRANSACTION_SCOPED_PERSONAS="${TRANSACTION_SCOPED_PERSONAS:-0}"
 VIEWER_PRODUCT_BASE_URL="${VIEWER_PRODUCT_BASE_URL:-https://testai.acik.com}"
 PRODUCT_PILOT_SECONDS="${PRODUCT_PILOT_SECONDS:-300}"
 SOURCE_REVISION="${SOURCE_REVISION:-}"
@@ -120,6 +121,7 @@ MATRIX_WRONG_TENANT_TOKEN_FILE="${TMP_DIR}/matrix-wrong-tenant.jwt"
 MATRIX_WRONG_ROLE_CLAIMS_FILE="${TMP_DIR}/matrix-wrong-role-claims.redacted.json"
 MATRIX_WRONG_TENANT_CLAIMS_FILE="${TMP_DIR}/matrix-wrong-tenant-claims.redacted.json"
 TEMP_PERSONA_IDS=()
+TRANSACTION_PERSONA_PREFIX_RE='^faz226-(op|approver|wrong-role|wrong-tenant)-[0-9]+-[0-9]+$'
 
 status="starting"
 reason=""
@@ -193,12 +195,20 @@ fail_smoke() {
 }
 
 cleanup() {
+  local original_rc=$? persona_cleanup_rc=0 final_rc
+  trap - EXIT
   set +e
   stop_port_forward
   stop_management_port_forward
   restore_remote_bridge_runtime_env_override >/dev/null 2>&1 || true
-  delete_temporary_personas >/dev/null 2>&1 || true
+  delete_temporary_personas || persona_cleanup_rc=$?
   rm -rf "$TMP_DIR"
+  final_rc="$original_rc"
+  if (( persona_cleanup_rc != 0 )); then
+    echo "NO_GO keycloak-transaction-persona-cleanup-failed" >&2
+    final_rc=1
+  fi
+  exit "$final_rc"
 }
 
 stop_management_port_forward() {
@@ -208,7 +218,9 @@ stop_management_port_forward() {
     MANAGEMENT_PORT_FORWARD_PID=""
   fi
 }
-trap cleanup EXIT
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  trap cleanup EXIT
+fi
 
 stop_port_forward() {
   if [[ -n "$PORT_FORWARD_PID" ]] && kill -0 "$PORT_FORWARD_PID" >/dev/null 2>&1; then
@@ -282,6 +294,19 @@ validate_inputs() {
   [[ "$DURESS_SIGNAL_FOR_OPERATION" == "NONE" ]] || fail_smoke "duress-signal-for-operation-must-be-none"
   case "$REQUIRE_ACTIVE_GUI" in 0|1) ;; *) fail_smoke "require-active-gui-invalid" ;; esac
   case "$AUTH_ROUTE_PREFLIGHT_ONLY" in 0|1) ;; *) fail_smoke "auth-route-preflight-only-invalid" ;; esac
+  case "$TRANSACTION_SCOPED_PERSONAS" in 0|1) ;; *) fail_smoke "transaction-scoped-personas-invalid" ;; esac
+  if [[ "$TRANSACTION_SCOPED_PERSONAS" == "1" ]]; then
+    [[ "$OPERATOR_USERNAME" =~ ^faz226-op-[0-9]+-[0-9]+$ ]] \
+      || fail_smoke "transaction-operator-username-invalid"
+    [[ "$APPROVER_USERNAME" =~ ^faz226-approver-[0-9]+-[0-9]+$ ]] \
+      || fail_smoke "transaction-approver-username-invalid"
+    [[ "$OPERATOR_USERNAME" != "$APPROVER_USERNAME" ]] \
+      || fail_smoke "transaction-personas-not-distinct"
+    [[ "${WATCHDOG_EXPIRES_EPOCH:-}" =~ ^[1-9][0-9]*$ ]] \
+      || fail_smoke "transaction-persona-expiry-invalid"
+    (( WATCHDOG_EXPIRES_EPOCH > $(date -u +%s) )) \
+      || fail_smoke "transaction-persona-expiry-not-future"
+  fi
   case "$AUTO_FINALIZE" in 0|1) ;; *) fail_smoke "auto-finalize-invalid" ;; esac
   case "$VIEWER_PATH_DECISION" in owner-deferred|fanout-proven) ;; *) fail_smoke "viewer-path-decision-invalid" ;; esac
   [[ "$CONSENT_WAIT_SECONDS" =~ ^[0-9]+$ ]] || fail_smoke "consent-wait-seconds-invalid"
@@ -542,14 +567,76 @@ admin_curl() {
   curl_json "$method" "$KC_BASE_URL/admin/realms/$KC_REALM" "$path" "$KC_ADMIN_TOKEN_FILE" "$out" "$body"
 }
 
+reconcile_expired_transaction_personas() {
+  local list_file candidates_file code now_epoch requested=0 deleted=0 failed=0 uid username out
+  list_file="${TMP_DIR}/transaction-persona-reconcile-list.json"
+  candidates_file="${TMP_DIR}/transaction-persona-reconcile-candidates.tsv"
+  now_epoch="$(date -u +%s)"
+  code="$(admin_curl GET '/users?username=faz226-&exact=false&max=1000&briefRepresentation=false' "$list_file")"
+  [[ "$code" == "200" ]] || return 1
+  jq -e 'type == "array" and length < 1000' "$list_file" >/dev/null || return 1
+
+  jq -e --arg pattern "$TRANSACTION_PERSONA_PREFIX_RE" '
+    all(.[] | select(
+      (.username | test($pattern))
+      and (.attributes.faz22_6_transaction_scoped[0] // "") == "true"
+    );
+      ((.attributes.faz22_6_transaction_expires_epoch[0] // "") | test("^[1-9][0-9]*$"))
+    )
+  ' "$list_file" >/dev/null || return 1
+
+  jq -r --arg pattern "$TRANSACTION_PERSONA_PREFIX_RE" --argjson now "$now_epoch" '
+    .[]
+    | select(
+        (.username | test($pattern))
+        and (.attributes.faz22_6_transaction_scoped[0] // "") == "true"
+        and ((.attributes.faz22_6_transaction_expires_epoch[0] | tonumber) <= $now)
+      )
+    | [.id, .username] | @tsv
+  ' "$list_file" > "$candidates_file"
+
+  while IFS=$'\t' read -r uid username; do
+    [[ -n "$uid" && "$username" =~ $TRANSACTION_PERSONA_PREFIX_RE ]] || continue
+    requested=$((requested + 1))
+    out="${TMP_DIR}/reconcile-delete-${requested}.json"
+    code="$(admin_curl DELETE "/users/${uid}" "$out" 2>/dev/null || true)"
+    if [[ "$code" == "204" || "$code" == "404" ]]; then
+      deleted=$((deleted + 1))
+    else
+      failed=$((failed + 1))
+    fi
+  done < "$candidates_file"
+
+  jq -S -n \
+    --argjson requested "$requested" --argjson deleted "$deleted" --argjson failed "$failed" \
+    --arg observedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+      {
+        schemaVersion:"faz22.6.viewOnlyKeycloakPersonaReconciliation.v1",
+        observedAt:$observedAt,
+        selection:"strict-owned-prefix-and-expired-metadata",
+        requested:$requested,
+        deleted:$deleted,
+        failed:$failed,
+        rawUserIdIncluded:false,
+        rawCredentialIncluded:false,
+        verdict:(if $failed == 0 then "PASS" else "FAIL" end)
+      }
+    ' > "$EVIDENCE_DIR/keycloak-persona-reconciliation.json"
+  (( failed == 0 ))
+}
+
 ensure_persona() {
   local username="$1" user_id_file="$2" tenant="${3:-$TENANT_ID}"
   local role_mode="${4:-present}" temporary="${5:-0}"
-  local lookup="${TMP_DIR}/${username}-lookup.json" code uid
+  local lookup="${TMP_DIR}/${username}-lookup.json" code uid created=0
+  local transaction_run_ref="${GITHUB_REPOSITORY:-local}:${GITHUB_RUN_ID:-0}:${GITHUB_RUN_ATTEMPT:-0}"
   code="$(admin_curl GET "/users?username=${username}&exact=true" "$lookup")"
   assert_http "$code" 200 "keycloak lookup $username" "$lookup"
 
   uid="$(jq -r '.[0].id // empty' "$lookup")"
+  if [[ -n "$uid" && "$temporary" == "1" ]]; then
+    fail_smoke "keycloak-ephemeral-persona-preexists:${username}"
+  fi
   if [[ -z "$uid" ]]; then
     local create_body create_out
     create_out="${TMP_DIR}/${username}-create.json"
@@ -557,18 +644,30 @@ ensure_persona() {
       --arg username "$username" \
       --arg email "${username}@testai.acik.com" \
       --arg tenant "$tenant" \
+      --argjson temporary "$temporary" \
+      --arg transactionRunRef "$transaction_run_ref" \
+      --arg transactionExpiresEpoch "${WATCHDOG_EXPIRES_EPOCH:-}" \
       '{username:$username, enabled:true, emailVerified:true, email:$email,
         firstName:"RemoteBridge", lastName:$username,
-        attributes:{tenant_id:[$tenant], org_id:[$tenant], userId:[$username]}}')"
+        attributes:({tenant_id:[$tenant], org_id:[$tenant], userId:[$username]}
+          + if $temporary == 1 then {
+              faz22_6_transaction_scoped:["true"],
+              faz22_6_transaction_run:[$transactionRunRef],
+              faz22_6_transaction_expires_epoch:[$transactionExpiresEpoch]
+            } else {} end)}')"
     code="$(admin_curl POST /users "$create_out" "$create_body")"
     [[ "$code" == "201" || "$code" == "204" ]] || fail_smoke "keycloak create $username returned $code"
     code="$(admin_curl GET "/users?username=${username}&exact=true" "$lookup")"
     assert_http "$code" 200 "keycloak lookup-created $username" "$lookup"
     uid="$(jq -r '.[0].id // empty' "$lookup")"
+    created=1
   fi
   [[ -n "$uid" ]] || fail_smoke "keycloak user id missing for $username"
   printf '%s' "$uid" > "$user_id_file"
-  [[ "$temporary" == "1" ]] && TEMP_PERSONA_IDS+=("$uid")
+  if [[ "$temporary" == "1" ]]; then
+    [[ "$created" == "1" ]] || fail_smoke "keycloak-ephemeral-persona-not-created:${username}"
+    TEMP_PERSONA_IDS+=("$uid")
+  fi
 
   local update_out update_body pass_file reset_body reset_out role_file role_json role_out
   update_out="${TMP_DIR}/${username}-update.json"
@@ -577,9 +676,17 @@ ensure_persona() {
     --arg username "$username" \
     --arg email "${username}@testai.acik.com" \
     --arg tenant "$tenant" \
+    --argjson temporary "$temporary" \
+    --arg transactionRunRef "$transaction_run_ref" \
+    --arg transactionExpiresEpoch "${WATCHDOG_EXPIRES_EPOCH:-}" \
     '{id:$id, username:$username, enabled:true, emailVerified:true, email:$email,
       firstName:"RemoteBridge", lastName:$username,
-      attributes:{tenant_id:[$tenant], org_id:[$tenant], userId:[$username]}}')"
+      attributes:({tenant_id:[$tenant], org_id:[$tenant], userId:[$username]}
+        + if $temporary == 1 then {
+            faz22_6_transaction_scoped:["true"],
+            faz22_6_transaction_run:[$transactionRunRef],
+            faz22_6_transaction_expires_epoch:[$transactionExpiresEpoch]
+          } else {} end)}')"
   code="$(admin_curl PUT "/users/${uid}" "$update_out" "$update_body")"
   [[ "$code" == "204" ]] || fail_smoke "keycloak update $username returned $code"
 
@@ -617,15 +724,39 @@ ensure_persona() {
 }
 
 delete_temporary_personas() {
-  local uid out code
-  [[ -s "$KC_ADMIN_TOKEN_FILE" ]] || return 0
+  local uid out code requested deleted=0 failed=0
+  requested="${#TEMP_PERSONA_IDS[@]}"
+  if (( requested > 0 )) && [[ ! -s "$KC_ADMIN_TOKEN_FILE" ]]; then
+    failed="$requested"
+  fi
   for uid in "${TEMP_PERSONA_IDS[@]}"; do
+    [[ -s "$KC_ADMIN_TOKEN_FILE" ]] || break
     out="${TMP_DIR}/delete-${uid}.json"
     code="$(admin_curl DELETE "/users/${uid}" "$out" 2>/dev/null || true)"
     if [[ "$code" != "204" && "$code" != "404" ]]; then
-      echo "WARN temporary Keycloak matrix persona cleanup failed (HTTP ${code:-transport-error})" >&2
+      failed=$((failed + 1))
+    else
+      deleted=$((deleted + 1))
     fi
   done
+  if command -v jq >/dev/null 2>&1 && [[ -d "$EVIDENCE_DIR" ]]; then
+    jq -S -n \
+      --argjson transactionScoped "$TRANSACTION_SCOPED_PERSONAS" \
+      --argjson requested "$requested" --argjson deleted "$deleted" --argjson failed "$failed" \
+      --arg observedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+        {
+          schemaVersion:"faz22.6.viewOnlyKeycloakPersonaCleanup.v1",
+          observedAt:$observedAt,
+          transactionScoped:($transactionScoped == 1),
+          requested:$requested,
+          deleted:$deleted,
+          failed:$failed,
+          rawUserIdIncluded:false,
+          verdict:(if $failed == 0 then "PASS" else "FAIL" end)
+        }
+      ' > "$EVIDENCE_DIR/keycloak-persona-cleanup.json"
+  fi
+  (( failed == 0 ))
 }
 
 decode_jwt_claims() {
@@ -1450,13 +1581,19 @@ main() {
   start_port_forward
   read_keycloak_admin_password
   mint_admin_token
-  ensure_persona "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id"
-  ensure_persona "$APPROVER_USERNAME" "${TMP_DIR}/approver.id"
+  if [[ "$TRANSACTION_SCOPED_PERSONAS" == "1" ]]; then
+    reconcile_expired_transaction_personas \
+      || fail_smoke "keycloak-expired-transaction-persona-reconciliation-failed"
+  fi
+  ensure_persona "$OPERATOR_USERNAME" "${TMP_DIR}/operator.id" \
+    "$TENANT_ID" present "$TRANSACTION_SCOPED_PERSONAS"
+  ensure_persona "$APPROVER_USERNAME" "${TMP_DIR}/approver.id" \
+    "$TENANT_ID" present "$TRANSACTION_SCOPED_PERSONAS"
   mint_persona_token "$OPERATOR_USERNAME" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
   mint_persona_token "$APPROVER_USERNAME" "$APPROVER_TOKEN_FILE" "${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
   if [[ -n "$MATRIX_HOOK_SCRIPT" ]]; then
     local matrix_suffix matrix_wrong_role_user matrix_wrong_tenant_user
-    matrix_suffix="${GITHUB_RUN_ID:-manual-$(date -u +%Y%m%d%H%M%S)}"
+    matrix_suffix="${GITHUB_RUN_ID:-manual-$(date -u +%Y%m%d%H%M%S)}-${GITHUB_RUN_ATTEMPT:-1}"
     matrix_wrong_role_user="faz226-wrong-role-${matrix_suffix}"
     matrix_wrong_tenant_user="faz226-wrong-tenant-${matrix_suffix}"
     ensure_persona "$matrix_wrong_role_user" "${TMP_DIR}/matrix-wrong-role.id" \
@@ -1646,4 +1783,6 @@ main() {
   echo "ACCEPTED_CANDIDATE evidence_dir=${EVIDENCE_DIR}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

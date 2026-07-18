@@ -1,0 +1,796 @@
+name: Faz 22.6 VIEW_ONLY single-run transaction
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Required literal: RUN_FAZ22_6_VIEW_ONLY_TRANSACTION"
+        required: true
+        type: string
+      device_id:
+        description: "Consented attended-pilot device UUID"
+        required: true
+        type: string
+      device_hostname:
+        description: "Consented attended-pilot device hostname"
+        required: true
+        type: string
+      pilot_seconds:
+        description: "Bounded product observation window"
+        required: true
+        default: "300"
+        type: choice
+        options: ["300", "600", "900", "1200", "1800"]
+      mask_rect_bps:
+        description: "Expected endpoint DLP mask x,y,width,height in basis points"
+        required: true
+        default: "7500,7500,2500,2500"
+        type: string
+      preflight_only:
+        description: "Negative canary: stop before protected decision and mutation"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+  issues: read
+
+concurrency:
+  # Legacy apply survives until canary; share its broker mutation lock.
+  group: endpoint-admin-remote-bridge-activation
+  cancel-in-progress: false
+
+env:
+  K8S_CONTEXT: k3d-test
+  K8S_NAMESPACE: platform-test
+  TRANSACTION_STATE: /tmp/faz22-view-only-transaction-${{ github.run_id }}-${{ github.run_attempt }}/state.json
+  TRANSACTION_WORK_DIR: /tmp/faz22-view-only-transaction-${{ github.run_id }}-${{ github.run_attempt }}
+  PREFLIGHT_DIR: /tmp/faz22-view-only-transaction-${{ github.run_id }}-${{ github.run_attempt }}/preflight
+  PREFLIGHT_ARTIFACT_DIR: /tmp/faz22-view-only-transaction-${{ github.run_id }}-${{ github.run_attempt }}/preflight-artifact
+  EVIDENCE_DIR: /tmp/faz22-view-only-transaction-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+
+jobs:
+  preflight:
+    name: Verify immutable preflight before any protected decision
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # The unprotected job is source-only. It has no runner-local cluster,
+      # Docker, SSH agent, Keycloak or endpoint capability.
+      KUBECONFIG: /dev/null
+      SSH_AUTH_SOCK: ""
+    outputs:
+      preflight_sha256: ${{ steps.finalize.outputs.preflight_sha256 }}
+      endpoint_id_sha256: ${{ steps.finalize.outputs.endpoint_id_sha256 }}
+      device_hostname_sha256: ${{ steps.finalize.outputs.device_hostname_sha256 }}
+      policy_sha256: ${{ steps.finalize.outputs.policy_sha256 }}
+      mask_policy_sha256: ${{ steps.finalize.outputs.mask_policy_sha256 }}
+      preflight_artifact_name: ${{ steps.finalize.outputs.preflight_artifact_name }}
+      preflight_run_attempt: ${{ steps.finalize.outputs.preflight_run_attempt }}
+
+    steps:
+      - name: Validate bounded dispatch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
+        run: |
+          set -euo pipefail
+          [ "$CONFIRM" = "RUN_FAZ22_6_VIEW_ONLY_TRANSACTION" ] || {
+            echo "::error title=invalid-confirmation::confirmation literal is invalid"
+            exit 2
+          }
+          printf '%s' "$DEVICE_ID" | grep -Eq '^[0-9a-fA-F-]{36}$'
+          printf '%s' "$DEVICE_HOSTNAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{1,126}$'
+          case "$PILOT_SECONDS" in 300|600|900|1200|1800) ;; *) exit 2 ;; esac
+          printf '%s' "$MASK_RECT_BPS" | grep -Eq '^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$'
+          IFS=',' read -r mask_x mask_y mask_width mask_height <<<"$MASK_RECT_BPS"
+          mask_x=$((10#$mask_x)); mask_y=$((10#$mask_y))
+          mask_width=$((10#$mask_width)); mask_height=$((10#$mask_height))
+          (( mask_x <= 10000 && mask_y <= 10000 \
+             && mask_width > 0 && mask_height > 0 \
+             && mask_x + mask_width <= 10000 \
+             && mask_y + mask_height <= 10000 )) || {
+            echo "::error title=invalid-mask-geometry::mask is empty or outside the primary monitor"
+            exit 2
+          }
+
+      - name: Checkout exact transaction head
+        id: preflight_checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Run credential-free static transaction preflight
+        env:
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          SOURCE_REVISION: ${{ github.sha }}
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          DLP_MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
+          VIEW_ONLY_TRANSACTION_WORK_DIR: ${{ env.TRANSACTION_WORK_DIR }}
+          VIEW_ONLY_TRANSACTION_PREFLIGHT_DIR: ${{ env.PREFLIGHT_DIR }}
+        run: bash scripts/faz22-remote-ops/view-only-transaction-controller.sh preflight
+
+      - name: Finalize content-addressed preflight
+        id: finalize
+        env:
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
+        run: |
+          set -euo pipefail
+          test -s "$PREFLIGHT_DIR/preflight.json"
+          rm -rf -- "$PREFLIGHT_ARTIFACT_DIR"
+          install -d -m 0700 "$PREFLIGHT_ARTIFACT_DIR"
+          install -m 0600 "$PREFLIGHT_DIR/preflight.json" "$PREFLIGHT_ARTIFACT_DIR/preflight.json"
+          sums_file="$(mktemp "$RUNNER_TEMP/faz22-view-only-preflight-sums.XXXXXX")"
+          (
+            cd "$PREFLIGHT_ARTIFACT_DIR"
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$sums_file"
+          )
+          mv "$sums_file" "$PREFLIGHT_ARTIFACT_DIR/SHA256SUMS"
+          (cd "$PREFLIGHT_ARTIFACT_DIR" && sha256sum -c SHA256SUMS)
+          preflight_sha256="sha256:$(sha256sum "$PREFLIGHT_ARTIFACT_DIR/preflight.json" | awk '{print $1}')"
+          endpoint_id_sha256="sha256:$(printf '%s' "$DEVICE_ID" | sha256sum | awk '{print $1}')"
+          device_hostname_sha256="sha256:$(printf '%s' "${DEVICE_HOSTNAME,,}" | sha256sum | awk '{print $1}')"
+          policy_sha256="sha256:$(sha256sum config/faz22-6-view-only-pilot-owner-policy.v1.json | awk '{print $1}')"
+          mask_policy_sha256="sha256:$(printf '%s' "$MASK_RECT_BPS" | sha256sum | awk '{print $1}')"
+          {
+            printf 'preflight_sha256=%s\n' "$preflight_sha256"
+            printf 'endpoint_id_sha256=%s\n' "$endpoint_id_sha256"
+            printf 'device_hostname_sha256=%s\n' "$device_hostname_sha256"
+            printf 'policy_sha256=%s\n' "$policy_sha256"
+            printf 'mask_policy_sha256=%s\n' "$mask_policy_sha256"
+            printf 'preflight_artifact_name=faz22-view-only-transaction-preflight-%s-%s\n' \
+              "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+            printf 'preflight_run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable preflight evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-view-only-transaction-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.PREFLIGHT_ARTIFACT_DIR }}/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
+
+      - name: Securely remove preflight runner evidence
+        if: ${{ always() && steps.preflight_checkout.outcome == 'success' }}
+        env:
+          VIEW_ONLY_TRANSACTION_WORK_DIR: ${{ env.TRANSACTION_WORK_DIR }}
+        run: bash scripts/faz22-remote-ops/view-only-transaction-controller.sh cleanup-local
+
+  transaction:
+    name: One protected decision, attended evidence and automatic cleanup
+    needs: preflight
+    if: ${{ !inputs.preflight_only }}
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 75
+    environment:
+      name: faz22-view-only-pilot
+      url: https://github.com/Halildeu/platform-k8s-gitops/issues/2644
+
+    steps:
+      - name: Checkout exact transaction head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Prepare empty immutable preflight download directory
+        run: |
+          set -euo pipefail
+          rm -rf -- "$PREFLIGHT_DIR"
+          install -d -m 0700 "$PREFLIGHT_DIR"
+
+      - name: Download same-run immutable preflight
+        id: preflight-download
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.preflight.outputs.preflight_artifact_name }}
+          path: ${{ env.PREFLIGHT_DIR }}
+
+      - name: Verify preflight binding and initialize state ledger
+        env:
+          EXPECTED_PREFLIGHT_SHA256: ${{ needs.preflight.outputs.preflight_sha256 }}
+          EXPECTED_PREFLIGHT_RUN_ATTEMPT: ${{ needs.preflight.outputs.preflight_run_attempt }}
+        run: |
+          set -euo pipefail
+          (cd "$PREFLIGHT_DIR" && sha256sum -c SHA256SUMS)
+          actual_preflight_sha256="sha256:$(sha256sum "$PREFLIGHT_DIR/preflight.json" | awk '{print $1}')"
+          [ "$actual_preflight_sha256" = "$EXPECTED_PREFLIGHT_SHA256" ]
+          jq -e --arg repository "$GITHUB_REPOSITORY" --arg workflowRef "$GITHUB_WORKFLOW_REF" \
+            --arg headSha "$GITHUB_SHA" --argjson runId "$GITHUB_RUN_ID" \
+            --argjson runAttempt "$EXPECTED_PREFLIGHT_RUN_ATTEMPT" '
+              .repository == $repository and .workflowRef == $workflowRef and .headSha == $headSha
+              and .runId == $runId and .runAttempt == $runAttempt
+              and .mutationCount == 0 and .attendedConsentAttempted == false and .verdict == "PASS"
+            ' "$PREFLIGHT_DIR/preflight.json" >/dev/null
+          install -d -m 0700 "$(dirname "$TRANSACTION_STATE")"
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py init \
+            --output "$TRANSACTION_STATE" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow-ref "$GITHUB_WORKFLOW_REF" \
+            --head-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --endpoint-id-sha256 "${{ needs.preflight.outputs.endpoint_id_sha256 }}" \
+            --device-hostname-sha256 "${{ needs.preflight.outputs.device_hostname_sha256 }}" \
+            --policy-sha256 "${{ needs.preflight.outputs.policy_sha256 }}" \
+            --mask-policy-sha256 "${{ needs.preflight.outputs.mask_policy_sha256 }}" \
+            --pilot-seconds "${{ inputs.pilot_seconds }}" \
+            --preflight-sha256 "${{ needs.preflight.outputs.preflight_sha256 }}"
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to PREFLIGHT_VERIFIED \
+            --reason-code preflight-verified \
+            --payload-sha256 "${{ needs.preflight.outputs.preflight_sha256 }}"
+
+      - name: Build same-run protected authorization
+        id: authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PILOT_OPERATOR_SHA256: ${{ secrets.VIEW_ONLY_PILOT_OPERATOR_SHA256 }}
+          PILOT_DEVICE_SHA256: ${{ secrets.VIEW_ONLY_PILOT_DEVICE_SHA256 }}
+          PILOT_AUTHORIZATION_EXPIRES_AT: ${{ secrets.VIEW_ONLY_PILOT_AUTHORIZATION_EXPIRES_AT }}
+          EXPECTED_ENDPOINT_ID_SHA256: ${{ needs.preflight.outputs.endpoint_id_sha256 }}
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+        run: |
+          set -euo pipefail
+          out="$TRANSACTION_WORK_DIR/authorization"
+          install -d -m 0700 "$out"
+          for name in PILOT_OPERATOR_SHA256 PILOT_DEVICE_SHA256; do
+            printf '%s' "${!name:-}" | grep -Eq '^sha256:[a-f0-9]{64}$'
+          done
+          [ "$PILOT_OPERATOR_SHA256" != "$PILOT_DEVICE_SHA256" ]
+          [ "$PILOT_DEVICE_SHA256" = "$EXPECTED_ENDPOINT_ID_SHA256" ] || {
+            echo "::error title=authorization-device-mismatch::protected device hash does not match dispatch target"
+            exit 1
+          }
+          printf '%s' "$PILOT_AUTHORIZATION_EXPIRES_AT" \
+            | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+          authorization_expires_epoch="$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)"
+          now_epoch="$(date -u +%s)"
+          cleanup_headroom=900
+          required="$(( PILOT_SECONDS + cleanup_headroom ))"
+          [ "$(( authorization_expires_epoch - now_epoch ))" -ge "$required" ]
+          watchdog_expires_epoch="$(( now_epoch + required ))"
+          [ "$watchdog_expires_epoch" -le "$authorization_expires_epoch" ]
+          owner_comment_id="$(jq -er '.ownerDirective.commentId' config/faz22-6-view-only-pilot-owner-policy.v1.json)"
+          advisory_comment_id="$(jq -er '.aiAdvisory.commentId' config/faz22-6-view-only-pilot-owner-policy.v1.json)"
+          gh api "repos/$GITHUB_REPOSITORY/issues/comments/$owner_comment_id" > "$out/owner-comment.json"
+          gh api "repos/$GITHUB_REPOSITORY/issues/comments/$advisory_comment_id" > "$out/advisory-comment.json"
+          gh api "repos/$GITHUB_REPOSITORY/issues/2374" > "$out/legal-issue.json"
+          gh api "repos/$GITHUB_REPOSITORY/environments/faz22-view-only-pilot" > "$out/environment.json"
+          python3 scripts/faz22-remote-ops/build-view-only-pilot-owner-authorization.py \
+            --policy config/faz22-6-view-only-pilot-owner-policy.v1.json \
+            --owner-comment "$out/owner-comment.json" --advisory-comment "$out/advisory-comment.json" \
+            --legal-issue "$out/legal-issue.json" --environment "$out/environment.json" \
+            --revocations config/faz22-6-view-only-pilot-authorization-revocations.v1.json \
+            --operator-sha256 "$PILOT_OPERATOR_SHA256" --device-sha256 "$PILOT_DEVICE_SHA256" \
+            --issued-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --expires-at "$PILOT_AUTHORIZATION_EXPIRES_AT" \
+            --run-id "$GITHUB_RUN_ID" --head-sha "$GITHUB_SHA" --triggering-actor "$GITHUB_ACTOR" \
+            --output "$out/protected-authorization.json"
+          python3 scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py \
+            --receipt "$out/protected-authorization.json" \
+            --policy config/faz22-6-view-only-pilot-owner-policy.v1.json \
+            --revocations config/faz22-6-view-only-pilot-authorization-revocations.v1.json \
+            --expected-run-id "$GITHUB_RUN_ID" --expected-head-sha "$GITHUB_SHA"
+          jq -e --arg device "$EXPECTED_ENDPOINT_ID_SHA256" '.deviceSha256 == $device' \
+            "$out/protected-authorization.json" >/dev/null
+          authorization_sha256="sha256:$(sha256sum "$out/protected-authorization.json" | awk '{print $1}')"
+          {
+            printf 'authorization_sha256=%s\n' "$authorization_sha256"
+            printf 'authorization_expires_epoch=%s\n' "$authorization_expires_epoch"
+            printf 'watchdog_expires_epoch=%s\n' "$watchdog_expires_epoch"
+          } >> "$GITHUB_OUTPUT"
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to DECISION_AUTHORIZED \
+            --reason-code decision-authorized --payload-sha256 "$authorization_sha256" \
+            --authorization-sha256 "$authorization_sha256" \
+            --watchdog-expires-epoch "$watchdog_expires_epoch"
+          rm -f "$out/owner-comment.json" "$out/advisory-comment.json" "$out/legal-issue.json" "$out/environment.json"
+
+      - name: Revalidate live target after approval and before first viewer mutation
+        id: revalidation
+        env:
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          SOURCE_REVISION: ${{ github.sha }}
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          DLP_MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
+          EXPECTED_PREFLIGHT_SHA256: ${{ needs.preflight.outputs.preflight_sha256 }}
+          VIEW_ONLY_TRANSACTION_WORK_DIR: ${{ env.TRANSACTION_WORK_DIR }}
+          VIEW_ONLY_TRANSACTION_PREFLIGHT_DIR: ${{ env.PREFLIGHT_DIR }}
+        run: |
+          set -euo pipefail
+          bash scripts/faz22-remote-ops/view-only-transaction-controller.sh revalidate
+          revalidation_sha256="sha256:$(sha256sum "$TRANSACTION_WORK_DIR/live-revalidation.json" | awk '{print $1}')"
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to LIVE_REVALIDATED \
+            --reason-code live-revalidated --payload-sha256 "$revalidation_sha256"
+
+      - name: Activate bounded viewer surface without leaving the transaction
+        id: activation
+        env:
+          AUTHORIZATION_SHA256: ${{ steps.authorization.outputs.authorization_sha256 }}
+          WATCHDOG_EXPIRES_EPOCH: ${{ steps.authorization.outputs.watchdog_expires_epoch }}
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          VIEW_ONLY_TRANSACTION_WORK_DIR: ${{ env.TRANSACTION_WORK_DIR }}
+        run: |
+          set +e
+          bash scripts/faz22-remote-ops/view-only-transaction-controller.sh activate \
+            > "$TRANSACTION_WORK_DIR/activation.stdout" 2> "$TRANSACTION_WORK_DIR/activation.stderr"
+          rc=$?
+          set -e
+          printf 'exit_code=%s\n' "$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -eq 0 ]; then
+            payload="sha256:$(sha256sum "$TRANSACTION_WORK_DIR/activation.stdout" | awk '{print $1}')"
+            python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+              --state-file "$TRANSACTION_STATE" --to ACTIVATED \
+              --reason-code viewer-activated --payload-sha256 "$payload"
+          else
+            payload="sha256:$(sha256sum "$TRANSACTION_WORK_DIR/activation.stderr" | awk '{print $1}')"
+            python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+              --state-file "$TRANSACTION_STATE" --to FAILURE_CAPTURED \
+              --reason-code activation-failed --payload-sha256 "$payload"
+          fi
+
+      - name: Set up pinned attended browser runtime
+        id: attended-node
+        if: ${{ steps.activation.outputs.exit_code == '0' }}
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "22"
+
+      - name: Install pinned attended browser runtime
+        id: attended-runtime
+        if: ${{ steps.activation.outputs.exit_code == '0' }}
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/faz22-viewer-transaction-playwright"
+          mkdir -p "$runtime"
+          npm --prefix "$runtime" init --yes >/dev/null
+          npm --prefix "$runtime" install --no-audit --no-fund --save-exact playwright@1.60.0
+          npm --prefix "$runtime" exec playwright install chromium
+
+      - name: Collect one session-local attended VIEW_ONLY proof
+        id: collector
+        if: ${{ steps.activation.outputs.exit_code == '0' }}
+        env:
+          KC_TEST_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+          EMIT_GITHUB_MASK_COMMANDS: "1"
+          TRANSACTION_SCOPED_PERSONAS: "1"
+          OPERATOR_USERNAME: faz226-op-${{ github.run_id }}-${{ github.run_attempt }}
+          APPROVER_USERNAME: faz226-approver-${{ github.run_id }}-${{ github.run_attempt }}
+          DEVICE_ID: ${{ inputs.device_id }}
+          DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          PRODUCT_PILOT_SECONDS: ${{ inputs.pilot_seconds }}
+          CONSENT_WAIT_SECONDS: "240"
+          SOURCE_REVISION: ${{ github.sha }}
+          BROWSER_EVIDENCE_SCRIPT: ${{ github.workspace }}/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs
+          BROWSER_DIAGNOSTIC_OUTPUT: ${{ env.EVIDENCE_DIR }}/browser-diagnostic.json
+          PLAYWRIGHT_PACKAGE_ROOT: ${{ runner.temp }}/faz22-viewer-transaction-playwright
+          VIEWER_PRODUCT_BASE_URL: https://testai.acik.com
+          REMOTE_BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge-device-key
+          REQUIRE_ACTIVE_GUI: "1"
+          DENETIM_SSH_TARGET: denetim-pc
+          DENETIM_SSH_OPTS: __SSH_CONFIG__
+          OPEN_SESSION_DEVICE_READY_SECONDS: "180"
+          OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS: "5"
+          EVIDENCE_DIR: ${{ env.EVIDENCE_DIR }}
+          AUTO_FINALIZE: "0"
+          DLP_MASK_RECT_BPS: ${{ inputs.mask_rect_bps }}
+          AUTHORIZATION_SHA256: ${{ steps.authorization.outputs.authorization_sha256 }}
+          WATCHDOG_EXPIRES_EPOCH: ${{ steps.authorization.outputs.watchdog_expires_epoch }}
+        run: |
+          set -euo pipefail
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to CONSENT_PENDING \
+            --reason-code consent-pending --payload-sha256 "$AUTHORIZATION_SHA256"
+          collector_kubeconfig=""
+          cleanup_kubeconfig() {
+            local path="${collector_kubeconfig:-}"
+            [ -n "$path" ] || return 0
+            if [ -L "$path" ]; then rm -f -- "$path"; return 1; fi
+            [ ! -e "$path" ] || shred -u -- "$path" 2>/dev/null || rm -f -- "$path"
+          }
+          trap cleanup_kubeconfig EXIT
+          umask 077
+          rm -rf -- "$EVIDENCE_DIR"
+          install -d -m 0700 "$EVIDENCE_DIR"
+          collector_kubeconfig="$(mktemp "$RUNNER_TEMP/faz22-viewer-transaction-kubeconfig.XXXXXX")"
+          [ ! -L "$collector_kubeconfig" ]
+          kubectl config view --raw --flatten --minify --context=k3d-test > "$collector_kubeconfig"
+          chmod 600 "$collector_kubeconfig"
+          [ "$(stat -c '%a' "$collector_kubeconfig")" = "600" ]
+          KUBECONFIG="$collector_kubeconfig" kubectl config use-context k3d-test >/dev/null
+          [ "$(KUBECONFIG="$collector_kubeconfig" kubectl config current-context)" = "k3d-test" ]
+          export KUBECONFIG="$collector_kubeconfig"
+          set +e
+          bash scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh \
+            bash scripts/faz22-remote-ops/faz22-6-view-only-attended-smoke.sh
+          rc=$?
+          set -e
+          cleanup_kubeconfig || rc=1
+          collector_kubeconfig=""
+          printf 'exit_code=%s\n' "$rc" >> "$GITHUB_OUTPUT"
+          [ "$rc" -eq 0 ] || exit 0
+          test -s "$EVIDENCE_DIR/keycloak-persona-cleanup.json"
+          test -s "$EVIDENCE_DIR/keycloak-persona-reconciliation.json"
+          jq -e '
+            .schemaVersion == "faz22.6.viewOnlyKeycloakPersonaReconciliation.v1"
+            and .selection == "strict-owned-prefix-and-expired-metadata"
+            and .deleted == .requested and .failed == 0 and .verdict == "PASS"
+            and .rawUserIdIncluded == false and .rawCredentialIncluded == false
+          ' "$EVIDENCE_DIR/keycloak-persona-reconciliation.json" >/dev/null
+          jq -e '
+            .schemaVersion == "faz22.6.viewOnlyKeycloakPersonaCleanup.v1"
+            and .transactionScoped == true and .requested >= 2
+            and .deleted == .requested and .failed == 0 and .verdict == "PASS"
+          ' "$EVIDENCE_DIR/keycloak-persona-cleanup.json" >/dev/null
+          test -s "$EVIDENCE_DIR/browser.json"
+          test -s "$EVIDENCE_DIR/summary.json"
+          test -s "$TRANSACTION_WORK_DIR/authorization/protected-authorization.json"
+          jq -e '
+            .status == "accepted-candidate" and .consentWait == "granted"
+            and (.brokerSignals | index("CONSENT_GRANTED") != null)
+            and (.brokerSignals | index("CONSENT_DENIED") == null)
+          ' "$EVIDENCE_DIR/summary.json" >/dev/null
+          jq -e --slurpfile authorization \
+            "$TRANSACTION_WORK_DIR/authorization/protected-authorization.json" '
+              .binding.operatorSha256 == $authorization[0].operatorSha256
+              and .binding.deviceSha256 == $authorization[0].deviceSha256
+            ' "$EVIDENCE_DIR/browser.json" >/dev/null
+          session_id="$(jq -er '.sessionId' "$EVIDENCE_DIR/summary.json")"
+          session_sha256="sha256:$(printf '%s' "$session_id" | sha256sum | awk '{print $1}')"
+          consent_log_line="$(grep -F "session=\"$session_id\"" \
+            "$EVIDENCE_DIR/endpoint-agent-relevant.log" | grep -F 'granted=true' | tail -n 1)"
+          test -n "$consent_log_line"
+          summary_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/summary.json" | awk '{print $1}')"
+          open_session_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/open-session.body" | awk '{print $1}')"
+          endpoint_line_sha256="sha256:$(printf '%s' "$consent_log_line" | sha256sum | awk '{print $1}')"
+          jq -cS -n --slurpfile browser "$EVIDENCE_DIR/browser.json" \
+            --arg sourceRevision "$SOURCE_REVISION" --arg summarySha256 "$summary_sha256" \
+            --arg openSessionSha256 "$open_session_sha256" --arg endpointLineSha256 "$endpoint_line_sha256" '
+              {
+                schemaVersion:"faz22.6.viewOnlyViewerConsentSourceAttestation.v1",
+                sourceRevision:$sourceRevision,
+                observedAt:$browser[0].observedAt,
+                binding:$browser[0].binding,
+                smokeSummarySha256:$summarySha256,
+                openSessionResponseSha256:$openSessionSha256,
+                endpointConsentLogLineSha256:$endpointLineSha256,
+                openSessionConsentPromptSent:true,
+                brokerHelloVerified:true,
+                brokerConsentGranted:true,
+                endpointConsentGranted:true,
+                transportPushed:true
+              }
+            ' > "$EVIDENCE_DIR/consent-source.json"
+          consent_source_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/consent-source.json" | awk '{print $1}')"
+          jq -cS -n --slurpfile browser "$EVIDENCE_DIR/browser.json" \
+            --arg sourceRevision "$SOURCE_REVISION" --arg sourceAttestationSha256 "$consent_source_sha256" '
+              {
+                schemaVersion:"faz22.6.viewOnlyViewerConsentEvidence.v1",
+                sourceRevision:$sourceRevision,
+                observedAt:$browser[0].observedAt,
+                binding:$browser[0].binding,
+                consentPromptSent:true,
+                decision:"granted",
+                decisionSignal:"CONSENT_GRANTED",
+                decisionProtocol:"remote-bridge-consent-signal-v1",
+                decisionSource:"device-key-attested-endpoint-outbound-channel",
+                sourceAttestationSha256:$sourceAttestationSha256,
+                pilotAutoConsent:false,
+                recordingMode:"disabled",
+                screenContentPersisted:false
+              }
+            ' > "$EVIDENCE_DIR/consent.json"
+          consent_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/consent.json" | awk '{print $1}')"
+          jq -S --arg digest "$consent_sha256" '.payload.consentEvidenceSha256 = $digest' \
+            "$EVIDENCE_DIR/browser.json" > "$EVIDENCE_DIR/browser.json.tmp"
+          mv "$EVIDENCE_DIR/browser.json.tmp" "$EVIDENCE_DIR/browser.json"
+          evidence_sha256="sha256:$(sha256sum "$EVIDENCE_DIR/browser.json" | awk '{print $1}')"
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to EVIDENCE_COLLECTED \
+            --reason-code evidence-collected --payload-sha256 "$evidence_sha256" \
+            --session-sha256 "$session_sha256"
+          jq -e --argjson pilotSeconds "${{ inputs.pilot_seconds }}" '
+            .schemaVersion == "faz22.6.viewOnlyViewerProductChildEvidence.v2"
+            and .evidenceType == "browser"
+            and .sourceRevision == env.SOURCE_REVISION
+            and .producer.toolVersion == "v3-ack-drain"
+            and .payload.ackDrainCompleted == true
+            and .payload.renderAckRejectedCount == 0
+            and .payload.renderAckPendingCount == 0
+            and .payload.minimumAcceptedRenderAckCount == $pilotSeconds
+            and .payload.renderAckAcceptedCount >= .payload.minimumAcceptedRenderAckCount
+            and .payload.renderAckAttemptedCount >= .payload.renderAckAcceptedCount
+            and .payload.renderAckInFlightAtCutoffCount >= 0
+            and .payload.renderAckInFlightAtCutoffCount <= 32
+            and .payload.renderAckWindowDurationMillis >= ($pilotSeconds * 1000)
+            and .payload.minimumRenderAckSampleSpanMillis == (($pilotSeconds - 15) * 1000)
+            and .payload.renderAckSampleSpanMillis >= .payload.minimumRenderAckSampleSpanMillis
+            and .payload.renderAckWindowStartGapMillis <= .payload.maximumAllowedRenderAckGapMillis
+            and .payload.renderAckWindowEndGapMillis <= .payload.maximumAllowedRenderAckGapMillis
+            and .payload.renderAckMaximumGapMillis <= .payload.maximumAllowedRenderAckGapMillis
+            and .payload.maximumAllowedRenderAckGapMillis == 15000
+            and .payload.renderAckAttemptedCount == (
+              .payload.renderAckAcceptedCount + .payload.renderAckInFlightAtCutoffCount
+            )
+          ' "$EVIDENCE_DIR/browser.json" >/dev/null
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to EVIDENCE_VERIFIED \
+            --reason-code evidence-verified --payload-sha256 "$evidence_sha256"
+
+      - name: Capture every post-authorization failure without skipping cleanup
+        if: ${{ always() && steps.authorization.outcome == 'success' }}
+        env:
+          REVALIDATION_OUTCOME: ${{ steps.revalidation.outcome }}
+          ACTIVATION_OUTCOME: ${{ steps.activation.outcome }}
+          ATTENDED_NODE_OUTCOME: ${{ steps.attended-node.outcome }}
+          ATTENDED_RUNTIME_OUTCOME: ${{ steps.attended-runtime.outcome }}
+          COLLECTOR_OUTCOME: ${{ steps.collector.outcome }}
+          COLLECTOR_EXIT_CODE: ${{ steps.collector.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          current_state="$(jq -er .currentState "$TRANSACTION_STATE")"
+          case "$current_state" in
+            EVIDENCE_VERIFIED|FAILURE_CAPTURED)
+              exit 0
+              ;;
+            DECISION_AUTHORIZED|LIVE_REVALIDATED|ACTIVATED|CONSENT_PENDING|EVIDENCE_COLLECTED)
+              ;;
+            *)
+              echo "::error title=unexpected-transaction-state::cannot capture failure from $current_state"
+              exit 1
+              ;;
+          esac
+          diagnostic="$TRANSACTION_WORK_DIR/transaction-failure.json"
+          jq -S -n \
+            --arg state "$current_state" \
+            --arg revalidation "$REVALIDATION_OUTCOME" \
+            --arg activation "$ACTIVATION_OUTCOME" \
+            --arg nodeSetup "$ATTENDED_NODE_OUTCOME" \
+            --arg runtimeInstall "$ATTENDED_RUNTIME_OUTCOME" \
+            --arg collector "$COLLECTOR_OUTCOME" \
+            --arg collectorExitCode "$COLLECTOR_EXIT_CODE" \
+            --arg observedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+              {
+                schemaVersion:"faz22.6.viewOnlyTransactionFailureDiagnostic.v1",
+                state:$state,
+                revalidationOutcome:$revalidation,
+                activationOutcome:$activation,
+                nodeSetupOutcome:$nodeSetup,
+                runtimeInstallOutcome:$runtimeInstall,
+                collectorOutcome:$collector,
+                collectorExitCode:($collectorExitCode | if length == 0 then null else . end),
+                observedAt:$observedAt,
+                containsRawSecret:false
+              }
+            ' > "$diagnostic"
+          payload="sha256:$(sha256sum "$diagnostic" | awk '{print $1}')"
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to FAILURE_CAPTURED \
+            --reason-code transaction-step-failed --payload-sha256 "$payload"
+
+      - name: Stage failure or success artifacts before rollback
+        id: stage
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          stage="$TRANSACTION_WORK_DIR/pre-rollback-artifact"
+          rm -rf -- "$stage"
+          install -d -m 0700 "$stage"
+          install -m 0600 "$TRANSACTION_STATE" "$stage/state-before-rollback.json"
+          install -m 0600 "$PREFLIGHT_DIR/preflight.json" "$stage/preflight.json"
+          install -m 0600 "$TRANSACTION_WORK_DIR/authorization/protected-authorization.json" "$stage/protected-authorization.json"
+          diagnostic_dir="$TRANSACTION_WORK_DIR/redacted-diagnostic"
+          rm -rf -- "$diagnostic_dir"
+          bash scripts/faz22-remote-ops/build-view-only-viewer-collector-diagnostic.sh \
+            "$EVIDENCE_DIR/summary.json" "$EVIDENCE_DIR/operation.body" "$GITHUB_SHA" \
+            "$diagnostic_dir" "$EVIDENCE_DIR/browser-diagnostic.json"
+          for path in \
+            "$TRANSACTION_WORK_DIR/activation.stdout" \
+            "$TRANSACTION_WORK_DIR/activation.stderr" \
+            "$TRANSACTION_WORK_DIR/live-revalidation.json" \
+            "$TRANSACTION_WORK_DIR/transaction-failure.json" \
+            "$EVIDENCE_DIR/browser.json" \
+            "$EVIDENCE_DIR/browser-diagnostic.json" \
+            "$EVIDENCE_DIR/consent.json" \
+            "$EVIDENCE_DIR/consent-source.json" \
+            "$diagnostic_dir/collector-diagnostic.json"; do
+            [ ! -s "$path" ] || install -m 0600 "$path" "$stage/$(basename "$path")"
+          done
+          if [ -s "$diagnostic_dir/SHA256SUMS" ]; then
+            install -m 0600 "$diagnostic_dir/SHA256SUMS" "$stage/collector-diagnostic.SHA256SUMS"
+          fi
+          jq -S -n --arg state "$(jq -r .currentState "$TRANSACTION_STATE")" \
+            --arg headSha "$GITHUB_SHA" --argjson runId "$GITHUB_RUN_ID" \
+            --argjson runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg observedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg evidenceSha256 "$([ ! -s "$EVIDENCE_DIR/browser.json" ] \
+              || printf 'sha256:%s' "$(sha256sum "$EVIDENCE_DIR/browser.json" | awk '{print $1}')")" '
+              {
+                schemaVersion:"faz22.6.viewOnlyTransactionPreRollbackArtifact.v1",
+                state:$state,
+                headSha:$headSha,
+                runId:$runId,
+                runAttempt:$runAttempt,
+                observedAt:$observedAt,
+                browserEvidenceSha256:($evidenceSha256 | if length == 0 then null else . end),
+                containsRawSecret:false,
+                rollbackStarted:false
+              }
+            ' > "$stage/evidence-manifest.json"
+          sums_file="$(mktemp "$RUNNER_TEMP/faz22-view-only-artifact-sums.XXXXXX")"
+          (
+            cd "$stage"
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$sums_file"
+          )
+          mv "$sums_file" "$stage/SHA256SUMS"
+          (cd "$stage" && sha256sum -c SHA256SUMS)
+          artifact_sha256="sha256:$(sha256sum "$stage/SHA256SUMS" | awk '{print $1}')"
+          printf 'artifact_sha256=%s\n' "$artifact_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload diagnostics before compensating rollback
+        id: diagnostic_upload
+        if: ${{ always() && steps.stage.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-view-only-transaction-pre-rollback-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.TRANSACTION_WORK_DIR }}/pre-rollback-artifact/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 30
+
+      - name: Bind successful artifact upload to transaction ledger
+        id: artifact_state
+        if: ${{ always() && steps.diagnostic_upload.outcome == 'success' }}
+        env:
+          PACKAGE_SHA256: ${{ steps.stage.outputs.artifact_sha256 }}
+          UPLOADED_ARTIFACT_ID: ${{ steps.diagnostic_upload.outputs.artifact-id }}
+          UPLOADED_ARTIFACT_DIGEST: ${{ steps.diagnostic_upload.outputs.artifact-digest }}
+          UPLOADED_ARTIFACT_URL: ${{ steps.diagnostic_upload.outputs.artifact-url }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PACKAGE_SHA256" | grep -Eq '^sha256:[a-f0-9]{64}$'
+          printf '%s' "$UPLOADED_ARTIFACT_ID" | grep -Eq '^[1-9][0-9]*$'
+          case "$UPLOADED_ARTIFACT_DIGEST" in
+            sha256:[a-f0-9][a-f0-9]*) upload_digest="$UPLOADED_ARTIFACT_DIGEST" ;;
+            [a-f0-9][a-f0-9]*) upload_digest="sha256:$UPLOADED_ARTIFACT_DIGEST" ;;
+            *) exit 1 ;;
+          esac
+          printf '%s' "$upload_digest" | grep -Eq '^sha256:[a-f0-9]{64}$'
+          receipt="$TRANSACTION_WORK_DIR/pre-rollback-upload-receipt.json"
+          jq -S -n --argjson artifactId "$UPLOADED_ARTIFACT_ID" \
+            --arg artifactDigest "$upload_digest" --arg artifactUrl "$UPLOADED_ARTIFACT_URL" \
+            --arg packageSha256 "$PACKAGE_SHA256" --arg headSha "$GITHUB_SHA" \
+            --argjson runId "$GITHUB_RUN_ID" --argjson runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg observedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+              {
+                schemaVersion:"faz22.6.viewOnlyTransactionArtifactUploadReceipt.v1",
+                artifactId:$artifactId,
+                artifactDigest:$artifactDigest,
+                artifactUrl:$artifactUrl,
+                packageSha256:$packageSha256,
+                headSha:$headSha,
+                runId:$runId,
+                runAttempt:$runAttempt,
+                observedAt:$observedAt
+              }
+            ' > "$receipt"
+          receipt_sha256="sha256:$(sha256sum "$receipt" | awk '{print $1}')"
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to ARTIFACTS_STAGED \
+            --reason-code artifacts-uploaded --payload-sha256 "$receipt_sha256"
+          printf 'receipt_sha256=%s\n' "$receipt_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Run hash-bound compensating rollback
+        id: rollback
+        if: ${{ always() && steps.authorization.outcome == 'success' }}
+        env:
+          AUTHORIZATION_SHA256: ${{ steps.authorization.outputs.authorization_sha256 }}
+        run: |
+          set -uo pipefail
+          ledger_rc=0
+          rollback_payload="${{ steps.stage.outputs.artifact_sha256 }}"
+          if ! printf '%s' "$rollback_payload" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+            rollback_payload="sha256:$(sha256sum "$TRANSACTION_STATE" | awk '{print $1}')"
+          fi
+          current_state="$(jq -r '.currentState // empty' "$TRANSACTION_STATE" 2>/dev/null)"
+          if [ "$current_state" != ARTIFACTS_STAGED ]; then
+            failure_payload="sha256:$(sha256sum "$TRANSACTION_STATE" | awk '{print $1}')"
+            python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+              --state-file "$TRANSACTION_STATE" --to ARTIFACTS_STAGE_FAILED \
+              --reason-code artifact-stage-failed --payload-sha256 "$failure_payload" || ledger_rc=1
+          fi
+          if [ "$ledger_rc" -eq 0 ]; then
+            python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+              --state-file "$TRANSACTION_STATE" --to ROLLBACK_PENDING \
+              --reason-code rollback-pending --payload-sha256 "$rollback_payload" || ledger_rc=1
+          fi
+          set +e
+          bash scripts/faz22-remote-ops/view-only-transaction-controller.sh rollback \
+            > "$TRANSACTION_WORK_DIR/rollback.stdout" 2> "$TRANSACTION_WORK_DIR/rollback.stderr"
+          controller_rc=$?
+          set -e
+          printf 'controller_exit_code=%s\n' "$controller_rc" >> "$GITHUB_OUTPUT"
+          printf 'ledger_exit_code=%s\n' "$ledger_rc" >> "$GITHUB_OUTPUT"
+          if [ "$controller_rc" -ne 0 ] || [ "$ledger_rc" -ne 0 ]; then
+            printf 'exit_code=1\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          rollback_sha256="sha256:$(sha256sum "$TRANSACTION_WORK_DIR/rollback.stdout" | awk '{print $1}')"
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to ROLLED_BACK \
+            --reason-code rollback-verified --payload-sha256 "$rollback_sha256"
+          if jq -e 'any(.checkpoints[]; .state == "FAILURE_CAPTURED" or .state == "ARTIFACTS_STAGE_FAILED")' \
+            "$TRANSACTION_STATE" >/dev/null; then
+            terminal=FAILED_CLEAN
+            reason=transaction-failed-clean
+          else
+            terminal=COMPLETED
+            reason=transaction-completed
+          fi
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py transition \
+            --state-file "$TRANSACTION_STATE" --to "$terminal" \
+            --reason-code "$reason" --payload-sha256 "$rollback_sha256"
+          printf 'exit_code=0\n' >> "$GITHUB_OUTPUT"
+
+      - name: Upload final state and rollback receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faz22-view-only-transaction-final-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.TRANSACTION_STATE }}
+            ${{ env.TRANSACTION_WORK_DIR }}/rollback.stdout
+            ${{ env.TRANSACTION_WORK_DIR }}/rollback.stderr
+            ${{ env.TRANSACTION_WORK_DIR }}/pre-rollback-upload-receipt.json
+          if-no-files-found: warn
+          include-hidden-files: false
+          retention-days: 30
+
+      - name: Enforce final transaction result
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          authorization_outcome="${{ steps.authorization.outcome }}"
+          if [ "$authorization_outcome" != success ]; then
+            bash scripts/faz22-remote-ops/view-only-transaction-controller.sh verify-clean
+            echo "::error title=authorization-failed-before-mutation::protected authorization did not complete; live surface remains clean"
+            exit 1
+          fi
+          rollback_rc="${{ steps.rollback.outputs.exit_code }}"
+          controller_rc="${{ steps.rollback.outputs.controller_exit_code }}"
+          ledger_rc="${{ steps.rollback.outputs.ledger_exit_code }}"
+          [ -n "$rollback_rc" ] || rollback_rc=1
+          [ -n "$controller_rc" ] || controller_rc=1
+          [ -n "$ledger_rc" ] || ledger_rc=1
+          [ "$controller_rc" -eq 0 ] || {
+            echo "::error title=rollback-failed::watchdog remains authoritative; manual investigation required"
+            exit 1
+          }
+          [ "$ledger_rc" -eq 0 ] || {
+            echo "::error title=transaction-ledger-failed::rollback ran but state evidence is incomplete"
+            exit 1
+          }
+          python3 scripts/faz22-remote-ops/view_only_transaction_state.py verify \
+            --state-file "$TRANSACTION_STATE" --repository "$GITHUB_REPOSITORY" \
+            --workflow-ref "$GITHUB_WORKFLOW_REF" --head-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          [ "$rollback_rc" -eq 0 ]
+          final_state="$(jq -er .currentState "$TRANSACTION_STATE")"
+          [ "$final_state" = COMPLETED ] || {
+            echo "::error title=transaction-failed-clean::evidence failed, diagnostics preserved, rollback verified"
+            exit 1
+          }
+
+      - name: Securely remove transaction runner evidence
+        if: ${{ always() }}
+        env:
+          VIEW_ONLY_TRANSACTION_WORK_DIR: ${{ env.TRANSACTION_WORK_DIR }}
+        run: bash scripts/faz22-remote-ops/view-only-transaction-controller.sh cleanup-local

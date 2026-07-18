@@ -78,6 +78,8 @@ jobs:
         run: bash scripts/test/denetim-device-key-view-only-env-patch-static.sh
       - name: Faz 22.6 acceptance package workflows static guard
         run: bash scripts/test/faz22-6-acceptance-package-workflows-static.sh
+      - name: Faz 22.6 resumable VIEW_ONLY transaction static guard
+        run: bash scripts/test/faz22-6-view-only-transaction-static.sh
       - name: Faz 22.6 VIEW_ONLY audit DB role reconciler guard
         run: bash tests/faz22_remote_ops/test_reconcile_viewer_audit_db_role.sh
       - name: Faz 22.6 VIEW_ONLY audit DB role PostgreSQL integration

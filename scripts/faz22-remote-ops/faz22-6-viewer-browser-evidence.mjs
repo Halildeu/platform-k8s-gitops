@@ -16,6 +16,7 @@ const VIEWER_PRODUCT_PATH =
 const TEST_USERNAME = /^[A-Za-z0-9][A-Za-z0-9._@+-]{2,127}$/;
 const MIN_PILOT_SECONDS = 300;
 const MAX_PILOT_SECONDS = 1800;
+const MAX_RENDER_ACK_GAP_SECONDS = 15;
 const ACK_DRAIN_TIMEOUT_MILLIS = 10_000;
 const ACK_DRAIN_POLL_MILLIS = 100;
 const MAX_ACK_PENDING = 1_000;
@@ -41,6 +42,7 @@ const VIEWER_INPUT_CONTROL_SELECTOR = [
 
 export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-ack-count-diverged',
+  'browser-ack-continuity-gap',
   'browser-ack-drain-cutoff-failed',
   'browser-ack-drain-timeout',
   'browser-ack-minimum-not-met',
@@ -87,6 +89,61 @@ export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-view-viewonly-badge-missing',
   'browser-viewer-id-invalid',
 ]);
+
+export function minimumAcceptedRenderAcks(pilotSeconds) {
+  if (!Number.isSafeInteger(pilotSeconds) || pilotSeconds < MIN_PILOT_SECONDS || pilotSeconds > MAX_PILOT_SECONDS) {
+    throw new Error(`pilotSeconds must be ${MIN_PILOT_SECONDS}-${MAX_PILOT_SECONDS}`);
+  }
+  // The endpoint produces ~10 fps; one accepted render ACK per second is a
+  // conservative product-channel availability floor, not a capture-rate claim.
+  return pilotSeconds;
+}
+
+export function minimumRenderAckSampleSpanMillis(pilotSeconds) {
+  minimumAcceptedRenderAcks(pilotSeconds);
+  return Math.max(0, pilotSeconds - MAX_RENDER_ACK_GAP_SECONDS) * 1_000;
+}
+
+export function maximumRenderAckGapMillis(samples) {
+  if (!Array.isArray(samples) || samples.length < 2) return 0;
+  let maximum = 0;
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1]?.sampledAtMonotonicMillis;
+    const current = samples[index]?.sampledAtMonotonicMillis;
+    if (!Number.isFinite(previous) || !Number.isFinite(current) || current < previous) {
+      throw new Error('render ACK samples do not carry an ordered monotonic clock');
+    }
+    maximum = Math.max(maximum, current - previous);
+  }
+  return maximum;
+}
+
+export function maximumRenderAckWindowGapMillis(samples, startedAtMonotonicMillis, endedAtMonotonicMillis) {
+  if (
+    !Array.isArray(samples) ||
+    samples.length === 0 ||
+    !Number.isFinite(startedAtMonotonicMillis) ||
+    !Number.isFinite(endedAtMonotonicMillis) ||
+    endedAtMonotonicMillis < startedAtMonotonicMillis
+  ) {
+    throw new Error('render ACK window is invalid or empty');
+  }
+  const first = samples[0]?.sampledAtMonotonicMillis;
+  const last = samples.at(-1)?.sampledAtMonotonicMillis;
+  if (
+    !Number.isFinite(first) ||
+    !Number.isFinite(last) ||
+    first < startedAtMonotonicMillis ||
+    last > endedAtMonotonicMillis
+  ) {
+    throw new Error('render ACK samples fall outside the pilot window');
+  }
+  return Math.max(
+    first - startedAtMonotonicMillis,
+    maximumRenderAckGapMillis(samples),
+    endedAtMonotonicMillis - last,
+  );
+}
 
 class BrowserEvidenceError extends Error {
   constructor(code, diagnostic = null) {
@@ -214,14 +271,27 @@ export function installViewerEvidenceObserver() {
     if (!target) return false;
     const samples = [];
     let lastAcceptedSeq = null;
+    let windowBaseline = null;
     let invalid = false;
+    const readCounters = () => ({
+      attempted: Number(target.getAttribute('data-render-ack-attempted-count') ?? '-1'),
+      accepted: Number(target.getAttribute('data-render-ack-accepted-count') ?? '-1'),
+      rejected: Number(target.getAttribute('data-render-ack-rejected-count') ?? '-1'),
+      pending: Number(target.getAttribute('data-render-ack-pending-count') ?? '-1'),
+    });
     const recordAccepted = () => {
       if (!target.isConnected || document.querySelector('[data-testid="remote-view-page"]') !== target) {
         invalid = true;
         return;
       }
       const acceptedCount = Number(target.getAttribute('data-render-ack-accepted-count') ?? '-1');
-      if (!Number.isSafeInteger(acceptedCount) || acceptedCount < 0 || acceptedCount < samples.length) {
+      const acceptedBaseline = windowBaseline?.accepted ?? 0;
+      const expectedAcceptedCount = acceptedBaseline + samples.length;
+      if (
+        !Number.isSafeInteger(acceptedCount) ||
+        acceptedCount < 0 ||
+        acceptedCount < expectedAcceptedCount
+      ) {
         invalid = true;
         return;
       }
@@ -229,13 +299,13 @@ export function installViewerEvidenceObserver() {
       const observedRaw = target.getAttribute('data-render-ack-last-accepted-observed-at');
       const sentRaw = target.getAttribute('data-render-ack-last-accepted-sent-at');
       if (
-        acceptedCount === samples.length &&
+        acceptedCount === expectedAcceptedCount &&
         ((acceptedCount === 0 && acceptedSeqRaw === null) ||
           (acceptedSeqRaw !== null && Number(acceptedSeqRaw) === lastAcceptedSeq))
       ) {
         return;
       }
-      if (acceptedCount !== samples.length + 1 || acceptedSeqRaw === null) {
+      if (acceptedCount !== expectedAcceptedCount + 1 || acceptedSeqRaw === null) {
         invalid = true;
         return;
       }
@@ -253,7 +323,14 @@ export function installViewerEvidenceObserver() {
       ) {
         return;
       }
-      samples.push({ seq: acceptedSeq, observedAt, sentAt, sampledAt: Date.now() });
+      const sampledAtMonotonicMillis = performance.now();
+      samples.push({
+        seq: acceptedSeq,
+        observedAt,
+        sentAt,
+        sampledAtEpochMillis: performance.timeOrigin + sampledAtMonotonicMillis,
+        sampledAtMonotonicMillis,
+      });
       lastAcceptedSeq = acceptedSeq;
     };
     recordAccepted();
@@ -269,6 +346,43 @@ export function installViewerEvidenceObserver() {
     });
     window.__faz226ViewerEvidence = {
       samples,
+      startWindow: () => {
+        recordAccepted();
+        const counters = readCounters();
+        if (
+          invalid ||
+          !Object.values(counters).every((value) => Number.isSafeInteger(value) && value >= 0) ||
+          counters.accepted + counters.rejected > counters.attempted
+        ) {
+          throw new Error('browser telemetry is invalid at pilot start');
+        }
+        samples.splice(0, samples.length);
+        const startedAtMonotonicMillis = performance.now();
+        windowBaseline = { ...counters, startedAtMonotonicMillis };
+        return {
+          ...windowBaseline,
+          startedAtEpochMillis: performance.timeOrigin + startedAtMonotonicMillis,
+        };
+      },
+      snapshotWindowBoundary: () => {
+        recordAccepted();
+        if (invalid || !windowBaseline) {
+          throw new Error('browser pilot window is missing or invalid');
+        }
+        const counters = readCounters();
+        if (
+          !Object.values(counters).every((value) => Number.isSafeInteger(value) && value >= 0) ||
+          counters.accepted + counters.rejected > counters.attempted
+        ) {
+          throw new Error('browser telemetry is invalid at pilot cutoff');
+        }
+        const endedAtMonotonicMillis = performance.now();
+        return {
+          ...counters,
+          endedAtMonotonicMillis,
+          endedAtEpochMillis: performance.timeOrigin + endedAtMonotonicMillis,
+        };
+      },
       isValid: () => {
         recordAccepted();
         return !invalid;
@@ -470,6 +584,7 @@ async function main() {
   if (!Number.isSafeInteger(pilotSeconds) || pilotSeconds < MIN_PILOT_SECONDS || pilotSeconds > MAX_PILOT_SECONDS) {
     throw new Error(`PILOT_SECONDS must be ${MIN_PILOT_SECONDS}-${MAX_PILOT_SECONDS}`);
   }
+  const minimumAcceptedRenderAckCount = minimumAcceptedRenderAcks(pilotSeconds);
 
   const operatorPassword = (
     await evidenceStep('browser-test-credential-file-invalid', async () =>
@@ -514,7 +629,6 @@ async function main() {
     await evidenceStep('browser-observer-install-failed', async () =>
       page.addInitScript(installViewerEvidenceObserver),
     );
-    const startedAt = new Date();
     await evidenceStep('browser-route-navigation-failed', async () =>
       page.goto(viewerUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }),
     );
@@ -703,7 +817,15 @@ async function main() {
       throw evidenceFailure('browser-frame-active-indicator-invalid');
     }
 
-    const deadline = Date.now() + pilotSeconds * 1000;
+    const pilotWindowStart = await evidenceStep('browser-telemetry-read-failed', async () =>
+      page.evaluate(() => {
+        const evidence = window.__faz226ViewerEvidence;
+        if (!evidence?.startWindow) throw new Error('viewer evidence observer is missing');
+        return evidence.startWindow();
+      }),
+    );
+    const pilotStartedAt = new Date(pilotWindowStart.startedAtEpochMillis);
+    const deadline = pilotStartedAt.getTime() + pilotSeconds * 1000;
     while (Date.now() < deadline) {
       const status = await page.getByTestId('remote-view-status').textContent();
       if (!status || /error|hata|forbidden|yetkiniz|closed|kapandı/i.test(status)) {
@@ -713,7 +835,7 @@ async function main() {
     }
 
     const cutoffNonce = randomUUID();
-    const cutoffAtEpochMillis = await evidenceStep(
+    const pilotWindowEnd = await evidenceStep(
       'browser-ack-drain-cutoff-failed',
       async () =>
         page.evaluate((nonce) => {
@@ -727,13 +849,18 @@ async function main() {
           ) {
             throw new Error('viewer is not eligible for a fresh evidence cutoff');
           }
+          const evidence = window.__faz226ViewerEvidence;
+          if (!evidence?.snapshotWindowBoundary) {
+            throw new Error('viewer evidence observer is missing at cutoff');
+          }
+          const boundary = evidence.snapshotWindowBoundary();
           window.dispatchEvent(
             new CustomEvent('faz226:view-only-evidence-drain', { detail: { nonce } }),
           );
-          return Date.now();
+          return boundary;
         }, cutoffNonce),
     );
-    const pilotEndedAt = new Date(cutoffAtEpochMillis);
+    const pilotEndedAt = new Date(pilotWindowEnd.endedAtEpochMillis);
     await evidenceStep('browser-ack-drain-cutoff-failed', async () =>
       page.waitForFunction(
         (nonce) => {
@@ -841,15 +968,73 @@ async function main() {
       throw evidenceFailure('browser-unclassified-failure', drainDiagnostic);
     }
     const telemetry = drainResult.snapshot;
-    const unique = new Map(telemetry.samples.map((sample) => [sample.seq, sample]));
+    const windowSamples = telemetry.samples.filter(
+      (sample) =>
+        sample.sampledAtMonotonicMillis >= pilotWindowStart.startedAtMonotonicMillis &&
+        sample.sampledAtMonotonicMillis <= pilotWindowEnd.endedAtMonotonicMillis,
+    );
+    const unique = new Map(windowSamples.map((sample) => [sample.seq, sample]));
     const samples = [...unique.values()].sort((left, right) => left.seq - right.seq);
-    if (samples.length < 100 || telemetry.attempted < 100 || telemetry.accepted < 100) {
+    const renderAckAttemptedCount = pilotWindowEnd.attempted - pilotWindowStart.attempted;
+    const renderAckAcceptedCount = pilotWindowEnd.accepted - pilotWindowStart.accepted;
+    const renderAckRejectedCount = pilotWindowEnd.rejected - pilotWindowStart.rejected;
+    const renderAckInFlightAtCutoffCount =
+      renderAckAttemptedCount - renderAckAcceptedCount - renderAckRejectedCount;
+    if (
+      ![renderAckAttemptedCount, renderAckAcceptedCount, renderAckRejectedCount, renderAckInFlightAtCutoffCount]
+        .every((value) => Number.isSafeInteger(value) && value >= 0) ||
+      renderAckAcceptedCount !== samples.length
+    ) {
+      throw evidenceFailure('browser-ack-count-diverged');
+    }
+    const renderAckWindowDurationMillis =
+      pilotWindowEnd.endedAtMonotonicMillis - pilotWindowStart.startedAtMonotonicMillis;
+    const renderAckSampleSpanMillis =
+      samples.length === 0
+        ? 0
+        : Math.max(
+            0,
+            samples.at(-1).sampledAtMonotonicMillis - samples[0].sampledAtMonotonicMillis,
+          );
+    let renderAckMaximumGapMillis;
+    let renderAckWindowStartGapMillis;
+    let renderAckWindowEndGapMillis;
+    try {
+      renderAckMaximumGapMillis = maximumRenderAckWindowGapMillis(
+        samples,
+        pilotWindowStart.startedAtMonotonicMillis,
+        pilotWindowEnd.endedAtMonotonicMillis,
+      );
+      renderAckWindowStartGapMillis =
+        samples[0].sampledAtMonotonicMillis - pilotWindowStart.startedAtMonotonicMillis;
+      renderAckWindowEndGapMillis =
+        pilotWindowEnd.endedAtMonotonicMillis - samples.at(-1).sampledAtMonotonicMillis;
+    } catch {
+      throw evidenceFailure('browser-ack-continuity-gap');
+    }
+    const minimumRenderAckSampleSpan = minimumRenderAckSampleSpanMillis(pilotSeconds);
+    if (
+      samples.length < minimumAcceptedRenderAckCount ||
+      renderAckAttemptedCount < minimumAcceptedRenderAckCount ||
+      renderAckAcceptedCount < minimumAcceptedRenderAckCount ||
+      renderAckSampleSpanMillis < minimumRenderAckSampleSpan
+    ) {
       throw evidenceFailure(
         'browser-ack-minimum-not-met',
-        ackDiagnostic(telemetry, samples.length),
+        {
+          ...(ackDiagnostic(telemetry, samples.length) ?? {}),
+          renderAckSampleSpanMillis,
+          minimumRenderAckSampleSpanMillis: minimumRenderAckSampleSpan,
+        },
       );
     }
-    if (telemetry.rejected !== 0 || telemetry.accepted !== samples.length) {
+    if (renderAckMaximumGapMillis > MAX_RENDER_ACK_GAP_SECONDS * 1_000) {
+      throw evidenceFailure('browser-ack-continuity-gap', {
+        renderAckMaximumGapMillis,
+        maximumAllowedRenderAckGapMillis: MAX_RENDER_ACK_GAP_SECONDS * 1_000,
+      });
+    }
+    if (telemetry.rejected !== 0 || renderAckRejectedCount !== 0) {
       throw evidenceFailure(
         'browser-ack-count-diverged',
         ackDiagnostic(telemetry, samples.length),
@@ -871,7 +1056,7 @@ async function main() {
       throw evidenceFailure('browser-replay-not-rejected', { replayHttpStatus: replayStatus });
     }
     if (replayFailureCode !== null) throw evidenceFailure(replayFailureCode);
-    const ages = samples.map((sample) => Math.max(0, sample.sampledAt - sample.observedAt));
+    const ages = samples.map((sample) => Math.max(0, sample.sampledAtEpochMillis - sample.observedAt));
 
     const child = {
       schemaVersion: 'faz22.6.viewOnlyViewerProductChildEvidence.v2',
@@ -885,7 +1070,7 @@ async function main() {
         toolVersion: 'v3-ack-drain',
       },
       payload: {
-        pilotStartedAt: utcSeconds(startedAt),
+        pilotStartedAt: utcSeconds(pilotStartedAt),
         pilotEndedAt: utcSeconds(pilotEndedAt),
         ackDrainCompleted: true,
         ackDrainCutoffAt: utcSeconds(pilotEndedAt),
@@ -898,9 +1083,18 @@ async function main() {
         dlpMaskPixelCheckPassed: true,
         activeIndicatorPixelCheckPassed: true,
         maskedFrameSha256: frameChecks.maskedFrameSha256,
-        renderAckAttemptedCount: telemetry.attempted,
-        renderAckAcceptedCount: telemetry.accepted,
-        renderAckRejectedCount: telemetry.rejected,
+        renderAckAttemptedCount,
+        renderAckAcceptedCount,
+        renderAckInFlightAtCutoffCount,
+        minimumAcceptedRenderAckCount,
+        renderAckWindowDurationMillis,
+        renderAckWindowStartGapMillis,
+        renderAckWindowEndGapMillis,
+        renderAckSampleSpanMillis,
+        minimumRenderAckSampleSpanMillis: minimumRenderAckSampleSpan,
+        renderAckMaximumGapMillis,
+        maximumAllowedRenderAckGapMillis: MAX_RENDER_ACK_GAP_SECONDS * 1_000,
+        renderAckRejectedCount,
         renderAckPendingCount: telemetry.pending,
         consoleErrorCount,
         screenshotSha256: sha256(screenshot),

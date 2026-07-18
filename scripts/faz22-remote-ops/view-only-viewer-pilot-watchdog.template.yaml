@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/name: faz22-view-only-pilot-watchdog
     app.kubernetes.io/component: safety-controller
     app.kubernetes.io/part-of: remote-bridge
+  annotations:
+    faz22.6.acik.com/authorization-sha256: "__AUTHORIZATION_SHA256__"
 automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -14,6 +16,8 @@ kind: Role
 metadata:
   name: faz22-view-only-pilot-watchdog
   namespace: platform-test
+  annotations:
+    faz22.6.acik.com/authorization-sha256: "__AUTHORIZATION_SHA256__"
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -39,6 +43,8 @@ kind: RoleBinding
 metadata:
   name: faz22-view-only-pilot-watchdog
   namespace: platform-test
+  annotations:
+    faz22.6.acik.com/authorization-sha256: "__AUTHORIZATION_SHA256__"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -53,6 +59,8 @@ kind: NetworkPolicy
 metadata:
   name: allow-faz22-view-only-watchdog-kubernetes-api
   namespace: platform-test
+  annotations:
+    faz22.6.acik.com/authorization-sha256: "__AUTHORIZATION_SHA256__"
 spec:
   podSelector:
     matchLabels:
@@ -158,7 +166,7 @@ spec:
 
               ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
               request PATCH "/api/v1/namespaces/$namespace/configmaps/endpoint-admin-remote-bridge-config-device-key" \
-                application/merge-patch+json '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":"false","REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null,"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null}}' 200
+                application/merge-patch+json '{"data":{"REMOTE_BRIDGE_VIEWER_ENABLED":null,"REMOTE_BRIDGE_VIEW_ONLY_ALLOWED_FRAME_CONTENT_TYPES":null,"REMOTE_BRIDGE_BROKER_VIEW_ONLY_PERMIT_TTL_MILLIS":null}}' 200
               request PATCH "/api/v1/namespaces/$namespace/configmaps/api-gateway-config" \
                 application/merge-patch+json '{"data":{"__GATEWAY_ROUTE_PREFIX__ID":null,"__GATEWAY_ROUTE_PREFIX__URI":null,"__GATEWAY_ROUTE_PREFIX__ORDER":null,"__GATEWAY_ROUTE_PREFIX__PREDICATES_0":null,"__GATEWAY_ROUTE_PREFIX__PREDICATES_1":null,"__GATEWAY_ROUTE_PREFIX__FILTERS_0":null}}' 200
               request DELETE "/api/v1/namespaces/$namespace/services/endpoint-admin-remote-bridge-viewer" \
