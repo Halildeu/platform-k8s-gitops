@@ -96,6 +96,10 @@ jobs:
           echo "expiry_diagnostic_length=${#PILOT_AUTHORIZATION_EXPIRES_AT}"
           echo "expiry_diagnostic_matches_expected=$([ "$expiry_sha256" = "$expected_expiry_sha256" ] && echo true || echo false)"
           echo "expiry_diagnostic_delta_seconds=$((expiry_epoch - now_epoch))"
+          if [ "$GITHUB_REF" = "refs/heads/codex/faz226-2373-expiry-diag" ]; then
+            echo "::error::diagnostic-only branch intentionally stops before authorization or pilot mutation"
+            exit 1
+          fi
           [ "$expiry_epoch" -gt "$now_epoch" ] || {
             echo "::error::protected pilot authorization is expired"
             exit 1
