@@ -20,7 +20,7 @@
 #   build   https://github.com/Halildeu/ats/actions/runs/29629811674
 # Son canlı D29 kanıtlı baseline: sha-e6b7409 /
 #   sha256:b4b6a8067cc829a64c47aa94d90df3a10a570171a3ba47312387b69678a8e9d7
-# Yeni dce33483 pini için canlı D29, #2526 recovery koşumunda üretilecektir.
+# Yeni 8812ab4e pini için canlı D29, #2615 recovery + acceptance koşumunda üretilecektir.
 #
 # Build sanity (apply'sız):
 #   kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence

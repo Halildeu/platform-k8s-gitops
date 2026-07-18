@@ -25,6 +25,9 @@ jobs:
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
       EXPECTED_FRONTEND_DIGEST: sha256:dc4c10c76359836da06d83bca9d977433313a43ae06da1e909e28cd31ec71ead
       EXPECTED_FRONTEND_SHA: 07e9672d1e206544d95226d4a0d20111e269677c
+      ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29629811674
+      PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29629811595
+      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29630193356
     steps:
       - name: Validate test-only dispatch boundary
         env:
@@ -88,6 +91,45 @@ jobs:
           VAULT_INIT_JSON: /home/halil/bootstrap-drill/vault-init-test.json
         run: bash scripts/ats/fullats-live-browser-acceptance.sh
 
+      - name: Require rollback GitHub App credentials after acceptance failure
+        if: failure()
+        env:
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${APP_ID:-}" && -n "${APP_PRIVATE_KEY:-}" ]] || {
+            echo "::error::Full ATS acceptance failed, but rollback App credentials are unavailable"
+            exit 1
+          }
+
+      - name: Generate least-privilege rollback GitHub App token
+        if: failure()
+        id: rollback-app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
+      - name: Checkout failed promotion with rollback App identity
+        if: failure()
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          token: ${{ steps.rollback-app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Open atomic compensating GitOps rollback PR
+        if: failure()
+        id: rollback
+        env:
+          GH_TOKEN: ${{ steps.rollback-app-token.outputs.token }}
+          GH_REPO: Halildeu/platform-k8s-gitops
+          PROMOTION_PR: "2617"
+          FAILED_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: bash scripts/ats/open-fullats-test-rollback-pr.sh
+
       - name: Upload redacted live browser evidence
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -110,4 +152,12 @@ jobs:
             echo "- direct DB/OpenFGA acceptance seed: none"
             echo "- real PII / production mutation: none"
             echo "- secrets/JWT/candidate access token in artifact: none"
+            echo "- artifact authority: live desired image + ready pod imageID exact digest"
+            echo "- source lineage boundary: Actions build run metadata; no signed provenance attestation claimed"
+            echo "- ATS build: ${ATS_BUILD_RUN}"
+            echo "- permission build: ${PERMISSION_BUILD_RUN}"
+            echo "- frontend build: ${FRONTEND_BUILD_RUN}"
+            if [[ -n "${{ steps.rollback.outputs.rollback_pr_url }}" ]]; then
+              echo "- compensating rollback PR: ${{ steps.rollback.outputs.rollback_pr_url }}"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

@@ -12,6 +12,9 @@ const recruiterUsername = process.env.RECRUITER_USERNAME;
 const recruiterPasswordFile = process.env.RECRUITER_PASSWORD_FILE;
 const evidenceDir = process.env.EVIDENCE_DIR;
 const expectedFrontendSha = process.env.EXPECTED_FRONTEND_SHA;
+const expectedAtsDigest = process.env.EXPECTED_ATS_DIGEST;
+const expectedPermissionDigest = process.env.EXPECTED_PERMISSION_DIGEST;
+const expectedFrontendDigest = process.env.EXPECTED_FRONTEND_DIGEST;
 
 if (baseURL !== 'https://testai.acik.com') throw new Error('test-only base URL required');
 if (!recruiterUsername || !recruiterPasswordFile || !evidenceDir || !expectedFrontendSha) {
@@ -19,6 +22,11 @@ if (!recruiterUsername || !recruiterPasswordFile || !evidenceDir || !expectedFro
 }
 if (!/^[a-f0-9]{40}$/u.test(expectedFrontendSha)) {
   throw new Error('expected frontend source commit is invalid');
+}
+for (const digest of [expectedAtsDigest, expectedPermissionDigest, expectedFrontendDigest]) {
+  if (!/^sha256:[a-f0-9]{64}$/u.test(digest ?? '')) {
+    throw new Error('expected immutable runtime digest is invalid');
+  }
 }
 
 fs.mkdirSync(evidenceDir, { recursive: true });
@@ -134,12 +142,16 @@ const assertNewApplicationRejected = async (page, applicationPath, state) => {
           accuracyConfirmedAt: now,
         }),
       });
-      return { status: response.status };
+      const body = await response.clone().json().catch(() => null);
+      return {
+        status: response.status,
+        error: typeof body?.error === 'string' ? body.error : '',
+      };
     },
     { targetPath: applicationPath, suffix: `${state.toLowerCase()}-${Date.now()}` },
   );
-  if (result.status !== 404) {
-    throw new Error(`${state} job accepted a new application: HTTP ${result.status}`);
+  if (result.status !== 404 || result.error !== 'NOT_FOUND') {
+    throw new Error(`${state} job fail-closed contract mismatch: HTTP ${result.status} error=${result.error}`);
   }
 };
 
@@ -441,8 +453,13 @@ try {
   const interviewStep = candidatePage.getByRole('listitem').filter({ hasText: 'Mülakat planlaması' });
   await refreshUntilVisible(refreshStatusButton, interviewStep.getByText('Şimdi'), 'candidate sees interview pending');
 
-  const publicStatePage = await candidateContext.newPage();
-  attachNetworkEvidence(publicStatePage, 'candidate');
+  const negativeProbeContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    locale: 'tr-TR',
+    timezoneId: 'Europe/Istanbul',
+  });
+  const publicStatePage = await negativeProbeContext.newPage();
+  attachNetworkEvidence(publicStatePage, 'negative-probe');
   const pauseResponsePromise = recruiterPage.waitForResponse(
     (response) =>
       relevantPath(response.url()) === `/api/ats/v1/recruiter/jobs/${jobId}/transitions` &&
@@ -507,6 +524,7 @@ try {
   await jobCard.screenshot({ path: path.join(evidenceDir, 'recruiter-closed-job-card.png') });
 
   await publicStatePage.close();
+  await negativeProbeContext.close();
   await recruiterContext.close();
   await candidateContext.close();
 
@@ -537,7 +555,7 @@ try {
   }
   const rejectedApplications = networkEvidence.filter(
     (entry) =>
-      entry.persona === 'candidate' &&
+      entry.persona === 'negative-probe' &&
       entry.method === 'POST' &&
       entry.pathname === publicApplicationApiPath &&
       entry.status === 404,
@@ -566,6 +584,14 @@ try {
     environment: 'testai.acik.com',
     syntheticOnly: true,
     frontendSourceCommit: buildInfo.sha,
+    artifactBinding: {
+      atsRuntimeDigest: expectedAtsDigest,
+      permissionRuntimeDigest: expectedPermissionDigest,
+      frontendRuntimeDigest: expectedFrontendDigest,
+      runtimeAuthority: 'live deployment desired image plus ready pod imageID exact digest',
+      sourceLineageBoundary:
+        'source refs and build runs are recorded workflow metadata; no signed provenance attestation is claimed',
+    },
     candidateViewport: '390x844',
     recruiterViewport: '1440x1000',
     journey: [
@@ -601,12 +627,13 @@ try {
     accessibility: 'axe-wcag2a-wcag2aa-wcag21a-wcag21aa-zero-violations',
     horizontalOverflow: 'none',
     candidateTracking: 'sessionStorage-only; no URL/localStorage token',
+    capturedNetworkFields: ['persona', 'method', 'pathname', 'status'],
+    evidenceBoundary:
+      'network evidence excludes headers and bodies; screenshots contain synthetic product state only',
     networkEvidence: networkEvidence.map((entry) => ({
       ...entry,
       pathname: redactPath(entry.pathname),
     })),
-    containsRawCandidateAccessToken: false,
-    containsRawPasswordOrJwt: false,
     result: 'PASS',
   };
   const summaryBytes = `${JSON.stringify(summary, null, 2)}\n`;

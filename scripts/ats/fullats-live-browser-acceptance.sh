@@ -18,6 +18,9 @@ KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 EXPECTED_CONFIRM="RUN_FAZ25_FULLATS_LIVE_BROWSER"
 CONFIRM="${CONFIRM:-}"
 EXPECTED_FRONTEND_SHA="${EXPECTED_FRONTEND_SHA:-}"
+EXPECTED_ATS_DIGEST="${EXPECTED_ATS_DIGEST:-}"
+EXPECTED_PERMISSION_DIGEST="${EXPECTED_PERMISSION_DIGEST:-}"
+EXPECTED_FRONTEND_DIGEST="${EXPECTED_FRONTEND_DIGEST:-}"
 RECRUITER_USERNAME="ats-recruiter-persona"
 RECRUITER_EMAIL="ats-recruiter-persona@test.invalid"
 D35_ADMIN_EMAIL="d35-admin@example.com"
@@ -50,6 +53,12 @@ CURL_MAX_TIME=45
   echo "FATAL: exact reviewed frontend source SHA gerekli" >&2
   exit 2
 }
+for digest in "$EXPECTED_ATS_DIGEST" "$EXPECTED_PERMISSION_DIGEST" "$EXPECTED_FRONTEND_DIGEST"; do
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    echo "FATAL: exact immutable runtime digest gerekli" >&2
+    exit 2
+  }
+done
 
 for cmd in curl docker jq openssl python3; do
   command -v "$cmd" >/dev/null 2>&1 || {
@@ -335,6 +344,20 @@ GRANULE_CODE="$(api_request PUT "/api/v1/roles/$ROLE_ID/granules" "$ADMIN_HEADER
   echo "FATAL: role granule product API HTTP $GRANULE_CODE" >&2
   exit 1
 }
+GRANULE_SNAPSHOT_OUT="$(json_file recruiter-granule-snapshot.json)"
+GRANULE_SNAPSHOT_CODE="$(api_request GET "/api/v1/roles/$ROLE_ID/granules" "$ADMIN_HEADER_FILE" "$GRANULE_SNAPSHOT_OUT")"
+if [[ "$GRANULE_SNAPSHOT_CODE" != "200" ]] || ! jq -e --argjson role_id "$ROLE_ID" '
+    (.roleId == $role_id) and
+    ((.granules | map([.type, .key, .grant] | join(":")) | sort) == [
+      "ACTION:ATS_APPLICATION_MANAGE:ALLOW",
+      "ACTION:ATS_JOB_MANAGE:ALLOW",
+      "MODULE:ATS:VIEW",
+      "MODULE:INTERVIEW_EVIDENCE:VIEW"
+    ])
+  ' "$GRANULE_SNAPSHOT_OUT" >/dev/null; then
+  echo "FATAL: target recruiter role exact four-granule snapshot mismatch" >&2
+  exit 1
+fi
 MEMBER_BODY="$(json_file recruiter-member.json)"
 jq -n --argjson user_id "$RECRUITER_USER_ID" '{userIds:[$user_id]}' >"$MEMBER_BODY"
 MEMBER_OUT="$(json_file recruiter-member-result.json)"
@@ -353,19 +376,11 @@ for _ in $(seq 1 30); do
       --arg ats_key "$ATS_MODULE_KEY" \
       --arg job_action "$ATS_JOB_ACTION_KEY" \
       --arg application_action "$ATS_APPLICATION_ACTION_KEY" '
-    def module_allowed($key):
-      (((.modules[$key]? // "") | tostring | ascii_upcase) as $v |
-        ($v == "VIEW" or $v == "MANAGE" or $v == "ALLOW" or $v == "TRUE")) or
-      (((.allowedModules? // []) | index($key)) != null);
-    def action_allowed($key):
-      (((.actions[$key]? // "") | tostring | ascii_upcase) as $v |
-        ($v == "ALLOW" or $v == "TRUE")) or
-      (((.allowedActions? // []) | index($key)) != null);
     (.superAdmin == false) and
-    module_allowed($interview_key) and
-    module_allowed($ats_key) and
-    action_allowed($job_action) and
-    action_allowed($application_action)
+    (((.modules[$interview_key]? // "") | tostring | ascii_upcase) == "VIEW") and
+    (((.modules[$ats_key]? // "") | tostring | ascii_upcase) == "VIEW") and
+    (((.actions[$job_action]? // "") | tostring | ascii_upcase) == "ALLOW") and
+    (((.actions[$application_action]? // "") | tostring | ascii_upcase) == "ALLOW")
   ' "$RECRUITER_AUTHZ_OUT" >/dev/null; then
     break
   fi
@@ -376,19 +391,11 @@ if [[ "$RECRUITER_AUTHZ_CODE" != "200" ]] || ! jq -e \
     --arg ats_key "$ATS_MODULE_KEY" \
     --arg job_action "$ATS_JOB_ACTION_KEY" \
     --arg application_action "$ATS_APPLICATION_ACTION_KEY" '
-    def module_allowed($key):
-      (((.modules[$key]? // "") | tostring | ascii_upcase) as $v |
-        ($v == "VIEW" or $v == "MANAGE" or $v == "ALLOW" or $v == "TRUE")) or
-      (((.allowedModules? // []) | index($key)) != null);
-    def action_allowed($key):
-      (((.actions[$key]? // "") | tostring | ascii_upcase) as $v |
-        ($v == "ALLOW" or $v == "TRUE")) or
-      (((.allowedActions? // []) | index($key)) != null);
     (.superAdmin == false) and
-    module_allowed($interview_key) and
-    module_allowed($ats_key) and
-    action_allowed($job_action) and
-    action_allowed($application_action)
+    (((.modules[$interview_key]? // "") | tostring | ascii_upcase) == "VIEW") and
+    (((.modules[$ats_key]? // "") | tostring | ascii_upcase) == "VIEW") and
+    (((.actions[$job_action]? // "") | tostring | ascii_upcase) == "ALLOW") and
+    (((.actions[$application_action]? // "") | tostring | ascii_upcase) == "ALLOW")
   ' "$RECRUITER_AUTHZ_OUT" >/dev/null; then
   echo "FATAL: recruiter ATS least-privilege grant'leri /authz/me'ye 60s icinde yansimadi" >&2
   exit 1
@@ -400,7 +407,8 @@ INBOX_CODE="$(api_request GET '/api/ats/v1/recruiter/applications?page=0&size=1'
   exit 1
 }
 rm -f "$PROFILE_OUT" "$LOOKUP_OUT" "$ACTIVATION_BODY" "$ACTIVATION_OUT" \
-  "$ROLES_OUT" "$GRANULE_BODY" "$GRANULE_OUT" "$MEMBER_BODY" "$MEMBER_OUT" \
+  "$ROLES_OUT" "$GRANULE_BODY" "$GRANULE_OUT" "$GRANULE_SNAPSHOT_OUT" \
+  "$MEMBER_BODY" "$MEMBER_OUT" \
   "$RECRUITER_AUTHZ_OUT" "$INBOX_OUT"
 
 echo "5/6 Immutable Playwright runtime'i hazirla"
@@ -419,6 +427,9 @@ docker run --rm --ipc=host --network host \
   -e RECRUITER_PASSWORD_FILE=/run/secrets/recruiter.password \
   -e EVIDENCE_DIR=/evidence \
   -e EXPECTED_FRONTEND_SHA="$EXPECTED_FRONTEND_SHA" \
+  -e EXPECTED_ATS_DIGEST="$EXPECTED_ATS_DIGEST" \
+  -e EXPECTED_PERMISSION_DIGEST="$EXPECTED_PERMISSION_DIGEST" \
+  -e EXPECTED_FRONTEND_DIGEST="$EXPECTED_FRONTEND_DIGEST" \
   -e PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION" \
   -e AXE_VERSION="$AXE_VERSION" \
   -e PLAYWRIGHT_INTEGRITY="$PLAYWRIGHT_INTEGRITY" \
