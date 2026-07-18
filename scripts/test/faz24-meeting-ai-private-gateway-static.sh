@@ -4,10 +4,11 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 GW="${ROOT}/deploy/staging-sw/meeting-ai-private-gateway"
 TEST_RENDER="$(mktemp)"
+TEST_ESO_RENDER="$(mktemp)"
 PROD_RENDER="$(mktemp)"
 MONITOR_RENDER="$(mktemp)"
 PUBLIC_GATEWAY_RENDER="$(mktemp)"
-trap 'rm -f -- "${TEST_RENDER}" "${PROD_RENDER}" "${MONITOR_RENDER}" "${PUBLIC_GATEWAY_RENDER}"' EXIT
+trap 'rm -f -- "${TEST_RENDER}" "${TEST_ESO_RENDER}" "${PROD_RENDER}" "${MONITOR_RENDER}" "${PUBLIC_GATEWAY_RENDER}"' EXIT
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -71,6 +72,7 @@ fi
 
 command -v kustomize >/dev/null 2>&1 || fail "kustomize is required"
 kustomize build "${ROOT}/kustomize/overlays/test" >"${TEST_RENDER}"
+kustomize build "${ROOT}/kustomize/overlays/test/eso" >"${TEST_ESO_RENDER}"
 kustomize build "${ROOT}/kustomize/overlays/prod" >"${PROD_RENDER}"
 kustomize build "${ROOT}/kustomize/base/monitoring" >"${MONITOR_RENDER}"
 
@@ -103,6 +105,21 @@ if grep -A80 -F 'name: auth-service-secrets' "${TEST_RENDER}" | \
     head -80 | grep -Fq 'SERVICE_CLIENT_MEETING_AI_SECRET'; then
   fail "meeting-ai key must not share the core auth-service ExternalSecret"
 fi
+grep -Fq 'name: auth-service-transcript-service-secret' "${TEST_RENDER}" || \
+  fail "isolated transcript-service issuer secret missing"
+grep -Fq 'property: service_client_transcript_service_secret' "${TEST_RENDER}" || \
+  fail "transcript-service client credential Vault mapping missing"
+if grep -A100 -F 'name: auth-service-secrets' "${TEST_RENDER}" | \
+    head -100 | grep -Fq 'SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET'; then
+  fail "transcript-service issuer key must not share the core auth-service ExternalSecret"
+fi
+grep -A80 -F 'name: meeting-service-secrets' "${TEST_ESO_RENDER}" | \
+  head -80 | grep -Fq 'key: kv/platform/meeting-service' || \
+  fail "meeting-service Redis credential must use the meeting-service-owned Vault path"
+if grep -A80 -F 'name: meeting-service-secrets' "${TEST_ESO_RENDER}" | \
+    head -80 | grep -Fq 'key: kv/platform/audio-gateway-service'; then
+  fail "meeting-service must not depend on the audio-gateway Vault path"
+fi
 grep -Fq 'name: allow-meeting-ai-private-ingress-auth' "${TEST_RENDER}" || \
   fail "private auth ingress NetworkPolicy missing"
 grep -Fq 'name: allow-meeting-ai-private-ingress-meeting' "${TEST_RENDER}" || \
@@ -111,7 +128,7 @@ for binding in \
   'MEETING_INTERNAL_SERVICE_JWT_JWK_SET_URI: http://auth-service:8088/oauth2/jwks' \
   'MEETING_INTERNAL_SERVICE_JWT_ISSUER: auth-service' \
   'MEETING_INTERNAL_SERVICE_JWT_AUDIENCE: meeting-service' \
-  'MEETING_INTERNAL_SERVICE_JWT_CLIENT_ID: meeting-ai'; do
+  'MEETING_INTERNAL_SERVICE_JWT_CLIENT_IDS: meeting-ai,transcript-service'; do
   grep -Fq "${binding}" "${TEST_RENDER}" || fail "missing meeting verifier binding: ${binding}"
 done
 if grep -Fq 'meeting-ai-private.testai.internal' "${PROD_RENDER}"; then

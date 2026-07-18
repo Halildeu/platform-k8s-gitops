@@ -65,6 +65,7 @@ resources:
   - meeting-ai-service-bridge.yaml  # Faz 24 #2186: meeting-service -> GPU-host meeting-ai test bridge 10.99.0.2:8300
   - netpol-meeting-service-egress-meeting-ai.yaml  # Faz 24 #2186: narrow meeting-service egress to meeting-ai
   - auth-service-meeting-ai-externalsecret.yaml  # isolated ESO: missing key cannot stall core auth secret rotation
+  - auth-service-transcript-service-externalsecret.yaml  # isolated resolver secret; core auth remains available
   - ingress-meeting-ai-private.yaml  # Faz 24 #2321: host-loopback-only upstream for WG+mTLS gateway
   - netpol-meeting-ai-private-ingress.yaml  # ingress-nginx -> auth:8088 + meeting:8097 only
   # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
@@ -281,8 +282,11 @@ images:
     # carries the typed meeting.consent.revoked event contract used by the
     # durable audit outbox relay. Canonical image run 29603219415 produced the
     # immutable digest below. This test pin does not claim attended acceptance.
+    # 2026-07-18 canonical finalization rollout: platform-backend#865/#866
+    # binds source-window identity and publishes recording-finished through the
+    # transactional outbox. Image build run 29624668177, commit 45451bb.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:20b3918fb03037df70ced9ec8edd3d2d984831a0fb0474f164e2efbbdb459f11
+    digest: sha256:1da371209763f36119a05f87e5ed78a8439afc9427c03cf41f9e1aaa3d09d682
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -301,8 +305,12 @@ images:
     # 2026-06-26 retention runtime sync: platform-backend#764 adds metadata-only
     # transcript/KVKK access-log cleanup and destruction-audit accounting. This
     # desired-state pin does not by itself prove live deletion or legal closure.
+    # 2026-07-18 canonical finalization rollout: V6/V7 preserve source-window
+    # identity, consume recording-finished after Redis delivery, wait for
+    # bounded quiescence and publish transcript.ready durably. Image build run
+    # 29624668177, commit 45451bb.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:9f0e73f101a132e6b21b6d3a7530e333901dfed05a65c1ae4d728b0940ace53e
+    digest: sha256:373aff6ae2f1a86c89f8c06dd29f5d2a9eb1f263330e422522845ca68cc0c9b3
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -385,7 +393,10 @@ images:
     # 2026-07-12 update: sha-20ee06d (platform-backend#816) enforces the
     # client-bound meeting-ai service-token policy and blank-secret fail-closed
     # behavior. Digest source: CI - Image Build + GHCR Push run 29177080417.
-    digest: sha256:fdd91cdbb375428e49ee5c5c78442caebd894a403f8c863d22347b2248d1955a
+    # 2026-07-18 resolver rollout: platform-backend#865 registers the isolated
+    # transcript-service client with exact meeting-service audience and
+    # meeting:session:resolve permission. Image build run 29624668177.
+    digest: sha256:6de4965b3c1b0437f52bd8496b1bbeb4ec74b8d1392ecff315bcf0c3b3492660
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -6188,6 +6199,23 @@ patches:
       - op: add
         path: /data/MEETING_AUTHZ_LEGACY_USER_ID_DUAL_WRITE_ENABLED
         value: "true"
+      - op: add
+        path: /data/MEETING_REDIS_HOST
+        value: "redis-streams"
+      # Test-only activation. Base defaults stay off so this overlay can be
+      # rolled back atomically without silently enabling Redis in production.
+      - op: add
+        path: /data/MEETING_REDIS_PORT
+        value: "6379"
+      - op: add
+        path: /data/MEETING_REDIS_HEALTH_ENABLED
+        value: "true"
+      - op: add
+        path: /data/MEETING_EVENTS_REDIS_ENABLED
+        value: "true"
+      - op: add
+        path: /data/MEETING_EVENTS_OUTBOX_POLLER_ENABLED
+        value: "true"
 
   # notification-orchestrator-secrets is owned by the ExternalSecret rendered
   # exclusively by platform-eso-test. The base bootstrap Secret is for non-ESO
@@ -6223,6 +6251,15 @@ patches:
               name: auth-service-meeting-ai-secret
               key: SERVICE_CLIENT_MEETING_AI_SECRET
               optional: true  # core auth stays available; meeting-ai mint remains fail-closed
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-service-transcript-service-secret
+              key: SERVICE_CLIENT_TRANSCRIPT_SERVICE_SECRET
+              optional: true  # core auth stays available; resolver remains fail-closed
   - target:
       kind: Deployment
       name: api-gateway
@@ -6272,7 +6309,7 @@ patches:
       - op: add
         path: /spec/template/metadata/annotations
         value:
-          platform.acik.com/faz24-meeting-ai-base-url-rev: "2026-07-03-2186"
+          platform.acik.com/faz24-meeting-ai-base-url-rev: "2026-07-18-2610"
 
   # Faz 24 Meeting Intelligence foundation (#411): replica 1 default
   # (HARD RULE — Scale-to-Zero YASAK). No mTLS connector → base 150s startup
@@ -6290,7 +6327,7 @@ patches:
         template:
           metadata:
             annotations:
-              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-17-2568-v2"
+              transcript-service.acik.com/direct-stt-result-consumer-rev: "2026-07-18-2610"
           spec:
             containers:
               - name: transcript-service
@@ -6303,6 +6340,12 @@ patches:
                       secretKeyRef:
                         name: transcript-service-secrets
                         key: TRANSCRIPT_REDIS_PASSWORD
+                        optional: false
+                  - name: TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        name: transcript-service-secrets
+                        key: TRANSCRIPT_MEETING_SERVICE_CLIENT_SECRET
                         optional: false
       # #2568: transcript-service consumes ConfigMap values through envFrom.
       # Keep the activation rollbackable and force a pod roll whenever the
@@ -6332,6 +6375,50 @@ patches:
       - op: add
         path: /data/TRANSCRIPT_REDIS_HEALTH_ENABLED
         value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_REDIS_HOST
+        value: "redis-streams"
+      - op: add
+        path: /data/TRANSCRIPT_REDIS_PORT
+        value: "6379"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SESSION_RESOLVER_ENABLED
+        value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SERVICE_BASE_URL
+        value: "http://meeting-service:8097"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SERVICE_TOKEN_URL
+        value: "http://auth-service:8088/oauth2/token"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_SERVICE_CLIENT_ID
+        value: "transcript-service"
+      - op: add
+        path: /data/TRANSCRIPT_RECORDING_FINISHED_CONSUMER_ENABLED
+        value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_FINALIZATION_WORKER_ENABLED
+        value: "true"
+      # Direct STT windows can arrive late after recorder stop. Test waits at
+      # least six minutes, requires one quiet minute, and fails boundedly at
+      # fifteen minutes; production tuning remains evidence-gated.
+      - op: add
+        path: /data/TRANSCRIPT_FINALIZATION_QUIESCENCE
+        value: "PT1M"
+      - op: add
+        path: /data/TRANSCRIPT_FINALIZATION_MIN_WAIT
+        value: "PT6M"
+      - op: add
+        path: /data/TRANSCRIPT_FINALIZATION_MAX_WAIT
+        value: "PT15M"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_EVENTS_REDIS_ENABLED
+        value: "true"
+      - op: add
+        path: /data/TRANSCRIPT_MEETING_EVENTS_OUTBOX_POLLER_ENABLED
+        value: "true"
+      # Consumer, finalizer and both outbox relays are one rollback unit: their
+      # shared pod revision marker above forces deterministic reconciliation.
 
   # Faz 24 KVKK audit pipeline (#1249): replica 1 default (HARD RULE —
   # Scale-to-Zero YASAK). Pure Redis consumer (no mTLS, no inbound API) → base
