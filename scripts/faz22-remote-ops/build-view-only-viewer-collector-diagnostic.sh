@@ -80,7 +80,7 @@ jq -cS -n \
    | ($operation[0] // {}) as $operation
    | ($browser[0] // {}) as $browser
    | {
-       schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v4",
+       schemaVersion:"faz22.6.viewOnlyViewerCollectorDiagnostic.v5",
        sourceRevision:$sourceRevision,
        status:(($summary.status // "collector-did-not-write-summary") as $status
          | if ["starting", "no-go", "accepted-candidate", "collector-did-not-write-summary"]
@@ -97,18 +97,29 @@ jq -cS -n \
        ),
        browserFailureCode:(
          if $summary.reason != "browser-product-evidence-failed" then null
-         elif $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v2"
+         elif $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
            and $browser.sourceRevision == $sourceRevision
            and (($browser.failureCode | type) == "string")
            and (($browserAllowlist.failureCodes | index($browser.failureCode)) != null)
+           and (if $browser.failureCode == "browser-replay-not-rejected" then
+             $browser.ackTelemetry == null
+             and ($browser.replayHttpStatus | type) == "number"
+             and ($browser.replayHttpStatus | floor) == $browser.replayHttpStatus
+             and $browser.replayHttpStatus >= 100 and $browser.replayHttpStatus <= 599
+             and $browser.replayHttpStatus != 404
+           else
+             $browser.replayHttpStatus == null
+           end)
            then $browser.failureCode
          else "browser-unclassified-failure"
          end
        ),
        browserAckTelemetry:(
          if $summary.reason != "browser-product-evidence-failed"
-           or $browser.schemaVersion != "faz22.6.viewOnlyViewerBrowserDiagnostic.v2"
+           or $browser.schemaVersion != "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
            or $browser.sourceRevision != $sourceRevision
+           or $browser.failureCode == "browser-replay-not-rejected"
+           or $browser.replayHttpStatus != null
            or ($browser.ackTelemetry | type) != "object"
            or ($browser.ackTelemetry | keys) != ["accepted", "acceptedSamples", "attempted", "lastAcceptedSeq", "pending", "rejected"]
            then null
@@ -128,6 +139,21 @@ jq -cS -n \
            and ($browser.ackTelemetry.pending | type == "number"
              and floor == . and . >= 0 and . <= 1000)
            then $browser.ackTelemetry
+         else null
+         end
+       ),
+       browserReplayHttpStatus:(
+         if $summary.reason == "browser-product-evidence-failed"
+           and $browser.schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
+           and $browser.sourceRevision == $sourceRevision
+           and $browser.failureCode == "browser-replay-not-rejected"
+           and $browser.ackTelemetry == null
+           and ($browser.replayHttpStatus | type) == "number"
+           and $browser.replayHttpStatus >= 100 and $browser.replayHttpStatus <= 599
+           and $browser.replayHttpStatus != 404
+           and ($browser.replayHttpStatus | floor) == $browser.replayHttpStatus
+           # Collector diagnostics represent all HTTP statuses as bounded strings.
+           then ($browser.replayHttpStatus | tostring)
          else null
          end
        ),
@@ -155,7 +181,7 @@ jq -cS -n \
      }' > "$output"
 
 jq -e '
-  .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v4"
+  .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v5"
   and (.sourceRevision | test("^[a-f0-9]{40}$"))
   and (.status | test("^[A-Za-z0-9:._-]{1,64}$"))
   and (.failureReasonCode == null or (.failureReasonCode | test("^[A-Za-z0-9:._-]{1,160}$")))
@@ -174,6 +200,11 @@ jq -e '
       <= .browserAckTelemetry.attempted)
     and (.browserAckTelemetry.pending | type == "number"
       and floor == . and . >= 0 and . <= 1000)
+  ))
+  and (.browserReplayHttpStatus == null or (
+    (.browserReplayHttpStatus | type) == "string"
+    and (.browserReplayHttpStatus | test("^[1-5][0-9]{2}$"))
+    and .browserReplayHttpStatus != "404"
   ))
   and (.consentWait == null or (.consentWait | test("^[a-z-]{1,32}$")))
   and (.openSessionHttp == null or (.openSessionHttp | test("^[0-9]{3}$")))
