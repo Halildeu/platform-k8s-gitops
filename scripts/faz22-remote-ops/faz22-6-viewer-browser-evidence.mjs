@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -13,6 +13,9 @@ const VIEWER_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
 const TEST_USERNAME = /^[A-Za-z0-9][A-Za-z0-9._@+-]{2,127}$/;
 const MIN_PILOT_SECONDS = 300;
 const MAX_PILOT_SECONDS = 1800;
+const ACK_DRAIN_TIMEOUT_MILLIS = 10_000;
+const ACK_DRAIN_POLL_MILLIS = 100;
+const MAX_ACK_PENDING = 1_000;
 const MASK_BASIS_POINTS = 10_000;
 const VIEWER_INPUT_CONTROL_SELECTOR = [
   'input',
@@ -35,7 +38,10 @@ const VIEWER_INPUT_CONTROL_SELECTOR = [
 
 export const BROWSER_FAILURE_CODES = Object.freeze([
   'browser-ack-count-diverged',
+  'browser-ack-drain-cutoff-failed',
+  'browser-ack-drain-timeout',
   'browser-ack-minimum-not-met',
+  'browser-ack-rejected',
   'browser-auth-callback-failed',
   'browser-auth-session-missing',
   'browser-binding-invalid',
@@ -79,18 +85,208 @@ export const BROWSER_FAILURE_CODES = Object.freeze([
 ]);
 
 class BrowserEvidenceError extends Error {
-  constructor(code) {
+  constructor(code, diagnostic = null) {
     super(code);
     this.name = 'BrowserEvidenceError';
     this.code = code;
+    this.diagnostic = diagnostic;
   }
 }
 
-function evidenceFailure(code) {
+function evidenceFailure(code, diagnostic = null) {
   if (!BROWSER_FAILURE_CODES.includes(code)) {
     return new BrowserEvidenceError('browser-unclassified-failure');
   }
-  return new BrowserEvidenceError(code);
+  return new BrowserEvidenceError(code, diagnostic);
+}
+
+function boundedNonNegativeInteger(value, max = 10_000_000) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= max ? value : null;
+}
+
+export function ackDiagnostic(telemetry, acceptedSampleCount) {
+  if (!telemetry || typeof telemetry !== 'object') return null;
+  const accepted = boundedNonNegativeInteger(telemetry.accepted);
+  const lastAcceptedSeq =
+    accepted === 0 && telemetry.lastAcceptedSeq === null
+      ? null
+      : boundedNonNegativeInteger(telemetry.lastAcceptedSeq);
+  const diagnostic = {
+    attempted: boundedNonNegativeInteger(telemetry.attempted),
+    accepted,
+    rejected: boundedNonNegativeInteger(telemetry.rejected),
+    pending: boundedNonNegativeInteger(telemetry.pending, MAX_ACK_PENDING),
+    acceptedSamples: boundedNonNegativeInteger(acceptedSampleCount),
+    lastAcceptedSeq,
+  };
+  const validLastAcceptedSeq =
+    (accepted === 0 && lastAcceptedSeq === null) ||
+    (accepted !== null && accepted > 0 && lastAcceptedSeq !== null);
+  const validRelations =
+    accepted !== null &&
+    diagnostic.attempted !== null &&
+    diagnostic.rejected !== null &&
+    diagnostic.acceptedSamples !== null &&
+    diagnostic.acceptedSamples <= accepted &&
+    accepted + diagnostic.rejected <= diagnostic.attempted;
+  return accepted !== null &&
+    diagnostic.attempted !== null &&
+    diagnostic.rejected !== null &&
+    diagnostic.pending !== null &&
+    diagnostic.acceptedSamples !== null &&
+    validLastAcceptedSeq &&
+    validRelations
+    ? diagnostic
+    : null;
+}
+
+export function classifyAckDrainSnapshot(snapshot) {
+  const attempted = boundedNonNegativeInteger(snapshot?.attempted);
+  const accepted = boundedNonNegativeInteger(snapshot?.accepted);
+  const rejected = boundedNonNegativeInteger(snapshot?.rejected);
+  const pending = boundedNonNegativeInteger(snapshot?.pending, MAX_ACK_PENDING);
+  const validLastAcceptedSeq =
+    (accepted === 0 && snapshot?.lastAcceptedSeq === null) ||
+    (accepted !== null && accepted > 0 && boundedNonNegativeInteger(snapshot?.lastAcceptedSeq) !== null);
+  if (
+    !snapshot ||
+    typeof snapshot !== 'object' ||
+    attempted === null ||
+    accepted === null ||
+    rejected === null ||
+    pending === null ||
+    !validLastAcceptedSeq ||
+    accepted + rejected > attempted
+  ) {
+    return 'invalid';
+  }
+  if (rejected > 0) return 'rejected';
+  if (pending !== 0) return 'pending';
+  if (attempted !== accepted + rejected) return 'diverged';
+  return 'settled';
+}
+
+export function classifyViewerDrainSnapshot(snapshot, expectedNonce = null) {
+  const ackState = classifyAckDrainSnapshot(snapshot);
+  if (ackState === 'invalid') return 'telemetry-invalid';
+  const validViewState =
+    (snapshot.viewStatus === 'live' && snapshot.closureKind === 'none') ||
+    (snapshot.viewStatus === 'closed' && snapshot.closureKind === 'stream-ended-after-drain');
+  if (!validViewState || snapshot.draining !== true) return 'left-live';
+  if (expectedNonce !== null && snapshot.drainNonce !== expectedNonce) return 'cutoff-invalid';
+  return ackState;
+}
+
+export async function drainAckSnapshots({
+  readSnapshot,
+  now = () => performance.now(),
+  sleep,
+  timeoutMillis = ACK_DRAIN_TIMEOUT_MILLIS,
+  pollMillis = ACK_DRAIN_POLL_MILLIS,
+  expectedNonce = null,
+}) {
+  const deadline = now() + timeoutMillis;
+  let lastSnapshot = null;
+  while (now() <= deadline) {
+    const remainingMillis = deadline - now();
+    if (remainingMillis <= 0) break;
+    const snapshot = await readSnapshot(remainingMillis);
+    if (snapshot === null) break;
+    lastSnapshot = snapshot;
+    const state = classifyViewerDrainSnapshot(snapshot, expectedNonce);
+    if (state !== 'pending') return { state, snapshot };
+    const remainingAfterRead = deadline - now();
+    if (remainingAfterRead > 0) {
+      await sleep(Math.min(pollMillis, remainingAfterRead));
+    }
+  }
+  return { state: 'timeout', snapshot: lastSnapshot };
+}
+
+export function installViewerEvidenceObserver() {
+  const attach = () => {
+    if (window.__faz226ViewerEvidence?.snapshotAndStop) return true;
+    const target = document.querySelector('[data-testid="remote-view-page"]');
+    if (!target) return false;
+    const samples = [];
+    let lastAcceptedSeq = null;
+    let invalid = false;
+    const recordAccepted = () => {
+      if (!target.isConnected || document.querySelector('[data-testid="remote-view-page"]') !== target) {
+        invalid = true;
+        return;
+      }
+      const acceptedCount = Number(target.getAttribute('data-render-ack-accepted-count') ?? '-1');
+      if (!Number.isSafeInteger(acceptedCount) || acceptedCount < 0 || acceptedCount < samples.length) {
+        invalid = true;
+        return;
+      }
+      const acceptedSeqRaw = target.getAttribute('data-render-ack-last-accepted-seq');
+      const observedRaw = target.getAttribute('data-render-ack-last-accepted-observed-at');
+      const sentRaw = target.getAttribute('data-render-ack-last-accepted-sent-at');
+      if (
+        acceptedCount === samples.length &&
+        ((acceptedCount === 0 && acceptedSeqRaw === null) ||
+          (acceptedSeqRaw !== null && Number(acceptedSeqRaw) === lastAcceptedSeq))
+      ) {
+        return;
+      }
+      if (acceptedCount !== samples.length + 1 || acceptedSeqRaw === null) {
+        invalid = true;
+        return;
+      }
+      const acceptedSeq = Number(acceptedSeqRaw);
+      const observedAt = Number(observedRaw);
+      const sentAt = Number(sentRaw);
+      if (
+        observedRaw === null ||
+        sentRaw === null ||
+        !Number.isSafeInteger(acceptedSeq) ||
+        acceptedSeq < 0 ||
+        (lastAcceptedSeq !== null && acceptedSeq <= lastAcceptedSeq) ||
+        !Number.isFinite(observedAt) ||
+        !Number.isFinite(sentAt)
+      ) {
+        return;
+      }
+      samples.push({ seq: acceptedSeq, observedAt, sentAt, sampledAt: Date.now() });
+      lastAcceptedSeq = acceptedSeq;
+    };
+    recordAccepted();
+    const observer = new MutationObserver(recordAccepted);
+    observer.observe(target, {
+      attributes: true,
+      attributeFilter: [
+        'data-render-ack-accepted-count',
+        'data-render-ack-last-accepted-seq',
+        'data-render-ack-last-accepted-observed-at',
+        'data-render-ack-last-accepted-sent-at',
+      ],
+    });
+    window.__faz226ViewerEvidence = {
+      samples,
+      isValid: () => {
+        recordAccepted();
+        return !invalid;
+      },
+      snapshotAndStop: () => {
+        recordAccepted();
+        observer.disconnect();
+        return [...samples];
+      },
+    };
+    return true;
+  };
+
+  const start = () => {
+    if (attach()) return;
+    const rootObserver = new MutationObserver(() => {
+      if (attach()) rootObserver.disconnect();
+    });
+    rootObserver.observe(document.documentElement, { childList: true, subtree: true });
+  };
+  if (document.documentElement) start();
+  else window.addEventListener('DOMContentLoaded', start, { once: true });
 }
 
 async function evidenceStep(code, action) {
@@ -258,6 +454,9 @@ async function main() {
       }
     });
 
+    await evidenceStep('browser-observer-install-failed', async () =>
+      page.addInitScript(installViewerEvidenceObserver),
+    );
     const startedAt = new Date();
     await evidenceStep('browser-route-navigation-failed', async () =>
       page.goto(viewerUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }),
@@ -338,6 +537,13 @@ async function main() {
       );
       return;
     }
+    await evidenceStep('browser-observer-install-failed', async () =>
+      page.waitForFunction(
+        () => typeof window.__faz226ViewerEvidence?.snapshotAndStop === 'function',
+        undefined,
+        { timeout: 5_000 },
+      ),
+    );
     await evidenceStep('browser-metadata-not-trusted', async () =>
       page.waitForFunction(
         () => document.querySelector('[data-testid="remote-view-page"]')?.getAttribute('data-metadata-trusted') === 'true',
@@ -369,33 +575,6 @@ async function main() {
     if (interactive !== 0 || buttons !== 1 || stopButtons !== 1) {
       throw evidenceFailure('browser-unexpected-input-control');
     }
-
-    await evidenceStep('browser-observer-install-failed', async () => page.evaluate(() => {
-      const target = document.querySelector('[data-testid="remote-view-page"]');
-      if (!target) throw new Error('remote view evidence root missing');
-      const samples = [];
-      let lastSeq = null;
-      const record = () => {
-        const seqRaw = target.getAttribute('data-frame-seq');
-        const observedRaw = target.getAttribute('data-frame-observed-at');
-        const sentRaw = target.getAttribute('data-frame-sent-at');
-        if (seqRaw === null || observedRaw === null || sentRaw === null || seqRaw === lastSeq) return;
-        const seq = Number(seqRaw);
-        const observedAt = Number(observedRaw);
-        const sentAt = Number(sentRaw);
-        if (Number.isSafeInteger(seq) && Number.isFinite(observedAt) && Number.isFinite(sentAt)) {
-          samples.push({ seq, observedAt, sentAt, sampledAt: Date.now() });
-          lastSeq = seqRaw;
-        }
-      };
-      record();
-      const observer = new MutationObserver(record);
-      observer.observe(target, {
-        attributes: true,
-        attributeFilter: ['data-frame-seq', 'data-frame-observed-at', 'data-frame-sent-at'],
-      });
-      window.__faz226ViewerEvidence = { samples, stop: () => observer.disconnect() };
-    }));
 
     const screenshot = await evidenceStep('browser-screenshot-failed', async () =>
       page.screenshot({ type: 'png', fullPage: false }),
@@ -476,23 +655,148 @@ async function main() {
       await page.waitForTimeout(1_000);
     }
 
-    const telemetry = await evidenceStep('browser-telemetry-read-failed', async () => page.evaluate(() => {
-      const target = document.querySelector('[data-testid="remote-view-page"]');
-      const evidence = window.__faz226ViewerEvidence;
-      evidence?.stop();
-      return {
-        samples: evidence?.samples ?? [],
-        attempted: Number(target?.getAttribute('data-render-ack-attempted-count') ?? '-1'),
-        accepted: Number(target?.getAttribute('data-render-ack-accepted-count') ?? '-1'),
-      };
-    }));
+    const cutoffNonce = randomUUID();
+    const cutoffAtEpochMillis = await evidenceStep(
+      'browser-ack-drain-cutoff-failed',
+      async () =>
+        page.evaluate((nonce) => {
+          const target = document.querySelector('[data-testid="remote-view-page"]');
+          if (
+            !target ||
+            target.getAttribute('data-view-status') !== 'live' ||
+            target.getAttribute('data-view-closure-kind') !== 'none' ||
+            target.getAttribute('data-render-ack-draining') !== 'false' ||
+            target.hasAttribute('data-render-ack-drain-nonce')
+          ) {
+            throw new Error('viewer is not eligible for a fresh evidence cutoff');
+          }
+          window.dispatchEvent(
+            new CustomEvent('faz226:view-only-evidence-drain', { detail: { nonce } }),
+          );
+          return Date.now();
+        }, cutoffNonce),
+    );
+    const pilotEndedAt = new Date(cutoffAtEpochMillis);
+    await evidenceStep('browser-ack-drain-cutoff-failed', async () =>
+      page.waitForFunction(
+        (nonce) => {
+          const target = document.querySelector('[data-testid="remote-view-page"]');
+          return (
+            target?.getAttribute('data-render-ack-draining') === 'true' &&
+            target.getAttribute('data-render-ack-drain-nonce') === nonce
+          );
+        },
+        cutoffNonce,
+        { timeout: 5_000 },
+      ),
+    );
+
+    const drainResult = await drainAckSnapshots({
+      readSnapshot: async (remainingForRead) => {
+        let readTimeout;
+        const readOutcome = await Promise.race([
+          page.evaluate(() => {
+            const target = document.querySelector('[data-testid="remote-view-page"]');
+            const evidence = window.__faz226ViewerEvidence;
+            if (!target || !evidence?.snapshotAndStop || !evidence?.isValid?.()) {
+              throw new Error('browser telemetry missing or invalid');
+            }
+            const attempted = Number(
+              target.getAttribute('data-render-ack-attempted-count') ?? '-1',
+            );
+            const accepted = Number(
+              target.getAttribute('data-render-ack-accepted-count') ?? '-1',
+            );
+            const rejected = Number(
+              target.getAttribute('data-render-ack-rejected-count') ?? '-1',
+            );
+            const pending = Number(
+              target.getAttribute('data-render-ack-pending-count') ?? '-1',
+            );
+            const lastAcceptedSeqRaw = target.getAttribute(
+              'data-render-ack-last-accepted-seq',
+            );
+            const lastAcceptedSeq =
+              lastAcceptedSeqRaw === null ? null : Number(lastAcceptedSeqRaw);
+            const viewStatus = target.getAttribute('data-view-status');
+            const closureKind = target.getAttribute('data-view-closure-kind');
+            const draining = target.getAttribute('data-render-ack-draining') === 'true';
+            const drainNonce = target.getAttribute('data-render-ack-drain-nonce');
+            const settled =
+              draining && pending === 0 && rejected === 0 && attempted === accepted;
+            return {
+              attempted,
+              accepted,
+              rejected,
+              pending,
+              lastAcceptedSeq,
+              viewStatus,
+              closureKind,
+              draining,
+              drainNonce,
+              acceptedSampleCount: evidence.samples.length,
+              samples: settled ? evidence.snapshotAndStop() : [],
+            };
+          }).then(
+            (snapshot) => ({ kind: 'snapshot', snapshot }),
+            () => ({ kind: 'read-failed' }),
+          ),
+          new Promise((resolve) => {
+            readTimeout = setTimeout(
+              () => resolve({ kind: 'timeout' }),
+              remainingForRead,
+            );
+          }),
+        ]);
+        clearTimeout(readTimeout);
+        if (readOutcome.kind === 'timeout') return null;
+        if (readOutcome.kind !== 'snapshot') {
+          throw evidenceFailure('browser-telemetry-read-failed');
+        }
+        return readOutcome.snapshot;
+      },
+      sleep: (milliseconds) => page.waitForTimeout(milliseconds),
+      expectedNonce: cutoffNonce,
+    });
+    const drainDiagnostic = ackDiagnostic(
+      drainResult.snapshot,
+      drainResult.snapshot?.acceptedSampleCount ?? 0,
+    );
+    if (drainResult.state === 'timeout') {
+      throw evidenceFailure('browser-ack-drain-timeout', drainDiagnostic);
+    }
+    if (drainResult.state === 'telemetry-invalid') {
+      throw evidenceFailure('browser-telemetry-read-failed', drainDiagnostic);
+    }
+    if (drainResult.state === 'left-live') {
+      throw evidenceFailure('browser-left-live-state', drainDiagnostic);
+    }
+    if (drainResult.state === 'cutoff-invalid') {
+      throw evidenceFailure('browser-ack-drain-cutoff-failed', drainDiagnostic);
+    }
+    if (drainResult.state === 'rejected') {
+      throw evidenceFailure('browser-ack-rejected', drainDiagnostic);
+    }
+    if (drainResult.state === 'diverged') {
+      throw evidenceFailure('browser-ack-count-diverged', drainDiagnostic);
+    }
+    if (drainResult.state !== 'settled' || !drainResult.snapshot) {
+      throw evidenceFailure('browser-unclassified-failure', drainDiagnostic);
+    }
+    const telemetry = drainResult.snapshot;
     const unique = new Map(telemetry.samples.map((sample) => [sample.seq, sample]));
     const samples = [...unique.values()].sort((left, right) => left.seq - right.seq);
     if (samples.length < 100 || telemetry.attempted < 100 || telemetry.accepted < 100) {
-      throw evidenceFailure('browser-ack-minimum-not-met');
+      throw evidenceFailure(
+        'browser-ack-minimum-not-met',
+        ackDiagnostic(telemetry, samples.length),
+      );
     }
-    if (telemetry.attempted !== telemetry.accepted || telemetry.accepted !== samples.length) {
-      throw evidenceFailure('browser-ack-count-diverged');
+    if (telemetry.rejected !== 0 || telemetry.accepted !== samples.length) {
+      throw evidenceFailure(
+        'browser-ack-count-diverged',
+        ackDiagnostic(telemetry, samples.length),
+      );
     }
     const replayStatus = await evidenceStep('browser-replay-probe-failed', async () => page.evaluate(
       async ({ url, replayViewerId, replaySeq }) => {
@@ -517,7 +821,6 @@ async function main() {
     }
     const ages = samples.map((sample) => Math.max(0, sample.sampledAt - sample.observedAt));
 
-    const endedAt = new Date();
     const child = {
       schemaVersion: 'faz22.6.viewOnlyViewerProductChildEvidence.v2',
       evidenceType: 'browser',
@@ -527,11 +830,15 @@ async function main() {
       producer: {
         kind: 'browser-harness',
         tool: 'scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs',
-        toolVersion: 'v2',
+        toolVersion: 'v3-ack-drain',
       },
       payload: {
         pilotStartedAt: utcSeconds(startedAt),
-        pilotEndedAt: utcSeconds(endedAt),
+        pilotEndedAt: utcSeconds(pilotEndedAt),
+        ackDrainCompleted: true,
+        ackDrainCutoffAt: utcSeconds(pilotEndedAt),
+        ackDrainNonceSha256: sha256(cutoffNonce),
+        ackDrainClosureKind: telemetry.closureKind,
         imageElementRendered: true,
         pixelCheckPassed: true,
         inputChannelControlCount: interactive,
@@ -541,6 +848,8 @@ async function main() {
         maskedFrameSha256: frameChecks.maskedFrameSha256,
         renderAckAttemptedCount: telemetry.attempted,
         renderAckAcceptedCount: telemetry.accepted,
+        renderAckRejectedCount: telemetry.rejected,
+        renderAckPendingCount: telemetry.pending,
         consoleErrorCount,
         screenshotSha256: sha256(screenshot),
         firstFrameAgeMillis: Math.max(1, ages[0]),
@@ -566,14 +875,17 @@ async function main() {
   process.stdout.write(`browser_evidence=pass output=${path.basename(output)}\n`);
 }
 
-async function writeFailureDiagnostic(code) {
+async function writeFailureDiagnostic(code, error) {
   const output = process.env.BROWSER_DIAGNOSTIC_OUTPUT?.trim();
   if (!output) return;
   const sourceRevision = process.env.SOURCE_REVISION?.trim() ?? '';
+  const ackTelemetry =
+    error instanceof BrowserEvidenceError && error.diagnostic !== null ? error.diagnostic : null;
   const diagnostic = {
-    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v1',
+    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v2',
     sourceRevision: GIT_SHA.test(sourceRevision) ? sourceRevision : null,
     failureCode: code,
+    ackTelemetry,
   };
   await writeFile(output, `${JSON.stringify(diagnostic, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
 }
@@ -582,7 +894,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   main().catch(async (error) => {
     let code = classifyBrowserFailure(error);
     try {
-      await writeFailureDiagnostic(code);
+      await writeFailureDiagnostic(code, error);
     } catch {
       code = 'browser-diagnostic-write-failed';
     }

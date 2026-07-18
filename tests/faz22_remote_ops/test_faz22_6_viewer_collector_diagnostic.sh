@@ -26,7 +26,7 @@ bash "$SCRIPT" "$TMP/summary.json" "$TMP/operation.json" \
   70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/out"
 jq -e '
   .status == "no-go"
-  and .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v3"
+  and .schemaVersion == "faz22.6.viewOnlyViewerCollectorDiagnostic.v4"
   and .failureReasonCode == "open-session-device-not-connected-timeout"
   and .browserFailureCode == null
   and .openSessionHttp == "404"
@@ -110,18 +110,64 @@ cat > "$TMP/browser-summary.json" <<'JSON'
 JSON
 cat > "$TMP/browser-diagnostic.json" <<'JSON'
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v1",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v2",
   "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
-  "failureCode": "browser-metadata-not-trusted"
+  "failureCode": "browser-ack-count-diverged",
+  "ackTelemetry": {
+    "attempted": 705,
+    "accepted": 704,
+    "rejected": 0,
+    "pending": 0,
+    "acceptedSamples": 704,
+    "lastAcceptedSeq": 731
+  }
 }
 JSON
 bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
   70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser" "$TMP/browser-diagnostic.json"
 jq -e '
   .failureReasonCode == "browser-product-evidence-failed"
-  and .browserFailureCode == "browser-metadata-not-trusted"
+  and .browserFailureCode == "browser-ack-count-diverged"
+  and .browserAckTelemetry == {
+    attempted:705,
+    accepted:704,
+    rejected:0,
+    pending:0,
+    acceptedSamples:704,
+    lastAcceptedSeq:731
+  }
   and .consentWait == "granted"
 ' "$TMP/browser/collector-diagnostic.json" >/dev/null
+
+cat > "$TMP/browser-diagnostic-all-rejected.json" <<'JSON'
+{
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v2",
+  "sourceRevision": "70d8286163651805cd5ebd537d3836d02fb1692d",
+  "failureCode": "browser-ack-rejected",
+  "ackTelemetry": {
+    "attempted": 1,
+    "accepted": 0,
+    "rejected": 1,
+    "pending": 0,
+    "acceptedSamples": 0,
+    "lastAcceptedSeq": null
+  }
+}
+JSON
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-all-rejected" \
+  "$TMP/browser-diagnostic-all-rejected.json"
+jq -e '
+  .browserFailureCode == "browser-ack-rejected"
+  and .browserAckTelemetry == {
+    attempted:1,
+    accepted:0,
+    rejected:1,
+    pending:0,
+    acceptedSamples:0,
+    lastAcceptedSeq:null
+  }
+' "$TMP/browser-all-rejected/collector-diagnostic.json" >/dev/null
 
 jq '.failureCode = "sessionId=must-not-pass"' "$TMP/browser-diagnostic.json" \
   > "$TMP/browser-diagnostic-unknown.json"
@@ -163,9 +209,10 @@ if VIEWER_URL='https://testai.acik.com/endpoint-admin/remote-access/sessions/tes
   exit 1
 fi
 jq -e '
-  .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v1"
+  .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v2"
   and .sourceRevision == "70d8286163651805cd5ebd537d3836d02fb1692d"
   and .failureCode == "browser-binding-invalid"
+  and .ackTelemetry == null
 ' "$TMP/browser-script-diagnostic.json" >/dev/null
 grep -Fxq 'browser_evidence=fail code=browser-binding-invalid' "$TMP/browser-script.err"
 
@@ -176,7 +223,15 @@ import assert from 'node:assert/strict';
 
 const browserScript = process.argv[2];
 const allowlistPath = process.argv[3];
-const { BROWSER_FAILURE_CODES, classifyPreflightApiStatus } = await import(pathToFileURL(browserScript));
+const {
+  BROWSER_FAILURE_CODES,
+  ackDiagnostic,
+  classifyAckDrainSnapshot,
+  classifyViewerDrainSnapshot,
+  classifyPreflightApiStatus,
+  drainAckSnapshots,
+  installViewerEvidenceObserver,
+} = await import(pathToFileURL(browserScript));
 const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'));
 assert.deepEqual([...BROWSER_FAILURE_CODES].sort(), [...allowlist.failureCodes].sort());
 assert.equal(classifyPreflightApiStatus(null), 'browser-preflight-api-response-missing');
@@ -186,6 +241,159 @@ assert.equal(classifyPreflightApiStatus(403), 'browser-preflight-api-status-forb
 assert.equal(classifyPreflightApiStatus(404), 'browser-preflight-api-status-invalid');
 assert.equal(classifyPreflightApiStatus(409), 'browser-preflight-api-status-conflict');
 assert.equal(classifyPreflightApiStatus(502), 'browser-preflight-api-status-server-error');
+assert.equal(classifyAckDrainSnapshot({ attempted: 100, accepted: 100, rejected: 0, pending: 0, lastAcceptedSeq: 120 }), 'settled');
+assert.equal(classifyAckDrainSnapshot({ attempted: 101, accepted: 100, rejected: 0, pending: 1, lastAcceptedSeq: 120 }), 'pending');
+assert.equal(classifyAckDrainSnapshot({ attempted: 101, accepted: 100, rejected: 0, pending: 0, lastAcceptedSeq: 120 }), 'diverged');
+assert.equal(classifyAckDrainSnapshot({ attempted: 101, accepted: 100, rejected: 1, pending: 0, lastAcceptedSeq: 120 }), 'rejected');
+assert.equal(classifyAckDrainSnapshot({ attempted: 1, accepted: 0, rejected: 1, pending: 0, lastAcceptedSeq: null }), 'rejected');
+assert.equal(classifyAckDrainSnapshot({ attempted: 0, accepted: 0, rejected: 0, pending: 0, lastAcceptedSeq: null }), 'settled');
+assert.equal(classifyAckDrainSnapshot({ attempted: 1, accepted: 0, rejected: 0, pending: 0, lastAcceptedSeq: 0 }), 'invalid');
+assert.equal(classifyAckDrainSnapshot({ attempted: 1, accepted: 1, rejected: 0, pending: 0, lastAcceptedSeq: null }), 'invalid');
+assert.equal(classifyAckDrainSnapshot({ attempted: 101, accepted: 100, rejected: 0, pending: 1001, lastAcceptedSeq: 120 }), 'invalid');
+
+const settled = {
+  attempted: 100,
+  accepted: 100,
+  rejected: 0,
+  pending: 0,
+  lastAcceptedSeq: 120,
+  viewStatus: 'live',
+  closureKind: 'none',
+  draining: true,
+  drainNonce: 'test-cutoff-nonce-0001',
+};
+assert.equal(classifyViewerDrainSnapshot(settled), 'settled');
+assert.equal(classifyViewerDrainSnapshot({ ...settled, viewStatus: 'closed', closureKind: 'stream-ended-after-drain' }), 'settled');
+assert.equal(classifyViewerDrainSnapshot({ ...settled, viewStatus: 'closed', closureKind: 'stream-ended-before-drain' }), 'left-live');
+assert.equal(classifyViewerDrainSnapshot({ ...settled, viewStatus: 'closed', closureKind: 'local-stop' }), 'left-live');
+assert.equal(classifyViewerDrainSnapshot({ ...settled, draining: false }), 'left-live');
+assert.equal(classifyViewerDrainSnapshot(settled, 'different-cutoff-nonce'), 'cutoff-invalid');
+assert.equal(classifyViewerDrainSnapshot({ ...settled, pending: 1, attempted: 101 }), 'pending');
+assert.equal(classifyViewerDrainSnapshot({ ...settled, rejected: 1, attempted: 101 }), 'rejected');
+assert.equal(classifyViewerDrainSnapshot({ ...settled, attempted: 101 }), 'diverged');
+
+let clock = 0;
+const pendingSnapshot = { ...settled, attempted: 101, pending: 1 };
+const snapshots = [pendingSnapshot, settled];
+const drained = await drainAckSnapshots({
+  readSnapshot: async () => snapshots.shift(),
+  now: () => clock,
+  sleep: async (milliseconds) => { clock += milliseconds; },
+  timeoutMillis: 500,
+  pollMillis: 100,
+  expectedNonce: 'test-cutoff-nonce-0001',
+});
+assert.equal(drained.state, 'settled');
+assert.equal(clock, 100);
+
+clock = 0;
+const timedOut = await drainAckSnapshots({
+  readSnapshot: async () => pendingSnapshot,
+  now: () => clock,
+  sleep: async (milliseconds) => { clock += milliseconds; },
+  timeoutMillis: 250,
+  pollMillis: 100,
+});
+assert.equal(timedOut.state, 'timeout');
+assert.equal(clock, 250);
+assert.deepEqual(timedOut.snapshot, pendingSnapshot);
+
+const localStop = await drainAckSnapshots({
+  readSnapshot: async () => ({ ...settled, viewStatus: 'closed', closureKind: 'local-stop' }),
+  now: () => 0,
+  sleep: async () => {},
+  timeoutMillis: 100,
+});
+assert.equal(localStop.state, 'left-live');
+
+assert.deepEqual(
+  ackDiagnostic(
+    { attempted: 1, accepted: 0, rejected: 1, pending: 0, lastAcceptedSeq: null },
+    0,
+  ),
+  { attempted: 1, accepted: 0, rejected: 1, pending: 0, acceptedSamples: 0, lastAcceptedSeq: null },
+);
+assert.equal(
+  ackDiagnostic(
+    { attempted: 0, accepted: 1, rejected: 0, pending: 0, lastAcceptedSeq: 1 },
+    1,
+  ),
+  null,
+);
+assert.equal(
+  ackDiagnostic(
+    { attempted: 1, accepted: 1, rejected: 0, pending: 0, lastAcceptedSeq: 1 },
+    2,
+  ),
+  null,
+);
+
+function fakeTarget() {
+  const attrs = new Map([['data-render-ack-accepted-count', '0']]);
+  return {
+    isConnected: true,
+    getAttribute: (name) => attrs.has(name) ? attrs.get(name) : null,
+    setAttribute: (name, value) => attrs.set(name, String(value)),
+  };
+}
+
+function setupFakeObserver() {
+  const callbacks = [];
+  let currentTarget = fakeTarget();
+  globalThis.window = {};
+  globalThis.document = {
+    documentElement: {},
+    querySelector: () => currentTarget,
+  };
+  globalThis.MutationObserver = class {
+    constructor(callback) { this.callback = callback; callbacks.push(callback); }
+    observe() {}
+    disconnect() {}
+  };
+  installViewerEvidenceObserver();
+  return {
+    callbacks,
+    target: currentTarget,
+    replaceTarget: () => {
+      currentTarget.isConnected = false;
+      currentTarget = fakeTarget();
+      return currentTarget;
+    },
+    notify: () => callbacks.forEach((callback) => callback()),
+  };
+}
+
+let fake = setupFakeObserver();
+fake.target.setAttribute('data-render-ack-last-accepted-seq', '7');
+fake.target.setAttribute('data-render-ack-last-accepted-observed-at', '100');
+fake.target.setAttribute('data-render-ack-last-accepted-sent-at', '101');
+fake.target.setAttribute('data-render-ack-accepted-count', '1');
+fake.notify();
+assert.equal(window.__faz226ViewerEvidence.isValid(), true);
+assert.deepEqual(
+  window.__faz226ViewerEvidence.samples.map(({ seq, observedAt, sentAt }) => ({ seq, observedAt, sentAt })),
+  [{ seq: 7, observedAt: 100, sentAt: 101 }],
+);
+fake.replaceTarget();
+assert.equal(window.__faz226ViewerEvidence.isValid(), false);
+
+fake = setupFakeObserver();
+fake.target.setAttribute('data-render-ack-last-accepted-seq', '8');
+fake.target.setAttribute('data-render-ack-last-accepted-observed-at', '110');
+fake.target.setAttribute('data-render-ack-last-accepted-sent-at', '111');
+fake.target.setAttribute('data-render-ack-accepted-count', '1');
+fake.notify();
+fake.target.setAttribute('data-render-ack-accepted-count', '0');
+fake.notify();
+assert.equal(window.__faz226ViewerEvidence.isValid(), false);
+
+fake = setupFakeObserver();
+fake.target.setAttribute('data-render-ack-last-accepted-seq', '9');
+fake.target.setAttribute('data-render-ack-last-accepted-observed-at', '120');
+fake.target.setAttribute('data-render-ack-last-accepted-sent-at', '121');
+fake.target.setAttribute('data-render-ack-accepted-count', '2');
+fake.notify();
+assert.equal(window.__faz226ViewerEvidence.isValid(), false);
 NODE
 
 if grep -Fq "localStorage.setItem('token'" "$BROWSER_SCRIPT"; then

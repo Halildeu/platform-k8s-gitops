@@ -56,7 +56,7 @@ def child(evidence_type, kind, payload, observed_at="2026-07-14T00:05:00Z"):
         "producer": {
             "kind": kind,
             "tool": f"scripts/evidence/{evidence_type}",
-            "toolVersion": "v2",
+            "toolVersion": "v3-ack-drain" if evidence_type == "browser" else "v2",
         },
         "payload": payload,
     }
@@ -315,6 +315,10 @@ def child_documents():
             {
                 "pilotStartedAt": "2026-07-14T00:01:00Z",
                 "pilotEndedAt": "2026-07-14T00:06:00Z",
+                "ackDrainCompleted": True,
+                "ackDrainCutoffAt": "2026-07-14T00:06:00Z",
+                "ackDrainNonceSha256": sha("a"),
+                "ackDrainClosureKind": "none",
                 "imageElementRendered": True,
                 "pixelCheckPassed": True,
                 "inputChannelControlCount": 0,
@@ -324,12 +328,15 @@ def child_documents():
                 "maskedFrameSha256": sha("8"),
                 "renderAckAttemptedCount": 100,
                 "renderAckAcceptedCount": 100,
+                "renderAckRejectedCount": 0,
+                "renderAckPendingCount": 0,
                 "consoleErrorCount": 0,
                 "screenshotSha256": sha("5"),
                 "firstFrameAgeMillis": 900,
                 "steadyFrameAgeMillis": [200 + (index % 10) * 50 for index in range(100)],
                 "consentEvidenceSha256": sha("0"),
                 "meta": {
+                    "authentication": "keycloak-authorization-code-pkce",
                     "recording": False,
                     "attended": True,
                     "capability": "VIEW_ONLY",
@@ -1041,6 +1048,12 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         archive = build_archive(mutate_root=lambda root: root.update({"callerClaim": "pass"}))
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "Additional properties"):
             self.verify(FakeClient(archive))
+
+    def test_pre_drain_browser_producer_is_rejected_even_with_fresh_revision(self):
+        children = child_documents()
+        children["browser"]["producer"]["toolVersion"] = "v2"
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "v3-ack-drain"):
+            self.verify(FakeClient(build_archive(children=children)))
 
     def test_child_digest_tamper_fails_closed(self):
         archive = build_archive()

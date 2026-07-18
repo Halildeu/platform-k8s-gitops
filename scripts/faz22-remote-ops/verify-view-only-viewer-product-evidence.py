@@ -1417,6 +1417,7 @@ def validate_semantics(
     browser = children["browser"]["payload"]
     require_equal(browser["pilotStartedAt"], root["pilot"]["startedAt"], "browser pilot start")
     require_equal(browser["pilotEndedAt"], root["pilot"]["endedAt"], "browser pilot end")
+    require_equal(browser["ackDrainCutoffAt"], browser["pilotEndedAt"], "browser ACK drain cutoff")
     broker = children["broker"]["payload"]
     audit = children["audit"]["payload"]
     states = broker["states"]
@@ -1437,6 +1438,8 @@ def validate_semantics(
     require_equal(broker["renderAckAcceptedMetricDelta"], rendered, "broker accepted render-ACK metric")
     require_equal(browser["renderAckAcceptedCount"], rendered, "browser accepted render-ACK count")
     require_equal(browser["renderAckAttemptedCount"], rendered, "browser attempted render-ACK count")
+    require_equal(browser["renderAckRejectedCount"], 0, "browser rejected render-ACK count")
+    require_equal(browser["renderAckPendingCount"], 0, "browser pending render-ACK count")
     require_equal(
         browser["maskedFrameSha256"], broker["dlp"]["maskedFrameSha256"],
         "delivered-path DLP frame hash",

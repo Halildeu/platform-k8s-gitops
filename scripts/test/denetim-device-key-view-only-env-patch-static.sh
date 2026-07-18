@@ -795,7 +795,7 @@ JSON
   printf '\''{"consentPromptSent":true}\n'\'' >"$d/open-session.body"
   session_sha="sha256:$(printf '\''%s'\'' "$sid" | sha256_text)"
   cat >"$d/browser.json" <<JSON
-{"schemaVersion":"faz22.6.viewOnlyViewerProductChildEvidence.v2","evidenceType":"browser","sourceRevision":"abc123","binding":{"sessionSha256":"$session_sha"},"payload":{"renderAckAcceptedCount":100,"renderAckAttemptedCount":100}}
+{"schemaVersion":"faz22.6.viewOnlyViewerProductChildEvidence.v2","evidenceType":"browser","sourceRevision":"abc123","producer":{"kind":"browser-harness","toolVersion":"v3-ack-drain"},"binding":{"sessionSha256":"$session_sha"},"payload":{"pilotEndedAt":"2026-07-18T00:00:00Z","ackDrainCompleted":true,"ackDrainCutoffAt":"2026-07-18T00:00:00Z","ackDrainNonceSha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ackDrainClosureKind":"none","renderAckAcceptedCount":100,"renderAckAttemptedCount":100,"renderAckRejectedCount":0,"renderAckPendingCount":0}}
 JSON
   printf '\''session="%s" granted=true\n'\'' "$sid" >"$d/endpoint-agent-relevant.log"
   printf '\''session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=true\n'\'' "$sid" >"$d/broker-relevant.log"
@@ -1011,7 +1011,7 @@ cat >"$EVIDENCE_DIR/summary.json" <<JSON
 JSON
 printf '{"consentPromptSent":true}\n' >"$EVIDENCE_DIR/open-session.body"
 cat >"$EVIDENCE_DIR/browser.json" <<JSON
-{"schemaVersion":"faz22.6.viewOnlyViewerProductChildEvidence.v2","evidenceType":"browser","sourceRevision":"$SOURCE_REVISION","binding":{"sessionSha256":"$SESSION_SHA256"},"payload":{"renderAckAcceptedCount":100,"renderAckAttemptedCount":100}}
+{"schemaVersion":"faz22.6.viewOnlyViewerProductChildEvidence.v2","evidenceType":"browser","sourceRevision":"$SOURCE_REVISION","producer":{"kind":"browser-harness","toolVersion":"v3-ack-drain"},"binding":{"sessionSha256":"$SESSION_SHA256"},"payload":{"pilotEndedAt":"2026-07-18T00:00:00Z","ackDrainCompleted":true,"ackDrainCutoffAt":"2026-07-18T00:00:00Z","ackDrainNonceSha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ackDrainClosureKind":"none","renderAckAcceptedCount":100,"renderAckAttemptedCount":100,"renderAckRejectedCount":0,"renderAckPendingCount":0}}
 JSON
 printf 'session="%s" granted=true\n' "$SESSION_ID" >"$EVIDENCE_DIR/endpoint-agent-relevant.log"
 printf 'session=%s type=CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=true\n' "$SESSION_ID" >"$EVIDENCE_DIR/broker-relevant.log"

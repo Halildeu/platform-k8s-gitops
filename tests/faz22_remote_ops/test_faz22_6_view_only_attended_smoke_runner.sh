@@ -31,9 +31,10 @@ trap 'rm -rf "$TMP"' EXIT
 diagnostic_source='70d8286163651805cd5ebd537d3836d02fb1692d'
 cat > "$TMP/strict-browser-diagnostic.json" <<JSON
 {
-  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v1",
+  "schemaVersion": "faz22.6.viewOnlyViewerBrowserDiagnostic.v2",
   "sourceRevision": "$diagnostic_source",
-  "failureCode": "browser-binding-invalid"
+  "failureCode": "browser-binding-invalid",
+  "ackTelemetry": null
 }
 JSON
 [[ "$(bash "$BROWSER_DIAGNOSTIC_READER" \
@@ -112,7 +113,7 @@ if grep -Fq -- '--argjson operation "$operation"' <<<"$browser_workflow_text"; t
   echo "browser collector diagnostic must not expose raw operation response in process arguments" >&2
   exit 1
 fi
-grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v3' "$DIAGNOSTIC_SCRIPT"
+grep -q 'faz22.6.viewOnlyViewerCollectorDiagnostic.v4' "$DIAGNOSTIC_SCRIPT"
 grep -q 'failureReasonCode' "$DIAGNOSTIC_SCRIPT"
 grep -q 'browserFailureCode' "$DIAGNOSTIC_SCRIPT"
 grep -q 'openSessionHttp' "$DIAGNOSTIC_SCRIPT"
