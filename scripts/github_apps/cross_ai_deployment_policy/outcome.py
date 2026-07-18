@@ -128,17 +128,23 @@ def verify_stage_outcome(
     conclusion = payload["conclusion"]
     watchdog_value = payload["watchdogExpiresAt"]
     if expected_stage == "apply":
-        if conclusion not in {"success", "failure"} or watchdog_value is None:
+        if conclusion not in {"success", "failure"}:
             reject(
                 "STAGE_OUTCOME_STATE_INVALID",
-                "apply outcome requires success/failure and a watchdog expiry",
+                "apply outcome has an invalid conclusion",
             )
-        watchdog_end = parse_utc(watchdog_value, "stageOutcome.watchdogExpiresAt")
-        if watchdog_end <= created_at or watchdog_end > grant_end:
+        if conclusion == "success" and watchdog_value is None:
             reject(
-                "STAGE_OUTCOME_WATCHDOG_INVALID",
-                "apply watchdog expiry is not bounded by the signed grant",
+                "STAGE_OUTCOME_STATE_INVALID",
+                "successful apply outcome requires a watchdog expiry",
             )
+        if watchdog_value is not None:
+            watchdog_end = parse_utc(watchdog_value, "stageOutcome.watchdogExpiresAt")
+            if watchdog_end <= created_at or watchdog_end > grant_end:
+                reject(
+                    "STAGE_OUTCOME_WATCHDOG_INVALID",
+                    "apply watchdog expiry is not bounded by the signed grant",
+                )
     elif expected_stage == "browser-evidence":
         if conclusion not in {"success", "failure"} or watchdog_value is not None:
             reject(

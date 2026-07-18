@@ -384,14 +384,17 @@ A single `AGREE` string is insufficient. The bundle verifier requires:
 4. every prior `REVISE`, `RED` or `PARTIAL` must-fix finding has a stable
    finding ID, signed response/fix leaf and later acknowledgement by the
    provider family that raised it;
-5. finding, fix and acknowledgement leaves form an ordered hash chain whose
+5. a finding ID identifies exactly one raise event in the whole bundle; it
+   cannot be re-opened after acknowledgement or raised and acknowledged in the
+   same review, and an `AGREE` leaf carries no finding-state transition;
+6. finding, fix and acknowledgement leaves form an ordered hash chain whose
    `closureRootSha256` is identical in the consensus object and every counted
    final `AGREE` leaf;
-6. the final exact subject has at least two counted `AGREE` leaves from
+7. the final exact subject has at least two counted `AGREE` leaves from
    distinct provider families;
-7. no unexpired revocation entry matches a leaf, bundle, key, subject or
+8. no unexpired revocation entry matches a leaf, bundle, key, subject or
    grant;
-8. the final bundle and all counted leaves are fresh at decision time.
+9. the final bundle and all counted leaves are fresh at decision time.
 
 `subjectSha256` is normatively the JCS digest of the full authorization
 subject, ordered workflow stages and material grant constraints. The
@@ -626,6 +629,12 @@ downloaded and hashed. The resulting outcome record binds apply
 `run_id/run_attempt`, artifact name/digest, critical-jobs digest, watchdog
 absolute expiry, head, intent ref and session. It is stored in immutable CAS
 and hash-chained into the registry before stage 2 can reserve a grant.
+
+An apply failure that occurs before the watchdog is created carries a null
+watchdog expiry and may seal only as `Failed`; it can never become a successful
+apply or unlock browser evidence. Once a watchdog receipt exists, even failure
+evidence must carry its bounded expiry. This keeps the pre-mutation failure
+path terminal without inventing a watchdog receipt that never existed.
 
 The stage-2 decision requires this outcome digest plus the original opaque
 endpoint/operator digests. Attended consent is a separate session-local

@@ -131,7 +131,24 @@
         "properties": {
           "conclusion": {
             "enum": ["success", "failure"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "apply"
           },
+          "conclusion": {
+            "const": "success"
+          }
+        },
+        "required": ["stage", "conclusion"]
+      },
+      "then": {
+        "properties": {
           "watchdogExpiresAt": {
             "type": "string",
             "format": "date-time"

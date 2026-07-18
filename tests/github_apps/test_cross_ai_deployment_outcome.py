@@ -184,6 +184,13 @@ class StageOutcomeTest(unittest.TestCase):
         with self.assertRaisesRegex(PolicyError, "STAGE_OUTCOME_WATCHDOG_INVALID"):
             self.verify(changed)
 
+    def test_accepts_failed_apply_before_watchdog_creation(self) -> None:
+        changed = copy.deepcopy(self.payload)
+        changed["conclusion"] = "failure"
+        changed["watchdogExpiresAt"] = None
+        outcome = self.verify(changed)
+        self.assertEqual(outcome.target_state, "Failed")
+
     def test_rejects_conflicting_second_outcome(self) -> None:
         outcome = self.verify()
         self.registry.record_stage_outcome(

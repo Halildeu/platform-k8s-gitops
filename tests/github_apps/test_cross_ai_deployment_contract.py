@@ -238,6 +238,52 @@ class EvidenceContractTest(unittest.TestCase):
         with self.assertRaisesRegex(PolicyError, "CLOSURE_INCOMPLETE|CLOSURE_ROOT_MISMATCH"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
+    def _append_reopened_anthropic_finding(self, *, same_round_ack: bool) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        previous = sha256_digest(bundle["reviewEnvelopes"][2])
+        subject_digest = self.factory.decode_payload(bundle["reviewEnvelopes"][2])[
+            "subjectSha256"
+        ]
+        closure_root = bundle["closure"]["closureRootSha256"]
+        reopened = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000004",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=4,
+            verdict="PARTIAL" if same_round_ack else "REVISE",
+            previous=previous,
+            closure_root=closure_root,
+            finding_ids=["FINDING_A"],
+            resolved=["FINDING_A"] if same_round_ack else None,
+            acknowledged=["FINDING_A"] if same_round_ack else None,
+            issued_at="2026-07-16T20:18:00Z",
+            subject_digest=subject_digest,
+        )
+        final = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000005",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=5,
+            verdict="AGREE",
+            previous=sha256_digest(reopened),
+            closure_root=closure_root,
+            issued_at="2026-07-16T20:19:00Z",
+            subject_digest=subject_digest,
+        )
+        bundle["reviewEnvelopes"].extend([reopened, final])
+        bundle["consensus"]["finalAgreeReviewSha256"][0] = sha256_digest(final)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+
+    def test_rejects_finding_id_reopened_after_acknowledgement(self) -> None:
+        self._append_reopened_anthropic_finding(same_round_ack=False)
+        with self.assertRaisesRegex(PolicyError, "REVIEW_FINDING_REUSED"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_same_round_finding_raise_and_acknowledgement(self) -> None:
+        self._append_reopened_anthropic_finding(same_round_ack=True)
+        with self.assertRaisesRegex(PolicyError, "REVIEW_FINDING_STATE_INVALID"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
     def test_rejects_revoked_bundle(self) -> None:
         self.fixture.revocations_envelope = self.factory.revocations(
             [

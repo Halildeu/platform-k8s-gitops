@@ -584,8 +584,31 @@ class EvidenceVerifier:
 
     def _verify_review_chains(self, reviews: dict[str, VerifiedReview]) -> None:
         chains: dict[str, list[VerifiedReview]] = defaultdict(list)
+        raised_occurrences: dict[str, list[str]] = defaultdict(list)
         for review in reviews.values():
             chains[review.payload["reviewChainId"]].append(review)
+            finding_ids = set(review.payload["findingIds"])
+            resolved_ids = set(review.payload["resolvedFindingIds"])
+            acknowledged_ids = set(review.payload["acknowledgedFindingIds"])
+            if review.payload["verdict"] == "AGREE" and (
+                finding_ids or resolved_ids or acknowledged_ids
+            ):
+                reject(
+                    "REVIEW_AGREE_FINDINGS_INVALID",
+                    "AGREE review must not carry finding state transitions",
+                )
+            if finding_ids & (resolved_ids | acknowledged_ids):
+                reject(
+                    "REVIEW_FINDING_STATE_INVALID",
+                    "a review cannot raise and close the same finding",
+                )
+            for finding_id in finding_ids:
+                raised_occurrences[finding_id].append(review.digest)
+        if any(len(occurrences) != 1 for occurrences in raised_occurrences.values()):
+            reject(
+                "REVIEW_FINDING_REUSED",
+                "finding IDs must identify exactly one raise event in the bundle",
+            )
         for chain_id, chain in chains.items():
             ordered = sorted(chain, key=lambda item: item.payload["round"])
             families = {item.key.provider_family for item in ordered}
