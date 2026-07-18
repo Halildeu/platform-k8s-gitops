@@ -30,6 +30,11 @@ const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 const EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const NO_FINDINGS_RE = /^None\.?$/i;
+const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
+const TURKISH_PHONE_RE = /(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)/;
+const PRIVATE_KEY_RE = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
+const BEARER_RE = /authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}/i;
 const RECEIPT_KEYS = new Set([
   'provider', 'requested', 'actual', 'base_tip', 'base', 'head', 'scope',
   'verdict', 'ref', 'sha256',
@@ -99,7 +104,6 @@ const AUTOMATION_BRANCH_CONTRACT = {
   'auto-test-overlay/': '.github/workflows/deploy-backend-testai.yml',
   'auto-test-frontend/': '.github/workflows/deploy-testai.yml',
   'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
-  'auto-promotion/': 'scripts/promotion/scan-promotion-candidates.sh',
 };
 // Per-prefix actor contract (#827 PR-B, Codex `019e4048` Q2 REVISE). Each
 // automation prefix binds to the specific bot identity authorised to open its
@@ -107,15 +111,16 @@ const AUTOMATION_BRANCH_CONTRACT = {
 // prefix. The `auditAutomation` actor check requires BOTH the PR author and
 // the event sender to be in the matched prefix's set.
 //
-// `auto-test-overlay/` (deploy-backend-testai.yml sync-test-overlay-pr job)
-// and `auto-promotion/` (promotion-bot-scan-candidates.yml) are opened via a
-// GitHub App installation token — NOT GITHUB_TOKEN. A GITHUB_TOKEN-opened PR
+// `auto-test-overlay/` and `auto-test-frontend/` are opened via a GitHub App
+// installation token — NOT GITHUB_TOKEN. A GITHUB_TOKEN-opened PR
 // does not trigger the `pull_request` workflows the required `cross-ai-audit`
 // check needs, so the App is mandatory; its bot login is
 // `platform-gitops-automation[bot]` (the operator names the GitHub App so its slug
 // resolves to `platform-gitops-automation` — see
 // docs/operations/RUNBOOKS/RB-automation-overlay-sync.md).
 //
+// Production `auto-promotion/` is intentionally absent: it changes prod
+// desired state and therefore must pass the normal three-channel path.
 // `auto-verified/` keeps `github-actions[bot]` from #827 PR-A:
 // ledger-mark-verified.sh runs on a staging-sw host (not GitHub Actions), so
 // migrating it to a host-minted App token is a separate follow-up
@@ -123,7 +128,6 @@ const AUTOMATION_BRANCH_CONTRACT = {
 const AUTOMATION_PREFIX_ACTORS = {
   'auto-test-overlay/': new Set(['platform-gitops-automation[bot]']),
   'auto-test-frontend/': new Set(['platform-gitops-automation[bot]']),
-  'auto-promotion/': new Set(['platform-gitops-automation[bot]']),
   'auto-verified/': new Set(['github-actions[bot]']),
 };
 
@@ -143,9 +147,6 @@ const AUTOMATION_DIFF_ALLOWLIST = {
   ],
   'auto-verified/': [
     /^release-candidates\/(?:platform-agent|platform-backend|platform-web)\/[0-9a-f]{40}\.json$/,
-  ],
-  'auto-promotion/': [
-    /^kustomize\/overlays\/prod\/kustomization\.yaml$/,
   ],
 };
 
@@ -420,22 +421,34 @@ function sha256Utf8(value) {
 
 function parseProviderResponseVerdict(response) {
   if (typeof response !== 'string') return null;
-  const matches = [...response.matchAll(/^VERDICT:\s*(AGREE|REVISE)\s*$/gim)];
+  const matches = [...response.matchAll(/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/gim)];
   const lines = response.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (matches.length !== 1 || !lines.length || !/^VERDICT:\s*(AGREE|REVISE)\s*$/i.test(lines.at(-1))) {
+  if (matches.length !== 1 || !lines.length || !/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/i.test(lines.at(-1))) {
     return null;
   }
-  const headingRe = /^\s*(?:#{1,6}\s*)?(?:\*\*)?(P[012])(?:\*\*)?(?:\s*[—:-].*)?\s*$/gim;
+  const headingRe = /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?(?:[ \t]*[—:-].*)?[ \t]*$/gim;
   const headings = [...response.matchAll(headingRe)];
   if (headings.map((match) => match[1].toUpperCase()).join(',') !== 'P0,P1,P2') {
     return null;
   }
-  const sectionsHaveContent = headings.every((heading, index) => {
+  const sectionContents = headings.map((heading, index) => {
     const start = heading.index + heading[0].length;
     const end = index < 2 ? headings[index + 1].index : matches[0].index;
-    return response.slice(start, end).trim().length > 0;
+    return response.slice(start, end).trim();
   });
-  return sectionsHaveContent ? matches[0][1].toUpperCase() : null;
+  if (sectionContents.some((content) => content.length === 0)) return null;
+  const verdict = matches[0][1].toUpperCase();
+  if (verdict === 'AGREE' && (
+    !NO_FINDINGS_RE.test(sectionContents[0]) || !NO_FINDINGS_RE.test(sectionContents[1])
+  )) return null;
+  return verdict;
+}
+
+function containsSensitiveResponse(response) {
+  return EMAIL_RE.test(response)
+    || TURKISH_PHONE_RE.test(response)
+    || PRIVATE_KEY_RE.test(response)
+    || BEARER_RE.test(response);
 }
 
 async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
@@ -509,6 +522,7 @@ function evidenceMatches(
     && responseVerdict === evidence.verdict
     && typeof evidence.response === 'string'
     && evidence.response.length > 0
+    && !containsSensitiveResponse(evidence.response)
     && SHA256_RE.test(evidence.response_sha256 || '')
     && sha256Utf8(evidence.response) === evidence.response_sha256.toLowerCase()
   );
@@ -605,6 +619,7 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
   });
 
   const refs = [];
+  const evidenceCreatedAt = [];
   for (const [field, expected] of Object.entries(CONSULTATION_RECEIPTS)) {
     const receipt = parseReceipt(fields[field]);
     if (receipt?.ref) refs.push(receipt.ref);
@@ -628,6 +643,7 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
       evidenceComment, receipt, expected, expectedOwner,
       baseTip, base, commit, scope,
     );
+    if (pass) evidenceCreatedAt.push(Date.parse(evidenceComment.createdAt));
     findings.push({
       check: field.replaceAll(' ', '_'),
       pass,
@@ -640,6 +656,16 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
     check: 'consultation_evidence_refs_unique',
     pass: refs.length === 3 && new Set(refs).size === 3,
     detail: "Üç provider receipt ref'i birbirinden farklı olmalıdır",
+  });
+  const publicationOrderPass = evidenceCreatedAt.length === 3
+    && evidenceCreatedAt[0] <= evidenceCreatedAt[1]
+    && evidenceCreatedAt[1] <= evidenceCreatedAt[2];
+  findings.push({
+    check: 'consultation_publication_order_claude_minimax_codex',
+    pass: publicationOrderPass,
+    detail: publicationOrderPass
+      ? 'owner evidence publication order is Claude -> MiniMax -> Codex'
+      : 'owner evidence comments must be published in Claude -> MiniMax -> Codex order',
   });
 }
 

@@ -187,6 +187,14 @@ const wrongAssociationEvidence = {
     authorAssociation: 'MEMBER',
   },
 };
+const outOfOrderEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: {
+    ...EVIDENCE[CLAUDE_REF],
+    createdAt: new Date(Date.now() + 60_000).toISOString(),
+    updatedAt: new Date(Date.now() + 60_000).toISOString(),
+  },
+};
 const minimaxReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
 const minimaxReviseBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[MINIMAX_REF].body),
@@ -216,6 +224,34 @@ const emptySectionsPeerBody = peerBody.replace(
   sha256(EVIDENCE[CLAUDE_REF].body),
   sha256(emptySectionsClaudeBody),
 );
+const agreeWithP1FindingResponse = 'P0\nNone\nP1\nHigh finding\nP2\nNone\nVERDICT: AGREE';
+const agreeWithP1FindingBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  response_sha256: sha256(agreeWithP1FindingResponse),
+  response: agreeWithP1FindingResponse,
+});
+const agreeWithP1FindingEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(agreeWithP1FindingBody),
+};
+const agreeWithP1FindingPeerBody = peerBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(agreeWithP1FindingBody),
+);
+const sensitiveResponse = 'P0\nNone\nP1\nNone\nP2\nperson@example.com\nVERDICT: AGREE';
+const sensitiveBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  response_sha256: sha256(sensitiveResponse),
+  response: sensitiveResponse,
+});
+const sensitiveEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(sensitiveBody),
+};
+const sensitivePeerBody = peerBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(sensitiveBody),
+);
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -223,7 +259,6 @@ const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
 const PRIMARY_OVERLAY = 'kustomize/overlays/test/kustomization.yaml';
 const VERIFIED_LEDGER = `release-candidates/platform-backend/${'a'.repeat(40)}.json`;
-const PROD_OVERLAY = 'kustomize/overlays/prod/kustomization.yaml';
 
 // #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE).
 // Dependabot doesn't fill the Cross-AI body fields; the exemption is gated by
@@ -241,8 +276,10 @@ const cases = [
     { branch: 'auto-test-frontend/testai', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF), changedFiles: [PRIMARY_OVERLAY] }, 0],
   ['valid auto-verified PR (bot)',
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER] }, 0],
-  ['valid auto-promotion PR (App-bot)',
-    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN), changedFiles: [PROD_OVERLAY] }, 0],
+  ['auto-promotion draft cannot claim an automation exemption',
+    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN) }, 1],
+  ['auto-promotion passes only with normal three-channel receipts',
+    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: peerBody }, 0],
   ['#827 PR-B: auto-test-overlay + github-actions[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-test-overlay/x', actor: BOT, sender: BOT, body: autoBody(WF) }, 1],
   ['#2295: auto-test-frontend + github-actions[bot] (wrong bot for prefix) -> blocked',
@@ -255,16 +292,10 @@ const cases = [
     { branch: 'auto-test-frontend/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(FRONTEND_WF) }, 1],
   ['#827 PR-B: auto-verified + platform-gitops-automation[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-verified/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(LEDGER) }, 1],
-  ['#842: auto-promotion + github-actions[bot] (wrong bot for prefix) -> blocked',
-    { branch: 'auto-promotion/x', actor: BOT, sender: BOT, body: autoBody(SCAN) }, 1],
   ['auto-verified touching governance outside its ledger family -> blocked',
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER, 'AGENTS.md'] }, 1],
   ['auto-verified without changed-file evidence -> blocked',
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(LEDGER) }, 1],
-  ['auto-promotion touching a workflow outside prod kustomization -> blocked',
-    { branch: 'auto-promotion/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN), changedFiles: [PROD_OVERLAY, '.github/workflows/gate-cross-ai-audit.yml'] }, 1],
-  ['auto-promotion without changed-file evidence -> blocked',
-    { branch: 'auto-promotion/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN) }, 1],
   ['App-bot-opened auto-PR + HUMAN sender (synchronize bypass) -> blocked',
     { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: 'mallory', body: autoBody(WF), changedFiles: [PRIMARY_OVERLAY] }, 1],
   ['human-opened auto-* branch -> blocked',
@@ -324,6 +355,9 @@ const cases = [
   ['normal PR + owner login without OWNER association -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: wrongAssociationEvidence }, 1],
+  ['normal PR + evidence publication order is not Claude then MiniMax then Codex -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, evidence: outOfOrderEvidence }, 1],
   ['normal PR + duplicate provider evidence refs -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace(MINIMAX_REF, CLAUDE_REF) }, 1],
@@ -333,6 +367,12 @@ const cases = [
   ['provider response with empty P0/P1/P2 sections -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: emptySectionsPeerBody, evidence: emptySectionsEvidence }, 1],
+  ['provider response says AGREE while P1 contains a finding -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: agreeWithP1FindingPeerBody, evidence: agreeWithP1FindingEvidence }, 1],
+  ['provider response contains PII -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: sensitivePeerBody, evidence: sensitiveEvidence }, 1],
   ['auto-verified ledger outside the three canonical product families -> blocked',
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(LEDGER),
       changedFiles: [`release-candidates/fake-product/${'a'.repeat(40)}.json`] }, 1],

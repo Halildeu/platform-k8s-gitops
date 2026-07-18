@@ -18,10 +18,23 @@ from typing import NoReturn
 
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
-VERDICT_RE = re.compile(r"^VERDICT:\s*(AGREE|REVISE)\s*$", re.IGNORECASE | re.MULTILINE)
+VERDICT_RE = re.compile(
+    r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.IGNORECASE | re.MULTILINE
+)
 PRIORITY_HEADING_RE = re.compile(
-    r"(?im)^\s*(?:#{1,6}\s*)?(?:\*\*)?(P[012])(?:\*\*)?"
-    r"(?:\s*[—:-].*)?\s*$"
+    r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?"
+    r"(?:[ \t]*[—:-].*)?[ \t]*$"
+)
+NO_FINDINGS_RE = re.compile(r"^None\.?$", re.IGNORECASE)
+EMAIL_RE = re.compile(
+    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
+)
+TURKISH_PHONE_RE = re.compile(
+    r"(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)"
+)
+PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
+BEARER_RE = re.compile(
+    r"authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
 )
 PROVIDER_MODELS = {
     "anthropic": "claude-opus-4-8",
@@ -37,18 +50,30 @@ def fail(code: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def priority_sections_have_content(response: str) -> bool:
+def priority_sections(response: str) -> dict[str, str] | None:
     headings = list(PRIORITY_HEADING_RE.finditer(response))
     if [match.group(1).upper() for match in headings] != ["P0", "P1", "P2"]:
-        return False
+        return None
     verdict_match = next(iter(VERDICT_RE.finditer(response)), None)
     if verdict_match is None:
-        return False
+        return None
+    sections: dict[str, str] = {}
     for index, heading in enumerate(headings):
         end = headings[index + 1].start() if index < 2 else verdict_match.start()
-        if not response[heading.end():end].strip():
-            return False
-    return True
+        content = response[heading.end():end].strip()
+        if not content:
+            return None
+        sections[heading.group(1).upper()] = content
+    return sections
+
+
+def contains_sensitive_response(response: str) -> bool:
+    return bool(
+        EMAIL_RE.search(response)
+        or TURKISH_PHONE_RE.search(response)
+        or PRIVATE_KEY_RE.search(response)
+        or BEARER_RE.search(response)
+    )
 
 
 def main() -> None:
@@ -84,9 +109,17 @@ def main() -> None:
         or not VERDICT_RE.fullmatch(lines[-1])
     ):
         fail("provider_verdict_missing_ambiguous_or_nonterminal")
-    if not priority_sections_have_content(response):
+    sections = priority_sections(response)
+    if sections is None:
         fail("provider_findings_sections_missing_empty_duplicate_or_out_of_order")
     verdict = verdicts[0].upper()
+    if verdict == "AGREE" and (
+        not NO_FINDINGS_RE.fullmatch(sections["P0"])
+        or not NO_FINDINGS_RE.fullmatch(sections["P1"])
+    ):
+        fail("provider_agree_contains_p0_or_p1_findings")
+    if contains_sensitive_response(response):
+        fail("provider_response_contains_sensitive_data")
     response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
     evidence = json.dumps(
         {

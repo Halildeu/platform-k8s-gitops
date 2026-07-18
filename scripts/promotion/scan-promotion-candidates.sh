@@ -237,9 +237,14 @@ User-approval evidence: scan-promotion-candidates.sh DRAFT pattern — operator 
 
 ## Cross-AI
 
-Automation source: scripts/promotion/scan-promotion-candidates.sh
-Cross-AI exempt reason: Machine-generated prod-promotion-candidate DRAFT PR; no AI peer-review claim is made (issue 827 automation-PR governance contract).
-Automation evidence: release-candidates/${repo}/${git_sha}.json (test-verified ${test_verified})
+Implementer AI: Other
+Reviewer AI: Claude
+Codex thread: pending-three-channel-review
+Verdict: tracked_pending
+
+Production desired-state promotion is not automation-exempt. The draft remains
+fail-closed until Claude Opus 4.8, MiniMax M3 and Codex 5.6 SOL receipts for the
+exact final head replace these placeholders.
 
 🤖 Auto-opened by scan-promotion-candidates.sh (Codex Sprint B B1)
 EOM

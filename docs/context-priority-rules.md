@@ -450,7 +450,10 @@ Bu asgari yapıyı taşımayan özet/belirsiz metin `tracked_pending` sayılır.
 
 Claude-first sıra bir **operasyon ve acceptance kuralıdır**: issue/evidence
 kaydında Claude CLI session/modelUsage kaydı MiniMax ve Codex kayıtlarından önce
-yer alır. Mevcut GitHub gate owner-captured comment bütünlüğünü, freshness'i ve
+yer alır. GitHub gate owner-captured evidence yorumlarının yayın zamanını
+`Claude <= MiniMax <= Codex` olarak fail-closed denetler; aynı saniye timestamp'i
+eşit sıra kabul edilir. Bu yalnız yayın sırasını kanıtlar. Gate comment
+bütünlüğünü, freshness'i ve
 exact scope/head eşleşmesini denetler; provider çağrısının gerçekten yapıldığını
 veya çağrı zamanını kriptografik olarak kanıtladığı iddia edilmez. Provider
 imzalı receipt bulunmadığı sürece bu sınır `operator-captured, provider-unsigned`
@@ -499,7 +502,11 @@ taşır. Şema bu on bir alanı exact zorunlu tutar (`additionalProperties=false
 {"schema":"cross-ai-provider-evidence/v1","provider":"anthropic|minimax|openai","requested_model":"<exact>","actual_model":"<provider-reported-exact>","base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
 ```
 
-Bu gövde elle yeniden yazılmaz. Provider'ın tam final response'u stdin'den
+Bu gövde elle yeniden yazılmaz. `AGREE` yanıtında P0 ve P1 bölümlerinin her biri
+yalnız exact `None`/`None.` sentinel'i taşımalıdır; bulgu + `AGREE` çelişkisi
+builder ve gate tarafından reddedilir. Provider response'u evidence olmadan önce
+e-posta, Türk mobil numara, private-key marker ve raw bearer için fail-closed
+taranır; eşleşme redakte edilmeden GitHub'a post edilmez. Provider'ın tam final response'u stdin'den
 `scripts/ai/build_cross_ai_evidence.py` betiğine verilir; builder model ve SHA
 formatını, tekil terminal verdict'i, response digest'ini ve serialize edilmiş
 nihai GitHub comment byte sınırını doğrular. `REVISE`
@@ -543,13 +550,15 @@ Repository'nin ayrı `gitleaks` workflow'u aynı ana dal için required check
 kalmalıdır; `--derive-only` yalnız deterministik scope binding yaptığı için bu
 ayrı secret gate kaldırılırsa Cross-AI gate tek başına secret-scan iddiası taşımaz.
 
-Dar historical-docs ve önceden tanımlı rollbackable bot otomasyon istisnaları
+Dar historical-docs ve önceden tanımlı rollbackable **test/non-prod** bot otomasyon istisnaları
 üç sağlayıcı receipt'i üretmez; bunlar üç kanallı bağımsız konsensüs olarak
 etiketlenemez. İstisna dosya listesi GitHub API özetinden değil trusted CI'daki
 aynı fetched `merge-base...head` git objelerinden `--no-renames` ile çıkarılır;
 böylece authority/governance dosyasını arşive rename etmek eski yolu da listeler
-ve fail-closed olur. Governance, authz, deployment veya faz kapanışı değişikliği
-bu istisnalara giremez.
+ve fail-closed olur. Governance, authz, production deployment/cutover veya faz
+kapanışı değişikliği bu istisnalara giremez. `auto-promotion/` prod desired-state
+değişiklikleri normal üç-kanallı receipt yoluna tabidir; bot tarafından DRAFT
+açılması istisna sağlamaz.
 
 `Codex thread: N/A` body-only istisna değildir. Yalnız workflow'un event-bound
 changed-files listesi tamamen `docs/session-handoff-*.md` veya

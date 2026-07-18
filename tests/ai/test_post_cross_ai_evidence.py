@@ -59,6 +59,23 @@ class EvidenceValidationTests(unittest.TestCase):
         payload["response_sha256"] = "f" * 64
         self.assert_rejected(payload)
 
+    def test_rejects_sensitive_response_before_gh_invocation(self) -> None:
+        for value in (
+            "person@example.com",
+            "+90 532 123 45 67",
+            "-----BEGIN PRIVATE KEY-----",
+            "Authorization: Bearer abcdefghijklmnop",
+        ):
+            payload = evidence()
+            payload["response"] = (
+                f"P0\nNone\nP1\nNone\nP2\n{value}\nVERDICT: AGREE"
+            )
+            payload["response_sha256"] = hashlib.sha256(
+                payload["response"].encode("utf-8")
+            ).hexdigest()
+            with self.subTest(value=value):
+                self.assert_rejected(payload)
+
 
 if __name__ == "__main__":
     unittest.main()

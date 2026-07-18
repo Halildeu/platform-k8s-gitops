@@ -20,6 +20,16 @@ from typing import NoReturn
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+EMAIL_RE = re.compile(
+    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
+)
+TURKISH_PHONE_RE = re.compile(
+    r"(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)"
+)
+PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
+BEARER_RE = re.compile(
+    r"authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
+)
 MAX_EVIDENCE_BYTES = 60_000
 EVIDENCE_KEYS = {
     "schema",
@@ -63,6 +73,13 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         or hashlib.sha256(response.encode("utf-8")).hexdigest() != response_digest
     ):
         fail("invalid_response_digest")
+    if (
+        EMAIL_RE.search(response)
+        or TURKISH_PHONE_RE.search(response)
+        or PRIVATE_KEY_RE.search(response)
+        or BEARER_RE.search(response)
+    ):
+        fail("provider_response_contains_sensitive_data")
     return evidence, hashlib.sha256(encoded).hexdigest()
 
 

@@ -46,7 +46,7 @@ class EvidenceBuilderTests(unittest.TestCase):
         )
 
     def test_builds_strict_agree_evidence(self) -> None:
-        result = self.run_builder("P0\nYok\nP1\nYok\nP2\nYok\nVERDICT: AGREE")
+        result = self.run_builder("P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE")
         self.assertEqual(result.returncode, 0)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["schema"], "cross-ai-provider-evidence/v1")
@@ -57,6 +57,37 @@ class EvidenceBuilderTests(unittest.TestCase):
         result = self.run_builder("P0\nBulgu\nP1\nYok\nP2\nYok\nVERDICT: REVISE")
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["verdict"], "REVISE")
+
+    def test_rejects_agree_when_p0_or_p1_contains_a_finding(self) -> None:
+        for response in (
+            "P0\nCritical finding\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
+            "P0\nNone\nP1\nHigh finding\nP2\nNone\nVERDICT: AGREE",
+        ):
+            with self.subTest(response=response):
+                result = self.run_builder(response)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(
+                    json.loads(result.stdout)["error"],
+                    "provider_agree_contains_p0_or_p1_findings",
+                )
+
+    def test_rejects_sensitive_provider_response_before_comment_build(self) -> None:
+        values = (
+            "person@example.com",
+            "+90 532 123 45 67",
+            "-----BEGIN PRIVATE KEY-----",
+            "Authorization: Bearer abcdefghijklmnop",
+        )
+        for value in values:
+            with self.subTest(value=value):
+                result = self.run_builder(
+                    f"P0\nNone\nP1\nNone\nP2\n{value}\nVERDICT: AGREE"
+                )
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(
+                    json.loads(result.stdout)["error"],
+                    "provider_response_contains_sensitive_data",
+                )
 
     def test_rejects_nonterminal_verdict(self) -> None:
         result = self.run_builder("P0\nP1\nP2\nVERDICT: AGREE\nson söz")
@@ -79,15 +110,16 @@ class EvidenceBuilderTests(unittest.TestCase):
 
     def test_control_and_escape_characters_round_trip_in_json(self) -> None:
         response = (
-            "P0\nNone\u0001\nP1\nNone\u2028\nP2\n"
-            "literal \\\\n remains escaped text\nVERDICT: AGREE"
+            "P0\nNone\nP1\nNone\nP2\n"
+            "None\u0001 and None\u2028 plus literal \\\\n remains escaped text\n"
+            "VERDICT: AGREE"
         )
         result = self.run_builder(response)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["response"], response)
 
     def test_rejects_response_too_large_for_issue_comment_transport(self) -> None:
-        response = "P0\n" + ("x" * 49_000) + "\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+        response = "P0\nNone\nP1\nNone\nP2\n" + ("x" * 49_000) + "\nVERDICT: AGREE"
         result = self.run_builder(response)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(
@@ -95,7 +127,7 @@ class EvidenceBuilderTests(unittest.TestCase):
         )
 
     def test_rejects_json_escape_expansion_beyond_comment_limit(self) -> None:
-        response = "P0\n" + ('"' * 35_000) + "\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+        response = "P0\nNone\nP1\nNone\nP2\n" + ('"' * 35_000) + "\nVERDICT: AGREE"
         result = self.run_builder(response)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(

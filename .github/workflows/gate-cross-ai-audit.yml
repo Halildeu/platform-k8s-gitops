@@ -11,7 +11,7 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # - Three provider receipt + fetched, unedited owner evidence declaration
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation
-# prefix (auto-test-overlay/ · auto-verified/ · auto-promotion/) is audited in
+# prefix (auto-test-overlay/ · auto-test-frontend/ · auto-verified/) is audited in
 # pr-cross-ai-audit.mjs `auditAutomation` mode — a bot-generated PR is exempt
 # from the peer-review claim iff a multi-signal predicate holds (same-repo +
 # actor allowlist + Automation source/exempt-reason/evidence).
@@ -29,14 +29,10 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #   * `concurrency` block cancels superseded runs on the same PR — guards
 #     against rapid `synchronize` push churn (an attacker or noisy author
 #     cannot pile up N parallel audit runs to exhaust CI minutes).
-#   * `ready_for_review` is deliberately omitted — an auto-* automation PR is
-#     opened DRAFT by a bot (auto-promotion/ prod candidates) and an operator
-#     marks it ready. The automation-exemption gate rejects human-triggered
-#     re-runs; re-running on `ready_for_review` would break the legit operator
-#     DRAFT→ready flow, and special-casing it to PASS would launder a prior
-#     malicious human `synchronize`. The audit already ran on `opened` /
-#     `synchronize` (the content-changing events); the draft→ready flip
-#     changes no content.
+#   * `ready_for_review` is deliberately omitted because it changes no content;
+#     the audit already ran on `opened` / `edited` / `synchronize`. Production
+#     `auto-promotion/` candidates are NOT automation-exempt and must acquire
+#     normal three-channel receipts before merge.
 
 on:
   # #842 PR-A2 cleanup (post-PR #868 merge): the transition `pull_request`
@@ -56,7 +52,8 @@ on:
       # currently label-agnostic (pr-cross-ai-audit.mjs reads PR body fields
       # only, not labels). Under label events the GitHub `sender` flips to
       # whoever toggled the label — usually a human operator. For
-      # automation PRs (auto-promotion/, auto-test-overlay/, auto-verified/)
+      # exempt automation PRs (auto-test-overlay/, auto-test-frontend/,
+      # auto-verified/)
       # the audit script's `auditAutomation` mode requires BOTH the PR
       # author AND the event sender to be in the prefix-specific bot
       # allowlist (pr-cross-ai-audit.mjs `auditAutomation` actor check).
