@@ -94,8 +94,9 @@ same policy bytes in place while unexpired grants exist.
 
 Use distinct Ed25519 Transit keys and policies for:
 
-- direct Anthropic review issuer;
-- second provider review issuer;
+- direct Anthropic review issuer (`claude-opus-4-8`);
+- direct MiniMax review issuer (`minimax/MiniMax-M3`);
+- direct OpenAI Codex review issuer (`gpt-5.6-sol`);
 - evidence coordinator;
 - revocation authority;
 - runner inventory/admission-lease management.
@@ -144,7 +145,7 @@ key or policy readback drift.
 The bootstrap creates only:
 
 - the TEST-only `cross-ai/` Transit mount;
-- distinct `anthropic`, `provider-secondary`, `coordinator`, `revocation` and
+- distinct `anthropic`, `minimax`, `openai`, `coordinator`, `revocation` and
   `runner-management` non-derived, non-exportable Ed25519 keys;
 - the git-reviewed update of the already owner-gated
   `vault-config-reconciler` policy.
@@ -176,12 +177,22 @@ root-free:
 REPO_ROOT="$PWD" scripts/ops/vault-policy-reconcile.sh
 ```
 
-The reconciler may mint one-use credentials only for the Anthropic issuer,
-secondary issuer, coordinator and runner-management roles. It cannot mint a revocation
-secret-id. Every role can call only its exact `cross-ai/sign/<key>` endpoint;
-key read/export/backup/restore/datakey/encrypt/decrypt/rewrap/HMAC are denied. A missing
-second provider remains an authorization blocker; do not create a trust root
-that claims a provider route which has not been live-verified.
+The routine reconciler may create/update the named issuer and coordinator role
+definitions, but it cannot mint their SecretIDs. It may emit only the separate
+runner-management credential. Provider issuer and coordinator credentials
+must come from dedicated workload identity or an owner-controlled,
+response-wrapped handoff outside this reconciler trust domain. Their Vault
+tokens have `token_num_uses=1`, a ten-minute explicit maximum TTL, no default
+policy and exactly one `cross-ai/sign/<key>` capability. Revocation SecretID
+minting also remains owner-only. Key read/export/backup/restore/datakey/
+encrypt/decrypt/rewrap/HMAC are denied. Missing direct provider execution or
+exact backend model identity remains an authorization blocker.
+
+This source contract does not make three local Transit signatures equivalent
+to three provider executions. Each dedicated issuer must execute its provider,
+validate the exact reported model and only then consume its one-use sign token.
+Until the direct MiniMax and OpenAI execution adapters and their redacted,
+content-addressed receipts are accepted, enforcement remains `tracked_pending`.
 
 The evaluator's Transit client requires a canonical HTTPS Vault origin. The
 loopback HTTP address above is accepted only by the attended owner bootstrap.

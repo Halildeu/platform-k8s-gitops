@@ -25,6 +25,9 @@ on:
 permissions:
   contents: read
   id-token: write
+concurrency:
+  group: faz22-view-only-protected-lanes
+  cancel-in-progress: false
 jobs:
   apply:
     environment:
@@ -81,6 +84,22 @@ class WorkflowInspectionTest(unittest.TestCase):
         )
         self.assertRegex(result.workflow_sha256, r"^sha256:[a-f0-9]{64}$")
         self.assertRegex(result.dependency_lock_sha256, r"^sha256:[a-f0-9]{64}$")
+        self.assertRegex(
+            result.concurrency_group_sha256,
+            r"^sha256:[a-f0-9]{64}$",
+        )
+
+    def test_rejects_dynamic_or_cancelling_concurrency(self) -> None:
+        dynamic = workflow().replace(
+            b"group: faz22-view-only-protected-lanes",
+            b"group: ${{ github.ref }}",
+        )
+        self.assert_rejected(dynamic, "WORKFLOW_CONCURRENCY_INVALID")
+        cancelling = workflow().replace(
+            b"cancel-in-progress: false",
+            b"cancel-in-progress: true",
+        )
+        self.assert_rejected(cancelling, "WORKFLOW_CONCURRENCY_INVALID")
 
     def test_rejects_dispatch_inputs_and_input_reads(self) -> None:
         self.assert_rejected(

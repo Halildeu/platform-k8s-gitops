@@ -45,6 +45,7 @@ class TrustKey:
     public_key: bytes
     provider_family: str | None
     allowed_channels: tuple[str, ...]
+    allowed_model_ids: tuple[str, ...]
     allowed_model_identity_classes: tuple[str, ...]
     direct_provider_cli: bool | None
     not_before: datetime
@@ -139,6 +140,9 @@ class EvidenceVerifier:
             )
         _validate_schema(trust_root, TRUST_ROOT_SCHEMA, "TRUST_ROOT_SCHEMA_INVALID")
         self.max_skew = timedelta(seconds=trust_root["maxClockSkewSeconds"])
+        self.required_provider_families = frozenset(
+            trust_root["requiredProviderFamilies"]
+        )
         self.minimum_provider_families = trust_root["minimumProviderFamilies"]
         self.minimum_direct_routes = trust_root["minimumDirectProviderRoutes"]
         self.keys = self._parse_trust_keys(trust_root)
@@ -163,12 +167,14 @@ class EvidenceVerifier:
             role = entry["role"]
             family = entry["providerFamily"]
             channels = tuple(entry["allowedChannels"])
+            model_ids = tuple(entry["allowedModelIds"])
             model_identity_classes = tuple(entry["allowedModelIdentityClasses"])
             direct = entry["directProviderCli"]
             if role == "provider-review":
                 if (
                     not family
                     or not channels
+                    or not model_ids
                     or not model_identity_classes
                     or not isinstance(direct, bool)
                 ):
@@ -179,6 +185,7 @@ class EvidenceVerifier:
             elif (
                 family is not None
                 or channels
+                or model_ids
                 or model_identity_classes
                 or direct is not None
             ):
@@ -198,6 +205,7 @@ class EvidenceVerifier:
                 public_key=public_key,
                 provider_family=family,
                 allowed_channels=channels,
+                allowed_model_ids=model_ids,
                 allowed_model_identity_classes=model_identity_classes,
                 direct_provider_cli=direct,
                 not_before=not_before,
@@ -219,9 +227,10 @@ class EvidenceVerifier:
             for key in parsed.values()
             if key.role == "provider-review"
         }
-        if len(families) < self.minimum_provider_families:
+        if families != self.required_provider_families:
             reject(
-                "TRUST_PROVIDER_QUORUM_IMPOSSIBLE", "trust root cannot satisfy quorum"
+                "TRUST_PROVIDER_SET_INVALID",
+                "trust root provider families differ from the required signed set",
             )
         return parsed
 
@@ -533,8 +542,10 @@ class EvidenceVerifier:
             if (
                 leaf["providerFamily"] != key.provider_family
                 or leaf["channel"] not in key.allowed_channels
+                or leaf["modelId"] not in key.allowed_model_ids
                 or leaf["directProviderCli"] is not key.direct_provider_cli
                 or leaf["modelIdentityClass"] not in key.allowed_model_identity_classes
+                or leaf["issuer"] != f"cross-ai-issuer-{key.provider_family}"
             ):
                 reject(
                     "PROVIDER_ATTRIBUTION_MISMATCH",
@@ -711,22 +722,31 @@ class EvidenceVerifier:
                     "CONSENSUS_CLOSURE_MISMATCH", "counted AGREE has old closure root"
                 )
             final_reviews.append(review)
+        if set(chain_tips.values()) != set(final_digests):
+            reject(
+                "CONSENSUS_UNCOUNTED_CHAIN",
+                "every provider review chain tip must be selected by consensus",
+            )
         families = {
             review.key.provider_family
             for review in final_reviews
             if review.key.provider_family is not None
         }
-        direct_routes = sum(
-            1 for review in final_reviews if review.key.direct_provider_cli
-        )
-        if len(families) < self.minimum_provider_families:
+        direct_families = {
+            review.key.provider_family
+            for review in final_reviews
+            if review.key.direct_provider_cli
+            and review.key.provider_family is not None
+        }
+        if families != self.required_provider_families:
             reject(
-                "PROVIDER_FAMILY_QUORUM_MISSING", "provider family quorum is missing"
+                "PROVIDER_FAMILY_SET_MISMATCH",
+                "final provider families differ from the signed required set",
             )
-        if direct_routes < self.minimum_direct_routes:
+        if direct_families != self.required_provider_families:
             reject(
-                "DIRECT_PROVIDER_QUORUM_MISSING",
-                "direct provider route quorum is missing",
+                "DIRECT_PROVIDER_SET_MISMATCH",
+                "every required provider family must use its signed direct route",
             )
         if set(bundle["consensus"]["providerFamilies"]) != families:
             reject(

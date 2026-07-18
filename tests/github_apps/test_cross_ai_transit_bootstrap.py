@@ -138,7 +138,7 @@ class TransitBootstrapTests(unittest.TestCase):
             receipt = MODULE.bootstrap(self.args())
         client = FakeVaultClient.instances[-1]
         self.assertEqual(receipt["scope"], "test-only")
-        self.assertEqual(len(receipt["keys"]), 5)
+        self.assertEqual(len(receipt["keys"]), 6)
         self.assertEqual(
             {item["keyName"] for item in receipt["keys"]}, set(MODULE.KEY_NAMES)
         )
@@ -270,12 +270,17 @@ class TransitBootstrapTests(unittest.TestCase):
             ")", 1
         )[0]
         self.assertNotIn("cross-ai-revocation-test", emission_manifest)
+        self.assertNotIn("cross-ai-issuer-anthropic-test", emission_manifest)
+        self.assertNotIn("cross-ai-issuer-minimax-test", emission_manifest)
+        self.assertNotIn("cross-ai-issuer-openai-test", emission_manifest)
+        self.assertNotIn("cross-ai-coordinator-test", emission_manifest)
         self.assertIn("secret-id emission is not permitted", reconciler)
         self.assertIn("backup|restore|datakey", reconciler)
         self.assertIn("rewrap|hmac", reconciler)
         exact_paths = {
             "cross-ai-issuer-anthropic-test": "cross-ai/sign/anthropic",
-            "cross-ai-issuer-secondary-test": "cross-ai/sign/provider-secondary",
+            "cross-ai-issuer-minimax-test": "cross-ai/sign/minimax",
+            "cross-ai-issuer-openai-test": "cross-ai/sign/openai",
             "cross-ai-coordinator-test": "cross-ai/sign/coordinator",
             "cross-ai-revocation-test": "cross-ai/sign/revocation",
             "cross-ai-runner-management-test": "cross-ai/sign/runner-management",
@@ -291,6 +296,20 @@ class TransitBootstrapTests(unittest.TestCase):
         self.assertNotIn(
             'path "auth/approle/role/cross-ai-revocation-test/secret-id"',
             config_policy,
+        )
+        for role in (
+            "cross-ai-issuer-anthropic-test",
+            "cross-ai-issuer-minimax-test",
+            "cross-ai-issuer-openai-test",
+            "cross-ai-coordinator-test",
+        ):
+            self.assertNotIn(
+                f'path "auth/approle/role/{role}/secret-id"',
+                config_policy,
+            )
+        self.assertNotRegex(
+            reconciler,
+            r"cross-ai-(?:issuer-[a-z]+|coordinator)-test\|[^\n]*token_num_uses=0",
         )
 
 

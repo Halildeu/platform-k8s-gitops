@@ -126,8 +126,7 @@ Responsibilities:
 
 Every review leaf records two independent dimensions:
 
-- `channel`: for example `direct-anthropic-cli`, `cursor-cli`,
-  `mavis-minimax`, or `openai-codex`;
+- `channel`: `direct-anthropic-cli`, `direct-minimax-cli` or `openai-codex`;
 - `providerFamily`: for example `anthropic`, `xai`, `minimax`, or `openai`.
 
 Quorum counts distinct `providerFamily` values, not wrapper/channel names.
@@ -156,19 +155,22 @@ Quorum is counted only from the trust-root key mapping. The same key presented
 with two family labels still counts once and attribution mismatch rejects with
 `PROVIDER_ATTRIBUTION_MISMATCH`.
 
-Default non-prod policy:
+The protected VIEW_ONLY lane uses one exact, fail-closed provider set:
 
 ```yaml
-minimumProviderFamilies: 2
+requiredProviderFamilies: [anthropic, minimax, openai]
+minimumProviderFamilies: 3
 maximumReviewsPerProviderFamilyCounted: 1
-minimumDirectProviderRoutes: 1
+minimumDirectProviderRoutes: 3
 requiredFinalVerdict: AGREE
 openMustFixFindings: 0
 ```
 
-One direct route is the minimum, not proof against shared-host or common prompt
-injection. A higher-risk non-prod class may require two direct routes through a
-reviewed policy entry; wrappers never silently satisfy that stricter setting.
+The trust root also pins the exact model IDs `claude-opus-4-8`,
+`minimax/MiniMax-M3` and `gpt-5.6-sol`. A missing provider, alias, wrapper,
+unselected alternate chain, non-AGREE chain tip or unknown fourth provider is
+a rejection. Provider outage or model retirement becomes `tracked_pending`;
+there is no degraded 2-of-3 fallback.
 
 A signature attests that the allowlisted issuer observed and recorded a
 provider exchange. It is not falsely described as a vendor-signed model
@@ -218,9 +220,10 @@ mixed trust-root envelope is a schema/policy rejection, not a configuration
 fallback.
 
 The initial trust-root manifest is not self-authorizing. The TEST Vault owner
-first verifies the bootstrap receipt's cluster ID, five versioned public keys
+first verifies the bootstrap receipt's cluster ID, six versioned public keys
 and receipt digest out of band. A later trust-root release copies those public
-keys, binds the secondary key to one live provider family/channel, and pins the
+keys, binds the Anthropic, MiniMax and OpenAI keys to their exact live provider
+family/channel/model IDs, and pins the
 manifest digest in a separate reviewed deployment change. No Transit key signs
 or approves the trust-root manifest that first authorizes that same key.
 

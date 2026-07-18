@@ -66,7 +66,11 @@ path "sys/policies/acl/cross-ai-issuer-anthropic-test" {
   capabilities = ["create", "update", "read"]
 }
 
-path "sys/policies/acl/cross-ai-issuer-secondary-test" {
+path "sys/policies/acl/cross-ai-issuer-minimax-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "sys/policies/acl/cross-ai-issuer-openai-test" {
   capabilities = ["create", "update", "read"]
 }
 
@@ -131,20 +135,23 @@ path "auth/approle/role/cross-ai-issuer-anthropic-test/role-id" {
   capabilities = ["read"]
 }
 
-path "auth/approle/role/cross-ai-issuer-anthropic-test/secret-id" {
-  capabilities = ["create", "update"]
-}
+# No issuer/coordinator secret-id capability. A routine config reconciler must
+# not be able to mint all provider leaves plus the coordinator bundle.
 
-path "auth/approle/role/cross-ai-issuer-secondary-test" {
+path "auth/approle/role/cross-ai-issuer-minimax-test" {
   capabilities = ["create", "update", "read"]
 }
 
-path "auth/approle/role/cross-ai-issuer-secondary-test/role-id" {
+path "auth/approle/role/cross-ai-issuer-minimax-test/role-id" {
   capabilities = ["read"]
 }
 
-path "auth/approle/role/cross-ai-issuer-secondary-test/secret-id" {
-  capabilities = ["create", "update"]
+path "auth/approle/role/cross-ai-issuer-openai-test" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "auth/approle/role/cross-ai-issuer-openai-test/role-id" {
+  capabilities = ["read"]
 }
 
 path "auth/approle/role/cross-ai-coordinator-test" {
@@ -153,10 +160,6 @@ path "auth/approle/role/cross-ai-coordinator-test" {
 
 path "auth/approle/role/cross-ai-coordinator-test/role-id" {
   capabilities = ["read"]
-}
-
-path "auth/approle/role/cross-ai-coordinator-test/secret-id" {
-  capabilities = ["create", "update"]
 }
 
 path "auth/approle/role/cross-ai-revocation-test" {
@@ -181,6 +184,8 @@ path "auth/approle/role/cross-ai-runner-management-test/secret-id" {
 
 # Deliberately no cross-ai-revocation-test/secret-id capability. Revocation is
 # an exceptional owner-authorized operation, not a routine automation token.
+# Provider issuer and coordinator SecretIDs are likewise owner/dedicated-
+# workload-identity surfaces; only their role IDs are introspectable here.
 
 # ============================================================================
 # 3. ALLOW — read-only introspection (idempotency + audit correlation)

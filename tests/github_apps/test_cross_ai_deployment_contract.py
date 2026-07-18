@@ -33,9 +33,12 @@ class EvidenceContractTest(unittest.TestCase):
 
     def test_accepts_provider_distinct_closed_bundle(self) -> None:
         result = self.verifier().verify_bundle(self.fixture.bundle_envelope)
-        self.assertEqual(result.provider_families, ("anthropic", "xai"))
+        self.assertEqual(
+            result.provider_families,
+            ("anthropic", "minimax", "openai"),
+        )
         self.assertEqual(result.request_id, "30000000-0000-4000-8000-000000000001")
-        self.assertEqual(len(result.final_review_digests), 2)
+        self.assertEqual(len(result.final_review_digests), 3)
 
     def test_rejects_trust_root_that_differs_from_deployment_pin(self) -> None:
         with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_DIGEST_MISMATCH"):
@@ -66,10 +69,102 @@ class EvidenceContractTest(unittest.TestCase):
         bundle["reviewEnvelopes"][-1] = self.factory.sign(
             "application/vnd.acik.cross-ai-deployment-review.v1+json",
             review,
-            self.factory.XAI_KEY_ID,
+            self.factory.OPENAI_KEY_ID,
         )
         self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
         with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_unpinned_model_even_with_valid_provider_signature(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        review["modelId"] = "gpt-5.6"
+        bundle["reviewEnvelopes"][-1] = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.OPENAI_KEY_ID,
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_provider_issuer_mismatch(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        review["issuer"] = "cross-ai-issuer-anthropic"
+        bundle["reviewEnvelopes"][-1] = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.OPENAI_KEY_ID,
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_ATTRIBUTION_MISMATCH"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_consensus_without_exact_provider_set(self) -> None:
+        self.mutate_bundle(
+            lambda bundle: bundle["consensus"].__setitem__(
+                "providerFamilies", ["anthropic", "minimax", "xai"]
+            )
+        )
+        with self.assertRaisesRegex(PolicyError, "CONSENSUS_PROVIDER_MISMATCH"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_same_provider_wrappers_as_three_provider_trust(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["providerFamily"] = "anthropic"
+        trust_root["keys"][2]["allowedChannels"] = ["direct-anthropic-cli-alt"]
+        with self.assertRaisesRegex(PolicyError, "TRUST_PROVIDER_SET_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_public_key_reuse_across_provider_families(self) -> None:
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"][2]["publicKeyBase64"] = trust_root["keys"][1][
+            "publicKeyBase64"
+        ]
+        with self.assertRaisesRegex(PolicyError, "TRUST_KEY_REUSED"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+    def test_rejects_non_agree_review_selected_as_final(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        review["verdict"] = "REVISE"
+        envelope = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.OPENAI_KEY_ID,
+        )
+        bundle["reviewEnvelopes"][-1] = envelope
+        bundle["consensus"]["finalAgreeReviewSha256"][-1] = sha256_digest(envelope)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "CONSENSUS_VERDICT_INVALID"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_unselected_dissent_chain_from_required_provider(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        selected = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
+        dissent = self.factory._review(
+            review_id="60000000-0000-4000-8000-000000000003",
+            chain_id="40000000-0000-4000-8000-000000000004",
+            key_id=self.factory.OPENAI_KEY_ID,
+            round_number=1,
+            verdict="RED",
+            previous=None,
+            closure_root=bundle["closure"]["closureRootSha256"],
+            issued_at="2026-07-16T20:18:00Z",
+            subject_digest=selected["subjectSha256"],
+        )
+        bundle["reviewEnvelopes"].append(dissent)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(PolicyError, "CONSENSUS_UNCOUNTED_CHAIN"):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
     def test_rejects_model_identity_class_outside_key_policy(self) -> None:

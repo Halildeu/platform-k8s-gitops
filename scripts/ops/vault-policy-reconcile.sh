@@ -43,7 +43,8 @@ POLICIES=(
   "test/eso-runtime-extras.hcl|eso-runtime-test-extras"
   "test/audio-gateway-mtls-seeder.hcl|audio-gateway-mtls-seeder"
   "test/cross-ai-issuer-anthropic.hcl|cross-ai-issuer-anthropic-test"
-  "test/cross-ai-issuer-secondary.hcl|cross-ai-issuer-secondary-test"
+  "test/cross-ai-issuer-minimax.hcl|cross-ai-issuer-minimax-test"
+  "test/cross-ai-issuer-openai.hcl|cross-ai-issuer-openai-test"
   "test/cross-ai-coordinator.hcl|cross-ai-coordinator-test"
   "test/cross-ai-revocation.hcl|cross-ai-revocation-test"
   "test/cross-ai-runner-management.hcl|cross-ai-runner-management-test"
@@ -59,7 +60,8 @@ lint_policy() { # lint_policy <name> <file> ; echo OK / FAIL:<reason>
   local expected_sign_path=""
   case "$name" in
     cross-ai-issuer-anthropic-test) expected_sign_path="cross-ai/sign/anthropic" ;;
-    cross-ai-issuer-secondary-test) expected_sign_path="cross-ai/sign/provider-secondary" ;;
+    cross-ai-issuer-minimax-test) expected_sign_path="cross-ai/sign/minimax" ;;
+    cross-ai-issuer-openai-test) expected_sign_path="cross-ai/sign/openai" ;;
     cross-ai-coordinator-test) expected_sign_path="cross-ai/sign/coordinator" ;;
     cross-ai-revocation-test) expected_sign_path="cross-ai/sign/revocation" ;;
     cross-ai-runner-management-test) expected_sign_path="cross-ai/sign/runner-management" ;;
@@ -91,9 +93,10 @@ APPROLES=(
   "eso-runtime|eso-runtime,eso-runtime-test-extras|token_ttl=1h token_max_ttl=24h secret_id_ttl=0"
   "platform-bootstrap-writer-test|platform-bootstrap-writer|token_ttl=30m token_max_ttl=60m secret_id_ttl=60m secret_id_num_uses=10 bind_secret_id=true"
   "audio-gateway-mtls-seeder-test|audio-gateway-mtls-seeder|token_ttl=15m token_max_ttl=15m token_num_uses=0 secret_id_ttl=30m secret_id_num_uses=1 bind_secret_id=true"
-  "cross-ai-issuer-anthropic-test|cross-ai-issuer-anthropic-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
-  "cross-ai-issuer-secondary-test|cross-ai-issuer-secondary-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
-  "cross-ai-coordinator-test|cross-ai-coordinator-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  "cross-ai-issuer-anthropic-test|cross-ai-issuer-anthropic-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  "cross-ai-issuer-minimax-test|cross-ai-issuer-minimax-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  "cross-ai-issuer-openai-test|cross-ai-issuer-openai-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  "cross-ai-coordinator-test|cross-ai-coordinator-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
   "cross-ai-revocation-test|cross-ai-revocation-test|token_ttl=5m token_max_ttl=5m token_explicit_max_ttl=5m token_num_uses=0 secret_id_ttl=5m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
   "cross-ai-runner-management-test|cross-ai-runner-management-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
 )
@@ -101,9 +104,6 @@ APPROLES=(
 EMITTABLE_APPROLES=(
   "platform-bootstrap-writer-test"
   "audio-gateway-mtls-seeder-test"
-  "cross-ai-issuer-anthropic-test"
-  "cross-ai-issuer-secondary-test"
-  "cross-ai-coordinator-test"
   "cross-ai-runner-management-test"
 )
 

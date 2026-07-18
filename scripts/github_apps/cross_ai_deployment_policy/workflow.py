@@ -80,6 +80,7 @@ _StrictBaseLoader.add_constructor(
 class WorkflowInspection:
     workflow_sha256: str
     dependency_lock_sha256: str
+    concurrency_group_sha256: str
     governed_job: str
     runs_on_labels: tuple[str, ...]
     runner_group: str | None
@@ -157,6 +158,33 @@ def _validate_permissions(workflow: dict[str, Any]) -> None:
             "WORKFLOW_OIDC_PERMISSION_INVALID",
             "machine-gated workflow permissions must be exact least privilege",
         )
+
+
+def _concurrency_group(workflow: dict[str, Any]) -> tuple[str, str]:
+    concurrency = _mapping(workflow.get("concurrency"), "concurrency")
+    if set(concurrency) != {"group", "cancel-in-progress"}:
+        reject(
+            "WORKFLOW_CONCURRENCY_INVALID",
+            "workflow concurrency must contain only group and cancellation policy",
+        )
+    group = concurrency.get("group")
+    cancel = concurrency.get("cancel-in-progress")
+    if (
+        not isinstance(group, str)
+        or not 1 <= len(group) <= 100
+        or "${{" in group
+        or cancel != "false"
+    ):
+        reject(
+            "WORKFLOW_CONCURRENCY_INVALID",
+            "workflow concurrency must be one literal non-cancelling group",
+        )
+    return group, sha256_digest(
+        {
+            "domain": "acik.cross-ai-workflow-concurrency-group.v1",
+            "group": group,
+        }
+    )
 
 
 def _runs_on(value: object) -> tuple[tuple[str, ...], str | None]:
@@ -417,6 +445,7 @@ def inspect_workflow(
         )
     _validate_trigger(workflow)
     _validate_permissions(workflow)
+    _group, concurrency_group_sha256 = _concurrency_group(workflow)
 
     jobs = _mapping(workflow.get("jobs"), "jobs")
     if len(jobs) != 1:
@@ -496,6 +525,7 @@ def inspect_workflow(
     return WorkflowInspection(
         workflow_sha256=f"sha256:{hashlib.sha256(raw).hexdigest()}",
         dependency_lock_sha256=sha256_digest(dependency_projection),
+        concurrency_group_sha256=concurrency_group_sha256,
         governed_job=governed_jobs[0],
         runs_on_labels=governed_labels,
         runner_group=governed_group,
