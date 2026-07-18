@@ -694,6 +694,15 @@ fi
             "EXPECTED_FRONTEND_SHA: eee1310b33376013967482ae842bf15c797fe72c",
             self.fullats_browser_workflow,
         )
+        self.assertIn(
+            "FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29645789815",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            "FRONTEND_BUILD_JOB: https://github.com/Halildeu/platform-web/actions/runs/29645789815/job/88083697225",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn('echo "- frontend build job: ${FRONTEND_BUILD_JOB}"', self.fullats_browser_workflow)
         self.assertIn("body.sha !== expectedFrontendSha", self.fullats_browser)
         self.assertIn("fetchBuildInfo('pre')", self.fullats_browser)
         self.assertIn("fetchBuildInfo('post')", self.fullats_browser)
@@ -724,6 +733,36 @@ fi
         self.assertIn("redacted.replaceAll(value, marker)", self.fullats_browser)
         self.assertNotIn("containsRawCandidateAccessToken", self.fullats_browser)
         self.assertNotIn("containsRawPasswordOrJwt", self.fullats_browser)
+
+    def test_frontend_promotion_receipt_is_cross_file_bound(self):
+        source_sha = "eee1310b33376013967482ae842bf15c797fe72c"
+        tag = "sha-eee1310"
+        digest = "sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
+        run_id = "29645789815"
+        job_id = "88083697225"
+
+        for exact in (
+            f"Build run {run_id} testai job {job_id}.",
+            f"sourceRevision: {source_sha}",
+            f"newTag: {tag}",
+            f"digest: {digest}",
+        ):
+            self.assertIn(exact, self.test_root)
+
+        for exact in (
+            f'FRONTEND_NEW="{digest}"',
+            f'FRONTEND_NEW_SHA="{source_sha}"',
+            f'FRONTEND_NEW_TAG="{tag}"',
+        ):
+            self.assertIn(exact, self.rollback_script)
+
+        for exact in (
+            f"EXPECTED_FRONTEND_DIGEST: {digest}",
+            f"EXPECTED_FRONTEND_SHA: {source_sha}",
+            f"actions/runs/{run_id}",
+            f"actions/runs/{run_id}/job/{job_id}",
+        ):
+            self.assertIn(exact, self.fullats_browser_workflow)
 
     def test_fullats_live_failure_opens_exact_atomic_gitops_rollback(self):
         self.assertIn("timeout-minutes: 90", self.fullats_browser_workflow)
