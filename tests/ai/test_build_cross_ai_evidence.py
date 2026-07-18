@@ -106,6 +106,14 @@ class EvidenceBuilderTests(unittest.TestCase):
         result = self.run_builder("P0\nP1\nP2\nVERDICT: AGREE\nson söz")
         self.assertEqual(result.returncode, 1)
 
+    def test_rejects_non_exact_verdict_case(self) -> None:
+        for verdict in ("agree", "Agree", "revise", "Revise"):
+            with self.subTest(verdict=verdict):
+                result = self.run_builder(
+                    f"P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: {verdict}"
+                )
+                self.assertEqual(result.returncode, 1)
+
     def test_rejects_priority_names_only_in_prose(self) -> None:
         result = self.run_builder(
             "Bu cevapta P0, P1 ve P2 bolumleri yok.\nVERDICT: AGREE"

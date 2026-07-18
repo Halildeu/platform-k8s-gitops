@@ -280,6 +280,20 @@ const nonExactNonePeerBody = peerBody.replace(
   sha256(EVIDENCE[CLAUDE_REF].body),
   sha256(nonExactNoneBody),
 );
+const lowercaseVerdictResponse = 'P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: agree';
+const lowercaseVerdictBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  response_sha256: sha256(lowercaseVerdictResponse),
+  response: lowercaseVerdictResponse,
+});
+const lowercaseVerdictEvidence = {
+  ...EVIDENCE,
+  [CLAUDE_REF]: evidenceComment(lowercaseVerdictBody),
+};
+const lowercaseVerdictPeerBody = peerBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(lowercaseVerdictBody),
+);
 
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const FRONTEND_WF = '.github/workflows/deploy-testai.yml';
@@ -407,6 +421,15 @@ const cases = [
   ['provider AGREE uses a non-exact None sentinel -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: nonExactNonePeerBody, evidence: nonExactNoneEvidence }, 1],
+  ['provider terminal verdict uses lowercase agree -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: lowercaseVerdictPeerBody, evidence: lowercaseVerdictEvidence }, 1],
+  ['receipt verdict uses lowercase agree -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace(`verdict=AGREE; ref=${CLAUDE_REF}`, `verdict=agree; ref=${CLAUDE_REF}`) }, 1],
+  ['PR top-level verdict uses lowercase agree -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Verdict: AGREE', 'Verdict: agree') }, 1],
   ['auto-verified ledger outside the three canonical product families -> blocked',
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(LEDGER),
       changedFiles: [`release-candidates/fake-product/${'a'.repeat(40)}.json`] }, 1],

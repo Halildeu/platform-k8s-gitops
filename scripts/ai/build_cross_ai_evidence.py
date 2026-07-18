@@ -19,7 +19,7 @@ from typing import NoReturn
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 VERDICT_RE = re.compile(
-    r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.IGNORECASE | re.MULTILINE
+    r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE
 )
 PRIORITY_HEADING_RE = re.compile(
     r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?"
@@ -112,7 +112,7 @@ def main() -> None:
     sections = priority_sections(response)
     if sections is None:
         fail("provider_findings_sections_missing_empty_duplicate_or_out_of_order")
-    verdict = verdicts[0].upper()
+    verdict = verdicts[0]
     if verdict == "AGREE" and (
         not NO_FINDINGS_RE.fullmatch(sections["P0"])
         or not NO_FINDINGS_RE.fullmatch(sections["P1"])

@@ -45,6 +45,13 @@ class VerdictParsingTests(unittest.TestCase):
     def test_rejects_non_terminal_verdict(self) -> None:
         self.assert_rejected("P0 yok\nP1 yok\nP2 yok\nVERDICT: AGREE\nson söz")
 
+    def test_rejects_non_exact_verdict_case(self) -> None:
+        for verdict in ("agree", "Agree", "revise", "Revise"):
+            with self.subTest(verdict=verdict):
+                self.assert_rejected(
+                    f"P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: {verdict}"
+                )
+
     def test_rejects_missing_priority_sections(self) -> None:
         self.assert_rejected("İnceleme tamam.\nVERDICT: AGREE")
 

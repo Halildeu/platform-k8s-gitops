@@ -24,7 +24,7 @@ import { createHash } from 'node:crypto';
 import { argv, env, exit } from 'node:process';
 
 const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
-const VALID_VERDICTS = new Set(['agree', 'revise', 'partial', 'red']);
+const VALID_VERDICTS = new Set(['AGREE', 'REVISE', 'PARTIAL', 'RED']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
@@ -421,9 +421,9 @@ function sha256Utf8(value) {
 
 function parseProviderResponseVerdict(response) {
   if (typeof response !== 'string') return null;
-  const matches = [...response.matchAll(/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/gim)];
+  const matches = [...response.matchAll(/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/gm)];
   const lines = response.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (matches.length !== 1 || !lines.length || !/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/i.test(lines.at(-1))) {
+  if (matches.length !== 1 || !lines.length || !/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/.test(lines.at(-1))) {
     return null;
   }
   const headingRe = /^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?(?:[ \t]*[—:-].*)?[ \t]*$/gim;
@@ -632,7 +632,7 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
       && receipt.base?.toLowerCase() === base.toLowerCase()
       && receipt.head?.toLowerCase() === commit.toLowerCase()
       && receipt.scope?.toLowerCase() === scope.toLowerCase()
-      && receipt.verdict?.toLowerCase() === 'agree'
+      && receipt.verdict === 'AGREE'
       && validEvidenceRef(receipt.ref, prMeta?.baseRepo)
       && SHA256_RE.test(receipt.sha256 || '')
     );
@@ -820,9 +820,9 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   }
 
   // Check 5: merge/readiness lane is fail-closed — only AGREE can pass.
-  const verdict = (fields['verdict'] || '').trim().toLowerCase();
+  const verdict = (fields['verdict'] || '').trim();
   if (verdict) {
-    if (verdict === 'agree') {
+    if (verdict === 'AGREE') {
       findings.push({ check: 'verdict_agree', pass: true });
     } else {
       findings.push({

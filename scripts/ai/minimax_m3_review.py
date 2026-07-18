@@ -33,7 +33,7 @@ DEFAULT_MAX_TOKENS = 12_000
 DEFAULT_TIMEOUT_SECONDS = 300.0
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 VERDICT_RE = re.compile(
-    r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.IGNORECASE | re.MULTILINE
+    r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE
 )
 PRIORITY_HEADING_RE = re.compile(
     r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?"
@@ -237,7 +237,7 @@ def response_contract_error(result: str) -> str | None:
         if not content:
             return "provider_findings_sections_missing_empty_duplicate_or_out_of_order"
         sections[heading.group(1).upper()] = content
-    if matches[0].upper() == "AGREE" and (
+    if matches[0] == "AGREE" and (
         not NO_FINDINGS_RE.fullmatch(sections["P0"])
         or not NO_FINDINGS_RE.fullmatch(sections["P1"])
     ):
@@ -250,7 +250,7 @@ def parse_verdict(result: str) -> str:
     if error:
         fail(error)
     matches = VERDICT_RE.findall(result)
-    return matches[0].upper()
+    return matches[0]
 
 
 def format_repair_prompt() -> str:
