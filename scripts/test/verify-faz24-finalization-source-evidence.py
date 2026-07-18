@@ -11,6 +11,8 @@ from typing import Any
 
 REVIEWED_SOURCE_COMMIT = "df812c57341fb9ea55a7662f3fd308fefd2a45dd"
 ARTIFACT_COMMIT = "315f351a8ebf57d83f535617ccf8219749a2afc7"
+REVIEW_BASE_COMMIT = "45451bb2562bb6814eb23ab084a9fd3ee0921d5f"
+REVIEW_SCOPE_SHA256 = "9ab88f7e03558238915f713c66e2c37e01f00399353652e399f63c0ddc076775"
 EXPECTED_ACCEPTED_CLAIMS = {
     "reviewedSourceTree": True,
     "workflowRunOutcomes": True,
@@ -18,6 +20,20 @@ EXPECTED_ACCEPTED_CLAIMS = {
     "providerConsensus": False,
     "runtime": False,
     "downstreamAnalysis": False,
+}
+EXPECTED_EVIDENCE_KEYS = {
+    "schemaVersion",
+    "generatedAt",
+    "accepted",
+    "acceptanceLevel",
+    "acceptedClaims",
+    "runtimeAcceptance",
+    "rolloutBoundary",
+    "backend",
+    "implementationContracts",
+    "invariants",
+    "providerEvidence",
+    "productionGates",
 }
 EXPECTED_RUNS = {
     "testRun": {
@@ -134,15 +150,6 @@ EXPECTED_IMAGES = {
         "excluded",
     ),
 }
-EXPECTED_INVARIANTS = {
-    "auth-transcript-service-token-contract",
-    "source-window-canonical-identity",
-    "meeting-finish-and-outbox-are-atomic",
-    "one-thin-ready-outbox-row-per-finalization-version",
-    "pt6m-pt1m-pt15m-boundaries-are-exact",
-    "finalization-and-ready-outbox-are-one-transactional-operation",
-    "outbox-redelivery-does-not-duplicate-logical-effect",
-}
 EXPECTED_IMPLEMENTATIONS = {
     (
         "transcript-service/src/main/java/com/example/transcript/finalization/TranscriptQuiescentFinalizationProcessor.java",
@@ -153,78 +160,108 @@ EXPECTED_IMPLEMENTATIONS = {
         "e32ff2631ebd8ad7ddc9135e6a143572753fbd3b",
     ),
 }
-EXPECTED_TESTS = {
-    (
-        "auth-service/src/test/java/com/example/auth/controller/MeetingAiServiceTokenMintTest.java",
-        "12881b068025d2ceced8a12fa51e86eeaf94db32",
-        "class-contract",
-    ),
-    (
-        "auth-service/src/test/java/com/example/auth/controller/TranscriptServiceBlankSecretTokenMintTest.java",
-        "f05430b163c7ea9c619be048e648c9d76e180167",
-        "class-contract",
-    ),
-    (
-        "transcript-service/src/test/java/com/example/transcript/repository/TranscriptAssociationMigrationIntegrationTest.java",
-        "937003493495bf69176615d3f8d65ad0bc9537b3",
-        "latestMigrationBackfillsWindowIdentityAndAddsRestartSafeFinalizationState",
-    ),
-    (
-        "transcript-service/src/test/java/com/example/transcript/directstt/DirectSttTranscriptIngestionServiceTest.java",
-        "fd01287fb0502d2654b09f9458c2b752fdab1535",
-        "createsDraftWithSourceWindowAndCanonicalSessionUuid",
-    ),
-    (
-        "transcript-service/src/test/java/com/example/transcript/directstt/DirectSttTranscriptIngestionServiceTest.java",
-        "fd01287fb0502d2654b09f9458c2b752fdab1535",
-        "postFinalizationNewWindowIsPersistedAndStartsAnotherCycle",
-    ),
-    (
-        "meeting-service/src/test/java/com/example/meeting/repository/MeetingRecordingFinishedOutboxPostgresIntegrationTest.java",
-        "802ae62cbc01635b0c5400702ca2a0f003b00120",
-        "class-contract",
-    ),
-    (
-        "transcript-service/src/test/java/com/example/transcript/service/TranscriptFinalizationServiceTest.java",
-        "2b2f6dcc109f6d864ca5fc35f291735f95556417",
-        "duplicateOccurrenceCreatesOneThinOutboxEffect",
-    ),
-    (
-        "transcript-service/src/test/java/com/example/transcript/finalization/TranscriptFinalizationStateMachineTest.java",
-        "af6ade91c566ec790f1363cc4749cc72105f8b29",
-        "class-contract",
-    ),
-    (
-        "transcript-service/src/test/java/com/example/transcript/finalization/TranscriptQuiescentFinalizationProcessorTest.java",
-        "6ad44937387405f5aa955047698e5b34d2bdd6a2",
-        "validSnapshotPersistsIntegrityRowAndReadyEventAtomically",
-    ),
-    (
-        "meeting-service/src/test/java/com/example/meeting/events/MeetingEventOutboxPollerPostgresIntegrationTest.java",
-        "a78d27567a2047f0e851e706c20ad62bcbd2a483",
-        "redeliveryOfSameEventKey_appliesConsumerSideEffectOnlyOnce",
-    ),
-    (
-        "transcript-service/src/test/java/com/example/transcript/events/TranscriptEventOutboxPollerTest.java",
-        "4ab26951ac01f280cc5a74083f63af5a1e75d2bc",
-        "successfulPublishUsesLeaseFenceBeforeMarkingPublished",
-    ),
+EXPECTED_INVARIANTS = {
+    "auth-transcript-service-token-contract": {
+        (
+            "auth-service/src/test/java/com/example/auth/controller/MeetingAiServiceTokenMintTest.java",
+            "12881b068025d2ceced8a12fa51e86eeaf94db32",
+            "class-contract",
+        ),
+        (
+            "auth-service/src/test/java/com/example/auth/controller/TranscriptServiceBlankSecretTokenMintTest.java",
+            "f05430b163c7ea9c619be048e648c9d76e180167",
+            "class-contract",
+        ),
+    },
+    "source-window-canonical-identity": {
+        (
+            "transcript-service/src/test/java/com/example/transcript/repository/TranscriptAssociationMigrationIntegrationTest.java",
+            "937003493495bf69176615d3f8d65ad0bc9537b3",
+            "latestMigrationBackfillsWindowIdentityAndAddsRestartSafeFinalizationState",
+        ),
+        (
+            "transcript-service/src/test/java/com/example/transcript/directstt/DirectSttTranscriptIngestionServiceTest.java",
+            "fd01287fb0502d2654b09f9458c2b752fdab1535",
+            "createsDraftWithSourceWindowAndCanonicalSessionUuid",
+        ),
+        (
+            "transcript-service/src/test/java/com/example/transcript/directstt/DirectSttTranscriptIngestionServiceTest.java",
+            "fd01287fb0502d2654b09f9458c2b752fdab1535",
+            "postFinalizationNewWindowIsPersistedAndStartsAnotherCycle",
+        ),
+    },
+    "meeting-finish-and-outbox-are-atomic": {
+        (
+            "meeting-service/src/test/java/com/example/meeting/repository/MeetingRecordingFinishedOutboxPostgresIntegrationTest.java",
+            "802ae62cbc01635b0c5400702ca2a0f003b00120",
+            "class-contract",
+        )
+    },
+    "one-thin-ready-outbox-row-per-finalization-version": {
+        (
+            "transcript-service/src/test/java/com/example/transcript/service/TranscriptFinalizationServiceTest.java",
+            "2b2f6dcc109f6d864ca5fc35f291735f95556417",
+            "duplicateOccurrenceCreatesOneThinOutboxEffect",
+        )
+    },
+    "pt6m-pt1m-pt15m-boundaries-are-exact": {
+        (
+            "transcript-service/src/test/java/com/example/transcript/finalization/TranscriptFinalizationStateMachineTest.java",
+            "af6ade91c566ec790f1363cc4749cc72105f8b29",
+            "class-contract",
+        )
+    },
+    "finalization-and-ready-outbox-are-one-transactional-operation": {
+        (
+            "transcript-service/src/test/java/com/example/transcript/finalization/TranscriptQuiescentFinalizationProcessorTest.java",
+            "6ad44937387405f5aa955047698e5b34d2bdd6a2",
+            "validSnapshotPersistsIntegrityRowAndReadyEventAtomically",
+        )
+    },
+    "outbox-redelivery-does-not-duplicate-logical-effect": {
+        (
+            "meeting-service/src/test/java/com/example/meeting/events/MeetingEventOutboxPollerPostgresIntegrationTest.java",
+            "a78d27567a2047f0e851e706c20ad62bcbd2a483",
+            "redeliveryOfSameEventKey_appliesConsumerSideEffectOnlyOnce",
+        ),
+        (
+            "transcript-service/src/test/java/com/example/transcript/events/TranscriptEventOutboxPollerTest.java",
+            "4ab26951ac01f280cc5a74083f63af5a1e75d2bc",
+            "successfulPublishUsesLeaseFenceBeforeMarkingPublished",
+        ),
+    },
 }
 EXPECTED_PRODUCTION_GATES = {
     "test-vault-dr-keyset-and-redis-acl-separation",
     "github-protected-environment-approval",
     "production-secret-owner-and-named-legal-approval",
 }
-EXPECTED_REVIEW_RECEIPT = {
-    "apiUrl": "https://api.github.com/repos/Halildeu/platform-backend/issues/comments/5010138585",
-    "commentId": 5010138585,
-    "nodeId": "IC_kwDOSLwN9M8AAAABKqCl2Q",
-    "author": "Halildeu",
-    "authorAssociation": "OWNER",
-    "createdAt": "2026-07-18T05:53:13Z",
-    "updatedAt": "2026-07-18T05:53:13Z",
-    "bodySha256": "0c954b0d61936ca08c67143214a05807a31f9a842738ffc530d236884788b901",
-    "remoteVerificationRequired": True,
+PROVIDER_ORDER = (
+    ("anthropic", "claude-opus-4-8"),
+    ("minimax", "minimax/MiniMax-M3"),
+    ("openai", "gpt-5.6-sol"),
+)
+PROVIDER_HISTORY_KEYS = {
+    "status",
+    "acceptanceEffect",
+    "attestationBoundary",
+    "requiredReceiptSchema",
+    "requiredProviderOrder",
+    "receipts",
+}
+RECEIPT_LEDGER_KEYS = {
+    "provider",
+    "requestedModel",
+    "actualModel",
+    "baseTipSha",
+    "baseSha",
+    "headSha",
+    "scopeSha256",
+    "verdict",
+    "responseSha256",
+    "apiUrl",
+    "bodySha256",
+    "createdAt",
 }
 
 
@@ -245,9 +282,15 @@ def load(path: str) -> dict[str, Any]:
 
 def job_tuples(run: dict[str, Any]) -> set[tuple[Any, Any, Any, Any]]:
     jobs = run.get("jobs", [])
-    if not jobs:
+    if not isinstance(jobs, list) or not jobs:
         fail(f"run {run.get('id')} has no pinned jobs")
-    return {
+    if any(
+        not isinstance(item, dict)
+        or set(item) != {"id", "name", "requiredStep", "conclusion"}
+        for item in jobs
+    ):
+        fail(f"run {run.get('id')} job evidence contains unbound fields")
+    values = {
         (
             item.get("id"),
             item.get("name"),
@@ -256,13 +299,88 @@ def job_tuples(run: dict[str, Any]) -> set[tuple[Any, Any, Any, Any]]:
         )
         for item in jobs
     }
+    if len(values) != len(jobs):
+        fail(f"run {run.get('id')} contains duplicate pinned jobs")
+    return values
+
+
+def require_provider_evidence(history: dict[str, Any], consensus: bool) -> None:
+    if not isinstance(history, dict) or set(history) != PROVIDER_HISTORY_KEYS:
+        fail("provider evidence must use the exact fail-closed schema")
+    if history.get("acceptanceEffect") != "excluded-from-source-and-runtime-claims":
+        fail("provider evidence escaped its bounded acceptance effect")
+    if history.get("attestationBoundary") != "operator-captured-provider-unsigned":
+        fail("provider evidence attestation boundary changed")
+    if history.get("requiredReceiptSchema") != "cross-ai-provider-evidence/v1":
+        fail("provider receipt schema changed")
+    expected_order = [provider for provider, _model in PROVIDER_ORDER]
+    if history.get("requiredProviderOrder") != expected_order:
+        fail("provider order contract changed")
+    receipts = history.get("receipts")
+    if not isinstance(receipts, list):
+        fail("provider receipts must be a list")
+    if not receipts:
+        if consensus or history.get("status") != "tracked-pending":
+            fail("missing provider receipts must remain tracked-pending")
+        return
+    if len(receipts) != 3 or history.get("status") != "verified" or not consensus:
+        fail("provider consensus requires exactly three structured receipts")
+    if any(
+        not isinstance(item, dict) or set(item) != RECEIPT_LEDGER_KEYS
+        for item in receipts
+    ):
+        fail("provider receipt ledger contains unbound/self-attested fields")
+    refs = [item.get("apiUrl") for item in receipts]
+    if len(set(refs)) != 3:
+        fail("provider receipt refs must be unique")
+    created_at: list[str] = []
+    for receipt, (provider, model) in zip(receipts, PROVIDER_ORDER, strict=True):
+        expected = {
+            "provider": provider,
+            "requestedModel": model,
+            "actualModel": model,
+            "baseTipSha": REVIEW_BASE_COMMIT,
+            "baseSha": REVIEW_BASE_COMMIT,
+            "headSha": REVIEWED_SOURCE_COMMIT,
+            "scopeSha256": REVIEW_SCOPE_SHA256,
+            "verdict": "AGREE",
+        }
+        if {key: receipt.get(key) for key in expected} != expected:
+            fail("provider receipt model/scope/verdict binding changed")
+        for key in ("responseSha256", "bodySha256"):
+            value = receipt.get(key)
+            if not isinstance(value, str) or len(value) != 64 or value != value.lower():
+                fail(f"provider receipt {key} is not a full SHA-256 digest")
+            try:
+                int(value, 16)
+            except ValueError:
+                fail(f"provider receipt {key} is not a full SHA-256 digest")
+        api_url = receipt.get("apiUrl")
+        expected_prefix = (
+            "https://api.github.com/repos/Halildeu/platform-backend/issues/comments/"
+        )
+        if (
+            not isinstance(api_url, str)
+            or not api_url.startswith(expected_prefix)
+            or not api_url.removeprefix(expected_prefix).isdigit()
+            or int(api_url.removeprefix(expected_prefix)) < 1
+        ):
+            fail("provider receipt ref escaped the backend GitHub comment boundary")
+        timestamp = receipt.get("createdAt")
+        if not isinstance(timestamp, str) or not timestamp.endswith("Z"):
+            fail("provider receipt createdAt is invalid")
+        created_at.append(timestamp)
+    if not created_at[0] < created_at[1] < created_at[2]:
+        fail("provider receipts must have strict Claude < MiniMax < Codex order")
 
 
 def main() -> None:
     if len(sys.argv) != 2:
         fail("usage: verify-faz24-finalization-source-evidence.py EVIDENCE_JSON")
     evidence = load(sys.argv[1])
-    if evidence.get("schemaVersion") != "faz24-finalization-source-ci.v4":
+    if set(evidence) != EXPECTED_EVIDENCE_KEYS:
+        fail("evidence root contains unknown/self-attested fields")
+    if evidence.get("schemaVersion") != "faz24-finalization-source-ci.v5":
         fail("unexpected schemaVersion")
     if evidence.get("accepted") is not True:
         fail("bounded source/workflow evidence must be accepted")
@@ -360,6 +478,18 @@ def main() -> None:
         fail("post-push test preflight contract changed")
 
     backend = evidence.get("backend", {})
+    if set(backend) != {
+        "repository",
+        "repositoryVisibility",
+        "reviewedSourceCommit",
+        "artifactCommit",
+        "pullRequests",
+        "testRun",
+        "authContractRun",
+        "buildRun",
+        "desiredImages",
+    }:
+        fail("backend evidence contains unbound/self-attested fields")
     if backend.get("repository") != "Halildeu/platform-backend":
         fail("backend repository changed")
     if backend.get("repositoryVisibility") != "public":
@@ -390,11 +520,33 @@ def main() -> None:
         )
         for item in backend.get("desiredImages", [])
     }
+    if any(
+        not isinstance(item, dict)
+        or set(item)
+        != {
+            "service",
+            "image",
+            "digest",
+            "buildJobId",
+            "artifactId",
+            "artifactName",
+            "artifactUploadSha256",
+            "provenanceStatus",
+            "acceptanceEffect",
+        }
+        for item in backend.get("desiredImages", [])
+    ):
+        fail("desired image evidence contains unbound provenance fields")
+    if len(image_tuples) != len(backend.get("desiredImages", [])):
+        fail("desired image evidence contains duplicate provenance records")
     if image_tuples != EXPECTED_IMAGES:
         fail("desired image/operator provenance tuple changed")
 
     implementations = evidence.get("implementationContracts", [])
-    if any(set(item) != {"path", "blobSha"} for item in implementations):
+    if any(
+        not isinstance(item, dict) or set(item) != {"path", "blobSha"}
+        for item in implementations
+    ):
         fail("implementation contracts may contain only remotely verifiable fields")
     if {(item.get("path"), item.get("blobSha")) for item in implementations} != (
         EXPECTED_IMPLEMENTATIONS
@@ -402,37 +554,41 @@ def main() -> None:
         fail("immutable implementation path/blob set changed")
 
     invariants = evidence.get("invariants", [])
-    if {item.get("id") for item in invariants} != EXPECTED_INVARIANTS:
-        fail("required invariant set changed")
-    if any(
-        item.get("status") != "source-pinned-job-level-success" for item in invariants
-    ):
-        fail("invariants must state their bounded evidence level")
-    actual_tests: set[tuple[str, str, str]] = set()
+    if not isinstance(invariants, list):
+        fail("invariants must be a list")
+    actual_invariants: dict[Any, set[tuple[Any, Any, Any]]] = {}
     for invariant in invariants:
+        if not isinstance(invariant, dict) or set(invariant) != {
+            "id",
+            "status",
+            "tests",
+        }:
+            fail("invariant evidence contains counts/assertions or unbound fields")
+        if invariant.get("status") != "source-pinned-job-level-success":
+            fail("invariants must state their bounded evidence level")
         tests = invariant.get("tests", [])
-        if not tests:
+        if not isinstance(tests, list) or not tests:
             fail(f"invariant {invariant.get('id')} has no source-pinned test")
+        records: set[tuple[Any, Any, Any]] = set()
         for test in tests:
-            if set(test) != {"path", "blobSha", "method"}:
-                fail("test evidence may contain only remotely verifiable fields")
-            actual_tests.add(
-                (test.get("path"), test.get("blobSha"), test.get("method"))
-            )
-    if actual_tests != EXPECTED_TESTS:
-        fail("immutable test path/blob/method set changed")
+            if not isinstance(test, dict) or set(test) != {"path", "blobSha", "method"}:
+                fail("test evidence contains counts/assertions or unbound fields")
+            records.add((test.get("path"), test.get("blobSha"), test.get("method")))
+        if len(records) != len(tests):
+            fail(f"invariant {invariant.get('id')} contains duplicate test evidence")
+        invariant_id = invariant.get("id")
+        if invariant_id in actual_invariants:
+            fail(f"invariant {invariant_id} is duplicated")
+        actual_invariants[invariant_id] = records
+    if actual_invariants != EXPECTED_INVARIANTS:
+        fail("immutable invariant-to-test path/blob/method mapping changed")
 
-    history = evidence.get("reviewHistory", {})
-    if history.get("headSha") != REVIEWED_SOURCE_COMMIT:
-        fail("review history is not bound to the reviewed source commit")
-    if history.get("attestationLevel") != "owner-recorded-provider-summary":
-        fail("review history attestation level changed")
-    if history.get("independentRemoteAttestations") is not False:
-        fail("owner summary must not claim independent provider attestations")
-    if history.get("acceptanceEffect") != "excluded":
-        fail("owner review summary must remain excluded from acceptance")
-    if history.get("remoteReceipt") != EXPECTED_REVIEW_RECEIPT:
-        fail("remote owner-summary receipt changed")
+    if "reviewHistory" in evidence:
+        fail("owner summary/self-attestation is not accepted provider evidence")
+    require_provider_evidence(
+        evidence.get("providerEvidence"),
+        evidence.get("acceptedClaims", {}).get("providerConsensus") is True,
+    )
 
     gates = evidence.get("productionGates", [])
     if {item.get("id") for item in gates} != EXPECTED_PRODUCTION_GATES:

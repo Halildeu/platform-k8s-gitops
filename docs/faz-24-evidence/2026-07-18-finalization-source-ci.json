@@ -327,24 +327,18 @@
       ]
     }
   },
-  "reviewHistory": {
-    "headSha": "df812c57341fb9ea55a7662f3fd308fefd2a45dd",
-    "attestationLevel": "owner-recorded-provider-summary",
-    "independentRemoteAttestations": false,
-    "acceptanceEffect": "excluded",
-    "url": "https://github.com/Halildeu/platform-backend/pull/872#issuecomment-5010138585",
-    "remoteReceipt": {
-      "apiUrl": "https://api.github.com/repos/Halildeu/platform-backend/issues/comments/5010138585",
-      "commentId": 5010138585,
-      "nodeId": "IC_kwDOSLwN9M8AAAABKqCl2Q",
-      "author": "Halildeu",
-      "authorAssociation": "OWNER",
-      "createdAt": "2026-07-18T05:53:13Z",
-      "updatedAt": "2026-07-18T05:53:13Z",
-      "bodySha256": "0c954b0d61936ca08c67143214a05807a31f9a842738ffc530d236884788b901",
-      "remoteVerificationRequired": true
-    }
+  "providerEvidence": {
+    "status": "tracked-pending",
+    "acceptanceEffect": "excluded-from-source-and-runtime-claims",
+    "attestationBoundary": "operator-captured-provider-unsigned",
+    "requiredReceiptSchema": "cross-ai-provider-evidence/v1",
+    "requiredProviderOrder": [
+      "anthropic",
+      "minimax",
+      "openai"
+    ],
+    "receipts": []
   },
   "runtimeAcceptance": false,
-  "schemaVersion": "faz24-finalization-source-ci.v4"
+  "schemaVersion": "faz24-finalization-source-ci.v5"
 }

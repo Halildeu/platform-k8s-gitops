@@ -32,6 +32,8 @@ python3 "${ROOT}/scripts/test/verify-faz24-finalization-rollout.py" \
   "${TEST_RENDER}" "${TEST_ESO_RENDER}" "${PROD_RENDER}" "${PROD_ESO_RENDER}"
 python3 "${ROOT}/scripts/test/verify-faz24-finalization-source-evidence.py" \
   "${ROOT}/docs/faz-24-evidence/2026-07-18-finalization-source-ci.json"
+python3 -m unittest \
+  tests.faz24.test_finalization_evidence_verifiers
 
 python3 - \
   "${ROOT}/docs/faz-24-evidence/2026-07-18-finalization-source-ci.json" \
