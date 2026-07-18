@@ -180,6 +180,26 @@ spec:
               type: RuntimeDefault
             capabilities:
               drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  token_file=/var/run/secrets/kubernetes.io/serviceaccount/token
+                  ca_file=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                  namespace_file=/var/run/secrets/kubernetes.io/serviceaccount/namespace
+                  test -r "$token_file" -a -r "$ca_file" -a -r "$namespace_file"
+                  namespace="$(cat "$namespace_file")"
+                  token="$(cat "$token_file")"
+                  curl -fsS --cacert "$ca_file" \
+                    -H "Authorization: Bearer $token" --max-time 5 \
+                    "https://kubernetes.default.svc/api/v1/namespaces/$namespace/configmaps/api-gateway-config" \
+                    >/dev/null
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            timeoutSeconds: 6
+            failureThreshold: 2
           volumeMounts:
             - name: tmp
               mountPath: /tmp

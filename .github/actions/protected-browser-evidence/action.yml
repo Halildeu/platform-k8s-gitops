@@ -9,6 +9,7 @@ runs:
       run: bash scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh browser-evidence
 
     - name: Upload redacted product browser evidence
+      id: product_evidence
       if: ${{ steps.execute.outcome == 'success' }}
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
@@ -24,7 +25,7 @@ runs:
       if: ${{ always() }}
       shell: bash
       env:
-        STAGE_CONCLUSION: ${{ steps.execute.outcome == 'success' && 'success' || 'failure' }}
+        STAGE_CONCLUSION: ${{ steps.execute.outcome == 'success' && steps.product_evidence.outcome == 'success' && 'success' || 'failure' }}
       run: >-
         python3 scripts/github_apps/build_cross_ai_stage_evidence.py
         --bootstrap-file "$CROSS_AI_BOOTSTRAP_FILE"
@@ -33,8 +34,14 @@ runs:
         --output-dir "$RUNNER_TEMP/cross-ai-stage-outcome"
         --github-output "$GITHUB_OUTPUT"
 
+    - name: Remove private bootstrap response
+      id: cleanup
+      if: ${{ always() }}
+      shell: bash
+      run: rm -f -- "$CROSS_AI_BOOTSTRAP_FILE"
+
     - name: Upload canonical browser outcome evidence
-      if: ${{ always() && steps.evidence.outcome == 'success' }}
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.cleanup.outcome == 'success' }}
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: ${{ steps.evidence.outputs.artifact-name }}
@@ -43,8 +50,3 @@ runs:
         include-hidden-files: false
         compression-level: 0
         retention-days: 30
-
-    - name: Remove private bootstrap response
-      if: ${{ always() }}
-      shell: bash
-      run: rm -f -- "$CROSS_AI_BOOTSTRAP_FILE"

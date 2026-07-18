@@ -75,7 +75,7 @@ ENDPOINT_ID_SHA256="${BINDING[2]}"
 GRANT_EXPIRES_EPOCH="$(date -u -d "$GRANT_EXPIRES_AT" +%s)" || exit 2
 
 verify_watchdog_active() {
-  local job_json
+  local job_json pod_json service_account role role_binding network_policy permission
   job_json="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     get job faz22-view-only-pilot-watchdog -o json)"
   jq -e \
@@ -87,6 +87,94 @@ verify_watchdog_active() {
       and ((.status.failed // 0) == 0)
       and ((.status.succeeded // 0) == 0)
     ' <<<"$job_json" >/dev/null
+
+  service_account="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get serviceaccount faz22-view-only-pilot-watchdog -o json)"
+  jq -e '
+    .metadata.deletionTimestamp == null
+    and .automountServiceAccountToken == false
+  ' <<<"$service_account" >/dev/null
+
+  role="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get role faz22-view-only-pilot-watchdog -o json)"
+  jq -e '
+    def normalized:
+      map({
+        apiGroups: (.apiGroups | sort),
+        resources: (.resources | sort),
+        resourceNames: (.resourceNames | sort),
+        verbs: (.verbs | sort)
+      }) | sort_by([(.apiGroups | join(",")), (.resources | join(","))]);
+    .metadata.deletionTimestamp == null
+    and (.rules | normalized) == ([
+      {apiGroups: [""], resources: ["configmaps"], resourceNames: ["endpoint-admin-remote-bridge-config-device-key", "api-gateway-config"], verbs: ["get", "patch"]},
+      {apiGroups: [""], resources: ["services"], resourceNames: ["endpoint-admin-remote-bridge-viewer"], verbs: ["delete", "get"]},
+      {apiGroups: ["apps"], resources: ["deployments"], resourceNames: ["api-gateway", "endpoint-admin-remote-bridge-device-key"], verbs: ["get", "patch"]},
+      {apiGroups: ["networking.k8s.io"], resources: ["networkpolicies"], resourceNames: ["eab-api-gateway-allow-egress-8096-to-bridge-viewer", "eab-bridge-viewer-allow-ingress-8096-from-api-gateway"], verbs: ["delete", "get"]}
+    ] | normalized)
+  ' <<<"$role" >/dev/null
+
+  role_binding="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get rolebinding faz22-view-only-pilot-watchdog -o json)"
+  jq -e --arg namespace "$K8S_NAMESPACE" '
+    .metadata.deletionTimestamp == null
+    and .roleRef == {apiGroup: "rbac.authorization.k8s.io", kind: "Role", name: "faz22-view-only-pilot-watchdog"}
+    and .subjects == [{kind: "ServiceAccount", name: "faz22-view-only-pilot-watchdog", namespace: $namespace}]
+  ' <<<"$role_binding" >/dev/null
+
+  network_policy="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get networkpolicy allow-faz22-view-only-watchdog-kubernetes-api -o json)"
+  jq -e '
+    .metadata.deletionTimestamp == null
+    and .spec.podSelector.matchLabels == {
+      "app.kubernetes.io/component": "safety-controller",
+      "app.kubernetes.io/name": "faz22-view-only-pilot-watchdog"
+    }
+    and (.spec.policyTypes | sort) == ["Egress"]
+    and ([.spec.egress[] | {
+      cidr: .to[0].ipBlock.cidr,
+      protocol: .ports[0].protocol,
+      port: .ports[0].port
+    }] | sort_by(.cidr)) == ([
+      {cidr: "10.45.0.1/32", protocol: "TCP", port: 443},
+      {cidr: "172.19.0.0/16", protocol: "TCP", port: 6443}
+    ] | sort_by(.cidr))
+  ' <<<"$network_policy" >/dev/null
+
+  for permission in \
+    "get configmap/endpoint-admin-remote-bridge-config-device-key" \
+    "patch configmap/endpoint-admin-remote-bridge-config-device-key" \
+    "get configmap/api-gateway-config" \
+    "patch configmap/api-gateway-config" \
+    "get service/endpoint-admin-remote-bridge-viewer" \
+    "delete service/endpoint-admin-remote-bridge-viewer" \
+    "get deployment/endpoint-admin-remote-bridge-device-key" \
+    "patch deployment/endpoint-admin-remote-bridge-device-key" \
+    "get deployment/api-gateway" \
+    "patch deployment/api-gateway" \
+    "get networkpolicy/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \
+    "delete networkpolicy/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \
+    "get networkpolicy/eab-api-gateway-allow-egress-8096-to-bridge-viewer" \
+    "delete networkpolicy/eab-api-gateway-allow-egress-8096-to-bridge-viewer"; do
+    # Deliberate word splitting turns each fixed pair into verb + resource/name.
+    # shellcheck disable=SC2086
+    [[ "$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" auth can-i $permission \
+      --as="system:serviceaccount:${K8S_NAMESPACE}:faz22-view-only-pilot-watchdog")" == "yes" ]]
+  done
+
+  pod_json="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get pods -l batch.kubernetes.io/job-name=faz22-view-only-pilot-watchdog -o json)"
+  jq -e --arg job_uid "$(jq -r '.metadata.uid' <<<"$job_json")" '
+    [.items[] | select(
+      .metadata.deletionTimestamp == null
+      and any(.metadata.ownerReferences[]?; .uid == $job_uid and .kind == "Job" and .name == "faz22-view-only-pilot-watchdog" and .controller == true)
+      and .spec.serviceAccountName == "faz22-view-only-pilot-watchdog"
+      and .spec.automountServiceAccountToken == true
+      and .status.phase == "Running"
+      and any(.status.conditions[]?; .type == "Ready" and .status == "True")
+      and any(.status.containerStatuses[]?; .name == "watchdog" and .ready == true and (.state.running.startedAt | type == "string"))
+    )] | length == 1
+  ' <<<"$pod_json" >/dev/null
 }
 
 rollback_surface() {

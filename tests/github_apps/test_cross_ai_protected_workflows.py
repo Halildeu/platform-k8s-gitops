@@ -59,10 +59,51 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertGreaterEqual(script.count('verify_watchdog_active'), 4)
         self.assertIn('(.status.active // 0) == 1', script)
         self.assertIn('(.status.failed // 0) == 0', script)
+        self.assertIn('.status.phase == "Running"', script)
+        self.assertIn('.type == "Ready" and .status == "True"', script)
+        self.assertIn('.state.running.startedAt | type == "string"', script)
+        self.assertIn('auth can-i $permission', script)
+        self.assertIn('get rolebinding faz22-view-only-pilot-watchdog -o json', script)
+        self.assertIn(
+            'get networkpolicy allow-faz22-view-only-watchdog-kubernetes-api -o json',
+            script,
+        )
         self.assertLess(
             script.index('"networkpolicy/allow-faz22-view-only-watchdog-kubernetes-api"'),
             script.index('delete job/faz22-view-only-pilot-watchdog'),
         )
+
+    def test_watchdog_readiness_proves_live_api_access(self) -> None:
+        template = (
+            ROOT
+            / "scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("readinessProbe:", template)
+        self.assertIn("kubernetes.default.svc/api/v1/namespaces/", template)
+        self.assertIn("configmaps/api-gateway-config", template)
+        self.assertIn('Authorization: Bearer $token', template)
+
+    def test_canonical_outcome_is_last_fallible_action_step(self) -> None:
+        actions = {
+            "protected-apply": "apply",
+            "protected-browser-evidence": "browser",
+            "protected-rollback": "rollback",
+        }
+        for directory, label in actions.items():
+            raw = (ROOT / ".github/actions" / directory / "action.yml").read_text(
+                encoding="utf-8"
+            )
+            upload = f"Upload canonical {label} outcome evidence"
+            self.assertIn("id: cleanup", raw)
+            self.assertLess(raw.index("id: cleanup"), raw.index(upload))
+            self.assertNotIn("Remove private bootstrap response", raw[raw.index(upload) :])
+            self.assertIn("steps.cleanup.outcome == 'success'", raw)
+
+        browser = (
+            ROOT / ".github/actions/protected-browser-evidence/action.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("id: product_evidence", browser)
+        self.assertIn("steps.product_evidence.outcome == 'success'", browser)
 
 
 if __name__ == "__main__":
