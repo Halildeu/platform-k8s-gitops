@@ -545,6 +545,12 @@ runtime-authority inventory that retriggers this gate. The browser stage uses
 the fixed runner-owned `/home/halil/.ssh/config`; OpenSSH host-key verification,
 the signed endpoint-ID digest, live certificate/channel checks and attended
 consent remain cumulative gates rather than interchangeable identity claims.
+The watchdog NetworkPolicy permits only the Kubernetes service ClusterIP
+`10.45.0.1/32:443` and the k3d node CIDR `172.19.0.0/16:6443`. The second rule
+is required because the test cluster's policy engine observes the apiserver's
+post-DNAT node endpoint; it is not general workload egress. Both CIDRs, ports
+and the empty-ingress posture are byte-checked by the protected-workflow
+contract, so widening them requires a reviewed authority change.
 
 This path is source-ready only. Do not expose the endpoint or enable the
 Environment custom rule until the policy runtime has reviewed HTTPS, the

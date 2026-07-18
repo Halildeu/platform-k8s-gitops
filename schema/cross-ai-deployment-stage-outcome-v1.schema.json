@@ -200,9 +200,6 @@
       },
       "then": {
         "properties": {
-          "conclusion": {
-            "enum": ["success", "failure"]
-          },
           "watchdogExpiresAt": {
             "type": "null"
           },

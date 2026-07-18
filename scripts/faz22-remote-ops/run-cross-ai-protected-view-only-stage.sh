@@ -144,7 +144,7 @@ fi
 GRANT_EXPIRES_EPOCH="$(date -u -d "$GRANT_EXPIRES_AT" +%s)" || exit 2
 
 verify_watchdog_active() {
-  local job_json pod_json service_account role role_binding network_policy permission
+  local job_json pod_json service_account role role_binding network_policy permission allowed
   job_json="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     get job faz22-view-only-pilot-watchdog -o json)"
   jq -e \
@@ -212,8 +212,16 @@ verify_watchdog_active() {
     "delete networkpolicy/eab-api-gateway-allow-egress-8096-to-bridge-viewer"; do
     # Deliberate word splitting turns each fixed pair into verb + resource/name.
     # shellcheck disable=SC2086
-    [[ "$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" auth can-i $permission \
-      --as="system:serviceaccount:${K8S_NAMESPACE}:faz22-view-only-pilot-watchdog")" == "yes" ]]
+    if ! allowed="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+      auth can-i $permission \
+      --as="system:serviceaccount:${K8S_NAMESPACE}:faz22-view-only-pilot-watchdog")"; then
+      echo "protected-view-only-stage: watchdog permission query failed: $permission" >&2
+      return 1
+    fi
+    if [[ "$allowed" != "yes" ]]; then
+      echo "protected-view-only-stage: watchdog permission denied: $permission" >&2
+      return 1
+    fi
   done
 
   pod_json="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
@@ -233,10 +241,21 @@ verify_watchdog_active() {
 
 rollback_surface() {
   local live_bundle status
-  live_bundle="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
-    get job faz22-view-only-pilot-watchdog \
+  if ! live_bundle="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get job faz22-view-only-pilot-watchdog --ignore-not-found \
     -o jsonpath='{.metadata.annotations.faz22\.6\.acik\.com/authorization-sha256}' \
-    2>/dev/null)"
+    2>/dev/null)"; then
+    echo "protected-view-only-stage: rollback ownership marker cannot be read" >&2
+    return 1
+  fi
+  if [[ -z "$live_bundle" ]]; then
+    if verify_rollback; then
+      echo "protected-view-only-stage: rollback surface is already clean" >&2
+      return 0
+    fi
+    echo "protected-view-only-stage: rollback ownership marker is absent while surface is not clean" >&2
+    return 1
+  fi
   if [[ "$live_bundle" != "$BUNDLE_SHA256" ]]; then
     echo "protected-view-only-stage: rollback ownership marker differs" >&2
     return 1

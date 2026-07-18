@@ -112,7 +112,6 @@
       },
       "then": {
         "properties": {
-          "conclusion": {"enum": ["success", "failure"]},
           "watchdogExpiresAt": {"type": "null"},
           "productArtifactId": {"type": "integer", "minimum": 1},
           "productArtifactName": {"type": "string"},

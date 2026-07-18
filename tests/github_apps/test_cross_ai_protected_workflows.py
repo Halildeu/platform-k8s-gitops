@@ -27,7 +27,8 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             workflow_source,
             Loader=yaml.BaseLoader,
         )
-        self.assertIn("schema/cross-ai-*.schema.json", workflow_source)
+        self.assertIn('"schema/cross-ai-*.json"', workflow_source)
+        self.assertIn("for schema in schema/cross-ai-*.json", workflow_source)
         self.assertNotIn("schema/cross-ai-deployment-*.json", workflow_source)
         policy = load_policy(POLICY)
         inventory = (
@@ -164,6 +165,12 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn("gateway route index $GATEWAY_ROUTE_INDEX is not clean", script)
         self.assertIn('GATEWAY_ROUTE_INDEX="28"', script)
         self.assertIn("GATEWAY_ROUTE_PREFIX", script)
+        self.assertIn("rollback surface is already clean", script)
+        self.assertIn(
+            "rollback ownership marker is absent while surface is not clean",
+            script,
+        )
+        self.assertIn("watchdog permission denied: $permission", script)
         self.assertIn("contains($token)", script)
         self.assertIn("one bounded DNS line", script)
         self.assertIn("bootstrap response digest mismatch", script)
