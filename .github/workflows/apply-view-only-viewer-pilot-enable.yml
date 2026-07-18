@@ -89,7 +89,14 @@ jobs:
               echo "::error::protected authorization expiry must be RFC3339 UTC"
               exit 1
             }
-          [ "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" -gt "$(date -u +%s)" ] || {
+          expiry_epoch="$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)"
+          now_epoch="$(date -u +%s)"
+          expiry_sha256="$(printf '%s' "$PILOT_AUTHORIZATION_EXPIRES_AT" | sha256sum | awk '{print $1}')"
+          expected_expiry_sha256="a3e256947686716aa576c15a49eecd965de84873e567f4c0bfb1ef951f2c8174"
+          echo "expiry_diagnostic_length=${#PILOT_AUTHORIZATION_EXPIRES_AT}"
+          echo "expiry_diagnostic_matches_expected=$([ "$expiry_sha256" = "$expected_expiry_sha256" ] && echo true || echo false)"
+          echo "expiry_diagnostic_delta_seconds=$((expiry_epoch - now_epoch))"
+          [ "$expiry_epoch" -gt "$now_epoch" ] || {
             echo "::error::protected pilot authorization is expired"
             exit 1
           }
