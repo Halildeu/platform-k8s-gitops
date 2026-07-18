@@ -74,38 +74,29 @@ mavis communication peers
 - [docs/context-priority-rules.md §10 Agent İletişimi](./docs/context-priority-rules.md) (proje canonical detay)
 - Global `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı + örnek senaryolar)
 
-### 0.1 Zorunlu Üç Kanallı Cross-AI İstişare (2026-07-17)
+### 0.1 Durumsal Cross-AI İstişare — Az Kanal Varsayımı (2026-07-18)
 
-Faz/plan/PR review'u ve yüksek etkili kararlar aynı exact scope/head üzerinde
-**doğrudan `claude-opus-4-8` + MiniMax `minimax/MiniMax-M3` + doğrudan
-`gpt-5.6-sol`** kanallarına verilir. Cursor kullanım yolu kural setinden kaldırılmıştır;
-Cursor CLI/MCP/model/harness veya Cursor-routed model bu zincirde kullanılmaz.
-Kararın stable provenance kaydı [#2601](https://github.com/Halildeu/platform-k8s-gitops/issues/2601)'dir.
+- Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
+  adımlarında istişare açma: `Consultation mode: none`. Changed-files kanıtı
+  eksikse, consultation governance dosyası değişiyorsa veya branch
+  `auto-promotion/` ise gate `none` kabul etmez; en az `single` gerekir.
+- İkinci görüş gerçekten gerekiyorsa tek ve birincil kanal doğrudan
+  `claude --model claude-opus-4-8` olur: `Consultation mode: single`.
+  JSON `modelUsage` exact `claude-opus-4-8` değilse gerçek görüş sayılmaz;
+  Claude implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz.
+- Yalnız geri döndürülemez, çok yüksek riskli veya açık insan/yetkili kararı
+  gerektiren noktada Claude'a bir provider-distinct ikincil kanal ekle:
+  `Consultation mode: dual`. MiniMax M3 veya Codex 5.6 SOL'dan yalnız biri
+  seçilir; ikincil kanal implementer sağlayıcısıyla aynı olamaz, toplam iki
+  kanal aşılmaz ve mümkünse paralel çağrılır.
+- Cursor, wrapper-routed model ve AI uygulama penceresi istişare kanalı değildir.
+- `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
+  review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya
+  kanallar değişen exact scope üzerinde yeniden inceler.
+- İstişare test/CI/live evidence/browser smoke/board/human gate yerine geçmez.
+- Secret, PII veya raw credential prompt/argümana konmaz; UI fallback yapılmaz.
 
-- **Birincil istişare ve her turun ilk dış çağrısı doğrudan
-  `claude-opus-4-8`'dir.** JSON `modelUsage` exact `claude-opus-4-8`
-  doğrulamıyorsa bu kanal tamamlanmış sayılmaz; alias veya daha düşük modele
-  sessiz fallback yapılmaz. Sonra MiniMax M3 ve Codex 5.6 SOL aynı scope'u inceler.
-- Yalnız headless CLI/daemon kullanılır; AI uygulama penceresi ve UI fallback yoktur.
-- Her çağrıda exact model kimliği canlı çıktıdan doğrulanır; model adı hafızadan uydurulmaz.
-- Auth/kota/fallback/boş çıktı gerçek review değildir ve kanal `tracked_pending` kalır.
-- `REVISE -> düzeltme -> exact-head yeniden review -> AGREE` zinciri kaydedilir.
-- Her yeni push/head önceki receipt'leri hükümsüz kılar; full PR range secret/PII
-  preflight'tan geçirilir ve üç kanal aynı content-addressed scope'u okur.
-- Implementer ile aynı sağlayıcının kanalı challenger olarak kalır ama bağımsız
-  onay sayılmaz; bağımsızlık diğer iki direct-provider kanalından gelir.
-- Üç ayrı owner-captured, exact-scope-bound `AGREE` evidence yoksa consensus yoktur; `tracked_pending`, `REVISE`,
-  model/provider uyuşmazlığı veya çözümsüz ayrışma fail-closed kalır. PR body
-  istisnası bu kapıyı aşmaz; politika değişikliği ayrı auditable governance
-  değişikliği ister.
-- Üçlü AI görüşü test/CI/live evidence/browser smoke/human gate yerine geçmez.
-- Secret, PII veya raw credential prompt/argümana konmaz.
-- İlk gate PR'ı kendi head kurallarını geçmiş sayılmaz; exact model kalıcı olarak
-  provider'dan kalkarsa yalnız context-rules §11.4'teki dar, insan-atıflı
-  model-pin migration break-glass yolu kullanılabilir. Timeout/kota/format/REVISE
-  bu yol için yeterli değildir.
-
-Canonical çağrı, attribution ve failure semantiği:
+Canonical mod, attribution ve receipt semantiği:
 [docs/context-priority-rules.md §11](./docs/context-priority-rules.md#cross-ai-three-channel).
 
 ### 1. No Closure Language
@@ -159,28 +150,26 @@ Agent'ın **staging-sw sunucusuna SSH** ile erişim ve kubectl operasyonlarını
 
 User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak kural olarak ekle genel kural"
 
-### 8. Continuous Autonomous Mode + Üçlü Cross-AI Decision Authority (KALICI ANA KURAL — 2026-07-17 güncel)
+### 8. Continuous Autonomous Mode + Durumsal Cross-AI (KALICI ANA KURAL — 2026-07-18 güncel)
 
 **HARD RULE**: Otomatik mod sürekli aktiftir; durmak yok, tüm işler bitene kadar devam.
 
 **Karar verme kuralı**:
-- Stratejik karar gerektiren noktada (mimari, deploy, rollback, scope değişimi)
-  §0.1'deki doğrudan `claude-opus-4-8` + `minimax/MiniMax-M3` + doğrudan
-  `gpt-5.6-sol`
-  zincirine danış.
+- Normal implementation/test akışını istişareyle yavaşlatma; otonom ilerle.
+- Gerçek ikinci görüş noktasında yalnız direct Claude Opus 4.8 kullan.
+- Geri döndürülemez/çok yüksek riskli/insan-yetkili kararda en fazla bir ek
+  provider-distinct kanal kullan; bu kanal implementer sağlayıcısıyla aynı
+  olamaz, mümkünse iki çağrıyı paralel yürüt.
 - Cursor veya Cursor-routed model kullanma.
-- Üç kanalın geçerli bulgularını absorb et; `REVISE` sonrası exact-head yeniden
-  review ile üç ayrı owner-captured, exact-scope-bound `AGREE` evidence üret. Kalıcı ayrışma `consensus=false` ve
-  fail-closed'dur; kendiliğinden karar/deploy/merge yetkisi vermez.
-- Devredilebilir engineering kararında mutabakatı uygula; gerçek human gate
-  istisnalarını AI kararıyla ikame etme.
-- Sağlayıcı/model erişilemiyorsa dürüstçe `tracked_pending` bırak; yapay `PASS` üretme.
+- Geçerli bulguları absorb et; `REVISE` kapanmadan hazır/merge-ready deme.
+- Gerçek human gate istisnalarını AI kararıyla ikame etme; sağlayıcı/model
+  erişilemiyorsa dürüstçe `tracked_pending` bırak, yapay `PASS` üretme.
 
 **Çıktı**:
-- Her turda sağlayıcı + exact model + exact base-tip/base/head/scope + verdict +
-  ayrı GitHub evidence-comment ref'i + fetched comment/response digest'leri kaydedilir.
-- Plan iterasyonları kullanıcıya gösterilmez; nihai consensus ve absorbe edilen
-  somut bulgular kanıtlanır.
+- `none` modda kısa gerekçe; `single/dual` modda sağlayıcı + exact model + exact
+  base-tip/base/head/scope + verdict + evidence ref/digest kaydedilir.
+- Plan iterasyonları kullanıcıya gösterilmez; seçilen az kanalın somut ve
+  absorbe edilen bulguları kanıtlanır.
 
 **İstisnalar** (yine kullanıcı onayı gerek):
 - Repo arşivleme/silme/visibility değişimi (irreversible)
