@@ -4257,9 +4257,9 @@ images:
     # 2026-07-18 Faz 25 #2615 branch acceptance: platform-web#947 exact head
     # adds recruiter job lifecycle, public list/detail/apply and browser-local
     # PDF CV autofill/edit. Build run 29636197881 testai job 88058870412.
-    # sourceRevision: d5846603ff278e97c3539c8c8bf04950cfd5f628
-    newTag: sha-d584660
-    digest: sha256:ac5f7f81a61c118e8891ff50551e35e22463470b06f02a382687638211f9437d
+    # sourceRevision: 9f82edb249bcc4de3d83ce59a3800d835e88f410
+    newTag: sha-9f82edb
+    digest: sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
