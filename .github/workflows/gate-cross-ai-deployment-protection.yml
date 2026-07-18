@@ -12,7 +12,14 @@ on:
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
       - "scripts/ops/vault-policy-reconcile.sh"
+      - "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
+      - ".github/actions/protected-apply/**"
+      - ".github/actions/protected-browser-evidence/**"
+      - ".github/actions/protected-rollback/**"
+      - ".github/workflows/apply-view-only-viewer-pilot-protected.yml"
+      - ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml"
+      - ".github/workflows/rollback-view-only-viewer-pilot-protected.yml"
       - ".github/workflows/gate-cross-ai-deployment-protection.yml"
   push:
     branches: [main]
@@ -26,7 +33,14 @@ on:
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
       - "scripts/ops/vault-policy-reconcile.sh"
+      - "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
+      - ".github/actions/protected-apply/**"
+      - ".github/actions/protected-browser-evidence/**"
+      - ".github/actions/protected-rollback/**"
+      - ".github/workflows/apply-view-only-viewer-pilot-protected.yml"
+      - ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml"
+      - ".github/workflows/rollback-view-only-viewer-pilot-protected.yml"
 
 permissions:
   contents: read
@@ -55,8 +69,11 @@ jobs:
       - name: Compile policy implementation
         run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py scripts/ops/bootstrap_cross_ai_transit.py tests/github_apps/*.py
 
-      - name: Lint TEST Vault reconciliation shell
-        run: shellcheck scripts/ops/vault-policy-reconcile.sh
+      - name: Lint TEST Vault and protected-stage shell
+        run: >-
+          shellcheck
+          scripts/ops/vault-policy-reconcile.sh
+          scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh
 
       - name: Validate JSON schemas and example policy
         run: |

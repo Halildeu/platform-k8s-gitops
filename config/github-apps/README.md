@@ -17,9 +17,22 @@ in the service deployment as `--expected-trust-root-sha256`. Do not derive the
 pin from the mounted trust-root file at service startup; that would make a
 tampered file self-authorizing.
 
-The example names dedicated `*-protected.yml` workflows. Those workflows are
-not in the repository yet: the current human-gated workflows declare dispatch
-inputs and therefore correctly fail the v1 machine-gate inspector.
+The example names three dedicated no-input `*-protected.yml` workflows. Their
+execution actions are pinned to immutable commit
+`ac69b07503755f56ef4f683ca331863bd5e9c6f0`; all three share one literal,
+non-cancelling concurrency group and publish the exact canonical stage-outcome
+artifact expected by the sweeper. Apply performs immediate in-job compensation
+on failure; the separate rollback workflow is only the pre-signed
+crash/CallbackUnknown recovery lane and checks the live watchdog bundle marker
+before destructive cleanup.
+
+The workflows are intentionally fail-closed until the one-time owner Transit
+bootstrap produces the six public keys. Their command currently pins the zero
+digest sentinel and references environment-specific policy, trust-root and
+revocation files that are deliberately absent. A separate reviewed release
+change must add those public artifacts and replace the sentinel with the
+independently computed trust-root digest. Do not substitute the mounted file's
+digest at runtime or weaken the command to accept mutable workflow inputs.
 
 `cross-ai-protection-evaluator-app.example.json` and
 `cross-ai-intent-dispatcher-app.example.json` are reviewable registration
