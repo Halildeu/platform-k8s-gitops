@@ -116,7 +116,7 @@ jobs:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PROMOTION_PR: "2632"
+          PROMOTION_PR: "2636"
           ATTESTATION_OUTPUT: ${{ runner.temp }}/fullats-rollback-content-attestation-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: bash scripts/ats/verify-fullats-test-rollback-content.sh
 
