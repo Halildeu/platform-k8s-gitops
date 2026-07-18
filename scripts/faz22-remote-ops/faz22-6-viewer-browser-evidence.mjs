@@ -402,6 +402,37 @@ export function classifyReplayProbeStatus(status) {
   return status === 404 ? null : 'browser-replay-not-rejected';
 }
 
+export async function runReplayProbe({ viewerAckUrl, viewerId, frameSeq, readBearer, request = fetch }) {
+  const url = new URL(viewerAckUrl);
+  if (
+    url.origin !== VIEWER_ORIGIN ||
+    !/^\/api\/v1\/endpoint-admin\/remote-access\/sessions\/[A-Za-z0-9._:-]{1,160}\/view$/.test(
+      url.pathname,
+    ) ||
+    url.searchParams.getAll('streamId').length !== 1 ||
+    !/^[A-Za-z0-9_-]{1,128}$/.test(url.searchParams.get('streamId') ?? '') ||
+    [...url.searchParams.keys()].some((key) => key !== 'streamId') ||
+    !VIEWER_ID.test(viewerId) ||
+    !Number.isSafeInteger(frameSeq) ||
+    frameSeq < 0
+  ) {
+    throw new Error('replay probe is outside the bounded test VIEW_ONLY ACK route');
+  }
+  const bearer = await readBearer();
+  if (typeof bearer !== 'string' || bearer.length < 32) return null;
+  const response = await request(url.toString(), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearer}`,
+    },
+    body: JSON.stringify({ viewerId, frameSeq }),
+    redirect: 'manual',
+  });
+  return response?.status;
+}
+
 function validateMaskRect(raw) {
   if (!/^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$/.test(raw)) {
     throw new Error('DLP_MASK_RECT_BPS is not canonical x,y,width,height');
@@ -824,24 +855,17 @@ async function main() {
         ackDiagnostic(telemetry, samples.length),
       );
     }
-    const replayStatus = await evidenceStep('browser-replay-probe-failed', async () => page.evaluate(
-      async ({ url, replayViewerId, replaySeq }) => {
-        const bearer = window.localStorage.getItem('token');
-        if (!bearer) return null;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${bearer}`,
-          },
-          cache: 'no-store',
-          body: JSON.stringify({ viewerId: replayViewerId, frameSeq: replaySeq }),
-        });
-        return response.status;
-      },
-      { url: viewerAckUrl, replayViewerId: viewerId, replaySeq: samples.at(-1).seq },
-    ));
+    // Keep the intentional 404 replay rejection out of the product page's
+    // console. The bearer remains process-memory-only and the exact browser
+    // session identity still drives the server-side negative probe.
+    const replayStatus = await evidenceStep('browser-replay-probe-failed', async () =>
+      runReplayProbe({
+        viewerAckUrl,
+        viewerId,
+        frameSeq: samples.at(-1).seq,
+        readBearer: () => page.evaluate(() => window.localStorage.getItem('token')),
+      }),
+    );
     const replayFailureCode = classifyReplayProbeStatus(replayStatus);
     if (replayFailureCode === 'browser-replay-not-rejected') {
       throw evidenceFailure('browser-replay-not-rejected', { replayHttpStatus: replayStatus });
