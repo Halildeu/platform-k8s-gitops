@@ -191,6 +191,17 @@ jq -e '
   and .browserReplayHttpStatus == "405"
 ' "$TMP/browser-replay/collector-diagnostic.json" >/dev/null
 
+jq '.replayHttpStatus = 404' "$TMP/browser-diagnostic-replay.json" \
+  > "$TMP/browser-diagnostic-replay-impossible.json"
+bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \
+  70d8286163651805cd5ebd537d3836d02fb1692d "$TMP/browser-replay-impossible" \
+  "$TMP/browser-diagnostic-replay-impossible.json"
+jq -e '
+  .browserFailureCode == "browser-unclassified-failure"
+  and .browserAckTelemetry == null
+  and .browserReplayHttpStatus == null
+' "$TMP/browser-replay-impossible/collector-diagnostic.json" >/dev/null
+
 jq '.failureCode = "browser-ack-count-diverged"' "$TMP/browser-diagnostic-replay.json" \
   > "$TMP/browser-diagnostic-mismatched-fields.json"
 bash "$SCRIPT" "$TMP/browser-summary.json" "$TMP/operation.json" \

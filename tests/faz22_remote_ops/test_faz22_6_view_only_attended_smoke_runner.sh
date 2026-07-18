@@ -41,10 +41,18 @@ JSON
 [[ "$(bash "$BROWSER_DIAGNOSTIC_READER" \
   "$TMP/strict-browser-diagnostic.json" "$diagnostic_source")" == "browser-binding-invalid" ]]
 
-jq '.failureCode = "browser-replay-not-rejected" | .replayHttpStatus = 404' \
+jq '.failureCode = "browser-replay-not-rejected" | .replayHttpStatus = 405' \
   "$TMP/strict-browser-diagnostic.json" > "$TMP/strict-browser-replay-diagnostic.json"
 [[ "$(bash "$BROWSER_DIAGNOSTIC_READER" \
   "$TMP/strict-browser-replay-diagnostic.json" "$diagnostic_source")" == "browser-replay-not-rejected" ]]
+
+jq '.replayHttpStatus = 404' "$TMP/strict-browser-replay-diagnostic.json" \
+  > "$TMP/strict-browser-replay-impossible.json"
+if bash "$BROWSER_DIAGNOSTIC_READER" \
+    "$TMP/strict-browser-replay-impossible.json" "$diagnostic_source" >/dev/null 2>&1; then
+  echo "browser diagnostic reader accepted replay-not-rejected with HTTP 404" >&2
+  exit 1
+fi
 
 jq '.replayHttpStatus = 404' "$TMP/strict-browser-diagnostic.json" \
   > "$TMP/strict-browser-diagnostic-mismatched-fields.json"

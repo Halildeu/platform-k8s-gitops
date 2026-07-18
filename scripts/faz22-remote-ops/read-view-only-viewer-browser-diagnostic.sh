@@ -48,7 +48,7 @@ jq -er \
         .replayHttpStatus | type == "number" and floor == . and . >= 100 and . <= 599
       ))
       and (if .failureCode == "browser-replay-not-rejected" then
-        .ackTelemetry == null and .replayHttpStatus != null
+        .ackTelemetry == null and .replayHttpStatus != null and .replayHttpStatus != 404
       else
         .replayHttpStatus == null
       end)

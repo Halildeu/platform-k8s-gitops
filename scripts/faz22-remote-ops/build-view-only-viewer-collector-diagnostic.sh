@@ -106,6 +106,7 @@ jq -cS -n \
              and ($browser.replayHttpStatus | type) == "number"
              and ($browser.replayHttpStatus | floor) == $browser.replayHttpStatus
              and $browser.replayHttpStatus >= 100 and $browser.replayHttpStatus <= 599
+             and $browser.replayHttpStatus != 404
            else
              $browser.replayHttpStatus == null
            end)
@@ -149,6 +150,7 @@ jq -cS -n \
            and $browser.ackTelemetry == null
            and ($browser.replayHttpStatus | type) == "number"
            and $browser.replayHttpStatus >= 100 and $browser.replayHttpStatus <= 599
+           and $browser.replayHttpStatus != 404
            and ($browser.replayHttpStatus | floor) == $browser.replayHttpStatus
            # Collector diagnostics represent all HTTP statuses as bounded strings.
            then ($browser.replayHttpStatus | tostring)
@@ -199,7 +201,11 @@ jq -e '
     and (.browserAckTelemetry.pending | type == "number"
       and floor == . and . >= 0 and . <= 1000)
   ))
-  and (.browserReplayHttpStatus == null or (.browserReplayHttpStatus | test("^[1-5][0-9]{2}$")))
+  and (.browserReplayHttpStatus == null or (
+    (.browserReplayHttpStatus | type) == "string"
+    and (.browserReplayHttpStatus | test("^[1-5][0-9]{2}$"))
+    and .browserReplayHttpStatus != "404"
+  ))
   and (.consentWait == null or (.consentWait | test("^[a-z-]{1,32}$")))
   and (.openSessionHttp == null or (.openSessionHttp | test("^[0-9]{3}$")))
   and (.operationHttp == null or (.operationHttp | test("^[0-9]{3}$")))
