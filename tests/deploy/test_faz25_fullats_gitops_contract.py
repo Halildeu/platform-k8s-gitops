@@ -795,6 +795,10 @@ fi
             'echo "[fullats-rollback] missing command: $command"',
             self.rollback_script,
         )
+        self.assertIn("awk gh git grep jq kustomize python3", self.rollback_script)
+        self.assertNotIn("python3 rg", self.rollback_script)
+        self.assertNotIn("rg -F", self.rollback_script)
+        self.assertIn('grep -Fxq -- "ROLLED_BACK"', self.rollback_script)
         self.assertIn(
             'branch="auto-fullats-rollback/faz25-fullats-${RUN_ID}-${RUN_ATTEMPT}"',
             self.rollback_script,
