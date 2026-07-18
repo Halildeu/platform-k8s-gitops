@@ -125,7 +125,7 @@ const AUTOMATION_BRANCH_CONTRACT = {
 // docs/operations/RUNBOOKS/RB-automation-overlay-sync.md).
 //
 // Production `auto-promotion/` is intentionally absent: it changes prod
-// desired state and therefore must pass the normal three-channel path.
+// desired state and therefore must pass the normal explicit consultation-mode path.
 // `auto-verified/` keeps `github-actions[bot]` from #827 PR-A:
 // ledger-mark-verified.sh runs on a staging-sw host (not GitHub Actions), so
 // migrating it to a host-minted App token is a separate follow-up
@@ -358,7 +358,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -557,7 +557,13 @@ function docsOnlyExemption(fields, prMeta) {
   };
 }
 
-async function appendConsultationFindings(findings, fields, prMeta, evidenceOverrides) {
+async function appendConsultationFindings(
+  findings,
+  fields,
+  prMeta,
+  evidenceOverrides,
+  receiptFields = Object.keys(CONSULTATION_RECEIPTS),
+) {
   const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
   const baseTip = fields['consultation base tip'] || '';
   const base = fields['consultation base'] || '';
@@ -630,7 +636,8 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
 
   const refs = [];
   const evidenceCreatedAt = [];
-  for (const [field, expected] of Object.entries(CONSULTATION_RECEIPTS)) {
+  for (const field of receiptFields) {
+    const expected = CONSULTATION_RECEIPTS[field];
     const receipt = parseReceipt(fields[field]);
     if (receipt?.ref) refs.push(receipt.ref);
     const shapePass = Boolean(
@@ -664,19 +671,123 @@ async function appendConsultationFindings(findings, fields, prMeta, evidenceOver
   }
   findings.push({
     check: 'consultation_evidence_refs_unique',
-    pass: refs.length === 3 && new Set(refs).size === 3,
-    detail: "Üç provider receipt ref'i birbirinden farklı olmalıdır",
+    pass: refs.length === receiptFields.length && new Set(refs).size === receiptFields.length,
+    detail: 'Seçilen provider receipt referansları birbirinden farklı olmalıdır',
   });
-  const publicationOrderPass = evidenceCreatedAt.length === 3
-    && evidenceCreatedAt[0] < evidenceCreatedAt[1]
-    && evidenceCreatedAt[1] < evidenceCreatedAt[2];
+  if (receiptFields.length === 3) {
+    const publicationOrderPass = evidenceCreatedAt.length === 3
+      && evidenceCreatedAt[0] < evidenceCreatedAt[1]
+      && evidenceCreatedAt[1] < evidenceCreatedAt[2];
+    findings.push({
+      check: 'consultation_publication_order_claude_minimax_codex',
+      pass: publicationOrderPass,
+      detail: publicationOrderPass
+        ? 'owner evidence publication order is strictly Claude -> MiniMax -> Codex'
+        : 'owner evidence comments must have strictly increasing Claude -> MiniMax -> Codex timestamps',
+    });
+  }
+}
+
+async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) {
+  const findings = [];
+  const mode = (fields['consultation mode'] || '').trim().toLowerCase();
+  const reason = (fields['consultation reason'] || '').trim();
+  const implementer = normalizeProvider(fields['implementer ai']);
+  const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
+  const presentReceipts = receiptNames.filter((field) => Boolean(fields[field]));
+
   findings.push({
-    check: 'consultation_publication_order_claude_minimax_codex',
-    pass: publicationOrderPass,
-    detail: publicationOrderPass
-      ? 'owner evidence publication order is strictly Claude -> MiniMax -> Codex'
-      : 'owner evidence comments must have strictly increasing Claude -> MiniMax -> Codex timestamps',
+    check: 'consultation_mode_valid',
+    pass: ['none', 'single', 'dual'].includes(mode),
+    detail: ['none', 'single', 'dual'].includes(mode)
+      ? `consultation mode ${mode}`
+      : 'Consultation mode yalnız none, single veya dual olabilir',
   });
+  findings.push({
+    check: 'consultation_reason_present',
+    pass: reason.length >= 10,
+    detail: reason.length >= 10
+      ? `consultation reason recorded (${reason.length}c)`
+      : 'Consultation reason en az 10 karakter olmalıdır',
+  });
+  findings.push({
+    check: 'implementer_provider_enum',
+    pass: Boolean(implementer && VALID_PROVIDERS.has(implementer)),
+    detail: implementer && VALID_PROVIDERS.has(implementer)
+      ? `implementer ${implementer}`
+      : 'Implementer AI canonical provider enum içinde olmalıdır',
+  });
+
+  if (mode === 'none') {
+    findings.push({
+      check: 'consultation_none_has_no_receipts',
+      pass: presentReceipts.length === 0,
+      detail: presentReceipts.length === 0
+        ? 'routine work carries no fabricated provider receipt'
+        : 'Consultation mode none iken provider receipt bulunamaz',
+    });
+    return findings;
+  }
+
+  const baseFields = [
+    'consultation base tip',
+    'consultation base',
+    'consultation commit',
+    'consultation scope',
+  ];
+  const missingBaseFields = baseFields.filter((field) => !fields[field]);
+  findings.push({
+    check: 'consultation_binding_fields_present',
+    pass: missingBaseFields.length === 0,
+    detail: missingBaseFields.length === 0
+      ? 'exact consultation binding fields present'
+      : `Eksik consultation binding field: ${missingBaseFields.join(', ')}`,
+  });
+  findings.push({
+    check: 'consultation_verdict_agree',
+    pass: fields.verdict === 'AGREE',
+    detail: fields.verdict === 'AGREE'
+      ? 'consultation verdict AGREE'
+      : 'single/dual consultation yalnız AGREE ile geçer',
+  });
+
+  let selectedReceipts = ['claude receipt'];
+  if (mode === 'single') {
+    findings.push({
+      check: 'consultation_single_exact_channel_count',
+      pass: presentReceipts.length === 1 && presentReceipts[0] === 'claude receipt',
+      detail: 'single mode exact direct Claude Opus 4.8 channel requires one receipt',
+    });
+  } else if (mode === 'dual') {
+    const riskTrigger = (fields['risk trigger'] || '').trim();
+    const secondaryReceipts = ['minimax receipt', 'codex receipt'].filter((field) => fields[field]);
+    findings.push({
+      check: 'consultation_dual_high_risk_trigger',
+      pass: riskTrigger.length >= 10,
+      detail: riskTrigger.length >= 10
+        ? `high-risk trigger recorded (${riskTrigger.length}c)`
+        : 'dual mode yalnız somut Risk trigger ile kullanılabilir',
+    });
+    findings.push({
+      check: 'consultation_dual_exact_channel_count',
+      pass: presentReceipts.length === 2
+        && Boolean(fields['claude receipt'])
+        && secondaryReceipts.length === 1,
+      detail: 'dual mode exact Claude plus one provider-distinct receipt requires two channels maximum',
+    });
+    selectedReceipts = ['claude receipt', ...(secondaryReceipts.length === 1 ? secondaryReceipts : [])];
+  }
+
+  if (missingBaseFields.length === 0 && selectedReceipts.length === (mode === 'dual' ? 2 : 1)) {
+    await appendConsultationFindings(
+      findings,
+      fields,
+      prMeta,
+      evidenceOverrides,
+      selectedReceipts,
+    );
+  }
+  return findings;
 }
 
 async function audit(body, prMeta = null, evidenceOverrides = {}) {
@@ -693,6 +804,10 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   findings.push({ check: 'cross_ai_section_present', pass: true });
 
   const fields = extractFields(section);
+  if (fields['consultation mode']) {
+    findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
+    return findings;
+  }
 
   // Check 1: required fields present
   const exemption = docsOnlyExemption(fields, prMeta);

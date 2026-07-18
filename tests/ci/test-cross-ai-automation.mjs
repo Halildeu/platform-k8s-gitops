@@ -134,6 +134,32 @@ const peerBody =
   `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(EVIDENCE[MINIMAX_REF].body)}\n` +
   `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
 
+const explicitNoneBody =
+  `## Cross-AI\n` +
+  `Implementer AI: Codex\n` +
+  `Consultation mode: none\n` +
+  `Consultation reason: Routine implementation and automated tests do not need external consultation.\n`;
+const explicitSingleBody =
+  `## Cross-AI\n` +
+  `Implementer AI: Codex\n` +
+  `Consultation mode: single\n` +
+  `Consultation reason: One primary architecture opinion is sufficient for this reversible decision.\n` +
+  `Verdict: AGREE\n` +
+  `Consultation base tip: ${BASE_TIP_SHA}\n` +
+  `Consultation base: ${BASE_SHA}\n` +
+  `Consultation commit: ${HEAD_SHA}\n` +
+  `Consultation scope: ${SCOPE_SHA256}\n` +
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n`;
+const explicitDualBody =
+  explicitSingleBody
+    .replace('Consultation mode: single', 'Consultation mode: dual')
+    .replace(
+      'Consultation reason: One primary architecture opinion is sufficient for this reversible decision.',
+      'Consultation reason: A second provider-distinct opinion is justified by the irreversible decision.',
+    ) +
+  `Risk trigger: Irreversible production security boundary with named human authority.\n` +
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+
 const staleClaudeBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
   head_sha: 'f'.repeat(40),
@@ -385,6 +411,24 @@ const cases = [
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, headRepo: 'mallory/platform-k8s-gitops', body: autoBody(LEDGER) }, 1],
   ['normal PR + valid peer review -> normal audit pass',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody }, 0],
+  ['explicit none mode lets routine work pass without provider receipts',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody }, 0],
+  ['explicit none mode rejects a fabricated or stale provider receipt',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitNoneBody}${peerBody.match(/^Claude receipt:.*$/m)[0]}\n` }, 1],
+  ['explicit single mode accepts exact direct Claude Opus 4.8 evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody }, 0],
+  ['explicit single mode rejects a second consultation channel',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitSingleBody}${peerBody.match(/^Codex receipt:.*$/m)[0]}\n` }, 1],
+  ['explicit dual mode accepts Claude plus one provider-distinct channel',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody }, 0],
+  ['explicit dual mode requires a concrete high-risk trigger',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitDualBody.replace(/^Risk trigger:.*\n/m, '') }, 1],
+  ['explicit dual mode rejects three consultation channels',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: `${explicitDualBody}${peerBody.match(/^MiniMax receipt:.*$/m)[0]}\n` }, 1],
   ['GitHub Actions mode rejects offline evidence-file override',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, githubActions: true }, 1],
   ['local evidence-file requires explicit test override flag',

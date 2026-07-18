@@ -476,43 +476,40 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertEqual(desired.group(1), workflow.group(1))
         self.assertEqual(workflow.group(1), runtime.group(1))
 
-    def test_three_channel_cross_ai_is_pinned_without_cursor_usage(self):
-        rule = "Zorunlu üç-kanallı Cross-AI istişare"
+    def test_consultation_defaults_to_none_then_single_claude_and_max_two(self):
+        rule = "Durumsal Cross-AI istişre — varsayılan az kanal"
         self.assertIn(rule, self.agents)
+        self.assertIn("`Consultation mode: none`", self.agents)
+        self.assertIn("(`single`)", self.agents)
+        self.assertIn("(`dual`)", self.agents)
         self.assertIn("`claude-opus-4-8`", self.agents)
         self.assertIn("`minimax/MiniMax-M3`", self.agents)
         self.assertIn("`gpt-5.6-sol`", self.agents)
-        self.assertIn("Cursor kullanım yolu kaldırılmıştır", self.agents)
-        self.assertIn("Cursor-routed modeller kullanılmaz", self.agents)
-        self.assertIn("Birincil istişare Claude Opus 4.8'dir", self.agents)
-        self.assertIn("daha düşük modele sessiz fallback yapılmaz", self.agents)
-        primary_start = self.agents.index(
-            "- **Birincil istişare Claude Opus 4.8'dir (KALICI)**"
-        )
-        primary_end = self.agents.index("\n- ", primary_start)
-        primary_rule = self.agents[primary_start:primary_end]
-        self.assertLess(
-            primary_rule.index("claude --model claude-opus-4-8"),
-            primary_rule.index("MiniMax M3"),
-        )
-        self.assertLess(
-            primary_rule.index("MiniMax M3"),
-            primary_rule.index("Codex 5.6 SOL"),
-        )
+        self.assertIn("toplam iki kanal aşılmaz", self.agents)
+        self.assertIn("mümkünse paralel", self.agents)
+        self.assertIn("Cursor ve AI uygulama pencereleri istişre yolu değildir", self.agents)
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents
         )
-        self.assertIn("## 11. Zorunlu Üç Kanallı Cross-AI İstişare", self.context_rules)
+        self.assertIn(
+            "## 11. Durumsal Cross-AI İstişre — Varsayılan Az Kanal",
+            self.context_rules,
+        )
+        self.assertIn("**`none` — varsayılan:**", self.context_rules)
+        self.assertIn("**`single` — gerçekten ikinci görüş gerektiğinde:**", self.context_rules)
+        self.assertIn("**`dual` — istisnai yüksek risk:**", self.context_rules)
         self.assertIn("**`claude-opus-4-8`**", self.context_rules)
         self.assertIn("**`minimax/MiniMax-M3`**", self.context_rules)
         self.assertIn("**`gpt-5.6-sol`**", self.context_rules)
         self.assertIn(
-            "Birincil istişare kanalı doğrudan Anthropic Claude Opus 4.8'dir",
+            "İstişre bir teslimat ritüeli değil, yalnız karar",
             self.context_rules,
         )
         self.assertIn("JSON `modelUsage`", self.context_rules)
-        self.assertIn("Cursor kullanım yolu", self.context_rules)
-        self.assertIn("kullanılamaz", self.context_rules)
+        self.assertIn("Cursor CLI/MCP/model/harness", self.context_rules)
+        self.assertIn("AI uygulama pencereleri istişre kanalı değildir", self.context_rules)
+        self.assertIn("`none` receipt", self.context_rules)
+        self.assertIn("`dual` yayın sırası zorunlu değildir", self.context_rules)
 
 if __name__ == "__main__":
     unittest.main()
