@@ -155,10 +155,13 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
             f'{self.ats_config_sha256}"'
         )
         self.assertIn(annotation, self.ats_deployment)
-        self.assertIn(
-            f"fullats.acik.com/configmap-sha256: {self.ats_config_sha256}",
+        rendered_annotation = re.search(
+            r"(?m)^\s*fullats\.acik\.com/configmap-sha256:\s*\"?"
+            r"([0-9a-f]{64})\"?\s*$",
             self.rendered_test_root,
         )
+        self.assertIsNotNone(rendered_annotation)
+        self.assertEqual(rendered_annotation.group(1), self.ats_config_sha256)
 
     def test_model_governance_endpoint_and_approval_refs_match_all_surfaces(self):
         patterns = {
