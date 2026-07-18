@@ -70,7 +70,7 @@ const EVIDENCE = {
 const REVERSED_DUAL_EVIDENCE = {
   ...EVIDENCE,
   [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 2_000),
-  [CODEX_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 0),
+  [MINIMAX_REF]: evidenceComment(EVIDENCE[MINIMAX_REF].body, 0),
 };
 
 // Build the GitHub event payload and run the real script; return its exit code.
@@ -185,6 +185,7 @@ const GOVERNANCE_PATH = 'AGENTS.md';
 const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
 const RBAC_PATH = 'kustomize/base/security/clusterrolebinding-platform-admin.yaml';
 const MIGRATION_PATH = 'services/reporting/src/main/resources/db/migration/V42__grant.sql';
+const HARMLESS_RBAC_DOC_PATH = 'docs/rbac-overview.md';
 const GOVERNANCE_CONTRACT_TEST_PATH = 'tests/deploy/test_faz25_fullats_gitops_contract.py';
 
 const staleClaudeBody = JSON.stringify({
@@ -494,13 +495,15 @@ const cases = [
   ['explicit single mode rejects consultation enforcement changes that require dual',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ENFORCEMENT_PATH] }, 1],
   ['explicit dual mode accepts consultation enforcement changes',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
   ['explicit none mode rejects a high-confidence RBAC path',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [RBAC_PATH] }, 1],
   ['explicit single mode accepts a high-confidence RBAC path',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [RBAC_PATH] }, 0],
   ['explicit none mode rejects a high-confidence database migration path',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [MIGRATION_PATH] }, 1],
+  ['explicit none mode accepts a harmless RBAC-named documentation path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [HARMLESS_RBAC_DOC_PATH] }, 0],
   ['explicit single mode rejects same-provider Claude self-review',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 1],
@@ -532,13 +535,15 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitSingleBody}Risk trigger:\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode accepts Claude plus one provider-distinct channel',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts MiniMax as the one provider-distinct secondary',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit dual mode rejects a secondary from the Codex implementer provider',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode accepts one independent channel for a Claude implementer',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts reverse evidence publication timestamps',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH], evidence: REVERSED_DUAL_EVIDENCE }, 0],
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH], evidence: REVERSED_DUAL_EVIDENCE }, 0],
   ['explicit dual mode rejects an empty third receipt key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitDualBody}MiniMax receipt:\n`, changedFiles: [ROUTINE_PATH] }, 1],

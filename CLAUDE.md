@@ -87,7 +87,8 @@ mavis communication peers
 - Yalnız geri döndürülemez, çok yüksek riskli veya açık insan/yetkili kararı
   gerektiren noktada Claude'a bir provider-distinct ikincil kanal ekle:
   `Consultation mode: dual`. MiniMax M3 veya Codex 5.6 SOL'dan yalnız biri
-  seçilir; toplam iki kanal aşılmaz ve mümkünse paralel çağrılır.
+  seçilir; ikincil kanal implementer sağlayıcısıyla aynı olamaz, toplam iki
+  kanal aşılmaz ve mümkünse paralel çağrılır.
 - Cursor, wrapper-routed model ve AI uygulama penceresi istişare kanalı değildir.
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
   review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya
@@ -157,7 +158,8 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 - Normal implementation/test akışını istişareyle yavaşlatma; otonom ilerle.
 - Gerçek ikinci görüş noktasında yalnız direct Claude Opus 4.8 kullan.
 - Geri döndürülemez/çok yüksek riskli/insan-yetkili kararda en fazla bir ek
-  provider-distinct kanal kullan; mümkünse iki çağrıyı paralel yürüt.
+  provider-distinct kanal kullan; bu kanal implementer sağlayıcısıyla aynı
+  olamaz, mümkünse iki çağrıyı paralel yürüt.
 - Cursor veya Cursor-routed model kullanma.
 - Geçerli bulguları absorb et; `REVISE` kapanmadan hazır/merge-ready deme.
 - Gerçek human gate istisnalarını AI kararıyla ikame etme; sağlayıcı/model

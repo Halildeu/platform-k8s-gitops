@@ -363,7 +363,8 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    riskli veya açık insan/yetkili kararı gerektiren noktada Claude'a **bir**
    provider-distinct kanal eklenir. İkincil kanal MiniMax
    `minimax/MiniMax-M3` veya OpenAI `gpt-5.6-sol` olabilir; ikisi birden
-   kullanılmaz. Toplam iki kanal aşılmaz ve çağrılar mümkünse paralel yürür.
+   kullanılmaz. İkincil kanal implementer sağlayıcısıyla da aynı olamaz.
+   Toplam iki kanal aşılmaz ve çağrılar mümkünse paralel yürür.
 
 Cursor CLI/MCP/model/harness, Cursor-routed model, wrapper ile aynı provider'ı
 ikinci kez çağırma ve AI uygulama pencereleri istişare kanalı değildir. CLI,

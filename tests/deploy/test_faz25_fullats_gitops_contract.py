@@ -492,6 +492,7 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
         self.assertIn("audit/evidence enforcement kodunun kendisi `dual` ister", self.agents)
         self.assertIn("Claude implementer kendi receipt'ini", self.agents)
         self.assertIn("provider-distinct ikinci kanal ile `dual` gerekir", self.context_rules)
+        self.assertIn("İkincil kanal implementer sağlayıcısıyla da aynı olamaz", self.context_rules)
         self.assertIn("`other` bu iki modda", self.context_rules)
         self.assertNotIn(
             "Cursor CLI (öncelikli ilave adversarial-review kanalı)", self.agents

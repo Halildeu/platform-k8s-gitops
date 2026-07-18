@@ -85,8 +85,8 @@ const CONSULTATION_DUAL_GOVERNANCE_PATHS = [
   /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|minimax_m3_review)\.py$/,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_HIGH_RISK_PATHS = [
-  /(?:^|\/)(?:rbac|networkpolic(?:y|ies)|vault-polic(?:y|ies)|external-secrets?|clustersecretstores?)(?:\/|[-_.])/i,
-  /(?:^|\/)(?:clusterrole|clusterrolebinding|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
+  /(?:^|\/)(?:[^/]+[-_.])?(?:rbac|clusterrole|clusterrolebinding|role|rolebinding|networkpolicy|externalsecret|clusterexternalsecret|secretstore|clustersecretstore)(?:[-_.][^/]*)?\.ya?ml$/i,
+  /(?:^|\/)vault\/polic(?:y|ies)\/[^/]+\.hcl$/i,
   /(?:^|\/)(?:db\/migration|migrations?)(?:\/|$)/i,
 ];
 const CONSULTATION_AT_LEAST_SINGLE_BRANCH_PREFIXES = ['auto-promotion/'];
@@ -946,6 +946,11 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   } else if (mode === 'dual') {
     const riskTrigger = (fields['risk trigger'] || '').trim();
     const secondaryReceipts = ['minimax receipt', 'codex receipt'].filter((field) => fields[field]);
+    const secondaryProvider = secondaryReceipts[0] === 'codex receipt'
+      ? 'codex'
+      : secondaryReceipts[0] === 'minimax receipt'
+        ? 'minimax'
+        : null;
     findings.push({
       check: 'consultation_dual_high_risk_trigger',
       pass: meaningfulRiskTrigger(riskTrigger),
@@ -959,6 +964,13 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
         && Boolean(fields['claude receipt'])
         && secondaryReceipts.length === 1,
       detail: 'dual mode exact Claude plus one provider-distinct receipt requires two channels maximum',
+    });
+    findings.push({
+      check: 'consultation_dual_secondary_is_provider_distinct',
+      pass: Boolean(secondaryProvider && secondaryProvider !== implementer),
+      detail: secondaryProvider && secondaryProvider !== implementer
+        ? `secondary reviewer ${secondaryProvider}, implementer ${implementer} providerından farklı`
+        : 'dual secondary receipt implementer sağlayıcısıyla aynı olamaz',
     });
     selectedReceipts = ['claude receipt', ...(secondaryReceipts.length === 1 ? secondaryReceipts : [])];
   }
