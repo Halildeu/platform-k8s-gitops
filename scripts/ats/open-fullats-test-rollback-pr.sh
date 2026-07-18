@@ -31,6 +31,12 @@ PROMOTION_BASE_SHA="fc5f2735a49977d79b82e9d36d71642e54e67023"
   echo "[fullats-rollback] run identity is invalid" >&2
   exit 2
 }
+for command in awk gh git jq kustomize python3 rg; do
+  command -v "$command" >/dev/null 2>&1 || {
+    echo "[fullats-rollback] missing command: $command" >&2
+    exit 2
+  }
+done
 
 promotion_json="$(gh api "repos/$GH_REPO/pulls/$PROMOTION_PR")"
 merge_sha="$(jq -r '.merge_commit_sha // empty' <<<"$promotion_json")"
@@ -90,14 +96,13 @@ done
   echo "[fullats-rollback] Codex implementer cannot use Codex as dual secondary" >&2
   exit 1
 }
-[[ "$FAILED_SHA" == "$merge_sha" ]] || {
-  echo "[fullats-rollback] refusing stale/non-promotion workflow SHA" >&2
-  exit 1
-}
-
 git fetch origin main --quiet
 [[ "$(git rev-parse origin/main)" == "$FAILED_SHA" ]] || {
   echo "[fullats-rollback] main advanced; automatic revert requires a new reviewed scope" >&2
+  exit 1
+}
+git merge-base --is-ancestor "$merge_sha" "$FAILED_SHA" || {
+  echo "[fullats-rollback] failed revision does not descend from the reviewed promotion" >&2
   exit 1
 }
 
@@ -117,6 +122,22 @@ activation="kustomize/overlays/test/activation/ats-interview-evidence/kustomizat
 test_root="kustomize/overlays/test/kustomization.yaml"
 smoke="scripts/ats/d29-smoke.sh"
 state_marker="kustomize/overlays/test/fullats-promotion-state.txt"
+descendant_sensitive_changed="$(git diff --name-only "$merge_sha" "$FAILED_SHA" | awk '
+  /^(kustomize\/|argocd\/|helm-values\/|runtime-artifacts\/|config\/faz25|scripts\/ats\/|scripts\/automation\/(backend-testai|sync-test-overlay|apply-test-overlay)|scripts\/deploy\/(reconcile-testai|ensure-argocd|verify-testai|verify-pod|gate-stability)|\.github\/workflows\/(faz25-fullats|deploy-backend-testai|verify-testai-backend-rollout))/ {print}
+' | sort)"
+expected_descendant_sensitive_changed="$(printf '%s\n' \
+  .github/workflows/faz25-fullats-live-browser-acceptance.yml \
+  scripts/ats/install-pinned-gh-cli.sh \
+  scripts/ats/open-fullats-test-rollback-pr.sh | sort)"
+[[ "$descendant_sensitive_changed" == "$expected_descendant_sensitive_changed" ]] || {
+  echo "[fullats-rollback] descendant main changed the protected Full ATS runtime/recovery scope" >&2
+  exit 1
+}
+git diff --quiet "$merge_sha" "$FAILED_SHA" -- \
+  "$activation" "$state_marker" "$test_root" "$smoke" || {
+  echo "[fullats-rollback] promoted runtime binding changed after the reviewed promotion" >&2
+  exit 1
+}
 parent_count="$(git rev-list --parents -n 1 "$merge_sha" | awk '{print NF - 1}')"
 if [[ "$parent_count" != "1" || "$(git rev-parse "$merge_sha^")" != "$PROMOTION_BASE_SHA" ]]; then
   echo "[fullats-rollback] promotion must be one-parent squash directly on reviewed base" >&2
@@ -185,9 +206,11 @@ git push origin "HEAD:$branch" --quiet
 body="$(cat <<'EOF'
 ## Test-only compensating rollback
 
-The live Full ATS browser acceptance failed on the exact merge commit of
-promotion PR #__PROMOTION_PR__. This PR restores only the reviewed-base ATS +
-permission-service + frontend artifact set and marks the promotion ROLLED_BACK.
+The live Full ATS browser acceptance failed on an exact current-main descendant
+of promotion PR #__PROMOTION_PR__. The four promoted runtime-binding paths were
+unchanged from that reviewed promotion. This PR restores only the reviewed-base
+ATS + permission-service + frontend artifact set and marks the promotion
+ROLLED_BACK.
 
 - Failed acceptance run: __RUN_URL__
 - Failed main SHA: `__FAILED_SHA__`

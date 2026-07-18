@@ -21,7 +21,7 @@ jobs:
     runs-on: [self-hosted, staging-sw, testai-deploy]
     # Includes the customer journey plus a bounded wait for a protected
     # compensating rollback PR if runtime/browser acceptance fails.
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
@@ -47,6 +47,22 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+
+      - name: Wait for exact GitOps auto-sync convergence
+        id: convergence
+        env:
+          EXPECTED_GITOPS_SHA: ${{ github.sha }}
+          EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          digest_map="$(python3 scripts/automation/backend-testai-digest-contract.py inspect \
+            --kustomization kustomize/overlays/test/kustomization.yaml)"
+          REVISION="$EXPECTED_GITOPS_SHA" \
+          DIGEST_MAP="$digest_map" \
+          FULL_SYNC_TIMEOUT=900 \
+          REPORT_PATH="$EVIDENCE_DIR/argocd-convergence.json" \
+            bash scripts/deploy/reconcile-testai-backend-sequential.sh
 
       - name: Bind pre-journey runtime to this exact GitOps revision
         id: runtime
@@ -82,7 +98,7 @@ jobs:
         run: bash scripts/ats/verify-fullats-live-runtime.sh
 
       - name: Require rollback GitHub App credentials after acceptance failure
-        if: failure() && steps.preflight.outcome == 'success' && (steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure')
+        if: failure() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure')
         id: rollback-credentials
         env:
           APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
@@ -112,8 +128,13 @@ jobs:
           token: ${{ steps.rollback-app-token.outputs.token }}
           fetch-depth: 0
 
-      - name: Open atomic compensating GitOps rollback PR
+      - name: Install pinned GitHub CLI for rollback automation
         if: failure() && steps.rollback-checkout.outcome == 'success'
+        id: rollback-gh
+        run: bash scripts/ats/install-pinned-gh-cli.sh
+
+      - name: Open atomic compensating GitOps rollback PR
+        if: failure() && steps.rollback-gh.outcome == 'success'
         id: rollback
         env:
           GH_TOKEN: ${{ steps.rollback-app-token.outputs.token }}
@@ -124,6 +145,13 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
           ROLLBACK_EVIDENCE_DIR: ${{ runner.temp }}/fullats-rollback-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash scripts/ats/open-fullats-test-rollback-pr.sh
+
+      - name: Require compensating rollback completion after acceptance failure
+        if: always() && steps.preflight.outcome == 'success' && (steps.convergence.outcome == 'failure' || steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure') && steps.rollback.outcome != 'success'
+        run: |
+          echo "::error::Full ATS acceptance failed and protected compensating rollback did not complete"
+          echo "convergence=${{ steps.convergence.outcome }} runtime=${{ steps.runtime.outcome }} browser=${{ steps.browser.outcome }} d29=${{ steps.d29.outcome }} final-runtime=${{ steps.final-runtime.outcome }} rollback-gh=${{ steps.rollback-gh.outcome }} rollback=${{ steps.rollback.outcome }}"
+          exit 1
 
       - name: Upload redacted live browser evidence
         if: always()

@@ -73,6 +73,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.rollback_script = (
             ROOT / "scripts/ats/open-fullats-test-rollback-pr.sh"
         ).read_text()
+        cls.pinned_gh_installer = (
+            ROOT / "scripts/ats/install-pinned-gh-cli.sh"
+        ).read_text()
         cls.rollback_content_verifier = (
             ROOT / "scripts/ats/verify-fullats-test-rollback-content.sh"
         ).read_text()
@@ -669,21 +672,64 @@ fi
         self.assertNotIn("containsRawPasswordOrJwt", self.fullats_browser)
 
     def test_fullats_live_failure_opens_exact_atomic_gitops_rollback(self):
-        self.assertIn("timeout-minutes: 60", self.fullats_browser_workflow)
+        self.assertIn("timeout-minutes: 90", self.fullats_browser_workflow)
         self.assertIn("id: preflight", self.fullats_browser_workflow)
         self.assertIn("id: runtime", self.fullats_browser_workflow)
         self.assertIn("id: browser", self.fullats_browser_workflow)
         self.assertIn("id: d29", self.fullats_browser_workflow)
         self.assertIn("id: final-runtime", self.fullats_browser_workflow)
+        self.assertIn("id: convergence", self.fullats_browser_workflow)
+        self.assertIn("FULL_SYNC_TIMEOUT=900", self.fullats_browser_workflow)
+        self.assertIn(
+            "scripts/deploy/reconcile-testai-backend-sequential.sh",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn("steps.convergence.outcome == 'failure'", self.fullats_browser_workflow)
         self.assertIn(
             "steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure'",
             self.fullats_browser_workflow,
         )
         self.assertIn("steps.rollback-checkout.outcome == 'success'", self.fullats_browser_workflow)
+        self.assertIn("install-pinned-gh-cli.sh", self.fullats_browser_workflow)
+        self.assertIn("steps.rollback-gh.outcome == 'success'", self.fullats_browser_workflow)
         self.assertIn("open-fullats-test-rollback-pr.sh", self.fullats_browser_workflow)
         self.assertIn('PROMOTION_PR: "2617"', self.fullats_browser_workflow)
-        self.assertIn('[[ "$FAILED_SHA" == "$merge_sha" ]]', self.rollback_script)
         self.assertIn('[[ "$(git rev-parse origin/main)" == "$FAILED_SHA" ]]', self.rollback_script)
+        self.assertIn(
+            'git merge-base --is-ancestor "$merge_sha" "$FAILED_SHA"',
+            self.rollback_script,
+        )
+        self.assertIn(
+            'git diff --quiet "$merge_sha" "$FAILED_SHA"',
+            self.rollback_script,
+        )
+        self.assertIn(
+            "promoted runtime binding changed after the reviewed promotion",
+            self.rollback_script,
+        )
+        self.assertIn(
+            "descendant main changed the protected Full ATS runtime/recovery scope",
+            self.rollback_script,
+        )
+        for reviewed_sensitive_path in (
+            ".github/workflows/faz25-fullats-live-browser-acceptance.yml",
+            "scripts/ats/install-pinned-gh-cli.sh",
+            "scripts/ats/open-fullats-test-rollback-pr.sh",
+        ):
+            self.assertIn(reviewed_sensitive_path, self.rollback_script)
+        for fail_closed_prefix in (
+            "kustomize\\/",
+            "argocd\\/",
+            "helm-values\\/",
+            "runtime-artifacts\\/",
+            "config\\/faz25",
+            "scripts\\/ats\\/",
+        ):
+            self.assertIn(fail_closed_prefix, self.rollback_script)
+        self.assertIn(
+            'echo "[fullats-rollback] missing command: $command"',
+            self.rollback_script,
+        )
         self.assertIn(
             'branch="auto-fullats-rollback/faz25-fullats-${RUN_ID}-${RUN_ATTEMPT}"',
             self.rollback_script,
@@ -747,7 +793,32 @@ fi
         )
         self.assertIn("faz25-fullats-post-rollback-runtime/v1", self.rollback_script)
         self.assertIn("fullats-rollback-evidence-", self.fullats_browser_workflow)
+        self.assertIn(
+            "Require compensating rollback completion after acceptance failure",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn(
+            "protected compensating rollback did not complete",
+            self.fullats_browser_workflow,
+        )
+        self.assertIn("steps.rollback.outcome != 'success'", self.fullats_browser_workflow)
         self.assertIn("üç-artifact compensator", self.runbook)
+
+    def test_fullats_rollback_installs_checksum_pinned_runner_local_github_cli(self):
+        self.assertIn('VERSION="2.96.0"', self.pinned_gh_installer)
+        self.assertIn(
+            'expected_sha="83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60"',
+            self.pinned_gh_installer,
+        )
+        self.assertIn(
+            'expected_sha="06f86ec7103d41993b76cd78072f43595c34aaa56506d971d9860e67140bf909"',
+            self.pinned_gh_installer,
+        )
+        self.assertIn("--retry-all-errors", self.pinned_gh_installer)
+        self.assertIn('[[ "$actual_sha" == "$expected_sha" ]]', self.pinned_gh_installer)
+        self.assertIn('[[ "$(uname -s)" == "Linux" ]]', self.pinned_gh_installer)
+        self.assertIn('printf \'%s\\n\' "$bin_dir" >>"$GITHUB_PATH"', self.pinned_gh_installer)
+        self.assertNotIn("sudo", self.pinned_gh_installer)
 
     def test_fullats_promotion_or_rollback_state_binds_one_exact_artifact_set(self):
         self.assertIn(self.promotion_state, {"PROMOTED", "ROLLED_BACK"})
