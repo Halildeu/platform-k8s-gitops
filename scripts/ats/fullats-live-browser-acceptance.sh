@@ -375,6 +375,16 @@ if [[ "$USER_ROLES_CODE" != "200" ]] || ! jq -e \
   echo "FATAL: recruiter active product role set is not exact" >&2
   exit 1
 fi
+ROLE_MEMBERS_OUT="$(json_file recruiter-role-members.json)"
+ROLE_MEMBERS_CODE="$(api_request GET "/api/v1/roles/$ROLE_ID/members" "$ADMIN_HEADER_FILE" "$ROLE_MEMBERS_OUT")"
+if [[ "$ROLE_MEMBERS_CODE" != "200" ]] || ! jq -e \
+    --argjson recruiter_user_id "$RECRUITER_USER_ID" '
+      length == 1 and .[0].userId == $recruiter_user_id and
+      (. | all((keys | sort) == ["assignedAt", "userId"]))
+    ' "$ROLE_MEMBERS_OUT" >/dev/null; then
+  echo "FATAL: recruiter role exact member snapshot mismatch" >&2
+  exit 1
+fi
 
 RECRUITER_AUTHZ_OUT="$(json_file recruiter-authz.json)"
 RECRUITER_AUTHZ_CODE=""
@@ -419,7 +429,7 @@ INBOX_CODE="$(api_request GET '/api/ats/v1/recruiter/applications?page=0&size=1'
 }
 rm -f "$PROFILE_OUT" "$LOOKUP_OUT" "$ACTIVATION_BODY" "$ACTIVATION_OUT" \
   "$ROLES_OUT" "$GRANULE_BODY" "$GRANULE_OUT" "$GRANULE_SNAPSHOT_OUT" \
-  "$ASSIGNMENT_BODY" "$ASSIGNMENT_OUT" "$USER_ROLES_OUT" \
+  "$ASSIGNMENT_BODY" "$ASSIGNMENT_OUT" "$USER_ROLES_OUT" "$ROLE_MEMBERS_OUT" \
   "$RECRUITER_AUTHZ_OUT" "$INBOX_OUT"
 
 echo "5/6 Immutable Playwright runtime'i hazirla"

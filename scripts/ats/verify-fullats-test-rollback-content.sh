@@ -34,15 +34,13 @@ require_exact_body_line() {
 
 require_exact_body_line "Consultation base: $PROMOTION_BASE_SHA"
 require_exact_body_line "Consultation commit: $promotion_head"
+require_exact_body_line "Consultation mode: none"
+consultation_reason="$(sed -nE 's/^Consultation reason:[[:space:]]*(.{10,})[[:space:]]*$/\1/p' <<<"$promotion_body")"
+[[ -n "$consultation_reason" ]] || exit 1
 promotion_scope="$(sed -nE 's/^Consultation scope:[[:space:]]*([0-9a-f]{64})[[:space:]]*$/\1/p' <<<"$promotion_body")"
 [[ "$promotion_scope" =~ ^[0-9a-f]{64}$ ]] || exit 1
 for receipt_label in "Claude receipt" "MiniMax receipt" "Codex receipt"; do
-  receipt_line="$(grep -F "$receipt_label:" <<<"$promotion_body" || true)"
-  [[ "$(grep -Fc "$receipt_label:" <<<"$promotion_body" || true)" == "1" ]] || exit 1
-  [[ "$receipt_line" == *"base=$PROMOTION_BASE_SHA;"* ]] || exit 1
-  [[ "$receipt_line" == *"head=$promotion_head;"* ]] || exit 1
-  [[ "$receipt_line" == *"scope=$promotion_scope;"* ]] || exit 1
-  [[ "$receipt_line" == *"verdict=AGREE;"* ]] || exit 1
+  [[ "$(grep -Fc "$receipt_label:" <<<"$promotion_body" || true)" == "0" ]] || exit 1
 done
 
 [[ "$(git rev-list --parents -n 1 "$PR_HEAD_SHA" | awk '{print NF - 1}')" == "1" ]] || exit 1

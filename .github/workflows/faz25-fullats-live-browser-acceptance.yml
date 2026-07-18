@@ -25,11 +25,11 @@ jobs:
     env:
       EXPECTED_ATS_DIGEST: sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11
       EXPECTED_PERMISSION_DIGEST: sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d
-      EXPECTED_FRONTEND_DIGEST: sha256:dc4c10c76359836da06d83bca9d977433313a43ae06da1e909e28cd31ec71ead
-      EXPECTED_FRONTEND_SHA: 07e9672d1e206544d95226d4a0d20111e269677c
+      EXPECTED_FRONTEND_DIGEST: sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0
+      EXPECTED_FRONTEND_SHA: 9f82edb249bcc4de3d83ce59a3800d835e88f410
       ATS_BUILD_RUN: https://github.com/Halildeu/ats/actions/runs/29629811674
       PERMISSION_BUILD_RUN: https://github.com/Halildeu/platform-backend/actions/runs/29629811595
-      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29630193356
+      FRONTEND_BUILD_RUN: https://github.com/Halildeu/platform-web/actions/runs/29636197881
     steps:
       - name: Validate test-only dispatch boundary
         id: preflight
@@ -45,48 +45,16 @@ jobs:
 
       - name: Checkout canonical acceptance scripts
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
 
-      - name: Assert canonical test runtime is healthy
+      - name: Bind pre-journey runtime to this exact GitOps revision
         id: runtime
-        run: |
-          set -euo pipefail
-          kubectl --context=k3d-test -n platform-test rollout status \
-            deployment/ats-interview-evidence --timeout=180s
-          kubectl --context=k3d-test -n platform-test rollout status \
-            deployment/permission-service --timeout=180s
-          kubectl --context=k3d-test -n platform-test rollout status \
-            deployment/frontend --timeout=180s
-          desired="$(kubectl --context=k3d-test -n platform-test get deployment \
-            ats-interview-evidence -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}')"
-          [[ "$desired" == "ghcr.io/halildeu/ats-app-boot@$EXPECTED_ATS_DIGEST" ]]
-          kubectl --context=k3d-test -n platform-test get pods \
-            -l app=ats-interview-evidence -o json | jq -e --arg digest "${desired##*@}" '
-              [.items[].status.containerStatuses[]? | select(.name=="app-boot")] as $statuses |
-              ($statuses | length) > 0 and
-              ($statuses | all(.ready == true and (.imageID | endswith("@" + $digest))))
-            ' >/dev/null
-          permission_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
-            permission-service -o jsonpath='{.spec.template.spec.containers[?(@.name=="permission-service")].image}')"
-          [[ "$permission_desired" == "ghcr.io/halildeu/platform-backend-permission-service@$EXPECTED_PERMISSION_DIGEST" ]]
-          kubectl --context=k3d-test -n platform-test get pods \
-            -l app.kubernetes.io/name=permission-service -o json | jq -e \
-            --arg digest "${permission_desired##*@}" '
-              [.items[].status.containerStatuses[]? | select(.name=="permission-service")] as $statuses |
-              ($statuses | length) > 0 and
-              ($statuses | all(.ready == true and (.imageID | endswith("@" + $digest))))
-            ' >/dev/null
-          frontend_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
-            frontend -o jsonpath='{.spec.template.spec.containers[?(@.name=="frontend")].image}')"
-          [[ "$frontend_desired" == "ghcr.io/halildeu/platform-web-frontend-testai:sha-07e9672@$EXPECTED_FRONTEND_DIGEST" ]]
-          kubectl --context=k3d-test -n platform-test get pods \
-            -l app.kubernetes.io/name=frontend -o json | jq -e \
-            --arg digest "${frontend_desired##*@}" '
-              [.items[].status.containerStatuses[]? | select(.name=="frontend")] as $statuses |
-              ($statuses | length) > 0 and
-              ($statuses | all(.ready == true and (.imageID | endswith("@" + $digest))))
-            ' >/dev/null
-          curl -fsS https://testai.acik.com/build-info.json | jq -e \
-            --arg expected "$EXPECTED_FRONTEND_SHA" '.sha == $expected' >/dev/null
+        env:
+          EXPECTED_GITOPS_SHA: ${{ github.sha }}
+          PHASE: pre
+          EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash scripts/ats/verify-fullats-live-runtime.sh
 
       - name: Run product-path persona setup and real browser journey
         id: browser
@@ -96,8 +64,25 @@ jobs:
           VAULT_INIT_JSON: /home/halil/bootstrap-drill/vault-init-test.json
         run: bash scripts/ats/fullats-live-browser-acceptance.sh
 
+      - name: Run promoted D29 functional and authorization matrix
+        id: d29
+        run: |
+          set -euo pipefail
+          evidence_dir="${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
+          mkdir -p "$evidence_dir"
+          ATS_EXPECTED_DIGEST="$EXPECTED_ATS_DIGEST" \
+            bash scripts/ats/d29-smoke.sh | tee "$evidence_dir/d29.log"
+
+      - name: Rebind post-journey runtime to the same exact revision
+        id: final-runtime
+        env:
+          EXPECTED_GITOPS_SHA: ${{ github.sha }}
+          PHASE: post
+          EVIDENCE_DIR: ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash scripts/ats/verify-fullats-live-runtime.sh
+
       - name: Require rollback GitHub App credentials after acceptance failure
-        if: failure() && steps.preflight.outcome == 'success' && (steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure')
+        if: failure() && steps.preflight.outcome == 'success' && (steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure')
         id: rollback-credentials
         env:
           APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
@@ -147,6 +132,7 @@ jobs:
           name: faz25-fullats-live-browser-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/fullats-browser-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/fullats-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
             ${{ runner.temp }}/fullats-rollback-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
           retention-days: 7
@@ -159,8 +145,10 @@ jobs:
             echo ""
             echo "- environment: testai.acik.com"
             echo "- personas: synthetic candidate + synthetic recruiter"
-            echo "- journey: recruiter draft -> edit -> preview -> publish -> candidate application -> recruiter inbox/status -> pause/republish/close -> new intake fail-closed -> existing receipt survives"
+            echo "- journey: recruiter draft -> edit -> preview -> publish -> candidate real-PDF local autofill/edit/application -> recruiter inbox/status -> pause/republish/close -> new intake fail-closed -> existing receipt survives"
             echo "- recruiter access setup: user activation + least-privilege ATS module/actions + role member product APIs"
+            echo "- promoted D29 matrix: mandatory"
+            echo "- revision fence: origin/main + Argo Synced/Healthy + pre/post runtime == workflow GitOps SHA"
             echo "- direct DB/OpenFGA acceptance seed: none"
             echo "- real PII / production mutation: none"
             echo "- secrets/JWT/candidate access token in artifact: none"

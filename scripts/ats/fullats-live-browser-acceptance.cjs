@@ -51,6 +51,65 @@ const allowedEvidencePaths = [
 ];
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
+const buildSyntheticResumePdf = ({ fullName, email }) => {
+  const lines = [
+    `Ad Soyad: ${fullName}`,
+    `E-posta: ${email}`,
+    'Telefon: +90 555 000 00 00',
+    'Sehir: Istanbul',
+    'LinkedIn: https://www.linkedin.com/in/fullats-synthetic',
+    'Portfoy: https://portfolio.example.test/fullats-synthetic',
+    'Profesyonel Ozet',
+    'Musteri ihtiyacini calisan urun yolculuguna donusturen sentetik aday.',
+    'Is Deneyimi',
+    'Urun Uzmani - Ornek Teknoloji - 2022-2026',
+    'Egitim',
+    'Yonetim Bilisim Sistemleri - Ornek Universitesi - 2020',
+    'Beceriler',
+    'Urun kesfi, kullanici arastirmasi, analitik',
+    'Not',
+    'Urun odakli ekibinizle calismak istiyorum.',
+  ];
+  const escape = (value) => value.replace(/([\\()])/gu, '\\$1');
+  const stream = `BT\n/F1 10 Tf\n48 760 Td\n14 TL\n${lines
+    .map((line) => `(${escape(line)}) Tj T*`)
+    .join('\n')}\nET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(stream, 'ascii')} >>\nstream\n${stream}\nendstream`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(pdf, 'ascii'));
+    pdf += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'ascii');
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('');
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, 'ascii');
+};
+
+const fetchBuildInfo = async (phase) => {
+  const url = `${baseURL}/build-info.json?fullats_run=${encodeURIComponent(runSuffix)}&phase=${encodeURIComponent(phase)}`;
+  const response = await fetch(url, {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+  });
+  if (!response.ok) throw new Error(`build-info ${phase} HTTP ${response.status}`);
+  const body = await response.json();
+  if (body.sha !== expectedFrontendSha) {
+    throw new Error(`live frontend sha does not match reviewed source commit at ${phase}`);
+  }
+  return body;
+};
 const relevantPath = (urlValue) => {
   try {
     const parsed = new URL(urlValue);
@@ -156,13 +215,7 @@ const assertNewApplicationRejected = async (page, applicationPath, state) => {
 };
 
 void (async () => {
-const buildInfo = await fetch(`${baseURL}/build-info.json`).then(async (response) => {
-  if (!response.ok) throw new Error(`build-info HTTP ${response.status}`);
-  return response.json();
-});
-if (buildInfo.sha !== expectedFrontendSha) {
-  throw new Error('live frontend sha does not match the reviewed source commit');
-}
+const buildInfo = await fetchBuildInfo('pre');
 
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 let publicRef = '';
@@ -293,11 +346,32 @@ try {
   await candidatePage.getByRole('link', { name: 'Başvuru formuna geç' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-page'), 'candidate application page');
   await waitVisible(candidatePage.getByRole('heading', { name: jobTitle }), 'job title');
-  await candidatePage.getByTestId('fill-synthetic-resume').click();
-  await candidatePage.getByTestId('candidate-fullName').fill(candidateName);
-  await candidatePage.getByTestId('candidate-email').fill(candidateEmail);
+  await candidatePage.getByTestId('candidate-resume').setInputFiles({
+    name: 'fullats-synthetic-resume.pdf',
+    mimeType: 'application/pdf',
+    buffer: buildSyntheticResumePdf({ fullName: candidateName, email: candidateEmail }),
+  });
+  const resumeMeta = candidatePage.getByTestId('candidate-resume-meta');
+  await waitVisible(resumeMeta, 'candidate PDF import result');
+  if (!/PDF’den dolduruldu/u.test((await resumeMeta.textContent()) ?? '')) {
+    throw new Error('candidate PDF did not autofill the application form');
+  }
+  if ((await candidatePage.getByTestId('candidate-email').inputValue()) !== candidateEmail) {
+    throw new Error('candidate PDF email autofill mismatch');
+  }
+  if ((await candidatePage.getByTestId('candidate-fullName').inputValue()) !== candidateName) {
+    throw new Error('candidate PDF full-name autofill mismatch');
+  }
+  const editedCandidateName = `${candidateName} Düzenlendi`;
+  await candidatePage.getByTestId('candidate-fullName').fill(editedCandidateName);
   await candidatePage.getByRole('button', { name: 'Başvuruyu önizle' }).click();
   await waitVisible(candidatePage.getByTestId('candidate-application-preview'), 'candidate preview');
+  await waitVisible(
+    candidatePage.getByTestId('candidate-application-preview').getByText(editedCandidateName, {
+      exact: true,
+    }),
+    'candidate edited PDF field preview',
+  );
   await candidatePage.locator('#candidate-notice-accepted').check();
   await candidatePage.locator('#candidate-accuracy-confirmed').check();
   await assertAxeClean(candidatePage, 'candidate-preview-mobile');
@@ -312,6 +386,34 @@ try {
   await candidatePage.getByTestId('create-application-receipt').click();
   const submitted = await submitResponse;
   if (submitted.status() !== 201) throw new Error(`candidate submit HTTP ${submitted.status()}`);
+  const submittedPayload = submitted.request().postDataJSON();
+  const submittedKeys = Object.keys(submittedPayload ?? {}).sort();
+  const expectedSubmittedKeys = [
+    'accuracyConfirmedAt',
+    'city',
+    'education',
+    'email',
+    'experience',
+    'fullName',
+    'linkedIn',
+    'note',
+    'noticeAcceptedAt',
+    'noticeVersion',
+    'phone',
+    'portfolio',
+    'skills',
+    'summary',
+  ].sort();
+  if (JSON.stringify(submittedKeys) !== JSON.stringify(expectedSubmittedKeys)) {
+    throw new Error(`candidate submission field boundary mismatch: ${submittedKeys.join(',')}`);
+  }
+  if (submittedPayload.fullName !== editedCandidateName || submittedPayload.email !== candidateEmail) {
+    throw new Error('candidate edited PDF fields were not submitted');
+  }
+  const serializedSubmission = JSON.stringify(submittedPayload);
+  if (serializedSubmission.includes('%PDF') || serializedSubmission.includes('fullats-synthetic-resume.pdf')) {
+    throw new Error('raw PDF content or filename escaped the browser-local parser boundary');
+  }
   await waitVisible(candidatePage.getByTestId('candidate-application-receipt'), 'persistent receipt');
   publicRef = (await candidatePage.getByTestId('candidate-receipt-id').textContent())?.trim() ?? '';
   if (!/^app_[A-Za-z0-9_-]{24}$/u.test(publicRef)) throw new Error('persistent receipt ref invalid');
@@ -531,6 +633,11 @@ try {
   await journeyPanel.screenshot({ path: path.join(evidenceDir, 'candidate-status-mobile.png') });
   await jobCard.screenshot({ path: path.join(evidenceDir, 'recruiter-closed-job-card.png') });
 
+  const finalBuildInfo = await fetchBuildInfo('post');
+  if (finalBuildInfo.sha !== buildInfo.sha) {
+    throw new Error('frontend source changed during the live customer journey');
+  }
+
   await publicStatePage.close();
   await negativeProbeContext.close();
   await recruiterContext.close();
@@ -616,6 +723,8 @@ try {
       'recruiter-previews-draft',
       'recruiter-publishes-job',
       'candidate-opens-dynamic-public-job',
+      'candidate-imports-real-pdf-locally',
+      'candidate-edits-pdf-autofilled-field',
       'editable-candidate-form',
       'explicit-preview-and-confirmation',
       'persistent-receipt-created',
@@ -643,7 +752,7 @@ try {
     candidateTracking: 'sessionStorage-only; no URL/localStorage token',
     capturedNetworkFields: ['persona', 'method', 'pathname', 'status'],
     evidenceBoundary:
-      'network evidence excludes headers and bodies; screenshots contain synthetic product state only',
+      'network evidence excludes headers and bodies; raw PDF, extracted text, and filename are not retained or submitted; screenshots contain synthetic product state only',
     networkEvidence: networkEvidence.map((entry) => ({
       ...entry,
       pathname: redactPath(entry.pathname),

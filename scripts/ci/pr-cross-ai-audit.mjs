@@ -1310,7 +1310,7 @@ function auditAutomation(body, prMeta) {
       check: 'automation_fullats_content_attestation',
       pass: attestationPass,
       detail: attestationPass
-        ? 'trusted-base verifier bound exact promotion tree, reviewed receipts, one-commit rollback and four expected file blobs'
+        ? 'trusted-base verifier bound exact promotion tree, explicit consultation mode, one-commit rollback and four expected file blobs'
         : 'trusted-base Full ATS rollback content attestation missing or does not match PR base/head/source/exact paths',
     });
   }

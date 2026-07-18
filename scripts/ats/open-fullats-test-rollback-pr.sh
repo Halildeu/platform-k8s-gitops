@@ -59,21 +59,22 @@ require_exact_body_line() {
 
 require_exact_body_line "Consultation base: $PROMOTION_BASE_SHA"
 require_exact_body_line "Consultation commit: $promotion_head"
+require_exact_body_line "Consultation mode: none"
+consultation_reason="$(sed -nE 's/^Consultation reason:[[:space:]]*(.{10,})[[:space:]]*$/\1/p' <<<"$promotion_body")"
+[[ -n "$consultation_reason" ]] || {
+  echo "[fullats-rollback] promotion consultation reason is missing or too short" >&2
+  exit 1
+}
 consultation_scope="$(sed -nE 's/^Consultation scope:[[:space:]]*([0-9a-f]{64})[[:space:]]*$/\1/p' <<<"$promotion_body")"
 [[ "$consultation_scope" =~ ^[0-9a-f]{64}$ ]] || {
   echo "[fullats-rollback] promotion consultation scope is missing or duplicated" >&2
   exit 1
 }
 for receipt_label in "Claude receipt" "MiniMax receipt" "Codex receipt"; do
-  receipt_line="$(grep -F "$receipt_label:" <<<"$promotion_body" || true)"
-  [[ "$(grep -Fc "$receipt_label:" <<<"$promotion_body" || true)" == "1" ]] && \
-    [[ "$receipt_line" == *"base=$PROMOTION_BASE_SHA;"* ]] && \
-    [[ "$receipt_line" == *"head=$promotion_head;"* ]] && \
-    [[ "$receipt_line" == *"scope=$consultation_scope;"* ]] && \
-    [[ "$receipt_line" == *"verdict=AGREE;"* ]] || {
-      echo "[fullats-rollback] $receipt_label is not bound to the merged reviewed scope" >&2
-      exit 1
-    }
+  [[ "$(grep -Fc "$receipt_label:" <<<"$promotion_body" || true)" == "0" ]] || {
+    echo "[fullats-rollback] consultation mode none cannot carry provider receipts" >&2
+    exit 1
+  }
 done
 [[ "$FAILED_SHA" == "$merge_sha" ]] || {
   echo "[fullats-rollback] refusing stale/non-promotion workflow SHA" >&2
@@ -96,7 +97,7 @@ PERMISSION_OLD="sha256:3a202b36843676768dc74bbacc22328ecfba2de43b7383b9aa401e6e1
 FRONTEND_OLD="sha256:28da39d9402a27d825d637e65e409ecf601cbfd22540add04ce5a3b9bf566b2d"
 ATS_NEW="sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11"
 PERMISSION_NEW="sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d"
-FRONTEND_NEW="sha256:dc4c10c76359836da06d83bca9d977433313a43ae06da1e909e28cd31ec71ead"
+FRONTEND_NEW="sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0"
 
 activation="kustomize/overlays/test/activation/ats-interview-evidence/kustomization.yaml"
 test_root="kustomize/overlays/test/kustomization.yaml"
@@ -141,7 +142,7 @@ if rg -Fq "$ATS_NEW" "$activation" || \
    rg -Fq "$ATS_NEW" "$smoke" || \
    rg -Fq "$PERMISSION_NEW" "$test_root" || \
    rg -Fq "$FRONTEND_NEW" "$test_root" || \
-   rg -Fq "newTag: sha-07e9672" "$test_root"; then
+   rg -Fq "newTag: sha-9f82edb" "$test_root"; then
   echo "[fullats-rollback] promoted artifact survived deterministic revert" >&2
   exit 1
 fi
@@ -260,52 +261,15 @@ FULL_SYNC_TIMEOUT=600 \
 REPORT_PATH="$rollback_evidence_dir/argocd-convergence.json" \
   bash scripts/deploy/reconcile-testai-backend-sequential.sh
 
-kubectl --context=k3d-test -n platform-test rollout status \
-  deployment/ats-interview-evidence --timeout=180s
-kubectl --context=k3d-test -n platform-test rollout status \
-  deployment/permission-service --timeout=180s
-kubectl --context=k3d-test -n platform-test rollout status \
-  deployment/frontend --timeout=180s
-
-ats_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
-  ats-interview-evidence -o jsonpath='{.spec.template.spec.containers[?(@.name=="app-boot")].image}')"
-permission_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
-  permission-service -o jsonpath='{.spec.template.spec.containers[?(@.name=="permission-service")].image}')"
-frontend_desired="$(kubectl --context=k3d-test -n platform-test get deployment \
-  frontend -o jsonpath='{.spec.template.spec.containers[?(@.name=="frontend")].image}')"
-[[ "$ats_desired" == "ghcr.io/halildeu/ats-app-boot@$ATS_OLD" ]]
-[[ "$permission_desired" == "ghcr.io/halildeu/platform-backend-permission-service@$PERMISSION_OLD" ]]
-[[ "$frontend_desired" == "ghcr.io/halildeu/platform-web-frontend-testai:sha-653752b@$FRONTEND_OLD" ]]
-
-wait_ready_image_set() {
-  local selector="$1"
-  local container="$2"
-  local digest="$3"
-  local pods=""
-  for _ in $(seq 1 36); do
-    pods="$(kubectl --context=k3d-test -n platform-test get pods \
-      -l "$selector" -o json)"
-    if jq -e --arg container "$container" --arg digest "$digest" '
-      [.items[].status.containerStatuses[]? | select(.name==$container)] as $s |
-      ($s | length) > 0 and
-      ($s | all(.ready == true and (.imageID | endswith("@" + $digest))))
-    ' <<<"$pods" >/dev/null; then
-      return 0
-    fi
-    sleep 5
-  done
-  echo "[fullats-rollback] Ready pod imageID set did not converge for $container" >&2
-  return 1
-}
-wait_ready_image_set "app=ats-interview-evidence" "app-boot" "$ATS_OLD"
-wait_ready_image_set "app.kubernetes.io/name=permission-service" \
-  "permission-service" "$PERMISSION_OLD"
-wait_ready_image_set "app.kubernetes.io/name=frontend" "frontend" "$FRONTEND_OLD"
-
-build_info="$(curl -fsS -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
-  "https://testai.acik.com/build-info.json?rollback_revision=$rollback_merge_sha")"
-jq -e '.sha == "653752b7bcfb8343b3af0845499a749c4655052c"' \
-  <<<"$build_info" >/dev/null
+EXPECTED_GITOPS_SHA="$rollback_merge_sha" \
+EXPECTED_FRONTEND_SHA="653752b7bcfb8343b3af0845499a749c4655052c" \
+EXPECTED_ATS_DIGEST="$ATS_OLD" \
+EXPECTED_PERMISSION_DIGEST="$PERMISSION_OLD" \
+EXPECTED_FRONTEND_DIGEST="$FRONTEND_OLD" \
+PHASE=post \
+EVIDENCE_DIR="$rollback_evidence_dir" \
+REQUIRE_HEAD_SHA=false \
+  bash scripts/ats/verify-fullats-live-runtime.sh
 ATS_EXPECTED_DIGEST="$ATS_OLD" bash "$smoke"
 
 git fetch origin main --quiet

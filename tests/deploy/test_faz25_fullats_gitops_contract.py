@@ -56,6 +56,9 @@ class Faz25FullAtsGitopsContractTests(unittest.TestCase):
         cls.fullats_browser_workflow = (
             ROOT / ".github/workflows/faz25-fullats-live-browser-acceptance.yml"
         ).read_text()
+        cls.fullats_runtime = (
+            ROOT / "scripts/ats/verify-fullats-live-runtime.sh"
+        ).read_text()
         cls.fullats_axe_evidence = (
             ROOT / "scripts/ats/fullats-axe-evidence.cjs"
         )
@@ -346,8 +349,9 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
     def test_fullats_rollback_is_bound_to_reviewed_tree_and_trusted_content_attestation(self):
         for required in (
             'require_exact_body_line "Consultation commit: $promotion_head"',
-            '"$receipt_line" == *"head=$promotion_head;"*',
-            '"$receipt_line" == *"scope=$consultation_scope;"*',
+            'require_exact_body_line "Consultation mode: none"',
+            "promotion consultation reason is missing or too short",
+            "consultation mode none cannot carry provider receipts",
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
             self.assertIn(required, self.rollback_script)
@@ -439,9 +443,8 @@ if [[ "$*" == *"/pulls/2617"* ]]; then
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
     "Consultation scope: $PROMOTION_SCOPE_SHA256" \
-    "Claude receipt: provider=anthropic; base=$PROMOTION_BASE_SHA; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE;" \
-    "MiniMax receipt: provider=minimax; base=$PROMOTION_BASE_SHA; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE;" \
-    "Codex receipt: provider=openai; base=$PROMOTION_BASE_SHA; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE;")"
+    "Consultation mode: none" \
+    "Consultation reason: Direct owner decision makes additional routine AI consultation unnecessary.")"
   jq -n \
     --arg merge "$PR_BASE_SHA" \
     --arg head "$PROMOTION_HEAD_SHA" \
@@ -534,6 +537,12 @@ fi
         self.assertIn("jobIdSha256: sha256(jobId)", self.fullats_browser)
         self.assertIn("jobSlugSha256: sha256(jobSlug)", self.fullats_browser)
         self.assertIn("finalJobState: 'CLOSED'", self.fullats_browser)
+        self.assertIn("getByTestId('candidate-resume').setInputFiles", self.fullats_browser)
+        self.assertIn("buildSyntheticResumePdf", self.fullats_browser)
+        self.assertIn("candidate-imports-real-pdf-locally", self.fullats_browser)
+        self.assertIn("candidate-edits-pdf-autofilled-field", self.fullats_browser)
+        self.assertIn("candidate submission field boundary mismatch", self.fullats_browser)
+        self.assertNotIn("getByTestId('fill-synthetic-resume').click()", self.fullats_browser)
         self.assertIn("attachNetworkEvidence(publicStatePage, 'negative-probe')", self.fullats_browser)
         self.assertIn("entry.persona === 'negative-probe'", self.fullats_browser)
         self.assertIn("result.error !== 'NOT_FOUND'", self.fullats_browser)
@@ -561,16 +570,24 @@ fi
         self.assertIn("recruiter active product role set is not exact", self.fullats_browser_shell)
         self.assertIn('(.roles // []) == [$role_name]', self.fullats_browser_shell)
         self.assertIn('(.reports // {}) == {}', self.fullats_browser_shell)
+        self.assertIn(
+            'GET "/api/v1/roles/$ROLE_ID/members"',
+            self.fullats_browser_shell,
+        )
+        self.assertIn(
+            "recruiter role exact member snapshot mismatch",
+            self.fullats_browser_shell,
+        )
+        self.assertIn("length == 1 and .[0].userId", self.fullats_browser_shell)
         self.assertNotIn("def module_allowed", self.fullats_browser_shell)
         self.assertNotIn("def action_allowed", self.fullats_browser_shell)
-        self.assertNotIn('/roles/$ROLE_ID/members', self.fullats_browser_shell)
         self.assertNotIn('{type:"MODULE",key:$ats_key,grant:"MANAGE"}', self.fullats_browser_shell)
 
     def test_fullats_live_browser_is_bound_to_three_exact_runtime_artifacts(self):
         expected = {
             "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "frontend": "sha256:dc4c10c76359836da06d83bca9d977433313a43ae06da1e909e28cd31ec71ead",
+            "frontend": "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
         }
         self.assertIn(f"EXPECTED_ATS_DIGEST: {expected['ats']}", self.fullats_browser_workflow)
         self.assertIn(
@@ -582,13 +599,35 @@ fi
             self.fullats_browser_workflow,
         )
         self.assertIn(
-            "EXPECTED_FRONTEND_SHA: 07e9672d1e206544d95226d4a0d20111e269677c",
+            "EXPECTED_FRONTEND_SHA: 9f82edb249bcc4de3d83ce59a3800d835e88f410",
             self.fullats_browser_workflow,
         )
-        self.assertIn("buildInfo.sha !== expectedFrontendSha", self.fullats_browser)
+        self.assertIn("body.sha !== expectedFrontendSha", self.fullats_browser)
+        self.assertIn("fetchBuildInfo('pre')", self.fullats_browser)
+        self.assertIn("fetchBuildInfo('post')", self.fullats_browser)
+        self.assertIn("cache: 'no-store'", self.fullats_browser)
         self.assertIn('-e EXPECTED_FRONTEND_SHA="$EXPECTED_FRONTEND_SHA"', self.fullats_browser_shell)
-        self.assertIn("deployment/permission-service --timeout=180s", self.fullats_browser_workflow)
-        self.assertIn("deployment/frontend --timeout=180s", self.fullats_browser_workflow)
+        self.assertIn("scripts/ats/verify-fullats-live-runtime.sh", self.fullats_browser_workflow)
+        self.assertIn(
+            "permission-service permission-service app.kubernetes.io/name=permission-service",
+            self.fullats_runtime,
+        )
+        self.assertIn(
+            "frontend frontend app.kubernetes.io/name=frontend",
+            self.fullats_runtime,
+        )
+        self.assertIn(".status.sync.revision == $revision", self.fullats_runtime)
+        self.assertIn('.status.sync.status == "Synced"', self.fullats_runtime)
+        self.assertIn('.status.health.status == "Healthy"', self.fullats_runtime)
+        self.assertIn("origin/main", self.fullats_runtime)
+        self.assertIn("replica_set_uid", self.fullats_runtime)
+        self.assertIn(".imageID | endswith", self.fullats_runtime)
+        self.assertIn("Cache-Control: no-cache", self.fullats_runtime)
+        self.assertIn("PHASE: pre", self.fullats_browser_workflow)
+        self.assertIn("PHASE: post", self.fullats_browser_workflow)
+        self.assertIn("id: d29", self.fullats_browser_workflow)
+        self.assertIn("bash scripts/ats/d29-smoke.sh", self.fullats_browser_workflow)
+        self.assertNotRegex(self.d29, r"curl\s+-[^\n]*k")
         self.assertIn("capturedNetworkFields", self.fullats_browser)
         self.assertIn("redacted.replaceAll(value, marker)", self.fullats_browser)
         self.assertNotIn("containsRawCandidateAccessToken", self.fullats_browser)
@@ -599,8 +638,10 @@ fi
         self.assertIn("id: preflight", self.fullats_browser_workflow)
         self.assertIn("id: runtime", self.fullats_browser_workflow)
         self.assertIn("id: browser", self.fullats_browser_workflow)
+        self.assertIn("id: d29", self.fullats_browser_workflow)
+        self.assertIn("id: final-runtime", self.fullats_browser_workflow)
         self.assertIn(
-            "steps.runtime.outcome == 'failure' || steps.browser.outcome == 'failure'",
+            "steps.d29.outcome == 'failure' || steps.final-runtime.outcome == 'failure'",
             self.fullats_browser_workflow,
         )
         self.assertIn("steps.rollback-checkout.outcome == 'success'", self.fullats_browser_workflow)
@@ -651,11 +692,19 @@ fi
         self.assertIn('REVISION="$rollback_merge_sha"', self.rollback_script)
         self.assertIn("FULL_SYNC_TIMEOUT=600", self.rollback_script)
         self.assertIn(
-            "deployment/ats-interview-evidence --timeout=180s",
+            'EXPECTED_GITOPS_SHA="$rollback_merge_sha"',
             self.rollback_script,
         )
-        self.assertIn("wait_ready_image_set", self.rollback_script)
-        self.assertIn("rollback_revision=$rollback_merge_sha", self.rollback_script)
+        self.assertIn(
+            'EXPECTED_FRONTEND_SHA="653752b7bcfb8343b3af0845499a749c4655052c"',
+            self.rollback_script,
+        )
+        self.assertIn(
+            "bash scripts/ats/verify-fullats-live-runtime.sh",
+            self.rollback_script,
+        )
+        self.assertIn("REQUIRE_HEAD_SHA=false", self.rollback_script)
+        self.assertIn("fullats_run=$nonce", self.fullats_runtime)
         self.assertIn("ready_pod_image_ids_exact: true", self.rollback_script)
         self.assertIn(
             'ATS_EXPECTED_DIGEST="$ATS_OLD" bash "$smoke"',
@@ -670,8 +719,8 @@ fi
         promoted = {
             "ats": "sha256:8812ab4eed4881c24e8a8cc7129648d201e064f032dced571d9a56916ad66a11",
             "permission": "sha256:55f2f2f2d1edb3aa67c663c1411b0cc21ab1818d10b4d8d70a5beeeb32ade13d",
-            "frontend": "sha256:dc4c10c76359836da06d83bca9d977433313a43ae06da1e909e28cd31ec71ead",
-            "tag": "sha-07e9672",
+            "frontend": "sha256:f23165a53eed9778213ae8af6b1211d3e972e124a03d87fe678a20e97f6fe8b0",
+            "tag": "sha-9f82edb",
         }
         rolled_back = {
             "ats": "sha256:dce33483d78ffed43e665a8a1c960e6fc3c2fc11ad3a9028a95593a9f5572515",
