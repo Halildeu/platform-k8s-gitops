@@ -58,7 +58,7 @@ const FULLATS_ROLLBACK_PATHS = [
   'kustomize/overlays/test/fullats-promotion-state.txt',
   'kustomize/overlays/test/kustomization.yaml',
 ];
-const FULLATS_PROMOTION_BASE_SHA = '3833433f8f14cbbc1d6115a5edee0573e6a79f9b';
+const FULLATS_PROMOTION_BASE_SHA = 'aa93f4743dc8254ce8e22a0317f92db1f5819268';
 const DOCS_ONLY_EXEMPT_ALLOWLIST = [
   /^docs\/session-handoff-[^/]+\.md$/,
   /^docs\/archive\/[^/]+\.md$/,
@@ -1295,7 +1295,7 @@ function auditAutomation(body, prMeta) {
       && attestation.branch === prMeta.headRef
       && attestation.base_sha === prMeta.baseSha
       && attestation.head_sha === prMeta.headSha
-      && attestation.promotion_pr === 2632
+      && attestation.promotion_pr === 2636
       && attestation.promotion_merge_sha === prMeta.baseSha
       && COMMIT_SHA_RE.test(attestation.promotion_head_sha || '')
       && attestation.promotion_base_sha === FULLATS_PROMOTION_BASE_SHA

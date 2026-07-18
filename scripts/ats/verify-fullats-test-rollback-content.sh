@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # Trusted-base verifier for the narrow Full ATS test rollback automation lane.
-# It proves that the bot PR is the exact inverse of promotion PR #2632's
+# It proves that the bot PR is the exact inverse of promotion PR #2636's
 # frontend pin plus the explicit ROLLED_BACK marker before Cross-AI grants the
 # machine-generated exemption. ATS and permission-service pins are deliberately
 # outside the compensator and remain on the current validated baseline.
 set -euo pipefail
 
 GH_REPO="${GH_REPO:-Halildeu/platform-k8s-gitops}"
-PROMOTION_PR="${PROMOTION_PR:-2632}"
+PROMOTION_PR="${PROMOTION_PR:-2636}"
 PR_NUMBER="${PR_NUMBER:-}"
 PR_HEAD_REF="${PR_HEAD_REF:-}"
 PR_HEAD_SHA="${PR_HEAD_SHA:-}"
 PR_BASE_SHA="${PR_BASE_SHA:-}"
 ATTESTATION_OUTPUT="${ATTESTATION_OUTPUT:-}"
-PROMOTION_BASE_SHA="3833433f8f14cbbc1d6115a5edee0573e6a79f9b"
+PROMOTION_BASE_SHA="aa93f4743dc8254ce8e22a0317f92db1f5819268"
 SOURCE_WORKFLOW=".github/workflows/faz25-fullats-live-browser-acceptance.yml"
 
-[[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" && "$PROMOTION_PR" == "2632" ]] || exit 2
+[[ "$GH_REPO" == "Halildeu/platform-k8s-gitops" && "$PROMOTION_PR" == "2636" ]] || exit 2
 [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 2
 [[ "$PR_HEAD_REF" =~ ^auto-fullats-rollback/faz25-fullats-[0-9]+-[0-9]+$ ]] || exit 2
 [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ && "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
@@ -102,7 +102,7 @@ jq -n \
     branch:$branch,
     base_sha:$base,
     head_sha:$head,
-    promotion_pr:2632,
+    promotion_pr:2636,
     promotion_merge_sha:$promotion_merge,
     promotion_head_sha:$promotion_head,
     promotion_base_sha:$promotion_base,
