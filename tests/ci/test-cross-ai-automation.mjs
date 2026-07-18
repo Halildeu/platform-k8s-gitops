@@ -68,10 +68,12 @@ const EVIDENCE = {
   [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 1_000),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
 };
-const REVERSED_DUAL_EVIDENCE = {
+// Forward-policy dual channel is Claude + Codex; reverse their publication order
+// to prove the accepted dual path does not depend on receipt timestamp ordering.
+const REVERSED_DUAL_CODEX_EVIDENCE = {
   ...EVIDENCE,
   [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 2_000),
-  [MINIMAX_REF]: evidenceComment(EVIDENCE[MINIMAX_REF].body, 0),
+  [CODEX_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 0),
 };
 
 // Build the GitHub event payload and run the real script; return its exit code.
@@ -79,7 +81,7 @@ const REVERSED_DUAL_EVIDENCE = {
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true' }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck }) {
   const event = {
     pull_request: {
       body,
@@ -123,7 +125,12 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     execFileSync('node', cmdArgs, { stdio: 'pipe', env: childEnv });
     return 0;
   } catch (e) {
-    return e.status ?? -1;
+    const status = e.status ?? -1;
+    if (expectedFailureCheck) {
+      const output = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+      return output.includes(`✗ ${expectedFailureCheck}`) ? status : -2;
+    }
+    return status;
   }
 }
 
@@ -190,10 +197,20 @@ const explicitDualClaudeImplementerBody = explicitDualBody.replace(
   'Implementer AI: Codex',
   'Implementer AI: Claude',
 );
-const explicitDualMiniMaxWrongDigestBody = explicitDualMiniMaxBody.replace(
-  sha256(EVIDENCE[MINIMAX_REF].body),
+const explicitDualMiniMaxWrongClaudeDigestBody = explicitDualMiniMaxBody.replace(
+  sha256(EVIDENCE[CLAUDE_REF].body),
   'f'.repeat(64),
 );
+// Claude + Codex (the valid dual pair) plus a retired MiniMax receipt appended.
+// The forward policy fail-closes on the MiniMax field regardless of the two
+// otherwise-valid channels.
+const explicitDualClaudeCodexMiniMaxBody =
+  `${explicitDualBody}${peerBody.match(/^MiniMax receipt:.*$/m)[0]}\n`;
+// none / single explicit-mode bodies carrying a retired MiniMax receipt.
+const explicitNoneMiniMaxBody =
+  `${explicitNoneBody}${peerBody.match(/^MiniMax receipt:.*$/m)[0]}\n`;
+const explicitSingleMiniMaxBody =
+  `${explicitSingleBody}${peerBody.match(/^MiniMax receipt:.*$/m)[0]}\n`;
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'AGENTS.md';
 const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
@@ -545,7 +562,7 @@ const cases = [
   ['explicit single mode rejects consultation enforcement changes that require dual',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ENFORCEMENT_PATH] }, 1],
   ['explicit dual mode accepts consultation enforcement changes',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
   ['explicit none mode rejects a high-confidence RBAC path',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [RBAC_PATH] }, 1],
   ['explicit single mode accepts a high-confidence RBAC path',
@@ -584,21 +601,27 @@ const cases = [
   ['explicit single mode rejects an empty risk-trigger key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitSingleBody}Risk trigger:\n`, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode accepts Claude plus one provider-distinct channel',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
-  ['explicit dual mode accepts MiniMax as the one provider-distinct secondary',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
-  ['explicit dual mode rejects a secondary from the Codex implementer provider',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode accepts one independent channel for a Claude implementer',
+  ['explicit dual mode accepts Claude plus Codex provider-distinct channels',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit dual mode rejects MiniMax as a retired secondary channel',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit dual mode accepts the exact Claude+Codex pair for a Codex implementer',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit dual mode accepts the exact Claude+Codex pair for a Claude implementer',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts reverse evidence publication timestamps',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH], evidence: REVERSED_DUAL_EVIDENCE }, 0],
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH], evidence: REVERSED_DUAL_CODEX_EVIDENCE }, 0],
+  ['explicit dual mode rejects a Claude+Codex+MiniMax three-channel mixture',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeCodexMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_minimax_receipt_rejected' }, 1],
+  ['explicit none mode rejects a retired MiniMax receipt',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit single mode rejects a retired MiniMax receipt',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode rejects an empty third receipt key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitDualBody}MiniMax receipt:\n`, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects a mismatched MiniMax evidence digest',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxWrongDigestBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['invalid MiniMax dual still validates the present allowlisted Claude receipt',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxWrongClaudeDigestBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'claude_receipt' }, 1],
   ['explicit dual mode requires a concrete high-risk trigger',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitDualBody.replace(/^Risk trigger:.*\n/m, ''), changedFiles: [ROUTINE_PATH] }, 1],
