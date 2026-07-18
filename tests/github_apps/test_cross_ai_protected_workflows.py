@@ -164,6 +164,9 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertNotIn("SPRING_CLOUD_GATEWAY_ROUTES_28_", watchdog)
         self.assertIn("watchdog expiry differs from signed grant", script)
         self.assertIn("apply failure compensation verified", script)
+        apply_body = script.split("run_apply() {", 1)[1].split("run_browser() {", 1)[0]
+        self.assertIn("an earlier watchdog still owns rollback", apply_body)
+        self.assertNotIn("delete job faz22-view-only-pilot-watchdog", apply_body)
         self.assertNotIn("npm --prefix", script)
         self.assertIn("extract-cross-ai-browser-runtime.py", script)
         self.assertIn("runtimeBundleSha256", script)

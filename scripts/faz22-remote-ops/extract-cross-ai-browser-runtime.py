@@ -9,6 +9,7 @@ import json
 import os
 import stat
 import tarfile
+import tempfile
 from pathlib import Path, PurePosixPath
 
 
@@ -25,15 +26,6 @@ DIGEST_PREFIX = "sha256:"
 
 class RuntimeBundleError(ValueError):
     """The runtime archive is not the exact safe bundle selected by evidence."""
-
-
-def _digest_file(descriptor: int) -> str:
-    digest = hashlib.sha256()
-    os.lseek(descriptor, 0, os.SEEK_SET)
-    while chunk := os.read(descriptor, 1024 * 1024):
-        digest.update(chunk)
-    os.lseek(descriptor, 0, os.SEEK_SET)
-    return f"{DIGEST_PREFIX}{digest.hexdigest()}"
 
 
 def _validated_name(raw: str) -> PurePosixPath:
@@ -126,12 +118,29 @@ def extract_runtime(archive: Path, expected_digest: str, output: Path) -> None:
             or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
             raise RuntimeBundleError("runtime archive metadata is unsafe")
-        if _digest_file(descriptor) != expected_digest:
-            raise RuntimeBundleError(
-                "runtime archive digest differs from signed evidence"
-            )
-        with os.fdopen(os.dup(descriptor), "rb", closefd=True) as stream:
-            with tarfile.open(fileobj=stream, mode="r:*") as bundle:
+        # Copy the opened source into an anonymous, private snapshot while
+        # hashing. Extraction must consume these exact signed bytes, not the
+        # still-writable source inode after a time-of-check/time-of-use gap.
+        with tempfile.TemporaryFile(mode="w+b") as snapshot:
+            digest = hashlib.sha256()
+            copied = 0
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            while chunk := os.read(descriptor, 1024 * 1024):
+                copied += len(chunk)
+                if copied > metadata.st_size:
+                    raise RuntimeBundleError("runtime archive changed during snapshot")
+                digest.update(chunk)
+                snapshot.write(chunk)
+            if copied != metadata.st_size:
+                raise RuntimeBundleError("runtime archive changed during snapshot")
+            snapshot.flush()
+            os.fsync(snapshot.fileno())
+            snapshot.seek(0)
+            if f"{DIGEST_PREFIX}{digest.hexdigest()}" != expected_digest:
+                raise RuntimeBundleError(
+                    "runtime archive digest differs from signed evidence"
+                )
+            with tarfile.open(fileobj=snapshot, mode="r:*") as bundle:
                 members = bundle.getmembers()
                 if not 1 <= len(members) <= MAX_MEMBERS:
                     raise RuntimeBundleError("runtime archive member count is invalid")

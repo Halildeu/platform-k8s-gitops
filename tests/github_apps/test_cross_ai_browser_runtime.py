@@ -9,6 +9,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -96,6 +97,31 @@ class BrowserRuntimeBundleTest(unittest.TestCase):
                 MODULE.RuntimeBundleError, "links or special files"
             ):
                 MODULE.extract_runtime(archive, self._digest(archive), root / "output")
+
+    def test_extracts_from_signed_snapshot_if_source_changes_after_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = self._archive(root)
+            expected_digest = self._digest(archive)
+            original_open = tarfile.open
+
+            def mutate_source_then_open(*args: object, **kwargs: object):
+                size = archive.stat().st_size
+                archive.write_bytes(b"x" * size)
+                os.chmod(archive, 0o600)
+                return original_open(*args, **kwargs)
+
+            output = root / "output"
+            with mock.patch.object(
+                MODULE.tarfile, "open", side_effect=mutate_source_then_open
+            ):
+                MODULE.extract_runtime(archive, expected_digest, output)
+            self.assertEqual(
+                (
+                    output / "browser-runtime/node_modules/playwright/package.json"
+                ).read_text(),
+                '{"version":"1.60.0"}',
+            )
 
 
 if __name__ == "__main__":

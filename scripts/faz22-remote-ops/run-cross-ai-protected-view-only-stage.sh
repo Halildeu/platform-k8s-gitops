@@ -333,8 +333,17 @@ run_apply() {
     echo "protected-view-only-stage: watchdog template is unresolved" >&2
     return 1
   fi
-  kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
-    delete job faz22-view-only-pilot-watchdog --ignore-not-found --wait=true
+  # An existing Job is the rollback-ownership marker for an earlier apply.
+  # Never replace it from a new authorization: doing so could strand the
+  # earlier mutation without its compensating controller. The signed rollback
+  # lane removes the marker only after it proves the full surface clean.
+  local existing_watchdog
+  existing_watchdog="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
+    get job faz22-view-only-pilot-watchdog --ignore-not-found -o name)"
+  [[ -z "$existing_watchdog" ]] || {
+    echo "protected-view-only-stage: an earlier watchdog still owns rollback" >&2
+    return 1
+  }
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     apply --dry-run=server -f "$work/watchdog.yaml"
   kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" apply -f "$work/watchdog.yaml"
