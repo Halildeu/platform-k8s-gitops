@@ -15,12 +15,19 @@ source_revision="$2"
 [[ -f "$diagnostic" && ! -L "$diagnostic" ]] || exit 1
 [[ -f "$ALLOWLIST" && ! -L "$ALLOWLIST" ]] || exit 1
 
+schema_version="$(jq -r '.schemaVersion // empty' "$diagnostic" 2>/dev/null || true)"
+[[ "$schema_version" == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3" ]] || {
+  echo "browser-diagnostic-schema-mismatch" >&2
+  exit 1
+}
+
 jq -er \
   --arg sourceRevision "$source_revision" \
   --slurpfile allowlist "$ALLOWLIST" '
+    # The producer and reader are checked out from one exact workflow revision; mixed v2/v3 input is rejected.
     select(
-      keys == ["ackTelemetry", "failureCode", "schemaVersion", "sourceRevision"]
-      and .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v2"
+      keys == ["ackTelemetry", "failureCode", "replayHttpStatus", "schemaVersion", "sourceRevision"]
+      and .schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnostic.v3"
       and .sourceRevision == $sourceRevision
       and (.failureCode | type == "string")
       and (.failureCode | test("^browser-[a-z0-9-]{1,80}$"))
@@ -35,6 +42,14 @@ jq -er \
         and ((.ackTelemetry.accepted + .ackTelemetry.rejected) <= .ackTelemetry.attempted)
         and (.ackTelemetry.pending | type == "number" and floor == . and . >= 0 and . <= 1000)
       ))
+      and (.replayHttpStatus == null or (
+        .replayHttpStatus | type == "number" and floor == . and . >= 100 and . <= 599
+      ))
+      and (if .failureCode == "browser-replay-not-rejected" then
+        .ackTelemetry == null and .replayHttpStatus != null
+      else
+        .replayHttpStatus == null
+      end)
       and ($allowlist | length == 1)
       and ($allowlist[0] | keys == ["failureCodes", "schemaVersion"])
       and ($allowlist[0].schemaVersion == "faz22.6.viewOnlyViewerBrowserDiagnosticCodes.v1")

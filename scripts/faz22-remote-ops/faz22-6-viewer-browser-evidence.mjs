@@ -377,6 +377,20 @@ function validateViewerUrl(raw) {
   return url.toString();
 }
 
+export function deriveViewerAckUrl(raw) {
+  // validateViewerUrl pins the origin, route template, and sole streamId query before this prefix is added.
+  const url = new URL(validateViewerUrl(raw));
+  const streamId = url.searchParams.get('streamId');
+  if (!streamId) throw new Error('VIEWER_URL streamId invariant failed');
+  if (!url.pathname.startsWith('/endpoint-admin/')) {
+    throw new Error('VIEWER_URL product route invariant failed');
+  }
+  url.pathname = `/api/v1${url.pathname}`;
+  url.search = '';
+  url.searchParams.set('streamId', streamId);
+  return url.toString();
+}
+
 function validateMaskRect(raw) {
   if (!/^[0-9]{1,5},[0-9]{1,5},[0-9]{1,5},[0-9]{1,5}$/.test(raw)) {
     throw new Error('DLP_MASK_RECT_BPS is not canonical x,y,width,height');
@@ -397,6 +411,7 @@ function validateMaskRect(raw) {
 
 async function main() {
   const viewerUrl = validateViewerUrl(required('VIEWER_URL'));
+  const viewerAckUrl = deriveViewerAckUrl(viewerUrl);
   const output = required('EVIDENCE_OUTPUT');
   const sourceRevision = required('SOURCE_REVISION');
   if (!GIT_SHA.test(sourceRevision)) throw new Error('SOURCE_REVISION must be a full Git SHA');
@@ -814,10 +829,10 @@ async function main() {
         });
         return response.status;
       },
-      { url: viewerUrl, replayViewerId: viewerId, replaySeq: samples.at(-1).seq },
+      { url: viewerAckUrl, replayViewerId: viewerId, replaySeq: samples.at(-1).seq },
     ));
     if (replayStatus !== 404) {
-      throw evidenceFailure('browser-replay-not-rejected');
+      throw evidenceFailure('browser-replay-not-rejected', { replayHttpStatus: replayStatus });
     }
     const ages = samples.map((sample) => Math.max(0, sample.sampledAt - sample.observedAt));
 
@@ -879,13 +894,21 @@ async function writeFailureDiagnostic(code, error) {
   const output = process.env.BROWSER_DIAGNOSTIC_OUTPUT?.trim();
   if (!output) return;
   const sourceRevision = process.env.SOURCE_REVISION?.trim() ?? '';
-  const ackTelemetry =
+  const rawDiagnostic =
     error instanceof BrowserEvidenceError && error.diagnostic !== null ? error.diagnostic : null;
+  const isReplayDiagnostic = code === 'browser-replay-not-rejected';
+  const replayHttpStatus =
+    isReplayDiagnostic && rawDiagnostic && Number.isSafeInteger(rawDiagnostic.replayHttpStatus)
+      && rawDiagnostic.replayHttpStatus >= 100 && rawDiagnostic.replayHttpStatus <= 599
+      ? rawDiagnostic.replayHttpStatus
+      : null;
+  const ackTelemetry = isReplayDiagnostic ? null : rawDiagnostic;
   const diagnostic = {
-    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v2',
+    schemaVersion: 'faz22.6.viewOnlyViewerBrowserDiagnostic.v3',
     sourceRevision: GIT_SHA.test(sourceRevision) ? sourceRevision : null,
     failureCode: code,
     ackTelemetry,
+    replayHttpStatus,
   };
   await writeFile(output, `${JSON.stringify(diagnostic, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
 }
