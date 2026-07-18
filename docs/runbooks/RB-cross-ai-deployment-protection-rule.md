@@ -552,6 +552,20 @@ post-DNAT node endpoint; it is not general workload egress. Both CIDRs, ports
 and the empty-ingress posture are byte-checked by the protected-workflow
 contract, so widening them requires a reviewed authority change.
 
+The protected action pin must remain an ancestor of the landed branch. Merge
+this PR with a **merge commit**; squash and rebase merge are prohibited because
+they would orphan the reviewed action-source commit and make the post-merge
+ancestry gate fail. If repository policy cannot preserve that topology, do not
+merge these protected workflows; first land the source package separately and
+open a new exact-main pin/review PR.
+
+Exact provider model IDs are part of the signed contract. On model retirement,
+existing grants remain bound to the retired ID and are not rewritten: revoke
+unconsumed grants, land and review a contract/trust-root migration, rotate the
+affected issuer identity as required, and issue fresh grants. Until that full
+migration reaches three-provider consensus, new and existing executions remain
+fail-closed as `tracked_pending`.
+
 This path is source-ready only. Do not expose the endpoint or enable the
 Environment custom rule until the policy runtime has reviewed HTTPS, the
 public trust-root pin exists, the separate dispatcher identity is live, the

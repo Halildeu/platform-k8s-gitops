@@ -144,7 +144,7 @@ fi
 GRANT_EXPIRES_EPOCH="$(date -u -d "$GRANT_EXPIRES_AT" +%s)" || exit 2
 
 verify_watchdog_active() {
-  local job_json pod_json service_account role role_binding network_policy permission allowed
+  local job_json pod_json service_account role role_binding network_policy permission verb resource allowed
   job_json="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     get job faz22-view-only-pilot-watchdog -o json)"
   jq -e \
@@ -196,30 +196,31 @@ verify_watchdog_active() {
   jq -e -f "$WATCHDOG_NETWORK_POLICY_FILTER" <<<"$network_policy" >/dev/null
 
   for permission in \
-    "get configmap/endpoint-admin-remote-bridge-config-device-key" \
-    "patch configmap/endpoint-admin-remote-bridge-config-device-key" \
-    "get configmap/api-gateway-config" \
-    "patch configmap/api-gateway-config" \
-    "get service/endpoint-admin-remote-bridge-viewer" \
-    "delete service/endpoint-admin-remote-bridge-viewer" \
-    "get deployment/endpoint-admin-remote-bridge-device-key" \
-    "patch deployment/endpoint-admin-remote-bridge-device-key" \
-    "get deployment/api-gateway" \
-    "patch deployment/api-gateway" \
-    "get networkpolicy/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \
-    "delete networkpolicy/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \
-    "get networkpolicy/eab-api-gateway-allow-egress-8096-to-bridge-viewer" \
-    "delete networkpolicy/eab-api-gateway-allow-egress-8096-to-bridge-viewer"; do
-    # Deliberate word splitting turns each fixed pair into verb + resource/name.
-    # shellcheck disable=SC2086
+    "get|configmap/endpoint-admin-remote-bridge-config-device-key" \
+    "patch|configmap/endpoint-admin-remote-bridge-config-device-key" \
+    "get|configmap/api-gateway-config" \
+    "patch|configmap/api-gateway-config" \
+    "get|service/endpoint-admin-remote-bridge-viewer" \
+    "delete|service/endpoint-admin-remote-bridge-viewer" \
+    "get|deployment/endpoint-admin-remote-bridge-device-key" \
+    "patch|deployment/endpoint-admin-remote-bridge-device-key" \
+    "get|deployment/api-gateway" \
+    "patch|deployment/api-gateway" \
+    "get|networkpolicy/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \
+    "delete|networkpolicy/eab-bridge-viewer-allow-ingress-8096-from-api-gateway" \
+    "get|networkpolicy/eab-api-gateway-allow-egress-8096-to-bridge-viewer" \
+    "delete|networkpolicy/eab-api-gateway-allow-egress-8096-to-bridge-viewer"; do
+    IFS='|' read -r verb resource <<<"$permission"
+    [[ "$verb" =~ ^(get|patch|delete)$ \
+      && "$resource" =~ ^[a-z0-9-]+/[a-z0-9-]+$ ]] || return 1
     if ! allowed="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
-      auth can-i $permission \
+      auth can-i "$verb" "$resource" \
       --as="system:serviceaccount:${K8S_NAMESPACE}:faz22-view-only-pilot-watchdog")"; then
-      echo "protected-view-only-stage: watchdog permission query failed: $permission" >&2
+      echo "protected-view-only-stage: watchdog permission query failed: $verb $resource" >&2
       return 1
     fi
     if [[ "$allowed" != "yes" ]]; then
-      echo "protected-view-only-stage: watchdog permission denied: $permission" >&2
+      echo "protected-view-only-stage: watchdog permission denied: $verb $resource" >&2
       return 1
     fi
   done

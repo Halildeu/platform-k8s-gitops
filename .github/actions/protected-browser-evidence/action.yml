@@ -31,16 +31,25 @@ runs:
       shell: bash
       env:
         STAGE_CONCLUSION: ${{ steps.execute.outcome == 'success' && steps.product_evidence.outcome == 'success' && 'success' || 'failure' }}
+        PRODUCT_ARTIFACT_DIGEST_RAW: ${{ steps.product_evidence.outputs['artifact-digest'] }}
         CROSS_AI_SOURCE_ROOT: ${{ github.action_path }}/../../..
         CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json
       run: |
         cd -- "$CROSS_AI_SOURCE_ROOT"
+        if [[ "$PRODUCT_ARTIFACT_DIGEST_RAW" =~ ^[a-f0-9]{64}$ ]]; then
+          product_artifact_digest="sha256:$PRODUCT_ARTIFACT_DIGEST_RAW"
+        elif [[ "$PRODUCT_ARTIFACT_DIGEST_RAW" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+          product_artifact_digest="$PRODUCT_ARTIFACT_DIGEST_RAW"
+        else
+          echo "protected-browser-evidence: artifact digest is invalid" >&2
+          exit 2
+        fi
         python3 scripts/github_apps/build_cross_ai_stage_evidence.py \
           --bootstrap-file "$CROSS_AI_BOOTSTRAP_FILE" \
           --stage browser-evidence \
           --conclusion "$STAGE_CONCLUSION" \
           --product-artifact-id "${{ steps.product_evidence.outputs['artifact-id'] }}" \
-          --product-artifact-digest "${{ steps.product_evidence.outputs['artifact-digest'] }}" \
+          --product-artifact-digest "$product_artifact_digest" \
           --output-dir "$RUNNER_TEMP/cross-ai-stage-outcome" \
           --github-output "$GITHUB_OUTPUT"
 

@@ -170,7 +170,9 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             "rollback ownership marker is absent while surface is not clean",
             script,
         )
-        self.assertIn("watchdog permission denied: $permission", script)
+        self.assertIn('auth can-i "$verb" "$resource"', script)
+        self.assertIn("watchdog permission denied: $verb $resource", script)
+        self.assertNotIn("auth can-i $permission", script)
         self.assertIn("contains($token)", script)
         self.assertIn("one bounded DNS line", script)
         self.assertIn("bootstrap response digest mismatch", script)
@@ -221,7 +223,6 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn('.status.phase == "Running"', script)
         self.assertIn('.type == "Ready" and .status == "True"', script)
         self.assertIn('.state.running.startedAt | type == "string"', script)
-        self.assertIn("auth can-i $permission", script)
         self.assertIn("get rolebinding faz22-view-only-pilot-watchdog -o json", script)
         self.assertIn(
             "get networkpolicy allow-faz22-view-only-watchdog-kubernetes-api -o json",
@@ -333,6 +334,15 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn("steps.product_evidence.outcome == 'success'", browser)
         self.assertIn("steps.product_evidence.outputs['artifact-id']", browser)
         self.assertIn("steps.product_evidence.outputs['artifact-digest']", browser)
+        self.assertIn("PRODUCT_ARTIFACT_DIGEST_RAW", browser)
+        self.assertIn(
+            'product_artifact_digest="sha256:$PRODUCT_ARTIFACT_DIGEST_RAW"',
+            browser,
+        )
+        self.assertIn(
+            '--product-artifact-digest "$product_artifact_digest"',
+            browser,
+        )
         self.assertLess(
             browser.index("Upload redacted product browser evidence"),
             browser.index("Build canonical browser outcome evidence"),
