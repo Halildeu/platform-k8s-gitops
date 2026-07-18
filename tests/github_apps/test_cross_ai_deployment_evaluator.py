@@ -46,13 +46,17 @@ jobs:
     steps:
       - uses: actions/checkout@{'1' * 40}
       - name: Verify signed runner bootstrap
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-bootstrap@{'1' * 40}
         env:
           CROSS_AI_BOOTSTRAP_TOKEN: ${{{{ secrets.CROSS_AI_BOOTSTRAP_TOKEN }}}}
           CROSS_AI_ENDPOINT_ID: ${{{{ secrets.CROSS_AI_ENDPOINT_ID }}}}
           CROSS_AI_OPERATOR_ID: ${{{{ secrets.CROSS_AI_OPERATOR_ID }}}}
           CROSS_AI_BOOTSTRAP_URL: https://testai.acik.com/v1/runner-bootstrap
           CROSS_AI_BOOTSTRAP_OUTPUT: ${{{{ runner.temp }}}}/cross-ai-bootstrap.json
-        run: python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py --stage apply --workflow-path .github/workflows/apply-view-only-viewer-pilot-protected.yml --policy-file config/github-apps/cross-ai-deployment-policy.json --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json --expected-trust-root-sha256 sha256:{'2' * 64} --revocations-file config/github-apps/cross-ai-deployment-revocations.json --output "$CROSS_AI_BOOTSTRAP_OUTPUT"
+        with:
+          stage: apply
+          workflow-path: .github/workflows/apply-view-only-viewer-pilot-protected.yml
+          expected-trust-root-sha256: sha256:{'2' * 64}
       - name: Execute reviewed stage
         uses: Halildeu/platform-k8s-gitops/.github/actions/protected-apply@{'1' * 40}
         env:
