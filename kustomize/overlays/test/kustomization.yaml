@@ -4250,9 +4250,9 @@ images:
     # Build run 29533847049 testai job 87740302536 published and independently
     # reported the exact immutable digest below. Dispatch run 29534095913 found
     # and this change fixes the promotion-script quoted-heredoc recursion bug.
-    # sourceRevision: 653752b7bcfb8343b3af0845499a749c4655052c
-    newTag: sha-653752b
-    digest: sha256:28da39d9402a27d825d637e65e409ecf601cbfd22540add04ce5a3b9bf566b2d
+    # sourceRevision: b887c4710717daa4893a9593a0a422817cc002e4
+    newTag: sha-b887c47
+    digest: sha256:ebae8a81ea502ee5709366396a8f99c7ed408cb08a511339b0bee1d5ab150e29
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
