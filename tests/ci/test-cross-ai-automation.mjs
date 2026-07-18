@@ -167,6 +167,14 @@ const explicitDualMiniMaxBody = explicitDualBody.replace(
   /^Codex receipt:.*$/m,
   peerBody.match(/^MiniMax receipt:.*$/m)[0],
 );
+const explicitDualClaudeImplementerBody = explicitDualBody.replace(
+  'Implementer AI: Codex',
+  'Implementer AI: Claude',
+);
+const explicitDualMiniMaxWrongDigestBody = explicitDualMiniMaxBody.replace(
+  sha256(EVIDENCE[MINIMAX_REF].body),
+  'f'.repeat(64),
+);
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
 const GOVERNANCE_CONTRACT_TEST_PATH = 'tests/deploy/test_faz25_fullats_gitops_contract.py';
@@ -445,6 +453,8 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitNoneBody}Reviewer AI: Codex\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit none mode rejects an empty legacy control key',
+    // Empty values remain present in extractFields so explicit-mode legacy
+    // keys cannot disappear merely by omitting their value.
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitNoneBody}Reviewer AI:\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['field-aware selection prefers a complete explicit-mode section',
@@ -470,6 +480,10 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit dual mode accepts MiniMax as the one provider-distinct secondary',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit dual mode accepts one independent channel for a Claude implementer',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit dual mode rejects a mismatched MiniMax evidence digest',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxWrongDigestBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit dual mode requires a concrete high-risk trigger',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitDualBody.replace(/^Risk trigger:.*\n/m, ''), changedFiles: [ROUTINE_PATH] }, 1],

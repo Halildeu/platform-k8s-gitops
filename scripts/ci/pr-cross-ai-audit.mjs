@@ -438,6 +438,8 @@ function meaningfulRiskTrigger(value) {
 
 function minimumConsultationMode(prMeta) {
   const files = prMeta?.changedFiles;
+  // Missing event-bound scope metadata must never silently authorize `none`.
+  // Raising the floor to `single` is the intentional fail-closed fallback.
   if (!Array.isArray(files) || files.length === 0) {
     return { mode: 'single', reason: 'changed-files metadata missing' };
   }
@@ -893,7 +895,13 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     selectedReceipts = ['claude receipt', ...(secondaryReceipts.length === 1 ? secondaryReceipts : [])];
   }
 
-  if (missingBaseFields.length === 0 && selectedReceipts.length === (mode === 'dual' ? 2 : 1)) {
+  // Run strict provider/evidence checks even when a binding field is missing.
+  // The missing-field finding already fails the PR; this additionally prevents
+  // a malformed or fabricated receipt from escaping diagnostics on that path.
+  if (
+    ['single', 'dual'].includes(mode)
+    && selectedReceipts.length === (mode === 'dual' ? 2 : 1)
+  ) {
     await appendConsultationFindings(
       findings,
       fields,
