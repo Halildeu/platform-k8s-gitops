@@ -12,6 +12,11 @@ data:
   ATS_JWT_ISSUER: "OVERLAY_MUST_OVERRIDE"
   ATS_JWKS_URI: "OVERLAY_MUST_OVERRIDE"
   ATS_JWT_AUDIENCE: "ats-api"
+  # Recruiter karar yetkisi JWT rolünden veya frontend görünürlüğünden
+  # türetilmez; aynı bearer kimliği platform'un canonical authz
+  # projeksiyonunda yeniden doğrulanır. Bu service origin test/prod namespace
+  # içinde aynıdır ve dış internete çıkmaz.
+  ATS_AUTHORIZATION_PLATFORM_BASE_URL: "http://api-gateway:8080"
   # Public careers katalog tenant'ı request/header/body'den seçilemez.
   ATS_PUBLIC_TENANT_ID: "OVERLAY_MUST_OVERRIDE"
   ATS_AI_BASE_URL: "OVERLAY_MUST_OVERRIDE"

@@ -127,7 +127,10 @@ descendant_sensitive_changed="$(git diff --name-only "$merge_sha" "$FAILED_SHA" 
 ' | sort)"
 expected_descendant_sensitive_changed="$(printf '%s\n' \
   .github/workflows/faz25-fullats-live-browser-acceptance.yml \
+  kustomize/base/apps/ats-interview-evidence/configmap.yaml \
+  kustomize/overlays/test/activation/ats-interview-evidence/netpol.yaml \
   scripts/ats/install-pinned-gh-cli.sh \
+  scripts/ats/install-pinned-kustomize.sh \
   scripts/ats/open-fullats-test-rollback-pr.sh | sort)"
 [[ "$descendant_sensitive_changed" == "$expected_descendant_sensitive_changed" ]] || {
   echo "[fullats-rollback] descendant main changed the protected Full ATS runtime/recovery scope" >&2

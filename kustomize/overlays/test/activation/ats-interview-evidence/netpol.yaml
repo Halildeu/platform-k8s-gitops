@@ -1,7 +1,8 @@
 # NetPol — ats-interview-evidence (ATS-0019 39d-3).
 # ingress: yalnız ingress-nginx → 8080. egress: DNS + host-bridge PG/KC
 # (Endpoints IP'leri — Codex uyarısı: host-bridge hedefe podSelector işlemez,
-# ipBlock zorunlu; IP'ler overlay Endpoints pin'leriyle AYNI kaynaktan) + live-STT.
+# ipBlock zorunlu; IP'ler overlay Endpoints pin'leriyle AYNI kaynaktan) +
+# canonical platform authz projection + live-STT.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -46,6 +47,16 @@ spec:
             cidr: 172.19.0.7/32
       ports:
         - port: 8080
+    # Recruiter yetkisi aynı bearer ile yalnız canonical platform authz
+    # projeksiyonunda doğrulanır. Service selector ve tek port dışındaki
+    # platform içi egress kapalı kalır.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+      ports:
+        - port: 8080
+          protocol: TCP
     # live-STT (denetim-PC GPU host; WG 10.99.0.2:8243 Caddy mTLS) — 39d-5.
     # audio-gateway allow-audio-gateway-egress-live-stt-mtls aynası (ipBlock/32,
     # TCP/8243). Provider live-stt fail-closed; otomatik stub fallback yoktur.
@@ -54,4 +65,26 @@ spec:
             cidr: 10.99.0.2/32
       ports:
         - port: 8243
+          protocol: TCP
+---
+# api-gateway baseline ingress'i yalnız app.kubernetes.io/part-of=platform
+# kaynaklarını kabul eder. ATS kasıtlı olarak bu geniş etiketi taşımaz; bunun
+# yerine sadece authz doğrulamasına gereken dar kaynak/port istisnası açılır.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-authz-from-ats-interview-evidence
+  namespace: platform-test
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: ats-interview-evidence
+      ports:
+        - port: 8080
           protocol: TCP
