@@ -289,6 +289,7 @@ const {
   deriveViewerAckUrl,
   drainAckSnapshots,
   installViewerEvidenceObserver,
+  runReplayProbe,
 } = await import(pathToFileURL(browserScript));
 const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'));
 assert.deepEqual([...BROWSER_FAILURE_CODES].sort(), [...allowlist.failureCodes].sort());
@@ -300,10 +301,82 @@ assert.equal(classifyPreflightApiStatus(404), 'browser-preflight-api-status-inva
 assert.equal(classifyPreflightApiStatus(409), 'browser-preflight-api-status-conflict');
 assert.equal(classifyPreflightApiStatus(502), 'browser-preflight-api-status-server-error');
 assert.equal(classifyReplayProbeStatus(404), null);
+assert.equal(classifyReplayProbeStatus(302), 'browser-replay-not-rejected');
 assert.equal(classifyReplayProbeStatus(405), 'browser-replay-not-rejected');
 assert.equal(classifyReplayProbeStatus(null), 'browser-replay-token-missing');
 assert.equal(classifyReplayProbeStatus(0), 'browser-replay-probe-failed');
 assert.equal(classifyReplayProbeStatus(200.5), 'browser-replay-probe-failed');
+const testBearer = ['test-only', 'bearer', 'x'.repeat(40)].join('-');
+const replayRequests = [];
+const replayStatus = await runReplayProbe({
+  viewerAckUrl: 'https://testai.acik.com/api/v1/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1',
+  viewerId: 'viewer-1',
+  frameSeq: 120,
+  readBearer: async () => testBearer,
+  request: async (url, options) => {
+    replayRequests.push({ url, options });
+    return { status: 404 };
+  },
+});
+assert.equal(replayStatus, 404);
+assert.equal(replayRequests.length, 1);
+assert.equal(replayRequests[0].options.redirect, 'manual');
+assert.equal(replayRequests[0].options.headers.Authorization, `Bearer ${testBearer}`);
+assert.deepEqual(JSON.parse(replayRequests[0].options.body), { viewerId: 'viewer-1', frameSeq: 120 });
+let missingBearerRequested = false;
+assert.equal(
+  await runReplayProbe({
+    viewerAckUrl: replayRequests[0].url,
+    viewerId: 'viewer-1',
+    frameSeq: 120,
+    readBearer: async () => null,
+    request: async () => { missingBearerRequested = true; },
+  }),
+  null,
+);
+assert.equal(missingBearerRequested, false);
+let shortBearerRequested = false;
+assert.equal(
+  await runReplayProbe({
+    viewerAckUrl: replayRequests[0].url,
+    viewerId: 'viewer-1',
+    frameSeq: 120,
+    readBearer: async () => 'too-short',
+    request: async () => { shortBearerRequested = true; },
+  }),
+  null,
+);
+assert.equal(shortBearerRequested, false);
+await assert.rejects(
+  runReplayProbe({
+    viewerAckUrl: 'https://evil.example/api/v1/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1',
+    viewerId: 'viewer-1',
+    frameSeq: 120,
+    readBearer: async () => testBearer,
+    request: async () => ({ status: 404 }),
+  }),
+  /outside the bounded test VIEW_ONLY ACK route/,
+);
+await assert.rejects(
+  runReplayProbe({
+    viewerAckUrl: `${replayRequests[0].url}&extra=1`,
+    viewerId: 'viewer-1',
+    frameSeq: 120,
+    readBearer: async () => testBearer,
+    request: async () => ({ status: 404 }),
+  }),
+  /outside the bounded test VIEW_ONLY ACK route/,
+);
+await assert.rejects(
+  runReplayProbe({
+    viewerAckUrl: 'https://testai.acik.com/api/v1/endpoint-admin/remote-access/sessions/session-1/admin?streamId=stream_1',
+    viewerId: 'viewer-1',
+    frameSeq: 120,
+    readBearer: async () => testBearer,
+    request: async () => ({ status: 404 }),
+  }),
+  /outside the bounded test VIEW_ONLY ACK route/,
+);
 assert.equal(
   deriveViewerAckUrl('https://testai.acik.com/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1'),
   'https://testai.acik.com/api/v1/endpoint-admin/remote-access/sessions/session-1/view?streamId=stream_1',
