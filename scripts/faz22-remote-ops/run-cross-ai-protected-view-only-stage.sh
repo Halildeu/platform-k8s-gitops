@@ -429,7 +429,10 @@ SQL
   export PLAYWRIGHT_BROWSERS_PATH="$runtime/browser-runtime/ms-playwright"
   export VIEWER_PRODUCT_BASE_URL=https://testai.acik.com
   export REMOTE_BRIDGE_DEPLOYMENT="$BRIDGE_DEPLOYMENT" REQUIRE_ACTIVE_GUI=1
-  export DENETIM_SSH_TARGET=denetim-pc DENETIM_SSH_OPTS=__SSH_CONFIG__
+  # Keep the exact runner-owned SSH config path visible in this governed stage;
+  # OpenSSH host-key checking remains enforced by that fixed config.
+  export DENETIM_SSH_TARGET=denetim-pc
+  export DENETIM_SSH_OPTS="-F /home/halil/.ssh/config"
   export OPEN_SESSION_DEVICE_READY_SECONDS=180 OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS=5
   export EVIDENCE_DIR="$evidence" AUTO_FINALIZE=0 DLP_MASK_RECT_BPS=7500,7500,2500,2500
   bash scripts/faz22-remote-ops/apply-denetim-attestation-migration.sh \

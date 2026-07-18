@@ -180,32 +180,29 @@ host-local until the owner verifies its cluster ID and printed canonical
 receipt digest. The caller, not the script, owns cleanup of the root-token
 handoff file.
 
-After that one-time owner action, normal TEST policy/AppRole reconciliation is
-root-free:
+After that one-time owner action, normal TEST policy reconciliation and the
+non-issuer AppRole subset are root-free:
 
 ```bash
 REPO_ROOT="$PWD" scripts/ops/vault-policy-reconcile.sh
 ```
 
-The routine reconciler may create/update the named issuer and coordinator role
-definitions, but it cannot mint their SecretIDs. It may emit only the separate
-runner-management credential. Provider issuer and coordinator credentials
-must come from dedicated workload identity or an owner-controlled,
-response-wrapped handoff outside this reconciler trust domain. Their Vault
-tokens have `token_num_uses=1`, a ten-minute explicit maximum TTL, no default
-policy and exactly one `cross-ai/sign/<key>` capability. Revocation SecretID
+The routine reconciler cannot create, update or read the named issuer and
+coordinator AppRole definitions, role IDs or SecretIDs. It may emit only the
+separate runner-management credential. Provider issuer and coordinator roles
+must be created by the owner or a dedicated workload-identity controller
+outside this reconciler trust domain with `bind_secret_id=true`, one-use
+SecretIDs and tokens, a ten-minute explicit maximum token TTL, no default
+policy and exactly one `cross-ai/sign/<key>` policy. Revocation SecretID
 minting also remains owner-only. Key read/export/backup/restore/datakey/
 encrypt/decrypt/rewrap/HMAC are denied. Missing direct provider execution or
 exact backend model identity remains an authorization blocker.
 
-Role-definition write access is still a TEST activation blocker, not full
-issuer independence: the routine reconciler can currently set an issuer or
-coordinator AppRole to `bind_secret_id=false` and can read that role's role-id.
-Before enabling the custom rule, role-definition ownership must move out of the
-routine reconciler trust domain (or the reconciler must lose those write/read
-capabilities after bootstrap), and live Vault capability tests must prove the
-downgrade/login path is denied. Merely withholding normal SecretID minting is
-not sufficient evidence.
+Before enabling the custom rule, live Vault capability tests must prove that
+the routine reconciler is denied on every issuer/coordinator role definition,
+role-id and secret-id path and that a `bind_secret_id=false` downgrade/login is
+unavailable. This PR changes the reviewed source policy only; it does not claim
+that the owner-gated live policy replacement or role provisioning has occurred.
 
 This source contract does not make three local Transit signatures equivalent
 to three provider executions. Each dedicated issuer must execute its provider,
@@ -529,6 +526,15 @@ The workflow contains exactly one governed job. After bootstrap it may use only
 or multiline `run:`, local actions, a second checkout, additional jobs and
 unbounded `with:` values are fail-closed. Place required mutation logic in the
 reviewed content-addressed execution action; do not fetch live control code.
+The remote composite action is pinned to a commit that is an ancestor of the
+protected workflow branch and whose action bytes equal the checked-in action.
+Its shell commands execute against the single signed-head checkout: the runner
+bootstrap binds `GITHUB_SHA`, workflow blob and repository identity before the
+action can run, while `scripts/faz22-remote-ops/**` is part of the declared
+runtime-authority inventory that retriggers this gate. The browser stage uses
+the fixed runner-owned `/home/halil/.ssh/config`; OpenSSH host-key verification,
+the signed endpoint-ID digest, live certificate/channel checks and attended
+consent remain cumulative gates rather than interchangeable identity claims.
 
 This path is source-ready only. Do not expose the endpoint or enable the
 Environment custom rule until the policy runtime has reviewed HTTPS, the

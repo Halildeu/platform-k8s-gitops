@@ -299,6 +299,7 @@ class TransitBootstrapTests(unittest.TestCase):
         config_policy = (policy_dir / "vault-config-reconciler.hcl").read_text(
             encoding="utf-8"
         )
+        routine_approles = reconciler.split("APPROLES=(", 1)[1].split(")", 1)[0]
         self.assertNotIn(
             'path "auth/approle/role/cross-ai-revocation-test/secret-id"',
             config_policy,
@@ -309,10 +310,12 @@ class TransitBootstrapTests(unittest.TestCase):
             "cross-ai-issuer-openai-test",
             "cross-ai-coordinator-test",
         ):
-            self.assertNotIn(
-                f'path "auth/approle/role/{role}/secret-id"',
-                config_policy,
-            )
+            for suffix in ("", "/role-id", "/secret-id"):
+                self.assertNotIn(
+                    f'path "auth/approle/role/{role}{suffix}"',
+                    config_policy,
+                )
+            self.assertNotIn(f'"{role}|', routine_approles)
         self.assertNotRegex(
             reconciler,
             r"cross-ai-(?:issuer-[a-z]+|coordinator)-test\|[^\n]*token_num_uses=0",

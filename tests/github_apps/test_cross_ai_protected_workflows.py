@@ -14,7 +14,7 @@ from scripts.github_apps.cross_ai_deployment_policy.workflow import inspect_work
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "config/github-apps/cross-ai-deployment-policy.example.json"
-ACTION_COMMIT = "bfb2a880f4fc26c727a02fda8ad5643cc03412d6"
+ACTION_COMMIT = "a53d870cacb6e7c99762d62bdd60c098a56c4e70"
 ZERO_TRUST_PIN = "sha256:" + ("0" * 64)
 
 
@@ -96,6 +96,27 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             1,
         )
 
+    def test_pinned_execution_action_commit_is_reachable_and_byte_exact(self) -> None:
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ACTION_COMMIT, "HEAD"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        )
+        for action in (
+            "protected-apply",
+            "protected-browser-evidence",
+            "protected-rollback",
+        ):
+            path = f".github/actions/{action}/action.yml"
+            pinned = subprocess.run(
+                ["git", "show", f"{ACTION_COMMIT}:{path}"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+            ).stdout
+            self.assertEqual(pinned, (ROOT / path).read_bytes(), path)
+
     def test_release_artifacts_are_absent_until_owner_transit_bootstrap(self) -> None:
         for name in (
             "cross-ai-deployment-policy.json",
@@ -119,6 +140,7 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn("GATEWAY_ROUTE_PREFIX", script)
         self.assertIn("contains($token)", script)
         self.assertIn("bounded DNS name", script)
+        self.assertIn('DENETIM_SSH_OPTS="-F /home/halil/.ssh/config"', script)
         self.assertIn("expires_epoch - now_epoch + 600", script)
         rollback = (
             ROOT / "scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh"

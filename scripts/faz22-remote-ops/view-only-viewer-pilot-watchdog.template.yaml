@@ -61,6 +61,8 @@ spec:
   policyTypes: ["Egress"]
   egress:
     - to:
+        # k3d-test service CIDR is 10.45.0.0/16; this is the fixed
+        # kubernetes.default.svc ClusterIP used by the readiness probe.
         - ipBlock:
             cidr: 10.45.0.1/32
       ports:

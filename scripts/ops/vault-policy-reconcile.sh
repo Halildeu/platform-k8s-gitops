@@ -93,10 +93,9 @@ APPROLES=(
   "eso-runtime|eso-runtime,eso-runtime-test-extras|token_ttl=1h token_max_ttl=24h secret_id_ttl=0"
   "platform-bootstrap-writer-test|platform-bootstrap-writer|token_ttl=30m token_max_ttl=60m secret_id_ttl=60m secret_id_num_uses=10 bind_secret_id=true"
   "audio-gateway-mtls-seeder-test|audio-gateway-mtls-seeder|token_ttl=15m token_max_ttl=15m token_num_uses=0 secret_id_ttl=30m secret_id_num_uses=1 bind_secret_id=true"
-  "cross-ai-issuer-anthropic-test|cross-ai-issuer-anthropic-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
-  "cross-ai-issuer-minimax-test|cross-ai-issuer-minimax-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
-  "cross-ai-issuer-openai-test|cross-ai-issuer-openai-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
-  "cross-ai-coordinator-test|cross-ai-coordinator-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=1 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
+  # Issuer/coordinator AppRole definitions are intentionally owner-managed.
+  # This routine reconciler applies their sign-only ACL policies but cannot
+  # create, rewrite, inspect or mint credentials for those identities.
   "cross-ai-revocation-test|cross-ai-revocation-test|token_ttl=5m token_max_ttl=5m token_explicit_max_ttl=5m token_num_uses=0 secret_id_ttl=5m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
   "cross-ai-runner-management-test|cross-ai-runner-management-test|token_ttl=10m token_max_ttl=10m token_explicit_max_ttl=10m token_num_uses=0 secret_id_ttl=10m secret_id_num_uses=1 bind_secret_id=true token_no_default_policy=true"
 )

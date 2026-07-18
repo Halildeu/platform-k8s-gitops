@@ -30,6 +30,6 @@ jobs:
         run: python3 scripts/github_apps/run_cross_ai_runner_bootstrap.py --stage browser-evidence --workflow-path .github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml --policy-file config/github-apps/cross-ai-deployment-policy.json --trust-root-file config/github-apps/cross-ai-deployment-trust-root.json --expected-trust-root-sha256 sha256:0000000000000000000000000000000000000000000000000000000000000000 --revocations-file config/github-apps/cross-ai-deployment-revocations.json --output "$CROSS_AI_BOOTSTRAP_OUTPUT"
 
       - name: Execute reviewed stage
-        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-browser-evidence@bfb2a880f4fc26c727a02fda8ad5643cc03412d6
+        uses: Halildeu/platform-k8s-gitops/.github/actions/protected-browser-evidence@a53d870cacb6e7c99762d62bdd60c098a56c4e70
         env:
           CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json

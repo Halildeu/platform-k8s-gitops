@@ -127,40 +127,10 @@ path "auth/approle/role/audio-gateway-mtls-seeder-test/secret-id" {
   capabilities = ["create", "update"]
 }
 
-path "auth/approle/role/cross-ai-issuer-anthropic-test" {
-  capabilities = ["create", "update", "read"]
-}
-
-path "auth/approle/role/cross-ai-issuer-anthropic-test/role-id" {
-  capabilities = ["read"]
-}
-
-# No issuer/coordinator secret-id capability. A routine config reconciler must
-# not be able to mint all provider leaves plus the coordinator bundle.
-
-path "auth/approle/role/cross-ai-issuer-minimax-test" {
-  capabilities = ["create", "update", "read"]
-}
-
-path "auth/approle/role/cross-ai-issuer-minimax-test/role-id" {
-  capabilities = ["read"]
-}
-
-path "auth/approle/role/cross-ai-issuer-openai-test" {
-  capabilities = ["create", "update", "read"]
-}
-
-path "auth/approle/role/cross-ai-issuer-openai-test/role-id" {
-  capabilities = ["read"]
-}
-
-path "auth/approle/role/cross-ai-coordinator-test" {
-  capabilities = ["create", "update", "read"]
-}
-
-path "auth/approle/role/cross-ai-coordinator-test/role-id" {
-  capabilities = ["read"]
-}
+# Provider issuer and coordinator AppRole definitions, role IDs and SecretIDs
+# are intentionally absent. They belong to the owner/dedicated-workload
+# identity domain; a routine reconciler must not be able to downgrade
+# bind_secret_id or reconstruct every signing identity.
 
 path "auth/approle/role/cross-ai-revocation-test" {
   capabilities = ["create", "update", "read"]
@@ -184,8 +154,8 @@ path "auth/approle/role/cross-ai-runner-management-test/secret-id" {
 
 # Deliberately no cross-ai-revocation-test/secret-id capability. Revocation is
 # an exceptional owner-authorized operation, not a routine automation token.
-# Provider issuer and coordinator SecretIDs are likewise owner/dedicated-
-# workload-identity surfaces; only their role IDs are introspectable here.
+# Provider issuer and coordinator AppRole definitions and credentials are
+# owner/dedicated-workload-identity surfaces and are not introspectable here.
 
 # ============================================================================
 # 3. ALLOW — read-only introspection (idempotency + audit correlation)
