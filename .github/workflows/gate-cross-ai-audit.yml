@@ -89,19 +89,36 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout base ref (trusted main, not PR head)
-        # #842 Codex 019e42c7 Q8: `base.ref` (not `base.sha`) — track the latest
-        # commit on the base branch so a freshly-hardened audit script runs
-        # against PRs opened before the hardening landed. `base.sha` would
-        # pin to the SHA at PR-open time and miss subsequent fixes.
+        # Pull-request-target must execute only the immutable trusted base tree.
+        # Binding to the event's exact base SHA prevents a mutable-ref TOCTOU
+        # window after this privileged event starts. A later base hardening
+        # naturally appears on the next edited/synchronize/reopened event.
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: 20
+
+      # Run the trusted-base verifier before importing any PR-head git object
+      # into the job. The verifier opens from the immutable base checkout and
+      # fetches the exact rollback head internally only for content inspection;
+      # it never checks out or executes a file from that head.
+      - name: Verify exact Full ATS rollback content from trusted base
+        if: startsWith(github.event.pull_request.head.ref, 'auto-fullats-rollback/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PROMOTION_PR: "2617"
+          ATTESTATION_OUTPUT: ${{ runner.temp }}/fullats-rollback-content-attestation-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: bash scripts/ats/verify-fullats-test-rollback-content.sh
 
       - name: Derive trusted merge-base and scope digest
         id: scope
@@ -144,9 +161,18 @@ jobs:
         # metadata intentionally rejects `none` instead of silently bypassing it.
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          ATTESTATION_OUTPUT: ${{ runner.temp }}/fullats-rollback-content-attestation-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: |
-          node scripts/ci/pr-cross-ai-audit.mjs \
-            --event-path "$GITHUB_EVENT_PATH" \
-            --changed-files-file /tmp/changed-files.txt \
-            --derived-base-sha "${{ steps.scope.outputs.merge_base }}" \
+          args=(
+            --event-path "$GITHUB_EVENT_PATH"
+            --changed-files-file /tmp/changed-files.txt
+            --derived-base-sha "${{ steps.scope.outputs.merge_base }}"
             --derived-scope-sha256 "${{ steps.scope.outputs.scope_sha256 }}"
+          )
+          if [[ -f "$ATTESTATION_OUTPUT" ]]; then
+            args+=(
+              --automation-content-attestation-file
+              "$ATTESTATION_OUTPUT"
+            )
+          fi
+          node scripts/ci/pr-cross-ai-audit.mjs "${args[@]}"

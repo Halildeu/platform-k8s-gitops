@@ -12,7 +12,7 @@
 |---|---|
 | İmaj | `ghcr.io/halildeu/ats-app-boot` (public; ats repo `image-push.yml` — trivy CRITICAL fail-closed push-öncesi; `digest:` log satırı AUTHORITY) |
 | Base manifest | `kustomize/base/apps/ats-interview-evidence/` (test activation overlay üzerinden kullanılır) |
-| Aktivasyon | `kustomize/overlays/test/activation/ats-interview-evidence/` (Faz 25 #2526: test Argo-root içinde, self-heal aktif) |
+| Aktivasyon | `kustomize/overlays/test/activation/ats-interview-evidence/` (Faz 25 #2615: test Argo-root içinde, self-heal aktif) |
 | Provisioning | `scripts/ats/provision-test-pg-vault.sh` + `scripts/ats/transition-test-model-governance.sh` + `scripts/ats/provision-test-keycloak.sh` (idempotent; staging-sw'de koşulur; secret basmaz) |
 
 ## Akış (tetik → adımlar)
@@ -38,13 +38,13 @@
    - **Functional — live-stt**: reviewer token'ı ile consent→upload(sentetik)→transcribe→read-back
    - **İSPATLAMAZ**: gerçek KVKK pilotu, prod-hazırlık
 
-### Faz 25 Full ATS aday/recruiter acceptance (#2526)
+### Faz 25 Full ATS aday/recruiter acceptance (#2615)
 
 - Public careers tenant: `00000000-0000-0000-0000-000000000001`; request/header/body tenant seçemez.
 - Backend yalnız `.test` e-posta kabul eder; gerçek aday PII G0 kilidinde kalır.
-- Recruiter persona ayrı `ats_tenant` attribute'u ve yalnız iki application rolü taşır; interview persona'ları `t-platform-test` üzerinde değişmeden kalır.
+- Recruiter persona ayrı `ats_tenant` attribute'u taşır; platform product API'leriyle `INTERVIEW_EVIDENCE=VIEW`, `ATS=VIEW`, `ATS_JOB_MANAGE=ALLOW` ve `ATS_APPLICATION_MANAGE=ALLOW` exact least-privilege granule set'i kurulur. `/authz/me` aynı kimlik için `superAdmin=false` ve dört exact grant'i kanıtlamadan browser kabulü başlamaz.
 - Canlı API zinciri: `scripts/ats/fullats-application-smoke.sh` — TLS doğrulamalı public jobs → sentetik submit → idempotent replay → session-token candidate status (PII-free) → tenant-scoped recruiter inbox → aynı application rollerine sahip diğer tenant için listeleme reddi + status `PUT` 404 negatif izolasyonu → iki optimistic-lock status transition. `10/10 PASS` beklenir; JWT/parola/candidate token basmaz.
-- Ürün kabulü ayrıca browser'da `/jobs` → `/jobs/product-designer/apply` → receipt/takip ve `/admin/ats/recruiter` yolculuğunu gerektirir; API smoke browser kanıtı yerine geçmez.
+- Ürün kabulü `.github/workflows/faz25-fullats-live-browser-acceptance.yml` ile exact ATS + permission + frontend digest'lerine ve exact frontend source SHA'ya bağlanır. Browser zinciri İK login → kalıcı taslak oluşturma → düzenlenen özetin hem modal önizlemede hem public ilanda exact görünmesi → yayın → dinamik `/careers/<handle>/jobs/<slug>` ilanı → adayın düzenlenebilir form/önizleme/açık onay/kalıcı makbuzu → İK inbox ve insan kontrollü durumlar → ilanı duraklat/yeniden yayınla/kapat → duraklatılmış/kapalı ilanda yeni POST 404 + `NOT_FOUND` → mevcut aday makbuzunun yaşamaya devam etmesidir. API smoke, yalnız update yanıtı veya local UI testi bu browser kanıtı yerine geçmez.
 
 ### Faz 25 test model-governance artifact geçişi (#2526)
 
@@ -144,7 +144,7 @@ Kanıtlar (aynı oturum):
 E2E'de kanıtlı), canlı STT (39d-5), browser-acceptance (login-gated).
 
 **39d-12 son canlı D29 baseline: `e6b7409` / `sha256:b4b6a806…a8e9d7`.**
-**Faz 25 #2526 desired pin: `f34a761` / `sha256:dce33483…72515`; canlı D29 pending ve yalnız recovery + acceptance koşumuyla kanıtlanacaktır.**
+**Faz 25 #2615 branch-acceptance pini: ATS #183 exact head `f4d2b4f` / `sha256:8812ab4e…66a11`; canlı D29 pending ve yalnız recovery + acceptance koşumuyla kanıtlanacaktır.**
 (Tarihsel aktivasyon hedefi: ~~f3ccad71~~ → `e6b7409` UYGULANDI.)
 (39d-8/8c/8d/9/10/**11** birlikte; #108 R4-repair dahil — KC koşumu
 `provision-test-keycloak.sh` gitops#2328 sürümüyle: 12 rol/13 scope,
@@ -193,6 +193,8 @@ kanaldan seed edilir, cluster'a YALNIZ ExternalSecret ile taşınır.
 ## Rollback (ArgoCD-aware)
 
 - **Sıra:** doğrudan `kubectl delete -k` kullanma; Argo `selfHeal:true` kaynağı geri getirir ve sahte rollback üretir. Önce rollback GitOps PR'ını merge et, Argo'nun yeni revision'ı `Synced/Healthy` yaptığını kanıtla, yalnız desired-state'ten çıkarılmış ve `prune:false` nedeniyle kalmış kaynakları sonra isimle sil.
+- **Faz 25 Full ATS üç-artifact compensator:** #2617 merge SHA'sında çalışan `faz25-fullats-live-browser-acceptance.yml`, exact runtime veya browser kabulü düşerse GitHub App kimliğiyle dört dosyalık bir rollback PR'ı açar. Repo-wide auto-merge ayarını varsaymaz: required check'lerin oluşmasını ve geçmesini bekler, PR head'inin değişmediğini yeniden doğrular ve `--match-head-commit` ile normal korumalı squash merge yapar; `--admin` bypass yoktur. Main ilerlerse `strict` branch protection merge'i reddeder ve akış açık PR + failed workflow olarak fail-closed kalır. Compensator yalnız workflow SHA'sı #2617 `merge_commit_sha` ve `origin/main` head'iyle birebir aynıysa; ayrıca #2617 tek-parent squash commit'inin doğrudan parent'ı reviewed `5cec8606…` base ve squash tree'si PR'ın Cross-AI receipt'leriyle bağlı exact head tree'si ise çalışır. Bu direct-parent + exact-tree kapısı nedeniyle review sonrası head değişikliği veya aradaki unrelated main değişikliği sessiz rollback üretemez; yeni incelenmiş scope gerekir. PR yalnız ATS activation pini + permission/frontend test-root pinleri + D29 digest aynası ve `fullats-promotion-state.txt=ROLLED_BACK` marker'ını değiştirir. ATS `sha256:dce33483…72515`, permission-service `sha256:3a202b36…a5256` ve frontend `sha-653752b@sha256:28da39d9…6b2d` **reviewed-base artifact setidir; merge öncesinde güncel canlı kabulü kanıtlanmış diye sunulmaz**. Cross-AI automation istisnası body beyanı değildir: trusted-base `verify-fullats-test-rollback-content.sh`, rollback PR'ının tek commit parent'ını, promotion PR/head/tree/scope bağını, exact dört-path diff'ini, üç restored blob'un reviewed base ile birebir eşitliğini ve marker içeriğini doğrulayıp PR base/head'ine bağlı strict attestation üretir. Audit ancak bu attestation ile birlikte exact prefix, App bot author+event sender, source workflow ve path seti de eşleşirse geçer; workflow/governance/application dosyası veya allowlisted path içinde farklı içerik taşıyamaz. Normal korumalı merge'den sonra başarı hâlâ verilmez: read-only GitOps verifier exact rollback merge revision'ını iki ardışık poll'da `Synced/Healthy` görmeli; üç Deployment desired image'i ve bütün Ready pod `imageID` değerleri immutable rollback digestlerine, public `build-info.json` exact `653752b7…` SHA'sına eşleşmeli ve rollback ATS digest'iyle tam D29 authn/authz/live-STT/DSAR matrisi geçmelidir. Bu kanıtlar redacted `argocd-convergence.json` + `runtime-acceptance.json` artifact'larına yazılır. Merge sonrası doğrulama düşerse rollback gerçekleşmiş olsa bile workflow kırmızı kalır; başarılı telafi iddiası yapılmaz. Bu dar lane'in kendisi #2617 exact üç-sağlayıcı inceleme kapsamındadır. Doğrudan cluster patch'i yoktur ve production rollback otoritesi değildir.
+- **Artifact/source kanıt sınırı:** canlı kabul desired Deployment image'i ve Ready pod `imageID` değerini üç immutable digest ile birebir bağlar. Source commit ve Actions build run kayıtları lineage metadata'sıdır; bu artifact'lerde imzalı provenance attestation bulunmadığından kriptografik source→digest provenance iddiası yapılmaz. Prod promotion öncesinde ayrı imzalı provenance kapısı gerekir.
 - **Yalnız backend sürümü:** activation `images.digest` değerini son kanıtlı digest'e döndüren PR → merge → Argo reconcile → pod `imageID` eşitliği + D29. Flyway V5 tablosu additive bırakılır; incident sırasında tablo/drop veya veri silme yapılmaz.
 - **Frontend sürümü:** test root `frontend` image tag+digest+sourceRevision üçlüsünü önceki kanıtlı immutable sürüme döndüren PR → merge → Argo reconcile → edge `build-info.json` + browser smoke.
 - **ATS yüzeyini test root'tan çıkarma:** PR ile `kustomize/overlays/test/kustomization.yaml` içindeki `activation/ats-interview-evidence` kaynağını kaldır → merge → Argo revision doğrula → `prune:false` nedeniyle kalan ATS kaynaklarını, `kubectl kustomize kustomize/overlays/test/activation/ats-interview-evidence` çıktısındaki kind/name çiftlerine göre tek tek sil. Wildcard veya namespace-wide silme yasaktır.
