@@ -95,6 +95,16 @@ resources:
   - frontend-federation-smoke-status.yaml
   - frontend-federation-smoke-netpol.yaml
 
+# Faz 25 #2615 test-only customer-path fix: the immutable frontend image ships
+# the correct `.mjs` MIME rule, but the GitOps-mounted nginx ConfigMap replaces
+# that image config. Replace only the test overlay generator so PDF.js module
+# workers are executable without rolling or changing the production frontend.
+configMapGenerator:
+  - name: nginx-config
+    behavior: replace
+    files:
+      - default.conf=frontend-nginx-default.conf
+
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
   # 2026-04-20: Tüm 8 servis sha-60611fa immutable tag (D30 full uyum).
