@@ -554,10 +554,14 @@ contract, so widening them requires a reviewed authority change.
 
 The protected action pin must remain an ancestor of the landed branch. Merge
 this PR with a **merge commit**; squash and rebase merge are prohibited because
-they would orphan the reviewed action-source commit and make the post-merge
-ancestry gate fail. If repository policy cannot preserve that topology, do not
-merge these protected workflows; first land the source package separately and
-open a new exact-main pin/review PR.
+they would orphan the reviewed action-source commit. The Cross-AI gate requires
+this PR to have merge-commit auto-merge selected and reruns on both
+`auto_merge_enabled` and `auto_merge_disabled`; a missing or different merge
+method fails closed. Enabling repository-level auto-merge only exposes the
+feature: selecting it on this PR remains a deliberate merge authorization and
+is not performed by the deployment App. If that topology cannot be guaranteed,
+do not merge these protected workflows; first land the source package
+separately and open a new exact-main pin/review PR.
 
 Exact provider model IDs are part of the signed contract. On model retirement,
 existing grants remain bound to the retired ID and are not rewritten: revoke

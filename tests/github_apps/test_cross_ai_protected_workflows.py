@@ -54,6 +54,17 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
                 required_paths <= configured_paths,
                 f"{event} does not trigger the gate for the declared authority inventory",
             )
+        pull_request = workflow["on"]["pull_request"]
+        self.assertIn("auto_merge_enabled", pull_request["types"])
+        self.assertIn("auto_merge_disabled", pull_request["types"])
+        self.assertIn(
+            "github.event.pull_request.auto_merge.merge_method",
+            workflow_source,
+        )
+        self.assertIn(
+            'if [ "$AUTO_MERGE_METHOD" != "merge" ]; then',
+            workflow_source,
+        )
 
     def test_canonical_adr_uses_exact_three_provider_contract(self) -> None:
         adr = (
@@ -124,10 +135,12 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             self.assertEqual(pinned, (ROOT / path).read_bytes(), path)
 
         allowed_after_pin = {
+            ".github/workflows/gate-cross-ai-deployment-protection.yml",
             ".github/workflows/apply-view-only-viewer-pilot-protected.yml",
             ".github/workflows/faz22-6-view-only-viewer-browser-evidence-protected.yml",
             ".github/workflows/rollback-view-only-viewer-pilot-protected.yml",
             "config/github-apps/README.md",
+            "docs/runbooks/RB-cross-ai-deployment-protection-rule.md",
             "tests/github_apps/test_cross_ai_protected_workflows.py",
         }
         changed_after_pin = set(

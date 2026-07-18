@@ -2,6 +2,14 @@ name: Gate — signed Cross-AI deployment protection
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
+      - auto_merge_enabled
+      - auto_merge_disabled
     paths:
       - "schema/cross-ai-*.json"
       - "scripts/github_apps/**"
@@ -57,6 +65,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Require merge-commit auto-merge topology
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          AUTO_MERGE_METHOD: ${{ github.event.pull_request.auto_merge.merge_method }}
+        run: |
+          if [ "$AUTO_MERGE_METHOD" != "merge" ]; then
+            echo "cross-ai gate: select merge-commit auto-merge; squash/rebase is forbidden" >&2
+            exit 1
+          fi
+
       - name: Checkout immutable source
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
