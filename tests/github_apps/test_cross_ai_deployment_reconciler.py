@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import tempfile
 import unittest
@@ -42,12 +43,28 @@ class FakeGitHub:
 
 
 class FakeArtifactSource:
-    def __init__(self, archive: bytes) -> None:
+    def __init__(
+        self,
+        archive: bytes,
+        *,
+        product_archives: dict[str, tuple[int, bytes]] | None = None,
+    ) -> None:
         self.archive = archive
         self.requested_name: str | None = None
+        self.product_archives = product_archives or {}
+        self.calls: list[dict[str, object]] = []
 
     def fetch(self, **kwargs) -> bytes:
+        self.calls.append(dict(kwargs))
         self.requested_name = kwargs["artifact_name"]
+        if self.requested_name in self.product_archives:
+            artifact_id, value = self.product_archives[self.requested_name]
+            if kwargs.get("expected_artifact_id") != artifact_id:
+                raise PolicyError(
+                    "STAGE_PRODUCT_ARTIFACT_MISMATCH",
+                    "live product artifact ID differs from stage evidence",
+                )
+            return value
         return self.archive
 
 
@@ -196,9 +213,11 @@ class GitHubOutcomeReconcilerTest(unittest.TestCase):
         evidence=None,
         filename="cross-ai-stage-evidence.json",
         now=None,
+        product_archives=None,
     ):
         source = FakeArtifactSource(
-            archive(evidence or self.evidence, filename=filename)
+            archive(evidence or self.evidence, filename=filename),
+            product_archives=product_archives,
         )
         value = GitHubOutcomeReconciler(
             installation_id=2222,
@@ -238,6 +257,111 @@ class GitHubOutcomeReconcilerTest(unittest.TestCase):
             stage="apply",
         )
         self.assertEqual(repeated.outcome_digest, outcome.outcome_digest)
+
+    def test_browser_success_fetches_exact_product_artifact_and_verifies_digest(
+        self,
+    ) -> None:
+        apply_reconciler, _ = self.reconciler()
+        apply_reconciler.reconcile(
+            request_id=self.verified.request_id,
+            stage="apply",
+        )
+        self.registry.reserve_stage(
+            request_id=self.verified.request_id,
+            stage="browser-evidence",
+            run_id=202,
+            run_attempt=1,
+            app_rule_id=999,
+            now=self.fixture.now,
+        )
+        browser_stage = self.verified.payload["workflowStages"][1]
+        self.run["id"] = 202
+        self.run["path"] = browser_stage["workflowPath"]
+        product_name = "faz22-6-view-only-viewer-browser-evidence-202"
+        product_archive = b"independently-downloaded-browser-product-artifact"
+        browser_evidence = copy.deepcopy(self.evidence)
+        browser_evidence.update(
+            {
+                "stage": "browser-evidence",
+                "runId": 202,
+                "workflowBlobSha256": browser_stage["workflowBlobSha256"],
+                "productArtifactId": 707,
+                "productArtifactName": product_name,
+                "productArtifactDigest": (
+                    f"sha256:{hashlib.sha256(product_archive).hexdigest()}"
+                ),
+                "watchdogExpiresAt": None,
+            }
+        )
+        reconciler, source = self.reconciler(
+            evidence=browser_evidence,
+            product_archives={product_name: (707, product_archive)},
+        )
+        outcome = reconciler.reconcile(
+            request_id=self.verified.request_id,
+            stage="browser-evidence",
+        )
+        self.assertEqual(outcome.target_state, "Succeeded")
+        self.assertEqual(source.calls[-1]["artifact_name"], product_name)
+        self.assertEqual(source.calls[-1]["expected_artifact_id"], 707)
+
+    def test_browser_success_rejects_product_artifact_id_or_digest_mismatch(
+        self,
+    ) -> None:
+        apply_reconciler, _ = self.reconciler()
+        apply_reconciler.reconcile(
+            request_id=self.verified.request_id,
+            stage="apply",
+        )
+        self.registry.reserve_stage(
+            request_id=self.verified.request_id,
+            stage="browser-evidence",
+            run_id=202,
+            run_attempt=1,
+            app_rule_id=999,
+            now=self.fixture.now,
+        )
+        browser_stage = self.verified.payload["workflowStages"][1]
+        self.run["id"] = 202
+        self.run["path"] = browser_stage["workflowPath"]
+        product_name = "faz22-6-view-only-viewer-browser-evidence-202"
+        browser_evidence = copy.deepcopy(self.evidence)
+        browser_evidence.update(
+            {
+                "stage": "browser-evidence",
+                "runId": 202,
+                "workflowBlobSha256": browser_stage["workflowBlobSha256"],
+                "productArtifactId": 707,
+                "productArtifactName": product_name,
+                "productArtifactDigest": "sha256:" + ("7" * 64),
+                "watchdogExpiresAt": None,
+            }
+        )
+        reconciler, _ = self.reconciler(
+            evidence=browser_evidence,
+            product_archives={product_name: (708, b"wrong-product")},
+        )
+        with self.assertRaisesRegex(
+            PolicyError,
+            "STAGE_PRODUCT_ARTIFACT_MISMATCH",
+        ):
+            reconciler.reconcile(
+                request_id=self.verified.request_id,
+                stage="browser-evidence",
+            )
+
+        reconciler, _ = self.reconciler(
+            evidence=browser_evidence,
+            product_archives={product_name: (707, b"wrong-product")},
+        )
+        with self.assertRaisesRegex(
+            PolicyError,
+            "STAGE_PRODUCT_ARTIFACT_MISMATCH",
+        ):
+            reconciler.reconcile(
+                request_id=self.verified.request_id,
+                stage="browser-evidence",
+            )
 
     def test_rejects_wrong_run_binding_unsafe_zip_and_conclusion_confusion(
         self,
