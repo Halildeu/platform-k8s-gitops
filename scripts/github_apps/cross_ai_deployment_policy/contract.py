@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -169,8 +169,32 @@ class EvidenceVerifier:
         now: datetime | None = None,
         expected_policy_sha256: str | None = None,
         expected_trust_root_sha256: str | None = None,
+        verification_mode: Literal["active", "forensic"] = "active",
+        forensic_reference_time: datetime | None = None,
     ) -> None:
-        self.now = now or utc_now()
+        self.observed_at = now or utc_now()
+        if verification_mode not in {"active", "forensic"}:
+            reject("VERIFICATION_MODE_INVALID", "verification mode is unsupported")
+        if verification_mode == "active" and forensic_reference_time is not None:
+            reject(
+                "FORENSIC_REFERENCE_INVALID",
+                "active verification cannot use a forensic reference time",
+            )
+        if verification_mode == "forensic" and forensic_reference_time is None:
+            reject(
+                "FORENSIC_REFERENCE_REQUIRED",
+                "forensic verification requires an explicit historical time",
+            )
+        if (
+            forensic_reference_time is not None
+            and forensic_reference_time > self.observed_at
+        ):
+            reject(
+                "FORENSIC_REFERENCE_INVALID",
+                "forensic reference time cannot be in the future",
+            )
+        self.verification_mode = verification_mode
+        self.now = forensic_reference_time or self.observed_at
         self.expected_policy_sha256 = expected_policy_sha256
         self.trust_root = trust_root
         schema_version = trust_root.get("schemaVersion")
@@ -199,6 +223,17 @@ class EvidenceVerifier:
                 "TRUST_ROOT_SCHEMA_INVALID",
                 "trust root contract version is unsupported",
             )
+        if self.verification_mode == "forensic":
+            if self.contract_version != "v1":
+                reject(
+                    "FORENSIC_CONTRACT_INVALID",
+                    "forensic replay is reserved for the retired v1 contract",
+                )
+            if self.now >= MINIMAX_NEW_REVIEW_CUTOFF:
+                reject(
+                    "FORENSIC_REFERENCE_INVALID",
+                    "v1 forensic reference time must predate the retirement cutoff",
+                )
         if (
             expected_trust_root_sha256 is not None
             and sha256_digest(trust_root) != expected_trust_root_sha256
@@ -217,7 +252,8 @@ class EvidenceVerifier:
         if (
             self.contract_version == "v1"
             and "minimax" in self.required_provider_families
-            and self.now >= MINIMAX_NEW_REVIEW_CUTOFF
+            and self.verification_mode == "active"
+            and self.observed_at >= MINIMAX_NEW_REVIEW_CUTOFF
         ):
             reject(
                 "MINIMAX_PROVIDER_DEPRECATED",
@@ -673,7 +709,10 @@ class EvidenceVerifier:
             issued_at = parse_utc(leaf["issuedAt"], "review.issuedAt")
             expires_at = parse_utc(leaf["expiresAt"], "review.expiresAt")
             if self.contract_version == "v1" and leaf["providerFamily"] == "minimax":
-                if self.now >= MINIMAX_NEW_REVIEW_CUTOFF:
+                if (
+                    self.verification_mode == "active"
+                    and self.observed_at >= MINIMAX_NEW_REVIEW_CUTOFF
+                ):
                     reject(
                         "MINIMAX_PROVIDER_DEPRECATED",
                         "active verification cannot accept MiniMax review leaves after the cutoff",

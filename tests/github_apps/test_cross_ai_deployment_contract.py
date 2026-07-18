@@ -80,6 +80,29 @@ class EvidenceContractTest(unittest.TestCase):
                 now=datetime(2026, 7, 18, tzinfo=timezone.utc),
             )
 
+    def test_current_time_can_forensically_replay_archived_v1_bundle(self) -> None:
+        verifier = EvidenceVerifier(
+            trust_root=self.fixture.trust_root,
+            revocations_envelope=self.fixture.revocations_envelope,
+            now=datetime(2026, 7, 19, tzinfo=timezone.utc),
+            verification_mode="forensic",
+            forensic_reference_time=self.fixture.now,
+        )
+        result = verifier.verify_bundle(self.fixture.bundle_envelope)
+        self.assertEqual(
+            result.provider_families,
+            ("anthropic", "minimax", "openai"),
+        )
+
+    def test_forensic_v1_replay_requires_historical_reference_time(self) -> None:
+        with self.assertRaisesRegex(PolicyError, "FORENSIC_REFERENCE_REQUIRED"):
+            EvidenceVerifier(
+                trust_root=self.fixture.trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=datetime(2026, 7, 19, tzinfo=timezone.utc),
+                verification_mode="forensic",
+            )
+
     def test_rejects_browser_stage_without_signed_runtime_bundle(self) -> None:
         self.fixture = self.factory.build(
             stage_overrides={"browser-evidence": {"runtimeBundleSha256": None}}

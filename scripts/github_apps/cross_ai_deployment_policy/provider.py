@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -248,24 +249,7 @@ class DirectCodexRunner:
         prompt_bytes = prompt.encode("utf-8")
         if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
             reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
-        version = subprocess.run(
-            [str(self.executable), "--version"],
-            cwd=workspace,
-            capture_output=True,
-            check=False,
-            timeout=30,
-        )
         catalog_command = [str(self.executable), "debug", "models"]
-        catalog = subprocess.run(
-            catalog_command,
-            cwd=workspace,
-            capture_output=True,
-            check=False,
-            timeout=60,
-        )
-        if version.returncode != 0 or not version.stdout or catalog.returncode != 0:
-            reject("PROVIDER_CAPABILITY_UNAVAILABLE", "Codex capability is unavailable")
-        self._catalog_model(catalog.stdout, model)
         execution_command = [
             str(self.executable),
             "exec",
@@ -281,14 +265,60 @@ class DirectCodexRunner:
             str(workspace.resolve()),
             "-",
         ]
-        result = subprocess.run(
-            execution_command,
-            cwd=workspace,
-            input=prompt_bytes,
-            capture_output=True,
-            check=False,
-            timeout=timeout_seconds,
-        )
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="cross-ai-codex-", dir=workspace.resolve()
+            ) as directory:
+                pinned_executable = Path(directory) / "codex"
+                shutil.copyfile(self.executable, pinned_executable)
+                pinned_executable.chmod(0o500)
+                pinned_digest = _bytes_digest(pinned_executable.read_bytes())
+                dispatch = {"executable": str(pinned_executable)}
+                version = subprocess.run(
+                    [str(self.executable), "--version"],
+                    cwd=workspace,
+                    capture_output=True,
+                    check=False,
+                    timeout=30,
+                    **dispatch,
+                )
+                catalog = subprocess.run(
+                    catalog_command,
+                    cwd=workspace,
+                    capture_output=True,
+                    check=False,
+                    timeout=60,
+                    **dispatch,
+                )
+                if (
+                    version.returncode != 0
+                    or not version.stdout
+                    or catalog.returncode != 0
+                ):
+                    reject(
+                        "PROVIDER_CAPABILITY_UNAVAILABLE",
+                        "Codex capability is unavailable",
+                    )
+                self._catalog_model(catalog.stdout, model)
+                result = subprocess.run(
+                    execution_command,
+                    cwd=workspace,
+                    input=prompt_bytes,
+                    capture_output=True,
+                    check=False,
+                    timeout=timeout_seconds,
+                    **dispatch,
+                )
+                if _bytes_digest(pinned_executable.read_bytes()) != pinned_digest:
+                    reject(
+                        "PROVIDER_EXECUTABLE_CHANGED",
+                        "Codex executable changed during execution",
+                    )
+        except OSError:
+            reject(
+                "PROVIDER_EXECUTABLE_PIN_FAILED",
+                "Codex executable could not be pinned for execution",
+            )
         if result.returncode != 0:
             reject("PROVIDER_EXECUTION_FAILED", "direct Codex execution failed")
         text = self._terminal_result(result.stdout)
@@ -296,7 +326,8 @@ class DirectCodexRunner:
             {
                 "channel": "openai-codex",
                 "cliRealpath": str(self.executable),
-                "cliSha256": _bytes_digest(self.executable.read_bytes()),
+                "cliSha256": pinned_digest,
+                "executableIdentityClass": "private-content-copy",
                 "cliVersionSha256": _bytes_digest(version.stdout.strip()),
                 "liveModelCatalogSha256": _bytes_digest(catalog.stdout),
                 "requestedModel": CODEX_MODEL,

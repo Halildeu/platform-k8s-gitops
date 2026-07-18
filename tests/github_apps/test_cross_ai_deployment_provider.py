@@ -202,6 +202,14 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertEqual(
             run.call_args_list[1].args[0], [str(runner.executable), "debug", "models"]
         )
+        dispatched_executables = {
+            call.kwargs["executable"] for call in run.call_args_list
+        }
+        self.assertEqual(len(dispatched_executables), 1)
+        dispatched_executable = Path(dispatched_executables.pop())
+        self.assertEqual(dispatched_executable.name, "codex")
+        self.assertNotEqual(dispatched_executable, runner.executable)
+        self.assertFalse(dispatched_executable.exists())
         self.assertEqual(
             run.call_args_list[2].args[0],
             [
@@ -241,6 +249,44 @@ class ProviderExecutionTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(PolicyError, "PROVIDER_OUTPUT_INVALID"):
             DirectCodexRunner._terminal_result(("\n".join(duplicated) + "\n").encode())
+
+    def test_direct_codex_rejects_pinned_executable_mutation(self) -> None:
+        catalog = {
+            "models": [
+                {"slug": CODEX_MODEL, "visibility": "list", "supported_in_api": True}
+            ]
+        }
+        responses = iter(
+            [
+                subprocess.CompletedProcess([], 0, stdout=b"codex-cli 1\n", stderr=b""),
+                subprocess.CompletedProcess(
+                    [], 0, stdout=json.dumps(catalog).encode(), stderr=b""
+                ),
+                subprocess.CompletedProcess(
+                    [], 0, stdout=self.codex_events(REVIEW_RESULT), stderr=b""
+                ),
+            ]
+        )
+        call_count = 0
+
+        def mutate_after_execution(*args, **kwargs):
+            nonlocal call_count
+            del args
+            call_count += 1
+            response = next(responses)
+            if call_count == 3:
+                executable = Path(kwargs["executable"])
+                executable.chmod(0o700)
+                executable.write_bytes(b"changed")
+            return response
+
+        with patch("subprocess.run", side_effect=mutate_after_execution):
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_EXECUTABLE_CHANGED"):
+                DirectCodexRunner(Path("/bin/sh")).run(
+                    prompt="review this digest",
+                    model=CODEX_MODEL,
+                    workspace=self.workspace,
+                )
 
 
 class ProviderIssuerTest(unittest.TestCase):
