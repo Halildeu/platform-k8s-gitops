@@ -22,7 +22,7 @@ from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory, digest
 
 REVIEW_RESULT = json.dumps(
     {
-        "verdict": "AGREE",
+        "verdict": "PARTIAL",
         "findingIds": [],
         "resolvedFindingIds": ["FINDING_A"],
         "acknowledgedFindingIds": ["FINDING_A"],

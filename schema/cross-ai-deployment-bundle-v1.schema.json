@@ -156,6 +156,7 @@
         "workflowPath",
         "workflowBlobSha256",
         "dependencyLockSha256",
+        "runtimeBundleSha256",
         "concurrencyGroupSha256",
         "runsOnLabels",
         "maxUses"
@@ -193,6 +194,12 @@
         "dependencyLockSha256": {
           "$ref": "#/$defs/digest"
         },
+        "runtimeBundleSha256": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/digest"}
+          ]
+        },
         "concurrencyGroupSha256": {
           "$ref": "#/$defs/digest"
         },
@@ -220,7 +227,21 @@
         "maxUses": {
           "const": 1
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"stage": {"const": "browser-evidence"}},
+            "required": ["stage"]
+          },
+          "then": {
+            "properties": {"runtimeBundleSha256": {"$ref": "#/$defs/digest"}}
+          },
+          "else": {
+            "properties": {"runtimeBundleSha256": {"type": "null"}}
+          }
+        }
+      ]
     },
     "dsse_signature": {
       "type": "object",

@@ -268,6 +268,7 @@ Illustrative v1 shape; implementation ships a strict JSON Schema with
       "workflowPath": ".github/workflows/apply-view-only-viewer-pilot-enable.yml",
       "workflowBlobSha256": "sha256:...",
       "dependencyLockSha256": "sha256:...",
+      "runtimeBundleSha256": null,
       "concurrencyGroupSha256": "sha256:...",
       "runsOnLabels": ["ubuntu-latest"],
       "maxUses": 1
@@ -279,6 +280,7 @@ Illustrative v1 shape; implementation ships a strict JSON Schema with
       "workflowPath": ".github/workflows/faz22-6-view-only-viewer-browser-evidence.yml",
       "workflowBlobSha256": "sha256:...",
       "dependencyLockSha256": "sha256:...",
+      "runtimeBundleSha256": "sha256:...",
       "priorStageOutcomeSchemaSha256": "sha256:...",
       "runsOnLabels": ["self-hosted", "staging-sw", "testai-deploy"],
       "runnerGroupId": 1234,
@@ -292,6 +294,7 @@ Illustrative v1 shape; implementation ships a strict JSON Schema with
       "workflowPath": ".github/workflows/rollback-view-only-viewer-pilot.yml",
       "workflowBlobSha256": "sha256:...",
       "dependencyLockSha256": "sha256:...",
+      "runtimeBundleSha256": null,
       "runsOnLabels": ["ubuntu-latest"],
       "maxUses": 1
     }
@@ -381,21 +384,25 @@ A single `AGREE` string is insufficient. The bundle verifier requires:
 2. each leaf binds its reviewed subject digest and exact artifact/plan inputs;
 3. verdict is one strict enum value: `AGREE`, `REVISE`, `RED` or
    `PARTIAL`; free text never becomes policy state;
-4. every prior `REVISE`, `RED` or `PARTIAL` must-fix finding has a stable
+4. `REVISE` and `RED` raise at least one stable finding ID, while `PARTIAL`
+   carries at least one real raise/resolve/acknowledge transition; a state-free
+   non-`AGREE` verdict is invalid and cannot disappear beneath a later
+   `AGREE`;
+5. every prior `REVISE`, `RED` or `PARTIAL` must-fix finding has a stable
    finding ID, signed response/fix leaf and later acknowledgement by the
    provider family that raised it;
-5. a finding ID identifies exactly one raise event in the whole bundle; it
+6. a finding ID identifies exactly one raise event in the whole bundle; it
    cannot be re-opened after acknowledgement or raised and acknowledged in the
    same review, a resolve/acknowledgement cannot reference a finding that was
    never raised, and an `AGREE` leaf carries no finding-state transition;
-6. finding, fix and acknowledgement leaves form an ordered hash chain whose
+7. finding, fix and acknowledgement leaves form an ordered hash chain whose
    `closureRootSha256` is identical in the consensus object and every counted
    final `AGREE` leaf;
-7. the final exact subject has at least two counted `AGREE` leaves from
+8. the final exact subject has at least two counted `AGREE` leaves from
    distinct provider families;
-8. no unexpired revocation entry matches a leaf, bundle, key, subject or
+9. no unexpired revocation entry matches a leaf, bundle, key, subject or
    grant;
-9. the final bundle and all counted leaves are fresh at decision time.
+10. the final bundle and all counted leaves are fresh at decision time.
 
 `subjectSha256` is normatively the JCS digest of the full authorization
 subject, ordered workflow stages and material grant constraints. The
@@ -658,6 +665,14 @@ failed or succeeded terminal count, and carries the exact signed bundle and
 grant-expiry annotations. Compensating rollback keeps that Job as its retry
 ownership marker until the rollback surface, rollouts and every other watchdog
 resource have been removed and re-verified; the Job is deleted last.
+
+The browser stage never installs executable dependencies from the network. Its
+signed workflow-stage entry carries `runtimeBundleSha256`; the runner exposes
+one fixed, pre-provisioned Playwright/Chromium tar archive. The stage opens the
+archive without following symlinks, verifies the complete archive digest,
+rejects links/devices/path traversal and only then extracts it into the private
+runner temp directory. The runtime archive is therefore part of the reviewed
+subject, not ambient runner state or a mutable package-registry response.
 
 An uncertain or failed apply quarantines the intent; stage 2 is rejected until
 the apply outcome is sealed. Callback ambiguity or outcome-deadline expiry

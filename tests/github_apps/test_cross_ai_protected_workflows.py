@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import copy
+import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -14,7 +17,9 @@ ZERO_TRUST_PIN = "sha256:" + ("0" * 64)
 
 
 class ProtectedWorkflowSourceContractTest(unittest.TestCase):
-    def test_all_signed_stage_paths_are_no_input_and_statically_reproducible(self) -> None:
+    def test_all_signed_stage_paths_are_no_input_and_statically_reproducible(
+        self,
+    ) -> None:
         policy = load_policy(POLICY)
         inspections = []
         for stage in policy.stages.values():
@@ -47,31 +52,103 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
 
     def test_stage_runner_opens_bootstrap_as_private_owned_regular_file(self) -> None:
         script = (
-            ROOT
-            / "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
+            ROOT / "scripts/faz22-remote-ops/run-cross-ai-protected-view-only-stage.sh"
         ).read_text(encoding="utf-8")
-        self.assertIn('flags |= os.O_NOFOLLOW', script)
-        self.assertIn('metadata.st_uid != os.getuid()', script)
-        self.assertIn('stat.S_IMODE(metadata.st_mode) != 0o600', script)
-        self.assertIn('gateway route index 28 is not clean', script)
-        self.assertIn('watchdog expiry differs from signed grant', script)
-        self.assertIn('apply failure compensation verified', script)
-        self.assertGreaterEqual(script.count('verify_watchdog_active'), 4)
-        self.assertIn('(.status.active // 0) == 1', script)
-        self.assertIn('(.status.failed // 0) == 0', script)
+        self.assertIn("flags |= os.O_NOFOLLOW", script)
+        self.assertIn("metadata.st_uid != os.getuid()", script)
+        self.assertIn("stat.S_IMODE(metadata.st_mode) != 0o600", script)
+        self.assertIn("gateway route index 28 is not clean", script)
+        self.assertIn("watchdog expiry differs from signed grant", script)
+        self.assertIn("apply failure compensation verified", script)
+        self.assertNotIn("npm --prefix", script)
+        self.assertIn("extract-cross-ai-browser-runtime.py", script)
+        self.assertIn("runtimeBundleSha256", script)
+        self.assertIn(
+            "/opt/acik/cross-ai/browser-runtime/playwright-1.60.0-linux-x64.tar",
+            script,
+        )
+        self.assertGreaterEqual(script.count("verify_watchdog_active"), 4)
+        self.assertIn("(.status.active // 0) == 1", script)
+        self.assertIn("(.status.failed // 0) == 0", script)
         self.assertIn('.status.phase == "Running"', script)
         self.assertIn('.type == "Ready" and .status == "True"', script)
         self.assertIn('.state.running.startedAt | type == "string"', script)
-        self.assertIn('auth can-i $permission', script)
-        self.assertIn('get rolebinding faz22-view-only-pilot-watchdog -o json', script)
+        self.assertIn("auth can-i $permission", script)
+        self.assertIn("get rolebinding faz22-view-only-pilot-watchdog -o json", script)
         self.assertIn(
-            'get networkpolicy allow-faz22-view-only-watchdog-kubernetes-api -o json',
+            "get networkpolicy allow-faz22-view-only-watchdog-kubernetes-api -o json",
             script,
         )
         self.assertLess(
-            script.index('"networkpolicy/allow-faz22-view-only-watchdog-kubernetes-api"'),
-            script.index('delete job/faz22-view-only-pilot-watchdog'),
+            script.index(
+                '"networkpolicy/allow-faz22-view-only-watchdog-kubernetes-api"'
+            ),
+            script.index("delete job/faz22-view-only-pilot-watchdog"),
         )
+
+    def test_watchdog_network_policy_filter_rejects_authority_expansion(self) -> None:
+        policy_filter = (
+            ROOT / "scripts/faz22-remote-ops/verify-watchdog-network-policy.jq"
+        )
+        valid = {
+            "metadata": {"deletionTimestamp": None},
+            "spec": {
+                "podSelector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/component": "safety-controller",
+                        "app.kubernetes.io/name": "faz22-view-only-pilot-watchdog",
+                    }
+                },
+                "policyTypes": ["Egress"],
+                "egress": [
+                    {
+                        "to": [{"ipBlock": {"cidr": "10.45.0.1/32"}}],
+                        "ports": [{"protocol": "TCP", "port": 443}],
+                    },
+                    {
+                        "to": [{"ipBlock": {"cidr": "172.19.0.0/16"}}],
+                        "ports": [{"protocol": "TCP", "port": 6443}],
+                    },
+                ],
+            },
+        }
+
+        def accepts(value: dict) -> bool:
+            return (
+                subprocess.run(
+                    ["jq", "-e", "-f", str(policy_filter)],
+                    input=json.dumps(value),
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                ).returncode
+                == 0
+            )
+
+        self.assertTrue(accepts(valid))
+        mutations = []
+        extra_selector = copy.deepcopy(valid)
+        extra_selector["spec"]["podSelector"]["matchExpressions"] = [
+            {"key": "never-present", "operator": "Exists"}
+        ]
+        mutations.append(extra_selector)
+        extra_destination = copy.deepcopy(valid)
+        extra_destination["spec"]["egress"][0]["to"].append(
+            {"ipBlock": {"cidr": "0.0.0.0/0"}}
+        )
+        mutations.append(extra_destination)
+        extra_port = copy.deepcopy(valid)
+        extra_port["spec"]["egress"][0]["ports"].append(
+            {"protocol": "TCP", "port": 4444}
+        )
+        mutations.append(extra_port)
+        except_range = copy.deepcopy(valid)
+        except_range["spec"]["egress"][0]["to"][0]["ipBlock"]["except"] = [
+            "10.45.0.2/32"
+        ]
+        mutations.append(except_range)
+        for mutated in mutations:
+            self.assertFalse(accepts(mutated))
 
     def test_watchdog_readiness_proves_live_api_access(self) -> None:
         template = (
@@ -81,7 +158,7 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
         self.assertIn("readinessProbe:", template)
         self.assertIn("kubernetes.default.svc/api/v1/namespaces/", template)
         self.assertIn("configmaps/api-gateway-config", template)
-        self.assertIn('Authorization: Bearer $token', template)
+        self.assertIn("Authorization: Bearer $token", template)
 
     def test_canonical_outcome_is_last_fallible_action_step(self) -> None:
         actions = {
@@ -96,7 +173,9 @@ class ProtectedWorkflowSourceContractTest(unittest.TestCase):
             upload = f"Upload canonical {label} outcome evidence"
             self.assertIn("id: cleanup", raw)
             self.assertLess(raw.index("id: cleanup"), raw.index(upload))
-            self.assertNotIn("Remove private bootstrap response", raw[raw.index(upload) :])
+            self.assertNotIn(
+                "Remove private bootstrap response", raw[raw.index(upload) :]
+            )
             self.assertIn("steps.cleanup.outcome == 'success'", raw)
 
         browser = (

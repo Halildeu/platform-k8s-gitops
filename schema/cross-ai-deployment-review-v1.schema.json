@@ -119,6 +119,43 @@
       "pattern": "^vault-transit://[a-z0-9/_-]+#v[1-9][0-9]*$"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"verdict": {"const": "AGREE"}},
+        "required": ["verdict"]
+      },
+      "then": {
+        "properties": {
+          "findingIds": {"maxItems": 0},
+          "resolvedFindingIds": {"maxItems": 0},
+          "acknowledgedFindingIds": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"verdict": {"enum": ["REVISE", "RED"]}},
+        "required": ["verdict"]
+      },
+      "then": {
+        "properties": {"findingIds": {"minItems": 1}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"verdict": {"const": "PARTIAL"}},
+        "required": ["verdict"]
+      },
+      "then": {
+        "anyOf": [
+          {"properties": {"findingIds": {"minItems": 1}}},
+          {"properties": {"resolvedFindingIds": {"minItems": 1}}},
+          {"properties": {"acknowledgedFindingIds": {"minItems": 1}}}
+        ]
+      }
+    }
+  ],
   "$defs": {
     "digest": {
       "type": "string",

@@ -505,6 +505,19 @@ Environment, intent ref, SHA, workflow, run/attempt, numeric actor and signed
 runner lease. One successful response is durably consumed; a retry returns a
 conflict and is not a safe automatic retry signal. The verified response is
 written as a new `0600` file and must be consumed before any mutation step.
+
+The browser runner also requires one pre-provisioned, non-secret runtime
+archive at the fixed path
+`/opt/acik/cross-ai/browser-runtime/playwright-1.60.0-linux-x64.tar`. Build it
+in the controlled runner-image pipeline with normalized root ownership and the
+exact `browser-runtime/runtime-manifest.json` profile, then record the complete
+archive SHA-256 as the browser stage's signed `runtimeBundleSha256`. The stage
+does not call npm or a browser CDN: it opens the fixed archive without
+following symlinks, rejects unsafe tar members and extracts only after the
+signed digest matches. Applying a new runtime archive therefore requires new
+provider leaves for the changed exact subject; do not copy a mutable cache into
+this path or derive the expected digest from the live file.
+
 The workflow contains exactly one governed job. After bootstrap it may use only
 1-8 full-SHA or image-digest pinned execution actions, each with only
 `CROSS_AI_BOOTSTRAP_FILE: ${{ runner.temp }}/cross-ai-bootstrap.json`. Free-form

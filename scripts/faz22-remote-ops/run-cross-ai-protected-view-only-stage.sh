@@ -25,6 +25,8 @@ VIEWER_OVERLAY="kustomize/overlays/test/activation/endpoint-admin-remote-bridge-
 BROKER_ONLY_OVERLAY="kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key-live"
 WATCHDOG_TEMPLATE="scripts/faz22-remote-ops/view-only-viewer-pilot-watchdog.template.yaml"
 WATCHDOG_RECEIPT="${RUNNER_TEMP:?}/cross-ai-watchdog-expires-at"
+WATCHDOG_NETWORK_POLICY_FILTER="scripts/faz22-remote-ops/verify-watchdog-network-policy.jq"
+BROWSER_RUNTIME_ARCHIVE="/opt/acik/cross-ai/browser-runtime/playwright-1.60.0-linux-x64.tar"
 
 for command in bash date docker jq kubectl python3 sha256sum ssh; do
   command -v "$command" >/dev/null 2>&1 || {
@@ -58,20 +60,30 @@ with os.fdopen(descriptor, encoding="utf-8") as handle:
 if response.get("stage") != sys.argv[2]:
     raise SystemExit("bootstrap stage mismatch")
 bundle = json.loads(base64.b64decode(response["bundleEnvelope"]["payload"], validate=True))
+stages = [item for item in bundle["workflowStages"] if item["stage"] == sys.argv[2]]
+if len(stages) != 1:
+    raise SystemExit("signed workflow stage is ambiguous")
 print(response["bundleSha256"])
 print(bundle["grant"]["expiresAt"])
 print(bundle["subject"]["endpointIdSha256"])
+print(stages[0]["runtimeBundleSha256"] or "")
 PY
 )
-[[ "${#BINDING[@]}" -eq 3 ]] || {
+[[ "${#BINDING[@]}" -eq 4 ]] || {
   echo "protected-view-only-stage: signed bootstrap projection is invalid" >&2
   exit 2
 }
 BUNDLE_SHA256="${BINDING[0]}"
 GRANT_EXPIRES_AT="${BINDING[1]}"
 ENDPOINT_ID_SHA256="${BINDING[2]}"
+RUNTIME_BUNDLE_SHA256="${BINDING[3]}"
 [[ "$BUNDLE_SHA256" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 2
 [[ "$ENDPOINT_ID_SHA256" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 2
+if [[ "$STAGE" == "browser-evidence" ]]; then
+  [[ "$RUNTIME_BUNDLE_SHA256" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 2
+else
+  [[ -z "$RUNTIME_BUNDLE_SHA256" ]] || exit 2
+fi
 GRANT_EXPIRES_EPOCH="$(date -u -d "$GRANT_EXPIRES_AT" +%s)" || exit 2
 
 verify_watchdog_active() {
@@ -124,22 +136,7 @@ verify_watchdog_active() {
 
   network_policy="$(kubectl --context="$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     get networkpolicy allow-faz22-view-only-watchdog-kubernetes-api -o json)"
-  jq -e '
-    .metadata.deletionTimestamp == null
-    and .spec.podSelector.matchLabels == {
-      "app.kubernetes.io/component": "safety-controller",
-      "app.kubernetes.io/name": "faz22-view-only-pilot-watchdog"
-    }
-    and (.spec.policyTypes | sort) == ["Egress"]
-    and ([.spec.egress[] | {
-      cidr: .to[0].ipBlock.cidr,
-      protocol: .ports[0].protocol,
-      port: .ports[0].port
-    }] | sort_by(.cidr)) == ([
-      {cidr: "10.45.0.1/32", protocol: "TCP", port: 443},
-      {cidr: "172.19.0.0/16", protocol: "TCP", port: 6443}
-    ] | sort_by(.cidr))
-  ' <<<"$network_policy" >/dev/null
+  jq -e -f "$WATCHDOG_NETWORK_POLICY_FILTER" <<<"$network_policy" >/dev/null
 
   for permission in \
     "get configmap/endpoint-admin-remote-bridge-config-device-key" \
@@ -388,12 +385,11 @@ SQL
   }
 
   runtime="$RUNNER_TEMP/faz22-viewer-playwright"
-  mkdir -p "$runtime"
-  if [[ ! -s "$runtime/node_modules/playwright/package.json" ]]; then
-    npm --prefix "$runtime" init --yes >/dev/null
-    npm --prefix "$runtime" install --no-audit --no-fund --save-exact playwright@1.60.0
-    npm --prefix "$runtime" exec playwright install chromium
-  fi
+  rm -rf -- "$runtime"
+  python3 scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py \
+    --archive "$BROWSER_RUNTIME_ARCHIVE" \
+    --expected-sha256 "$RUNTIME_BUNDLE_SHA256" \
+    --output-dir "$runtime"
   evidence="$RUNNER_TEMP/faz22-viewer-browser-collector"
   rm -rf -- "$evidence"
   mkdir -m 0700 "$evidence"
@@ -402,7 +398,9 @@ SQL
   export SOURCE_REVISION="$GITHUB_SHA"
   export BROWSER_EVIDENCE_SCRIPT="$GITHUB_WORKSPACE/scripts/faz22-remote-ops/faz22-6-viewer-browser-evidence.mjs"
   export BROWSER_DIAGNOSTIC_OUTPUT="$evidence/browser-diagnostic.json"
-  export PLAYWRIGHT_PACKAGE_ROOT="$runtime" VIEWER_PRODUCT_BASE_URL=https://testai.acik.com
+  export PLAYWRIGHT_PACKAGE_ROOT="$runtime/browser-runtime"
+  export PLAYWRIGHT_BROWSERS_PATH="$runtime/browser-runtime/ms-playwright"
+  export VIEWER_PRODUCT_BASE_URL=https://testai.acik.com
   export REMOTE_BRIDGE_DEPLOYMENT="$BRIDGE_DEPLOYMENT" REQUIRE_ACTIVE_GUI=1
   export DENETIM_SSH_TARGET=denetim-pc DENETIM_SSH_OPTS=__SSH_CONFIG__
   export OPEN_SESSION_DEVICE_READY_SECONDS=180 OPEN_SESSION_DEVICE_READY_INTERVAL_SECONDS=5

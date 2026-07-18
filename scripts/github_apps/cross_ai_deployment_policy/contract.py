@@ -604,6 +604,18 @@ class EvidenceVerifier:
                     "REVIEW_AGREE_FINDINGS_INVALID",
                     "AGREE review must not carry finding state transitions",
                 )
+            if review.payload["verdict"] in {"REVISE", "RED"} and not finding_ids:
+                reject(
+                    "REVIEW_DISSENT_FINDINGS_REQUIRED",
+                    "REVISE and RED reviews must raise at least one finding",
+                )
+            if review.payload["verdict"] == "PARTIAL" and not (
+                finding_ids or resolved_ids or acknowledged_ids
+            ):
+                reject(
+                    "REVIEW_PARTIAL_TRANSITION_REQUIRED",
+                    "PARTIAL review must carry a finding state transition",
+                )
             if finding_ids & (resolved_ids | acknowledged_ids):
                 reject(
                     "REVIEW_FINDING_STATE_INVALID",

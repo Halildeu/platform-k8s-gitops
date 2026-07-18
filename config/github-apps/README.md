@@ -19,7 +19,7 @@ tampered file self-authorizing.
 
 The example names three dedicated no-input `*-protected.yml` workflows. Their
 execution actions are pinned to immutable commit
-`ac69b07503755f56ef4f683ca331863bd5e9c6f0`; all three share one literal,
+`bfb2a880f4fc26c727a02fda8ad5643cc03412d6`; all three share one literal,
 non-cancelling concurrency group and publish the exact canonical stage-outcome
 artifact expected by the sweeper. Apply performs immediate in-job compensation
 on failure; the separate rollback workflow is only the pre-signed

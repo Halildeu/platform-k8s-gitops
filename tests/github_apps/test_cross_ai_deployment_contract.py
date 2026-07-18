@@ -40,6 +40,20 @@ class EvidenceContractTest(unittest.TestCase):
         self.assertEqual(result.request_id, "30000000-0000-4000-8000-000000000001")
         self.assertEqual(len(result.final_review_digests), 3)
 
+    def test_rejects_browser_stage_without_signed_runtime_bundle(self) -> None:
+        self.fixture = self.factory.build(
+            stage_overrides={"browser-evidence": {"runtimeBundleSha256": None}}
+        )
+        with self.assertRaisesRegex(PolicyError, "BUNDLE_SCHEMA_INVALID"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_runtime_bundle_on_non_browser_stage(self) -> None:
+        self.fixture = self.factory.build(
+            stage_overrides={"apply": {"runtimeBundleSha256": "sha256:" + ("1" * 64)}}
+        )
+        with self.assertRaisesRegex(PolicyError, "BUNDLE_SCHEMA_INVALID"):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
     def test_rejects_trust_root_that_differs_from_deployment_pin(self) -> None:
         with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_DIGEST_MISMATCH"):
             EvidenceVerifier(
@@ -59,7 +73,9 @@ class EvidenceContractTest(unittest.TestCase):
         envelope = copy.deepcopy(self.fixture.bundle_envelope)
         noncanonical = b'{ "schemaVersion": "acik.cross-ai-deployment-bundle.v1" }'
         envelope["payload"] = base64.b64encode(noncanonical).decode()
-        with self.assertRaisesRegex(PolicyError, "DSSE_SIGNATURE_INVALID|DSSE_PAYLOAD_NON_CANONICAL"):
+        with self.assertRaisesRegex(
+            PolicyError, "DSSE_SIGNATURE_INVALID|DSSE_PAYLOAD_NON_CANONICAL"
+        ):
             self.verifier().verify_bundle(envelope)
 
     def test_rejects_provider_family_self_assertion(self) -> None:
@@ -169,10 +185,64 @@ class EvidenceContractTest(unittest.TestCase):
         bundle["reviewEnvelopes"][-1] = envelope
         bundle["consensus"]["finalAgreeReviewSha256"][-1] = sha256_digest(envelope)
         self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
-        with self.assertRaisesRegex(PolicyError, "CONSENSUS_VERDICT_INVALID"):
+        with self.assertRaisesRegex(
+            PolicyError, "REVIEW_SCHEMA_INVALID|CONSENSUS_VERDICT_INVALID"
+        ):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
-    def test_rejects_unselected_dissent_chain_from_required_provider(self) -> None:
+    def test_rejects_hidden_empty_dissent_before_final_agree(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        partial = bundle["reviewEnvelopes"][1]
+        subject_digest = self.factory.decode_payload(partial)["subjectSha256"]
+        hidden_red = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000004",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=3,
+            verdict="RED",
+            previous=sha256_digest(partial),
+            closure_root=bundle["closure"]["closureRootSha256"],
+            finding_ids=[],
+            issued_at="2026-07-16T20:14:00Z",
+            subject_digest=subject_digest,
+        )
+        final = self.factory._review(
+            review_id="50000000-0000-4000-8000-000000000005",
+            chain_id="40000000-0000-4000-8000-000000000001",
+            key_id=self.factory.ANTHROPIC_KEY_ID,
+            round_number=4,
+            verdict="AGREE",
+            previous=sha256_digest(hidden_red),
+            closure_root=bundle["closure"]["closureRootSha256"],
+            issued_at="2026-07-16T20:15:00Z",
+            subject_digest=subject_digest,
+        )
+        bundle["reviewEnvelopes"][2:3] = [hidden_red, final]
+        bundle["consensus"]["finalAgreeReviewSha256"][0] = sha256_digest(final)
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(
+            PolicyError, "REVIEW_SCHEMA_INVALID|REVIEW_DISSENT_FINDINGS_REQUIRED"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_partial_without_finding_transition(self) -> None:
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        review = self.factory.decode_payload(bundle["reviewEnvelopes"][1])
+        review["findingIds"] = []
+        review["resolvedFindingIds"] = []
+        review["acknowledgedFindingIds"] = []
+        bundle["reviewEnvelopes"][1] = self.factory.sign(
+            "application/vnd.acik.cross-ai-deployment-review.v1+json",
+            review,
+            self.factory.ANTHROPIC_KEY_ID,
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(
+            PolicyError, "REVIEW_SCHEMA_INVALID|REVIEW_PARTIAL_TRANSITION_REQUIRED"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
+
+    def test_rejects_unselected_parallel_chain_from_required_provider(self) -> None:
         bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
         selected = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
         dissent = self.factory._review(
@@ -180,7 +250,7 @@ class EvidenceContractTest(unittest.TestCase):
             chain_id="40000000-0000-4000-8000-000000000004",
             key_id=self.factory.OPENAI_KEY_ID,
             round_number=1,
-            verdict="RED",
+            verdict="AGREE",
             previous=None,
             closure_root=bundle["closure"]["closureRootSha256"],
             issued_at="2026-07-16T20:18:00Z",
@@ -247,7 +317,9 @@ class EvidenceContractTest(unittest.TestCase):
 
     def test_rejects_open_or_missing_closure(self) -> None:
         self.mutate_bundle(lambda bundle: bundle["closure"].__setitem__("entries", []))
-        with self.assertRaisesRegex(PolicyError, "CLOSURE_INCOMPLETE|CLOSURE_ROOT_MISMATCH"):
+        with self.assertRaisesRegex(
+            PolicyError, "CLOSURE_INCOMPLETE|CLOSURE_ROOT_MISMATCH"
+        ):
             self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
     def _append_reopened_anthropic_finding(self, *, same_round_ack: bool) -> None:
