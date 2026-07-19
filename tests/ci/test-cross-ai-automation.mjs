@@ -322,6 +322,20 @@ const agreeWithP1FindingPeerBody = peerBody.replace(
   sha256(EVIDENCE[PEER_REF].body),
   sha256(agreeWithP1FindingBody),
 );
+const agreeWithP2FindingResponse = 'P0\nNone\nP1\nNone\nP2\nLow finding\nVERDICT: AGREE';
+const agreeWithP2FindingBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
+  response_sha256: sha256(agreeWithP2FindingResponse),
+  response: agreeWithP2FindingResponse,
+});
+const agreeWithP2FindingEvidence = {
+  ...EVIDENCE,
+  [PEER_REF]: evidenceComment(agreeWithP2FindingBody),
+};
+const agreeWithP2FindingPeerBody = peerBody.replace(
+  sha256(EVIDENCE[PEER_REF].body),
+  sha256(agreeWithP2FindingBody),
+);
 const sensitiveResponse = 'P0\nNone\nP1\nNone\nP2\nperson@example.com\nVERDICT: AGREE';
 const sensitiveBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[PEER_REF].body),
@@ -533,6 +547,18 @@ const cases = [
   ['Vault policy rejects routine class and Spark evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, changedFiles: ['bootstrap/vault-policies/test/cross-ai-issuer-openai.hcl'] }, 1],
+  ['Full ATS rollback enforcement rejects none mode',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: ['scripts/ats/open-fullats-test-rollback-pr.sh'] }, 1],
+  ['Full ATS trusted rollback verifier rejects routine class and Spark evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, changedFiles: ['scripts/ats/verify-fullats-test-rollback-content.sh'] }, 1],
+  ['production promotion scanner rejects routine class and Spark evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, changedFiles: [SCAN] }, 1],
+  ['production promotion scanner accepts high-impact class and SOL evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [SCAN] }, 0],
   ['explicit none mode rejects production promotion branch',
     { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH] }, 1],
@@ -709,6 +735,9 @@ const cases = [
   ['provider response says AGREE while P1 contains a finding -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: agreeWithP1FindingPeerBody, evidence: agreeWithP1FindingEvidence }, 1],
+  ['provider response says AGREE while P2 contains a finding -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: agreeWithP2FindingPeerBody, evidence: agreeWithP2FindingEvidence }, 1],
   ['provider response contains PII -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: sensitivePeerBody, evidence: sensitiveEvidence }, 1],

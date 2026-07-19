@@ -427,7 +427,9 @@ sayısını doğrular: `none` receipt, binding/outcome veya legacy control field
 taşıyamaz; `single` yalnız exact Codex receipt'i taşır. Claude ve MiniMax
 alanları fail-closed reddedilir. `single` çıktısı `P0/P1/P2` ve tek terminal
 `VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim
-onarımıyla evidence yapılamaz. Exact scope, owner-captured GitHub comment,
+onarımıyla evidence yapılamaz. `AGREE` yalnız P0, P1 ve P2 bölümlerinin üçü de
+case-sensitive exact `None` ise acceptance üretir; herhangi bir priority
+bulgusu `AGREE` ile birlikte fail-closed reddedilir. Exact scope, owner-captured GitHub comment,
 freshness, digest, redaction ve provider/model eşlemesi korunur.
 
 Path/branch sınıflandırıcısı yalnız açık governance ve production-promotion

@@ -109,6 +109,7 @@ def response_contract(response: str) -> tuple[str, dict[str, str]] | None:
     if verdict == "AGREE" and (
         not NO_FINDINGS_RE.fullmatch(sections["P0"])
         or not NO_FINDINGS_RE.fullmatch(sections["P1"])
+        or not NO_FINDINGS_RE.fullmatch(sections["P2"])
     ):
         return None
     return verdict, sections
