@@ -20,8 +20,12 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from jsonschema import Draft202012Validator, FormatChecker
+
 
 MAX_RECEIPT_BYTES = 2 * 1024 * 1024
+ROOT = Path(__file__).resolve().parents[2]
+TRUST_ROOT_SCHEMA = ROOT / "schema/cross-ai-deployment-trust-root-v2.schema.json"
 RECEIPT_SCHEMA_VERSION = "acik.cross-ai-transit-bootstrap-receipt.v2"
 TRUST_ROOT_SCHEMA_VERSION = "acik.cross-ai-deployment-trust-root.v2"
 EXPECTED_KEY_NAMES = (
@@ -112,6 +116,40 @@ def _load_receipt(path: Path) -> dict[str, Any]:
         raise TrustRootBuildError("public Transit receipt is not valid JSON") from exc
     if not isinstance(value, dict):
         raise TrustRootBuildError("public Transit receipt must be an object")
+    return value
+
+
+def _load_previous_trust_root(path: Path) -> dict[str, Any]:
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise TrustRootBuildError("previous trust root is unavailable") from exc
+    if not raw or len(raw) > MAX_RECEIPT_BYTES or b"\x00" in raw:
+        raise TrustRootBuildError("previous trust-root size is invalid")
+    try:
+        value = json.loads(
+            raw,
+            object_pairs_hook=_mapping,
+            parse_float=lambda _value: (_ for _ in ()).throw(
+                TrustRootBuildError("floating-point JSON values are forbidden")
+            ),
+            parse_constant=lambda _value: (_ for _ in ()).throw(
+                TrustRootBuildError("non-finite JSON values are forbidden")
+            ),
+        )
+        schema = json.loads(TRUST_ROOT_SCHEMA.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TrustRootBuildError("previous trust root is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise TrustRootBuildError("previous trust root must be an object")
+    errors = sorted(
+        Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(
+            value
+        ),
+        key=lambda error: list(error.absolute_path),
+    )
+    if errors:
+        raise TrustRootBuildError("previous trust root fails the strict v2 schema")
     return value
 
 
@@ -281,6 +319,7 @@ def build_trust_root(
     expires_at: str,
     issuer_image_digest: str,
     launcher_source_sha256: str,
+    previous_trust_root: dict[str, Any] | None = None,
     max_clock_skew_seconds: int = 60,
 ) -> dict[str, Any]:
     keys, source_digest = _validate_receipt(receipt)
@@ -356,9 +395,24 @@ def build_trust_root(
     openai = by_name["openai"]
     current_provider_end = min(end, start + MAX_PROVIDER_KEY_LIFETIME)
     provider_entries: list[dict[str, Any]] = []
-    if openai["keyVersion"] > 1:
-        previous_version = openai["keyVersion"] - 1
-        previous_history = openai["versionHistory"][previous_version - 1]
+    previous_keys_by_role: dict[str, list[dict[str, Any]]] = {}
+    if previous_trust_root is not None:
+        if (
+            previous_trust_root["trustRootId"] == trust_root_id
+            or _utc(previous_trust_root["issuedAt"], "previous root issuedAt")
+            >= start
+            or _utc(previous_trust_root["expiresAt"], "previous root expiresAt")
+            <= start
+        ):
+            raise TrustRootBuildError("previous trust-root boundary is invalid")
+        for entry in previous_trust_root["keys"]:
+            previous_keys_by_role.setdefault(entry["role"], []).append(entry)
+
+    if previous_trust_root is None:
+        if openai["keyVersion"] != 1:
+            raise TrustRootBuildError(
+                "OpenAI rotation requires the exact previous trust root"
+            )
         provider_entries.append(
             trust_key(
                 openai,
@@ -367,25 +421,95 @@ def build_trust_root(
                 "openai-codex",
                 ["gpt-5.3-codex-spark", "gpt-5.6-sol"],
                 "trusted-launch-attested",
-                key_id=f"vault-transit://cross-ai/openai#v{previous_version}",
-                public_key=previous_history["publicKeyBase64"],
-                not_before=start
-                - (MAX_PROVIDER_KEY_LIFETIME - MIN_PROVIDER_KEY_OVERLAP),
-                not_after=start + MIN_PROVIDER_KEY_OVERLAP,
+                not_before=start,
+                not_after=current_provider_end,
             )
         )
-    provider_entries.append(
-        trust_key(
-            openai,
-            "provider-review",
-            "openai",
-            "openai-codex",
-            ["gpt-5.3-codex-spark", "gpt-5.6-sol"],
-            "trusted-launch-attested",
-            not_before=start,
-            not_after=current_provider_end,
+    else:
+        previous_providers = previous_keys_by_role.get("provider-review", [])
+        if not previous_providers:
+            raise TrustRootBuildError("previous trust root lacks an OpenAI key")
+        try:
+            previous_provider = max(
+                previous_providers,
+                key=lambda entry: int(entry["keyId"].rsplit("#v", 1)[1]),
+            )
+            previous_version = int(previous_provider["keyId"].rsplit("#v", 1)[1])
+        except (KeyError, ValueError, IndexError) as exc:
+            raise TrustRootBuildError(
+                "previous OpenAI key identity is invalid"
+            ) from exc
+        if openai["keyVersion"] not in {previous_version, previous_version + 1}:
+            raise TrustRootBuildError("OpenAI key rotation is not consecutive")
+        previous_history = openai["versionHistory"][previous_version - 1]
+        if (
+            previous_provider["publicKeyBase64"]
+            != previous_history["publicKeyBase64"]
+        ):
+            raise TrustRootBuildError(
+                "previous trust-root key differs from Transit history"
+            )
+        previous_not_before = _utc(
+            previous_provider["notBefore"], "previous provider notBefore"
         )
-    )
+        previous_not_after = _utc(
+            previous_provider["notAfter"], "previous provider notAfter"
+        )
+        if (
+            previous_not_before > start
+            or previous_not_after < start + MIN_PROVIDER_KEY_OVERLAP
+        ):
+            raise TrustRootBuildError(
+                "previous OpenAI key cannot provide the required 24-hour overlap"
+            )
+        provider_entries.append(dict(previous_provider))
+        if openai["keyVersion"] == previous_version + 1:
+            provider_entries.append(
+                trust_key(
+                    openai,
+                    "provider-review",
+                    "openai",
+                    "openai-codex",
+                    ["gpt-5.3-codex-spark", "gpt-5.6-sol"],
+                    "trusted-launch-attested",
+                    not_before=start,
+                    not_after=current_provider_end,
+                )
+            )
+
+    def management_key(name: str, role: str) -> dict[str, Any]:
+        source = by_name[name]
+        if previous_trust_root is None:
+            return trust_key(source, role, None)
+        previous_entries = previous_keys_by_role.get(role, [])
+        if len(previous_entries) != 1:
+            raise TrustRootBuildError(
+                f"previous trust root lacks the exact {role} key"
+            )
+        previous_entry = previous_entries[0]
+        if (
+            previous_entry["keyId"] == source["keyId"]
+            and previous_entry["publicKeyBase64"] == source["publicKeyBase64"]
+        ):
+            if _utc(previous_entry["notAfter"], f"previous {role} notAfter") < end:
+                raise TrustRootBuildError(
+                    f"carried {role} key does not cover the replacement root"
+                )
+            return dict(previous_entry)
+        try:
+            previous_version = int(previous_entry["keyId"].rsplit("#v", 1)[1])
+        except (ValueError, IndexError) as exc:
+            raise TrustRootBuildError(
+                f"previous {role} key identity is invalid"
+            ) from exc
+        if source["keyVersion"] != previous_version + 1:
+            raise TrustRootBuildError(f"{role} key rotation is not consecutive")
+        previous_history = source["versionHistory"][previous_version - 1]
+        if previous_entry["publicKeyBase64"] != previous_history["publicKeyBase64"]:
+            raise TrustRootBuildError(
+                f"previous {role} key differs from Transit history"
+            )
+        return trust_key(source, role, None)
     return {
         "schemaVersion": TRUST_ROOT_SCHEMA_VERSION,
         "trustRootId": trust_root_id,
@@ -408,9 +532,9 @@ def build_trust_root(
         },
         "keys": provider_entries
         + [
-            trust_key(by_name["coordinator"], "coordinator", None),
-            trust_key(by_name["revocation"], "revocation", None),
-            trust_key(by_name["runner-management"], "runner-management", None),
+            management_key("coordinator", "coordinator"),
+            management_key("revocation", "revocation"),
+            management_key("runner-management", "runner-management"),
         ],
     }
 
@@ -441,6 +565,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expires-at", required=True)
     parser.add_argument("--issuer-image-digest", required=True)
     parser.add_argument("--launcher-source-sha256", required=True)
+    parser.add_argument("--previous-trust-root", type=Path)
     parser.add_argument("--max-clock-skew-seconds", type=int, default=60)
     parser.add_argument("--out", type=Path, required=True)
     return parser.parse_args(argv)
@@ -456,6 +581,11 @@ def main(argv: list[str] | None = None) -> int:
             expires_at=args.expires_at,
             issuer_image_digest=args.issuer_image_digest,
             launcher_source_sha256=args.launcher_source_sha256,
+            previous_trust_root=(
+                _load_previous_trust_root(args.previous_trust_root)
+                if args.previous_trust_root is not None
+                else None
+            ),
             max_clock_skew_seconds=args.max_clock_skew_seconds,
         )
         payload = _canonical_bytes(trust_root)

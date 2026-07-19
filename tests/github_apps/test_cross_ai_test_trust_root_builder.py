@@ -79,14 +79,22 @@ def receipt() -> dict[str, object]:
     }
 
 
-def build(value: dict[str, object]) -> dict[str, object]:
+def build(
+    value: dict[str, object],
+    *,
+    trust_root_id: str = TRUST_ROOT_ID,
+    issued_at: str = ISSUED_AT,
+    expires_at: str = EXPIRES_AT,
+    previous_trust_root: dict[str, object] | None = None,
+) -> dict[str, object]:
     return MODULE.build_trust_root(
         value,
-        trust_root_id=TRUST_ROOT_ID,
-        issued_at=ISSUED_AT,
-        expires_at=EXPIRES_AT,
+        trust_root_id=trust_root_id,
+        issued_at=issued_at,
+        expires_at=expires_at,
         issuer_image_digest=ISSUER_IMAGE_DIGEST,
         launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
+        previous_trust_root=previous_trust_root,
     )
 
 
@@ -178,6 +186,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         )
 
     def test_openai_rotation_emits_only_consecutive_codex_keys_with_24h_overlap(self) -> None:
+        previous_root = build(receipt())
         rotated_receipt = receipt()
         key = next(
             item for item in rotated_receipt["keys"] if item["keyName"] == "openai"
@@ -190,7 +199,13 @@ class TestTrustRootBuilderTests(unittest.TestCase):
             {"version": 2, "publicKeyBase64": rotated}
         )
 
-        trust_root = build(rotated_receipt)
+        trust_root = build(
+            rotated_receipt,
+            trust_root_id="10000000-0000-4000-8000-000000000100",
+            issued_at="2026-07-21T12:34:56Z",
+            expires_at="2026-07-28T12:34:56Z",
+            previous_trust_root=previous_root,
+        )
         providers = [
             item for item in trust_root["keys"] if item["role"] == "provider-review"
         ]
@@ -201,11 +216,38 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                 "vault-transit://cross-ai/openai#v2",
             ],
         )
-        self.assertEqual(providers[0]["notAfter"], "2026-07-19T18:00:00Z")
-        self.assertEqual(providers[1]["notBefore"], ISSUED_AT)
+        previous_provider = next(
+            item
+            for item in previous_root["keys"]
+            if item["role"] == "provider-review"
+        )
+        self.assertEqual(providers[0], previous_provider)
+        self.assertEqual(providers[1]["notBefore"], "2026-07-21T12:34:56Z")
+        for role in ("coordinator", "revocation", "runner-management"):
+            self.assertEqual(
+                next(item for item in trust_root["keys"] if item["role"] == role),
+                next(item for item in previous_root["keys"] if item["role"] == role),
+            )
         self.assertTrue(
             all(item["providerFamily"] == "openai" for item in providers)
         )
+
+    def test_openai_rotation_rejects_missing_previous_root(self) -> None:
+        rotated_receipt = receipt()
+        key = next(
+            item for item in rotated_receipt["keys"] if item["keyName"] == "openai"
+        )
+        rotated = public_key(22)
+        key["keyVersion"] = 2
+        key["keyId"] = "vault-transit://cross-ai/openai#v2"
+        key["publicKeyBase64"] = rotated
+        key["versionHistory"].append(
+            {"version": 2, "publicKeyBase64": rotated}
+        )
+        with self.assertRaisesRegex(
+            MODULE.TrustRootBuildError, "exact previous trust root"
+        ):
+            build(rotated_receipt)
 
     def test_rejects_ephemeral_and_overlong_root_lifetimes(self) -> None:
         for invalid in ("2026-07-21T18:00:00Z", "2026-08-17T18:00:01Z"):

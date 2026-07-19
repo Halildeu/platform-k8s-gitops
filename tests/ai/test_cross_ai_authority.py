@@ -509,7 +509,31 @@ class GenesisTransitionTests(unittest.TestCase):
         )
         head = self.commit("stage with untrusted attestor")
         self.git("reset", "-q", "--hard", base)
-        with self.assertRaisesRegex(TransitionError, "TRUST_SIGNER_BINDING"):
+        with self.assertRaisesRegex(TransitionError, "runtime policy differs"):
+            stage_public_authority(
+                self.root, base=base, head=head, now=self.fixture.factory.now
+            )
+
+    def test_stage_rejects_runtime_image_outside_the_pinned_root(self) -> None:
+        base = self.install_base(genesis_status="installed")
+        staged = self.genesis(status="staged")
+        staged["issuerRuntimePolicy"] = dict(staged["issuerRuntimePolicy"])
+        staged["issuerRuntimePolicy"]["issuerImageDigest"] = "sha256:" + ("0" * 64)
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-genesis.v1.json",
+            staged,
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            self.fixture.authority.trust_root,
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
+            self.fixture.authority.revocations_envelope,
+        )
+        head = self.commit("stage with untrusted runtime image")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(TransitionError, "runtime policy differs"):
             stage_public_authority(
                 self.root, base=base, head=head, now=self.fixture.factory.now
             )
