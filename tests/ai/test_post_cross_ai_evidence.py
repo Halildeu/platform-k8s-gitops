@@ -194,6 +194,14 @@ class EvidenceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(TrustedEvidenceError, "fixed route"):
             self.validate(capability)
 
+        routed = copy.deepcopy(self.fixture.evidence)
+        routed["capability_snapshot"]["environmentPolicy"] = {
+            **routed["capability_snapshot"]["environmentPolicy"],
+            "networkRoutingVariables": "inherited",
+        }
+        with self.assertRaisesRegex(TrustedEvidenceError, "fixed route"):
+            self.validate(routed)
+
     def test_verifier_rejects_executable_provenance_outside_its_own_policy(self) -> None:
         policy = copy.deepcopy(self.fixture.authority.codex_executable_policy)
         policy["allowedExecutables"][0]["cliSha256"] = "sha256:" + ("0" * 64)

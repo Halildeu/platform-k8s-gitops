@@ -12,6 +12,7 @@ from pathlib import Path
 from scripts.ai.cross_ai_authority import (
     AuthorityUnavailable,
     load_active_authority,
+    load_revocation_refresh_authority,
     load_staged_activation_authority,
 )
 from scripts.ai.prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope
@@ -20,6 +21,9 @@ from scripts.ai.verify_cross_ai_authority_transition import (
     stage_public_authority,
 )
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
+from scripts.github_apps.cross_ai_deployment_policy.contract import (
+    REVOCATIONS_PAYLOAD_TYPE,
+)
 from tests.ai.signed_evidence_fixture import make_signed_evidence
 
 
@@ -318,6 +322,116 @@ class GenesisTransitionTests(unittest.TestCase):
                     "scope_sha256": hashlib.sha256(bad_scope).hexdigest(),
                 },
                 scope_bytes=bad_scope,
+                now=self.fixture.factory.now,
+            )
+
+    def signed_revocations(
+        self, *, set_id: str, issued_at: str, next_update: str,
+        entries: list[dict[str, str]],
+    ) -> dict[str, object]:
+        return self.fixture.factory.sign(
+            REVOCATIONS_PAYLOAD_TYPE,
+            {
+                "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
+                "revocationSetId": set_id,
+                "issuedAt": issued_at,
+                "nextUpdate": next_update,
+                "entries": entries,
+            },
+            self.fixture.factory.REVOCATION_KEY_ID,
+        )
+
+    def test_stale_revocations_have_one_signed_monotonic_exact_path_recovery(self) -> None:
+        prior_entry = {
+            "type": "review",
+            "id": "sha256:" + ("1" * 64),
+            "effectiveAt": "2026-07-18T18:00:00Z",
+            "reasonCode": "REVIEW_COMPROMISED",
+        }
+        stale = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000091",
+            issued_at="2026-07-18T18:00:00Z",
+            next_update="2026-07-18T19:00:00Z",
+            entries=[prior_entry],
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            self.authority_manifest(active=True),
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            self.fixture.authority.trust_root,
+        )
+        revocation_path = (
+            "config/github-apps/"
+            "cross-ai-provider-review-revocations.v1.dsse.json"
+        )
+        self.write_json(revocation_path, stale)
+        base = self.commit("stale base")
+        with self.assertRaisesRegex(AuthorityUnavailable, "REVOCATIONS_STALE"):
+            load_active_authority(self.root, now=self.fixture.factory.now)
+
+        fresh = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000092",
+            issued_at="2026-07-18T20:20:00Z",
+            next_update="2026-07-18T21:00:00Z",
+            entries=[prior_entry],
+        )
+        self.write_json(revocation_path, fresh)
+        head = self.commit("signed refresh")
+        self.git("reset", "-q", "--hard", base)
+        scope = self.scope(base, head)
+        bindings = {
+            "base_tip_sha": base,
+            "base_sha": base,
+            "head_sha": head,
+            "scope_sha256": hashlib.sha256(scope).hexdigest(),
+        }
+        recovered = load_revocation_refresh_authority(
+            self.root,
+            expected_bindings=bindings,
+            scope_bytes=scope,
+            now=self.fixture.factory.now,
+        )
+        self.assertEqual(recovered.revocations_envelope, fresh)
+
+        self.git("checkout", "-q", head)
+        removed = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000093",
+            issued_at="2026-07-18T20:21:00Z",
+            next_update="2026-07-18T21:00:00Z",
+            entries=[],
+        )
+        self.write_json(revocation_path, removed)
+        bad_head = self.commit("attempt unrevocation")
+        self.git("checkout", "-q", base)
+        bad_scope = self.scope(base, bad_head)
+        with self.assertRaisesRegex(AuthorityUnavailable, "UNREVOCATION_FORBIDDEN"):
+            load_revocation_refresh_authority(
+                self.root,
+                expected_bindings={
+                    **bindings,
+                    "head_sha": bad_head,
+                    "scope_sha256": hashlib.sha256(bad_scope).hexdigest(),
+                },
+                scope_bytes=bad_scope,
+                now=self.fixture.factory.now,
+            )
+
+        self.git("checkout", "-q", head)
+        (self.root / "unrelated.txt").write_text("not allowed", encoding="utf-8")
+        unrelated_head = self.commit("unrelated mutation")
+        self.git("checkout", "-q", base)
+        unrelated_scope = self.scope(base, unrelated_head)
+        with self.assertRaisesRegex(AuthorityUnavailable, "outside the signed release"):
+            load_revocation_refresh_authority(
+                self.root,
+                expected_bindings={
+                    **bindings,
+                    "head_sha": unrelated_head,
+                    "scope_sha256": hashlib.sha256(unrelated_scope).hexdigest(),
+                },
+                scope_bytes=unrelated_scope,
                 now=self.fixture.factory.now,
             )
 

@@ -169,6 +169,16 @@ verifies its signature and `nextUpdate` then. Replace the file atomically. A
 missing, partially written, stale or invalid envelope rejects the decision;
 revocation activation does not depend on a process restart.
 
+A missed refresh window does not permanently deadlock the review gate. Create a
+new release with `build_cross_ai_provider_review_revocations.py` and open a PR
+whose sole changed path is
+`config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json`. The
+trusted-base audit permits the normal high-impact signed Codex review to use the
+head replacement only after independently verifying the pinned revocation
+signature, freshness, a strictly newer set identity/time and a byte-for-byte
+superset of every stale predecessor entry. This path never permits an empty
+fallback, unrevocation, root/code/schema change or replay of the retired genesis.
+
 V1 evaluates only current, unconsumed authorizations. A matching revocation
 entry therefore takes effect immediately, even if its `effectiveAt` is in the
 future or the signed leaf predates it. `effectiveAt` remains historical audit
@@ -178,7 +188,10 @@ future-dated entry unless this immediate preemption is intended.
 Codex JSONL does not
 report backend model identity: its leaf is therefore honestly marked
 `trusted-launch-attested`, bound to the live supported-model catalog, exact
-executable/version/digest and no-tool read-only launch. It is never upgraded to
+executable/version/digest, a complete non-inheriting environment policy and
+no-tool read-only launch. Version, catalog and review execute from the same
+pinned private binary copy with provider endpoint/proxy environment variables
+cleared. It is never upgraded to
 `provider-reported`. Cursor is not an authorized provider route.
 
 ### 4.1 One-time TEST Transit owner bootstrap

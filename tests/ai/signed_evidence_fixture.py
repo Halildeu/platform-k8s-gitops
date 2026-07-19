@@ -16,6 +16,7 @@ from scripts.github_apps.cross_ai_deployment_policy.contract import (
     REVOCATIONS_PAYLOAD_TYPE,
 )
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
+    CODEX_ENVIRONMENT_POLICY,
     CODEX_MODEL,
     CODEX_MODELS,
     ProviderExecutionReceipt,
@@ -84,6 +85,7 @@ def capability_snapshot(
         "sandbox": "read-only",
         "ephemeral": True,
         "toolPolicy": "none-pre-execution",
+        "environmentPolicy": CODEX_ENVIRONMENT_POLICY,
         "launchConfiguration": {
             "catalogArguments": ["debug", "models"],
             "executionArguments": expected_execution_arguments(model),

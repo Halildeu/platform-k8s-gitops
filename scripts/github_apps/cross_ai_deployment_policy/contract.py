@@ -473,17 +473,23 @@ class EvidenceVerifier:
                 )
 
     def _active_keys(self, role: str) -> dict[str, bytes]:
+        return self._keys_valid_at(role, self.now)
+
+    def _keys_valid_at(self, role: str, reference_time: datetime) -> dict[str, bytes]:
         active: dict[str, bytes] = {}
         for key in self.keys.values():
             if key.role != role:
                 continue
             if (
-                key.not_before <= self.now + self.max_skew
-                and key.not_after >= self.now - self.max_skew
+                key.not_before <= reference_time + self.max_skew
+                and key.not_after >= reference_time - self.max_skew
             ):
                 active[key.key_id] = key.public_key
         if not active:
-            reject("TRUST_ACTIVE_KEY_MISSING", f"no active {role} key is available")
+            reject(
+                "TRUST_ACTIVE_KEY_MISSING",
+                f"no {role} key is valid at the acceptance reference time",
+            )
         return active
 
     def _role_keys(self, role: str) -> dict[str, bytes]:
@@ -535,7 +541,9 @@ class EvidenceVerifier:
         self._validate_key_time(key, issued_at or self.now, "signer")
         return key
 
-    def _verify_revocations(self, envelope: dict[str, Any]) -> VerifiedEnvelope:
+    def _verify_revocations(
+        self, envelope: dict[str, Any], *, require_fresh: bool = True
+    ) -> VerifiedEnvelope:
         verified = verify_json_envelope(
             envelope,
             expected_payload_type=REVOCATIONS_PAYLOAD_TYPE,
@@ -556,7 +564,7 @@ class EvidenceVerifier:
                 "REVOCATIONS_NOT_YET_VALID",
                 "revocation set issue time is in the future",
             )
-        if next_update < self.now - self.max_skew:
+        if require_fresh and next_update < self.now - self.max_skew:
             reject("REVOCATIONS_STALE", "revocation set nextUpdate is stale")
         if next_update <= issued_at:
             reject("REVOCATIONS_LIFETIME_INVALID", "revocation set lifetime is invalid")
@@ -580,6 +588,56 @@ class EvidenceVerifier:
                 "revocation refresh extends beyond signer validity",
             )
         return verified
+
+    def require_stale_revocation_predecessor(
+        self, predecessor_envelope: dict[str, Any]
+    ) -> VerifiedEnvelope:
+        """Validate the sole narrow recovery from a missed refresh window.
+
+        ``self`` has already authenticated the fresh replacement against the
+        active pinned root. The trusted-base predecessor must also be
+        authentic, actually stale, strictly older, and every prior revocation
+        must remain present byte-for-byte. This permits an exact
+        revocations-file-only PR to recover freshness without creating an
+        unrevocation or arbitrary governance bypass.
+        """
+
+        predecessor = self._verify_revocations(
+            predecessor_envelope, require_fresh=False
+        )
+        old_issued = parse_utc(
+            predecessor.payload["issuedAt"], "predecessorRevocations.issuedAt"
+        )
+        old_next = parse_utc(
+            predecessor.payload["nextUpdate"], "predecessorRevocations.nextUpdate"
+        )
+        new_issued = parse_utc(
+            self.revocations["issuedAt"], "replacementRevocations.issuedAt"
+        )
+        if old_next >= self.now - self.max_skew:
+            reject(
+                "REVOCATION_RECOVERY_NOT_REQUIRED",
+                "revocation predecessor is not stale",
+            )
+        if (
+            new_issued <= old_issued
+            or self.revocations["revocationSetId"]
+            == predecessor.payload["revocationSetId"]
+        ):
+            reject(
+                "REVOCATION_RECOVERY_ORDER_INVALID",
+                "replacement revocation set is not a new release",
+            )
+        old_entries = {
+            sha256_digest(entry) for entry in predecessor.payload["entries"]
+        }
+        new_entries = {sha256_digest(entry) for entry in self.revocations["entries"]}
+        if not old_entries.issubset(new_entries):
+            reject(
+                "REVOCATION_RECOVERY_UNREVOCATION_FORBIDDEN",
+                "replacement omits a predecessor revocation",
+            )
+        return predecessor
 
     def _validate_key_time(
         self,
@@ -823,12 +881,14 @@ class EvidenceVerifier:
     def _verify_reviews(
         self, bundle: dict[str, Any], subject_digest: str
     ) -> dict[str, VerifiedReview]:
-        # Active authorization accepts only a provider key that is active at
-        # the independent observation time. Otherwise a holder of an expired
-        # Transit key version could sign later and backdate issuer-controlled
-        # issuedAt. Retired v1 forensic replay remains explicitly historical.
+        # A current authorization uses observation time by default. A durable
+        # downstream product verifier instead supplies its independently
+        # fetched pilot/run time, so an authentic leaf remains verifiable after
+        # normal provider-key rotation. The leaf is still checked separately at
+        # its signed issuedAt, preventing a retired key from backdating a new
+        # review into its old interval.
         provider_keys = (
-            self._active_keys("provider-review")
+            self._keys_valid_at("provider-review", self.review_reference_time)
             if self.verification_mode == "active"
             else self._role_keys("provider-review")
         )

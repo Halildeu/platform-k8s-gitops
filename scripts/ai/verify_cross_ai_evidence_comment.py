@@ -24,6 +24,7 @@ from scripts.ai.trusted_cross_ai_evidence import (
 from scripts.ai.cross_ai_authority import (
     AuthorityUnavailable,
     load_active_authority,
+    load_revocation_refresh_authority,
     load_staged_activation_authority,
 )
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
@@ -97,19 +98,28 @@ def main() -> None:
         try:
             authority = load_active_authority(args.repo_root, now=now)
         except AuthorityUnavailable as exc:
-            if "tracked_pending" not in str(exc):
+            bindings = {
+                "base_tip_sha": args.base_tip_sha,
+                "base_sha": args.base_sha,
+                "head_sha": args.head_sha,
+                "scope_sha256": args.scope_sha256,
+            }
+            if "tracked_pending" in str(exc):
+                authority = load_staged_activation_authority(
+                    args.repo_root,
+                    expected_bindings=bindings,
+                    scope_bytes=scope_bytes,
+                    now=now,
+                )
+            elif "REVOCATIONS_STALE" in str(exc):
+                authority = load_revocation_refresh_authority(
+                    args.repo_root,
+                    expected_bindings=bindings,
+                    scope_bytes=scope_bytes,
+                    now=now,
+                )
+            else:
                 raise
-            authority = load_staged_activation_authority(
-                args.repo_root,
-                expected_bindings={
-                    "base_tip_sha": args.base_tip_sha,
-                    "base_sha": args.base_sha,
-                    "head_sha": args.head_sha,
-                    "scope_sha256": args.scope_sha256,
-                },
-                scope_bytes=scope_bytes,
-                now=now,
-            )
         validated = validate_evidence(
             evidence,
             trust_root=authority.trust_root,

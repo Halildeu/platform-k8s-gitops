@@ -33,7 +33,12 @@ are never accepted from the runner, caller or review response. Updating Codex
 therefore requires an explicit authority-manifest policy change, but does not
 rotate the provider-review signing root. The signed launch capability snapshot
 then binds the matched allowlist entry, private-copy digest, live model catalog
-and fixed arguments inside each provider-review leaf.
+and fixed arguments inside each provider-review leaf. Version discovery, model
+catalog and review execution all receive the same complete isolated environment:
+no caller variable is inherited, provider endpoint/proxy variables are absent,
+and the OS-account Codex home plus private temporary root are fixed. The signed
+capability snapshot binds that exact environment policy, so
+`OPENAI_BASE_URL`/proxy routing cannot masquerade as direct OpenAI provenance.
 
 The first public root cannot cryptographically authorize its own introduction.
 `cross-ai-provider-review-genesis.v1.json` resolves that bootstrap without a
@@ -81,6 +86,12 @@ entrypoint for the public revocation file. It signs only
 `cross-ai/revocation` Transit route, requires the independently supplied root
 pin, enforces a maximum 60-minute `nextUpdate`, verifies the emitted DSSE and
 writes create-once bytes. Missing or stale revocations never mean an empty set.
+If the 60-minute window is missed after genesis retirement, recovery is not a
+genesis replay and does not lower the high-impact review floor. The trusted-base
+verifier accepts only an exact revocations-file-only PR whose replacement is a
+fresh DSSE from the already pinned revocation key, has a new set identity/time,
+and contains every predecessor revocation byte-for-byte. Any other changed path,
+forged release, non-stale predecessor or attempted unrevocation fails closed.
 
 The example names three dedicated no-input `*-protected.yml` workflows. Their
 execution actions are pinned to immutable commit
