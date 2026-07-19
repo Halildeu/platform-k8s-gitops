@@ -511,7 +511,7 @@ printf '%s' "$final_accessors" | jq -e --arg expected "$new_accessor" \
 unset old_accessors final_accessors new_accessor
 
 # Create/validate the login role without embedding a cleartext password in SQL.
-docker exec "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+docker exec -i "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
 DO $$
 BEGIN
   IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'ethics_app') THEN
@@ -582,7 +582,7 @@ case "$schema_owner" in
   ethics_app|pg_database_owner) ;;
   *) echo "FATAL: unexpected ethics.public schema owner" >&2; exit 1 ;;
 esac
-docker exec "$PG_CONTAINER" psql -U postgres -d ethics -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+docker exec -i "$PG_CONTAINER" psql -U postgres -d ethics -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
 REVOKE ALL ON DATABASE ethics FROM PUBLIC;
 GRANT CONNECT, TEMPORARY ON DATABASE ethics TO ethics_app;
 ALTER SCHEMA public OWNER TO ethics_app;

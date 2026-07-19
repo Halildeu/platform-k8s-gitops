@@ -127,6 +127,18 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.pg_vault.index("Create/validate the login role"),
         )
 
+    def test_pg_heredoc_sql_is_attached_to_container_stdin(self):
+        self.assertIn(
+            'docker exec -i "$PG_CONTAINER" psql -U postgres '
+            "-v ON_ERROR_STOP=1 >/dev/null <<'SQL'",
+            self.pg_vault,
+        )
+        self.assertIn(
+            'docker exec -i "$PG_CONTAINER" psql -U postgres -d ethics '
+            "-v ON_ERROR_STOP=1 >/dev/null <<'SQL'",
+            self.pg_vault,
+        )
+
     def test_provisioners_remain_pinned_to_synthetic_test_targets(self):
         self.assertIn('[ "$PG_CONTAINER" = "platform-pg-test" ]', self.pg_vault)
         self.assertIn('[ "$VAULT_CONTAINER" = "platform-vault-test" ]', self.pg_vault)
