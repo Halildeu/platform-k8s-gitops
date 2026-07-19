@@ -116,6 +116,26 @@ def post_retry_pending(repo: str, head: str, url: str, generation: int) -> dict:
     return created
 
 
+def protect_live_pr_generation(repo: str, current: object, url: str) -> dict | None:
+    if not isinstance(current, dict):
+        return None
+    try:
+        head = current["head"]["sha"].lower()
+        body = current.get("body") or ""
+    except (KeyError, TypeError, AttributeError):
+        return None
+    if (
+        current.get("state") != "open"
+        or current.get("html_url") != url
+        or SHA_RE.fullmatch(head) is None
+        or not isinstance(body, str)
+    ):
+        return None
+    markers = MARKER_RE.findall(body)
+    generation = int(markers[0][0]) if len(markers) == 1 else 0
+    return post_retry_pending(repo, head, url, generation)
+
+
 def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     if REPO_RE.fullmatch(repo) is None or issue < 1 or shutil.which("gh") is None:
         fail("invalid_audit_generation_target")
@@ -152,6 +172,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         or current_base != event_base
         or current_body != event_body
     ):
+        protect_live_pr_generation(repo, current, expected_url)
         fail("github_pr_generation_mismatch")
 
     pages = gh_json([
@@ -296,21 +317,14 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         current_after_body = ""
     superseded = bool(
         current_after.get("state") != "open"
+        or current_after.get("html_url") != expected_url
         or current_after_head != event_head
         or current_after_base != event_base
         or current_after_body != event_body
         or newer_owner_pending
     )
     if superseded:
-        marker_matches = MARKER_RE.findall(current_after_body)
-        next_generation = pending_status_id
-        if len(marker_matches) == 1:
-            candidate = int(marker_matches[0][0])
-            if any(valid_owner_pending(status, candidate, owner, expected_url) for status in audit_after):
-                next_generation = candidate
-        elif newer_owner_pending:
-            next_generation = max(status["id"] for status in newer_owner_pending)
-        post_retry_pending(repo, event_head, expected_url, next_generation)
+        protect_live_pr_generation(repo, current_after, expected_url)
         fail("audit_generation_superseded_after_success")
     return {
         "ok": True,

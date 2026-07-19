@@ -569,7 +569,8 @@ Trusted completion helper event body/head ile canlı açık PR body/head'ini,
 marker'daki pending ID ile owner pending status'u ve marker'daki ledger ID ile
 exact digest/PR/owner ledger'ını yeniden doğrulamadan success yazamaz. Success
 sonrasında daha yeni owner generation/body/head görülürse trusted workflow retry
-pending'i yeniden kurar; yeni generation bu fail-closed kaydı tüketebilir. Audit
+pending'ini yeniden okunan canlı PR head SHA'sına kurar; yeni generation bu
+fail-closed kaydı tüketebilir. Audit
 ancak tüm receipt/ledger/comment/lineage kontrolleri geçince exact generation
 için status'u `success` yapar. Ledger, comment veya body update başarısız kalırsa
 pending status fail-closed korunur; aynı evidence digest'iyle
