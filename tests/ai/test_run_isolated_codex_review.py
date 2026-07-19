@@ -56,6 +56,10 @@ if os.environ.get("FAKE_DUPLICATE_TURN_STARTED") == "1":
     print(json.dumps({"type":"turn.started"}))
 if os.environ.get("FAKE_STDERR") == "1":
     print("model routing warning", file=sys.stderr)
+if os.environ.get("FAKE_REASONING_EVENT") == "1":
+    reasoning = {"id":"item_r","type":"reasoning","text":"internal summary"}
+    print(json.dumps({"type":"item.started","item":reasoning}))
+    print(json.dumps({"type":"item.completed","item":reasoning}))
 if os.environ.get("FAKE_ERROR_EVENT") == "1":
     item = {"id":"item_e","type":"error","message":"model rerouted"}
 elif os.environ.get("FAKE_TOOL_EVENT") == "1":
@@ -63,6 +67,11 @@ elif os.environ.get("FAKE_TOOL_EVENT") == "1":
 else:
     item = {"id":"item_0","type":"agent_message","text":"P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"}
 print(json.dumps({"type":"item.completed","item":item}))
+if os.environ.get("FAKE_DUPLICATE_AGENT_MESSAGE") == "1":
+    print(json.dumps({"type":"item.completed","item":item}))
+if os.environ.get("FAKE_REASONING_AFTER_AGENT") == "1":
+    item = {"id":"item_late","type":"reasoning","text":"late"}
+    print(json.dumps({"type":"item.completed","item":item}))
 print(json.dumps({"type":"turn.completed","usage":{}}))
 '''
 
@@ -147,7 +156,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             json.dumps({"name": "@openai/codex", "version": dependency_version}),
             encoding="utf-8",
         )
-        fake_codex = platform_root / "vendor" / target / "bin" / executable_name
+        fake_codex = platform_root / "vendor" / target / "codex" / executable_name
         fake_codex.parent.mkdir(parents=True)
         fake_codex.write_text(FAKE_CODEX, encoding="utf-8")
         fake_codex.chmod(0o700)
@@ -226,6 +235,9 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         stderr_event: bool = False,
         skip_turn_started: bool = False,
         duplicate_turn_started: bool = False,
+        reasoning_event: bool = False,
+        duplicate_agent_message: bool = False,
+        reasoning_after_agent: bool = False,
         review_tier: str = "routine",
         trusted_pin: bool = True,
     ) -> subprocess.CompletedProcess[str]:
@@ -243,6 +255,12 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             env["FAKE_SKIP_TURN_STARTED"] = "1"
         if duplicate_turn_started:
             env["FAKE_DUPLICATE_TURN_STARTED"] = "1"
+        if reasoning_event:
+            env["FAKE_REASONING_EVENT"] = "1"
+        if duplicate_agent_message:
+            env["FAKE_DUPLICATE_AGENT_MESSAGE"] = "1"
+        if reasoning_after_agent:
+            env["FAKE_REASONING_AFTER_AGENT"] = "1"
         if review_tier == "high-impact":
             env["EXPECTED_MODEL"] = "gpt-5.6-sol"
         arguments = [
@@ -346,6 +364,26 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             json.loads(result.stdout)["error"],
             "codex_tool_or_non_message_event_forbidden",
         )
+
+    def test_accepts_bounded_reasoning_lifecycle_before_terminal_message(self) -> None:
+        result = self.run_harness(reasoning_event=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        evidence = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(evidence["verdict"], "AGREE")
+
+    def test_rejects_duplicate_or_post_terminal_items(self) -> None:
+        for options in (
+            {"duplicate_agent_message": True},
+            {"reasoning_after_agent": True},
+        ):
+            with self.subTest(options=options):
+                result = self.run_harness(**options)
+                self.assertEqual(result.returncode, 1)
+                self.assertFalse(self.output.exists())
+                self.assertEqual(
+                    json.loads(result.stdout)["error"],
+                    "codex_event_sequence_invalid",
+                )
 
     def test_rejects_nonempty_cli_stderr(self) -> None:
         result = self.run_harness(stderr_event=True)

@@ -235,7 +235,7 @@ def resolve_codex_native() -> tuple[Path, str, str, str]:
     platform_package = read_json_object(
         platform_root / "package.json", "codex_platform_package_invalid"
     )
-    native = platform_root / "vendor" / target / "bin" / executable_name
+    native = platform_root / "vendor" / target / "codex" / executable_name
     if (
         platform_package.get("name") != "@openai/codex"
         or platform_package.get("version") != f"{version}-{package_suffix.removeprefix('codex-')}"
@@ -336,23 +336,55 @@ def parse_codex_events(stdout: str) -> tuple[str, str]:
         if not isinstance(event, dict):
             fail("codex_jsonl_invalid")
         events.append(event)
-    if [event.get("type") for event in events] != [
-        "thread.started",
-        "turn.started",
-        "item.completed",
-        "turn.completed",
-    ]:
+    if len(events) < 4 or events[0].get("type") != "thread.started":
         fail("codex_event_sequence_invalid")
     thread_id = events[0].get("thread_id")
     if not isinstance(thread_id, str) or not THREAD_ID_RE.fullmatch(thread_id):
         fail("codex_thread_id_invalid")
-    item = events[2].get("item")
-    if not isinstance(item, dict) or item.get("type") != "agent_message":
-        fail("codex_tool_or_non_message_event_forbidden")
-    response = item.get("text")
-    if not isinstance(response, str) or not response.strip():
-        fail("codex_response_missing")
-    return thread_id, response.strip()
+
+    turn_started = False
+    response: str | None = None
+    turn_completed = False
+    for index, event in enumerate(events[1:], start=1):
+        event_type = event.get("type")
+        if event_type == "turn.started":
+            if turn_started or response is not None or turn_completed:
+                fail("codex_event_sequence_invalid")
+            turn_started = True
+            continue
+        if event_type in {"item.started", "item.completed"}:
+            if not turn_started or turn_completed or response is not None:
+                fail("codex_event_sequence_invalid")
+            item = event.get("item")
+            if not isinstance(item, dict):
+                fail("codex_jsonl_invalid")
+            item_type = item.get("type")
+            if item_type == "reasoning":
+                continue
+            if event_type != "item.completed" or item_type != "agent_message":
+                fail("codex_tool_or_non_message_event_forbidden")
+            message = item.get("text")
+            if not isinstance(message, str) or not message.strip():
+                fail("codex_response_missing")
+            response = message.strip()
+            continue
+        if event_type == "turn.completed":
+            if (
+                not turn_started
+                or response is None
+                or turn_completed
+                or index != len(events) - 1
+            ):
+                fail("codex_event_sequence_invalid")
+            turn_completed = True
+            continue
+        if event_type in {"error", "turn.failed"}:
+            fail("codex_tool_or_non_message_event_forbidden")
+        fail("codex_event_sequence_invalid")
+
+    if not turn_started or response is None or not turn_completed:
+        fail("codex_event_sequence_invalid")
+    return thread_id, response
 
 
 def write_create_once(path: Path, content: str) -> None:
