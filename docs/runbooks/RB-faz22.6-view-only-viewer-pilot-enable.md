@@ -67,11 +67,13 @@ boundary; see OWNER-APPROVAL.md node-origin caveat).
 
 This is the owner decision. Do not flip the flag until every box holds:
 
-- [ ] Canonical `faz22.6-view-only-pilot-owner-policy-v2` is `active`. It binds
-      the owner directive to a canonical signed `cross-ai-provider-evidence/v3`
-      GitHub comment proving direct OpenAI Codex CLI `gpt-5.6-sol xhigh`,
-      `read-only`, `ephemeral`, finding-free `AGREE`; review base-tip/base/head/
-      scope digests exactly match the policy contract, the GitHub comment is
+- [ ] Canonical `faz22.6-view-only-pilot-owner-policy-v2` remains the immutable
+      `tracked_pending` constraint template. The protected apply receives the
+      immutable #2373 comment ID at runtime and verifies a canonical signed
+      `cross-ai-provider-evidence/v3` comment proving direct OpenAI Codex CLI
+      `gpt-5.6-sol xhigh`, `read-only`, `ephemeral`, finding-free `AGREE`;
+      review base-tip/base/head/scope digests exactly match the activation head
+      and independently derived git scope, the GitHub comment is
       unedited (`created_at == updated_at`) and no older than 168 hours at
       authorization time. The v1 Claude-bearing policy bytes remain immutable
       so pre-migration receipts can be terminated or forensically audited.
@@ -123,12 +125,13 @@ gh workflow run apply-view-only-viewer-pilot-enable.yml \
   --ref main \
   -f action=apply \
   -f confirm=APPLY_VIEW_ONLY_VIEWER_PILOT_ENABLE \
+  -f advisory_comment_id=<SIGNED_CODEX_EVIDENCE_COMMENT_ID> \
   -f pilot_ttl_minutes=120
 ```
 
 The `apply` run waits for the protected Environment reviewer, verifies the
-content-addressed owner directive, provider-distinct advisory consensus, open
-#2374 escalation, bounded scope and current revocation ledger, then emits a v2
+content-addressed owner directive, exact runtime-bound signed Codex advisory,
+open #2374 escalation, bounded scope and current revocation ledger, then emits a v2
 protected-authorization receipt before the deployment job can start. The
 workflow then installs a cluster-side
 absolute-expiry watchdog **before** exposure, applies the bridge-side viewer

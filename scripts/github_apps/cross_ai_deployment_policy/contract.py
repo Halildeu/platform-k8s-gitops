@@ -805,12 +805,15 @@ class EvidenceVerifier:
     def _verify_reviews(
         self, bundle: dict[str, Any], subject_digest: str
     ) -> dict[str, VerifiedReview]:
-        # A bounded review issued during the previous provider key's validity
-        # remains verifiable through the rotation overlap even if that key is
-        # no longer active at observation time. Signature acceptance therefore
-        # uses every pinned provider key and separately proves root/key
-        # validity at the signed review issue time.
-        provider_keys = self._role_keys("provider-review")
+        # Active authorization accepts only a provider key that is active at
+        # the independent observation time. Otherwise a holder of an expired
+        # Transit key version could sign later and backdate issuer-controlled
+        # issuedAt. Retired v1 forensic replay remains explicitly historical.
+        provider_keys = (
+            self._active_keys("provider-review")
+            if self.verification_mode == "active"
+            else self._role_keys("provider-review")
+        )
         verified: dict[str, VerifiedReview] = {}
         review_ids: set[str] = set()
         for envelope in bundle["reviewEnvelopes"]:

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -87,7 +86,7 @@ def produce(
     activation_run_id: int,
     head_sha: str,
     *,
-    advisory_scope_bytes: bytes,
+    advisory_scope_bytes: bytes | None,
     cross_ai_trust_root: dict,
     cross_ai_revocations: dict,
     expected_cross_ai_trust_root_sha256: str,
@@ -132,22 +131,9 @@ def produce(
     return child
 
 
-def load_current_authority_inputs() -> tuple[bytes, dict, dict, str, dict]:
+def load_current_authority_inputs() -> tuple[dict, dict, str, dict]:
     authority = VERIFIER.load_active_authority(VERIFIER.ROOT)
-    policy = VERIFIER.load_json_file(VERIFIER.OWNER_POLICY_V2, "active owner policy")
-    binding = policy.get("aiAdvisory", {}).get("evidenceBinding", {})
-    scope_bytes, _, _ = VERIFIER.derive_scope(
-        VERIFIER.ROOT,
-        base_tip_sha=binding.get("baseTipSha", ""),
-        base_sha=binding.get("baseSha", ""),
-        head_sha=binding.get("headSha", ""),
-        max_scope_bytes=VERIFIER.MAX_SCOPE_BYTES,
-        scan_secrets=True,
-    )
-    if hashlib.sha256(scope_bytes).hexdigest() != binding.get("scopeSha256"):
-        raise VERIFIER.EvidenceError("canonical advisory scope digest mismatch")
     return (
-        scope_bytes,
         authority.trust_root,
         authority.revocations_envelope,
         authority.expected_trust_root_sha256,
@@ -165,13 +151,13 @@ def main() -> int:
     parser.add_argument("--github-token-env", default="GITHUB_TOKEN")
     args = parser.parse_args()
     try:
-        scope_bytes, trust_root, revocations, expected_root, executable_policy = (
+        trust_root, revocations, expected_root, executable_policy = (
             load_current_authority_inputs()
         )
         result = produce(
             VERIFIER.GitHubClient(os.environ.get(args.github_token_env, "")),
             args.repository, args.browser_run_id, args.activation_run_id, args.head_sha,
-            advisory_scope_bytes=scope_bytes,
+            advisory_scope_bytes=None,
             cross_ai_trust_root=trust_root,
             cross_ai_revocations=revocations,
             expected_cross_ai_trust_root_sha256=expected_root,

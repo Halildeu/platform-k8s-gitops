@@ -1127,6 +1127,9 @@ def verify_activation_authorization(
         "protected authorization receipt digest",
     )
     authorization = load_json_bytes(raw_authorization, "protected-authorization.json")
+    policy, legacy_v1 = load_bound_owner_policy(
+        authorization.get("ownerPolicySha256"), allow_legacy_v1=allow_legacy_v1,
+    )
     expected_keys = {
         "schemaVersion", "minimumAcceptedAuthorizationSchema", "environment",
         "onePersonRoster", "operatorSha256", "consentingPilotDevice", "deviceSha256",
@@ -1143,6 +1146,12 @@ def verify_activation_authorization(
         "issuedAt", "expiresAt", "authorizationRunId",
         "authorizationHeadSha",
     }
+    if not legacy_v1:
+        expected_keys |= {
+            "aiAdvisoryCommentId", "aiAdvisoryBaseTipSha",
+            "aiAdvisoryBaseSha", "aiAdvisoryHeadSha",
+            "aiAdvisoryScopeSha256",
+        }
     if set(authorization) != expected_keys:
         raise EvidenceError("protected authorization receipt field set mismatch")
     require_equal(
@@ -1154,9 +1163,6 @@ def verify_activation_authorization(
         "minimum accepted authorization schema",
     )
     require_equal(authorization["environment"], "faz22-view-only-pilot", "protected environment")
-    policy, legacy_v1 = load_bound_owner_policy(
-        authorization["ownerPolicySha256"], allow_legacy_v1=allow_legacy_v1,
-    )
     expected_advisory_provenance = (
         "owner-attested-provider-session"
         if legacy_v1 else "signed-direct-codex-launch-attested-v3"
@@ -1204,7 +1210,10 @@ def verify_activation_authorization(
         OWNER_POLICY_SCHEMA_V1 if legacy_v1 else OWNER_POLICY_SCHEMA_V2,
         "canonical owner policy schema",
     )
-    require_equal(policy["status"], "active", "canonical owner policy status")
+    require_equal(
+        policy["status"], "active" if legacy_v1 else "tracked_pending",
+        "canonical owner policy status",
+    )
     policy_digest = digest_json(policy)
     require_equal(authorization["ownerPolicySha256"], policy_digest, "canonical owner policy digest")
     if revocations.get("schemaVersion") != "faz22.6-view-only-pilot-authorization-revocations-v1":
@@ -1221,8 +1230,6 @@ def verify_activation_authorization(
         raise EvidenceError("canonical owner/advisory policy entries are missing")
     require_equal(authorization["ownerDirectiveRef"], owner_contract.get("ref"), "owner directive ref")
     require_equal(authorization["ownerDirectiveSha256"], owner_contract.get("bodySha256"), "owner directive digest")
-    require_equal(authorization["aiAdvisoryRef"], advisory_contract.get("ref"), "AI advisory ref")
-    require_equal(authorization["aiAdvisorySha256"], advisory_contract.get("bodySha256"), "AI advisory digest")
     require_equal(
         authorization["aiAdvisoryProvenanceClass"], advisory_contract.get("provenanceClass"),
         "AI advisory provenance class",
@@ -1234,7 +1241,11 @@ def verify_activation_authorization(
     )
     require_equal(authorization["aiConsensusVerdict"], "AGREE", "AI advisory consensus")
     require_equal(advisory_contract.get("advisoryOnly"), True, "AI advisory-only policy")
-    require_equal(advisory_contract.get("consensusVerdict"), "AGREE", "AI advisory policy consensus")
+    require_equal(
+        advisory_contract.get("consensusVerdict"),
+        "AGREE" if legacy_v1 else "PENDING",
+        "AI advisory policy consensus",
+    )
     require_equal(
         advisory_contract.get("providers"),
         (
@@ -1269,21 +1280,45 @@ def verify_activation_authorization(
         }
         if set(advisory_contract) != expected_advisory_fields:
             raise EvidenceError("Codex advisory policy field set mismatch")
-        evidence_binding = advisory_contract.get("evidenceBinding")
-        if not isinstance(evidence_binding, dict) or set(evidence_binding) != {
+        policy_binding = advisory_contract.get("evidenceBinding")
+        if not isinstance(policy_binding, dict) or set(policy_binding) != {
             "baseTipSha", "baseSha", "headSha", "scopeSha256",
         }:
-            raise EvidenceError("Codex advisory expected binding field set mismatch")
+            raise EvidenceError("Codex advisory policy binding template field set mismatch")
+        if (
+            any(
+                advisory_contract.get(field) is not None
+                for field in (
+                    "commentId", "ref", "bodySha256", "authorLogin",
+                    "authorAssociation",
+                )
+            )
+            or any(value is not None for value in policy_binding.values())
+        ):
+            raise EvidenceError("Codex advisory policy is not a stable pending template")
         expected_bindings = {
-            "base_tip_sha": evidence_binding["baseTipSha"],
-            "base_sha": evidence_binding["baseSha"],
-            "head_sha": evidence_binding["headSha"],
-            "scope_sha256": evidence_binding["scopeSha256"],
+            "base_tip_sha": authorization["aiAdvisoryBaseTipSha"],
+            "base_sha": authorization["aiAdvisoryBaseSha"],
+            "head_sha": authorization["aiAdvisoryHeadSha"],
+            "scope_sha256": authorization["aiAdvisoryScopeSha256"],
         }
         require_equal(
-            evidence_binding["headSha"], expected_head_sha,
+            authorization["aiAdvisoryHeadSha"], expected_head_sha,
             "activation/advisory head binding",
         )
+        if advisory_scope_bytes is None:
+            advisory_scope_bytes, _, _ = derive_scope(
+                ROOT,
+                base_tip_sha=expected_bindings["base_tip_sha"],
+                base_sha=expected_bindings["base_sha"],
+                head_sha=expected_bindings["head_sha"],
+                max_scope_bytes=MAX_SCOPE_BYTES,
+                scan_secrets=True,
+            )
+        if hashlib.sha256(advisory_scope_bytes).hexdigest() != expected_bindings[
+            "scope_sha256"
+        ]:
+            raise EvidenceError("canonical advisory scope digest mismatch")
         if (
             advisory_scope_bytes is None
             or cross_ai_trust_root is None
@@ -1292,8 +1327,16 @@ def verify_activation_authorization(
             or codex_executable_policy is None
         ):
             raise EvidenceError("signed Codex advisory authority inputs are unavailable")
+        runtime_advisory_contract = {
+            "commentId": authorization["aiAdvisoryCommentId"],
+            "ref": authorization["aiAdvisoryRef"],
+            "bodySha256": authorization["aiAdvisorySha256"],
+            "authorLogin": owner_contract.get("authorLogin"),
+            "authorAssociation": "OWNER",
+        }
         for label, contract in (
-            ("owner directive", owner_contract), ("AI advisory", advisory_contract),
+            ("owner directive", owner_contract),
+            ("AI advisory", runtime_advisory_contract),
         ):
             comment_id = contract.get("commentId")
             if not isinstance(comment_id, int) or comment_id < 1:
@@ -1772,25 +1815,11 @@ def main() -> int:
     try:
         token = os.environ.get(args.github_token_env, "")
         authority = load_active_authority(ROOT)
-        policy = load_json_file(OWNER_POLICY_V2, "active owner policy")
-        advisory_binding = policy.get("aiAdvisory", {}).get("evidenceBinding", {})
-        advisory_scope_bytes, _, _ = derive_scope(
-            ROOT,
-            base_tip_sha=advisory_binding.get("baseTipSha", ""),
-            base_sha=advisory_binding.get("baseSha", ""),
-            head_sha=advisory_binding.get("headSha", ""),
-            max_scope_bytes=MAX_SCOPE_BYTES,
-            scan_secrets=True,
-        )
-        if hashlib.sha256(advisory_scope_bytes).hexdigest() != advisory_binding.get(
-            "scopeSha256"
-        ):
-            raise EvidenceError("canonical advisory scope digest mismatch")
         result = verify_product_evidence(
             GitHubClient(token=token, api_base=args.github_api_url),
             args.repository,
             args.run_id,
-            advisory_scope_bytes=advisory_scope_bytes,
+            advisory_scope_bytes=None,
             cross_ai_trust_root=authority.trust_root,
             cross_ai_revocations=authority.revocations_envelope,
             expected_cross_ai_trust_root_sha256=(

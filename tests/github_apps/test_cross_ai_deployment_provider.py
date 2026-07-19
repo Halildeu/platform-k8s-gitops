@@ -272,6 +272,18 @@ class ProviderExecutionTest(unittest.TestCase):
                 ("\n".join(nonterminal) + "\n").encode()
             )
 
+        disguised = self.codex_events(REVIEW_RESULT).decode().splitlines()
+        disguised[1] = json.dumps(
+            {
+                "type": "turn.started",
+                "item": {"id": "tool", "type": "command_execution"},
+            }
+        )
+        with self.assertRaisesRegex(PolicyError, "PROVIDER_TOOL_EVENT_REJECTED"):
+            DirectCodexRunner._terminal_result(
+                ("\n".join(disguised) + "\n").encode()
+            )
+
         duplicated = self.codex_events(REVIEW_RESULT).decode().splitlines()
         duplicated.insert(
             -1,
