@@ -528,7 +528,7 @@ if grep -Eq "memory: (24|32)Mi" "$VIEWER_WATCHDOG"; then
   echo "watchdog memory request must retain headroom above the platform-test 32Mi LimitRange minimum" >&2
   exit 1
 fi
-require_grep 'REMOTE_BRIDGE_VIEWER_ENABLED":"false"' "$VIEWER_WATCHDOG"
+require_grep 'REMOTE_BRIDGE_VIEWER_ENABLED":null' "$VIEWER_WATCHDOG"
 require_grep '__GATEWAY_ROUTE_PREFIX__ID":null' "$VIEWER_WATCHDOG"
 require_grep 'VIEWER_APPLY_ATTEMPT_MARKER: ${{ runner.temp }}/faz22-view-only-pilot-overlay-attempted' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'rm -f "$VIEWER_APPLY_ATTEMPT_MARKER"' "$VIEWER_APPLY_WORKFLOW"

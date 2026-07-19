@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-external-checkpoint-receipt-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY external checkpoint receipt payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptId",
+    "leaseId",
+    "leaseEnvelopeSha256",
+    "transactionIdSha256",
+    "bindingSha256",
+    "binding",
+    "evaluationPreflightReceiptEnvelopeSha256",
+    "redemptionPreflightReceiptEnvelopeSha256",
+    "authorizationEnvelopeSha256",
+    "sequence",
+    "previousState",
+    "state",
+    "reasonCode",
+    "storedObjectSha256",
+    "previousStoredObjectSha256",
+    "localCheckpointSha256",
+    "localPayloadSha256",
+    "idempotencyKeySha256",
+    "executorCaller",
+    "createdAt",
+    "expiresAt",
+    "terminal",
+    "credentialMaterialStored"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyExternalCheckpointReceipt.v1"},
+    "receiptId": {"type": "string", "format": "uuid"},
+    "leaseId": {"type": "string", "format": "uuid"},
+    "leaseEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+    "transactionIdSha256": {"$ref": "#/$defs/sha256"},
+    "bindingSha256": {"$ref": "#/$defs/sha256"},
+    "binding": {
+      "$ref": "https://acik.com/schemas/faz22-6-view-only-transaction-binding-v1.schema.json"
+    },
+    "evaluationPreflightReceiptEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+    "redemptionPreflightReceiptEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+    "authorizationEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+    "sequence": {"type": "integer", "minimum": 0, "maximum": 63},
+    "previousState": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/state"}]
+    },
+    "state": {"$ref": "#/$defs/state"},
+    "reasonCode": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"},
+    "storedObjectSha256": {"$ref": "#/$defs/sha256"},
+    "previousStoredObjectSha256": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]
+    },
+    "localCheckpointSha256": {"$ref": "#/$defs/sha256"},
+    "localPayloadSha256": {"$ref": "#/$defs/sha256"},
+    "idempotencyKeySha256": {"$ref": "#/$defs/sha256"},
+    "executorCaller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "subject",
+        "runId",
+        "runAttempt",
+        "headSha",
+        "tokenJtiSha256"
+      ],
+      "properties": {
+        "profile": {"const": "executor"},
+        "subject": {
+          "type": "string",
+          "pattern": "^repo:Halildeu/platform-k8s-gitops:ref:refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"const": 1},
+        "headSha": {"$ref": "#/$defs/gitSha"},
+        "tokenJtiSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "createdAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "terminal": {"type": "boolean"},
+    "credentialMaterialStored": {"const": false}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"sequence": {"const": 0}}, "required": ["sequence"]},
+      "then": {
+        "properties": {
+          "previousStoredObjectSha256": {"type": "null"},
+          "previousState": {"type": "null"},
+          "state": {"const": "DECISION_AUTHORIZED"}
+        }
+      },
+      "else": {
+        "properties": {
+          "previousStoredObjectSha256": {"$ref": "#/$defs/sha256"},
+          "previousState": {"$ref": "#/$defs/state"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"terminal": {"const": true}}, "required": ["terminal"]},
+      "then": {"properties": {"state": {"enum": ["ROLLED_BACK", "COMPLETED", "FAILED_CLEAN"]}}},
+      "else": {"properties": {"state": {"not": {"enum": ["COMPLETED", "FAILED_CLEAN"]}}}}
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "state": {
+      "type": "string",
+      "enum": [
+        "DECISION_AUTHORIZED",
+        "LIVE_REVALIDATED",
+        "ACTIVATED",
+        "CONSENT_PENDING",
+        "EVIDENCE_COLLECTED",
+        "EVIDENCE_VERIFIED",
+        "FAILURE_CAPTURED",
+        "ARTIFACTS_STAGE_FAILED",
+        "ARTIFACTS_STAGED",
+        "ROLLBACK_PENDING",
+        "ROLLED_BACK",
+        "COMPLETED",
+        "FAILED_CLEAN"
+      ]
+    }
+  }
+}

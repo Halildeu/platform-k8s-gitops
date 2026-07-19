@@ -357,6 +357,8 @@ jobs:
             echo "::error::requested watchdog expiry exceeds the signed protected authorization"
             exit 1
           }
+          bash scripts/faz22-remote-ops/view-only-transaction-controller.sh reclaim-stale
+          bash scripts/faz22-remote-ops/view-only-transaction-controller.sh verify-clean
           active_deadline="$(( PILOT_TTL_MINUTES * 60 + 600 ))"
           sed \
             -e "s/__EXPIRES_EPOCH__/${expires_epoch}/g" \
@@ -368,8 +370,6 @@ jobs:
             echo "::error::watchdog template contains unresolved placeholders"
             exit 1
           fi
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            delete job faz22-view-only-pilot-watchdog --ignore-not-found --wait=true
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
             apply --dry-run=server -f /tmp/faz22-view-only-pilot-watchdog.yaml
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
@@ -501,6 +501,7 @@ jobs:
         if: always() && inputs.action == 'apply' && failure()
         env:
           VIEWER_APPLY_ATTEMPT_MARKER: ${{ runner.temp }}/faz22-view-only-pilot-overlay-attempted
+          AUTHORIZATION_SHA256: ${{ needs.authorize-live-apply.outputs.authorization_sha256 }}
         run: |
           set +e
           bash scripts/faz22-remote-ops/rollback-view-only-viewer-pilot-config.sh
@@ -517,16 +518,12 @@ jobs:
           kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" rollout restart \
             "deploy/${BRIDGE_DEPLOYMENT}" "deploy/${GATEWAY_DEPLOYMENT}"
           if [ ! -e "$VIEWER_APPLY_ATTEMPT_MARKER" ]; then
-            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-              delete job faz22-view-only-pilot-watchdog --ignore-not-found --wait=true
-            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-              delete rolebinding faz22-view-only-pilot-watchdog --ignore-not-found
-            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-              delete role faz22-view-only-pilot-watchdog --ignore-not-found
-            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-              delete serviceaccount faz22-view-only-pilot-watchdog --ignore-not-found
-            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-              delete networkpolicy allow-faz22-view-only-watchdog-kubernetes-api --ignore-not-found
+            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" rollout status \
+              "deploy/${BRIDGE_DEPLOYMENT}" --timeout=300s
+            kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" rollout status \
+              "deploy/${GATEWAY_DEPLOYMENT}" --timeout=300s
+            AUTHORIZATION_SHA256="$AUTHORIZATION_SHA256" \
+              bash scripts/faz22-remote-ops/view-only-transaction-controller.sh cleanup-owned-watchdog
             echo "::warning::apply failed before viewer resources were attempted; failed watchdog resources removed."
           else
             echo "::warning::apply failed after viewer resource apply began; immediate compensation requested and cluster watchdog remains authoritative."
@@ -559,17 +556,9 @@ jobs:
             rollout status "deploy/${BRIDGE_DEPLOYMENT}" --timeout=300s
 
           # The viewer surface is already closed and the broker-only overlay is
-          # healthy. Remove the now-obsolete safety controller last.
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            delete job faz22-view-only-pilot-watchdog --ignore-not-found --wait=true
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            delete rolebinding faz22-view-only-pilot-watchdog --ignore-not-found
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            delete role faz22-view-only-pilot-watchdog --ignore-not-found
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            delete serviceaccount faz22-view-only-pilot-watchdog --ignore-not-found
-          kubectl --context="${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
-            delete networkpolicy allow-faz22-view-only-watchdog-kubernetes-api --ignore-not-found
+          # healthy. The shared controller verifies a clean surface and
+          # consistent ownership before retiring the obsolete watchdog.
+          bash scripts/faz22-remote-ops/view-only-transaction-controller.sh retire-watchdog-after-clean-surface
 
       - name: Verify rollback posture
         if: inputs.action == 'rollback'

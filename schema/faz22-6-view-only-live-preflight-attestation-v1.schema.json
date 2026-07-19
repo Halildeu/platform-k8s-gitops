@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-live-preflight-attestation-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY live preflight attestation payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptId",
+    "requestId",
+    "idempotencyKeySha256",
+    "requestSha256",
+    "bindingHandoffEnvelopeSha256",
+    "bindingSha256",
+    "transactionIdSha256",
+    "binding",
+    "caller",
+    "persona",
+    "checks",
+    "mutationCount",
+    "attendedConsentAttempted",
+    "issuedAt",
+    "expiresAt",
+    "maxUses",
+    "replayIdentitySha256",
+    "verdict"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyLivePreflightAttestation.v1"},
+    "receiptId": {"type": "string", "format": "uuid"},
+    "requestId": {"type": "string", "format": "uuid"},
+    "idempotencyKeySha256": {"$ref": "#/$defs/sha256"},
+    "requestSha256": {"$ref": "#/$defs/sha256"},
+    "bindingHandoffEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+    "bindingSha256": {"$ref": "#/$defs/sha256"},
+    "transactionIdSha256": {"$ref": "#/$defs/sha256"},
+    "binding": {
+      "$ref": "https://acik.com/schemas/faz22-6-view-only-transaction-binding-v1.schema.json"
+    },
+    "caller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "issuer",
+        "audience",
+        "subject",
+        "repository",
+        "repositoryId",
+        "workflowRef",
+        "ref",
+        "headSha",
+        "runId",
+        "runAttempt",
+        "runnerEnvironment",
+        "tokenIssuedAt",
+        "tokenExpiresAt",
+        "tokenJtiSha256"
+      ],
+      "properties": {
+        "profile": {"const": "preflight"},
+        "issuer": {"const": "https://token.actions.githubusercontent.com"},
+        "audience": {"const": "faz22-view-only-preflight"},
+        "subject": {
+          "type": "string",
+          "pattern": "^repo:Halildeu/platform-k8s-gitops:ref:refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "repository": {"const": "Halildeu/platform-k8s-gitops"},
+        "repositoryId": {"const": "1211415632"},
+        "workflowRef": {
+          "type": "string",
+          "pattern": "^Halildeu/platform-k8s-gitops/[.]github/workflows/faz22-6-view-only-viewer-transaction[.]yml@refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "headSha": {"$ref": "#/$defs/gitSha"},
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"const": 1},
+        "runnerEnvironment": {"const": "github-hosted"},
+        "tokenIssuedAt": {"type": "string", "format": "date-time"},
+        "tokenExpiresAt": {"type": "string", "format": "date-time"},
+        "tokenJtiSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "persona": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identitySha256",
+        "tenantIdSha256",
+        "expiresAt",
+        "preprovisioned",
+        "adminCredentialUsed",
+        "userConfigurationMutationCount"
+      ],
+      "properties": {
+        "identitySha256": {"$ref": "#/$defs/sha256"},
+        "tenantIdSha256": {"$ref": "#/$defs/sha256"},
+        "expiresAt": {"type": "string", "format": "date-time"},
+        "preprovisioned": {"const": true},
+        "adminCredentialUsed": {"const": false},
+        "userConfigurationMutationCount": {"const": 0}
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetIdentity",
+        "pkceAuthorizationCode",
+        "tokenRefresh",
+        "routeApi",
+        "browserConsole",
+        "replayIsolation",
+        "clusterContext",
+        "portsTunnels",
+        "imageDigests",
+        "policyMask",
+        "runnerCapacity",
+        "watchdogRollback"
+      ],
+      "properties": {
+        "targetIdentity": {"$ref": "#/$defs/check"},
+        "pkceAuthorizationCode": {"$ref": "#/$defs/check"},
+        "tokenRefresh": {"$ref": "#/$defs/check"},
+        "routeApi": {"$ref": "#/$defs/check"},
+        "browserConsole": {"$ref": "#/$defs/check"},
+        "replayIsolation": {"$ref": "#/$defs/check"},
+        "clusterContext": {"$ref": "#/$defs/check"},
+        "portsTunnels": {"$ref": "#/$defs/check"},
+        "imageDigests": {"$ref": "#/$defs/check"},
+        "policyMask": {"$ref": "#/$defs/check"},
+        "runnerCapacity": {"$ref": "#/$defs/check"},
+        "watchdogRollback": {"$ref": "#/$defs/check"}
+      }
+    },
+    "mutationCount": {"const": 0},
+    "attendedConsentAttempted": {"const": false},
+    "issuedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "maxUses": {"const": 1},
+    "replayIdentitySha256": {"$ref": "#/$defs/sha256"},
+    "verdict": {"const": "PASS"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkVersion",
+        "status",
+        "source",
+        "evidenceSha256",
+        "observedAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "checkVersion": {"type": "string", "pattern": "^v[1-9][0-9]*$"},
+        "status": {"const": "PASS"},
+        "source": {
+          "type": "string",
+          "enum": [
+            "attestor-runtime",
+            "browser-fixed-function",
+            "github-api",
+            "kubernetes-readonly",
+            "remote-bridge-device-channel",
+            "policy-bundle"
+          ]
+        },
+        "evidenceSha256": {"$ref": "#/$defs/sha256"},
+        "observedAt": {"type": "string", "format": "date-time"},
+        "expiresAt": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

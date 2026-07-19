@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-live-preflight-request-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY fixed-function live preflight request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "idempotencyKeySha256",
+    "bindingHandoffEnvelope",
+    "requestedChecks"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyLivePreflightRequest.v1"},
+    "requestId": {"type": "string", "format": "uuid"},
+    "idempotencyKeySha256": {"$ref": "#/$defs/sha256"},
+    "bindingHandoffEnvelope": {
+      "$ref": "https://acik.com/schemas/faz22-6-dsse-envelope-v1.schema.json"
+    },
+    "requestedChecks": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "uniqueItems": true,
+      "prefixItems": [
+        {"const": "targetIdentity"},
+        {"const": "pkceAuthorizationCode"},
+        {"const": "tokenRefresh"},
+        {"const": "routeApi"},
+        {"const": "browserConsole"},
+        {"const": "replayIsolation"},
+        {"const": "clusterContext"},
+        {"const": "portsTunnels"},
+        {"const": "imageDigests"},
+        {"const": "policyMask"},
+        {"const": "runnerCapacity"},
+        {"const": "watchdogRollback"}
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  }
+}

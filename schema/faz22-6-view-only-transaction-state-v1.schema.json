@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-transaction-state-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY transaction state",
+  "description": "Runner-local content-addressed orchestration ledger. Integrity and lifecycle evidence only; an external signed authority receipt must bind the final artifact digest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "binding",
+    "currentState",
+    "sequence",
+    "reasonCode",
+    "checkpoints"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "faz22.6.viewOnlyTransactionState.v1"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "workflowRef",
+        "headSha",
+        "runId",
+        "runAttempt",
+        "endpointIdSha256",
+        "deviceHostnameSha256",
+        "policySha256",
+        "maskPolicySha256",
+        "pilotSeconds",
+        "preflightSha256",
+        "authorizationSha256",
+        "watchdogExpiresEpoch",
+        "sessionSha256"
+      ],
+      "properties": {
+        "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+        "workflowRef": {"type": "string", "minLength": 1, "maxLength": 512},
+        "headSha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"const": 1},
+        "endpointIdSha256": {"$ref": "#/$defs/sha256"},
+        "deviceHostnameSha256": {"$ref": "#/$defs/sha256"},
+        "policySha256": {"$ref": "#/$defs/sha256"},
+        "maskPolicySha256": {"$ref": "#/$defs/sha256"},
+        "pilotSeconds": {"type": "integer", "enum": [300, 600, 900, 1200, 1800]},
+        "preflightSha256": {"$ref": "#/$defs/sha256"},
+        "authorizationSha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]},
+        "watchdogExpiresEpoch": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 1}]},
+        "sessionSha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]}
+      }
+    },
+    "currentState": {"$ref": "#/$defs/state"},
+    "sequence": {"type": "integer", "minimum": 0},
+    "reasonCode": {"$ref": "#/$defs/reason"},
+    "checkpoints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sequence",
+          "state",
+          "observedAt",
+          "reasonCode",
+          "payloadSha256",
+          "bindingSha256",
+          "previousCheckpointSha256",
+          "checkpointSha256"
+        ],
+        "properties": {
+          "sequence": {"type": "integer", "minimum": 0},
+          "state": {"$ref": "#/$defs/state"},
+          "observedAt": {"type": "string", "format": "date-time"},
+          "reasonCode": {"$ref": "#/$defs/reason"},
+          "payloadSha256": {"$ref": "#/$defs/sha256"},
+          "bindingSha256": {"$ref": "#/$defs/sha256"},
+          "previousCheckpointSha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]},
+          "checkpointSha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "currentState": {
+            "not": {"enum": ["INIT", "PREFLIGHT_VERIFIED"]}
+          }
+        },
+        "required": ["currentState"]
+      },
+      "then": {
+        "properties": {
+          "binding": {
+            "properties": {
+              "authorizationSha256": {"$ref": "#/$defs/sha256"},
+              "watchdogExpiresEpoch": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "currentState": {
+            "enum": ["EVIDENCE_COLLECTED", "EVIDENCE_VERIFIED"]
+          }
+        },
+        "required": ["currentState"]
+      },
+      "then": {
+        "properties": {
+          "binding": {
+            "properties": {
+              "sessionSha256": {"$ref": "#/$defs/sha256"}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "reason": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"},
+    "state": {
+      "type": "string",
+      "enum": [
+        "INIT",
+        "PREFLIGHT_VERIFIED",
+        "DECISION_AUTHORIZED",
+        "LIVE_REVALIDATED",
+        "ACTIVATED",
+        "CONSENT_PENDING",
+        "EVIDENCE_COLLECTED",
+        "EVIDENCE_VERIFIED",
+        "FAILURE_CAPTURED",
+        "ARTIFACTS_STAGE_FAILED",
+        "ARTIFACTS_STAGED",
+        "ROLLBACK_PENDING",
+        "ROLLED_BACK",
+        "COMPLETED",
+        "FAILED_CLEAN"
+      ]
+    }
+  }
+}

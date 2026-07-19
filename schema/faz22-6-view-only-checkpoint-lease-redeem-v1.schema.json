@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-checkpoint-lease-redeem-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY checkpoint lease redemption request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "idempotencyKeySha256",
+    "binding",
+    "bindingSha256",
+    "transactionIdSha256",
+    "evaluationPreflightReceiptEnvelope",
+    "authorizationEnvelope",
+    "authorizationPayloadType",
+    "requestedTtlSeconds",
+    "requestedMaxWrites"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyCheckpointLeaseRedeem.v1"},
+    "requestId": {"type": "string", "format": "uuid"},
+    "idempotencyKeySha256": {"$ref": "#/$defs/sha256"},
+    "binding": {
+      "$ref": "https://acik.com/schemas/faz22-6-view-only-transaction-binding-v1.schema.json"
+    },
+    "bindingSha256": {"$ref": "#/$defs/sha256"},
+    "transactionIdSha256": {"$ref": "#/$defs/sha256"},
+    "evaluationPreflightReceiptEnvelope": {
+      "$ref": "https://acik.com/schemas/faz22-6-dsse-envelope-v1.schema.json"
+    },
+    "authorizationEnvelope": {
+      "$ref": "https://acik.com/schemas/faz22-6-dsse-envelope-v1.schema.json"
+    },
+    "authorizationPayloadType": {
+      "const": "application/vnd.acik.cross-ai-deployment-bundle.v3+json"
+    },
+    "requestedTtlSeconds": {"type": "integer", "minimum": 900, "maximum": 7200},
+    "requestedMaxWrites": {"const": 64}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  }
+}

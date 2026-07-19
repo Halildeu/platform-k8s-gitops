@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-checkpoint-lease-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY checkpoint lease receipt payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "leaseId",
+    "redeemRequestId",
+    "idempotencyKeySha256",
+    "transactionIdSha256",
+    "bindingSha256",
+    "binding",
+    "evaluationPreflightReceiptEnvelopeSha256",
+    "redemptionPreflightReceiptEnvelopeSha256",
+    "redemptionPreflightIssuedAt",
+    "authorizationEnvelopeSha256",
+    "authorizationPayloadType",
+    "authorizationRedemptionCount",
+    "authorizationCaller",
+    "executorProfile",
+    "issuedAt",
+    "expiresAt",
+    "sequenceMinimumInclusive",
+    "sequenceMaximumInclusive",
+    "maxWrites",
+    "closed"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyCheckpointLease.v1"},
+    "leaseId": {"type": "string", "format": "uuid"},
+    "redeemRequestId": {"type": "string", "format": "uuid"},
+    "idempotencyKeySha256": {"$ref": "#/$defs/sha256"},
+    "transactionIdSha256": {"$ref": "#/$defs/sha256"},
+    "bindingSha256": {"$ref": "#/$defs/sha256"},
+    "binding": {
+      "$ref": "https://acik.com/schemas/faz22-6-view-only-transaction-binding-v1.schema.json"
+    },
+    "evaluationPreflightReceiptEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+    "redemptionPreflightReceiptEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+    "redemptionPreflightIssuedAt": {"type": "string", "format": "date-time"},
+    "authorizationEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+    "authorizationPayloadType": {
+      "const": "application/vnd.acik.cross-ai-deployment-bundle.v3+json"
+    },
+    "authorizationRedemptionCount": {"const": 1},
+    "authorizationCaller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "subject",
+        "runId",
+        "runAttempt",
+        "headSha",
+        "tokenJtiSha256"
+      ],
+      "properties": {
+        "profile": {"const": "authorization"},
+        "subject": {"const": "repo:Halildeu/platform-k8s-gitops:environment:faz22-view-only-pilot"},
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"const": 1},
+        "headSha": {"$ref": "#/$defs/gitSha"},
+        "tokenJtiSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "executorProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audience", "subject", "runnerEnvironment"],
+      "properties": {
+        "audience": {"const": "faz22-view-only-checkpoint"},
+        "subject": {
+          "type": "string",
+          "pattern": "^repo:Halildeu/platform-k8s-gitops:ref:refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "runnerEnvironment": {"const": "self-hosted"}
+      }
+    },
+    "issuedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "sequenceMinimumInclusive": {"const": 0},
+    "sequenceMaximumInclusive": {"const": 63},
+    "maxWrites": {"const": 64},
+    "closed": {"const": false}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[a-f0-9]{40}$"}
+  }
+}

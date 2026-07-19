@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-transaction-binding-handoff-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY coordinator-signed transaction binding handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "handoffId",
+    "lookupRequestId",
+    "idempotencyKeySha256",
+    "binding",
+    "bindingSha256",
+    "transactionIdSha256",
+    "derivation",
+    "caller",
+    "issuedAt",
+    "expiresAt",
+    "maxUses",
+    "mutationCount"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyTransactionBindingHandoff.v1"},
+    "handoffId": {"type": "string", "format": "uuid"},
+    "lookupRequestId": {"type": "string", "format": "uuid"},
+    "idempotencyKeySha256": {"$ref": "#/$defs/sha256"},
+    "binding": {
+      "$ref": "https://acik.com/schemas/faz22-6-view-only-transaction-binding-v1.schema.json"
+    },
+    "bindingSha256": {"$ref": "#/$defs/sha256"},
+    "transactionIdSha256": {"$ref": "#/$defs/sha256"},
+    "derivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundleSchemaVersion",
+        "bundleRequestId",
+        "bundleEnvelopeSha256",
+        "registryState",
+        "intentRefObjectId",
+        "intentRefHeadSha",
+        "intentRefFinalized",
+        "dispatchAccepted",
+        "dispatchWatermarkRunId",
+        "dispatchRunId",
+        "dispatchRunAttempt",
+        "dispatchTriggeringActorId",
+        "dispatchHeadBranch",
+        "dispatchHeadRepository",
+        "dispatchRepository",
+        "dispatchWorkflowPath",
+        "dispatchStatus",
+        "dispatchHeadSha",
+        "dispatchWorkflowRef",
+        "correlatedAt"
+      ],
+      "properties": {
+        "bundleSchemaVersion": {"const": "acik.cross-ai-deployment-bundle.v3"},
+        "bundleRequestId": {"type": "string", "format": "uuid"},
+        "bundleEnvelopeSha256": {"$ref": "#/$defs/sha256"},
+        "registryState": {"const": "DispatchAccepted"},
+        "intentRefObjectId": {"$ref": "#/$defs/gitSha"},
+        "intentRefHeadSha": {"$ref": "#/$defs/gitSha"},
+        "intentRefFinalized": {"const": true},
+        "dispatchAccepted": {"const": true},
+        "dispatchWatermarkRunId": {"type": "integer", "minimum": 0},
+        "dispatchRunId": {"type": "integer", "minimum": 1},
+        "dispatchRunAttempt": {"const": 1},
+        "dispatchTriggeringActorId": {"type": "integer", "minimum": 1},
+        "dispatchHeadBranch": {
+          "type": "string",
+          "pattern": "^cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "dispatchHeadRepository": {"const": "Halildeu/platform-k8s-gitops"},
+        "dispatchRepository": {"const": "Halildeu/platform-k8s-gitops"},
+        "dispatchWorkflowPath": {
+          "const": ".github/workflows/faz22-6-view-only-viewer-transaction.yml"
+        },
+        "dispatchStatus": {"enum": ["queued", "in_progress"]},
+        "dispatchHeadSha": {"$ref": "#/$defs/gitSha"},
+        "dispatchWorkflowRef": {
+          "type": "string",
+          "pattern": "^Halildeu/platform-k8s-gitops/[.]github/workflows/faz22-6-view-only-viewer-transaction[.]yml@refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "correlatedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "caller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "subject",
+        "ref",
+        "workflowRef",
+        "headSha",
+        "runId",
+        "runAttempt",
+        "triggeringActorId",
+        "runnerEnvironment",
+        "tokenJtiSha256"
+      ],
+      "properties": {
+        "profile": {"const": "binding"},
+        "subject": {
+          "type": "string",
+          "pattern": "^repo:Halildeu/platform-k8s-gitops:ref:refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "workflowRef": {
+          "type": "string",
+          "pattern": "^Halildeu/platform-k8s-gitops/[.]github/workflows/faz22-6-view-only-viewer-transaction[.]yml@refs/tags/cross-ai-intent/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "headSha": {"$ref": "#/$defs/gitSha"},
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"const": 1},
+        "triggeringActorId": {"type": "integer", "minimum": 1},
+        "runnerEnvironment": {"const": "github-hosted"},
+        "tokenJtiSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "issuedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "maxUses": {"const": 1},
+    "mutationCount": {"const": 0}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[a-f0-9]{40}$"}
+  }
+}

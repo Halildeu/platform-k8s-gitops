@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-external-checkpoint-create-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY external checkpoint create request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "leaseEnvelope",
+    "transactionIdSha256",
+    "bindingSha256",
+    "sequence",
+    "previousState",
+    "state",
+    "reasonCode",
+    "localCheckpointSha256",
+    "localPayloadSha256",
+    "previousStoredObjectSha256",
+    "idempotencyKeySha256",
+    "terminal"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyExternalCheckpointCreate.v1"},
+    "requestId": {"type": "string", "format": "uuid"},
+    "leaseEnvelope": {
+      "$ref": "https://acik.com/schemas/faz22-6-dsse-envelope-v1.schema.json"
+    },
+    "transactionIdSha256": {"$ref": "#/$defs/sha256"},
+    "bindingSha256": {"$ref": "#/$defs/sha256"},
+    "sequence": {"type": "integer", "minimum": 0, "maximum": 63},
+    "previousState": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/state"}]
+    },
+    "state": {"$ref": "#/$defs/state"},
+    "reasonCode": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"},
+    "localCheckpointSha256": {"$ref": "#/$defs/sha256"},
+    "localPayloadSha256": {"$ref": "#/$defs/sha256"},
+    "previousStoredObjectSha256": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]
+    },
+    "idempotencyKeySha256": {"$ref": "#/$defs/sha256"},
+    "terminal": {"type": "boolean"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"sequence": {"const": 0}}, "required": ["sequence"]},
+      "then": {
+        "properties": {
+          "previousStoredObjectSha256": {"type": "null"},
+          "previousState": {"type": "null"},
+          "state": {"const": "DECISION_AUTHORIZED"}
+        }
+      },
+      "else": {
+        "properties": {
+          "previousStoredObjectSha256": {"$ref": "#/$defs/sha256"},
+          "previousState": {"$ref": "#/$defs/state"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"terminal": {"const": true}}, "required": ["terminal"]},
+      "then": {"properties": {"state": {"enum": ["ROLLED_BACK", "COMPLETED", "FAILED_CLEAN"]}}},
+      "else": {"properties": {"state": {"not": {"enum": ["COMPLETED", "FAILED_CLEAN"]}}}}
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "state": {
+      "type": "string",
+      "enum": [
+        "DECISION_AUTHORIZED",
+        "LIVE_REVALIDATED",
+        "ACTIVATED",
+        "CONSENT_PENDING",
+        "EVIDENCE_COLLECTED",
+        "EVIDENCE_VERIFIED",
+        "FAILURE_CAPTURED",
+        "ARTIFACTS_STAGE_FAILED",
+        "ARTIFACTS_STAGED",
+        "ROLLBACK_PENDING",
+        "ROLLED_BACK",
+        "COMPLETED",
+        "FAILED_CLEAN"
+      ]
+    }
+  }
+}

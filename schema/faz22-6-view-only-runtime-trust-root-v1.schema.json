@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-runtime-trust-root-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY runtime receipt public trust root",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "activationState",
+    "trustRootId",
+    "digestDomain",
+    "algorithm",
+    "keys",
+    "revocations",
+    "generatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyRuntimeTrustRoot.v1"},
+    "activationState": {"enum": ["tracked_pending", "active"]},
+    "trustRootId": {"const": "faz22-view-only-runtime-test-v1"},
+    "digestDomain": {"const": "faz22.6/view-only/runtime-trust-root/v1"},
+    "algorithm": {"const": "ed25519"},
+    "keys": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "keyId",
+          "role",
+          "version",
+          "publicKeyBase64",
+          "notBefore",
+          "notAfter",
+          "state"
+        ],
+        "properties": {
+          "keyId": {
+            "type": "string",
+            "pattern": "^vault-transit://endpoint-admin/view-only-(runtime-attestor|checkpoint)#v[1-9][0-9]*$"
+          },
+          "role": {"enum": ["runtime-attestor", "checkpoint-signer"]},
+          "version": {"type": "integer", "minimum": 1},
+          "publicKeyBase64": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]{43}=$"
+          },
+          "notBefore": {"type": "string", "format": "date-time"},
+          "notAfter": {"type": "string", "format": "date-time"},
+          "state": {"const": "active"}
+        }
+      }
+    },
+    "revocations": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["keyId", "revokedAt", "reasonCode"],
+        "properties": {
+          "keyId": {"type": "string", "minLength": 1, "maxLength": 160},
+          "revokedAt": {"type": "string", "format": "date-time"},
+          "reasonCode": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"}
+        }
+      }
+    },
+    "generatedAt": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"activationState": {"const": "active"}}},
+      "then": {
+        "properties": {
+          "keys": {
+            "minItems": 2,
+            "allOf": [
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {"role": {"const": "runtime-attestor"}},
+                  "required": ["role"]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {"role": {"const": "checkpoint-signer"}},
+                  "required": ["role"]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

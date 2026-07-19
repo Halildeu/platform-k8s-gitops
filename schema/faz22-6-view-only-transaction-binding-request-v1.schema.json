@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/faz22-6-view-only-transaction-binding-request-v1.schema.json",
+  "title": "Faz 22.6 VIEW_ONLY transaction binding lookup request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "idempotencyKeySha256",
+    "requestedPayloadType",
+    "workflowPath"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "faz22.6.viewOnlyTransactionBindingRequest.v1"},
+    "requestId": {"type": "string", "format": "uuid"},
+    "idempotencyKeySha256": {"$ref": "#/$defs/sha256"},
+    "requestedPayloadType": {
+      "const": "application/vnd.acik.faz22-6-view-only-transaction-binding-handoff.v1+json"
+    },
+    "workflowPath": {
+      "const": ".github/workflows/faz22-6-view-only-viewer-transaction.yml"
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  }
+}
