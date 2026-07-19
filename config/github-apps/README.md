@@ -111,10 +111,13 @@ is forbidden.
 
 The protected #2373 authorization artifact retains the exact downloaded signed
 advisory comment JSON alongside the authorization receipt and covers both with
-`SHA256SUMS` plus the immutable artifact digest. Product replay validates this
-archived transport object, its owner/timestamp/ref/body metadata and signed
-carrier bytes, so deletion or temporary unavailability of the live GitHub
-comment endpoint does not erase an already issued durable advisory.
+`SHA256SUMS` plus the immutable artifact digest. The independently produced
+operator child then carries both exact byte sequences in its content-addressed
+product-evidence payload together with the activation identity and timestamps.
+Product replay validates the carried authorization and advisory bytes; it does
+not relist or redownload the expiring activation artifact and does not refetch
+the live advisory comment. Deletion or unavailability of either GitHub
+transport therefore does not erase an already assembled product carrier.
 
 `build_cross_ai_provider_review_revocations.py` is the only repository release
 entrypoint for the public revocation file. It signs only

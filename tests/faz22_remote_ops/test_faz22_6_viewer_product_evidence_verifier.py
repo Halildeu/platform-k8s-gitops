@@ -1,4 +1,5 @@
 import copy
+import base64
 import hashlib
 import importlib.util
 import io
@@ -445,9 +446,19 @@ def child_documents():
                 "activationRunId": ACTIVATION_RUN_ID,
                 "activationRunAttempt": 1,
                 "activationHeadSha": HEAD_SHA,
+                "activationActorLogin": "workflow-operator",
+                "activationCreatedAt": "2026-07-14T00:00:00Z",
+                "activationRunStartedAt": "2026-07-14T00:00:00Z",
+                "activationUpdatedAt": "2026-07-14T00:00:30Z",
                 "authorizationArtifactId": AUTHORIZATION_ARTIFACT_ID,
                 "authorizationArtifactDigest": VERIFIER.digest_bytes(activation_archive()),
                 "authorizationSha256": VERIFIER.digest_bytes(authorization_bytes()),
+                "authorizationCarrierBase64": base64.b64encode(
+                    authorization_bytes()
+                ).decode("ascii"),
+                "advisoryCommentCarrierBase64": base64.b64encode(
+                    encode_json(advisory_comment_document())
+                ).decode("ascii"),
                 "authorizationSchemaVersion": VERIFIER.AUTHORIZATION_SCHEMA,
                 "ownerPolicySha256": VERIFIER.digest_json(owner_policy_fixture()),
                 "ownerDirectiveSha256": VERIFIER.digest_bytes(OWNER_COMMENT_BODY.encode()),
@@ -1069,6 +1080,12 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         operator.update({
             "authorizationArtifactDigest": VERIFIER.digest_bytes(protected_archive),
             "authorizationSha256": authorization_digest,
+            "authorizationCarrierBase64": base64.b64encode(
+                raw_authorization
+            ).decode("ascii"),
+            "advisoryCommentCarrierBase64": base64.b64encode(
+                encode_json(advisory_comment or advisory_comment_document())
+            ).decode("ascii"),
             "ownerPolicySha256": authorization["ownerPolicySha256"],
             "ownerDirectiveSha256": authorization["ownerDirectiveSha256"],
             "aiAdvisorySha256": authorization["aiAdvisorySha256"],
@@ -1249,9 +1266,12 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
 
     def test_activation_receipt_is_content_and_identity_bound(self):
         client = FakeClient()
-        client.activation_archive += b"tamper"
-        with self.assertRaisesRegex(VERIFIER.EvidenceError, "authorization artifact digest"):
-            self.verify(client)
+        children = child_documents()
+        children["operator"]["payload"]["authorizationCarrierBase64"] = (
+            base64.b64encode(authorization_bytes() + b"tamper").decode("ascii")
+        )
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "authorization receipt digest"):
+            self.verify(FakeClient(build_archive(children=children)))
 
         operator = child_documents()["operator"]["payload"]
         unauthorized_binding = binding()
@@ -1396,6 +1416,25 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         client.get_json = unavailable
         self.assertEqual("pass", self.verify(client)["status"])
 
+    def test_durable_authorization_carrier_does_not_refetch_activation_artifact(self):
+        client = FakeClient()
+        original_json = client.get_json
+        original_bytes = client.get_bytes
+
+        def unavailable_json(path):
+            if f"/actions/runs/{ACTIVATION_RUN_ID}" in path:
+                raise VERIFIER.EvidenceError("activation artifact transport unavailable")
+            return original_json(path)
+
+        def unavailable_bytes(path):
+            if path.endswith(f"/actions/artifacts/{AUTHORIZATION_ARTIFACT_ID}/zip"):
+                raise VERIFIER.EvidenceError("activation artifact transport unavailable")
+            return original_bytes(path)
+
+        client.get_json = unavailable_json
+        client.get_bytes = unavailable_bytes
+        self.assertEqual("pass", self.verify(client)["status"])
+
     def test_immutable_v1_is_rejected_for_current_product_but_allowed_for_explicit_forensics(self):
         legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
         self.assertEqual(
@@ -1424,8 +1463,9 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
                 "expiresAt": "2026-07-19T00:20:00Z",
             },
         )
-        client.activation_created_at = "2026-07-19T00:00:00Z"
-        client.activation_updated_at = "2026-07-19T00:00:30Z"
+        client.operator_payload["activationCreatedAt"] = "2026-07-19T00:00:00Z"
+        client.operator_payload["activationRunStartedAt"] = "2026-07-19T00:00:00Z"
+        client.operator_payload["activationUpdatedAt"] = "2026-07-19T00:00:30Z"
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "migration cutoff"):
             VERIFIER.verify_activation_authorization(
                 client, client.operator_payload, HEAD_SHA, binding(),
@@ -1437,8 +1477,9 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
     def test_legacy_v1_forensics_rejects_backdated_receipt_from_post_cutoff_run(self):
         legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
         client = self.client_for_policy(legacy_policy, legacy_v1=True)
-        client.activation_created_at = "2026-07-19T00:00:00Z"
-        client.activation_updated_at = "2026-07-19T00:00:30Z"
+        client.operator_payload["activationCreatedAt"] = "2026-07-19T00:00:00Z"
+        client.operator_payload["activationRunStartedAt"] = "2026-07-19T00:00:00Z"
+        client.operator_payload["activationUpdatedAt"] = "2026-07-19T00:00:30Z"
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "activation run started"):
             VERIFIER.verify_activation_authorization(
                 client, client.operator_payload, HEAD_SHA, binding(),

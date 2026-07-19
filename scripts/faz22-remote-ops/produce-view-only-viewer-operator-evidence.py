@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -72,9 +73,19 @@ def fetch_operator_payload(client: object, repository: str, activation_run_id: i
         "activationRunId": activation_run_id,
         "activationRunAttempt": run["run_attempt"],
         "activationHeadSha": run["head_sha"],
+        "activationActorLogin": run["actor"]["login"],
+        "activationCreatedAt": run["created_at"],
+        "activationRunStartedAt": run["run_started_at"],
+        "activationUpdatedAt": run["updated_at"],
         "authorizationArtifactId": artifact["id"],
         "authorizationArtifactDigest": artifact["digest"],
         "authorizationSha256": VERIFIER.digest_bytes(files["protected-authorization.json"]),
+        "authorizationCarrierBase64": base64.b64encode(
+            files["protected-authorization.json"]
+        ).decode("ascii"),
+        "advisoryCommentCarrierBase64": base64.b64encode(
+            files["advisory-comment.json"]
+        ).decode("ascii"),
         "authorizationSchemaVersion": authorization["schemaVersion"],
         "ownerPolicySha256": authorization["ownerPolicySha256"],
         "ownerDirectiveSha256": authorization["ownerDirectiveSha256"],

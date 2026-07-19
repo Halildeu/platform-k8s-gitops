@@ -94,6 +94,7 @@ jobs:
             --archive "$out/authorization.zip" \
             --destination "$out/receipt" \
             --expected-file SHA256SUMS \
+            --expected-file advisory-comment.json \
             --expected-file protected-authorization.json
           (cd "$out/receipt" && sha256sum -c SHA256SUMS)
           authorization_sha256="sha256:$(sha256sum "$out/receipt/protected-authorization.json" | awk '{print $1}')"
