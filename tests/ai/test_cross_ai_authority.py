@@ -1055,6 +1055,56 @@ class GenesisTransitionTests(unittest.TestCase):
         )
         self.assertEqual(proactive, recovered.revocations_envelope)
 
+    def test_mixed_path_revocation_change_cannot_remove_predecessor_entries(self) -> None:
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            self.authority_manifest(active=True),
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            self.fixture.authority.trust_root,
+        )
+        revocation_path = (
+            "config/github-apps/"
+            "cross-ai-provider-review-revocations.v1.dsse.json"
+        )
+        entry = {
+            "type": "key",
+            "id": "vault-transit://cross-ai/openai-codex#v99",
+            "effectiveAt": "2026-07-18T20:00:00Z",
+            "reasonCode": "TEST_RETIREMENT",
+        }
+        predecessor = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000097",
+            issued_at="2026-07-18T20:00:00Z",
+            next_update="2026-07-18T21:00:00Z",
+            entries=[entry],
+        )
+        self.write_json(revocation_path, predecessor)
+        base = self.commit("active authority with revocation")
+        replacement = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000098",
+            issued_at="2026-07-18T20:20:00Z",
+            next_update="2026-07-18T21:20:00Z",
+            entries=[],
+        )
+        self.write_json(revocation_path, replacement)
+        (self.root / "mixed-change.txt").write_text("unrelated\n")
+        head = self.commit("attempt mixed-path unrevocation")
+        self.git("reset", "-q", "--hard", base)
+        scope = self.scope(base, head)
+        with self.assertRaisesRegex(AuthorityUnavailable, "UNREVOCATION_FORBIDDEN"):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings={
+                    "base_tip_sha": base,
+                    "base_sha": base,
+                    "head_sha": head,
+                    "scope_sha256": hashlib.sha256(scope).hexdigest(),
+                },
+                now=self.fixture.factory.now,
+            )
+
     def test_staged_authority_can_refresh_after_its_initial_revocations_expire(self) -> None:
         stale = self.signed_revocations(
             set_id="20000000-0000-4000-8000-000000000094",

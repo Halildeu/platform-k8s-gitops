@@ -459,6 +459,9 @@ def child_documents():
                 "advisoryCommentCarrierBase64": base64.b64encode(
                     encode_json(advisory_comment_document())
                 ).decode("ascii"),
+                "ownerDirectiveCarrierBase64": base64.b64encode(
+                    encode_json(owner_comment_document())
+                ).decode("ascii"),
                 "authorizationSchemaVersion": VERIFIER.AUTHORIZATION_SCHEMA,
                 "ownerPolicySha256": VERIFIER.digest_json(owner_policy_fixture()),
                 "ownerDirectiveSha256": VERIFIER.digest_bytes(OWNER_COMMENT_BODY.encode()),
@@ -685,11 +688,27 @@ def advisory_comment_document(
     }
 
 
-def activation_archive(raw_authorization=None, advisory_comment=None):
+def owner_comment_document(*, body=OWNER_COMMENT_BODY):
+    return {
+        "id": OWNER_COMMENT_ID,
+        "html_url": owner_policy_fixture()["ownerDirective"]["ref"],
+        "issue_url": (
+            f"https://api.github.com/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373"
+        ),
+        "author_association": "OWNER",
+        "user": {"login": "Halildeu"},
+        "body": body,
+        "created_at": "2026-07-13T00:00:00Z",
+        "updated_at": "2026-07-13T00:00:00Z",
+    }
+
+
+def activation_archive(raw_authorization=None, advisory_comment=None, owner_comment=None):
     files = {
         "advisory-comment.json": encode_json(
             advisory_comment or advisory_comment_document()
         ),
+        "owner-comment.json": encode_json(owner_comment or owner_comment_document()),
         "protected-authorization.json": raw_authorization or authorization_bytes(),
     }
     sums = "".join(
@@ -1090,6 +1109,9 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             "advisoryCommentCarrierBase64": base64.b64encode(
                 encode_json(advisory_comment or advisory_comment_document())
             ).decode("ascii"),
+            "ownerDirectiveCarrierBase64": base64.b64encode(
+                encode_json(owner_comment_document())
+            ).decode("ascii"),
             "ownerPolicySha256": authorization["ownerPolicySha256"],
             "ownerDirectiveSha256": authorization["ownerDirectiveSha256"],
             "aiAdvisorySha256": authorization["aiAdvisorySha256"],
@@ -1296,8 +1318,12 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             self.verify(client)
 
     def test_owner_advisory_legal_and_environment_controls_fail_closed(self):
-        client = FakeClient()
-        client.owner_comment_body += " tampered"
+        children = child_documents()
+        tampered_owner = owner_comment_document(body=OWNER_COMMENT_BODY + " tampered")
+        children["operator"]["payload"]["ownerDirectiveCarrierBase64"] = (
+            base64.b64encode(encode_json(tampered_owner)).decode("ascii")
+        )
+        client = FakeClient(build_archive(children=children))
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "owner directive body digest"):
             self.verify(client)
 
@@ -1420,6 +1446,18 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         client.get_json = unavailable
         self.assertEqual("pass", self.verify(client)["status"])
 
+    def test_durable_owner_directive_carrier_does_not_refetch_live_comment(self):
+        client = FakeClient()
+        original = client.get_json
+
+        def unavailable(path):
+            if path.endswith(f"/issues/comments/{OWNER_COMMENT_ID}"):
+                raise VERIFIER.EvidenceError("live owner transport unavailable")
+            return original(path)
+
+        client.get_json = unavailable
+        self.assertEqual("pass", self.verify(client)["status"])
+
     def test_durable_authorization_carrier_does_not_refetch_activation_artifact(self):
         client = FakeClient()
         original_json = client.get_json
@@ -1473,6 +1511,52 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         )
         VERIFIER.OWNER_POLICY_V2.write_bytes(encode_json(replacement))
         self.assertEqual("pass", self.verify(client)["status"])
+
+    def test_preexisting_v2_operator_child_remains_schema_valid(self):
+        operator_child = child_documents()["operator"]
+        for field in (
+            "activationActorLogin", "activationCreatedAt", "activationRunStartedAt",
+            "activationUpdatedAt", "authorizationCarrierBase64",
+            "advisoryCommentCarrierBase64", "ownerDirectiveCarrierBase64",
+        ):
+            operator_child["payload"].pop(field)
+        VERIFIER.validate_schema(
+            operator_child, VERIFIER.CHILD_SCHEMA, "preexisting v2 operator child"
+        )
+
+    def test_preexisting_v2_operator_child_uses_bounded_legacy_decoder(self):
+        legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
+        client = self.client_for_policy(legacy_policy, legacy_v1=True)
+        operator = client.operator_payload
+        raw_authorization = base64.b64decode(
+            operator["authorizationCarrierBase64"], validate=True
+        )
+        legacy_files = {"protected-authorization.json": raw_authorization}
+        sums = (
+            f"{hashlib.sha256(raw_authorization).hexdigest()}  "
+            "protected-authorization.json\n"
+        ).encode("ascii")
+        client.activation_archive = encode_zip({
+            **legacy_files, "SHA256SUMS": sums,
+        })
+        operator["authorizationArtifactDigest"] = VERIFIER.digest_bytes(
+            client.activation_archive
+        )
+        for field in (
+            "activationActorLogin", "activationCreatedAt", "activationRunStartedAt",
+            "activationUpdatedAt", "authorizationCarrierBase64",
+            "advisoryCommentCarrierBase64", "ownerDirectiveCarrierBase64",
+        ):
+            operator.pop(field)
+        expires = VERIFIER.verify_activation_authorization(
+            client, operator, HEAD_SHA, binding(),
+            datetime(2026, 7, 14, 0, 1, tzinfo=timezone.utc),
+            datetime(2026, 7, 14, 0, 6, tzinfo=timezone.utc),
+            allow_legacy_v1=True,
+        )
+        self.assertEqual(
+            datetime(2026, 7, 14, 0, 20, tzinfo=timezone.utc), expires,
+        )
 
     def test_immutable_v1_is_rejected_for_current_product_but_allowed_for_explicit_forensics(self):
         legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())

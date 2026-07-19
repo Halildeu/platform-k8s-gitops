@@ -276,7 +276,7 @@
     },
     "operatorPayload": {
       "type": "object", "additionalProperties": false,
-      "required": ["onePersonRoster", "pilotDeviceConsented", "exposureApproved", "protectedEnvironment", "activationRunId", "activationRunAttempt", "activationHeadSha", "activationActorLogin", "activationCreatedAt", "activationRunStartedAt", "activationUpdatedAt", "authorizationArtifactId", "authorizationArtifactDigest", "authorizationSha256", "authorizationCarrierBase64", "advisoryCommentCarrierBase64", "authorizationSchemaVersion", "ownerPolicySha256", "ownerDirectiveSha256", "aiAdvisorySha256", "legalTrackStatus", "legalClearanceClaimed"],
+      "required": ["onePersonRoster", "pilotDeviceConsented", "exposureApproved", "protectedEnvironment", "activationRunId", "activationRunAttempt", "activationHeadSha", "authorizationArtifactId", "authorizationArtifactDigest", "authorizationSha256", "authorizationSchemaVersion", "ownerPolicySha256", "ownerDirectiveSha256", "aiAdvisorySha256", "legalTrackStatus", "legalClearanceClaimed"],
       "properties": {
         "onePersonRoster": {"const": true},
         "pilotDeviceConsented": {"const": true},
@@ -294,6 +294,7 @@
         "authorizationSha256": {"$ref": "#/$defs/sha256"},
         "authorizationCarrierBase64": {"type": "string", "minLength": 16, "maxLength": 262144, "pattern": "^[A-Za-z0-9+/]+={0,2}$"},
         "advisoryCommentCarrierBase64": {"type": "string", "minLength": 16, "maxLength": 2097152, "pattern": "^[A-Za-z0-9+/]+={0,2}$"},
+        "ownerDirectiveCarrierBase64": {"type": "string", "minLength": 16, "maxLength": 2097152, "pattern": "^[A-Za-z0-9+/]+={0,2}$"},
         "authorizationSchemaVersion": {"const": "faz22.6-view-only-pilot-protected-authorization-v2"},
         "ownerPolicySha256": {"$ref": "#/$defs/sha256"},
         "ownerDirectiveSha256": {"$ref": "#/$defs/sha256"},

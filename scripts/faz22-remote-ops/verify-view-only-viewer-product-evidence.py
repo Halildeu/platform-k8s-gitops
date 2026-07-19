@@ -1090,13 +1090,106 @@ def verify_activation_authorization(
     authority_observed_at: datetime | None = None,
     authority_repo_root: Path | None = None,
 ) -> datetime:
+    operator = dict(operator)
     run_id = operator["activationRunId"]
     if operator["activationRunAttempt"] < 1:
         raise EvidenceError("activation run attempt is invalid")
-    require_equal(
-        operator["activationHeadSha"], expected_head_sha,
-        "activation producer revision",
-    )
+    durable_fields = {
+        "activationActorLogin", "activationCreatedAt", "activationRunStartedAt",
+        "activationUpdatedAt", "authorizationCarrierBase64",
+        "advisoryCommentCarrierBase64", "ownerDirectiveCarrierBase64",
+    }
+    present_durable_fields = durable_fields.intersection(operator)
+    if present_durable_fields and present_durable_fields != durable_fields:
+        raise EvidenceError("protected authorization durable carrier field set is incomplete")
+    durable_carrier = present_durable_fields == durable_fields
+
+    archived_advisory_comment: dict[str, Any] | None = None
+    archived_owner_comment: dict[str, Any] | None = None
+    if durable_carrier:
+        require_equal(
+            operator["activationHeadSha"], expected_head_sha,
+            "activation producer revision",
+        )
+        try:
+            raw_authorization = base64.b64decode(
+                operator["authorizationCarrierBase64"], validate=True
+            )
+            raw_advisory_comment = base64.b64decode(
+                operator["advisoryCommentCarrierBase64"], validate=True
+            )
+            raw_owner_comment = base64.b64decode(
+                operator["ownerDirectiveCarrierBase64"], validate=True
+            )
+        except (KeyError, TypeError, ValueError, binascii.Error) as exc:
+            raise EvidenceError("protected authorization carrier is invalid") from exc
+        archived_advisory_comment = load_json_bytes(
+            raw_advisory_comment, "advisory-comment.json"
+        )
+        archived_owner_comment = load_json_bytes(
+            raw_owner_comment, "owner-comment.json"
+        )
+    else:
+        run = fetch_run(
+            client, EXPECTED_REPOSITORY, run_id, EXPECTED_ACTIVATION_WORKFLOW_NAME,
+            EXPECTED_ACTIVATION_WORKFLOW_PATH, "legacy protected activation",
+        )
+        require_equal(
+            operator["activationRunAttempt"], run["run_attempt"],
+            "activation run attempt",
+        )
+        require_equal(operator["activationHeadSha"], run["head_sha"], "activation head SHA")
+        require_equal(run["head_sha"], expected_head_sha, "activation producer revision")
+        operator.update({
+            "activationActorLogin": run["actor"]["login"],
+            "activationCreatedAt": run["created_at"],
+            "activationRunStartedAt": run["run_started_at"],
+            "activationUpdatedAt": run["updated_at"],
+        })
+        artifact_name = f"faz22-view-only-pilot-protected-authorization-{run_id}"
+        listing = client.get_json(
+            f"/repos/{EXPECTED_REPOSITORY}/actions/runs/{run_id}/artifacts?per_page=100"
+        )
+        artifacts = listing.get("artifacts")
+        if not isinstance(artifacts, list):
+            raise EvidenceError("activation artifact listing is invalid")
+        matches = [
+            artifact for artifact in artifacts if isinstance(artifact, dict)
+            and artifact.get("id") == operator["authorizationArtifactId"]
+            and artifact.get("name") == artifact_name
+        ]
+        if len(matches) != 1:
+            raise EvidenceError("protected authorization artifact identity is not unique")
+        artifact = matches[0]
+        require_equal(
+            artifact.get("digest"), operator["authorizationArtifactDigest"],
+            "protected authorization artifact digest",
+        )
+        if artifact.get("expired") is not False:
+            raise EvidenceError("protected authorization artifact is expired")
+        workflow_run = artifact.get("workflow_run")
+        if not isinstance(workflow_run, dict) or workflow_run.get("id") != run_id:
+            raise EvidenceError("protected authorization artifact run binding is invalid")
+        raw_archive = client.get_bytes(
+            f"/repos/{EXPECTED_REPOSITORY}/actions/artifacts/"
+            f"{operator['authorizationArtifactId']}/zip"
+        )
+        require_equal(
+            digest_bytes(raw_archive), operator["authorizationArtifactDigest"],
+            "downloaded protected authorization artifact digest",
+        )
+        files = safe_archive_files(raw_archive)
+        legacy_files = {"SHA256SUMS", "protected-authorization.json"}
+        advisory_files = legacy_files | {"advisory-comment.json"}
+        if set(files) not in (legacy_files, advisory_files):
+            raise EvidenceError("legacy protected authorization artifact file set mismatch")
+        verify_sha256sums(files, set(files) - {"SHA256SUMS"})
+        raw_authorization = files["protected-authorization.json"]
+        if "advisory-comment.json" in files:
+            archived_advisory_comment = load_json_bytes(
+                files["advisory-comment.json"], "advisory-comment.json"
+            )
+
     activation_updated = parse_utc(
         operator["activationUpdatedAt"], "activation updated_at"
     )
@@ -1105,23 +1198,11 @@ def verify_activation_authorization(
     if pilot_started - activation_updated > MAX_ACTIVATION_TO_PILOT_DELAY:
         raise EvidenceError("protected activation is too old for the pilot window")
 
-    try:
-        raw_authorization = base64.b64decode(
-            operator["authorizationCarrierBase64"], validate=True
-        )
-        raw_advisory_comment = base64.b64decode(
-            operator["advisoryCommentCarrierBase64"], validate=True
-        )
-    except (KeyError, TypeError, ValueError, binascii.Error) as exc:
-        raise EvidenceError("protected authorization carrier is invalid") from exc
     require_equal(
         digest_bytes(raw_authorization), operator["authorizationSha256"],
         "protected authorization receipt digest",
     )
     authorization = load_json_bytes(raw_authorization, "protected-authorization.json")
-    archived_advisory_comment = load_json_bytes(
-        raw_advisory_comment, "advisory-comment.json"
-    )
     policy, legacy_v1 = load_bound_owner_policy(
         authorization.get("ownerPolicySha256"), allow_legacy_v1=allow_legacy_v1,
     )
@@ -1341,12 +1422,13 @@ def verify_activation_authorization(
             comment_id = contract.get("commentId")
             if not isinstance(comment_id, int) or comment_id < 1:
                 raise EvidenceError(f"{label} comment ID is invalid")
-            comment = (
+            archived_comment = (
                 archived_advisory_comment
                 if label == "AI advisory"
-                else client.get_json(
-                    f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}",
-                )
+                else archived_owner_comment
+            )
+            comment = archived_comment or client.get_json(
+                f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}",
             )
             require_equal(comment.get("html_url"), contract.get("ref"), f"{label} URL")
             require_equal(

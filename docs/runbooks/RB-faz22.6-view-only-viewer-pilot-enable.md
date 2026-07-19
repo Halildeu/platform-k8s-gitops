@@ -356,10 +356,14 @@ every downloaded ZIP SHA-256 against GitHub artifact metadata, reject unsafe ZIP
 entries, and require the aggregated child bytes to equal the source artifact
 bytes exactly. The operator child additionally binds the successful protected
 apply workflow, authorization artifact ID/digest, receipt digest and KVKK marker
-digest. The independent verifier re-downloads that activation artifact, checks
-its exact file envelope and `SHA256SUMS`, and matches the authorized operator and
-device hashes to the browser session binding. A local file path, syntax-only URL,
-nonexistent run/artifact or hash-shaped placeholder is not accepted.
+digest. New operator evidence carries the exact protected authorization, signed
+advisory comment and owner-directive comment bytes from the checksum-covered
+activation artifact; the independent verifier can therefore replay the decision
+without refetching mutable or expired GitHub transport. The original v2 field set
+remains schema-valid only for explicit bounded legacy decoding, where the verifier
+re-downloads the exact historical activation run/artifact and checks its
+`SHA256SUMS`. A partially populated durable carrier, local file path, syntax-only
+URL, nonexistent run/artifact or hash-shaped placeholder is not accepted.
 
 Negative and termination source artifacts additionally carry one strict case
 attestation per case and one canonical, newline-terminated observation in

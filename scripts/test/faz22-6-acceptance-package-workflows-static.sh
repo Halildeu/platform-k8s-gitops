@@ -445,11 +445,10 @@ fi
 require_grep "VIEW_ONLY_PILOT_OPERATOR_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep "VIEW_ONLY_PILOT_DEVICE_SHA256" "$VIEWER_APPLY_WORKFLOW"
 require_grep 'sha256sum -c SHA256SUMS' "$VIEWER_APPLY_WORKFLOW"
-require_grep 'sha256sum protected-authorization.json advisory-comment.json > SHA256SUMS' \
+require_grep 'sha256sum protected-authorization.json advisory-comment.json owner-comment.json > SHA256SUMS' \
   "$VIEWER_APPLY_WORKFLOW"
-if grep -Fq 'rm -f "$out/owner-comment.json" "$out/advisory-comment.json"' \
-  "$VIEWER_APPLY_WORKFLOW"; then
-  echo "protected apply must retain the signed advisory carrier in the durable artifact" >&2
+if grep -Fq 'rm -f "$out/owner-comment.json"' "$VIEWER_APPLY_WORKFLOW"; then
+  echo "protected apply must retain owner and advisory carriers in the durable artifact" >&2
   exit 1
 fi
 require_grep 'legalClearanceClaimed' "$VIEWER_AUTH_BUILDER"
