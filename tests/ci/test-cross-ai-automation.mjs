@@ -101,6 +101,10 @@ const resolvedClaudeReviseEvidence = {
   ...unresolvedClaudeReviseEvidence,
   [UNREFERENCED_CLAUDE_AGREE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
 };
+const resolvedSelectedClaudeReviseEvidence = {
+  ...unresolvedClaudeReviseEvidence,
+  [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
+};
 const changedBindingClaudeReviseBody = JSON.stringify({
   ...JSON.parse(claudeReviseBody),
   base_tip_sha: 'd'.repeat(40),
@@ -114,7 +118,7 @@ const unresolvedChangedBindingEvidence = {
 };
 const resolvedChangedBindingEvidence = {
   ...unresolvedChangedBindingEvidence,
-  [UNREFERENCED_CLAUDE_AGREE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
+  [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
 };
 const differentPrEvidence = {
   ...EVIDENCE,
@@ -131,6 +135,20 @@ const agedUnresolvedReviseEvidence = {
 const otherPrReviseEvidence = {
   [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(
     claudeReviseBody, 0, PR_NUMBER + 1,
+  ),
+};
+const editedHistoricalReviseComment = evidenceComment(claudeReviseBody, 3_000);
+editedHistoricalReviseComment.updatedAt = new Date(NOW_MS + 4_000).toISOString();
+const editedHistoricalReviseEvidence = {
+  [UNREFERENCED_CLAUDE_REVISE_REF]: editedHistoricalReviseComment,
+};
+const invalidDigestHistoricalReviseBody = JSON.stringify({
+  ...JSON.parse(claudeReviseBody),
+  response_sha256: 'f'.repeat(64),
+});
+const invalidDigestHistoricalReviseEvidence = {
+  [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(
+    invalidDigestHistoricalReviseBody, 3_000,
   ),
 };
 const SOL_RECEIPT_SPARK_EVIDENCE = {
@@ -641,6 +659,16 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: otherPrReviseEvidence }, 0],
+  ['an edited historical REVISE candidate fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: editedHistoricalReviseEvidence,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['an invalid-digest historical REVISE candidate fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: invalidDigestHistoricalReviseEvidence,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['explicit none mode accepts substantive prose containing the word none',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody.replace(/^Consultation reason:.*$/m, 'Consultation reason: Reversible documentation update; none of the protected runtime paths apply.'),
@@ -698,10 +726,15 @@ const cases = [
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
       evidence: unresolvedClaudeReviseEvidence,
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
-  ['a later same-provider AGREE resolves an unreferenced same-head REVISE',
+  ['an unselected same-provider AGREE cannot resolve a REVISE in single mode',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
-      evidence: resolvedClaudeReviseEvidence }, 0],
+      evidence: resolvedClaudeReviseEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['a selected same-provider AGREE resolves a REVISE in dual mode',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitDualBody, changedFiles: [ROUTINE_PATH],
+      evidence: resolvedSelectedClaudeReviseEvidence }, 0],
   ['a prior-head REVISE remains unresolved after PR head and scope change',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
@@ -709,7 +742,7 @@ const cases = [
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['a current-head same-provider AGREE resolves a prior-head REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      body: explicitDualBody, changedFiles: [ROUTINE_PATH],
       evidence: resolvedChangedBindingEvidence }, 0],
   ['explicit single mode rejects SOL receipt bound to Spark evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
@@ -832,9 +865,10 @@ const cases = [
   ['normal legacy PR + empty required field still fails closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: legacyPeerBody.replace('Reviewer AI: Codex', 'Reviewer AI:'), changedFiles: [ROUTINE_PATH] }, 1],
-  ['normal PR + receipt commit differs from PR head -> fail closed',
+  ['normal PR + metadata-only head change reuses byte-identical reviewed scope',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      headSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody }, 1],
+      headSha: 'fedcba9876543210fedcba9876543210fedcba98', body: peerBody,
+      changedFiles: [ROUTINE_PATH] }, 0],
   ['normal PR + MiniMax receipt is forbidden even with an actual-model mismatch',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${peerBody}${MINIMAX_RECEIPT_LINE.replace('actual=minimax/MiniMax-M3', 'actual=minimax/MiniMax-M2.7')}\n` }, 1],

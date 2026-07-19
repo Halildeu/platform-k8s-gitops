@@ -59,7 +59,7 @@ Critical-Fix: no
 
 ## Cross-AI İstişare Modu
 
-> Varsayılan `none`; istişare gerekiyorsa exact scope/head ile context-isolated
+> Varsayılan `none`; istişare gerekiyorsa content-addressed exact scope ile context-isolated
 > `codex exec --ephemeral --sandbox read-only` tek başına `single` Cross-AI
 > review'dur. Ek adversarial görüş yararlıysa direct Claude ile `dual` seçilebilir.
 > Detay: `docs/context-priority-rules.md` §11.
@@ -73,7 +73,7 @@ Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
 # Verdict: AGREE # yalnız single/dual
 # Consultation base tip: <single/dual exact target tip>
 # Consultation base: <single/dual exact merge-base>
-# Consultation commit: <single/dual exact head>
+# Consultation commit: <single/dual reviewed head; current head farklıysa canonical scope byte-identical olmalı>
 # Consultation scope: <single/dual content SHA-256>
 # Codex receipt: <single ve dual için exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2>
 # Claude receipt: <yalnız dual için exact optional challenger receipt>

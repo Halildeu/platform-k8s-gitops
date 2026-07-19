@@ -757,13 +757,16 @@ function issueCommentFromPayload(payload) {
     createdAt: payload?.created_at,
     updatedAt: payload?.updated_at,
     issueNumber,
+    ref: payload?.url,
   };
 }
 
 async function loadPullRequestEvidenceComments(prMeta, evidenceOverrides) {
-  const overrideComments = Object.values(evidenceOverrides).filter(
-    (comment) => comment && typeof comment === 'object' && !Array.isArray(comment),
-  );
+  const overrideComments = Object.entries(evidenceOverrides)
+    .filter(([, comment]) => (
+      comment && typeof comment === 'object' && !Array.isArray(comment)
+    ))
+    .map(([ref, comment]) => ({ ...comment, ref: comment.ref ?? ref }));
   if (overrideComments.length > 0) return overrideComments;
 
   if (!prMeta?.baseRepo || !Number.isInteger(prMeta?.issueNumber)) return null;
@@ -792,7 +795,9 @@ async function loadPullRequestEvidenceComments(prMeta, evidenceOverrides) {
   return null;
 }
 
-async function appendPriorRevisionFinding(findings, prMeta, evidenceOverrides) {
+async function appendPriorRevisionFinding(
+  findings, prMeta, evidenceOverrides, selectedEvidenceRefs = new Set(),
+) {
   const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
   const baseTip = prMeta?.baseSha || '';
   const base = prMeta?.derivedBaseSha || '';
@@ -817,37 +822,71 @@ async function appendPriorRevisionFinding(findings, prMeta, evidenceOverrides) {
   }
 
   const records = [];
+  const invalidCandidates = [];
   for (const comment of comments) {
+    // Live history is loaded from the current PR endpoint. Local overrides are
+    // broader so contract tests can prove evidence from another PR is ignored,
+    // not misclassified as a malformed candidate for this PR.
+    if (comment?.issueNumber !== prMeta.issueNumber) continue;
     let body;
     try {
       body = JSON.parse(comment?.body || '');
     } catch {
+      if (
+        typeof comment?.body === 'string'
+        && comment.body.includes('cross-ai-provider-evidence/v3')
+        && /"provider"\s*:\s*"(?:openai|anthropic)"/.test(comment.body)
+      ) invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;
     }
     const expected = Object.values(CONSULTATION_RECEIPTS).find(
       (candidate) => candidate.provider === body?.provider,
     );
-    if (!expected) continue;
-    const parsed = parseEvidenceComment(comment, expected, expectedOwner, {
-      issueNumber: prMeta.issueNumber,
-      enforceFreshness: false,
-    });
+    const evidenceCandidate = body?.schema === 'cross-ai-provider-evidence/v3'
+      || [
+        'base_sha', 'head_sha', 'scope_sha256', 'execution_profile',
+        'response_sha256', 'response', 'verdict',
+      ].every((key) => Object.hasOwn(body || {}, key));
+    if (!expected || !evidenceCandidate) continue;
+    const candidateRefValid = validEvidenceRef(comment?.ref, prMeta.baseRepo);
+    const parsed = candidateRefValid
+      ? parseEvidenceComment(comment, expected, expectedOwner, {
+        issueNumber: prMeta.issueNumber,
+        enforceFreshness: false,
+      })
+      : null;
+    if (!parsed) {
+      invalidCandidates.push(comment?.ref || 'missing-ref');
+      continue;
+    }
     if (parsed) {
       const current = parseEvidenceComment(comment, expected, expectedOwner, {
         issueNumber: prMeta.issueNumber,
-        binding: { baseTip, base, head, scope },
+        binding: { baseTip, base, head: parsed.evidence.head_sha, scope },
       });
       records.push({
         provider: parsed.evidence.provider,
         verdict: parsed.evidence.verdict,
         createdAtMs: parsed.createdAtMs,
-        currentBindingFresh: Boolean(current),
+        currentBindingFresh: Boolean(current) && selectedEvidenceRefs.has(comment.ref),
       });
     }
   }
 
+  findings.push({
+    check: 'consultation_evidence_history_valid',
+    pass: invalidCandidates.length === 0,
+    detail: invalidCandidates.length === 0
+      ? 'PR geçmişindeki tanınmış evidence yorumları immutable ve yapısal olarak geçerli'
+      : `Düzenlenmiş veya geçersiz evidence yorumu fail-closed: ${invalidCandidates.join(', ')}`,
+  });
+
   const unresolved = [];
-  for (const provider of new Set(records.map((record) => record.provider))) {
+  const revisedProviders = new Set(
+    records.filter((record) => record.verdict === 'REVISE')
+      .map((record) => record.provider),
+  );
+  for (const provider of revisedProviders) {
     const providerRecords = records.filter((record) => record.provider === provider);
     const latestRevise = Math.max(
       ...providerRecords.filter((record) => record.verdict === 'REVISE')
@@ -868,7 +907,7 @@ async function appendPriorRevisionFinding(findings, prMeta, evidenceOverrides) {
     pass: unresolved.length === 0,
     detail: unresolved.length === 0
       ? 'PR geçmişindeki her provider REVISE kaydı daha yeni ve güncel base/head/scope bağlı aynı-provider AGREE ile karşılanıyor'
-      : `PR geçmişinde güncel base/head/scope AGREE bekleyen REVISE provider: ${unresolved.join(', ')}`,
+      : `PR geçmişinde seçilmiş güncel receipt ile AGREE bekleyen REVISE provider: ${unresolved.join(', ')}`,
   });
 }
 
@@ -943,15 +982,17 @@ async function appendConsultationFindings(
         : `consultation base ${base.slice(0, 12)} CI merge-base ${prMeta.derivedBaseSha.slice(0, 12)} ile eşleşmiyor`,
   });
   findings.push({
-    check: 'consultation_commit_exact_head',
-    pass: validFormat && matchesHead,
+    check: 'consultation_commit_current_or_scope_equivalent_head',
+    pass: validFormat && headPresent && (matchesHead || derivedScopeMatches),
     detail: !validFormat
       ? 'Consultation commit 40-char git SHA değil'
         : !headPresent
           ? 'PR head SHA metadata eksik; exact-head binding fail-closed'
           : matchesHead
-        ? `consultation commit ${commit.slice(0, 12)} exact-head ile eşleşiyor`
-        : `consultation commit ${commit.slice(0, 12)} PR head ${prMeta.headSha.slice(0, 12)} ile eşleşmiyor`,
+            ? `consultation commit ${commit.slice(0, 12)} current head ile eşleşiyor`
+            : derivedScopeMatches
+              ? `review head ${commit.slice(0, 12)} current head ${prMeta.headSha.slice(0, 12)} ile farklı; canonical scope byte-identical`
+              : `review head ${commit.slice(0, 12)} current head ${prMeta.headSha.slice(0, 12)} ile farklı ve scope değişmiş`,
   });
   findings.push({
     check: 'consultation_scope_sha256',
@@ -1237,7 +1278,14 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     );
   }
   if (['single', 'dual'].includes(mode)) {
-    await appendPriorRevisionFinding(findings, prMeta, evidenceOverrides);
+    const selectedEvidenceRefs = new Set(
+      selectedReceipts
+        .map((field) => parseReceipt(fields[field])?.ref)
+        .filter(Boolean),
+    );
+    await appendPriorRevisionFinding(
+      findings, prMeta, evidenceOverrides, selectedEvidenceRefs,
+    );
   }
   return findings;
 }

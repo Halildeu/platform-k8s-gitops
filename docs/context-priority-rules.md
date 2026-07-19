@@ -405,6 +405,13 @@ sandbox veya ephemeral capability hazır değilse UI/wrapper fallback yapılmaz.
 `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta review
 tekrarlanmaz. Geçerli `REVISE` bulgusu düzeltildiğinde yalnız önceden seçilmiş
 kanal veya kanallar değişen exact scope üzerinde yeniden inceler.
+Yalnız commit metadata'sı değişmiş, target base-tip + merge-base + canonical
+scope SHA-256 aynı kalmışsa fresh receipt review head'ine bağlı biçimde yeniden
+kullanılabilir; scope byte'ı değiştiğinde yeni exact-scope review zorunludur.
+Bir provider `REVISE` kaydı yalnız PR gövdesinde seçilmiş aynı-provider receipt
+referansındaki daha yeni `AGREE` ile çözülür; `none` veya seçilmemiş yan kanal
+yorumları çözüm yetkisi üretmez. Düzenlenmiş ya da yapısal olarak geçersiz
+evidence adayı geçmişten sessizce düşmez, gate'i fail-closed yapar.
 
 ### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
 
@@ -442,7 +449,7 @@ Risk trigger: <kategori>: <somut açıklama> # yalnız dual
 Verdict: AGREE # yalnız single/dual
 Consultation base tip: <single/dual exact target tip>
 Consultation base: <single/dual exact merge-base>
-Consultation commit: <single/dual exact head>
+Consultation commit: <single/dual reviewed head; current head farklıysa canonical scope byte-identical olmalı>
 Consultation scope: <single/dual content SHA-256>
 Codex receipt: <single/dual exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2>
 Claude receipt: <yalnız dual exact challenger receipt>
