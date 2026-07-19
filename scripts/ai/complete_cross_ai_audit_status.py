@@ -18,6 +18,9 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 MARKER_RE = re.compile(
     r"<!-- cross-ai-audit-recheck:(\d+):(\d+):([0-9a-f]{64}) -->"
 )
+PUBLICATION_LOCK_RE = re.compile(
+    r"<!-- cross-ai-publication-lock:([0-9a-f]{64}):([0-9a-f]{64}) -->"
+)
 CONSULTATION_COMMIT_RE = re.compile(
     r"(?mi)^Consultation commit:\s*([0-9a-f]{40})\s*$"
 )
@@ -261,6 +264,21 @@ def protect_live_pr_generation(repo: str, current: object, url: str) -> dict | N
     return post_retry_pending(repo, head, url, generation)
 
 
+def created_comment_needs_guard(body: str) -> bool:
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        payload = None
+    return bool(
+        (
+            isinstance(payload, dict)
+            and payload.get("schema") == "cross-ai-provider-evidence/v4"
+            and payload.get("provider") == "openai"
+        )
+        or re.search(r"(?m)^VERDICT:[ \t]*REVISE[ \t]*$", body)
+    )
+
+
 def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     if REPO_RE.fullmatch(repo) is None or issue < 1 or shutil.which("gh") is None:
         fail("invalid_audit_generation_target")
@@ -272,6 +290,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         event_body = event_pr.get("body") or ""
         event_url = event_pr["html_url"]
         event_number = event_pr["number"]
+        event_draft = event_pr["draft"]
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("invalid_audit_generation_event")
     expected_url = f"https://github.com/{repo}/pull/{issue}"
@@ -280,6 +299,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         or event_url != expected_url
         or SHA_RE.fullmatch(event_head) is None
         or SHA_RE.fullmatch(event_base) is None
+        or not isinstance(event_draft, bool)
     ):
         fail("invalid_audit_generation_event")
 
@@ -288,6 +308,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         current_head = current["head"]["sha"].lower()
         current_base = current["base"]["sha"].lower()
         current_body = current.get("body") or ""
+        current_draft = current["draft"]
     except (KeyError, TypeError, AttributeError):
         fail("github_pr_generation_mismatch")
     if (
@@ -296,9 +317,14 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         or current_head != event_head
         or current_base != event_base
         or current_body != event_body
+        or current_draft != event_draft
     ):
         protect_live_pr_generation(repo, current, expected_url)
         fail("github_pr_generation_mismatch")
+
+    if PUBLICATION_LOCK_RE.search(event_body):
+        protect_live_pr_generation(repo, current, expected_url)
+        fail("audit_publication_in_progress")
 
     markers = MARKER_RE.findall(event_body)
     if not markers:
@@ -409,6 +435,17 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     if not current_pending_valid:
         fail("audit_generation_not_latest_pending")
 
+    # Evidence is published only while the PR is draft. Keep the generation
+    # pending until `ready_for_review` creates a fresh trusted audit event;
+    # this prevents a publisher and success writer from racing on a mergeable
+    # PR while still allowing draft review iterations.
+    if event_draft:
+        return {
+            "ok": True,
+            "action": "deferred-draft",
+            "generation": pending_status_id,
+        }
+
     # Revalidate every mutable authority before the only success write. A
     # failure leaves the existing pending generation in place; success must
     # never be followed by compensating validation or a retry write.
@@ -448,10 +485,12 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         current_before_head = current_before_success["head"]["sha"].lower()
         current_before_base = current_before_success["base"]["sha"].lower()
         current_before_body = current_before_success.get("body") or ""
+        current_before_draft = current_before_success["draft"]
     except (KeyError, TypeError, AttributeError):
         current_before_head = ""
         current_before_base = ""
         current_before_body = ""
+        current_before_draft = None
     final_pending_valid = (
         valid_owner_pending(
             latest_current_before_success,
@@ -472,6 +511,8 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         or current_before_head != event_head
         or current_before_base != event_base
         or current_before_body != event_body
+        or current_before_draft is not False
+        or PUBLICATION_LOCK_RE.search(current_before_body)
         or newer_owner_pending
         or not final_pending_valid
     ):
@@ -530,11 +571,16 @@ def guard_comment_mutation(repo: str, event_path: Path) -> dict:
         event = json.loads(event_path.read_text(encoding="utf-8"))
         action = event["action"]
         comment_id = event["comment"]["id"]
+        comment_body = event["comment"].get("body") or ""
+        comment_author = event["comment"]["user"]["login"].lower()
+        comment_association = event["comment"].get("author_association")
         issue = event["issue"]
         issue_number = issue["number"]
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
         fail("invalid_audit_mutation_event")
-    if action not in {"edited", "deleted"} or not isinstance(comment_id, int):
+    if action not in {"created", "edited", "deleted"} or not isinstance(comment_id, int):
+        fail("invalid_audit_mutation_event")
+    if not isinstance(comment_body, str):
         fail("invalid_audit_mutation_event")
     if not isinstance(issue_number, int) or issue_number < 1:
         fail("invalid_audit_mutation_event")
@@ -558,7 +604,43 @@ def guard_comment_mutation(repo: str, event_path: Path) -> dict:
 
     markers = MARKER_RE.findall(body)
     generation = int(markers[0][0]) if len(markers) == 1 else 0
+    owner = repo.split("/", 1)[0].lower()
     fields = parse_selected_evidence_fields(body)
+    if action == "created" and (
+        comment_author == owner
+        and comment_association == "OWNER"
+        and created_comment_needs_guard(comment_body)
+    ):
+        selected_match = re.fullmatch(
+            rf"https://api\.github\.com/repos/{re.escape(repo)}/issues/comments/(\d+)",
+            fields.get("ref", "") if fields is not None else "",
+        )
+        if (
+            fields is not None
+            and fields.get("verdict") == "AGREE"
+            and selected_match is not None
+            and int(selected_match.group(1)) == comment_id
+        ):
+            try:
+                selected_evidence_snapshot(
+                    repo,
+                    issue_number,
+                    comment_id,
+                    fields["ref"],
+                    fields["sha256"].lower(),
+                )
+            except SystemExit:
+                pass
+            else:
+                return {"ok": True, "action": "ignored-valid-selected-created"}
+        created = post_retry_pending(repo, head, expected_url, generation)
+        return {
+            "ok": True,
+            "action": "created-cross-ai-evidence-guarded",
+            "comment_action": action,
+            "generation": generation,
+            "status_id": created["id"],
+        }
     if fields is None:
         if markers:
             created = post_retry_pending(repo, head, expected_url, generation)

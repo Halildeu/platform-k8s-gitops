@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import re
+import secrets
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -22,6 +23,9 @@ from typing import NoReturn
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 RECHECK_MARKER_RE = re.compile(
     r"(?:\n\n)?<!-- cross-ai-audit-recheck:\d+(?::\d+)?:[0-9a-f]{64} -->\n?"
+)
+PUBLICATION_LOCK_RE = re.compile(
+    r"(?:\n\n)?<!-- cross-ai-publication-lock:([0-9a-f]{64}):([0-9a-f]{64}) -->\n?"
 )
 ETAG_RE = re.compile(r'^etag:\s*(\S+)\s*$', re.IGNORECASE | re.MULTILINE)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -352,11 +356,71 @@ def load_pr_snapshot(
         fail("gh_pr_snapshot_invalid")
     if (
         snapshot.get("state") != "open"
+        or snapshot.get("draft") is not True
         or current_head != head_sha.lower()
         or not isinstance(current_body, str)
     ):
         fail("gh_pr_snapshot_invalid")
     return snapshot, etag
+
+
+def acquire_publication_lock(
+    *,
+    repo: str,
+    issue_number: int,
+    head_sha: str,
+    body_sha256: str,
+    publication_token: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> str:
+    """Acquire the draft-only PR-body lease before any status mutation."""
+    snapshot, etag = load_pr_snapshot(
+        repo=repo,
+        issue_number=issue_number,
+        head_sha=head_sha,
+        runner=runner,
+    )
+    body = snapshot["body"]
+    locks = PUBLICATION_LOCK_RE.findall(body)
+    marker = (
+        "<!-- cross-ai-publication-lock:"
+        f"{body_sha256}:{publication_token} -->"
+    )
+    if locks:
+        fail("gh_publication_lock_conflict")
+    clean_body = RECHECK_MARKER_RE.sub("", body).rstrip()
+    updated_body = f"{clean_body}\n\n{marker}\n"
+    if len(updated_body.encode("utf-8")) > 65_536:
+        fail("gh_pr_body_invalid")
+    try:
+        update_result = runner(
+            [
+                "gh", "api", f"repos/{repo}/pulls/{issue_number}",
+                "--method", "PATCH", "-H", f"If-Match: {etag}", "--input", "-",
+            ],
+            input=json.dumps({"body": updated_body}, separators=(",", ":")),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_publication_lock_failed")
+    if update_result.returncode != 0:
+        fail("gh_publication_lock_failed")
+    try:
+        updated_pr = json.loads(update_result.stdout)
+        updated_head = updated_pr["head"]["sha"].lower()
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        fail("gh_publication_lock_invalid")
+    if (
+        updated_pr.get("body") != updated_body
+        or updated_pr.get("state") != "open"
+        or updated_pr.get("draft") is not True
+        or updated_head != head_sha.lower()
+    ):
+        fail("gh_publication_lock_invalid")
+    return marker
 
 
 def patch_recheck_marker(
@@ -367,6 +431,8 @@ def patch_recheck_marker(
     pending_status_id: int,
     ledger_status_id: int,
     body_sha256: str,
+    publication_token: str,
+    release_lock: bool,
     runner: Callable[..., subprocess.CompletedProcess[str]],
 ) -> str:
     snapshot, etag = load_pr_snapshot(
@@ -375,7 +441,13 @@ def patch_recheck_marker(
         head_sha=head_sha,
         runner=runner,
     )
-    clean_body = RECHECK_MARKER_RE.sub("", snapshot["body"]).rstrip()
+    locks = PUBLICATION_LOCK_RE.findall(snapshot["body"])
+    if len(locks) != 1 or locks[0] != (body_sha256, publication_token):
+        fail("gh_publication_lock_lost")
+    clean_body = RECHECK_MARKER_RE.sub("", snapshot["body"])
+    if release_lock:
+        clean_body = PUBLICATION_LOCK_RE.sub("", clean_body)
+    clean_body = clean_body.rstrip()
     marker = (
         "<!-- cross-ai-audit-recheck:"
         f"{pending_status_id}:{ledger_status_id}:{body_sha256} -->"
@@ -407,6 +479,7 @@ def patch_recheck_marker(
     if (
         updated_pr.get("body") != updated_body
         or updated_pr.get("state") != "open"
+        or updated_pr.get("draft") is not True
         or updated_head != head_sha.lower()
     ):
         fail("gh_audit_recheck_trigger_invalid")
@@ -426,14 +499,24 @@ def publish_evidence(
 ) -> dict:
     """Publish evidence under one exact-head audit generation.
 
-    The exact-head required status becomes pending before any body/evidence
-    mutation. Its GitHub status id is then written into the PR body with CAS.
+    A draft-only PR-body lease is acquired with ETag CAS before any status
+    mutation. The exact-head required status then becomes pending and its
+    GitHub status id is written into the leased PR body with CAS.
     Older events cannot clear that newer status because their marker generation
     differs. The ledger id is added only after the immutable status and owner
     comment exist. Any partial publication therefore remains fail-closed.
     """
     if not isinstance(pr_body, str):
         fail("gh_pr_body_invalid")
+    publication_token = secrets.token_hex(32)
+    publication_lock = acquire_publication_lock(
+        repo=repo,
+        issue_number=issue_number,
+        head_sha=evidence["head_sha"],
+        body_sha256=body_sha256,
+        publication_token=publication_token,
+        runner=runner,
+    )
     invalidation = audit_invalidation_payload(pr_url)
     try:
         invalidation_result = runner(
@@ -479,6 +562,8 @@ def publish_evidence(
         pending_status_id=invalidation_id,
         ledger_status_id=0,
         body_sha256=body_sha256,
+        publication_token=publication_token,
+        release_lock=False,
         runner=runner,
     )
 
@@ -567,6 +652,8 @@ def publish_evidence(
         pending_status_id=invalidation_id,
         ledger_status_id=ledger_id,
         body_sha256=body_sha256,
+        publication_token=publication_token,
+        release_lock=True,
         runner=runner,
     )
     return {
@@ -577,6 +664,7 @@ def publish_evidence(
         "ledger_context": ledger_context,
         "audit_invalidation_ref": invalidation_ref,
         "audit_generation_id": invalidation_id,
+        "publication_lock": publication_lock,
         "audit_recheck_marker": recheck_marker,
     }
 
@@ -618,6 +706,7 @@ def main() -> None:
         pr_state = pr["state"]
         pr_url = pr["html_url"]
         pr_body = pr["body"]
+        pr_draft = pr["draft"]
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         fail("gh_pr_binding_invalid")
     evidence, body_sha256 = validate_evidence_text(
@@ -625,6 +714,7 @@ def main() -> None:
     )
     if (
         pr_state != "open"
+        or pr_draft is not True
         or evidence["base_tip_sha"].lower() != pr_base_sha
         or evidence["head_sha"].lower() != pr_head_sha
     ):
@@ -657,6 +747,7 @@ def main() -> None:
                 "ledger_context": publication["ledger_context"],
                 "audit_invalidation_ref": publication["audit_invalidation_ref"],
                 "audit_generation_id": publication["audit_generation_id"],
+                "publication_lock": publication["publication_lock"],
                 "audit_recheck_marker": publication["audit_recheck_marker"],
             },
             ensure_ascii=False,

@@ -60,7 +60,13 @@ def evidence() -> dict:
     }
 
 
-def included_pr(body: str, head_sha: str, etag: str = '"pr-v1"') -> str:
+def included_pr(
+    body: str,
+    head_sha: str,
+    etag: str = '"pr-v1"',
+    *,
+    draft: bool = True,
+) -> str:
     return (
         "HTTP/2.0 200 OK\n"
         f"etag: {etag}\n"
@@ -68,6 +74,7 @@ def included_pr(body: str, head_sha: str, etag: str = '"pr-v1"') -> str:
         + json.dumps({
             "body": body,
             "state": "open",
+            "draft": draft,
             "head": {"sha": head_sha},
         })
     )
@@ -148,6 +155,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     stdout=json.dumps({
                         "body": current_body,
                         "state": "open",
+                        "draft": True,
                         "head": {"sha": payload["head_sha"]},
                     }),
                 )
@@ -187,14 +195,14 @@ class EvidenceValidationTests(unittest.TestCase):
             pr_body="## Cross-AI\nConsultation mode: single\n",
             runner=runner,
         )
-        self.assertIn("/statuses/", calls[0][2])
-        self.assertIn("GET", calls[1])
-        self.assertIn("PATCH", calls[2])
+        self.assertIn("GET", calls[0])
+        self.assertIn("PATCH", calls[1])
+        self.assertIn("/statuses/", calls[2][2])
         self.assertEqual(
             status_contexts,
             ["cross-ai-audit", f"cross-ai/evidence/{digest}"],
         )
-        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
         self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertEqual(result["ledger_context"], f"cross-ai/evidence/{digest}")
@@ -203,6 +211,7 @@ class EvidenceValidationTests(unittest.TestCase):
             f"<!-- cross-ai-audit-recheck:10:11:{digest} -->",
         )
         self.assertTrue(current_body.endswith(result["audit_recheck_marker"] + "\n"))
+        self.assertNotIn("cross-ai-publication-lock", current_body)
         self.assertIn("concurrent human edit", current_body)
 
     def test_invalidation_failure_never_creates_binding_evidence(self) -> None:
@@ -225,6 +234,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     command, 0, stdout=json.dumps({
                         "body": current_body,
                         "state": "open",
+                        "draft": True,
                         "head": {"sha": payload["head_sha"]},
                     })
                 )
@@ -242,8 +252,10 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 1)
-        self.assertIn("/statuses/", calls[0][2])
+        self.assertEqual(len(calls), 3)
+        self.assertIn("GET", calls[0])
+        self.assertIn("PATCH", calls[1])
+        self.assertIn("/statuses/", calls[2][2])
 
     def test_etag_conflict_leaves_exact_head_pending_without_evidence(self) -> None:
         payload = evidence()
@@ -283,8 +295,8 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="human body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 3)
-        self.assertEqual(sum("/statuses/" in call[2] for call in calls), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sum("/statuses/" in call[2] for call in calls), 0)
         self.assertFalse(any("/comments" in call[2] for call in calls))
 
     def test_ledger_failure_after_invalidation_never_creates_comment(self) -> None:
@@ -309,6 +321,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     stdout=json.dumps({
                         "body": current_body,
                         "state": "open",
+                        "draft": True,
                         "head": {"sha": payload["head_sha"]},
                     }),
                 )
@@ -337,8 +350,8 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 4)
-        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 2)
+        self.assertEqual(len(calls), 6)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertFalse(any("/comments" in call[2] for call in calls))
 
@@ -377,6 +390,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     stdout=json.dumps({
                         "body": current_body,
                         "state": "open",
+                        "draft": True,
                         "head": {"sha": payload["head_sha"]},
                     }),
                 )
@@ -394,8 +408,8 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 5)
-        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 2)
+        self.assertEqual(len(calls), 7)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertIn("/comments", calls[-1][2])
 
@@ -440,7 +454,7 @@ class EvidenceValidationTests(unittest.TestCase):
                 )
             if "/pulls/" in command[2]:
                 patch_count += 1
-                if patch_count == 2:
+                if patch_count == 3:
                     return subprocess.CompletedProcess(command, 1, stdout="")
                 posted = json.loads(str(kwargs["input"]))
                 current_body = posted["body"]
@@ -450,6 +464,7 @@ class EvidenceValidationTests(unittest.TestCase):
                     stdout=json.dumps({
                         "body": current_body,
                         "state": "open",
+                        "draft": True,
                         "head": {"sha": payload["head_sha"]},
                     }),
                 )
@@ -467,8 +482,8 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 7)
-        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
+        self.assertEqual(len(calls), 9)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
         self.assertIn("PATCH", calls[-1])
@@ -492,6 +507,59 @@ class EvidenceValidationTests(unittest.TestCase):
                 )
         self.assertEqual(calls, [])
 
+    def test_ready_pr_cannot_acquire_publication_lock(self) -> None:
+        payload = evidence()
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.acquire_publication_lock(
+                repo="Halildeu/platform-k8s-gitops",
+                issue_number=2638,
+                head_sha=payload["head_sha"],
+                body_sha256="f" * 64,
+                publication_token="e" * 64,
+                runner=lambda command, **_kwargs: subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=included_pr(
+                        "body", payload["head_sha"], draft=False
+                    ),
+                    stderr="",
+                ),
+            )
+
+    def test_existing_lock_cannot_be_reused_even_for_same_digest(self) -> None:
+        payload = evidence()
+        digest = "f" * 64
+        calls: list[list[str]] = []
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=included_pr(
+                    f"body\n<!-- cross-ai-publication-lock:{digest}:{'d' * 64} -->\n",
+                    payload["head_sha"],
+                ),
+                stderr="",
+            )
+
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.acquire_publication_lock(
+                repo="Halildeu/platform-k8s-gitops",
+                issue_number=2638,
+                head_sha=payload["head_sha"],
+                body_sha256=digest,
+                publication_token="e" * 64,
+                runner=runner,
+            )
+        self.assertEqual(len(calls), 1)
+
     def test_trusted_workflow_can_clear_pending_audit_only_after_success(self) -> None:
         workflow = (
             ROOT / ".github/workflows/gate-cross-ai-audit.yml"
@@ -500,6 +568,9 @@ class EvidenceValidationTests(unittest.TestCase):
         self.assertIn("Mark exact-head Cross-AI audit status current", workflow)
         self.assertIn("scripts/ai/complete_cross_ai_audit_status.py", workflow)
         self.assertIn("issue_comment:", workflow)
+        self.assertIn("- created", workflow)
+        self.assertIn("- ready_for_review", workflow)
+        self.assertIn("- converted_to_draft", workflow)
         self.assertIn("cross-ai-evidence-mutation-guard", workflow)
         self.assertIn('--comment-event-path "$GITHUB_EVENT_PATH"', workflow)
 

@@ -41,6 +41,7 @@ const EVIDENCE_HISTORY_POLICY_INTRODUCED_MS = Date.parse('2026-07-19T01:09:35Z')
 // deleting an unreferenced REVISE payload cannot erase the tombstone.
 const EVIDENCE_STATUS_LEDGER_POLICY_INTRODUCED_MS = Date.parse('2026-07-19T17:06:35Z');
 const EVIDENCE_LEDGER_CONTEXT_PREFIX = 'cross-ai/evidence/';
+const PUBLICATION_LOCK_RE = /<!-- cross-ai-publication-lock:([0-9a-f]{64}):([0-9a-f]{64}) -->/g;
 const EVIDENCE_LEDGER_DESCRIPTION_RE = /^v4 openai (AGREE|REVISE) pr=(\d+) thread=([0-9a-f-]{36})$/i;
 const NO_FINDINGS_RE = /^None$/;
 const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
@@ -1955,6 +1956,15 @@ async function audit(
   trustedSourceDigestOverrides = {},
 ) {
   const findings = [];
+  const publicationLocks = [...body.matchAll(PUBLICATION_LOCK_RE)];
+  findings.push({
+    check: 'cross_ai_publication_lock_absent',
+    pass: publicationLocks.length === 0,
+    detail: publicationLocks.length === 0
+      ? 'Cross-AI evidence publication lease is not active'
+      : 'Cross-AI evidence publication is in progress; audit remains fail-closed',
+  });
+  if (publicationLocks.length !== 0) return findings;
   const section = extractCrossAiSection(body);
   if (!section) {
     findings.push({

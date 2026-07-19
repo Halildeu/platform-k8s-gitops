@@ -30,10 +30,11 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #   * `concurrency` block cancels superseded runs on the same PR — guards
 #     against rapid `synchronize` push churn (an attacker or noisy author
 #     cannot pile up N parallel audit runs to exhaust CI minutes).
-#   * `ready_for_review` is deliberately omitted because it changes no content;
-#     the audit already ran on `opened` / `edited` / `synchronize`. Production
-#     `auto-promotion/` candidates are NOT automation-exempt and must acquire
-#     normal explicit consultation-mode contract before merge.
+#   * Evidence publication is draft-only. `ready_for_review` re-audits the
+#     final live generation before it becomes mergeable; `converted_to_draft`
+#     cancels a superseded ready audit. Production `auto-promotion/` candidates
+#     are NOT automation-exempt and must acquire normal explicit
+#     consultation-mode contract before merge.
 
 on:
   # #842 PR-A2 cleanup (post-PR #868 merge): the transition `pull_request`
@@ -48,6 +49,8 @@ on:
       - edited
       - synchronize
       - reopened
+      - ready_for_review
+      - converted_to_draft
       # #842 follow-up cleanup (Codex thread 019e5b85, 2026-05-24):
       # `labeled` / `unlabeled` triggers REMOVED. The audit script is
       # currently label-agnostic (pr-cross-ai-audit.mjs reads PR body fields
@@ -66,11 +69,13 @@ on:
       # When the audit script gains genuine label-aware semantics, this
       # block should be re-added with the matching script logic in the
       # SAME PR (atomic wiring + behavior), not pre-wired ahead.
-  # Selected evidence comments remain mutable GitHub objects. Any later edit
-  # or deletion of the exact comment referenced by an open PR restores the
-  # fail-closed status on that PR's current head.
+  # Evidence comments remain mutable GitHub objects. Owner-created v4/REVISE
+  # evidence and any later edit/deletion of selected evidence restore the
+  # fail-closed status on the open PR's current head. A delayed `created` event
+  # for the already-selected immutable AGREE is idempotent.
   issue_comment:
     types:
+      - created
       - edited
       - deleted
 

@@ -557,13 +557,21 @@ ve izole thread kimliğini taşır; poster ve CI aynı provenance pinini yeniden
 doğrular. Yeni CLI sürümü pinset güncellemesi ve high-impact SOL exact-head
 review ister. Poster exact şema/profil/provenance dışında fail-closed olur;
 trusted producer commit'inin exact PR base tip'inin atası olduğunu posting
-öncesinde doğrular. Yeni binding evidence veya PR body mutation'ı görünür
-olmadan exact-head `cross-ai-audit` commit status'unu `pending` yapar; eski event
+öncesinde doğrular. Evidence yalnız draft PR üzerinde yayımlanabilir. Poster
+status/comment yazmadan önce ETag/`If-Match` ile exact digest ve süreç-tekil
+rastgele token'a bağlı `cross-ai-publication-lock` body lease'ini alır; audit bu
+lease varken fail-closed kalır. Var olan lease, digest aynı olsa bile başka bir
+publisher tarafından devralınamaz; retry/operator recovery açıkça reconcile
+edilmeden yeni yayın reddedilir. Yeni binding evidence veya PR body mutation'ı görünür
+olmadan lease altında exact-head `cross-ai-audit` commit status'unu `pending` yapar; eski event
 marker'ları bu yeni status ID ile eşleşemediği için onu success'e çeviremez.
 Status ID'sini ETag/`If-Match` ile güncellenen generation marker'ına hemen bağlar;
 eşzamanlı insan/agent body değişiklikleri kaybolmaz. Ardından immutable status ledger'ını
 owner comment'ten önce üretir ve exact pending-id/ledger-id/digest taşıyan final
-marker'la trusted-base `pull_request_target: edited` audit'ini yeniden tetikler.
+marker'la lease'i atomik bırakıp trusted-base `pull_request_target: edited`
+audit'ini yeniden tetikler. Draft audit generation'ı success'e çeviremez;
+`ready_for_review` olayı aynı canlı binding'i yeniden denetler ve poster artık
+ready PR üzerinde çalışamadığı için success yazarıyla yarışamaz.
 Trusted completion helper event body/head ile canlı açık PR body/head'ini,
 marker'daki pending ID ile owner pending status'u ve marker'daki ledger ID ile
 exact digest/PR/owner ledger'ını yeniden doğrulamadan ve ledger ID pending
@@ -572,7 +580,8 @@ owner comment'i success'ten hemen önce yeniden okuyup exact body digest, OWNER
 association ve `created_at == updated_at` immutability koşulunu korur; success
 bu workflow'un son dış yazımıdır ve telafi amaçlı success-sonrası pending
 penceresi oluşturulmaz. Daha sonraki seçili-comment `edited` / `deleted`
-olayları trusted `issue_comment` mutation guard ile güncel PR head'ini yeniden
+olayları ve owner tarafından oluşturulan yeni v4 evidence veya terminal
+`REVISE` yorumları trusted `issue_comment` guard ile güncel PR head'ini yeniden
 pending yapar.
 Byte-identical canonical scope reuse halinde generation pending/ledger kayıtlarını
 `Consultation commit` SHA'sında doğrular, ancak success'i güncel PR head SHA'sına
