@@ -35,6 +35,15 @@ const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
 const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
 const SCOPE_SHA256 = 'a'.repeat(64);
+const HISTORICAL_TRUSTED_BASE_SHA = '1'.repeat(40);
+const REAL_TRUSTED_BASE_SHA = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: REPO_ROOT,
+  encoding: 'utf8',
+}).trim();
+const REAL_TRUSTED_BASE_PARENT_SHA = execFileSync('git', ['rev-parse', 'HEAD^'], {
+  cwd: REPO_ROOT,
+  encoding: 'utf8',
+}).trim();
 const NOW_MS = Date.now();
 const HISTORICAL_CLAUDE_MS = Date.parse('2026-07-19T00:00:00Z');
 const HISTORICAL_MINIMAX_MS = Date.parse('2026-07-18T14:00:00Z');
@@ -46,9 +55,45 @@ const EXECUTION_PROFILE = {
 };
 
 const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
+const CURRENT_TRUSTED_SOURCE_DIGESTS = {
+  review_harness_sha256: sha256(readFileSync(
+    join(REPO_ROOT, 'scripts', 'ai', 'run_isolated_codex_review.py'), 'utf8',
+  )),
+  scope_preparer_sha256: sha256(readFileSync(
+    join(REPO_ROOT, 'scripts', 'ai', 'prepare_cross_ai_scope.py'), 'utf8',
+  )),
+  pii_attester_sha256: sha256(readFileSync(
+    join(REPO_ROOT, 'scripts', 'ai', 'attest_cross_ai_scope_pii.py'), 'utf8',
+  )),
+  evidence_builder_sha256: sha256(readFileSync(
+    join(REPO_ROOT, 'scripts', 'ai', 'build_cross_ai_evidence.py'), 'utf8',
+  )),
+};
+const HISTORICAL_TRUSTED_SOURCE_DIGESTS = {
+  review_harness_sha256: '1'.repeat(64),
+  scope_preparer_sha256: '2'.repeat(64),
+  pii_attester_sha256: '3'.repeat(64),
+  evidence_builder_sha256: '4'.repeat(64),
+};
+const REAL_TRUSTED_SOURCE_DIGESTS = Object.fromEntries(
+  Object.entries({
+    review_harness_sha256: 'scripts/ai/run_isolated_codex_review.py',
+    scope_preparer_sha256: 'scripts/ai/prepare_cross_ai_scope.py',
+    pii_attester_sha256: 'scripts/ai/attest_cross_ai_scope_pii.py',
+    evidence_builder_sha256: 'scripts/ai/build_cross_ai_evidence.py',
+  }).map(([key, path]) => [key, sha256(execFileSync(
+    'git', ['show', `${REAL_TRUSTED_BASE_SHA}:${path}`],
+    { cwd: REPO_ROOT, encoding: 'utf8' },
+  ))]),
+);
+const TRUSTED_SOURCE_DIGEST_OVERRIDES = {
+  [BASE_TIP_SHA]: CURRENT_TRUSTED_SOURCE_DIGESTS,
+  [HISTORICAL_TRUSTED_BASE_SHA]: HISTORICAL_TRUSTED_SOURCE_DIGESTS,
+  ['d'.repeat(40)]: CURRENT_TRUSTED_SOURCE_DIGESTS,
+};
 const evidenceRef = (id) =>
   `https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/${id}`;
-const evidenceBody = (provider, model, response) => JSON.stringify({
+const evidenceBody = (provider, model, response, options = {}) => JSON.stringify({
   schema: provider === 'openai'
     ? 'cross-ai-provider-evidence/v4'
     : 'cross-ai-provider-evidence/v3',
@@ -67,23 +112,12 @@ const evidenceBody = (provider, model, response) => JSON.stringify({
     trust_root: 'repo-pinned-codex-native-sha256-v1',
     stderr_classification: 'empty',
     source_trust_root: 'trusted-base-cross-ai-sources-sha256-v1',
-    trusted_base_sha: BASE_TIP_SHA,
-    review_harness_sha256: sha256(readFileSync(
-      join(REPO_ROOT, 'scripts', 'ai', 'run_isolated_codex_review.py'), 'utf8',
-    )),
-    scope_preparer_sha256: sha256(readFileSync(
-      join(REPO_ROOT, 'scripts', 'ai', 'prepare_cross_ai_scope.py'), 'utf8',
-    )),
-    pii_attester_sha256: sha256(readFileSync(
-      join(REPO_ROOT, 'scripts', 'ai', 'attest_cross_ai_scope_pii.py'), 'utf8',
-    )),
-    evidence_builder_sha256: sha256(readFileSync(
-      join(REPO_ROOT, 'scripts', 'ai', 'build_cross_ai_evidence.py'), 'utf8',
-    )),
+    trusted_base_sha: options.trustedBaseSha ?? BASE_TIP_SHA,
+    ...(options.sourceDigests ?? CURRENT_TRUSTED_SOURCE_DIGESTS),
     pii_review_status: 'no-sensitive-pii',
     pii_attestation_sha256: 'e'.repeat(64),
   } : null,
-  base_tip_sha: BASE_TIP_SHA,
+  base_tip_sha: options.trustedBaseSha ?? BASE_TIP_SHA,
   base_sha: BASE_SHA,
   head_sha: HEAD_SHA,
   scope_sha256: SCOPE_SHA256,
@@ -145,6 +179,7 @@ const MINIMAX_V1_EVIDENCE = {
 };
 const HISTORICAL_CLAUDE_V1_REF = evidenceRef(1010);
 const HISTORICAL_CODEX_V1_REF = evidenceRef(1011);
+const HISTORICAL_CODEX_V4_REF = evidenceRef(1012);
 const historicalV1Body = (provider, model) => JSON.stringify({
   schema: 'cross-ai-provider-evidence/v1',
   provider,
@@ -167,6 +202,43 @@ const HISTORICAL_PROVIDER_V1_EVIDENCE = {
     historicalV1Body('openai', 'gpt-5.6-sol'),
     HISTORICAL_PROVIDER_V1_MS,
   ),
+};
+const historicalCodexV4Body = JSON.stringify({
+  ...JSON.parse(evidenceBody(
+    'openai',
+    'gpt-5.6-sol',
+    '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE',
+    {
+      trustedBaseSha: HISTORICAL_TRUSTED_BASE_SHA,
+      sourceDigests: HISTORICAL_TRUSTED_SOURCE_DIGESTS,
+    },
+  )),
+  execution_provenance: {
+    ...JSON.parse(evidenceBody(
+      'openai',
+      'gpt-5.6-sol',
+      '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE',
+      {
+        trustedBaseSha: HISTORICAL_TRUSTED_BASE_SHA,
+        sourceDigests: HISTORICAL_TRUSTED_SOURCE_DIGESTS,
+      },
+    )).execution_provenance,
+    thread_id: '019f7785-c66d-7992-a21a-d4097d9eb3fd',
+  },
+});
+const HISTORICAL_CODEX_V4_EVIDENCE = {
+  [HISTORICAL_CODEX_V4_REF]: evidenceComment(historicalCodexV4Body, 1_500),
+};
+const realTrustedBaseCodexV4Evidence = {
+  [HISTORICAL_CODEX_V4_REF]: evidenceComment(evidenceBody(
+    'openai',
+    'gpt-5.6-sol',
+    '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE',
+    {
+      trustedBaseSha: REAL_TRUSTED_BASE_SHA,
+      sourceDigests: REAL_TRUSTED_SOURCE_DIGESTS,
+    },
+  ), 1_500),
 };
 const CURRENT_CODEX_V1_EVIDENCE = {
   [HISTORICAL_CODEX_V1_REF]: evidenceComment(
@@ -371,7 +443,7 @@ const REVERSED_DUAL_CODEX_EVIDENCE = {
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, includeEvidenceOverride = true, trustedSourceDigests = TRUSTED_SOURCE_DIGEST_OVERRIDES, includeTrustedSourceOverride = true, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck }) {
   const event = {
     pull_request: {
       number: PR_NUMBER,
@@ -384,14 +456,10 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
   };
   const f = join(dir, 'ev.json');
   writeFileSync(f, JSON.stringify(event));
-  const evidenceFile = join(dir, 'evidence.json');
-  writeFileSync(evidenceFile, JSON.stringify(evidence));
   const cmdArgs = [
     SCRIPT,
     '--event-path',
     f,
-    '--evidence-file',
-    evidenceFile,
     '--allow-local-evidence-override',
     allowLocalOverride,
     '--derived-base-sha',
@@ -399,6 +467,16 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     '--derived-scope-sha256',
     derivedScopeSha256,
   ];
+  if (includeTrustedSourceOverride) {
+    const trustedSourceDigestsFile = join(dir, 'trusted-source-digests.json');
+    writeFileSync(trustedSourceDigestsFile, JSON.stringify(trustedSourceDigests));
+    cmdArgs.push('--trusted-source-digests-file', trustedSourceDigestsFile);
+  }
+  if (includeEvidenceOverride) {
+    const evidenceFile = join(dir, 'evidence.json');
+    writeFileSync(evidenceFile, JSON.stringify(evidence));
+    cmdArgs.push('--evidence-file', evidenceFile);
+  }
   if (Array.isArray(changedFiles)) {
     const cf = join(dir, 'changed-files.txt');
     writeFileSync(cf, changedFiles.join('\n'));
@@ -524,7 +602,10 @@ const explicitSingleMiniMaxBody =
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'AGENTS.md';
 const GATE_WORKFLOW_PATH = '.github/workflows/gate-cross-ai-audit.yml';
+const ACTIVATION_WORKFLOW_PATH = '.github/workflows/ci.yml';
 const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
+const ACTIVATION_VERIFIER_PATH = 'scripts/ai/verify_cross_ai_source_activation.py';
+const ACTIVATION_TEST_PATH = 'tests/ai/test_verify_cross_ai_source_activation.py';
 const RETIRED_MINIMAX_WRAPPER_PATH = 'scripts/ai/minimax_m3_review.py';
 const RBAC_PATH = 'kustomize/base/security/clusterrolebinding-platform-admin.yaml';
 const MIGRATION_PATH = 'services/reporting/src/main/resources/db/migration/V42__grant.sql';
@@ -867,6 +948,21 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: HISTORICAL_PROVIDER_V1_EVIDENCE }, 0],
+  ['historical Codex v4 evidence uses producer digests from its own trusted base',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: HISTORICAL_CODEX_V4_EVIDENCE }, 0],
+  ['historical Codex v4 evidence resolves producer bytes from a real git commit',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      baseSha: REAL_TRUSTED_BASE_SHA, body: explicitNoneBody,
+      changedFiles: [ROUTINE_PATH], evidence: realTrustedBaseCodexV4Evidence,
+      includeTrustedSourceOverride: false }, 0],
+  ['historical Codex v4 evidence rejects a trusted base outside PR-base ancestry',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      baseSha: REAL_TRUSTED_BASE_PARENT_SHA, body: explicitNoneBody,
+      changedFiles: [ROUTINE_PATH], evidence: realTrustedBaseCodexV4Evidence,
+      includeTrustedSourceOverride: false,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['none mode rejects a post-retirement OpenAI v1 record',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -972,6 +1068,15 @@ const cases = [
   ['explicit none mode rejects the Cross-AI gate workflow path',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [GATE_WORKFLOW_PATH] }, 1],
+  ['explicit none mode rejects the Cross-AI activation workflow path',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ACTIVATION_WORKFLOW_PATH] }, 1],
+  ['explicit none mode rejects the Cross-AI activation verifier',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ACTIVATION_VERIFIER_PATH] }, 1],
+  ['explicit none mode rejects Cross-AI Python contract tests',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ACTIVATION_TEST_PATH] }, 1],
   ['explicit none mode rejects consultation governance contract-test changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [GOVERNANCE_CONTRACT_TEST_PATH] }, 1],
@@ -1167,6 +1272,10 @@ const cases = [
       body: `${explicitDualBody}${MINIMAX_RECEIPT_LINE}\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['GitHub Actions mode rejects offline evidence-file override',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, githubActions: true }, 1],
+  ['GitHub Actions mode rejects trusted-source digest override',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH], githubActions: true,
+      includeEvidenceOverride: false }, 1],
   ['local evidence-file requires explicit test override flag',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, allowLocalOverride: 'false' }, 1],
   ['normal PR + missing required consultation receipts -> fail closed',

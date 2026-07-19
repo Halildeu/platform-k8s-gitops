@@ -20,6 +20,13 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+def trusted_source_digests() -> dict[str, str]:
+    return {
+        key: hashlib.sha256((ROOT / relative_path).read_bytes()).hexdigest()
+        for key, relative_path in MODULE.TRUSTED_SOURCE_PATHS.items()
+    }
+
+
 def evidence() -> dict:
     response = "## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE"
     return {
@@ -38,18 +45,7 @@ def evidence() -> dict:
             "stderr_classification": "empty",
             "source_trust_root": "trusted-base-cross-ai-sources-sha256-v1",
             "trusted_base_sha": "a" * 40,
-            "review_harness_sha256": hashlib.sha256(
-                (ROOT / "scripts/ai/run_isolated_codex_review.py").read_bytes()
-            ).hexdigest(),
-            "scope_preparer_sha256": hashlib.sha256(
-                (ROOT / "scripts/ai/prepare_cross_ai_scope.py").read_bytes()
-            ).hexdigest(),
-            "pii_attester_sha256": hashlib.sha256(
-                (ROOT / "scripts/ai/attest_cross_ai_scope_pii.py").read_bytes()
-            ).hexdigest(),
-            "evidence_builder_sha256": hashlib.sha256(
-                (ROOT / "scripts/ai/build_cross_ai_evidence.py").read_bytes()
-            ).hexdigest(),
+            **trusted_source_digests(),
             "pii_review_status": "no-sensitive-pii",
             "pii_attestation_sha256": "e" * 64,
         },
@@ -64,14 +60,21 @@ def evidence() -> dict:
 
 
 class EvidenceValidationTests(unittest.TestCase):
+    @staticmethod
+    def validate(text: str) -> tuple[dict, str]:
+        return MODULE.validate_evidence_text(
+            text,
+            trusted_source_loader=lambda _trusted_base_sha: trusted_source_digests(),
+        )
+
     def assert_rejected(self, payload: dict) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit):
-                MODULE.validate_evidence_text(json.dumps(payload))
+                self.validate(json.dumps(payload))
 
     def test_accepts_exact_builder_schema_and_digest(self) -> None:
         text = json.dumps(evidence(), separators=(",", ":"))
-        parsed, digest = MODULE.validate_evidence_text(text)
+        parsed, digest = self.validate(text)
         self.assertEqual(parsed["provider"], "openai")
         self.assertEqual(digest, hashlib.sha256(text.encode()).hexdigest())
 
@@ -79,10 +82,32 @@ class EvidenceValidationTests(unittest.TestCase):
         payload = evidence()
         payload["requested_model"] = "gpt-5.3-codex-spark"
         payload["actual_model"] = "not-provider-attested"
-        parsed, _ = MODULE.validate_evidence_text(
+        parsed, _ = self.validate(
             json.dumps(payload, separators=(",", ":"))
         )
         self.assertEqual(parsed["requested_model"], "gpt-5.3-codex-spark")
+
+    def test_accepts_historical_producer_digests_from_evidence_trusted_base(self) -> None:
+        payload = evidence()
+        historical_digests = {
+            key: str(index) * 64
+            for index, key in enumerate(MODULE.TRUSTED_SOURCE_PATHS, start=1)
+        }
+        payload["execution_provenance"].update(historical_digests)
+        requested_shas: list[str] = []
+
+        def load_historical(trusted_base_sha: str) -> dict[str, str]:
+            requested_shas.append(trusted_base_sha)
+            return historical_digests
+
+        parsed, _ = MODULE.validate_evidence_text(
+            json.dumps(payload, separators=(",", ":")),
+            trusted_source_loader=load_historical,
+        )
+        self.assertEqual(
+            parsed["execution_provenance"]["review_harness_sha256"], "1" * 64
+        )
+        self.assertEqual(requested_shas, ["a" * 40])
 
     def test_rejects_extra_schema_key(self) -> None:
         payload = evidence()

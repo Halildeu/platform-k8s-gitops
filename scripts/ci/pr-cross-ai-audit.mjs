@@ -20,6 +20,7 @@
 
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { argv, env, exit } from 'node:process';
 
 const VALID_PROVIDERS = new Set(['claude', 'codex', 'gemini', 'other']);
@@ -68,11 +69,11 @@ const CODEX_PROVENANCE_KEYS = [
   'scope_preparer_sha256', 'source_trust_root', 'stderr_classification', 'thread_id',
   'trust_root', 'trusted_base_sha',
 ];
-const TRUSTED_SOURCE_SHA256 = new Map([
-  ['review_harness_sha256', sha256Utf8(readFileSync(new URL('../ai/run_isolated_codex_review.py', import.meta.url), 'utf8'))],
-  ['scope_preparer_sha256', sha256Utf8(readFileSync(new URL('../ai/prepare_cross_ai_scope.py', import.meta.url), 'utf8'))],
-  ['pii_attester_sha256', sha256Utf8(readFileSync(new URL('../ai/attest_cross_ai_scope_pii.py', import.meta.url), 'utf8'))],
-  ['evidence_builder_sha256', sha256Utf8(readFileSync(new URL('../ai/build_cross_ai_evidence.py', import.meta.url), 'utf8'))],
+const TRUSTED_SOURCE_PATHS = new Map([
+  ['review_harness_sha256', 'scripts/ai/run_isolated_codex_review.py'],
+  ['scope_preparer_sha256', 'scripts/ai/prepare_cross_ai_scope.py'],
+  ['pii_attester_sha256', 'scripts/ai/attest_cross_ai_scope_pii.py'],
+  ['evidence_builder_sha256', 'scripts/ai/build_cross_ai_evidence.py'],
 ]);
 const TRUSTED_CODEX_NATIVE_SHA256 = new Map([
   ['0.144.1:codex-darwin-arm64', '29915529b97697def1a957b0505e770aa6a45744435d62fc263e98d7619e167a'],
@@ -120,12 +121,14 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^CLAUDE\.md$/,
   /^docs\/context-priority-rules\.md$/,
   /^\.github\/pull_request_template\.md$/,
+  /^\.github\/workflows\/ci\.yml$/,
   /^\.github\/workflows\/gate-cross-ai-audit\.yml$/,
   /^scripts\/ci\/pr-cross-ai-audit\.mjs$/,
   // Tombstone: deleting the retired wrapper remains a governance change, and
   // any future MiniMax-named review helper cannot be reintroduced under none.
   /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|attest_cross_ai_scope_pii|build_cross_ai_evidence|post_cross_ai_evidence|run_isolated_codex_review)\.py$/,
+  /^scripts\/ai\/(?:prepare_cross_ai_scope|attest_cross_ai_scope_pii|build_cross_ai_evidence|post_cross_ai_evidence|run_isolated_codex_review|verify_cross_ai_source_activation)\.py$/,
+  /^tests\/ai\/test_.*\.py$/,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];
@@ -326,6 +329,21 @@ function readEvidenceOverrides(args) {
   const parsed = JSON.parse(readFileSync(args['evidence-file'], 'utf8'));
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
     throw new Error('evidence-file object map olmalı');
+  }
+  return parsed;
+}
+
+function readTrustedSourceDigestOverrides(args) {
+  if (!args['trusted-source-digests-file']) return {};
+  if (args['allow-local-evidence-override'] !== 'true') {
+    throw new Error('trusted-source-digests-file yalnız explicit local test override ile kullanılabilir');
+  }
+  if (env.GITHUB_ACTIONS === 'true') {
+    throw new Error('trusted-source-digests-file GitHub Actions event modunda yasaktır');
+  }
+  const parsed = JSON.parse(readFileSync(args['trusted-source-digests-file'], 'utf8'));
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('trusted-source-digests-file object map olmalı');
   }
   return parsed;
 }
@@ -593,6 +611,42 @@ function sha256Utf8(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+function trustedSourceDigestsAtCommit(trustedBaseSha, trustAnchorSha, overrides = {}) {
+  if (!COMMIT_SHA_RE.test(trustedBaseSha || '') || !COMMIT_SHA_RE.test(trustAnchorSha || '')) {
+    return null;
+  }
+  const normalizedTrustedBase = trustedBaseSha.toLowerCase();
+  const overridden = overrides[normalizedTrustedBase];
+  if (overridden !== undefined) {
+    const keys = overridden && typeof overridden === 'object' && !Array.isArray(overridden)
+      ? Object.keys(overridden).sort()
+      : [];
+    const expectedKeys = [...TRUSTED_SOURCE_PATHS.keys()].sort();
+    if (
+      keys.join(',') !== expectedKeys.join(',')
+      || expectedKeys.some((key) => !SHA256_RE.test(overridden[key] || ''))
+    ) return null;
+    return new Map(expectedKeys.map((key) => [key, overridden[key].toLowerCase()]));
+  }
+  try {
+    execFileSync(
+      'git',
+      ['merge-base', '--is-ancestor', normalizedTrustedBase, trustAnchorSha.toLowerCase()],
+      { stdio: 'ignore', timeout: 10_000 },
+    );
+    return new Map([...TRUSTED_SOURCE_PATHS].map(([key, path]) => {
+      const bytes = execFileSync(
+        'git',
+        ['show', `${normalizedTrustedBase}:${path}`],
+        { encoding: null, stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000, maxBuffer: 2_000_000 },
+      );
+      return [key, createHash('sha256').update(bytes).digest('hex')];
+    }));
+  } catch {
+    return null;
+  }
+}
+
 function parseProviderResponseVerdict(response) {
   if (typeof response !== 'string') return null;
   const matches = [...response.matchAll(/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/gm)];
@@ -737,6 +791,13 @@ function parseEvidenceComment(comment, expected, expectedOwner, options = {}) {
   const expectedNativeSha = expected.provider === 'openai' && provenance
     ? TRUSTED_CODEX_NATIVE_SHA256.get(`${provenance.cli_version}:${provenance.cli_native_target}`)
     : undefined;
+  const trustedSourceDigests = expected.provider === 'openai' && provenance
+    ? trustedSourceDigestsAtCommit(
+        provenance.trusted_base_sha,
+        options.trustedSourceAnchorSha,
+        options.trustedSourceDigestOverrides,
+      )
+    : null;
   const currentCodexProvenanceMatches = expected.provider === 'openai'
     ? Boolean(
       provenance
@@ -749,7 +810,8 @@ function parseEvidenceComment(comment, expected, expectedOwner, options = {}) {
       && provenance.trusted_base_sha === evidence.base_tip_sha?.toLowerCase()
       && provenance.pii_review_status === 'no-sensitive-pii'
       && SHA256_RE.test(provenance.pii_attestation_sha256 || '')
-      && [...TRUSTED_SOURCE_SHA256].every(([key, digest]) => provenance[key] === digest)
+      && trustedSourceDigests
+      && [...trustedSourceDigests].every(([key, digest]) => provenance[key] === digest)
       && ['empty', 'allowlisted-model-cache-schema-warning-v1'].includes(provenance.stderr_classification)
       && provenance.cli_native_sha256 === expectedNativeSha
     )
@@ -800,6 +862,7 @@ function parseEvidenceComment(comment, expected, expectedOwner, options = {}) {
 
 function evidenceMatches(
   comment, receipt, expected, expectedOwner, issueNumber, baseTip, base, head, scope,
+  trustedSourceDigestOverrides,
 ) {
   if (
     !comment
@@ -809,6 +872,8 @@ function evidenceMatches(
   const parsed = parseEvidenceComment(comment, expected, expectedOwner, {
     issueNumber,
     binding: { baseTip, base, head, scope },
+    trustedSourceAnchorSha: baseTip,
+    trustedSourceDigestOverrides,
   });
   return Boolean(
     parsed
@@ -872,7 +937,11 @@ async function loadPullRequestEvidenceComments(prMeta, evidenceOverrides) {
 }
 
 async function appendPriorRevisionFinding(
-  findings, prMeta, evidenceOverrides, selectedEvidenceRefs = new Set(),
+  findings,
+  prMeta,
+  evidenceOverrides,
+  trustedSourceDigestOverrides,
+  selectedEvidenceRefs = new Set(),
 ) {
   const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
   const baseTip = prMeta?.baseSha || '';
@@ -963,7 +1032,9 @@ async function appendPriorRevisionFinding(
           issueNumber: prMeta.issueNumber,
           enforceFreshness: false,
           allowLegacyV3: true,
-      })
+          trustedSourceAnchorSha: baseTip,
+          trustedSourceDigestOverrides,
+        })
       : null;
     if (!parsed) {
       invalidCandidates.push(comment?.ref || 'missing-ref');
@@ -982,6 +1053,8 @@ async function appendPriorRevisionFinding(
       const current = parseEvidenceComment(comment, expected, expectedOwner, {
         issueNumber: prMeta.issueNumber,
         binding: { baseTip, base, head: parsed.evidence.head_sha, scope },
+        trustedSourceAnchorSha: baseTip,
+        trustedSourceDigestOverrides,
       });
       records.push({
         provider: parsed.evidence.provider,
@@ -1076,6 +1149,7 @@ async function appendConsultationFindings(
   fields,
   prMeta,
   evidenceOverrides,
+  trustedSourceDigestOverrides,
   receiptFields = Object.keys(CONSULTATION_RECEIPTS),
 ) {
   const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
@@ -1177,6 +1251,7 @@ async function appendConsultationFindings(
     const pass = shapePass && evidenceMatches(
       evidenceComment, receipt, expected, expectedOwner,
       prMeta?.issueNumber, baseTip, base, commit, scope,
+      trustedSourceDigestOverrides,
     );
     findings.push({
       check: field.replaceAll(' ', '_'),
@@ -1193,7 +1268,9 @@ async function appendConsultationFindings(
   });
 }
 
-async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) {
+async function auditExplicitConsultationMode(
+  fields, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+) {
   const findings = [];
   const mode = (fields['consultation mode'] || '').trim().toLowerCase();
   const reason = (fields['consultation reason'] || '').trim();
@@ -1294,7 +1371,9 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
         ? 'none mode binding, verdict veya risk trigger taşımıyor'
         : `none mode outcome/binding field taşıyamaz: ${presentOutcomeFields.join(', ')}`,
     });
-    await appendPriorRevisionFinding(findings, prMeta, evidenceOverrides);
+    await appendPriorRevisionFinding(
+      findings, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+    );
     return findings;
   }
 
@@ -1399,6 +1478,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       fields,
       prMeta,
       evidenceOverrides,
+      trustedSourceDigestOverrides,
       selectedReceipts,
     );
   }
@@ -1409,13 +1489,19 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
         .filter(Boolean),
     );
     await appendPriorRevisionFinding(
-      findings, prMeta, evidenceOverrides, selectedEvidenceRefs,
+      findings,
+      prMeta,
+      evidenceOverrides,
+      trustedSourceDigestOverrides,
+      selectedEvidenceRefs,
     );
   }
   return findings;
 }
 
-async function audit(body, prMeta = null, evidenceOverrides = {}) {
+async function audit(
+  body, prMeta = null, evidenceOverrides = {}, trustedSourceDigestOverrides = {},
+) {
   const findings = [];
   const section = extractCrossAiSection(body);
   if (!section) {
@@ -1441,7 +1527,9 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
       : `Doğrulanmamış/retired receipt alanı yasaktır: ${forbiddenFields.join(', ')}`,
   });
   if (Object.hasOwn(fields, 'consultation mode')) {
-    findings.push(...await auditExplicitConsultationMode(fields, prMeta, evidenceOverrides));
+    findings.push(...await auditExplicitConsultationMode(
+      fields, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+    ));
     return findings;
   }
 
@@ -1556,7 +1644,9 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   }
 
   if (!consultationExempt) {
-    await appendConsultationFindings(findings, fields, prMeta, evidenceOverrides);
+    await appendConsultationFindings(
+      findings, fields, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+    );
   }
 
   // Check 4: Codex thread format — Codex `019e2693` MED-3 absorb
@@ -1618,7 +1708,9 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
   }
 
   if (consultationExempt) {
-    await appendPriorRevisionFinding(findings, prMeta, evidenceOverrides);
+    await appendPriorRevisionFinding(
+      findings, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+    );
   }
 
   return findings;
@@ -1901,6 +1993,7 @@ function report(findings) {
 const args = parseArgs();
 const { body, prMeta } = loadInput(args);
 const evidenceOverrides = readEvidenceOverrides(args);
+const trustedSourceDigestOverrides = readTrustedSourceDigestOverrides(args);
 let findings;
 if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
   console.log(
@@ -1915,7 +2008,9 @@ if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
     );
     findings = auditAutomation(body, prMeta);
   } else {
-    findings = await audit(body, prMeta, evidenceOverrides);
+    findings = await audit(
+      body, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+    );
   }
 }
 const ok = report(findings);

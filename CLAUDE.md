@@ -103,6 +103,11 @@ mavis communication peers
 - Politika aktivasyonundan sonra owner-authored PR yorumlarını düzenleme;
   evidence/history yorumu edit edilirse gate fail-closed olur. Tarihsel
   docs-only muafiyeti açık `REVISE` geçmişini atlayamaz.
+- Tarihsel v4 evidence producer digest'ini current checkout'tan değil, kaydın
+  kendi immutable `trusted_base_sha` commit'inden doğrula; trusted base mevcut
+  PR base'inin atası değilse fail-closed kal. Producer zincirini ilk ekleyen PR
+  kendi v4 receipt'ını üretemez; yeni sözleşme ancak merge sonrası `main` push
+  `cross-ai-source-trust-activation/v1` kontrolü geçince aktif sayılır.
 - Varsayımsal senaryoyu yalnız yol/opsiyon keşfinde ve açıkça non-authoritative
   kullan. Kesin review'da yalnız mevcut exact scope'tan somut, yeniden
   üretilebilir bulgu yaz; “ileride gevşetilirse/olabilir/potansiyel” iddiasını

@@ -14,12 +14,14 @@ import json
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 THREAD_ID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
@@ -113,6 +115,12 @@ PROVIDER_EXECUTION_PROFILES = {
 PROVIDER_MODELS = {
     "openai": ("gpt-5.3-codex-spark", "gpt-5.6-sol"),
 }
+TRUSTED_SOURCE_PATHS = {
+    "review_harness_sha256": "scripts/ai/run_isolated_codex_review.py",
+    "scope_preparer_sha256": "scripts/ai/prepare_cross_ai_scope.py",
+    "pii_attester_sha256": "scripts/ai/attest_cross_ai_scope_pii.py",
+    "evidence_builder_sha256": "scripts/ai/build_cross_ai_evidence.py",
+}
 
 
 def fail(code: str) -> NoReturn:
@@ -120,7 +128,36 @@ def fail(code: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def validate_evidence_text(text: str) -> tuple[dict, str]:
+def trusted_source_digests_at_commit(
+    trusted_base_sha: str,
+    repo_root: Path | None = None,
+) -> dict[str, str] | None:
+    if COMMIT_SHA_RE.fullmatch(trusted_base_sha) is None:
+        return None
+    root = repo_root or Path(__file__).resolve().parents[2]
+    digests: dict[str, str] = {}
+    for key, relative_path in TRUSTED_SOURCE_PATHS.items():
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(root), "show", f"{trusted_base_sha}:{relative_path}"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0:
+            return None
+        digests[key] = hashlib.sha256(result.stdout).hexdigest()
+    return digests
+
+
+def validate_evidence_text(
+    text: str,
+    trusted_source_loader: Callable[[str], dict[str, str] | None]
+    = trusted_source_digests_at_commit,
+) -> tuple[dict, str]:
     encoded = text.encode("utf-8")
     if not encoded or len(encoded) > MAX_EVIDENCE_BYTES:
         fail("invalid_evidence_size")
@@ -150,7 +187,9 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         provenance.get("schema") != "codex-native-execution-provenance/v2"
         or provenance.get("trust_root") != CODEX_NATIVE_TRUST_ROOT
         or provenance.get("source_trust_root") != SOURCE_TRUST_ROOT
-        or provenance.get("trusted_base_sha") != evidence.get("base_tip_sha", "").lower()
+        or COMMIT_SHA_RE.fullmatch(evidence.get("base_tip_sha", "")) is None
+        or provenance.get("trusted_base_sha")
+        != evidence.get("base_tip_sha", "").lower()
         or provenance.get("pii_review_status") != "no-sensitive-pii"
         or not isinstance(provenance.get("pii_attestation_sha256"), str)
         or SHA256_RE.fullmatch(provenance["pii_attestation_sha256"]) is None
@@ -166,21 +205,18 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         or native_sha256 != pin
     ):
         fail("invalid_execution_provenance")
-    source_root = Path(__file__).resolve().parents[2]
-    source_paths = {
-        "review_harness_sha256": "scripts/ai/run_isolated_codex_review.py",
-        "scope_preparer_sha256": "scripts/ai/prepare_cross_ai_scope.py",
-        "pii_attester_sha256": "scripts/ai/attest_cross_ai_scope_pii.py",
-        "evidence_builder_sha256": "scripts/ai/build_cross_ai_evidence.py",
-    }
-    for key, relative_path in source_paths.items():
-        try:
-            expected_digest = hashlib.sha256(
-                (source_root / relative_path).read_bytes()
-            ).hexdigest()
-        except OSError:
-            fail("invalid_execution_provenance")
-        if provenance.get(key) != expected_digest:
+    expected_source_digests = trusted_source_loader(evidence["base_tip_sha"].lower())
+    if (
+        not isinstance(expected_source_digests, dict)
+        or set(expected_source_digests) != set(TRUSTED_SOURCE_PATHS)
+        or any(
+            not isinstance(value, str) or SHA256_RE.fullmatch(value) is None
+            for value in expected_source_digests.values()
+        )
+    ):
+        fail("invalid_execution_provenance")
+    for key, expected_digest in expected_source_digests.items():
+        if provenance.get(key) != expected_digest.lower():
             fail("invalid_execution_provenance")
     response = evidence.get("response")
     response_digest = evidence.get("response_sha256")

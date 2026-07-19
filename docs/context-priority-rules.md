@@ -510,7 +510,11 @@ create-once yazar. Native binary SHA-256, repo-review edilmiş
 `repo-pinned-codex-native-sha256-v1` release pinsetiyle byte-exact eşleşmeden
 çağrı başlamaz. Çalışan harness, scope preparer, PII attester ve builder
 byte'ları `trusted-base-cross-ai-sources-sha256-v1` ile exact base tip'e bağlı
-olmalıdır. Scope external provider'a verilmeden önce owner-only
+olmalıdır. Poster ve CI tarihsel v4 evidence producer digest'lerini mevcut
+checkout'tan değil evidence'ın kendi immutable `trusted_base_sha` commit'inden
+okur; bu commit mevcut PR base tip'inin atası değilse evidence fail-closed olur.
+Producer güncellemesi bu nedenle daha önce geçerli olan immutable kanıtı geriye
+dönük olarak bozmaz. Scope external provider'a verilmeden önce owner-only
 `attest_cross_ai_scope_pii.py` exact digest için `no-sensitive-pii` kararı
 üretmelidir; yokluğu `tracked_pending` olur. Evidence v4 exact CLI
 version/target/native SHA-256/trust-root, producer kimlikleri, PII attestation
@@ -529,6 +533,16 @@ event'i olmadan kabul edilen policy girdisidir; `actual_model` alanında tekrar
 edilerek provider-signed model attestation varmış gibi sunulamaz. Model-tier
 enforcement (`Spark` rutin, `SOL` yüksek etkili) `requested_model` üzerinden
 yapılır ve bu sınır receipt'te açık kalır.
+
+Producer zincirini ilk kez ekleyen aktivasyon PR'ı, trusted base commit'inde
+harness/preparer/attester/builder bulunmadığı için kendi v4 evidence'ını
+üretemez ve yeni zinciri kendisiyle doğrulamış sayılmaz. Bu bootstrap delta'sı
+predecessor branch protection ve required-check sözleşmesine tabidir; ham direct
+Codex çıktısı inceleme kanıtıdır ama canonical v4 receipt değildir. Yeni politika
+yalnız merge sonrası exact `main` push checkout'unda
+`scripts/ai/verify_cross_ai_source_activation.py` tarafından üretilen
+`cross-ai-source-trust-activation/v1` sonucu geçince aktif kabul edilir. Bu
+aktivasyondan sonraki PR'lar merged trusted producer stack'i kullanır.
 
 Codex process `stderr` politikası da fail-closed'dur. Boş `stderr` kabul edilir;
 yalnız Codex 0.144.1 ile server model-cache şeması arasındaki doğrulanmış

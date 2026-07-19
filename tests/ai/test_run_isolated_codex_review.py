@@ -541,7 +541,12 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             poster_trusted,
         ):
             posted_evidence, _ = POSTER_MODULE.validate_evidence_text(
-                self.output.read_text(encoding="utf-8")
+                self.output.read_text(encoding="utf-8"),
+                trusted_source_loader=lambda trusted_base_sha: (
+                    POSTER_MODULE.trusted_source_digests_at_commit(
+                        trusted_base_sha, self.worktree
+                    )
+                ),
             )
         self.assertEqual(evidence["provider"], "openai")
         self.assertEqual(evidence["schema"], "cross-ai-provider-evidence/v4")
