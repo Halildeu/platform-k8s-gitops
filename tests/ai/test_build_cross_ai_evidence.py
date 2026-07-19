@@ -282,7 +282,7 @@ class EvidenceBuilderTests(unittest.TestCase):
                 side_effect=[self.fixture.factory.now, stale_time],
             ),
             patch.object(
-                MODULE, "load_active_authority",
+                MODULE, "load_review_submission_authority",
                 return_value=self.fixture.authority,
             ) as authority_loader,
         ):

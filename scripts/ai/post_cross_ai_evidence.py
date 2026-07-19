@@ -19,7 +19,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.ai.build_cross_ai_evidence import _scope
-from scripts.ai.cross_ai_authority import AuthorityUnavailable, load_active_authority
+from scripts.ai.cross_ai_authority import (
+    AuthorityUnavailable,
+    load_review_submission_authority,
+)
 from scripts.ai.trusted_cross_ai_evidence import (
     EVIDENCE_SCHEMA,
     TrustedEvidenceError,
@@ -79,7 +82,12 @@ def main() -> None:
         )
         if transport_model not in CODEX_MODELS:
             raise TrustedEvidenceError("transport model is outside the fixed routes")
-        authority = load_active_authority(workspace)
+        authority = load_review_submission_authority(
+            workspace,
+            expected_bindings=bindings,
+            scope_bytes=scope_bytes,
+            now=datetime.now(timezone.utc),
+        )
         validated = validate_evidence(
             evidence,
             trust_root=authority.trust_root,
