@@ -31,6 +31,25 @@ SUBJECT_SCHEMA = "acik.cross-ai-consultation-subject.v1"
 PROMPT_DOMAIN = "acik.cross-ai-direct-codex-review.v1"
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
+SENSITIVE_RESPONSE_PATTERNS = (
+    re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"),
+    re.compile(r"(?<!\d)(?:\+?90[\s().-]*)?(?:0[\s().-]*)?5\d{2}(?:[\s().-]*\d){7}(?!\d)"),
+    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"),
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    re.compile(
+        r"\b(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|"
+        r"github_pat_[A-Za-z0-9_]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|"
+        r"AIza[0-9A-Za-z_-]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|"
+        r"rk_(?:live|test)_[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{16,})\b"
+    ),
+    re.compile(
+        r"(?i)\b(?:api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|"
+        r"password|passwd|private[_-]?key)\s*[:=]\s*['\"]?[^\s'\"]{8,}"
+    ),
+    re.compile(r"(?i)https://[^\s|]*(?:hooks|webhook)[^\s|]*"),
+    re.compile(r"(?i)\b(?:set-)?cookie\s*:\s*[^\r\n]{4,}"),
+)
 EVIDENCE_KEYS = {
     "schema",
     "subject",
@@ -93,6 +112,12 @@ def expected_execution_arguments(model: str) -> list[str]:
 
 class TrustedEvidenceError(ValueError):
     pass
+
+
+def validate_response_hygiene(response: str) -> None:
+    """Reject secrets and direct personal contact data before evidence transport."""
+    if any(pattern.search(response) for pattern in SENSITIVE_RESPONSE_PATTERNS):
+        raise TrustedEvidenceError("signed Codex response contains sensitive data")
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -272,6 +297,7 @@ def validate_evidence(
     response = evidence.get("response")
     if not isinstance(response, str) or not response:
         raise TrustedEvidenceError("signed Codex response is missing")
+    validate_response_hygiene(response)
     try:
         result = parse_canonical_review_response(response)
     except PolicyError as exc:
@@ -338,5 +364,6 @@ __all__ = [
     "bytes_digest",
     "canonical_bytes",
     "expected_execution_arguments",
+    "validate_response_hygiene",
     "validate_evidence",
 ]

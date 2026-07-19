@@ -234,13 +234,44 @@ class ProviderExecutionTest(unittest.TestCase):
         )
 
     def test_direct_codex_rejects_tool_or_multiple_terminal_messages(self) -> None:
+        disallowed_items = (
+            {"id": "tool", "type": "command_execution", "command": "pwd"},
+            {"id": "tool", "type": "mcp_tool_call", "server": "repo"},
+            {"id": "tool", "type": "web_search", "query": "repository"},
+            {"id": "tool", "type": "file_change", "path": "outside-scope"},
+            {
+                "id": "tool", "type": "agent_message", "text": REVIEW_RESULT,
+                "command": "pwd",
+            },
+            {
+                "id": "tool", "type": "reasoning", "text": "reviewing",
+                "command": "pwd",
+            },
+        )
+        for item in disallowed_items:
+            with self.subTest(item_type=item["type"]):
+                with self.assertRaisesRegex(
+                    PolicyError, "PROVIDER_TOOL_EVENT_REJECTED"
+                ):
+                    DirectCodexRunner._terminal_result(
+                        self.codex_events(REVIEW_RESULT, extra_item=item)
+                    )
+
+        nonterminal = self.codex_events(REVIEW_RESULT).decode().splitlines()
+        nonterminal.insert(
+            -2,
+            json.dumps(
+                {
+                    "type": "item.started",
+                    "item": {"id": "tool", "type": "command_execution"},
+                }
+            ),
+        )
         with self.assertRaisesRegex(PolicyError, "PROVIDER_TOOL_EVENT_REJECTED"):
             DirectCodexRunner._terminal_result(
-                self.codex_events(
-                    REVIEW_RESULT,
-                    extra_item={"id": "tool", "type": "command_execution", "command": "pwd"},
-                )
+                ("\n".join(nonterminal) + "\n").encode()
             )
+
         duplicated = self.codex_events(REVIEW_RESULT).decode().splitlines()
         duplicated.insert(
             -1,

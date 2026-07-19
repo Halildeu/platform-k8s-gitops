@@ -1280,6 +1280,10 @@ def verify_activation_authorization(
             "head_sha": evidence_binding["headSha"],
             "scope_sha256": evidence_binding["scopeSha256"],
         }
+        require_equal(
+            evidence_binding["headSha"], expected_head_sha,
+            "activation/advisory head binding",
+        )
         if (
             advisory_scope_bytes is None
             or cross_ai_trust_root is None

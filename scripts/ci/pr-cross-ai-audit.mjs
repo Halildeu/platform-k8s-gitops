@@ -80,7 +80,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^config\/github-apps\//,
   /^bootstrap\/vault-policies\/common\/eso-runtime\.hcl$/,
   /^bootstrap\/vault-policies\/test\/(?:cross-ai-[^/]+|vault-config-reconciler)\.hcl$/,
-  /^scripts\/ops\/(?:bootstrap_cross_ai_transit|build_cross_ai_test_trust_root)\.py$/,
+  /^scripts\/ops\/(?:bootstrap_cross_ai_transit|build_cross_ai_(?:test_trust_root|provider_review_revocations))\.py$/,
   /^scripts\/ops\/vault-policy-reconcile\.sh$/,
   /^scripts\/faz22-remote-ops\//,
   /^scripts\/test\/faz22-6-acceptance-package-workflows-static\.sh$/,
@@ -108,10 +108,10 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^kustomize\/overlays\/test\/(?:fullats-promotion-state\.txt|kustomization\.yaml)$/,
   /^docs\/adr\/0045-signed-cross-ai-custom-deployment-protection-rule\.md$/,
   /^docs\/runbooks\/RB-cross-ai-deployment-protection-rule\.md$/,
-  // Tombstone: deleting the retired wrapper remains a governance change, and
-  // any future MiniMax-named review helper cannot be reintroduced under none.
-  /^scripts\/ai\/[^/]*minimax[^/]*\.py$/i,
-  /^scripts\/ai\/(?:prepare_cross_ai_scope|build_cross_ai_evidence|post_cross_ai_evidence|verify_cross_ai_evidence_comment)\.py$/,
+  // Every Cross-AI authority, scope, launcher, carrier and verifier module is
+  // governance-critical. Blanket this directory so a helper-only change can
+  // never downgrade itself to none or routine review.
+  /^scripts\/ai\//,
   /^tests\/ci\/test-cross-ai-automation\.mjs$/,
   /^tests\/deploy\/test_faz25_fullats_gitops_contract\.py$/,
 ];

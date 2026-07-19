@@ -623,12 +623,20 @@ class DirectCodexRunner:
             if not isinstance(item, dict):
                 reject("PROVIDER_OUTPUT_INVALID", "Codex item is invalid")
             item_type = item.get("type")
+            if item_type not in {"reasoning", "agent_message"}:
+                reject("PROVIDER_TOOL_EVENT_REJECTED", "Codex used or exposed a tool")
+            if set(item) != {"id", "type", "text"}:
+                reject(
+                    "PROVIDER_TOOL_EVENT_REJECTED",
+                    "Codex item contains fields outside the no-tool transcript contract",
+                )
+            item_id = item.get("id")
+            text = item.get("text")
+            if not isinstance(item_id, str) or not item_id or not isinstance(text, str):
+                reject("PROVIDER_OUTPUT_INVALID", "Codex item is invalid")
             if item_type == "reasoning":
                 continue
-            if item_type != "agent_message":
-                reject("PROVIDER_TOOL_EVENT_REJECTED", "Codex used or exposed a tool")
-            text = item.get("text")
-            if not isinstance(text, str) or not text:
+            if not text:
                 reject("PROVIDER_OUTPUT_INVALID", "Codex message is invalid")
             messages.append(text)
         if len(messages) != 1:

@@ -328,6 +328,11 @@ const VIEW_ONLY_CODEX_POLICY_PATHS = [
   'docs/faz-24-meeting-intelligence-plan.md',
   'docs/runbooks/RB-faz22.6-view-only-viewer-pilot-enable.md',
 ];
+const CROSS_AI_AUTHORITY_PATHS = [
+  'scripts/ai/cross_ai_authority.py',
+  'scripts/ai/trusted_cross_ai_evidence.py',
+  'scripts/ops/build_cross_ai_provider_review_revocations.py',
+];
 
 const staleCodexBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[PEER_REF].body),
@@ -795,6 +800,26 @@ const cases = [
     ],
     [
       `VIEW_ONLY Codex-only policy path accepts high-impact SOL: ${path}`,
+      { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+        body: explicitSingleBody, changedFiles: [path] },
+      0,
+    ],
+  ]),
+  ...CROSS_AI_AUTHORITY_PATHS.flatMap((path) => [
+    [
+      `Cross-AI authority path rejects none: ${path}`,
+      { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+        body: explicitNoneBody, changedFiles: [path] },
+      1,
+    ],
+    [
+      `Cross-AI authority path rejects routine Spark: ${path}`,
+      { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+        body: peerBody, changedFiles: [path] },
+      1,
+    ],
+    [
+      `Cross-AI authority path accepts high-impact SOL: ${path}`,
       { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
         body: explicitSingleBody, changedFiles: [path] },
       0,

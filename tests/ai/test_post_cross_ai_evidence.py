@@ -15,6 +15,7 @@ from scripts.ai.trusted_cross_ai_evidence import (
     TrustedEvidenceError,
     canonical_bytes,
     validate_evidence,
+    validate_response_hygiene,
 )
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import CODEX_ROUTINE_MODEL
@@ -60,6 +61,49 @@ class EvidenceValidationTests(unittest.TestCase):
             "P2\nNone\nVERDICT: REVISE"
         )
         with self.assertRaisesRegex(TrustedEvidenceError, "leaf binding mismatch"):
+            validate_evidence(
+                evidence,
+                trust_root=self.fixture.authority.trust_root,
+                revocations_envelope=self.fixture.authority.revocations_envelope,
+                expected_trust_root_sha256=(
+                    self.fixture.authority.expected_trust_root_sha256
+                ),
+                codex_executable_policy=(
+                    self.fixture.authority.codex_executable_policy
+                ),
+                expected_bindings=self.fixture.bindings,
+                scope_bytes=self.fixture.scope_bytes,
+                now=self.fixture.factory.now,
+                require_agree=False,
+            )
+
+    def test_rejects_sensitive_response_before_transport_or_signature_binding(self) -> None:
+        sensitive_values = (
+            "candidate@example.com",
+            "+90 532 123 45 67",
+            "-----BEGIN PRIVATE KEY-----",
+            "Bearer abcdefghijklmnopqrstuvwxyz",
+            "eyJabcdefgh.abcdefgh.abcdefgh",
+            "ghp_abcdefghijklmnopqrstuvwxyz",
+            "client_secret=supersecretvalue",
+            "https://example.com/hooks/secret-value",
+            "Cookie: session=secretvalue",
+        )
+        for value in sensitive_values:
+            with self.subTest(value=value.split("=")[0]):
+                with self.assertRaisesRegex(
+                    TrustedEvidenceError, "contains sensitive data"
+                ):
+                    validate_response_hygiene(f"finding contains {value}")
+
+        evidence = copy.deepcopy(self.fixture.evidence)
+        evidence["response"] = (
+            "P0\nNone\nP1\n"
+            "- P1-SENSITIVE_RESPONSE | scripts/ai/example.py:10 | "
+            "Bearer abcdefghijklmnopqrstuvwxyz\n"
+            "P2\nNone\nVERDICT: REVISE"
+        )
+        with self.assertRaisesRegex(TrustedEvidenceError, "contains sensitive data"):
             validate_evidence(
                 evidence,
                 trust_root=self.fixture.authority.trust_root,

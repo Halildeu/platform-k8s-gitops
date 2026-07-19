@@ -1211,7 +1211,7 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
                 client = self.client_for_policy(policy_value)
                 with self.assertRaisesRegex(
                     VERIFIER.EvidenceError,
-                    "scope bytes differ|subject or prompt binding mismatch",
+                    "activation/advisory head binding|scope bytes differ|subject or prompt binding mismatch",
                 ):
                     self.verify(client)
 
