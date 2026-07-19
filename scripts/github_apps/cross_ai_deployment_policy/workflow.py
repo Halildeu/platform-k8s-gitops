@@ -4,6 +4,11 @@ GitHub's deployment-protection webhook and workflow-run REST representation do
 not expose ``workflow_dispatch`` inputs.  The v1 contract therefore accepts
 only no-input, content-addressed workflows whose runner and dependency surface
 can be reproduced from the reviewed commit.
+
+The v3 contract has a separate inspector for the reviewed two-job VIEW_ONLY
+transaction.  Its dispatch inputs are permitted only because the dispatcher
+hash-binds them to the signed subject and the protected job consumes the
+same-run preflight artifact before any mutation.
 """
 
 from __future__ import annotations
@@ -84,6 +89,18 @@ class WorkflowInspection:
     runs_on_labels: tuple[str, ...]
     runner_group: str | None
     local_uses: tuple[str, ...]
+    external_uses: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TransactionWorkflowInspection:
+    workflow_sha256: str
+    dependency_lock_sha256: str
+    concurrency_group_sha256: str
+    preflight_job: str
+    governed_job: str
+    runs_on_labels: tuple[str, ...]
+    runner_group: str | None
     external_uses: tuple[str, ...]
 
 
@@ -513,4 +530,219 @@ def inspect_workflow(
     )
 
 
-__all__ = ["WorkflowInspection", "inspect_workflow"]
+def _validate_transaction_trigger(workflow: dict[str, Any]) -> None:
+    trigger = _mapping(workflow.get("on"), "on")
+    if set(trigger) != {"workflow_dispatch"}:
+        reject(
+            "TRANSACTION_WORKFLOW_TRIGGER_INVALID",
+            "transaction workflow must use only workflow_dispatch",
+        )
+    dispatch = _mapping(trigger["workflow_dispatch"], "on.workflow_dispatch")
+    if set(dispatch) != {"inputs"}:
+        reject(
+            "TRANSACTION_WORKFLOW_TRIGGER_INVALID",
+            "transaction workflow_dispatch must contain only inputs",
+        )
+    inputs = _mapping(dispatch["inputs"], "on.workflow_dispatch.inputs")
+    if set(inputs) != {
+        "confirm",
+        "device_id",
+        "device_hostname",
+        "pilot_seconds",
+        "mask_rect_bps",
+        "preflight_only",
+    }:
+        reject(
+            "TRANSACTION_WORKFLOW_INPUTS_INVALID",
+            "transaction workflow inputs differ from the v3 contract",
+        )
+    expected: dict[str, dict[str, Any]] = {
+        "confirm": {"required": "true", "type": "string"},
+        "device_id": {"required": "true", "type": "string"},
+        "device_hostname": {"required": "true", "type": "string"},
+        "pilot_seconds": {
+            "required": "true",
+            "default": "300",
+            "type": "choice",
+            "options": ["300", "600", "900", "1200", "1800"],
+        },
+        "mask_rect_bps": {
+            "required": "true",
+            "default": "7500,7500,2500,2500",
+            "type": "string",
+        },
+        "preflight_only": {
+            "required": "true",
+            "default": "false",
+            "type": "boolean",
+        },
+    }
+    for name, required in expected.items():
+        item = _mapping(inputs[name], f"on.workflow_dispatch.inputs.{name}")
+        if set(item) - {"description", *required} or any(
+            item.get(key) != value for key, value in required.items()
+        ):
+            reject(
+                "TRANSACTION_WORKFLOW_INPUTS_INVALID",
+                f"transaction input {name} is not the exact bounded contract",
+            )
+
+
+def inspect_transaction_workflow(
+    raw: bytes,
+    *,
+    stage_policy: StagePolicy,
+    environment: str,
+) -> TransactionWorkflowInspection:
+    """Inspect the one-workflow/two-job same-run transaction authority."""
+
+    workflow = _parse_yaml(raw)
+    if set(workflow) - {
+        "name",
+        "on",
+        "permissions",
+        "concurrency",
+        "env",
+        "jobs",
+    }:
+        reject(
+            "TRANSACTION_WORKFLOW_ROOT_INVALID",
+            "transaction workflow contains an unsupported root control field",
+        )
+    _validate_transaction_trigger(workflow)
+    if _mapping(workflow.get("permissions"), "permissions") != {
+        "actions": "read",
+        "contents": "read",
+        "issues": "read",
+    }:
+        reject(
+            "TRANSACTION_WORKFLOW_PERMISSIONS_INVALID",
+            "transaction workflow permissions are not exact least privilege",
+        )
+    _group, concurrency_group_sha256 = _concurrency_group(workflow)
+    jobs = _mapping(workflow.get("jobs"), "jobs")
+    if set(jobs) != {"preflight", "transaction"}:
+        reject(
+            "TRANSACTION_WORKFLOW_JOBS_INVALID",
+            "transaction workflow must contain exactly preflight and transaction jobs",
+        )
+    preflight = _mapping(jobs["preflight"], "jobs.preflight")
+    transaction = _mapping(jobs["transaction"], "jobs.transaction")
+    if "environment" in preflight or "needs" in preflight:
+        reject(
+            "TRANSACTION_PREFLIGHT_GATE_INVALID",
+            "preflight must run before and outside every protected Environment",
+        )
+    if transaction.get("needs") != "preflight" or transaction.get("if") != "${{ !inputs.preflight_only }}":
+        reject(
+            "TRANSACTION_SAME_RUN_BINDING_INVALID",
+            "protected transaction must depend on the same-run preflight",
+        )
+    if _environment_name(transaction.get("environment")) != environment:
+        reject(
+            "TRANSACTION_ENVIRONMENT_BINDING_INVALID",
+            "transaction job must bind the one governed Environment",
+        )
+    if sum(
+        1
+        for value in jobs.values()
+        if _environment_name(_mapping(value, "job").get("environment")) is not None
+    ) != 1:
+        reject(
+            "TRANSACTION_ENVIRONMENT_BINDING_INVALID",
+            "exactly one job may carry an Environment gate",
+        )
+    preflight_labels, preflight_group = _runs_on(preflight.get("runs-on"))
+    transaction_labels, transaction_group = _runs_on(transaction.get("runs-on"))
+    expected_labels = tuple(stage_policy.required_runs_on_labels)
+    expected_preflight_labels = tuple(
+        stage_policy.required_preflight_runs_on_labels
+    )
+    if (
+        preflight_labels != expected_preflight_labels
+        or transaction_labels != expected_labels
+        or preflight_group is not None
+        or stage_policy.require_runner_group != (transaction_group is not None)
+    ):
+        reject(
+            "TRANSACTION_WORKFLOW_RUNNER_MISMATCH",
+            "preflight or protected transaction runner differs from policy",
+        )
+    local: set[str] = set()
+    external: set[str] = set()
+    for job_name, job in (("preflight", preflight), ("transaction", transaction)):
+        if "continue-on-error" in job:
+            reject(
+                "TRANSACTION_CONTINUE_ON_ERROR_FORBIDDEN",
+                "transaction jobs may not continue on error",
+            )
+        for step_value in _sequence(job.get("steps"), f"jobs.{job_name}.steps"):
+            step = _mapping(step_value, f"jobs.{job_name}.steps[]")
+            if "continue-on-error" in step:
+                reject(
+                    "TRANSACTION_CONTINUE_ON_ERROR_FORBIDDEN",
+                    "transaction steps may not continue on error",
+                )
+            if "uses" in step:
+                _inspect_use(step["uses"], local=local, external=external)
+    if local:
+        reject(
+            "TRANSACTION_LOCAL_ACTION_FORBIDDEN",
+            "transaction authority must not hide execution in a local action",
+        )
+    preflight_text = yaml.safe_dump(preflight, sort_keys=True)
+    if re.search(r"\bsecrets\s*(?:[.]|\[)", preflight_text, re.IGNORECASE):
+        reject(
+            "TRANSACTION_PREFLIGHT_SECRET_FORBIDDEN",
+            "preflight must not access protected secrets",
+        )
+    raw_text = raw.decode("utf-8")
+    required_bindings = (
+        "faz22-view-only-transaction-preflight-${{ github.run_id }}-${{ github.run_attempt }}",
+        "${{ needs.preflight.outputs.preflight_artifact_name }}",
+        "${{ needs.preflight.outputs.preflight_run_attempt }}",
+        "${{ needs.preflight.outputs.preflight_sha256 }}",
+    )
+    if any(value not in raw_text for value in required_bindings):
+        reject(
+            "TRANSACTION_SAME_RUN_BINDING_INVALID",
+            "workflow lacks the exact run/attempt preflight artifact binding",
+        )
+    external_repositories = {
+        REMOTE_ACTION.fullmatch(value).group("repository").casefold()
+        for value in external
+        if REMOTE_ACTION.fullmatch(value) is not None
+    }
+    if not {
+        "actions/checkout",
+        "actions/upload-artifact",
+        "actions/download-artifact",
+    }.issubset(external_repositories):
+        reject(
+            "TRANSACTION_DEPENDENCY_INVALID",
+            "transaction workflow lacks pinned checkout/upload/download dependencies",
+        )
+    dependency_lock_sha256 = sha256_digest(
+        {
+            "domain": "acik.cross-ai-transaction-dependency-lock.v1",
+            "externalUses": sorted(external),
+        }
+    )
+    return TransactionWorkflowInspection(
+        workflow_sha256=f"sha256:{hashlib.sha256(raw).hexdigest()}",
+        dependency_lock_sha256=dependency_lock_sha256,
+        concurrency_group_sha256=concurrency_group_sha256,
+        preflight_job="preflight",
+        governed_job="transaction",
+        runs_on_labels=transaction_labels,
+        runner_group=transaction_group,
+        external_uses=tuple(sorted(external)),
+    )
+
+
+__all__ = [
+    "TransactionWorkflowInspection",
+    "WorkflowInspection",
+    "inspect_transaction_workflow",
+    "inspect_workflow",
+]

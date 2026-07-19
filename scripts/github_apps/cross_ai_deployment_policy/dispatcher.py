@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import datetime, timedelta
 from typing import Any, Callable, Protocol
 
@@ -32,6 +34,7 @@ class IntentRefDispatcher(Protocol):
         repository: str,
         workflow_path: str,
         request_id: str,
+        inputs: dict[str, Any] | None = None,
     ) -> DispatchResult: ...
 
 
@@ -137,7 +140,145 @@ class IntentDispatchOrchestrator:
         )
         return self.dispatch_stage(request_id=verified.request_id, stage="apply")
 
-    def dispatch_stage(self, *, request_id: str, stage: str) -> DispatchJob:
+    @staticmethod
+    def _transaction_inputs(
+        *, verified: VerifiedBundle, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        if verified.contract_version != "v3":
+            reject(
+                "TRANSACTION_CONTRACT_REQUIRED",
+                "single-transaction dispatch requires authority contract v3",
+            )
+        if set(values) != {
+            "confirm",
+            "device_id",
+            "device_hostname",
+            "pilot_seconds",
+            "mask_rect_bps",
+            "preflight_only",
+        }:
+            reject(
+                "TRANSACTION_INPUTS_INVALID",
+                "transaction inputs differ from the exact dispatch contract",
+            )
+        confirm = values["confirm"]
+        device_id = values["device_id"]
+        hostname = values["device_hostname"]
+        pilot_seconds = values["pilot_seconds"]
+        mask = values["mask_rect_bps"]
+        preflight_only = values["preflight_only"]
+        if (
+            confirm != "RUN_FAZ22_6_VIEW_ONLY_TRANSACTION"
+            or not isinstance(device_id, str)
+            or re.fullmatch(
+                r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-"
+                r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}",
+                device_id,
+            )
+            is None
+            or not isinstance(hostname, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{1,126}", hostname)
+            is None
+            or not isinstance(pilot_seconds, int)
+            or isinstance(pilot_seconds, bool)
+            or pilot_seconds not in {300, 600, 900, 1200, 1800}
+            or not isinstance(mask, str)
+            or preflight_only is not False
+        ):
+            reject(
+                "TRANSACTION_INPUTS_INVALID",
+                "transaction inputs are not canonical bounded attended values",
+            )
+        mask_parts = mask.split(",")
+        if (
+            len(mask_parts) != 4
+            or any(re.fullmatch(r"[0-9]{1,5}", part) is None for part in mask_parts)
+        ):
+            reject(
+                "TRANSACTION_INPUTS_INVALID",
+                "mask rectangle must be four canonical basis-point values",
+            )
+        mask_x, mask_y, mask_width, mask_height = map(int, mask_parts)
+        if (
+            mask_x > 10000
+            or mask_y > 10000
+            or mask_width < 1
+            or mask_height < 1
+            or mask_x + mask_width > 10000
+            or mask_y + mask_height > 10000
+        ):
+            reject(
+                "TRANSACTION_INPUTS_INVALID",
+                "mask rectangle is empty or outside the primary monitor",
+            )
+        subject = verified.payload["subject"]
+
+        def sha(value: str) -> str:
+            return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+        if (
+            sha(device_id) != subject["endpointIdSha256"]
+            or sha(hostname.lower()) != subject["deviceHostnameSha256"]
+            or sha(mask) != subject["maskPolicySha256"]
+            or pilot_seconds != subject["pilotSeconds"]
+        ):
+            reject(
+                "TRANSACTION_INPUT_BINDING_MISMATCH",
+                "transaction inputs differ from the signed endpoint/session subject",
+            )
+        return {
+            "confirm": confirm,
+            "device_id": device_id,
+            "device_hostname": hostname,
+            "pilot_seconds": str(pilot_seconds),
+            "mask_rect_bps": mask,
+            "preflight_only": False,
+        }
+
+    def register_and_dispatch_transaction(
+        self,
+        *,
+        envelope: dict[str, Any],
+        transaction_inputs: dict[str, Any],
+    ) -> DispatchJob:
+        current = self._now()
+        verified = self.verify_envelope(envelope)
+        inputs = self._transaction_inputs(
+            verified=verified,
+            values=transaction_inputs,
+        )
+        self.registry.register(
+            envelope=envelope,
+            verified=verified,
+            registration_principal=self.registration_principal,
+            registered_at=current,
+        )
+        subject = verified.payload["subject"]
+        live_ref = self.dispatcher.create_intent_ref(
+            installation_id=self.installation_id,
+            repository=subject["repository"],
+            request_id=verified.request_id,
+            head_sha=subject["headSha"],
+        )
+        self.registry.finalize_ref(
+            request_id=verified.request_id,
+            ref_object_id=live_ref.ref_object_id,
+            resolved_head_sha=live_ref.head_sha,
+            finalized_at=current,
+        )
+        return self.dispatch_stage(
+            request_id=verified.request_id,
+            stage="transaction",
+            workflow_inputs=inputs,
+        )
+
+    def dispatch_stage(
+        self,
+        *,
+        request_id: str,
+        stage: str,
+        workflow_inputs: dict[str, Any] | None = None,
+    ) -> DispatchJob:
         current = self._now()
         record, _, _ = self._verified_record(request_id)
         job = self.registry.queue_dispatch(
@@ -177,12 +318,26 @@ class IntentDispatchOrchestrator:
             watermark=max(run_ids, default=0),
             snapshot_at=snapshot_at,
         )
-        result = self.dispatcher.dispatch_workflow(
-            installation_id=claimed.installation_id,
-            repository=claimed.repository,
-            workflow_path=claimed.workflow_path,
-            request_id=claimed.request_id,
-        )
+        if workflow_inputs is None:
+            result = self.dispatcher.dispatch_workflow(
+                installation_id=claimed.installation_id,
+                repository=claimed.repository,
+                workflow_path=claimed.workflow_path,
+                request_id=claimed.request_id,
+            )
+        else:
+            if stage != "transaction":
+                reject(
+                    "DISPATCH_INPUT_AUTHORITY_INVALID",
+                    "workflow inputs are permitted only for the v3 transaction",
+                )
+            result = self.dispatcher.dispatch_workflow(
+                installation_id=claimed.installation_id,
+                repository=claimed.repository,
+                workflow_path=claimed.workflow_path,
+                request_id=claimed.request_id,
+                inputs=workflow_inputs,
+            )
         if result.accepted:
             if result.status is None:
                 reject("DISPATCH_STATUS_INVALID", "accepted dispatch lacks HTTP status")

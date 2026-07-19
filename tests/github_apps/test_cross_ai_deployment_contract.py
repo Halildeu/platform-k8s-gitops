@@ -209,7 +209,6 @@ class EvidenceContractTest(unittest.TestCase):
                 revocations_envelope=self.fixture.revocations_envelope,
                 now=self.fixture.now,
             )
-
     def test_rejects_provider_issuer_mismatch(self) -> None:
         bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
         review = self.factory.decode_payload(bundle["reviewEnvelopes"][-1])
@@ -679,25 +678,41 @@ class EvidenceContractV2Test(unittest.TestCase):
                 now=self.fixture.now,
             )
 
-        minimax = copy.deepcopy(self.factory.trust_root()["keys"][0])
-        minimax.update(
-            {
-                "keyId": self.factory.MINIMAX_KEY_ID,
-                "publicKeyBase64": base64.b64encode(b"\x09" * 32).decode("ascii"),
-                "providerFamily": "minimax",
-                "allowedChannels": ["direct-minimax-cli"],
-                "allowedModelIds": ["minimax/MiniMax-M3"],
-                "allowedModelIdentityClasses": ["provider-reported"],
-            }
+
+class EvidenceContractV3Test(unittest.TestCase):
+    def setUp(self) -> None:
+        self.factory = FixtureFactory("v3")
+        self.fixture = self.factory.build()
+
+    def verifier(self) -> EvidenceVerifier:
+        return EvidenceVerifier(
+            trust_root=self.fixture.trust_root,
+            revocations_envelope=self.fixture.revocations_envelope,
+            now=self.fixture.now,
+            expected_bundle_contract="v3",
         )
-        trust_root = copy.deepcopy(self.fixture.trust_root)
-        trust_root["keys"].append(minimax)
-        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_SCHEMA_INVALID"):
+
+    def test_accepts_one_transaction_bound_to_amended_2644_head(self) -> None:
+        verified = self.verifier().verify_bundle(self.fixture.bundle_envelope)
+        self.assertEqual(verified.contract_version, "v3")
+        self.assertEqual(verified.provider_families, ("openai",))
+        subject = verified.payload["subject"]
+        stages = verified.payload["workflowStages"]
+        self.assertEqual(
+            subject["headSha"], self.factory.TRANSACTION_REVIEWED_HEAD_SHA
+        )
+        self.assertEqual([stage["stage"] for stage in stages], ["transaction"])
+        self.assertEqual(len(stages[0]["authorityFiles"]), 20)
+        self.assertEqual(verified.payload["grant"]["maxRunAttempts"], 1)
+
+    def test_v3_rejects_v2_verifier_downgrade_and_authority_tamper(self) -> None:
+        with self.assertRaisesRegex(PolicyError, "DSSE_PAYLOAD_TYPE_MISMATCH"):
             EvidenceVerifier(
-                trust_root=trust_root,
+                trust_root=self.fixture.trust_root,
                 revocations_envelope=self.fixture.revocations_envelope,
                 now=self.fixture.now,
-            )
+                expected_bundle_contract="v2",
+            ).verify_bundle(self.fixture.bundle_envelope)
 
         anthropic = copy.deepcopy(self.factory.trust_root()["keys"][0])
         anthropic.update(
@@ -719,6 +734,15 @@ class EvidenceContractV2Test(unittest.TestCase):
                 now=self.fixture.now,
             )
 
+        bundle = self.factory.decode_payload(self.fixture.bundle_envelope)
+        bundle["workflowStages"][0]["authorityFiles"][0]["sha256"] = (
+            "sha256:" + "f" * 64
+        )
+        self.factory.resign_bundle(self.fixture.bundle_envelope, bundle)
+        with self.assertRaisesRegex(
+            PolicyError, "TRANSACTION_SCOPE_MISMATCH|REVIEW_SUBJECT_MISMATCH"
+        ):
+            self.verifier().verify_bundle(self.fixture.bundle_envelope)
 
 if __name__ == "__main__":
     unittest.main()

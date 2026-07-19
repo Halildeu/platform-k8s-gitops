@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import sqlite3
@@ -114,6 +116,18 @@ class BootstrapConsumption:
     runner_id: int
     response_digest: str
     consumed_at: str
+
+
+@dataclass(frozen=True)
+class IdempotentEnvelope:
+    operation: str
+    request_id: str
+    idempotency_key: str
+    request_digest: str
+    identity_digest: str
+    response_digest: str
+    envelope: dict[str, Any]
+    created_at: str
 
 
 class ContentAddressedStore:
@@ -252,7 +266,7 @@ class IntentRegistry:
                     request_id TEXT NOT NULL,
                     repository_id INTEGER NOT NULL,
                     environment TEXT NOT NULL,
-                    stage TEXT NOT NULL CHECK (stage IN ('apply', 'browser-evidence', 'compensating-rollback')),
+                    stage TEXT NOT NULL CHECK (stage IN ('apply', 'browser-evidence', 'compensating-rollback', 'transaction')),
                     stage_order INTEGER NOT NULL,
                     nonce_digest TEXT NOT NULL,
                     workflow_path TEXT NOT NULL,
@@ -351,6 +365,32 @@ class IntentRegistry:
                         REFERENCES intent_stages(request_id, stage)
                 ) STRICT;
 
+                CREATE TABLE IF NOT EXISTS stage_outcome_receipts (
+                    request_id TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    outcome_digest TEXT NOT NULL,
+                    envelope_digest TEXT NOT NULL UNIQUE,
+                    signer_key_id TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    PRIMARY KEY (request_id, stage),
+                    FOREIGN KEY (request_id, stage)
+                        REFERENCES stage_outcomes(request_id, stage)
+                ) STRICT;
+
+                CREATE TABLE IF NOT EXISTS idempotent_envelopes (
+                    operation TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    request_digest TEXT NOT NULL,
+                    identity_digest TEXT NOT NULL,
+                    response_digest TEXT NOT NULL,
+                    response_json BLOB NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (operation, request_id),
+                    UNIQUE (operation, idempotency_key),
+                    UNIQUE (response_digest)
+                ) STRICT;
+
                 CREATE TRIGGER IF NOT EXISTS intent_events_no_update
                 BEFORE UPDATE ON intent_events BEGIN
                     SELECT RAISE(ABORT, 'append-only intent events');
@@ -375,6 +415,22 @@ class IntentRegistry:
                 BEFORE DELETE ON bootstrap_consumptions BEGIN
                     SELECT RAISE(ABORT, 'bootstrap consumption is immutable');
                 END;
+                CREATE TRIGGER IF NOT EXISTS idempotent_envelopes_no_update
+                BEFORE UPDATE ON idempotent_envelopes BEGIN
+                    SELECT RAISE(ABORT, 'idempotent envelopes are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS idempotent_envelopes_no_delete
+                BEFORE DELETE ON idempotent_envelopes BEGIN
+                    SELECT RAISE(ABORT, 'idempotent envelopes are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS stage_outcome_receipts_no_update
+                BEFORE UPDATE ON stage_outcome_receipts BEGIN
+                    SELECT RAISE(ABORT, 'signed outcome receipts are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS stage_outcome_receipts_no_delete
+                BEFORE DELETE ON stage_outcome_receipts BEGIN
+                    SELECT RAISE(ABORT, 'signed outcome receipts are immutable');
+                END;
                 """
             )
             stage_columns = {
@@ -388,6 +444,7 @@ class IntentRegistry:
                 self._connection.execute(
                     "ALTER TABLE intent_stages ADD COLUMN workflow_path TEXT"
                 )
+            self._migrate_stage_contract_v3()
             intent_columns = {
                 row["name"]
                 for row in self._connection.execute("PRAGMA table_info(intents)")
@@ -450,6 +507,105 @@ class IntentRegistry:
                     SELECT RAISE(ABORT, 'signed triggering actor is required');
                 END;
                 """
+            )
+
+    def _migrate_stage_contract_v3(self) -> None:
+        """Expand the stage enum without mutating any historical intent row."""
+
+        row = self._connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'intent_stages'"
+        ).fetchone()
+        if row is None or not isinstance(row["sql"], str):
+            reject("REGISTRY_SCHEMA_INVALID", "intent stage table is unavailable")
+        if "'transaction'" in row["sql"]:
+            return
+        columns = {
+            item["name"] for item in self._connection.execute("PRAGMA table_info(intent_stages)")
+        }
+        expected = {
+            "request_id",
+            "repository_id",
+            "environment",
+            "stage",
+            "stage_order",
+            "nonce_digest",
+            "workflow_path",
+            "workflow_blob_digest",
+            "state",
+            "run_id",
+            "run_attempt",
+            "app_rule_id",
+            "reservation_id",
+            "reservation_expires_at",
+        }
+        if columns != expected:
+            reject(
+                "REGISTRY_SCHEMA_MIGRATION_REQUIRED",
+                "legacy intent stage columns cannot be migrated automatically",
+            )
+        try:
+            self._connection.execute("PRAGMA foreign_keys=OFF")
+            self._connection.executescript(
+                """
+                BEGIN IMMEDIATE;
+                CREATE TABLE intent_stages_v3 (
+                    request_id TEXT NOT NULL,
+                    repository_id INTEGER NOT NULL,
+                    environment TEXT NOT NULL,
+                    stage TEXT NOT NULL CHECK (stage IN (
+                        'apply', 'browser-evidence', 'compensating-rollback', 'transaction'
+                    )),
+                    stage_order INTEGER NOT NULL,
+                    nonce_digest TEXT NOT NULL,
+                    workflow_path TEXT,
+                    workflow_blob_digest TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN (
+                        'Available', 'Reserved', 'ApprovedPendingOutcome', 'Succeeded',
+                        'Failed', 'OutcomeOverdue', 'CallbackUnknown', 'RolledBack',
+                        'Rejected'
+                    )),
+                    run_id INTEGER,
+                    run_attempt INTEGER,
+                    app_rule_id INTEGER,
+                    reservation_id TEXT UNIQUE,
+                    reservation_expires_at TEXT,
+                    PRIMARY KEY (request_id, stage),
+                    FOREIGN KEY (request_id) REFERENCES intents(request_id)
+                ) STRICT;
+                INSERT INTO intent_stages_v3 (
+                    request_id, repository_id, environment, stage, stage_order,
+                    nonce_digest, workflow_path, workflow_blob_digest, state,
+                    run_id, run_attempt, app_rule_id, reservation_id,
+                    reservation_expires_at
+                )
+                SELECT
+                    request_id, repository_id, environment, stage, stage_order,
+                    nonce_digest, workflow_path, workflow_blob_digest, state,
+                    run_id, run_attempt, app_rule_id, reservation_id,
+                    reservation_expires_at
+                FROM intent_stages;
+                DROP TABLE intent_stages;
+                ALTER TABLE intent_stages_v3 RENAME TO intent_stages;
+                CREATE UNIQUE INDEX unique_run_rule
+                ON intent_stages(
+                    repository_id, environment, run_id, run_attempt, app_rule_id
+                ) WHERE run_id IS NOT NULL;
+                COMMIT;
+                """
+            )
+        except sqlite3.Error:
+            if self._connection.in_transaction:
+                self._connection.execute("ROLLBACK")
+            reject(
+                "REGISTRY_SCHEMA_MIGRATION_FAILED",
+                "legacy intent stage contract could not be preserved during v3 migration",
+            )
+        finally:
+            self._connection.execute("PRAGMA foreign_keys=ON")
+        if self._connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            reject(
+                "REGISTRY_SCHEMA_MIGRATION_FAILED",
+                "v3 stage migration failed the foreign-key integrity check",
             )
 
     def close(self) -> None:
@@ -601,6 +757,11 @@ class IntentRegistry:
                     row_values,
                 )
                 for stage in verified.payload["workflowStages"]:
+                    nonce_digest = (
+                        grant["transactionNonceSha256"]
+                        if stage["stage"] == "transaction"
+                        else grant["stageNonceSha256"][stage["stage"]]
+                    )
                     self._connection.execute(
                         """
                         INSERT INTO intent_stages (
@@ -615,7 +776,7 @@ class IntentRegistry:
                             subject["environment"],
                             stage["stage"],
                             stage["order"],
-                            grant["stageNonceSha256"][stage["stage"]],
+                            nonce_digest,
                             stage["workflowPath"],
                             stage["workflowBlobSha256"],
                         ),
@@ -1301,6 +1462,243 @@ class IntentRegistry:
         digest = row["outcome_digest"]
         return digest, self.cas.get_json(digest)
 
+    def get_stage_outcome_receipt(
+        self, request_id: str, stage: str
+    ) -> tuple[str, dict[str, Any]]:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT envelope_digest FROM stage_outcome_receipts "
+                "WHERE request_id = ? AND stage = ?",
+                (request_id, stage),
+            ).fetchone()
+        if row is None:
+            reject(
+                "STAGE_OUTCOME_RECEIPT_NOT_FOUND",
+                "signed stage outcome receipt is unavailable",
+            )
+        digest = row["envelope_digest"]
+        return digest, self.cas.get_json(digest)
+
+    @staticmethod
+    def _idempotent_envelope_from_row(row: sqlite3.Row) -> IdempotentEnvelope:
+        raw = bytes(row["response_json"])
+        if not 1 <= len(raw) <= 1024 * 1024:
+            reject(
+                "IDEMPOTENT_RESPONSE_INVALID",
+                "stored idempotent response exceeds its bounded size",
+            )
+        try:
+            envelope = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            reject(
+                "IDEMPOTENT_RESPONSE_INVALID",
+                "stored idempotent response is not JSON",
+            )
+        if (
+            not isinstance(envelope, dict)
+            or canonical_bytes(envelope) != raw
+            or sha256_digest(envelope) != row["response_digest"]
+        ):
+            reject(
+                "IDEMPOTENT_RESPONSE_INVALID",
+                "stored idempotent response failed integrity verification",
+            )
+        return IdempotentEnvelope(
+            operation=row["operation"],
+            request_id=row["request_id"],
+            idempotency_key=row["idempotency_key"],
+            request_digest=row["request_digest"],
+            identity_digest=row["identity_digest"],
+            response_digest=row["response_digest"],
+            envelope=envelope,
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _validate_idempotent_identity(
+        *,
+        operation: str,
+        request_id: str,
+        idempotency_key: str,
+        request_digest: str,
+        identity_digest: str,
+    ) -> None:
+        try:
+            parsed_request_id = uuid.UUID(request_id)
+        except (ValueError, AttributeError, TypeError):
+            reject("IDEMPOTENCY_REQUEST_INVALID", "request ID must be a UUID")
+        if str(parsed_request_id) != request_id:
+            reject(
+                "IDEMPOTENCY_REQUEST_INVALID",
+                "request ID must use canonical lowercase UUID text",
+            )
+        if (
+            not isinstance(operation, str)
+            or not operation.isascii()
+            or not 1 <= len(operation) <= 80
+            or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in operation)
+        ):
+            reject(
+                "IDEMPOTENCY_OPERATION_INVALID",
+                "idempotency operation is invalid",
+            )
+        ContentAddressedStore._hex(idempotency_key)
+        ContentAddressedStore._hex(request_digest)
+        ContentAddressedStore._hex(identity_digest)
+
+    def _find_idempotent_envelope(
+        self,
+        *,
+        operation: str,
+        request_id: str,
+        idempotency_key: str,
+        request_digest: str,
+        identity_digest: str,
+    ) -> IdempotentEnvelope | None:
+        rows = self._connection.execute(
+            """
+            SELECT * FROM idempotent_envelopes
+            WHERE operation = ? AND (request_id = ? OR idempotency_key = ?)
+            """,
+            (operation, request_id, idempotency_key),
+        ).fetchall()
+        if not rows:
+            return None
+        if len(rows) != 1:
+            reject(
+                "IDEMPOTENCY_CONFLICT",
+                "request ID and idempotency key resolve to different operations",
+            )
+        row = rows[0]
+        if (
+            row["request_id"] != request_id
+            or row["idempotency_key"] != idempotency_key
+            or row["request_digest"] != request_digest
+            or row["identity_digest"] != identity_digest
+        ):
+            reject(
+                "IDEMPOTENCY_CONFLICT",
+                "idempotency key was reused with a different request or identity",
+            )
+        return self._idempotent_envelope_from_row(row)
+
+    def get_idempotent_envelope(
+        self,
+        *,
+        operation: str,
+        request_id: str,
+        idempotency_key: str,
+        request_digest: str,
+        identity_digest: str,
+    ) -> IdempotentEnvelope | None:
+        self._validate_idempotent_identity(
+            operation=operation,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            request_digest=request_digest,
+            identity_digest=identity_digest,
+        )
+        with self._lock:
+            return self._find_idempotent_envelope(
+                operation=operation,
+                request_id=request_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                identity_digest=identity_digest,
+            )
+
+    def record_idempotent_envelope(
+        self,
+        *,
+        operation: str,
+        request_id: str,
+        idempotency_key: str,
+        request_digest: str,
+        identity_digest: str,
+        envelope: dict[str, Any],
+        max_response_bytes: int,
+        created_at: datetime | None = None,
+    ) -> IdempotentEnvelope:
+        self._validate_idempotent_identity(
+            operation=operation,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
+            request_digest=request_digest,
+            identity_digest=identity_digest,
+        )
+        if not 1 <= max_response_bytes <= 1024 * 1024:
+            reject(
+                "IDEMPOTENT_RESPONSE_INVALID",
+                "idempotent response size limit is invalid",
+            )
+        response_bytes = canonical_bytes(envelope)
+        if not 1 <= len(response_bytes) <= max_response_bytes:
+            reject(
+                "IDEMPOTENT_RESPONSE_INVALID",
+                "idempotent response exceeds its operation size limit",
+            )
+        response_digest = sha256_digest(envelope)
+        timestamp = utc_seconds(created_at or utc_now())
+        with self._lock:
+            self._begin()
+            try:
+                existing = self._find_idempotent_envelope(
+                    operation=operation,
+                    request_id=request_id,
+                    idempotency_key=idempotency_key,
+                    request_digest=request_digest,
+                    identity_digest=identity_digest,
+                )
+                if existing is not None:
+                    self._connection.execute("COMMIT")
+                    return existing
+                self._connection.execute(
+                    """
+                    INSERT INTO idempotent_envelopes(
+                        operation, request_id, idempotency_key, request_digest,
+                        identity_digest, response_digest, response_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        operation,
+                        request_id,
+                        idempotency_key,
+                        request_digest,
+                        identity_digest,
+                        response_digest,
+                        sqlite3.Binary(response_bytes),
+                        timestamp,
+                    ),
+                )
+                row = self._connection.execute(
+                    "SELECT * FROM idempotent_envelopes "
+                    "WHERE operation = ? AND request_id = ?",
+                    (operation, request_id),
+                ).fetchone()
+                self._connection.execute("COMMIT")
+                assert row is not None
+                return self._idempotent_envelope_from_row(row)
+            except sqlite3.IntegrityError:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                existing = self._find_idempotent_envelope(
+                    operation=operation,
+                    request_id=request_id,
+                    idempotency_key=idempotency_key,
+                    request_digest=request_digest,
+                    identity_digest=identity_digest,
+                )
+                if existing is None:
+                    reject(
+                        "IDEMPOTENCY_CONFLICT",
+                        "idempotent response lost its unique insert race",
+                    )
+                return existing
+            except Exception:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+
     def stage_approved_at(self, request_id: str, stage: str) -> str:
         with self._lock:
             row = self._connection.execute(
@@ -1482,7 +1880,7 @@ class IntentRegistry:
                 raise
 
     def _prerequisite_satisfied(self, request_id: str, stage: str) -> bool:
-        if stage == "apply":
+        if stage in {"apply", "transaction"}:
             return True
         apply = self._connection.execute(
             """
@@ -1697,6 +2095,9 @@ class IntentRegistry:
         outcome: dict[str, Any],
         outcome_digest: str,
         target_state: str,
+        outcome_envelope: dict[str, Any] | None = None,
+        outcome_envelope_digest: str | None = None,
+        outcome_signer_key_id: str | None = None,
         recorded_at: datetime | None = None,
     ) -> bool:
         """Atomically persist a verified outcome and advance the one bound stage."""
@@ -1705,6 +2106,7 @@ class IntentRegistry:
             "apply": {"Succeeded", "Failed"},
             "browser-evidence": {"Succeeded", "Failed"},
             "compensating-rollback": {"RolledBack", "Failed"},
+            "transaction": {"Succeeded", "RolledBack"},
         }
         if target_state not in allowed_targets.get(stage, set()):
             reject("STAGE_OUTCOME_STATE_INVALID", "outcome target is invalid for stage")
@@ -1725,7 +2127,14 @@ class IntentRegistry:
             or outcome.get("runId") != run_id
             or outcome.get("runAttempt") != run_attempt
             or outcome.get("sourceArtifactName")
-            != f"cross-ai-stage-outcome-{request_id}-{stage}-{run_id}-{run_attempt}"
+            != (
+                f"faz22-view-only-transaction-final-{run_id}-{run_attempt}"
+                if stage == "transaction"
+                else (
+                    f"cross-ai-stage-outcome-{request_id}-{stage}-"
+                    f"{run_id}-{run_attempt}"
+                )
+            )
             or conclusion_target != target_state
         ):
             reject(
@@ -1738,6 +2147,72 @@ class IntentRegistry:
                 "STAGE_OUTCOME_BINDING_MISMATCH", "outcome archive digest is missing"
             )
         ContentAddressedStore._hex(source_archive_sha256)
+        signed_receipt: tuple[dict[str, Any], str, str] | None = None
+        if stage == "transaction":
+            if (
+                not isinstance(outcome_envelope, dict)
+                or not isinstance(outcome_envelope_digest, str)
+                or not isinstance(outcome_signer_key_id, str)
+            ):
+                reject(
+                    "STAGE_OUTCOME_SIGNATURE_REQUIRED",
+                    "transaction outcome requires a signed coordinator receipt",
+                )
+            if (
+                set(outcome_envelope) != {"payloadType", "payload", "signatures"}
+                or outcome_envelope.get("payloadType")
+                != "application/vnd.acik.cross-ai-deployment-stage-outcome.v1+json"
+                or not isinstance(outcome_envelope.get("payload"), str)
+                or not isinstance(outcome_envelope.get("signatures"), list)
+                or len(outcome_envelope["signatures"]) != 1
+                or not isinstance(outcome_envelope["signatures"][0], dict)
+                or set(outcome_envelope["signatures"][0]) != {"keyid", "sig"}
+                or outcome_envelope["signatures"][0].get("keyid")
+                != outcome_signer_key_id
+            ):
+                reject(
+                    "STAGE_OUTCOME_SIGNATURE_INVALID",
+                    "transaction outcome receipt envelope is malformed",
+                )
+            try:
+                payload_bytes = base64.b64decode(
+                    outcome_envelope["payload"], validate=True
+                )
+                signature_bytes = base64.b64decode(
+                    outcome_envelope["signatures"][0].get("sig"), validate=True
+                )
+            except (binascii.Error, ValueError, TypeError):
+                reject(
+                    "STAGE_OUTCOME_SIGNATURE_INVALID",
+                    "transaction outcome receipt is not canonical Base64",
+                )
+            if (
+                payload_bytes != canonical_bytes(outcome)
+                or len(signature_bytes) != 64
+                or sha256_digest(outcome_envelope) != outcome_envelope_digest
+            ):
+                reject(
+                    "STAGE_OUTCOME_SIGNATURE_INVALID",
+                    "transaction outcome receipt differs from the verified outcome",
+                )
+            ContentAddressedStore._hex(outcome_envelope_digest)
+            signed_receipt = (
+                outcome_envelope,
+                outcome_envelope_digest,
+                outcome_signer_key_id,
+            )
+        elif any(
+            value is not None
+            for value in (
+                outcome_envelope,
+                outcome_envelope_digest,
+                outcome_signer_key_id,
+            )
+        ):
+            reject(
+                "STAGE_OUTCOME_SIGNATURE_INVALID",
+                "legacy stage outcome may not assert a v3 signed receipt",
+            )
         current = recorded_at or utc_now()
         timestamp = utc_seconds(current)
         with self._lock:
@@ -1803,6 +2278,23 @@ class IntentRegistry:
                             "STAGE_OUTCOME_CONFLICT",
                             "stage already has another outcome",
                         )
+                    if stage == "transaction":
+                        receipt_row = self._connection.execute(
+                            "SELECT * FROM stage_outcome_receipts "
+                            "WHERE request_id = ? AND stage = ?",
+                            (request_id, stage),
+                        ).fetchone()
+                        assert signed_receipt is not None
+                        if (
+                            receipt_row is None
+                            or receipt_row["outcome_digest"] != outcome_digest
+                            or receipt_row["envelope_digest"] != signed_receipt[1]
+                            or receipt_row["signer_key_id"] != signed_receipt[2]
+                        ):
+                            reject(
+                                "STAGE_OUTCOME_CONFLICT",
+                                "transaction signed outcome receipt is missing or changed",
+                            )
                     self._connection.execute("COMMIT")
                     return False
                 from_state = row["state"]
@@ -1852,6 +2344,10 @@ class IntentRegistry:
                             "run started after the callback reservation lease expired",
                         )
                 self.cas.put_json(outcome, expected_digest=outcome_digest)
+                if signed_receipt is not None:
+                    self.cas.put_json(
+                        signed_receipt[0], expected_digest=signed_receipt[1]
+                    )
                 if from_state in {"Reserved", "CallbackUnknown"}:
                     self._connection.execute(
                         "UPDATE intent_stages SET state = 'ApprovedPendingOutcome' "
@@ -1885,6 +2381,23 @@ class IntentRegistry:
                         timestamp,
                     ),
                 )
+                if signed_receipt is not None:
+                    self._connection.execute(
+                        """
+                        INSERT INTO stage_outcome_receipts (
+                            request_id, stage, outcome_digest, envelope_digest,
+                            signer_key_id, recorded_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            request_id,
+                            stage,
+                            outcome_digest,
+                            signed_receipt[1],
+                            signed_receipt[2],
+                            timestamp,
+                        ),
+                    )
                 self._connection.execute(
                     "UPDATE intent_stages SET state = ? WHERE request_id = ? AND stage = ?",
                     (target_state, request_id, stage),

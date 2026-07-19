@@ -7,7 +7,8 @@
 > #2638 optional-Claude branch'i superseded'dır ve oradaki Claude acceptance
 > aktarılmaz. Yeni aktif v2 yalnız separate-context direct OpenAI Codex
 > `gpt-5.6-sol xhigh`, read-only ve ephemeral leaf/trust-root kabul eder.
-> Claude, MiniMax, Cursor/UI/wrapper/fallback kabul edilmez. MiniMax içeren bir v1
+> Claude, MiniMax, Cursor/UI/wrapper/fallback kabul edilmez. Versioned v3 de
+> yalnız aynı direct OpenAI Codex leaf'ini kabul eder. MiniMax içeren bir v1
 > trust root cutoff sonrasına taşamaz; pre-cutoff kayıt yeni acceptance üretemez.
 > Aktif verifier saati cutoff'a ulaştığında MiniMax taşıyan v1 trust root'u
 > payload zamanı backdate edilse bile reddeder. Owner-gated Transit bootstrap
@@ -60,6 +61,84 @@
 > has been signed. The rule remains disabled until the reviewed Codex-only v2
 > public trust-root release/TLS, exact OpenAI Codex 5.6 SOL adapter, dispatcher App,
 > signed intent, protected workflows and one real callback are all proven.
+
+> **v3 source extension (2026-07-19):** evaluator App `4322193`, repository-only
+> installation `147158710`, receive-only observer and failed-delivery recovery
+> exist. TEST Vault is HTTPS, healthy/unsealed/audited. The owner-gated v2
+> bootstrap and public trust-root release succeeded with exactly five active
+> authority keys; MiniMax AppRole/policy is absent and its retained public key
+> is forensic-only. Trust-root digest is
+> `sha256:7023f16283e380da3b831f624451b522f327e2c3d247bf5bd3a0a36efec3b925`.
+> Provider/coordinator credentials, a signed bundle and the dispatcher App do
+> not exist. `faz22-view-only-pilot` retains human reviewer
+> `gladyatore-lab`, prevent-self-review is enabled, and no custom rule is
+> attached. New forward authority is policy-v2/bundle-v3 single transaction;
+> v2 three-stage issuance is historical-only. The #2688-stacked #2644 candidate
+> is at exact head `708846651bbc99f1995bca470e7a5012fd2dd486`, canonical scope
+> `sha256:c8ae3c5fe6a7483d13fea84f204f8efe1847bee366820acd3711f2774ece3dd7`.
+> #2502 now implements the coordinator-signed binding endpoint, immutable
+> response-loss idempotency, runtime trust/DSSE verification and final signed
+> checkpoint-chain reconciliation; its focused suite is `293/293` PASS. The
+> exact #2644 workflow is still `PROPOSED` and not rewired to the backend APIs,
+> runtime evidence artifact or same-job supervisor. Runtime Transit keys/pins,
+> persona pins, backend APIs, dispatcher/issuer provisioning, callback and live
+> canary remain absent. #2688 must first merge the new Codex-only review
+> policy to `main`; then the exact #2502 scope needs its high-impact `single`
+> receipt, PR/CI and TEST rollout. No deployment or product acceptance is
+> claimed.
+
+## 0. Forward v3 transaction boundary
+
+Use these generations literally:
+
+- v1/MiniMax: immutable forensic history only;
+- v2 three-stage bundle: historical audit and rollback compatibility only;
+- v2 trust root + `cross-ai-deployment-policy-v2` + bundle v3: the only new
+  VIEW_ONLY authorization contract.
+
+The v3 contract authorizes only
+`.github/workflows/faz22-6-view-only-viewer-transaction.yml`, stage
+`transaction`, one signed grant, one run attempt, same-run preflight, one
+protected Environment gate and in-run compensating rollback. Do not issue or
+dispatch separate `apply`, `browser-evidence` or rollback stages for a new v3
+intent. Do not treat v2 as a fallback or bypass when v3 fails.
+
+Before preparing a v3 receipt, bind exact stacked #2644 head
+`708846651bbc99f1995bca470e7a5012fd2dd486` and all 20 signed authority-file
+digests. Do not reuse the superseded `be7ba69d` or `0b157f75` candidate digests.
+The stabilized contract repairs their pre-gate mutation, refresh/console/replay,
+watchdog ownership and runner-local crash-authority defects by specifying a
+fixed-function attestor, one-use lease, external signed CAS and a bounded
+same-job-only supervisor. This source contract is not proof those services or
+workflow calls are deployed.
+
+Do not repurpose the historical runner-bootstrap endpoint. Its OIDC verifier is
+fixed to the protected Environment/self-hosted bootstrap profile and its
+authorizer rejects v3. The current CAS stores content-addressed objects but does
+not expose an authenticated checkpoint protocol. The replacement uses four
+non-interchangeable audiences: `binding`, `preflight`, `authorization` and
+`executor`. The App derives a signed handoff only from its finalized registry,
+accepted post-watermark dispatch and live run; the preflight attestor accepts
+that handoff and no caller-authored PASS/binding. The protected authorization
+job automatically refreshes stale live checks after the human wait before it
+redeems one lease. The executor can append only a monotonic signed checkpoint
+chain under that lease. No bootstrap credential, Keycloak admin token,
+kubeconfig, SSH key or self-hosted runner authority moves into an unprotected
+job.
+
+All POSTs are transactionally idempotent. An identical authenticated retry of
+the same canonical request returns the stored byte-identical envelope without a
+second authority consumption; reuse of the same request/idempotency key with a
+different body or identity is `409`. Same-job child-process restart is bounded
+to the reviewed supervisor policy and resumes only after verifying the latest
+external receipt. Runner-host/job loss is not described as resume: the watchdog
+must clean, and a new intent plus attended consent is required.
+
+Do not mint or dispatch authority until #2688 is canonical on `main`, the exact
+#2502 final scope passes the isolated Codex `gpt-5.6-sol xhigh` high-impact
+profile, #2644 uploads the exact runtime evidence package and all activation
+blockers are removed by live TEST evidence. Claude, MiniMax, Cursor, wrappers
+and UI review paths are forbidden.
 
 ## 1. What this removes — and what it does not
 
@@ -123,10 +202,12 @@ The 2026-07-17 snapshot was repository ID `1211415632`, public visibility,
 one required-reviewer rule, no custom rule, and no deployment branch policy.
 That snapshot is informational and must be refreshed before rollout.
 
-Copy `config/github-apps/cross-ai-deployment-policy.example.json` to the
-mounted configuration location and replace all `90000000x` sentinels with live
-numeric IDs. Phase transitions are explicit policy changes; do not modify the
-same policy bytes in place while unexpired grants exist.
+For new authorization, copy
+`config/github-apps/cross-ai-deployment-policy-v2.example.json` to the mounted
+configuration location and replace every `90000000x` sentinel with live
+numeric IDs. The older policy example is not a v3 template. Phase transitions
+are explicit policy changes; do not modify the same policy bytes in place while
+unexpired grants exist.
 
 ## 4. Vault Transit issuer boundary
 
@@ -277,6 +358,72 @@ The evaluator's Transit client requires a canonical HTTPS Vault origin. The
 loopback HTTP address above is accepted only by the attended owner bootstrap.
 If TEST Vault still lacks a reviewed HTTPS service identity, signed evidence
 issuance and enforcement remain disabled.
+
+### 4.2 Direct review issuance and v3 coordination
+
+The operational deployment-evidence issuer fixes the only accepted route to
+`--provider openai`; callers cannot pass a model alias or fallback. The route
+means direct `gpt-5.6-sol xhigh` in a read-only, ephemeral context with the
+honest `trusted-launch-attested` identity. Claude, MiniMax, Cursor, UI, wrappers
+and fallback have no route.
+
+Prepare the canonical, gitleaks-passed scope prompt and issuance request in a
+private directory. Both files must be current-user-owned regular files with
+exact mode `0600`. The request schema is
+`acik.cross-ai-review-issuance-request.v1` and contains only review/chain UUID,
+subject digest, round/previous digest, closure-root digest and bounded issue/
+expiry times. The Vault token is also file-only:
+
+```bash
+python3 scripts/github_apps/run_cross_ai_review_issuer.py \
+  --provider openai \
+  --workspace /REVIEWED/WORKTREE \
+  --prompt-file /run/private/openai-review-prompt.txt \
+  --request-file /run/private/openai-review-request.json \
+  --trust-root-file /run/config/cross-ai-trust-root-v2.json \
+  --expected-trust-root-sha256 'sha256:RELEASE_PIN_FROM_DUAL_CONTROL' \
+  --revocations-file /run/config/cross-ai-revocations.dsse.json \
+  --vault-origin https://127.0.0.1:8202 \
+  --vault-token-file /run/private/openai-one-use-token \
+  --vault-mount cross-ai \
+  --vault-key-name openai-codex \
+  --vault-key-version 1 \
+  --output /run/private/openai-review.dsse.json
+```
+
+The command verifies the independently configured trust-root
+pin, revocation set, active signer role/family/route and review signing time
+before it starts the provider. It signs only a schema-valid result, verifies the
+returned DSSE signature against the trust-root public key, writes a new `0600`
+file and prints only a redacted digest/verdict summary. It never prints prompt,
+provider text, token or output path and never overwrites an existing receipt.
+
+After every open finding has an exact fix and acknowledgement chain, prepare
+one private `acik.cross-ai-evidence-coordination-request.v1` object containing
+the final subject, transaction stage, runner lease, grant, review envelopes,
+closure entries, the final AGREE digest and exactly `openai`. Coordinate
+only with the distinct coordinator token:
+
+```bash
+python3 scripts/github_apps/run_cross_ai_evidence_coordinator.py \
+  --request-file /run/private/v3-coordination-request.json \
+  --trust-root-file /run/config/cross-ai-trust-root-v2.json \
+  --expected-trust-root-sha256 'sha256:RELEASE_PIN_FROM_DUAL_CONTROL' \
+  --revocations-file /run/config/cross-ai-revocations.dsse.json \
+  --expected-policy-sha256 'sha256:REVIEWED_POLICY_DIGEST' \
+  --vault-origin https://127.0.0.1:8202 \
+  --vault-token-file /run/private/coordinator-one-use-token \
+  --vault-mount cross-ai \
+  --vault-key-name coordinator \
+  --vault-key-version 1 \
+  --output /run/private/v3-deployment-bundle.dsse.json
+```
+
+The coordinator validates every provider leaf, closure, runner lease, subject,
+grant, policy and trust binding before returning a bundle. A wrong/stale pin or
+wrong role/provider key fails before provider execution or Transit signing.
+Issuer and coordinator credentials are never shared, reused or placed in argv,
+environment, Git, GitHub artifacts, issue comments or chat.
 
 ## 5. Service start and phase safety
 
@@ -503,7 +650,7 @@ and cannot consume the key. A later reviewed enforcement overlay must select
 the property explicitly and prove ESO readiness plus redacted hash alignment.
 Production Vault, root-token recovery and raw PEM output remain forbidden.
 
-### 5.2.1 Source-ready intent dispatcher
+### 5.2.1 Source-ready v3 transaction dispatcher
 
 The dispatcher CLI is source-ready but must not be invoked against the live
 repository until the separate dispatcher App, tag ruleset/egress deny rules,
@@ -522,12 +669,16 @@ python3 scripts/github_apps/run_cross_ai_intent_dispatcher.py \
   --github-app-id "$DISPATCHER_GITHUB_APP_ID" \
   --github-app-key-file /run/secrets/dispatcher-github-app.pem \
   --installation-id "$DISPATCHER_INSTALLATION_ID" \
-  register-and-dispatch-apply \
-  --bundle-file /run/evidence/cross-ai-deployment-bundle.dsse.json
+  register-and-dispatch-transaction \
+  --bundle-file /run/evidence/cross-ai-deployment-bundle-v3.dsse.json \
+  --transaction-input-file /run/private/view-only-transaction-inputs.json
 ```
 
-The key and bundle are file mounts; never place their contents in arguments,
-logs, Git or chat. Exit `0` means GitHub accepted the dispatch with empty 204.
+The key and bundle are file mounts. The transaction-input file is a bounded,
+regular, non-symlink file with mode `0600`; it carries the exact device,
+hostname, pilot and mask values whose digests are already signed by the v3
+subject. Never place any file contents in arguments, logs, Git or chat. Exit
+`0` means GitHub accepted the dispatch with empty 204.
 Exit `3` means a durable non-accepted state such as `Uncertain`; it is not a
 retry signal. `Sending`, `Uncertain` and `Rejected` are never automatically
 posted again. Use `reconcile-dispatch` only to read live GitHub truth; it can
@@ -535,7 +686,13 @@ accept an ambiguous job only when exactly one signed-intent-bound run exists.
 Issue a new signed request ID when liveness must be recovered after a
 fail-closed no-run result.
 
-### 5.2.2 Source-ready runner bootstrap
+### 5.2.2 Historical v2 runner bootstrap boundary
+
+The remainder of this subsection documents the retired three-stage runner
+bootstrap for immutable rollback compatibility. It is not a v3 dispatch
+recipe. New v3 operation uses the single #2644 workflow and its same-run
+preflight/transaction binding; never graft the separate v2 apply, browser or
+rollback bootstrap sequence onto that transaction.
 
 Each protected no-input workflow must declare workflow-level
 `permissions.id-token: write`. Its governed job may run only one pinned
@@ -675,20 +832,48 @@ material. The digest is an explicit release-time pin produced independently
 of the mounted trust-root file. The example above shows argument names, not a
 live invocation.
 
-`--mode enforce` is accepted only when policy, trust, revocation, registry,
-CAS and GitHub App dependencies are all present. Enforcement reserves the
+V3 enforcement adds the coordinator outcome signer. The token is a mounted
+owner-only file, never an argument value:
+
+```bash
+python3 scripts/github_apps/run_cross_ai_deployment_policy.py \
+  --mode enforce \
+  --listen 127.0.0.1 --port 8080 \
+  --db /var/lib/cross-ai/observe.sqlite3 \
+  --registry-db /var/lib/cross-ai/registry.sqlite3 \
+  --cas-dir /var/lib/cross-ai/cas \
+  --webhook-secret-file /run/secrets/github-webhook-current \
+  --policy-file /run/config/cross-ai-policy-v2.json \
+  --trust-root-file /run/config/cross-ai-trust-root-v2.json \
+  --expected-trust-root-sha256 'sha256:RELEASE_PIN_FROM_DUAL_CONTROL' \
+  --revocations-file /run/config/cross-ai-revocations.dsse.json \
+  --github-app-id "$GITHUB_APP_ID" \
+  --github-app-key-file /run/secrets/github-app.pem \
+  --outcome-vault-origin https://127.0.0.1:8202 \
+  --outcome-vault-token-file /run/secrets/coordinator-vault-token \
+  --outcome-vault-mount cross-ai \
+  --outcome-vault-key-name cross-ai-coordinator-test \
+  --outcome-vault-key-version 1
+```
+
+`--mode enforce` with a v3 policy is accepted only when policy, trust,
+revocation, registry, CAS, GitHub App and every outcome-signer dependency is
+present. The signer key ID/version must equal the coordinator key already
+bound by the verified grant. Enforcement reserves the
 grant, performs a second full GitHub truth read, and moves to
 `ApprovedPendingOutcome` only after HTTP 204. Timeout, 5xx, 409 or 422 becomes
 `OutcomeOverdue`; the grant is not freed for another run and rollback remains
 blocked while the exact run attempt is non-terminal.
 
 `GET /readyz` returns HTTP 503 in enforce mode unless the outcome sweeper
-thread is alive with a recent heartbeat. The sweeper re-reads revocations,
-uses attempt-specific run and jobs endpoints, downloads exactly one bounded
-Actions artifact named
-`cross-ai-stage-outcome-<requestId>-<stage>-<run_id>-<run_attempt>`, hashes the
-archive and stores the verified canonical outcome atomically. Missed webhooks
-are therefore repaired by polling. On callback ambiguity or deadline expiry,
+thread is alive with a recent heartbeat. The v3 sweeper re-reads revocations,
+uses attempt-specific run and jobs endpoints, downloads the exact bounded final
+transaction artifact, independently verifies its GitHub artifact ID/name/
+digest and pre-rollback upload receipt, then verifies the state ledger and
+rollback proof. It synthesizes the canonical terminal stage outcome, signs it
+with the pinned coordinator Transit key, verifies the resulting DSSE envelope
+and atomically stores payload plus signed receipt. Missed webhooks are therefore
+repaired by polling. On callback ambiguity or deadline expiry,
 the state remains `OutcomeOverdue` until GitHub proves that exact attempt
 terminal; only then does `CallbackUnknown` unlock the pre-signed rollback
 stage. Never dispatch rollback merely because a timer elapsed.
@@ -701,17 +886,23 @@ reviewer has been deliberately removed.
 
 ## 6. Rollout gates
 
-1. **Phase 0:** merge schemas and negative tests. Legacy unsigned receipts
-   must reject.
+1. **Phase 0:** merge v3 schemas, authority binding, signed final-outcome
+   reconciliation and negative tests. Legacy unsigned receipts and new v2
+   three-stage grants must reject.
 2. **Phase 1:** run observe/evaluate without enabling an Environment custom
    rule. Replay at least ten redacted cases; zero false approvals.
 3. **Phase 2:** enable the App rule while retaining the current required
-   reviewer. Land dedicated no-input protected workflows, runner admission
-   lease verification and a dedicated rollback path first. Complete the
-   negative matrix and rollback drill.
+   reviewer. Land the single #2644 transaction workflow, exact authority-file
+   binding, same-run preflight, coordinator-signed final receipt and in-run
+   rollback path first. Complete permit, deny, replay, crash and rollback
+   canaries. This phase has one protected Environment wait, not the historical
+   apply-plus-browser pair.
 4. **Phase 3:** only after recorded acceptance, remove the repeated reviewer
-   from this one reversible test Environment. Retain the App rule, admin-bypass
-   prohibition, secret scope, watchdog and compensating rollback.
+   from this one reversible test Environment and only if every active provider
+   identity meets the machine-only contract. The current
+   `trusted-launch-attested` OpenAI identity keeps this phase disabled. Retain
+   the App rule, admin-bypass prohibition, secret scope, watchdog and
+   compensating rollback.
 5. **Production:** out of scope for the active v2 TEST contract; required human reviewer stays.
 
 If App availability or decision integrity is uncertain: freeze registrations,

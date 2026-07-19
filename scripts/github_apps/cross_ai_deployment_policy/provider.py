@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -28,6 +29,7 @@ from .timeutil import parse_utc
 MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_PROMPT_BYTES = 512 * 1024
 REVIEW_RESULT_SCHEMA_VERSION = "acik.cross-ai-provider-review-result.v1"
+CLAUDE_MODEL = "claude-opus-4-8"
 CODEX_MODEL = "gpt-5.6-sol"
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -507,6 +509,63 @@ class ProviderReviewIssuer:
             )
 
     @staticmethod
+    def validate_coordinates(coordinates: ReviewCoordinates) -> None:
+        for label, value in (
+            ("reviewId", coordinates.review_id),
+            ("reviewChainId", coordinates.review_chain_id),
+        ):
+            try:
+                parsed = uuid.UUID(value)
+            except (AttributeError, ValueError):
+                reject("PROVIDER_REVIEW_COORDINATES_INVALID", f"{label} is not a UUID")
+            if str(parsed) != value:
+                reject(
+                    "PROVIDER_REVIEW_COORDINATES_INVALID",
+                    f"{label} is not a canonical UUID",
+                )
+        digest_fields = (
+            ("subjectSha256", coordinates.subject_sha256),
+            ("closureRootSha256", coordinates.closure_root_sha256),
+        )
+        for label, value in digest_fields:
+            if (
+                not isinstance(value, str)
+                or len(value) != 71
+                or not value.startswith("sha256:")
+                or any(character not in "0123456789abcdef" for character in value[7:])
+            ):
+                reject(
+                    "PROVIDER_REVIEW_COORDINATES_INVALID",
+                    f"{label} is not a canonical SHA-256 digest",
+                )
+        if not isinstance(coordinates.round, int) or not 1 <= coordinates.round <= 100:
+            reject("PROVIDER_REVIEW_COORDINATES_INVALID", "round is invalid")
+        previous = coordinates.previous_round_sha256
+        if coordinates.round == 1 and previous is not None:
+            reject(
+                "PROVIDER_REVIEW_COORDINATES_INVALID",
+                "round one cannot reference a previous review",
+            )
+        if coordinates.round > 1:
+            if (
+                not isinstance(previous, str)
+                or len(previous) != 71
+                or not previous.startswith("sha256:")
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in previous[7:]
+                )
+            ):
+                reject(
+                    "PROVIDER_REVIEW_COORDINATES_INVALID",
+                    "later rounds require a canonical previous-review digest",
+                )
+        issued_at = parse_utc(coordinates.issued_at, "review.issuedAt")
+        expires_at = parse_utc(coordinates.expires_at, "review.expiresAt")
+        if expires_at <= issued_at or expires_at - issued_at > timedelta(minutes=120):
+            reject("REVIEW_LIFETIME_INVALID", "review lifetime must be within 120 minutes")
+
+    @staticmethod
     def _review_result(text: str) -> dict[str, Any]:
         payload = _provider_json(text.encode("utf-8"), "review result")
         expected = {
@@ -554,10 +613,7 @@ class ProviderReviewIssuer:
             or execution.ephemeral is not True
         ):
             reject("PROVIDER_ISSUER_POLICY_MISMATCH", "execution receipt differs from issuer policy")
-        issued_at = parse_utc(coordinates.issued_at, "review.issuedAt")
-        expires_at = parse_utc(coordinates.expires_at, "review.expiresAt")
-        if expires_at <= issued_at or expires_at - issued_at > timedelta(minutes=120):
-            reject("REVIEW_LIFETIME_INVALID", "review lifetime must be within 120 minutes")
+        self.validate_coordinates(coordinates)
         result = self._review_result(execution.result_text)
         findings_projection = {
             "verdict": result["verdict"],
@@ -608,6 +664,7 @@ class ProviderReviewIssuer:
 
 
 __all__ = [
+    "CLAUDE_MODEL",
     "CODEX_MODEL",
     "DirectCodexRunner",
     "ProviderExecutionReceipt",

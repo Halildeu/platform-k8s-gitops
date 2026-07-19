@@ -1,10 +1,13 @@
 # Cross-AI deployment policy configuration
 
-`cross-ai-deployment-policy.example.json` is a schema-valid, non-live template.
-The repository ID is the live public repository identity read on 2026-07-17.
-The three `90000000x` values are deliberate sentinels for, respectively, the
-protection-rule App ID, installation ID and dispatcher bot actor ID. They are
-not deployed identities and must never be presented as live evidence.
+`cross-ai-deployment-policy.example.json` is the historical v2 three-stage
+template. It remains for immutable audit/rollback compatibility but cannot
+authorize a new VIEW_ONLY transaction.
+
+`cross-ai-deployment-policy-v2.example.json` is the forward, schema-valid,
+non-live policy for bundle contract v3. The repository and evaluator App IDs
+reflect the reviewed TEST identity; each `90000000x` value is still a deliberate
+dispatcher sentinel, not a deployed identity and never live evidence.
 
 Before use, create an environment-specific copy outside the image, replace the
 sentinels from GitHub's live API, validate it with `load_policy`, and bind its
@@ -17,7 +20,8 @@ in the service deployment as `--expected-trust-root-sha256`. Do not derive the
 pin from the mounted trust-root file at service startup; that would make a
 tampered file self-authorizing.
 
-The example names three dedicated no-input `*-protected.yml` workflows. Their
+The historical example names three dedicated no-input `*-protected.yml`
+workflows. Their
 execution actions are pinned to immutable commit
 `ead8b151457929c7a7525ebdab2fd2b374b4f976`; all three share one literal,
 non-cancelling concurrency group and publish the exact canonical stage-outcome
@@ -26,13 +30,36 @@ on failure; the separate rollback workflow is only the pre-signed
 crash/CallbackUnknown recovery lane and checks the live watchdog bundle marker
 before destructive cleanup.
 
-The workflows are intentionally fail-closed until the one-time owner Transit
-bootstrap produces the six public keys. Their command currently pins the zero
+The forward example instead authorizes exactly one stage, `transaction`, at
+`.github/workflows/faz22-6-view-only-viewer-transaction.yml`. Its signed bundle
+must bind the exact workflow blob, dependency/concurrency digests, complete
+authority-file inventory, same-run preflight and one protected Environment
+gate. A v2 dispatcher or any of the separate protected workflows is not a v3
+fallback.
+
+The historical workflows are intentionally fail-closed until their retired
+release material is present. Their command currently pins the zero
 digest sentinel and references environment-specific policy, trust-root and
 revocation files that are deliberately absent. A separate reviewed release
 change must add those public artifacts and replace the sentinel with the
 independently computed trust-root digest. Do not substitute the mounted file's
 digest at runtime or weaken the command to accept mutable workflow inputs.
+
+Forward v3 uses the five-key public v2 trust plane: Anthropic, OpenAI,
+coordinator, revocation and runner-management. The retained MiniMax public key
+is forensic-only and has no AppRole/policy authority. The final v3 policy bytes
+and authority hashes must not be released until the exact stabilized #2644
+head is bound and the merge-time Cross-AI gate required by canonical `main`
+passes. After #2688 lands, that gate is the isolated exact-scope Codex
+high-impact profile; Claude, MiniMax, Cursor, wrappers and UI review paths are
+forbidden.
+
+`run_cross_ai_review_issuer.py` and
+`run_cross_ai_evidence_coordinator.py` are the only forward operational signing
+entry points. They require owner-only file inputs, independently pinned
+trust-root bytes and separate one-use Vault tokens; neither accepts a model
+override or MiniMax route. A schema-valid local example is not an issuance
+request and must never be signed as live authority.
 
 `cross-ai-protection-evaluator-app.example.json` and
 `cross-ai-intent-dispatcher-app.example.json` are reviewable registration

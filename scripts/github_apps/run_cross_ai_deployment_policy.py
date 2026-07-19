@@ -13,6 +13,9 @@ from scripts.github_apps.cross_ai_deployment_policy.ledger import ObserveLedger
 from scripts.github_apps.cross_ai_deployment_policy.bootstrap import (
     RunnerBootstrapAuthorizer,
 )
+from scripts.github_apps.cross_ai_deployment_policy.binding import (
+    ViewOnlyBindingAuthority,
+)
 from scripts.github_apps.cross_ai_deployment_policy.delivery_poller import (
     DeliveryPoller,
 )
@@ -30,7 +33,10 @@ from scripts.github_apps.cross_ai_deployment_policy.intent_store import (
 )
 from scripts.github_apps.cross_ai_deployment_policy.jsonutil import load_json_file
 from scripts.github_apps.cross_ai_deployment_policy.oidc import GitHubOIDCVerifier
-from scripts.github_apps.cross_ai_deployment_policy.policy import load_policy
+from scripts.github_apps.cross_ai_deployment_policy.policy import (
+    load_policy,
+    resolve_authority_contract,
+)
 from scripts.github_apps.cross_ai_deployment_policy.reconciler import (
     GitHubOutcomeReconciler,
     GitHubStageArtifactSource,
@@ -40,6 +46,7 @@ from scripts.github_apps.cross_ai_deployment_policy.server import (
     ObserveService,
     make_server,
 )
+from scripts.github_apps.cross_ai_deployment_policy.transit import VaultTransitSigner
 from scripts.github_apps.cross_ai_deployment_policy.webhook import load_secret_files
 
 
@@ -83,6 +90,11 @@ def parse_args() -> argparse.Namespace:
         help="Exact GitHub App webhook target recorded in delivery details.",
     )
     parser.add_argument("--delivery-poll-interval", type=float, default=30.0)
+    parser.add_argument("--outcome-vault-origin")
+    parser.add_argument("--outcome-vault-token-file", type=Path)
+    parser.add_argument("--outcome-vault-mount")
+    parser.add_argument("--outcome-vault-key-name")
+    parser.add_argument("--outcome-vault-key-version", type=int)
     return parser.parse_args()
 
 
@@ -122,6 +134,7 @@ def main() -> int:
     decision_client = None
     outcome_sweeper = None
     bootstrap_authorizer = None
+    binding_authority = None
     delivery_reader = None
     allowed_origins: tuple[str, ...] = (args.github_api_origin,)
     if configured:
@@ -129,6 +142,7 @@ def main() -> int:
         if args.github_api_origin not in policy.allowed_api_origins:
             raise SystemExit("GitHub API origin is not allowlisted by policy")
         trust_root = load_json_file(args.trust_root_file)
+        bundle_contract_version = resolve_authority_contract(policy, trust_root)
         token_provider = GitHubAppTokenProvider(
             app_id=args.github_app_id,
             private_key_file=args.github_app_key_file,
@@ -137,6 +151,13 @@ def main() -> int:
         reader = GitHubReader(
             token_provider=token_provider,
             api_origin=args.github_api_origin,
+        )
+        artifact_source = GitHubStageArtifactSource(
+            reader=reader,
+            downloader=GitHubArtifactDownloader(
+                token_provider=token_provider,
+                api_origin=args.github_api_origin,
+            ),
         )
         delivery_reader = GitHubHookDeliveryReader(
             token_provider=token_provider,
@@ -153,6 +174,7 @@ def main() -> int:
             trust_root=trust_root,
             expected_trust_root_sha256=args.expected_trust_root_sha256,
             revocations_loader=lambda: load_json_file(args.revocations_file),
+            artifact_source=artifact_source,
             mode=args.mode,
         )
         if args.mode == "enforce":
@@ -164,20 +186,40 @@ def main() -> int:
                 token_provider=token_provider,
                 api_origin=args.github_api_origin,
             )
+            outcome_signer = None
+            signer_args = (
+                args.outcome_vault_origin,
+                args.outcome_vault_token_file,
+                args.outcome_vault_mount,
+                args.outcome_vault_key_name,
+                args.outcome_vault_key_version,
+            )
+            if bundle_contract_version == "v3":
+                if not all(value is not None for value in signer_args):
+                    raise SystemExit(
+                        "v3 enforce mode requires every outcome Vault signer argument"
+                    )
+                outcome_signer = VaultTransitSigner(
+                    vault_origin=args.outcome_vault_origin,
+                    token_file=args.outcome_vault_token_file,
+                    mount=args.outcome_vault_mount,
+                    key_name=args.outcome_vault_key_name,
+                    key_version=args.outcome_vault_key_version,
+                )
+            elif any(value is not None for value in signer_args):
+                raise SystemExit(
+                    "outcome Vault signer arguments are valid only for v3 enforcement"
+                )
             outcome_reconciler = GitHubOutcomeReconciler(
                 installation_id=next(iter(policy.allowed_installation_ids)),
                 registry=registry,
                 github=reader,
-                artifact_source=GitHubStageArtifactSource(
-                    reader=reader,
-                    downloader=GitHubArtifactDownloader(
-                        token_provider=token_provider,
-                        api_origin=args.github_api_origin,
-                    ),
-                ),
+                artifact_source=artifact_source,
                 trust_root=trust_root,
                 expected_trust_root_sha256=args.expected_trust_root_sha256,
                 revocations_loader=lambda: load_json_file(args.revocations_file),
+                bundle_contract_version=bundle_contract_version,
+                outcome_signer=outcome_signer,
             )
             outcome_sweeper = OutcomeSweeper(
                 registry=registry,
@@ -188,6 +230,19 @@ def main() -> int:
                 installation_id=next(iter(policy.allowed_installation_ids)),
                 oidc_verifier=GitHubOIDCVerifier(),
             )
+            if bundle_contract_version == "v3":
+                assert outcome_signer is not None
+                binding_authority = ViewOnlyBindingAuthority(
+                    installation_id=next(iter(policy.allowed_installation_ids)),
+                    registry=registry,
+                    github=reader,
+                    trust_root=trust_root,
+                    expected_trust_root_sha256=args.expected_trust_root_sha256,
+                    expected_policy_sha256=policy.digest,
+                    revocations_loader=lambda: load_json_file(args.revocations_file),
+                    oidc_verifier=GitHubOIDCVerifier(),
+                    signer=outcome_signer,
+                )
         allowed_origins = policy.allowed_api_origins
     service = ObserveService(
         secrets=secrets,
@@ -199,6 +254,7 @@ def main() -> int:
         decision_client=decision_client,
         outcome_sweeper=outcome_sweeper,
         bootstrap_authorizer=bootstrap_authorizer,
+        binding_authority=binding_authority,
     )
     if args.delivery_poll:
         assert delivery_reader is not None

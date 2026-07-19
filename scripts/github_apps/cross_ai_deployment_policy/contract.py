@@ -21,6 +21,7 @@ BUNDLE_SCHEMA = ROOT / "schema/cross-ai-deployment-bundle-v1.schema.json"
 REVIEW_SCHEMA = ROOT / "schema/cross-ai-deployment-review-v1.schema.json"
 TRUST_ROOT_SCHEMA = ROOT / "schema/cross-ai-deployment-trust-root-v1.schema.json"
 BUNDLE_SCHEMA_V2 = ROOT / "schema/cross-ai-deployment-bundle-v2.schema.json"
+BUNDLE_SCHEMA_V3 = ROOT / "schema/cross-ai-deployment-bundle-v3.schema.json"
 REVIEW_SCHEMA_V2 = ROOT / "schema/cross-ai-deployment-review-v2.schema.json"
 TRUST_ROOT_SCHEMA_V2 = ROOT / "schema/cross-ai-deployment-trust-root-v2.schema.json"
 REVOCATIONS_SCHEMA = ROOT / "schema/cross-ai-deployment-revocations-v1.schema.json"
@@ -31,6 +32,7 @@ RUNNER_ADMISSION_LEASE_SCHEMA = (
 BUNDLE_PAYLOAD_TYPE = "application/vnd.acik.cross-ai-deployment-bundle.v1+json"
 REVIEW_PAYLOAD_TYPE = "application/vnd.acik.cross-ai-deployment-review.v1+json"
 BUNDLE_PAYLOAD_TYPE_V2 = "application/vnd.acik.cross-ai-deployment-bundle.v2+json"
+BUNDLE_PAYLOAD_TYPE_V3 = "application/vnd.acik.cross-ai-deployment-bundle.v3+json"
 REVIEW_PAYLOAD_TYPE_V2 = "application/vnd.acik.cross-ai-deployment-review.v2+json"
 REVOCATIONS_PAYLOAD_TYPE = (
     "application/vnd.acik.cross-ai-deployment-revocations.v1+json"
@@ -42,6 +44,8 @@ SESSION_DOMAIN = "acik.cross-ai-deployment-session.v1"
 CLOSURE_DOMAIN = "acik.cross-ai-deployment-closure.v1"
 SESSION_DOMAIN_V2 = "acik.cross-ai-deployment-session.v2"
 CLOSURE_DOMAIN_V2 = "acik.cross-ai-deployment-closure.v2"
+SESSION_DOMAIN_V3 = "acik.cross-ai-deployment-session.v3"
+CLOSURE_DOMAIN_V3 = "acik.cross-ai-deployment-closure.v3"
 MAX_GRANT_TTL = timedelta(minutes=120)
 MINIMAX_NEW_REVIEW_CUTOFF = datetime(2026, 7, 18, tzinfo=timezone.utc)
 REQUIRED_PROVIDER_ROUTES = {
@@ -127,6 +131,7 @@ class VerifiedBundle:
     final_review_digests: tuple[str, ...]
     coordinator_key_id: str
     runner_admission_lease: VerifiedRunnerAdmissionLease
+    contract_version: str
     payload: dict[str, Any]
 
 
@@ -165,6 +170,7 @@ class EvidenceVerifier:
         expected_trust_root_sha256: str | None = None,
         verification_mode: Literal["active", "forensic"] = "active",
         forensic_reference_time: datetime | None = None,
+        expected_bundle_contract: Literal["v1", "v2", "v3"] | None = None,
     ) -> None:
         self.observed_at = now or utc_now()
         if verification_mode not in {"active", "forensic"}:
@@ -193,6 +199,11 @@ class EvidenceVerifier:
         self.trust_root = trust_root
         schema_version = trust_root.get("schemaVersion")
         if schema_version == "acik.cross-ai-deployment-trust-root.v1":
+            if expected_bundle_contract not in {None, "v1"}:
+                reject(
+                    "BUNDLE_CONTRACT_DOWNGRADE",
+                    "v1 trust root cannot verify a newer authority contract",
+                )
             self.contract_version = "v1"
             self.trust_root_schema = TRUST_ROOT_SCHEMA
             self.bundle_schema = BUNDLE_SCHEMA
@@ -203,15 +214,26 @@ class EvidenceVerifier:
             self.closure_domain = CLOSURE_DOMAIN
             self.required_provider_routes = REQUIRED_PROVIDER_ROUTES
         elif schema_version == "acik.cross-ai-deployment-trust-root.v2":
-            self.contract_version = "v2"
+            self.contract_version = expected_bundle_contract or "v2"
+            if self.contract_version not in {"v2", "v3"}:
+                reject(
+                    "BUNDLE_CONTRACT_DOWNGRADE",
+                    "v2 trust root accepts only v2 or v3 evidence contracts",
+                )
             self.trust_root_schema = TRUST_ROOT_SCHEMA_V2
-            self.bundle_schema = BUNDLE_SCHEMA_V2
             self.review_schema = REVIEW_SCHEMA_V2
-            self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE_V2
             self.review_payload_type = REVIEW_PAYLOAD_TYPE_V2
-            self.session_domain = SESSION_DOMAIN_V2
-            self.closure_domain = CLOSURE_DOMAIN_V2
             self.required_provider_routes = REQUIRED_PROVIDER_ROUTES_V2
+            if self.contract_version == "v2":
+                self.bundle_schema = BUNDLE_SCHEMA_V2
+                self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE_V2
+                self.session_domain = SESSION_DOMAIN_V2
+                self.closure_domain = CLOSURE_DOMAIN_V2
+            else:
+                self.bundle_schema = BUNDLE_SCHEMA_V3
+                self.bundle_payload_type = BUNDLE_PAYLOAD_TYPE_V3
+                self.session_domain = SESSION_DOMAIN_V3
+                self.closure_domain = CLOSURE_DOMAIN_V3
         else:
             reject(
                 "TRUST_ROOT_SCHEMA_INVALID",
@@ -390,6 +412,40 @@ class EvidenceVerifier:
             reject("TRUST_ACTIVE_KEY_MISSING", f"no active {role} key is available")
         return active
 
+    def require_active_signing_key(
+        self,
+        *,
+        key_id: str,
+        role: str,
+        provider_family: str | None = None,
+        issued_at: datetime | None = None,
+    ) -> TrustKey:
+        """Fail before signing when a workload is bound to the wrong trust key."""
+
+        key = self.keys.get(key_id)
+        if key is None or key.role != role:
+            reject(
+                "TRUST_SIGNER_BINDING_MISMATCH",
+                "signer key is absent or has a different trust-root role",
+            )
+        if provider_family is not None and key.provider_family != provider_family:
+            reject(
+                "TRUST_SIGNER_BINDING_MISMATCH",
+                "signer key has a different provider attribution",
+            )
+        if provider_family is None and key.provider_family is not None:
+            reject(
+                "TRUST_SIGNER_BINDING_MISMATCH",
+                "non-provider signer unexpectedly has provider attribution",
+            )
+        if key_id not in self._active_keys(role):
+            reject(
+                "TRUST_SIGNER_NOT_ACTIVE",
+                "signer key is outside its active trust-root window",
+            )
+        self._validate_key_time(key, issued_at or self.now, "signer")
+        return key
+
     def _verify_revocations(self, envelope: dict[str, Any]) -> VerifiedEnvelope:
         verified = verify_json_envelope(
             envelope,
@@ -465,6 +521,41 @@ class EvidenceVerifier:
         grant_not_before = parse_utc(bundle["grant"]["notBefore"], "grant.notBefore")
         self._validate_key_time(coordinator, grant_not_before, "bundle")
 
+        return self._verify_bundle_payload(
+            bundle,
+            coordinator=coordinator,
+            bundle_digest=outer.envelope_digest,
+        )
+
+    def validate_bundle_payload_for_signing(
+        self,
+        bundle: dict[str, Any],
+        *,
+        coordinator_key_id: str,
+    ) -> None:
+        """Validate every leaf and binding before consuming a signing token."""
+
+        _validate_schema(bundle, self.bundle_schema, "BUNDLE_SCHEMA_INVALID")
+        grant_not_before = parse_utc(bundle["grant"]["notBefore"], "grant.notBefore")
+        coordinator = self.require_active_signing_key(
+            key_id=coordinator_key_id,
+            role="coordinator",
+            issued_at=grant_not_before,
+        )
+        self._verify_bundle_payload(
+            bundle,
+            coordinator=coordinator,
+            bundle_digest="sha256:" + ("0" * 64),
+        )
+
+    def _verify_bundle_payload(
+        self,
+        bundle: dict[str, Any],
+        *,
+        coordinator: TrustKey,
+        bundle_digest: str,
+    ) -> VerifiedBundle:
+
         subject_digest = sha256_digest(
             {
                 "subject": bundle["subject"],
@@ -496,7 +587,7 @@ class EvidenceVerifier:
 
         return VerifiedBundle(
             bundle_id=bundle_id,
-            bundle_digest=outer.envelope_digest,
+            bundle_digest=bundle_digest,
             subject_digest=subject_digest,
             request_id=request_id,
             session_digest=bundle["subject"]["sessionSha256"],
@@ -516,6 +607,7 @@ class EvidenceVerifier:
             ),
             coordinator_key_id=coordinator.key_id,
             runner_admission_lease=runner_admission_lease,
+            contract_version=self.contract_version,
             payload=bundle,
         )
 
@@ -632,6 +724,20 @@ class EvidenceVerifier:
                 "bootstrapCredentialSha256": subject["bootstrapCredentialSha256"],
                 "endpointIdSha256": subject["endpointIdSha256"],
                 "operatorIdSha256": subject["operatorIdSha256"],
+                **(
+                    {
+                        "deviceHostnameSha256": subject["deviceHostnameSha256"],
+                        "pilotOwnerPolicySha256": subject["pilotOwnerPolicySha256"],
+                        "maskPolicySha256": subject["maskPolicySha256"],
+                        "runtimeImageDigest": subject["runtimeImageDigest"],
+                        "pilotSeconds": subject["pilotSeconds"],
+                        "transactionScopeSha256": subject[
+                            "transactionScopeSha256"
+                        ],
+                    }
+                    if self.contract_version == "v3"
+                    else {}
+                ),
             }
         )
         if subject["sessionSha256"] != expected_session:
@@ -642,16 +748,64 @@ class EvidenceVerifier:
 
         stages = bundle["workflowStages"]
         stage_names = [stage["stage"] for stage in stages]
-        if stage_names != ["apply", "browser-evidence", "compensating-rollback"]:
-            reject("STAGE_SEQUENCE_INVALID", "v1 stage order is not canonical")
-        if [stage["order"] for stage in stages] != [1, 2, 3]:
-            reject("STAGE_SEQUENCE_INVALID", "v1 stage order numbers are invalid")
-        if stages[0].get("dependsOn", []) != []:
-            reject("STAGE_SEQUENCE_INVALID", "apply must not depend on another stage")
-        if stages[1].get("dependsOn") != ["apply"]:
-            reject("STAGE_SEQUENCE_INVALID", "browser-evidence must depend on apply")
-        if stages[2].get("dependsOnFailure") != ["apply"]:
-            reject("STAGE_SEQUENCE_INVALID", "rollback must be failure-bound to apply")
+        if self.contract_version == "v3":
+            if stage_names != ["transaction"] or [stage["order"] for stage in stages] != [1]:
+                reject(
+                    "TRANSACTION_SEQUENCE_INVALID",
+                    "v3 requires exactly one signed transaction workflow",
+                )
+            transaction = stages[0]
+            if (
+                transaction["workflowPath"]
+                != ".github/workflows/faz22-6-view-only-viewer-transaction.yml"
+                or transaction["requiresSameRunPreflight"] is not True
+                or transaction["requiresOneProtectedEnvironmentGate"] is not True
+            ):
+                reject(
+                    "TRANSACTION_AUTHORITY_INVALID",
+                    "v3 transaction authority shape is not canonical",
+                )
+            authority_paths = [entry["path"] for entry in transaction["authorityFiles"]]
+            if len(authority_paths) != len(set(authority_paths)):
+                reject(
+                    "TRANSACTION_AUTHORITY_INVALID",
+                    "v3 transaction authority paths must be unique",
+                )
+            expected_scope = sha256_digest(
+                {
+                    "domain": "acik.cross-ai-transaction-authority-set.v1",
+                    "files": sorted(
+                        transaction["authorityFiles"], key=lambda entry: entry["path"]
+                    ),
+                }
+            )
+            if subject["transactionScopeSha256"] != expected_scope:
+                reject(
+                    "TRANSACTION_SCOPE_MISMATCH",
+                    "transaction authority set differs from the signed subject",
+                )
+            if (
+                grant["sequence"] != ["transaction"]
+                or grant["failureTransition"]
+                != "transaction->compensating-rollback-in-run"
+                or grant["authorizationMode"] != "dual-gate"
+                or grant["maxRunAttempts"] != 1
+            ):
+                reject(
+                    "TRANSACTION_GRANT_INVALID",
+                    "v3 grant is not one dual-gate same-run transaction",
+                )
+        else:
+            if stage_names != ["apply", "browser-evidence", "compensating-rollback"]:
+                reject("STAGE_SEQUENCE_INVALID", "v1/v2 stage order is not canonical")
+            if [stage["order"] for stage in stages] != [1, 2, 3]:
+                reject("STAGE_SEQUENCE_INVALID", "v1/v2 stage order numbers are invalid")
+            if stages[0].get("dependsOn", []) != []:
+                reject("STAGE_SEQUENCE_INVALID", "apply must not depend on another stage")
+            if stages[1].get("dependsOn") != ["apply"]:
+                reject("STAGE_SEQUENCE_INVALID", "browser-evidence must depend on apply")
+            if stages[2].get("dependsOnFailure") != ["apply"]:
+                reject("STAGE_SEQUENCE_INVALID", "rollback must be failure-bound to apply")
 
         # subject_digest is intentionally computed here even when no review is
         # present; callers can safely use it only after full verification.

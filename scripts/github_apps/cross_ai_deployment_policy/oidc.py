@@ -168,6 +168,97 @@ class GitHubOIDCVerifier:
         run_attempt: int,
         actor_id: int,
     ) -> dict[str, Any]:
+        return self.verify_claim_profile(
+            token,
+            audience=AUDIENCE,
+            exact_claims={
+                "repository_id": str(repository_id),
+                "repository": repository,
+                "environment": environment,
+                "ref": intent_ref,
+                "sha": head_sha,
+                "event_name": "workflow_dispatch",
+                "runner_environment": "self-hosted",
+                "workflow_ref": f"{repository}/{workflow_path}@{intent_ref}",
+                "sub": f"repo:{repository}:environment:{environment}",
+            },
+            positive_claims={
+                "run_id": run_id,
+                "run_attempt": run_attempt,
+                "actor_id": actor_id,
+            },
+            max_token_age_seconds=600,
+        )
+
+    def verify_claim_profile(
+        self,
+        token: str,
+        *,
+        audience: str,
+        exact_claims: dict[str, str],
+        positive_claims: dict[str, int],
+        forbidden_claims: tuple[str, ...] = (),
+        required_unique_claims: tuple[str, ...] = ("jti",),
+        max_token_age_seconds: int = 300,
+    ) -> dict[str, Any]:
+        """Verify one explicit GitHub OIDC capability profile.
+
+        The forward VIEW_ONLY transaction has distinct binding, preflight,
+        authorization and executor audiences.  Callers must materialize every
+        registry/binding-derived equality before invoking this method; no
+        claim expression language is evaluated in the verifier.
+        """
+
+        if (
+            not isinstance(audience, str)
+            or not audience.isascii()
+            or not 1 <= len(audience) <= 200
+            or not 30 <= max_token_age_seconds <= 600
+            or not exact_claims
+            or any(
+                not isinstance(name, str)
+                or not name
+                or not isinstance(value, str)
+                for name, value in exact_claims.items()
+            )
+            or any(
+                not isinstance(name, str)
+                or not name
+                or not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 1
+                for name, value in positive_claims.items()
+            )
+            or any(not isinstance(name, str) or not name for name in forbidden_claims)
+            or any(
+                not isinstance(name, str) or not name
+                for name in required_unique_claims
+            )
+        ):
+            reject(
+                "BOOTSTRAP_OIDC_CONFIG_INVALID",
+                "OIDC claim profile is invalid",
+            )
+        claim_sets = (
+            set(exact_claims),
+            set(positive_claims),
+            set(forbidden_claims),
+            set(required_unique_claims),
+        )
+        if (
+            len(set(forbidden_claims)) != len(forbidden_claims)
+            or len(set(required_unique_claims)) != len(required_unique_claims)
+            or any(
+                claim_sets[index].intersection(claim_sets[other])
+                for index in range(len(claim_sets))
+                for other in range(index + 1, len(claim_sets))
+            )
+        ):
+            reject(
+                "BOOTSTRAP_OIDC_CONFIG_INVALID",
+                "OIDC claim profile contains overlapping authority fields",
+            )
+
         if not isinstance(token, str) or not 100 <= len(token) <= MAX_JWT_BYTES:
             reject("BOOTSTRAP_OIDC_INVALID", "OIDC token size is invalid")
         parts = token.split(".")
@@ -244,38 +335,40 @@ class GitHubOIDCVerifier:
             or iat > current + 60
             or nbf > current + 60
             or exp < current - 30
-            or exp - iat > 600
+            or exp - iat > max_token_age_seconds
             or exp <= nbf
         ):
             reject("BOOTSTRAP_OIDC_TIME_INVALID", "OIDC lifetime is invalid")
-        exact = {
-            "iss": ISSUER,
-            "aud": AUDIENCE,
-            "repository_id": str(repository_id),
-            "repository": repository,
-            "environment": environment,
-            "ref": intent_ref,
-            "sha": head_sha,
-            "event_name": "workflow_dispatch",
-            "runner_environment": "self-hosted",
-            "workflow_ref": f"{repository}/{workflow_path}@{intent_ref}",
-            "sub": f"repo:{repository}:environment:{environment}",
-        }
+        exact = {"iss": ISSUER, "aud": audience, **exact_claims}
         if any(claims.get(name) != value for name, value in exact.items()):
             reject(
                 "BOOTSTRAP_OIDC_CLAIM_MISMATCH",
                 "OIDC authority claims differ from intent",
             )
-        if (
-            self._positive_claim(claims, "run_id") != run_id
-            or self._positive_claim(claims, "run_attempt") != run_attempt
-            or self._positive_claim(claims, "actor_id") != actor_id
-            or not isinstance(claims.get("jti"), str)
-            or not 16 <= len(claims["jti"]) <= 200
+        if any(
+            self._positive_claim(claims, name) != value
+            for name, value in positive_claims.items()
         ):
             reject(
                 "BOOTSTRAP_OIDC_CLAIM_MISMATCH", "OIDC run identity differs from intent"
             )
+        if any(name in claims for name in forbidden_claims):
+            reject(
+                "BOOTSTRAP_OIDC_CLAIM_MISMATCH",
+                "OIDC contains a claim forbidden by this capability profile",
+            )
+        for name in required_unique_claims:
+            value = claims.get(name)
+            if (
+                not isinstance(value, str)
+                or not value.isascii()
+                or not 16 <= len(value) <= 200
+                or any(character in value for character in "\r\n\x00")
+            ):
+                reject(
+                    "BOOTSTRAP_OIDC_CLAIM_MISMATCH",
+                    "OIDC unique identity claim is invalid",
+                )
         return claims
 
 

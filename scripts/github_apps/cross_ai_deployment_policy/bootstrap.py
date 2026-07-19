@@ -204,7 +204,13 @@ class RunnerBootstrapAuthorizer:
             now=current,
             expected_policy_sha256=self.evaluator.policy.digest,
             expected_trust_root_sha256=self.evaluator.expected_trust_root_sha256,
+            expected_bundle_contract=self.evaluator.bundle_contract_version,
         ).verify_bundle(envelope)
+        if verified.contract_version == "v3":
+            reject(
+                "BOOTSTRAP_NOT_APPLICABLE",
+                "v3 transaction authority does not expose the retired stage bootstrap",
+            )
         subject = verified.payload["subject"]
         grant = verified.payload["grant"]
         if (

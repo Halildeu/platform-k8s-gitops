@@ -46,6 +46,7 @@ class VaultTransitSignerTest(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.token = Path(self.directory.name) / "token"
         self.token.write_text("hvs." + ("a" * 40), encoding="ascii")
+        self.token.chmod(0o600)
         self.key = Ed25519PrivateKey.from_private_bytes(b"\x08" * 32)
         self.transport = TransitTransport(self.key)
         self.signer = VaultTransitSigner(
@@ -87,6 +88,29 @@ class VaultTransitSignerTest(unittest.TestCase):
             VaultTransitSigner(
                 vault_origin="http://vault.example.test",
                 token_file=self.token,
+                mount="cross-ai",
+                key_name="anthropic",
+                key_version=3,
+            )
+
+    def test_rejects_weak_mode_and_symlink_token_files(self) -> None:
+        self.token.chmod(0o644)
+        with self.assertRaisesRegex(PolicyError, "VAULT_TOKEN_FILE_INVALID"):
+            VaultTransitSigner(
+                vault_origin="https://vault.example.test",
+                token_file=self.token,
+                mount="cross-ai",
+                key_name="anthropic",
+                key_version=3,
+            )
+
+        self.token.chmod(0o600)
+        symlink = Path(self.directory.name) / "token-link"
+        symlink.symlink_to(self.token)
+        with self.assertRaisesRegex(PolicyError, "VAULT_TOKEN_UNAVAILABLE"):
+            VaultTransitSigner(
+                vault_origin="https://vault.example.test",
+                token_file=symlink,
                 mount="cross-ai",
                 key_name="anthropic",
                 key_version=3,

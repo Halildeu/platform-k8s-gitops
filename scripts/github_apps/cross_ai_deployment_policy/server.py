@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Protocol
 
 from .bootstrap import RunnerBootstrapAuthorizer, RunnerBootstrapRequest
+from .binding import MAX_REQUEST_BYTES, ViewOnlyBindingAuthority
 from .errors import PolicyError, reject
 from .evaluator import EvaluationResult
 from .github import CallbackResult
@@ -66,6 +67,7 @@ class ObserveService:
         decision_client: DecisionClient | None = None,
         outcome_sweeper: BackgroundReconciler | None = None,
         bootstrap_authorizer: RunnerBootstrapAuthorizer | None = None,
+        binding_authority: ViewOnlyBindingAuthority | None = None,
     ) -> None:
         if not secrets:
             reject("WEBHOOK_SECRET_MISSING", "observe service requires webhook secrets")
@@ -80,7 +82,8 @@ class ObserveService:
         ):
             reject(
                 "ENFORCEMENT_DEPENDENCY_MISSING",
-                "enforcement requires evaluator, registry, decision client, outcome sweeper and runner bootstrap",
+                "enforcement requires evaluator, registry, decision client, "
+                "outcome sweeper and runner bootstrap",
             )
         self.secrets = secrets
         self.ledger = ledger
@@ -91,6 +94,7 @@ class ObserveService:
         self.decision_client = decision_client
         self.outcome_sweeper = outcome_sweeper
         self.bootstrap_authorizer = bootstrap_authorizer
+        self.binding_authority = binding_authority
         self._reconcilers: list[BackgroundReconciler] = []
         self.queue: queue.Queue[DeploymentProtectionRequest | None] = queue.Queue(
             maxsize=queue_capacity
@@ -247,7 +251,10 @@ class ObserveService:
     @staticmethod
     def _approval_comment(result: EvaluationResult) -> str:
         evidence = result.evidence_digest.removeprefix("sha256:")[:16]
-        return f"APPROVED evidence=sha256:{evidence} stage={result.stage} policy=v1"
+        return (
+            f"APPROVED evidence=sha256:{evidence} stage={result.stage} "
+            f"policy_sha256={result.policy_digest}"
+        )
 
     @staticmethod
     def _rejection_comment(code: str) -> str:
@@ -473,6 +480,12 @@ class PolicyHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.NOT_FOUND, {"status": "not_found"})
 
     def do_POST(self) -> None:  # noqa: N802 (stdlib handler API)
+        if (
+            self.path
+            == "/github-apps/cross-ai-deployment-protection/transaction-binding"
+        ):
+            self._transaction_binding()
+            return
         if self.path == "/v1/runner-bootstrap":
             self._runner_bootstrap()
             return
@@ -639,6 +652,89 @@ class PolicyHandler(BaseHTTPRequestHandler):
             self._json(status, {"accepted": False, "code": exc.code})
             return
         self._json(HTTPStatus.OK, response)
+
+    def _transaction_binding(self) -> None:
+        authority = self.service.binding_authority
+        if self.service.mode != "enforce" or authority is None:
+            self._json(HTTPStatus.NOT_FOUND, {"accepted": False, "code": "NOT_FOUND"})
+            return
+        if self.headers.get("Transfer-Encoding"):
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"accepted": False, "code": "CHUNKED_BODY_FORBIDDEN"},
+            )
+            return
+        content_types = self.headers.get_all("Content-Type", [])
+        if (
+            len(content_types) != 1
+            or self.headers.get_content_type() != "application/json"
+        ):
+            self._json(
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                {"accepted": False, "code": "BINDING_CONTENT_TYPE_INVALID"},
+            )
+            return
+        authorization = self.headers.get_all("Authorization", [])
+        if len(authorization) != 1 or not authorization[0].startswith("Bearer "):
+            self._json(
+                HTTPStatus.UNAUTHORIZED,
+                {"accepted": False, "code": "BINDING_OIDC_MISSING"},
+            )
+            return
+        oidc_token = authorization[0][len("Bearer ") :]
+        content_length_value = self.headers.get("Content-Length")
+        try:
+            content_length = int(content_length_value or "")
+        except ValueError:
+            content_length = -1
+        if not 1 <= content_length <= MAX_REQUEST_BYTES:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"accepted": False, "code": "BINDING_BODY_SIZE_INVALID"},
+            )
+            return
+        raw_body = self.rfile.read(content_length)
+        if len(raw_body) != content_length or b"\x00" in raw_body:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"accepted": False, "code": "BINDING_BODY_INVALID"},
+            )
+            return
+        try:
+            request = authority.parse_request(raw_body)
+            response = authority.issue(request=request, oidc_token=oidc_token)
+        except PolicyError as exc:
+            if exc.code == "IDEMPOTENCY_CONFLICT":
+                status = HTTPStatus.CONFLICT
+            elif exc.code.startswith("BOOTSTRAP_OIDC_"):
+                status = (
+                    HTTPStatus.SERVICE_UNAVAILABLE
+                    if exc.code.endswith("UNAVAILABLE")
+                    else HTTPStatus.UNAUTHORIZED
+                )
+            elif exc.code in {
+                "BINDING_AUTHORITY_INACTIVE",
+                "BINDING_RUNTIME_TRUST_ROOT_INACTIVE",
+                "BINDING_RUNTIME_TRUST_ROOT_INVALID",
+                "BINDING_SCHEMA_UNAVAILABLE",
+                "VAULT_SIGN_FAILED",
+                "VAULT_SIGN_RESPONSE_INVALID",
+            }:
+                status = HTTPStatus.SERVICE_UNAVAILABLE
+            elif exc.code in {
+                "BINDING_IDEMPOTENCY_MISMATCH",
+                "BINDING_REQUEST_INVALID",
+                "JSON_DUPLICATE_KEY",
+                "JSON_FLOAT_FORBIDDEN",
+                "JSON_FILE_INVALID",
+                "JSON_FILE_SIZE_INVALID",
+            }:
+                status = HTTPStatus.BAD_REQUEST
+            else:
+                status = HTTPStatus.FORBIDDEN
+            self._json(status, {"accepted": False, "code": exc.code})
+            return
+        self._json(HTTPStatus.OK, response.envelope)
 
 
 def make_server(

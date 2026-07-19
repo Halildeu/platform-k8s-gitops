@@ -223,6 +223,82 @@ class GitHubOIDCVerifierTest(unittest.TestCase):
                 )
             )
 
+    def test_explicit_profile_rejects_forbidden_claim_even_when_empty(self) -> None:
+        claims = dict(self.claims)
+        claims.pop("environment")
+        claims["aud"] = "faz22-view-only-binding"
+        claims["runner_environment"] = "github-hosted"
+        claims["sub"] = f"repo:{REPOSITORY}:ref:{INTENT_REF}"
+        exact = {
+            "repository_id": str(REPOSITORY_ID),
+            "repository": REPOSITORY,
+            "ref": INTENT_REF,
+            "sha": HEAD_SHA,
+            "event_name": "workflow_dispatch",
+            "runner_environment": "github-hosted",
+            "workflow_ref": f"{REPOSITORY}/{WORKFLOW_PATH}@{INTENT_REF}",
+            "sub": f"repo:{REPOSITORY}:ref:{INTENT_REF}",
+        }
+        verified = self.verifier.verify_claim_profile(
+            self.token(claims=claims),
+            audience="faz22-view-only-binding",
+            exact_claims=exact,
+            positive_claims={
+                "run_id": RUN_ID,
+                "run_attempt": RUN_ATTEMPT,
+                "actor_id": ACTOR_ID,
+            },
+            forbidden_claims=("environment", "job_workflow_ref"),
+        )
+        self.assertEqual(verified["ref"], INTENT_REF)
+
+        claims["environment"] = ""
+        with self.assertRaisesRegex(
+            PolicyError, "BOOTSTRAP_OIDC_CLAIM_MISMATCH"
+        ):
+            self.verifier.verify_claim_profile(
+                self.token(claims=claims),
+                audience="faz22-view-only-binding",
+                exact_claims=exact,
+                positive_claims={
+                    "run_id": RUN_ID,
+                    "run_attempt": RUN_ATTEMPT,
+                    "actor_id": ACTOR_ID,
+                },
+                forbidden_claims=("environment", "job_workflow_ref"),
+            )
+
+    def test_explicit_profile_enforces_actor_and_300_second_lifetime(self) -> None:
+        claims = dict(self.claims)
+        claims["aud"] = "faz22-view-only-preflight"
+        claims["actor_id"] = str(ACTOR_ID + 1)
+        exact = {
+            "repository": REPOSITORY,
+            "ref": INTENT_REF,
+            "sha": HEAD_SHA,
+        }
+        with self.assertRaisesRegex(
+            PolicyError, "BOOTSTRAP_OIDC_CLAIM_MISMATCH"
+        ):
+            self.verifier.verify_claim_profile(
+                self.token(claims=claims),
+                audience="faz22-view-only-preflight",
+                exact_claims=exact,
+                positive_claims={"actor_id": ACTOR_ID},
+            )
+
+        claims["actor_id"] = str(ACTOR_ID)
+        claims["iat"] = int(self.now.timestamp()) - 20
+        claims["nbf"] = claims["iat"]
+        claims["exp"] = claims["iat"] + 301
+        with self.assertRaisesRegex(PolicyError, "BOOTSTRAP_OIDC_TIME_INVALID"):
+            self.verifier.verify_claim_profile(
+                self.token(claims=claims),
+                audience="faz22-view-only-preflight",
+                exact_claims=exact,
+                positive_claims={"actor_id": ACTOR_ID},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

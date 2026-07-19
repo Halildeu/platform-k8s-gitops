@@ -18,6 +18,9 @@ from .timeutil import parse_utc, utc_now
 
 ROOT = Path(__file__).resolve().parents[3]
 OUTCOME_SCHEMA = ROOT / "schema/cross-ai-deployment-stage-outcome-v1.schema.json"
+OUTCOME_PAYLOAD_TYPE = (
+    "application/vnd.acik.cross-ai-deployment-stage-outcome.v1+json"
+)
 MAX_CLOCK_SKEW = timedelta(seconds=60)
 
 
@@ -30,6 +33,8 @@ class VerifiedStageOutcome:
     outcome_digest: str
     target_state: str
     payload: dict[str, Any]
+    receipt_digest: str | None = None
+    receipt_signer_key_id: str | None = None
 
 
 def _validate_schema(value: dict[str, Any]) -> None:
@@ -59,6 +64,10 @@ def verify_stage_outcome(
     expected_critical_jobs_sha256: str,
     expected_source_artifact_name: str,
     expected_source_archive_sha256: str,
+    expected_runtime_evidence_artifact_name: str | None = None,
+    expected_runtime_evidence_archive_sha256: str | None = None,
+    expected_runtime_lease_envelope_sha256: str | None = None,
+    expected_runtime_terminal_receipt_sha256: str | None = None,
     now: datetime | None = None,
 ) -> VerifiedStageOutcome:
     """Bind a computed run/artifact outcome to the exact signed stage."""
@@ -76,8 +85,12 @@ def verify_stage_outcome(
         reject("STAGE_OUTCOME_BINDING_MISMATCH", "signed stage is missing or ambiguous")
     stage = stages[0]
     canonical_artifact_name = (
-        f"cross-ai-stage-outcome-{bundle.request_id}-{expected_stage}-"
-        f"{expected_run_id}-{expected_run_attempt}"
+        f"faz22-view-only-transaction-final-{expected_run_id}-{expected_run_attempt}"
+        if expected_stage == "transaction"
+        else (
+            f"cross-ai-stage-outcome-{bundle.request_id}-{expected_stage}-"
+            f"{expected_run_id}-{expected_run_attempt}"
+        )
     )
     if expected_source_artifact_name != canonical_artifact_name:
         reject(
@@ -110,6 +123,24 @@ def verify_stage_outcome(
                 "STAGE_OUTCOME_BINDING_MISMATCH",
                 f"stage outcome field {field} differs from signed/live authority",
             )
+    runtime_exact = {
+        "runtimeEvidenceArtifactName": expected_runtime_evidence_artifact_name,
+        "runtimeEvidenceArchiveSha256": expected_runtime_evidence_archive_sha256,
+        "runtimeLeaseEnvelopeSha256": expected_runtime_lease_envelope_sha256,
+        "runtimeTerminalReceiptSha256": expected_runtime_terminal_receipt_sha256,
+    }
+    if expected_stage == "transaction":
+        if any(value is None for value in runtime_exact.values()):
+            reject(
+                "STAGE_OUTCOME_BINDING_MISMATCH",
+                "transaction outcome lacks verified signed runtime evidence",
+            )
+        for field, expected in runtime_exact.items():
+            if payload[field] != expected:
+                reject(
+                    "STAGE_OUTCOME_BINDING_MISMATCH",
+                    f"transaction outcome field {field} differs from runtime authority",
+                )
 
     created_at = parse_utc(payload["createdAt"], "stageOutcome.createdAt")
     run_started_at = parse_utc(payload["runStartedAt"], "stageOutcome.runStartedAt")
@@ -185,11 +216,17 @@ def verify_stage_outcome(
                 "STAGE_OUTCOME_PRODUCT_ARTIFACT_INVALID",
                 "failed browser outcome must not assert a product artifact",
             )
-    else:
+    elif expected_stage == "compensating-rollback":
         if conclusion not in {"rolled-back", "failure"} or watchdog_value is not None:
             reject(
                 "STAGE_OUTCOME_STATE_INVALID",
                 "rollback outcome has an invalid conclusion or watchdog field",
+            )
+    else:
+        if conclusion not in {"success", "rolled-back"} or watchdog_value is not None:
+            reject(
+                "STAGE_OUTCOME_STATE_INVALID",
+                "transaction outcome has an invalid conclusion or watchdog field",
             )
     if expected_stage != "browser-evidence" and product_artifact != (None, None, None):
         reject(
@@ -213,4 +250,8 @@ def verify_stage_outcome(
     )
 
 
-__all__ = ["VerifiedStageOutcome", "verify_stage_outcome"]
+__all__ = [
+    "OUTCOME_PAYLOAD_TYPE",
+    "VerifiedStageOutcome",
+    "verify_stage_outcome",
+]

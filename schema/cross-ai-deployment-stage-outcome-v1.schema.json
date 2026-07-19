@@ -40,7 +40,7 @@
       "format": "uuid"
     },
     "stage": {
-      "enum": ["apply", "browser-evidence", "compensating-rollback"]
+      "enum": ["apply", "browser-evidence", "compensating-rollback", "transaction"]
     },
     "runId": {
       "type": "integer",
@@ -93,6 +93,19 @@
     "sourceArchiveSha256": {
       "$ref": "#/$defs/digest"
     },
+    "runtimeEvidenceArtifactName": {
+      "type": "string",
+      "pattern": "^faz22-view-only-transaction-runtime-[1-9][0-9]*-[1-9][0-9]*$"
+    },
+    "runtimeEvidenceArchiveSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "runtimeLeaseEnvelopeSha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "runtimeTerminalReceiptSha256": {
+      "$ref": "#/$defs/digest"
+    },
     "artifactSetSha256": {
       "$ref": "#/$defs/digest"
     },
@@ -141,48 +154,25 @@
   },
   "allOf": [
     {
-      "if": {
-        "properties": {
-          "stage": {
-            "const": "apply"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "conclusion": {
-            "enum": ["success", "failure"]
-          }
-        }
-      }
+      "if": {"properties": {"stage": {"const": "apply"}}},
+      "then": {"properties": {"conclusion": {"enum": ["success", "failure"]}}}
     },
     {
       "if": {
         "properties": {
-          "stage": {
-            "const": "apply"
-          },
-          "conclusion": {
-            "const": "success"
-          }
+          "stage": {"const": "apply"},
+          "conclusion": {"const": "success"}
         },
         "required": ["stage", "conclusion"]
       },
       "then": {
         "properties": {
-          "watchdogExpiresAt": {
-            "type": "string",
-            "format": "date-time"
-          }
+          "watchdogExpiresAt": {"type": "string", "format": "date-time"}
         }
       }
     },
     {
-      "if": {
-        "properties": {
-          "stage": {"const": "browser-evidence"}
-        }
-      },
+      "if": {"properties": {"stage": {"const": "browser-evidence"}}},
       "then": {
         "properties": {
           "conclusion": {"enum": ["success", "failure"]},
@@ -200,9 +190,7 @@
       },
       "then": {
         "properties": {
-          "watchdogExpiresAt": {
-            "type": "null"
-          },
+          "watchdogExpiresAt": {"type": "null"},
           "productArtifactId": {"type": "integer", "minimum": 1},
           "productArtifactName": {"type": "string"},
           "productArtifactDigest": {"$ref": "#/$defs/digest"}
@@ -228,21 +216,36 @@
       }
     },
     {
-      "if": {
-        "properties": {
-          "stage": {
-            "const": "compensating-rollback"
-          }
-        }
-      },
+      "if": {"properties": {"stage": {"const": "compensating-rollback"}}},
       "then": {
         "properties": {
-          "conclusion": {
-            "enum": ["rolled-back", "failure"]
-          },
-          "watchdogExpiresAt": {
-            "type": "null"
-          }
+          "conclusion": {"enum": ["rolled-back", "failure"]},
+          "watchdogExpiresAt": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"stage": {"const": "transaction"}}},
+      "then": {
+        "required": [
+          "runtimeEvidenceArtifactName",
+          "runtimeEvidenceArchiveSha256",
+          "runtimeLeaseEnvelopeSha256",
+          "runtimeTerminalReceiptSha256"
+        ],
+        "properties": {
+          "conclusion": {"enum": ["success", "rolled-back"]},
+          "watchdogExpiresAt": {"type": "null"}
+        }
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {"required": ["runtimeEvidenceArtifactName"]},
+            {"required": ["runtimeEvidenceArchiveSha256"]},
+            {"required": ["runtimeLeaseEnvelopeSha256"]},
+            {"required": ["runtimeTerminalReceiptSha256"]}
+          ]
         }
       }
     }

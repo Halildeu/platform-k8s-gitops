@@ -11,7 +11,10 @@ from scripts.github_apps.cross_ai_deployment_policy.ledger import ObserveLedger
 from scripts.github_apps.cross_ai_deployment_policy.evaluator import EvaluationResult
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.github import CallbackResult
-from scripts.github_apps.cross_ai_deployment_policy.intent_store import StageReservation
+from scripts.github_apps.cross_ai_deployment_policy.intent_store import (
+    IdempotentEnvelope,
+    StageReservation,
+)
 from scripts.github_apps.cross_ai_deployment_policy.server import (
     ObserveService,
     make_server,
@@ -206,6 +209,35 @@ class FakeBootstrapAuthorizer:
         }
 
 
+class FakeBindingAuthority:
+    def __init__(self, reject_code: str | None = None) -> None:
+        self.reject_code = reject_code
+        self.calls = []
+
+    def parse_request(self, raw_body: bytes):
+        return json.loads(raw_body)
+
+    def issue(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.reject_code is not None:
+            raise PolicyError(self.reject_code, "bounded binding rejection")
+        envelope = {
+            "payloadType": "application/vnd.acik.test-binding+json",
+            "payload": "e30=",
+            "signatures": [],
+        }
+        return IdempotentEnvelope(
+            operation="view-only-transaction-binding",
+            request_id=kwargs["request"]["requestId"],
+            idempotency_key="sha256:" + ("a" * 64),
+            request_digest="sha256:" + ("b" * 64),
+            identity_digest="sha256:" + ("c" * 64),
+            response_digest="sha256:" + ("d" * 64),
+            envelope=envelope,
+            created_at="2026-07-18T20:30:00Z",
+        )
+
+
 class BootstrapHTTPServerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
@@ -308,6 +340,102 @@ class BootstrapHTTPServerTest(unittest.TestCase):
         )
         self.assertEqual(status, 415)
         self.assertEqual(response["code"], "BOOTSTRAP_CONTENT_TYPE_INVALID")
+
+
+class TransactionBindingHTTPServerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.ledger = ObserveLedger(Path(self.directory.name) / "binding-ledger.sqlite3")
+        self.binding = FakeBindingAuthority()
+        self.service = ObserveService(
+            secrets=(TEST_HMAC_KEY,),
+            ledger=self.ledger,
+            evaluator=FakeEvaluator(),
+            mode="enforce",
+            registry=FakeRegistry(),  # type: ignore[arg-type]
+            decision_client=FakeDecisionClient(
+                CallbackResult(True, False, 204, "CALLBACK_ACCEPTED_204")
+            ),
+            outcome_sweeper=FakeSweeper(),
+            bootstrap_authorizer=FakeBootstrapAuthorizer(),  # type: ignore[arg-type]
+            binding_authority=self.binding,  # type: ignore[arg-type]
+        )
+        self.server = make_server("127.0.0.1", 0, self.service)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.host, self.port = self.server.server_address
+        self.body = json.dumps(
+            {
+                "schemaVersion": "faz22.6.viewOnlyTransactionBindingRequest.v1",
+                "requestId": "30000000-0000-4000-8000-000000000001",
+                "idempotencyKeySha256": "sha256:" + ("a" * 64),
+                "requestedPayloadType": (
+                    "application/vnd.acik.faz22-6-view-only-transaction-binding-handoff.v1+json"
+                ),
+                "workflowPath": (
+                    ".github/workflows/faz22-6-view-only-viewer-transaction.yml"
+                ),
+            },
+            separators=(",", ":"),
+        ).encode()
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+        self.service.stop()
+        self.ledger.close()
+        self.directory.cleanup()
+
+    def post(
+        self,
+        *,
+        body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=5)
+        try:
+            connection.request(
+                "POST",
+                "/github-apps/cross-ai-deployment-protection/transaction-binding",
+                body=self.body if body is None else body,
+                headers=headers
+                or {
+                    "Authorization": "Bearer test-oidc",
+                    "Content-Type": "application/json",
+                },
+            )
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close()
+
+    def test_accepts_bounded_json_and_passes_oidc_only_in_memory(self) -> None:
+        status, response = self.post()
+        self.assertEqual(status, 200)
+        self.assertEqual(response["payload"], "e30=")
+        self.assertEqual(self.binding.calls[0]["oidc_token"], "test-oidc")
+        self.assertEqual(
+            self.binding.calls[0]["request"]["requestId"],
+            "30000000-0000-4000-8000-000000000001",
+        )
+
+    def test_rejects_missing_oidc_wrong_media_type_and_idempotency_conflict(self) -> None:
+        status, response = self.post(headers={"Content-Type": "application/json"})
+        self.assertEqual(status, 401)
+        self.assertEqual(response["code"], "BINDING_OIDC_MISSING")
+        status, response = self.post(
+            headers={
+                "Authorization": "Bearer test-oidc",
+                "Content-Type": "text/plain",
+            }
+        )
+        self.assertEqual(status, 415)
+        self.assertEqual(response["code"], "BINDING_CONTENT_TYPE_INVALID")
+        self.binding.reject_code = "IDEMPOTENCY_CONFLICT"
+        status, response = self.post()
+        self.assertEqual(status, 409)
+        self.assertEqual(response["code"], "IDEMPOTENCY_CONFLICT")
 
 
 class EvaluatingObserveServiceTest(unittest.TestCase):
