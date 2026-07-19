@@ -20,6 +20,12 @@ from typing import NoReturn
 
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+VERDICT_RE = re.compile(r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE)
+PRIORITY_HEADING_RE = re.compile(
+    r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(P[012])(?:\*\*)?"
+    r"(?:[ \t]*[—:-].*)?[ \t]*$"
+)
+NO_FINDINGS_RE = re.compile(r"^None$")
 EMAIL_RE = re.compile(
     r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
 )
@@ -80,6 +86,34 @@ EVIDENCE_KEYS = {
 }
 
 
+def response_contract(response: str) -> tuple[str, dict[str, str]] | None:
+    verdicts = VERDICT_RE.findall(response)
+    lines = [line.strip() for line in response.splitlines() if line.strip()]
+    headings = list(PRIORITY_HEADING_RE.finditer(response))
+    if (
+        len(verdicts) != 1
+        or not lines
+        or not VERDICT_RE.fullmatch(lines[-1])
+        or [match.group(1).upper() for match in headings] != ["P0", "P1", "P2"]
+    ):
+        return None
+    verdict_match = next(iter(VERDICT_RE.finditer(response)))
+    sections: dict[str, str] = {}
+    for index, heading in enumerate(headings):
+        end = headings[index + 1].start() if index < 2 else verdict_match.start()
+        content = response[heading.end():end].strip()
+        if not content:
+            return None
+        sections[heading.group(1).upper()] = content
+    verdict = verdicts[0]
+    if verdict == "AGREE" and (
+        not NO_FINDINGS_RE.fullmatch(sections["P0"])
+        or not NO_FINDINGS_RE.fullmatch(sections["P1"])
+    ):
+        return None
+    return verdict, sections
+
+
 def fail(code: str) -> NoReturn:
     print(json.dumps({"ok": False, "error": code}, ensure_ascii=False))
     raise SystemExit(1)
@@ -116,6 +150,9 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         or hashlib.sha256(response.encode("utf-8")).hexdigest() != response_digest
     ):
         fail("invalid_response_digest")
+    parsed_response = response_contract(response)
+    if parsed_response is None or evidence.get("verdict") != parsed_response[0]:
+        fail("invalid_response_semantics")
     if (
         EMAIL_RE.search(response)
         or TURKISH_PHONE_RE.search(response)
