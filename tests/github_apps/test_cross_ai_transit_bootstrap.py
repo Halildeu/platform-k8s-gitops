@@ -101,6 +101,8 @@ class FakeVaultClient:
             self.mount_exists = True
             return self._response(204)
         if path in {
+            "auth/approle/role/cross-ai-issuer-anthropic-test",
+            "sys/policies/acl/cross-ai-issuer-anthropic-test",
             "auth/approle/role/cross-ai-issuer-minimax-test",
             "sys/policies/acl/cross-ai-issuer-minimax-test",
         }:
@@ -174,6 +176,8 @@ class TransitBootstrapTests(unittest.TestCase):
         self.assertEqual(
             receipt["verifiedAbsentResources"],
             [
+                "approle:cross-ai-issuer-anthropic-test",
+                "policy:cross-ai-issuer-anthropic-test",
                 "approle:cross-ai-issuer-minimax-test",
                 "policy:cross-ai-issuer-minimax-test",
             ],
@@ -246,7 +250,7 @@ class TransitBootstrapTests(unittest.TestCase):
             r"^sha256:[a-f0-9]{64}$",
         )
         self.assertEqual(
-            trust_root["requiredProviderFamilies"], ["anthropic", "openai"]
+            trust_root["requiredProviderFamilies"], ["openai"]
         )
 
     def test_existing_safe_resources_are_verified_without_recreation(self) -> None:
@@ -274,6 +278,8 @@ class TransitBootstrapTests(unittest.TestCase):
         self.assertEqual(
             receipt["verifiedAbsentResources"],
             [
+                "approle:cross-ai-issuer-anthropic-test",
+                "policy:cross-ai-issuer-anthropic-test",
                 "approle:cross-ai-issuer-minimax-test",
                 "policy:cross-ai-issuer-minimax-test",
             ],
@@ -392,7 +398,6 @@ class TransitBootstrapTests(unittest.TestCase):
         self.assertIn("backup|restore|datakey", reconciler)
         self.assertIn("rewrap|hmac", reconciler)
         exact_paths = {
-            "cross-ai-issuer-anthropic-test": "cross-ai/sign/anthropic",
             "cross-ai-issuer-openai-test": "cross-ai/sign/openai",
             "cross-ai-coordinator-test": "cross-ai/sign/coordinator",
             "cross-ai-revocation-test": "cross-ai/sign/revocation",
@@ -423,9 +428,15 @@ class TransitBootstrapTests(unittest.TestCase):
                 )
             self.assertNotIn(f'"{role}|', routine_approles)
         self.assertNotIn("cross-ai-issuer-minimax-test", reconciler)
+        self.assertNotIn("cross-ai-issuer-anthropic-test", reconciler)
         self.assertFalse((policy_dir / "cross-ai-issuer-minimax.hcl").exists())
+        self.assertFalse((policy_dir / "cross-ai-issuer-anthropic.hcl").exists())
         self.assertNotIn(
             'path "sys/policies/acl/cross-ai-issuer-minimax-test"',
+            config_policy,
+        )
+        self.assertNotIn(
+            'path "sys/policies/acl/cross-ai-issuer-anthropic-test"',
             config_policy,
         )
         self.assertNotRegex(

@@ -99,17 +99,34 @@ shellcheck bootstrap/*.sh scripts/*.sh
 
 ### 4. Codex Adversarial Review (büyük değişim için)
 
-Plan-time istişare: `mcp__codex__codex` MCP ile plan önerini sun:
+Kesin review yalnız ayrı context'te direct Codex CLI ile yapılır:
+
+```bash
+codex exec --ephemeral --sandbox read-only --model <scope-class-exact-model> \
+  -c 'model_reasoning_effort="xhigh"' -C <absolute-worktree> '<bounded exact-scope review>'
+```
+
+Rutin review modeli `gpt-5.3-codex-spark`; governance/security/migration/
+production modeli `gpt-5.6-sol` olur. Claude, MiniMax, Cursor, MCP/wrapper,
+başka model ve AI uygulama penceresi kullanılmaz.
+
+Provider yanıt sözleşmesi:
 
 ```
-VERDICT: AGREE / PARTIAL / REVISE / RED
+## P0
+None veya somut bulgu
+## P1
+None veya somut bulgu
+## P2
+None veya somut bulgu
+VERDICT: AGREE|REVISE
 ```
 
-- AGREE → direkt impl
-- PARTIAL/REVISE → absorb et, yeni iter
-- RED → kullanıcıya rapor + yön sor
+- `AGREE` → test/CI/live evidence kapılarına devam et.
+- `REVISE` → geçerli bulguyu düzelt, yeni exact head/scope ile yeniden incele.
 
-Kural: Codex AGREE sonrası kullanıcıya ara onay sorma (CLAUDE.md).
+Codex receipt protected Environment reviewer, gerçek kullanıcı rızası veya
+isimli insan/hukuk onayını ikame etmez.
 
 ### 5. Commit
 
@@ -123,7 +140,6 @@ Format:
 - Neden değişti
 - Kanıt (build sanity, Codex iter, smoke)
 
-Co-Authored-By: Claude Opus 4.X <noreply@anthropic.com>
 ```
 
 Types: `feat` / `fix` / `refactor` / `docs` / `chore` / `test`

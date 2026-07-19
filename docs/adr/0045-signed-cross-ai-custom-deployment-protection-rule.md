@@ -1,18 +1,20 @@
 # ADR-0045 — Signed Cross-AI Evidence Custom Deployment Protection Rule
 
-> **Forward-policy status (2026-07-18, #2638): SUPERSEDED FOR NEW EVIDENCE.**
+> **Forward-policy status (2026-07-19, #2688): CODEX-ONLY.**
 > Bu v1 üç-sağlayıcı tasarımının şema ve fixture'ları yalnız arşiv/forensic kayıt
 > açıklaması için korunur; cutoff sonrası aktif verifier MiniMax taşıyan trust
-> root veya bundle'ı doğrulamaz. Yeni review, trust root, deployment grant veya
-> activation bu sözleşmeyle üretilemez; yeni aktif sürüm ayrı versioned contract
-> altında Claude Opus 4.8 + OpenAI Codex 5.6 SOL kullanmalıdır.
+> root veya bundle'ı doğrulamaz. #2638'in optional-Claude kararı da superseded'dır
+> ve yeni review, trust root, deployment grant veya activation yetkisi üretmez.
+> Aktif v2 yalnız ayrı read-only/ephemeral bağlamda exact `gpt-5.6-sol xhigh`
+> direct OpenAI Codex review leaf'i kabul eder; Claude, MiniMax, Cursor, UI,
+> wrapper ve fallback leaf'leri schema/trust-root seviyesinde reddedilir.
 
 > **Status:** PROPOSED — source implementation, fail-closed tests, GitHub App
 > registration, the Phase-1 receive-only test observer, outbound failed-delivery
 > recovery and test-Vault App private-key provisioning exist. The owner-gated
-> TEST Transit bootstrap, exact three-provider contract and three protected
+> TEST Transit bootstrap, retired-provider decommission contract and three protected
 > workflow lanes are source-ready but have not been activated. Direct
-> Anthropic/MiniMax/OpenAI adapter activation, dispatcher App, Environment
+> OpenAI adapter activation, dispatcher App, Environment
 > configuration and live enforcement do not exist yet.
 > **Date:** 2026-07-16
 > **Owner issue:** [#2502](https://github.com/Halildeu/platform-k8s-gitops/issues/2502)

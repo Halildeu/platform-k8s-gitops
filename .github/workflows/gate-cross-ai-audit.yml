@@ -3,11 +3,11 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
 # PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
 #
-# Required check (durumsal az-kanal governance, #2621):
+# Required check (direct Codex-only governance, #2688):
 # - none: routine work + reason + zero receipt; governance/auto-promotion blocked
-# - single: exact direct Claude Opus 4.8 + exact scope + AGREE + provider-distinct
-# - dual: irreversible/high-risk/human-authority trigger + exact Claude + Codex;
-#   maximum two, MiniMax forbidden, parallel publication allowed
+# - single: routine gpt-5.3-codex-spark or high-impact gpt-5.6-sol, both
+#   exact direct OpenAI Codex xhigh + read-only + ephemeral + exact scope + AGREE
+# - Claude/MiniMax/Cursor/wrapper receipts forbidden; no second channel
 # - Fetched owner evidence, model, freshness, digest and redaction remain strict
 #
 # #827 — automation-PR governance: a PR whose head branch matches an automation

@@ -1,5 +1,25 @@
 # Current State — Platform K8s Migration
 
+## Source Delta — #2688 Codex-only governance migration in progress (2026-07-19)
+
+The owner's latest governance decision supersedes #2638's optional-Claude
+forward path. New consultation and deployment-review evidence accepts only a
+separate-context direct OpenAI Codex invocation: routine review uses exact
+`gpt-5.3-codex-spark xhigh`; governance, security, migration and production
+review uses exact `gpt-5.6-sol xhigh`. Both require read-only sandboxing and an
+ephemeral session. Claude, MiniMax, Cursor, UI, wrapper and fallback receipts
+are rejected; active modes are only `none|single`.
+
+#2688 source work updates the PR audit evidence schema to v2 and narrows the
+inactive signed deployment-protection v2 trust root to OpenAI only. Historical
+Anthropic/MiniMax keys and v1 evidence remain forensic data, but the owner
+bootstrap removes their signing AppRole/policy authority and the active trust
+root excludes them. This is source truth on the #2688 branch, not live
+activation evidence: no provider issuer/coordinator AppRole or SecretID is
+live, no signed bundle has been issued, the custom protection rule remains
+disabled, production is untouched, and the existing human required-reviewer
+rule remains authoritative.
+
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 
 This delta supersedes only the 2026-07-17 statements below that TEST Vault had

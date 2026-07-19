@@ -18,11 +18,16 @@ BASE_ARGS = [
     sys.executable,
     str(SCRIPT),
     "--provider",
-    "anthropic",
+    "openai",
     "--requested-model",
-    "claude-opus-4-8",
+    "gpt-5.6-sol",
     "--actual-model",
-    "claude-opus-4-8",
+    "gpt-5.6-sol",
+    "--reasoning-effort",
+    "xhigh",
+    "--sandbox",
+    "read-only",
+    "--ephemeral",
     "--base-tip-sha",
     SHA,
     "--base-sha",
@@ -49,7 +54,11 @@ class EvidenceBuilderTests(unittest.TestCase):
         result = self.run_builder("P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE")
         self.assertEqual(result.returncode, 0)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["schema"], "cross-ai-provider-evidence/v1")
+        self.assertEqual(payload["schema"], "cross-ai-provider-evidence/v2")
+        self.assertEqual(payload["provider"], "openai")
+        self.assertEqual(payload["reasoning_effort"], "xhigh")
+        self.assertEqual(payload["sandbox"], "read-only")
+        self.assertIs(payload["ephemeral"], True)
         self.assertEqual(payload["verdict"], "AGREE")
         self.assertEqual(payload["scope_sha256"], SCOPE)
 
@@ -58,9 +67,9 @@ class EvidenceBuilderTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["verdict"], "REVISE")
 
-    def test_rejects_minimax_as_a_new_evidence_provider(self) -> None:
+    def test_accepts_routine_spark_model_with_same_execution_contract(self) -> None:
         args = [
-            "minimax" if value == "anthropic" else value
+            "gpt-5.3-codex-spark" if value == "gpt-5.6-sol" else value
             for value in BASE_ARGS
         ]
         result = subprocess.run(
@@ -71,8 +80,41 @@ class EvidenceBuilderTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             check=False,
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("invalid choice", result.stderr)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["actual_model"], "gpt-5.3-codex-spark")
+
+    def test_rejects_claude_and_minimax_as_new_evidence_providers(self) -> None:
+        provider_index = BASE_ARGS.index("openai")
+        for provider in ("anthropic", "minimax"):
+            args = list(BASE_ARGS)
+            args[provider_index] = provider
+            result = subprocess.run(
+                args,
+                input="P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            with self.subTest(provider=provider):
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("invalid choice", result.stderr)
+
+    def test_requires_xhigh_read_only_ephemeral_execution_metadata(self) -> None:
+        for removable in ("--reasoning-effort", "--sandbox", "--ephemeral"):
+            args = list(BASE_ARGS)
+            index = args.index(removable)
+            del args[index:index + (1 if removable == "--ephemeral" else 2)]
+            result = subprocess.run(
+                args,
+                input="P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            with self.subTest(removable=removable):
+                self.assertNotEqual(result.returncode, 0)
 
     def test_rejects_agree_when_p0_or_p1_contains_a_finding(self) -> None:
         for response in (

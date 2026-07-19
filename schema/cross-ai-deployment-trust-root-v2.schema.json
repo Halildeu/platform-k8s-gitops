@@ -39,19 +39,18 @@
     },
     "requiredProviderFamilies": {
       "const": [
-        "anthropic",
         "openai"
       ]
     },
     "minimumProviderFamilies": {
-      "const": 2
+      "const": 1
     },
     "minimumDirectProviderRoutes": {
-      "const": 2
+      "const": 1
     },
     "keys": {
       "type": "array",
-      "minItems": 5,
+      "minItems": 4,
       "maxItems": 100,
       "items": {
         "$ref": "#/$defs/key"
@@ -171,47 +170,8 @@
             "properties": {
               "providerFamily": {
                 "enum": [
-                  "anthropic",
                   "openai"
                 ]
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "provider-review"
-              },
-              "providerFamily": {
-                "const": "anthropic"
-              }
-            },
-            "required": [
-              "role",
-              "providerFamily"
-            ]
-          },
-          "then": {
-            "properties": {
-              "allowedChannels": {
-                "const": [
-                  "direct-anthropic-cli"
-                ]
-              },
-              "allowedModelIds": {
-                "const": [
-                  "claude-opus-4-8"
-                ]
-              },
-              "allowedModelIdentityClasses": {
-                "const": [
-                  "provider-reported"
-                ]
-              },
-              "directProviderCli": {
-                "const": true
               }
             }
           }

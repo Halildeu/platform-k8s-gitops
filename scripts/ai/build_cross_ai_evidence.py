@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build one strict cross-ai-provider-evidence/v1 JSON comment body.
+"""Build one strict cross-ai-provider-evidence/v2 JSON comment body.
 
 The full provider response is read from stdin so it never enters process argv.
 The resulting single-line JSON can be posted as an issue comment; the PR receipt
@@ -68,9 +68,10 @@ COOKIE_HEADER_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 PROVIDER_MODELS = {
-    "anthropic": "claude-opus-4-8",
-    "openai": "gpt-5.6-sol",
+    "openai": {"gpt-5.3-codex-spark", "gpt-5.6-sol"},
 }
+REASONING_EFFORT = "xhigh"
+SANDBOX_MODE = "read-only"
 MAX_RESPONSE_BYTES = 48_000
 MAX_EVIDENCE_BYTES = 60_000
 
@@ -116,14 +117,20 @@ def main() -> None:
     parser.add_argument("--provider", choices=sorted(PROVIDER_MODELS), required=True)
     parser.add_argument("--requested-model", required=True)
     parser.add_argument("--actual-model", required=True)
+    parser.add_argument("--reasoning-effort", choices=[REASONING_EFFORT], required=True)
+    parser.add_argument("--sandbox", choices=[SANDBOX_MODE], required=True)
+    parser.add_argument("--ephemeral", action="store_true", required=True)
     parser.add_argument("--base-tip-sha", required=True)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--scope-sha256", required=True)
     args = parser.parse_args()
 
-    expected_model = PROVIDER_MODELS[args.provider]
-    if args.requested_model != expected_model or args.actual_model != expected_model:
+    expected_models = PROVIDER_MODELS[args.provider]
+    if (
+        args.requested_model not in expected_models
+        or args.actual_model != args.requested_model
+    ):
         fail("provider_model_mismatch")
     for value in (args.base_tip_sha, args.base_sha, args.head_sha):
         if not COMMIT_SHA_RE.fullmatch(value):
@@ -158,10 +165,13 @@ def main() -> None:
     response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
     evidence = json.dumps(
         {
-            "schema": "cross-ai-provider-evidence/v1",
+            "schema": "cross-ai-provider-evidence/v2",
             "provider": args.provider,
             "requested_model": args.requested_model,
             "actual_model": args.actual_model,
+            "reasoning_effort": args.reasoning_effort,
+            "sandbox": args.sandbox,
+            "ephemeral": args.ephemeral,
             "base_tip_sha": args.base_tip_sha.lower(),
             "base_sha": args.base_sha.lower(),
             "head_sha": args.head_sha.lower(),

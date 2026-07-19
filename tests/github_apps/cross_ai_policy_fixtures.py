@@ -150,18 +150,19 @@ class FixtureFactory:
             }
 
         providers = ["anthropic", "minimax", "openai"]
-        provider_entries = [
-            entry(
-                self.ANTHROPIC_KEY_ID,
-                "provider-review",
-                "anthropic",
-                ["direct-anthropic-cli"],
-                True,
-                ["claude-opus-4-8"],
-                ["provider-reported"],
-            )
-        ]
+        provider_entries: list[dict[str, Any]] = []
         if self.contract_version == "v1":
+            provider_entries.append(
+                entry(
+                    self.ANTHROPIC_KEY_ID,
+                    "provider-review",
+                    "anthropic",
+                    ["direct-anthropic-cli"],
+                    True,
+                    ["claude-opus-4-8"],
+                    ["provider-reported"],
+                )
+            )
             provider_entries.append(
                 entry(
                     self.MINIMAX_KEY_ID,
@@ -174,7 +175,7 @@ class FixtureFactory:
                 )
             )
         else:
-            providers = ["anthropic", "openai"]
+            providers = ["openai"]
         provider_entries.append(
             entry(
                 self.OPENAI_KEY_ID,
@@ -289,6 +290,14 @@ class FixtureFactory:
             "issuer": f"cross-ai-issuer-{family}",
             "keyId": key_id,
         }
+        if self.contract_version == "v2":
+            payload.update(
+                {
+                    "reasoningEffort": "xhigh",
+                    "sandbox": "read-only",
+                    "ephemeral": True,
+                }
+            )
         return self.sign(self.review_payload_type, payload, key_id)
 
     def build(
@@ -449,10 +458,15 @@ class FixtureFactory:
         )
         empty_closure = digest("closure-pending")
         chain_a = "40000000-0000-4000-8000-000000000001"
+        primary_key = (
+            self.ANTHROPIC_KEY_ID
+            if self.contract_version == "v1"
+            else self.OPENAI_KEY_ID
+        )
         a1 = self._review(
             review_id="50000000-0000-4000-8000-000000000001",
             chain_id=chain_a,
-            key_id=self.ANTHROPIC_KEY_ID,
+            key_id=primary_key,
             round_number=1,
             verdict="REVISE",
             previous=None,
@@ -465,7 +479,7 @@ class FixtureFactory:
         a2 = self._review(
             review_id="50000000-0000-4000-8000-000000000002",
             chain_id=chain_a,
-            key_id=self.ANTHROPIC_KEY_ID,
+            key_id=primary_key,
             round_number=2,
             verdict="PARTIAL",
             previous=a1_digest,
@@ -494,7 +508,7 @@ class FixtureFactory:
         a3 = self._review(
             review_id="50000000-0000-4000-8000-000000000003",
             chain_id=chain_a,
-            key_id=self.ANTHROPIC_KEY_ID,
+            key_id=primary_key,
             round_number=3,
             verdict="AGREE",
             previous=a2_digest,
@@ -502,22 +516,10 @@ class FixtureFactory:
             issued_at=f"{self.day}T20:15:00Z",
             subject_digest=subject_digest,
         )
-        c1 = self._review(
-            review_id="60000000-0000-4000-8000-000000000002",
-            chain_id="40000000-0000-4000-8000-000000000003",
-            key_id=self.OPENAI_KEY_ID,
-            round_number=1,
-            verdict="AGREE",
-            previous=None,
-            closure_root=closure_root,
-            issued_at=f"{self.day}T20:17:00Z",
-            subject_digest=subject_digest,
-        )
         a3_digest = sha256_digest(a3)
-        c1_digest = sha256_digest(c1)
         review_envelopes = [a1, a2, a3]
-        provider_families = ["anthropic", "openai"]
-        final_review_digests = [a3_digest, c1_digest]
+        provider_families = ["openai"]
+        final_review_digests = [a3_digest]
         if self.contract_version == "v1":
             b1 = self._review(
                 review_id="60000000-0000-4000-8000-000000000001",
@@ -531,9 +533,20 @@ class FixtureFactory:
                 subject_digest=subject_digest,
             )
             review_envelopes.append(b1)
+            c1 = self._review(
+                review_id="60000000-0000-4000-8000-000000000002",
+                chain_id="40000000-0000-4000-8000-000000000003",
+                key_id=self.OPENAI_KEY_ID,
+                round_number=1,
+                verdict="AGREE",
+                previous=None,
+                closure_root=closure_root,
+                issued_at=f"{self.day}T20:17:00Z",
+                subject_digest=subject_digest,
+            )
             provider_families = ["anthropic", "minimax", "openai"]
-            final_review_digests = [a3_digest, sha256_digest(b1), c1_digest]
-        review_envelopes.append(c1)
+            final_review_digests = [a3_digest, sha256_digest(b1), sha256_digest(c1)]
+            review_envelopes.append(c1)
         bundle = {
             "schemaVersion": f"acik.cross-ai-deployment-bundle.{self.contract_version}",
             "bundleId": "70000000-0000-4000-8000-000000000001",

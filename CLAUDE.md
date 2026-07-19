@@ -74,24 +74,25 @@ mavis communication peers
 - [docs/context-priority-rules.md §10 Agent İletişimi](./docs/context-priority-rules.md) (proje canonical detay)
 - Global `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı + örnek senaryolar)
 
-### 0.1 Durumsal Cross-AI İstişare — Az Kanal Varsayımı (2026-07-18)
+### 0.1 Durumsal Cross-AI İstişare — Yalnız Direct Codex (2026-07-19)
 
 - Normal kodlama, test, küçük düzeltme, rutin PR ve geri alınabilir uygulama
   adımlarında istişare açma: `Consultation mode: none`. Changed-files kanıtı
   eksikse, consultation governance dosyası değişiyorsa veya branch
   `auto-promotion/` ise gate `none` kabul etmez; en az `single` gerekir.
-- İkinci görüş gerçekten gerekiyorsa tek ve birincil kanal doğrudan
-  `claude --model claude-opus-4-8` olur: `Consultation mode: single`.
-  JSON `modelUsage` exact `claude-opus-4-8` değilse gerçek görüş sayılmaz;
-  Claude implementer kendi Claude receipt'ini bağımsız `single` görüş sayamaz.
-- Yalnız geri döndürülemez, çok yüksek riskli veya açık insan/yetkili kararı
-  gerektiren noktada Claude'a doğrudan OpenAI Codex 5.6 SOL ekle:
-  `Consultation mode: dual`. Toplam iki kanal aşılmaz. MiniMax çağrılmaz,
-  receipt'i üretilmez ve yeni acceptance zincirinde kabul edilmez.
-- Cursor, wrapper-routed model ve AI uygulama penceresi istişare kanalı değildir.
+- Kesin review gerekiyorsa tek kabul edilen kanal ayrı bağlamda
+  `codex exec --ephemeral --sandbox read-only` ile çağrılan direct OpenAI Codex
+  olur: rutin review exact `gpt-5.3-codex-spark` + `xhigh`, governance/security/
+  migration/production review exact `gpt-5.6-sol` + `xhigh` kullanır.
+  CLI başlangıç kimliğinde provider/model/effort exact doğrulanmazsa gerçek
+  görüş sayılmaz.
+- Claude, MiniMax, Cursor, wrapper-routed provider/model, başka model ve AI
+  uygulama penceresi istişare kanalı değildir; yeni receipt'leri reddedilir.
+- Codex implementer'ın direct Codex receipt'i kalite/öz-inceleme kapısıdır;
+  bağımsız-provider konsensüsü veya insan onayı diye sunulmaz.
 - `REVISE` yoksa veya karar scope'u maddi değişmediyse rutin her push'ta yeniden
-  review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız seçilmiş kanal veya
-  kanallar değişen exact scope üzerinde yeniden inceler.
+  review açma. Geçerli `REVISE` bulgusu düzeltildiyse yalnız direct Codex
+  değişen exact scope üzerinde yeniden inceler.
 - Varsayımsal senaryoyu yalnız yol/opsiyon keşfinde ve açıkça non-authoritative
   kullan. Kesin review'da yalnız mevcut exact scope'tan somut, yeniden
   üretilebilir bulgu yaz; “ileride gevşetilirse/olabilir/potansiyel” iddiasını
@@ -153,17 +154,16 @@ Agent'ın **staging-sw sunucusuna SSH** ile erişim ve kubectl operasyonlarını
 
 User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak kural olarak ekle genel kural"
 
-### 8. Continuous Autonomous Mode + Durumsal Cross-AI (KALICI ANA KURAL — 2026-07-18 güncel)
+### 8. Continuous Autonomous Mode + Durumsal Cross-AI (KALICI ANA KURAL — 2026-07-19 güncel)
 
 **HARD RULE**: Otomatik mod sürekli aktiftir; durmak yok, tüm işler bitene kadar devam.
 
 **Karar verme kuralı**:
 - Normal implementation/test akışını istişareyle yavaşlatma; otonom ilerle.
-- Gerçek ikinci görüş noktasında yalnız direct Claude Opus 4.8 kullan.
-- Geri döndürülemez/çok yüksek riskli/insan-yetkili kararda en fazla bir ek
-  provider-distinct kanal kullan; bu kanal implementer sağlayıcısıyla aynı
-  olamaz, mümkünse iki çağrıyı paralel yürüt.
-- Cursor veya Cursor-routed model kullanma.
+- Kesin review noktasında yalnız ayrı read-only/ephemeral context'te direct
+  OpenAI Codex kullan: routine `gpt-5.3-codex-spark xhigh`, high-impact
+  `gpt-5.6-sol xhigh`.
+- Claude, MiniMax, Cursor, wrapper-routed provider/model veya fallback kullanma.
 - Geçerli bulguları absorb et; `REVISE` kapanmadan hazır/merge-ready deme.
 - Varsayımsal yol keşfini kesin karar veya receipt gibi sunma; yalnız mevcut
   kanıttan yeniden üretilebilir P0/P1 kesin verdict'i etkileyebilir.
@@ -171,7 +171,7 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
   erişilemiyorsa dürüstçe `tracked_pending` bırak, yapay `PASS` üretme.
 
 **Çıktı**:
-- `none` modda kısa gerekçe; `single/dual` modda sağlayıcı + exact model + exact
+- `none` modda kısa gerekçe; `single` modda sağlayıcı + exact model + exact
   base-tip/base/head/scope + verdict + evidence ref/digest kaydedilir.
 - Plan iterasyonları kullanıcıya gösterilmez; seçilen az kanalın somut ve
   absorbe edilen bulguları kanıtlanır.
@@ -182,9 +182,10 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 - Credential paylaşımı (Vault token, admin password)
 - Para harcaması (cloud provider, GitHub Actions limit aşımı)
 
-**Mantık**: Kullanıcı sürekli iş + üç sağlayıcılı adversarial istişare ile yüksek
-tempo iteration istiyor. Auto mode + provider-distinct consensus pattern'iyle
-stratejik kararlar bağımsız itirazlara açılır, kullanıcı gereksiz yere interrupt edilmez.
+**Mantık**: Kullanıcının en güncel kararı, provider çoğaltmak yerine exact-scope
+ve exact-head üzerinde ikinci bir direct Codex bağlamını kalite kapısı olarak
+kullanmaktır. Bu kapı bağımsız sağlayıcı mutabakatı iddia etmez ve insan gate'ini
+ikame etmez.
 
 User mesajı (2026-04-25): "durmak yok süreklid evam tüm işler biteene kadar otomaitk mode karar gerektğinde codex ile msp üzeri,nde otomaitk cevap al benim kararım sasyılacak kural olrak yaz bunu klıcı kural ana kural"
 
@@ -229,12 +230,15 @@ kubectl --context k3d-<env> -n platform-<env> rollout restart deploy/<svc>
 
 ### Codex Adversarial Protokol
 
-Her büyük delta (10+ commit) sonrası Codex MCP **retrospektif ping-pong** yeni thread'de:
-- VERDICT: AGREE / PARTIAL / REVISE / RED
-- AGREE → direkt impl, plan onayı sorma (CLAUDE.md global kural)
-- PARTIAL → absorb et, yeni iter submit et
-- REVISE → absorb + karşı-tez + iter devam
-- RED → kullanıcıya rapor + yön sor
+Yalnız gerekli kapsamda, ayrı ve kalıcı olmayan read-only CLI bağlamı kullanılır:
+
+- rutin review: `codex exec --model gpt-5.3-codex-spark --sandbox read-only --ephemeral -c 'model_reasoning_effort="xhigh"'`;
+- governance/security/migration/production: aynı çağrı exact `gpt-5.6-sol` ile;
+- `REVISE` → geçerli bulguyu düzelt → yeni exact head/scope ile yeniden incele;
+- `AGREE` → test/CI/live evidence kapılarına devam et; tek başına deploy veya insan onayı sayma.
+
+Claude, MiniMax, Cursor, MCP/wrapper ve uygulama penceresi bu protokolde
+kullanılmaz.
 
 ### Commit Message Pattern
 
@@ -243,8 +247,7 @@ Her büyük delta (10+ commit) sonrası Codex MCP **retrospektif ping-pong** yen
 
 <body — neden, ne, kanıt>
 
-<Codex iter referansı varsa>
-<Co-Authored-By: Claude ...>
+<Codex exact-head receipt referansı varsa>
 ```
 
 Types: `feat` / `fix` / `refactor` / `docs` / `chore` / `test`

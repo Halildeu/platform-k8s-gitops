@@ -23,7 +23,7 @@ class EvidenceCoordinatorTest(unittest.TestCase):
                 expected_policy_sha256=original["subject"]["policySha256"],
             )
 
-    def test_v2_coordinator_emits_claude_and_codex_bundle(self) -> None:
+    def test_v2_coordinator_emits_codex_only_bundle(self) -> None:
         factory = FixtureFactory("v2")
         fixture = factory.build()
         original = factory.decode_payload(fixture.bundle_envelope)
@@ -50,7 +50,7 @@ class EvidenceCoordinatorTest(unittest.TestCase):
         )
         self.assertEqual(
             coordinated.verified.provider_families,
-            ("anthropic", "openai"),
+            ("openai",),
         )
 
 

@@ -56,106 +56,26 @@ class ProviderExecutionTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.directory.cleanup()
 
-    def test_direct_claude_uses_provider_reported_model_usage(self) -> None:
-        output = {
-            "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "result": REVIEW_RESULT,
-            "total_cost_usd": 0.1,
-            "modelUsage": {"claude-opus-4-6": {"inputTokens": 1}},
-        }
-        calls = [
-            subprocess.CompletedProcess([], 0, stdout=b"2.1.0\n", stderr=b""),
-            subprocess.CompletedProcess(
-                [], 0, stdout=json.dumps(output).encode(), stderr=b""
-            ),
-        ]
-        with patch("subprocess.run", side_effect=calls):
-            receipt = DirectClaudeRunner(Path("/bin/sh")).run(
-                prompt="review this digest",
-                model="claude-opus-4-6",
-                workspace=self.workspace,
-            )
-        self.assertEqual(receipt.model_id, "claude-opus-4-6")
-        self.assertEqual(receipt.model_identity_class, "provider-reported")
-        self.assertTrue(receipt.direct_provider_cli)
-
-    def test_direct_claude_rejects_requested_reported_model_mismatch(self) -> None:
-        output = {
-            "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "result": REVIEW_RESULT,
-            "modelUsage": {"claude-sonnet-4-6": {}},
-        }
-        calls = [
-            subprocess.CompletedProcess([], 0, stdout=b"2.1.0\n", stderr=b""),
-            subprocess.CompletedProcess(
-                [], 0, stdout=json.dumps(output).encode(), stderr=b""
-            ),
-        ]
-        with patch("subprocess.run", side_effect=calls):
-            with self.assertRaisesRegex(
-                PolicyError, "PROVIDER_MODEL_IDENTITY_MISMATCH"
-            ):
+    def test_direct_claude_is_retired_before_subprocess_execution(self) -> None:
+        with patch("subprocess.run") as run:
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_ROUTE_RETIRED"):
                 DirectClaudeRunner(Path("/bin/sh")).run(
                     prompt="review this digest",
-                    model="claude-opus-4-6",
+                    model="claude-opus-4-8",
                     workspace=self.workspace,
                 )
+        run.assert_not_called()
 
-    def test_cursor_attests_live_listed_launch_without_claiming_provider_report(
-        self,
-    ) -> None:
-        output = {
-            "type": "result",
-            "subtype": "success",
-            "is_error": False,
-            "result": REVIEW_RESULT,
-            "request_id": "10000000-0000-4000-8000-000000000001",
-        }
-        calls = [
-            subprocess.CompletedProcess([], 0, stdout=b"2026.07\n", stderr=b""),
-            subprocess.CompletedProcess(
-                [],
-                0,
-                stdout=b"Available models\n\ncursor-grok-4.5-high - Cursor Grok 4.5\n",
-                stderr=b"",
-            ),
-            subprocess.CompletedProcess(
-                [], 0, stdout=json.dumps(output).encode(), stderr=b""
-            ),
-        ]
-        with patch("subprocess.run", side_effect=calls):
-            receipt = CursorRunner(Path("/bin/sh")).run(
-                prompt="review this digest",
-                model="cursor-grok-4.5-high",
-                workspace=self.workspace,
-                provider_family="xai",
-            )
-        self.assertEqual(receipt.model_id, "cursor-grok-4.5-high")
-        self.assertEqual(receipt.model_identity_class, "trusted-launch-attested")
-        self.assertFalse(receipt.direct_provider_cli)
-
-    def test_cursor_rejects_unparseable_live_model_list(self) -> None:
-        calls = [
-            subprocess.CompletedProcess([], 0, stdout=b"2026.07\n", stderr=b""),
-            subprocess.CompletedProcess(
-                [],
-                0,
-                stdout=b"Available models\n\ncursor-grok-4.5-high Cursor Grok 4.5\n",
-                stderr=b"",
-            ),
-        ]
-        with patch("subprocess.run", side_effect=calls):
-            with self.assertRaisesRegex(PolicyError, "PROVIDER_MODEL_UNAVAILABLE"):
+    def test_cursor_is_retired_before_subprocess_execution(self) -> None:
+        with patch("subprocess.run") as run:
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_ROUTE_RETIRED"):
                 CursorRunner(Path("/bin/sh")).run(
                     prompt="review this digest",
                     model="cursor-grok-4.5-high",
                     workspace=self.workspace,
                     provider_family="xai",
                 )
+        run.assert_not_called()
 
     @staticmethod
     def codex_events(message: str, *, extra_item: dict | None = None) -> bytes:
@@ -199,6 +119,9 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertEqual(receipt.model_id, CODEX_MODEL)
         self.assertEqual(receipt.model_identity_class, "trusted-launch-attested")
         self.assertTrue(receipt.direct_provider_cli)
+        self.assertEqual(receipt.reasoning_effort, "xhigh")
+        self.assertEqual(receipt.sandbox, "read-only")
+        self.assertIs(receipt.ephemeral, True)
         self.assertEqual(
             run.call_args_list[1].args[0], [str(runner.executable), "debug", "models"]
         )
@@ -217,6 +140,8 @@ class ProviderExecutionTest(unittest.TestCase):
                 "exec",
                 "--ignore-user-config",
                 "--ignore-rules",
+                "-c",
+                'model_reasoning_effort="xhigh"',
                 "--model",
                 CODEX_MODEL,
                 "--sandbox",
@@ -306,22 +231,25 @@ class ProviderIssuerTest(unittest.TestCase):
 
     def test_issuer_binds_fixed_provider_policy_and_signer_key(self) -> None:
         factory = FixtureFactory()
-        signer = StaticSigner(factory, factory.ANTHROPIC_KEY_ID)
+        signer = StaticSigner(factory, factory.OPENAI_KEY_ID)
         issuer = ProviderReviewIssuer(
             signer=signer,
-            provider_family="anthropic",
-            channel="direct-anthropic-cli",
+            provider_family="openai",
+            channel="openai-codex",
             direct_provider_cli=True,
-            model_identity_class="provider-reported",
-            allowed_models=frozenset({"claude-opus-4-6"}),
-            issuer="cross-ai-issuer-anthropic",
+            model_identity_class="trusted-launch-attested",
+            allowed_models=frozenset({CODEX_MODEL}),
+            issuer="cross-ai-issuer-openai",
         )
         receipt = ProviderExecutionReceipt(
-            provider_family="anthropic",
-            channel="direct-anthropic-cli",
+            provider_family="openai",
+            channel="openai-codex",
             direct_provider_cli=True,
-            model_id="claude-opus-4-6",
-            model_identity_class="provider-reported",
+            model_id=CODEX_MODEL,
+            model_identity_class="trusted-launch-attested",
+            reasoning_effort="xhigh",
+            sandbox="read-only",
+            ephemeral=True,
             capability_snapshot_sha256=digest("capability"),
             input_sha256=digest("input"),
             output_sha256=digest("output"),
@@ -344,15 +272,17 @@ class ProviderIssuerTest(unittest.TestCase):
             envelope,
             expected_payload_type=REVIEW_PAYLOAD_TYPE_V2,
             allowed_keys={
-                factory.ANTHROPIC_KEY_ID: factory.keys[factory.ANTHROPIC_KEY_ID]
+                factory.OPENAI_KEY_ID: factory.keys[factory.OPENAI_KEY_ID]
                 .public_key()
                 .public_bytes_raw()
             },
         )
-        self.assertEqual(verified.payload["modelIdentityClass"], "provider-reported")
-        self.assertEqual(verified.payload["keyId"], factory.ANTHROPIC_KEY_ID)
+        self.assertEqual(
+            verified.payload["modelIdentityClass"], "trusted-launch-attested"
+        )
+        self.assertEqual(verified.payload["keyId"], factory.OPENAI_KEY_ID)
         altered = ProviderExecutionReceipt(
-            **{**receipt.__dict__, "model_identity_class": "trusted-launch-attested"}
+            **{**receipt.__dict__, "model_identity_class": "provider-reported"}
         )
         with self.assertRaisesRegex(PolicyError, "PROVIDER_ISSUER_POLICY_MISMATCH"):
             issuer.issue(
@@ -368,6 +298,31 @@ class ProviderIssuerTest(unittest.TestCase):
                     expires_at="2026-07-16T21:30:00Z",
                 ),
             )
+
+        for field, invalid in (
+            ("reasoning_effort", "high"),
+            ("sandbox", "workspace-write"),
+            ("ephemeral", False),
+        ):
+            altered = ProviderExecutionReceipt(
+                **{**receipt.__dict__, field: invalid}
+            )
+            with self.assertRaisesRegex(
+                PolicyError, "PROVIDER_ISSUER_POLICY_MISMATCH"
+            ):
+                issuer.issue(
+                    execution=altered,
+                    coordinates=ReviewCoordinates(
+                        review_id="50000000-0000-4000-8000-000000000004",
+                        review_chain_id="40000000-0000-4000-8000-000000000001",
+                        subject_sha256=digest("subject"),
+                        round=3,
+                        previous_round_sha256=digest("previous"),
+                        closure_root_sha256=digest("closure"),
+                        issued_at="2026-07-16T20:00:00Z",
+                        expires_at="2026-07-16T21:30:00Z",
+                    ),
+                )
 
     def test_issuer_rejects_unknown_review_result_schema(self) -> None:
         factory = FixtureFactory()
@@ -386,6 +341,9 @@ class ProviderIssuerTest(unittest.TestCase):
             direct_provider_cli=True,
             model_id=CODEX_MODEL,
             model_identity_class="trusted-launch-attested",
+            reasoning_effort="xhigh",
+            sandbox="read-only",
+            ephemeral=True,
             capability_snapshot_sha256=digest("capability"),
             input_sha256=digest("input"),
             output_sha256=digest("output"),

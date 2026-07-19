@@ -62,10 +62,6 @@ path "sys/policies/acl/audio-gateway-mtls-seeder" {
   capabilities = ["create", "update", "read"]
 }
 
-path "sys/policies/acl/cross-ai-issuer-anthropic-test" {
-  capabilities = ["create", "update", "read"]
-}
-
 path "sys/policies/acl/cross-ai-issuer-openai-test" {
   capabilities = ["create", "update", "read"]
 }

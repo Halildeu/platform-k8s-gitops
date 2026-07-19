@@ -13,6 +13,9 @@
     "directProviderCli",
     "modelId",
     "modelIdentityClass",
+    "reasoningEffort",
+    "sandbox",
+    "ephemeral",
     "capabilitySnapshotSha256",
     "subjectSha256",
     "round",
@@ -44,7 +47,6 @@
     },
     "providerFamily": {
       "enum": [
-        "anthropic",
         "openai"
       ]
     },
@@ -65,6 +67,15 @@
         "provider-reported",
         "trusted-launch-attested"
       ]
+    },
+    "reasoningEffort": {
+      "const": "xhigh"
+    },
+    "sandbox": {
+      "const": "read-only"
+    },
+    "ephemeral": {
+      "const": true
     },
     "capabilitySnapshotSha256": {
       "$ref": "#/$defs/digest"

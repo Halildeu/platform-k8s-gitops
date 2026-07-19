@@ -398,20 +398,19 @@
       "properties": {
         "providerFamilies": {
           "type": "array",
-          "minItems": 2,
-          "maxItems": 2,
+          "minItems": 1,
+          "maxItems": 1,
           "uniqueItems": true,
           "items": {
             "enum": [
-              "anthropic",
               "openai"
             ]
           }
         },
         "finalAgreeReviewSha256": {
           "type": "array",
-          "minItems": 2,
-          "maxItems": 2,
+          "minItems": 1,
+          "maxItems": 1,
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/digest"

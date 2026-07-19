@@ -67,6 +67,9 @@ EVIDENCE_KEYS = {
     "provider",
     "requested_model",
     "actual_model",
+    "reasoning_effort",
+    "sandbox",
+    "ephemeral",
     "base_tip_sha",
     "base_sha",
     "head_sha",
@@ -92,8 +95,17 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         fail("invalid_evidence_json")
     if not isinstance(evidence, dict) or set(evidence) != EVIDENCE_KEYS:
         fail("invalid_evidence_schema")
-    if evidence.get("schema") != "cross-ai-provider-evidence/v1":
+    if evidence.get("schema") != "cross-ai-provider-evidence/v2":
         fail("invalid_evidence_schema")
+    if (
+        evidence.get("provider") != "openai"
+        or evidence.get("requested_model") not in {"gpt-5.3-codex-spark", "gpt-5.6-sol"}
+        or evidence.get("actual_model") != evidence.get("requested_model")
+        or evidence.get("reasoning_effort") != "xhigh"
+        or evidence.get("sandbox") != "read-only"
+        or evidence.get("ephemeral") is not True
+    ):
+        fail("invalid_execution_identity")
     response = evidence.get("response")
     response_digest = evidence.get("response_sha256")
     if (
