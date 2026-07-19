@@ -19,7 +19,6 @@ spec:
   ingress:
     - from:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
-        - podSelector: {matchLabels: {app.kubernetes.io/name: api-gateway}}
       ports: [{port: 8099, protocol: TCP}]
   egress:
     - to:
@@ -32,13 +31,3 @@ spec:
       ports: [{port: 8080, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: openfga}}}]
       ports: [{port: 8080, protocol: TCP}]
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata: {name: api-gateway-to-ethics-service}
-spec:
-  podSelector: {matchLabels: {app.kubernetes.io/name: api-gateway}}
-  policyTypes: [Egress]
-  egress:
-    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: ethics-service}}}]
-      ports: [{port: 8099, protocol: TCP}]

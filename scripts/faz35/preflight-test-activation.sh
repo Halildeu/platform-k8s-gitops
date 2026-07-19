@@ -108,8 +108,8 @@ check_object_headroom() {
   fi
 }
 check_object_headroom services 2 2
-check_object_headroom configmaps 1 2
-check_object_headroom secrets 1 2
+check_object_headroom configmaps 2 2
+check_object_headroom secrets 2 2
 check_object_headroom pods 4 2
 [ "$quota_failures" -eq 0 ] || exit 1
 
@@ -146,6 +146,26 @@ grep -Fq 'sha256:000000000000000000000000000000000000000000000000000000000000000
 }
 grep -Fq OVERLAY_MUST_OVERRIDE "$rendered" && {
   echo "FATAL: overlay placeholder reached rendered activation" >&2
+  exit 1
+}
+external_secret_count=$(awk '
+  /^kind: ExternalSecret$/ { count++ }
+  END { print count + 0 }
+' "$rendered")
+[ "$external_secret_count" -eq 2 ] || {
+  echo "FATAL: activation must render exactly two ExternalSecrets" >&2
+  exit 1
+}
+[ "$(grep -c 'nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate' "$rendered")" -eq 2 ] || {
+  echo "FATAL: both public ingresses must use the synthetic test access gate" >&2
+  exit 1
+}
+[ "$(grep -c 'nginx.ingress.kubernetes.io/proxy-set-headers: platform-test/etik-speak-public-upstream-headers' "$rendered")" -eq 1 ] || {
+  echo "FATAL: public API ingress must bind the reviewed upstream-header contract" >&2
+  exit 1
+}
+grep -Fq 'X-Etik-Speak-Transport: https' "$rendered" || {
+  echo "FATAL: public API transport proof header is missing" >&2
   exit 1
 }
 

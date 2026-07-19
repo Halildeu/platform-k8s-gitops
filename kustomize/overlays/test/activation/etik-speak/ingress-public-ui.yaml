@@ -4,6 +4,10 @@ metadata:
   name: etik-speak-public-ui
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: etik-speak-public-gate
+    nginx.ingress.kubernetes.io/auth-realm: "Etik Speak sentetik test"
 spec:
   ingressClassName: nginx
   tls:

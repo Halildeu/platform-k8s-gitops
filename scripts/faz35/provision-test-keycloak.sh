@@ -18,6 +18,14 @@ KCADM=/opt/keycloak/bin/kcadm.sh
   echo "FATAL: this script is platform-test only" >&2
   exit 1
 }
+[ "$VAULT_CONTAINER" = "platform-vault-test" ] && \
+  [ "$VAULT_INIT_FILE" = "/home/halil/bootstrap-drill/vault-init-test.json" ] && \
+  [ "$PERSONA_USERNAME" = "ethics-manager-test" ] && \
+  [ "$PERSONA_PASSWORD_FILE" = "/home/halil/bootstrap-drill/ethics-manager-test.password" ] && \
+  [ "$ETHICS_ORG_ID" = "00000000-0000-0000-0000-000000000001" ] || {
+  echo "FATAL: Keycloak/Vault/persona mutation target override refused" >&2
+  exit 1
+}
 [ -r "$VAULT_INIT_FILE" ] || { echo "FATAL: Vault init file unreadable" >&2; exit 1; }
 command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 1; }
 
@@ -54,6 +62,13 @@ for candidate in "$REALM" master; do
 done
 unset automation_secret
 [ -n "$login_realm" ] || { echo "FATAL: Keycloak automation login failed" >&2; exit 1; }
+# kcadm natively consumes KC_CLI_CLIENT_SECRET when --secret is omitted. Prove
+# the resulting service-account session is usable without placing the secret in
+# argv or printing the token/config.
+docker exec "$KC_CONTAINER" "$KCADM" config credentials --status >/dev/null 2>&1 || {
+  echo "FATAL: Keycloak automation session status failed" >&2
+  exit 1
+}
 
 manager_client_id=$(kc get clients -r "$REALM" -q clientId=ethics-manager \
   --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
@@ -96,6 +111,21 @@ if [ -z "$audience_mapper_id" ]; then
     -s 'config."access.token.claim"=true' \
     -s 'config."id.token.claim"=false' >/dev/null
 fi
+org_mapper_id=$(kc get "client-scopes/$audience_scope_id/protocol-mappers/models" \
+  -r "$REALM" --fields id,name --format csv --noquotes 2>/dev/null \
+  | awk -F, '$2=="ethics-org-id-mapper"{print $1; exit}' || true)
+if [ -z "$org_mapper_id" ]; then
+  kc create "client-scopes/$audience_scope_id/protocol-mappers/models" -r "$REALM" \
+    -s name=ethics-org-id-mapper -s protocol=openid-connect \
+    -s protocolMapper=oidc-usermodel-attribute-mapper \
+    -s 'config."user.attribute"=org_id' \
+    -s 'config."claim.name"=org_id' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false' \
+    -s 'config."multivalued"=false' >/dev/null
+fi
 manage_scope_id=$(ensure_scope 'ethics:case:manage' true)
 
 frontend_id=$(kc get clients -r "$REALM" -q clientId=frontend \
@@ -103,11 +133,19 @@ frontend_id=$(kc get clients -r "$REALM" -q clientId=frontend \
 [ -n "$frontend_id" ] || { echo "FATAL: frontend client missing" >&2; exit 1; }
 bound_scopes=$(kc get "clients/$frontend_id/default-client-scopes" -r "$REALM" \
   --fields name --format csv --noquotes 2>/dev/null || true)
-if ! printf '%s\n' "$bound_scopes" | grep -Fqx ethics-manager-audience; then
-  kc update "clients/$frontend_id/default-client-scopes/$audience_scope_id" -r "$REALM" >/dev/null
+if printf '%s\n' "$bound_scopes" | grep -Fqx ethics-manager-audience; then
+  kc delete "clients/$frontend_id/default-client-scopes/$audience_scope_id" -r "$REALM" >/dev/null
 fi
-if ! printf '%s\n' "$bound_scopes" | grep -Fqx 'ethics:case:manage'; then
-  kc update "clients/$frontend_id/default-client-scopes/$manage_scope_id" -r "$REALM" >/dev/null
+if printf '%s\n' "$bound_scopes" | grep -Fqx 'ethics:case:manage'; then
+  kc delete "clients/$frontend_id/default-client-scopes/$manage_scope_id" -r "$REALM" >/dev/null
+fi
+optional_scopes=$(kc get "clients/$frontend_id/optional-client-scopes" -r "$REALM" \
+  --fields name --format csv --noquotes 2>/dev/null || true)
+if ! printf '%s\n' "$optional_scopes" | grep -Fqx ethics-manager-audience; then
+  kc update "clients/$frontend_id/optional-client-scopes/$audience_scope_id" -r "$REALM" >/dev/null
+fi
+if ! printf '%s\n' "$optional_scopes" | grep -Fqx 'ethics:case:manage'; then
+  kc update "clients/$frontend_id/optional-client-scopes/$manage_scope_id" -r "$REALM" >/dev/null
 fi
 
 persona_id=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true \
@@ -121,6 +159,13 @@ if [ -z "$persona_id" ]; then
     --fields id --format csv --noquotes | head -1)
 fi
 
+if ! kc get roles/ethics-manager -r "$REALM" >/dev/null 2>&1; then
+  kc create roles -r "$REALM" -s name=ethics-manager \
+    -s 'description=Etik Speak sentetik test manager' >/dev/null
+fi
+kc add-roles -r "$REALM" --uusername "$PERSONA_USERNAME" \
+  --rolename ethics-manager >/dev/null
+
 org_payload=$(jq -nc --arg org "$ETHICS_ORG_ID" '{attributes:{org_id:[$org]}}')
 printf '%s' "$org_payload" | docker exec -i "$KC_CONTAINER" "$KCADM" \
   update "users/$persona_id" -r "$REALM" -f - --merge >/dev/null
@@ -131,22 +176,32 @@ actual_org=$(kc get "users/$persona_id" -r "$REALM" | jq -r '.attributes.org_id[
 }
 
 umask 077
-if [ ! -s "$PERSONA_PASSWORD_FILE" ]; then
-  persona_password=$(openssl rand -base64 36 | tr -d '/+=' | cut -c1-36)
-  printf '%s' "$persona_password" >"$PERSONA_PASSWORD_FILE"
-  chmod 600 "$PERSONA_PASSWORD_FILE"
+if [ -e "$PERSONA_PASSWORD_FILE" ] || [ -L "$PERSONA_PASSWORD_FILE" ]; then
+  [ ! -L "$PERSONA_PASSWORD_FILE" ] && [ -f "$PERSONA_PASSWORD_FILE" ] || {
+    echo "FATAL: persona password path must be a regular non-symlink" >&2
+    exit 1
+  }
 else
-  persona_password=$(<"$PERSONA_PASSWORD_FILE")
+  persona_password=$(openssl rand -base64 36 | tr -d '/+=' | cut -c1-36)
+  (set -C; printf '%s' "$persona_password" >"$PERSONA_PASSWORD_FILE") || {
+    echo "FATAL: exclusive persona password file creation failed" >&2
+    exit 1
+  }
 fi
-printf '%s\n' "$persona_password" | docker exec -i \
-  -e KC_PERSONA_ID="$persona_id" -e KC_REALM="$REALM" "$KC_CONTAINER" sh -c '
-    set -eu
-    IFS= read -r KC_PERSONA_PASSWORD
-    /opt/keycloak/bin/kcadm.sh set-password -r "$KC_REALM" \
-      --userid "$KC_PERSONA_ID" --new-password "$KC_PERSONA_PASSWORD" \
-      --temporary=false >/dev/null
-    unset KC_PERSONA_PASSWORD
-  '
+chmod 600 "$PERSONA_PASSWORD_FILE"
+[ "$(stat -c '%u' "$PERSONA_PASSWORD_FILE")" = "$(id -u)" ] && \
+  [ "$(stat -c '%a' "$PERSONA_PASSWORD_FILE")" = 600 ] || {
+  echo "FATAL: persona password owner/mode assertion failed" >&2
+  exit 1
+}
+persona_password=$(<"$PERSONA_PASSWORD_FILE")
+[ ${#persona_password} -ge 24 ] || { echo "FATAL: persona password too short" >&2; exit 1; }
+# Admin REST reset-password body travels through stdin; no child process argv
+# contains the cleartext password.
+jq -nc --arg value "$persona_password" \
+  '{type:"password",value:$value,temporary:false}' \
+  | docker exec -i "$KC_CONTAINER" "$KCADM" \
+      update "users/$persona_id/reset-password" -r "$REALM" -f - >/dev/null
 
 # Mint one short-lived synthetic access token and validate only its non-secret
 # claims. The password is request-body stdin, never curl/docker argv. The raw
@@ -157,7 +212,7 @@ token_json=$(printf '%s\n' "$persona_password" | docker exec -i \
     set -eu
     command -v curl >/dev/null 2>&1 || exit 70
     IFS= read -r KC_PERSONA_PASSWORD
-    printf "grant_type=password&client_id=frontend&username=%s&password=%s&scope=openid" \
+    printf "grant_type=password&client_id=frontend&username=%s&password=%s&scope=openid%%20ethics-manager-audience%%20ethics%%3Acase%%3Amanage" \
       "$KC_PERSONA_USERNAME" "$KC_PERSONA_PASSWORD" \
       | curl -fsS -X POST \
           -H "Content-Type: application/x-www-form-urlencoded" \
@@ -187,6 +242,7 @@ print(json.dumps({
     "aud": claims.get("aud"),
     "scope": claims.get("scope", ""),
     "org_id": claims.get("org_id"),
+    "roles": claims.get("realm_access", {}).get("roles", []),
 }, separators=(",", ":")))
 ') || {
   unset persona_password org_payload token_json access_token token_claims
@@ -214,9 +270,15 @@ printf '%s' "$token_claims" | jq -e '
   echo "FATAL: synthetic access token org_id is not canonical test tenant" >&2
   exit 1
 }
+printf '%s' "$token_claims" | jq -e \
+  '.roles | index("ethics-manager") != null' >/dev/null || {
+  unset persona_password org_payload token_json access_token token_claims
+  echo "FATAL: synthetic access token lacks ethics-manager realm role" >&2
+  exit 1
+}
 unset persona_password org_payload token_json access_token token_claims
 
-echo "KC: ethics-manager audience + ethics:case:manage scope bound to frontend"
-echo "KC: synthetic access-token aud/scope/org_id contract OK"
+echo "KC: ethics-manager audience + ethics:case:manage are optional frontend scopes"
+echo "KC: synthetic access-token aud/scope/org_id/role contract OK"
 echo "KC: synthetic persona ready; password kept at $PERSONA_PASSWORD_FILE"
 echo "ETHICS_STAFF_SUBJECT=$persona_id"

@@ -6,7 +6,11 @@ set -euo pipefail
 set +x
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-MODEL_JSON="${MODEL_JSON:-$SCRIPT_DIR/../../bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json}"
+EXPECTED_MODEL_JSON="$SCRIPT_DIR/../../bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json"
+EXPECTED_MODEL_FGA="$SCRIPT_DIR/../../runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
+MODEL_LEDGER="$SCRIPT_DIR/../../runtime-artifacts/openfga-model/1a4fe00f5b169945f2672f58fbec1bff2c0332e4d1cf39b742b41c28a01a95a4.json"
+EXPECTED_MODEL_JSON_SHA256="9234b1d6356698f7bd2825c0842d6eed31cd5cb99d30101d22eb2a01a821409c"
+MODEL_JSON="${MODEL_JSON:-$EXPECTED_MODEL_JSON}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NS="${KUBE_NS:-platform-test}"
 POD_DEPLOY="${POD_DEPLOY:-deploy/meeting-service}"
@@ -22,7 +26,25 @@ VAULT_PATH="${VAULT_PATH:-kv/platform/etik-speak}"
   echo "FATAL: this script is k3d-test/platform-test only" >&2
   exit 1
 }
+for binding in \
+  "$POD_DEPLOY=deploy/meeting-service" \
+  "$OPENFGA_BASE=http://openfga:8080" \
+  "$STORE_NAME=platform-test-etik-speak" \
+  "$ETHICS_ORG_ID=00000000-0000-0000-0000-000000000001" \
+  "$VAULT_CONTAINER=platform-vault-test" \
+  "$VAULT_INIT_FILE=/home/halil/bootstrap-drill/vault-init-test.json" \
+  "$VAULT_PATH=kv/platform/etik-speak"; do
+  [ "${binding%%=*}" = "${binding#*=}" ] || {
+    echo "FATAL: mutation target override refused: ${binding%%=*}" >&2
+    exit 1
+  }
+done
 [ -f "$MODEL_JSON" ] || { echo "FATAL: compiled model missing: $MODEL_JSON" >&2; exit 1; }
+[ "$(cd "$(dirname "$MODEL_JSON")" && pwd -P)/$(basename "$MODEL_JSON")" = \
+  "$(cd "$(dirname "$EXPECTED_MODEL_JSON")" && pwd -P)/$(basename "$EXPECTED_MODEL_JSON")" ] || {
+  echo "FATAL: MODEL_JSON override refused" >&2
+  exit 1
+}
 [ -n "$STAFF_SUBJECT" ] || {
   echo "FATAL: STAFF_SUBJECT is required; use provision-test-keycloak.sh output" >&2
   exit 1
@@ -32,6 +54,21 @@ printf '%s' "$STAFF_SUBJECT" | grep -Eq '^[0-9A-Fa-f-]{36}$' || {
   exit 1
 }
 command -v jq >/dev/null 2>&1 || { echo "FATAL: jq missing" >&2; exit 1; }
+sha256_stream() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}';
+  else shasum -a 256 | awk '{print $1}'; fi
+}
+model_json_sha=$(jq -cS . "$MODEL_JSON" | sha256_stream)
+[ "$model_json_sha" = "$EXPECTED_MODEL_JSON_SHA256" ] || {
+  echo "FATAL: compiled OpenFGA model digest mismatch" >&2
+  exit 1
+}
+model_source_sha=$(sha256_stream <"$EXPECTED_MODEL_FGA")
+ledger_source_sha=$(jq -r '.artifact_content_digest | sub("^sha256:"; "")' "$MODEL_LEDGER")
+[ "$model_source_sha" = "$ledger_source_sha" ] || {
+  echo "FATAL: OpenFGA source digest does not match runtime ledger" >&2
+  exit 1
+}
 
 ke() { kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" "$@"; }
 pod_get() { ke exec "$POD_DEPLOY" -- curl -fsS "$1"; }
@@ -64,7 +101,7 @@ fi
 desired=$(jq -cS . "$MODEL_JSON")
 models=$(pod_get "$OPENFGA_BASE/stores/$store_id/authorization-models?page_size=100")
 model_id=$(printf '%s' "$models" | jq -r --argjson desired "$desired" \
-  '.authorization_models[]? | select((del(.id) | tojson) == ($desired | tojson)) | .id' | head -1)
+  '.authorization_models[]? | select(del(.id) == $desired) | .id' | head -1)
 if [ -z "$model_id" ]; then
   response=$(pod_post "$OPENFGA_BASE/stores/$store_id/authorization-models" <"$MODEL_JSON")
   code=${response##*$'\n'}

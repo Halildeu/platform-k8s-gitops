@@ -8,10 +8,11 @@ spec:
         operator: In
         values: [etik-speak-test]
   hard:
-    requests.cpu: "200m"
+    requests.cpu: "500m"
     # Both Deployments may surge by one pod at the same time. These ceilings
-    # cover steady state plus both immutable-digest rollout/rollback pods.
-    requests.memory: 384Mi
-    limits.cpu: "1250m"
-    limits.memory: 1Gi
-    pods: "4"
+    # cover steady state, both rollout pods and two worst-case backend repair
+    # pods. An exact four-pod fit would make rollback/recovery impossible.
+    requests.memory: 896Mi
+    limits.cpu: "2500m"
+    limits.memory: 2Gi
+    pods: "6"

@@ -10,13 +10,16 @@ resources:
   - netpol.yaml
   - resource-quota.yaml
   - priority-class.yaml
+  - public-api-upstream-headers.yaml
 images:
-  # Exact branch artifacts: backend source 5193a006 / run 29678300281 and
-  # public-web source 104f439b / run 29678660868. Root activation remains
+  # Exact branch artifacts: backend source 635b2012 / run 29681944894 and
+  # public-web source 61820d06 / run 29681910475. The public artifact content
+  # digest is unchanged because the follow-up changed only the E2E driver.
+  # Root activation remains
   # forbidden until the exact-head review and provisioning gates are satisfied.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:968d97e29fab5400d87c0b71062ab243d96dbf3a59a42a42b8ae56bec4ee325a
+    digest: sha256:fa6acf2cc77dc53b24c0922c896417c1064668d4fe091bd25f0217187a166703
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     digest: sha256:8e4497d887ddf01607172b0216bcbe5fb5b998b0eff628a7cec48a5cfde729d0

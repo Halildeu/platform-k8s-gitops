@@ -59,6 +59,14 @@ canonical host edge; `docs/S5-cert-renewal-runbook.md` defines it as optional
 when cluster TLS termination is not used. A valid edge certificate and
 authoritative public request remain mandatory.
 
+The public production-named hosts remain protected by a dedicated synthetic
+test Basic Auth gate until the separate production/legal change. ingress-nginx
+consumes that credential and removes `Authorization` before proxying the public
+API, then overwrites `X-Etik-Speak-Transport: https`. The ethics backend rejects
+public mutations without that exact transport proof, and its NetworkPolicy
+admits only the ingress namespace. This prevents uninvited real reports while
+preserving the application's bearer/cookie credential-confusion boundary.
+
 ```bash
 ./scripts/faz35/provision-test-pg-vault.sh
 ./scripts/faz35/provision-test-keycloak.sh
@@ -66,8 +74,11 @@ authoritative public request remain mandatory.
 
 The Keycloak script prints a non-secret `ETHICS_STAFF_SUBJECT=<uuid>` line and
 stores the dedicated synthetic persona password in the chmod-600 path reported
-by the script. Do not paste that password into chat, GitHub, logs, shell argv,
-or an evidence document.
+by the script. The PG/Vault script likewise prints only the public-gate username
+and the chmod-600 local password-file path; Vault stores only its htpasswd hash.
+Both files must be regular, non-symlink, owned by the invoking user and
+inaccessible to group/other users. Do not paste either password into chat,
+GitHub, logs, shell argv, or an evidence document.
 
 Use the printed subject to promote the isolated OpenFGA model, seed only the
 test staff product relations, and patch the existing Vault selector fields:
@@ -84,6 +95,8 @@ Expected non-secret results:
 - rerunning the PG/Vault provisioner reuses the existing Vault-managed DB
   password instead of rotating it underneath an active ESO/workload;
 - Vault `kv/platform/etik-speak`: DB keys plus OpenFGA store/model selectors;
+- Vault `kv/platform/etik-speak`: public edge htpasswd hash, while the raw gate
+  password remains only in the reported host-local file;
 - Keycloak access token contract: `aud` includes `ethics-manager`, `scope`
   includes `ethics:case:manage`, and `org_id` is the canonical test UUID;
 - OpenFGA checks return allow for product `case_viewer`, `case_triager`, and
@@ -111,15 +124,28 @@ In the GitOps PR:
 After reconciliation, verify ExternalSecret and immutable image identity:
 
 ```bash
-kubectl --context k3d-test -n platform-test get externalsecret ethics-service-secrets
+kubectl --context k3d-test -n platform-test get externalsecret \
+  ethics-service-secrets etik-speak-public-gate
 kubectl --context k3d-test -n platform-test get deploy ethics-service etik-speak-public
 kubectl --context k3d-test -n platform-test get pods \
   -l app.kubernetes.io/part-of=etik-speak \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}'
 ```
 
-The two pod `imageID` values must match the reviewed digests. `Up` alone is not
-functional acceptance.
+Also record the manager deployment image identity and the exact in-container
+ethic remote artifact hash; a healthy shell that serves an older remote is not
+manager acceptance:
+
+```bash
+kubectl --context k3d-test -n platform-test get pods -l app=frontend \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}'
+kubectl --context k3d-test -n platform-test exec deploy/frontend -- \
+  sha256sum /usr/share/nginx/html/remotes/ethic/remoteEntry.js
+```
+
+Backend, public UI and manager pod `imageID` values must match the reviewed
+digests, and the manager remote hash must be recorded against the same immutable
+image. `Up` alone is not functional acceptance.
 
 ## Gate 4: customer closed-loop acceptance
 
@@ -140,12 +166,14 @@ Use only synthetic content.
    confusion denial, wrong-org staff isolation, OpenFGA deny/outage behavior,
    stale `If-Match` `412`, and retry idempotency.
 
-The canonical browser driver lives in `platform-web` and reads the synthetic
-manager password only from a host-local chmod-600 file. It disables trace,
+The canonical browser driver lives in `platform-web` and reads both synthetic
+gate passwords only from host-local chmod-600 files. It validates regular-file,
+non-symlink, owner and mode boundaries before reading them. It disables trace,
 video and screenshots so a receipt/access secret cannot enter CI artifacts:
 
 ```bash
 ETIK_MANAGER_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-test.password \
+ETIK_PUBLIC_GATE_PASSWORD_FILE=/home/halil/bootstrap-drill/etik-speak-public-gate.password \
   pnpm test:e2e:etik-speak-runtime
 ```
 
