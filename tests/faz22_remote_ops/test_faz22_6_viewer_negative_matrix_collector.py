@@ -206,10 +206,24 @@ class NegativeMatrixCollectorTest(unittest.TestCase):
                 "MATRIX_OUTPUT_DIR": str(output),
                 "MATRIX_ROOT_BINDING_FILE": str(tmp / "root-binding.json"),
             })
-            completed = subprocess.run(
-                ["bash", str(COLLECTOR)], env=env, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    ["bash", str(COLLECTOR)], env=env, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    # The collector's production stream is independently bounded
+                    # at 90 seconds.  A 30-second fixture watchdog was shorter
+                    # than that contract and flaked under a loaded GitHub runner.
+                    timeout=120,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                state_snapshot = state.read_text(encoding="utf-8")
+                request_snapshot = request_log.read_text(encoding="utf-8")
+                self.fail(
+                    "negative matrix fixture exceeded its 120-second watchdog; "
+                    f"state={state_snapshot}; requests={request_snapshot}; "
+                    f"stdout={exc.stdout!r}; stderr={exc.stderr!r}"
+                )
             self.assertEqual(0, completed.returncode, completed.stderr)
             self.assertIn("raw_screen_persisted=false", completed.stdout)
 
