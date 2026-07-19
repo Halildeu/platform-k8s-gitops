@@ -142,7 +142,7 @@ fi
 preflight_existing_scope() {
   local name=$1 include=$2 scope_id scope_json mappers bindings client_bindings
   scope_id=$(kc get client-scopes -r "$REALM" --fields id,name \
-    --format csv --noquotes 2>/dev/null | awk -F, -v n="$name" '$2==n{print $1; exit}')
+    --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}')
   [ -n "$scope_id" ] || return 0
   scope_json=$(kc get "client-scopes/$scope_id" -r "$REALM")
   printf '%s' "$scope_json" | jq -e --arg name "$name" --arg include "$include" '
@@ -206,7 +206,7 @@ fi
 
 for existing_username in "$PERSONA_USERNAME" "$WRONG_ORG_USERNAME" "$DENIED_USERNAME"; do
   existing_user_id=$(kc get users -r "$REALM" -q "username=$existing_username" -q exact=true \
-    --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
+    --fields id --format csv --noquotes | sed -n '1p')
   [ -n "$existing_user_id" ] || continue
   existing_mappings=$(kc get "users/$existing_user_id/role-mappings" -r "$REALM")
   printf '%s' "$existing_mappings" | jq -e '
@@ -238,7 +238,7 @@ kc get roles/ethics-manager -r "$REALM" | jq -e '
 }
 
 manager_client_id=$(kc get clients -r "$REALM" -q clientId=ethics-manager \
-  --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
+  --fields id --format csv --noquotes | sed -n '1p')
 if [ -z "$manager_client_id" ]; then
   kc create clients -r "$REALM" \
     -s clientId=ethics-manager -s enabled=true -s bearerOnly=true \
@@ -246,7 +246,7 @@ if [ -z "$manager_client_id" ]; then
     -s implicitFlowEnabled=false -s directAccessGrantsEnabled=false \
     -s serviceAccountsEnabled=false >/dev/null
   manager_client_id=$(kc get clients -r "$REALM" -q clientId=ethics-manager \
-    --fields id --format csv --noquotes | head -1)
+    --fields id --format csv --noquotes | sed -n '1p')
   echo "KC: ethics-manager bearer client created"
 fi
 kc get "clients/$manager_client_id" -r "$REALM" | jq -e '
@@ -263,14 +263,14 @@ kc get "clients/$manager_client_id" -r "$REALM" | jq -e '
 ensure_scope() {
   local name=$1 include=$2 scope_id scope_json
   scope_id=$(kc get client-scopes -r "$REALM" --fields id,name \
-    --format csv --noquotes 2>/dev/null | awk -F, -v n="$name" '$2==n{print $1; exit}')
+    --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}')
   if [ -z "$scope_id" ]; then
     kc create client-scopes -r "$REALM" -s "name=$name" \
       -s protocol=openid-connect \
       -s "attributes.\"include.in.token.scope\"=$include" \
       -s 'attributes."display.on.consent.screen"=false' >/dev/null
     scope_id=$(kc get client-scopes -r "$REALM" --fields id,name \
-      --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1; exit}')
+      --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}')
   fi
   scope_json=$(kc get "client-scopes/$scope_id" -r "$REALM")
   printf '%s' "$scope_json" | jq -e --arg name "$name" --arg include "$include" '
@@ -288,8 +288,7 @@ ensure_scope() {
 
 ensure_scope_role_binding() {
   local scope_id=$1 scope_name=$2 bindings role_payload client_bindings
-  bindings=$(kc get "client-scopes/$scope_id/scope-mappings/realm" \
-    -r "$REALM" 2>/dev/null || printf '[]')
+  bindings=$(kc get "client-scopes/$scope_id/scope-mappings/realm" -r "$REALM")
   printf '%s' "$bindings" | jq -e '
     [.[].name | select(. != "ethics-manager")] | length == 0
   ' >/dev/null || {
@@ -318,9 +317,9 @@ ensure_scope_role_binding() {
 
 audience_scope_id=$(ensure_scope ethics-manager-audience false)
 mapper_rows=$(kc get "client-scopes/$audience_scope_id/protocol-mappers/models" \
-  -r "$REALM" --fields id,name --format csv --noquotes 2>/dev/null || true)
+  -r "$REALM" --fields id,name --format csv --noquotes)
 audience_mapper_id=$(printf '%s\n' "$mapper_rows" | awk -F, \
-  '$2=="ethics-manager-audience-mapper"{print $1; exit}')
+  '$2=="ethics-manager-audience-mapper"{print $1}')
 if [ -z "$audience_mapper_id" ]; then
   kc create "client-scopes/$audience_scope_id/protocol-mappers/models" -r "$REALM" \
     -s name=ethics-manager-audience-mapper -s protocol=openid-connect \
@@ -330,8 +329,8 @@ if [ -z "$audience_mapper_id" ]; then
     -s 'config."id.token.claim"=false' >/dev/null
 fi
 org_mapper_id=$(kc get "client-scopes/$audience_scope_id/protocol-mappers/models" \
-  -r "$REALM" --fields id,name --format csv --noquotes 2>/dev/null \
-  | awk -F, '$2=="ethics-org-id-mapper"{print $1; exit}' || true)
+  -r "$REALM" --fields id,name --format csv --noquotes \
+  | awk -F, '$2=="ethics-org-id-mapper"{print $1}')
 if [ -z "$org_mapper_id" ]; then
   kc create "client-scopes/$audience_scope_id/protocol-mappers/models" -r "$REALM" \
     -s name=ethics-org-id-mapper -s protocol=openid-connect \
@@ -382,10 +381,10 @@ ensure_scope_role_binding "$audience_scope_id" ethics-manager-audience
 ensure_scope_role_binding "$manage_scope_id" 'ethics:case:manage'
 
 frontend_id=$(kc get clients -r "$REALM" -q clientId=frontend \
-  --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
+  --fields id --format csv --noquotes | sed -n '1p')
 [ -n "$frontend_id" ] || { echo "FATAL: frontend client missing" >&2; exit 1; }
 bound_scopes=$(kc get "clients/$frontend_id/default-client-scopes" -r "$REALM" \
-  --fields name --format csv --noquotes 2>/dev/null || true)
+  --fields name --format csv --noquotes)
 if printf '%s\n' "$bound_scopes" | grep -Fqx ethics-manager-audience; then
   kc delete "clients/$frontend_id/default-client-scopes/$audience_scope_id" -r "$REALM" >/dev/null
 fi
@@ -393,7 +392,7 @@ if printf '%s\n' "$bound_scopes" | grep -Fqx 'ethics:case:manage'; then
   kc delete "clients/$frontend_id/default-client-scopes/$manage_scope_id" -r "$REALM" >/dev/null
 fi
 optional_scopes=$(kc get "clients/$frontend_id/optional-client-scopes" -r "$REALM" \
-  --fields name --format csv --noquotes 2>/dev/null || true)
+  --fields name --format csv --noquotes)
 if ! printf '%s\n' "$optional_scopes" | grep -Fqx ethics-manager-audience; then
   kc update "clients/$frontend_id/optional-client-scopes/$audience_scope_id" -r "$REALM" >/dev/null
 fi
@@ -454,14 +453,14 @@ assert_persona_role_boundary() {
 }
 
 persona_id=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true \
-  --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
+  --fields id --format csv --noquotes | sed -n '1p')
 if [ -z "$persona_id" ]; then
   kc create users -r "$REALM" -s "username=$PERSONA_USERNAME" \
     -s enabled=true -s emailVerified=true \
     -s "email=$PERSONA_USERNAME@test.invalid" \
     -s firstName=Ethics -s lastName=Manager >/dev/null
   persona_id=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true \
-    --fields id --format csv --noquotes | head -1)
+    --fields id --format csv --noquotes | sed -n '1p')
 fi
 printf '%s' "$persona_id" | grep -Eq \
   '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
@@ -588,14 +587,14 @@ unset persona_password org_payload token_json access_token token_claims
 ensure_negative_persona() {
   local username=$1 org_id=$2 password_file=$3 negative_id payload password token_json access_token claims
   negative_id=$(kc get users -r "$REALM" -q "username=$username" -q exact=true \
-    --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
+    --fields id --format csv --noquotes | sed -n '1p')
   if [ -z "$negative_id" ]; then
     kc create users -r "$REALM" -s "username=$username" \
       -s enabled=true -s emailVerified=true \
       -s "email=$username@test.invalid" \
       -s firstName=Ethics -s lastName=Negative >/dev/null
     negative_id=$(kc get users -r "$REALM" -q "username=$username" -q exact=true \
-      --fields id --format csv --noquotes | head -1)
+      --fields id --format csv --noquotes | sed -n '1p')
   fi
   kc add-roles -r "$REALM" --uusername "$username" --rolename ethics-manager >/dev/null
   assert_persona_role_boundary "$negative_id" "$username"

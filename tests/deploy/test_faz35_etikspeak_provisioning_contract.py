@@ -541,6 +541,14 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertEqual(len(direct_kcadm_calls), 5)
         for call in direct_kcadm_calls:
             self.assertIn('--config "$KCADM_CONFIG"', call)
+        self.assertNotIn("head -1", self.keycloak)
+        self.assertNotRegex(self.keycloak, r"awk[^\n]*\{print \$1; exit\}")
+        self.assertGreaterEqual(self.keycloak.count("| sed -n '1p'"), 7)
+        self.assertNotIn("2>/dev/null || printf '[]'", self.keycloak)
+        self.assertNotRegex(
+            self.keycloak,
+            r"(default|optional)-client-scopes[^\n]*\n[^\n]*\|\| true",
+        )
 
     def test_pg_preflight_preserves_only_dedicated_database_rerun_state(self):
         self.assertIn("OR d.dbid=ethics_db_oid", self.pg_vault)
