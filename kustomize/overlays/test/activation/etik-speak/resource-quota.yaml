@@ -9,7 +9,9 @@ spec:
         values: [etik-speak-test]
   hard:
     requests.cpu: "200m"
-    requests.memory: 256Mi
-    limits.cpu: "750m"
-    limits.memory: 640Mi
+    # Both Deployments may surge by one pod at the same time. These ceilings
+    # cover steady state plus both immutable-digest rollout/rollback pods.
+    requests.memory: 384Mi
+    limits.cpu: "1250m"
+    limits.memory: 1Gi
     pods: "4"

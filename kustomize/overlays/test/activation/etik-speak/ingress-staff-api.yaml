@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: etik-speak-staff-api
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [testai.acik.com]
+      secretName: wildcard-acik-com-tls
+  rules:
+    - host: testai.acik.com
+      http:
+        paths:
+          - path: /api/v1/ethics
+            pathType: Prefix
+            backend:
+              service: {name: ethics-service, port: {number: 8099}}

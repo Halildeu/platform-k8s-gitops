@@ -68,8 +68,10 @@ ambiguous credential combination returns `400 CREDENTIAL_CONFUSION`.
 
 `POST /api/v1/public/ethics/reports`
 
-Headers: `Idempotency-Key` required, `X-Public-Channel` derived/overridden by
-trusted ingress (`etik.acik.com` or `speakup.acik.com`).
+Headers: `Idempotency-Key` required. The service derives the public channel
+only from the trusted ingress host/server name and accepts only
+`etik.acik.com` or `speakup.acik.com`; no caller-controlled business header is
+tenant or channel input.
 
 ```json
 {
@@ -170,10 +172,14 @@ Required compartments/entities:
 - `evidence_artifacts`: quarantine/sealed/sanitized digests and derivation;
 - `audit_outbox` and `notification_outbox`: product-local durable intents.
 
-The intake transaction writes the first four required durable rows plus audit
-outbox. Notification delivery, Keycloak, suite entitlement, WORM sink and
-external scanner are not synchronous success dependencies. Attachment state may
-be `QUARANTINED` until scan/sanitize finishes; it is never silently `CLEAN`.
+Anonymous intake atomically writes exactly the report, case,
+reporter-access-grant hash, audit-outbox event and idempotency marker. It writes
+no reporter-identity or case-identity-link row. Confidential/named modes add
+their separately authorized identity/link rows only when that compartment is
+enabled. Notification outbox creation may share the transaction when configured,
+but provider delivery, Keycloak, suite entitlement, WORM sink and external
+scanner are not synchronous success dependencies. Attachment state may be
+`QUARANTINED` until scan/sanitize finishes; it is never silently `CLEAN`.
 
 ## 6. Event contract
 

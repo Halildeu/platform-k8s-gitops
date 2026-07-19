@@ -41,7 +41,7 @@ etik.acik.com|speakup.acik.com
   /*                       -> etik-speak-public
 
 testai.acik.com|ai.acik.com
-  /api/v1/ethics/*         -> api-gateway -> ethics-service staff filter chain
+  /api/v1/ethics/*         -> dedicated product ingress -> ethics-service staff filter chain
   /ethic                   -> shell -> mfe-ethic remote
 ```
 
@@ -68,7 +68,7 @@ Etik Speak aşağıdakileri ürün bazında ayırır:
 | Namespace/workloads | mevcut test namespace içinde dedicated labels, SA, quota ve NetPol; kapasite onayında dedicated namespace'e taşınabilir | dedicated namespace tercih edilir |
 | PostgreSQL | ayrı database/role/schema/pool; `org_id` + `product_id` | ayrı credential ve backup/restore scope |
 | OpenFGA | ayrı store/model/model-id ledger | test model promotion evidence ile |
-| Vault/ESO | `secret/test/etik-speak/*`, ayrı ExternalSecret/SA | `secret/prod/etik-speak/*`, named owner gate |
+| Vault/ESO | test Vault instance'ında `kv/platform/etik-speak`, ayrı ExternalSecret/SA | ayrı prod Vault instance'ında aynı mantıksal anahtar, ayrı credential ve named owner gate |
 | Object storage | quarantine, sealed, sanitized ve export prefix/bucket policy ayrımı | ayrı KMS/policy ve lifecycle |
 | Audit/notification | ayrı outbox, consumer checkpoint, retry/DLQ/backlog alarmı | provider outage product commit'ini bozmaz |
 | Network | default-deny; yalnız DNS, DB, authz, storage ve allowlisted adapters | public ingress suite auth endpointine erişmez |
@@ -115,9 +115,8 @@ flowchart LR
 
   U["Authorized staff browser"] --> T["testai.acik.com shell"]
   T --> M["mfe-ethic remote"]
-  M --> GA["/api/v1/ethics"]
-  GA --> G["API gateway staff chain"]
-  G --> B
+  M --> GA["/api/v1/ethics dedicated ingress"]
+  GA --> B
 
   B --> DB["Etik Speak PostgreSQL"]
   B --> FGA["Etik Speak OpenFGA store"]

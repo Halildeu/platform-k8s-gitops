@@ -6,6 +6,7 @@ resources:
   - externalsecret.yaml
   - ingress-public-api.yaml
   - ingress-public-ui.yaml
+  - ingress-staff-api.yaml
   - netpol.yaml
   - resource-quota.yaml
   - priority-class.yaml

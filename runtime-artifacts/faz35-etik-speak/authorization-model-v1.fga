@@ -13,6 +13,8 @@ type ethics_product
     define triager: [user, team#member]
     define handler: [user, team#member]
     define technical_admin: [user, team#member]
+    define evidence_approver: [user, team#member]
+    define ethics_product_admin: [user, team#member]
 
 type ethics_case
   relations
@@ -23,3 +25,4 @@ type ethics_case
     define case_viewer: (viewer from product or triager from product or handler from product) but not denied
     define case_triager: triager from product but not denied
     define case_handler: handler from product but not denied
+    define evidence_reveal_approved: evidence_approver from product but not denied
