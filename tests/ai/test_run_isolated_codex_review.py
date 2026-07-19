@@ -156,7 +156,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             json.dumps({"name": "@openai/codex", "version": dependency_version}),
             encoding="utf-8",
         )
-        fake_codex = platform_root / "vendor" / target / "codex" / executable_name
+        fake_codex = platform_root / "vendor" / target / "bin" / executable_name
         fake_codex.parent.mkdir(parents=True)
         fake_codex.write_text(FAKE_CODEX, encoding="utf-8")
         fake_codex.chmod(0o700)

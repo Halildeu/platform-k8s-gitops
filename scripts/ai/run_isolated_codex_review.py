@@ -235,7 +235,10 @@ def resolve_codex_native() -> tuple[Path, str, str, str]:
     platform_package = read_json_object(
         platform_root / "package.json", "codex_platform_package_invalid"
     )
-    native = platform_root / "vendor" / target / "codex" / executable_name
+    # The pinned 0.144.1 platform packages install the native executable here.
+    # Package version and executable digest checks below bind this layout to
+    # the reviewed release instead of trusting an arbitrary PATH binary.
+    native = platform_root / "vendor" / target / "bin" / executable_name
     if (
         platform_package.get("name") != "@openai/codex"
         or platform_package.get("version") != f"{version}-{package_suffix.removeprefix('codex-')}"
