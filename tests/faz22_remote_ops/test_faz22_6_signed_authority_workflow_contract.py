@@ -59,7 +59,7 @@ def verify_legacy_archive_contract(text: str) -> None:
         'elif set(names) == advisory:': 1,
         'elif set(names) == legacy:': 1,
         '[[ "$archive_mode" = v2-* ]]': 1,
-        '[ "$archive_mode" = v2-current ]': 1,
+        '[ "$archive_mode" = v2-current ]': 2,
         '[ "$archive_mode" = v1 ]': 1,
     }
     if any(text.count(token) != count for token, count in required_counts.items()):

@@ -247,6 +247,7 @@ def validate_evidence(
     review_reference_time: datetime | None = None,
     require_agree: bool,
     expected_model: str = CODEX_MODEL,
+    supplemental_revocation_entries: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
     if not isinstance(evidence, dict) or set(evidence) != EVIDENCE_KEYS:
         raise TrustedEvidenceError("signed Codex evidence field set is invalid")
@@ -337,6 +338,7 @@ def validate_evidence(
         now=now,
         review_reference_time=review_reference_time,
         expected_trust_root_sha256=expected_trust_root_sha256,
+        supplemental_revocation_entries=supplemental_revocation_entries,
     )
     verified = verifier.verify_provider_review(envelope, sha256_digest(subject))
     payload = verified.payload

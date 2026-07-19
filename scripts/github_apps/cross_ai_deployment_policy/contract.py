@@ -183,6 +183,7 @@ class EvidenceVerifier:
         verification_mode: Literal["active", "forensic"] = "active",
         forensic_reference_time: datetime | None = None,
         review_reference_time: datetime | None = None,
+        supplemental_revocation_entries: tuple[dict[str, Any], ...] = (),
     ) -> None:
         self.observed_at = now or utc_now()
         if verification_mode not in {"active", "forensic"}:
@@ -304,6 +305,14 @@ class EvidenceVerifier:
         self._validate_trust_root_lifetime()
         self.revocations_envelope = self._verify_revocations(revocations_envelope)
         self.revocations = self.revocations_envelope.payload
+        supplemental_payload = dict(self.revocations)
+        supplemental_payload["entries"] = list(supplemental_revocation_entries)
+        _validate_schema(
+            supplemental_payload,
+            REVOCATIONS_SCHEMA,
+            "SUPPLEMENTAL_REVOCATIONS_SCHEMA_INVALID",
+        )
+        self.supplemental_revocation_entries = tuple(supplemental_revocation_entries)
 
     def _parse_trust_keys(self, trust_root: dict[str, Any]) -> dict[str, TrustKey]:
         parsed: dict[str, TrustKey] = {}
@@ -674,7 +683,10 @@ class EvidenceVerifier:
     def _is_revoked(
         self, kind: str, identifier: str, issued_at: datetime | None = None
     ) -> bool:
-        for entry in self.revocations["entries"]:
+        for entry in (
+            *self.revocations["entries"],
+            *self.supplemental_revocation_entries,
+        ):
             if entry["type"] != kind or entry["id"] != identifier:
                 continue
             parse_utc(entry["effectiveAt"], "revocation.effectiveAt")

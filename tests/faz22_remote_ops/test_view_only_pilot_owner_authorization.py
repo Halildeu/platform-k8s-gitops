@@ -316,6 +316,12 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
         with self.assertRaisesRegex(AUTH.AuthorizationError, "body digest"):
             self.build(owner_comment=tampered)
 
+        edited = comment(
+            101, OWNER_BODY, updated_at="2026-07-15T00:00:01Z",
+        )
+        with self.assertRaisesRegex(AUTH.AuthorizationError, "comment was edited"):
+            self.build(owner_comment=edited)
+
     def test_advisory_expected_bindings_edit_and_freshness_fail_closed(self):
         with self.assertRaisesRegex(
             AUTH.AuthorizationError, "authorization head does not match Codex advisory"

@@ -22,6 +22,7 @@ from scripts.ai.cross_ai_authority import (
     validate_authority_history_transition,
 )
 from scripts.ai.prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope
+from scripts.ai.trusted_cross_ai_evidence import validate_evidence
 from scripts.ai.verify_cross_ai_authority_transition import (
     TransitionError,
     stage_public_authority,
@@ -30,6 +31,7 @@ from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_dige
 from scripts.github_apps.cross_ai_deployment_policy.contract import (
     REVOCATIONS_PAYLOAD_TYPE,
 )
+from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from tests.ai.signed_evidence_fixture import make_signed_evidence
 from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory
 
@@ -220,13 +222,15 @@ class PublicReviewAuthorityTests(unittest.TestCase):
             history_revocations,
             self.fixture.authority.revocations_envelope,
         )
-        authority = load_authority_for_evidence(
-            self.root,
-            expected_trust_root_sha256=digest,
-            observed_at=self.fixture.factory.now + timedelta(minutes=35),
-            evidence_reference_time=self.fixture.factory.now,
-        )
-        self.assertEqual(digest, authority.expected_trust_root_sha256)
+        with self.assertRaisesRegex(
+            AuthorityUnavailable, "requires an active current revocation authority"
+        ):
+            load_authority_for_evidence(
+                self.root,
+                expected_trust_root_sha256=digest,
+                observed_at=self.fixture.factory.now + timedelta(minutes=35),
+                evidence_reference_time=self.fixture.factory.now,
+            )
         with self.assertRaisesRegex(AuthorityUnavailable, "after its authority retired"):
             load_authority_for_evidence(
                 self.root,
@@ -276,17 +280,15 @@ class PublicReviewAuthorityTests(unittest.TestCase):
         )
         self.write_json(history_root, self.fixture.authority.trust_root)
         self.write_json(history_revocations, stale_snapshot)
-        replayed = load_authority_for_evidence(
-            self.root,
-            expected_trust_root_sha256=digest,
-            observed_at=self.fixture.factory.now + timedelta(days=30),
-            evidence_reference_time=self.fixture.factory.now + timedelta(minutes=25),
-        )
-        self.assertEqual(digest, replayed.expected_trust_root_sha256)
-        self.assertEqual(
-            self.fixture.factory.now + timedelta(minutes=30),
-            replayed.observed_at,
-        )
+        with self.assertRaisesRegex(
+            AuthorityUnavailable, "requires an active current revocation authority"
+        ):
+            load_authority_for_evidence(
+                self.root,
+                expected_trust_root_sha256=digest,
+                observed_at=self.fixture.factory.now + timedelta(days=30),
+                evidence_reference_time=self.fixture.factory.now + timedelta(minutes=25),
+            )
 
 
 class GenesisTransitionTests(unittest.TestCase):
@@ -683,6 +685,74 @@ class GenesisTransitionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             AuthorityUnavailable, "omits a predecessor revocation"
+        ):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, head),
+                now=self.fixture.factory.now,
+            )
+
+    def test_historical_replay_applies_current_signed_revocation_overlay(self) -> None:
+        revoked = {
+            "type": "key",
+            "id": self.fixture.factory.OPENAI_KEY_ID,
+            "effectiveAt": "2026-07-18T20:30:00Z",
+            "reasonCode": "HISTORICAL_PROVIDER_KEY_COMPROMISED",
+        }
+        _, head = self.install_rotation(replacement_entries=[revoked])
+        self.git("checkout", "-q", head)
+        authority = load_authority_for_evidence(
+            self.root,
+            expected_trust_root_sha256=(
+                self.fixture.authority.expected_trust_root_sha256
+            ),
+            observed_at=self.fixture.factory.now,
+            evidence_reference_time=self.fixture.factory.now - timedelta(minutes=10),
+        )
+        self.assertEqual((revoked,), authority.supplemental_revocation_entries)
+        with self.assertRaisesRegex(PolicyError, "SIGNING_KEY_REVOKED"):
+            validate_evidence(
+                self.fixture.evidence,
+                trust_root=authority.trust_root,
+                revocations_envelope=authority.revocations_envelope,
+                expected_trust_root_sha256=authority.expected_trust_root_sha256,
+                codex_executable_policy=authority.codex_executable_policy,
+                issuer_runtime_policy=authority.issuer_runtime_policy,
+                expected_bindings=self.fixture.bindings,
+                scope_bytes=self.fixture.scope_bytes,
+                now=authority.observed_at,
+                review_reference_time=self.fixture.factory.now - timedelta(minutes=10),
+                require_agree=True,
+                supplemental_revocation_entries=(
+                    authority.supplemental_revocation_entries
+                ),
+            )
+
+    def test_same_root_rejects_in_place_active_trust_root_mutation(self) -> None:
+        manifest = self.authority_manifest(active=True)
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            manifest,
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            self.fixture.authority.trust_root,
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
+            self.fixture.authority.revocations_envelope,
+        )
+        base = self.commit("active authority before in-place root mutation")
+        mutated = copy.deepcopy(self.fixture.authority.trust_root)
+        mutated["trustRootId"] = "10000000-0000-4000-8000-000000000099"
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            mutated,
+        )
+        head = self.commit("mutate active trust root without locator rotation")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(
+            AuthorityUnavailable, "cannot change without a manifest rotation"
         ):
             validate_authority_history_transition(
                 self.root,

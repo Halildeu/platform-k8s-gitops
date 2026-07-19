@@ -688,7 +688,12 @@ def advisory_comment_document(
     }
 
 
-def owner_comment_document(*, body=OWNER_COMMENT_BODY):
+def owner_comment_document(
+    *,
+    body=OWNER_COMMENT_BODY,
+    created_at="2026-07-13T00:00:00Z",
+    updated_at="2026-07-13T00:00:00Z",
+):
     return {
         "id": OWNER_COMMENT_ID,
         "html_url": owner_policy_fixture()["ownerDirective"]["ref"],
@@ -698,8 +703,8 @@ def owner_comment_document(*, body=OWNER_COMMENT_BODY):
         "author_association": "OWNER",
         "user": {"login": "Halildeu"},
         "body": body,
-        "created_at": "2026-07-13T00:00:00Z",
-        "updated_at": "2026-07-13T00:00:00Z",
+        "created_at": created_at,
+        "updated_at": updated_at,
     }
 
 
@@ -1325,6 +1330,19 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         )
         client = FakeClient(build_archive(children=children))
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "owner directive body digest"):
+            self.verify(client)
+
+        edited_owner = owner_comment_document(
+            updated_at="2026-07-13T00:00:01Z"
+        )
+        children = child_documents()
+        children["operator"]["payload"]["ownerDirectiveCarrierBase64"] = (
+            base64.b64encode(encode_json(edited_owner)).decode("ascii")
+        )
+        client = FakeClient(build_archive(children=children))
+        with self.assertRaisesRegex(
+            VERIFIER.EvidenceError, "owner directive immutable timestamp"
+        ):
             self.verify(client)
 
         client = self.client_for_policy(

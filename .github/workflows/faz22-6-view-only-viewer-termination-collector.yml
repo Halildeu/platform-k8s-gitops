@@ -170,8 +170,8 @@ jobs:
           )"
           case "$policy_mode" in
             v2)
-              [ "$archive_mode" = v2 ] || {
-                echo "::error::current v2 authorization archive is missing advisory-comment.json"
+              [ "$archive_mode" = v2-current ] || {
+                echo "::error::current v2 authorization archive is missing durable comment carriers"
                 exit 1
               }
               policy=config/faz22-6-view-only-pilot-owner-policy.v2.json

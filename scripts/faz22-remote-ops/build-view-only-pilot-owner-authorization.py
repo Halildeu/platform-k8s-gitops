@@ -93,6 +93,11 @@ def verify_comment(comment: dict[str, Any], contract: dict[str, Any], label: str
         raise AuthorizationError(f"{label} body is missing")
     if digest_bytes(body.encode()) != contract["bodySha256"]:
         raise AuthorizationError(f"{label} body digest mismatch")
+    if (
+        not isinstance(comment.get("created_at"), str)
+        or comment.get("updated_at") != comment.get("created_at")
+    ):
+        raise AuthorizationError(f"{label} comment was edited")
     if not str(comment.get("issue_url", "")).endswith("/issues/2373"):
         raise AuthorizationError(f"{label} is not bound to #2373")
     return body
@@ -223,6 +228,7 @@ def build_authorization(
     expected_cross_ai_trust_root_sha256: str,
     codex_executable_policy: dict[str, Any],
     issuer_runtime_policy: dict[str, Any],
+    cross_ai_supplemental_revocation_entries: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
     require_keys(policy, {"schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking", "scope", "authorization", "lifecycle"}, "owner policy")
     if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "tracked_pending":
@@ -291,6 +297,9 @@ def build_authorization(
             issuer_runtime_policy=issuer_runtime_policy,
             authority_observed_at=issued,
             review_reference_time=issued,
+            supplemental_revocation_entries=(
+                cross_ai_supplemental_revocation_entries
+            ),
         )
     except CodexEvidenceError as exc:
         raise AuthorizationError(f"Codex-only AI advisory evidence is invalid: {exc}") from exc
@@ -450,6 +459,9 @@ def main() -> int:
             expected_cross_ai_trust_root_sha256=authority.expected_trust_root_sha256,
             codex_executable_policy=authority.codex_executable_policy,
             issuer_runtime_policy=authority.issuer_runtime_policy,
+            cross_ai_supplemental_revocation_entries=(
+                authority.supplemental_revocation_entries
+            ),
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(canonical_receipt_bytes(result))

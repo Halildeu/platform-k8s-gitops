@@ -6,7 +6,7 @@ import hashlib
 import json
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -43,6 +43,8 @@ class PublicReviewAuthority:
     codex_executable_policy: dict[str, Any]
     issuer_runtime_policy: dict[str, Any]
     observed_at: datetime
+    verified_revocation_entries: tuple[dict[str, Any], ...] = ()
+    supplemental_revocation_entries: tuple[dict[str, Any], ...] = ()
 
 
 def require_active_codex_provider_key(
@@ -146,6 +148,7 @@ def _load_public_authority(
         codex_executable_policy=locator["codexExecutablePolicy"],
         issuer_runtime_policy=locator["issuerRuntimePolicy"],
         observed_at=now,
+        verified_revocation_entries=tuple(verifier.revocations["entries"]),
     )
 
 
@@ -247,7 +250,12 @@ def load_authority_for_evidence(
         raise AuthorityUnavailable(
             "provider-review evidence was issued after its authority retired"
         )
-    return _load_public_authority(
+    if manifest["status"] != "active":
+        raise AuthorityUnavailable(
+            "provider-review historical replay requires an active current revocation authority"
+        )
+    current_authority = _load_public_authority(root, manifest, now=observed_at)
+    historical_authority = _load_public_authority(
         root,
         historical,
         # The archived envelope is the final signed revocation view for this
@@ -257,6 +265,10 @@ def load_authority_for_evidence(
         # immutable retirement boundary, not against the current wall clock.
         now=retired_at,
         review_reference_time=evidence_reference_time,
+    )
+    return replace(
+        historical_authority,
+        supplemental_revocation_entries=current_authority.verified_revocation_entries,
     )
 
 
@@ -320,6 +332,16 @@ def validate_authority_history_transition(
 
     base_revocations_path = base_manifest.get("revocationsPath")
     head_revocations_path = head_manifest.get("revocationsPath")
+    base_trust_root_path = base_manifest.get("trustRootPath")
+    if (
+        manifest_name not in changed
+        and base_manifest["status"] == "active"
+        and isinstance(base_trust_root_path, str)
+        and base_trust_root_path in changed
+    ):
+        raise AuthorityUnavailable(
+            "provider-review active trust root cannot change without a manifest rotation"
+        )
     revocations_changed = any(
         isinstance(path, str) and path in changed
         for path in (base_revocations_path, head_revocations_path)
