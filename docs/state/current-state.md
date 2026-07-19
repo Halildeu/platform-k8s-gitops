@@ -43,6 +43,10 @@ of new authorization. Every active authorization/receipt/product-evidence
 consumer is rebound to versioned policy v2, which accepts only an owner-bound
 canonical signed `cross-ai-provider-evidence/v3` comment proving direct
 `gpt-5.6-sol xhigh`, read-only, ephemeral and finding-free `AGREE`. Canonical
+evidence also requires a role-distinct `runner-management` runtime attestation
+that binds the pinned issuer image/source to the exact prompt, response,
+Codex session, launch capability and provider-review envelope; possession of
+the provider-review signer alone is insufficient.
 v2 is deliberately and permanently `tracked_pending`: it is the immutable
 constraint template, not a container for a receipt whose insertion would change
 the reviewed commit. A protected apply receives one #2373 advisory comment ID,

@@ -8,6 +8,7 @@ import copy
 import json
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 from scripts.ai import post_cross_ai_evidence as POST
@@ -20,6 +21,11 @@ from scripts.ai.trusted_cross_ai_evidence import (
     validate_response_hygiene,
 )
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
+from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
+from scripts.github_apps.cross_ai_deployment_policy.contract import (
+    PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
+    REVOCATIONS_PAYLOAD_TYPE,
+)
 from scripts.github_apps.cross_ai_deployment_policy.provider import CODEX_ROUTINE_MODEL
 from tests.ai.signed_evidence_fixture import make_signed_evidence
 
@@ -39,6 +45,7 @@ class EvidenceValidationTests(unittest.TestCase):
             codex_executable_policy=(
                 self.fixture.authority.codex_executable_policy
             ),
+            issuer_runtime_policy=self.fixture.authority.issuer_runtime_policy,
             expected_bindings=self.fixture.bindings,
             scope_bytes=self.fixture.scope_bytes,
             now=self.fixture.factory.now,
@@ -81,6 +88,7 @@ class EvidenceValidationTests(unittest.TestCase):
                 codex_executable_policy=(
                     self.fixture.authority.codex_executable_policy
                 ),
+                issuer_runtime_policy=self.fixture.authority.issuer_runtime_policy,
                 expected_bindings=self.fixture.bindings,
                 scope_bytes=self.fixture.scope_bytes,
                 now=self.fixture.factory.now,
@@ -124,6 +132,7 @@ class EvidenceValidationTests(unittest.TestCase):
                 codex_executable_policy=(
                     self.fixture.authority.codex_executable_policy
                 ),
+                issuer_runtime_policy=self.fixture.authority.issuer_runtime_policy,
                 expected_bindings=self.fixture.bindings,
                 scope_bytes=self.fixture.scope_bytes,
                 now=self.fixture.factory.now,
@@ -143,6 +152,7 @@ class EvidenceValidationTests(unittest.TestCase):
                 codex_executable_policy=(
                     self.fixture.authority.codex_executable_policy
                 ),
+                issuer_runtime_policy=self.fixture.authority.issuer_runtime_policy,
                 expected_bindings=self.fixture.bindings,
                 scope_bytes=wrong_scope,
                 now=self.fixture.factory.now,
@@ -172,6 +182,7 @@ class EvidenceValidationTests(unittest.TestCase):
                 codex_executable_policy=(
                     self.fixture.authority.codex_executable_policy
                 ),
+                issuer_runtime_policy=self.fixture.authority.issuer_runtime_policy,
                 expected_bindings=bindings,
                 scope_bytes=self.fixture.scope_bytes,
                 now=self.fixture.factory.now,
@@ -183,8 +194,6 @@ class EvidenceValidationTests(unittest.TestCase):
         forged["review_envelope"]["signatures"][0]["sig"] = base64.b64encode(
             b"x" * 64
         ).decode("ascii")
-        from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
-
         forged["review_envelope_sha256"] = sha256_digest(forged["review_envelope"])
         with self.assertRaisesRegex(PolicyError, "DSSE_SIGNATURE_INVALID"):
             self.validate(forged)
@@ -214,6 +223,128 @@ class EvidenceValidationTests(unittest.TestCase):
                     self.fixture.authority.expected_trust_root_sha256
                 ),
                 codex_executable_policy=policy,
+                issuer_runtime_policy=self.fixture.authority.issuer_runtime_policy,
+                expected_bindings=self.fixture.bindings,
+                scope_bytes=self.fixture.scope_bytes,
+                now=self.fixture.factory.now,
+                require_agree=True,
+            )
+
+    def test_provider_leaf_needs_independent_pinned_runtime_attestation(self) -> None:
+        missing = copy.deepcopy(self.fixture.evidence)
+        missing.pop("issuer_runtime_envelope")
+        missing.pop("issuer_runtime_envelope_sha256")
+        with self.assertRaisesRegex(TrustedEvidenceError, "field set"):
+            self.validate(missing)
+
+        forged = copy.deepcopy(self.fixture.evidence)
+        forged["issuer_runtime_envelope"]["signatures"][0]["sig"] = (
+            base64.b64encode(b"z" * 64).decode("ascii")
+        )
+        forged["issuer_runtime_envelope_sha256"] = sha256_digest(
+            forged["issuer_runtime_envelope"]
+        )
+        with self.assertRaisesRegex(TrustedEvidenceError, "runtime attestation"):
+            self.validate(forged)
+
+        wrong_policy = copy.deepcopy(
+            self.fixture.authority.issuer_runtime_policy
+        )
+        wrong_policy["issuerImageDigest"] = "sha256:" + ("0" * 64)
+        with self.assertRaisesRegex(TrustedEvidenceError, "runtime attestation"):
+            validate_evidence(
+                self.fixture.evidence,
+                trust_root=self.fixture.authority.trust_root,
+                revocations_envelope=self.fixture.authority.revocations_envelope,
+                expected_trust_root_sha256=(
+                    self.fixture.authority.expected_trust_root_sha256
+                ),
+                codex_executable_policy=(
+                    self.fixture.authority.codex_executable_policy
+                ),
+                issuer_runtime_policy=wrong_policy,
+                expected_bindings=self.fixture.bindings,
+                scope_bytes=self.fixture.scope_bytes,
+                now=self.fixture.factory.now,
+                require_agree=True,
+            )
+
+    def test_runtime_attestation_is_coissued_proof_not_a_second_review_ttl(self) -> None:
+        review_time = self.fixture.factory.now + timedelta(minutes=30)
+        validated = validate_evidence(
+            self.fixture.evidence,
+            trust_root=self.fixture.authority.trust_root,
+            revocations_envelope=self.fixture.authority.revocations_envelope,
+            expected_trust_root_sha256=(
+                self.fixture.authority.expected_trust_root_sha256
+            ),
+            codex_executable_policy=(
+                self.fixture.authority.codex_executable_policy
+            ),
+            issuer_runtime_policy=self.fixture.authority.issuer_runtime_policy,
+            expected_bindings=self.fixture.bindings,
+            scope_bytes=self.fixture.scope_bytes,
+            now=review_time,
+            review_reference_time=review_time,
+            require_agree=True,
+        )
+        self.assertEqual(
+            self.fixture.evidence["issuer_runtime_envelope_sha256"],
+            validated["issuerRuntimeEnvelopeSha256"],
+        )
+
+        rebound = copy.deepcopy(self.fixture.evidence)
+        rebound_payload = self.fixture.factory.decode_payload(
+            rebound["issuer_runtime_envelope"]
+        )
+        rebound_payload["providerSessionId"] = (
+            "70000000-0000-4000-8000-000000000099"
+        )
+        rebound["issuer_runtime_envelope"] = self.fixture.factory.sign(
+            PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
+            rebound_payload,
+            self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID,
+        )
+        rebound["issuer_runtime_envelope_sha256"] = sha256_digest(
+            rebound["issuer_runtime_envelope"]
+        )
+        with self.assertRaisesRegex(TrustedEvidenceError, "runtime attestation"):
+            self.validate(rebound)
+
+        revoked_runtime = self.fixture.factory.sign(
+            REVOCATIONS_PAYLOAD_TYPE,
+            {
+                "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
+                "revocationSetId": "20000000-0000-4000-8000-000000000099",
+                "issuedAt": "2026-07-18T20:00:00Z",
+                "nextUpdate": "2026-07-18T21:00:00Z",
+                "entries": [
+                    {
+                        "type": "issuer-runtime",
+                        "id": self.fixture.evidence[
+                            "issuer_runtime_envelope_sha256"
+                        ],
+                        "effectiveAt": "2026-07-18T20:20:00Z",
+                        "reasonCode": "ISSUER_RUNTIME_COMPROMISED",
+                    }
+                ],
+            },
+            self.fixture.factory.REVOCATION_KEY_ID,
+        )
+        with self.assertRaisesRegex(TrustedEvidenceError, "runtime attestation"):
+            validate_evidence(
+                self.fixture.evidence,
+                trust_root=self.fixture.authority.trust_root,
+                revocations_envelope=revoked_runtime,
+                expected_trust_root_sha256=(
+                    self.fixture.authority.expected_trust_root_sha256
+                ),
+                codex_executable_policy=(
+                    self.fixture.authority.codex_executable_policy
+                ),
+                issuer_runtime_policy=(
+                    self.fixture.authority.issuer_runtime_policy
+                ),
                 expected_bindings=self.fixture.bindings,
                 scope_bytes=self.fixture.scope_bytes,
                 now=self.fixture.factory.now,
@@ -237,6 +368,7 @@ class EvidenceValidationTests(unittest.TestCase):
             revocations_envelope=fixture.authority.revocations_envelope,
             expected_trust_root_sha256=fixture.authority.expected_trust_root_sha256,
             codex_executable_policy=fixture.authority.codex_executable_policy,
+            issuer_runtime_policy=fixture.authority.issuer_runtime_policy,
             expected_bindings=fixture.bindings,
             scope_bytes=fixture.scope_bytes,
             now=fixture.factory.now,

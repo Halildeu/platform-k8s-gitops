@@ -53,6 +53,9 @@ class ViewerOperatorEvidenceProducerTest(unittest.TestCase):
             codex_executable_policy=(
                 fixtures.ADVISORY_FIXTURE.authority.codex_executable_policy
             ),
+            issuer_runtime_policy=(
+                fixtures.ADVISORY_FIXTURE.authority.issuer_runtime_policy
+            ),
             authority_observed_at=fixtures.NOW,
         )
         self.assertEqual("operator", child["evidenceType"])
@@ -88,6 +91,9 @@ class ViewerOperatorEvidenceProducerTest(unittest.TestCase):
                 ),
                 codex_executable_policy=(
                     fixtures.ADVISORY_FIXTURE.authority.codex_executable_policy
+                ),
+                issuer_runtime_policy=(
+                    fixtures.ADVISORY_FIXTURE.authority.issuer_runtime_policy
                 ),
             )
 

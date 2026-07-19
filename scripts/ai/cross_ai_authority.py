@@ -40,6 +40,7 @@ class PublicReviewAuthority:
     revocations_envelope: dict[str, Any]
     expected_trust_root_sha256: str
     codex_executable_policy: dict[str, Any]
+    issuer_runtime_policy: dict[str, Any]
 
 
 def _validate_document(value: Any, schema: dict[str, Any], label: str) -> dict[str, Any]:
@@ -76,11 +77,16 @@ def _load_public_authority(
     if sha256_digest(trust_root) != expected:
         raise AuthorityUnavailable("provider-review trust-root pin mismatch")
     try:
-        EvidenceVerifier(
+        verifier = EvidenceVerifier(
             trust_root=trust_root,
             revocations_envelope=revocations,
             now=now,
             expected_trust_root_sha256=expected,
+        )
+        verifier.require_active_signing_key(
+            key_id=locator["issuerRuntimePolicy"]["attestorKeyId"],
+            role="runner-management",
+            issued_at=now,
         )
     except PolicyError as exc:
         raise AuthorityUnavailable(
@@ -91,6 +97,7 @@ def _load_public_authority(
         revocations_envelope=revocations,
         expected_trust_root_sha256=expected,
         codex_executable_policy=locator["codexExecutablePolicy"],
+        issuer_runtime_policy=locator["issuerRuntimePolicy"],
     )
 
 
@@ -203,6 +210,7 @@ def load_staged_activation_authority(
             "trustRootPath": genesis["trustRootPath"],
             "revocationsPath": genesis["revocationsPath"],
             "expectedTrustRootSha256": genesis["expectedTrustRootSha256"],
+            "issuerRuntimePolicy": genesis["issuerRuntimePolicy"],
         }
     )
     if head_manifest != expected_head_manifest:
@@ -255,9 +263,36 @@ def load_revocation_refresh_authority(
         raise AuthorityUnavailable(
             "provider-review revocation recovery contract is unavailable"
         ) from exc
-    if manifest["status"] != "active":
-        raise AuthorityUnavailable("provider-review revocation recovery requires active authority")
-    revocations_path = Path(manifest["revocationsPath"])
+    locator = manifest
+    if manifest["status"] == "tracked_pending":
+        try:
+            genesis = _validate_document(
+                load_json_file(root / GENESIS_PATH),
+                load_json_file(root / GENESIS_SCHEMA),
+                "genesis contract",
+            )
+        except Exception as exc:
+            if isinstance(exc, AuthorityUnavailable):
+                raise
+            raise AuthorityUnavailable(
+                "provider-review staged revocation recovery contract is unavailable"
+            ) from exc
+        if genesis["status"] != "staged":
+            raise AuthorityUnavailable(
+                "provider-review revocation recovery requires active or staged authority"
+            )
+        locator = {
+            **manifest,
+            "trustRootPath": genesis["trustRootPath"],
+            "revocationsPath": genesis["revocationsPath"],
+            "expectedTrustRootSha256": genesis["expectedTrustRootSha256"],
+            "issuerRuntimePolicy": genesis["issuerRuntimePolicy"],
+        }
+    elif manifest["status"] != "active":
+        raise AuthorityUnavailable(
+            "provider-review revocation recovery requires active or staged authority"
+        )
+    revocations_path = Path(locator["revocationsPath"])
     expected_path = "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json"
     if revocations_path.as_posix() != expected_path:
         raise AuthorityUnavailable("provider-review revocation recovery path is not canonical")
@@ -270,10 +305,10 @@ def load_revocation_refresh_authority(
         raise AuthorityUnavailable(
             "provider-review revocation recovery changes paths outside the signed release"
         )
-    trust_root = load_json_file(_fixed_config_path(root, manifest["trustRootPath"]))
-    predecessor = load_json_file(_fixed_config_path(root, manifest["revocationsPath"]))
+    trust_root = load_json_file(_fixed_config_path(root, locator["trustRootPath"]))
+    predecessor = load_json_file(_fixed_config_path(root, locator["revocationsPath"]))
     replacement = _git_json(root, head, revocations_path)
-    expected = manifest["expectedTrustRootSha256"]
+    expected = locator["expectedTrustRootSha256"]
     if sha256_digest(trust_root) != expected:
         raise AuthorityUnavailable("provider-review trust-root pin mismatch")
     observed = now or utc_now()
@@ -283,6 +318,11 @@ def load_revocation_refresh_authority(
             revocations_envelope=replacement,
             now=observed,
             expected_trust_root_sha256=expected,
+        )
+        verifier.require_active_signing_key(
+            key_id=locator["issuerRuntimePolicy"]["attestorKeyId"],
+            role="runner-management",
+            issued_at=observed,
         )
         verifier.require_stale_revocation_predecessor(predecessor)
     except PolicyError as exc:
@@ -294,6 +334,7 @@ def load_revocation_refresh_authority(
         revocations_envelope=replacement,
         expected_trust_root_sha256=expected,
         codex_executable_policy=manifest["codexExecutablePolicy"],
+        issuer_runtime_policy=locator["issuerRuntimePolicy"],
     )
 
 

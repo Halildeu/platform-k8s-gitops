@@ -5,7 +5,10 @@ No provider response, model identity, git coordinate or signed payload is read
 from stdin/argv. The entrypoint derives the exact head/merge-base/sanitized
 scope, constructs the canonical prompt, launches DirectCodexRunner, issues the
 leaf with the active provider-review Vault Transit key, verifies it against the
-independently pinned trust root and writes one create-once v3 carrier.
+independently pinned trust root, requires a second runtime attestation from the
+isolated runner-management service and writes one create-once v3 carrier. The
+raw CLI owns neither signing capability and therefore fails closed; production
+issuance is available only through the pinned service adapters.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ import os
 import sys
 from datetime import timedelta
 from pathlib import Path
+from typing import Any, Protocol
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,7 +55,20 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
     parse_canonical_review_response,
 )
 from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc, utc_now
-from scripts.github_apps.cross_ai_deployment_policy.transit import VaultTransitSigner
+
+
+class IssuerRuntimeAttestor(Protocol):
+    """Remote runner-management service; never a local private-key adapter."""
+
+    def attest(
+        self,
+        *,
+        provider_review_envelope: dict[str, Any],
+        execution: object,
+        prompt_sha256: str,
+        issued_at: str,
+        expires_at: str,
+    ) -> dict[str, Any]: ...
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,9 +79,6 @@ def parse_args() -> argparse.Namespace:
         choices=("routine", "high-impact"),
         default="high-impact",
     )
-    parser.add_argument("--vault-origin", required=True)
-    parser.add_argument("--vault-token-file", type=Path, required=True)
-    parser.add_argument("--vault-key-version", type=int, required=True)
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
@@ -116,11 +130,17 @@ def build_signed_evidence(
     runner: DirectCodexRunner | None = None,
     signer: EnvelopeSigner | None = None,
     authority: PublicReviewAuthority | None = None,
+    runtime_attestor: IssuerRuntimeAttestor | None = None,
 ) -> dict[str, object]:
     if not 30 <= args.timeout_seconds <= 1200:
         reject("PROVIDER_TIMEOUT_INVALID", "provider timeout must be 30-1200 seconds")
     if os.path.lexists(args.output.expanduser().absolute()):
         reject("EVIDENCE_OUTPUT_INVALID", "evidence output must be a new writable file")
+    if signer is None or runtime_attestor is None:
+        reject(
+            "TRUSTED_ISSUER_SERVICE_REQUIRED",
+            "provider and runner-management authority are available only inside the pinned issuer service",
+        )
     workspace = args.workspace.expanduser().resolve()
     consultation_class = getattr(args, "consultation_class", "high-impact")
     model = (
@@ -151,13 +171,7 @@ def build_signed_evidence(
     preflight_authority = authority or load_active_authority(
         workspace, now=preflight_now
     )
-    active_signer = signer or VaultTransitSigner(
-        vault_origin=args.vault_origin,
-        token_file=args.vault_token_file,
-        mount="cross-ai",
-        key_name="openai",
-        key_version=args.vault_key_version,
-    )
+    active_signer = signer
     preflight_verifier = EvidenceVerifier(
         trust_root=preflight_authority.trust_root,
         revocations_envelope=preflight_authority.revocations_envelope,
@@ -248,6 +262,13 @@ def build_signed_evidence(
     ).issue(execution=execution, coordinates=coordinates)
     if execution.capability_snapshot is None:
         reject("PROVIDER_LAUNCH_ATTESTATION_MISSING", "Codex launch attestation is missing")
+    runtime_envelope = runtime_attestor.attest(
+        provider_review_envelope=envelope,
+        execution=execution,
+        prompt_sha256=subject["promptSha256"],
+        issued_at=issued_at,
+        expires_at=(now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z"),
+    )
     evidence: dict[str, object] = {
         "schema": EVIDENCE_SCHEMA,
         "subject": subject,
@@ -255,6 +276,8 @@ def build_signed_evidence(
         "response": execution.result_text,
         "review_envelope": envelope,
         "review_envelope_sha256": sha256_digest(envelope),
+        "issuer_runtime_envelope": runtime_envelope,
+        "issuer_runtime_envelope_sha256": sha256_digest(runtime_envelope),
         "trust_root_sha256": active_authority.expected_trust_root_sha256,
     }
     validate_evidence(
@@ -263,6 +286,7 @@ def build_signed_evidence(
         revocations_envelope=revocations,
         expected_trust_root_sha256=active_authority.expected_trust_root_sha256,
         codex_executable_policy=active_authority.codex_executable_policy,
+        issuer_runtime_policy=active_authority.issuer_runtime_policy,
         expected_bindings=bindings,
         scope_bytes=scope_bytes,
         now=now,

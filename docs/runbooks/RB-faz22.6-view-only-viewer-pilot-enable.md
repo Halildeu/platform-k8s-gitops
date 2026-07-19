@@ -72,6 +72,10 @@ This is the owner decision. Do not flip the flag until every box holds:
       immutable #2373 comment ID at runtime and verifies a canonical signed
       `cross-ai-provider-evidence/v3` comment proving direct OpenAI Codex CLI
       `gpt-5.6-sol xhigh`, `read-only`, `ephemeral`, finding-free `AGREE`;
+      the provider leaf is accompanied by a separately signed
+      `runner-management` runtime attestation binding the release-managed
+      issuer image/source, prompt, response, Codex session and capability;
+      provider-review signing capability alone is rejected;
       review base-tip/base/head/scope digests exactly match the activation head
       and independently derived git scope, the GitHub comment is
       unedited (`created_at == updated_at`) and no older than 168 hours at

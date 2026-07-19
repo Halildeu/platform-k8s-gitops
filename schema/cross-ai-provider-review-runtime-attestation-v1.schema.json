@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/cross-ai-provider-review-runtime-attestation-v1.schema.json",
+  "title": "Independent provider-review issuer runtime attestation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "attestationId",
+    "keyId",
+    "workloadIdentity",
+    "issuerImageDigest",
+    "launcherSourceSha256",
+    "providerReviewEnvelopeSha256",
+    "promptSha256",
+    "responseSha256",
+    "capabilitySnapshotSha256",
+    "providerSessionId",
+    "issuedAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "acik.cross-ai-provider-review-runtime-attestation.v1"},
+    "attestationId": {"type": "string", "format": "uuid"},
+    "keyId": {"type": "string", "pattern": "^vault-transit://cross-ai/runner-management#v[1-9][0-9]*$"},
+    "workloadIdentity": {"const": "spiffe://testai.acik.com/ns/cross-ai/sa/provider-review-issuer"},
+    "issuerImageDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "launcherSourceSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "providerReviewEnvelopeSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "promptSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "responseSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "capabilitySnapshotSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "providerSessionId": {"type": "string", "format": "uuid"},
+    "issuedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"}
+  }
+}

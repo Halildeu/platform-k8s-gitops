@@ -92,6 +92,7 @@ def produce(
     cross_ai_revocations: dict,
     expected_cross_ai_trust_root_sha256: str,
     codex_executable_policy: dict,
+    issuer_runtime_policy: dict,
     authority_observed_at: datetime | None = None,
 ) -> dict:
     if repository != VERIFIER.EXPECTED_REPOSITORY:
@@ -113,6 +114,7 @@ def produce(
             expected_cross_ai_trust_root_sha256
         ),
         codex_executable_policy=codex_executable_policy,
+        issuer_runtime_policy=issuer_runtime_policy,
         authority_observed_at=(
             authority_observed_at or datetime.now(timezone.utc)
         ),
@@ -136,13 +138,14 @@ def produce(
     return child
 
 
-def load_current_authority_inputs() -> tuple[dict, dict, str, dict]:
+def load_current_authority_inputs() -> tuple[dict, dict, str, dict, dict]:
     authority = VERIFIER.load_active_authority(VERIFIER.ROOT)
     return (
         authority.trust_root,
         authority.revocations_envelope,
         authority.expected_trust_root_sha256,
         authority.codex_executable_policy,
+        authority.issuer_runtime_policy,
     )
 
 
@@ -156,7 +159,7 @@ def main() -> int:
     parser.add_argument("--github-token-env", default="GITHUB_TOKEN")
     args = parser.parse_args()
     try:
-        trust_root, revocations, expected_root, executable_policy = (
+        trust_root, revocations, expected_root, executable_policy, runtime_policy = (
             load_current_authority_inputs()
         )
         result = produce(
@@ -167,6 +170,7 @@ def main() -> int:
             cross_ai_revocations=revocations,
             expected_cross_ai_trust_root_sha256=expected_root,
             codex_executable_policy=executable_policy,
+            issuer_runtime_policy=runtime_policy,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")

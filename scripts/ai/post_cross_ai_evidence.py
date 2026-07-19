@@ -86,6 +86,7 @@ def main() -> None:
             revocations_envelope=authority.revocations_envelope,
             expected_trust_root_sha256=authority.expected_trust_root_sha256,
             codex_executable_policy=authority.codex_executable_policy,
+            issuer_runtime_policy=authority.issuer_runtime_policy,
             expected_bindings=bindings,
             scope_bytes=scope_bytes,
             now=datetime.now(timezone.utc),

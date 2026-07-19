@@ -498,6 +498,16 @@ subject, model veya koordinat kabul etmez. `scripts/ai/post_cross_ai_evidence.py
 comment'i yalnız transport olarak kullanır. Kabul, repo-public pinned OpenAI
 provider-review trust root'u ile güncel ve imzalı revocation setini zorunlu tutar;
 owner comment'i tek başına authority değildir.
+Provider-review signer tek başına da authority değildir: aynı carrier, ayrı
+`runner-management` anahtarıyla imzalanmış runtime attestation içinde exact
+provider leaf, prompt, response, Codex session, capability snapshot ve
+release-managed issuer image/source digestlerini bağlar. Bu ikinci imza yalnız
+ayrı workload-identity attestor servisinden alınır; provider issuer bu private
+key'i taşımaz. Ham builder CLI iki signing capability'sini de kabul etmez ve
+pinned servis adapter'ları enjekte edilmedikçe provider çağrısından önce
+fail-closed olur. Public root/revocation/runtime policy staging tamamlanmadan
+authority `tracked_pending` kalır ve owner comment veya provider signer tek
+başına acceptance üretemez.
 
 <details>
 <summary>11.H — Yürürlükten kaldırılmış 2026-07-17 üç-kanal sözleşmesi (yalnız tarihsel denetim)</summary>

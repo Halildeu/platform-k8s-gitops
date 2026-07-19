@@ -36,7 +36,7 @@
       "required": ["type", "id", "effectiveAt", "reasonCode"],
       "properties": {
         "type": {
-          "enum": ["key", "bundle", "review", "subject", "grant", "runner-lease"]
+          "enum": ["key", "bundle", "review", "subject", "grant", "runner-lease", "issuer-runtime"]
         },
         "id": {
           "type": "string",

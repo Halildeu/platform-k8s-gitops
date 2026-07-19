@@ -991,6 +991,9 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             codex_executable_policy=(
                 ADVISORY_FIXTURE.authority.codex_executable_policy
             ),
+            issuer_runtime_policy=(
+                ADVISORY_FIXTURE.authority.issuer_runtime_policy
+            ),
         )
 
     def client_for_policy(

@@ -16,6 +16,10 @@ from unittest.mock import patch
 
 from scripts.ai import build_cross_ai_evidence as MODULE
 from scripts.ai.trusted_cross_ai_evidence import canonical_bytes, validate_evidence
+from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
+from scripts.github_apps.cross_ai_deployment_policy.contract import (
+    PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
+)
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from tests.ai.signed_evidence_fixture import (
     StaticSigner,
@@ -41,12 +45,48 @@ class StaticRunner:
         return execution_receipt(prompt, model=model)
 
 
+class StaticRuntimeAttestor:
+    def __init__(self, fixture) -> None:
+        self.fixture = fixture
+        self.calls = 0
+
+    def attest(
+        self, *, provider_review_envelope, execution, prompt_sha256,
+        issued_at, expires_at,
+    ):
+        self.calls += 1
+        policy = self.fixture.authority.issuer_runtime_policy
+        payload = {
+            "schemaVersion": "acik.cross-ai-provider-review-runtime-attestation.v1",
+            "attestationId": "60000000-0000-4000-8000-000000000020",
+            "keyId": self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID,
+            "workloadIdentity": policy["workloadIdentity"],
+            "issuerImageDigest": policy["issuerImageDigest"],
+            "launcherSourceSha256": policy["launcherSourceSha256"],
+            "providerReviewEnvelopeSha256": sha256_digest(
+                provider_review_envelope
+            ),
+            "promptSha256": prompt_sha256,
+            "responseSha256": execution.output_sha256,
+            "capabilitySnapshotSha256": execution.capability_snapshot_sha256,
+            "providerSessionId": execution.provider_session_id,
+            "issuedAt": issued_at,
+            "expiresAt": expires_at,
+        }
+        return self.fixture.factory.sign(
+            PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
+            payload,
+            self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID,
+        )
+
+
 class EvidenceBuilderTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.workspace = Path(self.directory.name)
         (self.workspace / ".git").write_text("gitdir: synthetic\n", encoding="utf-8")
         self.fixture = make_signed_evidence()
+        self.runtime_attestor = StaticRuntimeAttestor(self.fixture)
         self.output = self.workspace / "evidence.json"
         self.args = argparse.Namespace(
             workspace=self.workspace,
@@ -77,6 +117,7 @@ class EvidenceBuilderTests(unittest.TestCase):
                     self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                 ),
                 authority=self.fixture.authority,
+                runtime_attestor=self.runtime_attestor,
             )
         self.assertEqual(runner.calls, 1)
         self.assertEqual(runner.model, "gpt-5.6-sol")
@@ -97,6 +138,7 @@ class EvidenceBuilderTests(unittest.TestCase):
             codex_executable_policy=(
                 self.fixture.authority.codex_executable_policy
             ),
+            issuer_runtime_policy=self.fixture.authority.issuer_runtime_policy,
             expected_bindings=self.fixture.bindings,
             scope_bytes=self.fixture.scope_bytes,
             now=self.fixture.factory.now,
@@ -124,6 +166,7 @@ class EvidenceBuilderTests(unittest.TestCase):
                     self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                 ),
                 authority=self.fixture.authority,
+                runtime_attestor=self.runtime_attestor,
             )
         evidence = json.loads(self.output.read_bytes())
         leaf = json.loads(
@@ -158,6 +201,7 @@ class EvidenceBuilderTests(unittest.TestCase):
                     signer=StaticSigner(
                         self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                     ),
+                    runtime_attestor=self.runtime_attestor,
                 )
         self.assertEqual(authority_loader.call_count, 2)
         self.assertEqual(runner.calls, 1)
@@ -211,6 +255,7 @@ class EvidenceBuilderTests(unittest.TestCase):
                     self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                 ),
                 authority=self.fixture.authority,
+                runtime_attestor=self.runtime_attestor,
             )
         self.assertEqual(runner.model, "gpt-5.3-codex-spark")
         self.assertEqual(summary["model_id"], "gpt-5.3-codex-spark")
@@ -234,7 +279,21 @@ class EvidenceBuilderTests(unittest.TestCase):
                         self.fixture.factory.COORDINATOR_KEY_ID,
                     ),
                     authority=self.fixture.authority,
+                    runtime_attestor=self.runtime_attestor,
                 )
+        self.assertEqual(runner.calls, 0)
+
+    def test_provider_signing_capability_alone_cannot_issue_accepted_evidence(self) -> None:
+        runner = StaticRunner()
+        with self.assertRaisesRegex(PolicyError, "TRUSTED_ISSUER_SERVICE_REQUIRED"):
+            MODULE.build_signed_evidence(
+                self.args,
+                runner=runner,
+                signer=StaticSigner(
+                    self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
+                ),
+                authority=self.fixture.authority,
+            )
         self.assertEqual(runner.calls, 0)
 
     def test_evidence_output_is_create_once(self) -> None:
@@ -256,6 +315,7 @@ class EvidenceBuilderTests(unittest.TestCase):
                         self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
                     ),
                     authority=self.fixture.authority,
+                    runtime_attestor=self.runtime_attestor,
                 )
         self.assertEqual(self.output.read_text(encoding="utf-8"), "occupied")
         self.assertEqual(runner.calls, 0)

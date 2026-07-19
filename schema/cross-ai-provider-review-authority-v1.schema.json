@@ -12,6 +12,7 @@
     "trustRootPath",
     "revocationsPath",
     "expectedTrustRootSha256",
+    "issuerRuntimePolicy",
     "rotationPolicy"
   ],
   "properties": {
@@ -43,6 +44,12 @@
       "oneOf": [
         {"type": "null"},
         {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      ]
+    },
+    "issuerRuntimePolicy": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/issuerRuntimePolicy"}
       ]
     },
     "rotationPolicy": {
@@ -124,6 +131,26 @@
           }
         }
       }
+    },
+    "issuerRuntimePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "workloadIdentity",
+        "issuerImageDigest",
+        "launcherSourceSha256",
+        "attestorKeyId",
+        "maxAttestationLifetimeSeconds"
+      ],
+      "properties": {
+        "schemaVersion": {"const": "acik.cross-ai-provider-review-runtime-policy.v1"},
+        "workloadIdentity": {"const": "spiffe://testai.acik.com/ns/cross-ai/sa/provider-review-issuer"},
+        "issuerImageDigest": {"$ref": "#/$defs/digest"},
+        "launcherSourceSha256": {"$ref": "#/$defs/digest"},
+        "attestorKeyId": {"type": "string", "pattern": "^vault-transit://cross-ai/runner-management#v[1-9][0-9]*$"},
+        "maxAttestationLifetimeSeconds": {"const": 600}
+      }
     }
   },
   "allOf": [
@@ -133,14 +160,16 @@
         "properties": {
           "trustRootPath": {"type": "string"},
           "revocationsPath": {"type": "string"},
-          "expectedTrustRootSha256": {"type": "string"}
+          "expectedTrustRootSha256": {"type": "string"},
+          "issuerRuntimePolicy": {"type": "object"}
         }
       },
       "else": {
         "properties": {
           "trustRootPath": {"type": "null"},
           "revocationsPath": {"type": "null"},
-          "expectedTrustRootSha256": {"type": "null"}
+          "expectedTrustRootSha256": {"type": "null"},
+          "issuerRuntimePolicy": {"type": "null"}
         }
       }
     }

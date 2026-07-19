@@ -80,6 +80,14 @@ The routine Spark route is currently `tracked_pending` because the live Codex
 catalog does not list its exact slug. It has no model or wrapper fallback;
 routine work uses consultation mode `none` until that exact route becomes live.
 
+Provider rotation does not collapse issuer-runtime independence: the OpenAI
+provider issuer may use only the provider-review signer, while a separate
+workload-identity-bound attestor owns runner-management signing and binds the
+pinned issuer image and launcher source to the exact prompt, response, Codex
+session, capability snapshot and provider-review envelope. The raw evidence
+CLI carries neither credential and cannot issue accepted evidence outside
+those fixed services.
+
 `build_cross_ai_provider_review_revocations.py` is the only repository release
 entrypoint for the public revocation file. It signs only
 `acik.cross-ai-deployment-revocations.v1` with the fixed
