@@ -41,6 +41,9 @@ class EvidenceCoordinatorTest(unittest.TestCase):
             ],
             grant=original["grant"],
             review_envelopes=original["reviewEnvelopes"],
+            review_runtime_attestation_envelopes=original[
+                "reviewRuntimeAttestationEnvelopes"
+            ],
             closure_entries=original["closure"]["entries"],
             final_agree_review_sha256=original["consensus"][
                 "finalAgreeReviewSha256"

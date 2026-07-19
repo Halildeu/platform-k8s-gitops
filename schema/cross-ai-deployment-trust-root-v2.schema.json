@@ -14,6 +14,7 @@
     "requiredProviderFamilies",
     "minimumProviderFamilies",
     "minimumDirectProviderRoutes",
+    "providerReviewRuntimePolicy",
     "keys"
   ],
   "properties": {
@@ -48,6 +49,9 @@
     "minimumDirectProviderRoutes": {
       "const": 1
     },
+    "providerReviewRuntimePolicy": {
+      "$ref": "#/$defs/provider_review_runtime_policy"
+    },
     "keys": {
       "type": "array",
       "minItems": 4,
@@ -62,6 +66,43 @@
     }
   },
   "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "provider_review_runtime_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "workloadIdentity",
+        "issuerImageDigest",
+        "launcherSourceSha256",
+        "attestorKeyId",
+        "maxAttestationLifetimeSeconds"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "acik.cross-ai-provider-review-runtime-policy.v1"
+        },
+        "workloadIdentity": {
+          "const": "spiffe://testai.acik.com/ns/cross-ai/sa/provider-review-issuer"
+        },
+        "issuerImageDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "launcherSourceSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "attestorKeyId": {
+          "type": "string",
+          "pattern": "^vault-transit://cross-ai/runner-management#v[1-9][0-9]*$"
+        },
+        "maxAttestationLifetimeSeconds": {
+          "const": 600
+        }
+      }
+    },
     "key": {
       "type": "object",
       "additionalProperties": false,

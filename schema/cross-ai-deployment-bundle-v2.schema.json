@@ -11,6 +11,7 @@
     "workflowStages",
     "runnerAdmissionLeaseEnvelope",
     "reviewEnvelopes",
+    "reviewRuntimeAttestationEnvelopes",
     "closure",
     "consensus",
     "grant"
@@ -43,6 +44,14 @@
       "maxItems": 100,
       "items": {
         "$ref": "#/$defs/dsse_envelope"
+      }
+    },
+    "reviewRuntimeAttestationEnvelopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/runtime_attestation_envelope"
       }
     },
     "closure": {
@@ -303,6 +312,33 @@
         "payload": {
           "type": "string",
           "minLength": 4
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/dsse_signature"
+          }
+        }
+      }
+    },
+    "runtime_attestation_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payloadType",
+        "payload",
+        "signatures"
+      ],
+      "properties": {
+        "payloadType": {
+          "const": "application/vnd.acik.cross-ai-provider-review-runtime-attestation.v1+json"
+        },
+        "payload": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 1048576
         },
         "signatures": {
           "type": "array",

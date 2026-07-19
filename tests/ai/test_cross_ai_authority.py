@@ -143,7 +143,7 @@ class PublicReviewAuthorityTests(unittest.TestCase):
             "config/github-apps/cross-ai-provider-review-authority.v1.json",
             wrong_attestor,
         )
-        with self.assertRaisesRegex(AuthorityUnavailable, "TRUST_SIGNER_BINDING"):
+        with self.assertRaisesRegex(AuthorityUnavailable, "runtime policy pin mismatch"):
             load_active_authority(self.root, now=self.fixture.factory.now)
 
     def test_absent_or_stale_revocations_never_fall_back_to_empty(self) -> None:
@@ -1278,6 +1278,19 @@ class GenesisTransitionTests(unittest.TestCase):
         self.assertEqual(authority.revocations_envelope, fresh)
 
         self.git("checkout", "-q", head)
+        submission_authority = load_review_submission_authority(
+            self.root,
+            expected_bindings={
+                "base_tip_sha": base,
+                "base_sha": base,
+                "head_sha": head,
+                "scope_sha256": hashlib.sha256(scope).hexdigest(),
+            },
+            scope_bytes=scope,
+            now=self.fixture.factory.now,
+        )
+        self.assertEqual(submission_authority.revocations_envelope, fresh)
+
         (self.root / "unrelated.txt").write_text("not allowed", encoding="utf-8")
         unrelated_head = self.commit("unrelated mutation")
         self.git("checkout", "-q", base)

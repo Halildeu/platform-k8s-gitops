@@ -61,6 +61,7 @@ class EvidenceCoordinator:
         runner_admission_lease_envelope: dict[str, Any],
         grant: dict[str, Any],
         review_envelopes: list[dict[str, Any]],
+        review_runtime_attestation_envelopes: list[dict[str, Any]],
         closure_entries: list[dict[str, Any]],
         final_agree_review_sha256: list[str],
         provider_families: list[str],
@@ -90,6 +91,9 @@ class EvidenceCoordinator:
             "workflowStages": workflow_stages,
             "runnerAdmissionLeaseEnvelope": runner_admission_lease_envelope,
             "reviewEnvelopes": review_envelopes,
+            "reviewRuntimeAttestationEnvelopes": (
+                review_runtime_attestation_envelopes
+            ),
             "closure": {
                 "entries": closure_entries,
                 "closureRootSha256": closure_root,

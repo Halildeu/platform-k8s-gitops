@@ -27,6 +27,8 @@ SPEC.loader.exec_module(MODULE)
 TRUST_ROOT_ID = "10000000-0000-4000-8000-000000000099"
 ISSUED_AT = "2026-07-18T18:00:00Z"
 EXPIRES_AT = "2026-08-17T18:00:00Z"
+ISSUER_IMAGE_DIGEST = "sha256:" + ("b" * 64)
+LAUNCHER_SOURCE_SHA256 = "sha256:" + ("c" * 64)
 
 
 def public_key(seed: int) -> str:
@@ -83,6 +85,8 @@ def build(value: dict[str, object]) -> dict[str, object]:
         trust_root_id=TRUST_ROOT_ID,
         issued_at=ISSUED_AT,
         expires_at=EXPIRES_AT,
+        issuer_image_digest=ISSUER_IMAGE_DIGEST,
+        launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
     )
 
 
@@ -134,7 +138,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "e6976430452ea6b197c8529730388a117f6ddf47e94e2d7638db18521943a357",
+            "d91e9b44c34ea75510364843d01fcda8c07c59a069d7ec8edc61eeaf07268ec3",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:
@@ -213,6 +217,8 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                     trust_root_id=TRUST_ROOT_ID,
                     issued_at=ISSUED_AT,
                     expires_at=invalid,
+                    issuer_image_digest=ISSUER_IMAGE_DIGEST,
+                    launcher_source_sha256=LAUNCHER_SOURCE_SHA256,
                 )
 
     def test_rejects_unknown_missing_extra_duplicate_and_swapped_keys(self) -> None:
@@ -295,6 +301,10 @@ class TestTrustRootBuilderTests(unittest.TestCase):
                 ISSUED_AT,
                 "--expires-at",
                 EXPIRES_AT,
+                "--issuer-image-digest",
+                ISSUER_IMAGE_DIGEST,
+                "--launcher-source-sha256",
+                LAUNCHER_SOURCE_SHA256,
                 "--out",
                 str(output),
             ]

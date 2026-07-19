@@ -233,6 +233,8 @@ class TransitBootstrapTests(unittest.TestCase):
             trust_root_id="10000000-0000-4000-8000-000000000099",
             issued_at="2026-07-18T18:00:00Z",
             expires_at="2026-08-17T18:00:00Z",
+            issuer_image_digest="sha256:" + ("b" * 64),
+            launcher_source_sha256="sha256:" + ("c" * 64),
         )
         schema = json.loads(
             (
