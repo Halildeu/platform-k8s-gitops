@@ -133,6 +133,11 @@ def stage_public_authority(
     expected_pin = head_genesis["expectedTrustRootSha256"]
     if sha256_digest(trust_root) != expected_pin:
         raise TransitionError("staged trust-root digest does not match genesis pin")
+    if (
+        head_genesis["issuerRuntimePolicy"]
+        != trust_root.get("providerReviewRuntimePolicy")
+    ):
+        raise TransitionError("staged runtime policy differs from the trust root")
     try:
         verifier = EvidenceVerifier(
             trust_root=trust_root,

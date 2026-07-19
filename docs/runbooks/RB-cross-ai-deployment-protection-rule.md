@@ -297,6 +297,14 @@ existing v1 owner-local receipt is historical evidence and is deliberately not
 accepted as v2 input. Re-run the idempotent bootstrap after this source is
 merged/reviewed to obtain v2 public history; never hand-edit or reinterpret v1.
 
+`--previous-trust-root` is omitted only for the first v2 root. Every OpenAI key
+rotation requires the exact prior public root; the builder preserves the
+carried provider key entry byte-for-byte and rejects a rotation that has less
+than 24 hours of real overlap. The prior root is public material, not a signing
+credential. Add
+`--previous-trust-root /OWNER/LOCAL/previous-trust-root.json` to the command
+for every subsequent root generation.
+
 After that one-time owner action, normal TEST policy reconciliation and the
 non-issuer AppRole subset are root-free:
 
