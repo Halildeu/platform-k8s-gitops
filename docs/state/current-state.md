@@ -65,7 +65,13 @@ time; pre-retirement durable evidence uses the pinned final snapshot at the
 recorded retirement boundary while testing the signed review at the verified
 pilot-start reference time. A revocation-only PR is independently signature,
 freshness and monotonic-superset checked even when its predecessor has not yet
-expired.
+expired. Retirement is bounded against both future and excessive past skew;
+the replacement root/revocation set must be active and fresh at current review
+observation, not merely at a caller-recorded historical timestamp. The signed
+review base tip comes from the fixed GitHub `refs/heads/main` API rather than a
+mutable local `origin/main`. Protected authorization artifacts retain and
+checksum the exact signed advisory comment JSON, and product replay consumes
+that archived carrier instead of depending on the live comment transport.
 
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 

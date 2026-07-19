@@ -41,6 +41,7 @@ class PublicReviewAuthority:
     expected_trust_root_sha256: str
     codex_executable_policy: dict[str, Any]
     issuer_runtime_policy: dict[str, Any]
+    observed_at: datetime
 
 
 def _validate_document(value: Any, schema: dict[str, Any], label: str) -> dict[str, Any]:
@@ -108,6 +109,7 @@ def _load_public_authority(
         expected_trust_root_sha256=expected,
         codex_executable_policy=locator["codexExecutablePolicy"],
         issuer_runtime_policy=locator["issuerRuntimePolicy"],
+        observed_at=now,
     )
 
 
@@ -208,7 +210,7 @@ def load_authority_for_evidence(
     return _load_public_authority(
         root,
         historical,
-        now=retired_at,
+        now=observed_at,
         review_reference_time=evidence_reference_time,
     )
 
@@ -346,11 +348,15 @@ def validate_authority_history_transition(
     old_expires_at = parse_utc(old_root.get("expiresAt"), "predecessorTrustRoot.expiresAt")
     observed = now or utc_now()
     max_skew = old_root.get("maxClockSkewSeconds")
+    maximum_past_seconds = (
+        base_manifest["rotationPolicy"]["maxReviewLeafLifetimeMinutes"] * 60
+    )
     if (
         not isinstance(max_skew, int)
         or retired_at <= old_issued_at
         or retired_at >= old_expires_at
         or (retired_at - observed).total_seconds() > max_skew
+        or (observed - retired_at).total_seconds() > maximum_past_seconds
     ):
         raise AuthorityUnavailable(
             "provider-review replacement issuance is outside the predecessor boundary"
@@ -374,8 +380,9 @@ def validate_authority_history_transition(
         verifier = EvidenceVerifier(
             trust_root=new_root,
             revocations_envelope=new_revocations,
-            now=retired_at,
+            now=observed,
             expected_trust_root_sha256=head_digest,
+            review_reference_time=retired_at,
         )
         verifier.require_active_signing_key(
             key_id=head_manifest["issuerRuntimePolicy"]["attestorKeyId"],
@@ -587,6 +594,7 @@ def load_revocation_refresh_authority(
         expected_trust_root_sha256=expected,
         codex_executable_policy=manifest["codexExecutablePolicy"],
         issuer_runtime_policy=locator["issuerRuntimePolicy"],
+        observed_at=observed,
     )
 
 

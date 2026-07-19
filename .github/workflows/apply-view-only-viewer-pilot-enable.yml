@@ -161,9 +161,9 @@ jobs:
           printf 'authorization_sha256=%s\n' "$authorization_sha256" >> "$GITHUB_OUTPUT"
           printf 'authorization_expires_epoch=%s\n' \
             "$(date -u -d "$PILOT_AUTHORIZATION_EXPIRES_AT" +%s)" >> "$GITHUB_OUTPUT"
-          (cd "$out" && sha256sum protected-authorization.json > SHA256SUMS)
+          (cd "$out" && sha256sum protected-authorization.json advisory-comment.json > SHA256SUMS)
           (cd "$out" && sha256sum -c SHA256SUMS)
-          rm -f "$out/owner-comment.json" "$out/advisory-comment.json" \
+          rm -f "$out/owner-comment.json" \
             "$out/legal-issue.json" "$out/environment.json"
 
       - name: Upload protected authorization receipt

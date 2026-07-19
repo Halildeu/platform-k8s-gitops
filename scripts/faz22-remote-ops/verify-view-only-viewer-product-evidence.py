@@ -1124,7 +1124,11 @@ def verify_activation_authorization(
         "downloaded protected authorization artifact digest",
     )
     files = safe_archive_files(raw_archive)
-    expected_files = {"SHA256SUMS", "protected-authorization.json"}
+    expected_files = {
+        "SHA256SUMS",
+        "advisory-comment.json",
+        "protected-authorization.json",
+    }
     if set(files) != expected_files:
         raise EvidenceError("protected authorization artifact file set mismatch")
     verify_sha256sums(files, expected_files - {"SHA256SUMS"})
@@ -1134,6 +1138,9 @@ def verify_activation_authorization(
         "protected authorization receipt digest",
     )
     authorization = load_json_bytes(raw_authorization, "protected-authorization.json")
+    archived_advisory_comment = load_json_bytes(
+        files["advisory-comment.json"], "advisory-comment.json"
+    )
     policy, legacy_v1 = load_bound_owner_policy(
         authorization.get("ownerPolicySha256"), allow_legacy_v1=allow_legacy_v1,
     )
@@ -1350,8 +1357,12 @@ def verify_activation_authorization(
             comment_id = contract.get("commentId")
             if not isinstance(comment_id, int) or comment_id < 1:
                 raise EvidenceError(f"{label} comment ID is invalid")
-            comment = client.get_json(
-                f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}",
+            comment = (
+                archived_advisory_comment
+                if label == "AI advisory"
+                else client.get_json(
+                    f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}",
+                )
             )
             require_equal(comment.get("html_url"), contract.get("ref"), f"{label} URL")
             require_equal(
@@ -1377,6 +1388,7 @@ def verify_activation_authorization(
             )
             if label == "AI advisory":
                 try:
+                    advisory_authority_observed_at = authority_observed_at
                     validate_codex_advisory_comment_timing(
                         comment, pilot_started, advisory_contract.get("maxAgeHours"),
                     )
@@ -1409,6 +1421,9 @@ def verify_activation_authorization(
                         issuer_runtime_policy = (
                             resolved_authority.issuer_runtime_policy
                         )
+                        advisory_authority_observed_at = (
+                            resolved_authority.observed_at
+                        )
                     validate_codex_advisory_evidence(
                         body,
                         expected_bindings,
@@ -1420,7 +1435,7 @@ def verify_activation_authorization(
                         ),
                         codex_executable_policy=codex_executable_policy,
                         issuer_runtime_policy=issuer_runtime_policy,
-                        authority_observed_at=authority_observed_at,
+                        authority_observed_at=advisory_authority_observed_at,
                         review_reference_time=pilot_started,
                     )
                 except (

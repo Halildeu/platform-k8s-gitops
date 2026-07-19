@@ -157,6 +157,12 @@ overlapping public-key
 validity, issuing a fresh trust root, then revoking the old version after all
 grants expire.
 
+Before launching review, resolve `refs/heads/main` only through the fixed
+GitHub REST ref endpoint over TLS. The returned exact commit must already exist
+in the issuer checkout; otherwise refresh the trusted checkout and retry. Never
+derive the signed `base_tip` from the caller-selected worktree's `origin/main`,
+remote URL or a supplied SHA.
+
 Trust-root issuance must compare every candidate public key with the retained
 history of prior trust-root manifests. Reusing the same public key under a new
 `keyId`, provider family or role is a release rejection even when the current
@@ -168,6 +174,10 @@ all prior entries/bytes unchanged. Trusted-base validation rejects history
 deletion, mutation, reordering and a replacement root without that archive.
 This repo-public chain gives the running verifier a bounded, content-addressed
 cross-generation record instead of asking it to infer a deleted root.
+The recorded retirement may be at most one review-leaf lifetime in the past
+and no more than root clock-skew in the future. Validate the replacement root,
+runner-management key and revocation release at current verifier observation;
+a release that is fresh only at its backdated `retiredAt` is rejected.
 
 The service reloads the mounted revocation envelope for every evaluation and
 verifies its signature and `nextUpdate` then. Replace the file atomically. A
@@ -185,6 +195,13 @@ signature, freshness, a strictly newer set identity/time and a byte-for-byte
 superset of every predecessor entry whether the predecessor is stale or still
 fresh. This path never permits an empty
 fallback, unrevocation, root/code/schema change or replay of the retired genesis.
+
+The protected VIEW_ONLY authorization artifact must keep
+`advisory-comment.json` with `protected-authorization.json`; both names and
+digests are covered by `SHA256SUMS` and the GitHub artifact digest. Downstream
+product verification uses the archived comment metadata/body and must not
+refetch the live advisory comment. Owner/directive and current environment/legal
+operational checks remain separate live gates.
 
 V1 evaluates only current, unconsumed authorizations. A matching revocation
 entry therefore takes effect immediately, even if its `effectiveAt` is in the

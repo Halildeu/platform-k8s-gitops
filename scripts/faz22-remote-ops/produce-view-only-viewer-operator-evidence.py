@@ -45,7 +45,11 @@ def fetch_operator_payload(client: object, repository: str, activation_run_id: i
         VERIFIER.digest_bytes(raw_archive), artifact["digest"], "protected authorization archive digest"
     )
     files = VERIFIER.safe_archive_files(raw_archive)
-    expected_files = {"SHA256SUMS", "protected-authorization.json"}
+    expected_files = {
+        "SHA256SUMS",
+        "advisory-comment.json",
+        "protected-authorization.json",
+    }
     if set(files) != expected_files:
         raise VERIFIER.EvidenceError("protected authorization artifact file set mismatch")
     VERIFIER.verify_sha256sums(files, expected_files - {"SHA256SUMS"})
