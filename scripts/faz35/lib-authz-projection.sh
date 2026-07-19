@@ -1,26 +1,50 @@
 #!/usr/bin/env bash
 
-# Classify only the non-secret /authz/me fields needed by the Faz 35
-# entitlement reconciler. Any partial or broader ETHIC state is rejected.
+# Classify the complete non-secret /authz/me authority surface used by the Faz
+# 35 synthetic personas. ABSENT means no permission-service authority at all;
+# EXACT_MANAGE means only the dedicated Etik Speak role and ETHIC=MANAGE.
+# Partial ETHIC state and every unrelated/global privilege fail closed.
 faz35_authz_projection_state() {
   local document=$1
   jq -er '
-    if ((.subscriberId | tostring | test("^[0-9]+$")) | not) then
+    if (.userId | type) != "string" then
+      error("string userId is missing")
+    elif (.subscriberId | type) != "number" then
       error("numeric subscriberId is missing")
     elif (.userId | tostring) != (.subscriberId | tostring) then
       error("userId and subscriberId differ")
     elif
-      (((.modules // {}) | has("ETHIC")) | not) and
-      (((.allowedModules // []) | index("ETHIC")) == null)
+      ((.superAdmin | type) != "boolean") or
+      ((.roles | type) != "array") or
+      ((.modules | type) != "object") or
+      ((.allowedModules | type) != "array") or
+      ((.permissions | type) != "array") or
+      ((.actions | type) != "object") or
+      ((.reports | type) != "object") or
+      ((.scopes | type) != "array") or
+      ((.allowedScopes | type) != "array")
+    then
+      error("synthetic persona authority document is incomplete or malformed")
+    elif (.superAdmin != false) then
+      error("synthetic persona must not be super admin")
+    elif
+      (.roles == []) and .modules == {} and
+      (.allowedModules == []) and (.permissions == []) and
+      .actions == {} and .reports == {} and
+      (.scopes == []) and (.allowedScopes == [])
     then
       "ABSENT"
     elif
-      ((.modules.ETHIC // "") == "MANAGE") and
-      (((.allowedModules // []) | index("ETHIC")) != null)
+      ((.roles | sort) == ["ETIK_SPEAK_MANAGER"]) and
+      (.modules == {ETHIC:"MANAGE"}) and
+      ((.allowedModules | sort) == ["ETHIC"]) and
+      ((.permissions | sort) == ["ETHIC"]) and
+      .actions == {} and .reports == {} and
+      (.scopes == []) and (.allowedScopes == [])
     then
       "EXACT_MANAGE"
     else
-      error("ETHIC projection is partial or broader than MANAGE")
+      error("synthetic persona authority differs from the exact allowlist")
     end
   ' "$document"
 }

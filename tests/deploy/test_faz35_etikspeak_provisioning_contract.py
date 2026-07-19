@@ -283,11 +283,23 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
     def test_ethic_entitlement_rerun_accepts_only_its_exact_prior_state(self):
         states = {
             "first-run.json": (
-                {"userId": "41", "subscriberId": 41, "modules": {}, "allowedModules": []},
+                {
+                    "userId": "41", "subscriberId": 41, "superAdmin": False,
+                    "roles": [], "modules": {}, "allowedModules": [],
+                    "permissions": [], "actions": {}, "reports": {},
+                    "scopes": [], "allowedScopes": [],
+                },
                 "ABSENT",
             ),
             "rerun.json": (
-                {"userId": "41", "subscriberId": 41, "modules": {"ETHIC": "MANAGE"}, "allowedModules": ["ETHIC"]},
+                {
+                    "userId": "41", "subscriberId": 41, "superAdmin": False,
+                    "roles": ["ETIK_SPEAK_MANAGER"],
+                    "modules": {"ETHIC": "MANAGE"},
+                    "allowedModules": ["ETHIC"], "permissions": ["ETHIC"],
+                    "actions": {}, "reports": {}, "scopes": [],
+                    "allowedScopes": [],
+                },
                 "EXACT_MANAGE",
             ),
         }
@@ -310,10 +322,30 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
                 )
                 self.assertEqual(result.stdout.strip(), expected)
 
+            empty = states["first-run.json"][0]
+            exact_manage = states["rerun.json"][0]
             for filename, payload in {
-                "partial.json": {"userId": "41", "subscriberId": 41, "modules": {"ETHIC": "MANAGE"}, "allowedModules": []},
-                "broader.json": {"userId": "41", "subscriberId": 41, "modules": {"ETHIC": "ADMIN"}, "allowedModules": ["ETHIC"]},
-                "identity-drift.json": {"userId": "42", "subscriberId": 41, "modules": {}, "allowedModules": []},
+                "partial.json": {**exact_manage, "allowedModules": []},
+                "broader.json": {**exact_manage, "modules": {"ETHIC": "ADMIN"}},
+                "identity-drift.json": {**empty, "userId": "42"},
+                "super-admin.json": {**empty, "superAdmin": True},
+                "unrelated-role.json": {**empty, "roles": ["ADMIN"]},
+                "unrelated-module.json": {
+                    **empty,
+                    "modules": {"ACCESS": "MANAGE"},
+                    "allowedModules": ["ACCESS"],
+                    "permissions": ["ACCESS"],
+                },
+                "unrelated-scope.json": {
+                    **empty,
+                    "scopes": ["tenant:all"],
+                    "allowedScopes": ["tenant:all"],
+                },
+                "missing-authority-field.json": {
+                    key: value
+                    for key, value in empty.items()
+                    if key != "permissions"
+                },
             }.items():
                 path = Path(tmp) / filename
                 path.write_text(json.dumps(payload))
@@ -335,6 +367,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('[ "$target_projection_before" = EXACT_MANAGE ]', self.entitlement)
         self.assertIn("existing target ETHIC projection is not linked to the exact dedicated role", self.entitlement)
         self.assertIn('if [ "$member_present" = false ]; then', self.entitlement)
+        self.assertIn("synthetic persona authority differs from the exact allowlist", self.authz_projection_lib)
+        self.assertIn("synthetic persona authority document is incomplete or malformed", self.authz_projection_lib)
+        self.assertIn("gained non-canonical permission-service authority", self.entitlement)
 
     def test_authz_member_identity_must_match_local_user_before_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -788,6 +823,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("DENIED_SUBJECT", self.openfga)
         self.assertIn("collect_direct_relations", self.openfga)
         self.assertIn("assert_direct_relation_allowlist", self.openfga)
+        self.assertIn("page violates the exact response contract", self.openfga)
+        self.assertNotIn("$page[$key] // []", self.openfga)
+        self.assertIn('has("continuation_token")', self.openfga)
         self.assertIn("wrong-org-canonical", self.openfga)
         self.assertIn("denied-persona", self.openfga)
         self.assertIn("positive-least-privilege", self.openfga)

@@ -240,19 +240,20 @@ for label in target wrong-org denied; do
   unset username email user_id
 done
 
-# Negative personas must always lack ETHIC. The target may either lack ETHIC
-# on the first run or carry the exact MANAGE projection from a previously
-# completed run; its dedicated role linkage is verified below before mutation.
+# Negative personas must have no permission-service authority at all. The
+# target may be exact-empty on first run or carry only the dedicated role and
+# ETHIC=MANAGE on a rerun. The helper rejects super-admin, unrelated roles,
+# modules, permissions, actions, reports and scopes before profile activation.
 for label in target wrong-org denied; do
   code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-before.json" \
     --config "$TMP_DIR/$label-auth.curl")
   [ "$code" = 200 ] || { echo "FATAL: $label authz identity bootstrap failed" >&2; exit 1; }
   projection_state=$(faz35_authz_projection_state "$TMP_DIR/$label-authz-before.json") || {
-    echo "FATAL: $label has a non-canonical ETHIC authorization projection" >&2
+    echo "FATAL: $label has a non-canonical full authorization projection" >&2
     exit 1
   }
   if [ "$label" != target ] && [ "$projection_state" != ABSENT ]; then
-    echo "FATAL: $label unexpectedly has ETHIC before dedicated writer provisioning" >&2
+    echo "FATAL: $label unexpectedly has permission-service authority before dedicated writer provisioning" >&2
     exit 1
   fi
   [ "$label" != target ] || target_projection_before=$projection_state
@@ -374,11 +375,9 @@ done
 for label in wrong-org denied; do
   code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-after.json" \
     --config "$TMP_DIR/$label-auth.curl")
-  if [ "$code" != 200 ] || ! jq -e '
-    (((.modules // {}) | has("ETHIC")) | not) and
-    (((.allowedModules // []) | index("ETHIC")) == null)
-  ' "$TMP_DIR/$label-authz-after.json" >/dev/null; then
-    echo "FATAL: $label gained the dedicated ETHIC entitlement" >&2
+  if [ "$code" != 200 ] ||
+      [ "$(faz35_authz_projection_state "$TMP_DIR/$label-authz-after.json" 2>/dev/null || true)" != ABSENT ]; then
+    echo "FATAL: $label gained non-canonical permission-service authority" >&2
     exit 1
   fi
 done

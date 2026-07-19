@@ -243,10 +243,33 @@ collect_pages() {
   local endpoint=$1 array_key=$2 token='' next page accumulated='[]' page_count=0
   while :; do
     page=$(pod_get_page "$endpoint" "$token")
+    printf '%s' "$page" | jq -e --arg key "$array_key" '
+      type == "object" and has($key) and
+      ((.[$key] | type) == "array") and
+      has("continuation_token") and
+      ((.continuation_token | type) == "string") and
+      (if $key == "stores" then
+         all(.[$key][];
+           type == "object" and
+           (.id | type == "string" and test("^[0-9A-HJKMNP-TV-Z]{26}$")) and
+           (.name | type == "string" and length > 0) and
+           .deleted_at == null)
+       elif $key == "authorization_models" then
+         all(.[$key][];
+           type == "object" and
+           (.id | type == "string" and test("^[0-9A-HJKMNP-TV-Z]{26}$")) and
+           .schema_version == "1.1" and
+           ((.type_definitions | type) == "array") and
+           ((.type_definitions | length) > 0))
+       else false end)
+    ' >/dev/null || {
+      echo "FATAL: OpenFGA $array_key page violates the exact response contract" >&2
+      exit 1
+    }
     accumulated=$(jq -nc --argjson accumulated "$accumulated" \
       --argjson page "$page" --arg key "$array_key" \
-      '$accumulated + ($page[$key] // [])')
-    next=$(printf '%s' "$page" | jq -r '.continuation_token // empty')
+      '$accumulated + $page[$key]')
+    next=$(printf '%s' "$page" | jq -r '.continuation_token')
     [ -n "$next" ] || break
     [ "$next" != "$token" ] || {
       echo "FATAL: OpenFGA pagination returned a repeated continuation token" >&2
