@@ -8,9 +8,14 @@ authorized by this ADR.
 **Owner issues:** ES-002 [#2648](https://github.com/Halildeu/platform-k8s-gitops/issues/2648), ES-101 [#2656](https://github.com/Halildeu/platform-k8s-gitops/issues/2656)
 
 **Product charter:** [Faz 35 Etik Speak](../faz-35-etik-speak-product-charter.md)
-**Current review governance:** direct Codex-only migration [#2688](https://github.com/Halildeu/platform-k8s-gitops/issues/2688).
-The latest exact-head `gpt-5.6-sol` re-review is `tracked_pending` because the
-provider usage limit stopped the call before a verdict; no fallback is accepted.
+**Current review governance:** isolated exact-scope Codex-primary migration
+[#2638](https://github.com/Halildeu/platform-k8s-gitops/issues/2638) /
+[PR #2690](https://github.com/Halildeu/platform-k8s-gitops/pull/2690). Routine
+scope `gpt-5.3-codex-spark xhigh`, governance/security/migration/production
+scope exact `gpt-5.6-sol xhigh`; Claude is optional challenger and MiniMax is
+not a review channel. The latest exact-head SOL re-review is `tracked_pending`
+because the provider usage limit stopped the call before a verdict; no fallback
+or current-session self-review is accepted as an isolated receipt.
 
 ## Context
 
@@ -31,6 +36,9 @@ Meeting, Endpoint veya suite arızasından etkilenmemelidir.
 - Staff uygulaması mevcut `mfe-ethic` remote artifact'ıdır; testte
   `testai.acik.com/ethic`, productionda `ai.acik.com/ethic` üzerinden shell'e
   yüklenir.
+- Test manager remote, exact source head'ten üretilmiş immutable
+  `platform-web-frontend-testai` image'ının içindedir. Public image digest'i
+  staff image digest'inin yerine geçmez; ikisi ayrı provenance taşır.
 - Public artifact staff MFE bundle'ını, Keycloak adapter'ını veya suite shared
   singleton'larını içermez.
 

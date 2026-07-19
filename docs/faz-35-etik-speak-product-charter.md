@@ -2,7 +2,7 @@
 
 > **Owner:** ES-000 / [#2646](https://github.com/Halildeu/platform-k8s-gitops/issues/2646)
 >
-> **Status:** Accepted product baseline; source-ready değildir, runtime kabulü değildir
+> **Status:** Draft-head product baseline implemented; exact-scope review, merge ve runtime kabulü bekleniyor
 >
 > **Date:** 2026-07-18
 > **Customer-first slice:** public bildirim → kalıcı kayıt → erişim bilgisi → yetkili çalışan yanıtı → bildirim sahibinin mailbox takibi
@@ -117,7 +117,7 @@ Bu matris hukuki görüş değildir; ürün/engineering acceptance baseline'ıd�
 | Referans | Ürüne çevrilen kontrol | Owner | Acceptance / kanıt |
 |---|---|---|---|
 | ISO 37002:2021 whistleblowing management | trust, impartiality, protection; intake-assessment-address-close döngüsü | Product + Legal | lifecycle/role matrisi, COI tests, case audit |
-| EU Directive 2019/1937 | güvenli kanal, gizlilik, follow-up, yetkili erişim | Legal + Product | iki yönlü mailbox, confidentiality compartment, SLA config |
+| EU Directive 2019/1937 Art. 9 | güvenli kanal, gizlilik, yetkili erişim, 7 gün içinde alındı teyidi ve kural olarak 3 ay içinde geri bildirim | Legal + Product | anlık durable receipt; configurable acknowledgment/feedback clock ve overdue evidence |
 | GDPR Art. 5/25/32 ve KVKK ilkeleri | minimization, purpose limitation, privacy by design, security | DPO + Security | data map, retention/hold, encryption, redaction, DSAR gate |
 | ISO/IEC 27001:2022 ve 27002 | access control, logging, incident, supplier/crypto/backup controls | Security + Platform | authz deny tests, audit, restore/rollback evidence |
 | ISO/IEC 27701 | controller/processor privacy controls ve records | DPO + Security | processing inventory, role boundary, evidence register |
@@ -126,6 +126,14 @@ Bu matris hukuki görüş değildir; ürün/engineering acceptance baseline'ıd�
 | WCAG 2.2 AA / EN 301 549 | accessible public and staff critical paths | Web + QA | axe, keyboard, screen-reader/manual evidence |
 | NIST SP 800-63B ilkeleri | secret entropy, throttling, replay resistance | Security | access-secret generation/hash/rate-limit tests |
 | OpenTelemetry semantic conventions | redacted operational telemetry | Platform | allowlisted attributes; narrative/identity/secret absence scan |
+
+ISO 37002'nin `receive → assess → address → conclude` döngüsü ürün state
+machine'inde görünür olmalıdır. İlk sentetik dilimin `NEW → IN_REVIEW → CLOSED`
+durumları bu döngünün minimum teknik iskeletidir; gerçek müşteri açılışından önce
+kurumun bağımsızlık, misillemeden korunma, escalation ve yeniden-açma politikası
+CORE-CONFIG olarak isimli Product/Legal sahibi tarafından seçilir. EU süreleri
+üründe varsayılan kontrol hedefidir; ülke/kurum hukukunun belirlediği farklı süre
+yalnız versioned policy ile değiştirilir, hard-coded frontend metniyle değil.
 
 Normatif kaynaklar:
 
@@ -150,6 +158,21 @@ doğrulaması satış ekibi tarafından ayrıca yapılır.
 | OneTrust Ethics | privacy/compliance suite integration | isolated product cell + suite MFE | privacy/retention controls ile birleşik governance |
 | SpeakUp | trusted anonymous dialogue ve multilingual experience | secure receipt/mailbox, TR baseline | müşteri kontrollü localized guided intake |
 | FaceUp | kolay public reporting ve case collaboration | accessible public artifact + manager MFE | standalone veya suite paketleme esnekliği |
+
+Kategori baseline'ını doğrulamak için kullanılan kamuya açık ürün yüzeyleri:
+
+- <https://www.integrityline.com/>
+- <https://www.navex.com/en-us/products/navex-ethics-compliance/whistleblowing-hotline/>
+- <https://www.onetrust.com/products/ethics-compliance/>
+- <https://www.speakup.com/>
+- <https://www.faceup.com/>
+
+Bu bağlantılar güncel paket veya sözleşme taahhüdü değildir. Satış öncesi
+competitive check; anonymous dialogue, multilingual accessibility, SLA,
+case collaboration, export, data residency, SSO ve bağımsız hotline kapsamını
+teklif tarihinde yeniden doğrular. Ürün charter'ı rakip pazarlama iddiasını
+kanıt olarak kullanmaz; her Etik Speak iddiası kendi acceptance evidence'ına
+dayanır.
 
 Ayırt edici ana tez: Etik Speak bağımsız satılabilir ve ayrı arıza alanında
 çalışırken, gerektiğinde mevcut AÇIK platformunun kimlik, yetki, meeting, ETS ve

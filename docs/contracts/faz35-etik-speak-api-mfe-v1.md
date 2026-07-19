@@ -2,7 +2,7 @@
 
 > **Owner:** ES-007 / [#2653](https://github.com/Halildeu/platform-k8s-gitops/issues/2653)
 >
-> **Status:** Proposed implementation contract
+> **Status:** Implemented on draft source heads; exact-head review, merge ve runtime compatibility evidence bekleniyor
 >
 > **Version:** `1.0.0`
 > **Compatibility:** server N supports public/staff clients N and N-1
@@ -39,12 +39,13 @@ Content-Type: application/json
 Accept: application/json
 ```
 
-Sensitive API responses use `Cache-Control: no-store`. Conditional case
-updates carry the current numeric version in the response body and require a
-quoted `If-Match` value on the next write. `X-Request-Id` and response `ETag`
-headers are production-hardening gates, not claimed by the first synthetic
-test slice. Timestamps are RFC 3339 UTC. IDs are opaque UUID strings and
-contain no tenant, date, identity or sequence information.
+Sensitive API responses use `Cache-Control: no-store`. The service creates an
+opaque `X-Request-Id` for every public/staff API response and repeats it inside
+the error envelope without accepting caller text as trusted telemetry.
+Conditional case detail/update responses carry a quoted version `ETag`; the
+next write supplies the same value as `If-Match`. Timestamps are RFC 3339 UTC.
+IDs are opaque UUID strings and contain no tenant, date, identity or sequence
+information.
 
 Error envelope:
 
@@ -162,10 +163,12 @@ Minimal roles/relations:
 | product config | `ethics_product_admin` | does not imply case content read |
 
 The first synthetic test slice evaluates the staff subject against the
-org-owned `ethics_product:<orgId>` object and also filters every case query by
-the server-resolved `org_id`. Per-case conflict/recusal tuples are an explicit
-later feature gate; they are not claimed by this slice. Product authorization
-and the database org filter are both required and fail closed.
+org-owned `ethics_product:<orgId>` object, filters every query by the
+server-resolved `org_id`, and checks direct `conflicted` plus `recused` deny
+relations on `ethics_case:<caseId>`. Product allow, DB org scope and absence of
+both object-level deny relations are jointly required. Any policy-engine
+failure is indistinguishable from deny; list/detail/mutation do not reveal case
+existence after a deny.
 
 ## 5. Domain and transaction contract
 

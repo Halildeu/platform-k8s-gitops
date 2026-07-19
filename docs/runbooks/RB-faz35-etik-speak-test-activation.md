@@ -21,11 +21,13 @@ Before provisioning or root-overlay activation, record all of the following:
 1. Backend and web source PR checks are green.
 2. Direct Codex exact-head review has a valid `AGREE` receipt. A usage-limit
    error remains `tracked_pending` and does not authorize merge/deploy.
-3. Backend and public-web workflows published immutable image digests.
+3. Backend, public-web and `platform-web-frontend-testai` workflows published
+   immutable image digests from their exact source heads.
 4. The public image pinned-container smoke proves `/healthz`, CSP,
    `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`.
 5. The GitOps activation overlay contains no all-zero digest and renders with
-   no `OVERLAY_MUST_OVERRIDE` value.
+   no `OVERLAY_MUST_OVERRIDE` value; the root test overlay separately pins the
+   exact manager/testai frontend digest.
 
 ## Gate 2: test product-cell provisioning
 
@@ -65,12 +67,15 @@ Expected non-secret results:
 
 In the GitOps PR:
 
-1. Replace both all-zero image digests in
-   `kustomize/overlays/test/activation/etik-speak/kustomization.yaml`.
-2. Add `activation/etik-speak` to the root test overlay resources.
-3. Render the root test overlay and run the repository CI gates.
-4. Merge only after the exact-head review receipt and normal CI are valid.
-5. Let ArgoCD reconcile; do not apply the activation directory selectively.
+1. Verify backend and public digests in
+   `kustomize/overlays/test/activation/etik-speak/kustomization.yaml` against
+   their exact reviewed source heads.
+2. Pin the exact reviewed `platform-web-frontend-testai` digest in the root
+   test overlay so `/ethic` contains ES-204; a public image does not prove this.
+3. Add `activation/etik-speak` to the root test overlay resources.
+4. Render the root test overlay and run the repository CI gates.
+5. Merge only after the exact-head review receipt and normal CI are valid.
+6. Let ArgoCD reconcile; do not apply the activation directory selectively.
 
 After reconciliation, verify ExternalSecret and immutable image identity:
 
@@ -103,6 +108,15 @@ Use only synthetic content.
 6. Prove cross-host mailbox login denial, public bearer/cookie credential
    confusion denial, wrong-org staff isolation, OpenFGA deny/outage behavior,
    stale `If-Match` `412`, and retry idempotency.
+
+The canonical browser driver lives in `platform-web` and reads the synthetic
+manager password only from a host-local chmod-600 file. It disables trace,
+video and screenshots so a receipt/access secret cannot enter CI artifacts:
+
+```bash
+ETIK_MANAGER_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-test.password \
+  pnpm test:e2e:etik-speak-runtime
+```
 
 Acceptance evidence is the running environment, the target reporter/staff
 personas, the completed durable round trip, and the next actor reading the same
