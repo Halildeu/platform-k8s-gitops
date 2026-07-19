@@ -552,6 +552,15 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertNotIn("--arg include ", self.keycloak)
         self.assertNotIn("$include and", self.keycloak)
         self.assertGreaterEqual(self.keycloak.count("--arg include_value"), 2)
+        self.assertIn("kc_get_scope_client_mappings()", self.keycloak)
+        self.assertEqual(
+            self.keycloak.count('kc_get_scope_client_mappings "$scope_id"'), 2
+        )
+        self.assertIn(
+            "Resource not found for url: http://localhost:8080/admin/realms/$REALM/client-scopes/$scope_id/scope-mappings/clients",
+            self.keycloak,
+        )
+        self.assertIn("client-scope mapping lookup requires a canonical UUID", self.keycloak)
 
     def test_pg_preflight_preserves_only_dedicated_database_rerun_state(self):
         self.assertIn("OR d.dbid=ethics_db_oid", self.pg_vault)

@@ -124,6 +124,36 @@ mint_synthetic_token() {
   unset password
 }
 
+kc_get_scope_client_mappings() {
+  local scope_id=$1 output status expected_missing
+  printf '%s' "$scope_id" | grep -Eq \
+    '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
+    echo "FATAL: client-scope mapping lookup requires a canonical UUID" >&2
+    return 1
+  }
+  status=0
+  if output=$(kc get "client-scopes/$scope_id/scope-mappings/clients" -r "$REALM" 2>&1); then
+    status=0
+  else
+    status=$?
+  fi
+  if [ "$status" -eq 0 ]; then
+    printf '%s' "$output" | jq -e 'type == "array"' >/dev/null || {
+      echo "FATAL: Keycloak client-scope client-mapping response is not an array" >&2
+      return 1
+    }
+    printf '%s' "$output"
+    return 0
+  fi
+  expected_missing="Resource not found for url: http://localhost:8080/admin/realms/$REALM/client-scopes/$scope_id/scope-mappings/clients"
+  if [ "$output" = "$expected_missing" ]; then
+    printf '[]'
+    return 0
+  fi
+  echo "FATAL: Keycloak client-scope client-mapping read failed" >&2
+  return "$status"
+}
+
 # Inspect every existing named object before the first mutation. Missing
 # objects are allowed and created below; drifted or over-privileged objects are
 # never partially reconciled in place.
@@ -180,7 +210,7 @@ preflight_existing_scope() {
     echo "FATAL: pre-mutation client scope role-mapping drift: $name" >&2
     exit 1
   }
-  client_bindings=$(kc get "client-scopes/$scope_id/scope-mappings/clients" -r "$REALM")
+  client_bindings=$(kc_get_scope_client_mappings "$scope_id")
   printf '%s' "$client_bindings" | jq -e 'length == 0' >/dev/null || {
     echo "FATAL: pre-mutation client scope has unexpected client-role mappings: $name" >&2
     exit 1
@@ -308,7 +338,7 @@ ensure_scope_role_binding() {
       echo "FATAL: $scope_name role mapping is not the exact ethics-manager allowlist" >&2
       exit 1
     }
-  client_bindings=$(kc get "client-scopes/$scope_id/scope-mappings/clients" -r "$REALM")
+  client_bindings=$(kc_get_scope_client_mappings "$scope_id")
   printf '%s' "$client_bindings" | jq -e 'length == 0' >/dev/null || {
     echo "FATAL: $scope_name has unexpected client-role scope mappings" >&2
     exit 1
