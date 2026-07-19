@@ -198,13 +198,21 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('(.reports // {}) == {}', self.writer_identity)
         self.assertIn('(.scopes // []) == []', self.writer_identity)
         self.assertIn('(.allowedScopes // []) == []', self.writer_identity)
+        self.assertIn("credentialPreflightReady", self.writer_identity)
+        self.assertIn("writer-credential-preflight-subject-mismatch", self.writer_identity)
+        self.assertIn(
+            "(.attributes.userId == [$legacy] and .attributes.subscriberId == [$legacy])",
+            self.writer_identity,
+        )
         self.assertIn("firstName,lastName,emailVerified", self.writer_identity)
         self.assertNotIn('PROVISIONER_ROLE_NAME="ADMIN"', self.writer_identity)
         self.assertNotIn("user_role_assignments", self.writer_identity)
 
+        credential_preflight = self.writer_identity.index("CREDENTIAL_PREFLIGHT_READY=true")
         identity_alignment = self.writer_identity.index("KEYCLOAK_IDENTITY_ALIGNED=true")
         first_writer_token = self.writer_identity.index("mint_writer_token \"${TMP_DIR}/writer-token-before.json\"")
         first_role_api = self.writer_identity.index("writer-bootstrap-role-read-denied")
+        self.assertLess(credential_preflight, identity_alignment)
         self.assertLess(identity_alignment, first_writer_token)
         self.assertLess(first_writer_token, first_role_api)
 
@@ -263,6 +271,13 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("denied", self.entitlement)
         self.assertIn("dedicated permission role contains an unrelated member", self.entitlement)
         self.assertIn("permission-writer Vault response is not one exact JSON document", self.entitlement)
+        self.assertIn("permission-writer Vault username is not the canonical synthetic writer", self.entitlement)
+        self.assertIn("permission writer is not the exact least-privilege provisioner", self.entitlement)
+        self.assertIn('(.modules // {}) == {ACCESS:"MANAGE"}', self.entitlement)
+        self.assertIn('.superAdmin == false', self.entitlement)
+        writer_gate = self.entitlement.index("writer-authz-preflight.json")
+        first_entitlement_mutation = self.entitlement.index("/api/v1/users/me/profile")
+        self.assertLess(writer_gate, first_entitlement_mutation)
         self.assertNotIn("kubectl exec", self.entitlement)
 
     def test_ethic_entitlement_rerun_accepts_only_its_exact_prior_state(self):
@@ -411,6 +426,17 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('prepare_synthetic_password_file "$PERSONA_PASSWORD_FILE" persona', self.keycloak)
         self.assertIn('[ ! -L "$file" ]', self.keycloak)
         self.assertIn("persona password owner/mode assertion failed", self.keycloak)
+        self.assertIn("existing synthetic profile drifted from its exact contract", self.keycloak)
+        self.assertIn("synthetic profile postcondition is not exact", self.keycloak)
+        self.assertIn("canonical synthetic persona username is ambiguous", self.keycloak)
+        self.assertIn("synthetic username is ambiguous", self.keycloak)
+        manager_profile_gate = self.keycloak.index(
+            'assert_persona_profile_precondition "$persona_id"'
+        )
+        manager_role_mutation = self.keycloak.index(
+            'kc add-roles -r "$REALM" --uusername "$PERSONA_USERNAME"'
+        )
+        self.assertLess(manager_profile_gate, manager_role_mutation)
         self.assertLess(
             self.keycloak.index("prepare_synthetic_password_file \"$PERSONA_PASSWORD_FILE\""),
             self.keycloak.index("if ! kc get roles/ethics-manager"),
@@ -720,6 +746,20 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("wrong-org-canonical", self.openfga)
         self.assertIn("denied-persona", self.openfga)
         self.assertIn("positive-least-privilege", self.openfga)
+        for sensitive_relation in (
+            "viewer",
+            "triager",
+            "handler",
+            "technical_admin",
+            "evidence_approver",
+            "ethics_product_admin",
+            "content_denied",
+            "case_viewer",
+            "case_triager",
+            "case_handler",
+            "evidence_reveal_approved",
+        ):
+            self.assertIn(sensitive_relation, self.openfga)
         self.assertIn("collect_pages", self.openfga)
         self.assertIn("multiple OpenFGA stores use the canonical", self.openfga)
         self.assertIn("multiple exact Etik Speak authorization models", self.openfga)
@@ -756,7 +796,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.assertIn('--config "$KCADM_CONFIG"', call)
         self.assertNotIn("head -1", self.keycloak)
         self.assertNotRegex(self.keycloak, r"awk[^\n]*\{print \$1; exit\}")
-        self.assertGreaterEqual(self.keycloak.count("| sed -n '1p'"), 7)
+        self.assertGreaterEqual(self.keycloak.count("| sed -n '1p'"), 4)
+        self.assertIn("canonical synthetic persona username is ambiguous", self.keycloak)
+        self.assertIn("synthetic username is ambiguous", self.keycloak)
         self.assertNotIn("2>/dev/null || printf '[]'", self.keycloak)
         self.assertNotRegex(
             self.keycloak,

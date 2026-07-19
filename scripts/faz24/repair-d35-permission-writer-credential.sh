@@ -376,6 +376,7 @@ NEED_WRITER_LAST_NAME=false
 [[ -n "${WRITER_FIRST_NAME_BEFORE}" ]] || NEED_WRITER_FIRST_NAME=true
 [[ -n "${WRITER_LAST_NAME_BEFORE}" ]] || NEED_WRITER_LAST_NAME=true
 
+if [[ "${PRE_IDENTITY_CREDENTIAL_ONLY}" != "true" ]]; then
 if [[ "${NEED_WRITER_EMAIL}" == "true" ]]; then
   WRITER_PROFILE_EMAIL_FILE="${TMP_DIR}/writer-profile-email"
   printf '%s' "${WRITER_PROFILE_EMAIL}" > "${WRITER_PROFILE_EMAIL_FILE}"
@@ -492,6 +493,7 @@ jq -e --arg writerId "${WRITER_USER_ID}" '
   || die "permission-writer-profile-email-ownership-unverified"
 WRITER_PROFILE_EMAIL_COLLISION_FREE=true
 WRITER_PROFILE_READY=true
+fi
 
 EXISTING_WRITER_USERNAME="$(jq -r '.admin_persona_username // empty' "${VAULT_ORIGINAL_DATA}")"
 EXISTING_PASSWORD_FILE="${TMP_DIR}/existing-writer-password"

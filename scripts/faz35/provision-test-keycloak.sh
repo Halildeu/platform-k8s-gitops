@@ -500,21 +500,66 @@ assert_persona_role_boundary() {
   done < <(kc get clients -r "$REALM" | jq -r '.[] | [.id,.clientId] | @tsv')
 }
 
-persona_id=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true \
-  --fields id --format csv --noquotes | sed -n '1p')
-if [ -z "$persona_id" ]; then
+assert_persona_profile_precondition() {
+  local user_id=$1 username=$2 expected_email=$3 first_name=$4 last_name=$5 org_id=$6 profile
+  profile=$(kc get "users/$user_id" -r "$REALM")
+  printf '%s' "$profile" | jq -e \
+    --arg id "$user_id" --arg username "$username" --arg email "$expected_email" \
+    --arg first "$first_name" --arg last "$last_name" --arg org "$org_id" '
+      .id == $id and .username == $username and .email == $email and
+      .firstName == $first and .lastName == $last and
+      .enabled == true and .emailVerified == true and
+      (.requiredActions // []) == [] and
+      (((.attributes // {}) == {}) or ((.attributes // {}) == {org_id:[$org]}))
+    ' >/dev/null || {
+      echo "FATAL: $username existing synthetic profile drifted from its exact contract" >&2
+      exit 1
+    }
+}
+
+assert_persona_profile_postcondition() {
+  local user_id=$1 username=$2 expected_email=$3 first_name=$4 last_name=$5 org_id=$6 profile
+  profile=$(kc get "users/$user_id" -r "$REALM")
+  printf '%s' "$profile" | jq -e \
+    --arg id "$user_id" --arg username "$username" --arg email "$expected_email" \
+    --arg first "$first_name" --arg last "$last_name" --arg org "$org_id" '
+      .id == $id and .username == $username and .email == $email and
+      .firstName == $first and .lastName == $last and
+      .enabled == true and .emailVerified == true and
+      (.requiredActions // []) == [] and
+      (.attributes // {}) == {org_id:[$org]}
+    ' >/dev/null || {
+      echo "FATAL: $username synthetic profile postcondition is not exact" >&2
+      exit 1
+    }
+}
+
+persona_matches=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true)
+persona_count=$(printf '%s' "$persona_matches" | jq 'length')
+[ "$persona_count" -le 1 ] || {
+  echo "FATAL: canonical synthetic persona username is ambiguous" >&2
+  exit 1
+}
+persona_id=$(printf '%s' "$persona_matches" | jq -r '.[0].id // empty')
+if [ "$persona_count" -eq 0 ]; then
   kc create users -r "$REALM" -s "username=$PERSONA_USERNAME" \
     -s enabled=true -s emailVerified=true \
     -s "email=$PERSONA_USERNAME@test.invalid" \
     -s firstName=Ethics -s lastName=Manager >/dev/null
-  persona_id=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true \
-    --fields id --format csv --noquotes | sed -n '1p')
+  persona_matches=$(kc get users -r "$REALM" -q "username=$PERSONA_USERNAME" -q exact=true)
+  [ "$(printf '%s' "$persona_matches" | jq 'length')" -eq 1 ] || {
+    echo "FATAL: canonical synthetic persona creation was not unique" >&2
+    exit 1
+  }
+  persona_id=$(printf '%s' "$persona_matches" | jq -r '.[0].id')
 fi
 printf '%s' "$persona_id" | grep -Eq \
   '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' || {
   echo "FATAL: synthetic persona canonical UUID contract failed" >&2
   exit 1
 }
+assert_persona_profile_precondition "$persona_id" "$PERSONA_USERNAME" \
+  "$PERSONA_USERNAME@test.invalid" Ethics Manager "$ETHICS_ORG_ID"
 
 kc add-roles -r "$REALM" --uusername "$PERSONA_USERNAME" \
   --rolename ethics-manager >/dev/null
@@ -529,6 +574,8 @@ actual_org=$(kc get "users/$persona_id" -r "$REALM" | jq -r '.attributes.org_id[
   echo "FATAL: synthetic persona org_id was not persisted" >&2
   exit 1
 }
+assert_persona_profile_postcondition "$persona_id" "$PERSONA_USERNAME" \
+  "$PERSONA_USERNAME@test.invalid" Ethics Manager "$ETHICS_ORG_ID"
 
 # The path, owner, mode and content were established before the first realm
 # mutation by prepare_synthetic_password_file(). Recheck without repairing.
@@ -633,23 +680,36 @@ printf '%s' "$token_claims" | jq -e '
 unset persona_password org_payload token_json access_token token_claims
 
 ensure_negative_persona() {
-  local username=$1 org_id=$2 password_file=$3 negative_id payload password token_json access_token claims
-  negative_id=$(kc get users -r "$REALM" -q "username=$username" -q exact=true \
-    --fields id --format csv --noquotes | sed -n '1p')
-  if [ -z "$negative_id" ]; then
+  local username=$1 org_id=$2 password_file=$3 negative_id payload password token_json access_token claims matches count
+  matches=$(kc get users -r "$REALM" -q "username=$username" -q exact=true)
+  count=$(printf '%s' "$matches" | jq 'length')
+  [ "$count" -le 1 ] || {
+    echo "FATAL: $username synthetic username is ambiguous" >&2
+    exit 1
+  }
+  negative_id=$(printf '%s' "$matches" | jq -r '.[0].id // empty')
+  if [ "$count" -eq 0 ]; then
     kc create users -r "$REALM" -s "username=$username" \
       -s enabled=true -s emailVerified=true \
       -s "email=$username@test.invalid" \
       -s firstName=Ethics -s lastName=Negative >/dev/null
-    negative_id=$(kc get users -r "$REALM" -q "username=$username" -q exact=true \
-      --fields id --format csv --noquotes | sed -n '1p')
+    matches=$(kc get users -r "$REALM" -q "username=$username" -q exact=true)
+    [ "$(printf '%s' "$matches" | jq 'length')" -eq 1 ] || {
+      echo "FATAL: $username synthetic persona creation was not unique" >&2
+      exit 1
+    }
+    negative_id=$(printf '%s' "$matches" | jq -r '.[0].id')
   fi
+  assert_persona_profile_precondition "$negative_id" "$username" \
+    "$username@test.invalid" Ethics Negative "$org_id"
   kc add-roles -r "$REALM" --uusername "$username" --rolename ethics-manager >/dev/null
   assert_persona_role_boundary "$negative_id" "$username"
   payload=$(jq -nc --arg org "$org_id" '{attributes:{org_id:[$org]}}')
   printf '%s' "$payload" | docker exec -i "$KC_CONTAINER" "$KCADM" \
     update "users/$negative_id" -r "$REALM" -f - --merge \
     --config "$KCADM_CONFIG" >/dev/null
+  assert_persona_profile_postcondition "$negative_id" "$username" \
+    "$username@test.invalid" Ethics Negative "$org_id"
 
   # Preflight created or validated all three files before realm mutation.
   [ "$(stat -c '%u' "$password_file")" = "$(id -u)" ] && \

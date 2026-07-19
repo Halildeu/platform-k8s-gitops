@@ -46,6 +46,7 @@ PROVISIONER_ROLE_READY=false
 KEYCLOAK_IDENTITY_ALIGNED=false
 ACCESS_MANAGE_READY=false
 ROLES_READ_READY=false
+CREDENTIAL_PREFLIGHT_READY=false
 
 usage() {
   cat <<'EOF'
@@ -119,7 +120,8 @@ write_result() {
     --argjson provisionerRoleReady "${PROVISIONER_ROLE_READY}" \
     --argjson keycloakIdentityAligned "${KEYCLOAK_IDENTITY_ALIGNED}" \
     --argjson accessManageReady "${ACCESS_MANAGE_READY}" \
-    --argjson rolesReadReady "${ROLES_READ_READY}" '
+    --argjson rolesReadReady "${ROLES_READ_READY}" \
+    --argjson credentialPreflightReady "${CREDENTIAL_PREFLIGHT_READY}" '
     {
       schemaVersion: "faz35.permissionWriterIdentityReconciliation.v1",
       mode: "test-only-reconcile",
@@ -131,6 +133,7 @@ write_result() {
         bootstrapTupleReady: $bootstrapTupleReady,
         dedicatedProvisionerRoleReady: $provisionerRoleReady,
         keycloakIdentityAligned: $keycloakIdentityAligned,
+        credentialPreflightReady: $credentialPreflightReady,
         accessManageReady: $accessManageReady,
         rolesReadReady: $rolesReadReady
       },
@@ -253,9 +256,56 @@ jq -e \
   --arg legacy "${LEGACY_LOCAL_USER_ID}" '
     .id == $id and .username == $username and .email == $email and
     .enabled == true and (.requiredActions // []) == [] and
-    (.attributes.userId == [$legacy] or .attributes.userId == [$dedicated]) and
-    (.attributes.subscriberId == [$legacy] or .attributes.subscriberId == [$dedicated])
+    ((.attributes.userId == [$legacy] and .attributes.subscriberId == [$legacy]) or
+     (.attributes.userId == [$dedicated] and .attributes.subscriberId == [$dedicated]))
   ' "${KC_WRITER_JSON}" >/dev/null || die "keycloak-writer-precondition-mismatch"
+
+# Prove the Vault-held credential against the immutable writer subject before
+# any Keycloak, local-user, OpenFGA or permission mutation. The credential-only
+# repair step is intentionally defense in depth; this script is independently
+# fail closed and does not trust caller order or a caller-authored receipt.
+ROOT_TOKEN="$(jq -r '.root_token // empty' "${VAULT_INIT_FILE}")"
+[[ -n "${ROOT_TOKEN}" ]] || die "vault-root-token-missing"
+{
+  printf '%s\n' "${ROOT_TOKEN}"
+} | docker exec -i "${VAULT_CONTAINER}" sh -c '
+  IFS= read -r VAULT_TOKEN
+  export VAULT_TOKEN
+  vault kv get -format=json "$1"
+' sh "${WRITER_VAULT_PATH}" > "${TMP_DIR}/writer-vault.json" 2>/dev/null \
+  || die "writer-vault-read-failed"
+jq -e --arg username "${WRITER_USERNAME}" '
+  .data.data.admin_persona_username == $username and
+  (.data.data.admin_persona_password | type == "string" and length > 0)
+' "${TMP_DIR}/writer-vault.json" >/dev/null || die "writer-vault-record-mismatch"
+printf '%s' "${WRITER_USERNAME}" > "${TMP_DIR}/writer.username"
+jq -j '.data.data.admin_persona_password' "${TMP_DIR}/writer-vault.json" \
+  > "${TMP_DIR}/writer.password"
+chmod 600 "${TMP_DIR}/writer.username" "${TMP_DIR}/writer.password"
+unset ROOT_TOKEN
+
+code="$(http_status POST "${KC_BASE_URL}/realms/${KC_REALM}/protocol/openid-connect/token" \
+  "${TMP_DIR}/writer-credential-preflight-token.json" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=password' \
+  --data-urlencode 'client_id=frontend' \
+  --data-urlencode 'scope=openid' \
+  --data-urlencode "username@${TMP_DIR}/writer.username" \
+  --data-urlencode "password@${TMP_DIR}/writer.password")"
+[[ "${code}" == "200" ]] || die "writer-credential-preflight-login-failed"
+WRITER_TOKEN="$(jq -r '.access_token // empty' "${TMP_DIR}/writer-credential-preflight-token.json")"
+[[ -n "${WRITER_TOKEN}" ]] || die "writer-credential-preflight-token-missing"
+write_bearer_config "${TMP_DIR}/writer-credential-preflight-auth.curl" "${WRITER_TOKEN}"
+unset WRITER_TOKEN
+code="$(http_status GET \
+  "${KC_BASE_URL}/realms/${KC_REALM}/protocol/openid-connect/userinfo" \
+  "${TMP_DIR}/writer-credential-preflight-userinfo.json" \
+  --config "${TMP_DIR}/writer-credential-preflight-auth.curl")"
+[[ "${code}" == "200" ]] || die "writer-credential-preflight-userinfo-failed"
+jq -e --arg subject "${WRITER_USER_ID}" '.sub == $subject' \
+  "${TMP_DIR}/writer-credential-preflight-userinfo.json" >/dev/null \
+  || die "writer-credential-preflight-subject-mismatch"
+CREDENTIAL_PREFLIGHT_READY=true
 
 # Keep the complete non-attribute identity profile immutable. Only the two
 # numeric correlation attributes are allowed to change in this reconciliation.
@@ -354,26 +404,8 @@ body="${response%$'\n'*}"
   || die "shared-openfga-bootstrap-check-denied"
 BOOTSTRAP_TUPLE_READY=true
 
-# Read the existing Vault-held writer credential without putting it in argv,
-# then prove the bounded tuple opens only the canonical role API.
-ROOT_TOKEN="$(jq -r '.root_token // empty' "${VAULT_INIT_FILE}")"
-[[ -n "${ROOT_TOKEN}" ]] || die "vault-root-token-missing"
-{
-  printf '%s\n' "${ROOT_TOKEN}"
-} | docker exec -i "${VAULT_CONTAINER}" sh -c '
-  IFS= read -r VAULT_TOKEN
-  export VAULT_TOKEN
-  vault kv get -format=json "$1"
-' sh "${WRITER_VAULT_PATH}" > "${TMP_DIR}/writer-vault.json" 2>/dev/null \
-  || die "writer-vault-read-failed"
-WRITER_USERNAME_LIVE="$(jq -r '.data.data.admin_persona_username // empty' "${TMP_DIR}/writer-vault.json")"
-WRITER_PASSWORD="$(jq -r '.data.data.admin_persona_password // empty' "${TMP_DIR}/writer-vault.json")"
-[[ "${WRITER_USERNAME_LIVE}" == "${WRITER_USERNAME}" && -n "${WRITER_PASSWORD}" ]] \
-  || die "writer-vault-record-mismatch"
-printf '%s' "${WRITER_USERNAME_LIVE}" > "${TMP_DIR}/writer.username"
-printf '%s' "${WRITER_PASSWORD}" > "${TMP_DIR}/writer.password"
-unset WRITER_USERNAME_LIVE WRITER_PASSWORD ROOT_TOKEN
-
+# Reuse the preflight-proven credential, then prove the bounded tuple opens
+# only the canonical role API after identity alignment.
 mint_writer_token() {
   local output="$1" token code
   code="$(http_status POST "${KC_BASE_URL}/realms/${KC_REALM}/protocol/openid-connect/token" \

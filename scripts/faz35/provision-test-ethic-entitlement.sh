@@ -24,6 +24,9 @@ readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
 WRITER_VAULT_PATH="${WRITER_VAULT_PATH:-kv/platform/d35-3}"
+WRITER_USERNAME="${WRITER_USERNAME:-d35-admin-persona}"
+WRITER_LOCAL_USER_ID="${WRITER_LOCAL_USER_ID:-12}"
+WRITER_PROVISIONER_ROLE="${WRITER_PROVISIONER_ROLE:-ETIK_SPEAK_PROVISIONER}"
 PERSONA_USERNAME="${PERSONA_USERNAME:-ethics-manager-test}"
 PERSONA_PASSWORD_FILE="${PERSONA_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-test.password}"
 WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
@@ -40,6 +43,9 @@ for binding in \
   "$VAULT_CONTAINER=platform-vault-test" \
   "$VAULT_INIT_FILE=/home/halil/bootstrap-drill/vault-init-test.json" \
   "$WRITER_VAULT_PATH=kv/platform/d35-3" \
+  "$WRITER_USERNAME=d35-admin-persona" \
+  "$WRITER_LOCAL_USER_ID=12" \
+  "$WRITER_PROVISIONER_ROLE=ETIK_SPEAK_PROVISIONER" \
   "$PERSONA_USERNAME=ethics-manager-test" \
   "$PERSONA_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-test.password" \
   "$WRONG_ORG_USERNAME=ethics-manager-wrong-org-test" \
@@ -122,6 +128,10 @@ unset vault_root_token
 writer_username=$(printf '%s' "$writer_json" | jq -r '.data.data.admin_persona_username')
 writer_password=$(printf '%s' "$writer_json" | jq -r '.data.data.admin_persona_password')
 unset writer_json
+[ "$writer_username" = "$WRITER_USERNAME" ] || {
+  echo "FATAL: permission-writer Vault username is not the canonical synthetic writer" >&2
+  exit 1
+}
 
 printf '%s' "$writer_username" >"$TMP_DIR/writer.username"
 printf '%s' "$writer_password" >"$TMP_DIR/writer.password"
@@ -176,6 +186,29 @@ fi
 writer_token=$(jq -r '.access_token' "$TMP_DIR/writer-token.json")
 write_bearer_config "$TMP_DIR/writer-auth.curl" "$writer_token"
 unset writer_token
+
+# This is the final fail-closed writer gate before the first entitlement-side
+# user materialization or permission mutation. A valid password alone is not
+# authority: the live projection must be the exact dedicated non-admin writer.
+writer_authz_code=$(http_status GET "$BASE_URL/api/v1/authz/me" \
+  "$TMP_DIR/writer-authz-preflight.json" --config "$TMP_DIR/writer-auth.curl")
+[ "$writer_authz_code" = 200 ] || {
+  echo "FATAL: canonical permission writer authz preflight failed" >&2
+  exit 1
+}
+jq -e --arg id "$WRITER_LOCAL_USER_ID" --arg role "$WRITER_PROVISIONER_ROLE" '
+  .userId == $id and .subscriberId == ($id | tonumber) and
+  .superAdmin == false and
+  ((.roles // []) | sort) == [$role] and
+  (.modules // {}) == {ACCESS:"MANAGE"} and
+  ((.allowedModules // []) | sort) == ["ACCESS"] and
+  ((.permissions // []) | sort) == ["ACCESS"] and
+  (.actions // {}) == {} and (.reports // {}) == {} and
+  (.scopes // []) == [] and (.allowedScopes // []) == []
+' "$TMP_DIR/writer-authz-preflight.json" >/dev/null || {
+  echo "FATAL: permission writer is not the exact least-privilege provisioner" >&2
+  exit 1
+}
 
 # /authz/me is permission-service owned and cannot materialize a new local
 # user. Touch the user-service profile route first. A new least-privilege row

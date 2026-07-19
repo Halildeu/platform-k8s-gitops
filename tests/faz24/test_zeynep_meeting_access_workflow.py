@@ -629,6 +629,26 @@ def test_keycloak_admin_password_stdin_contract_reaches_ready_state(tmp_path):
     assert "mock-admin-password" not in proc.stderr
 
 
+def test_pre_identity_credential_mode_never_mutates_the_writer_profile(tmp_path):
+    proc, result, _, events, _ = _run_ambiguous_reset_scenario(
+        tmp_path,
+        "new-success",
+        writer_local_user_id="1204",
+        initial_email="drifted@example.invalid",
+        admin_password_via_stdin=True,
+        pre_identity_credential_only=True,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert result["status"] in {"credential-ready", "credential-repaired"}
+    assert result["permissionWriter"]["loginReady"] is True
+    assert result["permissionWriter"]["profileRepaired"] is False
+    assert "keycloak-profile-repair" not in events
+    assert (tmp_path / "keycloak-email-state").read_text(
+        encoding="utf-8"
+    ).strip() == "drifted@example.invalid"
+
+
 def test_repair_script_keeps_vault_and_keycloak_reconcilable():
     text = REPAIR_SCRIPT.read_text(encoding="utf-8")
 

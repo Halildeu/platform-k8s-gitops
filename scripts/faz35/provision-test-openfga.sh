@@ -329,7 +329,9 @@ check_expected() {
     exit 1
   }
 }
-for relation in case_viewer case_triager case_handler; do
+for relation in \
+  viewer triager handler technical_admin evidence_approver ethics_product_admin \
+  content_denied case_viewer case_triager case_handler evidence_reveal_approved; do
   check_expected "$WRONG_ORG_SUBJECT" "$relation" "$WRONG_ETHICS_ORG_ID" false "wrong-org-object-$relation"
   check_expected "$WRONG_ORG_SUBJECT" "$relation" "$ETHICS_ORG_ID" false "wrong-org-canonical-$relation"
   check_expected "$DENIED_SUBJECT" "$relation" "$ETHICS_ORG_ID" false "denied-persona-$relation"
