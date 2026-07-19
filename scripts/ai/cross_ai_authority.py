@@ -345,6 +345,28 @@ def validate_authority_history_transition(
     if sha256_digest(new_root) != head_digest:
         raise AuthorityUnavailable("provider-review replacement trust-root pin mismatch")
 
+    try:
+        predecessor_roots = [old_root, *(
+            _git_json(root, base, Path(entry["trustRootPath"]))
+            for entry in base_history
+        )]
+        predecessor_public_keys = {
+            key["publicKeyBase64"]
+            for trust_root in predecessor_roots
+            for key in trust_root["keys"]
+        }
+        replacement_public_keys = {
+            key["publicKeyBase64"] for key in new_root["keys"]
+        }
+    except (KeyError, TypeError) as exc:
+        raise AuthorityUnavailable(
+            "provider-review rotation public-key history is invalid"
+        ) from exc
+    if predecessor_public_keys & replacement_public_keys:
+        raise AuthorityUnavailable(
+            "provider-review replacement reuses a public key from a prior generation"
+        )
+
     retired_at_text = new_root.get("issuedAt")
     if not isinstance(retired_at_text, str):
         raise AuthorityUnavailable("provider-review replacement issuance time is invalid")

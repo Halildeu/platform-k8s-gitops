@@ -40,7 +40,6 @@ from view_only_pilot_authorization_common import (
 )
 from cross_ai_authority import (
     AuthorityUnavailable,
-    load_active_authority,
     load_authority_for_evidence,
 )
 from prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope
@@ -1304,14 +1303,17 @@ def verify_activation_authorization(
             "scope_sha256"
         ]:
             raise EvidenceError("canonical advisory scope digest mismatch")
+        explicit_authority_unavailable = any(value is None for value in (
+            cross_ai_trust_root,
+            cross_ai_revocations,
+            expected_cross_ai_trust_root_sha256,
+            codex_executable_policy,
+            issuer_runtime_policy,
+        ))
         if (
             advisory_scope_bytes is None
-            or cross_ai_trust_root is None
-            or cross_ai_revocations is None
-            or expected_cross_ai_trust_root_sha256 is None
-            or codex_executable_policy is None
-            or issuer_runtime_policy is None
             or authority_observed_at is None
+            or (authority_repo_root is None and explicit_authority_unavailable)
         ):
             raise EvidenceError("signed Codex advisory authority inputs are unavailable")
         runtime_advisory_contract = {
@@ -1854,19 +1856,11 @@ def main() -> int:
     args = parse_args()
     try:
         token = os.environ.get(args.github_token_env, "")
-        authority = load_active_authority(ROOT)
         result = verify_product_evidence(
             GitHubClient(token=token, api_base=args.github_api_url),
             args.repository,
             args.run_id,
             advisory_scope_bytes=None,
-            cross_ai_trust_root=authority.trust_root,
-            cross_ai_revocations=authority.revocations_envelope,
-            expected_cross_ai_trust_root_sha256=(
-                authority.expected_trust_root_sha256
-            ),
-            codex_executable_policy=authority.codex_executable_policy,
-            issuer_runtime_policy=authority.issuer_runtime_policy,
             authority_repo_root=ROOT,
         )
         write_json(args.output, result)

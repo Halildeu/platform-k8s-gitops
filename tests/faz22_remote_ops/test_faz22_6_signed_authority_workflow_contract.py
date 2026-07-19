@@ -10,6 +10,9 @@ WORKFLOWS = {
     / ".github/workflows/faz22-6-view-only-viewer-product-evidence-verify.yml",
 }
 LOCK_PATH = "scripts/github_apps/cross_ai_deployment_policy/requirements.lock"
+TERMINATION_WORKFLOW = (
+    ROOT / ".github/workflows/faz22-6-view-only-viewer-termination-collector.yml"
+)
 
 
 def verify_dependency_lock_contract(text: str) -> None:
@@ -42,6 +45,19 @@ def verify_runtime_advisory_contract(text: str) -> None:
         raise ValueError("runtime advisory binding contract is missing")
     if "jq -er '.aiAdvisory.commentId'" in text:
         raise ValueError("circular policy advisory binding is forbidden")
+
+
+def verify_legacy_archive_contract(text: str) -> None:
+    required_counts = {
+        'legacy = {"SHA256SUMS", "protected-authorization.json"}': 1,
+        'current = legacy | {"advisory-comment.json"}': 1,
+        'if set(names) == current:': 1,
+        'elif set(names) == legacy:': 1,
+        '[ "$archive_mode" = v2 ]': 2,
+        '[ "$archive_mode" = v1 ]': 1,
+    }
+    if any(text.count(token) != count for token, count in required_counts.items()):
+        raise ValueError("legacy/current authorization archive contract is missing")
 
 
 class SignedAuthorityWorkflowContractTest(unittest.TestCase):
@@ -94,6 +110,19 @@ class SignedAuthorityWorkflowContractTest(unittest.TestCase):
             verify_runtime_advisory_contract(
                 original + "\njq -er '.aiAdvisory.commentId'\n"
             )
+
+    def test_termination_accepts_only_exact_legacy_or_current_archive_sets(self):
+        original = TERMINATION_WORKFLOW.read_text(encoding="utf-8")
+        verify_legacy_archive_contract(original)
+        for token in (
+            'legacy = {"SHA256SUMS", "protected-authorization.json"}',
+            'current = legacy | {"advisory-comment.json"}',
+            '[ "$archive_mode" = v2 ]',
+            '[ "$archive_mode" = v1 ]',
+        ):
+            with self.subTest(omitted=token):
+                with self.assertRaisesRegex(ValueError, "archive contract is missing"):
+                    verify_legacy_archive_contract(original.replace(token, "", 1))
 
 
 if __name__ == "__main__":

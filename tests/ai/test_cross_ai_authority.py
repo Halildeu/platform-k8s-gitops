@@ -10,6 +10,8 @@ import unittest
 from datetime import timedelta
 from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from scripts.ai.cross_ai_authority import (
     AuthorityUnavailable,
     is_exact_revocation_transition,
@@ -29,6 +31,7 @@ from scripts.github_apps.cross_ai_deployment_policy.contract import (
     REVOCATIONS_PAYLOAD_TYPE,
 )
 from tests.ai.signed_evidence_fixture import make_signed_evidence
+from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -502,8 +505,18 @@ class GenesisTransitionTests(unittest.TestCase):
             self.fixture.factory.REVOCATION_KEY_ID,
         )
 
-    def rotated_trust_root(self) -> dict[str, object]:
-        replacement = copy.deepcopy(self.fixture.authority.trust_root)
+    def replacement_factory(self) -> FixtureFactory:
+        factory = FixtureFactory("v2")
+        for seed, key_id in enumerate(factory.keys, start=11):
+            factory.keys[key_id] = Ed25519PrivateKey.from_private_bytes(
+                bytes([seed]) * 32
+            )
+        return factory
+
+    def rotated_trust_root(
+        self, factory: FixtureFactory,
+    ) -> dict[str, object]:
+        replacement = factory.trust_root()
         replacement.update(
             {
                 "trustRootId": "10000000-0000-4000-8000-000000000002",
@@ -544,12 +557,19 @@ class GenesisTransitionTests(unittest.TestCase):
         )
         base = self.commit("active predecessor authority")
 
-        replacement_root = self.rotated_trust_root()
-        replacement_revocations = self.signed_revocations(
-            set_id="20000000-0000-4000-8000-000000000098",
-            issued_at="2026-07-18T20:30:00Z",
-            next_update="2026-07-18T21:30:00Z",
-            entries=[],
+        replacement_factory = self.replacement_factory()
+        self._replacement_factory = replacement_factory
+        replacement_root = self.rotated_trust_root(replacement_factory)
+        replacement_revocations = replacement_factory.sign(
+            REVOCATIONS_PAYLOAD_TYPE,
+            {
+                "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
+                "revocationSetId": "20000000-0000-4000-8000-000000000098",
+                "issuedAt": "2026-07-18T20:30:00Z",
+                "nextUpdate": "2026-07-18T21:30:00Z",
+                "entries": [],
+            },
+            replacement_factory.REVOCATION_KEY_ID,
         )
         old_digest = self.fixture.authority.expected_trust_root_sha256
         old_digest_hex = old_digest.removeprefix("sha256:")
@@ -614,6 +634,29 @@ class GenesisTransitionTests(unittest.TestCase):
             now=self.fixture.factory.now,
         )
 
+    def test_root_rotation_rejects_public_key_reuse_across_generations(self) -> None:
+        base, valid_head = self.install_rotation()
+        self.git("checkout", "-q", valid_head)
+        root_path = "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+        manifest_path = "config/github-apps/cross-ai-provider-review-authority.v1.json"
+        predecessor = json.loads(self.git("show", f"{base}:{root_path}"))
+        replacement = json.loads((self.root / root_path).read_text())
+        replacement["keys"][0]["publicKeyBase64"] = predecessor["keys"][0][
+            "publicKeyBase64"
+        ]
+        manifest = json.loads((self.root / manifest_path).read_text())
+        manifest["expectedTrustRootSha256"] = sha256_digest(replacement)
+        self.write_json(root_path, replacement)
+        self.write_json(manifest_path, manifest)
+        bad_head = self.commit("reuse predecessor public key")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(AuthorityUnavailable, "reuses a public key"):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, bad_head),
+                now=self.fixture.factory.now,
+            )
+
     def test_root_rotation_rejects_backdated_retirement(self) -> None:
         base, valid_head = self.install_rotation()
         self.git("checkout", "-q", valid_head)
@@ -663,11 +706,16 @@ class GenesisTransitionTests(unittest.TestCase):
                 if key["role"] == "provider-review"
                 else "2026-08-17T20:00:00Z"
             )
-        stale_revocations = self.signed_revocations(
-            set_id="20000000-0000-4000-8000-000000000099",
-            issued_at="2026-07-18T20:00:00Z",
-            next_update="2026-07-18T20:20:00Z",
-            entries=[],
+        stale_revocations = self._replacement_factory.sign(
+            REVOCATIONS_PAYLOAD_TYPE,
+            {
+                "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
+                "revocationSetId": "20000000-0000-4000-8000-000000000099",
+                "issuedAt": "2026-07-18T20:00:00Z",
+                "nextUpdate": "2026-07-18T20:20:00Z",
+                "entries": [],
+            },
+            self._replacement_factory.REVOCATION_KEY_ID,
         )
         manifest = json.loads((self.root / manifest_path).read_text())
         manifest["expectedTrustRootSha256"] = sha256_digest(replacement_root)
