@@ -68,7 +68,7 @@ printf '%s' "$evidence_comment" | python3 scripts/ai/verify_cross_ai_evidence_co
   --head-sha "$promotion_head" \
   --scope-sha256 "$promotion_scope" \
   --model gpt-5.6-sol >/dev/null || exit 1
-[[ "$(grep -Ec '^(Claude|MiniMax) receipt:' <<<"$promotion_body" || true)" == "0" ]] || exit 1
+[[ "$(grep -Eic '^[[:space:]]*(claude|minimax) receipt[[:space:]]*:' <<<"$promotion_body" || true)" == "0" ]] || exit 1
 
 [[ "$(git rev-list --parents -n 1 "$PR_HEAD_SHA" | awk '{print NF - 1}')" == "1" ]] || exit 1
 [[ "$(git rev-parse "$PR_HEAD_SHA^")" == "$PR_BASE_SHA" ]] || exit 1

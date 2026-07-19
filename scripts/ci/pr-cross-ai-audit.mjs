@@ -95,7 +95,13 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^scripts\/ops\/vault-policy-reconcile\.sh$/,
   /^scripts\/faz22-remote-ops\//,
   /^kustomize\/overlays\/test\/activation\/cross-ai-deployment-protection-observe\//,
-  /^scripts\/ats\/(?:open-fullats-test-rollback-pr|verify-fullats-test-rollback-content)\.sh$/,
+  // Active Full ATS acceptance/recovery/rollback executables and every local
+  // script they invoke are one high-impact product/deployment surface. An
+  // ordinary branch name must not downgrade any transitive entry to none or
+  // routine/Spark review.
+  /^scripts\/ats\/(?:d29-smoke(?:-receipt-chain)?|fullats-(?:application-smoke|axe-evidence|live-browser-acceptance)|install-pinned-(?:gh-cli|kustomize)|open-fullats-test-rollback-pr|provision-test-(?:keycloak|pg-vault)|transition-test-model-governance|verify-fullats-(?:live-runtime|test-rollback-content)|verify-model-governance-ledger)\.(?:cjs|py|sh)$/,
+  /^scripts\/automation\/(?:apply-test-overlay-digests\.py|backend-testai-digest-contract\.py|sync-test-overlay\.sh)$/,
+  /^scripts\/deploy\/(?:ensure-argocd-cli|gate-stability-window|reconcile-testai-backend-sequential|verify-pod-digest|verify-testai-backend-runtime)\.sh$/,
   /^scripts\/promotion\/scan-promotion-candidates\.sh$/,
   /^\.github\/workflows\/faz25-fullats-(?:live-browser-acceptance|test-recovery)\.yml$/,
   /^kustomize\/overlays\/test\/(?:fullats-promotion-state\.txt|kustomization\.yaml)$/,
@@ -595,9 +601,9 @@ function parseProviderResponseVerdict(response) {
   if (matches.length !== 1 || !lines.length || !/^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$/.test(lines.at(-1))) {
     return null;
   }
-  const headingRe = /^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$/gim;
+  const headingRe = /^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$/gm;
   const headings = [...response.matchAll(headingRe)];
-  if (headings.map((match) => match[1].toUpperCase()).join(',') !== 'P0,P1,P2') {
+  if (headings.map((match) => match[1]).join(',') !== 'P0,P1,P2') {
     return null;
   }
   if (response.slice(0, headings[0].index).trim()) return null;

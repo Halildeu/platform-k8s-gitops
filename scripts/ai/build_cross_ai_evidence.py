@@ -22,7 +22,7 @@ VERDICT_RE = re.compile(
     r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE
 )
 PRIORITY_HEADING_RE = re.compile(
-    r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$"
+    r"(?m)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$"
 )
 NO_FINDINGS_RE = re.compile(r"^None$")
 EMAIL_RE = re.compile(
@@ -82,7 +82,7 @@ def fail(code: str) -> NoReturn:
 
 def priority_sections(response: str) -> dict[str, str] | None:
     headings = list(PRIORITY_HEADING_RE.finditer(response))
-    if [match.group(1).upper() for match in headings] != ["P0", "P1", "P2"]:
+    if [match.group(1) for match in headings] != ["P0", "P1", "P2"]:
         return None
     if response[:headings[0].start()].strip():
         return None
@@ -95,7 +95,7 @@ def priority_sections(response: str) -> dict[str, str] | None:
         content = response[heading.end():end].strip()
         if not content:
             return None
-        sections[heading.group(1).upper()] = content
+        sections[heading.group(1)] = content
     return sections
 
 

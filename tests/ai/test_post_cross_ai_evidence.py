@@ -100,6 +100,7 @@ class EvidenceValidationTests(unittest.TestCase):
             "P0\nNone\nP1\nNone\nP2\nLow finding\nVERDICT: AGREE",
             "P0: Critical finding is present\nNone\nP1\nNone\nP2\nNone\n"
             "VERDICT: AGREE",
+            "p0\nNone\np1\nNone\np2\nNone\nVERDICT: AGREE",
             "Critical finding outside priority sections\n"
             "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
         ):
