@@ -203,6 +203,7 @@ const evidenceLedgerFromMap = (evidenceMap) => Object.entries(evidenceMap)
       return [];
     }
     return [{
+      statusId: index + 1,
       sha: body.head_sha,
       context: `cross-ai/evidence/${sha256(comment.body)}`,
       state: body.verdict === 'AGREE' ? 'success' : 'failure',
@@ -251,10 +252,16 @@ const HISTORICAL_CODEX_V3_EVIDENCE = {
     Date.parse('2026-07-19T17:00:00Z'),
   ),
 };
-const CURRENT_CODEX_V3_EVIDENCE = {
+const PRE_ACTIVATION_CODEX_V3_EVIDENCE = {
   [evidenceRef(1016)]: evidenceCommentAt(
     CODEX_V3_BODY,
     Date.parse('2026-07-19T17:10:00Z'),
+  ),
+};
+const POST_ACTIVATION_CODEX_V3_EVIDENCE = {
+  [evidenceRef(1018)]: evidenceCommentAt(
+    CODEX_V3_BODY,
+    Date.parse('2026-07-19T17:31:00Z'),
   ),
 };
 const MINIMAX_V3_BODY = evidenceBody(
@@ -415,6 +422,17 @@ const erasedOwnerHistoryEvidence = {
     updatedAt: new Date(NOW_MS + 4_000).toISOString(),
   },
 };
+const PRE_ACTIVATION_EDITED_REF = evidenceRef(1019);
+const preActivationEditedOwnerHistoryEvidence = {
+  ...EVIDENCE,
+  [PRE_ACTIVATION_EDITED_REF]: {
+    ...evidenceCommentAt(
+      codexReviseBody,
+      Date.parse('2026-07-19T17:20:00Z'),
+    ),
+    updatedAt: '2026-07-19T17:25:00.000Z',
+  },
+};
 const resolvedCodexReviseEvidence = {
   ...unresolvedCodexReviseEvidence,
   [UNREFERENCED_CODEX_AGREE_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 4_000),
@@ -429,6 +447,18 @@ const freshCodexAgreeBody = JSON.stringify({
 const freshSelectedCodexReviseEvidence = {
   ...unresolvedCodexReviseEvidence,
   [UNREFERENCED_CODEX_AGREE_REF]: evidenceComment(freshCodexAgreeBody, 4_000),
+};
+const SAME_SECOND_REVIEW_MS = Date.parse('2026-07-19T18:10:00Z');
+const sameSecondSelectedCodexReviseEvidence = {
+  ...EVIDENCE,
+  [UNREFERENCED_CODEX_REVISE_REF]: evidenceCommentAt(
+    codexReviseBody,
+    SAME_SECOND_REVIEW_MS,
+  ),
+  [UNREFERENCED_CODEX_AGREE_REF]: evidenceCommentAt(
+    freshCodexAgreeBody,
+    SAME_SECOND_REVIEW_MS,
+  ),
 };
 const resolvedSelectedCodexReviseEvidence = {
   ...unresolvedCodexReviseEvidence,
@@ -1033,6 +1063,7 @@ const TWO_STEP_FORCE_PUSH_FIXTURE = {
   },
   statuses: {
     [HIDDEN_REVISE_H1]: [{
+      id: 9001,
       context: `cross-ai/evidence/${HIDDEN_REVISE_DIGEST}`,
       state: 'failure',
       description: `v4 openai REVISE pr=${PR_NUMBER} thread=${HIDDEN_REVISE_THREAD}`,
@@ -1040,7 +1071,7 @@ const TWO_STEP_FORCE_PUSH_FIXTURE = {
       creator: { login: 'Halildeu' },
       created_at: new Date(NOW_MS + 5_000).toISOString(),
       updated_at: new Date(NOW_MS + 5_000).toISOString(),
-      url: `https://api.github.com/repos/${REPO}/statuses/hidden-h1`,
+      url: `https://api.github.com/repos/${REPO}/statuses/9001`,
     }],
   },
 };
@@ -1141,6 +1172,22 @@ const cases = [
         ref: 'refs/heads/staging',
       },
       expectedFailureCheck: 'cross_ai_source_trust_activation' }, 1],
+  ['normal PR with source activation before ledger policy introduction -> blocked',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, changedFiles: [ROUTINE_PATH],
+      sourceActivationAttestation: {
+        ...sourceActivation(),
+        activated_at: '2026-07-19T17:00:00Z',
+      },
+      expectedFailureCheck: 'cross_ai_source_trust_activation' }, 1],
+  ['normal PR with a future source activation timestamp -> blocked',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, changedFiles: [ROUTINE_PATH],
+      sourceActivationAttestation: {
+        ...sourceActivation(),
+        activated_at: '2099-01-01T00:00:00Z',
+      },
+      expectedFailureCheck: 'cross_ai_source_trust_activation' }, 1],
   ['legacy receipt body cannot produce current acceptance',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: legacyPeerBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_explicit_mode_required' }, 1],
   ['explicit none mode lets routine work pass without provider receipts',
@@ -1192,10 +1239,14 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: HISTORICAL_CODEX_V3_EVIDENCE }, 0],
-  ['none mode rejects OpenAI v3 created after ledger activation',
+  ['none mode keeps OpenAI v3 before verified source activation as read-only history',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
-      evidence: CURRENT_CODEX_V3_EVIDENCE,
+      evidence: PRE_ACTIVATION_CODEX_V3_EVIDENCE }, 0],
+  ['none mode rejects OpenAI v3 created after verified source activation',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: POST_ACTIVATION_CODEX_V3_EVIDENCE,
       expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['none mode cannot hide an unreferenced same-head Codex REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
@@ -1211,6 +1262,25 @@ const cases = [
         ...unresolvedCodexReviseEvidence,
       }),
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['none mode ignores a status tombstone created before verified source activation',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: EVIDENCE,
+      evidenceLedger: [
+        ...evidenceLedgerFromMap(EVIDENCE),
+        {
+          statusId: 7000,
+          sha: HEAD_SHA,
+          context: `cross-ai/evidence/${sha256(codexReviseBody)}`,
+          state: 'failure',
+          description: `v4 openai REVISE pr=${PR_NUMBER} thread=${JSON.parse(codexReviseBody).execution_provenance.thread_id}`,
+          targetUrl: `https://github.com/${REPO}/pull/${PR_NUMBER}`,
+          creator: 'Halildeu',
+          createdAt: '2026-07-19T17:20:00.000Z',
+          updatedAt: '2026-07-19T17:20:00.000Z',
+          ref: `https://api.github.com/repos/${REPO}/statuses/7000`,
+        },
+      ] }, 0],
   ['none mode cannot hide a REVISE older than the selected receipt freshness window',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -1230,6 +1300,10 @@ const cases = [
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: erasedOwnerHistoryEvidence,
       expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['an owner evidence comment edited before verified source activation has no authority',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: preActivationEditedOwnerHistoryEvidence }, 0],
   ['an invalid-digest historical REVISE candidate fails closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -1393,6 +1467,37 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: freshSelectedCodexBody, changedFiles: [ROUTINE_PATH],
       evidence: freshSelectedCodexReviseEvidence }, 0],
+  ['a same-second selected AGREE resolves a REVISE only through a larger status id',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: freshSelectedCodexBody, changedFiles: [ROUTINE_PATH],
+      evidence: sameSecondSelectedCodexReviseEvidence }, 0],
+  ['a same-second selected AGREE with an older status id cannot resolve a REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: freshSelectedCodexBody, changedFiles: [ROUTINE_PATH],
+      evidence: sameSecondSelectedCodexReviseEvidence,
+      evidenceLedger: (() => {
+        const statuses = evidenceLedgerFromMap(sameSecondSelectedCodexReviseEvidence);
+        const reviseDigest = sha256(codexReviseBody);
+        const agreeDigest = sha256(freshCodexAgreeBody);
+        return statuses.map((status) => {
+          if (status.context === `cross-ai/evidence/${reviseDigest}`) {
+            return {
+              ...status,
+              statusId: 9200,
+              ref: `https://api.github.com/repos/${REPO}/statuses/9200`,
+            };
+          }
+          if (status.context === `cross-ai/evidence/${agreeDigest}`) {
+            return {
+              ...status,
+              statusId: 9100,
+              ref: `https://api.github.com/repos/${REPO}/statuses/9100`,
+            };
+          }
+          return status;
+        });
+      })(),
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['a newly executed selected AGREE resolves a historical OpenAI v1 REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: freshSelectedCodexBody, changedFiles: [ROUTINE_PATH],
@@ -1597,9 +1702,10 @@ const cases = [
   ['normal PR + reverse two-provider evidence timestamps remain accepted',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: outOfOrderEvidence, changedFiles: [ROUTINE_PATH] }, 0],
-  ['normal PR + equal two-provider evidence timestamps remain accepted',
+  ['normal PR + pre-activation Codex v4 cannot gain authority from an equal timestamp',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody, evidence: equalTimestampEvidence, changedFiles: [ROUTINE_PATH] }, 0],
+      body: peerBody, evidence: equalTimestampEvidence, changedFiles: [ROUTINE_PATH],
+      expectedFailureCheck: 'consultation_selected_receipts_ledgered' }, 1],
   ['normal PR + duplicate provider evidence refs -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace(CODEX_REF, CLAUDE_REF) }, 1],

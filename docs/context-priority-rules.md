@@ -436,6 +436,10 @@ exact head, body SHA-256, thread ve verdict'e bağlı ayrı create-only commit-s
 ledger kaydı yorumdan önce üretilir ve exact PR URL'sine bağlanır. Gate yorumları
 ledger'a mutable yorum URL'siyle değil body digest'iyle bağlar; aynı digest'in
 exact retry kopyaları tek authority kaydıdır, çelişkili duplicate fail-closed olur.
+GitHub aynı saniye içinde üretilen iki status'a eşit timestamp döndürürse sıra,
+server tarafından verilen monoton numeric status ID ile belirlenir. Yalnız yorum
+timestamp'i olan veya status ID'si doğrulanamayan eş-zamanlı `REVISE`/`AGREE`
+kayıtları karşılaştırılamaz ve fail-closed kalır.
 Gate mevcut PR head'ini, force-push timeline uçlarını ve her ucun target base'e
 göre compare ile doğrulanan commit lineage'ını tarar; araya fast-forward commit
 eklenip sonra force-push yapılsa da eski `REVISE` status'u görünmez hale gelmez.
@@ -566,8 +570,13 @@ yalnız merge sonrası exact `main` push checkout'unda
 sonraki `pull_request_target` gate'i tarafından exact PR base SHA, successful
 run ID, main workflow/ref/event ve producer digest bağıyla yeniden tüketilince
 aktif kabul edilir; yalnız log'a yazılan veya tüketilmeyen çıktı aktivasyon
-yetkisi üretmez. Bu
-aktivasyondan sonraki PR'lar merged trusted producer stack'i kullanır.
+yetkisi üretmez. Doğrulanmış artifact'teki `activated_at`, history immutability
+ve status-ledger otoritesinin effective başlangıcıdır; kaynakta sabitlenen politika
+tarihleri yalnız alt sınırdır. `activated_at` bu alt sınırdan önce veya izinli
+clock-skew dışında gelecekteyse artifact reddedilir. Effective aktivasyondan önce
+düzenlenmiş owner yorumları ve üretilmiş status tombstone'ları yeni otorite
+üretmez; pre-activation OpenAI v3 yalnız read-only tarihsel kayıt olarak kalır.
+Bu aktivasyondan sonraki PR'lar merged trusted producer stack'i kullanır.
 
 Codex process `stderr` politikası da fail-closed'dur. Boş `stderr` kabul edilir;
 yalnız Codex 0.144.1 ile server model-cache şeması arasındaki doğrulanmış

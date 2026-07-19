@@ -35,11 +35,11 @@ const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const MINIMAX_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-18T14:16:20Z');
 const LEGACY_V1_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T00:04:38Z');
 const CLAUDE_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T01:09:35Z');
-const EVIDENCE_HISTORY_IMMUTABILITY_CUTOFF_MS = Date.parse('2026-07-19T01:09:35Z');
+const EVIDENCE_HISTORY_POLICY_INTRODUCED_MS = Date.parse('2026-07-19T01:09:35Z');
 // From this source-policy transition onward, issue comments are payload
 // storage only. Immutable commit-status records are the history authority, so
 // deleting an unreferenced REVISE payload cannot erase the tombstone.
-const EVIDENCE_STATUS_LEDGER_CUTOFF_MS = Date.parse('2026-07-19T17:06:35Z');
+const EVIDENCE_STATUS_LEDGER_POLICY_INTRODUCED_MS = Date.parse('2026-07-19T17:06:35Z');
 const EVIDENCE_LEDGER_CONTEXT_PREFIX = 'cross-ai/evidence/';
 const EVIDENCE_LEDGER_DESCRIPTION_RE = /^v4 openai (AGREE|REVISE) pr=(\d+) thread=([0-9a-f-]{36})$/i;
 const NO_FINDINGS_RE = /^None$/;
@@ -91,6 +91,7 @@ const SOURCE_ACTIVATION_KEYS = [
   'activated_at', 'event_name', 'ok', 'ref', 'repository', 'run_attempt',
   'run_id', 'schema', 'source_digests', 'trusted_sha', 'workflow_ref',
 ];
+const VERIFIED_SOURCE_ACTIVATION_MS = Symbol('verified-source-activation-ms');
 const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
   'base_sha', 'branch', 'changed_diff_sha256', 'expected_paths', 'head_sha',
   'promotion_base_sha', 'promotion_head_sha', 'promotion_merge_sha',
@@ -478,6 +479,8 @@ function sourceActivationFinding(prMeta, trustedSourceDigestOverrides) {
     && /^\d+$/.test(runAttempt)
     && Number(runAttempt) > 0
     && Number.isFinite(activatedAtMs)
+    && activatedAtMs >= EVIDENCE_STATUS_LEDGER_POLICY_INTRODUCED_MS
+    && activatedAtMs <= Date.now() + EVIDENCE_FUTURE_SKEW_MS
     && sourceKeys.join(',') === expectedSourceKeys.join(',')
     && trustedDigests
     && [...trustedDigests].every(([key, digest]) => sourceDigests[key] === digest)
@@ -485,6 +488,7 @@ function sourceActivationFinding(prMeta, trustedSourceDigestOverrides) {
   return {
     check: 'cross_ai_source_trust_activation',
     pass,
+    activatedAtMs: pass ? activatedAtMs : null,
     detail: pass
       ? `exact main base ${prMeta.baseSha.slice(0, 12)} successful CI activation artifact'i ile bağlı`
       : 'exact PR base için başarılı main-push source activation artifact doğrulanamadı',
@@ -1040,8 +1044,31 @@ function evidenceLedgerStatusFromPayload(payload, queriedSha) {
     creator: payload?.creator?.login,
     createdAt: payload?.created_at,
     updatedAt: payload?.updated_at,
+    statusId: payload?.id,
     ref: payload?.url,
   };
+}
+
+function evidenceAuthorityCutoffs(prMeta) {
+  const activatedAtMs = prMeta?.[VERIFIED_SOURCE_ACTIVATION_MS];
+  if (!Number.isFinite(activatedAtMs)) {
+    return {
+      historyMs: Number.POSITIVE_INFINITY,
+      ledgerMs: Number.POSITIVE_INFINITY,
+    };
+  }
+  return {
+    historyMs: Math.max(EVIDENCE_HISTORY_POLICY_INTRODUCED_MS, activatedAtMs),
+    ledgerMs: Math.max(EVIDENCE_STATUS_LEDGER_POLICY_INTRODUCED_MS, activatedAtMs),
+  };
+}
+
+function evidenceRecordStrictlyAfter(candidate, baseline) {
+  if (candidate.createdAtMs > baseline.createdAtMs) return true;
+  if (candidate.createdAtMs < baseline.createdAtMs) return false;
+  return Number.isSafeInteger(candidate.statusId)
+    && Number.isSafeInteger(baseline.statusId)
+    && candidate.statusId > baseline.statusId;
 }
 
 async function loadPullRequestEvidenceLedger(prMeta, ledgerOverrides) {
@@ -1138,6 +1165,7 @@ async function appendPriorRevisionFinding(
   trustedSourceDigestOverrides,
   selectedEvidenceRefs = new Set(),
 ) {
+  const authorityCutoffs = evidenceAuthorityCutoffs(prMeta);
   const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
   const baseTip = prMeta?.baseSha || '';
   const base = prMeta?.derivedBaseSha || '';
@@ -1183,6 +1211,14 @@ async function appendPriorRevisionFinding(
     }
     const expectedState = verdict === 'AGREE' ? 'success' : 'failure';
     const createdAtMs = Date.parse(status?.createdAt || '');
+    if (Number.isFinite(createdAtMs) && createdAtMs < authorityCutoffs.ledgerMs) {
+      continue;
+    }
+    const statusId = Number(
+      status?.statusId
+      ?? status?.id
+      ?? status?.ref?.match(/\/statuses\/(\d+)$/)?.[1],
+    );
     const valid = Boolean(
       SHA256_RE.test(digest)
       && description
@@ -1194,6 +1230,8 @@ async function appendPriorRevisionFinding(
       && typeof status?.creator === 'string'
       && status.creator.toLowerCase() === expectedOwner.toLowerCase()
       && Number.isFinite(createdAtMs)
+      && Number.isSafeInteger(statusId)
+      && statusId > 0
       && status.createdAt === status.updatedAt
     );
     if (!valid) {
@@ -1207,6 +1245,7 @@ async function appendPriorRevisionFinding(
       verdict,
       threadId,
       createdAtMs,
+      statusId,
     };
     const existing = ledgerByDigest.get(record.digest);
     if (existing) {
@@ -1217,7 +1256,13 @@ async function appendPriorRevisionFinding(
         && existing.threadId === record.threadId;
       if (!sameAuthority) {
         invalidCandidates.push(`${status?.ref || 'missing-ledger-ref'} (conflicting status ledger)`);
-      } else if (record.createdAtMs < existing.createdAtMs) {
+      } else if (
+        record.createdAtMs < existing.createdAtMs
+        || (
+          record.createdAtMs === existing.createdAtMs
+          && record.statusId < existing.statusId
+        )
+      ) {
         ledgerByDigest.set(record.digest, record);
       }
       continue;
@@ -1238,12 +1283,14 @@ async function appendPriorRevisionFinding(
       || comment.author.toLowerCase() !== expectedOwner.toLowerCase()
       || comment.authorAssociation !== 'OWNER'
     ) continue;
+    const commentCreatedAtMs = Date.parse(comment?.createdAt || '');
     const ownerCommentUpdatedAtMs = Date.parse(comment?.updatedAt || '');
-    if (
-      Number.isFinite(ownerCommentUpdatedAtMs)
-      && ownerCommentUpdatedAtMs >= EVIDENCE_HISTORY_IMMUTABILITY_CUTOFF_MS
-      && comment.createdAt !== comment.updatedAt
-    ) {
+    if (comment.createdAt !== comment.updatedAt) {
+      if (
+        Number.isFinite(commentCreatedAtMs)
+        && Number.isFinite(ownerCommentUpdatedAtMs)
+        && ownerCommentUpdatedAtMs < authorityCutoffs.historyMs
+      ) continue;
       invalidCandidates.push(`${comment?.ref || 'missing-ref'} (edited owner history)`);
       continue;
     }
@@ -1262,12 +1309,11 @@ async function appendPriorRevisionFinding(
     const expected = Object.values(EVIDENCE_PROVIDERS).find(
       (candidate) => candidate.provider === body?.provider,
     );
-    const commentCreatedAtMs = Date.parse(comment?.createdAt || '');
     if (
       body?.schema === 'cross-ai-provider-evidence/v3'
       && body?.provider === 'openai'
       && Number.isFinite(commentCreatedAtMs)
-      && commentCreatedAtMs >= EVIDENCE_STATUS_LEDGER_CUTOFF_MS
+      && commentCreatedAtMs >= authorityCutoffs.ledgerMs
     ) {
       invalidCandidates.push(`${comment?.ref || 'missing-ref'} (retired OpenAI v3 evidence)`);
       continue;
@@ -1276,15 +1322,14 @@ async function appendPriorRevisionFinding(
       && body?.provider === 'openai';
     const ledgerRequired = openAiV4
       && Number.isFinite(commentCreatedAtMs)
-      && commentCreatedAtMs >= EVIDENCE_STATUS_LEDGER_CUTOFF_MS;
+      && commentCreatedAtMs >= authorityCutoffs.ledgerMs;
     if (openAiV4) {
       const digest = sha256Utf8(comment.body);
       if (ledgerByDigest.has(digest)) {
         const matchingComments = commentsByDigest.get(digest) || [];
         matchingComments.push(comment);
         commentsByDigest.set(digest, matchingComments);
-        // A matching immutable status is the single authority, including for
-        // pre-cutoff comments that already carry a valid ledger record.
+        // A matching immutable post-activation status is the single authority.
         continue;
       }
       if (ledgerRequired) {
@@ -1304,6 +1349,7 @@ async function appendPriorRevisionFinding(
           createdAtMs: commentCreatedAtMs,
           evidenceSha256: sha256Utf8(comment.body),
           threadId: null,
+          statusId: null,
           ref: comment.ref,
           currentBindingFresh: false,
         });
@@ -1379,6 +1425,7 @@ async function appendPriorRevisionFinding(
         threadId: status.threadId,
         ref: status.ref,
         currentBindingFresh: false,
+        statusId: status.statusId,
         tombstone: true,
       });
       continue;
@@ -1417,6 +1464,7 @@ async function appendPriorRevisionFinding(
       threadId: status.threadId,
       ref: selectedComment.ref,
       currentBindingFresh: Boolean(current) && selectedEvidenceRefs.has(selectedComment.ref),
+      statusId: status.statusId,
       tombstone: false,
     });
   }
@@ -1468,19 +1516,14 @@ async function appendPriorRevisionFinding(
   );
   for (const provider of revisedProviders) {
     const providerRecords = records.filter((record) => record.provider === provider);
-    const latestRevise = Math.max(
-      ...providerRecords.filter((record) => record.verdict === 'REVISE')
-        .map((record) => record.createdAtMs),
-      Number.NEGATIVE_INFINITY,
-    );
-    const latestCurrentAgree = Math.max(
-      ...providerRecords.filter((record) => (
-        record.verdict === 'AGREE' && record.currentBindingFresh
-      ))
-        .map((record) => record.createdAtMs),
-      Number.NEGATIVE_INFINITY,
-    );
-    if (latestRevise >= latestCurrentAgree) unresolved.push(provider);
+    const revises = providerRecords.filter((record) => record.verdict === 'REVISE');
+    const currentAgrees = providerRecords.filter((record) => (
+      record.verdict === 'AGREE' && record.currentBindingFresh
+    ));
+    const everyReviseResolved = revises.every((revise) => (
+      currentAgrees.some((agree) => evidenceRecordStrictlyAfter(agree, revise))
+    ));
+    if (!everyReviseResolved) unresolved.push(provider);
   }
   findings.push({
     check: 'consultation_prior_revise_resolved',
@@ -2371,9 +2414,17 @@ const { body, prMeta } = loadInput(args);
 const evidenceOverrides = readEvidenceOverrides(args);
 const ledgerOverrides = readEvidenceLedgerOverrides(args);
 const trustedSourceDigestOverrides = readTrustedSourceDigestOverrides(args);
-const activationFinding = sourceActivationFinding(
+const activationEvaluation = sourceActivationFinding(
   prMeta, trustedSourceDigestOverrides,
 );
+if (prMeta && Number.isFinite(activationEvaluation.activatedAtMs)) {
+  prMeta[VERIFIED_SOURCE_ACTIVATION_MS] = activationEvaluation.activatedAtMs;
+}
+const activationFinding = {
+  check: activationEvaluation.check,
+  pass: activationEvaluation.pass,
+  detail: activationEvaluation.detail,
+};
 let findings;
 if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
   console.log(
