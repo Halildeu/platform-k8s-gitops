@@ -26,6 +26,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.openfga = (
             ROOT / "scripts/faz35/provision-test-openfga.sh"
         ).read_text()
+        cls.entitlement = (
+            ROOT / "scripts/faz35/provision-test-ethic-entitlement.sh"
+        ).read_text()
         cls.preflight = (
             ROOT / "scripts/faz35/preflight-test-activation.sh"
         ).read_text()
@@ -71,7 +74,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         ).read_text()
 
     def test_raw_credentials_are_not_in_docker_exec_arguments(self):
-        combined = "\n".join((self.pg_vault, self.keycloak, self.openfga))
+        combined = "\n".join((self.pg_vault, self.keycloak, self.entitlement, self.openfga))
         forbidden = (
             r"-e\s+VAULT_TOKEN(?:=|\s|\\)",
             r"-e\s+ETHICS_DB_PASSWORD(?:=|\s|\\)",
@@ -114,9 +117,24 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('[ "$KUBE_CONTEXT" = "k3d-test" ]', self.openfga)
         self.assertIn('[ "$KUBE_NS" = "platform-test" ]', self.openfga)
         self.assertIn("mutation target override refused", self.openfga)
+        self.assertIn("entitlement mutation target override refused", self.entitlement)
         self.assertIn("Keycloak/Vault/persona mutation target override refused", self.keycloak)
         self.assertIn("public test-gate target override refused", self.pg_vault)
-        self.assertNotIn("platform-prod", "\n".join((self.pg_vault, self.keycloak, self.openfga)))
+        self.assertNotIn(
+            "platform-prod",
+            "\n".join((self.pg_vault, self.keycloak, self.entitlement, self.openfga)),
+        )
+
+    def test_ethic_entitlement_uses_canonical_writer_and_negative_postconditions(self):
+        self.assertIn("/api/v1/roles/$role_id/granules", self.entitlement)
+        self.assertIn("/api/v1/roles/$role_id/members", self.entitlement)
+        self.assertIn('{type:"MODULE",key:"ETHIC",grant:"MANAGE"}', self.entitlement)
+        self.assertIn("/api/v1/authz/me", self.entitlement)
+        self.assertIn("wrong-org", self.entitlement)
+        self.assertIn("denied", self.entitlement)
+        self.assertIn("dedicated permission role contains an unrelated member", self.entitlement)
+        self.assertIn("permission-writer Vault response is not one exact JSON document", self.entitlement)
+        self.assertNotIn("kubectl exec", self.entitlement)
 
     def test_persona_secret_file_and_subject_are_bounded(self):
         self.assertIn("umask 077", self.keycloak)

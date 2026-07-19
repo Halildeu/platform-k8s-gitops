@@ -71,6 +71,7 @@ preserving the application's bearer/cookie credential-confusion boundary.
 ```bash
 ./scripts/faz35/provision-test-pg-vault.sh
 ./scripts/faz35/provision-test-keycloak.sh
+./scripts/faz35/provision-test-ethic-entitlement.sh
 ```
 
 The Keycloak script prints a non-secret `ETHICS_STAFF_SUBJECT=<uuid>` line and
@@ -80,6 +81,14 @@ prints only the public-gate username, its chmod-600 local password-file path,
 and the dedicated Etik Speak Vault AppRole's non-secret role ID. It creates a
 namespaced Kubernetes secret for that AppRole; the role can read only
 `kv/platform/etik-speak` and cannot use the broad shared ClusterSecretStore.
+The entitlement script uses the existing test permission-writer credential only
+from its Vault document and writes through permission-service's canonical
+role/granule/member APIs. It creates or reconciles the dedicated
+`ETIK_SPEAK_MANAGER` role to exactly `MODULE:ETHIC:MANAGE`, assigns only the
+synthetic allow persona, then proves `/authz/me` positive for that persona and
+negative for the wrong-org and OpenFGA-denied personas. Raw credentials, bearer
+tokens, email and numeric user IDs remain in mode-600 temporary files and are
+never emitted.
 Every password file must be regular, non-symlink, owned by the invoking user
 and inaccessible to group/other users. Do not paste a password or AppRole
 secret ID into chat, GitHub, logs, shell argv, or an evidence document.
@@ -107,6 +116,8 @@ Expected non-secret results:
 - Keycloak access token contract: `aud` includes `ethics-manager`, `scope`
   includes `ethics:case:manage`, the realm role includes `ethics-manager`, and
   `org_id` matches the persona's test tenant;
+- permission-service `/authz/me` returns `ETHIC=MANAGE` only for the dedicated
+  allow persona; both negative personas remain without the suite entitlement;
 - OpenFGA checks return allow for product `case_viewer`, `case_triager`, and
   `case_handler` for the synthetic manager subject.
 
