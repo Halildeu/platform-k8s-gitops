@@ -77,6 +77,14 @@ payload = sys.stdin.read()
 expected_payload = Path(os.environ["FAKE_EXPECTED_STDIN_FILE"]).read_text(encoding="utf-8")
 if payload != expected_payload:
     raise SystemExit(8)
+if os.environ.get("FAKE_LARGE_STDOUT") == "1":
+    sys.stdout.write("x" * 2_100_000)
+    sys.stdout.flush()
+    raise SystemExit(0)
+if os.environ.get("FAKE_LARGE_STDERR") == "1":
+    sys.stderr.write("x" * 100_000)
+    sys.stderr.flush()
+    raise SystemExit(0)
 print(json.dumps({"type":"thread.started","thread_id":"019f7785-c66d-7992-a21a-d4097d9eb3f9"}))
 if os.environ.get("FAKE_SKIP_TURN_STARTED") != "1":
     print(json.dumps({"type":"turn.started"}))
@@ -339,6 +347,8 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         trusted_pin: bool = True,
         trusted_gitleaks_pin: bool = True,
         gitleaks_finding: bool = False,
+        large_stdout: bool = False,
+        large_stderr: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
@@ -374,6 +384,10 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             env["FAKE_EXPECTED_MODEL"] = "gpt-5.6-sol"
         if gitleaks_finding:
             env["FAKE_GITLEAKS_FINDING"] = "1"
+        if large_stdout:
+            env["FAKE_LARGE_STDOUT"] = "1"
+        if large_stderr:
+            env["FAKE_LARGE_STDERR"] = "1"
         arguments = [
             str(SCRIPT),
             "--worktree",
@@ -560,6 +574,17 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertFalse(self.output.exists())
         self.assertEqual(json.loads(result.stdout)["error"], "codex_execution_failed")
+
+    def test_rejects_stdout_or_stderr_overflow_while_process_is_running(self) -> None:
+        for options in ({"large_stdout": True}, {"large_stderr": True}):
+            with self.subTest(options=options):
+                result = self.run_harness(**options)
+                self.assertEqual(result.returncode, 1)
+                self.assertFalse(self.output.exists())
+                self.assertEqual(
+                    json.loads(result.stdout)["error"],
+                    "codex_output_too_large",
+                )
 
     def test_rejects_missing_or_duplicate_turn_started_lifecycle(self) -> None:
         for options in (

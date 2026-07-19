@@ -22,8 +22,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
-from typing import Iterator, NoReturn
+from typing import BinaryIO, Iterator, NoReturn
 
 from build_cross_ai_evidence import (
     MAX_EVIDENCE_BYTES,
@@ -45,6 +46,8 @@ THREAD_ID_RE = re.compile(
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 ITEM_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 MAX_SCOPE_BYTES = 2_000_000
+MAX_CODEX_STDOUT_BYTES = 2_000_000
+MAX_CODEX_STDERR_BYTES = 64_000
 MAX_CODEX_NATIVE_BYTES = 320_000_000
 MAX_GITLEAKS_NATIVE_BYTES = 64_000_000
 GITLEAKS_VERSION = "8.30.1"
@@ -662,6 +665,62 @@ def write_create_once(path: Path, content: str) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _write_process_stdin(
+    handle: BinaryIO,
+    payload: bytes,
+    io_error: threading.Event,
+) -> None:
+    try:
+        handle.write(payload)
+        handle.flush()
+    except (BrokenPipeError, OSError):
+        io_error.set()
+    finally:
+        try:
+            handle.close()
+        except OSError:
+            io_error.set()
+
+
+def _drain_process_stream(
+    handle: BinaryIO,
+    limit: int,
+    chunks: list[bytes],
+    overflow: threading.Event,
+    io_error: threading.Event,
+    process: subprocess.Popen[bytes],
+) -> None:
+    total = 0
+    try:
+        while True:
+            chunk = handle.read(64 * 1024)
+            if not chunk:
+                return
+            remaining = limit - total
+            if len(chunk) > remaining:
+                if remaining > 0:
+                    chunks.append(chunk[:remaining])
+                overflow.set()
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+                return
+            chunks.append(chunk)
+            total += len(chunk)
+    except OSError:
+        io_error.set()
+        try:
+            process.kill()
+        except OSError:
+            pass
+    finally:
+        try:
+            handle.close()
+        except OSError:
+            io_error.set()
+
+
 def execute_codex_review(
     *,
     codex: Path,
@@ -698,18 +757,79 @@ def execute_codex_review(
             )
         )
         try:
-            return subprocess.run(
+            process = subprocess.Popen(
                 command,
-                input=f"{PROMPT}\n\n{scope}",
-                text=True,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=timeout_seconds,
-                check=False,
                 env=build_codex_environment(),
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError:
             fail("codex_execution_failed")
+        if process.stdin is None or process.stdout is None or process.stderr is None:
+            process.kill()
+            fail("codex_execution_failed")
+
+        stdout_chunks: list[bytes] = []
+        stderr_chunks: list[bytes] = []
+        overflow = threading.Event()
+        io_error = threading.Event()
+        threads = [
+            threading.Thread(
+                target=_write_process_stdin,
+                args=(process.stdin, f"{PROMPT}\n\n{scope}".encode("utf-8"), io_error),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=_drain_process_stream,
+                args=(
+                    process.stdout,
+                    MAX_CODEX_STDOUT_BYTES,
+                    stdout_chunks,
+                    overflow,
+                    io_error,
+                    process,
+                ),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=_drain_process_stream,
+                args=(
+                    process.stderr,
+                    MAX_CODEX_STDERR_BYTES,
+                    stderr_chunks,
+                    overflow,
+                    io_error,
+                    process,
+                ),
+                daemon=True,
+            ),
+        ]
+        for thread in threads:
+            thread.start()
+
+        timed_out = False
+        try:
+            process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            process.wait()
+        for thread in threads:
+            thread.join(timeout=5)
+        if any(thread.is_alive() for thread in threads):
+            process.kill()
+            fail("codex_execution_failed")
+        if overflow.is_set():
+            fail("codex_output_too_large")
+        if timed_out or io_error.is_set():
+            fail("codex_execution_failed")
+        try:
+            stdout = b"".join(stdout_chunks).decode("utf-8")
+            stderr = b"".join(stderr_chunks).decode("utf-8")
+        except UnicodeDecodeError:
+            fail("codex_execution_failed")
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def main() -> None:

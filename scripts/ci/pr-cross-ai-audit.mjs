@@ -647,8 +647,8 @@ async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
   }
 }
 
-function evidenceMatches(
-  comment, receipt, expected, expectedOwner, baseTip, base, head, scope,
+function parseBoundEvidence(
+  comment, expected, expectedOwner, baseTip, base, head, scope,
 ) {
   const createdAtMs = Date.parse(comment?.createdAt || '');
   const evidenceAgeMs = Date.now() - createdAtMs;
@@ -663,18 +663,17 @@ function evidenceMatches(
     || !Number.isFinite(createdAtMs)
     || evidenceAgeMs < -EVIDENCE_FUTURE_SKEW_MS
     || evidenceAgeMs > EVIDENCE_MAX_AGE_MS
-    || sha256Utf8(comment.body) !== receipt.sha256.toLowerCase()
-  ) return false;
+  ) return null;
   let evidence;
   try {
     evidence = JSON.parse(comment.body);
   } catch {
-    return false;
+    return null;
   }
-  if (!evidence || Array.isArray(evidence) || typeof evidence !== 'object') return false;
+  if (!evidence || Array.isArray(evidence) || typeof evidence !== 'object') return null;
   const keys = Object.keys(evidence).sort();
   if (keys.length !== EVIDENCE_KEYS.length || keys.some((key, index) => key !== EVIDENCE_KEYS[index])) {
-    return false;
+    return null;
   }
   const provenance = evidence.execution_provenance;
   const provenanceKeys = provenance && typeof provenance === 'object' && !Array.isArray(provenance)
@@ -696,11 +695,10 @@ function evidenceMatches(
     )
     : provenance === null;
   const responseVerdict = parseProviderResponseVerdict(evidence.response);
-  return Boolean(
+  const valid = Boolean(
     evidence.schema === 'cross-ai-provider-evidence/v3'
     && evidence.provider === expected.provider
     && expected.models.includes(evidence.requested_model)
-    && evidence.requested_model === receipt.requested
     && evidence.actual_model === (
       expected.provider === 'openai' ? UNATTESTED_ACTUAL_MODEL : evidence.requested_model
     )
@@ -710,7 +708,7 @@ function evidenceMatches(
     && evidence.base_sha?.toLowerCase() === base.toLowerCase()
     && evidence.head_sha?.toLowerCase() === head.toLowerCase()
     && evidence.scope_sha256?.toLowerCase() === scope.toLowerCase()
-    && evidence.verdict === 'AGREE'
+    && ['AGREE', 'REVISE'].includes(evidence.verdict)
     && responseVerdict === evidence.verdict
     && typeof evidence.response === 'string'
     && evidence.response.length > 0
@@ -718,6 +716,141 @@ function evidenceMatches(
     && SHA256_RE.test(evidence.response_sha256 || '')
     && sha256Utf8(evidence.response) === evidence.response_sha256.toLowerCase()
   );
+  return valid ? { evidence, createdAtMs } : null;
+}
+
+function evidenceMatches(
+  comment, receipt, expected, expectedOwner, baseTip, base, head, scope,
+) {
+  if (
+    !comment
+    || typeof comment.body !== 'string'
+    || sha256Utf8(comment.body) !== receipt.sha256.toLowerCase()
+  ) return false;
+  const parsed = parseBoundEvidence(
+    comment, expected, expectedOwner, baseTip, base, head, scope,
+  );
+  return Boolean(
+    parsed
+    && parsed.evidence.requested_model === receipt.requested
+    && parsed.evidence.verdict === 'AGREE'
+  );
+}
+
+function issueCommentFromPayload(payload) {
+  return {
+    body: payload?.body,
+    author: payload?.user?.login,
+    authorAssociation: payload?.author_association,
+    createdAt: payload?.created_at,
+    updatedAt: payload?.updated_at,
+  };
+}
+
+async function loadRepositoryEvidenceComments(prMeta, evidenceOverrides) {
+  const overrideComments = Object.values(evidenceOverrides).filter(
+    (comment) => comment && typeof comment === 'object' && !Array.isArray(comment),
+  );
+  if (overrideComments.length > 0) return overrideComments;
+
+  if (!prMeta?.baseRepo) return null;
+  const headers = { Accept: 'application/vnd.github+json' };
+  const token = env.GITHUB_TOKEN || env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const comments = [];
+  const since = new Date(
+    Date.now() - EVIDENCE_MAX_AGE_MS - EVIDENCE_FUTURE_SKEW_MS,
+  ).toISOString();
+  try {
+    for (let page = 1; page <= 10; page += 1) {
+      const url = `https://api.github.com/repos/${prMeta.baseRepo}/issues/comments?sort=created&direction=desc&since=${encodeURIComponent(since)}&per_page=100&page=${page}`;
+      const response = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) return null;
+      const payload = await response.json();
+      if (!Array.isArray(payload)) return null;
+      comments.push(...payload.map(issueCommentFromPayload));
+      if (payload.length < 100) return comments;
+    }
+  } catch {
+    return null;
+  }
+  // More than 1,000 fresh comments would make this scan incomplete. Do not infer that
+  // an unresolved revision is absent from a truncated history.
+  return null;
+}
+
+async function appendPriorRevisionFinding(findings, prMeta, evidenceOverrides) {
+  const expectedOwner = (prMeta?.baseRepo || '').split('/')[0];
+  const baseTip = prMeta?.baseSha || '';
+  const base = prMeta?.derivedBaseSha || '';
+  const head = prMeta?.headSha || '';
+  const scope = prMeta?.derivedScopeSha256 || '';
+  const bindingValid = COMMIT_SHA_RE.test(baseTip)
+    && COMMIT_SHA_RE.test(base)
+    && COMMIT_SHA_RE.test(head)
+    && SHA256_RE.test(scope)
+    && Boolean(expectedOwner);
+  const comments = bindingValid
+    ? await loadRepositoryEvidenceComments(prMeta, evidenceOverrides)
+    : null;
+  if (!comments) {
+    findings.push({
+      check: 'consultation_prior_revise_resolved',
+      pass: false,
+      detail: 'Exact-head issue yorum geçmişi eksiksiz yüklenemedi; önceki REVISE zinciri fail-closed',
+    });
+    return;
+  }
+
+  const records = [];
+  for (const comment of comments) {
+    let body;
+    try {
+      body = JSON.parse(comment?.body || '');
+    } catch {
+      continue;
+    }
+    const expected = Object.values(CONSULTATION_RECEIPTS).find(
+      (candidate) => candidate.provider === body?.provider,
+    );
+    if (!expected) continue;
+    const parsed = parseBoundEvidence(
+      comment, expected, expectedOwner, baseTip, base, head, scope,
+    );
+    if (parsed) {
+      records.push({
+        provider: parsed.evidence.provider,
+        verdict: parsed.evidence.verdict,
+        createdAtMs: parsed.createdAtMs,
+      });
+    }
+  }
+
+  const unresolved = [];
+  for (const provider of new Set(records.map((record) => record.provider))) {
+    const providerRecords = records.filter((record) => record.provider === provider);
+    const latestRevise = Math.max(
+      ...providerRecords.filter((record) => record.verdict === 'REVISE')
+        .map((record) => record.createdAtMs),
+      Number.NEGATIVE_INFINITY,
+    );
+    const latestAgree = Math.max(
+      ...providerRecords.filter((record) => record.verdict === 'AGREE')
+        .map((record) => record.createdAtMs),
+      Number.NEGATIVE_INFINITY,
+    );
+    if (latestRevise >= latestAgree) unresolved.push(provider);
+  }
+  findings.push({
+    check: 'consultation_prior_revise_resolved',
+    pass: unresolved.length === 0,
+    detail: unresolved.length === 0
+      ? 'Aynı base/head/scope geçmişinde her provider REVISE kaydı daha yeni aynı-provider AGREE ile karşılanıyor'
+      : `Aynı base/head/scope için çözülmemiş REVISE provider: ${unresolved.join(', ')}`,
+  });
 }
 
 function docsOnlyExemption(fields, prMeta) {
@@ -958,6 +1091,7 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
         ? 'none mode binding, verdict veya risk trigger taşımıyor'
         : `none mode outcome/binding field taşıyamaz: ${presentOutcomeFields.join(', ')}`,
     });
+    await appendPriorRevisionFinding(findings, prMeta, evidenceOverrides);
     return findings;
   }
 
@@ -1082,6 +1216,9 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
       evidenceOverrides,
       selectedReceipts,
     );
+  }
+  if (['single', 'dual'].includes(mode)) {
+    await appendPriorRevisionFinding(findings, prMeta, evidenceOverrides);
   }
   return findings;
 }

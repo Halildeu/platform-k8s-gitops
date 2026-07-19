@@ -84,6 +84,21 @@ const EVIDENCE = {
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
   [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
 };
+const UNREFERENCED_CLAUDE_REVISE_REF = evidenceRef(1005);
+const UNREFERENCED_CLAUDE_AGREE_REF = evidenceRef(1006);
+const claudeReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
+const claudeReviseBody = JSON.stringify({
+  ...JSON.parse(evidenceBody('anthropic', 'claude-opus-4-8', claudeReviseResponse)),
+  verdict: 'REVISE',
+});
+const unresolvedClaudeReviseEvidence = {
+  ...EVIDENCE,
+  [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(claudeReviseBody, 3_000),
+};
+const resolvedClaudeReviseEvidence = {
+  ...unresolvedClaudeReviseEvidence,
+  [UNREFERENCED_CLAUDE_AGREE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
+};
 const SOL_RECEIPT_SPARK_EVIDENCE = {
   ...EVIDENCE,
   [CODEX_REF]: evidenceComment(EVIDENCE[SPARK_REF].body, 2_000),
@@ -577,6 +592,11 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: legacyPeerBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_explicit_mode_required' }, 1],
   ['explicit none mode lets routine work pass without provider receipts',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['none mode cannot hide an unreferenced same-head Claude REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: unresolvedClaudeReviseEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['explicit none mode accepts substantive prose containing the word none',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody.replace(/^Consultation reason:.*$/m, 'Consultation reason: Reversible documentation update; none of the protected runtime paths apply.'),
@@ -629,6 +649,15 @@ const cases = [
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts exact context-isolated Codex evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['single mode cannot hide an unreferenced same-head Claude REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidence: unresolvedClaudeReviseEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['a later same-provider AGREE resolves an unreferenced same-head REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidence: resolvedClaudeReviseEvidence }, 0],
   ['explicit single mode rejects SOL receipt bound to Spark evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: solReceiptSparkEvidenceBody, changedFiles: [GOVERNANCE_PATH],
