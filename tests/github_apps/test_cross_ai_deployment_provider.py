@@ -67,6 +67,15 @@ class ProviderExecutionTest(unittest.TestCase):
         native.parent.mkdir(parents=True)
         shutil.copyfile("/bin/sh", native)
         native.chmod(0o755)
+        (native.parents[3] / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "@openai/codex",
+                    "version": "9.9.9-darwin-arm64",
+                }
+            ),
+            encoding="utf-8",
+        )
         (package_root / "package.json").write_text(
             json.dumps(
                 {
@@ -420,6 +429,19 @@ class ProviderExecutionTest(unittest.TestCase):
         with patch.dict(os.environ, {"PATH": str(self.workspace)}):
             with self.assertRaisesRegex(PolicyError, "PROVIDER_EXECUTABLE_INVALID"):
                 DirectCodexRunner(executable_policy=self.executable_policy)
+
+    def test_official_hoisted_platform_package_layout_resolves_exact_native(self) -> None:
+        package_root = self.wrapper.parent.parent
+        nested = self.native.parents[3]
+        hoisted = package_root.parent / nested.name
+        shutil.move(str(nested), str(hoisted))
+        runner = DirectCodexRunner(
+            self.wrapper, executable_policy=self.executable_policy
+        )
+        self.assertEqual(
+            runner.executable,
+            (hoisted / "vendor/aarch64-apple-darwin/bin/codex").resolve(),
+        )
 
     def test_direct_codex_rejects_unpinned_or_replaced_native_before_launch(self) -> None:
         wrong_policy = json.loads(json.dumps(self.executable_policy))

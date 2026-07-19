@@ -105,12 +105,20 @@ def main() -> None:
                 "scope_sha256": args.scope_sha256,
             }
             if "tracked_pending" in str(exc):
-                authority = load_staged_activation_authority(
-                    args.repo_root,
-                    expected_bindings=bindings,
-                    scope_bytes=scope_bytes,
-                    now=now,
-                )
+                try:
+                    authority = load_staged_activation_authority(
+                        args.repo_root,
+                        expected_bindings=bindings,
+                        scope_bytes=scope_bytes,
+                        now=now,
+                    )
+                except AuthorityUnavailable:
+                    authority = load_revocation_refresh_authority(
+                        args.repo_root,
+                        expected_bindings=bindings,
+                        scope_bytes=scope_bytes,
+                        now=now,
+                    )
             elif "REVOCATIONS_STALE" in str(exc):
                 authority = load_revocation_refresh_authority(
                     args.repo_root,
@@ -126,6 +134,7 @@ def main() -> None:
             revocations_envelope=authority.revocations_envelope,
             expected_trust_root_sha256=authority.expected_trust_root_sha256,
             codex_executable_policy=authority.codex_executable_policy,
+            issuer_runtime_policy=authority.issuer_runtime_policy,
             expected_bindings={
                 "base_tip_sha": args.base_tip_sha,
                 "base_sha": args.base_sha,

@@ -122,6 +122,7 @@ def stage_public_authority(
             "trustRootPath": "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
             "revocationsPath": "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
             "expectedTrustRootSha256": head_genesis.get("expectedTrustRootSha256"),
+            "issuerRuntimePolicy": head_genesis.get("issuerRuntimePolicy"),
         }
     )
     if head_genesis != expected_head:
@@ -132,11 +133,16 @@ def stage_public_authority(
     if sha256_digest(trust_root) != expected_pin:
         raise TransitionError("staged trust-root digest does not match genesis pin")
     try:
-        EvidenceVerifier(
+        verifier = EvidenceVerifier(
             trust_root=trust_root,
             revocations_envelope=revocations,
             now=now,
             expected_trust_root_sha256=expected_pin,
+        )
+        verifier.require_active_signing_key(
+            key_id=head_genesis["issuerRuntimePolicy"]["attestorKeyId"],
+            role="runner-management",
+            issued_at=now,
         )
     except PolicyError as exc:
         raise TransitionError(f"staged public authority is invalid: {exc.code}") from exc

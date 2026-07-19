@@ -544,30 +544,47 @@ class DirectCodexRunner:
                 "PROVIDER_EXECUTABLE_INVALID",
                 "Codex official package metadata is invalid",
             )
-        candidates = [
-            candidate.resolve()
-            for candidate in package_root.glob(
-                "node_modules/@openai/codex-*/vendor/*/bin/codex"
+        candidates: list[tuple[Path, str]] = []
+        for platform_suffix in ("darwin-arm64", "darwin-x64"):
+            dependency_name = f"codex-{platform_suffix}"
+            platform_dependency = f"@openai/{dependency_name}"
+            expected_dependency = (
+                f"npm:@openai/codex@{package['version']}-{platform_suffix}"
             )
-            if candidate.is_file() and os.access(candidate, os.X_OK)
-        ]
+            if package["optionalDependencies"].get(platform_dependency) != expected_dependency:
+                continue
+            package_candidates = (
+                package_root / "node_modules/@openai" / dependency_name,
+                package_root.parent / dependency_name,
+            )
+            for platform_root in dict.fromkeys(
+                path.resolve() for path in package_candidates
+            ):
+                package_json = platform_root / "package.json"
+                try:
+                    platform_manifest = json.loads(
+                        package_json.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not (
+                    isinstance(platform_manifest, dict)
+                    and platform_manifest.get("name") == "@openai/codex"
+                    and platform_manifest.get("version")
+                    == f"{package['version']}-{platform_suffix}"
+                ):
+                    continue
+                candidates.extend(
+                    (candidate.resolve(), platform_suffix)
+                    for candidate in platform_root.glob("vendor/*/bin/codex")
+                    if candidate.is_file() and os.access(candidate, os.X_OK)
+                )
         if len(candidates) != 1:
             reject(
                 "PROVIDER_EXECUTABLE_INVALID",
                 "Codex npm wrapper does not resolve to one native platform binary",
             )
-        native = candidates[0]
-        platform_package = native.parents[3]
-        platform_dependency = f"@openai/{platform_package.name}"
-        platform_suffix = platform_package.name.removeprefix("codex-")
-        expected_dependency = (
-            f"npm:@openai/codex@{package['version']}-{platform_suffix}"
-        )
-        if package["optionalDependencies"].get(platform_dependency) != expected_dependency:
-            reject(
-                "PROVIDER_EXECUTABLE_INVALID",
-                "Codex platform package is not bound to the official package version",
-            )
+        native, platform_suffix = candidates[0]
         try:
             with native.open("rb") as handle:
                 native_header = handle.read(4)

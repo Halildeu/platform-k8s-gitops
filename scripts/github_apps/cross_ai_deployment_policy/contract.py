@@ -28,6 +28,9 @@ REVOCATIONS_SCHEMA = ROOT / "schema/cross-ai-deployment-revocations-v1.schema.js
 RUNNER_ADMISSION_LEASE_SCHEMA = (
     ROOT / "schema/cross-ai-runner-admission-lease-v1.schema.json"
 )
+PROVIDER_RUNTIME_ATTESTATION_SCHEMA = (
+    ROOT / "schema/cross-ai-provider-review-runtime-attestation-v1.schema.json"
+)
 
 BUNDLE_PAYLOAD_TYPE = "application/vnd.acik.cross-ai-deployment-bundle.v1+json"
 REVIEW_PAYLOAD_TYPE = "application/vnd.acik.cross-ai-deployment-review.v1+json"
@@ -39,6 +42,9 @@ REVOCATIONS_PAYLOAD_TYPE = (
 RUNNER_ADMISSION_LEASE_PAYLOAD_TYPE = (
     "application/vnd.acik.cross-ai-runner-admission-lease.v1+json"
 )
+PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE = (
+    "application/vnd.acik.cross-ai-provider-review-runtime-attestation.v1+json"
+)
 SESSION_DOMAIN = "acik.cross-ai-deployment-session.v1"
 CLOSURE_DOMAIN = "acik.cross-ai-deployment-closure.v1"
 SESSION_DOMAIN_V2 = "acik.cross-ai-deployment-session.v2"
@@ -46,6 +52,7 @@ CLOSURE_DOMAIN_V2 = "acik.cross-ai-deployment-closure.v2"
 MAX_GRANT_TTL = timedelta(minutes=120)
 MAX_REVIEW_TTL = timedelta(minutes=120)
 MAX_REVOCATION_TTL = timedelta(minutes=60)
+MAX_PROVIDER_RUNTIME_ATTESTATION_TTL = timedelta(minutes=10)
 MIN_V2_TRUST_ROOT_TTL = timedelta(hours=168)
 MAX_V2_TRUST_ROOT_TTL = timedelta(hours=720)
 MAX_V2_PROVIDER_KEY_TTL = timedelta(hours=168)
@@ -998,6 +1005,105 @@ class EvidenceVerifier:
         if len(reviews) != 1:
             reject("REVIEW_CARDINALITY_INVALID", "exactly one provider review is required")
         return next(iter(reviews.values()))
+
+    def verify_provider_runtime_attestation(
+        self,
+        envelope: dict[str, Any],
+        *,
+        runtime_policy: dict[str, Any],
+        provider_review_envelope_sha256: str,
+        prompt_sha256: str,
+        response_sha256: str,
+        capability_snapshot_sha256: str,
+        provider_session_id: str,
+        provider_review_issued_at: datetime,
+    ) -> VerifiedEnvelope:
+        """Require a second authority for the immutable issuer runtime.
+
+        Possession of the provider-review signing key is insufficient. The
+        runner-management signer independently binds the fixed workload image
+        and launcher source to the exact prompt, response, Codex session,
+        capability snapshot and signed provider leaf.
+        """
+
+        required_policy = {
+            "schemaVersion",
+            "workloadIdentity",
+            "issuerImageDigest",
+            "launcherSourceSha256",
+            "attestorKeyId",
+            "maxAttestationLifetimeSeconds",
+        }
+        if (
+            not isinstance(runtime_policy, dict)
+            or set(runtime_policy) != required_policy
+            or runtime_policy.get("schemaVersion")
+            != "acik.cross-ai-provider-review-runtime-policy.v1"
+            or runtime_policy.get("maxAttestationLifetimeSeconds") != 600
+        ):
+            reject(
+                "PROVIDER_RUNTIME_POLICY_INVALID",
+                "provider issuer runtime policy is invalid",
+            )
+        verified = verify_json_envelope(
+            envelope,
+            expected_payload_type=PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
+            allowed_keys=self._keys_valid_at(
+                "runner-management", provider_review_issued_at
+            ),
+            exactly_one_signature=True,
+        )
+        _validate_schema(
+            verified.payload,
+            PROVIDER_RUNTIME_ATTESTATION_SCHEMA,
+            "PROVIDER_RUNTIME_ATTESTATION_SCHEMA_INVALID",
+        )
+        payload = verified.payload
+        key_id = verified.signing_key_ids[0]
+        if payload["keyId"] != key_id or key_id != runtime_policy["attestorKeyId"]:
+            reject(
+                "PROVIDER_RUNTIME_ATTESTOR_MISMATCH",
+                "provider runtime signer differs from the pinned runner authority",
+            )
+        expected = {
+            "workloadIdentity": runtime_policy["workloadIdentity"],
+            "issuerImageDigest": runtime_policy["issuerImageDigest"],
+            "launcherSourceSha256": runtime_policy["launcherSourceSha256"],
+            "providerReviewEnvelopeSha256": provider_review_envelope_sha256,
+            "promptSha256": prompt_sha256,
+            "responseSha256": response_sha256,
+            "capabilitySnapshotSha256": capability_snapshot_sha256,
+            "providerSessionId": provider_session_id,
+        }
+        if any(payload[field] != value for field, value in expected.items()):
+            reject(
+                "PROVIDER_RUNTIME_BINDING_MISMATCH",
+                "provider runtime attestation differs from the exact review execution",
+            )
+        issued_at = parse_utc(payload["issuedAt"], "providerRuntime.issuedAt")
+        expires_at = parse_utc(payload["expiresAt"], "providerRuntime.expiresAt")
+        if issued_at != provider_review_issued_at:
+            reject(
+                "PROVIDER_RUNTIME_REVIEW_TIME_MISMATCH",
+                "provider runtime attestation is not co-issued with the review leaf",
+            )
+        if (
+            expires_at <= issued_at
+            or expires_at - issued_at > MAX_PROVIDER_RUNTIME_ATTESTATION_TTL
+        ):
+            reject(
+                "PROVIDER_RUNTIME_LIFETIME_INVALID",
+                "provider runtime attestation lifetime is invalid",
+            )
+        key = self.keys[key_id]
+        self._validate_root_time(issued_at, "provider runtime attestation")
+        self._validate_key_time(key, issued_at, "provider runtime attestation")
+        if self._is_revoked("issuer-runtime", verified.envelope_digest, issued_at):
+            reject(
+                "PROVIDER_RUNTIME_REVOKED",
+                "provider runtime attestation is revoked",
+            )
+        return verified
 
     def _verify_review_chains(self, reviews: dict[str, VerifiedReview]) -> None:
         chains: dict[str, list[VerifiedReview]] = defaultdict(list)

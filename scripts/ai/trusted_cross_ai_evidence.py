@@ -60,6 +60,8 @@ EVIDENCE_KEYS = {
     "response",
     "review_envelope",
     "review_envelope_sha256",
+    "issuer_runtime_envelope",
+    "issuer_runtime_envelope_sha256",
     "trust_root_sha256",
 }
 SUBJECT_KEYS = {
@@ -238,6 +240,7 @@ def validate_evidence(
     revocations_envelope: dict[str, Any],
     expected_trust_root_sha256: str,
     codex_executable_policy: dict[str, Any],
+    issuer_runtime_policy: dict[str, Any],
     expected_bindings: dict[str, str],
     scope_bytes: bytes,
     now: datetime,
@@ -354,10 +357,38 @@ def validate_evidence(
         and payload["verdict"] == result["verdict"]
     ):
         raise TrustedEvidenceError("signed Codex leaf binding mismatch")
+    runtime_envelope = evidence.get("issuer_runtime_envelope")
+    if not isinstance(runtime_envelope, dict):
+        raise TrustedEvidenceError(
+            "independent provider issuer runtime attestation is missing"
+        )
+    runtime_digest = sha256_digest(runtime_envelope)
+    if evidence.get("issuer_runtime_envelope_sha256") != runtime_digest:
+        raise TrustedEvidenceError(
+            "independent provider issuer runtime attestation digest mismatch"
+        )
+    if not isinstance(payload.get("providerSessionId"), str):
+        raise TrustedEvidenceError("signed Codex session binding is missing")
+    try:
+        verifier.verify_provider_runtime_attestation(
+            runtime_envelope,
+            runtime_policy=issuer_runtime_policy,
+            provider_review_envelope_sha256=envelope_sha256,
+            prompt_sha256=subject["promptSha256"],
+            response_sha256=bytes_digest(response.encode("utf-8")),
+            capability_snapshot_sha256=sha256_digest(capability),
+            provider_session_id=payload["providerSessionId"],
+            provider_review_issued_at=verified.issued_at,
+        )
+    except PolicyError as exc:
+        raise TrustedEvidenceError(
+            "independent provider issuer runtime attestation is invalid"
+        ) from exc
     return {
         "evidence": evidence,
         "review": payload,
         "reviewEnvelopeSha256": envelope_sha256,
+        "issuerRuntimeEnvelopeSha256": runtime_digest,
     }
 
 

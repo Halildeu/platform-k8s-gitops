@@ -222,6 +222,7 @@ def build_authorization(
     cross_ai_revocations: dict[str, Any],
     expected_cross_ai_trust_root_sha256: str,
     codex_executable_policy: dict[str, Any],
+    issuer_runtime_policy: dict[str, Any],
 ) -> dict[str, Any]:
     require_keys(policy, {"schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking", "scope", "authorization", "lifecycle"}, "owner policy")
     if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "tracked_pending":
@@ -287,6 +288,7 @@ def build_authorization(
             revocations_envelope=cross_ai_revocations,
             expected_trust_root_sha256=expected_cross_ai_trust_root_sha256,
             codex_executable_policy=codex_executable_policy,
+            issuer_runtime_policy=issuer_runtime_policy,
             authority_observed_at=issued,
             review_reference_time=issued,
         )
@@ -447,6 +449,7 @@ def main() -> int:
             cross_ai_revocations=authority.revocations_envelope,
             expected_cross_ai_trust_root_sha256=authority.expected_trust_root_sha256,
             codex_executable_policy=authority.codex_executable_policy,
+            issuer_runtime_policy=authority.issuer_runtime_policy,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(canonical_receipt_bytes(result))

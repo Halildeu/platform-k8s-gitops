@@ -19,6 +19,7 @@
     "schemaVersion": "acik.codex-executable-policy.v1"
   },
   "expectedTrustRootSha256": null,
+  "issuerRuntimePolicy": null,
   "revocationsPath": null,
   "rotationPolicy": {
     "maxProviderKeyRotationHours": 168,

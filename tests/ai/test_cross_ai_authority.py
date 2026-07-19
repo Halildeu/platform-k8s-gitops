@@ -57,6 +57,9 @@ class PublicReviewAuthorityTests(unittest.TestCase):
             "status": status,
             "authoritySource": "test-vault-transit-public-export",
             "codexExecutablePolicy": self.fixture.authority.codex_executable_policy,
+            "issuerRuntimePolicy": (
+                self.fixture.authority.issuer_runtime_policy if active else None
+            ),
             "trustRootPath": (
                 "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
                 if active else None
@@ -116,6 +119,20 @@ class PublicReviewAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(AuthorityUnavailable, "pin mismatch"):
             load_active_authority(self.root, now=self.fixture.factory.now)
 
+        wrong_attestor = self.manifest()
+        wrong_attestor["issuerRuntimePolicy"] = dict(
+            wrong_attestor["issuerRuntimePolicy"]
+        )
+        wrong_attestor["issuerRuntimePolicy"]["attestorKeyId"] = (
+            "vault-transit://cross-ai/runner-management#v9"
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            wrong_attestor,
+        )
+        with self.assertRaisesRegex(AuthorityUnavailable, "TRUST_SIGNER_BINDING"):
+            load_active_authority(self.root, now=self.fixture.factory.now)
+
     def test_absent_or_stale_revocations_never_fall_back_to_empty(self) -> None:
         self.install_active_files()
         self.write_json(
@@ -173,6 +190,9 @@ class GenesisTransitionTests(unittest.TestCase):
             "status": "active" if active else "tracked_pending",
             "authoritySource": "test-vault-transit-public-export",
             "codexExecutablePolicy": self.fixture.authority.codex_executable_policy,
+            "issuerRuntimePolicy": (
+                self.fixture.authority.issuer_runtime_policy if active else None
+            ),
             "trustRootPath": (
                 "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
                 if active else None
@@ -204,6 +224,7 @@ class GenesisTransitionTests(unittest.TestCase):
                     "trustRootPath": "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
                     "revocationsPath": "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
                     "expectedTrustRootSha256": self.fixture.authority.expected_trust_root_sha256,
+                    "issuerRuntimePolicy": self.fixture.authority.issuer_runtime_policy,
                 }
             )
         return value
@@ -325,6 +346,32 @@ class GenesisTransitionTests(unittest.TestCase):
                 now=self.fixture.factory.now,
             )
 
+    def test_stage_rejects_runtime_attestor_outside_the_pinned_root(self) -> None:
+        base = self.install_base(genesis_status="installed")
+        staged = self.genesis(status="staged")
+        staged["issuerRuntimePolicy"] = dict(staged["issuerRuntimePolicy"])
+        staged["issuerRuntimePolicy"]["attestorKeyId"] = (
+            "vault-transit://cross-ai/runner-management#v9"
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-genesis.v1.json",
+            staged,
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            self.fixture.authority.trust_root,
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
+            self.fixture.authority.revocations_envelope,
+        )
+        head = self.commit("stage with untrusted attestor")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(TransitionError, "TRUST_SIGNER_BINDING"):
+            stage_public_authority(
+                self.root, base=base, head=head, now=self.fixture.factory.now
+            )
+
     def signed_revocations(
         self, *, set_id: str, issued_at: str, next_update: str,
         entries: list[dict[str, str]],
@@ -418,6 +465,55 @@ class GenesisTransitionTests(unittest.TestCase):
                 now=self.fixture.factory.now,
             )
 
+    def test_staged_authority_can_refresh_after_its_initial_revocations_expire(self) -> None:
+        stale = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000094",
+            issued_at="2026-07-18T18:00:00Z",
+            next_update="2026-07-18T19:00:00Z",
+            entries=[],
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            self.authority_manifest(active=False),
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-genesis.v1.json",
+            self.genesis(status="staged"),
+        )
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            self.fixture.authority.trust_root,
+        )
+        revocation_path = (
+            "config/github-apps/"
+            "cross-ai-provider-review-revocations.v1.dsse.json"
+        )
+        self.write_json(revocation_path, stale)
+        base = self.commit("staged stale base")
+
+        fresh = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000095",
+            issued_at="2026-07-18T20:20:00Z",
+            next_update="2026-07-18T21:00:00Z",
+            entries=[],
+        )
+        self.write_json(revocation_path, fresh)
+        head = self.commit("refresh staged revocations")
+        self.git("reset", "-q", "--hard", base)
+        scope = self.scope(base, head)
+        authority = load_revocation_refresh_authority(
+            self.root,
+            expected_bindings={
+                "base_tip_sha": base,
+                "base_sha": base,
+                "head_sha": head,
+                "scope_sha256": hashlib.sha256(scope).hexdigest(),
+            },
+            scope_bytes=scope,
+            now=self.fixture.factory.now,
+        )
+        self.assertEqual(authority.revocations_envelope, fresh)
+
         self.git("checkout", "-q", head)
         (self.root / "unrelated.txt").write_text("not allowed", encoding="utf-8")
         unrelated_head = self.commit("unrelated mutation")
@@ -427,7 +523,8 @@ class GenesisTransitionTests(unittest.TestCase):
             load_revocation_refresh_authority(
                 self.root,
                 expected_bindings={
-                    **bindings,
+                    "base_tip_sha": base,
+                    "base_sha": base,
                     "head_sha": unrelated_head,
                     "scope_sha256": hashlib.sha256(unrelated_scope).hexdigest(),
                 },

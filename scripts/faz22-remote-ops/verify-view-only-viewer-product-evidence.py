@@ -1070,6 +1070,7 @@ def verify_activation_authorization(
     cross_ai_revocations: dict[str, Any] | None = None,
     expected_cross_ai_trust_root_sha256: str | None = None,
     codex_executable_policy: dict[str, Any] | None = None,
+    issuer_runtime_policy: dict[str, Any] | None = None,
     authority_observed_at: datetime | None = None,
 ) -> datetime:
     run_id = operator["activationRunId"]
@@ -1326,6 +1327,7 @@ def verify_activation_authorization(
             or cross_ai_revocations is None
             or expected_cross_ai_trust_root_sha256 is None
             or codex_executable_policy is None
+            or issuer_runtime_policy is None
             or authority_observed_at is None
         ):
             raise EvidenceError("signed Codex advisory authority inputs are unavailable")
@@ -1383,6 +1385,7 @@ def verify_activation_authorization(
                             expected_cross_ai_trust_root_sha256
                         ),
                         codex_executable_policy=codex_executable_policy,
+                        issuer_runtime_policy=issuer_runtime_policy,
                         authority_observed_at=authority_observed_at,
                         review_reference_time=pilot_started,
                     )
@@ -1552,6 +1555,7 @@ def validate_semantics(
     cross_ai_revocations: dict[str, Any] | None,
     expected_cross_ai_trust_root_sha256: str | None,
     codex_executable_policy: dict[str, Any] | None,
+    issuer_runtime_policy: dict[str, Any] | None,
 ) -> dict[str, Any]:
     if scan := scan_hygiene(root):
         raise EvidenceError("root evidence hygiene failed: " + "; ".join(scan[:20]))
@@ -1661,6 +1665,7 @@ def validate_semantics(
         cross_ai_revocations=cross_ai_revocations,
         expected_cross_ai_trust_root_sha256=expected_cross_ai_trust_root_sha256,
         codex_executable_policy=codex_executable_policy,
+        issuer_runtime_policy=issuer_runtime_policy,
         authority_observed_at=now,
     )
     validate_negative_and_termination(
@@ -1709,6 +1714,7 @@ def verify_product_evidence(
     cross_ai_revocations: dict[str, Any] | None = None,
     expected_cross_ai_trust_root_sha256: str | None = None,
     codex_executable_policy: dict[str, Any] | None = None,
+    issuer_runtime_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validate_repository(repository)
     if run_id < 1:
@@ -1765,6 +1771,7 @@ def verify_product_evidence(
         cross_ai_revocations=cross_ai_revocations,
         expected_cross_ai_trust_root_sha256=expected_cross_ai_trust_root_sha256,
         codex_executable_policy=codex_executable_policy,
+        issuer_runtime_policy=issuer_runtime_policy,
     )
     result["marker"] = marker_text(result)
     return result
@@ -1830,6 +1837,7 @@ def main() -> int:
                 authority.expected_trust_root_sha256
             ),
             codex_executable_policy=authority.codex_executable_policy,
+            issuer_runtime_policy=authority.issuer_runtime_policy,
         )
         write_json(args.output, result)
         if args.marker_out:

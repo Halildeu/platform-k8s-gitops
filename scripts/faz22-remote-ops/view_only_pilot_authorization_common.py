@@ -68,6 +68,7 @@ def validate_codex_advisory_evidence(
     revocations_envelope: dict[str, Any],
     expected_trust_root_sha256: str,
     codex_executable_policy: dict[str, Any],
+    issuer_runtime_policy: dict[str, Any],
     authority_observed_at: datetime,
     review_reference_time: datetime,
 ) -> dict[str, Any]:
@@ -92,6 +93,7 @@ def validate_codex_advisory_evidence(
             revocations_envelope=revocations_envelope,
             expected_trust_root_sha256=expected_trust_root_sha256,
             codex_executable_policy=codex_executable_policy,
+            issuer_runtime_policy=issuer_runtime_policy,
             expected_bindings=expected_bindings,
             scope_bytes=scope_bytes,
             now=authority_observed_at,

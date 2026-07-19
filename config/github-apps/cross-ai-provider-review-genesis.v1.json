@@ -1,5 +1,6 @@
 {
   "expectedTrustRootSha256": null,
+  "issuerRuntimePolicy": null,
   "ownerDecision": {
     "apiRef": "https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/5014836397",
     "authorAssociation": "OWNER",

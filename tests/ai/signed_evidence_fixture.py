@@ -13,6 +13,7 @@ from scripts.ai.trusted_cross_ai_evidence import (
 )
 from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
 from scripts.github_apps.cross_ai_deployment_policy.contract import (
+    PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
     REVOCATIONS_PAYLOAD_TYPE,
 )
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
@@ -49,6 +50,19 @@ def codex_executable_policy() -> dict[str, Any]:
                 "signatureCdHashSha256": digest("codex-cdhash"),
             }
         ],
+    }
+
+
+def issuer_runtime_policy(factory: FixtureFactory) -> dict[str, Any]:
+    return {
+        "schemaVersion": "acik.cross-ai-provider-review-runtime-policy.v1",
+        "workloadIdentity": (
+            "spiffe://testai.acik.com/ns/cross-ai/sa/provider-review-issuer"
+        ),
+        "issuerImageDigest": digest("provider-review-issuer-image"),
+        "launcherSourceSha256": digest("provider-review-launcher-source"),
+        "attestorKeyId": factory.RUNNER_MANAGEMENT_KEY_ID,
+        "maxAttestationLifetimeSeconds": 600,
     }
 
 
@@ -170,11 +184,13 @@ def make_signed_evidence(
         factory.REVOCATION_KEY_ID,
     )
     executable_policy = codex_executable_policy()
+    runtime_policy = issuer_runtime_policy(factory)
     authority = PublicReviewAuthority(
         trust_root=trust_root,
         revocations_envelope=revocations_envelope,
         expected_trust_root_sha256=sha256_digest(trust_root),
         codex_executable_policy=executable_policy,
+        issuer_runtime_policy=runtime_policy,
     )
     scope_bytes = scope_bytes or (
         b"CROSS_AI_REVIEW_SCOPE_V1\n"
@@ -227,6 +243,26 @@ def make_signed_evidence(
             expires_at=_utc(reference_time + timedelta(minutes=110)),
         ),
     )
+    runtime_payload = {
+        "schemaVersion": "acik.cross-ai-provider-review-runtime-attestation.v1",
+        "attestationId": "60000000-0000-4000-8000-000000000010",
+        "keyId": factory.RUNNER_MANAGEMENT_KEY_ID,
+        "workloadIdentity": runtime_policy["workloadIdentity"],
+        "issuerImageDigest": runtime_policy["issuerImageDigest"],
+        "launcherSourceSha256": runtime_policy["launcherSourceSha256"],
+        "providerReviewEnvelopeSha256": sha256_digest(envelope),
+        "promptSha256": subject["promptSha256"],
+        "responseSha256": bytes_digest(receipt.result_text.encode("utf-8")),
+        "capabilitySnapshotSha256": receipt.capability_snapshot_sha256,
+        "providerSessionId": receipt.provider_session_id,
+        "issuedAt": _utc(reference_time - timedelta(minutes=10)),
+        "expiresAt": _utc(reference_time),
+    }
+    runtime_envelope = factory.sign(
+        PROVIDER_RUNTIME_ATTESTATION_PAYLOAD_TYPE,
+        runtime_payload,
+        factory.RUNNER_MANAGEMENT_KEY_ID,
+    )
     evidence = {
         "schema": "cross-ai-provider-evidence/v3",
         "subject": subject,
@@ -234,6 +270,8 @@ def make_signed_evidence(
         "response": receipt.result_text,
         "review_envelope": envelope,
         "review_envelope_sha256": sha256_digest(envelope),
+        "issuer_runtime_envelope": runtime_envelope,
+        "issuer_runtime_envelope_sha256": sha256_digest(runtime_envelope),
         "trust_root_sha256": authority.expected_trust_root_sha256,
     }
     return SignedEvidenceFixture(
