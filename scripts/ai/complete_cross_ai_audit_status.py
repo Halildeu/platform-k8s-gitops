@@ -71,6 +71,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         event = json.loads(event_path.read_text(encoding="utf-8"))
         event_pr = event["pull_request"]
         event_head = event_pr["head"]["sha"].lower()
+        event_base = event_pr["base"]["sha"].lower()
         event_body = event_pr.get("body") or ""
         event_url = event_pr["html_url"]
         event_number = event_pr["number"]
@@ -81,12 +82,14 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         event_number != issue
         or event_url != expected_url
         or SHA_RE.fullmatch(event_head) is None
+        or SHA_RE.fullmatch(event_base) is None
     ):
         fail("invalid_audit_generation_event")
 
     current = gh_json([f"repos/{repo}/pulls/{issue}", "--method", "GET"])
     try:
         current_head = current["head"]["sha"].lower()
+        current_base = current["base"]["sha"].lower()
         current_body = current.get("body") or ""
     except (KeyError, TypeError, AttributeError):
         fail("github_pr_generation_mismatch")
@@ -94,6 +97,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         current.get("state") != "open"
         or current.get("html_url") != expected_url
         or current_head != event_head
+        or current_base != event_base
         or current_body != event_body
     ):
         fail("github_pr_generation_mismatch")

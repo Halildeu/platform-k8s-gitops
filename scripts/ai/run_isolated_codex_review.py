@@ -692,7 +692,11 @@ def parse_codex_events(stdout: str) -> tuple[str, str]:
         if not isinstance(event, dict):
             fail("codex_jsonl_invalid")
         events.append(event)
-    if len(events) < 4 or events[0].get("type") != "thread.started":
+    if (
+        len(events) < 4
+        or events[0].get("type") != "thread.started"
+        or set(events[0]) != {"type", "thread_id"}
+    ):
         fail("codex_event_sequence_invalid")
     thread_id = events[0].get("thread_id")
     if not isinstance(thread_id, str) or not THREAD_ID_RE.fullmatch(thread_id):
@@ -706,12 +710,22 @@ def parse_codex_events(stdout: str) -> tuple[str, str]:
     for index, event in enumerate(events[1:], start=1):
         event_type = event.get("type")
         if event_type == "turn.started":
-            if turn_started or response is not None or turn_completed:
+            if (
+                set(event) != {"type"}
+                or turn_started
+                or response is not None
+                or turn_completed
+            ):
                 fail("codex_event_sequence_invalid")
             turn_started = True
             continue
         if event_type in {"item.started", "item.completed"}:
-            if not turn_started or turn_completed or response is not None:
+            if (
+                set(event) != {"type", "item"}
+                or not turn_started
+                or turn_completed
+                or response is not None
+            ):
                 fail("codex_event_sequence_invalid")
             item = event.get("item")
             if not isinstance(item, dict):
@@ -719,7 +733,13 @@ def parse_codex_events(stdout: str) -> tuple[str, str]:
             item_type = item.get("type")
             if item_type == "reasoning":
                 item_id = item.get("id")
-                if not isinstance(item_id, str) or not ITEM_ID_RE.fullmatch(item_id):
+                if (
+                    not {"id", "type"}.issubset(item)
+                    or not set(item).issubset({"id", "type", "text"})
+                    or ("text" in item and not isinstance(item["text"], str))
+                    or not isinstance(item_id, str)
+                    or not ITEM_ID_RE.fullmatch(item_id)
+                ):
                     fail("codex_event_sequence_invalid")
                 if event_type == "item.started":
                     if item_id in reasoning_in_progress or item_id in reasoning_completed:
@@ -736,6 +756,11 @@ def parse_codex_events(stdout: str) -> tuple[str, str]:
                 continue
             if event_type != "item.completed" or item_type != "agent_message":
                 fail("codex_tool_or_non_message_event_forbidden")
+            if set(item) != {"id", "type", "text"}:
+                fail("codex_event_sequence_invalid")
+            item_id = item.get("id")
+            if not isinstance(item_id, str) or not ITEM_ID_RE.fullmatch(item_id):
+                fail("codex_event_sequence_invalid")
             if reasoning_in_progress:
                 fail("codex_event_sequence_invalid")
             message = item.get("text")
@@ -744,8 +769,21 @@ def parse_codex_events(stdout: str) -> tuple[str, str]:
             response = message.strip()
             continue
         if event_type == "turn.completed":
+            usage = event.get("usage")
             if (
-                not turn_started
+                set(event) != {"type", "usage"}
+                or not isinstance(usage, dict)
+                or set(usage) != {
+                    "input_tokens", "cached_input_tokens", "output_tokens",
+                    "reasoning_output_tokens",
+                }
+                or any(
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or value < 0
+                    for value in usage.values()
+                )
+                or not turn_started
                 or response is None
                 or turn_completed
                 or index != len(events) - 1

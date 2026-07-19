@@ -24,6 +24,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
     repo = "Halildeu/platform-k8s-gitops"
     issue = 2638
     head = "a" * 40
+    base = "d" * 40
     digest = "b" * 64
     url = f"https://github.com/{repo}/pull/{issue}"
 
@@ -51,18 +52,25 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                     "html_url": self.url,
                     "body": value,
                     "head": {"sha": self.head},
+                    "base": {"sha": self.base},
                 }
             }),
             encoding="utf-8",
         )
         return value
 
-    def current_pr(self, body: str, head: str | None = None) -> dict:
+    def current_pr(
+        self,
+        body: str,
+        head: str | None = None,
+        base: str | None = None,
+    ) -> dict:
         return {
             "state": "open",
             "html_url": self.url,
             "body": body,
             "head": {"sha": head or self.head},
+            "base": {"sha": base or self.base},
         }
 
     def pending(self, identifier: int = 10) -> dict:
@@ -126,6 +134,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         for current in (
             self.current_pr(event_body + "changed\n"),
             self.current_pr(event_body, head="c" * 40),
+            self.current_pr(event_body, base="e" * 40),
         ):
             with self.subTest(current=current):
                 with (

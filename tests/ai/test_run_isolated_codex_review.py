@@ -116,13 +116,23 @@ elif os.environ.get("FAKE_TOOL_EVENT") == "1":
     item = {"id":"item_0","type":"command_execution","command":"git status"}
 else:
     item = {"id":"item_0","type":"agent_message","text":"P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"}
+if os.environ.get("FAKE_EXTRA_AGENT_FIELD") == "1":
+    item["tool_access"] = {"repository": True}
 print(json.dumps({"type":"item.completed","item":item}))
 if os.environ.get("FAKE_DUPLICATE_AGENT_MESSAGE") == "1":
     print(json.dumps({"type":"item.completed","item":item}))
 if os.environ.get("FAKE_REASONING_AFTER_AGENT") == "1":
     item = {"id":"item_late","type":"reasoning","text":"late"}
     print(json.dumps({"type":"item.completed","item":item}))
-print(json.dumps({"type":"turn.completed","usage":{}}))
+print(json.dumps({
+    "type":"turn.completed",
+    "usage":{
+        "input_tokens":1,
+        "cached_input_tokens":0,
+        "output_tokens":1,
+        "reasoning_output_tokens":0,
+    },
+}))
 '''
 
 FAKE_GITLEAKS = r'''#!/bin/sh
@@ -506,6 +516,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         review_tmpdir: Path | None = None,
         gh_login: str = "Halildeu",
         gh_admin: bool = True,
+        extra_agent_field: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
@@ -519,6 +530,8 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         }
         if tool_event:
             env["FAKE_TOOL_EVENT"] = "1"
+        if extra_agent_field:
+            env["FAKE_EXTRA_AGENT_FIELD"] = "1"
         if error_event:
             env["FAKE_ERROR_EVENT"] = "1"
         if stderr_event:
@@ -789,6 +802,15 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.assertEqual(
             json.loads(result.stdout)["error"],
             "codex_tool_or_non_message_event_forbidden",
+        )
+
+    def test_rejects_unexpected_metadata_on_allowed_agent_event(self) -> None:
+        result = self.run_harness(extra_agent_field=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "codex_event_sequence_invalid",
         )
 
     def test_accepts_bounded_reasoning_lifecycle_before_terminal_message(self) -> None:
