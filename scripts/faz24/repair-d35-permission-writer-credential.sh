@@ -10,6 +10,7 @@ readonly KC_REALM="platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly WRITER_USERNAME="d35-admin-persona"
 readonly WRITER_USER_ID="cbc9a869-1833-4d9c-beea-a9fa52fa851e"
+readonly WRITER_LOCAL_USER_ID="1204"
 # user-service binds this synthetic TEST administrator to its canonical local
 # ADMIN row by email; accepting another non-empty email leaves the actor disabled.
 readonly WRITER_PROFILE_EMAIL="d35-admin@example.com"
@@ -304,12 +305,16 @@ code="$(http_status GET \
   "${KC_WRITER_FRESH_JSON}" \
   --config "${KC_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "permission-writer-profile-precondition-read-failed"
-jq -e --arg writerId "${WRITER_USER_ID}" --arg writerUsername "${WRITER_USERNAME}" '
+jq -e \
+  --arg writerId "${WRITER_USER_ID}" \
+  --arg writerUsername "${WRITER_USERNAME}" \
+  --arg localUserId "${WRITER_LOCAL_USER_ID}" '
   .id == $writerId and
   .username == $writerUsername and
-  .enabled == true
+  .enabled == true and
+  .attributes.userId == [$localUserId]
 ' "${KC_WRITER_FRESH_JSON}" >/dev/null \
-  || die "permission-writer-profile-precondition-identity-mismatch"
+  || die "permission-writer-profile-precondition-local-user-mismatch"
 
 WRITER_FRESH_REQUIRED_ACTIONS="$(jq -c '.requiredActions // []' "${KC_WRITER_FRESH_JSON}")"
 [[ "${WRITER_FRESH_REQUIRED_ACTIONS}" == '[]' ]] \

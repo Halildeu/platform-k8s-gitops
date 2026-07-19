@@ -229,6 +229,7 @@ def _run_ambiguous_reset_scenario(
     initial_last_name: str = "Persona",
     email_owner_scenario: str = "available",
     writer_user_id: str = WRITER_USER_ID,
+    writer_local_user_id: str = "1204",
     vault_scenario: str = "ready",
     required_actions: tuple[str, ...] = (),
     profile_put_scenario: str = "success",
@@ -517,7 +518,10 @@ fi
     keycloak_user_id_state.write_text(writer_user_id, encoding="utf-8")
     attributes_state = tmp_path / "attributes-state.json"
     attributes_state.write_text(
-        json.dumps({"sentinel": ["keep"]}), encoding="utf-8"
+        json.dumps(
+            {"sentinel": ["keep"], "userId": [writer_local_user_id]}
+        ),
+        encoding="utf-8",
     )
     required_actions_state = tmp_path / "required-actions-state.json"
     required_actions_state.write_text(
@@ -929,6 +933,25 @@ def test_writer_uid_mismatch_blocks_before_any_mutation(tmp_path):
     assert proc.returncode == 1
     assert result["failureReason"] == "permission-writer-id-mismatch"
     assert result["permissionWriter"]["exactIdentityMatch"] is False
+    assert vault_state == original_vault
+    assert events == []
+
+
+def test_writer_local_user_id_mismatch_blocks_before_any_mutation(tmp_path):
+    proc, result, vault_state, events, original_vault = (
+        _run_ambiguous_reset_scenario(
+            tmp_path,
+            "new-success",
+            initial_email="drifted@example.invalid",
+            writer_local_user_id="9999",
+        )
+    )
+
+    assert proc.returncode == 1
+    assert result["failureReason"] == (
+        "permission-writer-profile-precondition-local-user-mismatch"
+    )
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is False
     assert vault_state == original_vault
     assert events == []
 

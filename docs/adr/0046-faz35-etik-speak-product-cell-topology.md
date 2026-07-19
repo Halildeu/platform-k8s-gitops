@@ -17,6 +17,10 @@ bağlı kapsam exact `gpt-5.3-codex-spark xhigh`; governance, security, migratio
 production ve diğer yüksek etkili kapsam exact `gpt-5.6-sol xhigh` kullanır.
 Claude, MiniMax/M3, Mavis-provider, Cursor, AI uygulama penceresi,
 wrapper/router ve model/provider fallback geçerli review kanalı değildir.
+Bu, kullanıcı/ürün sahibi tarafından verilmiş daha yeni ve bağlayıcı karardır;
+#2688 ana dala birleşene kadar repo kökündeki eski Claude-first veya çok-kanallı
+metin Faz 35 için uygulanmaz ve Claude receipt'i yeni bir Faz 35 bağımlılığı
+üretemez. Bu geçici authority notu production veya insan kapısını aşmaz.
 
 `REVISE` sonrasında eski head veya scope yeniden incelenmez. Düzeltme commitinden
 sonra yeni exact head, güncel base ref/base-tip, yeniden hesaplanan merge-base ve
