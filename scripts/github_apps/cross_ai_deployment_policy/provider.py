@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import pwd
 import re
 import shutil
 import subprocess
@@ -67,6 +68,20 @@ CODEX_NO_TOOL_FEATURES = (
     "unified_exec",
     "workspace_dependencies",
 )
+CODEX_ENVIRONMENT_POLICY = {
+    "schemaVersion": "acik.direct-codex-environment-policy.v1",
+    "inheritedVariables": [],
+    "fixedVariables": {
+        "HOME": "os-account-home",
+        "CODEX_HOME": "os-account-home/.codex",
+        "TMPDIR": "private-review-root",
+        "PATH": "/usr/bin:/bin",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "NO_COLOR": "1",
+    },
+    "networkRoutingVariables": "cleared",
+}
 # Compatibility name for existing high-impact/Faz 22 consumers. It must never
 # be interpreted as a wildcard or a routine-route alias.
 CODEX_MODEL = CODEX_HIGH_IMPACT_MODEL
@@ -579,6 +594,38 @@ class DirectCodexRunner:
         )
 
     @staticmethod
+    def _isolated_environment(private_root: Path) -> dict[str, str]:
+        """Return the complete environment for every provider subprocess.
+
+        In particular, never inherit ``OPENAI_BASE_URL``, proxy variables,
+        credentials, or another caller-controlled routing/config variable. The
+        fixed native executable authenticates only through the OS account's
+        private Codex home and uses the platform's default network trust path.
+        """
+
+        try:
+            account_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+        except (KeyError, OSError):
+            reject(
+                "PROVIDER_ENVIRONMENT_INVALID",
+                "OS account home is unavailable for isolated Codex launch",
+            )
+        if not account_home.is_absolute() or not private_root.resolve().is_dir():
+            reject(
+                "PROVIDER_ENVIRONMENT_INVALID",
+                "isolated Codex launch paths are invalid",
+            )
+        return {
+            "HOME": str(account_home),
+            "CODEX_HOME": str(account_home / ".codex"),
+            "TMPDIR": str(private_root.resolve()),
+            "PATH": "/usr/bin:/bin",
+            "LANG": "C",
+            "LC_ALL": "C",
+            "NO_COLOR": "1",
+        }
+
+    @staticmethod
     def _apple_signature_identity(path: Path) -> dict[str, str]:
         codesign = Path("/usr/bin/codesign")
         if not codesign.is_file():
@@ -768,7 +815,11 @@ class DirectCodexRunner:
                         "PROVIDER_EXECUTABLE_SIGNATURE_INVALID",
                         "Codex signature differs from the independent authority pin",
                     )
-                dispatch = {"executable": str(pinned_executable)}
+                launch_environment = self._isolated_environment(Path(directory))
+                dispatch = {
+                    "executable": str(pinned_executable),
+                    "env": launch_environment,
+                }
                 # Keep argv[0] and subprocess' executable override on the same
                 # verified private copy. The mutable source path is never
                 # launched after its content has been pinned.
@@ -864,6 +915,7 @@ class DirectCodexRunner:
             "sandbox": "read-only",
             "ephemeral": True,
             "toolPolicy": "none-pre-execution",
+            "environmentPolicy": CODEX_ENVIRONMENT_POLICY,
             "launchConfiguration": {
                 "catalogArguments": catalog_command[1:],
                 "executionArguments": public_execution_arguments,

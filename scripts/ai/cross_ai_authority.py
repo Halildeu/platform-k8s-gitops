@@ -212,9 +212,95 @@ def load_staged_activation_authority(
     return _load_public_authority(root, staged_locator, now=now or utc_now())
 
 
+def load_revocation_refresh_authority(
+    repo_root: Path,
+    *,
+    expected_bindings: dict[str, str],
+    scope_bytes: bytes,
+    now: datetime | None = None,
+) -> PublicReviewAuthority:
+    """Load only a signed, monotonic, revocations-file-only stale recovery.
+
+    The verifier and trust root come from the exact trusted base. The PR head
+    contributes only a fresh DSSE revocation envelope signed by the already
+    pinned revocation authority. Normal high-impact Codex review is still
+    required; this function merely prevents a missed 60-minute refresh window
+    from making that review cryptographically impossible.
+    """
+
+    root = repo_root.expanduser().resolve()
+    required_bindings = {"base_tip_sha", "base_sha", "head_sha", "scope_sha256"}
+    if set(expected_bindings) != required_bindings:
+        raise AuthorityUnavailable("provider-review revocation recovery binding set is invalid")
+    if hashlib.sha256(scope_bytes).hexdigest() != expected_bindings["scope_sha256"]:
+        raise AuthorityUnavailable("provider-review revocation recovery scope digest mismatch")
+    base_tip = expected_bindings["base_tip_sha"]
+    base = expected_bindings["base_sha"]
+    head = expected_bindings["head_sha"]
+    current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
+    merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
+    if current != base_tip or base != base_tip or merge_base != base:
+        raise AuthorityUnavailable(
+            "provider-review revocation recovery requires the exact trusted base tip"
+        )
+    try:
+        manifest = _validate_document(
+            load_json_file(root / MANIFEST_PATH),
+            load_json_file(root / MANIFEST_SCHEMA),
+            "authority manifest",
+        )
+    except Exception as exc:
+        if isinstance(exc, AuthorityUnavailable):
+            raise
+        raise AuthorityUnavailable(
+            "provider-review revocation recovery contract is unavailable"
+        ) from exc
+    if manifest["status"] != "active":
+        raise AuthorityUnavailable("provider-review revocation recovery requires active authority")
+    revocations_path = Path(manifest["revocationsPath"])
+    expected_path = "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json"
+    if revocations_path.as_posix() != expected_path:
+        raise AuthorityUnavailable("provider-review revocation recovery path is not canonical")
+    changed = sorted(
+        line for line in _git(
+            root, "diff", "--name-only", "--no-renames", f"{base}...{head}"
+        ).decode("utf-8", errors="strict").splitlines() if line
+    )
+    if changed != [expected_path]:
+        raise AuthorityUnavailable(
+            "provider-review revocation recovery changes paths outside the signed release"
+        )
+    trust_root = load_json_file(_fixed_config_path(root, manifest["trustRootPath"]))
+    predecessor = load_json_file(_fixed_config_path(root, manifest["revocationsPath"]))
+    replacement = _git_json(root, head, revocations_path)
+    expected = manifest["expectedTrustRootSha256"]
+    if sha256_digest(trust_root) != expected:
+        raise AuthorityUnavailable("provider-review trust-root pin mismatch")
+    observed = now or utc_now()
+    try:
+        verifier = EvidenceVerifier(
+            trust_root=trust_root,
+            revocations_envelope=replacement,
+            now=observed,
+            expected_trust_root_sha256=expected,
+        )
+        verifier.require_stale_revocation_predecessor(predecessor)
+    except PolicyError as exc:
+        raise AuthorityUnavailable(
+            f"provider-review revocation recovery is invalid: {exc.code}"
+        ) from exc
+    return PublicReviewAuthority(
+        trust_root=trust_root,
+        revocations_envelope=replacement,
+        expected_trust_root_sha256=expected,
+        codex_executable_policy=manifest["codexExecutablePolicy"],
+    )
+
+
 __all__ = [
     "AuthorityUnavailable",
     "PublicReviewAuthority",
     "load_active_authority",
+    "load_revocation_refresh_authority",
     "load_staged_activation_authority",
 ]

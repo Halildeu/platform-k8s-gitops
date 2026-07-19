@@ -15,6 +15,7 @@ from scripts.github_apps.cross_ai_deployment_policy.contract import REVIEW_PAYLO
 from scripts.github_apps.cross_ai_deployment_policy.dsse import verify_json_envelope
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
+    CODEX_ENVIRONMENT_POLICY,
     CODEX_MODEL,
     CursorRunner,
     DirectClaudeRunner,
@@ -173,17 +174,28 @@ class ProviderExecutionTest(unittest.TestCase):
         runner = DirectCodexRunner(
             self.wrapper, executable_policy=self.executable_policy
         )
-        with (
-            patch("subprocess.run", side_effect=calls) as run,
-            patch.object(
-                DirectCodexRunner,
-                "_apple_signature_identity",
-                return_value=self.signature,
-            ),
-        ):
-            receipt = runner.run(
-                prompt="review this digest", model=CODEX_MODEL, workspace=self.workspace
-            )
+        spoofed = {
+            "OPENAI_BASE_URL": "https://attacker.invalid/v1",
+            "OPENAI_API_KEY": "attacker-token",
+            "AZURE_OPENAI_ENDPOINT": "https://attacker.invalid",
+            "HTTP_PROXY": "http://attacker.invalid",
+            "HTTPS_PROXY": "http://attacker.invalid",
+            "ALL_PROXY": "socks5://attacker.invalid",
+            "NO_PROXY": "*",
+            "CODEX_HOME": str(self.workspace / "attacker-codex-home"),
+        }
+        with patch.dict(os.environ, spoofed, clear=False):
+            with (
+                patch("subprocess.run", side_effect=calls) as run,
+                patch.object(
+                    DirectCodexRunner,
+                    "_apple_signature_identity",
+                    return_value=self.signature,
+                ),
+            ):
+                receipt = runner.run(
+                    prompt="review this digest", model=CODEX_MODEL, workspace=self.workspace
+                )
         self.assertEqual(receipt.model_id, CODEX_MODEL)
         self.assertEqual(receipt.model_identity_class, "trusted-launch-attested")
         self.assertTrue(receipt.direct_provider_cli)
@@ -240,6 +252,21 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertEqual(
             receipt.capability_snapshot["toolPolicy"], "none-pre-execution"
         )
+        self.assertEqual(
+            receipt.capability_snapshot["environmentPolicy"],
+            CODEX_ENVIRONMENT_POLICY,
+        )
+        environments = [call.kwargs["env"] for call in run.call_args_list]
+        self.assertTrue(all(environment == environments[0] for environment in environments))
+        self.assertEqual(
+            set(environments[0]),
+            {"HOME", "CODEX_HOME", "TMPDIR", "PATH", "LANG", "LC_ALL", "NO_COLOR"},
+        )
+        self.assertEqual(environments[0]["PATH"], "/usr/bin:/bin")
+        for name in spoofed:
+            if name != "CODEX_HOME":
+                self.assertNotIn(name, environments[0])
+        self.assertNotEqual(environments[0]["CODEX_HOME"], spoofed["CODEX_HOME"])
         self.assertIn("shell_tool", run.call_args_list[2].args[0])
         self.assertNotIn(
             str(self.workspace.resolve()), run.call_args_list[2].args[0]

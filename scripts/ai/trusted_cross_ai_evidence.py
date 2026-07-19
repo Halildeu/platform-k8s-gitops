@@ -18,6 +18,7 @@ from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_dige
 from scripts.github_apps.cross_ai_deployment_policy.contract import EvidenceVerifier
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
+    CODEX_ENVIRONMENT_POLICY,
     CODEX_MODEL,
     CODEX_MODELS,
     canonical_codex_execution_arguments,
@@ -85,6 +86,7 @@ CAPABILITY_KEYS = {
     "sandbox",
     "ephemeral",
     "toolPolicy",
+    "environmentPolicy",
     "launchConfiguration",
 }
 
@@ -201,6 +203,7 @@ def _validate_capability(
         and value["sandbox"] == "read-only"
         and value["ephemeral"] is True
         and value["toolPolicy"] == "none-pre-execution"
+        and value["environmentPolicy"] == CODEX_ENVIRONMENT_POLICY
         and launch["catalogArguments"] == ["debug", "models"]
         and launch["executionArguments"] == expected_execution_arguments(expected_model)
     ):

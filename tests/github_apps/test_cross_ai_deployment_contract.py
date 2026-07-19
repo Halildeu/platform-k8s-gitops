@@ -727,6 +727,16 @@ class EvidenceContractV2Test(unittest.TestCase):
                 now=self.fixture.now,
             ).verify_bundle(self.fixture.bundle_envelope)
 
+        durable = EvidenceVerifier(
+            trust_root=trust_root,
+            revocations_envelope=self.fixture.revocations_envelope,
+            now=self.fixture.now,
+            review_reference_time=datetime(
+                2026, 7, 18, 20, 15, tzinfo=timezone.utc
+            ),
+        ).verify_bundle(self.fixture.bundle_envelope)
+        self.assertEqual(durable.provider_families, ("openai",))
+
     def test_v2_rejects_ephemeral_root_lifetime(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         trust_root["expiresAt"] = "2026-07-21T19:00:00Z"
