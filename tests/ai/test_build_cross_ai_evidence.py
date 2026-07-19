@@ -313,9 +313,13 @@ class EvidenceBuilderTests(unittest.TestCase):
                 str(self.workspace),
                 "--vault-origin",
                 "https://vault.example.test",
-                "--vault-token-file",
+                "--provider-token-file",
                 str(self.workspace / "unused-token"),
-                "--vault-key-version",
+                "--provider-key-version",
+                "1",
+                "--runtime-token-file",
+                str(self.workspace / "unused-runtime-token"),
+                "--runtime-key-version",
                 "1",
                 "--output",
                 str(self.output),
@@ -377,16 +381,51 @@ class EvidenceBuilderTests(unittest.TestCase):
 
     def test_provider_signing_capability_alone_cannot_issue_accepted_evidence(self) -> None:
         runner = StaticRunner()
-        with self.assertRaisesRegex(PolicyError, "TRUSTED_ISSUER_SERVICE_REQUIRED"):
-            MODULE.build_signed_evidence(
-                self.args,
-                runner=runner,
-                signer=StaticSigner(
-                    self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
-                ),
-                authority=self.fixture.authority,
-            )
+        with (
+            patch.object(
+                MODULE,
+                "_scope",
+                return_value=(self.fixture.bindings, self.fixture.scope_bytes),
+            ),
+            patch.object(MODULE, "utc_now", return_value=self.fixture.factory.now),
+        ):
+            with self.assertRaisesRegex(
+                PolicyError, "TRUSTED_ISSUER_SERVICE_REQUIRED"
+            ):
+                MODULE.build_signed_evidence(
+                    self.args,
+                    runner=runner,
+                    signer=StaticSigner(
+                        self.fixture.factory, self.fixture.factory.OPENAI_KEY_ID
+                    ),
+                    authority=self.fixture.authority,
+                )
         self.assertEqual(runner.calls, 0)
+
+    def test_vault_runtime_attestor_binds_live_launcher_and_management_key(self) -> None:
+        policy = dict(self.fixture.authority.issuer_runtime_policy)
+        policy["launcherSourceSha256"] = "sha256:" + hashlib.sha256(
+            Path(MODULE.__file__).read_bytes()
+        ).hexdigest()
+        signer = StaticSigner(
+            self.fixture.factory, self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID
+        )
+        attestor = MODULE.VaultTransitRuntimeAttestor(
+            signer=signer,
+            runtime_policy=policy,
+        )
+        execution = execution_receipt("review prompt")
+        envelope = attestor.attest(
+            provider_review_envelope=self.fixture.evidence["review_envelope"],
+            execution=execution,
+            prompt_sha256=execution.input_sha256,
+            issued_at="2026-07-18T20:00:00Z",
+            expires_at="2026-07-18T20:10:00Z",
+        )
+        self.assertEqual(
+            envelope["signatures"][0]["keyid"],
+            self.fixture.factory.RUNNER_MANAGEMENT_KEY_ID,
+        )
 
     def test_evidence_output_is_create_once(self) -> None:
         self.output.write_text("occupied", encoding="utf-8")

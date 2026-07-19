@@ -39,9 +39,16 @@ from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_dige
 from scripts.github_apps.cross_ai_deployment_policy.contract import EvidenceVerifier
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.jsonutil import load_json_file
+from scripts.ops.build_cross_ai_test_trust_root import (
+    TrustRootBuildError,
+    validate_public_bootstrap_receipt,
+)
 
 
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+BOOTSTRAP_RECEIPT_PATH = Path(
+    "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json"
+)
 
 
 class TransitionError(ValueError):
@@ -90,7 +97,12 @@ def exact_git_binding(root: Path, base_tip: str, base: str, head: str) -> None:
 
 
 def stage_public_authority(
-    root: Path, *, base: str, head: str, now: datetime
+    root: Path,
+    *,
+    base: str,
+    head: str,
+    now: datetime,
+    expected_bootstrap_receipt_sha256: str,
 ) -> dict[str, Any]:
     genesis_schema = load_json_file(root / GENESIS_SCHEMA)
     manifest_schema = load_json_file(root / MANIFEST_SCHEMA)
@@ -120,6 +132,9 @@ def stage_public_authority(
     expected_head.update(
         {
             "status": "staged",
+            "expectedBootstrapReceiptSha256": (
+                expected_bootstrap_receipt_sha256
+            ),
             "trustRootPath": "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
             "revocationsPath": "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
             "expectedTrustRootSha256": head_genesis.get("expectedTrustRootSha256"),
@@ -130,6 +145,43 @@ def stage_public_authority(
         raise TransitionError("public-authority stage mutates the genesis contract")
     trust_root = git_json(root, head, Path(head_genesis["trustRootPath"]))
     revocations = git_json(root, head, Path(head_genesis["revocationsPath"]))
+    if head_genesis["bootstrapReceiptPath"] != BOOTSTRAP_RECEIPT_PATH.as_posix():
+        raise TransitionError("public bootstrap receipt path is not canonical")
+    bootstrap_receipt = git_json(root, head, BOOTSTRAP_RECEIPT_PATH)
+    if sha256_digest(bootstrap_receipt) != expected_bootstrap_receipt_sha256:
+        raise TransitionError(
+            "public bootstrap receipt differs from the protected Environment pin"
+        )
+    try:
+        receipt_keys, source_public_keyset_sha256 = (
+            validate_public_bootstrap_receipt(bootstrap_receipt)
+        )
+    except TrustRootBuildError as exc:
+        raise TransitionError("public bootstrap receipt is invalid") from exc
+    if trust_root.get("sourcePublicKeysetSha256") != source_public_keyset_sha256:
+        raise TransitionError("staged trust root differs from the public Vault keyset")
+    receipt_by_name = {key["keyName"]: key for key in receipt_keys}
+    expected_root_keys = {
+        "provider-review": "openai",
+        "coordinator": "coordinator",
+        "revocation": "revocation",
+        "runner-management": "runner-management",
+    }
+    root_keys = trust_root.get("keys")
+    if not isinstance(root_keys, list):
+        raise TransitionError("staged trust root key set is invalid")
+    for role, receipt_name in expected_root_keys.items():
+        matching = [key for key in root_keys if key.get("role") == role]
+        receipt_key = receipt_by_name[receipt_name]
+        if (
+            len(matching) != 1
+            or matching[0].get("keyId") != receipt_key["keyId"]
+            or matching[0].get("publicKeyBase64")
+            != receipt_key["publicKeyBase64"]
+        ):
+            raise TransitionError(
+                f"staged {role} key differs from the public Vault receipt"
+            )
     expected_pin = head_genesis["expectedTrustRootSha256"]
     if sha256_digest(trust_root) != expected_pin:
         raise TransitionError("staged trust-root digest does not match genesis pin")
@@ -189,6 +241,7 @@ def main() -> int:
     parser.add_argument("--base-tip-sha", required=True)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
+    parser.add_argument("--expected-bootstrap-receipt-sha256")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -204,8 +257,25 @@ def main() -> int:
         )
         now = datetime.now(timezone.utc).replace(microsecond=0)
         if args.phase == "stage":
+            if (
+                not isinstance(args.expected_bootstrap_receipt_sha256, str)
+                or re.fullmatch(
+                    r"sha256:[a-f0-9]{64}",
+                    args.expected_bootstrap_receipt_sha256,
+                )
+                is None
+            ):
+                raise TransitionError(
+                    "stage requires the protected Environment bootstrap receipt pin"
+                )
             transition = stage_public_authority(
-                root, base=args.base_sha, head=args.head_sha, now=now
+                root,
+                base=args.base_sha,
+                head=args.head_sha,
+                now=now,
+                expected_bootstrap_receipt_sha256=(
+                    args.expected_bootstrap_receipt_sha256
+                ),
             )
         else:
             load_staged_activation_authority(

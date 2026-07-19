@@ -78,6 +78,14 @@ require_grep() {
   }
 }
 
+require_not_grep() {
+  local pattern="$1" path="$2"
+  if grep -Fq -- "$pattern" "$path"; then
+    echo "forbidden pattern in $path: $pattern" >&2
+    exit 1
+  fi
+}
+
 verify_viewer_resource_normalizer() {
   local filter normalized
   filter='{apiVersion:"v1", kind:"List", items:[.[]
@@ -366,6 +374,8 @@ require_grep 'readonly VERSION="8.30.1"' "$PINNED_GITLEAKS_INSTALLER"
 require_grep 'readonly ARCHIVE_SHA256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"' "$PINNED_GITLEAKS_INSTALLER"
 require_grep 'sha256sum --check --strict' "$PINNED_GITLEAKS_INSTALLER"
 require_grep 'test ! -L "$install_root/gitleaks"' "$PINNED_GITLEAKS_INSTALLER"
+require_grep 'readonly RUNNER_ROOT="${RUNNER_TEMP:?RUNNER_TEMP is required}"' "$PINNED_GITLEAKS_INSTALLER"
+require_not_grep 'rm -rf "$install_root"' "$PINNED_GITLEAKS_INSTALLER"
 require_grep 'bash scripts/ci/install-pinned-gitleaks.sh' "$VIEWER_APPLY_WORKFLOW"
 require_grep 'bash scripts/ci/install-pinned-gitleaks.sh' "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
 

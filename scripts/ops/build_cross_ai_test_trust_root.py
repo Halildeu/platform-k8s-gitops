@@ -311,6 +311,14 @@ def _validate_receipt(receipt: dict[str, Any]) -> tuple[list[dict[str, Any]], st
     return [parsed[name] for name in EXPECTED_KEY_NAMES], source_digest
 
 
+def validate_public_bootstrap_receipt(
+    receipt: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str]:
+    """Expose the strict public receipt projection to genesis verification."""
+
+    return _validate_receipt(receipt)
+
+
 def build_trust_root(
     receipt: dict[str, Any],
     *,

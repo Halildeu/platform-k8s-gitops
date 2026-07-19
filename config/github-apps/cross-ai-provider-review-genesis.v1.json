@@ -1,4 +1,6 @@
 {
+  "bootstrapReceiptPath": "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json",
+  "expectedBootstrapReceiptSha256": null,
   "expectedTrustRootSha256": null,
   "issuerRuntimePolicy": null,
   "ownerDecision": {
@@ -44,7 +46,8 @@
       "exactChangedPaths": [
         "config/github-apps/cross-ai-provider-review-genesis.v1.json",
         "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
-        "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+        "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+        "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json"
       ],
       "fromStatus": "installed",
       "toStatus": "staged"

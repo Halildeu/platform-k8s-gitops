@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -33,6 +34,9 @@ from scripts.github_apps.cross_ai_deployment_policy.contract import (
     REVOCATIONS_PAYLOAD_TYPE,
 )
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
+from scripts.ops.build_cross_ai_test_trust_root import (
+    validate_public_bootstrap_receipt,
+)
 from tests.ai.signed_evidence_fixture import make_signed_evidence
 from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory
 
@@ -312,6 +316,16 @@ class GenesisTransitionTests(unittest.TestCase):
         ):
             shutil.copyfile(ROOT / "schema" / name, self.root / "schema" / name)
         self.fixture = make_signed_evidence()
+        self.bootstrap_receipt = self.public_bootstrap_receipt()
+        _, source_digest = validate_public_bootstrap_receipt(
+            self.bootstrap_receipt
+        )
+        self.staged_trust_root = copy.deepcopy(
+            self.fixture.authority.trust_root
+        )
+        self.staged_trust_root["sourcePublicKeysetSha256"] = source_digest
+        self.bootstrap_receipt_sha256 = sha256_digest(self.bootstrap_receipt)
+        self.staged_trust_root_sha256 = sha256_digest(self.staged_trust_root)
         self.git("init", "-q")
         self.git("config", "user.email", "test@example.invalid")
         self.git("config", "user.name", "Cross AI Test")
@@ -333,7 +347,76 @@ class GenesisTransitionTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
 
-    def authority_manifest(self, *, active: bool) -> dict[str, object]:
+    def public_bootstrap_receipt(self) -> dict[str, object]:
+        by_role = {
+            item["role"]: item
+            for item in self.fixture.authority.trust_root["keys"]
+        }
+        key_roles = (
+            ("anthropic", None),
+            ("openai", "provider-review"),
+            ("coordinator", "coordinator"),
+            ("revocation", "revocation"),
+            ("runner-management", "runner-management"),
+        )
+        keys: list[dict[str, object]] = []
+        for name, role in key_roles:
+            if role is None:
+                key_id = "vault-transit://cross-ai/anthropic#v1"
+                public_key = base64.b64encode(bytes([99]) * 32).decode("ascii")
+            else:
+                source = by_role[role]
+                key_id = source["keyId"]
+                public_key = source["publicKeyBase64"]
+            version = int(str(key_id).rsplit("#v", 1)[1])
+            keys.append(
+                {
+                    "keyId": key_id,
+                    "keyName": name,
+                    "keyVersion": version,
+                    "publicKeyBase64": public_key,
+                    "keyType": "ed25519",
+                    "derived": False,
+                    "exportable": False,
+                    "allowPlaintextBackup": False,
+                    "deletionAllowed": False,
+                    "supportsSigning": True,
+                    "versionHistory": [
+                        {"version": item, "publicKeyBase64": public_key}
+                        for item in range(1, version + 1)
+                    ],
+                }
+            )
+        return {
+            "schemaVersion": "acik.cross-ai-transit-bootstrap-receipt.v2",
+            "scope": "test-only",
+            "vaultOrigin": "https://vault.example.test",
+            "vaultClusterId": "test-cluster-id",
+            "vaultClusterName": "vault-test",
+            "mount": "cross-ai",
+            "keys": keys,
+            "reconcilerPolicyName": "vault-config-reconciler",
+            "reconcilerPolicySha256": "sha256:" + ("a" * 64),
+            "createdResources": [],
+            "updatedResources": [],
+            "verifiedAbsentResources": [
+                "approle:cross-ai-issuer-anthropic-test",
+                "policy:cross-ai-issuer-anthropic-test",
+                "approle:cross-ai-issuer-minimax-test",
+                "policy:cross-ai-issuer-minimax-test",
+            ],
+            "verifiedAt": "2026-07-18T19:59:00Z",
+            "requiresOutOfBandOwnerPin": True,
+        }
+
+    def authority_manifest(
+        self, *, active: bool, staged: bool = False
+    ) -> dict[str, object]:
+        trust_root_sha256 = (
+            self.staged_trust_root_sha256
+            if staged
+            else self.fixture.authority.expected_trust_root_sha256
+        )
         return {
             "schemaVersion": "acik.cross-ai-provider-review-authority.v1",
             "status": "active" if active else "tracked_pending",
@@ -351,7 +434,7 @@ class GenesisTransitionTests(unittest.TestCase):
                 if active else None
             ),
             "expectedTrustRootSha256": (
-                self.fixture.authority.expected_trust_root_sha256 if active else None
+                trust_root_sha256 if active else None
             ),
             "historicalAuthorities": [],
             "rotationPolicy": {
@@ -371,9 +454,12 @@ class GenesisTransitionTests(unittest.TestCase):
         if status != "installed":
             value.update(
                 {
+                    "expectedBootstrapReceiptSha256": (
+                        self.bootstrap_receipt_sha256
+                    ),
                     "trustRootPath": "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
                     "revocationsPath": "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
-                    "expectedTrustRootSha256": self.fixture.authority.expected_trust_root_sha256,
+                    "expectedTrustRootSha256": self.staged_trust_root_sha256,
                     "issuerRuntimePolicy": self.fixture.authority.issuer_runtime_policy,
                 }
             )
@@ -395,8 +481,12 @@ class GenesisTransitionTests(unittest.TestCase):
         )
         if genesis_status == "staged":
             self.write_json(
+                "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json",
+                self.bootstrap_receipt,
+            )
+            self.write_json(
                 "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
-                self.fixture.authority.trust_root,
+                self.staged_trust_root,
             )
             self.write_json(
                 "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
@@ -422,8 +512,12 @@ class GenesisTransitionTests(unittest.TestCase):
             self.genesis(status="staged"),
         )
         self.write_json(
+            "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json",
+            self.bootstrap_receipt,
+        )
+        self.write_json(
             "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
-            self.fixture.authority.trust_root,
+            self.staged_trust_root,
         )
         self.write_json(
             "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
@@ -432,7 +526,11 @@ class GenesisTransitionTests(unittest.TestCase):
         head = self.commit("stage")
         self.git("reset", "-q", "--hard", base)
         result = stage_public_authority(
-            self.root, base=base, head=head, now=self.fixture.factory.now
+            self.root,
+            base=base,
+            head=head,
+            now=self.fixture.factory.now,
+            expected_bootstrap_receipt_sha256=self.bootstrap_receipt_sha256,
         )
         self.assertEqual(result["statusAfter"], "staged")
 
@@ -442,14 +540,27 @@ class GenesisTransitionTests(unittest.TestCase):
         self.git("checkout", "-q", base)
         with self.assertRaisesRegex(TransitionError, "outside genesis"):
             stage_public_authority(
-                self.root, base=base, head=bad_head, now=self.fixture.factory.now
+                self.root,
+                base=base,
+                head=bad_head,
+                now=self.fixture.factory.now,
+                expected_bootstrap_receipt_sha256=self.bootstrap_receipt_sha256,
+            )
+
+        with self.assertRaisesRegex(TransitionError, "mutates the genesis contract"):
+            stage_public_authority(
+                self.root,
+                base=base,
+                head=head,
+                now=self.fixture.factory.now,
+                expected_bootstrap_receipt_sha256="sha256:" + ("0" * 64),
             )
 
     def test_activation_uses_only_staged_base_authority_and_exact_retirement(self) -> None:
         base = self.install_base(genesis_status="staged")
         self.write_json(
             "config/github-apps/cross-ai-provider-review-authority.v1.json",
-            self.authority_manifest(active=True),
+            self.authority_manifest(active=True, staged=True),
         )
         self.write_json(
             "config/github-apps/cross-ai-provider-review-genesis.v1.json",
@@ -471,7 +582,7 @@ class GenesisTransitionTests(unittest.TestCase):
         )
         self.assertEqual(
             authority.expected_trust_root_sha256,
-            self.fixture.authority.expected_trust_root_sha256,
+            self.staged_trust_root_sha256,
         )
 
         self.git("checkout", "-q", head)
@@ -508,8 +619,12 @@ class GenesisTransitionTests(unittest.TestCase):
             staged,
         )
         self.write_json(
+            "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json",
+            self.bootstrap_receipt,
+        )
+        self.write_json(
             "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
-            self.fixture.authority.trust_root,
+            self.staged_trust_root,
         )
         self.write_json(
             "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
@@ -519,7 +634,11 @@ class GenesisTransitionTests(unittest.TestCase):
         self.git("reset", "-q", "--hard", base)
         with self.assertRaisesRegex(TransitionError, "runtime policy differs"):
             stage_public_authority(
-                self.root, base=base, head=head, now=self.fixture.factory.now
+                self.root,
+                base=base,
+                head=head,
+                now=self.fixture.factory.now,
+                expected_bootstrap_receipt_sha256=self.bootstrap_receipt_sha256,
             )
 
     def test_stage_rejects_runtime_image_outside_the_pinned_root(self) -> None:
@@ -532,8 +651,12 @@ class GenesisTransitionTests(unittest.TestCase):
             staged,
         )
         self.write_json(
+            "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json",
+            self.bootstrap_receipt,
+        )
+        self.write_json(
             "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
-            self.fixture.authority.trust_root,
+            self.staged_trust_root,
         )
         self.write_json(
             "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
@@ -543,7 +666,11 @@ class GenesisTransitionTests(unittest.TestCase):
         self.git("reset", "-q", "--hard", base)
         with self.assertRaisesRegex(TransitionError, "runtime policy differs"):
             stage_public_authority(
-                self.root, base=base, head=head, now=self.fixture.factory.now
+                self.root,
+                base=base,
+                head=head,
+                now=self.fixture.factory.now,
+                expected_bootstrap_receipt_sha256=self.bootstrap_receipt_sha256,
             )
 
     def signed_revocations(
@@ -1386,8 +1513,12 @@ class GenesisTransitionTests(unittest.TestCase):
             self.genesis(status="staged"),
         )
         self.write_json(
+            "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json",
+            self.bootstrap_receipt,
+        )
+        self.write_json(
             "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
-            self.fixture.authority.trust_root,
+            self.staged_trust_root,
         )
         revocation_path = (
             "config/github-apps/"
@@ -1466,6 +1597,8 @@ class GenesisTransitionTests(unittest.TestCase):
             "--require-hashes",
             "--only-binary=:all:",
             "scripts/ai/verify_cross_ai_authority_transition.py",
+            "CROSS_AI_BOOTSTRAP_RECEIPT_SHA256",
+            "--expected-bootstrap-receipt-sha256",
             "test \"$(jq -r .base.sha \"$RUNNER_TEMP/pr.json\")\" = \"$GITHUB_SHA\"",
             "test \"$(git merge-base \"$GITHUB_SHA\" \"$EXPECTED_HEAD_SHA\")\" = \"$GITHUB_SHA\"",
         ):

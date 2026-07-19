@@ -112,13 +112,24 @@ jobs:
       - name: Verify exact fail-closed transition
         env:
           PHASE: ${{ inputs.phase }}
+          EXPECTED_BOOTSTRAP_RECEIPT_SHA256: ${{ vars.CROSS_AI_BOOTSTRAP_RECEIPT_SHA256 }}
         run: |
+          bootstrap_args=()
+          if [ "$PHASE" = stage ]; then
+            printf '%s' "$EXPECTED_BOOTSTRAP_RECEIPT_SHA256" | \
+              grep -Eq '^sha256:[a-f0-9]{64}$'
+            bootstrap_args=(
+              --expected-bootstrap-receipt-sha256
+              "$EXPECTED_BOOTSTRAP_RECEIPT_SHA256"
+            )
+          fi
           python3 scripts/ai/verify_cross_ai_authority_transition.py \
             --phase "$PHASE" \
             --repo-root "$GITHUB_WORKSPACE" \
             --base-tip-sha "${{ steps.binding.outputs.base_tip }}" \
             --base-sha "${{ steps.binding.outputs.base_tip }}" \
             --head-sha "${{ steps.binding.outputs.head }}" \
+            "${bootstrap_args[@]}" \
             --output "$RUNNER_TEMP/cross-ai-provider-review-genesis-attestation.json"
 
       - name: Upload bounded genesis attestation

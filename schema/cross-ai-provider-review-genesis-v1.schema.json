@@ -7,6 +7,8 @@
   "required": [
     "schemaVersion",
     "status",
+    "bootstrapReceiptPath",
+    "expectedBootstrapReceiptSha256",
     "ownerDecision",
     "tracking",
     "protectedEnvironment",
@@ -19,6 +21,13 @@
   "properties": {
     "schemaVersion": {"const": "acik.cross-ai-provider-review-genesis.v1"},
     "status": {"enum": ["installed", "staged", "retired"]},
+    "bootstrapReceiptPath": {"const": "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json"},
+    "expectedBootstrapReceiptSha256": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      ]
+    },
     "ownerDecision": {
       "type": "object",
       "additionalProperties": false,
@@ -115,7 +124,8 @@
           "const": [
             "config/github-apps/cross-ai-provider-review-genesis.v1.json",
             "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json",
-            "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json",
+            "config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json"
           ]
         }
       }
@@ -147,6 +157,7 @@
         "properties": {
           "trustRootPath": {"type": "null"},
           "revocationsPath": {"type": "null"},
+          "expectedBootstrapReceiptSha256": {"type": "null"},
           "expectedTrustRootSha256": {"type": "null"},
           "issuerRuntimePolicy": {"type": "null"}
         }
@@ -155,6 +166,7 @@
         "properties": {
           "trustRootPath": {"type": "string"},
           "revocationsPath": {"type": "string"},
+          "expectedBootstrapReceiptSha256": {"type": "string"},
           "expectedTrustRootSha256": {"type": "string"},
           "issuerRuntimePolicy": {"type": "object"}
         }

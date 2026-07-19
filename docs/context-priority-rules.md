@@ -498,6 +498,16 @@ subject, model veya koordinat kabul etmez. `scripts/ai/post_cross_ai_evidence.py
 comment'i yalnız transport olarak kullanır. Kabul, repo-public pinned OpenAI
 provider-review trust root'u ile güncel ve imzalı revocation setini zorunlu tutar;
 owner comment'i tek başına authority değildir.
+Operational issuer yolu provider-review ve runner-management için iki farklı,
+owner-only (`0600`), symlink olmayan, bounded tek-kullanımlık Vault token dosyası
+ister. Builder bu dosyaları argv'ye veya çıktıya taşımaz; yalnız canonical HTTPS
+Vault origin, exact key version ve sabit `openai` / `runner-management` Transit
+key yollarını kabul eder. İki capability aynı token dosyasına bağlanamaz.
+Provider leaf direct Codex çalıştırıldıktan sonra `openai` key'iyle, runtime leaf
+ise repo-public policy'deki exact workload/image/launcher digestleri doğrulandıktan
+sonra ayrı `runner-management` key'iyle imzalanır. Eksik, gevşek izinli, symlink,
+değişmiş veya yanlış role/version tokenı provider çağrısı/acceptance öncesi
+fail-closed reddedilir.
 Root rotasyonu eski root ile son imzalı revocation snapshot'ını digest-adresli
 history dizinine byte-for-byte eklemek zorundadır; geçmiş entry veya archived
 byte silinemez/değiştirilemez. Revocation-only geçişi predecessor stale olsun
@@ -533,11 +543,9 @@ kanıt replay edilebilir.
 Provider-review signer tek başına da authority değildir: aynı carrier, ayrı
 `runner-management` anahtarıyla imzalanmış runtime attestation içinde exact
 provider leaf, prompt, response, Codex session, capability snapshot ve
-release-managed issuer image/source digestlerini bağlar. Bu ikinci imza yalnız
-ayrı workload-identity attestor servisinden alınır; provider issuer bu private
-key'i taşımaz. Ham builder CLI iki signing capability'sini de kabul etmez ve
-pinned servis adapter'ları enjekte edilmedikçe provider çağrısından önce
-fail-closed olur. Public root/revocation/runtime policy staging tamamlanmadan
+release-managed issuer image/source digestlerini bağlar. Private key material
+iki durumda da sürece girmez; imzalar farklı scope'lu tek-kullanımlık capability
+dosyaları üzerinden Vault Transit'te üretilir. Public root/revocation/runtime policy staging tamamlanmadan
 authority `tracked_pending` kalır ve owner comment veya provider signer tek
 başına acceptance üretemez.
 

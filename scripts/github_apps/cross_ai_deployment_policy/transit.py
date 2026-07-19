@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import base64
 import binascii
+import os
 import re
+import stat
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -47,10 +49,30 @@ class VaultTransitSigner:
             or key_version < 1
         ):
             reject("VAULT_TRANSIT_KEY_INVALID", "Vault Transit key binding is invalid")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         try:
-            token = token_file.read_bytes().strip()
+            descriptor = os.open(token_file, flags)
         except OSError:
-            reject("VAULT_TOKEN_UNAVAILABLE", "Vault token file cannot be read")
+            reject("VAULT_TOKEN_UNAVAILABLE", "Vault token file cannot be opened safely")
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_mode & 0o077
+                or not 20 <= metadata.st_size <= 4097
+            ):
+                reject(
+                    "VAULT_TOKEN_FILE_INVALID",
+                    "Vault token file must be a bounded owner-only regular file",
+                )
+            raw = os.read(descriptor, metadata.st_size + 1)
+        except OSError:
+            reject("VAULT_TOKEN_UNAVAILABLE", "Vault token file cannot be read safely")
+        finally:
+            os.close(descriptor)
+        if len(raw) != metadata.st_size:
+            reject("VAULT_TOKEN_FILE_INVALID", "Vault token file changed while reading")
+        token = raw.strip()
         if not 20 <= len(token) <= 4096 or b"\x00" in token:
             reject("VAULT_TOKEN_INVALID", "Vault token file is invalid")
         try:

@@ -11,8 +11,10 @@ if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
   exit 1
 fi
 
-install_root="${1:-${RUNNER_TEMP:?RUNNER_TEMP is required}/pinned-gitleaks-${VERSION}}"
-download_root="$(mktemp -d "${RUNNER_TEMP:-/tmp}/gitleaks-download.XXXXXX")"
+readonly RUNNER_ROOT="${RUNNER_TEMP:?RUNNER_TEMP is required}"
+test -d "$RUNNER_ROOT"
+install_root="$(mktemp -d "$RUNNER_ROOT/pinned-gitleaks-${VERSION}.XXXXXX")"
+download_root="$(mktemp -d "$RUNNER_ROOT/gitleaks-download.XXXXXX")"
 trap 'rm -rf "$download_root"' EXIT
 umask 077
 
@@ -29,8 +31,6 @@ curl \
 
 printf '%s  %s\n' "$ARCHIVE_SHA256" "$download_root/$ARCHIVE" | sha256sum --check --strict -
 
-rm -rf "$install_root"
-mkdir -p "$install_root"
 tar --extract --gzip --file "$download_root/$ARCHIVE" --directory "$install_root" gitleaks
 test -f "$install_root/gitleaks"
 test ! -L "$install_root/gitleaks"

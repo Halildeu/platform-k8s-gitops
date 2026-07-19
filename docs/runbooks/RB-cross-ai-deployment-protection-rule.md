@@ -336,9 +336,12 @@ that the owner-gated live policy replacement or role provisioning has occurred.
 
 This source contract does not make a local Transit signature equivalent to a
 provider execution. The dedicated OpenAI issuer must execute direct Codex,
-validate the exact allowed launch identity and only then consume its one-use
-sign token. Until that adapter and its redacted, content-addressed receipt are accepted, enforcement remains
-`tracked_pending`.
+validate the exact allowed launch identity and only then use its owner-only
+one-use sign-token file. The runtime leaf uses a different one-use token and the
+fixed `runner-management` Transit key after exact workload/image/launcher policy
+validation. Raw tokens and private key material never enter evidence, logs,
+arguments or repository files. Until both adapters and their redacted,
+content-addressed carrier are accepted, enforcement remains `tracked_pending`.
 
 ### One-time provider-review authority genesis and activation
 
@@ -351,13 +354,17 @@ product-evidence customer journey.
 
 - trusted base genesis status must be `installed`; active locator remains
   `tracked_pending`;
-- exact changed files are only the genesis record, public v2 trust root and
-  signed revocations carrier;
+- exact changed files are only the genesis record, public v2 trust root,
+  signed revocations carrier and public Transit bootstrap receipt;
 - dispatch `.github/workflows/cross-ai-provider-review-genesis.yml` from exact
   `main` with `phase=stage`, PR number and exact head SHA;
 - the `cross-ai-provider-review-genesis` Environment must have at least one
   human required reviewer and `prevent_self_review=true`; an unprotected or
   unreadable Environment fails before PR data is evaluated;
+- the same protected Environment must define
+  `CROSS_AI_BOOTSTRAP_RECEIPT_SHA256=sha256:<64hex>` from the separately
+  observed public receipt. The workflow rejects a PR-authored/self-consistent
+  replacement receipt or trust root that differs from this out-of-band pin;
 - after human approval, the trusted-main workflow verifies same-repository
   base/head, exact paths, root pin, DSSE role and revocation freshness. Record
   the successful API run URL as `Authority genesis run`; consultation mode is
