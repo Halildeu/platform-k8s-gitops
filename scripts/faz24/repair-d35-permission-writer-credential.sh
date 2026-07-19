@@ -10,10 +10,10 @@ readonly KC_REALM="platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly WRITER_USERNAME="d35-admin-persona"
 readonly WRITER_USER_ID="cbc9a869-1833-4d9c-beea-a9fa52fa851e"
-readonly WRITER_LOCAL_USER_ID="1204"
-# user-service binds this synthetic TEST administrator to its canonical local
-# ADMIN row by email; accepting another non-empty email leaves the actor disabled.
-readonly WRITER_PROFILE_EMAIL="d35-admin@example.com"
+readonly WRITER_LOCAL_USER_ID="12"
+# Faz 35 gives this synthetic permission writer its own active local profile;
+# it must never borrow the historical user 1204 / performance persona email.
+readonly WRITER_PROFILE_EMAIL="d35-admin-persona@acik.com"
 readonly WRITER_PROFILE_FIRST_NAME="D35"
 readonly WRITER_PROFILE_LAST_NAME="Admin Persona"
 readonly WRITER_CLIENT="frontend"

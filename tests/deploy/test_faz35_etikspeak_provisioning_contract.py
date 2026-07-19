@@ -31,6 +31,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.entitlement = (
             ROOT / "scripts/faz35/provision-test-ethic-entitlement.sh"
         ).read_text()
+        cls.writer_identity = (
+            ROOT / "scripts/faz35/reconcile-test-permission-writer-identity.sh"
+        ).read_text()
         cls.authz_projection_lib_path = (
             ROOT / "scripts/faz35/lib-authz-projection.sh"
         )
@@ -149,10 +152,39 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("entitlement mutation target override refused", self.entitlement)
         self.assertIn("Keycloak/persona mutation target override refused", self.keycloak)
         self.assertIn("public test-gate target override refused", self.pg_vault)
+        self.assertIn('readonly KUBE_CONTEXT="k3d-test"', self.writer_identity)
+        self.assertIn('readonly KUBE_NS="platform-test"', self.writer_identity)
+        self.assertIn('readonly PG_CONTAINER="platform-pg-test"', self.writer_identity)
+        self.assertIn('readonly KC_CONTAINER="platform-kc-test"', self.writer_identity)
+        self.assertIn('productionMutation: false', self.writer_identity)
+        self.assertIn('historicalUser1204Mutation: false', self.writer_identity)
         self.assertNotIn(
             "platform-prod",
-            "\n".join((self.pg_vault, self.keycloak, self.entitlement, self.openfga)),
+            "\n".join((self.pg_vault, self.keycloak, self.entitlement, self.openfga, self.writer_identity)),
         )
+
+    def test_permission_writer_identity_is_dedicated_and_least_privilege(self):
+        self.assertIn('readonly WRITER_LOCAL_USER_ID="12"', self.writer_identity)
+        self.assertIn('readonly LEGACY_LOCAL_USER_ID="1204"', self.writer_identity)
+        self.assertIn('readonly WRITER_EMAIL="d35-admin-persona@acik.com"', self.writer_identity)
+        self.assertIn('readonly PROVISIONER_ROLE_NAME="ETIK_SPEAK_PROVISIONER"', self.writer_identity)
+        self.assertIn('relation:"can_manage",object:"module:ACCESS"', self.writer_identity)
+        self.assertIn('{permissions:[{type:"MODULE",key:"ACCESS",grant:"MANAGE"}]}', self.writer_identity)
+        self.assertIn('.attributes.userId=[$local]', self.writer_identity)
+        self.assertIn('.attributes.subscriberId=[$local]', self.writer_identity)
+        self.assertIn("writer-provisioner-granule-conflict", self.writer_identity)
+        self.assertIn("writer-provisioner-member-conflict", self.writer_identity)
+        self.assertNotIn('PROVISIONER_ROLE_NAME="ADMIN"', self.writer_identity)
+        self.assertNotIn("user_role_assignments", self.writer_identity)
+
+    def test_permission_writer_identity_never_puts_secrets_in_argv_or_evidence(self):
+        self.assertIn('password@${KC_ADMIN_PASSWORD_FILE}', self.writer_identity)
+        self.assertIn('username@${TMP_DIR}/writer.username', self.writer_identity)
+        self.assertIn('password@${TMP_DIR}/writer.password', self.writer_identity)
+        self.assertIn("IFS= read -r VAULT_TOKEN", self.writer_identity)
+        self.assertIn("rawCredentialIncluded: false", self.writer_identity)
+        self.assertIn("rawTokenIncluded: false", self.writer_identity)
+        self.assertNotRegex(self.writer_identity, r"--data-urlencode \"password=\$\{")
 
     def test_ethic_entitlement_uses_canonical_writer_and_negative_postconditions(self):
         self.assertIn("/api/v1/roles/$role_id/granules", self.entitlement)

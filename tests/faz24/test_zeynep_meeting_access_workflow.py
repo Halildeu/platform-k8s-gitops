@@ -20,7 +20,7 @@ PRIMARY_SUBJECT = "FAZ 24"
 CORROBORATING_SUBJECT = "Platform Ai- Meeting Intelligence"
 NEW_PASSWORD = "a" * 64
 WRITER_USER_ID = "cbc9a869-1833-4d9c-beea-a9fa52fa851e"
-WRITER_PROFILE_EMAIL = "d35-admin@example.com"
+WRITER_PROFILE_EMAIL = "d35-admin-persona@acik.com"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -224,12 +224,12 @@ def _run_ambiguous_reset_scenario(
     tmp_path: Path,
     scenario: str,
     *,
-    initial_email: str = "d35-admin@example.com",
+    initial_email: str = WRITER_PROFILE_EMAIL,
     initial_first_name: str = "D35",
     initial_last_name: str = "Persona",
     email_owner_scenario: str = "available",
     writer_user_id: str = WRITER_USER_ID,
-    writer_local_user_id: str = "1204",
+    writer_local_user_id: str = "12",
     vault_scenario: str = "ready",
     required_actions: tuple[str, ...] = (),
     profile_put_scenario: str = "success",
