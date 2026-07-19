@@ -167,9 +167,12 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
 
     def test_ethic_entitlement_rerun_accepts_only_its_exact_prior_state(self):
         states = {
-            "first-run.json": ({"userId": 41, "modules": {}, "allowedModules": []}, "ABSENT"),
+            "first-run.json": (
+                {"userId": "41", "subscriberId": 41, "modules": {}, "allowedModules": []},
+                "ABSENT",
+            ),
             "rerun.json": (
-                {"userId": 41, "modules": {"ETHIC": "MANAGE"}, "allowedModules": ["ETHIC"]},
+                {"userId": "41", "subscriberId": 41, "modules": {"ETHIC": "MANAGE"}, "allowedModules": ["ETHIC"]},
                 "EXACT_MANAGE",
             ),
         }
@@ -193,8 +196,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
                 self.assertEqual(result.stdout.strip(), expected)
 
             for filename, payload in {
-                "partial.json": {"userId": 41, "modules": {"ETHIC": "MANAGE"}, "allowedModules": []},
-                "broader.json": {"userId": 41, "modules": {"ETHIC": "ADMIN"}, "allowedModules": ["ETHIC"]},
+                "partial.json": {"userId": "41", "subscriberId": 41, "modules": {"ETHIC": "MANAGE"}, "allowedModules": []},
+                "broader.json": {"userId": "41", "subscriberId": 41, "modules": {"ETHIC": "ADMIN"}, "allowedModules": ["ETHIC"]},
+                "identity-drift.json": {"userId": "42", "subscriberId": 41, "modules": {}, "allowedModules": []},
             }.items():
                 path = Path(tmp) / filename
                 path.write_text(json.dumps(payload))
@@ -232,6 +236,18 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             re.compile(r"STAFF_SUBJECT=.*WRONG_ORG_SUBJECT=.*DENIED_SUBJECT", re.DOTALL),
         )
         self.assertIn("must be a Keycloak UUID from provision-test-keycloak.sh", self.openfga)
+
+    def test_entitlement_materializes_and_activates_canonical_local_users(self):
+        self.assertIn("/api/v1/users/me/profile", self.entitlement)
+        self.assertIn('.message == "ACCOUNT_DISABLED"', self.entitlement)
+        self.assertIn("/api/v1/users/by-email", self.entitlement)
+        self.assertIn("/api/v1/users/$user_id/activation", self.entitlement)
+        self.assertIn("$label active local profile postcondition failed", self.entitlement)
+        self.assertIn("target_user_id=$(jq -r '.subscriberId'", self.entitlement)
+        self.assertIn("target authz subscriberId differs from the activated local profile", self.entitlement)
+        self.assertNotIn("target_user_id=$(jq -r '.userId'", self.entitlement)
+        self.assertIn('numeric subscriberId is missing', self.authz_projection_lib)
+        self.assertIn('userId and subscriberId differ', self.authz_projection_lib)
 
     def test_keycloak_provisioner_mints_and_checks_real_token_contract(self):
         self.assertIn("--data-binary @-", self.keycloak)

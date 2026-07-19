@@ -5,8 +5,10 @@
 faz35_authz_projection_state() {
   local document=$1
   jq -er '
-    if ((.userId | tostring | test("^[0-9]+$")) | not) then
-      error("numeric userId is missing")
+    if ((.subscriberId | tostring | test("^[0-9]+$")) | not) then
+      error("numeric subscriberId is missing")
+    elif (.userId | tostring) != (.subscriberId | tostring) then
+      error("userId and subscriberId differ")
     elif
       (((.modules // {}) | has("ETHIC")) | not) and
       (((.allowedModules // []) | index("ETHIC")) == null)

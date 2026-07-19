@@ -150,28 +150,6 @@ write_bearer_config "$TMP_DIR/wrong-org-auth.curl" "$wrong_org_token"
 write_bearer_config "$TMP_DIR/denied-auth.curl" "$denied_token"
 unset target_token wrong_org_token denied_token
 
-# These reads materialize the local-Keycloak identities through the existing
-# test-only user-service bridge. Negative personas must always lack ETHIC. The
-# target may either lack ETHIC on the first run or carry the exact MANAGE
-# projection from a previously completed run; its dedicated role linkage is
-# verified below before any mutation.
-for label in target wrong-org denied; do
-  code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-before.json" \
-    --config "$TMP_DIR/$label-auth.curl")
-  [ "$code" = 200 ] || { echo "FATAL: $label authz identity bootstrap failed" >&2; exit 1; }
-  projection_state=$(faz35_authz_projection_state "$TMP_DIR/$label-authz-before.json") || {
-    echo "FATAL: $label has a non-canonical ETHIC authorization projection" >&2
-    exit 1
-  }
-  if [ "$label" != target ] && [ "$projection_state" != ABSENT ]; then
-    echo "FATAL: $label unexpectedly has ETHIC before dedicated writer provisioning" >&2
-    exit 1
-  fi
-  [ "$label" != target ] || target_projection_before=$projection_state
-done
-target_user_id=$(jq -r '.userId' "$TMP_DIR/target-authz-before.json")
-unset projection_state
-
 writer_code=$(http_status POST "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
   "$TMP_DIR/writer-token.json" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
@@ -187,6 +165,81 @@ fi
 writer_token=$(jq -r '.access_token' "$TMP_DIR/writer-token.json")
 write_bearer_config "$TMP_DIR/writer-auth.curl" "$writer_token"
 unset writer_token
+
+# /authz/me is permission-service owned and cannot materialize a new local
+# user. Touch the user-service profile route first. A new least-privilege row
+# intentionally answers ACCOUNT_DISABLED; the canonical test admin then uses
+# the ordinary activation endpoint before any role/granule mutation.
+for label in target wrong-org denied; do
+  profile_code=$(http_status GET "$BASE_URL/api/v1/users/me/profile" \
+    "$TMP_DIR/$label-profile-bootstrap.json" --config "$TMP_DIR/$label-auth.curl")
+  if [ "$profile_code" != 200 ] && ! {
+      [ "$profile_code" = 403 ] &&
+      jq -e '.message == "ACCOUNT_DISABLED"' "$TMP_DIR/$label-profile-bootstrap.json" >/dev/null;
+    }; then
+    echo "FATAL: $label user-service identity materialization failed" >&2
+    exit 1
+  fi
+
+  username=$(<"$TMP_DIR/$label.username")
+  email="$username@test.invalid"
+  code=$(http_status GET "$BASE_URL/api/v1/users/by-email" "$TMP_DIR/$label-user.json" \
+    --config "$TMP_DIR/writer-auth.curl" --get --data-urlencode "email=$email")
+  if [ "$code" != 200 ] || ! jq -e --arg email "$email" '
+      (.id | type == "number") and .email == $email and (.enabled | type == "boolean")
+    ' "$TMP_DIR/$label-user.json" >/dev/null; then
+    echo "FATAL: $label canonical local user lookup failed" >&2
+    exit 1
+  fi
+  user_id=$(jq -r '.id' "$TMP_DIR/$label-user.json")
+  printf '%s' "$user_id" >"$TMP_DIR/$label-user-id"
+  unset username email user_id
+done
+
+# Negative personas must always lack ETHIC. The target may either lack ETHIC
+# on the first run or carry the exact MANAGE projection from a previously
+# completed run; its dedicated role linkage is verified below before mutation.
+for label in target wrong-org denied; do
+  code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-before.json" \
+    --config "$TMP_DIR/$label-auth.curl")
+  [ "$code" = 200 ] || { echo "FATAL: $label authz identity bootstrap failed" >&2; exit 1; }
+  projection_state=$(faz35_authz_projection_state "$TMP_DIR/$label-authz-before.json") || {
+    echo "FATAL: $label has a non-canonical ETHIC authorization projection" >&2
+    exit 1
+  }
+  if [ "$label" != target ] && [ "$projection_state" != ABSENT ]; then
+    echo "FATAL: $label unexpectedly has ETHIC before dedicated writer provisioning" >&2
+    exit 1
+  fi
+  [ "$label" != target ] || target_projection_before=$projection_state
+done
+target_user_id=$(jq -r '.subscriberId' "$TMP_DIR/target-authz-before.json")
+[ "$target_user_id" = "$(<"$TMP_DIR/target-user-id")" ] || {
+  echo "FATAL: target authz subscriberId differs from the activated local profile" >&2
+  exit 1
+}
+unset projection_state
+
+# Activate only after all three authz projections have passed the no-ETHIC /
+# exact-prior-state preflight above. This keeps a drift failure mutation-free.
+for label in target wrong-org denied; do
+  user_id=$(<"$TMP_DIR/$label-user-id")
+  if [ "$(jq -r '.enabled' "$TMP_DIR/$label-user.json")" = false ]; then
+    printf '{"active":true}' >"$TMP_DIR/$label-activation.json"
+    code=$(http_status PUT "$BASE_URL/api/v1/users/$user_id/activation" \
+      "$TMP_DIR/$label-activation-response.json" --config "$TMP_DIR/writer-auth.curl" \
+      -H 'Content-Type: application/json' --data-binary "@$TMP_DIR/$label-activation.json")
+    [ "$code" = 200 ] || { echo "FATAL: $label local user activation failed" >&2; exit 1; }
+  fi
+  code=$(http_status GET "$BASE_URL/api/v1/users/me/profile" \
+    "$TMP_DIR/$label-profile-active.json" --config "$TMP_DIR/$label-auth.curl")
+  if [ "$code" != 200 ] || ! jq -e --argjson expected "$user_id" \
+      '.id == $expected and .enabled == true' "$TMP_DIR/$label-profile-active.json" >/dev/null; then
+    echo "FATAL: $label active local profile postcondition failed" >&2
+    exit 1
+  fi
+  unset user_id
+done
 
 roles_code=$(http_status GET "$BASE_URL/api/v1/roles" "$TMP_DIR/roles.json" \
   --config "$TMP_DIR/writer-auth.curl")
