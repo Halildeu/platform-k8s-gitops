@@ -398,6 +398,12 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             datetime(2026, 7, 14, 23, 59, tzinfo=timezone.utc),
             datetime(2026, 7, 14, 23, 59, 1, tzinfo=timezone.utc),
         )
+        RECEIPT.verify(
+            legacy, raw, legacy_policy, revocations(), 123, "a" * 40,
+            datetime(2026, 8, 15, 1, 0, tzinfo=timezone.utc), True,
+            datetime(2026, 7, 14, 23, 59, tzinfo=timezone.utc),
+            datetime(2026, 7, 14, 23, 59, 1, tzinfo=timezone.utc),
+        )
 
         with self.assertRaisesRegex(RECEIPT.ReceiptError, "requires fetched activation run"):
             RECEIPT.verify(

@@ -221,7 +221,10 @@ def verify(
             raise ReceiptError("legacy v1 activation run started at or after the migration cutoff")
     if not issued < expires or (expires - issued).total_seconds() > 120 * 60:
         raise ReceiptError("authorization absolute TTL is invalid")
-    if expires <= now:
+    # Explicit legacy mode is termination/forensic replay only. Its operational
+    # TTL must remain cryptographically inspectable after expiry, while current
+    # v2 authorization continues to fail closed at the wall-clock boundary.
+    if expires <= now and not legacy_v1:
         raise ReceiptError("authorization receipt is expired")
 
 

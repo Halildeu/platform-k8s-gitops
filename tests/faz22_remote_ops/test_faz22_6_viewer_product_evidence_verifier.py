@@ -1435,6 +1435,27 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         client.get_bytes = unavailable_bytes
         self.assertEqual("pass", self.verify(client)["status"])
 
+    def test_cli_resolves_carried_authority_without_loading_current_authority(self):
+        output = Path(self.temp_dir.name) / "cli-result.json"
+        args = SimpleNamespace(
+            repository=VERIFIER.EXPECTED_REPOSITORY,
+            run_id=RUN_ID,
+            github_api_url="https://api.github.invalid",
+            github_token_env="TEST_GITHUB_TOKEN",
+            output=output,
+            marker_out=None,
+        )
+        with patch.object(VERIFIER, "parse_args", return_value=args), patch.object(
+            VERIFIER, "GitHubClient", return_value=object(),
+        ), patch.object(
+            VERIFIER,
+            "verify_product_evidence",
+            return_value={"status": "pass"},
+        ) as verify:
+            self.assertEqual(0, VERIFIER.main())
+        self.assertEqual(VERIFIER.ROOT, verify.call_args.kwargs["authority_repo_root"])
+        self.assertNotIn("cross_ai_trust_root", verify.call_args.kwargs)
+
     def test_immutable_v1_is_rejected_for_current_product_but_allowed_for_explicit_forensics(self):
         legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
         self.assertEqual(

@@ -105,12 +105,35 @@ jobs:
           artifact_digest="$(jq -r --arg name "$expected" '.artifacts[] | select(.name == $name) | .digest' "$out/artifacts.json")"
           github_read_api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$out/authorization.zip"
           [ "sha256:$(sha256sum "$out/authorization.zip" | awk '{print $1}')" = "$artifact_digest" ]
+          archive_mode="$(python3 - "$out/authorization.zip" <<'PY'
+          import sys
+          import zipfile
+
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              names = archive.namelist()
+          legacy = {"SHA256SUMS", "protected-authorization.json"}
+          current = legacy | {"advisory-comment.json"}
+          if len(names) != len(set(names)):
+              raise SystemExit("authorization archive contains duplicate members")
+          if set(names) == current:
+              print("v2")
+          elif set(names) == legacy:
+              print("v1")
+          else:
+              raise SystemExit("authorization archive file set is not canonical v1 or v2")
+          PY
+          )"
+          archive_args=(
+            --expected-file SHA256SUMS
+            --expected-file protected-authorization.json
+          )
+          if [ "$archive_mode" = v2 ]; then
+            archive_args+=(--expected-file advisory-comment.json)
+          fi
           python3 scripts/faz22-remote-ops/extract-exact-zip.py \
             --archive "$out/authorization.zip" \
             --destination "$out/receipt" \
-            --expected-file SHA256SUMS \
-            --expected-file advisory-comment.json \
-            --expected-file protected-authorization.json
+            "${archive_args[@]}"
           (cd "$out/receipt" && sha256sum -c SHA256SUMS)
           authorization_sha256="sha256:$(sha256sum "$out/receipt/protected-authorization.json" | awk '{print $1}')"
           policy_mode="$(python3 - "$out/receipt/protected-authorization.json" <<'PY'
@@ -139,6 +162,10 @@ jobs:
           )"
           case "$policy_mode" in
             v2)
+              [ "$archive_mode" = v2 ] || {
+                echo "::error::current v2 authorization archive is missing advisory-comment.json"
+                exit 1
+              }
               policy=config/faz22-6-view-only-pilot-owner-policy.v2.json
               legacy_args=()
               [ "$activation_head_sha" = "$GITHUB_SHA" ] || {
@@ -147,6 +174,10 @@ jobs:
               }
               ;;
             v1)
+              [ "$archive_mode" = v1 ] || {
+                echo "::error::legacy v1 authorization archive has a non-canonical file set"
+                exit 1
+              }
               policy=config/faz22-6-view-only-pilot-owner-policy.v1.json
               legacy_args=(
                 --allow-legacy-v1
