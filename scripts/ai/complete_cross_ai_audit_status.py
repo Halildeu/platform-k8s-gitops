@@ -19,6 +19,7 @@ MARKER_RE = re.compile(
 )
 AUDIT_CONTEXT = "cross-ai-audit"
 PENDING_DESCRIPTION = "Cross-AI evidence changed; trusted audit required"
+TRUSTED_WORKFLOW_STATUS_CREATOR = "github-actions[bot]"
 
 
 def fail(code: str) -> NoReturn:
@@ -150,7 +151,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
             latest_audit.get("description") != success_description
             or latest_audit.get("target_url") != expected_url
             or latest_audit["id"] <= pending_status_id
-            or success_creator != owner
+            or success_creator != TRUSTED_WORKFLOW_STATUS_CREATOR
         ):
             fail("audit_generation_success_invalid")
         return {
@@ -196,7 +197,7 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         or created.get("context") != AUDIT_CONTEXT
         or created.get("description") != success_description
         or created.get("target_url") != expected_url
-        or created_creator != owner
+        or created_creator != TRUSTED_WORKFLOW_STATUS_CREATOR
     ):
         fail("audit_success_status_invalid")
     return {

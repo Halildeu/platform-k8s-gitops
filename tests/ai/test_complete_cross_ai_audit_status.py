@@ -109,7 +109,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             "context": "cross-ai-audit",
             "description": "Trusted Cross-AI audit passed generation=10",
             "target_url": self.url,
-            "creator": {"login": "Halildeu"},
+            "creator": {"login": "github-actions[bot]"},
         }
         result, calls = self.execute([
             self.current_pr(body),
@@ -189,7 +189,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             "context": "cross-ai-audit",
             "description": "Trusted Cross-AI audit passed generation=10",
             "target_url": self.url,
-            "creator": {"login": "Halildeu"},
+            "creator": {"login": "github-actions[bot]"},
         }
         result, calls = self.execute([
             self.current_pr(body),
@@ -228,6 +228,42 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
                     self.assertRaises(SystemExit),
                 ):
                     MODULE.complete_status(self.repo, self.issue, self.event_path)
+
+    def test_non_actions_success_attribution_is_rejected(self) -> None:
+        body = self.write_event()
+        wrong_success = {
+            "id": 12,
+            "state": "success",
+            "context": "cross-ai-audit",
+            "description": "Trusted Cross-AI audit passed generation=10",
+            "target_url": self.url,
+            "creator": {"login": "Halildeu"},
+        }
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                side_effect=[
+                    subprocess.CompletedProcess(
+                        ["gh"],
+                        0,
+                        stdout=json.dumps(self.current_pr(body)),
+                        stderr="",
+                    ),
+                    subprocess.CompletedProcess(
+                        ["gh"],
+                        0,
+                        stdout=json.dumps(
+                            [[self.pending(), self.ledger(), wrong_success]]
+                        ),
+                        stderr="",
+                    ),
+                ],
+            ),
+            self.assertRaises(SystemExit),
+        ):
+            MODULE.complete_status(self.repo, self.issue, self.event_path)
 
 
 if __name__ == "__main__":
