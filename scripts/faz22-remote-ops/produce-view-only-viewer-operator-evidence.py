@@ -91,6 +91,7 @@ def produce(
     cross_ai_trust_root: dict,
     cross_ai_revocations: dict,
     expected_cross_ai_trust_root_sha256: str,
+    codex_executable_policy: dict,
 ) -> dict:
     if repository != VERIFIER.EXPECTED_REPOSITORY:
         raise VERIFIER.EvidenceError(f"repository must be exactly {VERIFIER.EXPECTED_REPOSITORY}")
@@ -110,6 +111,7 @@ def produce(
         expected_cross_ai_trust_root_sha256=(
             expected_cross_ai_trust_root_sha256
         ),
+        codex_executable_policy=codex_executable_policy,
     )
     child = {
         "schemaVersion": "faz22.6.viewOnlyViewerProductChildEvidence.v2",
@@ -130,7 +132,7 @@ def produce(
     return child
 
 
-def load_current_authority_inputs() -> tuple[bytes, dict, dict, str]:
+def load_current_authority_inputs() -> tuple[bytes, dict, dict, str, dict]:
     authority = VERIFIER.load_active_authority(VERIFIER.ROOT)
     policy = VERIFIER.load_json_file(VERIFIER.OWNER_POLICY_V2, "active owner policy")
     binding = policy.get("aiAdvisory", {}).get("evidenceBinding", {})
@@ -149,6 +151,7 @@ def load_current_authority_inputs() -> tuple[bytes, dict, dict, str]:
         authority.trust_root,
         authority.revocations_envelope,
         authority.expected_trust_root_sha256,
+        authority.codex_executable_policy,
     )
 
 
@@ -162,7 +165,7 @@ def main() -> int:
     parser.add_argument("--github-token-env", default="GITHUB_TOKEN")
     args = parser.parse_args()
     try:
-        scope_bytes, trust_root, revocations, expected_root = (
+        scope_bytes, trust_root, revocations, expected_root, executable_policy = (
             load_current_authority_inputs()
         )
         result = produce(
@@ -172,6 +175,7 @@ def main() -> int:
             cross_ai_trust_root=trust_root,
             cross_ai_revocations=revocations,
             expected_cross_ai_trust_root_sha256=expected_root,
+            codex_executable_policy=executable_policy,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")

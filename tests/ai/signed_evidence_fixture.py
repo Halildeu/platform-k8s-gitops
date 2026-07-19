@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -19,7 +18,6 @@ from scripts.github_apps.cross_ai_deployment_policy.contract import (
 from scripts.github_apps.cross_ai_deployment_policy.provider import (
     CODEX_MODEL,
     CODEX_MODELS,
-    REVIEW_RESULT_SCHEMA_VERSION,
     ProviderExecutionReceipt,
     ProviderReviewIssuer,
     ReviewCoordinates,
@@ -27,18 +25,30 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
 from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory, digest
 
 
-AGREE_RESULT = json.dumps(
-    {
-        "schemaVersion": REVIEW_RESULT_SCHEMA_VERSION,
-        "verdict": "AGREE",
-        "findingIds": [],
-        "resolvedFindingIds": [],
-        "acknowledgedFindingIds": [],
-    },
-    ensure_ascii=False,
-    sort_keys=True,
-    separators=(",", ":"),
-)
+AGREE_RESULT = "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+
+
+def codex_executable_policy() -> dict[str, Any]:
+    return {
+        "schemaVersion": "acik.codex-executable-policy.v1",
+        "allowedExecutables": [
+            {
+                "platform": "darwin-arm64",
+                "sourceClass": "official-openai-npm-bundled-native",
+                "packageName": "@openai/codex",
+                "packageVersion": "9.9.9",
+                "cliSha256": digest("codex-native-bytes"),
+                "cliVersion": "codex-cli 9.9.9",
+                "cliVersionSha256": digest("codex-version"),
+                "signatureType": "apple-developer-id",
+                "signatureIdentity": (
+                    "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
+                ),
+                "signatureTeamId": "2DC432GLL2",
+                "signatureCdHashSha256": digest("codex-cdhash"),
+            }
+        ],
+    }
 
 
 class StaticSigner:
@@ -54,7 +64,11 @@ class StaticSigner:
         return self.factory.sign(payload_type, payload, self._key_id)
 
 
-def capability_snapshot(model: str = CODEX_MODEL) -> dict[str, Any]:
+def capability_snapshot(
+    model: str = CODEX_MODEL,
+    executable_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    policy = executable_policy or codex_executable_policy()
     return {
         "schemaVersion": "acik.direct-codex-launch-attestation.v1",
         "channel": "openai-codex",
@@ -63,6 +77,7 @@ def capability_snapshot(model: str = CODEX_MODEL) -> dict[str, Any]:
         "executableIdentityClass": "private-content-copy",
         "cliVersionSha256": digest("codex-version"),
         "liveModelCatalogSha256": digest("codex-model-catalog"),
+        "officialExecutableProvenance": dict(policy["allowedExecutables"][0]),
         "requestedModel": model,
         "providerReportedModel": None,
         "reasoningEffort": "xhigh",
@@ -77,8 +92,9 @@ def capability_snapshot(model: str = CODEX_MODEL) -> dict[str, Any]:
 
 def execution_receipt(
     prompt: str, *, response: str = AGREE_RESULT, model: str = CODEX_MODEL,
+    executable_policy: dict[str, Any] | None = None,
 ) -> ProviderExecutionReceipt:
-    capability = capability_snapshot(model)
+    capability = capability_snapshot(model, executable_policy)
     return ProviderExecutionReceipt(
         provider_family="openai",
         channel="openai-codex",
@@ -150,10 +166,12 @@ def make_signed_evidence(
         revocation_payload,
         factory.REVOCATION_KEY_ID,
     )
+    executable_policy = codex_executable_policy()
     authority = PublicReviewAuthority(
         trust_root=trust_root,
         revocations_envelope=revocations_envelope,
         expected_trust_root_sha256=sha256_digest(trust_root),
+        codex_executable_policy=executable_policy,
     )
     scope_bytes = scope_bytes or (
         b"CROSS_AI_REVIEW_SCOPE_V1\n"
@@ -182,7 +200,9 @@ def make_signed_evidence(
         scope_sha256="sha256:" + bindings["scope_sha256"],
         prompt=prompt,
     )
-    receipt = execution_receipt(prompt, model=model)
+    receipt = execution_receipt(
+        prompt, model=model, executable_policy=executable_policy
+    )
     envelope = ProviderReviewIssuer(
         signer=StaticSigner(factory, factory.OPENAI_KEY_ID),
         provider_family="openai",

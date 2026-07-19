@@ -293,9 +293,19 @@ done
 require_grep "actions: read" "$VIEWER_OPERATOR_WORKFLOW"
 require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_OPERATOR_EVIDENCE" "$VIEWER_OPERATOR_WORKFLOW"
 require_grep "produce-view-only-viewer-operator-evidence.py" "$VIEWER_OPERATOR_WORKFLOW"
-require_grep "cryptography==46.0.7" "$VIEWER_OPERATOR_WORKFLOW"
+require_grep "fetch-depth: 0" "$VIEWER_OPERATOR_WORKFLOW"
 require_grep "load_current_authority_inputs" "$VIEWER_OPERATOR_PRODUCER"
 require_grep 'faz22-6-view-only-viewer-operator-evidence-${{ github.run_id }}' "$VIEWER_OPERATOR_WORKFLOW"
+
+for workflow in "$VIEWER_APPLY_WORKFLOW" "$VIEWER_OPERATOR_WORKFLOW" "$VIEWER_PRODUCT_VERIFY_WORKFLOW"; do
+  require_grep "--require-hashes" "$workflow"
+  require_grep "--only-binary=:all:" "$workflow"
+  require_grep "scripts/github_apps/cross_ai_deployment_policy/requirements.lock" "$workflow"
+  if grep -Eq 'pip install --quiet (jsonschema|cryptography)' "$workflow"; then
+    echo "signed authority verifier dependencies must use the hash-pinned lock: $workflow" >&2
+    exit 1
+  fi
+done
 
 require_grep "actions: read" "$VIEWER_D30_WORKFLOW"
 require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_D30_EVIDENCE" "$VIEWER_D30_WORKFLOW"

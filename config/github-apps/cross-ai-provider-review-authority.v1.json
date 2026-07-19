@@ -1,5 +1,23 @@
 {
   "authoritySource": "test-vault-transit-public-export",
+  "codexExecutablePolicy": {
+    "allowedExecutables": [
+      {
+        "cliSha256": "sha256:29915529b97697def1a957b0505e770aa6a45744435d62fc263e98d7619e167a",
+        "cliVersion": "codex-cli 0.144.1",
+        "cliVersionSha256": "sha256:9b2aa513e4795f64fa05a9aa1cfaeb1bae2a18588b6ac52f8b84ea068b384b54",
+        "packageName": "@openai/codex",
+        "packageVersion": "0.144.1",
+        "platform": "darwin-arm64",
+        "signatureCdHashSha256": "sha256:d03151872f950e955737aa42334e5bc513dcabc29f7e8148aa4baf37d5e15443",
+        "signatureIdentity": "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)",
+        "signatureTeamId": "2DC432GLL2",
+        "signatureType": "apple-developer-id",
+        "sourceClass": "official-openai-npm-bundled-native"
+      }
+    ],
+    "schemaVersion": "acik.codex-executable-policy.v1"
+  },
   "expectedTrustRootSha256": null,
   "revocationsPath": null,
   "rotationPolicy": {

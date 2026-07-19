@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -28,7 +29,13 @@ from .timeutil import parse_utc
 
 MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_PROMPT_BYTES = 512 * 1024
-REVIEW_RESULT_SCHEMA_VERSION = "acik.cross-ai-provider-review-result.v1"
+CANONICAL_REVIEW_SECTIONS = ("P0", "P1", "P2")
+CANONICAL_FINDING_RE = re.compile(
+    r"^- (?P<finding_id>P[012]-[A-Z0-9][A-Z0-9_-]{1,59})"
+    r" \| (?P<path>[A-Za-z0-9_.][A-Za-z0-9_./-]{0,239})"
+    r":(?P<line>[1-9][0-9]{0,6})"
+    r" \| (?P<detail>\S.{8,499})$"
+)
 CODEX_ROUTINE_MODEL = "gpt-5.3-codex-spark"
 CODEX_HIGH_IMPACT_MODEL = "gpt-5.6-sol"
 CODEX_MODELS = frozenset({CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL})
@@ -36,6 +43,21 @@ CODEX_MODELS = frozenset({CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL})
 # be interpreted as a wildcard or a routine-route alias.
 CODEX_MODEL = CODEX_HIGH_IMPACT_MODEL
 ROOT = Path(__file__).resolve().parents[3]
+CODEX_EXECUTABLE_POLICY_SCHEMA = "acik.codex-executable-policy.v1"
+CODEX_EXECUTABLE_POLICY_KEYS = {"schemaVersion", "allowedExecutables"}
+CODEX_EXECUTABLE_ENTRY_KEYS = {
+    "platform",
+    "sourceClass",
+    "packageName",
+    "packageVersion",
+    "cliSha256",
+    "cliVersion",
+    "cliVersionSha256",
+    "signatureType",
+    "signatureIdentity",
+    "signatureTeamId",
+    "signatureCdHashSha256",
+}
 
 
 def _bytes_digest(value: bytes) -> str:
@@ -60,6 +82,178 @@ def _provider_json(raw: bytes, label: str) -> dict[str, Any]:
         reject("PROVIDER_OUTPUT_INVALID", f"{label} output is not JSON")
     if not isinstance(value, dict):
         reject("PROVIDER_OUTPUT_INVALID", f"{label} output is not an object")
+    return value
+
+
+def parse_canonical_review_response(text: str) -> dict[str, Any]:
+    """Parse the one raw provider response accepted by the signed v2 leaf.
+
+    The exact text is retained and digest-bound by the execution receipt.  This
+    parser derives only the signed finding projection; it never repairs,
+    normalizes or re-renders provider output.
+    """
+
+    if (
+        not isinstance(text, str)
+        or not text
+        or "\r" in text
+        or text.endswith("\n")
+        or len(text.encode("utf-8")) > MAX_PROVIDER_OUTPUT_BYTES
+    ):
+        reject(
+            "PROVIDER_REVIEW_RESULT_INVALID",
+            "provider review response bytes are not canonical",
+        )
+    lines = text.split("\n")
+    section_indexes: list[int] = []
+    for section in CANONICAL_REVIEW_SECTIONS:
+        matches = [index for index, line in enumerate(lines) if line == section]
+        if len(matches) != 1:
+            reject(
+                "PROVIDER_REVIEW_RESULT_INVALID",
+                f"provider review requires exactly one {section} heading",
+            )
+        section_indexes.append(matches[0])
+    verdict_indexes = [
+        index for index, line in enumerate(lines) if line.startswith("VERDICT:")
+    ]
+    if (
+        section_indexes[0] != 0
+        or not section_indexes[0] < section_indexes[1] < section_indexes[2]
+        or len(verdict_indexes) != 1
+        or verdict_indexes[0] != len(lines) - 1
+        or section_indexes[2] >= verdict_indexes[0]
+    ):
+        reject(
+            "PROVIDER_REVIEW_RESULT_INVALID",
+            "provider review section or terminal verdict order is invalid",
+        )
+    verdict_line = lines[-1]
+    if verdict_line not in {"VERDICT: AGREE", "VERDICT: REVISE"}:
+        reject(
+            "PROVIDER_REVIEW_RESULT_INVALID",
+            "provider review terminal verdict is invalid",
+        )
+    findings: list[str] = []
+    section_has_finding: dict[str, bool] = {}
+    boundaries = section_indexes[1:] + [verdict_indexes[0]]
+    for section, start, end in zip(
+        CANONICAL_REVIEW_SECTIONS, section_indexes, boundaries
+    ):
+        content = lines[start + 1 : end]
+        if content == ["None"]:
+            section_has_finding[section] = False
+            continue
+        if not content or "None" in content:
+            reject(
+                "PROVIDER_REVIEW_RESULT_INVALID",
+                f"provider review {section} content is invalid",
+            )
+        section_has_finding[section] = True
+        for line in content:
+            match = CANONICAL_FINDING_RE.fullmatch(line)
+            if match is None:
+                reject(
+                    "PROVIDER_REVIEW_RESULT_INVALID",
+                    f"provider review {section} finding lacks exact ID or file:line",
+                )
+            path_parts = match.group("path").split("/")
+            if (
+                not match.group("finding_id").startswith(f"{section}-")
+                or any(part in {"", ".", ".."} for part in path_parts)
+            ):
+                reject(
+                    "PROVIDER_REVIEW_RESULT_INVALID",
+                    f"provider review {section} finding identity or path is invalid",
+                )
+            findings.append(match.group("finding_id"))
+    if len(findings) != len(set(findings)):
+        reject(
+            "PROVIDER_REVIEW_RESULT_INVALID",
+            "provider review finding IDs must be unique",
+        )
+    verdict = verdict_line.removeprefix("VERDICT: ")
+    any_finding = any(section_has_finding.values())
+    if (verdict == "AGREE" and any_finding) or (
+        verdict == "REVISE" and not any_finding
+    ):
+        reject(
+            "PROVIDER_REVIEW_RESULT_INVALID",
+            "provider review verdict conflicts with P0/P1/P2 findings",
+        )
+    return {
+        "verdict": verdict,
+        "findingIds": findings,
+        "resolvedFindingIds": [],
+        "acknowledgedFindingIds": [],
+    }
+
+
+def validate_codex_executable_policy(value: Any) -> dict[str, Any]:
+    if (
+        not isinstance(value, dict)
+        or set(value) != CODEX_EXECUTABLE_POLICY_KEYS
+        or value.get("schemaVersion") != CODEX_EXECUTABLE_POLICY_SCHEMA
+    ):
+        reject(
+            "PROVIDER_EXECUTABLE_POLICY_INVALID",
+            "Codex executable policy fields are invalid",
+        )
+    entries = value.get("allowedExecutables")
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 8:
+        reject(
+            "PROVIDER_EXECUTABLE_POLICY_INVALID",
+            "Codex executable allowlist cardinality is invalid",
+        )
+    identities: set[tuple[str, str, str]] = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != CODEX_EXECUTABLE_ENTRY_KEYS:
+            reject(
+                "PROVIDER_EXECUTABLE_POLICY_INVALID",
+                "Codex executable allowlist entry fields are invalid",
+            )
+        identity = (
+            entry.get("platform"),
+            entry.get("packageVersion"),
+            entry.get("cliSha256"),
+        )
+        if identity in identities:
+            reject(
+                "PROVIDER_EXECUTABLE_POLICY_INVALID",
+                "Codex executable allowlist contains a duplicate release",
+            )
+        identities.add(identity)
+        digests = (
+            entry.get("cliSha256"),
+            entry.get("cliVersionSha256"),
+            entry.get("signatureCdHashSha256"),
+        )
+        if not all(
+            isinstance(item, str)
+            and re.fullmatch(r"sha256:[a-f0-9]{64}", item)
+            for item in digests
+        ):
+            reject(
+                "PROVIDER_EXECUTABLE_POLICY_INVALID",
+                "Codex executable allowlist digest is invalid",
+            )
+        if not (
+            entry.get("platform") in {"darwin-arm64", "darwin-x64"}
+            and entry.get("sourceClass")
+            == "official-openai-npm-bundled-native"
+            and entry.get("packageName") == "@openai/codex"
+            and isinstance(entry.get("packageVersion"), str)
+            and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", entry["packageVersion"])
+            and entry.get("cliVersion") == f"codex-cli {entry['packageVersion']}"
+            and entry.get("signatureType") == "apple-developer-id"
+            and entry.get("signatureIdentity")
+            == "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
+            and entry.get("signatureTeamId") == "2DC432GLL2"
+        ):
+            reject(
+                "PROVIDER_EXECUTABLE_POLICY_INVALID",
+                "Codex executable allowlist attribution is invalid",
+            )
     return value
 
 
@@ -204,56 +398,74 @@ class DirectClaudeRunner:
 
 
 class DirectCodexRunner:
-    def __init__(self, executable: Path | None = None) -> None:
+    def __init__(
+        self,
+        executable: Path | None = None,
+        *,
+        executable_policy: dict[str, Any],
+    ) -> None:
         selected = executable or Path(shutil.which("codex") or "codex")
-        self.executable = self._validated_native_executable(selected)
+        self.executable_policy = validate_codex_executable_policy(
+            executable_policy
+        )
+        (
+            self.executable,
+            self.package_version,
+            self.platform_id,
+        ) = self._validated_official_npm_executable(selected)
+        executable_sha256 = _bytes_digest(self.executable.read_bytes())
+        matches = [
+            entry
+            for entry in self.executable_policy["allowedExecutables"]
+            if entry["platform"] == self.platform_id
+            and entry["packageVersion"] == self.package_version
+            and entry["cliSha256"] == executable_sha256
+        ]
+        if len(matches) != 1:
+            reject(
+                "PROVIDER_EXECUTABLE_NOT_PINNED",
+                "Codex native binary is absent from the independent authority allowlist",
+            )
+        self.executable_provenance = dict(matches[0])
 
     @staticmethod
-    def _validated_native_executable(path: Path) -> Path:
-        """Resolve only a native Codex binary or the official npm wrapper.
+    def _validated_official_npm_executable(path: Path) -> tuple[Path, str, str]:
+        """Resolve only the native binary bundled by the official npm package.
 
-        A PATH-injected shell/Python shim must never receive the provider-review
-        signing route.  The official npm entrypoint is resolved to its bundled
-        platform-native binary before the private execution copy is made.
+        The byte, version and Apple signature are independently pinned by the
+        public authority after this package-layout provenance is established.
         """
 
         resolved = DirectClaudeRunner._validated_executable(path, "Codex")
-        try:
-            with resolved.open("rb") as handle:
-                header = handle.read(4)
-            mode = resolved.stat().st_mode
-        except OSError:
-            reject("PROVIDER_EXECUTABLE_INVALID", "Codex executable cannot be inspected")
-        native_magic = (
-            header == b"\x7fELF"
-            or header[:2] == b"MZ"
-            or header
-            in {
-                b"\xfe\xed\xfa\xce",
-                b"\xce\xfa\xed\xfe",
-                b"\xfe\xed\xfa\xcf",
-                b"\xcf\xfa\xed\xfe",
-                b"\xca\xfe\xba\xbe",
-                b"\xbe\xba\xfe\xca",
-            }
-        )
-        if native_magic:
-            if mode & 0o022:
-                reject(
-                    "PROVIDER_EXECUTABLE_INVALID",
-                    "Codex native executable is group/world writable",
-                )
-            return resolved
         if resolved.name != "codex.js" or resolved.parent.name != "bin":
             reject(
                 "PROVIDER_EXECUTABLE_INVALID",
-                "Codex executable is neither native nor the official npm wrapper",
+                "Codex executable is not the official npm wrapper",
             )
         package_root = resolved.parent.parent
         if package_root.name != "codex" or package_root.parent.name != "@openai":
             reject(
                 "PROVIDER_EXECUTABLE_INVALID",
                 "Codex npm wrapper is outside the official package layout",
+            )
+        try:
+            package = json.loads(
+                (package_root / "package.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            reject(
+                "PROVIDER_EXECUTABLE_INVALID",
+                "Codex official package metadata is unavailable",
+            )
+        if (
+            not isinstance(package, dict)
+            or package.get("name") != "@openai/codex"
+            or not isinstance(package.get("version"), str)
+            or not isinstance(package.get("optionalDependencies"), dict)
+        ):
+            reject(
+                "PROVIDER_EXECUTABLE_INVALID",
+                "Codex official package metadata is invalid",
             )
         candidates = [
             candidate.resolve()
@@ -268,6 +480,17 @@ class DirectCodexRunner:
                 "Codex npm wrapper does not resolve to one native platform binary",
             )
         native = candidates[0]
+        platform_package = native.parents[3]
+        platform_dependency = f"@openai/{platform_package.name}"
+        platform_suffix = platform_package.name.removeprefix("codex-")
+        expected_dependency = (
+            f"npm:@openai/codex@{package['version']}-{platform_suffix}"
+        )
+        if package["optionalDependencies"].get(platform_dependency) != expected_dependency:
+            reject(
+                "PROVIDER_EXECUTABLE_INVALID",
+                "Codex platform package is not bound to the official package version",
+            )
         try:
             with native.open("rb") as handle:
                 native_header = handle.read(4)
@@ -287,11 +510,67 @@ class DirectCodexRunner:
                 b"\xbe\xba\xfe\xca",
             }
         ) and not (native_mode & 0o022):
-            return native
+            return native, package["version"], platform_suffix
         reject(
             "PROVIDER_EXECUTABLE_INVALID",
             "Codex package native binary is mutable or invalid",
         )
+
+    @staticmethod
+    def _apple_signature_identity(path: Path) -> dict[str, str]:
+        codesign = Path("/usr/bin/codesign")
+        if not codesign.is_file():
+            reject(
+                "PROVIDER_EXECUTABLE_SIGNATURE_INVALID",
+                "Apple codesign verifier is unavailable",
+            )
+        verified = subprocess.run(
+            [str(codesign), "--verify", "--strict", str(path)],
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        details = subprocess.run(
+            [str(codesign), "-dv", "--verbose=4", str(path)],
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        if verified.returncode != 0 or details.returncode != 0:
+            reject(
+                "PROVIDER_EXECUTABLE_SIGNATURE_INVALID",
+                "Codex Apple signature verification failed",
+            )
+        try:
+            text = details.stderr.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            reject(
+                "PROVIDER_EXECUTABLE_SIGNATURE_INVALID",
+                "Codex Apple signature identity is not UTF-8",
+            )
+        values: dict[str, str] = {}
+        authorities: list[str] = []
+        for line in text.splitlines():
+            if line.startswith("Authority="):
+                authorities.append(line.removeprefix("Authority="))
+            elif line.startswith("TeamIdentifier="):
+                values["signatureTeamId"] = line.removeprefix("TeamIdentifier=")
+            elif line.startswith("CandidateCDHashFull sha256="):
+                values["signatureCdHashSha256"] = (
+                    "sha256:" + line.removeprefix("CandidateCDHashFull sha256=")
+                )
+        if authorities:
+            values["signatureIdentity"] = authorities[0]
+        if set(values) != {
+            "signatureIdentity",
+            "signatureTeamId",
+            "signatureCdHashSha256",
+        }:
+            reject(
+                "PROVIDER_EXECUTABLE_SIGNATURE_INVALID",
+                "Codex Apple signature identity is incomplete",
+            )
+        return values
 
     @staticmethod
     def _catalog_model(raw: bytes, model: str) -> dict[str, Any]:
@@ -395,6 +674,20 @@ class DirectCodexRunner:
                 shutil.copyfile(self.executable, pinned_executable)
                 pinned_executable.chmod(0o500)
                 pinned_digest = _bytes_digest(pinned_executable.read_bytes())
+                if pinned_digest != self.executable_provenance["cliSha256"]:
+                    reject(
+                        "PROVIDER_EXECUTABLE_CHANGED",
+                        "Codex executable differs from the independent authority pin",
+                    )
+                signature = self._apple_signature_identity(pinned_executable)
+                if any(
+                    signature[field] != self.executable_provenance[field]
+                    for field in signature
+                ):
+                    reject(
+                        "PROVIDER_EXECUTABLE_SIGNATURE_INVALID",
+                        "Codex signature differs from the independent authority pin",
+                    )
                 dispatch = {"executable": str(pinned_executable)}
                 version = subprocess.run(
                     [str(self.executable), "--version"],
@@ -420,6 +713,24 @@ class DirectCodexRunner:
                     reject(
                         "PROVIDER_CAPABILITY_UNAVAILABLE",
                         "Codex capability is unavailable",
+                    )
+                try:
+                    actual_version = version.stdout.strip().decode(
+                        "utf-8", errors="strict"
+                    )
+                except UnicodeDecodeError:
+                    reject(
+                        "PROVIDER_EXECUTABLE_VERSION_INVALID",
+                        "Codex version is not UTF-8",
+                    )
+                if (
+                    actual_version != self.executable_provenance["cliVersion"]
+                    or _bytes_digest(version.stdout.strip())
+                    != self.executable_provenance["cliVersionSha256"]
+                ):
+                    reject(
+                        "PROVIDER_EXECUTABLE_VERSION_INVALID",
+                        "Codex version differs from the independent authority pin",
                     )
                 self._catalog_model(catalog.stdout, model)
                 result = subprocess.run(
@@ -455,6 +766,7 @@ class DirectCodexRunner:
             "executableIdentityClass": "private-content-copy",
             "cliVersionSha256": _bytes_digest(version.stdout.strip()),
             "liveModelCatalogSha256": _bytes_digest(catalog.stdout),
+            "officialExecutableProvenance": self.executable_provenance,
             "requestedModel": model,
             "providerReportedModel": None,
             "reasoningEffort": "xhigh",
@@ -685,35 +997,7 @@ class ProviderReviewIssuer:
 
     @staticmethod
     def _review_result(text: str) -> dict[str, Any]:
-        payload = _provider_json(text.encode("utf-8"), "review result")
-        expected = {
-            "schemaVersion",
-            "verdict",
-            "findingIds",
-            "resolvedFindingIds",
-            "acknowledgedFindingIds",
-        }
-        if (
-            set(payload) != expected
-            or payload.get("schemaVersion") != REVIEW_RESULT_SCHEMA_VERSION
-            or payload.get("verdict") not in {"AGREE", "REVISE", "RED", "PARTIAL"}
-        ):
-            reject("PROVIDER_REVIEW_RESULT_INVALID", "provider review result shape is invalid")
-        for field in expected - {"schemaVersion", "verdict"}:
-            values = payload[field]
-            if (
-                not isinstance(values, list)
-                or len(values) != len(set(values))
-                or any(
-                    not isinstance(value, str)
-                    or not 2 <= len(value) <= 64
-                    or value.upper() != value
-                    or any(character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in value)
-                    for value in values
-                )
-            ):
-                reject("PROVIDER_REVIEW_RESULT_INVALID", f"{field} is invalid")
-        return payload
+        return parse_canonical_review_response(text)
 
     def issue(
         self,
@@ -735,6 +1019,8 @@ class ProviderReviewIssuer:
             or execution.capability_snapshot is None
             or sha256_digest(execution.capability_snapshot)
             != execution.capability_snapshot_sha256
+            or execution.output_sha256
+            != _bytes_digest(execution.result_text.encode("utf-8"))
         ):
             reject("PROVIDER_ISSUER_POLICY_MISMATCH", "execution receipt differs from issuer policy")
         self.validate_coordinates(coordinates)
@@ -797,6 +1083,7 @@ __all__ = [
     "DirectCodexRunner",
     "ProviderExecutionReceipt",
     "ProviderReviewIssuer",
-    "REVIEW_RESULT_SCHEMA_VERSION",
     "ReviewCoordinates",
+    "parse_canonical_review_response",
+    "validate_codex_executable_policy",
 ]

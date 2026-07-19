@@ -46,6 +46,7 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
     EnvelopeSigner,
     ProviderReviewIssuer,
     ReviewCoordinates,
+    parse_canonical_review_response,
 )
 from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc, utc_now
 from scripts.github_apps.cross_ai_deployment_policy.transit import VaultTransitSigner
@@ -196,7 +197,12 @@ def build_signed_evidence(
         or key.direct_provider_cli is not True
     ):
         reject("TRUST_SIGNER_BINDING_MISMATCH", "provider signer route is not fixed Codex")
-    execution = (runner or DirectCodexRunner()).run(
+    execution = (
+        runner
+        or DirectCodexRunner(
+            executable_policy=active_authority.codex_executable_policy
+        )
+    ).run(
         prompt=prompt,
         model=model,
         workspace=workspace,
@@ -227,6 +233,7 @@ def build_signed_evidence(
         trust_root=trust_root,
         revocations_envelope=revocations,
         expected_trust_root_sha256=active_authority.expected_trust_root_sha256,
+        codex_executable_policy=active_authority.codex_executable_policy,
         expected_bindings=bindings,
         scope_bytes=scope_bytes,
         now=now,
@@ -245,7 +252,7 @@ def build_signed_evidence(
         "model_id": model,
         "model_identity_class": "trusted-launch-attested",
         "review_envelope_sha256": sha256_digest(envelope),
-        "verdict": json.loads(execution.result_text)["verdict"],
+        "verdict": parse_canonical_review_response(execution.result_text)["verdict"],
     }
 
 

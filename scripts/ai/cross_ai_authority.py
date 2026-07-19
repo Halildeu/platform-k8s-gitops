@@ -34,6 +34,7 @@ class PublicReviewAuthority:
     trust_root: dict[str, Any]
     revocations_envelope: dict[str, Any]
     expected_trust_root_sha256: str
+    codex_executable_policy: dict[str, Any]
 
 
 def load_active_authority(
@@ -83,6 +84,7 @@ def load_active_authority(
         trust_root=trust_root,
         revocations_envelope=revocations,
         expected_trust_root_sha256=expected,
+        codex_executable_policy=manifest["codexExecutablePolicy"],
     )
 
 

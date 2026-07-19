@@ -25,9 +25,15 @@ paths declared by the locator. No private Vault key or token belongs in these
 public files. The public root may live at most 720 hours; provider-review keys
 rotate within 168 hours with at least 24 hours overlap. Signed revocations must
 refresh within 60 minutes and individual review leaves remain bounded to 120
-minutes. Updating a CLI does not rotate the root: the signed launch capability
-snapshot binds the pinned-copy CLI digest, version, live model catalog and
-fixed arguments inside each provider-review leaf.
+minutes. `codexExecutablePolicy` is the independently reviewed, release-managed
+official executable allowlist: the runner must resolve the OpenAI npm wrapper,
+match the bundled native binary byte digest and CLI version, and verify its
+Apple Developer ID identity, team and full CDHash before launch. These values
+are never accepted from the runner, caller or review response. Updating Codex
+therefore requires an explicit authority-manifest policy change, but does not
+rotate the provider-review signing root. The signed launch capability snapshot
+then binds the matched allowlist entry, private-copy digest, live model catalog
+and fixed arguments inside each provider-review leaf.
 
 The public root contains only the OpenAI provider-review role plus one each of
 the coordinator, revocation and runner-management roles. A provider rotation
@@ -39,6 +45,9 @@ into the active v2 root. The OpenAI role permits only the fixed routine
 `gpt-5.3-codex-spark` and high-impact `gpt-5.6-sol` routes; both remain xhigh,
 read-only, ephemeral and trusted-launch-attested. The former short-lived
 staging root is forensic-only and is not an allowed locator target or fallback.
+The routine Spark route is currently `tracked_pending` because the live Codex
+catalog does not list its exact slug. It has no model or wrapper fallback;
+routine work uses consultation mode `none` until that exact route becomes live.
 
 `build_cross_ai_provider_review_revocations.py` is the only repository release
 entrypoint for the public revocation file. It signs only

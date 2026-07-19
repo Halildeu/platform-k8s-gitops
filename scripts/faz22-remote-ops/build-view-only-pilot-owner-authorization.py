@@ -162,6 +162,7 @@ def build_authorization(
     cross_ai_trust_root: dict[str, Any],
     cross_ai_revocations: dict[str, Any],
     expected_cross_ai_trust_root_sha256: str,
+    codex_executable_policy: dict[str, Any],
 ) -> dict[str, Any]:
     require_keys(policy, {"schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking", "scope", "authorization", "lifecycle"}, "owner policy")
     if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "active":
@@ -207,6 +208,7 @@ def build_authorization(
             trust_root=cross_ai_trust_root,
             revocations_envelope=cross_ai_revocations,
             expected_trust_root_sha256=expected_cross_ai_trust_root_sha256,
+            codex_executable_policy=codex_executable_policy,
             reference_time=issued,
         )
     except CodexEvidenceError as exc:
@@ -353,6 +355,7 @@ def main() -> int:
             cross_ai_trust_root=authority.trust_root,
             cross_ai_revocations=authority.revocations_envelope,
             expected_cross_ai_trust_root_sha256=authority.expected_trust_root_sha256,
+            codex_executable_policy=authority.codex_executable_policy,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(canonical_receipt_bytes(result))

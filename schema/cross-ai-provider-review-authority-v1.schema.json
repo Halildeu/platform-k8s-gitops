@@ -8,6 +8,7 @@
     "schemaVersion",
     "status",
     "authoritySource",
+    "codexExecutablePolicy",
     "trustRootPath",
     "revocationsPath",
     "expectedTrustRootSha256",
@@ -22,6 +23,9 @@
     },
     "authoritySource": {
       "const": "test-vault-transit-public-export"
+    },
+    "codexExecutablePolicy": {
+      "$ref": "#/$defs/codexExecutablePolicy"
     },
     "trustRootPath": {
       "oneOf": [
@@ -57,6 +61,68 @@
         "minimumKeyOverlapHours": {"const": 24},
         "maxRevocationStalenessMinutes": {"const": 60},
         "maxReviewLeafLifetimeMinutes": {"const": 120}
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "codexExecutablePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "allowedExecutables"],
+      "properties": {
+        "schemaVersion": {
+          "const": "acik.codex-executable-policy.v1"
+        },
+        "allowedExecutables": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "platform",
+              "sourceClass",
+              "packageName",
+              "packageVersion",
+              "cliSha256",
+              "cliVersion",
+              "cliVersionSha256",
+              "signatureType",
+              "signatureIdentity",
+              "signatureTeamId",
+              "signatureCdHashSha256"
+            ],
+            "properties": {
+              "platform": {"enum": ["darwin-arm64", "darwin-x64"]},
+              "sourceClass": {
+                "const": "official-openai-npm-bundled-native"
+              },
+              "packageName": {"const": "@openai/codex"},
+              "packageVersion": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+              },
+              "cliSha256": {"$ref": "#/$defs/digest"},
+              "cliVersion": {
+                "type": "string",
+                "pattern": "^codex-cli [0-9]+\\.[0-9]+\\.[0-9]+$"
+              },
+              "cliVersionSha256": {"$ref": "#/$defs/digest"},
+              "signatureType": {"const": "apple-developer-id"},
+              "signatureIdentity": {
+                "const": "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)"
+              },
+              "signatureTeamId": {"const": "2DC432GLL2"},
+              "signatureCdHashSha256": {"$ref": "#/$defs/digest"}
+            }
+          }
+        }
       }
     }
   },

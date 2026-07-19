@@ -33,6 +33,9 @@ class EvidenceValidationTests(unittest.TestCase):
             expected_trust_root_sha256=(
                 self.fixture.authority.expected_trust_root_sha256
             ),
+            codex_executable_policy=(
+                self.fixture.authority.codex_executable_policy
+            ),
             expected_bindings=self.fixture.bindings,
             scope_bytes=self.fixture.scope_bytes,
             now=self.fixture.factory.now,
@@ -50,15 +53,12 @@ class EvidenceValidationTests(unittest.TestCase):
 
     def test_rejects_response_repackaging_even_when_outer_text_is_well_formed(self) -> None:
         evidence = copy.deepcopy(self.fixture.evidence)
-        evidence["response"] = canonical_bytes(
-            {
-                "schemaVersion": "acik.cross-ai-provider-review-result.v1",
-                "verdict": "REVISE",
-                "findingIds": ["REPACKAGED_RESPONSE"],
-                "resolvedFindingIds": [],
-                "acknowledgedFindingIds": [],
-            }
-        ).decode("utf-8")
+        evidence["response"] = (
+            "P0\nNone\nP1\n"
+            "- P1-REPACKAGED_RESPONSE | scripts/ai/example.py:10 | "
+            "A different canonical response was repackaged.\n"
+            "P2\nNone\nVERDICT: REVISE"
+        )
         with self.assertRaisesRegex(TrustedEvidenceError, "leaf binding mismatch"):
             validate_evidence(
                 evidence,
@@ -66,6 +66,9 @@ class EvidenceValidationTests(unittest.TestCase):
                 revocations_envelope=self.fixture.authority.revocations_envelope,
                 expected_trust_root_sha256=(
                     self.fixture.authority.expected_trust_root_sha256
+                ),
+                codex_executable_policy=(
+                    self.fixture.authority.codex_executable_policy
                 ),
                 expected_bindings=self.fixture.bindings,
                 scope_bytes=self.fixture.scope_bytes,
@@ -82,6 +85,9 @@ class EvidenceValidationTests(unittest.TestCase):
                 revocations_envelope=self.fixture.authority.revocations_envelope,
                 expected_trust_root_sha256=(
                     self.fixture.authority.expected_trust_root_sha256
+                ),
+                codex_executable_policy=(
+                    self.fixture.authority.codex_executable_policy
                 ),
                 expected_bindings=self.fixture.bindings,
                 scope_bytes=wrong_scope,
@@ -109,6 +115,9 @@ class EvidenceValidationTests(unittest.TestCase):
                 expected_trust_root_sha256=(
                     self.fixture.authority.expected_trust_root_sha256
                 ),
+                codex_executable_policy=(
+                    self.fixture.authority.codex_executable_policy
+                ),
                 expected_bindings=bindings,
                 scope_bytes=self.fixture.scope_bytes,
                 now=self.fixture.factory.now,
@@ -131,6 +140,24 @@ class EvidenceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(TrustedEvidenceError, "fixed route"):
             self.validate(capability)
 
+    def test_verifier_rejects_executable_provenance_outside_its_own_policy(self) -> None:
+        policy = copy.deepcopy(self.fixture.authority.codex_executable_policy)
+        policy["allowedExecutables"][0]["cliSha256"] = "sha256:" + ("0" * 64)
+        with self.assertRaisesRegex(TrustedEvidenceError, "independently pinned"):
+            validate_evidence(
+                self.fixture.evidence,
+                trust_root=self.fixture.authority.trust_root,
+                revocations_envelope=self.fixture.authority.revocations_envelope,
+                expected_trust_root_sha256=(
+                    self.fixture.authority.expected_trust_root_sha256
+                ),
+                codex_executable_policy=policy,
+                expected_bindings=self.fixture.bindings,
+                scope_bytes=self.fixture.scope_bytes,
+                now=self.fixture.factory.now,
+                require_agree=True,
+            )
+
     def test_loader_requires_exact_canonical_create_once_carrier_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "evidence.json"
@@ -147,6 +174,7 @@ class EvidenceValidationTests(unittest.TestCase):
             trust_root=fixture.authority.trust_root,
             revocations_envelope=fixture.authority.revocations_envelope,
             expected_trust_root_sha256=fixture.authority.expected_trust_root_sha256,
+            codex_executable_policy=fixture.authority.codex_executable_policy,
             expected_bindings=fixture.bindings,
             scope_bytes=fixture.scope_bytes,
             now=fixture.factory.now,
