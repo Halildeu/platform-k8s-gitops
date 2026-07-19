@@ -58,7 +58,6 @@ const ROUTINE_CODEX_MODEL = 'gpt-5.3-codex-spark';
 const HIGH_IMPACT_CODEX_MODEL = 'gpt-5.6-sol';
 const REQUIRED_REASONING_EFFORT = 'xhigh';
 const REQUIRED_SANDBOX = 'read-only';
-const FORBIDDEN_CONSULTATION_FIELDS = new Set(['claude receipt', 'minimax receipt']);
 const CONSULTATION_MODES = new Set(['none', 'single']);
 const CONSULTATION_CLASSES = new Set(['routine', 'high-impact']);
 const GENESIS_WORKFLOW_PATH = '.github/workflows/cross-ai-provider-review-genesis.yml';
@@ -482,7 +481,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Consultation class|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|Claude receipt|MiniMax receipt|Codex receipt|Authority genesis run|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Consultation mode|Consultation reason|Consultation class|Risk trigger|Consultation base tip|Consultation base|Consultation commit|Consultation scope|[A-Za-z][A-Za-z0-9 _./-]{0,63} receipt|Authority genesis run|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -892,8 +891,8 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
   const implementer = normalizeProvider(fields['implementer ai']);
   const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
   const presentReceipts = receiptNames.filter((field) => Object.hasOwn(fields, field));
-  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
-    Object.hasOwn(fields, field)
+  const forbiddenFields = Object.keys(fields).filter((field) =>
+    field.endsWith(' receipt') && !receiptNames.includes(field)
   );
   const genesisPhase = genesisTransition(prMeta?.changedFiles);
   const genesisRunRef = (fields['authority genesis run'] || '').trim();
@@ -1102,8 +1101,9 @@ async function audit(body, prMeta = null, evidenceOverrides = {}) {
 
   const fields = extractFields(section);
   appendDuplicateFieldFinding(findings, fields);
-  const forbiddenFields = [...FORBIDDEN_CONSULTATION_FIELDS].filter((field) =>
-    Object.hasOwn(fields, field)
+  const receiptNames = Object.keys(CONSULTATION_RECEIPTS);
+  const forbiddenFields = Object.keys(fields).filter((field) =>
+    field.endsWith(' receipt') && !receiptNames.includes(field)
   );
   findings.push({
     check: 'consultation_has_no_forbidden_provider_receipt',
