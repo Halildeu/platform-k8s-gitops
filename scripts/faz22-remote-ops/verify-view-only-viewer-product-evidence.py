@@ -1070,6 +1070,7 @@ def verify_activation_authorization(
     cross_ai_revocations: dict[str, Any] | None = None,
     expected_cross_ai_trust_root_sha256: str | None = None,
     codex_executable_policy: dict[str, Any] | None = None,
+    authority_observed_at: datetime | None = None,
 ) -> datetime:
     run_id = operator["activationRunId"]
     run = fetch_run(
@@ -1325,6 +1326,7 @@ def verify_activation_authorization(
             or cross_ai_revocations is None
             or expected_cross_ai_trust_root_sha256 is None
             or codex_executable_policy is None
+            or authority_observed_at is None
         ):
             raise EvidenceError("signed Codex advisory authority inputs are unavailable")
         runtime_advisory_contract = {
@@ -1381,7 +1383,8 @@ def verify_activation_authorization(
                             expected_cross_ai_trust_root_sha256
                         ),
                         codex_executable_policy=codex_executable_policy,
-                        reference_time=pilot_started,
+                        authority_observed_at=authority_observed_at,
+                        review_reference_time=pilot_started,
                     )
                 except CodexEvidenceError as exc:
                     raise EvidenceError(
@@ -1658,6 +1661,7 @@ def validate_semantics(
         cross_ai_revocations=cross_ai_revocations,
         expected_cross_ai_trust_root_sha256=expected_cross_ai_trust_root_sha256,
         codex_executable_policy=codex_executable_policy,
+        authority_observed_at=now,
     )
     validate_negative_and_termination(
         children["negative"]["payload"], children["termination"]["payload"],

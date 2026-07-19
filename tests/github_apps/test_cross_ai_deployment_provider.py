@@ -23,6 +23,7 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
     ProviderExecutionReceipt,
     ProviderReviewIssuer,
     ReviewCoordinates,
+    canonical_codex_execution_arguments,
     parse_canonical_review_response,
 )
 from tests.github_apps.cross_ai_policy_fixtures import FixtureFactory, digest
@@ -213,25 +214,27 @@ class ProviderExecutionTest(unittest.TestCase):
         self.assertEqual(dispatched_executable.name, "codex")
         self.assertNotEqual(dispatched_executable, runner.executable)
         self.assertFalse(dispatched_executable.exists())
+        review_root = Path(run.call_args_list[2].kwargs["cwd"])
+        self.assertFalse(review_root.exists())
+        self.assertFalse(review_root.is_relative_to(self.workspace.resolve()))
+        self.assertTrue(
+            all(Path(call.kwargs["cwd"]) == review_root for call in run.call_args_list)
+        )
         self.assertEqual(
             run.call_args_list[2].args[0],
             [
                 str(runner.executable),
-                "exec",
-                "--ignore-user-config",
-                "--ignore-rules",
-                "-c",
-                'model_reasoning_effort="xhigh"',
-                "--model",
-                CODEX_MODEL,
-                "--sandbox",
-                "read-only",
-                "--ephemeral",
-                "--json",
-                "-C",
-                str(self.workspace.resolve()),
-                "-",
+                *canonical_codex_execution_arguments(
+                    CODEX_MODEL, str(review_root.resolve())
+                ),
             ],
+        )
+        self.assertEqual(
+            receipt.capability_snapshot["toolPolicy"], "none-pre-execution"
+        )
+        self.assertIn("shell_tool", run.call_args_list[2].args[0])
+        self.assertNotIn(
+            str(self.workspace.resolve()), run.call_args_list[2].args[0]
         )
 
     def test_direct_codex_accepts_prompt_above_legacy_512k_scope_limit(self) -> None:

@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import view_only_viewer_source_common as common
@@ -91,6 +92,7 @@ def produce(
     cross_ai_revocations: dict,
     expected_cross_ai_trust_root_sha256: str,
     codex_executable_policy: dict,
+    authority_observed_at: datetime | None = None,
 ) -> dict:
     if repository != VERIFIER.EXPECTED_REPOSITORY:
         raise VERIFIER.EvidenceError(f"repository must be exactly {VERIFIER.EXPECTED_REPOSITORY}")
@@ -111,6 +113,9 @@ def produce(
             expected_cross_ai_trust_root_sha256
         ),
         codex_executable_policy=codex_executable_policy,
+        authority_observed_at=(
+            authority_observed_at or datetime.now(timezone.utc)
+        ),
     )
     child = {
         "schemaVersion": "faz22.6.viewOnlyViewerProductChildEvidence.v2",

@@ -42,6 +42,31 @@ CANONICAL_FINDING_RE = re.compile(
 CODEX_ROUTINE_MODEL = "gpt-5.3-codex-spark"
 CODEX_HIGH_IMPACT_MODEL = "gpt-5.6-sol"
 CODEX_MODELS = frozenset({CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL})
+CODEX_NO_TOOL_FEATURES = (
+    "apps",
+    "browser_use",
+    "browser_use_external",
+    "browser_use_full_cdp_access",
+    "chronicle",
+    "code_mode",
+    "code_mode_host",
+    "code_mode_only",
+    "computer_use",
+    "enable_fanout",
+    "enable_mcp_apps",
+    "goals",
+    "hooks",
+    "image_generation",
+    "memories",
+    "multi_agent",
+    "multi_agent_v2",
+    "remote_plugin",
+    "shell_tool",
+    "skill_mcp_dependency_install",
+    "standalone_web_search",
+    "unified_exec",
+    "workspace_dependencies",
+)
 # Compatibility name for existing high-impact/Faz 22 consumers. It must never
 # be interpreted as a wildcard or a routine-route alias.
 CODEX_MODEL = CODEX_HIGH_IMPACT_MODEL
@@ -65,6 +90,40 @@ CODEX_EXECUTABLE_ENTRY_KEYS = {
 
 def _bytes_digest(value: bytes) -> str:
     return f"sha256:{hashlib.sha256(value).hexdigest()}"
+
+
+def canonical_codex_execution_arguments(
+    model: str, bound_workspace: str = "<BOUND_WORKSPACE>",
+) -> list[str]:
+    if model not in CODEX_MODELS:
+        reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not the pinned route")
+    arguments = [
+        "exec",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--strict-config",
+        "-c",
+        'model_reasoning_effort="xhigh"',
+        "-c",
+        'web_search="disabled"',
+    ]
+    for feature in CODEX_NO_TOOL_FEATURES:
+        arguments.extend(("--disable", feature))
+    arguments.extend(
+        (
+            "--model",
+            model,
+            "--sandbox",
+            "read-only",
+            "--ephemeral",
+            "--json",
+            "--skip-git-repo-check",
+            "-C",
+            bound_workspace,
+            "-",
+        )
+    )
+    return arguments
 
 
 def _no_duplicate_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -677,31 +736,21 @@ class DirectCodexRunner:
     ) -> ProviderExecutionReceipt:
         if model not in CODEX_MODELS:
             reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not the pinned route")
+        if not workspace.resolve().is_dir():
+            reject("PROVIDER_WORKSPACE_INVALID", "source workspace is unavailable")
         prompt_bytes = prompt.encode("utf-8")
         if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
             reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
         catalog_command = [str(self.executable), "debug", "models"]
-        execution_command = [
-            str(self.executable),
-            "exec",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "-c",
-            'model_reasoning_effort="xhigh"',
-            "--model",
-            model,
-            "--sandbox",
-            "read-only",
-            "--ephemeral",
-            "--json",
-            "-C",
-            str(workspace.resolve()),
-            "-",
-        ]
         try:
-            with tempfile.TemporaryDirectory(
-                prefix="cross-ai-codex-", dir=workspace.resolve()
-            ) as directory:
+            # The untrusted git diff is already embedded in the canonical
+            # prompt. Run in a new empty root outside the repository and remove
+            # every Codex feature that can read local/external state before the
+            # provider sees the prompt. Transcript rejection remains a second
+            # boundary, not the primary no-tool control.
+            with tempfile.TemporaryDirectory(prefix="cross-ai-codex-") as directory:
+                review_root = Path(directory) / "review"
+                review_root.mkdir(mode=0o700)
                 pinned_executable = Path(directory) / "codex"
                 shutil.copyfile(self.executable, pinned_executable)
                 pinned_executable.chmod(0o500)
@@ -723,7 +772,7 @@ class DirectCodexRunner:
                 dispatch = {"executable": str(pinned_executable)}
                 version = subprocess.run(
                     [str(self.executable), "--version"],
-                    cwd=workspace,
+                    cwd=review_root,
                     capture_output=True,
                     check=False,
                     timeout=30,
@@ -731,7 +780,7 @@ class DirectCodexRunner:
                 )
                 catalog = subprocess.run(
                     catalog_command,
-                    cwd=workspace,
+                    cwd=review_root,
                     capture_output=True,
                     check=False,
                     timeout=60,
@@ -765,9 +814,18 @@ class DirectCodexRunner:
                         "Codex version differs from the independent authority pin",
                     )
                 self._catalog_model(catalog.stdout, model)
+                public_execution_arguments = canonical_codex_execution_arguments(
+                    model
+                )
+                execution_command = [
+                    str(self.executable),
+                    *canonical_codex_execution_arguments(
+                        model, str(review_root.resolve())
+                    ),
+                ]
                 result = subprocess.run(
                     execution_command,
-                    cwd=workspace,
+                    cwd=review_root,
                     input=prompt_bytes,
                     capture_output=True,
                     check=False,
@@ -787,9 +845,6 @@ class DirectCodexRunner:
         if result.returncode != 0:
             reject("PROVIDER_EXECUTION_FAILED", "direct Codex execution failed")
         text, thread_id = self._terminal_result(result.stdout)
-        public_execution_arguments = list(execution_command[1:])
-        workspace_index = public_execution_arguments.index("-C") + 1
-        public_execution_arguments[workspace_index] = "<BOUND_WORKSPACE>"
         capability_snapshot = {
             "schemaVersion": "acik.direct-codex-launch-attestation.v1",
             "channel": "openai-codex",
@@ -804,6 +859,7 @@ class DirectCodexRunner:
             "reasoningEffort": "xhigh",
             "sandbox": "read-only",
             "ephemeral": True,
+            "toolPolicy": "none-pre-execution",
             "launchConfiguration": {
                 "catalogArguments": catalog_command[1:],
                 "executionArguments": public_execution_arguments,
