@@ -377,6 +377,7 @@ require_grep 'test ! -L "$install_root/gitleaks"' "$PINNED_GITLEAKS_INSTALLER"
 require_grep 'readonly RUNNER_ROOT="${RUNNER_TEMP:?RUNNER_TEMP is required}"' "$PINNED_GITLEAKS_INSTALLER"
 require_not_grep 'rm -rf "$install_root"' "$PINNED_GITLEAKS_INSTALLER"
 require_grep 'bash scripts/ci/install-pinned-gitleaks.sh' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'bash scripts/ci/install-pinned-gitleaks.sh' "$VIEWER_OPERATOR_WORKFLOW"
 require_grep 'bash scripts/ci/install-pinned-gitleaks.sh' "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
 
 require_grep "actions: read" "$VIEWER_D30_WORKFLOW"
