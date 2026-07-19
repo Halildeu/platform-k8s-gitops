@@ -55,7 +55,13 @@
 - Script global dosya kilidi, stale ephemeral-role preflight'ı, her CLI çağrısı öncesi writer/`ats_app`/live-image drift kontrolü, 120 saniye container timeout'u ve üç denemeli `REVOKE`+`DROP ROLE` cleanup uygular. `INT`/`TERM`/`HUP` cleanup'a yönlenir; `SIGKILL`/host-crash cleanup'ı teknik olarak çalıştıramaz. Sonraki koşum stale role sayısını fail-loud bildirir; otomatik wildcard role silme yapmaz.
 - Stale role reconciliation otomatik değildir: önce `SELECT rolname FROM pg_roles WHERE rolname ~ '^ats_governance_op_[0-9a-f]{16}$'` ve `pg_stat_activity` ile exact rol/oturum incelenir; yalnız doğrulanan exact isim için aktif oturumlar sonlandırılıp üyelik revoke edilir ve rol drop edilir. Wildcard/dinamik toplu drop yasaktır; işlem issue #2526 kanıtına yazılır ve recovery baştan çalıştırılır.
 - Append sonrası kabul: CLI projeksiyonu `APPROVED idempotent=true`; eski approval sequence `0` + genesis previous-hash ile byte-for-byte korunur, yeni artifact approval sequence `1` olur ve `previous_hash` eski satırın exact `entry_hash` değerine eşitlenir. Yeni satır exact actor/reason ve CLI çıktısıyla aynı 64-hex entry-hash taşır. İlk append ve idempotent replay aynı iki-satırlı zincir sözleşmesiyle doğrulanır. Test-PG append-only mekanizma kanıtıdır; mevzuatsal/harici WORM depolama iddiası değildir.
-- Bu owner-delegated test kararı direct Anthropic Claude + provider-ayrık Cursor CLI `AGREE` zincirine ve runtime issue #2526 kanıtına bağlıdır. AI review, gerçek prod secret-owner/hukuk/DPO imzası veya GitHub protected Environment insan tıklaması yerine geçmez.
+- Bu owner-delegated test kararının eski Anthropic Claude + Cursor `AGREE`
+  zinciri yalnız tarihsel audit kaydıdır ve yeni grant/activation yetkisi
+  üretmez. İleri yönde yüksek-etkili yeniden inceleme yalnız ayrı bağlamdaki
+  direct OpenAI Codex CLI `gpt-5.6-sol xhigh`, `read-only`, `ephemeral` kanıtı
+  ve runtime issue #2526 ile kabul edilir. AI review, gerçek prod
+  secret-owner/hukuk/DPO imzası veya GitHub protected Environment insan
+  tıklaması yerine geçmez.
 - Append rollback'i satır silmek/değiştirmek değildir; WORM trigger bunu reddeder. Ürün rollout rollback'i image/config GitOps PR'ıyla yapılır ve transition additive kalır. Gerçek bir revoke kararı ayrı transition kimliği, exact confirmation ve yeni kayıtlı owner/reviewer kararı ister.
 
 ### 39d-4 KANIT (2026-07-11, 14/14 PASS FAIL=0 — `scripts/ats/d29-smoke.sh`)

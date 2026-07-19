@@ -42,7 +42,7 @@ VIEWER_AUTH_BUILDER="$ROOT/scripts/faz22-remote-ops/build-view-only-pilot-owner-
 VIEWER_AUTH_VERIFIER="$ROOT/scripts/faz22-remote-ops/verify-view-only-pilot-authorization-receipt.py"
 VIEWER_AUTH_COMMON="$ROOT/scripts/faz22-remote-ops/view_only_pilot_authorization_common.py"
 VIEWER_EXACT_ZIP="$ROOT/scripts/faz22-remote-ops/extract-exact-zip.py"
-VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v1.json"
+VIEWER_OWNER_POLICY="$ROOT/config/faz22-6-view-only-pilot-owner-policy.v2.json"
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
 VIEWER_CONFIG_PATCH="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer/configmap-viewer-patch.yaml"
@@ -377,6 +377,13 @@ require_grep 'legalClearanceClaimed' "$VIEWER_AUTH_BUILDER"
 require_grep 'providerCryptographicAttestation' "$VIEWER_AUTH_BUILDER"
 require_grep 'canonical_receipt_bytes' "$VIEWER_AUTH_COMMON"
 require_grep 'canonical_receipt_bytes' "$VIEWER_AUTH_BUILDER"
+require_grep 'faz22.6-view-only-pilot-owner-policy-v2' "$VIEWER_OWNER_POLICY"
+require_grep '"status": "tracked_pending"' "$VIEWER_OWNER_POLICY"
+require_grep 'OpenAI/gpt-5.6-sol' "$VIEWER_OWNER_POLICY"
+if grep -Eqi 'Anthropic|Claude|MiniMax|Cursor' "$VIEWER_OWNER_POLICY"; then
+  echo "Codex-only v2 owner policy contains a retired provider" >&2
+  exit 1
+fi
 require_grep 'action=rollback' "$VIEWER_OWNER_POLICY"
 require_grep '"revokedAuthorizationSha256": []' "$VIEWER_REVOCATIONS"
 require_grep "pilot_ttl_minutes must be between 5 and 120" "$VIEWER_APPLY_WORKFLOW"

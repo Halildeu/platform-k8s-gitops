@@ -30,7 +30,26 @@ AUTHORIZATION_ARTIFACT_ID = 500001
 OWNER_COMMENT_ID = 900001
 ADVISORY_COMMENT_ID = 900002
 OWNER_COMMENT_BODY = "Owner authorizes the bounded attended VIEW_ONLY test pilot; legal clearance is not claimed."
-ADVISORY_COMMENT_BODY = "Claude Opus 4.8 and Codex 5.6 SOL agree on the bounded engineering authorization with legal tracked_pending."
+ADVISORY_RESPONSE = "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"
+ADVISORY_COMMENT_BODY = json.dumps(
+    {
+        "schema": "cross-ai-provider-evidence/v2",
+        "provider": "openai",
+        "requested_model": "gpt-5.6-sol",
+        "actual_model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh",
+        "sandbox": "read-only",
+        "ephemeral": True,
+        "base_tip_sha": "0" * 40,
+        "base_sha": "0" * 40,
+        "head_sha": HEAD_SHA,
+        "scope_sha256": "b" * 64,
+        "verdict": "AGREE",
+        "response_sha256": hashlib.sha256(ADVISORY_RESPONSE.encode()).hexdigest(),
+        "response": ADVISORY_RESPONSE,
+    },
+    separators=(",", ":"),
+)
 
 
 def sha(char):
@@ -506,7 +525,7 @@ def encode_zip(files):
 
 def owner_policy_fixture():
     return {
-        "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v1",
+        "schemaVersion": "faz22.6-view-only-pilot-owner-policy-v2",
         "status": "active",
         "ownerDirective": {
             "commentId": OWNER_COMMENT_ID,
@@ -523,8 +542,8 @@ def owner_policy_fixture():
             "authorAssociation": "OWNER",
             "advisoryOnly": True,
             "consensusVerdict": "AGREE",
-            "providers": ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"],
-            "provenanceClass": "owner-attested-provider-session",
+            "providers": ["OpenAI/gpt-5.6-sol"],
+            "provenanceClass": "owner-attested-direct-codex-evidence-v2",
             "providerCryptographicAttestation": False,
         },
         "legalTracking": {
@@ -588,7 +607,7 @@ def authorization_document():
         "ownerDirectiveRef": owner_policy_fixture()["ownerDirective"]["ref"],
         "ownerDirectiveSha256": VERIFIER.digest_bytes(OWNER_COMMENT_BODY.encode()),
         "aiAdvisoryOnly": True,
-        "aiAdvisoryProvenanceClass": "owner-attested-provider-session",
+        "aiAdvisoryProvenanceClass": "owner-attested-direct-codex-evidence-v2",
         "aiProviderCryptographicAttestation": False,
         "aiAdvisoryRef": owner_policy_fixture()["aiAdvisory"]["ref"],
         "aiAdvisorySha256": VERIFIER.digest_bytes(ADVISORY_COMMENT_BODY.encode()),

@@ -27,11 +27,20 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple, Protocol
 
+REMOTE_OPS_DIR = Path(__file__).resolve().parent
+if str(REMOTE_OPS_DIR) not in sys.path:
+    sys.path.insert(0, str(REMOTE_OPS_DIR))
+
+from view_only_pilot_authorization_common import (
+    CodexEvidenceError,
+    validate_codex_advisory_evidence,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-root-v2.schema.json"
 CHILD_SCHEMA = ROOT / "schema/faz22-6-view-only-viewer-product-evidence-child-v2.schema.json"
-OWNER_POLICY = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v1.json"
+OWNER_POLICY = ROOT / "config/faz22-6-view-only-pilot-owner-policy.v2.json"
 REVOCATION_LEDGER = ROOT / "config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 
 EVIDENCE_SCHEMA = "faz22.6.viewOnlyViewerProductEvidence.v2"
@@ -1112,7 +1121,7 @@ def verify_activation_authorization(
         and isinstance(authorization["protectedEnvironmentReviewerCount"], int)
         and authorization["protectedEnvironmentReviewerCount"] >= 1
         and authorization["aiAdvisoryOnly"] is True
-        and authorization["aiAdvisoryProvenanceClass"] == "owner-attested-provider-session"
+        and authorization["aiAdvisoryProvenanceClass"] == "owner-attested-direct-codex-evidence-v2"
         and authorization["aiProviderCryptographicAttestation"] is False
         and authorization["legalTrackStatus"] == "tracked_pending"
         and authorization["legalClearanceClaimed"] is False
@@ -1144,7 +1153,7 @@ def verify_activation_authorization(
     }:
         raise EvidenceError("canonical owner policy field set mismatch")
     require_equal(
-        policy["schemaVersion"], "faz22.6-view-only-pilot-owner-policy-v1",
+        policy["schemaVersion"], "faz22.6-view-only-pilot-owner-policy-v2",
         "canonical owner policy schema",
     )
     require_equal(policy["status"], "active", "canonical owner policy status")
@@ -1180,8 +1189,8 @@ def verify_activation_authorization(
     require_equal(advisory_contract.get("consensusVerdict"), "AGREE", "AI advisory policy consensus")
     require_equal(
         advisory_contract.get("providers"),
-        ["Anthropic/claude-opus-4-8", "OpenAI/gpt-5.6-sol"],
-        "AI advisory provider pair",
+        ["OpenAI/gpt-5.6-sol"],
+        "AI advisory Codex-only provider",
     )
 
     legal_contract = policy.get("legalTracking")
@@ -1214,6 +1223,11 @@ def verify_activation_authorization(
         if not isinstance(body, str):
             raise EvidenceError(f"{label} body is missing")
         require_equal(digest_bytes(body.encode()), contract.get("bodySha256"), f"{label} body digest")
+        if label == "AI advisory":
+            try:
+                validate_codex_advisory_evidence(body)
+            except CodexEvidenceError as exc:
+                raise EvidenceError(f"AI advisory is not strict Codex-only evidence: {exc}") from exc
 
     require_equal(
         authorization["legalTrackingIssueRef"],
