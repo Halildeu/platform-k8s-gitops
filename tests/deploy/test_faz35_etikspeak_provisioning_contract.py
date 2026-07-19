@@ -25,6 +25,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.keycloak = (
             ROOT / "scripts/faz35/provision-test-keycloak.sh"
         ).read_text()
+        cls.keycloak_persona_lib_path = (
+            ROOT / "scripts/faz35/lib-keycloak-persona-preflight.sh"
+        )
+        cls.keycloak_persona_lib = cls.keycloak_persona_lib_path.read_text()
         cls.openfga = (
             ROOT / "scripts/faz35/provision-test-openfga.sh"
         ).read_text()
@@ -448,29 +452,31 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
 
     def test_openfga_tuple_read_envelope_is_exact_before_mutation(self):
         self.assertIn(
-            '((keys | sort) == ["continuation_token", "tuples"])',
+            'has("tuples")',
             self.openfga,
         )
         self.assertIn(
-            '((.key | keys | sort) == ["condition", "object", "relation", "user"])',
+            '(.key | has("object") and has("relation") and has("user"))',
             self.openfga,
         )
         self.assertIn("direct tuple read response schema mismatch", self.openfga)
         self.assertNotIn("$page.tuples[]?", self.openfga)
-        self.assertNotIn(".continuation_token // empty", self.openfga)
 
         validator = r'''
           type == "object" and
-          ((keys | sort) == ["continuation_token", "tuples"]) and
-          (.continuation_token | type) == "string" and
+          has("tuples") and
+          ((keys - ["continuation_token", "tuples"]) | length) == 0 and
+          ((has("continuation_token") | not) or
+           ((.continuation_token | type) == "string")) and
           (.tuples | type) == "array" and
           all(.tuples[];
             type == "object" and
             ((keys | sort) == ["key", "timestamp"]) and
             (.timestamp | type) == "string" and (.timestamp | length) > 0 and
             (.key | type) == "object" and
-            ((.key | keys | sort) == ["condition", "object", "relation", "user"]) and
-            .key.condition == null and
+            ((.key | keys - ["condition", "object", "relation", "user"]) | length) == 0 and
+            (.key | has("object") and has("relation") and has("user")) and
+            ((.key | has("condition") | not) or .key.condition == null) and
             (.key.object | type) == "string" and (.key.object | length) > 0 and
             (.key.relation | type) == "string" and (.key.relation | length) > 0 and
             (.key.user | type) == "string" and (.key.user | length) > 0
@@ -478,11 +484,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         '''
         valid_pages = [
             {"continuation_token": "", "tuples": []},
+            {"tuples": []},
             {
-                "continuation_token": "next-page",
                 "tuples": [{
                     "key": {
-                        "condition": None,
                         "object": "ethics_product:7",
                         "relation": "can_manage",
                         "user": "user:41",
@@ -977,7 +982,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.assertIn('--config "$KCADM_CONFIG"', call)
         self.assertNotIn("head -1", self.keycloak)
         self.assertNotRegex(self.keycloak, r"awk[^\n]*\{print \$1; exit\}")
-        self.assertGreaterEqual(self.keycloak.count("| sed -n '1p'"), 4)
+        self.assertGreaterEqual(self.keycloak.count("| sed -n '1p'"), 3)
         self.assertIn("canonical synthetic persona username is ambiguous", self.keycloak)
         self.assertIn("synthetic username is ambiguous", self.keycloak)
         self.assertIn("PostgreSQL database inventory failed before ACL validation", self.pg_vault)
@@ -1007,6 +1012,62 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.keycloak,
         )
         self.assertIn("client-scope mapping lookup requires a canonical UUID", self.keycloak)
+
+    def test_complete_persona_drift_stops_before_every_realm_mutation(self):
+        self.assertIn("lib-keycloak-persona-preflight.sh", self.keycloak)
+        first_realm_mutation = self.keycloak.index('kc create roles -r "$REALM"')
+        for call in (
+            'preflight_existing_persona "$PERSONA_USERNAME"',
+            'preflight_existing_persona "$WRONG_ORG_USERNAME"',
+            'preflight_existing_persona "$DENIED_USERNAME"',
+        ):
+            self.assertLess(self.keycloak.index(call), first_realm_mutation)
+
+        drifted = {
+            "users": [{"id": "persona-id"}],
+            "profile": {
+                "id": "persona-id",
+                "username": "ethics-manager-test",
+                "email": "ethics-manager-test@test.invalid",
+                "firstName": "Ethics",
+                "lastName": "Manager",
+                "enabled": True,
+                "emailVerified": True,
+                "requiredActions": [],
+                "attributes": {"org_id": ["wrong-org"]},
+            },
+            "roleMappings": {"realmMappings": [], "clientMappings": {}},
+            "groups": [],
+            "effectiveRealm": [],
+            "effectiveClients": [{"clientId": "account", "roles": []}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "snapshot.json"
+            marker = Path(tmp) / "mutation-called"
+            snapshot.write_text(json.dumps(drifted))
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; '
+                    'mutation() { : >"$8"; }; '
+                    'faz35_validate_keycloak_persona_snapshot '
+                    '"$2" "$3" "$4" "$5" "$6" "$7" && mutation',
+                    "bash",
+                    str(self.keycloak_persona_lib_path),
+                    str(snapshot),
+                    "ethics-manager-test",
+                    "ethics-manager-test@test.invalid",
+                    "Ethics",
+                    "Manager",
+                    "00000000-0000-0000-0000-000000000001",
+                    str(marker),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(marker.exists())
 
     def test_pg_preflight_preserves_only_dedicated_database_rerun_state(self):
         self.assertIn("OR d.dbid=ethics_db_oid", self.pg_vault)

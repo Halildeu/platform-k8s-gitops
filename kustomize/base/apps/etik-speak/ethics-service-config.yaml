@@ -17,6 +17,10 @@ data:
   SECURITY_JWT_JWK_SET_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
   ETHICS_STAFF_AUDIENCE: "ethics-manager"
   ETHICS_STAFF_ROLE: "ethics-manager"
+  # Every staff request re-checks current permission-service ETHIC=MANAGE.
+  # Dependency failure or a revoked grant is a server-side deny.
+  ETHICS_PERMISSION_SERVICE_BASE_URL: "http://permission-service:8090"
+  ETHICS_PERMISSION_SERVICE_TIMEOUT: "PT3S"
   ERP_OPENFGA_ENABLED: "true"
   ERP_OPENFGA_API_URL: "http://openfga:8080"
   # The reviewed provisioner creates the isolated test store/model first.

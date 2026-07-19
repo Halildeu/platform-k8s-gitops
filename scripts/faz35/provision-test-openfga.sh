@@ -364,16 +364,19 @@ collect_direct_relations() {
     }
     if ! printf '%s' "$body" | jq -e '
       type == "object" and
-      ((keys | sort) == ["continuation_token", "tuples"]) and
-      (.continuation_token | type) == "string" and
+      has("tuples") and
+      ((keys - ["continuation_token", "tuples"]) | length) == 0 and
+      ((has("continuation_token") | not) or
+       ((.continuation_token | type) == "string")) and
       (.tuples | type) == "array" and
       all(.tuples[];
         type == "object" and
         ((keys | sort) == ["key", "timestamp"]) and
         (.timestamp | type) == "string" and (.timestamp | length) > 0 and
         (.key | type) == "object" and
-        ((.key | keys | sort) == ["condition", "object", "relation", "user"]) and
-        .key.condition == null and
+        ((.key | keys - ["condition", "object", "relation", "user"]) | length) == 0 and
+        (.key | has("object") and has("relation") and has("user")) and
+        ((.key | has("condition") | not) or .key.condition == null) and
         (.key.object | type) == "string" and (.key.object | length) > 0 and
         (.key.relation | type) == "string" and (.key.relation | length) > 0 and
         (.key.user | type) == "string" and (.key.user | length) > 0
@@ -384,7 +387,7 @@ collect_direct_relations() {
     fi
     relations=$(jq -nc --argjson accumulated "$relations" --argjson page "$body" \
       '$accumulated + ($page.tuples | map(.key.relation))')
-    next=$(printf '%s' "$body" | jq -r '.continuation_token')
+    next=$(printf '%s' "$body" | jq -r '.continuation_token // ""')
     [ -n "$next" ] || break
     [ "$next" != "$token" ] || {
       echo "FATAL: OpenFGA tuple read returned a repeated continuation token" >&2

@@ -8,6 +8,8 @@ set +x
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/faz35/lib-test-keycloak-binding.sh
 source "${SCRIPT_DIR}/lib-test-keycloak-binding.sh"
+# shellcheck source=scripts/faz35/lib-keycloak-persona-preflight.sh
+source "${SCRIPT_DIR}/lib-keycloak-persona-preflight.sh"
 
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 REALM="${REALM:-platform-test}"
@@ -246,23 +248,84 @@ if [ -n "$existing_manager_client" ]; then
   }
 fi
 
-for existing_username in "$PERSONA_USERNAME" "$WRONG_ORG_USERNAME" "$DENIED_USERNAME"; do
-  existing_user_id=$(kc get users -r "$REALM" -q "username=$existing_username" -q exact=true \
-    --fields id --format csv --noquotes | sed -n '1p')
-  [ -n "$existing_user_id" ] || continue
-  existing_mappings=$(kc get "users/$existing_user_id/role-mappings" -r "$REALM")
-  printf '%s' "$existing_mappings" | jq -e '
-    (([((.realmMappings // [])[] | .name)] - ["default-roles-platform-test", "ethics-manager"]) | length == 0) and
-    ([((.clientMappings // {}) | to_entries[]? | .value.mappings[]? | .name)] | length == 0)
-  ' >/dev/null || {
-    echo "FATAL: pre-mutation persona role drift: $existing_username" >&2
-    exit 1
+preflight_existing_persona() {
+  local username=$1 email=$2 first_name=$3 last_name=$4 org_id=$5
+  local users count user_id profile mappings groups effective_realm
+  local client_inventory client_rows client_id client_name client_roles
+  local effective_clients='[]' snapshot
+
+  users=$(kc get users -r "$REALM" -q "username=$username" -q exact=true) || {
+    echo "FATAL: pre-mutation persona inventory failed: $username" >&2
+    return 1
   }
-  kc get "users/$existing_user_id/groups" -r "$REALM" | jq -e 'length == 0' >/dev/null || {
-    echo "FATAL: pre-mutation persona group drift: $existing_username" >&2
-    exit 1
+  count=$(printf '%s' "$users" | jq -er 'if type == "array" then length else error("not array") end') || {
+    echo "FATAL: pre-mutation persona inventory is malformed: $username" >&2
+    return 1
   }
-done
+  [ "$count" -le 1 ] || {
+    echo "FATAL: pre-mutation persona username is ambiguous: $username" >&2
+    return 1
+  }
+  if [ "$count" -eq 0 ]; then
+    snapshot=$(jq -nc --argjson users "$users" '{users:$users}')
+    faz35_validate_keycloak_persona_snapshot \
+      <(printf '%s' "$snapshot") "$username" "$email" "$first_name" "$last_name" "$org_id"
+    return
+  fi
+
+  user_id=$(printf '%s' "$users" | jq -er '.[0].id | select(type == "string" and length > 0)') || {
+    echo "FATAL: pre-mutation persona id is missing: $username" >&2
+    return 1
+  }
+  profile=$(kc get "users/$user_id" -r "$REALM")
+  mappings=$(kc get "users/$user_id/role-mappings" -r "$REALM")
+  groups=$(kc get "users/$user_id/groups" -r "$REALM")
+  effective_realm=$(kc get "users/$user_id/role-mappings/realm/composite" -r "$REALM")
+  client_inventory=$(kc get clients -r "$REALM") || {
+    echo "FATAL: pre-mutation persona client inventory failed: $username" >&2
+    return 1
+  }
+  client_rows=$(printf '%s' "$client_inventory" | jq -er '
+    if type == "array" and length > 0 and
+       all(.[]; (.id | type == "string" and length > 0) and
+                (.clientId | type == "string" and length > 0))
+    then .[] | [.id,.clientId] | @tsv
+    else error("malformed client inventory") end
+  ') || {
+    echo "FATAL: pre-mutation persona client inventory is malformed: $username" >&2
+    return 1
+  }
+  while IFS=$'\t' read -r client_id client_name; do
+    [ -n "$client_id" ] || continue
+    client_roles=$(kc get "users/$user_id/role-mappings/clients/$client_id/composite" -r "$REALM")
+    effective_clients=$(jq -nc \
+      --argjson accumulated "$effective_clients" --arg clientId "$client_name" \
+      --argjson roles "$client_roles" \
+      '$accumulated + [{clientId:$clientId,roles:$roles}]')
+  done <<<"$client_rows"
+  snapshot=$(jq -nc \
+    --argjson users "$users" --argjson profile "$profile" \
+    --argjson roleMappings "$mappings" --argjson groups "$groups" \
+    --argjson effectiveRealm "$effective_realm" \
+    --argjson effectiveClients "$effective_clients" \
+    '{users:$users,profile:$profile,roleMappings:$roleMappings,groups:$groups,
+      effectiveRealm:$effectiveRealm,effectiveClients:$effectiveClients}')
+  if ! faz35_validate_keycloak_persona_snapshot \
+      <(printf '%s' "$snapshot") "$username" "$email" "$first_name" "$last_name" "$org_id"; then
+    echo "FATAL: pre-mutation complete persona drift: $username" >&2
+    return 1
+  fi
+}
+
+# All three complete persona snapshots are validated before the first realm
+# mutation. A drifted or duplicate target therefore executes zero create,
+# update, delete, add-roles, or direct kcadm mutation commands.
+preflight_existing_persona "$PERSONA_USERNAME" "$PERSONA_USERNAME@test.invalid" \
+  Ethics Manager "$ETHICS_ORG_ID"
+preflight_existing_persona "$WRONG_ORG_USERNAME" "$WRONG_ORG_USERNAME@test.invalid" \
+  Ethics Negative "$WRONG_ETHICS_ORG_ID"
+preflight_existing_persona "$DENIED_USERNAME" "$DENIED_USERNAME@test.invalid" \
+  Ethics Negative "$ETHICS_ORG_ID"
 
 if ! kc get roles/ethics-manager -r "$REALM" >/dev/null 2>&1; then
   kc create roles -r "$REALM" -s name=ethics-manager \

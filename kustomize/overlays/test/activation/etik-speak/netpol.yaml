@@ -31,3 +31,5 @@ spec:
       ports: [{port: 8080, protocol: TCP}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: openfga}}}]
       ports: [{port: 8080, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: permission-service}}}]
+      ports: [{port: 8090, protocol: TCP}]
