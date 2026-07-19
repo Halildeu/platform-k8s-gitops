@@ -65,7 +65,7 @@ Per the schema (`additionalProperties: false` everywhere):
 | `artifact_kind` | yes | Currently `"openfga-model"` |
 | `artifact_content_digest` | yes | `sha256:` + 64 hex |
 | `source` | yes | `{kind, canonical_source_ref}` — digest provenance only |
-| `runtime_selector` | no | `oneOf [null, vault, openfga-store-direct]` — where consumers find current id at runtime |
+| `runtime_selector` | no | `oneOf [null, vault, openfga-store-direct, kubernetes-configmap]` — where consumers find current id at runtime |
 | `promotion` | yes | `{test, prod}` env blocks (see below) |
 | `metadata` | yes | `{rollback_safe, ...}` |
 | `audit` | yes | `{implementer, reviewer, created_at, approval_pathway, ...}` |

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -51,10 +52,11 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.eso_policy = (
             ROOT / "bootstrap/vault-policies/test/etik-speak-eso.hcl"
         ).read_text()
-        cls.model_ledger = (
+        cls.model_ledger_path = (
             ROOT
-            / "runtime-artifacts/openfga-model/1a4fe00f5b169945f2672f58fbec1bff2c0332e4d1cf39b742b41c28a01a95a4.json"
-        ).read_text()
+            / "runtime-artifacts/openfga-model/711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33.json"
+        )
+        cls.model_ledger = cls.model_ledger_path.read_text()
         cls.test_root = (
             ROOT / "kustomize/overlays/test/kustomization.yaml"
         ).read_text()
@@ -244,10 +246,44 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
 
     def test_openfga_model_is_content_bound_to_runtime_ledger(self):
         self.assertIn("EXPECTED_MODEL_JSON_SHA256", self.openfga)
+        self.assertIn("EXPECTED_MODEL_FGA_SHA256", self.openfga)
         self.assertIn("artifact_content_digest", self.openfga)
-        self.assertIn("OpenFGA source digest does not match runtime ledger", self.openfga)
+        self.assertIn("OpenFGA source model digest mismatch", self.openfga)
+        self.assertIn(
+            "canonical OpenFGA model digest does not match runtime ledger",
+            self.openfga,
+        )
         self.assertIn("select(del(.id) == $desired)", self.openfga)
         self.assertNotIn("tojson) ==", self.openfga)
+
+        compiled_model = json.loads(
+            (
+                ROOT
+                / "bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json"
+            ).read_text()
+        )
+        canonical_model = json.dumps(
+            compiled_model,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        canonical_digest = hashlib.sha256(canonical_model).hexdigest()
+        ledger = json.loads(self.model_ledger)
+        self.assertEqual(
+            ledger["artifact_content_digest"],
+            f"sha256:{canonical_digest}",
+        )
+        self.assertEqual(self.model_ledger_path.stem, canonical_digest)
+
+        fga_source = (
+            ROOT / "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
+        ).read_bytes()
+        fga_digest = hashlib.sha256(fga_source).hexdigest()
+        self.assertNotEqual(fga_digest, canonical_digest)
+        self.assertIn(
+            f'EXPECTED_MODEL_FGA_SHA256="{fga_digest}"',
+            self.openfga,
+        )
 
     def test_database_owner_and_public_privileges_are_fail_closed(self):
         for required in (

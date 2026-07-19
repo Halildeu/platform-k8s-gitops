@@ -9,8 +9,9 @@ set +x
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 EXPECTED_MODEL_JSON="$SCRIPT_DIR/../../bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json"
 EXPECTED_MODEL_FGA="$SCRIPT_DIR/../../runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
-MODEL_LEDGER="$SCRIPT_DIR/../../runtime-artifacts/openfga-model/1a4fe00f5b169945f2672f58fbec1bff2c0332e4d1cf39b742b41c28a01a95a4.json"
-EXPECTED_MODEL_JSON_SHA256="9234b1d6356698f7bd2825c0842d6eed31cd5cb99d30101d22eb2a01a821409c"
+MODEL_LEDGER="$SCRIPT_DIR/../../runtime-artifacts/openfga-model/711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33.json"
+EXPECTED_MODEL_JSON_SHA256="711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33"
+EXPECTED_MODEL_FGA_SHA256="1a4fe00f5b169945f2672f58fbec1bff2c0332e4d1cf39b742b41c28a01a95a4"
 MODEL_JSON="${MODEL_JSON:-$EXPECTED_MODEL_JSON}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NS="${KUBE_NS:-platform-test}"
@@ -68,15 +69,20 @@ sha256_stream() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}';
   else shasum -a 256 | awk '{print $1}'; fi
 }
-model_json_sha=$(jq -cS . "$MODEL_JSON" | sha256_stream)
+model_json_canonical=$(jq -cS . "$MODEL_JSON")
+model_json_sha=$(printf '%s' "$model_json_canonical" | sha256_stream)
 [ "$model_json_sha" = "$EXPECTED_MODEL_JSON_SHA256" ] || {
   echo "FATAL: compiled OpenFGA model digest mismatch" >&2
   exit 1
 }
 model_source_sha=$(sha256_stream <"$EXPECTED_MODEL_FGA")
-ledger_source_sha=$(jq -r '.artifact_content_digest | sub("^sha256:"; "")' "$MODEL_LEDGER")
-[ "$model_source_sha" = "$ledger_source_sha" ] || {
-  echo "FATAL: OpenFGA source digest does not match runtime ledger" >&2
+[ "$model_source_sha" = "$EXPECTED_MODEL_FGA_SHA256" ] || {
+  echo "FATAL: OpenFGA source model digest mismatch" >&2
+  exit 1
+}
+ledger_content_sha=$(jq -r '.artifact_content_digest | sub("^sha256:"; "")' "$MODEL_LEDGER")
+[ "$model_json_sha" = "$ledger_content_sha" ] || {
+  echo "FATAL: canonical OpenFGA model digest does not match runtime ledger" >&2
   exit 1
 }
 

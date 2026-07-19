@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "artifact_kind": "openfga-model",
-  "artifact_content_digest": "sha256:1a4fe00f5b169945f2672f58fbec1bff2c0332e4d1cf39b742b41c28a01a95a4",
+  "artifact_content_digest": "sha256:711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33",
   "source": {
     "kind": "openfga-server",
     "canonical_source_ref": "openfga://pending/platform-test/etik-speak/authorization-model-v1"
