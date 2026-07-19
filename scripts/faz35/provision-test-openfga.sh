@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-MODEL_JSON="${MODEL_JSON:-$SCRIPT_DIR/../../runtime-artifacts/faz35-etik-speak/authorization-model-v1.json}"
+MODEL_JSON="${MODEL_JSON:-$SCRIPT_DIR/../../bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NS="${KUBE_NS:-platform-test}"
 POD_DEPLOY="${POD_DEPLOY:-deploy/meeting-service}"

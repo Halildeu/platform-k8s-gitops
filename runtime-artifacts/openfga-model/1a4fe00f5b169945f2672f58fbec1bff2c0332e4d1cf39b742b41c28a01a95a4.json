@@ -25,7 +25,7 @@
       "evidence_completeness": "unverified",
       "source_docs": [
         "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga",
-        "runtime-artifacts/faz35-etik-speak/authorization-model-v1.json",
+        "bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json",
         "docs/contracts/faz35-etik-speak-api-mfe-v1.md",
         "Halildeu/platform-k8s-gitops#2656"
       ]
@@ -43,7 +43,7 @@
       "evidence_completeness": "unverified",
       "source_docs": [
         "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga",
-        "runtime-artifacts/faz35-etik-speak/authorization-model-v1.json",
+        "bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json",
         "docs/adr/0046-faz35-etik-speak-product-cell-topology.md",
         "Halildeu/platform-k8s-gitops#2656"
       ]

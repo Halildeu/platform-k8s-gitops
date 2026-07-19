@@ -11,11 +11,12 @@ resources:
   - resource-quota.yaml
   - priority-class.yaml
 images:
-  # Source-ready placeholder. Activation in the root test overlay is forbidden
-  # until the corresponding CI runs publish and evidence exact immutable digests.
+  # Backend branch artifact is pinned to exact source 69a1e672 and CI run
+  # 29672392833. Root activation remains forbidden until exact-head review and
+  # the public-web immutable digest are both evidenced.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    digest: sha256:1acca0d7c7edf900521b4418bb4fe8385d30086646e611c2081a85e10206ed8c
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
     digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
