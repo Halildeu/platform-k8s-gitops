@@ -562,6 +562,8 @@ def main() -> None:
     parser.add_argument("--timeout-seconds", type=int, default=600)
     args = parser.parse_args()
 
+    if os.path.lexists(args.evidence_output):
+        fail("evidence_output_exists")
     (
         codex_bytes,
         codex_executable_name,

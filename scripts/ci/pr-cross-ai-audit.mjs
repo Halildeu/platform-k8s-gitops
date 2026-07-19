@@ -700,6 +700,7 @@ function evidenceMatches(
     evidence.schema === 'cross-ai-provider-evidence/v3'
     && evidence.provider === expected.provider
     && expected.models.includes(evidence.requested_model)
+    && evidence.requested_model === receipt.requested
     && evidence.actual_model === (
       expected.provider === 'openai' ? UNATTESTED_ACTUAL_MODEL : evidence.requested_model
     )

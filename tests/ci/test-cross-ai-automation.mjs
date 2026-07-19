@@ -84,6 +84,10 @@ const EVIDENCE = {
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
   [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
 };
+const SOL_RECEIPT_SPARK_EVIDENCE = {
+  ...EVIDENCE,
+  [CODEX_REF]: evidenceComment(EVIDENCE[SPARK_REF].body, 2_000),
+};
 // Forward-policy dual channel is Claude + Codex; reverse their publication order
 // to prove the accepted dual path does not depend on receipt timestamp ordering.
 const REVERSED_DUAL_CODEX_EVIDENCE = {
@@ -196,6 +200,10 @@ const explicitSingleBody =
 const explicitSparkSingleBody = explicitSingleBody.replace(
   /^Codex receipt:.*$/m,
   `Codex receipt: provider=openai; requested=gpt-5.3-codex-spark; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${SPARK_REF}; sha256=${sha256(EVIDENCE[SPARK_REF].body)}`,
+);
+const solReceiptSparkEvidenceBody = explicitSingleBody.replace(
+  sha256(EVIDENCE[CODEX_REF].body),
+  sha256(EVIDENCE[SPARK_REF].body),
 );
 const explicitDualBody =
   explicitSingleBody
@@ -621,6 +629,10 @@ const cases = [
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts exact context-isolated Codex evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode rejects SOL receipt bound to Spark evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: solReceiptSparkEvidenceBody, changedFiles: [GOVERNANCE_PATH],
+      evidence: SOL_RECEIPT_SPARK_EVIDENCE, expectedFailureCheck: 'codex_receipt' }, 1],
   ['explicit single mode accepts Spark for a routine voluntary consultation',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode rejects Spark for consultation governance changes',

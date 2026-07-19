@@ -521,6 +521,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         result = self.run_harness()
         self.assertEqual(result.returncode, 1)
         self.assertEqual(self.output.read_text(encoding="utf-8"), "existing")
+        self.assertFalse(self.execution_marker.exists())
 
     def test_rejects_untrusted_path_codex_without_official_package_layout(self) -> None:
         launcher = self.bin_dir / "codex"
