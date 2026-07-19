@@ -29,6 +29,10 @@ const COMMIT_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 const EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const EVIDENCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
+// Exact commit timestamps where these providers stopped producing binding
+// receipts. Older immutable records remain audit history only.
+const MINIMAX_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-18T14:16:20Z');
+const CLAUDE_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T01:09:35Z');
 const NO_FINDINGS_RE = /^None$/;
 const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
 const TURKISH_PHONE_RE = /(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)/;
@@ -46,6 +50,11 @@ const RECEIPT_KEYS = new Set([
 const EVIDENCE_KEYS = [
   'actual_model', 'base_sha', 'base_tip_sha', 'execution_profile', 'execution_provenance',
   'head_sha', 'provider', 'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
+  'verdict',
+];
+const RETIRED_MINIMAX_V1_KEYS = [
+  'actual_model', 'base_sha', 'base_tip_sha', 'head_sha', 'provider',
+  'requested_model', 'response', 'response_sha256', 'schema', 'scope_sha256',
   'verdict',
 ];
 const UNATTESTED_ACTUAL_MODEL = 'not-provider-attested';
@@ -618,6 +627,36 @@ function containsSensitiveResponse(response) {
     || COOKIE_HEADER_RE.test(response);
 }
 
+function immutableRetiredMinimaxV1Record(comment, evidence) {
+  const createdAtMs = Date.parse(comment?.createdAt || '');
+  const keys = evidence && typeof evidence === 'object' && !Array.isArray(evidence)
+    ? Object.keys(evidence).sort()
+    : [];
+  const responseVerdict = parseProviderResponseVerdict(evidence?.response);
+  return Boolean(
+    comment?.createdAt === comment?.updatedAt
+    && Number.isFinite(createdAtMs)
+    && createdAtMs < MINIMAX_RECEIPT_RETIREMENT_CUTOFF_MS
+    && keys.length === RETIRED_MINIMAX_V1_KEYS.length
+    && keys.every((key, index) => key === RETIRED_MINIMAX_V1_KEYS[index])
+    && evidence.schema === 'cross-ai-provider-evidence/v1'
+    && evidence.provider === 'minimax'
+    && evidence.requested_model === 'minimax/MiniMax-M3'
+    && evidence.actual_model === evidence.requested_model
+    && COMMIT_SHA_RE.test(evidence.base_tip_sha || '')
+    && COMMIT_SHA_RE.test(evidence.base_sha || '')
+    && COMMIT_SHA_RE.test(evidence.head_sha || '')
+    && SHA256_RE.test(evidence.scope_sha256 || '')
+    && ['AGREE', 'REVISE'].includes(evidence.verdict)
+    && responseVerdict === evidence.verdict
+    && typeof evidence.response === 'string'
+    && evidence.response.length > 0
+    && !containsSensitiveResponse(evidence.response)
+    && SHA256_RE.test(evidence.response_sha256 || '')
+    && sha256Utf8(evidence.response) === evidence.response_sha256.toLowerCase()
+  );
+}
+
 async function loadEvidenceComment(ref, baseRepo, evidenceOverrides) {
   if (Object.hasOwn(evidenceOverrides, ref)) {
     const override = evidenceOverrides[ref];
@@ -871,13 +910,14 @@ async function appendPriorRevisionFinding(
     const expected = Object.values(EVIDENCE_PROVIDERS).find(
       (candidate) => candidate.provider === body?.provider,
     );
-    // MiniMax v1 evidence predates the retirement policy. Preserve an
-    // untouched record as read-only history, but never exempt v3 evidence:
-    // v3 is the current schema and a new MiniMax record must fail closed.
-    const immutableRetiredMinimaxRecord = body?.provider === 'minimax'
-      && body?.schema === 'cross-ai-provider-evidence/v1'
-      && comment?.createdAt === comment?.updatedAt;
-    if (immutableRetiredMinimaxRecord) continue;
+    // MiniMax v1 evidence predating its exact retirement commit is immutable
+    // read-only history. A current, edited, or malformed v1/v3 record is an
+    // attempted retired-provider receipt and fails closed.
+    if (immutableRetiredMinimaxV1Record(comment, body)) continue;
+    if (body?.provider === 'minimax' || body?.schema === 'cross-ai-provider-evidence/v1') {
+      invalidCandidates.push(comment?.ref || 'missing-ref');
+      continue;
+    }
     const evidenceSignalCount = [
       'base_tip_sha', 'base_sha', 'head_sha', 'scope_sha256', 'execution_profile',
       'execution_provenance', 'requested_model', 'actual_model', 'response_sha256',
@@ -899,6 +939,15 @@ async function appendPriorRevisionFinding(
       })
       : null;
     if (!parsed) {
+      invalidCandidates.push(comment?.ref || 'missing-ref');
+      continue;
+    }
+    if (parsed.evidence.provider === 'anthropic') {
+      // Claude receipt authority ended at the exact Codex-only policy commit.
+      // Valid immutable records before that instant remain audit history, but
+      // never participate in current REVISE/AGREE resolution. New Claude
+      // receipt-shaped comments are rejected rather than silently blessed.
+      if (parsed.createdAtMs < CLAUDE_RECEIPT_RETIREMENT_CUTOFF_MS) continue;
       invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;
     }
@@ -949,8 +998,8 @@ async function appendPriorRevisionFinding(
     check: 'consultation_prior_revise_resolved',
     pass: unresolved.length === 0,
     detail: unresolved.length === 0
-      ? 'PR geçmişindeki her provider REVISE kaydı daha yeni ve güncel base/head/scope bağlı aynı-provider AGREE ile karşılanıyor'
-      : `PR geçmişinde seçilmiş güncel receipt ile AGREE bekleyen REVISE provider: ${unresolved.join(', ')}`,
+      ? 'PR geçmişindeki her bağlayıcı Codex REVISE kaydı daha yeni ve güncel base/head/scope bağlı seçilmiş Codex AGREE ile karşılanıyor'
+      : `PR geçmişinde seçilmiş güncel Codex receipt ile AGREE bekleyen provider: ${unresolved.join(', ')}`,
   });
 }
 

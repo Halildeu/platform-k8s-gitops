@@ -36,6 +36,8 @@ const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
 const SCOPE_SHA256 = 'a'.repeat(64);
 const NOW_MS = Date.now();
+const HISTORICAL_CLAUDE_MS = Date.parse('2026-07-19T00:00:00Z');
+const HISTORICAL_MINIMAX_MS = Date.parse('2026-07-18T14:00:00Z');
 const PR_NUMBER = 2690;
 const EXECUTION_PROFILE = {
   anthropic: 'claude-cli-no-session-persistence-exact-scope-v1',
@@ -94,12 +96,23 @@ const evidenceComment = (body, offsetMs = 0, issueNumber = PR_NUMBER) => ({
   updatedAt: new Date(NOW_MS + offsetMs).toISOString(),
   issueNumber,
 });
+const evidenceCommentAt = (body, timestampMs, issueNumber = PR_NUMBER) => ({
+  body,
+  author: 'Halildeu',
+  authorAssociation: 'OWNER',
+  createdAt: new Date(timestampMs).toISOString(),
+  updatedAt: new Date(timestampMs).toISOString(),
+  issueNumber,
+});
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
 const CODEX_REF = evidenceRef(1003);
 const SPARK_REF = evidenceRef(1004);
 const EVIDENCE = {
-  [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 0),
+  [CLAUDE_REF]: evidenceCommentAt(
+    evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'),
+    HISTORICAL_CLAUDE_MS,
+  ),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
   [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
 };
@@ -125,29 +138,58 @@ const MINIMAX_V1_BODY = JSON.stringify({
   response: '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE',
 });
 const MINIMAX_V1_EVIDENCE = {
+  [MINIMAX_REF]: evidenceCommentAt(MINIMAX_V1_BODY, HISTORICAL_MINIMAX_MS),
+};
+const CURRENT_MINIMAX_V1_EVIDENCE = {
   [MINIMAX_REF]: evidenceComment(MINIMAX_V1_BODY, 1_000),
 };
-const UNREFERENCED_CLAUDE_REVISE_REF = evidenceRef(1005);
-const UNREFERENCED_CLAUDE_AGREE_REF = evidenceRef(1006);
-const claudeReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
-const claudeReviseBody = JSON.stringify({
-  ...JSON.parse(evidenceBody('anthropic', 'claude-opus-4-8', claudeReviseResponse)),
+const INVALID_HISTORICAL_MINIMAX_V1_EVIDENCE = {
+  [MINIMAX_REF]: evidenceCommentAt(
+    JSON.stringify({
+      ...JSON.parse(MINIMAX_V1_BODY),
+      response_sha256: 'f'.repeat(64),
+    }),
+    HISTORICAL_MINIMAX_MS,
+  ),
+};
+const CURRENT_CLAUDE_V3_EVIDENCE = {
+  [CLAUDE_REF]: evidenceComment(
+    evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'),
+    1_000,
+  ),
+};
+const UNREFERENCED_CODEX_REVISE_REF = evidenceRef(1005);
+const UNREFERENCED_CODEX_AGREE_REF = evidenceRef(1006);
+const codexReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
+const codexReviseBody = JSON.stringify({
+  ...JSON.parse(evidenceBody('openai', 'gpt-5.6-sol', codexReviseResponse)),
   verdict: 'REVISE',
 });
-const unresolvedClaudeReviseEvidence = {
+const unresolvedCodexReviseEvidence = {
   ...EVIDENCE,
-  [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(claudeReviseBody, 3_000),
+  [UNREFERENCED_CODEX_REVISE_REF]: evidenceComment(codexReviseBody, 3_000),
 };
-const resolvedClaudeReviseEvidence = {
-  ...unresolvedClaudeReviseEvidence,
-  [UNREFERENCED_CLAUDE_AGREE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
+const resolvedCodexReviseEvidence = {
+  ...unresolvedCodexReviseEvidence,
+  [UNREFERENCED_CODEX_AGREE_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 4_000),
 };
-const resolvedSelectedClaudeReviseEvidence = {
-  ...unresolvedClaudeReviseEvidence,
-  [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
+const resolvedSelectedCodexReviseEvidence = {
+  ...unresolvedCodexReviseEvidence,
+  [CODEX_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 4_000),
 };
-const changedBindingClaudeReviseBody = JSON.stringify({
-  ...JSON.parse(claudeReviseBody),
+const historicalClaudeReviseBody = JSON.stringify({
+  ...JSON.parse(evidenceBody('anthropic', 'claude-opus-4-8', codexReviseResponse)),
+  verdict: 'REVISE',
+});
+const historicalClaudeReviseEvidence = {
+  [CLAUDE_REF]: evidenceCommentAt(historicalClaudeReviseBody, HISTORICAL_CLAUDE_MS),
+};
+const changedBindingCodexReviseBody = JSON.stringify({
+  ...JSON.parse(codexReviseBody),
+  execution_provenance: {
+    ...JSON.parse(codexReviseBody).execution_provenance,
+    trusted_base_sha: 'd'.repeat(40),
+  },
   base_tip_sha: 'd'.repeat(40),
   base_sha: 'e'.repeat(40),
   head_sha: 'f'.repeat(40),
@@ -155,54 +197,54 @@ const changedBindingClaudeReviseBody = JSON.stringify({
 });
 const unresolvedChangedBindingEvidence = {
   ...EVIDENCE,
-  [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(changedBindingClaudeReviseBody, 3_000),
+  [UNREFERENCED_CODEX_REVISE_REF]: evidenceComment(changedBindingCodexReviseBody, 3_000),
 };
 const resolvedChangedBindingEvidence = {
   ...unresolvedChangedBindingEvidence,
-  [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 4_000),
+  [CODEX_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 4_000),
 };
 const differentPrEvidence = {
   ...EVIDENCE,
   [CODEX_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 0, PR_NUMBER + 1),
   [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 0, PR_NUMBER + 1),
 };
-const agedUnresolvedReviseComment = evidenceComment(claudeReviseBody);
+const agedUnresolvedReviseComment = evidenceComment(codexReviseBody);
 agedUnresolvedReviseComment.createdAt = new Date(
   NOW_MS - (8 * 24 * 60 * 60 * 1000),
 ).toISOString();
 agedUnresolvedReviseComment.updatedAt = agedUnresolvedReviseComment.createdAt;
 const agedUnresolvedReviseEvidence = {
-  [UNREFERENCED_CLAUDE_REVISE_REF]: agedUnresolvedReviseComment,
+  [UNREFERENCED_CODEX_REVISE_REF]: agedUnresolvedReviseComment,
 };
 const otherPrReviseEvidence = {
-  [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(
-    claudeReviseBody, 0, PR_NUMBER + 1,
+  [UNREFERENCED_CODEX_REVISE_REF]: evidenceComment(
+    codexReviseBody, 0, PR_NUMBER + 1,
   ),
 };
-const editedHistoricalReviseComment = evidenceComment(claudeReviseBody, 3_000);
+const editedHistoricalReviseComment = evidenceComment(codexReviseBody, 3_000);
 editedHistoricalReviseComment.updatedAt = new Date(NOW_MS + 4_000).toISOString();
 const editedHistoricalReviseEvidence = {
-  [UNREFERENCED_CLAUDE_REVISE_REF]: editedHistoricalReviseComment,
+  [UNREFERENCED_CODEX_REVISE_REF]: editedHistoricalReviseComment,
 };
 const invalidDigestHistoricalReviseBody = JSON.stringify({
-  ...JSON.parse(claudeReviseBody),
+  ...JSON.parse(codexReviseBody),
   response_sha256: 'f'.repeat(64),
 });
 const invalidDigestHistoricalReviseEvidence = {
-  [UNREFERENCED_CLAUDE_REVISE_REF]: evidenceComment(
+  [UNREFERENCED_CODEX_REVISE_REF]: evidenceComment(
     invalidDigestHistoricalReviseBody, 3_000,
   ),
 };
-const changedProviderHistoricalRevise = JSON.parse(claudeReviseBody);
+const changedProviderHistoricalRevise = JSON.parse(codexReviseBody);
 changedProviderHistoricalRevise.provider = 'retired-or-unknown-provider';
 const changedProviderHistoricalReviseComment = evidenceComment(
   JSON.stringify(changedProviderHistoricalRevise), 3_000,
 );
 changedProviderHistoricalReviseComment.updatedAt = new Date(NOW_MS + 4_000).toISOString();
 const changedProviderHistoricalReviseEvidence = {
-  [UNREFERENCED_CLAUDE_REVISE_REF]: changedProviderHistoricalReviseComment,
+  [UNREFERENCED_CODEX_REVISE_REF]: changedProviderHistoricalReviseComment,
 };
-const strippedIdentityHistoricalRevise = JSON.parse(claudeReviseBody);
+const strippedIdentityHistoricalRevise = JSON.parse(codexReviseBody);
 delete strippedIdentityHistoricalRevise.schema;
 delete strippedIdentityHistoricalRevise.provider;
 const strippedIdentityHistoricalReviseComment = evidenceComment(
@@ -210,7 +252,7 @@ const strippedIdentityHistoricalReviseComment = evidenceComment(
 );
 strippedIdentityHistoricalReviseComment.updatedAt = new Date(NOW_MS + 4_000).toISOString();
 const strippedIdentityHistoricalReviseEvidence = {
-  [UNREFERENCED_CLAUDE_REVISE_REF]: strippedIdentityHistoricalReviseComment,
+  [UNREFERENCED_CODEX_REVISE_REF]: strippedIdentityHistoricalReviseComment,
 };
 const immutableHistoricalMinimaxV1Evidence = {
   ...MINIMAX_V1_EVIDENCE,
@@ -228,7 +270,7 @@ const editedHistoricalMinimaxV1Evidence = {
 const nonOwnerEvidenceRef = evidenceRef(1007);
 const nonOwnerJsonEvidence = {
   [nonOwnerEvidenceRef]: {
-    ...evidenceComment(claudeReviseBody, 3_000),
+    ...evidenceComment(codexReviseBody, 3_000),
     author: 'mallory',
     authorAssociation: 'CONTRIBUTOR',
   },
@@ -736,10 +778,19 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: legacyPeerBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_explicit_mode_required' }, 1],
   ['explicit none mode lets routine work pass without provider receipts',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [ROUTINE_PATH] }, 0],
-  ['none mode cannot hide an unreferenced same-head Claude REVISE',
+  ['none mode ignores an immutable pre-retirement Claude REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
-      evidence: unresolvedClaudeReviseEvidence,
+      evidence: historicalClaudeReviseEvidence }, 0],
+  ['none mode rejects a new Claude v3 receipt-shaped record',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: CURRENT_CLAUDE_V3_EVIDENCE,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['none mode cannot hide an unreferenced same-head Codex REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: unresolvedCodexReviseEvidence,
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['none mode cannot hide a REVISE older than the selected receipt freshness window',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
@@ -774,6 +825,16 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: immutableHistoricalMinimaxV1Evidence }, 0],
+  ['a post-retirement MiniMax v1 record fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: CURRENT_MINIMAX_V1_EVIDENCE,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['a malformed pre-retirement MiniMax v1 record fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: INVALID_HISTORICAL_MINIMAX_V1_EVIDENCE,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['a new MiniMax v3 history record fails closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -844,20 +905,24 @@ const cases = [
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts exact context-isolated Codex evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
-  ['single mode cannot hide an unreferenced same-head Claude REVISE',
+  ['single mode ignores an immutable pre-retirement Claude REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
-      evidence: unresolvedClaudeReviseEvidence,
+      evidence: { ...EVIDENCE, ...historicalClaudeReviseEvidence } }, 0],
+  ['single mode cannot hide an unreferenced same-head Codex REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidence: unresolvedCodexReviseEvidence,
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['an unselected same-provider AGREE cannot resolve a REVISE in single mode',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
-      evidence: resolvedClaudeReviseEvidence,
+      evidence: resolvedCodexReviseEvidence,
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['a forbidden dual mode cannot resolve a prior REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitDualBody, changedFiles: [ROUTINE_PATH],
-      evidence: resolvedSelectedClaudeReviseEvidence }, 1],
+      evidence: resolvedSelectedCodexReviseEvidence }, 1],
   ['a prior-head REVISE remains unresolved after PR head and scope change',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
