@@ -158,6 +158,24 @@ def enforce_redacted_scope_size(content: bytes, max_scope_bytes: int) -> None:
         fail("scope_too_large_after_redaction")
 
 
+def redact_scope_pii(scope_text: str) -> tuple[str, int, int]:
+    """Redact PII without treating a git diff marker as email local-part data."""
+    redacted_lines: list[str] = []
+    email_count = 0
+    phone_count = 0
+    for line in scope_text.splitlines(keepends=True):
+        marker = line[:1] if line.startswith(("+", "-")) else ""
+        payload = line[1:] if marker else line
+        payload, line_email_count = EMAIL_RE.subn("<redacted-email>", payload)
+        payload, line_phone_count = TURKISH_PHONE_RE.subn(
+            "<redacted-phone>", payload
+        )
+        redacted_lines.append(marker + payload)
+        email_count += line_email_count
+        phone_count += line_phone_count
+    return "".join(redacted_lines), email_count, phone_count
+
+
 def frame_redacted_scope(scope_text: str) -> bytes:
     return (SCOPE_PREAMBLE + scope_text).encode("utf-8")
 
@@ -254,10 +272,7 @@ def main() -> None:
         scope_text = raw_scope.decode("utf-8")
     except UnicodeDecodeError:
         fail("scope_not_utf8")
-    scope_text, email_count = EMAIL_RE.subn("<redacted-email>", scope_text)
-    scope_text, phone_count = TURKISH_PHONE_RE.subn(
-        "<redacted-phone>", scope_text
-    )
+    scope_text, email_count, phone_count = redact_scope_pii(scope_text)
     redacted_scope = frame_redacted_scope(scope_text)
     enforce_redacted_scope_size(redacted_scope, args.max_bytes)
     digest = hashlib.sha256(redacted_scope).hexdigest()

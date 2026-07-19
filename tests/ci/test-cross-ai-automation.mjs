@@ -151,6 +151,25 @@ const invalidDigestHistoricalReviseEvidence = {
     invalidDigestHistoricalReviseBody, 3_000,
   ),
 };
+const changedProviderHistoricalRevise = JSON.parse(claudeReviseBody);
+changedProviderHistoricalRevise.provider = 'retired-or-unknown-provider';
+const changedProviderHistoricalReviseComment = evidenceComment(
+  JSON.stringify(changedProviderHistoricalRevise), 3_000,
+);
+changedProviderHistoricalReviseComment.updatedAt = new Date(NOW_MS + 4_000).toISOString();
+const changedProviderHistoricalReviseEvidence = {
+  [UNREFERENCED_CLAUDE_REVISE_REF]: changedProviderHistoricalReviseComment,
+};
+const strippedIdentityHistoricalRevise = JSON.parse(claudeReviseBody);
+delete strippedIdentityHistoricalRevise.schema;
+delete strippedIdentityHistoricalRevise.provider;
+const strippedIdentityHistoricalReviseComment = evidenceComment(
+  JSON.stringify(strippedIdentityHistoricalRevise), 3_000,
+);
+strippedIdentityHistoricalReviseComment.updatedAt = new Date(NOW_MS + 4_000).toISOString();
+const strippedIdentityHistoricalReviseEvidence = {
+  [UNREFERENCED_CLAUDE_REVISE_REF]: strippedIdentityHistoricalReviseComment,
+};
 const SOL_RECEIPT_SPARK_EVIDENCE = {
   ...EVIDENCE,
   [CODEX_REF]: evidenceComment(EVIDENCE[SPARK_REF].body, 2_000),
@@ -668,6 +687,16 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: invalidDigestHistoricalReviseEvidence,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['an edited historical REVISE with changed provider fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: changedProviderHistoricalReviseEvidence,
+      expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
+  ['an edited historical REVISE with stripped identity fields fails closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: strippedIdentityHistoricalReviseEvidence,
       expectedFailureCheck: 'consultation_evidence_history_valid' }, 1],
   ['explicit none mode accepts substantive prose containing the word none',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',

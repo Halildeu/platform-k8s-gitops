@@ -47,6 +47,22 @@ class RedactionTests(unittest.TestCase):
         redacted = MODULE.TURKISH_PHONE_RE.sub("<redacted-phone>", redacted)
         self.assertEqual(redacted, "Aday <redacted-email> ve <redacted-phone>")
 
+    def test_diff_marker_is_preserved_and_decorator_is_not_an_email(self) -> None:
+        source = (
+            "+@contextlib.contextmanager\n"
+            "+recipient=person@example.com\n"
+            "-owner=old@example.com\n"
+        )
+        redacted, email_count, phone_count = MODULE.redact_scope_pii(source)
+        self.assertEqual(
+            redacted,
+            "+@contextlib.contextmanager\n"
+            "+recipient=<redacted-email>\n"
+            "-owner=<redacted-email>\n",
+        )
+        self.assertEqual(email_count, 2)
+        self.assertEqual(phone_count, 0)
+
     def test_redaction_expansion_is_rechecked_against_scope_limit(self) -> None:
         raw = ("a@b.co " * 100).encode("utf-8")
         redacted = MODULE.EMAIL_RE.sub(

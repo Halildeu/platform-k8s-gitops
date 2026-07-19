@@ -832,22 +832,32 @@ async function appendPriorRevisionFinding(
     try {
       body = JSON.parse(comment?.body || '');
     } catch {
-      if (
-        typeof comment?.body === 'string'
-        && comment.body.includes('cross-ai-provider-evidence/v3')
-        && /"provider"\s*:\s*"(?:openai|anthropic)"/.test(comment.body)
-      ) invalidCandidates.push(comment?.ref || 'missing-ref');
+      const rawEvidenceSignals = [
+        'cross-ai-provider-evidence/v3', 'base_tip_sha', 'base_sha', 'head_sha',
+        'scope_sha256', 'execution_profile', 'response_sha256', 'verdict',
+      ].filter((signal) => comment?.body?.includes(signal)).length;
+      if (rawEvidenceSignals >= 2) invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;
     }
     const expected = Object.values(CONSULTATION_RECEIPTS).find(
       (candidate) => candidate.provider === body?.provider,
     );
+    const immutableRetiredMinimaxRecord = body?.provider === 'minimax'
+      && body?.schema === 'cross-ai-provider-evidence/v3'
+      && comment?.createdAt === comment?.updatedAt;
+    if (immutableRetiredMinimaxRecord) continue;
+    const evidenceSignalCount = [
+      'base_tip_sha', 'base_sha', 'head_sha', 'scope_sha256', 'execution_profile',
+      'execution_provenance', 'requested_model', 'actual_model', 'response_sha256',
+      'response', 'verdict',
+    ].filter((key) => Object.hasOwn(body || {}, key)).length;
     const evidenceCandidate = body?.schema === 'cross-ai-provider-evidence/v3'
-      || [
-        'base_sha', 'head_sha', 'scope_sha256', 'execution_profile',
-        'response_sha256', 'response', 'verdict',
-      ].every((key) => Object.hasOwn(body || {}, key));
-    if (!expected || !evidenceCandidate) continue;
+      || evidenceSignalCount >= 2;
+    if (!evidenceCandidate) continue;
+    if (!expected) {
+      invalidCandidates.push(comment?.ref || 'missing-ref');
+      continue;
+    }
     const candidateRefValid = validEvidenceRef(comment?.ref, prMeta.baseRepo);
     const parsed = candidateRefValid
       ? parseEvidenceComment(comment, expected, expectedOwner, {

@@ -10,6 +10,7 @@ import io
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -178,6 +179,23 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             if version == "0.144.1"
         }
         self.assertEqual(package_suffixes, pinned_suffixes)
+
+    def test_native_pinset_matches_harness_poster_and_ci_for_all_platforms(self) -> None:
+        ci_source = (
+            ROOT / "scripts/ci/pr-cross-ai-audit.mjs"
+        ).read_text(encoding="utf-8")
+        ci_pins = {
+            tuple(key.split(":", 1)): digest
+            for key, digest in re.findall(
+                r"\['([^']+)', '([0-9a-f]{64})'\]", ci_source
+            )
+            if key.startswith("0.144.1:codex-")
+        }
+        self.assertEqual(
+            MODULE.TRUSTED_CODEX_NATIVE_SHA256,
+            POSTER_MODULE.TRUSTED_CODEX_NATIVE_SHA256,
+        )
+        self.assertEqual(MODULE.TRUSTED_CODEX_NATIVE_SHA256, ci_pins)
 
     def test_every_supported_codex_platform_has_a_gitleaks_release_pin(self) -> None:
         supported_platforms = {
