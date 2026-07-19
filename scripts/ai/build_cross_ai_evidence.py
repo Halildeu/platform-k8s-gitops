@@ -17,7 +17,12 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import ssl
+import subprocess
 import sys
+import urllib.error
+import urllib.request
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -57,6 +62,13 @@ from scripts.github_apps.cross_ai_deployment_policy.provider import (
 from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc, utc_now
 
 
+CANONICAL_MAIN_REF_API = (
+    "https://api.github.com/repos/Halildeu/platform-k8s-gitops/"
+    "git/ref/heads/main"
+)
+GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
 class IssuerRuntimeAttestor(Protocol):
     """Remote runner-management service; never a local private-key adapter."""
 
@@ -84,9 +96,100 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _canonical_main_tip(workspace: Path) -> str:
+    """Resolve main from GitHub TLS, never from caller-controlled git refs."""
+
+    request = urllib.request.Request(
+        CANONICAL_MAIN_REF_API,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "acik-cross-ai-provider-review-issuer/1",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+    )
+    try:
+        with opener.open(request, timeout=30) as response:
+            if response.status != 200:
+                reject(
+                    "PROVIDER_BASE_AUTHORITY_UNAVAILABLE",
+                    "canonical GitHub main ref is unavailable",
+                )
+            raw = response.read(65_537)
+        if len(raw) > 65_536:
+            raise ValueError("canonical GitHub ref response is oversized")
+        document = json.loads(raw)
+    except (
+        OSError,
+        UnicodeError,
+        ValueError,
+        json.JSONDecodeError,
+        urllib.error.URLError,
+    ):
+        reject(
+            "PROVIDER_BASE_AUTHORITY_UNAVAILABLE",
+            "canonical GitHub main ref cannot be verified",
+        )
+    if not isinstance(document, dict):
+        reject(
+            "PROVIDER_BASE_AUTHORITY_INVALID",
+            "canonical GitHub main ref response is invalid",
+        )
+    target = document.get("object")
+    if not isinstance(target, dict):
+        reject(
+            "PROVIDER_BASE_AUTHORITY_INVALID",
+            "canonical GitHub main ref response is invalid",
+        )
+    tip = target.get("sha")
+    if (
+        document.get("ref") != "refs/heads/main"
+        or target.get("type") != "commit"
+        or not isinstance(tip, str)
+        or not GIT_SHA_RE.fullmatch(tip)
+    ):
+        reject(
+            "PROVIDER_BASE_AUTHORITY_INVALID",
+            "canonical GitHub main ref response is invalid",
+        )
+    try:
+        local = subprocess.run(
+            ["git", "rev-parse", "--verify", f"{tip}^{{commit}}"],
+            cwd=workspace,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            env={
+                "HOME": os.environ.get("HOME", ""),
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "TZ": "UTC",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_TERMINAL_PROMPT": "0",
+            },
+        )
+    except OSError:
+        reject(
+            "PROVIDER_BASE_OBJECT_UNAVAILABLE",
+            "canonical main commit is unavailable in the issuer workspace",
+        )
+    if local.returncode != 0 or local.stdout.strip().lower() != tip:
+        reject(
+            "PROVIDER_BASE_OBJECT_UNAVAILABLE",
+            "canonical main commit is unavailable in the issuer workspace",
+        )
+    return tip
+
+
 def _scope(workspace: Path) -> tuple[dict[str, str], bytes]:
     head_sha = run_git(workspace, "rev-parse", "HEAD").lower()
-    base_tip_sha = run_git(workspace, "rev-parse", "origin/main").lower()
+    base_tip_sha = _canonical_main_tip(workspace)
     base_sha = run_git(workspace, "merge-base", base_tip_sha, head_sha).lower()
     if head_sha == base_sha or not run_git(
         workspace, "diff", "--name-only", "--no-renames", f"{base_sha}...{head_sha}"

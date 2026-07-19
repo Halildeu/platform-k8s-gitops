@@ -39,6 +39,10 @@ no caller variable is inherited, provider endpoint/proxy variables are absent,
 and the OS-account Codex home plus private temporary root are fixed. The signed
 capability snapshot binds that exact environment policy, so
 `OPENAI_BASE_URL`/proxy routing cannot masquerade as direct OpenAI provenance.
+The issuer resolves `refs/heads/main` from the fixed GitHub REST ref endpoint
+over direct TLS and requires that exact commit object to be present locally;
+the caller worktree's mutable `origin/main`, remote URL and ref namespace never
+define the signed review base.
 
 The first public root cannot cryptographically authorize its own introduction.
 `cross-ai-provider-review-genesis.v1.json` resolves that bootstrap without a
@@ -99,7 +103,18 @@ archived bytes are immutable; deleting, editing, reordering or rotating a root
 without the exact archive fails before review evidence is accepted. Product
 evidence issued before retirement can therefore be reverified against the
 pinned final snapshot after the current root changes, while evidence at or
-after retirement cannot use the old root.
+after retirement cannot use the old root. Retirement cannot be future-dated or
+older than the bounded review-leaf window, and the replacement root plus its
+signed revocations must still be active and fresh at the trusted verifier's
+current observation time; validating only at a backdated retirement timestamp
+is forbidden.
+
+The protected #2373 authorization artifact retains the exact downloaded signed
+advisory comment JSON alongside the authorization receipt and covers both with
+`SHA256SUMS` plus the immutable artifact digest. Product replay validates this
+archived transport object, its owner/timestamp/ref/body metadata and signed
+carrier bytes, so deletion or temporary unavailability of the live GitHub
+comment endpoint does not erase an already issued durable advisory.
 
 `build_cross_ai_provider_review_revocations.py` is the only repository release
 entrypoint for the public revocation file. It signs only

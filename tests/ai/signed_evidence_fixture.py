@@ -191,6 +191,7 @@ def make_signed_evidence(
         expected_trust_root_sha256=sha256_digest(trust_root),
         codex_executable_policy=executable_policy,
         issuer_runtime_policy=runtime_policy,
+        observed_at=reference_time,
     )
     scope_bytes = scope_bytes or (
         b"CROSS_AI_REVIEW_SCOPE_V1\n"

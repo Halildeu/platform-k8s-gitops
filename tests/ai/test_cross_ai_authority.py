@@ -183,7 +183,7 @@ class PublicReviewAuthorityTests(unittest.TestCase):
                 "issuerRuntimePolicy": (
                     self.fixture.authority.issuer_runtime_policy
                 ),
-                "retiredAt": "2026-07-18T21:00:00Z",
+                "retiredAt": "2026-07-18T20:45:00Z",
             }
         ]
         self.write_json(
@@ -198,7 +198,7 @@ class PublicReviewAuthorityTests(unittest.TestCase):
         authority = load_authority_for_evidence(
             self.root,
             expected_trust_root_sha256=digest,
-            observed_at=self.fixture.factory.now + timedelta(hours=2),
+            observed_at=self.fixture.factory.now + timedelta(minutes=35),
             evidence_reference_time=self.fixture.factory.now,
         )
         self.assertEqual(digest, authority.expected_trust_root_sha256)
@@ -209,6 +209,57 @@ class PublicReviewAuthorityTests(unittest.TestCase):
                 observed_at=self.fixture.factory.now + timedelta(hours=2),
                 evidence_reference_time=self.fixture.factory.now
                 + timedelta(minutes=30),
+            )
+
+    def test_retired_root_replay_checks_revocations_against_current_observation(self) -> None:
+        digest = self.fixture.authority.expected_trust_root_sha256
+        digest_hex = digest.removeprefix("sha256:")
+        history_root = (
+            f"config/github-apps/cross-ai-provider-review-history/"
+            f"{digest_hex}/trust-root.v2.json"
+        )
+        history_revocations = (
+            f"config/github-apps/cross-ai-provider-review-history/"
+            f"{digest_hex}/revocations.v1.dsse.json"
+        )
+        stale_snapshot = self.fixture.factory.sign(
+            REVOCATIONS_PAYLOAD_TYPE,
+            {
+                "schemaVersion": "acik.cross-ai-deployment-revocations.v1",
+                "revocationSetId": "20000000-0000-4000-8000-000000000099",
+                "issuedAt": "2026-07-18T20:10:00Z",
+                "nextUpdate": "2026-07-18T21:10:00Z",
+                "entries": [],
+            },
+            self.fixture.factory.REVOCATION_KEY_ID,
+        )
+        manifest = self.manifest(status="tracked_pending")
+        manifest["historicalAuthorities"] = [
+            {
+                "trustRootPath": history_root,
+                "revocationsPath": history_revocations,
+                "expectedTrustRootSha256": digest,
+                "expectedRevocationsSha256": sha256_digest(stale_snapshot),
+                "codexExecutablePolicy": self.fixture.authority.codex_executable_policy,
+                "issuerRuntimePolicy": self.fixture.authority.issuer_runtime_policy,
+                "retiredAt": "2026-07-18T21:00:00Z",
+            }
+        ]
+        self.write_json(
+            "config/github-apps/cross-ai-provider-review-authority.v1.json",
+            manifest,
+        )
+        self.write_json(history_root, self.fixture.authority.trust_root)
+        self.write_json(history_revocations, stale_snapshot)
+        with self.assertRaisesRegex(
+            AuthorityUnavailable,
+            "public authority is not active: REVOCATIONS_STALE",
+        ):
+            load_authority_for_evidence(
+                self.root,
+                expected_trust_root_sha256=digest,
+                observed_at=self.fixture.factory.now + timedelta(hours=1),
+                evidence_reference_time=self.fixture.factory.now + timedelta(minutes=25),
             )
 
 
@@ -561,6 +612,78 @@ class GenesisTransitionTests(unittest.TestCase):
             expected_bindings=self.history_bindings(base, head),
             now=self.fixture.factory.now,
         )
+
+    def test_root_rotation_rejects_backdated_retirement(self) -> None:
+        base, valid_head = self.install_rotation()
+        self.git("checkout", "-q", valid_head)
+        root_path = (
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+        )
+        manifest_path = (
+            "config/github-apps/cross-ai-provider-review-authority.v1.json"
+        )
+        replacement_root = json.loads((self.root / root_path).read_text())
+        replacement_root["issuedAt"] = "2026-07-18T18:29:00Z"
+        manifest = json.loads((self.root / manifest_path).read_text())
+        manifest["expectedTrustRootSha256"] = sha256_digest(replacement_root)
+        manifest["historicalAuthorities"][-1]["retiredAt"] = (
+            replacement_root["issuedAt"]
+        )
+        self.write_json(root_path, replacement_root)
+        self.write_json(manifest_path, manifest)
+        bad_head = self.commit("backdate authority retirement")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(AuthorityUnavailable, "predecessor boundary"):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, bad_head),
+                now=self.fixture.factory.now,
+            )
+
+    def test_root_rotation_rejects_replacement_revocations_stale_at_review(self) -> None:
+        base, valid_head = self.install_rotation()
+        self.git("checkout", "-q", valid_head)
+        root_path = (
+            "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
+        )
+        revocations_path = (
+            "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json"
+        )
+        manifest_path = (
+            "config/github-apps/cross-ai-provider-review-authority.v1.json"
+        )
+        replacement_root = json.loads((self.root / root_path).read_text())
+        replacement_root["issuedAt"] = "2026-07-18T20:00:00Z"
+        replacement_root["expiresAt"] = "2026-08-17T20:00:00Z"
+        for key in replacement_root["keys"]:
+            key["notBefore"] = "2026-07-18T20:00:00Z"
+            key["notAfter"] = (
+                "2026-07-25T20:00:00Z"
+                if key["role"] == "provider-review"
+                else "2026-08-17T20:00:00Z"
+            )
+        stale_revocations = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000099",
+            issued_at="2026-07-18T20:00:00Z",
+            next_update="2026-07-18T20:20:00Z",
+            entries=[],
+        )
+        manifest = json.loads((self.root / manifest_path).read_text())
+        manifest["expectedTrustRootSha256"] = sha256_digest(replacement_root)
+        manifest["historicalAuthorities"][-1]["retiredAt"] = (
+            replacement_root["issuedAt"]
+        )
+        self.write_json(root_path, replacement_root)
+        self.write_json(revocations_path, stale_revocations)
+        self.write_json(manifest_path, manifest)
+        bad_head = self.commit("use stale replacement revocations")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(AuthorityUnavailable, "REVOCATIONS_STALE"):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, bad_head),
+                now=self.fixture.factory.now,
+            )
 
     def test_root_rotation_without_archive_is_rejected(self) -> None:
         base, valid_head = self.install_rotation()

@@ -80,6 +80,22 @@ class StaticRuntimeAttestor:
         )
 
 
+class StaticHttpResponse:
+    status = 200
+
+    def __init__(self, document):
+        self.raw = json.dumps(document).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self, _maximum):
+        return self.raw
+
+
 class EvidenceBuilderTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
@@ -146,9 +162,53 @@ class EvidenceBuilderTests(unittest.TestCase):
         )
 
     def test_main_head_or_empty_diff_cannot_mint_review_evidence(self) -> None:
-        with patch.object(MODULE, "run_git", return_value="a" * 40):
+        with (
+            patch.object(MODULE, "_canonical_main_tip", return_value="a" * 40),
+            patch.object(MODULE, "run_git", return_value="a" * 40),
+        ):
             with self.assertRaisesRegex(PolicyError, "PROVIDER_SCOPE_EMPTY"):
                 MODULE._scope(self.workspace)
+
+    def test_scope_uses_canonical_github_tip_not_mutable_origin(self) -> None:
+        head = "c" * 40
+        base_tip = "b" * 40
+        merge_base = "a" * 40
+        scope = b"canonical-scope"
+        with (
+            patch.object(MODULE, "_canonical_main_tip", return_value=base_tip),
+            patch.object(
+                MODULE,
+                "run_git",
+                side_effect=[head, merge_base, "scripts/ai/review.py"],
+            ) as local_git,
+            patch.object(MODULE, "derive_scope", return_value=(scope, 0, 0)),
+        ):
+            bindings, actual_scope = MODULE._scope(self.workspace)
+        self.assertEqual(base_tip, bindings["base_tip_sha"])
+        self.assertEqual(merge_base, bindings["base_sha"])
+        self.assertEqual(scope, actual_scope)
+        self.assertNotIn("origin/main", str(local_git.call_args_list))
+
+    def test_canonical_main_tip_is_fetched_from_fixed_github_api(self) -> None:
+        tip = "d" * 40
+        response = StaticHttpResponse(
+            {
+                "ref": "refs/heads/main",
+                "object": {"type": "commit", "sha": tip},
+            }
+        )
+        with (
+            patch.object(MODULE.urllib.request, "build_opener") as builder,
+            patch.object(MODULE.subprocess, "run") as local_git,
+        ):
+            builder.return_value.open.return_value = response
+            local_git.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=tip + "\n"
+            )
+            self.assertEqual(tip, MODULE._canonical_main_tip(self.workspace))
+        request = builder.return_value.open.call_args.args[0]
+        self.assertEqual(MODULE.CANONICAL_MAIN_REF_API, request.full_url)
+        self.assertNotIn("origin", str(builder.return_value.open.call_args))
 
     def test_leaf_time_and_authority_are_refreshed_after_provider_returns(self) -> None:
         runner = StaticRunner()

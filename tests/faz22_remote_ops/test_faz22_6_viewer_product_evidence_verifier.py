@@ -651,8 +651,34 @@ def authorization_bytes():
     return VERIFIER.canonical_bytes(authorization_document()) + b"\n"
 
 
-def activation_archive(raw_authorization=None):
+def advisory_comment_document(
+    *,
+    body=ADVISORY_COMMENT_BODY,
+    created_at="2026-07-14T00:00:00Z",
+    updated_at="2026-07-14T00:00:00Z",
+):
+    return {
+        "id": ADVISORY_COMMENT_ID,
+        "html_url": (
+            f"https://github.com/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373"
+            f"#issuecomment-{ADVISORY_COMMENT_ID}"
+        ),
+        "issue_url": (
+            f"https://api.github.com/repos/{VERIFIER.EXPECTED_REPOSITORY}/issues/2373"
+        ),
+        "author_association": "OWNER",
+        "user": {"login": "Halildeu"},
+        "body": body,
+        "created_at": created_at,
+        "updated_at": updated_at,
+    }
+
+
+def activation_archive(raw_authorization=None, advisory_comment=None):
     files = {
+        "advisory-comment.json": encode_json(
+            advisory_comment or advisory_comment_document()
+        ),
         "protected-authorization.json": raw_authorization or authorization_bytes(),
     }
     sums = "".join(
@@ -813,6 +839,15 @@ class FakeClient:
             "type": "User",
             "reviewer": {"id": 700001, "login": "security-reviewer"},
         }]
+
+    def refresh_activation_archive(self):
+        self.activation_archive = activation_archive(
+            advisory_comment=advisory_comment_document(
+                body=self.advisory_comment_body,
+                created_at=self.advisory_comment_created_at,
+                updated_at=self.advisory_comment_updated_at,
+            )
+        )
 
     def get_json(self, path):
         if path == f"/repos/{VERIFIER.EXPECTED_REPOSITORY}/actions/runs/{ACTIVATION_RUN_ID}":
@@ -1003,6 +1038,7 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
 
     def client_for_policy(
         self, policy_value, *, legacy_v1=False, authorization_updates=None,
+        advisory_comment=None,
     ):
         if not legacy_v1:
             VERIFIER.OWNER_POLICY_V2.write_bytes(encode_json(policy_value))
@@ -1023,7 +1059,9 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             authorization["aiProviderCryptographicAttestation"] = False
         authorization.update(authorization_updates or {})
         raw_authorization = VERIFIER.canonical_bytes(authorization) + b"\n"
-        protected_archive = activation_archive(raw_authorization)
+        protected_archive = activation_archive(
+            raw_authorization, advisory_comment=advisory_comment
+        )
         authorization_digest = VERIFIER.digest_bytes(raw_authorization)
 
         children = child_documents()
@@ -1239,8 +1277,12 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "owner directive body digest"):
             self.verify(client)
 
-        client = FakeClient()
-        client.advisory_comment_body += " tampered"
+        client = self.client_for_policy(
+            owner_policy_fixture(),
+            advisory_comment=advisory_comment_document(
+                body=ADVISORY_COMMENT_BODY + " tampered"
+            ),
+        )
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "AI advisory body digest"):
             self.verify(client)
 
@@ -1274,14 +1316,22 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
                     self.verify(client)
 
         VERIFIER.OWNER_POLICY_V2.write_bytes(encode_json(owner_policy_fixture()))
-        edited = FakeClient()
-        edited.advisory_comment_updated_at = "2026-07-14T00:00:01Z"
+        edited = self.client_for_policy(
+            owner_policy_fixture(),
+            advisory_comment=advisory_comment_document(
+                updated_at="2026-07-14T00:00:01Z"
+            ),
+        )
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "edited or has invalid timestamps"):
             self.verify(edited)
 
-        stale = FakeClient()
-        stale.advisory_comment_created_at = "2026-07-06T23:59:59Z"
-        stale.advisory_comment_updated_at = stale.advisory_comment_created_at
+        stale = self.client_for_policy(
+            owner_policy_fixture(),
+            advisory_comment=advisory_comment_document(
+                created_at="2026-07-06T23:59:59Z",
+                updated_at="2026-07-06T23:59:59Z",
+            ),
+        )
         with self.assertRaisesRegex(VERIFIER.EvidenceError, "comment is stale"):
             self.verify(stale)
 
@@ -1309,12 +1359,17 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             expected_trust_root_sha256="sha256:" + ("f" * 64),
             codex_executable_policy={},
             issuer_runtime_policy={},
+            observed_at=NOW,
         )
         with patch.object(
             VERIFIER,
             "load_authority_for_evidence",
             return_value=ADVISORY_FIXTURE.authority,
-        ) as resolver:
+        ) as resolver, patch.object(
+            VERIFIER,
+            "validate_codex_advisory_evidence",
+            wraps=VERIFIER.validate_codex_advisory_evidence,
+        ) as advisory_verifier:
             result = self.verify(
                 authority_repo_root=Path("/trusted/repo"),
                 current_authority=rotated,
@@ -1324,6 +1379,22 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             ADVISORY_FIXTURE.authority.expected_trust_root_sha256,
             resolver.call_args.kwargs["expected_trust_root_sha256"],
         )
+        self.assertEqual(
+            ADVISORY_FIXTURE.authority.observed_at,
+            advisory_verifier.call_args.kwargs["authority_observed_at"],
+        )
+
+    def test_durable_advisory_carrier_does_not_refetch_live_comment(self):
+        client = FakeClient()
+        original = client.get_json
+
+        def unavailable(path):
+            if path.endswith(f"/issues/comments/{ADVISORY_COMMENT_ID}"):
+                raise VERIFIER.EvidenceError("live advisory transport unavailable")
+            return original(path)
+
+        client.get_json = unavailable
+        self.assertEqual("pass", self.verify(client)["status"])
 
     def test_immutable_v1_is_rejected_for_current_product_but_allowed_for_explicit_forensics(self):
         legacy_policy = json.loads(VERIFIER.OWNER_POLICY_V1.read_bytes())
