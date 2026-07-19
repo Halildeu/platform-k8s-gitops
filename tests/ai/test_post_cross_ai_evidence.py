@@ -499,6 +499,9 @@ class EvidenceValidationTests(unittest.TestCase):
         self.assertIn("statuses: write", workflow)
         self.assertIn("Mark exact-head Cross-AI audit status current", workflow)
         self.assertIn("scripts/ai/complete_cross_ai_audit_status.py", workflow)
+        self.assertIn("issue_comment:", workflow)
+        self.assertIn("cross-ai-evidence-mutation-guard", workflow)
+        self.assertIn('--comment-event-path "$GITHUB_EVENT_PATH"', workflow)
 
     def test_accepts_exact_spark_model(self) -> None:
         payload = evidence()

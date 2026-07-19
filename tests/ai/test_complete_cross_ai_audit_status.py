@@ -77,6 +77,21 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         )
         return value
 
+    def write_comment_event(self, action: str, comment_id: int) -> None:
+        self.event_path.write_text(
+            json.dumps({
+                "action": action,
+                "comment": {"id": comment_id},
+                "issue": {
+                    "number": self.issue,
+                    "pull_request": {
+                        "url": f"https://api.github.com/repos/{self.repo}/pulls/{self.issue}"
+                    },
+                },
+            }),
+            encoding="utf-8",
+        )
+
     def current_pr(
         self,
         body: str,
@@ -154,15 +169,15 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.current_pr(body),
             self.comment(),
             [[self.pending(), self.ledger()]],
-            success,
             self.current_pr(body),
-            [[self.pending(), self.ledger(), success]],
+            [[self.pending(), self.ledger()]],
             self.comment(),
+            success,
         ])
         self.assertEqual(result["action"], "marked-current")
         self.assertEqual(result["generation"], 10)
         self.assertEqual(len(calls), 7)
-        self.assertIn(f"statuses/{self.head}", calls[3][2])
+        self.assertIn(f"statuses/{self.head}", calls[-1][2])
 
     def test_stale_event_body_or_force_push_cannot_clear_pending(self) -> None:
         event_body = self.write_event()
@@ -357,16 +372,8 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
 
-    def test_selected_evidence_deleted_after_success_restores_pending(self) -> None:
+    def test_selected_evidence_deleted_before_final_success_never_turns_green(self) -> None:
         body = self.write_event()
-        success = {
-            "id": 12,
-            "state": "success",
-            "context": "cross-ai-audit",
-            "description": "Trusted Cross-AI audit passed generation=10",
-            "target_url": self.url,
-            "creator": {"login": "github-actions[bot]"},
-        }
         retry = {
             "id": 13,
             "state": "pending",
@@ -379,9 +386,8 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             (0, self.current_pr(body)),
             (0, self.comment()),
             (0, [[self.pending(), self.ledger()]]),
-            (0, success),
             (0, self.current_pr(body)),
-            (0, [[self.pending(), self.ledger(), success]]),
+            (0, [[self.pending(), self.ledger()]]),
             (1, {}),
             (0, retry),
         ]
@@ -400,7 +406,15 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
-        self.assertEqual(len(calls), 8)
+        self.assertEqual(len(calls), 7)
+        self.assertEqual(
+            sum(
+                f"statuses/{self.head}" in token
+                for call in calls
+                for token in call
+            ),
+            1,
+        )
         self.assertIn(f"statuses/{self.head}", calls[-1][2])
 
     def test_scope_equivalent_new_head_uses_review_head_generation(self) -> None:
@@ -419,11 +433,11 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.comment(),
             [[self.pending(), self.ledger()]],
             [[]],
-            success,
             self.current_pr(body),
             [[self.pending(), self.ledger()]],
-            [[success]],
+            [[]],
             self.comment(),
+            success,
         ])
         self.assertEqual(result["action"], "marked-current")
         self.assertTrue(
@@ -432,19 +446,11 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         self.assertTrue(
             any(f"commits/{self.head}/statuses" in token for token in calls[3])
         )
-        self.assertIn(f"statuses/{self.head}", calls[4][2])
+        self.assertIn(f"statuses/{self.head}", calls[-1][2])
 
     def test_new_owner_generation_after_validation_restores_pending(self) -> None:
         old_body = self.write_event()
         new_body = self.body(20, 21)
-        success = {
-            "id": 30,
-            "state": "success",
-            "context": "cross-ai-audit",
-            "description": "Trusted Cross-AI audit passed generation=10",
-            "target_url": self.url,
-            "creator": {"login": "github-actions[bot]"},
-        }
         retry = {
             "id": 31,
             "state": "pending",
@@ -457,14 +463,12 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.current_pr(old_body),
             self.comment(),
             [[self.pending(), self.ledger()]],
-            success,
             self.current_pr(new_body),
             [[
                 self.pending(),
                 self.ledger(),
                 self.pending(identifier=20),
                 self.ledger(identifier=21),
-                success,
             ]],
             retry,
         ]
@@ -482,20 +486,12 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
-        self.assertEqual(len(calls), 7)
+        self.assertEqual(len(calls), 6)
         self.assertIn(f"statuses/{self.head}", calls[-1][2])
 
-    def test_force_push_after_success_marks_live_head_pending(self) -> None:
+    def test_force_push_before_final_success_marks_live_head_pending(self) -> None:
         body = self.write_event()
         live_head = "c" * 40
-        success = {
-            "id": 30,
-            "state": "success",
-            "context": "cross-ai-audit",
-            "description": "Trusted Cross-AI audit passed generation=10",
-            "target_url": self.url,
-            "creator": {"login": "github-actions[bot]"},
-        }
         retry = {
             "id": 31,
             "state": "pending",
@@ -508,9 +504,8 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.current_pr(body),
             self.comment(),
             [[self.pending(), self.ledger()]],
-            success,
             self.current_pr(body, head=live_head),
-            [[self.pending(), self.ledger(), success]],
+            [[self.pending(), self.ledger()]],
             retry,
         ]
         calls: list[list[str]] = []
@@ -527,7 +522,7 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
-        self.assertEqual(len(calls), 7)
+        self.assertEqual(len(calls), 6)
         self.assertIn(f"statuses/{live_head}", calls[-1][2])
 
     def test_trusted_retry_pending_can_resume_exact_owner_generation(self) -> None:
@@ -552,10 +547,10 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.current_pr(body),
             self.comment(),
             [[self.pending(), self.ledger(), retry]],
-            success,
             self.current_pr(body),
-            [[self.pending(), self.ledger(), retry, success]],
+            [[self.pending(), self.ledger(), retry]],
             self.comment(),
+            success,
         ])
         self.assertEqual(result["action"], "marked-current")
 
@@ -679,6 +674,134 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
+
+    def test_post_completion_selected_comment_mutation_restores_pending(self) -> None:
+        body = self.body()
+        for action in ("edited", "deleted"):
+            with self.subTest(action=action):
+                self.write_comment_event(action, self.comment_id)
+                retry = {
+                    "id": 40,
+                    "state": "pending",
+                    "context": "cross-ai-audit",
+                    "description": "Cross-AI audit retry required generation=10",
+                    "target_url": self.url,
+                    "creator": {"login": "github-actions[bot]"},
+                }
+                responses = [self.current_pr(body), retry]
+                calls: list[list[str]] = []
+
+                def runner(
+                    command: list[str], **_kwargs: object
+                ) -> subprocess.CompletedProcess[str]:
+                    calls.append(command)
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout=json.dumps(responses.pop(0)),
+                        stderr="",
+                    )
+
+                with (
+                    mock.patch.object(
+                        MODULE.shutil, "which", return_value="/usr/bin/gh"
+                    ),
+                    mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+                ):
+                    result = MODULE.guard_comment_mutation(
+                        self.repo, self.event_path
+                    )
+                self.assertEqual(
+                    result["action"], "selected-evidence-mutation-guarded"
+                )
+                self.assertEqual(len(calls), 2)
+                self.assertIn(f"statuses/{self.head}", calls[-1][2])
+
+    def test_post_completion_unselected_comment_mutation_is_ignored(self) -> None:
+        self.write_comment_event("edited", self.comment_id + 1)
+        calls: list[list[str]] = []
+
+        responses = [self.current_pr(self.body()), self.comment()]
+
+        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(command)
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(responses.pop(0)),
+                stderr="",
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+        ):
+            result = MODULE.guard_comment_mutation(self.repo, self.event_path)
+        self.assertEqual(result["action"], "ignored-valid-unselected-comment")
+        self.assertEqual(len(calls), 2)
+
+    def test_unselected_event_still_guards_previously_mutated_selected_comment(self) -> None:
+        self.write_comment_event("edited", self.comment_id + 1)
+        retry = {
+            "id": 40,
+            "state": "pending",
+            "context": "cross-ai-audit",
+            "description": "Cross-AI audit retry required generation=10",
+            "target_url": self.url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        responses: list[tuple[int, object]] = [
+            (0, self.current_pr(self.body())),
+            (
+                0,
+                self.comment(
+                    body=self.evidence_body + "edited",
+                    updated_at="2026-07-19T18:01:00Z",
+                ),
+            ),
+            (0, retry),
+        ]
+
+        def runner(
+            command: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            returncode, payload = responses.pop(0)
+            return subprocess.CompletedProcess(
+                command,
+                returncode,
+                stdout=json.dumps(payload),
+                stderr="",
+            )
+
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(MODULE.subprocess, "run", side_effect=runner),
+        ):
+            result = MODULE.guard_comment_mutation(self.repo, self.event_path)
+        self.assertEqual(result["action"], "selected-evidence-invalid-guarded")
+
+    def test_comment_mutation_without_selected_evidence_is_ignored(self) -> None:
+        self.write_comment_event("edited", self.comment_id + 1)
+        with (
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+            mock.patch.object(
+                MODULE.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    ["gh"],
+                    0,
+                    stdout=json.dumps(
+                        self.current_pr(
+                            "Consultation mode: none\n"
+                            "Consultation reason: routine documentation\n"
+                        )
+                    ),
+                    stderr="",
+                ),
+            ),
+        ):
+            result = MODULE.guard_comment_mutation(self.repo, self.event_path)
+        self.assertEqual(result["action"], "ignored-no-selected-evidence")
 
 
 if __name__ == "__main__":

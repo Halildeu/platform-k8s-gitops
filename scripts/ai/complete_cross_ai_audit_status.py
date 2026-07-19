@@ -101,10 +101,10 @@ def consultation_commit(body: str) -> str:
     return matches[0].lower()
 
 
-def selected_evidence_binding(body: str, digest: str, repo: str) -> tuple[int, str]:
+def parse_selected_evidence_fields(body: str) -> dict[str, str] | None:
     matches = CODEX_RECEIPT_RE.findall(body)
     if len(matches) != 1:
-        fail("audit_selected_evidence_binding_invalid")
+        return None
     fields: dict[str, str] = {}
     for token in matches[0].split(";"):
         key, separator, value = token.strip().partition("=")
@@ -115,10 +115,22 @@ def selected_evidence_binding(body: str, digest: str, repo: str) -> tuple[int, s
             or normalized in fields
             or not value.strip()
         ):
-            fail("audit_selected_evidence_binding_invalid")
+            return None
         fields[normalized] = value.strip()
     if fields.keys() != RECEIPT_KEYS:
+        return None
+    return fields
+
+
+def selected_evidence_fields(body: str) -> dict[str, str]:
+    fields = parse_selected_evidence_fields(body)
+    if fields is None:
         fail("audit_selected_evidence_binding_invalid")
+    return fields
+
+
+def selected_evidence_binding(body: str, digest: str, repo: str) -> tuple[int, str]:
+    fields = selected_evidence_fields(body)
     ref = fields.get("ref", "")
     ref_match = re.fullmatch(
         rf"https://api\.github\.com/repos/{re.escape(repo)}/issues/comments/(\d+)",
@@ -397,6 +409,85 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     if not current_pending_valid:
         fail("audit_generation_not_latest_pending")
 
+    # Revalidate every mutable authority before the only success write. A
+    # failure leaves the existing pending generation in place; success must
+    # never be followed by compensating validation or a retry write.
+    current_before_success = gh_json(
+        [f"repos/{repo}/pulls/{issue}", "--method", "GET"]
+    )
+    source_statuses_before_success = status_history(repo, review_head)
+    current_statuses_before_success = (
+        source_statuses_before_success
+        if review_head == event_head
+        else status_history(repo, event_head)
+    )
+    source_audit_before_success = [
+        status for status in source_statuses_before_success
+        if status.get("context") == AUDIT_CONTEXT
+        and isinstance(status.get("id"), int)
+    ]
+    current_audit_before_success = [
+        status for status in current_statuses_before_success
+        if status.get("context") == AUDIT_CONTEXT
+        and isinstance(status.get("id"), int)
+    ]
+    newer_owner_pending = [
+        status for status in source_audit_before_success
+        if status["id"] > pending_status_id
+        and status.get("state") == "pending"
+        and status.get("description") == PENDING_DESCRIPTION
+        and status.get("target_url") == expected_url
+        and creator_login(status) == owner
+    ]
+    latest_current_before_success = max(
+        current_audit_before_success,
+        key=lambda status: status["id"],
+        default=None,
+    )
+    try:
+        current_before_head = current_before_success["head"]["sha"].lower()
+        current_before_base = current_before_success["base"]["sha"].lower()
+        current_before_body = current_before_success.get("body") or ""
+    except (KeyError, TypeError, AttributeError):
+        current_before_head = ""
+        current_before_base = ""
+        current_before_body = ""
+    final_pending_valid = (
+        valid_owner_pending(
+            latest_current_before_success,
+            pending_status_id,
+            owner,
+            expected_url,
+        )
+        if review_head == event_head
+        else latest_current_before_success is None
+    ) or valid_retry_pending(
+        latest_current_before_success,
+        pending_status_id,
+        expected_url,
+    )
+    if (
+        current_before_success.get("state") != "open"
+        or current_before_success.get("html_url") != expected_url
+        or current_before_head != event_head
+        or current_before_base != event_base
+        or current_before_body != event_body
+        or newer_owner_pending
+        or not final_pending_valid
+    ):
+        protect_live_pr_generation(repo, current_before_success, expected_url)
+        fail("audit_generation_superseded_before_success")
+    try:
+        evidence_final = selected_evidence_snapshot(
+            repo, issue, comment_id, evidence_ref, digest
+        )
+    except SystemExit:
+        protect_live_pr_generation(repo, current_before_success, expected_url)
+        fail("audit_selected_evidence_superseded_before_success")
+    if evidence_final != evidence_before:
+        protect_live_pr_generation(repo, current_before_success, expected_url)
+        fail("audit_selected_evidence_superseded_before_success")
+
     payload = json.dumps(
         {
             "state": "success",
@@ -424,66 +515,6 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
         or created_creator != TRUSTED_WORKFLOW_STATUS_CREATOR
     ):
         fail("audit_success_status_invalid")
-
-    current_after = gh_json([f"repos/{repo}/pulls/{issue}", "--method", "GET"])
-    source_statuses_after = status_history(repo, review_head)
-    current_statuses_after = (
-        source_statuses_after
-        if review_head == event_head
-        else status_history(repo, event_head)
-    )
-    source_audit_after = [
-        status for status in source_statuses_after
-        if status.get("context") == AUDIT_CONTEXT
-        and isinstance(status.get("id"), int)
-    ]
-    current_audit_after = [
-        status for status in current_statuses_after
-        if status.get("context") == AUDIT_CONTEXT
-        and isinstance(status.get("id"), int)
-    ]
-    newer_owner_pending = [
-        status for status in source_audit_after
-        if status["id"] > pending_status_id
-        and status.get("state") == "pending"
-        and status.get("description") == PENDING_DESCRIPTION
-        and status.get("target_url") == expected_url
-        and creator_login(status) == owner
-    ]
-    latest_current_after = max(
-        current_audit_after, key=lambda status: status["id"], default=None
-    )
-    try:
-        current_after_head = current_after["head"]["sha"].lower()
-        current_after_base = current_after["base"]["sha"].lower()
-        current_after_body = current_after.get("body") or ""
-    except (KeyError, TypeError, AttributeError):
-        current_after_head = ""
-        current_after_base = ""
-        current_after_body = ""
-    superseded = bool(
-        current_after.get("state") != "open"
-        or current_after.get("html_url") != expected_url
-        or current_after_head != event_head
-        or current_after_base != event_base
-        or current_after_body != event_body
-        or newer_owner_pending
-        or latest_current_after is None
-        or latest_current_after.get("id") != created.get("id")
-    )
-    if superseded:
-        protect_live_pr_generation(repo, current_after, expected_url)
-        fail("audit_generation_superseded_after_success")
-    try:
-        evidence_after = selected_evidence_snapshot(
-            repo, issue, comment_id, evidence_ref, digest
-        )
-    except SystemExit:
-        protect_live_pr_generation(repo, current_after, expected_url)
-        fail("audit_selected_evidence_superseded_after_success")
-    if evidence_after != evidence_before:
-        protect_live_pr_generation(repo, current_after, expected_url)
-        fail("audit_selected_evidence_superseded_after_success")
     return {
         "ok": True,
         "action": "marked-current",
@@ -492,13 +523,107 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     }
 
 
+def guard_comment_mutation(repo: str, event_path: Path) -> dict:
+    if REPO_RE.fullmatch(repo) is None or shutil.which("gh") is None:
+        fail("invalid_audit_mutation_target")
+    try:
+        event = json.loads(event_path.read_text(encoding="utf-8"))
+        action = event["action"]
+        comment_id = event["comment"]["id"]
+        issue = event["issue"]
+        issue_number = issue["number"]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+        fail("invalid_audit_mutation_event")
+    if action not in {"edited", "deleted"} or not isinstance(comment_id, int):
+        fail("invalid_audit_mutation_event")
+    if not isinstance(issue_number, int) or issue_number < 1:
+        fail("invalid_audit_mutation_event")
+    if not isinstance(issue.get("pull_request"), dict):
+        return {"ok": True, "action": "ignored-non-pr-comment"}
+
+    current = gh_json([f"repos/{repo}/pulls/{issue_number}", "--method", "GET"])
+    expected_url = f"https://github.com/{repo}/pull/{issue_number}"
+    try:
+        head = current["head"]["sha"].lower()
+        body = current.get("body") or ""
+    except (KeyError, TypeError, AttributeError):
+        fail("github_pr_mutation_guard_invalid")
+    if (
+        current.get("state") != "open"
+        or current.get("html_url") != expected_url
+        or SHA_RE.fullmatch(head) is None
+        or not isinstance(body, str)
+    ):
+        return {"ok": True, "action": "ignored-non-open-pr"}
+
+    markers = MARKER_RE.findall(body)
+    generation = int(markers[0][0]) if len(markers) == 1 else 0
+    fields = parse_selected_evidence_fields(body)
+    if fields is None:
+        if markers:
+            created = post_retry_pending(repo, head, expected_url, generation)
+            return {
+                "ok": True,
+                "action": "invalid-selected-evidence-binding-guarded",
+                "comment_action": action,
+                "generation": generation,
+                "status_id": created["id"],
+            }
+        return {"ok": True, "action": "ignored-no-selected-evidence"}
+    ref_match = re.fullmatch(
+        rf"https://api\.github\.com/repos/{re.escape(repo)}/issues/comments/(\d+)",
+        fields.get("ref", ""),
+    )
+    if ref_match is None:
+        fail("audit_selected_evidence_binding_invalid")
+    selected_comment_id = int(ref_match.group(1))
+    selected_ref = fields["ref"]
+    selected_digest = fields["sha256"].lower()
+    if selected_comment_id != comment_id:
+        try:
+            selected_evidence_snapshot(
+                repo,
+                issue_number,
+                selected_comment_id,
+                selected_ref,
+                selected_digest,
+            )
+        except SystemExit:
+            created = post_retry_pending(repo, head, expected_url, generation)
+            return {
+                "ok": True,
+                "action": "selected-evidence-invalid-guarded",
+                "comment_action": action,
+                "generation": generation,
+                "status_id": created["id"],
+            }
+        return {"ok": True, "action": "ignored-valid-unselected-comment"}
+    created = post_retry_pending(repo, head, expected_url, generation)
+    return {
+        "ok": True,
+        "action": "selected-evidence-mutation-guarded",
+        "comment_action": action,
+        "generation": generation,
+        "status_id": created["id"],
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--issue", type=int, required=True)
-    parser.add_argument("--event-path", type=Path, required=True)
+    parser.add_argument("--issue", type=int)
+    events = parser.add_mutually_exclusive_group(required=True)
+    events.add_argument("--event-path", type=Path)
+    events.add_argument("--comment-event-path", type=Path)
     args = parser.parse_args()
-    result = complete_status(args.repo, args.issue, args.event_path)
+    if args.event_path is not None:
+        if args.issue is None:
+            fail("invalid_audit_generation_target")
+        result = complete_status(args.repo, args.issue, args.event_path)
+    else:
+        if args.issue is not None:
+            fail("invalid_audit_mutation_target")
+        result = guard_comment_mutation(args.repo, args.comment_event_path)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
 

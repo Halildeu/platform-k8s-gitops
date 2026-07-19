@@ -66,6 +66,13 @@ on:
       # When the audit script gains genuine label-aware semantics, this
       # block should be re-added with the matching script logic in the
       # SAME PR (atomic wiring + behavior), not pre-wired ahead.
+  # Selected evidence comments remain mutable GitHub objects. Any later edit
+  # or deletion of the exact comment referenced by an open PR restores the
+  # fail-closed status on that PR's current head.
+  issue_comment:
+    types:
+      - edited
+      - deleted
 
 permissions:
   actions: read
@@ -78,11 +85,12 @@ permissions:
 # Per-PR concurrency group; superseded runs are cancelled on `synchronize`
 # so rapid push churn does not exhaust CI minutes.
 concurrency:
-  group: cross-ai-audit-${{ github.event.pull_request.number }}
+  group: cross-ai-audit-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   cross-ai-audit:
+    if: github.event_name == 'pull_request_target'
     # Codex `019e2693` HIGH-1: canonical check context PMD §2.10 must-pass list
     # branch protection ruleset bu exact context'i arıyor (`cross-ai-audit`).
     # #842 PR-A2: job name preserved across the pull_request → pull_request_target
@@ -263,3 +271,24 @@ jobs:
             --repo "$GH_REPO" \
             --issue "$PR_NUMBER" \
             --event-path "$GITHUB_EVENT_PATH"
+
+  evidence-mutation-guard:
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request != null
+    name: cross-ai-evidence-mutation-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout exact trusted default-branch event SHA
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Restore pending status for selected evidence mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 scripts/ai/complete_cross_ai_audit_status.py \
+            --repo "$GH_REPO" \
+            --comment-event-path "$GITHUB_EVENT_PATH"

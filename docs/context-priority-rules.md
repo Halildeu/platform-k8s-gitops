@@ -568,8 +568,12 @@ Trusted completion helper event body/head ile canlı açık PR body/head'ini,
 marker'daki pending ID ile owner pending status'u ve marker'daki ledger ID ile
 exact digest/PR/owner ledger'ını yeniden doğrulamadan ve ledger ID pending
 ID'den kesin büyük olmadan success yazamaz. Seçili Codex receipt ref'indeki
-owner comment'i success öncesi ve sonrasında yeniden okuyup exact body digest,
-OWNER association ve `created_at == updated_at` immutability koşulunu korur.
+owner comment'i success'ten hemen önce yeniden okuyup exact body digest, OWNER
+association ve `created_at == updated_at` immutability koşulunu korur; success
+bu workflow'un son dış yazımıdır ve telafi amaçlı success-sonrası pending
+penceresi oluşturulmaz. Daha sonraki seçili-comment `edited` / `deleted`
+olayları trusted `issue_comment` mutation guard ile güncel PR head'ini yeniden
+pending yapar.
 Byte-identical canonical scope reuse halinde generation pending/ledger kayıtlarını
 `Consultation commit` SHA'sında doğrular, ancak success'i güncel PR head SHA'sına
 yazar; böylece metadata-only yeni head de required status kazanır. Success
