@@ -319,6 +319,58 @@ printf '%s' "$final_accessors" | jq -e --arg expected "$new_accessor" \
 }
 unset old_accessors final_accessors new_accessor
 
+# Before changing PostgreSQL, inspect every ACL-bearing pg_catalog column that
+# this server version exposes. pg_init_privs is extension baseline metadata,
+# not the live privilege state. A default-ACL row owned by ethics_app is drift
+# even when its grantee is PUBLIC or another role.
+role_exists=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
+  "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ethics_app')")
+if [ "$role_exists" = t ]; then
+  while IFS= read -r database_name; do
+    docker exec -i "$PG_CONTAINER" psql -X -U postgres -d "$database_name" \
+      -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+DO $$
+DECLARE
+  target_oid oid;
+  acl_catalog record;
+  leaked boolean;
+BEGIN
+  SELECT oid INTO STRICT target_oid FROM pg_roles WHERE rolname='ethics_app';
+  IF EXISTS (SELECT 1 FROM pg_default_acl WHERE defaclrole=target_oid) THEN
+    RAISE EXCEPTION 'ethics_app owns an unexpected default ACL';
+  END IF;
+  FOR acl_catalog IN
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema='pg_catalog'
+      AND udt_name='_aclitem'
+      AND table_name <> 'pg_init_privs'
+    ORDER BY table_name, column_name
+  LOOP
+    IF acl_catalog.table_name = 'pg_database' THEN
+      EXECUTE format(
+        'SELECT EXISTS (SELECT 1 FROM pg_catalog.%I c, LATERAL aclexplode(c.%I) x '
+        'WHERE x.grantee=$1 AND NOT (c.datname=''ethics'' AND c.datdba=$1))',
+        acl_catalog.table_name, acl_catalog.column_name)
+        INTO leaked USING target_oid;
+    ELSE
+      EXECUTE format(
+        'SELECT EXISTS (SELECT 1 FROM pg_catalog.%I c, LATERAL aclexplode(c.%I) x '
+        'WHERE x.grantee=$1)', acl_catalog.table_name, acl_catalog.column_name)
+        INTO leaked USING target_oid;
+    END IF;
+    IF leaked THEN
+      RAISE EXCEPTION 'ethics_app has an unexpected ACL in %.%',
+        acl_catalog.table_name, acl_catalog.column_name;
+    END IF;
+  END LOOP;
+END
+$$;
+SQL
+  done < <(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
+    "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0' ORDER BY datname")
+fi
+
 # Create/validate the login role without embedding a cleartext password in SQL.
 docker exec "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
 DO $$
@@ -357,34 +409,6 @@ BEGIN
 END
 $$;
 SQL
-
-# A reused login must not carry direct ACLs from another product. Ownership is
-# checked separately; PUBLIC grants are cluster defaults and are not direct
-# grants to ethics_app.
-database_acl_count=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc "
-  SELECT count(*) FROM pg_database d, LATERAL aclexplode(d.datacl) x
-  WHERE x.grantee = (SELECT oid FROM pg_roles WHERE rolname='ethics_app')
-    AND NOT (d.datname='ethics' AND d.datdba=x.grantee)")
-[ "$database_acl_count" = 0 ] || {
-  echo "FATAL: ethics_app has unexpected direct database ACLs" >&2
-  exit 1
-}
-while IFS= read -r database_name; do
-  object_acl_count=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d "$database_name" -Atc "
-    WITH target AS (SELECT oid FROM pg_roles WHERE rolname='ethics_app')
-    SELECT
-      (SELECT count(*) FROM pg_namespace n, LATERAL aclexplode(n.nspacl) x, target t WHERE x.grantee=t.oid) +
-      (SELECT count(*) FROM pg_class c, LATERAL aclexplode(c.relacl) x, target t WHERE x.grantee=t.oid) +
-      (SELECT count(*) FROM pg_attribute a, LATERAL aclexplode(a.attacl) x, target t WHERE x.grantee=t.oid) +
-      (SELECT count(*) FROM pg_proc p, LATERAL aclexplode(p.proacl) x, target t WHERE x.grantee=t.oid) +
-      (SELECT count(*) FROM pg_type y, LATERAL aclexplode(y.typacl) x, target t WHERE x.grantee=t.oid) +
-      (SELECT count(*) FROM pg_default_acl a, LATERAL aclexplode(a.defaclacl) x, target t WHERE x.grantee=t.oid)")
-  [ "$object_acl_count" = 0 ] || {
-    echo "FATAL: ethics_app has unexpected direct object/default ACLs in $database_name" >&2
-    exit 1
-  }
-done < <(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
-  "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0' ORDER BY datname")
 
 # psql's \password command hashes client-side and avoids cleartext password SQL
 # in server statement logs. The password itself arrives only over stdin.

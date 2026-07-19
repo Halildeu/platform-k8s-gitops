@@ -259,6 +259,7 @@ live_activation_resources=$(remote '
     ingress/etik-speak-public-api ingress/etik-speak-public-ui ingress/etik-speak-staff-api \
     networkpolicy/etik-speak-public networkpolicy/ethics-service \
     externalsecret/ethics-service-secrets externalsecret/etik-speak-public-gate \
+    secret/ethics-service-secrets secret/etik-speak-public-gate \
     secretstore/etik-speak-vault resourcequota/etik-speak-budget; do
     kubectl --request-timeout=10s --context k3d-test -n platform-test get "$target" \
       --ignore-not-found -o name

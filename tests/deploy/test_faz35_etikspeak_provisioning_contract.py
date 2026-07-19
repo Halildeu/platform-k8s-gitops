@@ -219,8 +219,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("post-rotation AppRole credential enumeration failed", self.pg_vault)
         self.assertIn("stale AppRole credential accessor remains", self.pg_vault)
         self.assertIn("ethics_app inherits an unexpected role", self.pg_vault)
-        self.assertIn("ethics_app has unexpected direct database ACLs", self.pg_vault)
-        self.assertIn("ethics_app has unexpected direct object/default ACLs", self.pg_vault)
+        self.assertIn("ethics_app owns an unexpected default ACL", self.pg_vault)
+        self.assertIn("ethics_app has an unexpected ACL in", self.pg_vault)
+        self.assertIn("udt_name='_aclitem'", self.pg_vault)
+        self.assertIn("table_name <> 'pg_init_privs'", self.pg_vault)
         self.assertIn("NOINHERIT", self.pg_vault)
         self.assertIn('--from-file=secret-id="$approle_secret_file"', self.pg_vault)
 
@@ -279,6 +281,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "foundation provisioning refuses an included Etik Speak activation root",
             "foundation provisioning refuses existing or partial Etik Speak activation resources",
             "secretstore/etik-speak-vault",
+            "secret/ethics-service-secrets",
+            "secret/etik-speak-public-gate",
             "priorityclass/etik-speak-test",
         ):
             self.assertIn(required, self.preflight)
