@@ -48,6 +48,7 @@ VIEWER_OWNER_POLICY_HISTORY="$ROOT/config/faz22-6-view-only-pilot-owner-policy-h
 VIEWER_REVOCATIONS="$ROOT/config/faz22-6-view-only-pilot-authorization-revocations.v1.json"
 VIEWER_DEVICE_KEY_CONFIG="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-device-key/configmap-device-key-patch.yaml"
 VIEWER_CONFIG_PATCH="$ROOT/kustomize/overlays/test/activation/endpoint-admin-remote-bridge-viewer/configmap-viewer-patch.yaml"
+PINNED_GITLEAKS_INSTALLER="$ROOT/scripts/ci/install-pinned-gitleaks.sh"
 
 future_date_utc() {
   local days="$1"
@@ -359,6 +360,14 @@ for workflow in "$VIEWER_APPLY_WORKFLOW" "$VIEWER_OPERATOR_WORKFLOW" "$VIEWER_PR
     exit 1
   fi
 done
+
+bash -n "$PINNED_GITLEAKS_INSTALLER"
+require_grep 'readonly VERSION="8.30.1"' "$PINNED_GITLEAKS_INSTALLER"
+require_grep 'readonly ARCHIVE_SHA256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"' "$PINNED_GITLEAKS_INSTALLER"
+require_grep 'sha256sum --check --strict' "$PINNED_GITLEAKS_INSTALLER"
+require_grep 'test ! -L "$install_root/gitleaks"' "$PINNED_GITLEAKS_INSTALLER"
+require_grep 'bash scripts/ci/install-pinned-gitleaks.sh' "$VIEWER_APPLY_WORKFLOW"
+require_grep 'bash scripts/ci/install-pinned-gitleaks.sh' "$VIEWER_PRODUCT_VERIFY_WORKFLOW"
 
 require_grep "actions: read" "$VIEWER_D30_WORKFLOW"
 require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_D30_EVIDENCE" "$VIEWER_D30_WORKFLOW"

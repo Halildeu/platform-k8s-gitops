@@ -180,6 +180,9 @@ def main() -> None:
             now=now,
             require_agree=True,
             expected_model=args.model,
+            supplemental_revocation_entries=(
+                authority.supplemental_revocation_entries
+            ),
         )
     except (
         AuthorityUnavailable, OSError, json.JSONDecodeError, PolicyError,

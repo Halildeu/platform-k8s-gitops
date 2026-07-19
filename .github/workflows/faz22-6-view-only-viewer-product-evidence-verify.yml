@@ -55,6 +55,9 @@ jobs:
             --only-binary=:all: \
             --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
 
+      - name: Install hash-pinned secret scanner
+        run: bash scripts/ci/install-pinned-gitleaks.sh
+
       - name: Fetch and verify producer artifact
         env:
           GITHUB_TOKEN: ${{ github.token }}

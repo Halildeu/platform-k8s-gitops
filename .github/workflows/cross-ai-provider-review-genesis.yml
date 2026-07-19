@@ -60,10 +60,10 @@ jobs:
           gh api "repos/$GH_REPO/environments/$EXPECTED_ENVIRONMENT" > "$RUNNER_TEMP/environment.json"
           jq -e '
             .can_admins_bypass == false
-            and .prevent_self_review == true
             and any(
               .protection_rules[]?;
               .type == "required_reviewers"
+              and .prevent_self_review == true
               and ((.reviewers // []) | length) > 0
             )
           ' "$RUNNER_TEMP/environment.json" >/dev/null

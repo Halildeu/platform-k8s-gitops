@@ -812,6 +812,15 @@ class GenesisTransitionTests(unittest.TestCase):
                     authority.supplemental_revocation_entries
                 ),
             )
+        verifier_source = (
+            ROOT / "scripts/ai/verify_cross_ai_evidence_comment.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "supplemental_revocation_entries=(\n"
+            "                authority.supplemental_revocation_entries\n"
+            "            )",
+            verifier_source,
+        )
 
     def test_same_root_rejects_in_place_active_trust_root_mutation(self) -> None:
         manifest = self.authority_manifest(active=True)
@@ -1464,10 +1473,15 @@ class GenesisTransitionTests(unittest.TestCase):
                 self.assertIn(required, workflow)
         self.assertIn(
             ".can_admins_bypass == false\n"
-            "            and .prevent_self_review == true\n"
             "            and any(\n"
             "              .protection_rules[]?;\n"
-            '              .type == "required_reviewers"',
+            '              .type == "required_reviewers"\n'
+            "              and .prevent_self_review == true",
+            workflow,
+        )
+        self.assertNotIn(
+            ".can_admins_bypass == false\n"
+            "            and .prevent_self_review == true",
             workflow,
         )
         self.assertNotIn("pull_request:", workflow)
