@@ -402,6 +402,46 @@ class EvidenceBuilderTests(unittest.TestCase):
                 )
         self.assertEqual(runner.calls, 0)
 
+    def test_provider_and_runtime_token_aliases_are_rejected(self) -> None:
+        provider_token = self.workspace / "provider-token"
+        runtime_token = self.workspace / "runtime-token"
+        for alias_kind in ("hardlink", "copied-credential"):
+            with self.subTest(alias_kind=alias_kind):
+                provider_token.write_text("hvs." + ("a" * 40), encoding="ascii")
+                provider_token.chmod(0o600)
+                if alias_kind == "hardlink":
+                    runtime_token.hardlink_to(provider_token)
+                else:
+                    runtime_token.write_bytes(provider_token.read_bytes())
+                    runtime_token.chmod(0o600)
+                self.args.provider_token_file = provider_token
+                self.args.provider_key_version = 1
+                self.args.runtime_token_file = runtime_token
+                self.args.runtime_key_version = 1
+                runner = StaticRunner()
+                with (
+                    patch.object(
+                        MODULE,
+                        "_scope",
+                        return_value=(self.fixture.bindings, self.fixture.scope_bytes),
+                    ),
+                    patch.object(
+                        MODULE, "utc_now", return_value=self.fixture.factory.now
+                    ),
+                    self.assertRaisesRegex(
+                        PolicyError,
+                        "VAULT_TOKEN_FILE_INVALID|TRUSTED_ISSUER_SERVICE_REQUIRED",
+                    ),
+                ):
+                    MODULE.build_signed_evidence(
+                        self.args,
+                        runner=runner,
+                        authority=self.fixture.authority,
+                    )
+                self.assertEqual(runner.calls, 0)
+                runtime_token.unlink()
+                provider_token.unlink()
+
     def test_vault_runtime_attestor_binds_live_launcher_and_management_key(self) -> None:
         policy = dict(self.fixture.authority.issuer_runtime_policy)
         policy["launcherSourceSha256"] = "sha256:" + hashlib.sha256(

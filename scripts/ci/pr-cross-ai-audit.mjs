@@ -65,6 +65,7 @@ const GENESIS_STAGE_PATHS = [
   'config/github-apps/cross-ai-provider-review-genesis.v1.json',
   'config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json',
   'config/github-apps/cross-ai-provider-review-trust-root.v2.json',
+  'config/github-apps/cross-ai-transit-bootstrap-receipt.v2.json',
 ];
 const GENESIS_ACTIVATE_PATHS = [
   'config/github-apps/cross-ai-provider-review-authority.v1.json',

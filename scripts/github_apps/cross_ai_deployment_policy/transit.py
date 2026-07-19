@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import os
 import re
 import stat
@@ -58,6 +59,8 @@ class VaultTransitSigner:
             metadata = os.fstat(descriptor)
             if (
                 not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or metadata.st_nlink != 1
                 or metadata.st_mode & 0o077
                 or not 20 <= metadata.st_size <= 4097
             ):
@@ -83,6 +86,8 @@ class VaultTransitSigner:
         self.mount = mount
         self.key_name = key_name
         self.key_version = key_version
+        self.token_file_identity = (metadata.st_dev, metadata.st_ino)
+        self.token_sha256 = hashlib.sha256(token).digest()
         self.transport = transport or UrllibTransport()
 
     @property

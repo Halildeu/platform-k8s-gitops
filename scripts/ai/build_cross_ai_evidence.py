@@ -367,19 +367,21 @@ def build_signed_evidence(
     )
     provider_token_file = getattr(args, "provider_token_file", None)
     runtime_token_file = getattr(args, "runtime_token_file", None)
+    provider_transit_signer = None
     if signer is None:
         if provider_token_file is None:
             reject(
                 "TRUSTED_ISSUER_SERVICE_REQUIRED",
                 "provider signing requires the isolated one-use token file",
             )
-        active_signer = VaultTransitSigner(
+        provider_transit_signer = VaultTransitSigner(
             vault_origin=args.vault_origin,
             token_file=provider_token_file,
             mount="cross-ai",
             key_name="openai",
             key_version=args.provider_key_version,
         )
+        active_signer = provider_transit_signer
     else:
         active_signer = signer
     if runtime_attestor is None:
@@ -388,23 +390,28 @@ def build_signed_evidence(
                 "TRUSTED_ISSUER_SERVICE_REQUIRED",
                 "runtime attestation requires the isolated one-use token file",
             )
+        runtime_transit_signer = VaultTransitSigner(
+            vault_origin=args.vault_origin,
+            token_file=runtime_token_file,
+            mount="cross-ai",
+            key_name="runner-management",
+            key_version=args.runtime_key_version,
+        )
         if (
-            provider_token_file is not None
-            and provider_token_file.expanduser().resolve()
-            == runtime_token_file.expanduser().resolve()
+            provider_transit_signer is not None
+            and (
+                provider_transit_signer.token_file_identity
+                == runtime_transit_signer.token_file_identity
+                or provider_transit_signer.token_sha256
+                == runtime_transit_signer.token_sha256
+            )
         ):
             reject(
                 "TRUSTED_ISSUER_SERVICE_REQUIRED",
                 "provider and runtime authorities require distinct token files",
             )
         runtime_attestor = VaultTransitRuntimeAttestor(
-            signer=VaultTransitSigner(
-                vault_origin=args.vault_origin,
-                token_file=runtime_token_file,
-                mount="cross-ai",
-                key_name="runner-management",
-                key_version=args.runtime_key_version,
-            ),
+            signer=runtime_transit_signer,
             runtime_policy=preflight_authority.issuer_runtime_policy,
         )
     preflight_verifier = EvidenceVerifier(

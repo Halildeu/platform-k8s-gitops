@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -107,6 +108,22 @@ class VaultTransitSignerTest(unittest.TestCase):
 
         self.token.chmod(0o640)
         with self.assertRaisesRegex(PolicyError, "VAULT_TOKEN_FILE_INVALID"):
+            VaultTransitSigner(
+                vault_origin="https://vault.example.test",
+                token_file=self.token,
+                mount="cross-ai",
+                key_name="openai",
+                key_version=3,
+            )
+
+    def test_rejects_token_file_owned_by_another_uid(self) -> None:
+        with (
+            patch(
+                "scripts.github_apps.cross_ai_deployment_policy.transit.os.getuid",
+                return_value=self.token.stat().st_uid + 1,
+            ),
+            self.assertRaisesRegex(PolicyError, "VAULT_TOKEN_FILE_INVALID"),
+        ):
             VaultTransitSigner(
                 vault_origin="https://vault.example.test",
                 token_file=self.token,
