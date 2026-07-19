@@ -66,7 +66,7 @@ require_exact_body_line() {
 
 require_exact_body_line "Consultation base: $PROMOTION_BASE_SHA"
 require_exact_body_line "Consultation commit: $promotion_head"
-require_exact_body_line "Consultation mode: dual"
+require_exact_body_line "Consultation mode: single"
 require_exact_body_line "Verdict: AGREE"
 consultation_reason="$(sed -nE 's/^Consultation reason:[[:space:]]*(.{10,})[[:space:]]*$/\1/p' <<<"$promotion_body")"
 [[ -n "$consultation_reason" ]] || {
@@ -78,23 +78,22 @@ consultation_scope="$(sed -nE 's/^Consultation scope:[[:space:]]*([0-9a-f]{64})[
   echo "[fullats-rollback] promotion consultation scope is missing or duplicated" >&2
   exit 1
 }
-risk_trigger="$(sed -nE 's/^Risk trigger:[[:space:]]*(security-authz|production-cutover):[[:space:]]*(.{10,})[[:space:]]*$/\1: \2/p' <<<"$promotion_body")"
-[[ -n "$risk_trigger" ]] || {
-  echo "[fullats-rollback] dual consultation risk trigger is missing or invalid" >&2
+receipt_line="$(grep -E '^Codex receipt: ' <<<"$promotion_body" || true)"
+[[ "$(grep -Ec '^Codex receipt: ' <<<"$promotion_body" || true)" == "1" && \
+   "$receipt_line" == *"provider=openai;"* && \
+   "$receipt_line" == *"requested=gpt-5.6-sol;"* && \
+   "$receipt_line" == *"actual=gpt-5.6-sol;"* && \
+   "$receipt_line" == *"effort=xhigh;"* && \
+   "$receipt_line" == *"sandbox=read-only;"* && \
+   "$receipt_line" == *"ephemeral=true;"* && \
+   "$receipt_line" == *"head=$promotion_head;"* && \
+   "$receipt_line" == *"scope=$consultation_scope;"* && \
+   "$receipt_line" == *"verdict=AGREE;"* ]] || {
+  echo "[fullats-rollback] exact high-impact Codex receipt binding is missing or invalid" >&2
   exit 1
 }
-for receipt_label in "Claude receipt" "Codex receipt"; do
-  receipt_line="$(grep -E "^${receipt_label}: " <<<"$promotion_body" || true)"
-  [[ "$(grep -Ec "^${receipt_label}: " <<<"$promotion_body" || true)" == "1" && \
-     "$receipt_line" == *"head=$promotion_head;"* && \
-     "$receipt_line" == *"scope=$consultation_scope;"* && \
-     "$receipt_line" == *"verdict=AGREE;"* ]] || {
-    echo "[fullats-rollback] exact $receipt_label binding is missing or invalid" >&2
-    exit 1
-  }
-done
-[[ "$(grep -Fc "MiniMax receipt:" <<<"$promotion_body" || true)" == "0" ]] || {
-  echo "[fullats-rollback] MiniMax receipt is forbidden by forward policy" >&2
+[[ "$(grep -Ec '^(Claude|MiniMax) receipt:' <<<"$promotion_body" || true)" == "0" ]] || {
+  echo "[fullats-rollback] Claude and MiniMax receipts are forbidden by forward policy" >&2
   exit 1
 }
 git fetch origin main --quiet

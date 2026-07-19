@@ -65,12 +65,6 @@ REQUIRED_PROVIDER_ROUTES = {
     ),
 }
 REQUIRED_PROVIDER_ROUTES_V2 = {
-    "anthropic": (
-        "direct-anthropic-cli",
-        "claude-opus-4-8",
-        "provider-reported",
-        True,
-    ),
     "openai": (
         "openai-codex",
         "gpt-5.6-sol",

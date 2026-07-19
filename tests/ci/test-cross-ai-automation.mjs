@@ -41,10 +41,13 @@ const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex
 const evidenceRef = (id) =>
   `https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/${id}`;
 const evidenceBody = (provider, model, response) => JSON.stringify({
-  schema: 'cross-ai-provider-evidence/v1',
+  schema: 'cross-ai-provider-evidence/v2',
   provider,
   requested_model: model,
   actual_model: model,
+  reasoning_effort: 'xhigh',
+  sandbox: 'read-only',
+  ephemeral: true,
   base_tip_sha: BASE_TIP_SHA,
   base_sha: BASE_SHA,
   head_sha: HEAD_SHA,
@@ -63,17 +66,13 @@ const evidenceComment = (body, offsetMs = 0) => ({
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
 const CODEX_REF = evidenceRef(1003);
+const SPARK_REF = evidenceRef(1004);
+const PEER_REF = SPARK_REF;
 const EVIDENCE = {
   [CLAUDE_REF]: evidenceComment(evidenceBody('anthropic', 'claude-opus-4-8', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 0),
   [MINIMAX_REF]: evidenceComment(evidenceBody('minimax', 'minimax/MiniMax-M3', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 1_000),
   [CODEX_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.6-sol', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 2_000),
-};
-// Forward-policy dual channel is Claude + Codex; reverse their publication order
-// to prove the accepted dual path does not depend on receipt timestamp ordering.
-const REVERSED_DUAL_CODEX_EVIDENCE = {
-  ...EVIDENCE,
-  [CLAUDE_REF]: evidenceComment(EVIDENCE[CLAUDE_REF].body, 2_000),
-  [CODEX_REF]: evidenceComment(EVIDENCE[CODEX_REF].body, 0),
+  [SPARK_REF]: evidenceComment(evidenceBody('openai', 'gpt-5.3-codex-spark', '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'), 3_000),
 };
 
 // Build the GitHub event payload and run the real script; return its exit code.
@@ -149,7 +148,13 @@ const renderedRollbackBody = rollbackBodyMatch[1]
   .replaceAll('__FAILED_SHA__', HEAD_SHA);
 
 const MINIMAX_RECEIPT_LINE =
-  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(EVIDENCE[MINIMAX_REF].body)}`;
+  `MiniMax receipt: provider=minimax; requested=minimax/MiniMax-M3; actual=minimax/MiniMax-M3; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${MINIMAX_REF}; sha256=${sha256(EVIDENCE[MINIMAX_REF].body)}`;
+const CLAUDE_RECEIPT_LINE =
+  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}`;
+const CODEX_RECEIPT_LINE =
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}`;
+const SPARK_RECEIPT_LINE =
+  `Codex receipt: provider=openai; requested=gpt-5.3-codex-spark; actual=gpt-5.3-codex-spark; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${SPARK_REF}; sha256=${sha256(EVIDENCE[SPARK_REF].body)}`;
 const legacyPeerBody =
   `## Summary\nx\n\n## Cross-AI\n` +
   `Implementer AI: Claude\nReviewer AI: Codex\n` +
@@ -158,8 +163,8 @@ const legacyPeerBody =
   `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
-  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+  `${CLAUDE_RECEIPT_LINE}\n` +
+  `${CODEX_RECEIPT_LINE}\n`;
 
 const explicitNoneBody =
   `## Cross-AI\n` +
@@ -170,51 +175,36 @@ const explicitSingleBody =
   `## Cross-AI\n` +
   `Implementer AI: Codex\n` +
   `Consultation mode: single\n` +
-  `Consultation reason: One primary architecture opinion is sufficient for this reversible decision.\n` +
+  `Consultation reason: Exact direct Codex review is required for this high impact scope.\n` +
   `Verdict: AGREE\n` +
   `Consultation base tip: ${BASE_TIP_SHA}\n` +
   `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
-  `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n`;
-const explicitDualBody =
+  `${CODEX_RECEIPT_LINE}\n`;
+const explicitRoutineSingleBody =
   explicitSingleBody
-    .replace('Consultation mode: single', 'Consultation mode: dual')
     .replace(
-      'Consultation reason: One primary architecture opinion is sufficient for this reversible decision.',
-      'Consultation reason: A second provider-distinct opinion is justified by the irreversible decision.',
-    ) +
-  `Risk trigger: irreversible-production: Production security boundary with named human authority.\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+      'Consultation reason: Exact direct Codex review is required for this high impact scope.',
+      'Consultation reason: Optional routine review uses the bounded Codex Spark channel.',
+    )
+    .replace(CODEX_RECEIPT_LINE, SPARK_RECEIPT_LINE);
 // All current acceptance/evidence tests use the explicit forward contract.
 // The old fixture remains only for explicit legacy-rejection coverage.
-const peerBody = explicitDualBody;
-const explicitSingleClaudeImplementerBody = explicitSingleBody.replace(
-  'Implementer AI: Codex',
-  'Implementer AI: Claude',
-);
-const explicitDualMiniMaxBody = explicitDualBody.replace(
+const peerBody = explicitRoutineSingleBody;
+const explicitSingleClaudeReceiptBody = explicitSingleBody.replace(
   /^Codex receipt:.*$/m,
-  MINIMAX_RECEIPT_LINE,
+  CLAUDE_RECEIPT_LINE,
 );
-const explicitDualClaudeImplementerBody = explicitDualBody.replace(
-  'Implementer AI: Codex',
-  'Implementer AI: Claude',
-);
-const explicitDualMiniMaxWrongClaudeDigestBody = explicitDualMiniMaxBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
-  'f'.repeat(64),
-);
-// Claude + Codex (the valid dual pair) plus a retired MiniMax receipt appended.
-// The forward policy fail-closes on the MiniMax field regardless of the two
-// otherwise-valid channels.
-const explicitDualClaudeCodexMiniMaxBody =
-  `${explicitDualBody}${MINIMAX_RECEIPT_LINE}\n`;
-// none / single explicit-mode bodies carrying a retired MiniMax receipt.
+// none / single explicit-mode bodies carrying retired provider receipts.
 const explicitNoneMiniMaxBody =
   `${explicitNoneBody}${MINIMAX_RECEIPT_LINE}\n`;
 const explicitSingleMiniMaxBody =
   `${explicitSingleBody}${MINIMAX_RECEIPT_LINE}\n`;
+const explicitNoneClaudeBody =
+  `${explicitNoneBody}${CLAUDE_RECEIPT_LINE}\n`;
+const explicitSingleClaudeBody =
+  `${explicitSingleBody}${CLAUDE_RECEIPT_LINE}\n`;
 const ROUTINE_PATH = 'docs/operations/RUNBOOKS/RB-routine-update.md';
 const GOVERNANCE_PATH = 'AGENTS.md';
 const ENFORCEMENT_PATH = 'scripts/ci/pr-cross-ai-audit.mjs';
@@ -224,75 +214,73 @@ const MIGRATION_PATH = 'services/reporting/src/main/resources/db/migration/V42__
 const HARMLESS_RBAC_DOC_PATH = 'docs/rbac-overview.md';
 const GOVERNANCE_CONTRACT_TEST_PATH = 'tests/deploy/test_faz25_fullats_gitops_contract.py';
 
-const staleClaudeBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+const staleCodexBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
   head_sha: 'f'.repeat(40),
 });
-const staleEvidence = { ...EVIDENCE, [CLAUDE_REF]: evidenceComment(staleClaudeBody) };
+const staleEvidence = { ...EVIDENCE, [PEER_REF]: evidenceComment(staleCodexBody) };
 const staleEvidencePeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
-  sha256(staleClaudeBody),
+  sha256(EVIDENCE[PEER_REF].body),
+  sha256(staleCodexBody),
 );
 const reviseResponse = '## P0\nFinding\n## P1\nNone\n## P2\nNone\nVERDICT: REVISE';
-const contradictoryClaudeBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+const contradictoryCodexBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
   verdict: 'AGREE',
   response_sha256: sha256(reviseResponse),
   response: reviseResponse,
 });
 const contradictoryEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: evidenceComment(contradictoryClaudeBody),
+  [PEER_REF]: evidenceComment(contradictoryCodexBody),
 };
 const contradictoryPeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
-  sha256(contradictoryClaudeBody),
+  sha256(EVIDENCE[PEER_REF].body),
+  sha256(contradictoryCodexBody),
 );
 const editedEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: {
-    ...EVIDENCE[CLAUDE_REF],
+  [PEER_REF]: {
+    ...EVIDENCE[PEER_REF],
     updatedAt: new Date(Date.now() + 60_000).toISOString(),
   },
 };
 const agedEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: {
-    ...EVIDENCE[CLAUDE_REF],
+  [PEER_REF]: {
+    ...EVIDENCE[PEER_REF],
     createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
     updatedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
   },
 };
 const wrongAuthorEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: {
-    ...EVIDENCE[CLAUDE_REF],
+  [PEER_REF]: {
+    ...EVIDENCE[PEER_REF],
     author: 'mallory',
   },
 };
 const wrongAssociationEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: {
-    ...EVIDENCE[CLAUDE_REF],
+  [PEER_REF]: {
+    ...EVIDENCE[PEER_REF],
     authorAssociation: 'MEMBER',
   },
 };
-const outOfOrderEvidence = {
-  ...EVIDENCE,
-  [MINIMAX_REF]: {
-    ...EVIDENCE[MINIMAX_REF],
-    createdAt: new Date(NOW_MS - 1_000).toISOString(),
-    updatedAt: new Date(NOW_MS - 1_000).toISOString(),
-  },
+const mutatedPeerEvidence = (changes) => {
+  const body = JSON.stringify({
+    ...JSON.parse(EVIDENCE[PEER_REF].body),
+    ...changes,
+  });
+  return {
+    body: peerBody.replace(sha256(EVIDENCE[PEER_REF].body), sha256(body)),
+    evidence: { ...EVIDENCE, [PEER_REF]: evidenceComment(body) },
+  };
 };
-const equalTimestampEvidence = {
-  ...EVIDENCE,
-  [MINIMAX_REF]: {
-    ...EVIDENCE[MINIMAX_REF],
-    createdAt: EVIDENCE[CLAUDE_REF].createdAt,
-    updatedAt: EVIDENCE[CLAUDE_REF].updatedAt,
-  },
-};
+const evidenceWrongEffort = mutatedPeerEvidence({ reasoning_effort: 'high' });
+const evidenceWrongSandbox = mutatedPeerEvidence({ sandbox: 'workspace-write' });
+const evidenceNonEphemeral = mutatedPeerEvidence({ ephemeral: false });
+const evidenceLegacySchema = mutatedPeerEvidence({ schema: 'cross-ai-provider-evidence/v1' });
 const minimaxReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
 const minimaxReviseBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[MINIMAX_REF].body),
@@ -306,58 +294,58 @@ const minimaxReviseEvidence = {
 };
 const emptySectionsResponse = 'P0\nP1\nP2\nVERDICT: AGREE';
 const emptySectionsClaudeBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
   response_sha256: sha256(emptySectionsResponse),
   response: emptySectionsResponse,
 });
 const emptySectionsEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: evidenceComment(emptySectionsClaudeBody),
+  [PEER_REF]: evidenceComment(emptySectionsClaudeBody),
 };
 const emptySectionsPeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(EVIDENCE[PEER_REF].body),
   sha256(emptySectionsClaudeBody),
 );
 const agreeWithP1FindingResponse = 'P0\nNone\nP1\nHigh finding\nP2\nNone\nVERDICT: AGREE';
 const agreeWithP1FindingBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
   response_sha256: sha256(agreeWithP1FindingResponse),
   response: agreeWithP1FindingResponse,
 });
 const agreeWithP1FindingEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: evidenceComment(agreeWithP1FindingBody),
+  [PEER_REF]: evidenceComment(agreeWithP1FindingBody),
 };
 const agreeWithP1FindingPeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(EVIDENCE[PEER_REF].body),
   sha256(agreeWithP1FindingBody),
 );
 const sensitiveResponse = 'P0\nNone\nP1\nNone\nP2\nperson@example.com\nVERDICT: AGREE';
 const sensitiveBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
   response_sha256: sha256(sensitiveResponse),
   response: sensitiveResponse,
 });
 const sensitiveEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: evidenceComment(sensitiveBody),
+  [PEER_REF]: evidenceComment(sensitiveBody),
 };
 const sensitivePeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(EVIDENCE[PEER_REF].body),
   sha256(sensitiveBody),
 );
 const rawBearerResponse = 'P0\nNone\nP1\nNone\nP2\nBearer ' + 'abcdefghijklmnop\nVERDICT: AGREE';
 const rawBearerBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
   response_sha256: sha256(rawBearerResponse),
   response: rawBearerResponse,
 });
 const rawBearerEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: evidenceComment(rawBearerBody),
+  [PEER_REF]: evidenceComment(rawBearerBody),
 };
 const rawBearerPeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(EVIDENCE[PEER_REF].body),
   sha256(rawBearerBody),
 );
 const highConfidenceSensitiveFixtures = [
@@ -371,47 +359,47 @@ const highConfidenceSensitiveFixtures = [
 ].map(([label, value]) => {
   const response = `P0\nNone\nP1\nNone\nP2\n${value}\nVERDICT: AGREE`;
   const body = JSON.stringify({
-    ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+    ...JSON.parse(EVIDENCE[PEER_REF].body),
     response_sha256: sha256(response),
     response,
   });
   return [label, {
     body: peerBody.replace(
-      sha256(EVIDENCE[CLAUDE_REF].body),
+      sha256(EVIDENCE[PEER_REF].body),
       sha256(body),
     ),
     evidence: {
       ...EVIDENCE,
-      [CLAUDE_REF]: evidenceComment(body),
+      [PEER_REF]: evidenceComment(body),
     },
   }];
 });
 const nonExactNoneResponse = 'P0\nnOnE\nP1\nNone\nP2\nNone\nVERDICT: AGREE';
 const nonExactNoneBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
   response_sha256: sha256(nonExactNoneResponse),
   response: nonExactNoneResponse,
 });
 const nonExactNoneEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: evidenceComment(nonExactNoneBody),
+  [PEER_REF]: evidenceComment(nonExactNoneBody),
 };
 const nonExactNonePeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(EVIDENCE[PEER_REF].body),
   sha256(nonExactNoneBody),
 );
 const lowercaseVerdictResponse = 'P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: agree';
 const lowercaseVerdictBody = JSON.stringify({
-  ...JSON.parse(EVIDENCE[CLAUDE_REF].body),
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
   response_sha256: sha256(lowercaseVerdictResponse),
   response: lowercaseVerdictResponse,
 });
 const lowercaseVerdictEvidence = {
   ...EVIDENCE,
-  [CLAUDE_REF]: evidenceComment(lowercaseVerdictBody),
+  [PEER_REF]: evidenceComment(lowercaseVerdictBody),
 };
 const lowercaseVerdictPeerBody = peerBody.replace(
-  sha256(EVIDENCE[CLAUDE_REF].body),
+  sha256(EVIDENCE[PEER_REF].body),
   sha256(lowercaseVerdictBody),
 );
 
@@ -470,8 +458,8 @@ const cases = [
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER), changedFiles: [VERIFIED_LEDGER] }, 0],
   ['auto-promotion draft cannot claim an automation exemption',
     { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: autoBody(SCAN) }, 1],
-  ['auto-promotion passes only with required Claude and Codex receipts',
-    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: peerBody, changedFiles: [SCAN] }, 0],
+  ['auto-promotion passes only with high-impact Codex SOL xhigh receipt',
+    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: APP_BOT, sender: APP_BOT, body: explicitSingleBody, changedFiles: [SCAN] }, 0],
   ['#827 PR-B: auto-test-overlay + github-actions[bot] (wrong bot for prefix) -> blocked',
     { branch: 'auto-test-overlay/x', actor: BOT, sender: BOT, body: autoBody(WF) }, 1],
   ['#2295: auto-test-frontend + github-actions[bot] (wrong bot for prefix) -> blocked',
@@ -515,9 +503,13 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody.replace(/^Consultation reason:.*$/m, 'Consultation reason: Reversible documentation update; none of the protected runtime paths apply.'),
       changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit none mode rejects retired Claude implementer',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody.replace('Implementer AI: Codex', 'Implementer AI: Claude'),
+      changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit none mode rejects a fabricated or stale provider receipt',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: `${explicitNoneBody}${peerBody.match(/^Claude receipt:.*$/m)[0]}\n`, changedFiles: [ROUTINE_PATH] }, 1],
+      body: `${explicitNoneBody}${peerBody.match(/^Codex receipt:.*$/m)[0]}\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit none mode rejects an empty provider receipt key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${explicitNoneBody}Claude receipt:\n`, changedFiles: [ROUTINE_PATH] }, 1],
@@ -558,18 +550,18 @@ const cases = [
   ['field-aware selection prefers a complete explicit-mode section',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
-  ['explicit single mode accepts exact direct Claude Opus 4.8 evidence',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode accepts routine Codex Spark xhigh evidence',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode rejects retired Claude implementer',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Implementer AI: Codex', 'Implementer AI: Claude'),
+      changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit single mode accepts consultation governance changes',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [GOVERNANCE_PATH] }, 0],
-  ['explicit single mode rejects consultation enforcement changes that require dual',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ENFORCEMENT_PATH] }, 1],
-  ['retired MiniMax wrapper tombstone requires dual governance review',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [RETIRED_MINIMAX_WRAPPER_PATH] }, 1],
-  ['retired MiniMax wrapper deletion passes only with exact dual review',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [RETIRED_MINIMAX_WRAPPER_PATH] }, 0],
-  ['explicit dual mode accepts consultation enforcement changes',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
+  ['explicit single mode accepts consultation enforcement changes with Codex SOL',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ENFORCEMENT_PATH] }, 0],
+  ['retired MiniMax wrapper tombstone uses high-impact Codex SOL review',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [RETIRED_MINIMAX_WRAPPER_PATH] }, 0],
   ['explicit none mode rejects a high-confidence RBAC path',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [RBAC_PATH] }, 1],
   ['explicit single mode accepts a high-confidence RBAC path',
@@ -578,9 +570,9 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [MIGRATION_PATH] }, 1],
   ['explicit none mode accepts a harmless RBAC-named documentation path',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneBody, changedFiles: [HARMLESS_RBAC_DOC_PATH] }, 0],
-  ['explicit single mode rejects same-provider Claude self-review',
+  ['explicit single mode accepts Codex implementer self-review as a quality gate',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitSingleClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 1],
+      body: peerBody, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode rejects an unidentifiable other implementer',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody.replace('Implementer AI: Codex', 'Implementer AI: other'), changedFiles: [ROUTINE_PATH] }, 1],
@@ -592,10 +584,7 @@ const cases = [
       body: `${explicitSingleBody}Implementer AI: Codex\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit mode rejects duplicate receipt fields',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: `${explicitSingleBody}${explicitSingleBody.match(/^Claude receipt:.*$/m)[0]}\n`, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects duplicate risk-trigger fields',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: `${explicitDualBody}Risk trigger: security-authz: Duplicate security authority must not override prior classification.\n`, changedFiles: [ROUTINE_PATH] }, 1],
+      body: `${peerBody}${peerBody.match(/^Codex receipt:.*$/m)[0]}\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit single mode rejects non-AGREE verdict',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody.replace('Verdict: AGREE', 'Verdict: REVISE'), changedFiles: [ROUTINE_PATH] }, 1],
@@ -604,49 +593,36 @@ const cases = [
       body: explicitSingleBody.replace(/^Consultation scope:.*\n/m, ''), changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit single mode rejects a second consultation channel',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: `${explicitSingleBody}${peerBody.match(/^Codex receipt:.*$/m)[0]}\n`, changedFiles: [ROUTINE_PATH] }, 1],
+      body: `${peerBody}${CLAUDE_RECEIPT_LINE}\n`, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit single mode rejects an empty risk-trigger key',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: `${explicitSingleBody}Risk trigger:\n`, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode accepts Claude plus Codex provider-distinct channels',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
-  ['explicit dual mode rejects MiniMax as a retired secondary channel',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode accepts the exact Claude+Codex pair for a Codex implementer',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH] }, 0],
-  ['explicit dual mode accepts the exact Claude+Codex pair for a Claude implementer',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeImplementerBody, changedFiles: [ROUTINE_PATH] }, 0],
-  ['explicit dual mode accepts reverse evidence publication timestamps',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualBody, changedFiles: [ROUTINE_PATH], evidence: REVERSED_DUAL_CODEX_EVIDENCE }, 0],
-  ['explicit dual mode rejects a Claude+Codex+MiniMax three-channel mixture',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualClaudeCodexMiniMaxBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_minimax_receipt_rejected' }, 1],
+      body: `${peerBody}Risk trigger:\n`, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit dual mode is removed and rejected',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody.replace('Consultation mode: single', 'Consultation mode: dual'), changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit none mode rejects a retired MiniMax receipt',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit single mode rejects a retired MiniMax receipt',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleMiniMaxBody, changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects an empty third receipt key',
+  ['explicit none mode rejects a retired Claude receipt',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitNoneClaudeBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['explicit single mode rejects a retired Claude receipt',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleClaudeBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['Claude receipt cannot replace the only accepted Codex channel',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleClaudeReceiptBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['routine single rejects high-impact Codex SOL model',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 1],
+  ['governance single rejects routine Codex Spark model',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [GOVERNANCE_PATH] }, 1],
+  ['single rejects non-xhigh reasoning effort',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: `${explicitDualBody}MiniMax receipt:\n`, changedFiles: [ROUTINE_PATH] }, 1],
-  ['invalid MiniMax dual still validates the present allowlisted Claude receipt',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitDualMiniMaxWrongClaudeDigestBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'claude_receipt' }, 1],
-  ['explicit dual mode requires a concrete high-risk trigger',
+      body: peerBody.replace('effort=xhigh', 'effort=high'), changedFiles: [ROUTINE_PATH] }, 1],
+  ['single rejects non-read-only sandbox',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitDualBody.replace(/^Risk trigger:.*\n/m, ''), changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects unclassified free-form risk trigger',
+      body: peerBody.replace('sandbox=read-only', 'sandbox=workspace-write'), changedFiles: [ROUTINE_PATH] }, 1],
+  ['single rejects non-ephemeral execution',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitDualBody.replace(/^Risk trigger:.*$/m, 'Risk trigger: aaaaaaaaaa'), changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects unknown risk category',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitDualBody.replace(/^Risk trigger:.*$/m, 'Risk trigger: nonexistent-cat: Concrete production boundary would be irreversible'), changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects categorized placeholder detail',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitDualBody.replace(/^Risk trigger:.*$/m, 'Risk trigger: security-authz: placeholder'), changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects categorized repeated todo detail',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitDualBody.replace(/^Risk trigger:.*$/m, 'Risk trigger: human-authority: todo todo todo'), changedFiles: [ROUTINE_PATH] }, 1],
-  ['explicit dual mode rejects three consultation channels',
-    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: `${explicitDualBody}${MINIMAX_RECEIPT_LINE}\n`, changedFiles: [ROUTINE_PATH] }, 1],
+      body: peerBody.replace('ephemeral=true', 'ephemeral=false'), changedFiles: [ROUTINE_PATH] }, 1],
   ['GitHub Actions mode rejects offline evidence-file override',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, githubActions: true }, 1],
   ['local evidence-file requires explicit test override flag',
@@ -663,21 +639,21 @@ const cases = [
   ['normal PR + MiniMax receipt is forbidden even with an actual-model mismatch',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${peerBody}${MINIMAX_RECEIPT_LINE.replace('actual=minimax/MiniMax-M3', 'actual=minimax/MiniMax-M2.7')}\n` }, 1],
-  ['normal PR + Claude non-AGREE receipt -> fail closed',
+  ['normal PR + Codex non-AGREE receipt -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(`verdict=AGREE; ref=${CLAUDE_REF}`, `verdict=REVISE; ref=${CLAUDE_REF}`) }, 1],
+      body: peerBody.replace(`verdict=AGREE; ref=${PEER_REF}`, `verdict=REVISE; ref=${PEER_REF}`) }, 1],
   ['normal PR + arbitrary receipt ref -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(CLAUDE_REF, 'old-ref-123') }, 1],
+      body: peerBody.replace(PEER_REF, 'old-ref-123') }, 1],
   ['normal PR + evidence ref points to a different repository -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(CLAUDE_REF, 'https://api.github.com/repos/other/repo/issues/comments/1001') }, 1],
+      body: peerBody.replace(PEER_REF, 'https://api.github.com/repos/other/repo/issues/comments/1001') }, 1],
   ['normal PR + malformed receipt digest -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF].body), 'not-a-sha256') }, 1],
+      body: peerBody.replace(sha256(EVIDENCE[PEER_REF].body), 'not-a-sha256') }, 1],
   ['normal PR + well-formed but wrong evidence body digest -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(sha256(EVIDENCE[CLAUDE_REF].body), 'f'.repeat(64)) }, 1],
+      body: peerBody.replace(sha256(EVIDENCE[PEER_REF].body), 'f'.repeat(64)) }, 1],
   ['normal PR + stale evidence internal head with matching body digest -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: staleEvidencePeerBody, evidence: staleEvidence }, 1],
@@ -696,16 +672,19 @@ const cases = [
   ['normal PR + owner login without OWNER association -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, evidence: wrongAssociationEvidence }, 1],
-  ['normal PR + reverse two-provider evidence timestamps remain accepted',
+  ['evidence internal reasoning effort must be xhigh',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody, evidence: outOfOrderEvidence, changedFiles: [ROUTINE_PATH] }, 0],
-  ['normal PR + equal two-provider evidence timestamps remain accepted',
+      ...evidenceWrongEffort }, 1],
+  ['evidence internal sandbox must be read-only',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody, evidence: equalTimestampEvidence, changedFiles: [ROUTINE_PATH] }, 0],
-  ['normal PR + duplicate provider evidence refs -> fail closed',
+      ...evidenceWrongSandbox }, 1],
+  ['evidence internal execution must be ephemeral',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(CODEX_REF, CLAUDE_REF) }, 1],
-  ['Claude/Codex AGREE plus forbidden MiniMax REVISE -> fail closed',
+      ...evidenceNonEphemeral }, 1],
+  ['legacy evidence v1 schema is rejected',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      ...evidenceLegacySchema }, 1],
+  ['Codex AGREE plus forbidden MiniMax REVISE -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: `${peerBody}${MINIMAX_RECEIPT_LINE.replace(sha256(EVIDENCE[MINIMAX_REF].body), sha256(minimaxReviseBody))}\n`, evidence: minimaxReviseEvidence }, 1],
   ['provider response with empty P0/P1/P2 sections -> fail closed',
@@ -733,7 +712,7 @@ const cases = [
       body: lowercaseVerdictPeerBody, evidence: lowercaseVerdictEvidence }, 1],
   ['receipt verdict uses lowercase agree -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: peerBody.replace(`verdict=AGREE; ref=${CLAUDE_REF}`, `verdict=agree; ref=${CLAUDE_REF}`) }, 1],
+      body: peerBody.replace(`verdict=AGREE; ref=${PEER_REF}`, `verdict=agree; ref=${PEER_REF}`) }, 1],
   ['PR top-level verdict uses lowercase agree -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody.replace('Verdict: AGREE', 'Verdict: agree') }, 1],

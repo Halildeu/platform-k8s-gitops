@@ -64,6 +64,9 @@ class ProviderExecutionReceipt:
     direct_provider_cli: bool
     model_id: str
     model_identity_class: str
+    reasoning_effort: str
+    sandbox: str
+    ephemeral: bool
     capability_snapshot_sha256: str
     input_sha256: str
     output_sha256: str
@@ -111,6 +114,13 @@ class DirectClaudeRunner:
         workspace: Path,
         timeout_seconds: int = 600,
     ) -> ProviderExecutionReceipt:
+        del prompt, model, workspace, timeout_seconds
+        reject(
+            "PROVIDER_ROUTE_RETIRED",
+            "Claude execution is retired; active review accepts direct Codex only",
+        )
+        # Historical implementation remains below only for forensic source
+        # archaeology and is unreachable by construction.
         prompt_bytes = prompt.encode("utf-8")
         if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
             reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
@@ -255,6 +265,8 @@ class DirectCodexRunner:
             "exec",
             "--ignore-user-config",
             "--ignore-rules",
+            "-c",
+            'model_reasoning_effort="xhigh"',
             "--model",
             model,
             "--sandbox",
@@ -344,6 +356,9 @@ class DirectCodexRunner:
             direct_provider_cli=True,
             model_id=CODEX_MODEL,
             model_identity_class="trusted-launch-attested",
+            reasoning_effort="xhigh",
+            sandbox="read-only",
+            ephemeral=True,
             capability_snapshot_sha256=capability,
             input_sha256=_bytes_digest(prompt_bytes),
             output_sha256=_bytes_digest(text.encode("utf-8")),
@@ -368,6 +383,13 @@ class CursorRunner:
         provider_family: str,
         timeout_seconds: int = 600,
     ) -> ProviderExecutionReceipt:
+        del prompt, model, workspace, provider_family, timeout_seconds
+        reject(
+            "PROVIDER_ROUTE_RETIRED",
+            "Cursor execution is retired; active review accepts direct Codex only",
+        )
+        # Historical implementation remains below only for forensic source
+        # archaeology and is unreachable by construction.
         prompt_bytes = prompt.encode("utf-8")
         if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
             reject("PROVIDER_PROMPT_INVALID", "provider prompt size is invalid")
@@ -527,6 +549,9 @@ class ProviderReviewIssuer:
             or execution.direct_provider_cli is not self.direct_provider_cli
             or execution.model_identity_class != self.model_identity_class
             or execution.model_id not in self.allowed_models
+            or execution.reasoning_effort != "xhigh"
+            or execution.sandbox != "read-only"
+            or execution.ephemeral is not True
         ):
             reject("PROVIDER_ISSUER_POLICY_MISMATCH", "execution receipt differs from issuer policy")
         issued_at = parse_utc(coordinates.issued_at, "review.issuedAt")
@@ -549,6 +574,9 @@ class ProviderReviewIssuer:
             "directProviderCli": self.direct_provider_cli,
             "modelId": execution.model_id,
             "modelIdentityClass": execution.model_identity_class,
+            "reasoningEffort": execution.reasoning_effort,
+            "sandbox": execution.sandbox,
+            "ephemeral": execution.ephemeral,
             "capabilitySnapshotSha256": execution.capability_snapshot_sha256,
             "subjectSha256": coordinates.subject_sha256,
             "round": coordinates.round,
@@ -581,8 +609,6 @@ class ProviderReviewIssuer:
 
 __all__ = [
     "CODEX_MODEL",
-    "CursorRunner",
-    "DirectClaudeRunner",
     "DirectCodexRunner",
     "ProviderExecutionReceipt",
     "ProviderReviewIssuer",

@@ -156,10 +156,12 @@ def _validate_receipt(receipt: dict[str, Any]) -> tuple[list[dict[str, Any]], st
     ):
         raise TrustRootBuildError("public Transit receipt is outside the TEST trust scope")
     if receipt["verifiedAbsentResources"] != [
+        "approle:cross-ai-issuer-anthropic-test",
+        "policy:cross-ai-issuer-anthropic-test",
         "approle:cross-ai-issuer-minimax-test",
         "policy:cross-ai-issuer-minimax-test",
     ]:
-        raise TrustRootBuildError("legacy MiniMax signing authority absence is unverified")
+        raise TrustRootBuildError("retired provider signing authority absence is unverified")
     for field in ("vaultOrigin", "vaultClusterId", "vaultClusterName"):
         value = receipt[field]
         if (
@@ -322,18 +324,10 @@ def build_trust_root(
         "issuedAt": issued_at,
         "expiresAt": expires_at,
         "maxClockSkewSeconds": max_clock_skew_seconds,
-        "requiredProviderFamilies": ["anthropic", "openai"],
-        "minimumProviderFamilies": 2,
-        "minimumDirectProviderRoutes": 2,
+        "requiredProviderFamilies": ["openai"],
+        "minimumProviderFamilies": 1,
+        "minimumDirectProviderRoutes": 1,
         "keys": [
-            trust_key(
-                by_name["anthropic"],
-                "provider-review",
-                "anthropic",
-                "direct-anthropic-cli",
-                "claude-opus-4-8",
-                "provider-reported",
-            ),
             trust_key(
                 by_name["openai"],
                 "provider-review",

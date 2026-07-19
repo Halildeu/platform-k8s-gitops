@@ -603,14 +603,13 @@ class EvidenceContractV2Test(unittest.TestCase):
             now=self.fixture.now,
         )
 
-    def test_accepts_post_cutoff_claude_codex_v2_bundle(self) -> None:
+    def test_accepts_post_cutoff_codex_only_v2_bundle(self) -> None:
         result = self.verifier().verify_bundle(self.fixture.bundle_envelope)
-        self.assertEqual(result.provider_families, ("anthropic", "openai"))
-        self.assertEqual(len(result.final_review_digests), 2)
+        self.assertEqual(result.provider_families, ("openai",))
+        self.assertEqual(len(result.final_review_digests), 1)
         self.assertEqual(
             result.provider_identity_classes,
             (
-                ("anthropic", "provider-reported"),
                 ("openai", "trusted-launch-attested"),
             ),
         )
@@ -623,7 +622,7 @@ class EvidenceContractV2Test(unittest.TestCase):
             "application/vnd.acik.cross-ai-deployment-bundle.v2+json",
         )
 
-    def test_v2_rejects_minimax_and_openai_provider_report_upgrade(self) -> None:
+    def test_v2_rejects_retired_providers_and_openai_provider_report_upgrade(self) -> None:
         trust_root = copy.deepcopy(self.fixture.trust_root)
         openai = next(
             item
@@ -653,6 +652,26 @@ class EvidenceContractV2Test(unittest.TestCase):
         )
         trust_root = copy.deepcopy(self.fixture.trust_root)
         trust_root["keys"].append(minimax)
+        with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_SCHEMA_INVALID"):
+            EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=self.fixture.revocations_envelope,
+                now=self.fixture.now,
+            )
+
+        anthropic = copy.deepcopy(self.factory.trust_root()["keys"][0])
+        anthropic.update(
+            {
+                "keyId": self.factory.ANTHROPIC_KEY_ID,
+                "publicKeyBase64": base64.b64encode(b"\x08" * 32).decode("ascii"),
+                "providerFamily": "anthropic",
+                "allowedChannels": ["direct-anthropic-cli"],
+                "allowedModelIds": ["claude-opus-4-8"],
+                "allowedModelIdentityClasses": ["provider-reported"],
+            }
+        )
+        trust_root = copy.deepcopy(self.fixture.trust_root)
+        trust_root["keys"].append(anthropic)
         with self.assertRaisesRegex(PolicyError, "TRUST_ROOT_SCHEMA_INVALID"):
             EvidenceVerifier(
                 trust_root=trust_root,

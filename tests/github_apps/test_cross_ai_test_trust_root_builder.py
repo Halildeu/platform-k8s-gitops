@@ -67,6 +67,8 @@ def receipt() -> dict[str, object]:
         "createdResources": ["key:anthropic"],
         "updatedResources": ["policy:vault-config-reconciler"],
         "verifiedAbsentResources": [
+            "approle:cross-ai-issuer-anthropic-test",
+            "policy:cross-ai-issuer-anthropic-test",
             "approle:cross-ai-issuer-minimax-test",
             "policy:cross-ai-issuer-minimax-test",
         ],
@@ -102,17 +104,15 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         )
         self.assertEqual(
             trust_root["requiredProviderFamilies"],
-            ["anthropic", "openai"],
+            ["openai"],
         )
-        self.assertEqual(len(trust_root["keys"]), 5)
+        self.assertEqual(len(trust_root["keys"]), 4)
         providers = {
             item["providerFamily"]: item
             for item in trust_root["keys"]
             if item["role"] == "provider-review"
         }
-        self.assertEqual(
-            providers["anthropic"]["allowedModelIds"], ["claude-opus-4-8"]
-        )
+        self.assertEqual(set(providers), {"openai"})
         self.assertEqual(
             providers["openai"]["allowedModelIdentityClasses"],
             ["trusted-launch-attested"],
@@ -130,7 +130,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "476d5a81af5ce338259230cf550cc396be90f51f2853800df21a5492908457d7",
+            "ebb0eab41900c97f7e5de8f4db73f9b50874371ddf1f4f30278a2394976578c1",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:

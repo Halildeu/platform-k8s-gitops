@@ -23,10 +23,13 @@ SPEC.loader.exec_module(MODULE)
 def evidence() -> dict:
     response = "## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE"
     return {
-        "schema": "cross-ai-provider-evidence/v1",
-        "provider": "anthropic",
-        "requested_model": "claude-opus-4-8",
-        "actual_model": "claude-opus-4-8",
+        "schema": "cross-ai-provider-evidence/v2",
+        "provider": "openai",
+        "requested_model": "gpt-5.6-sol",
+        "actual_model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh",
+        "sandbox": "read-only",
+        "ephemeral": True,
         "base_tip_sha": "a" * 40,
         "base_sha": "b" * 40,
         "head_sha": "c" * 40,
@@ -46,7 +49,7 @@ class EvidenceValidationTests(unittest.TestCase):
     def test_accepts_exact_builder_schema_and_digest(self) -> None:
         text = json.dumps(evidence(), separators=(",", ":"))
         parsed, digest = MODULE.validate_evidence_text(text)
-        self.assertEqual(parsed["provider"], "anthropic")
+        self.assertEqual(parsed["provider"], "openai")
         self.assertEqual(digest, hashlib.sha256(text.encode()).hexdigest())
 
     def test_rejects_extra_schema_key(self) -> None:
@@ -58,6 +61,20 @@ class EvidenceValidationTests(unittest.TestCase):
         payload = evidence()
         payload["response_sha256"] = "f" * 64
         self.assert_rejected(payload)
+
+    def test_rejects_wrong_provider_model_or_execution_identity(self) -> None:
+        mutations = (
+            {"provider": "anthropic"},
+            {"requested_model": "claude-opus-4-8", "actual_model": "claude-opus-4-8"},
+            {"reasoning_effort": "high"},
+            {"sandbox": "workspace-write"},
+            {"ephemeral": False},
+        )
+        for mutation in mutations:
+            payload = evidence()
+            payload.update(mutation)
+            with self.subTest(mutation=mutation):
+                self.assert_rejected(payload)
 
     def test_rejects_sensitive_response_before_gh_invocation(self) -> None:
         for value in (

@@ -42,7 +42,6 @@ POLICIES=(
   "common/bootstrap-writer.hcl|platform-bootstrap-writer"
   "test/eso-runtime-extras.hcl|eso-runtime-test-extras"
   "test/audio-gateway-mtls-seeder.hcl|audio-gateway-mtls-seeder"
-  "test/cross-ai-issuer-anthropic.hcl|cross-ai-issuer-anthropic-test"
   "test/cross-ai-issuer-openai.hcl|cross-ai-issuer-openai-test"
   "test/cross-ai-coordinator.hcl|cross-ai-coordinator-test"
   "test/cross-ai-revocation.hcl|cross-ai-revocation-test"
@@ -58,7 +57,6 @@ lint_policy() { # lint_policy <name> <file> ; echo OK / FAIL:<reason>
   local name="$1" file="$2"
   local expected_sign_path=""
   case "$name" in
-    cross-ai-issuer-anthropic-test) expected_sign_path="cross-ai/sign/anthropic" ;;
     cross-ai-issuer-openai-test) expected_sign_path="cross-ai/sign/openai" ;;
     cross-ai-coordinator-test) expected_sign_path="cross-ai/sign/coordinator" ;;
     cross-ai-revocation-test) expected_sign_path="cross-ai/sign/revocation" ;;
