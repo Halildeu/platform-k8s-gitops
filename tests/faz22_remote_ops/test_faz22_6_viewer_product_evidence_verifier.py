@@ -9,6 +9,7 @@ import unittest
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).parents[2] / "scripts/faz22-remote-ops/verify-view-only-viewer-product-evidence.py"
@@ -973,27 +974,31 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         self, client=None, now=NOW,
         advisory_scope_bytes=ADVISORY_FIXTURE.scope_bytes,
         cross_ai_revocations=None,
+        authority_repo_root=None,
+        current_authority=None,
     ):
+        authority = current_authority or ADVISORY_FIXTURE.authority
         return VERIFIER.verify_product_evidence(
             client or FakeClient(),
             VERIFIER.EXPECTED_REPOSITORY,
             RUN_ID,
             now=now,
             advisory_scope_bytes=advisory_scope_bytes,
-            cross_ai_trust_root=ADVISORY_FIXTURE.authority.trust_root,
+            cross_ai_trust_root=authority.trust_root,
             cross_ai_revocations=(
                 cross_ai_revocations
-                or ADVISORY_FIXTURE.authority.revocations_envelope
+                or authority.revocations_envelope
             ),
             expected_cross_ai_trust_root_sha256=(
-                ADVISORY_FIXTURE.authority.expected_trust_root_sha256
+                authority.expected_trust_root_sha256
             ),
             codex_executable_policy=(
-                ADVISORY_FIXTURE.authority.codex_executable_policy
+                authority.codex_executable_policy
             ),
             issuer_runtime_policy=(
-                ADVISORY_FIXTURE.authority.issuer_runtime_policy
+                authority.issuer_runtime_policy
             ),
+            authority_repo_root=authority_repo_root,
         )
 
     def client_for_policy(
@@ -1295,6 +1300,29 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
         )
         self.assertEqual(
             "pass", self.verify(cross_ai_revocations=refreshed)["status"]
+        )
+
+    def test_retired_review_root_is_resolved_for_durable_product_evidence(self):
+        rotated = SimpleNamespace(
+            trust_root={},
+            revocations_envelope={},
+            expected_trust_root_sha256="sha256:" + ("f" * 64),
+            codex_executable_policy={},
+            issuer_runtime_policy={},
+        )
+        with patch.object(
+            VERIFIER,
+            "load_authority_for_evidence",
+            return_value=ADVISORY_FIXTURE.authority,
+        ) as resolver:
+            result = self.verify(
+                authority_repo_root=Path("/trusted/repo"),
+                current_authority=rotated,
+            )
+        self.assertEqual("pass", result["status"])
+        self.assertEqual(
+            ADVISORY_FIXTURE.authority.expected_trust_root_sha256,
+            resolver.call_args.kwargs["expected_trust_root_sha256"],
         )
 
     def test_immutable_v1_is_rejected_for_current_product_but_allowed_for_explicit_forensics(self):

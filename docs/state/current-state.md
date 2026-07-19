@@ -56,9 +56,16 @@ Codex-only advisory and the public TEST authority exist, activation remains
 fail-closed. Existing v1 Claude evidence is historical only; it cannot mint a
 fresh grant. The direct reviewer receives only the canonical redacted scope in
 an empty scratch root with shell, app, browser, computer, memory and other data
-tools disabled before inference. Product verification checks the current
-revocation authority at observation time while testing the signed review's
-validity at the verified pilot-start reference time.
+tools disabled before inference. Product verification resolves either the
+current root or its append-only, digest-addressed retired authority entry. A
+root rotation must archive the predecessor root and its final signed revocation
+snapshot byte-for-byte; history deletion/mutation and unarchived rotation fail
+closed. Current-root evidence uses the revocation authority at observation
+time; pre-retirement durable evidence uses the pinned final snapshot at the
+recorded retirement boundary while testing the signed review at the verified
+pilot-start reference time. A revocation-only PR is independently signature,
+freshness and monotonic-superset checked even when its predecessor has not yet
+expired.
 
 ## Live Delta — #2502 TEST Transit live; custom rule remains disabled (2026-07-18)
 

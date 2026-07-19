@@ -19,6 +19,7 @@
     "schemaVersion": "acik.codex-executable-policy.v1"
   },
   "expectedTrustRootSha256": null,
+  "historicalAuthorities": [],
   "issuerRuntimePolicy": null,
   "revocationsPath": null,
   "rotationPolicy": {

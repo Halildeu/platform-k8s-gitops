@@ -498,6 +498,13 @@ subject, model veya koordinat kabul etmez. `scripts/ai/post_cross_ai_evidence.py
 comment'i yalnız transport olarak kullanır. Kabul, repo-public pinned OpenAI
 provider-review trust root'u ile güncel ve imzalı revocation setini zorunlu tutar;
 owner comment'i tek başına authority değildir.
+Root rotasyonu eski root ile son imzalı revocation snapshot'ını digest-adresli
+history dizinine byte-for-byte eklemek zorundadır; geçmiş entry veya archived
+byte silinemez/değiştirilemez. Revocation-only geçişi predecessor stale olsun
+ya da olmasın imza, freshness, yeni set kimliği ve monotonic superset şartlarını
+aynı trusted-base doğrulayıcıda karşılar. Bu append-only history, retirement
+öncesi durable ürün kanıtının sonraki root döneminde doğrulanabilmesini sağlar;
+retirement anı veya sonrasında eski root yeni acceptance üretemez.
 Provider-review signer tek başına da authority değildir: aynı carrier, ayrı
 `runner-management` anahtarıyla imzalanmış runtime attestation içinde exact
 provider leaf, prompt, response, Codex session, capability snapshot ve

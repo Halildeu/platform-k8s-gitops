@@ -36,7 +36,11 @@ from view_only_pilot_authorization_common import (
     validate_codex_advisory_comment_timing,
     validate_codex_advisory_evidence,
 )
-from cross_ai_authority import AuthorityUnavailable, load_active_authority
+from cross_ai_authority import (
+    AuthorityUnavailable,
+    load_active_authority,
+    load_authority_for_evidence,
+)
 from prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope
 
 
@@ -1072,6 +1076,7 @@ def verify_activation_authorization(
     codex_executable_policy: dict[str, Any] | None = None,
     issuer_runtime_policy: dict[str, Any] | None = None,
     authority_observed_at: datetime | None = None,
+    authority_repo_root: Path | None = None,
 ) -> datetime:
     run_id = operator["activationRunId"]
     run = fetch_run(
@@ -1375,6 +1380,35 @@ def verify_activation_authorization(
                     validate_codex_advisory_comment_timing(
                         comment, pilot_started, advisory_contract.get("maxAgeHours"),
                     )
+                    if authority_repo_root is not None:
+                        carrier = json.loads(body)
+                        carrier_root = (
+                            carrier.get("trust_root_sha256")
+                            if isinstance(carrier, dict) else None
+                        )
+                        if not isinstance(carrier_root, str):
+                            raise CodexEvidenceError(
+                                "signed Codex carrier trust-root binding is missing"
+                            )
+                        resolved_authority = load_authority_for_evidence(
+                            authority_repo_root,
+                            expected_trust_root_sha256=carrier_root,
+                            observed_at=authority_observed_at,
+                            evidence_reference_time=pilot_started,
+                        )
+                        cross_ai_trust_root = resolved_authority.trust_root
+                        cross_ai_revocations = (
+                            resolved_authority.revocations_envelope
+                        )
+                        expected_cross_ai_trust_root_sha256 = (
+                            resolved_authority.expected_trust_root_sha256
+                        )
+                        codex_executable_policy = (
+                            resolved_authority.codex_executable_policy
+                        )
+                        issuer_runtime_policy = (
+                            resolved_authority.issuer_runtime_policy
+                        )
                     validate_codex_advisory_evidence(
                         body,
                         expected_bindings,
@@ -1389,7 +1423,11 @@ def verify_activation_authorization(
                         authority_observed_at=authority_observed_at,
                         review_reference_time=pilot_started,
                     )
-                except CodexEvidenceError as exc:
+                except (
+                    AuthorityUnavailable,
+                    CodexEvidenceError,
+                    json.JSONDecodeError,
+                ) as exc:
                     raise EvidenceError(
                         f"AI advisory is not strict Codex-only evidence: {exc}",
                     ) from exc
@@ -1556,6 +1594,7 @@ def validate_semantics(
     expected_cross_ai_trust_root_sha256: str | None,
     codex_executable_policy: dict[str, Any] | None,
     issuer_runtime_policy: dict[str, Any] | None,
+    authority_repo_root: Path | None,
 ) -> dict[str, Any]:
     if scan := scan_hygiene(root):
         raise EvidenceError("root evidence hygiene failed: " + "; ".join(scan[:20]))
@@ -1667,6 +1706,7 @@ def validate_semantics(
         codex_executable_policy=codex_executable_policy,
         issuer_runtime_policy=issuer_runtime_policy,
         authority_observed_at=now,
+        authority_repo_root=authority_repo_root,
     )
     validate_negative_and_termination(
         children["negative"]["payload"], children["termination"]["payload"],
@@ -1715,6 +1755,7 @@ def verify_product_evidence(
     expected_cross_ai_trust_root_sha256: str | None = None,
     codex_executable_policy: dict[str, Any] | None = None,
     issuer_runtime_policy: dict[str, Any] | None = None,
+    authority_repo_root: Path | None = None,
 ) -> dict[str, Any]:
     validate_repository(repository)
     if run_id < 1:
@@ -1772,6 +1813,7 @@ def verify_product_evidence(
         expected_cross_ai_trust_root_sha256=expected_cross_ai_trust_root_sha256,
         codex_executable_policy=codex_executable_policy,
         issuer_runtime_policy=issuer_runtime_policy,
+        authority_repo_root=authority_repo_root,
     )
     result["marker"] = marker_text(result)
     return result
@@ -1838,6 +1880,7 @@ def main() -> int:
             ),
             codex_executable_policy=authority.codex_executable_policy,
             issuer_runtime_policy=authority.issuer_runtime_policy,
+            authority_repo_root=ROOT,
         )
         write_json(args.output, result)
         if args.marker_out:

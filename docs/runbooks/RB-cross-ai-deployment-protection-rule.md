@@ -160,23 +160,30 @@ grants expire.
 Trust-root issuance must compare every candidate public key with the retained
 history of prior trust-root manifests. Reusing the same public key under a new
 `keyId`, provider family or role is a release rejection even when the current
-manifest has no duplicate. This cross-generation check belongs to the
-dual-control release ledger because one running verifier cannot infer deleted
-trust-root generations.
+manifest has no duplicate. Rotation must also append the prior active root and
+its final signed revocation snapshot byte-for-byte under
+`config/github-apps/cross-ai-provider-review-history/<old-root-digest>/`, bind
+both digests and the exact retirement time in the authority manifest, and leave
+all prior entries/bytes unchanged. Trusted-base validation rejects history
+deletion, mutation, reordering and a replacement root without that archive.
+This repo-public chain gives the running verifier a bounded, content-addressed
+cross-generation record instead of asking it to infer a deleted root.
 
 The service reloads the mounted revocation envelope for every evaluation and
 verifies its signature and `nextUpdate` then. Replace the file atomically. A
 missing, partially written, stale or invalid envelope rejects the decision;
 revocation activation does not depend on a process restart.
 
-A missed refresh window does not permanently deadlock the review gate. Create a
-new release with `build_cross_ai_provider_review_revocations.py` and open a PR
+A missed refresh window does not permanently deadlock the review gate. The same
+path may also rotate proactively before expiry. Create a new release with
+`build_cross_ai_provider_review_revocations.py` and open a PR
 whose sole changed path is
 `config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json`. The
 trusted-base audit permits the normal high-impact signed Codex review to use the
 head replacement only after independently verifying the pinned revocation
 signature, freshness, a strictly newer set identity/time and a byte-for-byte
-superset of every stale predecessor entry. This path never permits an empty
+superset of every predecessor entry whether the predecessor is stale or still
+fresh. This path never permits an empty
 fallback, unrevocation, root/code/schema change or replay of the retired genesis.
 
 V1 evaluates only current, unconsumed authorizations. A matching revocation

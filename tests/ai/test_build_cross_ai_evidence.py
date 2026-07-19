@@ -145,6 +145,11 @@ class EvidenceBuilderTests(unittest.TestCase):
             require_agree=True,
         )
 
+    def test_main_head_or_empty_diff_cannot_mint_review_evidence(self) -> None:
+        with patch.object(MODULE, "run_git", return_value="a" * 40):
+            with self.assertRaisesRegex(PolicyError, "PROVIDER_SCOPE_EMPTY"):
+                MODULE._scope(self.workspace)
+
     def test_leaf_time_and_authority_are_refreshed_after_provider_returns(self) -> None:
         runner = StaticRunner()
         completed_at = self.fixture.factory.now + timedelta(minutes=10)

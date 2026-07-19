@@ -88,6 +88,19 @@ session, capability snapshot and provider-review envelope. The raw evidence
 CLI carries neither credential and cannot issue accepted evidence outside
 those fixed services.
 
+Trust-root rotation is an append-only public transition. A replacement root
+must start at the exact recorded retirement time of the predecessor and the
+same PR must copy the predecessor root plus its final signed revocation
+snapshot byte-for-byte into
+`cross-ai-provider-review-history/<old-root-digest>/`. The authority manifest
+appends one content-addressed entry binding both digests, the executable and
+issuer-runtime policies, and the retirement time. Existing history entries and
+archived bytes are immutable; deleting, editing, reordering or rotating a root
+without the exact archive fails before review evidence is accepted. Product
+evidence issued before retirement can therefore be reverified against the
+pinned final snapshot after the current root changes, while evidence at or
+after retirement cannot use the old root.
+
 `build_cross_ai_provider_review_revocations.py` is the only repository release
 entrypoint for the public revocation file. It signs only
 `acik.cross-ai-deployment-revocations.v1` with the fixed
@@ -99,7 +112,10 @@ genesis replay and does not lower the high-impact review floor. The trusted-base
 verifier accepts only an exact revocations-file-only PR whose replacement is a
 fresh DSSE from the already pinned revocation key, has a new set identity/time,
 and contains every predecessor revocation byte-for-byte. Any other changed path,
-forged release, non-stale predecessor or attempted unrevocation fails closed.
+forged release or attempted unrevocation fails closed. The same validation is
+mandatory for a proactive refresh while the predecessor is still fresh; the
+active file can never bypass validation merely because its `nextUpdate` has not
+yet elapsed.
 
 The example names three dedicated no-input `*-protected.yml` workflows. Their
 execution actions are pinned to immutable commit

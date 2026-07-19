@@ -13,6 +13,7 @@
     "revocationsPath",
     "expectedTrustRootSha256",
     "issuerRuntimePolicy",
+    "historicalAuthorities",
     "rotationPolicy"
   ],
   "properties": {
@@ -51,6 +52,12 @@
         {"type": "null"},
         {"$ref": "#/$defs/issuerRuntimePolicy"}
       ]
+    },
+    "historicalAuthorities": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/historicalAuthority"}
     },
     "rotationPolicy": {
       "type": "object",
@@ -150,6 +157,34 @@
         "launcherSourceSha256": {"$ref": "#/$defs/digest"},
         "attestorKeyId": {"type": "string", "pattern": "^vault-transit://cross-ai/runner-management#v[1-9][0-9]*$"},
         "maxAttestationLifetimeSeconds": {"const": 600}
+      }
+    },
+    "historicalAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trustRootPath",
+        "revocationsPath",
+        "expectedTrustRootSha256",
+        "expectedRevocationsSha256",
+        "codexExecutablePolicy",
+        "issuerRuntimePolicy",
+        "retiredAt"
+      ],
+      "properties": {
+        "trustRootPath": {
+          "type": "string",
+          "pattern": "^config/github-apps/cross-ai-provider-review-history/[a-f0-9]{64}/trust-root\\.v2\\.json$"
+        },
+        "revocationsPath": {
+          "type": "string",
+          "pattern": "^config/github-apps/cross-ai-provider-review-history/[a-f0-9]{64}/revocations\\.v1\\.dsse\\.json$"
+        },
+        "expectedTrustRootSha256": {"$ref": "#/$defs/digest"},
+        "expectedRevocationsSha256": {"$ref": "#/$defs/digest"},
+        "codexExecutablePolicy": {"$ref": "#/$defs/codexExecutablePolicy"},
+        "issuerRuntimePolicy": {"$ref": "#/$defs/issuerRuntimePolicy"},
+        "retiredAt": {"type": "string", "format": "date-time"}
       }
     }
   },
