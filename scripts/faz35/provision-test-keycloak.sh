@@ -5,13 +5,9 @@ set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=scripts/faz35/lib-vault-accessor-inventory.sh
-source "$SCRIPT_DIR/lib-vault-accessor-inventory.sh"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
-VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
-VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
 REALM="${REALM:-platform-test}"
+KC_TOKEN_BASE_URL="${KC_TOKEN_BASE_URL:-http://127.0.0.1:8082}"
 PERSONA_USERNAME="${PERSONA_USERNAME:-ethics-manager-test}"
 PERSONA_PASSWORD_FILE="${PERSONA_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-test.password}"
 WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
@@ -26,8 +22,7 @@ KCADM=/opt/keycloak/bin/kcadm.sh
   echo "FATAL: this script is platform-test only" >&2
   exit 1
 }
-[ "$VAULT_CONTAINER" = "platform-vault-test" ] && \
-  [ "$VAULT_INIT_FILE" = "/home/halil/bootstrap-drill/vault-init-test.json" ] && \
+[ "$KC_TOKEN_BASE_URL" = "http://127.0.0.1:8082" ] && \
   [ "$PERSONA_USERNAME" = "ethics-manager-test" ] && \
   [ "$PERSONA_PASSWORD_FILE" = "/home/halil/bootstrap-drill/ethics-manager-test.password" ] && \
   [ "$WRONG_ORG_USERNAME" = "ethics-manager-wrong-org-test" ] && \
@@ -36,19 +31,11 @@ KCADM=/opt/keycloak/bin/kcadm.sh
   [ "$DENIED_PASSWORD_FILE" = "/home/halil/bootstrap-drill/ethics-manager-denied-test.password" ] && \
   [ "$WRONG_ETHICS_ORG_ID" = "00000000-0000-0000-0000-000000000002" ] && \
   [ "$ETHICS_ORG_ID" = "00000000-0000-0000-0000-000000000001" ] || {
-  echo "FATAL: Keycloak/Vault/persona mutation target override refused" >&2
-  exit 1
-}
-[ -r "$VAULT_INIT_FILE" ] && [ -f "$VAULT_INIT_FILE" ] && [ ! -L "$VAULT_INIT_FILE" ] || {
-  echo "FATAL: Vault init file must be a readable regular non-symlink" >&2
-  exit 1
-}
-[ "$(stat -c '%u' "$VAULT_INIT_FILE")" = "$(id -u)" ] && \
-  [ "$(stat -c '%a' "$VAULT_INIT_FILE")" = 600 ] || {
-  echo "FATAL: Vault init file must be invoking-user-owned mode 600" >&2
+  echo "FATAL: Keycloak/persona mutation target override refused" >&2
   exit 1
 }
 command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 1; }
+command -v curl >/dev/null 2>&1 || { echo "FATAL: host curl missing" >&2; exit 1; }
 
 prepare_synthetic_password_file() {
   local file=$1 label=$2 candidate owner mode parent
@@ -97,73 +84,44 @@ printf '%s' "$KCADM_CONFIG" | grep -Eq '^/tmp/kcadm-faz35\.[A-Za-z0-9]+$' || {
   exit 1
 }
 docker exec "$KC_CONTAINER" chmod 600 "$KCADM_CONFIG"
-vault_output_file=""
-vault_error_file=""
-trap 'unset automation_secret vault_root_token automation_json token_json access_token claims; [ -z "${vault_output_file:-}" ] || rm -f "$vault_output_file"; [ -z "${vault_error_file:-}" ] || rm -f "$vault_error_file"; [ -z "${KCADM_CONFIG:-}" ] || docker exec "$KC_CONTAINER" rm -f "$KCADM_CONFIG" >/dev/null 2>&1 || true' EXIT
+trap 'unset token_json access_token claims; [ -z "${KCADM_CONFIG:-}" ] || docker exec "$KC_CONTAINER" rm -f "$KCADM_CONFIG" >/dev/null 2>&1 || true' EXIT
 
 kc() { docker exec "$KC_CONTAINER" "$KCADM" "$@" --config "$KCADM_CONFIG"; }
 
-vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
-vault_output_file=$(mktemp)
-vault_error_file=$(mktemp)
-chmod 600 "$vault_output_file" "$vault_error_file"
-automation_status=0
-if printf '%s\n' "$vault_root_token" | docker exec -i \
-    -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
-      set -eu
-      IFS= read -r VAULT_TOKEN
-      export VAULT_TOKEN
-      exec vault kv get -format=json kv/platform/keycloak-automation
-    ' >"$vault_output_file" 2>"$vault_error_file"; then
-  automation_status=0
-else
-  automation_status=$?
+# The permanent svc-kc-automation account intentionally lacks manage-realm.
+# Do not widen it. Use the canonical admin password file only inside the
+# Keycloak container and bind it to this per-run, mode-600 config. The password
+# never crosses the container boundary or appears in argv/stdout.
+if ! docker exec -e KC_CONFIG="$KCADM_CONFIG" "$KC_CONTAINER" sh -c '
+  set -eu
+  [ -n "${KEYCLOAK_ADMIN_PASSWORD_FILE:-}" ]
+  [ -r "$KEYCLOAK_ADMIN_PASSWORD_FILE" ]
+  KC_CLI_PASSWORD=$(cat "$KEYCLOAK_ADMIN_PASSWORD_FILE")
+  [ -n "$KC_CLI_PASSWORD" ]
+  export KC_CLI_PASSWORD
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080 --realm master --user admin \
+    --config "$KC_CONFIG" >/dev/null 2>&1
+  unset KC_CLI_PASSWORD
+'; then
+  echo "FATAL: isolated Keycloak admin login failed" >&2
+  exit 1
 fi
-automation_json=$(vault_json_document_classify "$automation_status" \
-  "$vault_output_file" "$vault_error_file" \
-  '.data.data.client_id | type == "string" and length > 0') || {
-  echo "FATAL: Keycloak automation Vault response is not one exact JSON document" >&2
-  exit 1
-}
-printf '%s' "$automation_json" | jq -e -s '
-  length == 1 and
-  (.[0].data.data.client_secret | type == "string" and length > 0)
-' >/dev/null || {
-  echo "FATAL: Keycloak automation Vault response schema drift" >&2
-  exit 1
-}
-rm -f "$vault_output_file" "$vault_error_file"
-vault_output_file=""
-vault_error_file=""
-automation_client=$(printf '%s' "$automation_json" | jq -r '.data.data.client_id')
-automation_secret=$(printf '%s' "$automation_json" | jq -r '.data.data.client_secret')
-unset vault_root_token automation_json
-
-login_realm=""
-for candidate in "$REALM" master; do
-  if printf '%s\n' "$automation_secret" | docker exec -i \
-    -e KC_CLIENT="$automation_client" -e KC_LOGIN_REALM="$candidate" -e KC_CONFIG="$KCADM_CONFIG" \
-    "$KC_CONTAINER" sh -c '
-      set -eu
-      IFS= read -r KC_CLI_CLIENT_SECRET
-      export KC_CLI_CLIENT_SECRET
-      /opt/keycloak/bin/kcadm.sh config credentials \
-        --server http://localhost:8080 --realm "$KC_LOGIN_REALM" \
-        --client "$KC_CLIENT" --config "$KC_CONFIG" >/dev/null 2>&1
-      unset KC_CLI_CLIENT_SECRET
-    '; then
-    login_realm="$candidate"
-    break
-  fi
-done
-unset automation_secret
-[ -n "$login_realm" ] || { echo "FATAL: Keycloak automation login failed" >&2; exit 1; }
-# kcadm natively consumes KC_CLI_CLIENT_SECRET when --secret is omitted. Prove
-# the resulting service-account session is usable without placing the secret in
-# argv or printing the token/config.
 kc config credentials --status >/dev/null 2>&1 || {
-  echo "FATAL: Keycloak automation session status failed" >&2
+  echo "FATAL: isolated Keycloak admin session status failed" >&2
   exit 1
+}
+
+mint_synthetic_token() {
+  local username=$1 password
+  IFS= read -r password
+  printf 'grant_type=password&client_id=frontend&username=%s&password=%s&scope=openid%%20ethics-manager-audience%%20ethics%%3Acase%%3Amanage' \
+    "$username" "$password" \
+    | curl -fsS --max-time 10 -X POST \
+        -H 'Content-Type: application/x-www-form-urlencoded' \
+        --data-binary @- \
+        "$KC_TOKEN_BASE_URL/realms/$REALM/protocol/openid-connect/token"
+  unset password
 }
 
 # Inspect every existing named object before the first mutation. Missing
@@ -343,7 +301,8 @@ ensure_scope_role_binding() {
     role_payload=$(kc get roles/ethics-manager -r "$REALM" \
       | jq '[{id:.id,name:.name,description:.description,composite:.composite,clientRole:.clientRole,containerId:.containerId}]')
     printf '%s' "$role_payload" | docker exec -i "$KC_CONTAINER" "$KCADM" \
-      create "client-scopes/$scope_id/scope-mappings/realm" -r "$REALM" -f - >/dev/null
+      create "client-scopes/$scope_id/scope-mappings/realm" -r "$REALM" \
+      -f - --config "$KCADM_CONFIG" >/dev/null
   fi
   kc get "client-scopes/$scope_id/scope-mappings/realm" -r "$REALM" \
     | jq -e '[.[].name] == ["ethics-manager"]' >/dev/null || {
@@ -516,7 +475,8 @@ assert_persona_role_boundary "$persona_id" "$PERSONA_USERNAME"
 
 org_payload=$(jq -nc --arg org "$ETHICS_ORG_ID" '{attributes:{org_id:[$org]}}')
 printf '%s' "$org_payload" | docker exec -i "$KC_CONTAINER" "$KCADM" \
-  update "users/$persona_id" -r "$REALM" -f - --merge >/dev/null
+  update "users/$persona_id" -r "$REALM" -f - --merge \
+  --config "$KCADM_CONFIG" >/dev/null
 actual_org=$(kc get "users/$persona_id" -r "$REALM" | jq -r '.attributes.org_id[0] // empty')
 [ "$actual_org" = "$ETHICS_ORG_ID" ] || {
   echo "FATAL: synthetic persona org_id was not persisted" >&2
@@ -540,25 +500,14 @@ persona_password=$(<"$PERSONA_PASSWORD_FILE")
 jq -nc --arg value "$persona_password" \
   '{type:"password",value:$value,temporary:false}' \
   | docker exec -i "$KC_CONTAINER" "$KCADM" \
-      update "users/$persona_id/reset-password" -r "$REALM" -f - >/dev/null
+      update "users/$persona_id/reset-password" -r "$REALM" -f - \
+      --config "$KCADM_CONFIG" >/dev/null
 
 # Mint one short-lived synthetic access token and validate only its non-secret
 # claims. The password is request-body stdin, never curl/docker argv. The raw
 # access/refresh tokens remain in shell variables and are unset without output.
-token_json=$(printf '%s\n' "$persona_password" | docker exec -i \
-  -e KC_REALM="$REALM" -e KC_PERSONA_USERNAME="$PERSONA_USERNAME" \
-  "$KC_CONTAINER" sh -c '
-    set -eu
-    command -v curl >/dev/null 2>&1 || exit 70
-    IFS= read -r KC_PERSONA_PASSWORD
-    printf "grant_type=password&client_id=frontend&username=%s&password=%s&scope=openid%%20ethics-manager-audience%%20ethics%%3Acase%%3Amanage" \
-      "$KC_PERSONA_USERNAME" "$KC_PERSONA_PASSWORD" \
-      | curl -fsS -X POST \
-          -H "Content-Type: application/x-www-form-urlencoded" \
-          --data-binary @- \
-          "http://localhost:8080/realms/$KC_REALM/protocol/openid-connect/token"
-    unset KC_PERSONA_PASSWORD
-  ') || {
+token_json=$(printf '%s\n' "$persona_password" \
+  | mint_synthetic_token "$PERSONA_USERNAME") || {
   unset persona_password org_payload
   echo "FATAL: synthetic persona token mint failed" >&2
   exit 1
@@ -652,7 +601,8 @@ ensure_negative_persona() {
   assert_persona_role_boundary "$negative_id" "$username"
   payload=$(jq -nc --arg org "$org_id" '{attributes:{org_id:[$org]}}')
   printf '%s' "$payload" | docker exec -i "$KC_CONTAINER" "$KCADM" \
-    update "users/$negative_id" -r "$REALM" -f - --merge >/dev/null
+    update "users/$negative_id" -r "$REALM" -f - --merge \
+    --config "$KCADM_CONFIG" >/dev/null
 
   # Preflight created or validated all three files before realm mutation.
   [ "$(stat -c '%u' "$password_file")" = "$(id -u)" ] && \
@@ -667,19 +617,10 @@ ensure_negative_persona() {
   }
   jq -nc --arg value "$password" '{type:"password",value:$value,temporary:false}' \
     | docker exec -i "$KC_CONTAINER" "$KCADM" \
-        update "users/$negative_id/reset-password" -r "$REALM" -f - >/dev/null
+        update "users/$negative_id/reset-password" -r "$REALM" -f - \
+        --config "$KCADM_CONFIG" >/dev/null
 
-  token_json=$(printf '%s\n' "$password" | docker exec -i \
-    -e KC_REALM="$REALM" -e KC_PERSONA_USERNAME="$username" \
-    "$KC_CONTAINER" sh -c '
-      set -eu
-      IFS= read -r KC_PERSONA_PASSWORD
-      printf "grant_type=password&client_id=frontend&username=%s&password=%s&scope=openid%%20ethics-manager-audience%%20ethics%%3Acase%%3Amanage" \
-        "$KC_PERSONA_USERNAME" "$KC_PERSONA_PASSWORD" \
-        | curl -fsS -X POST -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-binary @- "http://localhost:8080/realms/$KC_REALM/protocol/openid-connect/token"
-      unset KC_PERSONA_PASSWORD
-    ')
+  token_json=$(printf '%s\n' "$password" | mint_synthetic_token "$username")
   access_token=$(printf '%s' "$token_json" | jq -r '.access_token // empty')
   claims=$(printf '%s' "$access_token" | python3 -c '
 import base64, json, sys

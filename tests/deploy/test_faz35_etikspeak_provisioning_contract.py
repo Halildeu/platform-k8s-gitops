@@ -106,9 +106,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertGreaterEqual(combined.count("IFS= read -r VAULT_TOKEN"), 5)
         self.assertIn("IFS= read -r ETHICS_DB_PASSWORD", self.pg_vault)
         self.assertIn("IFS= read -r PGPASSWORD", self.pg_vault)
-        self.assertIn("IFS= read -r KC_PERSONA_PASSWORD", self.keycloak)
-        for script in (self.pg_vault, self.keycloak):
-            self.assertLess(script.index("set +x"), script.index("root_token"))
+        self.assertIn("IFS= read -r password", self.keycloak)
+        self.assertLess(self.pg_vault.index("set +x"), self.pg_vault.index("root_token"))
         self.assertNotIn("root_token", self.openfga)
 
     def test_pg_rerun_reuses_vault_password_instead_of_rotating(self):
@@ -148,7 +147,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('[ "$KUBE_NS" = "platform-test" ]', self.openfga)
         self.assertIn("mutation target override refused", self.openfga)
         self.assertIn("entitlement mutation target override refused", self.entitlement)
-        self.assertIn("Keycloak/Vault/persona mutation target override refused", self.keycloak)
+        self.assertIn("Keycloak/persona mutation target override refused", self.keycloak)
         self.assertIn("public test-gate target override refused", self.pg_vault)
         self.assertNotIn(
             "platform-prod",
@@ -236,6 +235,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
 
     def test_keycloak_provisioner_mints_and_checks_real_token_contract(self):
         self.assertIn("--data-binary @-", self.keycloak)
+        self.assertIn('KC_TOKEN_BASE_URL="${KC_TOKEN_BASE_URL:-http://127.0.0.1:8082}"', self.keycloak)
+        self.assertIn("command -v curl", self.keycloak)
+        self.assertNotIn("command -v curl >/dev/null 2>&1 || exit 70", self.keycloak)
         self.assertIn('"aud": claims.get("aud")', self.keycloak)
         self.assertIn('index("ethics-manager")', self.keycloak)
         self.assertIn('index("ethics:case:manage")', self.keycloak)
@@ -514,10 +516,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
     def test_all_vault_json_credentials_use_single_document_classification(self):
         self.assertIn("vault_json_document_classify", self.pg_vault)
         self.assertIn("vault_kv_document_classify", self.pg_vault)
-        self.assertIn("vault_json_document_classify", self.keycloak)
+        self.assertNotIn("vault_json_document_classify", self.keycloak)
         self.assertNotIn('grep -Eqi "no value found|not found"', self.pg_vault)
         self.assertGreaterEqual(self.pg_vault.count('>"$vault_output_file" 2>"$vault_error_file"'), 3)
-        self.assertIn("Keycloak automation Vault response is not one exact JSON document", self.keycloak)
 
     def test_pg_and_keycloak_preconditions_precede_remote_mutation(self):
         self.assertLess(
@@ -528,7 +529,18 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("pg_auth_members WHERE roleid=", self.pg_vault)
         self.assertIn("KCADM_CONFIG=$(docker exec", self.keycloak)
         self.assertIn('rm -f "$KCADM_CONFIG"', self.keycloak)
-        self.assertIn('--config "$KC_CONFIG"', self.keycloak)
+        self.assertIn('KEYCLOAK_ADMIN_PASSWORD_FILE', self.keycloak)
+        self.assertIn('--config "$KCADM_CONFIG"', self.keycloak)
+        self.assertIn("isolated Keycloak admin login failed", self.keycloak)
+        self.assertIn("intentionally lacks manage-realm", self.keycloak)
+        direct_kcadm_calls = re.findall(
+            r'docker exec -i "\$KC_CONTAINER" "\$KCADM"(.*?>/dev/null)',
+            self.keycloak,
+            re.DOTALL,
+        )
+        self.assertEqual(len(direct_kcadm_calls), 5)
+        for call in direct_kcadm_calls:
+            self.assertIn('--config "$KCADM_CONFIG"', call)
 
     def test_pg_preflight_preserves_only_dedicated_database_rerun_state(self):
         self.assertIn("OR d.dbid=ethics_db_oid", self.pg_vault)
@@ -544,9 +556,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         )
 
     def test_authority_and_persona_password_files_are_strictly_bounded(self):
-        for script in (self.pg_vault, self.keycloak):
-            self.assertIn("Vault init file must be a readable regular non-symlink", script)
-            self.assertIn("Vault init file must be invoking-user-owned mode 600", script)
+        self.assertIn("Vault init file must be a readable regular non-symlink", self.pg_vault)
+        self.assertIn("Vault init file must be invoking-user-owned mode 600", self.pg_vault)
         self.assertIn("$label password fails the length/format policy", self.keycloak)
         self.assertIn("prepare_synthetic_password_file", self.keycloak)
         self.assertIn("existing secret file was not invoking-user-owned mode 600", self.pg_vault)
