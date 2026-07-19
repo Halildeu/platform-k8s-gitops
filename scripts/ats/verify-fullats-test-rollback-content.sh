@@ -42,6 +42,7 @@ require_exact_body_line() {
 }
 
 require_exact_body_line "Consultation base: $PROMOTION_BASE_SHA"
+require_exact_body_line "Consultation base tip: $PROMOTION_BASE_SHA"
 require_exact_body_line "Consultation commit: $promotion_head"
 require_exact_body_line "Consultation mode: single"
 require_exact_body_line "Verdict: AGREE"
@@ -50,16 +51,33 @@ consultation_reason="$(sed -nE 's/^Consultation reason:[[:space:]]*(.{10,})[[:sp
 promotion_scope="$(sed -nE 's/^Consultation scope:[[:space:]]*([0-9a-f]{64})[[:space:]]*$/\1/p' <<<"$promotion_body")"
 [[ "$promotion_scope" =~ ^[0-9a-f]{64}$ ]] || exit 1
 receipt_line="$(grep -E '^Codex receipt: ' <<<"$promotion_body" || true)"
-[[ "$(grep -Ec '^Codex receipt: ' <<<"$promotion_body" || true)" == "1" && \
-   "$receipt_line" == *"provider=openai;"* && \
-   "$receipt_line" == *"requested=gpt-5.6-sol;"* && \
-   "$receipt_line" == *"actual=gpt-5.6-sol;"* && \
-   "$receipt_line" == *"effort=xhigh;"* && \
-   "$receipt_line" == *"sandbox=read-only;"* && \
-   "$receipt_line" == *"ephemeral=true;"* && \
-   "$receipt_line" == *"head=$promotion_head;"* && \
-   "$receipt_line" == *"scope=$promotion_scope;"* && \
-   "$receipt_line" == *"verdict=AGREE;"* ]] || exit 1
+receipt_pattern="Codex receipt: provider=openai; requested=gpt-5\\.6-sol; actual=gpt-5\\.6-sol; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=$PROMOTION_BASE_SHA; base=$PROMOTION_BASE_SHA; head=$promotion_head; scope=$promotion_scope; verdict=AGREE; ref=https://api\\.github\\.com/repos/Halildeu/platform-k8s-gitops/issues/comments/[1-9][0-9]*; sha256=[0-9a-f]{64}"
+if [[ "$(grep -Ec '^Codex receipt: ' <<<"$promotion_body" || true)" != "1" ]] ||
+  ! grep -Exq -- "$receipt_pattern" <<<"$receipt_line"; then
+  exit 1
+fi
+receipt_ref="$(sed -nE 's/^.*; ref=(https:\/\/api\.github\.com\/repos\/Halildeu\/platform-k8s-gitops\/issues\/comments\/[1-9][0-9]*); sha256=[0-9a-f]{64}$/\1/p' <<<"$receipt_line")"
+receipt_sha256="$(sed -nE 's/^.*; sha256=([0-9a-f]{64})$/\1/p' <<<"$receipt_line")"
+evidence_comment="$(gh api "$receipt_ref")"
+evidence_body="$(jq -r '.body // empty' <<<"$evidence_comment")"
+[[ "$(jq -r '.user.login // empty' <<<"$evidence_comment")" == "Halildeu" && \
+   "$(jq -r '.author_association // empty' <<<"$evidence_comment")" == "OWNER" && \
+   "$(jq -r '.created_at // empty' <<<"$evidence_comment")" == \
+     "$(jq -r '.updated_at // empty' <<<"$evidence_comment")" && \
+   -n "$evidence_body" && \
+   "$(printf '%s' "$evidence_body" | shasum -a 256 | awk '{print $1}')" == "$receipt_sha256" ]] || exit 1
+python3 -c '
+import sys
+from scripts.ai.post_cross_ai_evidence import validate_evidence_text
+body = sys.stdin.read()
+if body.endswith("\n"):
+    body = body[:-1]
+evidence, _ = validate_evidence_text(body)
+expected = (sys.argv[1], sys.argv[2], sys.argv[3])
+actual = (evidence.get("base_tip_sha"), evidence.get("head_sha"), evidence.get("scope_sha256"))
+if actual != expected or evidence.get("base_sha") != expected[0] or evidence.get("verdict") != "AGREE":
+    raise SystemExit(1)
+' "$PROMOTION_BASE_SHA" "$promotion_head" "$promotion_scope" <<<"$evidence_body" >/dev/null || exit 1
 [[ "$(grep -Ec '^(Claude|MiniMax) receipt:' <<<"$promotion_body" || true)" == "0" ]] || exit 1
 
 [[ "$(git rev-list --parents -n 1 "$PR_HEAD_SHA" | awk '{print NF - 1}')" == "1" ]] || exit 1

@@ -422,11 +422,14 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
 
     def test_fullats_rollback_is_bound_to_reviewed_tree_and_trusted_content_attestation(self):
         for required in (
+            'require_exact_body_line "Consultation base tip: $PROMOTION_BASE_SHA"',
             'require_exact_body_line "Consultation commit: $promotion_head"',
             'require_exact_body_line "Consultation mode: single"',
             'require_exact_body_line "Verdict: AGREE"',
             "promotion consultation reason is missing or too short",
             "exact high-impact Codex receipt binding is missing or invalid",
+            "fetched Codex evidence metadata or body digest is invalid",
+            "fetched Codex evidence is not exact-scope bound",
             "Claude and MiniMax receipts are forbidden by forward policy",
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
@@ -540,20 +543,45 @@ esac
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'gh args=%s tree_mismatch=%s\n' "$*" "${FAKE_TREE_MISMATCH:-unset}" >>"$FAKE_TRACE"
+evidence_response="$(printf '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')"
+evidence_response_sha="$(printf '%s' "$evidence_response" | shasum -a 256 | awk '{print $1}')"
+evidence_head="$PROMOTION_HEAD_SHA"
+if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "internal-head" ]]; then
+  evidence_head="$(printf '%040d' 8)"
+fi
+evidence_body="$(jq -cn \
+  --arg base "$PROMOTION_BASE_SHA" \
+  --arg head "$evidence_head" \
+  --arg scope "$PROMOTION_SCOPE_SHA256" \
+  --arg response "$evidence_response" \
+  --arg response_sha "$evidence_response_sha" \
+  '{schema:"cross-ai-provider-evidence/v2",provider:"openai",requested_model:"gpt-5.6-sol",actual_model:"gpt-5.6-sol",reasoning_effort:"xhigh",sandbox:"read-only",ephemeral:true,base_tip_sha:$base,base_sha:$base,head_sha:$head,scope_sha256:$scope,verdict:"AGREE",response_sha256:$response_sha,response:$response}')"
+evidence_sha="$(printf '%s' "$evidence_body" | shasum -a 256 | awk '{print $1}')"
+receipt_line="Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=$PROMOTION_BASE_SHA; base=$PROMOTION_BASE_SHA; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/123456789; sha256=$evidence_sha"
+if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "missing-base-tip" ]]; then
+  receipt_line="${receipt_line/base_tip=$PROMOTION_BASE_SHA; /}"
+elif [[ "${FAKE_RECEIPT_TAMPER:-none}" == "bad-digest" ]]; then
+  receipt_line="${receipt_line/sha256=$evidence_sha/sha256=$(printf '%064d' 0)}"
+fi
 if [[ "$*" == *"/pulls/2636"* ]]; then
   body="$(printf '%s\n' \
+    "Consultation base tip: $PROMOTION_BASE_SHA" \
     "Consultation base: $PROMOTION_BASE_SHA" \
     "Consultation commit: $PROMOTION_HEAD_SHA" \
     "Consultation scope: $PROMOTION_SCOPE_SHA256" \
     "Consultation mode: single" \
     "Consultation reason: Protected rollback enforcement requires exact high impact Codex review." \
     "Verdict: AGREE" \
-    "Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; effort=xhigh; sandbox=read-only; ephemeral=true; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/example; sha256=$(printf '%064d' 7)")"
+    "$receipt_line")"
   jq -n \
     --arg merge "$PR_BASE_SHA" \
     --arg head "$PROMOTION_HEAD_SHA" \
     --arg body "$body" \
     '{merged_at:"2026-07-18T00:00:00Z",merge_commit_sha:$merge,head:{sha:$head},body:$body}'
+elif [[ "$*" == *"issues/comments/123456789"* ]]; then
+  jq -n \
+    --arg body "$evidence_body" \
+    '{body:$body,user:{login:"Halildeu"},author_association:"OWNER",created_at:"2026-07-19T00:00:00Z",updated_at:"2026-07-19T00:00:00Z"}'
 elif [[ "$*" == *"/git/commits/$PROMOTION_HEAD_SHA"* ]]; then
   if [[ "${FAKE_TREE_MISMATCH:-0}" == "1" ]]; then printf '%040d\n' 6; else printf '%s\n' "$PROMOTION_TREE_SHA"; fi
 elif [[ "$*" == *"/git/commits/$PR_BASE_SHA"* ]]; then
@@ -562,12 +590,19 @@ else
   exit 94
 fi
 """
-        for tamper, tree_mismatch, expected_rc in (
-            (False, False, 0),
-            (True, False, 1),
-            (False, True, 1),
+        for tamper, tree_mismatch, receipt_tamper, expected_rc in (
+            (False, False, "none", 0),
+            (True, False, "none", 1),
+            (False, True, "none", 1),
+            (False, False, "missing-base-tip", 1),
+            (False, False, "bad-digest", 1),
+            (False, False, "internal-head", 1),
         ):
-            with self.subTest(tamper=tamper, tree_mismatch=tree_mismatch):
+            with self.subTest(
+                tamper=tamper,
+                tree_mismatch=tree_mismatch,
+                receipt_tamper=receipt_tamper,
+            ):
                 with tempfile.TemporaryDirectory() as temp:
                     fake_bin = Path(temp) / "bin"
                     fake_bin.mkdir()
@@ -595,6 +630,7 @@ fi
                         "PROMOTION_TREE_SHA": tree,
                         "FAKE_TAMPER": "1" if tamper else "0",
                         "FAKE_TREE_MISMATCH": "1" if tree_mismatch else "0",
+                        "FAKE_RECEIPT_TAMPER": receipt_tamper,
                         "FAKE_TRACE": str(trace),
                     }
                     completed = subprocess.run(
@@ -1174,7 +1210,8 @@ fi
         self.assertIn("Claude, MiniMax, Cursor", self.agents)
         self.assertIn("consultation governance/audit/evidence dosyası", self.agents)
         self.assertIn("bağımsız-provider konsensüsü olarak sunulmaz", self.agents)
-        self.assertIn("`other` fail-closed reddedilir", self.context_rules)
+        self.assertIn("Cursor veya belirsiz `other`", self.context_rules)
+        self.assertIn("`none` modunda da fail-closed reddedilir", self.context_rules)
         self.assertIn("Varsayımsal istişare karar kanıtı değildir", self.agents)
         self.assertIn("non-authoritative direction exploration", self.context_rules)
         self.assertIn("tracked_pending", self.context_rules)
