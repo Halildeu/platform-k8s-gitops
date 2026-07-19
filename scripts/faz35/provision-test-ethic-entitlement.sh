@@ -358,10 +358,12 @@ fi
 # non-secret authorization projection and require both positive and negative
 # postconditions before returning success.
 entitlement_ready=false
+target_expected_id=$(<"$TMP_DIR/target-user-id")
 for _ in $(seq 1 30); do
   code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/target-authz-after.json" \
     --config "$TMP_DIR/target-auth.curl")
   if [ "$code" = 200 ] &&
+      [ "$(faz35_authz_member_id "$TMP_DIR/target-authz-after.json" "$target_expected_id" 2>/dev/null || true)" = "$target_expected_id" ] &&
       [ "$(faz35_authz_projection_state "$TMP_DIR/target-authz-after.json" 2>/dev/null || true)" = EXACT_MANAGE ]; then
     entitlement_ready=true
     break
@@ -373,16 +375,18 @@ done
   exit 1
 }
 for label in wrong-org denied; do
+  expected_user_id=$(<"$TMP_DIR/$label-user-id")
   code=$(http_status GET "$BASE_URL/api/v1/authz/me" "$TMP_DIR/$label-authz-after.json" \
     --config "$TMP_DIR/$label-auth.curl")
   if [ "$code" != 200 ] ||
+      [ "$(faz35_authz_member_id "$TMP_DIR/$label-authz-after.json" "$expected_user_id" 2>/dev/null || true)" != "$expected_user_id" ] ||
       [ "$(faz35_authz_projection_state "$TMP_DIR/$label-authz-after.json" 2>/dev/null || true)" != ABSENT ]; then
     echo "FATAL: $label gained non-canonical permission-service authority" >&2
     exit 1
   fi
 done
 
-unset target_user_id target_projection_before member_present
+unset target_user_id target_projection_before target_expected_id expected_user_id member_present
 echo "Permission: canonical role/granule/member writer granted only the synthetic manager ETHIC=MANAGE"
 echo "Permission: target positive and wrong-org/denied negative /authz/me postconditions OK"
 echo "ETHICS_PERMISSION_ROLE_ID=$role_id"

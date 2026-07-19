@@ -411,10 +411,108 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
                 )
                 self.assertNotEqual(mismatch.returncode, 0)
 
+            paired_wrong_path = Path(tmp) / "paired-wrong-authz.json"
+            paired_wrong_path.write_text(json.dumps({
+                "userId": "42",
+                "subscriberId": 42,
+                "modules": {},
+                "allowedModules": [],
+            }))
+            paired_wrong = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; faz35_authz_member_id "$2" "$3"',
+                    "bash",
+                    str(self.authz_projection_lib_path),
+                    str(paired_wrong_path),
+                    "41",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(paired_wrong.returncode, 0)
+
         identity_check = self.authz_projection_lib.index("authz identity differs from the canonical local profile")
         activation = self.authz_projection_lib.index("/api/v1/users/$user_id/activation")
         self.assertLess(identity_check, activation)
         self.assertIn("target_user_id=$(faz35_activate_verified_profiles", self.entitlement)
+        self.assertIn(
+            'faz35_authz_member_id "$TMP_DIR/target-authz-after.json" "$target_expected_id"',
+            self.entitlement,
+        )
+        self.assertIn(
+            'faz35_authz_member_id "$TMP_DIR/$label-authz-after.json" "$expected_user_id"',
+            self.entitlement,
+        )
+
+    def test_openfga_tuple_read_envelope_is_exact_before_mutation(self):
+        self.assertIn(
+            '((keys | sort) == ["continuation_token", "tuples"])',
+            self.openfga,
+        )
+        self.assertIn(
+            '((.key | keys | sort) == ["condition", "object", "relation", "user"])',
+            self.openfga,
+        )
+        self.assertIn("direct tuple read response schema mismatch", self.openfga)
+        self.assertNotIn("$page.tuples[]?", self.openfga)
+        self.assertNotIn(".continuation_token // empty", self.openfga)
+
+        validator = r'''
+          type == "object" and
+          ((keys | sort) == ["continuation_token", "tuples"]) and
+          (.continuation_token | type) == "string" and
+          (.tuples | type) == "array" and
+          all(.tuples[];
+            type == "object" and
+            ((keys | sort) == ["key", "timestamp"]) and
+            (.timestamp | type) == "string" and (.timestamp | length) > 0 and
+            (.key | type) == "object" and
+            ((.key | keys | sort) == ["condition", "object", "relation", "user"]) and
+            .key.condition == null and
+            (.key.object | type) == "string" and (.key.object | length) > 0 and
+            (.key.relation | type) == "string" and (.key.relation | length) > 0 and
+            (.key.user | type) == "string" and (.key.user | length) > 0
+          )
+        '''
+        valid_pages = [
+            {"continuation_token": "", "tuples": []},
+            {
+                "continuation_token": "next-page",
+                "tuples": [{
+                    "key": {
+                        "condition": None,
+                        "object": "ethics_product:7",
+                        "relation": "can_manage",
+                        "user": "user:41",
+                    },
+                    "timestamp": "2026-07-19T12:00:00Z",
+                }],
+            },
+        ]
+        invalid_pages = [
+            {},
+            {"continuation_token": "", "tuples": None},
+            {"continuation_token": None, "tuples": []},
+            {"continuation_token": "", "tuples": [{"key": {}}]},
+        ]
+        for page in valid_pages:
+            result = subprocess.run(
+                ["jq", "-e", validator],
+                input=json.dumps(page),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for page in invalid_pages:
+            result = subprocess.run(
+                ["jq", "-e", validator],
+                input=json.dumps(page),
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
 
     def test_identity_mismatch_executes_zero_activation_http_requests(self):
         with tempfile.TemporaryDirectory() as tmp:
