@@ -4268,12 +4268,9 @@ images:
     # list/detail/apply routes on the minimal public shell so auth bootstrap
     # cannot reload and erase the candidate's browser-local PDF draft.
     # Build run 29645789815 testai job 88083697225.
-    # 2026-07-19 Faz 35 ES-204: platform-web#967 adds the /ethic manager
-    # MFE and fail-closed sensitive-state purge. Exact PR-head image run
-    # 29678377804, testai job 88169900650; dispatch was intentionally skipped.
-    # sourceRevision: 86b45350e770318f769ac7be47fba5d255f15730
-    newTag: sha-86b4535
-    digest: sha256:fdddf4f687dc8d397feeddbc275265e1b861adbd07da2cc44aeef74cee4bdb5e
+    # sourceRevision: eee1310b33376013967482ae842bf15c797fe72c
+    newTag: sha-eee1310
+    digest: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

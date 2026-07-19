@@ -12,7 +12,7 @@ resources:
   - priority-class.yaml
 images:
   # Exact branch artifacts: backend source 5193a006 / run 29678300281 and
-  # public-web source 86b45350 / run 29678377817. Root activation remains
+  # public-web source 104f439b / run 29678660868. Root activation remains
   # forbidden until the exact-head review and provisioning gates are satisfied.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
