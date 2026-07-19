@@ -2,6 +2,8 @@
 # Faz 35 Etik Speak: create/reuse the isolated test store, promote the exact
 # compiled model, bind the synthetic staff subject, and patch Vault selectors.
 set -euo pipefail
+# A caller may invoke bash -x; disable tracing before any credential is read.
+set +x
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MODEL_JSON="${MODEL_JSON:-$SCRIPT_DIR/../../bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json}"
@@ -77,14 +79,23 @@ fi
 
 [ -r "$VAULT_INIT_FILE" ] || { echo "FATAL: Vault init file unreadable" >&2; exit 1; }
 vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
-docker exec -e VAULT_TOKEN="$vault_root_token" -e VAULT_ADDR=http://127.0.0.1:8200 \
-  "$VAULT_CONTAINER" vault kv get "$VAULT_PATH" >/dev/null 2>&1 || {
+printf '%s\n' "$vault_root_token" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    vault kv get "$1" >/dev/null 2>&1
+  ' sh "$VAULT_PATH" || {
   echo "FATAL: $VAULT_PATH missing; run provision-test-pg-vault.sh first" >&2
   exit 1
 }
-docker exec -e VAULT_TOKEN="$vault_root_token" -e VAULT_ADDR=http://127.0.0.1:8200 \
-  "$VAULT_CONTAINER" vault kv patch "$VAULT_PATH" \
-    ERP_OPENFGA_STORE_ID="$store_id" ERP_OPENFGA_MODEL_ID="$model_id" >/dev/null
+printf '%s\n' "$vault_root_token" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    vault kv patch "$1" ERP_OPENFGA_STORE_ID="$2" ERP_OPENFGA_MODEL_ID="$3" >/dev/null
+  ' sh "$VAULT_PATH" "$store_id" "$model_id"
 unset vault_root_token
 
 write_relation() {

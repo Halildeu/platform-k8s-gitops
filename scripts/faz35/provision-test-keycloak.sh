@@ -2,6 +2,8 @@
 # Faz 35 Etik Speak: platform-test audience/scope plus a dedicated synthetic
 # manager persona. The password is stored only in a chmod-600 host file.
 set -euo pipefail
+# A caller may invoke bash -x; disable tracing before any credential is read.
+set +x
 
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
@@ -22,9 +24,13 @@ command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 
 kc() { docker exec "$KC_CONTAINER" "$KCADM" "$@"; }
 
 vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
-automation_json=$(docker exec -e VAULT_TOKEN="$vault_root_token" \
-  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" \
-  vault kv get -format=json kv/platform/keycloak-automation)
+automation_json=$(printf '%s\n' "$vault_root_token" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    exec vault kv get -format=json kv/platform/keycloak-automation
+  ')
 automation_client=$(printf '%s' "$automation_json" | jq -r '.data.data.client_id')
 automation_secret=$(printf '%s' "$automation_json" | jq -r '.data.data.client_secret')
 unset vault_root_token automation_json
@@ -141,8 +147,76 @@ printf '%s\n' "$persona_password" | docker exec -i \
       --temporary=false >/dev/null
     unset KC_PERSONA_PASSWORD
   '
-unset persona_password org_payload
+
+# Mint one short-lived synthetic access token and validate only its non-secret
+# claims. The password is request-body stdin, never curl/docker argv. The raw
+# access/refresh tokens remain in shell variables and are unset without output.
+token_json=$(printf '%s\n' "$persona_password" | docker exec -i \
+  -e KC_REALM="$REALM" -e KC_PERSONA_USERNAME="$PERSONA_USERNAME" \
+  "$KC_CONTAINER" sh -c '
+    set -eu
+    command -v curl >/dev/null 2>&1 || exit 70
+    IFS= read -r KC_PERSONA_PASSWORD
+    printf "grant_type=password&client_id=frontend&username=%s&password=%s&scope=openid" \
+      "$KC_PERSONA_USERNAME" "$KC_PERSONA_PASSWORD" \
+      | curl -fsS -X POST \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          --data-binary @- \
+          "http://localhost:8080/realms/$KC_REALM/protocol/openid-connect/token"
+    unset KC_PERSONA_PASSWORD
+  ') || {
+  unset persona_password org_payload
+  echo "FATAL: synthetic persona token mint failed" >&2
+  exit 1
+}
+access_token=$(printf '%s' "$token_json" | jq -r '.access_token // empty')
+[ -n "$access_token" ] || {
+  unset persona_password org_payload token_json access_token
+  echo "FATAL: synthetic persona token response had no access token" >&2
+  exit 1
+}
+token_claims=$(printf '%s' "$access_token" | python3 -c '
+import base64, json, sys
+token = sys.stdin.read().strip()
+parts = token.split(".")
+if len(parts) != 3:
+    raise SystemExit(1)
+payload = parts[1] + "=" * (-len(parts[1]) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload))
+print(json.dumps({
+    "aud": claims.get("aud"),
+    "scope": claims.get("scope", ""),
+    "org_id": claims.get("org_id"),
+}, separators=(",", ":")))
+') || {
+  unset persona_password org_payload token_json access_token token_claims
+  echo "FATAL: synthetic persona access token was not a valid JWT" >&2
+  exit 1
+}
+
+printf '%s' "$token_claims" | jq -e '
+  ((.aud | type == "array") and (.aud | index("ethics-manager") != null)) or
+  ((.aud | type == "string") and .aud == "ethics-manager")
+' >/dev/null || {
+  unset persona_password org_payload token_json access_token token_claims
+  echo "FATAL: synthetic access token audience lacks ethics-manager" >&2
+  exit 1
+}
+printf '%s' "$token_claims" | jq -e '
+  (.scope | split(" ") | index("ethics:case:manage") != null)
+' >/dev/null || {
+  unset persona_password org_payload token_json access_token token_claims
+  echo "FATAL: synthetic access token scope lacks ethics:case:manage" >&2
+  exit 1
+}
+[ "$(printf '%s' "$token_claims" | jq -r '.org_id // empty')" = "$ETHICS_ORG_ID" ] || {
+  unset persona_password org_payload token_json access_token token_claims
+  echo "FATAL: synthetic access token org_id is not canonical test tenant" >&2
+  exit 1
+}
+unset persona_password org_payload token_json access_token token_claims
 
 echo "KC: ethics-manager audience + ethics:case:manage scope bound to frontend"
+echo "KC: synthetic access-token aud/scope/org_id contract OK"
 echo "KC: synthetic persona ready; password kept at $PERSONA_PASSWORD_FILE"
 echo "ETHICS_STAFF_SUBJECT=$persona_id"

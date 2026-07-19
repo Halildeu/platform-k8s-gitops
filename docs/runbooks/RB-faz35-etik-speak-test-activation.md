@@ -35,6 +35,21 @@ Run on `staging-sw` from the reviewed GitOps checkout. The scripts are
 test-only and fail closed if pointed at other containers, namespace, or
 context.
 
+First run the read-only preflight from the reviewed local checkout:
+
+```bash
+./scripts/faz35/preflight-test-activation.sh
+```
+
+It binds the current host-container IPs to the Kubernetes Endpoints and the
+reviewed NetworkPolicy, verifies ESO/OpenFGA availability, checks the external
+Sectigo wildcard TLS path for both public hosts, renders the immutable
+activation, and reports whether the root overlay/live resource set is still
+inactive. The cluster TLS Secret may be absent because TLS terminates at the
+canonical host edge; `docs/S5-cert-renewal-runbook.md` defines it as optional
+when cluster TLS termination is not used. A valid edge certificate and
+authoritative public request remain mandatory.
+
 ```bash
 ./scripts/faz35/provision-test-pg-vault.sh
 ./scripts/faz35/provision-test-keycloak.sh
@@ -57,11 +72,18 @@ Expected non-secret results:
 
 - PostgreSQL role `ethics_app`: LOGIN and no admin attributes;
 - database `ethics`, owned by `ethics_app`;
+- rerunning the PG/Vault provisioner reuses the existing Vault-managed DB
+  password instead of rotating it underneath an active ESO/workload;
 - Vault `kv/platform/etik-speak`: DB keys plus OpenFGA store/model selectors;
 - Keycloak access token contract: `aud` includes `ethics-manager`, `scope`
   includes `ethics:case:manage`, and `org_id` is the canonical test UUID;
 - OpenFGA checks return allow for product `case_viewer`, `case_triager`, and
   `case_handler` for the synthetic manager subject.
+
+Vault root tokens, DB passwords, Keycloak automation credentials and the
+synthetic manager password travel over stdin to their short-lived container
+processes. They must not be moved into `docker exec -e NAME=value`, shell argv,
+GitHub evidence, or command tracing during activation.
 
 ## Gate 3: desired-state activation
 
