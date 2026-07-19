@@ -71,6 +71,7 @@ def validate_codex_advisory_evidence(
     issuer_runtime_policy: dict[str, Any],
     authority_observed_at: datetime,
     review_reference_time: datetime,
+    supplemental_revocation_entries: tuple[dict[str, Any], ...] = (),
 ) -> dict[str, Any]:
     """Verify the comment-carried leaf against independent signed authority."""
 
@@ -99,6 +100,7 @@ def validate_codex_advisory_evidence(
             now=authority_observed_at,
             review_reference_time=review_reference_time,
             require_agree=True,
+            supplemental_revocation_entries=supplemental_revocation_entries,
         )
     except (PolicyError, TrustedEvidenceError) as exc:
         raise CodexEvidenceError(f"Codex advisory signed authority is invalid: {exc}") from exc

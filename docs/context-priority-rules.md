@@ -516,14 +516,20 @@ ve revocation seti retirement anında değil verifier'ın güncel observation
 anında da active/fresh olmalıdır. Retired authority resolver'ı final revocation
 snapshot'ını retirement anında bir kez doğrular ve downstream carrier
 doğrulamasına aynı historical observation anını taşır; 60 dakikalık `nextUpdate`
-geçti diye immutable geçmiş kanıt tekrar stale sayılmaz. Root rotasyonunda yeni
-imzalı revocation seti, eski root'un son doğrulanmış setindeki bütün entry'leri
-byte-anlamında korur; yeni root altında unrevocation yapılamaz.
+geçti diye immutable geçmiş kanıt tekrar stale sayılmaz. Bunun yanında replay
+anındaki active current root ve fresh signed revocation seti zorunludur; current
+setin entry'leri historical verifier'a ayrı deny-overlay olarak verilir. Böylece
+sonradan compromise edilen eski key/review/runtime kimliği archived snapshot'ta
+yok diye yeniden kabul edilemez. Root rotasyonunda yeni imzalı revocation seti,
+eski root'un son doğrulanmış setindeki bütün entry'leri byte-anlamında korur;
+yeni root altında unrevocation yapılamaz.
 Protected #2373 authorization artifact'i exact advisory ve owner comment JSON
 byte'larını receipt ile birlikte SHA256SUMS ve artifact digest'e bağlar. Sonraki
 product verifier live comment'i yeniden fetch etmeden archived owner/ref/timestamp/body
-metadata ve signed carrier'ı doğrular; comment transport silinse veya erişilemez
-olsa bile daha önce üretilmiş kanıt replay edilebilir.
+metadata ve signed carrier'ı doğrular; owner carrier yalnız
+`created_at == updated_at` ise immutable kabul edilir. Comment transport silinse
+veya erişilemez olsa bile daha önce üretilmiş, checksum-bound ve düzenlenmemiş
+kanıt replay edilebilir.
 Provider-review signer tek başına da authority değildir: aynı carrier, ayrı
 `runner-management` anahtarıyla imzalanmış runtime attestation içinde exact
 provider leaf, prompt, response, Codex session, capability snapshot ve

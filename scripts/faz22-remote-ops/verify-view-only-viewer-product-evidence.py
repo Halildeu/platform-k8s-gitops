@@ -1106,6 +1106,7 @@ def verify_activation_authorization(
 
     archived_advisory_comment: dict[str, Any] | None = None
     archived_owner_comment: dict[str, Any] | None = None
+    supplemental_revocation_entries: tuple[dict[str, Any], ...] = ()
     if durable_carrier:
         require_equal(
             operator["activationHeadSha"], expected_head_sha,
@@ -1457,6 +1458,11 @@ def verify_activation_authorization(
                 digest_bytes(body.encode()), contract.get("bodySha256"),
                 f"{label} body digest",
             )
+            if label == "owner directive":
+                require_equal(
+                    comment.get("updated_at"), comment.get("created_at"),
+                    "owner directive immutable timestamp",
+                )
             if label == "AI advisory":
                 try:
                     advisory_authority_observed_at = authority_observed_at
@@ -1495,6 +1501,9 @@ def verify_activation_authorization(
                         advisory_authority_observed_at = (
                             resolved_authority.observed_at
                         )
+                        supplemental_revocation_entries = (
+                            resolved_authority.supplemental_revocation_entries
+                        )
                     validate_codex_advisory_evidence(
                         body,
                         expected_bindings,
@@ -1508,6 +1517,9 @@ def verify_activation_authorization(
                         issuer_runtime_policy=issuer_runtime_policy,
                         authority_observed_at=advisory_authority_observed_at,
                         review_reference_time=pilot_started,
+                        supplemental_revocation_entries=(
+                            supplemental_revocation_entries
+                        ),
                     )
                 except (
                     AuthorityUnavailable,
