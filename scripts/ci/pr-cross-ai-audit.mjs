@@ -97,6 +97,7 @@ const CONSULTATION_GOVERNANCE_PATHS = [
   /^scripts\/test\/faz22-6-acceptance-package-workflows-static\.sh$/,
   /^tests\/faz22_remote_ops\//,
   /^config\/faz22-6-view-only-pilot-owner-policy\.v[12]\.json$/,
+  /^config\/faz22-6-view-only-pilot-owner-policy-history\/[a-f0-9]{64}\.json$/,
   /^kustomize\/overlays\/test\/activation\/cross-ai-deployment-protection-observe\//,
   // Active Full ATS acceptance/recovery/rollback executables and every local
   // script they invoke are one high-impact product/deployment surface. An
