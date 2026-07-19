@@ -79,7 +79,7 @@ command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 
 # the Etik Speak database. This read-only phase precedes every Vault, AppRole,
 # Kubernetes and PostgreSQL mutation.
 preflight_existing_pg_role() {
-  local role_exists database_name
+  local role_exists database_name database_inventory
   role_exists=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
     "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ethics_app')")
   [ "$role_exists" = t ] || return 0
@@ -133,6 +133,15 @@ END
 $$;
 SQL
 
+  database_inventory=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
+    "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0' ORDER BY datname") || {
+    echo "FATAL: PostgreSQL database inventory failed before ACL validation" >&2
+    exit 1
+  }
+  [ -n "$database_inventory" ] || {
+    echo "FATAL: PostgreSQL database inventory is unexpectedly empty" >&2
+    exit 1
+  }
   while IFS= read -r database_name; do
     docker exec -i "$PG_CONTAINER" psql -X -U postgres -d "$database_name" \
       -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
@@ -182,8 +191,7 @@ BEGIN
 END
 $$;
 SQL
-  done < <(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
-    "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0' ORDER BY datname")
+  done <<<"$database_inventory"
 }
 preflight_existing_pg_role
 

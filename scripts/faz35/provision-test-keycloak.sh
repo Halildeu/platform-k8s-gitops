@@ -449,7 +449,7 @@ if ! printf '%s\n' "$optional_scopes" | grep -Fqx 'ethics:case:manage'; then
 fi
 
 assert_persona_role_boundary() {
-  local user_id=$1 username=$2 role_mappings groups effective_realm client_id client_name effective_client
+  local user_id=$1 username=$2 role_mappings groups effective_realm client_id client_name effective_client client_inventory client_rows
   role_mappings=$(kc get "users/$user_id/role-mappings" -r "$REALM")
   printf '%s' "$role_mappings" | jq -e '
     ([((.realmMappings // [])[] | .name)] | index("ethics-manager") != null) and
@@ -470,6 +470,22 @@ assert_persona_role_boundary() {
     (([.[].name] - ["default-roles-platform-test", "ethics-manager", "offline_access", "uma_authorization"]) | length == 0)
   ' >/dev/null || {
     echo "FATAL: $username has unexpected effective/composite realm roles" >&2
+    exit 1
+  }
+  client_inventory=$(kc get clients -r "$REALM") || {
+    echo "FATAL: $username client inventory could not be read" >&2
+    exit 1
+  }
+  printf '%s' "$client_inventory" | jq -e '
+    type == "array" and length > 0 and
+    all(.[]; (.id | type == "string" and length > 0) and
+             (.clientId | type == "string" and length > 0))
+  ' >/dev/null || {
+    echo "FATAL: $username client inventory is empty or malformed" >&2
+    exit 1
+  }
+  client_rows=$(printf '%s' "$client_inventory" | jq -er '.[] | [.id,.clientId] | @tsv') || {
+    echo "FATAL: $username client inventory projection failed" >&2
     exit 1
   }
   while IFS=$'\t' read -r client_id client_name; do
@@ -497,7 +513,7 @@ assert_persona_role_boundary() {
         }
         ;;
     esac
-  done < <(kc get clients -r "$REALM" | jq -r '.[] | [.id,.clientId] | @tsv')
+  done <<<"$client_rows"
 }
 
 assert_persona_profile_precondition() {

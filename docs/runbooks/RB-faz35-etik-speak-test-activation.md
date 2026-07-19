@@ -123,6 +123,13 @@ DENIED_SUBJECT='<denied-uuid-from-keycloak-step>' \
   ./scripts/faz35/provision-test-openfga.sh
 ```
 
+The OpenFGA provisioner does not trust these caller-supplied UUIDs by format.
+Immediately before its first OpenFGA write it reauthenticates all three fixed
+synthetic users from their mode-600 password files against the exact loopback
+`platform-kc-test` issuer, then requires the token subject, username and org to
+match the corresponding allow, wrong-org and denied binding. Swapped or stale
+UUIDs therefore fail before any tuple is written.
+
 Expected non-secret results:
 
 - PostgreSQL role `ethics_app`: LOGIN and no admin attributes;

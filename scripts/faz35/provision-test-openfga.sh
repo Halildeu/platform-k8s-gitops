@@ -5,8 +5,11 @@
 set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
+umask 077
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/faz35/lib-test-keycloak-binding.sh
+source "$SCRIPT_DIR/lib-test-keycloak-binding.sh"
 EXPECTED_MODEL_JSON="$SCRIPT_DIR/../../bootstrap/openfga/faz35-etik-speak/authorization-model-v1.json"
 EXPECTED_MODEL_FGA="$SCRIPT_DIR/../../runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"
 MODEL_LEDGER="$SCRIPT_DIR/../../runtime-artifacts/openfga-model/711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33.json"
@@ -23,6 +26,16 @@ WRONG_ETHICS_ORG_ID="${WRONG_ETHICS_ORG_ID:-00000000-0000-0000-0000-000000000002
 STAFF_SUBJECT="${STAFF_SUBJECT:-}"
 WRONG_ORG_SUBJECT="${WRONG_ORG_SUBJECT:-}"
 DENIED_SUBJECT="${DENIED_SUBJECT:-}"
+KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
+KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
+KC_REALM="${KC_REALM:-platform-test}"
+KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
+STAFF_USERNAME="${STAFF_USERNAME:-ethics-manager-test}"
+STAFF_PASSWORD_FILE="${STAFF_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-test.password}"
+WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
+WRONG_ORG_PASSWORD_FILE="${WRONG_ORG_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password}"
+DENIED_USERNAME="${DENIED_USERNAME:-ethics-manager-denied-test}"
+DENIED_PASSWORD_FILE="${DENIED_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-denied-test.password}"
 RECUSAL_SENTINEL_CASE_ID="00000000-0000-0000-0000-000000000035"
 
 [ "$KUBE_NS" = "platform-test" ] && [ "$KUBE_CONTEXT" = "k3d-test" ] || {
@@ -34,7 +47,16 @@ for binding in \
   "$OPENFGA_BASE=http://openfga:8080" \
   "$STORE_NAME=platform-test-etik-speak" \
   "$ETHICS_ORG_ID=00000000-0000-0000-0000-000000000001" \
-  "$WRONG_ETHICS_ORG_ID=00000000-0000-0000-0000-000000000002"; do
+  "$WRONG_ETHICS_ORG_ID=00000000-0000-0000-0000-000000000002" \
+  "$KC_CONTAINER=platform-kc-test" \
+  "$KC_BASE_URL=http://127.0.0.1:8082" \
+  "$KC_REALM=platform-test" \
+  "$STAFF_USERNAME=ethics-manager-test" \
+  "$STAFF_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-test.password" \
+  "$WRONG_ORG_USERNAME=ethics-manager-wrong-org-test" \
+  "$WRONG_ORG_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password" \
+  "$DENIED_USERNAME=ethics-manager-denied-test" \
+  "$DENIED_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-denied-test.password"; do
   [ "${binding%%=*}" = "${binding#*=}" ] || {
     echo "FATAL: mutation target override refused: ${binding%%=*}" >&2
     exit 1
@@ -64,7 +86,88 @@ done
   echo "FATAL: positive and negative Keycloak subjects must be distinct" >&2
   exit 1
 }
-command -v jq >/dev/null 2>&1 || { echo "FATAL: jq missing" >&2; exit 1; }
+for command_name in curl docker jq mktemp python3 stat; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    echo "FATAL: required command missing: $command_name" >&2
+    exit 1
+  }
+done
+faz35_assert_test_keycloak_binding \
+  "$KC_CONTAINER" "$KC_BASE_URL" "$KC_REALM" "$KC_EXPECTED_ISSUER" || {
+  echo "FATAL: TEST Keycloak container/loopback/issuer binding is invalid" >&2
+  exit 1
+}
+
+SUBJECT_TMP_DIR=$(mktemp -d /tmp/faz35-openfga-subjects.XXXXXX)
+trap 'find "$SUBJECT_TMP_DIR" -type f -delete 2>/dev/null || true; find "$SUBJECT_TMP_DIR" -depth -type d -empty -delete 2>/dev/null || true' EXIT
+
+validate_persona_password_file() {
+  local file=$1 label=$2
+  [ -r "$file" ] && [ -f "$file" ] && [ ! -L "$file" ] || {
+    echo "FATAL: $label password must be a readable regular non-symlink" >&2
+    exit 1
+  }
+  [ "$(stat -c '%u' "$file")" = "$(id -u)" ] && \
+    [ "$(stat -c '%a' "$file")" = 600 ] || {
+    echo "FATAL: $label password must be invoking-user-owned mode 600" >&2
+    exit 1
+  }
+}
+
+assert_subject_persona_binding() {
+  local username=$1 password_file=$2 expected_subject=$3 expected_org=$4 label=$5 code
+  local token_file="$SUBJECT_TMP_DIR/$label-token.json"
+  local claims_file="$SUBJECT_TMP_DIR/$label-claims.json"
+  validate_persona_password_file "$password_file" "$label"
+  code=$(curl -sS --max-time 15 -o "$token_file" -w '%{http_code}' \
+    -X POST "$KC_BASE_URL/realms/$KC_REALM/protocol/openid-connect/token" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode 'grant_type=password' \
+    --data-urlencode 'client_id=frontend' \
+    --data-urlencode "username=$username" \
+    --data-urlencode "password@$password_file" \
+    --data-urlencode 'scope=openid ethics-manager-audience ethics:case:manage' || printf '000')
+  if [ "$code" != 200 ] || ! jq -e \
+      '.access_token | type == "string" and length > 0' "$token_file" >/dev/null; then
+    echo "FATAL: $label live Keycloak authentication failed" >&2
+    exit 1
+  fi
+  jq -j '.access_token' "$token_file" | python3 -c '
+import base64, json, sys
+token = sys.stdin.read().strip().split(".")
+if len(token) != 3:
+    raise SystemExit(1)
+payload = token[1] + "=" * (-len(token[1]) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload))
+print(json.dumps({
+    "iss": claims.get("iss"),
+    "sub": claims.get("sub"),
+    "preferred_username": claims.get("preferred_username"),
+    "org_id": claims.get("org_id"),
+    "roles": claims.get("realm_access", {}).get("roles", []),
+}, separators=(",", ":")))
+' >"$claims_file" || {
+    echo "FATAL: $label live Keycloak token is not a valid JWT" >&2
+    exit 1
+  }
+  jq -e --arg issuer "$KC_EXPECTED_ISSUER" --arg subject "$expected_subject" \
+    --arg username "$username" --arg org "$expected_org" '
+      .iss == $issuer and .sub == $subject and
+      .preferred_username == $username and .org_id == $org and
+      ((.roles // []) | index("ethics-manager") != null)
+    ' "$claims_file" >/dev/null || {
+    echo "FATAL: $label subject does not match the canonical live Keycloak persona" >&2
+    exit 1
+  }
+}
+
+assert_subject_persona_binding "$STAFF_USERNAME" "$STAFF_PASSWORD_FILE" \
+  "$STAFF_SUBJECT" "$ETHICS_ORG_ID" staff
+assert_subject_persona_binding "$WRONG_ORG_USERNAME" "$WRONG_ORG_PASSWORD_FILE" \
+  "$WRONG_ORG_SUBJECT" "$WRONG_ETHICS_ORG_ID" wrong-org
+assert_subject_persona_binding "$DENIED_USERNAME" "$DENIED_PASSWORD_FILE" \
+  "$DENIED_SUBJECT" "$ETHICS_ORG_ID" denied
+
 sha256_stream() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}';
   else shasum -a 256 | awk '{print $1}'; fi
