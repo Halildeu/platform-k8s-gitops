@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Faz 35 Etik Speak: create/reuse the isolated test store, promote the exact
-# compiled model, bind the synthetic staff subject, and patch Vault selectors.
+# compiled model and bind the synthetic staff subject. Store/model IDs are
+# non-secret outputs that must be pinned in GitOps by a new reviewed commit.
 set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
@@ -18,9 +19,6 @@ OPENFGA_BASE="${OPENFGA_BASE:-http://openfga:8080}"
 STORE_NAME="${STORE_NAME:-platform-test-etik-speak}"
 ETHICS_ORG_ID="${ETHICS_ORG_ID:-00000000-0000-0000-0000-000000000001}"
 STAFF_SUBJECT="${STAFF_SUBJECT:-}"
-VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
-VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
-VAULT_PATH="${VAULT_PATH:-kv/platform/etik-speak}"
 
 [ "$KUBE_NS" = "platform-test" ] && [ "$KUBE_CONTEXT" = "k3d-test" ] || {
   echo "FATAL: this script is k3d-test/platform-test only" >&2
@@ -30,10 +28,7 @@ for binding in \
   "$POD_DEPLOY=deploy/meeting-service" \
   "$OPENFGA_BASE=http://openfga:8080" \
   "$STORE_NAME=platform-test-etik-speak" \
-  "$ETHICS_ORG_ID=00000000-0000-0000-0000-000000000001" \
-  "$VAULT_CONTAINER=platform-vault-test" \
-  "$VAULT_INIT_FILE=/home/halil/bootstrap-drill/vault-init-test.json" \
-  "$VAULT_PATH=kv/platform/etik-speak"; do
+  "$ETHICS_ORG_ID=00000000-0000-0000-0000-000000000001"; do
   [ "${binding%%=*}" = "${binding#*=}" ] || {
     echo "FATAL: mutation target override refused: ${binding%%=*}" >&2
     exit 1
@@ -114,27 +109,6 @@ if [ -z "$model_id" ]; then
 fi
 [ -n "$model_id" ] || { echo "FATAL: OpenFGA model id unresolved" >&2; exit 1; }
 
-[ -r "$VAULT_INIT_FILE" ] || { echo "FATAL: Vault init file unreadable" >&2; exit 1; }
-vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
-printf '%s\n' "$vault_root_token" | docker exec -i \
-  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
-    set -eu
-    IFS= read -r VAULT_TOKEN
-    export VAULT_TOKEN
-    vault kv get "$1" >/dev/null 2>&1
-  ' sh "$VAULT_PATH" || {
-  echo "FATAL: $VAULT_PATH missing; run provision-test-pg-vault.sh first" >&2
-  exit 1
-}
-printf '%s\n' "$vault_root_token" | docker exec -i \
-  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
-    set -eu
-    IFS= read -r VAULT_TOKEN
-    export VAULT_TOKEN
-    vault kv patch "$1" ERP_OPENFGA_STORE_ID="$2" ERP_OPENFGA_MODEL_ID="$3" >/dev/null
-  ' sh "$VAULT_PATH" "$store_id" "$model_id"
-unset vault_root_token
-
 write_relation() {
   local relation=$1 response code body
   response=$(jq -nc --arg model "$model_id" --arg user "user:$STAFF_SUBJECT" \
@@ -168,4 +142,6 @@ for relation in case_viewer case_triager case_handler; do
 done
 
 echo "OpenFGA: isolated Etik Speak store/model and staff allow checks OK"
-echo "Vault: store/model selectors patched; raw values not printed"
+echo "ETHICS_OPENFGA_STORE_ID=$store_id"
+echo "ETHICS_OPENFGA_MODEL_ID=$model_id"
+echo "OpenFGA: pin these non-secret IDs plus the canonical digest in GitOps before activation"

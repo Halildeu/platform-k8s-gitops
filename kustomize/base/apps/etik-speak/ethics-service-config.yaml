@@ -15,8 +15,15 @@ data:
   ETHICS_SECRET_ITERATIONS: "210000"
   SECURITY_JWT_ISSUER: "https://testai.acik.com/realms/platform-test"
   SECURITY_JWT_JWK_SET_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  ETHICS_STAFF_AUDIENCE: "ethics-manager"
+  ETHICS_STAFF_ROLE: "ethics-manager"
   ERP_OPENFGA_ENABLED: "true"
   ERP_OPENFGA_API_URL: "http://openfga:8080"
+  # The reviewed provisioner creates the isolated test store/model first.
+  # Their non-secret immutable IDs are then pinned here in a new commit before
+  # this activation is allowed into the root test overlay.
+  ERP_OPENFGA_STORE_ID: "PENDING_FAZ35_OPENFGA_STORE_ID"
+  ERP_OPENFGA_MODEL_ID: "PENDING_FAZ35_OPENFGA_MODEL_ID"
   MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
   SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"

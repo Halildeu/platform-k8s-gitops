@@ -5,6 +5,15 @@ set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+EXPECTED_ESO_POLICY="$SCRIPT_DIR/../../bootstrap/vault-policies/test/etik-speak-eso.hcl"
+ESO_POLICY_FILE="${ESO_POLICY_FILE:-$EXPECTED_ESO_POLICY}"
+ESO_POLICY_NAME="${ESO_POLICY_NAME:-etik-speak-eso-test}"
+ESO_APPROLE_NAME="${ESO_APPROLE_NAME:-etik-speak-eso-test}"
+ESO_SECRET_NAME="${ESO_SECRET_NAME:-etik-speak-vault-approle}"
+KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
+KUBE_NS="${KUBE_NS:-platform-test}"
+
 PG_CONTAINER="${PG_CONTAINER:-platform-pg-test}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
@@ -33,11 +42,32 @@ PUBLIC_GATE_PASSWORD_FILE="${PUBLIC_GATE_PASSWORD_FILE:-/home/halil/bootstrap-dr
   echo "FATAL: public test-gate target override refused" >&2
   exit 1
 }
+for binding in \
+  "$ESO_POLICY_NAME=etik-speak-eso-test" \
+  "$ESO_APPROLE_NAME=etik-speak-eso-test" \
+  "$ESO_SECRET_NAME=etik-speak-vault-approle" \
+  "$KUBE_CONTEXT=k3d-test" \
+  "$KUBE_NS=platform-test"; do
+  [ "${binding%%=*}" = "${binding#*=}" ] || {
+    echo "FATAL: ESO provisioning target override refused: ${binding%%=*}" >&2
+    exit 1
+  }
+done
+[ -f "$ESO_POLICY_FILE" ] && [ ! -L "$ESO_POLICY_FILE" ] || {
+  echo "FATAL: dedicated ESO policy must be a regular non-symlink" >&2
+  exit 1
+}
+[ "$(cd "$(dirname "$ESO_POLICY_FILE")" && pwd -P)/$(basename "$ESO_POLICY_FILE")" = \
+  "$(cd "$(dirname "$EXPECTED_ESO_POLICY")" && pwd -P)/$(basename "$EXPECTED_ESO_POLICY")" ] || {
+  echo "FATAL: ESO_POLICY_FILE override refused" >&2
+  exit 1
+}
 command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 1; }
 [ -r "$VAULT_INIT_FILE" ] || { echo "FATAL: Vault init file unreadable" >&2; exit 1; }
 
 vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
-trap 'unset db_password vault_root_token existing_db_password public_gate_password public_gate_hash public_gate_htpasswd vault_entry_json' EXIT
+approle_secret_file=""
+trap 'unset db_password vault_root_token existing_db_password public_gate_password public_gate_hash public_gate_htpasswd vault_entry_json approle_json approle_secret_id; [ -z "${approle_secret_file:-}" ] || rm -f "$approle_secret_file"' EXIT
 
 # Keep the Vault token out of docker(1) argv. The static container-side shell
 # reads it from stdin and exports it only for the short-lived Vault CLI child.
@@ -164,6 +194,86 @@ verified_gate_htpasswd=$(vault_get_field EDGE_BASIC_AUTH_HTPASSWD)
 }
 unset verified_gate_htpasswd public_gate_password public_gate_hash public_gate_htpasswd
 
+# Create a product-scoped Vault policy/AppRole and place only its secret_id in
+# the product namespace. The broad shared ClusterSecretStore role is never
+# referenced by Etik Speak. Policy and role configuration are idempotent; the
+# static secret_id is rotated on each reviewed provisioner run.
+{
+  printf '%s\n' "$vault_root_token"
+  cat "$ESO_POLICY_FILE"
+} | docker exec -i -e VAULT_ADDR=http://127.0.0.1:8200 \
+  "$VAULT_CONTAINER" sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    policy_file=$(mktemp)
+    trap '\''rm -f "$policy_file"'\'' EXIT
+    cat >"$policy_file"
+    vault policy write "$1" "$policy_file" >/dev/null
+    vault write "auth/approle/role/$2" \
+      token_policies="$1" token_no_default_policy=true \
+      token_ttl=15m token_max_ttl=30m \
+      secret_id_ttl=720h secret_id_num_uses=0 >/dev/null
+  ' sh "$ESO_POLICY_NAME" "$ESO_APPROLE_NAME"
+
+role_id=$(printf '%s\n' "$vault_root_token" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    exec vault read -field=role_id "auth/approle/role/$1/role-id"
+  ' sh "$ESO_APPROLE_NAME")
+printf '%s' "$role_id" | grep -Eq '^[0-9A-Fa-f-]{36}$' || {
+  echo "FATAL: dedicated ESO AppRole role_id is not a UUID" >&2
+  exit 1
+}
+
+old_accessors=$(printf '%s\n' "$vault_root_token" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    vault list -format=json "auth/approle/role/$1/secret-id" 2>/dev/null || printf "[]"
+  ' sh "$ESO_APPROLE_NAME")
+approle_json=$(printf '%s\n' "$vault_root_token" | docker exec -i \
+  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+    set -eu
+    IFS= read -r VAULT_TOKEN
+    export VAULT_TOKEN
+    exec vault write -format=json -f "auth/approle/role/$1/secret-id"
+  ' sh "$ESO_APPROLE_NAME")
+approle_secret_id=$(printf '%s' "$approle_json" | jq -r '.data.secret_id // empty')
+new_accessor=$(printf '%s' "$approle_json" | jq -r '.data.secret_id_accessor // empty')
+[ -n "$approle_secret_id" ] && [ -n "$new_accessor" ] || {
+  echo "FATAL: dedicated ESO AppRole secret generation failed" >&2
+  exit 1
+}
+
+umask 077
+approle_secret_file=$(mktemp)
+printf '%s' "$approle_secret_id" >"$approle_secret_file"
+chmod 600 "$approle_secret_file"
+kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" create secret generic "$ESO_SECRET_NAME" \
+  --from-file=secret-id="$approle_secret_file" --dry-run=client -o yaml \
+  | kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NS" apply -f - >/dev/null
+unset approle_secret_id approle_json
+rm -f "$approle_secret_file"
+approle_secret_file=""
+
+printf '%s' "$old_accessors" | jq -r '.[]?' | while IFS= read -r accessor; do
+  [ -n "$accessor" ] && [ "$accessor" != "$new_accessor" ] || continue
+  printf '%s\n' "$vault_root_token" | docker exec -i \
+    -e VAULT_ADDR=http://127.0.0.1:8200 -e SECRET_ID_ACCESSOR="$accessor" \
+    "$VAULT_CONTAINER" sh -c '
+      set -eu
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN
+      vault write "auth/approle/role/$1/secret-id-accessor/destroy" \
+        secret_id_accessor="$SECRET_ID_ACCESSOR" >/dev/null
+    ' sh "$ESO_APPROLE_NAME"
+done
+unset old_accessors new_accessor
+
 # Create/validate the login role without embedding a cleartext password in SQL.
 docker exec "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
 DO $$
@@ -246,5 +356,7 @@ login_result=$(printf '%s\n' "$db_password" | docker exec -i "$PG_CONTAINER" sh 
 
 echo "PG: ethics_app least-privilege role + ethics database OK"
 echo "Vault: $VAULT_PATH DB keys + public test gate seeded; raw values not printed"
+echo "Vault/ESO: dedicated read-only Etik Speak AppRole + namespaced secret rotated"
 echo "PUBLIC_GATE_USERNAME=$PUBLIC_GATE_USERNAME"
 echo "PUBLIC_GATE_PASSWORD_FILE=$PUBLIC_GATE_PASSWORD_FILE"
+echo "ETHICS_VAULT_ROLE_ID=$role_id"

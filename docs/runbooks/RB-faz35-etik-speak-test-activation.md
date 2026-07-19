@@ -31,7 +31,8 @@ Before provisioning or root-overlay activation, record all of the following:
    `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`.
 5. The GitOps activation overlay contains no all-zero digest and renders with
    no `OVERLAY_MUST_OVERRIDE` value; the root test overlay separately pins the
-   exact manager/testai frontend digest.
+   exact manager/testai frontend digest. `PENDING_FAZ35_*` values are allowed
+   only in the provisioning-stage review and block activation preflight.
 
 ## Gate 2: test product-cell provisioning
 
@@ -42,7 +43,7 @@ context.
 First run the read-only preflight from the reviewed local checkout:
 
 ```bash
-./scripts/faz35/preflight-test-activation.sh
+PREFLIGHT_STAGE=foundation ./scripts/faz35/preflight-test-activation.sh
 ```
 
 It binds the current host-container IPs to the Kubernetes Endpoints and the
@@ -73,15 +74,18 @@ preserving the application's bearer/cookie credential-confusion boundary.
 ```
 
 The Keycloak script prints a non-secret `ETHICS_STAFF_SUBJECT=<uuid>` line and
-stores the dedicated synthetic persona password in the chmod-600 path reported
-by the script. The PG/Vault script likewise prints only the public-gate username
-and the chmod-600 local password-file path; Vault stores only its htpasswd hash.
-Both files must be regular, non-symlink, owned by the invoking user and
-inaccessible to group/other users. Do not paste either password into chat,
-GitHub, logs, shell argv, or an evidence document.
+stores the dedicated allow, wrong-org and OpenFGA-denied synthetic persona
+passwords in the chmod-600 paths reported by the script. The PG/Vault script
+prints only the public-gate username, its chmod-600 local password-file path,
+and the dedicated Etik Speak Vault AppRole's non-secret role ID. It creates a
+namespaced Kubernetes secret for that AppRole; the role can read only
+`kv/platform/etik-speak` and cannot use the broad shared ClusterSecretStore.
+Every password file must be regular, non-symlink, owned by the invoking user
+and inaccessible to group/other users. Do not paste a password or AppRole
+secret ID into chat, GitHub, logs, shell argv, or an evidence document.
 
-Use the printed subject to promote the isolated OpenFGA model, seed only the
-test staff product relations, and patch the existing Vault selector fields:
+Use the printed subject to promote the isolated OpenFGA model and seed only the
+allow-persona product relations:
 
 ```bash
 STAFF_SUBJECT='<uuid-from-keycloak-step>' \
@@ -94,13 +98,32 @@ Expected non-secret results:
 - database `ethics`, owned by `ethics_app`;
 - rerunning the PG/Vault provisioner reuses the existing Vault-managed DB
   password instead of rotating it underneath an active ESO/workload;
-- Vault `kv/platform/etik-speak`: DB keys plus OpenFGA store/model selectors;
 - Vault `kv/platform/etik-speak`: public edge htpasswd hash, while the raw gate
   password remains only in the reported host-local file;
+- a dedicated `etik-speak-eso-test` read-only Vault policy/AppRole and
+  `platform-test/etik-speak-vault-approle` Kubernetes Secret;
 - Keycloak access token contract: `aud` includes `ethics-manager`, `scope`
-  includes `ethics:case:manage`, and `org_id` is the canonical test UUID;
+  includes `ethics:case:manage`, the realm role includes `ethics-manager`, and
+  `org_id` matches the persona's test tenant;
 - OpenFGA checks return allow for product `case_viewer`, `case_triager`, and
   `case_handler` for the synthetic manager subject.
+
+The provisioners print three non-secret bindings:
+
+- `ETHICS_VAULT_ROLE_ID`;
+- `ETHICS_OPENFGA_STORE_ID`;
+- `ETHICS_OPENFGA_MODEL_ID`.
+
+Create a new GitOps commit that replaces the three `PENDING_FAZ35_*` values in
+`secretstore.yaml` and `ethics-service-config.yaml`. Update the OpenFGA runtime
+ledger with the actual test store/model ID, canonical digest and evidence.
+Then derive a new exact head/base-tip/merge-base/canonical scope and obtain a
+fresh direct-Codex `AGREE`; the provisioning-stage receipt cannot authorize
+activation. Finally run the full read-only preflight:
+
+```bash
+./scripts/faz35/preflight-test-activation.sh
+```
 
 Vault root tokens, DB passwords, Keycloak automation credentials and the
 synthetic manager password travel over stdin to their short-lived container
@@ -162,9 +185,11 @@ Use only synthetic content.
 5. Reopen the mailbox on the original public host, read the staff reply, send a
    reporter reply, then log out and prove the expired host-only cookie no longer
    authorizes reads.
-6. Prove cross-host mailbox login denial, public bearer/cookie credential
-   confusion denial, wrong-org staff isolation, OpenFGA deny/outage behavior,
-   stale `If-Match` `412`, and retry idempotency.
+6. Prove missing Basic Auth denial, Basic Auth stripping at the backend,
+   cross-host mailbox login denial, public suite-cookie confusion denial,
+   wrong-org staff isolation, live OpenFGA allow/deny plus source-level outage
+   fail-closed behavior, stale `If-Match` `412`, same-payload replay and
+   different-payload idempotency conflict. Both hosts must emit one-year HSTS.
 
 The canonical browser driver lives in `platform-web` and reads both synthetic
 gate passwords only from host-local chmod-600 files. It validates regular-file,
@@ -173,6 +198,8 @@ video and screenshots so a receipt/access secret cannot enter CI artifacts:
 
 ```bash
 ETIK_MANAGER_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-test.password \
+ETIK_WRONG_ORG_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password \
+ETIK_DENIED_PASSWORD_FILE=/home/halil/bootstrap-drill/ethics-manager-denied-test.password \
 ETIK_PUBLIC_GATE_PASSWORD_FILE=/home/halil/bootstrap-drill/etik-speak-public-gate.password \
   pnpm test:e2e:etik-speak-runtime
 ```

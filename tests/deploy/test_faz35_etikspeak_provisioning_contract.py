@@ -27,6 +27,16 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/externalsecret.yaml"
         ).read_text()
+        cls.secret_store = (
+            ROOT
+            / "kustomize/overlays/test/activation/etik-speak/secretstore.yaml"
+        ).read_text()
+        cls.service_config = (
+            ROOT / "kustomize/base/apps/etik-speak/ethics-service-config.yaml"
+        ).read_text()
+        cls.eso_policy = (
+            ROOT / "bootstrap/vault-policies/test/etik-speak-eso.hcl"
+        ).read_text()
         cls.test_root = (
             ROOT / "kustomize/overlays/test/kustomization.yaml"
         ).read_text()
@@ -66,8 +76,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("IFS= read -r ETHICS_DB_PASSWORD", self.pg_vault)
         self.assertIn("IFS= read -r PGPASSWORD", self.pg_vault)
         self.assertIn("IFS= read -r KC_PERSONA_PASSWORD", self.keycloak)
-        for script in (self.pg_vault, self.keycloak, self.openfga):
+        for script in (self.pg_vault, self.keycloak):
             self.assertLess(script.index("set +x"), script.index("root_token"))
+        self.assertNotIn("root_token", self.openfga)
 
     def test_pg_rerun_reuses_vault_password_instead_of_rotating(self):
         read_index = self.pg_vault.index("vault_entry_json=$(")
@@ -126,6 +137,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("ethics-org-id-mapper", self.keycloak)
         self.assertIn("optional-client-scopes", self.keycloak)
         self.assertIn("default-client-scopes", self.keycloak)
+        self.assertIn("scope-mappings/realm", self.keycloak)
+        self.assertIn("is not role-bound to ethics-manager", self.keycloak)
         self.assertIn("kc add-roles", self.keycloak)
         self.assertNotIn("kcadm.sh set-password", self.keycloak)
         self.assertNotIn("--new-password", self.keycloak)
@@ -148,17 +161,19 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         ):
             self.assertIn(required, self.pg_vault)
 
-    def test_external_secret_is_eso_owned_and_selector_only(self):
+    def test_external_secret_is_eso_owned_and_runtime_selectors_are_gitops_pinned(self):
         self.assertIn("creationPolicy: Owner", self.external_secret)
-        for key in (
-            "ETHICS_DB_USERNAME",
-            "ETHICS_DB_PASSWORD",
-            "ERP_OPENFGA_STORE_ID",
-            "ERP_OPENFGA_MODEL_ID",
-        ):
+        for key in ("ETHICS_DB_USERNAME", "ETHICS_DB_PASSWORD"):
             self.assertEqual(self.external_secret.count(f"secretKey: {key}"), 1)
             self.assertEqual(self.external_secret.count(f"property: {key}"), 1)
+        self.assertNotIn("ERP_OPENFGA_STORE_ID", self.external_secret)
+        self.assertNotIn("ERP_OPENFGA_MODEL_ID", self.external_secret)
+        self.assertIn("PENDING_FAZ35_OPENFGA_STORE_ID", self.service_config)
+        self.assertIn("PENDING_FAZ35_OPENFGA_MODEL_ID", self.service_config)
         self.assertEqual(self.external_secret.count("kind: ExternalSecret"), 2)
+        self.assertEqual(self.external_secret.count("kind: SecretStore"), 2)
+        self.assertEqual(self.external_secret.count("name: etik-speak-vault"), 2)
+        self.assertNotIn("ClusterSecretStore", self.external_secret)
         self.assertEqual(self.external_secret.count("name: etik-speak-public-gate"), 2)
         self.assertEqual(self.external_secret.count("secretKey: auth"), 1)
         self.assertEqual(
@@ -169,6 +184,21 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             r"(?i)(password|token|secret):\s*[A-Za-z0-9+/=_-]{12,}",
         )
 
+    def test_namespaced_secret_store_uses_dedicated_least_privilege_approle(self):
+        self.assertIn("kind: SecretStore", self.secret_store)
+        self.assertIn("roleId: PENDING_FAZ35_VAULT_ROLE_ID", self.secret_store)
+        self.assertIn("name: etik-speak-vault-approle", self.secret_store)
+        self.assertNotIn("vault-platform-gitops", self.secret_store)
+        self.assertIn('path "kv/data/platform/etik-speak"', self.eso_policy)
+        self.assertIn('path "kv/metadata/platform/etik-speak"', self.eso_policy)
+        self.assertEqual(self.eso_policy.count('capabilities = ["read"]'), 2)
+        for forbidden in ("create", "update", "delete", "list", "sudo"):
+            self.assertNotIn(f'"{forbidden}"', self.eso_policy)
+        self.assertIn("token_no_default_policy=true", self.pg_vault)
+        self.assertIn("secret_id_ttl=720h", self.pg_vault)
+        self.assertIn("secret-id-accessor/destroy", self.pg_vault)
+        self.assertIn('--from-file=secret-id="$approle_secret_file"', self.pg_vault)
+
     def test_preflight_is_read_only_and_binds_live_dependencies(self):
         self.assertIn('SSH_TARGET" = "halil@staging-sw', self.preflight)
         self.assertIn('KUBE_CONTEXT" = "k3d-test', self.preflight)
@@ -177,7 +207,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "platform-pg-test",
             "platform-kc-test",
             "platform-vault-test",
-            "vault-platform-gitops",
+            "etik-speak-vault-approle",
+            "PENDING_FAZ35_",
+            "EXPECTED_MODEL_JSON_SHA256",
             "externalsecrets.external-secrets.io",
             "http://openfga:8080/stores?page_size=1",
             "etik.acik.com",
@@ -193,6 +225,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "check_object_headroom pods 4 2",
             "activation must render exactly two ExternalSecrets",
             "both public ingresses must use the synthetic test access gate",
+            "one-year HSTS header",
         ):
             self.assertIn(required, self.preflight)
         self.assertNotRegex(

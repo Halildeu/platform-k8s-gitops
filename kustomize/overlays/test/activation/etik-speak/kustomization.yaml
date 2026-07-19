@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: platform-test
 resources:
   - ../../../../base/apps/etik-speak
+  - secretstore.yaml
   - externalsecret.yaml
   - ingress-public-api.yaml
   - ingress-public-ui.yaml

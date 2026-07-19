@@ -11,7 +11,12 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.
 REALM="${REALM:-platform-test}"
 PERSONA_USERNAME="${PERSONA_USERNAME:-ethics-manager-test}"
 PERSONA_PASSWORD_FILE="${PERSONA_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-test.password}"
+WRONG_ORG_USERNAME="${WRONG_ORG_USERNAME:-ethics-manager-wrong-org-test}"
+WRONG_ORG_PASSWORD_FILE="${WRONG_ORG_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password}"
+DENIED_USERNAME="${DENIED_USERNAME:-ethics-manager-denied-test}"
+DENIED_PASSWORD_FILE="${DENIED_PASSWORD_FILE:-/home/halil/bootstrap-drill/ethics-manager-denied-test.password}"
 ETHICS_ORG_ID="${ETHICS_ORG_ID:-00000000-0000-0000-0000-000000000001}"
+WRONG_ETHICS_ORG_ID="${WRONG_ETHICS_ORG_ID:-00000000-0000-0000-0000-000000000002}"
 KCADM=/opt/keycloak/bin/kcadm.sh
 
 [ "$KC_CONTAINER" = "platform-kc-test" ] && [ "$REALM" = "platform-test" ] || {
@@ -22,6 +27,11 @@ KCADM=/opt/keycloak/bin/kcadm.sh
   [ "$VAULT_INIT_FILE" = "/home/halil/bootstrap-drill/vault-init-test.json" ] && \
   [ "$PERSONA_USERNAME" = "ethics-manager-test" ] && \
   [ "$PERSONA_PASSWORD_FILE" = "/home/halil/bootstrap-drill/ethics-manager-test.password" ] && \
+  [ "$WRONG_ORG_USERNAME" = "ethics-manager-wrong-org-test" ] && \
+  [ "$WRONG_ORG_PASSWORD_FILE" = "/home/halil/bootstrap-drill/ethics-manager-wrong-org-test.password" ] && \
+  [ "$DENIED_USERNAME" = "ethics-manager-denied-test" ] && \
+  [ "$DENIED_PASSWORD_FILE" = "/home/halil/bootstrap-drill/ethics-manager-denied-test.password" ] && \
+  [ "$WRONG_ETHICS_ORG_ID" = "00000000-0000-0000-0000-000000000002" ] && \
   [ "$ETHICS_ORG_ID" = "00000000-0000-0000-0000-000000000001" ] || {
   echo "FATAL: Keycloak/Vault/persona mutation target override refused" >&2
   exit 1
@@ -70,6 +80,11 @@ docker exec "$KC_CONTAINER" "$KCADM" config credentials --status >/dev/null 2>&1
   exit 1
 }
 
+if ! kc get roles/ethics-manager -r "$REALM" >/dev/null 2>&1; then
+  kc create roles -r "$REALM" -s name=ethics-manager \
+    -s 'description=Etik Speak sentetik test manager' >/dev/null
+fi
+
 manager_client_id=$(kc get clients -r "$REALM" -q clientId=ethics-manager \
   --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
 if [ -z "$manager_client_id" ]; then
@@ -96,6 +111,24 @@ ensure_scope() {
       --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1; exit}')
   fi
   printf '%s' "$scope_id"
+}
+
+ensure_scope_role_binding() {
+  local scope_id=$1 scope_name=$2 bindings role_payload
+  bindings=$(kc get "client-scopes/$scope_id/scope-mappings/realm" \
+    -r "$REALM" 2>/dev/null || printf '[]')
+  if ! printf '%s' "$bindings" | jq -e \
+      '.[]? | select(.name == "ethics-manager")' >/dev/null; then
+    role_payload=$(kc get roles/ethics-manager -r "$REALM" \
+      | jq '[{id:.id,name:.name,description:.description,composite:.composite,clientRole:.clientRole,containerId:.containerId}]')
+    printf '%s' "$role_payload" | docker exec -i "$KC_CONTAINER" "$KCADM" \
+      create "client-scopes/$scope_id/scope-mappings/realm" -r "$REALM" -f - >/dev/null
+  fi
+  kc get "client-scopes/$scope_id/scope-mappings/realm" -r "$REALM" \
+    | jq -e '.[]? | select(.name == "ethics-manager")' >/dev/null || {
+      echo "FATAL: $scope_name is not role-bound to ethics-manager" >&2
+      exit 1
+    }
 }
 
 audience_scope_id=$(ensure_scope ethics-manager-audience false)
@@ -127,6 +160,8 @@ if [ -z "$org_mapper_id" ]; then
     -s 'config."multivalued"=false' >/dev/null
 fi
 manage_scope_id=$(ensure_scope 'ethics:case:manage' true)
+ensure_scope_role_binding "$audience_scope_id" ethics-manager-audience
+ensure_scope_role_binding "$manage_scope_id" 'ethics:case:manage'
 
 frontend_id=$(kc get clients -r "$REALM" -q clientId=frontend \
   --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
@@ -159,10 +194,6 @@ if [ -z "$persona_id" ]; then
     --fields id --format csv --noquotes | head -1)
 fi
 
-if ! kc get roles/ethics-manager -r "$REALM" >/dev/null 2>&1; then
-  kc create roles -r "$REALM" -s name=ethics-manager \
-    -s 'description=Etik Speak sentetik test manager' >/dev/null
-fi
 kc add-roles -r "$REALM" --uusername "$PERSONA_USERNAME" \
   --rolename ethics-manager >/dev/null
 
@@ -278,7 +309,89 @@ printf '%s' "$token_claims" | jq -e \
 }
 unset persona_password org_payload token_json access_token token_claims
 
-echo "KC: ethics-manager audience + ethics:case:manage are optional frontend scopes"
+ensure_negative_persona() {
+  local username=$1 org_id=$2 password_file=$3 negative_id payload password token_json access_token claims
+  negative_id=$(kc get users -r "$REALM" -q "username=$username" -q exact=true \
+    --fields id --format csv --noquotes 2>/dev/null | head -1 || true)
+  if [ -z "$negative_id" ]; then
+    kc create users -r "$REALM" -s "username=$username" \
+      -s enabled=true -s emailVerified=true \
+      -s "email=$username@test.invalid" \
+      -s firstName=Ethics -s lastName=Negative >/dev/null
+    negative_id=$(kc get users -r "$REALM" -q "username=$username" -q exact=true \
+      --fields id --format csv --noquotes | head -1)
+  fi
+  kc add-roles -r "$REALM" --uusername "$username" --rolename ethics-manager >/dev/null
+  payload=$(jq -nc --arg org "$org_id" '{attributes:{org_id:[$org]}}')
+  printf '%s' "$payload" | docker exec -i "$KC_CONTAINER" "$KCADM" \
+    update "users/$negative_id" -r "$REALM" -f - --merge >/dev/null
+
+  umask 077
+  if [ -e "$password_file" ] || [ -L "$password_file" ]; then
+    [ ! -L "$password_file" ] && [ -f "$password_file" ] || {
+      echo "FATAL: negative-persona password path must be a regular non-symlink" >&2
+      exit 1
+    }
+  else
+    password=$(openssl rand -base64 36 | tr -d '/+=' | cut -c1-36)
+    (set -C; printf '%s' "$password" >"$password_file") || {
+      echo "FATAL: exclusive negative-persona password creation failed" >&2
+      exit 1
+    }
+  fi
+  chmod 600 "$password_file"
+  [ "$(stat -c '%u' "$password_file")" = "$(id -u)" ] && \
+    [ "$(stat -c '%a' "$password_file")" = 600 ] || {
+    echo "FATAL: negative-persona password owner/mode assertion failed" >&2
+    exit 1
+  }
+  password=$(<"$password_file")
+  jq -nc --arg value "$password" '{type:"password",value:$value,temporary:false}' \
+    | docker exec -i "$KC_CONTAINER" "$KCADM" \
+        update "users/$negative_id/reset-password" -r "$REALM" -f - >/dev/null
+
+  token_json=$(printf '%s\n' "$password" | docker exec -i \
+    -e KC_REALM="$REALM" -e KC_PERSONA_USERNAME="$username" \
+    "$KC_CONTAINER" sh -c '
+      set -eu
+      IFS= read -r KC_PERSONA_PASSWORD
+      printf "grant_type=password&client_id=frontend&username=%s&password=%s&scope=openid%%20ethics-manager-audience%%20ethics%%3Acase%%3Amanage" \
+        "$KC_PERSONA_USERNAME" "$KC_PERSONA_PASSWORD" \
+        | curl -fsS -X POST -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-binary @- "http://localhost:8080/realms/$KC_REALM/protocol/openid-connect/token"
+      unset KC_PERSONA_PASSWORD
+    ')
+  access_token=$(printf '%s' "$token_json" | jq -r '.access_token // empty')
+  claims=$(printf '%s' "$access_token" | python3 -c '
+import base64, json, sys
+token = sys.stdin.read().strip().split(".")
+if len(token) != 3: raise SystemExit(1)
+payload = token[1] + "=" * (-len(token[1]) % 4)
+data = json.loads(base64.urlsafe_b64decode(payload))
+print(json.dumps({"aud": data.get("aud"), "scope": data.get("scope", ""),
+                  "org_id": data.get("org_id"),
+                  "roles": data.get("realm_access", {}).get("roles", [])}, separators=(",", ":")))
+')
+  printf '%s' "$claims" | jq -e --arg org "$org_id" '
+    (.org_id == $org) and
+    (((.aud | type == "array") and (.aud | index("ethics-manager") != null)) or
+     ((.aud | type == "string") and .aud == "ethics-manager")) and
+    (.scope | split(" ") | index("ethics:case:manage") != null) and
+    (.roles | index("ethics-manager") != null)
+  ' >/dev/null || {
+    echo "FATAL: negative-persona token contract failed" >&2
+    exit 1
+  }
+  unset password token_json access_token claims payload
+}
+
+ensure_negative_persona "$WRONG_ORG_USERNAME" "$WRONG_ETHICS_ORG_ID" "$WRONG_ORG_PASSWORD_FILE"
+ensure_negative_persona "$DENIED_USERNAME" "$ETHICS_ORG_ID" "$DENIED_PASSWORD_FILE"
+
+echo "KC: ethics-manager audience + ethics:case:manage are optional frontend scopes bound to the ethics-manager role"
 echo "KC: synthetic access-token aud/scope/org_id/role contract OK"
 echo "KC: synthetic persona ready; password kept at $PERSONA_PASSWORD_FILE"
+echo "KC: wrong-org and OpenFGA-denied synthetic personas ready; no OpenFGA tuples granted"
+echo "ETHICS_WRONG_ORG_PASSWORD_FILE=$WRONG_ORG_PASSWORD_FILE"
+echo "ETHICS_DENIED_PASSWORD_FILE=$DENIED_PASSWORD_FILE"
 echo "ETHICS_STAFF_SUBJECT=$persona_id"
