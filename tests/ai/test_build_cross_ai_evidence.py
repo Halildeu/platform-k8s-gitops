@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import subprocess
 import sys
@@ -168,6 +169,32 @@ class EvidenceBuilderTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(PolicyError, "PROVIDER_SCOPE_EMPTY"):
                 MODULE._scope(self.workspace)
+
+    def test_canonical_main_head_uses_exact_first_parent_scope(self) -> None:
+        head = "c" * 40
+        parent = "b" * 40
+        scope = b"canonical-main-scope"
+        with (
+            patch.object(MODULE, "_canonical_main_tip", return_value=head),
+            patch.object(
+                MODULE,
+                "run_git",
+                side_effect=[head, parent, "scripts/ai/review.py"],
+            ),
+            patch.object(MODULE, "derive_scope", return_value=(scope, 0, 0)) as derive,
+        ):
+            bindings, actual_scope = MODULE._scope(self.workspace)
+        self.assertEqual(
+            {
+                "base_tip_sha": head,
+                "base_sha": parent,
+                "head_sha": head,
+                "scope_sha256": hashlib.sha256(scope).hexdigest(),
+            },
+            bindings,
+        )
+        self.assertEqual(scope, actual_scope)
+        self.assertEqual(parent, derive.call_args.kwargs["base_sha"])
 
     def test_scope_uses_canonical_github_tip_not_mutable_origin(self) -> None:
         head = "c" * 40

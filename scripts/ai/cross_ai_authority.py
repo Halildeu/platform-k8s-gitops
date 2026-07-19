@@ -558,6 +558,12 @@ def validate_authority_history_transition(
         )
 
     try:
+        predecessor_verifier = EvidenceVerifier(
+            trust_root=old_root,
+            revocations_envelope=old_revocations,
+            now=retired_at,
+            expected_trust_root_sha256=base_digest,
+        )
         verifier = EvidenceVerifier(
             trust_root=new_root,
             revocations_envelope=new_revocations,
@@ -575,6 +581,19 @@ def validate_authority_history_transition(
             new_root,
             issued_at=retired_at,
         )
+        predecessor_entries = {
+            sha256_digest(entry)
+            for entry in predecessor_verifier.revocations["entries"]
+        }
+        replacement_entries = {
+            sha256_digest(entry) for entry in verifier.revocations["entries"]
+        }
+        if not predecessor_entries.issubset(replacement_entries):
+            raise AuthorityUnavailable(
+                "provider-review replacement omits a predecessor revocation"
+            )
+    except AuthorityUnavailable:
+        raise
     except PolicyError as exc:
         raise AuthorityUnavailable(
             f"provider-review replacement authority is invalid: {exc.code}"

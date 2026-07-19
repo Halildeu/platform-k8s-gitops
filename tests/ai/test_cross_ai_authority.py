@@ -566,14 +566,19 @@ class GenesisTransitionTests(unittest.TestCase):
                 )
         return replacement
 
-    def install_rotation(self) -> tuple[str, str]:
+    def install_rotation(
+        self,
+        *,
+        predecessor_entries: list[dict[str, object]] | None = None,
+        replacement_entries: list[dict[str, object]] | None = None,
+    ) -> tuple[str, str]:
         predecessor_manifest = self.authority_manifest(active=True)
         predecessor_root = self.fixture.authority.trust_root
         predecessor_revocations = self.signed_revocations(
             set_id="20000000-0000-4000-8000-000000000097",
             issued_at="2026-07-18T20:00:00Z",
             next_update="2026-07-18T21:00:00Z",
-            entries=[],
+            entries=predecessor_entries or [],
         )
         self.write_json(
             "config/github-apps/cross-ai-provider-review-authority.v1.json",
@@ -599,7 +604,7 @@ class GenesisTransitionTests(unittest.TestCase):
                 "revocationSetId": "20000000-0000-4000-8000-000000000098",
                 "issuedAt": "2026-07-18T20:30:00Z",
                 "nextUpdate": "2026-07-18T21:30:00Z",
-                "entries": [],
+                "entries": replacement_entries or [],
             },
             replacement_factory.REVOCATION_KEY_ID,
         )
@@ -665,6 +670,25 @@ class GenesisTransitionTests(unittest.TestCase):
             expected_bindings=self.history_bindings(base, head),
             now=self.fixture.factory.now,
         )
+
+    def test_root_rotation_cannot_resurrect_a_revoked_identity(self) -> None:
+        revoked = {
+            "type": "key",
+            "id": "vault-transit://cross-ai/openai#v1",
+            "effectiveAt": "2026-07-18T20:10:00Z",
+            "reasonCode": "TEST_ROTATION_REVOCATION",
+        }
+        base, head = self.install_rotation(
+            predecessor_entries=[revoked], replacement_entries=[]
+        )
+        with self.assertRaisesRegex(
+            AuthorityUnavailable, "omits a predecessor revocation"
+        ):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, head),
+                now=self.fixture.factory.now,
+            )
 
     def test_same_root_rejects_executable_policy_change_without_archive(self) -> None:
         manifest = self.authority_manifest(active=True)

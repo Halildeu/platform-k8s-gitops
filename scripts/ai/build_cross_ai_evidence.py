@@ -190,7 +190,11 @@ def _canonical_main_tip(workspace: Path) -> str:
 def _scope(workspace: Path) -> tuple[dict[str, str], bytes]:
     head_sha = run_git(workspace, "rev-parse", "HEAD").lower()
     base_tip_sha = _canonical_main_tip(workspace)
-    base_sha = run_git(workspace, "merge-base", base_tip_sha, head_sha).lower()
+    base_sha = (
+        run_git(workspace, "rev-parse", f"{head_sha}^1").lower()
+        if head_sha == base_tip_sha
+        else run_git(workspace, "merge-base", base_tip_sha, head_sha).lower()
+    )
     if head_sha == base_sha or not run_git(
         workspace, "diff", "--name-only", "--no-renames", f"{base_sha}...{head_sha}"
     ).splitlines():

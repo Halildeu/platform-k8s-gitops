@@ -112,23 +112,31 @@ jobs:
           with zipfile.ZipFile(sys.argv[1]) as archive:
               names = archive.namelist()
           legacy = {"SHA256SUMS", "protected-authorization.json"}
-          current = legacy | {"advisory-comment.json"}
+          advisory = legacy | {"advisory-comment.json"}
+          current = advisory | {"owner-comment.json"}
           if len(names) != len(set(names)):
               raise SystemExit("authorization archive contains duplicate members")
           if set(names) == current:
-              print("v2")
+              print("v2-current")
+          elif set(names) == advisory:
+              print("v2-legacy")
           elif set(names) == legacy:
               print("v1")
           else:
-              raise SystemExit("authorization archive file set is not canonical v1 or v2")
+              raise SystemExit(
+                  "authorization archive file set is not canonical v1, legacy v2, or current v2"
+              )
           PY
           )"
           archive_args=(
             --expected-file SHA256SUMS
             --expected-file protected-authorization.json
           )
-          if [ "$archive_mode" = v2 ]; then
+          if [[ "$archive_mode" = v2-* ]]; then
             archive_args+=(--expected-file advisory-comment.json)
+          fi
+          if [ "$archive_mode" = v2-current ]; then
+            archive_args+=(--expected-file owner-comment.json)
           fi
           python3 scripts/faz22-remote-ops/extract-exact-zip.py \
             --archive "$out/authorization.zip" \

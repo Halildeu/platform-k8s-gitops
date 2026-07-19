@@ -1181,13 +1181,18 @@ def verify_activation_authorization(
         files = safe_archive_files(raw_archive)
         legacy_files = {"SHA256SUMS", "protected-authorization.json"}
         advisory_files = legacy_files | {"advisory-comment.json"}
-        if set(files) not in (legacy_files, advisory_files):
+        durable_files = advisory_files | {"owner-comment.json"}
+        if set(files) not in (legacy_files, advisory_files, durable_files):
             raise EvidenceError("legacy protected authorization artifact file set mismatch")
         verify_sha256sums(files, set(files) - {"SHA256SUMS"})
         raw_authorization = files["protected-authorization.json"]
         if "advisory-comment.json" in files:
             archived_advisory_comment = load_json_bytes(
                 files["advisory-comment.json"], "advisory-comment.json"
+            )
+        if "owner-comment.json" in files:
+            archived_owner_comment = load_json_bytes(
+                files["owner-comment.json"], "owner-comment.json"
             )
 
     activation_updated = parse_utc(

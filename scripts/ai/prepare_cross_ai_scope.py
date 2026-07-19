@@ -182,11 +182,16 @@ def derive_scope(
     resolved_base = run_git(repo, "rev-parse", base_sha).lower()
     resolved_head = run_git(repo, "rev-parse", head_sha).lower()
     merge_base = run_git(repo, "merge-base", resolved_tip, resolved_head).lower()
+    canonical_pr_range = merge_base == resolved_base
+    canonical_main_commit = False
+    if resolved_tip == resolved_head and resolved_base != resolved_head:
+        first_parent = run_git(repo, "rev-parse", f"{resolved_head}^1").lower()
+        canonical_main_commit = first_parent == resolved_base
     if (
         resolved_tip != base_tip_sha.lower()
         or resolved_base != base_sha.lower()
         or resolved_head != head_sha.lower()
-        or merge_base != resolved_base
+        or not (canonical_pr_range or canonical_main_commit)
     ):
         fail("scope_binding_not_canonical_git_history")
     raw_scope = run_git_diff(repo, resolved_base, resolved_head, max_scope_bytes)
