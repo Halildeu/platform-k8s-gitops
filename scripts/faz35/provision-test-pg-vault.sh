@@ -6,6 +6,8 @@ set -euo pipefail
 set +x
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/faz35/lib-vault-accessor-inventory.sh
+source "$SCRIPT_DIR/lib-vault-accessor-inventory.sh"
 EXPECTED_ESO_POLICY="$SCRIPT_DIR/../../bootstrap/vault-policies/test/etik-speak-eso.hcl"
 ESO_POLICY_FILE="${ESO_POLICY_FILE:-$EXPECTED_ESO_POLICY}"
 ESO_POLICY_NAME="${ESO_POLICY_NAME:-etik-speak-eso-test}"
@@ -75,7 +77,9 @@ command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 
 
 vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
 approle_secret_file=""
-trap 'unset db_password vault_root_token existing_db_password public_gate_password public_gate_hash public_gate_htpasswd vault_entry_json approle_json approle_secret_id; [ -z "${approle_secret_file:-}" ] || rm -f "$approle_secret_file"' EXIT
+accessor_output_file=""
+accessor_error_file=""
+trap 'unset db_password vault_root_token existing_db_password public_gate_password public_gate_hash public_gate_htpasswd vault_entry_json approle_json approle_secret_id; [ -z "${approle_secret_file:-}" ] || rm -f "$approle_secret_file"; [ -z "${accessor_output_file:-}" ] || rm -f "$accessor_output_file"; [ -z "${accessor_error_file:-}" ] || rm -f "$accessor_error_file"' EXIT
 
 # Keep the Vault token out of docker(1) argv. The static container-side shell
 # reads it from stdin and exports it only for the short-lived Vault CLI child.
@@ -245,39 +249,30 @@ printf '%s' "$role_id" | grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}
   exit 1
 }
 
-old_accessors=$(printf '%s\n' "$vault_root_token" | docker exec -i \
-  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
-    set -eu
-    IFS= read -r VAULT_TOKEN
-    export VAULT_TOKEN
-    output_file=$(mktemp)
-    error_file=$(mktemp)
-    trap '\''rm -f "$output_file" "$error_file"'\'' EXIT
-    if vault list -format=json "auth/approle/role/$1/secret-id" \
-        >"$output_file" 2>"$error_file"; then
-      cat "$output_file"
-      exit 0
-    else
-      status=$?
-    fi
-    # Vault CLI 1.20 returns exit 2 plus an exact empty JSON object when the
-    # AppRole exists but has no secret-id accessors. Accept only that fully
-    # bounded no-data shape; other exit-2 results remain fatal.
-    compact_output=$(tr -d '\''[:space:]'\'' <"$output_file")
-    if [ "$status" -eq 2 ] && [ "$compact_output" = "{}" ] && [ ! -s "$error_file" ]; then
-      printf "[]"
-      exit 0
-    fi
-    if grep -Eqi "no value found|not found" "$error_file"; then
-      printf "[]"
-      exit 0
-    fi
-    printf "Vault AppRole accessor list failed; rotation refused.\n" >&2
-    exit 45
-  ' sh "$ESO_APPROLE_NAME") || {
+accessor_output_file=$(mktemp)
+accessor_error_file=$(mktemp)
+chmod 600 "$accessor_output_file" "$accessor_error_file"
+accessor_status=0
+if printf '%s\n' "$vault_root_token" | docker exec -i \
+    -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+      set -eu
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN
+      exec vault list -format=json "auth/approle/role/$1/secret-id"
+    ' sh "$ESO_APPROLE_NAME" >"$accessor_output_file" 2>"$accessor_error_file"; then
+  accessor_status=0
+else
+  accessor_status=$?
+fi
+old_accessors=$(vault_accessor_inventory_classify \
+  "$accessor_status" "$accessor_output_file" "$accessor_error_file") || {
   echo "FATAL: existing AppRole credentials could not be enumerated" >&2
   exit 1
 }
+rm -f "$accessor_output_file" "$accessor_error_file"
+accessor_output_file=""
+accessor_error_file=""
+unset accessor_status
 approle_json=$(printf '%s\n' "$vault_root_token" | docker exec -i \
   -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
     set -eu

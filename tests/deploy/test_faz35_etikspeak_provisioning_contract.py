@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -14,6 +16,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.pg_vault = (
             ROOT / "scripts/faz35/provision-test-pg-vault.sh"
         ).read_text()
+        cls.vault_accessor_lib_path = (
+            ROOT / "scripts/faz35/lib-vault-accessor-inventory.sh"
+        )
+        cls.vault_accessor_lib = cls.vault_accessor_lib_path.read_text()
         cls.keycloak = (
             ROOT / "scripts/faz35/provision-test-keycloak.sh"
         ).read_text()
@@ -216,9 +222,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("secret_id_ttl=720h", self.pg_vault)
         self.assertIn("secret-id-accessor/destroy", self.pg_vault)
         self.assertIn("existing AppRole credentials could not be enumerated", self.pg_vault)
-        self.assertIn('compact_output=$(tr -d', self.pg_vault)
-        self.assertIn('[ "$status" -eq 2 ]', self.pg_vault)
-        self.assertIn('[ "$compact_output" = "{}" ]', self.pg_vault)
+        self.assertNotIn('grep -Eqi "no value found|not found" "$accessor_error_file"', self.pg_vault)
+        self.assertIn("vault_accessor_inventory_classify", self.pg_vault)
         self.assertIn("post-rotation AppRole credential enumeration failed", self.pg_vault)
         self.assertIn("stale AppRole credential accessor remains", self.pg_vault)
         self.assertIn("ethics_app inherits an unexpected role", self.pg_vault)
@@ -228,6 +233,47 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("table_name <> 'pg_init_privs'", self.pg_vault)
         self.assertIn("NOINHERIT", self.pg_vault)
         self.assertIn('--from-file=secret-id="$approle_secret_file"', self.pg_vault)
+
+    def test_vault_accessor_inventory_classifier_is_exact_and_fail_closed(self):
+        def classify(status: int, stdout: bytes, stderr: bytes):
+            with tempfile.TemporaryDirectory() as directory:
+                output_path = Path(directory) / "stdout"
+                error_path = Path(directory) / "stderr"
+                output_path.write_bytes(stdout)
+                error_path.write_bytes(stderr)
+                return subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; vault_accessor_inventory_classify "$2" "$3" "$4"',
+                        "bash",
+                        str(self.vault_accessor_lib_path),
+                        str(status),
+                        str(output_path),
+                        str(error_path),
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+
+        success = classify(0, b'["accessor-a"]\n', b"")
+        self.assertEqual(success.returncode, 0)
+        self.assertEqual(success.stdout, b'["accessor-a"]\n')
+
+        empty = classify(2, b'{ \n }\n', b"")
+        self.assertEqual(empty.returncode, 0)
+        self.assertEqual(empty.stdout, b"[]")
+
+        for status, stdout, stderr in (
+            (2, b"{}", b"warning"),
+            (2, b'{"errors":[]}', b""),
+            (1, b"", b"not found"),
+            (0, b"{}", b""),
+        ):
+            with self.subTest(status=status, stdout=stdout, stderr=stderr):
+                result = classify(status, stdout, stderr)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, b"")
 
     def test_negative_personas_are_bound_to_openfga_deny_postconditions(self):
         self.assertIn("ETHICS_WRONG_ORG_SUBJECT=$wrong_org_id", self.keycloak)
