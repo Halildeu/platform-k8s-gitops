@@ -517,6 +517,15 @@ class GenesisTransitionTests(unittest.TestCase):
         self, factory: FixtureFactory,
     ) -> dict[str, object]:
         replacement = factory.trust_root()
+        current_provider = next(
+            key for key in replacement["keys"] if key["role"] == "provider-review"
+        )
+        current_provider["keyId"] = "vault-transit://cross-ai/openai#v2"
+        predecessor_provider = copy.deepcopy(next(
+            key for key in self.fixture.authority.trust_root["keys"]
+            if key["role"] == "provider-review"
+        ))
+        replacement["keys"].insert(0, predecessor_provider)
         replacement.update(
             {
                 "trustRootId": "10000000-0000-4000-8000-000000000002",
@@ -526,12 +535,15 @@ class GenesisTransitionTests(unittest.TestCase):
             }
         )
         for key in replacement["keys"]:
-            key["notBefore"] = "2026-07-18T20:30:00Z"
-            key["notAfter"] = (
-                "2026-07-25T20:30:00Z"
-                if key["role"] == "provider-review"
-                else "2026-08-17T20:30:00Z"
-            )
+            if key["keyId"] == "vault-transit://cross-ai/openai#v1":
+                key["notAfter"] = "2026-07-19T20:30:00Z"
+            else:
+                key["notBefore"] = "2026-07-18T20:30:00Z"
+                key["notAfter"] = (
+                    "2026-07-25T20:30:00Z"
+                    if key["role"] == "provider-review"
+                    else "2026-08-17T20:30:00Z"
+                )
         return replacement
 
     def install_rotation(self) -> tuple[str, str]:
@@ -634,14 +646,20 @@ class GenesisTransitionTests(unittest.TestCase):
             now=self.fixture.factory.now,
         )
 
-    def test_root_rotation_rejects_public_key_reuse_across_generations(self) -> None:
+    def test_root_rotation_rejects_public_key_reassignment_across_generations(self) -> None:
         base, valid_head = self.install_rotation()
         self.git("checkout", "-q", valid_head)
         root_path = "config/github-apps/cross-ai-provider-review-trust-root.v2.json"
         manifest_path = "config/github-apps/cross-ai-provider-review-authority.v1.json"
         predecessor = json.loads(self.git("show", f"{base}:{root_path}"))
         replacement = json.loads((self.root / root_path).read_text())
-        replacement["keys"][0]["publicKeyBase64"] = predecessor["keys"][0][
+        predecessor_provider = next(
+            key for key in predecessor["keys"] if key["role"] == "provider-review"
+        )
+        replacement_coordinator = next(
+            key for key in replacement["keys"] if key["role"] == "coordinator"
+        )
+        replacement_coordinator["publicKeyBase64"] = predecessor_provider[
             "publicKeyBase64"
         ]
         manifest = json.loads((self.root / manifest_path).read_text())
@@ -650,7 +668,26 @@ class GenesisTransitionTests(unittest.TestCase):
         self.write_json(manifest_path, manifest)
         bad_head = self.commit("reuse predecessor public key")
         self.git("reset", "-q", "--hard", base)
-        with self.assertRaisesRegex(AuthorityUnavailable, "reuses a public key"):
+        with self.assertRaisesRegex(AuthorityUnavailable, "reassigns a predecessor"):
+            validate_authority_history_transition(
+                self.root,
+                expected_bindings=self.history_bindings(base, bad_head),
+                now=self.fixture.factory.now,
+            )
+
+    def test_root_rotation_archive_must_match_predecessor_raw_bytes(self) -> None:
+        base, valid_head = self.install_rotation()
+        self.git("checkout", "-q", valid_head)
+        manifest = json.loads((
+            self.root / "config/github-apps/cross-ai-provider-review-authority.v1.json"
+        ).read_text())
+        archived_root_path = self.root / manifest["historicalAuthorities"][0][
+            "trustRootPath"
+        ]
+        archived_root_path.write_bytes(archived_root_path.read_bytes() + b"\n")
+        bad_head = self.commit("reformat archived predecessor root")
+        self.git("reset", "-q", "--hard", base)
+        with self.assertRaisesRegex(AuthorityUnavailable, "does not match"):
             validate_authority_history_transition(
                 self.root,
                 expected_bindings=self.history_bindings(base, bad_head),
@@ -700,12 +737,15 @@ class GenesisTransitionTests(unittest.TestCase):
         replacement_root["issuedAt"] = "2026-07-18T20:00:00Z"
         replacement_root["expiresAt"] = "2026-08-17T20:00:00Z"
         for key in replacement_root["keys"]:
-            key["notBefore"] = "2026-07-18T20:00:00Z"
-            key["notAfter"] = (
-                "2026-07-25T20:00:00Z"
-                if key["role"] == "provider-review"
-                else "2026-08-17T20:00:00Z"
-            )
+            if key["keyId"] == "vault-transit://cross-ai/openai#v1":
+                key["notAfter"] = "2026-07-19T20:00:00Z"
+            else:
+                key["notBefore"] = "2026-07-18T20:00:00Z"
+                key["notAfter"] = (
+                    "2026-07-25T20:00:00Z"
+                    if key["role"] == "provider-review"
+                    else "2026-08-17T20:00:00Z"
+                )
         stale_revocations = self._replacement_factory.sign(
             REVOCATIONS_PAYLOAD_TYPE,
             {
