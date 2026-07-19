@@ -1,0 +1,15 @@
+{
+  "authoritySource": "test-vault-transit-public-export",
+  "expectedTrustRootSha256": null,
+  "revocationsPath": null,
+  "rotationPolicy": {
+    "maxProviderKeyRotationHours": 168,
+    "maxRevocationStalenessMinutes": 60,
+    "maxReviewLeafLifetimeMinutes": 120,
+    "maxTrustRootLifetimeHours": 720,
+    "minimumKeyOverlapHours": 24
+  },
+  "schemaVersion": "acik.cross-ai-provider-review-authority.v1",
+  "status": "tracked_pending",
+  "trustRootPath": null
+}

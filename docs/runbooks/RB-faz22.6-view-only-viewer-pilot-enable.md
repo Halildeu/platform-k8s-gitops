@@ -68,7 +68,7 @@ boundary; see OWNER-APPROVAL.md node-origin caveat).
 This is the owner decision. Do not flip the flag until every box holds:
 
 - [ ] Canonical `faz22.6-view-only-pilot-owner-policy-v2` is `active`. It binds
-      the owner directive to a canonical `cross-ai-provider-evidence/v2`
+      the owner directive to a canonical signed `cross-ai-provider-evidence/v3`
       GitHub comment proving direct OpenAI Codex CLI `gpt-5.6-sol xhigh`,
       `read-only`, `ephemeral`, finding-free `AGREE`; review base-tip/base/head/
       scope digests exactly match the policy contract, the GitHub comment is

@@ -232,7 +232,7 @@ class TransitBootstrapTests(unittest.TestCase):
             receipt,
             trust_root_id="10000000-0000-4000-8000-000000000099",
             issued_at="2026-07-18T18:00:00Z",
-            expires_at="2026-07-18T21:00:00Z",
+            expires_at="2026-08-17T18:00:00Z",
         )
         schema = json.loads(
             (

@@ -13,8 +13,8 @@
       "scopeSha256": null
     },
     "maxAgeHours": 168,
-    "provenanceClass": "owner-attested-direct-codex-evidence-v2",
-    "providerCryptographicAttestation": false,
+    "provenanceClass": "signed-direct-codex-launch-attested-v3",
+    "providerCryptographicAttestation": true,
     "providers": [
       "OpenAI/gpt-5.6-sol"
     ],

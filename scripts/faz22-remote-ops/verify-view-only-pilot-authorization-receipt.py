@@ -67,6 +67,8 @@ def verify(
     receipt: dict[str, Any], receipt_raw: bytes, policy: dict[str, Any],
     revocations: dict[str, Any], expected_run_id: int, expected_head_sha: str,
     now: datetime, allow_legacy_v1: bool = False,
+    activation_run_created_at: datetime | None = None,
+    activation_run_started_at: datetime | None = None,
 ) -> None:
     if set(receipt) != EXPECTED_FIELDS:
         raise ReceiptError("authorization receipt field set mismatch")
@@ -90,7 +92,7 @@ def verify(
         raise ReceiptError("legacy v1 policy is forbidden for this verification mode")
     expected_provenance = (
         "owner-attested-provider-session"
-        if legacy_v1 else "owner-attested-direct-codex-evidence-v2"
+        if legacy_v1 else "signed-direct-codex-launch-attested-v3"
     )
     if not (
         receipt["environment"] == "faz22-view-only-pilot"
@@ -102,7 +104,7 @@ def verify(
         and receipt["protectedEnvironmentReviewerCount"] >= 1
         and receipt["aiAdvisoryOnly"] is True
         and receipt["aiAdvisoryProvenanceClass"] == expected_provenance
-        and receipt["aiProviderCryptographicAttestation"] is False
+        and receipt["aiProviderCryptographicAttestation"] is (not legacy_v1)
         and receipt["aiConsensusVerdict"] == "AGREE"
         and receipt["legalTrackingIssueRef"] == "https://github.com/Halildeu/platform-k8s-gitops/issues/2374"
         and receipt["legalTrackStatus"] == "tracked_pending"
@@ -133,7 +135,8 @@ def verify(
         policy_schema != POLICY_SCHEMA_V2
         or advisory.get("providers") != ["OpenAI/gpt-5.6-sol"]
         or advisory.get("consensusVerdict") != "AGREE"
-        or advisory.get("provenanceClass") != "owner-attested-direct-codex-evidence-v2"
+        or advisory.get("provenanceClass") != "signed-direct-codex-launch-attested-v3"
+        or advisory.get("providerCryptographicAttestation") is not True
     ):
         raise ReceiptError("canonical owner policy is not active Codex-only v2")
     policy_digest = digest_bytes(canonical_bytes(policy))
@@ -162,8 +165,16 @@ def verify(
         raise ReceiptError("authorization receipt has been revoked")
     issued = parse_utc(receipt["issuedAt"], "authorization issuedAt")
     expires = parse_utc(receipt["expiresAt"], "authorization expiresAt")
-    if legacy_v1 and issued >= LEGACY_V1_ISSUANCE_CUTOFF:
-        raise ReceiptError("legacy v1 authorization was issued at or after the migration cutoff")
+    if legacy_v1:
+        if issued >= LEGACY_V1_ISSUANCE_CUTOFF:
+            raise ReceiptError("legacy v1 authorization was issued at or after the migration cutoff")
+        if activation_run_created_at is None or activation_run_started_at is None:
+            raise ReceiptError("legacy v1 verification requires fetched activation run timestamps")
+        if (
+            activation_run_created_at >= LEGACY_V1_ISSUANCE_CUTOFF
+            or activation_run_started_at >= LEGACY_V1_ISSUANCE_CUTOFF
+        ):
+            raise ReceiptError("legacy v1 activation run started at or after the migration cutoff")
     if not issued < expires or (expires - issued).total_seconds() > 120 * 60:
         raise ReceiptError("authorization absolute TTL is invalid")
     if expires <= now:
@@ -181,15 +192,26 @@ def main() -> int:
         "--allow-legacy-v1", action="store_true",
         help="termination/forensic replay only; never authorizes new v1 issuance",
     )
+    parser.add_argument("--activation-run-created-at")
+    parser.add_argument("--activation-run-started-at")
     args = parser.parse_args()
     try:
         receipt_raw = args.receipt.read_bytes()
         receipt = load_object(args.receipt, "authorization receipt")
         policy = load_object(args.policy, "owner policy")
         revocations = load_object(args.revocations, "revocation ledger")
+        activation_run_created_at = (
+            parse_utc(args.activation_run_created_at, "activation run created_at")
+            if args.activation_run_created_at is not None else None
+        )
+        activation_run_started_at = (
+            parse_utc(args.activation_run_started_at, "activation run run_started_at")
+            if args.activation_run_started_at is not None else None
+        )
         verify(
             receipt, receipt_raw, policy, revocations, args.expected_run_id,
             args.expected_head_sha, datetime.now(timezone.utc), args.allow_legacy_v1,
+            activation_run_created_at, activation_run_started_at,
         )
         print(f"authorization-receipt=pass schema={SCHEMA}")
         return 0

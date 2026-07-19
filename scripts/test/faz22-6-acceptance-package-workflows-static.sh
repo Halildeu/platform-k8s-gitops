@@ -293,6 +293,8 @@ done
 require_grep "actions: read" "$VIEWER_OPERATOR_WORKFLOW"
 require_grep "PRODUCE_FAZ22_6_VIEW_ONLY_VIEWER_OPERATOR_EVIDENCE" "$VIEWER_OPERATOR_WORKFLOW"
 require_grep "produce-view-only-viewer-operator-evidence.py" "$VIEWER_OPERATOR_WORKFLOW"
+require_grep "cryptography==46.0.7" "$VIEWER_OPERATOR_WORKFLOW"
+require_grep "load_current_authority_inputs" "$VIEWER_OPERATOR_PRODUCER"
 require_grep 'faz22-6-view-only-viewer-operator-evidence-${{ github.run_id }}' "$VIEWER_OPERATOR_WORKFLOW"
 
 require_grep "actions: read" "$VIEWER_D30_WORKFLOW"

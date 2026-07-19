@@ -60,6 +60,11 @@ jobs:
     steps:
       - name: Checkout canonical owner policy and authorization builder
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Install signed authority verifier dependencies
+        run: python3 -m pip install --quiet jsonschema==4.25.1 cryptography==46.0.7
 
       - name: Verify owner directive, advisory provenance and protected authorization
         id: authorization
@@ -79,7 +84,8 @@ jobs:
             and .status == "active"
             and .aiAdvisory.consensusVerdict == "AGREE"
             and .aiAdvisory.providers == ["OpenAI/gpt-5.6-sol"]
-            and .aiAdvisory.provenanceClass == "owner-attested-direct-codex-evidence-v2"
+            and .aiAdvisory.provenanceClass == "signed-direct-codex-launch-attested-v3"
+            and .aiAdvisory.providerCryptographicAttestation == true
           ' "$policy" >/dev/null || {
             echo "::error::Codex-only v2 owner policy is not active; protected apply remains blocked"
             exit 1

@@ -6,6 +6,7 @@
 > açıklaması için korunur; cutoff sonrası aktif verifier bunları doğrulamaz.
 > #2638 optional-Claude branch'i superseded'dır ve oradaki Claude acceptance
 > aktarılmaz. Yeni aktif v2 yalnız separate-context direct OpenAI Codex
+> routine için `gpt-5.3-codex-spark xhigh`, high-impact için
 > `gpt-5.6-sol xhigh`, read-only ve ephemeral leaf/trust-root kabul eder.
 > Claude, MiniMax, Cursor/UI/wrapper/fallback kabul edilmez. MiniMax içeren bir v1
 > trust root cutoff sonrasına taşamaz; pre-cutoff kayıt yeni acceptance üretemez.
@@ -85,7 +86,8 @@ inherits neither GitHub App identity nor repository permissions. Anthropic and
 MiniMax are not active issuers and their historical material cannot authorize a
 new deployment.
 The provider routes are not a configurable wrapper allowlist. V2 fixes exactly
-`openai-codex` + `gpt-5.6-sol` + `xhigh` in a read-only/ephemeral launch. Codex is
+`openai-codex` + routine `gpt-5.3-codex-spark` veya high-impact
+`gpt-5.6-sol` + `xhigh` in a read-only/ephemeral launch. Codex is
 honestly fixed to
 `trusted-launch-attested` because its JSON stream does not report backend model
 identity; that weaker class is accepted only while the required reviewer is
@@ -132,7 +134,8 @@ same policy bytes in place while unexpired grants exist.
 
 Use distinct Ed25519 Transit keys and policies for:
 
-- direct OpenAI Codex review issuer (`gpt-5.6-sol`);
+- direct OpenAI Codex review issuer (routine `gpt-5.3-codex-spark`,
+  high-impact `gpt-5.6-sol`);
 - evidence coordinator;
 - revocation authority;
 - runner inventory/admission-lease management.
@@ -145,7 +148,8 @@ Each workload may sign only through its own Transit key. Provider keys cannot
 sign bundles, the coordinator cannot sign provider leaves, and only the
 revocation identity may sign the short-lived revocation set. Pin the Transit
 key version in both `keyId` and trust root. Each provider key permits exactly
-one direct channel, one exact model ID and one model-identity class; aliases or
+one direct channel, the two class-bound exact model IDs and one model-identity
+class; aliases or
 fallback models require a new reviewed trust root and invalidate existing
 grants. The Transit client sends the pinned `key_version` on every signing
 request and rejects a response signed by any other version. Rotate by

@@ -3,9 +3,9 @@
 
 The script derives and verifies the real merge-base, renders the full range,
 fails closed on gitleaks findings, redacts email/UPN and Turkish phone-shaped
-PII, writes a mode-0600 temporary artifact, and reports its SHA-256. Provider
-CLIs must all read this same file; raw `git diff | provider` pipelines are not
-canonical.
+PII, writes a mode-0600 temporary artifact, and reports its SHA-256. The fixed
+Codex launcher and every acceptance verifier must bind these same bytes; raw
+`git diff | provider` pipelines are not canonical.
 """
 
 from __future__ import annotations
@@ -162,6 +162,51 @@ def frame_redacted_scope(scope_text: str) -> bytes:
     return (SCOPE_PREAMBLE + scope_text).encode("utf-8")
 
 
+def derive_scope(
+    repo: Path,
+    *,
+    base_tip_sha: str,
+    base_sha: str,
+    head_sha: str,
+    max_scope_bytes: int = MAX_SCOPE_BYTES,
+    scan_secrets: bool = True,
+) -> tuple[bytes, int, int]:
+    """Recompute one historical canonical scope from immutable git objects."""
+
+    if any(
+        COMMIT_SHA_RE.fullmatch(value) is None
+        for value in (base_tip_sha, base_sha, head_sha)
+    ):
+        fail("invalid_scope_binding_sha")
+    resolved_tip = run_git(repo, "rev-parse", base_tip_sha).lower()
+    resolved_base = run_git(repo, "rev-parse", base_sha).lower()
+    resolved_head = run_git(repo, "rev-parse", head_sha).lower()
+    merge_base = run_git(repo, "merge-base", resolved_tip, resolved_head).lower()
+    if (
+        resolved_tip != base_tip_sha.lower()
+        or resolved_base != base_sha.lower()
+        or resolved_head != head_sha.lower()
+        or merge_base != resolved_base
+    ):
+        fail("scope_binding_not_canonical_git_history")
+    raw_scope = run_git_diff(repo, resolved_base, resolved_head, max_scope_bytes)
+    if BINARY_DIFF_RE.search(raw_scope):
+        fail("binary_scope_unsupported")
+    if PRIVATE_KEY_RE.search(raw_scope) or BEARER_RE.search(raw_scope):
+        fail("high_confidence_secret_detected")
+    if scan_secrets and not gitleaks_clean(raw_scope):
+        fail("gitleaks_finding_detected")
+    try:
+        scope_text = raw_scope.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("scope_not_utf8")
+    scope_text, email_count = EMAIL_RE.subn("<redacted-email>", scope_text)
+    scope_text, phone_count = TURKISH_PHONE_RE.subn("<redacted-phone>", scope_text)
+    redacted_scope = frame_redacted_scope(scope_text)
+    enforce_redacted_scope_size(redacted_scope, max_scope_bytes)
+    return redacted_scope, email_count, phone_count
+
+
 def gitleaks_clean(raw_scope: bytes) -> bool:
     binary = shutil.which("gitleaks")
     if binary is None:
@@ -240,26 +285,14 @@ def main() -> None:
     if merge_base_sha.lower() != args.base_sha.lower():
         fail("base_sha_not_real_merge_base")
 
-    raw_scope = run_git_diff(
-        repo, merge_base_sha, resolved_head, max_scope_bytes=args.max_bytes
+    redacted_scope, email_count, phone_count = derive_scope(
+        repo,
+        base_tip_sha=base_tip_sha,
+        base_sha=merge_base_sha,
+        head_sha=resolved_head,
+        max_scope_bytes=args.max_bytes,
+        scan_secrets=not args.derive_only,
     )
-    if BINARY_DIFF_RE.search(raw_scope):
-        fail("binary_scope_unsupported")
-    if PRIVATE_KEY_RE.search(raw_scope) or BEARER_RE.search(raw_scope):
-        fail("high_confidence_secret_detected")
-    if not args.derive_only and not gitleaks_clean(raw_scope):
-        fail("gitleaks_finding_detected")
-
-    try:
-        scope_text = raw_scope.decode("utf-8")
-    except UnicodeDecodeError:
-        fail("scope_not_utf8")
-    scope_text, email_count = EMAIL_RE.subn("<redacted-email>", scope_text)
-    scope_text, phone_count = TURKISH_PHONE_RE.subn(
-        "<redacted-phone>", scope_text
-    )
-    redacted_scope = frame_redacted_scope(scope_text)
-    enforce_redacted_scope_size(redacted_scope, args.max_bytes)
     digest = hashlib.sha256(redacted_scope).hexdigest()
 
     if args.output:

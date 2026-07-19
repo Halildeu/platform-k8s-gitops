@@ -17,7 +17,7 @@
 // Run: node tests/ci/test-cross-ai-automation.mjs   (exit 0 = all pass)
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,43 @@ const BOT = 'github-actions[bot]';
 // (Codex 019e4048 Q2 — per-prefix actor contract).
 const APP_BOT = 'platform-gitops-automation[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
+const verifierRepo = join(dir, 'trusted-base');
+const verifierDir = join(verifierRepo, 'scripts', 'ai');
+mkdirSync(verifierDir, { recursive: true });
+const localVerifier = join(verifierDir, 'verify_cross_ai_evidence_comment.py');
+writeFileSync(localVerifier, `
+import argparse, datetime, hashlib, json, sys
+p = argparse.ArgumentParser()
+for name in ("owner", "body-sha256", "base-tip-sha", "base-sha", "head-sha", "scope-sha256", "scope-file", "repo-root", "model"):
+    p.add_argument("--" + name, required=True)
+a = p.parse_args()
+c = json.load(sys.stdin)
+body = c.get("body")
+created = c.get("created_at")
+updated = c.get("updated_at")
+user = c.get("user")
+if not isinstance(body, str) or hashlib.sha256(body.encode()).hexdigest() != a.body_sha256:
+    raise SystemExit(1)
+if not isinstance(user, dict) or user.get("login") != a.owner or c.get("author_association") != "OWNER" or created != updated:
+    raise SystemExit(1)
+when = datetime.datetime.fromisoformat(created.replace("Z", "+00:00"))
+now = datetime.datetime.now(datetime.timezone.utc)
+if when < now - datetime.timedelta(days=7) or when > now + datetime.timedelta(minutes=5):
+    raise SystemExit(1)
+e = json.loads(body)
+if set(e) != {"schema", "test_signature_valid", "model", "subject", "response"}:
+    raise SystemExit(1)
+if e["schema"] != "cross-ai-provider-evidence/v3" or e["test_signature_valid"] is not True or e["model"] != a.model:
+    raise SystemExit(1)
+s = e["subject"]
+if s != {"base_tip_sha": a.base_tip_sha, "base_sha": a.base_sha, "head_sha": a.head_sha, "scope_sha256": a.scope_sha256}:
+    raise SystemExit(1)
+r = json.loads(e["response"])
+if r != {"acknowledgedFindingIds": [], "findingIds": [], "resolvedFindingIds": [], "schemaVersion": "acik.cross-ai-provider-review-result.v1", "verdict": "AGREE"}:
+    raise SystemExit(1)
+`);
+const scopeFile = join(dir, 'scope.patch');
+writeFileSync(scopeFile, 'local parser routing fixture\n');
 const HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
 const BASE_TIP_SHA = '76543210fedcba9876543210fedcba9876543210';
 const BASE_SHA = '89abcdef0123456789abcdef0123456789abcdef';
@@ -40,28 +77,31 @@ const NOW_MS = Date.now();
 const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
 const evidenceRef = (id) =>
   `https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/${id}`;
-const evidenceBody = (provider, model, response) => JSON.stringify({
-  schema: 'cross-ai-provider-evidence/v2',
-  provider,
-  requested_model: model,
-  actual_model: model,
-  reasoning_effort: 'xhigh',
-  sandbox: 'read-only',
-  ephemeral: true,
-  base_tip_sha: BASE_TIP_SHA,
-  base_sha: BASE_SHA,
-  head_sha: HEAD_SHA,
-  scope_sha256: SCOPE_SHA256,
+const SIGNED_AGREE_RESPONSE = JSON.stringify({
+  acknowledgedFindingIds: [],
+  findingIds: [],
+  resolvedFindingIds: [],
+  schemaVersion: 'acik.cross-ai-provider-review-result.v1',
   verdict: 'AGREE',
-  response_sha256: sha256(response),
-  response,
+});
+const evidenceBody = (_provider, model, _response) => JSON.stringify({
+  schema: 'cross-ai-provider-evidence/v3',
+  test_signature_valid: true,
+  model,
+  subject: {
+    base_tip_sha: BASE_TIP_SHA,
+    base_sha: BASE_SHA,
+    head_sha: HEAD_SHA,
+    scope_sha256: SCOPE_SHA256,
+  },
+  response: SIGNED_AGREE_RESPONSE,
 });
 const evidenceComment = (body, offsetMs = 0) => ({
   body,
-  author: 'Halildeu',
-  authorAssociation: 'OWNER',
-  createdAt: new Date(NOW_MS + offsetMs).toISOString(),
-  updatedAt: new Date(NOW_MS + offsetMs).toISOString(),
+  user: { login: 'Halildeu' },
+  author_association: 'OWNER',
+  created_at: new Date(NOW_MS + offsetMs).toISOString(),
+  updated_at: new Date(NOW_MS + offsetMs).toISOString(),
 });
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
@@ -106,6 +146,10 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     derivedBaseSha,
     '--derived-scope-sha256',
     derivedScopeSha256,
+    '--scope-file',
+    scopeFile,
+    '--repo-root',
+    verifierRepo,
   ];
   if (Array.isArray(changedFiles)) {
     const cf = join(dir, 'changed-files.txt');
@@ -320,29 +364,29 @@ const editedEvidence = {
   ...EVIDENCE,
   [PEER_REF]: {
     ...EVIDENCE[PEER_REF],
-    updatedAt: new Date(Date.now() + 60_000).toISOString(),
+    updated_at: new Date(Date.now() + 60_000).toISOString(),
   },
 };
 const agedEvidence = {
   ...EVIDENCE,
   [PEER_REF]: {
     ...EVIDENCE[PEER_REF],
-    createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+    updated_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
   },
 };
 const wrongAuthorEvidence = {
   ...EVIDENCE,
   [PEER_REF]: {
     ...EVIDENCE[PEER_REF],
-    author: 'mallory',
+    user: { login: 'mallory' },
   },
 };
 const wrongAssociationEvidence = {
   ...EVIDENCE,
   [PEER_REF]: {
     ...EVIDENCE[PEER_REF],
-    authorAssociation: 'MEMBER',
+    author_association: 'MEMBER',
   },
 };
 const mutatedPeerEvidence = (changes) => {
@@ -358,7 +402,7 @@ const mutatedPeerEvidence = (changes) => {
 const evidenceWrongEffort = mutatedPeerEvidence({ reasoning_effort: 'high' });
 const evidenceWrongSandbox = mutatedPeerEvidence({ sandbox: 'workspace-write' });
 const evidenceNonEphemeral = mutatedPeerEvidence({ ephemeral: false });
-const evidenceLegacySchema = mutatedPeerEvidence({ schema: 'cross-ai-provider-evidence/v1' });
+const evidenceLegacySchema = mutatedPeerEvidence({ schema: 'cross-ai-provider-evidence/v2' });
 const minimaxReviseResponse = '## P0\nNone\n## P1\nFinding\n## P2\nNone\nVERDICT: REVISE';
 const minimaxReviseBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[MINIMAX_REF].body),
@@ -945,7 +989,7 @@ const cases = [
   ['evidence internal execution must be ephemeral',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       ...evidenceNonEphemeral }, 1],
-  ['legacy evidence v1 schema is rejected',
+  ['legacy unsigned evidence v2 schema is rejected',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       ...evidenceLegacySchema }, 1],
   ['Codex AGREE plus forbidden MiniMax REVISE -> fail closed',

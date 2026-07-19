@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Build one strict cross-ai-provider-evidence/v2 JSON comment body.
+"""Run the fixed direct-Codex route and emit one signed evidence carrier.
 
-The full provider response is read from stdin so it never enters process argv.
-The resulting single-line JSON can be posted as an issue comment; the PR receipt
-uses SHA-256 of these exact UTF-8 bytes.
+No provider response, model identity, git coordinate or signed payload is read
+from stdin/argv. The entrypoint derives the exact head/merge-base/sanitized
+scope, constructs the canonical prompt, launches DirectCodexRunner, issues the
+leaf with the active provider-review Vault Transit key, verifies it against the
+independently pinned trust root and writes one create-once v3 carrier.
 """
 
 from __future__ import annotations
@@ -11,184 +13,254 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
+import os
 import sys
-from typing import NoReturn
+from datetime import timedelta
+from pathlib import Path
+from uuid import uuid4
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.ai.prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope, run_git
+from scripts.ai.cross_ai_authority import (
+    AuthorityUnavailable,
+    PublicReviewAuthority,
+    load_active_authority,
+)
+from scripts.ai.trusted_cross_ai_evidence import (
+    EVIDENCE_SCHEMA,
+    build_prompt,
+    build_subject,
+    canonical_bytes,
+    validate_evidence,
+)
+from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
+from scripts.github_apps.cross_ai_deployment_policy.contract import EvidenceVerifier
+from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError, reject
+from scripts.github_apps.cross_ai_deployment_policy.provider import (
+    CODEX_HIGH_IMPACT_MODEL,
+    CODEX_ROUTINE_MODEL,
+    DirectCodexRunner,
+    EnvelopeSigner,
+    ProviderReviewIssuer,
+    ReviewCoordinates,
+)
+from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc, utc_now
+from scripts.github_apps.cross_ai_deployment_policy.transit import VaultTransitSigner
 
 
-COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
-SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
-VERDICT_RE = re.compile(
-    r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE
-)
-PRIORITY_HEADING_RE = re.compile(
-    r"(?m)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$"
-)
-NO_FINDINGS_RE = re.compile(r"^None$")
-EMAIL_RE = re.compile(
-    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
-)
-TURKISH_PHONE_RE = re.compile(
-    r"(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)"
-)
-PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
-BEARER_RE = re.compile(
-    r"(?<![A-Za-z0-9])bearer[ \t]+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
-)
-JWT_RE = re.compile(
-    r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\."
-    r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])"
-)
-KNOWN_TOKEN_RE = re.compile(
-    r"(?<![A-Za-z0-9])(?:"
-    r"(?:AKIA|ASIA)[0-9A-Z]{16}"
-    r"|gh[pousr]_[A-Za-z0-9]{20,}"
-    r"|github_pat_[A-Za-z0-9_]{22,}"
-    r"|sk-(?:proj-)?[A-Za-z0-9_-]{20,}"
-    r"|AIza[0-9A-Za-z_-]{35}"
-    r"|xox[baprs]-[A-Za-z0-9-]{20,}"
-    r"|sk_live_[A-Za-z0-9]{16,}"
-    r")(?![A-Za-z0-9])"
-)
-SECRET_ASSIGNMENT_RE = re.compile(
-    r"\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|"
-    r"access[_-]?token|refresh[_-]?token|session[_-]?secret|"
-    r"secret[_-]?access[_-]?key|service[_-]?account[_-]?key|"
-    r"signing[_-]?key|hmac[_-]?key|private[_-]?key|credential)\b"
-    r"\s*[:=]\s*[\"']?[A-Za-z0-9._~+/=-]{12,}[\"']?",
-    re.IGNORECASE,
-)
-WEBHOOK_URL_RE = re.compile(
-    r"\bwebhook[_-]?url\b\s*[:=]\s*https?://[^\s\"'<>]{12,}",
-    re.IGNORECASE,
-)
-COOKIE_HEADER_RE = re.compile(
-    r"^[ \t]*(?:set-)?cookie[ \t]*:[ \t]*[^\r\n]{12,}$",
-    re.IGNORECASE | re.MULTILINE,
-)
-PROVIDER_MODELS = {
-    "openai": {"gpt-5.3-codex-spark", "gpt-5.6-sol"},
-}
-REASONING_EFFORT = "xhigh"
-SANDBOX_MODE = "read-only"
-MAX_RESPONSE_BYTES = 48_000
-MAX_EVIDENCE_BYTES = 60_000
+MAX_COMMENT_EVIDENCE_BYTES = 256_000
 
 
-def fail(code: str) -> NoReturn:
-    print(json.dumps({"ok": False, "error": code}, ensure_ascii=False))
-    raise SystemExit(1)
-
-
-def priority_sections(response: str) -> dict[str, str] | None:
-    headings = list(PRIORITY_HEADING_RE.finditer(response))
-    if [match.group(1) for match in headings] != ["P0", "P1", "P2"]:
-        return None
-    if response[:headings[0].start()].strip():
-        return None
-    verdict_match = next(iter(VERDICT_RE.finditer(response)), None)
-    if verdict_match is None:
-        return None
-    sections: dict[str, str] = {}
-    for index, heading in enumerate(headings):
-        end = headings[index + 1].start() if index < 2 else verdict_match.start()
-        content = response[heading.end():end].strip()
-        if not content:
-            return None
-        sections[heading.group(1)] = content
-    return sections
-
-
-def contains_sensitive_response(response: str) -> bool:
-    return bool(
-        EMAIL_RE.search(response)
-        or TURKISH_PHONE_RE.search(response)
-        or PRIVATE_KEY_RE.search(response)
-        or BEARER_RE.search(response)
-        or JWT_RE.search(response)
-        or KNOWN_TOKEN_RE.search(response)
-        or SECRET_ASSIGNMENT_RE.search(response)
-        or WEBHOOK_URL_RE.search(response)
-        or COOKIE_HEADER_RE.search(response)
-    )
-
-
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=sorted(PROVIDER_MODELS), required=True)
-    parser.add_argument("--requested-model", required=True)
-    parser.add_argument("--actual-model", required=True)
-    parser.add_argument("--reasoning-effort", choices=[REASONING_EFFORT], required=True)
-    parser.add_argument("--sandbox", choices=[SANDBOX_MODE], required=True)
-    parser.add_argument("--ephemeral", action="store_true", required=True)
-    parser.add_argument("--base-tip-sha", required=True)
-    parser.add_argument("--base-sha", required=True)
-    parser.add_argument("--head-sha", required=True)
-    parser.add_argument("--scope-sha256", required=True)
-    args = parser.parse_args()
-
-    expected_models = PROVIDER_MODELS[args.provider]
-    if (
-        args.requested_model not in expected_models
-        or args.actual_model != args.requested_model
-    ):
-        fail("provider_model_mismatch")
-    for value in (args.base_tip_sha, args.base_sha, args.head_sha):
-        if not COMMIT_SHA_RE.fullmatch(value):
-            fail("invalid_commit_sha")
-    if not SHA256_RE.fullmatch(args.scope_sha256):
-        fail("invalid_scope_sha256")
-
-    response = sys.stdin.read().strip()
-    if not response:
-        fail("provider_response_required")
-    if len(response.encode("utf-8")) > MAX_RESPONSE_BYTES:
-        fail("provider_response_too_large")
-    verdicts = VERDICT_RE.findall(response)
-    lines = [line.strip() for line in response.splitlines() if line.strip()]
-    if (
-        len(verdicts) != 1
-        or not lines
-        or not VERDICT_RE.fullmatch(lines[-1])
-    ):
-        fail("provider_verdict_missing_ambiguous_or_nonterminal")
-    sections = priority_sections(response)
-    if sections is None:
-        fail("provider_findings_sections_missing_empty_duplicate_or_out_of_order")
-    verdict = verdicts[0]
-    if contains_sensitive_response(response):
-        fail("provider_response_contains_sensitive_data")
-    if verdict == "AGREE" and (
-        not NO_FINDINGS_RE.fullmatch(sections["P0"])
-        or not NO_FINDINGS_RE.fullmatch(sections["P1"])
-        or not NO_FINDINGS_RE.fullmatch(sections["P2"])
-    ):
-        fail("provider_agree_contains_priority_findings")
-    response_sha256 = hashlib.sha256(response.encode("utf-8")).hexdigest()
-    evidence = json.dumps(
-        {
-            "schema": "cross-ai-provider-evidence/v2",
-            "provider": args.provider,
-            "requested_model": args.requested_model,
-            "actual_model": args.actual_model,
-            "reasoning_effort": args.reasoning_effort,
-            "sandbox": args.sandbox,
-            "ephemeral": args.ephemeral,
-            "base_tip_sha": args.base_tip_sha.lower(),
-            "base_sha": args.base_sha.lower(),
-            "head_sha": args.head_sha.lower(),
-            "scope_sha256": args.scope_sha256.lower(),
-            "verdict": verdict,
-            "response_sha256": response_sha256,
-            "response": response,
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
+    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument(
+        "--consultation-class",
+        choices=("routine", "high-impact"),
+        default="high-impact",
     )
-    if len(evidence.encode("utf-8")) > MAX_EVIDENCE_BYTES:
-        fail("evidence_comment_too_large")
-    print(evidence)
+    parser.add_argument("--vault-origin", required=True)
+    parser.add_argument("--vault-token-file", type=Path, required=True)
+    parser.add_argument("--vault-key-version", type=int, required=True)
+    parser.add_argument("--timeout-seconds", type=int, default=600)
+    parser.add_argument("--output", type=Path, required=True)
+    return parser.parse_args()
+
+
+def _scope(workspace: Path) -> tuple[dict[str, str], bytes]:
+    head_sha = run_git(workspace, "rev-parse", "HEAD").lower()
+    base_tip_sha = run_git(workspace, "rev-parse", "origin/main").lower()
+    base_sha = run_git(workspace, "merge-base", base_tip_sha, head_sha).lower()
+    scope_bytes, _, _ = derive_scope(
+        workspace,
+        base_tip_sha=base_tip_sha,
+        base_sha=base_sha,
+        head_sha=head_sha,
+        max_scope_bytes=MAX_SCOPE_BYTES,
+        scan_secrets=True,
+    )
+    bindings = {
+        "base_tip_sha": base_tip_sha,
+        "base_sha": base_sha,
+        "head_sha": head_sha,
+        "scope_sha256": hashlib.sha256(scope_bytes).hexdigest(),
+    }
+    return bindings, scope_bytes
+
+
+def _write_exclusive(path: Path, content: bytes) -> None:
+    target = path.expanduser().absolute()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(target, flags, 0o600)
+    except OSError:
+        reject("EVIDENCE_OUTPUT_INVALID", "evidence output must be a new writable file")
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError:
+        reject("EVIDENCE_OUTPUT_INVALID", "evidence output write failed")
+
+
+def build_signed_evidence(
+    args: argparse.Namespace,
+    *,
+    runner: DirectCodexRunner | None = None,
+    signer: EnvelopeSigner | None = None,
+    authority: PublicReviewAuthority | None = None,
+) -> dict[str, object]:
+    if not 30 <= args.timeout_seconds <= 1200:
+        reject("PROVIDER_TIMEOUT_INVALID", "provider timeout must be 30-1200 seconds")
+    if os.path.lexists(args.output.expanduser().absolute()):
+        reject("EVIDENCE_OUTPUT_INVALID", "evidence output must be a new writable file")
+    workspace = args.workspace.expanduser().resolve()
+    consultation_class = getattr(args, "consultation_class", "high-impact")
+    model = (
+        CODEX_ROUTINE_MODEL
+        if consultation_class == "routine"
+        else CODEX_HIGH_IMPACT_MODEL
+    )
+    if not workspace.is_dir() or not (workspace / ".git").exists():
+        reject("PROVIDER_WORKSPACE_INVALID", "workspace is not a git worktree")
+    bindings, scope_bytes = _scope(workspace)
+    scope_sha256 = f"sha256:{bindings['scope_sha256']}"
+    prompt = build_prompt(
+        base_tip_sha=bindings["base_tip_sha"],
+        base_sha=bindings["base_sha"],
+        head_sha=bindings["head_sha"],
+        scope_sha256=scope_sha256,
+        scope_bytes=scope_bytes,
+    )
+    subject = build_subject(
+        base_tip_sha=bindings["base_tip_sha"],
+        base_sha=bindings["base_sha"],
+        head_sha=bindings["head_sha"],
+        scope_sha256=scope_sha256,
+        prompt=prompt,
+    )
+    now = utc_now().replace(microsecond=0)
+    expires = now + timedelta(minutes=90)
+    issued_at = now.isoformat().replace("+00:00", "Z")
+    expires_at = expires.isoformat().replace("+00:00", "Z")
+    subject_sha256 = sha256_digest(subject)
+    coordinates = ReviewCoordinates(
+        review_id=str(uuid4()),
+        review_chain_id=str(uuid4()),
+        subject_sha256=subject_sha256,
+        round=1,
+        previous_round_sha256=None,
+        closure_root_sha256=sha256_digest(
+            {
+                "domain": "acik.cross-ai-single-review-closure.v1",
+                "subjectSha256": subject_sha256,
+            }
+        ),
+        issued_at=issued_at,
+        expires_at=expires_at,
+    )
+    active_authority = authority or load_active_authority(workspace, now=now)
+    trust_root = active_authority.trust_root
+    revocations = active_authority.revocations_envelope
+    active_signer = signer or VaultTransitSigner(
+        vault_origin=args.vault_origin,
+        token_file=args.vault_token_file,
+        mount="cross-ai",
+        key_name="openai",
+        key_version=args.vault_key_version,
+    )
+    verifier = EvidenceVerifier(
+        trust_root=trust_root,
+        revocations_envelope=revocations,
+        now=now,
+        expected_trust_root_sha256=active_authority.expected_trust_root_sha256,
+    )
+    key = verifier.require_active_signing_key(
+        key_id=active_signer.key_id,
+        role="provider-review",
+        provider_family="openai",
+        issued_at=parse_utc(issued_at, "review.issuedAt"),
+    )
+    if (
+        key.allowed_channels != ("openai-codex",)
+        or set(key.allowed_model_ids)
+        != {CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL}
+        or key.allowed_model_identity_classes != ("trusted-launch-attested",)
+        or key.direct_provider_cli is not True
+    ):
+        reject("TRUST_SIGNER_BINDING_MISMATCH", "provider signer route is not fixed Codex")
+    execution = (runner or DirectCodexRunner()).run(
+        prompt=prompt,
+        model=model,
+        workspace=workspace,
+        timeout_seconds=args.timeout_seconds,
+    )
+    envelope = ProviderReviewIssuer(
+        signer=active_signer,
+        provider_family="openai",
+        channel="openai-codex",
+        direct_provider_cli=True,
+        model_identity_class="trusted-launch-attested",
+        allowed_models=frozenset({CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL}),
+        issuer="cross-ai-issuer-openai",
+    ).issue(execution=execution, coordinates=coordinates)
+    if execution.capability_snapshot is None:
+        reject("PROVIDER_LAUNCH_ATTESTATION_MISSING", "Codex launch attestation is missing")
+    evidence: dict[str, object] = {
+        "schema": EVIDENCE_SCHEMA,
+        "subject": subject,
+        "capability_snapshot": execution.capability_snapshot,
+        "response": execution.result_text,
+        "review_envelope": envelope,
+        "review_envelope_sha256": sha256_digest(envelope),
+        "trust_root_sha256": active_authority.expected_trust_root_sha256,
+    }
+    validate_evidence(
+        evidence,
+        trust_root=trust_root,
+        revocations_envelope=revocations,
+        expected_trust_root_sha256=active_authority.expected_trust_root_sha256,
+        expected_bindings=bindings,
+        scope_bytes=scope_bytes,
+        now=now,
+        require_agree=False,
+        expected_model=model,
+    )
+    rendered = canonical_bytes(evidence)
+    if len(rendered) > MAX_COMMENT_EVIDENCE_BYTES:
+        reject("EVIDENCE_OUTPUT_INVALID", "signed evidence exceeds the GitHub carrier limit")
+    _write_exclusive(args.output, rendered)
+    return {
+        "ok": True,
+        "schema": EVIDENCE_SCHEMA,
+        "head_sha": bindings["head_sha"],
+        "scope_sha256": bindings["scope_sha256"],
+        "model_id": model,
+        "model_identity_class": "trusted-launch-attested",
+        "review_envelope_sha256": sha256_digest(envelope),
+        "verdict": json.loads(execution.result_text)["verdict"],
+    }
+
+
+def main() -> int:
+    try:
+        sys.stdout.buffer.write(canonical_bytes(build_signed_evidence(parse_args())) + b"\n")
+        return 0
+    except (AuthorityUnavailable, PolicyError, ValueError) as exc:
+        code = exc.code if isinstance(exc, PolicyError) else "TRUSTED_EVIDENCE_INVALID"
+        message = exc.message if isinstance(exc, PolicyError) else str(exc)
+        sys.stdout.buffer.write(
+            canonical_bytes({"ok": False, "error": code, "message": message}) + b"\n"
+        )
+        return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

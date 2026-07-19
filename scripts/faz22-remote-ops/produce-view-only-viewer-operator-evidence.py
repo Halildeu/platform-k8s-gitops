@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -79,8 +80,18 @@ def fetch_operator_payload(client: object, repository: str, activation_run_id: i
     }
 
 
-def produce(client: object, repository: str, browser_run_id: int, activation_run_id: int,
-            head_sha: str) -> dict:
+def produce(
+    client: object,
+    repository: str,
+    browser_run_id: int,
+    activation_run_id: int,
+    head_sha: str,
+    *,
+    advisory_scope_bytes: bytes,
+    cross_ai_trust_root: dict,
+    cross_ai_revocations: dict,
+    expected_cross_ai_trust_root_sha256: str,
+) -> dict:
     if repository != VERIFIER.EXPECTED_REPOSITORY:
         raise VERIFIER.EvidenceError(f"repository must be exactly {VERIFIER.EXPECTED_REPOSITORY}")
     if browser_run_id < 1 or activation_run_id < 1 or browser_run_id == activation_run_id:
@@ -93,6 +104,12 @@ def produce(client: object, repository: str, browser_run_id: int, activation_run
     pilot_ended = VERIFIER.parse_utc(browser["payload"]["pilotEndedAt"], "browser pilot end")
     VERIFIER.verify_activation_authorization(
         client, payload, head_sha, browser["binding"], pilot_started, pilot_ended,
+        advisory_scope_bytes=advisory_scope_bytes,
+        cross_ai_trust_root=cross_ai_trust_root,
+        cross_ai_revocations=cross_ai_revocations,
+        expected_cross_ai_trust_root_sha256=(
+            expected_cross_ai_trust_root_sha256
+        ),
     )
     child = {
         "schemaVersion": "faz22.6.viewOnlyViewerProductChildEvidence.v2",
@@ -113,6 +130,28 @@ def produce(client: object, repository: str, browser_run_id: int, activation_run
     return child
 
 
+def load_current_authority_inputs() -> tuple[bytes, dict, dict, str]:
+    authority = VERIFIER.load_active_authority(VERIFIER.ROOT)
+    policy = VERIFIER.load_json_file(VERIFIER.OWNER_POLICY_V2, "active owner policy")
+    binding = policy.get("aiAdvisory", {}).get("evidenceBinding", {})
+    scope_bytes, _, _ = VERIFIER.derive_scope(
+        VERIFIER.ROOT,
+        base_tip_sha=binding.get("baseTipSha", ""),
+        base_sha=binding.get("baseSha", ""),
+        head_sha=binding.get("headSha", ""),
+        max_scope_bytes=VERIFIER.MAX_SCOPE_BYTES,
+        scan_secrets=True,
+    )
+    if hashlib.sha256(scope_bytes).hexdigest() != binding.get("scopeSha256"):
+        raise VERIFIER.EvidenceError("canonical advisory scope digest mismatch")
+    return (
+        scope_bytes,
+        authority.trust_root,
+        authority.revocations_envelope,
+        authority.expected_trust_root_sha256,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", required=True)
@@ -123,14 +162,26 @@ def main() -> int:
     parser.add_argument("--github-token-env", default="GITHUB_TOKEN")
     args = parser.parse_args()
     try:
+        scope_bytes, trust_root, revocations, expected_root = (
+            load_current_authority_inputs()
+        )
         result = produce(
             VERIFIER.GitHubClient(os.environ.get(args.github_token_env, "")),
             args.repository, args.browser_run_id, args.activation_run_id, args.head_sha,
+            advisory_scope_bytes=scope_bytes,
+            cross_ai_trust_root=trust_root,
+            cross_ai_revocations=revocations,
+            expected_cross_ai_trust_root_sha256=expected_root,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return 0
-    except (VERIFIER.EvidenceError, OSError, ValueError) as exc:
+    except (
+        VERIFIER.AuthorityUnavailable,
+        VERIFIER.EvidenceError,
+        OSError,
+        ValueError,
+    ) as exc:
         print(f"operator_evidence=fail reason={exc}", file=sys.stderr)
         return 1
 

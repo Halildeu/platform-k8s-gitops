@@ -20,7 +20,18 @@ on:
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
       - "scripts/ops/build_cross_ai_test_trust_root.py"
+      - "scripts/ops/build_cross_ai_provider_review_revocations.py"
       - "scripts/ops/vault-policy-reconcile.sh"
+      - "scripts/ai/build_cross_ai_evidence.py"
+      - "scripts/ai/cross_ai_authority.py"
+      - "scripts/ai/post_cross_ai_evidence.py"
+      - "scripts/ai/prepare_cross_ai_scope.py"
+      - "scripts/ai/trusted_cross_ai_evidence.py"
+      - "scripts/ai/verify_cross_ai_evidence_comment.py"
+      - "tests/ai/signed_evidence_fixture.py"
+      - "tests/ai/test_build_cross_ai_evidence.py"
+      - "tests/ai/test_cross_ai_authority.py"
+      - "tests/ai/test_post_cross_ai_evidence.py"
       - "scripts/faz22-remote-ops/**"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
       - "docs/adr/0045-signed-cross-ai-custom-deployment-protection-rule.md"
@@ -45,7 +56,18 @@ on:
       - "bootstrap/vault-policies/test/vault-config-reconciler.hcl"
       - "scripts/ops/bootstrap_cross_ai_transit.py"
       - "scripts/ops/build_cross_ai_test_trust_root.py"
+      - "scripts/ops/build_cross_ai_provider_review_revocations.py"
       - "scripts/ops/vault-policy-reconcile.sh"
+      - "scripts/ai/build_cross_ai_evidence.py"
+      - "scripts/ai/cross_ai_authority.py"
+      - "scripts/ai/post_cross_ai_evidence.py"
+      - "scripts/ai/prepare_cross_ai_scope.py"
+      - "scripts/ai/trusted_cross_ai_evidence.py"
+      - "scripts/ai/verify_cross_ai_evidence_comment.py"
+      - "tests/ai/signed_evidence_fixture.py"
+      - "tests/ai/test_build_cross_ai_evidence.py"
+      - "tests/ai/test_cross_ai_authority.py"
+      - "tests/ai/test_post_cross_ai_evidence.py"
       - "scripts/faz22-remote-ops/**"
       - "kustomize/overlays/test/activation/cross-ai-deployment-protection-observe/**"
       - "docs/adr/0045-signed-cross-ai-custom-deployment-protection-rule.md"
@@ -98,7 +120,25 @@ jobs:
             --requirement scripts/github_apps/cross_ai_deployment_policy/requirements.lock
 
       - name: Compile policy implementation
-        run: python3 -m py_compile scripts/github_apps/cross_ai_deployment_policy/*.py scripts/github_apps/*.py scripts/ops/bootstrap_cross_ai_transit.py scripts/ops/build_cross_ai_test_trust_root.py scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py tests/github_apps/*.py
+        run: >-
+          python3 -m py_compile
+          scripts/github_apps/cross_ai_deployment_policy/*.py
+          scripts/github_apps/*.py
+          scripts/ops/bootstrap_cross_ai_transit.py
+          scripts/ops/build_cross_ai_test_trust_root.py
+          scripts/ops/build_cross_ai_provider_review_revocations.py
+          scripts/ai/build_cross_ai_evidence.py
+          scripts/ai/cross_ai_authority.py
+          scripts/ai/post_cross_ai_evidence.py
+          scripts/ai/prepare_cross_ai_scope.py
+          scripts/ai/trusted_cross_ai_evidence.py
+          scripts/ai/verify_cross_ai_evidence_comment.py
+          scripts/faz22-remote-ops/extract-cross-ai-browser-runtime.py
+          tests/github_apps/*.py
+          tests/ai/signed_evidence_fixture.py
+          tests/ai/test_build_cross_ai_evidence.py
+          tests/ai/test_cross_ai_authority.py
+          tests/ai/test_post_cross_ai_evidence.py
 
       - name: Lint TEST Vault and protected-stage shell
         run: >-
@@ -118,4 +158,9 @@ jobs:
           PY
 
       - name: Run signed-evidence, replay and callback negative matrix
-        run: python3 -m unittest discover -s tests/github_apps -p 'test_*.py' -v
+        run: |
+          python3 -m unittest discover -s tests/github_apps -p 'test_*.py' -v
+          python3 -m unittest \
+            tests.ai.test_build_cross_ai_evidence \
+            tests.ai.test_cross_ai_authority \
+            tests.ai.test_post_cross_ai_evidence -v

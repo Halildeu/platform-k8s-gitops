@@ -1,157 +1,159 @@
 #!/usr/bin/env python3
-"""Unit tests for secret-safe Cross-AI evidence posting validation."""
+"""Signed carrier verification and transport-boundary regressions."""
 
 from __future__ import annotations
 
-import contextlib
-import hashlib
-import importlib.util
-import io
+import base64
+import copy
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = ROOT / "scripts/ai/post_cross_ai_evidence.py"
-SPEC = importlib.util.spec_from_file_location("post_cross_ai_evidence", MODULE_PATH)
-assert SPEC is not None and SPEC.loader is not None
-MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
-
-
-def evidence() -> dict:
-    response = "## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE"
-    return {
-        "schema": "cross-ai-provider-evidence/v2",
-        "provider": "openai",
-        "requested_model": "gpt-5.6-sol",
-        "actual_model": "gpt-5.6-sol",
-        "reasoning_effort": "xhigh",
-        "sandbox": "read-only",
-        "ephemeral": True,
-        "base_tip_sha": "a" * 40,
-        "base_sha": "b" * 40,
-        "head_sha": "c" * 40,
-        "scope_sha256": "d" * 64,
-        "verdict": "AGREE",
-        "response_sha256": hashlib.sha256(response.encode()).hexdigest(),
-        "response": response,
-    }
+from scripts.ai import post_cross_ai_evidence as POST
+from scripts.ai.trusted_cross_ai_evidence import (
+    TrustedEvidenceError,
+    canonical_bytes,
+    validate_evidence,
+)
+from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
+from scripts.github_apps.cross_ai_deployment_policy.provider import CODEX_ROUTINE_MODEL
+from tests.ai.signed_evidence_fixture import make_signed_evidence
 
 
 class EvidenceValidationTests(unittest.TestCase):
-    def assert_rejected(self, payload: dict) -> None:
-        with contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                MODULE.validate_evidence_text(
-                    json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-                )
+    def setUp(self) -> None:
+        self.fixture = make_signed_evidence()
 
-    def test_accepts_exact_builder_schema_and_digest(self) -> None:
-        text = json.dumps(evidence(), separators=(",", ":"))
-        parsed, digest = MODULE.validate_evidence_text(text)
-        self.assertEqual(parsed["provider"], "openai")
-        self.assertEqual(digest, hashlib.sha256(text.encode()).hexdigest())
-
-    def test_rejects_noncanonical_or_duplicate_key_json(self) -> None:
-        with contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                MODULE.validate_evidence_text(json.dumps(evidence()))
-
-        canonical = json.dumps(
-            evidence(), ensure_ascii=False, separators=(",", ":")
+    def validate(self, evidence=None):
+        return validate_evidence(
+            evidence or self.fixture.evidence,
+            trust_root=self.fixture.authority.trust_root,
+            revocations_envelope=self.fixture.authority.revocations_envelope,
+            expected_trust_root_sha256=(
+                self.fixture.authority.expected_trust_root_sha256
+            ),
+            expected_bindings=self.fixture.bindings,
+            scope_bytes=self.fixture.scope_bytes,
+            now=self.fixture.factory.now,
+            require_agree=True,
         )
-        duplicate = canonical.replace(
-            '"response":',
-            '"response":"P0\\nFinding\\nP1\\nNone\\nP2\\nNone\\n'
-            'VERDICT: REVISE","response":',
-            1,
+
+    def test_accepts_exact_signed_launch_subject_prompt_response_and_authority(self) -> None:
+        validated = self.validate()
+        self.assertEqual(validated["review"]["providerFamily"], "openai")
+        self.assertEqual(validated["review"]["modelId"], "gpt-5.6-sol")
+        self.assertEqual(
+            validated["review"]["modelIdentityClass"],
+            "trusted-launch-attested",
         )
-        with contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                MODULE.validate_evidence_text(duplicate)
 
-    def test_rejects_extra_schema_key(self) -> None:
-        payload = evidence()
-        payload["untrusted"] = True
-        self.assert_rejected(payload)
-
-    def test_rejects_response_digest_mismatch(self) -> None:
-        payload = evidence()
-        payload["response_sha256"] = "f" * 64
-        self.assert_rejected(payload)
-
-    def test_rejects_external_agree_when_response_terminal_verdict_is_revise(self) -> None:
-        payload = evidence()
-        payload["response"] = (
-            "P0\nConcrete finding\nP1\nNone\nP2\nNone\nVERDICT: REVISE"
-        )
-        payload["response_sha256"] = hashlib.sha256(
-            payload["response"].encode("utf-8")
-        ).hexdigest()
-        self.assert_rejected(payload)
-
-    def test_rejects_malformed_or_nonterminal_provider_response(self) -> None:
-        for response in (
-            "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE\nextra",
-            "P0\nNone\nP1\nNone\nVERDICT: AGREE",
-            "P0\nFinding\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
-            "P0\nNone\nP1\nNone\nP2\nLow finding\nVERDICT: AGREE",
-            "P0: Critical finding is present\nNone\nP1\nNone\nP2\nNone\n"
-            "VERDICT: AGREE",
-            "p0\nNone\np1\nNone\np2\nNone\nVERDICT: AGREE",
-            "Critical finding outside priority sections\n"
-            "P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE",
-        ):
-            payload = evidence()
-            payload["response"] = response
-            payload["response_sha256"] = hashlib.sha256(
-                response.encode("utf-8")
-            ).hexdigest()
-            with self.subTest(response=response):
-                self.assert_rejected(payload)
-
-    def test_rejects_wrong_provider_model_or_execution_identity(self) -> None:
-        mutations = (
-            {"provider": "anthropic"},
-            {"requested_model": "claude-opus-4-8", "actual_model": "claude-opus-4-8"},
-            {"reasoning_effort": "high"},
-            {"sandbox": "workspace-write"},
-            {"ephemeral": False},
-        )
-        for mutation in mutations:
-            payload = evidence()
-            payload.update(mutation)
-            with self.subTest(mutation=mutation):
-                self.assert_rejected(payload)
-
-    def test_rejects_sensitive_response_before_gh_invocation(self) -> None:
-        for value in (
-            "person@example.com",
-            "+90 532 123 45 67",
-            "-----BEGIN " + "PRIVATE KEY-----",
-            "Authorization: " + "Bearer " + "abcdefghijklmnop",
-            "Bearer " + "abcdefghijklmnop",
-            "eyJ" + "a" * 16 + "." + "b" * 16 + "." + "c" * 16,
-            "AKIA" + "A" * 16,
-            "ghp_" + "a" * 30,
-            "sk-" + "a" * 30,
-            "password=" + "a" * 16,
-            "secret_access_key=" + "a" * 32,
-            "service_account_key=" + "a" * 32,
-            "webhook_url=https://example.invalid/" + "a" * 20,
-            "Cookie: session=" + "a" * 20,
-        ):
-            payload = evidence()
-            payload["response"] = (
-                f"P0\nNone\nP1\nNone\nP2\n{value}\nVERDICT: AGREE"
+    def test_rejects_response_repackaging_even_when_outer_text_is_well_formed(self) -> None:
+        evidence = copy.deepcopy(self.fixture.evidence)
+        evidence["response"] = canonical_bytes(
+            {
+                "schemaVersion": "acik.cross-ai-provider-review-result.v1",
+                "verdict": "REVISE",
+                "findingIds": ["REPACKAGED_RESPONSE"],
+                "resolvedFindingIds": [],
+                "acknowledgedFindingIds": [],
+            }
+        ).decode("utf-8")
+        with self.assertRaisesRegex(TrustedEvidenceError, "leaf binding mismatch"):
+            validate_evidence(
+                evidence,
+                trust_root=self.fixture.authority.trust_root,
+                revocations_envelope=self.fixture.authority.revocations_envelope,
+                expected_trust_root_sha256=(
+                    self.fixture.authority.expected_trust_root_sha256
+                ),
+                expected_bindings=self.fixture.bindings,
+                scope_bytes=self.fixture.scope_bytes,
+                now=self.fixture.factory.now,
+                require_agree=False,
             )
-            payload["response_sha256"] = hashlib.sha256(
-                payload["response"].encode("utf-8")
-            ).hexdigest()
-            with self.subTest(value=value):
-                self.assert_rejected(payload)
+
+    def test_rejects_prompt_or_scope_rebinding_and_unrelated_subject(self) -> None:
+        wrong_scope = self.fixture.scope_bytes + b"unrelated\n"
+        with self.assertRaisesRegex(TrustedEvidenceError, "scope bytes"):
+            validate_evidence(
+                self.fixture.evidence,
+                trust_root=self.fixture.authority.trust_root,
+                revocations_envelope=self.fixture.authority.revocations_envelope,
+                expected_trust_root_sha256=(
+                    self.fixture.authority.expected_trust_root_sha256
+                ),
+                expected_bindings=self.fixture.bindings,
+                scope_bytes=wrong_scope,
+                now=self.fixture.factory.now,
+                require_agree=True,
+            )
+        evidence = copy.deepcopy(self.fixture.evidence)
+        evidence["subject"]["promptSha256"] = "sha256:" + ("0" * 64)
+        with self.assertRaisesRegex(TrustedEvidenceError, "subject or prompt"):
+            self.validate(evidence)
+
+    def test_rejects_session_reuse_leaf_copied_to_another_subject(self) -> None:
+        evidence = copy.deepcopy(self.fixture.evidence)
+        evidence["subject"]["headSha"] = "d" * 40
+        bindings = dict(self.fixture.bindings)
+        bindings["head_sha"] = "d" * 40
+        with self.assertRaisesRegex(
+            (PolicyError, TrustedEvidenceError),
+            "REVIEW_SUBJECT_MISMATCH|subject or prompt",
+        ):
+            validate_evidence(
+                evidence,
+                trust_root=self.fixture.authority.trust_root,
+                revocations_envelope=self.fixture.authority.revocations_envelope,
+                expected_trust_root_sha256=(
+                    self.fixture.authority.expected_trust_root_sha256
+                ),
+                expected_bindings=bindings,
+                scope_bytes=self.fixture.scope_bytes,
+                now=self.fixture.factory.now,
+                require_agree=True,
+            )
+
+    def test_rejects_forged_envelope_and_tampered_capability(self) -> None:
+        forged = copy.deepcopy(self.fixture.evidence)
+        forged["review_envelope"]["signatures"][0]["sig"] = base64.b64encode(
+            b"x" * 64
+        ).decode("ascii")
+        from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
+
+        forged["review_envelope_sha256"] = sha256_digest(forged["review_envelope"])
+        with self.assertRaisesRegex(PolicyError, "DSSE_SIGNATURE_INVALID"):
+            self.validate(forged)
+
+        capability = copy.deepcopy(self.fixture.evidence)
+        capability["capability_snapshot"]["sandbox"] = "workspace-write"
+        with self.assertRaisesRegex(TrustedEvidenceError, "fixed route"):
+            self.validate(capability)
+
+    def test_loader_requires_exact_canonical_create_once_carrier_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            path.write_bytes(canonical_bytes(self.fixture.evidence))
+            self.assertEqual(POST.load_canonical_evidence(path), self.fixture.evidence)
+            path.write_text(json.dumps(self.fixture.evidence), encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                POST.load_canonical_evidence(path)
+
+    def test_transport_can_self_verify_the_fixed_routine_model_without_reclassifying_it(self) -> None:
+        fixture = make_signed_evidence(model=CODEX_ROUTINE_MODEL)
+        validated = validate_evidence(
+            fixture.evidence,
+            trust_root=fixture.authority.trust_root,
+            revocations_envelope=fixture.authority.revocations_envelope,
+            expected_trust_root_sha256=fixture.authority.expected_trust_root_sha256,
+            expected_bindings=fixture.bindings,
+            scope_bytes=fixture.scope_bytes,
+            now=fixture.factory.now,
+            require_agree=True,
+            expected_model=CODEX_ROUTINE_MODEL,
+        )
+        self.assertEqual(validated["review"]["modelId"], CODEX_ROUTINE_MODEL)
 
 
 if __name__ == "__main__":

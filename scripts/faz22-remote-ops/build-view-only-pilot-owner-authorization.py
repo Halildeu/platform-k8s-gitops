@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -19,6 +20,8 @@ from view_only_pilot_authorization_common import (
     validate_codex_advisory_comment_timing,
     validate_codex_advisory_evidence,
 )
+from cross_ai_authority import AuthorityUnavailable, load_active_authority
+from prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope
 
 
 SCHEMA = "faz22.6-view-only-pilot-protected-authorization-v2"
@@ -154,6 +157,11 @@ def build_authorization(
     environment: dict[str, Any], revocations: dict[str, Any],
     operator_sha256: str, device_sha256: str, expires_at: str, issued_at: str,
     run_id: int, head_sha: str, triggering_actor: str,
+    *,
+    advisory_scope_bytes: bytes,
+    cross_ai_trust_root: dict[str, Any],
+    cross_ai_revocations: dict[str, Any],
+    expected_cross_ai_trust_root_sha256: str,
 ) -> dict[str, Any]:
     require_keys(policy, {"schemaVersion", "status", "ownerDirective", "aiAdvisory", "legalTracking", "scope", "authorization", "lifecycle"}, "owner policy")
     if policy["schemaVersion"] != POLICY_SCHEMA or policy["status"] != "active":
@@ -165,8 +173,8 @@ def build_authorization(
     if providers != EXPECTED_ADVISORY_PROVIDERS:
         raise AuthorizationError("AI advisory provider is not exact Codex-only SOL")
     if (
-        policy["aiAdvisory"]["provenanceClass"] != "owner-attested-direct-codex-evidence-v2"
-        or policy["aiAdvisory"]["providerCryptographicAttestation"] is not False
+        policy["aiAdvisory"]["provenanceClass"] != "signed-direct-codex-launch-attested-v3"
+        or policy["aiAdvisory"]["providerCryptographicAttestation"] is not True
     ):
         raise AuthorizationError("AI advisory provenance boundary is not explicit")
     advisory_binding = policy["aiAdvisory"]["evidenceBinding"]
@@ -182,11 +190,24 @@ def build_authorization(
         "head_sha": advisory_binding["headSha"],
         "scope_sha256": advisory_binding["scopeSha256"],
     }
+    require_keys(policy["lifecycle"], {"validFrom", "validUntil"}, "policy.lifecycle")
+    valid_from = parse_utc(policy["lifecycle"]["validFrom"], "policy validFrom")
+    valid_until = parse_utc(policy["lifecycle"]["validUntil"], "policy validUntil")
+    issued = parse_utc(issued_at, "issuedAt")
+    expires = parse_utc(expires_at, "expiresAt")
+    if not valid_from <= issued < expires <= valid_until:
+        raise AuthorizationError("authorization is outside owner-policy lifecycle")
     verify_comment(owner_comment, policy["ownerDirective"], "ownerDirective")
     advisory_body = verify_comment(advisory_comment, {key: policy["aiAdvisory"][key] for key in ("commentId", "ref", "bodySha256", "authorLogin", "authorAssociation")}, "aiAdvisory")
     try:
         validate_codex_advisory_evidence(
-            advisory_body, expected_advisory_bindings,
+            advisory_body,
+            expected_advisory_bindings,
+            scope_bytes=advisory_scope_bytes,
+            trust_root=cross_ai_trust_root,
+            revocations_envelope=cross_ai_revocations,
+            expected_trust_root_sha256=expected_cross_ai_trust_root_sha256,
+            reference_time=issued,
         )
     except CodexEvidenceError as exc:
         raise AuthorizationError(f"Codex-only AI advisory evidence is invalid: {exc}") from exc
@@ -221,13 +242,6 @@ def build_authorization(
         raise AuthorizationError("revocation ledger ref mismatch")
     reviewer_count, reviewer_set_sha256 = verify_environment(environment, True, triggering_actor)
 
-    require_keys(policy["lifecycle"], {"validFrom", "validUntil"}, "policy.lifecycle")
-    valid_from = parse_utc(policy["lifecycle"]["validFrom"], "policy validFrom")
-    valid_until = parse_utc(policy["lifecycle"]["validUntil"], "policy validUntil")
-    issued = parse_utc(issued_at, "issuedAt")
-    expires = parse_utc(expires_at, "expiresAt")
-    if not valid_from <= issued < expires <= valid_until:
-        raise AuthorizationError("authorization is outside owner-policy lifecycle")
     if (expires - issued).total_seconds() > auth_policy["maxTtlMinutes"] * 60:
         raise AuthorizationError("authorization exceeds the absolute TTL limit")
     try:
@@ -265,8 +279,8 @@ def build_authorization(
         "ownerDirectiveRef": policy["ownerDirective"]["ref"],
         "ownerDirectiveSha256": policy["ownerDirective"]["bodySha256"],
         "aiAdvisoryOnly": True,
-        "aiAdvisoryProvenanceClass": "owner-attested-direct-codex-evidence-v2",
-        "aiProviderCryptographicAttestation": False,
+        "aiAdvisoryProvenanceClass": "signed-direct-codex-launch-attested-v3",
+        "aiProviderCryptographicAttestation": True,
         "aiAdvisoryRef": policy["aiAdvisory"]["ref"],
         "aiAdvisorySha256": policy["aiAdvisory"]["bodySha256"],
         "aiConsensusVerdict": "AGREE",
@@ -317,17 +331,34 @@ def main() -> int:
         legal, _ = load_object(args.legal_issue, "legal tracking issue")
         environment, _ = load_object(args.environment, "protected environment")
         revocations, _ = load_object(args.revocations, "revocation ledger")
+        repo_root = Path(__file__).resolve().parents[2]
+        authority = load_active_authority(repo_root)
+        binding = policy.get("aiAdvisory", {}).get("evidenceBinding", {})
+        advisory_scope_bytes, _, _ = derive_scope(
+            repo_root,
+            base_tip_sha=binding.get("baseTipSha", ""),
+            base_sha=binding.get("baseSha", ""),
+            head_sha=binding.get("headSha", ""),
+            max_scope_bytes=MAX_SCOPE_BYTES,
+            scan_secrets=True,
+        )
+        if hashlib.sha256(advisory_scope_bytes).hexdigest() != binding.get("scopeSha256"):
+            raise AuthorizationError("canonical advisory scope digest mismatch")
         result = build_authorization(
             policy, owner, advisory, legal, environment, revocations,
             args.operator_sha256, args.device_sha256,
             args.expires_at, args.issued_at, args.run_id, args.head_sha,
             args.triggering_actor,
+            advisory_scope_bytes=advisory_scope_bytes,
+            cross_ai_trust_root=authority.trust_root,
+            cross_ai_revocations=authority.revocations_envelope,
+            expected_cross_ai_trust_root_sha256=authority.expected_trust_root_sha256,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(canonical_receipt_bytes(result))
         print(f"authorization=pass schema={SCHEMA} output={args.output}")
         return 0
-    except (AuthorizationError, OSError, ValueError) as exc:
+    except (AuthorityUnavailable, AuthorizationError, OSError, ValueError) as exc:
         print(f"authorization=fail reason={exc}", file=sys.stderr)
         return 1
 

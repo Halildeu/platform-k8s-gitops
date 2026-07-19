@@ -15,7 +15,7 @@ import hashlib
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -65,6 +65,10 @@ KEY_FIELDS = frozenset(
     }
 )
 HISTORY_FIELDS = frozenset({"version", "publicKeyBase64"})
+MIN_TRUST_ROOT_LIFETIME = timedelta(hours=168)
+MAX_TRUST_ROOT_LIFETIME = timedelta(hours=720)
+MAX_PROVIDER_KEY_LIFETIME = timedelta(hours=168)
+MIN_PROVIDER_KEY_OVERLAP = timedelta(hours=24)
 
 
 class TrustRootBuildError(RuntimeError):
@@ -286,8 +290,11 @@ def build_trust_root(
         raise TrustRootBuildError("trust root ID must be a canonical UUID")
     start = _utc(issued_at, "issuedAt")
     end = _utc(expires_at, "expiresAt")
-    if end <= start:
-        raise TrustRootBuildError("trust root lifetime is invalid")
+    lifetime = end - start
+    if not MIN_TRUST_ROOT_LIFETIME <= lifetime <= MAX_TRUST_ROOT_LIFETIME:
+        raise TrustRootBuildError(
+            "trust root lifetime must be between 168 and 720 hours"
+        )
     if (
         not isinstance(max_clock_skew_seconds, int)
         or isinstance(max_clock_skew_seconds, bool)
@@ -300,23 +307,69 @@ def build_trust_root(
         role: str,
         family: str | None,
         channel: str | None = None,
-        model: str | None = None,
+        models: list[str] | None = None,
         identity_class: str | None = None,
+        *,
+        key_id: str | None = None,
+        public_key: str | None = None,
+        not_before: datetime | None = None,
+        not_after: datetime | None = None,
     ) -> dict[str, Any]:
+        key_start = not_before or start
+        key_end = not_after or end
         return {
-            "keyId": source["keyId"],
+            "keyId": key_id or source["keyId"],
             "role": role,
-            "publicKeyBase64": source["publicKeyBase64"],
-            "notBefore": issued_at,
-            "notAfter": expires_at,
+            "publicKeyBase64": public_key or source["publicKeyBase64"],
+            "notBefore": key_start.astimezone(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "notAfter": key_end.astimezone(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "providerFamily": family,
             "allowedChannels": [channel] if channel else [],
-            "allowedModelIds": [model] if model else [],
+            "allowedModelIds": models or [],
             "allowedModelIdentityClasses": [identity_class] if identity_class else [],
             "directProviderCli": True if family else None,
         }
 
     by_name = {key["keyName"]: key for key in keys}
+    openai = by_name["openai"]
+    current_provider_end = min(end, start + MAX_PROVIDER_KEY_LIFETIME)
+    provider_entries: list[dict[str, Any]] = []
+    if openai["keyVersion"] > 1:
+        previous_version = openai["keyVersion"] - 1
+        previous_history = openai["versionHistory"][previous_version - 1]
+        provider_entries.append(
+            trust_key(
+                openai,
+                "provider-review",
+                "openai",
+                "openai-codex",
+                ["gpt-5.3-codex-spark", "gpt-5.6-sol"],
+                "trusted-launch-attested",
+                key_id=f"vault-transit://cross-ai/openai#v{previous_version}",
+                public_key=previous_history["publicKeyBase64"],
+                not_before=start
+                - (MAX_PROVIDER_KEY_LIFETIME - MIN_PROVIDER_KEY_OVERLAP),
+                not_after=start + MIN_PROVIDER_KEY_OVERLAP,
+            )
+        )
+    provider_entries.append(
+        trust_key(
+            openai,
+            "provider-review",
+            "openai",
+            "openai-codex",
+            ["gpt-5.3-codex-spark", "gpt-5.6-sol"],
+            "trusted-launch-attested",
+            not_before=start,
+            not_after=current_provider_end,
+        )
+    )
     return {
         "schemaVersion": TRUST_ROOT_SCHEMA_VERSION,
         "trustRootId": trust_root_id,
@@ -327,15 +380,8 @@ def build_trust_root(
         "requiredProviderFamilies": ["openai"],
         "minimumProviderFamilies": 1,
         "minimumDirectProviderRoutes": 1,
-        "keys": [
-            trust_key(
-                by_name["openai"],
-                "provider-review",
-                "openai",
-                "openai-codex",
-                "gpt-5.6-sol",
-                "trusted-launch-attested",
-            ),
+        "keys": provider_entries
+        + [
             trust_key(by_name["coordinator"], "coordinator", None),
             trust_key(by_name["revocation"], "revocation", None),
             trust_key(by_name["runner-management"], "runner-management", None),

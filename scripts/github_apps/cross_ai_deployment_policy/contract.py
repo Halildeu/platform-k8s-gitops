@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import re
 from typing import Any, Literal
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -43,6 +44,15 @@ CLOSURE_DOMAIN = "acik.cross-ai-deployment-closure.v1"
 SESSION_DOMAIN_V2 = "acik.cross-ai-deployment-session.v2"
 CLOSURE_DOMAIN_V2 = "acik.cross-ai-deployment-closure.v2"
 MAX_GRANT_TTL = timedelta(minutes=120)
+MAX_REVIEW_TTL = timedelta(minutes=120)
+MAX_REVOCATION_TTL = timedelta(minutes=60)
+MIN_V2_TRUST_ROOT_TTL = timedelta(hours=168)
+MAX_V2_TRUST_ROOT_TTL = timedelta(hours=720)
+MAX_V2_PROVIDER_KEY_TTL = timedelta(hours=168)
+MIN_V2_PROVIDER_KEY_OVERLAP = timedelta(hours=24)
+OPENAI_TRANSIT_KEY_ID = re.compile(
+    r"^vault-transit://cross-ai/openai#v([1-9][0-9]*)$"
+)
 MINIMAX_NEW_REVIEW_CUTOFF = datetime(2026, 7, 18, tzinfo=timezone.utc)
 REQUIRED_PROVIDER_ROUTES = {
     "anthropic": (
@@ -67,7 +77,7 @@ REQUIRED_PROVIDER_ROUTES = {
 REQUIRED_PROVIDER_ROUTES_V2 = {
     "openai": (
         "openai-codex",
-        "gpt-5.6-sol",
+        ("gpt-5.3-codex-spark", "gpt-5.6-sol"),
         "trusted-launch-attested",
         True,
     ),
@@ -305,7 +315,7 @@ class EvidenceVerifier:
                 expected_route = self.required_provider_routes.get(family)
                 actual_route = (
                     channels[0],
-                    model_ids[0],
+                    model_ids if self.contract_version == "v2" else model_ids[0],
                     model_identity_classes[0],
                     direct,
                 )
@@ -364,6 +374,67 @@ class EvidenceVerifier:
                 "TRUST_PROVIDER_SET_INVALID",
                 "trust root provider families differ from the required signed set",
             )
+        if self.contract_version == "v2":
+            role_counts = defaultdict(int)
+            for key in parsed.values():
+                role_counts[key.role] += 1
+            if any(
+                role_counts[role] != 1
+                for role in ("coordinator", "revocation", "runner-management")
+            ):
+                reject(
+                    "TRUST_ROLE_CARDINALITY_INVALID",
+                    "v2 requires exactly one coordinator, revocation and runner-management key",
+                )
+            provider_keys = sorted(
+                (key for key in parsed.values() if key.role == "provider-review"),
+                key=lambda key: key.not_before,
+            )
+            if len(provider_keys) not in {1, 2}:
+                reject(
+                    "TRUST_PROVIDER_KEY_CARDINALITY_INVALID",
+                    "v2 permits one active OpenAI key or one bounded rotation pair",
+                )
+            versions: list[int] = []
+            for key in provider_keys:
+                match = OPENAI_TRANSIT_KEY_ID.fullmatch(key.key_id)
+                if match is None:
+                    reject(
+                        "TRUST_PROVIDER_KEY_ID_INVALID",
+                        "v2 provider key must use the fixed OpenAI Transit route",
+                    )
+                versions.append(int(match.group(1)))
+                if key.not_after - key.not_before > MAX_V2_PROVIDER_KEY_TTL:
+                    reject(
+                        "TRUST_PROVIDER_KEY_LIFETIME_INVALID",
+                        "v2 provider-review key lifetime exceeds 168 hours",
+                    )
+            if len(provider_keys) == 2:
+                versioned_keys = sorted(
+                    zip(versions, provider_keys), key=lambda item: item[0]
+                )
+                if versioned_keys[1][0] != versioned_keys[0][0] + 1:
+                    reject(
+                        "TRUST_PROVIDER_ROTATION_INVALID",
+                        "v2 provider rotation keys must be consecutive versions",
+                    )
+                if (
+                    versioned_keys[1][1].not_before
+                    < versioned_keys[0][1].not_before
+                    or versioned_keys[1][1].not_after
+                    <= versioned_keys[0][1].not_after
+                ):
+                    reject(
+                        "TRUST_PROVIDER_ROTATION_INVALID",
+                        "v2 provider rotation chronology does not advance with the key version",
+                    )
+                overlap_start = max(key.not_before for key in provider_keys)
+                overlap_end = min(key.not_after for key in provider_keys)
+                if overlap_end - overlap_start < MIN_V2_PROVIDER_KEY_OVERLAP:
+                    reject(
+                        "TRUST_PROVIDER_ROTATION_OVERLAP_INVALID",
+                        "v2 provider rotation overlap is shorter than 24 hours",
+                    )
         return parsed
 
     def _validate_trust_root_lifetime(self) -> None:
@@ -375,6 +446,13 @@ class EvidenceVerifier:
             reject("TRUST_ROOT_EXPIRED", "trust root is expired")
         if expires_at <= issued_at:
             reject("TRUST_ROOT_LIFETIME_INVALID", "trust root lifetime is invalid")
+        if self.contract_version == "v2":
+            lifetime = expires_at - issued_at
+            if not MIN_V2_TRUST_ROOT_TTL <= lifetime <= MAX_V2_TRUST_ROOT_TTL:
+                reject(
+                    "TRUST_ROOT_LIFETIME_INVALID",
+                    "v2 trust root lifetime must be between 168 and 720 hours",
+                )
 
     def _active_keys(self, role: str) -> dict[str, bytes]:
         active: dict[str, bytes] = {}
@@ -389,6 +467,55 @@ class EvidenceVerifier:
         if not active:
             reject("TRUST_ACTIVE_KEY_MISSING", f"no active {role} key is available")
         return active
+
+    def _role_keys(self, role: str) -> dict[str, bytes]:
+        keys = {
+            key.key_id: key.public_key
+            for key in self.keys.values()
+            if key.role == role
+        }
+        if not keys:
+            reject("TRUST_ROLE_MISSING", f"no {role} key is present")
+        return keys
+
+    def _validate_root_time(self, issued_at: datetime, label: str) -> None:
+        root_start = parse_utc(self.trust_root["issuedAt"], "trustRoot.issuedAt")
+        root_end = parse_utc(self.trust_root["expiresAt"], "trustRoot.expiresAt")
+        if issued_at < root_start - self.max_skew:
+            reject("TRUST_ROOT_NOT_YET_VALID", f"{label} predates trust-root validity")
+        if issued_at > root_end + self.max_skew:
+            reject("TRUST_ROOT_EXPIRED", f"{label} was issued after trust-root expiry")
+
+    def require_active_signing_key(
+        self,
+        *,
+        key_id: str,
+        role: str,
+        provider_family: str | None = None,
+        issued_at: datetime | None = None,
+    ) -> TrustKey:
+        """Fail before issuance when a workload is bound to the wrong key."""
+
+        key = self.keys.get(key_id)
+        if key is None or key.role != role:
+            reject(
+                "TRUST_SIGNER_BINDING_MISMATCH",
+                "signer key is absent or has a different trust-root role",
+            )
+        if provider_family is not None and key.provider_family != provider_family:
+            reject(
+                "TRUST_SIGNER_BINDING_MISMATCH",
+                "signer key has a different provider attribution",
+            )
+        if provider_family is None and key.provider_family is not None:
+            reject(
+                "TRUST_SIGNER_BINDING_MISMATCH",
+                "non-provider signer unexpectedly has provider attribution",
+            )
+        if key_id not in self._active_keys(role):
+            reject("TRUST_SIGNER_NOT_ACTIVE", "signer key is not active")
+        self._validate_key_time(key, issued_at or self.now, "signer")
+        return key
 
     def _verify_revocations(self, envelope: dict[str, Any]) -> VerifiedEnvelope:
         verified = verify_json_envelope(
@@ -415,8 +542,25 @@ class EvidenceVerifier:
             reject("REVOCATIONS_STALE", "revocation set nextUpdate is stale")
         if next_update <= issued_at:
             reject("REVOCATIONS_LIFETIME_INVALID", "revocation set lifetime is invalid")
+        if next_update - issued_at > MAX_REVOCATION_TTL:
+            reject(
+                "REVOCATIONS_LIFETIME_INVALID",
+                "revocation set lifetime exceeds 60 minutes",
+            )
         signer = self.keys[verified.signing_key_ids[0]]
+        self._validate_root_time(issued_at, "revocation")
+        root_end = parse_utc(self.trust_root["expiresAt"], "trustRoot.expiresAt")
+        if next_update > root_end + self.max_skew:
+            reject(
+                "REVOCATIONS_LIFETIME_INVALID",
+                "revocation refresh extends beyond trust-root validity",
+            )
         self._validate_key_time(signer, issued_at, "revocation", check_revocation=False)
+        if next_update > signer.not_after + self.max_skew:
+            reject(
+                "REVOCATIONS_LIFETIME_INVALID",
+                "revocation refresh extends beyond signer validity",
+            )
         return verified
 
     def _validate_key_time(
@@ -661,7 +805,12 @@ class EvidenceVerifier:
     def _verify_reviews(
         self, bundle: dict[str, Any], subject_digest: str
     ) -> dict[str, VerifiedReview]:
-        provider_keys = self._active_keys("provider-review")
+        # A bounded review issued during the previous provider key's validity
+        # remains verifiable through the rotation overlap even if that key is
+        # no longer active at observation time. Signature acceptance therefore
+        # uses every pinned provider key and separately proves root/key
+        # validity at the signed review issue time.
+        provider_keys = self._role_keys("provider-review")
         verified: dict[str, VerifiedReview] = {}
         review_ids: set[str] = set()
         for envelope in bundle["reviewEnvelopes"]:
@@ -722,6 +871,12 @@ class EvidenceVerifier:
                 reject("REVIEW_EXPIRED", "review is expired")
             if expires_at <= issued_at:
                 reject("REVIEW_LIFETIME_INVALID", "review lifetime is invalid")
+            if expires_at - issued_at > MAX_REVIEW_TTL:
+                reject(
+                    "REVIEW_LIFETIME_INVALID",
+                    "review lifetime exceeds 120 minutes",
+                )
+            self._validate_root_time(issued_at, "review")
             self._validate_key_time(key, issued_at, "review")
             if leaf["reviewId"] in review_ids:
                 reject("REVIEW_ID_DUPLICATE", "reviewId must be unique")
@@ -740,6 +895,28 @@ class EvidenceVerifier:
             )
         self._verify_review_chains(verified)
         return verified
+
+    def verify_provider_review(
+        self, envelope: dict[str, Any], expected_subject_sha256: str
+    ) -> VerifiedReview:
+        """Verify one signed provider leaf against the pinned active authority.
+
+        This deliberately reuses the same signature, role, attribution,
+        lifetime and revocation checks as bundle verification. It is the
+        bootstrap-safe acceptance boundary for a standalone consultation
+        comment; the owner-authored comment is only a transport envelope.
+        """
+
+        if not isinstance(expected_subject_sha256, str) or not expected_subject_sha256.startswith(
+            "sha256:"
+        ):
+            reject("REVIEW_SUBJECT_MISMATCH", "expected review subject digest is invalid")
+        reviews = self._verify_reviews(
+            {"reviewEnvelopes": [envelope]}, expected_subject_sha256
+        )
+        if len(reviews) != 1:
+            reject("REVIEW_CARDINALITY_INVALID", "exactly one provider review is required")
+        return next(iter(reviews.values()))
 
     def _verify_review_chains(self, reviews: dict[str, VerifiedReview]) -> None:
         chains: dict[str, list[VerifiedReview]] = defaultdict(list)

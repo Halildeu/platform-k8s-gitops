@@ -36,6 +36,8 @@ from view_only_pilot_authorization_common import (
     validate_codex_advisory_comment_timing,
     validate_codex_advisory_evidence,
 )
+from cross_ai_authority import AuthorityUnavailable, load_active_authority
+from prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -294,6 +296,13 @@ def load_json_bytes(raw: bytes, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise EvidenceError(f"{label} must be a JSON object")
     return value
+
+
+def load_json_file(path: Path, label: str) -> dict[str, Any]:
+    try:
+        return load_json_bytes(path.read_bytes(), label)
+    except OSError as exc:
+        raise EvidenceError(f"{label} is unavailable") from exc
 
 
 def load_schema(path: Path) -> dict[str, Any]:
@@ -1056,6 +1065,10 @@ def verify_activation_authorization(
     client: ApiClient, operator: dict[str, Any], expected_head_sha: str,
     binding: dict[str, str], pilot_started: datetime, pilot_ended: datetime,
     *, allow_legacy_v1: bool = False,
+    advisory_scope_bytes: bytes | None = None,
+    cross_ai_trust_root: dict[str, Any] | None = None,
+    cross_ai_revocations: dict[str, Any] | None = None,
+    expected_cross_ai_trust_root_sha256: str | None = None,
 ) -> datetime:
     run_id = operator["activationRunId"]
     run = fetch_run(
@@ -1145,7 +1158,7 @@ def verify_activation_authorization(
     )
     expected_advisory_provenance = (
         "owner-attested-provider-session"
-        if legacy_v1 else "owner-attested-direct-codex-evidence-v2"
+        if legacy_v1 else "signed-direct-codex-launch-attested-v3"
     )
     if not (
         authorization["onePersonRoster"] is True
@@ -1156,7 +1169,7 @@ def verify_activation_authorization(
         and authorization["protectedEnvironmentReviewerCount"] >= 1
         and authorization["aiAdvisoryOnly"] is True
         and authorization["aiAdvisoryProvenanceClass"] == expected_advisory_provenance
-        and authorization["aiProviderCryptographicAttestation"] is False
+        and authorization["aiProviderCryptographicAttestation"] is (not legacy_v1)
         and authorization["legalTrackStatus"] == "tracked_pending"
         and authorization["legalClearanceClaimed"] is False
         and authorization["legalDependencyAcknowledgedBy"] == "owner"
@@ -1266,6 +1279,13 @@ def verify_activation_authorization(
             "head_sha": evidence_binding["headSha"],
             "scope_sha256": evidence_binding["scopeSha256"],
         }
+        if (
+            advisory_scope_bytes is None
+            or cross_ai_trust_root is None
+            or cross_ai_revocations is None
+            or expected_cross_ai_trust_root_sha256 is None
+        ):
+            raise EvidenceError("signed Codex advisory authority inputs are unavailable")
         for label, contract in (
             ("owner directive", owner_contract), ("AI advisory", advisory_contract),
         ):
@@ -1302,7 +1322,17 @@ def verify_activation_authorization(
                     validate_codex_advisory_comment_timing(
                         comment, pilot_started, advisory_contract.get("maxAgeHours"),
                     )
-                    validate_codex_advisory_evidence(body, expected_bindings)
+                    validate_codex_advisory_evidence(
+                        body,
+                        expected_bindings,
+                        scope_bytes=advisory_scope_bytes,
+                        trust_root=cross_ai_trust_root,
+                        revocations_envelope=cross_ai_revocations,
+                        expected_trust_root_sha256=(
+                            expected_cross_ai_trust_root_sha256
+                        ),
+                        reference_time=pilot_started,
+                    )
                 except CodexEvidenceError as exc:
                     raise EvidenceError(
                         f"AI advisory is not strict Codex-only evidence: {exc}",
@@ -1338,6 +1368,14 @@ def verify_activation_authorization(
             "legacy v1 authorization was issued at or after the migration cutoff",
         )
     run_created = parse_utc(run["created_at"], "activation created_at")
+    run_started = parse_utc(run["run_started_at"], "activation run_started_at")
+    if legacy_v1 and (
+        run_created >= LEGACY_V1_ISSUANCE_CUTOFF
+        or run_started >= LEGACY_V1_ISSUANCE_CUTOFF
+    ):
+        raise EvidenceError(
+            "legacy v1 activation run started at or after the migration cutoff",
+        )
     if issued_at < run_created - RUN_CLOCK_SKEW or issued_at > activation_updated + RUN_CLOCK_SKEW:
         raise EvidenceError("protected authorization issuance is outside the activation run window")
     expires_at = parse_utc(authorization["expiresAt"], "protected authorization expiresAt")
@@ -1455,6 +1493,11 @@ def validate_semantics(
     client: ApiClient, root: dict[str, Any], children: dict[str, dict[str, Any]], run: dict[str, Any],
     source_runs: dict[str, dict[str, Any]], artifact: dict[str, Any], root_digest: str,
     archive_digest: str, now: datetime,
+    *,
+    advisory_scope_bytes: bytes | None,
+    cross_ai_trust_root: dict[str, Any] | None,
+    cross_ai_revocations: dict[str, Any] | None,
+    expected_cross_ai_trust_root_sha256: str | None,
 ) -> dict[str, Any]:
     if scan := scan_hygiene(root):
         raise EvidenceError("root evidence hygiene failed: " + "; ".join(scan[:20]))
@@ -1559,6 +1602,10 @@ def validate_semantics(
     operator = children["operator"]["payload"]
     authorization_expires_at = verify_activation_authorization(
         client, operator, run["head_sha"], binding, pilot_started, pilot_ended,
+        advisory_scope_bytes=advisory_scope_bytes,
+        cross_ai_trust_root=cross_ai_trust_root,
+        cross_ai_revocations=cross_ai_revocations,
+        expected_cross_ai_trust_root_sha256=expected_cross_ai_trust_root_sha256,
     )
     validate_negative_and_termination(
         children["negative"]["payload"], children["termination"]["payload"],
@@ -1600,6 +1647,11 @@ def validate_semantics(
 
 def verify_product_evidence(
     client: ApiClient, repository: str, run_id: int, now: datetime | None = None,
+    *,
+    advisory_scope_bytes: bytes | None = None,
+    cross_ai_trust_root: dict[str, Any] | None = None,
+    cross_ai_revocations: dict[str, Any] | None = None,
+    expected_cross_ai_trust_root_sha256: str | None = None,
 ) -> dict[str, Any]:
     validate_repository(repository)
     if run_id < 1:
@@ -1651,6 +1703,10 @@ def verify_product_evidence(
     result = validate_semantics(
         client, root, children, run, source_runs, verified.artifact, digest_json(root), verified.archive_digest,
         (now or datetime.now(timezone.utc)).astimezone(timezone.utc),
+        advisory_scope_bytes=advisory_scope_bytes,
+        cross_ai_trust_root=cross_ai_trust_root,
+        cross_ai_revocations=cross_ai_revocations,
+        expected_cross_ai_trust_root_sha256=expected_cross_ai_trust_root_sha256,
     )
     result["marker"] = marker_text(result)
     return result
@@ -1704,14 +1760,37 @@ def main() -> int:
     args = parse_args()
     try:
         token = os.environ.get(args.github_token_env, "")
+        authority = load_active_authority(ROOT)
+        policy = load_json_file(OWNER_POLICY_V2, "active owner policy")
+        advisory_binding = policy.get("aiAdvisory", {}).get("evidenceBinding", {})
+        advisory_scope_bytes, _, _ = derive_scope(
+            ROOT,
+            base_tip_sha=advisory_binding.get("baseTipSha", ""),
+            base_sha=advisory_binding.get("baseSha", ""),
+            head_sha=advisory_binding.get("headSha", ""),
+            max_scope_bytes=MAX_SCOPE_BYTES,
+            scan_secrets=True,
+        )
+        if hashlib.sha256(advisory_scope_bytes).hexdigest() != advisory_binding.get(
+            "scopeSha256"
+        ):
+            raise EvidenceError("canonical advisory scope digest mismatch")
         result = verify_product_evidence(
-            GitHubClient(token=token, api_base=args.github_api_url), args.repository, args.run_id
+            GitHubClient(token=token, api_base=args.github_api_url),
+            args.repository,
+            args.run_id,
+            advisory_scope_bytes=advisory_scope_bytes,
+            cross_ai_trust_root=authority.trust_root,
+            cross_ai_revocations=authority.revocations_envelope,
+            expected_cross_ai_trust_root_sha256=(
+                authority.expected_trust_root_sha256
+            ),
         )
         write_json(args.output, result)
         if args.marker_out:
             args.marker_out.write_text(result["marker"], encoding="utf-8")
         return 0
-    except (EvidenceError, OSError, ValueError) as exc:
+    except (AuthorityUnavailable, EvidenceError, OSError, ValueError) as exc:
         write_json(args.output, {"schemaVersion": VERIFIER_SCHEMA, "status": "fail", "error": str(exc)})
         return 1
 

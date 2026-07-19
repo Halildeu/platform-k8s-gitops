@@ -26,7 +26,7 @@ SPEC.loader.exec_module(MODULE)
 
 TRUST_ROOT_ID = "10000000-0000-4000-8000-000000000099"
 ISSUED_AT = "2026-07-18T18:00:00Z"
-EXPIRES_AT = "2026-07-18T21:00:00Z"
+EXPIRES_AT = "2026-08-17T18:00:00Z"
 
 
 def public_key(seed: int) -> str:
@@ -117,6 +117,10 @@ class TestTrustRootBuilderTests(unittest.TestCase):
             providers["openai"]["allowedModelIdentityClasses"],
             ["trusted-launch-attested"],
         )
+        self.assertEqual(
+            providers["openai"]["allowedModelIds"],
+            ["gpt-5.3-codex-spark", "gpt-5.6-sol"],
+        )
         serialized = MODULE._canonical_bytes(trust_root).decode("utf-8")
         for forbidden in ("token", "secretId", "credential", "privateKey"):
             self.assertNotIn(forbidden, serialized)
@@ -130,7 +134,7 @@ class TestTrustRootBuilderTests(unittest.TestCase):
         self.assertEqual(first, MODULE._canonical_bytes(json.loads(first)))
         self.assertEqual(
             hashlib.sha256(first).hexdigest(),
-            "ebb0eab41900c97f7e5de8f4db73f9b50874371ddf1f4f30278a2394976578c1",
+            "e6976430452ea6b197c8529730388a117f6ddf47e94e2d7638db18521943a357",
         )
 
     def test_operational_receipt_metadata_does_not_move_public_keyset_digest(self) -> None:
@@ -168,6 +172,48 @@ class TestTrustRootBuilderTests(unittest.TestCase):
             hashlib.sha256(MODULE._canonical_bytes(original)).digest(),
             hashlib.sha256(MODULE._canonical_bytes(rotated_root)).digest(),
         )
+
+    def test_openai_rotation_emits_only_consecutive_codex_keys_with_24h_overlap(self) -> None:
+        rotated_receipt = receipt()
+        key = next(
+            item for item in rotated_receipt["keys"] if item["keyName"] == "openai"
+        )
+        rotated = public_key(22)
+        key["keyVersion"] = 2
+        key["keyId"] = "vault-transit://cross-ai/openai#v2"
+        key["publicKeyBase64"] = rotated
+        key["versionHistory"].append(
+            {"version": 2, "publicKeyBase64": rotated}
+        )
+
+        trust_root = build(rotated_receipt)
+        providers = [
+            item for item in trust_root["keys"] if item["role"] == "provider-review"
+        ]
+        self.assertEqual(
+            [item["keyId"] for item in providers],
+            [
+                "vault-transit://cross-ai/openai#v1",
+                "vault-transit://cross-ai/openai#v2",
+            ],
+        )
+        self.assertEqual(providers[0]["notAfter"], "2026-07-19T18:00:00Z")
+        self.assertEqual(providers[1]["notBefore"], ISSUED_AT)
+        self.assertTrue(
+            all(item["providerFamily"] == "openai" for item in providers)
+        )
+
+    def test_rejects_ephemeral_and_overlong_root_lifetimes(self) -> None:
+        for invalid in ("2026-07-21T18:00:00Z", "2026-08-17T18:00:01Z"):
+            with self.assertRaisesRegex(
+                MODULE.TrustRootBuildError, "between 168 and 720 hours"
+            ):
+                MODULE.build_trust_root(
+                    receipt(),
+                    trust_root_id=TRUST_ROOT_ID,
+                    issued_at=ISSUED_AT,
+                    expires_at=invalid,
+                )
 
     def test_rejects_unknown_missing_extra_duplicate_and_swapped_keys(self) -> None:
         unknown = receipt()

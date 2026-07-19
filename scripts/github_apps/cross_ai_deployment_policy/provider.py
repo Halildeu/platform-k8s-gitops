@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Protocol
+from uuid import UUID
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -28,7 +29,12 @@ from .timeutil import parse_utc
 MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_PROMPT_BYTES = 512 * 1024
 REVIEW_RESULT_SCHEMA_VERSION = "acik.cross-ai-provider-review-result.v1"
-CODEX_MODEL = "gpt-5.6-sol"
+CODEX_ROUTINE_MODEL = "gpt-5.3-codex-spark"
+CODEX_HIGH_IMPACT_MODEL = "gpt-5.6-sol"
+CODEX_MODELS = frozenset({CODEX_ROUTINE_MODEL, CODEX_HIGH_IMPACT_MODEL})
+# Compatibility name for existing high-impact/Faz 22 consumers. It must never
+# be interpreted as a wildcard or a routine-route alias.
+CODEX_MODEL = CODEX_HIGH_IMPACT_MODEL
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -67,6 +73,9 @@ class ProviderExecutionReceipt:
     reasoning_effort: str
     sandbox: str
     ephemeral: bool
+    provider_session_id: str | None
+    provider_transcript_sha256: str | None
+    capability_snapshot: dict[str, Any] | None
     capability_snapshot_sha256: str
     input_sha256: str
     output_sha256: str
@@ -181,6 +190,12 @@ class DirectClaudeRunner:
             direct_provider_cli=True,
             model_id=reported_model,
             model_identity_class="provider-reported",
+            reasoning_effort="xhigh",
+            sandbox="read-only",
+            ephemeral=True,
+            provider_session_id=None,
+            provider_transcript_sha256=None,
+            capability_snapshot=None,
             capability_snapshot_sha256=capability,
             input_sha256=_bytes_digest(prompt_bytes),
             output_sha256=_bytes_digest(text.encode("utf-8")),
@@ -191,7 +206,92 @@ class DirectClaudeRunner:
 class DirectCodexRunner:
     def __init__(self, executable: Path | None = None) -> None:
         selected = executable or Path(shutil.which("codex") or "codex")
-        self.executable = DirectClaudeRunner._validated_executable(selected, "Codex")
+        self.executable = self._validated_native_executable(selected)
+
+    @staticmethod
+    def _validated_native_executable(path: Path) -> Path:
+        """Resolve only a native Codex binary or the official npm wrapper.
+
+        A PATH-injected shell/Python shim must never receive the provider-review
+        signing route.  The official npm entrypoint is resolved to its bundled
+        platform-native binary before the private execution copy is made.
+        """
+
+        resolved = DirectClaudeRunner._validated_executable(path, "Codex")
+        try:
+            with resolved.open("rb") as handle:
+                header = handle.read(4)
+            mode = resolved.stat().st_mode
+        except OSError:
+            reject("PROVIDER_EXECUTABLE_INVALID", "Codex executable cannot be inspected")
+        native_magic = (
+            header == b"\x7fELF"
+            or header[:2] == b"MZ"
+            or header
+            in {
+                b"\xfe\xed\xfa\xce",
+                b"\xce\xfa\xed\xfe",
+                b"\xfe\xed\xfa\xcf",
+                b"\xcf\xfa\xed\xfe",
+                b"\xca\xfe\xba\xbe",
+                b"\xbe\xba\xfe\xca",
+            }
+        )
+        if native_magic:
+            if mode & 0o022:
+                reject(
+                    "PROVIDER_EXECUTABLE_INVALID",
+                    "Codex native executable is group/world writable",
+                )
+            return resolved
+        if resolved.name != "codex.js" or resolved.parent.name != "bin":
+            reject(
+                "PROVIDER_EXECUTABLE_INVALID",
+                "Codex executable is neither native nor the official npm wrapper",
+            )
+        package_root = resolved.parent.parent
+        if package_root.name != "codex" or package_root.parent.name != "@openai":
+            reject(
+                "PROVIDER_EXECUTABLE_INVALID",
+                "Codex npm wrapper is outside the official package layout",
+            )
+        candidates = [
+            candidate.resolve()
+            for candidate in package_root.glob(
+                "node_modules/@openai/codex-*/vendor/*/bin/codex"
+            )
+            if candidate.is_file() and os.access(candidate, os.X_OK)
+        ]
+        if len(candidates) != 1:
+            reject(
+                "PROVIDER_EXECUTABLE_INVALID",
+                "Codex npm wrapper does not resolve to one native platform binary",
+            )
+        native = candidates[0]
+        try:
+            with native.open("rb") as handle:
+                native_header = handle.read(4)
+            native_mode = native.stat().st_mode
+        except OSError:
+            reject("PROVIDER_EXECUTABLE_INVALID", "Codex native binary is unavailable")
+        if (
+            native_header == b"\x7fELF"
+            or native_header[:2] == b"MZ"
+            or native_header
+            in {
+                b"\xfe\xed\xfa\xce",
+                b"\xce\xfa\xed\xfe",
+                b"\xfe\xed\xfa\xcf",
+                b"\xcf\xfa\xed\xfe",
+                b"\xca\xfe\xba\xbe",
+                b"\xbe\xba\xfe\xca",
+            }
+        ) and not (native_mode & 0o022):
+            return native
+        reject(
+            "PROVIDER_EXECUTABLE_INVALID",
+            "Codex package native binary is mutable or invalid",
+        )
 
     @staticmethod
     def _catalog_model(raw: bytes, model: str) -> dict[str, Any]:
@@ -208,7 +308,7 @@ class DirectCodexRunner:
         return selected
 
     @staticmethod
-    def _terminal_result(raw: bytes) -> str:
+    def _terminal_result(raw: bytes) -> tuple[str, str]:
         if not raw or len(raw) > MAX_PROVIDER_OUTPUT_BYTES:
             reject("PROVIDER_OUTPUT_INVALID", "Codex output size is invalid")
         try:
@@ -218,6 +318,16 @@ class DirectCodexRunner:
         events = [_provider_json(line.encode("utf-8"), "Codex event") for line in lines if line]
         if not events or events[0].get("type") != "thread.started":
             reject("PROVIDER_OUTPUT_INVALID", "Codex thread start is missing")
+        thread_events = [event for event in events if event.get("type") == "thread.started"]
+        if len(thread_events) != 1:
+            reject("PROVIDER_OUTPUT_INVALID", "Codex thread identity is ambiguous")
+        thread_id = thread_events[0].get("thread_id")
+        try:
+            canonical_thread_id = str(UUID(str(thread_id)))
+        except (ValueError, AttributeError):
+            reject("PROVIDER_SESSION_ID_INVALID", "Codex thread identity is invalid")
+        if canonical_thread_id != thread_id:
+            reject("PROVIDER_SESSION_ID_INVALID", "Codex thread identity is not canonical")
         if len([event for event in events if event.get("type") == "turn.started"]) != 1:
             reject("PROVIDER_OUTPUT_INVALID", "Codex turn start is ambiguous")
         completed = [event for event in events if event.get("type") == "turn.completed"]
@@ -244,7 +354,7 @@ class DirectCodexRunner:
             messages.append(text)
         if len(messages) != 1:
             reject("PROVIDER_OUTPUT_INVALID", "Codex terminal message is not singular")
-        return messages[0]
+        return messages[0], canonical_thread_id
 
     def run(
         self,
@@ -254,7 +364,7 @@ class DirectCodexRunner:
         workspace: Path,
         timeout_seconds: int = 600,
     ) -> ProviderExecutionReceipt:
-        if model != CODEX_MODEL:
+        if model not in CODEX_MODELS:
             reject("PROVIDER_MODEL_UNAVAILABLE", "Codex model is not the pinned route")
         prompt_bytes = prompt.encode("utf-8")
         if not prompt_bytes or len(prompt_bytes) > MAX_PROMPT_BYTES:
@@ -333,32 +443,41 @@ class DirectCodexRunner:
             )
         if result.returncode != 0:
             reject("PROVIDER_EXECUTION_FAILED", "direct Codex execution failed")
-        text = self._terminal_result(result.stdout)
-        capability = sha256_digest(
-            {
-                "channel": "openai-codex",
-                "cliRealpath": str(self.executable),
-                "cliSha256": pinned_digest,
-                "executableIdentityClass": "private-content-copy",
-                "cliVersionSha256": _bytes_digest(version.stdout.strip()),
-                "liveModelCatalogSha256": _bytes_digest(catalog.stdout),
-                "requestedModel": CODEX_MODEL,
-                "providerReportedModel": None,
-                "launchConfiguration": {
-                    "catalogArguments": catalog_command[1:],
-                    "executionArguments": execution_command[1:],
-                },
-            }
-        )
+        text, thread_id = self._terminal_result(result.stdout)
+        public_execution_arguments = list(execution_command[1:])
+        workspace_index = public_execution_arguments.index("-C") + 1
+        public_execution_arguments[workspace_index] = "<BOUND_WORKSPACE>"
+        capability_snapshot = {
+            "schemaVersion": "acik.direct-codex-launch-attestation.v1",
+            "channel": "openai-codex",
+            "cliRealpathSha256": _bytes_digest(str(self.executable).encode("utf-8")),
+            "cliSha256": pinned_digest,
+            "executableIdentityClass": "private-content-copy",
+            "cliVersionSha256": _bytes_digest(version.stdout.strip()),
+            "liveModelCatalogSha256": _bytes_digest(catalog.stdout),
+            "requestedModel": model,
+            "providerReportedModel": None,
+            "reasoningEffort": "xhigh",
+            "sandbox": "read-only",
+            "ephemeral": True,
+            "launchConfiguration": {
+                "catalogArguments": catalog_command[1:],
+                "executionArguments": public_execution_arguments,
+            },
+        }
+        capability = sha256_digest(capability_snapshot)
         return ProviderExecutionReceipt(
             provider_family="openai",
             channel="openai-codex",
             direct_provider_cli=True,
-            model_id=CODEX_MODEL,
+            model_id=model,
             model_identity_class="trusted-launch-attested",
             reasoning_effort="xhigh",
             sandbox="read-only",
             ephemeral=True,
+            provider_session_id=thread_id,
+            provider_transcript_sha256=_bytes_digest(result.stdout),
+            capability_snapshot=capability_snapshot,
             capability_snapshot_sha256=capability,
             input_sha256=_bytes_digest(prompt_bytes),
             output_sha256=_bytes_digest(text.encode("utf-8")),
@@ -464,6 +583,12 @@ class CursorRunner:
             direct_provider_cli=False,
             model_id=model,
             model_identity_class="trusted-launch-attested",
+            reasoning_effort="xhigh",
+            sandbox="read-only",
+            ephemeral=True,
+            provider_session_id=None,
+            provider_transcript_sha256=None,
+            capability_snapshot=None,
             capability_snapshot_sha256=capability,
             input_sha256=_bytes_digest(prompt_bytes),
             output_sha256=_bytes_digest(text.encode("utf-8")),
@@ -507,6 +632,58 @@ class ProviderReviewIssuer:
             )
 
     @staticmethod
+    def validate_coordinates(coordinates: ReviewCoordinates) -> None:
+        for label, value in (
+            ("reviewId", coordinates.review_id),
+            ("reviewChainId", coordinates.review_chain_id),
+        ):
+            try:
+                parsed = UUID(value)
+            except (AttributeError, ValueError):
+                reject("PROVIDER_REVIEW_COORDINATES_INVALID", f"{label} is not a UUID")
+            if str(parsed) != value:
+                reject(
+                    "PROVIDER_REVIEW_COORDINATES_INVALID",
+                    f"{label} is not a canonical UUID",
+                )
+        for label, value in (
+            ("subjectSha256", coordinates.subject_sha256),
+            ("closureRootSha256", coordinates.closure_root_sha256),
+        ):
+            if (
+                not isinstance(value, str)
+                or len(value) != 71
+                or not value.startswith("sha256:")
+                or any(character not in "0123456789abcdef" for character in value[7:])
+            ):
+                reject(
+                    "PROVIDER_REVIEW_COORDINATES_INVALID",
+                    f"{label} is not a canonical SHA-256 digest",
+                )
+        if not isinstance(coordinates.round, int) or not 1 <= coordinates.round <= 100:
+            reject("PROVIDER_REVIEW_COORDINATES_INVALID", "round is invalid")
+        previous = coordinates.previous_round_sha256
+        if coordinates.round == 1 and previous is not None:
+            reject(
+                "PROVIDER_REVIEW_COORDINATES_INVALID",
+                "round one cannot reference a previous review",
+            )
+        if coordinates.round > 1 and (
+            not isinstance(previous, str)
+            or len(previous) != 71
+            or not previous.startswith("sha256:")
+            or any(character not in "0123456789abcdef" for character in previous[7:])
+        ):
+            reject(
+                "PROVIDER_REVIEW_COORDINATES_INVALID",
+                "later rounds require a canonical previous-review digest",
+            )
+        issued_at = parse_utc(coordinates.issued_at, "review.issuedAt")
+        expires_at = parse_utc(coordinates.expires_at, "review.expiresAt")
+        if expires_at <= issued_at or expires_at - issued_at > timedelta(minutes=120):
+            reject("REVIEW_LIFETIME_INVALID", "review lifetime must be within 120 minutes")
+
+    @staticmethod
     def _review_result(text: str) -> dict[str, Any]:
         payload = _provider_json(text.encode("utf-8"), "review result")
         expected = {
@@ -531,6 +708,7 @@ class ProviderReviewIssuer:
                     not isinstance(value, str)
                     or not 2 <= len(value) <= 64
                     or value.upper() != value
+                    or any(character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in value)
                     for value in values
                 )
             ):
@@ -552,12 +730,14 @@ class ProviderReviewIssuer:
             or execution.reasoning_effort != "xhigh"
             or execution.sandbox != "read-only"
             or execution.ephemeral is not True
+            or execution.provider_session_id is None
+            or execution.provider_transcript_sha256 is None
+            or execution.capability_snapshot is None
+            or sha256_digest(execution.capability_snapshot)
+            != execution.capability_snapshot_sha256
         ):
             reject("PROVIDER_ISSUER_POLICY_MISMATCH", "execution receipt differs from issuer policy")
-        issued_at = parse_utc(coordinates.issued_at, "review.issuedAt")
-        expires_at = parse_utc(coordinates.expires_at, "review.expiresAt")
-        if expires_at <= issued_at or expires_at - issued_at > timedelta(minutes=120):
-            reject("REVIEW_LIFETIME_INVALID", "review lifetime must be within 120 minutes")
+        self.validate_coordinates(coordinates)
         result = self._review_result(execution.result_text)
         findings_projection = {
             "verdict": result["verdict"],
@@ -577,6 +757,8 @@ class ProviderReviewIssuer:
             "reasoningEffort": execution.reasoning_effort,
             "sandbox": execution.sandbox,
             "ephemeral": execution.ephemeral,
+            "providerSessionId": execution.provider_session_id,
+            "providerTranscriptSha256": execution.provider_transcript_sha256,
             "capabilitySnapshotSha256": execution.capability_snapshot_sha256,
             "subjectSha256": coordinates.subject_sha256,
             "round": coordinates.round,
@@ -608,7 +790,10 @@ class ProviderReviewIssuer:
 
 
 __all__ = [
+    "CODEX_HIGH_IMPACT_MODEL",
     "CODEX_MODEL",
+    "CODEX_MODELS",
+    "CODEX_ROUTINE_MODEL",
     "DirectCodexRunner",
     "ProviderExecutionReceipt",
     "ProviderReviewIssuer",

@@ -549,11 +549,6 @@ esac
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'gh args=%s tree_mismatch=%s\n' "$*" "${FAKE_TREE_MISMATCH:-unset}" >>"$FAKE_TRACE"
-evidence_response="$(printf '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE')"
-if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "response-revise" ]]; then
-  evidence_response="$(printf '## P0\nConcrete finding\n## P1\nNone\n## P2\nNone\nVERDICT: REVISE')"
-fi
-evidence_response_sha="$(printf '%s' "$evidence_response" | shasum -a 256 | awk '{print $1}')"
 evidence_head="$PROMOTION_HEAD_SHA"
 if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "internal-head" ]]; then
   evidence_head="$(printf '%040d' 8)"
@@ -562,9 +557,7 @@ evidence_body="$(jq -cn \
   --arg base "$PROMOTION_BASE_SHA" \
   --arg head "$evidence_head" \
   --arg scope "$PROMOTION_SCOPE_SHA256" \
-  --arg response "$evidence_response" \
-  --arg response_sha "$evidence_response_sha" \
-  '{schema:"cross-ai-provider-evidence/v2",provider:"openai",requested_model:"gpt-5.6-sol",actual_model:"gpt-5.6-sol",reasoning_effort:"xhigh",sandbox:"read-only",ephemeral:true,base_tip_sha:$base,base_sha:$base,head_sha:$head,scope_sha256:$scope,verdict:"AGREE",response_sha256:$response_sha,response:$response}')"
+  '{schema:"cross-ai-provider-evidence/v3",test_signature_valid:true,model:"gpt-5.6-sol",subject:{base_tip_sha:$base,base_sha:$base,head_sha:$head,scope_sha256:$scope}}')"
 evidence_sha="$(printf '%s' "$evidence_body" | shasum -a 256 | awk '{print $1}')"
 receipt_line="Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=gpt-5.6-sol; effort=xhigh; sandbox=read-only; ephemeral=true; base_tip=$PROMOTION_BASE_SHA; base=$PROMOTION_BASE_SHA; head=$PROMOTION_HEAD_SHA; scope=$PROMOTION_SCOPE_SHA256; verdict=AGREE; ref=https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/123456789; sha256=$evidence_sha"
 if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "missing-base-tip" ]]; then
@@ -615,6 +608,27 @@ else
   exit 94
 fi
 """
+        fake_python = r"""
+#!/usr/bin/env bash
+set -euo pipefail
+script="${1:-}"
+shift || true
+if [[ "$script" == *"prepare_cross_ai_scope.py" ]]; then
+  output=""
+  while (($#)); do
+    if [[ "$1" == "--output" ]]; then output="$2"; shift 2; else shift; fi
+  done
+  [[ -n "$output" ]]
+  printf 'local signed-scope routing fixture\n' > "$output"
+  printf '{"scope_sha256":"%s"}\n' "$PROMOTION_SCOPE_SHA256"
+elif [[ "$script" == *"verify_cross_ai_evidence_comment.py" ]]; then
+  comment="$(cat)"
+  [[ -n "$comment" ]]
+  [[ "${FAKE_RECEIPT_TAMPER:-none}" == "none" ]]
+else
+  exit 95
+fi
+"""
         for tamper, tree_mismatch, receipt_tamper, expected_rc in (
             (False, False, "none", 0),
             (True, False, "none", 1),
@@ -639,10 +653,13 @@ fi
                     fake_bin.mkdir()
                     git_path = fake_bin / "git"
                     gh_path = fake_bin / "gh"
+                    python_path = fake_bin / "python3"
                     git_path.write_text(textwrap.dedent(fake_git).lstrip())
                     gh_path.write_text(textwrap.dedent(fake_gh).lstrip())
+                    python_path.write_text(textwrap.dedent(fake_python).lstrip())
                     git_path.chmod(0o755)
                     gh_path.chmod(0o755)
+                    python_path.chmod(0o755)
                     output = Path(temp) / "attestation.json"
                     trace = Path(temp) / "trace.log"
                     env = {
@@ -1268,7 +1285,7 @@ fi
         self.assertIn("Path/branch sınıflandırıcısı", self.context_rules)
         self.assertIn("`none` receipt", self.context_rules)
         self.assertIn("`single` yalnız exact Codex receipt'i taşır", self.context_rules)
-        self.assertIn("cross-ai-provider-evidence/v2", self.context_rules)
+        self.assertIn("cross-ai-provider-evidence/v3", self.context_rules)
 
 if __name__ == "__main__":
     unittest.main()
