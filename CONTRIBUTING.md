@@ -113,14 +113,18 @@ başka model ve AI uygulama penceresi kullanılmaz.
 Provider yanıt sözleşmesi:
 
 ```
-## P0
-None veya somut bulgu
-## P1
-None veya somut bulgu
-## P2
-None veya somut bulgu
-VERDICT: AGREE|REVISE
+P0
+None
+P1
+- P1-STABLE_ID | repository/path.ext:123 | Somut bulgu
+P2
+None
+VERDICT: REVISE
 ```
+
+Başlıklar tam olarak `P0`, `P1`, `P2` olur; Markdown işareti kullanılmaz.
+Bulgu satırı `- P?-STABLE_ID | repository/path.ext:line | somut bulgu`
+biçimindedir. `AGREE` için üç bölüm de yalnız exact `None` içerir.
 
 - `AGREE` → test/CI/live evidence kapılarına devam et.
 - `REVISE` → geçerli bulguyu düzelt, yeni exact head/scope ile yeniden incele.

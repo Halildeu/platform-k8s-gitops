@@ -191,6 +191,12 @@ def build_authorization(
         "head_sha": advisory_binding["headSha"],
         "scope_sha256": advisory_binding["scopeSha256"],
     }
+    if not isinstance(head_sha, str) or not GIT_SHA.fullmatch(head_sha):
+        raise AuthorizationError("authorization run identity is invalid")
+    if head_sha != expected_advisory_bindings["head_sha"]:
+        raise AuthorizationError(
+            "authorization head does not match Codex advisory head binding"
+        )
     require_keys(policy["lifecycle"], {"validFrom", "validUntil"}, "policy.lifecycle")
     valid_from = parse_utc(policy["lifecycle"]["validFrom"], "policy validFrom")
     valid_until = parse_utc(policy["lifecycle"]["validUntil"], "policy validUntil")
@@ -252,7 +258,7 @@ def build_authorization(
         )
     except CodexEvidenceError as exc:
         raise AuthorizationError(f"Codex-only AI advisory evidence is invalid: {exc}") from exc
-    if run_id < 1 or not GIT_SHA.fullmatch(head_sha):
+    if run_id < 1:
         raise AuthorizationError("authorization run identity is invalid")
     require_sha256(operator_sha256, "operatorSha256")
     require_sha256(device_sha256, "deviceSha256")

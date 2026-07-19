@@ -304,6 +304,11 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
             self.build(owner_comment=tampered)
 
     def test_advisory_expected_bindings_edit_and_freshness_fail_closed(self):
+        with self.assertRaisesRegex(
+            AUTH.AuthorizationError, "authorization head does not match Codex advisory"
+        ):
+            self.build(head_sha="b" * 40)
+
         for policy_key, evidence_key, bad_value in (
             ("baseTipSha", "base_tip_sha", "1" * 40),
             ("baseSha", "base_sha", "2" * 40),
@@ -315,7 +320,7 @@ class ViewOnlyPilotOwnerAuthorizationTest(unittest.TestCase):
                 value["aiAdvisory"]["evidenceBinding"][policy_key] = bad_value
                 with self.assertRaisesRegex(
                     AUTH.AuthorizationError,
-                    "scope bytes differ|subject or prompt binding mismatch",
+                    "authorization head does not match|scope bytes differ|subject or prompt binding mismatch",
                 ):
                     self.build(policy=value)
 
