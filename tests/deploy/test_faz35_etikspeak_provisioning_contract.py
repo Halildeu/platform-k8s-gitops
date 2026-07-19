@@ -34,6 +34,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.writer_identity = (
             ROOT / "scripts/faz35/reconcile-test-permission-writer-identity.sh"
         ).read_text()
+        cls.activation_runbook = (
+            ROOT / "docs/runbooks/RB-faz35-etik-speak-test-activation.md"
+        ).read_text()
         cls.authz_projection_lib_path = (
             ROOT / "scripts/faz35/lib-authz-projection.sh"
         )
@@ -156,6 +159,8 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('readonly KUBE_NS="platform-test"', self.writer_identity)
         self.assertIn('readonly PG_CONTAINER="platform-pg-test"', self.writer_identity)
         self.assertIn('readonly KC_CONTAINER="platform-kc-test"', self.writer_identity)
+        self.assertIn("TEST Keycloak container is not exclusively bound", self.writer_identity)
+        self.assertIn('readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"', self.writer_identity)
         self.assertIn('productionMutation: false', self.writer_identity)
         self.assertIn('historicalUser1204Mutation: false', self.writer_identity)
         self.assertNotIn(
@@ -174,8 +179,31 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn('.attributes.subscriberId=[$local]', self.writer_identity)
         self.assertIn("writer-provisioner-granule-conflict", self.writer_identity)
         self.assertIn("writer-provisioner-member-conflict", self.writer_identity)
+        self.assertIn("writer-role-catalog-incomplete-or-paged", self.writer_identity)
+        self.assertIn('(.modules // {}) == {ACCESS:"MANAGE"}', self.writer_identity)
+        self.assertIn('((.allowedModules // []) | sort) == ["ACCESS"]', self.writer_identity)
+        self.assertIn("firstName,lastName,emailVerified", self.writer_identity)
         self.assertNotIn('PROVISIONER_ROLE_NAME="ADMIN"', self.writer_identity)
         self.assertNotIn("user_role_assignments", self.writer_identity)
+
+        identity_alignment = self.writer_identity.index("KEYCLOAK_IDENTITY_ALIGNED=true")
+        first_writer_token = self.writer_identity.index("mint_writer_token \"${TMP_DIR}/writer-token-before.json\"")
+        first_role_api = self.writer_identity.index("writer-bootstrap-role-read-denied")
+        self.assertLess(identity_alignment, first_writer_token)
+        self.assertLess(first_writer_token, first_role_api)
+
+    def test_runbook_reconciles_and_repairs_writer_before_entitlement(self):
+        reconcile = self.activation_runbook.index(
+            "./scripts/faz35/reconcile-test-permission-writer-identity.sh"
+        )
+        repair = self.activation_runbook.index(
+            "./scripts/faz24/repair-d35-permission-writer-credential.sh"
+        )
+        entitlement = self.activation_runbook.index(
+            "./scripts/faz35/provision-test-ethic-entitlement.sh"
+        )
+        self.assertLess(reconcile, repair)
+        self.assertLess(repair, entitlement)
 
     def test_permission_writer_identity_never_puts_secrets_in_argv_or_evidence(self):
         self.assertIn('password@${KC_ADMIN_PASSWORD_FILE}', self.writer_identity)

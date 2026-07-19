@@ -75,8 +75,19 @@ preserving the application's bearer/cookie credential-confusion boundary.
 ```bash
 ./scripts/faz35/provision-test-pg-vault.sh
 ./scripts/faz35/provision-test-keycloak.sh
+KC_ADMIN_PASSWORD="$(docker exec platform-kc-test cat /run/secrets/kc_admin_password)" \
+  ./scripts/faz35/reconcile-test-permission-writer-identity.sh
+KC_ADMIN_PASSWORD="$(docker exec platform-kc-test cat /run/secrets/kc_admin_password)" \
+  ./scripts/faz24/repair-d35-permission-writer-credential.sh
 ./scripts/faz35/provision-test-ethic-entitlement.sh
 ```
+
+The identity reconciliation first binds the dedicated permission writer to
+local synthetic user `12`, preserves the historical performance identity
+`1204`, grants only `ACCESS=MANAGE`, and proves the fresh-token projection.
+The credential repair then verifies or rotates only that aligned writer before
+the entitlement provisioner uses it. Both scripts receive the TEST Keycloak
+admin secret through a transient environment value; do not enable shell trace.
 
 The Keycloak script prints a non-secret `ETHICS_STAFF_SUBJECT=<uuid>` line and
 stores the dedicated allow, wrong-org and OpenFGA-denied synthetic persona

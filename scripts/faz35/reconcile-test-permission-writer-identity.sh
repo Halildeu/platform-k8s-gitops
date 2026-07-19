@@ -18,6 +18,7 @@ readonly PG_CONTAINER="platform-pg-test"
 readonly KC_CONTAINER="platform-kc-test"
 readonly KC_BASE_URL="http://127.0.0.1:8082"
 readonly KC_REALM="platform-test"
+readonly KC_EXPECTED_ISSUER="https://testai.acik.com/realms/platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly VAULT_CONTAINER="platform-vault-test"
 readonly VAULT_INIT_FILE="/home/halil/bootstrap-drill/vault-init-test.json"
@@ -78,6 +79,30 @@ done
   echo "ERROR: dedicated and historical local identities must differ" >&2
   exit 2
 }
+
+# Bind the loopback admin URL to the exact TEST container before any request.
+# A process merely listening on 8082 is not sufficient confinement evidence.
+kc_port_binding="$(docker inspect -f '{{json (index .NetworkSettings.Ports "8080/tcp")}}' \
+  "${KC_CONTAINER}" 2>/dev/null)" || {
+  echo "ERROR: TEST Keycloak container binding is unreadable" >&2
+  exit 2
+}
+[[ "${kc_port_binding}" == '[{"HostIp":"127.0.0.1","HostPort":"8082"}]' ]] || {
+  echo "ERROR: TEST Keycloak container is not exclusively bound to 127.0.0.1:8082" >&2
+  exit 2
+}
+kc_discovery="$(curl -sS --max-time 10 \
+  "${KC_BASE_URL}/realms/${KC_REALM}/.well-known/openid-configuration")" || {
+  echo "ERROR: TEST Keycloak discovery is unreachable" >&2
+  exit 2
+}
+jq -e --arg issuer "${KC_EXPECTED_ISSUER}" \
+  '.issuer == $issuer and .token_endpoint == ($issuer + "/protocol/openid-connect/token")' \
+  <<<"${kc_discovery}" >/dev/null || {
+  echo "ERROR: loopback Keycloak does not advertise the platform-test issuer" >&2
+  exit 2
+}
+unset kc_discovery kc_port_binding
 
 TMP_DIR="$(mktemp -d /tmp/faz35-writer-identity.XXXXXX)"
 mkdir -p "$(dirname "${OUT_PATH}")"
@@ -142,6 +167,16 @@ write_bearer_config() {
   local output="$1" token="$2"
   printf 'header = "Authorization: Bearer %s"\n' "${token}" > "${output}"
   chmod 600 "${output}"
+}
+
+validate_complete_role_catalog() {
+  local document="$1"
+  jq -e '
+    (.items | type) == "array" and
+    (.total | type) == "number" and
+    .total == (.items | length) and
+    .page == null and .pageSize == null
+  ' "${document}" >/dev/null
 }
 
 ke() {
@@ -229,6 +264,37 @@ jq -e \
     (.attributes.userId == [$legacy] or .attributes.userId == [$dedicated]) and
     (.attributes.subscriberId == [$legacy] or .attributes.subscriberId == [$dedicated])
   ' "${KC_WRITER_JSON}" >/dev/null || die "keycloak-writer-precondition-mismatch"
+
+# Keep the complete non-attribute identity profile immutable. Only the two
+# numeric correlation attributes are allowed to change in this reconciliation.
+jq -S '{id,username,email,firstName,lastName,emailVerified,enabled,requiredActions}' \
+  "${KC_WRITER_JSON}" > "${TMP_DIR}/profile-before.json"
+jq -S '.attributes // {}' "${KC_WRITER_JSON}" > "${TMP_DIR}/attributes-before.json"
+jq --arg local "${WRITER_LOCAL_USER_ID}" \
+  '.attributes.userId=[$local] | .attributes.subscriberId=[$local]' \
+  "${TMP_DIR}/attributes-before.json" > "${TMP_DIR}/attributes-expected.json"
+if ! cmp -s "${TMP_DIR}/attributes-before.json" "${TMP_DIR}/attributes-expected.json"; then
+  jq --slurpfile attrs "${TMP_DIR}/attributes-expected.json" '
+    {
+      username,enabled,firstName,lastName,email,emailVerified,requiredActions,
+      attributes:$attrs[0]
+    }
+  ' "${KC_WRITER_JSON}" > "${TMP_DIR}/kc-attributes-update.json"
+  code="$(http_status PUT "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
+    "${TMP_DIR}/kc-update-response.json" --config "${KC_AUTH_CONFIG}" \
+    -H 'Content-Type: application/json' --data-binary "@${TMP_DIR}/kc-attributes-update.json")"
+  [[ "${code}" == "204" ]] || die "keycloak-writer-identity-update-failed"
+fi
+code="$(http_status GET "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
+  "${TMP_DIR}/kc-writer-after.json" --config "${KC_AUTH_CONFIG}")"
+[[ "${code}" == "200" ]] || die "keycloak-writer-identity-readback-failed"
+jq -S '.attributes // {}' "${TMP_DIR}/kc-writer-after.json" \
+  | cmp -s "${TMP_DIR}/attributes-expected.json" - \
+  || die "keycloak-writer-identity-readback-mismatch"
+jq -S '{id,username,email,firstName,lastName,emailVerified,enabled,requiredActions}' \
+  "${TMP_DIR}/kc-writer-after.json" | cmp -s "${TMP_DIR}/profile-before.json" - \
+  || die "keycloak-writer-profile-changed"
+KEYCLOAK_IDENTITY_ALIGNED=true
 
 # Activate only the exact synthetic row. The transaction verifies its
 # postcondition; no other user or column is changed.
@@ -338,6 +404,8 @@ unset WRITER_TOKEN
 code="$(http_status GET 'https://testai.acik.com/api/v1/roles' \
   "${TMP_DIR}/roles.json" --config "${WRITER_AUTH_CONFIG}")"
 [[ "${code}" == "200" ]] || die "writer-bootstrap-role-read-denied"
+validate_complete_role_catalog "${TMP_DIR}/roles.json" \
+  || die "writer-role-catalog-incomplete-or-paged"
 
 role_count="$(jq --arg name "${PROVISIONER_ROLE_NAME}" '[.items[]? | select(.name == $name)] | length' \
   "${TMP_DIR}/roles.json")"
@@ -403,34 +471,6 @@ if [[ "${code}" != "200" ]] || ! jq -e --argjson writer "${WRITER_LOCAL_USER_ID}
 fi
 PROVISIONER_ROLE_READY=true
 
-# Align only the two numeric identity attributes; preserve every other
-# attribute and verify the complete attribute map after the Keycloak PUT.
-jq -S '.attributes // {}' "${KC_WRITER_JSON}" > "${TMP_DIR}/attributes-before.json"
-jq --arg local "${WRITER_LOCAL_USER_ID}" \
-  '.attributes.userId=[$local] | .attributes.subscriberId=[$local]' \
-  "${TMP_DIR}/attributes-before.json" > "${TMP_DIR}/attributes-expected.json"
-if ! cmp -s "${TMP_DIR}/attributes-before.json" "${TMP_DIR}/attributes-expected.json"; then
-  jq -n --slurpfile attrs "${TMP_DIR}/attributes-expected.json" '{attributes:$attrs[0]}' \
-    > "${TMP_DIR}/kc-attributes-update.json"
-  code="$(http_status PUT "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
-    "${TMP_DIR}/kc-update-response.json" --config "${KC_AUTH_CONFIG}" \
-    -H 'Content-Type: application/json' --data-binary "@${TMP_DIR}/kc-attributes-update.json")"
-  [[ "${code}" == "204" ]] || die "keycloak-writer-identity-update-failed"
-fi
-code="$(http_status GET "${KC_BASE_URL}/admin/realms/${KC_REALM}/users/${WRITER_USER_ID}" \
-  "${TMP_DIR}/kc-writer-after.json" --config "${KC_AUTH_CONFIG}")"
-[[ "${code}" == "200" ]] || die "keycloak-writer-identity-readback-failed"
-jq -S '.attributes // {}' "${TMP_DIR}/kc-writer-after.json" \
-  | cmp -s "${TMP_DIR}/attributes-expected.json" - \
-  || die "keycloak-writer-identity-readback-mismatch"
-jq -e \
-  --arg id "${WRITER_USER_ID}" --arg username "${WRITER_USERNAME}" --arg email "${WRITER_EMAIL}" '
-  .id == $id and .username == $username and .email == $email and
-  .enabled == true and (.requiredActions // []) == []
-' "${TMP_DIR}/kc-writer-after.json" >/dev/null \
-  || die "keycloak-writer-profile-changed"
-KEYCLOAK_IDENTITY_ALIGNED=true
-
 # A fresh post-alignment token must resolve as user 12, expose only the
 # dedicated ACCESS=MANAGE capability relevant here, and pass role reads.
 mint_writer_token "${TMP_DIR}/writer-token-after.json" || die "writer-token-remint-failed"
@@ -442,13 +482,15 @@ code="$(http_status GET 'https://testai.acik.com/api/v1/authz/me' \
 [[ "${code}" == "200" ]] || die "writer-authz-readback-failed"
 jq -e --arg id "${WRITER_LOCAL_USER_ID}" '
   .userId == $id and .subscriberId == ($id | tonumber) and
-  .modules.ACCESS == "MANAGE" and
-  ((.allowedModules // []) | index("ACCESS")) != null
+  (.modules // {}) == {ACCESS:"MANAGE"} and
+  ((.allowedModules // []) | sort) == ["ACCESS"]
 ' "${TMP_DIR}/authz-after.json" >/dev/null || die "writer-access-manage-not-authoritative"
 ACCESS_MANAGE_READY=true
 code="$(http_status GET 'https://testai.acik.com/api/v1/roles' \
   "${TMP_DIR}/roles-after.json" --config "${WRITER_AUTH_AFTER}")"
 [[ "${code}" == "200" ]] || die "writer-role-readback-denied"
+validate_complete_role_catalog "${TMP_DIR}/roles-after.json" \
+  || die "writer-role-catalog-readback-incomplete-or-paged"
 ROLES_READ_READY=true
 
 STATUS="ready"
