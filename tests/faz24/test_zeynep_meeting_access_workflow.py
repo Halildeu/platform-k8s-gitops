@@ -233,6 +233,7 @@ def _run_ambiguous_reset_scenario(
     vault_scenario: str = "ready",
     required_actions: tuple[str, ...] = (),
     profile_put_scenario: str = "success",
+    admin_password_via_stdin: bool = False,
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -539,7 +540,6 @@ fi
     env.update(
         {
             "PATH": f"{bin_dir}:{env['PATH']}",
-            "KC_ADMIN_PASSWORD": "mock-admin-password",
             "MOCK_SCENARIO": scenario,
             "MOCK_NEW_PASSWORD": NEW_PASSWORD,
             "MOCK_VAULT_STATE": str(vault_state),
@@ -560,8 +560,17 @@ fi
             "MOCK_EVENT_LOG": str(event_log),
         }
     )
+    command = ["bash", str(REPAIR_SCRIPT), "--out", str(result_path)]
+    stdin_value = None
+    if admin_password_via_stdin:
+        env.pop("KC_ADMIN_PASSWORD", None)
+        command.append("--keycloak-admin-password-stdin")
+        stdin_value = "mock-admin-password\n"
+    else:
+        env["KC_ADMIN_PASSWORD"] = "mock-admin-password"
     proc = subprocess.run(
-        ["bash", str(REPAIR_SCRIPT), "--out", str(result_path)],
+        command,
+        input=stdin_value,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -587,6 +596,18 @@ def test_repair_script_is_shell_syntax_valid():
     )
 
     assert proc.returncode == 0, proc.stderr
+
+
+def test_keycloak_admin_password_stdin_contract_reaches_ready_state(tmp_path):
+    proc, result, _, _, _ = _run_ambiguous_reset_scenario(
+        tmp_path,
+        "new-success",
+        admin_password_via_stdin=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert result["status"] in {"already-ready", "repaired", "profile-repaired"}
+    assert "mock-admin-password" not in proc.stdout
+    assert "mock-admin-password" not in proc.stderr
 
 
 def test_repair_script_keeps_vault_and_keycloak_reconcilable():

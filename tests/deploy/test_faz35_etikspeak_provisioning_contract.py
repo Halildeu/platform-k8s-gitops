@@ -34,6 +34,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.writer_identity = (
             ROOT / "scripts/faz35/reconcile-test-permission-writer-identity.sh"
         ).read_text()
+        cls.writer_credential_repair = (
+            ROOT / "scripts/faz24/repair-d35-permission-writer-credential.sh"
+        ).read_text()
         cls.activation_runbook = (
             ROOT / "docs/runbooks/RB-faz35-etik-speak-test-activation.md"
         ).read_text()
@@ -182,6 +185,12 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("writer-role-catalog-incomplete-or-paged", self.writer_identity)
         self.assertIn('(.modules // {}) == {ACCESS:"MANAGE"}', self.writer_identity)
         self.assertIn('((.allowedModules // []) | sort) == ["ACCESS"]', self.writer_identity)
+        self.assertIn('.superAdmin == false', self.writer_identity)
+        self.assertIn('((.roles // []) | sort) == [$role]', self.writer_identity)
+        self.assertIn('(.actions // {}) == {}', self.writer_identity)
+        self.assertIn('(.reports // {}) == {}', self.writer_identity)
+        self.assertIn('(.scopes // []) == []', self.writer_identity)
+        self.assertIn('(.allowedScopes // []) == []', self.writer_identity)
         self.assertIn("firstName,lastName,emailVerified", self.writer_identity)
         self.assertNotIn('PROVISIONER_ROLE_NAME="ADMIN"', self.writer_identity)
         self.assertNotIn("user_role_assignments", self.writer_identity)
@@ -204,6 +213,12 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         )
         self.assertLess(reconcile, repair)
         self.assertLess(repair, entitlement)
+        self.assertEqual(
+            self.activation_runbook.count("--keycloak-admin-password-stdin"), 2
+        )
+        self.assertNotIn("KC_ADMIN_PASSWORD=\"$(", self.activation_runbook)
+        self.assertIn("set +x", self.writer_identity)
+        self.assertIn("set +x", self.writer_credential_repair)
 
     def test_permission_writer_identity_never_puts_secrets_in_argv_or_evidence(self):
         self.assertIn('password@${KC_ADMIN_PASSWORD_FILE}', self.writer_identity)

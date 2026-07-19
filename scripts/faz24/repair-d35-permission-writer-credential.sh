@@ -2,6 +2,7 @@
 # Repair the stale test-only D35 permission-writer credential without exposing it.
 
 set -Eeuo pipefail
+set +x
 umask 077
 
 OUT_PATH="${OUT_PATH:-/tmp/faz24-permission-writer-repair.json}"
@@ -23,6 +24,7 @@ readonly VAULT_CONTAINER="platform-vault-test"
 readonly VAULT_INIT_FILE="/home/halil/bootstrap-drill/vault-init-test.json"
 
 STATUS="running"
+KC_ADMIN_PASSWORD_STDIN=false
 FAILURE_REASON=""
 EXACT_WRITER_MATCH=false
 KEYCLOAK_RESET=false
@@ -42,7 +44,7 @@ WRITER_PROFILE_EMAIL_MUTATION_CONFIRMED=false
 
 usage() {
   cat <<'EOF'
-Usage: repair-d35-permission-writer-credential.sh [--out PATH]
+Usage: repair-d35-permission-writer-credential.sh [--out PATH] [--keycloak-admin-password-stdin]
 
 Repairs missing platform-test D35 permission-writer service-profile fields,
 rotates its password, patches the matching Vault record, and verifies login plus
@@ -54,10 +56,23 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) OUT_PATH="$2"; shift 2 ;;
+    --keycloak-admin-password-stdin) KC_ADMIN_PASSWORD_STDIN=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ "${KC_ADMIN_PASSWORD_STDIN}" == "true" ]]; then
+  [[ -z "${KC_ADMIN_PASSWORD:-}" ]] || {
+    echo "ERROR: Keycloak admin password sources are ambiguous" >&2
+    exit 2
+  }
+  KC_ADMIN_PASSWORD=""
+  IFS= read -r KC_ADMIN_PASSWORD || [[ -n "${KC_ADMIN_PASSWORD}" ]] || {
+    echo "ERROR: Keycloak admin password stdin is empty" >&2
+    exit 2
+  }
+fi
 
 for command_name in cmp curl jq docker openssl tr; do
   command -v "${command_name}" >/dev/null 2>&1 || {

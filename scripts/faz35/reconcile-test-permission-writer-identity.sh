@@ -31,6 +31,7 @@ readonly LEGACY_LOCAL_USER_ID="1204"
 readonly PROVISIONER_ROLE_NAME="ETIK_SPEAK_PROVISIONER"
 
 STATUS="running"
+KC_ADMIN_PASSWORD_STDIN=false
 FAILURE_REASON=""
 LOCAL_PROFILE_EXACT=false
 LOCAL_PROFILE_ACTIVATED=false
@@ -42,7 +43,7 @@ ROLES_READ_READY=false
 
 usage() {
   cat <<'EOF'
-Usage: reconcile-test-permission-writer-identity.sh [--out PATH]
+Usage: reconcile-test-permission-writer-identity.sh [--out PATH] [--keycloak-admin-password-stdin]
 
 Reconciles only the synthetic platform-test permission writer. It activates
 the exact pre-provisioned local profile id 12, writes the bounded ACCESS
@@ -55,10 +56,23 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) OUT_PATH="$2"; shift 2 ;;
+    --keycloak-admin-password-stdin) KC_ADMIN_PASSWORD_STDIN=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ "${KC_ADMIN_PASSWORD_STDIN}" == "true" ]]; then
+  [[ -z "${KC_ADMIN_PASSWORD:-}" ]] || {
+    echo "ERROR: Keycloak admin password sources are ambiguous" >&2
+    exit 2
+  }
+  KC_ADMIN_PASSWORD=""
+  IFS= read -r KC_ADMIN_PASSWORD || [[ -n "${KC_ADMIN_PASSWORD}" ]] || {
+    echo "ERROR: Keycloak admin password stdin is empty" >&2
+    exit 2
+  }
+fi
 
 for command_name in cmp curl docker find grep jq kubectl mktemp sed stat tr wc; do
   command -v "${command_name}" >/dev/null 2>&1 || {
@@ -480,10 +494,15 @@ unset WRITER_TOKEN
 code="$(http_status GET 'https://testai.acik.com/api/v1/authz/me' \
   "${TMP_DIR}/authz-after.json" --config "${WRITER_AUTH_AFTER}")"
 [[ "${code}" == "200" ]] || die "writer-authz-readback-failed"
-jq -e --arg id "${WRITER_LOCAL_USER_ID}" '
+jq -e --arg id "${WRITER_LOCAL_USER_ID}" --arg role "${PROVISIONER_ROLE_NAME}" '
   .userId == $id and .subscriberId == ($id | tonumber) and
+  .superAdmin == false and
+  ((.roles // []) | sort) == [$role] and
   (.modules // {}) == {ACCESS:"MANAGE"} and
-  ((.allowedModules // []) | sort) == ["ACCESS"]
+  ((.allowedModules // []) | sort) == ["ACCESS"] and
+  ((.permissions // []) | sort) == ["ACCESS"] and
+  (.actions // {}) == {} and (.reports // {}) == {} and
+  (.scopes // []) == [] and (.allowedScopes // []) == []
 ' "${TMP_DIR}/authz-after.json" >/dev/null || die "writer-access-manage-not-authoritative"
 ACCESS_MANAGE_READY=true
 code="$(http_status GET 'https://testai.acik.com/api/v1/roles' \
