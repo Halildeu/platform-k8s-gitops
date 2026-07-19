@@ -251,6 +251,18 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         )
         self.assertIn("config credentials --status", self.keycloak)
         self.assertIn("ethics-org-id-mapper", self.keycloak)
+        self.assertEqual(
+            self.keycloak.count('config.\"introspection.token.claim\"=true'),
+            2,
+        )
+        self.assertIn(
+            '"included.client.audience":"ethics-manager","introspection.token.claim":"true","userinfo.token.claim":"false"',
+            self.keycloak,
+        )
+        self.assertIn(
+            '"id.token.claim":"false","introspection.token.claim":"true","jsonType.label":"String"',
+            self.keycloak,
+        )
         self.assertIn("optional-client-scopes", self.keycloak)
         self.assertIn("default-client-scopes", self.keycloak)
         self.assertIn("scope-mappings/realm", self.keycloak)

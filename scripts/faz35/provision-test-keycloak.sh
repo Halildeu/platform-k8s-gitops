@@ -190,10 +190,10 @@ preflight_existing_scope() {
       ([.[].name] - ["ethics-manager-audience-mapper", "ethics-org-id-mapper"] | length == 0) and
       (all(.[] | select(.name == "ethics-manager-audience-mapper");
         .protocol == "openid-connect" and .protocolMapper == "oidc-audience-mapper" and
-        .config == {"access.token.claim":"true","id.token.claim":"false","included.client.audience":"ethics-manager"})) and
+        .config == {"access.token.claim":"true","id.token.claim":"false","included.client.audience":"ethics-manager","introspection.token.claim":"true","userinfo.token.claim":"false"})) and
       (all(.[] | select(.name == "ethics-org-id-mapper");
         .protocol == "openid-connect" and .protocolMapper == "oidc-usermodel-attribute-mapper" and
-        .config == {"access.token.claim":"true","claim.name":"org_id","id.token.claim":"false","jsonType.label":"String","multivalued":"false","user.attribute":"org_id","userinfo.token.claim":"false"}))
+        .config == {"access.token.claim":"true","claim.name":"org_id","id.token.claim":"false","introspection.token.claim":"true","jsonType.label":"String","multivalued":"false","user.attribute":"org_id","userinfo.token.claim":"false"}))
     ' >/dev/null || {
       echo "FATAL: pre-mutation audience/org mapper drift" >&2
       exit 1
@@ -356,7 +356,9 @@ if [ -z "$audience_mapper_id" ]; then
     -s protocolMapper=oidc-audience-mapper \
     -s 'config."included.client.audience"=ethics-manager' \
     -s 'config."access.token.claim"=true' \
-    -s 'config."id.token.claim"=false' >/dev/null
+    -s 'config."id.token.claim"=false' \
+    -s 'config."introspection.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=false' >/dev/null
 fi
 org_mapper_id=$(kc get "client-scopes/$audience_scope_id/protocol-mappers/models" \
   -r "$REALM" --fields id,name --format csv --noquotes \
@@ -370,6 +372,7 @@ if [ -z "$org_mapper_id" ]; then
     -s 'config."jsonType.label"=String' \
     -s 'config."access.token.claim"=true' \
     -s 'config."id.token.claim"=false' \
+    -s 'config."introspection.token.claim"=true' \
     -s 'config."userinfo.token.claim"=false' \
     -s 'config."multivalued"=false' >/dev/null
 fi
@@ -384,7 +387,9 @@ printf '%s' "$audience_mappers" | jq -e '
     .config == {
       "access.token.claim":"true",
       "id.token.claim":"false",
-      "included.client.audience":"ethics-manager"
+      "included.client.audience":"ethics-manager",
+      "introspection.token.claim":"true",
+      "userinfo.token.claim":"false"
     }) and
   (map(select(.name == "ethics-org-id-mapper"))[0] |
     .protocol == "openid-connect" and
@@ -393,6 +398,7 @@ printf '%s' "$audience_mappers" | jq -e '
       "access.token.claim":"true",
       "claim.name":"org_id",
       "id.token.claim":"false",
+      "introspection.token.claim":"true",
       "jsonType.label":"String",
       "multivalued":"false",
       "user.attribute":"org_id",
