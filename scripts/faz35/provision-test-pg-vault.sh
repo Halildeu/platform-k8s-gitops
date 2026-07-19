@@ -75,48 +75,163 @@ command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 
   exit 1
 }
 
+# Existing role reuse is accepted only when the role is already dedicated to
+# the Etik Speak database. This read-only phase precedes every Vault, AppRole,
+# Kubernetes and PostgreSQL mutation.
+preflight_existing_pg_role() {
+  local role_exists database_name
+  role_exists=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
+    "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ethics_app')")
+  [ "$role_exists" = t ] || return 0
+
+  [ "$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -At -F '|' -c \
+    "SELECT rolcanlogin,rolinherit,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname='ethics_app'")" = \
+    "t|f|f|f|f|f|f" ] || {
+    echo "FATAL: pre-mutation ethics_app role attributes are unsafe" >&2
+    exit 1
+  }
+  [ "$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
+    "SELECT count(*) FROM pg_auth_members WHERE roleid=(SELECT oid FROM pg_roles WHERE rolname='ethics_app') OR member=(SELECT oid FROM pg_roles WHERE rolname='ethics_app')")" = 0 ] || {
+    echo "FATAL: pre-mutation ethics_app has inbound or outbound role membership" >&2
+    exit 1
+  }
+  [ "$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
+    "SELECT count(*) FROM pg_db_role_setting WHERE setrole=(SELECT oid FROM pg_roles WHERE rolname='ethics_app')")" = 0 ] || {
+    echo "FATAL: pre-mutation ethics_app has role/database settings" >&2
+    exit 1
+  }
+
+  while IFS= read -r database_name; do
+    docker exec -i "$PG_CONTAINER" psql -X -U postgres -d "$database_name" \
+      -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+DO $$
+DECLARE
+  target_oid oid;
+  ethics_db_oid oid;
+  acl_catalog record;
+  leaked boolean;
+BEGIN
+  SELECT oid INTO STRICT target_oid FROM pg_roles WHERE rolname='ethics_app';
+  SELECT oid INTO ethics_db_oid FROM pg_database WHERE datname='ethics';
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_shdepend d
+    WHERE d.refclassid='pg_authid'::regclass
+      AND d.refobjid=target_oid
+      AND d.deptype='o'
+      AND NOT (
+        (d.classid='pg_database'::regclass AND d.objid=ethics_db_oid)
+        OR (current_database()='ethics' AND d.dbid=ethics_db_oid)
+      )
+  ) THEN
+    RAISE EXCEPTION 'ethics_app owns an object outside the dedicated ethics database';
+  END IF;
+
+  IF current_database() <> 'ethics' THEN
+    IF EXISTS (SELECT 1 FROM pg_default_acl WHERE defaclrole=target_oid) THEN
+      RAISE EXCEPTION 'ethics_app owns an unexpected default ACL';
+    END IF;
+    FOR acl_catalog IN
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema='pg_catalog'
+        AND udt_name='_aclitem'
+        AND table_name <> 'pg_init_privs'
+      ORDER BY table_name, column_name
+    LOOP
+      EXECUTE format(
+        'SELECT EXISTS (SELECT 1 FROM pg_catalog.%I c, LATERAL aclexplode(c.%I) x '
+        'WHERE x.grantee=$1)', acl_catalog.table_name, acl_catalog.column_name)
+        INTO leaked USING target_oid;
+      IF leaked THEN
+        RAISE EXCEPTION 'ethics_app has an unexpected ACL outside ethics in %.%',
+          acl_catalog.table_name, acl_catalog.column_name;
+      END IF;
+    END LOOP;
+  END IF;
+END
+$$;
+SQL
+  done < <(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
+    "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0' ORDER BY datname")
+}
+preflight_existing_pg_role
+
 vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
 approle_secret_file=""
 accessor_output_file=""
 accessor_error_file=""
-trap 'unset db_password vault_root_token existing_db_password public_gate_password public_gate_hash public_gate_htpasswd vault_entry_json approle_json approle_secret_id; [ -z "${approle_secret_file:-}" ] || rm -f "$approle_secret_file"; [ -z "${accessor_output_file:-}" ] || rm -f "$accessor_output_file"; [ -z "${accessor_error_file:-}" ] || rm -f "$accessor_error_file"' EXIT
+vault_output_file=""
+vault_error_file=""
+trap 'unset db_password vault_root_token existing_db_password public_gate_password public_gate_hash public_gate_htpasswd vault_entry_json approle_json approle_secret_id; [ -z "${approle_secret_file:-}" ] || rm -f "$approle_secret_file"; [ -z "${accessor_output_file:-}" ] || rm -f "$accessor_output_file"; [ -z "${accessor_error_file:-}" ] || rm -f "$accessor_error_file"; [ -z "${vault_output_file:-}" ] || rm -f "$vault_output_file"; [ -z "${vault_error_file:-}" ] || rm -f "$vault_error_file"' EXIT
 
 # Keep the Vault token out of docker(1) argv. The static container-side shell
 # reads it from stdin and exports it only for the short-lived Vault CLI child.
-vault_get_field() {
-  local field=$1
-  printf '%s\n' "$vault_root_token" | docker exec -i \
+vault_read_document() {
+  local status_code=0 result
+  vault_output_file=$(mktemp)
+  vault_error_file=$(mktemp)
+  chmod 600 "$vault_output_file" "$vault_error_file"
+  if printf '%s\n' "$vault_root_token" | docker exec -i \
+      -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+        set -eu
+        IFS= read -r VAULT_TOKEN
+        export VAULT_TOKEN
+        exec vault kv get -format=json "$1"
+      ' sh "$VAULT_PATH" >"$vault_output_file" 2>"$vault_error_file"; then
+    status_code=0
+  else
+    status_code=$?
+  fi
+  result=$(vault_json_document_classify "$status_code" "$vault_output_file" \
+    "$vault_error_file" '.data.data | type == "object"') || {
+    echo "FATAL: Vault JSON read failed exact single-document validation" >&2
+    return 45
+  }
+  rm -f "$vault_output_file" "$vault_error_file"
+  vault_output_file=""
+  vault_error_file=""
+  printf '%s' "$result"
+}
+
+vault_output_file=$(mktemp)
+vault_error_file=$(mktemp)
+chmod 600 "$vault_output_file" "$vault_error_file"
+vault_entry_status=0
+if printf '%s\n' "$vault_root_token" | docker exec -i \
     -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
       set -eu
       IFS= read -r VAULT_TOKEN
       export VAULT_TOKEN
-      exec vault kv get -field="$1" "$2"
-    ' sh "$field" "$VAULT_PATH"
-}
-
-vault_entry_status=0
-if vault_entry_json=$(printf '%s\n' "$vault_root_token" | docker exec -i \
-  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
-    set -eu
-    IFS= read -r VAULT_TOKEN
-    export VAULT_TOKEN
-    err=$(mktemp)
-    trap '\''rm -f "$err"'\'' EXIT
-    if vault kv get -format=json "$1" 2>"$err"; then
-      exit 0
-    fi
-    grep -Eqi "no value found|not found" "$err" && exit 44
-    exit 45
-  ' sh "$VAULT_PATH"); then
+      exec vault kv get -format=json "$1"
+    ' sh "$VAULT_PATH" >"$vault_output_file" 2>"$vault_error_file"; then
   vault_entry_status=0
 else
   vault_entry_status=$?
 fi
-case "$vault_entry_status" in
-  0) existing_db_password=$(printf '%s' "$vault_entry_json" | jq -r '.data.data.ETHICS_DB_PASSWORD // empty') ;;
-  44) existing_db_password="" ;;
-  *) echo "FATAL: Vault read failed; refusing to classify it as missing" >&2; exit 1 ;;
-esac
+if vault_entry_json=$(vault_kv_document_classify "$vault_entry_status" \
+    "$vault_output_file" "$vault_error_file" "No value found at kv/data/platform/etik-speak"); then
+  printf '%s' "$vault_entry_json" | jq -e -s '
+    length == 1 and
+    (.[0].data.data.ETHICS_DB_USERNAME // "ethics_app") == "ethics_app" and
+    ((.[0].data.data.ETHICS_DB_PASSWORD // "") | type == "string")
+  ' >/dev/null || {
+    echo "FATAL: Vault Etik Speak document schema drift" >&2
+    exit 1
+  }
+  existing_db_password=$(printf '%s' "$vault_entry_json" | jq -r '.data.data.ETHICS_DB_PASSWORD // empty')
+else
+  vault_entry_status=$?
+  [ "$vault_entry_status" -eq 44 ] || {
+    echo "FATAL: Vault read failed; refusing to classify it as missing" >&2
+    exit 1
+  }
+  existing_db_password=""
+fi
+rm -f "$vault_output_file" "$vault_error_file"
+vault_output_file=""
+vault_error_file=""
 unset vault_entry_json
 
 if [ -n "$existing_db_password" ]; then
@@ -154,12 +269,13 @@ else
     ' sh "$VAULT_PATH"
 fi
 
-verified_db_password=$(vault_get_field ETHICS_DB_PASSWORD)
+verified_document=$(vault_read_document)
+verified_db_password=$(printf '%s' "$verified_document" | jq -r '.data.data.ETHICS_DB_PASSWORD // empty')
 [ "$verified_db_password" = "$db_password" ] || {
   echo "FATAL: Vault DB password read-after-write mismatch" >&2
   exit 1
 }
-unset verified_db_password
+unset verified_document verified_db_password
 
 ensure_local_secret_file() {
   local file=$1 generated=$2 owner mode
@@ -208,12 +324,13 @@ public_gate_htpasswd="$PUBLIC_GATE_USERNAME:$public_gate_hash"
       export VAULT_TOKEN
       vault kv patch "$1" EDGE_BASIC_AUTH_HTPASSWD=- >/dev/null
     ' sh "$VAULT_PATH"
-verified_gate_htpasswd=$(vault_get_field EDGE_BASIC_AUTH_HTPASSWD)
+verified_document=$(vault_read_document)
+verified_gate_htpasswd=$(printf '%s' "$verified_document" | jq -r '.data.data.EDGE_BASIC_AUTH_HTPASSWD // empty')
 [ "$verified_gate_htpasswd" = "$public_gate_htpasswd" ] || {
   echo "FATAL: Vault public-gate hash read-after-write mismatch" >&2
   exit 1
 }
-unset verified_gate_htpasswd public_gate_password public_gate_hash public_gate_htpasswd
+unset verified_document verified_gate_htpasswd public_gate_password public_gate_hash public_gate_htpasswd
 
 # Create a product-scoped Vault policy/AppRole and place only its secret_id in
 # the product namespace. The broad shared ClusterSecretStore role is never
@@ -273,13 +390,37 @@ rm -f "$accessor_output_file" "$accessor_error_file"
 accessor_output_file=""
 accessor_error_file=""
 unset accessor_status
-approle_json=$(printf '%s\n' "$vault_root_token" | docker exec -i \
-  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
-    set -eu
-    IFS= read -r VAULT_TOKEN
-    export VAULT_TOKEN
-    exec vault write -format=json -f "auth/approle/role/$1/secret-id"
-  ' sh "$ESO_APPROLE_NAME")
+vault_output_file=$(mktemp)
+vault_error_file=$(mktemp)
+chmod 600 "$vault_output_file" "$vault_error_file"
+secret_id_status=0
+if printf '%s\n' "$vault_root_token" | docker exec -i \
+    -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+      set -eu
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN
+      exec vault write -format=json -f "auth/approle/role/$1/secret-id"
+    ' sh "$ESO_APPROLE_NAME" >"$vault_output_file" 2>"$vault_error_file"; then
+  secret_id_status=0
+else
+  secret_id_status=$?
+fi
+approle_json=$(vault_json_document_classify "$secret_id_status" \
+  "$vault_output_file" "$vault_error_file" \
+  '.data.secret_id | type == "string" and length > 0') || {
+  echo "FATAL: dedicated ESO AppRole secret response is not one exact JSON document" >&2
+  exit 1
+}
+printf '%s' "$approle_json" | jq -e -s '
+  length == 1 and
+  (.[0].data.secret_id_accessor | type == "string" and length > 0)
+' >/dev/null || {
+  echo "FATAL: dedicated ESO AppRole secret response schema drift" >&2
+  exit 1
+}
+rm -f "$vault_output_file" "$vault_error_file"
+vault_output_file=""
+vault_error_file=""
 approle_secret_id=$(printf '%s' "$approle_json" | jq -r '.data.secret_id // empty')
 new_accessor=$(printf '%s' "$approle_json" | jq -r '.data.secret_id_accessor // empty')
 [ -n "$approle_secret_id" ] && [ -n "$new_accessor" ] || {
@@ -310,74 +451,35 @@ printf '%s' "$old_accessors" | jq -r '.[]?' | while IFS= read -r accessor; do
         secret_id_accessor="$SECRET_ID_ACCESSOR" >/dev/null
     ' sh "$ESO_APPROLE_NAME"
 done
-final_accessors=$(printf '%s\n' "$vault_root_token" | docker exec -i \
-  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
-    set -eu
-    IFS= read -r VAULT_TOKEN
-    export VAULT_TOKEN
-    exec vault list -format=json "auth/approle/role/$1/secret-id"
-  ' sh "$ESO_APPROLE_NAME") || {
+accessor_output_file=$(mktemp)
+accessor_error_file=$(mktemp)
+chmod 600 "$accessor_output_file" "$accessor_error_file"
+accessor_status=0
+if printf '%s\n' "$vault_root_token" | docker exec -i \
+    -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+      set -eu
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN
+      exec vault list -format=json "auth/approle/role/$1/secret-id"
+    ' sh "$ESO_APPROLE_NAME" >"$accessor_output_file" 2>"$accessor_error_file"; then
+  accessor_status=0
+else
+  accessor_status=$?
+fi
+final_accessors=$(vault_accessor_inventory_classify \
+  "$accessor_status" "$accessor_output_file" "$accessor_error_file") || {
   echo "FATAL: post-rotation AppRole credential enumeration failed" >&2
   exit 1
 }
+rm -f "$accessor_output_file" "$accessor_error_file"
+accessor_output_file=""
+accessor_error_file=""
 printf '%s' "$final_accessors" | jq -e --arg expected "$new_accessor" \
   'type == "array" and length == 1 and .[0] == $expected' >/dev/null || {
   echo "FATAL: stale AppRole credential accessor remains after rotation" >&2
   exit 1
 }
 unset old_accessors final_accessors new_accessor
-
-# Before changing PostgreSQL, inspect every ACL-bearing pg_catalog column that
-# this server version exposes. pg_init_privs is extension baseline metadata,
-# not the live privilege state. A default-ACL row owned by ethics_app is drift
-# even when its grantee is PUBLIC or another role.
-role_exists=$(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
-  "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='ethics_app')")
-if [ "$role_exists" = t ]; then
-  while IFS= read -r database_name; do
-    docker exec -i "$PG_CONTAINER" psql -X -U postgres -d "$database_name" \
-      -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
-DO $$
-DECLARE
-  target_oid oid;
-  acl_catalog record;
-  leaked boolean;
-BEGIN
-  SELECT oid INTO STRICT target_oid FROM pg_roles WHERE rolname='ethics_app';
-  IF EXISTS (SELECT 1 FROM pg_default_acl WHERE defaclrole=target_oid) THEN
-    RAISE EXCEPTION 'ethics_app owns an unexpected default ACL';
-  END IF;
-  FOR acl_catalog IN
-    SELECT table_name, column_name
-    FROM information_schema.columns
-    WHERE table_schema='pg_catalog'
-      AND udt_name='_aclitem'
-      AND table_name <> 'pg_init_privs'
-    ORDER BY table_name, column_name
-  LOOP
-    IF acl_catalog.table_name = 'pg_database' THEN
-      EXECUTE format(
-        'SELECT EXISTS (SELECT 1 FROM pg_catalog.%I c, LATERAL aclexplode(c.%I) x '
-        'WHERE x.grantee=$1 AND NOT (c.datname=''ethics'' AND c.datdba=$1))',
-        acl_catalog.table_name, acl_catalog.column_name)
-        INTO leaked USING target_oid;
-    ELSE
-      EXECUTE format(
-        'SELECT EXISTS (SELECT 1 FROM pg_catalog.%I c, LATERAL aclexplode(c.%I) x '
-        'WHERE x.grantee=$1)', acl_catalog.table_name, acl_catalog.column_name)
-        INTO leaked USING target_oid;
-    END IF;
-    IF leaked THEN
-      RAISE EXCEPTION 'ethics_app has an unexpected ACL in %.%',
-        acl_catalog.table_name, acl_catalog.column_name;
-    END IF;
-  END LOOP;
-END
-$$;
-SQL
-  done < <(docker exec "$PG_CONTAINER" psql -X -U postgres -d postgres -Atc \
-    "SELECT datname FROM pg_database WHERE datallowconn AND datname <> 'template0' ORDER BY datname")
-fi
 
 # Create/validate the login role without embedding a cleartext password in SQL.
 docker exec "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 >/dev/null <<'SQL'

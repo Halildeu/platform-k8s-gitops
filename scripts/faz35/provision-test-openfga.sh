@@ -22,6 +22,7 @@ WRONG_ETHICS_ORG_ID="${WRONG_ETHICS_ORG_ID:-00000000-0000-0000-0000-000000000002
 STAFF_SUBJECT="${STAFF_SUBJECT:-}"
 WRONG_ORG_SUBJECT="${WRONG_ORG_SUBJECT:-}"
 DENIED_SUBJECT="${DENIED_SUBJECT:-}"
+RECUSAL_SENTINEL_CASE_ID="00000000-0000-0000-0000-000000000035"
 
 [ "$KUBE_NS" = "platform-test" ] && [ "$KUBE_CONTEXT" = "k3d-test" ] || {
   echo "FATAL: this script is k3d-test/platform-test only" >&2
@@ -275,6 +276,40 @@ for relation in case_viewer case_triager case_handler; do
   }
 done
 
+# Prove an explicit case deny, not merely the absence of a product grant. This
+# persistent synthetic sentinel has no database/narrative counterpart; it
+# exists only to verify that a freshly-added recusal defeats an otherwise
+# authorized manager through the exact promoted model.
+write_exact_tuple() {
+  local user=$1 relation=$2 object=$3 response code body
+  response=$(jq -nc --arg model "$model_id" --arg user "$user" \
+    --arg relation "$relation" --arg object "$object" \
+    '{authorization_model_id:$model,writes:{tuple_keys:[{user:$user,relation:$relation,object:$object}]}}' \
+    | pod_post "$OPENFGA_BASE/stores/$store_id/write")
+  code=${response##*$'\n'}
+  body=${response%$'\n'*}
+  case "$code" in
+    200|201) ;;
+    400|409) printf '%s' "$body" | grep -qi 'already exist' || {
+      echo "FATAL: sentinel tuple write $relation HTTP $code" >&2; exit 1; }
+      ;;
+    *) echo "FATAL: sentinel tuple write $relation HTTP $code" >&2; exit 1 ;;
+  esac
+}
+sentinel_object="ethics_case:$RECUSAL_SENTINEL_CASE_ID"
+write_exact_tuple "ethics_product:$ETHICS_ORG_ID" product "$sentinel_object"
+write_exact_tuple "user:$STAFF_SUBJECT" recused "$sentinel_object"
+sentinel_response=$(jq -nc --arg model "$model_id" --arg user "user:$STAFF_SUBJECT" \
+  --arg object "$sentinel_object" \
+  '{authorization_model_id:$model,tuple_key:{user:$user,relation:"case_viewer",object:$object}}' \
+  | pod_post "$OPENFGA_BASE/stores/$store_id/check")
+sentinel_code=${sentinel_response##*$'\n'}
+sentinel_body=${sentinel_response%$'\n'*}
+[ "$sentinel_code" = 200 ] && [ "$(printf '%s' "$sentinel_body" | jq -r '.allowed')" = false ] || {
+  echo "FATAL: explicit recusal sentinel did not fail closed" >&2
+  exit 1
+}
+
 check_expected() {
   local subject=$1 relation=$2 org_id=$3 expected=$4 label=$5 response code body
   response=$(jq -nc --arg model "$model_id" --arg user "user:$subject" \
@@ -297,7 +332,7 @@ for relation in evidence_approver evidence_reveal_approved ethics_product_admin 
   check_expected "$STAFF_SUBJECT" "$relation" "$ETHICS_ORG_ID" false "positive-least-privilege-$relation"
 done
 
-echo "OpenFGA: isolated store/model; exact positive least privilege and negative effective-deny postconditions OK"
+echo "OpenFGA: isolated store/model; exact positive least privilege, explicit recusal and negative effective-deny postconditions OK"
 echo "ETHICS_OPENFGA_STORE_ID=$store_id"
 echo "ETHICS_OPENFGA_MODEL_ID=$model_id"
 echo "OpenFGA: pin these non-secret IDs plus the canonical digest in GitOps before activation"

@@ -97,7 +97,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("db_password=$existing_db_password", self.pg_vault)
         self.assertIn("vault_password_write=false", self.pg_vault)
         self.assertIn("ETHICS_DB_PASSWORD=-", self.pg_vault)
-        self.assertIn("exit 44", self.pg_vault)
+        self.assertIn("return 44", self.vault_accessor_lib)
         self.assertIn(
             "Vault read failed; refusing to classify it as missing", self.pg_vault
         )
@@ -120,9 +120,13 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
 
     def test_persona_secret_file_and_subject_are_bounded(self):
         self.assertIn("umask 077", self.keycloak)
-        self.assertIn('chmod 600 "$PERSONA_PASSWORD_FILE"', self.keycloak)
-        self.assertIn('[ ! -L "$PERSONA_PASSWORD_FILE" ]', self.keycloak)
+        self.assertIn('prepare_synthetic_password_file "$PERSONA_PASSWORD_FILE" persona', self.keycloak)
+        self.assertIn('[ ! -L "$file" ]', self.keycloak)
         self.assertIn("persona password owner/mode assertion failed", self.keycloak)
+        self.assertLess(
+            self.keycloak.index("prepare_synthetic_password_file \"$PERSONA_PASSWORD_FILE\""),
+            self.keycloak.index("if ! kc get roles/ethics-manager"),
+        )
         self.assertIn("secret file must be a regular non-symlink", self.pg_vault)
         self.assertRegex(
             self.openfga,
@@ -228,7 +232,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("stale AppRole credential accessor remains", self.pg_vault)
         self.assertIn("ethics_app inherits an unexpected role", self.pg_vault)
         self.assertIn("ethics_app owns an unexpected default ACL", self.pg_vault)
-        self.assertIn("ethics_app has an unexpected ACL in", self.pg_vault)
+        self.assertIn("ethics_app has an unexpected ACL outside ethics in", self.pg_vault)
+        self.assertIn("ethics_app owns an object outside the dedicated ethics database", self.pg_vault)
+        self.assertIn("inbound or outbound role membership", self.pg_vault)
         self.assertIn("udt_name='_aclitem'", self.pg_vault)
         self.assertIn("table_name <> 'pg_init_privs'", self.pg_vault)
         self.assertIn("NOINHERIT", self.pg_vault)
@@ -284,6 +290,73 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 45)
                 self.assertEqual(result.stdout, b"")
 
+    def test_generic_vault_json_and_exact_missing_classifiers_are_behavioral(self):
+        def classify(function: str, status: int, stdout: bytes, stderr: bytes, extra: str):
+            with tempfile.TemporaryDirectory() as directory:
+                output_path = Path(directory) / "stdout"
+                error_path = Path(directory) / "stderr"
+                output_path.write_bytes(stdout)
+                error_path.write_bytes(stderr)
+                return subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; "$2" "$3" "$4" "$5" "$6"',
+                        "bash",
+                        str(self.vault_accessor_lib_path),
+                        function,
+                        str(status),
+                        str(output_path),
+                        str(error_path),
+                        extra,
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+
+        valid = classify(
+            "vault_json_document_classify",
+            0,
+            b'{"data":{"secret_id":"value"}}\n',
+            b"",
+            '.data.secret_id | type == "string" and length > 0',
+        )
+        self.assertEqual(valid.returncode, 0)
+        self.assertEqual(valid.stdout, b'{"data":{"secret_id":"value"}}\n')
+        for stdout, stderr in (
+            (b'{"data":{"secret_id":"value"}}\n{}\n', b""),
+            (b'{"data":{"secret_id":"value"}}\n', b"warning"),
+            (b'{"data":{"secret_id":""}}\n', b""),
+        ):
+            rejected = classify(
+                "vault_json_document_classify",
+                0,
+                stdout,
+                stderr,
+                '.data.secret_id | type == "string" and length > 0',
+            )
+            self.assertEqual(rejected.returncode, 45)
+            self.assertEqual(rejected.stdout, b"")
+
+        missing = classify(
+            "vault_kv_document_classify",
+            2,
+            b"",
+            b"No value found at kv/data/platform/etik-speak\n",
+            "No value found at kv/data/platform/etik-speak",
+        )
+        self.assertEqual(missing.returncode, 44)
+        self.assertEqual(missing.stdout, b"null")
+        ambiguous_missing = classify(
+            "vault_kv_document_classify",
+            2,
+            b"",
+            b"warning\nNo value found at kv/data/platform/etik-speak\n",
+            "No value found at kv/data/platform/etik-speak",
+        )
+        self.assertEqual(ambiguous_missing.returncode, 45)
+        self.assertEqual(ambiguous_missing.stdout, b"")
+
     def test_negative_personas_are_bound_to_openfga_deny_postconditions(self):
         self.assertIn("ETHICS_WRONG_ORG_SUBJECT=$wrong_org_id", self.keycloak)
         self.assertIn("ETHICS_DENIED_SUBJECT=$denied_id", self.keycloak)
@@ -297,13 +370,34 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         self.assertIn("collect_pages", self.openfga)
         self.assertIn("multiple OpenFGA stores use the canonical", self.openfga)
         self.assertIn("multiple exact Etik Speak authorization models", self.openfga)
+        self.assertIn("RECUSAL_SENTINEL_CASE_ID", self.openfga)
+        self.assertIn("explicit recusal sentinel did not fail closed", self.openfga)
+
+    def test_all_vault_json_credentials_use_single_document_classification(self):
+        self.assertIn("vault_json_document_classify", self.pg_vault)
+        self.assertIn("vault_kv_document_classify", self.pg_vault)
+        self.assertIn("vault_json_document_classify", self.keycloak)
+        self.assertNotIn('grep -Eqi "no value found|not found"', self.pg_vault)
+        self.assertGreaterEqual(self.pg_vault.count('>"$vault_output_file" 2>"$vault_error_file"'), 3)
+        self.assertIn("Keycloak automation Vault response is not one exact JSON document", self.keycloak)
+
+    def test_pg_and_keycloak_preconditions_precede_remote_mutation(self):
+        self.assertLess(
+            self.pg_vault.index("preflight_existing_pg_role"),
+            self.pg_vault.index("vault_root_token=$("),
+        )
+        self.assertIn("pg_shdepend", self.pg_vault)
+        self.assertIn("pg_auth_members WHERE roleid=", self.pg_vault)
+        self.assertIn("KCADM_CONFIG=$(docker exec", self.keycloak)
+        self.assertIn('rm -f "$KCADM_CONFIG"', self.keycloak)
+        self.assertIn('--config "$KC_CONFIG"', self.keycloak)
 
     def test_authority_and_persona_password_files_are_strictly_bounded(self):
         for script in (self.pg_vault, self.keycloak):
             self.assertIn("Vault init file must be a readable regular non-symlink", script)
             self.assertIn("Vault init file must be invoking-user-owned mode 600", script)
-        self.assertIn("persona password fails the length/format policy", self.keycloak)
-        self.assertIn("negative-persona password fails the length/format policy", self.keycloak)
+        self.assertIn("$label password fails the length/format policy", self.keycloak)
+        self.assertIn("prepare_synthetic_password_file", self.keycloak)
         self.assertIn("existing secret file was not invoking-user-owned mode 600", self.pg_vault)
         self.assertIn("public gate password fails the canonical length/format policy", self.pg_vault)
 
@@ -337,6 +431,7 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "both public ingresses must use the synthetic test access gate",
             "one-year HSTS header",
             "foundation provisioning refuses an included Etik Speak activation root",
+            "foundation provisioning refuses an early shared test frontend pin",
             "foundation provisioning refuses existing or partial Etik Speak activation resources",
             "secretstore/etik-speak-vault",
             "secret/ethics-service-secrets",

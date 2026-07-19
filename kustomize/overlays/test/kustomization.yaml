@@ -4268,12 +4268,12 @@ images:
     # list/detail/apply routes on the minimal public shell so auth bootstrap
     # cannot reload and erase the candidate's browser-local PDF draft.
     # Build run 29645789815 testai job 88083697225.
-    # 2026-07-19 Faz 35 ES-210: platform-web #967 exact source 61820d06;
-    # build run 29681910620 testai job 88179435694. This pins the manager MFE
-    # and the secret-safe gated Playwright driver to one exact source head.
-    # sourceRevision: 61820d06bbcdafbbb081c274c376dcf93112fc85
-    newTag: sha-61820d0
-    digest: sha256:f7ce3e6a7f6f44fcc057975cd9fa25b30b5d971b1ba163079d7010b746c9c977
+    # Faz 35 foundation deliberately preserves the pre-existing root image.
+    # The exact reviewed Etik manager image is pinned atomically with root
+    # activation only after provisioning IDs and current-head artifacts exist.
+    # sourceRevision: eee1310b33376013967482ae842bf15c797fe72c
+    newTag: sha-eee1310
+    digest: sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.

@@ -5,6 +5,9 @@ set -euo pipefail
 # A caller may invoke bash -x; disable tracing before any credential is read.
 set +x
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/faz35/lib-vault-accessor-inventory.sh
+source "$SCRIPT_DIR/lib-vault-accessor-inventory.sh"
 KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-platform-vault-test}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-/home/halil/bootstrap-drill/vault-init-test.json}"
@@ -47,16 +50,91 @@ KCADM=/opt/keycloak/bin/kcadm.sh
 }
 command -v openssl >/dev/null 2>&1 || { echo "FATAL: openssl missing" >&2; exit 1; }
 
-kc() { docker exec "$KC_CONTAINER" "$KCADM" "$@"; }
+prepare_synthetic_password_file() {
+  local file=$1 label=$2 candidate owner mode parent
+  parent=$(dirname "$file")
+  [ -d "$parent" ] && [ ! -L "$parent" ] || {
+    echo "FATAL: $label password parent must be a real directory" >&2
+    exit 1
+  }
+  if [ -e "$file" ] || [ -L "$file" ]; then
+    [ ! -L "$file" ] && [ -f "$file" ] || {
+      echo "FATAL: $label password path must be a regular non-symlink" >&2
+      exit 1
+    }
+    owner=$(stat -c '%u' "$file")
+    mode=$(stat -c '%a' "$file")
+    [ "$owner" = "$(id -u)" ] && [ "$mode" = 600 ] || {
+      echo "FATAL: $label existing password must be invoking-user-owned mode 600" >&2
+      exit 1
+    }
+  else
+    candidate=$(openssl rand -base64 36 | tr -d '/+=' | cut -c1-36)
+    umask 077
+    (set -C; printf '%s' "$candidate" >"$file") || {
+      echo "FATAL: exclusive $label password file creation failed" >&2
+      exit 1
+    }
+    chmod 600 "$file"
+    unset candidate
+  fi
+  [[ "$(<"$file")" =~ ^[A-Za-z0-9_-]{24,128}$ ]] || {
+    echo "FATAL: $label password fails the length/format policy" >&2
+    exit 1
+  }
+}
+
+# All local credential targets are proven safe before the first Keycloak realm
+# mutation. Creating a missing host-local synthetic password is recoverable;
+# widening a realm role before discovering an unsafe path is not.
+prepare_synthetic_password_file "$PERSONA_PASSWORD_FILE" persona
+prepare_synthetic_password_file "$WRONG_ORG_PASSWORD_FILE" wrong-org-persona
+prepare_synthetic_password_file "$DENIED_PASSWORD_FILE" denied-persona
+
+KCADM_CONFIG=$(docker exec "$KC_CONTAINER" mktemp /tmp/kcadm-faz35.XXXXXX)
+printf '%s' "$KCADM_CONFIG" | grep -Eq '^/tmp/kcadm-faz35\.[A-Za-z0-9]+$' || {
+  echo "FATAL: per-run kcadm config path contract failed" >&2
+  exit 1
+}
+docker exec "$KC_CONTAINER" chmod 600 "$KCADM_CONFIG"
+vault_output_file=""
+vault_error_file=""
+trap 'unset automation_secret vault_root_token automation_json token_json access_token claims; [ -z "${vault_output_file:-}" ] || rm -f "$vault_output_file"; [ -z "${vault_error_file:-}" ] || rm -f "$vault_error_file"; [ -z "${KCADM_CONFIG:-}" ] || docker exec "$KC_CONTAINER" rm -f "$KCADM_CONFIG" >/dev/null 2>&1 || true' EXIT
+
+kc() { docker exec "$KC_CONTAINER" "$KCADM" "$@" --config "$KCADM_CONFIG"; }
 
 vault_root_token=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["root_token"])' "$VAULT_INIT_FILE")
-automation_json=$(printf '%s\n' "$vault_root_token" | docker exec -i \
-  -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
-    set -eu
-    IFS= read -r VAULT_TOKEN
-    export VAULT_TOKEN
-    exec vault kv get -format=json kv/platform/keycloak-automation
-  ')
+vault_output_file=$(mktemp)
+vault_error_file=$(mktemp)
+chmod 600 "$vault_output_file" "$vault_error_file"
+automation_status=0
+if printf '%s\n' "$vault_root_token" | docker exec -i \
+    -e VAULT_ADDR=http://127.0.0.1:8200 "$VAULT_CONTAINER" sh -c '
+      set -eu
+      IFS= read -r VAULT_TOKEN
+      export VAULT_TOKEN
+      exec vault kv get -format=json kv/platform/keycloak-automation
+    ' >"$vault_output_file" 2>"$vault_error_file"; then
+  automation_status=0
+else
+  automation_status=$?
+fi
+automation_json=$(vault_json_document_classify "$automation_status" \
+  "$vault_output_file" "$vault_error_file" \
+  '.data.data.client_id | type == "string" and length > 0') || {
+  echo "FATAL: Keycloak automation Vault response is not one exact JSON document" >&2
+  exit 1
+}
+printf '%s' "$automation_json" | jq -e -s '
+  length == 1 and
+  (.[0].data.data.client_secret | type == "string" and length > 0)
+' >/dev/null || {
+  echo "FATAL: Keycloak automation Vault response schema drift" >&2
+  exit 1
+}
+rm -f "$vault_output_file" "$vault_error_file"
+vault_output_file=""
+vault_error_file=""
 automation_client=$(printf '%s' "$automation_json" | jq -r '.data.data.client_id')
 automation_secret=$(printf '%s' "$automation_json" | jq -r '.data.data.client_secret')
 unset vault_root_token automation_json
@@ -64,14 +142,14 @@ unset vault_root_token automation_json
 login_realm=""
 for candidate in "$REALM" master; do
   if printf '%s\n' "$automation_secret" | docker exec -i \
-    -e KC_CLIENT="$automation_client" -e KC_LOGIN_REALM="$candidate" \
+    -e KC_CLIENT="$automation_client" -e KC_LOGIN_REALM="$candidate" -e KC_CONFIG="$KCADM_CONFIG" \
     "$KC_CONTAINER" sh -c '
       set -eu
       IFS= read -r KC_CLI_CLIENT_SECRET
       export KC_CLI_CLIENT_SECRET
       /opt/keycloak/bin/kcadm.sh config credentials \
         --server http://localhost:8080 --realm "$KC_LOGIN_REALM" \
-        --client "$KC_CLIENT" >/dev/null 2>&1
+        --client "$KC_CLIENT" --config "$KC_CONFIG" >/dev/null 2>&1
       unset KC_CLI_CLIENT_SECRET
     '; then
     login_realm="$candidate"
@@ -83,7 +161,7 @@ unset automation_secret
 # kcadm natively consumes KC_CLI_CLIENT_SECRET when --secret is omitted. Prove
 # the resulting service-account session is usable without placing the secret in
 # argv or printing the token/config.
-docker exec "$KC_CONTAINER" "$KCADM" config credentials --status >/dev/null 2>&1 || {
+kc config credentials --status >/dev/null 2>&1 || {
   echo "FATAL: Keycloak automation session status failed" >&2
   exit 1
 }
@@ -445,20 +523,8 @@ actual_org=$(kc get "users/$persona_id" -r "$REALM" | jq -r '.attributes.org_id[
   exit 1
 }
 
-umask 077
-if [ -e "$PERSONA_PASSWORD_FILE" ] || [ -L "$PERSONA_PASSWORD_FILE" ]; then
-  [ ! -L "$PERSONA_PASSWORD_FILE" ] && [ -f "$PERSONA_PASSWORD_FILE" ] || {
-    echo "FATAL: persona password path must be a regular non-symlink" >&2
-    exit 1
-  }
-else
-  persona_password=$(openssl rand -base64 36 | tr -d '/+=' | cut -c1-36)
-  (set -C; printf '%s' "$persona_password" >"$PERSONA_PASSWORD_FILE") || {
-    echo "FATAL: exclusive persona password file creation failed" >&2
-    exit 1
-  }
-fi
-chmod 600 "$PERSONA_PASSWORD_FILE"
+# The path, owner, mode and content were established before the first realm
+# mutation by prepare_synthetic_password_file(). Recheck without repairing.
 [ "$(stat -c '%u' "$PERSONA_PASSWORD_FILE")" = "$(id -u)" ] && \
   [ "$(stat -c '%a' "$PERSONA_PASSWORD_FILE")" = 600 ] || {
   echo "FATAL: persona password owner/mode assertion failed" >&2
@@ -588,20 +654,7 @@ ensure_negative_persona() {
   printf '%s' "$payload" | docker exec -i "$KC_CONTAINER" "$KCADM" \
     update "users/$negative_id" -r "$REALM" -f - --merge >/dev/null
 
-  umask 077
-  if [ -e "$password_file" ] || [ -L "$password_file" ]; then
-    [ ! -L "$password_file" ] && [ -f "$password_file" ] || {
-      echo "FATAL: negative-persona password path must be a regular non-symlink" >&2
-      exit 1
-    }
-  else
-    password=$(openssl rand -base64 36 | tr -d '/+=' | cut -c1-36)
-    (set -C; printf '%s' "$password" >"$password_file") || {
-      echo "FATAL: exclusive negative-persona password creation failed" >&2
-      exit 1
-    }
-  fi
-  chmod 600 "$password_file"
+  # Preflight created or validated all three files before realm mutation.
   [ "$(stat -c '%u' "$password_file")" = "$(id -u)" ] && \
     [ "$(stat -c '%a' "$password_file")" = 600 ] || {
     echo "FATAL: negative-persona password owner/mode assertion failed" >&2

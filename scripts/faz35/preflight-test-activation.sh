@@ -14,6 +14,7 @@ ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
 SERVICE_CONFIG="$REPO_ROOT/kustomize/base/apps/etik-speak/ethics-service-config.yaml"
 SECRET_STORE="$ACTIVATION/secretstore.yaml"
 EXPECTED_MODEL_JSON_SHA256="9234b1d6356698f7bd2825c0842d6eed31cd5cb99d30101d22eb2a01a821409c"
+FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
 
 [ "$SSH_TARGET" = "halil@staging-sw" ] || {
   echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2
@@ -245,6 +246,18 @@ if grep -Fq 'activation/etik-speak' "$ROOT_OVERLAY"; then
   root_state=included
 else
   root_state=not-included
+fi
+
+root_frontend_pin=$(awk '
+  $1 == "newName:" && $2 == "ghcr.io/halildeu/platform-web-frontend-testai" { found=1; next }
+  found && $1 == "newTag:" { tag=$2 }
+  found && $1 == "digest:" { print tag "|" $2; exit }
+' "$ROOT_OVERLAY")
+if [ "$PREFLIGHT_STAGE" = foundation ]; then
+  [ "$root_frontend_pin" = "$FOUNDATION_FRONTEND_PIN" ] || {
+    echo "FATAL: foundation provisioning refuses an early shared test frontend pin" >&2
+    exit 1
+  }
 fi
 
 # Variables in this single-quoted program intentionally expand on staging-sw.
