@@ -17,7 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_digest
+from scripts.github_apps.cross_ai_deployment_policy.canonical import (
+    canonical_bytes,
+    sha256_digest,
+)
 from scripts.github_apps.cross_ai_deployment_policy.contract import EvidenceVerifier
 from scripts.github_apps.cross_ai_deployment_policy.dsse import decode_public_key
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
@@ -929,6 +932,14 @@ def load_revocation_refresh_authority(
     trust_root = _git_json(root, base, Path(locator["trustRootPath"]))
     predecessor = _git_json(root, base, Path(locator["revocationsPath"]))
     replacement = _git_json(root, head, revocations_path)
+    target_tip_revocations = _git_json(root, base_tip, revocations_path)
+    expected_target_tip_revocations = predecessor if base_tip == base else replacement
+    if canonical_bytes(target_tip_revocations) != canonical_bytes(
+        expected_target_tip_revocations
+    ):
+        raise AuthorityUnavailable(
+            "provider-review revocation recovery differs from the target base-tip authority"
+        )
     expected = locator["expectedTrustRootSha256"]
     if sha256_digest(trust_root) != expected:
         raise AuthorityUnavailable("provider-review trust-root pin mismatch")

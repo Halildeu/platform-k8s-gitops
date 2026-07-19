@@ -1153,6 +1153,34 @@ class GenesisTransitionTests(unittest.TestCase):
         )
         self.assertEqual(recovered.revocations_envelope, fresh)
 
+        self.git("checkout", "-q", base)
+        concurrent = self.signed_revocations(
+            set_id="20000000-0000-4000-8000-000000000094",
+            issued_at="2026-07-18T20:19:00Z",
+            next_update="2026-07-18T21:00:00Z",
+            entries=[
+                prior_entry,
+                {
+                    "type": "key",
+                    "id": "vault-transit://cross-ai/openai-codex#v98",
+                    "effectiveAt": "2026-07-18T20:19:00Z",
+                    "reasonCode": "TEST_RETIREMENT",
+                },
+            ],
+        )
+        self.write_json(revocation_path, concurrent)
+        advanced_base_tip = self.commit("concurrent target revocation authority")
+        with self.assertRaisesRegex(AuthorityUnavailable, "target base-tip authority"):
+            load_revocation_refresh_authority(
+                self.root,
+                expected_bindings={
+                    **bindings,
+                    "base_tip_sha": advanced_base_tip,
+                },
+                scope_bytes=scope,
+                now=self.fixture.factory.now,
+            )
+
         self.git("checkout", "-q", head)
         removed = self.signed_revocations(
             set_id="20000000-0000-4000-8000-000000000093",
@@ -1424,8 +1452,8 @@ class GenesisTransitionTests(unittest.TestCase):
             'test "$GITHUB_REF" = "refs/heads/main"',
             "repos/$GH_REPO/environments/$EXPECTED_ENVIRONMENT",
             ".can_admins_bypass == false",
-            '.type == "required_reviewers"',
             ".prevent_self_review == true",
+            '.type == "required_reviewers"',
             "--require-hashes",
             "--only-binary=:all:",
             "scripts/ai/verify_cross_ai_authority_transition.py",
@@ -1434,6 +1462,14 @@ class GenesisTransitionTests(unittest.TestCase):
         ):
             with self.subTest(required=required):
                 self.assertIn(required, workflow)
+        self.assertIn(
+            ".can_admins_bypass == false\n"
+            "            and .prevent_self_review == true\n"
+            "            and any(\n"
+            "              .protection_rules[]?;\n"
+            '              .type == "required_reviewers"',
+            workflow,
+        )
         self.assertNotIn("pull_request:", workflow)
         self.assertNotIn("contents: write", workflow)
 
