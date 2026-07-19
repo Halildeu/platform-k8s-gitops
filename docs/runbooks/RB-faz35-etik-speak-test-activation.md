@@ -19,8 +19,12 @@ activation is GitOps-only through `kustomize/overlays/test`; direct
 Before provisioning or root-overlay activation, record all of the following:
 
 1. Backend and web source PR checks are green.
-2. Direct Codex exact-head review has a valid `AGREE` receipt. A usage-limit
-   error remains `tracked_pending` and does not authorize merge/deploy.
+2. Direct Codex review has a valid `AGREE` receipt bound to the current exact
+   head, live-refreshed base ref/base-tip, recomputed merge-base and canonical
+   scope hash. After a `REVISE`, all of these values are derived again from the
+   post-fix commit; an older receipt is invalid. A usage-limit error remains
+   `tracked_pending` and does not authorize merge/deploy. #2688, Faz 22.6 and
+   their handoffs are not Faz 35 activation dependencies.
 3. Backend, public-web and `platform-web-frontend-testai` workflows published
    immutable image digests from their exact source heads.
 4. The public image pinned-container smoke proves `/healthz`, CSP,

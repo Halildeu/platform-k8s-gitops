@@ -8,14 +8,22 @@ authorized by this ADR.
 **Owner issues:** ES-002 [#2648](https://github.com/Halildeu/platform-k8s-gitops/issues/2648), ES-101 [#2656](https://github.com/Halildeu/platform-k8s-gitops/issues/2656)
 
 **Product charter:** [Faz 35 Etik Speak](../faz-35-etik-speak-product-charter.md)
-**Current review governance:** isolated exact-scope Codex-primary migration
-[#2638](https://github.com/Halildeu/platform-k8s-gitops/issues/2638) /
-[PR #2690](https://github.com/Halildeu/platform-k8s-gitops/pull/2690). Routine
-scope `gpt-5.3-codex-spark xhigh`, governance/security/migration/production
-scope exact `gpt-5.6-sol xhigh`; Claude is optional challenger and MiniMax is
-not a review channel. The latest exact-head SOL re-review is `tracked_pending`
-because the provider usage limit stopped the call before a verdict; no fallback
-or current-session self-review is accepted as an isolated receipt.
+
+**Current review governance:** Faz 35, provisioning ve ES-210; #2688 veya Faz
+22.6 handoff kapsamından bağımsızdır. Bunların merge veya acceptance durumu Faz
+35 için bağımlılık ya da yeni gate üretmez. İstişare gerektiğinde ayrı bağlamda
+doğrudan `codex exec --ephemeral --sandbox read-only` kullanılır. Rutin isteğe
+bağlı kapsam exact `gpt-5.3-codex-spark xhigh`; governance, security, migration,
+production ve diğer yüksek etkili kapsam exact `gpt-5.6-sol xhigh` kullanır.
+Claude, MiniMax/M3, Mavis-provider, Cursor, AI uygulama penceresi,
+wrapper/router ve model/provider fallback geçerli review kanalı değildir.
+
+`REVISE` sonrasında eski head veya scope yeniden incelenmez. Düzeltme commitinden
+sonra yeni exact head, güncel base ref/base-tip, yeniden hesaplanan merge-base ve
+bunlardan yeniden türetilen canonical scope/scope hash incelemeye bağlanır. Eski
+bağlama ait receipt veya `AGREE` acceptance üretmez. Geçerli exact bağlam için
+receipt yoksa durum `tracked_pending` kalır; current-session self-review receipt
+yerine geçmez.
 
 ## Context
 

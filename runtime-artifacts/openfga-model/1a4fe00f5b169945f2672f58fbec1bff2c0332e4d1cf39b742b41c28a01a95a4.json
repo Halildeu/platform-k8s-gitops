@@ -60,7 +60,7 @@
   },
   "audit": {
     "implementer": "Codex",
-    "reviewer": "Direct OpenAI Codex gpt-5.6-sol initial REVISE absorbed; exact-head re-review tracked_pending due usage limit",
+    "reviewer": "Direct OpenAI Codex gpt-5.6-sol; post-fix exact head, refreshed base-tip, recomputed merge-base and canonical-scope re-review tracked_pending",
     "codex_thread_id": "019f766f-10ca-7d11-8234-aad6eaf62a96",
     "created_at": "2026-07-19T00:13:12Z",
     "approval_pathway": "owner-approved"
