@@ -66,6 +66,13 @@ print(json.dumps({"type":"item.completed","item":item}))
 print(json.dumps({"type":"turn.completed","usage":{}}))
 '''
 
+FAKE_GITLEAKS = r'''#!/bin/sh
+if [ "$1" != "detect" ]; then
+    exit 2
+fi
+exit 0
+'''
+
 
 class IsolatedCodexReviewTests(unittest.TestCase):
     def test_stderr_allowlist_accepts_only_exact_bounded_cache_schema_warning(self) -> None:
@@ -99,6 +106,9 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
+        fake_gitleaks = self.bin_dir / "gitleaks"
+        fake_gitleaks.write_text(FAKE_GITLEAKS, encoding="utf-8")
+        fake_gitleaks.chmod(0o700)
         package_root = self.root / "lib" / "node_modules" / "@openai" / "codex"
         launcher = package_root / "bin" / "codex.js"
         launcher.parent.mkdir(parents=True)
@@ -194,6 +204,10 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env={
+                **os.environ,
+                "PATH": f"{self.bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            },
             check=False,
         )
         if prepare.returncode != 0:
