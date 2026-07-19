@@ -224,6 +224,31 @@ const RBAC_PATH = 'kustomize/base/security/clusterrolebinding-platform-admin.yam
 const MIGRATION_PATH = 'services/reporting/src/main/resources/db/migration/V42__grant.sql';
 const HARMLESS_RBAC_DOC_PATH = 'docs/rbac-overview.md';
 const GOVERNANCE_CONTRACT_TEST_PATH = 'tests/deploy/test_faz25_fullats_gitops_contract.py';
+const FULLATS_ACTIVE_TRANSITIVE_PATHS = [
+  'scripts/ats/d29-smoke.sh',
+  'scripts/ats/d29-smoke-receipt-chain.sh',
+  'scripts/ats/fullats-application-smoke.sh',
+  'scripts/ats/fullats-axe-evidence.cjs',
+  'scripts/ats/fullats-live-browser-acceptance.cjs',
+  'scripts/ats/fullats-live-browser-acceptance.sh',
+  'scripts/ats/install-pinned-gh-cli.sh',
+  'scripts/ats/install-pinned-kustomize.sh',
+  'scripts/ats/open-fullats-test-rollback-pr.sh',
+  'scripts/ats/provision-test-keycloak.sh',
+  'scripts/ats/provision-test-pg-vault.sh',
+  'scripts/ats/transition-test-model-governance.sh',
+  'scripts/ats/verify-fullats-live-runtime.sh',
+  'scripts/ats/verify-fullats-test-rollback-content.sh',
+  'scripts/ats/verify-model-governance-ledger.py',
+  'scripts/automation/apply-test-overlay-digests.py',
+  'scripts/automation/backend-testai-digest-contract.py',
+  'scripts/automation/sync-test-overlay.sh',
+  'scripts/deploy/ensure-argocd-cli.sh',
+  'scripts/deploy/gate-stability-window.sh',
+  'scripts/deploy/reconcile-testai-backend-sequential.sh',
+  'scripts/deploy/verify-pod-digest.sh',
+  'scripts/deploy/verify-testai-backend-runtime.sh',
+];
 
 const staleCodexBody = JSON.stringify({
   ...JSON.parse(EVIDENCE[PEER_REF].body),
@@ -384,6 +409,20 @@ const prefixedFindingEvidence = {
 const prefixedFindingPeerBody = peerBody.replace(
   sha256(EVIDENCE[PEER_REF].body),
   sha256(prefixedFindingBody),
+);
+const lowercaseHeadingsResponse = 'p0\nNone\np1\nNone\np2\nNone\nVERDICT: AGREE';
+const lowercaseHeadingsBody = JSON.stringify({
+  ...JSON.parse(EVIDENCE[PEER_REF].body),
+  response_sha256: sha256(lowercaseHeadingsResponse),
+  response: lowercaseHeadingsResponse,
+});
+const lowercaseHeadingsEvidence = {
+  ...EVIDENCE,
+  [PEER_REF]: evidenceComment(lowercaseHeadingsBody),
+};
+const lowercaseHeadingsPeerBody = peerBody.replace(
+  sha256(EVIDENCE[PEER_REF].body),
+  sha256(lowercaseHeadingsBody),
 );
 const sensitiveResponse = 'P0\nNone\nP1\nNone\nP2\nperson@example.com\nVERDICT: AGREE';
 const sensitiveBody = JSON.stringify({
@@ -622,6 +661,26 @@ const cases = [
       body: explicitNoneBody, changedFiles: [path] },
     1,
   ]),
+  ...FULLATS_ACTIVE_TRANSITIVE_PATHS.flatMap((path) => [
+    [
+      `Full ATS active transitive path rejects none: ${path}`,
+      { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+        body: explicitNoneBody, changedFiles: [path] },
+      1,
+    ],
+    [
+      `Full ATS active transitive path rejects routine Spark: ${path}`,
+      { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+        body: peerBody, changedFiles: [path] },
+      1,
+    ],
+    [
+      `Full ATS active transitive path accepts high-impact SOL: ${path}`,
+      { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+        body: explicitSingleBody, changedFiles: [path] },
+      0,
+    ],
+  ]),
   ['signed deployment policy rejects routine class and Spark evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: peerBody, changedFiles: ['scripts/github_apps/cross_ai_deployment_policy/contract.py'] }, 1],
@@ -828,6 +887,9 @@ const cases = [
   ['provider response contains text before P0 -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: prefixedFindingPeerBody, evidence: prefixedFindingEvidence }, 1],
+  ['provider response uses lowercase priority headings -> fail closed',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: lowercaseHeadingsPeerBody, evidence: lowercaseHeadingsEvidence }, 1],
   ['provider response contains PII -> fail closed',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: sensitivePeerBody, evidence: sensitiveEvidence }, 1],

@@ -22,7 +22,7 @@ REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 VERDICT_RE = re.compile(r"^VERDICT:[ \t]*(AGREE|REVISE)[ \t]*$", re.MULTILINE)
 PRIORITY_HEADING_RE = re.compile(
-    r"(?im)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$"
+    r"(?m)^[ \t]*(?:#{1,6}[ \t]+)?(?:\*\*)?(P[012])(?:\*\*)?[ \t]*$"
 )
 NO_FINDINGS_RE = re.compile(r"^None$")
 EMAIL_RE = re.compile(
@@ -93,7 +93,7 @@ def response_contract(response: str) -> tuple[str, dict[str, str]] | None:
         len(verdicts) != 1
         or not lines
         or not VERDICT_RE.fullmatch(lines[-1])
-        or [match.group(1).upper() for match in headings] != ["P0", "P1", "P2"]
+        or [match.group(1) for match in headings] != ["P0", "P1", "P2"]
         or response[:headings[0].start()].strip()
     ):
         return None
@@ -104,7 +104,7 @@ def response_contract(response: str) -> tuple[str, dict[str, str]] | None:
         content = response[heading.end():end].strip()
         if not content:
             return None
-        sections[heading.group(1).upper()] = content
+        sections[heading.group(1)] = content
     verdict = verdicts[0]
     if verdict == "AGREE" and (
         not NO_FINDINGS_RE.fullmatch(sections["P0"])

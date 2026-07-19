@@ -101,7 +101,7 @@ printf '%s' "$evidence_comment" | python3 scripts/ai/verify_cross_ai_evidence_co
   echo "[fullats-rollback] fetched Codex evidence metadata or body digest is invalid" >&2
   exit 1
 }
-[[ "$(grep -Ec '^(Claude|MiniMax) receipt:' <<<"$promotion_body" || true)" == "0" ]] || {
+[[ "$(grep -Eic '^[[:space:]]*(claude|minimax) receipt[[:space:]]*:' <<<"$promotion_body" || true)" == "0" ]] || {
   echo "[fullats-rollback] Claude and MiniMax receipts are forbidden by forward policy" >&2
   exit 1
 }

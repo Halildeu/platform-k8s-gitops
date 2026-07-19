@@ -434,6 +434,12 @@ process.stdout.write(JSON.stringify(compactAxeViolations([
             '"$promotion_merge_tree" == "$promotion_head_tree"',
         ):
             self.assertIn(required, self.rollback_script)
+        retired_receipt_guard = (
+            "grep -Eic '^[[:space:]]*(claude|minimax) "
+            "receipt[[:space:]]*:'"
+        )
+        self.assertIn(retired_receipt_guard, self.rollback_script)
+        self.assertIn(retired_receipt_guard, self.rollback_content_verifier)
         for required in (
             '"$(git rev-parse "$PR_HEAD_SHA^")" == "$PR_BASE_SHA"',
             '"$promotion_merge_tree" == "$promotion_head_tree"',
@@ -577,6 +583,11 @@ if [[ "$*" == *"/pulls/2636"* ]]; then
     "Consultation reason: Protected rollback enforcement requires exact high impact Codex review." \
     "Verdict: AGREE" \
     "$receipt_line")"
+  if [[ "${FAKE_RECEIPT_TAMPER:-none}" == "retired-provider-indented" ]]; then
+    body+=$'\n  cLaUdE receipt : rejected'
+  elif [[ "${FAKE_RECEIPT_TAMPER:-none}" == "retired-provider-case" ]]; then
+    body+=$'\nmInImAx receipt: rejected'
+  fi
   jq -n \
     --arg merge "$PR_BASE_SHA" \
     --arg head "$PROMOTION_HEAD_SHA" \
@@ -615,6 +626,8 @@ fi
             (False, False, "future-comment", 1),
             (False, False, "response-revise", 1),
             (False, False, "internal-head", 1),
+            (False, False, "retired-provider-indented", 1),
+            (False, False, "retired-provider-case", 1),
         ):
             with self.subTest(
                 tamper=tamper,
