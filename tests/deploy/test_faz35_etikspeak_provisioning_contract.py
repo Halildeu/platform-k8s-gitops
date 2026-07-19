@@ -549,6 +549,9 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.keycloak,
             r"(default|optional)-client-scopes[^\n]*\n[^\n]*\|\| true",
         )
+        self.assertNotIn("--arg include ", self.keycloak)
+        self.assertNotIn("$include and", self.keycloak)
+        self.assertGreaterEqual(self.keycloak.count("--arg include_value"), 2)
 
     def test_pg_preflight_preserves_only_dedicated_database_rerun_state(self):
         self.assertIn("OR d.dbid=ethics_db_oid", self.pg_vault)

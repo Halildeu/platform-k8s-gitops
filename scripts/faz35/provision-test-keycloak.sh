@@ -140,14 +140,14 @@ if [ -n "$existing_role" ]; then
 fi
 
 preflight_existing_scope() {
-  local name=$1 include=$2 scope_id scope_json mappers bindings client_bindings
+  local name=$1 include_value=$2 scope_id scope_json mappers bindings client_bindings
   scope_id=$(kc get client-scopes -r "$REALM" --fields id,name \
     --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}')
   [ -n "$scope_id" ] || return 0
   scope_json=$(kc get "client-scopes/$scope_id" -r "$REALM")
-  printf '%s' "$scope_json" | jq -e --arg name "$name" --arg include "$include" '
+  printf '%s' "$scope_json" | jq -e --arg name "$name" --arg include_value "$include_value" '
     .name == $name and .protocol == "openid-connect" and
-    .attributes["include.in.token.scope"] == $include and
+    .attributes["include.in.token.scope"] == $include_value and
     .attributes["display.on.consent.screen"] == "false" and
     ((.attributes | keys - ["display.on.consent.screen", "gui.order", "include.in.token.scope"]) | length == 0)
   ' >/dev/null || {
@@ -261,22 +261,22 @@ kc get "clients/$manager_client_id" -r "$REALM" | jq -e '
 }
 
 ensure_scope() {
-  local name=$1 include=$2 scope_id scope_json
+  local name=$1 include_value=$2 scope_id scope_json
   scope_id=$(kc get client-scopes -r "$REALM" --fields id,name \
     --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}')
   if [ -z "$scope_id" ]; then
     kc create client-scopes -r "$REALM" -s "name=$name" \
       -s protocol=openid-connect \
-      -s "attributes.\"include.in.token.scope\"=$include" \
+      -s "attributes.\"include.in.token.scope\"=$include_value" \
       -s 'attributes."display.on.consent.screen"=false' >/dev/null
     scope_id=$(kc get client-scopes -r "$REALM" --fields id,name \
       --format csv --noquotes | awk -F, -v n="$name" '$2==n{print $1}')
   fi
   scope_json=$(kc get "client-scopes/$scope_id" -r "$REALM")
-  printf '%s' "$scope_json" | jq -e --arg name "$name" --arg include "$include" '
+  printf '%s' "$scope_json" | jq -e --arg name "$name" --arg include_value "$include_value" '
     .name == $name and
     .protocol == "openid-connect" and
-    .attributes["include.in.token.scope"] == $include and
+    .attributes["include.in.token.scope"] == $include_value and
     .attributes["display.on.consent.screen"] == "false" and
     ((.attributes | keys - ["display.on.consent.screen", "gui.order", "include.in.token.scope"]) | length == 0)
   ' >/dev/null || {
