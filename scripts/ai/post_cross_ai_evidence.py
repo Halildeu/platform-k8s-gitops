@@ -153,10 +153,39 @@ def trusted_source_digests_at_commit(
     return digests
 
 
+def trusted_base_is_ancestor(
+    trusted_base_sha: str,
+    pr_base_sha: str,
+    repo_root: Path | None = None,
+) -> bool:
+    if (
+        COMMIT_SHA_RE.fullmatch(trusted_base_sha) is None
+        or COMMIT_SHA_RE.fullmatch(pr_base_sha) is None
+    ):
+        return False
+    root = repo_root or Path(__file__).resolve().parents[2]
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", str(root), "merge-base", "--is-ancestor",
+                trusted_base_sha, pr_base_sha,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
 def validate_evidence_text(
     text: str,
     trusted_source_loader: Callable[[str], dict[str, str] | None]
     = trusted_source_digests_at_commit,
+    pr_base_sha: str | None = None,
+    ancestor_checker: Callable[[str, str], bool] = trusted_base_is_ancestor,
 ) -> tuple[dict, str]:
     encoded = text.encode("utf-8")
     if not encoded or len(encoded) > MAX_EVIDENCE_BYTES:
@@ -218,6 +247,10 @@ def validate_evidence_text(
     for key, expected_digest in expected_source_digests.items():
         if provenance.get(key) != expected_digest.lower():
             fail("invalid_execution_provenance")
+    if pr_base_sha is not None and not ancestor_checker(
+        provenance["trusted_base_sha"], pr_base_sha.lower()
+    ):
+        fail("trusted_base_not_pr_base_ancestor")
     response = evidence.get("response")
     response_digest = evidence.get("response_sha256")
     if (
@@ -243,6 +276,24 @@ def validate_evidence_text(
     return evidence, hashlib.sha256(encoded).hexdigest()
 
 
+def status_ledger_payload(
+    evidence: dict,
+    body_sha256: str,
+    issue_number: int,
+    api_ref: str,
+) -> dict:
+    thread_id = evidence["execution_provenance"]["thread_id"]
+    return {
+        "state": "success" if evidence["verdict"] == "AGREE" else "failure",
+        "context": f"cross-ai/evidence/{body_sha256}",
+        "description": (
+            f"v4 openai {evidence['verdict']} pr={issue_number} "
+            f"thread={thread_id}"
+        ),
+        "target_url": api_ref,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True)
@@ -258,7 +309,37 @@ def main() -> None:
         text = args.evidence_file.read_text(encoding="utf-8").strip()
     except (OSError, UnicodeError):
         fail("evidence_file_unreadable")
-    evidence, body_sha256 = validate_evidence_text(text)
+    try:
+        pr_result = subprocess.run(
+            [
+                "gh", "api", f"repos/{args.repo}/pulls/{args.issue}",
+                "--method", "GET",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_pr_binding_failed")
+    if pr_result.returncode != 0:
+        fail("gh_pr_binding_failed")
+    try:
+        pr = json.loads(pr_result.stdout)
+        pr_base_sha = pr["base"]["sha"].lower()
+        pr_head_sha = pr["head"]["sha"].lower()
+        pr_state = pr["state"]
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        fail("gh_pr_binding_invalid")
+    evidence, body_sha256 = validate_evidence_text(
+        text, pr_base_sha=pr_base_sha
+    )
+    if (
+        pr_state != "open"
+        or evidence["base_tip_sha"].lower() != pr_base_sha
+        or evidence["head_sha"].lower() != pr_head_sha
+    ):
+        fail("github_pr_binding_mismatch")
     payload = json.dumps({"body": text}, ensure_ascii=False, separators=(",", ":"))
     try:
         result = subprocess.run(
@@ -288,6 +369,46 @@ def main() -> None:
         updated_at = comment["updated_at"]
     except (json.JSONDecodeError, KeyError, TypeError):
         fail("gh_response_invalid")
+    expected_status = status_ledger_payload(
+        evidence, body_sha256, args.issue, api_ref
+    )
+    status_payload = json.dumps(
+        expected_status,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    try:
+        status_result = subprocess.run(
+            [
+                "gh", "api",
+                f"repos/{args.repo}/statuses/{evidence['head_sha']}",
+                "--method", "POST", "--input", "-",
+            ],
+            input=status_payload,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("gh_status_ledger_failed")
+    if status_result.returncode != 0:
+        fail("gh_status_ledger_failed")
+    try:
+        status_record = json.loads(status_result.stdout)
+        ledger_ref = status_record["url"]
+        ledger_context = status_record["context"]
+        ledger_sha = status_record["sha"].lower()
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        fail("gh_status_ledger_invalid")
+    if (
+        ledger_context != f"cross-ai/evidence/{body_sha256}"
+        or ledger_sha != evidence["head_sha"].lower()
+        or status_record.get("state") != expected_status["state"]
+        or status_record.get("description") != expected_status["description"]
+        or status_record.get("target_url") != api_ref
+    ):
+        fail("gh_status_ledger_invalid")
     print(
         json.dumps(
             {
@@ -300,6 +421,8 @@ def main() -> None:
                 "sha256": body_sha256,
                 "created_at": created_at,
                 "updated_at": updated_at,
+                "ledger_ref": ledger_ref,
+                "ledger_context": ledger_context,
             },
             ensure_ascii=False,
         )

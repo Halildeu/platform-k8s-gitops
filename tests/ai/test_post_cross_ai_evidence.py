@@ -65,6 +65,8 @@ class EvidenceValidationTests(unittest.TestCase):
         return MODULE.validate_evidence_text(
             text,
             trusted_source_loader=lambda _trusted_base_sha: trusted_source_digests(),
+            pr_base_sha="a" * 40,
+            ancestor_checker=lambda _trusted_base_sha, _pr_base_sha: True,
         )
 
     def assert_rejected(self, payload: dict) -> None:
@@ -77,6 +79,24 @@ class EvidenceValidationTests(unittest.TestCase):
         parsed, digest = self.validate(text)
         self.assertEqual(parsed["provider"], "openai")
         self.assertEqual(digest, hashlib.sha256(text.encode()).hexdigest())
+
+    def test_status_ledger_binds_pr_head_digest_thread_and_verdict(self) -> None:
+        payload = evidence()
+        digest = "f" * 64
+        status = MODULE.status_ledger_payload(
+            payload,
+            digest,
+            2638,
+            "https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/1",
+        )
+        self.assertEqual(status["state"], "success")
+        self.assertEqual(status["context"], f"cross-ai/evidence/{digest}")
+        self.assertEqual(
+            status["description"],
+            "v4 openai AGREE pr=2638 "
+            "thread=019f7785-c66d-7992-a21a-d4097d9eb3f9",
+        )
+        self.assertTrue(status["target_url"].endswith("/issues/comments/1"))
 
     def test_accepts_exact_spark_model(self) -> None:
         payload = evidence()
@@ -103,11 +123,24 @@ class EvidenceValidationTests(unittest.TestCase):
         parsed, _ = MODULE.validate_evidence_text(
             json.dumps(payload, separators=(",", ":")),
             trusted_source_loader=load_historical,
+            pr_base_sha="a" * 40,
+            ancestor_checker=lambda _trusted_base_sha, _pr_base_sha: True,
         )
         self.assertEqual(
             parsed["execution_provenance"]["review_harness_sha256"], "1" * 64
         )
         self.assertEqual(requested_shas, ["a" * 40])
+
+    def test_rejects_trusted_producer_commit_outside_pr_base_ancestry(self) -> None:
+        payload = evidence()
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                MODULE.validate_evidence_text(
+                    json.dumps(payload, separators=(",", ":")),
+                    trusted_source_loader=lambda _trusted_base_sha: trusted_source_digests(),
+                    pr_base_sha="b" * 40,
+                    ancestor_checker=lambda _trusted_base_sha, _pr_base_sha: False,
+                )
 
     def test_rejects_extra_schema_key(self) -> None:
         payload = evidence()

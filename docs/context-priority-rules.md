@@ -430,9 +430,12 @@ Bir Codex `REVISE` kaydı yalnız PR gövdesinde seçilmiş daha yeni Codex rece
 referansındaki `AGREE` ile çözülür; `none` veya challenger yorumları çözüm
 yetkisi üretmez. Düzenlenmiş ya da yapısal olarak geçersiz
 evidence adayı geçmişten sessizce düşmez, gate'i fail-closed yapar. Politika
-aktivasyonundan sonra owner-authored PR yorumları evidence silme/dönüştürme
-bypass'ını önlemek için immutable kabul edilir; herhangi bir edit gate'i
-fail-closed yapar ve yeni create-once yorum gerekir. Dar tarihsel docs-only
+aktivasyonundan sonra her owner-authored OpenAI v4 evidence yorumu PR numarası,
+exact head, body SHA-256, thread ve verdict'e bağlı ayrı create-only commit-status
+ledger kaydı üretir. Gate mevcut PR commit'leriyle birlikte force-push timeline
+head'lerini tarar; yorum silinse bile `REVISE` ledger tombstone olarak kalır.
+Yorum edit'i, seçilmiş receipt için eksik ledger veya ledger/comment bağ
+uyuşmazlığı fail-closed yapar ve yeni create-once yorum gerekir. Dar tarihsel docs-only
 muafiyeti de aynı PR'daki açık `REVISE` geçmişini atlayamaz.
 
 ### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
@@ -520,8 +523,11 @@ dönük olarak bozmaz. Scope external provider'a verilmeden önce owner-only
 version/target/native SHA-256/trust-root, producer kimlikleri, PII attestation
 ve izole thread kimliğini taşır; poster ve CI aynı provenance pinini yeniden
 doğrular. Yeni CLI sürümü pinset güncellemesi ve high-impact SOL exact-head
-review ister. Poster exact şema/profil/provenance dışında fail-closed olur; CI
-receipt ile GitHub comment gövdesini birlikte doğrular. Böylece normal sohbet
+review ister. Poster exact şema/profil/provenance dışında fail-closed olur;
+trusted producer commit'inin exact PR base tip'inin atası olduğunu posting
+öncesinde doğrular, owner comment ile immutable status ledger'ı birlikte üretir.
+CI receipt, GitHub comment gövdesi ve status-ledger bağını birlikte doğrular.
+Böylece normal sohbet
 yanıtı desteklenen araç zincirinde OpenAI `single` evidence olarak yeniden
 etiketlenemez. Bu kayıt yine provider imzalı değildir ve
 `operator-captured, provider-unsigned` sınırında kalır; yerel owner hesabının
@@ -541,7 +547,11 @@ predecessor branch protection ve required-check sözleşmesine tabidir; ham dire
 Codex çıktısı inceleme kanıtıdır ama canonical v4 receipt değildir. Yeni politika
 yalnız merge sonrası exact `main` push checkout'unda
 `scripts/ai/verify_cross_ai_source_activation.py` tarafından üretilen
-`cross-ai-source-trust-activation/v1` sonucu geçince aktif kabul edilir. Bu
+`cross-ai-source-trust-activation/v1` sonucu CI artifact'i olarak saklanıp,
+sonraki `pull_request_target` gate'i tarafından exact PR base SHA, successful
+run ID, main workflow/ref/event ve producer digest bağıyla yeniden tüketilince
+aktif kabul edilir; yalnız log'a yazılan veya tüketilmeyen çıktı aktivasyon
+yetkisi üretmez. Bu
 aktivasyondan sonraki PR'lar merged trusted producer stack'i kullanır.
 
 Codex process `stderr` politikası da fail-closed'dur. Boş `stderr` kabul edilir;

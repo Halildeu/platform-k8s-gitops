@@ -111,11 +111,34 @@ jobs:
         if: github.event_name == 'push'
         env:
           ACTIVATION_SHA: ${{ github.sha }}
+          ACTIVATION_OUTPUT: ${{ runner.temp }}/cross-ai-source-trust-activation.json
+          ACTIVATION_REPOSITORY: ${{ github.repository }}
+          ACTIVATION_WORKFLOW_REF: ${{ github.workflow_ref }}
+          ACTIVATION_EVENT_NAME: ${{ github.event_name }}
+          ACTIVATION_GIT_REF: ${{ github.ref }}
+          ACTIVATION_RUN_ID: ${{ github.run_id }}
+          ACTIVATION_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           python3 scripts/ai/verify_cross_ai_source_activation.py \
             --repo . \
             --trusted-ref "$ACTIVATION_SHA" \
-            --expected-sha "$ACTIVATION_SHA"
+            --expected-sha "$ACTIVATION_SHA" \
+            --repository "$ACTIVATION_REPOSITORY" \
+            --workflow-ref "$ACTIVATION_WORKFLOW_REF" \
+            --event-name "$ACTIVATION_EVENT_NAME" \
+            --git-ref "$ACTIVATION_GIT_REF" \
+            --run-id "$ACTIVATION_RUN_ID" \
+            --run-attempt "$ACTIVATION_RUN_ATTEMPT" \
+            --activated-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --output "$ACTIVATION_OUTPUT"
+      - name: Persist Cross-AI source-trust activation
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cross-ai-source-trust-activation-${{ github.sha }}
+          path: ${{ runner.temp }}/cross-ai-source-trust-activation.json
+          if-no-files-found: error
+          retention-days: 90
       # Faz 22.6 D10-8 — remote-bridge broker isolation. Desired-state, NOT in
       # the Argo root (owner-gated activation). Render sanity + isolation guards
       # (Codex 019ebc51 P2 — machine-enforced, not self-attestation).

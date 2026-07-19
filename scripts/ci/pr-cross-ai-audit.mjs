@@ -36,6 +36,12 @@ const MINIMAX_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-18T14:16:20Z');
 const LEGACY_V1_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T00:04:38Z');
 const CLAUDE_RECEIPT_RETIREMENT_CUTOFF_MS = Date.parse('2026-07-19T01:09:35Z');
 const EVIDENCE_HISTORY_IMMUTABILITY_CUTOFF_MS = Date.parse('2026-07-19T01:09:35Z');
+// From this source-policy transition onward, issue comments are payload
+// storage only. Immutable commit-status records are the history authority, so
+// deleting an unreferenced REVISE payload cannot erase the tombstone.
+const EVIDENCE_STATUS_LEDGER_CUTOFF_MS = Date.parse('2026-07-19T17:06:35Z');
+const EVIDENCE_LEDGER_CONTEXT_PREFIX = 'cross-ai/evidence/';
+const EVIDENCE_LEDGER_DESCRIPTION_RE = /^v4 openai (AGREE|REVISE) pr=(\d+) thread=([0-9a-f-]{36})$/i;
 const NO_FINDINGS_RE = /^None$/;
 const EMAIL_RE = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])/;
 const TURKISH_PHONE_RE = /(?<!\d)(?:\+90|0090|0)\s*\(?5\d{2}\)?(?:[ .-]*\d){7}(?!\d)/;
@@ -81,6 +87,10 @@ const TRUSTED_CODEX_NATIVE_SHA256 = new Map([
   ['0.144.1:codex-linux-arm64', '9513fa3f5f4ad444ac1e40d972aef0e2664834ec54da987d54aba0dc2f13ea07'],
   ['0.144.1:codex-linux-x64', 'a96f944d1a596dbfb7fdd84f482be5c50e34b04bb371126840d873e4ebf26902'],
 ]);
+const SOURCE_ACTIVATION_KEYS = [
+  'activated_at', 'event_name', 'ok', 'ref', 'repository', 'run_attempt',
+  'run_id', 'schema', 'source_digests', 'trusted_sha', 'workflow_ref',
+];
 const FULLATS_ROLLBACK_ATTESTATION_KEYS = [
   'base_sha', 'branch', 'changed_diff_sha256', 'expected_paths', 'head_sha',
   'promotion_base_sha', 'promotion_head_sha', 'promotion_merge_sha',
@@ -318,6 +328,16 @@ function readAutomationContentAttestation(args) {
     : null;
 }
 
+function readSourceActivationAttestation(args) {
+  if (!args['activation-attestation-file']) return null;
+  const parsed = JSON.parse(
+    readFileSync(args['activation-attestation-file'], 'utf8'),
+  );
+  return parsed && !Array.isArray(parsed) && typeof parsed === 'object'
+    ? parsed
+    : null;
+}
+
 function readEvidenceOverrides(args) {
   if (!args['evidence-file']) return {};
   if (args['allow-local-evidence-override'] !== 'true') {
@@ -329,6 +349,21 @@ function readEvidenceOverrides(args) {
   const parsed = JSON.parse(readFileSync(args['evidence-file'], 'utf8'));
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
     throw new Error('evidence-file object map olmalı');
+  }
+  return parsed;
+}
+
+function readEvidenceLedgerOverrides(args) {
+  if (!args['evidence-ledger-file']) return null;
+  if (args['allow-local-evidence-override'] !== 'true') {
+    throw new Error('evidence-ledger-file yalnız explicit local test override ile kullanılabilir');
+  }
+  if (env.GITHUB_ACTIONS === 'true') {
+    throw new Error('evidence-ledger-file GitHub Actions event modunda yasaktır');
+  }
+  const parsed = JSON.parse(readFileSync(args['evidence-ledger-file'], 'utf8'));
+  if (!Array.isArray(parsed)) {
+    throw new Error('evidence-ledger-file array olmalı');
   }
   return parsed;
 }
@@ -367,6 +402,8 @@ function loadInput(args) {
         sender: '',
         changedFiles: readChangedFiles(args),
         automationContentAttestation: readAutomationContentAttestation(args),
+        sourceActivationAttestation: readSourceActivationAttestation(args),
+        sourceActivationRunId: args['activation-run-id'] ?? '',
       },
     };
   }
@@ -396,11 +433,62 @@ function loadInput(args) {
         // direct GitHub API access.
         changedFiles: readChangedFiles(args),
         automationContentAttestation: readAutomationContentAttestation(args),
+        sourceActivationAttestation: readSourceActivationAttestation(args),
+        sourceActivationRunId: args['activation-run-id'] ?? '',
       },
     };
   }
   console.error('[cross-ai-audit] ERROR: --event-path veya --body-file gerekli');
   exit(2);
+}
+
+function sourceActivationFinding(prMeta, trustedSourceDigestOverrides) {
+  const attestation = prMeta?.sourceActivationAttestation;
+  const keys = attestation && typeof attestation === 'object' && !Array.isArray(attestation)
+    ? Object.keys(attestation).sort()
+    : [];
+  const sourceDigests = attestation?.source_digests;
+  const sourceKeys = sourceDigests && typeof sourceDigests === 'object' && !Array.isArray(sourceDigests)
+    ? Object.keys(sourceDigests).sort()
+    : [];
+  const expectedSourceKeys = [...TRUSTED_SOURCE_PATHS.keys()].sort();
+  const trustedDigests = COMMIT_SHA_RE.test(prMeta?.baseSha || '')
+    ? trustedSourceDigestsAtCommit(
+        prMeta.baseSha,
+        prMeta.baseSha,
+        trustedSourceDigestOverrides,
+      )
+    : null;
+  const runId = String(attestation?.run_id ?? '');
+  const runAttempt = String(attestation?.run_attempt ?? '');
+  const activatedAtMs = Date.parse(attestation?.activated_at || '');
+  const pass = Boolean(
+    attestation
+    && keys.join(',') === [...SOURCE_ACTIVATION_KEYS].sort().join(',')
+    && attestation.ok === true
+    && attestation.schema === 'cross-ai-source-trust-activation/v1'
+    && attestation.trusted_sha === prMeta?.baseSha?.toLowerCase()
+    && attestation.repository === prMeta?.baseRepo
+    && attestation.workflow_ref === `${prMeta?.baseRepo}/.github/workflows/ci.yml@refs/heads/main`
+    && attestation.event_name === 'push'
+    && attestation.ref === 'refs/heads/main'
+    && /^\d+$/.test(runId)
+    && Number(runId) > 0
+    && runId === String(prMeta?.sourceActivationRunId || '')
+    && /^\d+$/.test(runAttempt)
+    && Number(runAttempt) > 0
+    && Number.isFinite(activatedAtMs)
+    && sourceKeys.join(',') === expectedSourceKeys.join(',')
+    && trustedDigests
+    && [...trustedDigests].every(([key, digest]) => sourceDigests[key] === digest)
+  );
+  return {
+    check: 'cross_ai_source_trust_activation',
+    pass,
+    detail: pass
+      ? `exact main base ${prMeta.baseSha.slice(0, 12)} successful CI activation artifact'i ile bağlı`
+      : 'exact PR base için başarılı main-push source activation artifact doğrulanamadı',
+  };
 }
 
 // Codex `019e2693` MED-4 + PR #589 parser bug fix + Codex `019e26ae` field-aware refactor:
@@ -936,10 +1024,91 @@ async function loadPullRequestEvidenceComments(prMeta, evidenceOverrides) {
   return null;
 }
 
+function evidenceLedgerStatusFromPayload(payload) {
+  return {
+    sha: payload?.sha,
+    context: payload?.context,
+    state: payload?.state,
+    description: payload?.description,
+    targetUrl: payload?.target_url,
+    creator: payload?.creator?.login,
+    createdAt: payload?.created_at,
+    updatedAt: payload?.updated_at,
+    ref: payload?.url,
+  };
+}
+
+async function loadPullRequestEvidenceLedger(prMeta, ledgerOverrides) {
+  if (ledgerOverrides !== null) return ledgerOverrides;
+  if (!prMeta?.baseRepo || !Number.isInteger(prMeta?.issueNumber)) return null;
+  const headers = { Accept: 'application/vnd.github+json' };
+  const token = env.GITHUB_TOKEN || env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const commits = [];
+  try {
+    for (let page = 1; page <= 10; page += 1) {
+      const response = await fetch(
+        `https://api.github.com/repos/${prMeta.baseRepo}/pulls/${prMeta.issueNumber}/commits?per_page=100&page=${page}`,
+        { headers, signal: AbortSignal.timeout(15_000) },
+      );
+      if (!response.ok) return null;
+      const payload = await response.json();
+      if (!Array.isArray(payload)) return null;
+      commits.push(...payload.map((commit) => commit?.sha).filter((sha) => COMMIT_SHA_RE.test(sha || '')));
+      if (payload.length < 100) break;
+      if (page === 10) return null;
+    }
+    for (let page = 1; page <= 10; page += 1) {
+      const response = await fetch(
+        `https://api.github.com/repos/${prMeta.baseRepo}/issues/${prMeta.issueNumber}/timeline?per_page=100&page=${page}`,
+        {
+          headers: { ...headers, Accept: 'application/vnd.github+json' },
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+      if (!response.ok) return null;
+      const payload = await response.json();
+      if (!Array.isArray(payload)) return null;
+      for (const event of payload) {
+        if (event?.event !== 'head_ref_force_pushed') continue;
+        for (const field of ['before_commit', 'after_commit']) {
+          const candidate = typeof event?.[field] === 'string'
+            ? event[field]
+            : event?.[field]?.sha;
+          if (COMMIT_SHA_RE.test(candidate || '')) commits.push(candidate);
+        }
+      }
+      if (payload.length < 100) break;
+      if (page === 10) return null;
+    }
+    const statuses = [];
+    for (const sha of new Set(commits)) {
+      for (let page = 1; page <= 10; page += 1) {
+        const response = await fetch(
+          `https://api.github.com/repos/${prMeta.baseRepo}/commits/${sha}/statuses?per_page=100&page=${page}`,
+          { headers, signal: AbortSignal.timeout(15_000) },
+        );
+        if (!response.ok) return null;
+        const payload = await response.json();
+        if (!Array.isArray(payload)) return null;
+        statuses.push(...payload
+          .filter((status) => status?.context?.startsWith(EVIDENCE_LEDGER_CONTEXT_PREFIX))
+          .map(evidenceLedgerStatusFromPayload));
+        if (payload.length < 100) break;
+        if (page === 10) return null;
+      }
+    }
+    return statuses;
+  } catch {
+    return null;
+  }
+}
+
 async function appendPriorRevisionFinding(
   findings,
   prMeta,
   evidenceOverrides,
+  ledgerOverrides,
   trustedSourceDigestOverrides,
   selectedEvidenceRefs = new Set(),
 ) {
@@ -957,17 +1126,62 @@ async function appendPriorRevisionFinding(
   const comments = bindingValid
     ? await loadPullRequestEvidenceComments(prMeta, evidenceOverrides)
     : null;
-  if (!comments) {
+  const ledger = bindingValid
+    ? await loadPullRequestEvidenceLedger(prMeta, ledgerOverrides)
+    : null;
+  if (!comments || !ledger) {
     findings.push({
       check: 'consultation_prior_revise_resolved',
       pass: false,
-      detail: 'PR yorum geçmişi eksiksiz yüklenemedi; önceki REVISE zinciri fail-closed',
+      detail: 'PR yorum veya immutable status-ledger geçmişi eksiksiz yüklenemedi; önceki REVISE zinciri fail-closed',
     });
     return;
   }
 
   const records = [];
   const invalidCandidates = [];
+  const commentByRef = new Map(comments.map((comment) => [comment?.ref, comment]));
+  const ledgerByTarget = new Map();
+  for (const status of ledger) {
+    const digest = typeof status?.context === 'string'
+      && status.context.startsWith(EVIDENCE_LEDGER_CONTEXT_PREFIX)
+      ? status.context.slice(EVIDENCE_LEDGER_CONTEXT_PREFIX.length)
+      : '';
+    const description = status?.description?.match(EVIDENCE_LEDGER_DESCRIPTION_RE);
+    const verdict = description?.[1]?.toUpperCase();
+    const issueNumber = Number(description?.[2]);
+    const threadId = description?.[3]?.toLowerCase();
+    if (description && Number.isInteger(issueNumber) && issueNumber !== prMeta.issueNumber) {
+      continue;
+    }
+    const expectedState = verdict === 'AGREE' ? 'success' : 'failure';
+    const createdAtMs = Date.parse(status?.createdAt || '');
+    const valid = Boolean(
+      SHA256_RE.test(digest)
+      && description
+      && issueNumber === prMeta.issueNumber
+      && UUID_RE.test(threadId || '')
+      && status?.state === expectedState
+      && COMMIT_SHA_RE.test(status?.sha || '')
+      && validEvidenceRef(status?.targetUrl, prMeta.baseRepo)
+      && typeof status?.creator === 'string'
+      && status.creator.toLowerCase() === expectedOwner.toLowerCase()
+      && Number.isFinite(createdAtMs)
+      && status.createdAt === status.updatedAt
+    );
+    if (!valid || ledgerByTarget.has(status?.targetUrl)) {
+      invalidCandidates.push(`${status?.ref || 'missing-ledger-ref'} (invalid or duplicate status ledger)`);
+      continue;
+    }
+    ledgerByTarget.set(status.targetUrl, {
+      ...status,
+      digest: digest.toLowerCase(),
+      provider: 'openai',
+      verdict,
+      threadId,
+      createdAtMs,
+    });
+  }
   for (const comment of comments) {
     // Live history is loaded from the current PR endpoint. Local overrides are
     // broader so contract tests can prove evidence from another PR is ignored,
@@ -1006,6 +1220,18 @@ async function appendPriorRevisionFinding(
     const expected = Object.values(EVIDENCE_PROVIDERS).find(
       (candidate) => candidate.provider === body?.provider,
     );
+    const commentCreatedAtMs = Date.parse(comment?.createdAt || '');
+    const ledgerRequired = body?.schema === 'cross-ai-provider-evidence/v4'
+      && body?.provider === 'openai'
+      && Number.isFinite(commentCreatedAtMs)
+      && commentCreatedAtMs >= EVIDENCE_STATUS_LEDGER_CUTOFF_MS;
+    if (ledgerRequired) {
+      if (!ledgerByTarget.has(comment.ref)) {
+        invalidCandidates.push(`${comment?.ref || 'missing-ref'} (missing immutable status ledger)`);
+      }
+      // Current v4 authority is reconstructed from the immutable ledger below.
+      continue;
+    }
     // Strict immutable v1 evidence predating each provider's exact schema or
     // authority retirement remains read-only history. Current, edited, or
     // malformed v1 records cannot produce acceptance and fail closed.
@@ -1067,6 +1293,67 @@ async function appendPriorRevisionFinding(
       });
     }
   }
+
+  for (const status of ledgerByTarget.values()) {
+    const comment = commentByRef.get(status.targetUrl);
+    if (!comment) {
+      records.push({
+        provider: status.provider,
+        verdict: status.verdict,
+        createdAtMs: status.createdAtMs,
+        evidenceSha256: status.digest,
+        threadId: status.threadId,
+        ref: status.targetUrl,
+        currentBindingFresh: false,
+        tombstone: true,
+      });
+      continue;
+    }
+    const expected = EVIDENCE_PROVIDERS.openai;
+    const parsed = sha256Utf8(comment.body || '') === status.digest
+      ? parseEvidenceComment(comment, expected, expectedOwner, {
+          issueNumber: prMeta.issueNumber,
+          enforceFreshness: false,
+          trustedSourceAnchorSha: baseTip,
+          trustedSourceDigestOverrides,
+        })
+      : null;
+    if (
+      !parsed
+      || parsed.evidence.verdict !== status.verdict
+      || parsed.evidence.head_sha?.toLowerCase() !== status.sha?.toLowerCase()
+      || parsed.evidence.execution_provenance?.thread_id?.toLowerCase() !== status.threadId
+    ) {
+      invalidCandidates.push(`${status.ref || 'missing-ledger-ref'} (status ledger payload mismatch)`);
+      continue;
+    }
+    const current = parseEvidenceComment(comment, expected, expectedOwner, {
+      issueNumber: prMeta.issueNumber,
+      binding: { baseTip, base, head: parsed.evidence.head_sha, scope },
+      trustedSourceAnchorSha: baseTip,
+      trustedSourceDigestOverrides,
+    });
+    records.push({
+      provider: parsed.evidence.provider,
+      verdict: parsed.evidence.verdict,
+      createdAtMs: status.createdAtMs,
+      evidenceSha256: status.digest,
+      threadId: status.threadId,
+      ref: status.targetUrl,
+      currentBindingFresh: Boolean(current) && selectedEvidenceRefs.has(status.targetUrl),
+      tombstone: false,
+    });
+  }
+
+  const selectedLedgerMissing = [...selectedEvidenceRefs]
+    .filter((ref) => !ledgerByTarget.has(ref));
+  findings.push({
+    check: 'consultation_selected_receipts_ledgered',
+    pass: selectedLedgerMissing.length === 0,
+    detail: selectedLedgerMissing.length === 0
+      ? 'Seçili Codex receipt immutable commit-status ledger ile bağlı'
+      : `Seçili receipt status ledger kaydı eksik: ${selectedLedgerMissing.join(', ')}`,
+  });
 
   const seenEvidenceDigests = new Map();
   const seenThreadIds = new Map();
@@ -1269,7 +1556,7 @@ async function appendConsultationFindings(
 }
 
 async function auditExplicitConsultationMode(
-  fields, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+  fields, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
 ) {
   const findings = [];
   const mode = (fields['consultation mode'] || '').trim().toLowerCase();
@@ -1372,7 +1659,7 @@ async function auditExplicitConsultationMode(
         : `none mode outcome/binding field taşıyamaz: ${presentOutcomeFields.join(', ')}`,
     });
     await appendPriorRevisionFinding(
-      findings, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+      findings, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
     );
     return findings;
   }
@@ -1492,6 +1779,7 @@ async function auditExplicitConsultationMode(
       findings,
       prMeta,
       evidenceOverrides,
+      ledgerOverrides,
       trustedSourceDigestOverrides,
       selectedEvidenceRefs,
     );
@@ -1500,7 +1788,8 @@ async function auditExplicitConsultationMode(
 }
 
 async function audit(
-  body, prMeta = null, evidenceOverrides = {}, trustedSourceDigestOverrides = {},
+  body, prMeta = null, evidenceOverrides = {}, ledgerOverrides = null,
+  trustedSourceDigestOverrides = {},
 ) {
   const findings = [];
   const section = extractCrossAiSection(body);
@@ -1528,7 +1817,7 @@ async function audit(
   });
   if (Object.hasOwn(fields, 'consultation mode')) {
     findings.push(...await auditExplicitConsultationMode(
-      fields, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+      fields, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
     ));
     return findings;
   }
@@ -1709,7 +1998,7 @@ async function audit(
 
   if (consultationExempt) {
     await appendPriorRevisionFinding(
-      findings, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+      findings, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
     );
   }
 
@@ -1993,7 +2282,11 @@ function report(findings) {
 const args = parseArgs();
 const { body, prMeta } = loadInput(args);
 const evidenceOverrides = readEvidenceOverrides(args);
+const ledgerOverrides = readEvidenceLedgerOverrides(args);
 const trustedSourceDigestOverrides = readTrustedSourceDigestOverrides(args);
+const activationFinding = sourceActivationFinding(
+  prMeta, trustedSourceDigestOverrides,
+);
 let findings;
 if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
   console.log(
@@ -2009,9 +2302,10 @@ if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
     findings = auditAutomation(body, prMeta);
   } else {
     findings = await audit(
-      body, prMeta, evidenceOverrides, trustedSourceDigestOverrides,
+      body, prMeta, evidenceOverrides, ledgerOverrides, trustedSourceDigestOverrides,
     );
   }
 }
+findings = [activationFinding, ...findings];
 const ok = report(findings);
 exit(ok ? 0 : 1);

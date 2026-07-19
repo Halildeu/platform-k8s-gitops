@@ -68,9 +68,11 @@ on:
       # SAME PR (atomic wiring + behavior), not pre-wired ahead.
 
 permissions:
+  actions: read
   contents: read
   issues: read
   pull-requests: read
+  statuses: read
 
 # #842 Codex 019e42c7 Q8: concurrency guards parallel runs on the same PR.
 # Per-PR concurrency group; superseded runs are cancelled on `synchronize`
@@ -103,6 +105,32 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 20
+
+      - name: Load exact-base Cross-AI source-trust activation
+        id: activation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ACTIVATION_DIR: ${{ runner.temp }}/cross-ai-source-trust-activation
+        run: |
+          set -euo pipefail
+          run_id="$({
+            gh api --paginate \
+              "repos/${GH_REPO}/actions/workflows/ci.yml/runs?event=push&branch=main&status=success&per_page=100"
+          } | jq -r --arg sha "$PR_BASE_SHA" \
+            '.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success") | .id' \
+            | sed -n '1p')"
+          test -n "$run_id"
+          mkdir -p "$ACTIVATION_DIR"
+          gh run download "$run_id" \
+            --repo "$GH_REPO" \
+            --name "cross-ai-source-trust-activation-${PR_BASE_SHA}" \
+            --dir "$ACTIVATION_DIR"
+          activation_file="${ACTIVATION_DIR}/cross-ai-source-trust-activation.json"
+          test -s "$activation_file"
+          echo "file=$activation_file" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
 
       # Run the trusted-base verifier before importing any PR-head git object
       # into the job. The verifier opens from the immutable base checkout and
@@ -169,6 +197,8 @@ jobs:
             --changed-files-file /tmp/changed-files.txt
             --derived-base-sha "${{ steps.scope.outputs.merge_base }}"
             --derived-scope-sha256 "${{ steps.scope.outputs.scope_sha256 }}"
+            --activation-attestation-file "${{ steps.activation.outputs.file }}"
+            --activation-run-id "${{ steps.activation.outputs.run_id }}"
           )
           if [[ -f "$ATTESTATION_OUTPUT" ]]; then
             args+=(

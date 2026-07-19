@@ -91,6 +91,23 @@ const TRUSTED_SOURCE_DIGEST_OVERRIDES = {
   [HISTORICAL_TRUSTED_BASE_SHA]: HISTORICAL_TRUSTED_SOURCE_DIGESTS,
   ['d'.repeat(40)]: CURRENT_TRUSTED_SOURCE_DIGESTS,
 };
+const sourceActivation = (
+  trustedSha = BASE_TIP_SHA,
+  sourceDigests = CURRENT_TRUSTED_SOURCE_DIGESTS,
+  runId = '12345',
+) => ({
+  ok: true,
+  schema: 'cross-ai-source-trust-activation/v1',
+  trusted_sha: trustedSha,
+  source_digests: sourceDigests,
+  repository: REPO,
+  workflow_ref: `${REPO}/.github/workflows/ci.yml@refs/heads/main`,
+  event_name: 'push',
+  ref: 'refs/heads/main',
+  run_id: runId,
+  run_attempt: '1',
+  activated_at: '2026-07-19T17:30:00Z',
+});
 const evidenceRef = (id) =>
   `https://api.github.com/repos/Halildeu/platform-k8s-gitops/issues/comments/${id}`;
 const evidenceBody = (provider, model, response, options = {}) => JSON.stringify({
@@ -141,6 +158,34 @@ const evidenceCommentAt = (body, timestampMs, issueNumber = PR_NUMBER) => ({
   updatedAt: new Date(timestampMs).toISOString(),
   issueNumber,
 });
+const evidenceLedgerFromMap = (evidenceMap) => Object.entries(evidenceMap)
+  .flatMap(([ref, comment], index) => {
+    if (
+      comment?.author !== 'Halildeu'
+      || comment?.authorAssociation !== 'OWNER'
+      || typeof comment?.body !== 'string'
+    ) return [];
+    let body;
+    try {
+      body = JSON.parse(comment.body);
+    } catch {
+      return [];
+    }
+    if (body?.schema !== 'cross-ai-provider-evidence/v4' || body?.provider !== 'openai') {
+      return [];
+    }
+    return [{
+      sha: body.head_sha,
+      context: `cross-ai/evidence/${sha256(comment.body)}`,
+      state: body.verdict === 'AGREE' ? 'success' : 'failure',
+      description: `v4 openai ${body.verdict} pr=${comment.issueNumber} thread=${body.execution_provenance?.thread_id}`,
+      targetUrl: ref,
+      creator: comment.author,
+      createdAt: comment.createdAt,
+      updatedAt: comment.createdAt,
+      ref: `https://api.github.com/repos/${REPO}/statuses/${index + 1}`,
+    }];
+  });
 const CLAUDE_REF = evidenceRef(1001);
 const MINIMAX_REF = evidenceRef(1002);
 const CODEX_REF = evidenceRef(1003);
@@ -443,7 +488,7 @@ const REVERSED_DUAL_CODEX_EVIDENCE = {
 // `--changed-files-file`. `undefined` skips the flag entirely (older workflows
 // and the normal peer-review audit don't need it). `[]` writes an empty file
 // (fail-closed via dependabot_changed_files_present).
-function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, includeEvidenceOverride = true, trustedSourceDigests = TRUSTED_SOURCE_DIGEST_OVERRIDES, includeTrustedSourceOverride = true, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck }) {
+function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, baseSha = BASE_TIP_SHA, body, changedFiles, automationAttestation, evidence = EVIDENCE, includeEvidenceOverride = true, evidenceLedger, includeEvidenceLedgerOverride = true, sourceActivationAttestation, includeSourceActivationAttestation = true, activationRunId, trustedSourceDigests = TRUSTED_SOURCE_DIGEST_OVERRIDES, includeTrustedSourceOverride = true, derivedBaseSha = BASE_SHA, derivedScopeSha256 = SCOPE_SHA256, githubActions = false, allowLocalOverride = 'true', expectedFailureCheck }) {
   const event = {
     pull_request: {
       number: PR_NUMBER,
@@ -476,6 +521,28 @@ function runCase({ branch, actor, sender, headRepo = REPO, headSha = HEAD_SHA, b
     const evidenceFile = join(dir, 'evidence.json');
     writeFileSync(evidenceFile, JSON.stringify(evidence));
     cmdArgs.push('--evidence-file', evidenceFile);
+  }
+  if (includeEvidenceOverride && includeEvidenceLedgerOverride) {
+    const evidenceLedgerFile = join(dir, 'evidence-ledger.json');
+    writeFileSync(
+      evidenceLedgerFile,
+      JSON.stringify(evidenceLedger ?? evidenceLedgerFromMap(evidence)),
+    );
+    cmdArgs.push('--evidence-ledger-file', evidenceLedgerFile);
+  }
+  if (includeSourceActivationAttestation) {
+    const effectiveSourceDigests = trustedSourceDigests?.[baseSha]
+      ?? (baseSha === REAL_TRUSTED_BASE_SHA
+        ? REAL_TRUSTED_SOURCE_DIGESTS
+        : CURRENT_TRUSTED_SOURCE_DIGESTS);
+    const effectiveActivation = sourceActivationAttestation
+      ?? sourceActivation(baseSha, effectiveSourceDigests);
+    const activationFile = join(dir, 'source-activation.json');
+    writeFileSync(activationFile, JSON.stringify(effectiveActivation));
+    cmdArgs.push(
+      '--activation-attestation-file', activationFile,
+      '--activation-run-id', activationRunId ?? effectiveActivation.run_id,
+    );
   }
   if (Array.isArray(changedFiles)) {
     const cf = join(dir, 'changed-files.txt');
@@ -936,6 +1003,19 @@ const cases = [
     { branch: 'auto-verified/x', actor: BOT, sender: BOT, headRepo: 'mallory/platform-k8s-gitops', body: autoBody(LEDGER) }, 1],
   ['normal PR + valid peer review -> normal audit pass',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['normal PR without successful exact-base source activation -> blocked',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, changedFiles: [ROUTINE_PATH],
+      includeSourceActivationAttestation: false,
+      expectedFailureCheck: 'cross_ai_source_trust_activation' }, 1],
+  ['normal PR with a non-main source activation context -> blocked',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: peerBody, changedFiles: [ROUTINE_PATH],
+      sourceActivationAttestation: {
+        ...sourceActivation(),
+        ref: 'refs/heads/staging',
+      },
+      expectedFailureCheck: 'cross_ai_source_trust_activation' }, 1],
   ['legacy receipt body cannot produce current acceptance',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: legacyPeerBody, changedFiles: [ROUTINE_PATH], expectedFailureCheck: 'consultation_explicit_mode_required' }, 1],
   ['explicit none mode lets routine work pass without provider receipts',
@@ -982,6 +1062,15 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: unresolvedCodexReviseEvidence,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
+  ['none mode cannot hide a deleted Codex REVISE with an immutable status tombstone',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: EVIDENCE,
+      evidenceLedger: evidenceLedgerFromMap({
+        ...EVIDENCE,
+        ...unresolvedCodexReviseEvidence,
+      }),
       expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['none mode cannot hide a REVISE older than the selected receipt freshness window',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
@@ -1110,6 +1199,11 @@ const cases = [
       body: `## Cross-AI\nsummary without structured fields\n\n${explicitNoneBody}`, changedFiles: [ROUTINE_PATH] }, 0],
   ['explicit single mode accepts exact context-isolated Codex evidence',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit single mode rejects a selected receipt without an immutable ledger status',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitSingleBody, changedFiles: [ROUTINE_PATH],
+      evidenceLedger: [],
+      expectedFailureCheck: 'consultation_selected_receipts_ledgered' }, 1],
   ['explicit single mode rejects a missing consultation tier',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitSingleBody.replace(/^Consultation tier:.*\n/m, ''), changedFiles: [ROUTINE_PATH],

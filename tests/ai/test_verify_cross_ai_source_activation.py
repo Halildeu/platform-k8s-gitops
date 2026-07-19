@@ -21,6 +21,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class SourceActivationTests(unittest.TestCase):
+    CONTEXT = {
+        "repository": "Halildeu/platform-k8s-gitops",
+        "workflow_ref": (
+            "Halildeu/platform-k8s-gitops/.github/workflows/ci.yml"
+            "@refs/heads/main"
+        ),
+        "event_name": "push",
+        "git_ref": "refs/heads/main",
+        "run_id": "12345",
+        "run_attempt": "1",
+        "activated_at": "2026-07-19T17:30:00Z",
+    }
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name)
@@ -67,7 +80,7 @@ class SourceActivationTests(unittest.TestCase):
 
     def assert_activation_error(self, code: str, sha: str) -> None:
         with self.assertRaisesRegex(MODULE.ActivationError, f"^{code}$"):
-            MODULE.verify_activation(self.repo, sha, sha)
+            MODULE.verify_activation(self.repo, sha, sha, **self.CONTEXT)
 
     def test_bootstrap_commit_without_producer_stack_cannot_self_attest(self) -> None:
         self.assert_activation_error("trusted_source_unavailable", self.bootstrap_sha)
@@ -75,12 +88,33 @@ class SourceActivationTests(unittest.TestCase):
     def test_activation_commit_binds_checkout_to_all_trusted_sources(self) -> None:
         self.activate_source_stack()
         activation_sha = self.head_sha()
-        result = MODULE.verify_activation(self.repo, activation_sha, activation_sha)
+        result = MODULE.verify_activation(
+            self.repo, activation_sha, activation_sha, **self.CONTEXT
+        )
         self.assertEqual(
             result["schema"], "cross-ai-source-trust-activation/v1"
         )
         self.assertEqual(result["trusted_sha"], activation_sha)
         self.assertEqual(set(result["source_digests"]), set(MODULE.TRUSTED_SOURCE_PATHS))
+        self.assertEqual(result["ref"], "refs/heads/main")
+        self.assertEqual(result["run_id"], "12345")
+
+    def test_non_main_or_non_push_context_cannot_activate_policy(self) -> None:
+        self.activate_source_stack()
+        activation_sha = self.head_sha()
+        for mutation in (
+            {"event_name": "pull_request"},
+            {"git_ref": "refs/heads/feature"},
+            {"workflow_ref": "Halildeu/platform-k8s-gitops/.github/workflows/other.yml@refs/heads/main"},
+        ):
+            with self.subTest(mutation=mutation):
+                context = {**self.CONTEXT, **mutation}
+                with self.assertRaisesRegex(
+                    MODULE.ActivationError, "^untrusted_activation_context$"
+                ):
+                    MODULE.verify_activation(
+                        self.repo, activation_sha, activation_sha, **context
+                    )
 
     def test_modified_checkout_source_fails_after_activation(self) -> None:
         self.activate_source_stack()
