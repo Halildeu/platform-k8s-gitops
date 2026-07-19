@@ -284,19 +284,24 @@ const MINIMAX_V1_EVIDENCE = {
 const HISTORICAL_CLAUDE_V1_REF = evidenceRef(1010);
 const HISTORICAL_CODEX_V1_REF = evidenceRef(1011);
 const HISTORICAL_CODEX_V4_REF = evidenceRef(1012);
-const historicalV1Body = (provider, model) => JSON.stringify({
-  schema: 'cross-ai-provider-evidence/v1',
-  provider,
-  requested_model: model,
-  actual_model: model,
-  base_tip_sha: BASE_TIP_SHA,
-  base_sha: BASE_SHA,
-  head_sha: HEAD_SHA,
-  scope_sha256: SCOPE_SHA256,
-  verdict: 'AGREE',
-  response_sha256: sha256('## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'),
-  response: '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE',
-});
+const historicalV1Body = (provider, model, verdict = 'AGREE') => {
+  const response = verdict === 'AGREE'
+    ? '## P0\nNone\n## P1\nNone\n## P2\nNone\nVERDICT: AGREE'
+    : '## P0\nNone\n## P1\nHistorical binding issue\n## P2\nNone\nVERDICT: REVISE';
+  return JSON.stringify({
+    schema: 'cross-ai-provider-evidence/v1',
+    provider,
+    requested_model: model,
+    actual_model: model,
+    base_tip_sha: BASE_TIP_SHA,
+    base_sha: BASE_SHA,
+    head_sha: HEAD_SHA,
+    scope_sha256: SCOPE_SHA256,
+    verdict,
+    response_sha256: sha256(response),
+    response,
+  });
+};
 const HISTORICAL_PROVIDER_V1_EVIDENCE = {
   [HISTORICAL_CLAUDE_V1_REF]: evidenceCommentAt(
     historicalV1Body('anthropic', 'claude-opus-4-8'),
@@ -304,6 +309,12 @@ const HISTORICAL_PROVIDER_V1_EVIDENCE = {
   ),
   [HISTORICAL_CODEX_V1_REF]: evidenceCommentAt(
     historicalV1Body('openai', 'gpt-5.6-sol'),
+    HISTORICAL_PROVIDER_V1_MS,
+  ),
+};
+const HISTORICAL_CODEX_V1_REVISE_EVIDENCE = {
+  [HISTORICAL_CODEX_V1_REF]: evidenceCommentAt(
+    historicalV1Body('openai', 'gpt-5.6-sol', 'REVISE'),
     HISTORICAL_PROVIDER_V1_MS,
   ),
 };
@@ -694,6 +705,10 @@ const explicitSparkSingleBody = explicitSingleBody.replace(
 ).replace(
   /^Codex receipt:.*$/m,
   `Codex receipt: provider=openai; requested=gpt-5.3-codex-spark; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${SPARK_REF}; sha256=${sha256(EVIDENCE[SPARK_REF].body)}`,
+);
+const explicitRoutineSolBody = explicitSingleBody.replace(
+  'Consultation tier: high-impact',
+  'Consultation tier: routine',
 );
 const solReceiptSparkEvidenceBody = explicitSingleBody.replace(
   sha256(EVIDENCE[CODEX_REF].body),
@@ -1135,10 +1150,15 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: historicalClaudeReviseEvidence }, 0],
-  ['none mode ignores immutable pre-retirement Claude and OpenAI v1 audit records',
+  ['none mode ignores immutable pre-retirement Claude and OpenAI v1 AGREE records',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
       evidence: HISTORICAL_PROVIDER_V1_EVIDENCE }, 0],
+  ['none mode cannot hide an immutable pre-retirement OpenAI v1 REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
+      evidence: HISTORICAL_CODEX_V1_REVISE_EVIDENCE,
+      expectedFailureCheck: 'consultation_prior_revise_resolved' }, 1],
   ['historical Codex v4 evidence uses producer digests from its own trusted base',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitNoneBody, changedFiles: [ROUTINE_PATH],
@@ -1374,6 +1394,13 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: freshSelectedCodexBody, changedFiles: [ROUTINE_PATH],
       evidence: freshSelectedCodexReviseEvidence }, 0],
+  ['a newly executed selected AGREE resolves a historical OpenAI v1 REVISE',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: freshSelectedCodexBody, changedFiles: [ROUTINE_PATH],
+      evidence: {
+        ...freshSelectedCodexReviseEvidence,
+        ...HISTORICAL_CODEX_V1_REVISE_EVIDENCE,
+      } }, 0],
   ['a forbidden dual mode cannot resolve a prior REVISE',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: explicitDualBody, changedFiles: [ROUTINE_PATH],
@@ -1393,6 +1420,10 @@ const cases = [
       evidence: SOL_RECEIPT_SPARK_EVIDENCE, expectedFailureCheck: 'codex_receipt' }, 1],
   ['explicit single mode accepts Spark for a routine voluntary consultation',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: [ROUTINE_PATH] }, 0],
+  ['explicit routine tier rejects SOL instead of silently escalating models',
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
+      body: explicitRoutineSolBody, changedFiles: [ROUTINE_PATH],
+      expectedFailureCheck: 'consultation_codex_model_tier' }, 1],
   ['explicit single mode rejects routine tier for a governance path floor',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: [GOVERNANCE_PATH], expectedFailureCheck: 'consultation_tier_meets_scope_floor' }, 1],
   ['explicit single mode rejects Spark when the author declares high-impact on a neutral path',

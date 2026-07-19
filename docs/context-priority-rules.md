@@ -396,8 +396,9 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    production promotion, migration ve diğer yüksek etkili scope'ta
    `--review-tier high-impact` exact `gpt-5.6-sol` seçer. Sandbox `read-only`
    ve reasoning effort exact `xhigh` olur. Zorunlu bayraklar `--ephemeral`,
-   `--ignore-user-config`, `--ignore-rules` olur; plugin, app, remote-plugin ve
-   memory bağlamları kapatılır. JSONL içinde
+   `--ignore-user-config`, `--ignore-rules` olur; review temp dizisinin hiçbir
+   `.git` atası olamaz, child process gerçek `cwd` olarak bu dizine sabitlenir;
+   plugin, app, remote-plugin ve memory bağlamları kapatılır. JSONL içinde
    tool/repo erişim olayı görülürse evidence üretmez. Harness PATH'teki keyfi bir
    executable'a güvenmez: resmi `@openai/codex` launcher/package/version
    eşleşmesini doğrular ve platforma özel native binary'yi doğrudan çalıştırıp
@@ -446,6 +447,9 @@ adayı fail-closed yapar. Dar tarihsel docs-only muafiyeti de aynı PR'daki aç�
 muafiyet yollarında da çalışır. Otomasyon PR'ı açık `Consultation mode` taşıyorsa
 otomasyon kimlik/içerik kontratı ile normal consultation kontratı birlikte
 geçmeden seçilmiş yeni Codex `AGREE` önceki `REVISE` kaydını çözmüş sayılmaz.
+Cutoff öncesi strict/immutable OpenAI v1 `AGREE` yalnız tarihsel audit kaydıdır
+ve acceptance üretmez; aynı dönemin geçerli OpenAI v1 `REVISE` kaydı ise daha
+yeni seçilmiş current Codex `AGREE` ile çözülene kadar bağlayıcı geçmişte kalır.
 
 ### 11.0.1 Varsayımsal istişare ile kesin inceleme sınırı
 
@@ -495,8 +499,8 @@ süreç sözleşmesi nedeniyle kabul edilir; farklı sağlayıcı iddiası yazı
 `gate-cross-ai-audit` açık modda kanal sayısını ve makinece görülebilen asgari
 risk zeminini doğrular: `none` receipt, binding/outcome veya legacy control field taşıyamaz,
 `single` yalnız exact Codex execution-profile receipt'i taşır. Routine scope'ta
-`routine` tier beyan edilir; Spark varsayılandır ve Spark/SOL ikisi de kabul
-edilir. Gate'in `single` zemini zorunlu tuttuğu governance/yüksek etkili scope'ta
+`routine` tier ve exact `gpt-5.3-codex-spark` zorunludur; SOL routine receipt
+olarak kabul edilmez. Gate'in `single` zemini zorunlu tuttuğu governance/yüksek etkili scope'ta
 veya author `high-impact` beyan ettiğinde exact SOL zorunludur. Claude
 ve MiniMax receipt alanları fail-closed reddedilir. `single` çıktısı `P0/P1/P2` ve tek terminal
 `VERDICT: AGREE|REVISE` sözleşmesine uyar; bozuk yanıt elle veya otomatik biçim

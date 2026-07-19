@@ -71,6 +71,8 @@ if disabled != expected_disabled or sys.argv[1:].count("--disable") != len(expec
 review_dir = Path(sys.argv[sys.argv.index("-C") + 1])
 if (review_dir / ".git").exists():
     raise SystemExit(11)
+if Path.cwd().resolve() != review_dir.resolve():
+    raise SystemExit(12)
 model = sys.argv[sys.argv.index("--model") + 1]
 if model != os.environ.get("FAKE_EXPECTED_MODEL", "gpt-5.3-codex-spark"):
     raise SystemExit(9)
@@ -402,6 +404,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         large_stderr: bool = False,
         pii_attestation_file: Path | None = None,
         untrusted_source: bool = False,
+        review_tmpdir: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
@@ -491,6 +494,11 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             if key in MODULE.CODEX_ENV_ALLOWLIST or key.startswith("FAKE_")
         }
         codex_env.update({"LC_ALL": "C", "LANG": "C"})
+        temporary_directory_patch = (
+            mock.patch.object(MODULE.tempfile, "tempdir", str(review_tmpdir))
+            if review_tmpdir is not None
+            else contextlib.nullcontext()
+        )
         with (
             mock.patch.object(sys, "argv", arguments),
             mock.patch.dict(os.environ, env, clear=True),
@@ -508,6 +516,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
                 trusted_gitleaks,
             ),
             mock.patch.object(MODULE, "build_codex_environment", return_value=codex_env),
+            temporary_directory_patch,
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
         ):
@@ -589,6 +598,17 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.assertEqual(summary["review_tier"], "high-impact")
         self.assertEqual(summary["requested_model"], "gpt-5.6-sol")
         self.assertEqual(evidence["actual_model"], "not-provider-attested")
+
+    def test_rejects_review_directory_with_git_ancestor(self) -> None:
+        repository_tmpdir = self.worktree / "review-tmp"
+        repository_tmpdir.mkdir()
+        result = self.run_harness(review_tmpdir=repository_tmpdir)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "review_directory_not_isolated",
+        )
 
     def test_rejects_missing_or_wrong_scope_pii_attestation(self) -> None:
         missing = self.root / "missing-pii-attestation.json"

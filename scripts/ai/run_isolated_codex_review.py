@@ -815,6 +815,19 @@ def execute_codex_review(
     timeout_seconds: int,
 ) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="isolated-codex-review-") as directory:
+        try:
+            review_directory = Path(directory).resolve(strict=True)
+            ancestors = (review_directory, *review_directory.parents)
+            for ancestor in ancestors:
+                try:
+                    os.lstat(ancestor / ".git")
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    fail("review_directory_isolation_unverifiable")
+                fail("review_directory_not_isolated")
+        except OSError:
+            fail("review_directory_isolation_unverifiable")
         command = [
             str(codex),
             "exec",
@@ -848,6 +861,7 @@ def execute_codex_review(
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                cwd=review_directory,
                 env=build_codex_environment(),
             )
         except OSError:

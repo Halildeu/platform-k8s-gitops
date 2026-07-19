@@ -1291,9 +1291,23 @@ async function appendPriorRevisionFinding(
       }
     }
     // Strict immutable v1 evidence predating each provider's exact schema or
-    // authority retirement remains read-only history. Current, edited, or
-    // malformed v1 records cannot produce acceptance and fail closed.
-    if (immutableRetiredV1Record(comment, body)) continue;
+    // authority retirement remains read-only history. Historical OpenAI AGREE
+    // cannot produce current acceptance, but an OpenAI REVISE remains binding
+    // until a selected current receipt supplies a newer AGREE.
+    if (immutableRetiredV1Record(comment, body)) {
+      if (body.provider === 'openai' && body.verdict === 'REVISE') {
+        records.push({
+          provider: body.provider,
+          verdict: body.verdict,
+          createdAtMs: commentCreatedAtMs,
+          evidenceSha256: sha256Utf8(comment.body),
+          threadId: null,
+          ref: comment.ref,
+          currentBindingFresh: false,
+        });
+      }
+      continue;
+    }
     if (body?.provider === 'minimax' || body?.schema === 'cross-ai-provider-evidence/v1') {
       invalidCandidates.push(comment?.ref || 'missing-ref');
       continue;
@@ -1778,9 +1792,12 @@ async function auditExplicitConsultationMode(
 
   const codexReceipt = parseReceipt(fields['codex receipt']);
   const deepCodexRequired = requiredFloor.mode === 'single' || tier === 'high-impact';
+  const requiredCodexModel = deepCodexRequired
+    ? 'gpt-5.6-sol'
+    : 'gpt-5.3-codex-spark';
   const codexModelTierPass = Boolean(
     codexReceipt
-    && (!deepCodexRequired || codexReceipt.requested === 'gpt-5.6-sol')
+    && codexReceipt.requested === requiredCodexModel
   );
   findings.push({
     check: 'consultation_codex_model_tier',
@@ -1788,10 +1805,10 @@ async function auditExplicitConsultationMode(
     detail: codexModelTierPass
       ? deepCodexRequired
         ? 'high-impact scope exact gpt-5.6-sol reviewer kullanıyor'
-        : `routine scope ${codexReceipt.requested} reviewer kullanıyor; Spark varsayılan, SOL yükseltmesi geçerli`
+        : 'routine scope exact gpt-5.3-codex-spark reviewer kullanıyor'
       : deepCodexRequired
         ? 'governance/high-impact scope exact gpt-5.6-sol reviewer gerektirir; Spark yalnız routine scope içindir'
-        : 'Codex receipt desteklenen exact model kimliği taşımalıdır',
+        : 'routine tier exact gpt-5.3-codex-spark reviewer gerektirir; SOL yalnız high-impact scope içindir',
   });
 
   const selectedReceipts = ['codex receipt'];
