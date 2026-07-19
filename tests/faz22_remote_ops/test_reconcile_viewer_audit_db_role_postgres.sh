@@ -20,16 +20,29 @@ container_id="$($REAL_DOCKER run --rm -d \
   -e POSTGRES_USER=postgres \
   "$POSTGRES_IMAGE")"
 
+init_complete=0
 ready=0
 for _ in $(seq 1 60); do
-  if "$REAL_DOCKER" exec "$container_id" pg_isready -U postgres >/dev/null 2>&1; then
-    ready=1
-    break
+  if [[ "$init_complete" == "0" ]]; then
+    postgres_logs="$("$REAL_DOCKER" logs "$container_id" 2>&1 || true)"
+    if [[ "$postgres_logs" == *'PostgreSQL init process complete; ready for start up.'* ]]; then
+      init_complete=1
+    fi
+  fi
+  if [[ "$init_complete" == "1" ]]; then
+    sql_ready="$(
+      "$REAL_DOCKER" exec "$container_id" psql -X -qAt \
+        -U postgres -d postgres -c 'SELECT 1' 2>/dev/null || true
+    )"
+    if [[ "$sql_ready" == "1" ]]; then
+      ready=1
+      break
+    fi
   fi
   sleep 1
 done
 [[ "$ready" == "1" ]] || {
-  echo "ephemeral postgres did not become ready" >&2
+  echo "ephemeral postgres final server did not become SQL-ready" >&2
   exit 1
 }
 
