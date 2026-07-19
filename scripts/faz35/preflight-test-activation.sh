@@ -8,6 +8,9 @@ KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NS="${KUBE_NS:-platform-test}"
 PREFLIGHT_STAGE="${PREFLIGHT_STAGE:-activation}"
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+SCRIPT_DIR="$REPO_ROOT/scripts/faz35"
+# shellcheck source=scripts/faz35/lib-activation-artifacts.sh
+source "$SCRIPT_DIR/lib-activation-artifacts.sh"
 ACTIVATION="$REPO_ROOT/kustomize/overlays/test/activation/etik-speak"
 NETPOL="$ACTIVATION/netpol.yaml"
 ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
@@ -15,6 +18,7 @@ SERVICE_CONFIG="$REPO_ROOT/kustomize/base/apps/etik-speak/ethics-service-config.
 SECRET_STORE="$ACTIVATION/secretstore.yaml"
 EXPECTED_MODEL_JSON_SHA256="711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33"
 FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
+IMAGE_SET="$REPO_ROOT/runtime-artifacts/faz35-etik-speak/image-set/267146bafa5a415b60a5fd85efd6b2b51120e86ede8c97530fbc1201263c2c8f.json"
 
 [ "$SSH_TARGET" = "halil@staging-sw" ] || {
   echo "FATAL: Faz 35 preflight is pinned to halil@staging-sw" >&2
@@ -29,7 +33,7 @@ case "$PREFLIGHT_STAGE" in
   *) echo "FATAL: PREFLIGHT_STAGE must be foundation or activation" >&2; exit 1 ;;
 esac
 
-for command_name in ssh curl jq kustomize grep awk; do
+for command_name in ssh curl jq kustomize grep awk sed; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "FATAL: required command missing: $command_name" >&2
     exit 1
@@ -171,7 +175,8 @@ for host in etik.acik.com speakup.acik.com; do
 done
 
 rendered=$(mktemp)
-trap 'rm -f "$rendered"' EXIT
+rendered_root=$(mktemp)
+trap 'rm -f "$rendered" "$rendered_root"' EXIT
 kustomize build "$ACTIVATION" >"$rendered"
 if [ "$PREFLIGHT_STAGE" = activation ]; then
   grep -Eq 'PENDING_FAZ35_(VAULT_ROLE_ID|OPENFGA_STORE_ID|OPENFGA_MODEL_ID)' "$rendered" && {
@@ -220,6 +225,42 @@ grep -Fq 'X-Etik-Speak-Transport: https' "$rendered" || {
   exit 1
 }
 
+[ -f "$IMAGE_SET" ] && [ ! -L "$IMAGE_SET" ] || {
+  echo "FATAL: reviewed content-addressed image set is missing" >&2
+  exit 1
+}
+image_set_name=$(basename "$IMAGE_SET" .json)
+printf '%s' "$image_set_name" | grep -Eq '^[0-9a-f]{64}$' || {
+  echo "FATAL: image set filename is not a SHA-256 digest" >&2
+  exit 1
+}
+image_set_sha=$(jq -cS . "$IMAGE_SET" | sha256_stream)
+[ "$image_set_sha" = "$image_set_name" ] || {
+  echo "FATAL: image set content does not match its content-addressed filename" >&2
+  exit 1
+}
+jq -e '
+  .schema_version == "faz35-test-image-set-v1" and
+  (.source_heads.backend | test("^[0-9a-f]{40}$")) and
+  (.source_heads.web | test("^[0-9a-f]{40}$")) and
+  (.images.ethics_service.source_head == .source_heads.backend) and
+  (.images.public_web.source_head == .source_heads.web) and
+  (.images.manager_web.source_head == .source_heads.web) and
+  ([.images[] |
+    (.repository | test("^ghcr\\.io/halildeu/[a-z0-9-]+$")) and
+    (.digest | test("^sha256:[0-9a-f]{64}$")) and
+    (.workflow_run | type == "number" and . > 0)
+  ] | all)
+' "$IMAGE_SET" >/dev/null || {
+  echo "FATAL: image set schema/source-head binding is invalid" >&2
+  exit 1
+}
+expected_backend=$(jq -r '.images.ethics_service | .repository + "@" + .digest' "$IMAGE_SET")
+expected_public=$(jq -r '.images.public_web | .repository + "@" + .digest' "$IMAGE_SET")
+expected_manager=$(jq -r '.images.manager_web | .repository + "@" + .digest' "$IMAGE_SET")
+faz35_assert_rendered_deployment_image "$rendered" ethics-service "$expected_backend"
+faz35_assert_rendered_deployment_image "$rendered" etik-speak-public "$expected_public"
+
 if [ "$PREFLIGHT_STAGE" = activation ]; then
   store_id=$(awk '$1 == "ERP_OPENFGA_STORE_ID:" {gsub(/"/, "", $2); print $2; exit}' "$SERVICE_CONFIG")
   model_id=$(awk '$1 == "ERP_OPENFGA_MODEL_ID:" {gsub(/"/, "", $2); print $2; exit}' "$SERVICE_CONFIG")
@@ -258,6 +299,12 @@ if [ "$PREFLIGHT_STAGE" = foundation ]; then
     echo "FATAL: foundation provisioning refuses an early shared test frontend pin" >&2
     exit 1
   }
+else
+  faz35_assert_root_activation_binding "$ROOT_OVERLAY"
+  kustomize build "$REPO_ROOT/kustomize/overlays/test" >"$rendered_root"
+  faz35_assert_rendered_deployment_image "$rendered_root" ethics-service "$expected_backend"
+  faz35_assert_rendered_deployment_image "$rendered_root" etik-speak-public "$expected_public"
+  faz35_assert_rendered_deployment_image "$rendered_root" frontend "$expected_manager"
 fi
 
 # Variables in this single-quoted program intentionally expand on staging-sw.

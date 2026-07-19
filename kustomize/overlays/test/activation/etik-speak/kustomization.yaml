@@ -13,17 +13,17 @@ resources:
   - priority-class.yaml
   - public-api-upstream-headers.yaml
 images:
-  # Exact branch artifacts: backend source 635b2012 / run 29681944894 and
-  # public-web source 61820d06 / run 29681910475. The public artifact content
-  # digest is unchanged because the follow-up changed only the E2E driver.
+  # Exact branch artifacts: backend source d89545ad / run 29697615386 and
+  # public-web source 7206161f / run 29697854919. Their immutable identities
+  # are content-bound by the Faz 35 image-set ledger and preflight.
   # Root activation remains
   # forbidden until the exact-head review and provisioning gates are satisfied.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/ethics-service
     newName: ghcr.io/halildeu/platform-backend-ethics-service
-    digest: sha256:fa6acf2cc77dc53b24c0922c896417c1064668d4fe091bd25f0217187a166703
+    digest: sha256:93c03f6c942d0154e97e990dbd012adb8b010791373d5ef0637dd7e65cdd8b03
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/etik-speak-public
     newName: ghcr.io/halildeu/platform-web-etik-speak-public
-    digest: sha256:8e4497d887ddf01607172b0216bcbe5fb5b998b0eff628a7cec48a5cfde729d0
+    digest: sha256:e362462c1f0aa62e5eb5ed198467cbe9d8a6d235ee584b7632bb11a88889059d
 patches:
   - target: {kind: Deployment, name: ethics-service}
     patch: |-

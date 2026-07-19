@@ -134,9 +134,28 @@ attribute. Rate limit and lockout metadata is not case-enumerable.
 - `POST /api/v1/public/ethics/mailbox/messages`
 - `DELETE /api/v1/public/ethics/mailbox/session`
 
-Reporter sees only staff messages marked public and its own messages. Internal
-notes, assignee, staff identity beyond configured display label, reporter
-identity/link and evidence custody details are absent.
+`GET` returns a case-scoped envelope:
+
+```json
+{
+  "status": "IN_REVIEW",
+  "messages": [
+    {
+      "id": "01...",
+      "authorType": "STAFF",
+      "visibility": "REPORTER_VISIBLE",
+      "body": "Sentetik yanıt",
+      "createdAt": "2026-07-18T12:30:00Z"
+    }
+  ]
+}
+```
+
+`status` is restricted to the reporter-safe `NEW`, `IN_REVIEW` and
+`CLOSED` vocabulary. Reporter sees only staff messages marked public and its
+own messages. Case/org identifiers, internal notes, assignee, staff identity
+beyond the configured display label, reporter identity/link and evidence
+custody details are absent.
 
 ## 4. Staff API
 

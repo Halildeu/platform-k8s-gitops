@@ -38,6 +38,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
         cls.preflight = (
             ROOT / "scripts/faz35/preflight-test-activation.sh"
         ).read_text()
+        cls.activation_artifact_lib_path = (
+            ROOT / "scripts/faz35/lib-activation-artifacts.sh"
+        )
+        cls.activation_artifact_lib = cls.activation_artifact_lib_path.read_text()
         cls.external_secret = (
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/externalsecret.yaml"
@@ -79,6 +83,13 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             ROOT
             / "kustomize/overlays/test/activation/etik-speak/public-api-upstream-headers.yaml"
         ).read_text()
+        image_sets = list(
+            (ROOT / "runtime-artifacts/faz35-etik-speak/image-set").glob("*.json")
+        )
+        if len(image_sets) != 1:
+            raise AssertionError("expected exactly one Faz 35 image-set ledger")
+        cls.image_set_path = image_sets[0]
+        cls.image_set = json.loads(cls.image_set_path.read_text())
 
     def test_raw_credentials_are_not_in_docker_exec_arguments(self):
         combined = "\n".join((self.pg_vault, self.keycloak, self.entitlement, self.openfga))
@@ -565,6 +576,11 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             "secret/ethics-service-secrets",
             "secret/etik-speak-public-gate",
             "priorityclass/etik-speak-test",
+            "faz35_assert_root_activation_binding",
+            "faz35_assert_rendered_deployment_image",
+            "image set content does not match its content-addressed filename",
+            "image set schema/source-head binding is invalid",
+            'kustomize build "$REPO_ROOT/kustomize/overlays/test"',
         ):
             self.assertIn(required, self.preflight)
         self.assertNotRegex(
@@ -575,6 +591,161 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             self.preflight,
             r"vault\s+(kv\s+)?(put|patch|delete|write)",
         )
+
+    def test_activation_artifact_helpers_reject_stale_duplicate_and_unbound_state(self):
+        manifest = """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ethics-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: ethics-service
+          image: ghcr.io/halildeu/platform-backend-ethics-service@sha256:{digest}
+"""
+        expected_digest = "a" * 64
+        expected_image = (
+            "ghcr.io/halildeu/platform-backend-ethics-service@sha256:"
+            + expected_digest
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_path = Path(directory) / "rendered.yaml"
+            manifest_path.write_text(manifest.format(digest=expected_digest))
+            exact = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; faz35_assert_rendered_deployment_image "$2" "$3" "$4"',
+                    "bash",
+                    str(self.activation_artifact_lib_path),
+                    str(manifest_path),
+                    "ethics-service",
+                    expected_image,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(exact.returncode, 0)
+
+            stale = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; faz35_assert_rendered_deployment_image "$2" "$3" "$4"',
+                    "bash",
+                    str(self.activation_artifact_lib_path),
+                    str(manifest_path),
+                    "ethics-service",
+                    expected_image.replace("a" * 64, "b" * 64),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(stale.returncode, 0)
+
+            manifest_path.write_text(
+                manifest.format(digest=expected_digest)
+                + "        - name: stale-sidecar\n"
+                + f"          image: {expected_image}\n"
+            )
+            duplicate = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; faz35_assert_rendered_deployment_image "$2" "$3" "$4"',
+                    "bash",
+                    str(self.activation_artifact_lib_path),
+                    str(manifest_path),
+                    "ethics-service",
+                    expected_image,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(duplicate.returncode, 0)
+
+            root_path = Path(directory) / "kustomization.yaml"
+            root_path.write_text("resources:\n  - activation/etik-speak\n")
+            bound = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; faz35_assert_root_activation_binding "$2"',
+                    "bash",
+                    str(self.activation_artifact_lib_path),
+                    str(root_path),
+                ],
+                check=False,
+            )
+            self.assertEqual(bound.returncode, 0)
+            for value in (
+                "resources:\n",
+                "resources:\n  - activation/etik-speak\n  - activation/etik-speak\n",
+            ):
+                root_path.write_text(value)
+                rejected = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; faz35_assert_root_activation_binding "$2"',
+                        "bash",
+                        str(self.activation_artifact_lib_path),
+                        str(root_path),
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+
+    def test_image_set_is_content_addressed_source_bound_and_rendered_exactly(self):
+        canonical = (
+            json.dumps(self.image_set, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+        self.assertEqual(hashlib.sha256(canonical).hexdigest(), self.image_set_path.stem)
+        self.assertEqual(self.image_set["schema_version"], "faz35-test-image-set-v1")
+        self.assertEqual(
+            self.image_set["images"]["ethics_service"]["source_head"],
+            self.image_set["source_heads"]["backend"],
+        )
+        for name in ("public_web", "manager_web"):
+            self.assertEqual(
+                self.image_set["images"][name]["source_head"],
+                self.image_set["source_heads"]["web"],
+            )
+
+        rendered = subprocess.run(
+            ["kustomize", "build", str(ROOT / "kustomize/overlays/test/activation/etik-speak")],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_path = Path(directory) / "activation.yaml"
+            manifest_path.write_text(rendered)
+            for deployment, image_key in (
+                ("ethics-service", "ethics_service"),
+                ("etik-speak-public", "public_web"),
+            ):
+                image = self.image_set["images"][image_key]
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; faz35_assert_rendered_deployment_image "$2" "$3" "$4"',
+                        "bash",
+                        str(self.activation_artifact_lib_path),
+                        str(manifest_path),
+                        deployment,
+                        f'{image["repository"]}@{image["digest"]}',
+                    ],
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(result.returncode, 0)
 
     def test_public_test_hosts_are_gated_and_redirect_to_https(self):
         for ingress in (self.public_api_ingress, self.public_ui_ingress):
