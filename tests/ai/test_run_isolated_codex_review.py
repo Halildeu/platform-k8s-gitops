@@ -29,23 +29,41 @@ FAKE_CODEX = r'''#!/usr/bin/env python3
 import json
 import os
 import sys
+from pathlib import Path
 
 if sys.argv[1:] == ["--version"]:
+    marker = os.environ.get("FAKE_EXECUTION_MARKER")
+    if marker:
+        Path(marker).write_text("executed", encoding="utf-8")
     print("codex-cli 0.144.1")
     raise SystemExit(0)
 
 required = [
     "exec", "--sandbox", "read-only",
-    "--ephemeral", "--ignore-user-config", "--ignore-rules", "--json",
+    "--ephemeral", "--ignore-user-config", "--ignore-rules", "--strict-config",
+    "--skip-git-repo-check", "--json",
     'model_reasoning_effort="xhigh"',
-    "plugins", "apps", "remote_plugin", "memories",
 ]
 if any(value not in sys.argv[1:] for value in required):
     raise SystemExit(7)
-if sys.argv[1:].count("--disable") != 4:
+disabled = {
+    sys.argv[index + 1]
+    for index, value in enumerate(sys.argv[:-1])
+    if value == "--disable"
+}
+expected_disabled = {
+    "apps", "browser_use", "chronicle", "computer_use", "goals", "hooks",
+    "image_generation", "in_app_browser", "memories", "multi_agent", "plugins",
+    "remote_plugin", "shell_tool", "tool_suggest", "unified_exec",
+    "workspace_dependencies",
+}
+if disabled != expected_disabled or sys.argv[1:].count("--disable") != len(expected_disabled):
     raise SystemExit(10)
+review_dir = Path(sys.argv[sys.argv.index("-C") + 1])
+if (review_dir / ".git").exists():
+    raise SystemExit(11)
 model = sys.argv[sys.argv.index("--model") + 1]
-if model != os.environ.get("EXPECTED_MODEL", "gpt-5.3-codex-spark"):
+if model != os.environ.get("FAKE_EXPECTED_MODEL", "gpt-5.3-codex-spark"):
     raise SystemExit(9)
 if not sys.stdin.read():
     raise SystemExit(8)
@@ -60,9 +78,17 @@ if os.environ.get("FAKE_REASONING_EVENT") == "1":
     reasoning = {"id":"item_r","type":"reasoning","text":"internal summary"}
     print(json.dumps({"type":"item.started","item":reasoning}))
     print(json.dumps({"type":"item.completed","item":reasoning}))
+if os.environ.get("FAKE_REASONING_MISMATCH") == "1":
+    print(json.dumps({"type":"item.started","item":{"id":"item_r1","type":"reasoning"}}))
+    print(json.dumps({"type":"item.completed","item":{"id":"item_r2","type":"reasoning"}}))
+if os.environ.get("FAKE_REASONING_UNFINISHED") == "1":
+    print(json.dumps({"type":"item.started","item":{"id":"item_open","type":"reasoning"}}))
 if os.environ.get("FAKE_ERROR_EVENT") == "1":
     item = {"id":"item_e","type":"error","message":"model rerouted"}
 elif os.environ.get("FAKE_TOOL_EVENT") == "1":
+    if "shell_tool" not in disabled or "unified_exec" not in disabled:
+        source = Path(os.environ["FAKE_PROTECTED_INPUT"])
+        Path(os.environ["FAKE_EXFIL_MARKER"]).write_text(source.read_text(encoding="utf-8"))
     item = {"id":"item_0","type":"command_execution","command":"git status"}
 else:
     item = {"id":"item_0","type":"agent_message","text":"P0\nNone\nP1\nNone\nP2\nNone\nVERDICT: AGREE"}
@@ -84,6 +110,21 @@ exit 0
 
 
 class IsolatedCodexReviewTests(unittest.TestCase):
+    def test_codex_environment_excludes_unrelated_process_values(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "HOME": "/tmp/home",
+                "PATH": "/usr/bin",
+                "UNRELATED_SECRET": "must-not-cross-process-boundary",
+            },
+            clear=True,
+        ):
+            environment = MODULE.build_codex_environment()
+        self.assertEqual(environment["HOME"], "/tmp/home")
+        self.assertEqual(environment["PATH"], "/usr/bin")
+        self.assertNotIn("UNRELATED_SECRET", environment)
+
     def test_stderr_allowlist_accepts_only_exact_bounded_cache_schema_warning(self) -> None:
         timestamp = "2026-07-19T00:35:07.740892Z"
         allowed = (
@@ -161,6 +202,10 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         fake_codex.write_text(FAKE_CODEX, encoding="utf-8")
         fake_codex.chmod(0o700)
         self.fake_codex = fake_codex
+        self.execution_marker = self.root / "native-executed.txt"
+        self.protected_input = self.root / "provider-must-not-read.txt"
+        self.protected_input.write_text("not-for-provider", encoding="utf-8")
+        self.exfil_marker = self.root / "provider-read.txt"
         (self.bin_dir / "codex").symlink_to(launcher)
         self.worktree = self.root / "worktree"
         self.worktree.mkdir()
@@ -238,12 +283,17 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         reasoning_event: bool = False,
         duplicate_agent_message: bool = False,
         reasoning_after_agent: bool = False,
+        reasoning_mismatch: bool = False,
+        reasoning_unfinished: bool = False,
         review_tier: str = "routine",
         trusted_pin: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
             "PATH": f"{self.bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "FAKE_EXECUTION_MARKER": str(self.execution_marker),
+            "FAKE_PROTECTED_INPUT": str(self.protected_input),
+            "FAKE_EXFIL_MARKER": str(self.exfil_marker),
         }
         if tool_event:
             env["FAKE_TOOL_EVENT"] = "1"
@@ -261,8 +311,12 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             env["FAKE_DUPLICATE_AGENT_MESSAGE"] = "1"
         if reasoning_after_agent:
             env["FAKE_REASONING_AFTER_AGENT"] = "1"
+        if reasoning_mismatch:
+            env["FAKE_REASONING_MISMATCH"] = "1"
+        if reasoning_unfinished:
+            env["FAKE_REASONING_UNFINISHED"] = "1"
         if review_tier == "high-impact":
-            env["EXPECTED_MODEL"] = "gpt-5.6-sol"
+            env["FAKE_EXPECTED_MODEL"] = "gpt-5.6-sol"
         arguments = [
             str(SCRIPT),
             "--worktree",
@@ -292,10 +346,17 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         returncode = 0
+        codex_env = {
+            key: value
+            for key, value in env.items()
+            if key in MODULE.CODEX_ENV_ALLOWLIST or key.startswith("FAKE_")
+        }
+        codex_env.update({"LC_ALL": "C", "LANG": "C"})
         with (
             mock.patch.object(sys, "argv", arguments),
             mock.patch.dict(os.environ, env, clear=True),
             mock.patch.object(MODULE, "TRUSTED_CODEX_NATIVE_SHA256", trusted),
+            mock.patch.object(MODULE, "build_codex_environment", return_value=codex_env),
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
         ):
@@ -316,7 +377,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         summary = json.loads(result.stdout)
         self.assertEqual(
             summary["execution_profile"],
-            "codex-exec-ephemeral-read-only-exact-scope-v1",
+            "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2",
         )
         evidence = json.loads(self.output.read_text(encoding="utf-8"))
         self.assertEqual(evidence["provider"], "openai")
@@ -355,6 +416,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             json.loads(result.stdout)["error"],
             "codex_tool_or_non_message_event_forbidden",
         )
+        self.assertFalse(self.exfil_marker.exists())
 
     def test_rejects_cli_error_or_reroute_event(self) -> None:
         result = self.run_harness(error_event=True)
@@ -375,6 +437,20 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         for options in (
             {"duplicate_agent_message": True},
             {"reasoning_after_agent": True},
+        ):
+            with self.subTest(options=options):
+                result = self.run_harness(**options)
+                self.assertEqual(result.returncode, 1)
+                self.assertFalse(self.output.exists())
+                self.assertEqual(
+                    json.loads(result.stdout)["error"],
+                    "codex_event_sequence_invalid",
+                )
+
+    def test_rejects_mismatched_or_unfinished_reasoning_lifecycle(self) -> None:
+        for options in (
+            {"reasoning_mismatch": True},
+            {"reasoning_unfinished": True},
         ):
             with self.subTest(options=options):
                 result = self.run_harness(**options)
@@ -442,6 +518,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             json.loads(result.stdout)["error"],
             "codex_native_identity_unverifiable",
         )
+        self.assertFalse(self.execution_marker.exists())
 
 
 if __name__ == "__main__":
