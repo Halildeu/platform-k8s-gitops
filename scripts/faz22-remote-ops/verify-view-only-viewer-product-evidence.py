@@ -304,6 +304,28 @@ def load_json_bytes(raw: bytes, label: str) -> dict[str, Any]:
     return value
 
 
+def carried_review_issued_at(carrier: dict[str, Any]) -> datetime:
+    """Read the signed leaf timestamp for authority selection, then verify it later."""
+
+    envelope = carrier.get("review_envelope")
+    if not isinstance(envelope, dict) or set(envelope) != {
+        "payloadType", "payload", "signatures",
+    }:
+        raise CodexEvidenceError("signed Codex review envelope is invalid")
+    if envelope["payloadType"] != (
+        "application/vnd.acik.cross-ai-deployment-review.v2+json"
+    ):
+        raise CodexEvidenceError("signed Codex review payload type is invalid")
+    try:
+        raw_payload = base64.b64decode(envelope["payload"], validate=True)
+    except (TypeError, ValueError, binascii.Error) as exc:
+        raise CodexEvidenceError("signed Codex review payload is invalid") from exc
+    payload = load_json_bytes(raw_payload, "signed Codex review payload")
+    if canonical_bytes(payload) != raw_payload:
+        raise CodexEvidenceError("signed Codex review payload is not canonical")
+    return parse_utc(payload.get("issuedAt"), "signed Codex review issuedAt")
+
+
 def load_json_file(path: Path, label: str) -> dict[str, Any]:
     try:
         return load_json_bytes(path.read_bytes(), label)
@@ -1437,8 +1459,12 @@ def verify_activation_authorization(
                 if label == "AI advisory"
                 else archived_owner_comment
             )
-            comment = archived_comment or client.get_json(
-                f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}",
+            comment = (
+                archived_comment
+                if archived_comment is not None
+                else client.get_json(
+                    f"/repos/{EXPECTED_REPOSITORY}/issues/comments/{comment_id}",
+                )
             )
             require_equal(comment.get("html_url"), contract.get("ref"), f"{label} URL")
             require_equal(
@@ -1483,11 +1509,12 @@ def verify_activation_authorization(
                             raise CodexEvidenceError(
                                 "signed Codex carrier trust-root binding is missing"
                             )
+                        review_issued_at = carried_review_issued_at(carrier)
                         resolved_authority = load_authority_for_evidence(
                             authority_repo_root,
                             expected_trust_root_sha256=carrier_root,
                             observed_at=authority_observed_at,
-                            evidence_reference_time=pilot_started,
+                            evidence_reference_time=review_issued_at,
                         )
                         cross_ai_trust_root = resolved_authority.trust_root
                         cross_ai_revocations = (

@@ -698,6 +698,18 @@ class GenesisTransitionTests(unittest.TestCase):
             now=self.fixture.factory.now,
         )
 
+    def test_canonical_main_first_parent_scope_validates_authority_history(self) -> None:
+        base, head = self.install_rotation()
+        self.git("checkout", "-q", head)
+        validate_authority_history_transition(
+            self.root,
+            expected_bindings={
+                **self.history_bindings(base, head),
+                "base_tip_sha": head,
+            },
+            now=self.fixture.factory.now,
+        )
+
     def test_root_rotation_review_uses_predecessor_from_exact_head_checkout(self) -> None:
         base, head = self.install_rotation()
         self.git("checkout", "-q", head)

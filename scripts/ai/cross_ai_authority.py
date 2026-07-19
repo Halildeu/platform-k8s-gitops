@@ -222,6 +222,26 @@ def _git_json(root: Path, revision: str, path: Path) -> dict[str, Any]:
     return value
 
 
+def _require_canonical_git_binding(
+    root: Path, *, base_tip: str, base: str, head: str, label: str,
+) -> None:
+    """Accept one canonical PR range or one canonical main first-parent commit."""
+
+    current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
+    merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
+    canonical_pr_range = merge_base == base
+    canonical_main_commit = False
+    if base_tip == head and base != head:
+        first_parent = _git(root, "rev-parse", f"{head}^1").decode().strip().lower()
+        canonical_main_commit = first_parent == base
+    if current not in {base_tip, head} or not (
+        canonical_pr_range or canonical_main_commit
+    ):
+        raise AuthorityUnavailable(
+            f"provider-review {label} requires the exact canonical base or head checkout"
+        )
+
+
 def load_active_authority(
     repo_root: Path, *, now: datetime | None = None
 ) -> PublicReviewAuthority:
@@ -338,12 +358,10 @@ def validate_authority_history_transition(
     base_tip = expected_bindings["base_tip_sha"]
     base = expected_bindings["base_sha"]
     head = expected_bindings["head_sha"]
-    current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
-    merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
-    if current not in {base_tip, head} or base != base_tip or merge_base != base:
-        raise AuthorityUnavailable(
-            "provider-review history validation requires the exact base or head checkout"
-        )
+    _require_canonical_git_binding(
+        root, base_tip=base_tip, base=base, head=head,
+        label="history validation",
+    )
 
     changed = {
         line
@@ -844,12 +862,10 @@ def load_revocation_refresh_authority(
     base_tip = expected_bindings["base_tip_sha"]
     base = expected_bindings["base_sha"]
     head = expected_bindings["head_sha"]
-    current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
-    merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
-    if current not in {base_tip, head} or base != base_tip or merge_base != base:
-        raise AuthorityUnavailable(
-            "provider-review revocation recovery requires the exact base or head checkout"
-        )
+    _require_canonical_git_binding(
+        root, base_tip=base_tip, base=base, head=head,
+        label="revocation recovery",
+    )
     try:
         manifest_schema = _git_json(root, base, MANIFEST_SCHEMA)
         manifest = _validate_document(
@@ -955,12 +971,10 @@ def is_exact_revocation_transition(
     base_tip = expected_bindings["base_tip_sha"]
     base = expected_bindings["base_sha"]
     head = expected_bindings["head_sha"]
-    current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
-    merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
-    if current not in {base_tip, head} or base != base_tip or merge_base != base:
-        raise AuthorityUnavailable(
-            "provider-review revocation classification requires the exact base or head checkout"
-        )
+    _require_canonical_git_binding(
+        root, base_tip=base_tip, base=base, head=head,
+        label="revocation classification",
+    )
     changed = sorted(
         line for line in _git(
             root, "diff", "--name-only", "--no-renames", f"{base}...{head}"

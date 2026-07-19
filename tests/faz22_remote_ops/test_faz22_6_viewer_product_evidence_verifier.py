@@ -1448,6 +1448,10 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
             resolver.call_args.kwargs["expected_trust_root_sha256"],
         )
         self.assertEqual(
+            datetime(2026, 7, 13, 23, 51, tzinfo=timezone.utc),
+            resolver.call_args.kwargs["evidence_reference_time"],
+        )
+        self.assertEqual(
             ADVISORY_FIXTURE.authority.observed_at,
             advisory_verifier.call_args.kwargs["authority_observed_at"],
         )
@@ -1463,6 +1467,16 @@ class ViewerProductEvidenceVerifierTest(unittest.TestCase):
 
         client.get_json = unavailable
         self.assertEqual("pass", self.verify(client)["status"])
+
+    def test_empty_durable_advisory_carrier_does_not_fall_back_to_live_comment(self):
+        children = child_documents()
+        children["operator"]["payload"]["advisoryCommentCarrierBase64"] = (
+            base64.b64encode(b"{                                                }\n").decode(
+                "ascii"
+            )
+        )
+        with self.assertRaisesRegex(VERIFIER.EvidenceError, "AI advisory URL"):
+            self.verify(FakeClient(build_archive(children=children)))
 
     def test_durable_owner_directive_carrier_does_not_refetch_live_comment(self):
         client = FakeClient()
