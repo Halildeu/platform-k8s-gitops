@@ -299,20 +299,17 @@ def validate_authority_history_transition(
     manifest_name = MANIFEST_PATH.as_posix()
     history_prefix = "config/github-apps/cross-ai-provider-review-history/"
     history_changes = {path for path in changed if path.startswith(history_prefix)}
-    if manifest_name not in changed:
-        if history_changes:
-            raise AuthorityUnavailable(
-                "provider-review archived authority changed without a manifest rotation"
-            )
-        return
-
     try:
         schema = load_json_file(root / MANIFEST_SCHEMA)
         base_manifest = _validate_document(
             load_json_file(root / MANIFEST_PATH), schema, "authority manifest"
         )
-        head_manifest = _validate_document(
-            _git_json(root, head, MANIFEST_PATH), schema, "head authority manifest"
+        head_manifest = (
+            _validate_document(
+                _git_json(root, head, MANIFEST_PATH), schema, "head authority manifest"
+            )
+            if manifest_name in changed
+            else base_manifest
         )
     except Exception as exc:
         if isinstance(exc, AuthorityUnavailable):
@@ -320,6 +317,56 @@ def validate_authority_history_transition(
         raise AuthorityUnavailable(
             "provider-review authority history contract is unavailable"
         ) from exc
+
+    base_revocations_path = base_manifest.get("revocationsPath")
+    head_revocations_path = head_manifest.get("revocationsPath")
+    revocations_changed = any(
+        isinstance(path, str) and path in changed
+        for path in (base_revocations_path, head_revocations_path)
+    )
+    if (
+        revocations_changed
+        and base_manifest["status"] == "active"
+        and head_manifest["status"] == "active"
+        and base_manifest["expectedTrustRootSha256"]
+        == head_manifest["expectedTrustRootSha256"]
+    ):
+        if base_revocations_path != head_revocations_path:
+            raise AuthorityUnavailable(
+                "provider-review same-root revocation path is immutable"
+            )
+        try:
+            trust_root = _git_json(
+                root, head, Path(head_manifest["trustRootPath"])
+            )
+            predecessor = _git_json(root, base, Path(base_revocations_path))
+            replacement = _git_json(root, head, Path(head_revocations_path))
+            if sha256_digest(trust_root) != head_manifest["expectedTrustRootSha256"]:
+                raise AuthorityUnavailable(
+                    "provider-review same-root revocation pin mismatch"
+                )
+            verifier = EvidenceVerifier(
+                trust_root=trust_root,
+                revocations_envelope=replacement,
+                now=now or utc_now(),
+                expected_trust_root_sha256=head_manifest[
+                    "expectedTrustRootSha256"
+                ],
+            )
+            verifier.require_monotonic_revocation_predecessor(
+                predecessor, require_stale=False
+            )
+        except PolicyError as exc:
+            raise AuthorityUnavailable(
+                f"provider-review same-root revocation transition is invalid: {exc.code}"
+            ) from exc
+
+    if manifest_name not in changed:
+        if history_changes:
+            raise AuthorityUnavailable(
+                "provider-review archived authority changed without a manifest rotation"
+            )
+        return
 
     base_history = base_manifest["historicalAuthorities"]
     head_history = head_manifest["historicalAuthorities"]

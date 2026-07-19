@@ -49,6 +49,7 @@ def fetch_operator_payload(client: object, repository: str, activation_run_id: i
     expected_files = {
         "SHA256SUMS",
         "advisory-comment.json",
+        "owner-comment.json",
         "protected-authorization.json",
     }
     if set(files) != expected_files:
@@ -85,6 +86,9 @@ def fetch_operator_payload(client: object, repository: str, activation_run_id: i
         ).decode("ascii"),
         "advisoryCommentCarrierBase64": base64.b64encode(
             files["advisory-comment.json"]
+        ).decode("ascii"),
+        "ownerDirectiveCarrierBase64": base64.b64encode(
+            files["owner-comment.json"]
         ).decode("ascii"),
         "authorizationSchemaVersion": authorization["schemaVersion"],
         "ownerPolicySha256": authorization["ownerPolicySha256"],
