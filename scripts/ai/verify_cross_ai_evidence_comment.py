@@ -23,9 +23,11 @@ from scripts.ai.trusted_cross_ai_evidence import (
 )
 from scripts.ai.cross_ai_authority import (
     AuthorityUnavailable,
+    is_exact_revocation_transition,
     load_active_authority,
     load_revocation_refresh_authority,
     load_staged_activation_authority,
+    validate_authority_history_transition,
 )
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.provider import CODEX_MODELS
@@ -95,39 +97,47 @@ def main() -> None:
         if canonical_bytes(evidence).decode("utf-8") != body:
             raise TrustedEvidenceError("comment carrier is not canonical")
         scope_bytes = args.scope_file.read_bytes()
-        try:
-            authority = load_active_authority(args.repo_root, now=now)
-        except AuthorityUnavailable as exc:
-            bindings = {
-                "base_tip_sha": args.base_tip_sha,
-                "base_sha": args.base_sha,
-                "head_sha": args.head_sha,
-                "scope_sha256": args.scope_sha256,
-            }
-            if "tracked_pending" in str(exc):
-                try:
+        bindings = {
+            "base_tip_sha": args.base_tip_sha,
+            "base_sha": args.base_sha,
+            "head_sha": args.head_sha,
+            "scope_sha256": args.scope_sha256,
+        }
+        validate_authority_history_transition(
+            args.repo_root,
+            expected_bindings=bindings,
+            now=now,
+        )
+        if is_exact_revocation_transition(
+            args.repo_root, expected_bindings=bindings
+        ):
+            authority = load_revocation_refresh_authority(
+                args.repo_root,
+                expected_bindings=bindings,
+                scope_bytes=scope_bytes,
+                now=now,
+                require_stale_predecessor=False,
+            )
+        else:
+            try:
+                authority = load_active_authority(args.repo_root, now=now)
+            except AuthorityUnavailable as exc:
+                if "tracked_pending" in str(exc):
                     authority = load_staged_activation_authority(
                         args.repo_root,
                         expected_bindings=bindings,
                         scope_bytes=scope_bytes,
                         now=now,
                     )
-                except AuthorityUnavailable:
+                elif "REVOCATIONS_STALE" in str(exc):
                     authority = load_revocation_refresh_authority(
                         args.repo_root,
                         expected_bindings=bindings,
                         scope_bytes=scope_bytes,
                         now=now,
                     )
-            elif "REVOCATIONS_STALE" in str(exc):
-                authority = load_revocation_refresh_authority(
-                    args.repo_root,
-                    expected_bindings=bindings,
-                    scope_bytes=scope_bytes,
-                    now=now,
-                )
-            else:
-                raise
+                else:
+                    raise
         validated = validate_evidence(
             evidence,
             trust_root=authority.trust_root,

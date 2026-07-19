@@ -609,9 +609,19 @@ class EvidenceVerifier:
         unrevocation or arbitrary governance bypass.
         """
 
-        predecessor = self._verify_revocations(
-            predecessor_envelope, require_fresh=False
+        return self.require_monotonic_revocation_predecessor(
+            predecessor_envelope, require_stale=True
         )
+
+    def require_monotonic_revocation_predecessor(
+        self,
+        predecessor_envelope: dict[str, Any],
+        *,
+        require_stale: bool,
+    ) -> VerifiedEnvelope:
+        """Authenticate a proactive or stale monotonic revocation release."""
+
+        predecessor = self._verify_revocations(predecessor_envelope, require_fresh=False)
         old_issued = parse_utc(
             predecessor.payload["issuedAt"], "predecessorRevocations.issuedAt"
         )
@@ -621,7 +631,7 @@ class EvidenceVerifier:
         new_issued = parse_utc(
             self.revocations["issuedAt"], "replacementRevocations.issuedAt"
         )
-        if old_next >= self.now - self.max_skew:
+        if require_stale and old_next >= self.now - self.max_skew:
             reject(
                 "REVOCATION_RECOVERY_NOT_REQUIRED",
                 "revocation predecessor is not stale",

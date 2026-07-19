@@ -88,6 +88,13 @@ def _scope(workspace: Path) -> tuple[dict[str, str], bytes]:
     head_sha = run_git(workspace, "rev-parse", "HEAD").lower()
     base_tip_sha = run_git(workspace, "rev-parse", "origin/main").lower()
     base_sha = run_git(workspace, "merge-base", base_tip_sha, head_sha).lower()
+    if head_sha == base_sha or not run_git(
+        workspace, "diff", "--name-only", "--no-renames", f"{base_sha}...{head_sha}"
+    ).splitlines():
+        reject(
+            "PROVIDER_SCOPE_EMPTY",
+            "direct Codex review requires a non-empty PR head distinct from its trusted base",
+        )
     scope_bytes, _, _ = derive_scope(
         workspace,
         base_tip_sha=base_tip_sha,

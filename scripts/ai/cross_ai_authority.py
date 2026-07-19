@@ -21,7 +21,7 @@ from scripts.github_apps.cross_ai_deployment_policy.canonical import sha256_dige
 from scripts.github_apps.cross_ai_deployment_policy.contract import EvidenceVerifier
 from scripts.github_apps.cross_ai_deployment_policy.errors import PolicyError
 from scripts.github_apps.cross_ai_deployment_policy.jsonutil import load_json_file
-from scripts.github_apps.cross_ai_deployment_policy.timeutil import utc_now
+from scripts.github_apps.cross_ai_deployment_policy.timeutil import parse_utc, utc_now
 
 
 MANIFEST_PATH = Path("config/github-apps/cross-ai-provider-review-authority.v1.json")
@@ -62,7 +62,11 @@ def _fixed_config_path(root: Path, value: str) -> Path:
 
 
 def _load_public_authority(
-    root: Path, locator: dict[str, Any], *, now: datetime
+    root: Path,
+    locator: dict[str, Any],
+    *,
+    now: datetime,
+    review_reference_time: datetime | None = None,
 ) -> PublicReviewAuthority:
     trust_path = _fixed_config_path(root, locator["trustRootPath"])
     revocations_path = _fixed_config_path(root, locator["revocationsPath"])
@@ -76,17 +80,23 @@ def _load_public_authority(
     expected = locator["expectedTrustRootSha256"]
     if sha256_digest(trust_root) != expected:
         raise AuthorityUnavailable("provider-review trust-root pin mismatch")
+    if (
+        locator.get("expectedRevocationsSha256") is not None
+        and sha256_digest(revocations) != locator["expectedRevocationsSha256"]
+    ):
+        raise AuthorityUnavailable("provider-review revocation snapshot pin mismatch")
     try:
         verifier = EvidenceVerifier(
             trust_root=trust_root,
             revocations_envelope=revocations,
             now=now,
             expected_trust_root_sha256=expected,
+            review_reference_time=review_reference_time,
         )
         verifier.require_active_signing_key(
             key_id=locator["issuerRuntimePolicy"]["attestorKeyId"],
             role="runner-management",
-            issued_at=now,
+            issued_at=review_reference_time or now,
         )
     except PolicyError as exc:
         raise AuthorityUnavailable(
@@ -138,6 +148,244 @@ def load_active_authority(
     if manifest["status"] != "active":
         raise AuthorityUnavailable("provider-review public authority is tracked_pending")
     return _load_public_authority(root, manifest, now=now or utc_now())
+
+
+def load_authority_for_evidence(
+    repo_root: Path,
+    *,
+    expected_trust_root_sha256: str,
+    observed_at: datetime,
+    evidence_reference_time: datetime,
+) -> PublicReviewAuthority:
+    """Resolve current or immutable retired authority for durable evidence."""
+
+    root = repo_root.expanduser().resolve()
+    try:
+        manifest = _validate_document(
+            load_json_file(root / MANIFEST_PATH),
+            load_json_file(root / MANIFEST_SCHEMA),
+            "authority manifest",
+        )
+    except Exception as exc:
+        if isinstance(exc, AuthorityUnavailable):
+            raise
+        raise AuthorityUnavailable(
+            "provider-review authority history is unavailable"
+        ) from exc
+    if (
+        manifest["status"] == "active"
+        and manifest["expectedTrustRootSha256"]
+        == expected_trust_root_sha256
+    ):
+        return _load_public_authority(root, manifest, now=observed_at)
+    matches = [
+        entry for entry in manifest["historicalAuthorities"]
+        if entry["expectedTrustRootSha256"] == expected_trust_root_sha256
+    ]
+    if len(matches) != 1:
+        raise AuthorityUnavailable(
+            "provider-review evidence trust root is not uniquely archived"
+        )
+    historical = matches[0]
+    digest = expected_trust_root_sha256.removeprefix("sha256:")
+    expected_directory = f"config/github-apps/cross-ai-provider-review-history/{digest}/"
+    if not (
+        historical["trustRootPath"].startswith(expected_directory)
+        and historical["revocationsPath"].startswith(expected_directory)
+    ):
+        raise AuthorityUnavailable(
+            "provider-review authority history path is not content-addressed"
+        )
+    retired_at = parse_utc(historical["retiredAt"], "historicalAuthority.retiredAt")
+    if retired_at > observed_at:
+        raise AuthorityUnavailable(
+            "provider-review authority retirement is future-dated"
+        )
+    if evidence_reference_time >= retired_at:
+        raise AuthorityUnavailable(
+            "provider-review evidence was issued after its authority retired"
+        )
+    return _load_public_authority(
+        root,
+        historical,
+        now=retired_at,
+        review_reference_time=evidence_reference_time,
+    )
+
+
+def validate_authority_history_transition(
+    repo_root: Path,
+    *,
+    expected_bindings: dict[str, str],
+    now: datetime | None = None,
+) -> None:
+    """Keep retired authority material append-only across a root rotation.
+
+    The checkout is the trusted target-branch tip.  Head documents are parsed
+    as data only.  A root digest may change only when the old active root and
+    its final signed revocation snapshot are copied byte-for-byte into a
+    content-addressed history directory and one exact manifest entry is
+    appended.  Existing history can never be edited or removed.
+    """
+
+    required_bindings = {"base_tip_sha", "base_sha", "head_sha", "scope_sha256"}
+    if set(expected_bindings) != required_bindings:
+        raise AuthorityUnavailable("provider-review history binding set is invalid")
+    root = repo_root.expanduser().resolve()
+    base_tip = expected_bindings["base_tip_sha"]
+    base = expected_bindings["base_sha"]
+    head = expected_bindings["head_sha"]
+    current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
+    merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
+    if current != base_tip or base != base_tip or merge_base != base:
+        raise AuthorityUnavailable(
+            "provider-review history validation requires the exact trusted base tip"
+        )
+
+    changed = {
+        line
+        for line in _git(
+            root, "diff", "--name-only", "--no-renames", f"{base}...{head}"
+        ).decode("utf-8", errors="strict").splitlines()
+        if line
+    }
+    manifest_name = MANIFEST_PATH.as_posix()
+    history_prefix = "config/github-apps/cross-ai-provider-review-history/"
+    history_changes = {path for path in changed if path.startswith(history_prefix)}
+    if manifest_name not in changed:
+        if history_changes:
+            raise AuthorityUnavailable(
+                "provider-review archived authority changed without a manifest rotation"
+            )
+        return
+
+    try:
+        schema = load_json_file(root / MANIFEST_SCHEMA)
+        base_manifest = _validate_document(
+            load_json_file(root / MANIFEST_PATH), schema, "authority manifest"
+        )
+        head_manifest = _validate_document(
+            _git_json(root, head, MANIFEST_PATH), schema, "head authority manifest"
+        )
+    except Exception as exc:
+        if isinstance(exc, AuthorityUnavailable):
+            raise
+        raise AuthorityUnavailable(
+            "provider-review authority history contract is unavailable"
+        ) from exc
+
+    base_history = base_manifest["historicalAuthorities"]
+    head_history = head_manifest["historicalAuthorities"]
+    base_digest = base_manifest["expectedTrustRootSha256"]
+    head_digest = head_manifest["expectedTrustRootSha256"]
+
+    if base_manifest["status"] != "active":
+        if head_history != base_history or history_changes:
+            raise AuthorityUnavailable(
+                "provider-review genesis cannot mutate retired authority history"
+            )
+        return
+    if head_manifest["status"] != "active":
+        raise AuthorityUnavailable(
+            "provider-review active authority cannot be retired without a replacement"
+        )
+    if head_digest == base_digest:
+        if head_history != base_history or history_changes:
+            raise AuthorityUnavailable(
+                "provider-review retired authority history is immutable"
+            )
+        return
+
+    if not isinstance(base_digest, str) or not isinstance(head_digest, str):
+        raise AuthorityUnavailable("provider-review root rotation digest is unavailable")
+    old_digest_hex = base_digest.removeprefix("sha256:")
+    archive_root_path = (
+        f"{history_prefix}{old_digest_hex}/trust-root.v2.json"
+    )
+    archive_revocations_path = (
+        f"{history_prefix}{old_digest_hex}/revocations.v1.dsse.json"
+    )
+    if history_changes != {archive_root_path, archive_revocations_path}:
+        raise AuthorityUnavailable(
+            "provider-review root rotation must add only the exact archived authority files"
+        )
+
+    try:
+        old_root = _git_json(root, base, Path(base_manifest["trustRootPath"]))
+        old_revocations = _git_json(
+            root, base, Path(base_manifest["revocationsPath"])
+        )
+        archived_root = _git_json(root, head, Path(archive_root_path))
+        archived_revocations = _git_json(
+            root, head, Path(archive_revocations_path)
+        )
+        new_root = _git_json(root, head, Path(head_manifest["trustRootPath"]))
+        new_revocations = _git_json(
+            root, head, Path(head_manifest["revocationsPath"])
+        )
+    except Exception as exc:
+        if isinstance(exc, AuthorityUnavailable):
+            raise
+        raise AuthorityUnavailable(
+            "provider-review root rotation resource is unavailable"
+        ) from exc
+    if sha256_digest(old_root) != base_digest:
+        raise AuthorityUnavailable("provider-review predecessor trust-root pin mismatch")
+    if archived_root != old_root or archived_revocations != old_revocations:
+        raise AuthorityUnavailable(
+            "provider-review root rotation archive does not match the trusted predecessor"
+        )
+    if sha256_digest(new_root) != head_digest:
+        raise AuthorityUnavailable("provider-review replacement trust-root pin mismatch")
+
+    retired_at_text = new_root.get("issuedAt")
+    if not isinstance(retired_at_text, str):
+        raise AuthorityUnavailable("provider-review replacement issuance time is invalid")
+    retired_at = parse_utc(retired_at_text, "replacementTrustRoot.issuedAt")
+    old_issued_at = parse_utc(old_root.get("issuedAt"), "predecessorTrustRoot.issuedAt")
+    old_expires_at = parse_utc(old_root.get("expiresAt"), "predecessorTrustRoot.expiresAt")
+    observed = now or utc_now()
+    max_skew = old_root.get("maxClockSkewSeconds")
+    if (
+        not isinstance(max_skew, int)
+        or retired_at <= old_issued_at
+        or retired_at >= old_expires_at
+        or (retired_at - observed).total_seconds() > max_skew
+    ):
+        raise AuthorityUnavailable(
+            "provider-review replacement issuance is outside the predecessor boundary"
+        )
+
+    expected_history_entry = {
+        "trustRootPath": archive_root_path,
+        "revocationsPath": archive_revocations_path,
+        "expectedTrustRootSha256": base_digest,
+        "expectedRevocationsSha256": sha256_digest(old_revocations),
+        "codexExecutablePolicy": base_manifest["codexExecutablePolicy"],
+        "issuerRuntimePolicy": base_manifest["issuerRuntimePolicy"],
+        "retiredAt": retired_at_text,
+    }
+    if head_history != [*base_history, expected_history_entry]:
+        raise AuthorityUnavailable(
+            "provider-review root rotation must append the exact predecessor authority"
+        )
+
+    try:
+        verifier = EvidenceVerifier(
+            trust_root=new_root,
+            revocations_envelope=new_revocations,
+            now=retired_at,
+            expected_trust_root_sha256=head_digest,
+        )
+        verifier.require_active_signing_key(
+            key_id=head_manifest["issuerRuntimePolicy"]["attestorKeyId"],
+            role="runner-management",
+            issued_at=retired_at,
+        )
+    except PolicyError as exc:
+        raise AuthorityUnavailable(
+            f"provider-review replacement authority is invalid: {exc.code}"
+        ) from exc
 
 
 def load_staged_activation_authority(
@@ -226,6 +474,7 @@ def load_revocation_refresh_authority(
     expected_bindings: dict[str, str],
     scope_bytes: bytes,
     now: datetime | None = None,
+    require_stale_predecessor: bool = True,
 ) -> PublicReviewAuthority:
     """Load only a signed, monotonic, revocations-file-only stale recovery.
 
@@ -324,7 +573,10 @@ def load_revocation_refresh_authority(
             role="runner-management",
             issued_at=observed,
         )
-        verifier.require_stale_revocation_predecessor(predecessor)
+        verifier.require_monotonic_revocation_predecessor(
+            predecessor,
+            require_stale=require_stale_predecessor,
+        )
     except PolicyError as exc:
         raise AuthorityUnavailable(
             f"provider-review revocation recovery is invalid: {exc.code}"
@@ -338,10 +590,41 @@ def load_revocation_refresh_authority(
     )
 
 
+def is_exact_revocation_transition(
+    repo_root: Path, *, expected_bindings: dict[str, str]
+) -> bool:
+    """Classify the sole revocation-file transition from the trusted base."""
+
+    required_bindings = {"base_tip_sha", "base_sha", "head_sha", "scope_sha256"}
+    if set(expected_bindings) != required_bindings:
+        raise AuthorityUnavailable("provider-review revocation binding set is invalid")
+    root = repo_root.expanduser().resolve()
+    base_tip = expected_bindings["base_tip_sha"]
+    base = expected_bindings["base_sha"]
+    head = expected_bindings["head_sha"]
+    current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
+    merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
+    if current != base_tip or base != base_tip or merge_base != base:
+        raise AuthorityUnavailable(
+            "provider-review revocation classification requires the exact trusted base tip"
+        )
+    changed = sorted(
+        line for line in _git(
+            root, "diff", "--name-only", "--no-renames", f"{base}...{head}"
+        ).decode("utf-8", errors="strict").splitlines() if line
+    )
+    return changed == [
+        "config/github-apps/cross-ai-provider-review-revocations.v1.dsse.json"
+    ]
+
+
 __all__ = [
     "AuthorityUnavailable",
     "PublicReviewAuthority",
+    "is_exact_revocation_transition",
     "load_active_authority",
+    "load_authority_for_evidence",
     "load_revocation_refresh_authority",
     "load_staged_activation_authority",
+    "validate_authority_history_transition",
 ]

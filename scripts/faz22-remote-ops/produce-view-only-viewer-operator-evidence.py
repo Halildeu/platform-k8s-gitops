@@ -94,6 +94,7 @@ def produce(
     codex_executable_policy: dict,
     issuer_runtime_policy: dict,
     authority_observed_at: datetime | None = None,
+    authority_repo_root: Path | None = None,
 ) -> dict:
     if repository != VERIFIER.EXPECTED_REPOSITORY:
         raise VERIFIER.EvidenceError(f"repository must be exactly {VERIFIER.EXPECTED_REPOSITORY}")
@@ -118,6 +119,7 @@ def produce(
         authority_observed_at=(
             authority_observed_at or datetime.now(timezone.utc)
         ),
+        authority_repo_root=authority_repo_root,
     )
     child = {
         "schemaVersion": "faz22.6.viewOnlyViewerProductChildEvidence.v2",
@@ -171,6 +173,7 @@ def main() -> int:
             expected_cross_ai_trust_root_sha256=expected_root,
             codex_executable_policy=executable_policy,
             issuer_runtime_policy=runtime_policy,
+            authority_repo_root=VERIFIER.ROOT,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
