@@ -45,7 +45,7 @@ THREAD_ID_RE = re.compile(
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 ITEM_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 MAX_SCOPE_BYTES = 2_000_000
-MAX_CODEX_NATIVE_BYTES = 256_000_000
+MAX_CODEX_NATIVE_BYTES = 320_000_000
 CODEX_VERSION_RE = re.compile(r"^codex-cli ([0-9]+\.[0-9]+\.[0-9]+)$")
 BENIGN_CACHE_STDERR_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z ERROR "
