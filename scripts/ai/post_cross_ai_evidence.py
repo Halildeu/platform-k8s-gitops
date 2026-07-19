@@ -145,6 +145,7 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
         pin = TRUSTED_CODEX_NATIVE_SHA256.get(
             (provenance.get("cli_version"), provenance.get("cli_native_target"))
         )
+        native_sha256 = provenance.get("cli_native_sha256")
         if (
             provenance.get("schema") != "codex-native-execution-provenance/v1"
             or provenance.get("trust_root") != CODEX_NATIVE_TRUST_ROOT
@@ -154,7 +155,10 @@ def validate_evidence_text(text: str) -> tuple[dict, str]:
             }
             or not isinstance(provenance.get("thread_id"), str)
             or THREAD_ID_RE.fullmatch(provenance["thread_id"]) is None
-            or provenance.get("cli_native_sha256") != pin
+            or pin is None
+            or not isinstance(native_sha256, str)
+            or SHA256_RE.fullmatch(native_sha256) is None
+            or native_sha256 != pin
         ):
             fail("invalid_execution_provenance")
     elif provenance is not None:

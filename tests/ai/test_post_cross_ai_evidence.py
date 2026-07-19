@@ -98,6 +98,13 @@ class EvidenceValidationTests(unittest.TestCase):
         payload["execution_provenance"]["cli_native_sha256"] = "f" * 64
         self.assert_rejected(payload)
 
+    def test_rejects_null_digest_for_unknown_native_tuple(self) -> None:
+        payload = evidence()
+        payload["execution_provenance"]["cli_version"] = "99.99.99"
+        payload["execution_provenance"]["cli_native_target"] = "unknown-target"
+        payload["execution_provenance"]["cli_native_sha256"] = None
+        self.assert_rejected(payload)
+
     def test_rejects_sensitive_response_before_gh_invocation(self) -> None:
         for value in (
             "person@example.com",

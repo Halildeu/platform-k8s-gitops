@@ -120,6 +120,9 @@ fi
 if [ "$1" != "detect" ]; then
     exit 2
 fi
+if [ "$FAKE_GITLEAKS_FINDING" = "1" ]; then
+    exit 1
+fi
 exit 0
 '''
 
@@ -317,6 +320,7 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         review_tier: str = "routine",
         trusted_pin: bool = True,
         trusted_gitleaks_pin: bool = True,
+        gitleaks_finding: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         env = {
             **os.environ,
@@ -349,6 +353,8 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             env["FAKE_REASONING_UNFINISHED"] = "1"
         if review_tier == "high-impact":
             env["FAKE_EXPECTED_MODEL"] = "gpt-5.6-sol"
+        if gitleaks_finding:
+            env["FAKE_GITLEAKS_FINDING"] = "1"
         arguments = [
             str(SCRIPT),
             "--worktree",
@@ -650,6 +656,17 @@ class IsolatedCodexReviewTests(unittest.TestCase):
         self.assertEqual(
             json.loads(result.stdout)["error"],
             "gitleaks_identity_unverifiable",
+        )
+        self.assertFalse(self.output.exists())
+        self.assertFalse(self.execution_marker.exists())
+
+    def test_rejects_trusted_scanner_finding_before_codex_execution(self) -> None:
+        result = self.run_harness(gitleaks_finding=True)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            json.loads(result.stdout)["error"],
+            "gitleaks_finding_detected",
         )
         self.assertFalse(self.output.exists())
         self.assertFalse(self.execution_marker.exists())
