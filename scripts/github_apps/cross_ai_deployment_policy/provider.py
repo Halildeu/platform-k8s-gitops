@@ -28,7 +28,10 @@ from .timeutil import parse_utc
 
 
 MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024
-MAX_PROMPT_BYTES = 512 * 1024
+# Canonical review scope is bounded at 2,000,000 bytes. Keep enough fixed
+# overhead for coordinates and the fail-closed output contract so every scope
+# accepted by prepare_cross_ai_scope can reach the pinned direct runner.
+MAX_PROMPT_BYTES = 2_100_000
 CANONICAL_REVIEW_SECTIONS = ("P0", "P1", "P2")
 CANONICAL_FINDING_RE = re.compile(
     r"^- (?P<finding_id>P[012]-[A-Z0-9][A-Z0-9_-]{1,59})"
