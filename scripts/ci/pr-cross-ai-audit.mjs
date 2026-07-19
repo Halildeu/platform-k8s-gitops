@@ -83,7 +83,7 @@ const CONSULTATION_RECEIPTS = {
   'codex receipt': {
     provider: 'openai',
     models: ['gpt-5.3-codex-spark', 'gpt-5.6-sol'],
-    execution: 'codex-exec-ephemeral-read-only-exact-scope-v1',
+    execution: 'codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
   },
 };
 const FORBIDDEN_CONSULTATION_FIELDS = new Set(['minimax receipt']);
@@ -1010,13 +1010,13 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     findings.push({
       check: 'consultation_single_is_process_context_isolated',
       pass: fields['codex receipt']?.includes(
-        'execution=codex-exec-ephemeral-read-only-exact-scope-v1',
+        'execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
       ),
       detail: fields['codex receipt']?.includes(
-        'execution=codex-exec-ephemeral-read-only-exact-scope-v1',
+        'execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
       )
         ? 'Codex reviewer ayrı ephemeral süreçte, read-only sandbox ve exact scope ile çalıştı'
-        : 'single mode codex-exec-ephemeral-read-only-exact-scope-v1 execution binding ister',
+        : 'single mode codex-exec-ephemeral-read-only-exact-scope-no-tools-v2 execution binding ister',
     });
     findings.push({
       check: 'consultation_single_has_no_risk_trigger',
@@ -1048,10 +1048,10 @@ async function auditExplicitConsultationMode(fields, prMeta, evidenceOverrides) 
     findings.push({
       check: 'consultation_dual_codex_primary_is_process_context_isolated',
       pass: fields['codex receipt']?.includes(
-        'execution=codex-exec-ephemeral-read-only-exact-scope-v1',
+        'execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
       ),
       detail: fields['codex receipt']?.includes(
-        'execution=codex-exec-ephemeral-read-only-exact-scope-v1',
+        'execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
       )
         ? `Codex primary implementer ${implementer} değerinden bağımsız olarak süreç ve bağlam izolasyonlu`
         : 'dual mode Codex primary için exact ephemeral/read-only execution binding ister',

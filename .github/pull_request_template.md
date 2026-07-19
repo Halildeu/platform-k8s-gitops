@@ -75,7 +75,7 @@ Consultation reason: <neden none|single|dual seçildi; en az 10 karakter>
 # Consultation base: <single/dual exact merge-base>
 # Consultation commit: <single/dual exact head>
 # Consultation scope: <single/dual content SHA-256>
-# Codex receipt: <single ve dual için exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-v1>
+# Codex receipt: <single ve dual için exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2>
 # Claude receipt: <yalnız dual için exact optional challenger receipt>
 ```
 

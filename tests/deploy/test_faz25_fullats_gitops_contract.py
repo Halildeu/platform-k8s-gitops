@@ -1173,7 +1173,7 @@ fi
         self.assertIn("claude --model claude-opus-4-8", self.context_rules)
         self.assertIn("`gpt-5.3-codex-spark`", self.context_rules)
         self.assertIn("`gpt-5.6-sol`", self.context_rules)
-        self.assertIn("`codex-exec-ephemeral-read-only-exact-scope-v1`", self.agents)
+        self.assertIn("`codex-exec-ephemeral-read-only-exact-scope-no-tools-v2`", self.agents)
         self.assertIn("`scripts/ai/run_isolated_codex_review.py`", self.agents)
         self.assertIn("Genel `build_cross_ai_evidence.py` OpenAI girdisini", self.agents)
         self.assertIn("modül seviyesinde yeniden paketleme girişimini reddeder", self.agents)

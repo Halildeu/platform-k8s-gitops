@@ -38,7 +38,7 @@ const SCOPE_SHA256 = 'a'.repeat(64);
 const NOW_MS = Date.now();
 const EXECUTION_PROFILE = {
   anthropic: 'claude-cli-no-session-persistence-exact-scope-v1',
-  openai: 'codex-exec-ephemeral-read-only-exact-scope-v1',
+  openai: 'codex-exec-ephemeral-read-only-exact-scope-no-tools-v2',
 };
 
 const sha256 = (value) => createHash('sha256').update(value, 'utf8').digest('hex');
@@ -175,7 +175,7 @@ const legacyPeerBody =
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
   `Claude receipt: provider=anthropic; requested=claude-opus-4-8; actual=claude-opus-4-8; execution=claude-cli-no-session-persistence-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CLAUDE_REF}; sha256=${sha256(EVIDENCE[CLAUDE_REF].body)}\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
 
 const explicitNoneBody =
   `## Cross-AI\n` +
@@ -192,10 +192,10 @@ const explicitSingleBody =
   `Consultation base: ${BASE_SHA}\n` +
   `Consultation commit: ${HEAD_SHA}\n` +
   `Consultation scope: ${SCOPE_SHA256}\n` +
-  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
+  `Codex receipt: provider=openai; requested=gpt-5.6-sol; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${CODEX_REF}; sha256=${sha256(EVIDENCE[CODEX_REF].body)}\n`;
 const explicitSparkSingleBody = explicitSingleBody.replace(
   /^Codex receipt:.*$/m,
-  `Codex receipt: provider=openai; requested=gpt-5.3-codex-spark; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-v1; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${SPARK_REF}; sha256=${sha256(EVIDENCE[SPARK_REF].body)}`,
+  `Codex receipt: provider=openai; requested=gpt-5.3-codex-spark; actual=not-provider-attested; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2; base_tip=${BASE_TIP_SHA}; base=${BASE_SHA}; head=${HEAD_SHA}; scope=${SCOPE_SHA256}; verdict=AGREE; ref=${SPARK_REF}; sha256=${sha256(EVIDENCE[SPARK_REF].body)}`,
 );
 const explicitDualBody =
   explicitSingleBody
@@ -629,7 +629,7 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: explicitSparkSingleBody, changedFiles: [GATE_WORKFLOW_PATH], expectedFailureCheck: 'consultation_codex_model_tier' }, 1],
   ['explicit single mode rejects a receipt without the exact execution profile',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
-      body: explicitSingleBody.replace('; execution=codex-exec-ephemeral-read-only-exact-scope-v1', ''), changedFiles: [ROUTINE_PATH] }, 1],
+      body: explicitSingleBody.replace('; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2', ''), changedFiles: [ROUTINE_PATH] }, 1],
   ['explicit single mode rejects evidence from the current non-isolated Codex chat',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu',
       body: nonIsolatedCodexReceiptBody, changedFiles: [ROUTINE_PATH], evidence: nonIsolatedCodexEvidence }, 1],

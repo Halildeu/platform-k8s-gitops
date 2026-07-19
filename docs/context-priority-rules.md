@@ -385,7 +385,7 @@ belirsizliği veya risk için kullanılan sınırlı araçtır.
    eşleşmesini doğrular ve platforma özel native binary'yi doğrudan çalıştırıp
    SHA-256 kimliğini kaydeder. CLI-accepted requested model, sandbox ve execution
    bayrakları doğrulanır; receipt execution
-   profili exact `codex-exec-ephemeral-read-only-exact-scope-v1` olur. Yeni
+   profili exact `codex-exec-ephemeral-read-only-exact-scope-no-tools-v2` olur. Yeni
    süreç bu sohbet geçmişini, önceki Claude/Codex bulgularını veya uygulayıcı
    yorumunu almaz. Implementer Codex olsa dahi bu process/context isolation,
    proje acceptance sözleşmesinde bağımsız Cross-AI reviewer sayılır ve tek
@@ -444,7 +444,7 @@ Consultation base tip: <single/dual exact target tip>
 Consultation base: <single/dual exact merge-base>
 Consultation commit: <single/dual exact head>
 Consultation scope: <single/dual content SHA-256>
-Codex receipt: <single/dual exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-v1>
+Codex receipt: <single/dual exact receipt; execution=codex-exec-ephemeral-read-only-exact-scope-no-tools-v2>
 Claude receipt: <yalnız dual exact challenger receipt>
 ```
 
@@ -473,7 +473,7 @@ Güncel evidence comment gövdesi exact `cross-ai-provider-evidence/v3` JSON'dur
 `execution_profile` değeri exact olmalıdır:
 
 ```json
-{"schema":"cross-ai-provider-evidence/v3","provider":"openai","requested_model":"gpt-5.3-codex-spark|gpt-5.6-sol","actual_model":"not-provider-attested","execution_profile":"codex-exec-ephemeral-read-only-exact-scope-v1","execution_provenance":{"schema":"codex-native-execution-provenance/v1","thread_id":"<uuid>","cli_version":"<pinned-version>","cli_native_target":"<pinned-platform-package>","cli_native_sha256":"<pinned-64hex>","trust_root":"repo-pinned-codex-native-sha256-v1","stderr_classification":"empty|allowlisted-model-cache-schema-warning-v1"},"base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
+{"schema":"cross-ai-provider-evidence/v3","provider":"openai","requested_model":"gpt-5.3-codex-spark|gpt-5.6-sol","actual_model":"not-provider-attested","execution_profile":"codex-exec-ephemeral-read-only-exact-scope-no-tools-v2","execution_provenance":{"schema":"codex-native-execution-provenance/v1","thread_id":"<uuid>","cli_version":"<pinned-version>","cli_native_target":"<pinned-platform-package>","cli_native_sha256":"<pinned-64hex>","trust_root":"repo-pinned-codex-native-sha256-v1","stderr_classification":"empty|allowlisted-model-cache-schema-warning-v1"},"base_tip_sha":"<40hex>","base_sha":"<40hex>","head_sha":"<40hex>","scope_sha256":"<64hex>","verdict":"AGREE","response_sha256":"<64hex>","response":"<full provider response>"}
 ```
 
 Desteklenen OpenAI evidence yolu yalnız

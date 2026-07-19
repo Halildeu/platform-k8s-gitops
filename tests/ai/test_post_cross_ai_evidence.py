@@ -27,7 +27,7 @@ def evidence() -> dict:
         "provider": "openai",
         "requested_model": "gpt-5.6-sol",
         "actual_model": "not-provider-attested",
-        "execution_profile": "codex-exec-ephemeral-read-only-exact-scope-v1",
+        "execution_profile": "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2",
         "execution_provenance": {
             "schema": "codex-native-execution-provenance/v1",
             "thread_id": "019f7785-c66d-7992-a21a-d4097d9eb3f9",

@@ -102,7 +102,7 @@ EVIDENCE_KEYS = {
 }
 PROVIDER_EXECUTION_PROFILES = {
     "anthropic": "claude-cli-no-session-persistence-exact-scope-v1",
-    "openai": "codex-exec-ephemeral-read-only-exact-scope-v1",
+    "openai": "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2",
 }
 PROVIDER_MODELS = {
     "anthropic": ("claude-opus-4-8",),

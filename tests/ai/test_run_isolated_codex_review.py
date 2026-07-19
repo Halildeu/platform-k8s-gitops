@@ -25,6 +25,14 @@ SPEC = importlib.util.spec_from_file_location("run_isolated_codex_review", SCRIP
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+POSTER_PATH = ROOT / "scripts/ai/post_cross_ai_evidence.py"
+POSTER_SPEC = importlib.util.spec_from_file_location(
+    "post_cross_ai_evidence_for_harness_test",
+    POSTER_PATH,
+)
+assert POSTER_SPEC is not None and POSTER_SPEC.loader is not None
+POSTER_MODULE = importlib.util.module_from_spec(POSTER_SPEC)
+POSTER_SPEC.loader.exec_module(POSTER_MODULE)
 FAKE_CODEX = r'''#!/usr/bin/env python3
 import json
 import os
@@ -380,7 +388,20 @@ class IsolatedCodexReviewTests(unittest.TestCase):
             "codex-exec-ephemeral-read-only-exact-scope-no-tools-v2",
         )
         evidence = json.loads(self.output.read_text(encoding="utf-8"))
+        poster_trusted = dict(POSTER_MODULE.TRUSTED_CODEX_NATIVE_SHA256)
+        poster_trusted[("0.144.1", self.package_suffix)] = evidence[
+            "execution_provenance"
+        ]["cli_native_sha256"]
+        with mock.patch.object(
+            POSTER_MODULE,
+            "TRUSTED_CODEX_NATIVE_SHA256",
+            poster_trusted,
+        ):
+            posted_evidence, _ = POSTER_MODULE.validate_evidence_text(
+                self.output.read_text(encoding="utf-8")
+            )
         self.assertEqual(evidence["provider"], "openai")
+        self.assertEqual(posted_evidence, evidence)
         self.assertEqual(evidence["actual_model"], "not-provider-attested")
         self.assertEqual(summary["requested_model"], "gpt-5.3-codex-spark")
         self.assertEqual(summary["review_tier"], "routine")
