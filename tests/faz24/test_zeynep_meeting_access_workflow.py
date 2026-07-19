@@ -20,7 +20,7 @@ PRIMARY_SUBJECT = "FAZ 24"
 CORROBORATING_SUBJECT = "Platform Ai- Meeting Intelligence"
 NEW_PASSWORD = "a" * 64
 WRITER_USER_ID = "cbc9a869-1833-4d9c-beea-a9fa52fa851e"
-WRITER_PROFILE_EMAIL = "d35-admin-persona@acik.com"
+WRITER_PROFILE_EMAIL = "d35-admin@example.com"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -889,7 +889,7 @@ def test_vault_preflight_blocks_before_profile_repair(tmp_path):
     assert events == []
 
 
-def test_writer_email_is_preserved_while_credential_is_repaired(tmp_path):
+def test_writer_email_is_reconciled_to_the_canonical_local_identity(tmp_path):
     proc, result, vault_state, events, _ = _run_ambiguous_reset_scenario(
         tmp_path,
         "new-success",
@@ -901,13 +901,20 @@ def test_writer_email_is_preserved_while_credential_is_repaired(tmp_path):
     assert result["permissionWriter"]["identityBinding"] == (
         "username+immutable-user-id"
     )
-    assert result["boundaries"]["permissionWriterEmailMutation"] is False
-    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is False
-    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is False
-    assert result["permissionWriter"]["profileRepaired"] is False
+    assert result["boundaries"]["permissionWriterEmailMutation"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationAttempted"] is True
+    assert result["boundaries"]["permissionWriterEmailMutationConfirmed"] is True
+    assert result["permissionWriter"]["profileRepaired"] is True
     assert result["permissionWriter"]["profileEmailCollisionFree"] is True
     assert vault_state["admin_persona_password"] == NEW_PASSWORD
-    assert events == ["vault-put", "keycloak-reset-ambiguous"]
+    assert events == [
+        "keycloak-profile-repair",
+        "vault-put",
+        "keycloak-reset-ambiguous",
+    ]
+    assert (tmp_path / "keycloak-email-state").read_text(
+        encoding="utf-8"
+    ).strip() == WRITER_PROFILE_EMAIL
 
 
 def test_writer_uid_mismatch_blocks_before_any_mutation(tmp_path):

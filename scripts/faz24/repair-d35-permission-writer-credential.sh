@@ -10,7 +10,9 @@ readonly KC_REALM="platform-test"
 readonly KC_ADMIN_USER="admin"
 readonly WRITER_USERNAME="d35-admin-persona"
 readonly WRITER_USER_ID="cbc9a869-1833-4d9c-beea-a9fa52fa851e"
-readonly WRITER_PROFILE_EMAIL="d35-admin-persona@acik.com"
+# user-service binds this synthetic TEST administrator to its canonical local
+# ADMIN row by email; accepting another non-empty email leaves the actor disabled.
+readonly WRITER_PROFILE_EMAIL="d35-admin@example.com"
 readonly WRITER_PROFILE_FIRST_NAME="D35"
 readonly WRITER_PROFILE_LAST_NAME="Admin Persona"
 readonly WRITER_CLIENT="frontend"
@@ -326,7 +328,7 @@ WRITER_LAST_NAME_BEFORE="$(jq -r '.lastName // empty' "${KC_WRITER_FRESH_JSON}")
 NEED_WRITER_EMAIL=false
 NEED_WRITER_FIRST_NAME=false
 NEED_WRITER_LAST_NAME=false
-[[ -n "${WRITER_EMAIL_BEFORE}" ]] || NEED_WRITER_EMAIL=true
+[[ "${WRITER_EMAIL_BEFORE}" == "${WRITER_PROFILE_EMAIL}" ]] || NEED_WRITER_EMAIL=true
 [[ -n "${WRITER_FIRST_NAME_BEFORE}" ]] || NEED_WRITER_FIRST_NAME=true
 [[ -n "${WRITER_LAST_NAME_BEFORE}" ]] || NEED_WRITER_LAST_NAME=true
 
