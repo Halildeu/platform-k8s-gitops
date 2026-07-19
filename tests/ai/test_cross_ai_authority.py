@@ -17,6 +17,7 @@ from scripts.ai.cross_ai_authority import (
     is_exact_revocation_transition,
     load_active_authority,
     load_authority_for_evidence,
+    load_review_submission_authority,
     load_revocation_refresh_authority,
     load_staged_activation_authority,
     validate_authority_history_transition,
@@ -672,6 +673,34 @@ class GenesisTransitionTests(unittest.TestCase):
             expected_bindings=self.history_bindings(base, head),
             now=self.fixture.factory.now,
         )
+
+    def test_root_rotation_review_uses_predecessor_from_exact_head_checkout(self) -> None:
+        base, head = self.install_rotation()
+        self.git("checkout", "-q", head)
+        scope = b"exact canonical rotation scope\n"
+        bindings = self.history_bindings(base, head)
+        bindings["scope_sha256"] = hashlib.sha256(scope).hexdigest()
+        authority = load_review_submission_authority(
+            self.root,
+            expected_bindings=bindings,
+            scope_bytes=scope,
+            now=self.fixture.factory.now,
+        )
+        self.assertEqual(
+            authority.expected_trust_root_sha256,
+            self.fixture.authority.expected_trust_root_sha256,
+        )
+
+    def test_rotation_review_rejects_scope_rebinding_before_authority_load(self) -> None:
+        base, head = self.install_rotation()
+        self.git("checkout", "-q", head)
+        with self.assertRaisesRegex(AuthorityUnavailable, "scope digest mismatch"):
+            load_review_submission_authority(
+                self.root,
+                expected_bindings=self.history_bindings(base, head),
+                scope_bytes=b"different scope\n",
+                now=self.fixture.factory.now,
+            )
 
     def test_root_rotation_cannot_resurrect_a_revoked_identity(self) -> None:
         revoked = {

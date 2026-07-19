@@ -36,7 +36,7 @@ from scripts.ai.prepare_cross_ai_scope import MAX_SCOPE_BYTES, derive_scope, run
 from scripts.ai.cross_ai_authority import (
     AuthorityUnavailable,
     PublicReviewAuthority,
-    load_active_authority,
+    load_review_submission_authority,
 )
 from scripts.ai.trusted_cross_ai_evidence import (
     EVIDENCE_SCHEMA,
@@ -282,8 +282,11 @@ def build_signed_evidence(
     )
     subject_sha256 = sha256_digest(subject)
     preflight_now = utc_now().replace(microsecond=0)
-    preflight_authority = authority or load_active_authority(
-        workspace, now=preflight_now
+    preflight_authority = authority or load_review_submission_authority(
+        workspace,
+        expected_bindings=bindings,
+        scope_bytes=scope_bytes,
+        now=preflight_now,
     )
     active_signer = signer
     preflight_verifier = EvidenceVerifier(
@@ -327,7 +330,12 @@ def build_signed_evidence(
     expires = now + timedelta(minutes=90)
     issued_at = now.isoformat().replace("+00:00", "Z")
     expires_at = expires.isoformat().replace("+00:00", "Z")
-    active_authority = authority or load_active_authority(workspace, now=now)
+    active_authority = authority or load_review_submission_authority(
+        workspace,
+        expected_bindings=bindings,
+        scope_bytes=scope_bytes,
+        now=now,
+    )
     trust_root = active_authority.trust_root
     revocations = active_authority.revocations_envelope
     verifier = EvidenceVerifier(

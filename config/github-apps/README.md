@@ -109,6 +109,15 @@ signed revocations must still be active and fresh at the trusted verifier's
 current observation time; validating only at a backdated retirement timestamp
 is forbidden.
 
+The rotation PR's review is signed and transported under the still-active
+predecessor authority. The evidence builder and poster derive that predecessor
+only from the exact merge-base git objects after validating the complete
+append-only rotation and canonical scope binding; they never let the proposed
+replacement root authorize its own introduction. The trusted-base PR verifier
+repeats the transition validation and verifies the predecessor-signed leaf.
+After merge, ordinary reviews use the replacement active authority. This keeps
+rotation possible without creating a new-root self-authorization path.
+
 The protected #2373 authorization artifact retains the exact downloaded signed
 advisory comment JSON alongside the authorization receipt and covers both with
 `SHA256SUMS` plus the immutable artifact digest. The independently produced

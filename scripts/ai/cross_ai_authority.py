@@ -111,6 +111,23 @@ def _load_public_authority(
         raise AuthorityUnavailable(
             "provider-review public authority resource is unavailable"
         ) from exc
+    return _validate_public_authority_documents(
+        locator,
+        trust_root,
+        revocations,
+        now=now,
+        review_reference_time=review_reference_time,
+    )
+
+
+def _validate_public_authority_documents(
+    locator: dict[str, Any],
+    trust_root: dict[str, Any],
+    revocations: dict[str, Any],
+    *,
+    now: datetime,
+    review_reference_time: datetime | None = None,
+) -> PublicReviewAuthority:
     expected = locator["expectedTrustRootSha256"]
     if sha256_digest(trust_root) != expected:
         raise AuthorityUnavailable("provider-review trust-root pin mismatch")
@@ -149,6 +166,28 @@ def _load_public_authority(
         issuer_runtime_policy=locator["issuerRuntimePolicy"],
         observed_at=now,
         verified_revocation_entries=tuple(verifier.revocations["entries"]),
+    )
+
+
+def _load_git_public_authority(
+    root: Path,
+    revision: str,
+    locator: dict[str, Any],
+    *,
+    now: datetime,
+) -> PublicReviewAuthority:
+    try:
+        trust_root = _git_json(root, revision, Path(locator["trustRootPath"]))
+        revocations = _git_json(root, revision, Path(locator["revocationsPath"]))
+    except (KeyError, TypeError, AuthorityUnavailable) as exc:
+        raise AuthorityUnavailable(
+            "provider-review git authority resource is unavailable"
+        ) from exc
+    return _validate_public_authority_documents(
+        locator,
+        trust_root,
+        revocations,
+        now=now,
     )
 
 
@@ -296,9 +335,9 @@ def validate_authority_history_transition(
     head = expected_bindings["head_sha"]
     current = _git(root, "rev-parse", "HEAD").decode().strip().lower()
     merge_base = _git(root, "merge-base", base_tip, head).decode().strip().lower()
-    if current != base_tip or base != base_tip or merge_base != base:
+    if current not in {base_tip, head} or base != base_tip or merge_base != base:
         raise AuthorityUnavailable(
-            "provider-review history validation requires the exact trusted base tip"
+            "provider-review history validation requires the exact base or head checkout"
         )
 
     changed = {
@@ -312,9 +351,9 @@ def validate_authority_history_transition(
     history_prefix = "config/github-apps/cross-ai-provider-review-history/"
     history_changes = {path for path in changed if path.startswith(history_prefix)}
     try:
-        schema = load_json_file(root / MANIFEST_SCHEMA)
+        schema = _git_json(root, base, MANIFEST_SCHEMA)
         base_manifest = _validate_document(
-            load_json_file(root / MANIFEST_PATH), schema, "authority manifest"
+            _git_json(root, base, MANIFEST_PATH), schema, "authority manifest"
         )
         head_manifest = (
             _validate_document(
@@ -622,6 +661,65 @@ def validate_authority_history_transition(
         ) from exc
 
 
+def load_review_submission_authority(
+    repo_root: Path,
+    *,
+    expected_bindings: dict[str, str],
+    scope_bytes: bytes,
+    now: datetime | None = None,
+) -> PublicReviewAuthority:
+    """Select the authority that signs and transports the current review.
+
+    Ordinary and same-root revocation changes use the active authority in the
+    checkout. A root-rotation PR is reviewed by its trusted predecessor: the
+    replacement root cannot authorize the PR that introduces it, while the
+    final trusted-base verifier independently validates the complete append-only
+    rotation before accepting that predecessor-signed review.
+    """
+
+    required_bindings = {"base_tip_sha", "base_sha", "head_sha", "scope_sha256"}
+    if set(expected_bindings) != required_bindings:
+        raise AuthorityUnavailable("provider-review submission binding set is invalid")
+    if hashlib.sha256(scope_bytes).hexdigest() != expected_bindings["scope_sha256"]:
+        raise AuthorityUnavailable("provider-review submission scope digest mismatch")
+    root = repo_root.expanduser().resolve()
+    observed = now or utc_now()
+    validate_authority_history_transition(
+        root,
+        expected_bindings=expected_bindings,
+        now=observed,
+    )
+    base = expected_bindings["base_sha"]
+    head = expected_bindings["head_sha"]
+    try:
+        schema = _git_json(root, base, MANIFEST_SCHEMA)
+        base_manifest = _validate_document(
+            _git_json(root, base, MANIFEST_PATH), schema, "base authority manifest"
+        )
+        head_manifest = _validate_document(
+            _git_json(root, head, MANIFEST_PATH), schema, "head authority manifest"
+        )
+    except Exception as exc:
+        if isinstance(exc, AuthorityUnavailable):
+            raise
+        raise AuthorityUnavailable(
+            "provider-review submission authority is unavailable"
+        ) from exc
+    if (
+        base_manifest["status"] == "active"
+        and head_manifest["status"] == "active"
+        and base_manifest["expectedTrustRootSha256"]
+        != head_manifest["expectedTrustRootSha256"]
+    ):
+        return _load_git_public_authority(
+            root,
+            base,
+            base_manifest,
+            now=observed,
+        )
+    return load_active_authority(root, now=observed)
+
+
 def load_staged_activation_authority(
     repo_root: Path,
     *,
@@ -859,6 +957,7 @@ __all__ = [
     "is_exact_revocation_transition",
     "load_active_authority",
     "load_authority_for_evidence",
+    "load_review_submission_authority",
     "load_revocation_refresh_authority",
     "load_staged_activation_authority",
     "require_active_codex_provider_key",

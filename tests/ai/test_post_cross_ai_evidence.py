@@ -14,7 +14,10 @@ from pathlib import Path
 from scripts.ai import post_cross_ai_evidence as POST
 from scripts.ai.trusted_cross_ai_evidence import (
     GITHUB_COMMENT_MAX_CHARS,
+    OWNER_DECISION_BODY_SHA256,
+    OWNER_DECISION_REF,
     TrustedEvidenceError,
+    build_prompt,
     canonical_bytes,
     validate_github_comment_transport,
     validate_evidence,
@@ -60,6 +63,19 @@ class EvidenceValidationTests(unittest.TestCase):
             validated["review"]["modelIdentityClass"],
             "trusted-launch-attested",
         )
+
+    def test_review_prompt_binds_the_superseding_owner_policy_direction(self) -> None:
+        prompt = build_prompt(
+            base_tip_sha=self.fixture.bindings["base_tip_sha"],
+            base_sha=self.fixture.bindings["base_sha"],
+            head_sha=self.fixture.bindings["head_sha"],
+            scope_sha256=f"sha256:{self.fixture.bindings['scope_sha256']}",
+            scope_bytes=self.fixture.scope_bytes,
+        )
+        self.assertIn(OWNER_DECISION_REF, prompt)
+        self.assertIn(OWNER_DECISION_BODY_SHA256, prompt)
+        self.assertIn("direct OpenAI Codex-only none|single", prompt)
+        self.assertIn("superseded provider policy should be restored", prompt)
 
     def test_github_comment_transport_is_bounded_to_actual_65536_limit(self) -> None:
         validate_github_comment_transport("x" * GITHUB_COMMENT_MAX_CHARS)
