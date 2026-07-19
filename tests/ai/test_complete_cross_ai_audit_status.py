@@ -221,6 +221,37 @@ class CompleteCrossAiAuditStatusTests(unittest.TestCase):
         ):
             MODULE.complete_status(self.repo, self.issue, self.event_path)
 
+    def test_ledger_must_be_newer_than_pending_generation(self) -> None:
+        for ledger_id in (9, 10):
+            with self.subTest(ledger_id=ledger_id):
+                body = self.write_event(self.body(10, ledger_id))
+                with (
+                    mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/gh"),
+                    mock.patch.object(
+                        MODULE.subprocess,
+                        "run",
+                        side_effect=[
+                            subprocess.CompletedProcess(
+                                ["gh"],
+                                0,
+                                stdout=json.dumps(self.current_pr(body)),
+                                stderr="",
+                            ),
+                            subprocess.CompletedProcess(
+                                ["gh"],
+                                0,
+                                stdout=json.dumps([[
+                                    self.pending(),
+                                    self.ledger(identifier=ledger_id),
+                                ]]),
+                                stderr="",
+                            ),
+                        ],
+                    ),
+                    self.assertRaises(SystemExit),
+                ):
+                    MODULE.complete_status(self.repo, self.issue, self.event_path)
+
     def test_exact_generation_success_is_idempotent(self) -> None:
         body = self.write_event()
         current_success = {

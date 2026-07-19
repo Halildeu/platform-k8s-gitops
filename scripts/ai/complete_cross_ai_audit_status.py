@@ -218,7 +218,8 @@ def complete_status(repo: str, issue: int, event_path: Path) -> dict:
     except (KeyError, TypeError, AttributeError):
         fail("audit_generation_ledger_invalid")
     if (
-        ledger.get("context") != f"cross-ai/evidence/{digest}"
+        ledger_status_id <= pending_status_id
+        or ledger.get("context") != f"cross-ai/evidence/{digest}"
         or ledger.get("target_url") != expected_url
         or ledger_creator != owner
     ):

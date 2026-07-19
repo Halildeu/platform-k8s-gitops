@@ -426,23 +426,14 @@ def publish_evidence(
 ) -> dict:
     """Publish evidence under one exact-head audit generation.
 
-    A CAS-protected incomplete marker first supersedes every older workflow
-    event without exposing binding evidence. The required status then becomes
-    pending and its GitHub status id is written into the PR body immediately.
-    The ledger id is added only after the immutable status and owner comment
-    exist. Any partial publication therefore remains fail-closed.
+    The exact-head required status becomes pending before any body/evidence
+    mutation. Its GitHub status id is then written into the PR body with CAS.
+    Older events cannot clear that newer status because their marker generation
+    differs. The ledger id is added only after the immutable status and owner
+    comment exist. Any partial publication therefore remains fail-closed.
     """
     if not isinstance(pr_body, str):
         fail("gh_pr_body_invalid")
-    patch_recheck_marker(
-        repo=repo,
-        issue_number=issue_number,
-        head_sha=evidence["head_sha"],
-        pending_status_id=0,
-        ledger_status_id=0,
-        body_sha256=body_sha256,
-        runner=runner,
-    )
     invalidation = audit_invalidation_payload(pr_url)
     try:
         invalidation_result = runner(
@@ -529,7 +520,7 @@ def publish_evidence(
     if (
         ledger_context != f"cross-ai/evidence/{body_sha256}"
         or not isinstance(ledger_id, int)
-        or ledger_id < 1
+        or ledger_id <= invalidation_id
         or ledger_creator != repo.split("/", 1)[0].lower()
         or status_record.get("state") != expected_status["state"]
         or status_record.get("description") != expected_status["description"]

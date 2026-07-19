@@ -557,17 +557,17 @@ ve izole thread kimliğini taşır; poster ve CI aynı provenance pinini yeniden
 doğrular. Yeni CLI sürümü pinset güncellemesi ve high-impact SOL exact-head
 review ister. Poster exact şema/profil/provenance dışında fail-closed olur;
 trusted producer commit'inin exact PR base tip'inin atası olduğunu posting
-öncesinde doğrular. Yeni binding evidence görünür olmadan ETag/`If-Match` ile
-güncellenen incomplete generation marker'ını PR body'ye yazar; böylece eski
-event body'leri geçersiz olur ve eşzamanlı insan/agent body değişiklikleri
-kaybolmaz. Exact-head `cross-ai-audit` commit status'unu ardından `pending`
-yapar ve status ID'sini PR body'deki generation marker'ına hemen bağlar. Ardından
-immutable status ledger'ını
+öncesinde doğrular. Yeni binding evidence veya PR body mutation'ı görünür
+olmadan exact-head `cross-ai-audit` commit status'unu `pending` yapar; eski event
+marker'ları bu yeni status ID ile eşleşemediği için onu success'e çeviremez.
+Status ID'sini ETag/`If-Match` ile güncellenen generation marker'ına hemen bağlar;
+eşzamanlı insan/agent body değişiklikleri kaybolmaz. Ardından immutable status ledger'ını
 owner comment'ten önce üretir ve exact pending-id/ledger-id/digest taşıyan final
 marker'la trusted-base `pull_request_target: edited` audit'ini yeniden tetikler.
 Trusted completion helper event body/head ile canlı açık PR body/head'ini,
 marker'daki pending ID ile owner pending status'u ve marker'daki ledger ID ile
-exact digest/PR/owner ledger'ını yeniden doğrulamadan success yazamaz. Success
+exact digest/PR/owner ledger'ını yeniden doğrulamadan ve ledger ID pending
+ID'den kesin büyük olmadan success yazamaz. Success
 sonrasında daha yeni owner generation/body/head görülürse trusted workflow retry
 pending'ini yeniden okunan canlı PR head SHA'sına kurar; yeni generation bu
 fail-closed kaydı tüketebilir. Audit

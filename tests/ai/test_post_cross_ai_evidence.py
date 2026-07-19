@@ -187,14 +187,14 @@ class EvidenceValidationTests(unittest.TestCase):
             pr_body="## Cross-AI\nConsultation mode: single\n",
             runner=runner,
         )
-        self.assertEqual(calls[0][2], "repos/Halildeu/platform-k8s-gitops/pulls/2638")
-        self.assertIn("GET", calls[0])
-        self.assertIn("PATCH", calls[1])
+        self.assertIn("/statuses/", calls[0][2])
+        self.assertIn("GET", calls[1])
+        self.assertIn("PATCH", calls[2])
         self.assertEqual(
             status_contexts,
             ["cross-ai-audit", f"cross-ai/evidence/{digest}"],
         )
-        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
         self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertEqual(result["ledger_context"], f"cross-ai/evidence/{digest}")
@@ -242,18 +242,28 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 3)
-        self.assertIn("/pulls/", calls[0][2])
-        self.assertIn("/pulls/", calls[1][2])
-        self.assertIn("/statuses/", calls[2][2])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("/statuses/", calls[0][2])
 
-    def test_etag_conflict_fails_before_status_or_evidence_mutation(self) -> None:
+    def test_etag_conflict_leaves_exact_head_pending_without_evidence(self) -> None:
         payload = evidence()
         text = json.dumps(payload, separators=(",", ":"))
         calls: list[list[str]] = []
 
-        def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             calls.append(command)
+            if "/statuses/" in command[2]:
+                posted = json.loads(str(kwargs["input"]))
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({
+                        **posted,
+                        "id": 10,
+                        "url": "https://api.github.com/statuses/10",
+                        "creator": {"login": "Halildeu"},
+                    }),
+                )
             if "GET" in command:
                 return subprocess.CompletedProcess(
                     command, 0, stdout=included_pr("human body", payload["head_sha"])
@@ -273,8 +283,8 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="human body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 2)
-        self.assertFalse(any("/statuses/" in call[2] for call in calls))
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sum("/statuses/" in call[2] for call in calls), 1)
         self.assertFalse(any("/comments" in call[2] for call in calls))
 
     def test_ledger_failure_after_invalidation_never_creates_comment(self) -> None:
@@ -327,8 +337,8 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 6)
-        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 2)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertFalse(any("/comments" in call[2] for call in calls))
 
@@ -384,8 +394,8 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 7)
-        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 2)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertIn("/comments", calls[-1][2])
 
@@ -430,7 +440,7 @@ class EvidenceValidationTests(unittest.TestCase):
                 )
             if "/pulls/" in command[2]:
                 patch_count += 1
-                if patch_count == 3:
+                if patch_count == 2:
                     return subprocess.CompletedProcess(command, 1, stdout="")
                 posted = json.loads(str(kwargs["input"]))
                 current_body = posted["body"]
@@ -457,8 +467,8 @@ class EvidenceValidationTests(unittest.TestCase):
                     pr_body="body",
                     runner=runner,
                 )
-        self.assertEqual(len(calls), 9)
-        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 6)
+        self.assertEqual(len(calls), 7)
+        self.assertEqual(sum("/pulls/" in call[2] for call in calls), 4)
         self.assertEqual(sum("/statuses/" in call[2] for call in calls), 2)
         self.assertEqual(sum("/comments" in call[2] for call in calls), 1)
         self.assertIn("PATCH", calls[-1])
