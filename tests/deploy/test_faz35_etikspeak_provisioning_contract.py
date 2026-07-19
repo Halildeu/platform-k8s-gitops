@@ -274,6 +274,10 @@ class Faz35EtikSpeakProvisioningContractTests(unittest.TestCase):
             f"sha256:{canonical_digest}",
         )
         self.assertEqual(self.model_ledger_path.stem, canonical_digest)
+        self.assertIn(
+            f'EXPECTED_MODEL_JSON_SHA256="{canonical_digest}"',
+            self.preflight,
+        )
 
         fga_source = (
             ROOT / "runtime-artifacts/faz35-etik-speak/authorization-model-v1.fga"

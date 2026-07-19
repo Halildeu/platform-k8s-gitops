@@ -13,7 +13,7 @@ NETPOL="$ACTIVATION/netpol.yaml"
 ROOT_OVERLAY="$REPO_ROOT/kustomize/overlays/test/kustomization.yaml"
 SERVICE_CONFIG="$REPO_ROOT/kustomize/base/apps/etik-speak/ethics-service-config.yaml"
 SECRET_STORE="$ACTIVATION/secretstore.yaml"
-EXPECTED_MODEL_JSON_SHA256="9234b1d6356698f7bd2825c0842d6eed31cd5cb99d30101d22eb2a01a821409c"
+EXPECTED_MODEL_JSON_SHA256="711364fb006ac49b630a5df6f5724516fe82086c2418a26aa9e1f829e97d6c33"
 FOUNDATION_FRONTEND_PIN="sha-eee1310|sha256:46a55e1664552d7f8a35c15bdd14ff4a21b9a40bc6d10324aa779e61be036402"
 
 [ "$SSH_TARGET" = "halil@staging-sw" ] || {
